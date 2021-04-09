@@ -1,0 +1,7 @@
+*
+!docker
+#cmake-build-*
+#build
+#install
+!temp/gds
+

@@ -1,0 +1,23 @@
+Sphinx==3.5.2
+sphinx-autobuild==2020.9.1
+myst-parser==0.13.5
+sphinx-book-theme==0.0.40
+numpy==1.19.5
+matplotlib==3.3.4
+ipywidgets==7.6.3
+pandas==1.1.5
+nbclient==0.5.3
+myst-nb==0.12.0
+sphinx-togglebutton==0.2.3
+sphinx-copybutton==0.3.1
+plotly==4.14.3
+sphinxcontrib-bibtex<2.0.0 # https://github.com/executablebooks/jupyter-book/issues/1137
+sphinx-thebe==0.0.8
+sphinx-panels==0.5.2
+ablog==0.10.13
+docutils==0.16 # 0.17 causes error. https://github.com/executablebooks/MyST-Parser/issues/343
+pydata_sphinx_theme==0.4.3
+sphinxemoji==0.1.8
+cupy-cuda110==9.0.0b3
+scipy
+scikit-image

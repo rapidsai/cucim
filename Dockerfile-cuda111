@@ -1,0 +1,39 @@
+#
+# Copyright (c) 2020, NVIDIA CORPORATION.
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+FROM gigony/manylinux2014-x64:20201013-46b1bff
+
+ENV DEFAULT_DOCKCROSS_IMAGE gigony/manylinux2014-x64:cuda111
+ENV PATH=/usr/local/cuda/bin/:$PATH
+
+ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64/:/usr/local/cuda/nvvm/lib64:${LD_LIBRARY_PATH}
+
+RUN curl -LO https://developer.download.nvidia.com/compute/cuda/11.1.0/local_installers/cuda_11.1.0_455.23.05_linux.run && \
+    chmod +x cuda_*.run && \
+    ./cuda_*.run --silent --no-opengl-libs --toolkit && \
+    rm -f cuda_*.run;
+
+RUN curl -LO https://developer.download.nvidia.com/compute/cuda/repos/rhel7/x86_64/libnvjpeg2k0-0.0.1.17-1.x86_64.rpm && \
+    curl -LO https://developer.download.nvidia.com/compute/cuda/repos/rhel7/x86_64/libnvjpeg2k-devel-0.0.1.17-1.x86_64.rpm && \
+    rpm -i libnvjpeg2k*.rpm
+
+# TODO: Currently we don't install dependencies from libtiff here.
+RUN yum install -y openslide-python openslide-devel python-devel python3-devel
+
+# Copy stub libcuda file
+RUN cp /usr/local/cuda-11.1/targets/x86_64-linux/lib/stubs/libcuda.so /usr/lib64/libcuda.so.1
+
+RUN cp -P /usr/include/nvjpeg2k* /usr/local/cuda/include/ && \
+    cp -P /usr/lib64/libnvjpeg2k* /usr/local/cuda/lib64/

@@ -1,0 +1,29 @@
+# .coveragerc to control coverage.py
+[run]
+omit =
+    # omit vendored files
+    */_vendored/*
+    src/cucim/time.py
+    # omit versioneer file
+    src/cucim/_version.py
+
+
+[html]
+directory = coverage_html_report
+
+# [paths]
+# source =
+#    src
+#    */site-packages
+#
+# [run]
+# branch = true
+# source =
+#     src/cucim
+#     tests
+# parallel = true
+#
+# [report]
+# show_missing = true
+# precision = 2
+# omit = *migrations*

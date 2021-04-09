@@ -1,0 +1,500 @@
+#!/bin/bash
+#
+# Copyright (c) 2020, NVIDIA CORPORATION.
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+init_globals() {
+    if [ "$0" != "/bin/bash" ]; then
+        SCRIPT_DIR=$(dirname "$(readlink -f "$0")")
+        export RUN_SCRIPT_FILE="$(readlink -f "$0")"
+    else
+        export RUN_SCRIPT_FILE="$(readlink -f "${BASH_SOURCE[0]}")"
+    fi
+
+    export TOP=$(dirname "${RUN_SCRIPT_FILE}")
+}
+
+################################################################################
+# Utility functions
+################################################################################
+
+#######################################
+# Get list of available commands from a given input file.
+#
+# Available commands and command summary are extracted by checking a pattern
+# "_desc() { echo '".
+# Section title is extracted by checking a pattern "# Section: ".
+# This command is used for listing available commands in CLI.
+#
+# e.g.)
+#   "# Section: String/IO functions"
+#     => "# String/IO functions"
+#   "to_lower_desc() { echo 'Convert to lower case"
+#     => "to_lower ----------------- Convert to lower case"
+#
+# Arguments:
+#   $1 - input file that defines commands
+# Returns:
+#   Print list of available commands from $1
+#######################################
+get_list_of_available_commands() {
+    local file_name="$1"
+    if [ ! -e "$1" ]; then
+        echo "$1 doesn't exist!"
+    fi
+
+    local line_str='--------------------------------'
+    local IFS= cmd_lines="$(IFS= cat "$1" | grep -E -e "^(([[:alpha:]_[:digit:]]+)_desc\(\)|# Section: )" | sed "s/_desc() *{ *echo '/ : /")"
+    local line
+    while IFS= read -r line; do
+        local cmd=$(echo "$line" | cut -d":" -f1)
+        local desc=$(echo "$line" | cut -d":" -f2-)
+        if [ "$cmd" = "# Section" ]; then
+            c_echo B "${desc}"
+        else
+            # there is no substring operation in 'sh' so use 'cut'
+            local dash_line="$(echo "${line_str}" | cut -c ${#cmd}-)"  #  = "${line_str:${#cmd}}"
+             c_echo Y "   ${cmd}" w " ${dash_line} ${desc}"
+        fi
+        # use <<EOF, not '<<<"$cmd_lines"' to be executable in sh
+    done <<EOF
+$cmd_lines
+EOF
+}
+
+my_cat_prefix() {
+    local IFS
+    local prefix="$1"
+    local line
+    while IFS= read -r line; do
+        echo "${prefix}${line}" # -e option doesn't work in 'sh' so disallow escaped characters
+    done <&0
+}
+
+
+c_str() {
+    local old_color=39
+    local old_attr=0
+    local color=39
+    local attr=0
+    local text=""
+    #local no_change=0
+    for i in "$@"; do
+        case "$i" in
+            r|R)
+                color=31
+                ;;
+            g|G)
+                color=32
+                ;;
+            y|Y)
+                color=33
+                ;;
+            b|B)
+                color=34
+                ;;
+            p|P)
+                color=35
+                ;;
+            c|C)
+                color=36
+                ;;
+            w|W)
+                color=37
+                ;;
+
+            z|Z)
+                color=0
+                ;;
+        esac
+        case "$i" in
+            l|L|R|G|Y|B|P|C|W)
+                attr=1
+                ;;
+            n|N|r|g|y|b|p|c|w)
+                attr=0
+                ;;
+            z|Z)
+                attr=0
+                ;;
+            *)
+                text="${text}$i"
+        esac
+        if [ ${old_color} -ne ${color} ] || [ ${old_attr} -ne ${attr} ]; then
+            text="${text}\033[${attr};${color}m"
+            old_color=$color
+            old_attr=$attr
+        fi
+    done
+    /bin/echo -en "$text"
+}
+
+c_echo() {
+    local old_opt="$(shopt -op xtrace)" # save old xtrace option
+    set +x # unset xtrace
+    local text="$(c_str "$@")"
+    /bin/echo -e "$text\033[0m"
+    eval "${old_opt}" # restore old xtrace option
+}
+
+
+echo_err() {
+    >&2 echo "$@"
+}
+
+c_echo_err() {
+    >&2 c_echo "$@"
+}
+
+printf_err() {
+    >&2 printf "$@"
+}
+
+get_item_ranges() {
+    local indexes="$1"
+    local list="$2"
+    echo -n "$(echo "${list}" | xargs | cut -d " " -f "${indexes}")"
+    return $?
+}
+
+get_unused_ports() {
+    local num_of_ports=${1:-1}
+    local start=${2:-49152}
+    local end=${3:-61000}
+    comm -23 \
+    <(seq ${start} ${end} | sort) \
+    <(ss -tan | awk '{print $4}' | while read line; do echo ${line##*\:}; done | grep '[0-9]\{1,5\}' | sort -u) \
+    | shuf | tail -n ${num_of_ports} # use tail instead head to avoid broken pipe in VSCode terminal
+}
+
+newline() {
+    echo
+}
+
+info() {
+    c_echo W "$(date -u '+%Y-%m-%d %H:%M:%S') [INFO] " Z "$@"
+}
+
+error() {
+    echo R "$(date -u '+%Y-%m-%d %H:%M:%S') [ERROR] " Z "$@"
+}
+
+fatal() {
+    echo R "$(date -u '+%Y-%m-%d %H:%M:%S') [FATAL] " Z "$@"
+    echo
+    if [ -n "${SCRIPT_DIR}" ]; then
+        exit 1
+    fi
+}
+
+run_command() {
+    local status=0
+    local cmd="$*"
+
+    c_echo B "$(date -u '+%Y-%m-%d %H:%M:%S') " W "\$ " G "${cmd}"
+
+    [ "$(echo -n "$@")" = "" ] && return 1 # return 1 if there is no command available
+
+    "$@"
+    status=$?
+
+    unset IFS
+
+    return $status
+}
+
+retry() {
+    local retries=$1
+    shift
+
+    local count=0
+    until run_command "$@"; do
+        exit=$?
+        wait=$((2 ** count))
+        count=$((count + 1))
+        if [ $count -lt $retries ]; then
+            info "Retry $count/$retries. Exit code=$exit, Retrying in $wait seconds..."
+            sleep $wait
+        else
+            fatal "Retry $count/$retries. Exit code=$exit, no more retries left."
+            return 1
+        fi
+    done
+    return 0
+}
+
+#==================================================================================
+# Section: Example
+#==================================================================================
+
+download_testdata_desc() { echo 'Download test data from Docker Hub
+'
+}
+download_testdata() {
+    c_echo W "Downloading test data..."
+    run_command mkdir -p ${TOP}/notebooks/input
+    if [ ! -e ${TOP}/notebooks/input/README.md ]; then
+        run_command rm -rf ${TOP}/notebooks/input
+        id=$(docker create gigony/svs-testdata:little-big)
+        run_command docker cp $id:/input ${TOP}/notebooks
+        run_command docker rm -v $id
+        c_echo G "Test data is downloaded to ${TOP}/notebooks/input!"
+    else
+        c_echo G "Test data already exists at ${TOP}/notebooks/input!"
+    fi
+}
+
+copy_gds_files_() {
+    [ ! -d /usr/local/cuda/gds ] && c_echo_err R "GDS is not available at /usr/local/cuda/gds !" && return 1
+
+    rm -rf ${TOP}/temp/gds
+    mkdir -p ${TOP}/temp/gds/lib64
+    cp -P -r /usr/local/cuda/gds/* ${TOP}/temp/gds/
+    cp -P /usr/local/cuda/lib64/cufile.h /usr/local/cuda/lib64/libcufile* ${TOP}/temp/gds/lib64/
+}
+
+launch_notebooks_desc() { echo 'Launch jupyter notebooks
+
+Arguments:
+  -p <port> - port number
+  -h <host> - hostname to serve documentation on (default: 0.0.0.0)
+  -g        - launch GDS-enabled container
+'
+}
+launch_notebooks() {
+    local OPTIND
+    local port=$(get_unused_ports 1 10000 10030)
+    local host='0.0.0.0'
+    local gds_postfix=''
+    local gds_nvme_path=''
+
+    while getopts 'p:h:g:' option;
+    do
+        case "${option}" in
+            p)
+                port="$OPTARG"
+                ;;
+            h)
+                host="$OPTARG"
+                ;;
+            g)
+                gds_postfix='-gds'
+                echo "# OPTARG:$OPTARG"
+                [ -z "$OPTARG" ] && c_echo_err R "Please specify NVMe path!" && return 1
+                gds_nvme_path=$(readlink -f "$OPTARG")
+                [ ! -d "$gds_nvme_path" ] && c_echo_err R "Folder $gds_nvme_path doesn't exist!" && return 1
+
+                # Copy cufile SDK from host system to temp/gds
+                copy_gds_files_
+                ;;
+            *)
+                return 1
+       esac
+    done
+
+    download_testdata
+
+    run_command cp ${TOP}/*.whl ${TOP}/notebooks
+
+    run_command nvidia-docker build -t cucim-jupyter${gds_postfix} -f ${TOP}/docker/Dockerfile-jupyter${gds_postfix} ${TOP}
+
+    [ $? -ne 0 ] && return 1
+
+    c_echo W "Port " G "$port" W " would be used...(" B "http://$(hostname -I | cut -d' ' -f 1):${port}" W ")"
+
+    if [ -z "${gds_postfix}" ]; then
+        run_command nvidia-docker run --gpus all -it --rm \
+            -v ${TOP}/notebooks:/notebooks \
+            -p ${port}:${port} \
+            cucim-jupyter \
+            -c "echo -n 'Enter New Password: '; jupyter lab --ServerApp.password=\"\$(python3 -u -c \"from jupyter_server.auth import passwd;pw=input();print(passwd(pw));\" | egrep 'sha|argon')\" --ServerApp.root_dir=/notebooks --allow-root --port=${port} --ip=${host} --no-browser"
+    else
+        local MNT_PATH=/nvme
+        local GDS_IMAGE=cucim-jupyter${gds_postfix}
+
+        local BUILD_VER=`uname -r`
+        local NV_DRIVER=`nvidia-smi -q -i 0 | sed -n 's/Driver Version.*: *\(.*\) *$/\1/p'`
+        echo "using nvidia driver version $NV_DRIVER on kernel $BUILD_VER"
+
+        local ofed_version=$(ofed_info -s | grep MLNX)
+        if [ $? -eq 0 ]; then
+            local rdma_core=$(dpkg -s libibverbs-dev | grep "Source: rdma-core")
+            if [ $? -eq 0 ]; then
+                local CONFIG_MOFED_VERSION=$(echo $ofed_version | cut -d '-' -f 2)
+                echo "Found MOFED version $CONFIG_MOFED_VERSION"
+            fi
+            local MLNX_SRCS="--volume /usr/src/mlnx-ofed-kernel-${CONFIG_MOFED_VERSION}:/usr/src/mlnx-ofed-kernel-${CONFIG_MOFED_VERSION}:ro"
+            local MOFED_DEVS="--net=host --volume /sys/class/infiniband_verbs:/sys/class/infiniband_verbs/ "
+        fi
+
+        docker run \
+            --ipc host \
+            -it \
+            --rm \
+            --gpus all \
+            -v ${TOP}/notebooks:/notebooks \
+            -p ${port}:${port} \
+            --volume /run/udev:/run/udev:ro \
+            --volume /sys/kernel/config:/sys/kernel/config/ \
+            --volume /usr/src/nvidia-$NV_DRIVER:/usr/src/nvidia-$NV_DRIVER:ro  ${MLNX_SRCS}\
+            --volume /dev:/dev:ro \
+            --privileged \
+            --env NV_DRIVER=${NV_DRIVER} \
+            --volume /lib/modules/$BUILD_VER/:/lib/modules/$BUILD_VER \
+            --volume "${MNT_PATH}:/notebooks/nvme:rw" \
+            ${MOFED_DEVS} \
+            ${GDS_IMAGE} \
+            -c "echo -n 'Enter New Password: '; jupyter lab --ServerApp.password=\"\$(python3 -u -c \"from jupyter_server.auth import passwd;pw=input();print(passwd(pw));\" | egrep 'sha|argon')\" --ServerApp.root_dir=/notebooks --allow-root --port=${port} --ip=${host} --no-browser"
+    fi
+}
+
+#==================================================================================
+# Section: Build
+#==================================================================================
+
+build_train() {
+    local image_name=${1:-cucim-train}
+    run_command docker build -t ${image_name} -f ${TOP}/docker/Dockerfile-claratrain ${TOP}/docker
+}
+
+build_train_desc() { echo 'Build Clara Train Docker image with cuCIM (& OpenSlide)
+
+Build image from docker/Dockerfile-claratrain
+
+Arguments:
+  $1 - docker image name (default:cucim-train)
+'
+}
+build_train() {
+    local image_name=${1:-cucim-train}
+    run_command docker build -t ${image_name} -f ${TOP}/docker/Dockerfile-claratrain ${TOP}
+}
+
+build_examples_desc() { echo 'Build cuCIM C++ examples
+'
+}
+build_examples() {
+    local image_name=cucim-cmake
+    run_command docker build -t ${image_name} -f ${TOP}/docker/Dockerfile-cmake ${TOP}/docker
+    run_command docker run -it --rm \
+        -v ${TOP}:/workspace \
+        ${image_name} \
+            -c "
+                mkdir -p /workspace/examples/cpp/build;
+                rm -rf /workspace/examples/cpp/build/*;
+                cd /workspace/examples/cpp/build;
+                cmake .. && make"
+    c_echo W "Copying binary files to ${TOP}/bin folder..."
+    run_command mkdir -p ${TOP}/bin
+    run_command cp ${TOP}/examples/cpp/build/bin/* ${TOP}/bin
+
+    download_testdata
+
+    c_echo W "Execute the binary with the following commands:"
+    c_echo   "  # Set library path"
+    c_echo B "  export LD_LIBRARY_PATH=${TOP}/install/lib:\$LD_LIBRARY_PATH"
+    c_echo   "  # Execute"
+    c_echo B "  ./bin/tiff_image notebooks/input/image.tif ."
+}
+
+parse_args() {
+    local OPTIND
+    while getopts 'yh' option;
+    do
+        case "${option}" in
+            y)
+                ALWAYS_YES=true;
+                ;;
+            h)
+                print_usage
+                exit 1
+                ;;
+            *)
+                ;;
+        esac
+    done
+    shift $((OPTIND-1))
+
+    CMD="$1"
+    shift
+
+    ARGS=("$@")
+}
+
+print_usage() {
+    set +x
+    echo_err
+    echo_err "USAGE: $0 [command] [arguments]..."
+    echo_err ""
+    c_echo_err W "Global Arguments"
+    echo_err
+    c_echo_err W "Command List"
+    c_echo_err Y "    help  " w "----------------------------  Print detailed description for a given argument (command name)"
+    echo_err "$(get_list_of_available_commands "${RUN_SCRIPT_FILE}" | my_cat_prefix " ")"
+    echo_err
+}
+
+print_cmd_help_messages() {
+    local cmd="$1"
+    if [ -n "${cmd}" ]; then
+        if type ${cmd}_desc > /dev/null 2>&1; then
+            ${cmd}_desc
+            exit 0
+        else
+            c_echo_err R "Command '${cmd}' doesn't exist!"
+            exit 1
+        fi
+    fi
+    print_usage
+    return 0
+}
+
+main() {
+    local ret=0
+    parse_args "$@"
+
+    case "$CMD" in
+        help)
+            print_cmd_help_messages "${ARGS[@]}"
+            exit 0
+            ;;
+        build)
+            build_examples "${ARGS[@]}"
+            ;;
+        notebooks)
+            launch_notebooks "${ARGS[@]}"
+            ;;
+        ''|main)
+            print_usage
+            ;;
+        *)
+            if type ${CMD} > /dev/null 2>&1; then
+                "$CMD" "${ARGS[@]}"
+            else
+                print_usage
+                exit 1
+            fi
+            ;;
+    esac
+    ret=$?
+    if [ -n "${SCRIPT_DIR}" ]; then
+        exit $ret
+    fi
+}
+
+init_globals
+
+if [ -n "${SCRIPT_DIR}" ]; then
+    main "$@"
+fi

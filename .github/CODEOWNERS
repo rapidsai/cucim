@@ -1,0 +1,18 @@
+#cpp code owners
+cpp/               @rapidsai/<repo>-cpp-codeowners
+
+#python code owners
+python/            @rapidsai/<repo>-python-codeowners
+python/dask_cudf/  @rapidsai/<repo>-dask-codeowners
+
+#cmake code owners
+**/CMakeLists.txt  @rapidsai/<repo>-cmake-codeowners
+**/cmake/          @rapidsai/<repo>-cmake-codeowners
+
+#build/ops code owners
+.github/           @rapidsai/ops-codeowners 
+ci/                @rapidsai/ops-codeowners
+conda/             @rapidsai/ops-codeowners
+**/Dockerfile      @rapidsai/ops-codeowners
+**/.dockerignore   @rapidsai/ops-codeowners
+docker/            @rapidsai/ops-codeowners

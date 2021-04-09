@@ -1,0 +1,47 @@
+# Copyright (c) 2021, NVIDIA CORPORATION.
+
+{% set version = environ.get('GIT_DESCRIBE_TAG', '0.0.0.dev').lstrip('v') + environ.get('VERSION_SUFFIX', '') %}
+{% set minor_version =  version.split('.')[0] + '.' + version.split('.')[1] %}
+{% set python_version=environ.get('PYTHON_VER', '3.7') %}
+{% set cuda_version='.'.join(environ.get('CUDA_VERSION', '11.0').split('.')[:2]) %}
+
+package:
+  name: libcucim
+  version: {{ version }}
+
+source:
+  git_url: ../../..
+
+build:
+  number: {{ GIT_DESCRIBE_NUMBER }}
+  string: cuda{{ cuda_version }}_{{ GIT_DESCRIBE_HASH }}_{{ GIT_DESCRIBE_NUMBER }}
+
+requirements:
+  build:
+    - cmake >=3.18.0
+    - {{ compiler("cxx") }}
+  host:
+    - cudatoolkit {{ cuda_version }}.*
+    - openslide
+    - zlib
+    - jpeg
+    - jbig
+    - xz
+    - zstd
+    - libwebp-base  # [linux or osx]
+  run:
+    - cudatoolkit {{ cuda_version }}.*
+    # - openslide # skipping here but benchmark binary would needs openslide library
+    - zlib
+    - jpeg
+    - jbig
+    - xz
+    - zstd
+    - libwebp-base  # [linux or osx]
+
+about:
+  home: http://rapids.ai/
+  license: Apache-2.0
+  license_family: Apache
+  license_file: LICENSE
+  summary: libcucim C++ library

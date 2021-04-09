@@ -1,0 +1,10 @@
+openslide-python==1.1.2
+tifffile==2020.9.3
+itk==5.1.2
+dask[array,delayed,distributed]==2021.2.0
+dask-cuda==0.17.0
+zarr==2.6.1
+fsspec==0.8.5
+numpy # 1.17.3 already exists in the image
+opencv-contrib-python==4.5.1.48
+imagecodecs==2020.5.30

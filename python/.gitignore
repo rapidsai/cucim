@@ -1,0 +1,6 @@
+cmake-build*
+
+# C++ libraries
+lib*.so*
+# cucim plugins
+cucim.*.so

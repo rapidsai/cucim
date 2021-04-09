@@ -1,0 +1,293 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "cpp/plugins/cucim.kit.cuslide"
+		},
+		{
+			"path": "python"
+		}
+	],
+	"remoteAuthority": "wsl+Ubuntu-20.04",
+	"extensions": {
+		"recommendations": [
+			"ms-vscode.cpptools-extension-pack",
+			"matepek.vscode-catch2-test-adapter",
+			"ms-python.python",
+			"ms-python.vscode-pylance",
+			"shardulm94.trailing-spaces"
+		]
+	},
+	"settings": {
+		"editor.formatOnSave": true,
+		"editor.formatOnSaveMode": "modifications",
+		"cmake.sourceDirectory": "${fileWorkspaceFolder}",
+		"testMate.cpp.test.advancedExecutables": [
+			{
+				"pattern": "build-debug/**/*{test,Test,TEST,_tests,_benchmarks}*",
+				"env": {
+					"CUCIM_TESTDATA_FOLDER": "${workspaceDirectory}/test_data",
+					// Add cuslide plugin's library path to LD_LIBRARY_PATH
+					"LD_LIBRARY_PATH": "${workspaceDirectory}/build-debug/lib:${workspaceDirectory}/cpp/plugins/cucim.kit.cuslide/build-debug/lib:${os_env:LD_LIBRARY_PATH}",
+					"CUCIM_TEST_PLUGIN_PATH": "cucim.kit.cuslide@0.19.0.so"
+				},
+				"cwd": "${workspaceDirectory}",
+				"catch2": {
+					"ignoreTestEnumerationStdErr": true
+				},
+				"gbenchmark": {
+					"ignoreTestEnumerationStdErr": true
+				}
+			}
+		],
+		"files.associations": {
+			"cstdlib": "cpp",
+			"iostream": "cpp",
+			"chrono": "cpp",
+			"memory_resource": "cpp",
+			"string": "cpp",
+			"type_traits": "cpp",
+			"any": "cpp",
+			"future": "cpp",
+			"memory": "cpp",
+			"new": "cpp",
+			"format": "cpp",
+			"array": "cpp",
+			"atomic": "cpp",
+			"bit": "cpp",
+			"*.tcc": "cpp",
+			"bitset": "cpp",
+			"cctype": "cpp",
+			"cfenv": "cpp",
+			"cinttypes": "cpp",
+			"clocale": "cpp",
+			"cmath": "cpp",
+			"codecvt": "cpp",
+			"complex": "cpp",
+			"condition_variable": "cpp",
+			"csignal": "cpp",
+			"cstdarg": "cpp",
+			"cstddef": "cpp",
+			"cstdint": "cpp",
+			"cstdio": "cpp",
+			"cstring": "cpp",
+			"ctime": "cpp",
+			"cwchar": "cpp",
+			"cwctype": "cpp",
+			"deque": "cpp",
+			"forward_list": "cpp",
+			"list": "cpp",
+			"map": "cpp",
+			"set": "cpp",
+			"unordered_map": "cpp",
+			"unordered_set": "cpp",
+			"vector": "cpp",
+			"exception": "cpp",
+			"algorithm": "cpp",
+			"functional": "cpp",
+			"iterator": "cpp",
+			"numeric": "cpp",
+			"optional": "cpp",
+			"random": "cpp",
+			"ratio": "cpp",
+			"regex": "cpp",
+			"string_view": "cpp",
+			"system_error": "cpp",
+			"tuple": "cpp",
+			"utility": "cpp",
+			"fstream": "cpp",
+			"initializer_list": "cpp",
+			"iomanip": "cpp",
+			"iosfwd": "cpp",
+			"istream": "cpp",
+			"limits": "cpp",
+			"mutex": "cpp",
+			"ostream": "cpp",
+			"scoped_allocator": "cpp",
+			"shared_mutex": "cpp",
+			"sstream": "cpp",
+			"stdexcept": "cpp",
+			"streambuf": "cpp",
+			"thread": "cpp",
+			"typeindex": "cpp",
+			"typeinfo": "cpp",
+			"valarray": "cpp",
+			"variant": "cpp",
+			"__nullptr": "cpp",
+			"locale": "cpp",
+			"*.cu": "cpp",
+			"*.inc": "cpp",
+			"__config": "cpp",
+			"__functional_03": "cpp",
+			"__hash_table": "cpp",
+			"__split_buffer": "cpp",
+			"__tree": "cpp",
+			"queue": "cpp",
+			"stack": "cpp"
+		}
+	},
+	"tasks": {
+		"version": "2.0.0",
+		"tasks": [
+			{
+				"label": "Build All (debug)",
+				"type": "shell",
+				"command": "./run build_local all debug",
+				"options": {
+					"cwd": "${workspaceFolder}"
+				},
+				"presentation": {
+					"reveal": "always",
+					"focus": true
+				},
+				"problemMatcher": [],
+				"group": {
+					"kind": "build",
+					"isDefault": true
+				}
+			},
+			{
+				"label": "Build All (release)",
+				"type": "shell",
+				"command": "./run build_local all release",
+				"options": {
+					"cwd": "${workspaceFolder}"
+				},
+				"presentation": {
+					"reveal": "always",
+					"focus": true
+				},
+				"problemMatcher": [],
+				"group": "build",
+			}
+		]
+	},
+	"launch": {
+		"version": "0.2.0",
+		// https://code.visualstudio.com/docs/editor/variables-reference
+		"configurations": [
+			{
+				"name": "(gdb) cucim_tests",
+				"type": "cppdbg",
+				"request": "launch",
+				"program": "${workspaceFolder:cucim}/build-debug/bin/cucim_tests",
+				// https://github.com/catchorg/Catch2/blob/devel/docs/command-line.md#specifying-which-tests-to-run
+				"args": [
+					"-d",
+					"yes",
+					"Load test"
+				],
+				"stopAtEntry": false,
+				"cwd": "${workspaceFolder:cucim}",
+				"environment": [
+					{
+						"name": "LD_LIBRARY_PATH",
+						"value": "${workspaceFolder:cucim}/build-debug/lib:${workspaceFolder:cucim.kit.cuslide}/build-debug/lib:${env:LD_LIBRARY_PATH}"
+					},
+					{
+						"name": "CUCIM_TEST_PLUGIN_PATH",
+						"value": "cucim.kit.cuslide@0.19.0.so"
+					}
+				],
+				"console": "externalTerminal",
+				"MIMode": "gdb",
+				"setupCommands": [
+					{
+						"description": "Enable pretty-printing for gdb",
+						"text": "-enable-pretty-printing",
+						"ignoreFailures": true
+					}
+				]
+			},
+			{
+				"name": "(gdb) cuslide_tests",
+				"type": "cppdbg",
+				"request": "launch",
+				"program": "${workspaceFolder:cucim}/cpp/plugins/cucim.kit.cuslide/build-debug/bin/cuslide_tests",
+				"args": [],
+				"stopAtEntry": false,
+				"cwd": "${workspaceFolder:cucim}",
+				"environment": [
+					{
+						"name": "LD_LIBRARY_PATH",
+						"value": "${workspaceFolder:cucim}/build-debug/lib:${workspaceFolder:cucim.kit.cuslide}/build-debug/lib:${env:LD_LIBRARY_PATH}"
+					},
+					{
+						"name": "CUCIM_TEST_PLUGIN_PATH",
+						"value": "cucim.kit.cuslide@0.19.0.so"
+					}
+				],
+				"console": "externalTerminal",
+				"MIMode": "gdb",
+				"setupCommands": [
+					{
+						"description": "Enable pretty-printing for gdb",
+						"text": "-enable-pretty-printing",
+						"ignoreFailures": true
+					}
+				]
+			},
+			{
+				"name": "(gdb) cucim_py",
+				"type": "cppdbg",
+				"request": "launch",
+				"program": "/usr/bin/python3",
+				// https://github.com/catchorg/Catch2/blob/devel/docs/command-line.md#specifying-which-tests-to-run
+				"args": [
+					"${workspaceFolder:python}/cucim/src/localtest.py",
+				],
+				"stopAtEntry": false,
+				"cwd": "${workspaceFolder:cucim}",
+				"environment": [
+					{
+						"name": "LD_LIBRARY_PATH",
+						"value": "${workspaceFolder:cucim}/build-debug/lib:${workspaceFolder:cucim.kit.cuslide}/build-debug/lib:${env:LD_LIBRARY_PATH}"
+					},
+					{
+						"name": "CUCIM_TEST_PLUGIN_PATH",
+						"value": "cucim.kit.cuslide@0.19.0.so"
+					}
+				],
+				"console": "externalTerminal",
+				"MIMode": "gdb",
+				"setupCommands": [
+					{
+						"description": "Enable pretty-printing for gdb",
+						"text": "-enable-pretty-printing",
+						"ignoreFailures": true
+					}
+				]
+			},
+			{
+				"name": "(gdb) tiff_image (C++)",
+				"type": "cppdbg",
+				"request": "launch",
+				"program": "${workspaceFolder:cucim}/build-debug/bin/tiff_image",
+				// https://github.com/catchorg/Catch2/blob/devel/docs/command-line.md#specifying-which-tests-to-run
+				"args": [
+					"${workspaceFolder:cucim}/notebooks/input/image.tif",
+					"${workspaceFolder:cucim}/notebooks",
+				],
+				"stopAtEntry": false,
+				"cwd": "${workspaceFolder:cucim}",
+				"environment": [
+					{
+						"name": "LD_LIBRARY_PATH",
+						"value": "${workspaceFolder:cucim}/build-debug/lib:${workspaceFolder:cucim.kit.cuslide}/build-debug/lib:${env:LD_LIBRARY_PATH}"
+					}
+				],
+				"console": "externalTerminal",
+				"MIMode": "gdb",
+				"setupCommands": [
+					{
+						"description": "Enable pretty-printing for gdb",
+						"text": "-enable-pretty-printing",
+						"ignoreFailures": true
+					}
+				]
+			},
+		]
+	}
+}
