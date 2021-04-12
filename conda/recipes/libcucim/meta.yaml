@@ -20,6 +20,7 @@ requirements:
   build:
     - cmake >=3.18.0
     - {{ compiler("cxx") }}
+    - yasm # [x86_64]
   host:
     - cudatoolkit {{ cuda_version }}.*
     - openslide

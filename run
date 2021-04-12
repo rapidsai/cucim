@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2020, NVIDIA CORPORATION.
+# Copyright (c) 2020-2021, NVIDIA CORPORATION.
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -266,7 +266,7 @@ build_local_libcucim_() {
 
     pushd ${source_folder} > /dev/null
 
-    # Copy cufile SDK from host system to temp/gds
+    # Copy cufile SDK from host system to temp/cuda
     copy_gds_files_ $source_folder
 
     ${CMAKE_CMD} -S ${source_folder} -B ${build_folder} -G "Unix Makefiles" \
@@ -389,24 +389,43 @@ build_local() {
 
 copy_gds_files_() {
     local root_folder=${1:-${TOP}}
+    local cufile_search="${root_folder}/temp/cuda/include:${root_folder}/temp/cuda/lib64"  #"/usr/local/cuda/include:/usr/local/cuda/lib64 ${PREFIX:-}/include:${PREFIX:-}/lib ${CONDA_PREFIX:-}/include:${CONDA_PREFIX:-}/lib ${root_folder}/temp/cuda/include:${root_folder}/temp/cuda/lib64"
+    local candidate
+    local cufile_include
+    local cufile_lib
 
-    run_command rm -rf ${root_folder}/temp/gds
-    run_command mkdir -p ${root_folder}/temp/gds/lib64
+    for candidate in ${cufile_search}; do
+        cufile_include="$(echo $candidate | cut -d: -f1)"
+        cufile_lib="$(echo $candidate | cut -d: -f2)"
+        if [ -f ${cufile_include}/cufile.h ] && [ -f ${cufile_lib}/libcufile.so ]; then
+            c_echo W "GDS client library is available at '${cufile_include}/cufile.h' and '${cufile_lib}/libcufile.so'"
+            break
+        fi
+        cufile_include=""
+        cufile_lib=""
+    done
 
-    if [ ! -f /usr/local/cuda/lib64/cufile.h ] && [ ! -f /usr/local/cuda/lib64/libcufile.so ]; then
-        c_echo_err Y "GDS is not available at /usr/local/cuda/gds! Downloading internal package to get cufile.h"
+    if [ ! -f ${cufile_include}/cufile.h ]; then
+        c_echo_err Y "GDS client library is not available! Downloading the redistributable package to get cufile.h and libraries."
 
-        local temp_deb_dir=$(mktemp -d)
-        pushd ${temp_deb_dir}
-        run_command wget https://developer.download.nvidia.com/gds/redist/ # TODO: update this once the official file is available.
-        run_command ar x libcufile-dev-11-0_0.95.0.34-1_amd64.deb
-        run_command tar xvf *.tar.xz
-        run_command cp usr/local/cuda-11.0/targets/x86_64-linux/lib/cufile.h ${root_folder}/temp/gds/lib64/
+        run_command rm -rf ${root_folder}/temp/cuda
+        run_command mkdir -p ${root_folder}/temp/cuda/include ${root_folder}/temp/cuda/lib64
+
+        local temp_tgz_dir=$(mktemp -d)
+        pushd ${temp_tgz_dir}
+        run_command wget https://developer.download.nvidia.com/gds/redist/rel-0.95.0/gds-redistrib-0.95.0.tgz
+        run_command tar xzvf gds-redistrib-0.95.0.tgz
+        run_command cp -P gds-redistrib-0.95.0/targets/x86_64-linux/include/cufile.h ${root_folder}/temp/cuda/include/
+        run_command cp -P gds-redistrib-0.95.0/targets/x86_64-linux/lib/* ${root_folder}/temp/cuda/lib64/
         popd > /dev/null
-        run_command rm -r ${temp_deb_dir}
+        run_command rm -r ${temp_tgz_dir}
     else
-        run_command cp -P -r /usr/local/cuda/gds/* ${root_folder}/temp/gds/ || true
-        run_command cp -P /usr/local/cuda/lib64/cufile.h /usr/local/cuda/lib64/libcufile* ${root_folder}/temp/gds/lib64/ || true
+        run_command mkdir -p ${root_folder}/temp/cuda/include ${root_folder}/temp/cuda/lib64
+
+        if [ "${cufile_include}" != "${root_folder}/temp/cuda/include" ]; then
+            run_command cp -Pf ${cufile_include}/cufile.h ${root_folder}/temp/cuda/include/ || true
+            run_command cp -Pf ${cufile_lib}/libcufile* ${root_folder}/temp/cuda/lib64/ || true
+        fi
     fi
 }
 
@@ -420,7 +439,7 @@ build_python_package() {
     local old_opt="$(shopt -op errexit);$(shopt -op nounset)" # save old shopts
     set -eu
 
-    # Copy cufile SDK from host system to temp/gds
+    # Copy cufile SDK from host system to temp/cuda
     copy_gds_files_
 
     run_command ${TOP}/dockcross-manylinux2014-x64 ./run build_python_package_
@@ -453,6 +472,12 @@ build_python_package_() {
     local old_opt="$(shopt -op errexit);$(shopt -op nounset)" # save old shopts
     set -eu
 
+    # Clear CMakeCache.txt to use the latest options
+    run_command rm -f ${BUILD_ROOT}/libcucim/CMakeCache.txt
+    run_command rm -f ${BUILD_ROOT}/cuslide/CMakeCache.txt
+    run_command rm -f ${BUILD_ROOT}/cucim/CMakeCache.txt
+
+    # Create a folder for .whl file that repair_wheel_ is not applied.
     TEMP_PYPKG_DIR=${BUILD_ROOT}/py_pkg # $(mktemp -d)
     c_echo b "TEMP_PYPKG_DIR=${TEMP_PYPKG_DIR}"
     mkdir -p $TEMP_PYPKG_DIR
@@ -475,6 +500,7 @@ build_python_package_() {
     rm -rf ${BUILD_ROOT}/cuslide/lib/*
     rm -rf ${BUILD_ROOT}/cuslide/install/lib*/cucim*
     rm -rf ${BUILD_ROOT}/cucim/lib/cucim/*.so*
+    rm -rf ${BUILD_ROOT}/cucim/install/lib/*.so*
 
     # Build libcucim
     ${CMAKE_CMD} -S ${SRC_ROOT} -B ${BUILD_ROOT}/libcucim \
@@ -651,9 +677,9 @@ download_testdata() {
 launch_notebooks_desc() { echo 'Launch jupyter notebooks
 
 Arguments:
-  -p <port> - port number
-  -h <host> - hostname to serve documentation on (default: 0.0.0.0)
-  -g        - launch GDS-enabled container
+  -p <port>                - port number
+  -h <host>                - hostname to serve documentation on (default: 0.0.0.0)
+  -g <path to NVMe device> - launch GDS-enabled container
 '
 }
 launch_notebooks() {
@@ -678,7 +704,7 @@ launch_notebooks() {
                 gds_nvme_path=$(readlink -f "$OPTARG")
                 [ ! -d "$gds_nvme_path" ] && c_echo_err R "Folder $gds_nvme_path doesn't exist!" && return 1
 
-                # Copy cufile SDK from host system to temp/gds
+                # Copy cufile SDK from host system to temp/cuda
                 copy_gds_files_
                 ;;
             *)
@@ -748,6 +774,18 @@ launch_notebooks() {
 # Section: Documentation
 #==================================================================================
 
+install_tox_() {
+    if ! command -v tox > /dev/null; then
+        c_echo G "tox" W " doesn't exists. Installing " G "tox" W "..."
+        if [ -n "${CONDA_PREFIX}" ]; then
+            run_command pip3 install tox
+        else
+            run_command pip3 install --user tox
+        fi
+        hash -r
+    fi
+}
+
 gen_docs_desc() { echo 'Generate document
 
 Generated docs would be avaialable at ${TOP}/dist/docs.
@@ -763,6 +801,9 @@ gen_docs() {
     local OUTPUT_FOLDER=${1:-${TOP}/dist/docs}
     local ret=0
     pushd ${TOP}/python/cucim > /dev/null
+
+    # Install prerequisites
+    install_tox_
 
     # Remove existing files in dist/docs
     run_command rm -rf ${OUTPUT_FOLDER}/*
@@ -821,6 +862,9 @@ gen_docs_dev() {
     done
 
     pushd ${TOP}/python/cucim > /dev/null
+
+    # Install prerequisites
+    install_tox_
 
     # Remove existing files in python/cucim/dist/docs
     run_command rm -rf ${TOP}/python/cucim/dist/docs/*
@@ -915,7 +959,11 @@ bump_version() {
 
     if ! command -v bump2version > /dev/null; then
         c_echo G "bump2version" W " doesn't exists. Installing " G "bump2version" W "..."
-        run_command pip3 install --user bump2version
+        if [ -n "${CONDA_PREFIX}" ]; then
+            run_command pip3 install bump2version
+        else
+            run_command pip3 install --user bump2version
+        fi
         hash -r
     fi
 

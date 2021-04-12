@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -313,7 +313,7 @@ std::vector<int64_t> CuImage::size(std::string dim_order) const
     {
         if (dim_order.empty())
         {
-            dim_order = std::move(std::string(image_metadata_->dims));
+            dim_order = std::string(image_metadata_->dims);
         }
 
         result_size.reserve(dim_order.size());
@@ -359,7 +359,7 @@ std::vector<float> CuImage::spacing(std::string dim_order) const
     {
         if (dim_order.empty())
         {
-            dim_order = std::move(std::string(image_metadata_->dims));
+            dim_order = std::string(image_metadata_->dims);
             result_spacing.reserve(dim_order.size());
         }
 
@@ -395,7 +395,7 @@ std::vector<std::string> CuImage::spacing_units(std::string dim_order) const
     {
         if (dim_order.empty())
         {
-            dim_order = std::move(std::string(image_metadata_->dims));
+            dim_order = std::string(image_metadata_->dims);
             result_spacing_units.reserve(dim_order.size());
         }
 

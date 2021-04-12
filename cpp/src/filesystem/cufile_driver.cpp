@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -103,6 +103,11 @@ static int get_file_flags(const char* flags)
     file_flags |= O_CLOEXEC;
 
     return file_flags;
+}
+
+bool is_gds_available()
+{
+    return static_cast<bool>(s_cufile_initializer);
 }
 
 std::shared_ptr<CuFileDriver> open(const char* file_path, const char* flags, mode_t mode)
