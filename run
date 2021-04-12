@@ -637,7 +637,7 @@ download_testdata_desc() { echo 'Download test data from Docker Hub
 download_testdata() {
     c_echo W "Downloading test data..."
     run_command mkdir -p ${TOP}/notebooks/input
-    if [ ! -e ${TOP}/notebooks/input/README.md ]; then
+    if [ ! -e ${TOP}/notebooks/input/image.tif ]; then
         run_command rm -rf ${TOP}/notebooks/input
         id=$(docker create gigony/svs-testdata:little-big)
         run_command docker cp $id:/input ${TOP}/notebooks
