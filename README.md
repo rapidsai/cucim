@@ -14,13 +14,17 @@
 
 #### Conda (stable)
 
-> conda create -n cucim -c rapidsai -c conda-forge/label/cupy_rc cucim
+> conda create -n cucim -c rapidsai -c conda-forge/label/cupy_rc -c conda-forge cucim cudatoolkit=`<CUDA version>`
+
+`<CUDA version>` should be 11.0+ (e.g., `11.0`, `11.1`, `11.2 `, `11.3`, or `11.4`)
 
 **NOTE:** The first cuCIM conda package (v0.19.0) would be available on 4/15/2021.
 
 #### Conda (nightlies)
 
-> conda create -n cucim -c rapidsai-nightly -c conda-forge/label/cupy_rc cucim
+> conda create -n cucim -c rapidsai-nightly -c conda-forge/label/cupy_rc -c conda-forge cucim cudatoolkit=`<CUDA version>`
+
+`<CUDA version>` should be 11.0+ (e.g., `11.0`, `11.1`, `11.2 `, `11.3`, or `11.4`)
 
 ### Notebooks
 
