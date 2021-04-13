@@ -26,42 +26,17 @@ nvidia-smi
 gpuci_logger "Activate conda env"
 . /opt/conda/etc/profile.d/conda.sh
 
-conda install -c conda-forge conda-build -y
-
-# We don't use 'rapids' conda environment here.
-# cuCIM depends on CuPy 9 which should be adopted in 0.20
-LIBCUCIM_BLD_PATH=$WORKSPACE/ci/artifacts/cucim/cpu/.conda-bld
-CUCIM_BLD_PATH=/opt/conda/envs/rapids/conda-bld
-mkdir -p ${CUCIM_BLD_PATH}
-
-gpuci_conda_retry build -c ${LIBCUCIM_BLD_PATH} -c conda-forge/label/cupy_rc -c conda-forge -c rapidsai-nightly \
-    --python=${PYTHON_VER} \
-    --dirty \
-    --no-remove-work-dir \
-    --croot ${CUCIM_BLD_PATH} \
-    conda/recipes/cucim
-
-
-# TODO: Move installs to docs-build-env meta package
+gpuci_logger "Installing cuCIM / Deps / Docs into new env"
 gpuci_conda_retry create -n cucim -y -c conda-forge -c conda-forge/label/cupy_rc -c rapidsai-nightly \
     rapids-doc-env \
-    flake8 \
-    pytest \
-    pytest-cov \
-    python=${PYTHON_VER} \
+    python=3.8 \
     conda-forge/label/cupy_rc::cupy=9 \
-    cudatoolkit=${CUDA_VER} \
-    numpy \
-    scipy \
+    cudatoolkit=11.2 \
     scikit-image=0.18.1 \
-    openslide
+    cucim
 
 conda activate cucim
 
-gpuci_logger "Installing cuCIM"
-gpuci_conda_retry install -y -c ${LIBCUCIM_BLD_PATH} -c ${CUCIM_BLD_PATH} \
-    libcucim \
-    cucim
 
 gpuci_logger "Check versions"
 python --version
