@@ -5,17 +5,48 @@
 
 **NOTE:** For the latest stable [README.md](https://github.com/rapidsai/cucim/blob/main/README.md) ensure you are on the `main` branch.
 
+- [GTC 2021 cuCIM: A GPU Image I/O and Processing Toolkit [S32194]](https://www.nvidia.com/en-us/gtc/catalog/?search=cuCIM#/)
+  - [video](https://gtc21.event.nvidia.com/media/cuCIM%3A%20A%20GPU%20Image%20I_O%20and%20Processing%20Toolkit%20%5BS32194%5D/1_fwfxd0iu)
+
 ## Install cuCIM
 
 ### Conda
 
 #### Conda (stable)
 
-> conda create -n cucim -c rapidsai -c conda-forge/label/cupy_rc cucim
+> conda create -n cucim -c rapidsai -c conda-forge/label/cupy_rc -c conda-forge cucim cudatoolkit=`<CUDA version>`
+
+`<CUDA version>` should be 11.0+ (e.g., `11.0`, `11.1`, `11.2 `, `11.3`, or `11.4`)
+
+**NOTE:** The first cuCIM conda package (v0.19.0) would be available on 4/15/2021.
 
 #### Conda (nightlies)
 
-> conda create -n cucim -c rapidsai-nightly -c conda-forge/label/cupy_rc cucim
+> conda create -n cucim -c rapidsai-nightly -c conda-forge/label/cupy_rc -c conda-forge cucim cudatoolkit=`<CUDA version>`
+
+`<CUDA version>` should be 11.0+ (e.g., `11.0`, `11.2`, etc)
+
+### Notebooks
+
+Please check out [Welcome](notebooks/Welcome.ipynb) notebook.
+
+#### Downloading sample images
+
+To download images used in the notebooks, please execute the following commands from the repository root folder to copy sample input images into `notebooks/input` folder:
+
+(You will need [Docker](https://www.docker.com/) installed in your system)
+
+```bash
+./run download_testdata
+```
+or
+
+```bash
+mkdir -p notebooks/input
+tmp_id=$(docker create gigony/svs-testdata:little-big)
+docker cp $tmp_id:/input notebooks
+docker rm -v ${tmp_id}
+```
 
 ## Build/Install from Source
 See build [instructions](CONTRIBUTING.md#setting-up-your-build-environment).
