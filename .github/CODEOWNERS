@@ -3,7 +3,6 @@ cpp/               @rapidsai/cucim-cpp-codeowners
 
 #python code owners
 python/            @rapidsai/cucim-python-codeowners
-python/dask_cudf/  @rapidsai/cucim-dask-codeowners
 
 #cmake code owners
 **/CMakeLists.txt  @rapidsai/cucim-cmake-codeowners
