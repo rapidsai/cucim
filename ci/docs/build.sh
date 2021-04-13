@@ -28,8 +28,7 @@ gpuci_logger "Activate conda env"
 conda activate rapids
 
 # TODO: Move installs to docs-build-env meta package
-gpuci_conda_retry install -c conda-forge markdown beautifulsoup4 jq
-python -m pip install sphinx-markdown-tables nbsphinx recommonmark numpydoc
+gpuci_conda_retry install -c conda-forge markdown beautifulsoup4 jq sphinx-markdown-tables nbsphinx recommonmark numpydoc
 
 gpuci_logger "Check versions"
 python --version
