@@ -1,13 +1,13 @@
 #cpp code owners
-cpp/               @rapidsai/<repo>-cpp-codeowners
+cpp/               @rapidsai/cucim-cpp-codeowners
 
 #python code owners
-python/            @rapidsai/<repo>-python-codeowners
-python/dask_cudf/  @rapidsai/<repo>-dask-codeowners
+python/            @rapidsai/cucim-python-codeowners
+python/dask_cudf/  @rapidsai/cucim-dask-codeowners
 
 #cmake code owners
-**/CMakeLists.txt  @rapidsai/<repo>-cmake-codeowners
-**/cmake/          @rapidsai/<repo>-cmake-codeowners
+**/CMakeLists.txt  @rapidsai/cucim-cmake-codeowners
+**/cmake/          @rapidsai/cucim-cmake-codeowners
 
 #build/ops code owners
 .github/           @rapidsai/ops-codeowners 
