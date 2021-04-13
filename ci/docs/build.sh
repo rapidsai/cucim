@@ -26,9 +26,9 @@ nvidia-smi
 gpuci_logger "Activate conda env"
 . /opt/conda/etc/profile.d/conda.sh
 conda activate rapids
+
 # TODO: Move installs to docs-build-env meta package
-gpuci_conda_retry install -c anaconda markdown beautifulsoup4 jq
-pip install sphinx-markdown-tables
+gpuci_conda_retry install -c conda-forge markdown beautifulsoup4 jq sphinx-markdown-tables nbsphinx recommonmark numpydoc
 
 gpuci_logger "Check versions"
 python --version
