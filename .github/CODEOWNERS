@@ -1,5 +1,6 @@
 #cpp code owners
 cpp/               @rapidsai/cucim-cpp-codeowners
+python/pybind11    @rapidsai/cucim-cpp-codeowners
 
 #python code owners
 python/            @rapidsai/cucim-python-codeowners
