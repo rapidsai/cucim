@@ -13,45 +13,23 @@
 # limitations under the License.
 #
 
-"""CuPy Extensions
+"""cuCIM module
 
-This project contains CuPy-based implementations of functions from NumPy,
-SciPy and scikit-image that are not currently available in CuPy itself.
+This project contains core modules and CuPy-based implementations of functions
+from scikit-image that are not currently available in CuPy itself.
 
 Most functions are not provided via the top level-import. Instead, individual
 subpackages should be imported instead.
 
 Subpackages
 -----------
-numpy
-    Functions from NumPy which are not available via CuPy.
-scipy
-    Functions from SciPy which are not available via CuPy.
+
+clara
+    Functions for image IO and operations.
 skimage
     Functions from scikit-image.
 
-Additional documentation and usage examples for the functions can be found
-at the main documentation pages of the various packges:
-
 """
-
-try:
-    import cupy
-
-    try:
-        memoize = cupy.util.memoize
-    except AttributeError:
-        memoize = cupy.memoize
-
-    del cupy
-except ImportError:
-    import sys
-    print('[warning] CuPy is not available. cucim.skimage package may not work correctly.', file=sys.stderr)
-
-# from ._version import get_versions
-
-# __version__ = get_versions()['version']
-# del get_versions
 
 from .clara import CuImage
 from .clara import __version__

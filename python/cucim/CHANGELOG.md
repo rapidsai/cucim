@@ -1,6 +1,13 @@
 
 # Changelog
 
+## 0.19.0 (2021-04-15)
+
+- The first release of cuClaraImage + [cupyimg](https://github.com/mritools/cupyimg) as a single project `cuCIM`.
+  - `cucim.skimage` package is added from `cupyimg`.
+  - CuPy (>=9.0.0b3), scipy, scikit-image is required to use cuCIM's scikit-image-compatible API.
+- Fix memory leaks that occur when reading completely out-of-boundary regions.
+
 ## 0.18.2 (2021-03-29)
 
 - Use the white background only for Philips TIFF file.

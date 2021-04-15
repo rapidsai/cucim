@@ -28,7 +28,7 @@
 
 ### Notebooks
 
-Please check out [Welcome](notebooks/Welcome.ipynb) notebook.
+Please check out our [Welcome](notebooks/Welcome.ipynb) notebook.
 
 #### Downloading sample images
 
