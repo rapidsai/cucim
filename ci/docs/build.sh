@@ -25,10 +25,18 @@ nvidia-smi
 
 gpuci_logger "Activate conda env"
 . /opt/conda/etc/profile.d/conda.sh
-conda activate rapids
 
-# TODO: Move installs to docs-build-env meta package
-gpuci_conda_retry install -c conda-forge markdown beautifulsoup4 jq sphinx-markdown-tables nbsphinx recommonmark numpydoc
+gpuci_logger "Installing cuCIM / Deps / Docs into new env"
+gpuci_conda_retry create -n cucim -y -c conda-forge -c conda-forge/label/cupy_rc -c rapidsai-nightly \
+    rapids-doc-env \
+    python=3.8 \
+    conda-forge/label/cupy_rc::cupy=9 \
+    cudatoolkit=11.2 \
+    scikit-image=0.18.1 \
+    cucim
+
+conda activate cucim
+
 
 gpuci_logger "Check versions"
 python --version
