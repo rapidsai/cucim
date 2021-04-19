@@ -96,7 +96,7 @@ def test_unsupervised_wiener(dtype):
     # cp.testing.assert_allclose(cp.real(deconvolved), np.load(path), rtol=1e-3)
 
 
-@cp.testing.with_requires("skimage>=1.18")
+@cp.testing.with_requires("scikit-image>=0.18")
 def test_image_shape():
     """Test that shape of output image in deconvolution is same as input.
 

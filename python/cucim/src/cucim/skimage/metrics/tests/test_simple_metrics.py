@@ -21,7 +21,7 @@ assert_almost_equal = cp.testing.assert_array_almost_equal
 
 
 @pytest.mark.parametrize('dtype', [cp.uint8, cp.float32, cp.float64])
-@cp.testing.with_requires("skimage>=1.18")
+@cp.testing.with_requires("scikit-image>=0.18")
 def test_PSNR_vs_IPOL(dtype):
     """Tests vs. imdiff result from the following IPOL article and code:
     https://www.ipol.im/pub/art/2011/g_lmii/.

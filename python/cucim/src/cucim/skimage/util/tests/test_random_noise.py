@@ -171,7 +171,7 @@ def test_clip_poisson():
     assert (cam_poisson2.max() > 1.3) and (cam_poisson2.min() == -1.0)
 
 
-@cp.testing.with_requires("skimage>=1.18")
+@cp.testing.with_requires("scikit-image>=0.18")
 def test_clip_gaussian():
     seed = 42
     data = camerad  # 512x512 grayscale uint8
