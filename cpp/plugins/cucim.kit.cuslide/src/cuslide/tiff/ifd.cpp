@@ -478,16 +478,11 @@ bool IFD::read_region_tiles_boundary(const TIFF* tiff,
     uint32_t width = ifd->width_;
     uint32_t height = ifd->height_;
 
-    uint32_t tw = ifd->tile_width_;
-    uint32_t th = ifd->tile_height_;
-
     // Memory for tile_raster would be manually allocated here, instead of using decode_libjpeg().
     // Need to free the manually. Usually it is set to nullptr and memory is created by decode_libjpeg() by using
     // tjAlloc() (Also need to free with tjFree() after use. See the documentation of tjAlloc() for the detail.)
     const int pixel_format = TJPF_RGB; // TODO: support other pixel format
     const int pixel_size_nbytes = tjPixelSize[pixel_format];
-    const size_t tile_raster_nbytes = tw * th * pixel_size_nbytes;
-    uint8_t* tile_raster = static_cast<uint8_t*>(cucim_malloc(tile_raster_nbytes));
     auto dest_start_ptr = static_cast<uint8_t*>(raster);
 
     bool is_out_of_image = (ex < 0 || width <= sx || ey < 0 || height <= sy);
@@ -497,6 +492,12 @@ bool IFD::read_region_tiles_boundary(const TIFF* tiff,
         memset(dest_start_ptr, background_value, w * h * pixel_size_nbytes);
         return true;
     }
+
+    uint32_t tw = ifd->tile_width_;
+    uint32_t th = ifd->tile_height_;
+
+    const size_t tile_raster_nbytes = tw * th * pixel_size_nbytes;
+    uint8_t* tile_raster = static_cast<uint8_t*>(cucim_malloc(tile_raster_nbytes));
 
     // TODO: revert this once we can get RGB data instead of RGBA
     uint32_t samples_per_pixel = 3; // ifd->samples_per_pixel();

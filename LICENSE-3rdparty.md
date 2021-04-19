@@ -83,14 +83,9 @@ DLPack
   - https://github.com/dmlc/dlpack/blob/main/LICENSE
 - Copyright: DLPack Contributors
 
-NVIDIA CUDA TOOLKIT
+NVIDIA CUDA TOOLKIT (including libcufile)
 - License: NVIDIA License
   - https://docs.nvidia.com/cuda/pdf/EULA.pdf
-- Copyright: NVIDIA Corporation
-
-NVIDIA cufile (GDS)
-- License: NVIDIA License
-  - TBD
 - Copyright: NVIDIA Corporation
 
 RAPIDS RMM

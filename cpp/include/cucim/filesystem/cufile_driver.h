@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,6 +30,14 @@ using ScopedLock = std::scoped_lock<Mutex>;
 
 // Forward declaration.
 class CuFileDriver;
+
+
+/**
+ * @brief Check if the GDS is available in the system.
+ *
+ * @return true if libcufile.so is loaded and cuFileDriverOpen() API call succeeds.
+ */
+bool EXPORT_VISIBLE is_gds_available();
 
 /**
  * Open file with specific flags and mode.
@@ -116,11 +124,11 @@ public:
     {
         return is_available_;
     }
-    inline uint64_t max_device_cache_size()
+    inline uint64_t max_device_cache_size() const
     {
         return max_device_cache_size_;
     }
-    inline uint64_t max_host_cache_size()
+    inline uint64_t max_host_cache_size() const
     {
         return max_host_cache_size_;
     }

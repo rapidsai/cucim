@@ -1,5 +1,5 @@
 # Apache License, Version 2.0
-# Copyright 2020 NVIDIA Corporation
+# Copyright 2020-2021 NVIDIA Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -127,7 +127,6 @@ add_definitions(-D_GLIBCXX_USE_CXX11_ABI=0) # TODO: create two library, one with
 superbuild_depend(fmt)
 superbuild_depend(libjpeg-turbo) # libjpeg-turbo should be located before libtiff as libtiff depends on libjpeg-turbo
 superbuild_depend(libtiff)
-superbuild_depend(gds)
 superbuild_depend(catch2)
 superbuild_depend(openslide)
 superbuild_depend(googletest)

@@ -1,13 +1,3 @@
-# ___PROJECT___ 0.0.0 (DD Mon YYYY)
+# cuCIM 0.19.0 (15 Apr 2021)
 
-## New Features
-
-- ...
-
-## Improvements
-
-- ...
-
-## Bug Fixes
-
-- ...
+Initial release of cuCIM including cuClaraImage and [cupyimg](https://github.com/mritools/cupyimg).

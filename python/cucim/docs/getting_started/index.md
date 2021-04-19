@@ -7,10 +7,9 @@
 ../notebooks/Basic_Usage.ipynb
 ../notebooks/Accessing_File_with_GDS.ipynb
 ../notebooks/File-access_Experiments_on_TIFF.ipynb
+../notebooks/Multi-thread_and_Multi-process_Tests.ipynb
 ../notebooks/Working_with_DALI.ipynb
 ../notebooks/Working_with_Albumentation.ipynb
-../notebooks/Single-process_Tests.ipynb
-../notebooks/Multi-thread_and_Multi-process_Tests.ipynb
 ```
 
 ## Installation
