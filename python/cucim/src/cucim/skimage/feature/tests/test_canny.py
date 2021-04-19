@@ -77,7 +77,7 @@ class TestCanny(unittest.TestCase):
         result2 = feature.canny(cp.zeros((20, 20)), 4, 0, 0)
         self.assertTrue(cp.all(result1 == result2))
 
-    @cp.testing.with_requires("skimage>=1.18")
+    @cp.testing.with_requires("scikit-image>=0.18")
     def test_use_quantiles(self):
         image = img_as_float(cp.asarray(data.camera()[::100, ::100]))
 
