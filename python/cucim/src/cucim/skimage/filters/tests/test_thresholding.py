@@ -431,7 +431,7 @@ def test_isodata_camera_image():
 
 @cp.testing.with_requires("scikit-image>=0.18")
 def test_isodata_camera_image_histogram():
-    camera = util.img_as_ubyte(data.camera())
+    camera = util.img_as_ubyte(camerad)
     hist = histogram(camera.ravel(), 256, source_range='image')
     threshold = threshold_isodata(hist=hist)
     assert threshold == 102
@@ -439,7 +439,7 @@ def test_isodata_camera_image_histogram():
 
 @cp.testing.with_requires("scikit-image>=0.18")
 def test_isodata_camera_image_counts():
-    camera = util.img_as_ubyte(data.camera())
+    camera = util.img_as_ubyte(camerad)
     counts, bin_centers = histogram(camera.ravel(), 256, source_range='image')
     threshold = threshold_isodata(hist=counts)
     assert threshold == 102

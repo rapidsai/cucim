@@ -41,11 +41,10 @@ def test_PSNR_vs_IPOL(dtype):
     https://github.com/scikit-image/scikit-image/pull/4913#issuecomment-700653165
     """
     p_IPOL = 22.409353363576034
-    p = peak_signal_noise_ratio(cam.astype(dtype), cam_noisy.astype(dtype))
-    if np.dtype.kind(dtype) == 'f':
-        assert p.dtype == dtype
-    else:
-        assert p.dtype == cp.float64
+    p = peak_signal_noise_ratio(cam.astype(dtype), cam_noisy.astype(dtype),
+                                data_range=255)
+    # internally, mean_square_error always sets dtype=cp.float64 for accuracy
+    assert p.dtype == cp.float64
     assert_almost_equal(p, p_IPOL, decimal=4)
 
 
