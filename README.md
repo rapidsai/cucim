@@ -18,7 +18,7 @@
 
 `<CUDA version>` should be 11.0+ (e.g., `11.0`, `11.2`, etc.)
 
-**NOTE:** The first cuCIM conda package (v0.19.0) would be available on 4/15/2021.
+**NOTE:** The first cuCIM conda package (v0.19.0) would be available on 4/19/2021.
 
 #### Conda (nightlies)
 

@@ -1,6 +1,16 @@
 End User License Agreement
 --------------------------
 
+The CUDA Toolkit End User License Agreement applies to the
+NVIDIA CUDA Toolkit, the NVIDIA CUDA Samples, the NVIDIA
+Display Driver, NVIDIA Nsight tools (Visual Studio Edition),
+and the associated documentation on CUDA APIs, programming
+model and development tools. If you do not agree with the
+terms and conditions of the license agreement, then do not
+download or use the software.
+
+Last updated: Mar 24, 2021.
+
 
 Preface
 -------
@@ -97,10 +107,6 @@ Windows platform:
 
 1. License Agreement for NVIDIA Software Development Kits
 ---------------------------------------------------------
-
-
-Release Date: May 21, 2019
---------------------------
 
 
 Important Notice—Read before downloading, installing,
@@ -257,6 +263,11 @@ terms, the terms of this Agreement. Copyright to third party
 software is held by the copyright holders indicated in the
 third-party software or license.
 
+Subject to the other terms of this Agreement, you may use the
+SDK to develop and test applications released under Open
+Source Initiative (OSI) approved open source software
+licenses.
+
 
 1.1.7. Reservation of Rights
 
@@ -304,12 +315,12 @@ SDK:
     application where the use or failure of the system or
     application can reasonably be expected to threaten or
     result in personal injury, death, or catastrophic loss.
-    Examples include use in nuclear, avionics, navigation,
-    military, medical, life support or other life critical
-    applications. NVIDIA does not design, test or manufacture
-    the SDK for these critical uses and NVIDIA shall not be
-    liable to you or any third party, in whole or in part, for
-    any claims or damages arising from such uses.
+    Examples include use in avionics, navigation, military,
+    medical, life support or other life critical applications.
+    NVIDIA does not design, test or manufacture the SDK for
+    these critical uses and NVIDIA shall not be liable to you
+    or any third party, in whole or in part, for any claims or
+    damages arising from such uses.
 
   7. You agree to defend, indemnify and hold harmless NVIDIA
     and its affiliates, and their respective employees,
@@ -328,8 +339,8 @@ SDK:
   1.  NVIDIA or its licensors hold all rights, title and
     interest in and to the SDK and its modifications and
     derivative works, including their respective intellectual
-    property rights, subject to your rights described here .
-    This SDK may include software and materials from
+    property rights, subject to your rights under Section
+    1.3.2. This SDK may include software and materials from
     NVIDIA’s licensors, and these licensors are intended
     third party beneficiaries that may enforce this Agreement
     with respect to their intellectual property rights.
@@ -338,7 +349,7 @@ SDK:
     applications and your derivative works of the sample
     source code delivered in the SDK, including their
     respective intellectual property rights, subject to
-    NVIDIA’s rights described here .
+    NVIDIA’s rights under Section 1.3.1.
 
   3. You may, but don’t have to, provide to NVIDIA
     suggestions, feature requests or other feedback regarding
@@ -519,10 +530,6 @@ parties.
 NVIDIA Software Development Kits
 ------------------------------------------------------------
 
-
-Release date: August 16, 2018
------------------------------
-
 The terms in this supplement govern your use of the NVIDIA
 CUDA Toolkit SDK under the terms of your license agreement
 (“Agreement”) as modified by this supplement. Capitalized
@@ -582,8 +589,12 @@ nvidia-compute-license-questions@nvidia.com.
 
 2.6. Attachment A
 
-The following portions of the SDK are distributable under the
-Agreement:
+The following CUDA Toolkit files may be distributed with
+Licensee Applications developed by you, including certain
+variations of these files that have version number or
+architecture specific information embedded in the file name -
+as an example only, for release version 9.0 of the 64-bit
+Windows software, the file cudart64_90.dll is redistributable.
 
 Component
 
@@ -729,26 +740,6 @@ libcurand.so, libcurand_static.a
 
 Component
 
-CUDA Accelerated Graph Library
-
-Windows
-
-nvgraph.dll, nvgraph.lib
-
-Mac OSX
-
-libnvgraph.dylib, libnvgraph_static.a
-
-Linux
-
-libnvgraph.so, libnvgraph_static.a
-
-Android
-
-libnvgraph.so, libnvgraph_static.a
-
-Component
-
 NVIDIA Performance Primitives Library
 
 Windows
@@ -814,7 +805,11 @@ libculibos.a
 
 Component
 
-NVIDIA Runtime Compilation Library
+NVIDIA Runtime Compilation Library and Header
+
+All
+
+nvrtc.h
 
 Windows
 
@@ -914,8 +909,20 @@ NVIDIA CUDA Driver Libraries
 
 Linux
 
-libcuda.so, libnvidia-fatbinaryloader.so,
-libnvidia-ptxjitcompiler.so
+libcuda.so, libnvidia-ptxjitcompiler.so
+
+Component
+
+NVIDIA CUDA File IO Libraries and Header
+
+All
+
+cufile.h
+
+Linux
+
+libcufile.so, libcufile_rdma.so, libcufile_static.a,
+libcufile_rdma_static.a
 
 The NVIDIA CUDA Driver Libraries are only distributable in
 applications that meet this criteria:
@@ -1062,8 +1069,9 @@ conditions:
     ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
     DEALINGS WITH THE SOFTWARE.
 
-  5. Licensee's use of the PCRE third party component is
-    subject to the following terms and conditions:
+  5. Licensee's use (e.g. nvprof) of the PCRE third party
+    component is subject to the following terms and
+    conditions:
 
     ------------
     PCRE LICENCE

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -60,11 +60,12 @@ void init_filesystem(py::module& fs)
             return fmt::format("<cucim.clara.filesystem.CuFileDriver path:{}>", fd.path());
         });
 
-    fs.def("open", &py_open, doc::doc_open,
-           py::arg("file_path"), //
-           py::arg("flags"), //
-           py::arg("mode") = 0644, //
-           py::call_guard<py::gil_scoped_release>())
+    fs.def("is_gds_available", &is_gds_available, doc::doc_is_gds_available, py::call_guard<py::gil_scoped_release>())
+        .def("open", &py_open, doc::doc_open,
+             py::arg("file_path"), //
+             py::arg("flags"), //
+             py::arg("mode") = 0644, //
+             py::call_guard<py::gil_scoped_release>())
         .def("pread", &py_pread, doc::doc_pread, // Do not release GIL as it would access properties of python object
              py::arg("fd"), //
              py::arg("buf"), //
