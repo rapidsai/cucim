@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,16 @@
 
 namespace cucim::filesystem::doc
 {
+
+// bool is_gds_available();
+PYDOC(is_gds_available, R"doc(
+Check if the GDS is available in the system.
+
+Returns:
+    True if libcufile.so is loaded and cuFileDriverOpen() API call succeeds.
+)doc")
+
+
 // std::shared_ptr<CuFileDriver> open(const char* file_path, const char* flags = "r", mode_t mode = 0644);
 PYDOC(open, R"doc(
 Open file with specific flags and mode.

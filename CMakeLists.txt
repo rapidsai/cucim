@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2020, NVIDIA CORPORATION.
+# Copyright (c) 2020-2021, NVIDIA CORPORATION.
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -120,11 +120,9 @@ superbuild_depend(abseil)
 superbuild_depend(rmm) # this imports googletest internally
 #superbuild_depend(googletest)
 superbuild_depend(googlebenchmark)
-#superbuild_depend(gds)
 superbuild_depend(openslide)
 superbuild_depend(catch2)
 superbuild_depend(cli11)
-superbuild_depend(pybind11)
 superbuild_depend(json)
 
 ################################################################################

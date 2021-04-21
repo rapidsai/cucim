@@ -11,7 +11,7 @@ The following list is on the road |:smile:|
 
 ## cuCIM
 
-### {fa}`calendar-alt,text-info mr-1` `v0.1.0`
+### {fa}`calendar-alt,text-info mr-1` `v0.1`
 
 - {fa}`check,text-success mr-1` Abstract C++ API -- [v0.1.0](../release_notes/v0.1.0.md)
 - {fa}`check,text-success mr-1` Benchmark with openslide (for generic tiff file) : link -- [v0.1.0](../release_notes/v0.1.0.md)
@@ -28,7 +28,7 @@ The following list is on the road |:smile:|
 - {fa}`check,text-success mr-1` Pass SWIPAT -- [v0.1.1](../release_notes/v0.1.1.md)
 - {fa}`check,text-success mr-1` Ignore link check for relative link with header that starts with `/` or `..` -- [v0.1.1](../release_notes/v0.1.1.md)
 
-### {fa}`calendar-alt,text-info mr-1` `v0.2.0`
+### {fa}`calendar-alt,text-info mr-1` `v0.2`
 
 - {fa}`check,text-success mr-1` Make it work with various CUDA versions -- [v0.2.0](../release_notes/v0.2.0.md)
 - {fa}`check,text-success mr-1` Develop a wrapper for cufile API -- [v0.2.0](../release_notes/v0.2.0.md)
@@ -39,7 +39,7 @@ The following list is on the road |:smile:|
 - {fa}`check,text-success mr-1` Fix again for the error that occurs when loading a TIFF image that has `TIFFTAG_JPEGTABLES` tag -- [v0.2.0](../release_notes/v0.2.0.md)
 - {fa}`check,text-success mr-1` Force-reinstall cucim Python package in the Tox environment whenever `gen_docs` or `gen_docs_dev` command is executed -- [v0.2.0](../release_notes/v0.2.0.md)
 
-### {fa}`calendar-alt,text-info mr-1` `v0.3.0`
+### {fa}`calendar-alt,text-info mr-1` `v0.3`
 
 - {fa}`check,text-success mr-1` Add metadata and associated images for Philips TIFF Format
   - {fa}`check,text-success mr-1` Support Philips TIFF associated image from XML metadata -- [v0.3.0](../release_notes/v0.3.0.md)
@@ -48,19 +48,19 @@ The following list is on the road |:smile:|
 - {fa}`check,text-success mr-1` Showcase the interoperability with DALI -- [v0.3.0](../release_notes/v0.3.0.md)
 
 
-### {fa}`calendar-alt,text-info mr-1` `v0.18.0`
+### {fa}`calendar-alt,text-info mr-1` `v0.18`
 
 - {fa}`check,text-success mr-1` Support Deflate(zlib)-compressed RGB Tiff Image -- [v0.18.0](../release_notes/v0.18.0.md)
 - {fa}`check,text-success mr-1` Change the namespaces (`cuimage` to `cucim`) -- [v0.18.0](../release_notes/v0.18.0.md)
 
-### {fa}`calendar-alt,text-info mr-1` `v0.19.0`
+### {fa}`calendar-alt,text-info mr-1` `v0.19`
 
 - Refactor the cupyimg package to incorporate it in the adaption layer of cuCIM. Change the namespaces
 - Support `__cuda_array_interface__` and DLPack object in Python API
 - Support loading data to CUDA memory
 - Implement cache mechanism for tile-based image formats
 
-### {fa}`calendar-alt,text-info mr-1` `v0.20.0`
+### {fa}`calendar-alt,text-info mr-1` `v0.20`
 
 - Make use of nvJPEG to decode TIFF Files
 - Support .svs format with nvJPEG2000
@@ -68,13 +68,13 @@ The following list is on the road |:smile:|
 - Implement a filter (example: Otsu Thresholding)
 - Support loading MHD files
 
-### {fa}`calendar-alt,text-info mr-1` `v0.21.0`
+### {fa}`calendar-alt,text-info mr-1` `v0.21`
 
 - Support JPEG, Jpeg 2000, PNG, BMP formats
 - Support MIRAX/3DHISTECH (.mrxs) format
 - Support LEICA (.scn) format
 
-### {fa}`calendar-alt,text-info mr-1` `v0.22.0`
+### {fa}`calendar-alt,text-info mr-1` `v0.22`
 
 - Design a CT bone segmentation filter
 - Provide a robust CI/CD system
@@ -96,7 +96,7 @@ The following list is on the road |:smile:|
 - {fa}`check,text-success mr-1` Expose metadata of the TIFF file as JSON -- [v0.3.0](../release_notes/v0.3.0.md)
 - {fa}`check,text-success mr-1` Support reading out of boundary region -- [v0.3.0](../release_notes/v0.3.0.md)
 - {fa}`check,text-success mr-1` Support Deflate(zlib)-compressed RGB Tiff Image -- [v0.18.0](../release_notes/v0.18.0.md)
-- Implement cache mechanism for tile-based image formats -- [v0.19.0](../release_notes/v0.19.0.md)
+- Implement cache mechanism for tile-based image formats -- [v0.19.1](../release_notes/v0.19.1.md)
 - Use CuFileDriver class for reading files
 - Make use of nvJPEG to decode TIFF Files -- [v0.20.0](../release_notes/v0.20.0.md)
 
@@ -105,11 +105,11 @@ The following list is on the road |:smile:|
   - `metadata`
 - Check if the `tile_rester` memory is freed by jpeg-turbo or not
   - {fa}`check,text-success mr-1` `cpp/plugins/cucim.kit.cuslide/src/cuslide/tiff/ifd.cpp:365` in `IFD::read_region_tiles_libjpeg()` -- [v0.3.0](../release_notes/v0.3.0.md)
-    - `cpp/plugins/cucim.kit.cuslide/src/cuslide/cuslide.cpp:123` in `parser_parse` -- [v0.19.0](../release_notes/v0.19.0.md)
+    - `cpp/plugins/cucim.kit.cuslide/src/cuslide/cuslide.cpp:123` in `parser_parse` -- [v0.19.1](../release_notes/v0.19.1.md)
 - Fill correct metadata information for `CuImage::read_region()`
-  - `cpp/src/cucim.cpp:417` -- [v0.19.0](../release_notes/v0.19.0.md)
+  - `cpp/src/cucim.cpp:417` -- [v0.19.1](../release_notes/v0.19.1.md)
 - Check and use `ifd->samples_per_pixel()` once we can get RGB data instead of RGBA
-  - `cpp/plugins/cucim.kit.cuslide/src/cuslide/tiff/ifd.cpp:280` in `IFD::read_region_tiles_libjpeg()` -- [v0.19.0](../release_notes/v0.19.0.md)
+  - `cpp/plugins/cucim.kit.cuslide/src/cuslide/tiff/ifd.cpp:280` in `IFD::read_region_tiles_libjpeg()` -- [v0.19.1](../release_notes/v0.19.1.md)
 - Consider endianness of the .tif file
   - `cpp/plugins/cucim.kit.cuslide/src/cuslide/tiff/ifd.cpp:329` in `IFD::read_region_tiles_libjpeg()`
 - Consider tile's depth tag
@@ -206,16 +206,16 @@ The following list is on the road |:smile:|
 
 - {fa}`check,text-success mr-1` Provide an example/plan for the interoperability with DALI -- [v0.2.0](../release_notes/v0.2.0.md)
 - {fa}`check,text-success mr-1` Showcase the interoperability with DALI -- [v0.3.0](../release_notes/v0.3.0.md)
-- Support `__cuda_array_interface__` and DLPack object in Python API -- [v0.19.0](../release_notes/v0.19.0.md)
+- Support `__cuda_array_interface__` and DLPack object in Python API -- [v0.19.1](../release_notes/v0.19.1.md)
   - https://docs.cupy.dev/en/stable/reference/interoperability.html#dlpack
   - https://github.com/pytorch/pytorch/pull/11984
 - Refactor the cupyimg package to incorporate it in the adaption layer of cuCIM. Change the namespaces -- [v0.19.0](../release_notes/v0.19.0.md)
   - Implement/expose `scikit-image`-like image loading APIs (such as `imread`) and filtering APIs for cuCIM library by using cuCIM's APIs
 - Support DALI's CPU/GPU Tensor: <https://docs.nvidia.com/deeplearning/dali/user-guide/docs/data_types.html#tensor>
-- Support loading data to CUDA memory -- [v0.19.0](../release_notes/v0.19.0.md)
+- Support loading data to CUDA memory -- [v0.19.1](../release_notes/v0.19.1.md)
 - Consider adding `to_xxx()` methods in Python API
   - `examples/python/tiff_image/main.py:125`
-- Support byte-like object for CuImage object so that the following method works -- [v0.19.0](../release_notes/v0.19.0.md)
+- Support byte-like object for CuImage object so that the following method works -- [v0.19.1](../release_notes/v0.19.1.md)
     ```python
     from PIL import Image
     ...
@@ -243,7 +243,7 @@ The following list is on the road |:smile:|
 ### Python API
 
 - Feature parity with OpenSlide
-- Add context manager for CuImage class (for `close()` method) -- [v0.19.0](../release_notes/v0.19.0.md)
+- Add context manager for CuImage class (for `close()` method) -- [v0.19.1](../release_notes/v0.19.1.md)
 
 ### C++ API
 

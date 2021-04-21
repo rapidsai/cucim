@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2020, NVIDIA CORPORATION.
+# Copyright (c) 2020-2021, NVIDIA CORPORATION.
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -27,8 +27,6 @@ endif()
 if(NOT BUILD_SHARED_LIBS)
     set(BUILD_SHARED_LIBS ON)
 endif()
-
-set(CMAKE_C_FLAGS "-O2")
 
 ################################################################################
 # Set definitions
@@ -110,6 +108,7 @@ target_compile_definitions(${CUCIM_PACKAGE_NAME}
         CUCIM_VERSION_PATCH=${PROJECT_VERSION_PATCH}
         CUCIM_VERSION_BUILD=${PROJECT_VERSION_BUILD}
         CUCIM_SUPPORT_GDS=$<BOOL:${CUCIM_SUPPORT_GDS}>
+        CUCIM_STATIC_GDS=$<BOOL:${CUCIM_STATIC_GDS}>
         _GLIBCXX_USE_CXX11_ABI=0  # TODO: create two library, one with CXX11 ABI and one without it.
 )
 
@@ -118,7 +117,6 @@ target_link_libraries(${CUCIM_PACKAGE_NAME}
         PUBLIC
             ${CMAKE_DL_LIBS}
             $<BUILD_INTERFACE:deps::fmt>
-            $<BUILD_INTERFACE:deps::gds>
 #            $<BUILD_INTERFACE:deps::boost>
 #            $<BUILD_INTERFACE:deps::rmm>
 #            $<BUILD_INTERFACE:deps::gds>
@@ -128,6 +126,7 @@ target_link_libraries(${CUCIM_PACKAGE_NAME}
 ##            $<INSTALL_INTERFACE:cucim::gds>
         PRIVATE
             deps::abseil
+            deps::gds
         )
 
 if (CUCIM_STATIC_GDS)
@@ -164,6 +163,7 @@ target_compile_definitions(${CUCIM_PACKAGE_NAME}-header-only
         CUCIM_VERSION_PATCH=${PROJECT_VERSION_PATCH}
         CUCIM_VERSION_BUILD=${PROJECT_VERSION_BUILD}
         CUCIM_SUPPORT_GDS=$<BOOL:${CUCIM_SUPPORT_GDS}>
+        CUCIM_STATIC_GDS=$<BOOL:${CUCIM_STATIC_GDS}>
         CUCIM_HEADER_ONLY=1
         )
 target_compile_features(${CUCIM_PACKAGE_NAME}-header-only INTERFACE ${CUCIM_REQUIRED_FEATURES})

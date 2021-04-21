@@ -23,7 +23,9 @@ from openslide import OpenSlide
 
 from cucim import CuImage
 
-img = CuImage("notebooks/0486052bb.tiff")
+input_file = "notebooks/input/image.tif"
+
+img = CuImage(input_file)
 # True if image data is loaded & available.
 print(img.is_loaded)
 # A device type.
@@ -93,7 +95,6 @@ class Timer(ContextDecorator):
 
 num_threads = 1  # os.cpu_count()
 
-input_file = "notebooks/0486052bb.tiff"
 start_location = 0
 tile_size = 256
 

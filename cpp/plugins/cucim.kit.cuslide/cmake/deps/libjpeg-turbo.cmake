@@ -1,5 +1,5 @@
 # Apache License, Version 2.0
-# Copyright 2020 NVIDIA Corporation
+# Copyright 2020-2021 NVIDIA Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -43,8 +43,10 @@ if (NOT TARGET deps::libjpeg-turbo)
     # Tell CMake where to find the compiler by setting either the environment
     # variable "ASM_NASM" or the CMake cache entry CMAKE_ASM_NASM_COMPILER to the
     # full path to the compiler, or to the compiler name if it is in the PATH.
-    # nasm is available through `sudo apt-get install nasm` on Debian Linux.
-    set(REQUIRE_SIMD 1)
+    # yasm is available through `sudo apt-get install yasm` on Debian Linux.
+    # See _deps/deps-libjpeg-turbo-src/simd/CMakeLists.txt:25.
+    set(CMAKE_ASM_NASM_COMPILER yasm)
+    set(REQUIRE_SIMD 1) # CMP0077
 
     add_subdirectory(${deps-libjpeg-turbo_SOURCE_DIR} ${deps-libjpeg-turbo_BINARY_DIR} EXCLUDE_FROM_ALL)
 
