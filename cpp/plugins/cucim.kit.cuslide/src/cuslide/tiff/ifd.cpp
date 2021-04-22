@@ -173,6 +173,14 @@ bool IFD::read(const TIFF* tiff,
                 "Cannot handle the out-of-boundary cases for a non-RGB image or a non-Jpeg/Deflate-compressed image."));
         }
 
+        // Check if the image format is supported or not
+        if (!is_format_supported())
+        {
+            throw std::runtime_error(fmt::format(
+                "This format (compression: {}, sample_per_pixel: {}, planar_config: {}, photometric: {}) is not supported yet!.",
+                compression_, samples_per_pixel_, planar_config_, photometric_));
+        }
+
         if (tif->tif_curdir != ifd_index)
         {
             TIFFSetDirectory(tif, ifd_index);
@@ -204,7 +212,19 @@ bool IFD::read(const TIFF* tiff,
                     }
                 }
             }
+            else
+            {
+                throw std::runtime_error(fmt::format(
+                    "This format (compression: {}, sample_per_pixel: {}, planar_config: {}, photometric: {}) is not supported yet!: {}",
+                    compression_, samples_per_pixel_, planar_config_, photometric_, emsg));
+            }
             TIFFRGBAImageEnd(&img);
+        }
+        else
+        {
+            throw std::runtime_error(fmt::format(
+                "This format (compression: {}, sample_per_pixel: {}, planar_config: {}, photometric: {}) is not supported yet!: {}",
+                compression_, samples_per_pixel_, planar_config_, photometric_, emsg));
         }
     }
 
@@ -308,13 +328,22 @@ const std::vector<uint64_t>& IFD::image_piece_bytecounts() const
     return image_piece_bytecounts_;
 }
 
-bool IFD::is_read_optimizable() const
+bool IFD::is_compression_supported() const
 {
     return (compression_ == COMPRESSION_ADOBE_DEFLATE || compression_ == COMPRESSION_JPEG ||
-            compression_ == COMPRESSION_DEFLATE) &&
-           bits_per_sample_ == 8 && samples_per_pixel_ == 3 && planar_config_ == PLANARCONFIG_CONTIG &&
+            compression_ == COMPRESSION_DEFLATE);
+}
+bool IFD::is_read_optimizable() const
+{
+    return is_compression_supported() && bits_per_sample_ == 8 && samples_per_pixel_ == 3 &&
+           planar_config_ == PLANARCONFIG_CONTIG &&
            (photometric_ == PHOTOMETRIC_RGB || photometric_ == PHOTOMETRIC_YCBCR) &&
            !tiff_->is_in_read_config(TIFF::kUseLibTiff);
+}
+
+bool IFD::is_format_supported() const
+{
+    return is_compression_supported();
 }
 
 bool IFD::read_region_tiles(const TIFF* tiff,

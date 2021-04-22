@@ -122,6 +122,11 @@ private:
     std::vector<uint64_t> image_piece_bytecounts_;
 
     /**
+     * @brief Check if the current compression method is supported or not.
+     */
+    bool is_compression_supported() const;
+
+    /**
      *
      * Note: This method is called by the constructor of IFD and read() method so it is possible that the output of
      *       'is_read_optimizable()' could be changed during read() method if user set read configuration
@@ -129,6 +134,11 @@ private:
      * @return
      */
     bool is_read_optimizable() const;
+
+    /**
+     * @brief Check if the specified image format is supported or not.
+     */
+    bool is_format_supported() const;
 };
 } // namespace cuslide::tiff
 
