@@ -14,7 +14,7 @@
 
 #### Conda (stable)
 
-> conda create -n cucim -c rapidsai -c conda-forge/label/cupy_rc -c conda-forge cucim cudatoolkit=`<CUDA version>`
+> conda create -n cucim -c rapidsai -c conda-forge cucim cudatoolkit=`<CUDA version>`
 
 `<CUDA version>` should be 11.0+ (e.g., `11.0`, `11.2`, etc.)
 
@@ -22,7 +22,7 @@
 
 #### Conda (nightlies)
 
-> conda create -n cucim -c rapidsai-nightly -c conda-forge/label/cupy_rc -c conda-forge cucim cudatoolkit=`<CUDA version>`
+> conda create -n cucim -c rapidsai-nightly -c conda-forge cucim cudatoolkit=`<CUDA version>`
 
 `<CUDA version>` should be 11.0+ (e.g., `11.0`, `11.2`, etc)
 
