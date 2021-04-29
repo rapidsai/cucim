@@ -63,7 +63,7 @@ CUCIM_BLD_PATH=/opt/conda/envs/rapids/conda-bld
 mkdir -p ${CUCIM_BLD_PATH}
 
 
-gpuci_conda_retry build -c ${LIBCUCIM_BLD_PATH} -c conda-forge/label/cupy_rc -c conda-forge -c rapidsai-nightly \
+gpuci_conda_retry build -c ${LIBCUCIM_BLD_PATH} -c conda-forge -c rapidsai-nightly \
     --python=${PYTHON_VER} \
     --dirty \
     --no-remove-work-dir \
@@ -79,20 +79,9 @@ gpuci_conda_retry build -c ${LIBCUCIM_BLD_PATH} -c conda-forge/label/cupy_rc -c 
 gpuci_logger "Install cuCIM and its dependencies"
 
 gpuci_logger "Install dependencies"
-gpuci_conda_retry create -n cucim -y -c conda-forge -c conda-forge/label/cupy_rc -c rapidsai-nightly \
+gpuci_conda_retry install -y -c conda-forge -c rapidsai-nightly \
     rapids-doc-env \
-    flake8 \
-    pytest \
-    pytest-cov \
-    python=${PYTHON_VER} \
-    conda-forge/label/cupy_rc::cupy=9 \
-    cudatoolkit=${CUDA_VER} \
-    numpy \
-    scipy \
-    scikit-image=0.18.1 \
     openslide
-
-conda activate cucim
 
 gpuci_logger "Installing cuCIM"
 gpuci_conda_retry install -y -c ${LIBCUCIM_BLD_PATH} -c ${CUCIM_BLD_PATH} \

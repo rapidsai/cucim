@@ -26,7 +26,7 @@ requirements:
     - python {{ python_version }}.*
     - libcucim {{ version }}.*
     - click
-    - conda-forge/label/cupy_rc::cupy=9
+    - cupy=9
     - numpy
     - scipy
     - scikit-image 0.18.1
@@ -35,7 +35,7 @@ requirements:
     - python {{ python_version }}.*
     - libcucim {{ version }}.*
     - click
-    - conda-forge/label/cupy_rc::cupy=9
+    - cupy=9
     - numpy
     - scipy
     - scikit-image 0.18.1
