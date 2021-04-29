@@ -76,14 +76,7 @@ gpuci_conda_retry build -c ${LIBCUCIM_BLD_PATH} -c conda-forge -c rapidsai-night
 ################################################################################
 
 # Install cuCIM and its dependencies
-gpuci_logger "Install cuCIM and its dependencies"
-
-gpuci_logger "Install dependencies"
-gpuci_conda_retry install -y -c conda-forge -c rapidsai-nightly \
-    rapids-doc-env \
-    openslide
-
-gpuci_logger "Installing cuCIM"
+gpuci_logger "Installing cuCIM and its dependencies"
 gpuci_conda_retry install -y -c ${LIBCUCIM_BLD_PATH} -c ${CUCIM_BLD_PATH} \
     libcucim \
     cucim
