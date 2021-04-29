@@ -19,6 +19,7 @@ build:
 requirements:
   build:
     - cmake >=3.18.0
+    - {{ compiler("c") }}
     - {{ compiler("cxx") }}
     - yasm # [x86_64]
   host:
