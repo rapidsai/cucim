@@ -29,7 +29,7 @@ requirements:
     - libcucim {{ version }}.*
     - click
     - cupy 9.*
-    - numpy
+    - numpy >=1.17.0
     - scipy
     - scikit-image 0.18.1
   run:
@@ -38,7 +38,7 @@ requirements:
     - libcucim {{ version }}.*
     - click
     - cupy 9.*
-    - numpy
+    - {{ pin_compatible('numpy') }}
     - scipy
     - scikit-image 0.18.1
     # - openslide # skipping here but benchmark binary would needs openslide library
