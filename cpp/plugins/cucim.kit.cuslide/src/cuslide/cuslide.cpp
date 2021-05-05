@@ -17,21 +17,19 @@
 
 #include "cuslide.h"
 
-#include "cucim/io/format/image_format.h"
-
 #include "cucim/core/framework.h"
 #include "cucim/core/plugin_util.h"
-
-#include <memory>
-//#include "tiffio.h"
-//#include "tif_dir.h"
+#include "cucim/io/format/image_format.h"
 #include "tiff/tiff.h"
-#include <fcntl.h>
+
+#include <fmt/format.h>
+#include <nlohmann/json.hpp>
+
+#include <array>
 #include <cassert>
 #include <cstring>
-#include <array>
-#include <nlohmann/json.hpp>
-// #include <rmm/mr/host/new_delete_resource.hpp>
+#include <fcntl.h>
+#include <memory>
 
 using json = nlohmann::json;
 
@@ -121,7 +119,18 @@ static bool CUCIM_ABI parser_parse(CuCIMFileHandle* handle, cucim::io::format::I
     }
 
     // Assume that the image has only one main (high resolution) image.
-    assert(main_ifd_list.size() == 1);
+    if (main_ifd_list.size() != 1)
+    {
+        throw std::runtime_error(
+            fmt::format("This format has more than one image with Subfile Type 0 so cannot be loaded!"));
+    }
+
+    // Explicitly forbid loading SVS format (#17)
+    if (tif->ifd(0)->image_description().rfind("Aperio", 0) == 0)
+    {
+        throw std::runtime_error(
+            fmt::format("cuCIM doesn't support Aperio SVS for now (https://github.com/rapidsai/cucim/issues/17)."));
+    }
 
     //
     // Metadata Setup
@@ -284,17 +293,3 @@ void fill_interface(cucim::io::format::IImageFormat& iface)
     };
     // clang-format on
 }
-
-//
-//
-//#include <iostream>
-//#include "fmt/format.h"
-//
-//
-//
-// CUCIM_API int foo()
-//{
-//    std::cout << "Foo!" << std::endl;
-////    std::string a = fmt::format(b.getName());
-//    return 0;
-//}
