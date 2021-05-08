@@ -2,6 +2,8 @@ import cupy as cp
 import numpy as np
 import pytest
 from cupy.testing import assert_array_equal
+from skimage import data
+from skimage.morphology import thin as thin_cpu
 
 from cucim.skimage.morphology import thin
 from cucim.skimage.morphology._skeletonize import (_G123_LUT, _G123P_LUT,
@@ -56,3 +58,12 @@ class TestThin():
 
         assert_array_equal(cp.asarray(g123), _G123_LUT)
         assert_array_equal(cp.asarray(g123p), _G123P_LUT)
+
+    @pytest.mark.parametrize('invert', [False, True])
+    def test_compare_skimage(self, invert):
+        h = data.horse()
+        if invert:
+            h = ~h
+        result = thin(cp.asarray(h))
+        expected = thin_cpu(h)
+        assert_array_equal(result, expected)
