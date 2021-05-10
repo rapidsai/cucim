@@ -5,11 +5,11 @@ try:
     # try importing Cython-based private axis handling functions from CuPy
     if hasattr(cupy, '_core'):
         # CuPy 10 renames core->_core
-        from cupy._core.internal import (_normalize_axis_index,  # NOQA
-                                         _normalize_axis_indices)
+        from cupy._core.internal import _normalize_axis_index  # NOQA
+        from cupy._core.internal import _normalize_axis_indices  # NOQA
     else:
-        from cupy.core.internal import (_normalize_axis_index,  # NOQA
-                                        _normalize_axis_indices)
+        from cupy.core.internal import _normalize_axis_index  # NOQA
+        from cupy.core.internal import _normalize_axis_indices  # NOQA
 
 except ImportError:
     # Fallback to local Python implementations
