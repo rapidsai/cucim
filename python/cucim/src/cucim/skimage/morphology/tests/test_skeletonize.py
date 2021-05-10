@@ -6,8 +6,7 @@ from skimage import data
 from skimage.morphology import thin as thin_cpu
 
 from cucim.skimage.morphology import thin
-from cucim.skimage.morphology._skeletonize import (_G123_LUT, _G123P_LUT,
-                                                   _generate_thin_luts)
+from cucim.skimage.morphology._skeletonize import _G123_LUT, _G123P_LUT
 
 
 class TestThin():
@@ -52,12 +51,6 @@ class TestThin():
         for ii in [cp.zeros((3)), cp.zeros((3, 3, 3))]:
             with pytest.raises(ValueError):
                 thin(ii)
-
-    def test_lut_generation(self):
-        g123, g123p = _generate_thin_luts()
-
-        assert_array_equal(cp.asarray(g123), _G123_LUT)
-        assert_array_equal(cp.asarray(g123p), _G123P_LUT)
 
     @pytest.mark.parametrize('invert', [False, True])
     def test_compare_skimage(self, invert):
