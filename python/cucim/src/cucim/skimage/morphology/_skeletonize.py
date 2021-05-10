@@ -2,7 +2,7 @@ import cupy as cp
 import cupyx.scipy.ndimage as ndi
 import numpy as np
 
-from .._shared.utils import check_nD, warn
+from .._shared.utils import check_nD
 
 # --------- Skeletonization and thinning based on Guo and Hall 1989 ---------
 
@@ -112,8 +112,8 @@ def thin(image, max_iter=None):
     skel = cp.asarray(image, dtype=bool).astype(cp.uint8)
 
     # neighborhood mask
-    mask = cp.asarray([[ 8,  4,   2],
-                       [16,  0,   1],
+    mask = cp.asarray([[ 8,  4,   2],  # noqa
+                       [16,  0,   1],  # noqa
                        [32, 64, 128]], dtype=cp.uint8)
 
     G123_LUT = cp.asarray(_G123_LUT)

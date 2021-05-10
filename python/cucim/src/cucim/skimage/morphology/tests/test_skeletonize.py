@@ -1,12 +1,10 @@
 import cupy as cp
-import numpy as np
 import pytest
 from cupy.testing import assert_array_equal
 from skimage import data
 from skimage.morphology import thin as thin_cpu
 
 from cucim.skimage.morphology import thin
-from cucim.skimage.morphology._skeletonize import _G123_LUT, _G123P_LUT
 
 
 class TestThin():
@@ -23,7 +21,7 @@ class TestThin():
         return ii
 
     def test_zeros(self):
-        assert cp.all(thin(cp.zeros((10, 10))) == False)
+        assert cp.all(thin(cp.zeros((10, 10))) == 0)
 
     def test_iter_1(self):
         result = thin(self.input_image, 1).astype(cp.uint8)
