@@ -18,7 +18,7 @@ conda activate rapids
 cd python/cucim
 
 # Run isort and get results/return code
-ISORT=`isort --recursive --check-only src`
+ISORT=`isort --check-only src`
 ISORT_RETVAL=$?
 
 # Run black and get results/return code
