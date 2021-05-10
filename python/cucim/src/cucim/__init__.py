@@ -31,6 +31,4 @@ skimage
 
 """
 
-from .clara import CuImage
-from .clara import __version__
-from .clara import cli
+from .clara import CuImage, __version__, cli
