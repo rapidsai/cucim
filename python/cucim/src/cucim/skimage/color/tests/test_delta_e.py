@@ -6,7 +6,7 @@ import pytest
 from cupy.testing import (assert_allclose, assert_array_almost_equal,
                           assert_array_equal)
 
-from cucim.skimage._shared.testing import fetch, expected_warnings
+from cucim.skimage._shared.testing import expected_warnings, fetch
 from cucim.skimage.color.delta_e import (deltaE_cie76, deltaE_ciede94,
                                          deltaE_ciede2000, deltaE_cmc)
 

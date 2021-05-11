@@ -4,7 +4,6 @@ import pytest
 from cupy.testing import assert_allclose, assert_array_almost_equal
 from numpy.testing import assert_
 
-
 from cucim.skimage import filters
 from cucim.skimage.data import binary_blobs
 from cucim.skimage.filters.edges import _mask_filter_result

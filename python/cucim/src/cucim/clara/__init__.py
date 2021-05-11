@@ -15,13 +15,9 @@
 
 import os
 
-from . import cli
-from . import converter
+from . import cli, converter
 # import hidden methods
-from ._cucim import CuImage
-from ._cucim import __version__
-from ._cucim import filesystem
-from ._cucim import io
+from ._cucim import CuImage, __version__, filesystem, io
 
 __all__ = ['cli', 'CuImage', 'filesystem', 'io', 'converter', '__version__']
 
