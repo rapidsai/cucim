@@ -55,7 +55,7 @@ class TestConnectedComponents:
         assert_array_equal(label(self.x, background=9), self.labels_bg_9)
 
     def test_random(self):
-        x = (cp.random.rand(20, 30) * 5).astype(cp.int)
+        x = (cp.random.rand(20, 30) * 5).astype(int)
         labels = label(x)
 
         n = int(labels.max())
@@ -180,7 +180,7 @@ class TestConnectedComponents3d:
         assert self.x[0, 0, 2] == 2, "Data was modified!"
 
     def test_random(self):
-        x = (cp.random.rand(20, 30) * 5).astype(cp.int)
+        x = (cp.random.rand(20, 30) * 5).astype(int)
         labels = label(x)
 
         n = int(labels.max())
