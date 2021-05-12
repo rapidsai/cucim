@@ -143,3 +143,9 @@ cp -P python/install/lib/* python/cucim/src/cucim/clara/
 cd python/cucim/
 python -m pip install .
 ```
+
+For contributors interested in working on the Python code from an in-place
+(editable) installation, replace the last line above with
+```bash
+python -m pip install --editable .
+```
