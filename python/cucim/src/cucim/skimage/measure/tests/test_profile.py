@@ -4,7 +4,7 @@ from cupy.testing import assert_array_almost_equal, assert_array_equal
 
 from cucim.skimage.measure import profile_line
 
-image = cp.arange(100).reshape((10, 10)).astype(cp.float)
+image = cp.arange(100).reshape((10, 10)).astype(float)
 
 
 def test_horizontal_rightward():

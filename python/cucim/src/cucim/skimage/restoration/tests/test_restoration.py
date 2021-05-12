@@ -102,7 +102,7 @@ def test_image_shape():
 
     This addresses issue #1172.
     """
-    point = cp.zeros((5, 5), np.float)
+    point = cp.zeros((5, 5), float)
     point[2, 2] = 1.0
     psf = ndi.gaussian_filter(point, sigma=1.0)
     # image shape: (45, 45), as reported in #1172

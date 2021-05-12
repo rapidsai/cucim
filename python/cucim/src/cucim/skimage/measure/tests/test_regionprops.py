@@ -65,10 +65,10 @@ def test_all_props_3d():
 
 
 def test_dtype():
-    regionprops(cp.zeros((10, 10), dtype=cp.int))
+    regionprops(cp.zeros((10, 10), dtype=int))
     regionprops(cp.zeros((10, 10), dtype=cp.uint))
     with pytest.raises(TypeError):
-        regionprops(cp.zeros((10, 10), dtype=cp.float))
+        regionprops(cp.zeros((10, 10), dtype=float))
     with pytest.raises(TypeError):
         regionprops(cp.zeros((10, 10), dtype=cp.double))
     with pytest.raises(TypeError):
@@ -76,13 +76,13 @@ def test_dtype():
 
 
 def test_ndim():
-    regionprops(cp.zeros((10, 10), dtype=cp.int))
-    regionprops(cp.zeros((10, 10, 1), dtype=cp.int))
-    regionprops(cp.zeros((10, 10, 10), dtype=cp.int))
-    regionprops(cp.zeros((1, 1), dtype=cp.int))
-    regionprops(cp.zeros((1, 1, 1), dtype=cp.int))
+    regionprops(cp.zeros((10, 10), dtype=int))
+    regionprops(cp.zeros((10, 10, 1), dtype=int))
+    regionprops(cp.zeros((10, 10, 10), dtype=int))
+    regionprops(cp.zeros((1, 1), dtype=int))
+    regionprops(cp.zeros((1, 1, 1), dtype=int))
     with pytest.raises(TypeError):
-        regionprops(cp.zeros((10, 10, 10, 2), dtype=cp.int))
+        regionprops(cp.zeros((10, 10, 10, 2), dtype=int))
 
 
 @pytest.mark.skip('feret_diameter_max not implmented on the GPU')
@@ -210,7 +210,7 @@ def test_eccentricity():
     eps = regionprops(SAMPLE)[0].eccentricity
     assert_almost_equal(eps, 0.814629313427)
 
-    img = cp.zeros((5, 5), dtype=cp.int)
+    img = cp.zeros((5, 5), dtype=int)
     img[2, 2] = 1
     eps = regionprops(img)[0].eccentricity
     assert_almost_equal(eps, 0)
@@ -473,7 +473,7 @@ def test_weighted_moments_normalized():
 
 
 def test_label_sequence():
-    a = cp.empty((2, 2), dtype=cp.int)
+    a = cp.empty((2, 2), dtype=int)
     a[:, :] = 2
     ps = regionprops(a)
     assert len(ps) == 1
@@ -481,7 +481,7 @@ def test_label_sequence():
 
 
 def test_pure_background():
-    a = cp.zeros((2, 2), dtype=cp.int)
+    a = cp.zeros((2, 2), dtype=int)
     ps = regionprops(a)
     assert len(ps) == 0
 
@@ -503,7 +503,7 @@ def test_invalid_size():
 
 
 def test_equals():
-    arr = cp.zeros((100, 100), dtype=cp.int)
+    arr = cp.zeros((100, 100), dtype=int)
     arr[0:25, 0:25] = 1
     arr[50:99, 50:99] = 2
 
