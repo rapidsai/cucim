@@ -13,13 +13,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import sys
 import functools
-from os.path import join
 import glob
+import re
+import sys
+from os.path import join
 from unittest.mock import patch
-from auditwheel.main import main
+
 import auditwheel.elfutils
+from auditwheel.main import main
 from auditwheel.wheeltools import InWheelCtx
 
 # How auditwheel repair works?
@@ -37,14 +39,14 @@ from auditwheel.wheeltools import InWheelCtx
 #
 # With current implementation,
 # - `cucim/_cucim.cpython-XX-x86_64-linux-gnu.so` files are in A by 1)
-# - `cucim/libcucim.so.0` is in B by 1)
-# - `cucim/libcucim.so.0` and `libcudart.so.11.0` are in `needed_libs` by 2)
-# - `cucim/cucim.kit.cuslide@0.1.1.so` is in A by 3)
+# - `cucim/libcucim.so.??` is in B by 1)
+# - `cucim/libcucim.so.??` and `libcudart.so.11.0` are in `needed_libs` by 2)
+# - `cucim/cucim.kit.cuslide@??.??.??.so` is in A by 3)
 #
 # And only libz and libcudart are considered as external libraries.
 
 # To work with cuCIM, we need to
-# 1) make `cucim/libcucim.so.0` as Python extension library
+# 1) make `cucim/libcucim.so.??` as Python extension library
 #   - Patch elf_is_python_extension : https://github.com/pypa/auditwheel/blob/3.2.0/auditwheel/elfutils.py#L81
 # 2) control how to copy external libraries
 #   - Patch copylib: https://github.com/pypa/auditwheel/blob/3.2.0/auditwheel/repair.py#L108
@@ -55,15 +57,15 @@ from auditwheel.wheeltools import InWheelCtx
 
 
 # Parameters
-PYTHON_EXTENSION_LIBRARIES = {
-    'cucim/libcucim.so.0'
-}
+PYTHON_EXTENSION_LIBRARIES = [
+    r'cucim/libcucim\.so\.\d{1,2}'
+]
 
 # 1) auditwheel.elfutils.elf_is_python_extension replacement
 orig_elf_is_python_extension = auditwheel.elfutils.elf_is_python_extension
 @functools.wraps(orig_elf_is_python_extension)
 def elf_is_python_extension(fn, elf):
-    if fn in PYTHON_EXTENSION_LIBRARIES:
+    if any(map(lambda x: re.fullmatch(x, fn), PYTHON_EXTENSION_LIBRARIES)):
         print("[cuCIM] Consider {} as a python extension.".format(fn))
         return True, 3
     return orig_elf_is_python_extension(fn, elf)

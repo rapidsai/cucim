@@ -24,6 +24,9 @@
 #include "cucim/core/framework.h"
 #include <fmt/format.h>
 
+#define XSTR(x) STR(x)
+#define STR(x) #x
+
 namespace cucim
 {
 
@@ -760,22 +763,19 @@ void CuImage::ensure_init()
         // TODO: Here 'LINUX' path separator is used. Need to make it generalize once filesystem library is
         // available.
         std::string plugin_file_path = (plugin_root && *plugin_root != 0) ?
-                                           fmt::format("{}/cucim.kit.cuslide@{}.{}.{}.so", plugin_root,
-                                                       CUCIM_VERSION_MAJOR, CUCIM_VERSION_MINOR, CUCIM_VERSION_PATCH) :
-                                           fmt::format("cucim.kit.cuslide@{}.{}.{}.so", CUCIM_VERSION_MAJOR,
-                                                       CUCIM_VERSION_MINOR, CUCIM_VERSION_PATCH);
+                                           fmt::format("{}/cucim.kit.cuslide@" XSTR(CUCIM_VERSION) ".so", plugin_root) :
+                                           fmt::format("cucim.kit.cuslide@" XSTR(CUCIM_VERSION) ".so");
         struct stat st_buff;
         if (stat(plugin_file_path.c_str(), &st_buff) != 0)
         {
-            plugin_file_path = fmt::format(
-                "cucim.kit.cuslide@{}.{}.{}.so", CUCIM_VERSION_MAJOR, CUCIM_VERSION_MINOR, CUCIM_VERSION_PATCH);
+            plugin_file_path = fmt::format("cucim.kit.cuslide@" XSTR(CUCIM_VERSION) ".so");
         }
         image_formats_ =
             framework_->acquire_interface_from_library<cucim::io::format::IImageFormat>(plugin_file_path.c_str());
         if (image_formats_ == nullptr)
         {
-            throw std::runtime_error(fmt::format("Dependent library 'cucim.kit.cuslide@{}.{}.{}.so' cannot be loaded!",
-                                                 CUCIM_VERSION_MAJOR, CUCIM_VERSION_MINOR, CUCIM_VERSION_PATCH));
+            throw std::runtime_error(
+                fmt::format("Dependent library 'cucim.kit.cuslide@" XSTR(CUCIM_VERSION) ".so' cannot be loaded!"));
         }
     }
 }

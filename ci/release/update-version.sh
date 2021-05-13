@@ -33,7 +33,7 @@ function sed_runner() {
 # Update version-related files using bump2version
 # (Need to execute this before other version updates because this command
 #  would checks if the git repository is dirty or not)
-./run bump_version ${RELEASE_TYPE}
+./run bump_version ${NEXT_FULL_TAG}
 
 # RTD update
 sed_runner 's/version = .*/version = '"'${NEXT_SHORT_TAG}'"'/g' docs/source/conf.py
