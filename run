@@ -343,6 +343,8 @@ build_local() {
     local build_type_str="Debug"
     local prefix=${3:-}
 
+    local major_version="$(cat ${TOP}/VERSION | cut -d. -f1)" # major version number
+
     [ "$build_type" = "debug" ] && build_type_str="Debug"
     [ "$build_type" = "release" ] && build_type_str="Release"
     [ "$build_type" = "rel-debug" ] && build_type_str="RelWithDebInfo"
@@ -369,17 +371,17 @@ build_local() {
         # We don't need to copy binary if executed by conda-build
         if [ "${CONDA_BUILD:-}" != "1" ]; then
             # Copy .so files to pybind's build folder
-            # we don't need to copy symbolic links. Instead copy only libcucim.so.0 (without symbolic link)
-            cp ${TOP}/build-$build_type/lib*/libcucim.so.0 ${TOP}/python/cucim/src/cucim/clara/
+            # we don't need to copy symbolic links. Instead copy only libcucim.so.${major_version} (without symbolic link)
+            cp ${TOP}/build-$build_type/lib*/libcucim.so.${major_version} ${TOP}/python/cucim/src/cucim/clara/
             cp -P ${TOP}/cpp/plugins/cucim.kit.cuslide/build-$build_type/lib*/cucim* ${TOP}/python/cucim/src/cucim/clara/
 
             # Copy .so files from pybind's build folder to cucim Python source folder
             # Since wheel file doesn't support symbolic link (https://github.com/pypa/wheel/issues/203),
-            # we don't need to copy symbolic links. Instead copy only libcucim.so.0 (without symbolic link)
+            # we don't need to copy symbolic links. Instead copy only libcucim.so.${major_version} (without symbolic link)
             #find ${TOP}/python/install/lib -maxdepth 1 -type f -exec cp {} ${TOP}/python/cucimrc/cucim/clara\;
             cp ${TOP}/python/build-$build_type/lib/cucim/_cucim.*.so ${TOP}/python/cucim/src/cucim/clara/
             # cp ${TOP}/python/build-$build_type/lib/cucim.*.so ${TOP}/python/cucim/src/cucim/clara/
-            # cp ${TOP}/python/build-$build_type/lib/libcucim.so.0 ${TOP}/python/cucim/src/cucim/clara/
+            # cp ${TOP}/python/build-$build_type/lib/libcucim.so.${major_version} ${TOP}/python/cucim/src/cucim/clara/
             # find ${TOP}/python/build-$build_type/lib -maxdepth 1 -type f -name "lib*.so" -exec cp {} ${TOP}/python/cucim/src/cucim/clara \;
         fi
     fi
@@ -470,6 +472,7 @@ build_python_package_() {
     local CUCIM_SDK_PATH=${4:-${BUILD_ROOT}/libcucim}
 
     local old_opt="$(shopt -op errexit);$(shopt -op nounset)" # save old shopts
+    local major_version="$(cat ${TOP}/VERSION | cut -d. -f1)" # major version number
     set -eu
 
     # Clear CMakeCache.txt to use the latest options
@@ -547,11 +550,11 @@ build_python_package_() {
 
     # Copy .so files from pybind's build folder to cucim Python source folder
     # Since wheel file doesn't support symbolic link (https://github.com/pypa/wheel/issues/203),
-    # we don't need to copy symbolic links. Instead copy only libcucim.so.0 (without symbolic link)
+    # we don't need to copy symbolic links. Instead copy only libcucim.so.${major_version} (without symbolic link)
       #find ${BUILD_ROOT}/cucim/install/lib -maxdepth 1 -type f -exec cp {} ${SRC_ROOT}/python/cucim/src/cucim/clara/ \;
     cp ${BUILD_ROOT}/cucim/install/lib/_cucim.*.so ${SRC_ROOT}/python/cucim/src/cucim/clara/
     cp ${BUILD_ROOT}/cucim/install/lib/cucim.*.so ${SRC_ROOT}/python/cucim/src/cucim/clara/
-    cp ${BUILD_ROOT}/cucim/install/lib/libcucim.so.0 ${SRC_ROOT}/python/cucim/src/cucim/clara/
+    cp ${BUILD_ROOT}/cucim/install/lib/libcucim.so.${major_version} ${SRC_ROOT}/python/cucim/src/cucim/clara/
     find ${BUILD_ROOT}/cucim/install/lib -maxdepth 1 -type f -name "lib*.so" -exec cp {} ${SRC_ROOT}/python/cucim/src/cucim/clara/ \;
 
     cd ${SRC_ROOT}/python/cucim
@@ -954,7 +957,7 @@ Returns:
 '
 }
 bump_version() {
-    local part=${1:-}
+    local new_version=${1:-}
     local ret=0
 
     if ! command -v bump2version > /dev/null; then
@@ -969,42 +972,33 @@ bump_version() {
 
     pushd $TOP/python/cucim
 
-    case "$part" in
-        major|minor|patch)
-            local current_version="$(bump2version --dry-run --list --allow-dirty $part | grep -Po 'current_version=\K[\d\.]+')"
-            local new_version="$(bump2version --dry-run --list --allow-dirty $part | grep -Po 'new_version=\K[\d\.]+')"
-            c_echo W "current_version=" G "${current_version}"
-            c_echo W "new_version=" G "${new_version}"
+    local current_version="$(bump2version --dry-run --list --allow-dirty patch | grep -Po 'current_version=\K[\d\.]+')"
+    c_echo W "current_version=" G "${current_version}"
+    c_echo W "new_version=" G "${new_version}"
 
-            local version_from_tag="$(git tag | grep -xE 'v[0-9\.]+' | sort --version-sort | tail -n 1 | tr -d 'v')"
+    local version_from_tag="$(git tag | grep -xE 'v[0-9\.]+' | sort --version-sort | tail -n 1 | tr -d 'v')"
 
-            # Print error if versions are not in sync.
-            if [ "${current_version}" != "${version_from_tag}" ]; then
-                c_echo_err R "version (" W "${current_version}" R ") from VERSION file doesn't match with version (" W "${version_from_tag}" R ") from tag."
-                c_echo_err W "Please sync those two versions!"
-                popd
-                return 1
-            fi
+    # Print error if versions are not in sync.
+    if [ "${current_version}" != "${version_from_tag}" ]; then
+        c_echo_err R "version (" W "${current_version}" R ") from VERSION file doesn't match with version (" W "${version_from_tag}" R ") from tag."
+        c_echo_err W "Please sync those two versions!"
+        popd
+        return 1
+    fi
 
-            bump2version "$@"
-            ret=$?
-            if [ $ret -eq 0 ]; then
-                local file_name
-                for file_name in ${TOP}/notebooks/*.ipynb; do
-                    c_echo b "processing " g "${file_name} ..."
-                    sed -ie "s#cucim-${current_version}#cucim-${new_version}#" "${file_name}"
-                    sed -ie "s#cucim ${current_version}#cucim ${new_version}#" "${file_name}"
-                    sed -ie "s#cucim==${current_version}#cucim==${new_version}#" "${file_name}"
-                    sed -ie "s#cuclara-image ${current_version}#cuclara-image ${new_version}#" "${file_name}"
-                    sed -ie "s#cuclara-image-${current_version}#cuclara-image-${new_version}#" "${file_name}"
-                done
-            fi
-            ;;
-        *)
-            bump2version "$@"
-            ret=$?
-            ;;
-    esac
+    bump2version --new-version ${new_version} minor
+    ret=$?
+    if [ $ret -eq 0 ]; then
+        local file_name
+        for file_name in ${TOP}/notebooks/*.ipynb; do
+            c_echo b "processing " g "${file_name} ..."
+            sed -ie "s#cucim-${current_version}#cucim-${new_version}#" "${file_name}"
+            sed -ie "s#cucim ${current_version}#cucim ${new_version}#" "${file_name}"
+            sed -ie "s#cucim==${current_version}#cucim==${new_version}#" "${file_name}"
+            sed -ie "s#cuclara-image ${current_version}#cuclara-image ${new_version}#" "${file_name}"
+            sed -ie "s#cuclara-image-${current_version}#cuclara-image-${new_version}#" "${file_name}"
+        done
+    fi
 
     popd
 
