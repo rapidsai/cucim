@@ -940,79 +940,10 @@ publish_docs() {
 # Section: Release
 #==================================================================================
 
-bump_version_desc() { echo 'Bump version (internal use)
-
-Executes bump2version(https://github.com/c4urself/bump2version) with
-a post-processing.
-`bump2version` package would be installed if not available.
-
-Post-processing includes:
-- Updating version in *.ipynb files
-
-Returns:
-  Outputs executed by bump2version
-
-  Exit code:
-    exit code returned from bump2version
-'
-}
-bump_version() {
-    local new_version=${1:-}
-    local ret=0
-
-    if ! command -v bump2version > /dev/null; then
-        c_echo G "bump2version" W " doesn't exists. Installing " G "bump2version" W "..."
-        if [ -n "${CONDA_PREFIX}" ]; then
-            run_command pip3 install bump2version
-        else
-            run_command pip3 install --user bump2version
-        fi
-        hash -r
-    fi
-
-    pushd $TOP/python/cucim
-
-    local current_version="$(bump2version --dry-run --list --allow-dirty patch | grep -Po 'current_version=\K[\d\.]+')"
-    c_echo W "current_version=" G "${current_version}"
-    c_echo W "new_version=" G "${new_version}"
-
-    local version_from_tag="$(git tag | grep -xE 'v[0-9\.]+' | sort --version-sort | tail -n 1 | tr -d 'v')"
-
-    # Print error if versions are not in sync.
-    if [ "${current_version}" != "${version_from_tag}" ]; then
-        c_echo_err R "version (" W "${current_version}" R ") from VERSION file doesn't match with version (" W "${version_from_tag}" R ") from tag."
-        c_echo_err W "Please sync those two versions!"
-        popd
-        return 1
-    fi
-
-    bump2version --new-version ${new_version} minor
-    ret=$?
-    if [ $ret -eq 0 ]; then
-        local file_name
-        for file_name in ${TOP}/notebooks/*.ipynb; do
-            c_echo b "processing " g "${file_name} ..."
-            sed -ie "s#cucim-${current_version}#cucim-${new_version}#" "${file_name}"
-            sed -ie "s#cucim ${current_version}#cucim ${new_version}#" "${file_name}"
-            sed -ie "s#cucim==${current_version}#cucim==${new_version}#" "${file_name}"
-            sed -ie "s#cuclara-image ${current_version}#cuclara-image ${new_version}#" "${file_name}"
-            sed -ie "s#cuclara-image-${current_version}#cuclara-image-${new_version}#" "${file_name}"
-        done
-    fi
-
-    popd
-
-    return $ret
-}
-
 update_version_desc() { echo 'Update version
 
 Executes ci/release/update-version.sh which updates some version-related
-files based on the tag.
-
-ci/release/update-version.sh internally call
-  ./run bump_version [major|minor|patch]
-to update other version-realted files including VERSION files.
+files based on VERSION file.
 
 Returns:
   Outputs executed by update-version.sh
@@ -1022,7 +953,9 @@ Returns:
 '
 }
 update_version() {
+    local new_version=${1:-}
     local ret=0
+    [ -z "${new_version}" ] && c_echo_err R "Please specify '[new version]' (e.g., '21.06.00')!" && return 1
     $TOP/ci/release/update-version.sh "$@"
     ret=$?
 
