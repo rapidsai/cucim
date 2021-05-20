@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2020, NVIDIA CORPORATION.
+# Copyright (c) 2020-2021, NVIDIA CORPORATION.
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -143,17 +143,24 @@ pybind11_add_module(cucim
         pybind11/cucim_py.h
         pybind11/cucim_pydoc.h
         pybind11/cucim_py.cpp
-        pybind11/io/init.h
+        pybind11/cache/cache_py.h
+        pybind11/cache/cache_pydoc.h
+        pybind11/cache/cache_py.cpp
+        pybind11/cache/image_cache_pydoc.h
+        pybind11/cache/image_cache_py.h
+        pybind11/cache/image_cache_py.cpp
+        pybind11/io/io_py.h
         pybind11/io/io_pydoc.h
         pybind11/io/io_py.cpp
         pybind11/io/device_pydoc.h
         pybind11/io/device_py.cpp
-        pybind11/filesystem/init.h
+        pybind11/filesystem/filesystem_py.h
         pybind11/filesystem/filesystem_pydoc.h
         pybind11/filesystem/filesystem_py.cpp
+        pybind11/filesystem/cufile_py.h
         pybind11/filesystem/cufile_pydoc.h
         pybind11/filesystem/cufile_py.cpp
-        pybind11/memory/init.h
+        pybind11/memory/memory_py.h
         pybind11/memory/memory_pydoc.h
         pybind11/memory/memory_py.cpp
         )

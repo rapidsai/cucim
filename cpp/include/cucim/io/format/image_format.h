@@ -39,6 +39,7 @@ struct ResolutionInfoDesc
     uint16_t level_ndim;
     int64_t* level_dimensions;
     float* level_downsamples;
+    uint32_t* level_tile_sizes;
 };
 
 struct AssociatedImageInfoDesc
@@ -104,6 +105,7 @@ public:
     ImageMetadata& level_ndim(uint16_t level_ndim);
     ImageMetadata& level_dimensions(const std::pmr::vector<int64_t>& level_dimensions);
     ImageMetadata& level_downsamples(const std::pmr::vector<float>& level_downsamples);
+    ImageMetadata& level_tile_sizes(const std::pmr::vector<uint32_t>& level_tile_sizes);
 
     // AssociatedImageInfoDesc
     ImageMetadata& image_count(uint16_t image_count);
@@ -132,6 +134,7 @@ private:
 
     std::pmr::vector<int64_t> level_dimensions_{ &res_ };
     std::pmr::vector<float> level_downsamples_{ &res_ };
+    std::pmr::vector<uint32_t> level_tile_sizes_{ &res_ };
 
     std::pmr::vector<std::pmr::string> image_names_{ &res_ };
 #else
@@ -146,6 +149,7 @@ private:
 
     std::pmr::vector<int64_t> level_dimensions_{ &res_ };
     std::pmr::vector<float> level_downsamples_{ &res_ };
+    std::pmr::vector<uint32_t> level_tile_sizes_{ &res_ };
 
     std::pmr::vector<std::string> image_names_{ &res_ };
 #endif

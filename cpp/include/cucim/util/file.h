@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,26 +13,20 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#ifndef PYCUCIM_MEMORY_INIT_H
-#define PYCUCIM_MEMORY_INIT_H
+//
+#ifndef CUCIM_UTIL_FILE_H
+#define CUCIM_UTIL_FILE_H
 
-#include <pybind11/pybind11.h>
-#include <cucim/io/device.h>
+#include "cucim/core/framework.h"
 
-namespace py = pybind11;
-
-namespace cucim::memory
+/**
+ * @brief Utility methods that need to be refactored later.
+ */
+namespace cucim::util
 {
 
-void init_memory(py::module& m);
+EXPORT_VISIBLE bool file_exists(const char* path);
 
-void get_memory_info(py::object& buf_obj,
-                     void** out_buf,
-                     cucim::io::Device* out_device = nullptr,
-                     size_t* out_memory_size = 0,
-                     bool* out_readonly = nullptr);
+} // namespace cucim::util
 
-} // namespace cucim::memory
-
-
-#endif // PYCUCIM_MEMORY_INIT_H
+#endif // CUCIM_UTIL_FILE_H

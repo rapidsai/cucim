@@ -16,13 +16,13 @@
 
 #include "cucim/cuimage.h"
 
+#include "cucim/util/file.h"
+
+#include <fmt/format.h>
+
 #include <iostream>
 #include <fstream>
 #include <cstring>
-#include <sys/stat.h>
-
-#include "cucim/core/framework.h"
-#include <fmt/format.h>
 
 #define XSTR(x) STR(x)
 #define STR(x) #x
@@ -69,6 +69,8 @@ ResolutionInfo::ResolutionInfo(io::format::ResolutionInfoDesc desc)
         level_dimensions_.end(), &desc.level_dimensions[0], &desc.level_dimensions[level_count_ * level_ndim_]);
     level_downsamples_.insert(
         level_downsamples_.end(), &desc.level_downsamples[0], &desc.level_downsamples[level_count_]);
+    level_tile_sizes_.insert(
+        level_tile_sizes_.end(), &desc.level_tile_sizes[0], &desc.level_tile_sizes[level_count_ * level_ndim_]);
 }
 uint16_t ResolutionInfo::level_count() const
 {
@@ -101,6 +103,21 @@ float ResolutionInfo::level_downsample(uint16_t level) const
     }
     return level_downsamples_.at(level);
 }
+const std::vector<uint32_t>& ResolutionInfo::level_tile_sizes() const
+{
+    return level_tile_sizes_;
+}
+std::vector<uint32_t> ResolutionInfo::level_tile_size(uint16_t level) const
+{
+    if (level >= level_count_)
+    {
+        throw std::invalid_argument(fmt::format("'level' should be less than {}", level_count_));
+    }
+    std::vector<uint32_t> result;
+    auto start_index = level_tile_sizes_.begin() + (level * level_ndim_);
+    result.insert(result.end(), start_index, start_index + level_ndim_);
+    return result;
+}
 
 DetectedFormat detect_format(filesystem::Path path)
 {
@@ -111,6 +128,9 @@ DetectedFormat detect_format(filesystem::Path path)
 
 
 Framework* CuImage::framework_ = cucim::acquire_framework("cucim");
+std::unique_ptr<config::Config> CuImage::config_ = std::make_unique<config::Config>();
+std::unique_ptr<cache::ImageCacheManager> CuImage::cache_manager_ = std::make_unique<cache::ImageCacheManager>();
+
 
 CuImage::CuImage(const filesystem::Path& path)
 {
@@ -252,6 +272,26 @@ CuImage::~CuImage()
 Framework* CuImage::get_framework()
 {
     return framework_;
+}
+
+config::Config* CuImage::get_config()
+{
+    return config_.get();
+}
+
+cache::ImageCacheManager& CuImage::cache_manager()
+{
+    return *cache_manager_;
+}
+
+std::shared_ptr<cache::ImageCache> CuImage::cache()
+{
+    return cache_manager_->get_cache();
+}
+
+std::shared_ptr<cache::ImageCache> CuImage::cache(cache::ImageCacheConfig& config)
+{
+    return cache_manager_->cache(config);
 }
 
 filesystem::Path CuImage::path() const
@@ -482,17 +522,14 @@ memory::DLTContainer CuImage::container() const
     }
 }
 
-CuImage CuImage::read_region(std::vector<int64_t> location,
-                             std::vector<int64_t> size,
+CuImage CuImage::read_region(std::vector<int64_t>&& location,
+                             std::vector<int64_t>&& size,
                              uint16_t level,
-                             DimIndices region_dim_indices,
-                             io::Device device,
+                             const DimIndices& region_dim_indices,
+                             const io::Device& device,
                              DLTensor* buf,
-                             std::string shm_name)
+                             const std::string& shm_name) const
 {
-    (void)location;
-    (void)size;
-    (void)level;
     (void)region_dim_indices;
     (void)device;
     (void)buf;
@@ -655,6 +692,10 @@ CuImage CuImage::read_region(std::vector<int64_t> location,
     level_downsamples.reserve(1);
     level_downsamples.emplace_back(1.0);
 
+    std::pmr::vector<uint32_t> level_tile_sizes(&resource);
+    level_tile_sizes.reserve(level_ndim * 1); // it has only one size
+    level_tile_sizes.insert(level_tile_sizes.end(), &size[0], &size[level_ndim]); // same with level_dimension
+
     // Empty associated images
     const size_t associated_image_count = 0;
     std::pmr::vector<std::string_view> associated_image_names(&resource);
@@ -678,6 +719,7 @@ CuImage CuImage::read_region(std::vector<int64_t> location,
     out_metadata.level_ndim(2);
     out_metadata.level_dimensions(level_dimensions);
     out_metadata.level_downsamples(level_downsamples);
+    out_metadata.level_tile_sizes(level_tile_sizes);
     out_metadata.image_count(associated_image_count);
     out_metadata.image_names(associated_image_names);
     out_metadata.raw_data(raw_data);
@@ -763,10 +805,11 @@ void CuImage::ensure_init()
         // TODO: Here 'LINUX' path separator is used. Need to make it generalize once filesystem library is
         // available.
         std::string plugin_file_path = (plugin_root && *plugin_root != 0) ?
-                                           fmt::format("{}/cucim.kit.cuslide@" XSTR(CUCIM_VERSION) ".so", plugin_root) :
-                                           fmt::format("cucim.kit.cuslide@" XSTR(CUCIM_VERSION) ".so");
-        struct stat st_buff;
-        if (stat(plugin_file_path.c_str(), &st_buff) != 0)
+                                           fmt::format("{}/cucim.kit.cuslide@{}.{}.{}.so", plugin_root,
+                                                       CUCIM_VERSION_MAJOR, CUCIM_VERSION_MINOR, CUCIM_VERSION_PATCH) :
+                                           fmt::format("cucim.kit.cuslide@{}.{}.{}.so", CUCIM_VERSION_MAJOR,
+                                                       CUCIM_VERSION_MINOR, CUCIM_VERSION_PATCH);
+        if (!cucim::util::file_exists(plugin_file_path.c_str()))
         {
             plugin_file_path = fmt::format("cucim.kit.cuslide@" XSTR(CUCIM_VERSION) ".so");
         }

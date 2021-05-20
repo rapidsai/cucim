@@ -196,6 +196,15 @@ static bool CUCIM_ABI parser_parse(CuCIMFileHandle* handle, cucim::io::format::I
         level_downsamples.emplace_back(((orig_width / level_ifd->width()) + (orig_height / level_ifd->height())) / 2);
     }
 
+    std::pmr::vector<uint32_t> level_tile_sizes(&resource);
+    level_tile_sizes.reserve(level_count * 2);
+    for (size_t i = 0; i < level_count; ++i)
+    {
+        const auto& level_ifd = tif->level_ifd(i);
+        level_tile_sizes.emplace_back(level_ifd->tile_width());
+        level_tile_sizes.emplace_back(level_ifd->tile_height());
+    }
+
     const size_t associated_image_count = tif->associated_image_count();
     std::pmr::vector<std::string_view> associated_image_names(&resource);
     for (const auto& associated_image : tif->associated_images())
@@ -226,6 +235,7 @@ static bool CUCIM_ABI parser_parse(CuCIMFileHandle* handle, cucim::io::format::I
     out_metadata.level_ndim(level_ndim);
     out_metadata.level_dimensions(level_dimensions);
     out_metadata.level_downsamples(level_downsamples);
+    out_metadata.level_tile_sizes(level_tile_sizes);
     out_metadata.image_count(associated_image_count);
     out_metadata.image_names(associated_image_names);
     out_metadata.raw_data(raw_data);

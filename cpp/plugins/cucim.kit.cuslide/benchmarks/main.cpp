@@ -86,7 +86,6 @@ static void test_basic(benchmark::State& state)
         auto handle = image_format->formats[0].image_parser.open(g_config.input_file.c_str());
 
         cucim::io::format::ImageMetadata metadata{};
-        metadata.level_count(1).level_downsamples({ 1.0 }).level_ndim(3);
         image_format->formats[0].image_parser.parse(&handle, &metadata.desc());
 
         cucim::io::format::ImageReaderRegionRequestDesc request{};

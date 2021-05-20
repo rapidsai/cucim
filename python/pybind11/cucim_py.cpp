@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,15 +16,18 @@
 
 #include "cucim_py.h"
 #include "cucim_pydoc.h"
-#include "io/init.h"
-#include "filesystem/init.h"
-
-#include <pybind11/pybind11.h>
-#include <pybind11/stl.h>
-#include <pybind11/numpy.h>
 
 #include <fmt/format.h>
 #include <fmt/ranges.h>
+#include <pybind11/numpy.h>
+#include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
+
+#include <cucim/cuimage.h>
+
+#include "cache/cache_py.h"
+#include "filesystem/filesystem_py.h"
+#include "io/io_py.h"
 
 using namespace pybind11::literals;
 namespace py = pybind11;
@@ -62,6 +65,10 @@ PYBIND11_MODULE(_cucim, m)
     auto m_fs = m.def_submodule("filesystem");
     filesystem::init_filesystem(m_fs);
 
+    // Submodule: cache
+    auto m_cache = m.def_submodule("cache");
+    cache::init_cache(m_cache);
+
     // Data structures
     py::enum_<DLDataTypeCode>(m, "DLDataTypeCode") //
         .value("DLInt", kDLInt) //
@@ -92,6 +99,8 @@ PYBIND11_MODULE(_cucim, m)
     py::class_<CuImage, std::shared_ptr<CuImage>>(m, "CuImage") //
         .def(py::init<const std::string&>(), doc::CuImage::doc_CuImage, py::call_guard<py::gil_scoped_release>(), //
              py::arg("path")) //
+        .def_static("cache", &py_cache, doc::CuImage::doc_cache, py::call_guard<py::gil_scoped_release>(), //
+                    py::arg("type") = py::none()) //
         .def_property("path", &CuImage::path, nullptr, doc::CuImage::doc_path, py::call_guard<py::gil_scoped_release>()) //
         .def_property("is_loaded", &CuImage::is_loaded, nullptr, doc::CuImage::doc_is_loaded,
                       py::call_guard<py::gil_scoped_release>()) //
@@ -183,6 +192,57 @@ pybind11::tuple vector2pytuple(const std::vector<T>& vec)
     return result;
 }
 
+std::shared_ptr<cucim::cache::ImageCache> py_cache(const py::object& type, const py::kwargs& kwargs)
+{
+    if (py::isinstance<py::str>(type))
+    {
+        std::string ctype = std::string(py::cast<py::str>(type));
+
+        cucim::cache::CacheType cache_type = cucim::cache::lookup_cache_type(ctype);
+        // Copy default cache config to local
+        cucim::cache::ImageCacheConfig config = cucim::CuImage::get_config()->cache();
+        config.type = cache_type;
+
+        if (kwargs.contains("memory_capacity"))
+        {
+            config.memory_capacity = py::cast<uint32_t>(kwargs["memory_capacity"]);
+        }
+        if (kwargs.contains("capacity"))
+        {
+            config.capacity = py::cast<uint32_t>(kwargs["capacity"]);
+        }
+        else
+        {
+            // Update capacity depends on memory_capacity.
+            config.capacity = cucim::cache::calc_default_cache_capacity(cucim::cache::kOneMiB * config.memory_capacity);
+        }
+        if (kwargs.contains("mutex_pool_capacity"))
+        {
+            config.mutex_pool_capacity = py::cast<uint32_t>(kwargs["mutex_pool_capacity"]);
+        }
+        if (kwargs.contains("list_padding"))
+        {
+            config.list_padding = py::cast<uint32_t>(kwargs["list_padding"]);
+        }
+        if (kwargs.contains("extra_shared_memory_size"))
+        {
+            config.extra_shared_memory_size = py::cast<uint32_t>(kwargs["extra_shared_memory_size"]);
+        }
+        if (kwargs.contains("record_stat"))
+        {
+            config.record_stat = py::cast<bool>(kwargs["record_stat"]);
+        }
+        return CuImage::cache(config);
+    }
+    else if (type.is_none())
+    {
+        return CuImage::cache();
+    }
+
+    throw std::invalid_argument(
+        fmt::format("The first argument should be one of ['nocache', 'per_process', 'shared_memory']."));
+}
+
 json py_metadata(const CuImage& cuimg)
 {
     auto metadata = cuimg.metadata();
@@ -221,6 +281,13 @@ json py_metadata(const CuImage& cuimg)
         }
         resolutions_metadata.emplace("level_dimensions", level_dimensions_vec);
         resolutions_metadata.emplace("level_downsamples", resolutions.level_downsamples());
+        std::vector<std::vector<uint32_t>> level_tile_sizes_vec;
+        level_tile_sizes_vec.reserve(level_count);
+        for (int level = 0; level < level_count; ++level)
+        {
+            level_tile_sizes_vec.emplace_back(resolutions.level_tile_size(level));
+        }
+        resolutions_metadata.emplace("level_tile_sizes", level_tile_sizes_vec);
     }
     cucim_metadata.emplace("associated_images", cuimg.associated_images());
     return json_obj;
@@ -235,7 +302,8 @@ py::dict py_resolutions(const CuImage& cuimg)
         return py::dict{
             "level_count"_a = pybind11::int_(0), //
             "level_dimensions"_a = pybind11::tuple(), //
-            "level_downsamples"_a = pybind11::tuple() //
+            "level_downsamples"_a = pybind11::tuple(), //
+            "level_tile_sizes"_a = pybind11::tuple() //
         };
     }
 
@@ -248,23 +316,25 @@ py::dict py_resolutions(const CuImage& cuimg)
 
     py::tuple level_dimensions = vector2pytuple<const pybind11::tuple&>(level_dimensions_vec);
     py::tuple level_downsamples = vector2pytuple<pybind11::float_>(resolutions.level_downsamples());
+    py::tuple level_tile_sizes = vector2pytuple<pybind11::int_>(resolutions.level_tile_sizes());
 
     return py::dict{
         "level_count"_a = pybind11::int_(level_count), //
         "level_dimensions"_a = level_dimensions, //
-        "level_downsamples"_a = level_downsamples //
+        "level_downsamples"_a = level_downsamples, //
+        "level_tile_sizes"_a = level_tile_sizes //
     };
 }
 
 
-CuImage py_read_region(CuImage& cuimg,
-                       std::vector<int64_t> location,
-                       std::vector<int64_t> size,
+CuImage py_read_region(const CuImage& cuimg,
+                       std::vector<int64_t>&& location,
+                       std::vector<int64_t>&& size,
                        int16_t level,
-                       io::Device device,
-                       py::object buf,
+                       const io::Device& device,
+                       const py::object& buf,
                        const std::string& shm_name,
-                       py::kwargs kwargs)
+                       const py::kwargs& kwargs)
 {
     cucim::DimIndices indices;
     if (kwargs)
@@ -299,7 +369,7 @@ CuImage py_read_region(CuImage& cuimg,
     {
         indices = cucim::DimIndices{};
     }
-    cucim::CuImage region = cuimg.read_region(location, size, level, indices, device, nullptr, "");
+    cucim::CuImage region = cuimg.read_region(std::move(location), std::move(size), level, indices, device, nullptr, "");
     return region;
 }
 

@@ -32,7 +32,23 @@ public:
     }
 
     /**
-     * Returns a string providing the basic type of the homogenous array in NumPy.
+     * @brief Return the size of memory required to store the contents of data.
+     *
+     * @return size_t Required size for the tensor.
+     */
+    size_t size()
+    {
+        size_t size = 1;
+        for (int i = 0; i < tensor_->ndim; ++i)
+        {
+            size *= tensor_->shape[i];
+        }
+        size *= (tensor_->dtype.bits * tensor_->dtype.lanes + 7) / 8;
+        return size;
+    }
+
+    /**
+     * @brief Return a string providing the basic type of the homogenous array in NumPy.
      *
      * Note: This method assumes little-endian for now.
      *

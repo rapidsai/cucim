@@ -162,6 +162,13 @@ ImageMetadata& ImageMetadata::level_downsamples(const std::pmr::vector<float>& l
     return *this;
 }
 
+ImageMetadata& ImageMetadata::level_tile_sizes(const std::pmr::vector<uint32_t>& level_tile_sizes)
+{
+    level_tile_sizes_ = std::move(level_tile_sizes);
+    desc_.resolution_info.level_tile_sizes = const_cast<uint32_t*>(level_tile_sizes_.data());
+    return *this;
+}
+
 ImageMetadata& ImageMetadata::image_count(uint16_t image_count)
 {
     desc_.associated_image_info.image_count = image_count;

@@ -772,6 +772,11 @@ bool TIFF::read_associated_image(const cucim::io::format::ImageMetadataDesc* met
         level_downsamples.reserve(1);
         level_downsamples.emplace_back(1.0);
 
+        std::pmr::vector<uint32_t> level_tile_sizes(&resource);
+        level_tile_sizes.reserve(level_ndim * 1); // it has only one size
+        level_tile_sizes.emplace_back(shape[1]); // tile_width
+        level_tile_sizes.emplace_back(shape[0]); // tile_height
+
         // Empty associated images
         const size_t associated_image_count = 0;
         std::pmr::vector<std::string_view> associated_image_names(&resource);
@@ -793,6 +798,7 @@ bool TIFF::read_associated_image(const cucim::io::format::ImageMetadataDesc* met
         out_metadata.level_ndim(2);
         out_metadata.level_dimensions(level_dimensions);
         out_metadata.level_downsamples(level_downsamples);
+        out_metadata.level_tile_sizes(level_tile_sizes);
         out_metadata.image_count(associated_image_count);
         out_metadata.image_names(associated_image_names);
         out_metadata.raw_data(raw_data);

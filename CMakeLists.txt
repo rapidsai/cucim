@@ -124,6 +124,8 @@ superbuild_depend(openslide)
 superbuild_depend(catch2)
 superbuild_depend(cli11)
 superbuild_depend(json)
+superbuild_depend(libcuckoo)
+superbuild_depend(boost-header-only)
 
 ################################################################################
 # Define some names

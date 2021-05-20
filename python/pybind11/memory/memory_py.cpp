@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,10 +14,11 @@
  * limitations under the License.
  */
 
+#include "memory_py.h"
 #include "memory_pydoc.h"
-#include "init.h"
 
 #include <pybind11/pybind11.h>
+
 #include <cucim/memory/memory_manager.h>
 
 namespace py = pybind11;
@@ -29,15 +30,18 @@ void init_memory(py::module& memory)
 {
 }
 
-static size_t calculate_memory_size(std::vector<size_t> shape, const char* dtype_str)
+static size_t calculate_memory_size(const std::vector<size_t>& shape, const char* dtype_str)
 {
     // TODO: implement method to calculate size
     //       https://github.com/pytorch/pytorch/blob/master/torch/tensor.py#L733  (we can take digit part)
     return 0;
 }
 
-void get_memory_info(
-    py::object& buf_obj, void** out_buf, cucim::io::Device* out_device, size_t* out_memory_size, bool* out_readonly)
+void get_memory_info(const py::object& buf_obj,
+                     void** out_buf,
+                     cucim::io::Device* out_device,
+                     size_t* out_memory_size,
+                     bool* out_readonly)
 {
     if (out_buf == nullptr)
     {
