@@ -14,7 +14,7 @@ from os.path import splitext
 from setuptools import find_packages
 from setuptools import setup
 
-# import versioneer
+import versioneer
 
 # Give setuptools a hint to complain if it's too old a version
 # 24.2.0 added the python_requires option
@@ -31,13 +31,11 @@ def read(*names, **kwargs):
     ) as fh:
         return fh.read()
 
-# lib_paths = list(map(lambda x: basename(x), glob("src/cucim/clara/*.so*")))
-
 
 opts = dict(
     name='cucim',
     version=read('VERSION').strip(),  # versioneer.get_version(),
-    # cmdclass=versioneer.get_cmdclass()
+    cmdclass=versioneer.get_cmdclass(),
     license='Apache-2.0',
     description='cuCIM - an extensible toolkit designed to provide GPU accelerated I/O, computer vision & image processing primitives for N-Dimensional images with a focus on biomedical imaging.',  # noqa
     long_description='%s\n%s' % (
@@ -49,14 +47,13 @@ opts = dict(
     url='https://github.com/rapidsai/cucim',
     packages=find_packages('src'),
     package_dir={'cucim': 'src/cucim'},
-    py_modules=[splitext(basename(path))[0] for path in glob('src/*.py')],
+    # # https://docs.python.org/3/distutils/setupscript.html#listing-individual-modules
+    # py_modules=[splitext(basename(path))[0] for path in glob('src/*.py')],
+
     # If True, the data files [of include_package_data] must be under version
     # control or specified via the distutils' MANIFEST.in file
     # (https://setuptools.readthedocs.io/en/latest/userguide/datafiles.html)
     include_package_data=True,
-    # package_data={
-    #     '': lib_paths,
-    # },
     zip_safe=False,
     classifiers=[
         # complete classifier list:

@@ -31,4 +31,19 @@ skimage
 
 """
 
-from .clara import CuImage, __version__, cli
+# Try to import cupy first.
+# If cucim.clara package is imported first, you may see the following error when running on CUDA 10.x (#44)
+#   python3: Relink `/usr/lib/x86_64-linux-gnu/libnccl.so.2.8.3' with `/lib/x86_64-linux-gnu/librt.so.1' for IFUNC symbol `clock_gettime'
+#   Segmentation fault
+try:
+    import cupy
+except ImportError:
+    pass
+
+try:
+    from .clara import __version__, CuImage, cli
+except ImportError:
+    from ._version import get_versions
+    __version__ = get_versions()['version']
+    del get_versions
+    del _version
