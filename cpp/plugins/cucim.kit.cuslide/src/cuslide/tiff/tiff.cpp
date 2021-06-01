@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,22 +15,23 @@
  */
 
 #include "tiff.h"
-#include "ifd.h"
-#include "cuslide/jpeg/libjpeg_turbo.h"
+
+#include <fcntl.h>
 
 #include <algorithm>
-#include <fcntl.h>
+#include <string_view>
+
+#include <fmt/format.h>
+#include <nlohmann/json.hpp>
+#include <pugixml.hpp>
 #include <tiffiop.h>
 
 #include <cucim/codec/base64.h>
-#include <cucim/memory/memory_manager.h>
 #include <cucim/logger/timer.h>
+#include <cucim/memory/memory_manager.h>
 
-#include <fmt/format.h>
-#include <string_view>
-#include <pugixml.hpp>
-#include <nlohmann/json.hpp>
-
+#include "cuslide/jpeg/libjpeg_turbo.h"
+#include "ifd.h"
 
 static constexpr int DEFAULT_IFD_SIZE = 32;
 
@@ -595,11 +596,12 @@ bool TIFF::read_associated_image(const cucim::io::format::ImageMetadataDesc* met
     std::string device_name(request->device);
     if (request->shm_name)
     {
-        device_name = device_name + "[" + request->shm_name + "]"; // TODO: check performance
+        device_name = device_name + fmt::format("[{}]", request->shm_name); // TODO: check performance
     }
     cucim::io::Device out_device(device_name);
 
     uint8_t* raster = nullptr;
+    size_t raster_size = 0;
     uint32_t width = 0;
     uint32_t height = 0;
     uint32_t samples_per_pixel = 0;
@@ -630,9 +632,9 @@ bool TIFF::read_associated_image(const cucim::io::format::ImageMetadataDesc* met
             width = image_ifd->width();
             height = image_ifd->height();
             samples_per_pixel = image_ifd->samples_per_pixel();
-            uint64_t image_size_in_bytes = width * height * samples_per_pixel;
+            raster_size = width * height * samples_per_pixel;
 
-            raster = static_cast<uint8_t*>(cucim_malloc(image_size_in_bytes)); // RGB image
+            raster = static_cast<uint8_t*>(cucim_malloc(raster_size)); // RGB image
 
             // TODO: here we assume that the image has a single strip.
             uint64_t offset = image_ifd->image_piece_offsets_[0];
@@ -674,9 +676,9 @@ bool TIFF::read_associated_image(const cucim::io::format::ImageMetadataDesc* met
             width = image_width;
             height = image_height;
             samples_per_pixel = 3; // NOTE: assumes RGB image
-            uint64_t image_size_in_bytes = image_width * image_height * samples_per_pixel;
+            raster_size = image_width * image_height * samples_per_pixel;
 
-            raster = static_cast<uint8_t*>(cucim_malloc(image_size_in_bytes)); // RGB image
+            raster = static_cast<uint8_t*>(cucim_malloc(raster_size)); // RGB image
 
             if (!cuslide::jpeg::decode_libjpeg(-1, reinterpret_cast<unsigned char*>(decoded_buf), 0 /*offset*/,
                                                decoded_size, nullptr /*jpegtable_data*/, 0 /*jpegtable_count*/, &raster,
@@ -703,18 +705,34 @@ bool TIFF::read_associated_image(const cucim::io::format::ImageMetadataDesc* met
     // Populate image data
     const uint16_t ndim = 3;
 
-    int64_t* container_shape = (int64_t*)cucim_malloc(sizeof(int64_t) * ndim);
+    int64_t* container_shape = static_cast<int64_t*>(cucim_malloc(sizeof(int64_t) * ndim));
     container_shape[0] = height;
     container_shape[1] = width;
     container_shape[2] = 3; // TODO: hard-coded for 'C'
 
-    out_image_data->container.data = raster;
-    out_image_data->container.ctx = DLContext{ static_cast<DLDeviceType>(cucim::io::DeviceType::kCPU), 0 };
-    out_image_data->container.ndim = ndim;
-    out_image_data->container.dtype = { kDLUInt, 8, 1 };
-    out_image_data->container.shape = container_shape;
-    out_image_data->container.strides = nullptr; // Tensor is compact and row-majored
-    out_image_data->container.byte_offset = 0;
+    // Copy the raster memory and free it if needed.
+    cucim::memory::move_raster_from_host((void**)&raster, raster_size, out_device);
+
+    auto& out_image_container = out_image_data->container;
+    out_image_container.data = raster;
+    out_image_container.ctx = DLContext{ static_cast<DLDeviceType>(out_device.type()), out_device.index() };
+    out_image_container.ndim = ndim;
+    out_image_container.dtype = { kDLUInt, 8, 1 };
+    out_image_container.shape = container_shape;
+    out_image_container.strides = nullptr; // Tensor is compact and row-majored
+    out_image_container.byte_offset = 0;
+
+    auto& shm_name = out_device.shm_name();
+    size_t shm_name_len = shm_name.size();
+    if (shm_name_len != 0)
+    {
+        out_image_data->shm_name = static_cast<char*>(cucim_malloc(shm_name_len + 1));
+        memcpy(out_image_data->shm_name, shm_name.c_str(), shm_name_len + 1);
+    }
+    else
+    {
+        out_image_data->shm_name = nullptr;
+    }
 
     // Populate metadata
     if (out_metadata_desc && out_metadata_desc->handle)
@@ -730,7 +748,6 @@ bool TIFF::read_associated_image(const cucim::io::format::ImageMetadataDesc* met
         shape.insert(shape.end(), &container_shape[0], &container_shape[ndim]);
 
         DLDataType dtype{ kDLUInt, 8, 1 };
-
 
         // TODO: Do not assume channel names as 'RGB'
         std::pmr::vector<std::string_view> channel_names(

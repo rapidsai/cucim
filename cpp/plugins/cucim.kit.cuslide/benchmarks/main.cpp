@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,16 +16,16 @@
 
 #include "config.h"
 
-
-#include <benchmark/benchmark.h>
-#include <openslide/openslide.h>
-#include <CLI/CLI.hpp>
-#include <fmt/format.h>
-
-#include <cstring>
 #include <fcntl.h>
 #include <unistd.h>
+
 #include <cstdlib>
+#include <cstring>
+
+#include <benchmark/benchmark.h>
+#include <CLI/CLI.hpp>
+#include <fmt/format.h>
+#include <openslide/openslide.h>
 
 #include "cucim/core/framework.h"
 #include "cucim/io/format/image_format.h"
@@ -141,7 +141,7 @@ static void test_openslide(benchmark::State& state)
         state.ResumeTiming();
 
         openslide_t* slide = openslide_open(g_config.input_file.c_str());
-        uint32_t* buf = (uint32_t*)cucim_malloc(state.range(0) * state.range(0) * 4);
+        uint32_t* buf = static_cast<uint32_t*>(cucim_malloc(state.range(0) * state.range(0) * 4));
         int64_t request_location[2] = { 0, 0 };
         if (g_config.random_start_location)
         {

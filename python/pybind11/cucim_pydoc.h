@@ -227,9 +227,14 @@ Saves image data to the file path.
 Currently it supports only .ppm file format that can be viewed by `eog` command in Ubuntu.
 )doc")
 
-// py::dict get_array_interface(const CuImage& cuimg);
-PYDOC(get_array_interface, R"doc(
-Get an array interface for Python.
+// void _set_array_interface(const CuImage& cuimg);
+PYDOC(_set_array_interface, R"doc(
+Add `__array_interface__` or `__cuda_array_interface__` depending on the memory type.
+
+Args:
+  cuimg: CuImage object
+Returns:
+  None
 )doc")
 
 }; // namespace CuImage

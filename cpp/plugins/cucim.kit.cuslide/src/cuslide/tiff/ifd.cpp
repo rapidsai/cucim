@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,22 +16,26 @@
 
 #include "ifd.h"
 
-#include "tiff.h"
-#include "cuslide/jpeg/libjpeg_turbo.h"
-#include "cuslide/deflate/deflate.h"
+#include <sys/types.h>
+#include <unistd.h>
 
+#include <iostream>
+#include <thread>
+
+#include <fmt/format.h>
 #include <tiffio.h>
 #include <tiffiop.h> // this is not included in the released library
 #include <turbojpeg.h>
-#include <fmt/format.h>
-#include <iostream>
-#include <thread>
-#include <cucim/codec/hash_function.h>
-#include <cucim/logger/timer.h>
-#include <cucim/cuimage.h>
 
-#include <sys/types.h>
-#include <unistd.h>
+#include <cucim/codec/hash_function.h>
+#include <cucim/cuimage.h>
+#include <cucim/logger/timer.h>
+#include <cucim/memory/memory_manager.h>
+
+#include "cuslide/jpeg/libjpeg_turbo.h"
+#include "cuslide/deflate/deflate.h"
+#include "tiff.h"
+
 
 namespace cuslide::tiff
 {
@@ -139,7 +143,7 @@ bool IFD::read(const TIFF* tiff,
 
     if (request->shm_name)
     {
-        device_name = device_name + "[" + request->shm_name + "]"; // TODO: check performance
+        device_name = device_name + fmt::format("[{}]", request->shm_name); // TODO: check performance
     }
     cucim::io::Device out_device(device_name);
 
@@ -149,10 +153,12 @@ bool IFD::read(const TIFF* tiff,
     int64_t h = request->size[1];
     int32_t n_ch = 3; // number of channels
 
+    size_t raster_size = w * h * samples_per_pixel_;
     void* raster = nullptr;
-
     DLTensor* out_buf = request->buf;
-    if (out_buf && out_buf->data)
+    bool is_buf_available = out_buf && out_buf->data;
+
+    if (is_buf_available)
     {
         // TODO: memory size check if out_buf->data has high-enough memory (>= tjBufSize())
         raster = out_buf->data;
@@ -162,8 +168,8 @@ bool IFD::read(const TIFF* tiff,
     {
         if (!raster)
         {
-            raster = cucim_malloc(w * h * samples_per_pixel_); // RGB image
-            memset(raster, 0, w * h * 3);
+            raster = cucim_malloc(raster_size); // RGB image
+            memset(raster, 0, raster_size);
         }
 
 
@@ -206,9 +212,10 @@ bool IFD::read(const TIFF* tiff,
             {
                 size_t npixels;
                 npixels = w * h;
+                raster_size = npixels * 4;
                 if (!raster)
                 {
-                    raster = cucim_malloc(npixels * sizeof(uint32_t));
+                    raster = cucim_malloc(raster_size);
                 }
                 img.col_offset = sx;
                 img.row_offset = sy;
@@ -218,7 +225,7 @@ bool IFD::read(const TIFF* tiff,
                 {
                     if (!TIFFRGBAImageGet(&img, (uint32_t*)raster, w, h))
                     {
-                        memset(raster, 0, w * h * sizeof(uint32_t));
+                        memset(raster, 0, raster_size);
                     }
                 }
             }
@@ -239,18 +246,36 @@ bool IFD::read(const TIFF* tiff,
     }
 
     int ndim = 3;
-    int64_t* shape = (int64_t*)cucim_malloc(sizeof(int64_t) * ndim);
+    int64_t* shape = static_cast<int64_t*>(cucim_malloc(sizeof(int64_t) * ndim));
     shape[0] = h;
     shape[1] = w;
     shape[2] = n_ch;
 
-    out_image_data->container.data = raster;
-    out_image_data->container.ctx = DLContext{ static_cast<DLDeviceType>(cucim::io::DeviceType::kCPU), 0 };
-    out_image_data->container.ndim = ndim;
-    out_image_data->container.dtype = metadata->dtype;
-    out_image_data->container.shape = shape;
-    out_image_data->container.strides = nullptr; // Tensor is compact and row-majored
-    out_image_data->container.byte_offset = 0;
+    // Copy the raster memory and free it if needed.
+    if (!is_buf_available)
+    {
+        cucim::memory::move_raster_from_host(&raster, raster_size, out_device);
+    }
+
+    auto& out_image_container = out_image_data->container;
+    out_image_container.data = raster;
+    out_image_container.ctx = DLContext{ static_cast<DLDeviceType>(out_device.type()), out_device.index() };
+    out_image_container.ndim = ndim;
+    out_image_container.dtype = metadata->dtype;
+    out_image_container.shape = shape;
+    out_image_container.strides = nullptr; // Tensor is compact and row-majored
+    out_image_container.byte_offset = 0;
+    auto& shm_name = out_device.shm_name();
+    size_t shm_name_len = shm_name.size();
+    if (shm_name_len != 0)
+    {
+        out_image_data->shm_name = static_cast<char*>(cucim_malloc(shm_name_len + 1));
+        memcpy(out_image_data->shm_name, shm_name.c_str(), shm_name_len + 1);
+    }
+    else
+    {
+        out_image_data->shm_name = nullptr;
+    }
 
     return true;
 }

@@ -27,7 +27,7 @@ class DLTContainer
 {
 public:
     DLTContainer() = delete;
-    DLTContainer(DLTensor* handle) : tensor_(handle)
+    DLTContainer(DLTensor* handle, char* shm_name = nullptr) : tensor_(handle), shm_name_(shm_name)
     {
     }
 
@@ -124,7 +124,8 @@ public:
     }
 
 private:
-    DLTensor* tensor_;
+    DLTensor* tensor_ = nullptr;
+    char* shm_name_ = nullptr;
 };
 
 } // namespace cucim::memory

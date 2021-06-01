@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,21 +17,21 @@
 #ifndef CUSLIDE_TIFF_H
 #define CUSLIDE_TIFF_H
 
-#include "types.h"
-#include "ifd.h"
-//#include <tiffio.h>
-
-#include <cucim/macros/api_header.h>
 #include <cucim/filesystem/file_path.h>
 #include <cucim/filesystem/file_handle.h>
-#include <cucim/memory/memory_manager.h>
 #include <cucim/io/format/image_format.h>
+#include <cucim/macros/api_header.h>
+#include <cucim/memory/memory_manager.h>
+//#include <tiffio.h>
 
 #include <cstdint>
 #include <fcntl.h>
+#include <map>
 #include <memory>
 #include <vector>
-#include <map>
+
+#include "ifd.h"
+#include "types.h"
 
 typedef struct tiff TIFF;
 

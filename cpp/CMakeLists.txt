@@ -55,12 +55,14 @@ add_library(${CUCIM_PACKAGE_NAME}
         include/cucim/filesystem/file_handle.h
         include/cucim/filesystem/file_path.h
         include/cucim/io/device.h
+        include/cucim/io/device_type.h
         include/cucim/io/format/image_format.h
         include/cucim/logger/logger.h
         include/cucim/logger/timer.h
         include/cucim/macros/defines.h
         include/cucim/memory/dlpack.h
         include/cucim/memory/memory_manager.h
+        include/cucim/util/cuda.h
         include/cucim/util/file.h
         include/cucim/3rdparty/dlpack/dlpack.h
         include/cucim/3rdparty/dlpack/dlpackcpp.h
@@ -87,6 +89,7 @@ add_library(${CUCIM_PACKAGE_NAME}
         src/filesystem/cufile_driver.cpp
         src/filesystem/file_handle.cpp
         src/io/device.cpp
+        src/io/device_type.cpp
         src/io/format/image_format.cpp
         src/logger/logger.cpp
         src/logger/timer.cpp
@@ -128,6 +131,7 @@ target_compile_definitions(${CUCIM_PACKAGE_NAME}
         CUCIM_VERSION_BUILD=${PROJECT_VERSION_BUILD}
         CUCIM_SUPPORT_GDS=$<BOOL:${CUCIM_SUPPORT_GDS}>
         CUCIM_STATIC_GDS=$<BOOL:${CUCIM_STATIC_GDS}>
+        CUCIM_SUPPORT_CUDA=$<BOOL:${CUCIM_SUPPORT_CUDA}>
         _GLIBCXX_USE_CXX11_ABI=0  # TODO: create two library, one with CXX11 ABI and one without it.
 )
 
@@ -186,6 +190,7 @@ target_compile_definitions(${CUCIM_PACKAGE_NAME}-header-only
         CUCIM_VERSION_BUILD=${PROJECT_VERSION_BUILD}
         CUCIM_SUPPORT_GDS=$<BOOL:${CUCIM_SUPPORT_GDS}>
         CUCIM_STATIC_GDS=$<BOOL:${CUCIM_STATIC_GDS}>
+        CUCIM_SUPPORT_CUDA=$<BOOL:${CUCIM_SUPPORT_CUDA}>
         CUCIM_HEADER_ONLY=1
         )
 target_compile_features(${CUCIM_PACKAGE_NAME}-header-only INTERFACE ${CUCIM_REQUIRED_FEATURES})

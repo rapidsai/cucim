@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,20 +16,14 @@
 
 #include "cucim/memory/memory_manager.h"
 
-#include <fmt/format.h>
-#include <cuda_runtime.h>
-
 #include <memory_resource>
 
-#define CUDA_TRY(stmt)                                                                                                 \
-    {                                                                                                                  \
-        cuda_status = stmt;                                                                                            \
-        if (cudaSuccess != cuda_status)                                                                                \
-        {                                                                                                              \
-            fmt::print(stderr, "[Error] CUDA Runtime call {} in line {} of file {} failed with '{}' ({}).\n", #stmt,   \
-                       __LINE__, __FILE__, cudaGetErrorString(cuda_status), cuda_status);                              \
-        }                                                                                                              \
-    }
+#include <cuda_runtime.h>
+#include <fmt/format.h>
+
+#include "cucim/io/device_type.h"
+#include "cucim/util/cuda.h"
+
 
 CUCIM_API void* cucim_malloc(size_t size)
 {
@@ -72,6 +66,32 @@ void get_pointer_attributes(PointerAttributes& attr, const void* ptr)
         attr.ptr = attributes.devicePointer;
         break;
     }
+}
+
+bool move_raster_from_host(void** target, size_t size, cucim::io::Device& dst_device)
+{
+    switch (dst_device.type())
+    {
+    case cucim::io::DeviceType::kCPU:
+        break;
+    case cucim::io::DeviceType::kCUDA:
+        cudaError_t cuda_status;
+        void* host_mem = *target;
+        void* cuda_mem;
+        CUDA_TRY(cudaMalloc(&cuda_mem, size));
+        if (cuda_status)
+        {
+            throw std::bad_alloc();
+        }
+        CUDA_TRY(cudaMemcpy(cuda_mem, host_mem, size, cudaMemcpyHostToDevice));
+        if (cuda_status)
+        {
+            throw std::bad_alloc();
+        }
+        cucim_free(host_mem);
+        *target = cuda_mem;
+    }
+    return true;
 }
 
 } // namespace cucim::memory

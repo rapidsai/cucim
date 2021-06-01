@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,10 +17,11 @@
 #ifndef CUCIM_MEMORY_MANAGER_H
 #define CUCIM_MEMORY_MANAGER_H
 
-#include "cucim/io/device.h"
+#include "cucim/macros/api_header.h"
 
-#include <cucim/macros/api_header.h>
 #include <cstddef>
+
+#include "cucim/io/device.h"
 
 /**
  * Host memory allocator for exchanged data
@@ -35,9 +36,7 @@ CUCIM_API void* cucim_malloc(size_t size);
  */
 CUCIM_API void cucim_free(void* ptr);
 
-namespace cucim
-{
-namespace memory
+namespace cucim::memory
 {
 
 /**
@@ -46,7 +45,7 @@ namespace memory
 struct PointerAttributes
 {
     /**
-     * The type of device
+     * @brief The type of device
      */
     cucim::io::Device device{};
 
@@ -58,7 +57,7 @@ struct PointerAttributes
 };
 
 /**
- * A wrapper for cudaPointerGetAttributes() in CUDA.
+ * @brief A wrapper for cudaPointerGetAttributes() in CUDA.
  *
  * Instead of cudaPointerAttributes
  *
@@ -67,7 +66,18 @@ struct PointerAttributes
  */
 CUCIM_API void get_pointer_attributes(PointerAttributes& attr, const void* ptr);
 
+/**
+ * @brief Move host memory of `size` bytes to a new memory in `out_device`.
+ *
+ * Set the pointer of the new memory to `target` and free the host memory previously indicated by `target.
+ * Do nothing if `out_device` is CPU memory.
+ *
+ * @param[in, out] target Pointer to the pointer of the host memory.
+ * @param size Size of the host memory.
+ * @param dst_device Destination device of the memory.
+ * @return `true` if succeed.
+ */
+bool move_raster_from_host(void** target, size_t size, cucim::io::Device& dst_device);
 
-} // namespace memory
-} // namespace cucim
+} // namespace cucim::memory
 #endif // CUCIM_MEMORY_MANAGER_H

@@ -16,13 +16,18 @@
 
 #include "cucim/cuimage.h"
 
-#include "cucim/util/file.h"
+#include <cstring>
+#include <fstream>
+#include <iostream>
 
+#if CUCIM_SUPPORT_CUDA
+#    include <cuda_runtime.h>
+#endif
 #include <fmt/format.h>
 
-#include <iostream>
-#include <fstream>
-#include <cstring>
+#include "cucim/util/cuda.h"
+#include "cucim/util/file.h"
+
 
 #define XSTR(x) STR(x)
 #define STR(x) #x
@@ -251,8 +256,29 @@ CuImage::~CuImage()
     {
         if (image_data_->container.data)
         {
-            cucim_free(image_data_->container.data);
-            image_data_->container.data = nullptr;
+            DLContext& ctx = image_data_->container.ctx;
+            auto device_type = static_cast<io::DeviceType>(ctx.device_type);
+            switch (device_type)
+            {
+            case io::DeviceType::kCPU:
+                cucim_free(image_data_->container.data);
+                image_data_->container.data = nullptr;
+                break;
+            case io::DeviceType::kCUDA:
+                cudaError_t cuda_status;
+                CUDA_TRY(cudaFree(image_data_->container.data));
+                image_data_->container.data = nullptr;
+                if (cuda_status)
+                {
+                    fmt::print(stderr, "[Error] Cannot free memory!");
+                }
+                break;
+            case io::DeviceType::kPinned:
+            case io::DeviceType::kCPUShared:
+            case io::DeviceType::kCUDAShared:
+                fmt::print(stderr, "Device type {} is not supported!", device_type);
+                break;
+            }
         }
         if (image_data_->container.shape)
         {
@@ -263,6 +289,11 @@ CuImage::~CuImage()
         {
             cucim_free(image_data_->container.strides);
             image_data_->container.strides = nullptr;
+        }
+        if (image_data_->shm_name)
+        {
+            cucim_free(image_data_->shm_name);
+            image_data_->shm_name = nullptr;
         }
         cucim_free(image_data_);
         image_data_ = nullptr;
@@ -304,7 +335,11 @@ bool CuImage::is_loaded() const
 }
 io::Device CuImage::device() const
 {
-    return io::Device("cpu");
+    DLContext& ctx = image_data_->container.ctx;
+    auto device_type = static_cast<io::DeviceType>(ctx.device_type);
+    auto device_id = static_cast<io::DeviceIndex>(ctx.device_id);
+    std::string shm_name = image_data_->shm_name == nullptr ? "" : image_data_->shm_name;
+    return io::Device(device_type, device_id, shm_name);
 }
 Metadata CuImage::raw_metadata() const
 {
@@ -514,7 +549,7 @@ memory::DLTContainer CuImage::container() const
 {
     if (image_data_)
     {
-        return memory::DLTContainer(&image_data_->container);
+        return memory::DLTContainer(&image_data_->container, image_data_->shm_name);
     }
     else
     {
@@ -554,13 +589,14 @@ CuImage CuImage::read_region(std::vector<int64_t>&& location,
         size.insert(size.end(), level_dimension.begin(), level_dimension.end());
     }
 
+    std::string device_name = std::string(device);
     cucim::io::format::ImageReaderRegionRequestDesc request{};
     int64_t request_location[2] = { location[0], location[1] };
     request.location = request_location;
     request.level = level;
     int64_t request_size[2] = { size[0], size[1] };
     request.size = request_size;
-    request.device = const_cast<char*>("cpu");
+    request.device = device_name.data();
 
     //    cucim::io::format::ImageDataDesc image_data{};
 
@@ -733,14 +769,15 @@ std::set<std::string> CuImage::associated_images() const
     return associated_images_;
 }
 
-CuImage CuImage::associated_image(const std::string& name) const
+CuImage CuImage::associated_image(const std::string& name, const io::Device& device) const
 {
     auto it = associated_images_.find(name);
     if (it != associated_images_.end())
     {
         io::format::ImageReaderRegionRequestDesc request{};
         request.associated_image_name = const_cast<char*>(name.c_str());
-        request.device = const_cast<char*>("cpu");
+        std::string device_name = std::string(device);
+        request.device = device_name.data();
 
         io::format::ImageDataDesc* out_image_data =
             static_cast<cucim::io::format::ImageDataDesc*>(cucim_malloc(sizeof(cucim::io::format::ImageDataDesc)));
@@ -866,6 +903,14 @@ bool CuImage::crop_image(io::format::ImageMetadataDesc* metadata,
             fmt::format("Invalid location/size (it exceeds the image height {})", original_img_height));
     }
 
+    std::string device_name(request->device);
+
+    if (request->shm_name)
+    {
+        device_name = device_name + fmt::format("[{}]", request->shm_name); // TODO: check performance
+    }
+    cucim::io::Device out_device(device_name);
+
     int64_t sx = request->location[0];
     int64_t sy = request->location[1];
     int64_t w = request->size[0];
@@ -892,17 +937,30 @@ bool CuImage::crop_image(io::format::ImageMetadataDesc* metadata,
         dest_ptr += dest_stride_x_bytes;
     }
 
-    out_image_data->container.data = raster;
-    out_image_data->container.ctx = DLContext{ static_cast<DLDeviceType>(cucim::io::DeviceType::kCPU), 0 };
-    out_image_data->container.ndim = metadata->ndim;
-    out_image_data->container.dtype = metadata->dtype;
-    out_image_data->container.strides = nullptr; // Tensor is compact and row-majored
-    out_image_data->container.byte_offset = 0;
+    auto& out_image_container = out_image_data->container;
+    out_image_container.data = raster;
+    out_image_container.ctx = DLContext{ static_cast<DLDeviceType>(out_device.type()), out_device.index() };
+    out_image_container.ndim = metadata->ndim;
+    out_image_container.dtype = metadata->dtype;
+    out_image_container.strides = nullptr; // Tensor is compact and row-majored
+    out_image_container.byte_offset = 0;
     // Set correct shape
-    out_image_data->container.shape = static_cast<int64_t*>(cucim_malloc(sizeof(int64_t) * metadata->ndim));
-    memcpy(out_image_data->container.shape, metadata->shape, sizeof(int64_t) * metadata->ndim);
-    out_image_data->container.shape[0] = h;
-    out_image_data->container.shape[1] = w;
+    out_image_container.shape = static_cast<int64_t*>(cucim_malloc(sizeof(int64_t) * metadata->ndim));
+    memcpy(out_image_container.shape, metadata->shape, sizeof(int64_t) * metadata->ndim);
+    out_image_container.shape[0] = h;
+    out_image_container.shape[1] = w;
+
+    auto& shm_name = out_device.shm_name();
+    size_t shm_name_len = shm_name.size();
+    if (shm_name_len != 0)
+    {
+        out_image_data->shm_name = static_cast<char*>(cucim_malloc(shm_name_len + 1));
+        memcpy(out_image_data->shm_name, shm_name.c_str(), shm_name_len + 1);
+    }
+    else
+    {
+        out_image_data->shm_name = nullptr;
+    }
 
     return true;
 }

@@ -161,7 +161,7 @@ public:
                         const std::string& shm_name = std::string{}) const;
 
     std::set<std::string> associated_images() const;
-    CuImage associated_image(const std::string& name) const;
+    CuImage associated_image(const std::string& name, const io::Device& device = "cpu") const;
 
     void save(std::string file_path) const;
 

@@ -16,32 +16,25 @@
 
 #include "cucim/filesystem/cufile_driver.h"
 
-#include "fmt/format.h"
-#include "cufile_stub.h"
-
 #include <fcntl.h>
-#include <unistd.h>
-#include <cuda_runtime.h>
 #include <linux/fs.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
-#include <sys/statvfs.h>
 #include <sys/stat.h>
+#include <sys/statvfs.h>
+#include <unistd.h>
+
 #include <chrono>
 
+#include <cuda_runtime.h>
+#include <fmt/format.h>
+
+#include "cucim/util/cuda.h"
+#include "cufile_stub.h"
 
 #define ALIGN_UP(x, align_to) (((uint64_t)(x) + ((uint64_t)(align_to)-1)) & ~((uint64_t)(align_to)-1))
 #define ALIGN_DOWN(x, align_to) ((uint64_t)(x) & ~((uint64_t)(align_to)-1))
 
-#define CUDA_TRY(stmt)                                                                                                 \
-    {                                                                                                                  \
-        cuda_status = stmt;                                                                                            \
-        if (cudaSuccess != cuda_status)                                                                                \
-        {                                                                                                              \
-            fmt::print(stderr, "[Error] CUDA Runtime call {} in line {} of file {} failed with '{}' ({}).\n", #stmt,   \
-                       __LINE__, __FILE__, cudaGetErrorString(cuda_status), cuda_status);                              \
-        }                                                                                                              \
-    }
 
 namespace cucim::filesystem
 {

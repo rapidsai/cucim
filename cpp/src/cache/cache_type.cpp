@@ -74,7 +74,7 @@ constexpr std::string_view CacheTypeStrMap::at(const CacheType& key) const
     }
 }
 
-static constexpr std::array<std::pair<std::string_view, CacheType>, 3> cache_type_values{
+static constexpr std::array<std::pair<std::string_view, CacheType>, kCacheTypeCount> cache_type_values{
     { { "nocache"sv, CacheType::kNoCache },
       { "per_process"sv, CacheType::kPerProcess },
       { "shared_memory"sv, CacheType::kSharedMemory } }
@@ -86,7 +86,7 @@ CacheType lookup_cache_type(const std::string_view sv)
     return map.at(sv);
 }
 
-static constexpr std::array<std::pair<CacheType, std::string_view>, 3> cache_type_str_values{
+static constexpr std::array<std::pair<CacheType, std::string_view>, kCacheTypeCount> cache_type_str_values{
     { { CacheType::kNoCache, "nocache"sv },
       { CacheType::kPerProcess, "per_process"sv },
       { CacheType::kSharedMemory, "shared_memory"sv } }

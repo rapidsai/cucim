@@ -96,11 +96,14 @@ PYBIND11_MODULE(_cucim, m)
             },
             py::call_guard<py::gil_scoped_release>());
 
-    py::class_<CuImage, std::shared_ptr<CuImage>>(m, "CuImage") //
+    py::class_<CuImage, std::shared_ptr<CuImage>>(m, "CuImage", py::dynamic_attr()) //
         .def(py::init<const std::string&>(), doc::CuImage::doc_CuImage, py::call_guard<py::gil_scoped_release>(), //
              py::arg("path")) //
         .def_static("cache", &py_cache, doc::CuImage::doc_cache, py::call_guard<py::gil_scoped_release>(), //
                     py::arg("type") = py::none()) //
+        .def_static("_set_array_interface", &_set_array_interface, doc::CuImage::doc__set_array_interface, //
+                    py::call_guard<py::gil_scoped_release>(), //
+                    py::arg("cuimg") = py::none()) //
         .def_property("path", &CuImage::path, nullptr, doc::CuImage::doc_path, py::call_guard<py::gil_scoped_release>()) //
         .def_property("is_loaded", &CuImage::is_loaded, nullptr, doc::CuImage::doc_is_loaded,
                       py::call_guard<py::gil_scoped_release>()) //
@@ -147,7 +150,8 @@ PYBIND11_MODULE(_cucim, m)
                       py::call_guard<py::gil_scoped_release>()) //
         .def("associated_image", &CuImage::associated_image, doc::CuImage::doc_associated_image,
              py::call_guard<py::gil_scoped_release>(), //
-             py::arg("name") = "") //
+             py::arg("name") = "", //
+             py::arg("device") = io::Device()) //
         .def("save", &CuImage::save, doc::CuImage::doc_save, py::call_guard<py::gil_scoped_release>()) //
         .def("__bool__", &CuImage::operator bool, py::call_guard<py::gil_scoped_release>()) //
         .def(
@@ -155,9 +159,7 @@ PYBIND11_MODULE(_cucim, m)
             [](const CuImage& cuimg) { //
                 return fmt::format("<cucim.CuImage path:{}>", cuimg.path());
             },
-            py::call_guard<py::gil_scoped_release>())
-        .def_property("__array_interface__", &get_array_interface, nullptr, doc::CuImage::doc_get_array_interface,
-                      py::call_guard<py::gil_scoped_release>());
+            py::call_guard<py::gil_scoped_release>());
 
     // We can use `"cpu"` instead of `Device("cpu")`
     py::implicitly_convertible<const char*, io::Device>();
@@ -327,14 +329,14 @@ py::dict py_resolutions(const CuImage& cuimg)
 }
 
 
-CuImage py_read_region(const CuImage& cuimg,
-                       std::vector<int64_t>&& location,
-                       std::vector<int64_t>&& size,
-                       int16_t level,
-                       const io::Device& device,
-                       const py::object& buf,
-                       const std::string& shm_name,
-                       const py::kwargs& kwargs)
+py::object py_read_region(const CuImage& cuimg,
+                          std::vector<int64_t>&& location,
+                          std::vector<int64_t>&& size,
+                          int16_t level,
+                          const io::Device& device,
+                          const py::object& buf,
+                          const std::string& shm_name,
+                          const py::kwargs& kwargs)
 {
     cucim::DimIndices indices;
     if (kwargs)
@@ -369,36 +371,90 @@ CuImage py_read_region(const CuImage& cuimg,
     {
         indices = cucim::DimIndices{};
     }
-    cucim::CuImage region = cuimg.read_region(std::move(location), std::move(size), level, indices, device, nullptr, "");
+    cucim::CuImage* region_ptr =
+        new cucim::CuImage(cuimg.read_region(std::move(location), std::move(size), level, indices, device, nullptr, ""));
+    py::object region = py::cast(region_ptr);
+
+    // Add `__array_interace__` or `__cuda_array_interface__` in runtime.
+    _set_array_interface(region);
     return region;
 }
 
-py::dict get_array_interface(const CuImage& cuimg)
+void _set_array_interface(const py::object& cuimg_obj)
 {
+    const auto& cuimg = cuimg_obj.cast<const CuImage&>();
+
     // TODO: using __array_struct__, access to array interface could be faster
     //       (https://numpy.org/doc/stable/reference/arrays.interface.html#c-struct-access)
     // TODO: check the performance difference between python int vs python long later.
-    const DLTensor* tensor = static_cast<DLTensor*>(cuimg.container());
+    memory::DLTContainer container = cuimg.container();
+
+    const DLTensor* tensor = static_cast<DLTensor*>(container);
     if (!tensor)
     {
-        return pybind11::dict();
+        return;
     }
-    const char* type_str = cuimg.container().numpy_dtype();
 
+    const char* type_str = container.numpy_dtype();
+    py::str typestr = py::str(type_str);
+
+    py::tuple data = pybind11::make_tuple(py::int_(reinterpret_cast<uint64_t>(tensor->data)), py::bool_(false));
     py::list descr;
-    descr.append(py::make_tuple(""_s, py::str(type_str)));
+    descr.append(py::make_tuple(""_s, typestr));
 
     py::tuple shape = vector2pytuple<pybind11::int_>(cuimg.shape());
 
-    // Reference: https://numpy.org/doc/stable/reference/arrays.interface.html
-    return py::dict{ "data"_a =
-                         pybind11::make_tuple(py::int_(reinterpret_cast<uint64_t>(tensor->data)), py::bool_(false)),
-                     "strides"_a = py::none(),
-                     "descr"_a = descr,
-                     "typestr"_a = py::str(type_str),
-                     "shape"_a = shape,
-                     "version"_a = py::int_(3) };
+    // TODO: depending on container's memory type, expose either array_interface or cuda_array_interface
+    switch (tensor->ctx.device_type)
+    {
+    case kDLCPU: {
+
+
+        py::gil_scoped_acquire scope_guard;
+        // Reference: https://numpy.org/doc/stable/reference/arrays.interface.html
+        cuimg_obj.attr("__array_interface__") =
+            py::dict{ "data"_a = data,       "strides"_a = py::none(), "descr"_a = descr,
+                      "typestr"_a = typestr, "shape"_a = shape,        "version"_a = py::int_(3) };
+    }
+    break;
+    case kDLGPU: {
+        py::gil_scoped_acquire scope_guard;
+        // Reference: http://numba.pydata.org/numba-doc/latest/cuda/cuda_array_interface.html
+        cuimg_obj.attr("__cuda_array_interface__") =
+            py::dict{ "data"_a = data,       "strides"_a = py::none(), "descr"_a = descr,
+                      "typestr"_a = typestr, "shape"_a = shape,        "version"_a = py::int_(2) };
+    }
+    break;
+    default:
+        break;
+    }
 }
+// py::dict get_array_interface(const CuImage& cuimg)
+// {
+//     // TODO: using __array_struct__, access to array interface could be faster
+//     //       (https://numpy.org/doc/stable/reference/arrays.interface.html#c-struct-access)
+//     // TODO: check the performance difference between python int vs python long later.
+//     const DLTensor* tensor = static_cast<DLTensor*>(cuimg.container());
+//     if (!tensor)
+//     {
+//         return pybind11::dict();
+//     }
+//     const char* type_str = cuimg.container().numpy_dtype();
+
+//     py::list descr;
+//     descr.append(py::make_tuple(""_s, py::str(type_str)));
+
+//     py::tuple shape = vector2pytuple<pybind11::int_>(cuimg.shape());
+
+//     // Reference: https://numpy.org/doc/stable/reference/arrays.interface.html
+//     return py::dict{ "data"_a =
+//                          pybind11::make_tuple(py::int_(reinterpret_cast<uint64_t>(tensor->data)), py::bool_(false)),
+//                      "strides"_a = py::none(),
+//                      "descr"_a = descr,
+//                      "typestr"_a = py::str(type_str),
+//                      "shape"_a = shape,
+//                      "version"_a = py::int_(3) };
+// }
 
 
 } // namespace cucim
