@@ -53,8 +53,8 @@ gpuci_conda_retry install -y \
     sysroot_linux-64=2.17 \
     conda-build \
     "cudatoolkit=${CUDA_VER}.*" \
-    "rapids-build-env=$MINOR_VERSION.*" \
     "python=${PYTHON_VER}.*" \
+    "rapids-build-env=$MINOR_VERSION.*"
 
 ################################################################################
 # BUILD - Build cuCIM
