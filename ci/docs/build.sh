@@ -27,12 +27,8 @@ gpuci_logger "Activate conda env"
 conda activate rapids
 
 gpuci_logger "Installing cuCIM / Deps / Docs into new env"
-gpuci_conda_retry create -y -c conda-forge -c rapidsai-nightly \
+gpuci_conda_retry install -y \
     rapids-doc-env \
-    python=3.8 \
-    cupy=9 \
-    cudatoolkit=11.2 \
-    scikit-image=0.18.1 \
     cucim
 
 
