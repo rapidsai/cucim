@@ -35,8 +35,6 @@ gpuci_conda_retry create -y -c conda-forge -c rapidsai-nightly \
     scikit-image=0.18.1 \
     cucim
 
-conda activate cucim
-
 
 gpuci_logger "Check versions"
 python --version
