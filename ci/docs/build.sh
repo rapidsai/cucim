@@ -24,6 +24,7 @@ nvidia-smi
 
 gpuci_logger "Activate conda env"
 . /opt/conda/etc/profile.d/conda.sh
+conda activate rapids
 
 gpuci_logger "Installing cuCIM / Deps / Docs into new env"
 gpuci_conda_retry create -y -c conda-forge -c rapidsai-nightly \

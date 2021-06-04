@@ -47,6 +47,7 @@ env
 
 gpuci_logger "Activate conda env"
 . /opt/conda/etc/profile.d/conda.sh
+conda activate rapids
 
 
 conda install -c conda-forge conda-build
