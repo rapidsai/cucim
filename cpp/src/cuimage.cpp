@@ -335,11 +335,18 @@ bool CuImage::is_loaded() const
 }
 io::Device CuImage::device() const
 {
-    DLContext& ctx = image_data_->container.ctx;
-    auto device_type = static_cast<io::DeviceType>(ctx.device_type);
-    auto device_id = static_cast<io::DeviceIndex>(ctx.device_id);
-    std::string shm_name = image_data_->shm_name == nullptr ? "" : image_data_->shm_name;
-    return io::Device(device_type, device_id, shm_name);
+    if (image_data_)
+    {
+        DLContext& ctx = image_data_->container.ctx;
+        auto device_type = static_cast<io::DeviceType>(ctx.device_type);
+        auto device_id = static_cast<io::DeviceIndex>(ctx.device_id);
+        std::string shm_name = image_data_->shm_name == nullptr ? "" : image_data_->shm_name;
+        return io::Device(device_type, device_id, shm_name);
+    }
+    else
+    {
+        return io::Device("cpu");
+    }
 }
 Metadata CuImage::raw_metadata() const
 {
@@ -617,7 +624,7 @@ CuImage CuImage::read_region(std::vector<int64_t>&& location,
         }
         else // Read region by cropping image
         {
-            crop_image(image_metadata_, &request, image_data);
+            crop_image(&request, image_data);
         }
     }
     catch (std::invalid_argument& e)
@@ -815,14 +822,34 @@ void CuImage::save(std::string file_path) const
         fs << width << "\n" << height << "\n" << 0xff << "\n";
 
         uint8_t* data = static_cast<uint8_t*>(image_data_->container.data);
-        size_t data_size = width * height * 3;
-        for (unsigned int i = 0; (i < data_size) && fs.good(); ++i)
+        uint8_t* raster = nullptr;
+        size_t raster_size = width * height * 3;
+
+        const cucim::io::Device& in_device = device();
+        if (in_device.type() == cucim::io::DeviceType::kCUDA)
+        {
+            cudaError_t cuda_status;
+            raster = static_cast<uint8_t*>(cucim_malloc(raster_size));
+            CUDA_TRY(cudaMemcpy(raster, data, raster_size, cudaMemcpyDeviceToHost));
+            if (cuda_status)
+            {
+                cucim_free(raster);
+                throw std::runtime_error("Error during cudaMemcpy!");
+            }
+            data = raster;
+        }
+
+        for (unsigned int i = 0; (i < raster_size) && fs.good(); ++i)
         {
             fs << data[i];
         }
         fs.flush();
         if (fs.bad())
         {
+            if (in_device.type() == cucim::io::DeviceType::kCUDA)
+            {
+                cucim_free(raster);
+            }
             CUCIM_ERROR("Writing data failed!");
         }
         fs.close();
@@ -860,18 +887,18 @@ void CuImage::ensure_init()
     }
 }
 
-bool CuImage::crop_image(io::format::ImageMetadataDesc* metadata,
-                         io::format::ImageReaderRegionRequestDesc* request,
-                         io::format::ImageDataDesc* out_image_data) const
+bool CuImage::crop_image(io::format::ImageReaderRegionRequestDesc* request, io::format::ImageDataDesc* out_image_data) const
 {
     // TODO: assume length of location/size to 2.
     constexpr int32_t ndims = 2;
 
-    if (request->level >= metadata->resolution_info.level_count)
+    if (request->level >= image_metadata_->resolution_info.level_count)
     {
         throw std::invalid_argument(fmt::format("Invalid level ({}) in the request! (Should be < {})", request->level,
-                                                metadata->resolution_info.level_count));
+                                                image_metadata_->resolution_info.level_count));
     }
+
+    const cucim::io::Device& in_device = device();
 
     auto original_img_width = image_metadata_->shape[dim_indices_.index('X')];
     auto original_img_height = image_metadata_->shape[dim_indices_.index('Y')];
@@ -920,9 +947,9 @@ bool CuImage::crop_image(io::format::ImageMetadataDesc* metadata,
     uint64_t ey = sy + h - 1;
 
     uint8_t* src_ptr = static_cast<uint8_t*>(image_data_->container.data);
+    size_t raster_size = w * h * samples_per_pixel;
 
-    void* raster = cucim_malloc(w * h * samples_per_pixel); // RGB image
-    auto dest_ptr = static_cast<uint8_t*>(raster);
+    void* raster = nullptr;
     int64_t dest_stride_x_bytes = w * samples_per_pixel;
 
     int64_t src_stride_x = original_img_width;
@@ -931,22 +958,83 @@ bool CuImage::crop_image(io::format::ImageMetadataDesc* metadata,
     int64_t start_offset = (sx + (sy * src_stride_x)) * samples_per_pixel;
     int64_t end_offset = (ex + (ey * src_stride_x)) * samples_per_pixel;
 
-    for (int64_t src_offset = start_offset; src_offset <= end_offset; src_offset += src_stride_x_bytes)
+    switch (in_device.type())
     {
-        memcpy(dest_ptr, src_ptr + src_offset, dest_stride_x_bytes);
-        dest_ptr += dest_stride_x_bytes;
+    case cucim::io::DeviceType::kCPU: {
+        raster = cucim_malloc(raster_size);
+        auto dest_ptr = static_cast<uint8_t*>(raster);
+        for (int64_t src_offset = start_offset; src_offset <= end_offset; src_offset += src_stride_x_bytes)
+        {
+            memcpy(dest_ptr, src_ptr + src_offset, dest_stride_x_bytes);
+            dest_ptr += dest_stride_x_bytes;
+        }
+        // Copy the raster memory and free it if needed.
+        cucim::memory::move_raster_from_host((void**)&raster, raster_size, out_device);
+        break;
+    }
+    case cucim::io::DeviceType::kCUDA: {
+        cudaError_t cuda_status;
+
+        if (out_device.type() == cucim::io::DeviceType::kCPU)
+        {
+            // cuda -> host at bulk then host -> host per row is faster than cuda-> cuda per row, then cuda->host at
+            // bulk.
+            uint8_t* copied_src_ptr = static_cast<uint8_t*>(cucim_malloc(src_stride_x_bytes * h));
+            CUDA_TRY(cudaMemcpy(copied_src_ptr, src_ptr + start_offset, src_stride_x_bytes * h, cudaMemcpyDeviceToHost));
+            if (cuda_status)
+            {
+                cucim_free(copied_src_ptr);
+                throw std::runtime_error("Error during cudaMemcpy!");
+            }
+
+            end_offset -= start_offset;
+            start_offset = 0;
+
+            raster = cucim_malloc(raster_size);
+            auto dest_ptr = static_cast<uint8_t*>(raster);
+            for (int64_t src_offset = start_offset; src_offset <= end_offset; src_offset += src_stride_x_bytes)
+            {
+                memcpy(dest_ptr, copied_src_ptr + src_offset, dest_stride_x_bytes);
+                dest_ptr += dest_stride_x_bytes;
+            }
+            cucim_free(copied_src_ptr);
+        }
+        else
+        {
+            CUDA_TRY(cudaMalloc(&raster, raster_size));
+            if (cuda_status)
+            {
+                throw std::bad_alloc();
+            }
+            auto dest_ptr = static_cast<uint8_t*>(raster);
+            CUDA_TRY(cudaMemcpy2D(dest_ptr, dest_stride_x_bytes, src_ptr + start_offset, src_stride_x_bytes,
+                                  dest_stride_x_bytes, h, cudaMemcpyDeviceToDevice));
+            if (cuda_status)
+            {
+                throw std::runtime_error("Error during cudaMemcpy2D!");
+            }
+            // Copy the raster memory and free it if needed.
+            cucim::memory::move_raster_from_device((void**)&raster, raster_size, out_device);
+        }
+        break;
+    }
+    case cucim::io::DeviceType::kPinned:
+    case cucim::io::DeviceType::kCPUShared:
+    case cucim::io::DeviceType::kCUDAShared:
+        throw std::runtime_error(fmt::format("Device type {} not supported!", in_device.type()));
+        break;
     }
 
     auto& out_image_container = out_image_data->container;
     out_image_container.data = raster;
     out_image_container.ctx = DLContext{ static_cast<DLDeviceType>(out_device.type()), out_device.index() };
-    out_image_container.ndim = metadata->ndim;
-    out_image_container.dtype = metadata->dtype;
+    out_image_container.ndim = image_metadata_->ndim;
+    out_image_container.dtype = image_metadata_->dtype;
     out_image_container.strides = nullptr; // Tensor is compact and row-majored
     out_image_container.byte_offset = 0;
     // Set correct shape
-    out_image_container.shape = static_cast<int64_t*>(cucim_malloc(sizeof(int64_t) * metadata->ndim));
-    memcpy(out_image_container.shape, metadata->shape, sizeof(int64_t) * metadata->ndim);
+    out_image_container.shape = static_cast<int64_t*>(cucim_malloc(sizeof(int64_t) * image_metadata_->ndim));
+    memcpy(out_image_container.shape, image_metadata_->shape, sizeof(int64_t) * image_metadata_->ndim);
     out_image_container.shape[0] = h;
     out_image_container.shape[1] = w;
 

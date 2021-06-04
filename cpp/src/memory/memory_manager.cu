@@ -94,4 +94,27 @@ bool move_raster_from_host(void** target, size_t size, cucim::io::Device& dst_de
     return true;
 }
 
+bool move_raster_from_device(void** target, size_t size, cucim::io::Device& dst_device)
+{
+    switch (dst_device.type())
+    {
+    case cucim::io::DeviceType::kCPU: {
+        cudaError_t cuda_status;
+        void* cuda_mem = *target;
+        void* host_mem = cucim_malloc(size);
+        CUDA_TRY(cudaMemcpy(host_mem, cuda_mem, size, cudaMemcpyDeviceToHost));
+        if (cuda_status)
+        {
+            throw std::bad_alloc();
+        }
+        cudaFree(cuda_mem);
+        *target = host_mem;
+        break;
+    }
+    case cucim::io::DeviceType::kCUDA:
+        break;
+    }
+    return true;
+}
+
 } // namespace cucim::memory

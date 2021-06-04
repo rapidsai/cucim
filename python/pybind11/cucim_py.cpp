@@ -101,8 +101,8 @@ PYBIND11_MODULE(_cucim, m)
              py::arg("path")) //
         .def_static("cache", &py_cache, doc::CuImage::doc_cache, py::call_guard<py::gil_scoped_release>(), //
                     py::arg("type") = py::none()) //
+        // Do not release GIL
         .def_static("_set_array_interface", &_set_array_interface, doc::CuImage::doc__set_array_interface, //
-                    py::call_guard<py::gil_scoped_release>(), //
                     py::arg("cuimg") = py::none()) //
         .def_property("path", &CuImage::path, nullptr, doc::CuImage::doc_path, py::call_guard<py::gil_scoped_release>()) //
         .def_property("is_loaded", &CuImage::is_loaded, nullptr, doc::CuImage::doc_is_loaded,
@@ -342,31 +342,36 @@ py::object py_read_region(const CuImage& cuimg,
                           const py::kwargs& kwargs)
 {
     cucim::DimIndices indices;
+
     if (kwargs)
     {
         std::vector<std::pair<char, int64_t>> indices_args;
 
-        for (auto item : kwargs)
         {
-            auto key = std::string(py::str(item.first));
-            auto value = py::cast<int>(item.second);
+            py::gil_scoped_acquire scope_guard;
 
-            if (key.size() != 1)
+            for (auto item : kwargs)
             {
-                throw std::invalid_argument(
-                    fmt::format("Argument name for Dimension should be a single character but '{}' is used.", key));
-            }
-            char key_char = key[0] & ~32;
-            if (key_char < 'A' || key_char > 'Z')
-            {
-                throw std::invalid_argument(
-                    fmt::format("Dimension character should be an alphabet but '{}' is used.", key));
-            }
+                auto key = std::string(py::str(item.first));
+                auto value = py::cast<int>(item.second);
 
-            indices_args.emplace_back(std::make_pair(key_char, value));
+                if (key.size() != 1)
+                {
+                    throw std::invalid_argument(
+                        fmt::format("Argument name for Dimension should be a single character but '{}' is used.", key));
+                }
+                char key_char = key[0] & ~32;
+                if (key_char < 'A' || key_char > 'Z')
+                {
+                    throw std::invalid_argument(
+                        fmt::format("Dimension character should be an alphabet but '{}' is used.", key));
+                }
 
-            //            fmt::print("k:{} v:{}\n", std::string(py::str(item.first)),
-            //            std::string(py::str(item.second)));
+                indices_args.emplace_back(std::make_pair(key_char, value));
+
+                //            fmt::print("k:{} v:{}\n", std::string(py::str(item.first)),
+                //            std::string(py::str(item.second)));
+            }
         }
         indices = cucim::DimIndices(indices_args);
     }
@@ -374,13 +379,20 @@ py::object py_read_region(const CuImage& cuimg,
     {
         indices = cucim::DimIndices{};
     }
-    cucim::CuImage* region_ptr =
-        new cucim::CuImage(cuimg.read_region(std::move(location), std::move(size), level, indices, device, nullptr, ""));
-    py::object region = py::cast(region_ptr);
 
-    // Add `__array_interace__` or `__cuda_array_interface__` in runtime.
-    _set_array_interface(region);
-    return region;
+    auto region_ptr = std::make_shared<cucim::CuImage>(
+        cuimg.read_region(std::move(location), std::move(size), level, indices, device, nullptr, ""));
+
+    {
+        py::gil_scoped_acquire scope_guard;
+
+        py::object region = py::cast(region_ptr);
+
+        // Add `__array_interace__` or `__cuda_array_interface__` in runtime.
+        _set_array_interface(region);
+
+        return region;
+    }
 }
 
 void _set_array_interface(const py::object& cuimg_obj)
@@ -411,9 +423,6 @@ void _set_array_interface(const py::object& cuimg_obj)
     switch (tensor->ctx.device_type)
     {
     case kDLCPU: {
-
-
-        py::gil_scoped_acquire scope_guard;
         // Reference: https://numpy.org/doc/stable/reference/arrays.interface.html
         cuimg_obj.attr("__array_interface__") =
             py::dict{ "data"_a = data,       "strides"_a = py::none(), "descr"_a = descr,
@@ -421,43 +430,15 @@ void _set_array_interface(const py::object& cuimg_obj)
     }
     break;
     case kDLGPU: {
-        py::gil_scoped_acquire scope_guard;
-        // Reference: http://numba.pydata.org/numba-doc/latest/cuda/cuda_array_interface.html
+        // Reference: https://numba.readthedocs.io/en/stable/cuda/cuda_array_interface.html
         cuimg_obj.attr("__cuda_array_interface__") =
-            py::dict{ "data"_a = data,       "strides"_a = py::none(), "descr"_a = descr,
-                      "typestr"_a = typestr, "shape"_a = shape,        "version"_a = py::int_(2) };
+            py::dict{ "data"_a = data,   "strides"_a = py::none(),  "descr"_a = descr,     "typestr"_a = typestr,
+                      "shape"_a = shape, "version"_a = py::int_(3), "mask"_a = py::none(), "stream"_a = 1 };
     }
     break;
     default:
         break;
     }
 }
-// py::dict get_array_interface(const CuImage& cuimg)
-// {
-//     // TODO: using __array_struct__, access to array interface could be faster
-//     //       (https://numpy.org/doc/stable/reference/arrays.interface.html#c-struct-access)
-//     // TODO: check the performance difference between python int vs python long later.
-//     const DLTensor* tensor = static_cast<DLTensor*>(cuimg.container());
-//     if (!tensor)
-//     {
-//         return pybind11::dict();
-//     }
-//     const char* type_str = cuimg.container().numpy_dtype();
-
-//     py::list descr;
-//     descr.append(py::make_tuple(""_s, py::str(type_str)));
-
-//     py::tuple shape = vector2pytuple<pybind11::int_>(cuimg.shape());
-
-//     // Reference: https://numpy.org/doc/stable/reference/arrays.interface.html
-//     return py::dict{ "data"_a =
-//                          pybind11::make_tuple(py::int_(reinterpret_cast<uint64_t>(tensor->data)), py::bool_(false)),
-//                      "strides"_a = py::none(),
-//                      "descr"_a = descr,
-//                      "typestr"_a = py::str(type_str),
-//                      "shape"_a = shape,
-//                      "version"_a = py::int_(3) };
-// }
-
 
 } // namespace cucim

@@ -172,9 +172,7 @@ private:
     explicit CuImage();
 
     void ensure_init();
-    bool crop_image(io::format::ImageMetadataDesc* metadata,
-                    io::format::ImageReaderRegionRequestDesc* request,
-                    io::format::ImageDataDesc* out_image_data) const;
+    bool crop_image(io::format::ImageReaderRegionRequestDesc* request, io::format::ImageDataDesc* out_image_data) const;
 
 
     static Framework* framework_;

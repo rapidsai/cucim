@@ -79,5 +79,18 @@ CUCIM_API void get_pointer_attributes(PointerAttributes& attr, const void* ptr);
  */
 bool move_raster_from_host(void** target, size_t size, cucim::io::Device& dst_device);
 
+/**
+ * @brief Move device memory of `size` bytes to a new memory in `out_device`.
+ *
+ * Set the pointer of the new memory to `target` and free the device memory previously indicated by `target.
+ * Do nothing if `out_device` is CUDA memory.
+ *
+ * @param[in, out] target Pointer to the pointer of the device memory.
+ * @param size Size of the device memory.
+ * @param dst_device Destination device of the memory.
+ * @return `true` if succeed.
+ */
+bool move_raster_from_device(void** target, size_t size, cucim::io::Device& dst_device);
+
 } // namespace cucim::memory
 #endif // CUCIM_MEMORY_MANAGER_H
