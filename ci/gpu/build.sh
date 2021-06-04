@@ -64,7 +64,6 @@ mkdir -p ${CUCIM_BLD_PATH}
 
 
 gpuci_conda_retry build -c ${LIBCUCIM_BLD_PATH} -c conda-forge -c rapidsai-nightly \
-    --python=${PYTHON_VER} \
     --dirty \
     --no-remove-work-dir \
     --croot ${CUCIM_BLD_PATH} \
