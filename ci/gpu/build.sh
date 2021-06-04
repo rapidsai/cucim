@@ -78,8 +78,8 @@ gpuci_conda_retry build -c ${LIBCUCIM_BLD_PATH} -c conda-forge -c rapidsai-night
 gpuci_logger "Installing cuCIM and its dependencies"
 gpuci_conda_retry install -y -c ${LIBCUCIM_BLD_PATH} -c ${CUCIM_BLD_PATH} \
     "rapids-build-env=$MINOR_VERSION.*" \
-    libcucim \
-    cucim
+    "libcucim=$MINOR_VERSION.*" \
+    "cucim=$MINOR_VERSION.*"
 
 gpuci_logger "Testing cuCIM import"
 python -c 'import cucim' 
