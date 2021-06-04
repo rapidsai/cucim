@@ -47,7 +47,13 @@ nvidia-smi
 gpuci_logger "Activate conda env"
 . /opt/conda/etc/profile.d/conda.sh
 
-conda install -c conda-forge conda-build -y
+gpuci_logger "Install dependencies"
+gpuci_conda_retry install -y \
+    sysroot_linux-64=2.17 \
+    conda-build \
+    "cudatoolkit=${CUDA_VER}.*" \
+    "rapids-build-env=$MINOR_VERSION.*" \
+    "python=${PYTHON_VER}.*" \
 
 ################################################################################
 # BUILD - Build cuCIM
@@ -75,12 +81,8 @@ gpuci_conda_retry build -c ${LIBCUCIM_BLD_PATH} -c conda-forge -c rapidsai-night
 ################################################################################
 
 # Install cuCIM and its dependencies
-gpuci_logger "Installing cuCIM and its dependencies"
+gpuci_logger "Installing cuCIM"
 gpuci_conda_retry install -y -c ${LIBCUCIM_BLD_PATH} -c ${CUCIM_BLD_PATH} \
-    sysroot_linux-64=2.17 \
-    "cudatoolkit=${CUDA_VER}.*" \
-    "python=${PYTHON_VER}.*" \
-    "rapids-build-env=$MINOR_VERSION.*" \
     "libcucim=$MINOR_VERSION.*" \
     "cucim=$MINOR_VERSION.*"
 
