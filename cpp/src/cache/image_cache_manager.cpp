@@ -75,11 +75,20 @@ std::shared_ptr<cucim::cache::ImageCache> ImageCacheManager::get_cache() const
     return cache_;
 }
 
-void ImageCacheManager::reserve(uint32_t new_capacity, uint32_t new_memory_capacity)
+void ImageCacheManager::reserve(uint32_t new_memory_capacity)
 {
     ImageCacheConfig cache_config;
-    cache_config.capacity = new_capacity;
     cache_config.memory_capacity = new_memory_capacity;
+    cache_config.capacity = calc_default_cache_capacity(kOneMiB * new_memory_capacity);
+
+    cache_->reserve(cache_config);
+}
+
+void ImageCacheManager::reserve(uint32_t new_memory_capacity, uint32_t new_capacity)
+{
+    ImageCacheConfig cache_config;
+    cache_config.memory_capacity = new_memory_capacity;
+    cache_config.capacity = new_capacity;
 
     cache_->reserve(cache_config);
 }

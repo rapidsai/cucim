@@ -416,8 +416,13 @@ uint64_t SharedMemoryImageCache::miss_count() const
 
 void SharedMemoryImageCache::reserve(const ImageCacheConfig& config)
 {
-    uint32_t new_capacity = config.capacity;
     uint64_t new_memory_capacity_nbytes = kOneMiB * config.memory_capacity;
+    uint32_t new_capacity = config.capacity;
+
+    if ((*capacity_nbytes_) < new_memory_capacity_nbytes)
+    {
+        (*capacity_nbytes_) = new_memory_capacity_nbytes;
+    }
 
     if ((*capacity_) < new_capacity)
     {
@@ -452,11 +457,6 @@ void SharedMemoryImageCache::reserve(const ImageCacheConfig& config)
             // Set new tail
             (*list_tail_).store(new_head, std::memory_order_relaxed);
         }
-    }
-
-    if ((*capacity_nbytes_) < new_memory_capacity_nbytes)
-    {
-        (*capacity_nbytes_) = new_memory_capacity_nbytes;
     }
 }
 

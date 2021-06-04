@@ -311,14 +311,17 @@ py::dict py_resolutions(const CuImage& cuimg)
 
     std::vector<py::tuple> level_dimensions_vec;
     level_dimensions_vec.reserve(level_count);
+    std::vector<py::tuple> level_tile_sizes_vec;
+    level_tile_sizes_vec.reserve(level_count);
     for (int level = 0; level < level_count; ++level)
     {
         level_dimensions_vec.emplace_back(vector2pytuple<pybind11::int_>(resolutions.level_dimension(level)));
+        level_tile_sizes_vec.emplace_back(vector2pytuple<pybind11::int_>(resolutions.level_tile_size(level)));
     }
 
     py::tuple level_dimensions = vector2pytuple<const pybind11::tuple&>(level_dimensions_vec);
     py::tuple level_downsamples = vector2pytuple<pybind11::float_>(resolutions.level_downsamples());
-    py::tuple level_tile_sizes = vector2pytuple<pybind11::int_>(resolutions.level_tile_sizes());
+    py::tuple level_tile_sizes = vector2pytuple<const pybind11::tuple&>(level_tile_sizes_vec);
 
     return py::dict{
         "level_count"_a = pybind11::int_(level_count), //
