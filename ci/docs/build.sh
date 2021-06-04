@@ -26,7 +26,7 @@ gpuci_logger "Activate conda env"
 . /opt/conda/etc/profile.d/conda.sh
 
 gpuci_logger "Installing cuCIM / Deps / Docs into new env"
-gpuci_conda_retry create -n cucim -y -c conda-forge -c rapidsai-nightly \
+gpuci_conda_retry create -y -c conda-forge -c rapidsai-nightly \
     rapids-doc-env \
     python=3.8 \
     cupy=9 \
