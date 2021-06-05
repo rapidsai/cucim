@@ -5,11 +5,8 @@ from __future__ import print_function
 
 import io
 import sys
-from glob import glob
-from os.path import basename
 from os.path import dirname
 from os.path import join
-from os.path import splitext
 
 from setuptools import find_packages
 from setuptools import setup
@@ -47,7 +44,7 @@ opts = dict(
     url='https://github.com/rapidsai/cucim',
     packages=find_packages('src'),
     package_dir={'cucim': 'src/cucim'},
-    # # https://docs.python.org/3/distutils/setupscript.html#listing-individual-modules
+    # # https://docs.python.org/3/distutils/setupscript.html
     # py_modules=[splitext(basename(path))[0] for path in glob('src/*.py')],
 
     # If True, the data files [of include_package_data] must be under version

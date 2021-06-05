@@ -13,9 +13,6 @@
 # limitations under the License.
 #
 
-
-import sys
-import os
 import concurrent.futures
 import json
 from contextlib import ContextDecorator
