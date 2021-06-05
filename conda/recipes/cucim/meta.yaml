@@ -19,7 +19,7 @@ build:
   script_env:
     - CC
     - CXX
-    - CUDAHOSTCXx
+    - CUDAHOSTCXX
 
 requirements:
   build:
