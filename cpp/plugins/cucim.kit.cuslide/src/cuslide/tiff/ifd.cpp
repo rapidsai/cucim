@@ -484,42 +484,22 @@ bool IFD::read_region_tiles(const TIFF* tiff,
 
             if (tiledata_size > 0)
             {
-                // clang-format off
-                // cucim::logger::Timer tt("decode_deflate: {}\n");
-                //fmt::print(stderr, "# {}: {} {} - before key\n", std::chrono::high_resolution_clock::now().time_since_epoch().count(), getpid(), index); // [print]
-                auto key = image_cache.create_key(ifd_hash_value, index); //[cache]
-                //fmt::print(stderr, "# {}: {} {} - after key/before lock\n", std::chrono::high_resolution_clock::now().time_since_epoch().count(), getpid(), index); // [print]
-                // * lock(index)
-                image_cache.lock(index); //[cache][w lock]
-                //fmt::print(stderr, "# {}: {} {} - after lock/before find\n", std::chrono::high_resolution_clock::now().time_since_epoch().count(), getpid(), index); // [print]
-                auto value = image_cache.find(key); //[cache]
-                //fmt::print(stderr, "# {}: {} {} -   after find\n", std::chrono::high_resolution_clock::now().time_since_epoch().count(), getpid(), index); // [print]
-                if (value) //[cache]
-                { //[cache]
-                    // * unlock(index)
-                    //fmt::print(stderr, "# {}: {} {} -   before unlock\n", std::chrono::high_resolution_clock::now().time_since_epoch().count(), getpid(), index); // [print]
-                    image_cache.unlock(index); //[cache][w lock]
-                    //fmt::print(stderr, "# {}: {} {} -   after unlock\n", std::chrono::high_resolution_clock::now().time_since_epoch().count(), getpid(), index); // [print]
-
-                    // std::cerr << "# " << curr_pid << " " << index << " "
-                    //           << "found\n";
-                    tile_data = static_cast<uint8_t*>(value->data); //[cache]
-                     //fmt::print(stderr, "# {} {} found: {}\n", getpid(), index, (uint64_t)tile_data); // [print_process]
-                    //fmt::print(stderr, "# {} {} found: {}\n", std::hash<std::thread::id>{}(std::this_thread::get_id()), index, (uint64_t)tile_data); // [print_thread]
-                } //[cache]
-                else //[cache]
-                { //[cache]
+                auto key = image_cache.create_key(ifd_hash_value, index);
+                image_cache.lock(index);
+                auto value = image_cache.find(key);
+                if (value)
+                {
+                    image_cache.unlock(index);
+                    tile_data = static_cast<uint8_t*>(value->data);
+                }
+                else
+                {
                     // Lifetime of tile_data is same with `value`
                     // : do not access this data when `value` is not accessible.
                     if (cache_type != cucim::cache::CacheType::kNoCache)
                     {
-                        tile_data = static_cast<uint8_t*>(image_cache.allocate(tile_raster_nbytes)); //[cache]
+                        tile_data = static_cast<uint8_t*>(image_cache.allocate(tile_raster_nbytes));
                     }
-
-                     //fmt::print(stderr, "# {} {} not found: {}\n", getpid(), index, (uint64_t)tile_data); // [print_process]
-                    //fmt::print(stderr, "# {} {} not found: {}\n", std::hash<std::thread::id>{}(std::this_thread::get_id()), index, (uint64_t)tile_data); // [print_thread]
-                    // std::cerr << "# " << curr_pid << " " << index << " "
-                    //           << "not found : " << std::hex << tile_data << "\n";
 
                     if (compression_method == COMPRESSION_JPEG)
                     {
@@ -531,19 +511,14 @@ bool IFD::read_region_tiles(const TIFF* tiff,
                         cuslide::deflate::decode_deflate(tiff_file, nullptr, tiledata_offset, tiledata_size, &tile_data,
                                                          tile_raster_nbytes, out_device);
                     }
-                    value = image_cache.create_value(tile_data, tile_raster_nbytes); //[cache]
-                    image_cache.insert(key, value); //[cache]
-                    // * unlock(index)
-                    //fmt::print(stderr, "# {}: {} {} -   before unlock\n", std::chrono::high_resolution_clock::now().time_since_epoch().count(), getpid(), index); // [print]
-                    image_cache.unlock(index); //[cache][w lock]
-                    //fmt::print(stderr, "# {}: {} {} -   after unlock\n", std::chrono::high_resolution_clock::now().time_since_epoch().count(), getpid(), index); // [print]
-                } //[cache]
+                    value = image_cache.create_value(tile_data, tile_raster_nbytes);
+                    image_cache.insert(key, value);
+                    image_cache.unlock(index);
+                }
 
                 for (uint32_t ty = tile_pixel_offset_sy; ty <= tile_pixel_offset_ey;
                      ++ty, dest_pixel_index += dest_pixel_step_y, nbytes_tile_index += nbytes_tw)
                 {
-                    //                printf("[GB] index_y: %d, offset_x: %d   y:%d, %d, %d %d\n", index_y, offset_x,
-                    //                ty, dest_pixel_index, nbytes_tile_index, nbytes_tile_pixel_size_x);
                     memcpy(dest_start_ptr + dest_pixel_index, tile_data + nbytes_tile_index, nbytes_tile_pixel_size_x);
                 }
             }
@@ -556,7 +531,6 @@ bool IFD::read_region_tiles(const TIFF* tiff,
                     memset(dest_start_ptr + dest_pixel_index, background_value, nbytes_tile_pixel_size_x);
                 }
             }
-            //            printf("\n");
             dest_pixel_index_x += nbytes_tile_pixel_size_x;
         }
         dest_start_ptr += dest_pixel_step_y * dest_pixel_offset_len_y;
@@ -684,7 +658,7 @@ bool IFD::read_region_tiles_boundary(const TIFF* tiff,
 
 
     int tiff_file = tiff->file_handle_.fd;
-    uint64_t ifd_hash_value = ifd->hash_value_; //[cache]
+    uint64_t ifd_hash_value = ifd->hash_value_;
 
     uint32_t dest_pixel_step_y = w * samples_per_pixel;
     uint32_t nbytes_tw = tw * samples_per_pixel;
@@ -755,42 +729,22 @@ bool IFD::read_region_tiles_boundary(const TIFF* tiff,
 
                 uint8_t* tile_data = tile_raster;
 
-                // cucim::logger::Timer tt("decode_deflate: {}\n");
-                // clang-format off
-                //fmt::print(stderr, "# {}: {} {} - before key\n", std::chrono::high_resolution_clock::now().time_since_epoch().count(), getpid(), index); // [print]
-                auto key = image_cache.create_key(ifd_hash_value, index); //[cache]
-                //fmt::print(stderr, "# {}: {} {} - after key/before lock\n", std::chrono::high_resolution_clock::now().time_since_epoch().count(), getpid(), index); // [print]
-                // * lock(index)
-                image_cache.lock(index); //[cache][w lock]
-                //fmt::print(stderr, "# {}: {} {} - after lock/before find\n", std::chrono::high_resolution_clock::now().time_since_epoch().count(), getpid(), index); // [print]
-                auto value = image_cache.find(key); //[cache]
-                //fmt::print(stderr, "# {}: {} {} -   after find\n", std::chrono::high_resolution_clock::now().time_since_epoch().count(), getpid(), index); // [print]
-                if (value) //[cache]
-                { //[cache]
-                    // * unlock(index)
-                    //fmt::print(stderr, "# {}: {} {} -   before unlock\n", std::chrono::high_resolution_clock::now().time_since_epoch().count(), getpid(), index); // [print]
-                    image_cache.unlock(index); //[cache][w lock]
-                    //fmt::print(stderr, "# {}: {} {} -   after unlock\n", std::chrono::high_resolution_clock::now().time_since_epoch().count(), getpid(), index); // [print]
-                    // std::cerr << std::dec << "# " << curr_pid << " " << index << " "
-                    //           << "found\n";
-                    tile_data = static_cast<uint8_t*>(value->data); //[cache]
-                     //fmt::print(stderr, "# {} {} found: {}\n", getpid(), index, (uint64_t)tile_data); // [print_process]
-                    //fmt::print(stderr, "# {} {} found: {}\n", std::hash<std::thread::id>{}(std::this_thread::get_id()), index, (uint64_t)tile_data); // [print_thread]
-                } //[cache]
-                else //[cache]
-                { //[cache]
+                auto key = image_cache.create_key(ifd_hash_value, index);
+                image_cache.lock(index);
+                auto value = image_cache.find(key);
+                if (value)
+                {
+                    image_cache.unlock(index);
+                    tile_data = static_cast<uint8_t*>(value->data);
+                }
+                else
+                {
                     // Lifetime of tile_data is same with `value`
                     // : do not access this data when `value` is not accessible.
                     if (cache_type != cucim::cache::CacheType::kNoCache)
                     {
-                        tile_data = static_cast<uint8_t*>(image_cache.allocate(tile_raster_nbytes)); //[cache]
+                        tile_data = static_cast<uint8_t*>(image_cache.allocate(tile_raster_nbytes));
                     }
-
-                     //fmt::print(stderr, "# {} {} not found: {}\n", getpid(), index, (uint64_t)tile_data); // [print_process]
-                    //fmt::print(stderr, "# {} {} notfound: {}\n", std::hash<std::thread::id>{}(std::this_thread::get_id()), index, (uint64_t)tile_data); // [print_thread]
-                    // std::cerr << std::dec << "# " << curr_pid << " " << index << " "
-                    //           << "not found : " << std::hex << tile_data << "\n";
-
                     if (compression_method == COMPRESSION_JPEG)
                     {
                         cuslide::jpeg::decode_libjpeg(tiff_file, nullptr, tiledata_offset, tiledata_size,
@@ -801,15 +755,10 @@ bool IFD::read_region_tiles_boundary(const TIFF* tiff,
                         cuslide::deflate::decode_deflate(tiff_file, nullptr, tiledata_offset, tiledata_size, &tile_data,
                                                          tile_raster_nbytes, out_device);
                     }
-                    value = image_cache.create_value(tile_data, tile_raster_nbytes); //[cache]
-                    image_cache.insert(key, value); //[cache]
-                    // * unlock(index)
-                    //fmt::print(stderr, "# {}: {} {} -   before unlock\n", std::chrono::high_resolution_clock::now().time_since_epoch().count(), getpid(), index); // [print]
-                    image_cache.unlock(index); //[cache][w lock]
-                    //fmt::print(stderr, "# {}: {} {} -   after unlock\n", std::chrono::high_resolution_clock::now().time_since_epoch().count(), getpid(), index); // [print]
-                } //[cache]
-                // clang-format on
-
+                    value = image_cache.create_value(tile_data, tile_raster_nbytes);
+                    image_cache.insert(key, value);
+                    image_cache.unlock(index);
+                }
                 if (copy_partial)
                 {
                     uint32_t fill_gap_x = nbytes_tile_pixel_size_x - fixed_nbytes_tile_pixel_size_x;
