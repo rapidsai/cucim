@@ -15,40 +15,17 @@
  */
 
 #include "cucim/io/device_type.h"
-
-#include <algorithm>
+#include "cucim/cpp20/find_if.h"
 
 
 namespace cucim::io
 {
 
-// https://en.cppreference.com/w/cpp/algorithm/find
-#if __cplusplus < 202002L
-template <class InputIt, class UnaryPredicate>
-constexpr InputIt myfind_if(InputIt first, InputIt last, UnaryPredicate p)
-{
-    for (; first != last; ++first)
-    {
-        if (p(*first))
-        {
-            return first;
-        }
-    }
-    return last;
-}
-#else
-template <class InputIt, class UnaryPredicate>
-constexpr InputIt myfind_if(InputIt first, InputIt last, UnaryPredicate p)
-{
-    return std::find_if(first, last, p);
-}
-#endif
-
 using namespace std::literals::string_view_literals;
 
 constexpr DeviceType DeviceTypeMap::at(const std::string_view& key) const
 {
-    const auto itr = myfind_if(begin(data), end(data), [&key](const auto& v) { return v.first == key; });
+    const auto itr = cucim::cpp20::find_if(begin(data), end(data), [&key](const auto& v) { return v.first == key; });
 
     if (itr != end(data))
     {
@@ -62,7 +39,7 @@ constexpr DeviceType DeviceTypeMap::at(const std::string_view& key) const
 
 constexpr std::string_view DeviceTypeStrMap::at(const DeviceType& key) const
 {
-    const auto itr = myfind_if(begin(data), end(data), [&key](const auto& v) { return v.first == key; });
+    const auto itr = cucim::cpp20::find_if(begin(data), end(data), [&key](const auto& v) { return v.first == key; });
 
     if (itr != end(data))
     {

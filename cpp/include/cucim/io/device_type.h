@@ -44,6 +44,7 @@ enum class DeviceType : int16_t
     kCUDAShared = 102, /// custom type for GPU-shared memory
 };
 
+// Using constexpr map (https://www.youtube.com/watch?v=INn3xa4pMfg)
 struct DeviceTypeMap
 {
     std::array<std::pair<std::string_view, DeviceType>, kDeviceTypeCount> data;

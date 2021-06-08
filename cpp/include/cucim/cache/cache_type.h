@@ -34,6 +34,7 @@ enum class CacheType : uint8_t
     kSharedMemory
 };
 
+// Using constexpr map (https://www.youtube.com/watch?v=INn3xa4pMfg)
 struct CacheTypeMap
 {
     std::array<std::pair<std::string_view, CacheType>, kCacheTypeCount> data;

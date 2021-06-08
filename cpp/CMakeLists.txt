@@ -50,6 +50,7 @@ add_library(${CUCIM_PACKAGE_NAME}
         include/cucim/core/plugin_util.h
         include/cucim/core/interface.h
         include/cucim/core/version.h
+        include/cucim/cpp20/find_if.h
         include/cucim/dynlib/helper.h
         include/cucim/filesystem/cufile_driver.h
         include/cucim/filesystem/file_handle.h
