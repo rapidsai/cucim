@@ -16,32 +16,25 @@
 
 #include "cucim/filesystem/cufile_driver.h"
 
-#include "fmt/format.h"
-#include "cufile_stub.h"
-
 #include <fcntl.h>
-#include <unistd.h>
-#include <cuda_runtime.h>
 #include <linux/fs.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
-#include <sys/statvfs.h>
 #include <sys/stat.h>
+#include <sys/statvfs.h>
+#include <unistd.h>
+
 #include <chrono>
 
+#include <cuda_runtime.h>
+#include <fmt/format.h>
+
+#include "cucim/util/cuda.h"
+#include "cufile_stub.h"
 
 #define ALIGN_UP(x, align_to) (((uint64_t)(x) + ((uint64_t)(align_to)-1)) & ~((uint64_t)(align_to)-1))
 #define ALIGN_DOWN(x, align_to) ((uint64_t)(x) & ~((uint64_t)(align_to)-1))
 
-#define CUDA_TRY(stmt)                                                                                                 \
-    {                                                                                                                  \
-        cuda_status = stmt;                                                                                            \
-        if (cudaSuccess != cuda_status)                                                                                \
-        {                                                                                                              \
-            fmt::print(stderr, "[Error] CUDA Runtime call {} in line {} of file {} failed with '{}' ({}).\n", #stmt,   \
-                       __LINE__, __FILE__, cudaGetErrorString(cuda_status), cuda_status);                              \
-        }                                                                                                              \
-    }
 
 namespace cucim::filesystem
 {
@@ -200,7 +193,14 @@ CuFileDriver::CuFileDriver(int fd, bool no_gds, bool use_mmap, const char* file_
     file_flags_ = flags;
 
     FileHandleType file_type = (flags & O_DIRECT) ? FileHandleType::kPosixODirect : FileHandleType::kPosix;
-    handle_ = CuCIMFileHandle{ fd, nullptr, file_type, const_cast<char*>(file_path_.c_str()), this };
+    handle_ = CuCIMFileHandle{ fd,
+                               nullptr,
+                               file_type,
+                               const_cast<char*>(file_path_.c_str()),
+                               this,
+                               static_cast<uint64_t>(st.st_dev),
+                               static_cast<uint64_t>(st.st_ino),
+                               static_cast<int64_t>(st.st_mtim.tv_nsec) };
 
     CUfileError_t status;
     CUfileDescr_t cf_descr{}; // It is important to set zero!
@@ -326,7 +326,7 @@ CuFileDriverInitializer::CuFileDriverInitializer()
         max_device_cache_size_ = DEFAULT_MAX_CACHE_SIZE;
         max_host_cache_size_ = DEFAULT_MAX_CACHE_SIZE;
 
-        // fmt::print(stderr, "[warning] CuFileDriver cannot be open. Falling back to use POSIX file IO APIs.\n");
+        // fmt::print(stderr, "[Warning] CuFileDriver cannot be open. Falling back to use POSIX file IO APIs.\n");
     }
 }
 CuFileDriverInitializer::~CuFileDriverInitializer()

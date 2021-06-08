@@ -455,7 +455,7 @@ build_python_package() {
 repair_wheel_() {
     local wheel="$1"
     local dest="${2:-./}"
-    local PLAT="${3:-manylinux2014-x86_64}"
+    local PLAT="${3:-manylinux2014_x86_64}"
 
 
     if ! auditwheel show "$wheel"; then

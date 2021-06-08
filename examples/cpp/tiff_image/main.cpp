@@ -43,6 +43,7 @@ int main(int argc, char* argv[])
     fmt::print("level_dimensions: ({})\n", fmt::join(resolutions.level_dimensions(), ", "));
     fmt::print("level_dimension (level 0): ({})\n", fmt::join(resolutions.level_dimension(0), ", "));
     fmt::print("level_downsamples: ({})\n", fmt::join(resolutions.level_downsamples(), ", "));
+    fmt::print("level_tile_sizes: ({})\n", fmt::join(resolutions.level_tile_sizes(), ", "));
 
     auto associated_images = image.associated_images();
     fmt::print("associated_images: ({})\n", fmt::join(associated_images, ", "));
@@ -74,6 +75,7 @@ int main(int argc, char* argv[])
     fmt::print("level_dimensions: ({})\n", fmt::join(resolutions.level_dimensions(), ", "));
     fmt::print("level_dimension (level 0): ({})\n", fmt::join(resolutions.level_dimension(0), ", "));
     fmt::print("level_downsamples: ({})\n", fmt::join(resolutions.level_downsamples(), ", "));
+    fmt::print("level_tile_sizes: ({})\n", fmt::join(resolutions.level_tile_sizes(), ", "));
 
     associated_images = region.associated_images();
     fmt::print("associated_images: ({})\n", fmt::join(associated_images, ", "));

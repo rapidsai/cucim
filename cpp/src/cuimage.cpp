@@ -16,13 +16,18 @@
 
 #include "cucim/cuimage.h"
 
-#include <iostream>
-#include <fstream>
 #include <cstring>
-#include <sys/stat.h>
+#include <fstream>
+#include <iostream>
 
-#include "cucim/core/framework.h"
+#if CUCIM_SUPPORT_CUDA
+#    include <cuda_runtime.h>
+#endif
 #include <fmt/format.h>
+
+#include "cucim/util/cuda.h"
+#include "cucim/util/file.h"
+
 
 #define XSTR(x) STR(x)
 #define STR(x) #x
@@ -69,6 +74,8 @@ ResolutionInfo::ResolutionInfo(io::format::ResolutionInfoDesc desc)
         level_dimensions_.end(), &desc.level_dimensions[0], &desc.level_dimensions[level_count_ * level_ndim_]);
     level_downsamples_.insert(
         level_downsamples_.end(), &desc.level_downsamples[0], &desc.level_downsamples[level_count_]);
+    level_tile_sizes_.insert(
+        level_tile_sizes_.end(), &desc.level_tile_sizes[0], &desc.level_tile_sizes[level_count_ * level_ndim_]);
 }
 uint16_t ResolutionInfo::level_count() const
 {
@@ -101,6 +108,21 @@ float ResolutionInfo::level_downsample(uint16_t level) const
     }
     return level_downsamples_.at(level);
 }
+const std::vector<uint32_t>& ResolutionInfo::level_tile_sizes() const
+{
+    return level_tile_sizes_;
+}
+std::vector<uint32_t> ResolutionInfo::level_tile_size(uint16_t level) const
+{
+    if (level >= level_count_)
+    {
+        throw std::invalid_argument(fmt::format("'level' should be less than {}", level_count_));
+    }
+    std::vector<uint32_t> result;
+    auto start_index = level_tile_sizes_.begin() + (level * level_ndim_);
+    result.insert(result.end(), start_index, start_index + level_ndim_);
+    return result;
+}
 
 DetectedFormat detect_format(filesystem::Path path)
 {
@@ -111,6 +133,9 @@ DetectedFormat detect_format(filesystem::Path path)
 
 
 Framework* CuImage::framework_ = cucim::acquire_framework("cucim");
+std::unique_ptr<config::Config> CuImage::config_ = std::make_unique<config::Config>();
+std::unique_ptr<cache::ImageCacheManager> CuImage::cache_manager_ = std::make_unique<cache::ImageCacheManager>();
+
 
 CuImage::CuImage(const filesystem::Path& path)
 {
@@ -231,8 +256,29 @@ CuImage::~CuImage()
     {
         if (image_data_->container.data)
         {
-            cucim_free(image_data_->container.data);
-            image_data_->container.data = nullptr;
+            DLContext& ctx = image_data_->container.ctx;
+            auto device_type = static_cast<io::DeviceType>(ctx.device_type);
+            switch (device_type)
+            {
+            case io::DeviceType::kCPU:
+                cucim_free(image_data_->container.data);
+                image_data_->container.data = nullptr;
+                break;
+            case io::DeviceType::kCUDA:
+                cudaError_t cuda_status;
+                CUDA_TRY(cudaFree(image_data_->container.data));
+                image_data_->container.data = nullptr;
+                if (cuda_status)
+                {
+                    fmt::print(stderr, "[Error] Cannot free memory!");
+                }
+                break;
+            case io::DeviceType::kPinned:
+            case io::DeviceType::kCPUShared:
+            case io::DeviceType::kCUDAShared:
+                fmt::print(stderr, "Device type {} is not supported!", device_type);
+                break;
+            }
         }
         if (image_data_->container.shape)
         {
@@ -244,6 +290,11 @@ CuImage::~CuImage()
             cucim_free(image_data_->container.strides);
             image_data_->container.strides = nullptr;
         }
+        if (image_data_->shm_name)
+        {
+            cucim_free(image_data_->shm_name);
+            image_data_->shm_name = nullptr;
+        }
         cucim_free(image_data_);
         image_data_ = nullptr;
     }
@@ -252,6 +303,26 @@ CuImage::~CuImage()
 Framework* CuImage::get_framework()
 {
     return framework_;
+}
+
+config::Config* CuImage::get_config()
+{
+    return config_.get();
+}
+
+cache::ImageCacheManager& CuImage::cache_manager()
+{
+    return *cache_manager_;
+}
+
+std::shared_ptr<cache::ImageCache> CuImage::cache()
+{
+    return cache_manager_->get_cache();
+}
+
+std::shared_ptr<cache::ImageCache> CuImage::cache(cache::ImageCacheConfig& config)
+{
+    return cache_manager_->cache(config);
 }
 
 filesystem::Path CuImage::path() const
@@ -264,7 +335,18 @@ bool CuImage::is_loaded() const
 }
 io::Device CuImage::device() const
 {
-    return io::Device("cpu");
+    if (image_data_)
+    {
+        DLContext& ctx = image_data_->container.ctx;
+        auto device_type = static_cast<io::DeviceType>(ctx.device_type);
+        auto device_id = static_cast<io::DeviceIndex>(ctx.device_id);
+        std::string shm_name = image_data_->shm_name == nullptr ? "" : image_data_->shm_name;
+        return io::Device(device_type, device_id, shm_name);
+    }
+    else
+    {
+        return io::Device("cpu");
+    }
 }
 Metadata CuImage::raw_metadata() const
 {
@@ -474,7 +556,7 @@ memory::DLTContainer CuImage::container() const
 {
     if (image_data_)
     {
-        return memory::DLTContainer(&image_data_->container);
+        return memory::DLTContainer(&image_data_->container, image_data_->shm_name);
     }
     else
     {
@@ -482,17 +564,14 @@ memory::DLTContainer CuImage::container() const
     }
 }
 
-CuImage CuImage::read_region(std::vector<int64_t> location,
-                             std::vector<int64_t> size,
+CuImage CuImage::read_region(std::vector<int64_t>&& location,
+                             std::vector<int64_t>&& size,
                              uint16_t level,
-                             DimIndices region_dim_indices,
-                             io::Device device,
+                             const DimIndices& region_dim_indices,
+                             const io::Device& device,
                              DLTensor* buf,
-                             std::string shm_name)
+                             const std::string& shm_name) const
 {
-    (void)location;
-    (void)size;
-    (void)level;
     (void)region_dim_indices;
     (void)device;
     (void)buf;
@@ -517,13 +596,14 @@ CuImage CuImage::read_region(std::vector<int64_t> location,
         size.insert(size.end(), level_dimension.begin(), level_dimension.end());
     }
 
+    std::string device_name = std::string(device);
     cucim::io::format::ImageReaderRegionRequestDesc request{};
     int64_t request_location[2] = { location[0], location[1] };
     request.location = request_location;
     request.level = level;
     int64_t request_size[2] = { size[0], size[1] };
     request.size = request_size;
-    request.device = const_cast<char*>("cpu");
+    request.device = device_name.data();
 
     //    cucim::io::format::ImageDataDesc image_data{};
 
@@ -544,7 +624,7 @@ CuImage CuImage::read_region(std::vector<int64_t> location,
         }
         else // Read region by cropping image
         {
-            crop_image(image_metadata_, &request, image_data);
+            crop_image(request, *image_data);
         }
     }
     catch (std::invalid_argument& e)
@@ -655,6 +735,10 @@ CuImage CuImage::read_region(std::vector<int64_t> location,
     level_downsamples.reserve(1);
     level_downsamples.emplace_back(1.0);
 
+    std::pmr::vector<uint32_t> level_tile_sizes(&resource);
+    level_tile_sizes.reserve(level_ndim * 1); // it has only one size
+    level_tile_sizes.insert(level_tile_sizes.end(), &size[0], &size[level_ndim]); // same with level_dimension
+
     // Empty associated images
     const size_t associated_image_count = 0;
     std::pmr::vector<std::string_view> associated_image_names(&resource);
@@ -665,21 +749,22 @@ CuImage CuImage::read_region(std::vector<int64_t> location,
     std::string_view json_data{ "" };
 
     out_metadata.ndim(ndim);
-    out_metadata.dims(dims);
-    out_metadata.shape(shape);
+    out_metadata.dims(std::move(dims));
+    out_metadata.shape(std::move(shape));
     out_metadata.dtype(dtype);
-    out_metadata.channel_names(channel_names);
-    out_metadata.spacing(spacing);
-    out_metadata.spacing_units(spacing_units);
-    out_metadata.origin(origin);
-    out_metadata.direction(direction);
-    out_metadata.coord_sys(coord_sys);
+    out_metadata.channel_names(std::move(channel_names));
+    out_metadata.spacing(std::move(spacing));
+    out_metadata.spacing_units(std::move(spacing_units));
+    out_metadata.origin(std::move(origin));
+    out_metadata.direction(std::move(direction));
+    out_metadata.coord_sys(std::move(coord_sys));
     out_metadata.level_count(1);
     out_metadata.level_ndim(2);
-    out_metadata.level_dimensions(level_dimensions);
-    out_metadata.level_downsamples(level_downsamples);
+    out_metadata.level_dimensions(std::move(level_dimensions));
+    out_metadata.level_downsamples(std::move(level_downsamples));
+    out_metadata.level_tile_sizes(std::move(level_tile_sizes));
     out_metadata.image_count(associated_image_count);
-    out_metadata.image_names(associated_image_names);
+    out_metadata.image_names(std::move(associated_image_names));
     out_metadata.raw_data(raw_data);
     out_metadata.json_data(json_data);
 
@@ -691,14 +776,15 @@ std::set<std::string> CuImage::associated_images() const
     return associated_images_;
 }
 
-CuImage CuImage::associated_image(const std::string& name) const
+CuImage CuImage::associated_image(const std::string& name, const io::Device& device) const
 {
     auto it = associated_images_.find(name);
     if (it != associated_images_.end())
     {
         io::format::ImageReaderRegionRequestDesc request{};
         request.associated_image_name = const_cast<char*>(name.c_str());
-        request.device = const_cast<char*>("cpu");
+        std::string device_name = std::string(device);
+        request.device = device_name.data();
 
         io::format::ImageDataDesc* out_image_data =
             static_cast<cucim::io::format::ImageDataDesc*>(cucim_malloc(sizeof(cucim::io::format::ImageDataDesc)));
@@ -736,14 +822,34 @@ void CuImage::save(std::string file_path) const
         fs << width << "\n" << height << "\n" << 0xff << "\n";
 
         uint8_t* data = static_cast<uint8_t*>(image_data_->container.data);
-        size_t data_size = width * height * 3;
-        for (unsigned int i = 0; (i < data_size) && fs.good(); ++i)
+        uint8_t* raster = nullptr;
+        size_t raster_size = width * height * 3;
+
+        const cucim::io::Device& in_device = device();
+        if (in_device.type() == cucim::io::DeviceType::kCUDA)
+        {
+            cudaError_t cuda_status;
+            raster = static_cast<uint8_t*>(cucim_malloc(raster_size));
+            CUDA_TRY(cudaMemcpy(raster, data, raster_size, cudaMemcpyDeviceToHost));
+            if (cuda_status)
+            {
+                cucim_free(raster);
+                throw std::runtime_error("Error during cudaMemcpy!");
+            }
+            data = raster;
+        }
+
+        for (unsigned int i = 0; (i < raster_size) && fs.good(); ++i)
         {
             fs << data[i];
         }
         fs.flush();
         if (fs.bad())
         {
+            if (in_device.type() == cucim::io::DeviceType::kCUDA)
+            {
+                cucim_free(raster);
+            }
             CUCIM_ERROR("Writing data failed!");
         }
         fs.close();
@@ -763,10 +869,11 @@ void CuImage::ensure_init()
         // TODO: Here 'LINUX' path separator is used. Need to make it generalize once filesystem library is
         // available.
         std::string plugin_file_path = (plugin_root && *plugin_root != 0) ?
-                                           fmt::format("{}/cucim.kit.cuslide@" XSTR(CUCIM_VERSION) ".so", plugin_root) :
-                                           fmt::format("cucim.kit.cuslide@" XSTR(CUCIM_VERSION) ".so");
-        struct stat st_buff;
-        if (stat(plugin_file_path.c_str(), &st_buff) != 0)
+                                           fmt::format("{}/cucim.kit.cuslide@{}.{}.{}.so", plugin_root,
+                                                       CUCIM_VERSION_MAJOR, CUCIM_VERSION_MINOR, CUCIM_VERSION_PATCH) :
+                                           fmt::format("cucim.kit.cuslide@{}.{}.{}.so", CUCIM_VERSION_MAJOR,
+                                                       CUCIM_VERSION_MINOR, CUCIM_VERSION_PATCH);
+        if (!cucim::util::file_exists(plugin_file_path.c_str()))
         {
             plugin_file_path = fmt::format("cucim.kit.cuslide@" XSTR(CUCIM_VERSION) ".so");
         }
@@ -780,18 +887,19 @@ void CuImage::ensure_init()
     }
 }
 
-bool CuImage::crop_image(io::format::ImageMetadataDesc* metadata,
-                         io::format::ImageReaderRegionRequestDesc* request,
-                         io::format::ImageDataDesc* out_image_data) const
+bool CuImage::crop_image(const io::format::ImageReaderRegionRequestDesc& request,
+                         io::format::ImageDataDesc& out_image_data) const
 {
     // TODO: assume length of location/size to 2.
     constexpr int32_t ndims = 2;
 
-    if (request->level >= metadata->resolution_info.level_count)
+    if (request.level >= image_metadata_->resolution_info.level_count)
     {
-        throw std::invalid_argument(fmt::format("Invalid level ({}) in the request! (Should be < {})", request->level,
-                                                metadata->resolution_info.level_count));
+        throw std::invalid_argument(fmt::format("Invalid level ({}) in the request! (Should be < {})", request.level,
+                                                image_metadata_->resolution_info.level_count));
     }
+
+    const cucim::io::Device& in_device = device();
 
     auto original_img_width = image_metadata_->shape[dim_indices_.index('X')];
     auto original_img_height = image_metadata_->shape[dim_indices_.index('Y')];
@@ -801,40 +909,47 @@ bool CuImage::crop_image(io::format::ImageMetadataDesc* metadata,
 
     for (int32_t i = 0; i < ndims; ++i)
     {
-        if (request->location[i] < 0)
+        if (request.location[i] < 0)
         {
             throw std::invalid_argument(
-                fmt::format("Invalid location ({}) in the request! (Should be >= 0)", request->location[i]));
+                fmt::format("Invalid location ({}) in the request! (Should be >= 0)", request.location[i]));
         }
-        if (request->size[i] <= 0)
+        if (request.size[i] <= 0)
         {
-            throw std::invalid_argument(
-                fmt::format("Invalid size ({}) in the request! (Should be > 0)", request->size[i]));
+            throw std::invalid_argument(fmt::format("Invalid size ({}) in the request! (Should be > 0)", request.size[i]));
         }
     }
-    if (request->location[0] + request->size[0] > original_img_width)
+    if (request.location[0] + request.size[0] > original_img_width)
     {
         throw std::invalid_argument(
             fmt::format("Invalid location/size (it exceeds the image width {})", original_img_width));
     }
-    if (request->location[1] + request->size[1] > original_img_height)
+    if (request.location[1] + request.size[1] > original_img_height)
     {
         throw std::invalid_argument(
             fmt::format("Invalid location/size (it exceeds the image height {})", original_img_height));
     }
 
-    int64_t sx = request->location[0];
-    int64_t sy = request->location[1];
-    int64_t w = request->size[0];
-    int64_t h = request->size[1];
+    std::string device_name(request.device);
+
+    if (request.shm_name)
+    {
+        device_name = device_name + fmt::format("[{}]", request.shm_name); // TODO: check performance
+    }
+    cucim::io::Device out_device(device_name);
+
+    int64_t sx = request.location[0];
+    int64_t sy = request.location[1];
+    int64_t w = request.size[0];
+    int64_t h = request.size[1];
 
     uint64_t ex = sx + w - 1;
     uint64_t ey = sy + h - 1;
 
     uint8_t* src_ptr = static_cast<uint8_t*>(image_data_->container.data);
+    size_t raster_size = w * h * samples_per_pixel;
 
-    void* raster = cucim_malloc(w * h * samples_per_pixel); // RGB image
-    auto dest_ptr = static_cast<uint8_t*>(raster);
+    void* raster = nullptr;
     int64_t dest_stride_x_bytes = w * samples_per_pixel;
 
     int64_t src_stride_x = original_img_width;
@@ -843,23 +958,97 @@ bool CuImage::crop_image(io::format::ImageMetadataDesc* metadata,
     int64_t start_offset = (sx + (sy * src_stride_x)) * samples_per_pixel;
     int64_t end_offset = (ex + (ey * src_stride_x)) * samples_per_pixel;
 
-    for (int64_t src_offset = start_offset; src_offset <= end_offset; src_offset += src_stride_x_bytes)
+    switch (in_device.type())
     {
-        memcpy(dest_ptr, src_ptr + src_offset, dest_stride_x_bytes);
-        dest_ptr += dest_stride_x_bytes;
+    case cucim::io::DeviceType::kCPU: {
+        raster = cucim_malloc(raster_size);
+        auto dest_ptr = static_cast<uint8_t*>(raster);
+        for (int64_t src_offset = start_offset; src_offset <= end_offset; src_offset += src_stride_x_bytes)
+        {
+            memcpy(dest_ptr, src_ptr + src_offset, dest_stride_x_bytes);
+            dest_ptr += dest_stride_x_bytes;
+        }
+        // Copy the raster memory and free it if needed.
+        cucim::memory::move_raster_from_host((void**)&raster, raster_size, out_device);
+        break;
+    }
+    case cucim::io::DeviceType::kCUDA: {
+        cudaError_t cuda_status;
+
+        if (out_device.type() == cucim::io::DeviceType::kCPU)
+        {
+            // cuda -> host at bulk then host -> host per row is faster than cuda-> cuda per row, then cuda->host at
+            // bulk.
+            uint8_t* copied_src_ptr = static_cast<uint8_t*>(cucim_malloc(src_stride_x_bytes * h));
+            CUDA_TRY(cudaMemcpy(copied_src_ptr, src_ptr + start_offset, src_stride_x_bytes * h, cudaMemcpyDeviceToHost));
+            if (cuda_status)
+            {
+                cucim_free(copied_src_ptr);
+                throw std::runtime_error("Error during cudaMemcpy!");
+            }
+
+            end_offset -= start_offset;
+            start_offset = 0;
+
+            raster = cucim_malloc(raster_size);
+            auto dest_ptr = static_cast<uint8_t*>(raster);
+            for (int64_t src_offset = start_offset; src_offset <= end_offset; src_offset += src_stride_x_bytes)
+            {
+                memcpy(dest_ptr, copied_src_ptr + src_offset, dest_stride_x_bytes);
+                dest_ptr += dest_stride_x_bytes;
+            }
+            cucim_free(copied_src_ptr);
+        }
+        else
+        {
+            CUDA_TRY(cudaMalloc(&raster, raster_size));
+            if (cuda_status)
+            {
+                throw std::bad_alloc();
+            }
+            auto dest_ptr = static_cast<uint8_t*>(raster);
+            CUDA_TRY(cudaMemcpy2D(dest_ptr, dest_stride_x_bytes, src_ptr + start_offset, src_stride_x_bytes,
+                                  dest_stride_x_bytes, h, cudaMemcpyDeviceToDevice));
+            if (cuda_status)
+            {
+                throw std::runtime_error("Error during cudaMemcpy2D!");
+            }
+            // Copy the raster memory and free it if needed.
+            cucim::memory::move_raster_from_device((void**)&raster, raster_size, out_device);
+        }
+        break;
+    }
+    case cucim::io::DeviceType::kPinned:
+    case cucim::io::DeviceType::kCPUShared:
+    case cucim::io::DeviceType::kCUDAShared:
+        throw std::runtime_error(fmt::format("Device type {} not supported!", in_device.type()));
+        break;
     }
 
-    out_image_data->container.data = raster;
-    out_image_data->container.ctx = DLContext{ static_cast<DLDeviceType>(cucim::io::DeviceType::kCPU), 0 };
-    out_image_data->container.ndim = metadata->ndim;
-    out_image_data->container.dtype = metadata->dtype;
-    out_image_data->container.strides = nullptr; // Tensor is compact and row-majored
-    out_image_data->container.byte_offset = 0;
+    auto& out_image_container = out_image_data.container;
+    out_image_container.data = raster;
+    out_image_container.ctx = DLContext{ static_cast<DLDeviceType>(out_device.type()), out_device.index() };
+    out_image_container.ndim = image_metadata_->ndim;
+    out_image_container.dtype = image_metadata_->dtype;
+    out_image_container.strides = nullptr; // Tensor is compact and row-majored
+    out_image_container.byte_offset = 0;
     // Set correct shape
-    out_image_data->container.shape = static_cast<int64_t*>(cucim_malloc(sizeof(int64_t) * metadata->ndim));
-    memcpy(out_image_data->container.shape, metadata->shape, sizeof(int64_t) * metadata->ndim);
-    out_image_data->container.shape[0] = h;
-    out_image_data->container.shape[1] = w;
+    out_image_container.shape = static_cast<int64_t*>(cucim_malloc(sizeof(int64_t) * image_metadata_->ndim));
+    memcpy(out_image_container.shape, image_metadata_->shape, sizeof(int64_t) * image_metadata_->ndim);
+    out_image_container.shape[0] = h;
+    out_image_container.shape[1] = w;
+
+    auto& shm_name = out_device.shm_name();
+    size_t shm_name_len = shm_name.size();
+    if (shm_name_len != 0)
+    {
+        out_image_data.shm_name = static_cast<char*>(cucim_malloc(shm_name_len + 1));
+        memcpy(out_image_data.shm_name, shm_name.c_str(), shm_name_len + 1);
+    }
+    else
+    {
+        out_image_data.shm_name = nullptr;
+    }
 
     return true;
 }

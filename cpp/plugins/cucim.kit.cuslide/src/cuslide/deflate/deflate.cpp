@@ -68,6 +68,11 @@ bool decode_deflate(int fd,
     size_t out_size;
     libdeflate_zlib_decompress(d, deflate_buf, size /*in_nbytes*/, *dest, dest_nbytes /*out_nbytes_avail*/, &out_size);
 
+    if (fd != -1)
+    {
+        free(deflate_buf);
+    }
+
     libdeflate_free_decompressor(d);
     return true;
 }

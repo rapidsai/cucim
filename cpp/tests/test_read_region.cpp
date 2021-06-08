@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,21 +14,19 @@
  * limitations under the License.
  */
 
-#include <catch2/catch.hpp>
+#include <chrono>
 #include <iostream>
 
+#include <catch2/catch.hpp>
+#include <cuda_runtime.h>
+#include <openslide/openslide.h>
+
 #include "config.h"
-#include "cucim/io/format/image_format.h"
 #include "cucim/core/framework.h"
-//#include "rmm/mr/host/new_delete_resource.hpp"
-//#include <iostream>
+#include "cucim/io/device.h"
+#include "cucim/io/format/image_format.h"
 #include "cucim/memory/memory_manager.h"
 
-#include <cuda_runtime.h>
-#include "cucim/io/device.h"
-
-#include <chrono>
-#include <openslide/openslide.h>
 
 SCENARIO("Verify read_region()", "[test_read_region.cpp]")
 {
@@ -43,7 +41,7 @@ SCENARIO("Verify read_region()", "[test_read_region.cpp]")
         openslide_t* slide = openslide_open(g_config.get_input_path().c_str());
         REQUIRE(slide != nullptr);
 
-        auto buf = (uint32_t*)cucim_malloc(test_width * test_height * 4);
+        auto buf = static_cast<uint32_t*>(cucim_malloc(test_width * test_height * 4));
         int64_t w, h;
         openslide_get_level0_dimensions(slide, &w, &h);
         printf("w = %ld h=%ld\n", w, h);

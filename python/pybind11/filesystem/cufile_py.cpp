@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,17 +16,19 @@
 
 #include "cufile_py.h"
 #include "cufile_pydoc.h"
-#include "../memory/init.h"
 
 #include <pybind11/pybind11.h>
+
 #include <cucim/filesystem/cufile_driver.h>
+
+#include "../memory/memory_py.h"
 
 namespace py = pybind11;
 
 namespace cucim::filesystem
 {
 
-ssize_t fd_pread(const CuFileDriver& fd, py::object obj, size_t count, off_t file_offset, off_t buf_offset)
+ssize_t fd_pread(const CuFileDriver& fd, const py::object& obj, size_t count, off_t file_offset, off_t buf_offset)
 {
     void* buf = nullptr;
     size_t memory_size = 0;
@@ -49,7 +51,7 @@ ssize_t fd_pread(const CuFileDriver& fd, py::object obj, size_t count, off_t fil
     py::call_guard<py::gil_scoped_release>();
     return fd.pread(buf, count, file_offset, buf_offset);
 }
-ssize_t fd_pwrite(CuFileDriver& fd, py::object obj, size_t count, off_t file_offset, off_t buf_offset)
+ssize_t fd_pwrite(CuFileDriver& fd, const py::object& obj, size_t count, off_t file_offset, off_t buf_offset)
 {
     void* buf = nullptr;
     size_t memory_size = 0;

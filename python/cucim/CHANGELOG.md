@@ -1,6 +1,12 @@
 
 # Changelog
 
+## [21.06.00](https://github.com/rapidsai/cucim/wiki/release_notes_v21.06.00)
+
+- Implement cache mechanism
+- Add `__cuda_array_interface`.
+- Fix a memory leak in Deflate decoder.
+
 ## 0.19.0 (2021-04-19)
 
 - The first release of cuClaraImage + [cupyimg](https://github.com/mritools/cupyimg) as a single project `cuCIM`.

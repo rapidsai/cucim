@@ -1,0 +1,31 @@
+diff --git a/libcuckoo/cuckoohash_map.hh b/libcuckoo/cuckoohash_map.hh
+index 88f1f43..a36c273 100644
+--- a/libcuckoo/cuckoohash_map.hh
++++ b/libcuckoo/cuckoohash_map.hh
+@@ -24,6 +24,10 @@
+ #include <utility>
+ #include <vector>
+
++// [cuCIM patch] Include boost interprocess vector/list.
++#include <boost/interprocess/containers/vector.hpp>
++#include <boost/interprocess/containers/list.hpp>
++
+ #include "cuckoohash_config.hh"
+ #include "cuckoohash_util.hh"
+ #include "bucket_container.hh"
+@@ -841,8 +845,13 @@ private:
+   using rebind_alloc =
+       typename std::allocator_traits<allocator_type>::template rebind_alloc<U>;
+
+-  using locks_t = std::vector<spinlock, rebind_alloc<spinlock>>;
+-  using all_locks_t = std::list<locks_t, rebind_alloc<locks_t>>;
++  // [cuCIM patch] Use boost::interprocess vector and list for using shared
++  // memory with Boost's interprocess module. This is not a portable solution.
++  //
++  // See [cuCIM patch] https://github.com/efficient/libcuckoo/issues/111
++  //
++  using locks_t = boost::interprocess::vector<spinlock, rebind_alloc<spinlock>>;
++  using all_locks_t = boost::interprocess::list<locks_t, rebind_alloc<locks_t>>;
+
+   // Classes for managing locked buckets. By storing and moving around sets of
+   // locked buckets in these classes, we can ensure that they are unlocked

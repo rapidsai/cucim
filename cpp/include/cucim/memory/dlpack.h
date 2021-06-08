@@ -27,12 +27,28 @@ class DLTContainer
 {
 public:
     DLTContainer() = delete;
-    DLTContainer(DLTensor* handle) : tensor_(handle)
+    DLTContainer(DLTensor* handle, char* shm_name = nullptr) : tensor_(handle), shm_name_(shm_name)
     {
     }
 
     /**
-     * Returns a string providing the basic type of the homogenous array in NumPy.
+     * @brief Return the size of memory required to store the contents of data.
+     *
+     * @return size_t Required size for the tensor.
+     */
+    size_t size()
+    {
+        size_t size = 1;
+        for (int i = 0; i < tensor_->ndim; ++i)
+        {
+            size *= tensor_->shape[i];
+        }
+        size *= (tensor_->dtype.bits * tensor_->dtype.lanes + 7) / 8;
+        return size;
+    }
+
+    /**
+     * @brief Return a string providing the basic type of the homogenous array in NumPy.
      *
      * Note: This method assumes little-endian for now.
      *
@@ -108,7 +124,8 @@ public:
     }
 
 private:
-    DLTensor* tensor_;
+    DLTensor* tensor_ = nullptr;
+    char* shm_name_ = nullptr;
 };
 
 } // namespace cucim::memory

@@ -38,28 +38,48 @@ endif()
 add_library(${CUCIM_PACKAGE_NAME}
         src/core/framework.cpp
         include/cucim/cuimage.h
+        include/cucim/cache/image_cache.h
+        include/cucim/cache/image_cache_config.h
+        include/cucim/cache/image_cache_manager.h
         include/cucim/codec/base64.h
+        include/cucim/codec/hash_function.h
         include/cucim/codec/methods.h
+        include/cucim/config/config.h
         include/cucim/core/framework.h
         include/cucim/core/plugin.h
         include/cucim/core/plugin_util.h
         include/cucim/core/interface.h
         include/cucim/core/version.h
+        include/cucim/cpp20/find_if.h
         include/cucim/dynlib/helper.h
         include/cucim/filesystem/cufile_driver.h
         include/cucim/filesystem/file_handle.h
         include/cucim/filesystem/file_path.h
         include/cucim/io/device.h
+        include/cucim/io/device_type.h
         include/cucim/io/format/image_format.h
         include/cucim/logger/logger.h
         include/cucim/logger/timer.h
         include/cucim/macros/defines.h
         include/cucim/memory/dlpack.h
         include/cucim/memory/memory_manager.h
+        include/cucim/util/cuda.h
+        include/cucim/util/file.h
         include/cucim/3rdparty/dlpack/dlpack.h
         include/cucim/3rdparty/dlpack/dlpackcpp.h
         src/cuimage.cpp
+        src/cache/cache_type.cpp
+        src/cache/image_cache.cpp
+        src/cache/image_cache_config.cpp
+        src/cache/image_cache_empty.h
+        src/cache/image_cache_empty.cpp
+        src/cache/image_cache_manager.cpp
+        src/cache/image_cache_per_process.h
+        src/cache/image_cache_per_process.cpp
+        src/cache/image_cache_shared_memory.h
+        src/cache/image_cache_shared_memory.cpp
         src/codec/base64.cpp
+        src/config/config.cpp
         src/core/cucim_framework.h
         src/core/cucim_framework.cpp
         src/core/cucim_plugin.h
@@ -68,11 +88,14 @@ add_library(${CUCIM_PACKAGE_NAME}
         src/core/plugin_manager.cpp
         src/core/version.inl
         src/filesystem/cufile_driver.cpp
+        src/filesystem/file_handle.cpp
         src/io/device.cpp
+        src/io/device_type.cpp
         src/io/format/image_format.cpp
         src/logger/logger.cpp
         src/logger/timer.cpp
-        src/memory/memory_manager.cu)
+        src/memory/memory_manager.cu
+        src/util/file.cpp)
 
 # Compile options
 set_target_properties(${CUCIM_PACKAGE_NAME}
@@ -109,6 +132,7 @@ target_compile_definitions(${CUCIM_PACKAGE_NAME}
         CUCIM_VERSION_BUILD=${PROJECT_VERSION_BUILD}
         CUCIM_SUPPORT_GDS=$<BOOL:${CUCIM_SUPPORT_GDS}>
         CUCIM_STATIC_GDS=$<BOOL:${CUCIM_STATIC_GDS}>
+        CUCIM_SUPPORT_CUDA=$<BOOL:${CUCIM_SUPPORT_CUDA}>
         _GLIBCXX_USE_CXX11_ABI=0  # TODO: create two library, one with CXX11 ABI and one without it.
 )
 
@@ -127,6 +151,9 @@ target_link_libraries(${CUCIM_PACKAGE_NAME}
         PRIVATE
             deps::abseil
             deps::gds
+            deps::libcuckoo
+            deps::boost-header-only
+            deps::json
         )
 
 if (CUCIM_STATIC_GDS)
@@ -164,6 +191,7 @@ target_compile_definitions(${CUCIM_PACKAGE_NAME}-header-only
         CUCIM_VERSION_BUILD=${PROJECT_VERSION_BUILD}
         CUCIM_SUPPORT_GDS=$<BOOL:${CUCIM_SUPPORT_GDS}>
         CUCIM_STATIC_GDS=$<BOOL:${CUCIM_STATIC_GDS}>
+        CUCIM_SUPPORT_CUDA=$<BOOL:${CUCIM_SUPPORT_CUDA}>
         CUCIM_HEADER_ONLY=1
         )
 target_compile_features(${CUCIM_PACKAGE_NAME}-header-only INTERFACE ${CUCIM_REQUIRED_FEATURES})

@@ -231,3 +231,9 @@ libdeflate
   - https://github.com/ebiggers/libdeflate/blob/master/COPYING
 - Copyright: Eric Biggers
 - Usage: Extracting tile image (zlib/deflate compressed)for TIFF file (@cuslide plugin)
+
+libcuckoo
+- License: Apache-2.0 License
+  - https://github.com/efficient/libcuckoo/blob/master/LICENSE
+- Copyright: Carnegie Mellon University and Intel Corporation
+- Usage: Using concurrent hash table implementation for cache mechanism.

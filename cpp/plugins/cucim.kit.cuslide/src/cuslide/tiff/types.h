@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,9 +17,9 @@
 #ifndef CUSLIDE_TYPES_H
 #define CUSLIDE_TYPES_H
 
-#include <cucim/codec/methods.h>
-
 #include <cstdint>
+
+#include <cucim/codec/methods.h>
 
 namespace cuslide::tiff
 {
