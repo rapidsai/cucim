@@ -44,12 +44,6 @@ opts = dict(
     url='https://github.com/rapidsai/cucim',
     packages=find_packages('src'),
     package_dir={'cucim': 'src/cucim'},
-    # # https://docs.python.org/3/distutils/setupscript.html
-    # py_modules=[splitext(basename(path))[0] for path in glob('src/*.py')],
-
-    # If True, the data files [of include_package_data] must be under version
-    # control or specified via the distutils' MANIFEST.in file
-    # (https://setuptools.readthedocs.io/en/latest/userguide/datafiles.html)
     include_package_data=True,
     zip_safe=False,
     classifiers=[

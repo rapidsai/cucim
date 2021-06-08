@@ -22,7 +22,6 @@
 #include <cucim/io/format/image_format.h>
 #include <cucim/macros/api_header.h>
 #include <cucim/memory/memory_manager.h>
-//#include <tiffio.h>
 
 #include <cstdint>
 #include <fcntl.h>

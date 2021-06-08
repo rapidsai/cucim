@@ -68,7 +68,7 @@ void get_pointer_attributes(PointerAttributes& attr, const void* ptr)
     }
 }
 
-bool move_raster_from_host(void** target, size_t size, cucim::io::Device& dst_device)
+bool move_raster_from_host(void** target, size_t size, const cucim::io::Device& dst_device)
 {
     switch (dst_device.type())
     {
@@ -94,7 +94,7 @@ bool move_raster_from_host(void** target, size_t size, cucim::io::Device& dst_de
     return true;
 }
 
-bool move_raster_from_device(void** target, size_t size, cucim::io::Device& dst_device)
+bool move_raster_from_device(void** target, size_t size, const cucim::io::Device& dst_device)
 {
     switch (dst_device.type())
     {

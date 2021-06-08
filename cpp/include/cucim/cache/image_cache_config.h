@@ -40,7 +40,7 @@ constexpr uint32_t calc_default_cache_capacity(uint64_t memory_capacity_in_bytes
 
 struct EXPORT_VISIBLE ImageCacheConfig
 {
-    void load_config(void* json_obj);
+    void load_config(const void* json_obj);
 
     CacheType type = CacheType::kNoCache;
     uint32_t memory_capacity = kDefaultCacheMemoryCapacity;

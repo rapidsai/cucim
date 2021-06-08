@@ -18,7 +18,6 @@
 #define CUCIM_CUIMAGE_H
 
 #include "cucim/core/framework.h"
-
 #include "cucim/cache/image_cache_manager.h"
 #include "cucim/config/config.h"
 #include "cucim/filesystem/file_path.h"
@@ -172,7 +171,8 @@ private:
     explicit CuImage();
 
     void ensure_init();
-    bool crop_image(io::format::ImageReaderRegionRequestDesc* request, io::format::ImageDataDesc* out_image_data) const;
+    bool crop_image(const io::format::ImageReaderRegionRequestDesc& request,
+                    io::format::ImageDataDesc& out_image_data) const;
 
 
     static Framework* framework_;

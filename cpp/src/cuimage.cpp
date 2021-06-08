@@ -624,7 +624,7 @@ CuImage CuImage::read_region(std::vector<int64_t>&& location,
         }
         else // Read region by cropping image
         {
-            crop_image(&request, image_data);
+            crop_image(request, *image_data);
         }
     }
     catch (std::invalid_argument& e)
@@ -887,14 +887,15 @@ void CuImage::ensure_init()
     }
 }
 
-bool CuImage::crop_image(io::format::ImageReaderRegionRequestDesc* request, io::format::ImageDataDesc* out_image_data) const
+bool CuImage::crop_image(const io::format::ImageReaderRegionRequestDesc& request,
+                         io::format::ImageDataDesc& out_image_data) const
 {
     // TODO: assume length of location/size to 2.
     constexpr int32_t ndims = 2;
 
-    if (request->level >= image_metadata_->resolution_info.level_count)
+    if (request.level >= image_metadata_->resolution_info.level_count)
     {
-        throw std::invalid_argument(fmt::format("Invalid level ({}) in the request! (Should be < {})", request->level,
+        throw std::invalid_argument(fmt::format("Invalid level ({}) in the request! (Should be < {})", request.level,
                                                 image_metadata_->resolution_info.level_count));
     }
 
@@ -908,40 +909,39 @@ bool CuImage::crop_image(io::format::ImageReaderRegionRequestDesc* request, io::
 
     for (int32_t i = 0; i < ndims; ++i)
     {
-        if (request->location[i] < 0)
+        if (request.location[i] < 0)
         {
             throw std::invalid_argument(
-                fmt::format("Invalid location ({}) in the request! (Should be >= 0)", request->location[i]));
+                fmt::format("Invalid location ({}) in the request! (Should be >= 0)", request.location[i]));
         }
-        if (request->size[i] <= 0)
+        if (request.size[i] <= 0)
         {
-            throw std::invalid_argument(
-                fmt::format("Invalid size ({}) in the request! (Should be > 0)", request->size[i]));
+            throw std::invalid_argument(fmt::format("Invalid size ({}) in the request! (Should be > 0)", request.size[i]));
         }
     }
-    if (request->location[0] + request->size[0] > original_img_width)
+    if (request.location[0] + request.size[0] > original_img_width)
     {
         throw std::invalid_argument(
             fmt::format("Invalid location/size (it exceeds the image width {})", original_img_width));
     }
-    if (request->location[1] + request->size[1] > original_img_height)
+    if (request.location[1] + request.size[1] > original_img_height)
     {
         throw std::invalid_argument(
             fmt::format("Invalid location/size (it exceeds the image height {})", original_img_height));
     }
 
-    std::string device_name(request->device);
+    std::string device_name(request.device);
 
-    if (request->shm_name)
+    if (request.shm_name)
     {
-        device_name = device_name + fmt::format("[{}]", request->shm_name); // TODO: check performance
+        device_name = device_name + fmt::format("[{}]", request.shm_name); // TODO: check performance
     }
     cucim::io::Device out_device(device_name);
 
-    int64_t sx = request->location[0];
-    int64_t sy = request->location[1];
-    int64_t w = request->size[0];
-    int64_t h = request->size[1];
+    int64_t sx = request.location[0];
+    int64_t sy = request.location[1];
+    int64_t w = request.size[0];
+    int64_t h = request.size[1];
 
     uint64_t ex = sx + w - 1;
     uint64_t ey = sy + h - 1;
@@ -1025,7 +1025,7 @@ bool CuImage::crop_image(io::format::ImageReaderRegionRequestDesc* request, io::
         break;
     }
 
-    auto& out_image_container = out_image_data->container;
+    auto& out_image_container = out_image_data.container;
     out_image_container.data = raster;
     out_image_container.ctx = DLContext{ static_cast<DLDeviceType>(out_device.type()), out_device.index() };
     out_image_container.ndim = image_metadata_->ndim;
@@ -1042,12 +1042,12 @@ bool CuImage::crop_image(io::format::ImageReaderRegionRequestDesc* request, io::
     size_t shm_name_len = shm_name.size();
     if (shm_name_len != 0)
     {
-        out_image_data->shm_name = static_cast<char*>(cucim_malloc(shm_name_len + 1));
-        memcpy(out_image_data->shm_name, shm_name.c_str(), shm_name_len + 1);
+        out_image_data.shm_name = static_cast<char*>(cucim_malloc(shm_name_len + 1));
+        memcpy(out_image_data.shm_name, shm_name.c_str(), shm_name_len + 1);
     }
     else
     {
-        out_image_data->shm_name = nullptr;
+        out_image_data.shm_name = nullptr;
     }
 
     return true;

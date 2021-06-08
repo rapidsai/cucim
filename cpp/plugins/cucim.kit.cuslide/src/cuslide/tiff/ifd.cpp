@@ -450,19 +450,10 @@ bool IFD::read_region_tiles(const TIFF* tiff,
     }
 
     int tiff_file = tiff->file_handle_.fd;
-    uint64_t ifd_hash_value = ifd->hash_value_; //[cache]
-
-
-    //    uint32_t nbytes_offset_sx = offset_sx * samples_per_pixel;
-    //    uint32_t nbytes_offset_ex = offset_ex * samples_per_pixel;
+    uint64_t ifd_hash_value = ifd->hash_value_;
     uint32_t dest_pixel_step_y = w * samples_per_pixel;
-    //    uint32_t dest_pixel_tile_step_y = dest_pixel_step_y * th;
 
     uint32_t nbytes_tw = tw * samples_per_pixel;
-    //    uint32_t nbytes_th = th * samples_per_pixel;
-    //    uint32_t nbytes_offset_sy = offset_sy * nbytes_tw;
-    //    uint32_t nbytes_offset_ey = offset_ey * nbytes_tw;
-
     auto dest_start_ptr = static_cast<uint8_t*>(raster);
 
     // TODO: Current implementation doesn't consider endianness so need to consider later

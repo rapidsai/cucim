@@ -24,9 +24,9 @@ using json = nlohmann::json;
 namespace cucim::cache
 {
 
-void ImageCacheConfig::load_config(void* json_obj)
+void ImageCacheConfig::load_config(const void* json_obj)
 {
-    json& cache_config = *(static_cast<json*>(json_obj));
+    const json& cache_config = *(static_cast<const json*>(json_obj));
 
     if (cache_config["type"].is_string())
     {

@@ -1,4 +1,4 @@
-# cuCIM [21.06.00](https://github.com/rapidsai/cucim/wiki/release_notes_v21.06.00) (Date TBD)
+# cuCIM 21.06.00 (Date TBD)
 
 Please see https://github.com/rapidsai/cucim/releases/tag/v21.06.00a for the latest changes to this development branch.
 

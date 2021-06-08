@@ -15,6 +15,7 @@
 
 import concurrent.futures
 import json
+import os
 from contextlib import ContextDecorator
 from time import perf_counter
 
@@ -61,19 +62,6 @@ print(json.dumps(img.metadata, indent=2))
 # A raw metadata string.
 print(img.raw_metadata)
 
-# a = np.asarray(img.read_region((10000, 10000), (1000, 1000), 0))
-# print(a.shape)
-b = img.read_region((10000, 10000), (1000, 1000), 0)
-print(b.metadata)
-# import PIL
-# from PIL import Image
-# b = Image.fromarray(a[:,:,:3])
-# b.save("output.jpg", "JPEG", quality=100)
-# import sys
-# sys.exit(1)
-# print(os.environ.get("LD_LIBRARY_PATH"))
-# sys.exit(1)
-
 
 class Timer(ContextDecorator):
     def __init__(self, message):
@@ -94,7 +82,7 @@ class Timer(ContextDecorator):
         print("{} : {}".format(self.message, self.end - self.start))
 
 
-num_threads = 12  # os.cpu_count()
+num_threads = os.cpu_count()
 
 start_location = 1
 tile_size = 512
@@ -110,28 +98,28 @@ def load_tile_cucim(slide, start_loc, tile_size):
 
 openslide_tot_time = 0
 cucim_tot_time = 0
-for num_workers in (num_threads,):  # range(1, num_threads + 1):
+for num_workers in range(1, num_threads + 1):
     with OpenSlide(input_file) as slide:
         width, height = slide.dimensions
 
-    #     count = 0
-    #     for h in range(start_location, height, tile_size):
-    #         for w in range(start_location, width, tile_size):
-    #             count += 1
-    #     start_loc_iter = ((w, h)
-    #                       for h in range(start_location, height, tile_size)
-    #                       for w in range(start_location, width, tile_size))
-    #     with Timer("  Thread elapsed time (OpenSlide)") as timer:
-    #         with concurrent.futures.ThreadPoolExecutor(
-    #             max_workers=num_workers
-    #         ) as executor:
-    #             executor.map(
-    #                 lambda start_loc: load_tile_openslide(
-    #                     slide, start_loc, tile_size),
-    #                 start_loc_iter,
-    #             )
-    #         openslide_time = timer.elapsed_time()
-    #         openslide_tot_time += openslide_time
+        count = 0
+        for h in range(start_location, height, tile_size):
+            for w in range(start_location, width, tile_size):
+                count += 1
+        start_loc_iter = ((w, h)
+                          for h in range(start_location, height, tile_size)
+                          for w in range(start_location, width, tile_size))
+        with Timer("  Thread elapsed time (OpenSlide)") as timer:
+            with concurrent.futures.ThreadPoolExecutor(
+                max_workers=num_workers
+            ) as executor:
+                executor.map(
+                    lambda start_loc: load_tile_openslide(
+                        slide, start_loc, tile_size),
+                    start_loc_iter,
+                )
+            openslide_time = timer.elapsed_time()
+            openslide_tot_time += openslide_time
 
     cucim_time = 0
     slide = CuImage(input_file)
@@ -148,8 +136,8 @@ for num_workers in (num_threads,):  # range(1, num_threads + 1):
             )
         cucim_time = timer.elapsed_time()
         cucim_tot_time += cucim_time
-    # print("  Performance gain (OpenSlide/cuCIM): {}".format(
-    #     openslide_time / cucim_time))
+    print("  Performance gain (OpenSlide/cuCIM): {}".format(
+        openslide_time / cucim_time))
 
 print("Total time (OpenSlide):", openslide_tot_time)
 print("Total time (cuCIM):", cucim_tot_time)
