@@ -88,28 +88,28 @@ public:
     ImageMetadataDesc& desc();
 
     ImageMetadata& ndim(uint16_t ndim);
-    ImageMetadata& dims(const std::string_view& dims);
-    ImageMetadata& shape(const std::pmr::vector<int64_t>& shape);
+    ImageMetadata& dims(std::string_view&& dims);
+    ImageMetadata& shape(std::pmr::vector<int64_t>&& shape);
     ImageMetadata& dtype(const DLDataType& dtype);
-    ImageMetadata& channel_names(const std::pmr::vector<std::string_view>& channel_names);
+    ImageMetadata& channel_names(std::pmr::vector<std::string_view>&& channel_names);
 
-    ImageMetadata& spacing(const std::pmr::vector<float>& spacing);
-    ImageMetadata& spacing_units(const std::pmr::vector<std::string_view>& spacing_units);
+    ImageMetadata& spacing(std::pmr::vector<float>&& spacing);
+    ImageMetadata& spacing_units(std::pmr::vector<std::string_view>&& spacing_units);
 
-    ImageMetadata& origin(const std::pmr::vector<float>& origin);
-    ImageMetadata& direction(const std::pmr::vector<float>& direction);
-    ImageMetadata& coord_sys(const std::string_view& coord_sys);
+    ImageMetadata& origin(std::pmr::vector<float>&& origin);
+    ImageMetadata& direction(std::pmr::vector<float>&& direction);
+    ImageMetadata& coord_sys(std::string_view&& coord_sys);
 
     // ResolutionInfoDesc
     ImageMetadata& level_count(uint16_t level_count);
     ImageMetadata& level_ndim(uint16_t level_ndim);
-    ImageMetadata& level_dimensions(const std::pmr::vector<int64_t>& level_dimensions);
-    ImageMetadata& level_downsamples(const std::pmr::vector<float>& level_downsamples);
-    ImageMetadata& level_tile_sizes(const std::pmr::vector<uint32_t>& level_tile_sizes);
+    ImageMetadata& level_dimensions(std::pmr::vector<int64_t>&& level_dimensions);
+    ImageMetadata& level_downsamples(std::pmr::vector<float>&& level_downsamples);
+    ImageMetadata& level_tile_sizes(std::pmr::vector<uint32_t>&& level_tile_sizes);
 
     // AssociatedImageInfoDesc
     ImageMetadata& image_count(uint16_t image_count);
-    ImageMetadata& image_names(const std::pmr::vector<std::string_view>& image_names);
+    ImageMetadata& image_names(std::pmr::vector<std::string_view>&& image_names);
 
     ImageMetadata& raw_data(const std::string_view& raw_data);
     ImageMetadata& json_data(const std::string_view& json_data);
@@ -125,9 +125,9 @@ private:
 #if _GLIBCXX_USE_CXX11_ABI
     std::pmr::string dims_{ &res_ };
     std::pmr::vector<int64_t> shape_{ &res_ };
-    std::pmr::vector<std::pmr::string> channel_names_{ &res_ };
+    std::pmr::vector<std::string_view> channel_names_{ &res_ };
     std::pmr::vector<float> spacing_{ &res_ };
-    std::pmr::vector<std::pmr::string> spacing_units_{ &res_ };
+    std::pmr::vector<std::string_view> spacing_units_{ &res_ };
     std::pmr::vector<float> origin_{ &res_ };
     std::pmr::vector<float> direction_{ &res_ };
     std::pmr::string coord_sys_{ &res_ };
@@ -136,13 +136,13 @@ private:
     std::pmr::vector<float> level_downsamples_{ &res_ };
     std::pmr::vector<uint32_t> level_tile_sizes_{ &res_ };
 
-    std::pmr::vector<std::pmr::string> image_names_{ &res_ };
+    std::pmr::vector<std::string_view> image_names_{ &res_ };
 #else
     std::string dims_;
     std::pmr::vector<int64_t> shape_{ &res_ };
-    std::pmr::vector<std::string> channel_names_{ &res_ };
+    std::pmr::vector<std::string_view> channel_names_{ &res_ };
     std::pmr::vector<float> spacing_{ &res_ };
-    std::pmr::vector<std::string> spacing_units_{ &res_ };
+    std::pmr::vector<std::string_view> spacing_units_{ &res_ };
     std::pmr::vector<float> origin_{ &res_ };
     std::pmr::vector<float> direction_{ &res_ };
     std::string coord_sys_;
@@ -151,7 +151,7 @@ private:
     std::pmr::vector<float> level_downsamples_{ &res_ };
     std::pmr::vector<uint32_t> level_tile_sizes_{ &res_ };
 
-    std::pmr::vector<std::string> image_names_{ &res_ };
+    std::pmr::vector<std::string_view> image_names_{ &res_ };
 #endif
     // Memory for raw_data and json_data needs to be created with cucim_malloc();
 };

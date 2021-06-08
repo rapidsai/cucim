@@ -749,22 +749,22 @@ CuImage CuImage::read_region(std::vector<int64_t>&& location,
     std::string_view json_data{ "" };
 
     out_metadata.ndim(ndim);
-    out_metadata.dims(dims);
-    out_metadata.shape(shape);
+    out_metadata.dims(std::move(dims));
+    out_metadata.shape(std::move(shape));
     out_metadata.dtype(dtype);
-    out_metadata.channel_names(channel_names);
-    out_metadata.spacing(spacing);
-    out_metadata.spacing_units(spacing_units);
-    out_metadata.origin(origin);
-    out_metadata.direction(direction);
-    out_metadata.coord_sys(coord_sys);
+    out_metadata.channel_names(std::move(channel_names));
+    out_metadata.spacing(std::move(spacing));
+    out_metadata.spacing_units(std::move(spacing_units));
+    out_metadata.origin(std::move(origin));
+    out_metadata.direction(std::move(direction));
+    out_metadata.coord_sys(std::move(coord_sys));
     out_metadata.level_count(1);
     out_metadata.level_ndim(2);
-    out_metadata.level_dimensions(level_dimensions);
-    out_metadata.level_downsamples(level_downsamples);
-    out_metadata.level_tile_sizes(level_tile_sizes);
+    out_metadata.level_dimensions(std::move(level_dimensions));
+    out_metadata.level_downsamples(std::move(level_downsamples));
+    out_metadata.level_tile_sizes(std::move(level_tile_sizes));
     out_metadata.image_count(associated_image_count);
-    out_metadata.image_names(associated_image_names);
+    out_metadata.image_names(std::move(associated_image_names));
     out_metadata.raw_data(raw_data);
     out_metadata.json_data(json_data);
 
