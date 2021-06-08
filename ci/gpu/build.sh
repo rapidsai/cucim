@@ -53,9 +53,7 @@ conda activate rapids
 
 gpuci_logger "Install dependencies"
 gpuci_conda_retry install -y -c rapidsai-nightly \
-    sysroot_linux-64=2.17 \
     "cudatoolkit=${CUDA_VER}.*" \
-    "python=${PYTHON_VER}.*" \
     "rapids-build-env=$MINOR_VERSION.*"
 
 ################################################################################
