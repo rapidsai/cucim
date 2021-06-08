@@ -8,6 +8,8 @@
 - [GTC 2021 cuCIM: A GPU Image I/O and Processing Toolkit [S32194]](https://www.nvidia.com/en-us/gtc/catalog/?search=cuCIM#/)
   - [video](https://gtc21.event.nvidia.com/media/cuCIM%3A%20A%20GPU%20Image%20I_O%20and%20Processing%20Toolkit%20%5BS32194%5D/1_fwfxd0iu)
 
+**Release notes** are available on our [wiki page](https://github.com/rapidsai/cucim/wiki/Release-Notes).
+
 ## Install cuCIM
 
 ### Conda
@@ -28,7 +30,7 @@
 
 ### Notebooks
 
-Please check out our [Welcome](notebooks/Welcome.ipynb) notebook.
+Please check out our [Welcome](notebooks/Welcome.ipynb) notebook ([NBViewer](https://nbviewer.jupyter.org/github/rapidsai/cucim/blob/branch-21.06/notebooks/Welcome.ipynb))
 
 #### Downloading sample images
 

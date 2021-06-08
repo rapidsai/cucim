@@ -105,6 +105,7 @@ include(ExternalProject)
 ################################################################################
 option(CUCIM_SUPPORT_GDS "Support cufile library" OFF)
 option(CUCIM_STATIC_GDS "Use static cufile library" OFF)
+option(CUCIM_SUPPORT_CUDA "Support CUDA" ON)
 
 # Setup CXX11 ABI
 # : Adds CXX11 ABI definition to the compiler command line for targets in the current directory,
@@ -124,6 +125,8 @@ superbuild_depend(openslide)
 superbuild_depend(catch2)
 superbuild_depend(cli11)
 superbuild_depend(json)
+superbuild_depend(libcuckoo)
+superbuild_depend(boost-header-only)
 
 ################################################################################
 # Define some names

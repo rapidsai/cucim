@@ -13,9 +13,9 @@
 # limitations under the License.
 #
 
-
 import concurrent.futures
 import json
+import os
 from contextlib import ContextDecorator
 from time import perf_counter
 
@@ -23,7 +23,7 @@ from openslide import OpenSlide
 
 from cucim import CuImage
 
-input_file = "notebooks/input/image.tif"
+input_file = "notebooks/input/image2.tif"
 
 img = CuImage(input_file)
 # True if image data is loaded & available.
@@ -62,17 +62,6 @@ print(json.dumps(img.metadata, indent=2))
 # A raw metadata string.
 print(img.raw_metadata)
 
-# a = np.asarray(img.read_region((10000, 10000), (1000, 1000), 0))
-# print(a.shape)
-b = img.read_region((10000, 10000), (1000, 1000), 0)
-print(b.metadata)
-# import PIL
-# from PIL import Image
-# b = Image.fromarray(a[:,:,:3])
-# b.save("output.jpg", "JPEG", quality=100)
-# import sys
-# sys.exit(1)
-
 
 class Timer(ContextDecorator):
     def __init__(self, message):
@@ -93,10 +82,10 @@ class Timer(ContextDecorator):
         print("{} : {}".format(self.message, self.end - self.start))
 
 
-num_threads = 1  # os.cpu_count()
+num_threads = os.cpu_count()
 
-start_location = 0
-tile_size = 256
+start_location = 1
+tile_size = 512
 
 
 def load_tile_openslide(slide, start_loc, tile_size):
@@ -119,7 +108,7 @@ for num_workers in range(1, num_threads + 1):
                 count += 1
         start_loc_iter = ((w, h)
                           for h in range(start_location, height, tile_size)
-                              for w in range(start_location, width, tile_size))
+                          for w in range(start_location, width, tile_size))
         with Timer("  Thread elapsed time (OpenSlide)") as timer:
             with concurrent.futures.ThreadPoolExecutor(
                 max_workers=num_workers
@@ -136,7 +125,7 @@ for num_workers in range(1, num_threads + 1):
     slide = CuImage(input_file)
     start_loc_iter = ((w, h)
                       for h in range(start_location, height, tile_size)
-                          for w in range(start_location, width, tile_size))
+                      for w in range(start_location, width, tile_size))
     with Timer("  Thread elapsed time (cuCIM)") as timer:
         with concurrent.futures.ThreadPoolExecutor(
             max_workers=num_workers

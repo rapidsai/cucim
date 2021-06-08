@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,31 +14,20 @@
  * limitations under the License.
  */
 
-#ifndef CUCIM_DEVICE_H
-#define CUCIM_DEVICE_H
+#ifndef CUCIM_IO_DEVICE_H
+#define CUCIM_IO_DEVICE_H
 
-#include <cucim/macros/api_header.h>
+#include "cucim/macros/api_header.h"
+
 #include <cstdint>
 #include <string>
+
+#include "device_type.h"
 
 namespace cucim::io
 {
 
 using DeviceIndex = int16_t;
-
-/**
- * Value for each device type follows https://github.com/dmlc/dlpack/blob/v0.3/include/dlpack/dlpack.h
- * Naming convention follows PyTorch (torch/include/c10/core/DeviceType.h)
- */
-enum class DeviceType : int16_t
-{
-    kCPU = 1,
-    kCUDA = 2,
-    kPinned = 3,
-
-    kCPUShared = 101, /// custom type for CPU-shared memory
-    kCUDAShared = 102, /// custom type for GPU-shared memory
-};
 
 // Make the following public libraries visible (default visibility) as this header's implementation is in device.cpp
 // and provided by cucim library.
@@ -74,4 +63,4 @@ private:
 } // namespace cucim::io
 
 
-#endif // CUCIM_DEVICE_H
+#endif // CUCIM_IO_DEVICE_H

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,17 +14,19 @@
  * limitations under the License.
  */
 
-#include "cucim/macros/defines.h"
 #include "cucim/io/device.h"
+
 #include <regex>
 #include <string>
 #include <string_view>
+
 #include <fmt/format.h>
+
+#include "cucim/macros/defines.h"
 
 
 namespace cucim::io
 {
-
 
 Device::Device()
 {
@@ -81,28 +83,23 @@ Device::Device(DeviceType type, DeviceIndex index, const std::string& param)
 
 DeviceType Device::parse_type(const std::string& device_name)
 {
-    (void)device_name;
-
-    // TODO: implement this
-    return DeviceType::kCPU;
+    return lookup_device_type(device_name);
 }
 Device::operator std::string() const
 {
-    static const std::unordered_map<DeviceType, std::string> device_type_map{
-        { DeviceType::kCPU, "cpu" },   { DeviceType::kPinned, "pinned" },   { DeviceType::kCPUShared, "cpu" },
-        { DeviceType::kCUDA, "cuda" }, { DeviceType::kCUDAShared, "cuda" },
-    };
+    std::string_view device_type_str = lookup_device_type_str(type_);
+
     if (index_ == -1 && shm_name_.empty())
     {
-        return fmt::format("{}", device_type_map.at(static_cast<DeviceType>(type_)));
+        return fmt::format("{}", device_type_str);
     }
     else if (index_ != -1 && shm_name_.empty())
     {
-        return fmt::format("{}:{}", device_type_map.at(static_cast<DeviceType>(type_)), index_);
+        return fmt::format("{}:{}", device_type_str, index_);
     }
     else
     {
-        return fmt::format("{}:{}[{}]", device_type_map.at(static_cast<DeviceType>(type_)), index_, shm_name_);
+        return fmt::format("{}:{}[{}]", device_type_str, index_, shm_name_);
     }
 }
 

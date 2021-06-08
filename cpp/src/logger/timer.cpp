@@ -54,11 +54,11 @@ void Timer::print(const char* message)
 {
     if (message)
     {
-        fmt::print(message, elapsed_seconds_);
+        fmt::print(stderr, message, elapsed_seconds_);
     }
     else
     {
-        fmt::print(message_, elapsed_seconds_);
+        fmt::print(stderr, message_, elapsed_seconds_);
     }
 }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,13 +14,16 @@
  * limitations under the License.
  */
 
-#include <cucim/memory/memory_manager.h>
-#include <openslide/openslide.h>
-#include "cuslide/tiff/tiff.h"
-#include "config.h"
+#include <chrono>
 
 #include <catch2/catch.hpp>
-#include <chrono>
+#include <openslide/openslide.h>
+
+#include <cucim/memory/memory_manager.h>
+
+#include "config.h"
+#include "cuslide/tiff/tiff.h"
+
 
 TEST_CASE("Verify read_region()", "[test_read_region.cpp]")
 {
@@ -44,7 +47,7 @@ TEST_CASE("Verify read_region()", "[test_read_region.cpp]")
             openslide_t* slide = openslide_open(g_config.get_input_path().c_str());
             REQUIRE(slide != nullptr);
 
-            auto buf = (uint32_t*)cucim_malloc(test_width * test_height * 4);
+            auto buf = static_cast<uint32_t*>(cucim_malloc(test_width * test_height * 4));
             openslide_read_region(slide, buf, test_sx, test_sy, 0, test_width, test_height);
 
             openslide_close(slide);

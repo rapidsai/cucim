@@ -50,16 +50,16 @@ ImageMetadata& ImageMetadata::ndim(uint16_t ndim)
     return *this;
 }
 
-ImageMetadata& ImageMetadata::dims(const std::string_view& dims)
+ImageMetadata& ImageMetadata::dims(std::string_view&& dims)
 {
-    dims_ = std::move(dims);
+    dims_ = dims;
     desc_.dims = dims_.data();
     return *this;
 }
 
-ImageMetadata& ImageMetadata::shape(const std::pmr::vector<int64_t>& shape)
+ImageMetadata& ImageMetadata::shape(std::pmr::vector<int64_t>&& shape)
 {
-    shape_ = std::move(shape);
+    shape_ = shape;
     desc_.shape = const_cast<int64_t*>(shape_.data());
     return *this;
 }
@@ -70,16 +70,10 @@ ImageMetadata& ImageMetadata::dtype(const DLDataType& dtype)
     return *this;
 }
 
-ImageMetadata& ImageMetadata::channel_names(const std::pmr::vector<std::string_view>& channel_names)
+ImageMetadata& ImageMetadata::channel_names(std::pmr::vector<std::string_view>&& channel_names)
 {
     const int channel_len = channel_names.size();
-    channel_names_.clear();
-    channel_names_.reserve(channel_len);
-
-    for (int i = 0; i < channel_len; ++i)
-    {
-        channel_names_.emplace_back(channel_names[i]);
-    }
+    channel_names_ = channel_names;
 
     desc_.channel_names = static_cast<char**>(allocate(channel_len * sizeof(char*)));
     for (int i = 0; i < channel_len; ++i)
@@ -89,23 +83,17 @@ ImageMetadata& ImageMetadata::channel_names(const std::pmr::vector<std::string_v
     return *this;
 }
 
-ImageMetadata& ImageMetadata::spacing(const std::pmr::vector<float>& spacing)
+ImageMetadata& ImageMetadata::spacing(std::pmr::vector<float>&& spacing)
 {
-    spacing_ = std::move(spacing);
+    spacing_ = spacing;
     desc_.spacing = const_cast<float*>(spacing_.data());
     return *this;
 }
 
-ImageMetadata& ImageMetadata::spacing_units(const std::pmr::vector<std::string_view>& spacing_units)
+ImageMetadata& ImageMetadata::spacing_units(std::pmr::vector<std::string_view>&& spacing_units)
 {
     const int ndim = spacing_units.size();
-    spacing_units_.clear();
-    spacing_units_.reserve(ndim);
-
-    for (int i = 0; i < ndim; ++i)
-    {
-        spacing_units_.emplace_back(spacing_units[i]);
-    }
+    spacing_units_ = spacing_units;
 
     desc_.spacing_units = static_cast<char**>(allocate(ndim * sizeof(char*)));
     for (int i = 0; i < ndim; ++i)
@@ -115,23 +103,23 @@ ImageMetadata& ImageMetadata::spacing_units(const std::pmr::vector<std::string_v
     return *this;
 }
 
-ImageMetadata& ImageMetadata::origin(const std::pmr::vector<float>& origin)
+ImageMetadata& ImageMetadata::origin(std::pmr::vector<float>&& origin)
 {
-    origin_ = std::move(origin);
+    origin_ = origin;
     desc_.origin = const_cast<float*>(origin_.data());
     return *this;
 }
 
-ImageMetadata& ImageMetadata::direction(const std::pmr::vector<float>& direction)
+ImageMetadata& ImageMetadata::direction(std::pmr::vector<float>&& direction)
 {
-    direction_ = std::move(direction);
+    direction_ = direction;
     desc_.direction = const_cast<float*>(direction_.data());
     return *this;
 }
 
-ImageMetadata& ImageMetadata::coord_sys(const std::string_view& coord_sys)
+ImageMetadata& ImageMetadata::coord_sys(std::string_view&& coord_sys)
 {
-    coord_sys_ = std::move(coord_sys);
+    coord_sys_ = coord_sys;
     desc_.coord_sys = coord_sys_.data();
     return *this;
 }
@@ -148,17 +136,24 @@ ImageMetadata& ImageMetadata::level_ndim(uint16_t level_ndim)
     return *this;
 }
 
-ImageMetadata& ImageMetadata::level_dimensions(const std::pmr::vector<int64_t>& level_dimensions)
+ImageMetadata& ImageMetadata::level_dimensions(std::pmr::vector<int64_t>&& level_dimensions)
 {
-    level_dimensions_ = std::move(level_dimensions);
+    level_dimensions_ = level_dimensions;
     desc_.resolution_info.level_dimensions = const_cast<int64_t*>(level_dimensions_.data());
     return *this;
 }
 
-ImageMetadata& ImageMetadata::level_downsamples(const std::pmr::vector<float>& level_downsamples)
+ImageMetadata& ImageMetadata::level_downsamples(std::pmr::vector<float>&& level_downsamples)
 {
-    level_downsamples_ = std::move(level_downsamples);
+    level_downsamples_ = level_downsamples;
     desc_.resolution_info.level_downsamples = const_cast<float*>(level_downsamples_.data());
+    return *this;
+}
+
+ImageMetadata& ImageMetadata::level_tile_sizes(std::pmr::vector<uint32_t>&& level_tile_sizes)
+{
+    level_tile_sizes_ = level_tile_sizes;
+    desc_.resolution_info.level_tile_sizes = const_cast<uint32_t*>(level_tile_sizes_.data());
     return *this;
 }
 
@@ -168,16 +163,10 @@ ImageMetadata& ImageMetadata::image_count(uint16_t image_count)
     return *this;
 }
 
-ImageMetadata& ImageMetadata::image_names(const std::pmr::vector<std::string_view>& image_names)
+ImageMetadata& ImageMetadata::image_names(std::pmr::vector<std::string_view>&& image_names)
 {
     const int image_size = image_names.size();
-    image_names_.clear();
-    image_names_.reserve(image_size);
-
-    for (int i = 0; i < image_size; ++i)
-    {
-        image_names_.emplace_back(image_names[i]);
-    }
+    image_names_ = image_names;
 
     desc_.associated_image_info.image_names = static_cast<char**>(allocate(image_size * sizeof(char*)));
     for (int i = 0; i < image_size; ++i)

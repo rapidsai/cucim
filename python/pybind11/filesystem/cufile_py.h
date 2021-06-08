@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,8 +26,8 @@ namespace py = pybind11;
 namespace cucim::filesystem
 {
 // Note: there would be name conflict with pread/pwrite in cufile_driver.h so prefixed 'fd_'.
-ssize_t fd_pread(const CuFileDriver& fd, py::object buf, size_t count, off_t file_offset, off_t buf_offset = 0);
-ssize_t fd_pwrite(CuFileDriver& fd, py::object buf, size_t count, off_t file_offset, off_t buf_offset = 0);
+ssize_t fd_pread(const CuFileDriver& fd, const py::object& buf, size_t count, off_t file_offset, off_t buf_offset = 0);
+ssize_t fd_pwrite(CuFileDriver& fd, const py::object& buf, size_t count, off_t file_offset, off_t buf_offset = 0);
 } // namespace cucim::filesystem
 
 #endif // PYCUCIM_CUFILE_PY_H

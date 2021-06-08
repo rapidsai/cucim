@@ -3,6 +3,7 @@
 CUCIM_BUILD_TYPE=${CUCIM_BUILD_TYPE:-release}
 
 echo "Current Folder: ${SRC_DIR}"
+echo "CUDA: ${CUDA}"
 echo "CUDA_VERSION: ${CUDA_VERSION}"
 echo "PYTHON: ${PYTHON}"
 
