@@ -47,9 +47,7 @@ env
 
 gpuci_logger "Activate conda env"
 . /opt/conda/etc/profile.d/conda.sh
-
-
-conda install -c conda-forge conda-build
+conda activate rapids
 
 gpuci_logger "Check versions"
 python --version
@@ -76,7 +74,6 @@ conda config --set ssl_verify False
 
 if [ "$BUILD_LIBCUCIM" == 1 ]; then
   gpuci_conda_retry build -c conda-forge -c rapidsai-nightly \
-    --python=${PYTHON_VER} \
     --dirty \
     --no-remove-work-dir \
     --no-build-id \

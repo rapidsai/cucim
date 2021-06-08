@@ -27,6 +27,7 @@ export HOME=$WORKSPACE
 cd $WORKSPACE
 export GIT_DESCRIBE_TAG=`git describe --abbrev=0 --tags`
 export MINOR_VERSION=`echo $GIT_DESCRIBE_TAG | grep -o -E '([0-9]+\.[0-9]+)'`
+echo "MINOR_VERSION: ${MINOR_VERSION}"
 
 # Get CUDA and Python version
 export CUDA_VERSION=${CUDA_VERSION:-$(cat /usr/local/cuda/version.txt | egrep -o "[[:digit:]]+.[[:digit:]]+.[[:digit:]]+")}
@@ -48,14 +49,19 @@ nvidia-smi
 
 gpuci_logger "Activate conda env"
 . /opt/conda/etc/profile.d/conda.sh
+conda activate rapids
 
-conda install -c conda-forge conda-build -y
+gpuci_logger "Install dependencies"
+gpuci_conda_retry install -y -c rapidsai-nightly \
+    sysroot_linux-64=2.17 \
+    "cudatoolkit=${CUDA_VER}.*" \
+    "python=${PYTHON_VER}.*" \
+    "rapids-build-env=$MINOR_VERSION.*"
 
 ################################################################################
 # BUILD - Build cuCIM
 ################################################################################
 
-# We don't use 'rapids' conda environment here.
 # To use 'conda-forge'-based package installation and to use 'Project Flash' feature,
 # we fake conda build folder for libcucim to '$WORKSPACE/ci/artifacts/cucim/cpu/conda-bld/' which is
 # conda build folder for CPU build.
@@ -66,7 +72,6 @@ mkdir -p ${CUCIM_BLD_PATH}
 
 
 gpuci_conda_retry build -c ${LIBCUCIM_BLD_PATH} -c conda-forge -c rapidsai-nightly \
-    --python=${PYTHON_VER} \
     --dirty \
     --no-remove-work-dir \
     --croot ${CUCIM_BLD_PATH} \
@@ -79,10 +84,10 @@ gpuci_conda_retry build -c ${LIBCUCIM_BLD_PATH} -c conda-forge -c rapidsai-night
 
 # Install cuCIM and its dependencies
 gpuci_logger "Installing cuCIM and its dependencies"
-gpuci_conda_retry install -y -c ${LIBCUCIM_BLD_PATH} -c ${CUCIM_BLD_PATH} -c conda-forge \
+gpuci_conda_retry install -y -c ${LIBCUCIM_BLD_PATH} -c ${CUCIM_BLD_PATH} -c rapidsai-nightly \
+    "rapids-build-env=$MINOR_VERSION.*" \
     libcucim \
-    cucim \
-    pytest
+    cucim
 
 gpuci_logger "Testing cuCIM import"
 python -c 'import cucim'
