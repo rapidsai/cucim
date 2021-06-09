@@ -1,6 +1,15 @@
-# cuCIM 21.06.00 (Date TBD)
+# cuCIM 21.06.00 (9 Jun 2021)
 
-Please see https://github.com/rapidsai/cucim/releases/tag/v21.06.00a for the latest changes to this development branch.
+## 🐛 Bug Fixes
+
+- Update `update-vesion.sh` ([#42](https://github.com/rapidsai/cucim/pull/42)) [@ajschmidt8](https://github.com/ajschmidt8)
+
+## 🛠️ Impovements
+
+- Update envionment vaiable used to detemine `cuda_vesion` ([#43](https://github.com/rapidsai/cucim/pull/43)) [@ajschmidt8](https://github.com/ajschmidt8)
+- Update vesion scipt to emove bump2vesion dependency ([#41](https://github.com/rapidsai/cucim/pull/41)) [@gigony](https://github.com/gigony)
+- Update changelog ([#40](https://github.com/rapidsai/cucim/pull/40)) [@ajschmidt8](https://github.com/ajschmidt8)
+- Update docs build scipt ([#39](https://github.com/rapidsai/cucim/pull/39)) [@ajschmidt8](https://github.com/ajschmidt8)
 
 # cuCIM 0.19.0 (15 Apr 2021)
 
