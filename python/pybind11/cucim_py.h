@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,16 +17,26 @@
 #ifndef PYCUCIM_CUIMAGE_PY_H
 #define PYCUCIM_CUIMAGE_PY_H
 
-#include <pybind11_json/pybind11_json.hpp>
-#include <nlohmann/json.hpp>
 #include <vector>
 
-#include <cucim/cuimage.h>
+#include <nlohmann/json.hpp>
+#include <pybind11_json/pybind11_json.hpp>
 
 using json = nlohmann::json;
 
 namespace cucim
 {
+
+// Forward declarations
+class CuImage;
+namespace io
+{
+class Device;
+}
+namespace cache
+{
+class ImageCache;
+}
 
 std::string get_plugin_root();
 void set_plugin_root(std::string path);
@@ -46,17 +56,19 @@ void set_plugin_root(std::string path);
 template<typename PT, typename T>
 pybind11::tuple vector2pytuple(const std::vector<T>& vec);
 
+std::shared_ptr<cucim::cache::ImageCache> py_cache(const py::object& ctype, const py::kwargs& kwargs);
+
 json py_metadata(const CuImage& cuimg);
 py::dict py_resolutions(const CuImage& cuimg);
-CuImage py_read_region(CuImage& cuimg,
-                    std::vector<int64_t> location,
-                    std::vector<int64_t> size,
-                    int16_t level,
-                    io::Device device,
-                    py::object buf,
-                    const std::string& shm_name,
-                    py::kwargs kwargs);
-py::dict get_array_interface(const CuImage& cuimg);
+py::object py_read_region(const CuImage& cuimg,
+                          std::vector<int64_t>&& location,
+                          std::vector<int64_t>&& size,
+                          int16_t level,
+                          const io::Device& device,
+                          const py::object& buf,
+                          const std::string& shm_name,
+                          const py::kwargs& kwargs);
+void _set_array_interface(const py::object& cuimg_obj);
 } // namespace cucim
 
 #endif // PYCUCIM_CUIMAGE_PY_H

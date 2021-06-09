@@ -58,18 +58,17 @@ The following instructions are for developers and contributors to cuCIM OSS deve
 
 #### Python
 
-cuCIM uses [Black](https://black.readthedocs.io/en/stable/),
-[isort](https://readthedocs.org/projects/isort/), and
+cuCIM uses [isort](https://readthedocs.org/projects/isort/), and
 [flake8](http://flake8.pycqa.org/en/latest/) to ensure a consistent code format
-throughout the project. `Black`, `isort`, and `flake8` can be installed with
+throughout the project. `isort`, and `flake8` can be installed with
 `conda` or `pip`:
 
 ```bash
-conda install black isort flake8
+conda install isort flake8
 ```
 
 ```bash
-pip install black isort flake8
+pip install isort flake8
 ```
 
 These tools are used to auto-format the Python code in the repository. Additionally, there is a CI check in place to enforce
@@ -78,7 +77,6 @@ automatically format your python code by running:
 
 ```bash
 isort --atomic python/**/*.py
-black python
 ```
 
 ### Get libcucim Dependencies
@@ -144,4 +142,10 @@ cp -P -r cpp/plugins/cucim.kit.cuslide/install/lib/* $CONDA_PREFIX/lib/
 cp -P python/install/lib/* python/cucim/src/cucim/clara/
 cd python/cucim/
 python -m pip install .
+```
+
+For contributors interested in working on the Python code from an in-place
+(editable) installation, replace the last line above with
+```bash
+python -m pip install --editable .
 ```

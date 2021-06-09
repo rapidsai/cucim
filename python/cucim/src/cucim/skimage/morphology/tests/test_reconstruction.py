@@ -12,9 +12,9 @@ import cupy as cp
 import numpy as np
 import pytest
 from cupy.testing import assert_array_almost_equal
+from skimage.morphology import reconstruction as reconstruction_cpu
 
 from cucim.skimage.morphology import reconstruction
-from skimage.morphology import reconstruction as reconstruction_cpu
 
 
 def test_zeros():

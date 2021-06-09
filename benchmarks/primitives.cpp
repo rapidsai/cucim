@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -160,7 +160,7 @@ static void alloc_pmr(benchmark::State& state)
         char* arr[30000];
         for (int i = 0; i < 30000; i++)
         {
-            arr[i] = (char*)cucim_malloc(10);
+            arr[i] = static_cast<char*>(cucim_malloc(10));
             arr[i][0] = i;
         }
         for (int i = 0; i < 30000; i++)

@@ -5,8 +5,8 @@ from cupyx.scipy.ndimage import fourier_shift
 from skimage.data import camera
 
 from cucim.skimage import img_as_float
-from cucim.skimage.data import binary_blobs
 from cucim.skimage._shared.fft import fftmodule as fft
+from cucim.skimage.data import binary_blobs
 from cucim.skimage.registration._phase_cross_correlation import (
     _upsampled_dft, phase_cross_correlation)
 

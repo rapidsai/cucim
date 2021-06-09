@@ -321,7 +321,6 @@ The following list is on the road |:smile:|
     - The PyPi package embeds CUDA runtime library.
     - https://github.com/pytorch/pytorch/issues/47268#issuecomment-721996861
 - Move to Github Project
-- Add `bump2version` command in `run` (version management)
 - Move `tox` setup from python folder to the project root folder
 - Setup Conda recipe
 - Setup automated test cases

@@ -93,7 +93,7 @@ static void test_openslide(benchmark::State& state)
         state.ResumeTiming();
 
         openslide_t* slide = openslide_open(g_config.input_file.c_str());
-        uint32_t* buf = (uint32_t*)cucim_malloc(state.range(0) * state.range(0) * 4);
+        uint32_t* buf = static_cast<uint32_t*>(cucim_malloc(state.range(0) * state.range(0) * 4));
         int64_t request_location[2] = { 0, 0 };
         if (g_config.random_start_location)
         {

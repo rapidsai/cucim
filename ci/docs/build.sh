@@ -14,7 +14,6 @@ export DOCS_WORKSPACE=$WORKSPACE/docs
 export PATH=/opt/conda/bin:/usr/local/cuda/bin:$PATH
 export HOME=$WORKSPACE
 export PROJECT_WORKSPACE=/rapids/cucim
-export NIGHTLY_VERSION=$(echo $BRANCH_VERSION | awk -F. '{print $2}')
 export PROJECTS=(cucim)
 
 gpuci_logger "Check environment"
@@ -25,14 +24,11 @@ nvidia-smi
 
 gpuci_logger "Activate conda env"
 . /opt/conda/etc/profile.d/conda.sh
+conda activate rapids
 
 gpuci_logger "Installing cuCIM / Deps / Docs into new env"
-gpuci_conda_retry create -n cucim -y -c conda-forge -c conda-forge/label/cupy_rc -c rapidsai-nightly \
+gpuci_conda_retry install -y -c rapidsai-nightly \
     rapids-doc-env \
-    python=3.8 \
-    conda-forge/label/cupy_rc::cupy=9 \
-    cudatoolkit=11.2 \
-    scikit-image=0.18.1 \
     cucim
 
 conda activate cucim

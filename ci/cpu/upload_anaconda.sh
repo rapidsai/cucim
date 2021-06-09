@@ -39,10 +39,10 @@ gpuci_logger "Starting conda uploads"
 
 if [[ "$BUILD_LIBCUCIM" == "1" ]]; then
     gpuci_logger "Upload libcuCIM"
-    gpuci_retry anaconda -t ${MY_UPLOAD_KEY} upload -u ${CONDA_USERNAME:-rapidsai} ${LABEL_OPTION} --skip-existing ${LIBCUCIM_FILE}
+    gpuci_retry anaconda -t ${MY_UPLOAD_KEY} upload -u ${CONDA_USERNAME:-rapidsai} ${LABEL_OPTION} --skip-existing ${LIBCUCIM_FILE} --no-progress
 fi
 
 if [[ "$BUILD_CUCIM" == "1" ]]; then
     gpuci_logger "Upload cuCIM"
-    gpuci_retry anaconda -t ${MY_UPLOAD_KEY} upload -u ${CONDA_USERNAME:-rapidsai} ${LABEL_OPTION} --skip-existing ${CUCIM_FILE}
+    gpuci_retry anaconda -t ${MY_UPLOAD_KEY} upload -u ${CONDA_USERNAME:-rapidsai} ${LABEL_OPTION} --skip-existing ${CUCIM_FILE} --no-progress
 fi

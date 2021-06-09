@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,18 +17,20 @@
 #ifndef CUCIM_CUIMAGE_H
 #define CUCIM_CUIMAGE_H
 
-#include <array>
-#include <memory>
-#include <vector>
-#include <string>
-#include <mutex>
-#include <set>
-
 #include "cucim/core/framework.h"
+#include "cucim/cache/image_cache_manager.h"
+#include "cucim/config/config.h"
 #include "cucim/filesystem/file_path.h"
 #include "cucim/io/device.h"
 #include "cucim/io/format/image_format.h"
 #include "cucim/memory/dlpack.h"
+
+#include <array>
+#include <set>
+#include <string>
+#include <memory>
+#include <mutex>
+#include <vector>
 
 namespace cucim
 {
@@ -67,12 +69,15 @@ public:
     std::vector<int64_t> level_dimension(uint16_t level) const;
     const std::vector<float>& level_downsamples() const;
     float level_downsample(uint16_t level) const;
+    const std::vector<uint32_t>& level_tile_sizes() const;
+    std::vector<uint32_t> level_tile_size(uint16_t level) const;
 
 private:
     uint16_t level_count_;
     uint16_t level_ndim_;
     std::vector<int64_t> level_dimensions_;
     std::vector<float> level_downsamples_;
+    std::vector<uint32_t> level_tile_sizes_;
 };
 
 /**
@@ -105,6 +110,10 @@ public:
     }
 
     static Framework* get_framework();
+    static config::Config* get_config();
+    static cache::ImageCacheManager& cache_manager();
+    static std::shared_ptr<cache::ImageCache> cache();
+    static std::shared_ptr<cache::ImageCache> cache(cache::ImageCacheConfig& config);
 
     filesystem::Path path() const;
 
@@ -142,16 +151,16 @@ public:
 
     memory::DLTContainer container() const;
 
-    CuImage read_region(std::vector<int64_t> location,
-                        std::vector<int64_t> size,
+    CuImage read_region(std::vector<int64_t>&& location,
+                        std::vector<int64_t>&& size,
                         uint16_t level = 0,
-                        DimIndices region_dim_indices = {},
-                        io::Device device = "cpu",
+                        const DimIndices& region_dim_indices = {},
+                        const io::Device& device = "cpu",
                         DLTensor* buf = nullptr,
-                        std::string shm_name = std::string{});
+                        const std::string& shm_name = std::string{}) const;
 
     std::set<std::string> associated_images() const;
-    CuImage associated_image(const std::string& name) const;
+    CuImage associated_image(const std::string& name, const io::Device& device = "cpu") const;
 
     void save(std::string file_path) const;
 
@@ -162,12 +171,14 @@ private:
     explicit CuImage();
 
     void ensure_init();
-    bool crop_image(io::format::ImageMetadataDesc* metadata,
-                    io::format::ImageReaderRegionRequestDesc* request,
-                    io::format::ImageDataDesc* out_image_data) const;
+    bool crop_image(const io::format::ImageReaderRegionRequestDesc& request,
+                    io::format::ImageDataDesc& out_image_data) const;
 
 
     static Framework* framework_;
+    // Note: config_ should be placed before cache_manager_ (cache_manager_ depends on config_)
+    static std::unique_ptr<config::Config> config_;
+    static std::unique_ptr<cache::ImageCacheManager> cache_manager_;
 
     mutable Mutex mutex_;
     cucim::io::format::IImageFormat* image_formats_ = nullptr;
@@ -179,8 +190,6 @@ private:
     std::set<std::string> associated_images_;
 };
 
-
 } // namespace cucim
-
 
 #endif // CUCIM_CUIMAGE_H

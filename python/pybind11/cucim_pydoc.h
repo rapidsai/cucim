@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,11 +15,11 @@
  */
 
 #ifndef PYCUCIM_CUCIM_PYDOC_H
-#    define PYCUCIM_CUCIM_PYDOC_H
+#define PYCUCIM_CUCIM_PYDOC_H
 
-#    include "macros.h"
+#include <string>
 
-#    include <string>
+#include "macros.h"
 
 namespace cucim::doc
 {
@@ -63,6 +63,11 @@ Constructor of CuImage.
 // CuImage(CuImage&& cuimg);
 //
 // ~CuImage();
+
+// std::shared_ptr<cache::ImageCache> CuImage::cache()
+PYDOC(cache, R"doc(
+Get cache object.
+)doc")
 
 // filesystem::Path path() const;
 PYDOC(path, R"doc(
@@ -171,6 +176,7 @@ Returns a dict that includes resolution information.
 - level_count: The number of levels
 - level_dimensions: A tuple of dimension tuples (width, height)
 - level_downsamples: A tuple of down-sample factors
+- level_tile_sizes: A tuple of tile size tuple (tile width, tile_height)
 )doc")
 
 // dlpack::DLTContainer container() const;
@@ -221,9 +227,14 @@ Saves image data to the file path.
 Currently it supports only .ppm file format that can be viewed by `eog` command in Ubuntu.
 )doc")
 
-// py::dict get_array_interface(const CuImage& cuimg);
-PYDOC(get_array_interface, R"doc(
-Get an array interface for Python.
+// void _set_array_interface(const CuImage& cuimg);
+PYDOC(_set_array_interface, R"doc(
+Add `__array_interface__` or `__cuda_array_interface__` depending on the memory type.
+
+Args:
+  cuimg: CuImage object
+Returns:
+  None
 )doc")
 
 }; // namespace CuImage
