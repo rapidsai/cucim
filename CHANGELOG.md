@@ -2,14 +2,14 @@
 
 ## 🐛 Bug Fixes
 
-- Update `update-vesion.sh` ([#42](https://github.com/rapidsai/cucim/pull/42)) [@ajschmidt8](https://github.com/ajschmidt8)
+- Update `update-version.sh` ([#42](https://github.com/rapidsai//pull/42)) [@ajschmidt8](https://github.com/ajschmidt8)
 
-## 🛠️ Impovements
+## 🛠️ Improvements
 
-- Update envionment vaiable used to detemine `cuda_vesion` ([#43](https://github.com/rapidsai/cucim/pull/43)) [@ajschmidt8](https://github.com/ajschmidt8)
-- Update vesion scipt to emove bump2vesion dependency ([#41](https://github.com/rapidsai/cucim/pull/41)) [@gigony](https://github.com/gigony)
-- Update changelog ([#40](https://github.com/rapidsai/cucim/pull/40)) [@ajschmidt8](https://github.com/ajschmidt8)
-- Update docs build scipt ([#39](https://github.com/rapidsai/cucim/pull/39)) [@ajschmidt8](https://github.com/ajschmidt8)
+- Update environment variable used to determine `cuda_version` ([#43](https://github.com/rapidsai//pull/43)) [@ajschmidt8](https://github.com/ajschmidt8)
+- Update version script to remove bump2version dependency ([#41](https://github.com/rapidsai//pull/41)) [@gigony](https://github.com/gigony)
+- Update changelog ([#40](https://github.com/rapidsai//pull/40)) [@ajschmidt8](https://github.com/ajschmidt8)
+- Update docs build script ([#39](https://github.com/rapidsai//pull/39)) [@ajschmidt8](https://github.com/ajschmidt8)
 
 # cuCIM 0.19.0 (15 Apr 2021)
 
