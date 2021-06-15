@@ -1,8 +1,8 @@
 # Architecture Decision Record
 
-Documents in this folder followes the concept from [this blog - Why Write ADRs?](https://github.blog/2020-08-13-why-write-adrs/).
+Documents in this folder follow the concept from [this blog - Why Write ADRs?](https://github.blog/2020-08-13-why-write-adrs/).
 
-Please refer to to https://github.com/joelparkerhenderson/architecture_decision_record for examples.
+Please refer to https://github.com/joelparkerhenderson/architecture_decision_record for examples.
 
 
 ## ADR file name conventions
