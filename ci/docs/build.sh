@@ -31,9 +31,6 @@ gpuci_conda_retry install -y -c rapidsai-nightly \
     rapids-doc-env \
     cucim
 
-conda activate cucim
-
-
 gpuci_logger "Check versions"
 python --version
 $CC --version
