@@ -18,6 +18,9 @@
 #define CUCIM_FRAMEWORK_H
 
 #include "cucim/core/plugin.h"
+
+#include <cstdlib>
+
 #include "cucim/memory/memory_manager.h"
 
 #define CUCIM_FRAMEWORK_GLOBALS(client_name)                                                                           \
@@ -27,8 +30,13 @@
 
 namespace cucim
 {
-
-const struct Version kFrameworkVersion = { CUCIM_VERSION_MAJOR, CUCIM_VERSION_MINOR, CUCIM_VERSION_PATCH };
+#define TEMP_STR(x) #x
+#define TEMP_XSTR(x) TEMP_STR(x)
+const struct Version kFrameworkVersion = { static_cast<uint32_t>(std::atoi(TEMP_XSTR(CUCIM_VERSION_MAJOR))),
+                                           static_cast<uint32_t>(std::atoi(TEMP_XSTR(CUCIM_VERSION_MINOR))),
+                                           static_cast<uint32_t>(std::atoi(TEMP_XSTR(CUCIM_VERSION_PATCH))) };
+#undef TEMP_STR
+#undef TEMP_XSTR
 
 struct PluginRegistrationDesc
 {
