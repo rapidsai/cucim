@@ -684,33 +684,53 @@ check_install_python_dep_() {
 
     [ -z "$package_names" ] && c_echo_err R "Please specify package names to check!" && return 1
 
+    local packages_to_install=""
     local has_all_packages=true
 
     for package_name in $package_names; do
+        # `package_name` has '<package name>[:<conda package name>]' format.
         if [ -n "${CONDA_PREFIX}" ]; then
-            if ! conda list | grep -c "${package_name} " > /dev/null; then
+            # abc:def => def
+            # abc => abc
+            package_name="${package_name##*:}"
+            if ! conda list | grep -i -c "${package_name} " > /dev/null; then
                 c_echo G "${package_name}" W " doesn't exists. Installing " G "${package_name}" W "..."
                 has_all_packages=false
+
+                # Workaround for `openslide-python`
+                # (See https://github.com/conda-forge/openslide-python-feedstock/issues/4)
+                [ "${package_name}" = "openslide-python" ] && package_name="conda-forge/linux-64::openslide-python"
+
+                packages_to_install="${packages_to_install} ${package_name}"
             fi
         else
-            if ! pip3 list | grep -c "${package_name} " > /dev/null; then
+            # abc:def => abc
+            # abc => abc
+            package_name="${package_name%%:*}"
+            if ! pip3 list | grep -i -c "${package_name} " > /dev/null; then
                 c_echo G "${package_name}" W " doesn't exists. Installing " G "${package_name}" W "..."
                 has_all_packages=false
+                packages_to_install="${packages_to_install} ${package_name}"
             fi
         fi
     done
     if [ "$has_all_packages" != "true" ]; then
         if [ -n "${CONDA_PREFIX}" ]; then
-            run_command conda install -c conda-forge -y ${package_names}
+            run_command conda install -c conda-forge -y ${packages_to_install}
         else
-            run_command pip3 install --user ${package_names}
+            if [ -n "${VIRTUAL_ENV}" ]; then
+                run_command pip3 install ${packages_to_install}
+            else
+                run_command pip3 install --user ${packages_to_install}
+            fi
         fi
     fi
     hash -r
 }
 
 install_python_test_deps_() {
-    check_install_python_dep_ pytest pytest-lazy-fixture psutil gputil
+    # Package name has '<package name>[:<conda package name>]' format.
+    check_install_python_dep_ pytest pytest-cov pytest-lazy-fixture psutil GPUtil tifffile imagecodecs openslide-python
 }
 
 test_python_desc() { echo 'Execute Python test cases
@@ -725,6 +745,7 @@ test_python() {
     local test_component="${2:-all}"
     local result=0
 
+    local testsuite=""
     local testsuite_unit_skimage="src"
     local testsuite_unit_clara="tests/unit/clara"
     local testsuite_performance="tests/performance"
@@ -732,25 +753,27 @@ test_python() {
     install_python_test_deps_
 
     if [ "$test_type" = "all" ] || [ "$test_type" = "unit" ]; then
-        local testsuite_unit="${testsuite_unit_skimage} ${testsuite_unit_clara}"
-        [ "$test_component" = "skimage" ] && testsuite_unit="${testsuite_unit_skimage}"
-        [ "$test_component" = "clara" ] && testsuite_unit="${testsuite_unit_clara}"
-        pushd $TOP/python/cucim
-        py.test --cache-clear -v ${testsuite_unit}
-        result=$?
-        popd
+        local testsuite="${testsuite_unit_skimage} ${testsuite_unit_clara}"
+        [ "$test_component" = "skimage" ] && testsuite="${testsuite_unit_skimage}"
+        [ "$test_component" = "clara" ] && testsuite="${testsuite_unit_clara}"
 
-        [ $result -ne 0 ] && return $result
     fi
-
     if [ "$test_type" = "all" ] || [ "$test_type" = "performance" ]; then
-        pushd $TOP/python/cucim
-        py.test --cache-clear -v ${testsuite_performance}
-        result=$?
-        popd
-
-        [ $result -ne 0 ] && return $result
+        testsuite="${testsuite} ${testsuite_performance}"
     fi
+
+    pushd $TOP/python/cucim
+    run_command py.test --cache-clear -vv \
+        --cov=cucim \
+        --junitxml="$TOP/junit-cucim.xml" \
+        --cov-config=$TOP/python/cucim/.coveragerc \
+        --cov-report=xml:"$TOP/cucim-coverage.xml" \
+        --cov-report term \
+        ${testsuite}
+    result=$?
+    popd
+
+    return $result
 }
 
 
@@ -881,7 +904,11 @@ install_tox_() {
         if [ -n "${CONDA_PREFIX}" ]; then
             run_command pip3 install tox
         else
-            run_command pip3 install --user tox
+            if [ -n "${VIRTUAL_ENV}" ]; then
+                run_command pip3 install tox
+            else
+                run_command pip3 install --user tox
+            fi
         fi
         hash -r
     fi
