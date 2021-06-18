@@ -237,3 +237,24 @@ libcuckoo
   - https://github.com/efficient/libcuckoo/blob/master/LICENSE
 - Copyright: Carnegie Mellon University and Intel Corporation
 - Usage: Using concurrent hash table implementation for cache mechanism.
+
+pytest-lazy-fixture
+- License: MIT License
+  - https://github.com/TvoroG/pytest-lazy-fixture/blob/master/LICENSE
+- Copyright: Marsel Zaripov
+- Usage: Using lazy fixture feature in PyTest.
+
+psutil
+- License: BSD-3-Clause License
+  - https://github.com/giampaolo/psutil/blob/master/LICENSE
+- Copyright:
+  - Jay Loden
+  - Dave Daeschler
+  - Giampaolo Rodola
+- Usage: Checking memory usage in Python applications.
+
+gputil
+- License: MIT License
+  - https://github.com/anderskm/gputil/blob/master/LICENSE.txt
+- Copyright: Anders Krogh Mortensen
+- Usage: Checking memory usage in Python applications.
