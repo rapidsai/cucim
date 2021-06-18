@@ -656,6 +656,104 @@ copy_data_() {
     run_command cp -r ${SRC_ROOT}/3rdparty ${SRC_ROOT}/LICENSE* ${DEST_ROOT}/
 }
 
+
+#==================================================================================
+# Section: Test
+#==================================================================================
+
+test_desc() { echo 'Execute test cases
+
+Arguments:
+  $1 - subcommand [all|python|c++] (default: all)
+  $2 - test_type [all|unit|integration|system|performance] (default: all)
+  $3 - test_component [all|clara|skimage] (default: all)
+'
+}
+test() {
+    local subcommand="${1:-all}"
+    local test_type="${2:-all}"
+    shift;
+
+    if [ "$subcommand" = "all" ] || [ "$subcommand" = "python" ]; then
+        test_python "$@"
+    fi
+}
+
+check_install_python_dep_() {
+    local package_names="$@"
+
+    [ -z "$package_names" ] && c_echo_err R "Please specify package names to check!" && return 1
+
+    local has_all_packages=true
+
+    for package_name in $package_names; do
+        if [ -n "${CONDA_PREFIX}" ]; then
+            if ! conda list | grep -c "${package_name} " > /dev/null; then
+                c_echo G "${package_name}" W " doesn't exists. Installing " G "${package_name}" W "..."
+                has_all_packages=false
+            fi
+        else
+            if ! pip3 list | grep -c "${package_name} " > /dev/null; then
+                c_echo G "${package_name}" W " doesn't exists. Installing " G "${package_name}" W "..."
+                has_all_packages=false
+            fi
+        fi
+    done
+    if [ "$has_all_packages" != "true" ]; then
+        if [ -n "${CONDA_PREFIX}" ]; then
+            run_command conda install -c conda-forge -y ${package_names}
+        else
+            run_command pip3 install --user ${package_names}
+        fi
+    fi
+    hash -r
+}
+
+install_python_test_deps_() {
+    check_install_python_dep_ pytest pytest-lazy-fixture psutil gputil
+}
+
+test_python_desc() { echo 'Execute Python test cases
+
+Arguments:
+  $1 - test_type [all|unit|integration|system|performance] (default: all)
+  $2 - test_component [all|clara|skimage] (default: all)
+'
+}
+test_python() {
+    local test_type="${1:-all}"
+    local test_component="${2:-all}"
+    local result=0
+
+    local testsuite_unit_skimage="src"
+    local testsuite_unit_clara="tests/unit/clara"
+    local testsuite_performance="tests/performance"
+
+    install_python_test_deps_
+
+    if [ "$test_type" = "all" ] || [ "$test_type" = "unit" ]; then
+        local testsuite_unit="${testsuite_unit_skimage} ${testsuite_unit_clara}"
+        [ "$test_component" = "skimage" ] && testsuite_unit="${testsuite_unit_skimage}"
+        [ "$test_component" = "clara" ] && testsuite_unit="${testsuite_unit_clara}"
+        pushd $TOP/python/cucim
+        py.test --cache-clear -v ${testsuite_unit}
+        result=$?
+        popd
+
+        [ $result -ne 0 ] && return $result
+    fi
+
+    if [ "$test_type" = "all" ] || [ "$test_type" = "performance" ]; then
+        pushd $TOP/python/cucim
+        py.test --cache-clear -v ${testsuite_performance}
+        result=$?
+        popd
+
+        [ $result -ne 0 ] && return $result
+    fi
+}
+
+
 #==================================================================================
 # Section: Example
 #==================================================================================
