@@ -23,15 +23,8 @@ def open_image_cucim(file_path):
     return img
 
 
-def open_image_openslide(file_path):
-    from openslide import OpenSlide
-    img = OpenSlide(file_path)
-    return img
-
-
 def test_tiff_stripe_inner(testimg_tiff_stripe_32x24_16):
     cucim_img = open_image_cucim(testimg_tiff_stripe_32x24_16)
-    openslide_img = open_image_openslide(testimg_tiff_stripe_32x24_16)
     width, height = cucim_img.size('XY')
     tile_width, tile_height = cucim_img.resolutions['level_tile_sizes'][0]
 
@@ -45,15 +38,16 @@ def test_tiff_stripe_inner(testimg_tiff_stripe_32x24_16):
                    ]
     for (start_pos, size) in region_list:
         cucim_arr = np.asarray(cucim_img.read_region(start_pos, size))
-        openslide_arr = np.asarray(
-            openslide_img.read_region(start_pos, 0, size))[:, :, :3]
 
-        assert np.array_equal(cucim_arr, openslide_arr)
+        # Not channel values are zero, so we need to check that.
+        channel_value_count = np.apply_along_axis(np.count_nonzero, 2,
+                                                  cucim_arr)
+        count_all_zero = np.count_nonzero(channel_value_count == 0)
+        assert count_all_zero == 0
 
 
 def test_tiff_stripe_boundary(testimg_tiff_stripe_32x24_16):
     cucim_img = open_image_cucim(testimg_tiff_stripe_32x24_16)
-    openslide_img = open_image_openslide(testimg_tiff_stripe_32x24_16)
     width, height = cucim_img.size('XY')
     tile_width, tile_height = cucim_img.resolutions['level_tile_sizes'][0]
 
@@ -69,17 +63,17 @@ def test_tiff_stripe_boundary(testimg_tiff_stripe_32x24_16):
                    ]
 
     for (start_pos, size) in region_list:
-        cucim_arr = np.asarray(
-            cucim_img.read_region(start_pos, size))
-        openslide_arr = np.asarray(
-            openslide_img.read_region(start_pos, 0, size))[:, :, :3]
-
-        assert np.array_equal(cucim_arr, openslide_arr)
+        cucim_arr = np.asarray(cucim_img.read_region(start_pos, size))
+        # Not channel values are zero, so we need to check that.
+        channel_value_count = np.apply_along_axis(np.count_nonzero, 2,
+                                                  cucim_arr)
+        count_all_zero = np.count_nonzero(channel_value_count == 0)
+        # 75% of the pixels would be all zero
+        assert count_all_zero - (tile_width * tile_height * 0.75) < 5
 
 
 def test_tiff_stripe_outside(testimg_tiff_stripe_32x24_16):
     cucim_img = open_image_cucim(testimg_tiff_stripe_32x24_16)
-    openslide_img = open_image_openslide(testimg_tiff_stripe_32x24_16)
     width, height = cucim_img.size('XY')
     tile_width, tile_height = cucim_img.resolutions['level_tile_sizes'][0]
 
@@ -92,10 +86,12 @@ def test_tiff_stripe_outside(testimg_tiff_stripe_32x24_16):
 
     for (start_pos, size) in region_list:
         cucim_arr = np.asarray(cucim_img.read_region(start_pos, size))
-        openslide_arr = np.asarray(
-            openslide_img.read_region(start_pos, 0, size))[:, :, :3]
-
-    assert np.array_equal(cucim_arr, openslide_arr)
+        # All channel values should be zero, so we need to check that.
+        channel_value_count = np.apply_along_axis(np.count_nonzero, 2,
+                                                  cucim_arr)
+        count_all_zero = np.count_nonzero(channel_value_count == 0)
+        # All pixels would be zero.
+        assert count_all_zero == (tile_width * tile_height)
 
 
 def test_tiff_outside_of_resolution_level(testimg_tiff_stripe_4096x4096_256):
@@ -109,17 +105,21 @@ def test_tiff_outside_of_resolution_level(testimg_tiff_stripe_4096x4096_256):
 
 def test_tiff_stripe_multiresolution(testimg_tiff_stripe_4096x4096_256):
     cucim_img = open_image_cucim(testimg_tiff_stripe_4096x4096_256)
-    openslide_img = open_image_openslide(testimg_tiff_stripe_4096x4096_256)
 
     level_count = cucim_img.resolutions['level_count']
     assert level_count == 6
 
-    start_pos, size = ((64, 64), (256, 256))
+    start_pos, size = ((0, 0), (256, 256))
     for level in range(level_count):
         cucim_arr = np.asarray(cucim_img.read_region(start_pos, size, level))
-        openslide_arr = np.asarray(
-            openslide_img.read_region(start_pos, level, size))[:, :, :3]
-        assert np.array_equal(cucim_arr, openslide_arr)
+        # Not channel values are zero, so we need to check that.
+        channel_value_count = np.apply_along_axis(np.count_nonzero, 2,
+                                                  cucim_arr)
+        count_all_zero = np.count_nonzero(channel_value_count == 0)
+        img_size = cucim_img.resolutions['level_dimensions'][level]
+        # Only outside of the box is zero.
+        assert count_all_zero == 256 * 256 - (min(img_size[0], 256) *
+                                              min(img_size[1], 256))
 
 
 def test_array_interface_support(testimg_tiff_stripe_32x24_16_jpeg):
