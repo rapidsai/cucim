@@ -13,10 +13,7 @@
 # limitations under the License.
 #
 
-import pytest
-from ...util.io import open_image_cucim
-
-
-def test_load_non_existing_image():
-    with pytest.raises(ValueError, match=r"Cannot open .*"):
-        _ = open_image_cucim('/tmp/non_existing_image.tif')
+def open_image_cucim(file_path):
+    from cucim import CuImage
+    img = CuImage(file_path)
+    return img

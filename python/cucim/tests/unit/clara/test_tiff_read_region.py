@@ -15,12 +15,7 @@
 
 import numpy as np
 import pytest
-
-
-def open_image_cucim(file_path):
-    from cucim import CuImage
-    img = CuImage(file_path)
-    return img
+from ...util.io import open_image_cucim
 
 
 def test_tiff_stripe_inner(testimg_tiff_stripe_32x24_16):
@@ -39,11 +34,9 @@ def test_tiff_stripe_inner(testimg_tiff_stripe_32x24_16):
     for (start_pos, size) in region_list:
         cucim_arr = np.asarray(cucim_img.read_region(start_pos, size))
 
-        # Not channel values are zero, so we need to check that.
-        channel_value_count = np.apply_along_axis(np.count_nonzero, 2,
-                                                  cucim_arr)
-        count_all_zero = np.count_nonzero(channel_value_count == 0)
-        assert count_all_zero == 0
+        # Not all channel values are zero, so we need to check that.
+        channel_value_count = np.count_nonzero(cucim_arr, axis=2)
+        assert np.all(channel_value_count > 0)
 
 
 def test_tiff_stripe_boundary(testimg_tiff_stripe_32x24_16):
@@ -64,9 +57,8 @@ def test_tiff_stripe_boundary(testimg_tiff_stripe_32x24_16):
 
     for (start_pos, size) in region_list:
         cucim_arr = np.asarray(cucim_img.read_region(start_pos, size))
-        # Not channel values are zero, so we need to check that.
-        channel_value_count = np.apply_along_axis(np.count_nonzero, 2,
-                                                  cucim_arr)
+        # Not all channel values are zero, so we need to check that.
+        channel_value_count = np.count_nonzero(cucim_arr, axis=2)
         count_all_zero = np.count_nonzero(channel_value_count == 0)
         # 75% of the pixels would be all zero
         assert count_all_zero - (tile_width * tile_height * 0.75) < 5
@@ -87,8 +79,7 @@ def test_tiff_stripe_outside(testimg_tiff_stripe_32x24_16):
     for (start_pos, size) in region_list:
         cucim_arr = np.asarray(cucim_img.read_region(start_pos, size))
         # All channel values should be zero, so we need to check that.
-        channel_value_count = np.apply_along_axis(np.count_nonzero, 2,
-                                                  cucim_arr)
+        channel_value_count = np.count_nonzero(cucim_arr, axis=2)
         count_all_zero = np.count_nonzero(channel_value_count == 0)
         # All pixels would be zero.
         assert count_all_zero == (tile_width * tile_height)
@@ -112,9 +103,8 @@ def test_tiff_stripe_multiresolution(testimg_tiff_stripe_4096x4096_256):
     start_pos, size = ((0, 0), (256, 256))
     for level in range(level_count):
         cucim_arr = np.asarray(cucim_img.read_region(start_pos, size, level))
-        # Not channel values are zero, so we need to check that.
-        channel_value_count = np.apply_along_axis(np.count_nonzero, 2,
-                                                  cucim_arr)
+        # Not all channel values are zero, so we need to check that.
+        channel_value_count = np.count_nonzero(cucim_arr, axis=2)
         count_all_zero = np.count_nonzero(channel_value_count == 0)
         img_size = cucim_img.resolutions['level_dimensions'][level]
         # Only outside of the box is zero.
@@ -137,21 +127,22 @@ def test_array_interface_support(testimg_tiff_stripe_32x24_16_jpeg):
     assert array_interface['shape'] == tuple(whole_img.shape)
     assert array_interface['version'] == 3
 
-    def test_cuda_array_interface_support(testimg_tiff_stripe_32x24_16_jpeg):
-        img = open_image_cucim(testimg_tiff_stripe_32x24_16_jpeg)
-        whole_img = img.read_region(device='cuda')
-        array_interface = whole_img.__cuda_array_interface__
-        print(array_interface)
 
-        # {'data': (81888083968, False), 'strides': None,
-        #  'descr': [('', '|u1')], 'typestr': '|u1', 'shape': (24, 32, 3),
-        #  'version': 3, 'mask': None, 'stream': 1}
-        assert array_interface['data'][0] is not None
-        assert not array_interface['data'][1]
-        assert array_interface['strides'] is None
-        assert array_interface['descr']
-        assert array_interface['typestr']
-        assert array_interface['shape'] == tuple(whole_img.shape)
-        assert array_interface['version'] == 3
-        assert array_interface['mask'] is None
-        assert array_interface['stream'] == 1
+def test_cuda_array_interface_support(testimg_tiff_stripe_32x24_16_jpeg):
+    img = open_image_cucim(testimg_tiff_stripe_32x24_16_jpeg)
+    whole_img = img.read_region(device='cuda')
+    array_interface = whole_img.__cuda_array_interface__
+    print(array_interface)
+
+    # {'data': (81888083968, False), 'strides': None,
+    #  'descr': [('', '|u1')], 'typestr': '|u1', 'shape': (24, 32, 3),
+    #  'version': 3, 'mask': None, 'stream': 1}
+    assert array_interface['data'][0] is not None
+    assert not array_interface['data'][1]
+    assert array_interface['strides'] is None
+    assert array_interface['descr']
+    assert array_interface['typestr']
+    assert array_interface['shape'] == tuple(whole_img.shape)
+    assert array_interface['version'] == 3
+    assert array_interface['mask'] is None
+    assert array_interface['stream'] == 1

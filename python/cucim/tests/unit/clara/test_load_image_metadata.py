@@ -13,11 +13,7 @@
 # limitations under the License.
 #
 
-
-def open_image_cucim(file_path):
-    from cucim import CuImage
-    img = CuImage(file_path)
-    return img
+from ...util.io import open_image_cucim
 
 
 def test_load_image_metadata(testimg_tiff_stripe_32x24_16):

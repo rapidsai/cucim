@@ -679,58 +679,21 @@ test() {
     fi
 }
 
-check_install_python_dep_() {
-    local package_names="$@"
-
-    [ -z "$package_names" ] && c_echo_err R "Please specify package names to check!" && return 1
-
-    local packages_to_install=""
-    local has_all_packages=true
-
-    for package_name in $package_names; do
-        # `package_name` has '<package name>[:<conda package name>]' format.
-        if [ -n "${CONDA_PREFIX}" ]; then
-            # abc:def => def
-            # abc => abc
-            package_name="${package_name##*:}"
-            if ! conda list | grep -i -c "${package_name} " > /dev/null; then
-                c_echo G "${package_name}" W " doesn't exists. Installing " G "${package_name}" W "..."
-                has_all_packages=false
-
-                # Workaround for `openslide-python`
-                # (See https://github.com/conda-forge/openslide-python-feedstock/issues/4)
-                [ "${package_name}" = "openslide-python" ] && package_name="conda-forge/linux-64::openslide-python"
-
-                packages_to_install="${packages_to_install} ${package_name}"
-            fi
+install_python_test_deps_() {
+    if [ -n "${CONDA_PREFIX}" ]; then
+        # Override openslide-python due to the following issue:
+        #   https://github.com/conda-forge/openslide-python-feedstock/issues/4
+        run_command conda install -c conda-forge -y \
+            --file ${TOP}/python/cucim/requirements-test.txt \
+            conda-forge/linux-64::openslide-python
+    else
+        if [ -n "${VIRTUAL_ENV}" ]; then
+            run_command pip3 install -r ${TOP}/python/cucim/requirements-test.txt
         else
-            # abc:def => abc
-            # abc => abc
-            package_name="${package_name%%:*}"
-            if ! pip3 list | grep -i -c "${package_name} " > /dev/null; then
-                c_echo G "${package_name}" W " doesn't exists. Installing " G "${package_name}" W "..."
-                has_all_packages=false
-                packages_to_install="${packages_to_install} ${package_name}"
-            fi
-        fi
-    done
-    if [ "$has_all_packages" != "true" ]; then
-        if [ -n "${CONDA_PREFIX}" ]; then
-            run_command conda install -c conda-forge -y ${packages_to_install}
-        else
-            if [ -n "${VIRTUAL_ENV}" ]; then
-                run_command pip3 install ${packages_to_install}
-            else
-                run_command pip3 install --user ${packages_to_install}
-            fi
+            run_command pip3 install --user -r ${TOP}/python/cucim/requirements-test.txt
         fi
     fi
     hash -r
-}
-
-install_python_test_deps_() {
-    # Package name has '<package name>[:<conda package name>]' format.
-    check_install_python_dep_ pytest pytest-cov pytest-lazy-fixture psutil GPUtil tifffile imagecodecs openslide-python
 }
 
 test_python_desc() { echo 'Execute Python test cases
