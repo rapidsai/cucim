@@ -351,8 +351,8 @@ The following list is on the road |:smile:|
   - `cucim._cucim.CuImage` -> `cucim.CuImage`
 - Use new feature to reference a cross-link with header (from v0.13.0 of [myst-parser](https://pypi.org/project/myst-parser/))
   - <https://github.com/executablebooks/MyST-Parser/issues/149>
-  - <https://myst-parser.readthedocs.io/en/latest/using/howto.html#automatically-create-targets-for-section-headers>
-  - <https://myst-parser.readthedocs.io/en/latest/using/syntax-optional.html#auto-generated-header-anchors>
+  - <https://myst-parser.readthedocs.io/en/v0.13.5/using/howto.html#automatically-create-targets-for-section-headers>
+  - <https://myst-parser.readthedocs.io/en/v0.13.5/using/syntax-optional.html#auto-generated-header-anchors>
 
 ### Plugin-system (Carbonite)
 
