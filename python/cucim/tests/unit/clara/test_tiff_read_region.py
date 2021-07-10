@@ -15,6 +15,7 @@
 
 import numpy as np
 import pytest
+
 from ...util.io import open_image_cucim
 
 

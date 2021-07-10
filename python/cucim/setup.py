@@ -1,17 +1,13 @@
 #!/usr/bin/env python
 # -*- encoding: utf-8 -*-
-from __future__ import absolute_import
-from __future__ import print_function
+from __future__ import absolute_import, print_function
 
 import io
 import sys
-from os.path import dirname
-from os.path import join
-
-from setuptools import find_packages
-from setuptools import setup
+from os.path import dirname, join
 
 import versioneer
+from setuptools import find_packages, setup
 
 # Give setuptools a hint to complain if it's too old a version
 # 24.2.0 added the python_requires option

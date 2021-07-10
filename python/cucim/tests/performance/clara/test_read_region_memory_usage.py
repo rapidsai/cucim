@@ -14,6 +14,7 @@
 #
 
 import pytest
+
 from ...util.io import open_image_cucim
 
 
@@ -46,6 +47,7 @@ def test_read_region_cuda_memleak(testimg_tiff_stripe_4096x4096_256):
 
 def test_read_region_cpu_memleak(testimg_tiff_stripe_4096x4096_256):
     import os
+
     import psutil
     process = psutil.Process(os.getpid())
 
@@ -65,8 +67,9 @@ def test_read_region_cpu_memleak(testimg_tiff_stripe_4096x4096_256):
 
 def test_read_random_region_cpu_memleak(testimg_tiff_stripe_4096x4096_256):
     import os
-    import psutil
     import random
+
+    import psutil
     process = psutil.Process(os.getpid())
 
     img = open_image_cucim(testimg_tiff_stripe_4096x4096_256)

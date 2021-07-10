@@ -14,9 +14,11 @@
 #
 
 import shutil
+
 import pytest
-from ..util.gen_image import ImageGenerator
 from pytest_lazyfixture import lazy_fixture
+
+from ..util.gen_image import ImageGenerator
 
 
 def gen_image(tmpdir_factory, recipe):

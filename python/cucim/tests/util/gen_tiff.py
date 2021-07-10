@@ -13,11 +13,12 @@
 # limitations under the License.
 #
 
-from tifffile import TiffWriter
-import numpy as np
-from pathlib import Path
 from functools import reduce
+from pathlib import Path
 from tempfile import mkdtemp
+
+import numpy as np
+from tifffile import TiffWriter
 
 COMPRESSION_MAP = {'jpeg': ('jpeg', 95),
                    'deflate': 'deflate'}
