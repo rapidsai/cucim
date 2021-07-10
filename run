@@ -333,7 +333,7 @@ build_local_desc() { echo 'Build locally
 Compile binaries locally
 
 Arguments:
-  $1 - subcommand [all|libcucim|cuslide|cucim] (default: all)
+  $1 - subcommand [all|clean_cache|clean|libcucim|cuslide|cucim] (default: all)
   $2 - build type [debug|release|rel-debug] (default: debug)
 '
 }
@@ -351,6 +351,21 @@ build_local() {
 
     local old_opt="$(shopt -op errexit);$(shopt -op nounset)" # save old shopts
     set -eu
+
+    if [ "$subcommand" = "clean_cache" ]; then
+        rm -f ${TOP}/build-*/CMakeCache.txt
+        rm -f ${TOP}/cpp/plugins/cucim.kit.cuslide/build-*/CMakeCache.txt
+        rm -f ${TOP}/python/build-*/CMakeCache.txt
+    fi
+
+    if [ "$subcommand" = "clean" ]; then
+        rm -rf ${TOP}/build-*
+        rm -rf ${TOP}/install
+        rm -rf ${TOP}/cpp/plugins/cucim.kit.cuslide/build-*/
+        rm -rf ${TOP}/cpp/plugins/cucim.kit.cuslide/install
+        rm -rf ${TOP}/python/build-*
+        rm -rf ${TOP}/python/install
+    fi
 
     if [ "$subcommand" = "all" ] || [ "$subcommand" = "libcucim" ]; then
         build_local_libcucim_ ${TOP} ${build_type} ${build_type_str} ${prefix}
@@ -370,19 +385,14 @@ build_local() {
     if [ "$subcommand" = "all" ] || [ "$subcommand" = "cucim" ]; then
         # We don't need to copy binary if executed by conda-build
         if [ "${CONDA_BUILD:-}" != "1" ]; then
-            # Copy .so files to pybind's build folder
+            # Copy .so files from libcucim & cuslide's build folders to cuCIM's Python source folder
+            # Since wheel file doesn't support symbolic link (https://github.com/pypa/wheel/issues/203),
             # we don't need to copy symbolic links. Instead copy only libcucim.so.${major_version} (without symbolic link)
             cp ${TOP}/build-$build_type/lib*/libcucim.so.${major_version} ${TOP}/python/cucim/src/cucim/clara/
             cp -P ${TOP}/cpp/plugins/cucim.kit.cuslide/build-$build_type/lib*/cucim* ${TOP}/python/cucim/src/cucim/clara/
 
-            # Copy .so files from pybind's build folder to cucim Python source folder
-            # Since wheel file doesn't support symbolic link (https://github.com/pypa/wheel/issues/203),
-            # we don't need to copy symbolic links. Instead copy only libcucim.so.${major_version} (without symbolic link)
-            #find ${TOP}/python/install/lib -maxdepth 1 -type f -exec cp {} ${TOP}/python/cucimrc/cucim/clara\;
+            # Copy .so files from pybind's build folder to cuCIM's Python source folder
             cp ${TOP}/python/build-$build_type/lib/cucim/_cucim.*.so ${TOP}/python/cucim/src/cucim/clara/
-            # cp ${TOP}/python/build-$build_type/lib/cucim.*.so ${TOP}/python/cucim/src/cucim/clara/
-            # cp ${TOP}/python/build-$build_type/lib/libcucim.so.${major_version} ${TOP}/python/cucim/src/cucim/clara/
-            # find ${TOP}/python/build-$build_type/lib -maxdepth 1 -type f -name "lib*.so" -exec cp {} ${TOP}/python/cucim/src/cucim/clara \;
         fi
     fi
 

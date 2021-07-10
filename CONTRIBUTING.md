@@ -52,7 +52,7 @@ implementation of the issue, ask them in the issue instead of the PR.
 
 ## Setting Up Your Build Environment
 
-The following instructions are for developers and contributors to cuCIM OSS development. These instructions are tested on Linux Ubuntu 16.04 & 18.04. Use these instructions to build cuCIM from source and contribute to its development.  Other operating systems may be compatible, but are not currently tested.
+The following instructions are for developers and contributors to cuCIM OSS development. These instructions are tested on Linux Ubuntu 16.04 & 18.04. Use these instructions to build cuCIM from the source and contribute to its development.  Other operating systems may be compatible, but are not currently tested.
 
 ### Code Formatting
 
@@ -72,7 +72,7 @@ pip install isort flake8
 ```
 
 These tools are used to auto-format the Python code in the repository. Additionally, there is a CI check in place to enforce
-that committed code follows our standards. You can use the tools to
+that the committed code follows our standards. You can use the tools to
 automatically format your python code by running:
 
 ```bash
@@ -96,56 +96,125 @@ CUDA/GPU requirements:
 You can obtain CUDA from [https://developer.nvidia.com/cuda-downloads](https://developer.nvidia.com/cuda-downloads).
 
 
-# Script to build cuCIM from source
+# Building and Testing cuCIM from Source
 
-### Build from Source
+First, please clone the cuCIM's repository
 
-- Clone the repository
 ```bash
 CUCIM_HOME=$(pwd)/cucim
 git clone https://github.com/rapidsai/cucim.git $CUCIM_HOME
 cd $CUCIM_HOME
 ```
+## Local Development using Conda Environment (for gcc 9.x and nvcc 11.0.x)
 
-- Create the conda development environment `cucim`:
+Conda can be used to setup GCC 9.x, CUDA Toolkit (including nvcc) 11.0.x, and other dependent libraries (as shown in `./conda/environments/env.yml`) for building cuCIM.
+
+Otherwise, you may need to install (such as zlib, xz, yasm) through your OS's package manager (`apt`, `yum`, and so on).
+
+
+### Creating the Conda Development Environment `cucim`
+
+Note that `./conda/environments/env.yml` is currently set to use gcc 9.x (gxx_linux-64) and CUDA 11.0.x (cudatoolkit & cudatoolkit-dev). If you want to change the version of gcc or CUDA toolkit
+package, please update `./conda/environments/env.yml` before executing the following commands.
+
 ```bash
 conda env create -f ./conda/environments/env.yml
 # activate the environment
 conda activate cucim
 ```
 
-- Build and install `libcucim` and `cucim` (python bindings):
+### Building `libcucim` and install `cucim` (python bindings):
+
+**Building `libcucim`**
+
 ```bash
-export CC=$CONDA_PREFIX/bin/x86_64-conda_cos6-linux-gnu-gcc
-export CXX=$CONDA_PREFIX/bin/x86_64-conda_cos6-linux-gnu-g++
+# `CC` and `CXX` environment variable will be set by default by `gxx_linux-64` package.
+# Check if the environments are correctly set.
+[ ${CC##$CONDA_PREFIX/bin} = "$CC" ] && >&2 echo "Environment variable CC doesn't start with '$CONDA_PREFIX/bin'"
+[ ${CXX##$CONDA_PREFIX/bin} = "$CXX" ] && >&2 echo "Environment variable CXX doesn't start with '$CONDA_PREFIX/bin'"
+
+# set to use nvcc in the conda environment
+export CUDACXX=$CONDA_PREFIX/pkgs/cuda-toolkit/bin/nvcc
+
+# build all with `release` binaries (you can change it to `debug` or `rel-debug`)
 ./run build_local all release $CONDA_PREFIX
 ```
 
-- Build command will create the following files:
-  - ./install/lib/libcucim*
-  - ./python/install/lib/_cucim.cpython-38-x86_64-linux-gnu.so
-  - ./cpp/plugins/cucim.kit.cuslide/install/lib/cucim.kit.cuslide@*.so
+The build command will create the following files:
+- `./install/lib/libcucim*`
+- `./python/install/lib/_cucim.cpython-*-x86_64-linux-gnu.so`
+- `./cpp/plugins/cucim.kit.cuslide/install/lib/cucim.kit.cuslide@*.so`
 
-- Install libcucim/cuslide/cucim(python):
+And, it will copy the built library files to `python/cucim/src/cucim/clara/` folder:
+- `libcucim.so.*`
+- `_cucim.cpython-*-x86_64-linux-gnu.so`
+- `cucim.kit.cuslide@*.so`
+
+
+**Building `cucim`(python bindings)**
+
 ```bash
-# libcucim
-cp -P -r install/bin/* $CONDA_PREFIX/bin/
-cp -P -r install/lib/* $CONDA_PREFIX/lib/
-cp -P -r install/lib/* $CONDA_PREFIX/lib/
-cp -P -r install/include/* $CONDA_PREFIX/include/
-
-# cuslide plugin
-cp -P -r cpp/plugins/cucim.kit.cuslide/install/bin/* $CONDA_PREFIX/bin
-cp -P -r cpp/plugins/cucim.kit.cuslide/install/lib/* $CONDA_PREFIX/lib/
-
-# cucim (python)
-cp -P python/install/lib/* python/cucim/src/cucim/clara/
-cd python/cucim/
-python -m pip install .
+python -m pip install python/cucim
 ```
 
 For contributors interested in working on the Python code from an in-place
 (editable) installation, replace the last line above with
 ```bash
-python -m pip install --editable .
+python -m pip install --editable python/cucim
+```
+
+**Cleaning build files**
+
+You can execute the following command whenever C++ code is changed during the development:
+```bash
+./run build_local all release $CONDA_PREFIX
+```
+Once it is built, the subsequent build doesn't take much time.
+
+However, if a build option or dependent packages are updated, the build can be failed (due to CMakeCache.txt or existing build files). In that case, you can remove use the following commands to remove CMakeCache.txt or build folder, then build it again.
+
+1) Remove CMakeCache.txt for libcucim, cuslide plugin, and the python wrapper (pybind11).
+
+```bash
+# this command wouldn't remove already downloaded dependency so faster than `clean` subcommand
+./run build_local clean_cache
+```
+
+2) Remove `build-*` and `install` folder for libcucim, cuslide plugin, and the python wrapper (pybind11).
+
+```bash
+# this command is for clean build
+./run build_local clean
+```
+
+## Building a Package (for distribution. Including a wheel package for pip)
+
+You can execute the following command to build a wheel file for pip.
+
+```bash
+./run build_package
+```
+
+The command would use `./temp` folder as a local build folder and build a distribution package into `dist` folder using [dockcross](https://github.com/dockcross/dockcross)'s manylinux2014 docker image.
+
+`./run build_package` will reuse local `./temp` folder to reduce the build time.
+
+If C++ code or dependent packages are updated so the build is failing somehow, please retry it after deleting the `temp` folder under the repository root.
+
+## Running Tests
+
+Once cuCIM is installed, you can test the module through `./run test` command.
+
+```bash
+# Arguments:
+#   $1 - subcommand [all|python|c++] (default: all)
+#   $2 - test_type [all|unit|integration|system|performance] (default: all)
+#   $3 - test_component [all|clara|skimage] (default: all)
+
+./run test                      # execute all tests
+./run test python               # execute all python tests
+./run test python unit          # execute all python unit tests
+./run test python unit skimage  # execute all python unit tests in `skimage` module
+./run test python unit clara    # execute all python unit tests in `clara` module
+./run test python performance   # execute all python performance tests
 ```

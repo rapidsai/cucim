@@ -33,4 +33,3 @@ cp -P -r install/include/* $PREFIX/include/ || true
 mkdir -p $PREFIX/bin $PREFIX/lib $PREFIX/include
 cp -P -r cpp/plugins/cucim.kit.cuslide/install/bin/* $PREFIX/bin/ || true
 cp -P -r cpp/plugins/cucim.kit.cuslide/install/lib/* $PREFIX/lib/ || true
-cp -P -r cpp/plugins/cucim.kit.cuslide/install/include/* $PREFIX/include/ || true
