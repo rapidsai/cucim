@@ -15,6 +15,10 @@ source:
 build:
   number: {{ GIT_DESCRIBE_NUMBER }}
   string: cuda{{ cuda_version }}_{{ GIT_DESCRIBE_HASH }}_{{ GIT_DESCRIBE_NUMBER }}
+  script_env:
+    - CC
+    - CXX
+    - CUDAHOSTCXX
 
 requirements:
   build:
