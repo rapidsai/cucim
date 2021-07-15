@@ -31,7 +31,7 @@
 					"CUCIM_TESTDATA_FOLDER": "${workspaceDirectory}/test_data",
 					// Add cuslide plugin's library path to LD_LIBRARY_PATH
 					"LD_LIBRARY_PATH": "${workspaceDirectory}/build-debug/lib:${workspaceDirectory}/cpp/plugins/cucim.kit.cuslide/build-debug/lib:${workspaceDirectory}/temp/cuda/lib64:${os_env:LD_LIBRARY_PATH}",
-					"CUCIM_TEST_PLUGIN_PATH": "cucim.kit.cuslide@21.08.00.so"
+					"CUCIM_TEST_PLUGIN_PATH": "cucim.kit.cuslide@21.10.00.so"
 				},
 				"cwd": "${workspaceDirectory}",
 				"catch2": {
@@ -214,7 +214,7 @@
 					},
 					{
 						"name": "CUCIM_TEST_PLUGIN_PATH",
-						"value": "cucim.kit.cuslide@21.08.00.so"
+						"value": "cucim.kit.cuslide@21.10.00.so"
 					}
 				],
 				"console": "externalTerminal",
@@ -242,7 +242,7 @@
 					},
 					{
 						"name": "CUCIM_TEST_PLUGIN_PATH",
-						"value": "cucim.kit.cuslide@21.08.00.so"
+						"value": "cucim.kit.cuslide@21.10.00.so"
 					}
 				],
 				"console": "externalTerminal",
@@ -273,7 +273,7 @@
 					},
 					{
 						"name": "CUCIM_TEST_PLUGIN_PATH",
-						"value": "cucim.kit.cuslide@21.08.00.so"
+						"value": "cucim.kit.cuslide@21.10.00.so"
 					}
 				],
 				"console": "externalTerminal",
