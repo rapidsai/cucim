@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,6 +29,7 @@
 #include <cassert>
 #include <cstring>
 #include <fcntl.h>
+#include <filesystem>
 #include <memory>
 
 using json = nlohmann::json;
@@ -68,12 +69,17 @@ static const char* get_format_name()
     return "Generic TIFF";
 }
 
-static bool CUCIM_ABI checker_is_valid(const char* file_name, const char* buf) // TODO: need buffer size parameter
+static bool CUCIM_ABI checker_is_valid(const char* file_name, const char* buf, size_t size)
 {
-    // TODO implement this
-    (void)file_name;
     (void)buf;
-    return true;
+    (void)size;
+    auto file = std::filesystem::path(file_name);
+    auto extension = file.extension().string();
+    if (extension.compare(".tif") == 0 || extension.compare(".tiff") == 0)
+    {
+        return true;
+    }
+    return false;
 }
 
 static CuCIMFileHandle CUCIM_ABI parser_open(const char* file_path)
@@ -277,7 +283,7 @@ static bool CUCIM_ABI writer_write(const CuCIMFileHandle* handle,
 
 void fill_interface(cucim::io::format::IImageFormat& iface)
 {
-    static cucim::io::format::ImageCheckerDesc image_checker = { 0, 80, checker_is_valid };
+    static cucim::io::format::ImageCheckerDesc image_checker = { 0, 0, checker_is_valid };
     static cucim::io::format::ImageParserDesc image_parser = { parser_open, parser_parse, parser_close };
 
     static cucim::io::format::ImageReaderDesc image_reader = { reader_read };

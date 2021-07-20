@@ -63,6 +63,8 @@ add_library(${CUCIM_PACKAGE_NAME}
         include/cucim/macros/defines.h
         include/cucim/memory/dlpack.h
         include/cucim/memory/memory_manager.h
+        include/cucim/plugin/image_format.h
+        include/cucim/plugin/plugin_config.h
         include/cucim/util/cuda.h
         include/cucim/util/file.h
         include/cucim/util/platform.h
@@ -96,6 +98,8 @@ add_library(${CUCIM_PACKAGE_NAME}
         src/logger/logger.cpp
         src/logger/timer.cpp
         src/memory/memory_manager.cu
+        src/plugin/image_format.cpp
+        src/plugin/plugin_config.cpp
         src/util/file.cpp
         src/util/platform.cpp)
 

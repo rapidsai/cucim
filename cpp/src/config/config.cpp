@@ -55,6 +55,11 @@ cucim::cache::ImageCacheConfig& Config::cache()
     return cache_;
 }
 
+cucim::plugin::PluginConfig& Config::plugin()
+{
+    return plugin_;
+}
+
 std::string Config::shm_name() const
 {
     return fmt::format("cucim-shm.{}", pgid());
@@ -113,10 +118,17 @@ bool Config::parse_config(std::string& path)
     {
         std::ifstream ifs(path);
         json obj = json::parse(ifs, nullptr /*cb*/, true /*allow_exceptions*/, true /*ignore_comments*/);
+
         json cache = obj["cache"];
         if (cache.is_object())
         {
             cache_.load_config(&cache);
+        }
+
+        json plugin = obj["plugin"];
+        if (plugin.is_object())
+        {
+            plugin_.load_config(&plugin);
         }
     }
     catch (const json::parse_error& e)

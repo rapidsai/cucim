@@ -206,6 +206,11 @@ TIFF::TIFF(const cucim::filesystem::Path& file_path, int mode) : file_path_(file
         throw std::invalid_argument(fmt::format("Cannot open {}!", file_path));
     }
     tiff_client_ = ::TIFFFdOpen(fd, file_path_cstr, "rm"); // Add 'm' to disable memory-mapped file
+    if (tiff_client_ == nullptr)
+    {
+        cucim_free(file_path_cstr);
+        throw std::invalid_argument(fmt::format("Cannot load {}!", file_path));
+    }
     // TODO: make file_handle_ object to pointer
     file_handle_ = CuCIMFileHandle{ fd, nullptr, FileHandleType::kPosix, file_path_cstr, this };
 

@@ -170,9 +170,10 @@ struct ImageCheckerDesc
      * Returns true if the given file is valid for the format
      * @param file_name
      * @param buf
+     * @param size
      * @return
      */
-    bool(CUCIM_ABI* is_valid)(const char* file_name, const char* buf);
+    bool(CUCIM_ABI* is_valid)(const char* file_name, const char* buf, size_t size);
 };
 
 struct ImageParserDesc
