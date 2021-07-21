@@ -20,7 +20,7 @@ _map_array = cp.ElementwiseKernel(
     }
     y = out_val;
     """,
-    name="cucim_skimage_map_array",
+    name="cucim_skimage_util_map_array",
 )
 
 
