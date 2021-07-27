@@ -148,7 +148,7 @@ PYBIND11_MODULE(_cucim, m)
              py::arg("shm_name") = "") //
         .def_property("associated_images", &CuImage::associated_images, nullptr, doc::CuImage::doc_associated_images,
                       py::call_guard<py::gil_scoped_release>()) //
-        .def("associated_image", &CuImage::associated_image, doc::CuImage::doc_associated_image,
+        .def("associated_image", &py_associated_image, doc::CuImage::doc_associated_image,
              py::call_guard<py::gil_scoped_release>(), //
              py::arg("name") = "", //
              py::arg("device") = io::Device()) //
@@ -392,6 +392,22 @@ py::object py_read_region(const CuImage& cuimg,
         _set_array_interface(region);
 
         return region;
+    }
+}
+
+py::object py_associated_image(const CuImage& cuimg, const std::string& name, const io::Device& device)
+{
+    auto image_ptr = std::make_shared<cucim::CuImage>(cuimg.associated_image(name, device));
+
+    {
+        py::gil_scoped_acquire scope_guard;
+
+        py::object image = py::cast(image_ptr);
+
+        // Add `__array_interace__` or `__cuda_array_interface__` in runtime.
+        _set_array_interface(image);
+
+        return image;
     }
 }
 
