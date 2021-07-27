@@ -1,29 +1,29 @@
 # .coveragerc to control coverage.py
+# Refer to: https://coverage.readthedocs.io/en/latest/config.html#syntax
+
 [run]
+source =
+    cucim
 omit =
     # omit vendored files
     */_vendored/*
-    src/cucim/time.py
+    # somehow, above doesn't omit the following files so add below specifically.
+    */cucim/skimage/_vendored/*
     # omit versioneer file
-    src/cucim/_version.py
+    */cucim/_version.py
+    # omit non-relevant files
+    */cucim/__init__.py
+    */cucim/__main__.py
+    */cucim/time.py
+    */cucim/_misc.py
+    */cucim/clara/cli.py
+
+[paths]
+source =
+    src
+    */site-packages
 
 
-[html]
-directory = coverage_html_report
-
-# [paths]
-# source =
-#    src
-#    */site-packages
-#
-# [run]
-# branch = true
-# source =
-#     src/cucim
-#     tests
-# parallel = true
-#
-# [report]
-# show_missing = true
-# precision = 2
-# omit = *migrations*
+[report]
+show_missing = true
+precision = 2

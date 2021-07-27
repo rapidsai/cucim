@@ -148,6 +148,7 @@ python/cucim/docs/notebooks
 
 # Conda folders
 .conda
+conda-bld
 
 # Large Images
 *.svs

@@ -109,6 +109,5 @@ else
     cat /etc/hosts
 
     gpuci_logger "Python py.test for cuCIM"
-    cd $WORKSPACE/python/cucim
-    py.test --cache-clear -v --ignore-glob . --rootdir=src
+    ./run test python all
 fi

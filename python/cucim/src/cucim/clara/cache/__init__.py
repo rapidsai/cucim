@@ -13,6 +13,7 @@
 # limitations under the License.
 #
 
-from cucim.clara._cucim.cache import CacheType, ImageCache, preferred_memory_capacity
+from cucim.clara._cucim.cache import (CacheType, ImageCache,
+                                      preferred_memory_capacity)
 
 __all__ = ['CacheType', 'ImageCache', 'preferred_memory_capacity']

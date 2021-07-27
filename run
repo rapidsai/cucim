@@ -333,7 +333,7 @@ build_local_desc() { echo 'Build locally
 Compile binaries locally
 
 Arguments:
-  $1 - subcommand [all|libcucim|cuslide|cucim] (default: all)
+  $1 - subcommand [all|clean_cache|clean|libcucim|cuslide|cucim] (default: all)
   $2 - build type [debug|release|rel-debug] (default: debug)
 '
 }
@@ -351,6 +351,21 @@ build_local() {
 
     local old_opt="$(shopt -op errexit);$(shopt -op nounset)" # save old shopts
     set -eu
+
+    if [ "$subcommand" = "clean_cache" ]; then
+        rm -f ${TOP}/build-*/CMakeCache.txt
+        rm -f ${TOP}/cpp/plugins/cucim.kit.cuslide/build-*/CMakeCache.txt
+        rm -f ${TOP}/python/build-*/CMakeCache.txt
+    fi
+
+    if [ "$subcommand" = "clean" ]; then
+        rm -rf ${TOP}/build-*
+        rm -rf ${TOP}/install
+        rm -rf ${TOP}/cpp/plugins/cucim.kit.cuslide/build-*/
+        rm -rf ${TOP}/cpp/plugins/cucim.kit.cuslide/install
+        rm -rf ${TOP}/python/build-*
+        rm -rf ${TOP}/python/install
+    fi
 
     if [ "$subcommand" = "all" ] || [ "$subcommand" = "libcucim" ]; then
         build_local_libcucim_ ${TOP} ${build_type} ${build_type_str} ${prefix}
@@ -370,19 +385,14 @@ build_local() {
     if [ "$subcommand" = "all" ] || [ "$subcommand" = "cucim" ]; then
         # We don't need to copy binary if executed by conda-build
         if [ "${CONDA_BUILD:-}" != "1" ]; then
-            # Copy .so files to pybind's build folder
+            # Copy .so files from libcucim & cuslide's build folders to cuCIM's Python source folder
+            # Since wheel file doesn't support symbolic link (https://github.com/pypa/wheel/issues/203),
             # we don't need to copy symbolic links. Instead copy only libcucim.so.${major_version} (without symbolic link)
             cp ${TOP}/build-$build_type/lib*/libcucim.so.${major_version} ${TOP}/python/cucim/src/cucim/clara/
             cp -P ${TOP}/cpp/plugins/cucim.kit.cuslide/build-$build_type/lib*/cucim* ${TOP}/python/cucim/src/cucim/clara/
 
-            # Copy .so files from pybind's build folder to cucim Python source folder
-            # Since wheel file doesn't support symbolic link (https://github.com/pypa/wheel/issues/203),
-            # we don't need to copy symbolic links. Instead copy only libcucim.so.${major_version} (without symbolic link)
-            #find ${TOP}/python/install/lib -maxdepth 1 -type f -exec cp {} ${TOP}/python/cucimrc/cucim/clara\;
+            # Copy .so files from pybind's build folder to cuCIM's Python source folder
             cp ${TOP}/python/build-$build_type/lib/cucim/_cucim.*.so ${TOP}/python/cucim/src/cucim/clara/
-            # cp ${TOP}/python/build-$build_type/lib/cucim.*.so ${TOP}/python/cucim/src/cucim/clara/
-            # cp ${TOP}/python/build-$build_type/lib/libcucim.so.${major_version} ${TOP}/python/cucim/src/cucim/clara/
-            # find ${TOP}/python/build-$build_type/lib -maxdepth 1 -type f -name "lib*.so" -exec cp {} ${TOP}/python/cucim/src/cucim/clara \;
         fi
     fi
 
@@ -656,6 +666,90 @@ copy_data_() {
     run_command cp -r ${SRC_ROOT}/3rdparty ${SRC_ROOT}/LICENSE* ${DEST_ROOT}/
 }
 
+
+#==================================================================================
+# Section: Test
+#==================================================================================
+
+test_desc() { echo 'Execute test cases
+
+Arguments:
+  $1 - subcommand [all|python|c++] (default: all)
+  $2 - test_type [all|unit|integration|system|performance] (default: all)
+  $3 - test_component [all|clara|skimage] (default: all)
+'
+}
+test() {
+    local subcommand="${1:-all}"
+    local test_type="${2:-all}"
+    shift;
+
+    if [ "$subcommand" = "all" ] || [ "$subcommand" = "python" ]; then
+        test_python "$@"
+    fi
+}
+
+install_python_test_deps_() {
+    if [ -n "${CONDA_PREFIX}" ]; then
+        # Override openslide-python due to the following issue:
+        #   https://github.com/conda-forge/openslide-python-feedstock/issues/4
+        run_command conda install -c conda-forge -y \
+            --file ${TOP}/python/cucim/requirements-test.txt \
+            conda-forge/linux-64::openslide-python
+    else
+        if [ -n "${VIRTUAL_ENV}" ]; then
+            run_command pip3 install -r ${TOP}/python/cucim/requirements-test.txt
+        else
+            run_command pip3 install --user -r ${TOP}/python/cucim/requirements-test.txt
+        fi
+    fi
+    hash -r
+}
+
+test_python_desc() { echo 'Execute Python test cases
+
+Arguments:
+  $1 - test_type [all|unit|integration|system|performance] (default: all)
+  $2 - test_component [all|clara|skimage] (default: all)
+'
+}
+test_python() {
+    local test_type="${1:-all}"
+    local test_component="${2:-all}"
+    local result=0
+
+    local testsuite=""
+    local testsuite_unit_skimage="src"
+    local testsuite_unit_clara="tests/unit/clara"
+    local testsuite_performance="tests/performance"
+
+    install_python_test_deps_
+
+    if [ "$test_type" = "all" ] || [ "$test_type" = "unit" ]; then
+        local testsuite="${testsuite_unit_skimage} ${testsuite_unit_clara}"
+        [ "$test_component" = "skimage" ] && testsuite="${testsuite_unit_skimage}"
+        [ "$test_component" = "clara" ] && testsuite="${testsuite_unit_clara}"
+
+    fi
+    if [ "$test_type" = "all" ] || [ "$test_type" = "performance" ]; then
+        testsuite="${testsuite} ${testsuite_performance}"
+    fi
+
+    pushd $TOP/python/cucim
+    run_command py.test --cache-clear -vv \
+        --cov=cucim \
+        --junitxml="$TOP/junit-cucim.xml" \
+        --cov-config=$TOP/python/cucim/.coveragerc \
+        --cov-report=xml:"$TOP/cucim-coverage.xml" \
+        --cov-report term \
+        ${testsuite}
+    result=$?
+    popd
+
+    return $result
+}
+
+
 #==================================================================================
 # Section: Example
 #==================================================================================
@@ -783,7 +877,11 @@ install_tox_() {
         if [ -n "${CONDA_PREFIX}" ]; then
             run_command pip3 install tox
         else
-            run_command pip3 install --user tox
+            if [ -n "${VIRTUAL_ENV}" ]; then
+                run_command pip3 install tox
+            else
+                run_command pip3 install --user tox
+            fi
         fi
         hash -r
     fi
