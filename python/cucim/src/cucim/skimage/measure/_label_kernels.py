@@ -55,7 +55,7 @@ def _kernel_init():
         "X x",
         "Y y",
         "if (x == 0) { y = -1; } else { y = i; }",
-        "cucim_nd_label_init",
+        "cucim_skimage_measure_label_init",
     )
 
 
@@ -129,7 +129,7 @@ def _kernel_connect(greyscale_mode=False, int_t="int"):
     )
 
     return cupy.ElementwiseKernel(
-        in_params, "raw Y y", code, "cucim_nd_label_connect",
+        in_params, "raw Y y", code, "cucim_skimage_measure_label_connect",
     )
 
 
@@ -144,7 +144,7 @@ def _kernel_count():
         if (j != i) y[i] = j;
         else atomicAdd(&count[0], 1);
         """,
-        "cucim_nd_label_count",
+        "cucim_skimage_measure_label_count",
     )
 
 
@@ -157,7 +157,7 @@ def _kernel_labels():
         int j = atomicAdd(&count[1], 1);
         labels[j] = i;
         """,
-        "cucim_nd_label_labels",
+        "cucim_skimage_measure_label_labels",
     )
 
 
@@ -182,7 +182,7 @@ def _kernel_finalize():
         }
         y[i] = j + 1;
         """,
-        "cucim_nd_label_finalize",
+        "cucim_skimage_measure_label_finalize",
     )
 
 
