@@ -7,6 +7,8 @@
 
 - [GTC 2021 cuCIM: A GPU Image I/O and Processing Toolkit [S32194]](https://www.nvidia.com/en-us/gtc/catalog/?search=cuCIM#/)
   - [video](https://gtc21.event.nvidia.com/media/cuCIM%3A%20A%20GPU%20Image%20I_O%20and%20Processing%20Toolkit%20%5BS32194%5D/1_fwfxd0iu)
+- [SciPy 2021 cuCIM - A GPU image I/O and processing library](https://www.scipy2021.scipy.org/)
+  - [video](https://youtu.be/G46kOOM9xbQ)
 
 **Release notes** are available on our [wiki page](https://github.com/rapidsai/cucim/wiki/Release-Notes).
 
