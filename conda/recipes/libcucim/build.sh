@@ -2,8 +2,9 @@
 
 CUCIM_BUILD_TYPE=${CUCIM_BUILD_TYPE:-release}
 
-echo "Current Folder: ${SRC_DIR}"
-echo "CUDA_VERSION: ${CUDA_VERSION}"
+echo "CC          : ${CC}"
+echo "CXX         : ${CXX}"
+echo "CUDAHOSTCXX : ${CUDAHOSTCXX}"
 
 # For now CUDAHOSTCXX is set to `/usr/bin/g++` by
 # https://github.com/rapidsai/docker/blob/161b200157206660d88fb02cf69fe58d363ac95e/generated-dockerfiles/rapidsai-core_ubuntu18.04-devel.Dockerfile
@@ -33,4 +34,3 @@ cp -P -r install/include/* $PREFIX/include/ || true
 mkdir -p $PREFIX/bin $PREFIX/lib $PREFIX/include
 cp -P -r cpp/plugins/cucim.kit.cuslide/install/bin/* $PREFIX/bin/ || true
 cp -P -r cpp/plugins/cucim.kit.cuslide/install/lib/* $PREFIX/lib/ || true
-cp -P -r cpp/plugins/cucim.kit.cuslide/install/include/* $PREFIX/include/ || true

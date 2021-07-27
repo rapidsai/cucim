@@ -14,8 +14,9 @@ from cucim.skimage._shared._warnings import expected_warnings
 from cucim.skimage.color import rgb2gray
 from cucim.skimage.exposure import histogram
 from cucim.skimage.filters.thresholding import _cross_entropy  # _mean_std,
-from cucim.skimage.filters.thresholding import (threshold_isodata, threshold_li,
-                                                threshold_local, threshold_mean,
+from cucim.skimage.filters.thresholding import (threshold_isodata,
+                                                threshold_li, threshold_local,
+                                                threshold_mean,
                                                 threshold_minimum,
                                                 threshold_multiotsu,
                                                 threshold_niblack,

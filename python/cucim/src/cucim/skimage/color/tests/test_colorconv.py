@@ -22,12 +22,12 @@ from cucim.skimage._shared.testing import TestCase, fetch
 from cucim.skimage.color import (combine_stains, convert_colorspace, gray2rgb,
                                  gray2rgba, hed2rgb, hsv2rgb, lab2lch, lab2rgb,
                                  lab2xyz, lch2lab, luv2rgb, luv2xyz, rgb2gray,
-                                 rgb2hed, rgb2hsv, rgb2lab, rgb2luv, rgb2rgbcie,
-                                 rgb2xyz, rgb2ycbcr, rgb2ydbdr, rgb2yiq,
-                                 rgb2ypbpr, rgb2yuv, rgba2rgb, rgbcie2rgb,
-                                 separate_stains, xyz2lab, xyz2luv, xyz2rgb,
-                                 ycbcr2rgb, ydbdr2rgb, yiq2rgb, ypbpr2rgb,
-                                 yuv2rgb)
+                                 rgb2hed, rgb2hsv, rgb2lab, rgb2luv,
+                                 rgb2rgbcie, rgb2xyz, rgb2ycbcr, rgb2ydbdr,
+                                 rgb2yiq, rgb2ypbpr, rgb2yuv, rgba2rgb,
+                                 rgbcie2rgb, separate_stains, xyz2lab, xyz2luv,
+                                 xyz2rgb, ycbcr2rgb, ydbdr2rgb, yiq2rgb,
+                                 ypbpr2rgb, yuv2rgb)
 from cucim.skimage.util import img_as_float, img_as_float32, img_as_ubyte
 
 

@@ -16,8 +16,9 @@ from .ridges import frangi, hessian, meijering, sato
 from .thresholding import (apply_hysteresis_threshold, threshold_isodata,
                            threshold_li, threshold_local, threshold_mean,
                            threshold_minimum, threshold_multiotsu,
-                           threshold_niblack, threshold_otsu, threshold_sauvola,
-                           threshold_triangle, threshold_yen, try_all_threshold)
+                           threshold_niblack, threshold_otsu,
+                           threshold_sauvola, threshold_triangle,
+                           threshold_yen, try_all_threshold)
 
 __all__ = [
     "inverse",
