@@ -52,7 +52,7 @@ gpuci_logger "Activate conda env"
 conda activate rapids
 
 gpuci_logger "Install dependencies"
-gpuci_conda_retry install -y -c rapidsai-nightly \
+gpuci_mamba_retry install -y -c rapidsai-nightly \
     "cudatoolkit=${CUDA_VER}.*" \
     "rapids-build-env=$MINOR_VERSION.*"
 
@@ -69,7 +69,7 @@ CUCIM_BLD_PATH=/opt/conda/envs/rapids/conda-bld
 mkdir -p ${CUCIM_BLD_PATH}
 
 
-gpuci_conda_retry build -c ${LIBCUCIM_BLD_PATH} -c conda-forge -c rapidsai-nightly \
+gpuci_mamba_retry build -c ${LIBCUCIM_BLD_PATH} -c conda-forge -c rapidsai-nightly \
     --dirty \
     --no-remove-work-dir \
     --croot ${CUCIM_BLD_PATH} \
@@ -82,7 +82,7 @@ gpuci_conda_retry build -c ${LIBCUCIM_BLD_PATH} -c conda-forge -c rapidsai-night
 
 # Install cuCIM and its dependencies
 gpuci_logger "Installing cuCIM and its dependencies"
-gpuci_conda_retry install -y -c ${LIBCUCIM_BLD_PATH} -c ${CUCIM_BLD_PATH} -c rapidsai-nightly \
+gpuci_mamba_retry install -y -c ${LIBCUCIM_BLD_PATH} -c ${CUCIM_BLD_PATH} -c rapidsai-nightly \
     "rapids-build-env=$MINOR_VERSION.*" \
     libcucim \
     cucim
