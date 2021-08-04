@@ -41,7 +41,7 @@ except ImportError:
     pass
 
 try:
-    from .clara import __version__, CuImage, cli
+    from .clara import CuImage, __version__, cli
 except ImportError:
     from ._version import get_versions
     __version__ = get_versions()['version']

@@ -1,6 +1,6 @@
 <!--
 
-Thank you for contributing to ___PROJECT___ :)
+Thank you for contributing to cuCIM :)
 
 Here are some guidelines to help the review process go smoothly.
 

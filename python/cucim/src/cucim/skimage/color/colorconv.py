@@ -146,7 +146,7 @@ def _rgba2rgb_kernel(background, name='rgba2rgb'):
         'raw X rgba',
         'raw X rgb',
         code,
-        name=name)
+        name='cucim_skimage_color_' + name)
 
 
 def rgba2rgb(rgba, background=(1, 1, 1)):
@@ -251,7 +251,7 @@ def _rgb_to_hsv_kernel(name='rgb2hsv'):
         'raw X rgb',
         'raw X hsv',
         code,
-        name=name)
+        name='cucim_skimage_color_' + name)
 
 
 def rgb2hsv(rgb):
@@ -354,7 +354,7 @@ def _hsv_to_rgb_kernel(name='hsv2rgb'):
         'raw X hsv',
         'raw X rgb',
         code,
-        name=name)
+        name='cucim_skimage_color_' + name)
 
 
 def hsv2rgb(hsv):
@@ -647,7 +647,7 @@ def _get_convert_kernel(matrix_tuple, pre, post, name):
         '',
         'raw X x, raw X y',
         pre + _get_core_colorconv_operation(matrix_tuple) + post,
-        name=name)
+        name='cucim_skimage_color_' + name)
 
 
 def _convert(matrix, arr, pre='', post='', name='_convert'):
@@ -866,7 +866,7 @@ def _rgb_to_gray_kernel(dtype):
         """
         gray[i] = 0.2125 * rgb[3*i] + 0.7154 * rgb[3*i + 1] + 0.0721 * rgb[3*i + 2];
         """,  # noqa
-        name=f'rgb2gray_{np.dtype(dtype).char}')
+        name=f'cucim_skimage_color_rgb2gray_{np.dtype(dtype).char}')
 
 
 def rgb2gray(rgb):
@@ -1072,7 +1072,7 @@ def _get_xyz_to_lab_kernel(xyz_ref_white, name='xyz2lab'):
         '',
         'raw X arr, raw X lab',
         _xyz_to_lab,
-        name=name)
+        name='cucim_skimage_color_' + name)
 
 
 def xyz2lab(xyz, illuminant="D65", observer="2"):
@@ -1168,7 +1168,7 @@ def _get_lab_to_xyz_kernel(xyz_ref_white, name='lab2xyz'):
         '',
         'raw X lab, raw X xyz, raw int32 warn',
         _lab_to_xyz,
-        name=name)
+        name='cucim_skimage_color_' + name)
 
 
 def lab2xyz(lab, illuminant="D65", observer="2"):
@@ -1354,7 +1354,7 @@ def _get_xyz_to_luv_kernel(xyz_ref_white, dtype):
         'raw X xyz, raw X luv',
         _xyz_to_luv,
         preamble=preamble,
-        name=f'xyz2luv_{np.dtype(dtype).char}')
+        name=f'cucim_skimage_color_xyz2luv_{np.dtype(dtype).char}')
 
 
 def xyz2luv(xyz, illuminant="D65", observer="2"):
@@ -1452,7 +1452,7 @@ def _get_luv_to_xyz_kernel(xyz_ref_white, dtype):
         '',
         'raw X luv, raw X xyz',
         _luv_to_xyz,
-        name=f'luv2xyz_{np.dtype(dtype).char}')
+        name=f'cucim_skimage_color_luv2xyz_{np.dtype(dtype).char}')
 
 
 def luv2xyz(luv, illuminant="D65", observer="2"):
@@ -1645,7 +1645,7 @@ def _separate_stains_kernel(m):
         'raw X rgb',
         'raw X stains',
         code,
-        name='seperate_stains')
+        name='cucim_skimage_color_seperate_stains')
 
 
 def separate_stains(rgb, conv_matrix):
@@ -1748,7 +1748,7 @@ def _combine_stains_kernel(m):
         'raw X stains',
         'raw X rgb',
         code,
-        name='combine_stains')
+        name='cucim_skimage_color_combine_stains')
 
 
 def combine_stains(stains, conv_matrix):
@@ -1839,7 +1839,7 @@ def _lab2lch_kernel(nchannels=3, name='lab2lch'):
         '',
         'raw X lab',
         code,
-        name=name)
+        name='cucim_skimage_color_' + name)
 
 
 def lab2lch(lab):
@@ -1910,7 +1910,7 @@ def _lch2lab_kernel(nchannels=3, name='lch2lab'):
         '',
         'raw X lch',
         code,
-        name=name)
+        name='cucim_skimage_color_' + name)
 
 
 def lch2lab(lch):

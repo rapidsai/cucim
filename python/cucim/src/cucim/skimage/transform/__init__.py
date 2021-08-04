@@ -3,8 +3,8 @@ from ._geometric import (AffineTransform, EssentialMatrixTransform,
                          PiecewiseAffineTransform, PolynomialTransform,
                          ProjectiveTransform, SimilarityTransform,
                          estimate_transform, matrix_transform)
-from ._warps import (downscale_local_mean, rescale, resize, rotate, swirl, warp,
-                     warp_coords, warp_polar)
+from ._warps import (downscale_local_mean, rescale, resize, rotate, swirl,
+                     warp, warp_coords, warp_polar)
 from .integral import integral_image, integrate
 from .pyramids import (pyramid_expand, pyramid_gaussian, pyramid_laplacian,
                        pyramid_reduce)

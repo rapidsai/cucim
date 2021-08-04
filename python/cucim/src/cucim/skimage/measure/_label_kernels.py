@@ -21,22 +21,10 @@ def _label(x, structure, y, greyscale_mode=False):
     y_shape = cupy.array(y.shape, dtype=numpy.int32)
     count = cupy.zeros(2, dtype=numpy.int32)
     _kernel_init()(x, y)
-    try:
-        int_t = int_types[y.dtype.char]
-    except KeyError:
-        raise ValueError("y must have int32, uint16, uint32 or uint64 dtype")
-    if int_t != "int":
-        raise NotImplementedError(
-            "Currently only 32-bit integer case is implemented"
-        )
     if greyscale_mode:
-        _kernel_connect(True, int_t)(
-            x, y_shape, dirs, ndirs, x.ndim, y, size=y.size
-        )
+        _kernel_connect(True)(x, y_shape, dirs, ndirs, x.ndim, y, size=y.size)
     else:
-        _kernel_connect(False, int_t)(
-            y_shape, dirs, ndirs, x.ndim, y, size=y.size
-        )
+        _kernel_connect(False)(y_shape, dirs, ndirs, x.ndim, y, size=y.size)
     _kernel_count()(y, count, size=y.size)
     maxlabel = int(count[0])  # synchronize
     labels = cupy.empty(maxlabel, dtype=numpy.int32)
@@ -55,7 +43,7 @@ def _kernel_init():
         "X x",
         "Y y",
         "if (x == 0) { y = -1; } else { y = i; }",
-        "cucim_nd_label_init",
+        "cucim_skimage_measure_label_init",
     )
 
 
@@ -129,7 +117,7 @@ def _kernel_connect(greyscale_mode=False, int_t="int"):
     )
 
     return cupy.ElementwiseKernel(
-        in_params, "raw Y y", code, "cucim_nd_label_connect",
+        in_params, "raw Y y", code, "cucim_skimage_measure_label_connect",
     )
 
 
@@ -144,7 +132,7 @@ def _kernel_count():
         if (j != i) y[i] = j;
         else atomicAdd(&count[0], 1);
         """,
-        "cucim_nd_label_count",
+        "cucim_skimage_measure_label_count",
     )
 
 
@@ -157,7 +145,7 @@ def _kernel_labels():
         int j = atomicAdd(&count[1], 1);
         labels[j] = i;
         """,
-        "cucim_nd_label_labels",
+        "cucim_skimage_measure_label_labels",
     )
 
 
@@ -182,13 +170,5 @@ def _kernel_finalize():
         }
         y[i] = j + 1;
         """,
-        "cucim_nd_label_finalize",
+        "cucim_skimage_measure_label_finalize",
     )
-
-
-int_types = {
-    "i": "int",
-    "H": "unsigned short",
-    "I": "unsigned int",
-    "L": "unsigned long long",
-}

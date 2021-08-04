@@ -11,6 +11,7 @@ import cupy as cp
 import numpy as np
 import pandas as pd
 import skimage
+import skimage.data
 import skimage.morphology
 import scipy.ndimage as ndi
 
@@ -23,7 +24,7 @@ class BinaryMorphologyBench(ImageBench):
         function_name,
         shape,
         selem=None,
-        dtypes=[np.float32],
+        dtypes=[bool],
         fixed_kwargs={},
         index_str="",
         var_kwargs={},
@@ -51,6 +52,17 @@ class BinaryMorphologyBench(ImageBench):
     def set_args(self, dtype):
         imaged = cp.random.standard_normal(self.shape).astype(dtype) > 0
         image = cp.asnumpy(imaged)
+        self.args_cpu = (image,)
+        self.args_gpu = (imaged,)
+
+
+class SkeletonizeBench(ImageBench):
+    def set_args(self, dtype):
+        h = ~skimage.data.horse()
+        nrow = math.ceil(self.shape[0] / h.shape[0])
+        ncol = math.ceil(self.shape[1] / h.shape[1])
+        image = np.tile(h, (nrow, ncol))[:self.shape[0], :self.shape[1]]
+        imaged = cp.asarray(image)
         self.args_cpu = (image,)
         self.args_gpu = (imaged,)
 
@@ -99,6 +111,33 @@ if os.path.exists(pfile):
 else:
     all_results = pd.DataFrame()
 dtypes_grey = [np.float32]
+
+
+for function_name, fixed_kwargs, var_kwargs, allow_nd in [
+    ("thin", dict(), dict(), True),
+]:
+
+    for shape in [(512, 512), (3840, 2160)]:
+
+        ndim = len(shape)
+        if ndim != 2:
+            raise ValueError("only 2d benchmark data has been implemented")
+
+        if not allow_nd and ndim > 2:
+            continue
+
+
+        B = SkeletonizeBench(
+            function_name=function_name,
+            shape=shape,
+            dtypes=[bool],
+            fixed_kwargs={},
+            var_kwargs=var_kwargs,
+            module_cpu=skimage.morphology,
+            module_gpu=cucim.skimage.morphology,
+        )
+        results = B.run_benchmark(duration=1)
+        all_results = all_results.append(results["full"])
 
 
 for function_name, fixed_kwargs, var_kwargs, allow_nd in [

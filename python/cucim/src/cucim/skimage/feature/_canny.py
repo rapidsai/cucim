@@ -23,7 +23,7 @@ from ..filters import gaussian
 
 
 # fuse several commonly paired ufunc operations into a single kernel call
-@cp.fuse()
+@cp.fuse(kernel_name='cucim_skimage_feature_fused_comparison')
 def _fused_comparison(w, c1, c2, m):
     return c2 * w + c1 * (1.0 - w) <= m
 

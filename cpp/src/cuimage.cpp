@@ -868,11 +868,12 @@ void CuImage::ensure_init()
         auto plugin_root = framework_->get_plugin_root();
         // TODO: Here 'LINUX' path separator is used. Need to make it generalize once filesystem library is
         // available.
-        std::string plugin_file_path = (plugin_root && *plugin_root != 0) ?
-                                           fmt::format("{}/cucim.kit.cuslide@{}.{}.{}.so", plugin_root,
-                                                       CUCIM_VERSION_MAJOR, CUCIM_VERSION_MINOR, CUCIM_VERSION_PATCH) :
-                                           fmt::format("cucim.kit.cuslide@{}.{}.{}.so", CUCIM_VERSION_MAJOR,
-                                                       CUCIM_VERSION_MINOR, CUCIM_VERSION_PATCH);
+        std::string plugin_file_path =
+            (plugin_root && *plugin_root != 0) ?
+                fmt::format("{}/cucim.kit.cuslide@{}.{}.{}.so", plugin_root, XSTR(CUCIM_VERSION_MAJOR),
+                            XSTR(CUCIM_VERSION_MINOR), XSTR(CUCIM_VERSION_PATCH)) :
+                fmt::format("cucim.kit.cuslide@{}.{}.{}.so", XSTR(CUCIM_VERSION_MAJOR), XSTR(CUCIM_VERSION_MINOR),
+                            XSTR(CUCIM_VERSION_PATCH));
         if (!cucim::util::file_exists(plugin_file_path.c_str()))
         {
             plugin_file_path = fmt::format("cucim.kit.cuslide@" XSTR(CUCIM_VERSION) ".so");
