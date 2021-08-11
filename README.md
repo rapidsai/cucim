@@ -22,8 +22,6 @@
 
 `<CUDA version>` should be 11.0+ (e.g., `11.0`, `11.2`, etc.)
 
-**NOTE:** The first cuCIM conda package (v0.19.0) would be available on 4/19/2021.
-
 #### Conda (nightlies)
 
 > conda create -n cucim -c rapidsai-nightly -c conda-forge cucim cudatoolkit=`<CUDA version>`
@@ -53,6 +51,7 @@ docker rm -v ${tmp_id}
 ```
 
 ## Build/Install from Source
+
 See build [instructions](CONTRIBUTING.md#setting-up-your-build-environment).
 
 ## Contributing Guide
