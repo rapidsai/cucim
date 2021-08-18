@@ -1,6 +1,14 @@
 
 # Changelog
 
+## [21.08.01](https://github.com/rapidsai/cucim/wiki/release_notes_v21.08.01)
+
+- [New] Add skimage.morphology.thin ([#27](https://github.com/rapidsai/cucim/pull/27))
+- [Bug] Fix missing `__array_interface__` for associated_image(): ([#48](https://github.com/rapidsai/cucim/pull/48), [#65](https://github.com/rapidsai/cucim/pull/65))
+- [Testing] Added unit and performance tests for TIFF loaders ([#62](https://github.com/rapidsai/cucim/pull/62))
+- [Bug] Fix Windows int-type Bug: ([#72](https://github.com/rapidsai/cucim/pull/72))
+- [Update] Use more descriptive ElementwiseKernel names in cucim.skimage: ([#75](https://github.com/rapidsai/cucim/pull/75))
+
 ## [21.06.00](https://github.com/rapidsai/cucim/wiki/release_notes_v21.06.00)
 
 - Implement cache mechanism
