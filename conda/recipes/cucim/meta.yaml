@@ -4,7 +4,7 @@
 {% set minor_version =  version.split('.')[0] + '.' + version.split('.')[2] %}
 {% set py_version=environ.get('CONDA_PY', 37) %}
 {% set python_version=environ.get('PYTHON_VER', '3.7') %}
-{% set cuda_version='.'.join(environ.get('CUDA', '11.0').split('.')[:2]) %}
+{% set cuda_version='.'.join(environ.get('CUDA_VER', '11.0').split('.')[:2]) %}
 
 package:
   name: cucim

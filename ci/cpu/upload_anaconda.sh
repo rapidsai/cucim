@@ -29,7 +29,7 @@ fi
 
 gpuci_logger "Get conda file output locations"
 export LIBCUCIM_FILE=`conda build --no-build-id --croot ${CONDA_BLD_DIR} conda/recipes/libcucim --output`
-export CUCIM_FILE=`conda build --croot ${CONDA_BLD_DIR} conda/recipes/cucim --python=$PYTHON --output`
+export CUCIM_FILE=`conda build --croot ${CONDA_BLD_DIR} conda/recipes/cucim --python=$PYTHON_VER --output`
 
 ################################################################################
 # UPLOAD - Conda packages

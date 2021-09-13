@@ -25,7 +25,7 @@ cp -P python/install/lib/* python/cucim/src/cucim/clara/
 
 pushd python/cucim
 
-echo "PYTHON: ${PYTHON}"
-$PYTHON setup.py install
+echo "PYTHON: ${PYTHON_VER}"
+$PYTHON_VER setup.py install
 
 popd
