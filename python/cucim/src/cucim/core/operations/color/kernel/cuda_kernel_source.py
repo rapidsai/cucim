@@ -14,15 +14,6 @@
 
 cuda_kernel_code = r'''
 extern "C" {
-__global__ void scaleVolume(float* image, float* output, float x, float y, float bmin, float bmax, int W)
-{
-    const unsigned int j = blockIdx.x * blockDim.x + threadIdx.x;
-    
-    if(j < W) {
-        output[j] = fmaxf(fminf(image[j] * x - y, bmax), bmin);
-    }
-}
-
 __global__ void brightnessjitter_kernel(unsigned char *input_rgb, unsigned char *output_rgb, int total_pixels, float brightness_factor) {
   // pitch is only WxH - not channels included
   int idx = threadIdx.x + blockIdx.x * blockDim.x;

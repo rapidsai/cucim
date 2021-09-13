@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
+import sys
 from typing import Any
 from warnings import warn
 
@@ -19,7 +21,7 @@ import cupy
 import numpy as np
 import scipy.ndimage as ndimage
 
-from ..utils.cuda_kernel_source import cuda_kernel_code
+from .kernel.cuda_kernel_source import cuda_kernel_code
 
 CUDA_KERNELS = cupy.RawModule(code=cuda_kernel_code)
 
@@ -109,7 +111,7 @@ def scale_intensity_range(
             result = cupy.asnumpy(result.astype(result.dtype))
         
     except Exception as e:
-        _logger.error("[cupy] " + str(e), exc_info=True)
+        _logger.error("[cucim] " + str(e), exc_info=True)
         raise
         
     return result

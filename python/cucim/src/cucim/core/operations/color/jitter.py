@@ -22,7 +22,7 @@ import scipy.ndimage as ndimage
 _logger = logging.getLogger("colorjitter_cucim")
 import cupy
 
-from ..utils.cuda_kernel_source import cuda_kernel_code
+from .kernel.cuda_kernel_source import cuda_kernel_code
 
 CUDA_KERNELS = cupy.RawModule(code=cuda_kernel_code)
 
@@ -228,6 +228,6 @@ def color_jitter(
 
         return result
     except Exception as e:
-        _logger.error("[cupy] " + str(e), exc_info=True)
+        _logger.error("[cucim] " + str(e), exc_info=True)
         _logger.info("Error executing color jitter on GPU")
         raise

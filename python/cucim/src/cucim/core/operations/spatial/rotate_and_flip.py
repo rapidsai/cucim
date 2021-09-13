@@ -116,6 +116,6 @@ def image_rotate(
             result = cupy.asnumpy(result.astype(result.dtype))
         return result
     except Exception as e:
-        _logger.error("[cupy] " + str(e), exc_info=True)
+        _logger.error("[cucim] " + str(e), exc_info=True)
         _logger.info("Error executing image rotation on GPU")
         raise
