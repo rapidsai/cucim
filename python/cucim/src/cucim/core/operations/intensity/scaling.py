@@ -12,15 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import numpy as np
-import scipy.ndimage as ndimage
 from typing import Any
 from warnings import warn
+
 import cupy
+import numpy as np
+import scipy.ndimage as ndimage
+
 from ..utils.cuda_kernel_source import cuda_kernel_code
+
 CUDA_KERNELS = cupy.RawModule(code=cuda_kernel_code)
 
 import logging
+
 _logger = logging.getLogger("scaling_cucim")
 
 def scale_intensity_range(

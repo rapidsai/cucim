@@ -1,13 +1,16 @@
-import cucim.core.operations.spatial as spt
-import numpy as np
+import os
+
 import cupy
+import numpy as np
 from PIL import Image
 
-img = Image.open('1.png')
+import cucim.core.operations.spatial as spt
+
+img = Image.open(os.path.join(os.path.abspath(os.path.dirname(__file__)), "1.png"))
 arr = np.asarray(img)
 arr = np.transpose(arr)
 
-img1 = Image.open('2r.png')
+img1 = Image.open(os.path.join(os.path.abspath(os.path.dirname(__file__)), "2r.png"))
 arr_o = np.asarray(img1)
 arr_o = np.transpose(arr_o)
 

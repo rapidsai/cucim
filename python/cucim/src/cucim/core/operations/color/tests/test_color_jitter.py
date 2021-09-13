@@ -1,9 +1,12 @@
-import cucim.core.operations.color as ccl
-import numpy as np
+import os
+
 import cupy
+import numpy as np
 from PIL import Image
 
-img = Image.open('1.png')
+import cucim.core.operations.color as ccl
+
+img = Image.open(os.path.join(os.path.abspath(os.path.dirname(__file__)), "1.png"))
 arr = np.asarray(img)
 arr = np.transpose(arr)
 

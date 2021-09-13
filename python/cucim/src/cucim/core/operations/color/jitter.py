@@ -12,14 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
+import numbers
+from typing import Any, List, Optional, Tuple
+
 import numpy as np
 import scipy.ndimage as ndimage
-from typing import Any, Tuple, List, Optional
-import numbers
-import logging
+
 _logger = logging.getLogger("colorjitter_cucim")
 import cupy
+
 from ..utils.cuda_kernel_source import cuda_kernel_code
+
 CUDA_KERNELS = cupy.RawModule(code=cuda_kernel_code)
 
 def color_jitter(

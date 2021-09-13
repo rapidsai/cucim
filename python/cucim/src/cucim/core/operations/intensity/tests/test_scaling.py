@@ -1,14 +1,16 @@
-import cucim.core.operations.intensity as its
-import numpy as np
-import cupy
-from PIL import Image
-from PIL import ImageChops
+import os
 
-img = Image.open('1.png')
+import cupy
+import numpy as np
+from PIL import Image
+
+import cucim.core.operations.intensity as its
+
+img = Image.open(os.path.join(os.path.abspath(os.path.dirname(__file__)), "1.png"))
 arr = np.asarray(img)
 arr = np.transpose(arr)
 
-img1 = Image.open('2.png')
+img1 = Image.open(os.path.join(os.path.abspath(os.path.dirname(__file__)), "2.png"))
 arr_o = np.asarray(img1)
 arr_o = np.transpose(arr_o)
 
