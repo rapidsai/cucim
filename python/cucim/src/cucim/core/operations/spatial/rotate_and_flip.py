@@ -61,7 +61,7 @@ def image_flip(
 
         result = cupy.flip(cupy_img, spatial_axis)
         if iscupy is True:
-            result = cupy.asnumpy(result.astype(result.dtype))
+            result = cupy.asnumpy(result)
         return result
     except Exception as e:
         _logger.error("[cucim] " + str(e), exc_info=True)
