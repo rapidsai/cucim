@@ -155,7 +155,7 @@ def rand_image_flip(
     R = np.random.RandomState()
 
     if R.rand() < prob:
-        return image_rotate_90(img, spatial_axis)
+        return image_flip(img, spatial_axis)
     else:
         return img
 
