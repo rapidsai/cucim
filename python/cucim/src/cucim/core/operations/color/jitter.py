@@ -142,7 +142,7 @@ def color_jitter(
 
             L32_mean = output_L32.mean(axis=[1,2], dtype=cupy.float32)
 
-            if N == 1:
+            if len(input_arr.shape) == 3:
                 output_rgb = cupy.empty((C,H,W), dtype=cupy.uint8)    
             else:
                 output_rgb = cupy.empty((N,C,H,W), dtype=cupy.uint8)
