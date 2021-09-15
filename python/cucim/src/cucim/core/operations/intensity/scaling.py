@@ -35,7 +35,7 @@ def scale_intensity_range(
     b_min: float, 
     a_max: float, 
     a_min: float, 
-    clip: bool
+    clip: bool = False
     )-> Any:
     """
     Apply intensity scaling to the input array.

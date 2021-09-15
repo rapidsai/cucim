@@ -15,7 +15,7 @@ arr_o = np.asarray(img1)
 arr_o = np.transpose(arr_o)
 
 cupy_arr = cupy.asarray(arr)
-cupy_output = spt.image_rotate(cupy_arr,1,[1,2])
+cupy_output = spt.image_rotate_90(cupy_arr,1,[1,2])
 np_output = cupy.asnumpy(cupy_output)
 
 diff_im = np_output-arr_o

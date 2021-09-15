@@ -68,7 +68,7 @@ def image_flip(
         _logger.info("Error executing image flip on GPU")
         raise
 
-def image_rotate(
+def image_rotate_90(
     img: Any, 
     k: int, 
     axis: tuple() 

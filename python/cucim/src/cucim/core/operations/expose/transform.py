@@ -17,4 +17,4 @@ from cucim.core.operations.intensity import \
     scale_intensity_range as scale_intensity_range
 from cucim.core.operations.intensity import zoom as zoom
 from cucim.core.operations.spatial import image_flip as image_flip
-from cucim.core.operations.spatial import image_rotate as image_rotate
+from cucim.core.operations.spatial import image_rotate_90 as image_rotate_90
