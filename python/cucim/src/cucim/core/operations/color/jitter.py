@@ -142,7 +142,10 @@ def color_jitter(
 
             L32_mean = output_L32.mean(axis=[1,2], dtype=cupy.float32)
 
-            output_rgb = cupy.empty((N,C,H,W), dtype=cupy.uint8)
+            if N == 1:
+                output_rgb = cupy.empty((C,H,W), dtype=cupy.uint8)    
+            else:
+                output_rgb = cupy.empty((N,C,H,W), dtype=cupy.uint8)
             kernel_blendconstant = CUDA_KERNELS.get_function("blendconstant_kernel")
             kernel_blendconstant(grid, block, args=(input_arr, output_rgb, np.int32(pitch), L32_mean, np.float32(contrast)))
 
@@ -212,10 +215,6 @@ def color_jitter(
         fn_idx, brightness_factor, contrast_factor, saturation_factor, hue_factor = \
           get_params(f_brightness, f_contrast, f_saturation, f_hue)
 
-        is_batch = True
-        if len(cupy_img.shape) == 3:
-            is_batch = False
-
         for fn_id in fn_idx:
             if fn_id == 0 and brightness_factor is not None:
                 cupy_img = adjust_brightness(cupy_img, brightness_factor)
@@ -230,9 +229,7 @@ def color_jitter(
             cupy_img = cupy_img.astype(cupy.float32)
         
         result = cupy_img
-        if is_batch is False:
-            result = result[0]
-
+        
         if to_cupy is True:
             result = cupy.asnumpy(cupy_img)
 
