@@ -40,14 +40,29 @@ def color_jitter(
     img : channel first, cupy.ndarray or numpy.ndarray
         Input data of shape (C, H, W). Can also batch process input of shape
         (N, C, H, W). Can be a numpy.ndarray or cupy.ndarray.
-    brightness : float
-        Factor to jitter brightness
-    contrast : float
-        Factor to jitter contrast
-    saturation : float
-        Factor to jitter saturation 
-    hue : float
-        Factor to jitter hue 
+    brightness : float or 2-tuple of float, optional
+        Non-negative factor to jitter the brightness by. When `brightness` is a
+        scalar, scaling will be by a random value in range
+        ``[max(0, 1 - brightness), (1 + brightness)]``. `brightness` can
+        also be a 2-tuple specifying the range for the random scaling factor.
+        A value of 0 or (1, 1) will result in no change.
+    contrast : float or 2-tuple of float, optional
+        Non-negative factor to jitter the contrast by. When `contrast` is a
+        scalar, scaling will be by a random value between
+        ``[max(0, 1 - contrast), (1 + contrast)]``. `contrast` can
+        also be a 2-tuple specifying the range for the random scaling factor.
+        A value of 0 or (1, 1) will result in no change.
+    saturation : float or 2-tuple of float, optional
+        Non-negative factor to jitter the saturation by. When `saturation` is a
+        scalar, scaling will be by a random value between
+        ``[max(0, 1 - saturation), (1 + saturation)]``. `saturation` can
+        also be a 2-tuple specifying the range for the random scaling factor.
+        A value of 0 or (1, 1) will result in no change.
+    hue : float or 2-tuple of float, optional
+        Factor between [-0.5, 0.5] to jitter hue by. When `hue` is a
+        scalar, scaling will be by a random value between in the range
+        ``[-hue, hue]``. `hue` can also be a 2-tuple specifying the range.
+        A value of 0 or (0, 0) will result in no change.        
 
     Returns
     -------
