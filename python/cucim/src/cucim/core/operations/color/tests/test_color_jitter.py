@@ -12,8 +12,7 @@ arr = np.transpose(arr)
 
 cupy_arr = cupy.asarray(arr)
 cupy_output = ccl.color_jitter(cupy_arr,.25,.75,.25,.04)
-np_output_ch = cupy.asnumpy(cupy_output)
-np_output = np_output_ch[0]
+np_output = cupy.asnumpy(cupy_output)
 
 diff_im = np_output - arr
 diff_total_value = np.abs(np.sum(diff_im))

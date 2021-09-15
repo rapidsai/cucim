@@ -147,3 +147,63 @@ def zoom(
         _logger.error("[cucim] " + str(e), exc_info=True)
         _logger.info("Error executing random zoom on GPU")
         raise
+
+def rand_zoom(
+    img: Any,  
+    min_zoom: Union[Sequence[float], float] = 0.9,
+    max_zoom: Union[Sequence[float], float] = 1.1,
+    prob: float = 0.1
+    ):
+    """
+    Randomly Calls zoom with random zoom factor
+
+    Parameters
+    ----------
+    img : channel first, cupy.ndarray or numpy.ndarray
+        Input data. Can be numpy.ndarray or cupy.ndarray
+    min_zoom: Min zoom factor. Can be float or sequence same size as image.
+        If a float, select a random factor from `[min_zoom, max_zoom]` then apply to all spatial dims
+        to keep the original spatial shape ratio.
+        If a sequence, min_zoom should contain one value for each spatial axis.
+        If 2 values provided for 3D data, use the first value for both H & W dims to keep the same zoom ratio.
+    max_zoom: Max zoom factor. Can be float or sequence same size as image.
+        If a float, select a random factor from `[min_zoom, max_zoom]` then apply to all spatial dims
+        to keep the original spatial shape ratio.
+        If a sequence, max_zoom should contain one value for each spatial axis.
+        If 2 values provided for 3D data, use the first value for both H & W dims to keep the same zoom ratio.
+    prob: Probability of zooming.
+
+    Returns
+    -------
+    out : cupy.ndarray or numpy.ndarray
+        Output data. Same dimensions and type as input.
+
+    Raises
+    ------
+    TypeError
+        If input 'img' is not cupy.ndarray or numpy.ndarray
+
+    Examples
+    --------
+    >>> import cucim.core.operations.intensity as its
+    >>> # input is channel first 3d array
+    >>> output_array = its.rand_zoom(input_arr)
+    """
+    R = np.random.RandomState()
+
+    rand_factor = R.rand()
+    zoom_factor = []
+
+    if rand_factor < prob:
+        try:
+            zoom_factor = [R.uniform(low, high) for low, high in zip(min_zoom, max_zoom)]
+        except:
+            zoom_factor = [R.uniform(min_zoom, max_zoom)]
+
+        if len(zoom_factor) != 2:
+            zoom_factor = [zoom_factor[0] for _ in range(2)]
+
+    if rand_factor < prob:
+        return zoom(img, zoom_factor)
+    else:
+        return img

@@ -16,5 +16,9 @@ from cucim.core.operations.color import color_jitter as color_jitter
 from cucim.core.operations.intensity import \
     scale_intensity_range as scale_intensity_range
 from cucim.core.operations.intensity import zoom as zoom
+from cucim.core.operations.intensity import rand_zoom as rand_zoom
 from cucim.core.operations.spatial import image_flip as image_flip
 from cucim.core.operations.spatial import image_rotate_90 as image_rotate_90
+from cucim.core.operations.spatial import rand_image_flip as rand_image_flip
+from cucim.core.operations.spatial import rand_image_rotate_90 as rand_image_rotate_90
+

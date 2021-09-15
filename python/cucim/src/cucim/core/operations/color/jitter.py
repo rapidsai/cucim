@@ -212,6 +212,10 @@ def color_jitter(
         fn_idx, brightness_factor, contrast_factor, saturation_factor, hue_factor = \
           get_params(f_brightness, f_contrast, f_saturation, f_hue)
 
+        is_batch = True
+        if len(cupy_img.shape) == 3:
+            is_batch = False
+
         for fn_id in fn_idx:
             if fn_id == 0 and brightness_factor is not None:
                 cupy_img = adjust_brightness(cupy_img, brightness_factor)
@@ -222,7 +226,13 @@ def color_jitter(
             elif fn_id == 3 and hue_factor is not None:
                 cupy_img = adjust_hue(cupy_img, hue_factor)
 
+        if img.dtype != np.uint8:
+            cupy_img = cupy_img.astype(cupy.float32)
+        
         result = cupy_img
+        if is_batch is False:
+            result = result[0]
+
         if to_cupy is True:
             result = cupy.asnumpy(cupy_img)
 
