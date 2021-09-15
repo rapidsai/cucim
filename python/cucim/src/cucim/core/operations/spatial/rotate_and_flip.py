@@ -106,7 +106,7 @@ def image_rotate_90(
         cupy_img = img
         if isinstance(img, np.ndarray):
             iscupy = True
-            cupy_img = cupy.asarray(img.astype(img.dtype))    
+            cupy_img = cupy.asarray(img)
         
         if isinstance(cupy_img, cupy.ndarray) is False:
           raise TypeError("Input must be a cupy.ndarray or numpy.ndarray")
