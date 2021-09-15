@@ -201,16 +201,26 @@ def color_jitter(
         to_cupy = False
         mempool = cupy.get_default_memory_pool()
         
-        cupy_img = img
+        if img.ndim not in (3, 4):
+            raise ValueError(
+                f"Unsupported img.ndim={img.ndim}. Expected `img` with "
+                "dimensions (C, H, W) or (N, C, H, W)."
+            )
+
         if isinstance(img, np.ndarray):
             to_cupy = True
-            cupy_img = cupy.asarray(img.astype(img.dtype))
+            cupy_img = cupy.asarray(img, dtype=cupy.uint8, order="C")
+        elif not isinstance(img, cupy.ndarray):
+            raise TypeError("img must be a cupy.ndarray or numpy.ndarray")            
+        else:
+            cupy_img = cupy.ascontiguousarray(img)
 
-        if isinstance(cupy_img, cupy.ndarray) is False:
-          raise TypeError("Input must be a cupy.ndarray or numpy.ndarray")
+        if cupy_img.dtype != cupy.uint8 and not cupy.can_cast(img.dtype, cupy.uint8):
+            raise ValueError(
+                "Cannot safely cast type {cupy_img.dtype.name} to 'uint8'"
+            )
 
-        if img.dtype != np.uint8:
-           cupy_img = cupy_img.astype(cupy.uint8)
+
 
         fn_idx, brightness_factor, contrast_factor, saturation_factor, hue_factor = \
           get_params(f_brightness, f_contrast, f_saturation, f_hue)
