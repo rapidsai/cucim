@@ -38,7 +38,8 @@ def color_jitter(
     Parameters
     ----------
     img : channel first, cupy.ndarray or numpy.ndarray
-        Input data. Can be numpy.ndarray or cupy.ndarray
+        Input data of shape (C, H, W). Can also batch process input of shape
+        (N, C, H, W). Can be a numpy.ndarray or cupy.ndarray.
     brightness : float
         Factor to jitter brightness
     contrast : float
