@@ -4,7 +4,6 @@ import numpy as np
 from PIL import Image
 import cucim.core.operations.intensity as its
 import skimage
-import pytest
 
 def get_input_arr():
     img = skimage.data.astronaut()
@@ -18,39 +17,36 @@ def get_zoomed_data():
     arr_o = np.transpose(arr_o)
     return arr_o
 
-def test_zoom_param():
-    arr = get_input_arr()
-    with pytest.raises(ValueError):
-        arr1 = arr.flatten()
-        output = its.zoom(arr1,[1.1,1.1])
-    with pytest.raises(TypeError):
-        img = Image.fromarray(arr.T, 'RGB')
-        output = its.zoom(img,[1.1,1.1])
-
-def test_zoom_numpy_input():
+def test_rand_zoom_numpy_input():
 
     arr = get_input_arr()
     zoomed_arr = get_zoomed_data()
-    output = its.zoom(arr,[1.1,1.1])
-    assert np.allclose(output,zoomed_arr)
+    output = its.rand_zoom(arr,prob=1.0,min_zoom=1.1,max_zoom=1.1)
+    assert np.allclose(output, zoomed_arr)
 
-def test_zoom_cupy_input():
+def test_rand_zoom_zero_prob():
+
+    arr = get_input_arr()
+    output = its.rand_zoom(arr,prob=0.0,min_zoom=1.1,max_zoom=1.1)
+    assert np.allclose(output,arr)
+
+def test_rand_zoom_cupy_input():
 
     arr = get_input_arr()
     zoomed_arr = get_zoomed_data()
     cupy_arr = cupy.asarray(arr)
-    cupy_output = its.zoom(cupy_arr,[1.1,1.1])
+    cupy_output = its.rand_zoom(cupy_arr,prob=1.0,min_zoom=1.1,max_zoom=1.1)
     np_output = cupy.asnumpy(cupy_output)
     
     assert np.allclose(np_output,zoomed_arr)
 
-def test_zoom_batchinput():
+def test_rand_zoom_batchinput():
     
     arr = get_input_arr()
     zoomed_arr = get_zoomed_data()
 
     arr_batch = np.stack((arr,)*8, axis=0)
-    np_output = its.zoom(arr_batch,[1.1,1.1])
+    np_output = its.rand_zoom(arr_batch,prob=1.0,min_zoom=1.1,max_zoom=1.1)
     assert np_output.shape[0] == 8
 
     for i in range(np_output.shape[0]):

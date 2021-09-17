@@ -17,7 +17,6 @@ import numbers
 from typing import Any, List, Optional, Tuple
 
 import numpy as np
-import scipy.ndimage as ndimage
 
 _logger = logging.getLogger("colorjitter_cucim")
 import cupy
@@ -217,12 +216,6 @@ def color_jitter(
         to_cupy = False
         mempool = cupy.get_default_memory_pool()
         
-        if img.ndim not in (3, 4):
-            raise ValueError(
-                f"Unsupported img.ndim={img.ndim}. Expected `img` with "
-                "dimensions (C, H, W) or (N, C, H, W)."
-            )
-
         if isinstance(img, np.ndarray):
             to_cupy = True
             cupy_img = cupy.asarray(img, dtype=cupy.uint8, order="C")
@@ -231,12 +224,19 @@ def color_jitter(
         else:
             cupy_img = cupy.ascontiguousarray(img)
 
-        if cupy_img.dtype != cupy.uint8 and not cupy.can_cast(img.dtype, cupy.uint8):
+        if cupy_img.dtype != cupy.uint8:
+            if cupy.can_cast(cupy_img.dtype, cupy.uint8, 'unsafe') is False:
+                raise ValueError(
+                    "Cannot cast type {cupy_img.dtype.name} to 'uint8'"
+                )
+            else:
+                cupy_img = cupy_img.astype(cupy.uint8)
+
+        if img.ndim not in (3, 4):
             raise ValueError(
-                "Cannot safely cast type {cupy_img.dtype.name} to 'uint8'"
+                f"Unsupported img.ndim={img.ndim}. Expected `img` with "
+                "dimensions (C, H, W) or (N, C, H, W)."
             )
-
-
 
         fn_idx, brightness_factor, contrast_factor, saturation_factor, hue_factor = \
           get_params(f_brightness, f_contrast, f_saturation, f_hue)

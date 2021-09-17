@@ -34,7 +34,8 @@ def zoom(
     Parameters
     ----------
     img : channel first, cupy.ndarray or numpy.ndarray
-        Input data. Can be numpy.ndarray or cupy.ndarray
+        Input data of shape (C, H, W). Can also batch process input of shape
+        (N, C, H, W). Can be a numpy.ndarray or cupy.ndarray.
     zoom_factor: Sequence[float]
         The zoom factor along the spatial axes.
         Zoom factor should contain one value for each spatial axis.
@@ -55,6 +56,31 @@ def zoom(
     >>> output_array = its.zoom(input_arr,[1.1,1.1])
     """
     try:
+        to_cupy = False
+        mempool = cupy.get_default_memory_pool()
+
+        if isinstance(img, np.ndarray):
+            to_cupy = True
+            cupy_img = cupy.asarray(img, dtype=cupy.float32, order="C")
+        elif not isinstance(img, cupy.ndarray):
+            raise TypeError("img must be a cupy.ndarray or numpy.ndarray")            
+        else:
+            cupy_img = cupy.ascontiguousarray(img)
+
+        if cupy_img.dtype != cupy.float32:
+            if cupy.can_cast(img.dtype, cupy.float32) is False:
+                raise ValueError(
+                    "Cannot safely cast type {cupy_img.dtype.name} to 'float32'"
+                )
+            else:
+                cupy_img = cupy_img.astype(cupy.float32)
+
+        if img.ndim not in (3, 4):
+            raise ValueError(
+                f"Unsupported img.ndim={img.ndim}. Expected `img` with "
+                "dimensions (C, H, W) or (N, C, H, W)."
+            )
+
         if len(img.shape) == 4:
             N, C, H, W = img.shape
         elif len(img.shape) == 3:
@@ -65,20 +91,6 @@ def zoom(
 
         if output_size_cu[2] == H and output_size_cu[3] == W:
             return img
-
-        to_cupy = False
-        mempool = cupy.get_default_memory_pool()
-
-        cupy_img = img
-        if isinstance(img, np.ndarray):
-            to_cupy = True
-            cupy_img = cupy.asarray(img.astype(img.dtype))
-
-        if isinstance(cupy_img, cupy.ndarray) is False:
-          raise TypeError("Input must be a cupy.ndarray or numpy.ndarray")
-
-        if img.dtype != np.float32:
-            cupy_img = cupy_img.astype(cupy.float32)
 
         def get_block_size(output_size_cu, H, W):
             max_smem = 48 * 1024
@@ -138,6 +150,9 @@ def zoom(
         else:
             raise Exception("Can only handle simultaneous expansion(or shrinkage) in both H,W dimension, check zoom factors")
 
+        if img.dtype != np.float32:
+            result = result.astype(img.dtype)
+
         if to_cupy is True:
             result = cupy.asnumpy(result)
 
@@ -160,7 +175,8 @@ def rand_zoom(
     Parameters
     ----------
     img : channel first, cupy.ndarray or numpy.ndarray
-        Input data. Can be numpy.ndarray or cupy.ndarray
+        Input data of shape (C, H, W). Can also batch process input of shape
+        (N, C, H, W). Can be a numpy.ndarray or cupy.ndarray.
     min_zoom: Min zoom factor. Can be float or sequence same size as image.
         If a float, select a random factor from `[min_zoom, max_zoom]` then apply to all spatial dims
         to keep the original spatial shape ratio.

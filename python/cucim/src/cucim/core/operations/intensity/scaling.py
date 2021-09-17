@@ -19,7 +19,6 @@ from warnings import warn
 
 import cupy
 import numpy as np
-import scipy.ndimage as ndimage
 
 from .kernel.cuda_kernel_source import cuda_kernel_code
 
@@ -44,7 +43,8 @@ def scale_intensity_range(
     Parameters
     ----------
     img : channel first, cupy.ndarray or numpy.ndarray
-        Input data. Can be numpy.ndarray or cupy.ndarray
+        Input data of shape (C, H, W). Can also batch process input of shape
+        (N, C, H, W). Can be a numpy.ndarray or cupy.ndarray.
     b_min : float
         intensity target range min.
     b_max : float
@@ -78,14 +78,23 @@ def scale_intensity_range(
         if a_max - a_min == 0.0:
             raise ValueError("Original intensity range min and max are same")
         
-        iscupy = False
-        image = img
+        to_cupy = False
+
         if isinstance(img, np.ndarray):
-            iscupy = True
-            image = cupy.asarray(img.astype(img.dtype))    
-        
-        if isinstance(image, cupy.ndarray) is False:
-          raise TypeError("Input must be a cupy.ndarray or numpy.ndarray")
+            to_cupy = True
+            cupy_img = cupy.asarray(img, dtype=cupy.float32, order='C')
+        elif not isinstance(img, cupy.ndarray):
+            raise TypeError("img must be a cupy.ndarray or numpy.ndarray")            
+        else:
+            cupy_img = cupy.ascontiguousarray(img)
+
+        if cupy_img.dtype != cupy.float32:
+            if cupy.can_cast(img.dtype, cupy.float32) is False:
+                raise ValueError(
+                    "Cannot safely cast type {cupy_img.dtype.name} to 'float32'"
+                )
+            else:
+                cupy_img = cupy_img.astype(cupy.float32)
 
         scale = CUDA_KERNELS.get_function("scaleVolume")
         
@@ -100,15 +109,18 @@ def scale_intensity_range(
         blockx = 128
         gridx = int((total_size - 1) / blockx + 1)
 
-        result = cupy.empty(image.shape, dtype=img.dtype)
+        result = cupy.empty(img.shape, dtype=cupy_img.dtype)
 
         scale((gridx, 1, 1), (blockx, 1, 1), 
-              (image, result, np.float32(x), np.float32(y), 
+              (cupy_img, result, np.float32(x), np.float32(y), 
               np.float32(b_min), np.float32(b_max), 
               np.int32(total_size)))
         
-        if iscupy is True:
-            result = cupy.asnumpy(result.astype(result.dtype))
+        if img.dtype != cupy.float32:
+            result = result.astype(img.dtype)
+
+        if to_cupy is True:
+            result = cupy.asnumpy(result)
         
     except Exception as e:
         _logger.error("[cucim] " + str(e), exc_info=True)
