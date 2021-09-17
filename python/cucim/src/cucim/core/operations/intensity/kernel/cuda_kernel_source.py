@@ -14,18 +14,20 @@
 
 cuda_kernel_code = r'''
 extern "C" {
-__global__ void scaleVolume(float* image, float* output, float x, float y, float bmin, float bmax, int W)
+__global__ void scaleVolume(float* image, float* output, \
+                            float x, float y, float bmin, \
+                            float bmax, int W)
 {
     const unsigned int j = blockIdx.x * blockDim.x + threadIdx.x;
-    
     if(j < W) {
         output[j] = fmaxf(fminf(image[j] * x - y, bmax), bmin);
     }
 }
 
 __global__ void zoom_in_kernel(float *input_tensor, float *output_tensor, \
-                 int input_h, int input_w, int output_h, int output_w, int pitch, \
-                 int out_h_start, int out_h_end, int out_w_start, int out_w_end) {
+                 int input_h, int input_w, int output_h, int output_w, \
+                 int pitch, int out_h_start, int out_h_end, \
+                 int out_w_start, int out_w_end) {
   extern __shared__ float staging_tile[];
 
   // H -> block Y, row
@@ -49,10 +51,12 @@ __global__ void zoom_in_kernel(float *input_tensor, float *output_tensor, \
   for (int i = threadIdx.y; i < smem_h_load_stretch; i+=blockDim.y) {
     for (int j = threadIdx.x; j < smem_w_load_stretch; j+=blockDim.x) {
 
-      if (((i+smem_load_h_start) < input_h) && ((j+smem_load_w_start) < input_w)) {
-        staging_tile[i * smem_w_load_stretch + j] = input_tensor[image_start_offset +
-                                                          (smem_load_h_start+i)*input_w + smem_load_w_start + j];
-        
+      if (((i+smem_load_h_start) < input_h) &&
+          ((j+smem_load_w_start) < input_w)) {
+          staging_tile[i * smem_w_load_stretch + j] = \
+                      input_tensor[image_start_offset +
+                                   (smem_load_h_start + i) * input_w +
+                                   smem_load_w_start + j];
       } else {
         staging_tile[i * smem_w_load_stretch + j] = 0.0f;
       }
@@ -89,13 +93,16 @@ __global__ void zoom_in_kernel(float *input_tensor, float *output_tensor, \
     sum_ /= (float)del_h;
     sum_ /= (float)del_w;
 
-    output_tensor[(blockIdx.z * pitch) + ((out_pixel_h - out_h_start) * input_w) + (out_pixel_w - out_w_start)] = sum_;
+    output_tensor[(blockIdx.z * pitch) +
+                  ((out_pixel_h - out_h_start) * input_w) +
+                  (out_pixel_w - out_w_start)] = sum_;
   }
 }
 
 __global__ void zoom_out_kernel(float *input_tensor, float *output_tensor,
-                  int input_h, int input_w, int output_h, int output_w, int pitch,
-                  int out_h_start, int out_h_end, int out_w_start, int out_w_end) {
+                  int input_h, int input_w, int output_h, int output_w,
+                  int pitch, int out_h_start, int out_h_end, int out_w_start,
+                  int out_w_end) {
   extern __shared__ float staging_tile[];
 
   // H -> block Y, row
@@ -119,10 +126,12 @@ __global__ void zoom_out_kernel(float *input_tensor, float *output_tensor,
   for (int i = threadIdx.y; i < smem_h_load_stretch; i+=blockDim.y) {
     for (int j = threadIdx.x; j < smem_w_load_stretch; j+=blockDim.x) {
 
-      if (((i+smem_load_h_start) < input_h) && ((j+smem_load_w_start) < input_w)) {
-        staging_tile[i * smem_w_load_stretch + j] = input_tensor[image_start_offset +
-                                                          (smem_load_h_start+i)*input_w + smem_load_w_start + j];
-        
+      if (((i+smem_load_h_start) < input_h) &&
+          ((j+smem_load_w_start) < input_w)) {
+          staging_tile[i * smem_w_load_stretch + j] = \
+                    input_tensor[image_start_offset +
+                                 (smem_load_h_start + i)*input_w +
+                                 smem_load_w_start + j];
       } else {
         staging_tile[i * smem_w_load_stretch + j] = 0.0f;
       }
@@ -157,37 +166,43 @@ __global__ void zoom_out_kernel(float *input_tensor, float *output_tensor,
     sum_ /= (float)del_h;
     sum_ /= (float)del_w;
 
-    output_tensor[(blockIdx.z * pitch) + ((out_pixel_h + out_h_start) * input_w) +
-                                                            (out_pixel_w + out_w_start)] = sum_;
+    output_tensor[(blockIdx.z * pitch) +
+                  ((out_pixel_h + out_h_start) * input_w) +
+                  (out_pixel_w + out_w_start)] = sum_;
 
     // replicate along top edge
     if (out_pixel_h == 0) {
       for (int ik = 0; ik < out_h_start; ik++)
-        output_tensor[(blockIdx.z * pitch) + ((out_pixel_h + ik) * input_w) +
-                                                            (out_pixel_w + out_w_start)] = sum_;
+        output_tensor[(blockIdx.z * pitch) +
+                      ((out_pixel_h + ik) * input_w) +
+                      (out_pixel_w + out_w_start)] = sum_;
     }
-    
+
     // replicate along bottom edge
     if (out_pixel_h == (output_h - 1)) {
       for (int ik = 1; ik <= out_h_end; ik++)
-        output_tensor[(blockIdx.z * pitch) + ((out_h_start + out_pixel_h + ik) * input_w) +
-                                                              (out_pixel_w + out_w_start)] = sum_;
+        output_tensor[(blockIdx.z * pitch) +
+                      ((out_h_start + out_pixel_h + ik) * input_w) +
+                      (out_pixel_w + out_w_start)] = sum_;
     }
 
     // replicate along left edge
     if (out_pixel_w == 0) {
       for (int ik = 0; ik < out_w_start; ik++)
-        output_tensor[(blockIdx.z * pitch) + ((out_pixel_h + out_h_start) * input_w) + ik] = sum_;
+        output_tensor[(blockIdx.z * pitch) +
+                      ((out_pixel_h + out_h_start) * input_w) + ik] = sum_;
     }
 
     // replicate along right edge
     if (out_pixel_w == (output_w - 1)) {
       for (int ik = 1; ik <= out_w_end; ik++)
-        output_tensor[(blockIdx.z * pitch) + ((out_pixel_h + out_h_start) * input_w) +
-                                                          (out_pixel_w + out_w_start + ik)] = sum_;
+        output_tensor[(blockIdx.z * pitch) +
+                      ((out_pixel_h + out_h_start) * input_w) +
+                      (out_pixel_w + out_w_start + ik)] = sum_;
     }
 
-    // corner replication not very friendly if large area to patch - single thread issues stores
+    // corner replication not very friendly if large area to patch -
+    // single thread issues stores
     // ToDo: Consider adding another kernel for corner padding
 
     // top left corner
@@ -201,22 +216,26 @@ __global__ void zoom_out_kernel(float *input_tensor, float *output_tensor,
     if (out_pixel_h == 0 && out_pixel_w == (output_w - 1)) {
       for (int ik = 0; ik < out_h_start; ik++) {
         for (int il = 1; il <= out_w_end; il++)
-          output_tensor[(blockIdx.z * pitch) + (ik * input_w) + (out_pixel_w + out_w_start + il)] = sum_;
+          output_tensor[(blockIdx.z * pitch) + (ik * input_w) +
+                        (out_pixel_w + out_w_start + il)] = sum_;
       }
     }
     // bottom left corner
     if (out_pixel_h == (output_h - 1) && out_pixel_w == 0) {
       for (int ik = 1; ik <= out_h_end; ik++) {
         for (int il = 0; il < out_w_start; il++)
-          output_tensor[(blockIdx.z * pitch) + ((out_h_start + out_pixel_h + ik) * input_w) + il] = sum_;
+          output_tensor[(blockIdx.z * pitch) +
+                        ((out_h_start + out_pixel_h + ik) * input_w) +
+                        il] = sum_;
       }
     }
     // bottom right corner
     if (out_pixel_h == (output_h - 1) && out_pixel_w == (output_w - 1)) {
       for (int ik = 1; ik <= out_h_end; ik++) {
         for (int il = 1; il <= out_w_end; il++)
-          output_tensor[(blockIdx.z * pitch) + ((out_h_start + out_pixel_h + ik) * input_w) +
-                                                                (out_pixel_w + out_w_start + il)] = sum_;
+          output_tensor[(blockIdx.z * pitch) +
+                        ((out_h_start + out_pixel_h + ik) * input_w) +
+                        (out_pixel_w + out_w_start + il)] = sum_;
       }
     }
   }

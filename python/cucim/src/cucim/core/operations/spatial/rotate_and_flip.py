@@ -20,12 +20,14 @@ import numpy as np
 
 _logger = logging.getLogger("spatial_cucim")
 
+
 def image_flip(
-    img: Any, 
+    img: Any,
     spatial_axis: tuple()
-    )-> Any:
+) -> Any:
     """
-    Shape preserving order reversal of elements in input array along the given spatial axis
+    Shape preserving order reversal of elements in input array
+    along the given spatial axis
 
     Parameters
     ----------
@@ -33,7 +35,7 @@ def image_flip(
         Input data. Can be numpy.ndarray or cupy.ndarray
     spatial_axis : tuple
         spatial axis along which to flip over the input array
-        
+
     Returns
     -------
     out : cupy.ndarray or numpy.ndarray
@@ -43,12 +45,12 @@ def image_flip(
     ------
     TypeError
         If input 'img' is not cupy.ndarray or numpy.ndarray
-    
+
     Examples
     --------
     >>> import cucim.core.operations.spatial as spt
     >>> # input is channel first 3d array
-    >>> output_array = spt.image_flip(input_arr,(1,2))
+    >>> output_array = spt.image_flip(input_arr, (1, 2))
     """
     try:
         to_cupy = False
@@ -57,7 +59,7 @@ def image_flip(
             to_cupy = True
             cupy_img = cupy.asarray(img, order="C")
         elif not isinstance(img, cupy.ndarray):
-            raise TypeError("img must be a cupy.ndarray or numpy.ndarray")            
+            raise TypeError("img must be a cupy.ndarray or numpy.ndarray")
         else:
             cupy_img = cupy.ascontiguousarray(img)
 
@@ -70,11 +72,12 @@ def image_flip(
         _logger.info("Error executing image flip on GPU")
         raise
 
+
 def image_rotate_90(
-    img: Any, 
-    k: int, 
-    spatial_axis: tuple() 
-    )-> Any:
+    img: Any,
+    k: int,
+    spatial_axis: tuple()
+) -> Any:
     """
     Rotate input array by 90 degress along the given axis
 
@@ -86,7 +89,7 @@ def image_rotate_90(
         number of times to rotate
     spatial_axis : tuple
         spatial axis along which to rotate the input array by 90 degrees
-        
+
     Returns
     -------
     out : cupy.ndarray or numpy.ndarray
@@ -96,7 +99,7 @@ def image_rotate_90(
     ------
     TypeError
         If input 'img' is not cupy.ndarray or numpy.ndarray
-    
+
     Examples
     --------
     >>> import cucim.core.operations.spatial as spt
@@ -110,7 +113,7 @@ def image_rotate_90(
             to_cupy = True
             cupy_img = cupy.asarray(img, order="C")
         elif not isinstance(img, cupy.ndarray):
-            raise TypeError("img must be a cupy.ndarray or numpy.ndarray")            
+            raise TypeError("img must be a cupy.ndarray or numpy.ndarray")
         else:
             cupy_img = cupy.ascontiguousarray(img)
 
@@ -123,13 +126,14 @@ def image_rotate_90(
         _logger.info("Error executing image rotation on GPU")
         raise
 
+
 def rand_image_flip(
     img: Any,
     spatial_axis: tuple(),
     prob: float = 0.1
-    )-> Any:
+) -> Any:
     """
-    Randomly flips the image along axis. 
+    Randomly flips the image along axis.
 
     Parameters
     ----------
@@ -138,7 +142,7 @@ def rand_image_flip(
     prob: Probability of flipping.
     spatial_axis : tuple
         spatial axis along which to flip over the input array
-        
+
     Returns
     -------
     out : cupy.ndarray or numpy.ndarray
@@ -148,7 +152,7 @@ def rand_image_flip(
     ------
     TypeError
         If input 'img' is not cupy.ndarray or numpy.ndarray
-    
+
     Examples
     --------
     >>> import cucim.core.operations.spatial as spt
@@ -162,12 +166,13 @@ def rand_image_flip(
     else:
         return img
 
+
 def rand_image_rotate_90(
     img: Any,
     spatial_axis: tuple(),
     prob: float = 0.1,
     max_k: int = 3
-    ) -> Any:
+) -> Any:
     """
     With probability `prob`, input arrays are rotated by 90 degrees
     in the plane specified by `spatial_axis`.
@@ -178,10 +183,11 @@ def rand_image_rotate_90(
         Input data. Can be numpy.ndarray or cupy.ndarray
     prob: probability of rotating.
         (Default 0.1, with 10% probability it returns a rotated array)
-    max_k: number of rotations will be sampled from `np.random.randint(max_k) + 1`, (Default 3).    
+    max_k: number of rotations
+        will be sampled from `np.random.randint(max_k) + 1`, (Default 3).
     spatial_axis : tuple
         spatial axis along which to rotate the input array by 90 degrees
-        
+
     Returns
     -------
     out : cupy.ndarray or numpy.ndarray
@@ -191,12 +197,12 @@ def rand_image_rotate_90(
     ------
     TypeError
         If input 'img' is not cupy.ndarray or numpy.ndarray
-    
+
     Examples
     --------
     >>> import cucim.core.operations.spatial as spt
     >>> # input is channel first 3d array
-    >>> output_array = spt.rand_image_rotate_90(input_arr, spatial_axis=(1,2))
+    >>> output_array = spt.rand_image_rotate_90(input_arr, spatial_axis=(1, 2))
     """
     R = np.random.RandomState()
 
