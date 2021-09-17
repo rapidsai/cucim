@@ -21,20 +21,17 @@ def get_zoomed_data():
     return arr_o
 
 def test_rand_zoom_numpy_input():
-
     arr = get_input_arr()
     zoomed_arr = get_zoomed_data()
     output = its.rand_zoom(arr,prob=1.0,min_zoom=1.1,max_zoom=1.1)
     assert np.allclose(output, zoomed_arr)
 
 def test_rand_zoom_zero_prob():
-
     arr = get_input_arr()
     output = its.rand_zoom(arr,prob=0.0,min_zoom=1.1,max_zoom=1.1)
     assert np.allclose(output,arr)
 
 def test_rand_zoom_cupy_input():
-
     arr = get_input_arr()
     zoomed_arr = get_zoomed_data()
     cupy_arr = cupy.asarray(arr)
@@ -44,7 +41,6 @@ def test_rand_zoom_cupy_input():
     assert np.allclose(np_output,zoomed_arr)
 
 def test_rand_zoom_batchinput():
-    
     arr = get_input_arr()
     zoomed_arr = get_zoomed_data()
 

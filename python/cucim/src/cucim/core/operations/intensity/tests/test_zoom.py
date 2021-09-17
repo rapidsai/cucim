@@ -31,14 +31,12 @@ def test_zoom_param():
         output = its.zoom(img,[1.1,1.1])
 
 def test_zoom_numpy_input():
-
     arr = get_input_arr()
     zoomed_arr = get_zoomed_data()
     output = its.zoom(arr,[1.1,1.1])
     assert np.allclose(output,zoomed_arr)
 
 def test_zoom_cupy_input():
-
     arr = get_input_arr()
     zoomed_arr = get_zoomed_data()
     cupy_arr = cupy.asarray(arr)
@@ -48,7 +46,6 @@ def test_zoom_cupy_input():
     assert np.allclose(np_output,zoomed_arr)
 
 def test_zoom_batchinput():
-    
     arr = get_input_arr()
     zoomed_arr = get_zoomed_data()
 

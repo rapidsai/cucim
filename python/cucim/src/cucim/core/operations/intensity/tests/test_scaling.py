@@ -30,14 +30,12 @@ def test_scale_param():
         output = its.scale_intensity_range(img,0.0,255.0,-1.0,1.0,False)
 
 def test_scale_numpy_input():
-
     arr = get_input_arr()
     scaled_arr = get_scaled_data()
     output = its.scale_intensity_range(arr,0.0,255.0,-1.0,1.0,False)
     assert np.allclose(output,scaled_arr)
 
 def test_scale_cupy_input():
-
     arr = get_input_arr()
     scaled_arr = get_scaled_data()
     cupy_arr = cupy.asarray(arr)
@@ -47,7 +45,6 @@ def test_scale_cupy_input():
     assert np.allclose(np_output,scaled_arr)
 
 def test_scale_batchinput():
-    
     arr = get_input_arr()
     scaled_arr = get_scaled_data()
 

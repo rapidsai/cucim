@@ -28,14 +28,12 @@ def test_flip_param():
         output = spt.image_flip(img,(1,2))
 
 def test_flip_numpy_input():
-
     arr = get_input_arr()
     flip_arr = get_flipped_data()
     output = spt.image_flip(arr,(1,2))
     assert np.allclose(output,flip_arr)
 
 def test_flip_cupy_input():
-
     arr = get_input_arr()
     flip_arr = get_flipped_data()
     cupy_arr = cupy.asarray(arr)
@@ -45,7 +43,6 @@ def test_flip_cupy_input():
     assert np.allclose(np_output,flip_arr)
 
 def test_flip_batchinput():
-    
     arr = get_input_arr()
     flip_arr = get_flipped_data()
 

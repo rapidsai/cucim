@@ -31,7 +31,6 @@ def test_color_jitter_param():
         np_output = ccl.color_jitter(img,.25,.75,.25,.04)
 
 def test_color_jitter_numpyinput():
-    
     arr = get_image_array()
     np_output = ccl.color_jitter(arr,.25,.75,.25,.04)
     verify_result(np_output, arr)

@@ -21,20 +21,17 @@ def get_rotated_data():
     return arr_o
 
 def test_rand_rotate90_numpy_input():
-
     arr = get_input_arr()
     rotate90_arr = get_rotated_data()
     output = spt.rand_image_rotate_90(arr,max_k=1,prob=1.0,spatial_axis=[1,2])
     assert np.allclose(output, rotate90_arr)
 
 def test_rand_rotate90_zero_prob():
-
     arr = get_input_arr()
     output = spt.rand_image_rotate_90(arr,max_k=1,prob=0.0,spatial_axis=[1,2])
     assert np.allclose(output, arr)
 
 def test_rand_rotate90_cupy_input():
-
     arr = get_input_arr()
     rotate90_arr = get_rotated_data()
     cupy_arr = cupy.asarray(arr)
@@ -43,7 +40,6 @@ def test_rand_rotate90_cupy_input():
     assert np.allclose(np_output, rotate90_arr)
 
 def test_rand_rotate90_batchinput():
-    
     arr = get_input_arr()
     rotate90_arr = get_rotated_data()
     arr_batch = np.stack((arr,)*8, axis=0)

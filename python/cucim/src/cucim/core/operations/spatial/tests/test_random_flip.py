@@ -21,7 +21,6 @@ def get_flipped_data():
     return arr_o
 
 def test_rand_flip_numpy_input():
-
     arr = get_input_arr()
     flip_arr = get_flipped_data()
     output = spt.rand_image_flip(arr,prob=1.0,spatial_axis=(1,2))
@@ -29,13 +28,11 @@ def test_rand_flip_numpy_input():
     assert np.allclose(output,flip_arr)
 
 def test_rand_flip_zero_prob():
-
     arr = get_input_arr()
     output = spt.rand_image_flip(arr,prob=0.0,spatial_axis=(1,2))
     assert np.allclose(output,arr)
 
 def test_rand_flip_cupy_input():
-
     arr = get_input_arr()
     flip_arr = get_flipped_data()
     cupy_arr = cupy.asarray(arr)
@@ -45,7 +42,6 @@ def test_rand_flip_cupy_input():
     assert np.allclose(np_output,flip_arr)
 
 def test_rand_flip_batchinput():
-    
     arr = get_input_arr()
     flip_arr = get_flipped_data()
 
