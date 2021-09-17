@@ -1,9 +1,12 @@
 import os
+
 import cupy
 import numpy as np
-from PIL import Image
 import skimage
+from PIL import Image
+
 import cucim.core.operations.spatial as spt
+
 
 def get_input_arr():
     img = skimage.data.astronaut()

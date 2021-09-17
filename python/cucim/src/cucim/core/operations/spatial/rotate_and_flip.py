@@ -12,11 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
 from typing import Any
 
 import cupy
 import numpy as np
-import logging
+
 _logger = logging.getLogger("spatial_cucim")
 
 def image_flip(

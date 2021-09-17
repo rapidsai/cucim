@@ -2,9 +2,11 @@ import os
 
 import cupy
 import numpy as np
-from PIL import Image
 import pytest
+from PIL import Image
+
 import cucim.core.operations.color as ccl
+
 
 def get_image_array():
     img = Image.open(os.path.join(os.path.abspath(os.path.dirname(__file__)), "1.png"))

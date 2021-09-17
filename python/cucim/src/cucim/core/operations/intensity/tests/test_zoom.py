@@ -1,10 +1,13 @@
 import os
+
 import cupy
 import numpy as np
-from PIL import Image
-import cucim.core.operations.intensity as its
-import skimage
 import pytest
+import skimage
+from PIL import Image
+
+import cucim.core.operations.intensity as its
+
 
 def get_input_arr():
     img = skimage.data.astronaut()
