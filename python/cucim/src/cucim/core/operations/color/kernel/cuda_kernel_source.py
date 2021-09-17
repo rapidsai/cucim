@@ -14,7 +14,10 @@
 
 cuda_kernel_code = r'''
 extern "C" {
-__global__ void brightnessjitter_kernel(unsigned char *input_rgb, unsigned char *output_rgb, int total_pixels, float brightness_factor) {
+__global__ void brightnessjitter_kernel(unsigned char *input_rgb, \
+                                        unsigned char *output_rgb, \
+                                        int total_pixels, \
+                                        float brightness_factor) {
   // pitch is only WxH - not channels included
   int idx = threadIdx.x + blockIdx.x * blockDim.x;
   int unvectorized_length = total_pixels;
@@ -32,7 +35,7 @@ __global__ void brightnessjitter_kernel(unsigned char *input_rgb, unsigned char 
       pixel *= brightness_factor;
       // clip
       pixel = (pixel <= 0.0f) ? 0.0f : ((pixel >= 255.0f) ? 255.0f : pixel);
-      unsigned int tmp = __float2uint_rz(pixel);  // rz helps bitwise match but..
+      unsigned int tmp = __float2uint_rz(pixel);//rz helps bitwise match but..
       out_vec = out_vec | (tmp << (ik*8));
     }
     reinterpret_cast<unsigned int*>(output_rgb)[idx] = out_vec;
@@ -51,7 +54,9 @@ __global__ void brightnessjitter_kernel(unsigned char *input_rgb, unsigned char 
   }
 }
 
-__global__ void rgb2l_kernel(unsigned char *input_rgb, unsigned int *output_L, int pitch) {
+__global__ void rgb2l_kernel(unsigned char *input_rgb, \
+                             unsigned int *output_L, \
+                             int pitch) {
   // 1D grid, access RGB values with pitch'd access
   // pitch is WxH not the image array pitch used for storing surface data
   int idx = threadIdx.x + blockIdx.x * blockDim.x;
@@ -61,13 +66,18 @@ __global__ void rgb2l_kernel(unsigned char *input_rgb, unsigned int *output_L, i
     unsigned int ui_r = (unsigned int)input_rgb[lookup_idx];
     unsigned int ui_g = (unsigned int)input_rgb[lookup_idx+pitch];
     unsigned int ui_b = (unsigned int)input_rgb[lookup_idx+pitch*2];
-    unsigned int L = ((ui_r * 19595 + ui_g * 38470 + ui_b * 7471) + 0x8000) >> 16;
+    unsigned int L = ((ui_r * 19595 + ui_g * 38470 + ui_b * 7471) + \
+                       0x8000) >> 16;
     int out_idx = (blockIdx.y * pitch) + idx;
     output_L[out_idx] = L;
   }
 }
 
-__global__ void blendconstant_kernel(unsigned char *input_rgb, unsigned char *output_rgb, int pitch, float* blend_constant, float blend_factor) {
+__global__ void blendconstant_kernel(unsigned char *input_rgb, \
+                                     unsigned char *output_rgb, \
+                                     int pitch, \
+                                     float* blend_constant, \
+                                     float blend_factor) {
   // 1D grid, access RGB values with pitch'd access
   // pitch is WxH not the image array pitch used for storing surface data
   int idx = threadIdx.x + blockIdx.x * blockDim.x;
@@ -80,7 +90,8 @@ __global__ void blendconstant_kernel(unsigned char *input_rgb, unsigned char *ou
     float g = __uint2float_rn((unsigned int)input_rgb[idx+pitch]);
     float b = __uint2float_rn((unsigned int)input_rgb[idx+pitch*2]);
 
-    // jit_contrast = float(L_round) + contrast * (input_arr.astype(cp.float32) -  float(L_round))
+    // jit_contrast = float(L_round) + contrast *
+    //                (input_arr.astype(cp.float32) -  float(L_round))
 
     r = blend_constant_f + blend_factor * (r - blend_constant_f);
     g = blend_constant_f + blend_factor * (g - blend_constant_f);
@@ -96,7 +107,10 @@ __global__ void blendconstant_kernel(unsigned char *input_rgb, unsigned char *ou
   }
 }
 
-__global__ void saturationjitter_kernel(unsigned char *input_rgb, unsigned char *output_rgb, int pitch, float saturation_factor) {
+__global__ void saturationjitter_kernel(unsigned char *input_rgb, \
+                                        unsigned char *output_rgb, \
+                                        int pitch, \
+                                        float saturation_factor) {
   // 1D grid, access RGB values with pitch'd access
   // pitch is WxH not the image array pitch used for storing surface data
   int idx = threadIdx.x + blockIdx.x * blockDim.x;
@@ -107,10 +121,13 @@ __global__ void saturationjitter_kernel(unsigned char *input_rgb, unsigned char 
     unsigned int ui_g = (unsigned int)input_rgb[idx+pitch];
     unsigned int ui_b = (unsigned int)input_rgb[idx+pitch*2];
 
-    // output_L = ((input_arr[0,:,:] * 19595 + input_arr[1,:,:] * 38470 + input_arr[2,:,:] * 7471) + 0x8000) >> 16
+    // output_L = ((input_arr[0,:,:] * 19595 + input_arr[1,:,:] \
+    //              * 38470 + input_arr[2,:,:] * 7471) + 0x8000) >> 16
 
-    unsigned int L = ((ui_r * 19595 + ui_g * 38470 + ui_b * 7471) + 0x8000) >> 16;
-    // jit_saturation = L_saturation + saturation * (input_arr.astype(cp.float32) - L_saturation)
+    unsigned int L = ((ui_r * 19595 + ui_g * 38470 + ui_b * 7471) \
+                       + 0x8000) >> 16;
+    // jit_saturation = L_saturation + saturation * \
+    //                  (input_arr.astype(cp.float32) - L_saturation)
 
     float sat_L = __uint2float_rn(L);
     float f_r = __uint2float_rn(ui_r);
@@ -130,7 +147,9 @@ __global__ void saturationjitter_kernel(unsigned char *input_rgb, unsigned char 
   }
 }
 
-__global__ void huejitter_kernel(unsigned char *input_rgb, unsigned char *output_rgb, int pitch, float hue_factor) {
+__global__ void huejitter_kernel(unsigned char *input_rgb, \
+                    unsigned char *output_rgb, \
+                    int pitch, float hue_factor) {
   // 1D grid, access RGB values with pitch'd access
   // pitch is WxH not the image array pitch used for storing surface data
   int idx = threadIdx.x + blockIdx.x * blockDim.x;
