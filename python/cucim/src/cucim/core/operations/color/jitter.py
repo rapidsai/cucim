@@ -12,12 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import cupy
 import logging
 import numbers
 from typing import Any, List, Optional, Tuple
-from .kernel.cuda_kernel_source import cuda_kernel_code
+
+import cupy
 import numpy as np
+
+from .kernel.cuda_kernel_source import cuda_kernel_code
 
 _logger = logging.getLogger("colorjitter_cucim")
 CUDA_KERNELS = cupy.RawModule(code=cuda_kernel_code)
