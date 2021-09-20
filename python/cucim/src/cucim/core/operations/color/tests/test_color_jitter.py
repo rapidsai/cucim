@@ -1,16 +1,14 @@
-import os
-
 import cupy
 import numpy as np
 import pytest
+import skimage
 from PIL import Image
 
 import cucim.core.operations.color as ccl
 
 
 def get_image_array():
-    dirname = os.path.dirname(__file__)
-    img = Image.open(os.path.join(os.path.abspath(dirname), "1.png"))
+    img = skimage.data.astronaut()
     arr = np.asarray(img)
     arr = np.transpose(arr)
     return arr
