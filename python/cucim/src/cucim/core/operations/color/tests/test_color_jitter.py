@@ -1,7 +1,7 @@
 import cupy
 import numpy as np
 import pytest
-import skimage
+import skimage.data
 from PIL import Image
 
 import cucim.core.operations.color as ccl
