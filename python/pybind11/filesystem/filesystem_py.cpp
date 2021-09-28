@@ -58,6 +58,19 @@ void init_filesystem(py::module& fs)
              py::arg("file_offset"), //
              py::arg("buf_offset") = 0) //
         .def("close", &CuFileDriver::close, doc::CuFileDriver::doc_close, py::call_guard<py::gil_scoped_release>()) //
+        .def(
+            "__enter__",
+            [](const std::shared_ptr<CuFileDriver>& fd) { //
+                return fd; //
+            }, //
+            py::call_guard<py::gil_scoped_release>())
+        .def(
+            "__exit__",
+            [](const std::shared_ptr<CuFileDriver>& fd, const py::object& type, const py::object& value,
+               const py::object& traceback) { //
+                fd->close(); //
+            }, //
+            py::call_guard<py::gil_scoped_release>())
         .def("__repr__", [](const CuFileDriver& fd) {
             return fmt::format("<cucim.clara.filesystem.CuFileDriver path:{}>", fd.path());
         });
