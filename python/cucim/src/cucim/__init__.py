@@ -30,6 +30,8 @@ skimage
     Functions from scikit-image.
 
 """
+_is_cupy_available = False
+_is_clara_available = False
 
 # Try to import cupy first.
 # If cucim.clara package is imported first, you may see the following error when running on CUDA 10.x (#44)
@@ -37,13 +39,40 @@ skimage
 #   Segmentation fault
 try:
     import cupy
+    _is_cupy_available = True
 except ImportError:
     pass
 
 try:
     from .clara import CuImage, __version__, cli
+    _is_clara_available = True
 except ImportError:
     from ._version import get_versions
     __version__ = get_versions()['version']
     del get_versions
     del _version
+
+
+def is_available(module_name: str = "") -> bool:
+    """Check if a specific module is available.
+
+    If module_name is not specified, returns True if all of the modules are
+    available.
+
+    Parameters
+    ----------
+    module_name : str
+        Name of the module to check. (e.g. "skimage", "core", and "clara")
+
+    Returns
+    -------
+    bool
+        True if the module is available, False otherwise.
+
+    """
+    if module_name in ("skimage", "core"):
+        return _is_cupy_available
+    elif module_name == 'clara':
+        return _is_clara_available
+    else:
+        return _is_cupy_available and _is_clara_available
