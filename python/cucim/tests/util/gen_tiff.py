@@ -21,7 +21,8 @@ import numpy as np
 from tifffile import TiffWriter
 
 COMPRESSION_MAP = {'jpeg': ('jpeg', 95),
-                   'deflate': 'deflate'}
+                   'deflate': 'deflate',
+                   'raw': None}
 
 
 class TiffGenerator:
