@@ -164,6 +164,8 @@ public:
 
     void save(std::string file_path) const;
 
+    void close();
+
 private:
     using Mutex = std::mutex;
     using ScopedLock = std::scoped_lock<Mutex>;

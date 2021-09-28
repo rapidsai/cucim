@@ -21,7 +21,7 @@
 #include "cucim/codec/hash_function.h"
 
 CuCIMFileHandle::CuCIMFileHandle()
-    : fd(0),
+    : fd(-1),
       cufile(nullptr),
       type(FileHandleType::kUnknown),
       path(nullptr),
