@@ -1,13 +1,13 @@
-import cucim.core.operations.expose.transform as expose
-
-color_jitter = expose.color_jitter
-image_flip = expose.image_flip
-image_rotate_90 = expose.image_rotate_90
-scale_intensity = expose.scale_intensity_range
-zoom = expose.zoom
-rand_zoom = expose.rand_zoom
-rand_image_flip = expose.rand_image_flip
-rand_image_rotate_90 = expose.rand_image_rotate_90
+from cucim.core.operations.expose.transform.expose import (
+    color_jitter,
+    image_flip,
+    image_rotate_90,
+    scale_intensity,
+    zoom,
+    rand_zoom,
+    rand_image_flip,
+    rand_image_rotate_90,
+)
 
 
 def test_exposed_transforms():
