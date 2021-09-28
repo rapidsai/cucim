@@ -14,17 +14,33 @@
  * limitations under the License.
  */
 
-#include "cucim/util/file.h"
+#include "cucim/util/platform.h"
 
-#include <sys/stat.h>
+#include <stdio.h>
+#include <string.h>
+#include <sys/utsname.h>
+
 
 namespace cucim::util
 {
 
-bool file_exists(const char* path)
+bool is_in_wsl()
 {
-    struct stat st_buff;
-    return stat(path, &st_buff) == 0;
+    struct utsname buf;
+    int err = uname(&buf);
+    if (err == 0)
+    {
+        char* pos = strstr(buf.release, "icrosoft");
+        if (pos)
+        {
+            // 'Microsoft' for WSL1 and 'microsoft' for WSL2
+            if (buf.release < pos && (pos[-1] == 'm' || pos[-1] == 'M'))
+            {
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 } // namespace cucim::util

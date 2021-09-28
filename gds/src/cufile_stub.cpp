@@ -16,6 +16,7 @@
 
 #include "cufile_stub.h"
 #include "cucim/dynlib/helper.h"
+#include "cucim/util/platform.h"
 
 #define IMPORT_FUNCTION(handle, name) impl_##name = cucim::dynlib::get_library_symbol<t_##name>(handle, #name);
 
@@ -196,9 +197,16 @@ extern "C"
 
     CUfileError_t cuFileDriverOpen(void)
     {
+        // GDS v1.0.0 does not support WSL and executing this can cause the following error:
+        //    Assertion failure, file index :cufio-udev  line :143
+        // So we do not call impl_cuFileDriverOpen() here if the current platform is WSL.
         if (impl_cuFileDriverOpen)
         {
-            return impl_cuFileDriverOpen();
+            // If not in WSL, call impl_cuFileDriverOpen()
+            if (!cucim::util::is_in_wsl())
+            {
+                return impl_cuFileDriverOpen();
+            }
         }
         return CUfileError_t{ CU_FILE_DRIVER_NOT_INITIALIZED, CUDA_SUCCESS };
     }
