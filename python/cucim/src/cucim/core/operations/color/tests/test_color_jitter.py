@@ -20,7 +20,7 @@ def verify_result(output, input):
     assert diff_total_value >= 0
 
 
-def test_color_jitter_param():
+def test_color_jitter_bad_params():
     arr = get_image_array()
     with pytest.raises(ValueError):
         arr1 = arr.flatten()
