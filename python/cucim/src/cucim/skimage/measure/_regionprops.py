@@ -311,9 +311,10 @@ class RegionProperties:
         # from ..morphology.convex_hull import convex_hull_image
         from skimage.morphology.convex_hull import convex_hull_image
 
-        # CuPy Backend: copy required here to avoid unexpected behavior
+        # CuPy Backend: explicitly cast to uint8 to avoid the issue see in
         #               reported in https://github.com/cupy/cupy/issues/4354
-        return cp.asarray(convex_hull_image(cp.asnumpy(self.image))).copy()
+        return cp.asarray(convex_hull_image(cp.asnumpy(self.image))).astype(
+            cp.uint8)
 
     @property
     def coords(self):
