@@ -40,6 +40,20 @@ bool decode_raw(int fd,
 {
     (void)out_device;
 
+    if (dest == nullptr)
+    {
+        throw std::runtime_error("'dest' shouldn't be nullptr in decode_raw()");
+    }
+
+    // Allocate memory only when dest is not null
+    if (*dest == nullptr)
+    {
+        if ((*dest = (unsigned char*)malloc(dest_nbytes)) == nullptr)
+        {
+            throw std::runtime_error("Unable to allocate uncompressed image buffer");
+        }
+    }
+
     if (raw_buf == nullptr)
     {
         if ((raw_buf = (unsigned char*)malloc(size)) == nullptr)

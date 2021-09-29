@@ -108,6 +108,11 @@ bool decode_libjpeg(int fd,
     if (size == 0)
         THROW("determining input file size", "Input file contains no data");
 
+    if (dest == nullptr)
+    {
+        THROW("checking dest ptr", "'dest' shouldn't be nullptr in decode_libjpeg()");
+    }
+
     if (jpeg_buf == nullptr)
     {
         if ((jpeg_buf = (unsigned char*)tjAlloc(size)) == nullptr)
@@ -145,7 +150,7 @@ bool decode_libjpeg(int fd,
     if (*dest == nullptr)
     {
         if ((*dest = (unsigned char*)tjAlloc(width * height * tjPixelSize[pixelFormat])) == nullptr)
-            THROW_UNIX("allocating uncompressed image buffer");
+            THROW_UNIX("Unable to allocate uncompressed image buffer");
     }
 
     if (tjDecompress2(tjInstance, jpeg_buf, size, (unsigned char*)*dest, width, 0, height, pixelFormat, flags) < 0)

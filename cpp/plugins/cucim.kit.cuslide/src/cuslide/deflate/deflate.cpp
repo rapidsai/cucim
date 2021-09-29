@@ -40,6 +40,20 @@ bool decode_deflate(int fd,
     (void)out_device;
     struct libdeflate_decompressor* d;
 
+    if (dest == nullptr)
+    {
+        throw std::runtime_error("'dest' shouldn't be nullptr in decode_deflate()");
+    }
+
+    // Allocate memory only when dest is not null
+    if (*dest == nullptr)
+    {
+        if ((*dest = (unsigned char*)malloc(dest_nbytes)) == nullptr)
+        {
+            throw std::runtime_error("Unable to allocate uncompressed image buffer");
+        }
+    }
+
     d = libdeflate_alloc_decompressor();
 
     if (d == nullptr)
