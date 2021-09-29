@@ -721,7 +721,7 @@ test_python() {
 
     local testsuite=""
     local testsuite_unit_skimage="src"
-    local testsuite_unit_clara="tests/unit/clara"
+    local testsuite_unit_clara="tests/unit"
     local testsuite_performance="tests/performance"
 
     install_python_test_deps_
