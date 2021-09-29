@@ -103,7 +103,7 @@ include(ExternalProject)
 ################################################################################
 # Options
 ################################################################################
-option(CUCIM_SUPPORT_GDS "Support cufile library" OFF)
+option(CUCIM_SUPPORT_GDS "Support cufile library" ON)
 option(CUCIM_STATIC_GDS "Use static cufile library" OFF)
 option(CUCIM_SUPPORT_CUDA "Support CUDA" ON)
 

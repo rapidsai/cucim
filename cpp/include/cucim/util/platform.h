@@ -13,18 +13,20 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+//
+#ifndef CUCIM_UTIL_PLATFORM_H
+#define CUCIM_UTIL_PLATFORM_H
 
-#include "cucim/util/file.h"
+#include "cucim/macros/api_header.h"
 
-#include <sys/stat.h>
-
+/**
+ * @brief Platform-specific macros and functions.
+ */
 namespace cucim::util
 {
 
-bool file_exists(const char* path)
-{
-    struct stat st_buff;
-    return stat(path, &st_buff) == 0;
-}
+EXPORT_VISIBLE bool is_in_wsl();
 
 } // namespace cucim::util
+
+#endif // CUCIM_UTIL_PLATFORM_H
