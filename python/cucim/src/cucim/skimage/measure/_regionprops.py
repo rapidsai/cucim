@@ -313,7 +313,8 @@ class RegionProperties:
 
         # CuPy Backend: explicitly cast to uint8 to avoid the issue see in
         #               reported in https://github.com/cupy/cupy/issues/4354
-        return cp.asarray(convex_hull_image(cp.asnumpy(self.image))).astype(cp.uint8)
+        return cp.asarray(convex_hull_image(cp.asnumpy(self.image))).astype(
+            cp.uint8)
 
     @property
     def coords(self):
