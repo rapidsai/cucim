@@ -34,6 +34,7 @@
 
 #include "cuslide/jpeg/libjpeg_turbo.h"
 #include "cuslide/deflate/deflate.h"
+#include "cuslide/raw/raw.h"
 #include "tiff.h"
 
 
@@ -151,7 +152,7 @@ bool IFD::read(const TIFF* tiff,
     int64_t sy = request->location[1];
     int64_t w = request->size[0];
     int64_t h = request->size[1];
-    int32_t n_ch = 3; // number of channels
+    int32_t n_ch = samples_per_pixel_; // number of channels
 
     size_t raster_size = w * h * samples_per_pixel_;
     void* raster = nullptr;
@@ -365,13 +366,22 @@ const std::vector<uint64_t>& IFD::image_piece_bytecounts() const
 
 bool IFD::is_compression_supported() const
 {
-    return (compression_ == COMPRESSION_ADOBE_DEFLATE || compression_ == COMPRESSION_JPEG ||
-            compression_ == COMPRESSION_DEFLATE);
+    switch (compression_)
+    {
+    case COMPRESSION_NONE:
+    case COMPRESSION_JPEG:
+    case COMPRESSION_ADOBE_DEFLATE:
+    case COMPRESSION_DEFLATE:
+        return true;
+    default:
+        return false;
+    }
 }
+
 bool IFD::is_read_optimizable() const
 {
     return is_compression_supported() && bits_per_sample_ == 8 && samples_per_pixel_ == 3 &&
-           planar_config_ == PLANARCONFIG_CONTIG &&
+           (tile_width_ != 0 && tile_height_ != 0) && planar_config_ == PLANARCONFIG_CONTIG &&
            (photometric_ == PHOTOMETRIC_RGB || photometric_ == PHOTOMETRIC_YCBCR) &&
            !tiff_->is_in_read_config(TIFF::kUseLibTiff);
 }
@@ -501,7 +511,12 @@ bool IFD::read_region_tiles(const TIFF* tiff,
                         tile_data = static_cast<uint8_t*>(image_cache.allocate(tile_raster_nbytes));
                     }
 
-                    if (compression_method == COMPRESSION_JPEG)
+                    if (compression_method == COMPRESSION_NONE)
+                    {
+                        cuslide::raw::decode_raw(tiff_file, nullptr, tiledata_offset, tiledata_size, &tile_data,
+                                                 tile_raster_nbytes, out_device);
+                    }
+                    else if (compression_method == COMPRESSION_JPEG)
                     {
                         cuslide::jpeg::decode_libjpeg(tiff_file, nullptr, tiledata_offset, tiledata_size,
                                                       jpegtable_data, jpegtable_count, &tile_data, out_device);
@@ -745,7 +760,13 @@ bool IFD::read_region_tiles_boundary(const TIFF* tiff,
                     {
                         tile_data = static_cast<uint8_t*>(image_cache.allocate(tile_raster_nbytes));
                     }
-                    if (compression_method == COMPRESSION_JPEG)
+
+                    if (compression_method == COMPRESSION_NONE)
+                    {
+                        cuslide::raw::decode_raw(tiff_file, nullptr, tiledata_offset, tiledata_size, &tile_data,
+                                                 tile_raster_nbytes, out_device);
+                    }
+                    else if (compression_method == COMPRESSION_JPEG)
                     {
                         cuslide::jpeg::decode_libjpeg(tiff_file, nullptr, tiledata_offset, tiledata_size,
                                                       jpegtable_data, jpegtable_count, &tile_data, out_device);

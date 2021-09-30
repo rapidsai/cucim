@@ -172,6 +172,8 @@ add_library(${CUCIM_PLUGIN_NAME}
     src/cuslide/deflate/deflate.h
     src/cuslide/jpeg/libjpeg_turbo.cpp
     src/cuslide/jpeg/libjpeg_turbo.h
+    src/cuslide/raw/raw.cpp
+    src/cuslide/raw/raw.h
     src/cuslide/tiff/ifd.cpp
     src/cuslide/tiff/ifd.h
     src/cuslide/tiff/tiff.cpp
