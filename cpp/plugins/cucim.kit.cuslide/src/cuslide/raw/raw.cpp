@@ -20,29 +20,29 @@
  * Please see LICENSE-3rdparty.md for the detail.
  */
 
-#include "deflate.h"
+#include "raw.h"
 
+#include <cstring>
 #include <stdexcept>
 #include <unistd.h>
-#include "libdeflate.h"
 
-namespace cuslide::deflate
+
+namespace cuslide::raw
 {
 
-bool decode_deflate(int fd,
-                    unsigned char* deflate_buf,
-                    uint64_t offset,
-                    uint64_t size,
-                    uint8_t** dest,
-                    uint64_t dest_nbytes,
-                    const cucim::io::Device& out_device)
+bool decode_raw(int fd,
+                unsigned char* raw_buf,
+                uint64_t offset,
+                uint64_t size,
+                uint8_t** dest,
+                uint64_t dest_nbytes,
+                const cucim::io::Device& out_device)
 {
     (void)out_device;
-    struct libdeflate_decompressor* d;
 
     if (dest == nullptr)
     {
-        throw std::runtime_error("'dest' shouldn't be nullptr in decode_deflate()");
+        throw std::runtime_error("'dest' shouldn't be nullptr in decode_raw()");
     }
 
     // Allocate memory only when dest is not null
@@ -54,41 +54,32 @@ bool decode_deflate(int fd,
         }
     }
 
-    d = libdeflate_alloc_decompressor();
-
-    if (d == nullptr)
+    if (raw_buf == nullptr)
     {
-        throw std::runtime_error("Unable to allocate decompressor for libdeflate!");
-    }
-
-    if (deflate_buf == nullptr)
-    {
-        if ((deflate_buf = (unsigned char*)malloc(size)) == nullptr)
+        if ((raw_buf = (unsigned char*)malloc(size)) == nullptr)
         {
-            throw std::runtime_error("Unable to allocate buffer for libdeflate!");
+            throw std::runtime_error("Unable to allocate buffer for raw data!");
         }
 
-        if (pread(fd, deflate_buf, size, offset) < 1)
+        if (pread(fd, raw_buf, size, offset) < 1)
         {
-            throw std::runtime_error("Unable to read file for libdeflate!");
+            throw std::runtime_error("Unable to read file for raw data!");
         }
     }
     else
     {
         fd = -1;
-        deflate_buf += offset;
+        raw_buf += offset;
     }
 
-    size_t out_size;
-    libdeflate_zlib_decompress(d, deflate_buf, size /*in_nbytes*/, *dest, dest_nbytes /*out_nbytes_avail*/, &out_size);
+    memcpy(*dest, raw_buf, dest_nbytes);
 
     if (fd != -1)
     {
-        free(deflate_buf);
+        free(raw_buf);
     }
 
-    libdeflate_free_decompressor(d);
     return true;
 }
 
-} // namespace cuslide::deflate
+} // namespace cuslide::raw
