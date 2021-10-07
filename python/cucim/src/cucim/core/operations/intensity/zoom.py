@@ -160,6 +160,15 @@ def zoom(
                          np.int32(pad_dims[1][0]),
                          np.int32(pad_dims[1][1])),
                    shared_mem=smem_size)
+            # padding kernel
+            kernel = CUDA_KERNELS.get_function("zoomout_edge_pad")
+            grid = (int((W - 1) / block[0] + 1) , int((H - 1) / block[1] + 1), C*N)
+            kernel(grid, block_config,
+                   args=(result, np.int32(H), np.int32(W), np.int32(pitch),
+                         np.int32(pad_dims[0][0]), np.int32(pad_dims[1][0]),
+                         np.int32(pad_dims[0][1]+output_size_cu[2]),
+                         np.int32(pad_dims[1][1]+output_size_cu[3])))
+
         else:
             raise Exception("Can only handle simultaneous \
                             expansion(or shrinkage) in both H,W dimension, \
