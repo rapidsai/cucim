@@ -1,6 +1,16 @@
 
-# Changelog
+# Changelog (See [Release Notes](https://github.com/rapidsai/cucim/wiki/Release-Notes))
 
+## [21.10.00](https://github.com/rapidsai/cucim/wiki/release_notes_v21.10.00)
+
+- [New] Add transforms for Digital Pathology ([#100](https://github.com/rapidsai/cucim/pull/100)) [@shekhardw](https://github.com/shekhardw) [@chirayuG-nvidia](https://github.com/chirayuG-nvidia)
+- [New] Enable GDS and Support Runtime Context (__enter__, __exit__) for CuFileDriver and CuImage ([#106](https://github.com/rapidsai/cucim/pull/106)) [@gigony](https://github.com/gigony)
+- [New] Add a mechanism for user to know the availability of cucim.CuImage ([#107](https://github.com/rapidsai/cucim/pull/107)) [@gigony](https://github.com/gigony)
+- [New] Support raw RGB tiled TIFF ([#108](https://github.com/rapidsai/cucim/pull/108)) [@gigony](https://github.com/gigony)
+- [Bug] fix failing regionprops test cases ([#110](https://github.com/rapidsai/cucim/pull/110)) [@grlee77](https://github.com/grlee77)
+- [Doc] Forward-merge branch-21.08 to branch-21.10 ([#88](https://github.com/rapidsai/cucim/pull/88)) [@jakirkham](https://github.com/jakirkham)
+- [Doc] Update PyPI cuCIM v21.08.01 README.md and CHANGELOG.md ([#87](https://github.com/rapidsai/cucim/pull/87)) [@gigony](https://github.com/gigony)
+- [Update] ENH Replace gpuci_conda_retry with gpuci_mamba_retry ([#69](https://github.com/rapidsai/cucim/pull/69)) [@dillon-cullinan](https://github.com/dillon-cullinan)
 ## [21.08.01](https://github.com/rapidsai/cucim/wiki/release_notes_v21.08.01)
 
 - [New] Add skimage.morphology.thin ([#27](https://github.com/rapidsai/cucim/pull/27))
@@ -15,34 +25,3 @@
 - Add `__cuda_array_interface`.
 - Fix a memory leak in Deflate decoder.
 
-## 0.19.0 (2021-04-19)
-
-- The first release of cuClaraImage + [cupyimg](https://github.com/mritools/cupyimg) as a single project `cuCIM`.
-  - `cucim.skimage` package is added from `cupyimg`.
-  - CuPy (>=9.0.0b3), scipy, scikit-image is required to use cuCIM's scikit-image-compatible API.
-
-## 0.18.3 (2021-04-16)
-
-- Fix memory leaks that occur when reading completely out-of-boundary regions.
-
-## 0.18.2 (2021-03-29)
-
-- Use the white background only for Philips TIFF file.
-  - Generic TIFF file would have the black background by default.
-- Fix upside-downed image for TIFF file if the image is not RGB & tiled image with JPEG/Deflate-compressed tiles.
-  - Use slow path if the image is not RGB & tiled image with JPEG/Deflate-compressed tiles.
-    - Show an error message if the out-of-boundary cases are requested with the slow path.
-    - `ValueError: Cannot handle the out-of-boundary cases for a non-RGB image or a non-Jpeg/Deflate-compressed image.`
-
-## 0.18.1 (2021-03-17)
-
-- Disable using cuFile
-  - Remove warning messages when libcufile.so is not available.
-    - `[warning] CuFileDriver cannot be open. Falling back to use POSIX file IO APIs.`
-
-## 0.18.0 (2021-03-16)
-
-- First release on PyPI with only cuClaraImage features.
-- The namespace of the project is changed from `cuimage` to `cucim` and project name is now `cuCIM`
-- Support Deflate(zlib) compression in Generic TIFF Format.
-  - [libdeflate](https://github.com/ebiggers/libdeflate) library is used to decode the deflate-compressed data.

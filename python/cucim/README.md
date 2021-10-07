@@ -15,15 +15,16 @@
 
 ### Install cuCIM
 
-```
+```bash
 pip install cucim
 
 # Install dependencies for `cucim.skimage` (assuming that CUDA 11.0 is used for CuPy)
-pip install scipy scikit-image cupy-cuda110==9.0.0b3
+pip install scipy scikit-image cupy-cuda110
 ```
+
 ### Jupyter Notebooks
 
-Please check out our [Welcome](https://github.com/rapidsai/cucim/blob/branch-21.08/notebooks/Welcome.ipynb) notebook.
+Please check out our [Welcome](https://github.com/rapidsai/cucim/blob/branch-21.10/notebooks/Welcome.ipynb) notebook.
 
 ### Open Image
 
@@ -94,7 +95,7 @@ visualize(region)
 
 ### Using Cache
 
-Please look at this [notebook](https://nbviewer.jupyter.org/github/rapidsai/cucim/blob/v21.08.01/notebooks/Using_Cache.ipynb).
+Please look at this [notebook](https://nbviewer.jupyter.org/github/rapidsai/cucim/blob/v21.10.00/notebooks/Using_Cache.ipynb).
 
 ### Using scikit-image API
 
