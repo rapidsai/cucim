@@ -153,7 +153,21 @@ PYBIND11_MODULE(_cucim, m)
              py::arg("name") = "", //
              py::arg("device") = io::Device()) //
         .def("save", &CuImage::save, doc::CuImage::doc_save, py::call_guard<py::gil_scoped_release>()) //
+        .def("close", &CuImage::close, doc::CuImage::doc_close, py::call_guard<py::gil_scoped_release>()) //
         .def("__bool__", &CuImage::operator bool, py::call_guard<py::gil_scoped_release>()) //
+        .def(
+            "__enter__",
+            [](const std::shared_ptr<CuImage>& cuimg) { //
+                return cuimg; //
+            }, //
+            py::call_guard<py::gil_scoped_release>())
+        .def(
+            "__exit__",
+            [](const std::shared_ptr<CuImage>& cuimg, const py::object& type, const py::object& value,
+               const py::object& traceback) { //
+                cuimg->close(); //
+            }, //
+            py::call_guard<py::gil_scoped_release>())
         .def(
             "__repr__", //
             [](const CuImage& cuimg) { //

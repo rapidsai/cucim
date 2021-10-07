@@ -46,9 +46,19 @@ def testimg_tiff_stripe_32x24_16_deflate(tmpdir_factory):
     shutil.rmtree(dataset_path)
 
 
+@pytest.fixture(scope='session')
+def testimg_tiff_stripe_32x24_16_raw(tmpdir_factory):
+    dataset_path, image_path = gen_image(
+        tmpdir_factory, 'tiff::stripe:32x24:16:raw')
+    yield image_path
+    # Clean up fake dataset folder
+    shutil.rmtree(dataset_path)
+
+
 @pytest.fixture(scope='session', params=[
     lazy_fixture('testimg_tiff_stripe_32x24_16_jpeg'),
-    lazy_fixture('testimg_tiff_stripe_32x24_16_deflate')
+    lazy_fixture('testimg_tiff_stripe_32x24_16_deflate'),
+    lazy_fixture('testimg_tiff_stripe_32x24_16_raw')
 ])
 def testimg_tiff_stripe_32x24_16(request):
     return request.param
@@ -74,9 +84,19 @@ def testimg_tiff_stripe_4096x4096_256_deflate(tmpdir_factory):
     shutil.rmtree(dataset_path)
 
 
+@pytest.fixture(scope='session')
+def testimg_tiff_stripe_4096x4096_256_raw(tmpdir_factory):
+    dataset_path, image_path = gen_image(
+        tmpdir_factory, 'tiff::stripe:4096x4096:256:raw')
+    yield image_path
+    # Clean up fake dataset folder
+    shutil.rmtree(dataset_path)
+
+
 @pytest.fixture(scope='session', params=[
     lazy_fixture('testimg_tiff_stripe_4096x4096_256_jpeg'),
-    lazy_fixture('testimg_tiff_stripe_4096x4096_256_deflate')
+    lazy_fixture('testimg_tiff_stripe_4096x4096_256_deflate'),
+    lazy_fixture('testimg_tiff_stripe_4096x4096_256_raw')
 ])
 def testimg_tiff_stripe_4096x4096_256(request):
     return request.param
@@ -101,9 +121,19 @@ def testimg_tiff_stripe_100000x100000_256_deflate(tmpdir_factory):
     shutil.rmtree(dataset_path)
 
 
+@pytest.fixture(scope='session')
+def testimg_tiff_stripe_100000x100000_256_raw(tmpdir_factory):
+    dataset_path, image_path = gen_image(
+        tmpdir_factory, 'tiff::stripe:100000x100000:256:raw')
+    yield image_path
+    # Clean up fake dataset folder
+    shutil.rmtree(dataset_path)
+
+
 @pytest.fixture(scope='session', params=[
     lazy_fixture('testimg_tiff_stripe_100000x100000_256_jpeg'),
-    lazy_fixture('testimg_tiff_stripe_100000x100000_256_deflate')
+    lazy_fixture('testimg_tiff_stripe_100000x100000_256_deflate'),
+    lazy_fixture('testimg_tiff_stripe_100000x100000_256_raw')
 ])
 def testimg_tiff_stripe_100000x100000_256(request):
     return request.param

@@ -30,6 +30,7 @@
 #include <fmt/format.h>
 
 #include "cucim/util/cuda.h"
+#include "cucim/util/platform.h"
 #include "cufile_stub.h"
 
 #define ALIGN_UP(x, align_to) (((uint64_t)(x) + ((uint64_t)(align_to)-1)) & ~((uint64_t)(align_to)-1))
@@ -100,7 +101,7 @@ static int get_file_flags(const char* flags)
 
 bool is_gds_available()
 {
-    return static_cast<bool>(s_cufile_initializer);
+    return static_cast<bool>(s_cufile_initializer) && !cucim::util::is_in_wsl();
 }
 
 std::shared_ptr<CuFileDriver> open(const char* file_path, const char* flags, mode_t mode)
@@ -529,7 +530,8 @@ ssize_t CuFileDriver::pread(void* buf, size_t count, off_t file_offset, off_t bu
             {
                 if (memory_type == cudaMemoryTypeUnregistered)
                 {
-                    read_cnt = ::pread(handle_.fd, reinterpret_cast<char*>(buf) + buf_offset, block_read_size, file_offset);
+                    read_cnt =
+                        ::pread(handle_.fd, reinterpret_cast<char*>(buf) + buf_offset, block_read_size, file_offset);
                     total_read_cnt += read_cnt;
                 }
                 else
@@ -838,7 +840,8 @@ ssize_t CuFileDriver::pwrite(const void* buf, size_t count, off_t file_offset, o
             {
                 if (memory_type == cudaMemoryTypeUnregistered)
                 {
-                    write_cnt = ::pwrite(handle_.fd, reinterpret_cast<const char*>(buf) + buf_offset, block_write_size, file_offset);
+                    write_cnt = ::pwrite(
+                        handle_.fd, reinterpret_cast<const char*>(buf) + buf_offset, block_write_size, file_offset);
                     total_write_cnt += write_cnt;
                 }
                 else
@@ -1100,7 +1103,8 @@ ssize_t CuFileDriver::pwrite(const void* buf, size_t count, off_t file_offset, o
     {
         (void*)s_cufile_cache.device_cache(); // Lazy initialization
 
-        ssize_t write_cnt = cuFileWrite(handle_.cufile, reinterpret_cast<const char*>(buf) + buf_offset, count, file_offset, 0);
+        ssize_t write_cnt =
+            cuFileWrite(handle_.cufile, reinterpret_cast<const char*>(buf) + buf_offset, count, file_offset, 0);
         if (write_cnt < 0)
         {
             fmt::print(stderr, "[cuFile Error] {}\n", CUFILE_ERRSTR(write_cnt));

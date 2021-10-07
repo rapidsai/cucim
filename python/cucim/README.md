@@ -8,6 +8,8 @@
 
 - [GTC 2021 cuCIM: A GPU Image I/O and Processing Toolkit [S32194]](https://www.nvidia.com/en-us/gtc/catalog/?search=cuCIM#/)
   - [video](https://gtc21.event.nvidia.com/media/cuCIM%3A%20A%20GPU%20Image%20I_O%20and%20Processing%20Toolkit%20%5BS32194%5D/1_fwfxd0iu)
+- [SciPy 2021 cuCIM - A GPU image I/O and processing library](https://www.scipy2021.scipy.org/)
+  - [video](https://youtu.be/G46kOOM9xbQ)
 
 ## Quick Start
 
@@ -21,7 +23,7 @@ pip install scipy scikit-image cupy-cuda110==9.0.0b3
 ```
 ### Jupyter Notebooks
 
-Please check out our [Welcome](https://github.com/rapidsai/cucim/blob/branch-0.20/notebooks/Welcome.ipynb) notebook.
+Please check out our [Welcome](https://github.com/rapidsai/cucim/blob/branch-21.08/notebooks/Welcome.ipynb) notebook.
 
 ### Open Image
 
@@ -89,6 +91,10 @@ visualize(region)
 #from PIL import Image
 #Image.fromarray(np.asarray(region))
 ```
+
+### Using Cache
+
+Please look at this [notebook](https://nbviewer.jupyter.org/github/rapidsai/cucim/blob/v21.08.01/notebooks/Using_Cache.ipynb).
 
 ### Using scikit-image API
 

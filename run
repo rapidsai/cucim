@@ -402,6 +402,7 @@ build_local() {
 copy_gds_files_() {
     local root_folder=${1:-${TOP}}
     local cufile_search="${root_folder}/temp/cuda/include:${root_folder}/temp/cuda/lib64"  #"/usr/local/cuda/include:/usr/local/cuda/lib64 ${PREFIX:-}/include:${PREFIX:-}/lib ${CONDA_PREFIX:-}/include:${CONDA_PREFIX:-}/lib ${root_folder}/temp/cuda/include:${root_folder}/temp/cuda/lib64"
+    local gds_version=1.0.0
     local candidate
     local cufile_include
     local cufile_lib
@@ -425,10 +426,10 @@ copy_gds_files_() {
 
         local temp_tgz_dir=$(mktemp -d)
         pushd ${temp_tgz_dir}
-        run_command wget https://developer.download.nvidia.com/gds/redist/rel-0.95.0/gds-redistrib-0.95.0.tgz
-        run_command tar xzvf gds-redistrib-0.95.0.tgz
-        run_command cp -P gds-redistrib-0.95.0/targets/x86_64-linux/include/cufile.h ${root_folder}/temp/cuda/include/
-        run_command cp -P gds-redistrib-0.95.0/targets/x86_64-linux/lib/* ${root_folder}/temp/cuda/lib64/
+        run_command wget https://developer.download.nvidia.com/gds/redist/rel-${gds_version}/gds-redistrib-${gds_version}.tgz
+        run_command tar xzvf gds-redistrib-${gds_version}.tgz
+        run_command cp -P gds-redistrib-${gds_version}/targets/x86_64-linux/include/cufile.h ${root_folder}/temp/cuda/include/
+        run_command cp -P gds-redistrib-${gds_version}/targets/x86_64-linux/lib/* ${root_folder}/temp/cuda/lib64/
         popd > /dev/null
         run_command rm -r ${temp_tgz_dir}
     else
@@ -720,7 +721,7 @@ test_python() {
 
     local testsuite=""
     local testsuite_unit_skimage="src"
-    local testsuite_unit_clara="tests/unit/clara"
+    local testsuite_unit_clara="tests/unit"
     local testsuite_performance="tests/performance"
 
     install_python_test_deps_

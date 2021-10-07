@@ -229,10 +229,7 @@ CuImage::CuImage() : std::enable_shared_from_this<CuImage>()
 CuImage::~CuImage()
 {
     //    printf("[cuCIM] CuImage::~CuImage()\n");
-    if (file_handle_.client_data)
-    {
-        image_formats_->formats[0].image_parser.close(&file_handle_);
-    }
+    close();
     image_formats_ = nullptr; // memory release is handled by the framework
     if (image_metadata_)
     {
@@ -615,6 +612,10 @@ CuImage CuImage::read_region(std::vector<int64_t>&& location,
         // Read region from internal file if image_data_ is nullptr
         if (image_data_ == nullptr)
         {
+            if (file_handle_.fd < 0) // file_handle_ is not opened
+            {
+                throw std::runtime_error("[Error] The image file is closed!");
+            }
             if (!image_formats_->formats[0].image_reader.read(
                     &file_handle_, image_metadata_, &request, image_data, nullptr /*out_metadata*/))
             {
@@ -778,6 +779,10 @@ std::set<std::string> CuImage::associated_images() const
 
 CuImage CuImage::associated_image(const std::string& name, const io::Device& device) const
 {
+    if (file_handle_.fd < 0) // file_handle_ is not opened
+    {
+        throw std::runtime_error("[Error] The image file is closed!");
+    }
     auto it = associated_images_.find(name);
     if (it != associated_images_.end())
     {
@@ -855,6 +860,18 @@ void CuImage::save(std::string file_path) const
         fs.close();
     }
 }
+
+void CuImage::close()
+{
+    if (file_handle_.client_data)
+    {
+        image_formats_->formats[0].image_parser.close(&file_handle_);
+    }
+    file_handle_.cufile = nullptr;
+    file_handle_.path = nullptr;
+    file_handle_.fd = -1;
+}
+
 void CuImage::ensure_init()
 {
     ScopedLock g(mutex_);

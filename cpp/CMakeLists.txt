@@ -65,6 +65,7 @@ add_library(${CUCIM_PACKAGE_NAME}
         include/cucim/memory/memory_manager.h
         include/cucim/util/cuda.h
         include/cucim/util/file.h
+        include/cucim/util/platform.h
         include/cucim/3rdparty/dlpack/dlpack.h
         include/cucim/3rdparty/dlpack/dlpackcpp.h
         src/cuimage.cpp
@@ -95,7 +96,8 @@ add_library(${CUCIM_PACKAGE_NAME}
         src/logger/logger.cpp
         src/logger/timer.cpp
         src/memory/memory_manager.cu
-        src/util/file.cpp)
+        src/util/file.cpp
+        src/util/platform.cpp)
 
 # Compile options
 set_target_properties(${CUCIM_PACKAGE_NAME}
