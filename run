@@ -692,11 +692,8 @@ test() {
 
 install_python_test_deps_() {
     if [ -n "${CONDA_PREFIX}" ]; then
-        # Override openslide-python due to the following issue:
-        #   https://github.com/conda-forge/openslide-python-feedstock/issues/4
         run_command conda install -c conda-forge -y \
-            --file ${TOP}/python/cucim/requirements-test.txt \
-            conda-forge/linux-64::openslide-python
+            --file ${TOP}/python/cucim/requirements-test.txt
     else
         if [ -n "${VIRTUAL_ENV}" ]; then
             run_command pip3 install -r ${TOP}/python/cucim/requirements-test.txt
