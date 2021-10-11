@@ -168,8 +168,8 @@ def zoom(
             kernel(grid, block_config,
                    args=(result, np.int32(H), np.int32(W), np.int32(pitch),
                          np.int32(pad_dims[0][0]), np.int32(pad_dims[1][0]),
-                         np.int32(pad_dims[0][1]+output_size_cu[2]),
-                         np.int32(pad_dims[1][1]+output_size_cu[3])))
+                         np.int32(pad_dims[0][1] + output_size_cu[2]),
+                         np.int32(pad_dims[1][1] + output_size_cu[3])))
 
         else:
             raise Exception("Can only handle simultaneous \

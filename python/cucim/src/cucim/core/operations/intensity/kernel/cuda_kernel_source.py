@@ -172,9 +172,10 @@ __global__ void zoom_out_kernel(float *input_tensor, float *output_tensor,
   }
 }
 
-__global__ void zoomout_edge_pad(float *output_tensor, int height, int width, int pitch,
-                                            int no_padding_h_start, int no_padding_w_start,
-                                            int no_padding_h_end, int no_padding_w_end) {
+__global__ void zoomout_edge_pad(float *output_tensor, int height, int width,
+                                  int pitch, int no_padding_h_start,
+                                  int no_padding_w_start,
+                                  int no_padding_h_end, int no_padding_w_end) {
   // H -> block Y, row
   // W -> block X, col
 
