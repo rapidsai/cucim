@@ -186,30 +186,53 @@ __global__ void zoomout_edge_pad(float *output_tensor, int height, int width, in
   int out_location = (blockIdx.z * pitch) + (out_pixel_h * width) + out_pixel_w;
 
   if (out_pixel_h < height && out_pixel_w < width) {
-    if (out_pixel_h < no_padding_h_start && out_pixel_w >= no_padding_w_start && out_pixel_w < no_padding_w_end) {
+    if (out_pixel_h < no_padding_h_start && out_pixel_w >= no_padding_w_start
+          && out_pixel_w < no_padding_w_end) {
       // top pad
-      output_tensor[out_location] = output_tensor[(blockIdx.z * pitch) + (no_padding_h_start * width) + out_pixel_w];
-    } else if (out_pixel_h >= no_padding_h_end && out_pixel_w >= no_padding_w_start && out_pixel_w < no_padding_w_end) {
+      output_tensor[out_location] = output_tensor[(blockIdx.z * pitch) +
+                                    (no_padding_h_start * width) + out_pixel_w];
+    } else if (out_pixel_h >= no_padding_h_end
+                && out_pixel_w >= no_padding_w_start
+                && out_pixel_w < no_padding_w_end) {
       // bottom pad
-      output_tensor[out_location] = output_tensor[(blockIdx.z * pitch) + ((no_padding_h_end-1) * width) + out_pixel_w];
-    } else if (out_pixel_w < no_padding_w_start && out_pixel_h >= no_padding_h_start && out_pixel_h < no_padding_h_end) {
+      output_tensor[out_location] = output_tensor[(blockIdx.z * pitch) +
+                                  ((no_padding_h_end-1) * width) + out_pixel_w];
+    } else if (out_pixel_w < no_padding_w_start
+                && out_pixel_h >= no_padding_h_start
+                && out_pixel_h < no_padding_h_end) {
       // left pad
-      output_tensor[out_location] = output_tensor[(blockIdx.z * pitch) + (out_pixel_h * width) + no_padding_w_start];
-    } else if (out_pixel_w >= no_padding_w_end && out_pixel_h >= no_padding_h_start && out_pixel_h < no_padding_h_end) {
+      output_tensor[out_location] = output_tensor[(blockIdx.z * pitch) +
+                                  (out_pixel_h * width) + no_padding_w_start];
+    } else if (out_pixel_w >= no_padding_w_end
+                && out_pixel_h >= no_padding_h_start
+                && out_pixel_h < no_padding_h_end) {
       // right pad
-      output_tensor[out_location] = output_tensor[(blockIdx.z * pitch) + (out_pixel_h * width) + (no_padding_w_end-1)];
-    } else if (out_pixel_h < no_padding_h_start && out_pixel_w < no_padding_w_start) {
+      output_tensor[out_location] = output_tensor[(blockIdx.z * pitch) +
+                                  (out_pixel_h * width) + (no_padding_w_end-1)];
+    } else if (out_pixel_h < no_padding_h_start
+                && out_pixel_w < no_padding_w_start) {
       // top-left corner
-      output_tensor[out_location] = output_tensor[(blockIdx.z * pitch) + (no_padding_h_start * width) + no_padding_w_start];
-    } else if (out_pixel_h < no_padding_h_start && out_pixel_w >= no_padding_w_end) {
+      output_tensor[out_location] = output_tensor[(blockIdx.z * pitch) +
+                                                (no_padding_h_start * width) +
+                                                no_padding_w_start];
+    } else if (out_pixel_h < no_padding_h_start
+                && out_pixel_w >= no_padding_w_end) {
       // top-right corner
-      output_tensor[out_location] = output_tensor[(blockIdx.z * pitch) + (no_padding_h_start * width) + (no_padding_w_end-1)];
-    } else if (out_pixel_h >= no_padding_h_end && out_pixel_w < no_padding_w_start) {
+      output_tensor[out_location] = output_tensor[(blockIdx.z * pitch) +
+                                                  (no_padding_h_start * width) +
+                                                  (no_padding_w_end-1)];
+    } else if (out_pixel_h >= no_padding_h_end
+                && out_pixel_w < no_padding_w_start) {
       // bottom-left corner
-      output_tensor[out_location] = output_tensor[(blockIdx.z * pitch) + ((no_padding_h_end-1) * width) + no_padding_w_start];
-    } else if (out_pixel_h >= no_padding_h_end && out_pixel_w >= no_padding_w_end) {
+      output_tensor[out_location] = output_tensor[(blockIdx.z * pitch) +
+                                    ((no_padding_h_end-1) * width) +
+                                    no_padding_w_start];
+    } else if (out_pixel_h >= no_padding_h_end
+                && out_pixel_w >= no_padding_w_end) {
       // bottom-right corner
-      output_tensor[out_location] = output_tensor[(blockIdx.z * pitch) + ((no_padding_h_end-1) * width) + (no_padding_w_end-1)];
+      output_tensor[out_location] = output_tensor[(blockIdx.z * pitch) +
+                                      ((no_padding_h_end-1) * width) +
+                                      (no_padding_w_end-1)];
     }
   }
 }
