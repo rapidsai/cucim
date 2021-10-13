@@ -82,6 +82,7 @@ class ImageGenerator:
                                                   image_size=image_size,
                                                   tile_size=tile_size,
                                                   compression=compression)
+            self.logger.info('  Generated %s...', image_path)
             results.append(image_path)
 
         self.logger.info('[Finished] Dataset generation')

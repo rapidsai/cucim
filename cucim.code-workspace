@@ -161,7 +161,7 @@
 					"cwd": "${workspaceFolder}",
 					"env": {
 						// Workaround the environment variable issue: https://github.com/microsoft/vscode/issues/121470
-						"PATH": "${env:PATH}"
+						"PATH": "${env:HOME}/.local/bin:${env:PATH}"
 					}
 				},
 				"presentation": {

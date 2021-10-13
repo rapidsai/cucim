@@ -20,12 +20,15 @@
 #include <string>
 #include <cstdlib>
 
+#define XSTR(x) STR(x)
+#define STR(x) #x
+
 struct AppConfig
 {
     std::string test_folder;
     std::string test_file;
     std::string temp_folder = "/tmp";
-    std::string get_input_path(const char* default_value = "private/generic_tiff_000.tif") const
+    std::string get_input_path(const std::string default_value = "generated/tiff_stripe_4096x4096_256.tif") const
     {
         // If `test_file` is absolute path
         if (!test_folder.empty() && test_file.substr(0, 1) == "/")
@@ -56,7 +59,7 @@ struct AppConfig
             }
         }
     }
-    std::string get_plugin_path(const char* default_value = "cucim.kit.cuslide@0.0.0.so")
+    std::string get_plugin_path(const char* default_value = "cucim.kit.cuslide@" XSTR(CUCIM_VERSION) ".so")
     {
         std::string plugin_path = default_value;
         if (const char* env_p = std::getenv("CUCIM_TEST_PLUGIN_PATH"))

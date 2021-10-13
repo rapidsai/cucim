@@ -43,6 +43,8 @@ static AppConfig g_config;
 
 static void test_basic(benchmark::State& state)
 {
+    std::string input_path = g_config.get_input_path();
+
     int arg = -1;
     for (auto state_item : state)
     {
@@ -57,7 +59,7 @@ static void test_basic(benchmark::State& state)
 
             if (g_config.discard_cache)
             {
-                int fd = open(g_config.input_file.c_str(), O_RDONLY);
+                int fd = open(input_path.c_str(), O_RDONLY);
                 fdatasync(fd);
                 posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED);
                 close(fd);
@@ -83,7 +85,7 @@ static void test_basic(benchmark::State& state)
             return;
         }
 
-        auto handle = image_format->formats[0].image_parser.open(g_config.input_file.c_str());
+        auto handle = image_format->formats[0].image_parser.open(input_path.c_str());
 
         cucim::io::format::ImageMetadata metadata{};
         image_format->formats[0].image_parser.parse(&handle, &metadata.desc());
@@ -118,6 +120,8 @@ static void test_basic(benchmark::State& state)
 
 static void test_openslide(benchmark::State& state)
 {
+    std::string input_path = g_config.get_input_path();
+
     int arg = -1;
     for (auto _ : state)
     {
@@ -132,7 +136,7 @@ static void test_openslide(benchmark::State& state)
 
             if (g_config.discard_cache)
             {
-                int fd = open(g_config.input_file.c_str(), O_RDONLY);
+                int fd = open(input_path.c_str(), O_RDONLY);
                 fdatasync(fd);
                 posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED);
                 close(fd);
@@ -140,7 +144,7 @@ static void test_openslide(benchmark::State& state)
         }
         state.ResumeTiming();
 
-        openslide_t* slide = openslide_open(g_config.input_file.c_str());
+        openslide_t* slide = openslide_open(input_path.c_str());
         uint32_t* buf = static_cast<uint32_t*>(cucim_malloc(state.range(0) * state.range(0) * 4));
         int64_t request_location[2] = { 0, 0 };
         if (g_config.random_start_location)
@@ -177,10 +181,11 @@ static bool remove_help_option(int* argc, char** argv)
 
 static bool setup_configuration()
 {
-    openslide_t* slide = openslide_open(g_config.input_file.c_str());
+    std::string input_path = g_config.get_input_path();
+    openslide_t* slide = openslide_open(input_path.c_str());
     if (slide == nullptr)
     {
-        fmt::print("[Error] Cannot load {}!\n", g_config.input_file);
+        fmt::print("[Error] Cannot load {}!\n", input_path);
         return false;
     }
 
@@ -205,7 +210,8 @@ int main(int argc, char** argv)
     //    if (::benchmark::ReportUnrecognizedArguments(argc, argv))
     //        return 1;
     CLI::App app{ "benchmark: cuSlide" };
-    app.add_option("--test_file", g_config.input_file, "An input .tif/.svs file path");
+    app.add_option("--test_folder", g_config.test_folder, "An input test folder path");
+    app.add_option("--test_file", g_config.test_file, "An input test image file path");
     app.add_option("--discard_cache", g_config.discard_cache, "Discard page cache for the input file for each iteration");
     app.add_option("--random_seed", g_config.random_seed, "A random seed number");
     app.add_option(
