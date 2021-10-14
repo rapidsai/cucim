@@ -21,7 +21,7 @@ def get_zoomed_data(zoomout=False):
         img1 = Image.open(os.path.join(os.path.abspath(dirname), "zoomed.png"))
     else:
         img1 = Image.open(os.path.join(os.path.abspath(dirname),
-                            "zoomout_padded.png"))
+                          "zoomout_padded.png"))
     arr_o = np.asarray(img1)
     arr_o = np.transpose(arr_o)
     return arr_o
