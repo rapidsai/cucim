@@ -28,9 +28,11 @@ cp -P -r install/bin/* $PREFIX/bin/ || true
 cp -P -r install/lib/* $PREFIX/lib/ || true
 cp -P -r install/include/* $PREFIX/include/ || true
 
-# Build libcucim.kit.cuslide plugin
-./run build_local cuslide ${CUCIM_BUILD_TYPE} ${PREFIX}
-
-mkdir -p $PREFIX/bin $PREFIX/lib $PREFIX/include
-cp -P -r cpp/plugins/cucim.kit.cuslide/install/bin/* $PREFIX/bin/ || true
-cp -P -r cpp/plugins/cucim.kit.cuslide/install/lib/* $PREFIX/lib/ || true
+# Build plugins
+for plugin_name in cuslide cumed; do
+    echo "Building cucim.kit.${plugin_name} ..."
+    ./run build_local ${plugin_name} ${CUCIM_BUILD_TYPE} ${PREFIX}
+    mkdir -p $PREFIX/bin $PREFIX/lib $PREFIX/include
+    cp -P -r cpp/plugins/cucim.kit.${plugin_name}/install/bin/* $PREFIX/bin/ || true
+    cp -P -r cpp/plugins/cucim.kit.${plugin_name}/install/lib/* $PREFIX/lib/ || true
+done
