@@ -19,6 +19,7 @@
 #include <fcntl.h>
 
 #include <algorithm>
+#include <string>
 #include <string_view>
 
 #include <fmt/format.h>
@@ -31,6 +32,7 @@
 #include <cucim/memory/memory_manager.h>
 
 #include "cuslide/jpeg/libjpeg_turbo.h"
+#include "cuslide/lzw/lzw.h"
 #include "ifd.h"
 
 static constexpr int DEFAULT_IFD_SIZE = 32;
@@ -187,6 +189,71 @@ static void parse_philips_tiff_metadata(const pugi::xml_node& node,
     }
 }
 
+static std::vector<std::string> split_string(std::string_view s, std::string_view delim, size_t capacity = 0)
+{
+    size_t pos_start = 0;
+    size_t pos_end = -1;
+    size_t delim_len = delim.length();
+
+    std::vector<std::string> result;
+    std::string_view item;
+
+    if (capacity != 0)
+    {
+        result.reserve(capacity);
+    }
+
+    while ((pos_end = s.find(delim, pos_start)) != std::string_view::npos)
+    {
+        item = s.substr(pos_start, pos_end - pos_start);
+        pos_start = pos_end + delim_len;
+        result.emplace_back(item);
+    }
+
+    result.emplace_back(s.substr(pos_start));
+    return result;
+}
+
+static std::string strip_string(const std::string& str)
+{
+    static const char* white_spaces = " \r\n\t";
+    std::string::size_type start_pos = str.find_first_not_of(white_spaces);
+    std::string::size_type end_pos = str.find_last_not_of(white_spaces);
+
+    if (start_pos != std::string::npos)
+    {
+        return str.substr(start_pos, end_pos - start_pos + 1);
+    }
+    else
+    {
+        return std::string();
+    }
+}
+
+static void parse_aperio_svs_metadata(std::shared_ptr<IFD>& first_ifd, json& metadata)
+{
+    (void)metadata;
+    std::string& desc = first_ifd->image_description();
+
+    // Assumes that metadata's image description starts with 'Aperio '.
+    // It is handled by 'resolve_vendor_format()'
+    std::vector<std::string> items = split_string(desc, "|");
+    if (items.size() < 1)
+    {
+        return;
+    }
+    // Store the first item of the image description as 'Header'
+    metadata.emplace("Header", items[0]);
+    for (size_t i = 1; i < items.size(); ++i)
+    {
+        std::vector<std::string> key_value = split_string(items[i], " = ");
+        if (key_value.size() == 2)
+        {
+            metadata.emplace(std::move(strip_string(key_value[0])), std::move(strip_string(key_value[1])));
+        }
+    }
+}
+
 TIFF::~TIFF()
 {
     close();
@@ -322,218 +389,294 @@ void TIFF::resolve_vendor_format()
     }
     json* json_metadata = reinterpret_cast<json*>(metadata_);
 
-    // Detect Philips TIFF
     auto& first_ifd = ifds_[0];
+    std::string& model = first_ifd->model();
     std::string& software = first_ifd->software();
-    std::string_view prefix("Philips");
-    std::string_view macro_prefix("Macro");
-    std::string_view label_prefix("Label");
 
-    auto res = std::mismatch(prefix.begin(), prefix.end(), software.begin());
-    if (res.first == prefix.end())
+    // Detect Aperio SVS format
     {
-        pugi::xml_document doc;
-        const char* image_desc_cstr = first_ifd->image_description().c_str();
-        pugi::xml_parse_result result = doc.load_string(image_desc_cstr);
-        if (result)
+        auto& image_desc = first_ifd->image_description();
+        std::string_view prefix("Aperio ");
+        auto res = std::mismatch(prefix.begin(), prefix.end(), image_desc.begin());
+        if (res.first == prefix.end())
         {
-            const auto& data_object = doc.child("DataObject");
-            if (std::string_view(data_object.attribute("ObjectType").as_string("")) != "DPUfsImport")
-            {
-                fmt::print(
-                    stderr,
-                    "[Warning] Failed to read as Philips TIFF. It looks like Philips TIFF but the image description of the first IFD doesn't have '<DataObject ObjectType=\"DPUfsImport\">' node!\n");
-                return;
-            }
-
-            pugi::xpath_query PIM_DP_IMAGE_TYPE(
-                "Attribute[@Name='PIM_DP_SCANNED_IMAGES']/Array/DataObject[Attribute/@Name='PIM_DP_IMAGE_TYPE' and Attribute/text()='WSI']");
-            pugi::xpath_node_set wsi_nodes = PIM_DP_IMAGE_TYPE.evaluate_node_set(data_object);
-            if (wsi_nodes.size() != 1)
-            {
-                fmt::print(
-                    stderr,
-                    "[Warning] Failed to read as Philips TIFF. Expected only one 'DPScannedImage' node with PIM_DP_IMAGE_TYPE='WSI'.\n");
-                return;
-            }
-
-            pugi::xpath_query DICOM_PIXEL_SPACING(
-                "Attribute[@Name='PIIM_PIXEL_DATA_REPRESENTATION_SEQUENCE']/Array/DataObject/Attribute[@Name='DICOM_PIXEL_SPACING']");
-            pugi::xpath_node_set pixel_spacing_nodes = DICOM_PIXEL_SPACING.evaluate_node_set(wsi_nodes[0]);
-
-            std::vector<std::pair<double, double>> pixel_spacings;
-            pixel_spacings.reserve(pixel_spacings.size());
-
-            for (const pugi::xpath_node& pixel_spacing : pixel_spacing_nodes)
-            {
-                std::string values = pixel_spacing.node().text().as_string();
-
-                // Assume that 'values' has a '"<height spacing in mm>" "<width spacing in mm>"' form.
-                double spacing_x = 0.0;
-                double spacing_y = 0.0;
-
-                std::string::size_type offset = values.find("\"");
-                if (offset != std::string::npos)
-                {
-                    spacing_y = std::atof(&values.c_str()[offset + 1]);
-                    offset = values.find(" \"", offset);
-                    if (offset != std::string::npos)
-                    {
-                        spacing_x = std::atof(&values.c_str()[offset + 2]);
-                    }
-                }
-                if (spacing_x == 0.0 || spacing_y == 0.0)
-                {
-                    fmt::print(stderr, "[Warning] Failed to read DICOM_PIXEL_SPACING: {}\n", values);
-                    return;
-                }
-                pixel_spacings.emplace_back(std::pair{ spacing_x, spacing_y });
-            }
-
-            double spacing_x_l0 = pixel_spacings[0].first;
-            double spacing_y_l0 = pixel_spacings[0].second;
-
-            uint32_t width_l0 = first_ifd->width();
-            uint32_t height_l0 = first_ifd->height();
-
-            uint16_t spacing_index = 1;
-            for (int index = 1, level_index = 1; index < ifd_count; ++index, ++level_index)
-            {
-                auto& ifd = ifds_[index];
-                if (ifd->tile_width() == 0)
-                {
-                    // TODO: check macro and label
-                    AssociatedImageBufferDesc buf_desc{};
-                    buf_desc.type = AssociatedImageBufferType::IFD;
-                    buf_desc.compression = static_cast<cucim::codec::CompressionMethod>(ifd->compression());
-                    buf_desc.ifd_index = index;
-
-                    auto& image_desc = ifd->image_description();
-                    if (std::mismatch(macro_prefix.begin(), macro_prefix.end(), image_desc.begin()).first ==
-                        macro_prefix.end())
-                    {
-                        associated_images_.emplace("macro", buf_desc);
-                    }
-                    else if (std::mismatch(label_prefix.begin(), label_prefix.end(), image_desc.begin()).first ==
-                             label_prefix.end())
-                    {
-                        associated_images_.emplace("label", buf_desc);
-                    }
-
-                    // Remove item at index `ifd_index` from `level_to_ifd_idx_`
-                    level_to_ifd_idx_.erase(level_to_ifd_idx_.begin() + level_index);
-                    --level_index;
-                    continue;
-                }
-                double downsample = std::round((pixel_spacings[spacing_index].first / spacing_x_l0 +
-                                                pixel_spacings[spacing_index].second / spacing_y_l0) /
-                                               2);
-                // Fix width and height of IFD
-                ifd->width_ = width_l0 / downsample;
-                ifd->height_ = height_l0 / downsample;
-                ++spacing_index;
-            }
-
-            constexpr int associated_image_type_count = 2;
-            pugi::xpath_query ASSOCIATED_IMAGES[associated_image_type_count] = {
-                pugi::xpath_query(
-                    "Attribute[@Name='PIM_DP_SCANNED_IMAGES']/Array/DataObject[Attribute/@Name='PIM_DP_IMAGE_TYPE' and Attribute/text()='MACROIMAGE'][1]/Attribute[@Name='PIM_DP_IMAGE_DATA']"),
-                pugi::xpath_query(
-                    "Attribute[@Name='PIM_DP_SCANNED_IMAGES']/Array/DataObject[Attribute/@Name='PIM_DP_IMAGE_TYPE' and Attribute/text()='LABELIMAGE'][1]/Attribute[@Name='PIM_DP_IMAGE_DATA']")
-            };
-            constexpr const char* associated_image_names[associated_image_type_count] = { "macro", "label" };
-
-            // Add associated image from XML if available (macro and label images)
-            // : Refer to PIM_DP_IMAGE_TYPE in
-            // https://www.openpathology.philips.com/wp-content/uploads/isyntax/4522%20207%2043941_2020_04_24%20Pathology%20iSyntax%20image%20format.pdf
-
-            for (int associated_image_type_idx = 0; associated_image_type_idx < associated_image_type_count;
-                 ++associated_image_type_idx)
-            {
-                pugi::xpath_node associated_node =
-                    ASSOCIATED_IMAGES[associated_image_type_idx].evaluate_node(data_object);
-                const char* associated_image_name = associated_image_names[associated_image_type_idx];
-
-                // If the associated image doesn't exist
-                if (associated_images_.find(associated_image_name) == associated_images_.end())
-                {
-                    if (associated_node)
-                    {
-                        auto node_offset = associated_node.node().offset_debug();
-
-                        if (node_offset >= 0)
-                        {
-                            // `image_desc_cstr[node_offset]` would point to the following text:
-                            //   Attribute Element="0x1004" Group="0x301D" Name="PIM_DP_IMAGE_DATA" PMSVR="IString">
-                            //     (base64-encoded JPEG image)
-                            //   </Attribute>
-                            //
-
-                            // 34 is from `Attribute Name="PIM_DP_IMAGE_DATA"`
-                            char* data_ptr = const_cast<char*>(image_desc_cstr) + node_offset + 34;
-                            uint32_t data_len = 0;
-                            while (*data_ptr != '>' && *data_ptr != '\0')
-                            {
-                                ++data_ptr;
-                            }
-                            if (*data_ptr != '\0')
-                            {
-                                ++data_ptr; // start of base64-encoded data
-                                char* data_end_ptr = data_ptr;
-                                // Seek until it finds '<' for '</Attribute>'
-                                while (*data_end_ptr != '<' && *data_end_ptr != '\0')
-                                {
-                                    ++data_end_ptr;
-                                }
-                                data_len = data_end_ptr - data_ptr;
-                            }
-
-                            if (data_len > 0)
-                            {
-                                AssociatedImageBufferDesc buf_desc{};
-                                buf_desc.type = AssociatedImageBufferType::IFD_IMAGE_DESC;
-                                buf_desc.compression = cucim::codec::CompressionMethod::JPEG;
-                                buf_desc.desc_ifd_index = 0;
-                                buf_desc.desc_offset = data_ptr - image_desc_cstr;
-                                buf_desc.desc_size = data_len;
-
-                                associated_images_.emplace(associated_image_name, buf_desc);
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Set TIFF type
-            tiff_type_ = TiffType::Philips;
-
-            // Set background color
-            background_value_ = 0xFF;
-
-            // Get metadata
-            if (json_metadata)
-            {
-                json philips_metadata;
-                parse_philips_tiff_metadata(data_object, philips_metadata, nullptr, PhilipsMetadataStage::ROOT);
-                parse_philips_tiff_metadata(
-                    wsi_nodes[0].node(), philips_metadata, nullptr, PhilipsMetadataStage::SCANNED_IMAGE);
-                (*json_metadata).emplace("philips", std::move(philips_metadata));
-            }
+            _populate_aperio_svs_metadata(ifd_count, json_metadata, first_ifd);
         }
     }
 
+    // Detect Philips TIFF
+    {
+        std::string_view prefix("Philips");
+        auto res = std::mismatch(prefix.begin(), prefix.end(), software.begin());
+        if (res.first == prefix.end())
+        {
+            _populate_philips_tiff_metadata(ifd_count, json_metadata, first_ifd);
+        }
+    }
 
     // Append TIFF metadata
-
     if (json_metadata)
     {
         json tiff_metadata;
 
-        tiff_metadata.emplace("model", first_ifd->model());
-        tiff_metadata.emplace("software", first_ifd->software());
-        tiff_metadata.emplace("model", first_ifd->model());
+        tiff_metadata.emplace("model", model);
+        tiff_metadata.emplace("software", software);
 
         (*json_metadata).emplace("tiff", std::move(tiff_metadata));
+    }
+}
+
+void TIFF::_populate_philips_tiff_metadata(uint16_t ifd_count, void* metadata, std::shared_ptr<IFD>& first_ifd)
+{
+    json* json_metadata = reinterpret_cast<json*>(metadata);
+    std::string_view macro_prefix("Macro");
+    std::string_view label_prefix("Label");
+
+    pugi::xml_document doc;
+    const char* image_desc_cstr = first_ifd->image_description().c_str();
+    pugi::xml_parse_result result = doc.load_string(image_desc_cstr);
+    if (result)
+    {
+        const auto& data_object = doc.child("DataObject");
+        if (std::string_view(data_object.attribute("ObjectType").as_string("")) != "DPUfsImport")
+        {
+            fmt::print(
+                stderr,
+                "[Warning] Failed to read as Philips TIFF. It looks like Philips TIFF but the image description of the first IFD doesn't have '<DataObject ObjectType=\"DPUfsImport\">' node!\n");
+            return;
+        }
+
+        pugi::xpath_query PIM_DP_IMAGE_TYPE(
+            "Attribute[@Name='PIM_DP_SCANNED_IMAGES']/Array/DataObject[Attribute/@Name='PIM_DP_IMAGE_TYPE' and Attribute/text()='WSI']");
+        pugi::xpath_node_set wsi_nodes = PIM_DP_IMAGE_TYPE.evaluate_node_set(data_object);
+        if (wsi_nodes.size() != 1)
+        {
+            fmt::print(
+                stderr,
+                "[Warning] Failed to read as Philips TIFF. Expected only one 'DPScannedImage' node with PIM_DP_IMAGE_TYPE='WSI'.\n");
+            return;
+        }
+
+        pugi::xpath_query DICOM_PIXEL_SPACING(
+            "Attribute[@Name='PIIM_PIXEL_DATA_REPRESENTATION_SEQUENCE']/Array/DataObject/Attribute[@Name='DICOM_PIXEL_SPACING']");
+        pugi::xpath_node_set pixel_spacing_nodes = DICOM_PIXEL_SPACING.evaluate_node_set(wsi_nodes[0]);
+
+        std::vector<std::pair<double, double>> pixel_spacings;
+        pixel_spacings.reserve(pixel_spacings.size());
+
+        for (const pugi::xpath_node& pixel_spacing : pixel_spacing_nodes)
+        {
+            std::string values = pixel_spacing.node().text().as_string();
+
+            // Assume that 'values' has a '"<height spacing in mm>" "<width spacing in mm>"' form.
+            double spacing_x = 0.0;
+            double spacing_y = 0.0;
+
+            std::string::size_type offset = values.find("\"");
+            if (offset != std::string::npos)
+            {
+                spacing_y = std::atof(&values.c_str()[offset + 1]);
+                offset = values.find(" \"", offset);
+                if (offset != std::string::npos)
+                {
+                    spacing_x = std::atof(&values.c_str()[offset + 2]);
+                }
+            }
+            if (spacing_x == 0.0 || spacing_y == 0.0)
+            {
+                fmt::print(stderr, "[Warning] Failed to read DICOM_PIXEL_SPACING: {}\n", values);
+                return;
+            }
+            pixel_spacings.emplace_back(std::pair{ spacing_x, spacing_y });
+        }
+
+        double spacing_x_l0 = pixel_spacings[0].first;
+        double spacing_y_l0 = pixel_spacings[0].second;
+
+        uint32_t width_l0 = first_ifd->width();
+        uint32_t height_l0 = first_ifd->height();
+
+        uint16_t spacing_index = 1;
+        for (int index = 1, level_index = 1; index < ifd_count; ++index, ++level_index)
+        {
+            auto& ifd = ifds_[index];
+            if (ifd->tile_width() == 0)
+            {
+                // TODO: check macro and label
+                AssociatedImageBufferDesc buf_desc{};
+                buf_desc.type = AssociatedImageBufferType::IFD;
+                buf_desc.compression = static_cast<cucim::codec::CompressionMethod>(ifd->compression());
+                buf_desc.ifd_index = index;
+
+                auto& image_desc = ifd->image_description();
+                if (std::mismatch(macro_prefix.begin(), macro_prefix.end(), image_desc.begin()).first ==
+                    macro_prefix.end())
+                {
+                    associated_images_.emplace("macro", buf_desc);
+                }
+                else if (std::mismatch(label_prefix.begin(), label_prefix.end(), image_desc.begin()).first ==
+                         label_prefix.end())
+                {
+                    associated_images_.emplace("label", buf_desc);
+                }
+
+                // Remove item at index `ifd_index` from `level_to_ifd_idx_`
+                level_to_ifd_idx_.erase(level_to_ifd_idx_.begin() + level_index);
+                --level_index;
+                continue;
+            }
+            double downsample = std::round((pixel_spacings[spacing_index].first / spacing_x_l0 +
+                                            pixel_spacings[spacing_index].second / spacing_y_l0) /
+                                           2);
+            // Fix width and height of IFD
+            ifd->width_ = width_l0 / downsample;
+            ifd->height_ = height_l0 / downsample;
+            ++spacing_index;
+        }
+
+        constexpr int associated_image_type_count = 2;
+        pugi::xpath_query ASSOCIATED_IMAGES[associated_image_type_count] = {
+            pugi::xpath_query(
+                "Attribute[@Name='PIM_DP_SCANNED_IMAGES']/Array/DataObject[Attribute/@Name='PIM_DP_IMAGE_TYPE' and Attribute/text()='MACROIMAGE'][1]/Attribute[@Name='PIM_DP_IMAGE_DATA']"),
+            pugi::xpath_query(
+                "Attribute[@Name='PIM_DP_SCANNED_IMAGES']/Array/DataObject[Attribute/@Name='PIM_DP_IMAGE_TYPE' and Attribute/text()='LABELIMAGE'][1]/Attribute[@Name='PIM_DP_IMAGE_DATA']")
+        };
+        constexpr const char* associated_image_names[associated_image_type_count] = { "macro", "label" };
+
+        // Add associated image from XML if available (macro and label images)
+        // : Refer to PIM_DP_IMAGE_TYPE in
+        // https://www.openpathology.philips.com/wp-content/uploads/isyntax/4522%20207%2043941_2020_04_24%20Pathology%20iSyntax%20image%20format.pdf
+
+        for (int associated_image_type_idx = 0; associated_image_type_idx < associated_image_type_count;
+             ++associated_image_type_idx)
+        {
+            pugi::xpath_node associated_node = ASSOCIATED_IMAGES[associated_image_type_idx].evaluate_node(data_object);
+            const char* associated_image_name = associated_image_names[associated_image_type_idx];
+
+            // If the associated image doesn't exist
+            if (associated_images_.find(associated_image_name) == associated_images_.end())
+            {
+                if (associated_node)
+                {
+                    auto node_offset = associated_node.node().offset_debug();
+
+                    if (node_offset >= 0)
+                    {
+                        // `image_desc_cstr[node_offset]` would point to the following text:
+                        //   Attribute Element="0x1004" Group="0x301D" Name="PIM_DP_IMAGE_DATA" PMSVR="IString">
+                        //     (base64-encoded JPEG image)
+                        //   </Attribute>
+                        //
+
+                        // 34 is from `Attribute Name="PIM_DP_IMAGE_DATA"`
+                        char* data_ptr = const_cast<char*>(image_desc_cstr) + node_offset + 34;
+                        uint32_t data_len = 0;
+                        while (*data_ptr != '>' && *data_ptr != '\0')
+                        {
+                            ++data_ptr;
+                        }
+                        if (*data_ptr != '\0')
+                        {
+                            ++data_ptr; // start of base64-encoded data
+                            char* data_end_ptr = data_ptr;
+                            // Seek until it finds '<' for '</Attribute>'
+                            while (*data_end_ptr != '<' && *data_end_ptr != '\0')
+                            {
+                                ++data_end_ptr;
+                            }
+                            data_len = data_end_ptr - data_ptr;
+                        }
+
+                        if (data_len > 0)
+                        {
+                            AssociatedImageBufferDesc buf_desc{};
+                            buf_desc.type = AssociatedImageBufferType::IFD_IMAGE_DESC;
+                            buf_desc.compression = cucim::codec::CompressionMethod::JPEG;
+                            buf_desc.desc_ifd_index = 0;
+                            buf_desc.desc_offset = data_ptr - image_desc_cstr;
+                            buf_desc.desc_size = data_len;
+
+                            associated_images_.emplace(associated_image_name, buf_desc);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Set TIFF type
+        tiff_type_ = TiffType::Philips;
+
+        // Set background color
+        background_value_ = 0xFF;
+
+        // Get metadata
+        if (json_metadata)
+        {
+            json philips_metadata;
+            parse_philips_tiff_metadata(data_object, philips_metadata, nullptr, PhilipsMetadataStage::ROOT);
+            parse_philips_tiff_metadata(
+                wsi_nodes[0].node(), philips_metadata, nullptr, PhilipsMetadataStage::SCANNED_IMAGE);
+            (*json_metadata).emplace("philips", std::move(philips_metadata));
+        }
+    }
+}
+
+void TIFF::_populate_aperio_svs_metadata(uint16_t ifd_count, void* metadata, std::shared_ptr<IFD>& first_ifd)
+{
+    (void)ifd_count;
+    (void)metadata;
+    (void)first_ifd;
+    json* json_metadata = reinterpret_cast<json*>(metadata);
+    (void)json_metadata;
+
+    int32_t non_tile_image_count = 0;
+
+    // Append associated images
+    for (int index = 1, level_index = 1; index < ifd_count; ++index, ++level_index)
+    {
+        auto& ifd = ifds_[index];
+        if (ifd->tile_width() == 0)
+        {
+            ++non_tile_image_count;
+            AssociatedImageBufferDesc buf_desc{};
+            buf_desc.type = AssociatedImageBufferType::IFD;
+            buf_desc.compression = static_cast<cucim::codec::CompressionMethod>(ifd->compression());
+            buf_desc.ifd_index = index;
+
+            uint64_t subfile_type = ifd->subfile_type();
+
+            // Assumes that associated image can be identified by checking subfile_type
+            if (index == 1 && subfile_type == 0)
+            {
+                associated_images_.emplace("thumbnail", buf_desc);
+            }
+            else if (subfile_type == 1)
+            {
+                associated_images_.emplace("label", buf_desc);
+            }
+            else if (subfile_type == 9)
+            {
+                associated_images_.emplace("macro", buf_desc);
+            }
+            // Remove item at index `ifd_index` from `level_to_ifd_idx_`
+            level_to_ifd_idx_.erase(level_to_ifd_idx_.begin() + level_index);
+            --level_index;
+            continue;
+        }
+    }
+
+    // Set TIFF type
+    tiff_type_ = TiffType::Aperio;
+
+    // Set background color
+    background_value_ = 0xFF;
+
+    // Get metadata
+    if (json_metadata)
+    {
+        json aperio_metadata;
+        parse_aperio_svs_metadata(first_ifd, aperio_metadata);
+        (*json_metadata).emplace("aperio", std::move(aperio_metadata));
     }
 }
 
@@ -634,25 +777,80 @@ bool TIFF::read_associated_image(const cucim::io::format::ImageMetadataDesc* met
             raw_data_ptr = image_description.c_str();
             raw_data_len = image_description_size;
 
-            width = image_ifd->width();
-            height = image_ifd->height();
-            samples_per_pixel = image_ifd->samples_per_pixel();
+            width = image_ifd->width_;
+            height = image_ifd->height_;
+            samples_per_pixel = image_ifd->samples_per_pixel_;
             raster_size = width * height * samples_per_pixel;
+
+            uint16_t compression_method = image_ifd->compression_;
+
+            if (compression_method != COMPRESSION_JPEG && compression_method != COMPRESSION_LZW)
+            {
+                fmt::print(stderr,
+                           "[Error] Unsupported compression method in read_associated_image()! (compression: {})\n",
+                           compression_method);
+                return false;
+            }
 
             raster = static_cast<uint8_t*>(cucim_malloc(raster_size)); // RGB image
 
-            // TODO: here we assume that the image has a single strip.
-            uint64_t offset = image_ifd->image_piece_offsets_[0];
-            uint64_t size = image_ifd->image_piece_bytecounts_[0];
+            // Process multi strips
             const void* jpegtable_data = image_ifd->jpegtable_.data();
             uint32_t jpegtable_count = image_ifd->jpegtable_.size();
+            int jpeg_color_space = image_ifd->jpeg_color_space_;
+            uint16_t predictor = image_ifd->predictor_;
 
-            if (!cuslide::jpeg::decode_libjpeg(file_handle_.fd, nullptr /*jpeg_buf*/, offset, size, jpegtable_data,
-                                               jpegtable_count, &raster, out_device))
+            uint8_t* target_ptr = raster;
+            uint32_t piece_count = image_ifd->image_piece_count_;
+            uint16_t rows_per_strip = image_ifd->rows_per_strip_;
+            uint32_t row_nbytes = width * samples_per_pixel;
+            uint32_t strip_nbytes = row_nbytes * rows_per_strip;
+            uint32_t start_row = 0;
+
+            std::vector<uint64_t>& image_piece_offsets = image_ifd->image_piece_offsets_;
+            std::vector<uint64_t>& image_piece_bytecounts = image_ifd->image_piece_bytecounts_;
+            for (int64_t piece_index = 0; piece_index < piece_count; ++piece_index)
             {
-                cucim_free(raster);
-                fmt::print(stderr, "[Error] Failed to read region with libjpeg!\n");
-                return false;
+                uint64_t offset = image_piece_offsets[piece_index];
+                uint64_t size = image_piece_bytecounts[piece_index];
+
+                // If the piece is the last piece, adjust strip_nbytes
+                if (start_row + rows_per_strip >= height)
+                {
+                    strip_nbytes = row_nbytes * (height - start_row);
+                }
+
+                switch (compression_method)
+                {
+                case COMPRESSION_JPEG:
+                    if (!cuslide::jpeg::decode_libjpeg(file_handle_.fd, nullptr /*jpeg_buf*/, offset, size, jpegtable_data,
+                                                       jpegtable_count, &target_ptr, out_device, jpeg_color_space))
+                    {
+                        cucim_free(raster);
+                        fmt::print(stderr, "[Error] Failed to read region with libjpeg!\n");
+                        return false;
+                    }
+                    break;
+                case COMPRESSION_LZW:
+                    if (!cuslide::lzw::decode_lzw(
+                            file_handle_.fd, nullptr /*jpeg_buf*/, offset, size, &target_ptr, strip_nbytes, out_device))
+                    {
+                        cucim_free(raster);
+                        fmt::print(stderr, "[Error] Failed to read region with lzw decoder!\n");
+                        return false;
+                    }
+                    break;
+                }
+                target_ptr += strip_nbytes;
+                start_row += rows_per_strip;
+            }
+
+            // Apply unpredictor
+            //   1: none, 2: horizontal differencing, 3: floating point predictor
+            //   https://www.adobe.io/content/dam/udp/en/open/standards/tiff/TIFF6.pdf
+            if (predictor == 2)
+            {
+                cuslide::lzw::horAcc8(raster, raster_size, row_nbytes);
             }
             break;
         }
