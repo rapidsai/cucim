@@ -41,3 +41,4 @@ sed_runner "s#\[Version ${CURRENT_LONG_TAG}\](release_notes/v${CURRENT_LONG_TAG}
 sed_runner "s/v${CURRENT_LONG_TAG}/v${NEXT_FULL_TAG}/g" python/cucim/docs/getting_started/index.md
 sed_runner "s#cucim.kit.cuslide@${CURRENT_LONG_TAG}.so#cucim.kit.cuslide@${NEXT_FULL_TAG}.so#g" python/cucim/docs/getting_started/index.md
 sed_runner "s#cucim.kit.cuslide@${CURRENT_LONG_TAG}.so#cucim.kit.cuslide@${NEXT_FULL_TAG}.so#g" cucim.code-workspace
+sed_runner "s#branch-${CURRENT_MAJOR}.${CURRENT_MINOR}#branch-${NEXT_MAJOR}.${NEXT_MINOR}#g" README.md
