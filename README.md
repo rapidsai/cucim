@@ -30,7 +30,7 @@
 
 ### Notebooks
 
-Please check out our [Welcome](notebooks/Welcome.ipynb) notebook ([NBViewer](https://nbviewer.jupyter.org/github/rapidsai/cucim/blob/branch-21.06/notebooks/Welcome.ipynb))
+Please check out our [Welcome](notebooks/Welcome.ipynb) notebook ([NBViewer](https://nbviewer.jupyter.org/github/rapidsai/cucim/blob/branch-21.12/notebooks/Welcome.ipynb))
 
 #### Downloading sample images
 
