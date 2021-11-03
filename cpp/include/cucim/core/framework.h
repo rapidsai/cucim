@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -63,7 +63,8 @@ struct PluginLoadingDesc
 
 struct Framework
 {
-    void load_plugins(const PluginLoadingDesc& desc = PluginLoadingDesc::get_default());
+    // TODO: need to update for better plugin support - https://github.com/rapidsai/cucim/issues/134
+    // void load_plugins(const PluginLoadingDesc& desc = PluginLoadingDesc::get_default());
     bool(CUCIM_ABI* register_plugin)(const char* client_name, const PluginRegistrationDesc& desc);
     void*(CUCIM_ABI* acquire_interface_from_library_with_client)(const char* client_name,
                                                                  InterfaceDesc desc,
@@ -74,6 +75,7 @@ struct Framework
     T* acquire_interface_from_library(const char* library_path);
 
     // cuCIM-specific methods
+    void(CUCIM_ABI* load_plugin)(const char* library_path);
     const char*(CUCIM_ABI* get_plugin_root)();
     void(CUCIM_ABI* set_plugin_root)(const char* path);
 };

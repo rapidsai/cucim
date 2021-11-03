@@ -20,6 +20,7 @@
 #include "cucim/macros/api_header.h"
 #include "cucim/cache/cache_type.h"
 #include "cucim/cache/image_cache_config.h"
+#include "cucim/plugin/plugin_config.h"
 
 #include <string>
 #include <string_view>
@@ -38,6 +39,7 @@ public:
     Config();
 
     cucim::cache::ImageCacheConfig& cache();
+    cucim::plugin::PluginConfig& plugin();
 
     std::string shm_name() const;
     pid_t pid() const;
@@ -52,6 +54,7 @@ private:
     std::string source_path_;
 
     cucim::cache::ImageCacheConfig cache_;
+    cucim::plugin::PluginConfig plugin_;
 };
 
 } // namespace cucim::config

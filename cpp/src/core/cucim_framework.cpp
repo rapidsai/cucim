@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -131,6 +131,25 @@ bool CuCIMFramework::register_plugin(const std::shared_ptr<Plugin>& plugin)
     return true;
 }
 
+size_t CuCIMFramework::get_plugin_count() const
+{
+    ScopedLock g(mutex_);
+    return plugin_manager_.get_plugin_indices().size();
+}
+
+void CuCIMFramework::get_plugins(PluginDesc* out_plugins) const
+{
+    ScopedLock g(mutex_);
+    const std::unordered_set<size_t>& plugins = plugin_manager_.get_plugin_indices();
+    size_t i = 0;
+    for (const auto& plugin_index : plugins)
+    {
+        if (out_plugins)
+        {
+            out_plugins[i++] = plugin_manager_.get_plugin(plugin_index)->get_plugin_desc();
+        }
+    }
+}
 
 size_t CuCIMFramework::get_plugin_index(const char* name) const
 {
@@ -603,6 +622,23 @@ bool CuCIMFramework::register_plugin(const std::string& file_path, bool reloadab
 }
 
 // cuCIM-specific methods
+
+void CuCIMFramework::load_plugin(const char* library_path)
+{
+
+    ScopedLock g(mutex_);
+
+    const std::string canonical_library_path(library_path);
+
+    Plugin* plugin = get_plugin_by_library_path(canonical_library_path);
+    // Check if plugin with this library path was already loaded
+    if (!plugin)
+    {
+        // It was not loaded, try to register such plugin and get it again
+        register_plugin(canonical_library_path);
+    }
+}
+
 std::string& CuCIMFramework::get_plugin_root()
 {
     return plugin_root_path_;
