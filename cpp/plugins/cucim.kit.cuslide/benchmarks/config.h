@@ -1,6 +1,6 @@
 /*
  * Apache License, Version 2.0
- * Copyright 2020 NVIDIA Corporation
+ * Copyright 2020-2021 NVIDIA Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,7 +21,8 @@
 
 struct AppConfig
 {
-    std::string input_file = "test_data/private/generic_tiff_000.tif";
+    std::string test_folder;
+    std::string test_file;
     bool discard_cache = false;
     int random_seed = 0;
     bool random_start_location = false;
@@ -42,6 +43,38 @@ struct AppConfig
     std::string benchmark_color; //  {auto|true|false}
     std::string benchmark_counters_tabular;
     std::string v; // <verbosity>
+
+    std::string get_input_path(const std::string default_value = "generated/tiff_stripe_4096x4096_256.tif") const
+    {
+        // If `test_file` is absolute path
+        if (!test_folder.empty() && test_file.substr(0, 1) == "/")
+        {
+            return test_file;
+        }
+        else
+        {
+            std::string test_data_folder = test_folder;
+            if (test_data_folder.empty())
+            {
+                if (const char* env_p = std::getenv("CUCIM_TESTDATA_FOLDER"))
+                {
+                    test_data_folder = env_p;
+                }
+                else
+                {
+                    test_data_folder = "test_data";
+                }
+            }
+            if (test_file.empty())
+            {
+                return test_data_folder + "/" + default_value;
+            }
+            else
+            {
+                return test_data_folder + "/" + test_file;
+            }
+        }
+    }
 };
 
 #endif // CUSLIDE_CONFIG_H
