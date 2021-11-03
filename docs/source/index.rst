@@ -1,6 +1,6 @@
+
 Welcome to cuCIM's documentation!
 ====================================
-
 cuCIM is a an extensible toolkit designed to provide GPU-accelearted I/O,
 computer vision and image processing primitives for N-Dimensional images
 with a focus on biomedical imaging.  Our API mirrors `scikit-image
