@@ -1,6 +1,10 @@
 
 # Changelog (See [Release Notes](https://github.com/rapidsai/cucim/wiki/Release-Notes))
 
+## [21.10.01](https://github.com/rapidsai/cucim/wiki/release_notes_v21.10.01)
+
+- [New] Support Aperio SVS with CPU LZW and jpeg2k decoder ([#141](https://github.com/rapidsai/cucim/pull/141))
+
 ## [21.10.00](https://github.com/rapidsai/cucim/wiki/release_notes_v21.10.00)
 
 - [New] Add transforms for Digital Pathology ([#100](https://github.com/rapidsai/cucim/pull/100)) [@shekhardw](https://github.com/shekhardw) [@chirayuG-nvidia](https://github.com/chirayuG-nvidia)
