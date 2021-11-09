@@ -28,7 +28,7 @@ void PluginConfig::load_config(const void* json_obj)
 {
     const json& plugin_config = *(static_cast<const json*>(json_obj));
 
-    if (plugin_config["names"].is_array())
+    if (plugin_config.contains("names") && plugin_config["names"].is_array())
     {
         std::vector<std::string> names;
         names.reserve(16);
