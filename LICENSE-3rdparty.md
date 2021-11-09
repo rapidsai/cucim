@@ -263,3 +263,9 @@ gputil
   - https://github.com/anderskm/gputil/blob/master/LICENSE.txt
 - Copyright: Anders Krogh Mortensen
 - Usage: Checking memory usage in Python applications.
+
+NVTX (NVIDIA Tool Extension Library)
+- License: Apache-2.0 License
+  - https://raw.githubusercontent.com/NVIDIA/NVTX/release-v3/LICENSE.txt
+- Copyright: NVIDIA Corporation
+- Usage: Support for profiling with NVIDIA Nsight Systems

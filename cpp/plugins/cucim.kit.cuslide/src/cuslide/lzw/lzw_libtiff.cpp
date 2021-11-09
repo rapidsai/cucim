@@ -26,11 +26,14 @@
 #include <cstring>
 #include <cinttypes>
 
+#include <cucim/memory/memory_manager.h>
+#include <cucim/profiler/nvtx3.h>
+
 #include "lzw_libtiff.h"
 
-#define _TIFFmalloc(...) malloc(__VA_ARGS__)
+#define _TIFFmalloc(...) cucim_malloc(__VA_ARGS__)
 #define _TIFFmemset(...) memset(__VA_ARGS__)
-#define _TIFFfree(...) free(__VA_ARGS__)
+#define _TIFFfree(...) cucim_free(__VA_ARGS__)
 #define TIFFErrorExt(tif, module, ...)                                                                                 \
     {                                                                                                                  \
         (void)module;                                                                                                  \
@@ -51,6 +54,7 @@ namespace cuslide::lzw
 
 void horAcc8(uint8_t* cp0, tmsize_t cc, tmsize_t width_nbytes)
 {
+    PROF_SCOPED_RANGE(PROF_EVENT(lzw_horAcc8));
     unsigned char* cp = (unsigned char*)cp0;
     while (cc > 0)
     {
@@ -217,6 +221,7 @@ static int LZWDecode(TIFF* tif, uint8_t* op0, tmsize_t occ0, uint16_t s);
 
 static int LZWSetupDecode(TIFF* tif)
 {
+    PROF_SCOPED_RANGE(PROF_EVENT(lzw_LZWSetupDecode));
     static const char module[] = "LZWSetupDecode";
     LZWCodecState* sp = DecoderState(tif);
     int code;
@@ -273,6 +278,7 @@ static int LZWSetupDecode(TIFF* tif)
  */
 static int LZWPreDecode(TIFF* tif, uint16_t s)
 {
+    PROF_SCOPED_RANGE(PROF_EVENT(lzw_LZWPreDecode));
     static const char module[] = "LZWPreDecode";
     LZWCodecState* sp = DecoderState(tif);
 
@@ -345,6 +351,7 @@ static void codeLoop(TIFF* tif, const char* module)
 
 static int LZWDecode(TIFF* tif, uint8_t* op0, tmsize_t occ0, uint16_t s)
 {
+    PROF_SCOPED_RANGE(PROF_EVENT(lzw_LZWDecode));
     static const char module[] = "LZWDecode";
     LZWCodecState* sp = DecoderState(tif);
     uint8_t* op = (uint8_t*)op0;
@@ -564,6 +571,7 @@ static int LZWDecode(TIFF* tif, uint8_t* op0, tmsize_t occ0, uint16_t s)
 
 static void LZWCleanup(TIFF* tif)
 {
+    PROF_SCOPED_RANGE(PROF_EVENT(lzw_LZWCleanup));
     assert(tif->tif_data != 0);
 
     if (DecoderState(tif)->dec_codetab)
@@ -578,6 +586,7 @@ static void LZWCleanup(TIFF* tif)
 
 int TIFFInitLZW(TIFF* tif, int scheme)
 {
+    PROF_SCOPED_RANGE(PROF_EVENT(lzw_TIFFInitLZW));
     static const char module[] = "TIFFInitLZW";
     (void)scheme;
     assert(scheme == COMPRESSION_LZW);

@@ -31,8 +31,10 @@
 #include <cstring>
 #include <jpeglib.h>
 #include <setjmp.h>
-#include <turbojpeg.h>
 #include <unistd.h>
+
+#include <cucim/profiler/nvtx3.h>
+#include <turbojpeg.h>
 
 static thread_local char errStr[JMSG_LENGTH_MAX] = "No error";
 
@@ -150,8 +152,11 @@ bool decode_libjpeg(int fd,
 
     if (jpeg_buf == nullptr)
     {
-        if ((jpeg_buf = (unsigned char*)tjAlloc(size)) == nullptr)
-            THROW_UNIX("allocating JPEG buffer");
+        {
+            PROF_SCOPED_RANGE(PROF_EVENT(decoder_libjpeg_turbo_tjAlloc));
+            if ((jpeg_buf = (unsigned char*)tjAlloc(size)) == nullptr)
+                THROW_UNIX("allocating JPEG buffer");
+        }
 
         if (pread(fd, jpeg_buf, size, offset) < 1)
             THROW_UNIX("reading input file");
@@ -162,20 +167,27 @@ bool decode_libjpeg(int fd,
         jpeg_buf += offset;
     }
 
-    if ((tjInstance = tjInitDecompress()) == nullptr)
-        THROW_TJ("initializing decompressor");
+    {
+        PROF_SCOPED_RANGE(PROF_EVENT(decoder_libjpeg_turbo_tjInitDecompress));
+        if ((tjInstance = tjInitDecompress()) == nullptr)
+            THROW_TJ("initializing decompressor");
+    }
 
     // Read jpeg tables if exists
     if (jpegtable_count)
     {
+        PROF_SCOPED_RANGE(PROF_EVENT(decoder_libjpeg_turbo_read_jpeg_header_tables));
         if (!read_jpeg_header_tables(tjInstance, jpegtable_data, jpegtable_count))
         {
             THROW_TJ("reading JPEG header tables");
         }
     }
 
-    if (tjDecompressHeader3(tjInstance, jpeg_buf, size, &width, &height, &inSubsamp, &inColorspace) < 0)
-        THROW_TJ("reading JPEG header");
+    {
+        PROF_SCOPED_RANGE(PROF_EVENT(decoder_libjpeg_turbo_tjDecompressHeader3));
+        if (tjDecompressHeader3(tjInstance, jpeg_buf, size, &width, &height, &inSubsamp, &inColorspace) < 0)
+            THROW_TJ("reading JPEG header");
+    }
 
     //    printf("%s Image:  %d x %d pixels, %s subsampling, %s colorspace\n", (doTransform ? "Transformed" : "Input"),
     //    width,
@@ -184,19 +196,27 @@ bool decode_libjpeg(int fd,
     // Allocate memory only when dest is not null
     if (*dest == nullptr)
     {
+        PROF_SCOPED_RANGE(PROF_EVENT(decoder_libjpeg_turbo_tjAlloc));
         if ((*dest = (unsigned char*)tjAlloc(width * height * tjPixelSize[pixelFormat])) == nullptr)
             THROW_UNIX("Unable to allocate uncompressed image buffer");
     }
 
-    if (jpeg_decode_buffer(tjInstance, jpeg_buf, size, (unsigned char*)*dest, width, 0, height, pixelFormat, flags,
-                           jpeg_color_space) < 0)
-        THROW_TJ("decompressing JPEG image");
+    {
+        PROF_SCOPED_RANGE(PROF_EVENT(decoder_libjpeg_turbo_jpeg_decode_buffer));
+        if (jpeg_decode_buffer(tjInstance, jpeg_buf, size, (unsigned char*)*dest, width, 0, height, pixelFormat, flags,
+                               jpeg_color_space) < 0)
+            THROW_TJ("decompressing JPEG image");
+    }
 
     if (fd != -1)
     {
+        PROF_SCOPED_RANGE(PROF_EVENT(decoder_libjpeg_turbo_tjFree));
         tjFree(jpeg_buf);
     }
-    tjDestroy(tjInstance);
+    {
+        PROF_SCOPED_RANGE(PROF_EVENT(decoder_libjpeg_turbo_tjDestroy));
+        tjDestroy(tjInstance);
+    }
     return true;
 
 bailout:

@@ -106,6 +106,7 @@ include(ExternalProject)
 option(CUCIM_SUPPORT_GDS "Support cufile library" ON)
 option(CUCIM_STATIC_GDS "Use static cufile library" OFF)
 option(CUCIM_SUPPORT_CUDA "Support CUDA" ON)
+option(CUCIM_SUPPORT_NVTX "Support NVTX" ON)
 
 # Setup CXX11 ABI
 # : Adds CXX11 ABI definition to the compiler command line for targets in the current directory,
@@ -127,6 +128,7 @@ superbuild_depend(cli11)
 superbuild_depend(json)
 superbuild_depend(libcuckoo)
 superbuild_depend(boost-header-only)
+superbuild_depend(nvtx3)
 
 ################################################################################
 # Define some names
@@ -213,6 +215,8 @@ install(DIRECTORY
 # Copy 3rdparty headers
 install(DIRECTORY
             ${deps-fmt_SOURCE_DIR}/include/
+            ${deps-nvtx3_SOURCE_DIR}/c/include/
+            ${deps-nvtx3_SOURCE_DIR}/cpp/include/
         DESTINATION
             ${CMAKE_INSTALL_INCLUDEDIR}/${CUCIM_PACKAGE_NAME}/3rdparty)
 

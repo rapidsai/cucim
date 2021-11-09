@@ -21,6 +21,8 @@
 #include <stdlib.h>
 #include <unistd.h>
 
+#include <cucim/memory/memory_manager.h>
+#include <cucim/profiler/nvtx3.h>
 #include <fmt/format.h>
 #include <openjpeg.h>
 
@@ -137,7 +139,7 @@ bool decode_libopenjpeg(int fd,
     // Allocate memory only when dest is not null
     if (*dest == nullptr)
     {
-        if ((*dest = (unsigned char*)malloc(dest_nbytes)) == nullptr)
+        if ((*dest = (unsigned char*)cucim_malloc(dest_nbytes)) == nullptr)
         {
             throw std::runtime_error("Unable to allocate uncompressed image buffer");
         }
@@ -146,7 +148,7 @@ bool decode_libopenjpeg(int fd,
     if (jpeg_buf == nullptr)
     {
 
-        if ((jpeg_buf = (unsigned char*)malloc(size)) == nullptr)
+        if ((jpeg_buf = (unsigned char*)cucim_malloc(size)) == nullptr)
         {
             throw std::runtime_error("Unable to allocate buffer for libopenjpeg!");
         }
@@ -162,7 +164,11 @@ bool decode_libopenjpeg(int fd,
         jpeg_buf += offset;
     }
 
-    opj_stream_t* stream = opj_stream_create(size, OPJ_TRUE);
+    opj_stream_t* stream;
+    {
+        PROF_SCOPED_RANGE(PROF_EVENT(opj_stream_create));
+        stream = opj_stream_create(size, OPJ_TRUE);
+    }
     if (!stream)
     {
         throw std::runtime_error("[Error] Failed to create stream\n");
@@ -175,7 +181,11 @@ bool decode_libopenjpeg(int fd,
     opj_stream_set_skip_function(stream, skip_callback);
     opj_stream_set_seek_function(stream, seek_callback);
 
-    opj_codec_t* codec = opj_create_decompress(OPJ_CODEC_J2K);
+    opj_codec_t* codec;
+    {
+        PROF_SCOPED_RANGE(PROF_EVENT(opj_create_decompress));
+        codec = opj_create_decompress(OPJ_CODEC_J2K);
+    }
     if (!codec)
     {
         throw std::runtime_error("[Error] Failed to create codec\n");
@@ -193,9 +203,12 @@ bool decode_libopenjpeg(int fd,
 
     try
     {
-        if (!opj_read_header(stream, codec, &image))
         {
-            throw std::runtime_error("[Error] Failed to read header from OpenJpeg stream\n");
+            PROF_SCOPED_RANGE(PROF_EVENT(opj_read_header));
+            if (!opj_read_header(stream, codec, &image))
+            {
+                throw std::runtime_error("[Error] Failed to read header from OpenJpeg stream\n");
+            }
         }
 
         if (image->numcomps != 3)
@@ -203,9 +216,12 @@ bool decode_libopenjpeg(int fd,
             throw std::runtime_error("[Error] Only RGB images are supported\n");
         }
 
-        if (!opj_decode(codec, stream, image))
         {
-            throw std::runtime_error("[Error] Failed to decode image\n");
+            PROF_SCOPED_RANGE(PROF_EVENT(opj_decode));
+            if (!opj_decode(codec, stream, image))
+            {
+                throw std::runtime_error("[Error] Failed to decode image\n");
+            }
         }
         if (image->color_space != OPJ_CLRSPC_SYCC)
         {
@@ -255,11 +271,15 @@ bool decode_libopenjpeg(int fd,
         {
             if (image->color_space == OPJ_CLRSPC_SYCC)
             {
+                PROF_SCOPED_RANGE(PROF_EVENT(color_sycc_to_rgb));
                 color_sycc_to_rgb(image);
             }
             if (image->icc_profile_buf)
             {
-                color_apply_icc_profile(image);
+                {
+                    PROF_SCOPED_RANGE(PROF_EVENT(color_apply_icc_profile));
+                    color_apply_icc_profile(image);
+                }
                 image->icc_profile_len = 0;
                 free(image->icc_profile_buf);
                 image->icc_profile_buf = nullptr;
@@ -272,22 +292,28 @@ bool decode_libopenjpeg(int fd,
     }
     catch (const std::runtime_error& e)
     {
-        opj_destroy_codec(codec);
-        opj_stream_destroy(stream);
-        opj_image_destroy(image);
+        {
+            PROF_SCOPED_RANGE(PROF_EVENT(opj_destructions));
+            opj_destroy_codec(codec);
+            opj_stream_destroy(stream);
+            opj_image_destroy(image);
+        }
         if (fd != -1)
         {
-            free(jpeg_buf);
+            cucim_free(jpeg_buf);
         }
         throw e;
     }
 
-    opj_destroy_codec(codec);
-    opj_stream_destroy(stream);
-    opj_image_destroy(image);
+    {
+        PROF_SCOPED_RANGE(PROF_EVENT(opj_destructions));
+        opj_destroy_codec(codec);
+        opj_stream_destroy(stream);
+        opj_image_destroy(image);
+    }
     if (fd != -1)
     {
-        free(jpeg_buf);
+        cucim_free(jpeg_buf);
     }
 
     return true;
