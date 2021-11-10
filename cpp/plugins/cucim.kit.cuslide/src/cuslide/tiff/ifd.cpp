@@ -501,6 +501,8 @@ bool IFD::read_region_tiles(const TIFF* tiff,
         uint32_t dest_pixel_index_x = 0;
 
         uint32_t index = index_y + offset_sx;
+        // Calculate a simple hash value for the tile index
+        uint64_t index_hash = ifd_hash_value ^ (static_cast<uint64_t>(index) | (static_cast<uint64_t>(index) << 32));
         for (uint32_t offset_x = offset_sx; offset_x <= offset_ex; ++offset_x, ++index)
         {
             auto tiledata_offset = static_cast<uint64_t>(ifd->image_piece_offsets_[index]);
@@ -519,11 +521,11 @@ bool IFD::read_region_tiles(const TIFF* tiff,
             if (tiledata_size > 0)
             {
                 auto key = image_cache.create_key(ifd_hash_value, index);
-                image_cache.lock(index);
+                image_cache.lock(index_hash);
                 auto value = image_cache.find(key);
                 if (value)
                 {
-                    image_cache.unlock(index);
+                    image_cache.unlock(index_hash);
                     tile_data = static_cast<uint8_t*>(value->data);
                 }
                 else
@@ -577,7 +579,7 @@ bool IFD::read_region_tiles(const TIFF* tiff,
 
                     value = image_cache.create_value(tile_data, tile_raster_nbytes);
                     image_cache.insert(key, value);
-                    image_cache.unlock(index);
+                    image_cache.unlock(index_hash);
                 }
 
                 for (uint32_t ty = tile_pixel_offset_sy; ty <= tile_pixel_offset_ey;
@@ -743,6 +745,8 @@ bool IFD::read_region_tiles_boundary(const TIFF* tiff,
         uint32_t dest_pixel_index_x = 0;
 
         int64_t index = index_y + offset_sx;
+        // Calculate a simple hash value for the tile index
+        uint64_t index_hash = ifd_hash_value ^ (static_cast<uint64_t>(index) | (static_cast<uint64_t>(index) << 32));
         for (int64_t offset_x = offset_sx; offset_x <= offset_ex; ++offset_x, ++index)
         {
             uint64_t tiledata_offset = 0;
@@ -798,11 +802,11 @@ bool IFD::read_region_tiles_boundary(const TIFF* tiff,
                 uint8_t* tile_data = tile_raster;
 
                 auto key = image_cache.create_key(ifd_hash_value, index);
-                image_cache.lock(index);
+                image_cache.lock(index_hash);
                 auto value = image_cache.find(key);
                 if (value)
                 {
-                    image_cache.unlock(index);
+                    image_cache.unlock(index_hash);
                     tile_data = static_cast<uint8_t*>(value->data);
                 }
                 else
@@ -855,7 +859,7 @@ bool IFD::read_region_tiles_boundary(const TIFF* tiff,
                     }
                     value = image_cache.create_value(tile_data, tile_raster_nbytes);
                     image_cache.insert(key, value);
-                    image_cache.unlock(index);
+                    image_cache.unlock(index_hash);
                 }
                 if (copy_partial)
                 {
