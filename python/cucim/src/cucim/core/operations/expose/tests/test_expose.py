@@ -1,8 +1,9 @@
 from cucim.core.operations.expose.transform import (color_jitter, image_flip,
                                                     image_rotate_90,
+                                                    normalize_data,
                                                     rand_image_flip,
                                                     rand_image_rotate_90,
-                                                    rand_zoom, normalize_data,
+                                                    rand_zoom,
                                                     scale_intensity_range, zoom)
 
 

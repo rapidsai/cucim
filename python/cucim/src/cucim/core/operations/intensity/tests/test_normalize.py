@@ -18,7 +18,17 @@ def get_input_arr():
 
 def get_norm_data():
     dirname = os.path.dirname(__file__)
-    img1 = Image.open(os.path.join(os.path.abspath(dirname), "normalized.png"))
+    img1 = Image.open(os.path.join(os.path.abspath(dirname),
+                                   "normalized.png"))
+    arr_o = np.asarray(img1)
+    arr_o = np.transpose(arr_o)
+    return arr_o
+
+
+def get_norm_atan_data():
+    dirname = os.path.dirname(__file__)
+    img1 = Image.open(os.path.join(os.path.abspath(dirname),
+                                   "normalized_atan.png"))
     arr_o = np.asarray(img1)
     arr_o = np.transpose(arr_o)
     return arr_o
@@ -27,7 +37,9 @@ def get_norm_data():
 def test_norm_param():
     arr = get_input_arr()
     with pytest.raises(ValueError):
-        its.normalize_data(arr, 10.0, 0, 255)
+        its.normalize_data(arr, 10.0, 255, 255)
+    with pytest.raises(ValueError):
+        its.normalize_data(arr, 10.0, 0, 255, 4)
     with pytest.raises(TypeError):
         img = Image.fromarray(arr.T, 'RGB')
         its.normalize_data(img, 10.0, 0, 255)
@@ -38,6 +50,10 @@ def test_norm_numpy_input():
     norm_arr = get_norm_data()
     output = its.normalize_data(arr, 10.0, 0, 255)
     assert np.allclose(output, norm_arr)
+
+    norm_atan_arr = get_norm_atan_data()
+    output = its.normalize_data(arr, 10000, 0, 255, 2)
+    assert np.allclose(output, norm_atan_arr)
 
 
 def test_norm_cupy_input():

@@ -74,7 +74,8 @@ def normalize_data(
     """
     try:
         if max_value - min_value == 0.0:
-            raise ValueError("Minimum and Maximum intensity same in input data")
+            raise ValueError("Minimum and Maximum intensity \
+                              same in input data")
 
         if type not in [1, 2]:
             raise ValueError("Incorrect normalization type. \
