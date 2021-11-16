@@ -33,7 +33,7 @@ requirements:
     - libcucim {{ version }}.*
     - click
     - cupy 9.*
-    - numpy >=1.17.0
+    - numpy 1.17.0
     - scipy
     - scikit-image 0.18.1
   run:
