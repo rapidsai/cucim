@@ -1,6 +1,6 @@
 # Copyright (c) 2021, NVIDIA CORPORATION.
 
-CUCIM_BUILD_TYPE=${CUCIM_BUILD_TYPE:-release}
+CUCIM_BUILD_TYPE=${CUCIM_BUILD_TYPE:-rel-debug}
 
 echo "CC          : ${CC}"
 echo "CXX         : ${CXX}"

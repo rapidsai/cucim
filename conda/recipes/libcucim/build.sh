@@ -1,7 +1,8 @@
 # Copyright (c) 2021, NVIDIA CORPORATION.
 
-CUCIM_BUILD_TYPE=${CUCIM_BUILD_TYPE:-release}
-
+CUCIM_BUILD_TYPE=${CUCIM_BUILD_TYPE:-rel-debug}
+echo "#####################################"
+echo "cat /proc/sys/kernel/core_pattern : $(cat /proc/sys/kernel/core_pattern)"
 echo "CC          : ${CC}"
 echo "CXX         : ${CXX}"
 echo "CUDAHOSTCXX : ${CUDAHOSTCXX}"

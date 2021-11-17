@@ -38,13 +38,17 @@ _is_clara_available = False
 #   python3: Relink `/usr/lib/x86_64-linux-gnu/libnccl.so.2.8.3' with `/lib/x86_64-linux-gnu/librt.so.1' for IFUNC symbol `clock_gettime'
 #   Segmentation fault
 try:
-    import cupy
+    print("Trying to import cupy...")
+    # import cupy
+    print("Importing cupy done.")
     _is_cupy_available = True
 except ImportError:
     pass
 
 try:
-    from .clara import CuImage, __version__, cli
+    print("Trying to import clara...")
+    # from .clara import CuImage, __version__, cli
+    print("Importing clara done.")
     _is_clara_available = True
 except ImportError:
     from ._version import get_versions

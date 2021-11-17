@@ -132,10 +132,15 @@ DetectedFormat detect_format(filesystem::Path path)
 }
 
 
-Framework* CuImage::framework_ = cucim::acquire_framework("cucim");
-std::unique_ptr<config::Config> CuImage::config_ = std::make_unique<config::Config>();
-std::unique_ptr<cache::ImageCacheManager> CuImage::cache_manager_ = std::make_unique<cache::ImageCacheManager>();
-std::unique_ptr<plugin::ImageFormat> CuImage::image_format_plugins_ = std::make_unique<plugin::ImageFormat>();
+// Framework* CuImage::framework_ = cucim::acquire_framework("cucim");
+// std::unique_ptr<config::Config> CuImage::config_ = std::make_unique<config::Config>();
+// std::unique_ptr<cache::ImageCacheManager> CuImage::cache_manager_ = std::make_unique<cache::ImageCacheManager>();
+// std::unique_ptr<plugin::ImageFormat> CuImage::image_format_plugins_ = std::make_unique<plugin::ImageFormat>();
+
+Framework* CuImage::framework_ = nullptr;
+std::unique_ptr<config::Config> CuImage::config_ = nullptr;
+std::unique_ptr<cache::ImageCacheManager> CuImage::cache_manager_ = nullptr;
+std::unique_ptr<plugin::ImageFormat> CuImage::image_format_plugins_ = nullptr;
 
 
 CuImage::CuImage(const filesystem::Path& path)
@@ -228,73 +233,73 @@ CuImage::CuImage() : std::enable_shared_from_this<CuImage>()
 
 CuImage::~CuImage()
 {
-    //    printf("[cuCIM] CuImage::~CuImage()\n");
-    close();
-    image_format_ = nullptr; // memory release is handled by the framework
-    if (image_metadata_)
-    {
-        // Memory for json_data needs to be manually released if image_metadata_->json_data is not ""
-        if (image_metadata_->json_data && *image_metadata_->json_data != '\0')
-        {
-            cucim_free(image_metadata_->json_data);
-            image_metadata_->json_data = nullptr;
-        }
-        // Delete object (cucim::io::format::ImageMetadata) that embeds image_metadata_
-        if (image_metadata_->handle)
-        {
-            // Keep original handle pointer before clearing it and delete the class object.
-            void* handle_ptr = image_metadata_->handle;
-            image_metadata_->handle = nullptr;
-            delete static_cast<cucim::io::format::ImageMetadata*>(handle_ptr);
-        }
-        image_metadata_ = nullptr;
-    }
-    if (image_data_)
-    {
-        if (image_data_->container.data)
-        {
-            DLContext& ctx = image_data_->container.ctx;
-            auto device_type = static_cast<io::DeviceType>(ctx.device_type);
-            switch (device_type)
-            {
-            case io::DeviceType::kCPU:
-                cucim_free(image_data_->container.data);
-                image_data_->container.data = nullptr;
-                break;
-            case io::DeviceType::kCUDA:
-                cudaError_t cuda_status;
-                CUDA_TRY(cudaFree(image_data_->container.data));
-                image_data_->container.data = nullptr;
-                if (cuda_status)
-                {
-                    fmt::print(stderr, "[Error] Cannot free memory!");
-                }
-                break;
-            case io::DeviceType::kPinned:
-            case io::DeviceType::kCPUShared:
-            case io::DeviceType::kCUDAShared:
-                fmt::print(stderr, "Device type {} is not supported!", device_type);
-                break;
-            }
-        }
-        if (image_data_->container.shape)
-        {
-            cucim_free(image_data_->container.shape);
-            image_data_->container.shape = nullptr;
-        }
-        if (image_data_->container.strides)
-        {
-            cucim_free(image_data_->container.strides);
-            image_data_->container.strides = nullptr;
-        }
-        if (image_data_->shm_name)
-        {
-            cucim_free(image_data_->shm_name);
-            image_data_->shm_name = nullptr;
-        }
-        cucim_free(image_data_);
-        image_data_ = nullptr;
-    }
+    // //    printf("[cuCIM] CuImage::~CuImage()\n");
+    // close();
+    // image_format_ = nullptr; // memory release is handled by the framework
+    // if (image_metadata_)
+    // {
+    //     // Memory for json_data needs to be manually released if image_metadata_->json_data is not ""
+    //     if (image_metadata_->json_data && *image_metadata_->json_data != '\0')
+    //     {
+    //         cucim_free(image_metadata_->json_data);
+    //         image_metadata_->json_data = nullptr;
+    //     }
+    //     // Delete object (cucim::io::format::ImageMetadata) that embeds image_metadata_
+    //     if (image_metadata_->handle)
+    //     {
+    //         // Keep original handle pointer before clearing it and delete the class object.
+    //         void* handle_ptr = image_metadata_->handle;
+    //         image_metadata_->handle = nullptr;
+    //         delete static_cast<cucim::io::format::ImageMetadata*>(handle_ptr);
+    //     }
+    //     image_metadata_ = nullptr;
+    // }
+    // if (image_data_)
+    // {
+    //     if (image_data_->container.data)
+    //     {
+    //         DLContext& ctx = image_data_->container.ctx;
+    //         auto device_type = static_cast<io::DeviceType>(ctx.device_type);
+    //         switch (device_type)
+    //         {
+    //         case io::DeviceType::kCPU:
+    //             cucim_free(image_data_->container.data);
+    //             image_data_->container.data = nullptr;
+    //             break;
+    //         case io::DeviceType::kCUDA:
+    //             cudaError_t cuda_status;
+    //             CUDA_TRY(cudaFree(image_data_->container.data));
+    //             image_data_->container.data = nullptr;
+    //             if (cuda_status)
+    //             {
+    //                 fmt::print(stderr, "[Error] Cannot free memory!");
+    //             }
+    //             break;
+    //         case io::DeviceType::kPinned:
+    //         case io::DeviceType::kCPUShared:
+    //         case io::DeviceType::kCUDAShared:
+    //             fmt::print(stderr, "Device type {} is not supported!", device_type);
+    //             break;
+    //         }
+    //     }
+    //     if (image_data_->container.shape)
+    //     {
+    //         cucim_free(image_data_->container.shape);
+    //         image_data_->container.shape = nullptr;
+    //     }
+    //     if (image_data_->container.strides)
+    //     {
+    //         cucim_free(image_data_->container.strides);
+    //         image_data_->container.strides = nullptr;
+    //     }
+    //     if (image_data_->shm_name)
+    //     {
+    //         cucim_free(image_data_->shm_name);
+    //         image_data_->shm_name = nullptr;
+    //     }
+    //     cucim_free(image_data_);
+    //     image_data_ = nullptr;
+    // }
 }
 
 Framework* CuImage::get_framework()

@@ -13,16 +13,17 @@
 # limitations under the License.
 #
 
-import os
+# import os
 
-from . import cli, converter
+# from . import cli, converter
 # import hidden methods
-from ._cucim import CuImage, __version__, cache, filesystem, io
+# from ._cucim import CuImage, __version__, cache, filesystem, io
+# from ._cucim import CuImage
 
-__all__ = ['cli', 'CuImage', 'filesystem', 'io', 'cache', 'converter', '__version__']
+# __all__ = ['cli', 'CuImage', 'filesystem', 'io', 'cache', 'converter', '__version__']
 
 
-from ._cucim import _get_plugin_root  # isort:skip
-from ._cucim import _set_plugin_root  # isort:skip
-# Set plugin root path
-_set_plugin_root(os.path.dirname(os.path.realpath(__file__)))
+# from ._cucim import _get_plugin_root  # isort:skip
+# from ._cucim import _set_plugin_root  # isort:skip
+# # Set plugin root path
+# _set_plugin_root(os.path.dirname(os.path.realpath(__file__)))

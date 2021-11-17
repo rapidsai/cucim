@@ -45,138 +45,140 @@ static const std::unordered_map<uint8_t, const char*> g_dldata_typecode{
 PYBIND11_MODULE(_cucim, m)
 {
 
-    // clang-format off
-#ifdef CUCIM_VERSION
-#  define XSTR(x) STR(x)
-#  define STR(x) #x
-    // Set version
-    m.attr("__version__") = XSTR(CUCIM_VERSION);
-#endif
-    // clang-format on
-    // Get/set plugin root path
-    m.def("_get_plugin_root", &get_plugin_root);
-    m.def("_set_plugin_root", &set_plugin_root);
+    //     // clang-format off
+    // #ifdef CUCIM_VERSION
+    // #  define XSTR(x) STR(x)
+    // #  define STR(x) #x
+    //     // Set version
+    //     m.attr("__version__") = XSTR(CUCIM_VERSION);
+    // #endif
+    //     // clang-format on
+    //     // Get/set plugin root path
+    //     m.def("_get_plugin_root", &get_plugin_root);
+    //     m.def("_set_plugin_root", &set_plugin_root);
 
-    // Submodule: io
-    auto m_io = m.def_submodule("io");
-    io::init_io(m_io);
+    // // Submodule: io
+    // auto m_io = m.def_submodule("io");
+    // io::init_io(m_io);
 
-    // Submodule: filesystem
-    auto m_fs = m.def_submodule("filesystem");
-    filesystem::init_filesystem(m_fs);
+    // // Submodule: filesystem
+    // auto m_fs = m.def_submodule("filesystem");
+    // filesystem::init_filesystem(m_fs);
 
-    // Submodule: cache
-    auto m_cache = m.def_submodule("cache");
-    cache::init_cache(m_cache);
+    // // Submodule: cache
+    // auto m_cache = m.def_submodule("cache");
+    // cache::init_cache(m_cache);
 
-    // Data structures
-    py::enum_<DLDataTypeCode>(m, "DLDataTypeCode") //
-        .value("DLInt", kDLInt) //
-        .value("DLUInt", kDLUInt) //
-        .value("DLFloat", kDLFloat) //
-        .value("DLBfloat", kDLBfloat);
+    // // Data structures
+    // py::enum_<DLDataTypeCode>(m, "DLDataTypeCode") //
+    //     .value("DLInt", kDLInt) //
+    //     .value("DLUInt", kDLUInt) //
+    //     .value("DLFloat", kDLFloat) //
+    //     .value("DLBfloat", kDLBfloat);
 
-    py::class_<DLDataType>(m, "DLDataType") //
-        .def(py::init([](DLDataTypeCode code, uint8_t bits, uint16_t lanes) {
-                 auto ctr = std::make_unique<DLDataType>();
-                 ctr->code = static_cast<uint8_t>(code);
-                 ctr->bits = bits;
-                 ctr->lanes = lanes;
-                 return ctr;
-             }),
-             doc::DLDataType::doc_DLDataType, py::call_guard<py::gil_scoped_release>())
-        .def_readonly("code", &DLDataType::code, doc::DLDataType::doc_code, py::call_guard<py::gil_scoped_release>()) //
-        .def_readonly("bits", &DLDataType::bits, doc::DLDataType::doc_bits, py::call_guard<py::gil_scoped_release>()) //
-        .def_readonly("lanes", &DLDataType::lanes, doc::DLDataType::doc_lanes, py::call_guard<py::gil_scoped_release>()) //
-        .def(
-            "__repr__",
-            [](const DLDataType& dtype) {
-                return fmt::format("<cucim.DLDataType code:{}({}) bits:{} lanes:{}>", g_dldata_typecode.at(dtype.code),
-                                   dtype.code, dtype.bits, dtype.lanes);
-            },
-            py::call_guard<py::gil_scoped_release>());
+    // py::class_<DLDataType>(m, "DLDataType") //
+    //     .def(py::init([](DLDataTypeCode code, uint8_t bits, uint16_t lanes) {
+    //              auto ctr = std::make_unique<DLDataType>();
+    //              ctr->code = static_cast<uint8_t>(code);
+    //              ctr->bits = bits;
+    //              ctr->lanes = lanes;
+    //              return ctr;
+    //          }),
+    //          doc::DLDataType::doc_DLDataType, py::call_guard<py::gil_scoped_release>())
+    //     .def_readonly("code", &DLDataType::code, doc::DLDataType::doc_code, py::call_guard<py::gil_scoped_release>())
+    //     // .def_readonly("bits", &DLDataType::bits, doc::DLDataType::doc_bits,
+    //     py::call_guard<py::gil_scoped_release>()) // .def_readonly("lanes", &DLDataType::lanes,
+    //     doc::DLDataType::doc_lanes, py::call_guard<py::gil_scoped_release>())
+    //     // .def(
+    //         "__repr__",
+    //         [](const DLDataType& dtype) {
+    //             return fmt::format("<cucim.DLDataType code:{}({}) bits:{} lanes:{}>",
+    //             g_dldata_typecode.at(dtype.code),
+    //                                dtype.code, dtype.bits, dtype.lanes);
+    //         },
+    //         py::call_guard<py::gil_scoped_release>());
 
-    py::class_<CuImage, std::shared_ptr<CuImage>>(m, "CuImage", py::dynamic_attr()) //
-        .def(py::init<const std::string&>(), doc::CuImage::doc_CuImage, py::call_guard<py::gil_scoped_release>(), //
-             py::arg("path")) //
-        .def_static("cache", &py_cache, doc::CuImage::doc_cache, py::call_guard<py::gil_scoped_release>(), //
-                    py::arg("type") = py::none()) //
-        // Do not release GIL
-        .def_static("_set_array_interface", &_set_array_interface, doc::CuImage::doc__set_array_interface, //
-                    py::arg("cuimg") = py::none()) //
-        .def_property("path", &CuImage::path, nullptr, doc::CuImage::doc_path, py::call_guard<py::gil_scoped_release>()) //
-        .def_property("is_loaded", &CuImage::is_loaded, nullptr, doc::CuImage::doc_is_loaded,
-                      py::call_guard<py::gil_scoped_release>()) //
-        .def_property(
-            "device", &CuImage::device, nullptr, doc::CuImage::doc_device, py::call_guard<py::gil_scoped_release>()) //
-        .def_property("raw_metadata", &CuImage::raw_metadata, nullptr, doc::CuImage::doc_raw_metadata,
-                      py::call_guard<py::gil_scoped_release>()) //
-        .def_property(
-            "metadata", &py_metadata, nullptr, doc::CuImage::doc_metadata, py::call_guard<py::gil_scoped_release>()) //
-        .def_property("ndim", &CuImage::ndim, nullptr, doc::CuImage::doc_ndim, py::call_guard<py::gil_scoped_release>()) //
-        .def_property("dims", &CuImage::dims, nullptr, doc::CuImage::doc_dims, py::call_guard<py::gil_scoped_release>()) //
-        .def_property(
-            "shape", &CuImage::shape, nullptr, doc::CuImage::doc_shape, py::call_guard<py::gil_scoped_release>()) //
-        .def("size", &CuImage::size, doc::CuImage::doc_size, py::call_guard<py::gil_scoped_release>(), //
-             py::arg("dim_order") = "" //
-             ) //
-        .def_property(
-            "dtype", &CuImage::dtype, nullptr, doc::CuImage::doc_dtype, py::call_guard<py::gil_scoped_release>()) //
-        .def_property("channel_names", &CuImage::channel_names, nullptr, doc::CuImage::doc_channel_names,
-                      py::call_guard<py::gil_scoped_release>()) //
-        .def("spacing", &CuImage::spacing, doc::CuImage::doc_spacing, py::call_guard<py::gil_scoped_release>(), //
-             py::arg("dim_order") = "" //
-             ) //
-        .def("spacing_units", &CuImage::spacing_units, doc::CuImage::doc_spacing_units,
-             py::call_guard<py::gil_scoped_release>(), //
-             py::arg("dim_order") = "" //
-             ) //
-        .def_property(
-            "origin", &CuImage::origin, nullptr, doc::CuImage::doc_origin, py::call_guard<py::gil_scoped_release>()) //
-        .def_property("direction", &CuImage::direction, nullptr, doc::CuImage::doc_direction,
-                      py::call_guard<py::gil_scoped_release>()) //
-        .def_property("coord_sys", &CuImage::coord_sys, nullptr, doc::CuImage::doc_coord_sys,
-                      py::call_guard<py::gil_scoped_release>()) //
-        .def_property("resolutions", &py_resolutions, nullptr, doc::CuImage::doc_resolutions,
-                      py::call_guard<py::gil_scoped_release>()) //
-        .def("read_region", &py_read_region, doc::CuImage::doc_read_region, py::call_guard<py::gil_scoped_release>(), //
-             py::arg("location") = py::list{}, //
-             py::arg("size") = py::list{}, //
-             py::arg("level") = 0, //
-             py::arg("device") = io::Device(), //
-             py::arg("buf") = py::none(), //
-             py::arg("shm_name") = "") //
-        .def_property("associated_images", &CuImage::associated_images, nullptr, doc::CuImage::doc_associated_images,
-                      py::call_guard<py::gil_scoped_release>()) //
-        .def("associated_image", &py_associated_image, doc::CuImage::doc_associated_image,
-             py::call_guard<py::gil_scoped_release>(), //
-             py::arg("name") = "", //
-             py::arg("device") = io::Device()) //
-        .def("save", &CuImage::save, doc::CuImage::doc_save, py::call_guard<py::gil_scoped_release>()) //
-        .def("close", &CuImage::close, doc::CuImage::doc_close, py::call_guard<py::gil_scoped_release>()) //
-        .def("__bool__", &CuImage::operator bool, py::call_guard<py::gil_scoped_release>()) //
-        .def(
-            "__enter__",
-            [](const std::shared_ptr<CuImage>& cuimg) { //
-                return cuimg; //
-            }, //
-            py::call_guard<py::gil_scoped_release>())
-        .def(
-            "__exit__",
-            [](const std::shared_ptr<CuImage>& cuimg, const py::object& type, const py::object& value,
-               const py::object& traceback) { //
-                cuimg->close(); //
-            }, //
-            py::call_guard<py::gil_scoped_release>())
-        .def(
-            "__repr__", //
-            [](const CuImage& cuimg) { //
-                return fmt::format("<cucim.CuImage path:{}>", cuimg.path());
-            },
-            py::call_guard<py::gil_scoped_release>());
+    // py::class_<CuImage, std::shared_ptr<CuImage>>(m, "CuImage", py::dynamic_attr()) //
+    //     .def(py::init<const std::string&>(), doc::CuImage::doc_CuImage, py::call_guard<py::gil_scoped_release>(), //
+    //          py::arg("path")); //
+    // .def_static("cache", &py_cache, doc::CuImage::doc_cache, py::call_guard<py::gil_scoped_release>(), //
+    //             py::arg("type") = py::none()) //
+    // // Do not release GIL
+    // .def_static("_set_array_interface", &_set_array_interface, doc::CuImage::doc__set_array_interface, //
+    //             py::arg("cuimg") = py::none()) //
+    // .def_property("path", &CuImage::path, nullptr, doc::CuImage::doc_path, py::call_guard<py::gil_scoped_release>())
+    // // .def_property("is_loaded", &CuImage::is_loaded, nullptr, doc::CuImage::doc_is_loaded,
+    //               py::call_guard<py::gil_scoped_release>()) //
+    // .def_property(
+    //     "device", &CuImage::device, nullptr, doc::CuImage::doc_device, py::call_guard<py::gil_scoped_release>()) //
+    // .def_property("raw_metadata", &CuImage::raw_metadata, nullptr, doc::CuImage::doc_raw_metadata,
+    //               py::call_guard<py::gil_scoped_release>()) //
+    // .def_property(
+    //     "metadata", &py_metadata, nullptr, doc::CuImage::doc_metadata, py::call_guard<py::gil_scoped_release>()) //
+    // .def_property("ndim", &CuImage::ndim, nullptr, doc::CuImage::doc_ndim, py::call_guard<py::gil_scoped_release>())
+    // // .def_property("dims", &CuImage::dims, nullptr, doc::CuImage::doc_dims,
+    // py::call_guard<py::gil_scoped_release>()) // .def_property(
+    //     "shape", &CuImage::shape, nullptr, doc::CuImage::doc_shape, py::call_guard<py::gil_scoped_release>()) //
+    // .def("size", &CuImage::size, doc::CuImage::doc_size, py::call_guard<py::gil_scoped_release>(), //
+    //      py::arg("dim_order") = "" //
+    //      ) //
+    // .def_property(
+    //     "dtype", &CuImage::dtype, nullptr, doc::CuImage::doc_dtype, py::call_guard<py::gil_scoped_release>()) //
+    // .def_property("channel_names", &CuImage::channel_names, nullptr, doc::CuImage::doc_channel_names,
+    //               py::call_guard<py::gil_scoped_release>()) //
+    // .def("spacing", &CuImage::spacing, doc::CuImage::doc_spacing, py::call_guard<py::gil_scoped_release>(), //
+    //      py::arg("dim_order") = "" //
+    //      ) //
+    // .def("spacing_units", &CuImage::spacing_units, doc::CuImage::doc_spacing_units,
+    //      py::call_guard<py::gil_scoped_release>(), //
+    //      py::arg("dim_order") = "" //
+    //      ) //
+    // .def_property(
+    //     "origin", &CuImage::origin, nullptr, doc::CuImage::doc_origin, py::call_guard<py::gil_scoped_release>()) //
+    // .def_property("direction", &CuImage::direction, nullptr, doc::CuImage::doc_direction,
+    //               py::call_guard<py::gil_scoped_release>()) //
+    // .def_property("coord_sys", &CuImage::coord_sys, nullptr, doc::CuImage::doc_coord_sys,
+    //               py::call_guard<py::gil_scoped_release>()) //
+    // .def_property("resolutions", &py_resolutions, nullptr, doc::CuImage::doc_resolutions,
+    //               py::call_guard<py::gil_scoped_release>()) //
+    // .def("read_region", &py_read_region, doc::CuImage::doc_read_region, py::call_guard<py::gil_scoped_release>(), //
+    //      py::arg("location") = py::list{}, //
+    //      py::arg("size") = py::list{}, //
+    //      py::arg("level") = 0, //
+    //      py::arg("device") = io::Device(), //
+    //      py::arg("buf") = py::none(), //
+    //      py::arg("shm_name") = "") //
+    // .def_property("associated_images", &CuImage::associated_images, nullptr, doc::CuImage::doc_associated_images,
+    //               py::call_guard<py::gil_scoped_release>()) //
+    // .def("associated_image", &py_associated_image, doc::CuImage::doc_associated_image,
+    //      py::call_guard<py::gil_scoped_release>(), //
+    //      py::arg("name") = "", //
+    //      py::arg("device") = io::Device()) //
+    // .def("save", &CuImage::save, doc::CuImage::doc_save, py::call_guard<py::gil_scoped_release>()) //
+    // .def("close", &CuImage::close, doc::CuImage::doc_close, py::call_guard<py::gil_scoped_release>()) //
+    // .def("__bool__", &CuImage::operator bool, py::call_guard<py::gil_scoped_release>()) //
+    // .def(
+    //     "__enter__",
+    //     [](const std::shared_ptr<CuImage>& cuimg) { //
+    //         return cuimg; //
+    //     }, //
+    //     py::call_guard<py::gil_scoped_release>())
+    // .def(
+    //     "__exit__",
+    //     [](const std::shared_ptr<CuImage>& cuimg, const py::object& type, const py::object& value,
+    //        const py::object& traceback) { //
+    //         cuimg->close(); //
+    //     }, //
+    //     py::call_guard<py::gil_scoped_release>())
+    // .def(
+    //     "__repr__", //
+    //     [](const CuImage& cuimg) { //
+    //         return fmt::format("<cucim.CuImage path:{}>", cuimg.path());
+    //     },
+    //     py::call_guard<py::gil_scoped_release>());
 
-    // We can use `"cpu"` instead of `Device("cpu")`
-    py::implicitly_convertible<const char*, io::Device>();
+    // // We can use `"cpu"` instead of `Device("cpu")`
+    // py::implicitly_convertible<const char*, io::Device>();
 }
 
 std::string get_plugin_root()

