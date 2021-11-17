@@ -181,7 +181,6 @@ __global__ void zoomout_edge_pad(float *output_tensor, int height, int width,
 
   int out_pixel_h = blockIdx.y * blockDim.y + threadIdx.y;
   int out_pixel_w = blockIdx.x * blockDim.x + threadIdx.x;
-  int image_start_offset = blockIdx.z * pitch;
 
   // no_padding_h_end, no_padding_w_end --> w_cropped+wstart, same for height
   int out_location = (blockIdx.z * pitch) + (out_pixel_h * width) + out_pixel_w;
