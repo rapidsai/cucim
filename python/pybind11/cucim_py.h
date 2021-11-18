@@ -56,21 +56,21 @@ void set_plugin_root(std::string path);
 template<typename PT, typename T>
 pybind11::tuple vector2pytuple(const std::vector<T>& vec);
 
-std::shared_ptr<cucim::cache::ImageCache> py_cache(const py::object& ctype, const py::kwargs& kwargs);
+// std::shared_ptr<cucim::cache::ImageCache> py_cache(const py::object& ctype, const py::kwargs& kwargs);
 
-json py_metadata(const CuImage& cuimg);
-py::dict py_resolutions(const CuImage& cuimg);
-py::object py_read_region(const CuImage& cuimg,
-                          std::vector<int64_t>&& location,
-                          std::vector<int64_t>&& size,
-                          int16_t level,
-                          const io::Device& device,
-                          const py::object& buf,
-                          const std::string& shm_name,
-                          const py::kwargs& kwargs);
-py::object py_associated_image(const CuImage& cuimg, const std::string& name, const io::Device& device);
+// json py_metadata(const CuImage& cuimg);
+// py::dict py_resolutions(const CuImage& cuimg);
+// py::object py_read_region(const CuImage& cuimg,
+//                           std::vector<int64_t>&& location,
+//                           std::vector<int64_t>&& size,
+//                           int16_t level,
+//                           const io::Device& device,
+//                           const py::object& buf,
+//                           const std::string& shm_name,
+//                           const py::kwargs& kwargs);
+// py::object py_associated_image(const CuImage& cuimg, const std::string& name, const io::Device& device);
 
-void _set_array_interface(const py::object& cuimg_obj);
+// void _set_array_interface(const py::object& cuimg_obj);
 } // namespace cucim
 
 #endif // PYCUCIM_CUIMAGE_PY_H

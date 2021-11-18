@@ -17,17 +17,18 @@
 #include "cucim_py.h"
 #include "cucim_pydoc.h"
 
+#include <cuda_runtime.h>
 #include <fmt/format.h>
 #include <fmt/ranges.h>
 #include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
-#include <cucim/cuimage.h>
+// #include <cucim/cuimage.h>
 
 #include "cache/cache_py.h"
-#include "filesystem/filesystem_py.h"
-#include "io/io_py.h"
+// #include "filesystem/filesystem_py.h"
+// #include "io/io_py.h"
 
 using namespace pybind11::literals;
 namespace py = pybind11;
@@ -35,12 +36,12 @@ namespace py = pybind11;
 namespace cucim
 {
 
-static const std::unordered_map<uint8_t, const char*> g_dldata_typecode{
-    { kDLInt, "DLInt" },
-    { kDLUInt, "DLUInt" },
-    { kDLFloat, "DLFloat" },
-    { kDLBfloat, "DLBfloat" },
-};
+// static const std::unordered_map<uint8_t, const char*> g_dldata_typecode{
+//     { kDLInt, "DLInt" },
+//     { kDLUInt, "DLUInt" },
+//     { kDLFloat, "DLFloat" },
+//     { kDLBfloat, "DLBfloat" },
+// };
 
 PYBIND11_MODULE(_cucim, m)
 {
@@ -179,17 +180,24 @@ PYBIND11_MODULE(_cucim, m)
 
     // // We can use `"cpu"` instead of `Device("cpu")`
     // py::implicitly_convertible<const char*, io::Device>();
+
+    m.def("haha", [](const std::string& s) {
+        std::cout << "haha" << std::endl;
+        void* cuda_mem;
+        cudaMalloc(&cuda_mem, 10);
+        cudaFree(cuda_mem);
+    });
 }
 
-std::string get_plugin_root()
-{
-    return CuImage::get_framework()->get_plugin_root();
-}
+// std::string get_plugin_root()
+// {
+//     return CuImage::get_framework()->get_plugin_root();
+// }
 
-void set_plugin_root(std::string path)
-{
-    CuImage::get_framework()->set_plugin_root(path.c_str());
-}
+// void set_plugin_root(std::string path)
+// {
+//     CuImage::get_framework()->set_plugin_root(path.c_str());
+// }
 
 template <typename PT, typename T>
 pybind11::tuple vector2pytuple(const std::vector<T>& vec)
@@ -210,267 +218,269 @@ pybind11::tuple vector2pytuple(const std::vector<T>& vec)
     return result;
 }
 
-std::shared_ptr<cucim::cache::ImageCache> py_cache(const py::object& type, const py::kwargs& kwargs)
-{
-    if (py::isinstance<py::str>(type))
-    {
-        std::string ctype = std::string(py::cast<py::str>(type));
+// std::shared_ptr<cucim::cache::ImageCache> py_cache(const py::object& type, const py::kwargs& kwargs)
+// {
+//     if (py::isinstance<py::str>(type))
+//     {
+//         std::string ctype = std::string(py::cast<py::str>(type));
 
-        cucim::cache::CacheType cache_type = cucim::cache::lookup_cache_type(ctype);
-        // Copy default cache config to local
-        cucim::cache::ImageCacheConfig config = cucim::CuImage::get_config()->cache();
-        config.type = cache_type;
+//         cucim::cache::CacheType cache_type = cucim::cache::lookup_cache_type(ctype);
+//         // Copy default cache config to local
+//         cucim::cache::ImageCacheConfig config = cucim::CuImage::get_config()->cache();
+//         config.type = cache_type;
 
-        if (kwargs.contains("memory_capacity"))
-        {
-            config.memory_capacity = py::cast<uint32_t>(kwargs["memory_capacity"]);
-        }
-        if (kwargs.contains("capacity"))
-        {
-            config.capacity = py::cast<uint32_t>(kwargs["capacity"]);
-        }
-        else
-        {
-            // Update capacity depends on memory_capacity.
-            config.capacity = cucim::cache::calc_default_cache_capacity(cucim::cache::kOneMiB * config.memory_capacity);
-        }
-        if (kwargs.contains("mutex_pool_capacity"))
-        {
-            config.mutex_pool_capacity = py::cast<uint32_t>(kwargs["mutex_pool_capacity"]);
-        }
-        if (kwargs.contains("list_padding"))
-        {
-            config.list_padding = py::cast<uint32_t>(kwargs["list_padding"]);
-        }
-        if (kwargs.contains("extra_shared_memory_size"))
-        {
-            config.extra_shared_memory_size = py::cast<uint32_t>(kwargs["extra_shared_memory_size"]);
-        }
-        if (kwargs.contains("record_stat"))
-        {
-            config.record_stat = py::cast<bool>(kwargs["record_stat"]);
-        }
-        return CuImage::cache(config);
-    }
-    else if (type.is_none())
-    {
-        return CuImage::cache();
-    }
+//         if (kwargs.contains("memory_capacity"))
+//         {
+//             config.memory_capacity = py::cast<uint32_t>(kwargs["memory_capacity"]);
+//         }
+//         if (kwargs.contains("capacity"))
+//         {
+//             config.capacity = py::cast<uint32_t>(kwargs["capacity"]);
+//         }
+//         else
+//         {
+//             // Update capacity depends on memory_capacity.
+//             config.capacity = cucim::cache::calc_default_cache_capacity(cucim::cache::kOneMiB *
+//             config.memory_capacity);
+//         }
+//         if (kwargs.contains("mutex_pool_capacity"))
+//         {
+//             config.mutex_pool_capacity = py::cast<uint32_t>(kwargs["mutex_pool_capacity"]);
+//         }
+//         if (kwargs.contains("list_padding"))
+//         {
+//             config.list_padding = py::cast<uint32_t>(kwargs["list_padding"]);
+//         }
+//         if (kwargs.contains("extra_shared_memory_size"))
+//         {
+//             config.extra_shared_memory_size = py::cast<uint32_t>(kwargs["extra_shared_memory_size"]);
+//         }
+//         if (kwargs.contains("record_stat"))
+//         {
+//             config.record_stat = py::cast<bool>(kwargs["record_stat"]);
+//         }
+//         return CuImage::cache(config);
+//     }
+//     else if (type.is_none())
+//     {
+//         return CuImage::cache();
+//     }
 
-    throw std::invalid_argument(
-        fmt::format("The first argument should be one of ['nocache', 'per_process', 'shared_memory']."));
-}
+//     throw std::invalid_argument(
+//         fmt::format("The first argument should be one of ['nocache', 'per_process', 'shared_memory']."));
+// }
 
-json py_metadata(const CuImage& cuimg)
-{
-    auto metadata = cuimg.metadata();
-    auto json_obj = json::parse(metadata.empty() ? "{}" : metadata);
+// json py_metadata(const CuImage& cuimg)
+// {
+//     auto metadata = cuimg.metadata();
+//     auto json_obj = json::parse(metadata.empty() ? "{}" : metadata);
 
-    // Append basic metadata for the image
-    auto item_iter = json_obj.emplace("cucim", json::object());
-    json& cucim_metadata = *(item_iter.first);
+//     // Append basic metadata for the image
+//     auto item_iter = json_obj.emplace("cucim", json::object());
+//     json& cucim_metadata = *(item_iter.first);
 
-    cucim_metadata.emplace("path", cuimg.path());
-    cucim_metadata.emplace("ndim", cuimg.ndim());
-    cucim_metadata.emplace("dims", cuimg.dims());
-    cucim_metadata.emplace("shape", cuimg.shape());
-    {
-        const auto& dtype = cuimg.dtype();
-        cucim_metadata.emplace(
-            "dtype", json::object({ { "code", dtype.code }, { "bits", dtype.bits }, { "lanes", dtype.lanes } }));
-    }
-    cucim_metadata.emplace("channel_names", cuimg.channel_names());
-    cucim_metadata.emplace("spacing", cuimg.spacing());
-    cucim_metadata.emplace("spacing_units", cuimg.spacing_units());
-    cucim_metadata.emplace("origin", cuimg.origin());
-    cucim_metadata.emplace("direction", cuimg.direction());
-    cucim_metadata.emplace("coord_sys", cuimg.coord_sys());
-    {
-        const auto& resolutions = cuimg.resolutions();
-        auto resolutions_iter = cucim_metadata.emplace("resolutions", json::object());
-        json& resolutions_metadata = *(resolutions_iter.first);
-        auto level_count = resolutions.level_count();
-        resolutions_metadata.emplace("level_count", level_count);
-        std::vector<std::vector<int64_t>> level_dimensions_vec;
-        level_dimensions_vec.reserve(level_count);
-        for (int level = 0; level < level_count; ++level)
-        {
-            level_dimensions_vec.emplace_back(resolutions.level_dimension(level));
-        }
-        resolutions_metadata.emplace("level_dimensions", level_dimensions_vec);
-        resolutions_metadata.emplace("level_downsamples", resolutions.level_downsamples());
-        std::vector<std::vector<uint32_t>> level_tile_sizes_vec;
-        level_tile_sizes_vec.reserve(level_count);
-        for (int level = 0; level < level_count; ++level)
-        {
-            level_tile_sizes_vec.emplace_back(resolutions.level_tile_size(level));
-        }
-        resolutions_metadata.emplace("level_tile_sizes", level_tile_sizes_vec);
-    }
-    cucim_metadata.emplace("associated_images", cuimg.associated_images());
-    return json_obj;
-}
+//     cucim_metadata.emplace("path", cuimg.path());
+//     cucim_metadata.emplace("ndim", cuimg.ndim());
+//     cucim_metadata.emplace("dims", cuimg.dims());
+//     cucim_metadata.emplace("shape", cuimg.shape());
+//     {
+//         const auto& dtype = cuimg.dtype();
+//         cucim_metadata.emplace(
+//             "dtype", json::object({ { "code", dtype.code }, { "bits", dtype.bits }, { "lanes", dtype.lanes } }));
+//     }
+//     cucim_metadata.emplace("channel_names", cuimg.channel_names());
+//     cucim_metadata.emplace("spacing", cuimg.spacing());
+//     cucim_metadata.emplace("spacing_units", cuimg.spacing_units());
+//     cucim_metadata.emplace("origin", cuimg.origin());
+//     cucim_metadata.emplace("direction", cuimg.direction());
+//     cucim_metadata.emplace("coord_sys", cuimg.coord_sys());
+//     {
+//         const auto& resolutions = cuimg.resolutions();
+//         auto resolutions_iter = cucim_metadata.emplace("resolutions", json::object());
+//         json& resolutions_metadata = *(resolutions_iter.first);
+//         auto level_count = resolutions.level_count();
+//         resolutions_metadata.emplace("level_count", level_count);
+//         std::vector<std::vector<int64_t>> level_dimensions_vec;
+//         level_dimensions_vec.reserve(level_count);
+//         for (int level = 0; level < level_count; ++level)
+//         {
+//             level_dimensions_vec.emplace_back(resolutions.level_dimension(level));
+//         }
+//         resolutions_metadata.emplace("level_dimensions", level_dimensions_vec);
+//         resolutions_metadata.emplace("level_downsamples", resolutions.level_downsamples());
+//         std::vector<std::vector<uint32_t>> level_tile_sizes_vec;
+//         level_tile_sizes_vec.reserve(level_count);
+//         for (int level = 0; level < level_count; ++level)
+//         {
+//             level_tile_sizes_vec.emplace_back(resolutions.level_tile_size(level));
+//         }
+//         resolutions_metadata.emplace("level_tile_sizes", level_tile_sizes_vec);
+//     }
+//     cucim_metadata.emplace("associated_images", cuimg.associated_images());
+//     return json_obj;
+// }
 
-py::dict py_resolutions(const CuImage& cuimg)
-{
-    const auto& resolutions = cuimg.resolutions();
-    auto level_count = resolutions.level_count();
-    if (resolutions.level_count() == 0)
-    {
-        return py::dict{
-            "level_count"_a = pybind11::int_(0), //
-            "level_dimensions"_a = pybind11::tuple(), //
-            "level_downsamples"_a = pybind11::tuple(), //
-            "level_tile_sizes"_a = pybind11::tuple() //
-        };
-    }
+// py::dict py_resolutions(const CuImage& cuimg)
+// {
+//     const auto& resolutions = cuimg.resolutions();
+//     auto level_count = resolutions.level_count();
+//     if (resolutions.level_count() == 0)
+//     {
+//         return py::dict{
+//             "level_count"_a = pybind11::int_(0), //
+//             "level_dimensions"_a = pybind11::tuple(), //
+//             "level_downsamples"_a = pybind11::tuple(), //
+//             "level_tile_sizes"_a = pybind11::tuple() //
+//         };
+//     }
 
-    std::vector<py::tuple> level_dimensions_vec;
-    level_dimensions_vec.reserve(level_count);
-    std::vector<py::tuple> level_tile_sizes_vec;
-    level_tile_sizes_vec.reserve(level_count);
-    for (int level = 0; level < level_count; ++level)
-    {
-        level_dimensions_vec.emplace_back(vector2pytuple<pybind11::int_>(resolutions.level_dimension(level)));
-        level_tile_sizes_vec.emplace_back(vector2pytuple<pybind11::int_>(resolutions.level_tile_size(level)));
-    }
+//     std::vector<py::tuple> level_dimensions_vec;
+//     level_dimensions_vec.reserve(level_count);
+//     std::vector<py::tuple> level_tile_sizes_vec;
+//     level_tile_sizes_vec.reserve(level_count);
+//     for (int level = 0; level < level_count; ++level)
+//     {
+//         level_dimensions_vec.emplace_back(vector2pytuple<pybind11::int_>(resolutions.level_dimension(level)));
+//         level_tile_sizes_vec.emplace_back(vector2pytuple<pybind11::int_>(resolutions.level_tile_size(level)));
+//     }
 
-    py::tuple level_dimensions = vector2pytuple<const pybind11::tuple&>(level_dimensions_vec);
-    py::tuple level_downsamples = vector2pytuple<pybind11::float_>(resolutions.level_downsamples());
-    py::tuple level_tile_sizes = vector2pytuple<const pybind11::tuple&>(level_tile_sizes_vec);
+//     py::tuple level_dimensions = vector2pytuple<const pybind11::tuple&>(level_dimensions_vec);
+//     py::tuple level_downsamples = vector2pytuple<pybind11::float_>(resolutions.level_downsamples());
+//     py::tuple level_tile_sizes = vector2pytuple<const pybind11::tuple&>(level_tile_sizes_vec);
 
-    return py::dict{
-        "level_count"_a = pybind11::int_(level_count), //
-        "level_dimensions"_a = level_dimensions, //
-        "level_downsamples"_a = level_downsamples, //
-        "level_tile_sizes"_a = level_tile_sizes //
-    };
-}
+//     return py::dict{
+//         "level_count"_a = pybind11::int_(level_count), //
+//         "level_dimensions"_a = level_dimensions, //
+//         "level_downsamples"_a = level_downsamples, //
+//         "level_tile_sizes"_a = level_tile_sizes //
+//     };
+// }
 
 
-py::object py_read_region(const CuImage& cuimg,
-                          std::vector<int64_t>&& location,
-                          std::vector<int64_t>&& size,
-                          int16_t level,
-                          const io::Device& device,
-                          const py::object& buf,
-                          const std::string& shm_name,
-                          const py::kwargs& kwargs)
-{
-    cucim::DimIndices indices;
+// py::object py_read_region(const CuImage& cuimg,
+//                           std::vector<int64_t>&& location,
+//                           std::vector<int64_t>&& size,
+//                           int16_t level,
+//                           const io::Device& device,
+//                           const py::object& buf,
+//                           const std::string& shm_name,
+//                           const py::kwargs& kwargs)
+// {
+//     cucim::DimIndices indices;
 
-    if (kwargs)
-    {
-        std::vector<std::pair<char, int64_t>> indices_args;
+//     if (kwargs)
+//     {
+//         std::vector<std::pair<char, int64_t>> indices_args;
 
-        {
-            py::gil_scoped_acquire scope_guard;
+//         {
+//             py::gil_scoped_acquire scope_guard;
 
-            for (auto item : kwargs)
-            {
-                auto key = std::string(py::str(item.first));
-                auto value = py::cast<int>(item.second);
+//             for (auto item : kwargs)
+//             {
+//                 auto key = std::string(py::str(item.first));
+//                 auto value = py::cast<int>(item.second);
 
-                if (key.size() != 1)
-                {
-                    throw std::invalid_argument(
-                        fmt::format("Argument name for Dimension should be a single character but '{}' is used.", key));
-                }
-                char key_char = key[0] & ~32;
-                if (key_char < 'A' || key_char > 'Z')
-                {
-                    throw std::invalid_argument(
-                        fmt::format("Dimension character should be an alphabet but '{}' is used.", key));
-                }
+//                 if (key.size() != 1)
+//                 {
+//                     throw std::invalid_argument(
+//                         fmt::format("Argument name for Dimension should be a single character but '{}' is used.",
+//                         key));
+//                 }
+//                 char key_char = key[0] & ~32;
+//                 if (key_char < 'A' || key_char > 'Z')
+//                 {
+//                     throw std::invalid_argument(
+//                         fmt::format("Dimension character should be an alphabet but '{}' is used.", key));
+//                 }
 
-                indices_args.emplace_back(std::make_pair(key_char, value));
+//                 indices_args.emplace_back(std::make_pair(key_char, value));
 
-                //            fmt::print("k:{} v:{}\n", std::string(py::str(item.first)),
-                //            std::string(py::str(item.second)));
-            }
-        }
-        indices = cucim::DimIndices(indices_args);
-    }
-    else
-    {
-        indices = cucim::DimIndices{};
-    }
+//                 //            fmt::print("k:{} v:{}\n", std::string(py::str(item.first)),
+//                 //            std::string(py::str(item.second)));
+//             }
+//         }
+//         indices = cucim::DimIndices(indices_args);
+//     }
+//     else
+//     {
+//         indices = cucim::DimIndices{};
+//     }
 
-    auto region_ptr = std::make_shared<cucim::CuImage>(
-        cuimg.read_region(std::move(location), std::move(size), level, indices, device, nullptr, ""));
+//     auto region_ptr = std::make_shared<cucim::CuImage>(
+//         cuimg.read_region(std::move(location), std::move(size), level, indices, device, nullptr, ""));
 
-    {
-        py::gil_scoped_acquire scope_guard;
+//     {
+//         py::gil_scoped_acquire scope_guard;
 
-        py::object region = py::cast(region_ptr);
+//         py::object region = py::cast(region_ptr);
 
-        // Add `__array_interace__` or `__cuda_array_interface__` in runtime.
-        _set_array_interface(region);
+//         // Add `__array_interace__` or `__cuda_array_interface__` in runtime.
+//         _set_array_interface(region);
 
-        return region;
-    }
-}
+//         return region;
+//     }
+// }
 
-py::object py_associated_image(const CuImage& cuimg, const std::string& name, const io::Device& device)
-{
-    auto image_ptr = std::make_shared<cucim::CuImage>(cuimg.associated_image(name, device));
+// py::object py_associated_image(const CuImage& cuimg, const std::string& name, const io::Device& device)
+// {
+//     auto image_ptr = std::make_shared<cucim::CuImage>(cuimg.associated_image(name, device));
 
-    {
-        py::gil_scoped_acquire scope_guard;
+//     {
+//         py::gil_scoped_acquire scope_guard;
 
-        py::object image = py::cast(image_ptr);
+//         py::object image = py::cast(image_ptr);
 
-        // Add `__array_interace__` or `__cuda_array_interface__` in runtime.
-        _set_array_interface(image);
+//         // Add `__array_interace__` or `__cuda_array_interface__` in runtime.
+//         _set_array_interface(image);
 
-        return image;
-    }
-}
+//         return image;
+//     }
+// }
 
-void _set_array_interface(const py::object& cuimg_obj)
-{
-    const auto& cuimg = cuimg_obj.cast<const CuImage&>();
+// void _set_array_interface(const py::object& cuimg_obj)
+// {
+//     const auto& cuimg = cuimg_obj.cast<const CuImage&>();
 
-    // TODO: using __array_struct__, access to array interface could be faster
-    //       (https://numpy.org/doc/stable/reference/arrays.interface.html#c-struct-access)
-    // TODO: check the performance difference between python int vs python long later.
-    memory::DLTContainer container = cuimg.container();
+//     // TODO: using __array_struct__, access to array interface could be faster
+//     //       (https://numpy.org/doc/stable/reference/arrays.interface.html#c-struct-access)
+//     // TODO: check the performance difference between python int vs python long later.
+//     memory::DLTContainer container = cuimg.container();
 
-    const DLTensor* tensor = static_cast<DLTensor*>(container);
-    if (!tensor)
-    {
-        return;
-    }
+//     const DLTensor* tensor = static_cast<DLTensor*>(container);
+//     if (!tensor)
+//     {
+//         return;
+//     }
 
-    const char* type_str = container.numpy_dtype();
-    py::str typestr = py::str(type_str);
+//     const char* type_str = container.numpy_dtype();
+//     py::str typestr = py::str(type_str);
 
-    py::tuple data = pybind11::make_tuple(py::int_(reinterpret_cast<uint64_t>(tensor->data)), py::bool_(false));
-    py::list descr;
-    descr.append(py::make_tuple(""_s, typestr));
+//     py::tuple data = pybind11::make_tuple(py::int_(reinterpret_cast<uint64_t>(tensor->data)), py::bool_(false));
+//     py::list descr;
+//     descr.append(py::make_tuple(""_s, typestr));
 
-    py::tuple shape = vector2pytuple<pybind11::int_>(cuimg.shape());
+//     py::tuple shape = vector2pytuple<pybind11::int_>(cuimg.shape());
 
-    // TODO: depending on container's memory type, expose either array_interface or cuda_array_interface
-    switch (tensor->ctx.device_type)
-    {
-    case kDLCPU: {
-        // Reference: https://numpy.org/doc/stable/reference/arrays.interface.html
-        cuimg_obj.attr("__array_interface__") =
-            py::dict{ "data"_a = data,       "strides"_a = py::none(), "descr"_a = descr,
-                      "typestr"_a = typestr, "shape"_a = shape,        "version"_a = py::int_(3) };
-    }
-    break;
-    case kDLGPU: {
-        // Reference: https://numba.readthedocs.io/en/stable/cuda/cuda_array_interface.html
-        cuimg_obj.attr("__cuda_array_interface__") =
-            py::dict{ "data"_a = data,   "strides"_a = py::none(),  "descr"_a = descr,     "typestr"_a = typestr,
-                      "shape"_a = shape, "version"_a = py::int_(3), "mask"_a = py::none(), "stream"_a = 1 };
-    }
-    break;
-    default:
-        break;
-    }
-}
+//     // TODO: depending on container's memory type, expose either array_interface or cuda_array_interface
+//     switch (tensor->ctx.device_type)
+//     {
+//     case kDLCPU: {
+//         // Reference: https://numpy.org/doc/stable/reference/arrays.interface.html
+//         cuimg_obj.attr("__array_interface__") =
+//             py::dict{ "data"_a = data,       "strides"_a = py::none(), "descr"_a = descr,
+//                       "typestr"_a = typestr, "shape"_a = shape,        "version"_a = py::int_(3) };
+//     }
+//     break;
+//     case kDLGPU: {
+//         // Reference: https://numba.readthedocs.io/en/stable/cuda/cuda_array_interface.html
+//         cuimg_obj.attr("__cuda_array_interface__") =
+//             py::dict{ "data"_a = data,   "strides"_a = py::none(),  "descr"_a = descr,     "typestr"_a = typestr,
+//                       "shape"_a = shape, "version"_a = py::int_(3), "mask"_a = py::none(), "stream"_a = 1 };
+//     }
+//     break;
+//     default:
+//         break;
+//     }
+// }
 
 } // namespace cucim

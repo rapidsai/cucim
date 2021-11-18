@@ -27,7 +27,7 @@ file(STRINGS ${CMAKE_CURRENT_LIST_DIR}/../VERSION VERSION)
 
 # Append local cmake module path
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake/modules")
-project(cucim VERSION ${VERSION} DESCRIPTION "cucim" LANGUAGES CXX)
+project(cucim VERSION ${VERSION} DESCRIPTION "cucim" LANGUAGES CXX CUDA)
 
 ################################################################################
 # Include utilities
@@ -62,6 +62,12 @@ endif ()
 find_package(CUDAToolkit) # cucim library depends on CUDA::cudart
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED YES)
+
+set(CUDA_STANDARD 17)
+set(CUDA_STANDARD_REQUIRED YES)
+set(CUDA_EXTENSIONS NO)
+set(CUDA_SEPARABLE_COMPILATION ON)
+set(CUDA_RUNTIME_LIBRARY Shared)
 
 # Disable visibility to not expose unnecessary symbols
 set(CMAKE_CXX_VISIBILITY_PRESET hidden)
@@ -143,30 +149,30 @@ pybind11_add_module(cucim
         pybind11/cucim_py.h
         pybind11/cucim_pydoc.h
         pybind11/cucim_py.cpp
-        pybind11/cache/cache_py.h
-        pybind11/cache/cache_pydoc.h
-        pybind11/cache/cache_py.cpp
-        pybind11/cache/image_cache_pydoc.h
-        pybind11/cache/image_cache_py.h
-        pybind11/cache/image_cache_py.cpp
-        pybind11/io/io_py.h
-        pybind11/io/io_pydoc.h
-        pybind11/io/io_py.cpp
-        pybind11/io/device_pydoc.h
-        pybind11/io/device_py.cpp
-        pybind11/filesystem/filesystem_py.h
-        pybind11/filesystem/filesystem_pydoc.h
-        pybind11/filesystem/filesystem_py.cpp
-        pybind11/filesystem/cufile_py.h
-        pybind11/filesystem/cufile_pydoc.h
-        pybind11/filesystem/cufile_py.cpp
-        pybind11/memory/memory_py.h
-        pybind11/memory/memory_pydoc.h
-        pybind11/memory/memory_py.cpp
+        # pybind11/cache/cache_py.h
+        # pybind11/cache/cache_pydoc.h
+        # pybind11/cache/cache_py.cpp
+        # pybind11/cache/image_cache_pydoc.h
+        # pybind11/cache/image_cache_py.h
+        # pybind11/cache/image_cache_py.cpp
+        # pybind11/io/io_py.h
+        # pybind11/io/io_pydoc.h
+        # pybind11/io/io_py.cpp
+        # pybind11/io/device_pydoc.h
+        # pybind11/io/device_py.cpp
+        # pybind11/filesystem/filesystem_py.h
+        # pybind11/filesystem/filesystem_pydoc.h
+        # pybind11/filesystem/filesystem_py.cpp
+        # pybind11/filesystem/cufile_py.h
+        # pybind11/filesystem/cufile_pydoc.h
+        # pybind11/filesystem/cufile_py.cpp
+        # pybind11/memory/memory_py.h
+        # pybind11/memory/memory_pydoc.h
+        # pybind11/memory/memory_py.cpp
         )
 target_link_libraries(cucim
     PRIVATE
-        cucim::cucim
+        # cucim::cucim
         deps::fmt
         deps::json
         deps::pybind11_json
@@ -177,6 +183,8 @@ set_target_properties(cucim PROPERTIES
         LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR}
         OUTPUT_NAME cucim/_cucim
         )
+
+set_source_files_properties(pybind11/cucim_py.cpp PROPERTIES LANGUAGE CUDA)
 
 #target_compile_options(cucim PRIVATE -g -O0)
 
