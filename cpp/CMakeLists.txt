@@ -155,10 +155,10 @@ target_link_libraries(${CUCIM_PACKAGE_NAME}
             # $<INSTALL_INTERFACE:cucim::rmm>
 ##            $<INSTALL_INTERFACE:cucim::gds>
         PRIVATE
-            # deps::abseil
+            deps::abseil
             deps::gds
-            # deps::libcuckoo
-            # deps::boost-header-only
+            deps::libcuckoo
+            deps::boost-header-only
             deps::json
         )
 
