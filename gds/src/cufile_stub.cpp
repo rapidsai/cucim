@@ -18,6 +18,8 @@
 #include "cucim/dynlib/helper.h"
 #include "cucim/util/platform.h"
 
+#include <cstdio>
+
 #define IMPORT_FUNCTION(handle, name) impl_##name = cucim::dynlib::get_library_symbol<t_##name>(handle, #name);
 
 typedef CUfileError_t (*t_cuFileHandleRegister)(CUfileHandle_t* fh, CUfileDescr_t* descr);
@@ -60,13 +62,17 @@ public:
 #endif
 
 #if !CUCIM_STATIC_GDS
+        fprintf(stderr, "##load()\n");
         if (handle_ == nullptr)
         {
+            fprintf(stderr, "##load(): handle_ == nullptr\n");
             handle_ = cucim::dynlib::load_library("libcufile.so");
             if (handle_ == nullptr)
             {
+                fprintf(stderr, "##load(): load_library == nullptr\n");
                 return;
             }
+            fprintf(stderr, "##load(): load_library != nullptr\n");
             IMPORT_FUNCTION(handle_, cuFileDriverOpen);
             IMPORT_FUNCTION(handle_, cuFileHandleRegister);
             IMPORT_FUNCTION(handle_, cuFileHandleDeregister);
@@ -91,8 +97,10 @@ public:
 #endif
 
 #if !CUCIM_STATIC_GDS
+        fprintf(stderr, "##unload()\n");
         if (handle_)
         {
+            fprintf(stderr, "##unload(): handle_ != nullptr\n");
             cucim::dynlib::unload_library(handle_);
             handle_ = nullptr;
 
@@ -111,10 +119,15 @@ public:
             impl_cuFileDriverSetMaxCacheSize = nullptr;
             impl_cuFileDriverSetMaxPinnedMemSize = nullptr;
         }
+        else
+        {
+            fprintf(stderr, "##unload(): handle_ == nullptr\n");
+        }
 #endif
     }
     ~CuFileStub()
     {
+        fprintf(stderr, "##Destructor CuFileStub for g_cufile_stub\n");
         // Note: unload() would be called explicitly by CuFileDriverInitializer to unload the shared library after calling
         // cuFileDriverClose() in CuFileDriverInitializer::~CuFileDriverInitializer()
 //        unload();
@@ -137,7 +150,9 @@ extern "C"
     }
     void close_cufile_stub()
     {
+        fprintf(stderr, "##close_cufile_stub() start: %p \n", (void*)&g_cufile_stub);
         g_cufile_stub.unload();
+        fprintf(stderr, "##close_cufile_stub() done\n");
     }
 
 #if !CUCIM_STATIC_GDS

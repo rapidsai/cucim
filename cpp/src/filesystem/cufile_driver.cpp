@@ -299,6 +299,7 @@ bool discard_page_cache(const char* file_path)
 
 CuFileDriverInitializer::CuFileDriverInitializer()
 {
+    fmt::print(stderr, "##CuFileDriverInitializer()\n");
     // Initialize libcufile library
     open_cufile_stub();
 
@@ -332,6 +333,7 @@ CuFileDriverInitializer::CuFileDriverInitializer()
 }
 CuFileDriverInitializer::~CuFileDriverInitializer()
 {
+    fmt::print(stderr, "##~CuFileDriverInitializer() for s_cufile_initializer: is_available_ = {}\n", is_available_);
     if (is_available_)
     {
         CUfileError_t status = cuFileDriverClose();
@@ -341,7 +343,7 @@ CuFileDriverInitializer::~CuFileDriverInitializer()
         }
         else
         {
-            // fmt::print(stderr, "CuFileDriver closed!\n");
+            fmt::print(stderr, "CuFileDriver closed!\n");
         }
         is_available_ = false;
     }
