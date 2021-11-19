@@ -155,11 +155,11 @@ pybind11_add_module(cucim
         # pybind11/cache/image_cache_pydoc.h
         # pybind11/cache/image_cache_py.h
         # pybind11/cache/image_cache_py.cpp
-        # pybind11/io/io_py.h
-        # pybind11/io/io_pydoc.h
-        # pybind11/io/io_py.cpp
-        # pybind11/io/device_pydoc.h
-        # pybind11/io/device_py.cpp
+        pybind11/io/io_py.h
+        pybind11/io/io_pydoc.h
+        pybind11/io/io_py.cpp
+        pybind11/io/device_pydoc.h
+        pybind11/io/device_py.cpp
         # pybind11/filesystem/filesystem_py.h
         # pybind11/filesystem/filesystem_pydoc.h
         # pybind11/filesystem/filesystem_py.cpp
@@ -172,7 +172,7 @@ pybind11_add_module(cucim
         )
 target_link_libraries(cucim
     PRIVATE
-        # cucim::cucim
+        cucim::cucim
         deps::fmt
         deps::json
         deps::pybind11_json

@@ -28,7 +28,7 @@
 
 #include "cache/cache_py.h"
 // #include "filesystem/filesystem_py.h"
-// #include "io/io_py.h"
+#include "io/io_py.h"
 
 using namespace pybind11::literals;
 namespace py = pybind11;
@@ -58,9 +58,9 @@ PYBIND11_MODULE(_cucim, m)
     //     m.def("_get_plugin_root", &get_plugin_root);
     //     m.def("_set_plugin_root", &set_plugin_root);
 
-    // // Submodule: io
-    // auto m_io = m.def_submodule("io");
-    // io::init_io(m_io);
+    // Submodule: io
+    auto m_io = m.def_submodule("io");
+    io::init_io(m_io);
 
     // // Submodule: filesystem
     // auto m_fs = m.def_submodule("filesystem");
