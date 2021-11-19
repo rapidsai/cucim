@@ -90,7 +90,7 @@ add_library(${CUCIM_PACKAGE_NAME}
         src/core/plugin_manager.h
         src/core/plugin_manager.cpp
         src/core/version.inl
-        src/filesystem/cufile_driver.cpp
+        # src/filesystem/cufile_driver.cpp
         src/filesystem/file_handle.cpp
         src/io/device.cpp
         src/io/device_type.cpp
@@ -101,7 +101,8 @@ add_library(${CUCIM_PACKAGE_NAME}
         # src/plugin/image_format.cpp
         # src/plugin/plugin_config.cpp
         # src/util/file.cpp
-        src/util/platform.cpp)
+        # src/util/platform.cpp
+        )
 
 # Compile options
 set_target_properties(${CUCIM_PACKAGE_NAME}
@@ -156,7 +157,7 @@ target_link_libraries(${CUCIM_PACKAGE_NAME}
 ##            $<INSTALL_INTERFACE:cucim::gds>
         PRIVATE
             deps::abseil
-            deps::gds
+            # deps::gds
             deps::libcuckoo
             deps::boost-header-only
             deps::json
