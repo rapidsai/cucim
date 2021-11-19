@@ -63,26 +63,26 @@ add_library(${CUCIM_PACKAGE_NAME}
         include/cucim/macros/defines.h
         include/cucim/memory/dlpack.h
         include/cucim/memory/memory_manager.h
-        include/cucim/plugin/image_format.h
-        include/cucim/plugin/plugin_config.h
+        # include/cucim/plugin/image_format.h
+        # include/cucim/plugin/plugin_config.h
         include/cucim/util/cuda.h
         include/cucim/util/file.h
         include/cucim/util/platform.h
         include/cucim/3rdparty/dlpack/dlpack.h
         include/cucim/3rdparty/dlpack/dlpackcpp.h
-        src/cuimage.cpp
-        src/cache/cache_type.cpp
-        src/cache/image_cache.cpp
-        src/cache/image_cache_config.cpp
-        src/cache/image_cache_empty.h
-        src/cache/image_cache_empty.cpp
-        src/cache/image_cache_manager.cpp
-        src/cache/image_cache_per_process.h
-        src/cache/image_cache_per_process.cpp
-        src/cache/image_cache_shared_memory.h
-        src/cache/image_cache_shared_memory.cpp
+        # src/cuimage.cpp
+        # src/cache/cache_type.cpp
+        # src/cache/image_cache.cpp
+        # src/cache/image_cache_config.cpp
+        # src/cache/image_cache_empty.h
+        # src/cache/image_cache_empty.cpp
+        # src/cache/image_cache_manager.cpp
+        # src/cache/image_cache_per_process.h
+        # src/cache/image_cache_per_process.cpp
+        # src/cache/image_cache_shared_memory.h
+        # src/cache/image_cache_shared_memory.cpp
         src/codec/base64.cpp
-        src/config/config.cpp
+        # src/config/config.cpp
         src/core/cucim_framework.h
         src/core/cucim_framework.cpp
         src/core/cucim_plugin.h
@@ -94,13 +94,13 @@ add_library(${CUCIM_PACKAGE_NAME}
         src/filesystem/file_handle.cpp
         src/io/device.cpp
         src/io/device_type.cpp
-        src/io/format/image_format.cpp
-        src/logger/logger.cpp
-        src/logger/timer.cpp
+        # src/io/format/image_format.cpp
+        # src/logger/logger.cpp
+        # src/logger/timer.cpp
         src/memory/memory_manager.cu
-        src/plugin/image_format.cpp
-        src/plugin/plugin_config.cpp
-        src/util/file.cpp
+        # src/plugin/image_format.cpp
+        # src/plugin/plugin_config.cpp
+        # src/util/file.cpp
         src/util/platform.cpp)
 
 # Compile options
