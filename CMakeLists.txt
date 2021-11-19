@@ -118,7 +118,7 @@ add_definitions(-D_GLIBCXX_USE_CXX11_ABI=0) # TODO: create two library, one with
 superbuild_depend(fmt)
 #superbuild_depend(boost)
 superbuild_depend(abseil)
-superbuild_depend(rmm) # this imports googletest internally
+# superbuild_depend(rmm) # this imports googletest internally
 #superbuild_depend(googletest)
 superbuild_depend(googlebenchmark)
 superbuild_depend(openslide)
@@ -138,8 +138,8 @@ set(CUCIM_PACKAGE_NAME cucim) # cucim
 ################################################################################
 add_subdirectory(cpp)
 add_subdirectory(gds)
-add_subdirectory(benchmarks)
-add_subdirectory(examples/cpp)
+# add_subdirectory(benchmarks)
+# add_subdirectory(examples/cpp)
 
 ################################################################################
 # Write CMakeLists.txt for C++ examples
@@ -158,7 +158,7 @@ set(INSTALL_TARGETS
 #        rmm
         fmt-header-only
 #        spdlog_header_only # required by rmm
-        cucim_benchmarks
+        # cucim_benchmarks
 #        cufile_stub
 #        cucim_tests
         )
