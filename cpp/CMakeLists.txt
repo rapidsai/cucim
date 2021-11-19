@@ -36,71 +36,71 @@ endif()
 # Add library: cucim
 ################################################################################
 add_library(${CUCIM_PACKAGE_NAME}
-        # src/core/framework.cpp
-        # include/cucim/cuimage.h
-        # include/cucim/cache/image_cache.h
-        # include/cucim/cache/image_cache_config.h
-        # include/cucim/cache/image_cache_manager.h
-        # include/cucim/codec/base64.h
-        # include/cucim/codec/hash_function.h
-        # include/cucim/codec/methods.h
-        # include/cucim/config/config.h
-        # include/cucim/core/framework.h
-        # include/cucim/core/plugin.h
-        # include/cucim/core/plugin_util.h
-        # include/cucim/core/interface.h
-        # include/cucim/core/version.h
-        # include/cucim/cpp20/find_if.h
-        # include/cucim/dynlib/helper.h
-        # include/cucim/filesystem/cufile_driver.h
-        # include/cucim/filesystem/file_handle.h
-        # include/cucim/filesystem/file_path.h
+        src/core/framework.cpp
+        include/cucim/cuimage.h
+        include/cucim/cache/image_cache.h
+        include/cucim/cache/image_cache_config.h
+        include/cucim/cache/image_cache_manager.h
+        include/cucim/codec/base64.h
+        include/cucim/codec/hash_function.h
+        include/cucim/codec/methods.h
+        include/cucim/config/config.h
+        include/cucim/core/framework.h
+        include/cucim/core/plugin.h
+        include/cucim/core/plugin_util.h
+        include/cucim/core/interface.h
+        include/cucim/core/version.h
+        include/cucim/cpp20/find_if.h
+        include/cucim/dynlib/helper.h
+        include/cucim/filesystem/cufile_driver.h
+        include/cucim/filesystem/file_handle.h
+        include/cucim/filesystem/file_path.h
         include/cucim/io/device.h
         include/cucim/io/device_type.h
         include/cucim/io/format/image_format.h
-        # include/cucim/logger/logger.h
-        # include/cucim/logger/timer.h
-        # include/cucim/macros/defines.h
-        # include/cucim/memory/dlpack.h
-        # include/cucim/memory/memory_manager.h
-        # include/cucim/plugin/image_format.h
-        # include/cucim/plugin/plugin_config.h
-        # include/cucim/util/cuda.h
-        # include/cucim/util/file.h
-        # include/cucim/util/platform.h
-        # include/cucim/3rdparty/dlpack/dlpack.h
-        # include/cucim/3rdparty/dlpack/dlpackcpp.h
-        # src/cuimage.cpp
-        # src/cache/cache_type.cpp
-        # src/cache/image_cache.cpp
-        # src/cache/image_cache_config.cpp
-        # src/cache/image_cache_empty.h
-        # src/cache/image_cache_empty.cpp
-        # src/cache/image_cache_manager.cpp
-        # src/cache/image_cache_per_process.h
-        # src/cache/image_cache_per_process.cpp
-        # src/cache/image_cache_shared_memory.h
-        # src/cache/image_cache_shared_memory.cpp
-        # src/codec/base64.cpp
-        # src/config/config.cpp
-        # src/core/cucim_framework.h
-        # src/core/cucim_framework.cpp
-        # src/core/cucim_plugin.h
-        # src/core/cucim_plugin.cpp
-        # src/core/plugin_manager.h
-        # src/core/plugin_manager.cpp
-        # src/core/version.inl
-        # src/filesystem/cufile_driver.cpp
-        # src/filesystem/file_handle.cpp
+        include/cucim/logger/logger.h
+        include/cucim/logger/timer.h
+        include/cucim/macros/defines.h
+        include/cucim/memory/dlpack.h
+        include/cucim/memory/memory_manager.h
+        include/cucim/plugin/image_format.h
+        include/cucim/plugin/plugin_config.h
+        include/cucim/util/cuda.h
+        include/cucim/util/file.h
+        include/cucim/util/platform.h
+        include/cucim/3rdparty/dlpack/dlpack.h
+        include/cucim/3rdparty/dlpack/dlpackcpp.h
+        src/cuimage.cpp
+        src/cache/cache_type.cpp
+        src/cache/image_cache.cpp
+        src/cache/image_cache_config.cpp
+        src/cache/image_cache_empty.h
+        src/cache/image_cache_empty.cpp
+        src/cache/image_cache_manager.cpp
+        src/cache/image_cache_per_process.h
+        src/cache/image_cache_per_process.cpp
+        src/cache/image_cache_shared_memory.h
+        src/cache/image_cache_shared_memory.cpp
+        src/codec/base64.cpp
+        src/config/config.cpp
+        src/core/cucim_framework.h
+        src/core/cucim_framework.cpp
+        src/core/cucim_plugin.h
+        src/core/cucim_plugin.cpp
+        src/core/plugin_manager.h
+        src/core/plugin_manager.cpp
+        src/core/version.inl
+        src/filesystem/cufile_driver.cpp
+        src/filesystem/file_handle.cpp
         src/io/device.cpp
         src/io/device_type.cpp
-        # src/io/format/image_format.cpp
-        # src/logger/logger.cpp
-        # src/logger/timer.cpp
-        # src/memory/memory_manager.cu
-        # src/plugin/image_format.cpp
-        # src/plugin/plugin_config.cpp
-        # src/util/file.cpp
+        src/io/format/image_format.cpp
+        src/logger/logger.cpp
+        src/logger/timer.cpp
+        src/memory/memory_manager.cu
+        src/plugin/image_format.cpp
+        src/plugin/plugin_config.cpp
+        src/util/file.cpp
         src/util/platform.cpp)
 
 # Compile options
