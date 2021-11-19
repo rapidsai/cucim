@@ -101,7 +101,7 @@ public:
         if (handle_)
         {
             fprintf(stderr, "##unload(): handle_ != nullptr\n");
-            cucim::dynlib::unload_library(handle_);
+            // cucim::dynlib::unload_library(handle_);
             handle_ = nullptr;
 
             impl_cuFileDriverOpen = nullptr;
