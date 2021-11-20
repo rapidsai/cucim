@@ -93,7 +93,12 @@ public:
 #if !CUCIM_STATIC_GDS
         if (handle_)
         {
-            cucim::dynlib::unload_library(handle_);
+            // Do not unload the cufile (GDS) library as libcufile registers a cleanup function with atexit() and
+            // unloading the library will cause a segfault (calling the cleanup function that doesn't exist anymore).
+            // Just leave the library loaded.
+            // See https://github.com/rapidsai/cucim/pull/153
+
+            // cucim::dynlib::unload_library(handle_);
             handle_ = nullptr;
 
             impl_cuFileDriverOpen = nullptr;
