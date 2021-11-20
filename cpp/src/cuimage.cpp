@@ -135,23 +135,23 @@ DetectedFormat detect_format(filesystem::Path path)
 Framework* CuImage::framework_ = cucim::acquire_framework("cucim");
 std::unique_ptr<config::Config> CuImage::config_ = std::make_unique<config::Config>();
 std::unique_ptr<cache::ImageCacheManager> CuImage::cache_manager_ = std::make_unique<cache::ImageCacheManager>();
+std::unique_ptr<plugin::ImageFormat> CuImage::image_format_plugins_ = std::make_unique<plugin::ImageFormat>();
 
 
 CuImage::CuImage(const filesystem::Path& path)
 {
     //    printf("[cuCIM] CuImage::CuImage(filesystem::Path path)\n");
     ensure_init();
-    (void)path;
+    image_format_ = image_format_plugins_->detect_image_format(path);
 
     // TODO: need to detect available format for the file path
-    file_handle_ = image_formats_->formats[0].image_parser.open(path.c_str());
+    file_handle_ = image_format_->image_parser.open(path.c_str());
     //    printf("[GB] file_handle: %s\n", file_handle_.path);
     //    fmt::print("[GB] CuImage path char: '{}'\n", file_handle_.path[0]);
 
-
     io::format::ImageMetadata& image_metadata = *(new io::format::ImageMetadata{});
     image_metadata_ = &image_metadata.desc();
-    is_loaded_ = image_formats_->formats[0].image_parser.parse(&file_handle_, image_metadata_);
+    is_loaded_ = image_format_->image_parser.parse(&file_handle_, image_metadata_);
     dim_indices_ = DimIndices(image_metadata_->dims);
 
     auto& associated_image_info = image_metadata_->associated_image_info;
@@ -183,7 +183,7 @@ CuImage::CuImage(CuImage&& cuimg) : std::enable_shared_from_this<CuImage>()
     // printf("[cuCIM] CuImage::CuImage(CuImage&& cuimg) %s\n", cuimg.file_handle_.path);
     (void)cuimg;
     std::swap(file_handle_, cuimg.file_handle_);
-    std::swap(image_formats_, cuimg.image_formats_);
+    std::swap(image_format_, cuimg.image_format_);
     std::swap(image_metadata_, cuimg.image_metadata_);
     std::swap(image_data_, cuimg.image_data_);
     std::swap(is_loaded_, cuimg.is_loaded_);
@@ -201,7 +201,7 @@ CuImage::CuImage(const CuImage* cuimg,
     //        cucim::io::format::ImageDataDesc* image_data)\n");
 
     //    file_handle_ = cuimg->file_handle_; ==> Don't do this. it will cause a double free.
-    image_formats_ = cuimg->image_formats_;
+    image_format_ = cuimg->image_format_;
     image_metadata_ = image_metadata;
     image_data_ = image_data;
     is_loaded_ = true;
@@ -230,7 +230,7 @@ CuImage::~CuImage()
 {
     //    printf("[cuCIM] CuImage::~CuImage()\n");
     close();
-    image_formats_ = nullptr; // memory release is handled by the framework
+    image_format_ = nullptr; // memory release is handled by the framework
     if (image_metadata_)
     {
         // Memory for json_data needs to be manually released if image_metadata_->json_data is not ""
@@ -616,7 +616,7 @@ CuImage CuImage::read_region(std::vector<int64_t>&& location,
             {
                 throw std::runtime_error("[Error] The image file is closed!");
             }
-            if (!image_formats_->formats[0].image_reader.read(
+            if (!image_format_->image_reader.read(
                     &file_handle_, image_metadata_, &request, image_data, nullptr /*out_metadata*/))
             {
                 cucim_free(image_data);
@@ -796,7 +796,7 @@ CuImage CuImage::associated_image(const std::string& name, const io::Device& dev
 
         io::format::ImageMetadata& out_metadata = *(new io::format::ImageMetadata{});
 
-        if (!image_formats_->formats[0].image_reader.read(
+        if (!image_format_->image_reader.read(
                 &file_handle_, image_metadata_, &request, out_image_data, &out_metadata.desc()))
         {
             cucim_free(out_image_data);
@@ -865,7 +865,7 @@ void CuImage::close()
 {
     if (file_handle_.client_data)
     {
-        image_formats_->formats[0].image_parser.close(&file_handle_);
+        image_format_->image_parser.close(&file_handle_);
     }
     file_handle_.cufile = nullptr;
     file_handle_.path = nullptr;
@@ -880,27 +880,34 @@ void CuImage::ensure_init()
     {
         CUCIM_ERROR("Framework is not initialized!");
     }
-    if (!image_formats_)
+    if (!(*image_format_plugins_))
     {
-        auto plugin_root = framework_->get_plugin_root();
-        // TODO: Here 'LINUX' path separator is used. Need to make it generalize once filesystem library is
-        // available.
-        std::string plugin_file_path =
-            (plugin_root && *plugin_root != 0) ?
-                fmt::format("{}/cucim.kit.cuslide@{}.{}.{}.so", plugin_root, XSTR(CUCIM_VERSION_MAJOR),
-                            XSTR(CUCIM_VERSION_MINOR), XSTR(CUCIM_VERSION_PATCH)) :
-                fmt::format("cucim.kit.cuslide@{}.{}.{}.so", XSTR(CUCIM_VERSION_MAJOR), XSTR(CUCIM_VERSION_MINOR),
-                            XSTR(CUCIM_VERSION_PATCH));
-        if (!cucim::util::file_exists(plugin_file_path.c_str()))
+        image_format_plugins_ = std::make_unique<cucim::plugin::ImageFormat>();
+
+        const std::vector<std::string>& plugin_names = get_config()->plugin().plugin_names;
+
+        const char* plugin_root = framework_->get_plugin_root();
+        for (auto& plugin_name : plugin_names)
         {
-            plugin_file_path = fmt::format("cucim.kit.cuslide@" XSTR(CUCIM_VERSION) ".so");
-        }
-        image_formats_ =
-            framework_->acquire_interface_from_library<cucim::io::format::IImageFormat>(plugin_file_path.c_str());
-        if (image_formats_ == nullptr)
-        {
-            throw std::runtime_error(
-                fmt::format("Dependent library 'cucim.kit.cuslide@" XSTR(CUCIM_VERSION) ".so' cannot be loaded!"));
+            // TODO: Here 'LINUX' path separator is used. Need to make it generalize once filesystem library is
+            // available.
+            std::string plugin_file_path = (plugin_root && *plugin_root != 0) ?
+                                               fmt::format("{}/{}", plugin_root, plugin_name) :
+                                               fmt::format("{}", plugin_name);
+            if (!cucim::util::file_exists(plugin_file_path.c_str()))
+            {
+                plugin_file_path = fmt::format("{}", plugin_name);
+            }
+
+            const auto& image_formats =
+                framework_->acquire_interface_from_library<cucim::io::format::IImageFormat>(plugin_file_path.c_str());
+
+            image_format_plugins_->add_interfaces(image_formats);
+
+            if (image_formats == nullptr)
+            {
+                throw std::runtime_error(fmt::format("Dependent library '{}' cannot be loaded!", plugin_file_path));
+            }
         }
     }
 }

@@ -1,6 +1,6 @@
 /*
  * Apache License, Version 2.0
- * Copyright 2020 NVIDIA Corporation
+ * Copyright 2020-2021 NVIDIA Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,7 +25,7 @@ struct AppConfig
     std::string test_folder;
     std::string test_file;
     std::string temp_folder = "/tmp";
-    std::string get_input_path(const char* default_value = "private/generic_tiff_000.tif") const
+    std::string get_input_path(const std::string default_value = "generated/tiff_stripe_4096x4096_256.tif") const
     {
         // If `test_file` is absolute path
         if (!test_folder.empty() && test_file.substr(0, 1) == "/")

@@ -110,6 +110,21 @@ SCENARIO("Verify read_region()", "[test_read_region.cpp]")
         //        }
         printf("\ncucim count: %d\n", hash);
         cucim_free(image_data.container.data);
+        if (image_data.container.shape)
+        {
+            cucim_free(image_data.container.shape);
+            image_data.container.shape = nullptr;
+        }
+        if (image_data.container.strides)
+        {
+            cucim_free(image_data.container.strides);
+            image_data.container.strides = nullptr;
+        }
+        if (image_data.shm_name)
+        {
+            cucim_free(image_data.shm_name);
+            image_data.shm_name = nullptr;
+        }
         image_format->formats[0].image_parser.close(&handle);
 
         auto end = std::chrono::high_resolution_clock::now();

@@ -100,6 +100,9 @@ public:
     friend class IFD;
 
 private:
+    void _populate_philips_tiff_metadata(uint16_t ifd_count, void* metadata, std::shared_ptr<IFD>& first_ifd);
+    void _populate_aperio_svs_metadata(uint16_t ifd_count, void* metadata, std::shared_ptr<IFD>& first_ifd);
+
     cucim::filesystem::Path file_path_;
     CuCIMFileHandle file_handle_{};
     ::TIFF* tiff_client_ = nullptr;

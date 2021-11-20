@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,6 +29,7 @@
 #include <cassert>
 #include <cstring>
 #include <fcntl.h>
+#include <filesystem>
 #include <memory>
 
 using json = nlohmann::json;
@@ -68,12 +69,17 @@ static const char* get_format_name()
     return "Generic TIFF";
 }
 
-static bool CUCIM_ABI checker_is_valid(const char* file_name, const char* buf) // TODO: need buffer size parameter
+static bool CUCIM_ABI checker_is_valid(const char* file_name, const char* buf, size_t size)
 {
-    // TODO implement this
-    (void)file_name;
     (void)buf;
-    return true;
+    (void)size;
+    auto file = std::filesystem::path(file_name);
+    auto extension = file.extension().string();
+    if (extension.compare(".tif") == 0 || extension.compare(".tiff") == 0 || extension.compare(".svs") == 0)
+    {
+        return true;
+    }
+    return false;
 }
 
 static CuCIMFileHandle CUCIM_ABI parser_open(const char* file_path)
@@ -94,42 +100,29 @@ static bool CUCIM_ABI parser_parse(CuCIMFileHandle* handle, cucim::io::format::I
 
     auto tif = static_cast<cuslide::tiff::TIFF*>(handle->client_data);
 
-    std::vector<size_t> main_ifd_list;
-
     size_t ifd_count = tif->ifd_count();
     size_t level_count = tif->level_count();
-    for (size_t i = 0; i < ifd_count; i++)
-    {
-        const std::shared_ptr<cuslide::tiff::IFD>& ifd = tif->ifd(i);
 
-        //        const char* char_ptr = ifd->model().c_str();
-        //        uint32_t width = ifd->width();
-        //        uint32_t height = ifd->height();
-        //        uint32_t bits_per_sample = ifd->bits_per_sample();
-        //        uint32_t samples_per_pixel = ifd->samples_per_pixel();
-        uint64_t subfile_type = ifd->subfile_type();
-        //        printf("image_description:\n%s\n", ifd->image_description().c_str());
-        //        printf("model=%s, width=%u, height=%u, model=%p bits_per_sample:%u, samples_per_pixel=%u, %lu \n",
-        //        char_ptr,
-        //               width, height, char_ptr, bits_per_sample, samples_per_pixel, subfile_type);
-        if (subfile_type == 0)
+    // If not Aperio SVS format (== Ordinary Pyramid TIFF image)
+    if (tif->ifd(0)->image_description().rfind("Aperio", 0) != 0)
+    {
+        std::vector<size_t> main_ifd_list;
+        for (size_t i = 0; i < ifd_count; i++)
         {
-            main_ifd_list.push_back(i);
+            const std::shared_ptr<cuslide::tiff::IFD>& ifd = tif->ifd(i);
+            uint64_t subfile_type = ifd->subfile_type();
+            if (subfile_type == 0)
+            {
+                main_ifd_list.push_back(i);
+            }
         }
-    }
 
-    // Assume that the image has only one main (high resolution) image.
-    if (main_ifd_list.size() != 1)
-    {
-        throw std::runtime_error(
-            fmt::format("This format has more than one image with Subfile Type 0 so cannot be loaded!"));
-    }
-
-    // Explicitly forbid loading SVS format (#17)
-    if (tif->ifd(0)->image_description().rfind("Aperio", 0) == 0)
-    {
-        throw std::runtime_error(
-            fmt::format("cuCIM doesn't support Aperio SVS for now (https://github.com/rapidsai/cucim/issues/17)."));
+        // Assume that the image has only one main (high resolution) image.
+        if (main_ifd_list.size() != 1)
+        {
+            throw std::runtime_error(
+                fmt::format("This format has more than one image with Subfile Type 0 so cannot be loaded!"));
+        }
     }
 
     //
@@ -277,7 +270,7 @@ static bool CUCIM_ABI writer_write(const CuCIMFileHandle* handle,
 
 void fill_interface(cucim::io::format::IImageFormat& iface)
 {
-    static cucim::io::format::ImageCheckerDesc image_checker = { 0, 80, checker_is_valid };
+    static cucim::io::format::ImageCheckerDesc image_checker = { 0, 0, checker_is_valid };
     static cucim::io::format::ImageParserDesc image_parser = { parser_open, parser_parse, parser_close };
 
     static cucim::io::format::ImageReaderDesc image_reader = { reader_read };

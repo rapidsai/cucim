@@ -64,8 +64,13 @@ if (NOT TARGET deps::libjpeg-turbo)
     cucim_restore_build_shared_libs()
 
     add_library(deps::libjpeg-turbo INTERFACE IMPORTED GLOBAL)
-
     target_link_libraries(deps::libjpeg-turbo INTERFACE turbojpeg-static)
+    target_include_directories(deps::libjpeg-turbo
+        INTERFACE
+            # turbojpeg.h is not included in 'turbojpeg-static' so manually include
+            ${deps-libjpeg-turbo_SOURCE_DIR}
+    )
+
     set(deps-libjpeg-turbo_SOURCE_DIR ${deps-libjpeg-turbo_SOURCE_DIR} CACHE INTERNAL "" FORCE)
     mark_as_advanced(deps-libjpeg-turbo_SOURCE_DIR)
     set(deps-libjpeg-turbo_BINARY_DIR ${deps-libjpeg-turbo_BINARY_DIR} CACHE INTERNAL "" FORCE)

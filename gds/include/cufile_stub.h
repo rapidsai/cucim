@@ -18,7 +18,17 @@
 
 #include "cufile.h"
 
-extern "C" void open_cufile_stub();
-extern "C" void close_cufile_stub();
+#include "cucim/dynlib/helper.h"
+
+class CuFileStub
+{
+public:
+    void load();
+    void unload();
+    ~CuFileStub();
+
+private:
+    cucim::dynlib::LibraryHandle handle_ = nullptr;
+};
 
 #endif // CUCIM_CUFILE_STUB_H
