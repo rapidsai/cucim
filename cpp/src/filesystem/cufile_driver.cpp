@@ -41,6 +41,7 @@ namespace cucim::filesystem
 {
 static constexpr unsigned int PAGE_SIZE = 4096;
 static constexpr uint64_t DEFAULT_MAX_CACHE_SIZE = 128 << 20; // 128MiB
+static CuFileStub g_cufile_stub;
 static CuFileDriverInitializer s_cufile_initializer;
 thread_local static CuFileDriverCache s_cufile_cache;
 Mutex CuFileDriver::driver_mutex_;
@@ -301,7 +302,7 @@ CuFileDriverInitializer::CuFileDriverInitializer()
 {
     fmt::print(stderr, "##CuFileDriverInitializer()\n");
     // Initialize libcufile library
-    open_cufile_stub();
+    g_cufile_stub.load();
 
     CUfileError_t status = cuFileDriverOpen();
     if (status.err == CU_FILE_SUCCESS)
@@ -349,7 +350,7 @@ CuFileDriverInitializer::~CuFileDriverInitializer()
     }
 
     // Close cufile stub
-    close_cufile_stub();
+    g_cufile_stub.unload();
 }
 
 CuFileDriverCache::CuFileDriverCache()

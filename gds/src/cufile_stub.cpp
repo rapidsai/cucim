@@ -52,11 +52,8 @@ static t_cuFileDriverSetMaxCacheSize impl_cuFileDriverSetMaxCacheSize = nullptr;
 static t_cuFileDriverSetMaxPinnedMemSize impl_cuFileDriverSetMaxPinnedMemSize = nullptr;
 
 
-class CuFileStub
+void CuFileStub::load()
 {
-public:
-    void load()
-    {
 #if !CUCIM_SUPPORT_GDS
         return;
 #endif
@@ -89,9 +86,9 @@ public:
             IMPORT_FUNCTION(handle_, cuFileDriverSetMaxPinnedMemSize);
         }
 #endif
-    }
-    void unload()
-    {
+}
+void CuFileStub::unload()
+{
 #if !CUCIM_SUPPORT_GDS
         return;
 #endif
@@ -124,34 +121,20 @@ public:
             fprintf(stderr, "##Unloading libcufile.so in unload(): other path\n");
         }
 #endif
-    }
-    ~CuFileStub()
-    {
-        fprintf(stderr, "##Destructor CuFileStub for g_cufile_stub\n");
-        // Note: unload() would be called explicitly by CuFileDriverInitializer to unload the shared library after
-        // calling cuFileDriverClose() in CuFileDriverInitializer::~CuFileDriverInitializer()
-        //        unload();
-    }
+}
 
-private:
-    cucim::dynlib::LibraryHandle handle_ = nullptr;
-};
-
-static CuFileStub g_cufile_stub;
+CuFileStub::~CuFileStub()
+{
+    fprintf(stderr, "##Destructor CuFileStub for g_cufile_stub\n");
+    // Note: unload() would be called explicitly by CuFileDriverInitializer to unload the shared library after
+    // calling cuFileDriverClose() in CuFileDriverInitializer::~CuFileDriverInitializer()
+    //        unload();
+}
 
 #if __cplusplus
 extern "C"
 {
 #endif
-
-    void open_cufile_stub()
-    {
-        g_cufile_stub.load();
-    }
-    void close_cufile_stub()
-    {
-        g_cufile_stub.unload();
-    }
 
 #if !CUCIM_STATIC_GDS
     CUfileError_t cuFileHandleRegister(CUfileHandle_t* fh, CUfileDescr_t* descr)
