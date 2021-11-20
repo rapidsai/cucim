@@ -406,15 +406,17 @@ void* CuFileDriverCache::host_cache()
 }
 CuFileDriverCache::~CuFileDriverCache()
 {
-
+    fmt::print(stderr, "##~CuFileDriverCache\n");
     if (device_cache_)
     {
         cudaError_t cuda_status;
+        fmt::print(stderr, "##  call cuFileBufDeregister()\n");
         CUfileError_t status = cuFileBufDeregister(device_cache_aligned_);
         if (status.err != CU_FILE_SUCCESS)
         {
             fmt::print(stderr, "Failed on cuFileBufDeregister()! (status: {})\n", cufileop_status_error(status.err));
         }
+        fmt::print(stderr, "##  call cuFileBufDeregister() done\n");
         CUDA_TRY(cudaFree(device_cache_));
         if (cuda_status)
         {

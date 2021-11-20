@@ -100,8 +100,8 @@ public:
         fprintf(stderr, "##unload()\n");
         if (handle_)
         {
-            fprintf(stderr, "##unload(): handle_ != nullptr\n");
-            // cucim::dynlib::unload_library(handle_);
+            fprintf(stderr, "##Unloading libcufile.so in unload()\n");
+            cucim::dynlib::unload_library(handle_);
             handle_ = nullptr;
 
             impl_cuFileDriverOpen = nullptr;
@@ -121,16 +121,16 @@ public:
         }
         else
         {
-            fprintf(stderr, "##unload(): handle_ == nullptr\n");
+            fprintf(stderr, "##Unloading libcufile.so in unload(): other path\n");
         }
 #endif
     }
     ~CuFileStub()
     {
         fprintf(stderr, "##Destructor CuFileStub for g_cufile_stub\n");
-        // Note: unload() would be called explicitly by CuFileDriverInitializer to unload the shared library after calling
-        // cuFileDriverClose() in CuFileDriverInitializer::~CuFileDriverInitializer()
-//        unload();
+        // Note: unload() would be called explicitly by CuFileDriverInitializer to unload the shared library after
+        // calling cuFileDriverClose() in CuFileDriverInitializer::~CuFileDriverInitializer()
+        //        unload();
     }
 
 private:
@@ -150,9 +150,7 @@ extern "C"
     }
     void close_cufile_stub()
     {
-        fprintf(stderr, "##close_cufile_stub() start: %p \n", (void*)&g_cufile_stub);
         g_cufile_stub.unload();
-        fprintf(stderr, "##close_cufile_stub() done\n");
     }
 
 #if !CUCIM_STATIC_GDS
@@ -160,6 +158,7 @@ extern "C"
     {
         if (impl_cuFileHandleRegister)
         {
+            fprintf(stderr, "##cuFileHandleRegister() called\n");
             return impl_cuFileHandleRegister(fh, descr);
         }
 
@@ -170,6 +169,7 @@ extern "C"
     {
         if (impl_cuFileHandleDeregister)
         {
+            fprintf(stderr, "##impl_cuFileHandleDeregister() called\n");
             impl_cuFileHandleDeregister(fh);
         }
     }
@@ -178,6 +178,7 @@ extern "C"
     {
         if (impl_cuFileBufRegister)
         {
+            fprintf(stderr, "##impl_cuFileBufRegister() called\n");
             return impl_cuFileBufRegister(devPtr_base, length, flags);
         }
         return CUfileError_t{ CU_FILE_DRIVER_NOT_INITIALIZED, CUDA_SUCCESS };
@@ -187,6 +188,7 @@ extern "C"
     {
         if (impl_cuFileBufDeregister)
         {
+            fprintf(stderr, "##impl_cuFileBufDeregister() called\n");
             return impl_cuFileBufDeregister(devPtr_base);
         }
         return CUfileError_t{ CU_FILE_DRIVER_NOT_INITIALIZED, CUDA_SUCCESS };
@@ -196,6 +198,7 @@ extern "C"
     {
         if (impl_cuFileRead)
         {
+            fprintf(stderr, "##impl_cuFileRead() called\n");
             return impl_cuFileRead(fh, devPtr_base, size, file_offset, devPtr_offset);
         }
         return -1;
@@ -205,6 +208,7 @@ extern "C"
     {
         if (impl_cuFileWrite)
         {
+            fprintf(stderr, "##impl_cuFileWrite() called\n");
             return impl_cuFileWrite(fh, devPtr_base, size, file_offset, devPtr_offset);
         }
         return -1;
@@ -230,6 +234,7 @@ extern "C"
     {
         if (impl_cuFileDriverClose)
         {
+            fprintf(stderr, "##impl_cuFileDriverClose() called\n");
             return impl_cuFileDriverClose();
         }
         return CUfileError_t{ CU_FILE_DRIVER_NOT_INITIALIZED, CUDA_SUCCESS };
@@ -239,6 +244,7 @@ extern "C"
     {
         if (impl_cuFileDriverGetProperties)
         {
+            fprintf(stderr, "##impl_cuFileDriverGetProperties() called\n");
             return impl_cuFileDriverGetProperties(props);
         }
         return CUfileError_t{ CU_FILE_DRIVER_NOT_INITIALIZED, CUDA_SUCCESS };
@@ -248,6 +254,7 @@ extern "C"
     {
         if (impl_cuFileDriverSetPollMode)
         {
+            fprintf(stderr, "##impl_cuFileDriverSetPollMode() called\n");
             return impl_cuFileDriverSetPollMode(poll, poll_threshold_size);
         }
         return CUfileError_t{ CU_FILE_DRIVER_NOT_INITIALIZED, CUDA_SUCCESS };
@@ -257,6 +264,7 @@ extern "C"
     {
         if (impl_cuFileDriverSetMaxDirectIOSize)
         {
+            fprintf(stderr, "##impl_cuFileDriverSetMaxDirectIOSize() called\n");
             return impl_cuFileDriverSetMaxDirectIOSize(max_direct_io_size);
         }
         return CUfileError_t{ CU_FILE_DRIVER_NOT_INITIALIZED, CUDA_SUCCESS };
@@ -266,6 +274,7 @@ extern "C"
     {
         if (impl_cuFileDriverSetMaxCacheSize)
         {
+            fprintf(stderr, "##impl_cuFileDriverSetMaxCacheSize() called\n");
             return impl_cuFileDriverSetMaxCacheSize(max_cache_size);
         }
         return CUfileError_t{ CU_FILE_DRIVER_NOT_INITIALIZED, CUDA_SUCCESS };
@@ -275,6 +284,7 @@ extern "C"
     {
         if (impl_cuFileDriverSetMaxPinnedMemSize)
         {
+            fprintf(stderr, "##impl_cuFileDriverSetMaxPinnedMemSize() called\n");
             return impl_cuFileDriverSetMaxPinnedMemSize(max_pinned_size);
         }
         return CUfileError_t{ CU_FILE_DRIVER_NOT_INITIALIZED, CUDA_SUCCESS };
