@@ -72,12 +72,14 @@ public:
     uint32_t height() const;
     uint32_t tile_width() const;
     uint32_t tile_height() const;
+    uint32_t rows_per_strip() const;
     uint32_t bits_per_sample() const;
     uint32_t samples_per_pixel() const;
     uint64_t subfile_type() const;
     uint16_t planar_config() const;
     uint16_t photometric() const;
     uint16_t compression() const;
+    uint16_t predictor() const;
 
     uint16_t subifd_count() const;
     std::vector<uint64_t>& subifd_offsets();
@@ -105,17 +107,20 @@ private:
     uint32_t height_ = 0;
     uint32_t tile_width_ = 0;
     uint32_t tile_height_ = 0;
+    uint32_t rows_per_strip_ = 0;
     uint32_t bits_per_sample_ = 0;
     uint32_t samples_per_pixel_ = 0;
     uint64_t subfile_type_ = 0;
     uint16_t planar_config_ = 0;
     uint16_t photometric_ = 0;
     uint16_t compression_ = 0;
+    uint16_t predictor_ = 1; // 1: none, 2: horizontal differencing, 3: floating point predictor
 
     uint16_t subifd_count_ = 0;
     std::vector<uint64_t> subifd_offsets_;
 
     std::vector<uint8_t> jpegtable_;
+    int32_t jpeg_color_space_ = 0; /// 0: JCS_UNKNOWN, 2: JCS_RGB, 3: JCS_YCbCr
 
     uint32_t image_piece_count_ = 0;
     std::vector<uint64_t> image_piece_offsets_;

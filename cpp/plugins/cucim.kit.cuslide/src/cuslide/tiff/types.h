@@ -30,6 +30,7 @@ enum class TiffType : uint32_t
 {
     Generic = 0,
     Philips = 1,
+    Aperio = 2,
 };
 
 enum class AssociatedImageBufferType : uint8_t

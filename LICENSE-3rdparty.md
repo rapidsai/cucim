@@ -30,6 +30,8 @@ libtiff
 - Copyright:
   - Sam Leffler
   - Silicon Graphics, Inc.
+- Files:
+  - cpp/plugins/cucim.kit.cuslide/src/cuslide/lzw/lzw_libtiff.cpp : Implementation of lzw decoder.
 
 fmt
 - License: MIT License
@@ -106,6 +108,9 @@ OpenJPEG
   - David Janssens
   - Centre National d'Etudes Spatiales (CNES), France
   - CS Systemes d'Information, France
+- Files:
+  - cpp/plugins/cucim.kit.cuslide/src/cuslide/jpeg2k/libopenjpeg.cpp : Implementation of jpeg2k decoder.
+  - cpp/plugins/cucim.kit.cuslide/src/cuslide/jpeg2k/color_conversion.cpp : Implementation of color conversion methods.
 
 NVIDIA nvJPEG
 - License: NVIDIA License
