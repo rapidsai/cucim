@@ -28,7 +28,7 @@ file(STRINGS ${CMAKE_CURRENT_LIST_DIR}/VERSION VERSION)
 # Append local cmake module path
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake/modules")
 
-project(cuslide VERSION ${VERSION} DESCRIPTION "cuslide" LANGUAGES CXX CUDA)
+project(cuslide VERSION ${VERSION} DESCRIPTION "cuslide" LANGUAGES C CXX CUDA)
 set(CUCIM_PLUGIN_NAME "cucim.kit.cuslide")
 
 ################################################################################
@@ -126,6 +126,7 @@ add_definitions(-D_GLIBCXX_USE_CXX11_ABI=0) # TODO: create two library, one with
 #superbuild_depend(cucim)
 superbuild_depend(fmt)
 superbuild_depend(libjpeg-turbo) # libjpeg-turbo should be located before libtiff as libtiff depends on libjpeg-turbo
+superbuild_depend(libopenjpeg)
 superbuild_depend(libtiff)
 superbuild_depend(catch2)
 superbuild_depend(openslide)
@@ -172,6 +173,16 @@ add_library(${CUCIM_PLUGIN_NAME}
     src/cuslide/deflate/deflate.h
     src/cuslide/jpeg/libjpeg_turbo.cpp
     src/cuslide/jpeg/libjpeg_turbo.h
+    src/cuslide/jpeg2k/color_conversion.cpp
+    src/cuslide/jpeg2k/color_conversion.h
+    src/cuslide/jpeg2k/color_table.h
+    src/cuslide/jpeg2k/libopenjpeg.cpp
+    src/cuslide/jpeg2k/libopenjpeg.h
+    ${deps-libopenjpeg_SOURCE_DIR}/src/bin/common/color.c  # for color_sycc_to_rgb() and color_apply_icc_profile()
+    src/cuslide/lzw/lzw.cpp
+    src/cuslide/lzw/lzw.h
+    src/cuslide/lzw/lzw_libtiff.cpp
+    src/cuslide/lzw/lzw_libtiff.h
     src/cuslide/raw/raw.cpp
     src/cuslide/raw/raw.h
     src/cuslide/tiff/ifd.cpp
@@ -184,6 +195,14 @@ add_library(${CUCIM_PLUGIN_NAME}
 # Otherwise, it will cause `/usr/bin/ld: cannot find -lcudart` error message.
 # Note: Since cuslide.cpp is using nlohmann/json.hpp which nvcc cannot parse properly, set other files for cudart.
 set_source_files_properties(src/cuslide/jpeg/libjpeg_turbo.cpp PROPERTIES LANGUAGE CUDA)
+
+# compile color.c for libopenjpeg with c++
+set_source_files_properties(${deps-libopenjpeg_SOURCE_DIR}/src/bin/common/color.c
+    PROPERTIES
+        LANGUAGE C
+        CMAKE_CXX_VISIBILITY_PRESET default
+        CMAKE_C_VISIBILITY_PRESET default
+        CMAKE_VISIBILITY_INLINES_HIDDEN OFF)
 
 # Compile options
 set_target_properties(${CUCIM_PLUGIN_NAME}
@@ -211,6 +230,8 @@ target_link_libraries(${CUCIM_PLUGIN_NAME}
             cucim::cucim
             deps::libtiff
             deps::libjpeg-turbo
+            deps::libopenjpeg
+            deps::libopenjpeg-lcms2
             deps::pugixml
             deps::json
             deps::libdeflate
@@ -222,8 +243,6 @@ target_include_directories(${CUCIM_PLUGIN_NAME}
             $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
         PRIVATE
             ${CMAKE_CURRENT_LIST_DIR}/src
-            # turbojpeg.h is not included in 'turbojpeg-static' so manually include
-            ${deps-libjpeg-turbo_SOURCE_DIR}
         )
 
 # Do not generate SONAME as this would be used as plugin
