@@ -43,7 +43,7 @@ static constexpr unsigned int PAGE_SIZE = 4096;
 static constexpr uint64_t DEFAULT_MAX_CACHE_SIZE = 128 << 20; // 128MiB
 static CuFileStub g_cufile_stub;
 static CuFileDriverInitializer s_cufile_initializer;
-thread_local static CuFileDriverCache s_cufile_cache;
+static CuFileDriverCache s_cufile_cache;
 Mutex CuFileDriver::driver_mutex_;
 
 

