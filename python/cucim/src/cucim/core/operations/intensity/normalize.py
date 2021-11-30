@@ -28,7 +28,7 @@ def normalize_data(
     norm_constant: float,
     min_value: float,
     max_value: float,
-    type: int = 1
+    type: str = 'range'
 ) -> Any:
     """
     Apply intensity normalization to the input array.
