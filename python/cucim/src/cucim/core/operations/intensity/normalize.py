@@ -45,11 +45,8 @@ def normalize_data(
         Minimum intensity value in input data.
     max_value : float
         Maximum intensity value in input data.
-    type : int
-        Type of normalization.
-        Supported types are
-            range based : 1
-            atangent based : 2
+type : {'range', 'atan'}
+    Type of normalization.
 
     Returns
     -------
