@@ -52,7 +52,7 @@ def test_norm_numpy_input():
     assert np.allclose(output, norm_arr)
 
     norm_atan_arr = get_norm_atan_data()
-    output = its.normalize_data(arr, 10000, 0, 255, 2)
+    output = its.normalize_data(arr, 10000, 0, 255, 'atan')
     assert np.allclose(output, norm_atan_arr)
 
 
