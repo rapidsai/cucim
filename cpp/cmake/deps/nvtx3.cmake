@@ -18,7 +18,7 @@ if (NOT TARGET deps::nvtx3)
             deps-nvtx3
             GIT_REPOSITORY https://github.com/NVIDIA/NVTX.git
             GIT_TAG 3c98c8425b0376fd8653aac7cfc6a864f3897752
-            # GIT_SHALLOW TRUE  # Uncomment this when the official release of nvtx3-cpp is available.
+            # GIT_SHALLOW TRUE  # TODO (#168): Uncomment this when the official release of nvtx3-cpp is available
     )
     FetchContent_GetProperties(deps-nvtx3)
     if (NOT deps-nvtx3_POPULATED)
