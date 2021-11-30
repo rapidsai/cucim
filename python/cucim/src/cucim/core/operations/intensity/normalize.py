@@ -74,7 +74,7 @@ type : {'range', 'atan'}
             raise ValueError("Minimum and Maximum intensity \
                               same in input data")
 
-        if type not in [1, 2]:
+        if type not in ['range', 'atan']:
             raise ValueError("Incorrect normalization type. \
                               Supported types are: \
                                   range based: 1,\
