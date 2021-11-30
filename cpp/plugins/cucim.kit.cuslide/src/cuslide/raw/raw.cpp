@@ -26,6 +26,9 @@
 #include <stdexcept>
 #include <unistd.h>
 
+#include <cucim/memory/memory_manager.h>
+#include <cucim/profiler/nvtx3.h>
+
 
 namespace cuslide::raw
 {
@@ -48,7 +51,7 @@ bool decode_raw(int fd,
     // Allocate memory only when dest is not null
     if (*dest == nullptr)
     {
-        if ((*dest = (unsigned char*)malloc(dest_nbytes)) == nullptr)
+        if ((*dest = (unsigned char*)cucim_malloc(dest_nbytes)) == nullptr)
         {
             throw std::runtime_error("Unable to allocate uncompressed image buffer");
         }
@@ -56,7 +59,7 @@ bool decode_raw(int fd,
 
     if (raw_buf == nullptr)
     {
-        if ((raw_buf = (unsigned char*)malloc(size)) == nullptr)
+        if ((raw_buf = (unsigned char*)cucim_malloc(size)) == nullptr)
         {
             throw std::runtime_error("Unable to allocate buffer for raw data!");
         }
@@ -76,7 +79,7 @@ bool decode_raw(int fd,
 
     if (fd != -1)
     {
-        free(raw_buf);
+        cucim_free(raw_buf);
     }
 
     return true;

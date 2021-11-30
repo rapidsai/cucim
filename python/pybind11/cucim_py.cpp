@@ -28,6 +28,7 @@
 #include "cache/cache_py.h"
 #include "filesystem/filesystem_py.h"
 #include "io/io_py.h"
+#include "profiler/profiler_py.h"
 
 using namespace pybind11::literals;
 namespace py = pybind11;
@@ -69,6 +70,10 @@ PYBIND11_MODULE(_cucim, m)
     auto m_cache = m.def_submodule("cache");
     cache::init_cache(m_cache);
 
+    // Submodule: profiler
+    auto m_profiler = m.def_submodule("profiler");
+    profiler::init_profiler(m_profiler);
+
     // Data structures
     py::enum_<DLDataTypeCode>(m, "DLDataTypeCode") //
         .value("DLInt", kDLInt) //
@@ -101,6 +106,9 @@ PYBIND11_MODULE(_cucim, m)
              py::arg("path")) //
         .def_static("cache", &py_cache, doc::CuImage::doc_cache, py::call_guard<py::gil_scoped_release>(), //
                     py::arg("type") = py::none()) //
+        .def_static("profiler", &py_profiler, doc::CuImage::doc_profiler, py::call_guard<py::gil_scoped_release>()) //
+        .def_property_readonly_static("is_trace_enabled", &py_is_trace_enabled, doc::CuImage::doc_is_trace_enabled,
+                                      py::call_guard<py::gil_scoped_release>()) //);
         // Do not release GIL
         .def_static("_set_array_interface", &_set_array_interface, doc::CuImage::doc__set_array_interface, //
                     py::arg("cuimg") = py::none()) //
@@ -257,6 +265,30 @@ std::shared_ptr<cucim::cache::ImageCache> py_cache(const py::object& type, const
 
     throw std::invalid_argument(
         fmt::format("The first argument should be one of ['nocache', 'per_process', 'shared_memory']."));
+}
+
+std::shared_ptr<cucim::profiler::Profiler> py_profiler(const py::kwargs& kwargs)
+{
+    if (kwargs.empty())
+    {
+        return CuImage::profiler();
+    }
+    else
+    {
+        // Copy default profiler config to local
+        cucim::profiler::ProfilerConfig config = cucim::CuImage::get_config()->profiler();
+
+        if (kwargs.contains("trace"))
+        {
+            config.trace = py::cast<bool>(kwargs["trace"]);
+        }
+        return CuImage::profiler(config);
+    }
+}
+
+bool py_is_trace_enabled(py::object /* self */)
+{
+    return CuImage::is_trace_enabled();
 }
 
 json py_metadata(const CuImage& cuimg)

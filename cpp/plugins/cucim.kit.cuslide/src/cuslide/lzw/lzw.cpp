@@ -26,6 +26,9 @@
 #include <stdexcept>
 #include <unistd.h>
 
+#include <cucim/memory/memory_manager.h>
+#include <cucim/profiler/nvtx3.h>
+
 
 namespace cuslide::lzw
 {
@@ -48,7 +51,7 @@ bool decode_lzw(int fd,
     // Allocate memory only when dest is not null
     if (*dest == nullptr)
     {
-        if ((*dest = (unsigned char*)malloc(dest_nbytes)) == nullptr)
+        if ((*dest = (unsigned char*)cucim_malloc(dest_nbytes)) == nullptr)
         {
             throw std::runtime_error("Unable to allocate uncompressed image buffer");
         }
@@ -56,7 +59,7 @@ bool decode_lzw(int fd,
 
     if (lzw_buf == nullptr)
     {
-        if ((lzw_buf = (unsigned char*)malloc(size)) == nullptr)
+        if ((lzw_buf = (unsigned char*)cucim_malloc(size)) == nullptr)
         {
             throw std::runtime_error("Unable to allocate buffer for lzw data!");
         }
@@ -92,14 +95,14 @@ bool decode_lzw(int fd,
 
     if (fd != -1)
     {
-        free(lzw_buf);
+        cucim_free(lzw_buf);
     }
 
     return true;
 bad:
     if (fd != -1)
     {
-        free(lzw_buf);
+        cucim_free(lzw_buf);
     }
     tif.tif_cleanup(&tif);
     return false;

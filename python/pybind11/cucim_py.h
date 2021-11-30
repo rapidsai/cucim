@@ -37,6 +37,10 @@ namespace cache
 {
 class ImageCache;
 }
+namespace profiler
+{
+class Profiler;
+}
 
 std::string get_plugin_root();
 void set_plugin_root(std::string path);
@@ -57,6 +61,8 @@ template<typename PT, typename T>
 pybind11::tuple vector2pytuple(const std::vector<T>& vec);
 
 std::shared_ptr<cucim::cache::ImageCache> py_cache(const py::object& ctype, const py::kwargs& kwargs);
+std::shared_ptr<cucim::profiler::Profiler> py_profiler(const py::kwargs& kwargs);
+bool py_is_trace_enabled(py::object /* self */);
 
 json py_metadata(const CuImage& cuimg);
 py::dict py_resolutions(const CuImage& cuimg);

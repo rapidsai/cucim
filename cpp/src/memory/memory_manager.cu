@@ -22,16 +22,19 @@
 #include <fmt/format.h>
 
 #include "cucim/io/device_type.h"
+#include "cucim/profiler/nvtx3.h"
 #include "cucim/util/cuda.h"
 
 
 CUCIM_API void* cucim_malloc(size_t size)
 {
+    PROF_SCOPED_RANGE(PROF_EVENT_P(cucim_malloc, size));
     return malloc(size);
 }
 
 CUCIM_API void cucim_free(void* ptr)
 {
+    PROF_SCOPED_RANGE(PROF_EVENT(cucim_free));
     free(ptr);
 }
 

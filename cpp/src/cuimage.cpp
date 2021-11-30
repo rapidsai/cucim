@@ -25,6 +25,7 @@
 #endif
 #include <fmt/format.h>
 
+#include "cucim/profiler/nvtx3.h"
 #include "cucim/util/cuda.h"
 #include "cucim/util/file.h"
 
@@ -134,18 +135,23 @@ DetectedFormat detect_format(filesystem::Path path)
 
 Framework* CuImage::framework_ = cucim::acquire_framework("cucim");
 std::unique_ptr<config::Config> CuImage::config_ = std::make_unique<config::Config>();
+std::shared_ptr<profiler::Profiler> CuImage::profiler_ = std::make_shared<profiler::Profiler>(config_->profiler());
 std::unique_ptr<cache::ImageCacheManager> CuImage::cache_manager_ = std::make_unique<cache::ImageCacheManager>();
 std::unique_ptr<plugin::ImageFormat> CuImage::image_format_plugins_ = std::make_unique<plugin::ImageFormat>();
 
 
 CuImage::CuImage(const filesystem::Path& path)
 {
+    PROF_SCOPED_RANGE(PROF_EVENT_P(cuimage_cuimage, 1));
     //    printf("[cuCIM] CuImage::CuImage(filesystem::Path path)\n");
     ensure_init();
     image_format_ = image_format_plugins_->detect_image_format(path);
 
     // TODO: need to detect available format for the file path
-    file_handle_ = image_format_->image_parser.open(path.c_str());
+    {
+        PROF_SCOPED_RANGE(PROF_EVENT(cuimage_cuimage_open));
+        file_handle_ = image_format_->image_parser.open(path.c_str());
+    }
     //    printf("[GB] file_handle: %s\n", file_handle_.path);
     //    fmt::print("[GB] CuImage path char: '{}'\n", file_handle_.path[0]);
 
@@ -166,6 +172,7 @@ CuImage::CuImage(const filesystem::Path& path)
 }
 CuImage::CuImage(const filesystem::Path& path, const std::string& plugin_name)
 {
+    PROF_SCOPED_RANGE(PROF_EVENT_P(cuimage_cuimage, 2));
     // TODO: implement this
     (void)path;
     (void)plugin_name;
@@ -180,6 +187,7 @@ CuImage::CuImage(const filesystem::Path& path, const std::string& plugin_name)
 
 CuImage::CuImage(CuImage&& cuimg) : std::enable_shared_from_this<CuImage>()
 {
+    PROF_SCOPED_RANGE(PROF_EVENT_P(cuimage_cuimage, 3));
     // printf("[cuCIM] CuImage::CuImage(CuImage&& cuimg) %s\n", cuimg.file_handle_.path);
     (void)cuimg;
     std::swap(file_handle_, cuimg.file_handle_);
@@ -196,6 +204,7 @@ CuImage::CuImage(const CuImage* cuimg,
                  cucim::io::format::ImageDataDesc* image_data)
     : std::enable_shared_from_this<CuImage>()
 {
+    PROF_SCOPED_RANGE(PROF_EVENT_P(cuimage_cuimage, 4));
     //    printf(
     //        "[cuCIM] CuImage::CuImage(CuImage* cuimg, io::format::ImageMetadataDesc* image_metadata,
     //        cucim::io::format::ImageDataDesc* image_data)\n");
@@ -223,11 +232,13 @@ CuImage::CuImage(const CuImage* cuimg,
 
 CuImage::CuImage() : std::enable_shared_from_this<CuImage>()
 {
+    PROF_SCOPED_RANGE(PROF_EVENT_P(cuimage_cuimage, 5));
     file_handle_.path = const_cast<char*>("<null>");
 }
 
 CuImage::~CuImage()
 {
+    PROF_SCOPED_RANGE(PROF_EVENT(cuimage__cuimage));
     //    printf("[cuCIM] CuImage::~CuImage()\n");
     close();
     image_format_ = nullptr; // memory release is handled by the framework
@@ -307,6 +318,17 @@ config::Config* CuImage::get_config()
     return config_.get();
 }
 
+std::shared_ptr<profiler::Profiler> CuImage::profiler()
+{
+    return profiler_;
+}
+
+std::shared_ptr<profiler::Profiler> CuImage::profiler(profiler::ProfilerConfig& config)
+{
+    profiler_->trace(config.trace);
+    return profiler_;
+}
+
 cache::ImageCacheManager& CuImage::cache_manager()
 {
     return *cache_manager_;
@@ -320,6 +342,11 @@ std::shared_ptr<cache::ImageCache> CuImage::cache()
 std::shared_ptr<cache::ImageCache> CuImage::cache(cache::ImageCacheConfig& config)
 {
     return cache_manager_->cache(config);
+}
+
+bool CuImage::is_trace_enabled()
+{
+    return profiler_->trace();
 }
 
 filesystem::Path CuImage::path() const
@@ -569,6 +596,7 @@ CuImage CuImage::read_region(std::vector<int64_t>&& location,
                              DLTensor* buf,
                              const std::string& shm_name) const
 {
+    PROF_SCOPED_RANGE(PROF_EVENT(cuimage_read_region));
     (void)region_dim_indices;
     (void)device;
     (void)buf;
@@ -779,6 +807,7 @@ std::set<std::string> CuImage::associated_images() const
 
 CuImage CuImage::associated_image(const std::string& name, const io::Device& device) const
 {
+    PROF_SCOPED_RANGE(PROF_EVENT(cuimage_associated_image));
     if (file_handle_.fd < 0) // file_handle_ is not opened
     {
         throw std::runtime_error("[Error] The image file is closed!");
@@ -874,6 +903,7 @@ void CuImage::close()
 
 void CuImage::ensure_init()
 {
+    PROF_SCOPED_RANGE(PROF_EVENT(cuimage_ensure_init));
     ScopedLock g(mutex_);
 
     if (!framework_)
@@ -889,6 +919,7 @@ void CuImage::ensure_init()
         const char* plugin_root = framework_->get_plugin_root();
         for (auto& plugin_name : plugin_names)
         {
+            PROF_SCOPED_RANGE(PROF_EVENT(cuimage_ensure_init_plugin_iter));
             // TODO: Here 'LINUX' path separator is used. Need to make it generalize once filesystem library is
             // available.
             std::string plugin_file_path = (plugin_root && *plugin_root != 0) ?
@@ -915,6 +946,7 @@ void CuImage::ensure_init()
 bool CuImage::crop_image(const io::format::ImageReaderRegionRequestDesc& request,
                          io::format::ImageDataDesc& out_image_data) const
 {
+    PROF_SCOPED_RANGE(PROF_EVENT(cuimage_crop_image));
     // TODO: assume length of location/size to 2.
     constexpr int32_t ndims = 2;
 

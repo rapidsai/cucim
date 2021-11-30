@@ -30,6 +30,7 @@
 #include <cucim/codec/base64.h>
 #include <cucim/logger/timer.h>
 #include <cucim/memory/memory_manager.h>
+#include <cucim/profiler/nvtx3.h>
 
 #include "cuslide/jpeg/libjpeg_turbo.h"
 #include "cuslide/lzw/lzw.h"
@@ -256,11 +257,13 @@ static void parse_aperio_svs_metadata(std::shared_ptr<IFD>& first_ifd, json& met
 
 TIFF::~TIFF()
 {
+    PROF_SCOPED_RANGE(PROF_EVENT(tiff__tiff));
     close();
 }
 
 TIFF::TIFF(const cucim::filesystem::Path& file_path, int mode) : file_path_(file_path)
 {
+    PROF_SCOPED_RANGE(PROF_EVENT_P(tiff_tiff, 1));
     // Copy file path (Allocated memory would be freed at close() method.)
     char* file_path_cstr = static_cast<char*>(cucim_malloc(file_path.size() + 1));
     memcpy(file_path_cstr, file_path.c_str(), file_path.size());
@@ -288,6 +291,7 @@ TIFF::TIFF(const cucim::filesystem::Path& file_path, int mode) : file_path_(file
 }
 TIFF::TIFF(const cucim::filesystem::Path& file_path, int mode, uint64_t read_config) : TIFF(file_path, mode)
 {
+    PROF_SCOPED_RANGE(PROF_EVENT_P(tiff_tiff, 2));
     read_config_ = read_config;
 }
 
@@ -334,6 +338,7 @@ void TIFF::close()
 
 void TIFF::construct_ifds()
 {
+    PROF_SCOPED_RANGE(PROF_EVENT(tiff_construct_ifds));
     ifd_offsets_.clear();
     ifd_offsets_.reserve(DEFAULT_IFD_SIZE);
     ifds_.clear();
@@ -382,6 +387,7 @@ void TIFF::construct_ifds()
 }
 void TIFF::resolve_vendor_format()
 {
+    PROF_SCOPED_RANGE(PROF_EVENT(tiff_resolve_vendor_format));
     uint16_t ifd_count = ifds_.size();
     if (ifd_count == 0)
     {
@@ -685,6 +691,7 @@ bool TIFF::read(const cucim::io::format::ImageMetadataDesc* metadata,
                 cucim::io::format::ImageDataDesc* out_image_data,
                 cucim::io::format::ImageMetadataDesc* out_metadata)
 {
+    PROF_SCOPED_RANGE(PROF_EVENT(tiff_read));
     if (request->associated_image_name)
     {
         // 'out_metadata' is only needed for reading associated image
@@ -738,6 +745,7 @@ bool TIFF::read_associated_image(const cucim::io::format::ImageMetadataDesc* met
                                  cucim::io::format::ImageDataDesc* out_image_data,
                                  cucim::io::format::ImageMetadataDesc* out_metadata_desc)
 {
+    PROF_SCOPED_RANGE(PROF_EVENT(tiff_read_associated_image));
     // TODO: implement
     (void)metadata;
 

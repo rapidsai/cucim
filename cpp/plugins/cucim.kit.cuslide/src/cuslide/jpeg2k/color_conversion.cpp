@@ -23,6 +23,8 @@
 
 #include "color_conversion.h"
 
+#include <cucim/profiler/nvtx3.h>
+
 #include "color_table.h"
 
 namespace cuslide::jpeg2k
@@ -35,6 +37,7 @@ static inline uint8_t clamp(int32_t x)
 
 void fast_sycc422_to_rgb(opj_image_t* image, uint8_t* dest)
 {
+    PROF_SCOPED_RANGE(PROF_EVENT(jpeg2k_fast_sycc422_to_rgb));
     const opj_image_comp_t* comps = image->comps;
     const size_t maxw = (size_t)comps[0].w;
     const size_t maxh = (size_t)comps[0].h;
@@ -115,6 +118,7 @@ void fast_sycc422_to_rgb(opj_image_t* image, uint8_t* dest)
 
 void fast_sycc420_to_rgb(opj_image_t* image, uint8_t* dest)
 {
+    PROF_SCOPED_RANGE(PROF_EVENT(jpeg2k_fast_sycc420_to_rgb));
     const opj_image_comp_t* comps = image->comps;
     const size_t maxw = (size_t)comps[0].w;
     const size_t maxh = (size_t)comps[0].h;
@@ -310,6 +314,7 @@ void fast_sycc420_to_rgb(opj_image_t* image, uint8_t* dest)
 
 void fast_sycc444_to_rgb(opj_image_t* image, uint8_t* dest)
 {
+    PROF_SCOPED_RANGE(PROF_EVENT(jpeg2k_fast_sycc444_to_rgb));
     const opj_image_comp_t* comps = image->comps;
     const size_t maxw = (size_t)comps[0].w;
     const size_t maxh = (size_t)comps[0].h;
@@ -341,6 +346,7 @@ void fast_sycc444_to_rgb(opj_image_t* image, uint8_t* dest)
 
 void fast_image_to_rgb(opj_image_t* image, uint8_t* dest)
 {
+    PROF_SCOPED_RANGE(PROF_EVENT(jpeg2k_fast_image_to_rgb));
     opj_image_comp_t* comps = image->comps;
     uint32_t width = comps[0].w;
     uint32_t height = comps[0].h;

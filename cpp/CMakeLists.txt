@@ -65,6 +65,9 @@ add_library(${CUCIM_PACKAGE_NAME}
         include/cucim/memory/memory_manager.h
         include/cucim/plugin/image_format.h
         include/cucim/plugin/plugin_config.h
+        include/cucim/profiler/nvtx3.h
+        include/cucim/profiler/profiler.h
+        include/cucim/profiler/profiler_config.h
         include/cucim/util/cuda.h
         include/cucim/util/file.h
         include/cucim/util/platform.h
@@ -100,6 +103,8 @@ add_library(${CUCIM_PACKAGE_NAME}
         src/memory/memory_manager.cu
         src/plugin/image_format.cpp
         src/plugin/plugin_config.cpp
+        src/profiler/profiler.cpp
+        src/profiler/profiler_config.cpp
         src/util/file.cpp
         src/util/platform.cpp)
 
@@ -139,6 +144,7 @@ target_compile_definitions(${CUCIM_PACKAGE_NAME}
         CUCIM_SUPPORT_GDS=$<BOOL:${CUCIM_SUPPORT_GDS}>
         CUCIM_STATIC_GDS=$<BOOL:${CUCIM_STATIC_GDS}>
         CUCIM_SUPPORT_CUDA=$<BOOL:${CUCIM_SUPPORT_CUDA}>
+        CUCIM_SUPPORT_NVTX=$<BOOL:${CUCIM_SUPPORT_NVTX}>
         _GLIBCXX_USE_CXX11_ABI=0  # TODO: create two library, one with CXX11 ABI and one without it.
 )
 
@@ -160,6 +166,7 @@ target_link_libraries(${CUCIM_PACKAGE_NAME}
             deps::libcuckoo
             deps::boost-header-only
             deps::json
+            deps::nvtx3
         )
 
 if (CUCIM_STATIC_GDS)
@@ -177,7 +184,7 @@ target_include_directories(${CUCIM_PACKAGE_NAME}
 #            $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/gds/lib> # for GDS header
 #            $<BUILD_INTERFACE:${THRUST_INCLUDE_DIR}>
             $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
-            $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/${CUCIM_PACKAGE_NAME}/3rdparty> # for 3rdparty libraries such as dlpack and fmt
+            $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/${CUCIM_PACKAGE_NAME}/3rdparty> # for 3rdparty libraries such as dlpack, nvtx3, and fmt
         PRIVATE
             ${CMAKE_CURRENT_LIST_DIR}/src
         )
@@ -198,6 +205,7 @@ target_compile_definitions(${CUCIM_PACKAGE_NAME}-header-only
         CUCIM_SUPPORT_GDS=$<BOOL:${CUCIM_SUPPORT_GDS}>
         CUCIM_STATIC_GDS=$<BOOL:${CUCIM_STATIC_GDS}>
         CUCIM_SUPPORT_CUDA=$<BOOL:${CUCIM_SUPPORT_CUDA}>
+        CUCIM_SUPPORT_NVTX=$<BOOL:${CUCIM_SUPPORT_NVTX}>
         CUCIM_HEADER_ONLY=1
         )
 target_compile_features(${CUCIM_PACKAGE_NAME}-header-only INTERFACE ${CUCIM_REQUIRED_FEATURES})

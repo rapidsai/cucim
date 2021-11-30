@@ -31,6 +31,7 @@
 #include <cucim/cuimage.h>
 #include <cucim/logger/timer.h>
 #include <cucim/memory/memory_manager.h>
+#include <cucim/profiler/nvtx3.h>
 
 #include "cuslide/deflate/deflate.h"
 #include "cuslide/jpeg/libjpeg_turbo.h"
@@ -45,6 +46,7 @@ namespace cuslide::tiff
 
 IFD::IFD(TIFF* tiff, uint16_t index, ifd_offset_t offset) : tiff_(tiff), ifd_index_(index), ifd_offset_(offset)
 {
+    PROF_SCOPED_RANGE(PROF_EVENT(ifd_ifd));
     auto tif = tiff->client();
     int ret;
 
@@ -147,6 +149,7 @@ bool IFD::read(const TIFF* tiff,
                const cucim::io::format::ImageReaderRegionRequestDesc* request,
                cucim::io::format::ImageDataDesc* out_image_data)
 {
+    PROF_SCOPED_RANGE(PROF_EVENT(ifd_read));
     ::TIFF* tif = tiff->tiff_client_;
 
     uint16_t ifd_index = ifd_index_;
@@ -192,6 +195,7 @@ bool IFD::read(const TIFF* tiff,
     }
     else
     {
+        PROF_SCOPED_RANGE(PROF_EVENT(ifd_read_slowpath));
         // Handle out-of-boundary case
         int64_t ex = sx + w - 1;
         int64_t ey = sy + h - 1;
@@ -422,6 +426,7 @@ bool IFD::read_region_tiles(const TIFF* tiff,
                             void* raster,
                             const cucim::io::Device& out_device)
 {
+    PROF_SCOPED_RANGE(PROF_EVENT(ifd_read_region_tiles));
     // Reference code: https://github.com/libjpeg-turbo/libjpeg-turbo/blob/master/tjexample.c
 
     int64_t ex = sx + w - 1;
@@ -505,6 +510,7 @@ bool IFD::read_region_tiles(const TIFF* tiff,
         uint64_t index_hash = ifd_hash_value ^ (static_cast<uint64_t>(index) | (static_cast<uint64_t>(index) << 32));
         for (uint32_t offset_x = offset_sx; offset_x <= offset_ex; ++offset_x, ++index)
         {
+            PROF_SCOPED_RANGE(PROF_EVENT_P(ifd_read_region_tiles_iter, index));
             auto tiledata_offset = static_cast<uint64_t>(ifd->image_piece_offsets_[index]);
             auto tiledata_size = static_cast<uint64_t>(ifd->image_piece_bytecounts_[index]);
 
@@ -537,44 +543,48 @@ bool IFD::read_region_tiles(const TIFF* tiff,
                         tile_data = static_cast<uint8_t*>(image_cache.allocate(tile_raster_nbytes));
                     }
 
-                    switch (compression_method)
                     {
-                    case COMPRESSION_NONE:
-                        cuslide::raw::decode_raw(tiff_file, nullptr, tiledata_offset, tiledata_size, &tile_data,
-                                                 tile_raster_nbytes, out_device);
-                        break;
-                    case COMPRESSION_JPEG:
-                        cuslide::jpeg::decode_libjpeg(tiff_file, nullptr, tiledata_offset, tiledata_size, jpegtable_data,
-                                                      jpegtable_count, &tile_data, out_device, jpeg_color_space);
-                        break;
-                    case COMPRESSION_ADOBE_DEFLATE:
-                    case COMPRESSION_DEFLATE:
-                        cuslide::deflate::decode_deflate(tiff_file, nullptr, tiledata_offset, tiledata_size, &tile_data,
-                                                         tile_raster_nbytes, out_device);
-                        break;
-                    case cuslide::jpeg2k::kAperioJpeg2kYCbCr: // 33003
-                        cuslide::jpeg2k::decode_libopenjpeg(tiff_file, nullptr, tiledata_offset, tiledata_size,
-                                                            &tile_data, tile_raster_nbytes, out_device,
-                                                            cuslide::jpeg2k::ColorSpace::kSYCC);
-                        break;
-                    case cuslide::jpeg2k::kAperioJpeg2kRGB: // 33005
-                        cuslide::jpeg2k::decode_libopenjpeg(tiff_file, nullptr, tiledata_offset, tiledata_size,
-                                                            &tile_data, tile_raster_nbytes, out_device,
-                                                            cuslide::jpeg2k::ColorSpace::kRGB);
-                        break;
-                    case COMPRESSION_LZW:
-                        cuslide::lzw::decode_lzw(tiff_file, nullptr, tiledata_offset, tiledata_size, &tile_data,
-                                                 tile_raster_nbytes, out_device);
-                        // Apply unpredictor
-                        //   1: none, 2: horizontal differencing, 3: floating point predictor
-                        //   https://www.adobe.io/content/dam/udp/en/open/standards/tiff/TIFF6.pdf
-                        if (predictor == 2)
+                        PROF_SCOPED_RANGE(PROF_EVENT(ifd_decompression));
+                        switch (compression_method)
                         {
-                            cuslide::lzw::horAcc8(tile_data, tile_raster_nbytes, nbytes_tw);
+                        case COMPRESSION_NONE:
+                            cuslide::raw::decode_raw(tiff_file, nullptr, tiledata_offset, tiledata_size, &tile_data,
+                                                     tile_raster_nbytes, out_device);
+                            break;
+                        case COMPRESSION_JPEG:
+                            cuslide::jpeg::decode_libjpeg(tiff_file, nullptr, tiledata_offset, tiledata_size,
+                                                          jpegtable_data, jpegtable_count, &tile_data, out_device,
+                                                          jpeg_color_space);
+                            break;
+                        case COMPRESSION_ADOBE_DEFLATE:
+                        case COMPRESSION_DEFLATE:
+                            cuslide::deflate::decode_deflate(tiff_file, nullptr, tiledata_offset, tiledata_size,
+                                                             &tile_data, tile_raster_nbytes, out_device);
+                            break;
+                        case cuslide::jpeg2k::kAperioJpeg2kYCbCr: // 33003
+                            cuslide::jpeg2k::decode_libopenjpeg(tiff_file, nullptr, tiledata_offset, tiledata_size,
+                                                                &tile_data, tile_raster_nbytes, out_device,
+                                                                cuslide::jpeg2k::ColorSpace::kSYCC);
+                            break;
+                        case cuslide::jpeg2k::kAperioJpeg2kRGB: // 33005
+                            cuslide::jpeg2k::decode_libopenjpeg(tiff_file, nullptr, tiledata_offset, tiledata_size,
+                                                                &tile_data, tile_raster_nbytes, out_device,
+                                                                cuslide::jpeg2k::ColorSpace::kRGB);
+                            break;
+                        case COMPRESSION_LZW:
+                            cuslide::lzw::decode_lzw(tiff_file, nullptr, tiledata_offset, tiledata_size, &tile_data,
+                                                     tile_raster_nbytes, out_device);
+                            // Apply unpredictor
+                            //   1: none, 2: horizontal differencing, 3: floating point predictor
+                            //   https://www.adobe.io/content/dam/udp/en/open/standards/tiff/TIFF6.pdf
+                            if (predictor == 2)
+                            {
+                                cuslide::lzw::horAcc8(tile_data, tile_raster_nbytes, nbytes_tw);
+                            }
+                            break;
+                        default:
+                            throw std::runtime_error("Unsupported compression method");
                         }
-                        break;
-                    default:
-                        throw std::runtime_error("Unsupported compression method");
                     }
 
                     value = image_cache.create_value(tile_data, tile_raster_nbytes);
@@ -619,6 +629,7 @@ bool IFD::read_region_tiles_boundary(const TIFF* tiff,
                                      void* raster,
                                      const cucim::io::Device& out_device)
 {
+    PROF_SCOPED_RANGE(PROF_EVENT(ifd_read_region_tiles_boundary));
     (void)out_device;
     // Reference code: https://github.com/libjpeg-turbo/libjpeg-turbo/blob/master/tjexample.c
 
@@ -749,6 +760,7 @@ bool IFD::read_region_tiles_boundary(const TIFF* tiff,
         uint64_t index_hash = ifd_hash_value ^ (static_cast<uint64_t>(index) | (static_cast<uint64_t>(index) << 32));
         for (int64_t offset_x = offset_sx; offset_x <= offset_ex; ++offset_x, ++index)
         {
+            PROF_SCOPED_RANGE(PROF_EVENT_P(ifd_read_region_tiles_boundary_iter, index));
             uint64_t tiledata_offset = 0;
             uint64_t tiledata_size = 0;
             if (offset_x >= offset_min_x && offset_x <= offset_max_x && index_y >= start_index_min_y &&
@@ -818,44 +830,48 @@ bool IFD::read_region_tiles_boundary(const TIFF* tiff,
                         tile_data = static_cast<uint8_t*>(image_cache.allocate(tile_raster_nbytes));
                     }
 
-                    switch (compression_method)
                     {
-                    case COMPRESSION_NONE:
-                        cuslide::raw::decode_raw(tiff_file, nullptr, tiledata_offset, tiledata_size, &tile_data,
-                                                 tile_raster_nbytes, out_device);
-                        break;
-                    case COMPRESSION_JPEG:
-                        cuslide::jpeg::decode_libjpeg(tiff_file, nullptr, tiledata_offset, tiledata_size, jpegtable_data,
-                                                      jpegtable_count, &tile_data, out_device, jpeg_color_space);
-                        break;
-                    case COMPRESSION_ADOBE_DEFLATE:
-                    case COMPRESSION_DEFLATE:
-                        cuslide::deflate::decode_deflate(tiff_file, nullptr, tiledata_offset, tiledata_size, &tile_data,
-                                                         tile_raster_nbytes, out_device);
-                        break;
-                    case cuslide::jpeg2k::kAperioJpeg2kYCbCr: // 33003
-                        cuslide::jpeg2k::decode_libopenjpeg(tiff_file, nullptr, tiledata_offset, tiledata_size,
-                                                            &tile_data, tile_raster_nbytes, out_device,
-                                                            cuslide::jpeg2k::ColorSpace::kSYCC);
-                        break;
-                    case cuslide::jpeg2k::kAperioJpeg2kRGB: // 33005
-                        cuslide::jpeg2k::decode_libopenjpeg(tiff_file, nullptr, tiledata_offset, tiledata_size,
-                                                            &tile_data, tile_raster_nbytes, out_device,
-                                                            cuslide::jpeg2k::ColorSpace::kRGB);
-                        break;
-                    case COMPRESSION_LZW:
-                        cuslide::lzw::decode_lzw(tiff_file, nullptr, tiledata_offset, tiledata_size, &tile_data,
-                                                 tile_raster_nbytes, out_device);
-                        // Apply unpredictor
-                        //   1: none, 2: horizontal differencing, 3: floating point predictor
-                        //   https://www.adobe.io/content/dam/udp/en/open/standards/tiff/TIFF6.pdf
-                        if (predictor == 2)
+                        PROF_SCOPED_RANGE(PROF_EVENT(ifd_decompression));
+                        switch (compression_method)
                         {
-                            cuslide::lzw::horAcc8(tile_data, tile_raster_nbytes, nbytes_tw);
+                        case COMPRESSION_NONE:
+                            cuslide::raw::decode_raw(tiff_file, nullptr, tiledata_offset, tiledata_size, &tile_data,
+                                                     tile_raster_nbytes, out_device);
+                            break;
+                        case COMPRESSION_JPEG:
+                            cuslide::jpeg::decode_libjpeg(tiff_file, nullptr, tiledata_offset, tiledata_size,
+                                                          jpegtable_data, jpegtable_count, &tile_data, out_device,
+                                                          jpeg_color_space);
+                            break;
+                        case COMPRESSION_ADOBE_DEFLATE:
+                        case COMPRESSION_DEFLATE:
+                            cuslide::deflate::decode_deflate(tiff_file, nullptr, tiledata_offset, tiledata_size,
+                                                             &tile_data, tile_raster_nbytes, out_device);
+                            break;
+                        case cuslide::jpeg2k::kAperioJpeg2kYCbCr: // 33003
+                            cuslide::jpeg2k::decode_libopenjpeg(tiff_file, nullptr, tiledata_offset, tiledata_size,
+                                                                &tile_data, tile_raster_nbytes, out_device,
+                                                                cuslide::jpeg2k::ColorSpace::kSYCC);
+                            break;
+                        case cuslide::jpeg2k::kAperioJpeg2kRGB: // 33005
+                            cuslide::jpeg2k::decode_libopenjpeg(tiff_file, nullptr, tiledata_offset, tiledata_size,
+                                                                &tile_data, tile_raster_nbytes, out_device,
+                                                                cuslide::jpeg2k::ColorSpace::kRGB);
+                            break;
+                        case COMPRESSION_LZW:
+                            cuslide::lzw::decode_lzw(tiff_file, nullptr, tiledata_offset, tiledata_size, &tile_data,
+                                                     tile_raster_nbytes, out_device);
+                            // Apply unpredictor
+                            //   1: none, 2: horizontal differencing, 3: floating point predictor
+                            //   https://www.adobe.io/content/dam/udp/en/open/standards/tiff/TIFF6.pdf
+                            if (predictor == 2)
+                            {
+                                cuslide::lzw::horAcc8(tile_data, tile_raster_nbytes, nbytes_tw);
+                            }
+                            break;
+                        default:
+                            throw std::runtime_error("Unsupported compression method");
                         }
-                        break;
-                    default:
-                        throw std::runtime_error("Unsupported compression method");
                     }
                     value = image_cache.create_value(tile_data, tile_raster_nbytes);
                     image_cache.insert(key, value);
