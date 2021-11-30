@@ -107,8 +107,7 @@ type : {'range', 'atan'}
         value_range = max_value - min_value
         norm_factor = norm_constant / value_range
 
-        sh = img.shape
-        total_size = np.prod(sh)
+        total_size = math.prod(img.shape)
         blockx = 128
         gridx = int((total_size - 1) / blockx + 1)
 
