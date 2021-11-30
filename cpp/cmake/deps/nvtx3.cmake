@@ -28,7 +28,7 @@ if (NOT TARGET deps::nvtx3)
     endif ()
 
     # Create shared library
-    cucim_set_build_shared_libs(ON) # since nvtx3 is head-only library, this may not needed.
+    cucim_set_build_shared_libs(ON) # since nvtx3 is header-only library, this may not needed.
 
     add_subdirectory(${deps-nvtx3_SOURCE_DIR}/cpp ${deps-nvtx3_BINARY_DIR} EXCLUDE_FROM_ALL)
     cucim_restore_build_shared_libs()
