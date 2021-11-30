@@ -24,6 +24,10 @@
 
 #include <stdexcept>
 #include <unistd.h>
+
+#include <cucim/memory/memory_manager.h>
+#include <cucim/profiler/nvtx3.h>
+
 #include "libdeflate.h"
 
 namespace cuslide::deflate
@@ -48,13 +52,16 @@ bool decode_deflate(int fd,
     // Allocate memory only when dest is not null
     if (*dest == nullptr)
     {
-        if ((*dest = (unsigned char*)malloc(dest_nbytes)) == nullptr)
+        if ((*dest = (unsigned char*)cucim_malloc(dest_nbytes)) == nullptr)
         {
             throw std::runtime_error("Unable to allocate uncompressed image buffer");
         }
     }
 
-    d = libdeflate_alloc_decompressor();
+    {
+        PROF_SCOPED_RANGE(PROF_EVENT(libdeflate_alloc_decompressor));
+        d = libdeflate_alloc_decompressor();
+    }
 
     if (d == nullptr)
     {
@@ -63,7 +70,7 @@ bool decode_deflate(int fd,
 
     if (deflate_buf == nullptr)
     {
-        if ((deflate_buf = (unsigned char*)malloc(size)) == nullptr)
+        if ((deflate_buf = (unsigned char*)cucim_malloc(size)) == nullptr)
         {
             throw std::runtime_error("Unable to allocate buffer for libdeflate!");
         }
@@ -80,14 +87,21 @@ bool decode_deflate(int fd,
     }
 
     size_t out_size;
-    libdeflate_zlib_decompress(d, deflate_buf, size /*in_nbytes*/, *dest, dest_nbytes /*out_nbytes_avail*/, &out_size);
+    {
+        PROF_SCOPED_RANGE(PROF_EVENT(libdeflate_zlib_decompress));
+        libdeflate_zlib_decompress(
+            d, deflate_buf, size /*in_nbytes*/, *dest, dest_nbytes /*out_nbytes_avail*/, &out_size);
+    }
 
     if (fd != -1)
     {
-        free(deflate_buf);
+        cucim_free(deflate_buf);
     }
 
-    libdeflate_free_decompressor(d);
+    {
+        PROF_SCOPED_RANGE(PROF_EVENT(libdeflate_free_decompressor));
+        libdeflate_free_decompressor(d);
+    }
     return true;
 }
 

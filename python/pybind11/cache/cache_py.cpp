@@ -41,7 +41,8 @@ void init_cache(py::module& cache)
     py::class_<ImageCache, std::shared_ptr<ImageCache>>(cache, "ImageCache")
         .def_property(
             "type", &ImageCache::type, nullptr, doc::ImageCache::doc_type, py::call_guard<py::gil_scoped_release>())
-        .def_property("config", &py_config, nullptr, doc::ImageCache::doc_type, py::call_guard<py::gil_scoped_release>())
+        .def_property(
+            "config", &py_config, nullptr, doc::ImageCache::doc_config, py::call_guard<py::gil_scoped_release>())
         .def_property(
             "size", &ImageCache::size, nullptr, doc::ImageCache::doc_size, py::call_guard<py::gil_scoped_release>())
         .def_property("memory_size", &ImageCache::memory_size, nullptr, doc::ImageCache::doc_memory_size,

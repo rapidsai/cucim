@@ -33,6 +33,10 @@ PYDOC(type, R"doc(
 A Cache type.
 )doc")
 
+PYDOC(config, R"doc(
+Returns the dictionary of configuration.
+)doc")
+
 // virtual uint32_t size() const = 0;
 PYDOC(size, R"doc(
 A size of list/hashmap.
@@ -62,7 +66,7 @@ A cache memory size available in the cache memory.
 // virtual void record(bool value) = 0;
 // virtual bool record() const = 0;
 PYDOC(record, R"doc(
-A cache memory size available in the cache memory.
+Records the cache statistics.
 )doc")
 
 // virtual uint64_t hit_count() const = 0;

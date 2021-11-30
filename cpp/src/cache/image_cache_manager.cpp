@@ -20,6 +20,7 @@
 #include "image_cache_per_process.h"
 #include "image_cache_shared_memory.h"
 #include "cucim/cuimage.h"
+#include "cucim/profiler/nvtx3.h"
 
 #include <cstdlib>
 #include <fmt/format.h>
@@ -103,6 +104,7 @@ std::unique_ptr<ImageCache> ImageCacheManager::create_cache() const
 
 std::unique_ptr<ImageCache> ImageCacheManager::create_cache(const ImageCacheConfig& cache_config) const
 {
+    PROF_SCOPED_RANGE(PROF_EVENT(image_cache_create_cache));
     switch (cache_config.type)
     {
     case CacheType::kNoCache:

@@ -69,6 +69,16 @@ PYDOC(cache, R"doc(
 Get cache object.
 )doc")
 
+// std::shared_ptr<profiler::Profiler> CuImage::profiler()
+PYDOC(profiler, R"doc(
+Get profiler object.
+)doc")
+
+// bool CuImage::is_trace_enabled()
+PYDOC(is_trace_enabled, R"doc(
+Return whether if the tracing is enabled or not.
+)doc")
+
 // filesystem::Path path() const;
 PYDOC(path, R"doc(
 Underlying file path for this object.

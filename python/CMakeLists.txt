@@ -163,6 +163,9 @@ pybind11_add_module(cucim
         pybind11/memory/memory_py.h
         pybind11/memory/memory_pydoc.h
         pybind11/memory/memory_py.cpp
+        pybind11/profiler/profiler_py.h
+        pybind11/profiler/profiler_pydoc.h
+        pybind11/profiler/profiler_py.cpp
         )
 target_link_libraries(cucim
     PRIVATE

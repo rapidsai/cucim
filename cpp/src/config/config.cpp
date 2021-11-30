@@ -48,6 +48,10 @@ Config::Config()
     {
         set_default_configuration();
     }
+
+    // Override config with environment variables
+    override_from_envs();
+    init_configs();
 }
 
 cucim::cache::ImageCacheConfig& Config::cache()
@@ -58,6 +62,11 @@ cucim::cache::ImageCacheConfig& Config::cache()
 cucim::plugin::PluginConfig& Config::plugin()
 {
     return plugin_;
+}
+
+cucim::profiler::ProfilerConfig& Config::profiler()
+{
+    return profiler_;
 }
 
 std::string Config::shm_name() const
@@ -130,6 +139,12 @@ bool Config::parse_config(std::string& path)
         {
             plugin_.load_config(&plugin);
         }
+
+        json profiler = obj["profiler"];
+        if (profiler.is_object())
+        {
+            profiler_.load_config(&profiler);
+        }
     }
     catch (const json::parse_error& e)
     {
@@ -146,6 +161,27 @@ bool Config::parse_config(std::string& path)
 void Config::set_default_configuration()
 {
     // Override if the initializer of Config class is not enough.
+}
+void Config::override_from_envs()
+{
+    if (const char* env_p = std::getenv("CUCIM_TRACE"))
+    {
+        if (env_p)
+        {
+            if (env_p[0] == '1')
+            {
+                profiler_.trace = true;
+            }
+            else
+            {
+                profiler_.trace = false;
+            }
+        }
+    }
+}
+void Config::init_configs()
+{
+    // Initialization if needed.
 }
 
 } // namespace cucim::config

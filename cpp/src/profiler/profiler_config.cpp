@@ -14,30 +14,24 @@
  * limitations under the License.
  */
 
-#include "cucim/plugin/plugin_config.h"
+#include "cucim/profiler/profiler_config.h"
 
 #include <fmt/format.h>
 #include <nlohmann/json.hpp>
 
 using json = nlohmann::json;
 
-namespace cucim::plugin
+namespace cucim::profiler
 {
 
-void PluginConfig::load_config(const void* json_obj)
+void ProfilerConfig::load_config(const void* json_obj)
 {
-    const json& plugin_config = *(static_cast<const json*>(json_obj));
+    const json& profiler_config = *(static_cast<const json*>(json_obj));
 
-    if (plugin_config.contains("names") && plugin_config["names"].is_array())
+    if (profiler_config.contains("trace") && profiler_config["trace"].is_boolean())
     {
-        std::vector<std::string> names;
-        names.reserve(16);
-        for (const auto& name : plugin_config["names"])
-        {
-            names.push_back(name);
-        }
-        plugin_names = std::move(names);
+        trace = profiler_config.value("trace", kDefaultProfilerTrace);
     }
 }
 
-} // namespace cucim::plugin
+} // namespace cucim::profiler
