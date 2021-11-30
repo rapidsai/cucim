@@ -28,7 +28,26 @@ constexpr uint64_t kOneMiB = 1024UL * 1024;
 constexpr std::string_view kDefaultCacheTypeStr = "nocache";
 constexpr CacheType kDefaultCacheType = cucim::cache::CacheType::kNoCache;
 constexpr uint64_t kDefaultCacheMemoryCapacity = 1024UL;
-constexpr uint32_t kDefaultCacheMutexPoolCapacity = 11117;
+/**
+ * @brief Mutex Pool size
+ *
+ * >>> from functools import reduce
+ * >>> def calc(pool_size, thread_size):
+ * >>>     a = reduce(lambda x,y: x*y, range(pool_size, pool_size - thread_size, -1))
+ * >>>     print(1 - (a / (pool_size**thread_size)))
+ *
+ * >>> calc(100003, 128)
+ * 0.07809410393222294
+ * >>> calc(100003, 256)
+ * 0.2786772006302005
+ *
+ * See https://godbolt.org/z/Tvx8179xK
+ * Creating a pool of 100000 mutexes takes only about 4 MB which is not big.
+ * I believe that making the mutex size biggger enough helps to the reduce the thread contention.
+ * For systems with more than 256 threads, the pool size should be larger.
+ * Choose a prime number for the pool size (https://primes.utm.edu/lists/small/100000.txt).
+ */
+constexpr uint32_t kDefaultCacheMutexPoolCapacity = 100003;
 constexpr uint32_t kDefaultCacheListPadding = 10000;
 constexpr uint32_t kDefaultCacheExtraSharedMemorySize = 100;
 constexpr bool kDefaultCacheRecordStat = false;
