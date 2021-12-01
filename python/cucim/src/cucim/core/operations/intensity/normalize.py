@@ -22,6 +22,7 @@ from .kernel.cuda_kernel_source import cuda_kernel_code
 
 CUDA_KERNELS = cupy.RawModule(code=cuda_kernel_code)
 
+
 def normalize_data(
     img: Any,
     norm_constant: float,
@@ -123,7 +124,7 @@ type : {'range', 'atan'}
         if to_cupy is True:
             result = cupy.asnumpy(result)
 
-    except Exception as e:
+    except Exception:
         raise
 
     return result

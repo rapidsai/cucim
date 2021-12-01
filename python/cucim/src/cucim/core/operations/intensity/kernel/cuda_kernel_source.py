@@ -15,24 +15,24 @@
 cuda_kernel_code = r'''
 extern "C" {
 __global__ void normalize_data_by_range(float *in, float *out, \
-								                        float norm_factor, \
-								                        float min_value, \
-								                        int total_size)
+                                        float norm_factor, \
+                                        float min_value, \
+                                        int total_size)
 {
   const unsigned int j = blockIdx.x * blockDim.x + threadIdx.x;
-	
+
   if( j < total_size ) {
     out[j] = norm_factor * (in[j] - min_value);
   }
 }
 
 __global__ void normalize_data_by_atan(float *in, float *out, \
-								                       float norm_factor, \
-								                       float min_value, \
-								                       int total_size)
+                                       float norm_factor, \
+                                       float min_value, \
+                                       int total_size)
 {
   const unsigned int j = blockIdx.x * blockDim.x + threadIdx.x;
-	
+
   if( j < total_size ) {
     out[j] = norm_factor * atan(in[j] - min_value);
   }
