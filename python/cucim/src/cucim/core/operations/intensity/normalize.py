@@ -102,7 +102,7 @@ type : {'range', 'atan'}
 
         normalize = CUDA_KERNELS.get_function("normalize_data_by_range")
 
-        if type == 2:
+        if type == 'atan':
             normalize = CUDA_KERNELS.get_function("normalize_data_by_atan")
 
         value_range = max_value - min_value
