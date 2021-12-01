@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import logging
 import math
 from typing import Any
 
@@ -22,7 +21,6 @@ import numpy as np
 from .kernel.cuda_kernel_source import cuda_kernel_code
 
 CUDA_KERNELS = cupy.RawModule(code=cuda_kernel_code)
-_logger = logging.getLogger("normalize_cucim")
 
 def normalize_data(
     img: Any,
@@ -126,7 +124,6 @@ type : {'range', 'atan'}
             result = cupy.asnumpy(result)
 
     except Exception as e:
-        _logger.error("[cucim] " + str(e), exc_info=True)
         raise
 
     return result
