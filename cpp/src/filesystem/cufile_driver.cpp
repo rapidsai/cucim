@@ -526,7 +526,6 @@ ssize_t CuFileDriver::pread(void* buf, size_t count, off_t file_offset, off_t bu
         {
             ssize_t read_cnt;
             size_t block_read_size = ALIGN_DOWN(count, PAGE_SIZE);
-            auto start = std::chrono::high_resolution_clock::now();
             if (block_read_size > 0)
             {
                 if (memory_type == cudaMemoryTypeUnregistered)
