@@ -65,7 +65,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CUDA_STANDARD 17) # Clion issue: https://youtrack.jetbrains.com/issue/CPP-19165 (fixed)
 set(CMAKE_CUDA_STANDARD_REQUIRED YES)
 set(CMAKE_CXX_STANDARD_REQUIRED YES)
-cucim_define_cuda_architectures(60;70;75;80;86)
+cucim_define_cuda_architectures(60;70;75;80;86) #
 # https://github.com/Kitware/CMake/blob/master/Modules/Compiler/NVIDIA-CUDA.cmake#L11
 # https://gitlab.kitware.com/cmake/cmake/-/issues/19017
 # For CUDA >= 10.2, we cannot use --compiler-options as '-forward-unknown-to-host-compiler' wouldbe added by default to nvcc options.
