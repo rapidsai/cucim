@@ -116,7 +116,7 @@ type : {'range', 'atan'}
         normalize((gridx, 1, 1), (blockx, 1, 1),
                   (cupy_img, result, np.float32(norm_factor),
                    np.float32(min_value),
-                   np.int32(total_size), np.int32(type)))
+                   np.int32(total_size)))
 
         if img.dtype != cupy.float32:
             result = result.astype(img.dtype)
