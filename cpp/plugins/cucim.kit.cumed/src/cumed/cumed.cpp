@@ -103,6 +103,7 @@ static CuCIMFileHandle CUCIM_ABI parser_open(const char* file_path_)
 
 static bool CUCIM_ABI parser_parse(CuCIMFileHandle* handle, cucim::io::format::ImageMetadataDesc* out_metadata_desc)
 {
+    (void)handle;
     if (!out_metadata_desc || !out_metadata_desc->handle)
     {
         throw std::runtime_error("out_metadata_desc shouldn't be nullptr!");
@@ -162,8 +163,6 @@ static bool CUCIM_ABI parser_parse(CuCIMFileHandle* handle, cucim::io::format::I
     }
 
     std::pmr::vector<float> level_downsamples(&resource);
-    float orig_width = static_cast<float>(shape[1]);
-    float orig_height = static_cast<float>(shape[0]);
     for (size_t i = 0; i < level_count; ++i)
     {
         level_downsamples.emplace_back(1.0);
@@ -234,6 +233,7 @@ static bool CUCIM_ABI reader_read(const CuCIMFileHandle* handle,
                                   cucim::io::format::ImageDataDesc* out_image_data,
                                   cucim::io::format::ImageMetadataDesc* out_metadata_desc = nullptr)
 {
+    (void)handle;
     (void)metadata;
 
     std::string device_name(request->device);

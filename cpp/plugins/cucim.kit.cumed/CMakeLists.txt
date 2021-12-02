@@ -163,10 +163,6 @@ add_library(${CUCIM_PLUGIN_NAME}
     src/cumed/cumed.h
     )
 
-# At least one file needs to be compiled with nvcc.
-# Otherwise, it will cause `/usr/bin/ld: cannot find -lcudart` error message.
-set_source_files_properties(src/cumed/cumed.cpp PROPERTIES LANGUAGE CUDA)
-
 # Compile options
 set_target_properties(${CUCIM_PLUGIN_NAME}
     PROPERTIES
@@ -188,6 +184,7 @@ target_compile_options(${CUCIM_PLUGIN_NAME} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-W
 # Link libraries
 target_link_libraries(${CUCIM_PLUGIN_NAME}
         PRIVATE
+            CUDA::cudart
             deps::fmt
             cucim::cucim
         )
