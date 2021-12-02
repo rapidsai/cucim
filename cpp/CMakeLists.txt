@@ -122,9 +122,6 @@ set_target_properties(${CUCIM_PACKAGE_NAME}
         SOVERSION ${PROJECT_VERSION_MAJOR}
         VERSION ${PROJECT_VERSION}
 )
-# At least one file needs to be compiled with nvcc.
-# Otherwise, it will cause `/usr/bin/ld: cannot find -lcudart` error message.
-set_source_files_properties(src/cucim.cpp src/filesystem/cufile_driver.cpp PROPERTIES LANGUAGE CUDA)
 
 # Note: Looks like the following line causes error on CMake 3.18.4 (it is working on 3.18.2). Keeping it for now.
 set(CUCIM_REQUIRED_FEATURES cxx_std_17 cuda_std_17)
@@ -161,6 +158,7 @@ target_link_libraries(${CUCIM_PACKAGE_NAME}
             # $<INSTALL_INTERFACE:cucim::rmm>
 ##            $<INSTALL_INTERFACE:cucim::gds>
         PRIVATE
+            CUDA::cudart
             deps::abseil
             deps::gds
             deps::libcuckoo

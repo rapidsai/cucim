@@ -191,11 +191,6 @@ add_library(${CUCIM_PLUGIN_NAME}
     src/cuslide/tiff/tiff.h
     src/cuslide/tiff/types.h)
 
-# At least one file needs to be compiled with nvcc.
-# Otherwise, it will cause `/usr/bin/ld: cannot find -lcudart` error message.
-# Note: Since cuslide.cpp is using nlohmann/json.hpp which nvcc cannot parse properly, set other files for cudart.
-set_source_files_properties(src/cuslide/jpeg/libjpeg_turbo.cpp PROPERTIES LANGUAGE CUDA)
-
 # compile color.c for libopenjpeg with c++
 set_source_files_properties(${deps-libopenjpeg_SOURCE_DIR}/src/bin/common/color.c
     PROPERTIES
@@ -203,6 +198,12 @@ set_source_files_properties(${deps-libopenjpeg_SOURCE_DIR}/src/bin/common/color.
         CMAKE_CXX_VISIBILITY_PRESET default
         CMAKE_C_VISIBILITY_PRESET default
         CMAKE_VISIBILITY_INLINES_HIDDEN OFF)
+
+# Ignore warnings in existing source code from libjpeg-turbo
+set_source_files_properties(src/cuslide/jpeg/libjpeg_turbo.cpp
+    PROPERTIES
+        COMPILE_OPTIONS "-Wno-error" # or, "-Wno-write-strings;-Wno-clobbered"
+    )
 
 # Compile options
 set_target_properties(${CUCIM_PLUGIN_NAME}
@@ -225,6 +226,7 @@ target_compile_options(${CUCIM_PLUGIN_NAME} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-W
 # Link libraries
 target_link_libraries(${CUCIM_PLUGIN_NAME}
         PRIVATE
+            CUDA::cudart
             deps::fmt
             #cucim::rmm
             cucim::cucim
