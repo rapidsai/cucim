@@ -59,7 +59,7 @@
 static void shuffle_offsets(uint32_t count, uint64_t* offsets, uint64_t* bytecounts)
 {
     // Fisher-Yates shuffle
-    for (int i = 0; i < count; ++i)
+    for (uint32_t i = 0; i < count; ++i)
     {
         int j = (std::rand() % (count - i)) + i;
         std::swap(offsets[i], offsets[j]);
@@ -172,7 +172,7 @@ TEST_CASE("Verify raw tiff read", "[test_read_rawtiff.cpp]")
             {
                 cucim::logger::Timer timer("- read whole : {:.7f}\n", true, false);
 
-                ssize_t read_cnt = fd->pread(aligned_host, test_file_size, 0);
+                fd->pread(aligned_host, test_file_size, 0);
 
                 double elapsed_time = timer.stop();
                 if (iter >= skip_count)
@@ -194,7 +194,7 @@ TEST_CASE("Verify raw tiff read", "[test_read_rawtiff.cpp]")
 
                 for (uint32_t i = 0; i < image_piece_count_; ++i)
                 {
-                    ssize_t read_cnt = fd->pread(aligned_host, image_piece_bytecounts_[i], image_piece_offsets_[i]);
+                    fd->pread(aligned_host, image_piece_bytecounts_[i], image_piece_offsets_[i]);
                 }
 
                 double elapsed_time = timer.stop();
@@ -220,7 +220,7 @@ TEST_CASE("Verify raw tiff read", "[test_read_rawtiff.cpp]")
             {
                 cucim::logger::Timer timer("- read whole : {:.7f}\n", true, false);
 
-                ssize_t read_cnt = fd->pread(aligned_host, test_file_size, 0);
+                fd->pread(aligned_host, test_file_size, 0);
 
                 double elapsed_time = timer.stop();
                 if (iter >= skip_count)
@@ -242,7 +242,7 @@ TEST_CASE("Verify raw tiff read", "[test_read_rawtiff.cpp]")
 
                 for (uint32_t i = 0; i < image_piece_count_; ++i)
                 {
-                    ssize_t read_cnt = fd->pread(buffer_host, image_piece_bytecounts_[i], image_piece_offsets_[i]);
+                    fd->pread(buffer_host, image_piece_bytecounts_[i], image_piece_offsets_[i]);
                 }
 
                 double elapsed_time = timer.stop();
@@ -274,7 +274,7 @@ TEST_CASE("Verify raw tiff read", "[test_read_rawtiff.cpp]")
             {
                 cucim::logger::Timer timer("- preload : {:.7f}\n", true, false);
 
-                ssize_t read_cnt = fd->pread(aligned_host, large_block_size, file_start_offset);
+                fd->pread(aligned_host, large_block_size, file_start_offset);
 
                 double elapsed_time = timer.stop();
                 if (iter >= skip_count)
@@ -358,7 +358,7 @@ TEST_CASE("Verify raw tiff read", "[test_read_rawtiff.cpp]")
                 for (uint32_t i = 0; i < image_piece_count_; ++i)
                 {
                     // 3.441 => 3.489
-                    ssize_t read_cnt = fd->pread(buffer_host, image_piece_bytecounts_[i], image_piece_offsets_[i]);
+                    fd->pread(buffer_host, image_piece_bytecounts_[i], image_piece_offsets_[i]);
                     //                                        memcpy(buffer_host, static_cast<char*>(mmap_host) +
                     //                                        image_piece_offsets_[i], image_piece_bytecounts_[i]);
                 }

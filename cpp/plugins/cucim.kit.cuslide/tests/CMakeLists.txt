@@ -26,18 +26,11 @@ add_executable(cuslide_tests
         test_read_rawtiff.cpp
         test_philips_tiff.cpp
         )
-set_source_files_properties(test_read_rawtiff.cpp PROPERTIES LANGUAGE CUDA) # failed with CLI11 library
-
 set_target_properties(cuslide_tests
     PROPERTIES
         CXX_STANDARD 17
         CXX_STANDARD_REQUIRED YES
         CXX_EXTENSIONS NO
-        CUDA_STANDARD 17
-        CUDA_STANDARD_REQUIRED YES
-        CUDA_EXTENSIONS NO
-        CUDA_SEPARABLE_COMPILATION ON
-        CUDA_RUNTIME_LIBRARY Shared
 )
 target_compile_features(cuslide_tests PRIVATE ${CUCIM_REQUIRED_FEATURES})
 # Use generator expression to avoid `nvcc fatal   : Value '-std=c++17' is not defined for option 'Werror'`
@@ -52,6 +45,7 @@ target_compile_definitions(cuslide_tests
 )
 target_link_libraries(cuslide_tests
         PRIVATE
+            CUDA::cudart
             cucim::cucim
             ${CUCIM_PLUGIN_NAME}
             deps::catch2

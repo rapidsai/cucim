@@ -64,6 +64,7 @@ static void create_test_file(const char* file_name, int size)
         test_data[i] = ::rand() % 256; // or i % 256;
     }
     ssize_t write_cnt = write(fd, test_data, size);
+    (void)write_cnt;
     assert(write_cnt == size);
     close(fd);
 }
@@ -125,8 +126,8 @@ TEST_CASE("Verify libcufile usage", "[test_cufile.cpp]")
                 INFO("# unaligned_host");
                 size_t reference_whole_hash = 0;
                 size_t reference_hash = 0;
-                size_t reference_write_cnt = 0;
-                size_t reference_read_cnt = 0;
+                ssize_t reference_write_cnt = 0;
+                ssize_t reference_read_cnt = 0;
                 for (int flag_idx = 0; flag_idx < W_FLAG_LEN; ++flag_idx)
                 {
                     INFO(fmt::format("flag_index: {} ({})\n  count: {}\n  file_offset: {}  buf_offset: {}\n", flag_idx,
@@ -185,8 +186,8 @@ TEST_CASE("Verify libcufile usage", "[test_cufile.cpp]")
                 INFO("# aligned_host");
                 size_t reference_whole_hash = 0;
                 size_t reference_hash = 0;
-                size_t reference_write_cnt = 0;
-                size_t reference_read_cnt = 0;
+                ssize_t reference_write_cnt = 0;
+                ssize_t reference_read_cnt = 0;
                 for (int flag_idx = 0; flag_idx < W_FLAG_LEN; ++flag_idx)
                 {
                     INFO(fmt::format("flag_index: {} ({})\n  count: {}\n  file_offset: {}  buf_offset: {}\n", flag_idx,
@@ -245,8 +246,8 @@ TEST_CASE("Verify libcufile usage", "[test_cufile.cpp]")
                     INFO("# unaligned_device");
                     size_t reference_whole_hash = 0;
                     size_t reference_hash = 0;
-                    size_t reference_write_cnt = 0;
-                    size_t reference_read_cnt = 0;
+                    ssize_t reference_write_cnt = 0;
+                    ssize_t reference_read_cnt = 0;
                     for (int flag_idx = 0; flag_idx < W_FLAG_LEN; ++flag_idx)
                     {
                         INFO(fmt::format("flag_index: {} ({})\n  count: {}\n  file_offset: {}  buf_offset: {}\n", flag_idx,
@@ -306,8 +307,8 @@ TEST_CASE("Verify libcufile usage", "[test_cufile.cpp]")
                     INFO("# aligned_device");
                     size_t reference_whole_hash = 0;
                     size_t reference_hash = 0;
-                    size_t reference_write_cnt = 0;
-                    size_t reference_read_cnt = 0;
+                    ssize_t reference_write_cnt = 0;
+                    ssize_t reference_read_cnt = 0;
                     for (int flag_idx = 0; flag_idx < W_FLAG_LEN; ++flag_idx)
                     {
                         INFO(fmt::format("flag_index: {} ({})\n  count: {}\n  file_offset: {}  buf_offset: {}\n", flag_idx,
@@ -368,8 +369,8 @@ TEST_CASE("Verify libcufile usage", "[test_cufile.cpp]")
                     INFO("# unaligned_device (pinned host)");
                     size_t reference_whole_hash = 0;
                     size_t reference_hash = 0;
-                    size_t reference_write_cnt = 0;
-                    size_t reference_read_cnt = 0;
+                    ssize_t reference_write_cnt = 0;
+                    ssize_t reference_read_cnt = 0;
                     for (int flag_idx = 0; flag_idx < W_FLAG_LEN; ++flag_idx)
                     {
                         INFO(fmt::format("flag_index: {} ({})\n  count: {}\n  file_offset: {}  buf_offset: {}\n", flag_idx,
@@ -431,8 +432,8 @@ TEST_CASE("Verify libcufile usage", "[test_cufile.cpp]")
                     INFO("# aligned_device (pinned host)");
                     size_t reference_whole_hash = 0;
                     size_t reference_hash = 0;
-                    size_t reference_write_cnt = 0;
-                    size_t reference_read_cnt = 0;
+                    ssize_t reference_write_cnt = 0;
+                    ssize_t reference_read_cnt = 0;
                     for (int flag_idx = 0; flag_idx < W_FLAG_LEN; ++flag_idx)
                     {
                         INFO(fmt::format("flag_index: {} ({})\n  count: {}\n  file_offset: {}  buf_offset: {}\n", flag_idx,
@@ -496,8 +497,8 @@ TEST_CASE("Verify libcufile usage", "[test_cufile.cpp]")
                     INFO("# unaligned_device (managed)");
                     size_t reference_whole_hash = 0;
                     size_t reference_hash = 0;
-                    size_t reference_write_cnt = 0;
-                    size_t reference_read_cnt = 0;
+                    ssize_t reference_write_cnt = 0;
+                    ssize_t reference_read_cnt = 0;
                     for (int flag_idx = 0; flag_idx < W_FLAG_LEN; ++flag_idx)
                     {
                         INFO(fmt::format("flag_index: {} ({})\n  count: {}\n  file_offset: {}  buf_offset: {}\n", flag_idx,
@@ -560,8 +561,8 @@ TEST_CASE("Verify libcufile usage", "[test_cufile.cpp]")
                     INFO("# aligned_device (managed)");
                     size_t reference_whole_hash = 0;
                     size_t reference_hash = 0;
-                    size_t reference_write_cnt = 0;
-                    size_t reference_read_cnt = 0;
+                    ssize_t reference_write_cnt = 0;
+                    ssize_t reference_read_cnt = 0;
                     for (int flag_idx = 0; flag_idx < W_FLAG_LEN; ++flag_idx)
                     {
                         INFO(fmt::format("flag_index: {} ({})\n  count: {}\n  file_offset: {}  buf_offset: {}\n", flag_idx,

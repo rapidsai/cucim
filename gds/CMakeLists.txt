@@ -32,27 +32,18 @@ add_library(cufile_stub
         src/cufile_stub.cpp
         )
 
-set_source_files_properties(src/cufile_stub.cpp PROPERTIES LANGUAGE CUDA)
-
 # Compile options
 set_target_properties(cufile_stub
     PROPERTIES
         CXX_STANDARD 17
         CXX_STANDARD_REQUIRED YES
         CXX_EXTENSIONS NO
-        CUDA_STANDARD 17
-        CUDA_STANDARD_REQUIRED YES
-        CUDA_EXTENSIONS NO
-        CUDA_SEPARABLE_COMPILATION ON
-        CUDA_RUNTIME_LIBRARY Shared
         # To prevent the error message: /usr/bin/ld: ../lib/libcufile_stub.a(cufile_stub.cpp.o): relocation R_X86_64_PC32 against symbol `__fatbinwrap_46_tmpxft_00005869_00000000_6_cufile_stub_cpp1_ii_1e2ddd49' can not be used when making a shared object; recompile with -fPIC
         POSITION_INDEPENDENT_CODE ON
-#        SOVERSION ${PROJECT_VERSION_MAJOR}
-#        VERSION ${PROJECT_VERSION}
 )
 
 # Note: Looks like the following line causes error on CMake 3.18.4 (it is working on 3.18.2). Keeping it for now.
-set(CUCIM_REQUIRED_FEATURES cxx_std_17 cuda_std_17)
+set(CUCIM_REQUIRED_FEATURES cxx_std_17)
 target_compile_features(cufile_stub PRIVATE ${CUCIM_REQUIRED_FEATURES})
 # Use generator expression to avoid `nvcc fatal   : Value '-std=c++17' is not defined for option 'Werror'`
 target_compile_options(cufile_stub
@@ -64,6 +55,8 @@ target_compile_options(cufile_stub
 target_link_libraries(cufile_stub
         PUBLIC
             ${CMAKE_DL_LIBS}
+        PRIVATE
+            CUDA::cudart
         )
 
 # Set GDS include path (cufile.h)

@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+#define CUCIM_EXPORTS // For exporting functions globally
+
 #include "cucim/memory/memory_manager.h"
 
 #include <memory_resource>
@@ -24,7 +26,6 @@
 #include "cucim/io/device_type.h"
 #include "cucim/profiler/nvtx3.h"
 #include "cucim/util/cuda.h"
-
 
 CUCIM_API void* cucim_malloc(size_t size)
 {
@@ -71,13 +72,13 @@ void get_pointer_attributes(PointerAttributes& attr, const void* ptr)
     }
 }
 
-bool move_raster_from_host(void** target, size_t size, const cucim::io::Device& dst_device)
+CUCIM_API bool move_raster_from_host(void** target, size_t size, const cucim::io::Device& dst_device)
 {
     switch (dst_device.type())
     {
     case cucim::io::DeviceType::kCPU:
         break;
-    case cucim::io::DeviceType::kCUDA:
+    case cucim::io::DeviceType::kCUDA: {
         cudaError_t cuda_status;
         void* host_mem = *target;
         void* cuda_mem;
@@ -93,11 +94,15 @@ bool move_raster_from_host(void** target, size_t size, const cucim::io::Device& 
         }
         cucim_free(host_mem);
         *target = cuda_mem;
+        break;
+    }
+    default:
+        throw std::runtime_error("Unsupported device type");
     }
     return true;
 }
 
-bool move_raster_from_device(void** target, size_t size, const cucim::io::Device& dst_device)
+CUCIM_API bool move_raster_from_device(void** target, size_t size, const cucim::io::Device& dst_device)
 {
     switch (dst_device.type())
     {
@@ -116,6 +121,8 @@ bool move_raster_from_device(void** target, size_t size, const cucim::io::Device
     }
     case cucim::io::DeviceType::kCUDA:
         break;
+    default:
+        throw std::runtime_error("Unsupported device type");
     }
     return true;
 }
