@@ -77,7 +77,7 @@ CUCIM_API void get_pointer_attributes(PointerAttributes& attr, const void* ptr);
  * @param dst_device Destination device of the memory.
  * @return `true` if succeed.
  */
-bool move_raster_from_host(void** target, size_t size, const cucim::io::Device& dst_device);
+CUCIM_API bool move_raster_from_host(void** target, size_t size, const cucim::io::Device& dst_device);
 
 /**
  * @brief Move device memory of `size` bytes to a new memory in `out_device`.
@@ -90,7 +90,7 @@ bool move_raster_from_host(void** target, size_t size, const cucim::io::Device& 
  * @param dst_device Destination device of the memory.
  * @return `true` if succeed.
  */
-bool move_raster_from_device(void** target, size_t size, const cucim::io::Device& dst_device);
+CUCIM_API bool move_raster_from_device(void** target, size_t size, const cucim::io::Device& dst_device);
 
 } // namespace cucim::memory
 #endif // CUCIM_MEMORY_MANAGER_H

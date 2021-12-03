@@ -100,7 +100,7 @@ add_library(${CUCIM_PACKAGE_NAME}
         src/io/format/image_format.cpp
         src/logger/logger.cpp
         src/logger/timer.cpp
-        src/memory/memory_manager.cu
+        src/memory/memory_manager.cpp
         src/plugin/image_format.cpp
         src/plugin/plugin_config.cpp
         src/profiler/profiler.cpp
@@ -114,17 +114,12 @@ set_target_properties(${CUCIM_PACKAGE_NAME}
         CXX_STANDARD 17
         CXX_STANDARD_REQUIRED YES
         CXX_EXTENSIONS NO
-        CUDA_STANDARD 17
-        CUDA_STANDARD_REQUIRED YES
-        CUDA_EXTENSIONS NO
-        CUDA_SEPARABLE_COMPILATION ON
-        CUDA_RUNTIME_LIBRARY Shared
         SOVERSION ${PROJECT_VERSION_MAJOR}
         VERSION ${PROJECT_VERSION}
 )
 
 # Note: Looks like the following line causes error on CMake 3.18.4 (it is working on 3.18.2). Keeping it for now.
-set(CUCIM_REQUIRED_FEATURES cxx_std_17 cuda_std_17)
+set(CUCIM_REQUIRED_FEATURES cxx_std_17)
 target_compile_features(${CUCIM_PACKAGE_NAME} PRIVATE ${CUCIM_REQUIRED_FEATURES})
 # Use generator expression to avoid `nvcc fatal   : Value '-std=c++17' is not defined for option 'Werror'`
 target_compile_options(${CUCIM_PACKAGE_NAME}
@@ -150,13 +145,7 @@ target_link_libraries(${CUCIM_PACKAGE_NAME}
         PUBLIC
             ${CMAKE_DL_LIBS}
             $<BUILD_INTERFACE:deps::fmt>
-#            $<BUILD_INTERFACE:deps::boost>
-#            $<BUILD_INTERFACE:deps::rmm>
-#            $<BUILD_INTERFACE:deps::gds>
             $<INSTALL_INTERFACE:cucim::fmt-header-only>
-##            $<INSTALL_INTERFACE:cucim::boost>
-            # $<INSTALL_INTERFACE:cucim::rmm>
-##            $<INSTALL_INTERFACE:cucim::gds>
         PRIVATE
             CUDA::cudart
             deps::abseil
@@ -179,8 +168,6 @@ target_include_directories(${CUCIM_PACKAGE_NAME}
         PUBLIC
             $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
             $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/${CUCIM_PACKAGE_NAME}/3rdparty>
-#            $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/gds/lib> # for GDS header
-#            $<BUILD_INTERFACE:${THRUST_INCLUDE_DIR}>
             $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
             $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/${CUCIM_PACKAGE_NAME}/3rdparty> # for 3rdparty libraries such as dlpack, nvtx3, and fmt
         PRIVATE
