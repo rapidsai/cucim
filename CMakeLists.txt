@@ -28,7 +28,7 @@ set(PROJECT_VERSION_BUILD dev)
 
 # Append local cmake module path
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cpp/cmake/modules")
-project(libcucim VERSION ${VERSION} DESCRIPTION "libcucim" LANGUAGES CXX CUDA)
+project(libcucim VERSION ${VERSION} DESCRIPTION "libcucim" LANGUAGES CXX)
 
 ################################################################################
 # Include utilities
@@ -62,19 +62,7 @@ endif ()
 
 find_package(CUDAToolkit REQUIRED)
 set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CUDA_STANDARD 17) # Clion issue: https://youtrack.jetbrains.com/issue/CPP-19165 (fixed)
-set(CMAKE_CUDA_STANDARD_REQUIRED YES)
 set(CMAKE_CXX_STANDARD_REQUIRED YES)
-cucim_define_cuda_architectures(60;70;75;80;86)
-# https://github.com/Kitware/CMake/blob/master/Modules/Compiler/NVIDIA-CUDA.cmake#L11
-# https://gitlab.kitware.com/cmake/cmake/-/issues/19017
-# For CUDA >= 10.2, we cannot use --compiler-options as '-forward-unknown-to-host-compiler' wouldbe added by default to nvcc options.
-# For the reason, we add "${CMAKE_CXX_FLAGS}" instead of "--compiler-options ${CMAKE_CXX_FLAGS}" here.
-# ==> We changed to use "${CMAKE_CUDA_FLAGS}" instead of "${CMAKE_CXX_FLAGS}" ${CMAKE_CXX_FLAGS} can have wrong options such as '-march=nocona'
-set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -use_fast_math -Xptxas=-v")
-set(CMAKE_CUDA_FLAGS_DEBUG "${CMAKE_CUDA_FLAGS_DEBUG} -G")
-set(CMAKE_CUDA_FLAGS_RELEASE "${CMAKE_CUDA_FLAGS_RELEASE} -lineinfo")
-set(CMAKE_CUDA_FLAGS_RELWITHDEBINFO "${CMAKE_CUDA_FLAGS_RELWITHDEBINFO} -lineinfo")
 
 # Include CUDA headers explicitly for VSCode intelli-sense
 include_directories(AFTER SYSTEM ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES})
@@ -114,13 +102,22 @@ option(CUCIM_SUPPORT_NVTX "Support NVTX" ON)
 add_definitions(-D_GLIBCXX_USE_CXX11_ABI=0) # TODO: create two library, one with CXX11 ABI and one without it.
 
 ################################################################################
+# Define basic dependencies
+################################################################################
+# Include pthread
+# (https://cmake.org/cmake/help/v3.18/module/FindThreads.html)
+set(CMAKE_THREAD_PREFER_PTHREAD TRUE)
+set(THREADS_PREFER_PTHREAD_FLAG TRUE)
+find_package(Threads REQUIRED)
+
+################################################################################
 # Define dependencies
 ################################################################################
 superbuild_depend(fmt)
 #superbuild_depend(boost)
 superbuild_depend(abseil)
-superbuild_depend(rmm) # this imports googletest internally
-#superbuild_depend(googletest)
+# superbuild_depend(rmm) # this imports googletest internally
+superbuild_depend(googletest)
 superbuild_depend(googlebenchmark)
 superbuild_depend(openslide)
 superbuild_depend(catch2)
@@ -156,13 +153,8 @@ configure_file(${CMAKE_CURRENT_LIST_DIR}/examples/cpp/CMakeLists.txt.examples.re
 ################################################################################
 set(INSTALL_TARGETS
         ${CUCIM_PACKAGE_NAME}
-#        ${CUCIM_PACKAGE_NAME}-header-only
-#        rmm
         fmt-header-only
-#        spdlog_header_only # required by rmm
         cucim_benchmarks
-#        cufile_stub
-#        cucim_tests
         )
 
 install(TARGETS ${INSTALL_TARGETS}

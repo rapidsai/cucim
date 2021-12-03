@@ -30,6 +30,9 @@ if (NOT TARGET deps::nvtx3)
     # Create shared library
     cucim_set_build_shared_libs(ON) # since nvtx3 is header-only library, this may not needed.
 
+    set(BUILD_TESTS OFF)
+    set(BUILD_BENCHMARKS OFF)
+
     add_subdirectory(${deps-nvtx3_SOURCE_DIR}/cpp ${deps-nvtx3_BINARY_DIR} EXCLUDE_FROM_ALL)
     cucim_restore_build_shared_libs()
 

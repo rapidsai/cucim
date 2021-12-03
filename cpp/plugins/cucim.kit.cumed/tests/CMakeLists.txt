@@ -24,18 +24,12 @@ add_executable(cumed_tests
         main.cpp
         test_basic.cpp
         )
-set_source_files_properties(test_basic.cpp PROPERTIES LANGUAGE CUDA) # failed with CLI11 library
 
 set_target_properties(cumed_tests
     PROPERTIES
         CXX_STANDARD 17
         CXX_STANDARD_REQUIRED YES
         CXX_EXTENSIONS NO
-        CUDA_STANDARD 17
-        CUDA_STANDARD_REQUIRED YES
-        CUDA_EXTENSIONS NO
-        CUDA_SEPARABLE_COMPILATION ON
-        CUDA_RUNTIME_LIBRARY Shared
 )
 target_compile_features(cumed_tests PRIVATE ${CUCIM_REQUIRED_FEATURES})
 # Use generator expression to avoid `nvcc fatal   : Value '-std=c++17' is not defined for option 'Werror'`
