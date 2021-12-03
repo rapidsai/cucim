@@ -93,4 +93,6 @@ class MapDaskDataset(torch.utils.data.Dataset):
         return len(self.darr)
 
     def __getitem__(self, idx):
-        return self.darr[idx].compute(scheduler="synchronous")
+        return torch.as_tensor(
+            self.darr[idx].compute(scheduler="synchronous")
+        )
