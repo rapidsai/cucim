@@ -106,7 +106,7 @@ def normalize_data(
         value_range = max_value - min_value
         norm_factor = norm_constant / value_range
 
-        total_size = math.prod(img.shape)
+        total_size = int(np.prod(img.shape))
         blockx = 128
         gridx = int((total_size - 1) / blockx + 1)
 
