@@ -59,7 +59,9 @@ void CuFileStub::load()
 #if !CUCIM_STATIC_GDS
         if (handle_ == nullptr)
         {
-            handle_ = cucim::dynlib::load_library("libcufile.so");
+            // Note: Load the dynamic library with RTLD_NODELETE flag because libcufile.so uses therad_local which can
+            // cause a segmentation fault if the library is dynamically loaded/unloaded. (See #158)
+            handle_ = cucim::dynlib::load_library("libcufile.so", RTLD_LAZY | RTLD_LOCAL | RTLD_NODELETE);
             if (handle_ == nullptr)
             {
                 return;
@@ -90,12 +92,7 @@ void CuFileStub::unload()
 #if !CUCIM_STATIC_GDS
         if (handle_)
         {
-            // Do not unload the cufile (GDS) library as libcufile registers a cleanup function with atexit() and
-            // unloading the library will cause a segfault (calling the cleanup function that doesn't exist anymore).
-            // Just leave the library loaded.
-            // See https://github.com/rapidsai/cucim/pull/153
-
-            // cucim::dynlib::unload_library(handle_);
+            cucim::dynlib::unload_library(handle_);
             handle_ = nullptr;
 
             impl_cuFileDriverOpen = nullptr;
