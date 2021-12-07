@@ -9,6 +9,8 @@ import time
 import math
 import os
 
+#from cucim.skimage import color
+
 
 class BatchQueue:
     def __init__(self, darr, batch_size):
@@ -93,6 +95,14 @@ class MapDaskDataset(torch.utils.data.Dataset):
         return len(self.darr)
 
     def __getitem__(self, idx):
+        part = self.darr[idx]
+        part = self.transform(part)
         return torch.as_tensor(
-            self.darr[idx].compute(scheduler="synchronous")
+            part.compute(scheduler="synchronous")
         )
+
+    def transform(dask_array):
+        ## Perform Dask-scheduled CuCIM transformation
+        ## Example:
+        ## dask_array = color.hed2rgb(dask_array)
+        return dask_array
