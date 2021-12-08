@@ -301,6 +301,27 @@ build_local_cuslide_() {
     popd
 }
 
+build_local_cumed_() {
+    local source_folder=${1:-${TOP}/cpp/plugins/cucim.kit.cumed}
+    local build_type=${2:-debug}
+    local build_type_str=${3:-Debug}
+    local prefix=${4:-}
+    local build_folder=${source_folder}/build-${build_type}
+    local CMAKE_CMD=${CMAKE_CMD:-cmake}
+
+    pushd ${source_folder} > /dev/null
+
+    ${CMAKE_CMD} -S ${source_folder} -B ${build_folder} -G "Unix Makefiles" \
+        -DCMAKE_EXPORT_COMPILE_COMMANDS:BOOL=TRUE \
+        -DCMAKE_BUILD_TYPE=${build_type_str} \
+        -DCMAKE_PREFIX_PATH=${prefix} \
+        -DCMAKE_INSTALL_PREFIX=${source_folder}/install
+    ${CMAKE_CMD} --build ${build_folder} --config ${build_type_str} --target cucim.kit.cumed -- -j $(nproc)
+    ${CMAKE_CMD} --build ${build_folder} --config ${build_type_str} --target install -- -j $(nproc)
+
+    popd
+}
+
 build_local_cucim_() {
     local source_folder=${1:-${TOP}/python}
     local build_type=${2:-debug}
@@ -333,7 +354,7 @@ build_local_desc() { echo 'Build locally
 Compile binaries locally
 
 Arguments:
-  $1 - subcommand [all|clean_cache|clean|libcucim|cuslide|cucim] (default: all)
+  $1 - subcommand [all|clean_cache|clean|libcucim|cuslide|cumed|cucim] (default: all)
   $2 - build type [debug|release|rel-debug] (default: debug)
 '
 }
@@ -355,6 +376,7 @@ build_local() {
     if [ "$subcommand" = "clean_cache" ]; then
         rm -f ${TOP}/build-*/CMakeCache.txt
         rm -f ${TOP}/cpp/plugins/cucim.kit.cuslide/build-*/CMakeCache.txt
+        rm -f ${TOP}/cpp/plugins/cucim.kit.cumed/build-*/CMakeCache.txt
         rm -f ${TOP}/python/build-*/CMakeCache.txt
     fi
 
@@ -363,6 +385,8 @@ build_local() {
         rm -rf ${TOP}/install
         rm -rf ${TOP}/cpp/plugins/cucim.kit.cuslide/build-*/
         rm -rf ${TOP}/cpp/plugins/cucim.kit.cuslide/install
+        rm -rf ${TOP}/cpp/plugins/cucim.kit.cumed/build-*/
+        rm -rf ${TOP}/cpp/plugins/cucim.kit.cumed/install
         rm -rf ${TOP}/python/build-*
         rm -rf ${TOP}/python/install
     fi
@@ -375,6 +399,10 @@ build_local() {
         build_local_cuslide_ ${TOP}/cpp/plugins/cucim.kit.cuslide ${build_type} ${build_type_str} ${prefix}
     fi
 
+    if [ "$subcommand" = "all" ] || [ "$subcommand" = "cumed" ]; then
+        build_local_cumed_ ${TOP}/cpp/plugins/cucim.kit.cumed ${build_type} ${build_type_str} ${prefix}
+    fi
+
     if [ "$subcommand" = "all" ] || [ "$subcommand" = "cucim" ]; then
         build_local_cucim_ ${TOP}/python ${build_type} ${build_type_str} ${prefix}
     fi
@@ -385,11 +413,12 @@ build_local() {
     if [ "$subcommand" = "all" ] || [ "$subcommand" = "cucim" ]; then
         # We don't need to copy binary if executed by conda-build
         if [ "${CONDA_BUILD:-}" != "1" ]; then
-            # Copy .so files from libcucim & cuslide's build folders to cuCIM's Python source folder
+            # Copy .so files from libcucim & cuslide/cumed's build folders to cuCIM's Python source folder
             # Since wheel file doesn't support symbolic link (https://github.com/pypa/wheel/issues/203),
             # we don't need to copy symbolic links. Instead copy only libcucim.so.${major_version} (without symbolic link)
             cp ${TOP}/build-$build_type/lib*/libcucim.so.${major_version} ${TOP}/python/cucim/src/cucim/clara/
             cp -P ${TOP}/cpp/plugins/cucim.kit.cuslide/build-$build_type/lib*/cucim* ${TOP}/python/cucim/src/cucim/clara/
+            cp -P ${TOP}/cpp/plugins/cucim.kit.cumed/build-$build_type/lib*/cucim* ${TOP}/python/cucim/src/cucim/clara/
 
             # Copy .so files from pybind's build folder to cuCIM's Python source folder
             cp ${TOP}/python/build-$build_type/lib/cucim/_cucim.*.so ${TOP}/python/cucim/src/cucim/clara/
@@ -489,6 +518,7 @@ build_python_package_() {
     # Clear CMakeCache.txt to use the latest options
     run_command rm -f ${BUILD_ROOT}/libcucim/CMakeCache.txt
     run_command rm -f ${BUILD_ROOT}/cuslide/CMakeCache.txt
+    run_command rm -f ${BUILD_ROOT}/cumed/CMakeCache.txt
     run_command rm -f ${BUILD_ROOT}/cucim/CMakeCache.txt
 
     # Create a folder for .whl file that repair_wheel_ is not applied.
@@ -513,6 +543,8 @@ build_python_package_() {
     rm -rf ${BUILD_ROOT}/libcucim/install/lib*/lib*
     rm -rf ${BUILD_ROOT}/cuslide/lib/*
     rm -rf ${BUILD_ROOT}/cuslide/install/lib*/cucim*
+    rm -rf ${BUILD_ROOT}/cumed/lib/*
+    rm -rf ${BUILD_ROOT}/cumed/install/lib*/cucim*
     rm -rf ${BUILD_ROOT}/cucim/lib/cucim/*.so*
     rm -rf ${BUILD_ROOT}/cucim/install/lib/*.so*
 
@@ -530,6 +562,14 @@ build_python_package_() {
         -DCUCIM_SDK_PATH=${CUCIM_SDK_PATH}
     ${CMAKE_CMD} --build ${BUILD_ROOT}/cuslide --config ${CMAKE_BUILD_TYPE} --target cucim.kit.cuslide -- -j ${NUM_THREADS}
     ${CMAKE_CMD} --build ${BUILD_ROOT}/cuslide --config ${CMAKE_BUILD_TYPE} --target install -- -j ${NUM_THREADS}
+
+    # Build cumed plugin
+    ${CMAKE_CMD} -S ${SRC_ROOT}/cpp/plugins/cucim.kit.cumed -B ${BUILD_ROOT}/cumed \
+        -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} \
+        -DCMAKE_INSTALL_PREFIX=${BUILD_ROOT}/cumed/install \
+        -DCUCIM_SDK_PATH=${CUCIM_SDK_PATH}
+    ${CMAKE_CMD} --build ${BUILD_ROOT}/cumed --config ${CMAKE_BUILD_TYPE} --target cucim.kit.cumed -- -j ${NUM_THREADS}
+    ${CMAKE_CMD} --build ${BUILD_ROOT}/cumed --config ${CMAKE_BUILD_TYPE} --target install -- -j ${NUM_THREADS}
 
     # Build Python bind
     pybins="$(echo /opt/python/*/bin)"
@@ -558,6 +598,7 @@ build_python_package_() {
     # (it uses -P to copy symbolic links as they are)
     cp -P ${BUILD_ROOT}/libcucim/install/lib*/lib* ${BUILD_ROOT}/cucim/install/lib/
     cp -P ${BUILD_ROOT}/cuslide/install/lib*/cucim* ${BUILD_ROOT}/cucim/install/lib/
+    cp -P ${BUILD_ROOT}/cumed/install/lib*/cucim* ${BUILD_ROOT}/cucim/install/lib/
 
     # Copy .so files from pybind's build folder to cucim Python source folder
     # Since wheel file doesn't support symbolic link (https://github.com/pypa/wheel/issues/203),
@@ -604,6 +645,7 @@ build_python_package_() {
     mkdir -p ${DEST_ROOT}/examples/cpp
     cp -P -r ${BUILD_ROOT}/libcucim/install ${DEST_ROOT}/
     cp -P -r ${BUILD_ROOT}/cuslide/install/lib/*.so ${DEST_ROOT}/install/lib/
+    cp -P -r ${BUILD_ROOT}/cumed/install/lib/*.so ${DEST_ROOT}/install/lib/
     cp -r ${SRC_ROOT}/examples/cpp/tiff_image ${DEST_ROOT}/examples/cpp/
 
     cp ${BUILD_ROOT}/libcucim/CMakeLists.txt.examples.release ${DEST_ROOT}/examples/cpp/CMakeLists.txt
@@ -692,11 +734,8 @@ test() {
 
 install_python_test_deps_() {
     if [ -n "${CONDA_PREFIX}" ]; then
-        # Override openslide-python due to the following issue:
-        #   https://github.com/conda-forge/openslide-python-feedstock/issues/4
         run_command conda install -c conda-forge -y \
-            --file ${TOP}/python/cucim/requirements-test.txt \
-            conda-forge/linux-64::openslide-python
+            --file ${TOP}/python/cucim/requirements-test.txt
     else
         if [ -n "${VIRTUAL_ENV}" ]; then
             run_command pip3 install -r ${TOP}/python/cucim/requirements-test.txt

@@ -38,6 +38,7 @@ class EXPORT_VISIBLE Device
 public:
     explicit Device();
     Device(const Device& device);
+    Device& operator=(const Device& device) = default;
     explicit Device(const std::string& device_name);
     Device(const char* device_name);
     Device(DeviceType type, DeviceIndex index);

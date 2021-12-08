@@ -14,14 +14,38 @@
 
 cuda_kernel_code = r'''
 extern "C" {
+__global__ void normalize_data_by_range(float *in, float *out, \
+                                        float norm_factor, \
+                                        float min_value, \
+                                        int total_size)
+{
+  const unsigned int j = blockIdx.x * blockDim.x + threadIdx.x;
+
+  if( j < total_size ) {
+    out[j] = norm_factor * (in[j] - min_value);
+  }
+}
+
+__global__ void normalize_data_by_atan(float *in, float *out, \
+                                       float norm_factor, \
+                                       float min_value, \
+                                       int total_size)
+{
+  const unsigned int j = blockIdx.x * blockDim.x + threadIdx.x;
+
+  if( j < total_size ) {
+    out[j] = norm_factor * atan(in[j] - min_value);
+  }
+}
+
 __global__ void scaleVolume(float* image, float* output, \
                             float x, float y, float bmin, \
                             float bmax, int W)
 {
-    const unsigned int j = blockIdx.x * blockDim.x + threadIdx.x;
-    if(j < W) {
-        output[j] = fmaxf(fminf(image[j] * x - y, bmax), bmin);
-    }
+  const unsigned int j = blockIdx.x * blockDim.x + threadIdx.x;
+  if(j < W) {
+    output[j] = fmaxf(fminf(image[j] * x - y, bmax), bmin);
+  }
 }
 
 __global__ void zoom_in_kernel(float *input_tensor, float *output_tensor, \
@@ -169,74 +193,70 @@ __global__ void zoom_out_kernel(float *input_tensor, float *output_tensor,
     output_tensor[(blockIdx.z * pitch) +
                   ((out_pixel_h + out_h_start) * input_w) +
                   (out_pixel_w + out_w_start)] = sum_;
+  }
+}
 
-    // replicate along top edge
-    if (out_pixel_h == 0) {
-      for (int ik = 0; ik < out_h_start; ik++)
-        output_tensor[(blockIdx.z * pitch) +
-                      ((out_pixel_h + ik) * input_w) +
-                      (out_pixel_w + out_w_start)] = sum_;
-    }
+__global__ void zoomout_edge_pad(float *output_tensor, int height, int width,
+                                  int pitch, int no_padding_h_start,
+                                  int no_padding_w_start,
+                                  int no_padding_h_end, int no_padding_w_end) {
+  // H -> block Y, row
+  // W -> block X, col
 
-    // replicate along bottom edge
-    if (out_pixel_h == (output_h - 1)) {
-      for (int ik = 1; ik <= out_h_end; ik++)
-        output_tensor[(blockIdx.z * pitch) +
-                      ((out_h_start + out_pixel_h + ik) * input_w) +
-                      (out_pixel_w + out_w_start)] = sum_;
-    }
+  int out_pixel_h = blockIdx.y * blockDim.y + threadIdx.y;
+  int out_pixel_w = blockIdx.x * blockDim.x + threadIdx.x;
 
-    // replicate along left edge
-    if (out_pixel_w == 0) {
-      for (int ik = 0; ik < out_w_start; ik++)
-        output_tensor[(blockIdx.z * pitch) +
-                      ((out_pixel_h + out_h_start) * input_w) + ik] = sum_;
-    }
+  // no_padding_h_end, no_padding_w_end --> w_cropped+wstart, same for height
+  int out_location = (blockIdx.z * pitch) + (out_pixel_h * width) + out_pixel_w;
 
-    // replicate along right edge
-    if (out_pixel_w == (output_w - 1)) {
-      for (int ik = 1; ik <= out_w_end; ik++)
-        output_tensor[(blockIdx.z * pitch) +
-                      ((out_pixel_h + out_h_start) * input_w) +
-                      (out_pixel_w + out_w_start + ik)] = sum_;
-    }
-
-    // corner replication not very friendly if large area to patch -
-    // single thread issues stores
-    // ToDo: Consider adding another kernel for corner padding
-
-    // top left corner
-    if (out_pixel_h == 0 && out_pixel_w == 0) {
-      for (int ik = 0; ik < out_h_start; ik++) {
-        for (int il = 0; il < out_w_start; il++)
-          output_tensor[(blockIdx.z * pitch) + (ik * input_w) + il] = sum_;
-      }
-    }
-    // top right corner
-    if (out_pixel_h == 0 && out_pixel_w == (output_w - 1)) {
-      for (int ik = 0; ik < out_h_start; ik++) {
-        for (int il = 1; il <= out_w_end; il++)
-          output_tensor[(blockIdx.z * pitch) + (ik * input_w) +
-                        (out_pixel_w + out_w_start + il)] = sum_;
-      }
-    }
-    // bottom left corner
-    if (out_pixel_h == (output_h - 1) && out_pixel_w == 0) {
-      for (int ik = 1; ik <= out_h_end; ik++) {
-        for (int il = 0; il < out_w_start; il++)
-          output_tensor[(blockIdx.z * pitch) +
-                        ((out_h_start + out_pixel_h + ik) * input_w) +
-                        il] = sum_;
-      }
-    }
-    // bottom right corner
-    if (out_pixel_h == (output_h - 1) && out_pixel_w == (output_w - 1)) {
-      for (int ik = 1; ik <= out_h_end; ik++) {
-        for (int il = 1; il <= out_w_end; il++)
-          output_tensor[(blockIdx.z * pitch) +
-                        ((out_h_start + out_pixel_h + ik) * input_w) +
-                        (out_pixel_w + out_w_start + il)] = sum_;
-      }
+  if (out_pixel_h < height && out_pixel_w < width) {
+    if (out_pixel_h < no_padding_h_start && out_pixel_w >= no_padding_w_start
+          && out_pixel_w < no_padding_w_end) {
+      // top pad
+      output_tensor[out_location] = output_tensor[(blockIdx.z * pitch) +
+                                    (no_padding_h_start * width) + out_pixel_w];
+    } else if (out_pixel_h >= no_padding_h_end
+                && out_pixel_w >= no_padding_w_start
+                && out_pixel_w < no_padding_w_end) {
+      // bottom pad
+      output_tensor[out_location] = output_tensor[(blockIdx.z * pitch) +
+                                  ((no_padding_h_end-1) * width) + out_pixel_w];
+    } else if (out_pixel_w < no_padding_w_start
+                && out_pixel_h >= no_padding_h_start
+                && out_pixel_h < no_padding_h_end) {
+      // left pad
+      output_tensor[out_location] = output_tensor[(blockIdx.z * pitch) +
+                                  (out_pixel_h * width) + no_padding_w_start];
+    } else if (out_pixel_w >= no_padding_w_end
+                && out_pixel_h >= no_padding_h_start
+                && out_pixel_h < no_padding_h_end) {
+      // right pad
+      output_tensor[out_location] = output_tensor[(blockIdx.z * pitch) +
+                                  (out_pixel_h * width) + (no_padding_w_end-1)];
+    } else if (out_pixel_h < no_padding_h_start
+                && out_pixel_w < no_padding_w_start) {
+      // top-left corner
+      output_tensor[out_location] = output_tensor[(blockIdx.z * pitch) +
+                                                (no_padding_h_start * width) +
+                                                no_padding_w_start];
+    } else if (out_pixel_h < no_padding_h_start
+                && out_pixel_w >= no_padding_w_end) {
+      // top-right corner
+      output_tensor[out_location] = output_tensor[(blockIdx.z * pitch) +
+                                                  (no_padding_h_start * width) +
+                                                  (no_padding_w_end-1)];
+    } else if (out_pixel_h >= no_padding_h_end
+                && out_pixel_w < no_padding_w_start) {
+      // bottom-left corner
+      output_tensor[out_location] = output_tensor[(blockIdx.z * pitch) +
+                                    ((no_padding_h_end-1) * width) +
+                                    no_padding_w_start];
+    } else if (out_pixel_h >= no_padding_h_end
+                && out_pixel_w >= no_padding_w_end) {
+      // bottom-right corner
+      output_tensor[out_location] = output_tensor[(blockIdx.z * pitch) +
+                                      ((no_padding_h_end-1) * width) +
+                                      (no_padding_w_end-1)];
     }
   }
 }

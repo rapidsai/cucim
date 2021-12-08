@@ -144,11 +144,13 @@ The build command will create the following files:
 - `./install/lib/libcucim*`
 - `./python/install/lib/_cucim.cpython-*-x86_64-linux-gnu.so`
 - `./cpp/plugins/cucim.kit.cuslide/install/lib/cucim.kit.cuslide@*.so`
+- `./cpp/plugins/cucim.kit.cumed/install/lib/cucim.kit.cumed@*.so`
 
 And, it will copy the built library files to `python/cucim/src/cucim/clara/` folder:
 - `libcucim.so.*`
 - `_cucim.cpython-*-x86_64-linux-gnu.so`
 - `cucim.kit.cuslide@*.so`
+- `cucim.kit.cumed@*.so`
 
 
 **Building `cucim`(python bindings)**
@@ -173,14 +175,14 @@ Once it is built, the subsequent build doesn't take much time.
 
 However, if a build option or dependent packages are updated, the build can be failed (due to CMakeCache.txt or existing build files). In that case, you can remove use the following commands to remove CMakeCache.txt or build folder, then build it again.
 
-1) Remove CMakeCache.txt for libcucim, cuslide plugin, and the python wrapper (pybind11).
+1) Remove CMakeCache.txt for libcucim, cuslide/cumed plugin, and the python wrapper (pybind11).
 
 ```bash
 # this command wouldn't remove already downloaded dependency so faster than `clean` subcommand
 ./run build_local clean_cache
 ```
 
-2) Remove `build-*` and `install` folder for libcucim, cuslide plugin, and the python wrapper (pybind11).
+2) Remove `build-*` and `install` folder for libcucim, cuslide/cumed plugin, and the python wrapper (pybind11).
 
 ```bash
 # this command is for clean build

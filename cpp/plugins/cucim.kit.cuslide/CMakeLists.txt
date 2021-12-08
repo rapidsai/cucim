@@ -28,7 +28,7 @@ file(STRINGS ${CMAKE_CURRENT_LIST_DIR}/VERSION VERSION)
 # Append local cmake module path
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake/modules")
 
-project(cuslide VERSION ${VERSION} DESCRIPTION "cuslide" LANGUAGES CXX CUDA)
+project(cuslide VERSION ${VERSION} DESCRIPTION "cuslide" LANGUAGES C CXX)
 set(CUCIM_PLUGIN_NAME "cucim.kit.cuslide")
 
 ################################################################################
@@ -72,19 +72,7 @@ endif()
 find_package(CUDAToolkit REQUIRED)
 
 set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CUDA_STANDARD 17) # Clion issue: https://youtrack.jetbrains.com/issue/CPP-19165 (fixed)
-set(CMAKE_CUDA_STANDARD_REQUIRED YES)
 set(CMAKE_CXX_STANDARD_REQUIRED YES)
-cucim_define_cuda_architectures(60;70;75;80;86)
-# https://github.com/Kitware/CMake/blob/master/Modules/Compiler/NVIDIA-CUDA.cmake#L11
-# https://gitlab.kitware.com/cmake/cmake/-/issues/19017
-# For CUDA >= 10.2, we cannot use --compiler-options as '-forward-unknown-to-host-compiler' would be added by default to nvcc options.
-# For the reason, we add "${CMAKE_CXX_FLAGS}" instead of "--compiler-options ${CMAKE_CXX_FLAGS}" here.
-# ==> We changed to use "${CMAKE_CUDA_FLAGS}" instead of "${CMAKE_CXX_FLAGS}" ${CMAKE_CXX_FLAGS} can have wrong options such as '-march=nocona'
-set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -use_fast_math -Xptxas=-v")
-set(CMAKE_CUDA_FLAGS_DEBUG "${CMAKE_CUDA_FLAGS_DEBUG} -G")
-set(CMAKE_CUDA_FLAGS_RELEASE "${CMAKE_CUDA_FLAGS_RELEASE} -lineinfo")
-set(CMAKE_CUDA_FLAGS_RELWITHDEBINFO "${CMAKE_CUDA_FLAGS_RELWITHDEBINFO} -lineinfo")
 
 # Include CUDA headers explicitly for VSCode intelli-sense
 include_directories(AFTER SYSTEM ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES})
@@ -123,9 +111,9 @@ add_definitions(-D_GLIBCXX_USE_CXX11_ABI=0) # TODO: create two library, one with
 ################################################################################
 # Define dependencies
 ################################################################################
-#superbuild_depend(cucim)
 superbuild_depend(fmt)
 superbuild_depend(libjpeg-turbo) # libjpeg-turbo should be located before libtiff as libtiff depends on libjpeg-turbo
+superbuild_depend(libopenjpeg)
 superbuild_depend(libtiff)
 superbuild_depend(catch2)
 superbuild_depend(openslide)
@@ -172,6 +160,16 @@ add_library(${CUCIM_PLUGIN_NAME}
     src/cuslide/deflate/deflate.h
     src/cuslide/jpeg/libjpeg_turbo.cpp
     src/cuslide/jpeg/libjpeg_turbo.h
+    src/cuslide/jpeg2k/color_conversion.cpp
+    src/cuslide/jpeg2k/color_conversion.h
+    src/cuslide/jpeg2k/color_table.h
+    src/cuslide/jpeg2k/libopenjpeg.cpp
+    src/cuslide/jpeg2k/libopenjpeg.h
+    ${deps-libopenjpeg_SOURCE_DIR}/src/bin/common/color.c  # for color_sycc_to_rgb() and color_apply_icc_profile()
+    src/cuslide/lzw/lzw.cpp
+    src/cuslide/lzw/lzw.h
+    src/cuslide/lzw/lzw_libtiff.cpp
+    src/cuslide/lzw/lzw_libtiff.h
     src/cuslide/raw/raw.cpp
     src/cuslide/raw/raw.h
     src/cuslide/tiff/ifd.cpp
@@ -180,10 +178,19 @@ add_library(${CUCIM_PLUGIN_NAME}
     src/cuslide/tiff/tiff.h
     src/cuslide/tiff/types.h)
 
-# At least one file needs to be compiled with nvcc.
-# Otherwise, it will cause `/usr/bin/ld: cannot find -lcudart` error message.
-# Note: Since cuslide.cpp is using nlohmann/json.hpp which nvcc cannot parse properly, set other files for cudart.
-set_source_files_properties(src/cuslide/jpeg/libjpeg_turbo.cpp PROPERTIES LANGUAGE CUDA)
+# compile color.c for libopenjpeg with c++
+set_source_files_properties(${deps-libopenjpeg_SOURCE_DIR}/src/bin/common/color.c
+    PROPERTIES
+        LANGUAGE C
+        CMAKE_CXX_VISIBILITY_PRESET default
+        CMAKE_C_VISIBILITY_PRESET default
+        CMAKE_VISIBILITY_INLINES_HIDDEN OFF)
+
+# Ignore warnings in existing source code from libjpeg-turbo
+set_source_files_properties(src/cuslide/jpeg/libjpeg_turbo.cpp
+    PROPERTIES
+        COMPILE_OPTIONS "-Wno-error" # or, "-Wno-write-strings;-Wno-clobbered"
+    )
 
 # Compile options
 set_target_properties(${CUCIM_PLUGIN_NAME}
@@ -191,11 +198,6 @@ set_target_properties(${CUCIM_PLUGIN_NAME}
         CXX_STANDARD 17
         CXX_STANDARD_REQUIRED YES
         CXX_EXTENSIONS NO
-        CUDA_STANDARD 17
-        CUDA_STANDARD_REQUIRED YES
-        CUDA_EXTENSIONS NO
-        CUDA_SEPARABLE_COMPILATION ON
-        CUDA_RUNTIME_LIBRARY Shared
         SOVERSION ${PROJECT_VERSION_MAJOR}
         VERSION ${PROJECT_VERSION}
 )
@@ -206,11 +208,13 @@ target_compile_options(${CUCIM_PLUGIN_NAME} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-W
 # Link libraries
 target_link_libraries(${CUCIM_PLUGIN_NAME}
         PRIVATE
+            CUDA::cudart
             deps::fmt
-            #cucim::rmm
             cucim::cucim
             deps::libtiff
             deps::libjpeg-turbo
+            deps::libopenjpeg
+            deps::libopenjpeg-lcms2
             deps::pugixml
             deps::json
             deps::libdeflate
@@ -222,8 +226,6 @@ target_include_directories(${CUCIM_PLUGIN_NAME}
             $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
         PRIVATE
             ${CMAKE_CURRENT_LIST_DIR}/src
-            # turbojpeg.h is not included in 'turbojpeg-static' so manually include
-            ${deps-libjpeg-turbo_SOURCE_DIR}
         )
 
 # Do not generate SONAME as this would be used as plugin

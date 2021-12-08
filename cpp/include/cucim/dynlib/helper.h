@@ -58,14 +58,20 @@ T get_library_symbol(LibraryHandle libHandle, const char* name)
 #endif
 }
 
-inline LibraryHandle load_library(const char* library_name)
+inline LibraryHandle load_library(const char* library_name, int mode = -1)
 {
 #if CUCIM_PLATFORM_LINUX
-    LibraryHandle handle = dlopen(library_name, RTLD_LAZY);
+    if (mode == -1)
+    {
+        return dlopen(library_name, RTLD_LAZY);
+    }
+    else
+    {
+        return dlopen(library_name, mode);
+    }
 #else
 #    error "This platform is not supported!"
 #endif
-    return handle;
 }
 
 inline std::string get_last_load_library_error()

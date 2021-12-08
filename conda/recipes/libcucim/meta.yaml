@@ -4,6 +4,7 @@
 {% set minor_version =  version.split('.')[0] + '.' + version.split('.')[1] %}
 {% set python_version=environ.get('PYTHON_VER', '3.7') %}
 {% set cuda_version='.'.join(environ.get('CUDA', '11.0').split('.')[:2]) %}
+{% set cuda_major=cuda_version.split('.')[0] %}
 
 package:
   name: libcucim
@@ -14,7 +15,7 @@ source:
 
 build:
   number: {{ GIT_DESCRIBE_NUMBER }}
-  string: cuda{{ cuda_version }}_{{ GIT_DESCRIBE_HASH }}_{{ GIT_DESCRIBE_NUMBER }}
+  string: cuda{{ cuda_major }}_{{ GIT_DESCRIBE_HASH }}_{{ GIT_DESCRIBE_NUMBER }}
   script_env:
     - CC
     - CXX
@@ -37,7 +38,7 @@ requirements:
     - zstd
     - libwebp-base  # [linux or osx]
   run:
-    - cudatoolkit {{ cuda_version }}.*
+    - {{ pin_compatible('cudatoolkit', max_pin='x', min_pin='x') }}
     # - openslide # skipping here but benchmark binary would needs openslide library
     - zlib
     - jpeg

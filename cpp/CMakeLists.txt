@@ -63,6 +63,11 @@ add_library(${CUCIM_PACKAGE_NAME}
         include/cucim/macros/defines.h
         include/cucim/memory/dlpack.h
         include/cucim/memory/memory_manager.h
+        include/cucim/plugin/image_format.h
+        include/cucim/plugin/plugin_config.h
+        include/cucim/profiler/nvtx3.h
+        include/cucim/profiler/profiler.h
+        include/cucim/profiler/profiler_config.h
         include/cucim/util/cuda.h
         include/cucim/util/file.h
         include/cucim/util/platform.h
@@ -95,7 +100,11 @@ add_library(${CUCIM_PACKAGE_NAME}
         src/io/format/image_format.cpp
         src/logger/logger.cpp
         src/logger/timer.cpp
-        src/memory/memory_manager.cu
+        src/memory/memory_manager.cpp
+        src/plugin/image_format.cpp
+        src/plugin/plugin_config.cpp
+        src/profiler/profiler.cpp
+        src/profiler/profiler_config.cpp
         src/util/file.cpp
         src/util/platform.cpp)
 
@@ -105,20 +114,12 @@ set_target_properties(${CUCIM_PACKAGE_NAME}
         CXX_STANDARD 17
         CXX_STANDARD_REQUIRED YES
         CXX_EXTENSIONS NO
-        CUDA_STANDARD 17
-        CUDA_STANDARD_REQUIRED YES
-        CUDA_EXTENSIONS NO
-        CUDA_SEPARABLE_COMPILATION ON
-        CUDA_RUNTIME_LIBRARY Shared
         SOVERSION ${PROJECT_VERSION_MAJOR}
         VERSION ${PROJECT_VERSION}
 )
-# At least one file needs to be compiled with nvcc.
-# Otherwise, it will cause `/usr/bin/ld: cannot find -lcudart` error message.
-set_source_files_properties(src/cucim.cpp src/filesystem/cufile_driver.cpp PROPERTIES LANGUAGE CUDA)
 
 # Note: Looks like the following line causes error on CMake 3.18.4 (it is working on 3.18.2). Keeping it for now.
-set(CUCIM_REQUIRED_FEATURES cxx_std_17 cuda_std_17)
+set(CUCIM_REQUIRED_FEATURES cxx_std_17)
 target_compile_features(${CUCIM_PACKAGE_NAME} PRIVATE ${CUCIM_REQUIRED_FEATURES})
 # Use generator expression to avoid `nvcc fatal   : Value '-std=c++17' is not defined for option 'Werror'`
 target_compile_options(${CUCIM_PACKAGE_NAME}
@@ -135,6 +136,7 @@ target_compile_definitions(${CUCIM_PACKAGE_NAME}
         CUCIM_SUPPORT_GDS=$<BOOL:${CUCIM_SUPPORT_GDS}>
         CUCIM_STATIC_GDS=$<BOOL:${CUCIM_STATIC_GDS}>
         CUCIM_SUPPORT_CUDA=$<BOOL:${CUCIM_SUPPORT_CUDA}>
+        CUCIM_SUPPORT_NVTX=$<BOOL:${CUCIM_SUPPORT_NVTX}>
         _GLIBCXX_USE_CXX11_ABI=0  # TODO: create two library, one with CXX11 ABI and one without it.
 )
 
@@ -143,19 +145,15 @@ target_link_libraries(${CUCIM_PACKAGE_NAME}
         PUBLIC
             ${CMAKE_DL_LIBS}
             $<BUILD_INTERFACE:deps::fmt>
-#            $<BUILD_INTERFACE:deps::boost>
-#            $<BUILD_INTERFACE:deps::rmm>
-#            $<BUILD_INTERFACE:deps::gds>
             $<INSTALL_INTERFACE:cucim::fmt-header-only>
-##            $<INSTALL_INTERFACE:cucim::boost>
-            # $<INSTALL_INTERFACE:cucim::rmm>
-##            $<INSTALL_INTERFACE:cucim::gds>
         PRIVATE
+            CUDA::cudart
             deps::abseil
             deps::gds
             deps::libcuckoo
             deps::boost-header-only
             deps::json
+            deps::nvtx3
         )
 
 if (CUCIM_STATIC_GDS)
@@ -170,10 +168,8 @@ target_include_directories(${CUCIM_PACKAGE_NAME}
         PUBLIC
             $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
             $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/${CUCIM_PACKAGE_NAME}/3rdparty>
-#            $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/gds/lib> # for GDS header
-#            $<BUILD_INTERFACE:${THRUST_INCLUDE_DIR}>
             $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
-            $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/${CUCIM_PACKAGE_NAME}/3rdparty> # for 3rdparty libraries such as dlpack and fmt
+            $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/${CUCIM_PACKAGE_NAME}/3rdparty> # for 3rdparty libraries such as dlpack, nvtx3, and fmt
         PRIVATE
             ${CMAKE_CURRENT_LIST_DIR}/src
         )
@@ -194,6 +190,7 @@ target_compile_definitions(${CUCIM_PACKAGE_NAME}-header-only
         CUCIM_SUPPORT_GDS=$<BOOL:${CUCIM_SUPPORT_GDS}>
         CUCIM_STATIC_GDS=$<BOOL:${CUCIM_STATIC_GDS}>
         CUCIM_SUPPORT_CUDA=$<BOOL:${CUCIM_SUPPORT_CUDA}>
+        CUCIM_SUPPORT_NVTX=$<BOOL:${CUCIM_SUPPORT_NVTX}>
         CUCIM_HEADER_ONLY=1
         )
 target_compile_features(${CUCIM_PACKAGE_NAME}-header-only INTERFACE ${CUCIM_REQUIRED_FEATURES})

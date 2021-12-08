@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,6 +32,8 @@ static AppConfig g_config;
 
 static void test_cucim(benchmark::State& state)
 {
+    std::string input_path = g_config.get_input_path();
+
     int arg = -1;
     for (auto state_item : state)
     {
@@ -46,7 +48,7 @@ static void test_cucim(benchmark::State& state)
 
             if (g_config.discard_cache)
             {
-                int fd = open(g_config.input_file.c_str(), O_RDONLY);
+                int fd = open(input_path.c_str(), O_RDONLY);
                 fdatasync(fd);
                 posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED);
                 close(fd);
@@ -61,7 +63,7 @@ static void test_cucim(benchmark::State& state)
             request_location[1] = rand() % (g_config.image_height - state.range(0));
         }
 
-        cucim::CuImage image = cucim::CuImage(g_config.input_file.c_str());
+        cucim::CuImage image = cucim::CuImage(input_path.c_str());
         cucim::CuImage region =
             image.read_region({ request_location[0], request_location[1] }, { state.range(0), state.range(0) }, 0,
                               cucim::DimIndices{}, "cpu", nullptr, "");
@@ -70,6 +72,8 @@ static void test_cucim(benchmark::State& state)
 
 static void test_openslide(benchmark::State& state)
 {
+    std::string input_path = g_config.get_input_path();
+
     int arg = -1;
     for (auto _ : state)
     {
@@ -84,7 +88,7 @@ static void test_openslide(benchmark::State& state)
 
             if (g_config.discard_cache)
             {
-                int fd = open(g_config.input_file.c_str(), O_RDONLY);
+                int fd = open(input_path.c_str(), O_RDONLY);
                 fdatasync(fd);
                 posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED);
                 close(fd);
@@ -92,7 +96,7 @@ static void test_openslide(benchmark::State& state)
         }
         state.ResumeTiming();
 
-        openslide_t* slide = openslide_open(g_config.input_file.c_str());
+        openslide_t* slide = openslide_open(input_path.c_str());
         uint32_t* buf = static_cast<uint32_t*>(cucim_malloc(state.range(0) * state.range(0) * 4));
         int64_t request_location[2] = { 0, 0 };
         if (g_config.random_start_location)
@@ -131,10 +135,12 @@ static bool remove_help_option(int* argc, char** argv)
 
 static bool setup_configuration()
 {
-    openslide_t* slide = openslide_open(g_config.input_file.c_str());
+    std::string input_path = g_config.get_input_path();
+
+    openslide_t* slide = openslide_open(input_path.c_str());
     if (slide == nullptr)
     {
-        fmt::print("[Error] Cannot load {}!\n", g_config.input_file);
+        fmt::print("[Error] Cannot load {}!\n", input_path);
         return false;
     }
     int64_t w, h;
@@ -159,7 +165,8 @@ int main(int argc, char** argv)
     //        return 1;
 
     CLI::App app{ "cuCIM Benchmark" };
-    app.add_option("--test_file", g_config.input_file, "An input .tif/.svs file path");
+    app.add_option("--test_folder", g_config.test_folder, "An input test folder path");
+    app.add_option("--test_file", g_config.test_file, "An input test image file path");
     app.add_option("--discard_cache", g_config.discard_cache, "Discard page cache for the input file for each iteration");
     app.add_option("--random_seed", g_config.random_seed, "A random seed number");
     app.add_option(

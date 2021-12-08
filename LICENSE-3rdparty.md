@@ -30,6 +30,8 @@ libtiff
 - Copyright:
   - Sam Leffler
   - Silicon Graphics, Inc.
+- Files:
+  - cpp/plugins/cucim.kit.cuslide/src/cuslide/lzw/lzw_libtiff.cpp : Implementation of lzw decoder.
 
 fmt
 - License: MIT License
@@ -106,6 +108,9 @@ OpenJPEG
   - David Janssens
   - Centre National d'Etudes Spatiales (CNES), France
   - CS Systemes d'Information, France
+- Files:
+  - cpp/plugins/cucim.kit.cuslide/src/cuslide/jpeg2k/libopenjpeg.cpp : Implementation of jpeg2k decoder.
+  - cpp/plugins/cucim.kit.cuslide/src/cuslide/jpeg2k/color_conversion.cpp : Implementation of color conversion methods.
 
 NVIDIA nvJPEG
 - License: NVIDIA License
@@ -258,3 +263,9 @@ gputil
   - https://github.com/anderskm/gputil/blob/master/LICENSE.txt
 - Copyright: Anders Krogh Mortensen
 - Usage: Checking memory usage in Python applications.
+
+NVTX (NVIDIA Tool Extension Library)
+- License: Apache-2.0 License
+  - https://raw.githubusercontent.com/NVIDIA/NVTX/release-v3/LICENSE.txt
+- Copyright: NVIDIA Corporation
+- Usage: Support for profiling with NVIDIA Nsight Systems

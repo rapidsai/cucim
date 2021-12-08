@@ -24,6 +24,8 @@
 #include "cucim/io/device.h"
 #include "cucim/io/format/image_format.h"
 #include "cucim/memory/dlpack.h"
+#include "cucim/plugin/image_format.h"
+#include "cucim/profiler/profiler.h"
 
 #include <array>
 #include <set>
@@ -106,14 +108,17 @@ public:
 
     operator bool() const
     {
-        return !!image_formats_ && !is_loaded_;
+        return !!image_format_ && !is_loaded_;
     }
 
     static Framework* get_framework();
     static config::Config* get_config();
+    static std::shared_ptr<profiler::Profiler> profiler();
+    static std::shared_ptr<profiler::Profiler> profiler(profiler::ProfilerConfig& config);
     static cache::ImageCacheManager& cache_manager();
     static std::shared_ptr<cache::ImageCache> cache();
     static std::shared_ptr<cache::ImageCache> cache(cache::ImageCacheConfig& config);
+    static bool is_trace_enabled();
 
     filesystem::Path path() const;
 
@@ -178,12 +183,14 @@ private:
 
 
     static Framework* framework_;
-    // Note: config_ should be placed before cache_manager_ (cache_manager_ depends on config_)
+    // Note: config_ should be placed before cache_manager_ and profiler_ (those depend on config_)
     static std::unique_ptr<config::Config> config_;
+    static std::shared_ptr<profiler::Profiler> profiler_;
     static std::unique_ptr<cache::ImageCacheManager> cache_manager_;
+    static std::unique_ptr<cucim::plugin::ImageFormat> image_format_plugins_;
 
     mutable Mutex mutex_;
-    cucim::io::format::IImageFormat* image_formats_ = nullptr;
+    cucim::io::format::ImageFormatDesc* image_format_ = nullptr;
     CuCIMFileHandle file_handle_{};
     io::format::ImageMetadataDesc* image_metadata_ = nullptr;
     io::format::ImageDataDesc* image_data_ = nullptr;

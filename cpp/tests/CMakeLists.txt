@@ -25,18 +25,12 @@ add_executable(cucim_tests
         test_cufile.cpp
         test_metadata.cpp
         )
-set_source_files_properties(main.cpp test_read_region.cpp test_cufile.cpp test_metadata.cpp PROPERTIES LANGUAGE CUDA)
 
 set_target_properties(cucim_tests
     PROPERTIES
         CXX_STANDARD 17
         CXX_STANDARD_REQUIRED YES
         CXX_EXTENSIONS NO
-        CUDA_STANDARD 17
-        CUDA_STANDARD_REQUIRED YES
-        CUDA_EXTENSIONS NO
-        CUDA_SEPARABLE_COMPILATION ON
-        CUDA_RUNTIME_LIBRARY Shared
 )
 target_compile_features(cucim_tests PRIVATE ${CUCIM_REQUIRED_FEATURES})
 # Use generator expression to avoid `nvcc fatal   : Value '-std=c++17' is not defined for option 'Werror'`
@@ -51,6 +45,7 @@ target_compile_definitions(cucim_tests
 )
 target_link_libraries(cucim_tests
         PRIVATE
+            CUDA::cudart
             ${CUCIM_PACKAGE_NAME}
             deps::catch2
             deps::openslide

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -58,12 +58,15 @@ public:
                                          const InterfaceDesc& desc,
                                          const char* library_path,
                                          bool optional = false);
+    size_t get_plugin_count() const;
+    void get_plugins(PluginDesc* out_plugins) const;
     size_t get_plugin_index(const char* name) const;
     Plugin* get_plugin(size_t index) const;
     Plugin* get_plugin(const char* name) const;
     Plugin* get_plugin_by_library_path(const std::string& library_path);
 
     // cuCIM-specific methods;
+    void load_plugin(const char* library_path);
     std::string& get_plugin_root();
     void set_plugin_root(const char* path);
 

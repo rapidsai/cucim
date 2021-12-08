@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <filesystem>
 
 namespace cucim
 {
@@ -49,8 +50,19 @@ Plugin::Plugin()
 
 Plugin::Plugin(const std::string& file_path) : Plugin()
 {
+    auto file = std::filesystem::path(file_path);
+    auto filename = file.filename().string();
+    std::size_t pivot = filename.find("@");
+    if (pivot != std::string::npos)
+    {
+        std::string plugin_name = filename.substr(0, pivot);
+        name_ = std::move(plugin_name);
+    }
+    else
+    {
+        name_ = "cucim.unknown";
+    }
     library_path_ = file_path;
-    name_ = "cucim.kit.cuslide"; // TODO: Get plgin name from file_path
 }
 
 Plugin::~Plugin()
@@ -257,7 +269,7 @@ bool Plugin::try_load(int version, bool full)
     {
         return is_loaded_;
     }
-    CUCIM_LOG_VERBOSE("[Plugin: %s] %s", name_cstr(), full ? "Loading..." : "Preloading...");
+    // CUCIM_LOG_VERBOSE("[Plugin: %s] %s", name_cstr(), full ? "Loading..." : "Preloading...");
 
     std::string lib_file;
     if (!prepare_file_to_load(lib_file, version))
@@ -297,11 +309,14 @@ bool Plugin::try_load(int version, bool full)
     // Register
     if (!fill_registration_data(version, full, lib_file))
     {
+        CUCIM_LOG_ERROR("[Plugin: %s] Could not load the dynamic library from %s. Error: fill_registration_data() failed!",
+                        name_cstr(), lib_file.c_str());
         return false;
     }
 
     // Load was successful
-    CUCIM_LOG_VERBOSE("[Plugin: %s] %s successfully. Version: %d", name_cstr(), full ? "loaded" : "preloaded", version);
+    // CUCIM_LOG_VERBOSE("[Plugin: %s] %s successfully. Version: %d", name_cstr(), full ? "loaded" : "preloaded",
+    // version);
     is_loaded_ = true;
     return is_loaded_;
 }

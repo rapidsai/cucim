@@ -5,6 +5,7 @@
 {% set py_version=environ.get('CONDA_PY', 37) %}
 {% set python_version=environ.get('PYTHON_VER', '3.7') %}
 {% set cuda_version='.'.join(environ.get('CUDA', '11.0').split('.')[:2]) %}
+{% set cuda_major=cuda_version.split('.')[0] %}
 
 package:
   name: cucim
@@ -15,7 +16,7 @@ source:
 
 build:
   number: {{ GIT_DESCRIBE_NUMBER }}
-  string: cuda_{{ cuda_version }}_py{{ py_version }}_{{ GIT_DESCRIBE_HASH }}_{{ GIT_DESCRIBE_NUMBER }}
+  string: cuda_{{ cuda_major }}_py{{ py_version }}_{{ GIT_DESCRIBE_HASH }}_{{ GIT_DESCRIBE_NUMBER }}
   script_env:
     - CC
     - CXX
@@ -33,11 +34,11 @@ requirements:
     - libcucim {{ version }}.*
     - click
     - cupy 9.*
-    - numpy >=1.17.0
+    - numpy 1.17
     - scipy
     - scikit-image 0.18.1
   run:
-    - cudatoolkit {{ cuda_version }}.*
+    - {{ pin_compatible('cudatoolkit', max_pin='x', min_pin='x') }}
     - python {{ python_version }}.*
     - libcucim {{ version }}.*
     - click

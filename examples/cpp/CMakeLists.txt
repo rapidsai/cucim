@@ -18,18 +18,12 @@
 ################################################################################
 
 add_executable(tiff_image tiff_image/main.cpp)
-set_source_files_properties(tiff_image/main.cpp PROPERTIES LANGUAGE CUDA)
 
 set_target_properties(tiff_image
     PROPERTIES
         CXX_STANDARD 17
         CXX_STANDARD_REQUIRED YES
         CXX_EXTENSIONS NO
-        CUDA_STANDARD 17
-        CUDA_STANDARD_REQUIRED YES
-        CUDA_EXTENSIONS NO
-        CUDA_SEPARABLE_COMPILATION ON
-        CUDA_RUNTIME_LIBRARY Shared
 )
 target_compile_features(tiff_image PRIVATE ${CUCIM_REQUIRED_FEATURES})
 # Use generator expression to avoid `nvcc fatal   : Value '-std=c++17' is not defined for option 'Werror'`
