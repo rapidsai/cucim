@@ -148,9 +148,15 @@ PYBIND11_MODULE(_cucim, m)
         .def_property("resolutions", &py_resolutions, nullptr, doc::CuImage::doc_resolutions,
                       py::call_guard<py::gil_scoped_release>()) //
         .def("read_region", &py_read_region, doc::CuImage::doc_read_region, py::call_guard<py::gil_scoped_release>(), //
-             py::arg("location") = py::list{}, //
-             py::arg("size") = py::list{}, //
+             py::arg("location") = py::tuple{}, //
+             py::arg("size") = py::tuple{}, //
              py::arg("level") = 0, //
+             py::arg("num_workers") = 0, //
+             py::arg("batch_size") = 1, //
+             py::arg("drop_last") = py::bool_(false), //
+             py::arg("prefetch_factor") = 2, //
+             py::arg("shuffle") = py::bool_(false), //
+             py::arg("seed") = py::int_(0), //
              py::arg("device") = io::Device(), //
              py::arg("buf") = py::none(), //
              py::arg("shm_name") = "") //
@@ -163,6 +169,12 @@ PYBIND11_MODULE(_cucim, m)
         .def("save", &CuImage::save, doc::CuImage::doc_save, py::call_guard<py::gil_scoped_release>()) //
         .def("close", &CuImage::close, doc::CuImage::doc_close, py::call_guard<py::gil_scoped_release>()) //
         .def("__bool__", &CuImage::operator bool, py::call_guard<py::gil_scoped_release>()) //
+        .def(
+            "__iter__", //
+            [](const std::shared_ptr<CuImage>& cuimg) { //
+                return cuimg->begin(); //
+            }, //
+            py::call_guard<py::gil_scoped_release>())
         .def(
             "__enter__",
             [](const std::shared_ptr<CuImage>& cuimg) { //
@@ -180,6 +192,30 @@ PYBIND11_MODULE(_cucim, m)
             "__repr__", //
             [](const CuImage& cuimg) { //
                 return fmt::format("<cucim.CuImage path:{}>", cuimg.path());
+            },
+            py::call_guard<py::gil_scoped_release>());
+
+    py::class_<CuImageIterator<CuImage>>(m, "CuImageIterator") //
+        .def(py::init<std::shared_ptr<CuImage>, bool>(), doc::CuImageIterator::doc_CuImageIterator,
+             py::arg("cuimg"), //
+             py::arg("ending") = false, py::call_guard<py::gil_scoped_release>())
+        .def(
+            "__len__",
+            [](const CuImageIterator<CuImage>& it) { //
+                return it.size(); //
+            }, //
+            py::call_guard<py::gil_scoped_release>())
+        .def(
+            "__iter__", //
+            [](CuImageIterator<CuImage>& it) { //
+                return CuImageIterator<CuImage>(it); //
+            }, //
+            py::call_guard<py::gil_scoped_release>())
+        .def("__next__", &py_cuimage_iterator_next, py::call_guard<py::gil_scoped_release>())
+        .def(
+            "__repr__", //
+            [](CuImageIterator<CuImage>& it) { //
+                return fmt::format("<cucim.CuImageIterator index:{}>", it.index());
             },
             py::call_guard<py::gil_scoped_release>());
 
@@ -379,15 +415,61 @@ py::dict py_resolutions(const CuImage& cuimg)
 
 
 py::object py_read_region(const CuImage& cuimg,
-                          std::vector<int64_t>&& location,
+                          const py::iterable& location,
                           std::vector<int64_t>&& size,
                           int16_t level,
+                          uint32_t num_workers,
+                          uint32_t batch_size,
+                          bool drop_last,
+                          uint32_t prefetch_factor,
+                          bool shuffle,
+                          uint64_t seed,
                           const io::Device& device,
                           const py::object& buf,
                           const std::string& shm_name,
                           const py::kwargs& kwargs)
 {
+    if (!size.empty() && size.size() != 2)
+    {
+        throw std::runtime_error("size (patch size) should be 2!");
+    }
+
     cucim::DimIndices indices;
+    std::vector<int64_t> locations;
+    {
+        py::gil_scoped_acquire scope_guard;
+
+        auto arr = pybind11::array_t<int64_t, py::array::c_style | py::array::forcecast>::ensure(location);
+        if (arr) // fast copy
+        {
+            py::buffer_info buf = arr.request();
+            int64_t* data_array = static_cast<int64_t*>(buf.ptr);
+            ssize_t data_size = buf.size;
+            locations.reserve(data_size);
+            locations.insert(locations.end(), &data_array[0], &data_array[data_size]);
+        }
+        else
+        {
+            auto iter = py::iter(location);
+            while (iter != py::iterator::sentinel())
+            {
+                if (py::isinstance<py::iterable>(*iter))
+                {
+                    auto iter2 = py::iter(*iter);
+                    while (iter2 != py::iterator::sentinel())
+                    {
+                        locations.emplace_back(py::cast<int64_t>(*iter2));
+                        ++iter2;
+                    }
+                }
+                else
+                {
+                    locations.emplace_back(py::cast<int64_t>(*iter));
+                }
+                ++iter;
+            }
+        }
+    }
 
     if (kwargs)
     {
@@ -414,9 +496,6 @@ py::object py_read_region(const CuImage& cuimg,
                 }
 
                 indices_args.emplace_back(std::make_pair(key_char, value));
-
-                //            fmt::print("k:{} v:{}\n", std::string(py::str(item.first)),
-                //            std::string(py::str(item.second)));
             }
         }
         indices = cucim::DimIndices(indices_args);
@@ -427,14 +506,26 @@ py::object py_read_region(const CuImage& cuimg,
     }
 
     auto region_ptr = std::make_shared<cucim::CuImage>(
-        cuimg.read_region(std::move(location), std::move(size), level, indices, device, nullptr, ""));
+        std::move(cuimg.read_region(std::move(locations), std::move(size), level, num_workers, batch_size, drop_last,
+                                    prefetch_factor, shuffle, seed, indices, device, nullptr, "")));
+    auto loader = region_ptr->loader();
+    if (batch_size > 1 || (loader && loader->size() > 1))
+    {
+        auto iter_ptr = region_ptr->begin();
 
+        py::gil_scoped_acquire scope_guard;
+
+        py::object iter = py::cast(iter_ptr);
+
+        return iter;
+    }
+    else
     {
         py::gil_scoped_acquire scope_guard;
 
         py::object region = py::cast(region_ptr);
 
-        // Add `__array_interace__` or `__cuda_array_interface__` in runtime.
+        // Add `__array_inteface__` or `__cuda_array_interface__` in runtime.
         _set_array_interface(region);
 
         return region;
@@ -457,6 +548,33 @@ py::object py_associated_image(const CuImage& cuimg, const std::string& name, co
     }
 }
 
+py::object py_cuimage_iterator_next(CuImageIterator<CuImage>& it)
+{
+    bool stop_iteration = (it.index() == it.size());
+
+    // Get the next batch of images.
+    ++it;
+
+    auto cuimg = *it;
+    memory::DLTContainer container = cuimg->container();
+    DLTensor* tensor = static_cast<DLTensor*>(container);
+    cucim::loader::ThreadBatchDataLoader* loader = cuimg->loader();
+
+    {
+        py::gil_scoped_acquire scope_guard;
+        py::object cuimg_obj = py::cast(cuimg);
+        if (loader)
+        {
+            _set_array_interface(cuimg_obj);
+        }
+        if (stop_iteration)
+        {
+            throw py::stop_iteration();
+        }
+        return cuimg_obj;
+    }
+}
+
 void _set_array_interface(const py::object& cuimg_obj)
 {
     const auto& cuimg = cuimg_obj.cast<const CuImage&>();
@@ -464,42 +582,74 @@ void _set_array_interface(const py::object& cuimg_obj)
     // TODO: using __array_struct__, access to array interface could be faster
     //       (https://numpy.org/doc/stable/reference/arrays.interface.html#c-struct-access)
     // TODO: check the performance difference between python int vs python long later.
+
+    loader::ThreadBatchDataLoader* loader = cuimg.loader();
     memory::DLTContainer container = cuimg.container();
 
-    const DLTensor* tensor = static_cast<DLTensor*>(container);
+    DLTensor* tensor = static_cast<DLTensor*>(container);
     if (!tensor)
     {
         return;
     }
-
-    const char* type_str = container.numpy_dtype();
-    py::str typestr = py::str(type_str);
-
-    py::tuple data = pybind11::make_tuple(py::int_(reinterpret_cast<uint64_t>(tensor->data)), py::bool_(false));
-    py::list descr;
-    descr.append(py::make_tuple(""_s, typestr));
-
-    py::tuple shape = vector2pytuple<pybind11::int_>(cuimg.shape());
-
-    // TODO: depending on container's memory type, expose either array_interface or cuda_array_interface
-    switch (tensor->ctx.device_type)
+    if (loader)
     {
-    case kDLCPU: {
-        // Reference: https://numpy.org/doc/stable/reference/arrays.interface.html
-        cuimg_obj.attr("__array_interface__") =
-            py::dict{ "data"_a = data,       "strides"_a = py::none(), "descr"_a = descr,
-                      "typestr"_a = typestr, "shape"_a = shape,        "version"_a = py::int_(3) };
+        // Get the last available (batch) image.
+        tensor->data = loader->data();
     }
-    break;
-    case kDLGPU: {
-        // Reference: https://numba.readthedocs.io/en/stable/cuda/cuda_array_interface.html
-        cuimg_obj.attr("__cuda_array_interface__") =
-            py::dict{ "data"_a = data,   "strides"_a = py::none(),  "descr"_a = descr,     "typestr"_a = typestr,
-                      "shape"_a = shape, "version"_a = py::int_(3), "mask"_a = py::none(), "stream"_a = 1 };
-    }
-    break;
-    default:
+
+    if (tensor->data)
+    {
+        const char* type_str = container.numpy_dtype();
+        py::str typestr = py::str(type_str);
+
+        py::tuple data = pybind11::make_tuple(py::int_(reinterpret_cast<uint64_t>(tensor->data)), py::bool_(false));
+        py::list descr;
+        descr.append(py::make_tuple(""_s, typestr));
+
+        py::tuple shape = vector2pytuple<pybind11::int_>(cuimg.shape());
+
+        // Depending on container's memory type, expose either array_interface or cuda_array_interface
+        switch (tensor->ctx.device_type)
+        {
+        case kDLCPU: {
+            // Reference: https://numpy.org/doc/stable/reference/arrays.interface.html
+            cuimg_obj.attr("__array_interface__") =
+                py::dict{ "data"_a = data,       "strides"_a = py::none(), "descr"_a = descr,
+                          "typestr"_a = typestr, "shape"_a = shape,        "version"_a = py::int_(3) };
+        }
         break;
+        case kDLGPU: {
+            // Reference: https://numba.readthedocs.io/en/stable/cuda/cuda_array_interface.html
+            cuimg_obj.attr("__cuda_array_interface__") =
+                py::dict{ "data"_a = data,   "strides"_a = py::none(),  "descr"_a = descr,     "typestr"_a = typestr,
+                          "shape"_a = shape, "version"_a = py::int_(3), "mask"_a = py::none(), "stream"_a = 1 };
+        }
+        break;
+        default:
+            break;
+        }
+    }
+    else
+    {
+        switch (tensor->ctx.device_type)
+        {
+        case kDLCPU: {
+            if (py::hasattr(cuimg_obj, "__array_interface__"))
+            {
+                py::delattr(cuimg_obj, "__array_interface__");
+            }
+        }
+        break;
+        case kDLGPU: {
+            if (py::hasattr(cuimg_obj, "__cuda_array_interface__"))
+            {
+                py::delattr(cuimg_obj, "__cuda_array_interface__");
+            }
+        }
+        break;
+        default:
+            break;
+        }
     }
 }
 

@@ -68,7 +68,7 @@ public:
                                cucim::io::format::ImageMetadataDesc* out_metadata);
 
     cucim::filesystem::Path file_path() const;
-    CuCIMFileHandle file_handle() const;
+    std::shared_ptr<CuCIMFileHandle>& file_handle(); /// used for moving the ownership of the file handle to the caller.
     ::TIFF* client() const;
     const std::vector<ifd_offset_t>& ifd_offsets() const;
     std::shared_ptr<IFD> ifd(size_t index) const;
@@ -104,7 +104,9 @@ private:
     void _populate_aperio_svs_metadata(uint16_t ifd_count, void* metadata, std::shared_ptr<IFD>& first_ifd);
 
     cucim::filesystem::Path file_path_;
-    CuCIMFileHandle file_handle_{};
+    /// Temporary shared file handle whose ownership would be transferred to CuImage through parser_open()
+    std::shared_ptr<CuCIMFileHandle> file_handle_shared_;
+    CuCIMFileHandle* file_handle_ = nullptr;
     ::TIFF* tiff_client_ = nullptr;
     std::vector<ifd_offset_t> ifd_offsets_; /// IFD offset for an index (IFD index)
     std::vector<std::shared_ptr<IFD>> ifds_; /// IFD object for an index (IFD index)

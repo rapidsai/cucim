@@ -43,12 +43,21 @@ target_compile_definitions(cucim_tests
         CUCIM_VERSION_PATCH=${PROJECT_VERSION_PATCH}
         CUCIM_VERSION_BUILD=${PROJECT_VERSION_BUILD}
 )
+
+# Include pthread
+# (https://cmake.org/cmake/help/v3.18/module/FindThreads.html)
+set(CMAKE_THREAD_PREFER_PTHREAD TRUE)
+set(THREADS_PREFER_PTHREAD_FLAG TRUE)
+find_package(Threads REQUIRED)
+
 target_link_libraries(cucim_tests
         PRIVATE
             CUDA::cudart
             ${CUCIM_PACKAGE_NAME}
             deps::catch2
             deps::openslide
+            deps::taskflow
+            Threads::Threads # -lpthread
         )
 
 include(ParseAndAddCatchTests)

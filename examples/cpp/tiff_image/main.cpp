@@ -59,8 +59,7 @@ int main(int argc, char* argv[])
     fmt::print("channel_names: ({})\n", fmt::join(associated_image.channel_names(), ", "));
     fmt::print("\n");
 
-    cucim::CuImage region =
-        image.read_region({ 10000, 10000 }, { 1024, 1024 }, 0, cucim::DimIndices{}, "cpu", nullptr, "");
+    cucim::CuImage region = image.read_region({ 10000, 10000 }, { 1024, 1024 }, 0);
 
     fmt::print("is_loaded: {}\n", region.is_loaded());
     fmt::print("device: {}\n", std::string(region.device()));
@@ -83,9 +82,21 @@ int main(int argc, char* argv[])
 
     region.save(fmt::format("{}/output.ppm", output_folder_path));
 
-    cucim::CuImage region2 =
-        image.read_region({ 5000, 5000 }, { 1024, 1024 }, 1, cucim::DimIndices{}, "cpu", nullptr, "");
+    cucim::CuImage region2 = image.read_region({ 5000, 5000 }, { 1024, 1024 }, 1);
     region2.save(fmt::format("{}/output2.ppm", output_folder_path));
 
+    // Batch loading image
+    // You need to create shared pointer for cucim::CuImage. Otherwise it will cause std::bad_weak_ptr exception.
+    auto batch_image = std::make_shared<cucim::CuImage>(input_file_path);
+
+    auto region3 = std::make_shared<cucim::CuImage>(image.read_region(
+        { 0, 0, 100, 200, 300, 300, 400, 400, 500, 500, 600, 600, 700, 700, 800, 800, 900, 900, 1000, 1000 },
+        { 200, 200 }, 0 /*level*/, 2 /*num_workers*/, 2 /*batch_size*/, false /*drop_last*/, 1 /*prefetch_factor*/,
+        false /*shuffle*/, 0 /*seed*/));
+
+    for (auto batch : *region3)
+    {
+        fmt::print("shape: {}, data size:{}\n", fmt::join(batch->shape(), ", "), batch->container().size());
+    }
     return 0;
 }

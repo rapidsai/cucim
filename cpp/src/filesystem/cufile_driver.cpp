@@ -195,14 +195,9 @@ CuFileDriver::CuFileDriver(int fd, bool no_gds, bool use_mmap, const char* file_
     file_flags_ = flags;
 
     FileHandleType file_type = (flags & O_DIRECT) ? FileHandleType::kPosixODirect : FileHandleType::kPosix;
-    handle_ = CuCIMFileHandle{ fd,
-                               nullptr,
-                               file_type,
-                               const_cast<char*>(file_path_.c_str()),
-                               this,
-                               static_cast<uint64_t>(st.st_dev),
-                               static_cast<uint64_t>(st.st_ino),
-                               static_cast<int64_t>(st.st_mtim.tv_nsec) };
+    handle_ = std::make_shared<CuCIMFileHandle>(fd, nullptr, file_type, const_cast<char*>(file_path_.c_str()), this,
+                                                static_cast<uint64_t>(st.st_dev), static_cast<uint64_t>(st.st_ino),
+                                                static_cast<int64_t>(st.st_mtim.tv_nsec));
 
     CUfileError_t status;
     CUfileDescr_t cf_descr{}; // It is important to set zero!
@@ -212,10 +207,10 @@ CuFileDriver::CuFileDriver(int fd, bool no_gds, bool use_mmap, const char* file_
     {
         cf_descr.handle.fd = fd;
         cf_descr.type = CU_FILE_HANDLE_TYPE_OPAQUE_FD;
-        status = cuFileHandleRegister(&handle_.cufile, &cf_descr);
+        status = cuFileHandleRegister(&handle_->cufile, &cf_descr);
         if (status.err == CU_FILE_SUCCESS)
         {
-            handle_.type = FileHandleType::kGPUDirect;
+            handle_->type = FileHandleType::kGPUDirect;
         }
         else
         {
@@ -236,7 +231,7 @@ CuFileDriver::CuFileDriver(int fd, bool no_gds, bool use_mmap, const char* file_
         mmap_ptr_ = mmap((void*)0, file_size_, PROT_READ, MAP_SHARED, fd, 0);
         if (mmap_ptr_ != MAP_FAILED)
         {
-            handle_.type = FileHandleType::kMemoryMapped;
+            handle_->type = FileHandleType::kMemoryMapped;
         }
         else
         {
@@ -448,7 +443,7 @@ ssize_t CuFileDriver::pread(void* buf, size_t count, off_t file_offset, off_t bu
     cudaPointerAttributes attributes;
     cudaMemoryType memory_type;
 
-    FileHandleType file_type = handle_.type;
+    FileHandleType file_type = handle_->type;
 
     CUDA_TRY(cudaPointerGetAttributes(&attributes, buf));
     if (cuda_status)
@@ -482,7 +477,7 @@ ssize_t CuFileDriver::pread(void* buf, size_t count, off_t file_offset, off_t bu
                 {
                     break;
                 }
-                read_cnt = ::pread(handle_.fd, cache_buf, bytes_to_copy, read_offset);
+                read_cnt = ::pread(handle_->fd, cache_buf, bytes_to_copy, read_offset);
                 CUDA_TRY(cudaMemcpy(output_buf, cache_buf, bytes_to_copy, cudaMemcpyHostToDevice));
                 if (cuda_status)
                 {
@@ -497,7 +492,7 @@ ssize_t CuFileDriver::pread(void* buf, size_t count, off_t file_offset, off_t bu
         }
         else
         {
-            total_read_cnt = ::pread(handle_.fd, reinterpret_cast<char*>(buf) + buf_offset, count, file_offset);
+            total_read_cnt = ::pread(handle_->fd, reinterpret_cast<char*>(buf) + buf_offset, count, file_offset);
         }
     }
     else if (file_type == FileHandleType::kMemoryMapped)
@@ -517,7 +512,7 @@ ssize_t CuFileDriver::pread(void* buf, size_t count, off_t file_offset, off_t bu
         }
         total_read_cnt = count;
     }
-    else if (memory_type == cudaMemoryTypeUnregistered || handle_.type == FileHandleType::kPosixODirect)
+    else if (memory_type == cudaMemoryTypeUnregistered || handle_->type == FileHandleType::kPosixODirect)
     {
         uint64_t buf_align = (reinterpret_cast<uint64_t>(buf) + buf_offset) % PAGE_SIZE;
         bool is_aligned = (buf_align == 0) && ((file_offset % PAGE_SIZE) == 0);
@@ -531,7 +526,7 @@ ssize_t CuFileDriver::pread(void* buf, size_t count, off_t file_offset, off_t bu
                 if (memory_type == cudaMemoryTypeUnregistered)
                 {
                     read_cnt =
-                        ::pread(handle_.fd, reinterpret_cast<char*>(buf) + buf_offset, block_read_size, file_offset);
+                        ::pread(handle_->fd, reinterpret_cast<char*>(buf) + buf_offset, block_read_size, file_offset);
                     total_read_cnt += read_cnt;
                 }
                 else
@@ -551,7 +546,7 @@ ssize_t CuFileDriver::pread(void* buf, size_t count, off_t file_offset, off_t bu
                             break;
                         }
 
-                        read_cnt = ::pread(handle_.fd, cache_buf, bytes_to_copy, read_offset);
+                        read_cnt = ::pread(handle_->fd, cache_buf, bytes_to_copy, read_offset);
                         CUDA_TRY(cudaMemcpy(input_buf, cache_buf, bytes_to_copy, cudaMemcpyHostToDevice));
                         if (cuda_status)
                         {
@@ -574,7 +569,7 @@ ssize_t CuFileDriver::pread(void* buf, size_t count, off_t file_offset, off_t bu
 
                 // Read the remaining block (size of PAGE_SIZE)
                 ssize_t read_cnt;
-                read_cnt = ::pread(handle_.fd, buf_pos, PAGE_SIZE, block_read_size);
+                read_cnt = ::pread(handle_->fd, buf_pos, PAGE_SIZE, block_read_size);
                 if (read_cnt < 0)
                 {
                     fmt::print(stderr, "Cannot read the remaining file content block! ({})\n", std::strerror(errno));
@@ -612,7 +607,7 @@ ssize_t CuFileDriver::pread(void* buf, size_t count, off_t file_offset, off_t bu
 
             if (large_block_size <= cache_size) // Optimize if bytes to load is less than cache_size
             {
-                ssize_t read_cnt = ::pread(handle_.fd, cache_buf, large_block_size, file_start_offset);
+                ssize_t read_cnt = ::pread(handle_->fd, cache_buf, large_block_size, file_start_offset);
                 if (read_cnt < 0)
                 {
                     fmt::print(stderr, "Cannot read the file content block! ({})\n", std::strerror(errno));
@@ -652,7 +647,7 @@ ssize_t CuFileDriver::pread(void* buf, size_t count, off_t file_offset, off_t bu
                 // Handle the head part of the file content
                 if (header_size)
                 {
-                    read_cnt = ::pread(handle_.fd, internal_buf_pos, PAGE_SIZE, read_offset);
+                    read_cnt = ::pread(handle_->fd, internal_buf_pos, PAGE_SIZE, read_offset);
                     if (read_cnt < 0)
                     {
                         fmt::print(stderr, "Cannot read the head part of the file content block! ({})\n",
@@ -691,7 +686,7 @@ ssize_t CuFileDriver::pread(void* buf, size_t count, off_t file_offset, off_t bu
                         break;
                     }
 
-                    read_cnt = ::pread(handle_.fd, cache_buf, bytes_to_copy, read_offset);
+                    read_cnt = ::pread(handle_->fd, cache_buf, bytes_to_copy, read_offset);
                     if (memory_type == cudaMemoryTypeUnregistered)
                     {
                         memcpy(output_buf, cache_buf, bytes_to_copy);
@@ -715,7 +710,7 @@ ssize_t CuFileDriver::pread(void* buf, size_t count, off_t file_offset, off_t bu
                 if (tail_size)
                 {
                     //                memset(internal_buf_pos, 0, PAGE_SIZE); // no need to initialize for pread()
-                    read_cnt = ::pread(handle_.fd, internal_buf_pos, PAGE_SIZE, read_offset);
+                    read_cnt = ::pread(handle_->fd, internal_buf_pos, PAGE_SIZE, read_offset);
                     if (read_cnt < 0)
                     {
                         fmt::print(stderr, "Cannot read the tail part of the file content block! ({})\n",
@@ -745,7 +740,7 @@ ssize_t CuFileDriver::pread(void* buf, size_t count, off_t file_offset, off_t bu
     {
         (void*)s_cufile_cache.device_cache(); // Lazy initialization
 
-        ssize_t read_cnt = cuFileRead(handle_.cufile, reinterpret_cast<char*>(buf) + buf_offset, count, file_offset, 0);
+        ssize_t read_cnt = cuFileRead(handle_->cufile, reinterpret_cast<char*>(buf) + buf_offset, count, file_offset, 0);
         total_read_cnt += read_cnt;
         if (read_cnt < 0)
         {
@@ -775,7 +770,7 @@ ssize_t CuFileDriver::pwrite(const void* buf, size_t count, off_t file_offset, o
     cudaPointerAttributes attributes;
     cudaMemoryType memory_type;
 
-    FileHandleType file_type = handle_.type;
+    FileHandleType file_type = handle_->type;
 
     CUDA_TRY(cudaPointerGetAttributes(&attributes, buf));
     if (cuda_status)
@@ -808,7 +803,7 @@ ssize_t CuFileDriver::pwrite(const void* buf, size_t count, off_t file_offset, o
                 {
                     return -1;
                 }
-                write_cnt = ::pwrite(handle_.fd, cache_buf, bytes_to_copy, write_offset);
+                write_cnt = ::pwrite(handle_->fd, cache_buf, bytes_to_copy, write_offset);
                 write_offset += write_cnt;
                 input_buf += write_cnt;
                 remaining_size -= write_cnt;
@@ -818,7 +813,7 @@ ssize_t CuFileDriver::pwrite(const void* buf, size_t count, off_t file_offset, o
         }
         else
         {
-            total_write_cnt = ::pwrite(handle_.fd, reinterpret_cast<const char*>(buf) + buf_offset, count, file_offset);
+            total_write_cnt = ::pwrite(handle_->fd, reinterpret_cast<const char*>(buf) + buf_offset, count, file_offset);
         }
     }
     else if (file_type == FileHandleType::kMemoryMapped)
@@ -826,7 +821,7 @@ ssize_t CuFileDriver::pwrite(const void* buf, size_t count, off_t file_offset, o
         fmt::print(stderr, "[Error] pwrite() is not supported for Memory-mapped IO file type!\n");
         return -1;
     }
-    else if (memory_type == cudaMemoryTypeUnregistered || handle_.type == FileHandleType::kPosixODirect)
+    else if (memory_type == cudaMemoryTypeUnregistered || handle_->type == FileHandleType::kPosixODirect)
     {
         uint64_t buf_align = (reinterpret_cast<uint64_t>(buf) + buf_offset) % PAGE_SIZE;
         bool is_aligned = (buf_align == 0) && ((file_offset % PAGE_SIZE) == 0);
@@ -841,7 +836,7 @@ ssize_t CuFileDriver::pwrite(const void* buf, size_t count, off_t file_offset, o
                 if (memory_type == cudaMemoryTypeUnregistered)
                 {
                     write_cnt = ::pwrite(
-                        handle_.fd, reinterpret_cast<const char*>(buf) + buf_offset, block_write_size, file_offset);
+                        handle_->fd, reinterpret_cast<const char*>(buf) + buf_offset, block_write_size, file_offset);
                     total_write_cnt += write_cnt;
                 }
                 else
@@ -866,7 +861,7 @@ ssize_t CuFileDriver::pwrite(const void* buf, size_t count, off_t file_offset, o
                         {
                             return -1;
                         }
-                        write_cnt = ::pwrite(handle_.fd, cache_buf, bytes_to_copy, write_offset);
+                        write_cnt = ::pwrite(handle_->fd, cache_buf, bytes_to_copy, write_offset);
                         write_offset += write_cnt;
                         input_buf += write_cnt;
                         remaining_size -= write_cnt;
@@ -885,7 +880,7 @@ ssize_t CuFileDriver::pwrite(const void* buf, size_t count, off_t file_offset, o
 
                 // Read the remaining block (size of PAGE_SIZE)
                 ssize_t read_cnt;
-                read_cnt = ::pread(handle_.fd, internal_buf_pos, PAGE_SIZE, block_write_size);
+                read_cnt = ::pread(handle_->fd, internal_buf_pos, PAGE_SIZE, block_write_size);
                 if (read_cnt < 0)
                 {
                     fmt::print(stderr, "Cannot read the remaining file content block! ({})\n", std::strerror(errno));
@@ -908,7 +903,7 @@ ssize_t CuFileDriver::pwrite(const void* buf, size_t count, off_t file_offset, o
                     }
                 }
                 // Write the constructed block
-                write_cnt = ::pwrite(handle_.fd, internal_buf_pos, PAGE_SIZE, block_write_size);
+                write_cnt = ::pwrite(handle_->fd, internal_buf_pos, PAGE_SIZE, block_write_size);
                 if (write_cnt < 0)
                 {
                     fmt::print(stderr, "Cannot write the remaining file content! ({})\n", std::strerror(errno));
@@ -933,7 +928,7 @@ ssize_t CuFileDriver::pwrite(const void* buf, size_t count, off_t file_offset, o
             if (large_block_size <= cache_size) // Optimize if bytes to write is less than cache_size
             {
                 memset(cache_buf, 0, PAGE_SIZE);
-                ssize_t read_cnt = ::pread(handle_.fd, cache_buf, PAGE_SIZE, file_start_offset);
+                ssize_t read_cnt = ::pread(handle_->fd, cache_buf, PAGE_SIZE, file_start_offset);
                 if (read_cnt < 0)
                 {
                     fmt::print(
@@ -942,7 +937,7 @@ ssize_t CuFileDriver::pwrite(const void* buf, size_t count, off_t file_offset, o
                 }
                 if (large_block_size > PAGE_SIZE)
                 {
-                    read_cnt = ::pread(handle_.fd, cache_buf + large_block_size - PAGE_SIZE, PAGE_SIZE,
+                    read_cnt = ::pread(handle_->fd, cache_buf + large_block_size - PAGE_SIZE, PAGE_SIZE,
                                        end_boundary_offset - PAGE_SIZE);
                     if (read_cnt < 0)
                     {
@@ -966,7 +961,7 @@ ssize_t CuFileDriver::pwrite(const void* buf, size_t count, off_t file_offset, o
                 }
 
                 // Write the constructed block
-                ssize_t write_cnt = ::pwrite(handle_.fd, cache_buf, large_block_size, file_start_offset);
+                ssize_t write_cnt = ::pwrite(handle_->fd, cache_buf, large_block_size, file_start_offset);
                 if (write_cnt < 0)
                 {
                     fmt::print(stderr, "Cannot write the file content block! ({})\n", std::strerror(errno));
@@ -993,7 +988,7 @@ ssize_t CuFileDriver::pwrite(const void* buf, size_t count, off_t file_offset, o
                 // Handle the head part of the file content
                 if (header_size)
                 {
-                    read_cnt = ::pread(handle_.fd, internal_buf_pos, PAGE_SIZE, write_offset);
+                    read_cnt = ::pread(handle_->fd, internal_buf_pos, PAGE_SIZE, write_offset);
                     if (read_cnt < 0)
                     {
                         fmt::print(stderr, "Cannot read the head part of the file content block! ({})\n",
@@ -1017,7 +1012,7 @@ ssize_t CuFileDriver::pwrite(const void* buf, size_t count, off_t file_offset, o
                     }
 
                     // Write the constructed block
-                    write_cnt = ::pwrite(handle_.fd, internal_buf_pos, PAGE_SIZE, write_offset);
+                    write_cnt = ::pwrite(handle_->fd, internal_buf_pos, PAGE_SIZE, write_offset);
                     if (write_cnt < 0)
                     {
                         fmt::print(stderr, "Cannot write the head part of the file content block! ({})\n",
@@ -1052,7 +1047,7 @@ ssize_t CuFileDriver::pwrite(const void* buf, size_t count, off_t file_offset, o
                             return -1;
                         }
                     }
-                    write_cnt = ::pwrite(handle_.fd, cache_buf, bytes_to_copy, write_offset);
+                    write_cnt = ::pwrite(handle_->fd, cache_buf, bytes_to_copy, write_offset);
                     write_offset += write_cnt;
                     input_buf += write_cnt;
                     body_remaining_size -= write_cnt;
@@ -1064,7 +1059,7 @@ ssize_t CuFileDriver::pwrite(const void* buf, size_t count, off_t file_offset, o
                 if (tail_size)
                 {
                     memset(internal_buf_pos, 0, PAGE_SIZE);
-                    read_cnt = ::pread(handle_.fd, internal_buf_pos, PAGE_SIZE, write_offset);
+                    read_cnt = ::pread(handle_->fd, internal_buf_pos, PAGE_SIZE, write_offset);
                     if (read_cnt < 0)
                     {
                         fmt::print(stderr, "Cannot read the tail part of the file content block! ({})\n",
@@ -1087,7 +1082,7 @@ ssize_t CuFileDriver::pwrite(const void* buf, size_t count, off_t file_offset, o
                     }
 
                     // Write the constructed block
-                    write_cnt = ::pwrite(handle_.fd, internal_buf_pos, PAGE_SIZE, write_offset);
+                    write_cnt = ::pwrite(handle_->fd, internal_buf_pos, PAGE_SIZE, write_offset);
                     if (write_cnt < 0)
                     {
                         fmt::print(stderr, "Cannot write the tail part of the file content block! ({})\n",
@@ -1104,7 +1099,7 @@ ssize_t CuFileDriver::pwrite(const void* buf, size_t count, off_t file_offset, o
         (void*)s_cufile_cache.device_cache(); // Lazy initialization
 
         ssize_t write_cnt =
-            cuFileWrite(handle_.cufile, reinterpret_cast<const char*>(buf) + buf_offset, count, file_offset, 0);
+            cuFileWrite(handle_->cufile, reinterpret_cast<const char*>(buf) + buf_offset, count, file_offset, 0);
         if (write_cnt < 0)
         {
             fmt::print(stderr, "[cuFile Error] {}\n", CUFILE_ERRSTR(write_cnt));
@@ -1122,10 +1117,10 @@ ssize_t CuFileDriver::pwrite(const void* buf, size_t count, off_t file_offset, o
 }
 bool CuFileDriver::close()
 {
-    if (handle_.cufile)
+    if (handle_->cufile)
     {
-        cuFileHandleDeregister(handle_.cufile);
-        handle_.cufile = nullptr;
+        cuFileHandleDeregister(handle_->cufile);
+
     }
     if (mmap_ptr_)
     {
@@ -1136,22 +1131,21 @@ bool CuFileDriver::close()
         }
         mmap_ptr_ = nullptr;
     }
-    if (handle_.fd != -1)
+    if (handle_->fd != -1)
     {
         // If block write was used
         if ((file_flags_ & O_RDWR) &&
-            (handle_.type == FileHandleType::kGPUDirect || handle_.type == FileHandleType::kPosixODirect))
+            (handle_->type == FileHandleType::kGPUDirect || handle_->type == FileHandleType::kPosixODirect))
         {
             // Truncate file assuming that `file_size_` is up to date during pwrite() calls
-            int err = ::ftruncate(handle_.fd, file_size_);
+            int err = ::ftruncate(handle_->fd, file_size_);
             if (err < 0)
             {
-                fmt::print(stderr, "[Error] Cannot resize the file {} to {} ({})\n", handle_.path, file_size_,
+                fmt::print(stderr, "[Error] Cannot resize the file {} to {} ({})\n", handle_->path, file_size_,
                            std::strerror(errno));
             }
         }
-        ::close(handle_.fd);
-        handle_.fd = -1;
+        handle_ = nullptr;
     }
     file_path_.clear();
     file_size_ = 0;
