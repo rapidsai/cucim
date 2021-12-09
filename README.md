@@ -16,17 +16,26 @@
 
 ### Conda
 
-#### Conda (stable)
+#### [Conda (stable)](https://anaconda.org/rapidsai/cucim)
 
 > conda create -n cucim -c rapidsai -c conda-forge cucim cudatoolkit=`<CUDA version>`
 
 `<CUDA version>` should be 11.0+ (e.g., `11.0`, `11.2`, etc.)
 
-#### Conda (nightlies)
+#### [Conda (nightlies)](https://anaconda.org/rapidsai-nightly/cucim)
 
 > conda create -n cucim -c rapidsai-nightly -c conda-forge cucim cudatoolkit=`<CUDA version>`
 
 `<CUDA version>` should be 11.0+ (e.g., `11.0`, `11.2`, etc)
+
+### [PyPI](https://pypi.org/project/cucim/)
+
+```bash
+pip install cucim
+
+# Install dependencies for `cucim.skimage` (assuming that CUDA 11.0 is used for CuPy)
+pip install scipy scikit-image cupy-cuda110
+```
 
 ### Notebooks
 
