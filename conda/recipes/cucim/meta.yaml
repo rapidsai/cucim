@@ -47,10 +47,12 @@ requirements:
     - scipy
     - scikit-image 0.18.1
     # - openslide # skipping here but benchmark binary would needs openslide library
-  # test:
-  #   - openslide
-  #   - pytest
-  #   - pytest-cov
+
+tests:                                 # [linux64]
+  requirements:                        # [linux64]
+    - cudatoolkit {{ cuda_version }}.* # [linux64]
+  imports:                             # [linux64]
+    - cucim                            # [linux64]
 
 about:
   home: http://rapids.ai/
