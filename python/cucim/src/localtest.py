@@ -13,6 +13,15 @@
 # limitations under the License.
 #
 
+from rasterio.windows import Window
+from openslide import OpenSlide
+import rasterio
+from itertools import repeat
+from datetime import datetime
+import concurrent.futures
+import json
+import os
+import time
 from contextlib import ContextDecorator
 from time import perf_counter
 from tifffile import TiffFile
@@ -40,34 +49,38 @@ class Timer(ContextDecorator):
         print("{} : {}".format(self.message, self.end - self.start))
 
 
-img = CuImage("notebooks/input/TUPAC-TR-467.svs")
+img = CuImage("notebooks/input/image.tif")
 
 cache = CuImage.cache("per_process", memory_capacity=1024)
 
+width, height = img.size("XY")
+start_location = 1
+patch_size = 224
+
+start_loc_data = [(sx, sy)
+                  for sy in range(start_location, height, patch_size)
+                  for sx in range(start_location, width, patch_size)]
+# start_loc_data = start_loc_data[len(
+#     start_loc_data) // 2:len(start_loc_data)//2 + 100]\
+
+
 with Timer("  Thread elapsed time (cuCIM)") as timer:
-    a = img.read_region(num_workers=16)
-    print(a)
+    region = img.read_region(device="cuda")
+    # # a = img.read_region(num_workers=16)
+    # # print(a)
+    # batch_iter = img.read_region(
+    #     iter(start_loc_data), (patch_size, patch_size), batch_size=2, device="cuda", num_workers=4)  # device="cuda",
+    # d = next(batch_iter)
+    # e = next(batch_iter)
+    # next(batch_iter)
+    # next(batch_iter)
+    # next(batch_iter)
+    # # c = 0
+    # # for batch in batch_iter:
+    # #     c += 1
 
 
 sys.exit(0)
-
-from tifffile import TiffFile
-import time
-import os
-import json
-import sys
-import concurrent.futures
-from contextlib import ContextDecorator
-from datetime import datetime
-from itertools import repeat
-from time import perf_counter
-
-import numpy as np
-import rasterio
-from openslide import OpenSlide
-from rasterio.windows import Window
-
-from cucim import CuImage
 
 
 class Timer(ContextDecorator):

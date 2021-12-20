@@ -195,7 +195,11 @@ CuFileDriver::CuFileDriver(int fd, bool no_gds, bool use_mmap, const char* file_
     file_flags_ = flags;
 
     FileHandleType file_type = (flags & O_DIRECT) ? FileHandleType::kPosixODirect : FileHandleType::kPosix;
-    handle_ = std::make_shared<CuCIMFileHandle>(fd, nullptr, file_type, const_cast<char*>(file_path_.c_str()), this,
+    // Copy file path (Allocated memory would be freed at close() method.)
+    char* file_path_cstr = static_cast<char*>(cucim_malloc(file_path_.size() + 1));
+    memcpy(file_path_cstr, file_path_.c_str(), file_path_.size());
+    file_path_cstr[file_path_.size()] = '\0';
+    handle_ = std::make_shared<CuCIMFileHandle>(fd, nullptr, file_type, const_cast<char*>(file_path_cstr), this,
                                                 static_cast<uint64_t>(st.st_dev), static_cast<uint64_t>(st.st_ino),
                                                 static_cast<int64_t>(st.st_mtim.tv_nsec));
 
@@ -253,7 +257,7 @@ ssize_t pread(const std::shared_ptr<CuFileDriver>& fd, void* buf, size_t count, 
     }
     else
     {
-        fmt::print(stderr, "fd (CuFileDriver) is null!");
+        fmt::print(stderr, "fd (CuFileDriver) is null!\n");
         return -1;
     }
 }
@@ -265,7 +269,7 @@ ssize_t pwrite(const std::shared_ptr<CuFileDriver>& fd, const void* buf, size_t 
     }
     else
     {
-        fmt::print(stderr, "fd (CuFileDriver) is null!");
+        fmt::print(stderr, "fd (CuFileDriver) is null!\n");
         return -1;
     }
 }

@@ -268,6 +268,8 @@ build_local_libcucim_() {
 
     # Copy cufile SDK from host system to temp/cuda
     copy_gds_files_ $source_folder
+    # Copy libjpeg SDK from host system to temp/cuda
+    copy_nvjpeg_files_ $source_folder
 
     ${CMAKE_CMD} -S ${source_folder} -B ${build_folder} -G "Unix Makefiles" \
         -DCMAKE_EXPORT_COMPILE_COMMANDS:BOOL=TRUE \
@@ -471,6 +473,75 @@ copy_gds_files_() {
     fi
 }
 
+get_arch_name_() {
+    architecture="unknown"
+    case $(uname -m) in
+        x86_64) architecture="x86_64" ;;
+        arm|aarch64)    dpkg --print-architecture | grep -q "arm64" && architecture="sbsa";;
+    esac
+    echo "${architecture}"
+}
+
+copy_nvjpeg_files_() {
+    local root_folder=${1:-${TOP}}
+    local arch_name="$(get_arch_name_)"
+    local nvjpeg_search="${root_folder}/temp/cuda/include:${root_folder}/temp/cuda/lib64"
+    local cuda_version="11.5"
+    local nvjpeg_version="11-5_11.5.4.107-1"
+    local candidate
+    local nvjpeg_include
+    local nvjpeg_lib
+
+    # TODO: Do not copy nvjpeg files until device input is supported (CUDA 11.6)
+    return
+
+    for candidate in ${nvjpeg_search}; do
+        nvjpeg_include="$(echo $candidate | cut -d: -f1)"
+        nvjpeg_lib="$(echo $candidate | cut -d: -f2)"
+        if [ -f ${nvjpeg_include}/cufile.h ] && [ -f ${nvjpeg_lib}/libcufile.so ]; then
+            c_echo W "GDS client library is available at '${nvjpeg_include}/cufile.h' and '${nvjpeg_lib}/libcufile.so'"
+            break
+        fi
+        nvjpeg_include=""
+        nvjpeg_lib=""
+    done
+
+    if [ ! -f ${nvjpeg_include}/nvjpeg.h ]; then
+        c_echo_err Y "nvJPEG library is not available! Downloading the redistributable package to get nvjpeg.h and libraries."
+
+        run_command rm -rf ${root_folder}/temp/cuda/include/*nvjpeg*
+        run_command rm -rf ${root_folder}/temp/cuda/lib64/*nvjpeg*
+        run_command mkdir -p ${root_folder}/temp/cuda/include ${root_folder}/temp/cuda/lib64
+
+        local temp_tgz_dir=$(mktemp -d)
+        pushd ${temp_tgz_dir}
+        c_echo W "Arch name: " G "${arch_name}"
+        if [ "${arch_name}" = "sbsa" ]; then
+            run_command wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/${arch_name}/libnvjpeg-dev-${nvjpeg_version}_arm64.deb
+        else
+            run_command wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/${arch_name}/libnvjpeg-dev-${nvjpeg_version}_amd64.deb
+        fi
+        mkdir -p libnvjpeg-dev
+        run_command ar x libnvjpeg-dev-${nvjpeg_version}*.deb --output=libnvjpeg-dev
+        pushd libnvjpeg-dev > /dev/null
+        run_command xz --decompress data.tar.xz
+        run_command tar xvf data.tar
+        popd > /dev/null
+
+        run_command cp libnvjpeg-dev/usr/local/cuda-${cuda_version}/include/nvjpeg.h ${root_folder}/temp/cuda/include/
+        run_command cp libnvjpeg-dev/usr/local/cuda-${cuda_version}/lib64/libnvjpeg_static.a ${root_folder}/temp/cuda/lib64/
+        popd > /dev/null
+        run_command rm -r ${temp_tgz_dir}
+    else
+        run_command mkdir -p ${root_folder}/temp/cuda/include ${root_folder}/temp/cuda/lib64
+
+        if [ "${nvjpeg_include}" != "${root_folder}/temp/cuda/include" ]; then
+            run_command cp -Pf ${nvjpeg_include}/*nvjpeg* ${root_folder}/temp/cuda/include/ || true
+            run_command cp -Pf ${nvjpeg_lib}/*nvjpeg* ${root_folder}/temp/cuda/lib64/ || true
+        fi
+    fi
+}
+
 build_python_package_desc() { echo 'Build Python package
 
 Note: This command does not remove `dist` folder before building.
@@ -483,6 +554,8 @@ build_python_package() {
 
     # Copy cufile SDK from host system to temp/cuda
     copy_gds_files_
+    # Copy nvjpeg SDK from host system to temp/cuda
+    copy_nvjpeg_files_
 
     run_command ${TOP}/dockcross-manylinux2014-x64 ./run build_python_package_
     ret=$?

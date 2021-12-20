@@ -22,11 +22,14 @@
 #include <fmt/format.h>
 
 #include "cucim/profiler/nvtx3.h"
+#include "cucim/util/cuda.h"
 
 namespace cucim::loader
 {
 
 ThreadBatchDataLoader::ThreadBatchDataLoader(LoadFunc load_func,
+                                             std::unique_ptr<BatchDataProcessor> batch_data_processor,
+                                             cucim::io::Device out_device,
                                              std::unique_ptr<std::vector<int64_t>> location,
                                              std::unique_ptr<std::vector<int64_t>> image_size,
                                              uint64_t location_len,
@@ -35,6 +38,7 @@ ThreadBatchDataLoader::ThreadBatchDataLoader(LoadFunc load_func,
                                              uint32_t prefetch_factor,
                                              uint32_t num_workers)
     : load_func_(load_func),
+      out_device_(out_device),
       location_(std::move(location)),
       image_size_(std::move(image_size)),
       location_len_(location_len),
@@ -42,7 +46,7 @@ ThreadBatchDataLoader::ThreadBatchDataLoader(LoadFunc load_func,
       batch_size_(batch_size),
       prefetch_factor_(prefetch_factor),
       num_workers_(num_workers),
-      buffer_item_len_(std::min(static_cast<uint64_t>(location_len), static_cast<uint64_t>(1 + prefetch_factor))),
+      batch_data_processor_(std::move(batch_data_processor)),
       buffer_size_(one_raster_size * batch_size),
       thread_pool_(num_workers),
       queued_item_count_(0),
@@ -52,10 +56,66 @@ ThreadBatchDataLoader::ThreadBatchDataLoader(LoadFunc load_func,
       current_data_(nullptr),
       current_data_batch_size_(0)
 {
+    buffer_item_len_ = std::min(static_cast<uint64_t>(location_len_), static_cast<uint64_t>(1 + prefetch_factor_)),
+
     raster_data_.reserve(buffer_item_len_);
+    cucim::io::DeviceType device_type = out_device_.type();
     for (size_t i = 0; i < buffer_item_len_; ++i)
     {
-        raster_data_.emplace_back(std::make_unique<uint8_t[]>(buffer_size_));
+        switch (device_type)
+        {
+        case io::DeviceType::kCPU:
+            raster_data_.emplace_back(static_cast<uint8_t*>(cucim_malloc(buffer_size_)));
+            break;
+        case io::DeviceType::kCUDA: {
+            cudaError_t cuda_status;
+            void* image_data_ptr = nullptr;
+            CUDA_ERROR(cudaMalloc(&image_data_ptr, buffer_size_));
+            raster_data_.emplace_back(static_cast<uint8_t*>(image_data_ptr));
+            break;
+        }
+        case io::DeviceType::kPinned:
+        case io::DeviceType::kCPUShared:
+        case io::DeviceType::kCUDAShared:
+            fmt::print(stderr, "Device type {} is not supported!\n", device_type);
+            break;
+        }
+    }
+}
+
+ThreadBatchDataLoader::~ThreadBatchDataLoader()
+{
+    cucim::io::DeviceType device_type = out_device_.type();
+    for (auto& raster_ptr : raster_data_)
+    {
+        switch (device_type)
+        {
+        case io::DeviceType::kCPU:
+            if (raster_ptr)
+            {
+                cucim_free(raster_ptr);
+            }
+            break;
+        case io::DeviceType::kCUDA:
+            cudaError_t cuda_status;
+            if (raster_ptr)
+            {
+                cuda_status = cudaSuccess;
+                CUDA_TRY(cudaFree(raster_ptr));
+            }
+            break;
+        case io::DeviceType::kPinned:
+        case io::DeviceType::kCPUShared:
+        case io::DeviceType::kCUDAShared:
+            fmt::print(stderr, "Device type {} is not supported!", device_type);
+            break;
+        }
+        raster_ptr = nullptr;
+    }
+    if (batch_data_processor_)
+    {
+        stopped_ = true;
+        batch_data_processor_->shutdown();
     }
 }
 
@@ -71,7 +131,7 @@ uint8_t* ThreadBatchDataLoader::raster_pointer(const uint64_t location_index) co
 
     assert(buffer_item_index < buffer_item_len_);
 
-    uint8_t* batch_raster_ptr = raster_data_[buffer_item_index].get();
+    uint8_t* batch_raster_ptr = raster_data_[buffer_item_index];
 
     return &batch_raster_ptr[raster_data_index * one_rester_size_];
 }
@@ -102,6 +162,12 @@ uint32_t ThreadBatchDataLoader::request(uint32_t load_size)
         // Append the number of added tasks to the batch count list.
         batch_item_counts_.emplace_back(tasks_.size() - last_item_count);
     }
+
+    if (batch_data_processor_)
+    {
+        uint32_t num_remaining_patches = static_cast<uint32_t>(location_len_ - queued_item_count_);
+        batch_data_processor_->request(batch_item_counts_, num_remaining_patches);
+    }
     return num_items_to_request;
 }
 
@@ -121,6 +187,12 @@ uint32_t ThreadBatchDataLoader::wait_batch()
             auto& future = tasks_.front();
             future.wait();
             tasks_.pop_front();
+            if (batch_data_processor_)
+            {
+                batch_data_processor_->remove_front_tile();
+                uint32_t num_remaining_patches = static_cast<uint32_t>(location_len_ - queued_item_count_);
+                batch_data_processor_->wait_batch(i, batch_item_counts_, num_remaining_patches);
+            }
         }
         batch_item_counts_.pop_front();
         num_items_waited += batch_item_count;
@@ -131,9 +203,11 @@ uint32_t ThreadBatchDataLoader::wait_batch()
 
 uint8_t* ThreadBatchDataLoader::next_data()
 {
-    if (num_workers_ == 0)
+    if (num_workers_ == 0) // (location_len == 1 && batch_size == 1)
     {
-        uint8_t* batch_raster_ptr = raster_data_[0].release();
+        // If it reads entire image with multi threads (using loader), release raster memory from batch data loader.
+        uint8_t* batch_raster_ptr = raster_data_[0];
+        raster_data_[0] = nullptr;
         return batch_raster_ptr;
     }
 
@@ -150,9 +224,26 @@ uint8_t* ThreadBatchDataLoader::next_data()
     // Wait until the batch is ready.
     wait_batch();
 
-    uint8_t* batch_raster_ptr = raster_data_[buffer_item_head_index_].release();
+    uint8_t* batch_raster_ptr = raster_data_[buffer_item_head_index_];
 
-    raster_data_[buffer_item_head_index_].reset(new uint8_t[buffer_size_]);
+    cucim::io::DeviceType device_type = out_device_.type();
+    switch (device_type)
+    {
+    case io::DeviceType::kCPU:
+        raster_data_[buffer_item_head_index_] = static_cast<uint8_t*>(cucim_malloc(buffer_size_));
+        break;
+    case io::DeviceType::kCUDA: {
+        cudaError_t cuda_status;
+        CUDA_ERROR(cudaMalloc(&raster_data_[buffer_item_head_index_], buffer_size_));
+        break;
+    }
+    case io::DeviceType::kPinned:
+    case io::DeviceType::kCPUShared:
+    case io::DeviceType::kCUDAShared:
+        fmt::print(stderr, "Device type {} is not supported!\n", device_type);
+        break;
+    }
+
     buffer_item_head_index_ = (buffer_item_head_index_ + 1) % buffer_item_len_;
 
     current_data_ = batch_raster_ptr;
@@ -164,6 +255,21 @@ uint8_t* ThreadBatchDataLoader::next_data()
     // Prepare the next batch
     request(batch_size_);
     return batch_raster_ptr;
+}
+
+BatchDataProcessor* ThreadBatchDataLoader::batch_data_processor()
+{
+    return batch_data_processor_.get();
+}
+
+std::shared_ptr<cucim::cache::ImageCacheValue> ThreadBatchDataLoader::wait_for_processing(uint32_t index)
+{
+    if (batch_data_processor_ == nullptr || stopped_)
+    {
+        return std::shared_ptr<cucim::cache::ImageCacheValue>();
+    }
+
+    return batch_data_processor_->wait_for_processing(index);
 }
 
 uint64_t ThreadBatchDataLoader::size() const
@@ -196,12 +302,16 @@ uint32_t ThreadBatchDataLoader::data_batch_size() const
     return current_data_batch_size_;
 }
 
-bool ThreadBatchDataLoader::enqueue(std::function<void()> task)
+bool ThreadBatchDataLoader::enqueue(std::function<void()> task, const TileInfo& tile)
 {
     if (num_workers_ > 0)
     {
         auto future = thread_pool_.enqueue(task);
         tasks_.emplace_back(std::move(future));
+        if (batch_data_processor_)
+        {
+            batch_data_processor_->add_tile(tile);
+        }
         return true;
     }
     return false;

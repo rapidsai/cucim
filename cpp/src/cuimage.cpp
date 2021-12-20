@@ -262,29 +262,22 @@ CuImage::~CuImage()
             switch (device_type)
             {
             case io::DeviceType::kCPU:
-                if (image_data_->loader)
-                {
-                    delete[] reinterpret_cast<uint8_t*>(image_data_->container.data);
-                }
-                else
-                {
-                    cucim_free(image_data_->container.data);
-                }
+                cucim_free(image_data_->container.data);
                 image_data_->container.data = nullptr;
                 break;
             case io::DeviceType::kCUDA:
-                cudaError_t cuda_status;
-                CUDA_TRY(cudaFree(image_data_->container.data));
-                image_data_->container.data = nullptr;
-                if (cuda_status)
+
+                if (image_data_->loader)
                 {
-                    fmt::print(stderr, "[Error] Cannot free memory!");
+                    cudaError_t cuda_status;
+                    CUDA_TRY(cudaFree(image_data_->container.data));
                 }
+                image_data_->container.data = nullptr;
                 break;
             case io::DeviceType::kPinned:
             case io::DeviceType::kCPUShared:
             case io::DeviceType::kCUDAShared:
-                fmt::print(stderr, "Device type {} is not supported!", device_type);
+                fmt::print(stderr, "Device type {} is not supported!\n", device_type);
                 break;
             }
         }
@@ -660,6 +653,12 @@ CuImage CuImage::read_region(std::vector<int64_t>&& location,
     if (batch_size == 0)
     {
         batch_size = 1;
+    }
+
+    // num_workers would be always > 0 if output device type is CUDA
+    if (num_workers == 0 && device.type() == cucim::io::DeviceType::kCUDA)
+    {
+        num_workers = 1;
     }
 
     uint32_t size_ndim = size.size();
@@ -1350,12 +1349,34 @@ void CuImageIterator<DataType>::increase_index_()
         auto next_data = loader->next_data();
         if (next_data)
         {
-            auto image_data = reinterpret_cast<uint8_t**>(&(cuimg_->image_data_->container.data));
-            if (*image_data)
+            auto& image_data = cuimg_->image_data_;
+            auto image_data_ptr = reinterpret_cast<uint8_t**>(&(image_data->container.data));
+
+            DLContext& ctx = image_data->container.ctx;
+            auto device_type = static_cast<io::DeviceType>(ctx.device_type);
+            switch (device_type)
             {
-                delete[] * image_data;
+            case io::DeviceType::kCPU:
+                if (*image_data_ptr)
+                {
+                    cucim_free(*image_data_ptr);
+                }
+                break;
+            case io::DeviceType::kCUDA:
+                if (*image_data_ptr)
+                {
+                    cudaError_t cuda_status;
+                    CUDA_ERROR(cudaFree(*image_data_ptr));
+                }
+                break;
+            case io::DeviceType::kPinned:
+            case io::DeviceType::kCPUShared:
+            case io::DeviceType::kCUDAShared:
+                fmt::print(stderr, "Device type {} is not supported!\n", device_type);
+                break;
             }
-            *image_data = next_data;
+
+            *image_data_ptr = next_data;
 
             if (loader->batch_size() > 1)
             {

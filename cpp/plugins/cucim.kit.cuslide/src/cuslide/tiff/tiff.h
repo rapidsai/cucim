@@ -69,6 +69,7 @@ public:
 
     cucim::filesystem::Path file_path() const;
     std::shared_ptr<CuCIMFileHandle>& file_handle(); /// used for moving the ownership of the file handle to the caller.
+                                                     /// Do not use for the application -- it will return nullptr.
     ::TIFF* client() const;
     const std::vector<ifd_offset_t>& ifd_offsets() const;
     std::shared_ptr<IFD> ifd(size_t index) const;

@@ -20,13 +20,15 @@
 #include "cucim/macros/api_header.h"
 
 #include <cstdint>
-#include <functional>
-#include <memory>
-#include <optional>
-#include <vector>
 #include <deque>
+#include <memory>
+#include <vector>
 
+#include "cucim/cache/image_cache.h"
 #include "cucim/concurrent/threadpool.h"
+#include "cucim/io/device.h"
+#include "cucim/loader/batch_data_processor.h"
+#include "cucim/loader/tile_info.h"
 
 namespace cucim::loader
 {
@@ -37,6 +39,8 @@ public:
     using LoadFunc = std::function<void(ThreadBatchDataLoader* loader_ptr, uint64_t location_index)>;
 
     ThreadBatchDataLoader(LoadFunc load_func,
+                          std::unique_ptr<BatchDataProcessor> batch_data_processor,
+                          cucim::io::Device out_device,
                           std::unique_ptr<std::vector<int64_t>> location,
                           std::unique_ptr<std::vector<int64_t>> image_size,
                           uint64_t location_len,
@@ -44,6 +48,8 @@ public:
                           uint32_t batch_size,
                           uint32_t prefetch_factor,
                           uint32_t num_workers);
+
+    ~ThreadBatchDataLoader();
 
     operator bool() const;
 
@@ -58,6 +64,9 @@ public:
      */
     uint8_t* next_data();
 
+    BatchDataProcessor* batch_data_processor();
+    std::shared_ptr<cucim::cache::ImageCacheValue> wait_for_processing(uint32_t index);
+
     uint64_t size() const;
     uint32_t batch_size() const;
 
@@ -66,21 +75,26 @@ public:
     uint8_t* data() const;
     uint32_t data_batch_size() const;
 
-    bool enqueue(std::function<void()> task);
+    bool enqueue(std::function<void()> task, const TileInfo& tile);
 
 private:
+    bool stopped_ = false;
     LoadFunc load_func_;
+    cucim::io::Device out_device_;
     std::unique_ptr<std::vector<int64_t>> location_ = nullptr;
     std::unique_ptr<std::vector<int64_t>> image_size_ = nullptr;
     uint64_t location_len_ = 0;
     size_t one_rester_size_ = 0;
-    uint32_t batch_size_ = 0;
-    uint32_t prefetch_factor_ = 0;
+    uint32_t batch_size_ = 1;
+    uint32_t prefetch_factor_ = 2;
     uint32_t num_workers_ = 0;
+
+    // For nvjpeg
+    std::unique_ptr<BatchDataProcessor> batch_data_processor_;
 
     size_t buffer_item_len_ = 0;
     size_t buffer_size_ = 0;
-    std::vector<std::unique_ptr<uint8_t[]>> raster_data_;
+    std::vector<uint8_t*> raster_data_;
     std::deque<std::future<void>> tasks_;
     // NOTE: the order is important ('thread_pool_' depends on 'raster_data_' and 'tasks_')
     cucim::concurrent::ThreadPool thread_pool_;

@@ -123,12 +123,12 @@ void py_image_cache_reserve(ImageCache& cache, uint32_t memory_capacity, py::kwa
 }
 
 py::int_ py_preferred_memory_capacity(const py::object& img,
-                                      const std::optional<const std::vector<uint32_t>>& image_size,
+                                      const std::optional<const std::vector<uint64_t>>& image_size,
                                       const std::optional<const std::vector<uint32_t>>& tile_size,
                                       const std::optional<const std::vector<uint32_t>>& patch_size,
                                       uint32_t bytes_per_pixel)
 {
-    std::vector<uint32_t> param_image;
+    std::vector<uint64_t> param_image;
     std::vector<uint32_t> param_tile;
     std::vector<uint32_t> param_patch;
 
