@@ -1,5 +1,4 @@
 from ._gabor import gabor, gabor_kernel
-from ._gaussian import _guess_spatial_dimensions  # noqa
 from ._gaussian import difference_of_gaussians, gaussian
 # from . import rank
 from ._median import median

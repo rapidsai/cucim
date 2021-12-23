@@ -4,14 +4,16 @@ import cupy as cp
 import numpy as np
 from cupyx.scipy import ndimage as ndi
 
-from .._shared.utils import convert_to_float, warn
+from .._shared import utils
 from ..util import img_as_float
 
 __all__ = ['gaussian', 'difference_of_gaussians']
 
 
+@utils.deprecate_multichannel_kwarg(multichannel_position=5)
 def gaussian(image, sigma=1, output=None, mode='nearest', cval=0,
-             multichannel=None, preserve_range=False, truncate=4.0):
+             multichannel=None, preserve_range=False, truncate=4.0, *,
+             channel_axis=None):
     """Multi-dimensional Gaussian filter.
 
     Parameters
@@ -39,6 +41,7 @@ def gaussian(image, sigma=1, output=None, mode='nearest', cval=0,
         not mixed together). Only 3 channels are supported. If ``None``,
         the function will attempt to guess this, and raise a warning if
         ambiguous, when the array has shape (M, N, 3).
+        This argument is deprecated: specify `channel_axis` instead.
     preserve_range : bool, optional
         Whether to keep the original range of values. Otherwise, the input
         image is converted according to the conventions of ``img_as_float``.
@@ -46,6 +49,10 @@ def gaussian(image, sigma=1, output=None, mode='nearest', cval=0,
         https://scikit-image.org/docs/dev/user_guide/data_types.html
     truncate : float, optional
         Truncate the filter at this many standard deviations.
+    channel_axis : int or None, optional
+        If None, the image is assumed to be a grayscale (single channel) image.
+        Otherwise, this parameter indicates which axis of the array corresponds
+        to channels.
 
     Returns
     -------
@@ -95,21 +102,16 @@ def gaussian(image, sigma=1, output=None, mode='nearest', cval=0,
     >>> # For RGB images, each is filtered separately
     >>> from skimage.data import astronaut
     >>> image = cp.array(astronaut())
-    >>> filtered_img = gaussian(image, sigma=1, multichannel=True)
+    >>> filtered_img = gaussian(image, sigma=1, channel_axis=-1)
 
     """
-
-    spatial_dims = None
-    try:
-        spatial_dims = _guess_spatial_dimensions(image)
-    except ValueError:
-        spatial_dims = image.ndim
-    if spatial_dims is None and multichannel is None:
+    if image.ndim == 3 and image.shape[-1] == 3 and channel_axis is None:
         msg = ("Images with dimensions (M, N, 3) are interpreted as 2D+RGB "
                "by default. Use `multichannel=False` to interpret as "
                "3D image with last dimension of length 3.")
-        warn(RuntimeWarning(msg))
-        multichannel = True
+        utils.warn(RuntimeWarning(msg))
+        channel_axis = -1
+
     # CuPy Backend: refactor to avoid overhead of cp.any(cp.asarray(sigma))
     sigma_msg = "Sigma values less than zero are not valid"
     if not isinstance(sigma, Iterable):
@@ -117,14 +119,15 @@ def gaussian(image, sigma=1, output=None, mode='nearest', cval=0,
             raise ValueError(sigma_msg)
     elif any(s < 0 for s in sigma):
         raise ValueError(sigma_msg)
-    if multichannel:
+
+    if channel_axis is not None:
         # do not filter across channels
         if not isinstance(sigma, Iterable):
             sigma = [sigma] * (image.ndim - 1)
-        if len(sigma) != image.ndim:
-            sigma = tuple(sigma) + (0,)  # zero on channels axis
-        sigma = tuple(sigma)
-    image = convert_to_float(image, preserve_range)
+        if len(sigma) == image.ndim - 1:
+            sigma = list(sigma)
+            sigma.insert(channel_axis % image.ndim, 0)
+    image = utils.convert_to_float(image, preserve_range)
     if output is None:
         output = cp.empty_like(image)
     elif not np.issubdtype(output.dtype, np.floating):
@@ -134,40 +137,10 @@ def gaussian(image, sigma=1, output=None, mode='nearest', cval=0,
     return output
 
 
-def _guess_spatial_dimensions(image):
-    """Make an educated guess about whether an image has a channels dimension.
-
-    Parameters
-    ----------
-    image : ndarray
-        The input image.
-
-    Returns
-    -------
-    spatial_dims : int or None
-        The number of spatial dimensions of ``image``. If ambiguous, the value
-        is ``None``.
-
-    Raises
-    ------
-    ValueError
-        If the image array has less than two or more than four dimensions.
-    """
-    if image.ndim == 2:
-        return 2
-    if image.ndim == 3 and image.shape[-1] != 3:
-        return 3
-    if image.ndim == 3 and image.shape[-1] == 3:
-        return None
-    if image.ndim == 4 and image.shape[-1] == 3:
-        return 3
-    else:
-        raise ValueError("Expected 2D, 3D, or 4D array, got %iD." % image.ndim)
-
-
+@utils.deprecate_multichannel_kwarg()
 def difference_of_gaussians(image, low_sigma, high_sigma=None, *,
-                            mode='nearest', cval=0, multichannel=False,
-                            truncate=4.0):
+                            mode='nearest', cval=0, channel_axis=None,
+                            truncate=4.0, multichannel=False):
     """Find features between ``low_sigma`` and ``high_sigma`` in size.
 
     This function uses the Difference of Gaussians method for applying
@@ -201,12 +174,17 @@ def difference_of_gaussians(image, low_sigma, high_sigma=None, *,
     cval : scalar, optional
         Value to fill past edges of input if ``mode`` is 'constant'. Default
         is 0.0
+    channel_axis : int or None, optional
+        If None, the image is assumed to be a grayscale (single channel) image.
+        Otherwise, this parameter indicates which axis of the array corresponds
+        to channels.
+    truncate : float, optional (default is 4.0)
+        Truncate the filter at this many standard deviations.
     multichannel : bool, optional (default: False)
         Whether the last axis of the image is to be interpreted as multiple
         channels. If True, each channel is filtered separately (channels are
-        not mixed together).
-    truncate : float, optional (default is 4.0)
-        Truncate the filter at this many standard deviations.
+        not mixed together). This argument is deprecated: specify
+        `channel_axis` instead.
 
     Returns
     -------
@@ -268,7 +246,7 @@ def difference_of_gaussians(image, low_sigma, high_sigma=None, *,
     image = img_as_float(image)
     # CuPy Backend: refactored low_sigma and high_sigma processing
 
-    if multichannel is True:
+    if channel_axis is not None:
         spatial_dims = image.ndim - 1
     else:
         spatial_dims = image.ndim
@@ -295,9 +273,11 @@ def difference_of_gaussians(image, low_sigma, high_sigma=None, *,
                          'low_sigma for all axes')
 
     out = gaussian(image, low_sigma, mode=mode, cval=cval,
-                   multichannel=multichannel, truncate=truncate)
+                   channel_axis=channel_axis, truncate=truncate,
+                   preserve_range=False)
 
     out -= gaussian(image, high_sigma, mode=mode, cval=cval,
-                    multichannel=multichannel, truncate=truncate)
+                    channel_axis=channel_axis, truncate=truncate,
+                    preserve_range=False)
 
     return out
