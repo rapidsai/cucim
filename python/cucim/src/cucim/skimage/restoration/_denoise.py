@@ -1,6 +1,10 @@
+import functools
+
 import cupy as cp
 
 from .. import img_as_float
+from .._shared import utils
+
 
 
 def _denoise_tv_chambolle_nd(image, weight=0.1, eps=2.0e-4, n_iter_max=200):
@@ -87,8 +91,9 @@ def _denoise_tv_chambolle_nd(image, weight=0.1, eps=2.0e-4, n_iter_max=200):
     return out
 
 
+@utils.deprecate_multichannel_kwarg(multichannel_position=4)
 def denoise_tv_chambolle(image, weight=0.1, eps=2.0e-4, n_iter_max=200,
-                         multichannel=False):
+                         multichannel=False, *, channel_axis=None):
     """Perform total-variation denoising on n-dimensional images.
 
     Parameters
@@ -111,7 +116,12 @@ def denoise_tv_chambolle(image, weight=0.1, eps=2.0e-4, n_iter_max=200,
     multichannel : bool, optional
         Apply total-variation denoising separately for each channel. This
         option should be true for color images, otherwise the denoising is
-        also applied in the channels dimension.
+        also applied in the channels dimension. This argument is deprecated:
+        specify `channel_axis` instead.
+    channel_axis : int or None, optional
+        If None, the image is assumed to be a grayscale (single channel) image.
+        Otherwise, this parameter indicates which axis of the array corresponds
+        to channels.
 
     Returns
     -------
@@ -162,10 +172,13 @@ def denoise_tv_chambolle(image, weight=0.1, eps=2.0e-4, n_iter_max=200,
     if not im_type.kind == 'f':
         image = img_as_float(image)
 
-    if multichannel:
+
+    if channel_axis is not None:
+        channel_axis = channel_axis % image.ndim
+        _at = functools.partial(utils.slice_at_axis, axis=channel_axis)
         out = cp.zeros_like(image)
-        for c in range(image.shape[-1]):
-            out[..., c] = _denoise_tv_chambolle_nd(image[..., c], weight, eps,
+        for c in range(image.shape[channel_axis]):
+            out[_at(c)] = _denoise_tv_chambolle_nd(image[_at(c)], weight, eps,
                                                    n_iter_max)
     else:
         out = _denoise_tv_chambolle_nd(image, weight, eps, n_iter_max)
