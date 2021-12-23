@@ -26,7 +26,7 @@ import numpy as np
 from .colorconv import _cart2polar_2pi, lab2lch
 
 
-def deltaE_cie76(lab1, lab2):
+def deltaE_cie76(lab1, lab2, channel_axis=-1):
     """Euclidean distance between two points in Lab color space
 
     Parameters
@@ -35,6 +35,9 @@ def deltaE_cie76(lab1, lab2):
         reference color (Lab colorspace)
     lab2 : array_like
         comparison color (Lab colorspace)
+    channel_axis : int, optional
+        This parameter indicates which axis of the arrays corresponds to
+        channels.
 
     Returns
     -------
@@ -47,15 +50,16 @@ def deltaE_cie76(lab1, lab2):
     .. [2] A. R. Robertson, "The CIE 1976 color-difference formulae,"
            Color Res. Appl. 2, 7-11 (1977).
     """
-    L1, a1, b1 = cp.rollaxis(lab1, -1)[:3]
-    L2, a2, b2 = cp.rollaxis(lab2, -1)[:3]
+    L1, a1, b1 = cp.moveaxis(lab1, source=channel_axis, destination=0)[:3]
+    L2, a2, b2 = cp.moveaxis(lab2, source=channel_axis, destination=0)[:3]
     out = (L2 - L1) * (L2 - L1)
     out += (a2 - a1) * (a2 - a1)
     out += (b2 - b1) * (b2 - b1)
     return cp.sqrt(out, out=out)
 
 
-def deltaE_ciede94(lab1, lab2, kH=1, kC=1, kL=1, k1=0.045, k2=0.015):
+def deltaE_ciede94(lab1, lab2, kH=1, kC=1, kL=1, k1=0.045, k2=0.015, *,
+                   channel_axis=-1):
     """Color difference according to CIEDE 94 standard
 
     Accommodates perceptual non-uniformities through the use of application
@@ -77,6 +81,9 @@ def deltaE_ciede94(lab1, lab2, kH=1, kC=1, kL=1, k1=0.045, k2=0.015):
         first scale parameter
     k2 : float, optional
         second scale parameter
+    channel_axis : int, optional
+        This parameter indicates which axis of the arrays corresponds to
+        channels.
 
     Returns
     -------
@@ -106,12 +113,14 @@ def deltaE_ciede94(lab1, lab2, kH=1, kC=1, kL=1, k1=0.045, k2=0.015):
     .. [1] https://en.wikipedia.org/wiki/Color_difference
     .. [2] http://www.brucelindbloom.com/index.html?Eqn_DeltaE_CIE94.html
     """
-    L1, C1 = cp.rollaxis(lab2lch(lab1), -1)[:2]
-    L2, C2 = cp.rollaxis(lab2lch(lab2), -1)[:2]
+    lab1 = cp.moveaxis(lab1, source=channel_axis, destination=0)
+    lab2 = cp.moveaxis(lab2, source=channel_axis, destination=0)
+    L1, C1 = lab2lch(lab1, channel_axis=0)[:2]
+    L2, C2 = lab2lch(lab2, channel_axis=0)[:2]
 
     dL = L1 - L2
     dC = C1 - C2
-    dH2 = get_dH2(lab1, lab2)
+    dH2 = get_dH2(lab1, lab2, channel_axis=0)
 
     SL = 1
     SC = 1 + k1 * C1
@@ -128,7 +137,7 @@ def deltaE_ciede94(lab1, lab2, kH=1, kC=1, kL=1, k1=0.045, k2=0.015):
     return cp.sqrt(cp.maximum(dE2, 0, out=dE2), out=dE2)
 
 
-def deltaE_ciede2000(lab1, lab2, kL=1, kC=1, kH=1):
+def deltaE_ciede2000(lab1, lab2, kL=1, kC=1, kH=1, *, channel_axis=-1):
     """Color difference as given by the CIEDE 2000 standard.
 
     CIEDE 2000 is a major revision of CIDE94.  The perceptual calibration is
@@ -147,6 +156,9 @@ def deltaE_ciede2000(lab1, lab2, kL=1, kC=1, kH=1):
         chroma scale factor, usually 1
     kH : float (range), optional
         hue scale factor, usually 1
+    channel_axis : int, optional
+        This parameter indicates which axis of the arrays corresponds to
+        channels.
 
     Returns
     -------
@@ -171,6 +183,7 @@ def deltaE_ciede2000(lab1, lab2, kL=1, kC=1, kH=1):
         "The numerical accuracy of this function on the GPU is reduced "
         "relative to the CPU version"
     )
+    channel_axis = channel_axis % lab1.ndim
     unroll = False
     if lab1.ndim == 1 and lab2.ndim == 1:
         unroll = True
@@ -178,8 +191,9 @@ def deltaE_ciede2000(lab1, lab2, kL=1, kC=1, kH=1):
             lab1 = lab1[None, :]
         if lab2.ndim == 1:
             lab2 = lab2[None, :]
-    L1, a1, b1 = cp.rollaxis(lab1, -1)[:3]
-    L2, a2, b2 = cp.rollaxis(lab2, -1)[:3]
+        channel_axis += 1
+    L1, a1, b1 = cp.moveaxis(lab1, source=channel_axis, destination=0)[:3]
+    L2, a2, b2 = cp.moveaxis(lab2, source=channel_axis, destination=0)[:3]
 
     # distort `a` based on average chroma
     # then convert to lch coordines from distorted `a`
@@ -258,7 +272,7 @@ def deltaE_ciede2000(lab1, lab2, kL=1, kC=1, kH=1):
     return dE2
 
 
-def deltaE_cmc(lab1, lab2, kL=1, kC=1):
+def deltaE_cmc(lab1, lab2, kL=1, kC=1, *, channel_axis=-1):
     """Color difference from the  CMC l:c standard.
 
     This color difference was developed by the Colour Measurement Committee
@@ -277,6 +291,9 @@ def deltaE_cmc(lab1, lab2, kL=1, kC=1):
         reference color (Lab colorspace)
     lab2 : array_like
         comparison color (Lab colorspace)
+    channel_axis : int, optional
+        This parameter indicates which axis of the arrays corresponds to
+        channels.
 
     Returns
     -------
@@ -297,12 +314,14 @@ def deltaE_cmc(lab1, lab2, kL=1, kC=1):
            JPC79 colour-difference formula," J. Soc. Dyers Colour. 100, 128-132
            (1984).
     """
-    L1, C1, h1 = cp.rollaxis(lab2lch(lab1), -1)[:3]
-    L2, C2, h2 = cp.rollaxis(lab2lch(lab2), -1)[:3]
+    lab1 = cp.moveaxis(lab1, source=channel_axis, destination=0)
+    lab2 = cp.moveaxis(lab2, source=channel_axis, destination=0)
+    L1, C1, h1 = lab2lch(lab1, channel_axis=0)[:3]
+    L2, C2, h2 = lab2lch(lab2, channel_axis=0)[:3]
 
     dC = C1 - C2
     dL = L1 - L2
-    dH2 = get_dH2(lab1, lab2)
+    dH2 = get_dH2(lab1, lab2, channel_axis=0)
 
     T = cp.where(cp.logical_and(cp.rad2deg(h1) >= 164, cp.rad2deg(h1) <= 345),
                  0.56 + 0.2 * cp.abs(np.cos(h1 + cp.deg2rad(168))),
@@ -321,7 +340,7 @@ def deltaE_cmc(lab1, lab2, kL=1, kC=1):
     return cp.sqrt(cp.maximum(dE2, 0, out=dE2), out=dE2)
 
 
-def get_dH2(lab1, lab2):
+def get_dH2(lab1, lab2, *, channel_axis=-1):
     """squared hue difference term occurring in deltaE_cmc and deltaE_ciede94
 
     Despite its name, "dH" is not a simple difference of hue values.  We avoid
@@ -339,8 +358,8 @@ def get_dH2(lab1, lab2):
     and then simplified to:
         2*|ab1|*|ab2| - 2*dot(ab1, ab2)
     """
-    a1, b1 = cp.rollaxis(lab1, -1)[1:3]
-    a2, b2 = cp.rollaxis(lab2, -1)[1:3]
+    a1, b1 = cp.moveaxis(lab1, source=channel_axis, destination=0)[1:3]
+    a2, b2 = cp.moveaxis(lab2, source=channel_axis, destination=0)[1:3]
 
     # magnitude of (a, b) is the chroma
     C1 = cp.hypot(a1, b1)
