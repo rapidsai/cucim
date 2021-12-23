@@ -11,7 +11,8 @@ from cucim.skimage.color.delta_e import (deltaE_cie76, deltaE_ciede94,
                                          deltaE_ciede2000, deltaE_cmc)
 
 
-def test_ciede2000_dE():
+@pytest.mark.parametrize("channel_axis", [0, 1, -1])
+def test_ciede2000_dE(channel_axis):
     data = load_ciede2000_data()
     N = len(data)
     lab1 = np.zeros((N, 3))
@@ -24,11 +25,9 @@ def test_ciede2000_dE():
     lab2[:, 1] = data['a2']
     lab2[:, 2] = data['b2']
 
-    lab1 = cp.asarray(lab1)
-    lab2 = cp.asarray(lab2)
-
-    with pytest.warns(UserWarning):
-        dE2 = deltaE_ciede2000(lab1, lab2)
+    lab1 = cp.moveaxis(cp.asarray(lab1), source=-1, destination=channel_axis)
+    lab2 = cp.moveaxis(cp.asarray(lab2), source=-1, destination=channel_axis)
+    dE2 = deltaE_ciede2000(lab1, lab2, channel_axis=channel_axis)
 
     # TODO: grlee77 had to raise rtol from 1e-4 to 1e-2 for this to pass.
     #       look into why this was necessary
@@ -66,7 +65,8 @@ def load_ciede2000_data():
     return np.loadtxt(path, dtype=dtype)
 
 
-def test_cie76():
+@pytest.mark.parametrize("channel_axis", [0, 1, -1])
+def test_cie76(channel_axis):
     data = load_ciede2000_data()
     N = len(data)
     lab1 = np.zeros((N, 3))
@@ -79,10 +79,10 @@ def test_cie76():
     lab2[:, 1] = data['a2']
     lab2[:, 2] = data['b2']
 
-    lab1 = cp.asarray(lab1)
-    lab2 = cp.asarray(lab2)
+    lab1 = cp.moveaxis(cp.asarray(lab1), source=-1, destination=channel_axis)
+    lab2 = cp.moveaxis(cp.asarray(lab2), source=-1, destination=channel_axis)
 
-    dE2 = deltaE_cie76(lab1, lab2)
+    dE2 = deltaE_cie76(lab1, lab2, channel_axis=channel_axis)
     # fmt: off
     oracle = cp.asarray([
         4.00106328, 6.31415011, 9.1776999, 2.06270077, 2.36957073,
@@ -97,7 +97,8 @@ def test_cie76():
     assert_allclose(dE2, oracle, rtol=1.0e-8)
 
 
-def test_ciede94():
+@pytest.mark.parametrize("channel_axis", [0, 1, -1])
+def test_ciede94(channel_axis):
     data = load_ciede2000_data()
     N = len(data)
     lab1 = np.zeros((N, 3))
@@ -110,10 +111,10 @@ def test_ciede94():
     lab2[:, 1] = data['a2']
     lab2[:, 2] = data['b2']
 
-    lab1 = cp.asarray(lab1)
-    lab2 = cp.asarray(lab2)
+    lab1 = cp.moveaxis(cp.asarray(lab1), source=-1, destination=channel_axis)
+    lab2 = cp.moveaxis(cp.asarray(lab2), source=-1, destination=channel_axis)
 
-    dE2 = deltaE_ciede94(lab1, lab2)
+    dE2 = deltaE_ciede94(lab1, lab2, channel_axis=channel_axis)
     # fmt: off
     oracle = cp.asarray([
         1.39503887, 1.93410055, 2.45433566, 0.68449187, 0.6695627,
@@ -128,7 +129,8 @@ def test_ciede94():
     assert_allclose(dE2, oracle, rtol=1.0e-8)
 
 
-def test_cmc():
+@pytest.mark.parametrize("channel_axis", [0, 1, -1])
+def test_cmc(channel_axis):
     data = load_ciede2000_data()
     N = len(data)
     lab1 = np.zeros((N, 3))
@@ -141,10 +143,10 @@ def test_cmc():
     lab2[:, 1] = data['a2']
     lab2[:, 2] = data['b2']
 
-    lab1 = cp.asarray(lab1)
-    lab2 = cp.asarray(lab2)
+    lab1 = cp.moveaxis(cp.asarray(lab1), source=-1, destination=channel_axis)
+    lab2 = cp.moveaxis(cp.asarray(lab2), source=-1, destination=channel_axis)
 
-    dE2 = deltaE_cmc(lab1, lab2)
+    dE2 = deltaE_cmc(lab1, lab2, channel_axis=channel_axis)
     # fmt: off
     oracle = cp.asarray([
         1.73873611, 2.49660844, 3.30494501, 0.85735576, 0.88332927,
@@ -164,11 +166,17 @@ def test_cmc():
     # issue on Github):
     lab1 = lab2
     expected = cp.zeros_like(oracle)
-    assert_array_almost_equal(deltaE_cmc(lab1, lab2), expected, decimal=6)
+    assert_array_almost_equal(
+        deltaE_cmc(lab1, lab2, channel_axis=channel_axis), expected, decimal=6
+    )
 
     lab2[0, 0] += cp.finfo(float).eps
-    assert_array_almost_equal(deltaE_cmc(lab1, lab2), expected, decimal=6)
+    assert_array_almost_equal(
+        deltaE_cmc(lab1, lab2, channel_axis=channel_axis), expected, decimal=6
+    )
 
+
+def test_cmc_single_item():
     # Single item case:
     lab1 = lab2 = cp.array([0., 1.59607713, 0.87755709])
     assert_array_equal(deltaE_cmc(lab1, lab2), 0)

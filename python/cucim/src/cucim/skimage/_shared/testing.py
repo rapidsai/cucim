@@ -14,11 +14,25 @@ parametrize = pytest.mark.parametrize
 raises = pytest.raises
 fixture = pytest.fixture
 
+have_fetch = True
+try:
+    # scikit-image 0.19
+    from skimage.data._fetchers import _fetch
+except ImportError:
+    # scikit-image 0.18
+    try:
+        from skimage.data import _fetch
+    except:
+        have_fetch = False
+
 
 def fetch(data_filename):
     """Attempt to fetch data, but if unavailable, skip the tests."""
-    try:
-        # CuPy Backend: TODO: avoid call to non-public _fetch method
-        return data._fetch(data_filename)
-    except (ConnectionError, ModuleNotFoundError):
-        pytest.skip(f'Unable to download {data_filename}')
+    if have_fetch:
+        try:
+            # CuPy Backend: TODO: avoid call to non-public _fetch method
+            return _fetch(data_filename)
+        except (ConnectionError, ModuleNotFoundError):
+            pytest.skip(f'Unable to download {data_filename}')
+    else:
+        pytest.skip('skimage _fetch utility not found')
