@@ -95,7 +95,7 @@ def test_structural_similarity_dtype(dtype):
     Y = rstate.rand(N, N).astype(dtype, copy=False)
 
     S1 = structural_similarity(X, Y)
-    assert S1.dtype == dtype
+    assert S1.dtype == np.float64
 
     X = (X * 255).astype(cp.uint8)
     Y = (X * 255).astype(cp.uint8)
@@ -105,7 +105,8 @@ def test_structural_similarity_dtype(dtype):
     assert S2 < 0.15  # grlee77: increase value from 0.1
 
 
-def test_structural_similarity_multichannel():
+@pytest.mark.parametrize('channel_axis', [0, 1, 2, -1])
+def test_structural_similarity_multichannel(channel_axis):
     N = 100
     X = (cp.random.rand(N, N) * 255).astype(cp.uint8)
     Y = (cp.random.rand(N, N) * 255).astype(cp.uint8)
@@ -115,30 +116,51 @@ def test_structural_similarity_multichannel():
     # replicate across three channels.  should get identical value
     Xc = cp.tile(X[..., cp.newaxis], (1, 1, 3))
     Yc = cp.tile(Y[..., cp.newaxis], (1, 1, 3))
-    S2 = structural_similarity(Xc, Yc, multichannel=True, win_size=3)
+
+    # move channels from last position to specified channel_axis
+    Xc, Yc = (cp.moveaxis(_arr, -1, channel_axis) for _arr in (Xc, Yc))
+
+    S2 = structural_similarity(Xc, Yc, channel_axis=channel_axis, win_size=3)
     assert_almost_equal(S1, S2)
 
     # full case should return an image as well
-    m, S3 = structural_similarity(Xc, Yc, multichannel=True, full=True)
+    m, S3 = structural_similarity(Xc, Yc, channel_axis=channel_axis, full=True)
     assert_equal(S3.shape, Xc.shape)
 
     # gradient case
-    m, grad = structural_similarity(Xc, Yc, multichannel=True, gradient=True)
+    m, grad = structural_similarity(Xc, Yc, channel_axis=channel_axis,
+                                    gradient=True)
     assert_equal(grad.shape, Xc.shape)
 
     # full and gradient case
-    m, grad, S3 = structural_similarity(
-        Xc, Yc, multichannel=True, full=True, gradient=True
-    )
+    m, grad, S3 = structural_similarity(Xc, Yc,
+                                        channel_axis=channel_axis,
+                                        full=True,
+                                        gradient=True)
     assert_equal(grad.shape, Xc.shape)
     assert_equal(S3.shape, Xc.shape)
 
     # fail if win_size exceeds any non-channel dimension
     with pytest.raises(ValueError):
-        structural_similarity(Xc, Yc, win_size=7, multichannel=False)
+        structural_similarity(Xc, Yc, win_size=7, channel_axis=None)
 
 
-@pytest.mark.parametrize('dtype', [cp.uint8, cp.float32, cp.float64])
+def test_structural_similarity_multichannel_deprecated():
+    N = 100
+    X = (cp.random.rand(N, N) * 255).astype(np.uint8)
+    Y = (cp.random.rand(N, N) * 255).astype(np.uint8)
+
+    S1 = structural_similarity(X, Y, win_size=3)
+
+    # replicate across three channels.  should get identical value
+    Xc = cp.tile(X[..., cp.newaxis], (1, 1, 3))
+    Yc = cp.tile(Y[..., cp.newaxis], (1, 1, 3))
+    with expected_warnings(["`multichannel` is a deprecated argument"]):
+        S2 = structural_similarity(Xc, Yc, multichannel=True, win_size=3)
+    assert_almost_equal(S1, S2)
+
+
+@pytest.mark.parametrize('dtype', [np.uint8, np.float32, np.float64])
 def test_structural_similarity_nD(dtype):
     # test 1D through 4D on small random arrays
     N = 10
@@ -148,11 +170,8 @@ def test_structural_similarity_nD(dtype):
         Y = (cp.random.rand(*xsize) * 255).astype(dtype)
 
         mssim = structural_similarity(X, Y, win_size=3)
+        assert mssim.dtype == np.float64
         assert mssim < 0.05
-        if np.dtype(dtype).kind == 'f':
-            assert mssim.dtype == X.dtype
-        else:
-            assert mssim.dtype == cp.float64
 
 
 def test_structural_similarity_multichannel_chelsea():
@@ -163,7 +182,7 @@ def test_structural_similarity_multichannel_chelsea():
     Yc = Yc.astype(Xc.dtype)
 
     # multichannel result should be mean of the individual channel results
-    mssim = structural_similarity(Xc, Yc, multichannel=True)
+    mssim = structural_similarity(Xc, Yc, channel_axis=-1)
     mssim_sep = [
         float(structural_similarity(Yc[..., c], Xc[..., c]))
         for c in range(Xc.shape[-1])
@@ -171,7 +190,7 @@ def test_structural_similarity_multichannel_chelsea():
     assert_almost_equal(mssim, np.mean(mssim_sep))
 
     # structural_similarity of image with itself should be 1.0
-    assert_equal(structural_similarity(Xc, Xc, multichannel=True), 1.0)
+    assert_equal(structural_similarity(Xc, Xc, channel_axis=-1), 1.0)
 
 
 @cp.testing.with_requires("scikit-image>=0.18")
@@ -219,6 +238,19 @@ def test_mssim_mixed_dtype():
         cam, cam_noisy.astype(cp.float32), data_range=255
     )
     assert_almost_equal(mssim, mssim_mixed)
+
+
+@pytest.mark.parametrize('dtype', [np.float16, np.float32, np.float64])
+def test_structural_similarity_small_image(dtype):
+    X = cp.zeros((5, 5), dtype=dtype)
+    # structural_similarity can be computed for small images if win_size is
+    # a) odd and b) less than or equal to the images' smaller side
+    assert_equal(structural_similarity(X, X, win_size=3), 1.0)
+    assert_equal(structural_similarity(X, X, win_size=5), 1.0)
+    # structural_similarity errors for small images if user doesn't specify
+    # win_size
+    with pytest.raises(ValueError):
+        structural_similarity(X, X)
 
 
 def test_invalid_input():
