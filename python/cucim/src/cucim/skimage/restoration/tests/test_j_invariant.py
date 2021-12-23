@@ -5,6 +5,7 @@ from skimage.data import camera, chelsea
 # from cucim.skimage.restoration import denoise_wavelet
 from skimage.restoration import denoise_wavelet
 
+from cucim.skimage._shared.testing import expected_warnings
 from cucim.skimage.data import binary_blobs
 from cucim.skimage.metrics import mean_squared_error as mse
 from cucim.skimage.restoration import calibrate_denoiser, denoise_tv_chambolle
@@ -42,9 +43,21 @@ def test_invariant_denoise_color(dtype):
     denoised_img_color = _invariant_denoise(
         noisy_img_color.astype(dtype),
         _denoise_wavelet,
-        denoiser_kwargs=dict(multichannel=True),
+        denoiser_kwargs=dict(channel_axis=-1),
     )
     assert denoised_img_color.dtype == dtype
+
+    denoised_mse = mse(denoised_img_color, test_img_color)
+    original_mse = mse(noisy_img_color, test_img_color)
+    assert denoised_mse < original_mse
+
+
+def test_invariant_denoise_color_deprecated():
+
+    with expected_warnings(["`multichannel` is a deprecated argument"]):
+        denoised_img_color = _invariant_denoise(
+            noisy_img_color, _denoise_wavelet,
+            denoiser_kwargs=dict(multichannel=True))
 
     denoised_mse = mse(denoised_img_color, test_img_color)
     original_mse = mse(noisy_img_color, test_img_color)
