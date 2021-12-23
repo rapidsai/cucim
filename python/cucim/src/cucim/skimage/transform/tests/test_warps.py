@@ -103,12 +103,12 @@ def test_warp_clip():
     x = cp.zeros((5, 5), dtype=np.double)
     x[2, 2] = 1
 
-    outx = rescale(x, 3, order=3, clip=False,
-                   multichannel=False, anti_aliasing=False, mode='constant')
+    outx = rescale(x, 3, order=3, clip=False, anti_aliasing=False,
+                   mode='constant')
     assert outx.min() < 0
 
-    outx = rescale(x, 3, order=3, clip=True,
-                   multichannel=False, anti_aliasing=False, mode='constant')
+    outx = rescale(x, 3, order=3, clip=True, anti_aliasing=False,
+                   mode='constant')
     assert_almost_equal(float(outx.min()), 0)
     assert_almost_equal(float(outx.max()), 1)
 
@@ -213,41 +213,58 @@ def test_rescale_invalid_scale():
 
 def test_rescale_multichannel():
     # 1D + channels
-    x = cp.zeros((8, 3), dtype=np.double)
-    scaled = rescale(x, 2, order=0, multichannel=True, anti_aliasing=False,
+    x = cp.zeros((8, 3), dtype=cp.double)
+    scaled = rescale(x, 2, order=0, channel_axis=-1, anti_aliasing=False,
                      mode='constant')
-    assert_equal(scaled.shape, (16, 3))
+    assert scaled.shape == (16, 3)
     # 2D
-    scaled = rescale(x, 2, order=0, multichannel=False, anti_aliasing=False,
+    scaled = rescale(x, 2, order=0, channel_axis=None, anti_aliasing=False,
                      mode='constant')
-    assert_array_equal(scaled.shape, (16, 6))
+    assert scaled.shape == (16, 6)
 
     # 2D + channels
-    x = cp.zeros((8, 8, 3), dtype=np.double)
-    scaled = rescale(x, 2, order=0, multichannel=True, anti_aliasing=False,
+    x = cp.zeros((8, 8, 3), dtype=cp.double)
+    scaled = rescale(x, 2, order=0, channel_axis=-1, anti_aliasing=False,
                      mode='constant')
-    assert_equal(scaled.shape, (16, 16, 3))
+    assert scaled.shape == (16, 16, 3)
     # 3D
-    scaled = rescale(x, 2, order=0, multichannel=False, anti_aliasing=False,
+    scaled = rescale(x, 2, order=0, channel_axis=None, anti_aliasing=False,
                      mode='constant')
-    assert_equal(scaled.shape, (16, 16, 6))
+    assert scaled.shape == (16, 16, 6)
 
     # 3D + channels
-    x = cp.zeros((8, 8, 8, 3), dtype=np.double)
-    scaled = rescale(x, 2, order=0, multichannel=True, anti_aliasing=False,
+    x = cp.zeros((8, 8, 8, 3), dtype=cp.double)
+    scaled = rescale(x, 2, order=0, channel_axis=-1, anti_aliasing=False,
                      mode='constant')
-    assert_array_equal(scaled.shape, (16, 16, 16, 3))
+    assert scaled.shape == (16, 16, 16, 3)
     # 4D
-    scaled = rescale(x, 2, order=0, multichannel=False, anti_aliasing=False,
+    scaled = rescale(x, 2, order=0, channel_axis=None, anti_aliasing=False,
                      mode='constant')
-    assert_equal(scaled.shape, (16, 16, 16, 6))
+    assert scaled.shape == (16, 16, 16, 6)
 
 
-def test_rescale_multichannel_multiscale():
+def test_rescale_multichannel_deprecated_multiscale():
+    x = cp.zeros((5, 5, 3), dtype=cp.double)
+    with expected_warnings(["`multichannel` is a deprecated argument"]):
+        scaled = rescale(x, (2, 1), order=0, multichannel=True,
+                         anti_aliasing=False, mode='constant')
+    assert scaled.shape == (10, 5, 3)
+
+    # repeat prior test, but check for positional multichannel _warnings
+    with expected_warnings(["Providing the `multichannel` argument"]):
+        scaled = rescale(x, (2, 1), 0, 'constant', 0, True, False, True,
+                         anti_aliasing=False)
+    assert scaled.shape == (10, 5, 3)
+
+
+@pytest.mark.parametrize('channel_axis', [0, 1, 2, -1])
+def test_rescale_channel_axis_multiscale(channel_axis):
     x = cp.zeros((5, 5, 3), dtype=np.double)
-    scaled = rescale(x, (2, 1), order=0, multichannel=True,
+    x = cp.moveaxis(x, -1, channel_axis)
+    scaled = rescale(x, scale=(2, 1), order=0, channel_axis=channel_axis,
                      anti_aliasing=False, mode='constant')
-    assert_equal(scaled.shape, (10, 5, 3))
+    scaled = cp.moveaxis(scaled, channel_axis, -1)
+    assert scaled.shape == (10, 5, 3)
 
 
 def test_rescale_multichannel_defaults():
