@@ -3,10 +3,13 @@ import numpy as np
 import pytest
 from cupy.testing import assert_array_almost_equal
 from numpy.testing import assert_almost_equal
+
 from skimage import data
+from skimage._shared.testing import expected_warnings
 
 from cucim.skimage import exposure
 from cucim.skimage.exposure import histogram_matching
+
 
 
 @pytest.mark.parametrize('array, template, expected_array', [
@@ -34,9 +37,9 @@ class TestMatchHistogram:
         """Assert that pdf of matched image is close to the reference's pdf for
         all channels and all values of matched"""
 
-        # when
-        matched = exposure.match_histograms(image, reference,
-                                            multichannel=multichannel)
+        with expected_warnings(["`multichannel` is a deprecated argument"]):
+            matched = exposure.match_histograms(image, reference,
+                                                multichannel=multichannel)
 
         matched = cp.asnumpy(matched)
         matched_pdf = self._calculate_image_empirical_pdf(matched)
@@ -55,6 +58,34 @@ class TestMatchHistogram:
                 assert_almost_equal(matched_quantiles[i],
                                     reference_quantiles[closest_id],
                                     decimal=1)
+
+    @pytest.mark.parametrize('channel_axis', (0, 1, -1))
+    def test_match_histograms_channel_axis(self, channel_axis):
+        """Assert that pdf of matched image is close to the reference's pdf for
+        all channels and all values of matched"""
+
+        image = cp.moveaxis(self.image_rgb, -1, channel_axis)
+        reference = cp.moveaxis(self.template_rgb, -1, channel_axis)
+        matched = exposure.match_histograms(image, reference,
+                                            channel_axis=channel_axis)
+        matched = cp.moveaxis(matched, channel_axis, -1)
+        reference = cp.moveaxis(reference, channel_axis, -1)
+        matched = cp.asnumpy(matched)
+        reference = cp.asnumpy(reference)
+        matched_pdf = self._calculate_image_empirical_pdf(matched)
+        reference_pdf = self._calculate_image_empirical_pdf(reference)
+
+        for channel in range(len(matched_pdf)):
+            reference_values, reference_quantiles = reference_pdf[channel]
+            matched_values, matched_quantiles = matched_pdf[channel]
+
+            for i, matched_value in enumerate(matched_values):
+                closest_id = (
+                    np.abs(reference_values - matched_value)
+                ).argmin()
+                assert_array_almost_equal(matched_quantiles[i],
+                                          reference_quantiles[closest_id],
+                                          decimal=1)
 
     @pytest.mark.parametrize('image, reference', [
         (image_rgb, template_rgb[:, :, 0]),
