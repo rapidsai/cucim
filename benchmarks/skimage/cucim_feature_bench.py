@@ -74,7 +74,7 @@ for function_name, fixed_kwargs, var_kwargs, allow_color, allow_nd in [
             continue
 
         if function_name == "multiscale_basic_features":
-            fixed_kwargs["multichannel"] = shape[-1] == 3
+            fixed_kwargs["channel_axis"] = -1 if shape[-1] == 3 else None
             if ndim == 3 and shape[-1] != 3:
                 # Omit texture=True case to avoid excessive GPU memory usage
                 var_kwargs["texture"] = [False]
