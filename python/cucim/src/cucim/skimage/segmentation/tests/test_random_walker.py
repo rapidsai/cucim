@@ -389,7 +389,7 @@ def test_bad_inputs():
     with testing.raises(ValueError):
         random_walker(img, labels)
     with testing.raises(ValueError):
-        random_walker(img, labels, multichannel=True)
+        random_walker(img, labels, channel_axis=-1)
 
     # Too many dimensions
     np.random.seed(42)
@@ -398,7 +398,7 @@ def test_bad_inputs():
     with testing.raises(ValueError):
         random_walker(img, labels)
     with testing.raises(ValueError):
-        random_walker(img, labels, multichannel=True)
+        random_walker(img, labels, channel_axis=-1)
 
     # Spacing incorrect length
     img = cp.array(np.random.normal(size=(10, 10)))

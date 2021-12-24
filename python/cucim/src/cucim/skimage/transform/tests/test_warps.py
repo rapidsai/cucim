@@ -185,7 +185,7 @@ def test_rescale():
     x = cp.zeros((5, 5), dtype=np.double)
     x[1, 1] = 1
     scaled = rescale(x, 2, order=0,
-                     multichannel=False, anti_aliasing=False, mode='constant')
+                     channel_axis=None, anti_aliasing=False, mode='constant')
     ref = cp.zeros((10, 10))
     ref[2:4, 2:4] = 1
     assert_array_almost_equal(scaled, ref)
@@ -195,7 +195,7 @@ def test_rescale():
     x[1, 1] = 1
 
     scaled = rescale(x, (2, 1), order=0,
-                     multichannel=False, anti_aliasing=False, mode='constant')
+                     channel_axis=None, anti_aliasing=False, mode='constant')
     ref = cp.zeros((10, 5))
     ref[2:4, 1] = 1
     assert_array_almost_equal(scaled, ref)
@@ -205,10 +205,10 @@ def test_rescale_invalid_scale():
     x = cp.zeros((10, 10, 3))
     with pytest.raises(ValueError):
         rescale(x, (2, 2),
-                multichannel=False, anti_aliasing=False, mode='constant')
+                channel_axis=None, anti_aliasing=False, mode='constant')
     with pytest.raises(ValueError):
         rescale(x, (2, 2, 2),
-                multichannel=True, anti_aliasing=False, mode='constant')
+                channel_axis=-1, anti_aliasing=False, mode='constant')
 
 
 def test_rescale_multichannel():
@@ -488,7 +488,7 @@ def test_downscale():
     x = cp.zeros((10, 10), dtype=np.double)
     x[2:4, 2:4] = 1
     scaled = rescale(x, 0.5, order=0, anti_aliasing=False,
-                     multichannel=False, mode='constant')
+                     channel_axis=None, mode='constant')
     assert_equal(scaled.shape, (5, 5))
     assert_equal(float(scaled[1, 1]), 1)
     assert_equal(float(scaled[2:, :].sum()), 0)
@@ -499,7 +499,7 @@ def test_downscale_anti_aliasing():
     x = cp.zeros((10, 10), dtype=np.double)
     x[2, 2] = 1
     scaled = rescale(x, 0.5, order=1, anti_aliasing=True,
-                     multichannel=False, mode='constant')
+                     channel_axis=None, mode='constant')
     assert_equal(scaled.shape, (5, 5))
     assert np.all(scaled[:3, :3] > 0)
     assert_equal(float(scaled[3:, :].sum()), 0)
@@ -544,17 +544,17 @@ def test_slow_warp_nonint_oshape():
 def test_keep_range():
     image = cp.linspace(0, 2, 25).reshape(5, 5)
     out = rescale(image, 2, preserve_range=False, clip=True, order=0,
-                  mode='constant', multichannel=False, anti_aliasing=False)
+                  mode='constant', channel_axis=None, anti_aliasing=False)
     assert out.min() == 0
     assert out.max() == 2
 
     out = rescale(image, 2, preserve_range=True, clip=True, order=0,
-                  mode='constant', multichannel=False, anti_aliasing=False)
+                  mode='constant', channel_axis=None, anti_aliasing=False)
     assert out.min() == 0
     assert out.max() == 2
 
     out = rescale(image.astype(np.uint8), 2, preserve_range=False,
-                  mode='constant', multichannel=False, anti_aliasing=False,
+                  mode='constant', channel_axis=None, anti_aliasing=False,
                   clip=True, order=0)
     assert out.min() == 0
     assert out.max() == 2 / 255.0
@@ -662,9 +662,9 @@ def test_invalid_dimensions_polar():
     with pytest.raises(ValueError):
         warp_polar(cp.zeros((10, 10, 3)), (5, 5))
     with pytest.raises(ValueError):
-        warp_polar(cp.zeros((10, 10)), (5, 5), multichannel=True)
+        warp_polar(cp.zeros((10, 10)), (5, 5), channel_axis=-1)
     with pytest.raises(ValueError):
-        warp_polar(cp.zeros((10, 10, 10, 3)), (5, 5), multichannel=True)
+        warp_polar(cp.zeros((10, 10, 10, 3)), (5, 5), channel_axis=-1)
 
 
 def test_bool_img_rescale():
