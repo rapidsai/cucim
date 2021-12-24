@@ -2,6 +2,7 @@ import functools
 import inspect
 import numbers
 import warnings
+from collections.abc import Iterable
 
 import cupy as cp
 import numpy as np
@@ -694,6 +695,50 @@ def _validate_interpolation_order(image_dtype, order):
              FutureWarning, stacklevel=2)
 
     return order
+
+
+new_float_type = {
+    # preserved types
+    cp.float32().dtype.char: cp.float32,
+    cp.float64().dtype.char: cp.float64,
+    cp.complex64().dtype.char: cp.complex64,
+    cp.complex128().dtype.char: cp.complex128,
+    # altered types
+    cp.float16().dtype.char: cp.float32,
+    'g': cp.float64,      # cp.float128 ; doesn't exist on windows
+    'G': cp.complex128,   # cp.complex256 ; doesn't exist on windows
+}
+
+
+def _supported_float_type(input_dtype, allow_complex=False):
+    """Return an appropriate floating-point dtype for a given dtype.
+
+    float32, float64, complex64, complex128 are preserved.
+    float16 is promoted to float32.
+    complex256 is demoted to complex128.
+    Other types are cast to float64.
+
+    Parameters
+    ----------
+    input_dtype : np.dtype or Iterable of np.dtype
+        The input dtype. If a sequence of multiple dtypes is provided, each
+        dtype is first converted to a supported floating point type and the
+        final dtype is then determined by applying `np.result_type` on the
+        sequence of supported floating point types.
+    allow_complex : bool, optional
+        If False, raise a ValueError on complex-valued inputs.
+
+    Returns
+    -------
+    float_type : dtype
+        Floating-point dtype for the image.
+    """
+    if isinstance(input_dtype, Iterable) and not isinstance(input_dtype, str):
+        return cp.result_type(*(_supported_float_type(d) for d in input_dtype))
+    input_dtype = cp.dtype(input_dtype)
+    if not allow_complex and input_dtype.kind == 'c':
+        raise ValueError("complex valued input is not supported")
+    return new_float_type.get(input_dtype.char, cp.float64)
 
 
 def identity(image, *args, **kwargs):
