@@ -3,8 +3,6 @@ import cupy as cp
 from ..util.dtype import img_as_float
 from .._shared import utils
 
-from .thresholding import _float_dtype
-
 
 def _unsharp_mask_single_channel(image, radius, amount, vrange):
     """Single channel implementation of the unsharp masking filter."""
@@ -125,10 +123,11 @@ def unsharp_mask(image, radius=1.0, amount=1.0, multichannel=False,
 
     """
     vrange = None  # Range for valid values; used for clipping.
+    float_dtype = utils._supported_float_type(image.dtype)
     if preserve_range:
-        fimg = image.astype(_float_dtype(image), copy=False)
+        fimg = image.astype(float_dtype, copy=False)
     else:
-        fimg = img_as_float(image)
+        fimg = img_as_float(image).astype(float_dtype, copy=False)
         negative = cp.any(fimg < 0)
         if negative:
             vrange = [-1.0, 1.0]
@@ -136,7 +135,7 @@ def unsharp_mask(image, radius=1.0, amount=1.0, multichannel=False,
             vrange = [0.0, 1.0]
 
     if channel_axis is not None:
-        result = cp.empty_like(fimg, dtype=fimg.dtype)
+        result = cp.empty_like(fimg, dtype=float_dtype)
         for channel in range(image.shape[channel_axis]):
             sl = utils.slice_at_axis(channel, channel_axis)
             result[sl] = _unsharp_mask_single_channel(

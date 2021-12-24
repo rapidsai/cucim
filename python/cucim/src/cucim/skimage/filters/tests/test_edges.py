@@ -1,28 +1,54 @@
+import math
+
 import cupy as cp
 import numpy as np
 import pytest
 from cupy.testing import assert_allclose, assert_array_almost_equal
 from numpy.testing import assert_
+from skimage import data
 
 from cucim.skimage import filters
+from cucim.skimage._shared.utils import _supported_float_type
 from cucim.skimage.data import binary_blobs
 from cucim.skimage.filters.edges import _mask_filter_result
 
 
-def test_roberts_zeros():
+@pytest.mark.parametrize('dtype', [np.float16, np.float32, np.float64])
+def test_roberts_zeros(dtype):
     """Roberts' filter on an array of all zeros."""
-    result = filters.roberts(cp.zeros((10, 10)), cp.ones((10, 10), bool))
+    result = filters.roberts(cp.zeros((10, 10), dtype=dtype),
+                             cp.ones((10, 10), bool))
+    assert result.dtype == _supported_float_type(dtype)
     assert cp.all(result == 0)
 
 
-def test_roberts_diagonal1():
+@pytest.mark.parametrize('dtype', [np.float16, np.float32, np.float64])
+def test_roberts_diagonal1(dtype):
     """Roberts' filter on a diagonal edge should be a diagonal line."""
-    image = cp.tri(10, 10, 0)
+    image = cp.tri(10, 10, 0, dtype=dtype)
     expected = ~(cp.tri(10, 10, -1).astype(bool) |
                  cp.tri(10, 10, -2).astype(bool).transpose())
     expected[-1, -1] = 0  # due to 'reflect' & image shape, last pixel not edge
-    result = filters.roberts(image).astype(bool)
-    assert_array_almost_equal(result, expected)
+    result = filters.roberts(image)
+    assert result.dtype == _supported_float_type(dtype)
+    assert_array_almost_equal(result.astype(bool), expected)
+
+
+@pytest.mark.parametrize(
+    'function_name',
+    ['farid', 'laplace', 'prewitt', 'roberts', 'scharr', 'sobel']
+)
+def test_int_rescaling(function_name):
+    """Basic test that uint8 inputs get rescaled from [0, 255] to [0, 1.]
+
+    The output of any of these filters should be within roughly a factor of
+    two of the input range. For integer inputs, rescaling to floats in
+    [0.0, 1.0] should occur, so just verify outputs are not > 2.0.
+    """
+    img = cp.asarray(data.coins()[:128, :128])
+    func = getattr(filters, function_name)
+    filtered = func(img)
+    assert filtered.max() <= 2.0
 
 
 def test_roberts_diagonal2():
@@ -41,20 +67,14 @@ def test_sobel_zeros():
     assert cp.all(result == 0)
 
 
-@pytest.mark.parametrize('function', ['sobel', 'prewitt', 'scharr'])
 @pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])
-def test_sobel_float_output_dtype(function, dtype):
-    """Sobel on an array of all zeros."""
-    x = cp.ones((4, 4), dtype=dtype)
-    filter_func = getattr(filters, function)
-    result = filter_func(x)
-    assert result.dtype == dtype
-
-
-def test_sobel_mask():
+def test_sobel_mask(dtype):
     """Sobel on a masked array should be zero."""
-    result = filters.sobel(cp.random.uniform(size=(10, 10)),
-                           cp.zeros((10, 10), dtype=bool))
+    result = filters.sobel(
+        cp.random.uniform(size=(10, 10)).astype(dtype, copy=False),
+        cp.zeros((10, 10), dtype=bool)
+    )
+    assert result.dtype == _supported_float_type(dtype)
     assert cp.all(result == 0)
 
 
@@ -62,7 +82,7 @@ def test_sobel_horizontal():
     """Sobel on a horizontal edge should be a horizontal line."""
     i, j = cp.mgrid[-5:6, -5:6]
     image = (i >= 0).astype(float)
-    result = filters.sobel(image) * np.sqrt(2)
+    result = filters.sobel(image) * math.sqrt(2)
     # Check if result match transform direction
 
     assert_allclose(result[i == 0], 1)
@@ -73,7 +93,7 @@ def test_sobel_vertical():
     """Sobel on a vertical edge should be a vertical line."""
     i, j = cp.mgrid[-5:6, -5:6]
     image = (j >= 0).astype(float)
-    result = filters.sobel(image) * np.sqrt(2)
+    result = filters.sobel(image) * math.sqrt(2)
     assert_allclose(result[j == 0], 1)
     assert cp.all(result[cp.abs(j) > 1] == 0)
 
@@ -104,7 +124,7 @@ def test_sobel_h_horizontal():
 def test_sobel_h_vertical():
     """Horizontal Sobel on a vertical edge should be zero."""
     i, j = cp.mgrid[-5:6, -5:6]
-    image = (j >= 0).astype(float) * np.sqrt(2)
+    image = (j >= 0).astype(float) * math.sqrt(2)
     result = filters.sobel_h(image)
     assert_allclose(result, 0, atol=1e-10)
 
@@ -146,10 +166,12 @@ def test_scharr_zeros():
     assert cp.all(result < 1e-16)
 
 
-def test_scharr_mask():
+@pytest.mark.parametrize('dtype', [np.float16, np.float32, np.float64])
+def test_scharr_mask(dtype):
     """Scharr on a masked array should be zero."""
-    result = filters.scharr(cp.random.uniform(size=(10, 10)),
+    result = filters.scharr(cp.random.uniform(size=(10, 10)).astype(dtype),
                             cp.zeros((10, 10), dtype=bool))
+    assert result.dtype == _supported_float_type(dtype)
     assert_allclose(result, 0)
 
 
@@ -157,7 +179,7 @@ def test_scharr_horizontal():
     """Scharr on an edge should be a horizontal line."""
     i, j = cp.mgrid[-5:6, -5:6]
     image = (i >= 0).astype(float)
-    result = filters.scharr(image) * np.sqrt(2)
+    result = filters.scharr(image) * math.sqrt(2)
     # Check if result match transform direction
     assert_allclose(result[i == 0], 1)
     assert cp.all(result[cp.abs(i) > 1] == 0)
@@ -167,7 +189,7 @@ def test_scharr_vertical():
     """Scharr on a vertical edge should be a vertical line."""
     i, j = cp.mgrid[-5:6, -5:6]
     image = (j >= 0).astype(float)
-    result = filters.scharr(image) * np.sqrt(2)
+    result = filters.scharr(image) * math.sqrt(2)
     assert_allclose(result[j == 0], 1)
     assert cp.all(result[cp.abs(j) > 1] == 0)
 
@@ -243,18 +265,20 @@ def test_prewitt_zeros():
     assert_allclose(result, 0)
 
 
-def test_prewitt_mask():
+@pytest.mark.parametrize('dtype', [np.float16, np.float32, np.float64])
+def test_prewitt_mask(dtype):
     """Prewitt on a masked array should be zero."""
-    result = filters.prewitt(cp.random.uniform(size=(10, 10)),
+    result = filters.prewitt(cp.random.uniform(size=(10, 10)).astype(dtype),
                              cp.zeros((10, 10), dtype=bool))
-    assert_allclose(cp.abs(result), 0)
+    assert result.dtype == _supported_float_type(dtype)
+    assert_allclose(np.abs(result), 0)
 
 
 def test_prewitt_horizontal():
     """Prewitt on an edge should be a horizontal line."""
     i, j = cp.mgrid[-5:6, -5:6]
     image = (i >= 0).astype(float)
-    result = filters.prewitt(image) * np.sqrt(2)
+    result = filters.prewitt(image) * math.sqrt(2)
     # Check if result match transform direction
     assert_allclose(result[i == 0], 1)
     assert_allclose(result[cp.abs(i) > 1], 0, atol=1e-10)
@@ -264,7 +288,7 @@ def test_prewitt_vertical():
     """Prewitt on a vertical edge should be a vertical line."""
     i, j = cp.mgrid[-5:6, -5:6]
     image = (j >= 0).astype(float)
-    result = filters.prewitt(image) * np.sqrt(2)
+    result = filters.prewitt(image) * math.sqrt(2)
     assert_allclose(result[j == 0], 1)
     assert_allclose(result[cp.abs(j) > 1], 0, atol=1e-10)
 
@@ -353,13 +377,15 @@ def test_laplace_zeros():
     assert_allclose(result, check_result)
 
 
-def test_laplace_mask():
+@pytest.mark.parametrize('dtype', [np.float16, np.float32, np.float64])
+def test_laplace_mask(dtype):
     """Laplace on a masked array should be zero."""
     # Create a synthetic 2D image
-    image = cp.zeros((9, 9))
+    image = cp.zeros((9, 9), dtype=dtype)
     image[3:-3, 3:-3] = 1
     # Define the mask
     result = filters.laplace(image, ksize=3, mask=cp.zeros((9, 9), dtype=bool))
+    assert result.dtype == _supported_float_type(dtype)
     assert cp.all(result == 0)
 
 
@@ -370,10 +396,12 @@ def test_farid_zeros():
     assert cp.all(result == 0)
 
 
-def test_farid_mask():
+@pytest.mark.parametrize('dtype', [np.float16, np.float32, np.float64])
+def test_farid_mask(dtype):
     """Farid on a masked array should be zero."""
-    result = filters.farid(cp.random.uniform(size=(10, 10)),
+    result = filters.farid(cp.random.uniform(size=(10, 10)).astype(dtype),
                            mask=cp.zeros((10, 10), dtype=bool))
+    assert result.dtype == _supported_float_type(dtype)
     assert (cp.all(result == 0))
 
 
@@ -381,7 +409,7 @@ def test_farid_horizontal():
     """Farid on a horizontal edge should be a horizontal line."""
     i, j = cp.mgrid[-5:6, -5:6]
     image = (i >= 0).astype(float)
-    result = filters.farid(image) * np.sqrt(2)
+    result = filters.farid(image) * math.sqrt(2)
     # Check if result match transform direction
     assert cp.all(result[i == 0] == result[i == 0][0])
     assert_allclose(result[cp.abs(i) > 2], 0, atol=1e-10)
@@ -391,7 +419,7 @@ def test_farid_vertical():
     """Farid on a vertical edge should be a vertical line."""
     i, j = cp.mgrid[-5:6, -5:6]
     image = (j >= 0).astype(float)
-    result = filters.farid(image) * np.sqrt(2)
+    result = filters.farid(image) * math.sqrt(2)
     assert cp.all(result[j == 0] == result[j == 0][0])
     assert_allclose(result[cp.abs(j) > 2], 0, atol=1e-10)
 
@@ -423,7 +451,7 @@ def test_farid_h_horizontal():
 def test_farid_h_vertical():
     """Horizontal Farid on a vertical edge should be zero."""
     i, j = cp.mgrid[-5:6, -5:6]
-    image = (j >= 0).astype(float) * np.sqrt(2)
+    image = (j >= 0).astype(float) * math.sqrt(2)
     result = filters.farid_h(image)
     assert_allclose(result, 0, atol=1e-10)
 
