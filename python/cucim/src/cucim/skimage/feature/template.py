@@ -5,7 +5,7 @@ import cucim.skimage._vendored
 #       choose_conv_method for > 1d has been implemented.
 from cucim import _misc
 
-from .._shared.utils import check_nD
+from .._shared.utils import check_nD, _supported_float_type
 
 # from cupyx.scipy import signal
 
@@ -135,7 +135,7 @@ def match_template(image, template, pad_input=False, mode='constant',
 
     image_shape = image.shape
 
-    float_dtype = cp.promote_types(image.dtype, cp.float32)
+    float_dtype = _supported_float_type(image.dtype)
     image = image.astype(float_dtype, copy=False)
     template = template.astype(float_dtype, copy=False)
 
@@ -181,7 +181,7 @@ def match_template(image, template, pad_input=False, mode='constant',
     response = cp.zeros_like(xcorr, dtype=float_dtype)
 
     # avoid zero-division
-    mask = denominator > cp.finfo(response.dtype).eps
+    mask = denominator > cp.finfo(float_dtype).eps
 
     response[mask] = numerator[mask] / denominator[mask]
 

@@ -7,6 +7,7 @@ from skimage import data, draw
 
 from cucim.skimage import img_as_float
 from cucim.skimage._shared._warnings import expected_warnings
+from cucim.skimage._shared.utils import _supported_float_type
 from cucim.skimage.color import rgb2gray
 from cucim.skimage.feature import (corner_foerstner, corner_harris,
                                    corner_kitchen_rosenfeld, corner_peaks,
@@ -28,10 +29,13 @@ def im3d():
     return cp.asarray(im3)
 
 
-def test_structure_tensor():
-    square = cp.zeros((5, 5))
+@pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])
+def test_structure_tensor(dtype):
+    square = cp.zeros((5, 5), dtype=dtype)
     square[2, 2] = 1
     Arr, Arc, Acc = structure_tensor(square, sigma=0.1, order='rc')
+    out_dtype = _supported_float_type(dtype)
+    assert all(a.dtype == out_dtype for a in (Arr, Arc, Acc))
     # fmt: off
     assert_array_equal(Acc, cp.asarray([[0, 0, 0, 0, 0],
                                         [0, 1, 0, 1, 0],
@@ -51,10 +55,12 @@ def test_structure_tensor():
     # fmt: on
 
 
-def test_structure_tensor_3d():
-    cube = cp.zeros((5, 5, 5))
+@pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])
+def test_structure_tensor_3d(dtype):
+    cube = cp.zeros((5, 5, 5), dtype=dtype)
     cube[2, 2, 2] = 1
     A_elems = structure_tensor(cube, sigma=0.1)
+    assert all(a.dtype == _supported_float_type(dtype) for a in A_elems)
     assert_equal(len(A_elems), 6)
     # fmt: off
     assert_array_equal(A_elems[0][:, 1, :], cp.asarray([[0, 0, 0, 0, 0],
@@ -98,10 +104,30 @@ def test_structure_tensor_orders():
         assert_array_equal(elem_xy, elem_rc)
 
 
-def test_hessian_matrix():
-    square = cp.zeros((5, 5))
+@pytest.mark.parametrize('ndim', [2, 3])
+def test_structure_tensor_sigma(ndim):
+    img = cp.zeros((5,) * ndim)
+    img[[2] * ndim] = 1
+    A_default = structure_tensor(img, sigma=0.1, order='rc')
+    A_tuple = structure_tensor(img, sigma=(0.1,) * ndim, order='rc')
+    A_list = structure_tensor(img, sigma=[0.1] * ndim, order='rc')
+    for elem_tup, elem_def in zip(A_tuple, A_default):
+        assert_array_equal(elem_tup, elem_def)
+    for elem_list, elem_def in zip(A_list, A_default):
+        assert_array_equal(elem_list, elem_def)
+    with pytest.raises(ValueError):
+        structure_tensor(img, sigma=(0.1,) * (ndim - 1), order='rc')
+    with pytest.raises(ValueError):
+        structure_tensor(img, sigma=[0.1] * (ndim + 1), order='rc')
+
+
+@pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])
+def test_hessian_matrix(dtype):
+    square = cp.zeros((5, 5), dtype=dtype)
     square[2, 2] = 4
     Hrr, Hrc, Hcc = hessian_matrix(square, sigma=0.1, order="rc")
+    out_dtype = _supported_float_type(dtype)
+    assert all(a.dtype == out_dtype for a in (Hrr, Hrc, Hcc))
     # fmt: off
     assert_array_almost_equal(Hrr, cp.asarray([[0, 0,  0, 0, 0],    # noqa
                                                [0, 0,  0, 0, 0],    # noqa
@@ -140,11 +166,14 @@ def test_hessian_matrix_3d():
     # fmt: on
 
 
-def test_structure_tensor_eigenvalues():
-    square = cp.zeros((5, 5))
+@pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])
+def test_structure_tensor_eigenvalues(dtype):
+    square = cp.zeros((5, 5), dtype=dtype)
     square[2, 2] = 1
     A_elems = structure_tensor(square, sigma=0.1, order='rc')
     l1, l2 = structure_tensor_eigenvalues(A_elems)
+    out_dtype = _supported_float_type(dtype)
+    assert all(a.dtype == out_dtype for a in (l1, l2))
     assert_array_equal(l1, cp.asarray([[0, 0, 0, 0, 0],
                                        [0, 2, 4, 2, 0],
                                        [0, 4, 0, 4, 0],
@@ -178,11 +207,14 @@ def test_structure_tensor_eigvals():
         assert_array_equal(ev1, ev2)
 
 
-def test_hessian_matrix_eigvals():
-    square = cp.zeros((5, 5))
+@pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])
+def test_hessian_matrix_eigvals(dtype):
+    square = cp.zeros((5, 5), dtype=dtype)
     square[2, 2] = 4
     H = hessian_matrix(square, sigma=0.1, order='rc')
     l1, l2 = hessian_matrix_eigvals(H)
+    out_dtype = _supported_float_type(dtype)
+    assert all(a.dtype == out_dtype for a in (l1, l2))
     # fmt: off
     assert_array_almost_equal(l1, cp.asarray([[0, 0,  2, 0, 0],      # noqa
                                               [0, 1,  0, 1, 0],      # noqa
@@ -197,11 +229,15 @@ def test_hessian_matrix_eigvals():
 
     # fmt: on
 
-
-def test_hessian_matrix_eigvals_3d(im3d):
+@pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])
+def test_hessian_matrix_eigvals_3d(im3d, dtype):
+    im3d = im3d.astype(dtype, copy=False)
     H = hessian_matrix(im3d)
     E = hessian_matrix_eigvals(H)
     E = cp.asnumpy(E)
+    out_dtype = _supported_float_type(dtype)
+    assert all([a.dtype == out_dtype for a in E])
+
     # test descending order:
     e0, e1, e2 = E
     assert np.all(e0 >= e1) and np.all(e1 >= e2)
@@ -214,7 +250,6 @@ def test_hessian_matrix_eigvals_3d(im3d):
     ]
     response0 = np.array([np.mean(E0[c]) for c in circles])
     response2 = np.array([np.mean(E2[c]) for c in circles])
-
     # eigenvalues are negative just inside the sphere, positive just outside
     assert np.argmin(response2) < np.argmax(response0)
     assert np.min(response2) < 0
@@ -229,8 +264,11 @@ def test_hessian_matrix_det():
     assert_array_almost_equal(det, 0, decimal=3)
 
 
-def test_hessian_matrix_det_3d(im3d):
+@pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])
+def test_hessian_matrix_det_3d(im3d, dtype):
+    im3d = im3d.astype(dtype, copy=False)
     D = hessian_matrix_det(im3d)
+    assert D.dtype == _supported_float_type(dtype)
     D = cp.asnumpy(D)
     D0 = D[D.shape[0] // 2]
     row_center, col_center = np.asarray(D0.shape) // 2
@@ -299,6 +337,32 @@ def test_square_image():
                              min_distance=10, threshold_rel=0)
     # interest at corner
     assert len(results) == 1
+
+
+@pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])
+@pytest.mark.parametrize(
+    'func',
+    [
+        # corner_moravec,
+        corner_harris,
+        corner_shi_tomasi,
+        corner_kitchen_rosenfeld,
+    ]
+)
+def test_corner_dtype(dtype, func):
+    im = cp.zeros((50, 50), dtype=dtype)
+    im[:25, :25] = 1.
+    out_dtype = _supported_float_type(dtype)
+    corners = func(im)
+    assert corners.dtype == out_dtype
+
+
+@pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])
+def test_corner_foerstner_dtype(dtype):
+    im = cp.zeros((50, 50), dtype=dtype)
+    im[:25, :25] = 1.
+    out_dtype = _supported_float_type(dtype)
+    assert all(arr.dtype == out_dtype for arr in corner_foerstner(im))
 
 
 def test_noisy_square_image():
