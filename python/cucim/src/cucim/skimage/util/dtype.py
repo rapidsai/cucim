@@ -321,6 +321,15 @@ def _convert(image, dtype, force_copy=False, uniform=False):
             # DirectX uses this conversion also for signed ints
             # if imin_in:
             #     cp.maximum(image, -1.0, out=image)
+        elif kind_in == 'i':
+            # From DirectX conversions:
+            # The most negative value maps to -1.0f
+            # Every other value is converted to a float (call it c)
+            # and then result = c * (1.0f / (2⁽ⁿ⁻¹⁾-1)).
+
+            image = cp.multiply(image, 1. / imax_in,
+                                dtype=computation_type)
+            cp.maximum(image, -1.0, out=image)
         else:
             image = cp.add(image, 0.5, dtype=computation_type)
             image *= 2 / (imax_in - imin_in)
