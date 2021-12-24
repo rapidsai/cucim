@@ -110,7 +110,7 @@ if os.path.exists(pfile):
         all_results = pickle.load(f)
 else:
     all_results = pd.DataFrame()
-dtypes_grey = [np.float32]
+dtypes_gray = [np.float32]
 
 
 for function_name, fixed_kwargs, var_kwargs, allow_nd in [
@@ -243,7 +243,7 @@ for function_name, fixed_kwargs, var_kwargs, allow_color, allow_nd in [
             var_kwargs["selem"] = selems
 
         if function_name in ["gaussian", "unsharp_mask"]:
-            fixed_kwargs["multichannel"] = True if shape[-1] == 3 else False
+            fixed_kwargs["channel_axis"] = -1 if shape[-1] == 3 else None
 
         if function_name == "reconstruction":
             TestClass = ReconstructionBench
@@ -253,7 +253,7 @@ for function_name, fixed_kwargs, var_kwargs, allow_color, allow_nd in [
         B = TestClass(
             function_name=function_name,
             shape=shape,
-            dtypes=dtypes_grey,
+            dtypes=dtypes_gray,
             fixed_kwargs=fixed_kwargs,
             var_kwargs=var_kwargs,
             module_cpu=skimage.morphology,

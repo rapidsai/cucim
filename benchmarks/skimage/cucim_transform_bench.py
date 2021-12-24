@@ -87,7 +87,7 @@ for function_name, fixed_kwargs, var_kwargs, allow_color, allow_nd in [
         ndim_spatial = ndim - 1 if shape[-1] == 3 else ndim
 
         if function_name in ["rescale", "warp_polar", "pyramid_gaussian", "pyramid_laplacian"]:
-            fixed_kwargs["multichannel"] = ndim_spatial < ndim
+            fixed_kwargs["channel_axis"] = -1 if ndim_spatial < ndim else None
 
         function_is_generator = function_name in ["pyramid_gaussian", "pyramid_laplacian"]
 

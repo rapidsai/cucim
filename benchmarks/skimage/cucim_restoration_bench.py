@@ -127,7 +127,7 @@ for function_name, fixed_kwargs, var_kwargs, allow_color, allow_nd in [
             continue
 
         if function_name == "denoise_tv_chambolle":
-            fixed_kwargs["multichannel"] = shape[-1] == 3
+            fixed_kwargs["channel_axis"] = -1 if shape[-1] == 3 else None
 
         if function_name == "calibrate_denoiser":
             denoise_class = CalibratedDenoiseBench
