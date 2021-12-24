@@ -13,7 +13,7 @@ from cupyx.scipy import ndimage as ndi
 from cupyx.scipy import sparse
 from cupyx.scipy.sparse.linalg import cg, spsolve
 
-from .._shared.utils import warn
+from .._shared import utils
 from ..util import img_as_float
 
 # TODO: Implemented multigrid solver option, 'cg_mg'
@@ -159,8 +159,10 @@ def _solve_linear_system(lap_sparse, B, tol, mode):
         mode = 'cg_j'
 
     if mode == 'cg_mg' and not amg_loaded:
-        warn('"cg_mg" not available. The "cg_j" mode will be used instead.',
-             stacklevel=2)
+        utils.warn(
+            '"cg_mg" not available. The "cg_j" mode will be used instead.',
+             stacklevel=2
+        )
         mode = 'cg_j'
 
     if mode == 'bf':
@@ -186,9 +188,11 @@ def _solve_linear_system(lap_sparse, B, tol, mode):
             cg(lap_sparse, B[:, i].toarray(), tol=tol, M=M, maxiter=maxiter)
             for i in range(B.shape[1])]
         if any([info > 0 for _, info in cg_out]):
-            warn("Conjugate gradient convergence to tolerance not achieved. "
-                 "Consider decreasing beta to improve system conditionning.",
-                 stacklevel=2)
+            utils.warn(
+                "Conjugate gradient convergence to tolerance not achieved. "
+                "Consider decreasing beta to improve system conditionning.",
+                stacklevel=2
+            )
         X = cp.stack([x for x, _ in cg_out], axis=0)
 
     return X
@@ -198,10 +202,12 @@ def _preprocess(labels):
 
     label_values, inv_idx = cp.unique(labels, return_inverse=True)
     if not (label_values == 0).any():
-        warn('Random walker only segments unlabeled areas, where '
-             'labels == 0. No zero valued areas in labels were '
-             'found. Returning provided labels.',
-             stacklevel=2)
+        utils.warn(
+            'Random walker only segments unlabeled areas, where labels == 0. '
+            'No zero valued areas in labels were found. Returning provided '
+            'labels.',
+            stacklevel=2
+        )
 
         return labels, None, None, None, None
 
@@ -226,9 +232,11 @@ def _preprocess(labels):
 
         labels[isolated] = -1
         if cp.all(isolated[null_mask]):
-            warn('All unlabeled pixels are isolated, they could not be '
-                 'determined by the random walker algorithm.',
-                 stacklevel=2)
+            utils.warn(
+                'All unlabeled pixels are isolated, they could not be '
+                'determined by the random walker algorithm.',
+                stacklevel=2
+            )
             return labels, None, None, None, None
 
         mask[isolated] = False
@@ -249,9 +257,11 @@ def _preprocess(labels):
     return labels, nlabels, mask, inds_isolated_seeds, isolated_values
 
 
+@utils.channel_as_last_axis(multichannel_output=False)
+@utils.deprecate_multichannel_kwarg(multichannel_position=6)
 def random_walker(data, labels, beta=130, mode='cg_j', tol=1.e-3, copy=True,
                   multichannel=False, return_full_prob=False, spacing=None,
-                  *, prob_tol=1e-3):
+                  *, prob_tol=1e-3, channel_axis=None):
     """Random walker algorithm for segmentation from markers.
 
     Random walker algorithm is implemented for gray-level or multichannel
@@ -262,7 +272,7 @@ def random_walker(data, labels, beta=130, mode='cg_j', tol=1.e-3, copy=True,
     data : array_like
         Image to be segmented in phases. Gray-level `data` can be two- or
         three-dimensional; multichannel data can be three- or four-
-        dimensional (multichannel=True) with the highest dimension denoting
+        dimensional with `channel_axis` specifying the dimension containing
         channels. Data spacing is assumed isotropic unless the `spacing`
         keyword argument is used.
     labels : array of ints, of same shape as `data` without channels dimension
@@ -304,7 +314,8 @@ def random_walker(data, labels, beta=130, mode='cg_j', tol=1.e-3, copy=True,
         save on memory.
     multichannel : bool, optional
         If True, input data is parsed as multichannel data (see 'data' above
-        for proper input format in this case).
+        for proper input format in this case). This argument is deprecated:
+        specify `channel_axis` instead.
     return_full_prob : bool, optional
         If True, the probability that a pixel belongs to each of the
         labels will be returned, instead of only the most likely
@@ -315,6 +326,10 @@ def random_walker(data, labels, beta=130, mode='cg_j', tol=1.e-3, copy=True,
     prob_tol : float, optional
         Tolerance on the resulting probability to be in the interval [0, 1].
         If the tolerance is not satisfied, a warning is displayed.
+    channel_axis : int or None, optional
+        If None, the image is assumed to be a grayscale (single channel) image.
+        Otherwise, this parameter indicates which axis of the array corresponds
+        to channels.
 
     Returns
     -------
@@ -435,6 +450,7 @@ def random_walker(data, labels, beta=130, mode='cg_j', tol=1.e-3, copy=True,
     # and single channel images likewise have a singleton added for channels.
     # The following block ensures valid input and coerces it to the correct
     # form.
+    multichannel = channel_axis is not None
     if not multichannel:
         if data.ndim not in (2, 3):
             raise ValueError('For non-multichannel input, data must be of '
@@ -483,9 +499,10 @@ def random_walker(data, labels, beta=130, mode='cg_j', tol=1.e-3, copy=True,
     X = _solve_linear_system(lap_sparse, B, tol, mode)
 
     if X.min() < -prob_tol or X.max() > 1 + prob_tol:
-        warn('The probability range is outside [0, 1] given the tolerance '
-             '`prob_tol`. Consider decreasing `beta` and/or decreasing '
-             '`tol`.')
+        utils.warn(
+            'The probability range is outside [0, 1] given the tolerance '
+            '`prob_tol`. Consider decreasing `beta` and/or decreasing `tol`.'
+        )
 
     # Build the output according to return_full_prob value
     # Put back labels of isolated seeds

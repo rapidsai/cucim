@@ -1,5 +1,7 @@
 import cupy as cp
 import numpy as np
+import scipy
+from packaging import version
 
 from cucim.skimage._shared import testing
 from cucim.skimage._shared._warnings import expected_warnings
@@ -86,7 +88,6 @@ def test_2d_cg():
     assert (full_prob[1, 25:45, 40:60] >=
             full_prob[0, 25:45, 40:60]).all()
     assert data.shape == labels.shape
-    return data, labels_cg
 
 
 def test_2d_cg_mg():
@@ -103,7 +104,6 @@ def test_2d_cg_mg():
     assert (full_prob[1, 25:45, 40:60] >=
             full_prob[0, 25:45, 40:60]).all()
     assert data.shape == labels.shape
-    return data, labels_cg_mg
 
 
 def test_2d_cg_j():
@@ -130,7 +130,6 @@ def test_types():
         labels_cg_mg = random_walker(data, labels, beta=90, mode='cg_mg')
     assert (labels_cg_mg[25:45, 40:60] == 2).all()
     assert data.shape == labels.shape
-    return data, labels_cg_mg
 
 
 def test_reorder_labels():
@@ -141,7 +140,6 @@ def test_reorder_labels():
     labels_bf = random_walker(data, labels, beta=90, mode='bf')
     assert (labels_bf[25:45, 40:60] == 2).all()
     assert data.shape == labels.shape
-    return data, labels_bf
 
 
 def test_reorder_labels_cg():
@@ -152,7 +150,6 @@ def test_reorder_labels_cg():
     labels_bf = random_walker(data, labels, beta=90, mode='cg')
     assert (labels_bf[25:45, 40:60] == 2).all()
     assert data.shape == labels.shape
-    return data, labels_bf
 
 
 def test_2d_inactive():
@@ -164,7 +161,23 @@ def test_2d_inactive():
     labels = random_walker(data, labels, beta=90)
     assert (labels.reshape((lx, ly))[25:45, 40:60] == 2).all()
     assert data.shape == labels.shape
-    return data, labels
+
+
+def test_2d_laplacian_size():
+    # test case from: https://github.com/scikit-image/scikit-image/issues/5034
+    # The markers here were modified from the ones in the original issue to
+    # avoid a singular matrix, but still reproduce the issue.
+    data = cp.asarray([[12823, 12787, 12710],
+                       [12883, 13425, 12067],
+                       [11934, 11929, 12309]])
+    markers = cp.asarray([[0, -1, 2],
+                          [0, -1, 0],
+                          [1, 0, -1]])
+    expected_labels = cp.asarray([[1, -1, 2],
+                                  [1, -1, 2],
+                                  [1, 1, -1]])
+    labels = random_walker(data, markers, beta=10)
+    cp.testing.assert_array_equal(labels, expected_labels)
 
 
 def test_3d():
@@ -174,7 +187,6 @@ def test_3d():
     labels = random_walker(data, labels, mode='cg')
     assert (labels.reshape(data.shape)[13:17, 13:17, 13:17] == 2).all()
     assert data.shape == labels.shape
-    return data, labels
 
 
 def test_3d_inactive():
@@ -187,21 +199,47 @@ def test_3d_inactive():
     labels = random_walker(data, labels, mode='cg')
     assert (labels.reshape(data.shape)[13:17, 13:17, 13:17] == 2).all()
     assert data.shape == labels.shape
-    return data, labels, old_labels, after_labels
 
 
-def test_multispectral_2d():
+@testing.parametrize('channel_axis', [0, 1, -1])
+def test_multispectral_2d(channel_axis):
     lx, ly = 70, 100
     data, labels = make_2d_syntheticdata(lx, ly)
     data = data[..., cp.newaxis].repeat(2, axis=-1)  # Expect identical output
+    data = cp.moveaxis(data, -1, channel_axis)
     with expected_warnings(['The probability range is outside']):
         multi_labels = random_walker(data, labels, mode='cg',
-                                     multichannel=True)
+                                     channel_axis=channel_axis)
+    data = cp.moveaxis(data, channel_axis, -1)
+
     assert data[..., 0].shape == labels.shape
     single_labels = random_walker(data[..., 0], labels, mode='cg')
     assert (multi_labels.reshape(labels.shape)[25:45, 40:60] == 2).all()
     assert data[..., 0].shape == labels.shape
-    return data, multi_labels, single_labels, labels
+
+
+def test_multispectral_2d_deprecated():
+    lx, ly = 70, 100
+    data, labels = make_2d_syntheticdata(lx, ly)
+    data = data[..., np.newaxis].repeat(2, axis=-1)  # Expect identical output
+
+    # checking for multichannel kwarg warning
+    with expected_warnings(['`multichannel` is a deprecated argument',
+                            'The probability range is outside']):
+        multi_labels = random_walker(data, labels, mode='cg',
+                                     multichannel=True)
+    assert data[..., 0].shape == labels.shape
+
+    # checking for positional multichannel warning
+    with expected_warnings(['Providing the `multichannel` argument',
+                            'The probability range is outside']):
+        multi_labels = random_walker(data, labels, 130, 'cg', 1.e-3, True,
+                                     True)
+    assert data[..., 0].shape == labels.shape
+
+    single_labels = random_walker(data[..., 0], labels, mode='cg')
+    assert (multi_labels.reshape(labels.shape)[25:45, 40:60] == 2).all()
+    assert data[..., 0].shape == labels.shape
 
 
 def test_multispectral_3d():
@@ -209,14 +247,12 @@ def test_multispectral_3d():
     lx, ly, lz = n, n, n
     data, labels = make_3d_syntheticdata(lx, ly, lz)
     data = data[..., cp.newaxis].repeat(2, axis=-1)  # Expect identical output
-    multi_labels = random_walker(data, labels, mode='cg',
-                                 multichannel=True)
+    multi_labels = random_walker(data, labels, mode='cg', channel_axis=-1)
     assert data[..., 0].shape == labels.shape
     single_labels = random_walker(data[..., 0], labels, mode='cg')
     assert (multi_labels.reshape(labels.shape)[13:17, 13:17, 13:17] == 2).all()
     assert (single_labels.reshape(labels.shape)[13:17, 13:17, 13:17] == 2).all()
     assert data[..., 0].shape == labels.shape
-    return data, multi_labels, single_labels, labels
 
 
 def test_spacing_0():

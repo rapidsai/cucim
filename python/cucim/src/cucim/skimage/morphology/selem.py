@@ -32,7 +32,7 @@ def square(width, dtype=np.uint8):
 
 
 @deprecate_kwarg({"height": "ncols", "width": "nrows"},
-                 removed_version="0.20.0")
+                 removed_version="0.20.0", deprecated_version="0.18.0")
 def rectangle(nrows, ncols, dtype=np.uint8):
     """Generates a flat, rectangular-shaped structuring element.
 
