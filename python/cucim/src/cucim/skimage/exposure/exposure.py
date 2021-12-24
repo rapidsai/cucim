@@ -385,7 +385,10 @@ def equalize_hist(image, nbins=256, mask=None):
     else:
         cdf, bin_centers = cumulative_distribution(image, nbins)
     out = cp.interp(image.ravel(), bin_centers, cdf)
-    return out.reshape(image.shape)
+    out = out.reshape(image.shape)
+    # Unfortunately, np.interp currently always promotes to float64, so we
+    # have to cast back to single precision when float32 output is desired
+    return out.astype(utils._supported_float_type(image.dtype), copy=False)
 
 
 def intensity_range(image, range_values="image", clip_negative=False):
@@ -609,7 +612,8 @@ def _assert_non_negative(image):
 
 def _adjust_gamma_u8(image, gamma, gain):
     """LUT based implmentation of gamma adjustement."""
-    lut = (255 * gain * (np.linspace(0, 1, 256) ** gamma)).astype("uint8")
+    lut = (255 * gain * (np.linspace(0, 1, 256) ** gamma))
+    lut = np.minimum(lut, 255).astype('uint8')
     lut = cp.asarray(lut)
     return lut[image]
 
@@ -759,7 +763,7 @@ def adjust_sigmoid(image, cutoff=0.5, gain=10, inv=False):
     ----------
     .. [1] Gustav J. Braun, "Image Lightness Rescaling Using Sigmoidal Contrast
            Enhancement Functions",
-           http://www.cis.rit.edu/fairchild/PDFs/PAP07.pdf
+           http://markfairchild.org/PDFs/PAP07.pdf
 
     """
     _assert_non_negative(image)
@@ -820,6 +824,9 @@ def is_low_contrast(image, fraction_threshold=0.05, lower_percentile=1,
     >>> is_low_contrast(image, upper_percentile=100)
     False
     """
+    if image.dtype == bool:
+        return not ((image.max() == 1) and (image.min() == 0))
+
     if image.ndim == 3:
         from ..color import rgb2gray, rgba2rgb  # avoid circular import
 
