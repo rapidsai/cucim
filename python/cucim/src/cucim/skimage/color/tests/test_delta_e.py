@@ -7,20 +7,22 @@ from cupy.testing import (assert_allclose, assert_array_almost_equal,
                           assert_array_equal)
 
 from cucim.skimage._shared.testing import expected_warnings, fetch
+from cucim.skimage._shared.utils import _supported_float_type
 from cucim.skimage.color.delta_e import (deltaE_cie76, deltaE_ciede94,
                                          deltaE_ciede2000, deltaE_cmc)
 
 
 @pytest.mark.parametrize("channel_axis", [0, 1, -1])
-def test_ciede2000_dE(channel_axis):
+@pytest.mark.parametrize('dtype', [np.float32, np.float64])
+def test_ciede2000_dE(dtype, channel_axis):
     data = load_ciede2000_data()
     N = len(data)
-    lab1 = np.zeros((N, 3))
+    lab1 = np.zeros((N, 3), dtype=dtype)
     lab1[:, 0] = data['L1']
     lab1[:, 1] = data['a1']
     lab1[:, 2] = data['b1']
 
-    lab2 = np.zeros((N, 3))
+    lab2 = np.zeros((N, 3), dtype=dtype)
     lab2[:, 0] = data['L2']
     lab2[:, 1] = data['a2']
     lab2[:, 2] = data['b2']
@@ -28,10 +30,12 @@ def test_ciede2000_dE(channel_axis):
     lab1 = cp.moveaxis(cp.asarray(lab1), source=-1, destination=channel_axis)
     lab2 = cp.moveaxis(cp.asarray(lab2), source=-1, destination=channel_axis)
     dE2 = deltaE_ciede2000(lab1, lab2, channel_axis=channel_axis)
+    assert dE2.dtype == _supported_float_type(dtype)
 
-    # TODO: grlee77 had to raise rtol from 1e-4 to 1e-2 for this to pass.
-    #       look into why this was necessary
-    assert_allclose(dE2, cp.asarray(data['dE']), rtol=1.0e-2)
+    # Note: lower float64 accuracy than scikit-image
+    # rtol = 1e-2 if dtype == np.float32 else 1e-4
+    rtol = 1e-2
+    assert_allclose(dE2, data['dE'], rtol=rtol)
 
 
 def load_ciede2000_data():
@@ -66,15 +70,16 @@ def load_ciede2000_data():
 
 
 @pytest.mark.parametrize("channel_axis", [0, 1, -1])
-def test_cie76(channel_axis):
+@pytest.mark.parametrize('dtype', [np.float32, np.float64])
+def test_cie76(dtype, channel_axis):
     data = load_ciede2000_data()
     N = len(data)
-    lab1 = np.zeros((N, 3))
+    lab1 = np.zeros((N, 3), dtype=dtype)
     lab1[:, 0] = data['L1']
     lab1[:, 1] = data['a1']
     lab1[:, 2] = data['b1']
 
-    lab2 = np.zeros((N, 3))
+    lab2 = np.zeros((N, 3), dtype=dtype)
     lab2[:, 0] = data['L2']
     lab2[:, 1] = data['a2']
     lab2[:, 2] = data['b2']
@@ -83,6 +88,7 @@ def test_cie76(channel_axis):
     lab2 = cp.moveaxis(cp.asarray(lab2), source=-1, destination=channel_axis)
 
     dE2 = deltaE_cie76(lab1, lab2, channel_axis=channel_axis)
+    assert dE2.dtype == _supported_float_type(dtype)
     # fmt: off
     oracle = cp.asarray([
         4.00106328, 6.31415011, 9.1776999, 2.06270077, 2.36957073,
@@ -94,19 +100,21 @@ def test_cie76(channel_axis):
         1.50514845, 2.3237848, 0.94413208, 1.31910843
     ])
     # fmt: on
-    assert_allclose(dE2, oracle, rtol=1.0e-8)
+    rtol = 1e-5 if dtype == np.float32 else 1e-8
+    assert_allclose(dE2, oracle, rtol=rtol)
 
 
 @pytest.mark.parametrize("channel_axis", [0, 1, -1])
-def test_ciede94(channel_axis):
+@pytest.mark.parametrize('dtype', [np.float32, np.float64])
+def test_ciede94(dtype, channel_axis):
     data = load_ciede2000_data()
     N = len(data)
-    lab1 = np.zeros((N, 3))
+    lab1 = np.zeros((N, 3), dtype=dtype)
     lab1[:, 0] = data['L1']
     lab1[:, 1] = data['a1']
     lab1[:, 2] = data['b1']
 
-    lab2 = np.zeros((N, 3))
+    lab2 = np.zeros((N, 3), dtype=dtype)
     lab2[:, 0] = data['L2']
     lab2[:, 1] = data['a2']
     lab2[:, 2] = data['b2']
@@ -115,6 +123,7 @@ def test_ciede94(channel_axis):
     lab2 = cp.moveaxis(cp.asarray(lab2), source=-1, destination=channel_axis)
 
     dE2 = deltaE_ciede94(lab1, lab2, channel_axis=channel_axis)
+    assert dE2.dtype == _supported_float_type(dtype)
     # fmt: off
     oracle = cp.asarray([
         1.39503887, 1.93410055, 2.45433566, 0.68449187, 0.6695627,
@@ -126,19 +135,21 @@ def test_ciede94(channel_axis):
         1.41945261, 2.3225685, 0.93853308, 1.30654464
     ])
     # fmt: on
-    assert_allclose(dE2, oracle, rtol=1.0e-8)
+    rtol = 1e-5 if dtype == np.float32 else 1e-8
+    assert_allclose(dE2, oracle, rtol=rtol)
 
 
 @pytest.mark.parametrize("channel_axis", [0, 1, -1])
-def test_cmc(channel_axis):
+@pytest.mark.parametrize('dtype', [np.float32, np.float64])
+def test_cmc(dtype, channel_axis):
     data = load_ciede2000_data()
     N = len(data)
-    lab1 = np.zeros((N, 3))
+    lab1 = np.zeros((N, 3), dtype=dtype)
     lab1[:, 0] = data['L1']
     lab1[:, 1] = data['a1']
     lab1[:, 2] = data['b1']
 
-    lab2 = np.zeros((N, 3))
+    lab2 = np.zeros((N, 3), dtype=dtype)
     lab2[:, 0] = data['L2']
     lab2[:, 1] = data['a2']
     lab2[:, 2] = data['b2']
@@ -147,6 +158,7 @@ def test_cmc(channel_axis):
     lab2 = cp.moveaxis(cp.asarray(lab2), source=-1, destination=channel_axis)
 
     dE2 = deltaE_cmc(lab1, lab2, channel_axis=channel_axis)
+    assert dE2.dtype == _supported_float_type(dtype)
     # fmt: off
     oracle = cp.asarray([
         1.73873611, 2.49660844, 3.30494501, 0.85735576, 0.88332927,
@@ -158,8 +170,8 @@ def test_cmc(channel_axis):
         1.90095165, 1.70258148, 1.80317207, 2.44934417
     ])
     # fmt: on
-
-    assert_allclose(dE2, oracle, rtol=1.0e-8)
+    rtol = 1e-5 if dtype == np.float32 else 1e-8
+    assert_allclose(dE2, oracle, rtol=rtol)
 
     # Equal or close colors make `delta_e.get_dH2` function to return
     # negative values resulting in NaNs when passed to sqrt (see #1908

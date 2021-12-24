@@ -3,7 +3,7 @@ import itertools
 import cupy as cp
 import numpy as np
 
-from .._shared.utils import warn
+from .._shared.utils import _supported_float_type, warn
 from ..util import img_as_float
 from . import rgb_colors
 from .colorconv import gray2rgb, rgb2hsv, hsv2rgb
@@ -192,7 +192,8 @@ def _label2rgb_overlay(label, image=None, colors=None, alpha=0.3,
         if image.min() < 0:
             warn("Negative intensities in `image` are not supported")
 
-        image = img_as_float(image)
+        float_dtype = _supported_float_type(image.dtype)
+        image = img_as_float(image).astype(float_dtype, copy=False)
         if image.ndim > label.ndim:
             hsv = rgb2hsv(image)
             hsv[..., 1] *= saturation
@@ -257,7 +258,7 @@ def _label2rgb_avg(label_field, image, bg_label=0, bg_color=(0, 0, 0)):
     out : ndarray, same shape and type as `image`
         The output visualization.
     """
-    out = cp.zeros(label_field.shape + (3,))
+    out = cp.zeros(label_field.shape + (3,), dtype=image.dtype)
     labels = cp.unique(label_field)
     bg = (labels == bg_label)
     if bg.any():

@@ -23,7 +23,18 @@ import warnings
 import cupy as cp
 import numpy as np
 
+from .._shared.utils import _supported_float_type
 from .colorconv import _cart2polar_2pi, lab2lch
+
+
+def _float_inputs(lab1, lab2, allow_float32=True):
+    if allow_float32:
+        float_dtype = _supported_float_type([lab1.dtype, lab2.dtype])
+    else:
+        float_dtype = cp.float64
+    lab1 = lab1.astype(float_dtype, copy=False)
+    lab2 = lab2.astype(float_dtype, copy=False)
+    return lab1, lab2
 
 
 def deltaE_cie76(lab1, lab2, channel_axis=-1):
@@ -50,6 +61,7 @@ def deltaE_cie76(lab1, lab2, channel_axis=-1):
     .. [2] A. R. Robertson, "The CIE 1976 color-difference formulae,"
            Color Res. Appl. 2, 7-11 (1977).
     """
+    lab1, lab2 = _float_inputs(lab1, lab2, allow_float32=True)
     L1, a1, b1 = cp.moveaxis(lab1, source=channel_axis, destination=0)[:3]
     L2, a2, b2 = cp.moveaxis(lab2, source=channel_axis, destination=0)[:3]
     out = (L2 - L1) * (L2 - L1)
@@ -113,6 +125,7 @@ def deltaE_ciede94(lab1, lab2, kH=1, kC=1, kL=1, k1=0.045, k2=0.015, *,
     .. [1] https://en.wikipedia.org/wiki/Color_difference
     .. [2] http://www.brucelindbloom.com/index.html?Eqn_DeltaE_CIE94.html
     """
+    lab1, lab2 = _float_inputs(lab1, lab2, allow_float32=True)
     lab1 = cp.moveaxis(lab1, source=channel_axis, destination=0)
     lab2 = cp.moveaxis(lab2, source=channel_axis, destination=0)
     L1, C1 = lab2lch(lab1, channel_axis=0)[:2]
@@ -179,6 +192,7 @@ def deltaE_ciede2000(lab1, lab2, kL=1, kC=1, kH=1, *, channel_axis=-1):
            color metrics tested with an accurate color-difference tolerance
            dataset," Appl. Opt. 33, 8069-8077 (1994).
     """
+    lab1, lab2 = _float_inputs(lab1, lab2, allow_float32=True)
     warnings.warn(
         "The numerical accuracy of this function on the GPU is reduced "
         "relative to the CPU version"
@@ -314,6 +328,7 @@ def deltaE_cmc(lab1, lab2, kL=1, kC=1, *, channel_axis=-1):
            JPC79 colour-difference formula," J. Soc. Dyers Colour. 100, 128-132
            (1984).
     """
+    lab1, lab2 = _float_inputs(lab1, lab2, allow_float32=True)
     lab1 = cp.moveaxis(lab1, source=channel_axis, destination=0)
     lab2 = cp.moveaxis(lab2, source=channel_axis, destination=0)
     L1, C1, h1 = lab2lch(lab1, channel_axis=0)[:3]
@@ -358,6 +373,11 @@ def get_dH2(lab1, lab2, *, channel_axis=-1):
     and then simplified to:
         2*|ab1|*|ab2| - 2*dot(ab1, ab2)
     """
+    # This function needs double precision internally for accuracy
+    input_is_float_32 = _supported_float_type(
+        [lab1.dtype, lab2.dtype]
+    ) == cp.float32
+    lab1, lab2 = _float_inputs(lab1, lab2, allow_float32=False)
     a1, b1 = cp.moveaxis(lab1, source=channel_axis, destination=0)[1:3]
     a2, b2 = cp.moveaxis(lab2, source=channel_axis, destination=0)[1:3]
 
@@ -366,4 +386,7 @@ def get_dH2(lab1, lab2, *, channel_axis=-1):
     C2 = cp.hypot(a2, b2)
 
     term = (C1 * C2) - (a1 * a2 + b1 * b2)
-    return 2 * term
+    out = 2 * term
+    if input_is_float_32:
+        out = out.astype(np.float32)
+    return out

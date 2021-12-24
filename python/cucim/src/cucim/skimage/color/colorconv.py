@@ -57,8 +57,8 @@ import numpy as np
 from scipy import linalg
 
 
-from .._shared.utils import (channel_as_last_axis, identity, reshape_nd,
-                             slice_at_axis)
+from .._shared.utils import (_supported_float_type, channel_as_last_axis,
+                             identity, reshape_nd, slice_at_axis)
 from ..util import dtype, dtype_limits
 
 
@@ -137,7 +137,12 @@ def _prepare_colorarray(arr, force_copy=False, force_c_contiguous=True,
         msg = (f'the input array must have size 3 along `channel_axis`, '
                f'got {arr.shape}')
         raise ValueError(msg)
-    out = dtype.img_as_float(arr, force_copy=force_copy)
+    float_dtype = _supported_float_type(arr.dtype)
+    if float_dtype == cp.float32:
+        _func = dtype.img_as_float32
+    else:
+        _func = dtype.img_as_float64
+    out = _func(arr, force_copy=force_copy)
     if force_c_contiguous and not out.flags.c_contiguous:
         out = cp.ascontiguousarray(out)
     return out
@@ -214,7 +219,11 @@ def rgba2rgb(rgba, background=(1, 1, 1), *, channel_axis=-1):
                f'got {rgba.shape}')
         raise ValueError(msg)
 
-    rgba = dtype.img_as_float(rgba)
+    float_dtype = _supported_float_type(rgba.dtype)
+    if float_dtype == cp.float32:
+        rgba = dtype.img_as_float32(rgba)
+    else:
+        rgba = dtype.img_as_float64(rgba)
     if not rgba.flags.c_contiguous:
         rgba = cp.ascontiguousarray(rgba)
 
@@ -970,23 +979,6 @@ def rgb2gray(rgb, *, channel_axis=-1):
     >>> img = cp.array(data.astronaut())
     >>> img_gray = rgb2gray(img)
     """
-
-    if rgb.ndim == 2:
-        warn('The behavior of rgb2gray will change in scikit-image 0.19. '
-             'Currently, rgb2gray allows 2D grayscale image to be passed '
-             'as inputs and leaves them unmodified as outputs. '
-             'Starting from version 0.19, 2D arrays will '
-             'be treated as 1D images with 3 channels.',
-             FutureWarning, stacklevel=2)
-        return cp.ascontiguousarray(rgb)
-
-    if rgb.shape[-1] > 3:
-        warn('Non RGB image conversion is now deprecated. For RGBA images, '
-             'please use rgb2gray(rgba2rgb(rgb)) instead. In version 0.19, '
-             'a ValueError will be raised if input image last dimension '
-             'length is not 3.', FutureWarning, stacklevel=2)
-        rgb = rgb[..., :3]
-
     rgb = _prepare_colorarray(rgb, force_c_contiguous=True, channel_axis=channel_axis)
     kern = _rgb_to_gray_kernel(rgb.dtype)
     gray = cp.empty(rgb.shape[:-1], dtype=rgb.dtype)
@@ -1715,8 +1707,9 @@ def separate_stains(rgb, conv_matrix, *, channel_axis=-1):
 
     Parameters
     ----------
-    rgb : (..., 3) array_like
-        The image in RGB format. Final dimension denotes channels.
+    rgb : (..., 3, ...) array_like
+        The image in RGB format. By default, the final dimension denotes
+        channels.
     conv_matrix: ndarray
         The stain separation matrix as described by G. Landini [1]_.
     channel_axis : int, optional
@@ -1725,13 +1718,13 @@ def separate_stains(rgb, conv_matrix, *, channel_axis=-1):
 
     Returns
     -------
-    out : (..., 3) ndarray
+    out : (..., 3, ...) ndarray
         The image in stain color space. Same dimensions as input.
 
     Raises
     ------
     ValueError
-        If `rgb` is not at least 2-D with shape (..., 3).
+        If `rgb` is not at least 2-D with shape (..., 3, ...).
 
     Notes
     -----
@@ -2044,7 +2037,12 @@ def _prepare_lab_array(arr, force_copy=True):
     shape = arr.shape
     if shape[-1] < 3:
         raise ValueError('Input array has less than 3 color channels')
-    return dtype.img_as_float(arr, force_copy=force_copy)
+    float_dtype = _supported_float_type(arr.dtype)
+    if float_dtype == np.float32:
+        _func = dtype.img_as_float32
+    else:
+        _func = dtype.img_as_float64
+    return _func(arr, force_copy=force_copy)
 
 
 @channel_as_last_axis()
