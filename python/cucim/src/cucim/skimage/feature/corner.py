@@ -8,6 +8,7 @@ from scipy import spatial  # TODO: use RAPIDS cuSpatial?
 
 # from ..transform import integral_image
 from .. import img_as_float
+from .._shared.utils import _supported_float_type, safe_as_int
 from .peak import peak_local_max
 from .util import _prepare_grayscale_input_nD
 
@@ -56,9 +57,12 @@ def structure_tensor(image, sigma=1, mode="constant", cval=0, order=None):
     ----------
     image : ndarray
         Input image.
-    sigma : float, optional
+    sigma : float or array-like of float, optional
         Standard deviation used for the Gaussian kernel, which is used as a
         weighting function for the local summation of squared differences.
+        If sigma is an iterable, its length must be equal to `image.ndim` and
+        each element is used for the Gaussian kernel applied along its
+        respective axis.
     mode : {'constant', 'reflect', 'wrap', 'nearest', 'mirror'}, optional
         How to handle values outside the image borders.
     cval : float, optional
@@ -100,6 +104,8 @@ def structure_tensor(image, sigma=1, mode="constant", cval=0, order=None):
            [0., 0., 0., 0., 0.]])
 
     """
+    from ..filters import gaussian  # avoid circular import
+
     if order == "xy" and image.ndim > 2:
         raise ValueError('Only "rc" order is supported for dim > 2.')
 
@@ -120,6 +126,12 @@ def structure_tensor(image, sigma=1, mode="constant", cval=0, order=None):
         else:
             order = "rc"
 
+    if not np.isscalar(sigma):
+        sigma = tuple(sigma)
+        if len(sigma) != image.ndim:
+            raise ValueError('sigma must have as many elements as image '
+                             'has axes')
+
     image = _prepare_grayscale_input_nD(image)
 
     derivatives = _compute_derivatives(image, mode=mode, cval=cval)
@@ -128,24 +140,24 @@ def structure_tensor(image, sigma=1, mode="constant", cval=0, order=None):
         derivatives = reversed(derivatives)
 
     # structure tensor
-    A_elems = [
-        ndi.gaussian_filter(der0 * der1, sigma, mode=mode, cval=cval)
-        for der0, der1 in combinations_with_replacement(derivatives, 2)
-    ]
+    A_elems = [gaussian(der0 * der1, sigma, mode=mode, cval=cval)
+               for der0, der1 in combinations_with_replacement(derivatives, 2)]
 
     return A_elems
 
 
-def hessian_matrix(image, sigma=1, mode="constant", cval=0, order="rc"):
-    """Compute Hessian matrix.
+def hessian_matrix(image, sigma=1, mode='constant', cval=0, order='rc'):
+    """Compute the Hessian matrix.
 
-    The Hessian matrix is defined as::
+    In 2D, the Hessian matrix is defined as::
 
         H = [Hrr Hrc]
             [Hrc Hcc]
 
     which is computed by convolving the image with the second derivatives
     of the Gaussian kernel in the respective r- and c-directions.
+
+    The implementation here also supports n-dimensional data.
 
     Parameters
     ----------
@@ -167,12 +179,10 @@ def hessian_matrix(image, sigma=1, mode="constant", cval=0, order="rc"):
 
     Returns
     -------
-    Hrr : ndarray
-        Element of the Hessian matrix for each pixel in the input image.
-    Hrc : ndarray
-        Element of the Hessian matrix for each pixel in the input image.
-    Hcc : ndarray
-        Element of the Hessian matrix for each pixel in the input image.
+    H_elems : list of ndarray
+        Upper-diagonal elements of the hessian matrix for each pixel in the
+        input image. In 2D, this will be a three element list containing [Hrr,
+        Hrc, Hcc]. In nD, the list will contain ``(n**2 + n) / 2`` arrays.
 
     Examples
     --------
@@ -188,12 +198,13 @@ def hessian_matrix(image, sigma=1, mode="constant", cval=0, order="rc"):
            [ 0., -1.,  0.,  1.,  0.],
            [ 0.,  0.,  0.,  0.,  0.]])
     """
+    from ..filters import gaussian  # avoid circular import
 
     image = img_as_float(image)
+    float_dtype = _supported_float_type(image.dtype)
+    image = image.astype(float_dtype, copy=False)
 
-    gaussian_filtered = ndi.gaussian_filter(
-        image, sigma=sigma, mode=mode, cval=cval
-    )
+    gaussian_filtered = gaussian(image, sigma=sigma, mode=mode, cval=cval)
 
     gradients = cp.gradient(gaussian_filtered)
     axes = range(image.ndim)
@@ -213,14 +224,14 @@ def hessian_matrix_det(image, sigma=1, approximate=True):
     """Compute the approximate Hessian Determinant over an image.
 
     The 2D approximate method uses box filters over integral images to
-    compute the approximate Hessian Determinant, as described in [1]_.
+    compute the approximate Hessian Determinant.
 
     Parameters
     ----------
-    image : array
-        The image over which to compute Hessian Determinant.
+    image : ndarray
+        The image over which to compute the Hessian Determinant.
     sigma : float, optional
-        Standard deviation used for the Gaussian kernel, used for the Hessian
+        Standard deviation of the Gaussian kernel used for the Hessian
         matrix.
     approximate : bool, optional
         If ``True`` and the image is 2D, use a much faster approximate
@@ -246,6 +257,8 @@ def hessian_matrix_det(image, sigma=1, approximate=True):
     computed the Hessian and took its determinant.
     """
     image = img_as_float(image)
+    float_dtype = _supported_float_type(image.dtype)
+    image = image.astype(float_dtype, copy=False)
     if image.ndim == 2 and approximate:
         raise NotImplementedError("approximate=True case not implemented")
         # integral = integral_image(image)
@@ -324,7 +337,7 @@ def _symmetric_image(S_elems):
         containing the matrix corresponding to each coordinate.
     """
     image = S_elems[0]
-    symmetric_image = cp.zeros(image.shape + (image.ndim, image.ndim))
+    symmetric_image = cp.zeros(image.shape + (image.ndim, image.ndim), dtype=image.dtype)
     for idx, (row, col) in enumerate(
         combinations_with_replacement(range(image.ndim), 2)
     ):
@@ -364,6 +377,9 @@ def structure_tensor_eigenvalues(A_elems):
            [0., 2., 4., 2., 0.],
            [0., 0., 0., 0., 0.]])
 
+    See also
+    --------
+    structure_tensor
     """
     return _symmetric_compute_eigenvalues(A_elems)
 
@@ -467,7 +483,7 @@ def shape_index(image, sigma=1, mode="constant", cval=0):
     single valued measure of local curvature, assuming the image as a 3D plane
     with intensities representing heights.
 
-    It is derived from the eigen values of the Hessian, and its
+    It is derived from the eigenvalues of the Hessian, and its
     value ranges from -1 to 1 (and is undefined (=NaN) in *flat* regions),
     with following ranges representing following shapes:
 
@@ -489,7 +505,7 @@ def shape_index(image, sigma=1, mode="constant", cval=0):
 
     Parameters
     ----------
-    image : ndarray
+    image : (M, N) ndarray
         Input image.
     sigma : float, optional
         Standard deviation used for the Gaussian kernel, which is used for
@@ -529,7 +545,9 @@ def shape_index(image, sigma=1, mode="constant", cval=0):
     H = hessian_matrix(image, sigma=sigma, mode=mode, cval=cval, order="rc")
     l1, l2 = hessian_matrix_eigvals(H)
 
-    return (2.0 / np.pi) * np.arctan((l2 + l1) / (l2 - l1))
+    # don't warn on divide by 0 as occurs in the docstring example
+    with np.errstate(divide='ignore', invalid='ignore'):
+        return (2.0 / np.pi) * np.arctan((l2 + l1) / (l2 - l1))
 
 
 def corner_kitchen_rosenfeld(image, mode="constant", cval=0):
@@ -545,7 +563,7 @@ def corner_kitchen_rosenfeld(image, mode="constant", cval=0):
 
     Parameters
     ----------
-    image : ndarray
+    image : (M, N) ndarray
         Input image.
     mode : {'constant', 'reflect', 'wrap', 'nearest', 'mirror'}, optional
         How to handle values outside the image borders.
@@ -565,9 +583,12 @@ def corner_kitchen_rosenfeld(image, mode="constant", cval=0):
            :DOI:`10.1016/0167-8655(82)90020-4`
     """
 
-    imx, imy = _compute_derivatives(image, mode=mode, cval=cval)
-    imxx, imxy = _compute_derivatives(imx, mode=mode, cval=cval)
-    imyx, imyy = _compute_derivatives(imy, mode=mode, cval=cval)
+    float_dtype = _supported_float_type(image.dtype)
+    image = image.astype(float_dtype, copy=False)
+
+    imy, imx = _compute_derivatives(image, mode=mode, cval=cval)
+    imxy, imxx = _compute_derivatives(imx, mode=mode, cval=cval)
+    imyy, imyx = _compute_derivatives(imy, mode=mode, cval=cval)
 
     # numerator = imxx * imy ** 2 + imyy * imx ** 2 - 2 * imxy * imx * imy
     numerator = imxx * imy
@@ -584,7 +605,7 @@ def corner_kitchen_rosenfeld(image, mode="constant", cval=0):
     denominator = imx * imx
     denominator += imy * imy
 
-    response = cp.zeros_like(image, dtype=np.double)
+    response = cp.zeros_like(image, dtype=float_dtype)
 
     mask = denominator != 0
     response[mask] = numerator[mask] / denominator[mask]
@@ -611,7 +632,7 @@ def corner_harris(image, method="k", k=0.05, eps=1e-6, sigma=1):
 
     Parameters
     ----------
-    image : ndarray
+    image : (M, N) ndarray
         Input image.
     method : {'k', 'eps'}, optional
         Method to compute the response image from the auto-correlation matrix.
@@ -688,7 +709,7 @@ def corner_shi_tomasi(image, sigma=1):
 
     Parameters
     ----------
-    image : ndarray
+    image : (M, N) ndarray
         Input image.
     sigma : float, optional
         Standard deviation used for the Gaussian kernel, which is used as
@@ -776,10 +797,10 @@ def corner_foerstner(image, sigma=1):
 
     References
     ----------
-    .. [1] Förstner, W., & Gülch, E. (1987, June). A fast operator for
-           detection and precise location of distinct points, corners and
-           centres of circular features. In Proc. ISPRS intercommission
-           conference on fast processing of photogrammetric data (pp. 281-305).
+    .. [1] Förstner, W., & Gülch, E. (1987, June). A fast operator for detection and
+           precise location of distinct points, corners and centres of circular
+           features. In Proc. ISPRS intercommission conference on fast processing of
+           photogrammetric data (pp. 281-305).
            https://cseweb.ucsd.edu/classes/sp02/cse252/foerstner/foerstner.pdf
     .. [2] https://en.wikipedia.org/wiki/Corner_detection
 
@@ -819,8 +840,8 @@ def corner_foerstner(image, sigma=1):
     # trace
     traceA = Arr + Acc
 
-    w = cp.zeros_like(image, dtype=np.double)
-    q = cp.zeros_like(image, dtype=np.double)
+    w = cp.zeros_like(image, dtype=detA.dtype)
+    q = cp.zeros_like(w)
 
     mask = traceA != 0
 
@@ -853,7 +874,7 @@ def corner_peaks(
 
     Parameters
     ----------
-    image : ndarray
+    image : (M, N) ndarray
         Input image.
     min_distance : int, optional
         The minimal allowed distance separating peaks.
