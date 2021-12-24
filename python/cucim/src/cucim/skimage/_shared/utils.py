@@ -697,6 +697,38 @@ def _validate_interpolation_order(image_dtype, order):
     return order
 
 
+def _to_np_mode(mode):
+    """Convert padding modes from `ndi.correlate` to `np.pad`."""
+    mode_translation_dict = dict(nearest='edge', reflect='symmetric',
+                                 mirror='reflect')
+    if mode in mode_translation_dict:
+        mode = mode_translation_dict[mode]
+    return mode
+
+
+def _to_ndimage_mode(mode):
+    """Convert from `numpy.pad` mode name to the corresponding ndimage mode."""
+    mode_translation_dict = dict(constant='constant', edge='nearest',
+                                 symmetric='reflect', reflect='mirror',
+                                 wrap='wrap')
+    if mode not in mode_translation_dict:
+        raise ValueError(
+            (f"Unknown mode: '{mode}', or cannot translate mode. The "
+             f"mode should be one of 'constant', 'edge', 'symmetric', "
+             f"'reflect', or 'wrap'. See the documentation of numpy.pad for "
+             f"more info."))
+    return _fix_ndimage_mode(mode_translation_dict[mode])
+
+
+def _fix_ndimage_mode(mode):
+    # SciPy 1.6.0 introduced grid variants of constant and wrap which
+    # have less surprising behavior for images. Use these when available
+    grid_modes = {'constant': 'grid-constant', 'wrap': 'grid-wrap'}
+    if NumpyVersion(scipy.__version__) >= '1.6.0':
+        mode = grid_modes.get(mode, mode)
+    return mode
+
+
 new_float_type = {
     # preserved types
     cp.float32().dtype.char: cp.float32,

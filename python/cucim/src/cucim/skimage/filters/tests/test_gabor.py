@@ -4,6 +4,7 @@ import pytest
 from cupy.testing import assert_array_almost_equal
 from numpy.testing import assert_almost_equal
 
+from cucim.skimage._shared.utils import _supported_float_type
 from cucim.skimage.filters._gabor import _sigma_prefactor, gabor, gabor_kernel
 
 
@@ -30,6 +31,19 @@ def test_gabor_kernel_bandwidth():
 
     kernel = gabor_kernel(0.5, bandwidth=1)
     assert kernel.shape == (9, 9)
+
+
+@pytest.mark.parametrize('dtype', [cp.complex64, cp.complex128])
+def test_gabor_kernel_dtype(dtype):
+    kernel = gabor_kernel(1, bandwidth=1, dtype=dtype)
+    assert kernel.dtype == dtype
+
+
+@pytest.mark.parametrize('dtype', [cp.uint8, cp.float32])
+def test_gabor_kernel_invalid_dtype(dtype):
+    with pytest.raises(ValueError):
+        kernel = gabor_kernel(1, bandwidth=1, dtype=dtype)
+        assert kernel.dtype == dtype
 
 
 def test_sigma_prefactor():
@@ -82,3 +96,17 @@ def test_gabor(dtype):
     assert responses[1, 1] > responses[0, 1]
     assert responses[0, 0] > responses[1, 0]
     assert responses[1, 1] > responses[1, 0]
+
+
+@pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])
+def test_gabor_float_dtype(dtype):
+    image = cp.ones((16, 16), dtype=dtype)
+    y = gabor(image, 0.3)
+    assert all(arr.dtype == _supported_float_type(image.dtype) for arr in y)
+
+
+@pytest.mark.parametrize('dtype', [cp.uint8, cp.int32, cp.intp])
+def test_gabor_int_dtype(dtype):
+    image = cp.full((16, 16), 128, dtype=dtype)
+    y = gabor(image, 0.3)
+    assert all(arr.dtype == dtype for arr in y)
