@@ -7,6 +7,7 @@ from cupyx.scipy import ndimage as ndi
 from numpy.testing import assert_almost_equal
 from skimage import draw
 
+from skimage._shared.utils import _supported_float_type
 from cucim.skimage.measure import (centroid, inertia_tensor,
                                    inertia_tensor_eigvals, moments,
                                    moments_central, moments_coords,
@@ -53,37 +54,48 @@ def test_moments_central(dtype):
     assert_array_equal(mu, mu2)
 
 
-@pytest.mark.parametrize('dtype', [cp.float32, cp.float64])
-def test_moments_coords(dtype):
-    image = cp.zeros((20, 20), dtype=dtype)
+def test_moments_coords():
+    image = cp.zeros((20, 20), dtype=cp.double)
     image[13:17, 13:17] = 1
     mu_image = moments(image)
-    assert mu_image.dtype == dtype
+
+    coords = cp.array([[r, c] for r in range(13, 17)
+                       for c in range(13, 17)], dtype=cp.double)
+    mu_coords = moments_coords(coords)
+    assert_almost_equal(mu_coords, mu_image)
+
+
+@pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])
+def test_moments_coords_dtype(dtype):
+    image = cp.zeros((20, 20), dtype=dtype)
+    image[13:17, 13:17] = 1
+
+    expected_dtype = _supported_float_type(dtype)
+    mu_image = moments(image)
+    assert mu_image.dtype == expected_dtype
 
     coords = cp.asarray(
         np.array([[r, c] for r in range(13, 17)
                   for c in range(13, 17)], dtype=dtype)
     )
     mu_coords = moments_coords(coords)
-    assert mu_coords.dtype == dtype
+    assert mu_coords.dtype == expected_dtype
+
     assert_array_almost_equal(mu_coords, mu_image)
 
 
-@pytest.mark.parametrize('dtype', [cp.float32, cp.float64])
-def test_moments_central_coords(dtype):
-    image = cp.zeros((20, 20), dtype=dtype)
+def test_moments_central_coords():
+    image = cp.zeros((20, 20), dtype=float)
     image[13:17, 13:17] = 1
     mu_image = moments_central(image, (14.5, 14.5))
-    assert mu_image.dtype == dtype
 
     coords = cp.asarray(
         np.array(
             [[r, c] for r in range(13, 17) for c in range(13, 17)],
-            dtype=dtype,
+            dtype=float,
         )
     )
     mu_coords = moments_coords_central(coords, (14.5, 14.5))
-    assert mu_coords.dtype == dtype
     assert_array_almost_equal(mu_coords, mu_image)
 
     # ensure that center is being calculated normally
@@ -91,29 +103,26 @@ def test_moments_central_coords(dtype):
     assert_array_almost_equal(mu_coords_calc_centroid, mu_coords)
 
     # shift image by dx=3 dy=3
-    image = cp.zeros((20, 20), dtype=dtype)
+    image = cp.zeros((20, 20), dtype=float)
     image[16:20, 16:20] = 1
     mu_image = moments_central(image, (14.5, 14.5))
-    assert mu_image.dtype == dtype
 
     coords = cp.asarray(
         np.array([[r, c] for r in range(16, 20)
-                  for c in range(16, 20)], dtype=dtype)
+                  for c in range(16, 20)], dtype=float)
     )
     mu_coords = moments_coords_central(coords, (14.5, 14.5))
-    assert mu_coords.dtype == dtype
-    decimal = 3 if dtype == np.float32 else 6
+    decimal = 6
     assert_array_almost_equal(mu_coords, mu_image, decimal=decimal)
 
 
-@pytest.mark.parametrize('dtype', [cp.float32, cp.float64])
-def test_moments_normalized(dtype):
-    image = cp.zeros((20, 20), dtype=dtype)
+def test_moments_normalized():
+    image = cp.zeros((20, 20), dtype=float)
     image[13:17, 13:17] = 1
     mu = moments_central(image, (14.5, 14.5))
     nu = moments_normalized(mu)
     # shift image by dx=-3, dy=-3 and scale by 0.5
-    image2 = cp.zeros((20, 20), dtype=dtype)
+    image2 = cp.zeros((20, 20), dtype=float)
     image2[11:13, 11:13] = 1
     mu2 = moments_central(image2, (11.5, 11.5))
     nu2 = moments_normalized(mu2)
@@ -140,48 +149,69 @@ def test_moments_normalized_invalid():
         moments_normalized(cp.zeros((3, 3)), 4)
 
 
-@pytest.mark.parametrize('dtype', [cp.float32, cp.float64])
-def test_moments_hu(dtype):
+def test_moments_hu():
     moments_hu = pytest.importorskip("skimage.measure.moments_hu")
 
-    image = cp.zeros((20, 20), dtype=dtype)
+    image = cp.zeros((20, 20), dtype=float)
     image[13:15, 13:17] = 1
     mu = moments_central(image, (13.5, 14.5))
     nu = moments_normalized(mu)
     hu = moments_hu(nu)
-    assert hu.dtype == image.dtype
     # shift image by dx=2, dy=3, scale by 0.5 and rotate by 90deg
-    image2 = cp.zeros((20, 20), dtype=dtype)
+    image2 = cp.zeros((20, 20), dtype=float)
     image2[11, 11:13] = 1
     image2 = image2.T
     mu2 = moments_central(image2, (11.5, 11))
     nu2 = moments_normalized(mu2)
     hu2 = moments_hu(nu2)
-    assert hu2.dtype == image2.dtype
     # central moments must be translation and scale invariant
     assert_array_almost_equal(hu, hu2, decimal=1)
 
 
-@pytest.mark.parametrize('dtype', [cp.float32, cp.float64])
+@pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])
+def test_moments_dtype(dtype):
+    image = cp.zeros((20, 20), dtype=dtype)
+    image[13:15, 13:17] = 1
+
+    expected_dtype = _supported_float_type(dtype)
+    mu = moments_central(image, (13.5, 14.5))
+    assert mu.dtype == expected_dtype
+
+    nu = moments_normalized(mu)
+    assert nu.dtype == expected_dtype
+
+    hu = moments_hu(nu)
+    assert hu.dtype == expected_dtype
+
+
+@pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])
 def test_centroid(dtype):
     image = cp.zeros((20, 20), dtype=dtype)
     image[14, 14:16] = 1
     image[15, 14:16] = 1 / 3
     image_centroid = centroid(image)
-    assert image_centroid.dtype == image.dtype
-    assert_allclose(image_centroid, (14.25, 14.5))
+    if dtype == cp.float16:
+        rtol = 1e-3
+    elif dtype == cp.float32:
+        rtol = 1e-5
+    else:
+        rtol = 1e-7
+    assert_allclose(image_centroid, (14.25, 14.5), rtol=rtol)
 
 
-@pytest.mark.parametrize('dtype', [cp.float32, cp.float64])
+@pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])
 def test_inertia_tensor_2d(dtype):
     image = cp.zeros((40, 40), dtype=dtype)
     image[15:25, 5:35] = 1  # big horizontal rectangle (aligned with axis 1)
+    expected_dtype = _supported_float_type(image.dtype)
+
     T = inertia_tensor(image)
-    assert T.dtype == image.dtype
+    assert T.dtype == expected_dtype
     assert T[0, 0] > T[1, 1]
     cp.testing.assert_allclose(T[0, 1], 0)
     v0, v1 = inertia_tensor_eigvals(image, T=T)
-    assert v0.dtype == image.dtype
+    assert v0.dtype == expected_dtype
+    assert v1.dtype == expected_dtype
     cp.testing.assert_allclose(cp.sqrt(v0 / v1), 3, rtol=0.01, atol=0.05)
 
 
