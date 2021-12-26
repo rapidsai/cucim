@@ -3,7 +3,7 @@ import cupy as cp
 from ..util import view_as_blocks
 
 
-def block_reduce(image, block_size, func=cp.sum, cval=0, func_kwargs=None):
+def block_reduce(image, block_size=2, func=cp.sum, cval=0, func_kwargs=None):
     """Downsample image by applying function `func` to local blocks.
 
     This function is useful for max and mean pooling, for example.
@@ -12,7 +12,7 @@ def block_reduce(image, block_size, func=cp.sum, cval=0, func_kwargs=None):
     ----------
     image : ndarray
         N-dimensional input image.
-    block_size : array_like
+    block_size : array_like or int
         Array containing down-sampling integer factor along each axis.
     func : callable
         Function object which is used to calculate the return value for each
@@ -61,9 +61,11 @@ def block_reduce(image, block_size, func=cp.sum, cval=0, func_kwargs=None):
             [35]]])
     """
 
-    if len(block_size) != image.ndim:
-        raise ValueError("`block_size` must have the same length "
-                         "as `image.shape`.")
+    if np.isscalar(block_size):
+        block_size = (block_size,) * image.ndim
+    elif len(block_size) != image.ndim:
+        raise ValueError("`block_size` must be a scalar or have "
+                         "the same length as `image.shape`")
 
     if func_kwargs is None:
         func_kwargs = {}
