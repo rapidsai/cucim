@@ -10,8 +10,8 @@ import cupy as cp
 import numpy as np
 from cupyx.scipy import ndimage as ndi
 
-from cucim.skimage.transform import warp
-
+from .._shared.utils import _supported_float_type
+from ..transform import warp
 from ._optical_flow_utils import coarse_to_fine, get_warp_points
 
 
@@ -79,7 +79,7 @@ def _tvl1(reference_image, moving_image, flow0, attachment, tightness,
                                              [1] + reference_image.ndim * [3])
 
         image1_warp = warp(moving_image, get_warp_points(grid, flow_current),
-                           mode='nearest')
+                           mode='edge')
         grad = cp.stack(cp.gradient(image1_warp))
         NI = (grad * grad).sum(0)
         NI[NI == 0] = 1
@@ -144,7 +144,7 @@ def _tvl1(reference_image, moving_image, flow0, attachment, tightness,
 def optical_flow_tvl1(reference_image, moving_image,
                       *,
                       attachment=15, tightness=0.3, num_warp=5, num_iter=10,
-                      tol=1e-4, prefilter=False, dtype=np.float32):
+                      tol=1e-4, prefilter=False, dtype=cp.float32):
     r"""Coarse to fine optical flow estimator.
 
     The TV-L1 solver is applied at each level of the image
@@ -223,6 +223,10 @@ def optical_flow_tvl1(reference_image, moving_image,
                      tightness=tightness, num_warp=num_warp, num_iter=num_iter,
                      tol=tol, prefilter=prefilter)
 
+    if cp.dtype(dtype) != _supported_float_type(dtype):
+        msg = f"dtype={dtype} is not supported. Try 'float32' or 'float64.'"
+        raise ValueError(msg)
+
     return coarse_to_fine(reference_image, moving_image, solver, dtype=dtype)
 
 
@@ -255,13 +259,15 @@ def _ilk(reference_image, moving_image, flow0, radius, num_warp, gaussian,
         The estimated optical flow components for each axis.
 
     """
+    from cucim.skimage.filters import gaussian as gaussian_filter
+
     dtype = reference_image.dtype
     ndim = reference_image.ndim
     size = 2 * radius + 1
 
     if gaussian:
         sigma = ndim * (size / 4,)
-        filter_func = partial(ndi.gaussian_filter, sigma=sigma, mode='mirror')
+        filter_func = partial(gaussian_filter, sigma=sigma, mode='mirror')
     else:
         filter_func = partial(ndi.uniform_filter, size=ndim * (size,),
                               mode='mirror')
@@ -282,7 +288,7 @@ def _ilk(reference_image, moving_image, flow0, radius, num_warp, gaussian,
             flow = ndi.median_filter(flow, (1,) + ndim * (3,))
 
         moving_image_warp = warp(moving_image, get_warp_points(grid, flow),
-                                 mode='nearest')
+                                 mode='edge')
         grad = cp.stack(cp.gradient(moving_image_warp), axis=0)
         error_image = ((grad * flow).sum(axis=0)
                        + reference_image - moving_image_warp)
@@ -307,7 +313,7 @@ def _ilk(reference_image, moving_image, flow0, radius, num_warp, gaussian,
 
 def optical_flow_ilk(reference_image, moving_image, *,
                      radius=7, num_warp=10, gaussian=False,
-                     prefilter=False, dtype=np.float32):
+                     prefilter=False, dtype=cp.float32):
     """Coarse to fine optical flow estimator.
 
     The iterative Lucas-Kanade (iLK) solver is applied at each level
@@ -358,9 +364,26 @@ def optical_flow_ilk(reference_image, moving_image, *,
        F. (2016). Massively parallel Lucas Kanade optical flow for
        real-time video processing applications. Journal of Real-Time
        Image Processing, 11(4), 713-730. :DOI:`10.1007/s11554-014-0423-0`
+
+    Examples
+    --------
+    >>> import cupy as cp
+    >>> from skimage.data import stereo_motorcycle
+    >>> from cucim.skimage.color import rgb2gray
+    >>> from cucim.skimage.registration import optical_flow_ilk
+    >>> reference_image, moving_image, disp = map(cp.array, stereo_motorcycle())
+    >>> # --- Convert the images to gray level: color is not supported.
+    >>> reference_image = rgb2gray(reference_image)
+    >>> moving_image = rgb2gray(moving_image)
+    >>> flow = optical_flow_ilk(moving_image, reference_image)
+
     """
 
     solver = partial(_ilk, radius=radius, num_warp=num_warp, gaussian=gaussian,
                      prefilter=prefilter)
+
+    if cp.dtype(dtype) != _supported_float_type(dtype):
+        msg = f"dtype={dtype} is not supported. Try 'float32' or 'float64.'"
+        raise ValueError(msg)
 
     return coarse_to_fine(reference_image, moving_image, solver, dtype=dtype)

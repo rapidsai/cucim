@@ -1,13 +1,14 @@
 import cupy as cp
 import numpy as np
 import pytest
-from cupyx.scipy.ndimage import fourier_shift
+from cupyx.scipy.ndimage import fourier_shift, shift as real_shift
 from numpy.testing import assert_almost_equal
-from skimage.data import camera, stereo_motorcycle
+from skimage.data import brain, camera, stereo_motorcycle
 from skimage.io import imread
 
 from cucim.skimage._shared.fft import fftmodule as fft
 from cucim.skimage._shared.testing import expected_warnings, fetch
+from cucim.skimage._shared.utils import _supported_float_type
 from cucim.skimage.feature import masked_register_translation as _deprecated
 from cucim.skimage.registration._masked_phase_cross_correlation import \
     _masked_phase_cross_correlation as masked_register_translation
@@ -15,23 +16,6 @@ from cucim.skimage.registration._masked_phase_cross_correlation import \
     cross_correlate_masked
 from cucim.skimage.registration._phase_cross_correlation import \
     phase_cross_correlation
-
-
-def test_detrecated_masked_register_translation():
-    reference_image, moving_image, _ = stereo_motorcycle()
-    ref_mask = np.random.choice(
-        [True, False], reference_image.shape, p=[3 / 4, 1 / 4]
-    )
-    ref_mask = cp.asarray(ref_mask)
-    reference_image = cp.asarray(reference_image)
-    moving_image = cp.asarray(moving_image)
-    with expected_warnings(["Function ``masked_register_translation``"]):
-        cp.testing.assert_array_equal(
-            _deprecated(reference_image, moving_image, ref_mask),
-            phase_cross_correlation(
-                reference_image, moving_image, reference_mask=ref_mask
-            ),
-        )
 
 
 def test_masked_registration_vs_phase_cross_correlation():
@@ -80,6 +64,25 @@ def test_masked_registration_random_masks():
     cp.testing.assert_array_equal(measured_shift, -cp.asarray(shift))
 
 
+def test_masked_registration_3d_contiguous_mask():
+    """masked_register_translation should be able to register translations
+    between volumes with contiguous masks."""
+    ref_vol = cp.array(brain()[:, ::2, ::2])
+
+    offset = (1, -5, 10)
+
+    # create square mask
+    ref_mask = cp.zeros_like(ref_vol, dtype=bool)
+    ref_mask[:-2, 75:100, 75:100] = True
+    ref_shifted = real_shift(ref_vol, offset)
+
+    measured_offset = masked_register_translation(
+        ref_vol, ref_shifted, reference_mask=ref_mask, moving_mask=ref_mask
+    )
+
+    cp.testing.assert_array_equal(offset, -cp.array(measured_offset))
+
+
 def test_masked_registration_random_masks_non_equal_sizes():
     """masked_register_translation should be able to register
     translations between images that are not the same size even
@@ -106,8 +109,8 @@ def test_masked_registration_random_masks_non_equal_sizes():
     measured_shift = masked_register_translation(
         reference_image,
         shifted,
-        reference_mask=cp.ones(ref_mask.shape, dtype=ref_mask.dtype),
-        moving_mask=cp.ones(shifted_mask.shape, dtype=shifted_mask.dtype))
+        reference_mask=cp.ones_like(ref_mask),
+        moving_mask=cp.ones_like(shifted_mask))
     cp.testing.assert_array_equal(measured_shift, -cp.asarray(shift))
 
 
@@ -142,7 +145,7 @@ def test_masked_registration_padfield_data():
         np.testing.assert_array_equal((shift_x, shift_y), (-xi, yi))
 
 
-@pytest.mark.parametrize('dtype', [cp.float32, cp.float64])
+@pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])
 def test_cross_correlate_masked_output_shape(dtype):
     """Masked normalized cross-correlation should return a shape
     of N + M + 1 for each transform axis."""
@@ -157,16 +160,18 @@ def test_cross_correlate_masked_output_shape(dtype):
     m1 = cp.ones_like(arr1)
     m2 = cp.ones_like(arr2)
 
+    float_dtype = _supported_float_type(dtype)
+
     full_xcorr = cross_correlate_masked(
         arr1, arr2, m1, m2, axes=(0, 1, 2), mode='full')
     assert full_xcorr.dtype.kind != "c"  # grlee77: output should be real
     assert full_xcorr.shape == expected_full_shape
-    assert full_xcorr.dtype == dtype
+    assert full_xcorr.dtype == float_dtype
 
     same_xcorr = cross_correlate_masked(
         arr1, arr2, m1, m2, axes=(0, 1, 2), mode='same')
     assert same_xcorr.shape == expected_same_shape
-    assert same_xcorr.dtype == dtype
+    assert same_xcorr.dtype == float_dtype
 
 
 def test_cross_correlate_masked_test_against_mismatched_dimensions():
