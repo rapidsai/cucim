@@ -2,8 +2,8 @@ import functools
 
 import cupy as cp
 
-from cucim.skimage._shared.utils import check_shape_equality, warn
-from cucim.skimage.util.dtype import dtype_range
+from ..util.dtype import dtype_range
+from .._shared.utils import _supported_float_type, check_shape_equality, warn
 
 __all__ = ['mean_squared_error',
            'normalized_root_mse',
@@ -14,9 +14,7 @@ def _as_floats(image0, image1):
     """
     Promote im1, im2 to nearest appropriate floating point precision.
     """
-    float_type = functools.reduce(
-        cp.promote_types, [image0.dtype, image1.dtype, cp.float32]
-    )
+    float_type = _supported_float_type([image0.dtype, image1.dtype])
     image0 = image0.astype(float_type, copy=False)
     image1 = image1.astype(float_type, copy=False)
     return image0, image1
