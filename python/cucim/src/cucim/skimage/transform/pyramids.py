@@ -1,5 +1,4 @@
 import math
-from functools import reduce
 
 import cupy as cp
 from cupyx.scipy import ndimage as ndi
@@ -9,15 +8,16 @@ from .._shared.utils import convert_to_float
 from ..transform import resize
 
 
-def _smooth(image, sigma, mode, cval, multichannel=None):
+def _smooth(image, sigma, mode, cval, channel_axis):
     """Return image with each channel smoothed by the Gaussian filter."""
     from ..filters import gaussian  # avoid circular import
     smoothed = cp.empty_like(image)
 
     # apply Gaussian filter to all channels independently
-    if multichannel:
-        sigma = (sigma, ) * (image.ndim - 1) + (0, )
-        channel_axis = -1
+    if channel_axis is not None:
+        # can rely on gaussian to insert a 0 entry at channel_axis
+        channel_axis = channel_axis % image.ndim
+        sigma = (sigma,) * (image.ndim - 1)
     else:
         channel_axis = None
     gaussian(image, sigma, output=smoothed, mode=mode, cval=cval,
@@ -30,7 +30,6 @@ def _check_factor(factor):
         raise ValueError('scale factor must be greater than 1')
 
 
-@utils.channel_as_last_axis()
 @utils.deprecate_multichannel_kwarg(multichannel_position=6)
 def pyramid_reduce(image, downscale=2, sigma=None, order=1,
                    mode='reflect', cval=0, multichannel=False,
@@ -79,26 +78,28 @@ def pyramid_reduce(image, downscale=2, sigma=None, order=1,
 
     """
     _check_factor(downscale)
-    multichannel = channel_axis is not None
 
     image = convert_to_float(image, preserve_range)
-
-    out_shape = tuple([math.ceil(d / float(downscale)) for d in image.shape])
-    if multichannel:
-        out_shape = out_shape[:-1]
+    if channel_axis is not None:
+        channel_axis = channel_axis % image.ndim
+        out_shape = tuple(
+            math.ceil(d / float(downscale)) if ax != channel_axis else d
+            for ax, d in enumerate(image.shape)
+        )
+    else:
+        out_shape = tuple(math.ceil(d / float(downscale)) for d in image.shape)
 
     if sigma is None:
         # automatically determine sigma which covers > 99% of distribution
         sigma = 2 * downscale / 6.0
 
-    smoothed = _smooth(image, sigma, mode, cval, multichannel)
+    smoothed = _smooth(image, sigma, mode, cval, channel_axis)
     out = resize(smoothed, out_shape, order=order, mode=mode, cval=cval,
                  anti_aliasing=False)
 
     return out
 
 
-@utils.channel_as_last_axis()
 @utils.deprecate_multichannel_kwarg(multichannel_position=6)
 def pyramid_expand(image, upscale=2, sigma=None, order=1,
                    mode='reflect', cval=0, multichannel=False,
@@ -147,13 +148,15 @@ def pyramid_expand(image, upscale=2, sigma=None, order=1,
 
     """
     _check_factor(upscale)
-    multichannel = channel_axis is not None
-
     image = convert_to_float(image, preserve_range)
-
-    out_shape = tuple([math.ceil(upscale * d) for d in image.shape])
-    if multichannel:
-        out_shape = out_shape[:-1]
+    if channel_axis is not None:
+        channel_axis = channel_axis % image.ndim
+        out_shape = tuple(
+            math.ceil(upscale * d) if ax != channel_axis else d
+            for ax, d in enumerate(image.shape)
+        )
+    else:
+        out_shape = tuple(math.ceil(upscale * d) for d in image.shape)
 
     if sigma is None:
         # automatically determine sigma which covers > 99% of distribution
@@ -161,12 +164,11 @@ def pyramid_expand(image, upscale=2, sigma=None, order=1,
 
     resized = resize(image, out_shape, order=order,
                      mode=mode, cval=cval, anti_aliasing=False)
-    out = _smooth(resized, sigma, mode, cval, multichannel)
+    out = _smooth(resized, sigma, mode, cval, channel_axis)
 
     return out
 
 
-@utils.channel_as_last_axis()
 @utils.deprecate_multichannel_kwarg(multichannel_position=7)
 def pyramid_gaussian(image, max_layer=-1, downscale=2, sigma=None, order=1,
                      mode='reflect', cval=0, multichannel=False,
@@ -255,7 +257,6 @@ def pyramid_gaussian(image, max_layer=-1, downscale=2, sigma=None, order=1,
         yield layer_image
 
 
-@utils.channel_as_last_axis()
 @utils.deprecate_multichannel_kwarg(multichannel_position=7)
 def pyramid_laplacian(image, max_layer=-1, downscale=2, sigma=None, order=1,
                       mode='reflect', cval=0, multichannel=False,
@@ -320,7 +321,6 @@ def pyramid_laplacian(image, max_layer=-1, downscale=2, sigma=None, order=1,
 
     """  # noqa
     _check_factor(downscale)
-    multichannel = channel_axis is not None
 
     # cast to float for consistent data type in pyramid
     image = convert_to_float(image, preserve_range)
@@ -331,26 +331,37 @@ def pyramid_laplacian(image, max_layer=-1, downscale=2, sigma=None, order=1,
 
     current_shape = image.shape
 
-    smoothed_image = _smooth(image, sigma, mode, cval, multichannel)
+    smoothed_image = _smooth(image, sigma, mode, cval, channel_axis)
     yield image - smoothed_image
+
+    if channel_axis is not None:
+        channel_axis = channel_axis % image.ndim
+        shape_without_channels = list(current_shape)
+        shape_without_channels.pop(channel_axis)
+        shape_without_channels = tuple(shape_without_channels)
+    else:
+        shape_without_channels = current_shape
 
     # build downsampled images until max_layer is reached or downscale process
     # does not change image size
     if max_layer == -1:
-        max_layer = math.ceil(math.log(reduce(max, current_shape), downscale))
+        max_layer = math.ceil(math.log(max(shape_without_channels), downscale))
 
     for layer in range(max_layer):
 
-        out_shape = tuple(
-            [math.ceil(d / float(downscale)) for d in current_shape])
-
-        if multichannel:
-            out_shape = out_shape[:-1]
+        if channel_axis is not None:
+            out_shape = tuple(
+                math.ceil(d / float(downscale)) if ax != channel_axis else d
+                for ax, d in enumerate(current_shape)
+            )
+        else:
+            out_shape = tuple(math.ceil(d / float(downscale))
+                              for d in current_shape)
 
         resized_image = resize(smoothed_image, out_shape, order=order,
                                mode=mode, cval=cval, anti_aliasing=False)
         smoothed_image = _smooth(resized_image, sigma, mode, cval,
-                                 multichannel)
-        current_shape = cp.asarray(resized_image.shape)
+                                 channel_axis)
+        current_shape = resized_image.shape
 
         yield resized_image - smoothed_image

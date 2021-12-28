@@ -28,8 +28,9 @@ def test_pyramid_reduce_rgb_deprecated_multichannel():
 
 @pytest.mark.parametrize('channel_axis', [0, 1, -1])
 def test_pyramid_reduce_rgb(channel_axis):
+    image = cp.array(data.astronaut())
     rows, cols, dim = image.shape
-    image_ = cp.moveaxis(image, -1, channel_axis)
+    image_ = cp.moveaxis(image, source=-1, destination=channel_axis)
     out_ = pyramids.pyramid_reduce(image_, downscale=2,
                                    channel_axis=channel_axis)
     out = cp.moveaxis(out_, channel_axis, -1)
@@ -43,7 +44,7 @@ def test_pyramid_reduce_gray():
     assert_array_equal(out1.shape, (rows / 2, cols / 2))
     assert_almost_equal(float(out1.ptp()), 1.0, decimal=2)
     out2 = pyramids.pyramid_reduce(image_gray, downscale=2,
-                                   preserve_range=True)
+                                   channel_axis=None, preserve_range=True)
     assert_almost_equal(float(out2.ptp()) / float(image_gray.ptp()), 1.0,
                         decimal=2)
 
@@ -56,10 +57,16 @@ def test_pyramid_reduce_nd():
         assert_array_equal(out.shape, expected_shape)
 
 
-def test_pyramid_expand_rgb():
+@pytest.mark.parametrize('channel_axis', [0, 1, 2, -1, -2, -3])
+def test_pyramid_expand_rgb(channel_axis):
+    image = cp.array(data.astronaut())
     rows, cols, dim = image.shape
-    out = pyramids.pyramid_expand(image, upscale=2, channel_axis=-1)
-    assert_array_equal(out.shape, (rows * 2, cols * 2, dim))
+    image = cp.moveaxis(image, source=-1, destination=channel_axis)
+    out = pyramids.pyramid_expand(image, upscale=2,
+                                   channel_axis=channel_axis)
+    expected_shape = [rows * 2, cols * 2]
+    expected_shape.insert(channel_axis % image.ndim, dim)
+    assert_array_equal(out.shape, expected_shape)
 
 
 def test_pyramid_expand_rgb_deprecated_multichannel():
@@ -89,13 +96,17 @@ def test_pyramid_expand_nd():
         assert_array_equal(out.shape, expected_shape)
 
 
-def test_build_gaussian_pyramid_rgb():
+@pytest.mark.parametrize('channel_axis', [0, 1, 2, -1, -2, -3])
+def test_build_gaussian_pyramid_rgb(channel_axis):
+    image = cp.array(data.astronaut())
     rows, cols, dim = image.shape
+    image = cp.moveaxis(image, source=-1, destination=channel_axis)
     pyramid = pyramids.pyramid_gaussian(image, downscale=2,
-                                        channel_axis=-1)
+                                        channel_axis=channel_axis)
     for layer, out in enumerate(pyramid):
-        layer_shape = (rows / 2 ** layer, cols / 2 ** layer, dim)
-        assert_array_equal(out.shape, layer_shape)
+        layer_shape = [rows / 2 ** layer, cols / 2 ** layer]
+        layer_shape.insert(channel_axis % image.ndim, dim)
+        assert out.shape == tuple(layer_shape)
 
 
 def test_build_gaussian_pyramid_rgb_deprecated_multichannel():
@@ -136,13 +147,17 @@ def test_build_gaussian_pyramid_nd():
             assert_array_equal(out.shape, layer_shape)
 
 
-def test_build_laplacian_pyramid_rgb():
+@pytest.mark.parametrize('channel_axis', [0, 1, 2, -1, -2, -3])
+def test_build_laplacian_pyramid_rgb(channel_axis):
+    image = cp.array(data.astronaut())
     rows, cols, dim = image.shape
+    image = cp.moveaxis(image, source=-1, destination=channel_axis)
     pyramid = pyramids.pyramid_laplacian(image, downscale=2,
-                                         channel_axis=-1)
+                                         channel_axis=channel_axis)
     for layer, out in enumerate(pyramid):
-        layer_shape = (rows / 2 ** layer, cols / 2 ** layer, dim)
-        assert_array_equal(out.shape, layer_shape)
+        layer_shape = [rows / 2 ** layer, cols / 2 ** layer]
+        layer_shape.insert(channel_axis % image.ndim, dim)
+        assert out.shape == tuple(layer_shape)
 
 
 def test_build_laplacian_pyramid_rgb_deprecated_multichannel():
@@ -174,22 +189,42 @@ def test_build_laplacian_pyramid_nd():
             assert_array_equal(out.shape, layer_shape)
 
 
-def test_laplacian_pyramid_max_layers():
+@pytest.mark.parametrize('channel_axis', [0, 1, 2, -1, -2, -3])
+def test_laplacian_pyramid_max_layers(channel_axis):
     for downscale in [2, 3, 5, 7]:
-        img = cp.random.randn(32, 8)
+        if channel_axis is None:
+            shape = (32, 8)
+            shape_without_channels = shape
+        else:
+            shape_without_channels = (32, 8)
+            ndim = len(shape_without_channels) + 1
+            n_channels = 5
+            shape = list(shape_without_channels)
+            shape.insert(channel_axis % ndim, n_channels)
+            shape = tuple(shape)
+        img = cp.ones(shape)
         pyramid = pyramids.pyramid_laplacian(img, downscale=downscale,
-                                             channel_axis=None)
-        max_layer = int(np.ceil(math.log(np.max(img.shape), downscale)))
+                                             channel_axis=channel_axis)
+        max_layer = math.ceil(math.log(max(shape_without_channels), downscale))
         for layer, out in enumerate(pyramid):
+
+            if channel_axis is None:
+                out_shape_without_channels = out.shape
+            else:
+                assert out.shape[channel_axis] == n_channels
+                out_shape_without_channels = list(out.shape)
+                out_shape_without_channels.pop(channel_axis)
+                out_shape_without_channels = tuple(out_shape_without_channels)
+
             if layer < max_layer:
                 # should not reach all axes as size 1 prior to final level
-                assert np.max(out.shape) > 1
+                assert max(out_shape_without_channels) > 1
 
         # total number of images is max_layer + 1
         assert max_layer == layer
 
         # final layer should be size 1 on all axes
-        assert out.shape == (1, 1)
+        assert out_shape_without_channels == (1, 1)
 
 
 def test_check_factor():
