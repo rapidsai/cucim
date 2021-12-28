@@ -11,7 +11,8 @@ from skimage._shared.utils import _supported_float_type
 from cucim.skimage.measure import (centroid, inertia_tensor,
                                    inertia_tensor_eigvals, moments,
                                    moments_central, moments_coords,
-                                   moments_coords_central, moments_normalized)
+                                   moments_coords_central, moments_hu,
+                                   moments_normalized)
 
 
 @pytest.mark.parametrize('dtype', [cp.float32, cp.float64])
@@ -62,7 +63,7 @@ def test_moments_coords():
     coords = cp.array([[r, c] for r in range(13, 17)
                        for c in range(13, 17)], dtype=cp.double)
     mu_coords = moments_coords(coords)
-    assert_almost_equal(mu_coords, mu_image)
+    assert_array_almost_equal(mu_coords, mu_image)
 
 
 @pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])
@@ -150,8 +151,6 @@ def test_moments_normalized_invalid():
 
 
 def test_moments_hu():
-    moments_hu = pytest.importorskip("skimage.measure.moments_hu")
-
     image = cp.zeros((20, 20), dtype=float)
     image[13:15, 13:17] = 1
     mu = moments_central(image, (13.5, 14.5))
@@ -170,7 +169,6 @@ def test_moments_hu():
 
 @pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])
 def test_moments_dtype(dtype):
-    moments_hu = pytest.importorskip("skimage.measure.moments_hu")
     image = cp.zeros((20, 20), dtype=dtype)
     image[13:15, 13:17] = 1
 
