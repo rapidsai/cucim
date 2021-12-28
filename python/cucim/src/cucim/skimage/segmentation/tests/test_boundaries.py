@@ -1,7 +1,9 @@
 import cupy as cp
 import numpy as np
+import pytest
 from cupy.testing import assert_allclose, assert_array_equal
 
+from skimage._shared.utils import _supported_float_type
 from cucim.skimage.segmentation import find_boundaries, mark_boundaries
 
 white = (1, 1, 1)
@@ -42,8 +44,11 @@ def test_find_boundaries_bool():
     assert_array_equal(result, ref)
 
 
-def test_mark_boundaries():
-    image = cp.zeros((10, 10))
+@pytest.mark.parametrize(
+    'dtype', [cp.uint8, cp.float16, cp.float32, cp.float64]
+)
+def test_mark_boundaries(dtype):
+    image = cp.zeros((10, 10), dtype=dtype)
     label_image = cp.zeros((10, 10), dtype=cp.uint8)
     label_image[2:7, 2:7] = 1
 
@@ -60,6 +65,7 @@ def test_mark_boundaries():
                     [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]])
     # fmt: on
     marked = mark_boundaries(image, label_image, color=white, mode='thick')
+    assert marked.dtype == _supported_float_type(dtype)
     result = cp.mean(marked, axis=-1)
     assert_array_equal(result, ref)
     # fmt: off
@@ -101,20 +107,22 @@ def test_mark_boundaries_bool():
     assert_array_equal(result, ref)
 
 
-@cp.testing.with_requires('cupy>=9.0.0b2')
-def test_mark_boundaries_subpixel():
+@pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])
+def test_mark_boundaries_subpixel(dtype):
     # fmt: off
     labels = cp.array([[0, 0, 0, 0],
                        [0, 0, 5, 0],
                        [0, 1, 5, 0],
                        [0, 0, 5, 0],
-                       [0, 0, 0, 0]], dtype=np.uint8)
+                       [0, 0, 0, 0]], dtype=cp.uint8)
     np.random.seed(0)
     # fmt: on
     # Note: use np.random to have same seed as NumPy
     # Note: use np.round until cp.around is fixed upstream
     image = cp.asarray(np.round(np.random.rand(*labels.shape), 2))
+    image = image.astype(dtype, copy=False)
     marked = mark_boundaries(image, labels, color=white, mode='subpixel')
+    assert marked.dtype == _supported_float_type(dtype)
     marked_proj = cp.asarray(cp.around(cp.mean(marked, axis=-1), 2))
 
     # fmt: off
