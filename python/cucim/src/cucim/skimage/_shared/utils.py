@@ -7,7 +7,6 @@ from collections.abc import Iterable
 import cupy as cp
 import numpy as np
 
-from ..util import img_as_float
 from ._warnings import all_warnings, warn
 
 __all__ = ['deprecated', 'get_bound_method_class', 'all_warnings',
@@ -649,12 +648,15 @@ def convert_to_float(image, preserve_range):
         Transformed version of the input.
 
     """
+    if image.dtype == np.float16:
+        return image.astype(np.float32)
     if preserve_range:
         # Convert image to double only if it is not single or double
         # precision float
         if image.dtype.char not in 'df':
             image = image.astype(float)
     else:
+        from ..util.dtype import img_as_float
         image = img_as_float(image)
     return image
 
@@ -688,11 +690,10 @@ def _validate_interpolation_order(image_dtype, order):
                          "range 0-5.")
 
     if image_dtype == bool and order != 0:
-        warn("Input image dtype is bool. Interpolation is not defined "
+        raise ValueError(
+            "Input image dtype is bool. Interpolation is not defined "
              "with bool data type. Please set order to 0 or explicitely "
-             "cast input image to another data type. Starting from version "
-             "0.19 a ValueError will be raised instead of this warning.",
-             FutureWarning, stacklevel=2)
+             "cast input image to another data type.")
 
     return order
 
@@ -724,9 +725,7 @@ def _fix_ndimage_mode(mode):
     # SciPy 1.6.0 introduced grid variants of constant and wrap which
     # have less surprising behavior for images. Use these when available
     grid_modes = {'constant': 'grid-constant', 'wrap': 'grid-wrap'}
-    if NumpyVersion(scipy.__version__) >= '1.6.0':
-        mode = grid_modes.get(mode, mode)
-    return mode
+    return grid_modes.get(mode, mode)
 
 
 new_float_type = {

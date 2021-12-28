@@ -1417,7 +1417,7 @@ class SimilarityTransform(EuclideanTransform):
             if scale is None:
                 scale = 1
             if rotation is None:
-                rotation = (0,) if dimensionality == 2 else (0, 0, 0)
+                rotation = 0 if dimensionality == 2 else (0, 0, 0)
             if translation is None:
                 translation = (0,) * dimensionality
             if dimensionality == 2:

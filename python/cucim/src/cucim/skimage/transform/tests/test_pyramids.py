@@ -8,6 +8,7 @@ from skimage import data
 from skimage._shared.testing import expected_warnings
 
 from cucim.skimage._shared.testing import assert_almost_equal
+from cucim.skimage._shared.utils import _supported_float_type
 from cucim.skimage.transform import pyramids
 
 image = cp.asarray(data.astronaut())
@@ -234,11 +235,15 @@ def test_check_factor():
         pyramids._check_factor(-2)
 
 
-@pytest.mark.parametrize('dtype, expected',
-                         zip(['float32', 'float64', 'uint8', 'int64'],
-                             ['float32', 'float64', 'float64', 'float64']))
-def test_pyramid_gaussian_dtype_support(dtype, expected):
-    img = cp.random.randn(32, 8).astype(dtype)
-    pyramid = pyramids.pyramid_gaussian(img)
+@pytest.mark.parametrize(
+    'dtype', ['float16', 'float32', 'float64', 'uint8', 'int64']
+)
+@pytest.mark.parametrize(
+    'pyramid_func', [pyramids.pyramid_gaussian, pyramids.pyramid_laplacian]
+)
+def test_pyramid_dtype_support(pyramid_func, dtype):
+    img = cp.ones((32, 8), dtype=dtype)
+    pyramid = pyramid_func(img)
 
-    assert all([im.dtype == expected for im in pyramid])
+    float_dtype = _supported_float_type(dtype)
+    assert all([im.dtype == float_dtype for im in pyramid])
