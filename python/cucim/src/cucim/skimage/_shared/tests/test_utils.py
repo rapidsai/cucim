@@ -16,7 +16,7 @@ if hasattr(np, 'complex256'):
 
 have_numpydoc = False
 try:
-    import numpydoc
+    import numpydoc  # noqa
     have_numpydoc = True
 except ImportError:
     pass

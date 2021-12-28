@@ -127,19 +127,19 @@ def test_view_as_windows_2D():
     assert B.shape == (2, 2, 4, 3)
     # fmt: off
     cp.testing.assert_array_equal(
-        B, cp.array([[[[0,  1,  2],
-                       [4,  5,  6],
-                       [8,  9, 10],
+        B, cp.array([[[[0,  1,  2],    # noqa
+                       [4,  5,  6],    # noqa
+                       [8,  9, 10],    # noqa
                        [12, 13, 14]],
-                      [[1,  2,  3],
-                       [5,  6,  7],
-                       [9, 10, 11],
+                      [[1,  2,  3],    # noqa
+                       [5,  6,  7],    # noqa
+                       [9, 10, 11],    # noqa
                        [13, 14, 15]]],
-                     [[[4,  5,  6],
-                       [8,  9, 10],
+                     [[[4,  5,  6],    # noqa
+                       [8,  9, 10],    # noqa
                        [12, 13, 14],
                        [16, 17, 18]],
-                      [[5,  6,  7],
+                      [[5,  6,  7],    # noqa
                        [9, 10, 11],
                        [13, 14, 15],
                        [17, 18, 19]]]]))
@@ -175,16 +175,16 @@ def test_views_non_contiguous():
     print(res_b)
     print(res_w)
     # fmt: off
-    expected_b = [[[[0,  1],
-                    [8,  9]],
-                   [[2,  3],
+    expected_b = [[[[0,  1],    # noqa
+                    [8,  9]],   # noqa
+                   [[2,  3],    # noqa
                     [10, 11]]]]
 
-    expected_w = [[[[ 0,  1],
-                    [ 8,  9]],
-                   [[ 1,  2],
-                    [ 9, 10]],
-                   [[ 2,  3],
+    expected_w = [[[[ 0,  1],   # noqa
+                    [ 8,  9]],  # noqa
+                   [[ 1,  2],   # noqa
+                    [ 9, 10]],  # noqa
+                   [[ 2,  3],   # noqa
                     [10, 11]]]]
     # fmt: on
     cp.testing.assert_array_equal(res_b, expected_b)
@@ -203,11 +203,11 @@ def test_view_as_windows_step_tuple():
 
     # fmt: off
     cp.testing.assert_array_equal(
-        C, [[[[0,  1],
-              [4,  5],
-              [8,  9]],
-             [[2,  3],
-              [6,  7],
+        C, [[[[0,  1],   # noqa
+              [4,  5],   # noqa
+              [8,  9]],  # noqa
+             [[2,  3],   # noqa
+              [6,  7],   # noqa
               [10, 11]]],
             [[[12, 13],
               [16, 17],

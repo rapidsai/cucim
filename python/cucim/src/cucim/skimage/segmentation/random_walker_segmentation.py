@@ -161,7 +161,7 @@ def _solve_linear_system(lap_sparse, B, tol, mode):
     if mode == 'cg_mg' and not amg_loaded:
         utils.warn(
             '"cg_mg" not available. The "cg_j" mode will be used instead.',
-             stacklevel=2
+            stacklevel=2
         )
         mode = 'cg_j'
 
