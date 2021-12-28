@@ -11,15 +11,18 @@ from .._shared.utils import get_bound_method_class, safe_as_int
 
 _sin, _cos = math.sin, math.cos
 
-
-def _to_ndimage_mode(mode):
-    """Convert from `numpy.pad` mode name to the corresponding ndimage mode."""
-    mode_translation_dict = dict(
-        edge="nearest", symmetric="reflect", reflect="mirror"
-    )
-    if mode in mode_translation_dict:
-        mode = mode_translation_dict[mode]
-    return mode
+def _affine_matrix_from_vector(v):
+    """Affine matrix from linearized (d, d + 1) matrix entries."""
+    nparam = v.size
+    # solve for d in: d * (d + 1) = nparam
+    d = (1 + math.sqrt(1 + 4 * nparam)) / 2 - 1
+    dimensionality = round(d)  # round to prevent approx errors
+    if d != dimensionality:
+        raise ValueError('Invalid number of elements for '
+                         f'linearized matrix: {nparam}')
+    matrix = np.eye(dimensionality + 1)
+    matrix[:-1, :] = np.reshape(v, (dimensionality, dimensionality + 1))
+    return matrix
 
 
 def _center_and_normalize_points(points):
@@ -34,6 +37,8 @@ def _center_and_normalize_points(points):
 
     Normalize the image points, such that the mean distance from the points
     to the origin of the coordinate system is sqrt(D).
+
+    If the points are all identical, the returned values will contain nan.
 
     Parameters
     ----------
@@ -65,8 +70,16 @@ def _center_and_normalize_points(points):
     diff = points - centroid
     rms = math.sqrt(xp.sum(diff * diff) / points.shape[0])
 
+    # if all the points are the same, the transformation matrix cannot be
+    # created. We return an equivalent matrix with np.nans as sentinel values.
+    # This obviates the need for try/except blocks in functions calling this
+    # one, and those are only needed when actual 0 is reached, rather than some
+    # small value; ie, we don't need to worry about numerical stability here,
+    # only actual 0.
     if rms == 0:
-        return xp.full((d, d), np.nan), points, True
+        return (xp.full((d + 1, d + 1), xp.nan),
+                xp.full_like(points, xp.nan),
+                True)
 
     norm_factor = math.sqrt(d) / rms
 
@@ -167,8 +180,9 @@ def _umeyama(src, dst, estimate_scale):
 
 
 class GeometricTransform(object):
-    """Base class for geometric transformations."""
+    """Base class for geometric transformations.
 
+    """
     def __call__(self, coords):
         """Apply forward transformation.
 
@@ -224,7 +238,9 @@ class GeometricTransform(object):
         return xp.sqrt(xp.sum((self(src) - dst) ** 2, axis=1))
 
     def __add__(self, other):
-        """Combine this transformation with another."""
+        """Combine this transformation with another.
+
+        """
         raise NotImplementedError()
 
 
@@ -343,8 +359,13 @@ class FundamentalMatrixTransform(GeometricTransform):
         xp = cp.get_array_module(src)
 
         # Center and normalize image points for better numerical stability.
-        src_matrix, src, has_nan1 = _center_and_normalize_points(src)
-        dst_matrix, dst, has_nan2 = _center_and_normalize_points(dst)
+        try:
+            src_matrix, src, has_nan1 = _center_and_normalize_points(src)
+            dst_matrix, dst, has_nan2 = _center_and_normalize_points(dst)
+        except ZeroDivisionError:
+            self.params = xp.full((3, 3), xp.nan)
+            return 3 * [xp.full((3, 3), xp.nan)]
+
         if has_nan1 or has_nan2:
             self.params = xp.full((3, 3), xp.nan)
             return 3 * [xp.full((3, 3), xp.nan)]
@@ -588,13 +609,13 @@ class ProjectiveTransform(GeometricTransform):
     """
 
     def __init__(self, matrix=None, *, dimensionality=2, xp=cp):
-        if matrix is not None:
-            dimensionality = matrix.shape[0] - 1
         if matrix is None:
             # default to an identity transform
             matrix = xp.eye(dimensionality + 1)
-        if matrix.shape != (dimensionality + 1, dimensionality + 1):
-            raise ValueError("invalid shape of transformation matrix")
+        else:
+            dimensionality = matrix.shape[0] - 1
+            if matrix.shape != (dimensionality + 1, dimensionality + 1):
+                raise ValueError("invalid shape of transformation matrix")
         self.params = matrix
         self._coeffs = range(matrix.size - 1)
 
@@ -629,6 +650,10 @@ class ProjectiveTransform(GeometricTransform):
         return dst[:, :ndim]
 
     def __array__(self, dtype=None):
+        """Return the transform parameters as an array.
+
+         Note, __array__ is not currently supported by CuPy
+        """
         if dtype is None:
             return self.params
         else:
@@ -666,7 +691,7 @@ class ProjectiveTransform(GeometricTransform):
         """
         return self._apply_mat(coords, self._inv_matrix)
 
-    def estimate(self, src, dst):
+    def estimate(self, src, dst, weights=None):
         """Estimate the transformation from a set of corresponding points.
 
         You can determine the over-, well- and under-determined parameters
@@ -699,6 +724,13 @@ class ProjectiveTransform(GeometricTransform):
         of equations is the right singular vector of A which corresponds to the
         smallest singular value normed by the coefficient c3.
 
+        Weights can be applied to each pair of corresponding points to
+        indicate, particularly in an overdetermined system, if point pairs have
+        higher or lower confidence or uncertainties associated with them. From
+        the matrix treatment of least squares problems, these weight values are
+        normalised, square-rooted, then built into a diagonal matrix, by which
+        A is multiplied.
+
         In case of the affine transformation the coefficients c0 and c1 are 0.
         Thus the system of equations is::
 
@@ -715,6 +747,8 @@ class ProjectiveTransform(GeometricTransform):
             Source coordinates.
         dst : (N, 2) array
             Destination coordinates.
+        weights : (N,) array, optional
+            Relative weight values for each pair of points.
 
         Returns
         -------
@@ -744,7 +778,14 @@ class ProjectiveTransform(GeometricTransform):
         # Select relevant columns, depending on params
         A = A[:, list(self._coeffs) + [-1]]
 
-        _, _, V = xp.linalg.svd(A)
+        # Get the vectors that correspond to singular values, also applying
+        # the weighting if provided
+        if weights is None:
+            _, _, V = xp.linalg.svd(A)
+        else:
+            W = xp.diag(xp.tile(xp.sqrt(weights / xp.max(weights)), d))
+            _, _, V = xp.linalg.svd(W @ A)
+
         # if the last element of the vector corresponding to the smallest
         # singular value is close to zero, this implies a degenerate case
         # because it is a rank-defective transform, which would map points
@@ -771,6 +812,10 @@ class ProjectiveTransform(GeometricTransform):
         # De-center and de-normalize
         H = xp.linalg.inv(dst_matrix) @ H @ src_matrix
 
+        # Small errors can creep in if points are not exact, causing the last
+        # element of H to deviate from unity. Correct for that here.
+        H /= H[-1, -1]
+
         self.params = H
 
         return True
@@ -793,7 +838,7 @@ class ProjectiveTransform(GeometricTransform):
             return ProjectiveTransform(other.__self__._inv_matrix @ self.params)
         else:
             raise TypeError(
-                "Cannot combine transformations of differing " "types."
+                "Cannot combine transformations of differing types."
             )
 
     def __nice__(self):
@@ -899,24 +944,7 @@ class AffineTransform(ProjectiveTransform):
         if params and dimensionality > 2:
             raise ValueError("Parameter input is only supported in 2D.")
         elif matrix is not None:
-            if matrix.ndim == 1:  # linearized (d, d + 1) homogeneous matrix
-                nparam = matrix.size
-                # solve for d in: d * (d - 1) = nparam
-                d = (1 + np.sqrt(1 + 4 * nparam)) / 2 - 1
-                dimensionality = int(d)
-                if d != dimensionality:
-                    raise ValueError(
-                        "Invalid number of elements for "
-                        "linearized matrix: {}".format(nparam)
-                    )
-                matrix = xp.concatenate(
-                    (
-                        matrix.reshape((dimensionality, dimensionality + 1)),
-                        [0] * d + [1],
-                    ),
-                    axis=0,
-                )
-            elif matrix.shape[0] != matrix.shape[1]:
+            if matrix.ndim != 2 or matrix.shape[0] != matrix.shape[1]:
                 raise ValueError("Invalid shape of transformation matrix.")
             else:
                 dimensionality = matrix.shape[0] - 1
@@ -1151,15 +1179,22 @@ def _euler_rotation(axis, angle):
         The rotation matrix along axis `axis`.
     """
     i = axis
-    s, c = _sin(angle), _cos(angle)
-    R2 = np.array([[c, (-1) ** (i + 1) * s], [(-1) ** i * s, c]])
+    s = (-1) ** i * _sin(angle)
+    c = _cos(angle)
+    R2 = np.array([[c, -s],  # noqa
+                   [s, c]])  # noqa
     Ri = np.eye(3)
+    # We need the axes other than the rotation axis, in the right order:
+    # 0 -> (1, 2); 1 -> (0, 2); 2 -> (0, 1).
     axes = sorted({0, 1, 2} - {axis})
-    Ri[axes][:, axes] = R2
+    # We then embed the 2-axis rotation matrix into the full matrix.
+    # (1, 2) -> R[1:3:1, 1:3:1] = R2, (0, 2) -> R[0:3:2, 0:3:2] = R2, etc.
+    sl = slice(axes[0], axes[1] + 1, axes[1] - axes[0])
+    Ri[sl, sl] = R2
     return Ri
 
 
-def _euler_rotation_matrix(angles):
+def _euler_rotation_matrix(angles, axes=None):
     """Produce an Euler rotation matrix from the given angles.
 
     The matrix will have dimension equal to the number of angles given.
@@ -1168,16 +1203,20 @@ def _euler_rotation_matrix(angles):
     ----------
     angles : array of float, shape (3,)
         The transformation angles in radians.
+    axes : list of int
+        The axes about which to produce the rotation. Defaults to 0, 1, 2.
 
     Returns
     -------
     R : array of float, shape (3, 3)
         The Euler rotation matrix.
     """
+    if axes is None:
+        axes = range(3)
     dim = len(angles)
     R = np.eye(dim)
-    for i, angle in enumerate(angles):
-        R @= _euler_rotation(i, angle)
+    for i, angle in zip(axes, angles):
+        R = R @ _euler_rotation(i, angle)
     return R
 
 
@@ -1261,7 +1300,7 @@ class EuclideanTransform(ProjectiveTransform):
 
             if dimensionality == 2:
                 # fmt: off
-                self.params = np.array([
+                self.params = xp.array([
                     [math.cos(rotation), - math.sin(rotation), 0],  # NOQA
                     [math.sin(rotation),   math.cos(rotation), 0],  # NOQA
                     [                 0,                    0, 1],  # NOQA
@@ -1273,7 +1312,9 @@ class EuclideanTransform(ProjectiveTransform):
                 self.params[:dimensionality, :dimensionality] = xp.asarray(
                     _euler_rotation_matrix(rotation)
                 )
-            self.params[0:dimensionality, dimensionality] = translation
+            self.params[0:dimensionality, dimensionality] = xp.asarray(
+                translation
+            )
         else:
             # default to an identity transform
             self.params = xp.eye(dimensionality + 1)
@@ -1364,47 +1405,31 @@ class SimilarityTransform(EuclideanTransform):
             raise ValueError("You cannot specify the transformation matrix and"
                              " the implicit parameters at the same time.")
         elif matrix is not None:
-            if matrix.ndim == 1:  # parameter vector: scale, rot, translation
-                if dimensionality > 3:
-                    raise ValueError(
-                        "Parameter vectors are only supported for 2D and 3D."
-                    )
-                scale = matrix[0]
-                rotation = matrix[1:-dimensionality]
-                translation = matrix[-dimensionality:]
-                params = True
-            elif matrix.shape[0] != matrix.shape[1] or matrix.ndim > 2:
+            if matrix.ndim != 2 or matrix.shape[0] != matrix.shape[1]:
                 raise ValueError("Invalid shape of transformation matrix.")
             else:
                 self.params = matrix
                 dimensionality = matrix.shape[0] - 1
         if params:
-            if dimensionality == 2:
-                axes = ((0, 1),)
-            elif dimensionality == 3:
-                axes = ((1, 2), (0, 1), (1, 2))  # XZX Euler angles
-            else:
-                raise ValueError("Parameters only supported for 2D and 3D.")
+            if dimensionality not in (2, 3):
+                raise ValueError('Parameters only supported for 2D and 3D.')
             matrix = xp.eye(dimensionality + 1, dtype=float)
             if scale is None:
                 scale = 1
             if rotation is None:
                 rotation = (0,) if dimensionality == 2 else (0, 0, 0)
-            if np.isscalar(rotation):
-                rotation = [rotation]
             if translation is None:
                 translation = (0,) * dimensionality
-            translation = xp.asarray(translation)
-            for rot, ax in zip(rotation, axes):
-                R = np.eye(dimensionality + 1)
-                c, s = np.cos(rot), np.sin(rot)
-                R[ax, ax] = c
-                R[ax, ax[::-1]] = -s, s
-                R = xp.asarray(R)
-                matrix = xp.asarray(R @ matrix)
+            if dimensionality == 2:
+                ax = (0, 1)
+                c, s = _cos(rotation), _sin(rotation)
+                matrix[ax, ax] = c
+                matrix[ax, ax[::-1]] = -s, s
+            else:  # 3D rotation
+                matrix[:3, :3] = xp.asarray(_euler_rotation_matrix(rotation))
 
             matrix[:dimensionality, :dimensionality] *= scale
-            matrix[:dimensionality, dimensionality] = translation
+            matrix[:dimensionality, dimensionality] = xp.asarray(translation)
             self.params = matrix
         elif self.params is None:
             # default to an identity transform
@@ -1476,7 +1501,7 @@ class PolynomialTransform(GeometricTransform):
             raise ValueError("invalid shape of transformation parameters")
         self.params = params
 
-    def estimate(self, src, dst, order=2):
+    def estimate(self, src, dst, order=2, weights=None):
         """Estimate the transformation from a set of corresponding points.
 
         You can determine the over-, well- and under-determined parameters
@@ -1510,6 +1535,13 @@ class PolynomialTransform(GeometricTransform):
         of equations is the right singular vector of A which corresponds to the
         smallest singular value normed by the coefficient c3.
 
+        Weights can be applied to each pair of corresponding points to
+        indicate, particularly in an overdetermined system, if point pairs have
+        higher or lower confidence or uncertainties associated with them. From
+        the matrix treatment of least squares problems, these weight values are
+        normalised, square-rooted, then built into a diagonal matrix, by which
+        A is multiplied.
+
         Parameters
         ----------
         src : (N, 2) array
@@ -1518,6 +1550,8 @@ class PolynomialTransform(GeometricTransform):
             Destination coordinates.
         order : int, optional
             Polynomial order (number of coefficients is order + 1).
+        weights : (N,) array, optional
+            Relative weight values for each pair of points.
 
         Returns
         -------
@@ -1547,7 +1581,13 @@ class PolynomialTransform(GeometricTransform):
         A[:rows, -1] = xd
         A[rows:, -1] = yd
 
-        _, _, V = xp.linalg.svd(A)
+        # Get the vectors that correspond to singular values, also applying
+        # the weighting if provided
+        if weights is None:
+            _, _, V = xp.linalg.svd(A)
+        else:
+            W = xp.diag(xp.tile(xp.sqrt(weights / xp.max(weights)), 2))
+            _, _, V = xp.linalg.svd(W @ A)
 
         # solution is right singular vector that corresponds to smallest
         # singular value
@@ -1608,7 +1648,7 @@ TRANSFORMS = {
 }
 
 
-def estimate_transform(ttype, src, dst, **kwargs):
+def estimate_transform(ttype, src, dst, *args, **kwargs):
     """Estimate 2D geometric transformation parameters.
 
     You can determine the over-, well- and under-determined parameters
@@ -1677,7 +1717,7 @@ def estimate_transform(ttype, src, dst, **kwargs):
                          'implemented' % ttype)
 
     tform = TRANSFORMS[ttype](dimensionality=src.shape[1])
-    tform.estimate(src, dst, **kwargs)
+    tform.estimate(src, dst, *args, **kwargs)
 
     return tform
 
