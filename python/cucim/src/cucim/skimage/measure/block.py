@@ -1,4 +1,5 @@
 import cupy as cp
+import numpy as np
 
 from ..util import view_as_blocks
 

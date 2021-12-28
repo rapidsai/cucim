@@ -4,20 +4,68 @@ import cupy as cp
 import numpy as np
 from cupyx.scipy import ndimage as ndi
 
-from .._shared.utils import (_validate_interpolation_order, convert_to_float,
-                             safe_as_int, warn)
+from .._shared.utils import (_to_ndimage_mode, _validate_interpolation_order,
+                             convert_to_float, safe_as_int, warn)
 from ..measure import block_reduce
 from ._geometric import (AffineTransform, ProjectiveTransform,
-                         SimilarityTransform, _to_ndimage_mode)
+                         SimilarityTransform)
 
 from .._shared.utils import (channel_as_last_axis,
-                             deprecate_multichannel_kwarg)
+                             deprecate_multichannel_kwarg,
+                             _to_ndimage_mode)
 
 HOMOGRAPHY_TRANSFORMS = (
     SimilarityTransform,
     AffineTransform,
     ProjectiveTransform,
 )
+
+
+def _preprocess_resize_output_shape(image, output_shape):
+    """Validate resize output shape according to input image.
+
+    Parameters
+    ----------
+    image: ndarray
+        Image to be resized.
+    output_shape: tuple or ndarray
+        Size of the generated output image `(rows, cols[, ...][, dim])`. If
+        `dim` is not provided, the number of channels is preserved.
+
+    Returns
+    -------
+    image: ndarray
+        The input image, but with additional singleton dimensions appended in
+        the case where ``len(output_shape) > input.ndim``.
+    output_shape: tuple
+        The output image converted to tuple.
+
+    Raises
+    ------
+    ValueError:
+        If output_shape length is smaller than the image number of
+        dimensions
+
+    Notes
+    -----
+    The input image is reshaped if its number of dimensions is not
+    equal to output_shape_length.
+
+    """
+    output_ndim = len(output_shape)
+    input_shape = image.shape
+    if output_ndim > image.ndim:
+        # append dimensions to input_shape
+        input_shape += (1, ) * (output_ndim - image.ndim)
+        image = cp.reshape(image, input_shape)
+    elif output_ndim == image.ndim - 1:
+        # multichannel case: append shape of last axis
+        output_shape = output_shape + (image.shape[-1], )
+    elif output_ndim < image.ndim:
+        raise ValueError("output_shape length cannot be smaller than the "
+                         "image number of dimensions")
+
+    return image, output_shape
 
 
 def resize(image, output_shape, order=None, mode='reflect', cval=0, clip=True,
@@ -66,13 +114,13 @@ def resize(image, output_shape, order=None, mode='reflect', cval=0, clip=True,
         Also see https://scikit-image.org/docs/dev/user_guide/data_types.html
     anti_aliasing : bool, optional
         Whether to apply a Gaussian filter to smooth the image prior
-        to down-scaling. It is crucial to filter when down-sampling
-        the image to avoid aliasing artifacts. If input image data
-        type is bool, no anti-aliasing is applied.
+        to downsampling. It is crucial to filter when downsampling
+        the image to avoid aliasing artifacts. If not specified, it is set to
+        True when downsampling an image whose data type is not bool.
     anti_aliasing_sigma : {float, tuple of floats}, optional
-        Standard deviation for Gaussian filtering to avoid aliasing artifacts.
+        Standard deviation for Gaussian filtering used when anti-aliasing.
         By default, this value is chosen as (s - 1) / 2 where s is the
-        down-scaling factor, where s > 1. For the up-size case, s < 1, no
+        downsampling factor, where s > 1. For the up-size case, s < 1, no
         anti-aliasing is performed prior to rescaling.
 
     Notes
@@ -92,33 +140,36 @@ def resize(image, output_shape, order=None, mode='reflect', cval=0, clip=True,
     (100, 100)
 
     """
-    output_shape = tuple(output_shape)
-    output_ndim = len(output_shape)
+
+    image, output_shape = _preprocess_resize_output_shape(image, output_shape)
     input_shape = image.shape
-    if output_ndim > image.ndim:
-        # append dimensions to input_shape
-        input_shape = input_shape + (1,) * (output_ndim - image.ndim)
-        image = cp.reshape(image, input_shape)
-    elif output_ndim == image.ndim - 1:
-        # multichannel case: append shape of last axis
-        output_shape = output_shape + (image.shape[-1],)
-    elif output_ndim < image.ndim - 1:
-        raise ValueError("len(output_shape) cannot be smaller than the image "
-                         "dimensions")
+    input_type = image.dtype
+
+    if input_type == cp.float16:
+        image = image.astype(cp.float32, copy=False)
 
     if anti_aliasing is None:
-        anti_aliasing = not image.dtype == bool
+        anti_aliasing = (not input_type == bool and
+                         any(x < y for x, y in zip(output_shape, input_shape)))
 
-    if image.dtype == bool and anti_aliasing:
-        warn("Input image dtype is bool. Gaussian convolution is not defined "
-             "with bool data type. Please set anti_aliasing to False or "
-             "explicitely cast input image to another data type. Starting "
-             "from version 0.19 a ValueError will be raised instead of this "
-             "warning.", FutureWarning, stacklevel=2)
+    if input_type == bool and anti_aliasing:
+        raise ValueError("anti_aliasing must be False for boolean images")
 
     factors = tuple(si / so for si, so in zip(input_shape, output_shape))
+    order = _validate_interpolation_order(input_type, order)
+    if order > 0:
+        image = convert_to_float(image, preserve_range)
 
-    if anti_aliasing and any(f > 1 for f in factors):
+    # Save input value range for clip
+    img_bounds = (
+        cp.array([image.min(), image.max()]) if clip else None
+    )
+
+    # Translate modes used by np.pad to those used by scipy.ndimage
+    ndi_mode = _to_ndimage_mode(mode)
+    if anti_aliasing:
+        from cucim.skimage.filters import gaussian  # avoid circular import
+
         if anti_aliasing_sigma is None:
             anti_aliasing_sigma = tuple([max(0, (f - 1) / 2) for f in factors])
         else:
@@ -134,37 +185,18 @@ def resize(image, output_shape, order=None, mode='reflect', cval=0, clip=True,
                 warn("Anti-aliasing standard deviation greater than zero but "
                      "not down-sampling along all axes")
 
-        # Translate modes used by np.pad to those used by ndi.gaussian_filter
-        np_pad_to_ndimage = {
-            'constant': 'constant',
-            'edge': 'nearest',
-            'symmetric': 'reflect',
-            'reflect': 'mirror',
-            'wrap': 'wrap'
-        }
-        try:
-            ndi_mode = np_pad_to_ndimage[mode]
-        except KeyError:
-            raise ValueError("Unknown mode, or cannot translate mode. The "
-                             "mode should be one of 'constant', 'edge', "
-                             "'symmetric', 'reflect', or 'wrap'. See the "
-                             "documentation of numpy.pad for more info.")
+        # TODO: CuPy itself should do this grid-constant->constant conversion
+        #       make upstream PR for SciPy-compatible behavior
+        _ndi_mode = {'grid-constant': 'constant', 'grid-wrap':'wrap'}.get(ndi_mode, ndi_mode)  # noqa
+        # keep ndi.gaussian_filter rather than cucim.skimage.filters.gaussian
+        # to avoid undesired dtype coercion
+        image = ndi.gaussian_filter(image, anti_aliasing_sigma, cval=cval,
+                                    mode=_ndi_mode)
 
-        image = ndi.gaussian_filter(image, anti_aliasing_sigma,
-                                    cval=cval, mode=ndi_mode)
-
-    order = _validate_interpolation_order(image.dtype, order)
-    ndi_mode = _to_ndimage_mode(mode)
-    # TODO: move the following conversion into _to_ndimage_mode
-    if ndi_mode == 'constant':
-        ndi_mode = 'grid-constant'
-    elif ndi_mode == 'wrap':
-        ndi_mode = 'grid-wrap'
     zoom_factors = [1 / f for f in factors]
-    image = convert_to_float(image, preserve_range)
     out = ndi.zoom(image, zoom_factors, order=order, mode=ndi_mode,
                    cval=cval, grid_mode=True)
-    _clip_warp_output(image, out, order, mode, cval, clip)
+    _clip_warp_output(img_bounds, out, mode, cval, clip)
     return out
 
 
@@ -265,7 +297,7 @@ def rescale(image, scale, order=None, mode='reflect', cval=0, clip=True,
         if multichannel:
             scale = np.concatenate((scale, [1]))
     orig_shape = np.asarray(image.shape)
-    output_shape = np.round(scale * orig_shape)
+    output_shape = np.maximum(np.round(scale * orig_shape), 1)
     if multichannel:  # don't scale channel dimension
         output_shape[-1] = orig_shape[-1]
 
@@ -290,7 +322,7 @@ def _ndimage_affine(image, matrix, output_shape, order, mode, cval, clip,
     if image.dtype.kind == "c":
         if not preserve_range:
             raise NotImplementedError("TODO")
-    else:
+    elif order > 0:
         image = convert_to_float(image, preserve_range)
 
     input_shape = image.shape
@@ -308,7 +340,7 @@ def _ndimage_affine(image, matrix, output_shape, order, mode, cval, clip,
                                   mode=ndi_mode, order=order, cval=cval,
                                   output_shape=tuple(output_shape))
 
-    _clip_warp_output(image, warped, order, mode, cval, clip)
+    _clip_warp_output(image, warped, mode, cval, clip)
 
     return warped
 
@@ -328,7 +360,7 @@ def _ndimage_rotate(image, angle, resize, order, mode, cval, clip,
     if image.dtype.kind == "c":
         if not preserve_range:
             raise NotImplementedError("TODO")
-    else:
+    elif order > 0:
         image = convert_to_float(image, preserve_range)
 
     # Pre-filtering not necessary for order 0, 1 interpolation
@@ -337,7 +369,7 @@ def _ndimage_rotate(image, angle, resize, order, mode, cval, clip,
     ndi_mode = _to_ndimage_mode(mode)
     warped = ndi.rotate(image, angle, reshape=resize, prefilter=prefilter,
                         mode=ndi_mode, order=order, cval=cval)
-    _clip_warp_output(image, warped, order, mode, cval, clip)
+    _clip_warp_output(image, warped, mode, cval, clip)
     return warped
 
 
@@ -411,7 +443,9 @@ def rotate(image, angle, resize=False, center=None, order=None,
     """
 
     rows, cols = image.shape[0], image.shape[1]
-    img_center = np.array((cols, rows)) / 2.0 - 0.5
+    if image.dtype == cp.float16:
+        image = image.astype(cp.float32)
+    img_center = np.array((cols, rows)) / 2. - 0.5
     if center is None:
         center = img_center
         centered = True
@@ -628,7 +662,7 @@ def _stackcopy(a, b):
         a[:] = b
 
 
-def warp_coords(coord_map, shape, dtype=np.float64):
+def warp_coords(coord_map, shape, dtype=cp.float64):
     """Build the source coordinates for the output of a 2-D image warp.
 
     Parameters
@@ -708,7 +742,7 @@ def warp_coords(coord_map, shape, dtype=np.float64):
     return coords
 
 
-def _clip_warp_output(input_image, output_image, order, mode, cval, clip):
+def _clip_warp_output(input_image, output_image, mode, cval, clip):
     """Clip output image to range of values of input image.
 
     Note that this function modifies the values of `output_image` in-place
@@ -723,9 +757,6 @@ def _clip_warp_output(input_image, output_image, order, mode, cval, clip):
 
     Other parameters
     ----------------
-    order : int, optional
-        The order of the spline interpolation, default is 1. The order has to
-        be in the range 0-5. See `skimage.transform.warp` for detail.
     mode : {'constant', 'edge', 'symmetric', 'reflect', 'wrap'}, optional
         Points outside the boundaries of the input are filled according
         to the given mode.  Modes match the behaviour of `numpy.pad`.
@@ -738,9 +769,9 @@ def _clip_warp_output(input_image, output_image, order, mode, cval, clip):
         produce values outside the given input range.
 
     """
-    if clip and order != 0:
-        min_val = input_image.min()
-        max_val = input_image.max()
+    if clip:
+        min_val = input_image.min().item()
+        max_val = input_image.max().item()
 
         preserve_cval = (mode == 'constant' and not
                          (min_val <= cval <= max_val))
@@ -905,8 +936,10 @@ def warp(image, inverse_map, map_args={}, output_shape=None, order=None,
     if image.dtype.kind == "c":
         if not preserve_range:
             raise NotImplementedError("TODO")
-    else:
+    elif order > 0:
         image = convert_to_float(image, preserve_range)
+        if image.dtype == cp.float16:
+            image = image.astype(cp.float32)
 
     input_shape = np.array(image.shape)
 
@@ -952,7 +985,7 @@ def warp(image, inverse_map, map_args={}, output_shape=None, order=None,
     warped = ndi.map_coordinates(image, coords, prefilter=prefilter,
                                  mode=ndi_mode, order=order, cval=cval)
 
-    _clip_warp_output(image, warped, order, mode, cval, clip)
+    _clip_warp_output(image, warped, mode, cval, clip)
 
     return warped
 
@@ -1104,7 +1137,7 @@ def warp_polar(image, center=None, *, radius=None, output_shape=None,
 
     if output_shape is None:
         height = 360
-        width = int(np.ceil(radius))
+        width = math.ceil(radius)
         output_shape = (height, width)
     else:
         output_shape = safe_as_int(output_shape)
