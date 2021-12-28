@@ -4,7 +4,6 @@ import cupy as cp
 import numpy as np
 import pytest
 from cupy.testing import assert_array_equal
-from scipy import ndimage as ndi
 from skimage import color, data, img_as_float
 
 from cucim.skimage import restoration
@@ -52,7 +51,7 @@ def test_denoise_tv_chambolle_2d(dtype):
 
     # TODO: remove device to host transfers if cuda
     #       morphological_gradient is implemented
-    from scipy import ndimage as ndi
+    from scipy import ndimage as ndi  # noqa
 
     # Convert to a floating point type supported by scipy.ndimage
     float_dtype = _supported_float_type(img.dtype)

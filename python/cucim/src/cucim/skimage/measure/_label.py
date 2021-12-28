@@ -108,21 +108,21 @@ def label(label_image, background=None, return_num=False, connectivity=None):
      [1 1 2]
      [0 0 0]]
     """
-    ndim = input.ndim
+    ndim = label_image.ndim
     structure = _get_structure(ndim, connectivity)
     if background is None:
         background = 0
     elif background != 0:
         # offset so that background becomes 0 as expected by _label below
-        input = input - background
+        label_image = label_image - background
 
-    if input.dtype.kind not in "bui":
+    if label_image.dtype.kind not in "bui":
         # skimage always copies the input into a np.intp dtype array so do the
         # same here for non-integer dtypes.
-        input = input.astype(cp.intp)
+        label_image = label_image.astype(cp.intp)
 
-    labels = cp.empty(input.shape, order="C", dtype=cp.int32)
-    num = _label(input, structure, labels, greyscale_mode=True)
+    labels = cp.empty(label_image.shape, order="C", dtype=cp.int32)
+    num = _label(label_image, structure, labels, greyscale_mode=True)
 
     if return_num:
         return labels, num

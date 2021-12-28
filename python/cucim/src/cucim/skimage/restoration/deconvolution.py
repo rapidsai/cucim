@@ -1,9 +1,6 @@
 """Implementations restoration functions"""
 
-import math
-
 import cupy as cp
-import cupy.random as npr
 import numpy as np
 
 # TODO: use cupyx.scipy.signal once upstream fftconvolve and

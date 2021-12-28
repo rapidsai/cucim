@@ -600,6 +600,7 @@ def test_adjust_gamma_zero(dtype):
     assert_array_almost_equal(result, dtype_range[dtype][1])
     assert result.dtype == image.dtype
 
+
 def test_adjust_gamma_less_one():
     """Verifying the output with expected results for gamma
     correction with gamma equal to half"""

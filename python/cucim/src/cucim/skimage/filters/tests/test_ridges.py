@@ -5,7 +5,6 @@ from cupy.testing import assert_allclose, assert_array_equal, assert_array_less
 from skimage.data import camera, retina
 
 from cucim.skimage import img_as_float
-from cucim.skimage._shared.testing import expected_warnings
 from cucim.skimage._shared.utils import _supported_float_type
 from cucim.skimage.color import rgb2gray
 from cucim.skimage.filters import frangi, hessian, meijering, sato

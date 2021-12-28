@@ -11,6 +11,7 @@ from .._shared.utils import get_bound_method_class, safe_as_int
 
 _sin, _cos = math.sin, math.cos
 
+
 def _affine_matrix_from_vector(v):
     """Affine matrix from linearized (d, d + 1) matrix entries."""
     nparam = v.size

@@ -226,8 +226,8 @@ def test_hessian_matrix_eigvals(dtype):
                                               [0,  0, -2,  0, 0],    # noqa
                                               [0, -1,  0, -1, 0],    # noqa
                                               [0,  0,  0,  0, 0]]))  # noqa
-
     # fmt: on
+
 
 @pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])
 def test_hessian_matrix_eigvals_3d(im3d, dtype):

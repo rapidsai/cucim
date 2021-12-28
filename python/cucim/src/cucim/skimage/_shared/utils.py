@@ -692,8 +692,8 @@ def _validate_interpolation_order(image_dtype, order):
     if image_dtype == bool and order != 0:
         raise ValueError(
             "Input image dtype is bool. Interpolation is not defined "
-             "with bool data type. Please set order to 0 or explicitely "
-             "cast input image to another data type.")
+            "with bool data type. Please set order to 0 or explicitely "
+            "cast input image to another data type.")
 
     return order
 

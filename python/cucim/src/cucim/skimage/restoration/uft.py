@@ -29,7 +29,6 @@ import cupyx.scipy.fft as fft
 from .._shared.utils import _supported_float_type
 
 
-
 def ufftn(inarray, dim=None):
     """N-dimensional unitary Fourier transform.
 

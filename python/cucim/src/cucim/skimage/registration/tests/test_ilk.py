@@ -2,10 +2,8 @@ import cupy as cp
 import numpy as np
 import pytest
 
-from cucim.skimage._shared import testing
 from cucim.skimage._shared.utils import _supported_float_type
 from cucim.skimage.registration import optical_flow_ilk
-from cucim.skimage.transform import warp
 
 from test_tvl1 import _sin_flow_gen
 
@@ -33,6 +31,7 @@ def test_2d_motion(dtype, gaussian, prefilter):
         with pytest.raises(ValueError):
             optical_flow_ilk(image0, image1, gaussian=gaussian,
                              prefilter=prefilter, dtype=dtype)
+
 
 @pytest.mark.parametrize('gaussian', [True, False])
 @pytest.mark.parametrize('prefilter', [True, False])

@@ -138,7 +138,7 @@ def moments_coords_central(coords, center=None, order=3):
     # generate all possible exponents for each axis in the given set of points
     # produces a matrix of shape (order + 1, D, N)
     coords = coords.T
-    powers = cp.arange(order + 1, dtype=float_dtype)[:, np.newaxis, np.newaxis]
+    powers = cp.arange(order + 1, dtype=float_type)[:, np.newaxis, np.newaxis]
     coords = coords[cp.newaxis, ...] ** powers
 
     # add extra dimensions for proper broadcasting

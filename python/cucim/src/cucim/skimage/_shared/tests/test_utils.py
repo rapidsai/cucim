@@ -194,4 +194,3 @@ def test_supported_float_dtype_input_kinds(dtype):
 def test_supported_float_dtype_sequence(dtypes, expected):
     float_dtype = _supported_float_type(dtypes)
     assert float_dtype == expected
-
