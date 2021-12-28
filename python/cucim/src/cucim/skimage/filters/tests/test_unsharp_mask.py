@@ -49,35 +49,11 @@ def test_unsharp_masking_with_different_radii(radius, shape,
     if preserve is False:
         array /= max(cp.abs(array).max(), 1.0)
     channel_axis = -1 if multichannel else None
-    output = unsharp_mask(array, radius, amount, preserve_range=preserve,
-                          channel_axis=channel_axis)
+    unsharp_mask(array, radius, amount, preserve_range=preserve,
+                 channel_axis=channel_axis)
 
 
-@pytest.mark.parametrize("shape,channel_axis",
-                         [((16, 16), None),
-                          ((15, 15, 2), -1),
-                          ((13, 17, 3), -1),
-                          ((2, 15, 15), 0),
-                          ((3, 13, 17), 0)])
-@pytest.mark.parametrize("offset", [-5, 0, 5])
-@pytest.mark.parametrize("preserve", [False, True])
-def test_unsharp_masking_with_different_ranges(shape, offset, channel_axis,
-                                               preserve):
-    radius = 2.0
-    amount = 1.0
-    dtype = cp.int16
-    array = (cp.random.random(shape) * 5 + offset).astype(dtype)
-    negative = cp.any(array < 0)
-    output = unsharp_mask(array, radius, amount, preserve_range=preserve,
-                          channel_axis=channel_axis)
-    if preserve is False:
-        assert cp.any(output <= 1)
-        assert cp.any(output >= -1)
-        if negative is False:
-            assert cp.any(output >= 0)
-
-
-@pytest.mark.parametrize("shape,multichannel",
+@pytest.mark.parametrize("shape, multichannel",
                          [((16, 16), False),
                           ((15, 15, 2), True),
                           ((13, 17, 3), True)])

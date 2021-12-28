@@ -11,7 +11,7 @@ from cucim.skimage._shared.utils import (_validate_interpolation_order,
 
 have_numpydoc = False
 try:
-    import numpydoc
+    import numpydoc  # noqa
     have_numpydoc = True
 except ImportError:
     pass

@@ -11,7 +11,6 @@ from cucim.skimage import exposure
 from cucim.skimage.exposure import histogram_matching
 
 
-
 @pytest.mark.parametrize('array, template, expected_array', [
     (cp.arange(10), cp.arange(100), cp.arange(9, 100, 10)),
     (cp.random.rand(4), cp.ones(3), cp.ones(4))

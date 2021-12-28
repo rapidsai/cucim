@@ -1,7 +1,6 @@
 import math
 
 import cupy as cp
-from cupyx.scipy import ndimage as ndi
 
 from .._shared import utils
 from .._shared.utils import convert_to_float

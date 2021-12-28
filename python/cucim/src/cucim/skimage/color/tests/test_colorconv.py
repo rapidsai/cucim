@@ -620,7 +620,7 @@ class TestColorconv():
         assert luv2rgb(img).dtype == img.dtype
         assert luv2rgb(img32).dtype == img32.dtype
 
-    @pytest.mark.parametrize("channel_axis", [0, 1, -1 -2])
+    @pytest.mark.parametrize("channel_axis", [0, 1, -1, -2])
     def test_luv_rgb_roundtrip(self, channel_axis):
         img_rgb = img_as_float(self.img_rgb)
         img_rgb = cp.moveaxis(img_rgb, source=-1, destination=channel_axis)

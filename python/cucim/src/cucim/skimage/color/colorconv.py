@@ -49,7 +49,6 @@ References
 .. [4] https://en.wikipedia.org/wiki/CIE_1931_color_space
 """
 
-import functools
 from warnings import warn
 
 import cupy as cp
@@ -57,8 +56,7 @@ import numpy as np
 from scipy import linalg
 
 
-from .._shared.utils import (channel_as_last_axis, identity, reshape_nd,
-                             slice_at_axis)
+from .._shared.utils import channel_as_last_axis, identity
 from ..util import dtype, dtype_limits
 
 
@@ -725,6 +723,7 @@ def _get_core_colorconv_operation(m):
         y[3*i + 2] = x[3*i] * {m[6]} + x[3*i + 1] * {m[7]} + x[3*i + 2] * {m[8]};
     """  # noqa
 
+
 @channel_as_last_axis()
 def xyz2rgb(xyz, *, channel_axis=-1):
     """XYZ to RGB color space conversion.
@@ -767,7 +766,8 @@ def xyz2rgb(xyz, *, channel_axis=-1):
     """
     # Follow the algorithm from http://www.easyrgb.com/index.php
     # except we don't multiply/divide by 100 in the conversion
-    arr = _prepare_colorarray(xyz, force_c_contiguous=True, channel_axis=channel_axis)
+    arr = _prepare_colorarray(xyz, force_c_contiguous=True,
+                              channel_axis=channel_axis)
 
     # scaling applied after the 3x3 conversion matrix multiplication
     # (c indexes over color channels here)
@@ -987,7 +987,8 @@ def rgb2gray(rgb, *, channel_axis=-1):
              'length is not 3.', FutureWarning, stacklevel=2)
         rgb = rgb[..., :3]
 
-    rgb = _prepare_colorarray(rgb, force_c_contiguous=True, channel_axis=channel_axis)
+    rgb = _prepare_colorarray(rgb, force_c_contiguous=True,
+                              channel_axis=channel_axis)
     kern = _rgb_to_gray_kernel(rgb.dtype)
     gray = cp.empty(rgb.shape[:-1], dtype=rgb.dtype)
     kern(rgb, gray, size=gray.size)

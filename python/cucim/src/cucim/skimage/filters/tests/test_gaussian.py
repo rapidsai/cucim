@@ -95,7 +95,7 @@ def test_preserve_range():
 
     filtered_preserved = gaussian(ones, preserve_range=True)
     cp.testing.assert_array_almost_equal(
-        filtered_preserved,  cp.ones_like(filtered_preserved)
+        filtered_preserved, cp.ones_like(filtered_preserved)
     )
 
     img = cp.array([[10.0, -10.0], [-4, 3]], dtype=np.float32)
@@ -146,7 +146,7 @@ def test_difference_of_gaussians(s, s2, channel_axis):
     if channel_axis is not None:
         n_channels = 5
         image = np.stack((image,) * n_channels, channel_axis)
-    image =cp.asarray(image)
+    image = cp.asarray(image)
     im1 = gaussian(image, s, preserve_range=True, channel_axis=channel_axis)
     im2 = gaussian(image, s2, preserve_range=True, channel_axis=channel_axis)
     dog = im1 - im2

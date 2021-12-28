@@ -6,7 +6,6 @@ from .. import img_as_float
 from .._shared import utils
 
 
-
 def _denoise_tv_chambolle_nd(image, weight=0.1, eps=2.0e-4, n_iter_max=200):
     """Perform total-variation denoising on n-dimensional images.
 
@@ -171,7 +170,6 @@ def denoise_tv_chambolle(image, weight=0.1, eps=2.0e-4, n_iter_max=200,
     im_type = image.dtype
     if not im_type.kind == 'f':
         image = img_as_float(image)
-
 
     if channel_axis is not None:
         channel_axis = channel_axis % image.ndim

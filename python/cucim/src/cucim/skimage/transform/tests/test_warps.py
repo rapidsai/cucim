@@ -118,9 +118,9 @@ def test_homography():
     x[1, 1] = 1
     theta = -np.pi / 2
     # fmt: off
-    M = cp.array([[np.cos(theta), - np.sin(theta), 0],
-                  [np.sin(theta),   np.cos(theta), 4],
-                  [0,               0,             1]])
+    M = cp.array([[np.cos(theta), - np.sin(theta), 0],   # noqa
+                  [np.sin(theta),   np.cos(theta), 4],   # noqa
+                  [0,               0,             1]])  # noqa
     # fmt: on
 
     x90 = warp(x,
