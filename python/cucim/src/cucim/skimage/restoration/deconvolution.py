@@ -11,6 +11,7 @@ import numpy as np
 import cucim.skimage._vendored
 
 from . import uft
+from .._shared.utils import _supported_float_type
 
 # from cupyx.scipy.signal import convolve
 # from cupyx.scipy import signal
@@ -20,12 +21,6 @@ signal = cucim.skimage._vendored
 
 
 __keywords__ = "restoration, image, deconvolution"
-
-
-def _float_dtype(image):
-    if image.dtype.kind != 'f':
-        return cp.float64
-    return cp.result_type(image.dtype, cp.float32)
 
 
 def wiener(image, psf, balance, reg=None, is_real=True, clip=True):
@@ -135,10 +130,10 @@ def wiener(image, psf, balance, reg=None, is_real=True, clip=True):
         reg, _ = uft.laplacian(image.ndim, image.shape, is_real=is_real)
     if not cp.iscomplexobj(reg):
         reg = uft.ir2tf(reg, image.shape, is_real=is_real)
-    float_dtype = _float_dtype(image)
-    image = image.astype(float_dtype, copy=False)
-    psf = psf.real.astype(float_dtype, copy=False)
-    reg = reg.real.astype(float_dtype, copy=False)
+    float_type = _supported_float_type(image.dtype)
+    image = image.astype(float_type, copy=False)
+    psf = psf.real.astype(float_type, copy=False)
+    reg = reg.real.astype(float_type, copy=False)
 
     if psf.shape != reg.shape:
         trans_func = uft.ir2tf(psf, image.shape, is_real=is_real)
@@ -164,7 +159,7 @@ def wiener(image, psf, balance, reg=None, is_real=True, clip=True):
 
 
 def unsupervised_wiener(image, psf, reg=None, user_params=None, is_real=True,
-                        clip=True):
+                        clip=True, *, random_state=None):
     """Unsupervised Wiener-Hunt deconvolution.
 
     Return the deconvolution with a Wiener-Hunt approach, where the
@@ -189,6 +184,13 @@ def unsupervised_wiener(image, psf, reg=None, user_params=None, is_real=True,
     clip : boolean, optional
        True by default. If true, pixel values of the result above 1 or
        under -1 are thresholded for skimage pipeline compatibility.
+    random_state : {None, int, `cupy.random.Generator`}, optional
+        If `random_state` is None the `cupy.random.Generator` singleton is
+        used.
+        If `random_state` is an int, a new ``Generator`` instance is used,
+        seeded with `random_state`.
+        If `random_state` is already a ``Generator`` instance then that
+        instance is used.
 
     Returns
     -------
@@ -265,10 +267,10 @@ def unsupervised_wiener(image, psf, reg=None, user_params=None, is_real=True,
         reg, _ = uft.laplacian(image.ndim, image.shape, is_real=is_real)
     if not cp.iscomplexobj(reg):
         reg = uft.ir2tf(reg, image.shape, is_real=is_real)
-    float_dtype = _float_dtype(image)
-    image = image.astype(float_dtype, copy=False)
-    psf = psf.real.astype(float_dtype, copy=False)
-    reg = reg.real.astype(float_dtype, copy=False)
+    float_type = _supported_float_type(image.dtype)
+    image = image.astype(float_type, copy=False)
+    psf = psf.real.astype(float_type, copy=False)
+    reg = reg.real.astype(float_type, copy=False)
 
     if psf.shape != reg.shape:
         trans_fct = uft.ir2tf(psf, image.shape, is_real=is_real)
@@ -276,9 +278,9 @@ def unsupervised_wiener(image, psf, reg=None, user_params=None, is_real=True,
         trans_fct = psf
 
     # The mean of the object
-    x_postmean = cp.zeros(trans_fct.shape, dtype=float_dtype)
+    x_postmean = cp.zeros(trans_fct.shape, dtype=float_type)
     # The previous computed mean in the iterative loop
-    prev_x_postmean = cp.zeros(trans_fct.shape, dtype=float_dtype)
+    prev_x_postmean = cp.zeros(trans_fct.shape, dtype=float_type)
 
     # Difference between two successive mean
     delta = np.NAN
@@ -299,22 +301,27 @@ def unsupervised_wiener(image, psf, reg=None, user_params=None, is_real=True,
         data_spectrum = uft.urfft2(image)
     else:
         data_spectrum = uft.ufft2(image)
+
+    try:
+        rng = cp.random.default_rng(random_state)
+    except AttributeError:
+        # older CuPy without default_rng
+        rng = cp.random.RandomState(random_state)
+
     # Gibbs sampling
     for iteration in range(params["max_iter"]):
         # Sample of Eq. 27 p(circX^k | gn^k-1, gx^k-1, y).
 
         # weighting (correlation in direct space)
         precision = gn_chain[-1] * atf2 + gx_chain[-1] * areg2  # Eq. 29
-        excursion = (
-            math.sqrt(0.5)
-            / cp.sqrt(precision)
-            * (
-                cp.random.standard_normal(
-                    data_spectrum.shape).astype(float_dtype, copy=False)
-                + 1j * cp.random.standard_normal(
-                    data_spectrum.shape).astype(float_dtype, copy=False)
-            )
-        )
+        # Note: Use astype instead of dtype argument to standard_normal to get
+        #       similar random values across precisions, as needed for
+        #       reference data used by test_unsupervised_wiener.
+        _rand1 = rng.standard_normal(data_spectrum.shape)
+        _rand1 = _rand1.astype(float_type, copy=False)
+        _rand2 = rng.standard_normal(data_spectrum.shape)
+        _rand2 = _rand2.astype(float_type, copy=False)
+        excursion = cp.sqrt(0.5 / precision) * (_rand1 + 1j * _rand2)
 
         # mean Eq. 30 (RLS for fixed gn, gamma0 and gamma1 ...)
         wiener_filter = gn_chain[-1] * cp.conj(trans_fct) / precision
@@ -326,20 +333,20 @@ def unsupervised_wiener(image, psf, reg=None, user_params=None, is_real=True,
 
         # sample of Eq. 31 p(gn | x^k, gx^k, y)
         gn_chain.append(
-            npr.gamma(
+            rng.gamma(
                 image.size / 2,
                 2 / uft.image_quad_norm(data_spectrum -
                                         x_sample *
                                         trans_fct)
-            ).astype(float_dtype, copy=False)
+            ).astype(float_type, copy=False)
         )
 
         # sample of Eq. 31 p(gx | x^k, gn^k-1, y)
         gx_chain.append(
-            npr.gamma(
+            rng.gamma(
                 (image.size - 1) / 2,
                 2 / uft.image_quad_norm(x_sample * reg)
-            ).astype(float_dtype, copy=False)
+            ).astype(float_type, copy=False)
         )
 
         # current empirical average
@@ -413,14 +420,17 @@ def richardson_lucy(image, psf, iterations=50, clip=True,
     ----------
     .. [1] https://en.wikipedia.org/wiki/Richardson%E2%80%93Lucy_deconvolution
     """
-    float_type = _float_dtype(image)
+    float_type = _supported_float_type(image.dtype)
     image = image.astype(float_type, copy=False)
     psf = psf.astype(float_type, copy=False)
     im_deconv = cp.full(image.shape, 0.5, dtype=float_type)
     psf_mirror = cp.ascontiguousarray(psf[::-1, ::-1])
 
+    # Small regularization parameter used to avoid 0 divisions
+    eps = 1e-12
+
     for _ in range(iterations):
-        conv = signal.convolve(im_deconv, psf, mode='same')
+        conv = signal.convolve(im_deconv, psf, mode='same') + eps
         if filter_epsilon:
             relative_blur = cp.where(conv < filter_epsilon, 0, image / conv)
         else:

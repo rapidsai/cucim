@@ -9,7 +9,7 @@ from skimage import color, data, img_as_float
 
 from cucim.skimage import restoration
 from cucim.skimage._shared.testing import expected_warnings
-from cucim.skimage._shared.utils import slice_at_axis
+from cucim.skimage._shared.utils import _supported_float_type, slice_at_axis
 from cucim.skimage.metrics import structural_similarity
 
 cp.random.seed(1234)
@@ -31,8 +31,14 @@ astro_odd = cp.asarray(astro_odd)
 checkerboard = cp.asarray(checkerboard)
 checkerboard_gray = cp.asarray(checkerboard_gray)
 
+float_dtypes = [cp.float16, cp.float32, cp.float64]
+try:
+    float_dtypes += [cp.float128]
+except AttributeError:
+    pass
 
-@pytest.mark.parametrize('dtype', [cp.float32, cp.float64])
+
+@pytest.mark.parametrize('dtype', float_dtypes)
 def test_denoise_tv_chambolle_2d(dtype):
     # astronaut image
     img = astro_gray.astype(dtype, copy=True)
@@ -42,16 +48,21 @@ def test_denoise_tv_chambolle_2d(dtype):
     img = cp.clip(img, 0, 1)
     # denoise
     denoised_astro = restoration.denoise_tv_chambolle(img, weight=0.1)
-    # which dtype?
-    assert denoised_astro.dtype == dtype
+    assert denoised_astro.dtype == _supported_float_type(img.dtype)
 
     # TODO: remove device to host transfers if cuda
     #       morphological_gradient is implemented
+    from scipy import ndimage as ndi
+
+    # Convert to a floating point type supported by scipy.ndimage
+    float_dtype = _supported_float_type(img.dtype)
+    img = img.astype(float_dtype, copy=False)
+
     grad = ndi.morphological_gradient(cp.asnumpy(img), size=((3, 3)))
     grad_denoised = ndi.morphological_gradient(
         cp.asnumpy(denoised_astro), size=((3, 3)))
     # test if the total variation has decreased
-    assert grad_denoised.dtype == dtype
+    assert grad_denoised.dtype == float_dtype
     assert np.sqrt((grad_denoised ** 2).sum()) < np.sqrt((grad ** 2).sum())
 
 
