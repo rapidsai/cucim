@@ -2,11 +2,13 @@ import sys
 import warnings
 
 import numpy as np
+import cupy as cp
 import pytest
 
 from cucim.skimage._shared._warnings import expected_warnings
 from cucim.skimage._shared.utils import (_validate_interpolation_order,
-                                         change_default_value, check_nD,
+                                         change_default_value,
+                                         channel_as_last_axis, check_nD,
                                          deprecate_kwarg,
                                          _supported_float_type)
 
@@ -142,8 +144,8 @@ def test_validate_interpolation_order(dtype, order):
             _validate_interpolation_order(dtype, order)
     elif dtype == bool and order != 0:
         # Deprecated order for bool array
-        with expected_warnings(["Input image dtype is bool"]):
-            assert _validate_interpolation_order(bool, order) == order
+        with pytest.raises(ValueError):
+            _validate_interpolation_order(bool, order)
     else:
         # Valid use case
         assert _validate_interpolation_order(dtype, order) == order
@@ -194,3 +196,25 @@ def test_supported_float_dtype_input_kinds(dtype):
 def test_supported_float_dtype_sequence(dtypes, expected):
     float_dtype = _supported_float_type(dtypes)
     assert float_dtype == expected
+
+
+@channel_as_last_axis(multichannel_output=False)
+def _decorated_channel_axis_size(x, *, channel_axis=None):
+    if channel_axis is None:
+        return None
+    assert channel_axis == -1
+    return x.shape[-1]
+
+
+@pytest.mark.parametrize('channel_axis', [None, 0, 1, 2, -1, -2, -3])
+def test_decorated_channel_axis_shape(channel_axis):
+    # Verify that channel_as_last_axis modifies the channel_axis as expected
+
+    # need unique size per axis here
+    x = cp.zeros((2, 3, 4))
+
+    size = _decorated_channel_axis_size(x, channel_axis=channel_axis)
+    if channel_axis is None:
+        assert size is None
+    else:
+        assert size == x.shape[channel_axis]
