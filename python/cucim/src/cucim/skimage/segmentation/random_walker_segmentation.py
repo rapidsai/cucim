@@ -90,7 +90,7 @@ def _build_laplacian(data, spacing, mask, beta, multichannel):
     edges = _make_graph_edges_3d(l_x, l_y, l_z)
     weights = _compute_weights_3d(data, spacing, beta=beta, eps=1.e-10,
                                   multichannel=multichannel)
-    assert weights.dtype == data.dtype
+    # assert weights.dtype == utils._supported_float_type(data.dtype)
     if mask is not None:
         # Remove edges of the graph connected to masked nodes, as well
         # as corresponding weights of the edges.
