@@ -5,14 +5,11 @@ import numpy as np
 from cupyx.scipy import ndimage as ndi
 
 from .._shared.utils import (_to_ndimage_mode, _validate_interpolation_order,
-                             convert_to_float, safe_as_int, warn)
+                             channel_as_last_axis, convert_to_float,
+                             deprecate_multichannel_kwarg, safe_as_int, warn)
 from ..measure import block_reduce
 from ._geometric import (AffineTransform, ProjectiveTransform,
                          SimilarityTransform)
-
-from .._shared.utils import (channel_as_last_axis,
-                             deprecate_multichannel_kwarg,
-                             _to_ndimage_mode)
 
 HOMOGRAPHY_TRANSFORMS = (
     SimilarityTransform,
@@ -168,8 +165,6 @@ def resize(image, output_shape, order=None, mode='reflect', cval=0, clip=True,
     # Translate modes used by np.pad to those used by scipy.ndimage
     ndi_mode = _to_ndimage_mode(mode)
     if anti_aliasing:
-        from cucim.skimage.filters import gaussian  # avoid circular import
-
         if anti_aliasing_sigma is None:
             anti_aliasing_sigma = tuple([max(0, (f - 1) / 2) for f in factors])
         else:

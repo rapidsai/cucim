@@ -1,5 +1,3 @@
-import unittest
-
 import cupy as cp
 import pytest
 from skimage import data
@@ -16,6 +14,7 @@ class TestLPIFilter2D:
 
     def setup_method(self):
         self.f = LPIFilter2D(self.filt_func)
+
     @pytest.mark.parametrize(
         'c_slice', [slice(None), slice(0, -5), slice(0, -20)]
     )

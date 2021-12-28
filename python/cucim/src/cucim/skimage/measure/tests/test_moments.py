@@ -170,6 +170,7 @@ def test_moments_hu():
 
 @pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])
 def test_moments_dtype(dtype):
+    moments_hu = pytest.importorskip("skimage.measure.moments_hu")
     image = cp.zeros((20, 20), dtype=dtype)
     image[13:15, 13:17] = 1
 

@@ -748,7 +748,7 @@ def threshold_li(image, *, tolerance=None, initial_guess=None,
             mean_fore = float(mean_fore)
             t_next = (
                 (mean_back - mean_fore)
-                / (math.log(mean_back + eps)- math.log(mean_fore + eps))
+                / (math.log(mean_back + eps) - math.log(mean_fore + eps))
             )
 
             if iter_callback is not None:
@@ -1033,7 +1033,6 @@ def _mean_std(image, w):
     integral = integral_image(padded, dtype=np.float64)
     padded *= padded
     integral_sq = integral_image(padded, dtype=np.float64)
-
 
     # Create lists of non-zero kernel indices and values
     kernel_indices = list(itertools.product(*tuple([(0, _w) for _w in w])))

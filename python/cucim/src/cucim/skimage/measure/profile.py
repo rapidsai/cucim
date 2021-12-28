@@ -1,5 +1,4 @@
 import math
-from warnings import warn
 
 import cupy as cp
 import numpy as np

@@ -1,5 +1,3 @@
-import functools
-
 import cupy as cp
 
 from ..util.dtype import dtype_range

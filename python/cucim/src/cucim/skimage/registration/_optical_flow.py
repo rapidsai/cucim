@@ -7,7 +7,6 @@ from functools import partial
 from itertools import combinations_with_replacement
 
 import cupy as cp
-import numpy as np
 from cupyx.scipy import ndimage as ndi
 
 from .._shared.utils import _supported_float_type

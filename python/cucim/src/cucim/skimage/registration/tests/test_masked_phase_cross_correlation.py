@@ -3,13 +3,12 @@ import numpy as np
 import pytest
 from cupyx.scipy.ndimage import fourier_shift, shift as real_shift
 from numpy.testing import assert_almost_equal
-from skimage.data import brain, camera, stereo_motorcycle
+from skimage.data import brain, camera
 from skimage.io import imread
 
 from cucim.skimage._shared.fft import fftmodule as fft
-from cucim.skimage._shared.testing import expected_warnings, fetch
+from cucim.skimage._shared.testing import fetch
 from cucim.skimage._shared.utils import _supported_float_type
-from cucim.skimage.feature import masked_register_translation as _deprecated
 from cucim.skimage.registration._masked_phase_cross_correlation import \
     _masked_phase_cross_correlation as masked_register_translation
 from cucim.skimage.registration._masked_phase_cross_correlation import \

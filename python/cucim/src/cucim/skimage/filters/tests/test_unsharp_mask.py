@@ -1,5 +1,4 @@
 import cupy as cp
-import numpy as np
 import pytest
 from skimage._shared._warnings import expected_warnings
 
@@ -87,8 +86,8 @@ def test_unsharp_masking_with_different_ranges(shape, offset, channel_axis,
                           ((13, 17, 3), True)])
 @pytest.mark.parametrize("offset", [-5, 0, 5])
 @pytest.mark.parametrize("preserve", [False, True])
-def test_unsharp_masking_with_different_ranges(shape, offset,
-                                               multichannel, preserve):
+def test_unsharp_masking_with_different_ranges_dep(shape, offset,
+                                                   multichannel, preserve):
     radius = 2.0
     amount = 1.0
     dtype = cp.int16
@@ -115,7 +114,8 @@ def test_unsharp_masking_with_different_ranges(shape, offset,
                           ((15, 15, 2), -1),
                           ((13, 17, 3), -1)])
 @pytest.mark.parametrize("preserve", [False, True])
-@pytest.mark.parametrize("dtype", [cp.uint8, cp.float16, cp.float32, cp.float64])
+@pytest.mark.parametrize("dtype",
+                         [cp.uint8, cp.float16, cp.float32, cp.float64])
 def test_unsharp_masking_dtypes(shape, channel_axis, preserve, dtype):
     radius = 2.0
     amount = 1.0

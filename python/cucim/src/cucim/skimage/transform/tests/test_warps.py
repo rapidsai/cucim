@@ -393,7 +393,7 @@ def test_resize_dtype():
 @pytest.mark.parametrize('dtype', [cp.float64, cp.uint8])
 def test_resize_clip(order, preserve_range, anti_aliasing, dtype):
     # test if clip as expected
-    if dtype == cp.uint8 and (preserve_range or order==0):
+    if dtype == cp.uint8 and (preserve_range or order == 0):
         expected_max = 255
     else:
         expected_max = 1.0
@@ -801,4 +801,3 @@ def test_nonzero_order_warp_dtype(dtype, order):
     assert rotate(img, 45, order=order).dtype == float_dtype
     assert warp_polar(img, order=order).dtype == float_dtype
     assert swirl(img, order=order).dtype == float_dtype
-

@@ -8,7 +8,7 @@ from scipy import spatial  # TODO: use RAPIDS cuSpatial?
 
 # from ..transform import integral_image
 from .. import img_as_float
-from .._shared.utils import _supported_float_type, safe_as_int
+from .._shared.utils import _supported_float_type
 from .peak import peak_local_max
 from .util import _prepare_grayscale_input_nD
 
@@ -337,7 +337,8 @@ def _symmetric_image(S_elems):
         containing the matrix corresponding to each coordinate.
     """
     image = S_elems[0]
-    symmetric_image = cp.zeros(image.shape + (image.ndim, image.ndim), dtype=image.dtype)
+    symmetric_image = cp.zeros(image.shape + (image.ndim, image.ndim),
+                               dtype=image.dtype)
     for idx, (row, col) in enumerate(
         combinations_with_replacement(range(image.ndim), 2)
     ):
@@ -797,10 +798,10 @@ def corner_foerstner(image, sigma=1):
 
     References
     ----------
-    .. [1] Förstner, W., & Gülch, E. (1987, June). A fast operator for detection and
-           precise location of distinct points, corners and centres of circular
-           features. In Proc. ISPRS intercommission conference on fast processing of
-           photogrammetric data (pp. 281-305).
+    .. [1] Förstner, W., & Gülch, E. (1987, June). A fast operator for
+           detection and precise location of distinct points, corners and
+           centres of circular features. In Proc. ISPRS intercommission
+           conference on fast processing of photogrammetric data (pp. 281-305).
            https://cseweb.ucsd.edu/classes/sp02/cse252/foerstner/foerstner.pdf
     .. [2] https://en.wikipedia.org/wiki/Corner_detection
 

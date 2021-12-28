@@ -585,7 +585,7 @@ def test_degenerate(xp=cp):
 @pytest.mark.parametrize('xp', [np, cp])
 def test_normalize_degenerate_points(xp):
     """Return nan matrix *of appropriate size* when point is repeated."""
-    pts = xp.array([[73.42834308, 94.2977623 ],] * 3)
+    pts = xp.array([[73.42834308, 94.2977623]] * 3)
     mat, pts_tf, _ = _center_and_normalize_points(pts)
     assert xp.all(xp.isnan(mat))
     assert xp.all(xp.isnan(pts_tf))

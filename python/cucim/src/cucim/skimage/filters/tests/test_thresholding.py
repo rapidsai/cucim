@@ -11,12 +11,11 @@ from skimage.filters._multiotsu import (_get_multiotsu_thresh_indices,
 # from cupyx.scipy import ndimage as ndi
 from cucim.skimage import util
 from cucim.skimage._shared import testing
-from cucim.skimage._shared._dependency_checks import has_mpl
 from cucim.skimage._shared._warnings import expected_warnings
 from cucim.skimage._shared.utils import _supported_float_type
 from cucim.skimage.color import rgb2gray
 from cucim.skimage.exposure import histogram
-from cucim.skimage.filters.thresholding import (_cross_entropy, _mean_std,
+from cucim.skimage.filters.thresholding import (_cross_entropy,
                                                 threshold_isodata,
                                                 threshold_li, threshold_local,
                                                 threshold_mean,
@@ -198,11 +197,11 @@ class TestSimpleImage:
     @pytest.mark.parametrize('ndim', [2, 3])
     def test_threshold_local_median(self, ndim):
         ref = cp.array(
-            [[False, False, False, False,  True],
-             [False, False,  True, False, False],
-             [False, False,  True, False, False],
-             [False, False,  True,  True, False],
-             [False,  True, False, False, False]]
+            [[False, False, False, False,  True],  # noqa
+             [False, False,  True, False, False],  # noqa
+             [False, False,  True, False, False],  # noqa
+             [False, False,  True,  True, False],  # noqa
+             [False,  True, False, False, False]]  # noqa
         )
         if ndim == 2:
             image = self.image
