@@ -6,6 +6,7 @@ from skimage.data import camera, chelsea
 from skimage.restoration import denoise_wavelet
 
 from cucim.skimage._shared.testing import expected_warnings
+from cucim.skimage._shared.utils import _supported_float_type
 from cucim.skimage.data import binary_blobs
 from cucim.skimage.metrics import mean_squared_error as mse
 from cucim.skimage.restoration import calibrate_denoiser, denoise_tv_chambolle
@@ -38,18 +39,18 @@ def test_invariant_denoise():
     assert denoised_mse < original_mse
 
 
-@pytest.mark.parametrize('dtype', [cp.float32, cp.float64])
+@pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])
 def test_invariant_denoise_color(dtype):
     denoised_img_color = _invariant_denoise(
         noisy_img_color.astype(dtype),
         _denoise_wavelet,
         denoiser_kwargs=dict(channel_axis=-1),
     )
-    assert denoised_img_color.dtype == dtype
 
     denoised_mse = mse(denoised_img_color, test_img_color)
     original_mse = mse(noisy_img_color, test_img_color)
     assert denoised_mse < original_mse
+    assert denoised_img_color.dtype == _supported_float_type(dtype)
 
 
 def test_invariant_denoise_color_deprecated():
