@@ -4,7 +4,6 @@ from numpy.testing import (TestCase, assert_, assert_allclose,  # noqa
                            assert_array_almost_equal_nulp, assert_array_equal,
                            assert_array_less, assert_equal, assert_no_warnings,
                            assert_warns)
-from skimage import data
 
 from ._warnings import expected_warnings  # noqa
 
@@ -22,7 +21,7 @@ except ImportError:
     # scikit-image 0.18
     try:
         from skimage.data import _fetch
-    except:
+    except ImportError:
         have_fetch = False
 
 

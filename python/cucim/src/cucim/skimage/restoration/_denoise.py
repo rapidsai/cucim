@@ -6,7 +6,6 @@ from .. import img_as_float
 from .._shared import utils
 from .._shared.utils import _supported_float_type, warn
 
-
 def _denoise_tv_chambolle_nd(image, weight=0.1, eps=2.0e-4, n_iter_max=200):
     """Perform total-variation denoising on n-dimensional images.
 

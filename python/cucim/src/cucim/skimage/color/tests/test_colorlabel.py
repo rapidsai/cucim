@@ -44,6 +44,7 @@ def test_uint_image(channel_axis):
     new_axis = channel_axis % output.ndim
     assert output.shape[new_axis] == 3
 
+
 def test_rgb():
     image = cp.ones((1, 3))
     label = cp.arange(3).reshape(1, -1)

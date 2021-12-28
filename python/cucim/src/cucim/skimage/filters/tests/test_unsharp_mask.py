@@ -55,7 +55,7 @@ def test_unsharp_masking_with_different_radii(radius, shape,
     assert output.shape == shape
 
 
-@pytest.mark.parametrize("shape,channel_axis",
+@pytest.mark.parametrize("shape, channel_axis",
                          [((16, 16), None),
                           ((15, 15, 2), -1),
                           ((13, 17, 3), -1),
@@ -81,7 +81,7 @@ def test_unsharp_masking_with_different_ranges(shape, offset, channel_axis,
     assert output.shape == shape
 
 
-@pytest.mark.parametrize("shape,multichannel",
+@pytest.mark.parametrize("shape, multichannel",
                          [((16, 16), False),
                           ((15, 15, 2), True),
                           ((13, 17, 3), True)])
