@@ -6,7 +6,7 @@ from cupyx.scipy import ndimage as ndi
 from scipy import signal
 
 from cucim.skimage import restoration
-from cucim.skimage._shared.testing import fetch
+from cucim.skimage._shared.testing import expected_warnings, fetch
 from cucim.skimage._shared.utils import _supported_float_type
 from cucim.skimage.color import rgb2gray
 from cucim.skimage.restoration import uft
@@ -107,8 +107,8 @@ def test_unsupervised_wiener(dtype):
         reg=laplacian,
         is_real=False,
         user_params={"callback": lambda x: None,
-                     "max_iter": 200,
-                     "min_iter": 30},
+                     "max_num_iter": 200,
+                     "min_num_iter": 30},
         random_state=seed,
     )[0]
     assert deconvolved2.real.dtype == float_type
@@ -119,6 +119,21 @@ def test_unsupervised_wiener(dtype):
     #               Verified similar appearance qualitatively.
     # path = fetch("restoration/tests/camera_unsup2.npy")
     # cp.testing.assert_allclose(cp.real(deconvolved), np.load(path), rtol=1e-3)
+
+
+def test_unsupervised_wiener_deprecated_user_param():
+    psf = np.ones((5, 5), dtype=float) / 25
+    data = signal.convolve2d(cp.asnumpy(test_img), psf, 'same')
+    data = cp.array(data)
+    psf = cp.array(psf)
+    otf = uft.ir2tf(psf, data.shape, is_real=False)
+    _, laplacian = uft.laplacian(2, data.shape)
+    with expected_warnings(["`max_iter` is a deprecated key",
+                            "`min_iter` is a deprecated key"]):
+        restoration.unsupervised_wiener(
+            data, otf, reg=laplacian, is_real=False,
+            user_params={"max_iter": 200, "min_iter": 30}, random_state=5
+        )
 
 
 @cp.testing.with_requires("scikit-image>=0.18")
@@ -158,6 +173,17 @@ def test_richardson_lucy():
 
     path = fetch('restoration/tests/camera_rl.npy')
     cp.testing.assert_allclose(deconvolved, np.load(path), rtol=1e-4)
+
+
+def test_richardson_lucy_deprecated_iterations_kwarg():
+    psf = np.ones((5, 5)) / 25
+    data = signal.convolve2d(cp.asnumpy(test_img), psf, 'same')
+    np.random.seed(0)
+    data += 0.1 * data.std() * np.random.standard_normal(data.shape)
+    data = cp.array(data)
+    psf = cp.array(psf)
+    with expected_warnings(["`iterations` is a deprecated argument"]):
+        restoration.richardson_lucy(data, psf, iterations=5)
 
 
 @pytest.mark.parametrize('dtype_image', [cp.float16, cp.float32, cp.float64])

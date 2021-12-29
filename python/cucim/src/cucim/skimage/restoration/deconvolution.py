@@ -1,4 +1,5 @@
 """Implementations restoration functions"""
+import warnings
 
 import cupy as cp
 import numpy as np
@@ -7,7 +8,7 @@ import numpy as np
 #       choose_conv_method for > 1d has been implemented.
 import cucim.skimage._vendored
 
-from .._shared.utils import _supported_float_type
+from .._shared.utils import _supported_float_type, deprecate_kwarg
 from . import uft
 
 # from cupyx.scipy.signal import convolve
@@ -208,9 +209,9 @@ def unsupervised_wiener(image, psf, reg=None, user_params=None, is_real=True,
     burnin : int
        The number of sample to ignore to start computation of the
        mean. 15 by default.
-    min_iter : int
+    min_num_iter : int
        The minimum number of iterations. 30 by default.
-    max_iter : int
+    max_num_iter : int
        The maximum number of iterations if ``threshold`` is not
        satisfied. 200 by default.
     callback : callable (None by default)
@@ -256,8 +257,20 @@ def unsupervised_wiener(image, psf, reg=None, user_params=None, is_real=True,
 
            http://research.orieux.fr/files/papers/OGR-JOSA10.pdf
     """
-    params = {'threshold': 1e-4, 'max_iter': 200,
-              'min_iter': 30, 'burnin': 15, 'callback': None}
+
+    if user_params is not None:
+        for s in ('max', 'min'):
+            if (s + '_iter') in user_params:
+                warning_msg = (
+                    f'`{s}_iter` is a deprecated key for `user_params`. '
+                    f'It will be removed in version 1.0. '
+                    f'Use `{s}_num_iter` instead.'
+                )
+                warnings.warn(warning_msg, FutureWarning)
+                user_params[s + '_num_iter'] = user_params.pop(s + '_iter')
+
+    params = {'threshold': 1e-4, 'max_num_iter': 200,
+              'min_num_iter': 30, 'burnin': 15, 'callback': None}
     params.update(user_params or {})
 
     if reg is None:
@@ -306,7 +319,7 @@ def unsupervised_wiener(image, psf, reg=None, user_params=None, is_real=True,
         rng = cp.random.RandomState(random_state)
 
     # Gibbs sampling
-    for iteration in range(params["max_iter"]):
+    for iteration in range(params["max_num_iter"]):
         # Sample of Eq. 27 p(circX^k | gn^k-1, gx^k-1, y).
 
         # weighting (correlation in direct space)
@@ -359,7 +372,10 @@ def unsupervised_wiener(image, psf, reg=None, user_params=None, is_real=True,
         prev_x_postmean = x_postmean
 
         # stop of the algorithm
-        if (iteration > params['min_iter']) and (delta < params['threshold']):
+        if (
+            (iteration > params['min_num_iter'])
+            and (delta < params['threshold'])
+        ):
             break
 
     # Empirical average \approx POSTMEAN Eq. 44
@@ -376,8 +392,9 @@ def unsupervised_wiener(image, psf, reg=None, user_params=None, is_real=True,
     return (x_postmean, {'noise': gn_chain, 'prior': gx_chain})
 
 
-def richardson_lucy(image, psf, iterations=50, clip=True,
-                    filter_epsilon=None):
+@deprecate_kwarg({'iterations': 'num_iter'}, removed_version="1.0",
+                 deprecated_version="0.19")
+def richardson_lucy(image, psf, num_iter=50, clip=True, filter_epsilon=None):
     """Richardson-Lucy deconvolution.
 
     Parameters
@@ -386,7 +403,7 @@ def richardson_lucy(image, psf, iterations=50, clip=True,
        Input degraded image (can be N dimensional).
     psf : ndarray
        The point spread function.
-    iterations : int, optional
+    num_iter : int, optional
        Number of iterations. This parameter plays the role of
        regularisation.
     clip : boolean, optional
@@ -426,7 +443,7 @@ def richardson_lucy(image, psf, iterations=50, clip=True,
     # Small regularization parameter used to avoid 0 divisions
     eps = 1e-12
 
-    for _ in range(iterations):
+    for _ in range(num_iter):
         conv = signal.convolve(im_deconv, psf, mode='same') + eps
         if filter_epsilon:
             relative_blur = cp.where(conv < filter_epsilon, 0, image / conv)

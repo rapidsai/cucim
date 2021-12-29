@@ -10,7 +10,7 @@ from skimage.filters._multiotsu import (_get_multiotsu_thresh_indices,
 
 # from cupyx.scipy import ndimage as ndi
 from cucim.skimage import util
-from cucim.skimage._shared import testing
+from cucim.skimage._shared._dependency_checks import has_mpl
 from cucim.skimage._shared._warnings import expected_warnings
 from cucim.skimage._shared.utils import _supported_float_type
 from cucim.skimage.color import rgb2gray
@@ -49,6 +49,7 @@ class TestSimpleImage:
         with pytest.raises(RuntimeError):
             threshold_minimum(self.image)
 
+    @pytest.mark.skipif(not has_mpl, reason="matplotlib not installed")
     def test_try_all_threshold(self):
         fig, ax = try_all_threshold(self.image)
         all_texts = [axis.texts for axis in ax if axis.texts != []]
@@ -411,7 +412,7 @@ def test_li_arbitrary_start_point():
 
 
 def test_li_negative_inital_guess():
-    with testing.raises(ValueError):
+    with pytest.raises(ValueError):
         threshold_li(coinsd, initial_guess=-5)
 
 
@@ -462,7 +463,7 @@ def test_yen_coins_image_as_float():
 
 def test_local_even_block_size_error():
     img = camerad
-    with testing.raises(ValueError):
+    with pytest.raises(ValueError):
         threshold_local(img, block_size=4)
 
 
@@ -570,6 +571,13 @@ def test_threshold_minimum_histogram():
     assert_array_equal(threshold, 85)
 
 
+def test_threshold_minimum_deprecated_max_iter_kwarg():
+    camera = util.img_as_ubyte(camerad)
+    hist = histogram(camera.ravel(), 256, source_range='image')
+    with expected_warnings(["`max_iter` is a deprecated argument"]):
+        threshold_minimum(hist=hist, max_iter=5000)
+
+
 @cp.testing.with_requires("scikit-image>=0.18")
 def test_threshold_minimum_counts():
     camera = util.img_as_ubyte(camerad)
@@ -589,7 +597,7 @@ def test_threshold_minimum_synthetic():
 
 def test_threshold_minimum_failure():
     img = cp.zeros((16 * 16), dtype=cp.uint8)
-    with testing.raises(RuntimeError):
+    with pytest.raises(RuntimeError):
         threshold_minimum(img)
 
 
@@ -756,13 +764,13 @@ def test_multiotsu_astro_image():
 
 def test_multiotsu_more_classes_then_values():
     img = cp.ones((10, 10), dtype=cp.uint8)
-    with testing.raises(ValueError):
+    with pytest.raises(ValueError):
         threshold_multiotsu(img, classes=2)
     img[:, 3:] = 2
-    with testing.raises(ValueError):
+    with pytest.raises(ValueError):
         threshold_multiotsu(img, classes=3)
     img[:, 6:] = 3
-    with testing.raises(ValueError):
+    with pytest.raises(ValueError):
         threshold_multiotsu(img, classes=4)
 
 
