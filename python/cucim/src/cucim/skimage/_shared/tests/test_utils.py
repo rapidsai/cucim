@@ -5,7 +5,6 @@ import cupy as cp
 import numpy as np
 import pytest
 
-from cucim.skimage._shared._warnings import expected_warnings
 from cucim.skimage._shared.utils import (_supported_float_type,
                                          _validate_interpolation_order,
                                          change_default_value,
