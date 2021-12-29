@@ -1,8 +1,7 @@
 import cupy as cp
 
-from ..util.dtype import img_as_float
 from .._shared import utils
-
+from ..util.dtype import img_as_float
 from .thresholding import _float_dtype
 
 

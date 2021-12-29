@@ -55,7 +55,6 @@ import cupy as cp
 import numpy as np
 from scipy import linalg
 
-
 from .._shared.utils import channel_as_last_axis, identity
 from ..util import dtype, dtype_limits
 

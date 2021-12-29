@@ -4,14 +4,12 @@ import cupy as cp
 import numpy as np
 from cupyx.scipy import ndimage as ndi
 
-from .._shared.utils import (_validate_interpolation_order, convert_to_float,
-                             safe_as_int, warn)
+from .._shared.utils import (_validate_interpolation_order,
+                             channel_as_last_axis, convert_to_float,
+                             deprecate_multichannel_kwarg, safe_as_int, warn)
 from ..measure import block_reduce
 from ._geometric import (AffineTransform, ProjectiveTransform,
                          SimilarityTransform, _to_ndimage_mode)
-
-from .._shared.utils import (channel_as_last_axis,
-                             deprecate_multichannel_kwarg)
 
 HOMOGRAPHY_TRANSFORMS = (
     SimilarityTransform,
