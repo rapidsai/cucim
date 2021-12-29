@@ -12,8 +12,8 @@ http://www.dirkpadfield.com/
 from functools import partial
 
 import cupy as cp
-import numpy as np
 import cupyx.scipy.fft as fftmodule
+import numpy as np
 from cupyx.scipy.fft import next_fast_len
 
 from .._shared.utils import _supported_float_type

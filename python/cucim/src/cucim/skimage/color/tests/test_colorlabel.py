@@ -5,11 +5,9 @@ import numpy as np
 import pytest
 from cupy.testing import assert_array_almost_equal, assert_array_equal
 from numpy.testing import assert_no_warnings
-
 from skimage._shared.testing import expected_warnings
 
-from cucim.skimage.color.colorlabel import hsv2rgb, rgb2hsv
-from cucim.skimage.color.colorlabel import label2rgb
+from cucim.skimage.color.colorlabel import hsv2rgb, label2rgb, rgb2hsv
 
 
 def test_shape_mismatch():

@@ -2,8 +2,8 @@ import cupy as cp
 import numpy as np
 import pytest
 from cupy.testing import assert_allclose, assert_array_equal
-
 from skimage._shared.utils import _supported_float_type
+
 from cucim.skimage.segmentation import find_boundaries, mark_boundaries
 
 white = (1, 1, 1)

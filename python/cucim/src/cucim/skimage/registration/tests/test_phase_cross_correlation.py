@@ -2,11 +2,11 @@ import cupy as cp
 import pytest
 from cupy.testing import assert_allclose
 from cupyx.scipy.ndimage import fourier_shift
+from skimage._shared._warnings import expected_warnings
+from skimage._shared.utils import _supported_float_type
 from skimage.data import camera
 
 from cucim.skimage import img_as_float
-from skimage._shared._warnings import expected_warnings
-from skimage._shared.utils import _supported_float_type
 from cucim.skimage._shared.fft import fftmodule as fft
 from cucim.skimage.data import binary_blobs
 from cucim.skimage.registration._phase_cross_correlation import (

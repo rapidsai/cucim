@@ -1,7 +1,7 @@
 import cupy as cp
 
-from ..util.dtype import dtype_range
 from .._shared.utils import _supported_float_type, check_shape_equality, warn
+from ..util.dtype import dtype_range
 
 __all__ = ['mean_squared_error',
            'normalized_root_mse',

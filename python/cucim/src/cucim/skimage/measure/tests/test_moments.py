@@ -6,8 +6,8 @@ from cupy.testing import (assert_allclose, assert_array_almost_equal,
 from cupyx.scipy import ndimage as ndi
 from numpy.testing import assert_almost_equal
 from skimage import draw
-
 from skimage._shared.utils import _supported_float_type
+
 from cucim.skimage.measure import (centroid, inertia_tensor,
                                    inertia_tensor_eigvals, moments,
                                    moments_central, moments_coords,

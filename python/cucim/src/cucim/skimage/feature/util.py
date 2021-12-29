@@ -1,7 +1,7 @@
 import cupy as cp
 
-from ..util import img_as_float
 from .._shared.utils import _supported_float_type, check_nD
+from ..util import img_as_float
 
 
 def _prepare_grayscale_input_2D(image):

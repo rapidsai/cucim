@@ -1,7 +1,8 @@
 import cupy as cp
 import numpy as np
 import pytest
-from cupyx.scipy.ndimage import fourier_shift, shift as real_shift
+from cupyx.scipy.ndimage import fourier_shift
+from cupyx.scipy.ndimage import shift as real_shift
 from numpy.testing import assert_almost_equal
 from skimage.data import brain, camera
 from skimage.io import imread
