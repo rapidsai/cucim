@@ -1,7 +1,7 @@
 import cupy as cp
 
-from ..util.dtype import img_as_float
 from .._shared import utils
+from ..util.dtype import img_as_float
 
 
 def _unsharp_mask_single_channel(image, radius, amount, vrange):

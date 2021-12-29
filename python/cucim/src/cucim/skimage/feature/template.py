@@ -5,7 +5,7 @@ import cucim.skimage._vendored
 #       choose_conv_method for > 1d has been implemented.
 from cucim import _misc
 
-from .._shared.utils import check_nD, _supported_float_type
+from .._shared.utils import _supported_float_type, check_nD
 
 # from cupyx.scipy import signal
 

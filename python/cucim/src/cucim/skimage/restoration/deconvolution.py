@@ -7,8 +7,8 @@ import numpy as np
 #       choose_conv_method for > 1d has been implemented.
 import cucim.skimage._vendored
 
-from . import uft
 from .._shared.utils import _supported_float_type
+from . import uft
 
 # from cupyx.scipy.signal import convolve
 # from cupyx.scipy import signal

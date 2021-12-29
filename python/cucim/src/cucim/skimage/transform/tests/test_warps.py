@@ -22,7 +22,7 @@ from cucim.skimage.transform._warps import (_linear_polar_mapping,
                                             downscale_local_mean, rescale,
                                             resize, rotate, swirl, warp,
                                             warp_coords, warp_polar)
-from cucim.skimage.util.dtype import img_as_float, _convert
+from cucim.skimage.util.dtype import _convert, img_as_float
 
 # from skimage._shared.testing import test_parallel
 

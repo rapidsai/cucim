@@ -1,16 +1,16 @@
 import sys
 import warnings
 
-import numpy as np
 import cupy as cp
+import numpy as np
 import pytest
 
 from cucim.skimage._shared._warnings import expected_warnings
-from cucim.skimage._shared.utils import (_validate_interpolation_order,
+from cucim.skimage._shared.utils import (_supported_float_type,
+                                         _validate_interpolation_order,
                                          change_default_value,
                                          channel_as_last_axis, check_nD,
-                                         deprecate_kwarg,
-                                         _supported_float_type)
+                                         deprecate_kwarg)
 
 complex_dtypes = [np.complex64, np.complex128]
 if hasattr(np, 'complex256'):

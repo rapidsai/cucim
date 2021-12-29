@@ -16,9 +16,8 @@ from cucim.skimage._shared.utils import _supported_float_type
 from cucim.skimage.color import rgb2gray
 from cucim.skimage.exposure import histogram
 from cucim.skimage.filters.thresholding import (_cross_entropy,
-                                                threshold_isodata,
-                                                threshold_li, threshold_local,
-                                                threshold_mean,
+                                                threshold_isodata, threshold_li,
+                                                threshold_local, threshold_mean,
                                                 threshold_minimum,
                                                 threshold_multiotsu,
                                                 threshold_niblack,

@@ -22,12 +22,13 @@ import operator
 import cupy as cp
 import numpy as np
 
-from .._shared.utils import _supported_float_type
-from ..color.adapt_rgb import adapt_rgb, hsv_value
-from ..util import img_as_uint
 # TODO: replace _misc.prod with math.prod once minimum Python >= 3.88
 from cucim import _misc
 from cucim.skimage.exposure.exposure import rescale_intensity
+
+from .._shared.utils import _supported_float_type
+from ..color.adapt_rgb import adapt_rgb, hsv_value
+from ..util import img_as_uint
 
 NR_OF_GRAY = 2 ** 14  # number of grayscale levels to use in CLAHE algorithm
 

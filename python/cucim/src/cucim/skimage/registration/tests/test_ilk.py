@@ -1,11 +1,10 @@
 import cupy as cp
 import numpy as np
 import pytest
+from test_tvl1 import _sin_flow_gen
 
 from cucim.skimage._shared.utils import _supported_float_type
 from cucim.skimage.registration import optical_flow_ilk
-
-from test_tvl1 import _sin_flow_gen
 
 
 @pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])
