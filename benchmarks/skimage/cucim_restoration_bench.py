@@ -152,7 +152,7 @@ for function_name, fixed_kwargs, var_kwargs, allow_color, allow_nd in [
     # deconvolution.py
     ("wiener", dict(balance=100.0), dict(), False, False),
     ("unsupervised_wiener", dict(), dict(), False, False),
-    ("richardson_lucy", dict(), dict(iterations=[5]), False, True),
+    ("richardson_lucy", dict(), dict(num_iter=[5]), False, True),
 ]:
 
     for shape in [(512, 512), (3840, 2160), (3840, 2160, 3), (192, 192, 192)]:

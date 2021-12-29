@@ -23,7 +23,7 @@ class BinaryMorphologyBench(ImageBench):
         self,
         function_name,
         shape,
-        selem=None,
+        footprint=None,
         dtypes=[bool],
         fixed_kwargs={},
         index_str="",
@@ -32,9 +32,9 @@ class BinaryMorphologyBench(ImageBench):
         module_gpu=cucim.skimage.morphology,
     ):
 
-        array_kwargs = dict(selem=selem)
-        if "selem" in fixed_kwargs:
-            raise ValueError("fixed_kwargs cannot contain 'selem'")
+        array_kwargs = dict(footprint=footprint)
+        if "footprint" in fixed_kwargs:
+            raise ValueError("fixed_kwargs cannot contain 'footprint'")
         fixed_kwargs = copy.deepcopy(fixed_kwargs)
         fixed_kwargs.update(array_kwargs)
 
@@ -155,13 +155,13 @@ for function_name, fixed_kwargs, var_kwargs, allow_nd in [
 
         for connectivity in range(1, ndim + 1):
             index_str = f"conn={connectivity}"
-            selem = ndi.generate_binary_structure(ndim, connectivity)
+            footprint = ndi.generate_binary_structure(ndim, connectivity)
 
             B = BinaryMorphologyBench(
                 function_name=function_name,
                 shape=shape,
                 dtypes=[bool],
-                selem=selem,
+                footprint=footprint,
                 fixed_kwargs={},
                 var_kwargs=var_kwargs,
                 index_str=index_str,
@@ -213,7 +213,7 @@ for function_name, fixed_kwargs, var_kwargs, allow_color, allow_nd in [
     ("black_tophat", dict(), dict(), False, True),
     # greyreconstruct.py
     ("reconstruction", dict(), dict(), False, True),
-    # selem.py
+    # footprints.py
     # OMIT the functions from this file (each creates a structuring element)
 ]:
 
@@ -235,12 +235,14 @@ for function_name, fixed_kwargs, var_kwargs, allow_color, allow_nd in [
             var_kwargs["frequency"] = [f for f in var_kwargs["frequency"] if f >= 0.1]
 
         if function_name == "median":
-            selems = []
+            footprints = []
             ndim = len(shape)
-            selem_sizes = [3, 5, 7, 9] if ndim == 2 else [3, 5, 7]
-            for selem_size in [3, 5, 7, 9]:
-                selems.append(np.ones((selem_sizes,) * ndim, dtype=bool))
-            var_kwargs["selem"] = selems
+            footprint_sizes = [3, 5, 7, 9] if ndim == 2 else [3, 5, 7]
+            for footprint_size in [3, 5, 7, 9]:
+                footprints.append(
+                    np.ones((footprint_sizes,) * ndim, dtype=bool)
+                )
+            var_kwargs["footprint"] = footprints
 
         if function_name in ["gaussian", "unsharp_mask"]:
             fixed_kwargs["channel_axis"] = -1 if shape[-1] == 3 else None
