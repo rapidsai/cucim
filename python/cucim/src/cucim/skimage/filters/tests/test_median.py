@@ -4,9 +4,8 @@ import pytest
 from cupy.testing import assert_allclose
 from cupyx.scipy import ndimage
 
+from cucim.skimage._shared.testing import expected_warnings
 from cucim.skimage.filters import median
-
-# from cucim.skimage.filters import rank
 
 
 @pytest.fixture
@@ -21,28 +20,31 @@ def image():
 
 # TODO: mode='rank' disabled until it has been implmented
 @pytest.mark.parametrize(
-    "mode, cval, behavior, n_warning, warning_type",
-    [('nearest', 0.0, 'ndimage', 0, []),
-     # ('constant', 0.0, 'rank', 1, (UserWarning,)),
-     # ('nearest', 0.0, 'rank', 0, []),
-     ('nearest', 0.0, 'ndimage', 0, [])]
+    "mode, cval, behavior, warning_type",
+    [('nearest', 0.0, 'ndimage', []),
+     # ('constant', 0.0, 'rank', (UserWarning,)),
+     # ('nearest', 0.0, 'rank', []),
+     ('nearest', 0.0, 'ndimage', [])]
 )
-def test_median_warning(image, mode, cval, behavior,
-                        n_warning, warning_type):
+def test_median_warning(image, mode, cval, behavior, warning_type):
 
-    with pytest.warns(None) as records:
+    if warning_type:
+        with pytest.warns(warning_type):
+            median(image, mode=mode, behavior=behavior)
+    else:
         median(image, mode=mode, behavior=behavior)
 
-    assert len(records) == n_warning
-    for rec in records:
-        assert isinstance(rec.message, warning_type)
+
+def test_selem_kwarg_deprecation(image):
+    with expected_warnings(["`selem` is a deprecated argument name"]):
+        median(image, selem=None)
 
 
 # TODO: update if rank.median implemented
 @pytest.mark.parametrize(
     "behavior, func, params",
     [('ndimage', ndimage.median_filter, {'size': (3, 3)})]
-    # ('rank', rank.median, {'selem': np.ones((3, 3), dtype=np.uint8)})]
+    # ('rank', rank.median, {'footprint': np.ones((3, 3), dtype=np.uint8)})]
 )
 def test_median_behavior(image, behavior, func, params):
     assert_allclose(median(image, behavior=behavior), func(image, **params))

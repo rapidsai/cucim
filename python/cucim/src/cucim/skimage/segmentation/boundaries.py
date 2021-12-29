@@ -159,9 +159,10 @@ def find_boundaries(label_img, connectivity=1, mode="thick", background=0):
     if label_img.dtype == 'bool':
         label_img = label_img.astype(cp.uint8)
     ndim = label_img.ndim
-    selem = ndi.generate_binary_structure(ndim, connectivity)
+    footprint = ndi.generate_binary_structure(ndim, connectivity)
     if mode != 'subpixel':
-        boundaries = dilation(label_img, selem) != erosion(label_img, selem)
+        boundaries = (dilation(label_img, footprint)
+                      != erosion(label_img, footprint))
         if mode == 'inner':
             foreground_image = label_img != background
             boundaries &= foreground_image

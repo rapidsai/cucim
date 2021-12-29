@@ -1,8 +1,8 @@
 import cupy as cp
 import numpy as np
 import pytest
-from skimage._shared.testing import expected_warnings
 
+from cucim.skimage._shared.testing import expected_warnings
 from cucim.skimage.feature import multiscale_basic_features
 
 

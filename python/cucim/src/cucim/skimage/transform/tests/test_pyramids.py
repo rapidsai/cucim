@@ -4,9 +4,9 @@ import cupy as cp
 import pytest
 from cupy.testing import assert_array_equal
 from skimage import data
-from skimage._shared.testing import expected_warnings
 
-from cucim.skimage._shared.testing import assert_almost_equal
+from cucim.skimage._shared.testing import (assert_almost_equal,
+                                           expected_warnings)
 from cucim.skimage._shared.utils import _supported_float_type
 from cucim.skimage.transform import pyramids
 
