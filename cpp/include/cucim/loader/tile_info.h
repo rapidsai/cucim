@@ -19,6 +19,8 @@
 
 #include "cucim/macros/api_header.h"
 
+#include <cstdint>
+
 namespace cucim::loader
 {
 
