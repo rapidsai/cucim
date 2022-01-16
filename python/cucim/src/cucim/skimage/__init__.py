@@ -12,6 +12,8 @@ Subpackages
 -----------
 color
     Color space conversion.
+data
+    Test images and example data.
 exposure
     Image intensity adjustment, e.g., histogram equalization, etc.
 feature
@@ -58,7 +60,47 @@ dtype_limits
 
 """
 
+
+__version__ = '0.19.2.dev0'
+
+submodules = [
+    'color',
+    'data',
+    'exposure',
+    'feature',
+    'filters',
+    'measure',
+    'metrics',
+    'morphology',
+    'registration',
+    'restoration',
+    'segmentation',
+    'transform',
+    'util',
+]
+
+from ._shared.version_requirements import ensure_python_version
+ensure_python_version((3, 7))
+
+
+from ._shared import lazy
+__getattr__, __lazy_dir__, _ = lazy.attach(
+    __name__,
+    submodules,
+    submod_attrs={'data': ['data_dir']}
+)
+
+
+def __dir__():
+    return __lazy_dir__() + ['__version__']
+
 # All skimage root imports go here
-from .util.dtype import (dtype_limits, img_as_bool, img_as_float,
-                         img_as_float32, img_as_float64, img_as_int,
-                         img_as_ubyte, img_as_uint)
+from .util.dtype import (img_as_float32,
+                         img_as_float64,
+                         img_as_float,
+                         img_as_int,
+                         img_as_uint,
+                         img_as_ubyte,
+                         img_as_bool,
+                         dtype_limits)
+# from .util.lookfor import lookfor

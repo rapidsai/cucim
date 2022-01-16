@@ -6,6 +6,10 @@ from cucim.skimage._shared._warnings import expected_warnings
 from cucim.skimage.segmentation import random_walker
 from cucim.skimage.transform import resize
 
+# Used to ignore warnings from CuPy 9.X and 10.x about a deprecated import when
+# SciPy >= 1.8 is installed.
+cupy_warning = "Please use `spmatrix` from the `scipy.sparse` |\A\Z"
+
 
 def make_2d_syntheticdata(lx, ly=None):
     if ly is None:
@@ -101,11 +105,11 @@ def test_2d_cg_mg(dtype):
     ly = 100
     data, labels = make_2d_syntheticdata(lx, ly)
     data = data.astype(dtype, copy=False)
-    with expected_warnings(['"cg_mg" not available']):
+    with expected_warnings(['"cg_mg" not available', cupy_warning]):
         labels_cg_mg = random_walker(data, labels, beta=90, mode='cg_mg')
     assert (labels_cg_mg[25:45, 40:60] == 2).all()
     assert data.shape == labels.shape
-    with expected_warnings(['"cg_mg" not available']):
+    with expected_warnings(['"cg_mg" not available', cupy_warning]):
         full_prob = random_walker(data, labels, beta=90, mode='cg_mg',
                                   return_full_prob=True)
     assert (full_prob[1, 25:45, 40:60] >=
@@ -135,7 +139,7 @@ def test_types():
     data, labels = make_2d_syntheticdata(lx, ly)
     data = 255 * (data - data.min()) // (data.max() - data.min())
     data = data.astype(cp.uint8)
-    with expected_warnings(['"cg_mg" not available']):
+    with expected_warnings(['"cg_mg" not available', cupy_warning]):
         labels_cg_mg = random_walker(data, labels, beta=90, mode='cg_mg')
     assert (labels_cg_mg[25:45, 40:60] == 2).all()
     assert data.shape == labels.shape
@@ -218,7 +222,7 @@ def test_multispectral_2d(dtype, channel_axis):
     data = data.astype(dtype, copy=False)
     data = data[..., cp.newaxis].repeat(2, axis=-1)  # Expect identical output
     data = cp.moveaxis(data, -1, channel_axis)
-    with expected_warnings(['The probability range is outside']):
+    with expected_warnings(['The probability range is outside', cupy_warning]):
         multi_labels = random_walker(data, labels, mode='cg',
                                      channel_axis=channel_axis)
     data = cp.moveaxis(data, channel_axis, -1)
@@ -236,14 +240,14 @@ def test_multispectral_2d_deprecated():
 
     # checking for multichannel kwarg warning
     with expected_warnings(['`multichannel` is a deprecated argument',
-                            'The probability range is outside']):
+                            'The probability range is outside', cupy_warning]):
         multi_labels = random_walker(data, labels, mode='cg',
                                      multichannel=True)
     assert data[..., 0].shape == labels.shape
 
     # checking for positional multichannel warning
     with expected_warnings(['Providing the `multichannel` argument',
-                            'The probability range is outside']):
+                            'The probability range is outside', cupy_warning]):
         multi_labels = random_walker(data, labels, 130, 'cg', 1.e-3, True,
                                      True)
     assert data[..., 0].shape == labels.shape
@@ -350,7 +354,7 @@ def test_trivial_cases():
     img = cp.ones((10, 10))
     labels = cp.ones((10, 10))
 
-    with expected_warnings(["Returning provided labels"]):
+    with expected_warnings(["Returning provided labels", cupy_warning]):
         pass_through = random_walker(img, labels)
     cp.testing.assert_array_equal(pass_through, labels)
 
@@ -358,7 +362,7 @@ def test_trivial_cases():
     labels[:, :5] = 3
     expected = cp.concatenate(((labels == 1)[..., cp.newaxis],
                                (labels == 3)[..., cp.newaxis]), axis=2)
-    with expected_warnings(["Returning provided labels"]):
+    with expected_warnings(["Returning provided labels", cupy_warning]):
         test = random_walker(img, labels, return_full_prob=True)
     cp.testing.assert_array_equal(test, expected)
 
@@ -375,12 +379,12 @@ def test_trivial_cases():
         markers[y][x] = 1
 
     markers[img == 0] = -1
-    with expected_warnings(["All unlabeled pixels are isolated"]):
+    with expected_warnings(["All unlabeled pixels are isolated", cupy_warning]):
         output_labels = random_walker(img, markers)
     assert cp.all(output_labels[markers == 1] == 1)
     # Here 0-labeled pixels could not be determined (no connexion to seed)
     assert cp.all(output_labels[markers == 0] == -1)
-    with expected_warnings(["All unlabeled pixels are isolated"]):
+    with expected_warnings(["All unlabeled pixels are isolated", cupy_warning]):
         test = random_walker(img, markers, return_full_prob=True)
 
 
@@ -442,10 +446,10 @@ def test_isolated_seeds():
     mask = cp.array(mask)
 
     # Test that no error is raised, and that labels of isolated seeds are OK
-    with expected_warnings(['The probability range is outside']):
+    with expected_warnings(['The probability range is outside', cupy_warning]):
         res = random_walker(a, mask)
     assert res[1, 1] == 1
-    with expected_warnings(['The probability range is outside']):
+    with expected_warnings(['The probability range is outside', cupy_warning]):
         res = random_walker(a, mask, return_full_prob=True)
     assert res[0, 1, 1] == 1
     assert res[1, 1, 1] == 0
@@ -465,10 +469,10 @@ def test_isolated_area():
     mask = cp.array(mask)
 
     # Test that no error is raised, and that labels of isolated seeds are OK
-    with expected_warnings(['The probability range is outside']):
+    with expected_warnings(['The probability range is outside', cupy_warning]):
         res = random_walker(a, mask)
     assert res[1, 1] == 0
-    with expected_warnings(['The probability range is outside']):
+    with expected_warnings(['The probability range is outside', cupy_warning]):
         res = random_walker(a, mask, return_full_prob=True)
     assert res[0, 1, 1] == 0
     assert res[1, 1, 1] == 0
@@ -487,7 +491,7 @@ def test_prob_tol():
     mask[6, 6] = 1
     mask = cp.array(mask)
 
-    with expected_warnings(['The probability range is outside']):
+    with expected_warnings(['The probability range is outside', cupy_warning]):
         res = random_walker(a, mask, return_full_prob=True)
 
     # Lower beta, no warning is expected.
