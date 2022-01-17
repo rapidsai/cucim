@@ -6,7 +6,9 @@ import pytest
 from skimage import data
 
 from cucim.skimage._shared._warnings import expected_warnings
-from cucim.skimage.metrics import (mean_squared_error, normalized_root_mse,
+from cucim.skimage.metrics import (mean_squared_error,
+                                   normalized_mutual_information,
+                                   normalized_root_mse,
                                    peak_signal_noise_ratio)
 
 np.random.seed(
@@ -106,3 +108,32 @@ def test_NRMSE_errors():
     # invalid normalization name
     with pytest.raises(ValueError):
         normalized_root_mse(x, x, normalization="foo")
+
+
+def test_nmi():
+    assert_almost_equal(float(normalized_mutual_information(cam, cam)), 2)
+    assert (normalized_mutual_information(cam, cam_noisy)
+            < normalized_mutual_information(cam, cam))
+
+
+def test_nmi_different_sizes():
+    assert float(normalized_mutual_information(cam[:, :400], cam[:400, :])) > 1
+
+
+@pytest.mark.parametrize('dtype', [np.float16, np.float32, np.float64])
+def test_nmi_random(dtype):
+    rng = cp.random.default_rng()
+    random1 = rng.random((100, 100)).astype(dtype)
+    random2 = rng.random((100, 100)).astype(dtype)
+    nmi = normalized_mutual_information(random1, random2, bins=10)
+    assert nmi.dtype == cp.float64
+    assert_almost_equal(nmi, 1, decimal=2)
+
+
+def test_nmi_random_3d():
+    random1, random2 = cp.random.random((2, 10, 100, 100))
+    assert_almost_equal(
+        float(normalized_mutual_information(random1, random2, bins=10)),
+        1,
+        decimal=2,
+    )
