@@ -4,6 +4,7 @@ import cupy as cp
 from cupyx.scipy.ndimage import uniform_filter
 
 from .._shared import utils
+from .._shared.filters import gaussian
 from .._shared.utils import _supported_float_type, check_shape_equality, warn
 from ..util.arraycrop import crop
 from ..util.dtype import dtype_range
@@ -94,7 +95,6 @@ def structural_similarity(im1, im2,
        :DOI:`10.1007/s10043-009-0119-z`
 
     """
-    from .._shared.filters import gaussian  # avoid circular import
     check_shape_equality(im1, im2)
     float_type = _supported_float_type(im1.dtype)
 
