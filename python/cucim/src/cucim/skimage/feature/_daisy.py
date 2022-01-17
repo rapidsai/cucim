@@ -36,7 +36,7 @@ def daisy(image, step=4, radius=15, rings=3, histograms=8, orientations=8,
         Radius (in pixels) of the outermost ring.
     rings : int, optional
         Number of rings.
-    histograms  : int, optional
+    histograms : int, optional
         Number of histograms sampled per ring.
     orientations : int, optional
         Number of orientations (bins) per histogram.
@@ -98,6 +98,7 @@ def daisy(image, step=4, radius=15, rings=3, histograms=8, orientations=8,
     check_nD(image, 2, "img")
 
     image = img_as_float(image)
+    float_dtype = image.dtype
 
     # Validate parameters.
     if sigmas is not None and ring_radii is not None \
@@ -116,8 +117,8 @@ def daisy(image, step=4, radius=15, rings=3, histograms=8, orientations=8,
         raise ValueError('Invalid normalization method.')
 
     # Compute image derivatives.
-    dx = cp.zeros(image.shape)
-    dy = cp.zeros(image.shape)
+    dx = cp.zeros(image.shape, dtype=float_dtype)
+    dy = cp.zeros(image.shape, dtype=float_dtype)
     dx[:, :-1] = cp.diff(image, n=1, axis=1)
     dy[:-1, :] = cp.diff(image, n=1, axis=0)
 
@@ -131,7 +132,7 @@ def daisy(image, step=4, radius=15, rings=3, histograms=8, orientations=8,
     orientation_kappa = orientations / pi
     orientation_angles = [2 * o * pi / orientations - pi
                           for o in range(orientations)]
-    hist = cp.empty((orientations,) + image.shape, dtype=float)
+    hist = cp.empty((orientations,) + image.shape, dtype=float_dtype)
     for i, o in enumerate(orientation_angles):
         # Weigh bin contribution by the circular normal distribution
         hist[i, :, :] = cp.exp(orientation_kappa * cp.cos(grad_ori - o))
@@ -140,17 +141,19 @@ def daisy(image, step=4, radius=15, rings=3, histograms=8, orientations=8,
 
     # Smooth orientation histograms for the center and all rings.
     sigmas = [sigmas[0]] + sigmas
-    hist_smooth = cp.empty((rings + 1,) + hist.shape, dtype=float)
+    hist_smooth = cp.empty((rings + 1,) + hist.shape, dtype=float_dtype)
     for i in range(rings + 1):
         for j in range(orientations):
             hist_smooth[i, j, :, :] = gaussian_filter(hist[j, :, :],
-                                                      sigma=sigmas[i])
+                                                      sigma=sigmas[i],
+                                                      mode='reflect')
 
     # Assemble descriptor grid.
     theta = [2 * pi * j / histograms for j in range(histograms)]
     desc_dims = (rings * histograms + 1) * orientations
     descs = cp.empty((desc_dims, image.shape[0] - 2 * radius,
-                      image.shape[1] - 2 * radius))
+                      image.shape[1] - 2 * radius),
+                     dtype=float_dtype)
     descs[:orientations, :, :] = hist_smooth[0, :, radius:-radius,
                                              radius:-radius]
     idx = orientations

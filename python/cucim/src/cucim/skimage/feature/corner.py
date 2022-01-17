@@ -783,7 +783,7 @@ def corner_foerstner(image, sigma=1):
 
     Parameters
     ----------
-    image : ndarray
+    image : (M, N) ndarray
         Input image.
     sigma : float, optional
         Standard deviation used for the Gaussian kernel, which is used as
