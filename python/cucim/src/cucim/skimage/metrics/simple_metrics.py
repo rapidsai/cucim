@@ -187,7 +187,7 @@ def _pad_to(arr, shape):
     if not all(s >= i for s, i in zip(shape, arr.shape)):
         raise ValueError(f'Target shape {shape} cannot be smaller than input'
                          f'shape {arr.shape} along any axis.')
-    padding = [(0, s-i) for s, i in zip(shape, arr.shape)]
+    padding = [(0, s - i) for s, i in zip(shape, arr.shape)]
     return cp.pad(arr, pad_width=padding, mode='constant', constant_values=0)
 
 
@@ -252,10 +252,10 @@ def normalized_mutual_information(image0, image1, *, bins=100):
         padded0, padded1 = image0, image1
 
     hist, bin_edges = cp.histogramdd(
-            [cp.reshape(padded0, -1), cp.reshape(padded1, -1)],
-            bins=bins,
-            density=True,
-            )
+        [cp.reshape(padded0, -1), cp.reshape(padded1, -1)],
+        bins=bins,
+        density=True,
+    )
 
     H0 = entropy(cp.sum(hist, axis=0))
     H1 = entropy(cp.sum(hist, axis=1))

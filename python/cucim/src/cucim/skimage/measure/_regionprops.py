@@ -818,8 +818,6 @@ def _props_to_dict(regions, properties=('label', 'bbox'), separator='-'):
             or prop in OBJECT_COLUMNS
             or dtype is np.object_
         ):
-            #column_buffer = cp.zeros(n, dtype=dtype)
-
             if prop == 'slice':
                 # keep slice objects in a NumPy array
                 column_buffer = np.empty(n, dtype=dtype)

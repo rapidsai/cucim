@@ -1,8 +1,4 @@
-from collections.abc import Iterable
-
-import cupy as cp
 import numpy as np
-from cupyx.scipy import ndimage as ndi
 
 from .._shared import utils
 from .._shared.filters import gaussian

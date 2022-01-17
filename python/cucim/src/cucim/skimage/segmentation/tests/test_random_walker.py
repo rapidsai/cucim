@@ -8,7 +8,7 @@ from cucim.skimage.transform import resize
 
 # Used to ignore warnings from CuPy 9.X and 10.x about a deprecated import when
 # SciPy >= 1.8 is installed.
-cupy_warning = "Please use `spmatrix` from the `scipy.sparse` |\A\Z"
+cupy_warning = "Please use `spmatrix` from the `scipy.sparse` |\A\Z"  # noqa
 
 
 def make_2d_syntheticdata(lx, ly=None):

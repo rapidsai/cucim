@@ -6,7 +6,7 @@ import numpy as np
 from cupyx.scipy import ndimage as ndi
 from scipy import spatial  # TODO: use RAPIDS cuSpatial?
 
-from cucim.skimage.util import dtype_limits, img_as_float
+from cucim.skimage.util import img_as_float
 
 # from ..transform import integral_image
 from .._shared.utils import _supported_float_type
@@ -742,7 +742,7 @@ def corner_shi_tomasi(image, sigma=1):
            [0, 0, 1, 1, 1, 1, 1, 1, 0, 0],
            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]])
-    >>> corner_peaks(corner_shi_tomasi(square), min_distance=1)  # doctest: +SKIP
+    >>> corner_peaks(corner_shi_tomasi(square), min_distance=1)  # doctest: +SKIP  # noqa
     array([[2, 2],
            [2, 7],
            [7, 2],

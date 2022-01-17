@@ -11,13 +11,11 @@ Copyright (c) 2009-2011 Broad Institute
 All rights reserved.
 Original author: Lee Kamentsky
 """
-import functools
-
 import cupy as cp
 import cupyx.scipy.ndimage as ndi
 from cupyx.scipy.ndimage import binary_erosion, generate_binary_structure
 
-from cucim.skimage.util import dtype_limits, img_as_float
+from cucim.skimage.util import dtype_limits
 
 from .._shared.filters import gaussian
 from .._shared.utils import check_nD

@@ -10,7 +10,7 @@ import cupy as cp
 from cupyx.scipy import ndimage as ndi
 
 from .._shared import utils
-from .._shared.utils import _supported_float_type, convert_to_float, warn
+from .._shared.utils import _supported_float_type, convert_to_float
 
 
 @utils.deprecate_multichannel_kwarg(multichannel_position=5)

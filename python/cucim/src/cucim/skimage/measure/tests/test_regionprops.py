@@ -807,6 +807,8 @@ def test_multichannel():
             # property uses multiple channels, returns props stacked along
             # final axis
             assert_array_equal(p, p_multi[..., 1])
+
+
 def test_3d_ellipsoid_axis_lengths():
     """Verify that estimated axis lengths are correct.
 

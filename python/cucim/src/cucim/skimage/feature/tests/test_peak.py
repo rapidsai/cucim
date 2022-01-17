@@ -1,5 +1,4 @@
 import itertools
-import unittest
 
 import cupy as cp
 import numpy as np

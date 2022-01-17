@@ -1,5 +1,8 @@
 import os
+import warnings
 
+import cupy as cp
+import numpy as np
 import pytest
 from numpy.testing import (TestCase, assert_, assert_allclose,  # noqa
                            assert_almost_equal, assert_array_almost_equal,
@@ -62,11 +65,8 @@ def setup_test():
     warnings.simplefilter('default')
 
     if _error_on_warnings:
-        from scipy import linalg, ndimage, optimize, signal, special
-        from scipy.io import loadmat
-        from skimage import viewer
-
         np.random.seed(0)
+        cp.random.seed(0)
 
         warnings.simplefilter('error')
 
