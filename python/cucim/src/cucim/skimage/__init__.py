@@ -103,4 +103,4 @@ from .util.dtype import (img_as_float32,
                          img_as_ubyte,
                          img_as_bool,
                          dtype_limits)
-# from .util.lookfor import lookfor
+from .util.lookfor import lookfor
