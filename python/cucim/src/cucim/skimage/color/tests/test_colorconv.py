@@ -9,6 +9,7 @@ Authors
 """
 
 import colorsys
+import os
 
 import cupy as cp
 import numpy as np
@@ -18,7 +19,6 @@ from numpy.testing import assert_equal
 from skimage import data
 
 from cucim.skimage._shared._warnings import expected_warnings
-from cucim.skimage._shared.testing import fetch
 from cucim.skimage._shared.utils import _supported_float_type, slice_at_axis
 from cucim.skimage.color import (combine_stains, convert_colorspace, gray2rgb,
                                  gray2rgba, hed2rgb, hsv2rgb, lab2lch, lab2rgb,
@@ -30,6 +30,8 @@ from cucim.skimage.color import (combine_stains, convert_colorspace, gray2rgb,
                                  ycbcr2rgb, ydbdr2rgb, yiq2rgb, ypbpr2rgb,
                                  yuv2rgb)
 from cucim.skimage.util import img_as_float, img_as_float32, img_as_ubyte
+
+data_dir = os.path.join(os.path.dirname(__file__), 'data')
 
 
 class TestColorconv():
@@ -396,17 +398,19 @@ class TestColorconv():
                                   self.lab_array, decimal=3)
 
         # Test the conversion with the rest of the illuminants.
-        for i in ["d50", "d55", "d65", "d75"]:
-            for obs in ["2", "10"]:
-                fname = "color/tests/data/lab_array_{0}_{1}.npy".format(i, obs)
-                lab_array_I_obs = np.load(fetch(fname))
-                assert_array_almost_equal(lab_array_I_obs,
+        for i in ["A", "B", "C", "d50", "d55", "d65"]:
+            i = i.lower()
+            for obs in ["2", "10", "R"]:
+                obs = obs.lower()
+                fname = os.path.join(data_dir, f'lab_array_{i}_{obs}.npy')
+                lab_array_i_obs = np.load(fname)
+                assert_array_almost_equal(lab_array_i_obs,
                                           xyz2lab(self.xyz_array, i, obs),
                                           decimal=2)
-        for i in ["a", "e"]:
-            fname = "color/tests/data/lab_array_{0}_2.npy".format(i)
-            lab_array_I_obs = np.load(fetch(fname))
-            assert_array_almost_equal(lab_array_I_obs,
+        for i in ["d75", "e"]:
+            fname = os.path.join(data_dir, f'lab_array_{i}_2.npy')
+            lab_array_i_obs = np.load(fname)
+            assert_array_almost_equal(lab_array_i_obs,
                                       xyz2lab(self.xyz_array, i, "2"),
                                       decimal=2)
 
@@ -430,25 +434,26 @@ class TestColorconv():
                                   self.xyz_array, decimal=3)
 
         # Test the conversion with the rest of the illuminants.
-        for i in ["d50", "d55", "d65", "d75"]:
-            for obs in ["2", "10"]:
-                fname = "color/tests/data/lab_array_{0}_{1}.npy".format(i, obs)
-                lab_array_I_obs = cp.array(np.load(fetch(fname)))
-                assert_array_almost_equal(lab2xyz(lab_array_I_obs, i, obs),
+        for i in ["A", "B", "C", "d50", "d55", "d65"]:
+            i = i.lower()
+            for obs in ["2", "10", "R"]:
+                obs = obs.lower()
+                fname = os.path.join(data_dir, f'lab_array_{i}_{obs}.npy')
+                lab_array_i_obs = cp.array(np.load(fname))
+                assert_array_almost_equal(lab2xyz(lab_array_i_obs, i, obs),
                                           self.xyz_array, decimal=3)
-        for i in ["a", "e"]:
-            fname = "lab_array_{0}_2.npy".format(i)
-            lab_array_I_obs = cp.array(
-                np.load(fetch('color/tests/data/' + fname)))
-            assert_array_almost_equal(lab2xyz(lab_array_I_obs, i, "2"),
+        for i in ["d75", "e"]:
+            fname = os.path.join(data_dir, f'lab_array_{i}_2.npy')
+            lab_array_i_obs = cp.array(np.load(fname))
+            assert_array_almost_equal(lab2xyz(lab_array_i_obs, i, "2"),
                                       self.xyz_array, decimal=3)
 
         # And we include a call to test the exception handling in the code.
         with pytest.raises(ValueError):
-            lab2xyz(lab_array_I_obs, "NaI", "2")   # Not an illuminant
+            lab2xyz(lab_array_i_obs, "NaI", "2")   # Not an illuminant
 
         with pytest.raises(ValueError):
-            lab2xyz(lab_array_I_obs, "d50", "42")   # Not a degree
+            lab2xyz(lab_array_i_obs, "d50", "42")   # Not a degree
 
     @pytest.mark.parametrize("channel_axis", [0, 1, -1, -2])
     def test_lab2xyz_channel_axis(self, channel_axis):
@@ -522,17 +527,19 @@ class TestColorconv():
                                   self.luv_array, decimal=3)
 
         # Test the conversion with the rest of the illuminants.
-        for i in ["d50", "d55", "d65", "d75"]:
-            for obs in ["2", "10"]:
-                fname = "color/tests/data/luv_array_{0}_{1}.npy".format(i, obs)
-                luv_array_I_obs = cp.array(np.load(fetch(fname)))
-                assert_array_almost_equal(luv_array_I_obs,
+        for i in ["A", "B", "C", "d50", "d55", "d65"]:
+            i = i.lower()
+            for obs in ["2", "10", "R"]:
+                obs = obs.lower()
+                fname = os.path.join(data_dir, f'luv_array_{i}_{obs}.npy')
+                luv_array_i_obs = np.load(fname)
+                assert_array_almost_equal(luv_array_i_obs,
                                           xyz2luv(self.xyz_array, i, obs),
                                           decimal=2)
-        for i in ["a", "e"]:
-            fname = "color/tests/data/luv_array_{0}_2.npy".format(i)
-            luv_array_I_obs = cp.array(np.load(fetch(fname)))
-            assert_array_almost_equal(luv_array_I_obs,
+        for i in ["d75", "e"]:
+            fname = os.path.join(data_dir, f'luv_array_{i}_2.npy')
+            luv_array_i_obs = np.load(fname)
+            assert_array_almost_equal(luv_array_i_obs,
                                       xyz2luv(self.xyz_array, i, "2"),
                                       decimal=2)
 
@@ -556,16 +563,18 @@ class TestColorconv():
                                   self.xyz_array, decimal=3)
 
         # Test the conversion with the rest of the illuminants.
-        for i in ["d50", "d55", "d65", "d75"]:
-            for obs in ["2", "10"]:
-                fname = "color/tests/data/luv_array_{0}_{1}.npy".format(i, obs)
-                luv_array_I_obs = cp.array(np.load(fetch(fname)))
-                assert_array_almost_equal(luv2xyz(luv_array_I_obs, i, obs),
+        for i in ["A", "B", "C", "d50", "d55", "d65"]:
+            i = i.lower()
+            for obs in ["2", "10", "R"]:
+                obs = obs.lower()
+                fname = os.path.join(data_dir, f'luv_array_{i}_{obs}.npy')
+                luv_array_i_obs = cp.array(np.load(fname))
+                assert_array_almost_equal(luv2xyz(luv_array_i_obs, i, obs),
                                           self.xyz_array, decimal=3)
-        for i in ["a", "e"]:
-            fname = "color/tests/data/luv_array_{0}_2.npy".format(i)
-            luv_array_I_obs = cp.array(np.load(fetch(fname)))
-            assert_array_almost_equal(luv2xyz(luv_array_I_obs, i, "2"),
+        for i in ["d75", "e"]:
+            fname = os.path.join(data_dir, f'luv_array_{i}_2.npy')
+            luv_array_i_obs = cp.array(np.load(fname))
+            assert_array_almost_equal(luv2xyz(luv_array_i_obs, i, "2"),
                                       self.xyz_array, decimal=3)
 
     @pytest.mark.parametrize("channel_axis", [0, 1, -1, -2])
