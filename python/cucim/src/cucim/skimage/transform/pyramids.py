@@ -3,13 +3,13 @@ import math
 import cupy as cp
 
 from .._shared import utils
+from .._shared.filters import gaussian
 from .._shared.utils import convert_to_float
 from ..transform import resize
 
 
 def _smooth(image, sigma, mode, cval, channel_axis):
     """Return image with each channel smoothed by the Gaussian filter."""
-    from .._shared.filters import gaussian  # avoid circular import
     smoothed = cp.empty_like(image)
 
     # apply Gaussian filter to all channels independently

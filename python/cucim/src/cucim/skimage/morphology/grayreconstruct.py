@@ -13,7 +13,6 @@ import cupy as cp
 import numpy as np
 
 from .._shared.utils import deprecate_kwarg
-from ..filters._rank_order import rank_order
 
 
 @deprecate_kwarg(kwarg_mapping={'selem': 'footprint'}, removed_version="1.0",
@@ -127,6 +126,8 @@ def reconstruction(seed, mask, method='dilation', footprint=None, offset=None):
     .. [3] Soille, P., "Morphological Image Analysis: Principles and
            Applications", Chapter 6, 2nd edition (2003), ISBN 3540429883.
     """
+    from ..filters._rank_order import rank_order
+
     assert tuple(seed.shape) == tuple(mask.shape)
     if method == 'dilation' and cp.any(seed > mask):  # synchronize!
         raise ValueError("Intensity of seed image must be less than that "

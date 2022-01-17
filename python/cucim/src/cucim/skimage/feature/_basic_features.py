@@ -6,7 +6,8 @@ from itertools import combinations_with_replacement
 import cupy as cp
 import numpy as np
 
-from cucim.skimage import feature, filters, img_as_float32
+from cucim.skimage import feature, filters
+from cucim.skimage.util import img_as_float32
 from cucim.skimage._shared import utils
 
 

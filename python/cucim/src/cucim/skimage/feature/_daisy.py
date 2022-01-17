@@ -2,9 +2,9 @@ import math
 
 import cupy as cp
 
-from .. import img_as_float
 from .._shared.filters import gaussian
 from .._shared.utils import check_nD
+from cucim.skimage.util import img_as_float
 
 
 def daisy(image, step=4, radius=15, rings=3, histograms=8, orientations=8,

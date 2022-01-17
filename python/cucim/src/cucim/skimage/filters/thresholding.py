@@ -10,6 +10,7 @@ from cupyx.scipy import ndimage as ndi
 
 from cucim import _misc
 
+from .._shared.filters import gaussian
 from .._shared.utils import _supported_float_type, deprecate_kwarg, warn
 from .._shared.version_requirements import require
 from ..exposure import histogram
@@ -237,7 +238,6 @@ def threshold_local(image, block_size=3, method='gaussian', offset=0,
             image, param, block_size, output=thresh_image, mode=mode, cval=cval
         )
     elif method == 'gaussian':
-        from .._shared.filters import gaussian  # avoid circular import
         if param is None:
             # automatically determine sigma which covers > 99% of distribution
             sigma = tuple([(b - 1) / 6.0 for b in block_size])
@@ -729,6 +729,9 @@ def threshold_li(image, *, tolerance=None, initial_guess=None,
     # Callback on initial iterations
     if iter_callback is not None:
         iter_callback(t_next + image_min)
+
+    # Stop the iterations when the difference between the
+    # new and old threshold values is less than the tolerance
 
     if image.dtype.kind in 'iu':
         hist, bin_centers = histogram(image.reshape(-1),

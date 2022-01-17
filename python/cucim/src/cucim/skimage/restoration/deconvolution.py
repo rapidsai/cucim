@@ -4,18 +4,9 @@ import warnings
 import cupy as cp
 import numpy as np
 
-# TODO: use cupyx.scipy.signal once upstream fftconvolve and
-#       choose_conv_method for > 1d has been implemented.
-import cucim.skimage._vendored
-
 from .._shared.utils import _supported_float_type, deprecate_kwarg
 from . import uft
 
-# from cupyx.scipy.signal import convolve
-# from cupyx.scipy import signal
-
-
-signal = cucim.skimage._vendored
 
 
 __keywords__ = "restoration, image, deconvolution"
@@ -434,6 +425,10 @@ def richardson_lucy(image, psf, num_iter=50, clip=True, filter_epsilon=None):
     ----------
     .. [1] https://en.wikipedia.org/wiki/Richardson%E2%80%93Lucy_deconvolution
     """
+    # TODO: use cupyx.scipy.signal once upstream fftconvolve and
+    #       choose_conv_method for > 1d has been implemented.
+    from cucim.skimage import _vendored as signal
+
     float_type = _supported_float_type(image.dtype)
     image = image.astype(float_type, copy=False)
     psf = psf.astype(float_type, copy=False)

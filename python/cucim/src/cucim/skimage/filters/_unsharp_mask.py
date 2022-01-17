@@ -1,12 +1,12 @@
 import cupy as cp
 
 from .._shared import utils
+from .._shared.filters import gaussian
 from ..util.dtype import img_as_float
 
 
 def _unsharp_mask_single_channel(image, radius, amount, vrange):
     """Single channel implementation of the unsharp masking filter."""
-    from .._shared.filters import gaussian
 
     blurred = gaussian(image, sigma=radius, mode='reflect')
 

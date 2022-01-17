@@ -87,7 +87,7 @@ from ._shared import lazy
 __getattr__, __lazy_dir__, _ = lazy.attach(
     __name__,
     submodules,
-    submod_attrs={'data': ['data_dir']}
+    # submod_attrs={'data': ['data_dir']}
 )
 
 

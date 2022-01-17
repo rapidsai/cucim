@@ -7,10 +7,10 @@ from cupyx.scipy import ndimage as ndi
 from scipy import spatial  # TODO: use RAPIDS cuSpatial?
 
 # from ..transform import integral_image
-from .. import img_as_float
 from .._shared.utils import _supported_float_type
 from .peak import peak_local_max
 from .util import _prepare_grayscale_input_nD
+from cucim.skimage.util import dtype_limits, img_as_float
 
 
 def _compute_derivatives(image, mode="constant", cval=0):
