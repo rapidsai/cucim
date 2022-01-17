@@ -9,7 +9,7 @@ from ..transform import resize
 
 def _smooth(image, sigma, mode, cval, channel_axis):
     """Return image with each channel smoothed by the Gaussian filter."""
-    from ..filters import gaussian  # avoid circular import
+    from .._shared.filters import gaussian  # avoid circular import
     smoothed = cp.empty_like(image)
 
     # apply Gaussian filter to all channels independently

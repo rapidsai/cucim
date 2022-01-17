@@ -54,7 +54,7 @@ def binary_blobs(length=512, blob_size_fraction=0.1, n_dim=2,
     """
     # filters is quite an expensive import since it imports all of scipy.signal
     # We lazy import here
-    from ..filters import gaussian
+    from .._shared.filters import gaussian
 
     rs = cp.random.default_rng(seed)
     shape = tuple([length] * n_dim)

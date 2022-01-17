@@ -104,7 +104,7 @@ def structure_tensor(image, sigma=1, mode="constant", cval=0, order=None):
            [0., 0., 0., 0., 0.]])
 
     """
-    from ..filters import gaussian  # avoid circular import
+    from .._shared.filters import gaussian  # avoid circular import
 
     if order == "xy" and image.ndim > 2:
         raise ValueError('Only "rc" order is supported for dim > 2.')

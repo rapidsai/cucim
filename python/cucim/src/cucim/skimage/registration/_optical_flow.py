@@ -258,7 +258,7 @@ def _ilk(reference_image, moving_image, flow0, radius, num_warp, gaussian,
         The estimated optical flow components for each axis.
 
     """
-    from cucim.skimage.filters import gaussian as gaussian_filter
+    from .._shared.filters import gaussian as gaussian_filter
 
     dtype = reference_image.dtype
     ndim = reference_image.ndim

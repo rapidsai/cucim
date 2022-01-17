@@ -6,7 +6,7 @@ from ..util.dtype import img_as_float
 
 def _unsharp_mask_single_channel(image, radius, amount, vrange):
     """Single channel implementation of the unsharp masking filter."""
-    from ._gaussian import gaussian
+    from .._shared.filters import gaussian
 
     blurred = gaussian(image, sigma=radius, mode='reflect')
 

@@ -94,7 +94,7 @@ def structural_similarity(im1, im2,
        :DOI:`10.1007/s10043-009-0119-z`
 
     """
-    from ..filters import gaussian  # avoid circular import
+    from .._shared.filters import gaussian  # avoid circular import
     check_shape_equality(im1, im2)
     float_type = _supported_float_type(im1.dtype)
 

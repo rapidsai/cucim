@@ -237,7 +237,7 @@ def threshold_local(image, block_size=3, method='gaussian', offset=0,
             image, param, block_size, output=thresh_image, mode=mode, cval=cval
         )
     elif method == 'gaussian':
-        from ..filters import gaussian  # avoid circular import
+        from .._shared.filters import gaussian  # avoid circular import
         if param is None:
             # automatically determine sigma which covers > 99% of distribution
             sigma = tuple([(b - 1) / 6.0 for b in block_size])

@@ -114,8 +114,9 @@ def gabor_kernel(frequency, theta=0, bandwidth=1, sigma_x=None, sigma_y=None,
     roty = -x * st + y * ct
 
     g = cp.empty(roty.shape, dtype=dtype)
-    g[:] = cp.exp(
-        -0.5 * ((rotx * rotx) / sigma_x ** 2 + (roty * roty) / sigma_y ** 2)
+    cp.exp(
+        -0.5 * ((rotx * rotx) / sigma_x ** 2 + (roty * roty) / sigma_y ** 2),
+        out=g,
     )
     g /= 2 * math.pi * sigma_x * sigma_y
     g *= cp.exp(1j * (2 * math.pi * frequency * rotx + offset))
