@@ -661,8 +661,10 @@ def _props_to_dict(regions, properties=('label', 'bbox'), separator='-'):
 
     Examples
     --------
-    >>> from skimage import data, util, measure
-    >>> image = data.coins()
+    >>> import cupy as cp
+    >>> from skimage import data
+    >>> from cucim.skimage import util, measure
+    >>> image = cp.array(data.coins())
     >>> label_image = measure.label(image > 110, connectivity=image.ndim)
     >>> proplist = regionprops(label_image, image)
     >>> props = _props_to_dict(proplist, properties=['label', 'inertia_tensor',
@@ -1138,9 +1140,9 @@ def regionprops(label_image, intensity_image=None, cache=True,
     ...     return np.sum(regionmask)
     >>> props = regionprops(label_img, extra_properties=(pixelcount,))
     >>> props[0].pixelcount
-    7741
+    array(7741)
     >>> props[1]['pixelcount']
-    42
+    array(42)
 
     """
 

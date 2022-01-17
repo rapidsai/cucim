@@ -149,8 +149,8 @@ def ellipse(width, height, dtype=np.uint8):
 
     Examples
     --------
-    >>> from cucim.skimage.morphology import footprint
-    >>> footprint.ellipse(5, 3)
+    >>> from cucim.skimage.morphology import footprints
+    >>> footprints.ellipse(5, 3)
     array([[0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0],
            [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
            [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],

@@ -118,15 +118,15 @@ def euler_number(image, connectivity=None):
 
     Examples
     --------
-    >>> import numpy as np
-    >>> SAMPLE = np.zeros((100,100,100));
-    >>> SAMPLE[40:60, 40:60, 40:60]=1
+    >>> import cupy as cp
+    >>> SAMPLE = cp.zeros((100,100,100))
+    >>> SAMPLE[40:60, 40:60, 40:60] = 1
     >>> euler_number(SAMPLE) # doctest: +ELLIPSIS
     1...
     >>> SAMPLE[45:55,45:55,45:55] = 0;
     >>> euler_number(SAMPLE) # doctest: +ELLIPSIS
     2...
-    >>> SAMPLE = np.array([[0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 0, 0, 0, 0, 0],
+    >>> SAMPLE = cp.array([[0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 0, 0, 0, 0, 0],
     ...                    [0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0],
     ...                    [0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0],
     ...                    [0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0],
@@ -137,9 +137,9 @@ def euler_number(image, connectivity=None):
     ...                    [0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 0, 0, 1, 1, 1, 1],
     ...                    [0, 1, 1, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1]])
     >>> euler_number(SAMPLE)  # doctest:
-    0
+    array(0)
     >>> euler_number(SAMPLE, connectivity=1)  # doctest:
-    2
+    array(2)
     """  # noqa
 
     # as image can be a label image, transform it to binary
@@ -216,15 +216,17 @@ def perimeter(image, neighbourhood=4):
 
     Examples
     --------
-    >>> from skimage import data, util
-    >>> from skimage.measure import label
+    >>> import cupy as cp
+    >>> from skimage import data
+    >>> from cucim.skimage import util
+    >>> from cucim.skimage.measure import label
     >>> # coins image (binary)
-    >>> img_coins = data.coins() > 110
+    >>> img_coins = cp.array(data.coins() > 110)
     >>> # total perimeter of all objects in the image
     >>> perimeter(img_coins, neighbourhood=4)  # doctest: +ELLIPSIS
-    7796.867...
+    array(7796.86799644)
     >>> perimeter(img_coins, neighbourhood=8)  # doctest: +ELLIPSIS
-    8806.268...
+    array(8806.26807333)
 
     """
     if image.ndim != 2:

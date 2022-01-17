@@ -1694,7 +1694,7 @@ def estimate_transform(ttype, src, dst, *args, **kwargs):
     >>> tform = transform.estimate_transform('similarity', src, dst)
 
     >>> cp.allclose(tform.inverse(tform(src)), src)
-    True
+    array(True)
 
     >>> # warp image using the estimated transformation
     >>> from skimage import data
@@ -1709,7 +1709,7 @@ def estimate_transform(ttype, src, dst, *args, **kwargs):
     >>> # unite transformations, applied in order from left to right
     >>> tform3 = tform + tform2
     >>> cp.allclose(tform3(src), tform2(tform(src)))
-    True
+    array(True)
 
     """
     ttype = ttype.lower()

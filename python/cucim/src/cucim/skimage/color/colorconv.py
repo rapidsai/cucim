@@ -100,7 +100,7 @@ def convert_colorspace(arr, fromspace, tospace, *, channel_axis=-1):
     Examples
     --------
     >>> import cupy as cp
-    >>> from cucim.skimage import data
+    >>> from skimage import data
     >>> img = cp.array(data.astronaut())
     >>> img_hsv = convert_colorspace(img, 'RGB', 'HSV')
     """

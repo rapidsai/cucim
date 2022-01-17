@@ -91,9 +91,9 @@ def match_template(image, template, pad_input=False, mode='constant',
     >>> template = cp.zeros((3, 3))
     >>> template[1, 1] = 1
     >>> template
-    array([[ 0.,  0.,  0.],
-           [ 0.,  1.,  0.],
-           [ 0.,  0.,  0.]])
+    array([[0., 0., 0.],
+           [0., 1., 0.],
+           [0., 0., 0.]])
     >>> image = cp.zeros((6, 6))
     >>> image[1, 1] = 1
     >>> image[4, 4] = -1

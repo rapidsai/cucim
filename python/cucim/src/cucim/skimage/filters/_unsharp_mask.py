@@ -80,7 +80,7 @@ def unsharp_mask(image, radius=1.0, amount=1.0, multichannel=False,
     Examples
     --------
     >>> import cupy as cp
-    >>> array = cp.ones(shape=(5,5), dtype=np.uint8)*100
+    >>> array = cp.ones(shape=(5,5), dtype=cp.uint8)*100
     >>> array[2,2] = 120
     >>> array
     array([[100, 100, 100, 100, 100],
@@ -95,7 +95,7 @@ def unsharp_mask(image, radius=1.0, amount=1.0, multichannel=False,
            [0.39, 0.39, 0.38, 0.39, 0.39],
            [0.39, 0.39, 0.39, 0.39, 0.39]])
 
-    >>> array = cp.ones(shape=(5,5), dtype=np.int8)*100
+    >>> array = cp.ones(shape=(5,5), dtype=cp.int8)*100
     >>> array[2,2] = 127
     >>> cp.around(unsharp_mask(array, radius=0.5, amount=2),2)
     array([[0.79, 0.79, 0.79, 0.79, 0.79],

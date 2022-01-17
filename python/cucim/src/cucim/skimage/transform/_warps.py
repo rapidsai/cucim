@@ -1111,7 +1111,7 @@ def warp_polar(image, center=None, *, radius=None, output_shape=None,
 
     Perform a log-polar warp on a color image:
 
-    >>> image = data.astronaut()
+    >>> image = cp.array(data.astronaut())
     >>> warped = warp_polar(image, scaling='log', channel_axis=-1)
     """
     multichannel = channel_axis is not None

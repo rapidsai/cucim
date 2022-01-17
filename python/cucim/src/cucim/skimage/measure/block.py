@@ -15,6 +15,7 @@ def block_reduce(image, block_size=2, func=cp.sum, cval=0, func_kwargs=None):
         N-dimensional input image.
     block_size : array_like or int
         Array containing down-sampling integer factor along each axis.
+        Default block_size is 2.
     func : callable
         Function object which is used to calculate the return value for each
         local block. This function must implement an ``axis`` parameter.
@@ -36,7 +37,7 @@ def block_reduce(image, block_size=2, func=cp.sum, cval=0, func_kwargs=None):
     Examples
     --------
     >>> import cupy as cp
-    >>> from skimage.measure import block_reduce
+    >>> from cucim.skimage.measure import block_reduce
     >>> image = cp.arange(3*3*4).reshape(3, 3, 4)
     >>> image # doctest: +NORMALIZE_WHITESPACE
     array([[[ 0,  1,  2,  3],

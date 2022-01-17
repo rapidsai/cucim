@@ -93,7 +93,7 @@ def structure_tensor(image, sigma=1, mode="constant", cval=0, order=None):
     --------
     >>> import cupy as cp
     >>> from cucim.skimage.feature import structure_tensor
-    >>> square = np.zeros((5, 5))
+    >>> square = cp.zeros((5, 5))
     >>> square[2, 2] = 1
     >>> Arr, Arc, Acc = structure_tensor(square, sigma=0.1, order="rc")
     >>> Acc
@@ -421,7 +421,7 @@ def structure_tensor_eigvals(Axx, Axy, Ayy):
     >>> import cupy as cp
     >>> from cucim.skimage.feature import (structure_tensor,
     ...                                      structure_tensor_eigvals)
-    >>> square = np.zeros((5, 5))
+    >>> square = cp.zeros((5, 5))
     >>> square[2, 2] = 1
     >>> Arr, Arc, Acc = structure_tensor(square, sigma=0.1, order="rc")
     >>> structure_tensor_eigvals(Acc, Arc, Arr)[0]
@@ -671,7 +671,7 @@ def corner_harris(image, method="k", k=0.05, eps=1e-6, sigma=1):
            [0, 0, 1, 1, 1, 1, 1, 1, 0, 0],
            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]])
-    >>> corner_peaks(corner_harris(square), min_distance=1)
+    >>> corner_peaks(corner_harris(square), min_distance=1)  # doctest: +SKIP
     array([[2, 2],
            [2, 7],
            [7, 2],
@@ -741,7 +741,7 @@ def corner_shi_tomasi(image, sigma=1):
            [0, 0, 1, 1, 1, 1, 1, 1, 0, 0],
            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]])
-    >>> corner_peaks(corner_shi_tomasi(square), min_distance=1)
+    >>> corner_peaks(corner_shi_tomasi(square), min_distance=1)  # doctest: +SKIP
     array([[2, 2],
            [2, 7],
            [7, 2],
@@ -825,7 +825,7 @@ def corner_foerstner(image, sigma=1):
     >>> accuracy_thresh = 0.5
     >>> roundness_thresh = 0.3
     >>> foerstner = (q > roundness_thresh) * (w > accuracy_thresh) * w
-    >>> corner_peaks(foerstner, min_distance=1)
+    >>> corner_peaks(foerstner, min_distance=1)  # doctest: +SKIP
     array([[2, 2],
            [2, 7],
            [7, 2],

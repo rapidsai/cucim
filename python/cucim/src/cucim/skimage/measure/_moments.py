@@ -44,7 +44,7 @@ def moments_coords(coords, order=3):
     >>> M = moments_coords(coords)
     >>> centroid = (M[1, 0] / M[0, 0], M[0, 1] / M[0, 0])
     >>> centroid
-    (14.5, 15.5)
+    (array(14.5), array(15.5))
     """
     return moments_coords_central(coords, 0, order=order)
 
@@ -99,7 +99,7 @@ def moments_coords_central(coords, center=None, order=3):
     of the object (the default). If we break the symmetry by adding a new
     point, this no longer holds:
 
-    >>> coords2 = cp.concatenate((coords, [[17, 17]]), axis=0)
+    >>> coords2 = cp.concatenate((coords, cp.array([[17, 17]])), axis=0)
     >>> cp.round(moments_coords_central(coords2),
     ...          decimals=2)  # doctest: +NORMALIZE_WHITESPACE
     array([[17.  ,  0.  , 22.12, -2.49],
@@ -112,7 +112,7 @@ def moments_coords_central(coords, center=None, order=3):
 
     >>> cp.allclose(moments_coords(coords),
     ...             moments_coords_central(coords, (0, 0)))
-    True
+    array(True)
     """
     if isinstance(coords, tuple):
         # This format corresponds to coordinate tuples as returned by
@@ -203,7 +203,7 @@ def moments(image, order=3):
     >>> M = moments(image)
     >>> centroid = (M[1, 0] / M[0, 0], M[0, 1] / M[0, 0])
     >>> centroid
-    (14.5, 14.5)
+    (array(14.5), array(14.5))
     """
     return moments_central(image, (0,) * image.ndim, order=order)
 
@@ -328,7 +328,7 @@ def moments_normalized(mu, order=3):
     # CuPy Backend: For the tiny mu and nu arrays, it is faster to run this
     #               computation on the host and then transfer back to the GPU.
     mu = cp.asnumpy(mu)
-    nu = np.empty_like(mu)
+    nu = np.zeros_like(mu)
     mu0 = mu.ravel()[0]
     for powers in itertools.product(range(order + 1), repeat=mu.ndim):
         if sum(powers) < 2:
@@ -386,7 +386,7 @@ def moments_hu(nu):
     >>> nu = moments_normalized(mu)
     >>> moments_hu(nu)
     array([7.45370370e-01, 3.51165981e-01, 1.04049179e-01, 4.06442107e-02,
-           2.64312299e-03, 2.40854582e-02, 4.33680869e-19])
+           2.64312299e-03, 2.40854582e-02, 6.50521303e-19])
     """
     try:
         from skimage.measure import moments_hu

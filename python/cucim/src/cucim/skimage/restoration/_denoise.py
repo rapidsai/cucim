@@ -154,17 +154,19 @@ def denoise_tv_chambolle(image, weight=0.1, eps=2.0e-4, n_iter_max=200,
     --------
     2D example on astronaut image:
 
-    >>> from skimage import color, data
-    >>> img = color.rgb2gray(data.astronaut())[:50, :50]
-    >>> img += 0.5 * img.std() * np.random.randn(*img.shape)
+    >>> import cupy as cp
+    >>> from cucim.skimage import color
+    >>> from skimage import data
+    >>> img = color.rgb2gray(cp.array(data.astronaut()[:50, :50]))
+    >>> img += 0.5 * img.std() * cp.random.randn(*img.shape)
     >>> denoised_img = denoise_tv_chambolle(img, weight=60)
 
     3D example on synthetic data:
 
-    >>> x, y, z = np.ogrid[0:20, 0:20, 0:20]
+    >>> x, y, z = cp.ogrid[0:20, 0:20, 0:20]
     >>> mask = (x - 22)**2 + (y - 20)**2 + (z - 17)**2 < 8**2
     >>> mask = mask.astype(float)
-    >>> mask += 0.2*np.random.randn(*mask.shape)
+    >>> mask += 0.2*cp.random.randn(*mask.shape)
     >>> res = denoise_tv_chambolle(mask, weight=100)
 
     """

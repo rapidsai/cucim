@@ -58,11 +58,12 @@ def wiener(image, psf, balance, reg=None, is_real=True, clip=True):
     Examples
     --------
     >>> import cupy as cp
-    >>> from skimage import color, data, restoration
-    >>> img = color.rgb2gray(data.astronaut())
-    >>> from scipy.signal import convolve2d
+    >>> import cupyx.scipy.ndimage as ndi
+    >>> from cucim.skimage import color, restoration
+    >>> from skimage import data
+    >>> img = color.rgb2gray(cp.array(data.astronaut()))
     >>> psf = cp.ones((5, 5)) / 25
-    >>> img = convolve2d(img, psf, 'same')
+    >>> img = ndi.uniform_filter(img, size=psf.shape)
     >>> img += 0.1 * img.std() * cp.random.standard_normal(img.shape)
     >>> deconvolved_img = restoration.wiener(img, psf, 1100)
 
@@ -215,11 +216,12 @@ def unsupervised_wiener(image, psf, reg=None, user_params=None, is_real=True,
     Examples
     --------
     >>> import cupy as cp
-    >>> from skimage import color, data, restoration
-    >>> img = color.rgb2gray(data.astronaut())
-    >>> from scipy.signal import convolve2d
+    >>> import cupyx.scipy.ndimage as ndi
+    >>> from cucim.skimage import color, restoration
+    >>> from skimage import data
+    >>> img = color.rgb2gray(cp.array(data.astronaut()))
     >>> psf = cp.ones((5, 5)) / 25
-    >>> img = convolve2d(img, psf, 'same')
+    >>> img = ndi.uniform_filter(img, size=psf.shape)
     >>> img += 0.1 * img.std() * cp.random.standard_normal(img.shape)
     >>> deconvolved_img = restoration.unsupervised_wiener(img, psf)
 
@@ -414,7 +416,7 @@ def richardson_lucy(image, psf, num_iter=50, clip=True, filter_epsilon=None):
     >>> import cupy as cp
     >>> from cucim.skimage import img_as_float, restoration
     >>> from skimage import data
-    >>> camera = cp.asarray(img_as_float(data.camera()))
+    >>> camera = cp.asarray(img_as_float(cp.array(data.camera())))
     >>> from cupyx.scipy.signal import convolve2d
     >>> psf = cp.ones((5, 5)) / 25
     >>> camera = convolve2d(camera, psf, 'same')

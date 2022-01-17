@@ -29,7 +29,14 @@ def shannon_entropy(image, base=2):
     .. [1] `https://en.wikipedia.org/wiki/Entropy_(information_theory) <https://en.wikipedia.org/wiki/Entropy_(information_theory)>`_
     .. [2] https://en.wiktionary.org/wiki/Shannon_entropy
 
-    """  # noqa
+    Examples
+    --------
+    >>> import cupy as cp
+    >>> from skimage import data
+    >>> from cucim.skimage.measure import shannon_entropy
+    >>> shannon_entropy(cp.array(data.camera()))
+    array(7.23169501)
+    """
 
     _, counts = cp.unique(image, return_counts=True)
     return scipy_entropy(counts, base=base)
