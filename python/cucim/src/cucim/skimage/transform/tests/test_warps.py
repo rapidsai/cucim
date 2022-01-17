@@ -20,8 +20,9 @@ from cucim.skimage.transform._geometric import (AffineTransform,
 from cucim.skimage.transform._warps import (_linear_polar_mapping,
                                             _log_polar_mapping, _stackcopy,
                                             downscale_local_mean, rescale,
-                                            resize, rotate, swirl, warp,
-                                            warp_coords, warp_polar)
+                                            resize, resize_local_mean, rotate,
+                                            swirl, warp, warp_coords,
+                                            warp_polar)
 from cucim.skimage.util.dtype import _convert, img_as_float
 
 # from skimage._shared.testing import test_parallel
@@ -801,3 +802,129 @@ def test_nonzero_order_warp_dtype(dtype, order):
     assert rotate(img, 45, order=order).dtype == float_dtype
     assert warp_polar(img, order=order).dtype == float_dtype
     assert swirl(img, order=order).dtype == float_dtype
+
+
+def test_resize_local_mean2d():
+    x = cp.zeros((5, 5), dtype=np.double)
+    x[1, 1] = 1
+    resized = resize_local_mean(x, (10, 10))
+    ref = cp.zeros((10, 10))
+    ref[2:4, 2:4] = 1
+    assert_array_almost_equal(resized, ref)
+
+
+@pytest.mark.parametrize('channel_axis', [0, 1, 2, -1, -2, -3])
+def test_resize_local_mean3d_keep(channel_axis):
+    # keep 3rd dimension
+    nch = 3
+    x = cp.zeros((5, 5, nch), dtype=np.double)
+    x[1, 1, :] = 1
+    # move channels to expected dimension
+    x = cp.moveaxis(x, -1, channel_axis)
+    resized = resize_local_mean(x, (10, 10), channel_axis=channel_axis)
+    # move channels back to last axis to match the reference image
+    resized = cp.moveaxis(resized, channel_axis, -1)
+    with pytest.raises(ValueError):
+        # output_shape too short
+        resize_local_mean(x, (10, ))
+    ref = cp.zeros((10, 10, nch))
+    ref[2:4, 2:4, :] = 1
+    assert_array_almost_equal(resized, ref)
+
+    channel_axis = channel_axis % x.ndim
+    spatial_shape = (10, 10)
+    out_shape = (
+        spatial_shape[:channel_axis] + (nch,) + spatial_shape[channel_axis:]
+    )
+    resized = resize_local_mean(x, out_shape)
+    # move channels back to last axis to match the reference image
+    resized = cp.moveaxis(resized, channel_axis, -1)
+    assert_array_almost_equal(resized, ref)
+
+
+def test_resize_local_mean3d_resize():
+    # resize 3rd dimension
+    x = cp.zeros((5, 5, 3), dtype=cp.double)
+    x[1, 1, :] = 1
+    resized = resize_local_mean(x, (10, 10, 1))
+    ref = cp.zeros((10, 10, 1))
+    ref[2:4, 2:4] = 1
+    assert_array_almost_equal(resized, ref)
+
+    # can't resize along specified channel axis
+    with pytest.raises(ValueError):
+        resize_local_mean(x, (10, 10, 1), channel_axis=-1)
+
+
+def test_resize_local_mean3d_2din_3dout():
+    # 3D output with 2D input
+    x = cp.zeros((5, 5), dtype=cp.double)
+    x[1, 1] = 1
+    resized = resize_local_mean(x, (10, 10, 1))
+    ref = cp.zeros((10, 10, 1))
+    ref[2:4, 2:4] = 1
+    assert_array_almost_equal(resized, ref)
+
+
+def test_resize_local_mean2d_4d():
+    # resize with extra output dimensions
+    x = cp.zeros((5, 5), dtype=cp.double)
+    x[1, 1] = 1
+    out_shape = (10, 10, 1, 1)
+    resized = resize_local_mean(x, out_shape)
+    ref = cp.zeros(out_shape)
+    ref[2:4, 2:4, ...] = 1
+    assert_array_almost_equal(resized, ref)
+
+
+@pytest.mark.parametrize("dim", range(1, 6))
+def test_resize_local_mean_nd(dim):
+    shape = tuple(2 + np.arange(dim) * 2)
+    x = cp.ones(shape)
+    out_shape = (np.asarray(shape) * 1.5).astype(int)
+    resized = resize_local_mean(x, out_shape)
+    expected_shape = tuple(1.5 * np.asarray(shape))
+    assert_array_equal(resized.shape, expected_shape)
+    assert_array_equal(resized, 1)
+
+
+def test_resize_local_mean3d():
+    x = cp.zeros((5, 5, 2), dtype=cp.double)
+    x[1, 1, 0] = 0
+    x[1, 1, 1] = 1
+    resized = resize_local_mean(x, (10, 10, 1))
+    ref = cp.zeros((10, 10, 1))
+    ref[2:4, 2:4, :] = 0.5
+    assert_array_almost_equal(resized, ref)
+    resized = resize_local_mean(x, (10, 10, 1), grid_mode=False)
+    ref[1, 1, :] = 0.0703125
+    ref[2, 2, :] = 0.5
+    ref[3, 3, :] = 0.3828125
+    ref[1, 2, :] = ref[2, 1, :] = 0.1875
+    ref[1, 3, :] = ref[3, 1, :] = 0.1640625
+    ref[2, 3, :] = ref[3, 2, :] = 0.4375
+    assert_array_almost_equal(resized, ref)
+
+
+def test_resize_local_mean_dtype():
+    x = cp.zeros((5, 5))
+    x_f32 = x.astype(cp.float32)
+    x_u8 = x.astype(cp.uint8)
+    x_b = x.astype(bool)
+
+    assert resize_local_mean(x, (10, 10),
+                             preserve_range=False).dtype == x.dtype
+    assert resize_local_mean(x, (10, 10),
+                             preserve_range=True).dtype == x.dtype
+    assert resize_local_mean(x_u8, (10, 10),
+                             preserve_range=False).dtype == cp.double
+    assert resize_local_mean(x_u8, (10, 10),
+                             preserve_range=True).dtype == cp.double
+    assert resize_local_mean(x_b, (10, 10),
+                             preserve_range=False).dtype == cp.double
+    assert resize_local_mean(x_b, (10, 10),
+                             preserve_range=True).dtype == cp.double
+    assert resize_local_mean(x_f32, (10, 10),
+                             preserve_range=False).dtype == x_f32.dtype
+    assert resize_local_mean(x_f32, (10, 10),
+                             preserve_range=True).dtype == x_f32.dtype
