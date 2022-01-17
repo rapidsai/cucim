@@ -25,6 +25,6 @@ __getattr__, __dir__, __all__ = lazy.attach(
         '_sparse': ['correlate_sparse'],
         '_unsharp_mask': ['unsharp_mask'],
         '_window': ['window'],
-        # '_fft_based': ['butterworth']
+        '_fft_based': ['butterworth']
     }
 )
