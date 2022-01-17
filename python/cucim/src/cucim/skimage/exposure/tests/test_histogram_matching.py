@@ -67,6 +67,7 @@ class TestMatchHistogram:
         reference = cp.moveaxis(self.template_rgb, -1, channel_axis)
         matched = exposure.match_histograms(image, reference,
                                             channel_axis=channel_axis)
+        assert matched.dtype == image.dtype
         matched = cp.moveaxis(matched, channel_axis, -1)
         reference = cp.moveaxis(reference, channel_axis, -1)
         matched = cp.asnumpy(matched)

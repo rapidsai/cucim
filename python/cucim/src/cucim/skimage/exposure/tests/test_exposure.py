@@ -289,6 +289,10 @@ def test_rescale_out_range(dtype):
     .. versionchanged:: 0.17
         This function used to return dtype matching the input dtype. It now
         matches the output.
+
+    .. versionchanged:: 0.19
+        float16 and float32 inputs now result in float32 output. Formerly they
+        would give float64 outputs.
     """
     image = cp.array([-10, 0, 10], dtype=cp.int8)
     out = exposure.rescale_intensity(image, out_range=(0, 127))
