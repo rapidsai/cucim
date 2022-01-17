@@ -62,7 +62,7 @@ def setup_test():
     warnings.simplefilter('default')
 
     if _error_on_warnings:
-        from scipy import signal, ndimage, special, optimize, linalg
+        from scipy import linalg, ndimage, optimize, signal, special
         from scipy.io import loadmat
         from skimage import viewer
 

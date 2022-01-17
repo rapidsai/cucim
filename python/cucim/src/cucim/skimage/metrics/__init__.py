@@ -1,8 +1,6 @@
 from ._structural_similarity import structural_similarity
-from .simple_metrics import (mean_squared_error,
-                             normalized_mutual_information,
-                             normalized_root_mse,
-                             peak_signal_noise_ratio)
+from .simple_metrics import (mean_squared_error, normalized_mutual_information,
+                             normalized_root_mse, peak_signal_noise_ratio)
 
 __all__ = [
     "mean_squared_error",

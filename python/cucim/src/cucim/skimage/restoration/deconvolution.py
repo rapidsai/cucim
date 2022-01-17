@@ -7,8 +7,6 @@ import numpy as np
 from .._shared.utils import _supported_float_type, deprecate_kwarg
 from . import uft
 
-
-
 __keywords__ = "restoration, image, deconvolution"
 
 

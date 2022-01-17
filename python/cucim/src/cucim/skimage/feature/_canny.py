@@ -17,9 +17,10 @@ import cupy as cp
 import cupyx.scipy.ndimage as ndi
 from cupyx.scipy.ndimage import binary_erosion, generate_binary_structure
 
+from cucim.skimage.util import dtype_limits, img_as_float
+
 from .._shared.filters import gaussian
 from .._shared.utils import check_nD
-from cucim.skimage.util import dtype_limits, img_as_float
 
 
 # fuse several commonly paired ufunc operations into a single kernel call

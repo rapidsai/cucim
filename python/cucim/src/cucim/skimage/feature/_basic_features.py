@@ -7,8 +7,8 @@ import cupy as cp
 import numpy as np
 
 from cucim.skimage import feature, filters
-from cucim.skimage.util import img_as_float32
 from cucim.skimage._shared import utils
+from cucim.skimage.util import img_as_float32
 
 
 def _texture_filter(gaussian_filtered):

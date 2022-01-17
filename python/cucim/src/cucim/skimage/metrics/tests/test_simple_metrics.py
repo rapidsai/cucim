@@ -8,8 +8,7 @@ from skimage import data
 from cucim.skimage._shared._warnings import expected_warnings
 from cucim.skimage.metrics import (mean_squared_error,
                                    normalized_mutual_information,
-                                   normalized_root_mse,
-                                   peak_signal_noise_ratio)
+                                   normalized_root_mse, peak_signal_noise_ratio)
 
 np.random.seed(
     5
