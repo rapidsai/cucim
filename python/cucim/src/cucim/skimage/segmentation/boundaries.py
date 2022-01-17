@@ -17,6 +17,10 @@ def _find_boundaries_subpixel(label_img):
     for every image dimension of size ``s``. These "interstitial" rows
     and columns are filled as ``True`` if they separate two labels in
     `label_img`, ``False`` otherwise.
+
+    I used ``view_as_windows`` to get the neighborhood of each pixel.
+    Then I check whether there are two labels or more in that
+    neighborhood.
     """
     ndim = label_img.ndim
     max_label = cp.iinfo(label_img.dtype).max
@@ -169,11 +173,11 @@ def find_boundaries(label_img, connectivity=1, mode="thick", background=0):
         elif mode == 'outer':
             max_label = cp.iinfo(label_img.dtype).max
             background_image = label_img == background
-            selem = ndi.generate_binary_structure(ndim, ndim)
+            footprint = ndi.generate_binary_structure(ndim, ndim)
             inverted_background = cp.array(label_img, copy=True)
             inverted_background[background_image] = max_label
-            adjacent_objects = ((dilation(label_img, selem) !=
-                                 erosion(inverted_background, selem)) &
+            adjacent_objects = ((dilation(label_img, footprint) !=
+                                 erosion(inverted_background, footprint)) &
                                 ~background_image)
             boundaries &= (background_image | adjacent_objects)
         return boundaries

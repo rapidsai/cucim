@@ -421,7 +421,7 @@ def choose_conv_method(in1, in2, mode="full", measure=False):
     --------
     Estimate the fastest method for a given input:
 
-    >>> from scipy import signal
+    >>> from cucim.skimage import _vendored as signal
     >>> img = cupy.random.rand(32, 32)
     >>> filter = cupy.random.rand(8, 8)
     >>> method = signal.choose_conv_method(img, filter, mode='same')

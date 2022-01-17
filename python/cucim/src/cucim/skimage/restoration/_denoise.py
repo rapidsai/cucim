@@ -186,7 +186,7 @@ def denoise_tv_chambolle(image, weight=0.1, eps=2.0e-4, max_num_iter=200,
         out = cp.zeros_like(image)
         for c in range(image.shape[channel_axis]):
             out[_at(c)] = _denoise_tv_chambolle_nd(image[_at(c)], weight, eps,
-                                                   n_iter_max)
+                                                   max_num_iter)
     else:
-        out = _denoise_tv_chambolle_nd(image, weight, eps, n_iter_max)
+        out = _denoise_tv_chambolle_nd(image, weight, eps, max_num_iter)
     return out
