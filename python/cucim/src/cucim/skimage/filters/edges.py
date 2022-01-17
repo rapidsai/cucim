@@ -179,6 +179,7 @@ def _generic_edge_filter(image, *, smooth_weights, edge_weights=[1, 0, -1],
         image = image.astype(float_dtype, copy=False)
     else:
         image = img_as_float(image)
+        float_dtype = image.dtype
 
     # TODO: file an upstream scikit-image PR casting weights in this manner
     edge_weights = cp.asarray(edge_weights, dtype=float_dtype)
@@ -245,7 +246,8 @@ def sobel(image, mask=None, *, axis=None, mode='reflect', cval=0.0):
 
     See also
     --------
-    scharr, prewitt, canny
+    sobel_h, sobel_v : horizontal and vertical edge detection.
+    scharr, prewitt, farid, cucim.skimage.feature.canny
 
     References
     ----------
@@ -262,7 +264,6 @@ def sobel(image, mask=None, *, axis=None, mode='reflect', cval=0.0):
     >>> camera = cp.array(data.camera())
     >>> edges = filters.sobel(camera)
     """
-    image = img_as_float(image)
     output = _generic_edge_filter(image, smooth_weights=SOBEL_SMOOTH,
                                   axis=axis, mode=mode, cval=cval)
     output = _mask_filter_result(output, mask)
@@ -362,7 +363,8 @@ def scharr(image, mask=None, *, axis=None, mode='reflect', cval=0.0):
 
     See also
     --------
-    sobel, prewitt, canny
+    scharr_h, scharr_v : horizontal and vertical edge detection.
+    sobel, prewitt, farid, cucim.skimage.feature.canny
 
     Notes
     -----
@@ -384,7 +386,6 @@ def scharr(image, mask=None, *, axis=None, mode='reflect', cval=0.0):
     >>> camera = cp.array(data.camera())
     >>> edges = filters.scharr(camera)
     """
-    image = img_as_float(image)
     output = _generic_edge_filter(image, smooth_weights=SCHARR_SMOOTH,
                                   axis=axis, mode=mode, cval=cval)
     output = _mask_filter_result(output, mask)
@@ -493,7 +494,8 @@ def prewitt(image, mask=None, *, axis=None, mode='reflect', cval=0.0):
 
     See also
     --------
-    sobel, scharr
+    prewitt_h, prewitt_v : horizontal and vertical edge detection.
+    sobel, scharr, farid, cucim.skimage.feature.canny
 
     Notes
     -----
@@ -512,7 +514,6 @@ def prewitt(image, mask=None, *, axis=None, mode='reflect', cval=0.0):
     >>> camera = cp.array(data.camera())
     >>> edges = filters.prewitt(camera)
     """
-    image = img_as_float(image)
     output = _generic_edge_filter(image, smooth_weights=PREWITT_SMOOTH,
                                   axis=axis, mode=mode, cval=cval)
     output = _mask_filter_result(output, mask)
@@ -598,7 +599,8 @@ def roberts(image, mask=None):
 
     See also
     --------
-    sobel, scharr, prewitt, feature.canny
+    roberts_pos_diag, roberts_neg_diag : diagonal edge detection.
+    sobel, scharr, prewitt, cucim.skimage.feature.canny
 
     Examples
     --------
@@ -767,7 +769,7 @@ def farid(image, *, mask=None):
     See also
     --------
     farid_h, farid_v : horizontal and vertical edge detection.
-    sobel, prewitt, farid, skimage.feature.canny
+    sobel, prewitt, farid, cucim.skimage.feature.canny
 
     Notes
     -----
