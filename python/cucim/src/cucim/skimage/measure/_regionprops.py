@@ -832,48 +832,33 @@ def _props_to_dict(regions, properties=('label', 'bbox'), separator='-'):
                     p = regions[i][prop]
                     column_buffer.append(p)
                 column_buffer = cp.array(column_buffer)
-                print(f"prop={prop}, column_buffer.dtype={column_buffer.dtype}")
                 out[orig_prop] = column_buffer
         else:
-            legacy_code_path = False
-            if legacy_code_path:
-                column_buffer = cp.empty(n, dtype=dtype)
-
             if isinstance(rp, cp.ndarray):
                 shape = rp.shape
             else:
                 shape = (len(rp),)
 
-            if legacy_code_path:
-                # legacy code path
-                for ind in np.ndindex(shape):
-                    for k in range(n):
-                        loc = ind if len(ind) > 1 else ind[0]
-                        column_buffer[k] = regions[k][prop][loc]
-                    modified_prop = separator.join(map(str, (orig_prop,) + ind))
-                    out[modified_prop] = cp.copy(column_buffer)
+            # precompute property column names and locations
+            modified_props = []
+            locs = []
+            for ind in np.ndindex(shape):
+                modified_props.append(
+                    separator.join(map(str, (orig_prop,) + ind))
+                )
+                locs.append(ind if len(ind) > 1 else ind[0])
 
-            else:
-                # precompute property column names and locations
-                modified_props = []
-                locs = []
-                for ind in np.ndindex(shape):
-                    modified_props.append(
-                        separator.join(map(str, (orig_prop,) + ind))
-                    )
-                    locs.append(ind if len(ind) > 1 else ind[0])
+            # fill temporary column data_array
+            n_columns = len(locs)
+            column_data = cp.empty((n, n_columns), dtype=dtype)
+            for k in range(n):
+                rp = regions[k][prop]
+                for i, loc in enumerate(locs):
+                    column_data[k, i] = rp[loc]
 
-                # fill temporary column data_array
-                n_columns = len(locs)
-                column_data = cp.empty((n, n_columns), dtype=dtype)
-                for k in range(n):
-                    rp = regions[k][prop]
-                    for i, loc in enumerate(locs):
-                        column_data[k, i] = rp[loc]
-
-                # add the columns to the output dictionary
-                for i, modified_prop in enumerate(modified_props):
-                    out[modified_prop] = column_data[:, i]
+            # add the columns to the output dictionary
+            for i, modified_prop in enumerate(modified_props):
+                out[modified_prop] = column_data[:, i]
     return out
 
 
