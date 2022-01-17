@@ -103,10 +103,13 @@ def butterworth(
     Apply a high pass and low pass Butterworth filter to a grayscale and
     color image respectively:
 
+    >>> import cupy as cp
     >>> from skimage.data import camera, astronaut
-    >>> from skimage.filters import butterworth
-    >>> high_pass = butterworth(camera(), 0.07, True, 8)
-    >>> low_pass = butterworth(astronaut(), 0.01, False, 4, channel_axis=-1)
+    >>> from cucim.skimage.filters import butterworth
+    >>> cam = cp.asarray(camera())
+    >>> astro = cp.asarray(astronaut())
+    >>> high_pass = butterworth(cam, 0.07, True, 8)
+    >>> low_pass = butterworth(astro, 0.01, False, 4, channel_axis=-1)
 
     References
     ----------
