@@ -398,52 +398,6 @@ def _image_symmetric_real33_eigvals(M00, M01, M02, M11, M12, M22):
 """
 
 
-def structure_tensor_eigvals(Axx, Axy, Ayy):
-    """Compute eigenvalues of structure tensor.
-
-    Parameters
-    ----------
-    Axx : ndarray
-        Element of the structure tensor for each pixel in the input image.
-    Axy : ndarray
-        Element of the structure tensor for each pixel in the input image.
-    Ayy : ndarray
-        Element of the structure tensor for each pixel in the input image.
-
-    Returns
-    -------
-    l1 : ndarray
-        Larger eigen value for each input matrix.
-    l2 : ndarray
-        Smaller eigen value for each input matrix.
-
-    Examples
-    --------
-    >>> import cupy as cp
-    >>> from cucim.skimage.feature import (structure_tensor,
-    ...                                      structure_tensor_eigvals)
-    >>> square = cp.zeros((5, 5))
-    >>> square[2, 2] = 1
-    >>> Arr, Arc, Acc = structure_tensor(square, sigma=0.1, order="rc")
-    >>> structure_tensor_eigvals(Acc, Arc, Arr)[0]
-    array([[0., 0., 0., 0., 0.],
-           [0., 2., 4., 2., 0.],
-           [0., 4., 0., 4., 0.],
-           [0., 2., 4., 2., 0.],
-           [0., 0., 0., 0., 0.]])
-
-    """
-    warn(
-        "deprecation warning: the function structure_tensor_eigvals is "
-        "deprecated and will be removed in version 0.20. Please use "
-        "structure_tensor_eigenvalues instead.",
-        category=FutureWarning,
-        stacklevel=2,
-    )
-
-    return _image_orthogonal_matrix22_eigvals(Axx, Axy, Ayy)
-
-
 def hessian_matrix_eigvals(H_elems):
     """Compute eigenvalues of Hessian matrix.
 
@@ -742,7 +696,8 @@ def corner_shi_tomasi(image, sigma=1):
            [0, 0, 1, 1, 1, 1, 1, 1, 0, 0],
            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]])
-    >>> corner_peaks(corner_shi_tomasi(square), min_distance=1)  # doctest: +SKIP  # noqa
+    >>> corner_peaks(corner_shi_tomasi(square),
+    ...              min_distance=1)  # doctest: +SKIP
     array([[2, 2],
            [2, 7],
            [7, 2],
