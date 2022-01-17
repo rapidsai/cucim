@@ -1263,9 +1263,10 @@ def resize_local_mean(image, output_shape, grid_mode=True,
 
     Examples
     --------
+    >>> import cupy as cp
     >>> from skimage import data
-    >>> from skimage.transform import resize_local_mean
-    >>> image = data.camera()
+    >>> from cucim.skimage.transform import resize_local_mean
+    >>> image = cp.array(data.camera())
     >>> resize_local_mean(image, (100, 100)).shape
     (100, 100)
 
