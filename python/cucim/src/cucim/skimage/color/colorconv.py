@@ -1781,6 +1781,7 @@ def separate_stains(rgb, conv_matrix, *, channel_axis=-1):
     kern = _separate_stains_kernel(conv_matrix)
     stains = cp.empty_like(rgb)
     kern(rgb, stains, size=rgb.size // 3)
+    cp.maximum(stains, 0, out=stains)
     return stains
 
 

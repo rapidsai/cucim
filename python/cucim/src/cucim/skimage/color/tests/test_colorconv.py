@@ -253,13 +253,13 @@ class TestColorconv():
         )
         assert_array_almost_equal(img_out, img_in)
 
-    # RGB<->HDX roundtrip with ubyte image
-    def test_hdx_rgb_roundtrip(self):
-        from cucim.skimage.color.colorconv import hdx_from_rgb, rgb_from_hdx
-        img_rgb = self.img_rgb
-        conv = combine_stains(separate_stains(img_rgb, hdx_from_rgb),
-                              rgb_from_hdx)
-        assert_array_equal(img_as_ubyte(conv), img_rgb)
+    # RGB<->BRO roundtrip with ubyte image
+    def test_bro_rgb_roundtrip(self):
+        from cucim.skimage.color.colorconv import bro_from_rgb, rgb_from_bro
+        img_in = img_as_ubyte(self.img_stains)
+        img_out = combine_stains(img_in, rgb_from_bro)
+        img_out = separate_stains(img_out, bro_from_rgb)
+        assert_array_equal(img_as_ubyte(img_out), img_in)
 
     # BRO<->RGB roundtrip with float image
     @pytest.mark.parametrize("channel_axis", [0, 1, -1])
