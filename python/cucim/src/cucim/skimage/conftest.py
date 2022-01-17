@@ -1,4 +1,4 @@
-from skimage._shared.testing import setup_test, teardown_test
+from cucim.skimage._shared.testing import setup_test, teardown_test
 
 
 def pytest_runtest_setup(item):
