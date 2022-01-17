@@ -297,6 +297,20 @@ def perimeter_crofton(image, directions=4):
            2010.
            Ecole Nationale Superieure des Mines de Saint-Etienne.
            https://tel.archives-ouvertes.fr/tel-00560838
+
+    Examples
+    --------
+    >>> import cupy as cp
+    >>> from cucim.skimage import util
+    >>> from skimage import data
+    >>> from skimage.measure import label
+    >>> # coins image (binary)
+    >>> img_coins = cp.array(data.coins() > 110)
+    >>> # total perimeter of all objects in the image
+    >>> perimeter_crofton(img_coins, directions=2)  # doctest: +ELLIPSIS
+    array(8144.57895443)
+    >>> perimeter_crofton(img_coins, directions=4)  # doctest: +ELLIPSIS
+    array(7837.07740694)
     """
     if image.ndim != 2:
         raise NotImplementedError(
