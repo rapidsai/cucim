@@ -486,14 +486,11 @@ copy_nvjpeg_files_() {
     local root_folder=${1:-${TOP}}
     local arch_name="$(get_arch_name_)"
     local nvjpeg_search="${root_folder}/temp/cuda/include:${root_folder}/temp/cuda/lib64"
-    local cuda_version="11.5"
-    local nvjpeg_version="11-5_11.5.4.107-1"
+    local cuda_version="11.6"
+    local nvjpeg_version="11-6_11.6.0.55-1"
     local candidate
     local nvjpeg_include
     local nvjpeg_lib
-
-    # TODO: Do not copy nvjpeg files until device input is supported (CUDA 11.6)
-    return
 
     for candidate in ${nvjpeg_search}; do
         nvjpeg_include="$(echo $candidate | cut -d: -f1)"
@@ -521,12 +518,8 @@ copy_nvjpeg_files_() {
         else
             run_command wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/${arch_name}/libnvjpeg-dev-${nvjpeg_version}_amd64.deb
         fi
-        mkdir -p libnvjpeg-dev
-        run_command ar x libnvjpeg-dev-${nvjpeg_version}*.deb --output=libnvjpeg-dev
-        pushd libnvjpeg-dev > /dev/null
-        run_command xz --decompress data.tar.xz
-        run_command tar xvf data.tar
-        popd > /dev/null
+
+        run_command dpkg -x libnvjpeg-dev-${nvjpeg_version}*.deb libnvjpeg-dev
 
         run_command cp libnvjpeg-dev/usr/local/cuda-${cuda_version}/include/nvjpeg.h ${root_folder}/temp/cuda/include/
         run_command cp libnvjpeg-dev/usr/local/cuda-${cuda_version}/lib64/libnvjpeg_static.a ${root_folder}/temp/cuda/lib64/
