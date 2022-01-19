@@ -100,5 +100,6 @@ opts = dict(
     },
 )
 
+
 if __name__ == '__main__':
     setup(**opts)
