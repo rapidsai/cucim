@@ -62,7 +62,8 @@ def test_invariant_denoise_color(dtype):
 
 def test_invariant_denoise_color_deprecated():
 
-    with expected_warnings(["`multichannel` is a deprecated argument"]):
+    # can remove \A\Z here if only testing with scikit-image 0.19
+    with expected_warnings([r"`multichannel` is a deprecated argument|\A\Z"]):
         denoised_img_color = _invariant_denoise(
             noisy_img_color, _denoise_wavelet,
             denoiser_kwargs=dict(multichannel=True))
