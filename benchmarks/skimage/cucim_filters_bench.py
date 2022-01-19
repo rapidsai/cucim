@@ -19,7 +19,9 @@ def main(args):
             all_results = pickle.load(f)
     else:
         all_results = pd.DataFrame()
-    dtypes = [np.float32]
+    # dyptes
+    dtype_dict = {'fp64': np.float64, 'fp32': np.float32, 'fp16': np.float16}
+    dtypes = [dtype_dict[args.dtype]]
 
     for function_name, fixed_kwargs, var_kwargs, allow_color, allow_nd in [
         # _gabor.py
@@ -112,48 +114,51 @@ def main(args):
         ("apply_hysteresis_threshold", dict(low=0.15, high=0.6), dict(), False, True),
         ("threshold_multiotsu", dict(), dict(nbins=[64, 256], classes=[3]), False, True),
     ]:
-
-        shape = tuple(args.img_size)
-
-        # for shape in [(512, 512), (3840, 2160), (3840, 2160, 3), (192, 192, 192)]:
-
-        ndim = len(shape)
-        if not allow_nd:
-            if not allow_color:
-                if ndim > 2:
-                    continue
-            else:
-                if ndim > 3 or (ndim == 3 and shape[-1] not in [3, 4]):
-                    continue
-        if shape[-1] == 3 and not allow_color:
+        if function_name != args.func_name:
             continue
+        else:
+            # image sizes/shapes
+            shape = tuple(args.img_size)
 
-        if function_name == "gabor" and np.prod(shape) > 1000000:
-            # avoid cases that are too slow on the CPU
-            var_kwargs["frequency"] = [f for f in var_kwargs["frequency"] if f >= 0.1]
+            # for shape in [(512, 512), (3840, 2160), (3840, 2160, 3), (192, 192, 192)]:
 
-        if function_name == "median":
-            selems = []
             ndim = len(shape)
-            selem_sizes = [3, 5, 7, 9] if ndim == 2 else [3, 5, 7]
-            for selem_size in [3, 5, 7, 9]:
-                selems.append(np.ones((selem_size,) * ndim, dtype=bool))
-            var_kwargs["selem"] = selems
+            if not allow_nd:
+                if not allow_color:
+                    if ndim > 2:
+                        continue
+                else:
+                    if ndim > 3 or (ndim == 3 and shape[-1] not in [3, 4]):
+                        continue
+            if shape[-1] == 3 and not allow_color:
+                continue
 
-        if function_name in ["gaussian", "unsharp_mask"]:
-            fixed_kwargs["multichannel"] = True if shape[-1] == 3 else False
+            if function_name == "gabor" and np.prod(shape) > 1000000:
+                # avoid cases that are too slow on the CPU
+                var_kwargs["frequency"] = [f for f in var_kwargs["frequency"] if f >= 0.1]
 
-        B = ImageBench(
-            function_name=function_name,
-            shape=shape,
-            dtypes=dtypes,
-            fixed_kwargs=fixed_kwargs,
-            var_kwargs=var_kwargs,
-            module_cpu=skimage.filters,
-            module_gpu=cucim.skimage.filters,
-        )
-        results = B.run_benchmark(duration=1)
-        all_results = all_results.append(results["full"])
+            if function_name == "median":
+                selems = []
+                ndim = len(shape)
+                selem_sizes = [3, 5, 7, 9] if ndim == 2 else [3, 5, 7]
+                for selem_size in [3, 5, 7, 9]:
+                    selems.append(np.ones((selem_size,) * ndim, dtype=bool))
+                var_kwargs["selem"] = selems
+
+            if function_name in ["gaussian", "unsharp_mask"]:
+                fixed_kwargs["multichannel"] = True if shape[-1] == 3 else False
+
+            B = ImageBench(
+                function_name=function_name,
+                shape=shape,
+                dtypes=dtypes,
+                fixed_kwargs=fixed_kwargs,
+                var_kwargs=var_kwargs,
+                module_cpu=skimage.filters,
+                module_gpu=cucim.skimage.filters,
+            )
+            results = B.run_benchmark(duration=1)
+            all_results = all_results.append(results["full"])
 
     fbase = os.path.splitext(pfile)[0]
     all_results.to_csv(fbase + ".csv")
@@ -164,7 +169,9 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Benchmarking cuCIM Filters')
+    func_name_choices = ['gabor', 'gaussian', 'median', 'rank_order', 'unsharp_mask', 'sobel', 'prewitt', 'scharr', 'roberts', 'roberts_pos_diag', 'roberts_neg_diag', 'farid', 'laplace', 'meijering', 'sato', 'frangi', 'hessian', 'threshold_isodata', 'threshold_otsu', 'threshold_yen', 'threshold_local', 'threshold_li', 'threshold_minimum', 'threshold_mean', 'threshold_triangle', 'threshold_niblack', 'threshold_sauvola', 'apply_hysteresis_threshold', 'threshold_multiotsu']
     parser.add_argument('-i','--img_size', type=int, nargs="+", help='Size of input image', required=True)
+    parser.add_argument('-d','--dtype', type=str, help='Dtype of input image', choices = ['fp64','fp32','fp16'], required=True)
+    parser.add_argument('-f','--func_name', type=str, help='function to benchmark', choices = func_name_choices, required=True)
     args = parser.parse_args()
-    # print(args.img_size)
     main(args)
