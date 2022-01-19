@@ -15,8 +15,7 @@ from cucim.skimage.feature import (corner_foerstner, corner_harris,
                                    hessian_matrix_det, hessian_matrix_eigvals,
                                    peak_local_max, shape_index,
                                    structure_tensor,
-                                   structure_tensor_eigenvalues,
-                                   structure_tensor_eigvals)
+                                   structure_tensor_eigenvalues)
 from cucim.skimage.morphology import cube
 
 
@@ -194,17 +193,6 @@ def test_structure_tensor_eigenvalues_3d():
     e0, e1, e2 = structure_tensor_eigenvalues(A_elems)
     # e0 should detect facets
     assert np.all(e0[boundary] != 0)
-
-
-def test_structure_tensor_eigvals():
-    square = cp.zeros((5, 5))
-    square[2, 2] = 1
-    A_elems = structure_tensor(square, sigma=0.1, order='rc')
-    with expected_warnings(['structure_tensor_eigvals is deprecated']):
-        eigvals = structure_tensor_eigvals(*A_elems)
-    eigenvalues = structure_tensor_eigenvalues(A_elems)
-    for ev1, ev2 in zip(eigvals, eigenvalues):
-        assert_array_equal(ev1, ev2)
 
 
 @pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])
