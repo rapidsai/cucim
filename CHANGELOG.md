@@ -2,9 +2,125 @@
 
 Please see https://github.com/rapidsai/cucim/releases/tag/v22.02.00a for the latest changes to this development branch.
 
-# cuCIM 21.12.00 (8 Dec 2021)
+# cuCIM 21.12.00 (9 Dec 2021)
 
-Please see https://github.com/rapidsai/cucim/releases/tag/v21.12.00 for the details.
+## 🚀 New Features
+
+1. Support Aperio SVS with CPU LZW and jpeg2k decoder ([#141](https://github.com/rapidsai/cucim/pull/141)) [[@gigony](https://github.com/gigony)](https://github.com/gigony](https://github.com/gigony))
+2. Add NVTX support for performance analysis ([#144](https://github.com/rapidsai/cucim/pull/144)) [[@gigony](https://github.com/gigony)](https://github.com/gigony](https://github.com/gigony))
+3. Normalize operation ([#150](https://github.com/rapidsai/cucim/pull/150)) [[@shekhardw](https://github.com/shekhardw)](https://github.com/shekhardw](https://github.com/shekhardw))
+
+### 1. Support Aperio SVS (.svs)
+
+cuCIM now supports [Aperio SVS format](https://openslide.org/formats/aperio/) with help of [OpenJpeg](https://www.openjpeg.org/) for decoding jpeg2k-compressed data.
+
+Please check [this notebook](https://nbviewer.org/github/rapidsai/cucim/blob/branch-21.12/notebooks/Supporting_Aperio_SVS_Format.ipynb) to see how to use the feature.
+
+#### Unaligned Case (`per_process`, JPEG-compressed SVS file)
+
+![image](https://user-images.githubusercontent.com/1928522/141350490-06fdd8cb-5be2-42e4-9774-c7b76fab6f9a.png)
+
+#### Unaligned Case (`per_process`, JPEG2000 RGB-compressed SVS file)
+
+![image](https://user-images.githubusercontent.com/1928522/141093324-574b532e-ad42-4d61-8473-4c3e07e3feae.png)
+
+#### Unaligned Case (`per_process`, JPEG2000 YCbCr-compressed SVS file)
+
+![image](https://user-images.githubusercontent.com/1928522/141093381-8ab0161d-1b17-4e80-a680-86abfbf2fa65.png)
+
+The detailed data is available [here](https://docs.google.com/spreadsheets/d/15D1EqNI_E9x_S8i3kJLwBxMcEmwk8SafW0WryMrAm6A/edit#gid=369408723).
+
+### 2. Add NVTX support for performance analysis
+
+Important methods in cuCIM are instrumented with [NVTX](https://docs.nvidia.com/gameworks/index.html#gameworkslibrary/nvtx/nvidia_tools_extension_library_nvtx.htm) so can see performance bottlenecks easily with [NSight systems](https://developer.nvidia.com/nsight-systems).
+
+Tracing can be enabled through config file or environment variable or through API and less than 1% performance overheads in normal execution.
+
+#### Enabling Tracing
+##### Through `.cucim.json` file
+
+```json
+{
+        "profiler" : { "trace": true }
+}
+```
+
+##### Through Environment variable
+
+```bash
+CUCIM_TRACE=1 python
+```
+
+##### Through API
+
+```python
+from cucim import CuImage
+
+CuImage.profiler(trace=True)
+#or
+CuImage.profiler().trace(True)
+
+CuImage.profiler().config
+# {'trace': True}
+CuImage.profiler().trace()
+# True
+CuImage.is_trace_enabled # this is simpler method.
+# True
+```
+
+#### Profiling with NVIDIA Nsight Systems
+
+```bash
+nsys profile -f true -t cuda,nvtx,osrt -s cpu -x true --trace-fork-before-exec true -o my_profile `which python` benchmark.py
+# can add `--stats true`
+```
+
+Then, execute `nsight-sys` to open the profile results (my_profile.qdrep).
+
+![image](https://user-images.githubusercontent.com/1928522/141221297-2ff5224b-e99b-4fe6-af7d-69452141d71d.png)
+
+With this feature, a bug in cuCIM [v21.10.01](https://github.com/rapidsai/cucim/wiki/release_notes_v21.10.01) (thread contention in Cache) was found and fixed ([#145](https://github.com/rapidsai/cucim/pull/145)).
+
+### 3. Normalize operation
+
+CUDA-based normalization operation is added. Normalization supports the following types.
+
+1. Simple range based normalization
+2. Arctangent based normalization
+
+Arctangent-based normalization helps to stretch lower intensity pixels in the image slightly better than range-based normalization. If you look at its [graph](https://mathworld.wolfram.com/InverseTangent.html), there is a huge variation at certain lower intensities, but as intensities become higher, the curve becomes flatter. This helps in isolating regions like lungs (and regions within lungs) more efficiently. There can be separate use cases depending on the modality and the application.
+
+Please check the [test cases](https://github.com/rapidsai/cucim/blob/branch-21.12/python/cucim/src/cucim/core/operations/intensity/tests/test_normalize.py) to see how you can use the operation.
+
+
+## 🐛 Bug Fixes
+
+- Load libcufile.so with RTLD_NODELETE flag ([#177](https://github.com/rapidsai/cucim/pull/177)) [[@gigony](https://github.com/gigony)](https://github.com/gigony](https://github.com/gigony))
+- Remove rmm/nvcc dependencies to fix cudaErrorUnsupportedPtxVersion error ([#175](https://github.com/rapidsai/cucim/pull/175)) [[@gigony](https://github.com/gigony)](https://github.com/gigony](https://github.com/gigony))
+- Do not compile code with nvcc if no CUDA kernel exists ([#171](https://github.com/rapidsai/cucim/pull/171)) [[@gigony](https://github.com/gigony)](https://github.com/gigony](https://github.com/gigony))
+- Fix a segmentation fault due to unloaded libcufile ([#158](https://github.com/rapidsai/cucim/pull/158)) [[@gigony](https://github.com/gigony)](https://github.com/gigony](https://github.com/gigony))
+- Fix thread contention in Cache ([#145](https://github.com/rapidsai/cucim/pull/145)) [[@gigony](https://github.com/gigony)](https://github.com/gigony](https://github.com/gigony))
+- Build with NumPy 1.17 ([#148](https://github.com/rapidsai/cucim/pull/148)) [[@jakirkham](https://github.com/jakirkham)](https://github.com/jakirkham](https://github.com/jakirkham))
+
+## 📖 Documentation
+
+- Add Jupyter notebook for SVS Support ([#147](https://github.com/rapidsai/cucim/pull/147)) [[@gigony](https://github.com/gigony)](https://github.com/gigony](https://github.com/gigony))
+- Update change log for v21.10.01 ([#142](https://github.com/rapidsai/cucim/pull/142)) [[@gigony](https://github.com/gigony)](https://github.com/gigony](https://github.com/gigony))
+- update docs theme to pydata-sphinx-theme ([#138](https://github.com/rapidsai/cucim/pull/138)) [[@quasiben](https://github.com/quasiben)](https://github.com/quasiben](https://github.com/quasiben))
+- Update Github links in README.md through script ([#132](https://github.com/rapidsai/cucim/pull/132)) [[@gigony](https://github.com/gigony)](https://github.com/gigony](https://github.com/gigony))
+- Fix GDS link in Jupyter notebook ([#131](https://github.com/rapidsai/cucim/pull/131)) [[@gigony](https://github.com/gigony)](https://github.com/gigony](https://github.com/gigony))
+- Update notebook for the interoperability with DALI ([#127](https://github.com/rapidsai/cucim/pull/127)) [[@gigony](https://github.com/gigony)](https://github.com/gigony](https://github.com/gigony))
+
+
+
+## 🛠️ Improvements
+
+- Update `conda` recipes for Enhanced Compatibility effort by ([#164](https://github.com/rapidsai/cucim/pull/164)) [[@ajschmidt8](https://github.com/ajschmidt8)](https://github.com/ajschmidt8](https://github.com/ajschmidt8))
+- Fix Changelog Merge Conflicts for `branch-21.12` ([#156](https://github.com/rapidsai/cucim/pull/156)) [[@ajschmidt8](https://github.com/ajschmidt8)](https://github.com/ajschmidt8](https://github.com/ajschmidt8))
+- Add cucim.kit.cumed plugin with skeleton ([#129](https://github.com/rapidsai/cucim/pull/129)) [[@gigony](https://github.com/gigony)](https://github.com/gigony](https://github.com/gigony))
+- Update initial cpp unittests ([#128](https://github.com/rapidsai/cucim/pull/128)) [[@gigony](https://github.com/gigony)](https://github.com/gigony](https://github.com/gigony))
+- Optimize zoom out implementation with separate padding kernel ([#125](https://github.com/rapidsai/cucim/pull/125)) [[@chirayuG-nvidia](https://github.com/chirayuG-nvidia)](https://github.com/chirayuG-nvidia](https://github.com/chirayuG-nvidia))
+- Do not force install linux-64 version of openslide-python ([#124](https://github.com/rapidsai/cucim/pull/124)) [[@Ethyling](https://github.com/Ethyling)](https://github.com/Ethyling](https://github.com/Ethyling))
 
 # cuCIM 21.10.00 (7 Oct 2021)
 
