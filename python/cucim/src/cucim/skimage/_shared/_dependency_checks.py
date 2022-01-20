@@ -6,6 +6,6 @@ if has_mpl:
         # will fail with
         #    ImportError: Failed to import any qt binding
         # if only matplotlib-base is installed
-        from matplotlib import pyplot
+        from matplotlib import pyplot  # noqa
     except ImportError:
         has_mpl = False
