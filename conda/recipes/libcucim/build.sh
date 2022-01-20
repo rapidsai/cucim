@@ -5,6 +5,7 @@ CUCIM_BUILD_TYPE=${CUCIM_BUILD_TYPE:-release}
 echo "CC          : ${CC}"
 echo "CXX         : ${CXX}"
 echo "CUDAHOSTCXX : ${CUDAHOSTCXX}"
+echo "CUDA        : ${CUDA}"
 
 # For now CUDAHOSTCXX is set to `/usr/bin/g++` by
 # https://github.com/rapidsai/docker/blob/161b200157206660d88fb02cf69fe58d363ac95e/generated-dockerfiles/rapidsai-core_ubuntu18.04-devel.Dockerfile

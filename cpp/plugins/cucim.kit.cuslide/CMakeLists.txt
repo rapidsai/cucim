@@ -70,6 +70,8 @@ endif()
 
 # Find CUDAToolkit as rmm depends on it
 find_package(CUDAToolkit REQUIRED)
+# For Threads::Threads
+find_package(Threads REQUIRED)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED YES)
@@ -124,6 +126,7 @@ superbuild_depend(pugixml)
 superbuild_depend(json)
 superbuild_depend(libdeflate)
 superbuild_depend(nvjpeg)
+superbuild_depend(libculibos)
 
 ################################################################################
 # Find cucim package
@@ -213,7 +216,9 @@ target_compile_options(${CUCIM_PLUGIN_NAME} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-W
 # Link libraries
 target_link_libraries(${CUCIM_PLUGIN_NAME}
         PRIVATE
+            # Use custom nvjpeg_static that supports GPU input (>= CUDA 11.6)
             deps::nvjpeg_static # add this before cudart so that nvjpeg.h in static library takes precedence.
+            # Add CUDA::culibos to link necessary methods for 'deps::nvjpeg_static'
             CUDA::culibos       # for nvjpeg
             CUDA::cudart
             deps::fmt
