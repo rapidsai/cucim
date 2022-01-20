@@ -29,7 +29,6 @@ requirements:
     - sysroot_linux-64 2.17
     - yasm # [x86_64]
   host:
-    - cudatoolkit {{ cuda_version }}.*
     - openslide
     - zlib
     - jpeg
