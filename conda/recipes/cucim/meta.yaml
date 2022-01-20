@@ -34,7 +34,7 @@ requirements:
     - libcucim {{ version }}.*
     - click
     - cupy >=9,<11.0.0a0
-    - numpy 1.18
+    - numpy 1.19
     - scipy
     - scikit-image 0.18.1
   run:
