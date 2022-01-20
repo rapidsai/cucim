@@ -477,7 +477,7 @@ get_arch_name_() {
     architecture="unknown"
     case $(uname -m) in
         x86_64) architecture="x86_64" ;;
-        arm|aarch64)    dpkg --print-architecture | grep -q "arm64" && architecture="sbsa";;
+        arm|aarch64) lscpu | awk '/Architecture:/{print $2}' | grep -i -q "aarch64" && architecture="sbsa";;
     esac
     echo "${architecture}"
 }
@@ -485,6 +485,7 @@ get_arch_name_() {
 copy_nvjpeg_files_() {
     local root_folder=${1:-${TOP}}
     local arch_name="$(get_arch_name_)"
+    echo "lscpu: $(lscpu | awk '/Architecture:/{print $2}')"
     local nvjpeg_search="${root_folder}/temp/cuda/include:${root_folder}/temp/cuda/lib64"
     local cuda_version="11.6"
     local nvjpeg_version="11-6_11.6.0.55-1"
@@ -495,8 +496,8 @@ copy_nvjpeg_files_() {
     for candidate in ${nvjpeg_search}; do
         nvjpeg_include="$(echo $candidate | cut -d: -f1)"
         nvjpeg_lib="$(echo $candidate | cut -d: -f2)"
-        if [ -f ${nvjpeg_include}/cufile.h ] && [ -f ${nvjpeg_lib}/libcufile.so ]; then
-            c_echo W "GDS client library is available at '${nvjpeg_include}/cufile.h' and '${nvjpeg_lib}/libcufile.so'"
+        if [ -f ${nvjpeg_include}/nvjpeg.h ] && [ -f ${nvjpeg_lib}/libnvjpeg_static.a ]; then
+            c_echo W "nvJPEG client library is available at '${nvjpeg_include}/nvjpeg.h' and '${nvjpeg_lib}/libnvjpeg_static.a'"
             break
         fi
         nvjpeg_include=""
@@ -519,7 +520,13 @@ copy_nvjpeg_files_() {
             run_command wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/${arch_name}/libnvjpeg-dev-${nvjpeg_version}_amd64.deb
         fi
 
-        run_command dpkg -x libnvjpeg-dev-${nvjpeg_version}*.deb libnvjpeg-dev
+        mkdir -p libnvjpeg-dev
+        mv libnvjpeg-dev-${nvjpeg_version}*.deb libnvjpeg-dev/
+        pushd libnvjpeg-dev > /dev/null
+        run_command ar x libnvjpeg-dev-${nvjpeg_version}*.deb
+        run_command xz --decompress data.tar.xz
+        run_command tar xvf data.tar
+        popd > /dev/null
 
         run_command cp libnvjpeg-dev/usr/local/cuda-${cuda_version}/include/nvjpeg.h ${root_folder}/temp/cuda/include/
         run_command cp libnvjpeg-dev/usr/local/cuda-${cuda_version}/lib64/libnvjpeg_static.a ${root_folder}/temp/cuda/lib64/
