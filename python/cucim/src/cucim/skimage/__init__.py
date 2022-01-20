@@ -60,6 +60,8 @@ dtype_limits
 
 """
 
+from ._shared import lazy
+
 submodules = [
     'color',
     'data',
@@ -76,25 +78,17 @@ submodules = [
     'util',
 ]
 
-from ._shared.version_requirements import ensure_python_version
-
-ensure_python_version((3, 7))
-
-
-from ._shared import lazy
 
 __getattr__, __lazy_dir__, _ = lazy.attach(
     __name__,
     submodules,
-    # submod_attrs={'data': ['data_dir']}
+    {'util.dtype': ['dtype_limits', 'img_as_bool', 'img_as_float',
+                    'img_as_float32', 'img_as_float64', 'img_as_int',
+                    'img_as_ubyte', 'img_as_uint'],
+     'util.lookfor': ['lookfor'],
+    }
 )
 
 
 def __dir__():
-    return __lazy_dir__() + ['__version__']
-
-# All skimage root imports go here
-from .util.dtype import (dtype_limits, img_as_bool, img_as_float,
-                         img_as_float32, img_as_float64, img_as_int,
-                         img_as_ubyte, img_as_uint)
-from .util.lookfor import lookfor
+    return __lazy_dir__()
