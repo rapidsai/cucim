@@ -43,6 +43,27 @@
         }                                                                                                              \
     }
 
+#define NVJPEG_TRY(stmt)                                                                                               \
+    {                                                                                                                  \
+        nvjpegStatus_t _nvjpeg_status = stmt;                                                                          \
+        if (_nvjpeg_status != NVJPEG_STATUS_SUCCESS)                                                                   \
+        {                                                                                                              \
+            fmt::print("[Error] NVJPEG call {} in line {} of file {} failed with the error code {}.\n", #stmt,         \
+                __LINE__, __FILE__, _nvjpeg_status));                                                                  \
+        }                                                                                                              \
+    }
+
+#define NVJPEG_ERROR(stmt)                                                                                             \
+    {                                                                                                                  \
+        nvjpegStatus_t _nvjpeg_status = stmt;                                                                          \
+        if (_nvjpeg_status != NVJPEG_STATUS_SUCCESS)                                                                   \
+        {                                                                                                              \
+            throw std::runtime_error(                                                                                  \
+                fmt::format("[Error] NVJPEG call {} in line {} of file {} failed with the error code {}.\n", #stmt,    \
+                            __LINE__, __FILE__, _nvjpeg_status));                                                      \
+        }                                                                                                              \
+    }
+
 namespace cucim::util
 {
 

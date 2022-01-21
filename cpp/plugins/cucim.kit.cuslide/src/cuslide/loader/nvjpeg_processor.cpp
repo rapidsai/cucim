@@ -164,6 +164,17 @@ NvJpegProcessor::~NvJpegProcessor()
             raw_cuda_outputs_[i].channel[0] = nullptr;
         }
     }
+
+    if (state_)
+    {
+        NVJPEG_ERROR(nvjpegJpegStateDestroy(state_));
+        state_ = nullptr;
+    }
+    if (handle_)
+    {
+        NVJPEG_ERROR(nvjpegDestroy(handle_));
+        handle_ = nullptr;
+    }
 }
 
 uint32_t NvJpegProcessor::request(std::deque<uint32_t>& batch_item_counts, uint32_t num_remaining_patches)
@@ -325,7 +336,6 @@ uint32_t NvJpegProcessor::request(std::deque<uint32_t>& batch_item_counts, uint3
         const size_t tile_raster_nbytes = raw_cuda_inputs_len_[i];
         auto value = cuda_image_cache_->create_value(tile_data, tile_raster_nbytes, cucim::io::DeviceType::kCUDA);
         cuda_image_cache_->insert(key, value);
-
         cuda_image_cache_->unlock(index_hash);
     }
 
