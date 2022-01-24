@@ -1,7 +1,6 @@
 import math
 
 import cupy as cp
-import numpy as np
 import pytest
 from cupy.testing import assert_allclose, assert_array_almost_equal
 from numpy.testing import assert_

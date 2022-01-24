@@ -1,8 +1,8 @@
 import functools
 
 import cupy as cp
-import numpy as np
 import cupyx.scipy.fft as fft
+import numpy as np
 
 from .._shared.utils import _supported_float_type
 

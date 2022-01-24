@@ -1,9 +1,9 @@
 import cupy as cp
+import cupyx.scipy.fft as fftmodule
 import pytest
 from cupy.testing import assert_allclose, assert_array_equal
 from skimage.data import astronaut, coins
 
-import cupyx.scipy.fft as fftmodule
 from cucim.skimage._shared.utils import _supported_float_type
 from cucim.skimage.filters import butterworth
 
