@@ -13,7 +13,7 @@ from cucim.skimage.color.delta_e import (deltaE_cie76, deltaE_ciede94,
 
 
 @pytest.mark.parametrize("channel_axis", [0, 1, -1])
-@pytest.mark.parametrize('dtype', [np.float32, np.float64])
+@pytest.mark.parametrize('dtype', [cp.float32, cp.float64])
 def test_ciede2000_dE(dtype, channel_axis):
     data = load_ciede2000_data()
     N = len(data)
@@ -33,7 +33,7 @@ def test_ciede2000_dE(dtype, channel_axis):
     assert dE2.dtype == _supported_float_type(dtype)
 
     # Note: lower float64 accuracy than scikit-image
-    # rtol = 1e-2 if dtype == np.float32 else 1e-4
+    # rtol = 1e-2 if dtype == cp.float32 else 1e-4
     rtol = 1e-2
     assert_allclose(dE2, data['dE'], rtol=rtol)
 
@@ -70,7 +70,7 @@ def load_ciede2000_data():
 
 
 @pytest.mark.parametrize("channel_axis", [0, 1, -1])
-@pytest.mark.parametrize('dtype', [np.float32, np.float64])
+@pytest.mark.parametrize('dtype', [cp.float32, cp.float64])
 def test_cie76(dtype, channel_axis):
     data = load_ciede2000_data()
     N = len(data)
@@ -100,12 +100,12 @@ def test_cie76(dtype, channel_axis):
         1.50514845, 2.3237848, 0.94413208, 1.31910843
     ])
     # fmt: on
-    rtol = 1e-5 if dtype == np.float32 else 1e-8
+    rtol = 1e-5 if dtype == cp.float32 else 1e-8
     assert_allclose(dE2, oracle, rtol=rtol)
 
 
 @pytest.mark.parametrize("channel_axis", [0, 1, -1])
-@pytest.mark.parametrize('dtype', [np.float32, np.float64])
+@pytest.mark.parametrize('dtype', [cp.float32, cp.float64])
 def test_ciede94(dtype, channel_axis):
     data = load_ciede2000_data()
     N = len(data)
@@ -135,12 +135,12 @@ def test_ciede94(dtype, channel_axis):
         1.41945261, 2.3225685, 0.93853308, 1.30654464
     ])
     # fmt: on
-    rtol = 1e-5 if dtype == np.float32 else 1e-8
+    rtol = 1e-5 if dtype == cp.float32 else 1e-8
     assert_allclose(dE2, oracle, rtol=rtol)
 
 
 @pytest.mark.parametrize("channel_axis", [0, 1, -1])
-@pytest.mark.parametrize('dtype', [np.float32, np.float64])
+@pytest.mark.parametrize('dtype', [cp.float32, cp.float64])
 def test_cmc(dtype, channel_axis):
     data = load_ciede2000_data()
     N = len(data)
@@ -170,7 +170,7 @@ def test_cmc(dtype, channel_axis):
         1.90095165, 1.70258148, 1.80317207, 2.44934417
     ])
     # fmt: on
-    rtol = 1e-5 if dtype == np.float32 else 1e-8
+    rtol = 1e-5 if dtype == cp.float32 else 1e-8
     assert_allclose(dE2, oracle, rtol=rtol)
 
     # Equal or close colors make `delta_e.get_dH2` function to return

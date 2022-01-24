@@ -60,7 +60,7 @@ def test_structural_similarity_image():
 # Because we are forcing a random seed state, it is probably good to test
 # against a few seeds in case on seed gives a particularly bad example
 @pytest.mark.parametrize('seed', [1, 2, 3, 5, 8, 13])
-@pytest.mark.parametrize('dtype', [np.float16, np.float32, np.float64])
+@pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])
 def test_structural_similarity_grad(seed, dtype):
     N = 60
     # NOTE: This test is known to randomly fail on some systems (Mac OS X 10.6)
@@ -108,7 +108,7 @@ def test_structural_similarity_dtype(dtype):
     Y = cp.array(Y)
 
     S1 = structural_similarity(X, Y)
-    assert S1.dtype == np.float64
+    assert S1.dtype == cp.float64
 
     assert S1 < 0.1
 
@@ -155,8 +155,8 @@ def test_structural_similarity_multichannel(channel_axis):
 
 def test_structural_similarity_multichannel_deprecated():
     N = 100
-    X = (cp.random.rand(N, N) * 255).astype(np.uint8)
-    Y = (cp.random.rand(N, N) * 255).astype(np.uint8)
+    X = (cp.random.rand(N, N) * 255).astype(cp.uint8)
+    Y = (cp.random.rand(N, N) * 255).astype(cp.uint8)
 
     S1 = structural_similarity(X, Y, win_size=3)
 
@@ -168,7 +168,7 @@ def test_structural_similarity_multichannel_deprecated():
     assert_almost_equal(S1, S2)
 
 
-@pytest.mark.parametrize('dtype', [np.uint8, np.float32, np.float64])
+@pytest.mark.parametrize('dtype', [cp.uint8, cp.float32, cp.float64])
 def test_structural_similarity_nD(dtype):
     # test 1D through 4D on small random arrays
     N = 10
@@ -178,7 +178,7 @@ def test_structural_similarity_nD(dtype):
         Y = (cp.random.rand(*xsize) * 255).astype(dtype)
 
         mssim = structural_similarity(X, Y, win_size=3)
-        assert mssim.dtype == np.float64
+        assert mssim.dtype == cp.float64
         assert mssim < 0.05
 
 
@@ -240,7 +240,7 @@ def test_mssim_mixed_dtype():
     assert_almost_equal(mssim, mssim_mixed)
 
 
-@pytest.mark.parametrize('dtype', [np.float16, np.float32, np.float64])
+@pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])
 def test_structural_similarity_small_image(dtype):
     X = cp.zeros((5, 5), dtype=dtype)
     # structural_similarity can be computed for small images if win_size is

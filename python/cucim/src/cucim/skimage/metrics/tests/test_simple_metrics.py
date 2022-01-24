@@ -77,8 +77,8 @@ def test_NRMSE(dtype):
     x = cp.ones(4, dtype=dtype)
     y = cp.asarray([0., 2., 2., 2.], dtype=dtype)
     nrmse = normalized_root_mse(y, x, normalization='mean')
-    assert nrmse.dtype == np.float64
-    assert_almost_equal(nrmse, 1 / cp.mean(y, dtype=np.float64))
+    assert nrmse.dtype == cp.float64
+    assert_almost_equal(nrmse, 1 / cp.mean(y, dtype=cp.float64))
     assert_almost_equal(normalized_root_mse(y, x, normalization='euclidean'),
                         1 / math.sqrt(3))
     assert_almost_equal(normalized_root_mse(y, x, normalization='min-max'),
@@ -119,7 +119,7 @@ def test_nmi_different_sizes():
     assert float(normalized_mutual_information(cam[:, :400], cam[:400, :])) > 1
 
 
-@pytest.mark.parametrize('dtype', [np.float16, np.float32, np.float64])
+@pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])
 def test_nmi_random(dtype):
     rng = cp.random.default_rng()
     random1 = rng.random((100, 100)).astype(dtype)

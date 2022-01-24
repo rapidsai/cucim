@@ -13,7 +13,7 @@ from cucim.skimage.data import binary_blobs
 from cucim.skimage.filters.edges import _mask_filter_result
 
 
-@pytest.mark.parametrize('dtype', [np.float16, np.float32, np.float64])
+@pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])
 def test_roberts_zeros(dtype):
     """Roberts' filter on an array of all zeros."""
     result = filters.roberts(cp.zeros((10, 10), dtype=dtype),
@@ -22,7 +22,7 @@ def test_roberts_zeros(dtype):
     assert cp.all(result == 0)
 
 
-@pytest.mark.parametrize('dtype', [np.float16, np.float32, np.float64])
+@pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])
 def test_roberts_diagonal1(dtype):
     """Roberts' filter on a diagonal edge should be a diagonal line."""
     image = cp.tri(10, 10, 0, dtype=dtype)
@@ -166,7 +166,7 @@ def test_scharr_zeros():
     assert cp.all(result < 1e-16)
 
 
-@pytest.mark.parametrize('dtype', [np.float16, np.float32, np.float64])
+@pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])
 def test_scharr_mask(dtype):
     """Scharr on a masked array should be zero."""
     result = filters.scharr(cp.random.uniform(size=(10, 10)).astype(dtype),
@@ -265,13 +265,13 @@ def test_prewitt_zeros():
     assert_allclose(result, 0)
 
 
-@pytest.mark.parametrize('dtype', [np.float16, np.float32, np.float64])
+@pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])
 def test_prewitt_mask(dtype):
     """Prewitt on a masked array should be zero."""
     result = filters.prewitt(cp.random.uniform(size=(10, 10)).astype(dtype),
                              cp.zeros((10, 10), dtype=bool))
     assert result.dtype == _supported_float_type(dtype)
-    assert_allclose(np.abs(result), 0)
+    assert_allclose(cp.abs(result), 0)
 
 
 def test_prewitt_horizontal():
@@ -377,7 +377,7 @@ def test_laplace_zeros():
     assert_allclose(result, check_result)
 
 
-@pytest.mark.parametrize('dtype', [np.float16, np.float32, np.float64])
+@pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])
 def test_laplace_mask(dtype):
     """Laplace on a masked array should be zero."""
     # Create a synthetic 2D image
@@ -396,7 +396,7 @@ def test_farid_zeros():
     assert cp.all(result == 0)
 
 
-@pytest.mark.parametrize('dtype', [np.float16, np.float32, np.float64])
+@pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])
 def test_farid_mask(dtype):
     """Farid on a masked array should be zero."""
     result = filters.farid(cp.random.uniform(size=(10, 10)).astype(dtype),
