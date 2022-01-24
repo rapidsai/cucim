@@ -86,8 +86,8 @@ def gabor_kernel(frequency, theta=0, bandwidth=1, sigma_x=None, sigma_y=None,
     if float_dtype is not None:
         if dtype is not None:
             raise ValueError(
-                "Cannot set both dtype and float_dtype. Please dtype instead "
-                "(float_dtype is deprecated)."
+                "Cannot set both dtype and float_dtype. Please use dtype "
+                "instead (float_dtype is deprecated)."
             )
         warn("`float_dtype` is deprecated: use `dtype` instead.")
         cplx_dtype = cp.promote_types(float_dtype, cp.complex64)
