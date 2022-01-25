@@ -58,6 +58,10 @@ dtype_limits
 
 """
 
+# This __api_version__ attribute indicates which major.minor version of the
+# scikit-image API we are currently targeting.
+__api_version__ = '0.18'
+
 # All skimage root imports go here
 from .util.dtype import (dtype_limits, img_as_bool, img_as_float,
                          img_as_float32, img_as_float64, img_as_int,

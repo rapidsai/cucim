@@ -17,6 +17,10 @@ CuImage
 skimage Submodules
 ==================
 
+The `cucim.skimage` subpackage is designed to match the API of upstream scikit-image. The version of the upstream API that has been implemented can be determined by checking `cucim.skimage.__api_version__`. This attribute will be
+a "major.minor" version string corresponding to a released scikit-image
+version.
+
 color
 -----
 
