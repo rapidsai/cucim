@@ -609,6 +609,7 @@ def test_degenerate(xp=cp):
     for affine in tform.inverse_affines:
         assert not xp.all(xp.isnan(affine.params))
 
+
 @pytest.mark.parametrize('xp', [np, cp])
 def test_normalize_degenerate_points(xp):
     """Return nan matrix *of appropriate size* when point is repeated."""
