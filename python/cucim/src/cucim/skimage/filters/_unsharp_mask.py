@@ -1,16 +1,14 @@
 import cupy as cp
-from cupyx.scipy.ndimage import gaussian_filter
 
-from .. import img_as_float
-from .thresholding import _float_dtype
+from .._shared import utils
+from .._shared.filters import gaussian
+from ..util.dtype import img_as_float
 
 
 def _unsharp_mask_single_channel(image, radius, amount, vrange):
     """Single channel implementation of the unsharp masking filter."""
 
-    blurred = gaussian_filter(image,
-                              sigma=radius,
-                              mode='reflect')
+    blurred = gaussian(image, sigma=radius, mode='reflect')
 
     result = image + (image - blurred) * amount
     if vrange is not None:
@@ -18,8 +16,9 @@ def _unsharp_mask_single_channel(image, radius, amount, vrange):
     return result
 
 
+@utils.deprecate_multichannel_kwarg(multichannel_position=3)
 def unsharp_mask(image, radius=1.0, amount=1.0, multichannel=False,
-                 preserve_range=False):
+                 preserve_range=False, *, channel_axis=None):
     """Unsharp masking filter.
 
     The sharp details are identified as the difference between the original
@@ -42,10 +41,15 @@ def unsharp_mask(image, radius=1.0, amount=1.0, multichannel=False,
     multichannel : bool, optional
         If True, the last ``image`` dimension is considered as a color channel,
         otherwise as spatial. Color channels are processed individually.
+        This argument is deprecated: specify `channel_axis` instead.
     preserve_range : bool, optional
         Whether to keep the original range of values. Otherwise, the input
         image is converted according to the conventions of ``img_as_float``.
         Also see https://scikit-image.org/docs/dev/user_guide/data_types.html
+    channel_axis : int or None, optional
+        If None, the image is assumed to be a grayscale (single channel) image.
+        Otherwise, this parameter indicates which axis of the array corresponds
+        to channels.
 
     Returns
     -------
@@ -76,7 +80,7 @@ def unsharp_mask(image, radius=1.0, amount=1.0, multichannel=False,
     Examples
     --------
     >>> import cupy as cp
-    >>> array = cp.ones(shape=(5,5), dtype=np.uint8)*100
+    >>> array = cp.ones(shape=(5,5), dtype=cp.uint8)*100
     >>> array[2,2] = 120
     >>> array
     array([[100, 100, 100, 100, 100],
@@ -91,7 +95,7 @@ def unsharp_mask(image, radius=1.0, amount=1.0, multichannel=False,
            [0.39, 0.39, 0.38, 0.39, 0.39],
            [0.39, 0.39, 0.39, 0.39, 0.39]])
 
-    >>> array = cp.ones(shape=(5,5), dtype=np.int8)*100
+    >>> array = cp.ones(shape=(5,5), dtype=cp.int8)*100
     >>> array[2,2] = 127
     >>> cp.around(unsharp_mask(array, radius=0.5, amount=2),2)
     array([[0.79, 0.79, 0.79, 0.79, 0.79],
@@ -119,21 +123,23 @@ def unsharp_mask(image, radius=1.0, amount=1.0, multichannel=False,
 
     """
     vrange = None  # Range for valid values; used for clipping.
+    float_dtype = utils._supported_float_type(image.dtype)
     if preserve_range:
-        fimg = image.astype(_float_dtype(image), copy=False)
+        fimg = image.astype(float_dtype, copy=False)
     else:
-        fimg = img_as_float(image)
+        fimg = img_as_float(image).astype(float_dtype, copy=False)
         negative = cp.any(fimg < 0)
         if negative:
             vrange = [-1.0, 1.0]
         else:
             vrange = [0.0, 1.0]
 
-    if multichannel:
-        result = cp.empty_like(fimg, dtype=fimg.dtype)
-        for channel in range(image.shape[-1]):
-            result[..., channel] = _unsharp_mask_single_channel(
-                fimg[..., channel], radius, amount, vrange)
+    if channel_axis is not None:
+        result = cp.empty_like(fimg, dtype=float_dtype)
+        for channel in range(image.shape[channel_axis]):
+            sl = utils.slice_at_axis(channel, channel_axis)
+            result[sl] = _unsharp_mask_single_channel(
+                fimg[sl], radius, amount, vrange)
         return result
     else:
         return _unsharp_mask_single_channel(fimg, radius, amount, vrange)

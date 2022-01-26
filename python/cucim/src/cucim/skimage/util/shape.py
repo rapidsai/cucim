@@ -44,7 +44,7 @@ def view_as_blocks(arr_in, block_shape):
     array([[2, 3],
            [6, 7]])
     >>> B[1, 0, 1, 1]
-    13
+    array(13)
 
     >>> A = cp.arange(4*4*6).reshape(4,4,6)
     >>> A  # doctest: +NORMALIZE_WHITESPACE

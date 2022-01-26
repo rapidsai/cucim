@@ -4,22 +4,10 @@ import cupy as cp
 import numpy as np
 import pytest
 from cupy.testing import assert_array_almost_equal, assert_array_equal
+from numpy.testing import assert_no_warnings
 
-from cucim.skimage._shared.testing import assert_no_warnings
-from cucim.skimage.color.colorlabel import label2rgb
-
-
-def test_deprecation_warning():
-
-    image = cp.ones((3, 3))
-    label = cp.ones((3, 3))
-
-    with pytest.warns(FutureWarning) as record:
-        label2rgb(image, label)
-
-    expected_msg = "The new recommended value"
-
-    assert str(record[0].message).startswith(expected_msg)
+from cucim.skimage._shared.testing import expected_warnings
+from cucim.skimage.color.colorlabel import hsv2rgb, label2rgb, rgb2hsv
 
 
 def test_shape_mismatch():
@@ -38,15 +26,21 @@ def test_wrong_kind():
         label2rgb(label, kind="foo", bg_label=-1)
 
 
-def test_uint_image():
+@pytest.mark.parametrize("channel_axis", [0, 1, -1])
+def test_uint_image(channel_axis):
     img = cp.random.randint(0, 255, (10, 10), dtype=cp.uint8)
     labels = cp.zeros((10, 10), dtype=cp.int64)
     labels[1:3, 1:3] = 1
     labels[6:9, 6:9] = 2
-    output = label2rgb(labels, image=img, bg_label=0)
+    output = label2rgb(labels, image=img, bg_label=0,
+                       channel_axis=channel_axis)
     # Make sure that the output is made of floats and in the correct range
     assert cp.issubdtype(output.dtype, cp.floating)
     assert output.max() <= 1
+
+    # size 3 (RGB) along the specified channel_axis
+    new_axis = channel_axis % output.ndim
+    assert output.shape[new_axis] == 3
 
 
 def test_rgb():
@@ -149,7 +143,8 @@ def test_leave_labels_alone():
 
 
 # TODO: diagnose test error that occurs only with CUB enabled: CuPy bug?
-def test_avg():
+@pytest.mark.parametrize("channel_axis", [0, 1, -1])
+def test_avg(channel_axis):
     # label image
     # fmt: off
     label_field = cp.asarray([[1, 1, 1, 2],
@@ -181,18 +176,24 @@ def test_avg():
     expected_out = cp.dstack((rout, gout, bout))
 
     # test standard averaging
-    out = label2rgb(label_field, image, kind='avg', bg_label=-1)
+    _image = cp.moveaxis(image, source=-1, destination=channel_axis)
+    out = label2rgb(label_field, _image, kind='avg', bg_label=-1,
+                    channel_axis=channel_axis)
+    out = cp.moveaxis(out, source=channel_axis, destination=-1)
     assert_array_equal(out, expected_out)
 
     # test averaging with custom background value
-    out_bg = label2rgb(label_field, image, bg_label=2, bg_color=(0, 0, 0),
-                       kind='avg')
+    out_bg = label2rgb(label_field, _image, bg_label=2, bg_color=(0, 0, 0),
+                       kind='avg', channel_axis=channel_axis)
+    out_bg = cp.moveaxis(out_bg, source=channel_axis, destination=-1)
     expected_out_bg = expected_out.copy()
     expected_out_bg[label_field == 2] = 0
     assert_array_equal(out_bg, expected_out_bg)
 
     # test default background color
-    out_bg = label2rgb(label_field, image, bg_label=2, kind='avg')
+    out_bg = label2rgb(label_field, _image, bg_label=2, kind='avg',
+                       channel_axis=channel_axis)
+    out_bg = cp.moveaxis(out_bg, source=channel_axis, destination=-1)
     assert_array_equal(out_bg, expected_out_bg)
 
 
@@ -222,3 +223,97 @@ def test_avg_with_2d_image():
     img = cp.asarray(img)
     labels = cp.asarray(labels)
     assert_no_warnings(label2rgb, labels, image=img, bg_label=0, kind='avg')
+
+
+@pytest.mark.parametrize('image_type', ['rgb', 'gray', None])
+def test_label2rgb_nd(image_type):
+    # validate 1D and 3D cases by testing their output relative to the 2D case
+    shape = (10, 10)
+    if image_type == 'rgb':
+        img = cp.random.randint(0, 255, shape + (3,), dtype=np.uint8)
+    elif image_type == 'gray':
+        img = cp.random.randint(0, 255, shape, dtype=np.uint8)
+    else:
+        img = None
+
+    # add a couple of rectangular labels
+    labels = cp.zeros(shape, dtype=np.int64)
+    # Note: Have to choose labels here so that the 1D slice below also contains
+    #       both label values. Otherwise the labeled colors will not match.
+    labels[2:-2, 1:3] = 1
+    labels[3:-3, 6:9] = 2
+
+    # label in the 2D case (correct 2D output is tested in other funcitons)
+    labeled_2d = label2rgb(labels, image=img, bg_label=0)
+
+    # labeling a single line gives an equivalent result
+    image_1d = img[5] if image_type is not None else None
+    labeled_1d = label2rgb(labels[5], image=image_1d, bg_label=0)
+    expected = labeled_2d[5]
+    assert_array_equal(labeled_1d, expected)
+
+    # Labeling a 3D stack of duplicates gives the same result in each plane
+    image_3d = cp.stack((img, ) * 4) if image_type is not None else None
+    labels_3d = cp.stack((labels,) * 4)
+    labeled_3d = label2rgb(labels_3d, image=image_3d, bg_label=0)
+    for labeled_plane in labeled_3d:
+        assert_array_equal(labeled_plane, labeled_2d)
+
+
+def test_label2rgb_shape_errors():
+    img = cp.random.randint(0, 255, (10, 10, 3), dtype=np.uint8)
+    labels = cp.zeros((10, 10), dtype=np.int64)
+    labels[2:5, 2:5] = 1
+
+    # mismatched 2D shape
+    with pytest.raises(ValueError):
+        label2rgb(labels, img[1:])
+
+    # too many axes in img
+    with pytest.raises(ValueError):
+        label2rgb(labels, img[..., np.newaxis])
+
+    # too many channels along the last axis
+    with pytest.raises(ValueError):
+        label2rgb(labels, np.concatenate((img, img), axis=-1))
+
+
+def test_overlay_full_saturation():
+    rgb_img = cp.random.uniform(size=(10, 10, 3))
+    labels = cp.ones((10, 10), dtype=np.int64)
+    labels[5:, 5:] = 2
+    labels[:3, :3] = 0
+    alpha = 0.3
+    rgb = label2rgb(labels, image=rgb_img, alpha=alpha,
+                    bg_label=0, saturation=1)
+    # check that rgb part of input image is preserved, where labels=0
+    assert_array_almost_equal(rgb_img[:3, :3] * (1 - alpha), rgb[:3, :3])
+
+
+def test_overlay_custom_saturation():
+    rgb_img = cp.random.uniform(size=(10, 10, 3))
+    labels = cp.ones((10, 10), dtype=np.int64)
+    labels[5:, 5:] = 2
+    labels[:3, :3] = 0
+    alpha = 0.3
+    saturation = 0.3
+    rgb = label2rgb(labels, image=rgb_img, alpha=alpha,
+                    bg_label=0, saturation=saturation)
+
+    hsv = rgb2hsv(rgb_img)
+    hsv[..., 1] *= saturation
+    saturated_img = hsv2rgb(hsv)
+
+    # check that rgb part of input image is saturated, where labels=0
+    assert_array_almost_equal(saturated_img[:3, :3] * (1 - alpha), rgb[:3, :3])
+
+
+def test_saturation_warning():
+    rgb_img = cp.random.uniform(size=(10, 10, 3))
+    labels = cp.ones((10, 10), dtype=np.int64)
+    with expected_warnings(["saturation must be in range"]):
+        label2rgb(labels, image=rgb_img,
+                  bg_label=0, saturation=2)
+    with expected_warnings(["saturation must be in range"]):
+        label2rgb(labels, image=rgb_img,
+                  bg_label=0, saturation=-1)

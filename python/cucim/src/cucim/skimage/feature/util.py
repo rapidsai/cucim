@@ -1,19 +1,23 @@
 import cupy as cp
 
-from .._shared.utils import check_nD
+from .._shared.utils import _supported_float_type, check_nD
 from ..util import img_as_float
 
 
 def _prepare_grayscale_input_2D(image):
     image = cp.squeeze(image)
     check_nD(image, 2)
-    return img_as_float(image)
+    image = img_as_float(image)
+    float_dtype = _supported_float_type(image.dtype)
+    return image.astype(float_dtype, copy=False)
 
 
 def _prepare_grayscale_input_nD(image):
     image = cp.squeeze(image)
     check_nD(image, range(2, 6))
-    return img_as_float(image)
+    image = img_as_float(image)
+    float_dtype = _supported_float_type(image.dtype)
+    return image.astype(float_dtype, copy=False)
 
 
 def _mask_border_keypoints(image_shape, keypoints, distance):

@@ -140,14 +140,14 @@ for function_name, fixed_kwargs, var_kwargs, allow_color, allow_nd in [
     (
         "morphological_geodesic_active_contour",
         dict(),
-        dict(iterations=[16], init_level_set=["checkerboard", "disk"]),
+        dict(num_iter=[16], init_level_set=["checkerboard", "disk"]),
         False,
         False,
     ),
     (
         "morphological_chan_vese",
         dict(),
-        dict(iterations=[16], init_level_set=["checkerboard", "disk"]),
+        dict(num_iter=[16], init_level_set=["checkerboard", "disk"]),
         False,
         False,
     ),

@@ -1,5 +1,4 @@
 import itertools
-import unittest
 
 import cupy as cp
 import numpy as np
@@ -519,7 +518,23 @@ def test_exclude_border_errors():
         assert peak.peak_local_max(image, exclude_border=-1)
 
 
-class TestProminentPeaks(unittest.TestCase):
+def test_input_values_with_labels():
+    # Issue #5235: input values may be modified when labels are used
+
+    img = cp.random.rand(128, 128)
+    labels = cp.zeros((128, 128), int)
+
+    labels[10:20, 10:20] = 1
+    labels[12:16, 12:16] = 0
+
+    img_before = img.copy()
+
+    _ = peak.peak_local_max(img, labels=labels)
+
+    assert_array_equal(img, img_before)
+
+
+class TestProminentPeaks():
     def test_isolated_peaks(self):
         image = cp.zeros((15, 15))
         x0, y0, i0 = (12, 8, 1)
@@ -531,9 +546,9 @@ class TestProminentPeaks(unittest.TestCase):
         out = peak._prominent_peaks(image)
         assert len(out[0]) == 3
         for i, x, y in zip(out[0], out[1], out[2]):
-            self.assertTrue(i in (i0, i1, i2))
-            self.assertTrue(x in (x0, x1, x2))
-            self.assertTrue(y in (y0, y1, y2))
+            assert i in (i0, i1, i2)
+            assert x in (x0, x1, x2)
+            assert y in (y0, y1, y2)
 
     def test_threshold(self):
         image = cp.zeros((15, 15))
@@ -546,14 +561,14 @@ class TestProminentPeaks(unittest.TestCase):
         out = peak._prominent_peaks(image, threshold=None)
         assert len(out[0]) == 3
         for i, x, y in zip(out[0], out[1], out[2]):
-            self.assertTrue(i in (i0, i1, i2))
-            self.assertTrue(x in (x0, x1, x2))
+            assert i in (i0, i1, i2)
+            assert x in (x0, x1, x2)
         out = peak._prominent_peaks(image, threshold=9)
         assert len(out[0]) == 2
         for i, x, y in zip(out[0], out[1], out[2]):
-            self.assertTrue(i in (i0, i2))
-            self.assertTrue(x in (x0, x2))
-            self.assertTrue(y in (y0, y2))
+            assert i in (i0, i2)
+            assert x in (x0, x2)
+            assert y in (y0, y2)
 
     def test_peaks_in_contact(self):
         image = cp.zeros((15, 15))
@@ -594,5 +609,4 @@ class TestProminentPeaks(unittest.TestCase):
         labels = cp.asarray(labels)
         local_max = peak.peak_local_max(dist, min_distance=20,
                                         exclude_border=False, labels=labels)
-
         assert len(local_max) == 625

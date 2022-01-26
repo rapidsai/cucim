@@ -22,11 +22,13 @@ import operator
 import cupy as cp
 import numpy as np
 
+# TODO: replace _misc.prod with math.prod once minimum Python >= 3.88
 from cucim import _misc
 from cucim.skimage.exposure.exposure import rescale_intensity
 
+from .._shared.utils import _supported_float_type
 from ..color.adapt_rgb import adapt_rgb, hsv_value
-from ..util import img_as_float, img_as_uint
+from ..util import img_as_uint
 
 NR_OF_GRAY = 2 ** 14  # number of grayscale levels to use in CLAHE algorithm
 
@@ -44,7 +46,7 @@ def equalize_adapthist(image, kernel_size=None,
     ----------
     image : (N1, ...,NN[, C]) ndarray
         Input image.
-    kernel_size: int or array_like, optional
+    kernel_size : int or array_like, optional
         Defines the shape of contextual regions used in the algorithm. If
         iterable is passed, it must have the same number of elements as
         ``image.ndim`` (without color channel). If integer, it is broadcasted
@@ -83,23 +85,23 @@ def equalize_adapthist(image, kernel_size=None,
     .. [2] https://en.wikipedia.org/wiki/CLAHE#CLAHE
     """
 
+    float_dtype = _supported_float_type(image.dtype)
     image = img_as_uint(image)
     image = cp.around(
         rescale_intensity(image, out_range=(0, NR_OF_GRAY - 1))
-    ).astype(cp.uint16)
+    ).astype(cp.min_scalar_type(NR_OF_GRAY))
 
     if kernel_size is None:
-        kernel_size = tuple(image.shape[dim] // 8
-                            for dim in range(image.ndim))
+        kernel_size = tuple([max(s // 8, 1) for s in image.shape])
     elif isinstance(kernel_size, numbers.Number):
         kernel_size = (kernel_size,) * image.ndim
     elif len(kernel_size) != image.ndim:
-        ValueError('Incorrect value of `kernel_size`: {}'.format(kernel_size))
+        ValueError(f'Incorrect value of `kernel_size`: {kernel_size}')
 
     kernel_size = [int(k) for k in kernel_size]
 
     image = _clahe(image, kernel_size, clip_limit, nbins)
-    image = img_as_float(image)
+    image = image.astype(float_dtype, copy=False)
     return rescale_intensity(image)
 
 
@@ -110,7 +112,7 @@ def _clahe(image, kernel_size, clip_limit, nbins):
     ----------
     image : (N1,...,NN) ndarray
         Input image.
-    kernel_size: int or N-tuple of int
+    kernel_size : int or N-tuple of int
         Defines the shape of contextual regions used in the algorithm.
     clip_limit : float
         Normalized clipping limit between 0 and 1 (higher values give more
@@ -145,7 +147,7 @@ def _clahe(image, kernel_size, clip_limit, nbins):
 
     # determine gray value bins
     bin_size = 1 + NR_OF_GRAY // nbins
-    lut = cp.arange(NR_OF_GRAY)
+    lut = cp.arange(NR_OF_GRAY, dtype=cp.min_scalar_type(NR_OF_GRAY))
     lut //= bin_size
 
     image = lut[image]

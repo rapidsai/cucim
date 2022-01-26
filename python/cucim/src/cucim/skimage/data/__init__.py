@@ -1,3 +1,9 @@
-from ._binary_blobs import binary_blobs
+from .._shared import lazy
 
-__all__ = ['binary_blobs']
+__getattr__, __dir__, __all__ = lazy.attach(
+    __name__,
+    submodules={},
+    submod_attrs={
+        '_binary_blobs': ['binary_blobs'],
+    }
+)

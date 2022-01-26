@@ -5,8 +5,7 @@ from ._daisy import daisy
 from .corner import (corner_foerstner, corner_harris, corner_kitchen_rosenfeld,
                      corner_peaks, corner_shi_tomasi, hessian_matrix,
                      hessian_matrix_det, hessian_matrix_eigvals, shape_index,
-                     structure_tensor, structure_tensor_eigenvalues,
-                     structure_tensor_eigvals)
+                     structure_tensor, structure_tensor_eigenvalues)
 from .peak import peak_local_max
 from .template import match_template
 
