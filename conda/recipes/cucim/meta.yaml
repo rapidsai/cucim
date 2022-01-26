@@ -36,7 +36,7 @@ requirements:
     - cupy >=9,<11.0.0a0
     - numpy 1.19
     - scipy
-    - scikit-image 0.18.1
+    - scikit-image >=0.18.1,<0.20.0a0
   run:
     - {{ pin_compatible('cudatoolkit', max_pin='x', min_pin='x') }}
     - python {{ python_version }}.*
@@ -45,7 +45,7 @@ requirements:
     - cupy >=9,<11.0.0a0
     - {{ pin_compatible('numpy') }}
     - scipy
-    - scikit-image 0.18.1
+    - scikit-image >=0.18.1,<0.20.0a0
     # - openslide # skipping here but benchmark binary would needs openslide library
 
 tests:                                 # [linux64]

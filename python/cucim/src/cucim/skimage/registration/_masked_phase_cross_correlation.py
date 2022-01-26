@@ -12,9 +12,11 @@ http://www.dirkpadfield.com/
 from functools import partial
 
 import cupy as cp
+import cupyx.scipy.fft as fftmodule
 import numpy as np
+from cupyx.scipy.fft import next_fast_len
 
-from .._shared.fft import fftmodule, next_fast_len
+from .._shared.utils import _supported_float_type
 
 
 def _masked_phase_cross_correlation(reference_image, moving_image,
@@ -76,8 +78,10 @@ def _masked_phase_cross_correlation(reference_image, moving_image,
             raise ValueError(
                 "Image sizes must match their respective mask sizes.")
 
-    xcorr = cross_correlate_masked(moving_image, reference_image, moving_mask,
-                                   reference_mask, axes=(0, 1), mode='full',
+    xcorr = cross_correlate_masked(moving_image, reference_image,
+                                   moving_mask, reference_mask,
+                                   axes=tuple(range(moving_image.ndim)),
+                                   mode='full',
                                    overlap_ratio=overlap_ratio)
 
     # Generalize to the average of multiple equal maxima
@@ -151,17 +155,19 @@ def cross_correlate_masked(arr1, arr2, m1, m2, mode='full', axes=(-2, -1),
            :DOI:`10.1109/CVPR.2010.5540032`
     """
     if mode not in {'full', 'same'}:
-        raise ValueError("Correlation mode '{}' is not valid.".format(mode))
+        raise ValueError(f"Correlation mode '{mode}' is not valid.")
 
-    if arr1.dtype.kind == "c" or arr2.dtype.kind == "c":
+    fixed_image = arr1
+    moving_image = arr2
+    float_dtype = _supported_float_type(
+        [fixed_image.dtype, moving_image.dtype]
+    )
+    if float_dtype.kind == 'c':
         raise ValueError("complex-valued arr1, arr2 are not supported")
 
-    # CuPy Backend: use float_dtype instead of forcing cp.float64
-    float_dtype = np.result_type(arr1.dtype, arr2.dtype, cp.float32)
-
-    fixed_image = arr1.astype(float_dtype, copy=False)
+    fixed_image = fixed_image.astype(float_dtype, copy=False)
     fixed_mask = m1.astype(bool, copy=False)
-    moving_image = arr2.astype(float_dtype, copy=False)
+    moving_image = moving_image.astype(float_dtype, copy=False)
     moving_mask = m2.astype(bool, copy=False)
     eps = np.finfo(float_dtype).eps
 
@@ -170,8 +176,8 @@ def cross_correlate_masked(arr1, arr2, m1, m2, mode='full', axes=(-2, -1),
     for axis in (all_axes - set(axes)):
         if fixed_image.shape[axis] != moving_image.shape[axis]:
             raise ValueError(
-                "Array shapes along non-transformation axes should be "
-                "equal, but dimensions along axis {a} are not".format(a=axis))
+                f'Array shapes along non-transformation axes should be '
+                f'equal, but dimensions along axis {axis} are not.')
 
     # Determine final size along transformation axes
     # Note that it might be faster to compute Fourier transform in a slightly
@@ -188,13 +194,16 @@ def cross_correlate_masked(arr1, arr2, m1, m2, mode='full', axes=(-2, -1),
     # 7)
     fast_shape = tuple([next_fast_len(final_shape[ax]) for ax in axes])
 
-    # We use numpy.fft or the new scipy.fft because they allow leaving the
-    # transform axes unchanged which was not possible with scipy.fftpack's
+    # We use the new scipy.fft because they allow leaving the transform axes
+    # unchanged which was not possible with scipy.fftpack's
     # fftn/ifftn in older versions of SciPy.
     # E.g. arr shape (2, 3, 7), transform along axes (0, 1) with shape (4, 4)
     # results in arr_fft shape (4, 4, 7)
     fft = partial(fftmodule.fftn, s=fast_shape, axes=axes)
-    ifft = partial(fftmodule.ifftn, s=fast_shape, axes=axes)
+    _ifft = partial(fftmodule.ifftn, s=fast_shape, axes=axes)
+
+    def ifft(x):
+        return _ifft(x).real
 
     fixed_image[cp.logical_not(fixed_mask)] = 0.0
     moving_image[cp.logical_not(moving_mask)] = 0.0
@@ -258,11 +267,7 @@ def cross_correlate_masked(arr1, arr2, m1, m2, mode='full', axes=(-2, -1),
     tol = 1e3 * eps * cp.max(cp.abs(denom), axis=axes, keepdims=True)
     nonzero_indices = denom > tol
 
-    # TODO: Added a cast to real here.
-    #       probably it should be real earlier?
-    numerator = numerator.real
-    denom = denom.real
-    out = cp.zeros_like(denom)
+    out = cp.zeros_like(denom, dtype=float_dtype)
     out[nonzero_indices] = numerator[nonzero_indices] / denom[nonzero_indices]
     cp.clip(out, a_min=-1, a_max=1, out=out)
 

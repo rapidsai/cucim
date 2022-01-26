@@ -128,15 +128,17 @@ for function_name, fixed_kwargs, var_kwargs, allow_color, allow_nd in [
             var_kwargs["frequency"] = [f for f in var_kwargs["frequency"] if f >= 0.1]
 
         if function_name == "median":
-            selems = []
+            footprints = []
             ndim = len(shape)
-            selem_sizes = [3, 5, 7, 9] if ndim == 2 else [3, 5, 7]
-            for selem_size in [3, 5, 7, 9]:
-                selems.append(np.ones((selem_size,) * ndim, dtype=bool))
-            var_kwargs["selem"] = selems
+            footprint_sizes = [3, 5, 7, 9] if ndim == 2 else [3, 5, 7]
+            for footprint_size in [3, 5, 7, 9]:
+                footprints.append(
+                    np.ones((footprint_size,) * ndim, dtype=bool)
+                )
+            var_kwargs["footprint"] = footprints
 
         if function_name in ["gaussian", "unsharp_mask"]:
-            fixed_kwargs["multichannel"] = True if shape[-1] == 3 else False
+            fixed_kwargs["channel_axis"] = -1 if shape[-1] == 3 else None
 
         B = ImageBench(
             function_name=function_name,

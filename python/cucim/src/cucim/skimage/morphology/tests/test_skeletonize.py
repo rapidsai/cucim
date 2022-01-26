@@ -4,6 +4,7 @@ from cupy.testing import assert_array_equal
 from skimage import data
 from skimage.morphology import thin as thin_cpu
 
+from cucim.skimage._shared._warnings import expected_warnings
 from cucim.skimage.morphology import thin
 
 
@@ -33,6 +34,12 @@ class TestThin():
                              [0, 0, 0, 0, 0, 0, 0],
                              [0, 0, 0, 0, 0, 0, 0]], dtype=cp.uint8)
         assert_array_equal(result, expected)
+
+    def test_max_iter_kwarg_deprecation(self):
+        result1 = thin(self.input_image, max_num_iter=1).astype(cp.uint8)
+        with expected_warnings(["`max_iter` is a deprecated argument name"]):
+            result2 = thin(self.input_image, max_iter=1).astype(cp.uint8)
+        assert_array_equal(result1, result2)
 
     def test_noiter(self):
         result = thin(self.input_image).astype(cp.uint8)

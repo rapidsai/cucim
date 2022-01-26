@@ -4,7 +4,8 @@ import pytest
 from cupy.testing import assert_allclose, assert_array_equal, assert_array_less
 from skimage.data import camera, retina
 
-from cucim.skimage._shared.testing import expected_warnings
+from cucim.skimage import img_as_float
+from cucim.skimage._shared.utils import _supported_float_type
 from cucim.skimage.color import rgb2gray
 from cucim.skimage.filters import frangi, hessian, meijering, sato
 from cucim.skimage.util import crop, invert
@@ -36,11 +37,13 @@ def test_2d_null_matrix():
 
 def test_3d_null_matrix():
 
-    a_black = cp.zeros((3, 3, 3)).astype(cp.uint8)
+    # Note: last axis intentionally not size 3 to avoid 2D+RGB autodetection
+    #       warning from an internal call to `skimage.filters.gaussian`.
+    a_black = cp.zeros((3, 3, 5)).astype(cp.uint8)
     a_white = invert(a_black)
 
-    zeros = cp.zeros((3, 3, 3))
-    ones = cp.ones((3, 3, 3))
+    zeros = cp.zeros((3, 3, 5))
+    ones = cp.ones((3, 3, 5))
 
     assert_allclose(meijering(a_black, black_ridges=True), zeros, atol=1e-1)
     assert_allclose(meijering(a_white, black_ridges=False), zeros, atol=1e-1)
@@ -145,7 +148,9 @@ def test_2d_linearity():
 
 def test_3d_linearity():
 
-    a_black = cp.ones((3, 3, 3)).astype(np.uint8)
+    # Note: last axis intentionally not size 3 to avoid 2D+RGB autodetection
+    #       warning from an internal call to `skimage.filters.gaussian`.
+    a_black = cp.ones((3, 3, 5)).astype(np.uint8)
     a_white = invert(a_black)
 
     assert_allclose(meijering(1 * a_black, black_ridges=True),
@@ -184,16 +189,23 @@ def test_2d_cropped_camera_image():
     assert_allclose(meijering(a_black, black_ridges=True),
                     meijering(a_white, black_ridges=False))
 
-    assert_allclose(sato(a_black, black_ridges=True, mode='mirror'),
-                    sato(a_white, black_ridges=False, mode='mirror'))
+    assert_allclose(sato(a_black, black_ridges=True, mode='reflect'),
+                    sato(a_white, black_ridges=False, mode='reflect'))
 
     assert_allclose(frangi(a_black, black_ridges=True), zeros, atol=1e-3)
     assert_allclose(frangi(a_white, black_ridges=False), zeros, atol=1e-3)
 
-    assert_allclose(hessian(a_black, black_ridges=True, mode='mirror'),
+    assert_allclose(hessian(a_black, black_ridges=True, mode='reflect'),
                     ones, atol=1 - 1e-7)
-    assert_allclose(hessian(a_white, black_ridges=False, mode='mirror'),
+    assert_allclose(hessian(a_white, black_ridges=False, mode='reflect'),
                     ones, atol=1 - 1e-7)
+
+
+@pytest.mark.parametrize('func', [meijering, sato, frangi, hessian])
+@pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])
+def test_ridge_output_dtype(func, dtype):
+    img = img_as_float(cp.array(camera()).astype(dtype, copy=False))
+    assert func(img).dtype == _supported_float_type(img.dtype)
 
 
 def test_3d_cropped_camera_image():
@@ -209,15 +221,15 @@ def test_3d_cropped_camera_image():
     assert_allclose(meijering(a_black, black_ridges=True),
                     meijering(a_white, black_ridges=False))
 
-    assert_allclose(sato(a_black, black_ridges=True, mode='mirror'),
-                    sato(a_white, black_ridges=False, mode='mirror'))
+    assert_allclose(sato(a_black, black_ridges=True, mode='reflect'),
+                    sato(a_white, black_ridges=False, mode='reflect'))
 
     assert_allclose(frangi(a_black, black_ridges=True), zeros, atol=1e-3)
     assert_allclose(frangi(a_white, black_ridges=False), zeros, atol=1e-3)
 
-    assert_allclose(hessian(a_black, black_ridges=True, mode='mirror'),
+    assert_allclose(hessian(a_black, black_ridges=True, mode='reflect'),
                     ones, atol=1 - 1e-7)
-    assert_allclose(hessian(a_white, black_ridges=False, mode='mirror'),
+    assert_allclose(hessian(a_white, black_ridges=False, mode='reflect'),
                     ones, atol=1 - 1e-7)
 
 
@@ -244,20 +256,3 @@ def test_border_management(func, tol):
     assert abs(full_mean - inside_mean) < tol
     assert abs(full_mean - border_mean) < tol
     assert abs(inside_mean - border_mean) < tol
-
-
-@pytest.mark.parametrize('func', [sato, hessian])
-def test_border_warning(func):
-    img = rgb2gray(cp.array(retina()[300:500, 700:900]))
-
-    with expected_warnings(["implicitly used 'constant' as the border mode"]):
-        func(img, sigmas=[1])
-
-
-@pytest.mark.parametrize('dtype', [cp.float32, cp.float64])
-@pytest.mark.parametrize('func', [sato, hessian, meijering, frangi])
-def test_output_dtype(func, dtype):
-    img = rgb2gray(cp.array(retina()[300:500, 700:900], dtype=dtype))
-
-    out = func(img, sigmas=[1], mode='reflect')
-    assert out.dtype == dtype

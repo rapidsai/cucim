@@ -3,7 +3,7 @@ import itertools
 import cupy as cp
 import numpy as np
 
-from .._shared.utils import check_nD
+from .._shared.utils import _supported_float_type, check_nD
 
 
 def moments_coords(coords, order=3):
@@ -18,7 +18,7 @@ def moments_coords(coords, order=3):
 
     Parameters
     ----------
-    coords : (N, D) floating point or uint8 array
+    coords : (N, D) double or uint8 array
         Array of N points that describe an image of D dimensionality in
         Cartesian space.
     order : int, optional
@@ -44,7 +44,7 @@ def moments_coords(coords, order=3):
     >>> M = moments_coords(coords)
     >>> centroid = (M[1, 0] / M[0, 0], M[0, 1] / M[0, 0])
     >>> centroid
-    (14.5, 15.5)
+    (array(14.5), array(15.5))
     """
     return moments_coords_central(coords, 0, order=order)
 
@@ -61,7 +61,7 @@ def moments_coords_central(coords, center=None, order=3):
 
     Parameters
     ----------
-    coords : (N, D) floating point or uint8 array
+    coords : (N, D) double or uint8 array
         Array of N points that describe an image of D dimensionality in
         Cartesian space. A tuple of coordinates as returned by
         ``cp.nonzero`` is also accepted as input.
@@ -99,7 +99,7 @@ def moments_coords_central(coords, center=None, order=3):
     of the object (the default). If we break the symmetry by adding a new
     point, this no longer holds:
 
-    >>> coords2 = cp.concatenate((coords, [[17, 17]]), axis=0)
+    >>> coords2 = cp.concatenate((coords, cp.array([[17, 17]])), axis=0)
     >>> cp.round(moments_coords_central(coords2),
     ...          decimals=2)  # doctest: +NORMALIZE_WHITESPACE
     array([[17.  ,  0.  , 22.12, -2.49],
@@ -112,23 +112,25 @@ def moments_coords_central(coords, center=None, order=3):
 
     >>> cp.allclose(moments_coords(coords),
     ...             moments_coords_central(coords, (0, 0)))
-    True
+    array(True)
     """
     if isinstance(coords, tuple):
         # This format corresponds to coordinate tuples as returned by
         # e.g. cp.nonzero: (row_coords, column_coords).
         # We represent them as an npoints x ndim array.
         coords = cp.stack(coords, axis=-1)
-    float_dtype = coords.dtype if coords.dtype.kind == 'f' else cp.float64
     check_nD(coords, 2)
     ndim = coords.shape[1]
+
+    float_type = _supported_float_type(coords.dtype)
     if center is None:
-        center = cp.mean(coords, axis=0)
+        center = cp.mean(coords, axis=0, dtype=float)
+        center = center.astype(float_type, copy=False)
     else:
-        center = cp.asarray(center, dtype=float_dtype)
+        center = cp.asarray(center, dtype=float_type)
 
     # center the coordinates
-    coords = coords.astype(float_dtype, copy=False)
+    coords = coords.astype(float_type, copy=False)
     coords -= center
 
     # CuPy backend: for efficiency, sum over the last axis
@@ -136,7 +138,7 @@ def moments_coords_central(coords, center=None, order=3):
     # generate all possible exponents for each axis in the given set of points
     # produces a matrix of shape (order + 1, D, N)
     coords = coords.T
-    powers = cp.arange(order + 1, dtype=float_dtype)[:, np.newaxis, np.newaxis]
+    powers = cp.arange(order + 1, dtype=float_type)[:, np.newaxis, np.newaxis]
     coords = coords[cp.newaxis, ...] ** powers
 
     # add extra dimensions for proper broadcasting
@@ -171,7 +173,7 @@ def moments(image, order=3):
 
     Parameters
     ----------
-    image : nD floating point or uint8 array
+    image : nD double or uint8 array
         Rasterized shape as image.
     order : int, optional
         Maximum order of moments. Default is 3.
@@ -201,7 +203,7 @@ def moments(image, order=3):
     >>> M = moments(image)
     >>> centroid = (M[1, 0] / M[0, 0], M[0, 1] / M[0, 0])
     >>> centroid
-    (14.5, 14.5)
+    (array(14.5), array(14.5))
     """
     return moments_central(image, (0,) * image.ndim, order=order)
 
@@ -217,7 +219,7 @@ def moments_central(image, center=None, order=3, **kwargs):
 
     Parameters
     ----------
-    image : nD floating point or uint8 array
+    image : nD double or uint8 array
         Rasterized shape as image.
     center : tuple of float, optional
         Coordinates of the image centroid. This will be computed if it
@@ -257,7 +259,7 @@ def moments_central(image, center=None, order=3, **kwargs):
     """
     if center is None:
         center = centroid(image)
-    float_dtype = image.dtype if image.dtype.kind == 'f' else cp.float64
+    float_dtype = _supported_float_type(image.dtype)
     calc = image.astype(float_dtype, copy=False)
     powers = cp.arange(order + 1, dtype=float_dtype)
     for dim, dim_length in enumerate(image.shape):
@@ -326,7 +328,7 @@ def moments_normalized(mu, order=3):
     # CuPy Backend: For the tiny mu and nu arrays, it is faster to run this
     #               computation on the host and then transfer back to the GPU.
     mu = cp.asnumpy(mu)
-    nu = np.empty_like(mu)
+    nu = np.zeros_like(mu)
     mu0 = mu.ravel()[0]
     for powers in itertools.product(range(order + 1), repeat=mu.ndim):
         if sum(powers) < 2:
@@ -384,7 +386,7 @@ def moments_hu(nu):
     >>> nu = moments_normalized(mu)
     >>> moments_hu(nu)
     array([7.45370370e-01, 3.51165981e-01, 1.04049179e-01, 4.06442107e-02,
-           2.64312299e-03, 2.40854582e-02, 4.33680869e-19])
+           2.64312299e-03, 2.40854582e-02, 6.50521303e-19])
     """
     try:
         from skimage.measure import moments_hu
@@ -393,7 +395,7 @@ def moments_hu(nu):
 
     # CuPy Backend: TODO: Due to small arrays involved, just transfer to/from
     #                     the CPU implementation.
-    float_dtype = nu.dtype if nu.dtype.kind == 'f' else cp.float64
+    float_dtype = cp.float32 if nu.dtype == cp.float32 else cp.float64
     return cp.asarray(moments_hu(cp.asnumpy(nu)), dtype=float_dtype)
 
 

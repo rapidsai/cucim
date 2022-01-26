@@ -1,16 +1,10 @@
 import cupy as cp
 
-import cucim.skimage._vendored
-# TODO: use cupyx.scipy.signal once upstream fftconvolve and
-#       choose_conv_method for > 1d has been implemented.
 from cucim import _misc
 
-from .._shared.utils import check_nD
+from .._shared.utils import _supported_float_type, check_nD
 
 # from cupyx.scipy import signal
-
-
-signal = cucim.skimage._vendored
 
 
 def _window_sum_2d(image, window_shape):
@@ -97,9 +91,9 @@ def match_template(image, template, pad_input=False, mode='constant',
     >>> template = cp.zeros((3, 3))
     >>> template[1, 1] = 1
     >>> template
-    array([[ 0.,  0.,  0.],
-           [ 0.,  1.,  0.],
-           [ 0.,  0.,  0.]])
+    array([[0., 0., 0.],
+           [0., 1., 0.],
+           [0., 0., 0.]])
     >>> image = cp.zeros((6, 6))
     >>> image[1, 1] = 1
     >>> image[4, 4] = -1
@@ -125,6 +119,10 @@ def match_template(image, template, pad_input=False, mode='constant',
            [ 0.   ,  0.   ,  0.   ,  0.125, -1.   ,  0.125],
            [ 0.   ,  0.   ,  0.   ,  0.125,  0.125,  0.125]])
     """
+    # TODO: use cupyx.scipy.signal once upstream fftconvolve and
+    #       choose_conv_method for > 1d has been implemented.
+    from cucim.skimage import _vendored as signal
+
     check_nD(image, (2, 3))
 
     if image.ndim < template.ndim:
@@ -135,7 +133,7 @@ def match_template(image, template, pad_input=False, mode='constant',
 
     image_shape = image.shape
 
-    float_dtype = cp.promote_types(image.dtype, cp.float32)
+    float_dtype = _supported_float_type(image.dtype)
     image = image.astype(float_dtype, copy=False)
     template = template.astype(float_dtype, copy=False)
 
@@ -181,7 +179,7 @@ def match_template(image, template, pad_input=False, mode='constant',
     response = cp.zeros_like(xcorr, dtype=float_dtype)
 
     # avoid zero-division
-    mask = denominator > cp.finfo(response.dtype).eps
+    mask = denominator > cp.finfo(float_dtype).eps
 
     response[mask] = numerator[mask] / denominator[mask]
 

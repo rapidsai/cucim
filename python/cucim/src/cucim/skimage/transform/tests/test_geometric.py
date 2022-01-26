@@ -13,7 +13,10 @@ from cucim.skimage.transform import (AffineTransform, EssentialMatrixTransform,
                                      PolynomialTransform, ProjectiveTransform,
                                      SimilarityTransform, estimate_transform,
                                      matrix_transform)
-from cucim.skimage.transform._geometric import GeometricTransform
+from cucim.skimage.transform._geometric import (GeometricTransform,
+                                                _affine_matrix_from_vector,
+                                                _center_and_normalize_points,
+                                                _euler_rotation_matrix)
 
 # fmt: off
 SRC = cp.array([
@@ -358,6 +361,32 @@ def test_projective_estimation():
     assert_array_almost_equal(tform3.params, tform2.params)
 
 
+def test_projective_weighted_estimation():
+
+    # Exact solution with same points, and unity weights
+    tform = estimate_transform('projective', SRC[:4, :], DST[:4, :])
+    tform_w = estimate_transform('projective',
+                                 SRC[:4, :], DST[:4, :], cp.ones(4))
+    assert_array_almost_equal(tform.params, tform_w.params)
+
+    # Over-determined solution with same points, and unity weights
+    tform = estimate_transform('projective', SRC, DST)
+    tform_w = estimate_transform('projective',
+                                 SRC, DST, cp.ones(SRC.shape[0]))
+    assert_array_almost_equal(tform.params, tform_w.params)
+
+    # Repeating a point, but setting its weight small, should give nearly
+    # the same result.
+    point_weights = cp.ones(SRC.shape[0] + 1)
+    point_weights[0] = 1.0e-15
+    tform1 = estimate_transform('projective', SRC, DST)
+    tform2 = estimate_transform('projective',
+                                SRC[cp.arange(-1, SRC.shape[0]), :],
+                                DST[cp.arange(-1, SRC.shape[0]), :],
+                                point_weights)
+    assert_array_almost_equal(tform1.params, tform2.params, decimal=3)
+
+
 def test_projective_init():
     tform = estimate_transform('projective', SRC, DST)
     # init with transformation matrix
@@ -374,6 +403,29 @@ def test_polynomial_estimation():
     tform2 = PolynomialTransform()
     tform2.estimate(SRC, DST, order=10)
     assert_array_almost_equal(tform2.params, tform.params)
+
+
+def test_polynomial_weighted_estimation():
+    # Over-determined solution with same points, and unity weights
+    tform = estimate_transform('polynomial', SRC, DST, order=10)
+    tform_w = estimate_transform('polynomial',
+                                 SRC,
+                                 DST,
+                                 order=10,
+                                 weights=cp.ones(SRC.shape[0]))
+    assert_array_almost_equal(tform.params, tform_w.params)
+
+    # Repeating a point, but setting its weight small, should give nearly
+    # the same result.
+    point_weights = cp.ones(SRC.shape[0] + 1)
+    point_weights[0] = 1.0e-15
+    tform1 = estimate_transform('polynomial', SRC, DST, order=10)
+    tform2 = estimate_transform('polynomial',
+                                SRC[cp.arange(-1, SRC.shape[0]), :],
+                                DST[cp.arange(-1, SRC.shape[0]), :],
+                                order=10,
+                                weights=point_weights)
+    assert_array_almost_equal(tform1.params, tform2.params, decimal=4)
 
 
 def test_polynomial_init():
@@ -530,6 +582,17 @@ def test_degenerate(xp=cp):
         assert not tform.estimate(src, dst) or xp.isfinite(tform.params).all()
 
 
+@pytest.mark.parametrize('xp', [np, cp])
+def test_normalize_degenerate_points(xp):
+    """Return nan matrix *of appropriate size* when point is repeated."""
+    pts = xp.array([[73.42834308, 94.2977623]] * 3)
+    mat, pts_tf, _ = _center_and_normalize_points(pts)
+    assert xp.all(xp.isnan(mat))
+    assert xp.all(xp.isnan(pts_tf))
+    assert mat.shape == (3, 3)
+    assert pts_tf.shape == pts.shape
+
+
 @pytest.mark.parametrize("xp", [np, cp])
 def test_projective_repr(xp):
     tform = ProjectiveTransform(xp=xp)
@@ -567,3 +630,129 @@ def test_projective_str(xp):
     want = want.replace('1\\.', ' *1\\.')
     print(want)
     assert re.match(want, str(tform))
+
+
+def _assert_least_squares(tf, src, dst, xp=cp):
+    baseline = xp.sum((tf(src) - dst) ** 2)
+    for i in range(tf.params.size):
+        for update in [0.001, -0.001]:
+            params = xp.copy(tf.params).ravel()
+            params[i] += update
+            params = xp.reshape(params, tf.params.shape)
+            new_tf = tf.__class__(matrix=params)
+            new_ssq = np.sum((new_tf(src) - dst) ** 2)
+            assert new_ssq > baseline
+
+
+@pytest.mark.parametrize("xp", [np, cp])
+def test_estimate_affine_3d(xp):
+    ndim = 3
+    src = np.random.random((25, ndim)) * 2 ** np.arange(7, 7 + ndim)
+    src = xp.asarray(src)
+    matrix = xp.array(
+        [[4.8, 0.1, 0.2, 25],
+         [0.0, 1.0, 0.1, 30],
+         [0.0, 0.0, 1.0, -2],
+         [0.0, 0.0, 0.0, 1.]]
+    )
+    tf = AffineTransform(matrix=matrix)
+    dst = tf(src)
+    dst_noisy = dst + xp.asarray(np.random.random((25, ndim)))
+    tf2 = AffineTransform(dimensionality=ndim)
+    tf2.estimate(src, dst_noisy)
+    # we check rot/scale/etc more tightly than translation because translation
+    # estimation is on the 1 pixel scale
+    assert_array_almost_equal(tf2.params[:, :-1], matrix[:, :-1], decimal=2)
+    assert_array_almost_equal(tf2.params[:, -1], matrix[:, -1], decimal=0)
+    _assert_least_squares(tf2, src, dst_noisy)
+
+
+def test_fundamental_3d_not_implemented():
+    with pytest.raises(NotImplementedError):
+        _ = FundamentalMatrixTransform(dimensionality=3)
+    with pytest.raises(NotImplementedError):
+        _ = FundamentalMatrixTransform(np.eye(4))
+
+
+# array protocol not expected to work for CuPy arrays
+# def test_array_protocol():
+#     mat = cp.eye(4)
+#     tf = ProjectiveTransform(mat)
+#     assert_array_equal(cp.array(tf), mat)
+#     assert_array_equal(cp.array(tf, dtype=int), mat.astype(int))
+
+
+def test_affine_transform_from_linearized_parameters():
+    mat = np.concatenate(
+        (np.random.random((3, 4)), np.eye(4)[-1:]), axis=0
+    )
+    v = mat[:-1].ravel()
+    mat_from_v = _affine_matrix_from_vector(v)
+    tf = AffineTransform(matrix=mat_from_v)
+    assert_array_equal(tf.params, mat)
+    # incorrect number of parameters
+    with pytest.raises(ValueError):
+        _ = _affine_matrix_from_vector(v[:-1])
+    with pytest.raises(ValueError):
+        _ = AffineTransform(matrix=v[:-1])
+
+
+def test_affine_params_nD_error():
+    with pytest.raises(ValueError):
+        _ = AffineTransform(scale=5, dimensionality=3)
+
+
+def test_euler_rotation():
+    v = [0, 10, 0]
+    angles = np.radians([90, 45, 45])
+    expected = [-5, -5, 7.1]
+    R = _euler_rotation_matrix(angles)
+    assert_array_almost_equal(R @ v, expected, decimal=1)
+
+
+@pytest.mark.parametrize("xp", [np, cp])
+def test_euclidean_param_defaults(xp):
+    # 2D rotation is 0 when only translation is given
+    tf = EuclideanTransform(translation=(5, 5))
+    assert tf.params[0, 1] == 0
+    # off diagonals are 0 when only translation is given
+    tf = EuclideanTransform(translation=(4, 5, 9), dimensionality=3)
+    assert xp.all(tf.params[[0, 0, 1, 1, 2, 2], [1, 2, 0, 2, 0, 1]] == 0)
+    with pytest.raises(ValueError):
+        # specifying parameters for D>3 is not supported
+        _ = EuclideanTransform(translation=(5, 6, 7, 8), dimensionality=4)
+    with pytest.raises(ValueError):
+        # incorrect number of angles for given dimensionality
+        _ = EuclideanTransform(rotation=(4, 8), dimensionality=3)
+    # translation is 0 when rotation is given
+    tf = EuclideanTransform(rotation=np.pi * cp.arange(3), dimensionality=3)
+    assert xp.all(tf.params[:-1, 3] == 0)
+
+
+@pytest.mark.parametrize("xp", [np, cp])
+def test_similarity_transform_params(xp):
+    with pytest.raises(ValueError):
+        _ = SimilarityTransform(translation=(4, 5, 6, 7), dimensionality=4,
+                                xp=xp)
+    tf = SimilarityTransform(scale=4, dimensionality=3, xp=xp)
+    assert_array_equal(tf(xp.asarray([[1, 1, 1]])),
+                       xp.asarray([[4, 4, 4]]))
+
+
+@pytest.mark.parametrize("xp", [np, cp])
+def test_euler_angle_consistency(xp):
+    angles = xp.random.random((3,)) * 2 * np.pi - np.pi
+    euclid = EuclideanTransform(rotation=angles, dimensionality=3, xp=xp)
+    similar = SimilarityTransform(rotation=angles, dimensionality=3, xp=xp)
+    assert_array_almost_equal(euclid.params, similar.params)
+
+
+@pytest.mark.parametrize("xp", [np, cp])
+def test_2D_only_implementations(xp):
+    with pytest.raises(NotImplementedError):
+        _ = PolynomialTransform(dimensionality=3, xp=xp)
+    tf = AffineTransform(dimensionality=3, xp=xp)
+    with pytest.raises(NotImplementedError):
+        _ = tf.rotation
+    with pytest.raises(NotImplementedError):
+        _ = tf.shear

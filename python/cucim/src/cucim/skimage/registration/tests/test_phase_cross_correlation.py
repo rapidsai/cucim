@@ -5,38 +5,58 @@ from cupyx.scipy.ndimage import fourier_shift
 from skimage.data import camera
 
 from cucim.skimage import img_as_float
+from cucim.skimage._shared._warnings import expected_warnings
 from cucim.skimage._shared.fft import fftmodule as fft
+from cucim.skimage._shared.utils import _supported_float_type
 from cucim.skimage.data import binary_blobs
 from cucim.skimage.registration._phase_cross_correlation import (
     _upsampled_dft, phase_cross_correlation)
 
 
-def test_correlation():
+@pytest.mark.parametrize('normalization', [None, 'phase'])
+def test_correlation(normalization):
     reference_image = fft.fftn(cp.array(camera()))
     shift = (-7, 12)
     shifted_image = fourier_shift(reference_image, shift)
 
     # pixel precision
-    result, error, diffphase = phase_cross_correlation(reference_image,
-                                                       shifted_image,
-                                                       space="fourier")
+    result, _, _ = phase_cross_correlation(reference_image,
+                                           shifted_image,
+                                           space="fourier",
+                                           normalization=normalization)
     assert_allclose(result[:2], -cp.array(shift))
 
 
-def test_subpixel_precision():
+@pytest.mark.parametrize('normalization', ['nonexisting'])
+def test_correlation_invalid_normalization(normalization):
+    reference_image = fft.fftn(cp.array(camera()))
+    shift = (-7, 12)
+    shifted_image = fourier_shift(reference_image, shift)
+
+    # pixel precision
+    with pytest.raises(ValueError):
+        phase_cross_correlation(reference_image,
+                                shifted_image,
+                                space="fourier",
+                                normalization=normalization)
+
+
+@pytest.mark.parametrize('normalization', [None, 'phase'])
+def test_subpixel_precision(normalization):
     reference_image = fft.fftn(cp.array(camera()))
     subpixel_shift = (-2.4, 1.32)
     shifted_image = fourier_shift(reference_image, subpixel_shift)
 
     # subpixel precision
-    result, error, diffphase = phase_cross_correlation(reference_image,
-                                                       shifted_image,
-                                                       upsample_factor=100,
-                                                       space="fourier")
+    result, _, _ = phase_cross_correlation(reference_image,
+                                           shifted_image,
+                                           upsample_factor=100,
+                                           space="fourier",
+                                           normalization=normalization)
     assert_allclose(result[:2], -cp.array(subpixel_shift), atol=0.05)
 
 
-@pytest.mark.parametrize('dtype', [cp.float32, cp.float64])
+@pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])
 def test_real_input(dtype):
     reference_image = cp.array(camera()).astype(dtype, copy=False)
     subpixel_shift = (-2.4, 1.32)
@@ -47,7 +67,7 @@ def test_real_input(dtype):
     result, error, diffphase = phase_cross_correlation(reference_image,
                                                        shifted_image,
                                                        upsample_factor=100)
-    assert result.dtype == dtype
+    assert result.dtype == _supported_float_type(dtype)
     assert_allclose(result[:2], -cp.array(subpixel_shift), atol=0.05)
 
 
@@ -110,8 +130,9 @@ def test_wrong_input():
     image = cp.ones((5, 5))
     image[0][0] = cp.nan
     template = cp.ones((5, 5))
-    with pytest.raises(ValueError):
-        phase_cross_correlation(template, image, return_error=True)
+    with expected_warnings([r'invalid value encountered in true_divide|\A\Z']):
+        with pytest.raises(ValueError):
+            phase_cross_correlation(template, image, return_error=True)
 
 
 def test_4d_input_pixel():

@@ -2,7 +2,7 @@ import cupy as cp
 import cupyx.scipy.ndimage as ndi
 import numpy as np
 
-from .._shared.utils import check_nD
+from .._shared.utils import check_nD, deprecate_kwarg
 
 # --------- Skeletonization and thinning based on Guo and Hall 1989 ---------
 
@@ -39,7 +39,9 @@ _G123P_LUT = np.array([0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0,
                        0, 0, 0, 0, 0, 0, 0, 0, 0], dtype=bool)
 
 
-def thin(image, max_iter=None):
+@deprecate_kwarg({'max_iter': 'max_num_iter'}, removed_version="1.0",
+                 deprecated_version="0.19")
+def thin(image, max_num_iter=None):
     """
     Perform morphological thinning of a binary image.
 
@@ -47,7 +49,7 @@ def thin(image, max_iter=None):
     ----------
     image : binary (M, N) ndarray
         The image to be thinned.
-    max_iter : int, number of iterations, optional
+    max_num_iter : int, number of iterations, optional
         Regardless of the value of this parameter, the thinned image
         is returned immediately if an iteration produces no change.
         If this parameter is specified it thus sets an upper bound on
@@ -120,10 +122,10 @@ def thin(image, max_iter=None):
     G123P_LUT = cp.asarray(_G123P_LUT)
 
     # iterate until convergence, up to the iteration limit
-    max_iter = max_iter or cp.inf
-    n_iter = 0
+    max_num_iter = max_num_iter or cp.inf
+    num_iter = 0
     n_pts_old, n_pts_new = cp.inf, cp.sum(skel)
-    while n_pts_old != n_pts_new and n_iter < max_iter:
+    while n_pts_old != n_pts_new and num_iter < max_num_iter:
         n_pts_old = n_pts_new
 
         # perform the two "subiterations" described in the paper
@@ -136,6 +138,6 @@ def thin(image, max_iter=None):
             skel[D] = 0
 
         n_pts_new = cp.sum(skel)  # count points after thinning
-        n_iter += 1
+        num_iter += 1
 
     return skel.astype(bool)

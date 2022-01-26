@@ -1,6 +1,7 @@
 import cupy as cp
 from cupyx.scipy import ndimage as ndi
 
+from .._shared.utils import _supported_float_type
 from ..color import gray2rgb
 from ..morphology import dilation, erosion, square
 from ..util import img_as_float
@@ -16,6 +17,10 @@ def _find_boundaries_subpixel(label_img):
     for every image dimension of size ``s``. These "interstitial" rows
     and columns are filled as ``True`` if they separate two labels in
     `label_img`, ``False`` otherwise.
+
+    I used ``view_as_windows`` to get the neighborhood of each pixel.
+    Then I check whether there are two labels or more in that
+    neighborhood.
     """
     ndim = label_img.ndim
     max_label = cp.iinfo(label_img.dtype).max
@@ -158,20 +163,21 @@ def find_boundaries(label_img, connectivity=1, mode="thick", background=0):
     if label_img.dtype == 'bool':
         label_img = label_img.astype(cp.uint8)
     ndim = label_img.ndim
-    selem = ndi.generate_binary_structure(ndim, connectivity)
+    footprint = ndi.generate_binary_structure(ndim, connectivity)
     if mode != 'subpixel':
-        boundaries = dilation(label_img, selem) != erosion(label_img, selem)
+        boundaries = (dilation(label_img, footprint)
+                      != erosion(label_img, footprint))
         if mode == 'inner':
             foreground_image = label_img != background
             boundaries &= foreground_image
         elif mode == 'outer':
             max_label = cp.iinfo(label_img.dtype).max
             background_image = label_img == background
-            selem = ndi.generate_binary_structure(ndim, ndim)
+            footprint = ndi.generate_binary_structure(ndim, ndim)
             inverted_background = cp.array(label_img, copy=True)
             inverted_background[background_image] = max_label
-            adjacent_objects = ((dilation(label_img, selem) !=
-                                 erosion(inverted_background, selem)) &
+            adjacent_objects = ((dilation(label_img, footprint) !=
+                                 erosion(inverted_background, footprint)) &
                                 ~background_image)
             boundaries &= (background_image | adjacent_objects)
         return boundaries
@@ -219,7 +225,9 @@ def mark_boundaries(image, label_img, color=(1, 1, 0),
     --------
     find_boundaries
     """
+    float_dtype = _supported_float_type(image.dtype)
     marked = img_as_float(image, force_copy=True)
+    marked = marked.astype(float_dtype, copy=False)
     if marked.ndim == 2:
         marked = gray2rgb(marked)
     if mode == 'subpixel':

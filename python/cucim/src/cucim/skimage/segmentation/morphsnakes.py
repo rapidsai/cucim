@@ -1,5 +1,4 @@
 import functools
-import warnings
 from itertools import cycle
 
 import cupy as cp
@@ -8,12 +7,11 @@ from cupyx.scipy import ndimage as ndi
 
 from cucim import _misc
 
-from .._shared.utils import check_nD
+from .._shared.utils import check_nD, deprecate_kwarg
 
 __all__ = ['morphological_chan_vese',
            'morphological_geodesic_active_contour',
            'inverse_gaussian_gradient',
-           'circle_level_set',
            'disk_level_set',
            'checkerboard_level_set'
            ]
@@ -108,9 +106,6 @@ def _init_level_set(init_level_set, image_shape):
     if isinstance(init_level_set, str):
         if init_level_set == 'checkerboard':
             res = checkerboard_level_set(image_shape)
-        # TODO: remove me in 0.19.0
-        elif init_level_set == 'circle':
-            res = circle_level_set(image_shape)
         elif init_level_set == 'disk':
             res = disk_level_set(image_shape)
         else:
@@ -119,45 +114,6 @@ def _init_level_set(init_level_set, image_shape):
     else:
         res = init_level_set
     return res
-
-
-def circle_level_set(image_shape, center=None, radius=None):
-    """Create a circle level set with binary values.
-
-    Parameters
-    ----------
-    image_shape : tuple of positive integers
-        Shape of the image
-    center : tuple of positive integers, optional
-        Coordinates of the center of the circle given in (row, column). If not
-        given, it defaults to the center of the image.
-    radius : float, optional
-        Radius of the circle. If not given, it is set to the 75% of the
-        smallest image dimension.
-
-    Returns
-    -------
-    out : array with shape `image_shape`
-        Binary level set of the circle with the given `radius` and `center`.
-
-    Warns
-    -----
-    Deprecated:
-        .. versionadded:: 0.17
-
-            This function is deprecated and will be removed in scikit-image
-            0.19. Please use the function named ``disk_level_set`` instead.
-
-    See Also
-    --------
-    checkerboard_level_set
-    """
-    warnings.warn("circle_level_set is deprecated in favor of "
-                  "disk_level_set."
-                  "circle_level_set will be removed in version 0.19",
-                  FutureWarning, stacklevel=2)
-
-    return disk_level_set(image_shape, center=center, radius=radius)
 
 
 def disk_level_set(image_shape, *, center=None, radius=None):
@@ -215,7 +171,7 @@ def checkerboard_level_set(image_shape, square_size=5):
 
     See Also
     --------
-    circle_level_set
+    disk_level_set
     """
 
     grid = cp.mgrid[[slice(i) for i in image_shape]]
@@ -263,7 +219,9 @@ def inverse_gaussian_gradient(image, alpha=100.0, sigma=5.0):
     return 1.0 / cp.sqrt(1.0 + alpha * gradnorm)
 
 
-def morphological_chan_vese(image, iterations, init_level_set='checkerboard',
+@deprecate_kwarg({'iterations': 'num_iter'}, removed_version="1.0",
+                 deprecated_version="0.19")
+def morphological_chan_vese(image, num_iter, init_level_set='checkerboard',
                             smoothing=1, lambda1=1, lambda2=1,
                             iter_callback=lambda x: None):
     """Morphological Active Contours without Edges (MorphACWE)
@@ -278,14 +236,14 @@ def morphological_chan_vese(image, iterations, init_level_set='checkerboard',
     ----------
     image : (M, N) or (L, M, N) array
         Grayscale image or volume to be segmented.
-    iterations : uint
-        Number of iterations to run
+    num_iter : uint
+        Number of num_iter to run
     init_level_set : str, (M, N) array, or (L, M, N) array
         Initial level set. If an array is given, it will be binarized and used
         as the initial level set. If a string is given, it defines the method
         to generate a reasonable initial level set with the shape of the
-        `image`. Accepted values are 'checkerboard' and 'circle'. See the
-        documentation of `checkerboard_level_set` and `circle_level_set`
+        `image`. Accepted values are 'checkerboard' and 'disk'. See the
+        documentation of `checkerboard_level_set` and `disk_level_set`
         respectively for details about how these level sets are created.
     smoothing : uint, optional
         Number of times the smoothing operator is applied per iteration.
@@ -311,11 +269,10 @@ def morphological_chan_vese(image, iterations, init_level_set='checkerboard',
 
     See Also
     --------
-    circle_level_set, checkerboard_level_set
+    disk_level_set, checkerboard_level_set
 
     Notes
     -----
-
     This is a version of the Chan-Vese algorithm that uses morphological
     operators instead of solving a partial differential equation (PDE) for the
     evolution of the contour. The set of morphological operators used in this
@@ -343,7 +300,7 @@ def morphological_chan_vese(image, iterations, init_level_set='checkerboard',
 
     iter_callback(u)
 
-    for _ in range(iterations):
+    for _ in range(num_iter):
 
         # inside = u > 0
         # outside = u <= 0
@@ -369,8 +326,10 @@ def morphological_chan_vese(image, iterations, init_level_set='checkerboard',
     return u
 
 
-def morphological_geodesic_active_contour(gimage, iterations,
-                                          init_level_set='circle', smoothing=1,
+@deprecate_kwarg({'iterations': 'num_iter'}, removed_version="1.0",
+                 deprecated_version="0.19")
+def morphological_geodesic_active_contour(gimage, num_iter,
+                                          init_level_set='disk', smoothing=1,
                                           threshold='auto', balloon=0,
                                           iter_callback=lambda x: None):
     """Morphological Geodesic Active Contours (MorphGAC).
@@ -392,14 +351,14 @@ def morphological_geodesic_active_contour(gimage, iterations,
         perform this preprocessing. Note that the quality of
         `morphological_geodesic_active_contour` might greatly depend on this
         preprocessing.
-    iterations : uint
-        Number of iterations to run.
+    num_iter : uint
+        Number of num_iter to run.
     init_level_set : str, (M, N) array, or (L, M, N) array
         Initial level set. If an array is given, it will be binarized and used
         as the initial level set. If a string is given, it defines the method
         to generate a reasonable initial level set with the shape of the
-        `image`. Accepted values are 'checkerboard' and 'circle'. See the
-        documentation of `checkerboard_level_set` and `circle_level_set`
+        `image`. Accepted values are 'checkerboard' and 'disk'. See the
+        documentation of `checkerboard_level_set` and `disk_level_set`
         respectively for details about how these level sets are created.
     smoothing : uint, optional
         Number of times the smoothing operator is applied per iteration.
@@ -427,11 +386,10 @@ def morphological_geodesic_active_contour(gimage, iterations,
 
     See Also
     --------
-    inverse_gaussian_gradient, circle_level_set, checkerboard_level_set
+    inverse_gaussian_gradient, disk_level_set, checkerboard_level_set
 
     Notes
     -----
-
     This is a version of the Geodesic Active Contours (GAC) algorithm that uses
     morphological operators instead of solving partial differential equations
     (PDEs) for the evolution of the contour. The set of morphological operators
@@ -469,7 +427,7 @@ def morphological_geodesic_active_contour(gimage, iterations,
 
     iter_callback(u)
 
-    for _ in range(iterations):
+    for _ in range(num_iter):
 
         # Balloon
         if balloon > 0:
