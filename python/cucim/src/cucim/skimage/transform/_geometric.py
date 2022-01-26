@@ -763,7 +763,7 @@ class ProjectiveTransform(GeometricTransform):
         src_matrix, src, has_nan1 = _center_and_normalize_points(src)
         dst_matrix, dst, has_nan2 = _center_and_normalize_points(dst)
         if has_nan1 or has_nan2:
-            self.params = xp.full((d, d), np.nan)
+            self.params = xp.full((d + 1, d + 1), xp.nan)
             return False
         # params: a0, a1, a2, b0, b1, b2, c0, c1
         A = xp.zeros((n * d, (d + 1) ** 2))
@@ -792,6 +792,7 @@ class ProjectiveTransform(GeometricTransform):
         # because it is a rank-defective transform, which would map points
         # to a line rather than a plane.
         if xp.isclose(V[-1, -1], 0):
+            self.params = xp.full((d + 1, d + 1), xp.nan)
             return False
 
         H = np.zeros(
@@ -1050,7 +1051,7 @@ class PiecewiseAffineTransform(GeometricTransform):
         Returns
         -------
         success : bool
-            True, if model estimation succeeds.
+            True, if all pieces of the model are successfully estimated.
 
         """
 
@@ -1065,11 +1066,14 @@ class PiecewiseAffineTransform(GeometricTransform):
             dst = cp.asnumpy(dst)
 
         self._tesselation = spatial.Delaunay(src)
+
+        ok = True
+
         # find affine mapping from source positions to destination
         self.affines = []
         for tri in self._tesselation.vertices:
             affine = AffineTransform(dimensionality=ndim)
-            affine.estimate(src[tri, :], dst[tri, :])
+            ok &= affine.estimate(src[tri, :], dst[tri, :])
             self.affines.append(affine)
 
         # inverse piecewise affine
@@ -1079,10 +1083,10 @@ class PiecewiseAffineTransform(GeometricTransform):
         self.inverse_affines = []
         for tri in self._inverse_tesselation.vertices:
             affine = AffineTransform(dimensionality=ndim)
-            affine.estimate(dst[tri, :], src[tri, :])
+            ok &= affine.estimate(dst[tri, :], src[tri, :])
             self.inverse_affines.append(affine)
 
-        return True
+        return ok
 
     def __call__(self, coords):
         """Apply forward transformation.
@@ -1460,7 +1464,8 @@ class SimilarityTransform(EuclideanTransform):
 
         self.params = _umeyama(src, dst, estimate_scale=True)
 
-        return True
+        # _umeyama will return nan if the problem is not well-conditioned.
+        return not cp.any(cp.isnan(self.params))
 
     @property
     def scale(self):
