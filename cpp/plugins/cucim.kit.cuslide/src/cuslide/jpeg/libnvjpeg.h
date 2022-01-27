@@ -23,7 +23,7 @@ namespace cuslide::jpeg
 {
 
 EXPORT_VISIBLE bool decode_libnvjpeg(int fd,
-                                     unsigned char* jpeg_buf,
+                                     const unsigned char* jpeg_buf,
                                      uint64_t offset,
                                      uint64_t size,
                                      const void* jpegtable_data,

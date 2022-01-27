@@ -43,13 +43,13 @@ class NvJpegProcessor : public cucim::loader::BatchDataProcessor
 public:
     NvJpegProcessor(CuCIMFileHandle* file_handle,
                     const cuslide::tiff::IFD* ifd,
-                    int64_t* request_location,
-                    int64_t* request_size,
+                    const int64_t* request_location,
+                    const int64_t* request_size,
                     uint64_t location_len,
                     uint32_t batch_size,
                     uint32_t maximum_tile_count,
                     const uint8_t* jpegtable_data,
-                    const uint32_t jpegtable_size);
+                    uint32_t jpegtable_size);
     ~NvJpegProcessor();
 
     uint32_t request(std::deque<uint32_t>& batch_item_counts, uint32_t num_remaining_patches) override;
@@ -64,7 +64,7 @@ public:
     uint32_t preferred_loader_prefetch_factor();
 
 private:
-    void update_file_block_info(int64_t* request_location, int64_t* request_size, uint64_t location_len);
+    void update_file_block_info(const int64_t* request_location, const int64_t* request_size, uint64_t location_len);
 
     bool stopped_ = false;
     uint32_t preferred_loader_prefetch_factor_ = 2;

@@ -53,7 +53,7 @@ public:
 
     operator bool() const;
 
-    uint8_t* raster_pointer(const uint64_t location_index) const;
+    uint8_t* raster_pointer(uint64_t location_index) const;
     uint32_t request(uint32_t load_size = 0);
     uint32_t wait_batch();
     /**

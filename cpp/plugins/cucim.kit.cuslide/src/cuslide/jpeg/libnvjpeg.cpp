@@ -32,12 +32,12 @@ namespace cuslide::jpeg
     }
 
 
-bool decode_libnvjpeg(int fd,
-                      unsigned char* jpeg_buf,
-                      uint64_t offset,
-                      uint64_t size,
+bool decode_libnvjpeg(const int fd,
+                      const unsigned char* jpeg_buf,
+                      const uint64_t offset,
+                      const uint64_t size,
                       const void* jpegtable_data,
-                      uint32_t jpegtable_count,
+                      const uint32_t jpegtable_count,
                       uint8_t** dest,
                       const cucim::io::Device& out_device)
 {

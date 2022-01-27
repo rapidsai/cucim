@@ -34,10 +34,10 @@ constexpr uint32_t MAX_CUDA_BATCH_SIZE = 1024;
 
 NvJpegProcessor::NvJpegProcessor(CuCIMFileHandle* file_handle,
                                  const cuslide::tiff::IFD* ifd,
-                                 int64_t* request_location,
-                                 int64_t* request_size,
-                                 uint64_t location_len,
-                                 uint32_t batch_size,
+                                 const int64_t* request_location,
+                                 const int64_t* request_size,
+                                 const uint64_t location_len,
+                                 const uint32_t batch_size,
                                  uint32_t maximum_tile_count,
                                  const uint8_t* jpegtable_data,
                                  const uint32_t jpegtable_size)
@@ -177,7 +177,7 @@ NvJpegProcessor::~NvJpegProcessor()
     }
 }
 
-uint32_t NvJpegProcessor::request(std::deque<uint32_t>& batch_item_counts, uint32_t num_remaining_patches)
+uint32_t NvJpegProcessor::request(std::deque<uint32_t>& batch_item_counts, const uint32_t num_remaining_patches)
 {
     (void)batch_item_counts;
     std::vector<cucim::loader::TileInfo> tile_to_request;
@@ -280,8 +280,7 @@ uint32_t NvJpegProcessor::request(std::deque<uint32_t>& batch_item_counts, uint3
     {
         for (uint32_t i = 0; i < cuda_batch_size_; ++i)
         {
-            uint8_t* mem_offset = nullptr;
-            mem_offset = file_block_ptr + tile_to_request[0].offset - file_start_offset_;
+            uint8_t* mem_offset = file_block_ptr + tile_to_request[0].offset - file_start_offset_;
             raw_cuda_inputs_.push_back((const unsigned char*)mem_offset);
             raw_cuda_inputs_len_.push_back(tile_to_request[0].size);
             CUDA_ERROR(cudaMallocPitch(
@@ -345,9 +344,9 @@ uint32_t NvJpegProcessor::request(std::deque<uint32_t>& batch_item_counts, uint3
     return request_count;
 }
 
-uint32_t NvJpegProcessor::wait_batch(uint32_t index_in_task,
+uint32_t NvJpegProcessor::wait_batch(const uint32_t index_in_task,
                                      std::deque<uint32_t>& batch_item_counts,
-                                     uint32_t num_remaining_patches)
+                                     const uint32_t num_remaining_patches)
 {
     // Check if the next (cuda) batch needs to be requested whenever an index in a task is divided by cuda batch size.
     // (each task which is for a patch consists of multiple tile processing)
@@ -358,7 +357,7 @@ uint32_t NvJpegProcessor::wait_batch(uint32_t index_in_task,
     return 0;
 }
 
-std::shared_ptr<cucim::cache::ImageCacheValue> NvJpegProcessor::wait_for_processing(uint32_t index)
+std::shared_ptr<cucim::cache::ImageCacheValue> NvJpegProcessor::wait_for_processing(const uint32_t index)
 {
     uint64_t index_hash = cucim::codec::splitmix64(index);
     std::mutex* m = reinterpret_cast<std::mutex*>(cuda_image_cache_->mutex(index_hash));
@@ -390,7 +389,9 @@ uint32_t NvJpegProcessor::preferred_loader_prefetch_factor()
     return preferred_loader_prefetch_factor_;
 }
 
-void NvJpegProcessor::update_file_block_info(int64_t* request_location, int64_t* request_size, uint64_t location_len)
+void NvJpegProcessor::update_file_block_info(const int64_t* request_location,
+                                             const int64_t* request_size,
+                                             const uint64_t location_len)
 {
 
     uint32_t width = ifd_->width();

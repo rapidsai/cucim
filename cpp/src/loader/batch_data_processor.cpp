@@ -25,7 +25,7 @@
 namespace cucim::loader
 {
 
-BatchDataProcessor::BatchDataProcessor(uint32_t batch_size) : batch_size_(batch_size), processed_index_count_(0)
+BatchDataProcessor::BatchDataProcessor(const uint32_t batch_size) : batch_size_(batch_size), processed_index_count_(0)
 {
 }
 
@@ -42,22 +42,22 @@ void BatchDataProcessor::add_tile(const TileInfo& tile)
 
 TileInfo BatchDataProcessor::remove_front_tile()
 {
-    TileInfo tile = tiles_.front();
+    const TileInfo tile = tiles_.front();
     tiles_.pop_front();
     ++processed_index_count_;
     return tile;
 }
 
-uint32_t BatchDataProcessor::request(std::deque<uint32_t>& batch_item_counts, uint32_t num_remaining_patches)
+uint32_t BatchDataProcessor::request(std::deque<uint32_t>& batch_item_counts, const uint32_t num_remaining_patches)
 {
     (void)batch_item_counts;
     (void)num_remaining_patches;
     return 0;
 }
 
-uint32_t BatchDataProcessor::wait_batch(uint32_t index_in_task,
+uint32_t BatchDataProcessor::wait_batch(const uint32_t index_in_task,
                                         std::deque<uint32_t>& batch_item_counts,
-                                        uint32_t num_remaining_patches)
+                                        const uint32_t num_remaining_patches)
 {
     (void)index_in_task;
     (void)batch_item_counts;
@@ -65,7 +65,7 @@ uint32_t BatchDataProcessor::wait_batch(uint32_t index_in_task,
     return 0;
 }
 
-std::shared_ptr<cucim::cache::ImageCacheValue> BatchDataProcessor::wait_for_processing(uint32_t)
+std::shared_ptr<cucim::cache::ImageCacheValue> BatchDataProcessor::wait_for_processing(const uint32_t)
 {
     return std::shared_ptr<cucim::cache::ImageCacheValue>();
 }

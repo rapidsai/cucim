@@ -29,14 +29,14 @@ namespace cucim::loader
 
 ThreadBatchDataLoader::ThreadBatchDataLoader(LoadFunc load_func,
                                              std::unique_ptr<BatchDataProcessor> batch_data_processor,
-                                             cucim::io::Device out_device,
+                                             const cucim::io::Device out_device,
                                              std::unique_ptr<std::vector<int64_t>> location,
                                              std::unique_ptr<std::vector<int64_t>> image_size,
-                                             uint64_t location_len,
-                                             size_t one_raster_size,
-                                             uint32_t batch_size,
-                                             uint32_t prefetch_factor,
-                                             uint32_t num_workers)
+                                             const uint64_t location_len,
+                                             const size_t one_raster_size,
+                                             const uint32_t batch_size,
+                                             const uint32_t prefetch_factor,
+                                             const uint32_t num_workers)
     : load_func_(load_func),
       out_device_(out_device),
       location_(std::move(location)),

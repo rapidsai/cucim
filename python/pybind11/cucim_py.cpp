@@ -525,7 +525,7 @@ py::object py_read_region(const CuImage& cuimg,
 
         py::object region = py::cast(region_ptr);
 
-        // Add `__array_inteface__` or `__cuda_array_interface__` in runtime.
+        // Add `__array_interface__` or `__cuda_array_interface__` in runtime.
         _set_array_interface(region);
 
         return region;
@@ -541,7 +541,7 @@ py::object py_associated_image(const CuImage& cuimg, const std::string& name, co
 
         py::object image = py::cast(image_ptr);
 
-        // Add `__array_interace__` or `__cuda_array_interface__` in runtime.
+        // Add `__array_interface__` or `__cuda_array_interface__` in runtime.
         _set_array_interface(image);
 
         return image;
