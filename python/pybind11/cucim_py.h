@@ -29,6 +29,8 @@ namespace cucim
 
 // Forward declarations
 class CuImage;
+template <typename DataType = CuImage>
+class CuImageIterator;
 namespace io
 {
 class Device;
@@ -67,14 +69,22 @@ bool py_is_trace_enabled(py::object /* self */);
 json py_metadata(const CuImage& cuimg);
 py::dict py_resolutions(const CuImage& cuimg);
 py::object py_read_region(const CuImage& cuimg,
-                          std::vector<int64_t>&& location,
+                          const py::iterable& location,
                           std::vector<int64_t>&& size,
                           int16_t level,
+                          uint32_t num_workers,
+                          uint32_t batch_size,
+                          bool drop_last,
+                          uint32_t prefetch_factor,
+                          bool shuffle,
+                          uint64_t seed,
                           const io::Device& device,
                           const py::object& buf,
                           const std::string& shm_name,
                           const py::kwargs& kwargs);
 py::object py_associated_image(const CuImage& cuimg, const std::string& name, const io::Device& device);
+
+py::object py_cuimage_iterator_next(CuImageIterator<CuImage>& it);
 
 void _set_array_interface(const py::object& cuimg_obj);
 } // namespace cucim

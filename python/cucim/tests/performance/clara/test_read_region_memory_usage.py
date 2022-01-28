@@ -18,14 +18,14 @@ import pytest
 from ...util.io import open_image_cucim
 
 
-def test_read_region_cuda_memleak(testimg_tiff_stripe_4096x4096_256):
+def test_read_region_cuda_memleak(testimg_tiff_stripe_4096x4096_256_jpeg):
     import GPUtil
     gpus = GPUtil.getGPUs()
 
     if len(gpus) == 0:
         pytest.skip('No gpu available')
 
-    img = open_image_cucim(testimg_tiff_stripe_4096x4096_256)
+    img = open_image_cucim(testimg_tiff_stripe_4096x4096_256_jpeg)
 
     gpu = gpus[0]
     mem_usage_history = [gpu.memoryUsed]
@@ -38,11 +38,10 @@ def test_read_region_cuda_memleak(testimg_tiff_stripe_4096x4096_256):
 
     print(mem_usage_history)
 
-    # Memory usage difference should be less than 40MB
+    # The difference in memory usage should be less than 180MB.
     # Note: Since we cannot measure GPU memory usage for a process,
-    #       we use a rough number.
-    #       Actual CUDA memory used would be 48MB per iteration (4096x4096x3).
-    assert mem_usage_history[4] - mem_usage_history[1] < 40.0
+    #       we use a rough number (experimentally measured).
+    assert mem_usage_history[4] - mem_usage_history[1] < 180.0
 
 
 def test_read_region_cpu_memleak(testimg_tiff_stripe_4096x4096_256):

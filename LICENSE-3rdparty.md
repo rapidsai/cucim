@@ -85,7 +85,7 @@ DLPack
   - https://github.com/dmlc/dlpack/blob/main/LICENSE
 - Copyright: DLPack Contributors
 
-NVIDIA CUDA TOOLKIT (including libcufile)
+NVIDIA CUDA TOOLKIT (including libcufile/libnvjpeg)
 - License: NVIDIA License
   - https://docs.nvidia.com/cuda/pdf/EULA.pdf
 - Copyright: NVIDIA Corporation
@@ -269,3 +269,9 @@ NVTX (NVIDIA Tool Extension Library)
   - https://raw.githubusercontent.com/NVIDIA/NVTX/release-v3/LICENSE.txt
 - Copyright: NVIDIA Corporation
 - Usage: Support for profiling with NVIDIA Nsight Systems
+
+Taskflow
+- License: MIT License
+  - https://github.com/taskflow/taskflow
+- Copyright: Dr. Tsung-Wei Huang
+- Usage: Threadpool implementation for batch processing.

@@ -40,7 +40,10 @@ struct ImageCacheItemDetail;
 
 struct SharedMemoryImageCacheValue : public ImageCacheValue
 {
-    SharedMemoryImageCacheValue(void* data, uint64_t size, void* user_obj = nullptr);
+    SharedMemoryImageCacheValue(void* data,
+                                uint64_t size,
+                                void* user_obj = nullptr,
+                                const cucim::io::DeviceType device_type = cucim::io::DeviceType::kCPU);
     ~SharedMemoryImageCacheValue() override;
 };
 
@@ -121,19 +124,23 @@ using cache_item_type = boost::interprocess::shared_ptr<
 class SharedMemoryImageCache : public ImageCache
 {
 public:
-    SharedMemoryImageCache(const ImageCacheConfig& config);
+    SharedMemoryImageCache(const ImageCacheConfig& config,
+                           const cucim::io::DeviceType device_type = cucim::io::DeviceType::kCPU);
     ~SharedMemoryImageCache();
 
     const char* type_str() const override;
 
     std::shared_ptr<ImageCacheKey> create_key(uint64_t file_hash, uint64_t index) override;
-    std::shared_ptr<ImageCacheValue> create_value(void* data, uint64_t size) override;
+    std::shared_ptr<ImageCacheValue> create_value(
+        void* data, uint64_t size, const cucim::io::DeviceType device_type = cucim::io::DeviceType::kCPU) override;
 
     void* allocate(std::size_t n) override;
     void lock(uint64_t index) override;
     void unlock(uint64_t index) override;
+    void* mutex(uint64_t index) override;
 
     bool insert(std::shared_ptr<ImageCacheKey>& key, std::shared_ptr<ImageCacheValue>& value) override;
+    void remove_front() override;
 
     uint32_t size() const override;
     uint64_t memory_size() const override;
@@ -155,7 +162,6 @@ public:
 private:
     bool is_list_full() const;
     bool is_memory_full(uint64_t additional_size = 0) const;
-    void remove_front();
     void push_back(cache_item_type<ImageCacheItemDetail>& item);
     bool erase(const std::shared_ptr<ImageCacheKey>& key);
 

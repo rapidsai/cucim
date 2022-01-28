@@ -188,8 +188,10 @@ DEFINE_EVENT(ifd_read, "IFD::read()", io, 255, 255, 0, 0);
 DEFINE_EVENT(ifd_read_slowpath, "IFD::read::slow_path", io, 255, 255, 0, 0);
 DEFINE_EVENT(ifd_read_region_tiles, "IFD::read_region_tiles()", io, 255, 255, 0, 0);
 DEFINE_EVENT(ifd_read_region_tiles_iter, "IFD::read_region_tiles::iter", io, 255, 255, 0, 0);
+DEFINE_EVENT(ifd_read_region_tiles_task, "IFD::read_region_tiles::task", io, 255, 255, 0, 0);
 DEFINE_EVENT(ifd_read_region_tiles_boundary, "IFD::read_region_tiles_boundary()", io, 255, 255, 0, 0);
 DEFINE_EVENT(ifd_read_region_tiles_boundary_iter, "IFD::read_region_tiles_boundary::iter", io, 255, 255, 0, 0);
+DEFINE_EVENT(ifd_read_region_tiles_boundary_task, "IFD::read_region_tiles_boundary::task", io, 255, 255, 0, 0);
 DEFINE_EVENT(ifd_decompression, "IFD::decompression", compute, 255, 0, 255, 0);
 
 DEFINE_EVENT(decoder_libjpeg_turbo_tjAlloc, "libjpeg-turbo::tjAlloc()", memory, 255, 63, 72, 204);

@@ -26,7 +26,8 @@ ImageCacheKey::ImageCacheKey(uint64_t file_hash, uint64_t index) : file_hash(fil
 {
 }
 
-ImageCacheValue::ImageCacheValue(void* data, uint64_t size, void* user_obj) : data(data), size(size), user_obj(user_obj)
+ImageCacheValue::ImageCacheValue(void* data, uint64_t size, void* user_obj, const cucim::io::DeviceType device_type)
+    : data(data), size(size), user_obj(user_obj), device_type(device_type)
 {
 }
 
@@ -36,7 +37,8 @@ ImageCacheValue::operator bool() const
 }
 
 
-ImageCache::ImageCache(const ImageCacheConfig& config, CacheType type) : type_(type), config_(config){};
+ImageCache::ImageCache(const ImageCacheConfig& config, CacheType type, const cucim::io::DeviceType device_type)
+    : type_(type), device_type_(device_type), config_(config){};
 
 CacheType ImageCache::type() const
 {
@@ -46,6 +48,11 @@ CacheType ImageCache::type() const
 const char* ImageCache::type_str() const
 {
     return "nocache";
+}
+
+cucim::io::DeviceType ImageCache::device_type() const
+{
+    return device_type_;
 }
 
 ImageCacheConfig& ImageCache::config()

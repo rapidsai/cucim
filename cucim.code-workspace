@@ -7,6 +7,9 @@
 			"path": "cpp/plugins/cucim.kit.cuslide"
 		},
 		{
+			"path": "cpp/plugins/cucim.kit.cumed"
+		},
+		{
 			"path": "python"
 		}
 	],
@@ -141,7 +144,15 @@
 			"__node_handle": "cpp",
 			"__memory": "cpp",
 			"*.def": "cpp",
-			"__mutex_base": "cpp"
+			"__mutex_base": "cpp",
+			"mprealsupport": "cpp",
+			"compare": "cpp",
+			"concepts": "cpp",
+			"coroutine": "cpp",
+			"numbers": "cpp",
+			"semaphore": "cpp",
+			"stop_token": "cpp",
+			"tensor": "cpp"
 		},
 		// https://vector-of-bool.github.io/docs/vscode-cmake-tools/settings.html
 		"cmake.buildTask": true,
@@ -160,7 +171,6 @@
 				"options": {
 					"cwd": "${workspaceFolder}",
 					"env": {
-						// Workaround the environment variable issue: https://github.com/microsoft/vscode/issues/121470
 						"PATH": "${env:HOME}/.local/bin:${env:PATH}"
 					}
 				},
@@ -179,14 +189,17 @@
 				"type": "shell",
 				"command": "./run build_local all release",
 				"options": {
-					"cwd": "${workspaceFolder}"
+					"cwd": "${workspaceFolder}",
+					"env": {
+						"PATH": "${env:HOME}/.local/bin:${env:PATH}"
+					}
 				},
 				"presentation": {
 					"reveal": "always",
 					"focus": true
 				},
 				"problemMatcher": [],
-				"group": "build",
+				"group": "build"
 			}
 		]
 	},
@@ -210,7 +223,7 @@
 				"environment": [
 					{
 						"name": "LD_LIBRARY_PATH",
-						"value": "${workspaceFolder:cucim}/build-debug/lib:${workspaceFolder:cucim.kit.cuslide}/build-debug/lib:${env:LD_LIBRARY_PATH}"
+						"value": "${workspaceFolder:cucim}/build-debug/lib:${workspaceFolder:cucim.kit.cuslide}/build-debug/lib:${workspaceFolder:cucim.kit.cumed}/build-debug/lib:${env:LD_LIBRARY_PATH}"
 					},
 					{
 						"name": "CUCIM_TEST_PLUGIN_PATH",
@@ -238,7 +251,7 @@
 				"environment": [
 					{
 						"name": "LD_LIBRARY_PATH",
-						"value": "${workspaceFolder:cucim}/build-debug/lib:${workspaceFolder:cucim.kit.cuslide}/build-debug/lib:${env:LD_LIBRARY_PATH}"
+						"value": "${workspaceFolder:cucim}/build-debug/lib:${workspaceFolder:cucim.kit.cuslide}/build-debug/lib:${workspaceFolder:cucim.kit.cumed}/build-debug/lib:${env:LD_LIBRARY_PATH}"
 					},
 					{
 						"name": "CUCIM_TEST_PLUGIN_PATH",
@@ -259,9 +272,10 @@
 				"name": "(gdb) cucim_py",
 				"type": "cppdbg",
 				"request": "launch",
-				"program": "/usr/bin/python3",
+				"program": "/usr/bin/bash",
 				// https://github.com/catchorg/Catch2/blob/devel/docs/command-line.md#specifying-which-tests-to-run
 				"args": [
+					"${workspaceFolder:cucim}/scripts/debug_python",
 					"${workspaceFolder:python}/cucim/src/localtest.py",
 				],
 				"stopAtEntry": false,
@@ -269,7 +283,7 @@
 				"environment": [
 					{
 						"name": "LD_LIBRARY_PATH",
-						"value": "${workspaceFolder:cucim}/build-debug/lib:${workspaceFolder:cucim.kit.cuslide}/build-debug/lib:${env:LD_LIBRARY_PATH}"
+						"value": "${workspaceFolder:cucim}/build-debug/lib:${workspaceFolder:cucim.kit.cuslide}/build-debug/lib:${workspaceFolder:cucim.kit.cumed}/build-debug/lib:${env:LD_LIBRARY_PATH}"
 					},
 					{
 						"name": "CUCIM_TEST_PLUGIN_PATH",
@@ -301,7 +315,7 @@
 				"environment": [
 					{
 						"name": "LD_LIBRARY_PATH",
-						"value": "${workspaceFolder:cucim}/build-debug/lib:${workspaceFolder:cucim.kit.cuslide}/build-debug/lib:${env:LD_LIBRARY_PATH}"
+						"value": "${workspaceFolder:cucim}/build-debug/lib:${workspaceFolder:cucim.kit.cuslide}/build-debug/lib:${workspaceFolder:cucim.kit.cumed}/build-debug/lib:${env:LD_LIBRARY_PATH}"
 					}
 				],
 				"console": "externalTerminal",

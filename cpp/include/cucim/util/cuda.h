@@ -17,7 +17,10 @@
 #ifndef CUCIM_UTIL_CUDA_H
 #define CUCIM_UTIL_CUDA_H
 
-#include <cuda_runtime.h>
+
+#if CUCIM_SUPPORT_CUDA
+#    include <cuda_runtime.h>
+#endif
 
 #define CUDA_TRY(stmt)                                                                                                 \
     {                                                                                                                  \
@@ -26,6 +29,38 @@
         {                                                                                                              \
             fmt::print(stderr, "[Error] CUDA Runtime call {} in line {} of file {} failed with '{}' ({}).\n", #stmt,   \
                        __LINE__, __FILE__, cudaGetErrorString(cuda_status), cuda_status);                              \
+        }                                                                                                              \
+    }
+
+#define CUDA_ERROR(stmt)                                                                                               \
+    {                                                                                                                  \
+        cuda_status = stmt;                                                                                            \
+        if (cudaSuccess != cuda_status)                                                                                \
+        {                                                                                                              \
+            throw std::runtime_error(                                                                                  \
+                fmt::format("[Error] CUDA Runtime call {} in line {} of file {} failed with '{}' ({}).\n", #stmt,      \
+                            __LINE__, __FILE__, cudaGetErrorString(cuda_status), cuda_status));                        \
+        }                                                                                                              \
+    }
+
+#define NVJPEG_TRY(stmt)                                                                                               \
+    {                                                                                                                  \
+        nvjpegStatus_t _nvjpeg_status = stmt;                                                                          \
+        if (_nvjpeg_status != NVJPEG_STATUS_SUCCESS)                                                                   \
+        {                                                                                                              \
+            fmt::print("[Error] NVJPEG call {} in line {} of file {} failed with the error code {}.\n", #stmt,         \
+                __LINE__, __FILE__, _nvjpeg_status));                                                                  \
+        }                                                                                                              \
+    }
+
+#define NVJPEG_ERROR(stmt)                                                                                             \
+    {                                                                                                                  \
+        nvjpegStatus_t _nvjpeg_status = stmt;                                                                          \
+        if (_nvjpeg_status != NVJPEG_STATUS_SUCCESS)                                                                   \
+        {                                                                                                              \
+            throw std::runtime_error(                                                                                  \
+                fmt::format("[Error] NVJPEG call {} in line {} of file {} failed with the error code {}.\n", #stmt,    \
+                            __LINE__, __FILE__, _nvjpeg_status));                                                      \
         }                                                                                                              \
     }
 

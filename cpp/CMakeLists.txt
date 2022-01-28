@@ -44,6 +44,7 @@ add_library(${CUCIM_PACKAGE_NAME}
         include/cucim/codec/base64.h
         include/cucim/codec/hash_function.h
         include/cucim/codec/methods.h
+        include/cucim/concurrent/threadpool.h
         include/cucim/config/config.h
         include/cucim/core/framework.h
         include/cucim/core/plugin.h
@@ -58,6 +59,9 @@ add_library(${CUCIM_PACKAGE_NAME}
         include/cucim/io/device.h
         include/cucim/io/device_type.h
         include/cucim/io/format/image_format.h
+        include/cucim/loader/batch_data_processor.h
+        include/cucim/loader/thread_batch_data_loader.h
+        include/cucim/loader/tile_info.h
         include/cucim/logger/logger.h
         include/cucim/logger/timer.h
         include/cucim/macros/defines.h
@@ -85,6 +89,7 @@ add_library(${CUCIM_PACKAGE_NAME}
         src/cache/image_cache_shared_memory.h
         src/cache/image_cache_shared_memory.cpp
         src/codec/base64.cpp
+        src/concurrent/threadpool.cpp
         src/config/config.cpp
         src/core/cucim_framework.h
         src/core/cucim_framework.cpp
@@ -98,6 +103,8 @@ add_library(${CUCIM_PACKAGE_NAME}
         src/io/device.cpp
         src/io/device_type.cpp
         src/io/format/image_format.cpp
+        src/loader/batch_data_processor.cpp
+        src/loader/thread_batch_data_loader.cpp
         src/logger/logger.cpp
         src/logger/timer.cpp
         src/memory/memory_manager.cpp
@@ -144,6 +151,7 @@ target_compile_definitions(${CUCIM_PACKAGE_NAME}
 target_link_libraries(${CUCIM_PACKAGE_NAME}
         PUBLIC
             ${CMAKE_DL_LIBS}
+            Threads::Threads # -lpthread
             $<BUILD_INTERFACE:deps::fmt>
             $<INSTALL_INTERFACE:cucim::fmt-header-only>
         PRIVATE
@@ -154,6 +162,7 @@ target_link_libraries(${CUCIM_PACKAGE_NAME}
             deps::boost-header-only
             deps::json
             deps::nvtx3
+            deps::taskflow
         )
 
 if (CUCIM_STATIC_GDS)

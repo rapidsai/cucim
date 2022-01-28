@@ -65,8 +65,7 @@ static void test_cucim(benchmark::State& state)
 
         cucim::CuImage image = cucim::CuImage(input_path.c_str());
         cucim::CuImage region =
-            image.read_region({ request_location[0], request_location[1] }, { state.range(0), state.range(0) }, 0,
-                              cucim::DimIndices{}, "cpu", nullptr, "");
+            image.read_region({ request_location[0], request_location[1] }, { state.range(0), state.range(0) }, 0);
     }
 }
 
