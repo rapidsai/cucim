@@ -77,7 +77,7 @@ static bool CUCIM_ABI checker_is_valid(const char* file_name, const char* buf, s
     return false;
 }
 
-static CuCIMFileHandle CUCIM_ABI parser_open(const char* file_path_)
+static CuCIMFileHandle_share CUCIM_ABI parser_open(const char* file_path_)
 {
     const cucim::filesystem::Path& file_path = file_path_;
 
@@ -95,13 +95,13 @@ static CuCIMFileHandle CUCIM_ABI parser_open(const char* file_path_)
         throw std::invalid_argument(fmt::format("Cannot open {}!", file_path));
     }
 
-    // TODO: make file_handle_ object to pointer
-    auto file_handle = CuCIMFileHandle{ fd, nullptr, FileHandleType::kPosix, file_path_cstr, nullptr };
+    auto file_handle = std::make_shared<CuCIMFileHandle>(fd, nullptr, FileHandleType::kPosix, file_path_cstr, nullptr);
+    CuCIMFileHandle_share handle = new std::shared_ptr<CuCIMFileHandle>(std::move(file_handle));
 
-    return file_handle;
+    return handle;
 }
 
-static bool CUCIM_ABI parser_parse(CuCIMFileHandle* handle, cucim::io::format::ImageMetadataDesc* out_metadata_desc)
+static bool CUCIM_ABI parser_parse(CuCIMFileHandle_ptr handle, cucim::io::format::ImageMetadataDesc* out_metadata_desc)
 {
     (void)handle;
     if (!out_metadata_desc || !out_metadata_desc->handle)
@@ -210,13 +210,10 @@ static bool CUCIM_ABI parser_parse(CuCIMFileHandle* handle, cucim::io::format::I
     return true;
 }
 
-static bool CUCIM_ABI parser_close(CuCIMFileHandle* handle)
+static bool CUCIM_ABI parser_close(CuCIMFileHandle_ptr handle_ptr)
 {
-    if (handle->path)
-    {
-        cucim_free(handle->path);
-        handle->path = nullptr;
-    }
+    CuCIMFileHandle* handle = reinterpret_cast<CuCIMFileHandle*>(handle_ptr);
+
     if (handle->client_data)
     {
         // TODO: comment out and reinterpret_cast when needed.
@@ -227,12 +224,13 @@ static bool CUCIM_ABI parser_close(CuCIMFileHandle* handle)
     return true;
 }
 
-static bool CUCIM_ABI reader_read(const CuCIMFileHandle* handle,
+static bool CUCIM_ABI reader_read(const CuCIMFileHandle_ptr handle_ptr,
                                   const cucim::io::format::ImageMetadataDesc* metadata,
                                   const cucim::io::format::ImageReaderRegionRequestDesc* request,
                                   cucim::io::format::ImageDataDesc* out_image_data,
                                   cucim::io::format::ImageMetadataDesc* out_metadata_desc = nullptr)
 {
+    CuCIMFileHandle* handle = reinterpret_cast<CuCIMFileHandle*>(handle_ptr);
     (void)handle;
     (void)metadata;
 
@@ -378,10 +376,11 @@ static bool CUCIM_ABI reader_read(const CuCIMFileHandle* handle,
     return true;
 }
 
-static bool CUCIM_ABI writer_write(const CuCIMFileHandle* handle,
+static bool CUCIM_ABI writer_write(const CuCIMFileHandle_ptr handle_ptr,
                                    const cucim::io::format::ImageMetadataDesc* metadata,
                                    const cucim::io::format::ImageDataDesc* image_data)
 {
+    CuCIMFileHandle* handle = reinterpret_cast<CuCIMFileHandle*>(handle_ptr);
     (void)handle;
     (void)metadata;
     (void)image_data;

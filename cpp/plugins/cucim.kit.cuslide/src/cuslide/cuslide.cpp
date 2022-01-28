@@ -82,15 +82,20 @@ static bool CUCIM_ABI checker_is_valid(const char* file_name, const char* buf, s
     return false;
 }
 
-static CuCIMFileHandle CUCIM_ABI parser_open(const char* file_path)
+static CuCIMFileHandle_share CUCIM_ABI parser_open(const char* file_path)
 {
     auto tif = new cuslide::tiff::TIFF(file_path, O_RDONLY);
     tif->construct_ifds();
-    return tif->file_handle();
+    // Move the ownership of the file handle object to the caller (CuImage).
+    auto handle_t = tif->file_handle();
+    tif->file_handle() = nullptr;
+    CuCIMFileHandle_share handle = new std::shared_ptr<CuCIMFileHandle>(handle_t);
+    return handle;
 }
 
-static bool CUCIM_ABI parser_parse(CuCIMFileHandle* handle, cucim::io::format::ImageMetadataDesc* out_metadata_desc)
+static bool CUCIM_ABI parser_parse(CuCIMFileHandle_ptr handle_ptr, cucim::io::format::ImageMetadataDesc* out_metadata_desc)
 {
+    CuCIMFileHandle* handle = reinterpret_cast<CuCIMFileHandle*>(handle_ptr);
     if (!out_metadata_desc || !out_metadata_desc->handle)
     {
         throw std::runtime_error("out_metadata_desc shouldn't be nullptr!");
@@ -237,30 +242,34 @@ static bool CUCIM_ABI parser_parse(CuCIMFileHandle* handle, cucim::io::format::I
     return true;
 }
 
-static bool CUCIM_ABI parser_close(CuCIMFileHandle* handle)
+static bool CUCIM_ABI parser_close(CuCIMFileHandle_ptr handle_ptr)
 {
+    CuCIMFileHandle* handle = reinterpret_cast<CuCIMFileHandle*>(handle_ptr);
+
     auto tif = static_cast<cuslide::tiff::TIFF*>(handle->client_data);
     delete tif;
     handle->client_data = nullptr;
     return true;
 }
 
-static bool CUCIM_ABI reader_read(const CuCIMFileHandle* handle,
+static bool CUCIM_ABI reader_read(const CuCIMFileHandle_ptr handle_ptr,
                                   const cucim::io::format::ImageMetadataDesc* metadata,
                                   const cucim::io::format::ImageReaderRegionRequestDesc* request,
                                   cucim::io::format::ImageDataDesc* out_image_data,
                                   cucim::io::format::ImageMetadataDesc* out_metadata = nullptr)
 {
+    CuCIMFileHandle* handle = reinterpret_cast<CuCIMFileHandle*>(handle_ptr);
     auto tif = static_cast<cuslide::tiff::TIFF*>(handle->client_data);
     bool result = tif->read(metadata, request, out_image_data, out_metadata);
 
     return result;
 }
 
-static bool CUCIM_ABI writer_write(const CuCIMFileHandle* handle,
+static bool CUCIM_ABI writer_write(const CuCIMFileHandle_ptr handle_ptr,
                                    const cucim::io::format::ImageMetadataDesc* metadata,
                                    const cucim::io::format::ImageDataDesc* image_data)
 {
+    CuCIMFileHandle* handle = reinterpret_cast<CuCIMFileHandle*>(handle_ptr);
     (void)handle;
     (void)metadata;
     (void)image_data;

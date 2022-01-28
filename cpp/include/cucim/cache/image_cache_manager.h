@@ -20,6 +20,7 @@
 #include "cucim/core/framework.h"
 
 #include "cucim/cache/image_cache.h"
+#include "cucim/io/device_type.h"
 
 namespace cucim::cache
 {
@@ -27,7 +28,7 @@ namespace cucim::cache
 constexpr uint32_t kDefaultTileSize = 256;
 constexpr uint32_t kDefaultPatchSize = 256;
 
-uint32_t EXPORT_VISIBLE preferred_memory_capacity(const std::vector<uint32_t>& image_size,
+uint32_t EXPORT_VISIBLE preferred_memory_capacity(const std::vector<uint64_t>& image_size,
                                                   const std::vector<uint32_t>& tile_size,
                                                   const std::vector<uint32_t>& patch_size,
                                                   uint32_t bytes_per_pixel = 3);
@@ -43,9 +44,11 @@ public:
     void reserve(uint32_t new_memory_capacity);
     void reserve(uint32_t new_memory_capacity, uint32_t new_capacity);
 
+    static std::unique_ptr<ImageCache> create_cache(const ImageCacheConfig& cache_config,
+                                                    const cucim::io::DeviceType device_type = cucim::io::DeviceType::kCPU);
+
 private:
     std::unique_ptr<ImageCache> create_cache() const;
-    std::unique_ptr<ImageCache> create_cache(const ImageCacheConfig& cache_config) const;
 
     std::shared_ptr<ImageCache> cache_;
 };

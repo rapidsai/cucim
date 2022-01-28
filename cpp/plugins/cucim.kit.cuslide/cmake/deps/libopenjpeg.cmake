@@ -38,7 +38,6 @@ if (NOT TARGET deps::libopenjpeg)
     ###########################################################################
     # Build liblcms2 with the source in libopenjpeg
     ###########################################################################
-    message(" ##GG ${deps-libopenjpeg_SOURCE_DIR}")
 
     add_subdirectory(${deps-libopenjpeg_SOURCE_DIR}/thirdparty/liblcms2 ${deps-libopenjpeg_BINARY_DIR}/thirdparty/liblcms2)
 

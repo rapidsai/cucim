@@ -190,7 +190,7 @@ private:
     size_t file_size_ = 0;
     int file_flags_ = -1;
     void* mmap_ptr_ = nullptr;
-    ::CuCIMFileHandle handle_;
+    std::shared_ptr<CuCIMFileHandle> handle_;
 };
 
 } // namespace cucim::filesystem
