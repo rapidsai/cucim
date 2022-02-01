@@ -118,7 +118,7 @@ def main(args):
             continue
         else:
             # image sizes/shapes
-            shape = tuple(args.img_size)
+            shape = tuple(list(map(int,(args.img_size.split(',')))))
 
             # for shape in [(512, 512), (3840, 2160), (3840, 2160, 3), (192, 192, 192)]:
 
@@ -170,7 +170,7 @@ def main(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Benchmarking cuCIM Filters')
     func_name_choices = ['gabor', 'gaussian', 'median', 'rank_order', 'unsharp_mask', 'sobel', 'prewitt', 'scharr', 'roberts', 'roberts_pos_diag', 'roberts_neg_diag', 'farid', 'laplace', 'meijering', 'sato', 'frangi', 'hessian', 'threshold_isodata', 'threshold_otsu', 'threshold_yen', 'threshold_local', 'threshold_li', 'threshold_minimum', 'threshold_mean', 'threshold_triangle', 'threshold_niblack', 'threshold_sauvola', 'apply_hysteresis_threshold', 'threshold_multiotsu']
-    parser.add_argument('-i','--img_size', type=int, nargs="+", help='Size of input image', required=True)
+    parser.add_argument('-i','--img_size', type=str, help='Size of input image', required=True)
     parser.add_argument('-d','--dtype', type=str, help='Dtype of input image', choices = ['fp64','fp32','fp16'], required=True)
     parser.add_argument('-f','--func_name', type=str, help='function to benchmark', choices = func_name_choices, required=True)
     args = parser.parse_args()
