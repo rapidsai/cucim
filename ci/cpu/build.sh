@@ -1,5 +1,5 @@
 #!/bin/bash
-# Copyright (c) 2020, NVIDIA CORPORATION.
+# Copyright (c) 2020-2022, NVIDIA CORPORATION.
 ######################################
 # ucx-py CPU conda build script for CI #
 ######################################
@@ -60,6 +60,9 @@ conda list --show-channel-urls
 # FIX Added to deal with Anancoda SSL verification issues during conda builds
 conda config --set ssl_verify False
 
+# FIXME: Remove
+gpuci_mamba_retry install -c conda-forge boa
+
 ################################################################################
 # BUILD - Conda package builds (conda deps: libcucim)
 ################################################################################
@@ -73,7 +76,7 @@ conda config --set ssl_verify False
 #          /opt/conda/envs/rapids/lib
 
 if [ "$BUILD_LIBCUCIM" == 1 ]; then
-  gpuci_conda_retry build -c conda-forge -c rapidsai-nightly \
+  gpuci_conda_retry mambabuild -c conda-forge -c rapidsai-nightly \
     --dirty \
     --no-remove-work-dir \
     --no-build-id \
@@ -89,7 +92,7 @@ if [ "$BUILD_CUCIM" == 1 ]; then
   # Set libcucim conda build folder for CPU build
   export LIBCUCIM_BLD_PATH=${WORKSPACE}/ci/artifacts/cucim/cpu/.conda-bld
 
-  gpuci_conda_retry build -c ${LIBCUCIM_BLD_PATH} -c conda-forge -c rapidsai-nightly \
+  gpuci_conda_retry mambabuild -c ${LIBCUCIM_BLD_PATH} -c conda-forge -c rapidsai-nightly \
     --python=${PYTHON_VER} \
     --dirty \
     --no-remove-work-dir \

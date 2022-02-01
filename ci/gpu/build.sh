@@ -1,5 +1,5 @@
 #!/bin/bash
-# Copyright (c) 2020, NVIDIA CORPORATION.
+# Copyright (c) 2020-2022, NVIDIA CORPORATION.
 #########################################
 # ucx-py GPU build and test script for CI #
 #########################################
@@ -64,7 +64,9 @@ LIBCUCIM_BLD_PATH=$WORKSPACE/ci/artifacts/cucim/cpu/.conda-bld
 CUCIM_BLD_PATH=/opt/conda/envs/rapids/conda-bld
 mkdir -p ${CUCIM_BLD_PATH}
 
-gpuci_mamba_retry build -c ${LIBCUCIM_BLD_PATH} -c conda-forge -c rapidsai-nightly \
+# TODO: Move boa install to gpuci/rapidsai
+gpuci_mamba_retry install -c conda-forge boa
+gpuci_conda_retry mambabuild -c ${LIBCUCIM_BLD_PATH} -c conda-forge -c rapidsai-nightly \
     --dirty \
     --no-remove-work-dir \
     --croot ${CUCIM_BLD_PATH} \
