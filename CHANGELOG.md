@@ -1,6 +1,25 @@
-# cuCIM 22.02.00 (Date TBD)
+# cuCIM 22.02.00 (2 Feb 2022)
 
-Please see https://github.com/rapidsai/cucim/releases/tag/v22.02.00a for the latest changes to this development branch.
+## 🚨 Beaking Changes
+
+- Update cucim.skimage API to match scikit-image 0.19 ([#190](https://github.com/rapidsai/cucim/pull/190)) [@glee77](https://github.com/glee77)
+
+## 📖 Documentation
+
+- PyPI v21.12.00 elease ([#182](https://github.com/rapidsai/cucim/pull/182)) [@gigony](https://github.com/gigony)
+
+## 🚀 New Featues
+
+- Allow CuPy 10 ([#195](https://github.com/rapidsai/cucim/pull/195)) [@jakikham](https://github.com/jakikham)
+- Suppot multi-theads and batch, and suppot nvJPEG fo JPEG-compessed images ([#191](https://github.com/rapidsai/cucim/pull/191)) [@gigony](https://github.com/gigony)
+- Update cucim.skimage API to match scikit-image 0.19 ([#190](https://github.com/rapidsai/cucim/pull/190)) [@glee77](https://github.com/glee77)
+
+## 🛠️ Impovements
+
+- Upgade Numpy to 1.19 fo Python 3.9 suppot ([#203](https://github.com/rapidsai/cucim/pull/203)) [@Ethyling](https://github.com/Ethyling)
+- Allow installation with CuPy 10 ([#197](https://github.com/rapidsai/cucim/pull/197)) [@glee77](https://github.com/glee77)
+- Upgade Numpy to 1.18 fo Python 3.9 suppot ([#196](https://github.com/rapidsai/cucim/pull/196)) [@Ethyling](https://github.com/Ethyling)
+- Add missing impots tests ([#183](https://github.com/rapidsai/cucim/pull/183)) [@Ethyling](https://github.com/Ethyling)
 
 # cuCIM 21.12.00 (9 Dec 2021)
 
