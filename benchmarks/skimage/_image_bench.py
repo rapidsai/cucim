@@ -166,17 +166,17 @@ class ImageBench(object):
                 rep_kwargs_gpu = self.get_reps(
                     self.func_gpu, self.args_gpu, kw_gpu, duration, cpu=False
                 )
-                perf = repeat(self.func_cpu, self.args_cpu, kw_cpu, **rep_kwargs_cpu)
+                # perf = repeat(self.func_cpu, self.args_cpu, kw_cpu, **rep_kwargs_cpu)
                 perf_gpu = repeat(self.func_gpu, self.args_gpu, kw_gpu, **rep_kwargs_gpu)
-                df.at[index, "GPU accel"] = perf.cpu_times.mean() / perf_gpu.gpu_times.mean()
+                # df.at[index, "GPU accel"] = perf.cpu_times.mean() / perf_gpu.gpu_times.mean()
                 df.at[index, "shape"] = f"{self.shape}"
                 # df.at[index,  "description"] = index
                 df.at[index, "function_name"] = self.function_name
                 df.at[index, "dtype"] = np.dtype(dtype).name
                 df.at[index, "ndim"] = len(self.shape)
 
-                df.at[index, "CPU: host (mean)"] = perf.cpu_times.mean()
-                df.at[index, "CPU: host (std)"] = perf.cpu_times.std()
+                # df.at[index, "CPU: host (mean)"] = perf.cpu_times.mean()
+                # df.at[index, "CPU: host (std)"] = perf.cpu_times.std()
 
                 df.at[index, "GPU: host (mean)"] = perf_gpu.cpu_times.mean()
                 df.at[index, "GPU: host (std)"] = perf_gpu.cpu_times.std()

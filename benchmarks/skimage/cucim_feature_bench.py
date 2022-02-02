@@ -63,7 +63,7 @@ def main(args):
     ]:
 
         if function_name == args.func_name:
-            shape = tuple(args.img_size)
+            shape = tuple(list(map(int,(args.img_size.split(',')))))
         else:
             continue
 
@@ -130,7 +130,7 @@ def main(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Benchmarking cuCIM Feature')
     func_name_choices = ["multiscale_basic_features","canny","daisy","structure_tensor","hessian_matrix","hessian_matrix_det","shape_index","corner_kitchen_rosenfeld","corner_harris","corner_shi_tomasi","corner_foerstner","corner_peaks","match_template"]
-    parser.add_argument('-i','--img_size', type=int, nargs="+", help='Size of input image', required=True)
+    parser.add_argument('-i','--img_size', type=str, help='Size of input image', required=True)
     parser.add_argument('-d','--dtype', type=str, help='Dtype of input image', choices = ['fp64','fp32','fp16'], required=True)
     parser.add_argument('-f','--func_name', type=str, help='function to benchmark', choices = func_name_choices, required=True)
     args = parser.parse_args()
