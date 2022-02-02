@@ -23,19 +23,27 @@
 #include "cucim/filesystem/file_path.h"
 #include "cucim/io/device.h"
 #include "cucim/io/format/image_format.h"
+#include "cucim/loader/thread_batch_data_loader.h"
 #include "cucim/memory/dlpack.h"
 #include "cucim/plugin/image_format.h"
 #include "cucim/profiler/profiler.h"
 
 #include <array>
-#include <set>
-#include <string>
+#include <cstddef> // for std::ptrdiff_t
+#include <iterator> // for std::forward_iterator_tag
 #include <memory>
 #include <mutex>
+#include <set>
+#include <string>
 #include <vector>
 
 namespace cucim
 {
+
+// Forward declarations
+class CuImage;
+template <typename DataType>
+class CuImageIterator;
 
 using DetectedFormat = std::pair<std::string, std::vector<std::string>>;
 using Metadata = std::string;
@@ -154,11 +162,19 @@ public:
 
     ResolutionInfo resolutions() const;
 
+    loader::ThreadBatchDataLoader* loader() const;
+
     memory::DLTContainer container() const;
 
     CuImage read_region(std::vector<int64_t>&& location,
                         std::vector<int64_t>&& size,
                         uint16_t level = 0,
+                        uint32_t num_workers = 0,
+                        uint32_t batch_size = 1,
+                        bool drop_last = false,
+                        uint32_t prefetch_factor = 2,
+                        bool shuffle = false,
+                        uint64_t seed = 0,
                         const DimIndices& region_dim_indices = {},
                         const io::Device& device = "cpu",
                         DLTensor* buf = nullptr,
@@ -170,6 +186,22 @@ public:
     void save(std::string file_path) const;
 
     void close();
+
+    /////////////////////////////
+    // Iterator implementation //
+    /////////////////////////////
+
+    using iterator = CuImageIterator<CuImage>;
+    using const_iterator = CuImageIterator<const CuImage>;
+
+    friend class CuImageIterator<CuImage>;
+    friend class CuImageIterator<const CuImage>;
+
+    iterator begin();
+    iterator end();
+
+    const_iterator begin() const;
+    const_iterator end() const;
 
 private:
     using Mutex = std::mutex;
@@ -191,13 +223,48 @@ private:
 
     mutable Mutex mutex_;
     cucim::io::format::ImageFormatDesc* image_format_ = nullptr;
-    CuCIMFileHandle file_handle_{};
+    std::shared_ptr<CuCIMFileHandle> file_handle_;
     io::format::ImageMetadataDesc* image_metadata_ = nullptr;
     io::format::ImageDataDesc* image_data_ = nullptr;
     bool is_loaded_ = false;
     DimIndices dim_indices_{};
     std::set<std::string> associated_images_;
 };
+
+template <typename DataType>
+class EXPORT_VISIBLE CuImageIterator
+{
+public:
+    using iterator_category = std::forward_iterator_tag;
+    using difference_type = std::ptrdiff_t;
+    using value_type = DataType;
+    using pointer = value_type*;
+    using reference = std::shared_ptr<value_type>;
+
+    CuImageIterator(std::shared_ptr<DataType> cuimg, bool ending = false);
+    CuImageIterator(const CuImageIterator<DataType>& it) = default;
+
+    reference operator*() const;
+    pointer operator->();
+    CuImageIterator<DataType>& operator++();
+    CuImageIterator<DataType> operator++(int);
+    bool operator==(const CuImageIterator<DataType>& other);
+    bool operator!=(const CuImageIterator<DataType>& other);
+
+    int64_t index(); /// batch index
+    uint64_t size() const; /// number of batches
+
+private:
+    void increase_index_();
+
+    std::shared_ptr<DataType> cuimg_;
+    void* loader_ = nullptr;
+    int64_t batch_index_ = 0;
+    uint64_t total_batch_count_ = 0;
+};
+
+template class CuImageIterator<CuImage>;
+template class CuImageIterator<const CuImage>;
 
 } // namespace cucim
 

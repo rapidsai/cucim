@@ -1,7 +1,8 @@
 import cupy as cp
 import numpy as np
 import pytest
-from cupy.testing import assert_array_almost_equal, assert_array_equal
+from cupy.testing import (assert_allclose, assert_array_almost_equal,
+                          assert_array_equal)
 from skimage import data
 from skimage.draw import disk
 from skimage.filters._multiotsu import (_get_multiotsu_thresh_indices,
@@ -9,14 +10,14 @@ from skimage.filters._multiotsu import (_get_multiotsu_thresh_indices,
 
 # from cupyx.scipy import ndimage as ndi
 from cucim.skimage import util
-from cucim.skimage._shared import testing
+from cucim.skimage._shared._dependency_checks import has_mpl
 from cucim.skimage._shared._warnings import expected_warnings
+from cucim.skimage._shared.utils import _supported_float_type
 from cucim.skimage.color import rgb2gray
 from cucim.skimage.exposure import histogram
-from cucim.skimage.filters.thresholding import _cross_entropy  # _mean_std,
-from cucim.skimage.filters.thresholding import (threshold_isodata,
-                                                threshold_li, threshold_local,
-                                                threshold_mean,
+from cucim.skimage.filters.thresholding import (_cross_entropy,
+                                                threshold_isodata, threshold_li,
+                                                threshold_local, threshold_mean,
                                                 threshold_minimum,
                                                 threshold_multiotsu,
                                                 threshold_niblack,
@@ -48,6 +49,7 @@ class TestSimpleImage:
         with pytest.raises(RuntimeError):
             threshold_minimum(self.image)
 
+    @pytest.mark.skipif(not has_mpl, reason="matplotlib not installed")
     def test_try_all_threshold(self):
         fig, ax = try_all_threshold(self.image)
         all_texts = [axis.texts for axis in ax if axis.texts != []]
@@ -132,7 +134,8 @@ class TestSimpleImage:
         assert all(0.49 < threshold_isodata(imfloat, nbins=1024,
                                             return_all=True))
 
-    def test_threshold_local_gaussian(self):
+    @pytest.mark.parametrize('ndim', [2, 3])
+    def test_threshold_local_gaussian(self, ndim):
         # fmt: off
         ref = cp.array(
             [[False, False, False, False,  True],  # noqa
@@ -141,14 +144,27 @@ class TestSimpleImage:
              [False,  True,  True, False, False],  # noqa
              [ True,  True, False, False, False]]  # noqa
         )
-        out = threshold_local(self.image, 3, method='gaussian')
-        assert_array_equal(ref, self.image > out)
+        if ndim == 2:
+            image = self.image
+            block_sizes = [3, (3,) * image.ndim]
+        else:
+            image = cp.stack((self.image, ) * 5, axis=-1)
+            ref = cp.stack((ref, ) * 5, axis=-1)
+            block_sizes = [3, (3,) * image.ndim,
+                           (3,) * (image.ndim - 1) + (1,)]
 
-        out = threshold_local(self.image, 3, method='gaussian',
-                              param=1.0 / 3.0)
-        assert_array_equal(ref, self.image > out)
+        for block_size in block_sizes:
+            out = threshold_local(image, block_size, method='gaussian',
+                                  mode='reflect')
+            assert_array_equal(ref, image > out)
 
-    def test_threshold_local_mean(self):
+        out = threshold_local(image, 3, method='gaussian', mode='reflect',
+                              param=1 / 3)
+        assert_array_equal(ref, image > out)
+
+    @pytest.mark.parametrize('ndim', [2, 3])
+    def test_threshold_local_mean(self, ndim):
+
         # fmt: off
         ref = cp.array(
             [[False, False, False, False,  True],  # noqa
@@ -157,12 +173,29 @@ class TestSimpleImage:
              [False,  True,  True, False, False],  # noqa
              [ True,  True, False, False, False]]  # noqa
         )
-        # fmt: on
-        out = threshold_local(self.image, 3, method="mean")
-        assert_array_equal(ref, self.image > out)
+        if ndim == 2:
+            image = self.image
+            block_sizes = [3, (3,) * image.ndim]
+        else:
+            image = cp.stack((self.image, ) * 5, axis=-1)
+            ref = cp.stack((ref, ) * 5, axis=-1)
+            # Given the same data at each z location, the following block sizes
+            # will all give an equivalent result.
+            block_sizes = [3, (3,) * image.ndim,
+                           (3,) * (image.ndim - 1) + (1,)]
+        for block_size in block_sizes:
+            out = threshold_local(image, block_size, method='mean',
+                                  mode='reflect')
+            assert_array_equal(ref, image > out)
 
-    def test_threshold_local_median(self):
-        # fmt: off
+    @pytest.mark.parametrize('block_size', [(3, ), (3, 3, 3)])
+    def test_threshold_local_invalid_block_size(self, block_size):
+        # len(block_size) != image.ndim
+        with pytest.raises(ValueError):
+            threshold_local(self.image, block_size, method='mean')
+
+    @pytest.mark.parametrize('ndim', [2, 3])
+    def test_threshold_local_median(self, ndim):
         ref = cp.array(
             [[False, False, False, False,  True],  # noqa
              [False, False,  True, False, False],  # noqa
@@ -170,9 +203,13 @@ class TestSimpleImage:
              [False, False,  True,  True, False],  # noqa
              [False,  True, False, False, False]]  # noqa
         )
-        # fmt: on
-        out = threshold_local(self.image, 3, method="median")
-        assert_array_equal(ref, self.image > out)
+        if ndim == 2:
+            image = self.image
+        else:
+            image = cp.stack((self.image, ) * 5, axis=-1)
+            ref = cp.stack((ref, ) * 5, axis=-1)
+        out = threshold_local(image, 3, method='median', mode='reflect')
+        assert_array_equal(ref, image > out)
 
     def test_threshold_local_median_constant_mode(self):
         out = threshold_local(self.image, 3, method='median',
@@ -263,6 +300,19 @@ def test_otsu_camera_image_counts():
     camera = util.img_as_ubyte(camerad)
     counts, bin_centers = histogram(camera.ravel(), 256, source_range="image")
     assert 101 < threshold_otsu(hist=counts) < 103
+
+
+def test_otsu_zero_count_histogram():
+    """Issue #5497.
+
+    As the histogram returned by np.bincount starts with zero,
+    it resulted in NaN-related issues.
+    """
+    x = cp.array([1, 2])
+
+    t1 = threshold_otsu(x)
+    t2 = threshold_otsu(hist=cp.bincount(x))
+    assert t1 == t2
 
 
 def test_otsu_coins_image():
@@ -362,7 +412,7 @@ def test_li_arbitrary_start_point():
 
 
 def test_li_negative_inital_guess():
-    with testing.raises(ValueError):
+    with pytest.raises(ValueError):
         threshold_li(coinsd, initial_guess=-5)
 
 
@@ -413,7 +463,7 @@ def test_yen_coins_image_as_float():
 
 def test_local_even_block_size_error():
     img = camerad
-    with testing.raises(ValueError):
+    with pytest.raises(ValueError):
         threshold_local(img, block_size=4)
 
 
@@ -521,6 +571,13 @@ def test_threshold_minimum_histogram():
     assert_array_equal(threshold, 85)
 
 
+def test_threshold_minimum_deprecated_max_iter_kwarg():
+    camera = util.img_as_ubyte(camerad)
+    hist = histogram(camera.ravel(), 256, source_range='image')
+    with expected_warnings(["`max_iter` is a deprecated argument"]):
+        threshold_minimum(hist=hist, max_iter=5000)
+
+
 @cp.testing.with_requires("scikit-image>=0.18")
 def test_threshold_minimum_counts():
     camera = util.img_as_ubyte(camerad)
@@ -540,7 +597,7 @@ def test_threshold_minimum_synthetic():
 
 def test_threshold_minimum_failure():
     img = cp.zeros((16 * 16), dtype=cp.uint8)
-    with testing.raises(RuntimeError):
+    with pytest.raises(RuntimeError):
         threshold_minimum(img)
 
 
@@ -632,6 +689,28 @@ def test_triangle_flip():
 #     cp.testing.assert_allclose(s, expected_s)
 
 
+@pytest.mark.parametrize(
+    "threshold_func", [threshold_local, threshold_niblack, threshold_sauvola],
+)
+@pytest.mark.parametrize("dtype", [cp.uint8, cp.int16, cp.float16, cp.float32])
+def test_variable_dtypes(threshold_func, dtype):
+    r = 255 * cp.random.rand(32, 16)
+    r = r.astype(dtype, copy=False)
+
+    kwargs = {}
+    if threshold_func is threshold_local:
+        kwargs = dict(block_size=9)
+    elif threshold_func is threshold_sauvola:
+        kwargs = dict(r=128)
+
+    # use double precision result as a reference
+    expected = threshold_func(r.astype(float), **kwargs)
+
+    out = threshold_func(r, **kwargs)
+    assert out.dtype == _supported_float_type(dtype)
+    assert_allclose(out, expected, rtol=1e-5, atol=1e-5)
+
+
 def test_niblack_sauvola_pathological_image():
     # For certain values, floating point error can cause
     # E(X^2) - (E(X))^2 to be negative, and taking the square root of this
@@ -685,13 +764,13 @@ def test_multiotsu_astro_image():
 
 def test_multiotsu_more_classes_then_values():
     img = cp.ones((10, 10), dtype=cp.uint8)
-    with testing.raises(ValueError):
+    with pytest.raises(ValueError):
         threshold_multiotsu(img, classes=2)
     img[:, 3:] = 2
-    with testing.raises(ValueError):
+    with pytest.raises(ValueError):
         threshold_multiotsu(img, classes=3)
     img[:, 6:] = 3
-    with testing.raises(ValueError):
+    with pytest.raises(ValueError):
         threshold_multiotsu(img, classes=4)
 
 
@@ -729,3 +808,19 @@ def test_multiotsu_lut():
             result = _get_multiotsu_thresh_indices(prob, classes - 1)
 
             assert_array_equal(result_lut, result)
+
+
+def test_multiotsu_missing_img_and_hist():
+    with pytest.raises(Exception):
+        threshold_multiotsu()
+
+
+def test_multiotsu_hist_parameter():
+    for classes in [2, 3, 4]:
+        for name in ['camera', 'moon', 'coins', 'text', 'clock', 'page']:
+            img = cp.array(getattr(data, name)())
+            sk_hist = histogram(img, nbins=256)
+            #
+            thresh_img = threshold_multiotsu(img, classes)
+            thresh_sk_hist = threshold_multiotsu(classes=classes, hist=sk_hist)
+            assert cp.allclose(thresh_img, thresh_sk_hist)

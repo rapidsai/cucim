@@ -28,6 +28,13 @@ for function_name, fixed_kwargs, var_kwargs, allow_color, allow_nd in [
         True,
     ),  # scale handled in loop below
     (
+        "resize_local_mean",
+        dict(preserve_range=True),
+        {},
+        True,
+        True,
+    ),  # scale handled in loop below
+    (
         "rescale",
         dict(preserve_range=True),
         dict(order=[0, 1, 3], mode=["reflect"], anti_aliasing=[True]),
@@ -87,15 +94,15 @@ for function_name, fixed_kwargs, var_kwargs, allow_color, allow_nd in [
         ndim_spatial = ndim - 1 if shape[-1] == 3 else ndim
 
         if function_name in ["rescale", "warp_polar", "pyramid_gaussian", "pyramid_laplacian"]:
-            fixed_kwargs["multichannel"] = ndim_spatial < ndim
+            fixed_kwargs["channel_axis"] = -1 if ndim_spatial < ndim else None
 
         function_is_generator = function_name in ["pyramid_gaussian", "pyramid_laplacian"]
 
-        if function_name in ["rescale", "resize"]:
+        if function_name in ["rescale", "resize", "resize_local_mean"]:
             scales = [0.75, 1.25]
             if function_name == "rescale":
                 var_kwargs["scale"] = [(s,) * ndim_spatial for s in scales]
-            elif function_name == "resize":
+            elif function_name.startswith("resize"):
                 out_shapes = [[int(s_ * s) for s_ in shape] for s in scales]
                 if ndim_spatial < ndim:
                     # don't resize along channels dimension

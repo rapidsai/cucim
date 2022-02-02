@@ -49,7 +49,10 @@ struct PerProcessImageCacheItem;
 
 struct PerProcessImageCacheValue : public ImageCacheValue
 {
-    PerProcessImageCacheValue(void* data, uint64_t size, void* user_obj = nullptr);
+    PerProcessImageCacheValue(void* data,
+                              uint64_t size,
+                              void* user_obj = nullptr,
+                              const cucim::io::DeviceType device_type = cucim::io::DeviceType::kCPU);
     ~PerProcessImageCacheValue() override;
 };
 
@@ -64,19 +67,23 @@ struct PerProcessImageCacheValue : public ImageCacheValue
 class PerProcessImageCache : public ImageCache
 {
 public:
-    PerProcessImageCache(const ImageCacheConfig& config);
+    PerProcessImageCache(const ImageCacheConfig& config,
+                         const cucim::io::DeviceType device_type = cucim::io::DeviceType::kCPU);
     ~PerProcessImageCache();
 
     const char* type_str() const override;
 
     std::shared_ptr<ImageCacheKey> create_key(uint64_t file_hash, uint64_t index) override;
-    std::shared_ptr<ImageCacheValue> create_value(void* data, uint64_t size) override;
+    std::shared_ptr<ImageCacheValue> create_value(
+        void* data, uint64_t size, const cucim::io::DeviceType device_type = cucim::io::DeviceType::kCPU) override;
 
     void* allocate(std::size_t n) override;
     void lock(uint64_t index) override;
     void unlock(uint64_t index) override;
+    void* mutex(uint64_t index) override;
 
     bool insert(std::shared_ptr<ImageCacheKey>& key, std::shared_ptr<ImageCacheValue>& value) override;
+    void remove_front() override;
 
     uint32_t size() const override;
     uint64_t memory_size() const override;
@@ -98,7 +105,6 @@ public:
 private:
     bool is_list_full() const;
     bool is_memory_full(uint64_t additional_size = 0) const;
-    void remove_front();
     void push_back(std::shared_ptr<PerProcessImageCacheItem>& item);
     bool erase(const std::shared_ptr<ImageCacheKey>& key);
 

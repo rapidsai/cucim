@@ -126,6 +126,7 @@ superbuild_depend(json)
 superbuild_depend(libcuckoo)
 superbuild_depend(boost-header-only)
 superbuild_depend(nvtx3)
+superbuild_depend(taskflow)
 
 ################################################################################
 # Define some names

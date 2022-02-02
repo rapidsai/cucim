@@ -3,7 +3,7 @@ import math
 import cupy as cp
 from cupyx.scipy import ndimage as ndi
 
-from .._shared.utils import check_nD
+from .._shared.utils import _supported_float_type, check_nD, warn
 
 __all__ = ["gabor_kernel", "gabor"]
 
@@ -16,7 +16,7 @@ def _sigma_prefactor(bandwidth):
 
 
 def gabor_kernel(frequency, theta=0, bandwidth=1, sigma_x=None, sigma_y=None,
-                 n_stds=3, offset=0, *, float_dtype=cp.float64):
+                 n_stds=3, offset=0, dtype=None, *, float_dtype=None):
     """Return complex 2D Gabor filter kernel.
 
     Gabor kernel is a Gaussian kernel modulated by a complex harmonic function.
@@ -46,6 +46,8 @@ def gabor_kernel(frequency, theta=0, bandwidth=1, sigma_x=None, sigma_y=None,
         deviations
     offset : float, optional
         Phase offset of harmonic function in radians.
+    dtype : {np.complex64, np.complex128}
+        Specifies if the filter is single or double precision complex.
 
     Returns
     -------
@@ -81,34 +83,44 @@ def gabor_kernel(frequency, theta=0, bandwidth=1, sigma_x=None, sigma_y=None,
     if sigma_y is None:
         sigma_y = _sigma_prefactor(bandwidth) / frequency
 
+    if float_dtype is not None:
+        if dtype is not None:
+            raise ValueError(
+                "Cannot set both dtype and float_dtype. Please use dtype "
+                "instead (float_dtype is deprecated)."
+            )
+        warn("`float_dtype` is deprecated: use `dtype` instead.")
+        cplx_dtype = cp.promote_types(float_dtype, cp.complex64)
+        dtype = cplx_dtype
+    elif dtype is None:
+        dtype = cp.complex128
+
+    if cp.dtype(dtype).kind != 'c':
+        raise ValueError("dtype must be complex")
+
+    ct = math.cos(theta)
+    st = math.sin(theta)
     x0 = math.ceil(
-        max(
-            abs(n_stds * sigma_x * math.cos(theta)),
-            abs(n_stds * sigma_y * math.sin(theta)),
-            1,
-        )
+        max(abs(n_stds * sigma_x * ct), abs(n_stds * sigma_y * st), 1)
     )
     y0 = math.ceil(
-        max(
-            abs(n_stds * sigma_y * math.cos(theta)),
-            abs(n_stds * sigma_x * math.sin(theta)),
-            1,
-        )
+        max(abs(n_stds * sigma_y * ct), abs(n_stds * sigma_x * st), 1)
     )
-    y, x = cp.mgrid[-y0:y0 + 1, -x0:x0 + 1]
+    y, x = cp.meshgrid(cp.arange(-y0, y0 + 1),
+                       cp.arange(-x0, x0 + 1),
+                       indexing='ij',
+                       sparse=True)
+    rotx = x * ct + y * st
+    roty = -x * st + y * ct
 
-    rotx = x * math.cos(theta) + y * math.sin(theta)
-    roty = -x * math.sin(theta) + y * math.cos(theta)
-
-    cplx_dtype = cp.promote_types(float_dtype, cp.complex64)
-    g = cp.empty(y.shape, dtype=cplx_dtype)
-    g[:] = cp.exp(
-        -0.5 * ((rotx * rotx) / sigma_x ** 2 + (roty * roty) / sigma_y ** 2)
+    g = cp.empty(roty.shape, dtype=dtype)
+    cp.exp(
+        -0.5 * ((rotx * rotx) / sigma_x ** 2 + (roty * roty) / sigma_y ** 2),
+        out=g,
     )
     g /= 2 * math.pi * sigma_x * sigma_y
     g *= cp.exp(1j * (2 * math.pi * frequency * rotx + offset))
 
-    assert g.dtype == cplx_dtype
     return g
 
 
@@ -186,10 +198,19 @@ def gabor(image, frequency, theta=0, bandwidth=1, sigma_x=None,
     >>> io.show()                          # doctest: +SKIP
     """  # noqa
     check_nD(image, 2)
-    float_dtype = cp.promote_types(image.dtype, cp.float16)
+    # do not cast integer types to float!
+    if image.dtype.kind == 'f':
+        float_dtype = _supported_float_type(image.dtype)
+        image = image.astype(float_dtype, copy=False)
+        kernel_dtype = cp.promote_types(image.dtype, cp.complex64)
+    else:
+        kernel_dtype = cp.complex128
+
     g = gabor_kernel(frequency, theta, bandwidth, sigma_x, sigma_y, n_stds,
-                     offset, float_dtype=float_dtype)
+                     offset, dtype=kernel_dtype)
 
-    filtered = ndi.convolve(image, g, mode=mode, cval=cval)
+    # separate real and imaginary calls in order to preserve integer dtypes
+    filtered_real = ndi.convolve(image, g.real, mode=mode, cval=cval)
+    filtered_imag = ndi.convolve(image, g.imag, mode=mode, cval=cval)
 
-    return filtered.real, filtered.imag
+    return filtered_real, filtered_imag

@@ -1,9 +1,14 @@
+import functools
+
 import cupy as cp
 
-from .. import img_as_float
+from cucim.skimage.util import img_as_float
+
+from .._shared import utils
+from .._shared.utils import _supported_float_type
 
 
-def _denoise_tv_chambolle_nd(image, weight=0.1, eps=2.0e-4, n_iter_max=200):
+def _denoise_tv_chambolle_nd(image, weight=0.1, eps=2.0e-4, max_num_iter=200):
     """Perform total-variation denoising on n-dimensional images.
 
     Parameters
@@ -19,7 +24,7 @@ def _denoise_tv_chambolle_nd(image, weight=0.1, eps=2.0e-4, n_iter_max=200):
 
             (E_(n-1) - E_n) < eps * E_0
 
-    n_iter_max : int, optional
+    max_num_iter : int, optional
         Maximal number of iterations used for the optimization.
 
     Returns
@@ -30,7 +35,6 @@ def _denoise_tv_chambolle_nd(image, weight=0.1, eps=2.0e-4, n_iter_max=200):
     Notes
     -----
     Rudin, Osher and Fatemi algorithm.
-
     """
 
     ndim = image.ndim
@@ -41,7 +45,7 @@ def _denoise_tv_chambolle_nd(image, weight=0.1, eps=2.0e-4, n_iter_max=200):
     slices_g = [slice(None)] * (ndim + 1)
     slices_d = [slice(None)] * ndim
     slices_p = [slice(None)] * (ndim + 1)
-    while i < n_iter_max:
+    while i < max_num_iter:
         if i > 0:
             # d will be the (negative) divergence of p
             d = -p.sum(0)
@@ -87,8 +91,11 @@ def _denoise_tv_chambolle_nd(image, weight=0.1, eps=2.0e-4, n_iter_max=200):
     return out
 
 
-def denoise_tv_chambolle(image, weight=0.1, eps=2.0e-4, n_iter_max=200,
-                         multichannel=False):
+@utils.deprecate_kwarg({'n_iter_max': 'max_num_iter'}, removed_version="1.0",
+                       deprecated_version="0.19.2")
+@utils.deprecate_multichannel_kwarg(multichannel_position=4)
+def denoise_tv_chambolle(image, weight=0.1, eps=2.0e-4, max_num_iter=200,
+                         multichannel=False, *, channel_axis=None):
     """Perform total-variation denoising on n-dimensional images.
 
     Parameters
@@ -106,12 +113,17 @@ def denoise_tv_chambolle(image, weight=0.1, eps=2.0e-4, n_iter_max=200,
 
             (E_(n-1) - E_n) < eps * E_0
 
-    n_iter_max : int, optional
+    max_num_iter : int, optional
         Maximal number of iterations used for the optimization.
     multichannel : bool, optional
         Apply total-variation denoising separately for each channel. This
         option should be true for color images, otherwise the denoising is
-        also applied in the channels dimension.
+        also applied in the channels dimension. This argument is deprecated:
+        specify `channel_axis` instead.
+    channel_axis : int or None, optional
+        If None, the image is assumed to be a grayscale (single channel) image.
+        Otherwise, this parameter indicates which axis of the array corresponds
+        to channels.
 
     Returns
     -------
@@ -144,29 +156,38 @@ def denoise_tv_chambolle(image, weight=0.1, eps=2.0e-4, n_iter_max=200,
     --------
     2D example on astronaut image:
 
-    >>> from skimage import color, data
-    >>> img = color.rgb2gray(data.astronaut())[:50, :50]
-    >>> img += 0.5 * img.std() * np.random.randn(*img.shape)
+    >>> import cupy as cp
+    >>> from cucim.skimage import color
+    >>> from skimage import data
+    >>> img = color.rgb2gray(cp.array(data.astronaut()[:50, :50]))
+    >>> img += 0.5 * img.std() * cp.random.randn(*img.shape)
     >>> denoised_img = denoise_tv_chambolle(img, weight=60)
 
     3D example on synthetic data:
 
-    >>> x, y, z = np.ogrid[0:20, 0:20, 0:20]
+    >>> x, y, z = cp.ogrid[0:20, 0:20, 0:20]
     >>> mask = (x - 22)**2 + (y - 20)**2 + (z - 17)**2 < 8**2
     >>> mask = mask.astype(float)
-    >>> mask += 0.2*np.random.randn(*mask.shape)
+    >>> mask += 0.2*cp.random.randn(*mask.shape)
     >>> res = denoise_tv_chambolle(mask, weight=100)
 
     """
+
     im_type = image.dtype
     if not im_type.kind == 'f':
         image = img_as_float(image)
 
-    if multichannel:
+    # enforce float16->float32 and float128->float64
+    float_dtype = _supported_float_type(image.dtype)
+    image = image.astype(float_dtype, copy=False)
+
+    if channel_axis is not None:
+        channel_axis = channel_axis % image.ndim
+        _at = functools.partial(utils.slice_at_axis, axis=channel_axis)
         out = cp.zeros_like(image)
-        for c in range(image.shape[-1]):
-            out[..., c] = _denoise_tv_chambolle_nd(image[..., c], weight, eps,
-                                                   n_iter_max)
+        for c in range(image.shape[channel_axis]):
+            out[_at(c)] = _denoise_tv_chambolle_nd(image[_at(c)], weight, eps,
+                                                   max_num_iter)
     else:
-        out = _denoise_tv_chambolle_nd(image, weight, eps, n_iter_max)
+        out = _denoise_tv_chambolle_nd(image, weight, eps, max_num_iter)
     return out

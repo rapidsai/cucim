@@ -1,12 +1,12 @@
 from ._skeletonize import thin
 from .binary import (binary_closing, binary_dilation, binary_erosion,
                      binary_opening)
-from .grey import (black_tophat, closing, dilation, erosion, opening,
+from .footprints import (ball, cube, diamond, disk, octagon, octahedron,
+                         rectangle, square, star)
+from .gray import (black_tophat, closing, dilation, erosion, opening,
                    white_tophat)
-from .greyreconstruct import reconstruction
+from .grayreconstruct import reconstruction
 from .misc import remove_small_holes, remove_small_objects
-from .selem import (ball, cube, diamond, disk, octagon, octahedron, rectangle,
-                    square, star)
 
 __all__ = [
     "binary_erosion",

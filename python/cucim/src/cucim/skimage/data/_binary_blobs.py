@@ -18,9 +18,12 @@ def binary_blobs(length=512, blob_size_fraction=0.1, n_dim=2,
     volume_fraction : float, default 0.5
         Fraction of image pixels covered by the blobs (where the output is 1).
         Should be in [0, 1].
-    seed : int, optional
-        Seed to initialize the random number generator.
-        If `None`, a random seed from the operating system is used.
+    seed : {None, int, `cupy.random.Generator`}, optional
+        If `seed` is None the `cupy.random.Generator` singleton is used.
+        If `seed` is an int, a new ``Generator`` instance is used,
+        seeded with `seed`.
+        If `seed` is already a ``Generator`` instance then that instance is
+        used.
 
     Returns
     -------
@@ -51,13 +54,13 @@ def binary_blobs(length=512, blob_size_fraction=0.1, n_dim=2,
     """
     # filters is quite an expensive import since it imports all of scipy.signal
     # We lazy import here
-    from ..filters import gaussian
+    from .._shared.filters import gaussian
 
-    rs = cp.random.RandomState(seed)
+    rs = cp.random.default_rng(seed)
     shape = tuple([length] * n_dim)
     mask = cp.zeros(shape)
     n_pts = max(int(1. / blob_size_fraction) ** n_dim, 1)
-    points = (length * rs.rand(n_dim, n_pts)).astype(int)
+    points = (length * rs.random((n_dim, n_pts))).astype(int)
     mask[tuple(indices for indices in points)] = 1
     mask = gaussian(mask, sigma=0.25 * length * blob_size_fraction)
     threshold = cp.percentile(mask, 100 * (1 - volume_fraction))

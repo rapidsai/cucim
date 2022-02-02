@@ -19,12 +19,14 @@
 
 #include "types.h"
 
-#include <cucim/io/format/image_format.h>
-#include <cucim/io/device.h>
-//#include <tiffio.h>
-
 #include <memory>
 #include <vector>
+
+#include <cucim/concurrent/threadpool.h>
+#include <cucim/io/format/image_format.h>
+#include <cucim/io/device.h>
+#include <cucim/loader/thread_batch_data_loader.h>
+//#include <tiffio.h>
 
 namespace cuslide::tiff
 {
@@ -40,21 +42,23 @@ public:
 
     static bool read_region_tiles(const TIFF* tiff,
                                   const IFD* ifd,
-                                  const int64_t sx,
-                                  const int64_t sy,
+                                  const int64_t* location,
+                                  const int64_t location_index,
                                   const int64_t w,
                                   const int64_t h,
                                   void* raster,
-                                  const cucim::io::Device& out_device);
+                                  const cucim::io::Device& out_device,
+                                  cucim::loader::ThreadBatchDataLoader* loader);
 
     static bool read_region_tiles_boundary(const TIFF* tiff,
                                            const IFD* ifd,
-                                           const int64_t sx,
-                                           const int64_t sy,
+                                           const int64_t* location,
+                                           const int64_t location_index,
                                            const int64_t w,
                                            const int64_t h,
                                            void* raster,
-                                           const cucim::io::Device& out_device);
+                                           const cucim::io::Device& out_device,
+                                           cucim::loader::ThreadBatchDataLoader* loader);
 
     bool read(const TIFF* tiff,
               const cucim::io::format::ImageMetadataDesc* metadata,
@@ -87,6 +91,9 @@ public:
     uint32_t image_piece_count() const;
     const std::vector<uint64_t>& image_piece_offsets() const;
     const std::vector<uint64_t>& image_piece_bytecounts() const;
+
+    size_t pixel_size_nbytes() const;
+    size_t tile_raster_size_nbytes() const;
 
     // Hidden methods for benchmarking
     void write_offsets_(const char* file_path);

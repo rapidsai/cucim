@@ -23,11 +23,10 @@ References
 import math
 
 import cupy as cp
+import cupyx.scipy.fft as fft
 import numpy as np
 
-from .._shared.fft import fftmodule as fft
-
-__keywords__ = "fft, Fourier Transform, orthonormal, unitary"
+from .._shared.utils import _supported_float_type
 
 
 def ufftn(inarray, dim=None):
@@ -52,7 +51,7 @@ def ufftn(inarray, dim=None):
     >>> input = cp.ones((3, 3, 3))
     >>> output = ufftn(input)
     >>> cp.allclose(cp.sum(input) / cp.sqrt(input.size), output[0, 0, 0])
-    True
+    array(True)
     >>> output.shape
     (3, 3, 3)
     """
@@ -84,7 +83,7 @@ def uifftn(inarray, dim=None):
     >>> input = cp.ones((3, 3, 3))
     >>> output = uifftn(input)
     >>> cp.allclose(cp.sum(input) / cp.sqrt(input.size), output[0, 0, 0])
-    True
+    array(True)
     >>> output.shape
     (3, 3, 3)
     """
@@ -125,7 +124,7 @@ def urfftn(inarray, dim=None):
     >>> input = cp.ones((5, 5, 5))
     >>> output = urfftn(input)
     >>> cp.allclose(cp.sum(input) / cp.sqrt(input.size), output[0, 0, 0])
-    True
+    array(True)
     >>> output.shape
     (5, 5, 3)
     """
@@ -170,7 +169,7 @@ def uirfftn(inarray, dim=None, shape=None):
     >>> input = cp.ones((5, 5, 5))
     >>> output = uirfftn(urfftn(input), shape=input.shape)
     >>> cp.allclose(input, output)
-    True
+    array(True)
     >>> output.shape
     (5, 5, 5)
     """
@@ -206,7 +205,7 @@ def ufft2(inarray):
     >>> output = ufft2(input)
     >>> cp.allclose(cp.sum(input[1, ...]) / cp.sqrt(input[1, ...].size),
     ...               output[1, 0, 0])
-    True
+    array(True)
     >>> output.shape
     (10, 128, 128)
     """
@@ -239,7 +238,7 @@ def uifft2(inarray):
     >>> output = uifft2(input)
     >>> cp.allclose(cp.sum(input[1, ...]) / cp.sqrt(input[1, ...].size),
     ...               output[0, 0, 0])
-    True
+    array(True)
     >>> output.shape
     (10, 128, 128)
     """
@@ -274,7 +273,7 @@ def urfft2(inarray):
     >>> output = urfft2(input)
     >>> cp.allclose(cp.sum(input[1,...]) / cp.sqrt(input[1,...].size),
     ...               output[1, 0, 0])
-    True
+    array(True)
     >>> output.shape
     (10, 128, 65)
     """
@@ -312,7 +311,7 @@ def uirfft2(inarray, shape=None):
     >>> input = cp.ones((10, 128, 128))
     >>> output = uirfftn(urfftn(input), shape=input.shape)
     >>> cp.allclose(input, output)
-    True
+    array(True)
     >>> output.shape
     (10, 128, 128)
     """
@@ -341,9 +340,9 @@ def image_quad_norm(inarray):
     >>> import cupy as cp
     >>> input = cp.ones((5, 5))
     >>> image_quad_norm(ufft2(input)) == cp.sum(cp.abs(input)**2)
-    True
+    array(True)
     >>> image_quad_norm(ufft2(input)) == image_quad_norm(urfft2(input))
-    True
+    array(True)
     """
     # If there is a Hermitian symmetry
     abs_sq = cp.abs(inarray)
@@ -391,7 +390,7 @@ def ir2tf(imp_resp, shape, dim=None, is_real=True):
     --------
     >>> import cupy as cp
     >>> cp.all(cp.array([[4, 0], [0, 0]]) == ir2tf(cp.ones((2, 2)), (2, 2)))
-    True
+    array(True)
     >>> ir2tf(cp.ones((2, 2)), (512, 512)).shape == (512, 257)
     True
     >>> ir2tf(cp.ones((2, 2)), (512, 512), is_real=False).shape == (512, 512)
@@ -407,7 +406,7 @@ def ir2tf(imp_resp, shape, dim=None, is_real=True):
     if not dim:
         dim = imp_resp.ndim
     # Zero padding and fill
-    irpadded_dtype = imp_resp.dtype if imp_resp.dtype.kind == 'f' else float
+    irpadded_dtype = _supported_float_type(imp_resp.dtype)
     irpadded = cp.zeros(shape, dtype=irpadded_dtype)
     irpadded[tuple([slice(0, s) for s in imp_resp.shape])] = imp_resp
     # Roll for zero convention of the fft to avoid the phase
@@ -417,10 +416,9 @@ def ir2tf(imp_resp, shape, dim=None, is_real=True):
             irpadded = cp.roll(irpadded,
                                shift=-math.floor(axis_size / 2),
                                axis=axis)
-    if is_real:
-        return fft.rfftn(irpadded, axes=range(-dim, 0))
-    else:
-        return fft.fftn(irpadded, axes=range(-dim, 0))
+    func = fft.rfftn if is_real else fft.fftn
+    out = func(irpadded, axes=(range(-dim, 0)))
+    return out
 
 
 def laplacian(ndim, shape, is_real=True, *, dtype=None):
@@ -451,9 +449,9 @@ def laplacian(ndim, shape, is_real=True, *, dtype=None):
     >>> import cupy as cp
     >>> tf, ir = laplacian(2, (32, 32))
     >>> cp.all(ir == cp.array([[0, -1, 0], [-1, 4, -1], [0, -1, 0]]))
-    True
+    array(True)
     >>> cp.all(tf == ir2tf(ir, (32, 32)))
-    True
+    array(True)
     """
     if dtype is None:
         dtype = cp.float64 if is_real else cp.complex128

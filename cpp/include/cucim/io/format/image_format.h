@@ -160,6 +160,7 @@ struct ImageDataDesc
 {
     DLTensor container;
     char* shm_name;
+    void* loader;
 };
 
 struct ImageCheckerDesc
@@ -183,7 +184,7 @@ struct ImageParserDesc
      * @param file_path
      * @return
      */
-    CuCIMFileHandle(CUCIM_ABI* open)(const char* file_path);
+    CuCIMFileHandle_share(CUCIM_ABI* open)(const char* file_path);
 
     /**
      *
@@ -191,26 +192,36 @@ struct ImageParserDesc
      * @param out_metadata
      * @return
      */
-    bool(CUCIM_ABI* parse)(CuCIMFileHandle* handle, ImageMetadataDesc* out_metadata);
+    bool(CUCIM_ABI* parse)(CuCIMFileHandle_ptr handle, ImageMetadataDesc* out_metadata);
 
     /**
      *
      * @param handle
      * @return
      */
-    bool(CUCIM_ABI* close)(CuCIMFileHandle* handle);
+    bool(CUCIM_ABI* close)(CuCIMFileHandle_ptr handle);
 };
 
 struct ImageReaderRegionRequestDesc
 {
-    int64_t* location;
-    int64_t* size;
-    uint16_t level;
-    DimIndicesDesc region_dim_indices;
-    char* associated_image_name;
-    char* device;
-    DLTensor* buf;
-    char* shm_name;
+    int64_t* location = nullptr;
+    void* location_unique = nullptr;
+    int64_t* size = nullptr;
+    void* size_unique = nullptr;
+    uint64_t location_len = 1;
+    int32_t size_ndim = 2;
+    uint16_t level = 0;
+    uint32_t num_workers = 0;
+    uint32_t batch_size = 1;
+    bool drop_last = false;
+    uint32_t prefetch_factor = 2;
+    bool shuffle = false;
+    uint64_t seed = 0;
+    DimIndicesDesc region_dim_indices{};
+    char* associated_image_name = nullptr;
+    char* device = nullptr;
+    DLTensor* buf = nullptr;
+    char* shm_name = nullptr;
 };
 
 struct ImageReaderDesc
@@ -223,7 +234,7 @@ struct ImageReaderDesc
      * @param out_image_metadata needed for associated_image
      * @return
      */
-    bool(CUCIM_ABI* read)(const CuCIMFileHandle* handle,
+    bool(CUCIM_ABI* read)(const CuCIMFileHandle_ptr handle,
                           const ImageMetadataDesc* metadata,
                           const ImageReaderRegionRequestDesc* request,
                           ImageDataDesc* out_image_data,
@@ -239,7 +250,7 @@ struct ImageWriterDesc
      * @param image_data
      * @return
      */
-    bool(CUCIM_ABI* write)(const CuCIMFileHandle* handle,
+    bool(CUCIM_ABI* write)(const CuCIMFileHandle_ptr handle,
                            const ImageMetadataDesc* metadata,
                            const ImageDataDesc* image_data);
 };

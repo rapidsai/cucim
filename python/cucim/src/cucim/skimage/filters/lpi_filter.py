@@ -5,9 +5,9 @@
 
 import cupy as cp
 import numpy as np
+from cupyx.scipy import fft
 
-from .._shared.fft import fftmodule as fft
-from .._shared.utils import check_nD
+from .._shared.utils import _supported_float_type, check_nD
 
 eps = np.finfo(float).eps
 
@@ -34,7 +34,7 @@ def _pad(data, shape):
     shape : (2,) tuple
 
     """
-    out = cp.zeros(shape)
+    out = cp.zeros(shape, dtype=data.dtype)
     out[tuple(slice(0, n) for n in data.shape)] = data
     return out
 
@@ -86,6 +86,9 @@ class LPIFilter2D(object):
         dshape += dshape % 2 == 0  # all filter dimensions must be uneven
         oshape = np.array(data.shape) * 2 - 1
 
+        float_dtype = _supported_float_type(data.dtype)
+        data = data.astype(float_dtype, copy=False)
+
         if self._cache is None or np.any(self._cache.shape != oshape):
             coords = cp.mgrid[[slice(0, float(n)) for n in dshape]]
             # this steps over two sets of coordinates,
@@ -93,6 +96,7 @@ class LPIFilter2D(object):
             for k, coord in enumerate(coords):
                 coord -= (dshape[k] - 1) / 2.0
             coords = coords.reshape(2, -1).T  # coordinate pairs (r,c)
+            coords = coords.astype(float_dtype, copy=False)
 
             f = self.impulse_response(coords[:, 0], coords[:, 1],
                                       **self.filter_params).reshape(dshape)

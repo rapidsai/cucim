@@ -110,9 +110,9 @@ def relabel_sequential(label_field, offset=1):
     >>> cp.array(inv)
     array([ 0,  1,  5,  8, 42, 99])
     >>> (fw[label_field] == relab).all()
-    True
+    array(True)
     >>> (inv[relab] == label_field).all()
-    True
+    array(True)
     >>> relab, fw, inv = relabel_sequential(label_field, offset=5)
     >>> relab
     array([5, 5, 6, 6, 7, 9, 8])

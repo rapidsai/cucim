@@ -29,7 +29,7 @@
 namespace cucim::cache
 {
 
-uint32_t preferred_memory_capacity(const std::vector<uint32_t>& image_size,
+uint32_t preferred_memory_capacity(const std::vector<uint64_t>& image_size,
                                    const std::vector<uint32_t>& tile_size,
                                    const std::vector<uint32_t>& patch_size,
                                    uint32_t bytes_per_pixel)
@@ -47,7 +47,9 @@ uint32_t preferred_memory_capacity(const std::vector<uint32_t>& image_size,
 
     // The maximal number of tiles (y-axis) overapped with the given patch
     uint32_t patch_down_count =
-        std::min(image_size[1] + (tile_size[1] - 1), patch_size[1] + (tile_size[1] - 1)) / tile_size[1] + 1;
+        std::min(image_size[1] + (tile_size[1] - 1), static_cast<uint64_t>(patch_size[1] + (tile_size[1] - 1))) /
+            tile_size[1] +
+        1;
 
     // (tile_accross_count) x (tile width) x (tile_height) x (patch_down_count) x (bytes per pixel)
     uint64_t bytes_needed =
@@ -95,14 +97,8 @@ void ImageCacheManager::reserve(uint32_t new_memory_capacity, uint32_t new_capac
     cache_->reserve(cache_config);
 }
 
-std::unique_ptr<ImageCache> ImageCacheManager::create_cache() const
-{
-    ImageCacheConfig& cache_config = cucim::CuImage::get_config()->cache();
-
-    return create_cache(cache_config);
-}
-
-std::unique_ptr<ImageCache> ImageCacheManager::create_cache(const ImageCacheConfig& cache_config) const
+std::unique_ptr<ImageCache> ImageCacheManager::create_cache(const ImageCacheConfig& cache_config,
+                                                            const cucim::io::DeviceType device_type)
 {
     PROF_SCOPED_RANGE(PROF_EVENT(image_cache_create_cache));
     switch (cache_config.type)
@@ -110,12 +106,19 @@ std::unique_ptr<ImageCache> ImageCacheManager::create_cache(const ImageCacheConf
     case CacheType::kNoCache:
         return std::make_unique<EmptyImageCache>(cache_config);
     case CacheType::kPerProcess:
-        return std::make_unique<PerProcessImageCache>(cache_config);
+        return std::make_unique<PerProcessImageCache>(cache_config, device_type);
     case CacheType::kSharedMemory:
-        return std::make_unique<SharedMemoryImageCache>(cache_config);
+        return std::make_unique<SharedMemoryImageCache>(cache_config, device_type);
     default:
         return std::make_unique<EmptyImageCache>(cache_config);
     }
+}
+
+std::unique_ptr<ImageCache> ImageCacheManager::create_cache() const
+{
+    ImageCacheConfig& cache_config = cucim::CuImage::get_config()->cache();
+
+    return create_cache(cache_config);
 }
 
 } // namespace cucim::cache

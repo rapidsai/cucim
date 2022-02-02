@@ -154,8 +154,11 @@ struct ImageCacheItemDetail
     deleter_type<SharedMemoryImageCacheValue> value;
 };
 
-SharedMemoryImageCacheValue::SharedMemoryImageCacheValue(void* data, uint64_t size, void* user_obj)
-    : ImageCacheValue(data, size, user_obj){};
+SharedMemoryImageCacheValue::SharedMemoryImageCacheValue(void* data,
+                                                         uint64_t size,
+                                                         void* user_obj,
+                                                         const cucim::io::DeviceType device_type)
+    : ImageCacheValue(data, size, user_obj, device_type){};
 
 SharedMemoryImageCacheValue::~SharedMemoryImageCacheValue()
 {
@@ -169,8 +172,8 @@ SharedMemoryImageCacheValue::~SharedMemoryImageCacheValue()
     }
 };
 
-SharedMemoryImageCache::SharedMemoryImageCache(const ImageCacheConfig& config)
-    : ImageCache(config, CacheType::kSharedMemory),
+SharedMemoryImageCache::SharedMemoryImageCache(const ImageCacheConfig& config, const cucim::io::DeviceType device_type)
+    : ImageCache(config, CacheType::kSharedMemory, device_type),
       segment_(create_segment(config)),
       //   mutex_array_(nullptr, shared_mem_deleter<boost::interprocess::interprocess_mutex>(segment_)),
       size_nbytes_(nullptr, shared_mem_deleter<std::atomic<uint64_t>>(segment_)),
@@ -189,6 +192,12 @@ SharedMemoryImageCache::SharedMemoryImageCache(const ImageCacheConfig& config)
     const uint32_t& capacity = config.capacity;
     const uint32_t& mutex_pool_capacity = config.mutex_pool_capacity;
     const bool& record_stat = config.record_stat;
+
+    if (device_type != cucim::io::DeviceType::kCPU)
+    {
+        throw std::runtime_error(
+            fmt::format("[Error] SharedMemoryImageCache doesn't support other memory type other than CPU memory!\n"));
+    }
 
     try
     {
@@ -282,11 +291,13 @@ std::shared_ptr<ImageCacheKey> SharedMemoryImageCache::create_key(uint64_t file_
 
     return std::shared_ptr<ImageCacheKey>(key.get().get(), null_deleter<decltype(key)>(key));
 }
-std::shared_ptr<ImageCacheValue> SharedMemoryImageCache::create_value(void* data, uint64_t size)
+std::shared_ptr<ImageCacheValue> SharedMemoryImageCache::create_value(void* data,
+                                                                      uint64_t size,
+                                                                      const cucim::io::DeviceType device_type)
 {
     auto value = boost::interprocess::make_managed_shared_ptr(
         segment_->find_or_construct<SharedMemoryImageCacheValue>(boost::interprocess::anonymous_instance)(
-            data, size, &*segment_),
+            data, size, &*segment_, device_type),
         *segment_);
 
     return std::shared_ptr<ImageCacheValue>(value.get().get(), null_deleter<decltype(value)>(value));
@@ -333,6 +344,11 @@ void SharedMemoryImageCache::unlock(uint64_t index)
     mutex_array_[index % *mutex_pool_capacity_].unlock();
 }
 
+void* SharedMemoryImageCache::mutex(uint64_t index)
+{
+    return &mutex_array_[index % *mutex_pool_capacity_];
+}
+
 bool SharedMemoryImageCache::insert(std::shared_ptr<ImageCacheKey>& key, std::shared_ptr<ImageCacheValue>& value)
 {
     if (value->size > *capacity_nbytes_ || *capacity_ < 1)
@@ -357,6 +373,36 @@ bool SharedMemoryImageCache::insert(std::shared_ptr<ImageCacheKey>& key, std::sh
         push_back(item);
     }
     return succeed;
+}
+
+void SharedMemoryImageCache::remove_front()
+{
+    while (true)
+    {
+        uint32_t head = (*list_head_).load(std::memory_order_relaxed);
+        uint32_t tail = (*list_tail_).load(std::memory_order_relaxed);
+        if (head != tail)
+        {
+            // Remove front by increasing head
+            if ((*list_head_)
+                    .compare_exchange_weak(
+                        head, (head + 1) % (*list_capacity_), std::memory_order_release, std::memory_order_relaxed))
+            {
+                auto& head_item = (*list_)[head];
+                if (head_item) // it is possible that head_item is nullptr
+                {
+                    (*size_nbytes_).fetch_sub(head_item->value->size, std::memory_order_relaxed);
+                    hashmap_->erase(head_item->key);
+                    (*list_)[head].reset(); // decrease refcount
+                    break;
+                }
+            }
+        }
+        else
+        {
+            break; // already empty
+        }
+    }
 }
 
 uint32_t SharedMemoryImageCache::size() const
@@ -505,36 +551,6 @@ bool SharedMemoryImageCache::is_memory_full(uint64_t additional_size) const
     else
     {
         return false;
-    }
-}
-
-void SharedMemoryImageCache::remove_front()
-{
-    while (true)
-    {
-        uint32_t head = (*list_head_).load(std::memory_order_relaxed);
-        uint32_t tail = (*list_tail_).load(std::memory_order_relaxed);
-        if (head != tail)
-        {
-            // Remove front by increasing head
-            if ((*list_head_)
-                    .compare_exchange_weak(
-                        head, (head + 1) % (*list_capacity_), std::memory_order_release, std::memory_order_relaxed))
-            {
-                auto& head_item = (*list_)[head];
-                if (head_item) // it is possible that head_item is nullptr
-                {
-                    (*size_nbytes_).fetch_sub(head_item->value->size, std::memory_order_relaxed);
-                    hashmap_->erase(head_item->key);
-                    (*list_)[head].reset(); // decrease refcount
-                    break;
-                }
-            }
-        }
-        else
-        {
-            break; // already empty
-        }
     }
 }
 

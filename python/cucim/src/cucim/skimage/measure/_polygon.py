@@ -2,12 +2,6 @@
 #       choose_conv_method for > 1d has been implemented.
 import cupy as cp
 
-import cucim.skimage._vendored
-
-# from cupyx.scipy import signal
-
-signal = cucim.skimage._vendored
-
 
 def approximate_polygon(coords, tolerance):
     """Approximate a polygonal chain with the specified tolerance.
@@ -138,6 +132,8 @@ def subdivide_polygon(coords, degree=2, preserve_ends=False):
     ----------
     .. [1] http://mrl.nyu.edu/publications/subdiv-course2000/coursenotes00.pdf
     """
+    from cucim.skimage import _vendored as signal
+
     if degree not in _SUBDIVISION_MASKS:
         raise ValueError("Invalid B-Spline degree. Only degree 1 - 7 is "
                          "supported.")

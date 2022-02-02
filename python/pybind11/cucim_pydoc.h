@@ -258,6 +258,16 @@ Returns:
 
 }; // namespace CuImage
 
+namespace CuImageIterator
+{
+
+// CuImageIterator(std::shared_ptr<DataType> cuimg, bool ending = false);
+PYDOC(CuImageIterator, R"doc(
+Constructor of CuImageIterator.
+)doc")
+
+} // namespace CuImageIterator
+
 } // namespace cucim::doc
 
 #endif // PYCUCIM_CUCIM_PYDOC_H

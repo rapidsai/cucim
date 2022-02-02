@@ -70,6 +70,8 @@ endif()
 
 # Find CUDAToolkit as rmm depends on it
 find_package(CUDAToolkit REQUIRED)
+# For Threads::Threads
+find_package(Threads REQUIRED)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED YES)
