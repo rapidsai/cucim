@@ -1,6 +1,25 @@
 
 # Changelog (See [Release Notes](https://github.com/rapidsai/cucim/wiki/Release-Notes))
 
+## [22.02.00](https://github.com/rapidsai/cucim/wiki/release_notes_v22.02.00)
+
+- [New/Breaking] Update cucim.skimage API to match scikit-image 0.19 ([#190](https://github.com/rapidsai/cucim/pull/190)) [@glee77](https://github.com/glee77)
+- [Bug] Fix a bug in [v21.12.01](https://github.com/rapidsai/cucim/wiki/release_notes_v21.12.01) ([#191](https://github.com/rapidsai/cucim/pull/191)) [@gigony](https://github.com/gigony)
+  - Fix GPU memory leak when using nvJPEG API (when `device='cuda'` parameter is used in `read_region` method).
+- [Bug] Fix segfault for preferred_memory_capacity in Python 3.9+ ([#214](https://github.com/rapidsai/cucim/pull/214)) [@gigony](https://github.com/gigony)
+- [Doc] PyPI v21.12.00 release ([#182](https://github.com/rapidsai/cucim/pull/182)) [@gigony](https://github.com/gigony)
+- [New] Allow CuPy 10 ([#195](https://github.com/rapidsai/cucim/pull/195)) [@jakikham](https://github.com/jakikham)
+- [New] Support multi-threads and batch, and support nvJPEG for JPEG-compressed images ([#191](https://github.com/rapidsai/cucim/pull/191)) [@gigony](https://github.com/gigony)
+- [New] Update cucim.skimage API to match scikit-image 0.19 ([#190](https://github.com/rapidsai/cucim/pull/190)) [@glee77](https://github.com/glee77)
+- [Update] Add missing imports tests ([#183](https://github.com/rapidsai/cucim/pull/183)) [@Ethyling](https://github.com/Ethyling)
+- [Update] Allow installation with CuPy 10 ([#197](https://github.com/rapidsai/cucim/pull/197)) [@glee77](https://github.com/glee77)
+- [Update] Upgrade Numpy to 1.18 for Python 3.9 support ([#196](https://github.com/rapidsai/cucim/pull/196)) [@Ethyling](https://github.com/Ethyling)
+- [Update] Upgrade Numpy to 1.19 for Python 3.9 support ([#203](https://github.com/rapidsai/cucim/pull/203)) [@Ethyling](https://github.com/Ethyling)
+
+## [21.12.01](https://github.com/rapidsai/cucim/wiki/release_notes_v21.12.01)
+
+- [New] Supporting Multithreading and Batch Processing ([#149](https://github.com/rapidsai/cucim/issues/149)) [@gigony](https://github.com/gigony)
+
 ## [21.12.00](https://github.com/rapidsai/cucim/wiki/release_notes_v21.12.00)
 
 - [New] Support Aperio SVS with CPU LZW and jpeg2k decoder ([#141](https://github.com/rapidsai/cucim/pull/141)) [@gigony](https://github.com/gigony)
@@ -39,6 +58,11 @@
 - [Doc] Forward-merge branch-21.08 to branch-21.10 ([#88](https://github.com/rapidsai/cucim/pull/88)) [@jakirkham](https://github.com/jakirkham)
 - [Doc] Update PyPI cuCIM v21.08.01 README.md and CHANGELOG.md ([#87](https://github.com/rapidsai/cucim/pull/87)) [@gigony](https://github.com/gigony)
 - [Update] ENH Replace gpuci_conda_retry with gpuci_mamba_retry ([#69](https://github.com/rapidsai/cucim/pull/69)) [@dillon-cullinan](https://github.com/dillon-cullinan)
+
+## [21.08.02](https://github.com/rapidsai/cucim/wiki/release_notes_v21.08.02)
+
+- [New] Add transforms for Digital Pathology ([#100](https://github.com/rapidsai/cucim/pull/100)) [@shekhardw](https://github.com/shekhardw) [@chirayuG-nvidia](https://github.com/chirayuG-nvidia)
+
 ## [21.08.01](https://github.com/rapidsai/cucim/wiki/release_notes_v21.08.01)
 
 - [New] Add skimage.morphology.thin ([#27](https://github.com/rapidsai/cucim/pull/27))
