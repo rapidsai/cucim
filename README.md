@@ -39,7 +39,7 @@ pip install scipy scikit-image cupy-cuda110
 
 ### Notebooks
 
-Please check out our [Welcome](notebooks/Welcome.ipynb) notebook ([NBViewer](https://nbviewer.jupyter.org/github/rapidsai/cucim/blob/branch-22.02/notebooks/Welcome.ipynb))
+Please check out our [Welcome](notebooks/Welcome.ipynb) notebook ([NBViewer](https://nbviewer.jupyter.org/github/rapidsai/cucim/blob/branch-22.04/notebooks/Welcome.ipynb))
 
 #### Downloading sample images
 
