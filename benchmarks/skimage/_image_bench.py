@@ -166,6 +166,7 @@ class ImageBench(object):
                 rep_kwargs_gpu = self.get_reps(
                     self.func_gpu, self.args_gpu, kw_gpu, duration, cpu=False
                 )
+                print("Number of Repetitions : ", rep_kwargs_gpu)
                 # perf = repeat(self.func_cpu, self.args_cpu, kw_cpu, **rep_kwargs_cpu)
                 perf_gpu = repeat(self.func_gpu, self.args_gpu, kw_gpu, **rep_kwargs_gpu)
                 # df.at[index, "GPU accel"] = perf.cpu_times.mean() / perf_gpu.gpu_times.mean()

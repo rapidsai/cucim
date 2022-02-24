@@ -176,5 +176,6 @@ if __name__ == '__main__':
     parser.add_argument('-i','--img_size', type=str, help='Size of input image', required=True)
     parser.add_argument('-d','--dtype', type=str, help='Dtype of input image', choices = ['fp64','fp32','fp16'], required=True)
     parser.add_argument('-f','--func_name', type=str, help='function to benchmark', choices = func_name_choices, required=True)
+    parser.add_argument('-t','--duration', type=int, help='time to run benchmark', required=True)
     args = parser.parse_args()
     main(args)
