@@ -5,7 +5,7 @@ param_dt=('fp64' 'fp32' 'fp16')
 for shape in "${param_shape[@]}"; do
     for filt in "${param_filt[@]}"; do
         for dt in "${param_dt[@]}"; do
-            python cucim_feature_bench.py -f $filt -i $shape -d $dt
+            python cucim_feature_bench.py -f $filt -i $shape -d $dt -t 10
             done
         done
     done
