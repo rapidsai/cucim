@@ -1121,10 +1121,9 @@ ssize_t CuFileDriver::pwrite(const void* buf, size_t count, off_t file_offset, o
 }
 bool CuFileDriver::close()
 {
-    if (handle_->cufile)
+    if (handle_ && handle_->cufile)
     {
         cuFileHandleDeregister(handle_->cufile);
-
     }
     if (mmap_ptr_)
     {
@@ -1135,7 +1134,7 @@ bool CuFileDriver::close()
         }
         mmap_ptr_ = nullptr;
     }
-    if (handle_->fd != -1)
+    if (handle_ && handle_->fd != -1)
     {
         // If block write was used
         if ((file_flags_ & O_RDWR) &&
