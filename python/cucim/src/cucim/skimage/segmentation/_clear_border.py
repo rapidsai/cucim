@@ -99,7 +99,7 @@ def clear_border(labels, buffer_size=0, bgval=0, mask=None, *, out=None):
     borders_indices = cp.unique(labels[borders])
     indices = cp.arange(number + 1)
     # mask all label indices that are connected to borders
-    label_mask = cp.in1d(indices, borders_indices)
+    label_mask = cp.isin(indices, borders_indices)
     # create mask for pixels to clear
     mask = label_mask[labels.reshape(-1)].reshape(labels.shape)
 

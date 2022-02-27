@@ -1,7 +1,6 @@
 import cupy as cp
 from cupy.testing import assert_array_equal
 
-from cucim.skimage._shared._warnings import expected_warnings
 from cucim.skimage.segmentation import clear_border
 
 
@@ -12,7 +11,8 @@ def test_clear_border():
          [1, 1, 0, 1, 0, 1, 0, 0, 0],
          [0, 0, 0, 1, 1, 1, 1, 0, 0],
          [0, 1, 1, 1, 1, 1, 1, 1, 0],
-         [0, 0, 0, 0, 0, 0, 0, 0, 0]])
+         [0, 0, 0, 0, 0, 0, 0, 0, 0]]
+    )
 
     # test default case
     result = clear_border(image.copy())
@@ -43,20 +43,20 @@ def test_clear_border():
 
 
 def test_clear_border_3d():
-    image = cp.array([
-        [[0, 0, 0, 0],
-         [0, 0, 0, 0],
-         [0, 0, 0, 0],
-         [1, 0, 0, 0]],
-        [[0, 0, 0, 0],
-         [0, 1, 1, 0],
-         [0, 0, 1, 0],
-         [0, 0, 0, 0]],
-        [[0, 0, 0, 0],
-         [0, 0, 0, 0],
-         [0, 0, 0, 0],
-         [0, 0, 0, 0]],
-        ])
+    image = cp.array(
+        [[[0, 0, 0, 0],
+          [0, 0, 0, 0],
+          [0, 0, 0, 0],
+          [1, 0, 0, 0]],
+         [[0, 0, 0, 0],
+          [0, 1, 1, 0],
+          [0, 0, 1, 0],
+          [0, 0, 0, 0]],
+         [[0, 0, 0, 0],
+          [0, 0, 0, 0],
+          [0, 0, 0, 0],
+          [0, 0, 0, 0]]]
+    )
     # test default case
     result = clear_border(image.copy())
     ref = image.copy()
@@ -101,8 +101,8 @@ def test_clear_border_non_binary_3d():
          [[1, 2, 3, 1, 2],
           [3, 3, 3, 4, 2],
           [3, 4, 3, 4, 2],
-          [3, 3, 2, 1, 2]],
-         ])
+          [3, 3, 2, 1, 2]]]
+    )
 
     result = clear_border(image3d)
     expected = cp.array(
@@ -117,8 +117,8 @@ def test_clear_border_non_binary_3d():
          [[0, 0, 0, 0, 0],
           [0, 0, 0, 0, 0],
           [0, 0, 0, 0, 0],
-          [0, 0, 0, 0, 0]],
-         ])
+          [0, 0, 0, 0, 0]]]
+    )
 
     assert_array_equal(result, expected)
     assert not cp.all(image3d == result)
@@ -152,8 +152,8 @@ def test_clear_border_non_binary_inplace_3d():
          [[1, 2, 3, 1, 2],
           [3, 3, 3, 4, 2],
           [3, 4, 3, 4, 2],
-          [3, 3, 2, 1, 2]],
-         ])
+          [3, 3, 2, 1, 2]]]
+    )
 
     result = clear_border(image3d, out=image3d)
     expected = cp.array(
@@ -168,8 +168,8 @@ def test_clear_border_non_binary_inplace_3d():
          [[0, 0, 0, 0, 0],
           [0, 0, 0, 0, 0],
           [0, 0, 0, 0, 0],
-          [0, 0, 0, 0, 0]],
-         ])
+          [0, 0, 0, 0, 0]]]
+    )
 
     assert_array_equal(result, expected)
     assert_array_equal(image3d, result)
@@ -204,8 +204,8 @@ def test_clear_border_non_binary_out_3d():
          [[1, 2, 3, 1, 2],
           [3, 3, 3, 4, 2],
           [3, 4, 3, 4, 2],
-          [3, 3, 2, 1, 2]],
-         ])
+          [3, 3, 2, 1, 2]]]
+    )
     out = cp.empty_like(image3d)
 
     result = clear_border(image3d, out=out)
@@ -221,8 +221,8 @@ def test_clear_border_non_binary_out_3d():
          [[0, 0, 0, 0, 0],
           [0, 0, 0, 0, 0],
           [0, 0, 0, 0, 0],
-          [0, 0, 0, 0, 0]],
-         ])
+          [0, 0, 0, 0, 0]]]
+    )
 
     assert_array_equal(result, expected)
     assert_array_equal(out, result)

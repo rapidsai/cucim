@@ -7,7 +7,6 @@ from .morphsnakes import (checkerboard_level_set, disk_level_set,
 from .random_walker_segmentation import random_walker
 
 __all__ = [
-    "clear_border",
     "random_walker",
     "find_boundaries",
     "mark_boundaries",
