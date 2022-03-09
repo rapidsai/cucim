@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,9 @@
 
 
 #include "../macros/defines.h"
+
+#include <unistd.h>
+
 #include <cstdio>
 #include <cstdint>
 #include <memory>
@@ -32,7 +35,7 @@ typedef void* CuCIMFileHandle_share;
 typedef void* CuCIMFileHandle_ptr;
 typedef bool (*CuCIMFileHandleDeleter)(CuCIMFileHandle_ptr);
 
-enum class FileHandleType: uint16_t
+enum class FileHandleType : uint16_t
 {
     kUnknown = 0,
     kPosix = 1,
@@ -55,7 +58,8 @@ struct EXPORT_VISIBLE CuCIMFileHandle : public std::enable_shared_from_this<CuCI
                     void* client_data,
                     uint64_t dev,
                     uint64_t ino,
-                    int64_t mtime);
+                    int64_t mtime,
+                    bool own_fd);
 
     ~CuCIMFileHandle()
     {
@@ -69,6 +73,13 @@ struct EXPORT_VISIBLE CuCIMFileHandle : public std::enable_shared_from_this<CuCI
         {
             deleter(this);
             deleter = nullptr;
+        }
+
+        if (own_fd)
+        {
+            ::close(fd);
+            fd = -1;
+            own_fd = false;
         }
     }
 
@@ -86,6 +97,7 @@ struct EXPORT_VISIBLE CuCIMFileHandle : public std::enable_shared_from_this<CuCI
     uint64_t dev = 0;
     uint64_t ino = 0;
     int64_t mtime = 0;
+    bool own_fd = false; /// whether if the file descriptor is created internally by the driver
     CuCIMFileHandleDeleter deleter = nullptr;
 };
 #else

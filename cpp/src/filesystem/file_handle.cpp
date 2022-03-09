@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,7 +29,8 @@ CuCIMFileHandle::CuCIMFileHandle()
       hash_value(0),
       dev(0),
       ino(0),
-      mtime(0)
+      mtime(0),
+      own_fd(false)
 {
 }
 
@@ -53,8 +54,9 @@ CuCIMFileHandle::CuCIMFileHandle(int fd,
                                  void* client_data,
                                  uint64_t dev,
                                  uint64_t ino,
-                                 int64_t mtime)
-    : fd(fd), cufile(cufile), type(type), path(path), client_data(client_data), dev(dev), ino(ino), mtime(mtime)
+                                 int64_t mtime,
+                                 bool own_fd)
+    : fd(fd), cufile(cufile), type(type), path(path), client_data(client_data), dev(dev), ino(ino), mtime(mtime), own_fd(own_fd)
 {
     hash_value = cucim::codec::splitmix64_3(dev, ino, mtime);
 }
