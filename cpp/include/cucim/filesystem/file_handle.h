@@ -75,7 +75,7 @@ struct EXPORT_VISIBLE CuCIMFileHandle : public std::enable_shared_from_this<CuCI
             deleter = nullptr;
         }
 
-        if (own_fd)
+        if (own_fd && fd >=0)
         {
             ::close(fd);
             fd = -1;
