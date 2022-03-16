@@ -298,3 +298,87 @@ def color_jitter(
         _logger.error("[cucim] " + str(e), exc_info=True)
         _logger.info("Error executing color jitter on GPU")
         raise
+
+
+def rand_color_jitter(
+    img: Any,
+    brightness=0,
+    contrast=0,
+    saturation=0,
+    hue=0,
+    prob: float = 0.1,
+    whole_batch: bool = False
+):
+    """Randomly Applies color jitter by random sequential application of
+    4 operations (brightness, contrast, saturation, hue).
+
+    Parameters
+    ----------
+    img : channel first, cupy.ndarray or numpy.ndarray
+        Input data of shape (C, H, W). Can also batch process input of shape
+        (N, C, H, W). Can be a numpy.ndarray or cupy.ndarray.
+    brightness : float or 2-tuple of float, optional
+        Non-negative factor to jitter the brightness by. When `brightness` is a
+        scalar, scaling will be by a random value in range
+        ``[max(0, 1 - brightness), (1 + brightness)]``. `brightness` can
+        also be a 2-tuple specifying the range for the random scaling factor.
+        A value of 0 or (1, 1) will result in no change.
+    contrast : float or 2-tuple of float, optional
+        Non-negative factor to jitter the contrast by. When `contrast` is a
+        scalar, scaling will be by a random value between
+        ``[max(0, 1 - contrast), (1 + contrast)]``. `contrast` can
+        also be a 2-tuple specifying the range for the random scaling factor.
+        A value of 0 or (1, 1) will result in no change.
+    saturation : float or 2-tuple of float, optional
+        Non-negative factor to jitter the saturation by. When `saturation` is a
+        scalar, scaling will be by a random value between
+        ``[max(0, 1 - saturation), (1 + saturation)]``. `saturation` can
+        also be a 2-tuple specifying the range for the random scaling factor.
+        A value of 0 or (1, 1) will result in no change.
+    hue : float or 2-tuple of float, optional
+        Factor between [-0.5, 0.5] to jitter hue by. When `hue` is a
+        scalar, scaling will be by a random value between in the range
+        ``[-hue, hue]``. `hue` can also be a 2-tuple specifying the range.
+        A value of 0 or (0, 0) will result in no change.
+    prob: probability of applying color jitter.
+        (Default 0.1, with 10% probability it returns a color jittered array)
+    whole_batch: Flag to apply transform on whole batch.
+        If False, each image in the batch is randomly transformed
+        It True, entire batch is transformed
+    Returns
+    -------
+    out : cupy.ndarray or numpy.ndarray
+        Output data. Same dimensions and type as input.
+
+    Raises
+    ------
+    ValueError
+        If 'brightness','contrast','saturation' or 'hue' is outside
+        of allowed range
+    TypeError
+        If input 'img' is not cupy.ndarray or numpy.ndarray
+
+    Examples
+    --------
+    >>> import cucim.core.operations.color as ccl
+    >>> # input is channel first 3d array
+    >>> output_array = ccl.rand_color_jitter(input_arr,.25,.75,.25,.04)
+    """
+    R = np.random.RandomState()
+
+    shape = img.shape
+    image_wise_probs = []
+
+    if whole_batch is False and len(shape) == 4:
+        image_wise_probs = R.rand(shape[0])
+
+        for i in range(shape[0]):
+            if image_wise_probs[i] < prob:
+                img[i] = color_jitter(img[i],
+                                      brightness,
+                                      contrast,
+                                      saturation,
+                                      hue)
+        return img
+    else:
+        return color_jitter(img, brightness, contrast, saturation, hue)

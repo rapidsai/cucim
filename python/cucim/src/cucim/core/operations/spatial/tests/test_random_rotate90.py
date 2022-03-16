@@ -61,7 +61,8 @@ def test_rand_rotate90_batchinput():
     np_output = spt.rand_image_rotate_90(arr_batch,
                                          max_k=1,
                                          prob=1.0,
-                                         spatial_axis=[2, 3])
+                                         spatial_axis=[2, 3],
+                                         whole_batch=True)
     assert np_output.shape[0] == 8
 
     for i in range(np_output.shape[0]):
