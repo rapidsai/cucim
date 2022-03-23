@@ -28,6 +28,8 @@ Please check out our [Welcome](https://github.com/rapidsai/cucim/blob/branch-22.
 
 ### Open Image
 
+cuCIM's dataloader(`cucim.CuImage` class) is currently supporting Digital-pathology specific image formats (tiled multi-resolution raw/deflate/lzw/JPEG/JPEG2000-compressed TIFF-like RGB images such as Generic TIFF, Philips TIFF, Aperio SVS format).
+
 ```python
 from cucim import CuImage
 img = CuImage('image.tif')
@@ -109,6 +111,10 @@ Please look at this [notebook](https://nbviewer.jupyter.org/github/rapidsai/cuci
 
 Please look at [this release note](https://github.com/rapidsai/cucim/wiki/release_notes_v21.12.00#2-add-nvtx-support-for-performance-analysis).
 
+### Supporting Multithreading and Batch Processing
+
+Please look at [this release note](https://github.com/rapidsai/cucim/wiki/release_notes_v22.02.00#2-supporting-multithreading-and-batch-processing).
+
 ### Using scikit-image API
 
 Import `cucim.skimage` instead of `skimage`.
@@ -121,6 +127,11 @@ import matplotlib.pyplot as plt
 
 # from skimage import data
 from cucim.skimage.color import rgb2hed, hed2rgb  # modified from: `from skimage.color import rgb2hed, hed2rgb`
+
+# Load image (You can download sample images from https://openslide.cs.cmu.edu/download/openslide-testdata/Aperio/)
+from cucim import CuImage
+img = CuImage("CMU-1.svs")
+region = img.read_region((30000, 10000), (256, 256))
 
 # Example IHC image
 ihc_rgb = cp.asarray(region)  # modified from: `ihc_rgb = data.immunohistochemistry()`
