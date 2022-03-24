@@ -309,7 +309,7 @@ def rand_color_jitter(
     prob: float = 0.1,
     whole_batch: bool = False
 ):
-    """Randomly Applies color jitter by random sequential application of
+    """Randomly applies color jitter by random sequential application of
     4 operations (brightness, contrast, saturation, hue).
 
     Parameters
