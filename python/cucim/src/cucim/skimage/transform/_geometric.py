@@ -763,7 +763,7 @@ class ProjectiveTransform(GeometricTransform):
         src_matrix, src, has_nan1 = _center_and_normalize_points(src)
         dst_matrix, dst, has_nan2 = _center_and_normalize_points(dst)
         if has_nan1 or has_nan2:
-            self.params = xp.full((d, d), np.nan)
+            self.params = xp.full((d + 1, d + 1), xp.nan)
             return False
         # params: a0, a1, a2, b0, b1, b2, c0, c1
         A = xp.zeros((n * d, (d + 1) ** 2))
@@ -792,6 +792,7 @@ class ProjectiveTransform(GeometricTransform):
         # because it is a rank-defective transform, which would map points
         # to a line rather than a plane.
         if xp.isclose(V[-1, -1], 0):
+            self.params = xp.full((d + 1, d + 1), xp.nan)
             return False
 
         H = np.zeros(
@@ -1050,7 +1051,7 @@ class PiecewiseAffineTransform(GeometricTransform):
         Returns
         -------
         success : bool
-            True, if model estimation succeeds.
+            True, if all pieces of the model are successfully estimated.
 
         """
 
@@ -1058,31 +1059,30 @@ class PiecewiseAffineTransform(GeometricTransform):
         # forward piecewise affine
         # triangulate input positions into mesh
         xp = cp.get_array_module(src)
-        if xp is cp:
-            # TODO: grlee77 :update if spatial.Delaunay is implemented for GPU
-            # transfer to CPU for use of spatial.Delaunay
-            src = cp.asnumpy(src)
-            dst = cp.asnumpy(dst)
+        # TODO: update if spatial.Delaunay become available in CuPy
+        self._tesselation = spatial.Delaunay(cp.asnumpy(src))
 
-        self._tesselation = spatial.Delaunay(src)
+        ok = True
+
         # find affine mapping from source positions to destination
         self.affines = []
-        for tri in self._tesselation.vertices:
+        for tri in xp.asarray(self._tesselation.vertices):
             affine = AffineTransform(dimensionality=ndim)
-            affine.estimate(src[tri, :], dst[tri, :])
+            ok &= affine.estimate(src[tri, :], dst[tri, :])
             self.affines.append(affine)
 
         # inverse piecewise affine
         # triangulate input positions into mesh
-        self._inverse_tesselation = spatial.Delaunay(dst)
+        # TODO: update if spatial.Delaunay become available in CuPy
+        self._inverse_tesselation = spatial.Delaunay(cp.asnumpy(dst))
         # find affine mapping from source positions to destination
         self.inverse_affines = []
-        for tri in self._inverse_tesselation.vertices:
+        for tri in xp.asarray(self._inverse_tesselation.vertices):
             affine = AffineTransform(dimensionality=ndim)
-            affine.estimate(dst[tri, :], src[tri, :])
+            ok &= affine.estimate(dst[tri, :], src[tri, :])
             self.inverse_affines.append(affine)
 
-        return True
+        return ok
 
     def __call__(self, coords):
         """Apply forward transformation.
@@ -1102,12 +1102,12 @@ class PiecewiseAffineTransform(GeometricTransform):
         """
 
         xp = cp.get_array_module(coords)
-        if xp == cp:
-            coords = coords.get()
-        out = np.empty_like(coords, np.double)
+        out = xp.empty_like(coords, xp.double)
 
         # determine triangle index for each coordinate
-        simplex = self._tesselation.find_simplex(coords)
+        # coords must be on host for calls to _tesselation methods
+        simplex = self._tesselation.find_simplex(cp.asnumpy(coords))
+        simplex = xp.asarray(simplex)
 
         # coordinates outside of mesh
         out[simplex == -1, :] = -1
@@ -1120,8 +1120,6 @@ class PiecewiseAffineTransform(GeometricTransform):
 
             out[index_mask, :] = affine(coords[index_mask, :])
 
-        if xp == cp:
-            out = xp.asarray(out)
         return out
 
     def inverse(self, coords):
@@ -1142,12 +1140,12 @@ class PiecewiseAffineTransform(GeometricTransform):
         """
 
         xp = cp.get_array_module(coords)
-        if xp == cp:
-            coords = coords.get()
-        out = np.empty_like(coords, np.double)
+        out = xp.empty_like(coords, xp.double)
 
         # determine triangle index for each coordinate
-        simplex = self._inverse_tesselation.find_simplex(coords)
+        # coords must be on host for calls to _tesselation methods
+        simplex = self._inverse_tesselation.find_simplex(cp.asnumpy(coords))
+        simplex = xp.asarray(simplex)
 
         # coordinates outside of mesh
         out[simplex == -1, :] = -1
@@ -1159,8 +1157,7 @@ class PiecewiseAffineTransform(GeometricTransform):
             index_mask = simplex == index
 
             out[index_mask, :] = affine(coords[index_mask, :])
-        if xp == cp:
-            out = xp.asarray(out)
+
         return out
 
 
@@ -1344,7 +1341,9 @@ class EuclideanTransform(ProjectiveTransform):
 
         self.params = _umeyama(src, dst, False)
 
-        return True
+        # _umeyama will return nan if the problem is not well-conditioned.
+        xp = cp.get_array_module(self.params)
+        return not xp.any(xp.isnan(self.params))
 
     @property
     def rotation(self):
@@ -1460,7 +1459,9 @@ class SimilarityTransform(EuclideanTransform):
 
         self.params = _umeyama(src, dst, estimate_scale=True)
 
-        return True
+        # _umeyama will return nan if the problem is not well-conditioned.
+        xp = cp.get_array_module(self.params)
+        return not xp.any(xp.isnan(self.params))
 
     @property
     def scale(self):
