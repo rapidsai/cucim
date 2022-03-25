@@ -130,6 +130,8 @@ PYBIND11_MODULE(_cucim, m)
              ) //
         .def_property(
             "dtype", &CuImage::dtype, nullptr, doc::CuImage::doc_dtype, py::call_guard<py::gil_scoped_release>()) //
+        .def_property("typestr", &CuImage::typestr, nullptr, doc::CuImage::doc_typestr,
+                      py::call_guard<py::gil_scoped_release>()) //
         .def_property("channel_names", &CuImage::channel_names, nullptr, doc::CuImage::doc_channel_names,
                       py::call_guard<py::gil_scoped_release>()) //
         .def("spacing", &CuImage::spacing, doc::CuImage::doc_spacing, py::call_guard<py::gil_scoped_release>(), //
@@ -345,6 +347,7 @@ json py_metadata(const CuImage& cuimg)
         cucim_metadata.emplace(
             "dtype", json::object({ { "code", dtype.code }, { "bits", dtype.bits }, { "lanes", dtype.lanes } }));
     }
+    cucim_metadata.emplace("typestr", cuimg.typestr());
     cucim_metadata.emplace("channel_names", cuimg.channel_names());
     cucim_metadata.emplace("spacing", cuimg.spacing());
     cucim_metadata.emplace("spacing_units", cuimg.spacing_units());

@@ -446,6 +446,11 @@ DLDataType CuImage::dtype() const
     // TODO: support string conversion like Device class
     return DLDataType({ DLDataTypeCode::kDLUInt, 8, 1 });
 }
+std::string CuImage::typestr() const
+{
+    const char* type_str = container().numpy_dtype();
+    return std::string(type_str);
+}
 std::vector<std::string> CuImage::channel_names() const
 {
     std::vector<std::string> channel_names;

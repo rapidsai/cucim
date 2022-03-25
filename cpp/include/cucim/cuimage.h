@@ -148,6 +148,8 @@ public:
 
     DLDataType dtype() const;
 
+    std::string typestr() const;
+
     std::vector<std::string> channel_names() const;
 
     std::vector<float> spacing(std::string dim_order = std::string{}) const;
