@@ -34,6 +34,27 @@
 #define XSTR(x) STR(x)
 #define STR(x) #x
 
+
+// DLDataType's equality operator implementation
+template <>
+struct std::hash<DLDataType>
+{
+    size_t operator()(const DLDataType& dtype) const
+    {
+        return (dtype.code * 1117) ^ (dtype.bits * 31) ^ (dtype.lanes);
+    }
+};
+
+bool operator==(const DLDataType& lhs, const DLDataType& rhs)
+{
+    return (lhs.code == rhs.code) && (lhs.bits == rhs.bits) && (lhs.lanes == rhs.lanes);
+}
+
+bool operator!=(const DLDataType& lhs, const DLDataType& rhs)
+{
+    return (lhs.code != rhs.code) || (lhs.bits != rhs.bits) || (lhs.lanes != rhs.lanes);
+}
+
 namespace cucim
 {
 

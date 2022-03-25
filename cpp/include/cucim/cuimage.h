@@ -37,6 +37,14 @@
 #include <string>
 #include <vector>
 
+
+// Forward declarations for DLDataType's equality operator.
+template <>
+struct std::hash<DLDataType>;
+
+EXPORT_VISIBLE bool operator==(const DLDataType& lhs, const DLDataType& rhs);
+EXPORT_VISIBLE bool operator!=(const DLDataType& lhs, const DLDataType& rhs);
+
 namespace cucim
 {
 
