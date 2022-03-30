@@ -1,6 +1,18 @@
 
 # Changelog (See [Release Notes](https://github.com/rapidsai/cucim/wiki/Release-Notes))
 
+## [22.02.01](https://github.com/rapidsai/cucim/wiki/release_notes_v22.02.01)
+
+- [Bug] Check nullptr of handler in CuFileDriver::close() ([#229](https://github.com/rapidsai/cucim/pull/229)) [@gigony](https://github.com/gigony)
+- [Bug] Handle file descriptor ownership and update documents for GDS ([#234](https://github.com/rapidsai/cucim/pull/234)) [@gigony](https://github.com/gigony)
+- [Bug] Apply fixes to skimage.transform scheduled for scikit-image 0.19.2 ([#208](https://github.com/rapidsai/cucim/pull/208)) [@grlee7](https://github.com/grlee7)
+- [New] Randomization of transforms per image per batch ([#231](https://github.com/rapidsai/cucim/pull/231)) [@shekhardw](https://github.com/shekhardw)
+- [New] Expose data type of CuImage object for interoperability with NumPy ([#246](https://github.com/rapidsai/cucim/pull/246)) [@gigony](https://github.com/gigony)
+- [Update] Remove verbose plugin messages temporarily. Address [#109](https://github.com/rapidsai/cucim/issues/109) ([BUG] - Info messages appearing as warnings in Jupyter notebooks)
+- [Doc] Fix docs builds ([#218](https://github.com/rapidsai/cucim/pull/218)) [@ajschmidt8](https://github.com/ajschmidt8)
+- [Doc] Update GTC 2021 Spring video links ([#227](https://github.com/rapidsai/cucim/pull/227)) [@gigony](https://github.com/gigony)
+- [Doc] Update documents for v22.02.00 ([#226](https://github.com/rapidsai/cucim/pull/226)) [@gigony](https://github.com/gigony)
+
 ## [22.02.00](https://github.com/rapidsai/cucim/wiki/release_notes_v22.02.00)
 
 - [New/Breaking] Update cucim.skimage API to match scikit-image 0.19 ([#190](https://github.com/rapidsai/cucim/pull/190)) [@glee77](https://github.com/glee77)
