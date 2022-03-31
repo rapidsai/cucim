@@ -64,3 +64,14 @@ def test_color_jitter_batchinput():
     np_output = ccl.color_jitter(arr_batch, .25, .75, .25, .04)
     assert np_output.shape[0] == 8
     verify_result(np_output, arr_batch)
+
+
+def test_rand_color_jitter_batchinput():
+    arr = get_image_array()
+    arr_batch = np.stack((arr,) * 8, axis=0)
+    np_output = ccl.rand_color_jitter(arr_batch,
+                                      .25, .75, .25, .04,
+                                      prob=1.0,
+                                      whole_batch=True)
+    assert np_output.shape[0] == 8
+    verify_result(np_output, arr_batch)

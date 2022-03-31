@@ -17,9 +17,11 @@ import os
 
 from . import cli, converter
 # import hidden methods
-from ._cucim import CuImage, __version__, cache, filesystem, io
+from ._cucim import (CuImage, DLDataType, DLDataTypeCode, __version__, cache,
+                     filesystem, io)
 
-__all__ = ['cli', 'CuImage', 'filesystem', 'io', 'cache', 'converter', '__version__']
+__all__ = ['cli', 'CuImage', 'DLDataType', 'DLDataTypeCode', 'filesystem',
+           'io', 'cache', 'converter', '__version__']
 
 
 from ._cucim import _get_plugin_root  # isort:skip

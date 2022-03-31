@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -74,25 +74,30 @@ TEST_CASE("Verify metadata", "[test_metadata.cpp]")
 {
     cucim::Framework* framework = cucim::acquire_framework("sample.app");
     REQUIRE(framework != nullptr);
-
+    std::string plugin_path = g_config.get_plugin_path();
     cucim::io::format::IImageFormat* image_format =
-        framework->acquire_interface_from_library<cucim::io::format::IImageFormat>(g_config.get_plugin_path().c_str());
+        framework->acquire_interface_from_library<cucim::io::format::IImageFormat>(plugin_path.c_str());
     // fmt::print("{}\n", image_format->formats[0].get_format_name());
     REQUIRE(image_format != nullptr);
 
-    auto handle =
-        image_format->formats[0].image_parser.open(g_config.get_input_path("private/philips_tiff_000.tif").c_str());
+    std::string input_path = g_config.get_input_path();
+    std::shared_ptr<CuCIMFileHandle>* file_handle_shared = reinterpret_cast<std::shared_ptr<CuCIMFileHandle>*>(
+        image_format->formats[0].image_parser.open(input_path.c_str()));
+
+    std::shared_ptr<CuCIMFileHandle> file_handle = *file_handle_shared;
+    delete file_handle_shared;
+
+    // Set deleter to close the file handle
+    file_handle->set_deleter(image_format->formats[0].image_parser.close);
 
     cucim::io::format::ImageMetadata metadata{};
-    image_format->formats[0].image_parser.parse(&handle, &metadata.desc());
+    image_format->formats[0].image_parser.parse(file_handle.get(), &metadata.desc());
 
     // Using fmt::print() has a problem with TestMate VSCode plugin (output is not caught by the plugin)
     std::cout << fmt::format("metadata: {}\n", metadata.desc().raw_data);
     const uint8_t* buf = metadata.get_buffer();
     const uint8_t* buf2 = static_cast<uint8_t*>(metadata.allocate(1));
     std::cout << fmt::format("test: {}\n", buf2 - buf);
-
-    image_format->formats[0].image_parser.close(&handle);
 
     // cucim::CuImage img{ g_config.get_input_path("private/philips_tiff_000.tif") };
     // const auto& img_metadata = img.metadata();
@@ -131,8 +136,13 @@ TEST_CASE("Verify metadata", "[test_metadata.cpp]")
 TEST_CASE("Load test", "[test_metadata.cpp]")
 {
     cucim::CuImage img{ g_config.get_input_path("private/philips_tiff_000.tif") };
+    REQUIRE(img.dtype() == DLDataType{ DLDataTypeCode::kDLUInt, 8, 1 });
+    REQUIRE(img.typestr() == "|u1");
 
     auto test = img.read_region({ -10, -10 }, { 100, 100 });
+
+    REQUIRE(test.dtype() == DLDataType{ DLDataTypeCode::kDLUInt, 8, 1 });
+    REQUIRE(test.typestr() == "|u1");
 
     fmt::print("{}", img.metadata());
 }

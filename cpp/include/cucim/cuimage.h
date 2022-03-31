@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,6 +36,14 @@
 #include <set>
 #include <string>
 #include <vector>
+
+
+// Forward declarations for DLDataType's equality operator.
+template <>
+struct std::hash<DLDataType>;
+
+EXPORT_VISIBLE bool operator==(const DLDataType& lhs, const DLDataType& rhs);
+EXPORT_VISIBLE bool operator!=(const DLDataType& lhs, const DLDataType& rhs);
 
 namespace cucim
 {
@@ -147,6 +155,8 @@ public:
     std::vector<int64_t> size(std::string dim_order = std::string{}) const;
 
     DLDataType dtype() const;
+
+    std::string typestr() const;
 
     std::vector<std::string> channel_names() const;
 
