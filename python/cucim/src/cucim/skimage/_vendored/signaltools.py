@@ -3,13 +3,26 @@ import warnings
 
 import cupy
 import numpy as np
-from cupyx.scipy.ndimage import _util
 from cupyx.scipy.ndimage import uniform_filter, rank_filter
 
 from cucim import _misc
 from cucim.skimage._vendored import _signaltools_core as _st_core
 
 _prod = _misc.prod
+
+
+def _fix_sequence_arg(arg, ndim, name, conv=lambda x: x):
+    if isinstance(arg, str):
+        return [conv(arg)] * ndim
+    try:
+        arg = iter(arg)
+    except TypeError:
+        return [conv(arg)] * ndim
+    lst = [conv(x) for x in arg]
+    if len(lst) != ndim:
+        msg = "{} must have length equal to input rank".format(name)
+        raise RuntimeError(msg)
+    return lst
 
 
 def convolve(in1, in2, mode='full', method='auto'):
@@ -608,7 +621,7 @@ def wiener(im, mysize=None, noise=None):
         raise TypeError("complex types not currently supported")
     if mysize is None:
         mysize = 3
-    mysize = _util._fix_sequence_arg(mysize, im.ndim, 'mysize', int)
+    mysize = _fix_sequence_arg(mysize, im.ndim, 'mysize', int)
     im = im.astype(float, copy=False)
 
     # Estimate the local mean
@@ -732,8 +745,7 @@ def medfilt2d(input, kernel_size=3):
 def _get_kernel_size(kernel_size, ndim):
     if kernel_size is None:
         kernel_size = (3,) * ndim
-    kernel_size = _util._fix_sequence_arg(kernel_size, ndim,
-                                          'kernel_size', int)
+    kernel_size = _fix_sequence_arg(kernel_size, ndim, 'kernel_size', int)
     if any((k % 2) != 1 for k in kernel_size):
         raise ValueError("Each element of kernel_size should be odd")
     return kernel_size

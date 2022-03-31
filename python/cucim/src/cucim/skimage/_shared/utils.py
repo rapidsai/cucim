@@ -738,6 +738,11 @@ new_float_type = {
     cp.float16().dtype.char: cp.float32,
     'g': cp.float64,      # cp.float128 ; doesn't exist on windows
     'G': cp.complex128,   # cp.complex256 ; doesn't exist on windows
+    # int types where the full range can be represented exactly in float32
+    cp.int8: cp.float32,
+    cp.uint8: cp.float32,
+    cp.int16: cp.float32,
+    cp.uint16: cp.float32,
 }
 
 
