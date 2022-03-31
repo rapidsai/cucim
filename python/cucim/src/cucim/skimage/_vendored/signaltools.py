@@ -1,4 +1,10 @@
-"""A vendored subset of cupyx.scipy.signal.signaltools"""
+"""A vendored subset of cupyx.scipy.signal.signaltools
+
+Note:
+
+The version of ``choose_conv_method`` here differs from the one in CuPy and
+does not restrict the choice of fftconvolve to only 1D arrays.
+"""
 
 import timeit
 import warnings
