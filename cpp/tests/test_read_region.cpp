@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -38,7 +38,8 @@ SCENARIO("Verify read_region()", "[test_read_region.cpp]")
     for (int iter=0; iter< 100; iter++)
     {
         auto start = std::chrono::high_resolution_clock::now();
-        openslide_t* slide = openslide_open(g_config.get_input_path().c_str());
+        std::string input_path = g_config.get_input_path();
+        openslide_t* slide = openslide_open(input_path.c_str());
         REQUIRE(slide != nullptr);
 
         auto buf = static_cast<uint32_t*>(cucim_malloc(test_width * test_height * 4));
@@ -77,10 +78,19 @@ SCENARIO("Verify read_region()", "[test_read_region.cpp]")
     {
 
         auto start = std::chrono::high_resolution_clock::now();
-        auto handle = image_format->formats[0].image_parser.open(g_config.get_input_path().c_str());
+
+        std::string input_path = g_config.get_input_path();
+        std::shared_ptr<CuCIMFileHandle>* file_handle_shared = reinterpret_cast<std::shared_ptr<CuCIMFileHandle>*>(
+            image_format->formats[0].image_parser.open(input_path.c_str()));
+
+        std::shared_ptr<CuCIMFileHandle> file_handle = *file_handle_shared;
+        delete file_handle_shared;
+
+        // Set deleter to close the file handle
+        file_handle->set_deleter(image_format->formats[0].image_parser.close);
 
         cucim::io::format::ImageMetadata metadata{};
-        image_format->formats[0].image_parser.parse(&handle, &metadata.desc());
+        image_format->formats[0].image_parser.parse(file_handle.get(), &metadata.desc());
 
         cucim::io::format::ImageReaderRegionRequestDesc request{};
         int64_t request_location[2] = { test_sx, test_sy };
@@ -93,7 +103,7 @@ SCENARIO("Verify read_region()", "[test_read_region.cpp]")
         cucim::io::format::ImageDataDesc image_data{};
 
         image_format->formats[0].image_reader.read(
-            &handle, &metadata.desc(), &request, &image_data, nullptr /*out_metadata*/);
+            file_handle.get(), &metadata.desc(), &request, &image_data, nullptr /*out_metadata*/);
         auto out_image = reinterpret_cast<uint8_t*>(image_data.container.data);
 
         int hash = 0;
@@ -125,7 +135,6 @@ SCENARIO("Verify read_region()", "[test_read_region.cpp]")
             cucim_free(image_data.shm_name);
             image_data.shm_name = nullptr;
         }
-        image_format->formats[0].image_parser.close(&handle);
 
         auto end = std::chrono::high_resolution_clock::now();
         auto elapsed_seconds = std::chrono::duration_cast<std::chrono::duration<double>>(end - start);

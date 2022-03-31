@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -85,10 +85,18 @@ static void test_basic(benchmark::State& state)
             return;
         }
 
-        auto handle = image_format->formats[0].image_parser.open(input_path.c_str());
+        std::string input_path = g_config.get_input_path();
+        std::shared_ptr<CuCIMFileHandle>* file_handle_shared = reinterpret_cast<std::shared_ptr<CuCIMFileHandle>*>(
+            image_format->formats[0].image_parser.open(input_path.c_str()));
+
+        std::shared_ptr<CuCIMFileHandle> file_handle = *file_handle_shared;
+        delete file_handle_shared;
+
+        // Set deleter to close the file handle
+        file_handle->set_deleter(image_format->formats[0].image_parser.close);
 
         cucim::io::format::ImageMetadata metadata{};
-        image_format->formats[0].image_parser.parse(&handle, &metadata.desc());
+        image_format->formats[0].image_parser.parse(file_handle.get(), &metadata.desc());
 
         cucim::io::format::ImageReaderRegionRequestDesc request{};
         int64_t request_location[2] = { 0, 0 };
@@ -107,10 +115,8 @@ static void test_basic(benchmark::State& state)
         cucim::io::format::ImageDataDesc image_data;
 
         image_format->formats[0].image_reader.read(
-            &handle, &metadata.desc(), &request, &image_data, nullptr /*out_metadata*/);
+            file_handle.get(), &metadata.desc(), &request, &image_data, nullptr /*out_metadata*/);
         cucim_free(image_data.container.data);
-
-        image_format->formats[0].image_parser.close(&handle);
 
         //        auto end = std::chrono::high_resolution_clock::now();
         //        auto elapsed_seconds = std::chrono::duration_cast<std::chrono::duration<double>>(end - start);
