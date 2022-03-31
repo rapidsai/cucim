@@ -136,8 +136,13 @@ TEST_CASE("Verify metadata", "[test_metadata.cpp]")
 TEST_CASE("Load test", "[test_metadata.cpp]")
 {
     cucim::CuImage img{ g_config.get_input_path("private/philips_tiff_000.tif") };
+    REQUIRE(img.dtype() == DLDataType{ DLDataTypeCode::kDLUInt, 8, 1 });
+    REQUIRE(img.typestr() == "|u1");
 
     auto test = img.read_region({ -10, -10 }, { 100, 100 });
+
+    REQUIRE(test.dtype() == DLDataType{ DLDataTypeCode::kDLUInt, 8, 1 });
+    REQUIRE(test.typestr() == "|u1");
 
     fmt::print("{}", img.metadata());
 }

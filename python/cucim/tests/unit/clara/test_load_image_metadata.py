@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -17,6 +17,8 @@ from ...util.io import open_image_cucim
 
 
 def test_load_image_metadata(testimg_tiff_stripe_32x24_16):
+    import numpy as np
+
     img = open_image_cucim(testimg_tiff_stripe_32x24_16)
 
     # True if image data is loaded & available.
@@ -36,6 +38,8 @@ def test_load_image_metadata(testimg_tiff_stripe_32x24_16):
     assert dtype.code == 1
     assert dtype.bits == 8
     assert dtype.lanes == 1
+    # The typestr of the image.
+    assert np.dtype(img.typestr) == np.uint8
     # A channel name list.
     assert img.channel_names == ['R', 'G', 'B']
     # Returns physical size in tuple.

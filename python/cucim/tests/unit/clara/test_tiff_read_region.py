@@ -128,6 +128,20 @@ def test_region_image_level_data(testimg_tiff_stripe_4096x4096_256):
         assert resolutions["level_tile_sizes"][0] == (300, 400)
 
 
+def test_region_image_dtype(testimg_tiff_stripe_4096x4096_256):
+    from cucim.clara import DLDataType, DLDataTypeCode
+
+    cucim_img = open_image_cucim(testimg_tiff_stripe_4096x4096_256)
+
+    level_count = cucim_img.resolutions['level_count']
+
+    start_pos, size = ((0, 10), (20, 30))
+    for level in range(level_count):
+        region_img = cucim_img.read_region(start_pos, size, level)
+        assert region_img.dtype == DLDataType(DLDataTypeCode.DLUInt, 8, 1)
+        assert np.dtype(region_img.typestr) == np.uint8
+
+
 def test_array_interface_support(testimg_tiff_stripe_32x24_16_jpeg):
     img = open_image_cucim(testimg_tiff_stripe_32x24_16_jpeg)
     whole_img = img.read_region()
