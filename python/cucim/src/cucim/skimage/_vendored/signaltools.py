@@ -11,7 +11,7 @@ import warnings
 
 import cupy
 import numpy as np
-from cupyx.scipy.ndimage import uniform_filter, rank_filter
+from cupyx.scipy.ndimage import rank_filter, uniform_filter
 
 from cucim import _misc
 from cucim.skimage._vendored import _signaltools_core as _st_core

@@ -1,10 +1,9 @@
 """A vendored subset of cupyx.scipy.ndimage._filters_core"""
 
-import numpy
 import cupy
+import numpy
 
 from cucim.skimage._vendored import _ndimage_util as _util
-
 
 includes = r'''
 // workaround for HIP: line begins with #include
