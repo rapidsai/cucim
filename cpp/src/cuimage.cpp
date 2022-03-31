@@ -848,7 +848,7 @@ CuImage CuImage::read_region(std::vector<int64_t>&& location,
     const uint16_t level_ndim = 2;
     std::pmr::vector<int64_t> level_dimensions(&resource);
     level_dimensions.reserve(level_ndim * 1); // it has only one size
-    level_dimensions.insert(level_dimensions.end(), request.location, &request.location[request.location_len]);
+    level_dimensions.insert(level_dimensions.end(), request.size, &request.size[request.size_ndim]);
 
     std::pmr::vector<float> level_downsamples(&resource);
     level_downsamples.reserve(1);
@@ -856,8 +856,8 @@ CuImage CuImage::read_region(std::vector<int64_t>&& location,
 
     std::pmr::vector<uint32_t> level_tile_sizes(&resource);
     level_tile_sizes.reserve(level_ndim * 1); // it has only one size
-    level_tile_sizes.insert(
-        level_tile_sizes.end(), request.location, &request.location[request.location_len]); // same with level_dimension
+    level_tile_sizes.insert(level_tile_sizes.end(), request.size, &request.size[request.size_ndim]); // same with
+                                                                                                     // level_dimension
 
     // Empty associated images
     const size_t associated_image_count = 0;
