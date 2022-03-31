@@ -1,3 +1,5 @@
+"""A vendored subset of cupyx.scipy.signal.signaltools"""
+
 import timeit
 import warnings
 
@@ -7,22 +9,9 @@ from cupyx.scipy.ndimage import uniform_filter, rank_filter
 
 from cucim import _misc
 from cucim.skimage._vendored import _signaltools_core as _st_core
+from cucim.skimage._vendored._ndimage_util import _fix_sequence_arg
 
 _prod = _misc.prod
-
-
-def _fix_sequence_arg(arg, ndim, name, conv=lambda x: x):
-    if isinstance(arg, str):
-        return [conv(arg)] * ndim
-    try:
-        arg = iter(arg)
-    except TypeError:
-        return [conv(arg)] * ndim
-    lst = [conv(x) for x in arg]
-    if len(lst) != ndim:
-        msg = "{} must have length equal to input rank".format(name)
-        raise RuntimeError(msg)
-    return lst
 
 
 def convolve(in1, in2, mode='full', method='auto'):

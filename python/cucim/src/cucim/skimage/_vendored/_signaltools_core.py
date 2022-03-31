@@ -1,9 +1,11 @@
+"""A vendored subset of cupyx.scipy.signal._signaltools_core"""
+
 import cupy
 from cupyx.scipy import fft
-from cupyx.scipy.ndimage import filters
 
 from . import _internal as internal
 from . import _ndimage_util as _util
+from cucim.skimage._vendored._ndimage_filters import _get_correlate_kernel
 
 
 def _check_conv_inputs(in1, in2, mode, convolution=True):
@@ -67,7 +69,7 @@ def _direct_correlate(in1, in2, mode='full', output=float, convolution=False,
 
     # Get and run the CuPy kernel
     int_type = _util._get_inttype(in1)
-    kernel = filters._get_correlate_kernel(
+    kernel = _get_correlate_kernel(
         boundary, in2.shape, int_type, offsets, fillvalue)
     in2 = _reverse_and_conj(in2) if convolution else in2
     if not swapped_inputs:
