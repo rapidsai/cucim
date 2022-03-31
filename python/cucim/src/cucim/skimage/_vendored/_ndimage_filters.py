@@ -1,7 +1,5 @@
 """A vendored subset of cupyx.scipy.ndimage._filters"""
 
-import numpy
-
 import cupy
 
 from cucim.skimage._vendored import _ndimage_filters_core as _filters_core

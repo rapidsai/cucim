@@ -1,4 +1,8 @@
 """A vendored subset of cupyx.scipy.ndimage._util"""
+import warnings
+
+import cupy
+import numpy
 
 
 def _get_output(output, input, shape=None, complex_output=False):
@@ -119,6 +123,6 @@ def _generate_boundary_condition_ops(mode, ix, xsize, int_t="int",
 def _generate_indices_ops(ndim, int_type, offsets):
     code = '{type} ind_{j} = _i % ysize_{j} - {offset}; _i /= ysize_{j};'
     body = [code.format(type=int_type, j=j, offset=offsets[j])
-            for j in range(ndim-1, 0, -1)]
+            for j in range(ndim - 1, 0, -1)]
     return '{type} _i = i;\n{body}\n{type} ind_0 = _i - {offset};'.format(
         type=int_type, body='\n'.join(body), offset=offsets[0])

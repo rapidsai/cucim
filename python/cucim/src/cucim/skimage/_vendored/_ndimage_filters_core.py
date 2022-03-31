@@ -1,12 +1,9 @@
 """A vendored subset of cupyx.scipy.ndimage._filters_core"""
 
-import warnings
-
 import numpy
 import cupy
 
 from cucim.skimage._vendored import _ndimage_util as _util
-from cucim.skimage._vendored._internal import _normalize_axis_index
 
 
 includes = r'''
@@ -139,7 +136,7 @@ def _generate_nd_kernel(name, pre, found, post, mode, w_shape, int_type,
     {post}
     '''.format(sizes='\n'.join(sizes), inds=inds, pre=pre, post=post,
                ws_init=ws_init, ws_pre=ws_pre, ws_post=ws_post,
-               loops='\n'.join(loops), found=found, end_loops='}'*ndim)
+               loops='\n'.join(loops), found=found, end_loops='}' * ndim)
 
     mode_str = mode.replace('-', '_')  # avoid potential hyphen in kernel name
     name = 'cupyx_scipy_ndimage_{}_{}d_{}_w{}'.format(

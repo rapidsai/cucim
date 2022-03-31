@@ -701,7 +701,7 @@ def medfilt(volume, kernel_size=None):
 
     size = np.prod(kernel_size)
     return rank_filter(volume, size // 2, size=kernel_size,
-                               output=float, mode='constant')
+                       output=float, mode='constant')
 
 
 def medfilt2d(input, kernel_size=3):
