@@ -650,6 +650,8 @@ def convert_to_float(image, preserve_range):
     """
     if image.dtype == np.float16:
         return image.astype(np.float32)
+    if image.dtype.kind in 'iu':
+        image = image.astype(_supported_float_type(image.dtype))
     if preserve_range:
         # Convert image to double only if it is not single or double
         # precision float
@@ -738,6 +740,11 @@ new_float_type = {
     cp.float16().dtype.char: cp.float32,
     'g': cp.float64,      # cp.float128 ; doesn't exist on windows
     'G': cp.complex128,   # cp.complex256 ; doesn't exist on windows
+    # the full range of these int types can be represented exactly in float32
+    cp.int8().dtype.char: cp.float32,
+    cp.uint8().dtype.char: cp.float32,
+    cp.int16().dtype.char: cp.float32,
+    cp.uint16().dtype.char: cp.float32,
 }
 
 
