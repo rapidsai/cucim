@@ -190,11 +190,29 @@ def zoom(
         raise
 
 
+def get_zoom_factor(
+    min_zoom: Union[Sequence[float], float] = 0.9,
+    max_zoom: Union[Sequence[float], float] = 1.1,
+):
+    R = np.random.RandomState()
+    try:
+        zoom_factor = [R.uniform(low, high)
+                       for low, high in zip(min_zoom, max_zoom)]
+    except Exception:
+        zoom_factor = [R.uniform(min_zoom, max_zoom)]
+
+    if len(zoom_factor) != 2:
+        zoom_factor = [zoom_factor[0] for _ in range(2)]
+
+    return zoom_factor
+
+
 def rand_zoom(
     img: Any,
     min_zoom: Union[Sequence[float], float] = 0.9,
     max_zoom: Union[Sequence[float], float] = 1.1,
-    prob: float = 0.1
+    prob: float = 0.1,
+    whole_batch: bool = False
 ):
     """
     Randomly Calls zoom with random zoom factor
@@ -217,6 +235,9 @@ def rand_zoom(
         If 2 values provided for 3D data, use the first value for both H & W
         dims to keep the same zoom ratio.
     prob: Probability of zooming.
+    whole_batch: Flag to apply transform on whole batch.
+        If False, each image in the batch is randomly transformed
+        It True, entire batch is transformed randomly.
 
     Returns
     -------
@@ -236,20 +257,17 @@ def rand_zoom(
     """
     R = np.random.RandomState()
 
-    rand_factor = R.rand()
-    zoom_factor = []
+    shape = img.shape
 
-    if rand_factor < prob:
-        try:
-            zoom_factor = [R.uniform(low, high)
-                           for low, high in zip(min_zoom, max_zoom)]
-        except Exception:
-            zoom_factor = [R.uniform(min_zoom, max_zoom)]
-
-        if len(zoom_factor) != 2:
-            zoom_factor = [zoom_factor[0] for _ in range(2)]
-
-    if rand_factor < prob:
+    if whole_batch is False and len(shape) == 4:
+        image_wise_probs = R.rand(shape[0])
+        for i in range(shape[0]):
+            if image_wise_probs[i] < prob:
+                zoom_factor = get_zoom_factor(min_zoom, max_zoom)
+                img[i] = zoom(img[i], zoom_factor)
+        return img
+    elif R.rand() < prob:
+        zoom_factor = get_zoom_factor(min_zoom, max_zoom)
         return zoom(img, zoom_factor)
     else:
         return img

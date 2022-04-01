@@ -20,6 +20,7 @@
 #include <fmt/format.h>
 #include <fmt/ranges.h>
 #include <pybind11/numpy.h>
+#include <pybind11/operators.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
@@ -93,11 +94,13 @@ PYBIND11_MODULE(_cucim, m)
         .def_readonly("code", &DLDataType::code, doc::DLDataType::doc_code, py::call_guard<py::gil_scoped_release>()) //
         .def_readonly("bits", &DLDataType::bits, doc::DLDataType::doc_bits, py::call_guard<py::gil_scoped_release>()) //
         .def_readonly("lanes", &DLDataType::lanes, doc::DLDataType::doc_lanes, py::call_guard<py::gil_scoped_release>()) //
+        .def(py::self == py::self) //
+        .def(py::self != py::self) //
         .def(
             "__repr__",
             [](const DLDataType& dtype) {
-                return fmt::format("<cucim.DLDataType code:{}({}) bits:{} lanes:{}>", g_dldata_typecode.at(dtype.code),
-                                   dtype.code, dtype.bits, dtype.lanes);
+                return fmt::format("<cucim.clara.DLDataType code:{}({}) bits:{} lanes:{}>",
+                                   g_dldata_typecode.at(dtype.code), dtype.code, dtype.bits, dtype.lanes);
             },
             py::call_guard<py::gil_scoped_release>());
 
@@ -130,6 +133,8 @@ PYBIND11_MODULE(_cucim, m)
              ) //
         .def_property(
             "dtype", &CuImage::dtype, nullptr, doc::CuImage::doc_dtype, py::call_guard<py::gil_scoped_release>()) //
+        .def_property("typestr", &CuImage::typestr, nullptr, doc::CuImage::doc_typestr,
+                      py::call_guard<py::gil_scoped_release>()) //
         .def_property("channel_names", &CuImage::channel_names, nullptr, doc::CuImage::doc_channel_names,
                       py::call_guard<py::gil_scoped_release>()) //
         .def("spacing", &CuImage::spacing, doc::CuImage::doc_spacing, py::call_guard<py::gil_scoped_release>(), //
@@ -345,6 +350,7 @@ json py_metadata(const CuImage& cuimg)
         cucim_metadata.emplace(
             "dtype", json::object({ { "code", dtype.code }, { "bits", dtype.bits }, { "lanes", dtype.lanes } }));
     }
+    cucim_metadata.emplace("typestr", cuimg.typestr());
     cucim_metadata.emplace("channel_names", cuimg.channel_names());
     cucim_metadata.emplace("spacing", cuimg.spacing());
     cucim_metadata.emplace("spacing_units", cuimg.spacing_units());

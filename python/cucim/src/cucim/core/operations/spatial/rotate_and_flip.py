@@ -66,6 +66,7 @@ def image_flip(
         result = cupy.flip(cupy_img, spatial_axis)
         if to_cupy is True:
             result = cupy.asnumpy(result)
+
         return result
     except Exception as e:
         _logger.error("[cucim] " + str(e), exc_info=True)
@@ -130,7 +131,8 @@ def image_rotate_90(
 def rand_image_flip(
     img: Any,
     spatial_axis: tuple(),
-    prob: float = 0.1
+    prob: float = 0.1,
+    whole_batch: bool = False
 ) -> Any:
     """
     Randomly flips the image along axis.
@@ -142,6 +144,9 @@ def rand_image_flip(
     prob: Probability of flipping.
     spatial_axis : tuple
         spatial axis along which to flip over the input array
+    whole_batch: Flag to apply transform on whole batch.
+        If False, each image in the batch is randomly transformed
+        It True, entire batch is transformed randomly.
 
     Returns
     -------
@@ -161,7 +166,15 @@ def rand_image_flip(
     """
     R = np.random.RandomState()
 
-    if R.rand() < prob:
+    shape = img.shape
+
+    if whole_batch is False and len(shape) == 4:
+        image_wise_probs = R.rand(shape[0])
+        for i in range(shape[0]):
+            if image_wise_probs[i] < prob:
+                img[i] = image_flip(img[i], spatial_axis)
+        return img
+    elif R.rand() < prob:
         return image_flip(img, spatial_axis)
     else:
         return img
@@ -171,7 +184,8 @@ def rand_image_rotate_90(
     img: Any,
     spatial_axis: tuple(),
     prob: float = 0.1,
-    max_k: int = 3
+    max_k: int = 3,
+    whole_batch: bool = False
 ) -> Any:
     """
     With probability `prob`, input arrays are rotated by 90 degrees
@@ -187,6 +201,9 @@ def rand_image_rotate_90(
         will be sampled from `np.random.randint(max_k) + 1`, (Default 3).
     spatial_axis : tuple
         spatial axis along which to rotate the input array by 90 degrees
+    whole_batch: Flag to apply transform on whole batch.
+        If False, each image in the batch is randomly transformed
+        It True, entire batch is transformed randomly.
 
     Returns
     -------
@@ -206,9 +223,17 @@ def rand_image_rotate_90(
     """
     R = np.random.RandomState()
 
-    _rand_k = R.randint(max_k) + 1
+    shape = img.shape
 
-    if R.rand() < prob:
+    if whole_batch is False and len(shape) == 4:
+        image_wise_probs = R.rand(shape[0])
+        for i in range(shape[0]):
+            if image_wise_probs[i] < prob:
+                _rand_k = R.randint(max_k) + 1
+                img[i] = image_rotate_90(img[i], _rand_k, spatial_axis)
+        return img
+    elif R.rand() < prob:
+        _rand_k = R.randint(max_k) + 1
         return image_rotate_90(img, _rand_k, spatial_axis)
     else:
         return img
