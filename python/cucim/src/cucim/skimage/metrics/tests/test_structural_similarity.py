@@ -3,6 +3,7 @@ import numpy as np
 import pytest
 from skimage import data
 
+from cucim.skimage import img_as_float64
 from cucim.skimage._shared._warnings import expected_warnings
 from cucim.skimage._shared.utils import _supported_float_type
 from cucim.skimage.metrics import structural_similarity
@@ -219,12 +220,19 @@ def test_gaussian_structural_similarity_vs_IPOL():
     assert_almost_equal(mssim, mssim_IPOL, decimal=3)
 
 
-# TODO: fix test case
 @cp.testing.with_requires("scikit-image>=0.18")
 def test_mssim_vs_legacy():
     # check that ssim with default options matches skimage 0.11 result
     mssim_skimage_0pt17 = 0.3674518327910367
+
+    # uint8 will be computed in float32 precision
     mssim = structural_similarity(cam, cam_noisy)
+    assert_almost_equal(mssim, mssim_skimage_0pt17, decimal=4)
+
+    # also check with double precision and explicit specification of data_range
+    mssim = structural_similarity(cam.astype(float),
+                                  cam_noisy.astype(float),
+                                  data_range=255)
     assert_almost_equal(mssim, mssim_skimage_0pt17)
 
 

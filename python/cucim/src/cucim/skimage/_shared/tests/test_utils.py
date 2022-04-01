@@ -158,7 +158,7 @@ def test_validate_interpolation_order(dtype, order):
 def test_supported_float_dtype_real(dtype):
     float_dtype = _supported_float_type(dtype)
     if dtype in [np.float16, np.float32, np.int8, np.uint8, np.int16,
-                 np.uint16]:
+                 np.uint16, bool]:
         assert float_dtype == np.float32
     else:
         assert float_dtype == np.float64
@@ -190,6 +190,7 @@ def test_supported_float_dtype_input_kinds(dtype):
     [
         ((np.float16, np.float64), np.float64),
         ([np.float32, np.uint16, np.int8], np.float32),
+        ([np.float32, bool], np.float32),
         ([np.float32, np.uint32, np.int16], np.float64),
         ({np.float32, np.float16}, np.float32),
     ]

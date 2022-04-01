@@ -140,8 +140,13 @@ def structure_tensor(image, sigma=1, mode="constant", cval=0, order=None):
     if order == "xy":
         derivatives = reversed(derivatives)
 
+    # Autodetection as done internally to Gaussian, but set it here to silence
+    # a warning.
+    channel_axis = -1 if (image.ndim == 3 and image.shape[-1] == 3) else None
+
     # structure tensor
-    A_elems = [gaussian(der0 * der1, sigma, mode=mode, cval=cval)
+    A_elems = [gaussian(der0 * der1, sigma, mode=mode, cval=cval,
+                        channel_axis=channel_axis)
                for der0, der1 in combinations_with_replacement(derivatives, 2)]
 
     return A_elems
@@ -205,7 +210,13 @@ def hessian_matrix(image, sigma=1, mode='constant', cval=0, order='rc'):
     float_dtype = _supported_float_type(image.dtype)
     image = image.astype(float_dtype, copy=False)
 
-    gaussian_filtered = gaussian(image, sigma=sigma, mode=mode, cval=cval)
+
+    # Autodetection as done internally to Gaussian, but set it here to silence
+    # a warning.
+    channel_axis = -1 if (image.ndim == 3 and image.shape[-1] == 3) else None
+
+    gaussian_filtered = gaussian(image, sigma=sigma, mode=mode, cval=cval,
+                                 channel_axis=channel_axis)
 
     gradients = cp.gradient(gaussian_filtered)
     axes = range(image.ndim)
