@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,6 +33,27 @@
 
 #define XSTR(x) STR(x)
 #define STR(x) #x
+
+
+// DLDataType's equality operator implementation
+template <>
+struct std::hash<DLDataType>
+{
+    size_t operator()(const DLDataType& dtype) const
+    {
+        return (dtype.code * 1117) ^ (dtype.bits * 31) ^ (dtype.lanes);
+    }
+};
+
+bool operator==(const DLDataType& lhs, const DLDataType& rhs)
+{
+    return (lhs.code == rhs.code) && (lhs.bits == rhs.bits) && (lhs.lanes == rhs.lanes);
+}
+
+bool operator!=(const DLDataType& lhs, const DLDataType& rhs)
+{
+    return (lhs.code != rhs.code) || (lhs.bits != rhs.bits) || (lhs.lanes != rhs.lanes);
+}
 
 namespace cucim
 {
@@ -443,8 +464,37 @@ std::vector<int64_t> CuImage::size(std::string dim_order) const
 }
 DLDataType CuImage::dtype() const
 {
-    // TODO: support string conversion like Device class
+    const memory::DLTContainer img_data = container();
+    if (img_data)
+    {
+        const DLDataType dtype = img_data.dtype();
+        return dtype;
+    }
+    else
+    {
+        if (image_metadata_)
+        {
+            return image_metadata_->dtype;
+        }
+    }
     return DLDataType({ DLDataTypeCode::kDLUInt, 8, 1 });
+}
+std::string CuImage::typestr() const
+{
+    const memory::DLTContainer img_data = container();
+    if (img_data)
+    {
+        const char* type_str = img_data.numpy_dtype();
+        return std::string(type_str);
+    }
+    else
+    {
+        if (image_metadata_)
+        {
+            return std::string(memory::to_numpy_dtype(image_metadata_->dtype));
+        }
+    }
+    return "|u1";
 }
 std::vector<std::string> CuImage::channel_names() const
 {
@@ -848,7 +898,7 @@ CuImage CuImage::read_region(std::vector<int64_t>&& location,
     const uint16_t level_ndim = 2;
     std::pmr::vector<int64_t> level_dimensions(&resource);
     level_dimensions.reserve(level_ndim * 1); // it has only one size
-    level_dimensions.insert(level_dimensions.end(), request.location, &request.location[request.location_len]);
+    level_dimensions.insert(level_dimensions.end(), request.size, &request.size[request.size_ndim]);
 
     std::pmr::vector<float> level_downsamples(&resource);
     level_downsamples.reserve(1);
@@ -856,8 +906,8 @@ CuImage CuImage::read_region(std::vector<int64_t>&& location,
 
     std::pmr::vector<uint32_t> level_tile_sizes(&resource);
     level_tile_sizes.reserve(level_ndim * 1); // it has only one size
-    level_tile_sizes.insert(
-        level_tile_sizes.end(), request.location, &request.location[request.location_len]); // same with level_dimension
+    level_tile_sizes.insert(level_tile_sizes.end(), request.size, &request.size[request.size_ndim]); // same with
+                                                                                                     // level_dimension
 
     // Empty associated images
     const size_t associated_image_count = 0;

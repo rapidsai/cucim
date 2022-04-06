@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -162,7 +162,15 @@ std::shared_ptr<CuFileDriver> open(const char* file_path, const char* flags, mod
         }
     }
 
-    return std::make_shared<CuFileDriver>(fd, no_gds, use_mmap, file_path);
+    const auto handle = std::make_shared<CuFileDriver>(fd, no_gds, use_mmap, file_path);
+
+    // Set ownership to the file descriptor
+    if (handle->handle_)
+    {
+        handle->handle_->own_fd = true;
+    }
+
+    return handle;
 }
 
 std::shared_ptr<CuFileDriver> open(int fd, bool no_gds, bool use_mmap)
@@ -201,7 +209,7 @@ CuFileDriver::CuFileDriver(int fd, bool no_gds, bool use_mmap, const char* file_
     file_path_cstr[file_path_.size()] = '\0';
     handle_ = std::make_shared<CuCIMFileHandle>(fd, nullptr, file_type, const_cast<char*>(file_path_cstr), this,
                                                 static_cast<uint64_t>(st.st_dev), static_cast<uint64_t>(st.st_ino),
-                                                static_cast<int64_t>(st.st_mtim.tv_nsec));
+                                                static_cast<int64_t>(st.st_mtim.tv_nsec), false);
 
     CUfileError_t status;
     CUfileDescr_t cf_descr{}; // It is important to set zero!
@@ -1121,10 +1129,9 @@ ssize_t CuFileDriver::pwrite(const void* buf, size_t count, off_t file_offset, o
 }
 bool CuFileDriver::close()
 {
-    if (handle_->cufile)
+    if (handle_ && handle_->cufile)
     {
         cuFileHandleDeregister(handle_->cufile);
-
     }
     if (mmap_ptr_)
     {
@@ -1135,7 +1142,7 @@ bool CuFileDriver::close()
         }
         mmap_ptr_ = nullptr;
     }
-    if (handle_->fd != -1)
+    if (handle_ && handle_->fd != -1)
     {
         // If block write was used
         if ((file_flags_ & O_RDWR) &&

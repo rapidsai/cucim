@@ -1,116 +1,68 @@
-# cuCIM 22.02.00 (2 Feb 2022)
+# cuCIM 22.04.00 (6 Apr 2022)
 
-## 🚨 Beaking Changes
+## 🚨 Breaking Changes
 
-- Update cucim.skimage API to match scikit-image 0.19 ([#190](https://github.com/rapidsai/cucim/pull/190)) [@glee77](https://github.com/glee77)
+- Apply fixes to skimage.transform scheduled for scikit-image 0.19.2 ([#208](https://github.com/rapidsai/cucim/pull/208)) [@grlee77](https://github.com/grlee77)
+
+## 🐛 Bug Fixes
+
+- Fix ImportError from vendored code ([#252](https://github.com/rapidsai/cucim/pull/252)) [@grlee77](https://github.com/grlee77)
+- Fix wrong dimension in metadata ([#248](https://github.com/rapidsai/cucim/pull/248)) [@gigony](https://github.com/gigony)
+- Handle file descriptor ownership and update documents for GDS ([#234](https://github.com/rapidsai/cucim/pull/234)) [@gigony](https://github.com/gigony)
+- Check nullptr of handler in CuFileDriver::close() ([#229](https://github.com/rapidsai/cucim/pull/229)) [@gigony](https://github.com/gigony)
+- Fix docs builds ([#218](https://github.com/rapidsai/cucim/pull/218)) [@ajschmidt8](https://github.com/ajschmidt8)
+- Apply fixes to skimage.transform scheduled for scikit-image 0.19.2 ([#208](https://github.com/rapidsai/cucim/pull/208)) [@grlee77](https://github.com/grlee77)
 
 ## 📖 Documentation
 
-- PyPI v21.12.00 elease ([#182](https://github.com/rapidsai/cucim/pull/182)) [@gigony](https://github.com/gigony)
+- Update PyPI cuCIM v22.02.01 CHANGELOG.md ([#249](https://github.com/rapidsai/cucim/pull/249)) [@gigony](https://github.com/gigony)
+- Update GTC 2021 Spring video links ([#227](https://github.com/rapidsai/cucim/pull/227)) [@gigony](https://github.com/gigony)
+- Update documents for v22.02.00 ([#226](https://github.com/rapidsai/cucim/pull/226)) [@gigony](https://github.com/gigony)
+- Merge branch-22.02 into branch-22.04 ([#220](https://github.com/rapidsai/cucim/pull/220)) [@jakirkham](https://github.com/jakirkham)
 
-## 🚀 New Featues
+## 🛠️ Improvements
 
-- Allow CuPy 10 ([#195](https://github.com/rapidsai/cucim/pull/195)) [@jakikham](https://github.com/jakikham)
-- Suppot multi-theads and batch, and suppot nvJPEG fo JPEG-compessed images ([#191](https://github.com/rapidsai/cucim/pull/191)) [@gigony](https://github.com/gigony)
+- Expose data type of CuImage object for interoperability with NumPy ([#246](https://github.com/rapidsai/cucim/pull/246)) [@gigony](https://github.com/gigony)
+- Temporarily disable new `ops-bot` functionality ([#239](https://github.com/rapidsai/cucim/pull/239)) [@ajschmidt8](https://github.com/ajschmidt8)
+- Add `.github/ops-bot.yaml` config file ([#236](https://github.com/rapidsai/cucim/pull/236)) [@ajschmidt8](https://github.com/ajschmidt8)
+- randomization per image per batch ([#231](https://github.com/rapidsai/cucim/pull/231)) [@shekhardw](https://github.com/shekhardw)
+
+# cuCIM 22.02.00 (2 Feb 2022)
+
+## 🚨 Breaking Changes
+
 - Update cucim.skimage API to match scikit-image 0.19 ([#190](https://github.com/rapidsai/cucim/pull/190)) [@glee77](https://github.com/glee77)
 
-## 🛠️ Impovements
+## 🐛 Bug Fixes
 
-- Upgade Numpy to 1.19 fo Python 3.9 suppot ([#203](https://github.com/rapidsai/cucim/pull/203)) [@Ethyling](https://github.com/Ethyling)
+- Fix a bug in [v21.12.01](https://github.com/rapidsai/cucim/wiki/release_notes_v21.12.01) ([#191](https://github.com/rapidsai/cucim/pull/191)) [@gigony](https://github.com/gigony)
+  - Fix GPU memory leak when using nvJPEG API (when `device='cuda'` parameter is used in `read_region` method).
+- Fix segfault for preferred_memory_capacity in Python 3.9+ ([#214](https://github.com/rapidsai/cucim/pull/214)) [@gigony](https://github.com/gigony)
+
+## 📖 Documentation
+
+- PyPI v21.12.00 release ([#182](https://github.com/rapidsai/cucim/pull/182)) [@gigony](https://github.com/gigony)
+
+## 🚀 New Features
+
+- Update cucim.skimage API to match scikit-image 0.19 ([#190](https://github.com/rapidsai/cucim/pull/190)) [@glee77](https://github.com/glee77)
+- Support multi-threads and batch, and support nvJPEG for JPEG-compressed images ([#191](https://github.com/rapidsai/cucim/pull/191)) [@gigony](https://github.com/gigony)
+- Allow CuPy 10 ([#195](https://github.com/rapidsai/cucim/pull/195)) [@jakikham](https://github.com/jakikham)
+
+## 🛠️ Improvements
+
+- Add missing imports tests ([#183](https://github.com/rapidsai/cucim/pull/183)) [@Ethyling](https://github.com/Ethyling)
 - Allow installation with CuPy 10 ([#197](https://github.com/rapidsai/cucim/pull/197)) [@glee77](https://github.com/glee77)
-- Upgade Numpy to 1.18 fo Python 3.9 suppot ([#196](https://github.com/rapidsai/cucim/pull/196)) [@Ethyling](https://github.com/Ethyling)
-- Add missing impots tests ([#183](https://github.com/rapidsai/cucim/pull/183)) [@Ethyling](https://github.com/Ethyling)
+- Upgrade Numpy to 1.18 for Python 3.9 support ([#196](https://github.com/rapidsai/cucim/pull/196)) [@Ethyling](https://github.com/Ethyling)
+- Upgrade Numpy to 1.19 for Python 3.9 support ([#203](https://github.com/rapidsai/cucim/pull/203)) [@Ethyling](https://github.com/Ethyling)
 
 # cuCIM 21.12.00 (9 Dec 2021)
 
 ## 🚀 New Features
 
-1. Support Aperio SVS with CPU LZW and jpeg2k decoder ([#141](https://github.com/rapidsai/cucim/pull/141)) [[@gigony](https://github.com/gigony)](https://github.com/gigony](https://github.com/gigony))
-2. Add NVTX support for performance analysis ([#144](https://github.com/rapidsai/cucim/pull/144)) [[@gigony](https://github.com/gigony)](https://github.com/gigony](https://github.com/gigony))
-3. Normalize operation ([#150](https://github.com/rapidsai/cucim/pull/150)) [[@shekhardw](https://github.com/shekhardw)](https://github.com/shekhardw](https://github.com/shekhardw))
-
-### 1. Support Aperio SVS (.svs)
-
-cuCIM now supports [Aperio SVS format](https://openslide.org/formats/aperio/) with help of [OpenJpeg](https://www.openjpeg.org/) for decoding jpeg2k-compressed data.
-
-Please check [this notebook](https://nbviewer.org/github/rapidsai/cucim/blob/branch-21.12/notebooks/Supporting_Aperio_SVS_Format.ipynb) to see how to use the feature.
-
-#### Unaligned Case (`per_process`, JPEG-compressed SVS file)
-
-![image](https://user-images.githubusercontent.com/1928522/141350490-06fdd8cb-5be2-42e4-9774-c7b76fab6f9a.png)
-
-#### Unaligned Case (`per_process`, JPEG2000 RGB-compressed SVS file)
-
-![image](https://user-images.githubusercontent.com/1928522/141093324-574b532e-ad42-4d61-8473-4c3e07e3feae.png)
-
-#### Unaligned Case (`per_process`, JPEG2000 YCbCr-compressed SVS file)
-
-![image](https://user-images.githubusercontent.com/1928522/141093381-8ab0161d-1b17-4e80-a680-86abfbf2fa65.png)
-
-The detailed data is available [here](https://docs.google.com/spreadsheets/d/15D1EqNI_E9x_S8i3kJLwBxMcEmwk8SafW0WryMrAm6A/edit#gid=369408723).
-
-### 2. Add NVTX support for performance analysis
-
-Important methods in cuCIM are instrumented with [NVTX](https://docs.nvidia.com/gameworks/index.html#gameworkslibrary/nvtx/nvidia_tools_extension_library_nvtx.htm) so can see performance bottlenecks easily with [NSight systems](https://developer.nvidia.com/nsight-systems).
-
-Tracing can be enabled through config file or environment variable or through API and less than 1% performance overheads in normal execution.
-
-#### Enabling Tracing
-##### Through `.cucim.json` file
-
-```json
-{
-        "profiler" : { "trace": true }
-}
-```
-
-##### Through Environment variable
-
-```bash
-CUCIM_TRACE=1 python
-```
-
-##### Through API
-
-```python
-from cucim import CuImage
-
-CuImage.profiler(trace=True)
-#or
-CuImage.profiler().trace(True)
-
-CuImage.profiler().config
-# {'trace': True}
-CuImage.profiler().trace()
-# True
-CuImage.is_trace_enabled # this is simpler method.
-# True
-```
-
-#### Profiling with NVIDIA Nsight Systems
-
-```bash
-nsys profile -f true -t cuda,nvtx,osrt -s cpu -x true --trace-fork-before-exec true -o my_profile `which python` benchmark.py
-# can add `--stats true`
-```
-
-Then, execute `nsight-sys` to open the profile results (my_profile.qdrep).
-
-![image](https://user-images.githubusercontent.com/1928522/141221297-2ff5224b-e99b-4fe6-af7d-69452141d71d.png)
-
-With this feature, a bug in cuCIM [v21.10.01](https://github.com/rapidsai/cucim/wiki/release_notes_v21.10.01) (thread contention in Cache) was found and fixed ([#145](https://github.com/rapidsai/cucim/pull/145)).
-
-### 3. Normalize operation
-
-CUDA-based normalization operation is added. Normalization supports the following types.
-
-1. Simple range based normalization
-2. Arctangent based normalization
-
-Arctangent-based normalization helps to stretch lower intensity pixels in the image slightly better than range-based normalization. If you look at its [graph](https://mathworld.wolfram.com/InverseTangent.html), there is a huge variation at certain lower intensities, but as intensities become higher, the curve becomes flatter. This helps in isolating regions like lungs (and regions within lungs) more efficiently. There can be separate use cases depending on the modality and the application.
-
-Please check the [test cases](https://github.com/rapidsai/cucim/blob/branch-21.12/python/cucim/src/cucim/core/operations/intensity/tests/test_normalize.py) to see how you can use the operation.
-
+- Support Aperio SVS with CPU LZW and jpeg2k decoder ([#141](https://github.com/rapidsai/cucim/pull/141)) [[@gigony](https://github.com/gigony)](https://github.com/gigony](https://github.com/gigony))
+- Add NVTX support for performance analysis ([#144](https://github.com/rapidsai/cucim/pull/144)) [[@gigony](https://github.com/gigony)](https://github.com/gigony](https://github.com/gigony))
+- Normalize operation ([#150](https://github.com/rapidsai/cucim/pull/150)) [[@shekhardw](https://github.com/shekhardw)](https://github.com/shekhardw](https://github.com/shekhardw))
 
 ## 🐛 Bug Fixes
 
@@ -203,4 +155,4 @@ Please check the [test cases](https://github.com/rapidsai/cucim/blob/branch-21.1
 
 # cuCIM 0.19.0 (15 Apr 2021)
 
-Initial release of cuCIM including cuClaraImage and [cupyimg](https://github.com/mritools/cupyimg).
+- Initial release of cuCIM including cuClaraImage and [cupyimg](https://github.com/mritools/cupyimg).
