@@ -28,6 +28,7 @@ cd $WORKSPACE
 export GIT_DESCRIBE_TAG=`git describe --abbrev=0 --tags`
 export MINOR_VERSION=`echo $GIT_DESCRIBE_TAG | grep -o -E '([0-9]+\.[0-9]+)'`
 echo "MINOR_VERSION: ${MINOR_VERSION}"
+unset GIT_DESCRIBE_TAG
 
 # Get CUDA and Python version
 export CUDA_VERSION=${CUDA_VERSION:-$(cat /usr/local/cuda/version.txt | egrep -o "[[:digit:]]+.[[:digit:]]+.[[:digit:]]+")}
@@ -51,11 +52,6 @@ gpuci_logger "Activate conda env"
 . /opt/conda/etc/profile.d/conda.sh
 conda activate rapids
 
-gpuci_logger "Install dependencies"
-gpuci_mamba_retry install -y -c rapidsai-nightly \
-    "cudatoolkit=${CUDA_VER}.*" \
-    "rapids-build-env=$MINOR_VERSION.*"
-
 ################################################################################
 # BUILD - Build cuCIM
 ################################################################################
@@ -68,13 +64,11 @@ LIBCUCIM_BLD_PATH=$WORKSPACE/ci/artifacts/cucim/cpu/.conda-bld
 CUCIM_BLD_PATH=/opt/conda/envs/rapids/conda-bld
 mkdir -p ${CUCIM_BLD_PATH}
 
-
 gpuci_mamba_retry build -c ${LIBCUCIM_BLD_PATH} -c conda-forge -c rapidsai-nightly \
     --dirty \
     --no-remove-work-dir \
     --croot ${CUCIM_BLD_PATH} \
     conda/recipes/cucim
-
 
 ################################################################################
 # TEST - Run py.tests for cuCIM
@@ -83,7 +77,6 @@ gpuci_mamba_retry build -c ${LIBCUCIM_BLD_PATH} -c conda-forge -c rapidsai-night
 # Install cuCIM and its dependencies
 gpuci_logger "Installing cuCIM and its dependencies"
 gpuci_mamba_retry install -y -c ${LIBCUCIM_BLD_PATH} -c ${CUCIM_BLD_PATH} -c rapidsai-nightly \
-    "rapids-build-env=$MINOR_VERSION.*" \
     libcucim \
     cucim
 
