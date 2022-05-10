@@ -818,18 +818,16 @@ def _props_to_dict(regions, properties=('label', 'bbox'), separator='-'):
             or prop in OBJECT_COLUMNS
             or dtype is np.object_
         ):
-            if prop == 'slice':
-                # keep slice objects in a NumPy array
+            if prop in OBJECT_COLUMNS:
+                # keep objects in a NumPy array
                 column_buffer = np.empty(n, dtype=dtype)
                 for i in range(n):
                     column_buffer[i] = regions[i][prop]
                 out[orig_prop] = np.copy(column_buffer)
             else:
-                column_buffer = []
+                column_buffer = cp.empty(n, dtype=dtype)
                 for i in range(n):
-                    p = regions[i][prop]
-                    column_buffer.append(p)
-                column_buffer = cp.array(column_buffer)
+                    column_buffer[i] = regions[i][prop]
                 out[orig_prop] = column_buffer
         else:
             if isinstance(rp, cp.ndarray):
