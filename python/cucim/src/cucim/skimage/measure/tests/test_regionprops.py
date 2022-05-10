@@ -602,7 +602,7 @@ def test_props_to_dict():
                    'bbox+2': cp.array([10]), 'bbox+3': cp.array([18])}
 
     regions = regionprops(SAMPLE_MULTIPLE)
-    out = _props_to_dict(regions, properties=['coords'])
+    out = _props_to_dict(regions, properties=('coords',))
     coords = np.empty(2, object)
     coords[0] = cp.array((cp.arange(10), cp.arange(10))).T
     coords[1] = cp.array([[3, 7], [4, 7]])
@@ -622,8 +622,8 @@ def test_regionprops_table():
     assert out == {'label': cp.array([1]), 'area': cp.array([72]),
                    'bbox+0': cp.array([0]), 'bbox+1': cp.array([0]),
                    'bbox+2': cp.array([10]), 'bbox+3': cp.array([18])}
-    
-    out = regionprops_table(SAMPLE_MULTIPLE, properties=['coords'])
+
+    out = regionprops_table(SAMPLE_MULTIPLE, properties=('coords',))
     coords = np.empty(2, object)
     coords[0] = cp.array((cp.arange(10), cp.arange(10))).T
     coords[1] = cp.array([[3, 7], [4, 7]])
