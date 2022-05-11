@@ -13,102 +13,20 @@
 # limitations under the License.
 
 
-import unittest
-
 import cupy as cp
-from parameterized import parameterized
+import pytest
+
 from cucim.core.operations.color import HEStainExtractor, StainNormalizer
 
-# None inputs
-EXTRACT_STAINS_TEST_CASE_0 = (None,)
-EXTRACT_STAINS_TEST_CASE_00 = (None, None)
-NORMALIZE_STAINS_TEST_CASE_0 = (None,)
-NORMALIZE_STAINS_TEST_CASE_00: tuple = ({}, None, None)
 
-# input pixels with negative values
-NEGATIVE_VALUE_TEST_CASE = [cp.full((3, 2, 4), -1)]
-
-# input pixels with greater than 255 values
-INVALID_VALUE_TEST_CASE = [cp.full((3, 2, 4), 256)]
-
-# input pixels all transparent and below the beta absorbance threshold
-EXTRACT_STAINS_TEST_CASE_1 = [cp.full((3, 2, 4), 240)]
-
-# input pixels uniformly filled, but above beta absorbance threshold
-EXTRACT_STAINS_TEST_CASE_2 = [cp.full((3, 2, 4), 100)]
-
-# input pixels uniformly filled (different value), but above beta absorbance threshold
-EXTRACT_STAINS_TEST_CASE_3 = [cp.full((3, 2, 4), 150)]
-
-# input pixels uniformly filled with zeros, leading to two identical stains extracted
-EXTRACT_STAINS_TEST_CASE_4 = [
-    cp.zeros((3, 2, 4)),
-    cp.array([[0.0, 0.0], [0.70710678, 0.70710678], [0.70710678, 0.70710678]]),
-]
-
-# input pixels not uniformly filled, leading to two different stains extracted
-EXTRACT_STAINS_TEST_CASE_5 = [
-    cp.array(
+class TestHEStainExtractor():
+    @pytest.mark.parametrize(
+        'image',
         [
-            [[100, 0, 0], [0, 0, 0]],
-            [[0, 0, 0], [0, 0, 0]],
-            [[0, 0, 0], [0, 0, 0]],
-        ]
-    ),
-    cp.array([[0.70710677, 0.18696113], [0.0, 0.0], [0.70710677, 0.98236734]]),
-]
-
-
-# input pixels all transparent and below the beta absorbance threshold
-NORMALIZE_STAINS_TEST_CASE_1 = [cp.full((3, 2, 5), 240)]
-
-# input pixels uniformly filled with zeros, and target stain matrix provided
-NORMALIZE_STAINS_TEST_CASE_2 = [
-    {"ref_stain_coeff": cp.full((3, 2), 1)},
-    cp.zeros((3, 2, 4)),
-    cp.full((3, 2, 4), 11),
-]
-
-# input pixels uniformly filled with zeros, and target stain matrix not provided
-NORMALIZE_STAINS_TEST_CASE_3 = [
-    {},
-    cp.zeros((3, 2, 3)),
-    cp.array(
-        [
-            [[63, 63, 63], [63, 63, 63]],
-            [[25, 25, 25], [25, 25, 25]],
-            [[60, 60, 60], [60, 60, 60]],
-        ]
-    ),
-]
-
-# input pixels not uniformly filled
-NORMALIZE_STAINS_TEST_CASE_4 = [
-    {"ref_stain_coeff": cp.full((3, 2), 1)},
-    cp.array(
-        [
-            [[100, 0, 0], [0, 0, 0]],
-            [[0, 0, 0], [0, 0, 0]],
-            [[0, 0, 0], [0, 0, 0]],
-        ]
-    ),
-    cp.array(
-        [
-            [[87, 33, 33], [33, 33, 33]],
-            [[87, 33, 33], [33, 33, 33]],
-            [[87, 33, 33], [33, 33, 33]],
-        ]
-    ),
-]
-
-
-class TestHEStainExtractor(unittest.TestCase):
-    @parameterized.expand(
-        [
-            NEGATIVE_VALUE_TEST_CASE,
-            INVALID_VALUE_TEST_CASE,
-            EXTRACT_STAINS_TEST_CASE_0,
-            EXTRACT_STAINS_TEST_CASE_1,
+            cp.full((3, 2, 4), -1),   # negative value
+            cp.full((3, 2, 4), 256),  # out of range value
+            None,
+            cp.full((3, 2, 4), 240),  # uniformly below the beta threshold
         ]
     )
     def test_transparent_image(self, image):
@@ -120,17 +38,18 @@ class TestHEStainExtractor(unittest.TestCase):
         remaining pixels to compute eigenvectors.
         """
         if image is None:
-            with self.assertRaises(TypeError):
+            with pytest.raises(TypeError):
                 HEStainExtractor()(image)
         else:
-            with self.assertRaises(ValueError):
+            with pytest.raises(ValueError):
                 HEStainExtractor()(image)
 
-    @parameterized.expand(
+    @pytest.mark.parametrize(
+        'image',
         [
-            EXTRACT_STAINS_TEST_CASE_0,
-            EXTRACT_STAINS_TEST_CASE_2,
-            EXTRACT_STAINS_TEST_CASE_3,
+            None,
+            cp.full((3, 2, 4), 100),  # uniform, above beta absorbance thresh.
+            cp.full((3, 2, 4), 150),  # uniform, above beta absorbance thresh.
         ]
     )
     def test_identical_result_vectors(self, image):
@@ -143,20 +62,48 @@ class TestHEStainExtractor(unittest.TestCase):
         of the returned stain matrix.
         """
         if image is None:
-            with self.assertRaises(TypeError):
+            with pytest.raises(TypeError):
                 HEStainExtractor()(image)
         else:
             result = HEStainExtractor()(image)
             cp.testing.assert_array_equal(result[:, 0], result[:, 1])
 
-    @parameterized.expand(
+    @pytest.mark.parametrize(
+        'image, expected',
         [
-            EXTRACT_STAINS_TEST_CASE_00,
-            EXTRACT_STAINS_TEST_CASE_4,
-            EXTRACT_STAINS_TEST_CASE_5,
+            (None, None),
+            # uniformly zero -> two identical stains extracted
+            (
+                cp.zeros((3, 2, 4)),
+                cp.array(
+                    [
+                        [0.0, 0.0],
+                        [0.70710678, 0.70710678],
+                        [0.70710678, 0.70710678]
+                    ]
+                )
+            ),
+            # input pixels not uniformly filled, leading to two different
+            # stains extracted
+            (
+                cp.array(
+                    [
+                        [[100, 0, 0], [0, 0, 0]],
+                        [[0, 0, 0], [0, 0, 0]],
+                        [[0, 0, 0], [0, 0, 0]],
+                    ]
+                ),
+                cp.array(
+                    [
+                        [0.70710677, 0.18702291],
+                        [0.0, 0.0],
+                        [0.70710677, 0.9823556],
+                    ]
+                ),
+            ),
         ]
     )
-    def test_result_value(self, image, expected_data):
+    def test_result_value(self, image, expected):
         """
         Test that an input image returns an expected stain matrix.
 
@@ -184,20 +131,21 @@ class TestHEStainExtractor(unittest.TestCase):
           [[0.70710677,0.18696113],[0,0],[0.70710677,0.98236734]]
         """
         if image is None:
-            with self.assertRaises(TypeError):
+            with pytest.raises(TypeError):
                 HEStainExtractor()(image)
         else:
             result = HEStainExtractor()(image)
-            cp.testing.assert_allclose(result, expected_data)
+            cp.testing.assert_allclose(result, expected)
 
 
-class TestStainNormalizer(unittest.TestCase):
-    @parameterized.expand(
+class TestStainNormalizer():
+    @pytest.mark.parametrize(
+        'image',
         [
-            NEGATIVE_VALUE_TEST_CASE,
-            INVALID_VALUE_TEST_CASE,
-            NORMALIZE_STAINS_TEST_CASE_0,
-            NORMALIZE_STAINS_TEST_CASE_1,
+            cp.full((3, 2, 4), -1),   # negative value case
+            cp.full((3, 2, 4), 256),  # out of range value
+            None,
+            cp.full((3, 2, 5), 240),  # uniformly below the beta threshold
         ]
     )
     def test_transparent_image(self, image):
@@ -209,50 +157,91 @@ class TestStainNormalizer(unittest.TestCase):
         remaining pixels to compute eigenvectors.
         """
         if image is None:
-            with self.assertRaises(TypeError):
+            with pytest.raises(TypeError):
                 StainNormalizer()(image)
         else:
-            with self.assertRaises(ValueError):
+            with pytest.raises(ValueError):
                 StainNormalizer()(image)
 
-    @parameterized.expand(
+    @pytest.mark.parametrize(
+        'kwargs, image, expected',
         [
-            NORMALIZE_STAINS_TEST_CASE_00,
-            NORMALIZE_STAINS_TEST_CASE_2,
-            NORMALIZE_STAINS_TEST_CASE_3,
-            NORMALIZE_STAINS_TEST_CASE_4,
+            # 1.) invalid image
+            ({}, None, None),
+            # 2.) input uniformly zero, and target stain matrix provided.
+            # - The normalized concentration returned for each pixel is the
+            #   same as the reference maximum stain concentrations in the case
+            #   that the image is uniformly filled, as in this test case. This
+            #   is because the maximum concentration for each stain is the same
+            #   as each pixel's concentration.
+            # - Thus, the normalized concentration matrix should be a (2, 6)
+            #   matrix with the first row having all values of 1.9705, second
+            #   row all 1.0308.
+            # - Taking the matrix product of the target stain matrix and the
+            #   concentration matrix, then using the inverse Beer-Lambert
+            #   transform to obtain the RGB image from the absorbance image,
+            #   and finally converting to uint8, we get that the stain
+            #   normalized image should be 12 everywhere.
+            [
+                {"ref_stain_coeff": cp.full((3, 2), 1)},
+                cp.zeros((3, 2, 4)),
+                cp.full((3, 2, 4), 12),
+            ],
+            # 3.) input uniformly zero, and target stain matrix provided.
+            # - As in test case 2, the normalized concentration matrix should
+            #   be a (2, 6) matrix with the first row having all values of
+            #   1.9705, second row all 1.0308.
+            # - Taking the matrix product of the target default stain matrix
+            #   and the concentration matrix, then using the inverse
+            #   Beer-Lambert transform to obtain the RGB image from the
+            #   absorbance image, and finally converting to uint8, we get the
+            #   expected result listed here.
+            [
+                {},
+                cp.zeros((3, 2, 3)),
+                cp.array(
+                    [
+                        [[63, 63, 63], [63, 63, 63]],
+                        [[25, 25, 25], [25, 25, 25]],
+                        [[61, 61, 61], [61, 61, 61]],
+                    ]
+                ),
+            ],
+            # 4.) input pixels not uniformly filled
+            # - For this non-uniformly filled image, the stain extracted should
+            #   be [[0.70710677,0.18696113],[0,0],[0.70710677,0.98236734]], as
+            #   validated for the HEStainExtractor class. Solving the linear
+            #   least squares problem (since absorbance matrix = stain matrix *
+            #   concentration matrix), we obtain the concentration matrix that
+            #   should be [[-0.3101, 7.7508, 7.7508, 7.7508, 7.7508, 7.7508],
+            #   [5.8022, 0, 0, 0, 0, 0]].
+            # - Normalizing the concentration matrix, taking the matrix product
+            #   of the target stain matrix and the concentration matrix, using
+            #   the inverse Beer-Lambert transform to obtain the RGB image from
+            #   the absorbance image, and finally converting to uint8, we get
+            #   the expected result listed here.
+            [
+                {"ref_stain_coeff": cp.full((3, 2), 1)},
+                cp.array(
+                    [
+                        [[100, 0, 0], [0, 0, 0]],
+                        [[0, 0, 0], [0, 0, 0]],
+                        [[0, 0, 0], [0, 0, 0]],
+                    ]
+                ),
+                cp.array(
+                    [
+                        [[88, 33, 33], [33, 33, 33]],
+                        [[88, 33, 33], [33, 33, 33]],
+                        [[88, 33, 33], [33, 33, 33]],
+                    ]
+                ),
+            ],
         ]
     )
-    def test_result_value(self, argments, image, expected_data):
+    def test_result_value(self, kwargs, image, expected):
         """
         Test that an input image returns an expected normalized image.
-
-        For test case 2:
-        - This case tests calling the stain normalizer, after the
-          _deconvolution_extract_conc function. This is because the normalized
-          concentration returned for each pixel is the same as the reference
-          maximum stain concentrations in the case that the image is uniformly
-          filled, as in this test case. This is because the maximum concentration
-          for each stain is the same as each pixel's concentration.
-        - Thus, the normalized concentration matrix should be a (2, 6) matrix
-          with the first row having all values of 1.9705, second row all 1.0308.
-        - Taking the matrix product of the target stain matrix and the concentration
-          matrix, then using the inverse Beer-Lambert transform to obtain the RGB
-          image from the absorbance image, and finally converting to uint8,
-          we get that the stain normalized image should be a matrix of
-          dims (3, 2, 3), with all values 11.
-
-        For test case 3:
-        - This case also tests calling the stain normalizer, after the
-          _deconvolution_extract_conc function returns the image concentration
-          matrix.
-        - As in test case 2, the normalized concentration matrix should be a (2, 6) matrix
-          with the first row having all values of 1.9705, second row all 1.0308.
-        - Taking the matrix product of the target default stain matrix and the concentration
-          matrix, then using the inverse Beer-Lambert transform to obtain the RGB
-          image from the absorbance image, and finally converting to uint8,
-          we get that the stain normalized image should be [[[63, 25, 60], [63, 25, 60]],
-          [[63, 25, 60], [63, 25, 60]], [[63, 25, 60], [63, 25, 60]]]
 
         For test case 4:
         - For this non-uniformly filled image, the stain extracted should be
@@ -269,12 +258,8 @@ class TestStainNormalizer(unittest.TestCase):
           [[33, 33, 33], [33, 33, 33]]]
         """
         if image is None:
-            with self.assertRaises(TypeError):
+            with pytest.raises(TypeError):
                 StainNormalizer()(image)
         else:
-            result = StainNormalizer(**argments)(image)
-            cp.testing.assert_allclose(result, expected_data)
-
-
-if __name__ == "__main__":
-    unittest.main()
+            result = StainNormalizer(**kwargs)(image)
+            cp.testing.assert_allclose(result, expected)
