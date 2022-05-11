@@ -240,23 +240,8 @@ class TestStainNormalizer():
         ]
     )
     def test_result_value(self, kwargs, image, expected):
-        """
-        Test that an input image returns an expected normalized image.
+        """Test that an input image returns an expected normalized image."""
 
-        For test case 4:
-        - For this non-uniformly filled image, the stain extracted should be
-          [[0.70710677,0.18696113],[0,0],[0.70710677,0.98236734]], as validated for the
-          HEStainExtractor class. Solving the linear least squares problem (since
-          absorbance matrix = stain matrix * concentration matrix), we obtain the concentration
-          matrix that should be [[-0.3101, 7.7508, 7.7508, 7.7508, 7.7508, 7.7508],
-          [5.8022, 0, 0, 0, 0, 0]]
-        - Normalizing the concentration matrix, taking the matrix product of the
-          target stain matrix and the concentration matrix, using the inverse
-          Beer-Lambert transform to obtain the RGB image from the absorbance
-          image, and finally converting to uint8, we get that the stain normalized
-          image should be [[[87, 87, 87], [33, 33, 33]], [[33, 33, 33], [33, 33, 33]],
-          [[33, 33, 33], [33, 33, 33]]]
-        """
         if image is None:
             with pytest.raises(TypeError):
                 StainNormalizer()(image)

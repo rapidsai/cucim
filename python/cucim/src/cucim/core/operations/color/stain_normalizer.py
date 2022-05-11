@@ -29,6 +29,7 @@ __all__ = [
     'normalize_colors_macenko',
 ]
 
+
 @cp.fuse()
 def _image_to_absorbance(image, min_val, max_val):
     image = cp.minimum(image, max_val)
@@ -480,19 +481,19 @@ def _normalized_from_concentrations(conc_raw, max_percentile, ref_stain_coeff,
 
 def normalize_colors_macenko(
         image,
-        source_intensity=240,
-        alpha=1,
-        beta=0.15,
-        ref_stain_coeff: Union[tuple, np.ndarray] = (
+        source_intensity: float = 240.0,
+        alpha: float = 1.0,
+        beta: float = 0.15,
+        ref_stain_coeff: Union[tuple, cp.ndarray] = (
             (0.5626, 0.2159),
             (0.7201, 0.8012),
             (0.4062, 0.5581),
         ),
-        ref_max_conc: Union[tuple, np.ndarray] = (1.9705, 1.0308),
-        image_type='intensity',
-        channel_axis=-1,
-        method='ortho',
-    ):
+        ref_max_conc: Union[tuple, cp.ndarray] = (1.9705, 1.0308),
+        image_type: str = 'intensity',
+        channel_axis: int = -1,
+        method: str = 'ortho',
+):
     """Extract the matrix of stain coefficient from the image.
 
     Parameters
@@ -630,7 +631,12 @@ class HEStainExtractor:
         self.beta = beta
         self.append_third_column = append_third_column
 
-    def __call__(self, image: cp.ndarray, channel_axis=0, image_type='intensity') -> cp.ndarray:
+    def __call__(
+        self,
+        image: cp.ndarray,
+        channel_axis: int = 0,
+        image_type: str = 'intensity'
+    ) -> cp.ndarray:
         """Perform stain extraction.
 
         Parameters
@@ -718,7 +724,7 @@ class StainNormalizer:
         ref_max_conc: Union[tuple, cp.ndarray] = (1.9705, 1.0308),
         stain_extractor=None,
         beta: float = 0.15,
-        concentration_method: str='ortho',
+        concentration_method: str = 'ortho',
     ) -> None:
         self.source_intensity = source_intensity
         self.alpha = alpha
@@ -736,17 +742,23 @@ class StainNormalizer:
         else:
             self.stain_extractor = stain_extractor
 
-    def __call__(self, image: cp.ndarray, channel_axis=0, image_type='intensity') -> cp.ndarray:
+    def __call__(
+        self,
+        image: cp.ndarray,
+        channel_axis: int = 0,
+        image_type: str = 'intensity',
+    ) -> cp.ndarray:
         """Perform stain normalization.
 
         Parameters
         ----------
         image : cp.ndarray
-            RGB image to perform stain extraction on. Intensities should typically
-            be within unsigned 8-bit integer intensity range ([0, 255]) when
-            ``image_type == 'intensity'``.
+            RGB image to perform stain extraction on. Intensities should
+            typically be within unsigned 8-bit integer intensity range
+            ([0, 255]) when ``image_type == 'intensity'``.
         channel_axis : int, optional
-            The axis corresponding to color channels (default is the last axis).
+            The axis corresponding to color channels (default is the last
+            axis).
         image_type : {'intensity', 'absorbance'}, optional
             With the default `image_type` of `'intensity'`, the image will be
             transformed to `absorbance` units via ``image_to_absorbance``. If
@@ -782,16 +794,19 @@ class StainNormalizer:
             self.concentration_method == 'ortho'
             and cp.any(cp.isnan(src_stain_coeff))
         ):
-            # Fall back to lstsq if NaN's found in final column of src_stain_coeff.
+            # Fall back to lstsq if NaN's found in final column of
+            # `src_stain_coeff`.
             # (e.g. may happen for an image of uniform intensity)
             src_stain_coeff = src_stain_coeff[:, :2]
             method = 'lstsq'
+        else:
+            method = self.concentration_method
 
         # convert absorbances to raw stain concentrations
         conc_raw = _get_raw_concentrations(
             src_stain_coeff=src_stain_coeff,
             absorbance=absorbance,
-            method=self.concentration_method
+            method=method,
         )
 
         # get normalized image from raw concentrations
