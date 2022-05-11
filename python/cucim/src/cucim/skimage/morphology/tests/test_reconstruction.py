@@ -96,14 +96,14 @@ def test_invalid_seed():
         reconstruction(seed * 0.5, mask, method='erosion')
 
 
-def test_invalid_selem():
+def test_invalid_footprint():
     seed = cp.ones((5, 5))
     mask = cp.ones((5, 5))
     with pytest.raises(ValueError):
-        reconstruction(seed, mask, selem=np.ones((4, 4)))
+        reconstruction(seed, mask, footprint=np.ones((4, 4)))
     with pytest.raises(ValueError):
-        reconstruction(seed, mask, selem=np.ones((3, 4)))
-    reconstruction(seed, mask, selem=np.ones((3, 3)))
+        reconstruction(seed, mask, footprint=np.ones((3, 4)))
+    reconstruction(seed, mask, footprint=np.ones((3, 3)))
 
 
 def test_invalid_method():
@@ -132,7 +132,7 @@ def test_invalid_offset_not_none():
     # fmt: on
     with pytest.raises(ValueError):
         reconstruction(image, mask, method='dilation',
-                       selem=cp.ones((3, 3)), offset=cp.array([3, 0]))
+                       footprint=cp.ones((3, 3)), offset=cp.array([3, 0]))
 
 
 def test_offset_not_none():
@@ -143,7 +143,7 @@ def test_offset_not_none():
 
     assert_array_almost_equal(
         reconstruction(seed, mask, method='dilation',
-                       selem=cp.ones(3), offset=cp.array([0])), expected)
+                       footprint=cp.ones(3), offset=cp.array([0])), expected)
 
 
 def test_reconstruction_float_inputs():

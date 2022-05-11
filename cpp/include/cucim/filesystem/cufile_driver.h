@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -183,6 +183,9 @@ public:
 
     ~CuFileDriver();
 
+    // To allow 'handle_' field
+    friend std::shared_ptr<CuFileDriver> open(const char* file_path, const char* flags, mode_t mode);
+
 private:
     static Mutex driver_mutex_; // TODO: not used yet.
 
@@ -190,7 +193,7 @@ private:
     size_t file_size_ = 0;
     int file_flags_ = -1;
     void* mmap_ptr_ = nullptr;
-    ::CuCIMFileHandle handle_;
+    std::shared_ptr<CuCIMFileHandle> handle_;
 };
 
 } // namespace cucim::filesystem

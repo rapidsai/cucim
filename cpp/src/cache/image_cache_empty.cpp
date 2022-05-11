@@ -27,7 +27,7 @@ std::shared_ptr<ImageCacheKey> EmptyImageCache::create_key(uint64_t, uint64_t)
 {
     return std::make_shared<ImageCacheKey>(0, 0);
 }
-std::shared_ptr<ImageCacheValue> EmptyImageCache::create_value(void*, uint64_t)
+std::shared_ptr<ImageCacheValue> EmptyImageCache::create_value(void*, uint64_t, const cucim::io::DeviceType)
 {
     return std::make_shared<ImageCacheValue>(nullptr, 0);
 }
@@ -47,11 +47,19 @@ void EmptyImageCache::unlock(uint64_t)
     return;
 }
 
+void* EmptyImageCache::mutex(uint64_t)
+{
+    return nullptr;
+}
+
 bool EmptyImageCache::insert(std::shared_ptr<ImageCacheKey>&, std::shared_ptr<ImageCacheValue>&)
 {
     return true;
 }
 
+void EmptyImageCache::remove_front()
+{
+}
 
 uint32_t EmptyImageCache::size() const
 {

@@ -1,6 +1,7 @@
 import cupy as cp
 import scipy.ndimage as cpu_ndi
 
+from .._shared.utils import deprecate_kwarg
 from ._label_kernels import _label
 
 
@@ -14,7 +15,10 @@ def _get_structure(ndim, connectivity):
 
 
 # TODO: currently uses int32 for the labels. should add int64 option as well
-def label(input, background=None, return_num=False, connectivity=None):
+@deprecate_kwarg({'input': 'label_image'},
+                 deprecated_version='0.19',
+                 removed_version='1.0')
+def label(label_image, background=None, return_num=False, connectivity=None):
     r"""Label connected regions of an integer array.
 
     Two pixels are connected when they are neighbors and have the same value.
@@ -32,7 +36,7 @@ def label(input, background=None, return_num=False, connectivity=None):
 
     Parameters
     ----------
-    input : ndarray of dtype int
+    label_image : ndarray of dtype int
         Image to label.
     background : int, optional
         Consider all pixels with this value as background pixels, and label
@@ -104,21 +108,21 @@ def label(input, background=None, return_num=False, connectivity=None):
      [1 1 2]
      [0 0 0]]
     """
-    ndim = input.ndim
+    ndim = label_image.ndim
     structure = _get_structure(ndim, connectivity)
     if background is None:
         background = 0
     elif background != 0:
         # offset so that background becomes 0 as expected by _label below
-        input = input - background
+        label_image = label_image - background
 
-    if input.dtype.kind not in "bui":
+    if label_image.dtype.kind not in "bui":
         # skimage always copies the input into a np.intp dtype array so do the
         # same here for non-integer dtypes.
-        input = input.astype(cp.intp)
+        label_image = label_image.astype(cp.intp)
 
-    labels = cp.empty(input.shape, order="C", dtype=cp.int32)
-    num = _label(input, structure, labels, greyscale_mode=True)
+    labels = cp.empty(label_image.shape, order="C", dtype=cp.int32)
+    num = _label(label_image, structure, labels, greyscale_mode=True)
 
     if return_num:
         return labels, num

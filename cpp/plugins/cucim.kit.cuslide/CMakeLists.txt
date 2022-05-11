@@ -70,6 +70,8 @@ endif()
 
 # Find CUDAToolkit as rmm depends on it
 find_package(CUDAToolkit REQUIRED)
+# For Threads::Threads
+find_package(Threads REQUIRED)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED YES)
@@ -123,6 +125,8 @@ superbuild_depend(cli11)
 superbuild_depend(pugixml)
 superbuild_depend(json)
 superbuild_depend(libdeflate)
+superbuild_depend(nvjpeg)
+superbuild_depend(libculibos)
 
 ################################################################################
 # Find cucim package
@@ -160,11 +164,15 @@ add_library(${CUCIM_PLUGIN_NAME}
     src/cuslide/deflate/deflate.h
     src/cuslide/jpeg/libjpeg_turbo.cpp
     src/cuslide/jpeg/libjpeg_turbo.h
+    src/cuslide/jpeg/libnvjpeg.cpp
+    src/cuslide/jpeg/libnvjpeg.h
     src/cuslide/jpeg2k/color_conversion.cpp
     src/cuslide/jpeg2k/color_conversion.h
     src/cuslide/jpeg2k/color_table.h
     src/cuslide/jpeg2k/libopenjpeg.cpp
     src/cuslide/jpeg2k/libopenjpeg.h
+    src/cuslide/loader/nvjpeg_processor.cpp
+    src/cuslide/loader/nvjpeg_processor.h
     ${deps-libopenjpeg_SOURCE_DIR}/src/bin/common/color.c  # for color_sycc_to_rgb() and color_apply_icc_profile()
     src/cuslide/lzw/lzw.cpp
     src/cuslide/lzw/lzw.h
@@ -208,6 +216,10 @@ target_compile_options(${CUCIM_PLUGIN_NAME} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-W
 # Link libraries
 target_link_libraries(${CUCIM_PLUGIN_NAME}
         PRIVATE
+            # Use custom nvjpeg_static that supports GPU input (>= CUDA 11.6)
+            deps::nvjpeg_static # add this before cudart so that nvjpeg.h in static library takes precedence.
+            # Add CUDA::culibos to link necessary methods for 'deps::nvjpeg_static'
+            CUDA::culibos       # for nvjpeg
             CUDA::cudart
             deps::fmt
             cucim::cucim

@@ -68,7 +68,7 @@ for function_name, fixed_kwargs, var_kwargs, allow_color, allow_nd in [
             continue
 
         if function_name in ["structural_similarity"]:
-            fixed_kwargs["multichannel"] = True if shape[-1] == 3 else False
+            fixed_kwargs["channel_axis"] = -1 if shape[-1] == 3 else None
 
         B = MetricsBench(
             function_name=function_name,

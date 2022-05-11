@@ -138,6 +138,14 @@ PYDOC(dtype, R"doc(
 The data type of the image.
 )doc")
 
+// DLDataType typestr() const;
+PYDOC(typestr, R"doc(
+The data type of the image in string format.
+
+The value can be converted to NumPy's dtype using `numpy.dtype()`.
+(e.g., `numpy.dtype(img.typestr)`).
+)doc")
+
 // std::vector<std::string> channel_names() const;
 PYDOC(channel_names, R"doc(
 A channel name list.
@@ -257,6 +265,16 @@ Returns:
 )doc")
 
 }; // namespace CuImage
+
+namespace CuImageIterator
+{
+
+// CuImageIterator(std::shared_ptr<DataType> cuimg, bool ending = false);
+PYDOC(CuImageIterator, R"doc(
+Constructor of CuImageIterator.
+)doc")
+
+} // namespace CuImageIterator
 
 } // namespace cucim::doc
 

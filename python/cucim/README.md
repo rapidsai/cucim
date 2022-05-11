@@ -6,8 +6,8 @@
 
 **NOTE:** For the latest stable [README.md](https://github.com/rapidsai/cucim/blob/main/README.md) ensure you are on the `main` branch.
 
-- [GTC 2021 cuCIM: A GPU Image I/O and Processing Toolkit [S32194]](https://www.nvidia.com/en-us/gtc/catalog/?search=cuCIM#/)
-  - [video](https://gtc21.event.nvidia.com/media/cuCIM%3A%20A%20GPU%20Image%20I_O%20and%20Processing%20Toolkit%20%5BS32194%5D/1_fwfxd0iu)
+- [GTC 2021 cuCIM: A GPU Image I/O and Processing Toolkit [S32194]](https://www.nvidia.com/en-us/on-demand/search/?facet.mimetype[]=event%20session&layout=list&page=1&q=cucim&sort=date)
+  - [video](https://www.nvidia.com/en-us/on-demand/session/gtcspring21-s32194/)
 - [SciPy 2021 cuCIM - A GPU image I/O and processing library](https://www.scipy2021.scipy.org/)
   - [video](https://youtu.be/G46kOOM9xbQ)
 
@@ -24,9 +24,11 @@ pip install scipy scikit-image cupy-cuda110
 
 ### Jupyter Notebooks
 
-Please check out our [Welcome](https://github.com/rapidsai/cucim/blob/branch-22.02/notebooks/Welcome.ipynb) notebook.
+Please check out our [Welcome](https://github.com/rapidsai/cucim/blob/branch-22.06/notebooks/Welcome.ipynb) notebook.
 
 ### Open Image
+
+cuCIM's dataloader(`cucim.CuImage` class) is currently supporting Digital-pathology specific image formats (tiled multi-resolution raw/deflate/lzw/JPEG/JPEG2000-compressed TIFF-like RGB images such as Generic TIFF, Philips TIFF, Aperio SVS format).
 
 ```python
 from cucim import CuImage
@@ -95,19 +97,23 @@ visualize(region)
 
 Aperio SVS (.svs) image format is supported since cuCIM [v21.10.01](https://github.com/rapidsai/cucim/wiki/release_notes_v21.10.01#support-aperio-svs-svs).
 
-Please check [this notebook](https://nbviewer.org/github/rapidsai/cucim/blob/branch-22.02/notebooks/Supporting_Aperio_SVS_Format.ipynb) to see how to use the feature.
+Please check [this notebook](https://nbviewer.org/github/rapidsai/cucim/blob/branch-22.06/notebooks/Supporting_Aperio_SVS_Format.ipynb) to see how to use the feature.
 
 ### Using Cache
 
-Please look at this [notebook](https://nbviewer.jupyter.org/github/rapidsai/cucim/blob/branch-22.02/notebooks/Using_Cache.ipynb).
+Please look at this [notebook](https://nbviewer.jupyter.org/github/rapidsai/cucim/blob/branch-22.06/notebooks/Using_Cache.ipynb).
 
 ### Accessing File with GDS
 
-Please look at this [notebook](https://nbviewer.jupyter.org/github/rapidsai/cucim/blob/branch-22.02/notebooks/Accessing_File_with_GDS.ipynb).
+Please look at this [notebook](https://nbviewer.jupyter.org/github/rapidsai/cucim/blob/branch-22.06/notebooks/Accessing_File_with_GDS.ipynb).
 
 ### NVTX Support for Performance Analysis
 
 Please look at [this release note](https://github.com/rapidsai/cucim/wiki/release_notes_v21.12.00#2-add-nvtx-support-for-performance-analysis).
+
+### Supporting Multithreading and Batch Processing
+
+Please look at [this release note](https://github.com/rapidsai/cucim/wiki/release_notes_v22.02.00#2-supporting-multithreading-and-batch-processing).
 
 ### Using scikit-image API
 
@@ -121,6 +127,11 @@ import matplotlib.pyplot as plt
 
 # from skimage import data
 from cucim.skimage.color import rgb2hed, hed2rgb  # modified from: `from skimage.color import rgb2hed, hed2rgb`
+
+# Load image (You can download sample images from https://openslide.cs.cmu.edu/download/openslide-testdata/Aperio/)
+from cucim import CuImage
+img = CuImage("CMU-1.svs")
+region = img.read_region((30000, 10000), (256, 256))
 
 # Example IHC image
 ihc_rgb = cp.asarray(region)  # modified from: `ihc_rgb = data.immunohistochemistry()`

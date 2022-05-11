@@ -112,13 +112,13 @@ for function_name, fixed_kwargs, var_kwargs, allow_color in [
 for shape in [(512, 512), (3840, 2160), (3840, 2160, 3), (192, 192, 192)]:
     ndim = len(shape)
 
-    multichannel = shape[-1] in [3, 4]
+    channel_axis = -1 if shape[-1] in [3, 4] else None
 
     B = MatchHistogramBench(
         function_name="match_histograms",
         shape=shape,
         dtypes=dtypes,
-        fixed_kwargs=dict(multichannel=multichannel),
+        fixed_kwargs=dict(channel_axis=channel_axis),
         var_kwargs=dict(),
         module_cpu=skimage.exposure,
         module_gpu=cucim.skimage.exposure,

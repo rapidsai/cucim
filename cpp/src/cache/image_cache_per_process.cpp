@@ -17,7 +17,9 @@
 
 #include "image_cache_per_process.h"
 
+#include "cucim/cache/image_cache.h"
 #include "cucim/memory/memory_manager.h"
+#include "cucim/util/cuda.h"
 
 #include <fmt/format.h>
 
@@ -53,19 +55,38 @@ struct PerProcessImageCacheItem
     std::shared_ptr<ImageCacheValue> value;
 };
 
-PerProcessImageCacheValue::PerProcessImageCacheValue(void* data, uint64_t size, void* user_obj)
-    : ImageCacheValue(data, size, user_obj){};
+PerProcessImageCacheValue::PerProcessImageCacheValue(void* data,
+                                                     uint64_t size,
+                                                     void* user_obj,
+                                                     const cucim::io::DeviceType device_type)
+    : ImageCacheValue(data, size, user_obj, device_type){};
+
 PerProcessImageCacheValue::~PerProcessImageCacheValue()
 {
     if (data)
     {
-        cucim_free(data);
+        switch (device_type)
+        {
+        case io::DeviceType::kCPU:
+            cucim_free(data);
+            break;
+        case io::DeviceType::kCUDA: {
+            cudaError_t cuda_status;
+            CUDA_TRY(cudaFree(data));
+            break;
+        }
+        case io::DeviceType::kPinned:
+        case io::DeviceType::kCPUShared:
+        case io::DeviceType::kCUDAShared:
+            fmt::print(stderr, "Device type {} is not supported!\n", device_type);
+            break;
+        }
         data = nullptr;
     }
 };
 
-PerProcessImageCache::PerProcessImageCache(const ImageCacheConfig& config)
-    : ImageCache(config, CacheType::kPerProcess),
+PerProcessImageCache::PerProcessImageCache(const ImageCacheConfig& config, const cucim::io::DeviceType device_type)
+    : ImageCache(config, CacheType::kPerProcess, device_type),
       mutex_array_(config.mutex_pool_capacity),
       capacity_nbytes_(kOneMiB * config.memory_capacity),
       capacity_(config.capacity),
@@ -89,14 +110,32 @@ std::shared_ptr<ImageCacheKey> PerProcessImageCache::create_key(uint64_t file_ha
 {
     return std::make_shared<ImageCacheKey>(file_hash, index);
 }
-std::shared_ptr<ImageCacheValue> PerProcessImageCache::create_value(void* data, uint64_t size)
+std::shared_ptr<ImageCacheValue> PerProcessImageCache::create_value(void* data,
+                                                                    uint64_t size,
+                                                                    const cucim::io::DeviceType device_type)
 {
-    return std::make_shared<PerProcessImageCacheValue>(data, size);
+    return std::make_shared<PerProcessImageCacheValue>(data, size, nullptr, device_type);
 }
 
 void* PerProcessImageCache::allocate(std::size_t n)
 {
-    return cucim_malloc(n);
+    switch (device_type_)
+    {
+    case io::DeviceType::kCPU:
+        return cucim_malloc(n);
+    case io::DeviceType::kCUDA: {
+        cudaError_t cuda_status;
+        void* image_data_ptr = nullptr;
+        CUDA_TRY(cudaMalloc(&image_data_ptr, n));
+        return image_data_ptr;
+    }
+    case io::DeviceType::kPinned:
+    case io::DeviceType::kCPUShared:
+    case io::DeviceType::kCUDAShared:
+        fmt::print(stderr, "Device type {} is not supported!\n", device_type_);
+        break;
+    }
+    return nullptr;
 }
 
 void PerProcessImageCache::lock(uint64_t index)
@@ -107,6 +146,11 @@ void PerProcessImageCache::lock(uint64_t index)
 void PerProcessImageCache::unlock(uint64_t index)
 {
     mutex_array_[index % mutex_pool_capacity_].unlock();
+}
+
+void* PerProcessImageCache::mutex(uint64_t index)
+{
+    return &mutex_array_[index % mutex_pool_capacity_];
 }
 
 bool PerProcessImageCache::insert(std::shared_ptr<ImageCacheKey>& key, std::shared_ptr<ImageCacheValue>& value)
@@ -133,6 +177,32 @@ bool PerProcessImageCache::insert(std::shared_ptr<ImageCacheKey>& key, std::shar
         fmt::print(stderr, "{} existing list_[] = {}\n", std::hash<std::thread::id>{}(std::this_thread::get_id()), (uint64_t)item->key->location_hash);
     }
     return succeed;
+}
+
+void PerProcessImageCache::remove_front()
+{
+    while (true)
+    {
+        uint32_t head = list_head_.load(std::memory_order_relaxed);
+        uint32_t tail = list_tail_.load(std::memory_order_relaxed);
+        if (head != tail)
+        {
+            // Remove front by increasing head
+            if (list_head_.compare_exchange_weak(
+                    head, (head + 1) % list_capacity_, std::memory_order_release, std::memory_order_relaxed))
+            {
+                std::shared_ptr<PerProcessImageCacheItem> head_item = list_[head];
+                size_nbytes_.fetch_sub(head_item->value->size, std::memory_order_relaxed);
+                hashmap_.erase(head_item->key);
+                list_[head].reset(); // decrease refcount
+                break;
+            }
+        }
+        else
+        {
+            break; // already empty
+        }
+    }
 }
 
 uint32_t PerProcessImageCache::size() const
@@ -279,36 +349,6 @@ bool PerProcessImageCache::is_memory_full(uint64_t additional_size) const
     }
 }
 
-void PerProcessImageCache::remove_front()
-{
-    while (true)
-    {
-        uint32_t head = list_head_.load(std::memory_order_relaxed);
-        uint32_t tail = list_tail_.load(std::memory_order_relaxed);
-        if (head != tail)
-        {
-            // Remove front by increasing head
-            if (list_head_.compare_exchange_weak(
-                    head, (head + 1) % list_capacity_, std::memory_order_release, std::memory_order_relaxed))
-            {
-                // fmt::print(stderr, "{} remove list_[{:05}]\n", std::hash<std::thread::id>{}(std::this_thread::get_id()), head); //[print_list]
-                std::shared_ptr<PerProcessImageCacheItem> head_item = list_[head];
-                // if (head_item) // it is possible that head_item is nullptr.
-                // {
-                size_nbytes_.fetch_sub(head_item->value->size, std::memory_order_relaxed);
-                hashmap_.erase(head_item->key);
-                list_[head].reset(); // decrease refcount
-                break;
-                    // }
-            }
-        }
-        else
-        {
-            break; // already empty
-        }
-    }
-}
-
 void PerProcessImageCache::push_back(std::shared_ptr<PerProcessImageCacheItem>& item)
 {
     uint32_t tail = list_tail_.load(std::memory_order_relaxed);
@@ -318,7 +358,6 @@ void PerProcessImageCache::push_back(std::shared_ptr<PerProcessImageCacheItem>& 
         if (list_tail_.compare_exchange_weak(
                 tail, (tail + 1) % list_capacity_, std::memory_order_release, std::memory_order_relaxed))
         {
-            // fmt::print(stderr, "{} list_[{:05}]={}\n", std::hash<std::thread::id>{}(std::this_thread::get_id()), tail, (uint64_t)item->key->location_hash); // [print_list]
             list_[tail] = item;
             size_nbytes_.fetch_add(item->value->size, std::memory_order_relaxed);
             break;
