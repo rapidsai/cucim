@@ -5,8 +5,9 @@ from numbers import Integral
 import cupy as cp
 import numpy as np
 
-from .._shared.utils import deprecate_kwarg
 from cucim.skimage import morphology
+
+from .._shared.utils import deprecate_kwarg
 
 # Precomputed ball and disk decompositions were saved as 2D arrays where the
 # radius of the desired decomposition is used to index into the first axis of
