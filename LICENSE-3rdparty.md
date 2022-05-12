@@ -275,3 +275,17 @@ Taskflow
   - https://github.com/taskflow/taskflow
 - Copyright: Dr. Tsung-Wei Huang
 - Usage: Threadpool implementation for batch processing.
+
+StainTools
+- License: MIT License
+  - https://github.com/Peter554/StainTools/blob/master/LICENSE.txt
+- Copyright: Peter Byfield
+- Usage: reference for stain color normalization algorithm
+
+HistomicsTK
+- License: Apache-2.0 License
+  - https://github.com/DigitalSlideArchive/HistomicsTK/blob/master/LICENSE
+- Copyright:
+  - Kitware, Inc.
+  - Emory University
+- Usage: reference for stain color normalization algorithm
