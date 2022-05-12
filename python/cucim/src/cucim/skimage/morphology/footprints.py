@@ -4,7 +4,6 @@ from numbers import Integral
 
 import cupy as cp
 import numpy as np
-from cupyx.scipy import ndimage as ndi
 
 from .._shared.utils import deprecate_kwarg
 from cucim.skimage import morphology
