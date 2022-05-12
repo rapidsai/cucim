@@ -88,7 +88,7 @@ def structure_tensor(image, sigma=1, mode="constant", cval=0, order=None):
 
     References
     ----------
-    .. [1] https://en.wikipedia.org/wiki/Structure_tensor\
+    .. [1] https://en.wikipedia.org/wiki/Structure_tensor
 
     Examples
     --------
