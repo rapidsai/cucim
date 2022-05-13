@@ -69,13 +69,14 @@ def image_to_absorbance(image, source_intensity=255.0, dtype=cp.float32):
     if dtype.kind != 'f':
         raise ValueError("dtype must be a floating point type")
 
+    input_dtype = image.dtype
     image = image.astype(dtype, copy=False)
     if source_intensity < 0:
         raise ValueError(
             "Source transmitted light intensity must be a positive value."
         )
     source_intensity = float(source_intensity)
-    if dtype.kind == 'f':
+    if input_dtype == 'f':
         min_val = source_intensity / 255.0
         max_val = source_intensity
     else:
