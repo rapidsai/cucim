@@ -25,7 +25,7 @@ __all__ = [
     'StainNormalizer',
     'absorbance_to_image',
     'image_to_absorbance',
-    'stain_decomposition_macenko',
+    'stain_extraction_macenko',
     'normalize_colors_macenko',
 ]
 
@@ -281,7 +281,7 @@ def _prep_channel_axis(channel_axis, ndim):
     return channel_axis % ndim
 
 
-def stain_decomposition_macenko(image, source_intensity=240, alpha=1,
+def stain_extraction_macenko(image, source_intensity=240, alpha=1,
                                 beta=0.345, *, channel_axis=0,
                                 image_type='intensity',
                                 append_third_column=False):
@@ -515,7 +515,7 @@ def normalize_colors_macenko(
         as transparent. Transparent pixels are excluded from the estimation.
     ref_stain_coeff : array-like
         Reference stain coefficients as determined by the output of
-        `stain_decomposition` for a reference image.
+        `stain_extraction_macenko` for a reference image.
     ref_max_conc : tuple or cp.ndarray
         The reference maximum concentrations.
     image_type : {'intensity', 'absorbance'}, optional
@@ -566,7 +566,7 @@ def normalize_colors_macenko(
     )
 
     # channels_axis=0 for the shape (3, n_pixels) absorbance matrix
-    src_stain_coeff = stain_decomposition_macenko(
+    src_stain_coeff = stain_extraction_macenko(
         absorbance,
         beta=beta,
         image_type='absorbance',
@@ -673,7 +673,7 @@ class HEStainExtractor:
             where the first column is H, the second column is E, and the rows
             are RGB values.
         """
-        return stain_decomposition_macenko(
+        return stain_extraction_macenko(
             image,
             source_intensity=self.source_intensity,
             alpha=self.alpha,
@@ -704,7 +704,7 @@ class StainNormalizer:
         percentile range used as a robust [min, max] estimate.
     ref_stain_coeff : array-like
         Reference stain coefficients as determined by the output of
-        `stain_decomposition` for a reference image.
+        `stain_extraction_macenko` for a reference image.
     ref_max_conc : tuple or cp.ndarray
         The reference maximum concentrations.
 
