@@ -177,7 +177,6 @@ def absorbance_to_image(absorbance, source_intensity=255, dtype=cp.uint8):
             absorbance, source_intensity, iinfo.min, iinfo.max
         )
         return image.astype(dtype, copy=False)
-    
     return _absorbance_to_image_float(absorbance, source_intensity)
 
 
@@ -243,9 +242,8 @@ def _prep_channel_axis(channel_axis, ndim):
     return channel_axis % ndim
 
 
-def stain_extraction_macenko(image, source_intensity=240, alpha=1,
-                                beta=0.345, *, channel_axis=0,
-                                image_type='intensity'):
+def stain_extraction_macenko(image, source_intensity=240, alpha=1, beta=0.345,
+                             *, channel_axis=0, image_type='intensity'):
     """Extract the matrix of H & E stain coefficient from an image.
 
     Uses the method of Macenko et. al. [1]_.
