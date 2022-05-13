@@ -32,11 +32,9 @@ __all__ = [
 
 @cp.fuse()
 def _image_to_absorbance(image, min_val, max_val):
-    image = cp.minimum(image, max_val)
-    image = cp.maximum(image, min_val)
-    image /= max_val
-    image = cp.log(image)
-    return -image
+    image = cp.maximum(cp.minimum(image, max_val), min_val)
+    absorbance = -cp.log(image / max_val)
+    return absorbance
 
 
 def image_to_absorbance(image, source_intensity=255.0, dtype=cp.float32):
