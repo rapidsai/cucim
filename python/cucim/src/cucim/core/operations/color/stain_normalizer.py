@@ -87,7 +87,7 @@ def image_to_absorbance(image, source_intensity=255.0, dtype=cp.float32):
 
 
 def _image_to_absorbance_matrix(image, source_intensity=240,
-                                image_type='intensity', channel_axis=-1,
+                                image_type='intensity', channel_axis=0,
                                 dtype=cp.float32):
     """Convert image to an absorbance and reshape to (3, n_pixels).
 
@@ -282,7 +282,7 @@ def _prep_channel_axis(channel_axis, ndim):
 
 
 def stain_decomposition_macenko(image, source_intensity=240, alpha=1,
-                                beta=0.345, *, channel_axis=-1,
+                                beta=0.345, *, channel_axis=0,
                                 image_type='intensity',
                                 append_third_column=False):
     """Extract the matrix of H & E stain coefficient from an image.
@@ -491,7 +491,7 @@ def normalize_colors_macenko(
         ),
         ref_max_conc: Union[tuple, cp.ndarray] = (1.9705, 1.0308),
         image_type: str = 'intensity',
-        channel_axis: int = -1,
+        channel_axis: int = 0,
         method: str = 'ortho',
 ):
     """Extract the matrix of stain coefficient from the image.
