@@ -16,10 +16,11 @@
 import cupy as cp
 import pytest
 
-from cucim.core.operations.color import HEStainExtractor, StainNormalizer
+from cucim.core.operations.color import (stain_extraction_macenko,
+                                         normalize_colors_macenko)
 
 
-class TestHEStainExtractor():
+class TestStainExtractorMacenko():
     @pytest.mark.parametrize(
         'image',
         [
@@ -39,10 +40,10 @@ class TestHEStainExtractor():
         """
         if image is None:
             with pytest.raises(TypeError):
-                HEStainExtractor()(image)
+                stain_extraction_macenko(image)
         else:
             with pytest.raises(ValueError):
-                HEStainExtractor()(image)
+                stain_extraction_macenko(image)
 
     @pytest.mark.parametrize(
         'image',
@@ -63,9 +64,9 @@ class TestHEStainExtractor():
         """
         if image is None:
             with pytest.raises(TypeError):
-                HEStainExtractor()(image)
+                stain_extraction_macenko(image)
         else:
-            result = HEStainExtractor()(image)
+            result = stain_extraction_macenko(image)
             cp.testing.assert_array_equal(result[:, 0], result[:, 1])
 
     @pytest.mark.parametrize(
@@ -132,13 +133,13 @@ class TestHEStainExtractor():
         """
         if image is None:
             with pytest.raises(TypeError):
-                HEStainExtractor()(image)
+                stain_extraction_macenko(image)
         else:
-            result = HEStainExtractor()(image)
+            result = stain_extraction_macenko(image)
             cp.testing.assert_allclose(result, expected)
 
 
-class TestStainNormalizer():
+class TestStainNormalizerMacenko():
     @pytest.mark.parametrize(
         'image',
         [
@@ -158,10 +159,10 @@ class TestStainNormalizer():
         """
         if image is None:
             with pytest.raises(TypeError):
-                StainNormalizer()(image)
+                normalize_colors_macenko(image)
         else:
             with pytest.raises(ValueError):
-                StainNormalizer()(image)
+                normalize_colors_macenko(image)
 
     @pytest.mark.parametrize(
         'kwargs, image, expected',
@@ -210,7 +211,7 @@ class TestStainNormalizer():
             # 4.) input pixels not uniformly filled
             # - For this non-uniformly filled image, the stain extracted should
             #   be [[0.70710677,0.18696113],[0,0],[0.70710677,0.98236734]], as
-            #   validated for the HEStainExtractor class. Solving the linear
+            #   validated for stain_extraction_macenko. Solving the linear
             #   least squares problem (since absorbance matrix = stain matrix *
             #   concentration matrix), we obtain the concentration matrix that
             #   should be [[-0.3101, 7.7508, 7.7508, 7.7508, 7.7508, 7.7508],
@@ -244,7 +245,7 @@ class TestStainNormalizer():
 
         if image is None:
             with pytest.raises(TypeError):
-                StainNormalizer()(image)
+                normalize_colors_macenko(image)
         else:
-            result = StainNormalizer(**kwargs)(image)
+            result = normalize_colors_macenko(image, **kwargs)
             cp.testing.assert_allclose(result, expected)
