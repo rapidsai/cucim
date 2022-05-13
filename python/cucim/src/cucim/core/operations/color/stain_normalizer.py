@@ -63,7 +63,7 @@ def image_to_absorbance(image, source_intensity=255.0, dtype=cp.float32):
 
     .. math::
 
-        absorbance = \\log_10{\\frac{image}{source_intensity}}.
+        absorbance = \\log{\\frac{image}{source_intensity}}.
     """
     dtype = cp.dtype(dtype)
     if not dtype.kind == 'f':
@@ -282,7 +282,7 @@ def _prep_channel_axis(channel_axis, ndim):
 
 
 def stain_decomposition_macenko(image, source_intensity=240, alpha=1,
-                                beta=0.15, *, channel_axis=-1,
+                                beta=0.345, *, channel_axis=-1,
                                 image_type='intensity',
                                 append_third_column=False):
     """Extract the matrix of H & E stain coefficient from an image.
@@ -326,6 +326,12 @@ def stain_decomposition_macenko(image, source_intensity=240, alpha=1,
         Stain attenuation coefficient matrix derived from the image, where
         the first column corresponds to H, the second column is E and the rows
         are RGB values.
+
+    Notes
+    -----
+    The default `beta` of 0.345 is equivalent to the use of 0.15 in [1]_. The
+    difference is due to our use of the natural log instead of a decadic log
+    (log10) when computing the absorbance.
 
     References
     ----------
@@ -477,7 +483,7 @@ def normalize_colors_macenko(
         image,
         source_intensity: float = 240.0,
         alpha: float = 1.0,
-        beta: float = 0.15,
+        beta: float = 0.345,
         ref_stain_coeff: Union[tuple, cp.ndarray] = (
             (0.5626, 0.2159),
             (0.7201, 0.8012),
@@ -532,6 +538,12 @@ def normalize_colors_macenko(
         Stain attenuation coefficient matrix derived from the image, where
         the first column corresponds to H, the second column is E and the rows
         are RGB values.
+
+    Notes
+    -----
+    The default `beta` of 0.345 is equivalent to the use of 0.15 in [1]_. The
+    difference is due to our use of the natural log instead of a decadic log
+    (log10) when computing the absorbance.
 
     References
     ----------
@@ -604,6 +616,12 @@ class HEStainExtractor:
         If True, a third stain vector, orthogonal to the first two will be
         added so that the stain coefficients matrix is square.
 
+    Notes
+    -----
+    The default `beta` of 0.345 is equivalent to the use of 0.15 in [1]_. The
+    difference is due to our use of the natural log instead of a decadic log
+    (log10) when computing the absorbance.
+
     References
     ----------
     .. [1] M. Macenko et al., "A method for normalizing histology slides for
@@ -617,7 +635,7 @@ class HEStainExtractor:
         self,
         source_intensity: float = 240,
         alpha: float = 1,
-        beta: float = 0.15,
+        beta: float = 0.345,
         append_third_column: bool = False,
     ) -> None:
         self.source_intensity = source_intensity
@@ -717,7 +735,7 @@ class StainNormalizer:
         ),
         ref_max_conc: Union[tuple, cp.ndarray] = (1.9705, 1.0308),
         stain_extractor=None,
-        beta: float = 0.15,
+        beta: float = 0.345,
         concentration_method: str = 'ortho',
     ) -> None:
         self.source_intensity = source_intensity
