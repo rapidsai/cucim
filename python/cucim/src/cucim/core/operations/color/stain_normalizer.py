@@ -228,36 +228,6 @@ def _covariance(a):
     return out.squeeze()
 
 
-def _complement_stain_matrix(w):
-    """Generates a complemented stain matrix
-    Used to fill out empty columns of a stain matrix for use with
-    color_deconvolution. Replaces right-most column with normalized
-    cross-product of first two columns.
-
-    Parameters
-    ----------
-    w : array_like
-        A 3x3 stain calibration matrix with stain color vectors in columns.
-
-    Returns
-    -------
-    w_comp : array_like
-        A 3x3 complemented stain calibration matrix with a third
-        orthogonal column.
-
-    Notes
-    -----
-    This function was adopted from HistomicsTK.
-    """
-
-    stain0 = w[:, 0]
-    stain1 = w[:, 1]
-    stain2 = np.cross(stain0, stain1)
-    # Normalize new vector to have unit norm
-    stain2 /= np.linalg.norm(stain2)
-    return np.stack([stain0, stain1, stain2], axis=1)
-
-
 def _validate_image(image):
     if not isinstance(image, cp.ndarray):
         raise TypeError("Image must be of type cupy.ndarray.")
@@ -275,8 +245,7 @@ def _prep_channel_axis(channel_axis, ndim):
 
 def stain_extraction_macenko(image, source_intensity=240, alpha=1,
                                 beta=0.345, *, channel_axis=0,
-                                image_type='intensity',
-                                append_third_column=False):
+                                image_type='intensity'):
     """Extract the matrix of H & E stain coefficient from an image.
 
     Uses the method of Macenko et. al. [1]_.
@@ -308,9 +277,6 @@ def stain_extraction_macenko(image, source_intensity=240, alpha=1,
         transformed to `absorbance` units via ``image_to_absorbance``. If
         the input `image` is already an absorbance image, then `image_type`
         should be set to `'absorbance'` instead.
-    append_third_column : bool, optional
-        If True, a dummy stain vector, orthogonal to the first two will be
-        added.
 
     Returns
     -------
@@ -390,34 +356,23 @@ def stain_extraction_macenko(image, source_intensity=240, alpha=1,
 
     # renormalize columns to reduce numerical error
     stain_coeff /= np.linalg.norm(stain_coeff, axis=0, keepdims=True)
-    if append_third_column:
-        stain_coeff = _complement_stain_matrix(stain_coeff)
     return cp.asarray(stain_coeff)
 
 
-def _get_raw_concentrations(src_stain_coeff, absorbance, method):
+def _get_raw_concentrations(src_stain_coeff, absorbance):
 
     if absorbance.ndim != 2 or absorbance.shape[0] != 3:
         raise ValueError("`absorbance` must be shape (3, n_pixels)")
 
     # estimate the raw stain concentrations
-    if method == 'lstsq':
-        if src_stain_coeff.shape != (3, 2):
-            raise ValueError("expected a set of two stain vectors")
-        # If there are only two stain vectors, use a least-squares estimate.
-        conc_raw = cp.linalg.lstsq(
-            src_stain_coeff, absorbance, rcond=None
-        )[0]
-    elif method == 'ortho':
-        if src_stain_coeff.shape != (3, 3):
-            raise ValueError("expected a set of three stain vectors")
-        # This approach relies on a square stain coeffs matrix as used by
-        # HistomicsTK. In practice, it gives nearly identical results to the
-        # least-squares approach.
-        coeff_inv = cp.linalg.inv(src_stain_coeff)
-        conc_raw = cp.dot(cp.asarray(coeff_inv, order='F'), absorbance)[:2]
-    else:
-        raise ValueError(f"unknown method, {method}")
+
+    # pseudo-inverse
+    coeff_pinv = cp.dot(
+        cp.linalg.inv(cp.dot(src_stain_coeff.T, src_stain_coeff)),
+        src_stain_coeff.T
+    )
+    conc_raw = cp.dot(cp.asarray(coeff_pinv, order='F'), absorbance)
+
     return conc_raw
 
 
@@ -484,7 +439,6 @@ def normalize_colors_macenko(
         ref_max_conc: Union[tuple, cp.ndarray] = (1.9705, 1.0308),
         image_type: str = 'intensity',
         channel_axis: int = 0,
-        method: str = 'ortho',
 ):
     """Extract the matrix of stain coefficient from the image.
 
@@ -517,12 +471,6 @@ def normalize_colors_macenko(
         should be set to `'absorbance'` instead.
     channel_axis : int, optional
         The axis corresponding to color channels (default is the last axis).
-    method : {'ortho', 'lstsq'}, optional
-        The method used to solve for the raw stain concentrations. 'ortho'
-        the inverse of the source stain coefficients matrix by the absorbances.
-        This can be used when the source stain coefficients form a square
-        matrix. `lstsq` performs a least-squares solution, and can be used when
-        there are fewer stain vectors than color channels.
 
     Returns
     -------
@@ -563,17 +511,10 @@ def normalize_colors_macenko(
         beta=beta,
         image_type='absorbance',
         channel_axis=0,
-        append_third_column=(method == 'ortho'),
     )
 
-    if method == 'ortho' and cp.any(cp.isnan(src_stain_coeff)):
-        # Fall back to lstsq if NaN's found in final column of src_stain_coeff.
-        # (e.g. may happen for an image of uniform intensity)
-        src_stain_coeff = src_stain_coeff[:, :2]
-        method = 'lstsq'
-
     # get normalized image from raw concentrations
-    conc_raw = _get_raw_concentrations(src_stain_coeff, absorbance, method)
+    conc_raw = _get_raw_concentrations(src_stain_coeff, absorbance)
 
     # get normalized image
     image_norm = _normalized_from_concentrations(
@@ -604,9 +545,6 @@ class HEStainExtractor:
     beta : float, optional
         Absorbance (optical density) threshold below which to consider pixels
         as transparent. Transparent pixels are excluded from the estimation.
-    append_third_column : bool, optional
-        If True, a third stain vector, orthogonal to the first two will be
-        added so that the stain coefficients matrix is square.
 
     Notes
     -----
@@ -628,12 +566,10 @@ class HEStainExtractor:
         source_intensity: float = 240,
         alpha: float = 1,
         beta: float = 0.345,
-        append_third_column: bool = False,
     ) -> None:
         self.source_intensity = source_intensity
         self.alpha = alpha
         self.beta = beta
-        self.append_third_column = append_third_column
 
     def __call__(
         self,
@@ -672,7 +608,6 @@ class HEStainExtractor:
             beta=self.beta,
             channel_axis=channel_axis,
             image_type=image_type,
-            append_third_column=self.append_third_column,
         )
 
 
@@ -709,12 +644,6 @@ class StainNormalizer:
         Absorbance (optical density) threshold below which to consider pixels
         as transparent. Transparent pixels are excluded from the estimation.
         Used to initialize `HEStainExtractor` when `stain_extractor` is None.
-    concentration_method : {'ortho', 'lstsq'}, optional
-        The method used to solve for the raw stain concentrations. 'ortho'
-        the inverse of the source stain coefficients matrix by the absorbances.
-        This can be used when the source stain coefficients form a square
-        matrix. `lstsq` performs a least-squares solution, and can be used when
-        there are fewer stain vectors than color channels.
     """
     def __init__(
         self,
@@ -728,20 +657,17 @@ class StainNormalizer:
         ref_max_conc: Union[tuple, cp.ndarray] = (1.9705, 1.0308),
         stain_extractor=None,
         beta: float = 0.345,
-        concentration_method: str = 'ortho',
     ) -> None:
         self.source_intensity = source_intensity
         self.alpha = alpha
         self.beta = beta
         self.ref_stain_coeff = cp.asarray(ref_stain_coeff)
         self.ref_max_conc = cp.asarray(ref_max_conc)
-        self.concentration_method = concentration_method
         if stain_extractor is None:
             self.stain_extractor = HEStainExtractor(
                 source_intensity=source_intensity,
                 alpha=alpha,
                 beta=beta,
-                append_third_column=(concentration_method == 'ortho'),
             )
         else:
             self.stain_extractor = stain_extractor
@@ -794,23 +720,10 @@ class StainNormalizer:
             channel_axis=0
         )
 
-        if (
-            self.concentration_method == 'ortho'
-            and cp.any(cp.isnan(src_stain_coeff))
-        ):
-            # Fall back to lstsq if NaN's found in final column of
-            # `src_stain_coeff`.
-            # (e.g. may happen for an image of uniform intensity)
-            src_stain_coeff = src_stain_coeff[:, :2]
-            method = 'lstsq'
-        else:
-            method = self.concentration_method
-
         # convert absorbances to raw stain concentrations
         conc_raw = _get_raw_concentrations(
             src_stain_coeff=src_stain_coeff,
             absorbance=absorbance,
-            method=method,
         )
 
         # get normalized image from raw concentrations
