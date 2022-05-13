@@ -366,6 +366,9 @@ def threshold_otsu(image=None, nbins=256, *, hist=None):
             return first_pixel
 
     counts, bin_centers = _validate_image_histogram(image, hist, nbins)
+    # small size counts, bin_centers -> faster on the host
+    counts = cp.asnumpy(counts)
+    bin_centers = cp.asnumpy(bin_centers)
 
     # class probabilities for all possible thresholds
     weight1 = np.cumsum(counts)
@@ -379,10 +382,10 @@ def threshold_otsu(image=None, nbins=256, *, hist=None):
     # ``weight2``/``mean2``, which do not exist.
     variance12 = weight1[:-1] * weight2[1:] * (mean1[:-1] - mean2[1:]) ** 2
 
-    idx = cp.argmax(variance12)
+    idx = np.argmax(variance12)
     threshold = bin_centers[idx]
 
-    return threshold
+    return cp.asarray(threshold)
 
 
 def threshold_yen(image=None, nbins=256, *, hist=None):
@@ -434,14 +437,16 @@ def threshold_yen(image=None, nbins=256, *, hist=None):
         return bin_centers[0]
 
     # Calculate probability mass function
+    # (small size counts -> faster on the host)
+    counts = cp.asnumpy(counts)
     pmf = counts.astype(cp.float32) / counts.sum()
-    P1 = cp.cumsum(pmf)  # Cumulative normalized histogram
-    P1_sq = cp.cumsum(pmf * pmf)
+    P1 = np.cumsum(pmf)  # Cumulative normalized histogram
+    P1_sq = np.cumsum(pmf * pmf)
     # Get cumsum calculated from end of squared array:
-    P2_sq = cp.cumsum(pmf[::-1] ** 2)[::-1]
+    P2_sq = np.cumsum(pmf[::-1] ** 2)[::-1]
     # P2_sq indexes is shifted +1. I assume, with P1[:-1] it's help avoid
     # '-inf' in crit. ImageJ Yen implementation replaces those values by zero.
-    crit = cp.log(((P1_sq[:-1] * P2_sq[1:]) ** -1) *
+    crit = np.log(((P1_sq[:-1] * P2_sq[1:]) ** -1) *
                   (P1[:-1] * (1.0 - P1[:-1])) ** 2)
     return bin_centers[crit.argmax()]
 
@@ -515,11 +520,14 @@ def threshold_isodata(image=None, nbins=256, return_all=False, *, hist=None):
         else:
             return bin_centers[0]
 
+    # small size counts, bin_centers -> faster on the host
+    counts = cp.asnumpy(counts)
+    bin_centers = cp.asnumpy(bin_centers)
     counts = counts.astype(cp.float32)
 
     # csuml and csumh contain the count of pixels in that bin or lower, and
     # in all bins strictly higher than that bin, respectively
-    csuml = cp.cumsum(counts)
+    csuml = np.cumsum(counts)
     csumh = csuml[-1] - csuml
 
     # intensity_sum contains the total pixel intensity from each bin
@@ -535,7 +543,7 @@ def threshold_isodata(image=None, nbins=256, return_all=False, *, hist=None):
     # can be in the top bin.
     # To avoid the division by zero, we simply skip over the last element in
     # all future computation.
-    csum_intensity = cp.cumsum(intensity_sum)
+    csum_intensity = np.cumsum(intensity_sum)
     lower = csum_intensity[:-1] / csuml[:-1]
     higher = (csum_intensity[-1] - csum_intensity[:-1]) / csumh[:-1]
 
@@ -556,6 +564,7 @@ def threshold_isodata(image=None, nbins=256, return_all=False, *, hist=None):
     # there really can't be any guarantees anymore anyway.
     distances = all_mean - bin_centers[:-1]
     thresholds = bin_centers[:-1][(distances >= 0) & (distances < bin_width)]
+    thresholds = cp.asarray(thresholds)
 
     if return_all:
         return thresholds
@@ -831,6 +840,16 @@ def threshold_minimum(image=None, nbins=256, max_num_iter=10000, *, hist=None):
     >>> thresh = threshold_minimum(image)
     >>> binary = image > thresh
     """
+    have_scipy = False
+    try:
+        from scipy.ndimage import uniform_filter1d
+        have_scipy = True
+        # SciPy box filter
+        # (preferred over CuPy for lower overhead on small arrays)
+        box_filt1d = uniform_filter1d
+    except ImportError:
+        # CuPy box filter
+        box_filt1d = ndi.uniform_filter1d
 
     def find_local_maxima_idx(hist):
         # We can't use scipy.signal.argrelmax
@@ -838,8 +857,9 @@ def threshold_minimum(image=None, nbins=256, max_num_iter=10000, *, hist=None):
         maximum_idxs = list()
         direction = 1
 
-        # TODO: better to transfer hist back to cpu?
-        hist = cp.asnumpy(hist)  # device synchronize
+        if isinstance(hist, cp.ndarray):
+            # for loop below is faster for an array on the host
+            hist = cp.asnumpy(hist)
 
         for i in range(hist.shape[0] - 1):
             if direction > 0:
@@ -853,11 +873,14 @@ def threshold_minimum(image=None, nbins=256, max_num_iter=10000, *, hist=None):
         return maximum_idxs
 
     counts, bin_centers = _validate_image_histogram(image, hist, nbins)
+    if have_scipy:
+        # small size counts, bin_centers -> faster on the host
+        counts = cp.asnumpy(counts)
+        bin_centers = cp.asnumpy(bin_centers)
 
     smooth_hist = counts.astype(cp.float64, copy=False)
-
     for counter in range(max_num_iter):
-        smooth_hist = ndi.uniform_filter1d(smooth_hist, 3)
+        smooth_hist = box_filt1d(smooth_hist, 3)
         maximum_idxs = find_local_maxima_idx(smooth_hist)
         if len(maximum_idxs) < 3:
             break
@@ -869,11 +892,12 @@ def threshold_minimum(image=None, nbins=256, max_num_iter=10000, *, hist=None):
                            'smoothing')
 
     # Find lowest point between the maxima
-    threshold_idx = cp.argmin(
+    # (np.argmin will dispatch to CuPy if needed)
+    threshold_idx = np.argmin(
         smooth_hist[maximum_idxs[0]:maximum_idxs[1] + 1]
     )
 
-    return bin_centers[maximum_idxs[0] + int(threshold_idx)]
+    return cp.asarray(bin_centers[maximum_idxs[0] + int(threshold_idx)])
 
 
 def threshold_mean(image):
