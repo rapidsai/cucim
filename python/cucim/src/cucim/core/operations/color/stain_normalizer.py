@@ -119,31 +119,22 @@ def _image_to_absorbance_matrix(image, source_intensity=240,
 
 @cp.fuse()
 def _absorbance_to_image_float(absorbance, source_intensity):
-    rgb = -absorbance
-    rgb = cp.exp(rgb)
-    rgb *= source_intensity
-    return rgb
+    return -cp.exp(absorbance) * source_intensity
 
 
 @cp.fuse()
 def _absorbance_to_image_int(absorbance, source_intensity, min_val, max_val):
-    rgb = -absorbance
-    rgb = cp.exp(rgb)
-    rgb *= source_intensity
+    rgb = -cp.exp(absorbance) * source_intensity
     # prevent overflow/underflow
-    rgb = cp.maximum(rgb, min_val)
-    rgb = cp.minimum(rgb, max_val)
+    rgb = cp.minimum(cp.maximum(rgb, min_val), max_val)
     return cp.round(rgb)
 
 
 @cp.fuse()
 def _absorbance_to_image_uint8(absorbance, source_intensity):
-    rgb = -absorbance
-    rgb = cp.exp(rgb)
-    rgb *= source_intensity
+    rgb = -cp.exp(absorbance) * source_intensity
     # prevent overflow/underflow
-    rgb = cp.maximum(rgb, 0)
-    rgb = cp.minimum(rgb, 255)
+    rgb = cp.minimum(cp.maximum(rgb, 0), 255)
     return cp.round(rgb).astype(cp.uint8)
 
 
