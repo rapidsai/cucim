@@ -387,13 +387,16 @@ def _normalized_from_concentrations(conc_raw, max_percentile, ref_stain_coeff,
             "`conc_raw` must be a 2D array of concentrations with size 2 on "
             "axis 0."
         )
-    if ref_stain_coeff.shape != (3, 2):
+    if ref_stain_coeff.ndim != 2 or ref_stain_coeff.shape[0] != 3:
         raise ValueError(
-            "`ref_stain_coeff` must be a shape (3, 2) matrix, representing "
-            "two stain vectors."
+            "`ref_stain_coeff` must be a shape (3, n) matrix, representing "
+            "n stain vectors."
         )
-    if len(ref_max_conc) != 2:
-        raise ValueError("`ref_max_conc` must have length 2.")
+    if len(ref_max_conc) != ref_stain_coeff.shape[1]:
+        raise ValueError(
+            "`ref_max_conc` must have length equal to the number of stain "
+            "coefficient vectors."
+        )
 
     # normalize stain concentrations
     # Note: calling percentile separately for each channel is faster than:
@@ -412,10 +415,10 @@ def _normalized_from_concentrations(conc_raw, max_percentile, ref_stain_coeff,
     )
 
     # restore original shape for each channel
-    channel_shape = (
+    spatial_shape = (
         original_shape[:channel_axis] + original_shape[channel_axis + 1:]
     )
-    image_norm = cp.reshape(image_norm, (3,) + channel_shape)
+    image_norm = cp.reshape(image_norm, (3,) + spatial_shape)
 
     # move channels from axis 0 to channel_axis
     if channel_axis != 0:
