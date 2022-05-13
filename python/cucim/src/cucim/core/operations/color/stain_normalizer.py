@@ -119,12 +119,12 @@ def _image_to_absorbance_matrix(image, source_intensity=240,
 
 @cp.fuse()
 def _absorbance_to_image_float(absorbance, source_intensity):
-    return -cp.exp(absorbance) * source_intensity
+    return cp.exp(-absorbance) * source_intensity
 
 
 @cp.fuse()
 def _absorbance_to_image_int(absorbance, source_intensity, min_val, max_val):
-    rgb = -cp.exp(absorbance) * source_intensity
+    rgb = cp.exp(-absorbance) * source_intensity
     # prevent overflow/underflow
     rgb = cp.minimum(cp.maximum(rgb, min_val), max_val)
     return cp.round(rgb)
@@ -132,7 +132,7 @@ def _absorbance_to_image_int(absorbance, source_intensity, min_val, max_val):
 
 @cp.fuse()
 def _absorbance_to_image_uint8(absorbance, source_intensity):
-    rgb = -cp.exp(absorbance) * source_intensity
+    rgb = cp.exp(-absorbance) * source_intensity
     # prevent overflow/underflow
     rgb = cp.minimum(cp.maximum(rgb, 0), 255)
     return cp.round(rgb).astype(cp.uint8)
@@ -371,7 +371,13 @@ def _get_raw_concentrations(src_stain_coeff, absorbance):
         cp.linalg.inv(cp.dot(src_stain_coeff.T, src_stain_coeff)),
         src_stain_coeff.T
     )
-    conc_raw = cp.dot(cp.asarray(coeff_pinv, order='F'), absorbance)
+    if cp.any(cp.isnan(coeff_pinv)):
+        # fall back to cp.linalg.lstsq if pseudo-inverse above failed
+        conc_raw = cp.linalg.lstsq(
+            src_stain_coeff, absorbance, rcond=None
+        )[0]
+    else:
+        conc_raw = cp.dot(cp.asarray(coeff_pinv, order='F'), absorbance)
 
     return conc_raw
 
