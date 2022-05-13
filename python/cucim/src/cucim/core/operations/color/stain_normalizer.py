@@ -66,7 +66,7 @@ def image_to_absorbance(image, source_intensity=255.0, dtype=cp.float32):
         absorbance = \\log{\\frac{image}{source_intensity}}.
     """
     dtype = cp.dtype(dtype)
-    if not dtype.kind == 'f':
+    if dtype.kind != 'f':
         raise ValueError("dtype must be a floating point type")
 
     image = image.astype(dtype, copy=False)
@@ -178,15 +178,15 @@ def absorbance_to_image(absorbance, source_intensity=255, dtype=cp.uint8):
     dtype = cp.dtype(dtype)
     if dtype == cp.uint8:
         return _absorbance_to_image_uint8(absorbance, source_intensity)
-    elif dtype.kind in 'iu':
+    if dtype.kind in 'iu':
         # round to nearest integer and cast to desired integer dtype
         iinfo = cp.iinfo(dtype)
         image = _absorbance_to_image_int(
             absorbance, source_intensity, iinfo.min, iinfo.max
         )
         return image.astype(dtype, copy=False)
-    else:
-        return _absorbance_to_image_float(absorbance, source_intensity)
+    
+    return _absorbance_to_image_float(absorbance, source_intensity)
 
 
 def _covariance(a):
