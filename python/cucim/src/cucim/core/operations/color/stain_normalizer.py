@@ -191,19 +191,17 @@ def absorbance_to_image(absorbance, source_intensity=255, dtype=cp.uint8):
         return _absorbance_to_image_float(absorbance, source_intensity)
 
 
-def _covariance(a, rowvar=True):
+def _covariance(a):
     """Returns the covariance matrix of an array.
 
     This is a modified version of cupy.cov that will not automatically promote
-    float32 to float64. It also removes unused kwargs (`y`, `bias`, `ddof`).
+    float32 to float64. It also removes all unused kwargs (`y`, `bias`, etc.).
 
     Parameters
     ----------
     a : cupy.ndarray
-        Array to compute the covariance matrix for.
-    rowvar : bool, optional
-        If ``True``, then each row represents a variable, with observations in
-        the columns. Otherwise, the relationship is transposed.
+        Array to compute the covariance matrix for. Each row represents a
+        variable, with observations in the columns.
 
     Returns
     -------
@@ -217,8 +215,6 @@ def _covariance(a, rowvar=True):
     X = a
     if X.ndim == 0:
         X = X[np.newaxis, :]
-    if not rowvar and X.shape[0] != 1:
-        X = X.T
     if X.shape[0] == 0:
         return cp.array([]).reshape(0, 0)
     # import to have C-contiguous order for fast mean along last axis
@@ -365,7 +361,7 @@ def stain_decomposition_macenko(image, source_intensity=240, alpha=1,
         )
 
     # compute eigenvectors (do small 3x3 matrix calculations on the host)
-    cov = _covariance(absorbance, rowvar=True)
+    cov = _covariance(absorbance)
     cov = cp.asnumpy(cov).astype(np.float32, copy=False)
     _, ev = np.linalg.eigh(cov)
     ev = ev[:, [2, 1]]
