@@ -3,7 +3,6 @@ import numpy as np
 import pytest
 from skimage import data
 
-from cucim.skimage import img_as_float64
 from cucim.skimage._shared._warnings import expected_warnings
 from cucim.skimage._shared.utils import _supported_float_type
 from cucim.skimage.metrics import structural_similarity

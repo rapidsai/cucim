@@ -210,7 +210,6 @@ def hessian_matrix(image, sigma=1, mode='constant', cval=0, order='rc'):
     float_dtype = _supported_float_type(image.dtype)
     image = image.astype(float_dtype, copy=False)
 
-
     # Autodetection as done internally to Gaussian, but set it here to silence
     # a warning.
     channel_axis = -1 if (image.ndim == 3 and image.shape[-1] == 3) else None
