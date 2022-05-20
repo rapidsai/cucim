@@ -18,7 +18,7 @@ from cupyx.scipy.ndimage import binary_erosion, generate_binary_structure
 from cucim.skimage.util import dtype_limits
 
 from .._shared.filters import gaussian
-from .._shared.utils import check_nD
+from .._shared.utils import _supported_float_type, check_nD
 
 
 # fuse several commonly paired ufunc operations into a single kernel call
@@ -71,40 +71,44 @@ def _preprocess(image, mask, sigma, mode, cval):
 
     gaussian_kwargs = dict(sigma=sigma, mode=mode, cval=cval,
                            preserve_range=False)
+    compute_bleedover = (mode == 'constant' or mask is not None)
+    float_type = _supported_float_type(image.dtype)
     if mask is None:
-        # Smooth the masked image
-        smoothed_image = gaussian(image, **gaussian_kwargs)
+        if compute_bleedover:
+            mask = cp.ones(image.shape, dtype=float_type)
+        masked_image = image
+
         # mask that is ones everywhere except the borders
         eroded_mask = cp.ones(image.shape, dtype=bool)
         eroded_mask[:1, :] = 0
         eroded_mask[-1:, :] = 0
         eroded_mask[:, :1] = 0
         eroded_mask[:, -1:] = 0
-        return smoothed_image, eroded_mask
+    else:
+        mask = mask.astype(bool, copy=False)
+        masked_image = cp.zeros_like(image)
+        masked_image[mask] = image[mask]
 
-    masked_image = cp.zeros_like(image)
-    masked_image[mask] = image[mask]
+        # Make the eroded mask. Setting the border value to zero will wipe
+        # out the image edges for us.
+        s = ndi.generate_binary_structure(2, 2)
+        eroded_mask = ndi.binary_erosion(mask, s, border_value=0)
 
-    # Compute the fractional contribution of masked pixels by applying
-    # the function to the mask (which gets you the fraction of the
-    # pixel data that's due to significant points)
-    bleed_over = gaussian(mask.astype(cp.float32), **gaussian_kwargs)
-    bleed_over += cp.finfo(cp.float32).eps
+    if compute_bleedover:
+        # Compute the fractional contribution of masked pixels by applying
+        # the function to the mask (which gets you the fraction of the
+        # pixel data that's due to significant points)
+        bleed_over = gaussian(mask.astype(cp.float32), **gaussian_kwargs)
+        bleed_over += cp.finfo(cp.float32).eps
 
     # Smooth the masked image
     smoothed_image = gaussian(masked_image, **gaussian_kwargs)
 
-    # Lower the result by the bleed-over fraction, so you can
-    # recalibrate by dividing by the function on the mask to recover
-    # the effect of smoothing from just the significant pixels.
-    smoothed_image /= bleed_over
-
-    #
-    # Make the eroded mask. Setting the border value to zero will wipe
-    # out the image edges for us.
-    #
-    s = generate_binary_structure(2, 2)
-    eroded_mask = binary_erosion(mask, s, border_value=0)
+    if compute_bleedover:
+        # Lower the result by the bleed-over fraction, so you can
+        # recalibrate by dividing by the function on the mask to recover
+        # the effect of smoothing from just the significant pixels.
+        smoothed_image /= bleed_over
 
     return smoothed_image, eroded_mask
 
