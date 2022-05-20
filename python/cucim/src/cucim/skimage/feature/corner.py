@@ -269,6 +269,7 @@ def hessian_matrix_det(image, sigma=1, approximate=True):
         return cp.linalg.det(hessian_mat_array)
 
 
+@cp.fuse()
 def _image_orthogonal_matrix22_eigvals(M00, M01, M11):
     """
     analytical formula below optimized for in-place computations.
