@@ -2,16 +2,65 @@
 cuCIM API Reference
 ~~~~~~~~~~~~~~~~~~~~~~
 
-CuImage Submodules
-==================
+Clara Submodules
+================
 
-CuImage
--------
-
-.. automodule:: cucim.CuImage
+.. automodule:: cucim.clara
     :members:
     :undoc-members:
 
+cache
+-----
+
+.. automodule:: cucim.clara.cache
+    :members:
+    :undoc-members:
+
+filesystem
+----------
+
+.. automodule:: cucim.clara.filesystem
+    :members:
+    :undoc-members:
+
+io
+---
+
+.. automodule:: cucim.clara.io
+    :members:
+    :undoc-members:
+
+
+core Submodules
+===============
+
+color
+-----
+
+.. automodule:: cucim.core.operations.color
+    :members:
+    :undoc-members:
+
+expose
+------
+
+.. automodule:: cucim.core.operations.expose
+    :members:
+    :undoc-members:
+
+intensity
+---------
+
+.. automodule:: cucim.core.operations.intensity
+    :members:
+    :undoc-members:
+
+spatial
+-------
+
+.. automodule:: cucim.core.operations.spatial
+    :members:
+    :undoc-members:
 
 
 skimage Submodules
