@@ -30,7 +30,7 @@ def test_structural_similarity_patch_range():
     Y = (rstate.rand(N, N) * 255).astype(cp.uint8)
 
     assert structural_similarity(X, Y, win_size=N) < 0.1
-    assert_equal(structural_similarity(X, X, win_size=N), 1)
+    assert_almost_equal(structural_similarity(X, X, win_size=N), 1)
 
 
 def test_structural_similarity_image():
@@ -40,7 +40,7 @@ def test_structural_similarity_image():
     Y = (rstate.rand(N, N) * 255).astype(cp.uint8)
 
     S0 = structural_similarity(X, X, win_size=3)
-    assert_equal(S0, 1)
+    assert_almost_equal(S0, 1)
 
     S1 = structural_similarity(X, Y, win_size=3)
     assert S1 < 0.3
@@ -51,10 +51,10 @@ def test_structural_similarity_image():
     mssim0, S3 = structural_similarity(X, Y, full=True)
     assert_equal(S3.shape, X.shape)
     mssim = structural_similarity(X, Y)
-    assert_equal(mssim0, mssim)
+    assert_almost_equal(mssim0, mssim)
 
     # structural_similarity of image with itself should be 1.0
-    assert_equal(structural_similarity(X, X), 1.0)
+    assert_almost_equal(structural_similarity(X, X), 1.0)
 
 
 # Because we are forcing a random seed state, it is probably good to test
@@ -223,7 +223,15 @@ def test_gaussian_structural_similarity_vs_IPOL():
 def test_mssim_vs_legacy():
     # check that ssim with default options matches skimage 0.11 result
     mssim_skimage_0pt17 = 0.3674518327910367
+
+    # uint8 will be computed in float32 precision
     mssim = structural_similarity(cam, cam_noisy)
+    assert_almost_equal(mssim, mssim_skimage_0pt17, decimal=4)
+
+    # also check with double precision and explicit specification of data_range
+    mssim = structural_similarity(cam.astype(float),
+                                  cam_noisy.astype(float),
+                                  data_range=255)
     assert_almost_equal(mssim, mssim_skimage_0pt17)
 
 

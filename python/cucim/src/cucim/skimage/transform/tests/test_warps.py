@@ -380,8 +380,8 @@ def test_resize_dtype():
 
     assert resize(x, (10, 10), preserve_range=False).dtype == x.dtype
     assert resize(x, (10, 10), preserve_range=True).dtype == x.dtype
-    assert resize(x_u8, (10, 10), preserve_range=False).dtype == cp.double
-    assert resize(x_u8, (10, 10), preserve_range=True).dtype == cp.double
+    assert resize(x_u8, (10, 10), preserve_range=False).dtype == cp.float32
+    assert resize(x_u8, (10, 10), preserve_range=True).dtype == cp.float32
     assert resize(x_b, (10, 10), preserve_range=False).dtype == bool
     assert resize(x_b, (10, 10), preserve_range=True).dtype == bool
     assert resize(x_f32, (10, 10), preserve_range=False).dtype == x_f32.dtype
@@ -917,13 +917,13 @@ def test_resize_local_mean_dtype():
     assert resize_local_mean(x, (10, 10),
                              preserve_range=True).dtype == x.dtype
     assert resize_local_mean(x_u8, (10, 10),
-                             preserve_range=False).dtype == cp.double
+                             preserve_range=False).dtype == cp.float32
     assert resize_local_mean(x_u8, (10, 10),
-                             preserve_range=True).dtype == cp.double
+                             preserve_range=True).dtype == cp.float32
     assert resize_local_mean(x_b, (10, 10),
-                             preserve_range=False).dtype == cp.double
+                             preserve_range=False).dtype == cp.float32
     assert resize_local_mean(x_b, (10, 10),
-                             preserve_range=True).dtype == cp.double
+                             preserve_range=True).dtype == cp.float32
     assert resize_local_mean(x_f32, (10, 10),
                              preserve_range=False).dtype == x_f32.dtype
     assert resize_local_mean(x_f32, (10, 10),

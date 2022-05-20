@@ -123,6 +123,7 @@ def butterworth(
                  else np.delete(image.shape, channel_axis))
     is_real = cp.isrealobj(image)
     float_dtype = _supported_float_type(image.dtype, allow_complex=True)
+    image = image.astype(float_dtype, copy=False)
     wfilt = _get_ND_butterworth_filter(
         fft_shape, cutoff_frequency_ratio, order, high_pass, is_real,
         float_dtype

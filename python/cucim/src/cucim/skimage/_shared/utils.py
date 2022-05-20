@@ -654,9 +654,10 @@ def convert_to_float(image, preserve_range):
         # Convert image to double only if it is not single or double
         # precision float
         if image.dtype.char not in 'df':
-            image = image.astype(float)
+            image = image.astype(_supported_float_type(image.dtype))
     else:
         from ..util.dtype import img_as_float
+
         image = img_as_float(image)
     return image
 
@@ -730,14 +731,21 @@ def _fix_ndimage_mode(mode):
 
 new_float_type = {
     # preserved types
-    cp.float32().dtype.char: cp.float32,
-    cp.float64().dtype.char: cp.float64,
-    cp.complex64().dtype.char: cp.complex64,
-    cp.complex128().dtype.char: cp.complex128,
-    # altered types
-    cp.float16().dtype.char: cp.float32,
-    'g': cp.float64,      # cp.float128 ; doesn't exist on windows
-    'G': cp.complex128,   # cp.complex256 ; doesn't exist on windows
+    'f': cp.float32,     # float32
+    'd': cp.float64,     # float64
+    'F': cp.complex64,   # complex64
+    'D': cp.complex128,  # complex128
+    # promoted float types
+    'e': cp.float32,     # float16
+    # truncated float types
+    'g': cp.float64,     # float128 (doesn't exist on windows)
+    'G': cp.complex128,  # complex256 (doesn't exist on windows)
+    # integer types that can be exactly represented in float32
+    'b': cp.float32,     # int8
+    'B': cp.float32,     # uint8
+    'h': cp.float32,     # int16
+    'H': cp.float32,     # uint16
+    '?': cp.float32,     # bool
 }
 
 
