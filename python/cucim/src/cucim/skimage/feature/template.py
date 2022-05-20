@@ -134,7 +134,9 @@ def match_template(image, template, pad_input=False, mode='constant',
     image_shape = image.shape
 
     float_dtype = _supported_float_type(image.dtype)
-    image = image.astype(float_dtype, copy=False)
+
+    # Note: keep image in float64 for accuracy of cumsum operations, etc.
+    image = image.astype(cp.float64, copy=False)
     template = template.astype(float_dtype, copy=False)
 
     pad_width = tuple((width, width) for width in template.shape)
@@ -153,11 +155,12 @@ def match_template(image, template, pad_input=False, mode='constant',
         image_window_sum = _window_sum_3d(image, template.shape)
         image_window_sum2 = _window_sum_3d(image * image, template.shape)
 
-    template_mean = template.mean()
+    # perform mean and sum in float64 for accuracy
+    template_mean = template.mean(dtype=cp.float64)
     template_volume = _misc.prod(template.shape)
     template_ssd = template - template_mean
     template_ssd *= template_ssd
-    template_ssd = cp.sum(template_ssd)
+    template_ssd = cp.sum(template_ssd, dtype=cp.float64)
 
     if image.ndim == 2:
         xcorr = signal.fftconvolve(image, template[::-1, ::-1],

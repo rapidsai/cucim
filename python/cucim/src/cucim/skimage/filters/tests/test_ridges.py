@@ -4,7 +4,7 @@ import pytest
 from cupy.testing import assert_allclose, assert_array_equal, assert_array_less
 from skimage.data import camera, retina
 
-from cucim.skimage import img_as_float
+from cucim.skimage import img_as_float, img_as_float64
 from cucim.skimage._shared.utils import _supported_float_type
 from cucim.skimage.color import rgb2gray
 from cucim.skimage.filters import frangi, hessian, meijering, sato
@@ -178,9 +178,12 @@ def test_3d_linearity():
                     atol=1e-3)
 
 
-def test_2d_cropped_camera_image():
-
+@pytest.mark.parametrize('dtype', ['float64', 'uint8'])
+def test_2d_cropped_camera_image(dtype):
     a_black = crop(cp.array(camera()), ((200, 212), (100, 312)))
+    assert a_black.dtype == cp.uint8
+    if dtype == 'float64':
+        a_black = img_as_float64(a_black)
     a_white = invert(a_black)
 
     zeros = cp.zeros((100, 100))
@@ -208,9 +211,13 @@ def test_ridge_output_dtype(func, dtype):
     assert func(img).dtype == _supported_float_type(img.dtype)
 
 
-def test_3d_cropped_camera_image():
+@pytest.mark.parametrize('dtype', ['float64', 'uint8'])
+def test_3d_cropped_camera_image(dtype):
 
     a_black = crop(cp.asarray(camera()), ((200, 212), (100, 312)))
+    assert a_black.dtype == cp.uint8
+    if dtype == 'float64':
+        a_black = img_as_float64(a_black)
     a_black = cp.dstack([a_black, a_black, a_black])
     a_white = invert(a_black)
 

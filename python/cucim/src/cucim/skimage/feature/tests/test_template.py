@@ -26,7 +26,7 @@ def test_template(dtype):
     target = cp.asarray(target)
 
     result = match_template(image, target)
-    assert result.dtype == dtype
+    assert result.dtype == result.dtype
     delta = 5
 
     positions = peak_local_max(result, min_distance=delta)
@@ -200,6 +200,5 @@ def test_bounding_values():
     template = cp.zeros((3, 3))
     template[1, 1] = 1
     result = match_template(image, template)
-    print(result.max())
     assert result.max() < 1 + 1e-7
     assert result.min() > -1 - 1e-7

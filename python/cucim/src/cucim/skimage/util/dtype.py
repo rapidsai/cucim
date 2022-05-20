@@ -3,6 +3,8 @@ from warnings import warn
 
 import cupy as cp
 
+from .._shared.utils import _supported_float_type
+
 __all__ = ['img_as_float32', 'img_as_float64', 'img_as_float',
            'img_as_int', 'img_as_uint', 'img_as_ubyte',
            'img_as_bool', 'dtype_limits']
@@ -464,7 +466,9 @@ def img_as_float(image, force_copy=False):
     and can be outside the ranges [0.0, 1.0] or [-1.0, 1.0].
 
     """
-    return _convert(image, cp.floating, force_copy)
+    # casts float16, float32 and 8 or 16-bit integer types to float32
+    float_dtype = _supported_float_type(image.dtype)
+    return _convert(image, float_dtype, force_copy)
 
 
 def img_as_uint(image, force_copy=False):

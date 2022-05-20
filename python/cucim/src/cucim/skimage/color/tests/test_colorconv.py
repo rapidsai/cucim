@@ -14,7 +14,8 @@ import os
 import cupy as cp
 import numpy as np
 import pytest
-from cupy.testing import assert_array_almost_equal, assert_array_equal
+from cupy.testing import (assert_allclose, assert_array_almost_equal,
+                          assert_array_equal)
 from numpy.testing import assert_equal
 from skimage import data
 
@@ -236,7 +237,7 @@ class TestColorconv():
         round_trip = xyz2rgb(rgb2xyz(img_rgb, channel_axis=channel_axis),
                              channel_axis=channel_axis)
 
-        assert_array_almost_equal(round_trip, img_rgb)
+        assert_allclose(round_trip, img_rgb, rtol=1e-5, atol=1e-5)
 
     # RGB<->HED roundtrip with ubyte image
     def test_hed_rgb_roundtrip(self):
@@ -497,12 +498,15 @@ class TestColorconv():
     def test_lab_rgb_roundtrip(self, channel_axis):
         img_rgb = img_as_float(self.img_rgb)
         img_rgb = cp.moveaxis(img_rgb, source=-1, destination=channel_axis)
-        assert_array_almost_equal(
+
+        assert_allclose(
             lab2rgb(
                 rgb2lab(img_rgb, channel_axis=channel_axis),
                 channel_axis=channel_axis
             ),
             img_rgb,
+            rtol=1e-5,
+            atol=1e-5,
         )
 
     def test_rgb2lab_dtype(self):
@@ -633,12 +637,14 @@ class TestColorconv():
     def test_luv_rgb_roundtrip(self, channel_axis):
         img_rgb = img_as_float(self.img_rgb)
         img_rgb = cp.moveaxis(img_rgb, source=-1, destination=channel_axis)
-        assert_array_almost_equal(
+        assert_allclose(
             luv2rgb(
                 rgb2luv(img_rgb, channel_axis=channel_axis),
                 channel_axis=channel_axis
             ),
             img_rgb,
+            rtol=1e-4,
+            atol=1e-4,
         )
 
     def test_lab_rgb_outlier(self):
@@ -674,7 +680,7 @@ class TestColorconv():
             lab2lch(lab, channel_axis=channel_axis),
             channel_axis=channel_axis,
         )
-        assert_array_almost_equal(lab2, lab)
+        assert_allclose(lab2, lab, rtol=1e-4, atol=1e-4)
 
     def test_rgb_lch_roundtrip(self):
         rgb = img_as_float(self.img_rgb)
@@ -682,7 +688,7 @@ class TestColorconv():
         lch = lab2lch(lab)
         lab2 = lch2lab(lch)
         rgb2 = lab2rgb(lab2)
-        assert_array_almost_equal(rgb, rgb2)
+        assert_allclose(rgb, rgb2, rtol=1e-4, atol=1e-4)
 
     def test_lab_lch_0d(self):
         lab0 = self._get_lab0()
@@ -736,26 +742,41 @@ class TestColorconv():
     def test_yuv_roundtrip(self, channel_axis):
         img_rgb = img_as_float(self.img_rgb)[::16, ::16]
         img_rgb = cp.moveaxis(img_rgb, source=-1, destination=channel_axis)
-        assert_array_almost_equal(
+        assert_allclose(
             yuv2rgb(rgb2yuv(img_rgb, channel_axis=channel_axis),
                     channel_axis=channel_axis),
-            img_rgb)
-        assert_array_almost_equal(
+            img_rgb,
+            rtol=1e-5,
+            atol=1e-5,
+        )
+        assert_allclose(
             yiq2rgb(rgb2yiq(img_rgb, channel_axis=channel_axis),
                     channel_axis=channel_axis),
-            img_rgb)
-        assert_array_almost_equal(
+            img_rgb,
+            rtol=1e-5,
+            atol=1e-5,
+        )
+        assert_allclose(
             ypbpr2rgb(rgb2ypbpr(img_rgb, channel_axis=channel_axis),
                       channel_axis=channel_axis),
-            img_rgb)
-        assert_array_almost_equal(
+            img_rgb,
+            rtol=1e-5,
+            atol=1e-5,
+        )
+        assert_allclose(
             ycbcr2rgb(rgb2ycbcr(img_rgb, channel_axis=channel_axis),
                       channel_axis=channel_axis),
-            img_rgb)
-        assert_array_almost_equal(
+            img_rgb,
+            rtol=1e-5,
+            atol=1e-5,
+        )
+        assert_allclose(
             ydbdr2rgb(rgb2ydbdr(img_rgb, channel_axis=channel_axis),
                       channel_axis=channel_axis),
-            img_rgb)
+            img_rgb,
+            rtol=1e-5,
+            atol=1e-5,
+        )
 
     def test_rgb2yuv_dtype(self):
         img = self.colbars_array.astype('float64')
