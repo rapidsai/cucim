@@ -23,8 +23,7 @@ requirements:
     - cmake >=3.18.0
     - {{ compiler("c") }}
     - {{ compiler("cxx") }}
-    - sysroot_linux-64 {{ sysroot_version }} # [linux64]
-    - sysroot_linux-aarch64 {{ sysroot_version }} # [aarch64]
+    - sysroot_{{ target_platform }} {{ sysroot_version }}
   host:
     - cudatoolkit {{ cuda_version }}.*
     - python {{ python_version }}.*
