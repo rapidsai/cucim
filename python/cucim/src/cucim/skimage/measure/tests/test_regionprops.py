@@ -604,7 +604,7 @@ def test_props_to_dict():
     regions = regionprops(SAMPLE_MULTIPLE)
     out = _props_to_dict(regions, properties=('coords',))
     coords = np.empty(2, object)
-    coords[0] = cp.array((cp.arange(10), cp.arange(10))).T
+    coords[0] = cp.stack((cp.arange(10),) * 2, axis=-1)
     coords[1] = cp.array([[3, 7], [4, 7]])
     assert out['coords'].shape == coords.shape
     assert_array_equal(out['coords'][0], coords[0])
@@ -625,7 +625,7 @@ def test_regionprops_table():
 
     out = regionprops_table(SAMPLE_MULTIPLE, properties=('coords',))
     coords = np.empty(2, object)
-    coords[0] = cp.array((cp.arange(10), cp.arange(10))).T
+    coords[0] = cp.stack((cp.arange(10),) * 2, axis=-1)
     coords[1] = cp.array([[3, 7], [4, 7]])
     assert out['coords'].shape == coords.shape
     assert_array_equal(out['coords'][0], coords[0])
