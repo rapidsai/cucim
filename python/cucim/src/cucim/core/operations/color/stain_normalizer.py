@@ -23,8 +23,8 @@ import numpy as np
 __all__ = [
     'absorbance_to_image',
     'image_to_absorbance',
-    'stain_extraction_macenko',
-    'normalize_colors_macenko',
+    'stain_extraction_pca',
+    'normalize_colors_pca',
 ]
 
 
@@ -240,11 +240,13 @@ def _prep_channel_axis(channel_axis, ndim):
     return channel_axis % ndim
 
 
-def stain_extraction_macenko(image, source_intensity=240, alpha=1, beta=0.345,
-                             *, channel_axis=0, image_type='intensity'):
+def stain_extraction_pca(image, source_intensity=240, alpha=1, beta=0.345,
+                         *, channel_axis=0, image_type='intensity'):
     """Extract the matrix of H & E stain coefficient from an image.
 
-    Uses the method of Macenko et. al. [1]_.
+    Uses a method that selects stain vectors based on the angle distribution
+    within a best-fit plane determined by principle component analysis (PCA)
+    [1]_.
 
     Parameters
     ----------
@@ -431,7 +433,7 @@ def _normalized_from_concentrations(conc_raw, max_percentile, ref_stain_coeff,
     return image_norm
 
 
-def normalize_colors_macenko(
+def normalize_colors_pca(
         image,
         source_intensity: float = 240.0,
         alpha: float = 1.0,
@@ -466,7 +468,7 @@ def normalize_colors_macenko(
         as transparent. Transparent pixels are excluded from the estimation.
     ref_stain_coeff : array-like
         Reference stain coefficients as determined by the output of
-        `stain_extraction_macenko` for a reference image.
+        `stain_extraction_pca` for a reference image.
     ref_max_conc : tuple or cp.ndarray
         The reference maximum concentrations.
     image_type : {'intensity', 'absorbance'}, optional
@@ -511,7 +513,7 @@ def normalize_colors_macenko(
     )
 
     # channels_axis=0 for the shape (3, n_pixels) absorbance matrix
-    src_stain_coeff = stain_extraction_macenko(
+    src_stain_coeff = stain_extraction_pca(
         absorbance,
         beta=beta,
         image_type='absorbance',
