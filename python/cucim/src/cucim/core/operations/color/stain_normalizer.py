@@ -21,10 +21,10 @@ import numpy as np
 
 
 __all__ = [
-    'absorbance_to_image',
-    'image_to_absorbance',
-    'stain_extraction_pca',
-    'normalize_colors_pca',
+    "absorbance_to_image",
+    "image_to_absorbance",
+    "stain_extraction_pca",
+    "normalize_colors_pca",
 ]
 
 
@@ -64,7 +64,7 @@ def image_to_absorbance(image, source_intensity=255.0, dtype=cp.float32):
         absorbance = \\log{\\frac{image}{source_intensity}}.
     """
     dtype = cp.dtype(dtype)
-    if dtype.kind != 'f':
+    if dtype.kind != "f":
         raise ValueError("dtype must be a floating point type")
 
     input_dtype = image.dtype
@@ -74,7 +74,7 @@ def image_to_absorbance(image, source_intensity=255.0, dtype=cp.float32):
             "Source transmitted light intensity must be a positive value."
         )
     source_intensity = float(source_intensity)
-    if input_dtype == 'f':
+    if input_dtype == "f":
         min_val = source_intensity / 255.0
         max_val = source_intensity
     else:
@@ -86,7 +86,7 @@ def image_to_absorbance(image, source_intensity=255.0, dtype=cp.float32):
 
 
 def _image_to_absorbance_matrix(image, source_intensity=240,
-                                image_type='intensity', channel_axis=0,
+                                image_type="intensity", channel_axis=0,
                                 dtype=cp.float32):
     """Convert image to an absorbance and reshape to (3, n_pixels).
 
@@ -96,11 +96,11 @@ def _image_to_absorbance_matrix(image, source_intensity=240,
     if c != 3:
         raise ValueError("Expected an RGB image")
 
-    if image_type == 'intensity':
+    if image_type == "intensity":
         absorbance = image_to_absorbance(
             image, source_intensity=source_intensity, dtype=dtype
         )
-    elif image_type == 'absorbance':
+    elif image_type == "absorbance":
         absorbance = image.astype(dtype, copy=True)
     else:
         raise ValueError(
@@ -168,7 +168,7 @@ def absorbance_to_image(absorbance, source_intensity=255, dtype=cp.uint8):
     dtype = cp.dtype(dtype)
     if dtype == cp.uint8:
         return _absorbance_to_image_uint8(absorbance, source_intensity)
-    if dtype.kind in 'iu':
+    if dtype.kind in "iu":
         # round to nearest integer and cast to desired integer dtype
         iinfo = cp.iinfo(dtype)
         image = _absorbance_to_image_int(
@@ -196,7 +196,7 @@ def _covariance(a):
         The covariance matrix of the input array.
     """
     if a.ndim > 2:
-        raise ValueError('Input must be <= 2-d')
+        raise ValueError("Input must be <= 2-d")
 
     dtype = cp.promote_types(a.dtype, cp.float32)
     X = a
@@ -205,11 +205,11 @@ def _covariance(a):
     if X.shape[0] == 0:
         return cp.array([]).reshape(0, 0)
     # import to have C-contiguous order for fast mean along last axis
-    X = cp.array(X, dtype=dtype, order='C', copy=True)
+    X = cp.array(X, dtype=dtype, order="C", copy=True)
     ddof = 1
     fact = X.shape[1] - ddof
     if fact <= 0:
-        warnings.warn('Degrees of freedom <= 0 for slice',
+        warnings.warn("Degrees of freedom <= 0 for slice",
                       RuntimeWarning, stacklevel=2)
         fact = 0.0
 
@@ -221,14 +221,14 @@ def _covariance(a):
         #       additional hardware.
         X = cp.asfortranarray(X)
     out = X.dot(X.T.conj())
-    out *= 1 / cp.float64(fact)
+    out *= 1 / float(fact)
     return out.squeeze()
 
 
 def _validate_image(image):
     if not isinstance(image, cp.ndarray):
         raise TypeError("Image must be of type cupy.ndarray.")
-    if image.dtype.kind != 'u' and image.min() < 0:
+    if image.dtype.kind != "u" and image.min() < 0:
         raise ValueError("Image should not have negative values.")
 
 
@@ -241,7 +241,7 @@ def _prep_channel_axis(channel_axis, ndim):
 
 
 def stain_extraction_pca(image, source_intensity=240, alpha=1, beta=0.345,
-                         *, channel_axis=0, image_type='intensity'):
+                         *, channel_axis=0, image_type="intensity"):
     """Extract the matrix of H & E stain coefficient from an image.
 
     Uses a method that selects stain vectors based on the angle distribution
@@ -253,12 +253,12 @@ def stain_extraction_pca(image, source_intensity=240, alpha=1, beta=0.345,
     image : cp.ndarray
         RGB image to perform stain extraction on. Intensities should typically
         be within unsigned 8-bit integer intensity range ([0, 255]) when
-        ``image_type == 'intensity'``.
+        ``image_type == "intensity"``.
     source_intensity : float, optional
         Transmitted light intensity. The algorithm will clip image intensities
         above the specified `source_intensity` and then normalize by
         `source_intensity` so that `image` intensities are <= 1.0. Only used
-        when `image_type=='intensity'`.
+        when `image_type=="intensity"`.
     alpha : float, optional
         Algorithm parameter controlling the ``[alpha, 100 - alpha]``
         percentile range used as a robust [min, max] estimate.
@@ -270,11 +270,11 @@ def stain_extraction_pca(image, source_intensity=240, alpha=1, beta=0.345,
     ---------------------
     channel_axis : int, optional
         The axis corresponding to color channels (default is the last axis).
-    image_type : {'intensity', 'absorbance'}, optional
-        With the default `image_type` of `'intensity'`, the image will be
+    image_type : {"intensity", "absorbance"}, optional
+        With the default `image_type` of `"intensity"`, the image will be
         transformed to `absorbance` units via ``image_to_absorbance``. If
         the input `image` is already an absorbance image, then `image_type`
-        should be set to `'absorbance'` instead.
+        should be set to `"absorbance"` instead.
 
     Returns
     -------
@@ -375,7 +375,7 @@ def _get_raw_concentrations(src_stain_coeff, absorbance):
             src_stain_coeff, absorbance, rcond=None
         )[0]
     else:
-        conc_raw = cp.dot(cp.asarray(coeff_pinv, order='F'), absorbance)
+        conc_raw = cp.dot(cp.asarray(coeff_pinv, order="F"), absorbance)
 
     return conc_raw
 
@@ -444,7 +444,7 @@ def normalize_colors_pca(
             (0.4062, 0.5581),
         ),
         ref_max_conc: Union[tuple, cp.ndarray] = (1.9705, 1.0308),
-        image_type: str = 'intensity',
+        image_type: str = "intensity",
         channel_axis: int = 0,
 ):
     """Extract the matrix of stain coefficient from the image.
@@ -454,12 +454,12 @@ def normalize_colors_pca(
     image : np.ndarray
         RGB image to determine concentrations for. Intensities should typically
         be within unsigned 8-bit integer intensity range ([0, 255]) when
-        ``image_type == 'intensity'``.
+        ``image_type == "intensity"``.
     source_intensity : float, optional
         Transmitted light intensity. The algorithm will clip image intensities
         above the specified `source_intensity` and then normalize by
         `source_intensity` so that `image` intensities are <= 1.0. Only used
-        when `image_type=='intensity'`.
+        when `image_type=="intensity"`.
     alpha : float, optional
         Algorithm parameter controlling the ``[alpha, 100 - alpha]``
         percentile range used as a robust [min, max] estimate.
@@ -471,11 +471,11 @@ def normalize_colors_pca(
         `stain_extraction_pca` for a reference image.
     ref_max_conc : tuple or cp.ndarray
         The reference maximum concentrations.
-    image_type : {'intensity', 'absorbance'}, optional
-        With the default `image_type` of `'intensity'`, the image will be
+    image_type : {"intensity", "absorbance"}, optional
+        With the default `image_type` of `"intensity"`, the image will be
         transformed to an `absorbance` using ``image_to_absorbance``. If
         the input `image` is already an absorbance image, then `image_type`
-        should be set to `'absorbance'` instead.
+        should be set to `"absorbance"` instead.
     channel_axis : int, optional
         The axis corresponding to color channels (default is the last axis).
 
@@ -516,7 +516,7 @@ def normalize_colors_pca(
     src_stain_coeff = stain_extraction_pca(
         absorbance,
         beta=beta,
-        image_type='absorbance',
+        image_type="absorbance",
         channel_axis=0,
     )
 
