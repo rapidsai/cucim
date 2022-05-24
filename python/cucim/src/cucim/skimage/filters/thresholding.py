@@ -353,6 +353,8 @@ def threshold_otsu(image=None, nbins=256, *, hist=None):
     -----
     The input image must be grayscale.
     """
+    from skimage.filters import threshold_otsu as threshold_otsu_cpu
+
     if image is not None and image.ndim > 2 and image.shape[-1] in (3, 4):
         warn(f'threshold_otsu is expected to work correctly only for '
              f'grayscale images; image shape {image.shape} looks like '
@@ -369,23 +371,9 @@ def threshold_otsu(image=None, nbins=256, *, hist=None):
     # small size counts, bin_centers -> faster on the host
     counts = cp.asnumpy(counts)
     bin_centers = cp.asnumpy(bin_centers)
-
-    # class probabilities for all possible thresholds
-    weight1 = np.cumsum(counts)
-    weight2 = np.cumsum(counts[::-1])[::-1]
-    # class means for all possible thresholds
-    mean1 = np.cumsum(counts * bin_centers) / weight1
-    mean2 = (np.cumsum((counts * bin_centers)[::-1]) / weight2[::-1])[::-1]
-
-    # Clip ends to align class 1 and class 2 variables:
-    # The last value of ``weight1``/``mean1`` should pair with zero values in
-    # ``weight2``/``mean2``, which do not exist.
-    variance12 = weight1[:-1] * weight2[1:] * (mean1[:-1] - mean2[1:]) ** 2
-
-    idx = np.argmax(variance12)
-    threshold = bin_centers[idx]
-
-    return cp.asarray(threshold)
+    return cp.asarray(
+        threshold_otsu_cpu(nbins=nbins, hist=(counts, bin_centers))
+    )
 
 
 def threshold_yen(image=None, nbins=256, *, hist=None):
@@ -429,6 +417,8 @@ def threshold_yen(image=None, nbins=256, *, hist=None):
     >>> thresh = threshold_yen(image)
     >>> binary = image <= thresh
     """  # noqa
+    from skimage.filters import threshold_yen as threshold_yen_cpu
+
     counts, bin_centers = _validate_image_histogram(image, hist, nbins)
 
     # On blank images (e.g. filled with 0) with int dtype, `histogram()`
@@ -439,16 +429,10 @@ def threshold_yen(image=None, nbins=256, *, hist=None):
     # Calculate probability mass function
     # (small size counts -> faster on the host)
     counts = cp.asnumpy(counts)
-    pmf = counts.astype(cp.float32) / counts.sum()
-    P1 = np.cumsum(pmf)  # Cumulative normalized histogram
-    P1_sq = np.cumsum(pmf * pmf)
-    # Get cumsum calculated from end of squared array:
-    P2_sq = np.cumsum(pmf[::-1] ** 2)[::-1]
-    # P2_sq indexes is shifted +1. I assume, with P1[:-1] it's help avoid
-    # '-inf' in crit. ImageJ Yen implementation replaces those values by zero.
-    crit = np.log(((P1_sq[:-1] * P2_sq[1:]) ** -1) *
-                  (P1[:-1] * (1.0 - P1[:-1])) ** 2)
-    return bin_centers[crit.argmax()]
+    bin_centers = cp.asnumpy(bin_centers)
+    return cp.asarray(
+        threshold_yen_cpu(nbins=nbins, hist=(counts, bin_centers))
+    )
 
 
 def threshold_isodata(image=None, nbins=256, return_all=False, *, hist=None):
@@ -511,6 +495,8 @@ def threshold_isodata(image=None, nbins=256, return_all=False, *, hist=None):
     >>> thresh = threshold_isodata(image)
     >>> binary = image > thresh
     """
+    from skimage.filters import threshold_isodata as threshold_isodata_cpu
+
     counts, bin_centers = _validate_image_histogram(image, hist, nbins)
 
     # image only contains one unique value
@@ -524,52 +510,13 @@ def threshold_isodata(image=None, nbins=256, return_all=False, *, hist=None):
     counts = cp.asnumpy(counts)
     bin_centers = cp.asnumpy(bin_centers)
     counts = counts.astype(cp.float32)
-
-    # csuml and csumh contain the count of pixels in that bin or lower, and
-    # in all bins strictly higher than that bin, respectively
-    csuml = np.cumsum(counts)
-    csumh = csuml[-1] - csuml
-
-    # intensity_sum contains the total pixel intensity from each bin
-    intensity_sum = counts * bin_centers
-
-    # l and h contain average value of all pixels in that bin or lower, and
-    # in all bins strictly higher than that bin, respectively.
-    # Note that since exp.histogram does not include empty bins at the low or
-    # high end of the range, csuml and csumh are strictly > 0, except in the
-    # last bin of csumh, which is zero by construction.
-    # So no worries about division by zero in the following lines, except
-    # for the last bin, but we can ignore that because no valid threshold
-    # can be in the top bin.
-    # To avoid the division by zero, we simply skip over the last element in
-    # all future computation.
-    csum_intensity = np.cumsum(intensity_sum)
-    lower = csum_intensity[:-1] / csuml[:-1]
-    higher = (csum_intensity[-1] - csum_intensity[:-1]) / csumh[:-1]
-
-    # isodata finds threshold values that meet the criterion t = (l + m)/2
-    # where l is the mean of all pixels <= t and h is the mean of all pixels
-    # > t, as calculated above. So we are looking for places where
-    # (l + m) / 2 equals the intensity value for which those l and m figures
-    # were calculated -- which is, of course, the histogram bin centers.
-    # We only require this equality to be within the precision of the bin
-    # width, of course.
-    all_mean = (lower + higher) / 2.0
-    bin_width = bin_centers[1] - bin_centers[0]
-
-    # Look only at thresholds that are below the actual all_mean value,
-    # for consistency with the threshold being included in the lower pixel
-    # group. Otherwise can get thresholds that are not actually fixed-points
-    # of the isodata algorithm. For float images, this matters less, since
-    # there really can't be any guarantees anymore anyway.
-    distances = all_mean - bin_centers[:-1]
-    thresholds = bin_centers[:-1][(distances >= 0) & (distances < bin_width)]
-    thresholds = cp.asarray(thresholds)
-
-    if return_all:
-        return thresholds
-    else:
-        return thresholds[0]
+    return cp.asarray(
+        threshold_isodata_cpu(
+            nbins=nbins,
+            return_all=return_all,
+            hist=(counts, bin_centers)
+        )
+    )
 
 
 # Computing a histogram using cp.histogram on a uint8 image with bins=256
@@ -840,64 +787,18 @@ def threshold_minimum(image=None, nbins=256, max_num_iter=10000, *, hist=None):
     >>> thresh = threshold_minimum(image)
     >>> binary = image > thresh
     """
-    have_scipy = False
-    try:
-        from scipy.ndimage import uniform_filter1d
-        have_scipy = True
-        # SciPy box filter
-        # (preferred over CuPy for lower overhead on small arrays)
-        box_filt1d = uniform_filter1d
-    except ImportError:
-        # CuPy box filter
-        box_filt1d = ndi.uniform_filter1d
-
-    def find_local_maxima_idx(hist):
-        # We can't use scipy.signal.argrelmax
-        # as it fails on plateaus
-        maximum_idxs = list()
-        direction = 1
-
-        if isinstance(hist, cp.ndarray):
-            # for loop below is faster for an array on the host
-            hist = cp.asnumpy(hist)
-
-        for i in range(hist.shape[0] - 1):
-            if direction > 0:
-                if hist[i + 1] < hist[i]:
-                    direction = -1
-                    maximum_idxs.append(i)
-            else:
-                if hist[i + 1] > hist[i]:
-                    direction = 1
-
-        return maximum_idxs
+    from skimage.filters import threshold_minimum as threshold_minimum_cpu
 
     counts, bin_centers = _validate_image_histogram(image, hist, nbins)
-    if have_scipy:
-        # small size counts, bin_centers -> faster on the host
-        counts = cp.asnumpy(counts)
-        bin_centers = cp.asnumpy(bin_centers)
-
-    smooth_hist = counts.astype(cp.float64, copy=False)
-    for counter in range(max_num_iter):
-        smooth_hist = box_filt1d(smooth_hist, 3)
-        maximum_idxs = find_local_maxima_idx(smooth_hist)
-        if len(maximum_idxs) < 3:
-            break
-
-    if len(maximum_idxs) != 2:
-        raise RuntimeError('Unable to find two maxima in histogram')
-    elif counter == max_num_iter - 1:
-        raise RuntimeError('Maximum iteration reached for histogram'
-                           'smoothing')
-
-    # Find lowest point between the maxima
-    # (np.argmin will dispatch to CuPy if needed)
-    threshold_idx = np.argmin(
-        smooth_hist[maximum_idxs[0]:maximum_idxs[1] + 1]
+    counts = cp.asnumpy(counts)
+    bin_centers = cp.asnumpy(bin_centers)
+    return cp.asarray(
+        threshold_minimum_cpu(
+            nbins=nbins,
+            max_num_iter=max_num_iter,
+            hist=(counts, bin_centers)
+        )
     )
-
-    return cp.asarray(bin_centers[maximum_idxs[0] + int(threshold_idx)])
 
 
 def threshold_mean(image):
@@ -1343,6 +1244,7 @@ def threshold_multiotsu(image=None, classes=3, nbins=256, *, hist=None):
             "could not the required (private) multi-otsu helper functions "
             "from scikit-image"
         )
+    from skimage.filters import threshold_multiotsu as _multiotsu_cpu
 
     if image is not None and image.ndim > 2 and image.shape[-1] in (3, 4):
         warn(f'threshold_multiotsu is expected to work correctly only for '
@@ -1353,31 +1255,8 @@ def threshold_multiotsu(image=None, classes=3, nbins=256, *, hist=None):
     prob, bin_centers = _validate_image_histogram(image, hist, nbins,
                                                   normalize=True)
     prob = prob.astype('float32')
-
-    nvalues = cp.count_nonzero(prob)
-    if nvalues < classes:
-        msg = (f'The input image has only {nvalues} different values. '
-               f'It cannot be thresholded in {classes} classes.')
-        raise ValueError(msg)
-    elif nvalues == classes:
-        thresh_idx = cp.where(prob > 0)[0][:-1]
-    else:
-        # Need probabilities on the CPU to use the Cython code
-        # CuPy Backend: prob is small, so CPU computations should be faster
-        prob = cp.asnumpy(prob)  # synchronization!
-        prob = prob.astype("float32")
-
-        # Get threshold indices
-        try:
-            thresh_idx = _get_multiotsu_thresh_indices_lut(prob, classes - 1)
-        except MemoryError:
-            # Don't use LUT if the number of bins is too large (if the
-            # image is uint16 for example): in this case, the
-            # allocated memory is too large.
-            thresh_idx = _get_multiotsu_thresh_indices(prob, classes - 1)
-        # transfer indices back to the GPU
-        thresh_idx = cp.asarray(thresh_idx)  # synchronization!
-
-    thresh = bin_centers[thresh_idx]
-
-    return thresh
+    prob = cp.asnumpy(prob)
+    bin_centers = cp.asnumpy(bin_centers)
+    return cp.asarray(
+        _multiotsu_cpu(classes=classes, nbins=nbins, hist=(prob, bin_centers))
+    )
