@@ -89,7 +89,7 @@ for function_name, fixed_kwargs, var_kwargs, allow_color, allow_nd in [
             module_gpu=cucim.skimage.feature,
         )
         results = B.run_benchmark(duration=1)
-        all_results = all_results.append(results["full"])
+        all_results = pd.concat([all_results, results["full"]])
 
 
 for function_name, fixed_kwargs, var_kwargs, allow_color, allow_nd in [
@@ -118,7 +118,7 @@ for function_name, fixed_kwargs, var_kwargs, allow_color, allow_nd in [
             module_gpu=cucim.skimage.feature,
         )
         results = B.run_benchmark(duration=1)
-        all_results = all_results.append(results["full"])
+        all_results = pd.concat([all_results, results["full"]])
 
 fbase = os.path.splitext(pfile)[0]
 all_results.to_csv(fbase + ".csv")
