@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -147,9 +147,29 @@ static bool CUCIM_ABI parser_parse(CuCIMFileHandle_ptr handle_ptr, cucim::io::fo
     DLDataType dtype{ kDLUInt, 8, 1 };
 
     // TODO: Fill correct values for cucim::io::format::ImageMetadataDesc
-    // TODO: Do not assume channel names as 'RGB'
-    std::pmr::vector<std::string_view> channel_names(
-        { std::string_view{ "R" }, std::string_view{ "G" }, std::string_view{ "B" } }, &resource);
+    uint8_t n_ch = level0_ifd->samples_per_pixel();
+    if (n_ch != 3)
+    {
+        // Image loaded by a slow-path(libtiff) always will have 4 channel
+        // (by TIFFRGBAImageGet() method in libtiff)
+        n_ch = 4;
+        shape[2] = 4;
+    }
+    std::pmr::vector<std::string_view> channel_names(&resource);
+    channel_names.reserve(n_ch);
+    if (n_ch == 3)
+    {
+        channel_names.emplace_back(std::string_view{ "R" });
+        channel_names.emplace_back(std::string_view{ "G" });
+        channel_names.emplace_back(std::string_view{ "B" });
+    }
+    else
+    {
+        channel_names.emplace_back(std::string_view{ "R" });
+        channel_names.emplace_back(std::string_view{ "G" });
+        channel_names.emplace_back(std::string_view{ "B" });
+        channel_names.emplace_back(std::string_view{ "A" });
+    }
 
     // TODO: Set correct spacing value
     std::pmr::vector<float> spacing(&resource);
