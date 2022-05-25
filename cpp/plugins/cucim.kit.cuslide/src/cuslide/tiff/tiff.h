@@ -27,6 +27,7 @@
 #include <fcntl.h>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <vector>
 
 #include "ifd.h"
@@ -119,6 +120,8 @@ private:
     uint64_t read_config_ = 0;
     TiffType tiff_type_ = TiffType::Generic;
     void* metadata_ = nullptr;
+
+    mutable std::once_flag slow_path_warning_flag_;
 };
 } // namespace cuslide::tiff
 
