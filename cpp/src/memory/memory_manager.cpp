@@ -61,12 +61,15 @@ void get_pointer_attributes(PointerAttributes& attr, const void* ptr)
         attr.ptr = const_cast<void*>(ptr);
         break;
     case cudaMemoryTypeHost:
-        attr.device = cucim::io::Device(cucim::io::DeviceType::kPinned, attributes.device);
+        attr.device = cucim::io::Device(cucim::io::DeviceType::kCUDAHost, attributes.device);
         attr.ptr = attributes.hostPointer;
         break;
     case cudaMemoryTypeDevice:
-    case cudaMemoryTypeManaged:
         attr.device = cucim::io::Device(cucim::io::DeviceType::kCUDA, attributes.device);
+        attr.ptr = attributes.devicePointer;
+        break;
+    case cudaMemoryTypeManaged:
+        attr.device = cucim::io::Device(cucim::io::DeviceType::kCUDAManaged, attributes.device);
         attr.ptr = attributes.devicePointer;
         break;
     }

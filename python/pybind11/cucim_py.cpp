@@ -615,7 +615,7 @@ void _set_array_interface(const py::object& cuimg_obj)
         py::tuple shape = vector2pytuple<pybind11::int_>(cuimg.shape());
 
         // Depending on container's memory type, expose either array_interface or cuda_array_interface
-        switch (tensor->ctx.device_type)
+        switch (tensor->device.device_type)
         {
         case kDLCPU: {
             // Reference: https://numpy.org/doc/stable/reference/arrays.interface.html
@@ -624,7 +624,7 @@ void _set_array_interface(const py::object& cuimg_obj)
                           "typestr"_a = typestr, "shape"_a = shape,        "version"_a = py::int_(3) };
         }
         break;
-        case kDLGPU: {
+        case kDLCUDA: {
             // Reference: https://numba.readthedocs.io/en/stable/cuda/cuda_array_interface.html
             cuimg_obj.attr("__cuda_array_interface__") =
                 py::dict{ "data"_a = data,   "strides"_a = py::none(),  "descr"_a = descr,     "typestr"_a = typestr,
@@ -637,7 +637,7 @@ void _set_array_interface(const py::object& cuimg_obj)
     }
     else
     {
-        switch (tensor->ctx.device_type)
+        switch (tensor->device.device_type)
         {
         case kDLCPU: {
             if (py::hasattr(cuimg_obj, "__array_interface__"))
@@ -646,7 +646,7 @@ void _set_array_interface(const py::object& cuimg_obj)
             }
         }
         break;
-        case kDLGPU: {
+        case kDLCUDA: {
             if (py::hasattr(cuimg_obj, "__cuda_array_interface__"))
             {
                 py::delattr(cuimg_obj, "__cuda_array_interface__");

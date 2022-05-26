@@ -30,7 +30,8 @@ void init_io(py::module& io)
     py::enum_<DeviceType>(io, "DeviceType") //
         .value("CPU", DeviceType::kCPU) //
         .value("CUDA", DeviceType::kCUDA) //
-        .value("Pinned", DeviceType::kPinned) //
+        .value("CUDAHost", DeviceType::kCUDAHost) //
+        .value("CUDAManaged", DeviceType::kCUDAManaged) //
         .value("CPUShared", DeviceType::kCPUShared) //
         .value("CUDAShared", DeviceType::kCUDAShared);
 
