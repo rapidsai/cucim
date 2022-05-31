@@ -12,13 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import logging
 from typing import Any
 
 import cupy
 import numpy as np
-
-_logger = logging.getLogger("spatial_cucim")
 
 
 def image_flip(
@@ -52,26 +49,21 @@ def image_flip(
     >>> # input is channel first 3d array
     >>> output_array = spt.image_flip(input_arr, (1, 2))
     """
-    try:
-        to_cupy = False
+    to_cupy = False
 
-        if isinstance(img, np.ndarray):
-            to_cupy = True
-            cupy_img = cupy.asarray(img, order="C")
-        elif not isinstance(img, cupy.ndarray):
-            raise TypeError("img must be a cupy.ndarray or numpy.ndarray")
-        else:
-            cupy_img = cupy.ascontiguousarray(img)
+    if isinstance(img, np.ndarray):
+        to_cupy = True
+        cupy_img = cupy.asarray(img, order="C")
+    elif not isinstance(img, cupy.ndarray):
+        raise TypeError("img must be a cupy.ndarray or numpy.ndarray")
+    else:
+        cupy_img = cupy.ascontiguousarray(img)
 
-        result = cupy.flip(cupy_img, spatial_axis)
-        if to_cupy is True:
-            result = cupy.asnumpy(result)
+    result = cupy.flip(cupy_img, spatial_axis)
+    if to_cupy is True:
+        result = cupy.asnumpy(result)
 
-        return result
-    except Exception as e:
-        _logger.error("[cucim] " + str(e), exc_info=True)
-        _logger.info("Error executing image flip on GPU")
-        raise
+    return result
 
 
 def image_rotate_90(
@@ -107,25 +99,20 @@ def image_rotate_90(
     >>> # input is channel first 3d array
     >>> output_array = spt.image_rotate_90(input_arr,1,(1,2))
     """
-    try:
-        to_cupy = False
+    to_cupy = False
 
-        if isinstance(img, np.ndarray):
-            to_cupy = True
-            cupy_img = cupy.asarray(img, order="C")
-        elif not isinstance(img, cupy.ndarray):
-            raise TypeError("img must be a cupy.ndarray or numpy.ndarray")
-        else:
-            cupy_img = cupy.ascontiguousarray(img)
+    if isinstance(img, np.ndarray):
+        to_cupy = True
+        cupy_img = cupy.asarray(img, order="C")
+    elif not isinstance(img, cupy.ndarray):
+        raise TypeError("img must be a cupy.ndarray or numpy.ndarray")
+    else:
+        cupy_img = cupy.ascontiguousarray(img)
 
-        result = cupy.rot90(cupy_img, k, spatial_axis)
-        if to_cupy is True:
-            result = cupy.asnumpy(result)
-        return result
-    except Exception as e:
-        _logger.error("[cucim] " + str(e), exc_info=True)
-        _logger.info("Error executing image rotation on GPU")
-        raise
+    result = cupy.rot90(cupy_img, k, spatial_axis)
+    if to_cupy is True:
+        result = cupy.asnumpy(result)
+    return result
 
 
 def rand_image_flip(
