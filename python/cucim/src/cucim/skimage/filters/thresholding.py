@@ -7,6 +7,11 @@ from collections.abc import Iterable
 import cupy as cp
 import numpy as np
 from cupyx.scipy import ndimage as ndi
+from skimage.filters import threshold_isodata_cpu as _threshold_isodata_cpu
+from skimage.filters import threshold_minimum as _threshold_minimum_cpu
+from skimage.filters import threshold_multiotsu as _threshold_multiotsu_cpu
+from skimage.filters import threshold_otsu as _threshold_otsu_cpu
+from skimage.filters import threshold_yen as _threshold_yen_cpu
 
 from cucim import _misc
 
@@ -353,7 +358,6 @@ def threshold_otsu(image=None, nbins=256, *, hist=None):
     -----
     The input image must be grayscale.
     """
-    from skimage.filters import threshold_otsu as threshold_otsu_cpu
 
     if image is not None and image.ndim > 2 and image.shape[-1] in (3, 4):
         warn(f'threshold_otsu is expected to work correctly only for '
@@ -372,7 +376,7 @@ def threshold_otsu(image=None, nbins=256, *, hist=None):
     counts = cp.asnumpy(counts)
     bin_centers = cp.asnumpy(bin_centers)
     return cp.asarray(
-        threshold_otsu_cpu(nbins=nbins, hist=(counts, bin_centers))
+        _threshold_otsu_cpu(nbins=nbins, hist=(counts, bin_centers))
     )
 
 
@@ -417,7 +421,6 @@ def threshold_yen(image=None, nbins=256, *, hist=None):
     >>> thresh = threshold_yen(image)
     >>> binary = image <= thresh
     """  # noqa
-    from skimage.filters import threshold_yen as threshold_yen_cpu
 
     counts, bin_centers = _validate_image_histogram(image, hist, nbins)
 
@@ -431,7 +434,7 @@ def threshold_yen(image=None, nbins=256, *, hist=None):
     counts = cp.asnumpy(counts)
     bin_centers = cp.asnumpy(bin_centers)
     return cp.asarray(
-        threshold_yen_cpu(nbins=nbins, hist=(counts, bin_centers))
+        _threshold_yen_cpu(nbins=nbins, hist=(counts, bin_centers))
     )
 
 
@@ -495,7 +498,6 @@ def threshold_isodata(image=None, nbins=256, return_all=False, *, hist=None):
     >>> thresh = threshold_isodata(image)
     >>> binary = image > thresh
     """
-    from skimage.filters import threshold_isodata as threshold_isodata_cpu
 
     counts, bin_centers = _validate_image_histogram(image, hist, nbins)
 
@@ -511,7 +513,7 @@ def threshold_isodata(image=None, nbins=256, return_all=False, *, hist=None):
     bin_centers = cp.asnumpy(bin_centers)
     counts = counts.astype(cp.float32)
     return cp.asarray(
-        threshold_isodata_cpu(
+        _threshold_isodata_cpu(
             nbins=nbins,
             return_all=return_all,
             hist=(counts, bin_centers)
@@ -787,13 +789,12 @@ def threshold_minimum(image=None, nbins=256, max_num_iter=10000, *, hist=None):
     >>> thresh = threshold_minimum(image)
     >>> binary = image > thresh
     """
-    from skimage.filters import threshold_minimum as threshold_minimum_cpu
 
     counts, bin_centers = _validate_image_histogram(image, hist, nbins)
     counts = cp.asnumpy(counts)
     bin_centers = cp.asnumpy(bin_centers)
     return cp.asarray(
-        threshold_minimum_cpu(
+        _threshold_minimum_cpu(
             nbins=nbins,
             max_num_iter=max_num_iter,
             hist=(counts, bin_centers)
@@ -1236,15 +1237,6 @@ def threshold_multiotsu(image=None, classes=3, nbins=256, *, hist=None):
     >>> regions_colorized = label2rgb(regions)
 
     """
-    try:
-        from skimage.filters._multiotsu import (
-            _get_multiotsu_thresh_indices, _get_multiotsu_thresh_indices_lut)
-    except ImportError:
-        raise ImportError(
-            "could not the required (private) multi-otsu helper functions "
-            "from scikit-image"
-        )
-    from skimage.filters import threshold_multiotsu as _multiotsu_cpu
 
     if image is not None and image.ndim > 2 and image.shape[-1] in (3, 4):
         warn(f'threshold_multiotsu is expected to work correctly only for '
@@ -1258,5 +1250,7 @@ def threshold_multiotsu(image=None, classes=3, nbins=256, *, hist=None):
     prob = cp.asnumpy(prob)
     bin_centers = cp.asnumpy(bin_centers)
     return cp.asarray(
-        _multiotsu_cpu(classes=classes, nbins=nbins, hist=(prob, bin_centers))
+        _threshold_multiotsu_cpu(
+            classes=classes, nbins=nbins, hist=(prob, bin_centers),
+        )
     )
