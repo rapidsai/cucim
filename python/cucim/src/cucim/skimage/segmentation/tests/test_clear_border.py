@@ -27,7 +27,7 @@ def test_clear_border():
 
     # test background value
     result = clear_border(image.copy(), buffer_size=1, bgval=2)
-    assert_array_equal(result, 2 * cp.ones_like(image))
+    assert_array_equal(result, cp.full_like(image, 2))
 
     # test mask
     mask = cp.array([[0, 0, 1, 1, 1, 1, 1, 1, 1],
@@ -69,7 +69,12 @@ def test_clear_border_3d():
 
     # test background value
     result = clear_border(image.copy(), buffer_size=1, bgval=2)
-    assert_array_equal(result, 2 * cp.ones_like(image))
+    assert_array_equal(result, cp.full_like(image, 2))
+
+    # test floating-point background value
+    image_f32 = image.astype(cp.float32)
+    result = clear_border(image_f32, buffer_size=1, bgval=2.5)
+    assert_array_equal(result, cp.full_like(image_f32, 2.5))
 
 
 def test_clear_border_non_binary():
