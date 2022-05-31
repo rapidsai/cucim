@@ -49,10 +49,9 @@ def image_flip(
     >>> # input is channel first 3d array
     >>> output_array = spt.image_flip(input_arr, (1, 2))
     """
-    to_cupy = False
-
+    to_numpy = False
     if isinstance(img, np.ndarray):
-        to_cupy = True
+        to_numpy = True
         cupy_img = cupy.asarray(img, order="C")
     elif not isinstance(img, cupy.ndarray):
         raise TypeError("img must be a cupy.ndarray or numpy.ndarray")
@@ -60,7 +59,7 @@ def image_flip(
         cupy_img = cupy.ascontiguousarray(img)
 
     result = cupy.flip(cupy_img, spatial_axis)
-    if to_cupy is True:
+    if to_numpy:
         result = cupy.asnumpy(result)
 
     return result
@@ -99,10 +98,9 @@ def image_rotate_90(
     >>> # input is channel first 3d array
     >>> output_array = spt.image_rotate_90(input_arr,1,(1,2))
     """
-    to_cupy = False
-
+    to_numpy = False
     if isinstance(img, np.ndarray):
-        to_cupy = True
+        to_numpy = True
         cupy_img = cupy.asarray(img, order="C")
     elif not isinstance(img, cupy.ndarray):
         raise TypeError("img must be a cupy.ndarray or numpy.ndarray")
@@ -110,7 +108,7 @@ def image_rotate_90(
         cupy_img = cupy.ascontiguousarray(img)
 
     result = cupy.rot90(cupy_img, k, spatial_axis)
-    if to_cupy is True:
+    if to_numpy:
         result = cupy.asnumpy(result)
     return result
 

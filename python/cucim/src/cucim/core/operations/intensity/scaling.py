@@ -73,10 +73,9 @@ def scale_intensity_range(
     if a_max - a_min == 0.0:
         raise ValueError("Original intensity range min and max are same")
 
-    to_cupy = False
-
+    to_numpy = False
     if isinstance(img, np.ndarray):
-        to_cupy = True
+        to_numpy = True
         cupy_img = cupy.asarray(img, dtype=cupy.float32, order='C')
     elif not isinstance(img, cupy.ndarray):
         raise TypeError("img must be a cupy.ndarray or numpy.ndarray")
@@ -115,7 +114,7 @@ def scale_intensity_range(
     if img.dtype != cupy.float32:
         result = result.astype(img.dtype)
 
-    if to_cupy is True:
+    if to_numpy:
         result = cupy.asnumpy(result)
 
     return result

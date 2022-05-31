@@ -252,10 +252,9 @@ def color_jitter(
     f_hue = _check_input(hue, 'hue', center=0, bound=(-0.5, 0.5),
                          clip_first_on_zero=False)
 
-    to_cupy = False
-
+    to_numpy = False
     if isinstance(img, np.ndarray):
-        to_cupy = True
+        to_numpy = True
         cupy_img = cupy.asarray(img, dtype=cupy.uint8, order="C")
     elif not isinstance(img, cupy.ndarray):
         raise TypeError("img must be a cupy.ndarray or numpy.ndarray")
@@ -294,7 +293,7 @@ def color_jitter(
         cupy_img = cupy_img.astype(cupy.float32)
 
     result = cupy_img
-    if to_cupy is True:
+    if to_numpy:
         result = cupy.asnumpy(cupy_img)
 
     return result
