@@ -1,9 +1,12 @@
+import math
 from warnings import warn
 
+import cupy as cp
 import numpy as np
 from cupyx.scipy import ndimage as ndi
 
 from .._shared.utils import deprecate_kwarg
+from ._median_hist import _can_use_histogram, _median_hist
 
 
 @deprecate_kwarg(kwarg_mapping={'selem': 'footprint'}, removed_version="1.0",
@@ -79,5 +82,39 @@ def median(image, footprint=None, out=None, mode='nearest', cval=0.0,
 
     if footprint is None:
         footprint = ndi.generate_binary_structure(image.ndim, image.ndim)
+
+    can_use_histogram, _ = _can_use_histogram(image, footprint)
+
+    # The sorting-based implementation in CuPy is faster for small footprints.
+    # Empirically, shapes above (11, 11) on GTX 1080 Ti and (15, 15) on
+    # RTX A6000 have faster execution for the histogram-based approach.
+    use_histogram = can_use_histogram and (math.prod(footprint.shape) > 200)
+
+    if use_histogram:
+        # as in SciPy, a user-provided `out` can be either an array or a dtype
+        output_array_provided = False
+        out_dtype = None
+        if out is not None:
+            output_array_provided = isinstance(out, cp.ndarray)
+            if not output_array_provided:
+                try:
+                    out_dtype = cp.dtype(out)
+                except TypeError:
+                    raise TypeError(
+                        "out must be either a cupy.array or a valid input to "
+                        "cupy.dtype"
+                    )
+
+        # TODO: Can't currently pass an output array into _median_hist as a new
+        #       array currently needs to be created due to boundary padding.
+        temp = _median_hist(image, footprint, mode=mode, cval=cval)
+        if output_array_provided:
+            out[:] = temp
+        else:
+            if out_dtype is not None:
+                temp = temp.astype(out_dtype, copy=False)
+            out = temp
+        return out
+
     return ndi.median_filter(image, footprint=footprint, output=out, mode=mode,
                              cval=cval)
