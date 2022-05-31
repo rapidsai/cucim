@@ -2,6 +2,22 @@ import cupy as cp
 
 from ..measure import label
 
+_clear_border_labels = cp.ElementwiseKernel(
+    in_params="raw X labels, raw X borders_indices, int32 nvals, Y bgval",
+    out_params="Y out",
+    operation="""
+    for (int j=0; j<nvals; j++)
+    {
+        if (labels[i] == borders_indices[j])
+        {
+            out = bgval;
+            break;
+        }
+    }
+    """,
+    name="cucim_skimage_clear_border_labels",
+)
+
 
 def clear_border(labels, buffer_size=0, bgval=0, mask=None, *, out=None):
     """Clear objects connected to the label image border.
@@ -97,13 +113,8 @@ def clear_border(labels, buffer_size=0, bgval=0, mask=None, *, out=None):
 
     # determine all objects that are connected to borders
     borders_indices = cp.unique(labels[borders])
-    indices = cp.arange(number + 1)
-    # mask all label indices that are connected to borders
-    label_mask = cp.isin(indices, borders_indices)
-    # create mask for pixels to clear
-    mask = label_mask[labels.reshape(-1)].reshape(labels.shape)
 
-    # clear border pixels
-    out[mask] = bgval
-
+    _clear_border_labels(
+        labels, borders_indices, borders_indices.size, bgval, out
+    )
     return out
