@@ -69,3 +69,41 @@ def test_load_image_metadata(testimg_tiff_stripe_32x24_16):
     assert len(metadata) == 2  # 'cucim' and 'tiff'
     # A raw metadata string.
     assert img.raw_metadata == '{"axes": "YXC", "shape": [24, 32, 3]}'
+
+
+def test_load_rgba_image_metadata(tmpdir):
+    """Test accessing RGBA image's metadata.
+
+    - https://github.com/rapidsai/cucim/issues/262
+    """
+    import numpy as np
+    from tifffile import imwrite
+    from cucim import CuImage
+
+    # Test with a 4-channel image
+    img_array = np.ones((32, 32, 3)).astype(np.uint8)
+    print(f'RGB image shape: {img_array.shape}')
+    img_array = np.concatenate(
+        [img_array, 255 * np.ones_like(img_array[..., 0])[..., np.newaxis]],
+        axis=2)
+    print(f'RGBA image shape: {img_array.shape}')
+
+    file_path_4ch = str(tmpdir.join("small_rgba_4ch.tiff"))
+    imwrite(file_path_4ch, img_array, shape=img_array.shape, tile=(16, 16))
+
+    obj = CuImage(file_path_4ch)
+    assert obj.metadata["cucim"]["channel_names"] == ["R", "G", "B", "A"]
+    obj2 = obj.read_region((0, 0), (16, 16))
+    assert obj2.metadata["cucim"]["channel_names"] == ["R", "G", "B", "A"]
+
+    # Test with a 1-channel image
+    img_1ch_array = np.ones((32, 32, 1)).astype(np.uint8)
+    file_path_1ch = str(tmpdir.join("small_rgba_1ch.tiff"))
+    imwrite(file_path_1ch, img_1ch_array,
+            shape=img_1ch_array.shape, tile=(16, 16))
+
+    obj = CuImage(file_path_1ch)
+    assert obj.shape == [32, 32, 4]
+    assert obj.metadata["cucim"]["channel_names"] == ["R", "G", "B", "A"]
+    obj2 = obj.read_region((0, 0), (16, 16))
+    assert obj2.metadata["cucim"]["channel_names"] == ["R", "G", "B", "A"]
