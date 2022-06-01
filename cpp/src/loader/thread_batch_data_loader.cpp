@@ -74,7 +74,8 @@ ThreadBatchDataLoader::ThreadBatchDataLoader(LoadFunc load_func,
             raster_data_.emplace_back(static_cast<uint8_t*>(image_data_ptr));
             break;
         }
-        case io::DeviceType::kPinned:
+        case io::DeviceType::kCUDAHost:
+        case io::DeviceType::kCUDAManaged:
         case io::DeviceType::kCPUShared:
         case io::DeviceType::kCUDAShared:
             fmt::print(stderr, "Device type {} is not supported!\n", device_type);
@@ -104,7 +105,8 @@ ThreadBatchDataLoader::~ThreadBatchDataLoader()
                 CUDA_TRY(cudaFree(raster_ptr));
             }
             break;
-        case io::DeviceType::kPinned:
+        case io::DeviceType::kCUDAHost:
+        case io::DeviceType::kCUDAManaged:
         case io::DeviceType::kCPUShared:
         case io::DeviceType::kCUDAShared:
             fmt::print(stderr, "Device type {} is not supported!", device_type);
@@ -237,7 +239,8 @@ uint8_t* ThreadBatchDataLoader::next_data()
         CUDA_ERROR(cudaMalloc(&raster_data_[buffer_item_head_index_], buffer_size_));
         break;
     }
-    case io::DeviceType::kPinned:
+    case io::DeviceType::kCUDAHost:
+    case io::DeviceType::kCUDAManaged:
     case io::DeviceType::kCPUShared:
     case io::DeviceType::kCUDAShared:
         fmt::print(stderr, "Device type {} is not supported!\n", device_type);
