@@ -277,7 +277,7 @@ bool Plugin::try_load(int version, bool full)
         return false;
     }
     // Load library
-    CUCIM_LOG_VERBOSE("[Plugin: %s] Loading the dynamic library from: %s", name_cstr(), lib_file.c_str());
+    // CUCIM_LOG_VERBOSE("[Plugin: %s] Loading the dynamic library from: %s", name_cstr(), lib_file.c_str());
     library_handle_ = dynlib::load_library(lib_file.c_str());
 
     if (!library_handle_)
@@ -339,7 +339,7 @@ void Plugin::unload()
         dynlib::unload_library(library_handle_);
         library_handle_ = nullptr;
         is_loaded_ = false;
-        CUCIM_LOG_VERBOSE("[Plugin: %s] Unloaded.", name_cstr());
+        // CUCIM_LOG_VERBOSE("[Plugin: %s] Unloaded.", name_cstr());
     }
 }
 
@@ -395,8 +395,8 @@ bool Plugin::initialize()
         return false;
     }
 
-    CUCIM_LOG_INFO("Initializing plugin: %s (interfaces: %s) (impl: %s)", name_cstr(), CSTR(get_interfaces()),
-                   CSTR(get_impl_desc()));
+    // CUCIM_LOG_INFO("Initializing plugin: %s (interfaces: %s) (impl: %s)", name_cstr(), CSTR(get_interfaces()),
+    //                CSTR(get_impl_desc()));
 
     is_in_initialization_ = true;
 
