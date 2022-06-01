@@ -1,3 +1,4 @@
+from ._clear_border import clear_border
 from ._join import join_segmentations, relabel_sequential
 from .boundaries import find_boundaries, mark_boundaries
 from .morphsnakes import (checkerboard_level_set, disk_level_set,
