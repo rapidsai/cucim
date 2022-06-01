@@ -916,7 +916,7 @@ bool TIFF::read_associated_image(const cucim::io::format::ImageMetadataDesc* met
 
     auto& out_image_container = out_image_data->container;
     out_image_container.data = raster;
-    out_image_container.ctx = DLContext{ static_cast<DLDeviceType>(out_device.type()), out_device.index() };
+    out_image_container.device = DLDevice{ static_cast<DLDeviceType>(out_device.type()), out_device.index() };
     out_image_container.ndim = ndim;
     out_image_container.dtype = { kDLUInt, 8, 1 };
     out_image_container.shape = container_shape;

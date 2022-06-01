@@ -75,7 +75,8 @@ PerProcessImageCacheValue::~PerProcessImageCacheValue()
             CUDA_TRY(cudaFree(data));
             break;
         }
-        case io::DeviceType::kPinned:
+        case io::DeviceType::kCUDAHost:
+        case io::DeviceType::kCUDAManaged:
         case io::DeviceType::kCPUShared:
         case io::DeviceType::kCUDAShared:
             fmt::print(stderr, "Device type {} is not supported!\n", device_type);
@@ -129,7 +130,8 @@ void* PerProcessImageCache::allocate(std::size_t n)
         CUDA_TRY(cudaMalloc(&image_data_ptr, n));
         return image_data_ptr;
     }
-    case io::DeviceType::kPinned:
+    case io::DeviceType::kCUDAHost:
+    case io::DeviceType::kCUDAManaged:
     case io::DeviceType::kCPUShared:
     case io::DeviceType::kCUDAShared:
         fmt::print(stderr, "Device type {} is not supported!\n", device_type_);

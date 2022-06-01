@@ -54,7 +54,8 @@ constexpr std::string_view DeviceTypeStrMap::at(const DeviceType& key) const
 static constexpr std::array<std::pair<std::string_view, DeviceType>, kDeviceTypeCount> device_type_values{
     { { "cpu"sv, DeviceType::kCPU },
       { "cuda"sv, DeviceType::kCUDA },
-      { "pinned"sv, DeviceType::kPinned },
+      { "cuda_host"sv, DeviceType::kCUDAHost },
+      { "cuda_managed"sv, DeviceType::kCUDAManaged },
       { "cpu_shared"sv, DeviceType::kCPUShared },
       { "cuda_shared"sv, DeviceType::kCUDAShared } }
 };
@@ -69,7 +70,8 @@ DeviceType lookup_device_type(const std::string_view sv)
 static constexpr std::array<std::pair<DeviceType, std::string_view>, kDeviceTypeCount> device_type_str_values{
     { { DeviceType::kCPU, "cpu"sv },
       { DeviceType::kCUDA, "cuda"sv },
-      { DeviceType::kPinned, "pinned"sv },
+      { DeviceType::kCUDAHost, "cuda_host"sv },
+      { DeviceType::kCUDAManaged, "cuda_managed"sv },
       { DeviceType::kCPUShared, "cpu_shared"sv },
       { DeviceType::kCUDAShared, "cuda_shared"sv } }
 };

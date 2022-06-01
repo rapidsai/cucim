@@ -278,8 +278,8 @@ CuImage::~CuImage()
     {
         if (image_data_->container.data)
         {
-            DLContext& ctx = image_data_->container.ctx;
-            auto device_type = static_cast<io::DeviceType>(ctx.device_type);
+            DLDevice& device = image_data_->container.device;
+            auto device_type = static_cast<io::DeviceType>(device.device_type);
             switch (device_type)
             {
             case io::DeviceType::kCPU:
@@ -295,7 +295,8 @@ CuImage::~CuImage()
                 }
                 image_data_->container.data = nullptr;
                 break;
-            case io::DeviceType::kPinned:
+            case io::DeviceType::kCUDAHost:
+            case io::DeviceType::kCUDAManaged:
             case io::DeviceType::kCPUShared:
             case io::DeviceType::kCUDAShared:
                 fmt::print(stderr, "Device type {} is not supported!\n", device_type);
@@ -386,9 +387,9 @@ io::Device CuImage::device() const
 {
     if (image_data_)
     {
-        DLContext& ctx = image_data_->container.ctx;
-        auto device_type = static_cast<io::DeviceType>(ctx.device_type);
-        auto device_id = static_cast<io::DeviceIndex>(ctx.device_id);
+        DLDevice& device = image_data_->container.device;
+        auto device_type = static_cast<io::DeviceType>(device.device_type);
+        auto device_id = static_cast<io::DeviceIndex>(device.device_id);
         std::string shm_name = image_data_->shm_name == nullptr ? "" : image_data_->shm_name;
         return io::Device(device_type, device_id, shm_name);
     }
@@ -1208,7 +1209,8 @@ bool CuImage::crop_image(const io::format::ImageReaderRegionRequestDesc& request
         }
         break;
     }
-    case cucim::io::DeviceType::kPinned:
+    case cucim::io::DeviceType::kCUDAHost:
+    case cucim::io::DeviceType::kCUDAManaged:
     case cucim::io::DeviceType::kCPUShared:
     case cucim::io::DeviceType::kCUDAShared:
         throw std::runtime_error(fmt::format("Device type {} not supported!", in_device.type()));
@@ -1217,7 +1219,7 @@ bool CuImage::crop_image(const io::format::ImageReaderRegionRequestDesc& request
 
     auto& out_image_container = out_image_data.container;
     out_image_container.data = raster;
-    out_image_container.ctx = DLContext{ static_cast<DLDeviceType>(out_device.type()), out_device.index() };
+    out_image_container.device = DLDevice{ static_cast<DLDeviceType>(out_device.type()), out_device.index() };
     out_image_container.ndim = image_metadata_->ndim;
     out_image_container.dtype = image_metadata_->dtype;
     out_image_container.strides = nullptr; // Tensor is compact and row-majored
@@ -1402,8 +1404,8 @@ void CuImageIterator<DataType>::increase_index_()
             auto& image_data = cuimg_->image_data_;
             auto image_data_ptr = reinterpret_cast<uint8_t**>(&(image_data->container.data));
 
-            DLContext& ctx = image_data->container.ctx;
-            auto device_type = static_cast<io::DeviceType>(ctx.device_type);
+            DLDevice& device = image_data->container.device;
+            auto device_type = static_cast<io::DeviceType>(device.device_type);
             switch (device_type)
             {
             case io::DeviceType::kCPU:
@@ -1419,7 +1421,8 @@ void CuImageIterator<DataType>::increase_index_()
                     CUDA_ERROR(cudaFree(*image_data_ptr));
                 }
                 break;
-            case io::DeviceType::kPinned:
+            case io::DeviceType::kCUDAHost:
+            case io::DeviceType::kCUDAManaged:
             case io::DeviceType::kCPUShared:
             case io::DeviceType::kCUDAShared:
                 fmt::print(stderr, "Device type {} is not supported!\n", device_type);
