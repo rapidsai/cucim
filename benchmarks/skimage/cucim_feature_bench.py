@@ -99,6 +99,7 @@ def main(args):
                 var_kwargs=var_kwargs,
                 module_cpu=skimage.feature,
                 module_gpu=cucim.skimage.feature,
+                run_cpu= args.no_cpu
             )
         else:
             if not allow_nd:
@@ -137,5 +138,6 @@ if __name__ == '__main__':
     parser.add_argument('-d','--dtype', type=str, help='Dtype of input image', choices = ['fp64','fp32','fp16'], required=True)
     parser.add_argument('-f','--func_name', type=str, help='function to benchmark', choices = func_name_choices, required=True)
     parser.add_argument('-t','--duration', type=int, help='time to run benchmark', required=True)
+    parser.add_argument('--run_cpu', action='store_true', help='disable cpu measurements', default=False)
     args = parser.parse_args()
     main(args)
