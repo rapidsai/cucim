@@ -20,7 +20,7 @@ def main(args):
     else:
         all_results = pd.DataFrame()
     # dyptes
-    dtype_dict = {'fp64': np.float64, 'fp32': np.float32, 'fp16': np.float16}
+    dtype_dict = {'fp64': np.float64, 'fp32': np.float32, 'fp16': np.float16, 'int8': np.int8}
     dtypes = [dtype_dict[args.dtype]]
 
     for function_name, fixed_kwargs, var_kwargs, allow_color, allow_nd in [
@@ -159,6 +159,7 @@ def main(args):
             var_kwargs=var_kwargs,
             module_cpu=skimage.filters,
             module_gpu=cucim.skimage.filters,
+            run_cpu= args.no_cpu
         )
         results = B.run_benchmark(duration=1)
         all_results = all_results.append(results["full"])
@@ -174,8 +175,10 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Benchmarking cuCIM Filters')
     func_name_choices = ['gabor', 'gaussian', 'median', 'rank_order', 'unsharp_mask', 'sobel', 'prewitt', 'scharr', 'roberts', 'roberts_pos_diag', 'roberts_neg_diag', 'farid', 'laplace', 'meijering', 'sato', 'frangi', 'hessian', 'threshold_isodata', 'threshold_otsu', 'threshold_yen', 'threshold_local', 'threshold_li', 'threshold_minimum', 'threshold_mean', 'threshold_triangle', 'threshold_niblack', 'threshold_sauvola', 'apply_hysteresis_threshold', 'threshold_multiotsu']
     parser.add_argument('-i','--img_size', type=str, help='Size of input image', required=True)
-    parser.add_argument('-d','--dtype', type=str, help='Dtype of input image', choices = ['fp64','fp32','fp16'], required=True)
+    parser.add_argument('-d','--dtype', type=str, help='Dtype of input image', choices = ['fp64','fp32','fp16', 'int8'], required=True)
     parser.add_argument('-f','--func_name', type=str, help='function to benchmark', choices = func_name_choices, required=True)
     parser.add_argument('-t','--duration', type=int, help='time to run benchmark', required=True)
+    parser.add_argument('--no_cpu', action='store_false', help='disable cpu measurements', default=True)
+
     args = parser.parse_args()
     main(args)
