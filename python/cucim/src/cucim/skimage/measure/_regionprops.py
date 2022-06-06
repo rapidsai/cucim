@@ -84,11 +84,6 @@ PROPS = {
     'weighted_moments_normalized': 'moments_weighted_normalized',
 }
 
-OBJECT_COLUMNS = {
-    'image', 'coords', 'image_convex', 'slice',
-    'image_filled', 'image_intensity'
-}
-
 COL_DTYPES = {
     'area': int,
     'area_bbox': int,
@@ -131,6 +126,8 @@ COL_DTYPES = {
     'slice': object,
     'solidity': float,
 }
+
+OBJECT_COLUMNS = [col for col, dtype in COL_DTYPES.items() if dtype == object]
 
 PROP_VALS = set(PROPS.values())
 
@@ -818,8 +815,8 @@ def _props_to_dict(regions, properties=('label', 'bbox'), separator='-'):
             or prop in OBJECT_COLUMNS
             or dtype is np.object_
         ):
-            if prop == 'slice':
-                # keep slice objects in a NumPy array
+            if prop in OBJECT_COLUMNS:
+                # keep objects in a NumPy array
                 column_buffer = np.empty(n, dtype=dtype)
                 for i in range(n):
                     column_buffer[i] = regions[i][prop]
