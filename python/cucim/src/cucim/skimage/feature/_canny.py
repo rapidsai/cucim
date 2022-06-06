@@ -13,18 +13,11 @@ Original author: Lee Kamentsky
 """
 import cupy as cp
 import cupyx.scipy.ndimage as ndi
-from cupyx.scipy.ndimage import binary_erosion, generate_binary_structure
 
 from cucim.skimage.util import dtype_limits
 
 from .._shared.filters import gaussian
-from .._shared.utils import check_nD
-
-
-# fuse several commonly paired ufunc operations into a single kernel call
-@cp.fuse(kernel_name='cucim_skimage_feature_fused_comparison')
-def _fused_comparison(w, c1, c2, m):
-    return c2 * w + c1 * (1.0 - w) <= m
+from .._shared.utils import _supported_float_type, check_nD
 
 
 def _preprocess(image, mask, sigma, mode, cval):
@@ -71,140 +64,178 @@ def _preprocess(image, mask, sigma, mode, cval):
 
     gaussian_kwargs = dict(sigma=sigma, mode=mode, cval=cval,
                            preserve_range=False)
+    compute_bleedover = (mode == 'constant' or mask is not None)
+    float_type = _supported_float_type(image.dtype)
     if mask is None:
-        # Smooth the masked image
-        smoothed_image = gaussian(image, **gaussian_kwargs)
+        if compute_bleedover:
+            mask = cp.ones(image.shape, dtype=float_type)
+        masked_image = image
+
         # mask that is ones everywhere except the borders
         eroded_mask = cp.ones(image.shape, dtype=bool)
         eroded_mask[:1, :] = 0
         eroded_mask[-1:, :] = 0
         eroded_mask[:, :1] = 0
         eroded_mask[:, -1:] = 0
-        return smoothed_image, eroded_mask
+    else:
+        mask = mask.astype(bool, copy=False)
+        masked_image = cp.zeros_like(image)
+        masked_image[mask] = image[mask]
 
-    masked_image = cp.zeros_like(image)
-    masked_image[mask] = image[mask]
+        # Make the eroded mask. Setting the border value to zero will wipe
+        # out the image edges for us.
+        s = ndi.generate_binary_structure(2, 2)
+        eroded_mask = ndi.binary_erosion(mask, s, border_value=0)
 
-    # Compute the fractional contribution of masked pixels by applying
-    # the function to the mask (which gets you the fraction of the
-    # pixel data that's due to significant points)
-    bleed_over = gaussian(mask.astype(cp.float32), **gaussian_kwargs)
-    bleed_over += cp.finfo(cp.float32).eps
+    if compute_bleedover:
+        # Compute the fractional contribution of masked pixels by applying
+        # the function to the mask (which gets you the fraction of the
+        # pixel data that's due to significant points)
+        bleed_over = gaussian(mask.astype(cp.float32), **gaussian_kwargs)
+        bleed_over += cp.finfo(cp.float32).eps
 
     # Smooth the masked image
     smoothed_image = gaussian(masked_image, **gaussian_kwargs)
 
-    # Lower the result by the bleed-over fraction, so you can
-    # recalibrate by dividing by the function on the mask to recover
-    # the effect of smoothing from just the significant pixels.
-    smoothed_image /= bleed_over
-
-    #
-    # Make the eroded mask. Setting the border value to zero will wipe
-    # out the image edges for us.
-    #
-    s = generate_binary_structure(2, 2)
-    eroded_mask = binary_erosion(mask, s, border_value=0)
+    if compute_bleedover:
+        # Lower the result by the bleed-over fraction, so you can
+        # recalibrate by dividing by the function on the mask to recover
+        # the effect of smoothing from just the significant pixels.
+        smoothed_image /= bleed_over
 
     return smoothed_image, eroded_mask
 
 
-def _set_local_maxima(magnitude, pts, w_num, w_denum, row_slices,
-                      col_slices, out):
-    """Get the magnitudes shifted left to make a matrix of the points to
-    the right of pts. Similarly, shift left and down to get the points
-    to the top right of pts.
-    """
-    r_0, r_1, r_2, r_3 = row_slices
-    c_0, c_1, c_2, c_3 = col_slices
-    c1 = magnitude[r_0, c_0][pts[r_1, c_1]]
-    c2 = magnitude[r_2, c_2][pts[r_3, c_3]]
-    m = magnitude[pts]
-    w = w_num[pts] / w_denum[pts]
-    c_plus = c2 * w + c1 * (1 - w) <= m
-    c1 = magnitude[r_1, c_1][pts[r_0, c_0]]
-    c2 = magnitude[r_3, c_3][pts[r_2, c_2]]
-    c_minus = c2 * w + c1 * (1 - w) <= m
-    out[pts] = c_plus & c_minus
+def _generate_nonmaximum_suppression_op(large_int=False):
+    """CUDA inner loop code for non-maximum suppression
 
+    Parameters
+    ----------
+    large_int : bool, optional
+        If True, `size_t` is used rather than `unsigned int` for
+        strides/indexing.
+
+    Returns
+    -------
+    ops: str
+        inner loop operation for use with cupy.ElementwiseKernel
+    """
+
+    if large_int:
+        uint_t = 'size_t'
+    else:
+        uint_t = 'unsigned int'
+
+    ops = f"""
+    // determine strides (in number of elements) along each axis
+    const {uint_t} stride_x = magnitude.shape()[1];
+    const {uint_t} stride_y = 1;
+    """
+
+    ops += """
+    T w, m, neigh1_1, neigh1_2, neigh2_1, neigh2_2;
+
+    out = static_cast<T>(0.);
+    m = magnitude[i];
+    if (!((eroded_mask[i] > 0) && (m >= low_threshold))) {
+        // return out
+        break;
+    }
+
+    T isob = isobel[i];
+    T jsob = jsobel[i];
+
+    bool is_down = (isob <= 0);
+    bool is_up = !is_down;
+
+    bool is_left = (jsob <= 0);
+    bool is_right = !is_left;
+
+    bool cond1 = (is_up && is_right) || (is_down && is_left);
+    bool cond2 = (is_down && is_right) || (is_up && is_left);
+    if (cond1 || cond2) {
+        isob = fabs(isob);
+        jsob = fabs(jsob);
+        if (cond1) {
+            if (isob > jsob) {
+                w = jsob / isob;
+                neigh1_1 = magnitude[i + stride_x];             // x + 1, y
+                neigh1_2 = magnitude[i + stride_x + stride_y];  // x + 1, y + 1
+                neigh2_1 = magnitude[i - stride_x];             // x - 1, y
+                neigh2_2 = magnitude[i - stride_x - stride_y];  // x - 1, y - 1
+            } else {
+                w = isob / jsob;
+                neigh1_1 = magnitude[i + stride_y];             // x    , y + 1
+                neigh1_2 = magnitude[i + stride_x + stride_y];  // x + 1, y + 1
+                neigh2_1 = magnitude[i - stride_y];             // x    , y - 1
+                neigh2_2 = magnitude[i - stride_x - stride_y];  // x - 1, y - 1
+            }
+        } else if (cond2) {
+            if (isob < jsob) {
+                w = isob / jsob;
+                neigh1_1 = magnitude[i + stride_y];             // x    , y + 1
+                neigh1_2 = magnitude[i - stride_x + stride_y];  // x - 1, y + 1
+                neigh2_1 = magnitude[i - stride_y];             // x    , y - 1
+                neigh2_2 = magnitude[i + stride_x - stride_y];  // x + 1, y - 1
+            } else {
+                w = jsob / isob;
+                neigh1_1 = magnitude[i - stride_x];             // x - 1, y
+                neigh1_2 = magnitude[i - stride_x + stride_y];  // x - 1, y + 1
+                neigh2_1 = magnitude[i + stride_x];             // x + 1, y
+                neigh2_2 = magnitude[i + stride_x - stride_y];  // x + 1, y - 1
+            }
+        }
+        // linear interpolation
+        bool c_plus = (neigh1_2 * w + neigh1_1 * (1.0 - w)) <= m;
+        if (c_plus) {
+            bool c_minus = (neigh2_2 * w + neigh2_1 * (1.0 - w)) <= m;
+            if (c_minus) {
+                out = m;
+            }
+        }
+    }
+    """
+    return ops
+
+
+@cp.memoize(for_each_device=True)
+def _get_nonmax_kernel(large_int=False):
+    in_params = ('raw T isobel, raw T jsobel, raw T magnitude, '
+                 'raw uint8 eroded_mask, T low_threshold')
+    out_params = 'T out'
+    name = 'cupyx_skimage_canny_nonmaximum_suppression'
+    if large_int:
+        name += '_large'
+    return cp.ElementwiseKernel(
+        in_params,
+        out_params,
+        operation=_generate_nonmaximum_suppression_op(large_int),
+        name=name,
+    )
+
+
+def _nonmaximum_suppression(
+    isobel, jsobel, magnitude, eroded_mask, low_threshold
+):
+
+    # make sure inputs are C-contiguous (stride calculations assume this)
+    isobel = cp.ascontiguousarray(isobel)
+    jsobel = cp.ascontiguousarray(jsobel)
+    magnitude = cp.ascontiguousarray(magnitude)
+    eroded_mask = cp.ascontiguousarray(eroded_mask)
+    if eroded_mask.dtype == cp.bool_:
+        # uint8 view of boolean array
+        eroded_mask = eroded_mask.view(cp.uint8)
+    elif eroded_mask.dtype != cp.uint8:
+        raise ValueError("eroded_mask must be boolean (or uint8)")
+
+    # generate the Elementwise kernel (with size dependent index type)
+    large_int = magnitude.size > 1 << 31
+    kernel = _get_nonmax_kernel(large_int=large_int)
+
+    out = cp.empty_like(magnitude)
+    kernel(isobel, jsobel, magnitude, eroded_mask, low_threshold, out)
     return out
-
-
-def _get_local_maxima(isobel, jsobel, magnitude, eroded_mask):
-    """Edge thinning by non-maximum suppression.
-
-    Finds the normal to the edge at each point using the arctangent of the
-    ratio of the Y sobel over the X sobel - pragmatically, we can
-    look at the signs of X and Y and the relative magnitude of X vs Y
-    to sort the points into 4 categories: horizontal, vertical,
-    diagonal and antidiagonal.
-
-    Look in the normal and reverse directions to see if the values
-    in either of those directions are greater than the point in question.
-    Use interpolation (via _set_local_maxima) to get a mix of points
-    instead of picking the one that's the closest to the normal.
-    """
-    abs_isobel = cp.abs(isobel)
-    abs_jsobel = cp.abs(jsobel)
-    eroded_mask = eroded_mask & (magnitude > 0)
-
-    # Normals' orientations
-    is_horizontal = eroded_mask & (abs_isobel >= abs_jsobel)
-    is_vertical = eroded_mask & (abs_isobel <= abs_jsobel)
-    is_up = (isobel >= 0)
-    is_down = (isobel <= 0)
-    is_right = (jsobel >= 0)
-    is_left = (jsobel <= 0)
-
-    # TODO: implement custom kernel to compute local maxima
-
-    #
-    # --------- Find local maxima --------------
-    #
-    # Assign each point to have a normal of 0-45 degrees, 45-90 degrees,
-    # 90-135 degrees and 135-180 degrees.
-    #
-    local_maxima = cp.zeros(magnitude.shape, bool)
-    # ----- 0 to 45 degrees ------
-    pts_plus = is_up & is_right
-    pts_minus = is_down & is_left
-    pts = ((pts_plus | pts_minus) & is_horizontal)
-    local_maxima = _set_local_maxima(
-        magnitude, pts, abs_jsobel, abs_isobel,
-        [slice(1, None), slice(-1), slice(1, None), slice(-1)],
-        [slice(None), slice(None), slice(1, None), slice(-1)],
-        local_maxima)
-    # ----- 45 to 90 degrees ------
-    # Mix diagonal and vertical
-    #
-    pts = ((pts_plus | pts_minus) & is_vertical)
-    local_maxima = _set_local_maxima(
-        magnitude, pts, abs_isobel, abs_jsobel,
-        [slice(None), slice(None), slice(1, None), slice(-1)],
-        [slice(1, None), slice(-1), slice(1, None), slice(-1)],
-        local_maxima)
-    # ----- 90 to 135 degrees ------
-    # Mix anti-diagonal and vertical
-    #
-    pts_plus = is_down & is_right
-    pts_minus = is_up & is_left
-    pts = ((pts_plus | pts_minus) & is_vertical)
-    local_maxima = _set_local_maxima(
-        magnitude, pts, abs_isobel, abs_jsobel,
-        [slice(None), slice(None), slice(-1), slice(1, None)],
-        [slice(1, None), slice(-1), slice(1, None), slice(-1)],
-        local_maxima)
-    # ----- 135 to 180 degrees ------
-    # Mix anti-diagonal and anti-horizontal
-    #
-    pts = ((pts_plus | pts_minus) & is_horizontal)
-    local_maxima = _set_local_maxima(
-        magnitude, pts, abs_jsobel, abs_isobel,
-        [slice(-1), slice(1, None), slice(-1), slice(1, None)],
-        [slice(None), slice(None), slice(1, None), slice(-1)],
-        local_maxima)
-
-    return local_maxima
 
 
 def canny(image, sigma=1., low_threshold=None, high_threshold=None, mask=None,
@@ -355,21 +386,22 @@ def canny(image, sigma=1., low_threshold=None, high_threshold=None, mask=None,
         )
 
     # Non-maximum suppression
-    local_maxima = _get_local_maxima(isobel, jsobel, magnitude, eroded_mask)
+    low_masked = _nonmaximum_suppression(
+        isobel, jsobel, magnitude, eroded_mask, low_threshold
+    )
 
     # Double thresholding and edge tracking
-    low_mask = local_maxima & (magnitude >= low_threshold)
-
     #
     # Segment the low-mask, then only keep low-segments that have
     # some high_mask component in them
     #
+    low_mask = low_masked > 0
     strel = cp.ones((3, 3), bool)
-    labels, count = ndi.label(low_mask, structure=strel)
+    labels, count = ndi.label(low_mask, strel)
     if count == 0:
         return low_mask
 
-    high_mask = local_maxima & (magnitude >= high_threshold)
+    high_mask = low_mask & (low_masked >= high_threshold)
     nonzero_sums = cp.unique(labels[high_mask])
     good_label = cp.zeros((count + 1,), bool)
     good_label[nonzero_sums] = True
