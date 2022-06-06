@@ -601,6 +601,15 @@ def test_props_to_dict():
                    'bbox+0': cp.array([0]), 'bbox+1': cp.array([0]),
                    'bbox+2': cp.array([10]), 'bbox+3': cp.array([18])}
 
+    regions = regionprops(SAMPLE_MULTIPLE)
+    out = _props_to_dict(regions, properties=('coords',))
+    coords = np.empty(2, object)
+    coords[0] = cp.stack((cp.arange(10),) * 2, axis=-1)
+    coords[1] = cp.array([[3, 7], [4, 7]])
+    assert out['coords'].shape == coords.shape
+    assert_array_equal(out['coords'][0], coords[0])
+    assert_array_equal(out['coords'][1], coords[1])
+
 
 def test_regionprops_table():
     out = regionprops_table(SAMPLE)
@@ -613,6 +622,14 @@ def test_regionprops_table():
     assert out == {'label': cp.array([1]), 'area': cp.array([72]),
                    'bbox+0': cp.array([0]), 'bbox+1': cp.array([0]),
                    'bbox+2': cp.array([10]), 'bbox+3': cp.array([18])}
+
+    out = regionprops_table(SAMPLE_MULTIPLE, properties=('coords',))
+    coords = np.empty(2, object)
+    coords[0] = cp.stack((cp.arange(10),) * 2, axis=-1)
+    coords[1] = cp.array([[3, 7], [4, 7]])
+    assert out['coords'].shape == coords.shape
+    assert_array_equal(out['coords'][0], coords[0])
+    assert_array_equal(out['coords'][1], coords[1])
 
 
 def test_regionprops_table_deprecated_vector_property():
