@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import logging
 from typing import Any
 
 import cupy
@@ -21,7 +20,6 @@ import numpy as np
 from .kernel.cuda_kernel_source import cuda_kernel_code
 
 CUDA_KERNELS = cupy.RawModule(code=cuda_kernel_code)
-_logger = logging.getLogger("scaling_cucim")
 
 
 def scale_intensity_range(
@@ -72,57 +70,51 @@ def scale_intensity_range(
                                                  0.0, 255.0,
                                                  -1.0, 1.0, False)
     """
-    try:
-        if a_max - a_min == 0.0:
-            raise ValueError("Original intensity range min and max are same")
+    if a_max - a_min == 0.0:
+        raise ValueError("Original intensity range min and max are same")
 
-        to_cupy = False
+    to_numpy = False
+    if isinstance(img, np.ndarray):
+        to_numpy = True
+        cupy_img = cupy.asarray(img, dtype=cupy.float32, order='C')
+    elif not isinstance(img, cupy.ndarray):
+        raise TypeError("img must be a cupy.ndarray or numpy.ndarray")
+    else:
+        cupy_img = cupy.ascontiguousarray(img)
 
-        if isinstance(img, np.ndarray):
-            to_cupy = True
-            cupy_img = cupy.asarray(img, dtype=cupy.float32, order='C')
-        elif not isinstance(img, cupy.ndarray):
-            raise TypeError("img must be a cupy.ndarray or numpy.ndarray")
+    if cupy_img.dtype != cupy.float32:
+        if cupy.can_cast(img.dtype, cupy.float32) is False:
+            raise ValueError(
+                "Cannot safely cast type {cupy_img.dtype.name} to \
+                'float32'"
+            )
         else:
-            cupy_img = cupy.ascontiguousarray(img)
+            cupy_img = cupy_img.astype(cupy.float32)
 
-        if cupy_img.dtype != cupy.float32:
-            if cupy.can_cast(img.dtype, cupy.float32) is False:
-                raise ValueError(
-                    "Cannot safely cast type {cupy_img.dtype.name} to \
-                    'float32'"
-                )
-            else:
-                cupy_img = cupy_img.astype(cupy.float32)
+    scale = CUDA_KERNELS.get_function("scaleVolume")
 
-        scale = CUDA_KERNELS.get_function("scaleVolume")
+    x = (b_max - b_min) / (a_max - a_min)
+    y = a_min * x - b_min
+    if clip is False:
+        b_max = float('inf')
+        b_min = float('-inf')
 
-        x = (b_max - b_min) / (a_max - a_min)
-        y = a_min * x - b_min
-        if clip is False:
-            b_max = float('inf')
-            b_min = float('-inf')
+    sh = img.shape
+    total_size = np.prod(sh)
+    blockx = 128
+    gridx = int((total_size - 1) / blockx + 1)
 
-        sh = img.shape
-        total_size = np.prod(sh)
-        blockx = 128
-        gridx = int((total_size - 1) / blockx + 1)
+    result = cupy.empty(img.shape, dtype=cupy_img.dtype)
 
-        result = cupy.empty(img.shape, dtype=cupy_img.dtype)
+    scale((gridx, 1, 1), (blockx, 1, 1),
+          (cupy_img, result, np.float32(x), np.float32(y),
+          np.float32(b_min), np.float32(b_max),
+          np.int32(total_size)))
 
-        scale((gridx, 1, 1), (blockx, 1, 1),
-              (cupy_img, result, np.float32(x), np.float32(y),
-              np.float32(b_min), np.float32(b_max),
-              np.int32(total_size)))
+    if img.dtype != cupy.float32:
+        result = result.astype(img.dtype)
 
-        if img.dtype != cupy.float32:
-            result = result.astype(img.dtype)
-
-        if to_cupy is True:
-            result = cupy.asnumpy(result)
-
-    except Exception as e:
-        _logger.error("[cucim] " + str(e), exc_info=True)
-        raise
+    if to_numpy:
+        result = cupy.asnumpy(result)
 
     return result

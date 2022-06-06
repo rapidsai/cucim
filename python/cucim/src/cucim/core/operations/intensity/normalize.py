@@ -68,62 +68,56 @@ def normalize_data(
     >>> output_array = its.normalize_data(input_arr,
                                           10, 0 , 255)
     """
-    try:
-        if max_value - min_value == 0.0:
-            raise ValueError("Minimum and Maximum intensity \
-                              same in input data")
+    if max_value - min_value == 0.0:
+        raise ValueError("Minimum and Maximum intensity \
+                          same in input data")
 
-        if type not in ['range', 'atan']:
-            raise ValueError("Incorrect normalization type. \
-                              Supported types are: \
-                                  range based: 1,\
-                                  atangent based: 2")
+    if type not in ['range', 'atan']:
+        raise ValueError("Incorrect normalization type. \
+                          Supported types are: \
+                              range based: 1,\
+                              atangent based: 2")
 
-        to_cupy = False
+    to_numpy = False
+    if isinstance(img, np.ndarray):
+        to_numpy = True
+        cupy_img = cupy.asarray(img, dtype=cupy.float32, order='C')
+    elif not isinstance(img, cupy.ndarray):
+        raise TypeError("img must be a cupy.ndarray or numpy.ndarray")
+    else:
+        cupy_img = cupy.ascontiguousarray(img)
 
-        if isinstance(img, np.ndarray):
-            to_cupy = True
-            cupy_img = cupy.asarray(img, dtype=cupy.float32, order='C')
-        elif not isinstance(img, cupy.ndarray):
-            raise TypeError("img must be a cupy.ndarray or numpy.ndarray")
+    if cupy_img.dtype != cupy.float32:
+        if cupy.can_cast(img.dtype, cupy.float32) is False:
+            raise ValueError(
+                "Cannot safely cast type {cupy_img.dtype.name} to \
+                'float32'"
+            )
         else:
-            cupy_img = cupy.ascontiguousarray(img)
+            cupy_img = cupy_img.astype(cupy.float32)
 
-        if cupy_img.dtype != cupy.float32:
-            if cupy.can_cast(img.dtype, cupy.float32) is False:
-                raise ValueError(
-                    "Cannot safely cast type {cupy_img.dtype.name} to \
-                    'float32'"
-                )
-            else:
-                cupy_img = cupy_img.astype(cupy.float32)
+    normalize = CUDA_KERNELS.get_function("normalize_data_by_range")
 
-        normalize = CUDA_KERNELS.get_function("normalize_data_by_range")
+    if type == 'atan':
+        normalize = CUDA_KERNELS.get_function("normalize_data_by_atan")
 
-        if type == 'atan':
-            normalize = CUDA_KERNELS.get_function("normalize_data_by_atan")
+    value_range = max_value - min_value
+    norm_factor = norm_constant / value_range
 
-        value_range = max_value - min_value
-        norm_factor = norm_constant / value_range
+    total_size = int(np.prod(img.shape))
+    blockx = 128
+    gridx = int((total_size - 1) / blockx + 1)
 
-        total_size = int(np.prod(img.shape))
-        blockx = 128
-        gridx = int((total_size - 1) / blockx + 1)
+    result = cupy.empty(img.shape, dtype=cupy_img.dtype)
 
-        result = cupy.empty(img.shape, dtype=cupy_img.dtype)
+    normalize((gridx, 1, 1), (blockx, 1, 1),
+              (cupy_img, result, np.float32(norm_factor),
+               np.float32(min_value),
+               np.int32(total_size)))
 
-        normalize((gridx, 1, 1), (blockx, 1, 1),
-                  (cupy_img, result, np.float32(norm_factor),
-                   np.float32(min_value),
-                   np.int32(total_size)))
+    if img.dtype != cupy.float32:
+        result = result.astype(img.dtype)
 
-        if img.dtype != cupy.float32:
-            result = result.astype(img.dtype)
-
-        if to_cupy is True:
-            result = cupy.asnumpy(result)
-
-    except Exception:
-        raise
-
+    if to_numpy:
+        result = cupy.asnumpy(result)
     return result

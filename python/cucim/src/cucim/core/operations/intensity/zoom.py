@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import logging
 import math
 from typing import Any, Sequence, Union
 
@@ -21,7 +20,6 @@ import numpy as np
 
 from .kernel.cuda_kernel_source import cuda_kernel_code
 
-_logger = logging.getLogger("zoom_cucim")
 CUDA_KERNELS = cupy.RawModule(code=cuda_kernel_code)
 
 
@@ -55,139 +53,132 @@ def zoom(
     >>> # input is channel first 3d array
     >>> output_array = its.zoom(input_arr,[1.1,1.1])
     """
-    try:
-        to_cupy = False
+    to_numpy = False
+    if isinstance(img, np.ndarray):
+        to_numpy = True
+        cupy_img = cupy.asarray(img, dtype=cupy.float32, order="C")
+    elif not isinstance(img, cupy.ndarray):
+        raise TypeError("img must be a cupy.ndarray or numpy.ndarray")
+    else:
+        cupy_img = cupy.ascontiguousarray(img)
 
-        if isinstance(img, np.ndarray):
-            to_cupy = True
-            cupy_img = cupy.asarray(img, dtype=cupy.float32, order="C")
-        elif not isinstance(img, cupy.ndarray):
-            raise TypeError("img must be a cupy.ndarray or numpy.ndarray")
-        else:
-            cupy_img = cupy.ascontiguousarray(img)
-
-        if cupy_img.dtype != cupy.float32:
-            if cupy.can_cast(img.dtype, cupy.float32) is False:
-                raise ValueError(
-                    "Cannot safely cast type {cupy_img.dtype.name} \
-                     to 'float32'"
-                )
-            else:
-                cupy_img = cupy_img.astype(cupy.float32)
-
-        if img.ndim not in (3, 4):
+    if cupy_img.dtype != cupy.float32:
+        if cupy.can_cast(img.dtype, cupy.float32) is False:
             raise ValueError(
-                f"Unsupported img.ndim={img.ndim}. Expected `img` with "
-                "dimensions (C, H, W) or (N, C, H, W)."
+                "Cannot safely cast type {cupy_img.dtype.name} \
+                 to 'float32'"
             )
-
-        if len(img.shape) == 4:
-            N, C, H, W = img.shape
-        elif len(img.shape) == 3:
-            C, H, W = img.shape
-            N = 1
-
-        output_size_cu = [N, C, int(math.floor(H * zoom_factor[0])),
-                          int(math.floor(W * zoom_factor[1]))]
-
-        if output_size_cu[2] == H and output_size_cu[3] == W:
-            return img
-
-        def get_block_size(output_size_cu, H, W):
-            max_smem = 48 * 1024
-            cu_block_options = [(16, 16, 1), (16, 8, 1), (8, 8, 1), (8, 4, 1)]
-            # compare for 48KB for standard CC optimal occupancy
-            # array is H, W but kernel is x--> W, y-->H
-            for param in cu_block_options:
-                h_stretch = [math.floor((0 * H) / output_size_cu[2]),
-                             math.ceil((param[1] * H) / output_size_cu[2])]
-                w_stretch = [math.floor((0 * W) / output_size_cu[3]),
-                             math.ceil((param[0] * W) / output_size_cu[3])]
-
-                smem_size = (h_stretch[1] + 1) * (w_stretch[1] + 1) * 4
-                if smem_size < max_smem:
-                    return param, smem_size
-
-            raise Exception("Random Zoom couldnt find a \
-                             shared memory configuration")
-
-        # input pitch
-        pitch = H * W
-
-        # get block size
-        block_config, smem_size = get_block_size(output_size_cu, H, W)
-        grid = (int((output_size_cu[3] - 1) / block_config[0] + 1),
-                int((output_size_cu[2] - 1) / block_config[1] + 1), C * N)
-
-        is_zoom_out = output_size_cu[2] < H and output_size_cu[3] < W
-        is_zoom_in = output_size_cu[2] > H and output_size_cu[3] > W
-
-        pad_dims = [[0, 0]] * 2  # zoom out
-        slice_dims = [[0, 0]] * 2  # zoom in
-        for idx, (orig, zoom) in enumerate(zip((H, W),
-                                           (output_size_cu[2],
-                                            output_size_cu[3]))):
-            diff = orig - zoom
-            half = abs(diff) // 2
-            if diff > 0:
-                pad_dims[idx] = [half, diff - half]
-            elif diff < 0:
-                slice_dims[idx] = [half, half + orig]
-
-        result = cupy.ndarray(cupy_img.shape, dtype=cupy.float32)
-
-        if is_zoom_in:
-            # slice
-            kernel = CUDA_KERNELS.get_function("zoom_in_kernel")
-            kernel(grid, block_config,
-                   args=(cupy_img, result, np.int32(H), np.int32(W),
-                         np.int32(output_size_cu[2]),
-                         np.int32(output_size_cu[3]),
-                         np.int32(pitch), np.int32(slice_dims[0][0]),
-                         np.int32(slice_dims[0][1]),
-                         np.int32(slice_dims[1][0]),
-                         np.int32(slice_dims[1][1])),
-                   shared_mem=smem_size)
-        elif is_zoom_out:
-            # pad
-            kernel = CUDA_KERNELS.get_function("zoom_out_kernel")
-            kernel(grid, block_config,
-                   args=(cupy_img, result, np.int32(H), np.int32(W),
-                         np.int32(output_size_cu[2]),
-                         np.int32(output_size_cu[3]),
-                         np.int32(pitch), np.int32(pad_dims[0][0]),
-                         np.int32(pad_dims[0][1]),
-                         np.int32(pad_dims[1][0]),
-                         np.int32(pad_dims[1][1])),
-                   shared_mem=smem_size)
-            # padding kernel
-            kernel = CUDA_KERNELS.get_function("zoomout_edge_pad")
-            grid = (int((W - 1) / block_config[0] + 1),
-                    int((H - 1) / block_config[1] + 1),
-                    C * N)
-            kernel(grid, block_config,
-                   args=(result, np.int32(H), np.int32(W), np.int32(pitch),
-                         np.int32(pad_dims[0][0]), np.int32(pad_dims[1][0]),
-                         np.int32(pad_dims[0][0] + output_size_cu[2]),
-                         np.int32(pad_dims[1][0] + output_size_cu[3])))
-
         else:
-            raise Exception("Can only handle simultaneous \
-                            expansion(or shrinkage) in both H,W dimension, \
-                            check zoom factors")
+            cupy_img = cupy_img.astype(cupy.float32)
 
-        if img.dtype != np.float32:
-            result = result.astype(img.dtype)
+    if img.ndim not in (3, 4):
+        raise ValueError(
+            f"Unsupported img.ndim={img.ndim}. Expected `img` with "
+            "dimensions (C, H, W) or (N, C, H, W)."
+        )
 
-        if to_cupy is True:
-            result = cupy.asnumpy(result)
+    if len(img.shape) == 4:
+        N, C, H, W = img.shape
+    elif len(img.shape) == 3:
+        C, H, W = img.shape
+        N = 1
 
-        return result
+    output_size_cu = [N, C, int(math.floor(H * zoom_factor[0])),
+                      int(math.floor(W * zoom_factor[1]))]
 
-    except Exception as e:
-        _logger.error("[cucim] " + str(e), exc_info=True)
-        _logger.info("Error executing random zoom on GPU")
-        raise
+    if output_size_cu[2] == H and output_size_cu[3] == W:
+        return img
+
+    def get_block_size(output_size_cu, H, W):
+        max_smem = 48 * 1024
+        cu_block_options = [(16, 16, 1), (16, 8, 1), (8, 8, 1), (8, 4, 1)]
+        # compare for 48KB for standard CC optimal occupancy
+        # array is H, W but kernel is x--> W, y-->H
+        for param in cu_block_options:
+            h_stretch = [math.floor((0 * H) / output_size_cu[2]),
+                         math.ceil((param[1] * H) / output_size_cu[2])]
+            w_stretch = [math.floor((0 * W) / output_size_cu[3]),
+                         math.ceil((param[0] * W) / output_size_cu[3])]
+
+            smem_size = (h_stretch[1] + 1) * (w_stretch[1] + 1) * 4
+            if smem_size < max_smem:
+                return param, smem_size
+
+        raise Exception("Random Zoom couldnt find a \
+                         shared memory configuration")
+
+    # input pitch
+    pitch = H * W
+
+    # get block size
+    block_config, smem_size = get_block_size(output_size_cu, H, W)
+    grid = (int((output_size_cu[3] - 1) / block_config[0] + 1),
+            int((output_size_cu[2] - 1) / block_config[1] + 1), C * N)
+
+    is_zoom_out = output_size_cu[2] < H and output_size_cu[3] < W
+    is_zoom_in = output_size_cu[2] > H and output_size_cu[3] > W
+
+    pad_dims = [[0, 0]] * 2  # zoom out
+    slice_dims = [[0, 0]] * 2  # zoom in
+    for idx, (orig, zoom) in enumerate(zip((H, W),
+                                       (output_size_cu[2],
+                                        output_size_cu[3]))):
+        diff = orig - zoom
+        half = abs(diff) // 2
+        if diff > 0:
+            pad_dims[idx] = [half, diff - half]
+        elif diff < 0:
+            slice_dims[idx] = [half, half + orig]
+
+    result = cupy.ndarray(cupy_img.shape, dtype=cupy.float32)
+
+    if is_zoom_in:
+        # slice
+        kernel = CUDA_KERNELS.get_function("zoom_in_kernel")
+        kernel(grid, block_config,
+               args=(cupy_img, result, np.int32(H), np.int32(W),
+                     np.int32(output_size_cu[2]),
+                     np.int32(output_size_cu[3]),
+                     np.int32(pitch), np.int32(slice_dims[0][0]),
+                     np.int32(slice_dims[0][1]),
+                     np.int32(slice_dims[1][0]),
+                     np.int32(slice_dims[1][1])),
+               shared_mem=smem_size)
+    elif is_zoom_out:
+        # pad
+        kernel = CUDA_KERNELS.get_function("zoom_out_kernel")
+        kernel(grid, block_config,
+               args=(cupy_img, result, np.int32(H), np.int32(W),
+                     np.int32(output_size_cu[2]),
+                     np.int32(output_size_cu[3]),
+                     np.int32(pitch), np.int32(pad_dims[0][0]),
+                     np.int32(pad_dims[0][1]),
+                     np.int32(pad_dims[1][0]),
+                     np.int32(pad_dims[1][1])),
+               shared_mem=smem_size)
+        # padding kernel
+        kernel = CUDA_KERNELS.get_function("zoomout_edge_pad")
+        grid = (int((W - 1) / block_config[0] + 1),
+                int((H - 1) / block_config[1] + 1),
+                C * N)
+        kernel(grid, block_config,
+               args=(result, np.int32(H), np.int32(W), np.int32(pitch),
+                     np.int32(pad_dims[0][0]), np.int32(pad_dims[1][0]),
+                     np.int32(pad_dims[0][0] + output_size_cu[2]),
+                     np.int32(pad_dims[1][0] + output_size_cu[3])))
+
+    else:
+        raise Exception("Can only handle simultaneous \
+                        expansion(or shrinkage) in both H,W dimension, \
+                        check zoom factors")
+
+    if img.dtype != np.float32:
+        result = result.astype(img.dtype)
+
+    if to_numpy:
+        result = cupy.asnumpy(result)
+
+    return result
 
 
 def get_zoom_factor(
