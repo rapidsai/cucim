@@ -214,11 +214,10 @@ Returns a subresolution image.
 - If location is not specified, location would be (0, 0) if Z=0. Otherwise, location would be (0, 0, 0)
 - Like OpenSlide, location is level-0 based coordinates (using the level-0 reference frame)
 - If `size` is not specified, size would be (width, height) of the image at the specified `level`.
-- `<not supported yet>` Additional parameters (S,T,C,Z) are similar to
-<https://allencellmodeling.github.io/aicsimageio/aicsimageio.html#aicsimageio.aics_image.AICSImage.get_image_data>
-  - We may not want to support indices/ranges for (S,T,C,Z) for the first release.
-  - Default value for level, S, T, Z are zero.
-  - Default value for C is -1 (whole channels)
+- `<not supported yet>` Additional parameters (S,T,C,Z) are similar to <https://allencellmodeling.github.io/aicsimageio/aicsimageio.html#aicsimageio.aics_image.AICSImage.get_image_data>
+- Do not yet support indices/ranges for (S,T,C,Z).
+- Default value for level, S, T, Z are zero.
+- Default value for C is -1 (whole channels)
 - `<not supported yet>` `device` could be one of the following strings or Device object: e.g., `'cpu'`, `'cuda'`, `'cuda:0'` (use index 0), `cucim.clara.io.Device(cucim.clara.io.CUDA,0)`.
 - `<not supported yet>` If `buf` is specified (buf's type can be either numpy object that implements `__array_interface__`, or cupy-compatible object that implements `__cuda_array_interface__`), the read image would be saved into buf object without creating CPU/GPU memory.
 - `<not supported yet>` If `shm_name` is specified, shared memory would be created and data would be read in the shared memory.
@@ -260,6 +259,7 @@ Add `__array_interface__` or `__cuda_array_interface__` depending on the memory 
 
 Args:
   cuimg: CuImage object
+
 Returns:
   None
 )doc")

@@ -16,17 +16,13 @@ source:
 build:
   number: {{ GIT_DESCRIBE_NUMBER }}
   string: cuda{{ cuda_major }}_{{ GIT_DESCRIBE_HASH }}_{{ GIT_DESCRIBE_NUMBER }}
-  script_env:
-    - CC
-    - CXX
-    - CUDAHOSTCXX
 
 requirements:
   build:
     - cmake >=3.18.0
     - {{ compiler("c") }}
     - {{ compiler("cxx") }}
-    - sysroot_linux-64 2.17
+    - sysroot_{{ target_platform }} {{ sysroot_version }}
     - yasm # [x86_64]
   host:
     - cudatoolkit {{ cuda_version }}.*

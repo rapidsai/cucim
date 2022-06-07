@@ -1,3 +1,35 @@
+# cuCIM 22.06.00 (7 Jun 2022)
+
+## 🚨 Breaking Changes
+
+- Promote small integer types to single rather than double precision ([#278](https://github.com/rapidsai/cucim/pull/278)) [@grlee77](https://github.com/grlee77)
+
+## 🐛 Bug Fixes
+
+- Populate correct channel names for RGBA image ([#294](https://github.com/rapidsai/cucim/pull/294)) [@gigony](https://github.com/gigony)
+- Merge branch-22.04 into branch-22.06 ([#258](https://github.com/rapidsai/cucim/pull/258)) [@jakirkham](https://github.com/jakirkham)
+
+## 📖 Documentation
+
+- update outdated links to example data ([#289](https://github.com/rapidsai/cucim/pull/289)) [@grlee77](https://github.com/grlee77)
+- Add missing API docs ([#275](https://github.com/rapidsai/cucim/pull/275)) [@grlee77](https://github.com/grlee77)
+
+## 🚀 New Features
+
+- add missing `cucim.skimage.segmentation.clear_border` function ([#267](https://github.com/rapidsai/cucim/pull/267)) [@grlee77](https://github.com/grlee77)
+
+## 🛠️ Improvements
+
+- Update to use DLPack v0.6 ([#295](https://github.com/rapidsai/cucim/pull/295)) [@gigony](https://github.com/gigony)
+- Remove plugin-related messages temporarily ([#291](https://github.com/rapidsai/cucim/pull/291)) [@gigony](https://github.com/gigony)
+- Simplify recipes ([#286](https://github.com/rapidsai/cucim/pull/286)) [@Ethyling](https://github.com/Ethyling)
+- Use cupy.fuse to improve efficiency hessian_matrix_eigvals ([#280](https://github.com/rapidsai/cucim/pull/280)) [@grlee77](https://github.com/grlee77)
+- Promote small integer types to single rather than double precision ([#278](https://github.com/rapidsai/cucim/pull/278)) [@grlee77](https://github.com/grlee77)
+- improve efficiency of histogram-based thresholding functions ([#276](https://github.com/rapidsai/cucim/pull/276)) [@grlee77](https://github.com/grlee77)
+- Remove unused dependencies in GPU tests job ([#268](https://github.com/rapidsai/cucim/pull/268)) [@Ethyling](https://github.com/Ethyling)
+- Use conda compilers ([#232](https://github.com/rapidsai/cucim/pull/232)) [@Ethyling](https://github.com/Ethyling)
+- Build packages using mambabuild ([#216](https://github.com/rapidsai/cucim/pull/216)) [@Ethyling](https://github.com/Ethyling)
+
 # cuCIM 22.04.00 (6 Apr 2022)
 
 ## 🚨 Breaking Changes

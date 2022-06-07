@@ -108,7 +108,7 @@ def test_butterworth_4D_channel(chan, dtype):
 
 
 def test_butterworth_correctness_bw():
-    small = cp.array(coins()[180:190, 260:270])
+    small = cp.array(coins()[180:190, 260:270], dtype=float)
     filtered = butterworth(small,
                            cutoff_frequency_ratio=0.2)
     correct = cp.array(
@@ -129,7 +129,7 @@ def test_butterworth_correctness_bw():
 
 
 def test_butterworth_correctness_rgb():
-    small = cp.array(astronaut()[135:145, 205:215])
+    small = cp.array(astronaut()[135:145, 205:215], dtype=float)
     filtered = butterworth(small,
                            cutoff_frequency_ratio=0.3,
                            high_pass=True,

@@ -5,7 +5,6 @@ import cupy as cp
 from cupyx.scipy import ndimage as ndi
 
 from .._shared.utils import remove_arg, warn
-from .footprints import _default_footprint
 
 # Our function names don't exactly correspond to ndimages.
 # This dictionary translates from our names to scipy's.
@@ -38,7 +37,7 @@ def default_footprint(func):
     @functools.wraps(func)
     def func_out(image, footprint=None, *args, **kwargs):
         if footprint is None:
-            footprint = _default_footprint(image.ndim)
+            footprint = ndi.generate_binary_structure(image.ndim, 1)
         return func(image, footprint=footprint, *args, **kwargs)
 
     return func_out
@@ -109,7 +108,7 @@ def remove_small_objects(ar, min_size=64, connectivity=1, in_place=False,
     array([[False, False, False,  True, False],
            [ True,  True,  True, False, False],
            [ True,  True,  True, False, False]])
-    >>> d = morphology.remove_small_objects(a, 6, in_place=True)
+    >>> d = morphology.remove_small_objects(a, 6, out=a)
     >>> d is a
     True
 
@@ -211,7 +210,7 @@ def remove_small_holes(ar, area_threshold=64, connectivity=1, in_place=False,
            [ True,  True,  True, False,  True, False],
            [ True, False, False,  True,  True, False],
            [ True,  True,  True,  True,  True, False]])
-    >>> d = morphology.remove_small_holes(a, 2, in_place=True)
+    >>> d = morphology.remove_small_holes(a, 2, out=a)
     >>> d is a
     True
 

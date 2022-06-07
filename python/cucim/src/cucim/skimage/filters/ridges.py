@@ -234,12 +234,12 @@ def meijering(image, sigmas=range(1, 10, 2), alpha=None,
     if alpha is None:
         alpha = 1.0 / ndim
 
-    float_dtype = _supported_float_type(image.dtype)
-    image = image.astype(float_dtype, copy=False)
-
     # Invert image to detect dark ridges on bright background
     if black_ridges:
         image = invert(image)
+
+    float_dtype = _supported_float_type(image.dtype)
+    image = image.astype(float_dtype, copy=False)
 
     # Generate empty (n+1)D arrays for storing auxiliary images filtered at
     # different (sigma) scales

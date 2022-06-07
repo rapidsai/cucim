@@ -32,15 +32,15 @@ Returns a good cache memory capacity value in MiB for the given conditions.
 Please see how the value is calculated: https://godbolt.org/z/8vxnPfKM5
 
 Args:
-    img: A `CuImage` object that can provide `image_size`, `tile_size`, `bytes_per_pixel` information.
-        If this argument is provided, only `patch_size` from the arguments is used for the calculation.
+    img: A `CuImage` object that can provide `image_size`, `tile_size`, `bytes_per_pixel` information. If this argument is provided, only `patch_size` from the arguments is used for the calculation.
     image_size: A list of values that presents the image size (width, height).
     tile_size: A list of values that presents the tile size (width, height). The default value is (256, 256).
     patch_size: A list of values that presents the patch size (width, height). The default value is (256, 256).
     bytes_per_pixel: The number of bytes that each pixel in the 2D image takes place. The default value is 3.
 
 Returns:
-    The suggested memory capacity in MiB.
+    int: The suggested memory capacity in MiB.
+
 )doc")
 
 } // namespace cucim::cache::doc

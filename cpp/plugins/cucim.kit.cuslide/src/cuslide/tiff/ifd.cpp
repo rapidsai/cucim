@@ -312,6 +312,16 @@ bool IFD::read(const TIFF* tiff,
     else
     {
         PROF_SCOPED_RANGE(PROF_EVENT(ifd_read_slowpath));
+        // Print a warning message for the slow path
+        std::call_once(
+            tiff->slow_path_warning_flag_,
+            [](const std::string& file_path) {
+                fmt::print(
+                    stderr,
+                    "[Warning] Loading image('{}') with a slow-path. The pixel format of the loaded image would be RGBA (4 channels) instead of RGB!\n",
+                    file_path);
+            },
+            tiff->file_path());
         // Handle out-of-boundary case
         int64_t ex = sx + w - 1;
         int64_t ey = sy + h - 1;
@@ -399,7 +409,7 @@ bool IFD::read(const TIFF* tiff,
 
     auto& out_image_container = out_image_data->container;
     out_image_container.data = raster;
-    out_image_container.ctx = DLContext{ static_cast<DLDeviceType>(out_device.type()), out_device.index() };
+    out_image_container.device = DLDevice{ static_cast<DLDeviceType>(out_device.type()), out_device.index() };
     out_image_container.ndim = ndim;
     out_image_container.dtype = metadata->dtype;
     out_image_container.shape = shape;

@@ -157,14 +157,14 @@ def test_area_bbox():
 def test_moments_central():
     mu = regionprops(SAMPLE)[0].moments_central
     # determined with OpenCV
-    assert_almost_equal(mu[2, 0], 436.00000000000045)
+    assert_almost_equal(mu[2, 0], 436.00000000000045, decimal=4)
     # different from OpenCV results, bug in OpenCV
-    assert_almost_equal(mu[3, 0], -737.333333333333)
-    assert_almost_equal(mu[1, 1], -87.33333333333303)
-    assert_almost_equal(mu[2, 1], -127.5555555555593)
-    assert_almost_equal(mu[0, 2], 1259.7777777777774)
-    assert_almost_equal(mu[1, 2], 2000.296296296291)
-    assert_almost_equal(mu[0, 3], -760.0246913580195)
+    assert_almost_equal(mu[3, 0], -737.333333333333, decimal=3)
+    assert_almost_equal(mu[1, 1], -87.33333333333303, decimal=3)
+    assert_almost_equal(mu[2, 1], -127.5555555555593, decimal=3)
+    assert_almost_equal(mu[0, 2], 1259.7777777777774, decimal=2)
+    assert_almost_equal(mu[1, 2], 2000.296296296291, decimal=2)
+    assert_almost_equal(mu[0, 3], -760.0246913580195, decimal=2)
 
 
 def test_centroid():
@@ -330,7 +330,7 @@ def test_axis_major_length():
     length = regionprops(SAMPLE)[0].axis_major_length
     # MATLAB has different interpretation of ellipse than found in literature,
     # here implemented as found in literature
-    assert_almost_equal(length, 16.7924234999)
+    assert_almost_equal(length, 16.7924234999, decimal=5)
 
 
 def test_intensity_max():
@@ -355,7 +355,7 @@ def test_axis_minor_length():
     length = regionprops(SAMPLE)[0].axis_minor_length
     # MATLAB has different interpretation of ellipse than found in literature,
     # here implemented as found in literature
-    assert_almost_equal(length, 9.739302807263)
+    assert_almost_equal(length, 9.739302807263, decimal=5)
 
 
 def test_moments():
@@ -601,6 +601,15 @@ def test_props_to_dict():
                    'bbox+0': cp.array([0]), 'bbox+1': cp.array([0]),
                    'bbox+2': cp.array([10]), 'bbox+3': cp.array([18])}
 
+    regions = regionprops(SAMPLE_MULTIPLE)
+    out = _props_to_dict(regions, properties=('coords',))
+    coords = np.empty(2, object)
+    coords[0] = cp.stack((cp.arange(10),) * 2, axis=-1)
+    coords[1] = cp.array([[3, 7], [4, 7]])
+    assert out['coords'].shape == coords.shape
+    assert_array_equal(out['coords'][0], coords[0])
+    assert_array_equal(out['coords'][1], coords[1])
+
 
 def test_regionprops_table():
     out = regionprops_table(SAMPLE)
@@ -613,6 +622,14 @@ def test_regionprops_table():
     assert out == {'label': cp.array([1]), 'area': cp.array([72]),
                    'bbox+0': cp.array([0]), 'bbox+1': cp.array([0]),
                    'bbox+2': cp.array([10]), 'bbox+3': cp.array([18])}
+
+    out = regionprops_table(SAMPLE_MULTIPLE, properties=('coords',))
+    coords = np.empty(2, object)
+    coords[0] = cp.stack((cp.arange(10),) * 2, axis=-1)
+    coords[1] = cp.array([[3, 7], [4, 7]])
+    assert out['coords'].shape == coords.shape
+    assert_array_equal(out['coords'][0], coords[0])
+    assert_array_equal(out['coords'][1], coords[1])
 
 
 def test_regionprops_table_deprecated_vector_property():

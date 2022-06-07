@@ -29,16 +29,17 @@ namespace cucim::io
 
 using DeviceIndex = int16_t;
 
-constexpr std::size_t kDeviceTypeCount = 5;
+constexpr std::size_t kDeviceTypeCount = 6;
 /**
- * Value for each device type follows https://github.com/dmlc/dlpack/blob/v0.3/include/dlpack/dlpack.h
+ * Value for each device type follows https://github.com/dmlc/dlpack/blob/v0.6/include/dlpack/dlpack.h
  * Naming convention follows PyTorch (torch/include/c10/core/DeviceType.h)
  */
 enum class DeviceType : int16_t
 {
     kCPU = 1,
     kCUDA = 2,
-    kPinned = 3,
+    kCUDAHost = 3,
+    kCUDAManaged = 13,
 
     kCPUShared = 101, /// custom type for CPU-shared memory
     kCUDAShared = 102, /// custom type for GPU-shared memory
