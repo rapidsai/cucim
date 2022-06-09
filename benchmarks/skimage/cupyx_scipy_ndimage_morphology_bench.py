@@ -126,7 +126,7 @@ for shape in [(512, 512), (3840, 2160), (192, 192, 192)]:
             var_kwargs=var_kwargs,
         )
         results = B.run_benchmark(duration=1)
-        all_results = all_results.append(results["full"])
+        all_results = pd.concat([all_results, results["full"]])
 
     iterations = [1, 10, 30]
     for fname, var_kwargs in [
@@ -152,7 +152,7 @@ for shape in [(512, 512), (3840, 2160), (192, 192, 192)]:
                 var_kwargs=var_kwargs,
             )
             results = B.run_benchmark(duration=1)
-            all_results = all_results.append(results["full"])
+            all_results = pd.concat([all_results, results["full"]])
 
 fbase = os.path.splitext(pfile)[0]
 all_results.to_csv(fbase + ".csv")
