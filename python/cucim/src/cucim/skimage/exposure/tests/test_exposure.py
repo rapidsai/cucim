@@ -21,7 +21,9 @@ from cucim.skimage.util.dtype import dtype_range
 def test_wrong_source_range():
     im = cp.array([-1, 100], dtype=cp.int8)
     with pytest.raises(ValueError):
-        frequencies, bin_centers = exposure.histogram(im, source_range="foobar")
+        frequencies, bin_centers = exposure.histogram(
+            im, source_range="foobar"
+        )
 
 
 def test_negative_overflow():
