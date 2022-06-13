@@ -101,6 +101,10 @@ class TestCanny():
 
         assert_array_equal(result, correct_output)
 
+    def test_img_all_ones(self):
+        image = cp.ones((10, 10))
+        assert cp.all(feature.canny(image) == 0)
+
     def test_invalid_use_quantiles(self):
         image = img_as_float(cp.array(data.camera()[::50, ::50]))
 
