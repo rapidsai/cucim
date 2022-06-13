@@ -118,6 +118,77 @@ def test_warp_clip():
     assert_almost_equal(float(outx.max()), 1)
 
 
+@pytest.mark.parametrize('order', [0, 1])
+def test_warp_clip_image_containing_nans(order):
+    # Test that clipping works as intended on an image with NaNs
+    # Orders >1 do not produce good output when the input image has
+    # NaNs, so those orders are not tested.
+
+    x = cp.ones((15, 15), dtype=cp.float64)
+    x[7, 7] = cp.nan
+
+    outx = rotate(x, 45, order=order, cval=2, resize=True, clip=True)
+
+    assert_almost_equal(cp.nanmin(outx).item(), 1)
+    assert_almost_equal(cp.nanmax(outx).item(), 2)
+
+
+@pytest.mark.parametrize('order', [0, 1])
+def test_warp_clip_cval_is_nan(order):
+    # Test that clipping works as intended when cval is NaN
+    # Orders > 1 do not produce good output when cval is NaN, so those
+    # orders are not tested.
+
+    x = cp.ones((15, 15), dtype=cp.float64)
+    x[5:-5, 5:-5] = 2
+
+    outx = rotate(x, 45, order=order, cval=cp.nan, resize=True, clip=True)
+
+    assert_almost_equal(cp.nanmin(outx).item(), 1)
+    assert_almost_equal(cp.nanmax(outx).item(), 2)
+
+
+@pytest.mark.parametrize('order', range(6))
+def test_warp_clip_cval_outside_input_range(order):
+    # Test that clipping behavior considers cval part of the input range
+
+    x = cp.ones((15, 15), dtype=cp.float64)
+
+    # Specify a cval that is outside the input range to check clipping
+    outx = rotate(x, 45, order=order, cval=2, resize=True, clip=True)
+
+    # The corners should be cval for all interpolation orders
+    outx = cp.asnumpy(outx)
+    assert_array_almost_equal([outx[0, 0], outx[0, -1],
+                               outx[-1, 0], outx[-1, -1]], 2)
+
+    # For all interpolation orders other than nearest-neighbor, the clipped
+    # output should have some pixels with values between the input (1) and
+    # cval (2) (i.e., clipping should not set them to 1)
+    if order > 0:
+        assert np.sum(np.less(1, outx) * np.less(outx, 2)) > 0
+
+
+@pytest.mark.parametrize('order', range(6))
+def test_warp_clip_cval_not_used(order):
+    # Test that clipping does not consider cval part of the input range if it
+    # is not used in the output image
+
+    x = cp.ones((15, 15), dtype=cp.float64)
+    x[5:-5, 5:-5] = 2
+
+    # Transform the image by stretching it out by one pixel on each side so
+    # that cval will not actually be used
+    transform = AffineTransform(scale=15/(15+2), translation=(1, 1))
+    outx = warp(x, transform, mode='constant', order=order, cval=0, clip=True)
+
+    # At higher orders of interpolation, the transformed image has overshoots
+    # beyond the input range that should be clipped to the range 1 to 2.  Even
+    # though cval=0, the minimum value of the clipped output image should be
+    # 1 and not affected by the unused cval.
+    assert_array_almost_equal(outx.min(), 1)
+
+
 def test_homography():
     x = cp.zeros((5, 5), dtype=cp.double)
     x[1, 1] = 1
