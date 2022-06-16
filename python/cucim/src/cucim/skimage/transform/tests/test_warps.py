@@ -179,7 +179,8 @@ def test_warp_clip_cval_not_used(order):
 
     # Transform the image by stretching it out by one pixel on each side so
     # that cval will not actually be used
-    transform = AffineTransform(scale=15/(15+2), translation=(1, 1))
+    scale = 15 / (15 + 2)
+    transform = AffineTransform(scale=scale, translation=(1, 1))
     outx = warp(x, transform, mode='constant', order=order, cval=0, clip=True)
 
     # At higher orders of interpolation, the transformed image has overshoots
