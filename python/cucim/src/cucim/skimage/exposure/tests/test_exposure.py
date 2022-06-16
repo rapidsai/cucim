@@ -21,7 +21,9 @@ from cucim.skimage.util.dtype import dtype_range
 def test_wrong_source_range():
     im = cp.array([-1, 100], dtype=cp.int8)
     with pytest.raises(ValueError):
-        frequencies, bin_centers = exposure.histogram(im, source_range="foobar")
+        frequencies, bin_centers = exposure.histogram(
+            im, source_range="foobar"
+        )
 
 
 def test_negative_overflow():
@@ -48,6 +50,15 @@ def test_int_range_image():
     assert len(bin_centers) == len(frequencies)
     assert bin_centers[0] == 10
     assert bin_centers[-1] == 100
+
+
+def test_multichannel_int_range_image():
+    im = cp.array([[10, 5], [100, 102]], dtype=np.int8)
+    frequencies, bin_centers = exposure.histogram(im, channel_axis=-1)
+    for ch in range(im.shape[-1]):
+        assert len(frequencies[ch]) == len(bin_centers)
+    assert bin_centers[0] == 5
+    assert bin_centers[-1] == 102
 
 
 def test_peak_uint_range_dtype():
