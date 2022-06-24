@@ -1,3 +1,5 @@
+import math
+
 import cupy as cp
 import pytest
 from cupy.testing import assert_allclose
@@ -81,12 +83,19 @@ def test_median_behavior(camera, behavior, func, mode, footprint_shape, out):
     'mode', ['reflect', 'mirror', 'nearest', 'constant', 'wrap']
 )
 # use an anisotropic footprint large enough to trigger the histogram-based path
-@pytest.mark.parametrize('footprint_shape', [(15, 23)])
+@pytest.mark.parametrize('footprint_shape', [(3, 3), (3, 5), (15, 23)])
 @pytest.mark.parametrize(
     'int_dtype', [cp.uint8, cp.uint16, cp.int8, cp.int16]
 )
+@pytest.mark.parametrize(
+    'algorithm', ['auto', 'histogram', 'sorting']
+)
+@pytest.mark.parametrize(
+    'algorithm_kwargs', [{}, {'partitions': 32}]
+)
 def test_median_hist_dtypes(
-    camera, behavior, func, mode, footprint_shape, int_dtype
+    camera, behavior, func, mode, footprint_shape, int_dtype, algorithm,
+    algorithm_kwargs
 ):
     footprint = cp.ones(footprint_shape, dtype=bool)
     rng = cp.random.default_rng(123)
@@ -101,7 +110,19 @@ def test_median_hist_dtypes(
     elif int_dtype == cp.int16:
         # chose a limited range of values to test 512 hist_size case
         img = rng.integers(-128, 384, shape, dtype=int).astype(cp.int16)
-    out = median(img, footprint, mode=mode, behavior=behavior)
+
+    # 200 is the value used to auto-select between sorting vs. histogram
+    small_kernel = math.prod(footprint_shape) < 200
+    if algorithm_kwargs and (
+        algorithm == 'sorting'
+        or (algorithm == 'auto' and small_kernel)
+    ):
+        msg = ["algorithm_kwargs={'partitions': 32} ignored"]
+    else:
+        msg = []
+    with expected_warnings(msg):
+        out = median(img, footprint, mode=mode, behavior=behavior,
+                     algorithm=algorithm, algorithm_kwargs=algorithm_kwargs)
     expected = func(img, size=footprint.shape, mode=mode)
     assert_allclose(expected, out)
 
@@ -129,14 +150,16 @@ def test_median_hist_kernel_resource_limit_try_except(int_dtype):
     'algorithm', ['auto', 'histogram', 'sorting', 'invalid']
 )
 def test_median_algorithm_parameter(algorithm):
-    # use an anisotropic footprint large enough to trigger
-    # the histogram-based path
+    """Call all algorithms for float32 input.
+    """
     footprint = cp.ones((15, 23), dtype=bool)
     mode = 'nearest'
     rng = cp.random.default_rng(123)
     shape = (350, 407)  # use anisotropic size
     img = rng.standard_normal(shape, dtype=cp.float32)
     if algorithm in ['invalid', 'histogram']:
+        # histogram supports only integer-valued dtypes
+        # 'invalid' is an uncrecognized algorithm
         with pytest.raises(ValueError):
             median(img, footprint, mode=mode, algorithm=algorithm)
     else:

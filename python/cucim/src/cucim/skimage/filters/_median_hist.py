@@ -607,7 +607,7 @@ def _get_kernel_params(image, footprint_shape, value_range='auto',
                 f", exceeds MaxBlockDimX={max_block_x} for this device."
             )
 
-    if partitions > image.shape[0]:
+    if partitions is None or partitions > image.shape[0]:
         partitions = image.shape[0] // 2  # can be chosen
     grid = (partitions, 1, 1)
     # block[0] must be at least the warp size
@@ -658,7 +658,7 @@ def _get_kernel_params(image, footprint_shape, value_range='auto',
 
 
 def _median_hist(image, footprint, output=None, mode='mirror', cval=0,
-                 value_range='auto'):
+                 value_range='auto', partitions=128):
 
     if output is not None:
         raise NotImplementedError(
@@ -682,7 +682,9 @@ def _median_hist(image, footprint, output=None, mode='mirror', cval=0,
     # (calculation here assumes all elements of the footprint are True)
     med_pos = footprint.size // 2
 
-    params = _get_kernel_params(image, footprint.shape, value_range)
+    params = _get_kernel_params(
+        image, footprint.shape, value_range, partitions
+    )
 
     # pad as necessary to avoid boundary artifacts
     # Don't have to pad along axis 0 if mode is already 'nearest' because the

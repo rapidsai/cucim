@@ -12,7 +12,7 @@ from ._median_hist import _can_use_histogram, _median_hist, KernelResourceError
 @deprecate_kwarg(kwarg_mapping={'selem': 'footprint'}, removed_version="1.0",
                  deprecated_version="0.19")
 def median(image, footprint=None, out=None, mode='nearest', cval=0.0,
-           behavior='ndimage', *, algorithm='auto'):
+           behavior='ndimage', *, algorithm='auto', algorithm_kwargs={}):
     """Return local median of an image.
 
     Parameters
@@ -49,12 +49,20 @@ def median(image, footprint=None, out=None, mode='nearest', cval=0.0,
            ``behavior`` is introduced in 0.15
         .. versionchanged:: 0.16
            Default ``behavior`` has been changed from 'rank' to 'ndimage'
+
+    Other Parameters
+    ----------------
     algorithm : {'auto', 'histogram', 'sorting'}
         Determines which algorithm is used to compute the median. The default
         of 'auto' will attempt to use a histogram-based algorithm for 2D
         images with 8 or 16-bit integer data types. Otherwise a sorting-based
         algorithm will be used. Note: this paramter is cuCIM-specific and does
         not exist in upstream scikit-image.
+    algorithm_kwargs : dict
+        Any additional algorithm-specific keywords. Currently can only be used
+        to set the number of parallel partitions for the 'histogram' algorithm.
+        (e.g. ``algorithm_kwargs={'partitions': 256}``). Note: this paramter is
+        cuCIM-specific and does not exist in upstream scikit-image.
 
     Returns
     -------
@@ -121,7 +129,10 @@ def median(image, footprint=None, out=None, mode='nearest', cval=0.0,
     # The sorting-based implementation in CuPy is faster for small footprints.
     # Empirically, shapes above (11, 11) on GTX 1080 Ti and (15, 15) on
     # RTX A6000 have faster execution for the histogram-based approach.
-    use_histogram = can_use_histogram and (math.prod(footprint.shape) > 200)
+    use_histogram = can_use_histogram
+    if algorithm == 'auto':
+        # prefer sorting-based algorithm if footprint shape is small
+        use_histogram = use_histogram and math.prod(footprint.shape) > 200
 
     if use_histogram:
         try:
@@ -141,7 +152,8 @@ def median(image, footprint=None, out=None, mode='nearest', cval=0.0,
 
             # TODO: Can't currently pass an output array into _median_hist as a
             #       new array currently needs to be created during padding.
-            temp = _median_hist(image, footprint, mode=mode, cval=cval)
+            temp = _median_hist(image, footprint, mode=mode, cval=cval,
+                                **algorithm_kwargs)
             if output_array_provided:
                 out[:] = temp
             else:
@@ -154,6 +166,10 @@ def median(image, footprint=None, out=None, mode='nearest', cval=0.0,
             # resource limit (e.g. insufficient shared memory per block).
             print(e)
             pass
+
+    if algorithm_kwargs:
+        warn(f"algorithm_kwargs={algorithm_kwargs} ignored for sorting-based "
+             f"algorithm")
 
     return ndi.median_filter(image, footprint=footprint, output=out, mode=mode,
                              cval=cval)
