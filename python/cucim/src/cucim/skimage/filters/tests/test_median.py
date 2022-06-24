@@ -126,6 +126,26 @@ def test_median_hist_kernel_resource_limit_try_except(int_dtype):
 
 
 @pytest.mark.parametrize(
+    'algorithm', ['auto', 'histogram', 'sorting', 'invalid']
+)
+def test_median_algorithm_parameter(algorithm):
+    # use an anisotropic footprint large enough to trigger
+    # the histogram-based path
+    footprint = cp.ones((15, 23), dtype=bool)
+    mode = 'nearest'
+    rng = cp.random.default_rng(123)
+    shape = (350, 407)  # use anisotropic size
+    img = rng.standard_normal(shape, dtype=cp.float32)
+    if algorithm in ['invalid', 'histogram']:
+        with pytest.raises(ValueError):
+            median(img, footprint, mode=mode, algorithm=algorithm)
+    else:
+        out = median(img, footprint, mode=mode, algorithm=algorithm)
+        expected = ndimage.median_filter(img, size=footprint.shape, mode=mode)
+        assert_allclose(expected, out)
+
+
+@pytest.mark.parametrize(
     "dtype", [cp.uint8, cp.uint16, cp.float32, cp.float64]
 )
 def test_median_preserve_dtype(image, dtype):

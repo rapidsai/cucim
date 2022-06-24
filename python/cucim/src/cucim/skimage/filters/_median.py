@@ -12,7 +12,7 @@ from ._median_hist import _can_use_histogram, _median_hist, KernelResourceError
 @deprecate_kwarg(kwarg_mapping={'selem': 'footprint'}, removed_version="1.0",
                  deprecated_version="0.19")
 def median(image, footprint=None, out=None, mode='nearest', cval=0.0,
-           behavior='ndimage'):
+           behavior='ndimage', *, algorithm='auto'):
     """Return local median of an image.
 
     Parameters
@@ -49,6 +49,12 @@ def median(image, footprint=None, out=None, mode='nearest', cval=0.0,
            ``behavior`` is introduced in 0.15
         .. versionchanged:: 0.16
            Default ``behavior`` has been changed from 'rank' to 'ndimage'
+    algorithm : {'auto', 'histogram', 'sorting'}
+        Determines which algorithm is used to compute the median. The default
+        of 'auto' will attempt to use a histogram-based algorithm for 2D
+        images with 8 or 16-bit integer data types. Otherwise a sorting-based
+        algorithm will be used. Note: this paramter is cuCIM-specific and does
+        not exist in upstream scikit-image.
 
     Returns
     -------
@@ -60,6 +66,22 @@ def median(image, footprint=None, out=None, mode='nearest', cval=0.0,
     skimage.filters.rank.median : Rank-based implementation of the median
         filtering offering more flexibility with additional parameters but
         dedicated for unsigned integer images.
+
+    Notes
+    -----
+    An efficient, histogram-based median filter as described in [1]_ is faster
+    than the sorting based approach for larger kernel sizes (e.g. greater than
+    13x13 or so in 2D). It has near-constant run time regardless of the kernel
+    size. The algorithm presented in [1]_ has been adapted to additional bit
+    depths here. When algorithm='auto', the histogram-based algorithm will be
+    chosen for integer-valued images with sufficiently large footprint size.
+    Otherwise, the sorting-based approach is used.
+
+    References
+    ----------
+    .. [1] O. Green, "Efficient Scalable Median Filtering Using Histogram-Based
+       Operations," in IEEE Transactions on Image Processing, vol. 27, no. 5,
+       pp. 2217-2228, May 2018, https://doi.org/10.1109/TIP.2017.2781375.
 
     Examples
     --------
@@ -83,7 +105,18 @@ def median(image, footprint=None, out=None, mode='nearest', cval=0.0,
     if footprint is None:
         footprint = ndi.generate_binary_structure(image.ndim, image.ndim)
 
-    can_use_histogram, _ = _can_use_histogram(image, footprint)
+    if algorithm == 'sorting':
+        can_use_histogram = False
+    elif algorithm in ['auto', 'histogram']:
+        can_use_histogram, reason = _can_use_histogram(image, footprint)
+    else:
+        raise ValueError(f"unknown algorithm: {algorithm}")
+
+    if algorithm == 'histogram' and not can_use_histogram:
+        raise ValueError(
+            "The histogram-based algorithm was requested, but it cannot "
+            f"be used for this image and footprint (reason: {reason})."
+        )
 
     # The sorting-based implementation in CuPy is faster for small footprints.
     # Empirically, shapes above (11, 11) on GTX 1080 Ti and (15, 15) on
