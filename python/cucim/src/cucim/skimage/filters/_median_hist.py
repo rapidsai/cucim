@@ -747,5 +747,3 @@ def _median_hist(image, footprint, output=None, mode='mirror', cval=0,
         else:
             out = out[..., radii[-1]:-radii[-1]]
     return out
-
-
