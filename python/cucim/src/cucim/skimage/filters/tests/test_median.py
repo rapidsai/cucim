@@ -111,8 +111,8 @@ def test_median_hist_dtypes(
         # chose a limited range of values to test 512 hist_size case
         img = rng.integers(-128, 384, shape, dtype=int).astype(cp.int16)
 
-    # 200 is the value used to auto-select between sorting vs. histogram
-    small_kernel = math.prod(footprint_shape) < 200
+    # 150 is the value used to auto-select between sorting vs. histogram
+    small_kernel = math.prod(footprint_shape) < 150
     if algorithm_kwargs and (
         algorithm == 'sorting'
         or (algorithm == 'auto' and small_kernel)

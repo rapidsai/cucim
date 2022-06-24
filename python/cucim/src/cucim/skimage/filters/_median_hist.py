@@ -504,7 +504,7 @@ class KernelResourceError(RuntimeError):
 
 
 def _get_kernel_params(image, footprint_shape, value_range='auto',
-                       partitions=128, hist_size_coarse=None):
+                       partitions=None, hist_size_coarse=None):
     """Determine kernel launch parameters and #define values for its code.
 
     Parameters
@@ -607,8 +607,16 @@ def _get_kernel_params(image, footprint_shape, value_range='auto',
                 f", exceeds MaxBlockDimX={max_block_x} for this device."
             )
 
-    if partitions is None or partitions > image.shape[0]:
-        partitions = image.shape[0] // 2  # can be chosen
+    if partitions is None:
+        # Substantial overhead in computing the first line, so need at least
+        # two lines per partition for best performance. Limit to bins_max
+        # partitions by default to avoid overly excessive memory overhead.
+        bins_max = max(16, 512 // (hist_size // 256))
+        partitions = min(image.shape[0] // 2, bins_max)
+    else:
+        # cannot exceed the number of image rows
+        partitions = min(partitions, image.shape[0])
+
     grid = (partitions, 1, 1)
     # block[0] must be at least the warp size
     block = (block0, 1, 1)
@@ -658,7 +666,7 @@ def _get_kernel_params(image, footprint_shape, value_range='auto',
 
 
 def _median_hist(image, footprint, output=None, mode='mirror', cval=0,
-                 value_range='auto', partitions=128):
+                 value_range='auto', partitions=None):
 
     if output is not None:
         raise NotImplementedError(
@@ -739,3 +747,5 @@ def _median_hist(image, footprint, output=None, mode='mirror', cval=0,
         else:
             out = out[..., radii[-1]:-radii[-1]]
     return out
+
+

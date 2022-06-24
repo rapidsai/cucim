@@ -127,12 +127,12 @@ def median(image, footprint=None, out=None, mode='nearest', cval=0.0,
         )
 
     # The sorting-based implementation in CuPy is faster for small footprints.
-    # Empirically, shapes above (11, 11) on GTX 1080 Ti and (15, 15) on
-    # RTX A6000 have faster execution for the histogram-based approach.
+    # Empirically, shapes above (13, 13) and above on RTX A6000 have faster
+    # execution for the histogram-based approach.
     use_histogram = can_use_histogram
     if algorithm == 'auto':
         # prefer sorting-based algorithm if footprint shape is small
-        use_histogram = use_histogram and math.prod(footprint.shape) > 200
+        use_histogram = use_histogram and math.prod(footprint.shape) > 150
 
     if use_histogram:
         try:
