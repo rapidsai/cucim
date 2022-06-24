@@ -494,8 +494,13 @@ def _can_use_histogram(image, footprint):
 
     # only fully populated footprint is supported
     if not np.all(footprint):  # synchronizes!
-        return False
-    return True, "footprint must be 1 everywhere"
+        return False, "footprint must be 1 everywhere"
+
+    return True, None
+
+
+class KernelResourceError(RuntimeError):
+    pass
 
 
 def _get_kernel_params(image, footprint_shape, value_range='auto',
@@ -580,7 +585,7 @@ def _get_kernel_params(image, footprint_shape, value_range='auto',
         elif hist_size <= 65536:
             hist_size_coarse = 64
         else:
-            raise ValueError(
+            raise KernelResourceError(
                 "More than 65536 bins is currently untested due to excessive "
                 "shared memory requirements."
             )
@@ -597,7 +602,7 @@ def _get_kernel_params(image, footprint_shape, value_range='auto',
         d = cp.cuda.Device()
         max_block_x = d.attributes["MaxBlockDimX"]
         if block0 > max_block_x:
-            raise RuntimeError(
+            raise KernelResourceError(
                 f"The requested block size of {block0} for the first dimension"
                 f", exceeds MaxBlockDimX={max_block_x} for this device."
             )
@@ -615,7 +620,7 @@ def _get_kernel_params(image, footprint_shape, value_range='auto',
     # All recent GPUs (CC>=3.5) allow at least 48k of shared memory per block,
     # so don't bother checking the requirements unless thousands of histogram
     # bins are requested.
-    # https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#features-and-technical-specifications
+    # https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#features-and-technical-specifications  # noqa
     if hist_size >= 8192:
         smem_size = _check_shared_memory_requirement_bytes(
             hist_dtype, hist_size_coarse, hist_size_fine
@@ -623,7 +628,7 @@ def _get_kernel_params(image, footprint_shape, value_range='auto',
         d = cp.cuda.Device()
         smem_available = d.attributes['MaxSharedMemoryPerBlock']
         if smem_size > smem_available:
-            raise RuntimeError(
+            raise KernelResourceError(
                 f"Shared memory requirement of {smem_size} bytes per block"
                 f"exceeds the device limit of {smem_available}."
             )

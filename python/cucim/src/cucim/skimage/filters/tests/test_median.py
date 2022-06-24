@@ -101,10 +101,27 @@ def test_median_hist_dtypes(
     elif int_dtype == cp.int16:
         # chose a limited range of values to test 512 hist_size case
         img = rng.integers(-128, 384, shape, dtype=int).astype(cp.int16)
-    else:
-        raise NotImplementedError("TODO")
     out = median(img, footprint, mode=mode, behavior=behavior)
     expected = func(img, size=footprint.shape, mode=mode)
+    assert_allclose(expected, out)
+
+
+@pytest.mark.parametrize('int_dtype', [cp.uint16, cp.int16])
+def test_median_hist_kernel_resource_limit_try_except(int_dtype):
+    # use an anisotropic footprint large enough to trigger
+    # the histogram-based path
+    footprint = cp.ones((15, 23), dtype=bool)
+    mode = 'nearest'
+    rng = cp.random.default_rng(123)
+    shape = (350, 407)  # use anisotropic size
+    if int_dtype == cp.uint16:
+        # test with range likely to exceed the shared memory limit
+        img = rng.integers(0, 65536, shape, dtype=cp.uint16)
+    elif int_dtype == cp.int16:
+        # test with range likely to exceed the shared memory limit
+        img = rng.integers(-32768, 32767, shape, dtype=int).astype(cp.int16)
+    out = median(img, footprint, mode=mode)
+    expected = ndimage.median_filter(img, size=footprint.shape, mode=mode)
     assert_allclose(expected, out)
 
 
