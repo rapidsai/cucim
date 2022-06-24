@@ -411,7 +411,9 @@ void cuRankFilterMultiBlock(IMAGE_T* src, IMAGE_T* dest, HIST_INT_T* histPar, HI
 
 
 @cp.memoize(for_each_device=True)
-def _get_median_rawkernel(image_t, hist_offset, hist_int_t, hist_size=256, hist_size_coarse=8):
+def _get_median_rawkernel(
+    image_t, hist_offset, hist_int_t, hist_size=256, hist_size_coarse=8
+):
     preamble = _gen_median_kernel_preamble(
         image_t=image_t,
         hist_offset=hist_offset,
@@ -419,7 +421,6 @@ def _get_median_rawkernel(image_t, hist_offset, hist_int_t, hist_size=256, hist_
         hist_size=hist_size,
         hist_size_coarse=hist_size_coarse,
     )
-    # print(f"Generating rawkernel for {image_t=}, {hist_offset=}, {hist_int_t=}")  # noqa
     return cp.RawKernel(
         code=preamble + rank_filter_kernel,
         name="cuRankFilterMultiBlock",
@@ -448,7 +449,7 @@ def _check_global_scratch_space_size(
     """
     n_last = image_shape[-1]  # this is the contiguous memory dimension
     n_fine = n_last * hist_size * partitions
-    n_coarse =  n_last * hist_size_coarse * partitions
+    n_coarse = n_last * hist_size_coarse * partitions
     return (n_fine + n_coarse) * cp.dtype(hist_dtype).itemsize
 
 
@@ -497,9 +498,8 @@ def _can_use_histogram(image, footprint):
     return True, "footprint must be 1 everywhere"
 
 
-
-def _get_kernel_params(image, footprint_shape, value_range='auto', partitions=128,
-                       hist_size_coarse=None):
+def _get_kernel_params(image, footprint_shape, value_range='auto',
+                       partitions=128, hist_size_coarse=None):
     """Determine kernel launch parameters and #define values for its code.
 
     Parameters
@@ -568,18 +568,15 @@ def _get_kernel_params(image, footprint_shape, value_range='auto', partitions=12
     hist_size = round(2**math.ceil(math.log2(hist_size)))
     hist_size = max(hist_size, 32)
 
-    # why don't all powers of two work here? (only 8 and 16 seem okay)
-    # However can use hist_size=128 with 8,   hist_size=512 with 16, but not 8  and hist_size=1024 with 32, but not 16
-    # I think this is because both hist_size_fine and hist_size_coarse must be < warp_size.
     if hist_size_coarse is None:
         if hist_size < 256:
-            hist_size_coarse = 4   # tests pass for 2, 4 or 8 only
+            hist_size_coarse = 4   # tests pass for 2, 4 or 8 only.
         elif hist_size == 256:
-            hist_size_coarse = 8   # tests pass for values of 2, 4, 8 or 16. fail for >= 32
+            hist_size_coarse = 8   # tests pass for 2, 4, 8 or 16. fail for 32.
         elif hist_size == 512:
-            hist_size_coarse = 8   # tests pass for values of 2, 4, 8 or 16. fail for >= 32
+            hist_size_coarse = 8   # tests pass for 2, 4, 8 or 16. fail for 32.
         elif hist_size < 4096:
-            hist_size_coarse = 32   # tests pass for values of 2, 4, 8, 16 or 32.  fail for >= 64
+            hist_size_coarse = 32  # tests pass for 2, 4, 8, 16 or 32.
         elif hist_size <= 65536:
             hist_size_coarse = 64
         else:
@@ -593,18 +590,20 @@ def _get_kernel_params(image, footprint_shape, value_range='auto', partitions=12
     # of threads in the block.
     # Use the maximum of the coarse and fine sizes, rounded up to the nearest
     # multiple of 32.
-    hist_size_max = max(hist_size//hist_size_coarse, hist_size_coarse)
+    hist_size_fine = hist_size // hist_size_coarse
+    hist_size_max = max(hist_size_fine, hist_size_coarse)
     block0 = 32 * math.ceil(hist_size_max / 32)
     if block0 > 256:
         d = cp.cuda.Device()
-        if block0 > d.attributes["MaxBlockDimX"]:
+        max_block_x = d.attributes["MaxBlockDimX"]
+        if block0 > max_block_x:
             raise RuntimeError(
                 f"The requested block size of {block0} for the first dimension"
-                f", exceeds MaxBlockDimX={MaxBlockDimX} for this device."
+                f", exceeds MaxBlockDimX={max_block_x} for this device."
             )
 
     if partitions > image.shape[0]:
-        partitions = n_rows // 2  # can be chosen
+        partitions = image.shape[0] // 2  # can be chosen
     grid = (partitions, 1, 1)
     # block[0] must be at least the warp size
     block = (block0, 1, 1)
@@ -619,7 +618,7 @@ def _get_kernel_params(image, footprint_shape, value_range='auto', partitions=12
     # https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#features-and-technical-specifications
     if hist_size >= 8192:
         smem_size = _check_shared_memory_requirement_bytes(
-            hist_dtype, hist_size_coarse, hist_size//hist_size_coarse
+            hist_dtype, hist_size_coarse, hist_size_fine
         )
         d = cp.cuda.Device()
         smem_available = d.attributes['MaxSharedMemoryPerBlock']

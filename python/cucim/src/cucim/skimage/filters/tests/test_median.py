@@ -6,7 +6,6 @@ from skimage import data
 
 from cucim.skimage._shared.testing import expected_warnings
 from cucim.skimage.filters import median
-from skimage.filters import median as median_cpu
 
 
 @pytest.fixture
@@ -106,9 +105,6 @@ def test_median_hist_dtypes(
         raise NotImplementedError("TODO")
     out = median(img, footprint, mode=mode, behavior=behavior)
     expected = func(img, size=footprint.shape, mode=mode)
-    # img_cpu = cp.asnumpy(img)
-    # footprint_cpu = cp.asnumpy(footprint)
-    # expected = median_cpu(img_cpu, footprint_cpu, mode=mode, behavior=behavior)
     assert_allclose(expected, out)
 
 
