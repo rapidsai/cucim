@@ -125,7 +125,7 @@ def median(image, footprint=None, out=None, mode='nearest', cval=0.0,
 
     if use_histogram:
         try:
-            # as in SciPy, a user-provided `out` can be either an array or a dtype
+            # as in SciPy, a user-provided `out` can be an array or a dtype
             output_array_provided = False
             out_dtype = None
             if out is not None:
@@ -135,12 +135,12 @@ def median(image, footprint=None, out=None, mode='nearest', cval=0.0,
                         out_dtype = cp.dtype(out)
                     except TypeError:
                         raise TypeError(
-                            "out must be either a cupy.array or a valid input to "
-                            "cupy.dtype"
+                            "out must be either a cupy.array or a valid input "
+                            "to cupy.dtype"
                         )
 
-            # TODO: Can't currently pass an output array into _median_hist as a new
-            #       array currently needs to be created due to boundary padding.
+            # TODO: Can't currently pass an output array into _median_hist as a
+            #       new array currently needs to be created during padding.
             temp = _median_hist(image, footprint, mode=mode, cval=cval)
             if output_array_provided:
                 out[:] = temp
