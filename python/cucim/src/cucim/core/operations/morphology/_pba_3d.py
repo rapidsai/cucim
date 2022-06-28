@@ -159,6 +159,11 @@ def _pba_3d(arr, sampling=None, return_distances=True, return_indices=False,
     if arr.ndim != 3:
         raise ValueError(f"expected a 3D array, got {arr.ndim}D")
 
+    if sampling is not None:
+        raise NotImplementedError("sampling not yet supported")
+        # if len(sampling) != 3:
+        #     raise ValueError("sampling must be a sequence of three values.")
+
     if block_params is None:
         m1 = 1
         m2 = 1

@@ -37,8 +37,9 @@ def assert_percentile_equal(arr1, arr2, pct=95):
 )
 @pytest.mark.parametrize('density', [5, 50, 95])
 @pytest.mark.parametrize('block_params', [None, (1, 1, 1)])
-def test_distance_transform_edt(shape, sampling, return_distances,
-                                return_indices, density, block_params):
+def test_distance_transform_edt(
+    shape, sampling, return_distances, return_indices, density, block_params
+):
 
     if not (return_indices or return_distances):
         return
@@ -63,6 +64,35 @@ def test_distance_transform_edt(shape, sampling, return_distances,
         cp.testing.assert_allclose(out, expected)
     elif return_indices:
         assert_percentile_equal(out, expected, pct=95)
+
+
+@pytest.mark.parametrize('return_indices', [False, True])
+@pytest.mark.parametrize('return_distances', [False, True])
+@pytest.mark.parametrize('shape, sampling',
+    [
+        ((384, 256), (1, 3)),
+        ((50, 32, 24), (1, 2, 4)),
+    ]
+)
+@pytest.mark.parametrize('density', [5, 50, 95])
+def test_distance_transform_edt_nonuniform_sampling(
+    shape, sampling, return_distances, return_indices, density
+):
+
+    if not (return_indices or return_distances):
+        return
+
+    kwargs_scipy = dict(
+        sampling=sampling,
+        return_distances=return_distances,
+        return_indices=return_indices,
+    )
+    kwargs_cucim = copy(kwargs_scipy)
+    img = binary_image(shape, pct_true=density)
+    if sampling is not None and len(np.unique(sampling)) != 1:
+        with pytest.raises(NotImplementedError):
+            distance_transform_edt(img, **kwargs_cucim)
+        return
 
 
 @pytest.mark.parametrize('value', [0, 1, 3])

@@ -112,6 +112,11 @@ def _pba_2d(arr, sampling=None, return_distances=True, return_indices=False,
     #       overhead of querying properties
     block_size = _get_block_size(check_warp_size)
 
+    if sampling is not None:
+        raise NotImplementedError("sampling not yet supported")
+        # if len(sampling) != 2:
+        #     raise ValueError("sampling must be a sequence of two values.")
+
     padded_size = math.ceil(max(arr.shape) / block_size) * block_size
     if block_params is None:
         # should be <= size / 64. sy must be a multiple of m1

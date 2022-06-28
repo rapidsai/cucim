@@ -148,13 +148,16 @@ def distance_transform_edt(image, sampling=None, return_distances=True,
         raise NotImplementedError(
             "preallocated indices image is not supported"
         )
+    scalar_sampling = None
     if sampling is not None:
         sampling = np.unique(np.atleast_1d(sampling))
-        if len(sampling) != 1:
+        if len(sampling) == 1:
+            scalar_sampling = float(sampling)
+            sampling = None
+        else:
             raise NotImplementedError(
                 "non-uniform values in sampling is not currently supported"
             )
-        sampling = float(sampling)
 
     if image.ndim == 3:
         pba_func = _pba_3d
@@ -172,8 +175,8 @@ def distance_transform_edt(image, sampling=None, return_distances=True,
         block_params=block_params
     )
 
-    if return_distances and sampling is not None:
-        vals= (vals[0] * sampling,) + vals[1:]
+    if return_distances and scalar_sampling is not None:
+        vals= (vals[0] * scalar_sampling,) + vals[1:]
 
     if len(vals) == 1:
         vals = vals[0]
