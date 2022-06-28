@@ -1,6 +1,5 @@
 import math
 import os
-from functools import reduce
 
 import cupy
 
@@ -23,10 +22,13 @@ def _init_marker(int_dtype):
         # marker = cupy.iinfo(int_dtype).min
         marker = -32768
     elif int_dtype == cupy.int32:
-        # divide by two so we don't have to promote other intermediate int variables to 64-bit int
+        # divide by two so we don't have to promote other intermediate int
+        # variables to 64-bit int
         marker = -2147483648 // 2
     else:
-        raise ValueError("expected int_dtype to be either cupy.int16 or cupy.int32")
+        raise ValueError(
+            "expected int_dtype to be either cupy.int16 or cupy.int32"
+        )
     return marker
 
 
@@ -62,6 +64,7 @@ def _pack_int2(arr, marker=-32768, int_dtype=cupy.int16):
         raise ValueError("only 2d arr suppported")
     input_x = cupy.zeros(arr.shape, dtype=int_dtype)
     input_y = cupy.zeros(arr.shape, dtype=int_dtype)
+    # TODO: create custom kernel for setting values in input_x, input_y
     cond = arr == 0
     y, x = cupy.where(cond)
     input_x[cond] = x
@@ -69,7 +72,7 @@ def _pack_int2(arr, marker=-32768, int_dtype=cupy.int16):
     input_x[mask] = marker  # 1 << 32
     input_y[cond] = y
     input_y[mask] = marker  # 1 << 32
-    int2_dtype = cupy.dtype({'names': ['x', 'y'], 'formats': [int_dtype]*2})
+    int2_dtype = cupy.dtype({'names': ['x', 'y'], 'formats': [int_dtype] * 2})
     # in C++ code x is the contiguous axis and corresponds to width
     #             y is the non-contiguous axis and corresponds to height
     # given that, store input_x as the last axis here
@@ -90,7 +93,9 @@ def _determine_padding(shape, padded_size, block_size):
     # shape is not isotropic
     orig_sy, orig_sx = shape
     if orig_sx != padded_size or orig_sy != padded_size:
-        padding_width = ((0, padded_size - orig_sy), (0, padded_size - orig_sx))
+        padding_width = (
+            (0, padded_size - orig_sy), (0, padded_size - orig_sx)
+        )
     else:
         padding_width = None
     return padding_width
@@ -104,9 +109,6 @@ def _pba_2d(arr, sampling=None, return_distances=True, return_indices=False,
     #    For each site at (x, y), the pixel at coordinate (x, y) should contain
     #    the pair (x, y). Pixels that are not sites should contain the pair
     #    (MARKER, MARKER)
-
-    # See the following on float2, etc. use in cupy:
-    #     https://github.com/cupy/cupy/issues/1535
 
     # Note: could query warp size here, but for now just assume 32 to avoid
     #       overhead of querying properties
@@ -171,7 +173,7 @@ def _pba_2d(arr, sampling=None, return_distances=True, return_indices=False,
     input_arr = _pack_int2(arr, marker=marker, int_dtype=int_dtype)
     output = cupy.zeros_like(input_arr)
 
-    int2_dtype = cupy.dtype({'names': ['x', 'y'], 'formats': [int_dtype]*2})
+    int2_dtype = cupy.dtype({'names': ['x', 'y'], 'formats': [int_dtype] * 2})
     margin = cupy.empty((2 * m1 * size,), dtype=int2_dtype)
 
     # phase 1 of PBA. m1 must divide texture size and be <= 64
@@ -249,7 +251,7 @@ def _pba_2d(arr, sampling=None, return_distances=True, return_indices=False,
         noBand //= 2
     # Replace the forward link with the X coordinate of the seed to remove
     # the need of looking at the other texture. We need it for coloring.
-    grid = (math.ceil(size / block[0]), size);
+    grid = (math.ceil(size / block[0]), size)
     kernelDoubleToSingleList(
         grid,
         block,
@@ -273,6 +275,7 @@ def _pba_2d(arr, sampling=None, return_distances=True, return_indices=False,
     # raise NotImplementedError("TODO")
     vals = ()
     if return_distances:
+        # TODO: custom kernel for more efficient distance computation
         y0, x0 = cupy.meshgrid(
             *(
                 cupy.arange(s, dtype=cupy.int32)

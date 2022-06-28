@@ -3,7 +3,6 @@ import numpy as np
 from ._pba_2d import _pba_2d
 from ._pba_3d import _pba_3d
 
-
 # TODO: make a 64-bit packed coordinates variant in 3D for large shapes
 #       support sampling distances
 #       support chamfer, chessboard and l1/manhattan distances too?
@@ -176,7 +175,7 @@ def distance_transform_edt(image, sampling=None, return_distances=True,
     )
 
     if return_distances and scalar_sampling is not None:
-        vals= (vals[0] * scalar_sampling,) + vals[1:]
+        vals = (vals[0] * scalar_sampling,) + vals[1:]
 
     if len(vals) == 1:
         vals = vals[0]

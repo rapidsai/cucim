@@ -3,17 +3,15 @@ from copy import copy
 import cupy as cp
 import numpy as np
 import pytest
-from cupy import testing
 import scipy.ndimage as ndi_cpu
 
 from cucim.core.operations.morphology import distance_transform_edt
 
 
-
 def binary_image(shape, pct_true=50):
     rng = cp.random.default_rng(123)
-    x = rng.integers(0, 100, size=shape,  dtype=cp.uint8)
-    return x >=pct_true
+    x = rng.integers(0, 100, size=shape, dtype=cp.uint8)
+    return x >= pct_true
 
 
 def assert_percentile_equal(arr1, arr2, pct=95):
@@ -27,7 +25,8 @@ def assert_percentile_equal(arr1, arr2, pct=95):
 
 @pytest.mark.parametrize('return_indices', [False, True])
 @pytest.mark.parametrize('return_distances', [False, True])
-@pytest.mark.parametrize('shape, sampling',
+@pytest.mark.parametrize(
+    'shape, sampling',
     [
         ((256, 128), None),
         ((384, 256), (1.5, 1.5)),
@@ -68,7 +67,8 @@ def test_distance_transform_edt(
 
 @pytest.mark.parametrize('return_indices', [False, True])
 @pytest.mark.parametrize('return_distances', [False, True])
-@pytest.mark.parametrize('shape, sampling',
+@pytest.mark.parametrize(
+    'shape, sampling',
     [
         ((384, 256), (1, 3)),
         ((50, 32, 24), (1, 2, 4)),
@@ -145,4 +145,3 @@ def test_distance_transform_edt_3d_int64():
     distance_transform_edt(img)
     # Note: no validation vs. scipy.ndimage due to excessive run time
     return
-

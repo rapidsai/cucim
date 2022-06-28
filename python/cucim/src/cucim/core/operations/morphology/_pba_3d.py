@@ -1,12 +1,10 @@
 import math
 import os
-from functools import reduce
 
 import cupy
 import numpy as np
 
 from ._pba_2d import _get_block_size
-
 
 pba3d_defines_template = """
 
@@ -94,7 +92,8 @@ def encode3d(arr, marker=-2147483648, bit_depth=32, size_max=1024):
     image = cupy.zeros(arr.shape, dtype=dtype, order='C')
     cond = arr == 0
     z, y, x = cupy.where(cond)
-    # z, y, x so that x is the contiguous axis (must match the TOID macro in the C++ code!)
+    # z, y, x so that x is the contiguous axis
+    # (must match TOID macro in the C++ code!)
     if size_max > 1024:
         image[cond] = (((x) << 40) | ((y) << 20) | (z))
     else:
@@ -105,7 +104,6 @@ def encode3d(arr, marker=-2147483648, bit_depth=32, size_max=1024):
 
 # TODO: custom kernel for decode3d
 def decode3d(output, size_max=1024):
-    # Note: z, y, x reversed vs. DECODE define in C above due to C-ordered memory layout
     if size_max > 1024:
         x = (output >> 40) & 0xfffff
         y = (output >> 20) & 0xfffff
@@ -203,15 +201,8 @@ def _pba_3d(arr, sampling=None, return_distances=True, return_indices=False,
 
     block = (blockx, blocky, 1)
     grid = (size // block[0], size // block[1], 1)
-
-    # MAKE SURE NO GRID/BLOCK SIZES WILL CAUSE OUT-OF-RANGE ACCESS
-    # block_size = min(32, min_pow2)
-    marker = -2147483648
-
-
     pba3d = cupy.RawModule(
-        code=get_pba3d_src(block_size_3d=block_size, marker=marker,
-                           size_max=size_max)
+        code=get_pba3d_src(block_size_3d=block_size, size_max=size_max)
     )
 
     kernelFloodZ = pba3d.get_function('kernelFloodZ')
@@ -264,7 +255,7 @@ def _pba_3d(arr, sampling=None, return_distances=True, return_indices=False,
 
     vals = ()
     if return_distances:
-        # TODO: kernel for more efficient distance computation
+        # TODO: custom kernel for more efficient distance computation
         orig_shape = (orig_sz, orig_sy, orig_sx)
         z0, y0, x0 = cupy.meshgrid(
             *(cupy.arange(s, dtype=cupy.int32) for s in orig_shape),
@@ -287,4 +278,3 @@ def _pba_3d(arr, sampling=None, return_distances=True, return_indices=False,
         indices = cupy.stack((z, y, x), axis=0)
         vals = vals + (indices,)
     return vals
-
