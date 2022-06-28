@@ -1,15 +1,41 @@
+// Euclidean Distance Transform
+// 
+// Kernels for the 2D version of the Parallel Banding Algorithm (PBA+). 
+// 
+// MIT license: see 3rdparty/LICENSE.pba+
+// Copyright: (c) 2019 School of Computing, National University of Singapore
+//
+// Modifications by Gregory Lee (2022) (NVIDIA)
+// - add user-defined pixel_int2_t to enable
+// - replace __mul24 operations with standard multiplication operator
+
+
+// START OF DEFINITIONS OVERRIDDEN BY THE PYTHON SCRIPT
+
+// The values included in this header file are those defined in the original
+// PBA+ implementation
+
+// However, the Python code generation can potentially generate a different
+// ENCODE/DECODE that use 20 bits per coordinates instead of 10 bits per
+// coordinate with ENCODED_INT_TYPE as `long long`.
 
 #ifndef MARKER
-    
 #define MARKER -32768
+#endif
+
+#ifndef BLOCKSIZE
 #define BLOCKSIZE 32
+#endif
+
+#ifndef pixel_int2_t
 #define pixel_int2_t short2
 #define make_pixel(x, y)  make_short2(x, y)
+#endif
 
-#endif  // MARKER
+// END OF DEFINITIONS OVERRIDDEN BY THE PYTHON SCRIPT
 
 
-#define TOID(x, y, size)  (__mul24((y), (size)) + (x))
+#define TOID(x, y, size)  ((y) * (size) + (x))
 
 #define LL long long
 __device__ bool dominate(LL x1, LL y1, LL x2, LL y2, LL x3, LL y3, LL x0)
@@ -169,8 +195,8 @@ __global__ void kernelUpdateVertical(pixel_int2_t *color, pixel_int2_t *margin, 
 
 __global__ void kernelProximatePoints(pixel_int2_t *input, pixel_int2_t *stack, int size, int bandSize)
 {
-    int tx = __mul24(blockIdx.x, blockDim.x) + threadIdx.x;
-    int ty = __mul24(blockIdx.y, bandSize);
+    int tx = blockIdx.x * blockDim.x + threadIdx.x;
+    int ty = blockIdx.y * bandSize;
     int id = TOID(tx, ty, size);
     int lasty = -1;
     pixel_int2_t last1, last2, current;
@@ -205,8 +231,8 @@ __global__ void kernelProximatePoints(pixel_int2_t *input, pixel_int2_t *stack, 
 
 __global__ void kernelCreateForwardPointers(pixel_int2_t *input, pixel_int2_t *output, int size, int bandSize)
 {
-    int tx = __mul24(blockIdx.x, blockDim.x) + threadIdx.x;
-    int ty = __mul24(blockIdx.y+1, bandSize) - 1;
+    int tx = blockIdx.x * blockDim.x + threadIdx.x;
+    int ty = (blockIdx.y+1) * bandSize - 1;
     int id = TOID(tx, ty, size);
     int lasty = -1, nexty;
     pixel_int2_t current;
@@ -235,7 +261,7 @@ __global__ void kernelCreateForwardPointers(pixel_int2_t *input, pixel_int2_t *o
 
 __global__ void kernelMergeBands(pixel_int2_t *color, pixel_int2_t *link, pixel_int2_t *output, int size, int bandSize)
 {
-    int tx = __mul24(blockIdx.x, blockDim.x) + threadIdx.x;
+    int tx = blockIdx.x * blockDim.x + threadIdx.x;
     int band1 = blockIdx.y * 2;
     int band2 = band1 + 1;
     int firsty, lasty;
@@ -246,7 +272,7 @@ __global__ void kernelMergeBands(pixel_int2_t *color, pixel_int2_t *link, pixel_
     // x component store the forward pointer
 
     // Get the two last items of the first list
-    lasty = __mul24(band2, bandSize) - 1;
+    lasty = band2 * bandSize - 1;
     last2 = make_pixel(color[TOID(tx, lasty, size)].x,
         link[TOID(tx, lasty, size)].y);
 
@@ -267,7 +293,7 @@ __global__ void kernelMergeBands(pixel_int2_t *color, pixel_int2_t *link, pixel_
     }
 
     // Get the first item of the second band
-    firsty = __mul24(band2, bandSize);
+    firsty = band2 * bandSize;
     current = make_pixel(link[TOID(tx, firsty, size)].x,
         color[TOID(tx, firsty, size)].x);
 
@@ -321,8 +347,8 @@ __global__ void kernelMergeBands(pixel_int2_t *color, pixel_int2_t *link, pixel_
     }
 
     // Update the head and tail pointer.
-    firsty = __mul24(band1, bandSize);
-    lasty = __mul24(band2, bandSize);
+    firsty = band1 * bandSize;
+    lasty = band2 * bandSize;
     current = link[TOID(tx, firsty, size)];
 
     if (current.y == MARKER && current.x < 0) { // No head?
@@ -336,8 +362,8 @@ __global__ void kernelMergeBands(pixel_int2_t *color, pixel_int2_t *link, pixel_
         output[TOID(tx, firsty, size)] = current;
     }
 
-    firsty = __mul24(band1, bandSize) + bandSize - 1;
-    lasty = __mul24(band2, bandSize) + bandSize - 1;
+    firsty = band1 * bandSize + bandSize - 1;
+    lasty = band2 * bandSize + bandSize - 1;
     current = link[TOID(tx, lasty, size)];
 
     if (current.x == MARKER && current.y < 0) { // No tail?
@@ -354,7 +380,7 @@ __global__ void kernelMergeBands(pixel_int2_t *color, pixel_int2_t *link, pixel_
 
 __global__ void kernelDoubleToSingleList(pixel_int2_t *color, pixel_int2_t *link, pixel_int2_t *output, int size)
 {
-    int tx = __mul24(blockIdx.x, blockDim.x) + threadIdx.x;
+    int tx = blockIdx.x * blockDim.x + threadIdx.x;
     int ty = blockIdx.y;
     int id = TOID(tx, ty, size);
 
@@ -367,7 +393,7 @@ __global__ void kernelColor(pixel_int2_t *input, pixel_int2_t *output, int size)
 
     int col = threadIdx.x;
     int tid = threadIdx.y;
-    int tx = __mul24(blockIdx.x, blockDim.x) + col;
+    int tx = blockIdx.x * blockDim.x + col;
     int dx, dy, lasty;
     unsigned int best, dist;
     pixel_int2_t last1, last2;
@@ -391,11 +417,11 @@ __global__ void kernelColor(pixel_int2_t *input, pixel_int2_t *output, int size)
 
         for (int ty = y_start - tid; ty >= y_end; ty -= blockDim.y) {
             dx = last2.x - tx; dy = lasty - ty;
-            best = dist = __mul24(dx, dx) + __mul24(dy, dy);
+            best = dist = dx * dx + dy * dy;
 
             while (last2.y >= 0) {
                 dx = last1.x - tx; dy = last2.y - ty;
-                dist = __mul24(dx, dx) + __mul24(dy, dy);
+                dist = dx * dx + dy * dy;
 
                 if (dist > best)
                     break;

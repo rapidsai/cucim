@@ -3,9 +3,20 @@
 // Kernels for the 3D version of the Parallel Banding Algorithm (PBA+). 
 // 
 // MIT license: see 3rdparty/LICENSE.pba+
+//
+// Modifications by Gregory Lee (2022) (NVIDIA)
+// - allow user-defined ENCODED_INT_TYPE, ENCODE, DECODE
 
 
-// START OF DEFINITIONS LIKELY OVERRIDDEN BY THE PYTHON SCRIPT
+// START OF DEFINITIONS OVERRIDDEN BY THE PYTHON SCRIPT
+
+// The values included in this header file are those defined in the original
+// PBA+ implementation
+
+// However, the Python code generation can potentially generate a different
+// ENCODE/DECODE that use 20 bits per coordinates instead of 10 bits per
+// coordinate with ENCODED_INT_TYPE as `long long`.
+
 
 #ifndef MARKER
 #define MARKER     -2147483648
@@ -19,26 +30,30 @@
 #define BLOCKSIZE  32
 #endif
 
-// #ifndef ENCODE
-//
-// // Sites     : ENCODE(x, y, z, 0, 0)
-// // Not sites : ENCODE(0, 0, 0, 1, 0) or MARKER
-// #define ENCODE(x, y, z, a, b)  (((x) << 20) | ((y) << 10) | (z) | ((a) << 31) | ((b) << 30))
-// #define DECODE(value, x, y, z) \
-//     x = ((value) >> 20) & 0x3ff; \
-//     y = ((value) >> 10) & 0x3ff; \
-//     z = (value) & 0x3ff
+#ifndef ENCODE
 
-// #define NOTSITE(value)  (((value) >> 31) & 1)
-// #define HASNEXT(value)  (((value) >> 30) & 1)
+// Sites     : ENCODE(x, y, z, 0, 0)
+// Not sites : ENCODE(0, 0, 0, 1, 0) or MARKER
+#define ENCODED_INT_TYPE int
+#define ZERO 0
+#define ONE 1
+#define ENCODE(x, y, z, a, b)  (((x) << 20) | ((y) << 10) | (z) | ((a) << 31) | ((b) << 30))
+#define DECODE(value, x, y, z) \
+    x = ((value) >> 20) & 0x3ff; \
+    y = ((value) >> 10) & 0x3ff; \
+    z = (value) & 0x3ff
 
-// #define GET_X(value)    (((value) >> 20) & 0x3ff)
-// #define GET_Y(value)    (((value) >> 10) & 0x3ff)
-// #define GET_Z(value)    ((NOTSITE((value))) ? MAX_INT : ((value) & 0x3ff))
+#define NOTSITE(value)  (((value) >> 31) & 1)
+#define HASNEXT(value)  (((value) >> 30) & 1)
 
-// #endif // ENCODE
+#define GET_X(value)    (((value) >> 20) & 0x3ff)
+#define GET_Y(value)    (((value) >> 10) & 0x3ff)
+#define GET_Z(value)    ((NOTSITE((value))) ? MAX_INT : ((value) & 0x3ff))
 
-// END OF DEFINITIONS POTENTIALLY DEFINED IN THE PYTHON SCRIPT
+#endif // ENCODE
+
+// END OF DEFINITIONS DEFINED IN THE PYTHON SCRIPT
+
 
 #define LL long long
 __device__ bool dominate(LL x_1, LL y_1, LL z_1, LL x_2, LL y_2, LL z_2, LL x_3, LL y_3, LL z_3, LL x_0, LL z_0)
