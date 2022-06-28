@@ -85,26 +85,12 @@ def _unpack_int2(img, make_copy=False, int_dtype=cupy.int16):
     return temp
 
 
-def _determine_padding(shape, block_size):
+def _determine_padding(shape, padded_size, block_size):
     # all kernels assume equal size along both axes, so pad up to equal size if
     # shape is not isotropic
-    round_up = False
     orig_sy, orig_sx = shape
-    if orig_sx % block_size != 0:
-        # round up size to a multiple of the band size
-        round_up = True
-        sx = block_size * math.ceil(orig_sx / block_size)
-    else:
-        sx = orig_sx
-    if orig_sy % block_size != 0:
-        # round up size to a multiple of the band size
-        round_up = True
-        sy = block_size * math.ceil(orig_sy / block_size)
-    else:
-        sy = orig_sy
-    if sx != sy or round_up:
-        smax = max(sx, sy)
-        padding_width = ((0, smax - orig_sy), (0, smax - orig_sx))
+    if orig_sx != padded_size or orig_sy != padded_size:
+        padding_width = ((0, padded_size - orig_sy), (0, padded_size - orig_sx))
     else:
         padding_width = None
     return padding_width
@@ -126,12 +112,18 @@ def _pba_2d(arr, sampling=None, return_distances=True, return_indices=False,
     #       overhead of querying properties
     block_size = _get_block_size(check_warp_size)
 
-    padded_size = max(arr.shape)
+    padded_size = math.ceil(max(arr.shape) / block_size) * block_size
     if block_params is None:
         # should be <= size / 64. sy must be a multiple of m1
         m1 = max(1, min(padded_size // block_size, 32))
+
         # size must be a multiple of m2
         m2 = max(1, min(padded_size // block_size, 32))
+        # m2 must also be a power of two
+        m2 = 2**math.floor(math.log2(m2))
+        if padded_size % m2 != 0:
+            raise RuntimeError("error in setting default m2")
+
         # should be <= 64. texture size must be a multiple of m3
         m3 = min(min(m1, m2), 2)
     else:
@@ -142,10 +134,10 @@ def _pba_2d(arr, sampling=None, return_distances=True, return_indices=False,
     if m2 > padded_size // block_size:
         raise ValueError("m2 too large. must be <= arr.shape[1] // 32")
     for m in (m1, m2, m3):
-        if padded_size % m1 != 0:
+        if padded_size % m != 0:
             raise ValueError(
                 f"Largest dimension of image ({padded_size}) must be evenly "
-                f"disivible by each element of block_params: {block_params}."
+                f"disivible by each element of block_params: {(m1, m2, m3)}."
             )
 
     shape_max = max(arr.shape)
@@ -166,11 +158,10 @@ def _pba_2d(arr, sampling=None, return_distances=True, return_indices=False,
     marker = _init_marker(int_dtype)
 
     orig_sy, orig_sx = arr.shape
-    padding_width = _determine_padding(arr.shape, block_size)
+    padding_width = _determine_padding(arr.shape, padded_size, block_size)
     if padding_width is not None:
         arr = cupy.pad(arr, padding_width, mode='constant', constant_values=1)
     size = arr.shape[0]
-    print(f"{orig_sy=}, {orig_sx=}, {padding_width=}, {arr.shape=}")
 
     input_arr = _pack_int2(arr, marker=marker, int_dtype=int_dtype)
     output = cupy.zeros_like(input_arr)
@@ -296,6 +287,6 @@ def _pba_2d(arr, sampling=None, return_distances=True, return_indices=False,
             cupy.sqrt(dist, out=dist)
         vals = vals + (dist,)
     if return_indices:
-        indices = cupy.stack((x, y), axis=0)
+        indices = cupy.stack((y, x), axis=0)
         vals = vals + (indices,)
     return vals

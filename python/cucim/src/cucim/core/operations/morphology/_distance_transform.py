@@ -79,6 +79,10 @@ def distance_transform_edt(image, sampling=None, return_distances=True,
     where b[i] is the background point (value 0) with the smallest Euclidean
     distance to input points x[i], and n is the number of dimensions.
 
+    Note that the `indices` output may differ from the one given by
+    `scipy.ndimage.distance_transform_edt` in the case of input pixels that are
+    equidistant from multiple background points.
+
     The parallel banding algorithm implemented here was originally described in
     [1]_. The kernels used here correspond to the revised PBA+ implementation
     that is described on the author's website [2]_. The source code of the
@@ -150,6 +154,7 @@ def distance_transform_edt(image, sampling=None, return_distances=True,
             raise NotImplementedError(
                 "non-uniform values in sampling is not currently supported"
             )
+        sampling = float(sampling)
 
     if image.ndim == 3:
         pba_func = _pba_3d
@@ -168,6 +173,9 @@ def distance_transform_edt(image, sampling=None, return_distances=True,
     )
 
     if return_distances and sampling is not None:
-        vals[0] = vals[0] * sampling
+        vals= (vals[0] * sampling,) + vals[1:]
+
+    if len(vals) == 1:
+        vals = vals[0]
 
     return vals
