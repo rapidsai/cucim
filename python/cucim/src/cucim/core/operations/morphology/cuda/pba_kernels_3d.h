@@ -1,11 +1,44 @@
+// Euclidean Distance Transform
+// 
+// Kernels for the 3D version of the Parallel Banding Algorithm (PBA+). 
+// 
+// MIT license: see 3rdparty/LICENSE.pba+
+
+
+// START OF DEFINITIONS LIKELY OVERRIDDEN BY THE PYTHON SCRIPT
 
 #ifndef MARKER
-
 #define MARKER     -2147483648
-#define MAX_INT    2147483647
-#define BLOCKSIZE  32
-
 #endif  // MARKER
+
+#ifndef MAX_INT
+#define MAX_INT    2147483647
+#endif
+
+#ifndef BLOCKSIZE
+#define BLOCKSIZE  32
+#endif
+
+// #ifndef ENCODE
+//
+// // Sites     : ENCODE(x, y, z, 0, 0)
+// // Not sites : ENCODE(0, 0, 0, 1, 0) or MARKER
+// #define ENCODE(x, y, z, a, b)  (((x) << 20) | ((y) << 10) | (z) | ((a) << 31) | ((b) << 30))
+// #define DECODE(value, x, y, z) \
+//     x = ((value) >> 20) & 0x3ff; \
+//     y = ((value) >> 10) & 0x3ff; \
+//     z = (value) & 0x3ff
+
+// #define NOTSITE(value)  (((value) >> 31) & 1)
+// #define HASNEXT(value)  (((value) >> 30) & 1)
+
+// #define GET_X(value)    (((value) >> 20) & 0x3ff)
+// #define GET_Y(value)    (((value) >> 10) & 0x3ff)
+// #define GET_Z(value)    ((NOTSITE((value))) ? MAX_INT : ((value) & 0x3ff))
+
+// #endif // ENCODE
+
+// END OF DEFINITIONS POTENTIALLY DEFINED IN THE PYTHON SCRIPT
 
 #define LL long long
 __device__ bool dominate(LL x_1, LL y_1, LL z_1, LL x_2, LL y_2, LL z_2, LL x_3, LL y_3, LL z_3, LL x_0, LL z_0)
@@ -20,29 +53,9 @@ __device__ bool dominate(LL x_1, LL y_1, LL z_1, LL x_2, LL y_2, LL z_2, LL x_3,
 #define TOID(x, y, z, size)    ((((z) * (size)) + (y)) * (size) + (x))
 
 
-#ifndef ENCODE
-
-// Sites     : ENCODE(x, y, z, 0, 0)
-// Not sites : ENCODE(0, 0, 0, 1, 0) or MARKER
-#define ENCODE(x, y, z, a, b)  (((x) << 20) | ((y) << 10) | (z) | ((a) << 31) | ((b) << 30))
-#define DECODE(value, x, y, z) \
-    x = ((value) >> 20) & 0x3ff; \
-    y = ((value) >> 10) & 0x3ff; \
-    z = (value) & 0x3ff
-
-#define NOTSITE(value)  (((value) >> 31) & 1)
-#define HASNEXT(value)  (((value) >> 30) & 1)
-
-#define GET_X(value)    (((value) >> 20) & 0x3ff)
-#define GET_Y(value)    (((value) >> 10) & 0x3ff)
-#define GET_Z(value)    ((NOTSITE((value))) ? MAX_INT : ((value) & 0x3ff))
-
-#endif // ENCODE
-
-
 extern "C"{
 
-__global__ void kernelFloodZ(int *input, int *output, int size)
+__global__ void kernelFloodZ(ENCODED_INT_TYPE *input, ENCODED_INT_TYPE *output, int size)
 {
 
     int tx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -51,9 +64,9 @@ __global__ void kernelFloodZ(int *input, int *output, int size)
 
     int plane = size * size;
     int id = TOID(tx, ty, tz, size);
-    int pixel1, pixel2;
+    ENCODED_INT_TYPE pixel1, pixel2;
 
-    pixel1 = ENCODE(0,0,0,1,0);
+    pixel1 = ENCODE(ZERO,ZERO,ZERO,ONE,ZERO);
 
     // Sweep down
     for (int i = 0; i < size; i++, id += plane) {
@@ -65,7 +78,7 @@ __global__ void kernelFloodZ(int *input, int *output, int size)
         output[id] = pixel1;
     }
 
-    int dist1, dist2, nz;
+    ENCODED_INT_TYPE dist1, dist2, nz;
 
     id -= plane + plane;
 
@@ -86,7 +99,7 @@ __global__ void kernelFloodZ(int *input, int *output, int size)
 }
 
 
-__global__ void kernelMaurerAxis(int *input, int *stack, int size)
+__global__ void kernelMaurerAxis(ENCODED_INT_TYPE *input, ENCODED_INT_TYPE *stack, int size)
 {
     int tx = blockIdx.x * blockDim.x + threadIdx.x;
     int tz = blockIdx.y * blockDim.y + threadIdx.y;
@@ -94,10 +107,10 @@ __global__ void kernelMaurerAxis(int *input, int *stack, int size)
 
     int id = TOID(tx, ty, tz, size);
 
-    int lasty = 0;
-    int x1, y1, z1, x2, y2, z2, nx, ny, nz;
-    int p = ENCODE(0,0,0,1,0), s1 = ENCODE(0,0,0,1,0), s2 = ENCODE(0,0,0,1,0);
-    int flag = 0;
+    ENCODED_INT_TYPE lasty = 0;
+    ENCODED_INT_TYPE x1, y1, z1, x2, y2, z2, nx, ny, nz;
+    ENCODED_INT_TYPE p = ENCODE(ZERO,ZERO,ZERO,ONE,ZERO), s1 = ENCODE(ZERO,ZERO,ZERO,ONE,ZERO), s2 = ENCODE(ZERO,ZERO,ZERO,ONE,ZERO);
+    ENCODED_INT_TYPE flag = 0;
 
     for (ty = 0; ty < size; ++ty, id += size) {
         p = input[id];
@@ -120,31 +133,31 @@ __global__ void kernelMaurerAxis(int *input, int *stack, int size)
 
             DECODE(p, nx, ny, nz);
             s1 = s2;
-            s2 = ENCODE(nx, lasty, nz, 0, flag);
+            s2 = ENCODE(nx, lasty, nz, ZERO, flag);
             y2 = lasty;
             lasty = ty;
 
             stack[id] = s2;
 
-            flag = 1;
+            flag = ONE;
         }
     }
 
     if (NOTSITE(p))
-        stack[TOID(tx, ty - 1, tz, size)] = ENCODE(0, lasty, 0, 1, flag);
+        stack[TOID(tx, ty - 1, tz, size)] = ENCODE(ZERO, lasty, ZERO, ONE, flag);
 }
 
-__global__ void kernelColorAxis(int *input, int *output, int size)
+__global__ void kernelColorAxis(ENCODED_INT_TYPE *input, ENCODED_INT_TYPE *output, int size)
 {
-    __shared__ int block[BLOCKSIZE][BLOCKSIZE];
+    __shared__ ENCODED_INT_TYPE block[BLOCKSIZE][BLOCKSIZE];
 
     int col = threadIdx.x;
     int tid = threadIdx.y;
     int tx = blockIdx.x * blockDim.x + col;
     int tz = blockIdx.y;
 
-    int x1, y1, z1, x2, y2, z2;
-    int last1 = ENCODE(0,0,0,1,0), last2 = ENCODE(0,0,0,1,0), lasty;
+    ENCODED_INT_TYPE x1, y1, z1, x2, y2, z2;
+    ENCODED_INT_TYPE last1 = ENCODE(ZERO,ZERO,ZERO,ONE,ZERO), last2 = ENCODE(ZERO,ZERO,ZERO,ONE,ZERO), lasty;
     long long dx, dy, dz, best, dist;
 
     lasty = size - 1;
@@ -189,7 +202,7 @@ __global__ void kernelColorAxis(int *input, int *output, int size)
                 }
             }
 
-            block[threadIdx.x][ty - y_end] = ENCODE(lasty, x2, z2, NOTSITE(last2), 0);
+            block[threadIdx.x][ty - y_end] = ENCODE(lasty, x2, z2, NOTSITE(last2), ZERO);
         }
 
         __syncthreads();
