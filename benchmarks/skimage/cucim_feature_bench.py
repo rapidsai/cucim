@@ -70,6 +70,7 @@ def main(args):
         #if function_name in ["corner_peaks", "peak_local_max"] and np.prod(shape) > 1000000:
             # skip any large sizes that take too long
         ndim = len(shape)
+        run_cpu = not args.no_cpu
 
         if function_name != "match_template":
             if not allow_nd:
@@ -79,11 +80,12 @@ def main(args):
                 else:
                     if ndim > 3 or (ndim == 3 and shape[-1] not in [3, 4]):
                         continue
+
             if shape[-1] == 3 and not allow_color:
                 continue
 
             if function_name == "multiscale_basic_features":
-                fixed_kwargs["multichannel"] = shape[-1] == 3
+                fixed_kwargs["channel_axis"] = -1 if shape[-1] == 3 else None
                 if ndim == 3 and shape[-1] != 3:
                     # Omit texture=True case to avoid excessive GPU memory usage
                     var_kwargs["texture"] = [False]
@@ -96,7 +98,7 @@ def main(args):
                 var_kwargs=var_kwargs,
                 module_cpu=skimage.feature,
                 module_gpu=cucim.skimage.feature,
-                run_cpu= args.no_cpu
+                run_cpu=run_cpu,
             )
         else:
             if not allow_nd:
@@ -117,6 +119,7 @@ def main(args):
                 var_kwargs=var_kwargs,
                 module_cpu=skimage.feature,
                 module_gpu=cucim.skimage.feature,
+                run_cpu=run_cpu,
             )
 
         results = B.run_benchmark(duration=args.duration)
@@ -125,8 +128,14 @@ def main(args):
     fbase = os.path.splitext(pfile)[0]
     all_results.to_csv(fbase + ".csv")
     all_results.to_pickle(pfile)
-    with open(fbase + ".md", "wt") as f:
-        f.write(all_results.to_markdown())
+    try:
+        import tabulate
+
+        with open(fbase + ".md", "wt") as f:
+            f.write(all_results.to_markdown())
+    except ImportError:
+        pass
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Benchmarking cuCIM Feature')
@@ -135,6 +144,7 @@ if __name__ == '__main__':
     parser.add_argument('-d','--dtype', type=str, help='Dtype of input image', choices = ['fp64','fp32','fp16'], required=True)
     parser.add_argument('-f','--func_name', type=str, help='function to benchmark', choices = func_name_choices, required=True)
     parser.add_argument('-t','--duration', type=int, help='time to run benchmark', required=True)
-    parser.add_argument('--run_cpu', action='store_true', help='disable cpu measurements', default=False)
+    parser.add_argument('--no_cpu', action='store_true', help='disable cpu measurements', default=False)
+
     args = parser.parse_args()
     main(args)
