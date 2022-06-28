@@ -193,7 +193,7 @@ def _pba_3d(arr, sampling=None, return_distances=True, return_indices=False,
 
     # pba algorithm was implemented to use 32-bit integer to store compressed
     # coordinates. input_arr will be C-contiguous, int32
-    size_max = max(arr.shape)  # TODO: update
+    size_max = max(arr.shape)
     input_arr = encode3d(arr, size_max=size_max)
     buffer_idx = 0
     output = cupy.zeros_like(input_arr)

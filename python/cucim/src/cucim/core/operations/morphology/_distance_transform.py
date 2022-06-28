@@ -3,10 +3,9 @@ import numpy as np
 from ._pba_2d import _pba_2d
 from ._pba_3d import _pba_3d
 
-# TODO: make a 64-bit packed coordinates variant in 3D for large shapes
-#       support sampling distances
+# TODO: support sampling distances
+#       support the distances and indices output arguments
 #       support chamfer, chessboard and l1/manhattan distances too?
-#       remove __mul24 from the pba2d code? (is there any benefit on recent GPUs?)  # noqa
 
 
 def distance_transform_edt(image, sampling=None, return_distances=True,
