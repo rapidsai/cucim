@@ -3,6 +3,8 @@ import os
 import pickle
 
 import cucim.skimage
+import cucim.skimage.data
+import cucim.skimage.exposure
 import cucim.skimage.segmentation
 import cupy as cp
 import numpy as np
@@ -52,12 +54,36 @@ class LabelBench(ImageBench):
         )
         tiling = tuple(s // a_s for s, a_s in zip(shape, a.shape))
         if self.contiguous_labels:
-            image = np.kron(a, np.ones(tiling, dtype=a.dtype))
+            labels = np.kron(a, np.ones(tiling, dtype=a.dtype))
         else:
-            image = np.tile(a, tiling)
-        imaged = cp.asarray(image)
-        self.args_cpu = (image,)
-        self.args_gpu = (imaged,)
+            labels = np.tile(a, tiling)
+        labels_d = cp.asarray(labels)
+        self.args_cpu = (labels,)
+        self.args_gpu = (labels_d,)
+
+
+class LabelAndImageBench(LabelBench):
+
+    def set_args(self, dtype):
+        a = np.array(
+            [
+                [0, 0, 1, 1, 0, 0, 0, 0],
+                [0, 0, 0, 1, 0, 0, 4, 0],
+                [2, 2, 0, 0, 3, 0, 4, 4],
+                [0, 0, 0, 0, 0, 5, 0, 0],
+            ],
+            dtype=dtype,
+        )
+        tiling = tuple(s // a_s for s, a_s in zip(shape, a.shape))
+        if self.contiguous_labels:
+            labels = np.kron(a, np.ones(tiling, dtype=a.dtype))
+        else:
+            labels = np.tile(a, tiling)
+        labels_d = cp.asarray(labels)
+        image_d = cp.random.standard_normal(labels.shape).astype(np.float32)
+        image = cp.asnumpy(image_d)
+        self.args_cpu = (image, labels)
+        self.args_gpu = (image_d, labels_d)
 
 
 class MorphGeodesicBench(ImageBench):
@@ -75,7 +101,9 @@ class MorphGeodesicBench(ImageBench):
         imaged = cp.tile(im1, n_tile)[slices]
 
         # need this preprocessing for morphological_geodesic_active_contour
-        imaged = skimage.segmentation.inverse_gaussian_gradient(imaged)
+        imaged = cp.array(
+            skimage.segmentation.inverse_gaussian_gradient(cp.asnumpy(imaged))
+        )
 
         image = cp.asnumpy(imaged)
         assert imaged.dtype == dtype
@@ -84,17 +112,67 @@ class MorphGeodesicBench(ImageBench):
         self.args_gpu = (imaged,)
 
 
+class RandomWalkerBench(ImageBench):
+
+
+    def set_args(self, dtype):
+        # Note: dtype only used for merkers array, data is hard-coded as float32
+
+        if np.dtype(dtype).kind not in 'iu':
+            raise ValueError("random_walker markers require integer dtype")
+
+        n_dim = len(self.shape)
+        data = cucim.skimage.img_as_float(
+            cucim.skimage.data.binary_blobs(
+                length=max(self.shape), n_dim=n_dim, seed=1
+            )
+        )
+        data = data[tuple(slice(s) for s in self.shape)]
+        sigma = 0.35
+        rng = np.random.default_rng(5)
+        data += cp.array(rng.normal(loc=0, scale=sigma, size=data.shape))
+        data = cucim.skimage.exposure.rescale_intensity(
+            data, in_range=(-sigma, 1 + sigma), out_range=(-1, 1)
+        )
+        data = data.astype(cp.float32)
+        data_cpu = cp.asnumpy(data)
+
+        # The range of the binary image spans over (-1, 1).
+        # We choose the hottest and the coldest pixels as markers.
+        markers = cp.zeros(data.shape, dtype=dtype)
+        markers[data < -0.95] = 1
+        markers[data > 0.95] = 2
+        markers_cpu = cp.asnumpy(markers)
+        self.args_cpu = (data_cpu, markers_cpu)
+        self.args_gpu = (data, markers)
+
+
 pfile = "cucim_segmentation_results.pickle"
 if os.path.exists(pfile):
     with open(pfile, "rb") as f:
         all_results = pickle.load(f)
 else:
     all_results = pd.DataFrame()
+
 dtypes = [np.int32]
-
-
 for function_name, fixed_kwargs, var_kwargs, allow_color, allow_nd in [
-    # _denoise.py
+    # _clear_border.py
+    (
+        "clear_border",
+        dict(),
+        dict(),
+        False,
+        True,
+    ),
+    # _join.py
+    (
+        "relabel_sequential",
+        dict(offset=5),
+        dict(),
+        False,
+        True,
+    ),
+    # boundaries.py
     (
         "find_boundaries",
         dict(),
@@ -102,11 +180,24 @@ for function_name, fixed_kwargs, var_kwargs, allow_color, allow_nd in [
         False,
         True,
     ),
+    (
+        "mark_boundaries",
+        dict(),
+        dict(),
+        False,
+        True,
+    ),
+    (
+        "random_walker",
+        dict(beta=4, tol=1.e-4, prob_tol=1.e-2),
+        dict(mode=['cg', 'cg_j']),
+        False,
+        True,
+    ),
 ]:
 
     for shape in [
-        (64, 64),
-    ]:  # (512, 512), (1980, 1080), (1980, 1080, 3), (128, 128, 128)]:
+        (64, 64), (512, 512), (1980, 1080), (1980, 1080, 3), (128, 128, 128)]:
 
         ndim = len(shape)
         if not allow_nd:
@@ -119,7 +210,17 @@ for function_name, fixed_kwargs, var_kwargs, allow_color, allow_nd in [
         if shape[-1] == 3 and not allow_color:
             continue
 
-        B = LabelBench(
+        if function_name == 'random_walker':
+            fixed_kwargs['channel_axis'] = -1 if shape[-1] == 3 else None
+
+        if function_name == 'mark_boundaries':
+            bench_func = LabelAndImageBench
+        elif function_name == 'random_walker':
+            bench_func = RandomWalkerBench
+        else:
+            bench_func = LabelBench
+
+        B = bench_func(
             function_name=function_name,
             shape=shape,
             dtypes=dtypes,
@@ -151,9 +252,12 @@ for function_name, fixed_kwargs, var_kwargs, allow_color, allow_nd in [
         False,
         False,
     ),
+    # omit: disk_level_set (simple array generation function)
+    # omit: checkerboard_level_set (simple array generation function)
+
 ]:
 
-    for shape in [(512, 512), (3840, 2160), (3840, 2160, 3), (192, 192, 192)]:
+    for shape in [(512, 512), ]: # (3840, 2160), (3840, 2160, 3), (192, 192, 192)]:
 
         ndim = len(shape)
         if not allow_nd:
@@ -171,7 +275,7 @@ for function_name, fixed_kwargs, var_kwargs, allow_color, allow_nd in [
         else:
             bench_class = ImageBench
 
-        B = ImageBench(
+        B = bench_class(
             function_name=function_name,
             shape=shape,
             dtypes=dtypes,
@@ -187,5 +291,10 @@ for function_name, fixed_kwargs, var_kwargs, allow_color, allow_nd in [
 fbase = os.path.splitext(pfile)[0]
 all_results.to_csv(fbase + ".csv")
 all_results.to_pickle(pfile)
-with open(fbase + ".md", "wt") as f:
-    f.write(all_results.to_markdown())
+try:
+    import tabulate
+
+    with open(fbase + ".md", "wt") as f:
+        f.write(all_results.to_markdown())
+except ImportError:
+    pass
