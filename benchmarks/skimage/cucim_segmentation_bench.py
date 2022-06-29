@@ -260,7 +260,7 @@ def main(args):
                 module_cpu=skimage.segmentation,
                 module_gpu=cucim.skimage.segmentation,
             )
-            results = B.run_benchmark(duration=1)
+            results = B.run_benchmark(duration=args.duration)
             all_results = pd.concat([all_results, results["full"]])
 
 
@@ -280,7 +280,7 @@ def main(args):
                 module_cpu=skimage.segmentation,
                 module_gpu=cucim.skimage.segmentation,
             )
-            results = B.run_benchmark(duration=1)
+            results = B.run_benchmark(duration=args.duration)
             all_results = pd.concat([all_results, results["full"]])
 
 

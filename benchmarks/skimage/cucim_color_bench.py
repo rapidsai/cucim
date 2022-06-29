@@ -136,7 +136,7 @@ def main(args):
                         module_gpu=cucim.skimage.color,
                         run_cpu=run_cpu,
                     )
-                    results = B.run_benchmark(duration=1)
+                    results = B.run_benchmark(duration=args.duration)
                     all_results = pd.concat([all_results, results["full"]])
 
         elif function_name == 'rgba2rgb':
@@ -150,7 +150,7 @@ def main(args):
                 module_gpu=cucim.skimage.color,
                 run_cpu=run_cpu,
             )
-            results = B.run_benchmark(duration=1)
+            results = B.run_benchmark(duration=args.duration)
             all_results = pd.concat([all_results, results["full"]])
 
         elif function_name == 'label2rgb':
@@ -172,7 +172,7 @@ def main(args):
                     module_gpu=cucim.skimage.color,
                     run_cpu=run_cpu,
                 )
-                results = B.run_benchmark(duration=1)
+                results = B.run_benchmark(duration=args.duration)
                 all_results = pd.concat([all_results, results["full"]])
 
         elif function_name in [
@@ -188,7 +188,7 @@ def main(args):
                 module_gpu=cucim.skimage.color,
                 run_cpu=run_cpu,
             )
-            results = B.run_benchmark(duration=1)
+            results = B.run_benchmark(duration=args.duration)
             all_results = pd.concat([all_results, results["full"]])
 
 

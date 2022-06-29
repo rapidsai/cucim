@@ -140,7 +140,7 @@ def main(args):
             module_gpu=cucim.skimage.transform,
             function_is_generator=function_is_generator,
         )
-        results = B.run_benchmark(duration=1)
+        results = B.run_benchmark(duration=args.duration)
         all_results = pd.concat([all_results, results["full"]])
 
 
