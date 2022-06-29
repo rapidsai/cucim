@@ -15,6 +15,7 @@ import skimage.color
 
 from _image_bench import ImageBench
 
+func_name_choices = ['convert_colorspace', 'rgb2hed', 'hed2rgb', 'lab2lch', 'lch2lab', 'xyz2lab', 'lab2xyz', 'rgba2rgb', 'label2rgb']
 
 class ColorBench(ImageBench):
     def set_args(self, dtype):
@@ -100,20 +101,16 @@ def main(args):
     else:
         all_results = pd.DataFrame()
 
-    dtype_dict = {'fp64': np.float64, 'fp32': np.float32, 'fp16': np.float16}
-    if args.dtype in dtype_dict:
-        dtypes = [dtype_dict[args.dtype]]
-    else:
-        dtypes = [np.dtype(args.dtype)]
+    dtypes = [np.dtype(args.dtype)]
+    # image sizes/shapes
+    shape = tuple(list(map(int,(args.img_size.split(',')))))
+    run_cpu = not args.no_cpu
 
     all_colorspaces = False
 
-    # image sizes/shapes
-    shape = tuple(list(map(int,(args.img_size.split(',')))))
     ndim = len(shape)
-    run_cpu = not args.no_cpu
 
-    for function_name in ['convert_colorspace', 'rgba2rgb', 'label2rgb', 'rgb2hed', 'hed2rgb', 'lab2lch', 'lch2lab', 'xyz2lab', 'lab2xyz']:
+    for function_name in func_name_choices:
 
         if function_name != args.func_name:
             continue
@@ -209,7 +206,6 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Benchmarking cuCIM color conversion functions')
-    func_name_choices = ['convert_colorspace', 'rgb2hed', 'hed2rgb', 'lab2lch', 'lch2lab', 'xyz2lab', 'lab2xyz', 'rgba2rgb', 'label2rgb']
     dtype_choices = ['float16', 'float32', 'float64', 'int8', 'int16', 'int32', 'int64', 'uint8', 'uint16', 'uint32', 'uint64']
     parser.add_argument('-i','--img_size', type=str, help='Size of input image (omit color channel, it will be appended as needed)', required=True)
     parser.add_argument('-d','--dtype', type=str, help='Dtype of input image', choices = dtype_choices, required=True)

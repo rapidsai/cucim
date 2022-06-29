@@ -105,7 +105,7 @@ def main(args):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Benchmarking cuCIM measure functions')
+    parser = argparse.ArgumentParser(description='Benchmarking cuCIM metrics functions')
     func_name_choices = ['structural_similarity', 'mean_squared_error', 'normalized_root_mse', 'peak_signal_noise_ratio', 'normalized_mutual_information']
     dtype_choices = ['float16', 'float32', 'float64', 'int8', 'int16', 'int32', 'int64', 'uint8', 'uint16', 'uint32', 'uint64']
     parser.add_argument('-i','--img_size', type=str, help='Size of input image', required=True)

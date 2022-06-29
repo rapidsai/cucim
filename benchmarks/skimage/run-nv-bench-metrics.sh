@@ -1,5 +1,5 @@
 #!/bin/bash
-param_shape=(512,512)  #  3840,2160 64,64,64 256,256,256)
+param_shape=(512,512 3840,2160 3840,2160,3 192,192,192)
 param_filt=(structural_similarity mean_squared_error normalized_root_mse peak_signal_noise_ratio normalized_mutual_information)
 param_dt=(float32 uint8)
 for shape in "${param_shape[@]}"; do

@@ -1,5 +1,5 @@
 #!/bin/bash
-param_shape=(512,512)  #  3840,2160 64,64,64 256,256,256)
+param_shape=(512,512 3840,2160 3840,2160,3 192,192,192)
 
 # these require an integer-valued label image
 param_filt=(clear_border relabel_sequential find_boundaries mark_boundaries random_walker)
