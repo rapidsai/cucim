@@ -149,7 +149,7 @@ def decode3d(output, size_max=1024):
 def _determine_padding(shape, block_size, m1, m2, m3, blockx, blocky):
     # TODO: can possibly revise to consider only particular factors for LCM on
     #       a given axis
-    LCM = math.lcm(block_size, m1, m2, m3, blockx, blocky)
+    LCM = lcm(block_size, m1, m2, m3, blockx, blocky)
     orig_sz, orig_sy, orig_sx = shape
     round_up = False
     if orig_sx % LCM != 0:
