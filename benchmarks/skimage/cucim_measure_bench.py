@@ -1,3 +1,4 @@
+import argparse
 import math
 import os
 import pickle
@@ -25,6 +26,7 @@ class LabelBench(ImageBench):
         index_str=None,
         module_cpu=skimage.measure,
         module_gpu=cucim.skimage.measure,
+        run_cpu=True,
     ):
 
         self.contiguous_labels = contiguous_labels
@@ -38,6 +40,7 @@ class LabelBench(ImageBench):
             index_str=index_str,
             module_cpu=module_cpu,
             module_gpu=module_gpu,
+            run_cpu=run_cpu,
         )
 
     def set_args(self, dtype):
@@ -49,7 +52,7 @@ class LabelBench(ImageBench):
                 [0, 0, 0, 0, 0, 5, 0, 0],
             ]
         )
-        tiling = tuple(s // a_s for s, a_s in zip(shape, a.shape))
+        tiling = tuple(s // a_s for s, a_s in zip(self.shape, a.shape))
         if self.contiguous_labels:
             image = np.kron(a, np.ones(tiling, dtype=a.dtype))
         else:
@@ -71,6 +74,7 @@ class RegionpropsBench(ImageBench):
         index_str=None,
         module_cpu=skimage.measure,
         module_gpu=cucim.skimage.measure,
+        run_cpu=True,
     ):
 
         self.contiguous_labels = contiguous_labels
@@ -84,6 +88,7 @@ class RegionpropsBench(ImageBench):
             index_str=index_str,
             module_cpu=module_cpu,
             module_gpu=module_gpu,
+            run_cpu=run_cpu,
         )
 
     def set_args(self, dtype):
@@ -95,7 +100,7 @@ class RegionpropsBench(ImageBench):
                 [0, 0, 0, 0, 0, 5, 0, 0],
             ]
         )
-        tiling = tuple(s // a_s for s, a_s in zip(shape, a.shape))
+        tiling = tuple(s // a_s for s, a_s in zip(self.shape, a.shape))
         if self.contiguous_labels:
             image = np.kron(a, np.ones(tiling, dtype=a.dtype))
         else:
@@ -127,97 +132,66 @@ class FiltersBench(ImageBench):
         self.args_gpu = (imaged,)
 
 
-pfile = "cucim_measure_results.pickle"
-if os.path.exists(pfile):
-    with open(pfile, "rb") as f:
-        all_results = pickle.load(f)
-else:
-    all_results = pd.DataFrame()
-dtypes = [np.float32]
+def main(args):
 
-for function_name, fixed_kwargs, var_kwargs, allow_color, allow_nd in [
-    # _gaussian.py
-    (
-        "label",
-        dict(return_num=False, background=0),
-        dict(connectivity=[1, 2]),
-        False,
-        True,
-    ),
-    # regionprops.py
-    ("regionprops", dict(), dict(), False, True),
-]:
+    pfile = "cucim_measure_results.pickle"
+    if os.path.exists(pfile):
+        with open(pfile, "rb") as f:
+            all_results = pickle.load(f)
+    else:
+        all_results = pd.DataFrame()
 
-    for shape in [(512, 512), (3840, 2160), (3840, 2160, 3), (192, 192, 192)]:
+    dtypes = [np.dtype(args.dtype)]
+    # image sizes/shapes
+    shape = tuple(list(map(int,(args.img_size.split(',')))))
+    run_cpu = not args.no_cpu
 
-        ndim = len(shape)
-        if not allow_nd:
-            if allow_color:
-                if ndim > 2:
-                    continue
-            else:
-                if ndim > 3 or (ndim == 3 and shape[-1] not in [3, 4]):
-                    continue
-        if shape[-1] == 3 and not allow_color:
-            continue
-
-        Tester = LabelBench if function_name == "label" else RegionpropsBench
-
-        for contiguous_labels in [True, False]:
-            if contiguous_labels:
-                index_str = f"contiguous"
-            else:
-                index_str = None
-            B = Tester(
-                function_name=function_name,
-                shape=shape,
-                dtypes=dtypes,
-                contiguous_labels=contiguous_labels,
-                index_str=index_str,
-                fixed_kwargs=fixed_kwargs,
-                var_kwargs=var_kwargs,
-                module_cpu=skimage.measure,
-                module_gpu=cucim.skimage.measure,
-            )
-            results = B.run_benchmark(duration=1)
-            all_results = pd.concat([all_results, results["full"]])
-
-
-for function_name, fixed_kwargs, var_kwargs, allow_color, allow_nd in [
-    # _moments.py
-    ("moments", dict(), dict(order=[1, 2, 3, 4]), False, False),
-    ("moments_central", dict(), dict(order=[1, 2, 3]), False, True),
-    # omited from benchmarks (only tiny arrays): moments_normalized, moments_hu
-    ("centroid", dict(), dict(), False, True),
-    ("inertia_tensor", dict(), dict(), False, True),
-    ("inertia_tensor_eigvals", dict(), dict(), False, True),
-    # _polygon.py
-    # TODO: approximate_polygon, subdivide_polygon
-    # block.py
-    (
-        "block_reduce",
-        dict(),
-        dict(
-            func=[
-                cp.sum,
-            ]
+    for function_name, fixed_kwargs, var_kwargs, allow_color, allow_nd in [
+        # _gaussian.py
+        (
+            "label",
+            dict(return_num=False, background=0),
+            dict(connectivity=[1, 2]),
+            False,
+            True,
         ),
-        True,
-        True,
-    ),  # variable block_size configured below
-    # entropy.py
-    ("shannon_entropy", dict(base=2), dict(), True, True),
-    # profile.py
-    (
-        "profile_line",
-        dict(src=(5, 7)),
-        dict(reduce_func=[cp.mean], linewidth=[1, 2, 4], order=[1, 3]),
-        True,
-        False,
-    ),  # variable block_size configured below
-]:
+        # regionprops.py
+        ("regionprops", dict(), dict(), False, True),
+        # _moments.py
+        ("moments", dict(), dict(order=[1, 2, 3, 4]), False, False),
+        ("moments_central", dict(), dict(order=[1, 2, 3]), False, True),
+        # omited from benchmarks (only tiny arrays): moments_normalized, moments_hu
+        ("centroid", dict(), dict(), False, True),
+        ("inertia_tensor", dict(), dict(), False, True),
+        ("inertia_tensor_eigvals", dict(), dict(), False, True),
+        # _polygon.py
+        # TODO: approximate_polygon, subdivide_polygon
+        # block.py
+        (
+            "block_reduce",
+            dict(),
+            dict(
+                func=[
+                    cp.sum,
+                ]
+            ),
+            True,
+            True,
+        ),  # variable block_size configured below
+        # entropy.py
+        ("shannon_entropy", dict(base=2), dict(), True, True),
+        # profile.py
+        (
+            "profile_line",
+            dict(src=(5, 7)),
+            dict(reduce_func=[cp.mean], linewidth=[1, 2, 4], order=[1, 3]),
+            True,
+            False,
+        ),  # variable block_size configured below
+    ]:
 
-    for shape in [(512, 512), (3840, 2160), (3840, 2160, 3), (192, 192, 192)]:
+        if function_name != args.func_name:
+            continue
 
         ndim = len(shape)
         if not allow_nd:
@@ -230,49 +204,94 @@ for function_name, fixed_kwargs, var_kwargs, allow_color, allow_nd in [
         if shape[-1] == 3 and not allow_color:
             continue
 
-        if function_name == "gabor" and np.prod(shape) > 1000000:
-            # avoid cases that are too slow on the CPU
-            var_kwargs["frequency"] = [f for f in var_kwargs["frequency"] if f >= 0.1]
+        if function_name in ['label', 'regionprops']:
 
-        if function_name == "block_reduce":
-            ndim = len(shape)
-            if shape[-1] == 3:
-                block_sizes = [(b,) * (ndim - 1) + (3,) for b in (16, 32, 64)]
-            else:
-                block_sizes = [(b,) * ndim for b in (16, 32, 64)]
-            var_kwargs["block_size"] = block_sizes
+            Tester = LabelBench if function_name == "label" else RegionpropsBench
 
-        if function_name == "profile_line":
-            fixed_kwargs["dst"] = (shape[0] - 32, shape[1] + 9)
-
-        if function_name == "median":
-            footprints = []
-            ndim = len(shape)
-            footprint_sizes = [3, 5, 7, 9] if ndim == 2 else [3, 5, 7]
-            for footprint_size in [3, 5, 7, 9]:
-                footprints.append(
-                    np.ones((footprint_sizes,) * ndim, dtype=bool)
+            for contiguous_labels in [True, False]:
+                if contiguous_labels:
+                    index_str = f"contiguous"
+                else:
+                    index_str = None
+                B = Tester(
+                    function_name=function_name,
+                    shape=shape,
+                    dtypes=dtypes,
+                    contiguous_labels=contiguous_labels,
+                    index_str=index_str,
+                    fixed_kwargs=fixed_kwargs,
+                    var_kwargs=var_kwargs,
+                    module_cpu=skimage.measure,
+                    module_gpu=cucim.skimage.measure,
+                    run_cpu=run_cpu,
                 )
-            var_kwargs["footprint"] = footprints
-
-        if function_name in ["gaussian", "unsharp_mask"]:
-            fixed_kwargs["channel_axis"] = -1 if shape[-1] == 3 else None
-
-        B = FiltersBench(
-            function_name=function_name,
-            shape=shape,
-            dtypes=dtypes,
-            fixed_kwargs=fixed_kwargs,
-            var_kwargs=var_kwargs,
-            module_cpu=skimage.measure,
-            module_gpu=cucim.skimage.measure,
-        )
-        results = B.run_benchmark(duration=1)
-        all_results = pd.concat([all_results, results["full"]])
+                results = B.run_benchmark(duration=1)
+                all_results = pd.concat([all_results, results["full"]])
+        else:
 
 
-fbase = os.path.splitext(pfile)[0]
-all_results.to_csv(fbase + ".csv")
-all_results.to_pickle(pfile)
-with open(fbase + ".md", "wt") as f:
-    f.write(all_results.to_markdown())
+            if function_name == "gabor" and np.prod(shape) > 1000000:
+                # avoid cases that are too slow on the CPU
+                var_kwargs["frequency"] = [f for f in var_kwargs["frequency"] if f >= 0.1]
+
+            if function_name == "block_reduce":
+                ndim = len(shape)
+                if shape[-1] == 3:
+                    block_sizes = [(b,) * (ndim - 1) + (3,) for b in (16, 32, 64)]
+                else:
+                    block_sizes = [(b,) * ndim for b in (16, 32, 64)]
+                var_kwargs["block_size"] = block_sizes
+
+            if function_name == "profile_line":
+                fixed_kwargs["dst"] = (shape[0] - 32, shape[1] + 9)
+
+            if function_name == "median":
+                footprints = []
+                ndim = len(shape)
+                footprint_sizes = [3, 5, 7, 9] if ndim == 2 else [3, 5, 7]
+                for footprint_size in [3, 5, 7, 9]:
+                    footprints.append(
+                        np.ones((footprint_sizes,) * ndim, dtype=bool)
+                    )
+                var_kwargs["footprint"] = footprints
+
+            if function_name in ["gaussian", "unsharp_mask"]:
+                fixed_kwargs["channel_axis"] = -1 if shape[-1] == 3 else None
+
+            B = FiltersBench(
+                function_name=function_name,
+                shape=shape,
+                dtypes=dtypes,
+                fixed_kwargs=fixed_kwargs,
+                var_kwargs=var_kwargs,
+                module_cpu=skimage.measure,
+                module_gpu=cucim.skimage.measure,
+                run_cpu=run_cpu,
+            )
+            results = B.run_benchmark(duration=1)
+            all_results = pd.concat([all_results, results["full"]])
+
+    fbase = os.path.splitext(pfile)[0]
+    all_results.to_csv(fbase + ".csv")
+    all_results.to_pickle(pfile)
+    try:
+        import tabulate
+
+        with open(fbase + ".md", "wt") as f:
+            f.write(all_results.to_markdown())
+    except ImportError:
+        pass
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Benchmarking cuCIM measure functions')
+    func_name_choices = ['label', 'regionprops', 'moments', 'moments_central', 'centroid', 'inertia_tensor', 'inertia_tensor_eigvals', 'block_reduce', 'shannon_entropy', 'profile_line']
+    dtype_choices = ['float16', 'float32', 'float64', 'int8', 'int16', 'int32', 'int64', 'uint8', 'uint16', 'uint32', 'uint64']
+    parser.add_argument('-i','--img_size', type=str, help='Size of input image', required=True)
+    parser.add_argument('-d','--dtype', type=str, help='Dtype of input image', choices=dtype_choices, required=True)
+    parser.add_argument('-f','--func_name', type=str, help='function to benchmark', choices=func_name_choices, required=True)
+    parser.add_argument('-t','--duration', type=int, help='time to run benchmark', required=True)
+    parser.add_argument('--no_cpu', action='store_true', help='disable cpu measurements', default=False)
+
+    args = parser.parse_args()
+    main(args)
