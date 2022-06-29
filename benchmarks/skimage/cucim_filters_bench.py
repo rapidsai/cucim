@@ -19,9 +19,7 @@ def main(args):
             all_results = pickle.load(f)
     else:
         all_results = pd.DataFrame()
-    # dyptes
-    dtype_dict = {'fp64': np.float64, 'fp32': np.float32, 'fp16': np.float16, 'int8': np.int8}
-    dtypes = [dtype_dict[args.dtype]]
+    dtypes = [np.dtype(args.dtype)]
 
     for function_name, fixed_kwargs, var_kwargs, allow_color, allow_nd in [
         # _gabor.py
@@ -181,9 +179,10 @@ def main(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Benchmarking cuCIM Filters')
     func_name_choices = ['gabor', 'gaussian', 'median', 'rank_order', 'unsharp_mask', 'sobel', 'prewitt', 'scharr', 'roberts', 'roberts_pos_diag', 'roberts_neg_diag', 'farid', 'laplace', 'meijering', 'sato', 'frangi', 'hessian', 'threshold_isodata', 'threshold_otsu', 'threshold_yen', 'threshold_local', 'threshold_li', 'threshold_minimum', 'threshold_mean', 'threshold_triangle', 'threshold_niblack', 'threshold_sauvola', 'apply_hysteresis_threshold', 'threshold_multiotsu']
+    dtype_choices = ['float16', 'float32', 'float64', 'int8', 'int16', 'int32', 'int64', 'uint8', 'uint16', 'uint32', 'uint64']
     parser.add_argument('-i','--img_size', type=str, help='Size of input image', required=True)
-    parser.add_argument('-d','--dtype', type=str, help='Dtype of input image', choices = ['fp64','fp32','fp16', 'int8'], required=True)
-    parser.add_argument('-f','--func_name', type=str, help='function to benchmark', choices = func_name_choices, required=True)
+    parser.add_argument('-d','--dtype', type=str, help='Dtype of input image', choices=dtype_choices, required=True)
+    parser.add_argument('-f','--func_name', type=str, help='function to benchmark', choices=func_name_choices, required=True)
     parser.add_argument('-t','--duration', type=int, help='time to run benchmark', required=True)
     parser.add_argument('--no_cpu', action='store_true', help='disable cpu measurements', default=False)
 
