@@ -1,3 +1,4 @@
+import argparse
 import math
 import os
 import pickle
@@ -27,6 +28,7 @@ class LabelBench(ImageBench):
         index_str=None,
         module_cpu=skimage.measure,
         module_gpu=cucim.skimage.measure,
+        run_cpu=True,
     ):
 
         self.contiguous_labels = contiguous_labels
@@ -40,6 +42,7 @@ class LabelBench(ImageBench):
             index_str=index_str,
             module_cpu=module_cpu,
             module_gpu=module_gpu,
+            run_cpu=run_cpu,
         )
 
     def set_args(self, dtype):
@@ -52,7 +55,7 @@ class LabelBench(ImageBench):
             ],
             dtype=dtype,
         )
-        tiling = tuple(s // a_s for s, a_s in zip(shape, a.shape))
+        tiling = tuple(s // a_s for s, a_s in zip(self.shape, a.shape))
         if self.contiguous_labels:
             labels = np.kron(a, np.ones(tiling, dtype=a.dtype))
         else:
@@ -74,7 +77,7 @@ class LabelAndImageBench(LabelBench):
             ],
             dtype=dtype,
         )
-        tiling = tuple(s // a_s for s, a_s in zip(shape, a.shape))
+        tiling = tuple(s // a_s for s, a_s in zip(self.shape, a.shape))
         if self.contiguous_labels:
             labels = np.kron(a, np.ones(tiling, dtype=a.dtype))
         else:
@@ -147,57 +150,83 @@ class RandomWalkerBench(ImageBench):
         self.args_gpu = (data, markers)
 
 
-pfile = "cucim_segmentation_results.pickle"
-if os.path.exists(pfile):
-    with open(pfile, "rb") as f:
-        all_results = pickle.load(f)
-else:
-    all_results = pd.DataFrame()
 
-dtypes = [np.int32]
-for function_name, fixed_kwargs, var_kwargs, allow_color, allow_nd in [
-    # _clear_border.py
-    (
-        "clear_border",
-        dict(),
-        dict(),
-        False,
-        True,
-    ),
-    # _join.py
-    (
-        "relabel_sequential",
-        dict(offset=5),
-        dict(),
-        False,
-        True,
-    ),
-    # boundaries.py
-    (
-        "find_boundaries",
-        dict(),
-        dict(connectivity=[1], mode=["thick", "inner", "outer", "subpixel"]),
-        False,
-        True,
-    ),
-    (
-        "mark_boundaries",
-        dict(),
-        dict(),
-        False,
-        True,
-    ),
-    (
-        "random_walker",
-        dict(beta=4, tol=1.e-4, prob_tol=1.e-2),
-        dict(mode=['cg', 'cg_j']),
-        False,
-        True,
-    ),
-]:
+def main(args):
 
-    for shape in [
-        (64, 64), (512, 512), (1980, 1080), (1980, 1080, 3), (128, 128, 128)]:
+    pfile = "cucim_segmentation_results.pickle"
+    if os.path.exists(pfile):
+        with open(pfile, "rb") as f:
+            all_results = pickle.load(f)
+    else:
+        all_results = pd.DataFrame()
+
+    dtypes = [np.dtype(args.dtype)]
+    dtypes_label = [np.dtype(args.dtype_label)]
+    # image sizes/shapes
+    shape = tuple(list(map(int,(args.img_size.split(',')))))
+    run_cpu = not args.no_cpu
+
+    for function_name, fixed_kwargs, var_kwargs, allow_color, allow_nd in [
+        # _clear_border.py
+        (
+            "clear_border",
+            dict(),
+            dict(),
+            False,
+            True,
+        ),
+        # _join.py
+        (
+            "relabel_sequential",
+            dict(offset=5),
+            dict(),
+            False,
+            True,
+        ),
+        # boundaries.py
+        (
+            "find_boundaries",
+            dict(),
+            dict(connectivity=[1], mode=["thick", "inner", "outer", "subpixel"]),
+            False,
+            True,
+        ),
+        (
+            "mark_boundaries",
+            dict(),
+            dict(),
+            False,
+            True,
+        ),
+        (
+            "random_walker",
+            dict(beta=4, tol=1.e-4, prob_tol=1.e-2),
+            dict(mode=['cg', 'cg_j']),
+            False,
+            True,
+        ),
+        # morphsnakes.py
+        ("inverse_gaussian_gradient", dict(), dict(), False, True),
+        (
+            "morphological_geodesic_active_contour",
+            dict(),
+            dict(num_iter=[16], init_level_set=["checkerboard", "disk"]),
+            False,
+            False,
+        ),
+        (
+            "morphological_chan_vese",
+            dict(),
+            dict(num_iter=[16], init_level_set=["checkerboard", "disk"]),
+            False,
+            False,
+        ),
+        # omit: disk_level_set (simple array generation function)
+        # omit: checkerboard_level_set (simple array generation function)
+    ]:
+
+        if function_name != args.func_name:
+            continue
 
         ndim = len(shape)
         if not allow_nd:
@@ -210,91 +239,74 @@ for function_name, fixed_kwargs, var_kwargs, allow_color, allow_nd in [
         if shape[-1] == 3 and not allow_color:
             continue
 
-        if function_name == 'random_walker':
-            fixed_kwargs['channel_axis'] = -1 if shape[-1] == 3 else None
+        if function_name in ["clear_border", "relabel_sequential", "find_boundaries", "mark_boundaries", "random_walker"]:
 
-        if function_name == 'mark_boundaries':
-            bench_func = LabelAndImageBench
-        elif function_name == 'random_walker':
-            bench_func = RandomWalkerBench
-        else:
-            bench_func = LabelBench
+            if function_name == 'random_walker':
+                fixed_kwargs['channel_axis'] = -1 if shape[-1] == 3 else None
 
-        B = bench_func(
-            function_name=function_name,
-            shape=shape,
-            dtypes=dtypes,
-            fixed_kwargs=fixed_kwargs,
-            var_kwargs=var_kwargs,
-            module_cpu=skimage.segmentation,
-            module_gpu=cucim.skimage.segmentation,
-        )
-        results = B.run_benchmark(duration=1)
-        all_results = pd.concat([all_results, results["full"]])
-
-
-dtypes = [np.float32]
-# function_name, fixed_kwargs, var_kwargs, allow_color, allow_nd = ('unsupervised_wiener', dict(), dict(), False, True)
-for function_name, fixed_kwargs, var_kwargs, allow_color, allow_nd in [
-    # morphsnakes.py
-    ("inverse_gaussian_gradient", dict(), dict(), False, True),
-    (
-        "morphological_geodesic_active_contour",
-        dict(),
-        dict(num_iter=[16], init_level_set=["checkerboard", "disk"]),
-        False,
-        False,
-    ),
-    (
-        "morphological_chan_vese",
-        dict(),
-        dict(num_iter=[16], init_level_set=["checkerboard", "disk"]),
-        False,
-        False,
-    ),
-    # omit: disk_level_set (simple array generation function)
-    # omit: checkerboard_level_set (simple array generation function)
-
-]:
-
-    for shape in [(512, 512), ]: # (3840, 2160), (3840, 2160, 3), (192, 192, 192)]:
-
-        ndim = len(shape)
-        if not allow_nd:
-            if not allow_color:
-                if ndim > 2:
-                    continue
+            if function_name == 'mark_boundaries':
+                bench_func = LabelAndImageBench
+            elif function_name == 'random_walker':
+                bench_func = RandomWalkerBench
             else:
-                if ndim > 3 or (ndim == 3 and shape[-1] not in [3, 4]):
-                    continue
-        if shape[-1] == 3 and not allow_color:
-            continue
+                bench_func = LabelBench
 
-        if function_name == "morphological_geodesic_active_contour":
-            bench_class = MorphGeodesicBench
-        else:
-            bench_class = ImageBench
-
-        B = bench_class(
-            function_name=function_name,
-            shape=shape,
-            dtypes=dtypes,
-            fixed_kwargs=fixed_kwargs,
-            var_kwargs=var_kwargs,
-            module_cpu=skimage.segmentation,
-            module_gpu=cucim.skimage.segmentation,
-        )
-        results = B.run_benchmark(duration=1)
-        all_results = pd.concat([all_results, results["full"]])
+            B = bench_func(
+                function_name=function_name,
+                shape=shape,
+                dtypes=dtypes_label,
+                fixed_kwargs=fixed_kwargs,
+                var_kwargs=var_kwargs,
+                module_cpu=skimage.segmentation,
+                module_gpu=cucim.skimage.segmentation,
+            )
+            results = B.run_benchmark(duration=1)
+            all_results = pd.concat([all_results, results["full"]])
 
 
-fbase = os.path.splitext(pfile)[0]
-all_results.to_csv(fbase + ".csv")
-all_results.to_pickle(pfile)
-try:
-    import tabulate
+        if function_name in ["inverse_gaussian_gradient", "morphological_geodesic_active_contour", "morphological_chan_vese"]:
 
-    with open(fbase + ".md", "wt") as f:
-        f.write(all_results.to_markdown())
-except ImportError:
-    pass
+            if function_name == "morphological_geodesic_active_contour":
+                bench_class = MorphGeodesicBench
+            else:
+                bench_class = ImageBench
+
+            B = bench_class(
+                function_name=function_name,
+                shape=shape,
+                dtypes=dtypes,
+                fixed_kwargs=fixed_kwargs,
+                var_kwargs=var_kwargs,
+                module_cpu=skimage.segmentation,
+                module_gpu=cucim.skimage.segmentation,
+            )
+            results = B.run_benchmark(duration=1)
+            all_results = pd.concat([all_results, results["full"]])
+
+
+    fbase = os.path.splitext(pfile)[0]
+    all_results.to_csv(fbase + ".csv")
+    all_results.to_pickle(pfile)
+    try:
+        import tabular
+
+        with open(fbase + ".md", "wt") as f:
+            f.write(all_results.to_markdown())
+    except ImportError:
+        pass
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Benchmarking cuCIM segmentation functions')
+    func_name_choices = ["clear_border", "relabel_sequential", "find_boundaries", "mark_boundaries", "random_walker", "inverse_gaussian_gradient", "morphological_geodesic_active_contour", "morphological_chan_vese"]
+    label_dtype_choices = ['int8', 'int16', 'int32', 'int64', 'uint8', 'uint16', 'uint32', 'uint64']
+    dtype_choices = ['float16', 'float32', 'float64', 'int8', 'int16', 'int32', 'int64', 'uint8', 'uint16', 'uint32', 'uint64']
+    parser.add_argument('-i','--img_size', type=str, help='Size of input image (omit color channel, it will be appended as needed)', required=True)
+    parser.add_argument('-d','--dtype', type=str, help='Dtype of input image', choices = dtype_choices, required=True)
+    parser.add_argument('--dtype_label', type=str, help='Dtype of input image', choices = label_dtype_choices, required=False, default='uint8')
+    parser.add_argument('-f','--func_name', type=str, help='function to benchmark', choices = func_name_choices, required=True)
+    parser.add_argument('-t','--duration', type=int, help='time to run benchmark', required=True)
+    parser.add_argument('--no_cpu', action='store_true', help='disable cpu measurements', default=False)
+
+    args = parser.parse_args()
+    main(args)
