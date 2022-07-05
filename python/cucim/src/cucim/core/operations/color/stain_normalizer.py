@@ -209,9 +209,7 @@ def _covariance(a):
     ddof = 1
     fact = X.shape[1] - ddof
     if fact <= 0:
-        warnings.warn("Degrees of freedom <= 0 for slice",
-                      RuntimeWarning, stacklevel=2)
-        fact = 0.0
+        raise RuntimeError("Degrees of freedom <= 0")
 
     X -= X.mean(axis=1, keepdims=True)
     if not X.flags.f_contiguous:
@@ -315,9 +313,9 @@ def stain_extraction_pca(image, source_intensity=240, alpha=1, beta=0.345,
 
     # remove transparent pixels
     absorbance = absorbance[:, cp.all(absorbance > beta, axis=0)]
-    if absorbance.size == 0:
-        raise ValueError(
-            "All pixels of the input image are below the threshold."
+    if absorbance.size == 0 or absorbance.shape[1] <= 1:
+        raise RuntimeError(
+            "Multiple pixels of the input must be above the `beta` threshold."
         )
 
     # compute eigenvectors (do small 3x3 matrix calculations on the host)
