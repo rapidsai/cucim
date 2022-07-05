@@ -534,8 +534,8 @@ def normalize_colors_pca(
     image_norm = _normalized_from_concentrations(
         conc_raw=conc_raw,
         max_percentile=100 - alpha,
-        ref_max_conc=cp.asarray(ref_max_conc),
-        ref_stain_coeff=cp.asarray(ref_stain_coeff),
+        ref_max_conc=cp.asarray(ref_max_conc, dtype=conc_raw.dtype),
+        ref_stain_coeff=cp.asarray(ref_stain_coeff, dtype=conc_raw.dtype),
         source_intensity=source_intensity,
         channel_axis=channel_axis,
         original_shape=image.shape,
