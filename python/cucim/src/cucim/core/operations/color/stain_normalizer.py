@@ -383,7 +383,10 @@ def _get_raw_concentrations(src_stain_coeff, absorbance):
 def _normalized_from_concentrations(conc_raw, max_percentile, ref_stain_coeff,
                                     ref_max_conc, source_intensity,
                                     original_shape, channel_axis):
-    """Determine normalized image from concentrations."""
+    """Determine normalized image from concentrations.
+
+    Note: This function will also modify conc_raw in-place.
+    """
 
     # verify conc_raw is shape (2, n_pixels)
     if conc_raw.ndim != 2 or conc_raw.shape[0] != 2:
@@ -410,10 +413,14 @@ def _normalized_from_concentrations(conc_raw, max_percentile, ref_stain_coeff,
          for ch_raw in conc_raw]
     )
     normalization_factors = ref_max_conc / max_conc
-    conc_norm = conc_raw * normalization_factors[:, cp.newaxis]
+    # convert normalization factors to same precsision as conc_norm
+    # normalization_factors = normalization_factors.astype(
+    #     conc_raw.dtype, copy=False
+    # )
+    conc_raw *= normalization_factors[:, cp.newaxis]
 
     # reconstruct the image based on the reference stain matrix
-    absorbance_norm = ref_stain_coeff.dot(conc_norm)
+    absorbance_norm = ref_stain_coeff.dot(conc_raw)
     image_norm = absorbance_to_image(
         absorbance_norm, source_intensity=source_intensity, dtype=np.uint8
     )
@@ -534,3 +541,4 @@ def normalize_colors_pca(
         original_shape=image.shape,
     )
     return image_norm
+
