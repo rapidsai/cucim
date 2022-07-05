@@ -413,10 +413,6 @@ def _normalized_from_concentrations(conc_raw, max_percentile, ref_stain_coeff,
          for ch_raw in conc_raw]
     )
     normalization_factors = ref_max_conc / max_conc
-    # convert normalization factors to same precsision as conc_norm
-    # normalization_factors = normalization_factors.astype(
-    #     conc_raw.dtype, copy=False
-    # )
     conc_raw *= normalization_factors[:, cp.newaxis]
 
     # reconstruct the image based on the reference stain matrix
