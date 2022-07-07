@@ -574,21 +574,8 @@ def _get_kernel_params(image, footprint_shape, value_range='auto',
     hist_size = max(hist_size, 32)
 
     if hist_size_coarse is None:
-        if hist_size < 256:
-            hist_size_coarse = 4   # tests pass for 2, 4 or 8 only.
-        elif hist_size == 256:
-            hist_size_coarse = 8   # tests pass for 2, 4, 8 or 16. fail for 32.
-        elif hist_size == 512:
-            hist_size_coarse = 16   # tests pass for 2, 4, 8 or 16. fail for 32.
-        elif hist_size < 4096:
-            hist_size_coarse = 32  # tests pass for 2, 4, 8, 16 or 32.
-        elif hist_size <= 65536:
-            hist_size_coarse = 64
-        else:
-            raise KernelResourceError(
-                "More than 65536 bins is currently untested due to excessive "
-                "shared memory requirements."
-            )
+        # Empirically, robust to choose 32-fold less bins for hist_size coarse
+        hist_size_coarse = hist_size // 32
 
     # have to set block[0] large enough that histogramMedianParFineLookupOnly
     # and histogramMedianParCoarseLookupOnly search sizes fit within the number
