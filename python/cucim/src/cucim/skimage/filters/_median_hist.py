@@ -567,7 +567,7 @@ def _get_kernel_params(image, footprint_shape, value_range='auto',
             )
         minv, maxv = value_range
 
-    hist_offset = -min(minv, 0)
+    hist_offset = -minv
     hist_size = maxv - minv + 1
     # round hist_size up to the nearest power of 2
     hist_size = round(2**math.ceil(math.log2(hist_size)))
