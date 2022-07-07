@@ -588,6 +588,7 @@ def _get_kernel_params(image, footprint_shape, value_range='auto',
     # multiple of 32.
     hist_size_fine = hist_size // hist_size_coarse
     hist_size_max = max(hist_size_fine, hist_size_coarse)
+    # block0 must be at least the warp size
     block0 = 32 * math.ceil(hist_size_max / 32)
     if block0 > 256:
         d = cp.cuda.Device()
@@ -609,7 +610,6 @@ def _get_kernel_params(image, footprint_shape, value_range='auto',
         partitions = min(partitions, image.shape[0])
 
     grid = (partitions, 1, 1)
-    # block[0] must be at least the warp size
     block = (block0, 1, 1)
 
     hist_int_t, hist_dtype = _get_hist_dtype(footprint_shape)
