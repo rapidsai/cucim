@@ -567,8 +567,12 @@ def _get_kernel_params(image, footprint_shape, value_range='auto',
             )
         minv, maxv = value_range
 
-    hist_offset = -minv
+    if image.dtype.kind == 'u':
+        # cannot subtract a positive offset in the unsigned case
+        minv = min(minv, 0)
+    hist_offset = 0 if minv == 0 else -minv
     hist_size = maxv - minv + 1
+    hist_size = max(hist_size, 256)  # use at least 256 bins
     # round hist_size up to the nearest power of 2
     hist_size = round(2**math.ceil(math.log2(hist_size)))
     hist_size = max(hist_size, 32)
@@ -607,8 +611,6 @@ def _get_kernel_params(image, footprint_shape, value_range='auto',
     grid = (partitions, 1, 1)
     # block[0] must be at least the warp size
     block = (block0, 1, 1)
-
-    # print(f"{hist_size=}, {hist_size_coarse=}, {block[0]=}, {hist_offset=}")
 
     hist_int_t, hist_dtype = _get_hist_dtype(footprint_shape)
 

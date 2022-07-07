@@ -76,16 +76,12 @@ def test_median_behavior(camera, behavior, func, mode, footprint_shape, out):
 
 
 @pytest.mark.parametrize(
-    'behavior, func', [('ndimage', ndimage.median_filter)],
-    # ('rank', rank.median, {'footprint': cp.ones((3, 3), dtype=cp.uint8)})]
-)
-@pytest.mark.parametrize(
     'mode', ['reflect', 'mirror', 'nearest', 'constant', 'wrap']
 )
 # use an anisotropic footprint large enough to trigger the histogram-based path
 @pytest.mark.parametrize('footprint_shape', [(3, 3), (3, 5), (15, 23)])
 @pytest.mark.parametrize(
-    'int_dtype', [cp.uint8, cp.uint16, cp.int8, cp.int16]
+    'int_dtype', [cp.uint8, cp.int8, cp.uint16, cp.int16]
 )
 @pytest.mark.parametrize(
     'algorithm', ['auto', 'histogram', 'sorting']
@@ -93,16 +89,12 @@ def test_median_behavior(camera, behavior, func, mode, footprint_shape, out):
 @pytest.mark.parametrize(
     'algorithm_kwargs', [{}, {'partitions': 32}]
 )
-@pytest.mark.parametrize(
-    'shape', [(350, 407), (35, 97), (256, 256), (2048, 1530), (16, 32)]
-)
 def test_median_hist_dtypes(
-    camera, behavior, func, mode, footprint_shape, int_dtype, algorithm,
-    algorithm_kwargs, shape,
+    mode, footprint_shape, int_dtype, algorithm, algorithm_kwargs,
 ):
     footprint = cp.ones(footprint_shape, dtype=bool)
     rng = cp.random.default_rng(123)
-    # shape = (350, 407)  # use anisotropic size
+    shape = (350, 407)
     if int_dtype == cp.uint8:
         img = rng.integers(0, 256, shape, dtype=cp.uint8)
     elif int_dtype == cp.int8:
@@ -124,9 +116,51 @@ def test_median_hist_dtypes(
     else:
         msg = []
     with expected_warnings(msg):
-        out = median(img, footprint, mode=mode, behavior=behavior,
+        out = median(img, footprint, mode=mode, behavior='ndimage',
                      algorithm=algorithm, algorithm_kwargs=algorithm_kwargs)
-    expected = func(img, size=footprint.shape, mode=mode)
+    expected = ndimage.median_filter(img, size=footprint.shape, mode=mode)
+    assert_allclose(expected, out)
+
+
+@pytest.mark.parametrize('mode', ['reflect', ])
+# use an anisotropic footprint large enough to trigger the histogram-based path
+@pytest.mark.parametrize('footprint_shape', [(7, 11)])
+@pytest.mark.parametrize(
+    'int_dtype, irange',
+    [
+        (cp.uint16, (0, 256)),
+        (cp.uint16, (0, 15)),
+        (cp.uint16, (128, 384)),
+        (cp.uint16, (0, 200)),
+        (cp.uint16, (0, 510)),
+        (cp.uint16, (500, 550)),
+        (cp.uint16, (0, 1024)),
+        (cp.uint16, (0, 2048)),
+        (cp.uint16, (1024, 3185)),
+        (cp.int16, (0, 256)),
+        (cp.int16, (-15, 15)),
+        (cp.int16, (128, 384)),
+        (cp.int16, (-128, 384)),
+        (cp.int16, (-400, 400)),
+        (cp.int16, (-1024, 2048)),
+        (cp.int16, (150, 2048)),
+    ]
+)
+def test_median_hist_16bit_offsets(mode, footprint_shape, int_dtype, irange):
+    """Make sure 16-bit cases are robust to various value ranges"""
+    footprint = cp.ones(footprint_shape, dtype=bool)
+    rng = cp.random.default_rng(123)
+    shape = (350, 407)
+    if int_dtype == cp.uint16:
+        # test with 12-bit range stored in 16-bit integers (e.g. DICOM)
+        img = rng.integers(irange[0], irange[1], shape, dtype=cp.uint16)
+    elif int_dtype == cp.int16:
+        # chose a limited range of values to test 512 hist_size case
+        img = rng.integers(irange[0], irange[1], shape, dtype=int)
+        img = img.astype(cp.int16)
+    out = median(img, footprint, mode=mode, behavior='ndimage',
+                 algorithm='histogram')
+    expected = ndimage.median_filter(img, size=footprint.shape, mode=mode)
     assert_allclose(expected, out)
 
 
