@@ -579,7 +579,7 @@ def _get_kernel_params(image, footprint_shape, value_range='auto',
         elif hist_size == 256:
             hist_size_coarse = 8   # tests pass for 2, 4, 8 or 16. fail for 32.
         elif hist_size == 512:
-            hist_size_coarse = 8   # tests pass for 2, 4, 8 or 16. fail for 32.
+            hist_size_coarse = 16   # tests pass for 2, 4, 8 or 16. fail for 32.
         elif hist_size < 4096:
             hist_size_coarse = 32  # tests pass for 2, 4, 8, 16 or 32.
         elif hist_size <= 65536:

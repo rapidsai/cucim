@@ -93,13 +93,16 @@ def test_median_behavior(camera, behavior, func, mode, footprint_shape, out):
 @pytest.mark.parametrize(
     'algorithm_kwargs', [{}, {'partitions': 32}]
 )
+@pytest.mark.parametrize(
+    'shape', [(350, 407), (35, 97), (256, 256), (2048, 1530), (16, 32)]
+)
 def test_median_hist_dtypes(
     camera, behavior, func, mode, footprint_shape, int_dtype, algorithm,
-    algorithm_kwargs
+    algorithm_kwargs, shape,
 ):
     footprint = cp.ones(footprint_shape, dtype=bool)
     rng = cp.random.default_rng(123)
-    shape = (350, 407)  # use anisotropic size
+    # shape = (350, 407)  # use anisotropic size
     if int_dtype == cp.uint8:
         img = rng.integers(0, 256, shape, dtype=cp.uint8)
     elif int_dtype == cp.int8:
