@@ -281,3 +281,9 @@ StainTools
   - https://github.com/Peter554/StainTools/blob/master/LICENSE.txt
 - Copyright: Peter Byfield
 - Usage: reference for stain color normalization algorithm
+
+PBA+
+- License: MIT License
+  - https://github.com/orzzzjq/Parallel-Banding-Algorithm-plus/blob/master/LICENSE
+- Copyright: School of Computing, National University of Singapore
+- Usage: PBA+ is used to implement the Euclidean distance transform.
