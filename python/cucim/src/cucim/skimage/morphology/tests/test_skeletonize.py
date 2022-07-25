@@ -5,7 +5,7 @@ from skimage import data
 from skimage.morphology import thin as thin_cpu
 
 from cucim.skimage._shared._warnings import expected_warnings
-from cucim.skimage.morphology import thin
+from cucim.skimage.morphology import medial_axis, thin
 
 
 class TestThin():
@@ -65,3 +65,77 @@ class TestThin():
         result = thin(cp.asarray(h))
         expected = thin_cpu(h)
         assert_array_equal(result, expected)
+
+
+class TestMedialAxis():
+    def test_00_00_zeros(self):
+        '''Test skeletonize on an array of all zeros'''
+        result = medial_axis(cp.zeros((10, 10), bool))
+        assert cp.all(result == False)
+
+    def test_00_01_zeros_masked(self):
+        '''Test skeletonize on an array that is completely masked'''
+        result = medial_axis(cp.zeros((10, 10), bool),
+                             cp.zeros((10, 10), bool))
+        assert cp.all(result == False)
+
+    def test_vertical_line(self):
+        '''Test a thick vertical line, issue #3861'''
+        img = cp.zeros((9, 9))
+        img[:, 2] = 1
+        img[:, 3] = 1
+        img[:, 4] = 1
+
+        expected = cp.full(img.shape, False)
+        expected[:, 3] = True
+
+        result = medial_axis(img)
+        assert_array_equal(result, expected)
+
+    def test_01_01_rectangle(self):
+        '''Test skeletonize on a rectangle'''
+        image = cp.zeros((9, 15), bool)
+        image[1:-1, 1:-1] = True
+        #
+        # The result should be four diagonals from the
+        # corners, meeting in a horizontal line
+        #
+        expected = cp.array([[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                             [0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0],
+                             [0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0],
+                             [0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0],
+                             [0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0],
+                             [0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0],
+                             [0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0],
+                             [0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0],
+                             [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]],
+                            dtype=bool)
+        result = medial_axis(image)
+        assert cp.all(result == expected)
+        result, distance = medial_axis(image, return_distance=True)
+        assert distance.max() == 4
+
+    def test_01_02_hole(self):
+        '''Test skeletonize on a rectangle with a hole in the middle'''
+        image = cp.zeros((9, 15), bool)
+        image[1:-1, 1:-1] = True
+        image[4, 4:-4] = False
+        expected = cp.array([[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                             [0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0],
+                             [0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0],
+                             [0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0],
+                             [0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0],
+                             [0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0],
+                             [0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0],
+                             [0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0],
+                             [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]],
+                            dtype=bool)
+        result = medial_axis(image)
+        assert cp.all(result == expected)
+
+    def test_narrow_image(self):
+        """Test skeletonize on a 1-pixel thin strip"""
+        image = cp.zeros((1, 5), bool)
+        image[:, 1:-1] = True
+        result = medial_axis(image)
+        assert cp.all(result == image)
