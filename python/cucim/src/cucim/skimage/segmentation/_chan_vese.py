@@ -412,7 +412,6 @@ def chan_vese(image, mu=0.25, lambda1=1.0, lambda2=1.0, tol=1e-3,
         old_energy = _cv_energy(image, phi, mu, lambda1, lambda2)
         energies = []
     phivar = tol + 1
-    segmentation = phi > 0
 
     while(phivar > tol and i < max_num_iter):
         # Save old level set values
