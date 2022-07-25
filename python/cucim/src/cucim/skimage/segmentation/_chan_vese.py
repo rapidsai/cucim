@@ -94,10 +94,12 @@ def _cv_calculate_averages(image, Hphi):
     Hinvsum = cp.sum(Hinv)
     avg_inside = cp.sum(image * H)
     avg_oustide = cp.sum(image * Hinv)
-    if Hsum != 0:
-        avg_inside /= Hsum
-    if Hinvsum != 0:
-        avg_oustide /= Hinvsum
+
+    eps = 10 * cp.finfo(image.dtype).eps
+    Hsum += eps
+    Hinvsum += eps
+    avg_inside /= Hsum
+    avg_oustide /= Hinvsum
     return (avg_inside, avg_oustide)
 
 
