@@ -23,55 +23,92 @@ def _cv_curvature(phi):
     return K
 
 
+@cp.fuse()
+def _fused_variance_kernel1(eta, x_start, x_mid, x_end, y_start, y_mid, y_end):
+    phixp = x_end - x_mid
+    phixn = x_mid - x_start
+    phix0 = x_end - x_start
+    phix0 /= 2.0
+    phixp *= phixp
+    phixn *= phixn
+    phix0 *= phix0
+
+    phiyp = y_end - y_mid
+    phiyn = y_mid - y_start
+    phiy0 = y_end - y_start
+    phiy0 /= 2.0
+    phiyp *= phiyp
+    phiyn *= phiyn
+    phiy0 *= phiy0
+    C1 = rsqrt(eta + phixp + phiy0)
+    C2 = rsqrt(eta + phixn + phiy0)
+    C3 = rsqrt(eta + phix0 + phiyp)
+    C4 = rsqrt(eta + phix0 + phiyn)
+
+    K = x_end * C1
+    K += x_start * C2
+    K += y_end * C3
+    K += y_start * C4
+    Csum = C1
+    Csum += C2
+    Csum += C3
+    Csum += C4
+
+    return K, Csum
+
+
+@cp.fuse()
+def _fused_hphi_hinv(phi):
+    Hphi = (phi > 0).astype(phi.dtype)
+    Hinv = 1.0 - Hphi
+    return Hphi, Hinv
+
+
+@cp.fuse()
+def _fused_variance_kernel2(
+    image, c1, c2, lam1, lam2, phi, K, dt, mu, delta_phi, Csum
+):
+    difference_term = image - c1
+    difference_term *= difference_term
+    difference_term *= -lam1
+
+    term2 = image - c2
+    term2 *= term2
+    term2 *= lam2
+    difference_term += term2
+
+    new_phi = phi + (dt * delta_phi) * (mu * K + difference_term)
+    out = new_phi / (1 + mu * dt * delta_phi * Csum)
+    return out
+
+
 def _cv_calculate_variation(image, phi, mu, lambda1, lambda2, dt):
     """Returns the variation of level set 'phi' based on algorithm parameters.
     """
     eta = 1e-16
     P = cp.pad(phi, 1, mode='edge')
 
-    # phixp = ndi.convolve1d(phi, [1, -1], axis=1, mode='nearest')
-    # phixn = ndi.convolve1d(phi, [-1, 1], axis=1, mode='nearest')
-    # phix0 = ndi.convolve1d(phi, [1, 0, -1], axis=1, mode='nearest')
-    phixp = P[1:-1, 2:] - P[1:-1, 1:-1]
-    phixn = P[1:-1, 1:-1] - P[1:-1, :-2]
-    phix0 = (P[1:-1, 2:] - P[1:-1, :-2]) / 2.0
-    phixp *= phixp
-    phixn *= phixn
-    phix0 *= phix0
+    x_end = P[1:-1, 2:]
+    x_mid = P[1:-1, 1:-1]
+    x_start = P[1:-1, :-2]
 
-    phiyp = P[2:, 1:-1] - P[1:-1, 1:-1]
-    phiyn = P[1:-1, 1:-1] - P[:-2, 1:-1]
-    phiy0 = (P[2:, 1:-1] - P[:-2, 1:-1]) / 2.0
-    phiyp *= phiyp
-    phiyn *= phiyn
-    phiy0 *= phiy0
+    y_end = P[2:, 1:-1]
+    y_mid = P[1:-1, 1:-1]
+    y_start = P[:-2, 1:-1]
 
-    C1 = rsqrt(eta + phixp + phiy0)
-    C2 = rsqrt(eta + phixn + phiy0)
-    C3 = rsqrt(eta + phix0 + phiyp)
-    C4 = rsqrt(eta + phix0 + phiyn)
-
-    K = P[1:-1, 2:] * C1
-    K += P[1:-1, :-2] * C2
-    K += P[2:, 1:-1] * C3
-    K += P[:-2, 1:-1] * C4
-    Csum = C1
-    Csum += C2
-    Csum += C3
-    Csum += C4
-    # TODO: refactor the above to compute K and Csum in a single GPU kernel
-
-    Hphi = (phi > 0).astype(phi.dtype)
-    (c1, c2) = _cv_calculate_averages(image, Hphi, 1. - Hphi)
-
-    difference_from_average_term = (- lambda1 * (image-c1)**2 +
-                                    lambda2 * (image-c2)**2)
-    new_phi = (phi + (dt*_cv_delta(phi)) *
-               (mu*K + difference_from_average_term))
-    return new_phi / (1 + mu * dt * _cv_delta(phi) * (Csum))
+    K, Csum = _fused_variance_kernel1(
+        eta, x_start, x_mid, x_end, y_start, y_mid, y_end
+    )
+    Hphi, Hinv = _fused_hphi_hinv(phi)
+    c1, c2 = _cv_calculate_averages(image, Hphi, Hinv)
+    delta_phi = _cv_delta(phi)
+    out = _fused_variance_kernel2(
+        image, c1, c2, lambda1, lambda2, phi, K, dt, mu, delta_phi, Csum
+    )
+    return out
 
 
-@cp.fuse
+@cp.fuse()
 def _cv_heavyside(x, eps=1.):
     """Returns the result of a regularised heavyside function of the
     input value(s).
@@ -79,7 +116,7 @@ def _cv_heavyside(x, eps=1.):
     return 0.5 * (1. + (2./cp.pi) * cp.arctan(x/eps))
 
 
-@cp.fuse
+@cp.fuse()
 def _cv_delta(x, eps=1.):
     """Returns the result of a regularised dirac function of the
     input value(s).
@@ -87,7 +124,7 @@ def _cv_delta(x, eps=1.):
     return eps / (eps*eps + x*x)
 
 
-@cp.fuse
+@cp.fuse()
 def _fused_inplace_eps_div(num, denom, eps):
     denom += eps
     num /= denom
