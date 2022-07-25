@@ -3,11 +3,14 @@ from itertools import cycle
 
 import cupy as cp
 import numpy as np
+from cupyx import rsqrt
 from cupyx.scipy import ndimage as ndi
 
 from cucim import _misc
-
+from .._shared._gradient import gradient
 from .._shared.utils import check_nD, deprecate_kwarg
+
+
 
 __all__ = ['morphological_chan_vese',
            'morphological_geodesic_active_contour',
@@ -176,6 +179,11 @@ def checkerboard_level_set(image_shape, square_size=5):
     return res
 
 
+@cp.fuse()
+def _fused_inverse_kernel(gradnorm, alpha):
+    return rsqrt(1.0 + alpha * gradnorm)
+
+
 def inverse_gaussian_gradient(image, alpha=100.0, sigma=5.0):
     """Inverse of gradient magnitude.
 
@@ -205,7 +213,7 @@ def inverse_gaussian_gradient(image, alpha=100.0, sigma=5.0):
         `morphological_geodesic_active_contour`.
     """
     gradnorm = ndi.gaussian_gradient_magnitude(image, sigma, mode='nearest')
-    return 1.0 / cp.sqrt(1.0 + alpha * gradnorm)
+    return _fused_inverse_kernel(gradnorm, alpha)
 
 
 @cp.fuse()
@@ -330,7 +338,7 @@ def morphological_chan_vese(image, num_iter, init_level_set='checkerboard',
         c1 /= float(u.sum() + 1e-8)
 
         # Image attachment
-        du = cp.gradient(u)
+        du = gradient(u)
         abs_du = _abs_grad_kernel(du[0], du[1])
         aux_lt0, aux_gt0 =  _fused_variance_kernel(
             image, c1, c0, lambda1, lambda2, abs_du
@@ -439,7 +447,7 @@ def morphological_geodesic_active_contour(gimage, num_iter,
         threshold = cp.percentile(image, 40)
 
     structure = cp.ones((3,) * len(image.shape), dtype=cp.int8)
-    dimage = cp.gradient(image)
+    dimage = gradient(image)
     # threshold_mask = image > threshold
     if balloon != 0:
         threshold_mask_balloon = image > threshold / cp.abs(balloon)
@@ -469,7 +477,7 @@ def morphological_geodesic_active_contour(gimage, num_iter,
 
         # Image attachment
         aux = cp.zeros_like(image)
-        du = cp.gradient(u)
+        du = gradient(u)
         for el1, el2 in zip(dimage, du):
             aux += el1 * el2
         u[aux > 0] = 1
