@@ -9,6 +9,7 @@ from itertools import combinations_with_replacement
 import cupy as cp
 from cupyx.scipy import ndimage as ndi
 
+from .._shared._gradient import gradient
 from .._shared.utils import _supported_float_type
 from ..transform import warp
 from ._optical_flow_utils import coarse_to_fine, get_warp_points
@@ -79,7 +80,7 @@ def _tvl1(reference_image, moving_image, flow0, attachment, tightness,
 
         image1_warp = warp(moving_image, get_warp_points(grid, flow_current),
                            mode='edge')
-        grad = cp.stack(cp.gradient(image1_warp))
+        grad = cp.stack(gradient(image1_warp))
         NI = (grad * grad).sum(0)
         NI[NI == 0] = 1
 
@@ -288,7 +289,7 @@ def _ilk(reference_image, moving_image, flow0, radius, num_warp, gaussian,
 
         moving_image_warp = warp(moving_image, get_warp_points(grid, flow),
                                  mode='edge')
-        grad = cp.stack(cp.gradient(moving_image_warp), axis=0)
+        grad = cp.stack(gradient(moving_image_warp), axis=0)
         error_image = ((grad * flow).sum(axis=0)
                        + reference_image - moving_image_warp)
 
