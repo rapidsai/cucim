@@ -62,7 +62,7 @@ def _cv_calculate_variation(image, phi, mu, lambda1, lambda2, dt):
     # TODO: refactor the above to compute K and Csum in a single GPU kernel
 
     Hphi = (phi > 0).astype(phi.dtype)
-    (c1, c2) = _cv_calculate_averages(image, Hphi)
+    (c1, c2) = _cv_calculate_averages(image, Hphi, 1. - Hphi)
 
     difference_from_average_term = (- lambda1 * (image-c1)**2 +
                                     lambda2 * (image-c2)**2)
@@ -71,6 +71,7 @@ def _cv_calculate_variation(image, phi, mu, lambda1, lambda2, dt):
     return new_phi / (1 + mu * dt * _cv_delta(phi) * (Csum))
 
 
+@cp.fuse
 def _cv_heavyside(x, eps=1.):
     """Returns the result of a regularised heavyside function of the
     input value(s).
@@ -78,47 +79,62 @@ def _cv_heavyside(x, eps=1.):
     return 0.5 * (1. + (2./cp.pi) * cp.arctan(x/eps))
 
 
+@cp.fuse
 def _cv_delta(x, eps=1.):
     """Returns the result of a regularised dirac function of the
     input value(s).
     """
-    return eps / (eps**2 + x**2)
+    return eps / (eps*eps + x*x)
 
 
-def _cv_calculate_averages(image, Hphi):
+@cp.fuse
+def _fused_inplace_eps_div(num, denom, eps):
+    denom += eps
+    num /= denom
+    return
+
+
+def _cv_calculate_averages(image, H, Hinv):
     """Returns the average values 'inside' and 'outside'.
     """
-    H = Hphi
-    Hinv = 1. - H
     Hsum = cp.sum(H)
     Hinvsum = cp.sum(Hinv)
     avg_inside = cp.sum(image * H)
     avg_oustide = cp.sum(image * Hinv)
 
     eps = 10 * cp.finfo(image.dtype).eps
-    Hsum += eps
-    Hinvsum += eps
-    avg_inside /= Hsum
-    avg_oustide /= Hinvsum
+    _fused_inplace_eps_div(avg_inside, Hsum, eps)
+    _fused_inplace_eps_div(avg_oustide, Hinvsum, eps)
     return (avg_inside, avg_oustide)
+
+
+@cp.fuse()
+def _fused_difference_op1(image, c, h, lam):
+    out = image - c
+    out *= out
+    out *= h
+    out *= lam
+    return out
 
 
 def _cv_difference_from_average_term(image, Hphi, lambda_pos, lambda_neg):
     """Returns the 'energy' contribution due to the difference from
     the average value within a region at each point.
     """
-    (c1, c2) = _cv_calculate_averages(image, Hphi)
     Hinv = 1. - Hphi
-    return (lambda_pos * (image-c1)**2 * Hphi +
-            lambda_neg * (image-c2)**2 * Hinv)
+    (c1, c2) = _cv_calculate_averages(image, Hphi, Hinv)
+    out = _fused_difference_op1(image, c1, Hphi, lambda_pos)
+    out += _fused_difference_op1(image, c2, Hinv, lambda_neg)
+    return out
 
 
 def _cv_edge_length_term(phi, mu):
     """Returns the 'energy' contribution due to the length of the
     edge between regions at each point, multiplied by a factor 'mu'.
     """
-    toret = _cv_curvature(phi)
-    return mu * toret
+    e = _cv_curvature(phi)
+    e *= mu
+    return e
 
 
 def _cv_energy(image, phi, mu, lambda1, lambda2):
@@ -158,12 +174,14 @@ def _cv_large_disk(image_size):
 
     The disk covers the whole image along its smallest dimension.
     """
-    res = cp.ones(image_size)
-    centerY = int((image_size[0]-1) / 2)
-    centerX = int((image_size[1]-1) / 2)
+    res = cp.ones(image_size, dtype=bool)
+    centerY = int((image_size[0] - 1) / 2)
+    centerX = int((image_size[1] - 1) / 2)
     res[centerY, centerX] = 0.
     radius = float(min(centerX, centerY))
-    return (radius - distance_transform_edt(res)) / radius
+    out = radius - distance_transform_edt(res)
+    out /= radius
+    return out
 
 
 def _cv_small_disk(image_size):
@@ -171,12 +189,14 @@ def _cv_small_disk(image_size):
 
     The disk covers half of the image along its smallest dimension.
     """
-    res = cp.ones(image_size)
-    centerY = int((image_size[0]-1) / 2)
-    centerX = int((image_size[1]-1) / 2)
+    res = cp.ones(image_size, dtype=bool)
+    centerY = int((image_size[0] - 1) / 2)
+    centerX = int((image_size[1] - 1) / 2)
     res[centerY, centerX] = 0.
     radius = float(min(centerX, centerY)) / 2.0
-    return (radius - distance_transform_edt(res)) / (radius * 3)
+    out = radius - distance_transform_edt(res)
+    out /= radius * 3
+    return out
 
 
 def _cv_init_level_set(init_level_set, image_shape, dtype=cp.float64):
@@ -351,8 +371,6 @@ def chan_vese(image, mu=0.25, lambda1=1.0, lambda2=1.0, tol=1e-3,
 
         # Calculate new level set
         phi = _cv_calculate_variation(image, phi, mu, lambda1, lambda2, dt)
-        if phi.dtype != float_dtype:
-            1 / 0
         phi = _cv_reset_level_set(phi)
         phivar = phi - oldphi
         phivar *= phivar
