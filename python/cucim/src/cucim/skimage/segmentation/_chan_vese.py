@@ -425,9 +425,11 @@ def chan_vese(image, mu=0.25, lambda1=1.0, lambda2=1.0, tol=1e-3,
         phivar = cp.sqrt(phivar.mean())
 
         if extended_output:
-            # Extract energy and compare to previous level set and
-            # segmentation to see if continuing is necessary
+            # Extract energy
             new_energy = _cv_energy(image, phi, mu, lambda1, lambda2)
+
+            # Could compare energy to the previous level set to see if
+            # continuing is necessary
 
             # Save old energy values
             energies.append(old_energy)
