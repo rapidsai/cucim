@@ -40,6 +40,7 @@ def _fused_variance_kernel1(eta, x_start, x_mid, x_end, y_start, y_mid, y_end):
     phiyp *= phiyp
     phiyn *= phiyn
     phiy0 *= phiy0
+
     C1 = rsqrt(eta + phixp + phiy0)
     C2 = rsqrt(eta + phixn + phiy0)
     C3 = rsqrt(eta + phix0 + phiyp)
@@ -49,6 +50,7 @@ def _fused_variance_kernel1(eta, x_start, x_mid, x_end, y_start, y_mid, y_end):
     K += x_start * C2
     K += y_end * C3
     K += y_start * C4
+
     Csum = C1
     Csum += C2
     Csum += C3
@@ -181,13 +183,6 @@ def _cv_energy(image, phi, mu, lambda1, lambda2):
     avgenergy = _cv_difference_from_average_term(image, H, lambda1, lambda2)
     lenenergy = _cv_edge_length_term(phi, mu)
     return cp.sum(avgenergy) + cp.sum(lenenergy)
-
-
-def _cv_reset_level_set(phi):
-    """This is a placeholder function as resetting the level set is not
-    strictly necessary, and has not been done for this implementation.
-    """
-    return phi
 
 
 def _cv_checkerboard(image_size, square_size, dtype=cp.float64):
@@ -408,7 +403,6 @@ def chan_vese(image, mu=0.25, lambda1=1.0, lambda2=1.0, tol=1e-3,
 
         # Calculate new level set
         phi = _cv_calculate_variation(image, phi, mu, lambda1, lambda2, dt)
-        phi = _cv_reset_level_set(phi)
         phivar = phi - oldphi
         phivar *= phivar
         phivar = cp.sqrt(phivar.mean())
