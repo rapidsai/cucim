@@ -8,18 +8,34 @@ from .._shared.utils import _supported_float_type, deprecate_kwarg
 from cupyx import rsqrt  # reciprocal sqrt
 
 
+@cp.fuse()
+def _fused_curvature(phi, x_start, x_end, y_start, y_end, ul, ur, ll, lr):
+    fy = (y_end - y_start) / 2.0
+    fx = (x_end - x_start) / 2.0
+    fyy = y_end + y_start - 2*phi
+    fxx = x_end + x_start - 2*phi
+    fxy = .25 * (lr + ul - ur - ll)
+    grad2 = fx**2 + fy**2
+    K = (fxx*fy**2 - 2*fxy*fx*fy + fyy*fx**2)
+    K /= (grad2 * cp.sqrt(grad2) + 1e-8)
+    return K
+
+
 def _cv_curvature(phi):
     """Returns the 'curvature' of a level set 'phi'.
     """
     P = cp.pad(phi, 1, mode='edge')
-    fy = (P[2:, 1:-1] - P[:-2, 1:-1]) / 2.0
-    fx = (P[1:-1, 2:] - P[1:-1, :-2]) / 2.0
-    fyy = P[2:, 1:-1] + P[:-2, 1:-1] - 2*phi
-    fxx = P[1:-1, 2:] + P[1:-1, :-2] - 2*phi
-    fxy = .25 * (P[2:, 2:] + P[:-2, :-2] - P[:-2, 2:] - P[2:, :-2])
-    grad2 = fx**2 + fy**2
-    K = ((fxx*fy**2 - 2*fxy*fx*fy + fyy*fx**2) /
-         (grad2*cp.sqrt(grad2) + 1e-8))
+    y_start = P[:-2, 1:-1]
+    y_end = P[2:, 1:-1]
+    x_start = P[1:-1, :-2]
+    x_end = P[1:-1, 2:]
+
+    lower_right = P[2:, 2:]
+    lower_left = P[2:, :-2]
+    upper_right = P[:-2, 2:]
+    upper_left = P[:-2, :-2]
+    K = _fused_curvature(phi, x_start, x_end, y_start, y_end, upper_left,
+                         upper_right, lower_left, lower_right)
     return K
 
 
