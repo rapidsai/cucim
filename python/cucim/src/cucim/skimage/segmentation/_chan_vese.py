@@ -5,6 +5,8 @@ from cucim.core.operations.morphology import distance_transform_edt
 
 from .._shared.utils import _supported_float_type, deprecate_kwarg
 
+from cupyx import rsqrt  # reciprocal sqrt
+
 
 def _cv_curvature(phi):
     """Returns the 'curvature' of a level set 'phi'.
@@ -33,18 +35,31 @@ def _cv_calculate_variation(image, phi, mu, lambda1, lambda2, dt):
     phixp = P[1:-1, 2:] - P[1:-1, 1:-1]
     phixn = P[1:-1, 1:-1] - P[1:-1, :-2]
     phix0 = (P[1:-1, 2:] - P[1:-1, :-2]) / 2.0
+    phixp *= phixp
+    phixn *= phixn
+    phix0 *= phix0
 
     phiyp = P[2:, 1:-1] - P[1:-1, 1:-1]
     phiyn = P[1:-1, 1:-1] - P[:-2, 1:-1]
     phiy0 = (P[2:, 1:-1] - P[:-2, 1:-1]) / 2.0
+    phiyp *= phiyp
+    phiyn *= phiyn
+    phiy0 *= phiy0
 
-    C1 = 1. / cp.sqrt(eta + phixp**2 + phiy0**2)
-    C2 = 1. / cp.sqrt(eta + phixn**2 + phiy0**2)
-    C3 = 1. / cp.sqrt(eta + phix0**2 + phiyp**2)
-    C4 = 1. / cp.sqrt(eta + phix0**2 + phiyn**2)
+    C1 = rsqrt(eta + phixp + phiy0)
+    C2 = rsqrt(eta + phixn + phiy0)
+    C3 = rsqrt(eta + phix0 + phiyp)
+    C4 = rsqrt(eta + phix0 + phiyn)
 
-    K = (P[1:-1, 2:] * C1 + P[1:-1, :-2] * C2 +
-         P[2:, 1:-1] * C3 + P[:-2, 1:-1] * C4)
+    K = P[1:-1, 2:] * C1
+    K += P[1:-1, :-2] * C2
+    K += P[2:, 1:-1] * C3
+    K += P[:-2, 1:-1] * C4
+    Csum = C1
+    Csum += C2
+    Csum += C3
+    Csum += C4
+    # TODO: refactor the above to compute K and Csum in a single GPU kernel
 
     Hphi = (phi > 0).astype(phi.dtype)
     (c1, c2) = _cv_calculate_averages(image, Hphi)
@@ -53,7 +68,7 @@ def _cv_calculate_variation(image, phi, mu, lambda1, lambda2, dt):
                                     lambda2 * (image-c2)**2)
     new_phi = (phi + (dt*_cv_delta(phi)) *
                (mu*K + difference_from_average_term))
-    return new_phi / (1 + mu * dt * _cv_delta(phi) * (C1+C2+C3+C4))
+    return new_phi / (1 + mu * dt * _cv_delta(phi) * (Csum))
 
 
 def _cv_heavyside(x, eps=1.):
@@ -126,12 +141,14 @@ def _cv_checkerboard(image_size, square_size, dtype=cp.float64):
     According to Pascal Getreuer, such a level set function has fast
     convergence.
     """
-    yv = cp.arange(image_size[0], dtype=dtype).reshape(image_size[0], 1)
-    xv = cp.arange(image_size[1], dtype=dtype)
+    yv = cp.arange(image_size[0], dtype=dtype)[:, np.newaxis]
+    xv = cp.arange(image_size[1], dtype=dtype)[np.newaxis, :]
     sf = cp.pi / square_size
     xv *= sf
     yv *= sf
-    return cp.sin(yv) * cp.sin(xv)
+    cp.sin(xv, out=xv)
+    cp.sin(yv, out=yv)
+    return xv * yv
 
 
 def _cv_large_disk(image_size):
@@ -335,7 +352,9 @@ def chan_vese(image, mu=0.25, lambda1=1.0, lambda2=1.0, tol=1e-3,
         if phi.dtype != float_dtype:
             1 / 0
         phi = _cv_reset_level_set(phi)
-        phivar = cp.sqrt(((phi-oldphi)**2).mean())
+        phivar = phi - oldphi
+        phivar *= phivar
+        phivar = cp.sqrt(phivar.mean())
 
         # Extract energy and compare to previous level set and
         # segmentation to see if continuing is necessary
