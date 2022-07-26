@@ -537,4 +537,3 @@ def normalize_colors_pca(
         original_shape=image.shape,
     )
     return image_norm
-
