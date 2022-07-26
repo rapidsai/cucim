@@ -161,8 +161,8 @@ def main(args):
             module_gpu=cucim.skimage.filters,
             run_cpu=not args.no_cpu,
         )
-        results = B.run_benchmark(duration=args.duration)
-        all_results = all_results.append(results["full"])
+        results = B.run_benchmark(duration=1)
+        all_results = pd.concat([all_results, results["full"]])
 
     fbase = os.path.splitext(pfile)[0]
     all_results.to_csv(fbase + ".csv")
