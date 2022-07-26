@@ -4,12 +4,12 @@ import cupy as cp
 import cupyx.scipy.ndimage as ndi
 import numpy as np
 
-from .._shared.utils import check_nD, deprecate_kwarg
-from ._medial_axis_lookup import (
-    lookup_table as _medial_axis_lookup_table,
-    cornerness_table as _medial_axis_cornerness_table,
-)
 from cucim.core.operations.morphology import distance_transform_edt
+
+from .._shared.utils import check_nD, deprecate_kwarg
+from ._medial_axis_lookup import \
+    cornerness_table as _medial_axis_cornerness_table
+from ._medial_axis_lookup import lookup_table as _medial_axis_lookup_table
 
 # --------- Skeletonization and thinning based on Guo and Hall 1989 ---------
 
@@ -246,7 +246,7 @@ def medial_axis(image, mask=None, return_distance=False, *, random_state=None):
     """
     try:
         from skimage.morphology._skeletonize_cy import _skeletonize_loop
-    except ImportError:
+    except ImportError as e:
         warnings.warn(
             "Could not find required private skimage Cython function:\n"
             "\tskimage.morphology._skeletonize_cy._skeletonize_loop\n"

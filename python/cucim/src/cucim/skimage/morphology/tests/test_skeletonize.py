@@ -71,13 +71,13 @@ class TestMedialAxis():
     def test_00_00_zeros(self):
         '''Test skeletonize on an array of all zeros'''
         result = medial_axis(cp.zeros((10, 10), bool))
-        assert cp.all(result == False)
+        assert not cp.any(result)
 
     def test_00_01_zeros_masked(self):
         '''Test skeletonize on an array that is completely masked'''
         result = medial_axis(cp.zeros((10, 10), bool),
                              cp.zeros((10, 10), bool))
-        assert cp.all(result == False)
+        assert not cp.any(result)
 
     def test_vertical_line(self):
         '''Test a thick vertical line, issue #3861'''
