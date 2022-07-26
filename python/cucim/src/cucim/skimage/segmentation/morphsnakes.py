@@ -7,10 +7,9 @@ from cupyx import rsqrt
 from cupyx.scipy import ndimage as ndi
 
 from cucim import _misc
+
 from .._shared._gradient import gradient
 from .._shared.utils import check_nD, deprecate_kwarg
-
-
 
 __all__ = ['morphological_chan_vese',
            'morphological_geodesic_active_contour',
@@ -77,8 +76,8 @@ def inf_sup(u, footprints, workspace=None):
     return dilations.min(0)
 
 
-_curvop = _fcycle([lambda u, f, w: sup_inf(inf_sup(u, f, w), f ,w),   # SIoIS
-                   lambda u, f, w: inf_sup(sup_inf(u, f, w), f ,w)])  # ISoSI
+_curvop = _fcycle([lambda u, f, w: sup_inf(inf_sup(u, f, w), f, w),   # SIoIS
+                   lambda u, f, w: inf_sup(sup_inf(u, f, w), f, w)])  # ISoSI
 
 
 def _check_input(image, init_level_set):
@@ -321,7 +320,7 @@ def morphological_chan_vese(image, num_iter, init_level_set='checkerboard',
     if _misc.ndim(u) == 2:
         footprints = _get_P2()
     elif _misc.ndim(u) == 3:
-        footprints  = _get_P3()
+        footprints = _get_P3()
     else:
         raise ValueError("u has an invalid number of dimensions "
                          "(should be 2 or 3)")
@@ -340,7 +339,7 @@ def morphological_chan_vese(image, num_iter, init_level_set='checkerboard',
         # Image attachment
         du = gradient(u)
         abs_du = _abs_grad_kernel(du[0], du[1])
-        aux_lt0, aux_gt0 =  _fused_variance_kernel(
+        aux_lt0, aux_gt0 = _fused_variance_kernel(
             image, c1, c0, lambda1, lambda2, abs_du
         )
         u[aux_lt0] = 1
@@ -457,7 +456,7 @@ def morphological_geodesic_active_contour(gimage, num_iter,
     if _misc.ndim(u) == 2:
         footprints = _get_P2()
     elif _misc.ndim(u) == 3:
-        footprints  = _get_P3()
+        footprints = _get_P3()
     else:
         raise ValueError("u has an invalid number of dimensions "
                          "(should be 2 or 3)")

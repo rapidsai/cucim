@@ -75,8 +75,6 @@ def gradient(f, axis=None):
         # result allocation
         out = cupy.empty_like(f, dtype=otype)
 
-        uniform_spacing = True
-
         # Numerical differentiation: 2nd order interior
         slice1[axis] = slice(1, -1)
         slice2[axis] = slice(None, -2)
