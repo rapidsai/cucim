@@ -1,19 +1,15 @@
 import math
 
 import cupy as cp
-import numpy as np
 from cupy.testing import assert_array_equal
-
 from skimage import data
 # TODO: change to cucim.skimage.feature.BRIEF once implemented
 from skimage.feature import BRIEF
 
-
 from cucim.skimage import transform
 from cucim.skimage._shared import testing
 from cucim.skimage.color import rgb2gray
-from cucim.skimage.feature import (corner_harris, corner_peaks,
-                                   match_descriptors)
+from cucim.skimage.feature import corner_harris, corner_peaks, match_descriptors
 
 
 def test_binary_descriptors_unequal_descriptor_sizes_error():
@@ -41,7 +37,9 @@ def test_binary_descriptors_rotation_crosscheck_false():
     cross_check disabled."""
     img = cp.array(data.astronaut())
     img = rgb2gray(img)
-    tform = transform.SimilarityTransform(scale=1, rotation=0.15, translation=(0, 0))
+    tform = transform.SimilarityTransform(
+        scale=1, rotation=0.15, translation=(0, 0)
+    )
     rotated_img = transform.warp(img, tform, clip=False)
 
     extractor = BRIEF(descriptor_size=512)
@@ -87,7 +85,9 @@ def test_binary_descriptors_rotation_crosscheck_true():
     cross_check enabled."""
     img = cp.array(data.astronaut())
     img = rgb2gray(img)
-    tform = transform.SimilarityTransform(scale=1, rotation=0.15, translation=(0, 0))
+    tform = transform.SimilarityTransform(
+        scale=1, rotation=0.15, translation=(0, 0)
+    )
     rotated_img = transform.warp(img, tform, clip=False)
 
     extractor = BRIEF(descriptor_size=512)

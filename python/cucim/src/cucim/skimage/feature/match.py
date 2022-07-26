@@ -3,7 +3,8 @@ import warnings
 import cupy as cp
 
 try:
-    import pylibraft
+    # CuPy's cdist will only work if pylibraft is available
+    import pylibraft  # noqa
     from cupyx.scipy.spatial.distance import cdist
     have_gpu_cdist = True
 except ImportError:
