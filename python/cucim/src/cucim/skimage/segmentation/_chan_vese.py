@@ -1,22 +1,21 @@
 import cupy as cp
 import numpy as np
+from cupyx import rsqrt  # reciprocal sqrt
 
 from cucim.core.operations.morphology import distance_transform_edt
 
 from .._shared.utils import _supported_float_type, deprecate_kwarg
-
-from cupyx import rsqrt  # reciprocal sqrt
 
 
 @cp.fuse()
 def _fused_curvature(phi, x_start, x_end, y_start, y_end, ul, ur, ll, lr):
     fy = (y_end - y_start) / 2.0
     fx = (x_end - x_start) / 2.0
-    fyy = y_end + y_start - 2*phi
-    fxx = x_end + x_start - 2*phi
+    fyy = y_end + y_start - 2 * phi
+    fxx = x_end + x_start - 2 * phi
     fxy = .25 * (lr + ul - ur - ll)
     grad2 = fx**2 + fy**2
-    K = (fxx*fy**2 - 2*fxy*fx*fy + fyy*fx**2)
+    K = (fxx * fy**2 - 2 * fxy * fx * fy + fyy * fx**2)
     K /= (grad2 * cp.sqrt(grad2) + 1e-8)
     return K
 
@@ -131,7 +130,7 @@ def _cv_heavyside(x, eps=1.):
     """Returns the result of a regularised heavyside function of the
     input value(s).
     """
-    return 0.5 * (1. + (2./cp.pi) * cp.arctan(x/eps))
+    return 0.5 * (1. + (2. / cp.pi) * cp.arctan(x / eps))
 
 
 @cp.fuse()
@@ -139,7 +138,7 @@ def _cv_delta(x, eps=1.):
     """Returns the result of a regularised dirac function of the
     input value(s).
     """
-    return eps / (eps*eps + x*x)
+    return eps / (eps * eps + x * x)
 
 
 @cp.fuse()
