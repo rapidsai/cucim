@@ -39,10 +39,12 @@ def gradient(f, axis=None):
     if axis is None:
         axes = tuple(range(ndim))
     else:
-        for ax in axes:
+        if cupy.isscalar(axis):
+            axis = (axis,)
+        for ax in axis:
             if ax < -ndim or ax > ndim + 1:
                 raise ValueError(f"invalid axis: {ax}")
-        axes = tuple(ax + ndim if ax < 0 else ax for ax in axes)
+        axes = tuple(ax + ndim if ax < 0 else ax for ax in axis)
     len_axes = len(axes)
 
     # use central differences on interior and one-sided differences on the
