@@ -122,7 +122,7 @@ for shape in [(256, 256, 3), (3840, 2160, 3), (192, 192, 192, 3)]:
                 module_gpu=cucim.skimage.color,
             )
             results = B.run_benchmark(duration=1)
-            all_results = all_results.append(results["full"])
+            all_results = pd.concat([all_results, results["full"]])
 
     # rgb2hed and hed2rgb test combine_stains and separate_stains and all other
     # stains should have equivalent performance.
@@ -145,7 +145,7 @@ for shape in [(256, 256, 3), (3840, 2160, 3), (192, 192, 192, 3)]:
             module_gpu=cucim.skimage.color,
         )
         results = B.run_benchmark(duration=1)
-        all_results = all_results.append(results["full"])
+        all_results = pd.concat([all_results, results["full"]])
 
     B = RGBABench(
         function_name="rgba2rgb",
@@ -157,7 +157,7 @@ for shape in [(256, 256, 3), (3840, 2160, 3), (192, 192, 192, 3)]:
         module_gpu=cucim.skimage.color,
     )
     results = B.run_benchmark(duration=1)
-    all_results = all_results.append(results["full"])
+    all_results = pd.concat([all_results, results["full"]])
 
     for contiguous_labels in [True, False]:
         if contiguous_labels:
@@ -176,7 +176,7 @@ for shape in [(256, 256, 3), (3840, 2160, 3), (192, 192, 192, 3)]:
             module_gpu=cucim.skimage.color,
         )
         results = B.run_benchmark(duration=1)
-        all_results = all_results.append(results["full"])
+        all_results = pd.concat([all_results, results["full"]])
 
 fbase = os.path.splitext(pfile)[0]
 all_results.to_csv(fbase + ".csv")
