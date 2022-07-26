@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import math
-import warnings
 from typing import Union
 
 import cupy as cp
