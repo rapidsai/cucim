@@ -20,7 +20,7 @@ class ExposureBench(ImageBench):
             scale = 256
         else:
             scale = 1.0
-        imaged = cupy.testing.shaped_random(self.shape, xpcp, dtype=dtype, scale=scale)
+        imaged = cupy.testing.shaped_random(self.shape, xp=cp, dtype=dtype, scale=scale)
         image = cp.asnumpy(imaged)
         self.args_cpu = (image,)
         self.args_gpu = (imaged,)
