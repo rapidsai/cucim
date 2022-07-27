@@ -240,7 +240,6 @@ def main(args):
             continue
 
         if function_name in ["clear_border", "relabel_sequential", "find_boundaries", "mark_boundaries", "random_walker"]:
-
             if function_name == 'random_walker':
                 fixed_kwargs['channel_axis'] = -1 if shape[-1] == 3 else None
 
@@ -264,7 +263,7 @@ def main(args):
             all_results = pd.concat([all_results, results["full"]])
 
 
-        if function_name in ["inverse_gaussian_gradient", "morphological_geodesic_active_contour", "morphological_chan_vese"]:
+        elif function_name in ["inverse_gaussian_gradient", "morphological_geodesic_active_contour", "morphological_chan_vese"]:
 
             if function_name == "morphological_geodesic_active_contour":
                 bench_class = MorphGeodesicBench
@@ -282,7 +281,6 @@ def main(args):
             )
             results = B.run_benchmark(duration=args.duration)
             all_results = pd.concat([all_results, results["full"]])
-
 
     fbase = os.path.splitext(pfile)[0]
     all_results.to_csv(fbase + ".csv")

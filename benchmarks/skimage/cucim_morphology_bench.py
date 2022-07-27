@@ -166,6 +166,7 @@ def main(args):
                 module_gpu=cucim.skimage.morphology,
                 run_cpu=run_cpu,
             )
+
             results = B.run_benchmark(duration=args.duration)
             all_results = pd.concat([all_results, results["full"]])
         elif function_name.startswith('binary_'):
@@ -192,6 +193,7 @@ def main(args):
                 results = B.run_benchmark(duration=args.duration)
                 all_results = pd.concat([all_results, results["full"]])
 
+
         elif function_name in ['remove_small_holes', 'remove_small_objects']:
             if not allow_nd and ndim > 2:
                 continue
@@ -200,6 +202,7 @@ def main(args):
                 TestClass = RemoveSmallObjectsBench
             elif function_name == "remove_small_holes":
                 TestClass = RemoveSmallHolesBench
+
             else:
                 raise ValueError(f"unknown function: {function_name}")
             B = TestClass(
@@ -214,7 +217,6 @@ def main(args):
             )
             results = B.run_benchmark(duration=args.duration)
             all_results = pd.concat([all_results, results["full"]])
-
 
         else:
 

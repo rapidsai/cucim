@@ -177,7 +177,6 @@ def main(args):
             results = B.run_benchmark(duration=args.duration)
             all_results = pd.concat([all_results, results["full"]])
 
-
     fbase = os.path.splitext(pfile)[0]
     all_results.to_csv(fbase + ".csv")
     all_results.to_pickle(pfile)

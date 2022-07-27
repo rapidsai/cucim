@@ -20,7 +20,7 @@ class ExposureBench(ImageBench):
             scale = 256
         else:
             scale = 1.0
-        imaged = cupy.testing.shaped_random(self.shape, xp=cp, dtype=dtype, scale=scale)
+        imaged = cupy.testing.shaped_random(self.shape, xpcp, dtype=dtype, scale=scale)
         image = cp.asnumpy(imaged)
         self.args_cpu = (image,)
         self.args_gpu = (imaged,)
@@ -28,6 +28,7 @@ class ExposureBench(ImageBench):
 
 class MatchHistogramBench(ImageBench):
     def set_args(self, dtype):
+
         if np.dtype(dtype).kind in "iu":
             scale = 256
         else:
@@ -53,26 +54,6 @@ def main(args):
     # image sizes/shapes
     shape = tuple(list(map(int,(args.img_size.split(',')))))
     run_cpu = not args.no_cpu
-
-    exposure_config = {
-        "equalize_adapthist": dict(
-            fixed_kwargs=dict(clip_limit=0.01, nbins=256),
-            variable_kwargs=dict(),
-            color_required=False,
-            grayscale_only=False,
-            dtypes=None,
-            shapes=None,
-        ),
-        "histogram": dict(
-            fixed_kwargs=dict(source_range="image"),
-            variable_kwargs=dict(nbins=[16, 256], normalize=[True, False]),
-            color_required=False,
-            grayscale_only=True,
-            dtypes=None,
-            shapes=None,
-        ),
-    }
-
 
     for function_name, fixed_kwargs, var_kwargs, allow_color in [
         ("equalize_adapthist", dict(clip_limit=0.01, nbins=256), dict(), True),
