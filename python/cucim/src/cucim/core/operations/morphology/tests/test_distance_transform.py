@@ -132,14 +132,12 @@ def test_distance_transform_edt_3d_aniso(sx, sy, sz):
 
 @pytest.mark.parametrize('ndim', [1, 4, 5])
 def test_distance_transform_edt_unsupported_ndim(ndim):
-    """ensure default block_params is robust to anisotropic shape."""
     with pytest.raises(NotImplementedError):
         distance_transform_edt(cp.zeros((8,) * ndim))
 
 
 @pytest.mark.skip(reason="excessive memory requirement")
 def test_distance_transform_edt_3d_int64():
-    """ensure default block_params is robust to anisotropic shape."""
     shape = (1280, 1280, 1280)
     img = binary_image(shape, pct_true=80)
     distance_transform_edt(img)
