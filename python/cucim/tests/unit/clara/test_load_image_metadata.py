@@ -45,7 +45,7 @@ def test_load_image_metadata(testimg_tiff_stripe_32x24_16):
     # Returns physical size in tuple.
     assert img.spacing() == [1.0, 1.0, 1.0]
     # Units for each spacing element (size is same with `ndim`).
-    assert img.spacing_units() == ['micrometer', 'micrometer', 'color']
+    assert img.spacing_units() == ['', '', 'color']
     # Physical location of (0, 0, 0) (size is always 3).
     assert img.origin == [0.0, 0.0, 0.0]
     # Direction cosines (size is always 3x3).
