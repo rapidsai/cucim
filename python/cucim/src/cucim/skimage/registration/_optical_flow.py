@@ -80,7 +80,8 @@ def _tvl1(reference_image, moving_image, flow0, attachment, tightness,
 
         image1_warp = warp(moving_image, get_warp_points(grid, flow_current),
                            mode='edge')
-        grad = cp.stack(gradient(image1_warp))
+        # output_as_array=True stacks the gradients along the first axis
+        grad = gradient(image1_warp, output_as_array=True)
         NI = (grad * grad).sum(0)
         NI[NI == 0] = 1
 
@@ -289,7 +290,8 @@ def _ilk(reference_image, moving_image, flow0, radius, num_warp, gaussian,
 
         moving_image_warp = warp(moving_image, get_warp_points(grid, flow),
                                  mode='edge')
-        grad = cp.stack(gradient(moving_image_warp), axis=0)
+        # output_as_array=True stacks the gradients along the first axis
+        grad = gradient(moving_image_warp, output_as_array=True)
         error_image = ((grad * flow).sum(axis=0)
                        + reference_image - moving_image_warp)
 

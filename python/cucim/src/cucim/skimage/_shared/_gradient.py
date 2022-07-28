@@ -11,7 +11,7 @@ import cupy
 from cucim.skimage._shared.utils import _supported_float_type
 
 
-def gradient(f, axis=None):
+def gradient(f, axis=None, output_as_array=False):
     """Return the gradient of an N-dimensional array.
 
     The gradient is computed using second order accurate central differences
@@ -27,6 +27,7 @@ def gradient(f, axis=None):
             (axis = None) is to calculate the gradient for all the axes of the
             input array. axis may be negative, in which case it counts from the
             last to the first axis.
+        output_as_array
 
     Returns:
         gradient (cupy.ndarray or list of cupy.ndarray): A set of ndarrays
@@ -50,8 +51,6 @@ def gradient(f, axis=None):
     # use central differences on interior and one-sided differences on the
     # endpoints. This preserves second order-accuracy over the full domain.
 
-    outvals = []
-
     # create slice objects --- initially all are [:, :, ..., :]
     slice1 = [slice(None)] * ndim
     slice2 = [slice(None)] * ndim
@@ -68,6 +67,12 @@ def gradient(f, axis=None):
             f = f.astype(float_dtype)
         otype = float_dtype
 
+    if output_as_array:
+        out = cupy.empty((ndim,) + f.shape, dtype=otype)
+        outvals = out
+    else:
+        outvals = []
+
     for axis in axes:
         if f.shape[axis] < 2:
             raise ValueError(
@@ -75,7 +80,8 @@ def gradient(f, axis=None):
                 "at least 2 elements are required."
             )
         # result allocation
-        out = cupy.empty_like(f, dtype=otype)
+        if not output_as_array:
+            out = cupy.empty_like(f, dtype=otype)
 
         # Numerical differentiation: 2nd order interior
         slice1[axis] = slice(1, -1)
@@ -83,21 +89,25 @@ def gradient(f, axis=None):
         slice3[axis] = slice(1, -1)
         slice4[axis] = slice(2, None)
 
-        out[tuple(slice1)] = (f[tuple(slice4)] - f[tuple(slice2)]) / 2.0
+        out_sl = (axis,) + tuple(slice1) if output_as_array else tuple(slice1)
+        out[out_sl] = (f[tuple(slice4)] - f[tuple(slice2)]) / 2.0
 
         # Numerical differentiation: 1st order edges
         slice1[axis] = 0
         slice2[axis] = 1
         slice3[axis] = 0
         # 1D equivalent -- out[0] = (f[1] - f[0]) / (x[1] - x[0])
-        out[tuple(slice1)] = f[tuple(slice2)] - f[tuple(slice3)]
+        out_sl = (axis,) + tuple(slice1) if output_as_array else tuple(slice1)
+        out[out_sl] = f[tuple(slice2)] - f[tuple(slice3)]
 
         slice1[axis] = -1
         slice2[axis] = -1
         slice3[axis] = -2
         # 1D equivalent -- out[-1] = (f[-1] - f[-2]) / (x[-1] - x[-2])
-        out[tuple(slice1)] = f[tuple(slice2)] - f[tuple(slice3)]
-        outvals.append(out)
+        out_sl = (axis,) + tuple(slice1) if output_as_array else tuple(slice1)
+        out[out_sl] = f[tuple(slice2)] - f[tuple(slice3)]
+        if not output_as_array:
+            outvals.append(out)
 
         # reset the slice object in this dimension to ":"
         slice1[axis] = slice(None)
