@@ -62,7 +62,7 @@ def thin(image, max_num_iter=None):
 
     See Also
     --------
-    skeletonize, medial_axis
+    medial_axis
 
     Notes
     -----
