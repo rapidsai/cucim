@@ -161,19 +161,14 @@ def main(args):
             module_gpu=cucim.skimage.filters,
             run_cpu=not args.no_cpu,
         )
-        results = B.run_benchmark(duration=1)
+        results = B.run_benchmark(duration=args.duration)
         all_results = pd.concat([all_results, results["full"]])
 
     fbase = os.path.splitext(pfile)[0]
     all_results.to_csv(fbase + ".csv")
     all_results.to_pickle(pfile)
-    try:
-        import tabulate
-
-        with open(fbase + ".md", "wt") as f:
-            f.write(all_results.to_markdown())
-    except ImportError:
-        pass
+    with open(fbase + ".md", "wt") as f:
+        f.write(all_results.to_markdown())
 
 
 if __name__ == '__main__':
