@@ -471,7 +471,7 @@ def _can_use_histogram(image, footprint):
     reason : str
         Description of the reason for the incompatibility
     """
-    # only 2D uint8 images are supported
+    # only 2D 8 and 16-bit unsigned integer images are supported
     if image.ndim != 2:
         return False, "only 2D images are supported"
     if image.dtype not in [cp.uint8, cp.uint16, cp.int8, cp.int16]:

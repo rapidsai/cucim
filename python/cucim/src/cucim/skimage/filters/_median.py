@@ -164,8 +164,9 @@ def median(image, footprint=None, out=None, mode='nearest', cval=0.0,
         except KernelResourceError as e:
             # Fall back to sorting-based implementation if we encounter a
             # resource limit (e.g. insufficient shared memory per block).
-            print(e)
-            pass
+            warn("Kernel resource error encountered in histogram-based "
+                 f"median kerne: {e}\n"
+                 "Falling back to sorting-based median instead.")
 
     if algorithm_kwargs:
         warn(f"algorithm_kwargs={algorithm_kwargs} ignored for sorting-based "
