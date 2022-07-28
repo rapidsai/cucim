@@ -1,3 +1,4 @@
+import argparse
 import os
 import pickle
 
@@ -10,75 +11,83 @@ import skimage.transform
 
 from _image_bench import ImageBench
 
-pfile = "cucim_transform_results.pickle"
-if os.path.exists(pfile):
-    with open(pfile, "rb") as f:
-        all_results = pickle.load(f)
-else:
-    all_results = pd.DataFrame()
-dtypes = [np.float32]
 
-for function_name, fixed_kwargs, var_kwargs, allow_color, allow_nd in [
-    # _warps.py
-    (
-        "resize",
-        dict(preserve_range=True),
-        dict(order=[0, 1, 3], mode=["reflect"], anti_aliasing=[True]),
-        True,
-        True,
-    ),  # scale handled in loop below
-    (
-        "resize_local_mean",
-        dict(preserve_range=True),
-        {},
-        True,
-        True,
-    ),  # scale handled in loop below
-    (
-        "rescale",
-        dict(preserve_range=True),
-        dict(order=[0, 1, 3], mode=["reflect"], anti_aliasing=[True]),
-        True,
-        True,
-    ),  # output_shape handled in loop below
-    (
-        "rotate",
-        dict(angle=15, preserve_range=True),
-        dict(order=[0, 1, 3], mode=["reflect"], resize=[False, True]),
-        False,
-        False,
-    ),
-    ("downscale_local_mean", dict(), dict(), True, True),  # factors handled in loop below
-    (
-        "swirl",
-        dict(strength=1, preserve_range=True),
-        dict(order=[0, 1, 3], mode=["reflect"]),
-        False,
-        False,
-    ),
-    # TODO : warp? already indirectly benchmarked via swirl, etc
-    ("warp_polar", dict(), dict(scaling=["linear", "log"]), True, False),
-    # integral.py
-    ("integral_image", dict(), dict(), False, True),
-    # TODO: integrate
-    # pyramids.py
-    (
-        "pyramid_gaussian",
-        dict(max_layer=6, downscale=2, preserve_range=True),
-        dict(order=[0, 1, 3]),
-        True,
-        True,
-    ),
-    (
-        "pyramid_laplacian",
-        dict(max_layer=6, downscale=2, preserve_range=True),
-        dict(order=[0, 1, 3]),
-        True,
-        True,
-    ),
-]:
+def main(args):
 
-    for shape in [(512, 512), (3840, 2160), (3840, 2160, 3), (192, 192, 192)]:
+    pfile = "cucim_transform_results.pickle"
+    if os.path.exists(pfile):
+        with open(pfile, "rb") as f:
+            all_results = pickle.load(f)
+    else:
+        all_results = pd.DataFrame()
+
+    dtypes = [np.dtype(args.dtype)]
+    # image sizes/shapes
+    shape = tuple(list(map(int,(args.img_size.split(',')))))
+    run_cpu = not args.no_cpu
+
+    for function_name, fixed_kwargs, var_kwargs, allow_color, allow_nd in [
+        # _warps.py
+        (
+            "resize",
+            dict(preserve_range=True),
+            dict(order=[0, 1, 3], mode=["reflect"], anti_aliasing=[True]),
+            True,
+            True,
+        ),  # scale handled in loop below
+        (
+            "resize_local_mean",
+            dict(preserve_range=True),
+            {},
+            True,
+            True,
+        ),  # scale handled in loop below
+        (
+            "rescale",
+            dict(preserve_range=True),
+            dict(order=[0, 1, 3], mode=["reflect"], anti_aliasing=[True]),
+            True,
+            True,
+        ),  # output_shape handled in loop below
+        (
+            "rotate",
+            dict(angle=15, preserve_range=True),
+            dict(order=[0, 1, 3], mode=["reflect"], resize=[False, True]),
+            False,
+            False,
+        ),
+        ("downscale_local_mean", dict(), dict(), True, True),  # factors handled in loop below
+        (
+            "swirl",
+            dict(strength=1, preserve_range=True),
+            dict(order=[0, 1, 3], mode=["reflect"]),
+            False,
+            False,
+        ),
+        # TODO : warp? already indirectly benchmarked via swirl, etc
+        ("warp_polar", dict(), dict(scaling=["linear", "log"]), True, False),
+        # integral.py
+        ("integral_image", dict(), dict(), False, True),
+        # TODO: integrate
+        # pyramids.py
+        (
+            "pyramid_gaussian",
+            dict(max_layer=6, downscale=2, preserve_range=True),
+            dict(order=[0, 1, 3]),
+            True,
+            True,
+        ),
+        (
+            "pyramid_laplacian",
+            dict(max_layer=6, downscale=2, preserve_range=True),
+            dict(order=[0, 1, 3]),
+            True,
+            True,
+        ),
+    ]:
+
+        if function_name != args.func_name:
+            continue
 
         ndim = len(shape)
         if not allow_nd:
@@ -131,12 +140,30 @@ for function_name, fixed_kwargs, var_kwargs, allow_color, allow_nd in [
             module_gpu=cucim.skimage.transform,
             function_is_generator=function_is_generator,
         )
-        results = B.run_benchmark(duration=1)
-        all_results = all_results.append(results["full"])
+        results = B.run_benchmark(duration=args.duration)
+        all_results = pd.concat([all_results, results["full"]])
+
+    fbase = os.path.splitext(pfile)[0]
+    all_results.to_csv(fbase + ".csv")
+    all_results.to_pickle(pfile)
+    try:
+        import tabular
+
+        with open(fbase + ".md", "wt") as f:
+            f.write(all_results.to_markdown())
+    except ImportError:
+        pass
 
 
-fbase = os.path.splitext(pfile)[0]
-all_results.to_csv(fbase + ".csv")
-all_results.to_pickle(pfile)
-with open(fbase + ".md", "wt") as f:
-    f.write(all_results.to_markdown())
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Benchmarking cuCIM transform functions')
+    func_name_choices = ['resize', 'resize_local_mean', 'rescale', 'rotate', 'downscale_local_mean', 'warp_polar', 'integral_image', 'pyramid_gaussian', 'pyramid_laplacian']
+    dtype_choices = ['float16', 'float32', 'float64', 'int8', 'int16', 'int32', 'int64', 'uint8', 'uint16', 'uint32', 'uint64']
+    parser.add_argument('-i','--img_size', type=str, help='Size of input image (omit color channel, it will be appended as needed)', required=True)
+    parser.add_argument('-d','--dtype', type=str, help='Dtype of input image', choices = dtype_choices, required=True)
+    parser.add_argument('-f','--func_name', type=str, help='function to benchmark', choices = func_name_choices, required=True)
+    parser.add_argument('-t','--duration', type=int, help='time to run benchmark', required=True)
+    parser.add_argument('--no_cpu', action='store_true', help='disable cpu measurements', default=False)
+
+    args = parser.parse_args()
+    main(args)
