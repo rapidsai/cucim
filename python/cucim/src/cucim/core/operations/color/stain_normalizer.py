@@ -311,7 +311,7 @@ def stain_extraction_pca(image, source_intensity=240, alpha=1, beta=0.345,
     )
 
     # remove transparent pixels
-    absorbance = absorbance[:, cp.all(absorbance > beta, axis=0)]
+    absorbance = absorbance[:, cp.any(absorbance > beta, axis=0)]
     if absorbance.size == 0 or absorbance.shape[1] <= 1:
         raise ValueError(
             "Multiple pixels of the input must be above the `beta` threshold."

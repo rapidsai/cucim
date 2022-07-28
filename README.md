@@ -1,7 +1,23 @@
 # <div align="left"><img src="https://rapids.ai/assets/images/rapids_logo.png" width="90px"/>&nbsp;cuCIM</div>
 
+[RAPIDS](https://rapids.ai) cuCIM is an open-source, accelerated computer vision and image processing software library for multidimensional images used in biomedical, geospatial, material and life science, and remote sensing use cases.
 
-[RAPIDS](https://rapids.ai) cuCIM is an extensible toolkit designed to provide GPU accelerated I/O, computer vision & image processing primitives for N-Dimensional images with a focus on biomedical imaging.
+cuCIM offers:
+
+- Enhanced Image Processing Capabilities for large and n-dimensional tag image file format (TIFF) files
+- Accelerated performance through Graphics Processing Unit (GPU)-based image processing and computer vision primitives
+- A Straightforward Pythonic Interface with Matching Application Programming Interface (API) for Openslide
+
+cuCIM supports the following formats:
+
+- Aperio ScanScope Virtual Slide (SVS)
+- Philips TIFF
+- Generic Tiled, Multi-resolution RGB TIFF files with the following compression schemes:
+  - No Compression
+  - JPEG
+  - JPEG2000
+  - Lempel-Ziv-Welch (LZW)
+  - Deflate
 
 **NOTE:** For the latest stable [README.md](https://github.com/rapidsai/cucim/blob/main/README.md) ensure you are on the `main` branch.
 
@@ -9,6 +25,17 @@
   - [video](https://www.nvidia.com/en-us/on-demand/session/gtcspring21-s32194/)
 - [SciPy 2021 cuCIM - A GPU image I/O and processing library](https://www.scipy2021.scipy.org/)
   - [video](https://youtu.be/G46kOOM9xbQ)
+
+**Blogs**
+
+- [Accelerating Scikit-Image API with cuCIM: n-Dimensional Image Processing and IO on GPUs](https://developer.nvidia.com/blog/cucim-rapid-n-dimensional-image-processing-and-i-o-on-gpus/)
+- [Accelerating Digital Pathology Pipelines with NVIDIA Clara™ Deploy](https://developer.nvidia.com/blog/accelerating-digital-pathology-pipelines-with-nvidia-clara-deploy-2/)
+
+**Webinars**
+
+- [cuCIM: a GPU Image IO and Processing Library](https://www.youtube.com/watch?v=G46kOOM9xbQ)
+
+**[Documentation](https://docs.rapids.ai/api/cucim/stable)**
 
 **Release notes** are available on our [wiki page](https://github.com/rapidsai/cucim/wiki/Release-Notes).
 
