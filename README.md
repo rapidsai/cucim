@@ -21,10 +21,12 @@ cuCIM supports the following formats:
 
 **NOTE:** For the latest stable [README.md](https://github.com/rapidsai/cucim/blob/main/README.md) ensure you are on the `main` branch.
 
-- [GTC 2021 cuCIM: A GPU Image I/O and Processing Toolkit [S32194]](https://www.nvidia.com/en-us/on-demand/search/?facet.mimetype[]=event%20session&layout=list&page=1&q=cucim&sort=date)
-  - [video](https://www.nvidia.com/en-us/on-demand/session/gtcspring21-s32194/)
+- [GTC 2022 Accelerating Storage IO to GPUs with Magnum IO [S41347]](https://events.rainfocus.com/widget/nvidia/gtcspring2022/sessioncatalog/session/1634960000577001Etxp)
+  - cuCIM's GDS API examples: <https://github.com/NVIDIA/MagnumIO/tree/main/gds/readers/cucim-gds>
 - [SciPy 2021 cuCIM - A GPU image I/O and processing library](https://www.scipy2021.scipy.org/)
   - [video](https://youtu.be/G46kOOM9xbQ)
+- [GTC 2021 cuCIM: A GPU Image I/O and Processing Toolkit [S32194]](https://www.nvidia.com/en-us/on-demand/search/?facet.mimetype[]=event%20session&layout=list&page=1&q=cucim&sort=date)
+  - [video](https://www.nvidia.com/en-us/on-demand/session/gtcspring21-s32194/)
 
 **Blogs**
 
