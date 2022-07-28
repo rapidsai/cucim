@@ -4,15 +4,7 @@ CUCIM_BUILD_TYPE=${CUCIM_BUILD_TYPE:-release}
 
 echo "CC          : ${CC}"
 echo "CXX         : ${CXX}"
-echo "CUDAHOSTCXX : ${CUDAHOSTCXX}"
 echo "CUDA        : ${CUDA}"
-
-# For now CUDAHOSTCXX is set to `/usr/bin/g++` by
-# https://github.com/rapidsai/docker/blob/161b200157206660d88fb02cf69fe58d363ac95e/generated-dockerfiles/rapidsai-core_ubuntu18.04-devel.Dockerfile
-# To use GCC-9 in conda build environment, need to set it to $CXX (=$BUILD_PREFIX/bin/x86_64-conda-linux-gnu-c++)
-# This can be removed once we switch to use gcc-9
-# : https://docs.rapids.ai/notices/rdn0002/
-export CUDAHOSTCXX=${CXX}
 
 # CUDA needs to include $PREFIX/include as system include path
 export CUDAFLAGS="-isystem $BUILD_PREFIX/include -isystem $PREFIX/include "

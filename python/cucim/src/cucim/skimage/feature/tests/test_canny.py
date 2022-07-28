@@ -1,6 +1,5 @@
-import unittest
-
 import cupy as cp
+import pytest
 from cupy.testing import assert_array_equal
 from cupyx.scipy.ndimage import binary_dilation, binary_erosion
 from skimage import data
@@ -9,18 +8,18 @@ from cucim.skimage import feature
 from cucim.skimage.util import img_as_float
 
 
-class TestCanny(unittest.TestCase):
+class TestCanny():
     def test_00_00_zeros(self):
         """Test that the Canny filter finds no points for a blank field"""
         result = feature.canny(cp.zeros((20, 20)), 4, 0, 0, cp.ones((20, 20),
                                bool))
-        self.assertFalse(cp.any(result))
+        assert not cp.any(result)
 
     def test_00_01_zeros_mask(self):
         """Test that the Canny filter finds no points in a masked image"""
         result = (feature.canny(cp.random.uniform(size=(20, 20)), 4, 0, 0,
                                 cp.zeros((20, 20), bool)))
-        self.assertFalse(cp.any(result))
+        assert not cp.any(result)
 
     def test_01_01_circle(self):
         """Test that the Canny filter finds the outlines of a circle"""
@@ -36,7 +35,7 @@ class TestCanny(unittest.TestCase):
         cd = binary_dilation(c, iterations=3, brute_force=True)
         ce = binary_erosion(c, iterations=3, brute_force=True)
         cde = cp.logical_and(cd, cp.logical_not(ce))
-        self.assertTrue(cp.all(cde[result]))
+        assert cp.all(cde[result])
         #
         # The circle has a radius of 100. There are two rings here, one
         # for the inside edge and one for the outside. So that's
@@ -44,8 +43,8 @@ class TestCanny(unittest.TestCase):
         # The edge contains both pixels if there's a tie, so we
         # bump the count a little.
         point_count = cp.sum(result)
-        self.assertTrue(point_count > 1200)
-        self.assertTrue(point_count < 1600)
+        assert point_count > 1200
+        assert point_count < 1600
 
     def test_01_02_circle_with_noise(self):
         """Test that the Canny filter finds the circle outlines
@@ -62,24 +61,30 @@ class TestCanny(unittest.TestCase):
         cd = binary_dilation(c, iterations=4, brute_force=True)
         ce = binary_erosion(c, iterations=4, brute_force=True)
         cde = cp.logical_and(cd, cp.logical_not(ce))
-        self.assertTrue(cp.all(cde[result]))
+        assert cp.all(cde[result])
         point_count = cp.sum(result)
-        self.assertTrue(point_count > 1200)
-        self.assertTrue(point_count < 1600)
+        assert point_count > 1200
+        assert point_count < 1600
 
     def test_image_shape(self):
-        self.assertRaises(ValueError, feature.canny, cp.zeros((20, 20, 20)), 4,
-                          0, 0)
+        with pytest.raises(ValueError):
+            feature.canny(cp.zeros((20, 20, 20)), 4, 0, 0)
 
     def test_mask_none(self):
         result1 = feature.canny(cp.zeros((20, 20)), 4, 0, 0, cp.ones((20, 20),
                                 bool))
         result2 = feature.canny(cp.zeros((20, 20)), 4, 0, 0)
-        self.assertTrue(cp.all(result1 == result2))
+        assert cp.all(result1 == result2)
 
     @cp.testing.with_requires("scikit-image>=0.18")
-    def test_use_quantiles(self):
-        image = img_as_float(cp.asarray(data.camera()[::100, ::100]))
+    @pytest.mark.parametrize('image_dtype', [cp.uint8, cp.int64, cp.float32,
+                                             cp.float64])
+    def test_use_quantiles(self, image_dtype):
+        dtype = cp.dtype(image_dtype)
+        image = cp.asarray(data.camera()[::100, ::100])
+        if dtype.kind == 'f':
+            image = img_as_float(image)
+        image = image.astype(dtype)
 
         # Correct output produced manually with quantiles
         # of 0.8 and 0.6 for high and low respectively
@@ -96,24 +101,33 @@ class TestCanny(unittest.TestCase):
 
         assert_array_equal(result, correct_output)
 
+    def test_img_all_ones(self):
+        image = cp.ones((10, 10))
+        assert cp.all(feature.canny(image) == 0)
+
     def test_invalid_use_quantiles(self):
         image = img_as_float(cp.array(data.camera()[::50, ::50]))
 
-        self.assertRaises(ValueError, feature.canny, image, use_quantiles=True,
+        with pytest.raises(ValueError):
+            feature.canny(image, use_quantiles=True,
                           low_threshold=0.5, high_threshold=3.6)
 
-        self.assertRaises(ValueError, feature.canny, image, use_quantiles=True,
+        with pytest.raises(ValueError):
+            feature.canny(image, use_quantiles=True,
                           low_threshold=-5, high_threshold=0.5)
 
-        self.assertRaises(ValueError, feature.canny, image, use_quantiles=True,
+        with pytest.raises(ValueError):
+            feature.canny(image, use_quantiles=True,
                           low_threshold=99, high_threshold=0.9)
 
-        self.assertRaises(ValueError, feature.canny, image, use_quantiles=True,
+        with pytest.raises(ValueError):
+            feature.canny(image, use_quantiles=True,
                           low_threshold=0.5, high_threshold=-100)
 
         # Example from issue #4282
         image = data.camera()
-        self.assertRaises(ValueError, feature.canny, image, use_quantiles=True,
+        with pytest.raises(ValueError):
+            feature.canny(image, use_quantiles=True,
                           low_threshold=50, high_threshold=150)
 
     def test_dtype(self):
