@@ -184,24 +184,24 @@ static bool CUCIM_ABI parser_parse(CuCIMFileHandle_ptr handle_ptr, cucim::io::fo
     switch (resolution_unit)
     {
     case 1: // no absolute unit of measurement
-        spacing.emplace_back(x_resolution);
         spacing.emplace_back(y_resolution);
+        spacing.emplace_back(x_resolution);
         spacing.emplace_back(1.0f);
 
         spacing_units.emplace_back(std::string_view{ "" });
         spacing_units.emplace_back(std::string_view{ "" });
         break;
     case 2: // inch
-        spacing.emplace_back(x_resolution != 0 ? 25400 / x_resolution : 1.0f);
         spacing.emplace_back(y_resolution != 0 ? 25400 / y_resolution : 1.0f);
+        spacing.emplace_back(x_resolution != 0 ? 25400 / x_resolution : 1.0f);
         spacing.emplace_back(1.0f);
 
         spacing_units.emplace_back(std::string_view{ "micrometer" });
         spacing_units.emplace_back(std::string_view{ "micrometer" });
         break;
     case 3: // centimeter
-        spacing.emplace_back(x_resolution != 0 ? 10000 / x_resolution : 1.0f);
         spacing.emplace_back(y_resolution != 0 ? 10000 / y_resolution : 1.0f);
+        spacing.emplace_back(x_resolution != 0 ? 10000 / x_resolution : 1.0f);
         spacing.emplace_back(1.0f);
 
         spacing_units.emplace_back(std::string_view{ "micrometer" });
