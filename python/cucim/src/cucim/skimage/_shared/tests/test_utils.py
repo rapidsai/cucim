@@ -66,13 +66,13 @@ def test_change_default_value():
 
 def test_deprecate_kwarg():
 
-    @deprecate_kwarg({'old_arg1': 'new_arg1'}, '0.19')
+    @deprecate_kwarg({'old_arg1': 'new_arg1'}, '22.02.00')
     def foo(arg0, new_arg1=1, arg2=None):
         """Expected docstring"""
         return arg0, new_arg1, arg2
 
     @deprecate_kwarg({'old_arg1': 'new_arg1'},
-                     deprecated_version='0.19',
+                     deprecated_version='22.02.00',
                      warning_msg="Custom warning message")
     def bar(arg0, new_arg1=1, arg2=None):
         """Expected docstring"""
@@ -116,7 +116,7 @@ def test_deprecate_kwarg():
     old_arg1 : DEPRECATED
         Deprecated in favor of `new_arg1`.
 
-        .. deprecated:: 0.19
+        .. deprecated:: 22.02.00
 """
 
     assert len(recorded) == 0

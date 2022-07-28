@@ -16,8 +16,8 @@ def _get_structure(ndim, connectivity):
 
 # TODO: currently uses int32 for the labels. should add int64 option as well
 @deprecate_kwarg({'input': 'label_image'},
-                 deprecated_version='0.19',
-                 removed_version='1.0')
+                 deprecated_version='22.02.00',
+                 removed_version='23.02.00')
 def label(label_image, background=None, return_num=False, connectivity=None):
     r"""Label connected regions of an integer array.
 

@@ -297,11 +297,7 @@ def test_rescale_in_range_clip():
 def test_rescale_out_range(dtype):
     """Check that output range is correct.
 
-    .. versionchanged:: 0.17
-        This function used to return dtype matching the input dtype. It now
-        matches the output.
-
-    .. versionchanged:: 0.19
+    .. versionchanged:: 22.02.00
         float16 and float32 inputs now result in float32 output. Formerly they
         would give float64 outputs.
     """
