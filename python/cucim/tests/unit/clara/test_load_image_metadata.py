@@ -14,6 +14,7 @@
 #
 
 from ...util.io import open_image_cucim
+import math
 
 
 def test_load_image_metadata(testimg_tiff_stripe_32x24_16):
@@ -69,6 +70,44 @@ def test_load_image_metadata(testimg_tiff_stripe_32x24_16):
     assert len(metadata) == 2  # 'cucim' and 'tiff'
     # A raw metadata string.
     assert img.raw_metadata == '{"axes": "YXC", "shape": [24, 32, 3]}'
+
+
+def test_load_image_resolution_metadata(testimg_tiff_stripe_4096_4096_256_jpeg_resolution):  # noqa: E501
+    image, resolution = testimg_tiff_stripe_4096_4096_256_jpeg_resolution
+    img = open_image_cucim(image)
+
+    x_resolution, y_resolution, resolution_unit = resolution
+
+    if resolution_unit == "CENTIMETER":
+        x_spacing = 10000.0 / x_resolution
+        y_spacing = 10000.0 / y_resolution
+        spacing_unit = "micrometer"
+    elif resolution_unit == "INCH":
+        x_spacing = 25400.0 / x_resolution
+        y_spacing = 25400.0 / y_resolution
+        spacing_unit = "micrometer"
+    else:
+        x_spacing = x_resolution
+        y_spacing = y_resolution
+        spacing_unit = ""
+
+    # Returns physical size in tuple.
+    assert all(map(lambda a, b: math.isclose(a, b, rel_tol=0.1),
+                   img.spacing(), (y_spacing, x_spacing, 1.0)))
+    # Units for each spacing element (size is same with `ndim`).
+    assert img.spacing_units() == [spacing_unit, spacing_unit, 'color']
+
+    # A metadata object as `dict`
+    metadata = img.metadata
+    print(metadata)
+    assert isinstance(metadata, dict)
+    assert len(metadata) == 2  # 'cucim' and 'tiff'
+    assert math.isclose(metadata['tiff']['x_resolution'],
+                        x_resolution, rel_tol=0.00001)
+    assert math.isclose(metadata['tiff']['y_resolution'],
+                        y_resolution, rel_tol=0.00001)
+    unit_value = resolution_unit.lower() if resolution_unit != "NONE" else ""
+    assert metadata['tiff']['resolution_unit'] == unit_value
 
 
 def test_load_rgba_image_metadata(tmpdir):

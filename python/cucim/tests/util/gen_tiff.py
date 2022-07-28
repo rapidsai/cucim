@@ -38,7 +38,7 @@ class TiffGenerator:
         return None
 
     def save_image(self, image_data, dest_folder, file_name, kind, subpath,
-                   pattern, image_size, tile_size, compression):
+                   pattern, image_size, tile_size, compression, resolution):
         # You can add pyramid images (0: largest resolution)
         if isinstance(image_data, list):
             arr_stack = image_data
@@ -55,9 +55,15 @@ class TiffGenerator:
         tiff_file_name = str(
             (Path(dest_folder) / f'{file_name}.tif').absolute())
 
+        level_resolution = None
         with TiffWriter(tiff_file_name, bigtiff=True) as tif:
             for level in range(len(arr_stack)):  # save from the largest image
                 src_arr = arr_stack[level]
+
+                if resolution:
+                    level_resolution = (resolution[0] / (level + 1),
+                                        resolution[1] / (level + 1),
+                                        resolution[2])
 
                 tif.write(
                     src_arr,
@@ -68,6 +74,7 @@ class TiffGenerator:
                     planarconfig="CONTIG",
                     compression=compression,  # requires imagecodecs
                     subfiletype=1 if level else 0,
+                    resolution=level_resolution,
                 )
         return tiff_file_name
 
