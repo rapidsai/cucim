@@ -29,7 +29,7 @@ cuCIM supports the following formats:
   - [video](https://www.nvidia.com/en-us/on-demand/session/gtcspring21-s32194/)
 
 **Blogs**
-
+- [Enhanced Image Analysis with Multidimensional Image Processing](https://developer.nvidia.com/blog/enhanced-image-analysis-with-multidimensional-image-processing/)
 - [Accelerating Scikit-Image API with cuCIM: n-Dimensional Image Processing and IO on GPUs](https://developer.nvidia.com/blog/cucim-rapid-n-dimensional-image-processing-and-i-o-on-gpus/)
 - [Accelerating Digital Pathology Pipelines with NVIDIA Clara™ Deploy](https://developer.nvidia.com/blog/accelerating-digital-pathology-pipelines-with-nvidia-clara-deploy-2/)
 
