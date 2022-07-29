@@ -32,7 +32,7 @@ def get_shmem_limits(device_id=None):
     }
 
 
-def get_constants(ndim, axis, kernel_size):
+def get_constants(ndim, axis, kernel_size, anchor):
     if ndim == 2:
         # note, in this file axis 0 = "y"
         #                    axis 1 = "x"
@@ -40,18 +40,23 @@ def get_constants(ndim, axis, kernel_size):
         #       within shared memory limits. Initial values
         #       below should be suitable for up to 4 channels with
         #       kernel size <= 32
+
+        # for simplicity, keeping same halo size at both start and end
+        if anchor is None:
+            anchor = kernel_size // 2
+        halo_pixels_needed = max(kernel_size - anchor, anchor)
         if axis == 1:
             # as in OpenCV's column_filter.hpp
             block_x = 16
             block_y = 16
             patch_per_block = 4
-            halo_size = math.ceil(kernel_size / block_x) + 1
+            halo_size = math.ceil(halo_pixels_needed / block_x)
         elif axis == 0:
             # as in OpenCV's row_filter.hpp
             block_x = 32  # 16 in CUDA example
             block_y = 8  # 4 in CUDA example
             patch_per_block = 4  # 8 in CUDA_example
-            halo_size = math.ceil(kernel_size / block_y)
+            halo_size = math.ceil(halo_pixels_needed / block_y)
         # TODO: check halo_size. may be larger than needed right now
     elif ndim == 3:
         raise NotImplementedError("TODO")
@@ -61,8 +66,8 @@ def get_constants(ndim, axis, kernel_size):
     return block, patch_per_block, halo_size
 
 
-def get_smem_shape(ndim, axis, kernel_size, dtype=cp.float32):
-    block, patch_per_block, halo_size = get_constants(ndim, axis, kernel_size)
+def get_smem_shape(ndim, axis, kernel_size, anchor=None, dtype=cp.float32):
+    block, patch_per_block, halo_size = get_constants(ndim, axis, kernel_size, anchor)
     bx, by, bz = block
     if ndim != 2:
         raise NotImplementedError("TODO")
@@ -102,10 +107,10 @@ def _get_c_type(dtype):
 # Note: the version below is only single-channel
 # Note: need to insert appropriate boundary condition for row/col
 
-def _get_separable_conv_kernel_src(kernel_size, axis, ndim):
+def _get_separable_conv_kernel_src(kernel_size, axis, ndim, anchor):
 
     blocks, patch_per_block, halo_size = get_constants(
-        ndim, axis, kernel_size
+        ndim, axis, kernel_size, anchor
     )
     block_x, block_y, block_z = blocks
 
@@ -315,9 +320,9 @@ def _get_separable_conv_kernel_src(kernel_size, axis, ndim):
     return func_name, blocks, code
 
 
-def _get_separable_conv_kernel(kernel_size, axis, ndim=2, options=()):
+def _get_separable_conv_kernel(kernel_size, axis, ndim=2, anchor=None, options=()):
     func_name, block, code = _get_separable_conv_kernel_src(
-        kernel_size=kernel_size, axis=axis, ndim=ndim
+        kernel_size=kernel_size, axis=axis, ndim=ndim, anchor=anchor
     )
     m = cp.RawModule(code=code)
     return m.get_function(func_name), block
