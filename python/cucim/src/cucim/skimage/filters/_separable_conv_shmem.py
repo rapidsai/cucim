@@ -328,6 +328,27 @@ def _get_separable_conv_kernel(kernel_size, axis, ndim=2, anchor=None, options=(
     return m.get_function(func_name), block
 
 
+def _get_grid(shape, block, axis):
+    """Determine grid size from image shape and block parameters"""
+    if len(shape) != 2:
+        raise ValueError("grid calculation currently only implemented for 2D")
+    if axis == 0:
+        # column filter
+        grid = (
+            math.ceil(src.shape[1] / block[0]),
+            math.ceil(src.shape[0] / (block[1] * patch_per_block)),
+            1,
+        )
+    elif axis == 1:
+        # row filter
+        grid = (
+            math.ceil(src.shape[1] / (block[0] * patch_per_block)),
+            math.ceil(src.shape[0] / block[1]),
+            1,
+        )
+    return grid
+
+
 def _shmem_convolve1d(image, weights, axis=-1, output=None, mode="reflect",
                       cval=0.0, origin=0, convolution=False):
 
