@@ -48,9 +48,9 @@ def get_constants(ndim, axis, kernel_size):
             halo_size = math.ceil(kernel_size / block_x) + 1
         elif axis == 0:
             # as in OpenCV's row_filter.hpp
-            block_x = 32
-            block_y = 8
-            patch_per_block = 4
+            block_x = 32  # 16 in CUDA example
+            block_y = 8  # 4 in CUDA example
+            patch_per_block = 4  # 8 in CUDA_example
             halo_size = math.ceil(kernel_size / block_y)
         # TODO: check halo_size. may be larger than needed right now
     elif ndim == 3:
