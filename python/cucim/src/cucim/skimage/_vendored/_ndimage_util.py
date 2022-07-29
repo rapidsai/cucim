@@ -5,6 +5,15 @@ import cupy
 import numpy
 
 
+def _get_weights_dtype(input, weights):
+    if weights.dtype.kind == "c" or input.dtype.kind == "c":
+        return cupy.promote_types(input.real.dtype, cupy.complex64)
+    elif weights.dtype.kind in 'iub':
+        # convert integer dtype weights to double as in SciPy
+        return cupy.float64
+    return cupy.promote_types(input.real.dtype, cupy.float32)
+
+
 def _get_output(output, input, shape=None, complex_output=False):
     shape = input.shape if shape is None else shape
     if output is None:

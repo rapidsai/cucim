@@ -3,6 +3,7 @@ import math
 import cupy as cp
 from cupyx.scipy import ndimage as ndi
 
+from cucim.skimage._shared.utils import _supported_float_type
 from cucim.skimage._vendored._internal import _normalize_axis_index
 from cucim.skimage._vendored import _ndimage_util as util
 
@@ -32,7 +33,7 @@ def get_shmem_limits(device_id=None):
     }
 
 
-def get_constants(ndim, axis, kernel_size, anchor):
+def get_constants(ndim, axis, kernel_size, anchor, patch_per_block=None):
     if ndim == 2:
         # note, in this file axis 0 = "y"
         #                    axis 1 = "x"
@@ -45,17 +46,17 @@ def get_constants(ndim, axis, kernel_size, anchor):
         if anchor is None:
             anchor = kernel_size // 2
         halo_pixels_needed = max(kernel_size - anchor, anchor)
+        if patch_per_block is None:
+            patch_per_block = 4
         if axis == 1:
             # as in OpenCV's column_filter.hpp
             block_x = 16
             block_y = 16
-            patch_per_block = 4
             halo_size = math.ceil(halo_pixels_needed / block_x)
         elif axis == 0:
             # as in OpenCV's row_filter.hpp
             block_x = 32  # 16 in CUDA example
             block_y = 8  # 4 in CUDA example
-            patch_per_block = 4  # 8 in CUDA_example
             halo_size = math.ceil(halo_pixels_needed / block_y)
         # TODO: check halo_size. may be larger than needed right now
     elif ndim == 3:
@@ -66,8 +67,10 @@ def get_constants(ndim, axis, kernel_size, anchor):
     return block, patch_per_block, halo_size
 
 
-def get_smem_shape(ndim, axis, kernel_size, anchor=None, dtype=cp.float32):
-    block, patch_per_block, halo_size = get_constants(ndim, axis, kernel_size, anchor)
+def get_smem_shape(ndim, axis, kernel_size, anchor=None, patch_per_block=None, dtype=cp.float32):
+    block, patch_per_block, halo_size = get_constants(
+        ndim, axis, kernel_size, anchor=anchor, patch_per_block=patch_per_block
+    )
     bx, by, bz = block
     if ndim != 2:
         raise NotImplementedError("TODO")
@@ -81,7 +84,7 @@ def get_smem_shape(ndim, axis, kernel_size, anchor=None, dtype=cp.float32):
 
 
 _dtype_char_to_c_types = {
-    'e': 'half',
+    'e': 'float16',
     'f': 'float',
     'd': 'double',
     'F': 'complex<float>',
@@ -107,27 +110,31 @@ def _get_c_type(dtype):
 # Note: the version below is only single-channel
 # Note: need to insert appropriate boundary condition for row/col
 
-def _get_separable_conv_kernel_src(kernel_size, axis, ndim, anchor):
+def _get_separable_conv_kernel_src(kernel_size, axis, ndim, anchor, image_c_type, kernel_c_type, output_c_type, mode, patch_per_block=None):
 
     blocks, patch_per_block, halo_size = get_constants(
-        ndim, axis, kernel_size, anchor
+        ndim, axis, kernel_size, anchor, patch_per_block
     )
     block_x, block_y, block_z = blocks
 
     func_name = f"convolve_size{kernel_size}_{ndim}d_axis{axis}"
 
     code = f"""
+    #include "cupy/carray.cuh"  // for float16
+
     #define MAX_KERNEL_SIZE 32
 
+    #define KSIZE {kernel_size}
     const int BLOCK_DIM_X = {block_x};
     const int BLOCK_DIM_Y = {block_y};
     const int PATCH_PER_BLOCK = {patch_per_block};
     const int HALO_SIZE = {halo_size};
-    typedef float T;
-    typedef float D;
+    typedef {image_c_type}  T;
+    typedef {output_c_type} D;
+    typedef {kernel_c_type} W;
 
     extern "C"{{
-    __global__ void {func_name}(const T *src, D *dst, const float* kernel, const int anchor, int n_rows, int n_cols, int kernel_size)
+    __global__ void {func_name}(const T *src, D *dst, const W* kernel, const int anchor, int n_rows, int n_cols)
     {{
     """
 
@@ -160,8 +167,9 @@ def _get_separable_conv_kernel_src(kernel_size, axis, ndim, anchor):
             #pragma unroll
             for (int j = 0; j < HALO_SIZE; ++j) {
                 row = yStart - (HALO_SIZE - j) * BLOCK_DIM_Y;
-                if (row < 0)
-                    row = 0;
+        """
+        code += _generate_boundary_condition_ops(mode, 'row', 'n_rows')
+        code += """
                 smem[threadIdx.y + j * BLOCK_DIM_Y][threadIdx.x] = static_cast<T>(src_col[row * row_stride]);
             }
         }
@@ -186,8 +194,9 @@ def _get_separable_conv_kernel_src(kernel_size, axis, ndim, anchor):
             #pragma unroll
             for (int j = 0; j < PATCH_PER_BLOCK; ++j) {
                 row = yStart + j * BLOCK_DIM_Y;
-                if (row > n_rows - 1)
-                    row = n_rows - 1;
+        """
+        code += _generate_boundary_condition_ops(mode, 'row', 'n_rows')
+        code += """
                 smem[threadIdx.y + HALO_SIZE * BLOCK_DIM_Y + j * BLOCK_DIM_Y][threadIdx.x] = static_cast<T>(src_col[row * row_stride]);
             }
 
@@ -196,8 +205,9 @@ def _get_separable_conv_kernel_src(kernel_size, axis, ndim, anchor):
             for (int j = 0; j < HALO_SIZE; ++j)
             {
                 row = yStart + (PATCH_PER_BLOCK + j) * BLOCK_DIM_Y;
-                if (row > n_rows - 1)
-                    row = n_rows - 1;
+        """
+        code += _generate_boundary_condition_ops(mode, 'row', 'n_rows')
+        code += """
                 smem[threadIdx.y + (PATCH_PER_BLOCK + HALO_SIZE) * BLOCK_DIM_Y + j * BLOCK_DIM_Y][threadIdx.x] = static_cast<T>(src_col[row * row_stride]);
             }
         }
@@ -211,11 +221,11 @@ def _get_separable_conv_kernel_src(kernel_size, axis, ndim, anchor):
 
             if (y < n_rows)
             {
-                T sum = 0;
+                W sum = 0;
 
                 #pragma unroll
-                for (int k = 0; k < kernel_size; ++k)
-                    sum = sum + smem[threadIdx.y + HALO_SIZE * BLOCK_DIM_Y + j * BLOCK_DIM_Y - anchor + k][threadIdx.x] * kernel[k];
+                for (int k = 0; k < KSIZE; ++k)
+                    sum += static_cast<W>(smem[threadIdx.y + (HALO_SIZE + j) * BLOCK_DIM_Y - anchor + k][threadIdx.x]) * kernel[k];
 
                 // TODO: replace with appropriate saturating cast to D for dst
                 dst[y * row_stride + x] = static_cast<D>(sum);
@@ -250,8 +260,9 @@ def _get_separable_conv_kernel_src(kernel_size, axis, ndim, anchor):
             #pragma unroll
             for (int j = 0; j < HALO_SIZE; ++j){
                 col = xStart - (HALO_SIZE - j) * BLOCK_DIM_X;
-                if (col < 0)
-                    col = 0;
+"""
+        code += _generate_boundary_condition_ops(mode, 'col', 'n_cols')
+        code += """
                 smem[threadIdx.y][threadIdx.x + j * BLOCK_DIM_X] = static_cast<T>(src_row[col]);
             }
         }
@@ -276,8 +287,9 @@ def _get_separable_conv_kernel_src(kernel_size, axis, ndim, anchor):
             #pragma unroll
             for (int j = 0; j < PATCH_PER_BLOCK; ++j) {
                 col = xStart + j * BLOCK_DIM_X;
-                if (col > n_cols - 1)
-                    col = n_cols - 1;
+        """
+        code += _generate_boundary_condition_ops(mode, 'col', 'n_cols')
+        code += """
                 smem[threadIdx.y][threadIdx.x + HALO_SIZE * BLOCK_DIM_X + j * BLOCK_DIM_X] = static_cast<T>(src_row[col]);
             }
 
@@ -285,8 +297,9 @@ def _get_separable_conv_kernel_src(kernel_size, axis, ndim, anchor):
             #pragma unroll
             for (int j = 0; j < HALO_SIZE; ++j){
                 col = xStart + (PATCH_PER_BLOCK + j) * BLOCK_DIM_X;
-                if (col > n_cols - 1)
-                    col = n_cols - 1;
+        """
+        code += _generate_boundary_condition_ops(mode, 'col', 'n_cols')
+        code += """
                 smem[threadIdx.y][threadIdx.x + (PATCH_PER_BLOCK + HALO_SIZE) * BLOCK_DIM_X + j * BLOCK_DIM_X] = static_cast<T>(src_row[col]);
             }
         }
@@ -300,11 +313,11 @@ def _get_separable_conv_kernel_src(kernel_size, axis, ndim, anchor):
 
             if (x < n_cols)
             {
-                T sum = 0;
+                W sum = 0;
 
                 #pragma unroll
-                for (int k = 0; k < kernel_size; ++k)
-                    sum = sum + smem[threadIdx.y][threadIdx.x + HALO_SIZE * BLOCK_DIM_X + j * BLOCK_DIM_X - anchor + k] * kernel[k];
+                for (int k = 0; k < KSIZE; ++k)
+                    sum += static_cast<W>(smem[threadIdx.y][threadIdx.x + (HALO_SIZE + j) * BLOCK_DIM_X - anchor + k]) * kernel[k];
 
                 // TODO: replace with appropriate saturating cast to D for dst
                 dst[y * row_stride + x] = static_cast<D>(sum);
@@ -315,35 +328,43 @@ def _get_separable_conv_kernel_src(kernel_size, axis, ndim, anchor):
     }}  // function
     }}  // extern "C"
     """
+    return func_name, blocks, patch_per_block, code
 
 
-    return func_name, blocks, code
-
-
-def _get_separable_conv_kernel(kernel_size, axis, ndim=2, anchor=None, options=()):
-    func_name, block, code = _get_separable_conv_kernel_src(
-        kernel_size=kernel_size, axis=axis, ndim=ndim, anchor=anchor
+def _get_separable_conv_kernel(kernel_size, axis, ndim, image_c_type,
+                               kernel_c_type, output_c_type, anchor=None,
+                               mode='nearest', patch_per_block=None, options=()):
+    func_name, block, patch_per_block, code = _get_separable_conv_kernel_src(
+        kernel_size=kernel_size,
+        axis=axis,
+        ndim=ndim,
+        image_c_type=image_c_type,
+        kernel_c_type=kernel_c_type,
+        output_c_type=output_c_type,
+        anchor=anchor,
+        mode=mode,
+        patch_per_block=patch_per_block
     )
     m = cp.RawModule(code=code)
-    return m.get_function(func_name), block
+    return m.get_function(func_name), block, patch_per_block
 
 
-def _get_grid(shape, block, axis):
+def _get_grid(shape, block, axis, patch_per_block):
     """Determine grid size from image shape and block parameters"""
     if len(shape) != 2:
         raise ValueError("grid calculation currently only implemented for 2D")
     if axis == 0:
         # column filter
         grid = (
-            math.ceil(src.shape[1] / block[0]),
-            math.ceil(src.shape[0] / (block[1] * patch_per_block)),
+            math.ceil(shape[1] / block[0]),
+            math.ceil(shape[0] / (block[1] * patch_per_block)),
             1,
         )
     elif axis == 1:
         # row filter
         grid = (
-            math.ceil(src.shape[1] / (block[0] * patch_per_block)),
-            math.ceil(src.shape[0] / block[1]),
+            math.ceil(shape[1] / (block[0] * patch_per_block)),
+            math.ceil(shape[0] / block[1]),
             1,
         )
     return grid
@@ -364,41 +385,78 @@ def _shmem_convolve1d(image, weights, axis=-1, output=None, mode="reflect",
         raise RuntimeError('weights must be 2 GiB or less, use FFTs instead')
     util._check_mode(mode)
 
-    if False:
-        # TODO: check whether weights need to be reversed as in CuPy's kernels
-        if convolution:
-            weights = weights[::-1]
-            origin = -origin
-            if weights.size % 2 == 0:
-                origin -= 1
-        elif weights.dtype.kind == "c":
-            # numpy.correlate conjugates weights rather than input.
-            weights = weights.conj()
+    if convolution:
+        weights = weights[::-1]
+        origin = -origin
+        if weights.size % 2 == 0:
+            origin -= 1
+    elif weights.dtype.kind == "c":
+        # numpy.correlate conjugates weights rather than input.
+        weights = weights.conj()
 
-        # TODO: do we need offset or origin?
-        offset = weights.size // 2 + origin
-
-    float_dtype = _supported_float_type(image_dtype, allow_complex=False)
+    anchor = weights.size // 2 + origin
+    float_dtype = _supported_float_type(image.dtype, allow_complex=False)
 
     # CUDA kernels assume C-contiguous memory layout
     image = image.astype(float_dtype, copy=False)
     image = cp.ascontiguousarray(image)
-    weights_dtype = util._get_weights_dtype(image, weights)  # TODO: currently casts all int types to int64
+    weights_dtype = util._get_weights_dtype(image, weights)  # TODO: currently casts all int types to float64
     weights = weights.astype(weights_dtype, copy=False)
     weights = cp.ascontiguousarray(weights)
 
+    output = util._get_output(output, image)
+
     index_c_type = util._get_inttype(image)
-    image_c_type = _dtype_char_to_c_types[float_dtype.char]
-    weights_c_type = _dtype_char_to_c_types[weights_dtype.char]
+    image_c_type = _get_c_type(float_dtype)
+    weights_c_type = _get_c_type(weights_dtype)
+    output_c_type = _get_c_type(output.dtype)
+
+    #     block, patch_per_block, halo_size = get_constants(src.ndim, axis, kernel.size, anchor, patch_per_block=patch_per_block)
+    # print(f"{halo_size=}")
+    conv_axis_kernel, block, patch_per_block = _get_separable_conv_kernel(
+        weights.size,
+        axis=axis,
+        ndim=ndim,
+        anchor=anchor,
+        image_c_type=image_c_type,
+        kernel_c_type=weights_c_type,
+        output_c_type=output_c_type,
+        mode=mode,
+        patch_per_block=None,
+    )
+    grid = _get_grid(
+        image.shape, block=block, axis=axis, patch_per_block=patch_per_block
+    )
+
+    conv_axis_kernel(
+        grid,
+        block,
+        (image, output, weights, anchor, image.shape[0], image.shape[1])
+    )
+    return output
 
 
 def convolve1d(image, weights, axis=-1, output=None, mode="reflect", cval=0.0,
-               origin=0):
+               origin=0, algorithm=None):
     # TODO: update conditions here once more edges and/or sizes are supported
-    if image.ndim == 2 and weights.size <= 32 and mode == 'edge':
+    if algorithm is None:
+       if image.ndim == 2 and weights.size <= 256:
+           algorithm = 'shared_memory'
+       else:
+           algorithm = 'elementwise'
+    algorithm = algorithm.lower()
+    if algorithm == 'shared_memory':
+        if image.ndim != 2:
+            raise NotImplementedError(
+                f"shared_memory not implemented for ndim={image.ndim}"
+            )
         out = _shmem_convolve1d(image, weights, axis=axis, output=output,
                                 mode=mode, cval=cval, origin=origin)
-    else:
+    elif algorithm == 'elementwise':
         out = ndi.convolve1d(image, weights, axis=axis, output=output,
                              mode=mode, cval=cval, origin=origin)
+    else:
+        raise ValueError(
+            "algorithm must be 'shared_memory', 'elementwise' or None"
+        )
     return out
