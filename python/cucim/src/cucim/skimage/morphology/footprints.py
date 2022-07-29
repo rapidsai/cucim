@@ -175,8 +175,8 @@ def _decompose_size(size, kernel_size=3):
 
 
 @deprecate_kwarg({'height': 'ncols', 'width': 'nrows'},
-                 deprecated_version='0.18.0',
-                 removed_version='0.20.0')
+                 deprecated_version='21.06.00',
+                 removed_version='22.02.00')
 def rectangle(nrows, ncols, dtype=cp.uint8, *, decomposition=None):
     """Generates a flat, rectangular-shaped footprint.
 

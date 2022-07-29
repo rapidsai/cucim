@@ -25,7 +25,7 @@ noisy_img_3d = random_noise(test_img_3d, mode="gaussian", var=0.1)
 # TODO: replace with CuPy version once completed
 def _denoise_wavelet(image, rescale_sigma=True, **kwargs):
 
-    if 'channel_axis' in kwargs and skimage.__version__ < '0.19':
+    if 'channel_axis' in kwargs and skimage.__version__ < '22.02.00':
         # convert channel_axis to older multichannel kwarg for skimage 0.18.x
         channel_axis = kwargs.pop('channel_axis')
         kwargs['multichannel'] = False if channel_axis is None else True
@@ -62,7 +62,7 @@ def test_invariant_denoise_color(dtype):
 
 def test_invariant_denoise_color_deprecated():
 
-    # can remove \A\Z here if only testing with scikit-image 0.19
+    # can remove \A\Z here if only testing with cuCIM 22.02.00
     with expected_warnings([r"`multichannel` is a deprecated argument|\A\Z"]):
         denoised_img_color = _invariant_denoise(
             noisy_img_color, _denoise_wavelet,

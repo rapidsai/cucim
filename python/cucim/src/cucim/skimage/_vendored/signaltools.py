@@ -424,7 +424,7 @@ def choose_conv_method(in1, in2, mode="full", measure=False):
     returns `direct` (e.g., to protect against floating point integer
     precision).
 
-    .. versionadded:: 0.19
+    .. versionadded:: 22.02.00
 
     Examples
     --------

@@ -260,8 +260,8 @@ def rescale(image, scale, order=None, mode='reflect', cval=0, clip=True,
         Otherwise, this parameter indicates which axis of the array corresponds
         to channels.
 
-        .. versionadded:: 0.19
-           ``channel_axis`` was added in 0.19.
+        .. versionadded:: 22.02.00
+           ``channel_axis`` was added in 22.02.00.
 
     Notes
     -----
@@ -1094,8 +1094,8 @@ def warp_polar(image, center=None, *, radius=None, output_shape=None,
         Otherwise, this parameter indicates which axis of the array corresponds
         to channels.
 
-        .. versionadded:: 0.19
-           ``channel_axis`` was added in 0.19.
+        .. versionadded:: 22.02.00
+           ``channel_axis`` was added in 22.02.00.
     **kwargs : keyword arguments
         Passed to `transform.warp`.
 

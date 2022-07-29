@@ -127,13 +127,8 @@ def main(args):
     fbase = os.path.splitext(pfile)[0]
     all_results.to_csv(fbase + ".csv")
     all_results.to_pickle(pfile)
-    try:
-        import tabulate
-
-        with open(fbase + ".md", "wt") as f:
-            f.write(all_results.to_markdown())
-    except ImportError:
-        pass
+    with open(fbase + ".md", "wt") as f:
+        f.write(all_results.to_markdown())
 
 
 if __name__ == '__main__':
