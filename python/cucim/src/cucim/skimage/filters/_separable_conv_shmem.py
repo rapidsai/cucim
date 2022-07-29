@@ -1,7 +1,7 @@
 import math
 
 import cupy as cp
-from cupyx.scipy import ndimage as ndi
+import cucim.skimage._vendored.ndimage as ndi
 
 from cucim.skimage._shared.utils import _supported_float_type
 from cucim.skimage._vendored._internal import _normalize_axis_index
@@ -451,7 +451,8 @@ def convolve1d(image, weights, axis=-1, output=None, mode="reflect", cval=0.0,
                 f"shared_memory not implemented for ndim={image.ndim}"
             )
         out = _shmem_convolve1d(image, weights, axis=axis, output=output,
-                                mode=mode, cval=cval, origin=origin)
+                                mode=mode, cval=cval, origin=origin,
+                                convolution=True)
     elif algorithm == 'elementwise':
         out = ndi.convolve1d(image, weights, axis=axis, output=output,
                              mode=mode, cval=cval, origin=origin)

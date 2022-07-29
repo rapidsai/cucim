@@ -12,7 +12,7 @@ All rights reserved.
 Original author: Lee Kamentsky
 """
 import cupy as cp
-import cupyx.scipy.ndimage as ndi
+import cucim.skimage._vendored.ndimage as ndi
 
 from cucim.skimage.util import dtype_limits
 

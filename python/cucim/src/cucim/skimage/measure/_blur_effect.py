@@ -1,5 +1,5 @@
 import cupy as cp
-import cupyx.scipy.ndimage as ndi
+import cucim.skimage._vendored.ndimage as ndi
 
 from ..color import rgb2gray
 from ..util import img_as_float

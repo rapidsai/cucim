@@ -5,6 +5,20 @@ import cupy
 import numpy
 
 
+def _is_integer_output(output, input):
+    if output is None:
+        return input.dtype.kind in 'iu'
+    elif isinstance(output, cupy.ndarray):
+        return output.dtype.kind in 'iu'
+    return cupy.dtype(output).kind in 'iu'
+
+
+def _check_cval(mode, cval, integer_output):
+    if mode == 'constant' and integer_output and not cupy.isfinite(cval):
+        raise NotImplementedError("Non-finite cval is not supported for "
+                                  "outputs with integer dtype.")
+
+
 def _get_weights_dtype(input, weights):
     if weights.dtype.kind == "c" or input.dtype.kind == "c":
         return cupy.promote_types(input.real.dtype, cupy.complex64)
@@ -53,19 +67,19 @@ def _fix_sequence_arg(arg, ndim, name, conv=lambda x: x):
     return lst
 
 
+def _check_origin(origin, width):
+    origin = int(origin)
+    if (width // 2 + origin < 0) or (width // 2 + origin >= width):
+        raise ValueError('invalid origin')
+    return origin
+
+
 def _check_mode(mode):
     if mode not in ('reflect', 'constant', 'nearest', 'mirror', 'wrap',
                     'grid-mirror', 'grid-wrap', 'grid-reflect'):
         msg = f'boundary mode not supported (actual: {mode})'
         raise RuntimeError(msg)
     return mode
-
-
-def _check_origin(origin, width):
-    origin = int(origin)
-    if (width // 2 + origin < 0) or (width // 2 + origin >= width):
-        raise ValueError('invalid origin')
-    return origin
 
 
 def _get_inttype(input):

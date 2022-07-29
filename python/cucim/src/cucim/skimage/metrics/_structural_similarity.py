@@ -1,7 +1,7 @@
 import functools
 
 import cupy as cp
-from cupyx.scipy.ndimage import uniform_filter
+import cucim.skimage._vendored.ndimage as ndi
 
 from .._shared import utils
 from .._shared.filters import gaussian
@@ -187,7 +187,7 @@ def structural_similarity(im1, im2,
         filter_func = gaussian
         filter_args = {'sigma': sigma, 'truncate': truncate, 'mode': 'reflect'}
     else:
-        filter_func = uniform_filter
+        filter_func = ndi.uniform_filter
         filter_args = {'size': win_size}
 
     # ndimage filters need floating point data
