@@ -3,15 +3,12 @@ import warnings
 
 import cupy as cp
 import cucim.skimage._vendored.ndimage as ndi
-try:
-    from cupy_backends.cuda.api import runtime
-    _is_hip = runtime.is_hip
-except (ImportError, AttributeError):
-    _is_hip = False
 
 from cucim.skimage._shared.utils import _supported_float_type
 from cucim.skimage._vendored._internal import _normalize_axis_index
-from cucim.skimage._vendored._ndimage_filters_core import _CAST_FUNCTION
+from cucim.skimage._vendored._ndimage_filters_core import (
+    _ndimage_CAST_FUNCTION, _ndimage_includes
+)
 from cucim.skimage._vendored import _ndimage_util as util
 
 
@@ -150,29 +147,14 @@ def _get_separable_conv_kernel_src(kernel_size, axis, ndim, anchor, image_c_type
 
     func_name = f"convolve_size{kernel_size}_{ndim}d_axis{axis}"
 
-    code = f"""
+    code = """
     #include "cupy/carray.cuh"  // for float16
     #include "cupy/complex.cuh"  // for complex<float>
     """
 
-    if _is_hip:
-        code += r"""
-    // workaround for HIP: line begins with #include
-    #include <cupy/math_constants.h>\n
-    """
-    else:
-        code += r"""
-    #include <type_traits>  // let Jitify handle this
-    #include <cupy/math_constants.h>
-
-    template<> struct std::is_floating_point<float16> : std::true_type {};
-    template<> struct std::is_signed<float16> : std::true_type {};
-    template<class T> struct std::is_signed<complex<T>> : std::is_signed<T> {};
-    """
-
-    # SciPy-style integer casting for the output
-    # (use cast<W> instead of static_cast<W> for the output)
-    code += _CAST_FUNCTION
+    # SciPy-style float -> unsigned integer casting for the output
+    # (use cast<D>(sum) instead of static_cast<D>(sum) for the output)
+    code += _ndimage_includes + _ndimage_CAST_FUNCTION
 
     code += f"""
     #define MAX_KERNEL_SIZE 32

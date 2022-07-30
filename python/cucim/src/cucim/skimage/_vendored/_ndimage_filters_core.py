@@ -153,12 +153,12 @@ def _call_kernel(kernel, input, weights, output, structure=None,
 
 
 if _is_hip:
-    includes = r'''
+    _ndimage_includes = r'''
 // workaround for HIP: line begins with #include
 #include <cupy/math_constants.h>\n
 '''
 else:
-    includes = r'''
+    _ndimage_includes = r'''
 #include <type_traits>  // let Jitify handle this
 #include <cupy/math_constants.h>
 
@@ -168,7 +168,7 @@ template<class T> struct std::is_signed<complex<T>> : std::is_signed<T> {};
 '''
 
 
-_CAST_FUNCTION = """
+_ndimage_CAST_FUNCTION = """
 // Implements a casting function to make it compatible with scipy
 // Use like cast<to_type>(value)
 template <class B, class A>
@@ -300,7 +300,7 @@ def _generate_nd_kernel(name, pre, found, post, mode, w_shape, int_type,
         name += '_with_structure'
     if has_mask:
         name += '_with_mask'
-    preamble = includes + _CAST_FUNCTION + preamble
+    preamble = _ndimage_includes + _ndimage_CAST_FUNCTION + preamble
     options += ('--std=c++11', '-DCUPY_USE_JITIFY')
     return cupy.ElementwiseKernel(in_params, out_params, operation, name,
                                   reduce_dims=False, preamble=preamble,
