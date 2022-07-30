@@ -1,7 +1,11 @@
 import cupy as cp
 import pytest
 
-from cucim.skimage._vendored.ndimage import convolve1d, correlate1d
+from cucim.skimage._vendored.ndimage import (
+    convolve1d, correlate1d, gaussian_filter, gaussian_filter1d,
+    gaussian_gradient_magnitude, gaussian_laplace, laplace, prewitt, sobel,
+    uniform_filter, uniform_filter1d,
+)
 
 
 def _get_image(shape, dtype, seed=123):
@@ -36,44 +40,72 @@ def _get_rtol_atol(dtype):
 def _compare_implementations(
     shape, kernel_size, axis, dtype, mode, cval=0.0, origin=0,
     output_dtype=None, kernel_dtype=None, output_preallocated=False,
-    function=convolve1d, omit_kernel=False
+    function=convolve1d,
 ):
     dtype = cp.dtype(dtype)
     if kernel_dtype is None:
         kernel_dtype = dtype
     image = _get_image(shape, dtype)
-    if not omit_kernel:
-        kernel = _get_image((kernel_size,), kernel_dtype)
+    kernel = _get_image((kernel_size,), kernel_dtype)
     rtol, atol = _get_rtol_atol(kernel.dtype)
     kwargs = dict(axis=axis, mode=mode, cval=cval, origin=origin)
     if output_dtype is not None:
         output_dtype = cp.dtype(output_dtype)
-    args = (image, kernel) if not omit_kernel else (image,)
     if output_preallocated:
         if output_dtype is None:
             output_dtype = image.dtype
         output1 = cp.empty(image.shape, dtype=output_dtype)
         output2 = cp.empty(image.shape, dtype=output_dtype)
-        function(*args, output=output1, algorithm='elementwise')
-        function(*args, output=output2, algorithm='shared_memory')
+        function(image, kernel, output=output1, algorithm='elementwise', **kwargs)
+        function(image, kernel, output=output2, algorithm='shared_memory', **kwargs)
         cp.testing.assert_allclose(output1, output2, rtol=rtol, atol=atol)
         return
-    output1 = function(*args, output=output_dtype, algorithm='elementwise')
-    output2 = function(*args, output=output_dtype, algorithm='shared_memory')
+    output1 = function(image, kernel, output=output_dtype, algorithm='elementwise', **kwargs)
+    output2 = function(image, kernel, output=output_dtype, algorithm='shared_memory', **kwargs)
     cp.testing.assert_allclose(output1, output2, rtol=rtol, atol=atol)
     return
 
 
-@pytest.mark.parametrize('shape', ((64, 57),))
+def _compare_implementations_other(
+    shape, dtype, mode, cval=0.0,
+    output_dtype=None, kernel_dtype=None, output_preallocated=False,
+    function=convolve1d, func_kwargs={},
+):
+    dtype = cp.dtype(dtype)
+    image = _get_image(shape, dtype)
+    rtol, atol = _get_rtol_atol(image.dtype)
+    kwargs = dict(mode=mode, cval=cval)
+    if func_kwargs:
+        kwargs.update(func_kwargs)
+    if output_dtype is not None:
+        output_dtype = cp.dtype(output_dtype)
+    if output_preallocated:
+        if output_dtype is None:
+            output_dtype = image.dtype
+        output1 = cp.empty(image.shape, dtype=output_dtype)
+        output2 = cp.empty(image.shape, dtype=output_dtype)
+        function(image, output=output1, algorithm='elementwise', **kwargs)
+        function(image, output=output2, algorithm='shared_memory', **kwargs)
+        cp.testing.assert_allclose(output1, output2, rtol=rtol, atol=atol)
+        return
+    output1 = function(image, output=output_dtype, algorithm='elementwise', **kwargs)
+    output2 = function(image, output=output_dtype, algorithm='shared_memory', **kwargs)
+    cp.testing.assert_allclose(output1, output2, rtol=rtol, atol=atol)
+    return
+
+
+@pytest.mark.parametrize('shape', ((64, 57), (1000, 500)))
 @pytest.mark.parametrize('axis', (0, 1))
 @pytest.mark.parametrize('origin', ('min', 0, 'max'))
-@pytest.mark.parametrize(
-    'kernel_size', tuple(range(1, 16)) + (30, 31, 63, 64, 125, 257)
-)
+@pytest.mark.parametrize('kernel_size', tuple(range(1, 17)))
 @pytest.mark.parametrize('function', [convolve1d, correlate1d])
-def test_separable_kernel_sizes_and_origins(shape, axis, origin, kernel_size, function):
-    if origin == 'min':
-        origin = -kernel_size // 2
+def test_separable_kernel_sizes_and_origins(
+    shape, axis, origin, kernel_size, function
+):
+    if kernel_size == 1:
+        origin = 0
+    elif origin == 'min':
+        origin = -(kernel_size // 2)
     elif origin == 'max':
         origin = kernel_size // 2
         if kernel_size % 2 == 0:
@@ -89,13 +121,44 @@ def test_separable_kernel_sizes_and_origins(shape, axis, origin, kernel_size, fu
     )
 
 
+@pytest.mark.parametrize('shape', ((64, 57), (1000, 500)))
+@pytest.mark.parametrize('axis', (0, 1))
+@pytest.mark.parametrize(
+    'kernel_size',
+    tuple(range(17, 129, 11)) + tuple(range(145, 275, 41))
+)
+def test_separable_kernel_larger_sizes(shape, axis, kernel_size):
+    _compare_implementations(
+        shape,
+        kernel_size=kernel_size,
+        axis=axis,
+        dtype=cp.float32,
+        mode='reflect',
+        origin=0,
+    )
+
+
+@pytest.mark.parametrize('shape', ((1000, 500),))
+@pytest.mark.parametrize('axis', (0, 1))
+def test_separable_elementwise_very_large_size_fallback(shape, axis):
+    """Very large kernel to make it likely shared memory will be exceeded."""
+    _compare_implementations(
+        shape,
+        kernel_size=901,
+        axis=axis,
+        dtype=cp.float64,
+        mode='nearest',
+        origin=0,
+    )
+
+
 # test large and small sizes, highly anisotropic sizes
 @pytest.mark.parametrize('shape', ((4000, 2000), (1, 1), (5, 500), (1500, 5)))
 @pytest.mark.parametrize('axis', (-1, -2))
-@pytest.mark.parametrize('kernel_size', (1, 7, 8))
+@pytest.mark.parametrize('kernel_size', (1, 38, 129))
 @pytest.mark.parametrize(
     'mode',
-    ('nearest', 'constant', ('constant', 1), 'reflect', 'wrap', 'mirror'),
+    ('nearest', 'reflect', 'wrap', 'mirror', 'constant', ('constant', 1)),
 )
 def test_separable_image_shapes_and_modes(shape, axis, kernel_size, mode):
     if isinstance(mode, tuple):
@@ -172,23 +235,39 @@ def test_separable_input_and_output_dtypes(
 
 
 
-# @pytest.mark.parametrize('shape', ((64, 57),))
-# @pytest.mark.parametrize('axis', (0, 1))
-# @pytest.mark.parametrize('origin', ('min', 0, 'max'))
-# @pytest.mark.parametrize(
-#     'kernel_size', tuple()
-# )
-# @pytest.mark.parametrize('function', [gaussian, prewitt, sobel, scharr])
-# def test_separable_kernel_sizes_and_origins(shape, axis, origin, kernel_size, function):
-#     out = function(
-#         shape,
-#         kernel_size=kernel_size,
-#         axis=axis,
-#         dtype=cp.float32,
-#         mode='nearest',
-#         origin=origin,
-#         function=function,
-#     )
+@pytest.mark.parametrize('shape', ((64, 57),))
+@pytest.mark.parametrize('axis', (0, 1))
+@pytest.mark.parametrize('origin', ('min', 0, 'max'))
+@pytest.mark.parametrize(
+    'function, func_kwargs',
+    [
+        (gaussian_filter, dict(sigma=1.5)),
+        (gaussian_filter1d, dict(sigma=1.5, axis=0)),
+        (gaussian_filter1d, dict(sigma=1.5, axis=1)),
+        (gaussian_gradient_magnitude, dict(sigma=3.5)),
+        (gaussian_laplace, dict(sigma=2.5)),
+        (laplace, {}),
+        (prewitt, {}),
+        (sobel, {}),
+        (uniform_filter, dict(size=7)),
+        (uniform_filter1d, dict(size=7, axis=0)),
+        (uniform_filter1d, dict(size=7, axis=1)),
+    ]
+)
+def test_separable_internal_kernel(
+    shape, axis, origin, function, func_kwargs
+):
+    """
+    Test case to make sure the 'algorithm' kwarg works for all other separable
+    ndimage filters as well.
+    """
+    out = _compare_implementations_other(
+        shape,
+        dtype=cp.float32,
+        mode='nearest',
+        function=function,
+        func_kwargs=func_kwargs,
+    )
 
 
 # TODO: add separable min and max as well

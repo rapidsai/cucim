@@ -37,6 +37,8 @@ def _get_constants(ndim, axis, kernel_size, anchor, patch_per_block=None):
             block_x = 32  # 16 in CUDA example
             block_y = 8  # 4 in CUDA example
             halo_size = math.ceil(halo_pixels_needed / block_y)
+        # can have out of bounds access unless patch_per_block >= halo_size
+        patch_per_block = max(patch_per_block, halo_size)
         # TODO: check halo_size. may be larger than needed right now
     elif ndim == 3:
         raise NotImplementedError("TODO")
@@ -171,7 +173,6 @@ def _get_separable_conv_kernel_src(kernel_size, axis, ndim, anchor, image_c_type
     {{
     """
 
-
     if ndim == 2 and axis == 0:
         # as in OpenCV's column_filter.hpp
         code += """
@@ -184,7 +185,7 @@ def _get_separable_conv_kernel_src(kernel_size, axis, ndim, anchor, image_c_type
         const int yStart = blockIdx.y * (BLOCK_DIM_Y * PATCH_PER_BLOCK) + threadIdx.y;
 
         // memory is contiguous along last (columns) axis
-        const int row_stride = n_cols; // stride (in elements) along axis 0
+        const int row_stride = n_cols;  // stride (in elements) along axis 0
         int row;
 
         if (blockIdx.y > 0)
@@ -278,7 +279,7 @@ def _get_separable_conv_kernel_src(kernel_size, axis, ndim, anchor, image_c_type
                 for (int k = 0; k < KSIZE; ++k)
                     sum += static_cast<W>(smem[threadIdx.y + (HALO_SIZE + j) * BLOCK_DIM_Y - anchor + k][threadIdx.x]) * kernel[k];
 
-                dst[y * row_stride + x] = cast<D>(-sum);
+                dst[y * row_stride + x] = cast<D>(sum);
             }
         }
         """
@@ -321,7 +322,6 @@ def _get_separable_conv_kernel_src(kernel_size, axis, ndim, anchor, image_c_type
                     smem[threadIdx.y][threadIdx.x + j * BLOCK_DIM_X] = static_cast<T>(src_row[col]);
             }
         }
-
         if (blockIdx.x + 2 < gridDim.x)
         {
             //Load main data
@@ -362,13 +362,12 @@ def _get_separable_conv_kernel_src(kernel_size, axis, ndim, anchor, image_c_type
             code += f"""
                 if ((col < 0) || (col >= n_cols))
                     smem[threadIdx.y][threadIdx.x + (PATCH_PER_BLOCK + HALO_SIZE) * BLOCK_DIM_X + j * BLOCK_DIM_X] = static_cast<T>({cval});
+                else
             """
         else:
             code += util._generate_boundary_condition_ops(mode, 'col', 'n_cols')
-            code += """
-                    smem[threadIdx.y][threadIdx.x + (PATCH_PER_BLOCK + HALO_SIZE) * BLOCK_DIM_X + j * BLOCK_DIM_X] = static_cast<T>(src_row[col]);
-            """
         code += """
+                    smem[threadIdx.y][threadIdx.x + (PATCH_PER_BLOCK + HALO_SIZE) * BLOCK_DIM_X + j * BLOCK_DIM_X] = static_cast<T>(src_row[col]);
             }
         }
 

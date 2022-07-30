@@ -1,4 +1,5 @@
 """A vendored subset of cupyx.scipy.ndimage._filters"""
+import warnings
 
 import cupy
 import numpy
@@ -198,7 +199,7 @@ def _correlate_or_convolve1d(input, weights, axis, output, mode, cval, origin,
         )
         if input.ndim != 2:
             raise NotImplementedError(
-                f"shared_memory not implemented for ndim={image.ndim}"
+                f"shared_memory not implemented for ndim={input.ndim}"
             )
         try:
             out = _shmem_convolve1d(input, weights, axis=axis, output=output,
@@ -247,8 +248,7 @@ def _run_1d_correlates(input, params, get_weights, output, mode, cval,
     wghts = [wghts[param] for param in params]
     return _filters_core._run_1d_filters(
         [None if w is None else correlate1d for w in wghts],
-        input, wghts, output, mode, cval, origin,
-        filter_kwargs=filter_kwargs)
+        input, wghts, output, mode, cval, origin, **filter_kwargs)
 
 
 def uniform_filter1d(input, size, axis=-1, output=None, mode="reflect",
@@ -472,7 +472,9 @@ def prewitt(input, axis=-1, output=None, mode="reflect", cval=0.0, *,
         and input is integral) the results may not perfectly match the results
         from SciPy due to floating-point rounding of intermediate results.
     """
-    return _prewitt_or_sobel(input, axis, output, mode, cval, cupy.ones(3))
+    return _prewitt_or_sobel(
+        input, axis, output, mode, cval, cupy.ones(3), algorithm
+    )
 
 
 def sobel(input, axis=-1, output=None, mode="reflect", cval=0.0, *,
@@ -500,8 +502,9 @@ def sobel(input, axis=-1, output=None, mode="reflect", cval=0.0, *,
         and input is integral) the results may not perfectly match the results
         from SciPy due to floating-point rounding of intermediate results.
     """
-    return _prewitt_or_sobel(input, axis, output, mode, cval,
-                             cupy.array([1, 2, 1]))
+    return _prewitt_or_sobel(
+        input, axis, output, mode, cval, cupy.array([1, 2, 1]), algorithm
+    )
 
 
 def _prewitt_or_sobel(input, axis, output, mode, cval, weights, algorithm):
