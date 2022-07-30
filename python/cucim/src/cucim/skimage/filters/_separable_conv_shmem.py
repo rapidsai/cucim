@@ -3,9 +3,15 @@ import warnings
 
 import cupy as cp
 import cucim.skimage._vendored.ndimage as ndi
+try:
+    from cupy_backends.cuda.api import runtime
+    _is_hip = runtime.is_hip
+except (ImportError, AttributeError):
+    _is_hip = False
 
 from cucim.skimage._shared.utils import _supported_float_type
 from cucim.skimage._vendored._internal import _normalize_axis_index
+from cucim.skimage._vendored._ndimage_filters_core import _CAST_FUNCTION
 from cucim.skimage._vendored import _ndimage_util as util
 
 
@@ -147,10 +153,31 @@ def _get_separable_conv_kernel_src(kernel_size, axis, ndim, anchor, image_c_type
     code = f"""
     #include "cupy/carray.cuh"  // for float16
     #include "cupy/complex.cuh"  // for complex<float>
+    """
 
+    if _is_hip:
+        code += r"""
+    // workaround for HIP: line begins with #include
+    #include <cupy/math_constants.h>\n
+    """
+    else:
+        code += r"""
+    #include <type_traits>  // let Jitify handle this
+    #include <cupy/math_constants.h>
+
+    template<> struct std::is_floating_point<float16> : std::true_type {};
+    template<> struct std::is_signed<float16> : std::true_type {};
+    template<class T> struct std::is_signed<complex<T>> : std::is_signed<T> {};
+    """
+
+    # SciPy-style integer casting for the output
+    # (use cast<W> instead of static_cast<W> for the output)
+    code += _CAST_FUNCTION
+
+    code += f"""
     #define MAX_KERNEL_SIZE 32
 
-    #define KSIZE {kernel_size}
+    const int KSIZE = {kernel_size};
     const int BLOCK_DIM_X = {block_x};
     const int BLOCK_DIM_Y = {block_y};
     const int PATCH_PER_BLOCK = {patch_per_block};
@@ -163,6 +190,7 @@ def _get_separable_conv_kernel_src(kernel_size, axis, ndim, anchor, image_c_type
     __global__ void {func_name}(const T *src, D *dst, const W* kernel, const int anchor, int n_rows, int n_cols)
     {{
     """
+
 
     if ndim == 2 and axis == 0:
         # as in OpenCV's column_filter.hpp
@@ -251,7 +279,7 @@ def _get_separable_conv_kernel_src(kernel_size, axis, ndim, anchor, image_c_type
         else:
             code += util._generate_boundary_condition_ops(mode, 'row', 'n_rows')
         code += """
-                    smem[threadIdx.y + (PATCH_PE3_BLOCK + HALO_SIZE) * BLOCK_DIM_Y + j * BLOCK_DIM_Y][threadIdx.x] = static_cast<T>(src_col[row * row_stride]);
+                    smem[threadIdx.y + (PATCH_PER_BLOCK + HALO_SIZE) * BLOCK_DIM_Y + j * BLOCK_DIM_Y][threadIdx.x] = static_cast<T>(src_col[row * row_stride]);
             }
         }
 
@@ -270,12 +298,7 @@ def _get_separable_conv_kernel_src(kernel_size, axis, ndim, anchor, image_c_type
                 for (int k = 0; k < KSIZE; ++k)
                     sum += static_cast<W>(smem[threadIdx.y + (HALO_SIZE + j) * BLOCK_DIM_Y - anchor + k][threadIdx.x]) * kernel[k];
 
-                if (sum >= static_cast<W>(0))
-                {
-                    dst[y * row_stride + x] = static_cast<D>(sum);
-                } else {
-                    dst[y * row_stride + x] = -static_cast<D>(-sum);
-                }
+                dst[y * row_stride + x] = cast<D>(-sum);
             }
         }
         """
@@ -384,12 +407,7 @@ def _get_separable_conv_kernel_src(kernel_size, axis, ndim, anchor, image_c_type
                 for (int k = 0; k < KSIZE; ++k)
                     sum += static_cast<W>(smem[threadIdx.y][threadIdx.x + (HALO_SIZE + j) * BLOCK_DIM_X - anchor + k]) * kernel[k];
 
-                if (sum >= static_cast<W>(0))
-                {
-                    dst[y * row_stride + x] = static_cast<D>(sum);
-                } else {
-                    dst[y * row_stride + x] = -static_cast<D>(-sum);
-                }
+                dst[y * row_stride + x] = cast<D>(sum);
             }
         }
         """
@@ -416,7 +434,8 @@ def _get_separable_conv_kernel(kernel_size, axis, ndim, image_c_type,
         cval=cval,
         patch_per_block=patch_per_block
     )
-    m = cp.RawModule(code=code)
+    options = ('--std=c++11', '-DCUPY_USE_JITIFY')
+    m = cp.RawModule(code=code, options=options)
     return m.get_function(func_name), block, patch_per_block
 
 
