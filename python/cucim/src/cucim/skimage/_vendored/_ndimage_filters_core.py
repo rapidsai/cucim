@@ -3,8 +3,12 @@ import warnings
 
 import cupy
 import numpy
+try:
+    from cupy_backends.cuda.api import runtime
+    _is_hip = runtime.is_hip
+except (ImportError, AttributeError):
+    _is_hip = False
 
-from cupy_backends.cuda.api import runtime
 from cucim.skimage._vendored import _internal as internal
 from cucim.skimage._vendored import _ndimage_util as _util
 
@@ -71,7 +75,8 @@ def _check_nd_args(input, weights, mode, origin, wghts_name='filter weights'):
     return tuple(origins), _util._get_inttype(input)
 
 
-def _run_1d_filters(filters, input, args, output, mode, cval, origin=0):
+def _run_1d_filters(filters, input, args, output, mode, cval, origin=0,
+                    **filter_kwargs):
     """
     Runs a series of 1D filters forming an nd filter. The filters must be a
     list of callables that take input, arg, axis, output, mode, cval, origin.
@@ -96,7 +101,7 @@ def _run_1d_filters(filters, input, args, output, mode, cval, origin=0):
     for axis, (fltr, arg, mode, origin) in enumerate(iterator):
         if fltr is None:
             continue
-        fltr(input, arg, axis, output, mode, cval, origin)
+        fltr(input, arg, axis, output, mode, cval, origin, **filter_kwargs)
         input, output = output, temp if first else input
         first = False
     if isinstance(output_orig, cupy.ndarray) and input is not output_orig:
@@ -147,7 +152,7 @@ def _call_kernel(kernel, input, weights, output, structure=None,
     return output
 
 
-if runtime.is_hip:
+if _is_hip:
     includes = r'''
 // workaround for HIP: line begins with #include
 #include <cupy/math_constants.h>\n

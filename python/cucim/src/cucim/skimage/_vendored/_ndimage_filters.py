@@ -78,7 +78,7 @@ def convolve(input, weights, output=None, mode='reflect', cval=0.0, origin=0):
 
 
 def correlate1d(input, weights, axis=-1, output=None, mode="reflect", cval=0.0,
-                origin=0):
+                origin=0, *, algorithm=None):
     """One-dimensional correlate.
 
     The array is correlated with the given kernel.
@@ -108,13 +108,13 @@ def correlate1d(input, weights, axis=-1, output=None, mode="reflect", cval=0.0,
         and input is integral) the results may not perfectly match the results
         from SciPy due to floating-point rounding of intermediate results.
     """
-    weights, origins = _filters_core._convert_1d_args(input.ndim, weights,
-                                                      origin, axis)
-    return _correlate_or_convolve(input, weights, output, mode, cval, origins)
+    return _correlate_or_convolve1d(
+        input, weights, axis, output, mode, cval, origin, False, algorithm
+    )
 
 
 def convolve1d(input, weights, axis=-1, output=None, mode="reflect", cval=0.0,
-               origin=0):
+               origin=0, *, algorithm=None):
     """One-dimensional convolution.
 
     The array is convolved with the given kernel.
@@ -143,10 +143,9 @@ def convolve1d(input, weights, axis=-1, output=None, mode="reflect", cval=0.0,
         and input is integral) the results may not perfectly match the results
         from SciPy due to floating-point rounding of intermediate results.
     """
-    weights, origins = _filters_core._convert_1d_args(input.ndim, weights,
-                                                      origin, axis)
-    return _correlate_or_convolve(input, weights, output, mode, cval, origins,
-                                  True)
+    return _correlate_or_convolve1d(
+        input, weights, axis, output, mode, cval, origin, True, algorithm
+    )
 
 
 def _correlate_or_convolve(input, weights, output, mode, cval, origin,
@@ -178,6 +177,50 @@ def _correlate_or_convolve(input, weights, output, mode, cval, origin,
     return output
 
 
+def _correlate_or_convolve1d(input, weights, axis, output, mode, cval, origin,
+                             convolution=False, algorithm=None):
+    # Calls fast shared-memory convolution when possible, otherwise falls back
+    # to the vendored elementwise _correlate_or_convolve
+    if algorithm is None:
+       if input.ndim == 2 and weights.size <= 256:
+           algorithm = 'shared_memory'
+       else:
+           algorithm = 'elementwise'
+    elif algorithm not in ['shared_memory', 'elementwise']:
+        raise ValueError(
+            "algorithm must be 'shared_memory', 'elementwise' or None"
+        )
+    if mode == 'wrap':
+        mode = 'grid-wrap'
+    if algorithm == 'shared_memory':
+        from cucim.skimage.filters._separable_conv_shmem import (
+            _shmem_convolve1d, ResourceLimitError
+        )
+        if input.ndim != 2:
+            raise NotImplementedError(
+                f"shared_memory not implemented for ndim={image.ndim}"
+            )
+        try:
+            out = _shmem_convolve1d(input, weights, axis=axis, output=output,
+                                    mode=mode, cval=cval, origin=origin,
+                                    convolution=convolution)
+            return out
+        except ResourceLimitError:
+            # fallback to elementwise if inadequate shared memory available
+            warnings.warn(
+                "Inadequate resources for algorithm='shared_memory: "
+                "falling back to the elementwise implementation"
+            )
+            algorithm = 'elementwise'
+    if algorithm == 'elementwise':
+        weights, origins = _filters_core._convert_1d_args(
+            input.ndim, weights, origin, axis
+        )
+        return _correlate_or_convolve(
+            input, weights, output, mode, cval, origins, convolution
+        )
+
+
 @cupy.memoize(for_each_device=True)
 def _get_correlate_kernel(mode, w_shape, int_type, offsets, cval):
     return _filters_core._generate_nd_kernel(
@@ -189,7 +232,7 @@ def _get_correlate_kernel(mode, w_shape, int_type, offsets, cval):
 
 
 def _run_1d_correlates(input, params, get_weights, output, mode, cval,
-                       origin=0):
+                       origin=0, **filter_kwargs):
     """
     Enhanced version of _run_1d_filters that uses correlate1d as the filter
     function. The params are a list of values to pass to the get_weights
@@ -204,11 +247,12 @@ def _run_1d_correlates(input, params, get_weights, output, mode, cval,
     wghts = [wghts[param] for param in params]
     return _filters_core._run_1d_filters(
         [None if w is None else correlate1d for w in wghts],
-        input, wghts, output, mode, cval, origin)
+        input, wghts, output, mode, cval, origin,
+        filter_kwargs=filter_kwargs)
 
 
 def uniform_filter1d(input, size, axis=-1, output=None, mode="reflect",
-                     cval=0.0, origin=0):
+                     cval=0.0, origin=0, *, algorithm=None):
     """One-dimensional uniform filter along the given axis.
 
     The lines of the array along the given axis are filtered with a uniform
@@ -240,11 +284,11 @@ def uniform_filter1d(input, size, axis=-1, output=None, mode="reflect",
         from SciPy due to floating-point rounding of intermediate results.
     """
     return correlate1d(input, cupy.ones(size) / size, axis, output, mode, cval,
-                       origin)
+                       origin, algorithm=algorithm)
 
 
 def uniform_filter(input, size=3, output=None, mode="reflect", cval=0.0,
-                   origin=0):
+                   origin=0, *, algorithm=None):
     """Multi-dimensional uniform filter.
 
     Args:
@@ -278,11 +322,14 @@ def uniform_filter(input, size=3, output=None, mode="reflect", cval=0.0,
     def get(size):
         return None if size <= 1 else cupy.ones(size) / size
 
-    return _run_1d_correlates(input, sizes, get, output, mode, cval, origin)
+    return _run_1d_correlates(
+        input, sizes, get, output, mode, cval, origin, algorithm=algorithm
+    )
 
 
 def gaussian_filter1d(input, sigma, axis=-1, order=0, output=None,
-                      mode="reflect", cval=0.0, truncate=4.0):
+                      mode="reflect", cval=0.0, truncate=4.0, *,
+                      algorithm=None):
     """One-dimensional Gaussian filter along the given axis.
 
     The lines of the array along the given axis are filtered with a Gaussian
@@ -317,11 +364,13 @@ def gaussian_filter1d(input, sigma, axis=-1, order=0, output=None,
     """
     radius = int(float(truncate) * float(sigma) + 0.5)
     weights = _gaussian_kernel1d(sigma, int(order), radius)
-    return correlate1d(input, weights, axis, output, mode, cval)
+    return correlate1d(
+        input, weights, axis, output, mode, cval, algorithm=algorithm
+    )
 
 
 def gaussian_filter(input, sigma, order=0, output=None, mode="reflect",
-                    cval=0.0, truncate=4.0):
+                    cval=0.0, truncate=4.0, *, algorithm=None):
     """Multi-dimensional Gaussian filter.
 
     Args:
@@ -364,7 +413,7 @@ def gaussian_filter(input, sigma, order=0, output=None, mode="reflect",
         return _gaussian_kernel1d(sigma, order, radius)
 
     return _run_1d_correlates(input, list(zip(sigmas, orders)), get, output,
-                              mode, cval, 0)
+                              mode, cval, 0, algorithm=algorithm)
 
 
 def _gaussian_kernel1d(sigma, order, radius):
@@ -398,7 +447,8 @@ def _gaussian_kernel1d(sigma, order, radius):
     return cupy.asarray((q * phi_x)[::-1])
 
 
-def prewitt(input, axis=-1, output=None, mode="reflect", cval=0.0):
+def prewitt(input, axis=-1, output=None, mode="reflect", cval=0.0, *,
+            algorithm=None):
     """Compute a Prewitt filter along the given axis.
 
     Args:
@@ -425,7 +475,8 @@ def prewitt(input, axis=-1, output=None, mode="reflect", cval=0.0):
     return _prewitt_or_sobel(input, axis, output, mode, cval, cupy.ones(3))
 
 
-def sobel(input, axis=-1, output=None, mode="reflect", cval=0.0):
+def sobel(input, axis=-1, output=None, mode="reflect", cval=0.0, *,
+          algorithm=None):
     """Compute a Sobel filter along the given axis.
 
     Args:
@@ -453,14 +504,14 @@ def sobel(input, axis=-1, output=None, mode="reflect", cval=0.0):
                              cupy.array([1, 2, 1]))
 
 
-def _prewitt_or_sobel(input, axis, output, mode, cval, weights):
+def _prewitt_or_sobel(input, axis, output, mode, cval, weights, algorithm):
     axis = internal._normalize_axis_index(axis, input.ndim)
 
     def get(is_diff):
         return cupy.array([-1, 0, 1]) if is_diff else weights
 
     return _run_1d_correlates(input, [a == axis for a in range(input.ndim)],
-                              get, output, mode, cval)
+                              get, output, mode, cval, algorithm=algorithm)
 
 
 def generic_laplace(input, derivative2, output=None, mode="reflect",
@@ -522,7 +573,7 @@ def generic_laplace(input, derivative2, output=None, mode="reflect",
     return output
 
 
-def laplace(input, output=None, mode="reflect", cval=0.0):
+def laplace(input, output=None, mode="reflect", cval=0.0, *, algorithm=None):
     """Multi-dimensional Laplace filter based on approximate second
     derivatives.
 
@@ -548,13 +599,15 @@ def laplace(input, output=None, mode="reflect", cval=0.0):
     weights = cupy.array([1, -2, 1], dtype=cupy.float64)
 
     def derivative2(input, axis, output, mode, cval):
-        return correlate1d(input, weights, axis, output, mode, cval)
+        return correlate1d(
+            input, weights, axis, output, mode, cval, algorithm=algorithm
+        )
 
     return generic_laplace(input, derivative2, output, mode, cval)
 
 
 def gaussian_laplace(input, sigma, output=None, mode="reflect",
-                     cval=0.0, **kwargs):
+                     cval=0.0, *, algorithm=None, **kwargs):
     """Multi-dimensional Laplace filter using Gaussian second derivatives.
 
     Args:
@@ -585,7 +638,7 @@ def gaussian_laplace(input, sigma, output=None, mode="reflect",
         order = [0] * input.ndim
         order[axis] = 2
         return gaussian_filter(input, sigma, order, output, mode, cval,
-                               **kwargs)
+                               algorithm=algorithm, **kwargs)
     return generic_laplace(input, derivative2, output, mode, cval)
 
 
@@ -652,7 +705,7 @@ def generic_gradient_magnitude(input, derivative, output=None,
 
 
 def gaussian_gradient_magnitude(input, sigma, output=None, mode="reflect",
-                                cval=0.0, **kwargs):
+                                cval=0.0, *, algorithm=None, **kwargs):
     """Multi-dimensional gradient magnitude using Gaussian derivatives.
 
     Args:
@@ -683,5 +736,5 @@ def gaussian_gradient_magnitude(input, sigma, output=None, mode="reflect",
         order = [0] * input.ndim
         order[axis] = 1
         return gaussian_filter(input, sigma, order, output, mode, cval,
-                               **kwargs)
+                               algorithm=algorithm, **kwargs)
     return generic_gradient_magnitude(input, derivative, output, mode, cval)
