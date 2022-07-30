@@ -157,8 +157,6 @@ def _get_separable_conv_kernel_src(kernel_size, axis, ndim, anchor, image_c_type
     code += _ndimage_includes + _ndimage_CAST_FUNCTION
 
     code += f"""
-    #define MAX_KERNEL_SIZE 32
-
     const int KSIZE = {kernel_size};
     const int BLOCK_DIM_X = {block_x};
     const int BLOCK_DIM_Y = {block_y};
