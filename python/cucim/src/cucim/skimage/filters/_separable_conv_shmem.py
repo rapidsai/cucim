@@ -16,11 +16,6 @@ def _get_constants(ndim, axis, kernel_size, anchor, patch_per_block=None):
     if ndim == 2:
         # note, in this file axis 0 = "y"
         #                    axis 1 = "x"
-        # TODO: adjust as needed based on kernel size to stay
-        #       within shared memory limits. Initial values
-        #       below should be suitable for up to 4 channels with
-        #       kernel size <= 32
-
         # for simplicity, keeping same halo size at both start and end
         if anchor is None:
             anchor = kernel_size // 2
@@ -39,7 +34,6 @@ def _get_constants(ndim, axis, kernel_size, anchor, patch_per_block=None):
             halo_size = math.ceil(halo_pixels_needed / block_y)
         # can have out of bounds access unless patch_per_block >= halo_size
         patch_per_block = max(patch_per_block, halo_size)
-        # TODO: check halo_size. may be larger than needed right now
     elif ndim == 3:
         raise NotImplementedError("TODO")
     else:
@@ -98,6 +92,7 @@ class ResourceLimitError(RuntimeError):
     pass
 
 
+@cp.memoize(for_each_device=True)
 def _check_smem_availability(ndim, axis, kernel_size, anchor=None,
                              patch_per_block=None, image_dtype=cp.float32,
                              device_id=None):
@@ -130,17 +125,16 @@ _dtype_char_to_c_types = {
 }
 
 
-def _get_c_type(dtype):
-    dtype = cp.dtype(dtype)
-    return _dtype_char_to_c_types[dtype.char]
-
-
-# Note: in OpenCV T is always float, float3 or float4    (so can replace saturate_cast with simply static_cast)
+# Note: in OpenCV T is always float, float3 or float4  (so can replace saturate_cast with simply static_cast)
 #                 D is can be floating or integer dtype and does need saturation
 # Note: the version below is only single-channel
 # Note: need to insert appropriate boundary condition for row/col
 
-def _get_separable_conv_kernel_src(kernel_size, axis, ndim, anchor, image_c_type, kernel_c_type, output_c_type, mode, cval, patch_per_block=None):
+@cp.memoize(for_each_device=True)
+def _get_separable_conv_kernel_src(
+    kernel_size, axis, ndim, anchor, image_c_type, kernel_c_type,
+    output_c_type, mode, cval, patch_per_block=None, flip_kernel=False
+):
 
     blocks, patch_per_block, halo_size = _get_constants(
         ndim, axis, kernel_size, anchor, patch_per_block
@@ -159,11 +153,16 @@ def _get_separable_conv_kernel_src(kernel_size, axis, ndim, anchor, image_c_type
     code += _ndimage_includes + _ndimage_CAST_FUNCTION
 
     code += f"""
-    const int KSIZE = {kernel_size};
-    const int BLOCK_DIM_X = {block_x};
-    const int BLOCK_DIM_Y = {block_y};
-    const int PATCH_PER_BLOCK = {patch_per_block};
-    const int HALO_SIZE = {halo_size};
+    #define KSIZE {kernel_size}
+    #define BLOCK_DIM_X {block_x}
+    #define BLOCK_DIM_Y {block_y}
+    #define PATCH_PER_BLOCK {patch_per_block}
+    #define HALO_SIZE {halo_size}
+    // const int KSIZE = {kernel_size};
+    // const int BLOCK_DIM_X = {block_x};
+    // const int BLOCK_DIM_Y = {block_y};
+    // const int PATCH_PER_BLOCK = {patch_per_block};
+    // const int HALO_SIZE = {halo_size};
     typedef {image_c_type}  T;
     typedef {output_c_type} D;
     typedef {kernel_c_type} W;
@@ -193,7 +192,7 @@ def _get_separable_conv_kernel_src(kernel_size, axis, ndim, anchor, image_c_type
             //Upper halo
             #pragma unroll
             for (int j = 0; j < HALO_SIZE; ++j)
-                smem[threadIdx.y + j * BLOCK_DIM_Y][threadIdx.x] = static_cast<T>(src_col[(yStart - (HALO_SIZE - j) * BLOCK_DIM_Y) * row_stride]);
+                smem[threadIdx.y + j * BLOCK_DIM_Y][threadIdx.x] = src_col[(yStart - (HALO_SIZE - j) * BLOCK_DIM_Y) * row_stride];
         }
         else
         {
@@ -210,21 +209,21 @@ def _get_separable_conv_kernel_src(kernel_size, axis, ndim, anchor, image_c_type
         else:
             code += util._generate_boundary_condition_ops(mode, 'row', 'n_rows')
         code += """
-                    smem[threadIdx.y + j * BLOCK_DIM_Y][threadIdx.x] = static_cast<T>(src_col[row * row_stride]);
+                    smem[threadIdx.y + j * BLOCK_DIM_Y][threadIdx.x] = src_col[row * row_stride];
             }
         }
 
-        if (blockIdx.y + 2 < gridDim.y)
+        if (blockIdx.y + 2 < gridDim.y)  // Note: +2 here assumes HALO_SIZE <= PATCH_PER_BLOCK so we ensure that elsewhere
         {
             //Main data
             #pragma unroll
             for (int j = 0; j < PATCH_PER_BLOCK; ++j)
-                smem[threadIdx.y + HALO_SIZE * BLOCK_DIM_Y + j * BLOCK_DIM_Y][threadIdx.x] = static_cast<T>(src_col[(yStart + j * BLOCK_DIM_Y) * row_stride]);
+                smem[threadIdx.y + HALO_SIZE * BLOCK_DIM_Y + j * BLOCK_DIM_Y][threadIdx.x] = src_col[(yStart + j * BLOCK_DIM_Y) * row_stride];
 
             //Lower halo
             #pragma unroll
             for (int j = 0; j < HALO_SIZE; ++j)
-                smem[threadIdx.y + (PATCH_PER_BLOCK + HALO_SIZE) * BLOCK_DIM_Y + j * BLOCK_DIM_Y][threadIdx.x] = static_cast<T>(src_col[(yStart + (PATCH_PER_BLOCK + j) * BLOCK_DIM_Y) * row_stride]);
+                smem[threadIdx.y + (PATCH_PER_BLOCK + HALO_SIZE) * BLOCK_DIM_Y + j * BLOCK_DIM_Y][threadIdx.x] = src_col[(yStart + (PATCH_PER_BLOCK + j) * BLOCK_DIM_Y) * row_stride];
         }
         else
         {
@@ -242,7 +241,7 @@ def _get_separable_conv_kernel_src(kernel_size, axis, ndim, anchor, image_c_type
         else:
             code += util._generate_boundary_condition_ops(mode, 'row', 'n_rows')
         code += """
-                    smem[threadIdx.y + HALO_SIZE * BLOCK_DIM_Y + j * BLOCK_DIM_Y][threadIdx.x] = static_cast<T>(src_col[row * row_stride]);
+                    smem[threadIdx.y + HALO_SIZE * BLOCK_DIM_Y + j * BLOCK_DIM_Y][threadIdx.x] = src_col[row * row_stride];
             }
 
             //Lower halo
@@ -260,7 +259,7 @@ def _get_separable_conv_kernel_src(kernel_size, axis, ndim, anchor, image_c_type
         else:
             code += util._generate_boundary_condition_ops(mode, 'row', 'n_rows')
         code += """
-                    smem[threadIdx.y + (PATCH_PER_BLOCK + HALO_SIZE) * BLOCK_DIM_Y + j * BLOCK_DIM_Y][threadIdx.x] = static_cast<T>(src_col[row * row_stride]);
+                    smem[threadIdx.y + (PATCH_PER_BLOCK + HALO_SIZE) * BLOCK_DIM_Y + j * BLOCK_DIM_Y][threadIdx.x] = src_col[row * row_stride];
             }
         }
 
@@ -277,8 +276,16 @@ def _get_separable_conv_kernel_src(kernel_size, axis, ndim, anchor, image_c_type
 
                 #pragma unroll
                 for (int k = 0; k < KSIZE; ++k)
-                    sum += static_cast<W>(smem[threadIdx.y + (HALO_SIZE + j) * BLOCK_DIM_Y - anchor + k][threadIdx.x]) * kernel[k];
-
+        """
+        if flip_kernel:
+            code += """
+                    sum = sum + static_cast<W>(smem[threadIdx.y + (HALO_SIZE + j) * BLOCK_DIM_Y - anchor + k][threadIdx.x]) * kernel[KSIZE - 1 - k];
+            """
+        else:
+            code += """
+                    sum = sum + static_cast<W>(smem[threadIdx.y + (HALO_SIZE + j) * BLOCK_DIM_Y - anchor + k][threadIdx.x]) * kernel[k];
+            """
+        code += """
                 dst[y * row_stride + x] = cast<D>(sum);
             }
         }
@@ -301,7 +308,7 @@ def _get_separable_conv_kernel_src(kernel_size, axis, ndim, anchor, image_c_type
             //Load left halo
             #pragma unroll
             for (int j = 0; j < HALO_SIZE; ++j)
-                smem[threadIdx.y][threadIdx.x + j * BLOCK_DIM_X] = static_cast<T>(src_row[xStart - (HALO_SIZE - j) * BLOCK_DIM_X]);
+                smem[threadIdx.y][threadIdx.x + j * BLOCK_DIM_X] = src_row[xStart - (HALO_SIZE - j) * BLOCK_DIM_X];
         }
         else
         {
@@ -319,20 +326,20 @@ def _get_separable_conv_kernel_src(kernel_size, axis, ndim, anchor, image_c_type
         else:
             code += util._generate_boundary_condition_ops(mode, 'col', 'n_cols')
         code += """
-                    smem[threadIdx.y][threadIdx.x + j * BLOCK_DIM_X] = static_cast<T>(src_row[col]);
+                    smem[threadIdx.y][threadIdx.x + j * BLOCK_DIM_X] = src_row[col];
             }
         }
-        if (blockIdx.x + 2 < gridDim.x)
+        if (blockIdx.x + 2 < gridDim.x)  // Note: +2 here assumes HALO_SIZE <= PATCH_PER_BLOCK so we ensure that elsewhere
         {
             //Load main data
             #pragma unroll
             for (int j = 0; j < PATCH_PER_BLOCK; ++j)
-                smem[threadIdx.y][threadIdx.x + HALO_SIZE * BLOCK_DIM_X + j * BLOCK_DIM_X] = static_cast<T>(src_row[xStart + j * BLOCK_DIM_X]);
+                smem[threadIdx.y][threadIdx.x + HALO_SIZE * BLOCK_DIM_X + j * BLOCK_DIM_X] = src_row[xStart + j * BLOCK_DIM_X];
 
             //Load right halo
             #pragma unroll
             for (int j = 0; j < HALO_SIZE; ++j)
-                smem[threadIdx.y][threadIdx.x + (PATCH_PER_BLOCK + HALO_SIZE) * BLOCK_DIM_X + j * BLOCK_DIM_X] = static_cast<T>(src_row[xStart + (PATCH_PER_BLOCK + j) * BLOCK_DIM_X]);
+                smem[threadIdx.y][threadIdx.x + (PATCH_PER_BLOCK + HALO_SIZE) * BLOCK_DIM_X + j * BLOCK_DIM_X] = src_row[xStart + (PATCH_PER_BLOCK + j) * BLOCK_DIM_X];
         }
         else
         {
@@ -350,7 +357,7 @@ def _get_separable_conv_kernel_src(kernel_size, axis, ndim, anchor, image_c_type
         else:
             code += util._generate_boundary_condition_ops(mode, 'col', 'n_cols')
         code += """
-                    smem[threadIdx.y][threadIdx.x + HALO_SIZE * BLOCK_DIM_X + j * BLOCK_DIM_X] = static_cast<T>(src_row[col]);
+                    smem[threadIdx.y][threadIdx.x + HALO_SIZE * BLOCK_DIM_X + j * BLOCK_DIM_X] = src_row[col];
             }
 
             //Load right halo
@@ -367,7 +374,7 @@ def _get_separable_conv_kernel_src(kernel_size, axis, ndim, anchor, image_c_type
         else:
             code += util._generate_boundary_condition_ops(mode, 'col', 'n_cols')
         code += """
-                    smem[threadIdx.y][threadIdx.x + (PATCH_PER_BLOCK + HALO_SIZE) * BLOCK_DIM_X + j * BLOCK_DIM_X] = static_cast<T>(src_row[col]);
+                    smem[threadIdx.y][threadIdx.x + (PATCH_PER_BLOCK + HALO_SIZE) * BLOCK_DIM_X + j * BLOCK_DIM_X] = src_row[col];
             }
         }
 
@@ -384,23 +391,33 @@ def _get_separable_conv_kernel_src(kernel_size, axis, ndim, anchor, image_c_type
 
                 #pragma unroll
                 for (int k = 0; k < KSIZE; ++k)
-                    sum += static_cast<W>(smem[threadIdx.y][threadIdx.x + (HALO_SIZE + j) * BLOCK_DIM_X - anchor + k]) * kernel[k];
+        """
+        if flip_kernel:
+            code += """
+                    sum = sum + static_cast<W>(smem[threadIdx.y][threadIdx.x + (HALO_SIZE + j) * BLOCK_DIM_X - anchor + k]) * kernel[KSIZE - 1 - k];
+            """
+        else:
+            code += """
+                    sum = sum + static_cast<W>(smem[threadIdx.y][threadIdx.x + (HALO_SIZE + j) * BLOCK_DIM_X - anchor + k]) * kernel[k];
+            """
+        code += """
 
                 dst[y * row_stride + x] = cast<D>(sum);
             }
         }
         """
-    code += f"""
-    }}  // function
-    }}  // extern "C"
+    code += """
+    }  // function
+    }  // extern "C"
     """
     return func_name, blocks, patch_per_block, code
 
 
+@cp.memoize(for_each_device=True)
 def _get_separable_conv_kernel(kernel_size, axis, ndim, image_c_type,
                                kernel_c_type, output_c_type, anchor=None,
                                mode='nearest', cval=0,
-                               patch_per_block=None, options=()):
+                               patch_per_block=None, flip_kernel=False):
     func_name, block, patch_per_block, code = _get_separable_conv_kernel_src(
         kernel_size=kernel_size,
         axis=axis,
@@ -411,13 +428,15 @@ def _get_separable_conv_kernel(kernel_size, axis, ndim, image_c_type,
         anchor=anchor,
         mode=mode,
         cval=cval,
-        patch_per_block=patch_per_block
+        patch_per_block=patch_per_block,
+        flip_kernel=flip_kernel,
     )
     options = ('--std=c++11', '-DCUPY_USE_JITIFY')
     m = cp.RawModule(code=code, options=options)
     return m.get_function(func_name), block, patch_per_block
 
 
+@cp.memoize(for_each_device=False)
 def _get_grid(shape, block, axis, patch_per_block):
     """Determine grid size from image shape and block parameters"""
     if len(shape) != 2:
@@ -448,14 +467,11 @@ def _shmem_convolve1d(image, weights, axis=-1, output=None, mode="reflect",
     axis = _normalize_axis_index(axis, ndim)
     origin = util._check_origin(origin, weights.size)
     if weights.size == 0:
-        return cupy.zeros_like(input)
-    # TODO: set weights upper size limit based on available shared memory
-    if weights.nbytes >= (1 << 31):
-        raise RuntimeError('weights must be 2 GiB or less, use FFTs instead')
+        return cp.zeros_like(input)
     util._check_mode(mode)
 
     if convolution:
-        weights = weights[::-1]
+        # use flip_kernel to avoid cp.ascontiguousarray(weights[::-1]))
         origin = -origin
         if weights.size % 2 == 0:
             origin -= 1
@@ -465,17 +481,25 @@ def _shmem_convolve1d(image, weights, axis=-1, output=None, mode="reflect",
 
     anchor = weights.size // 2 + origin
 
-    _check_smem_availability(ndim, axis, weights.size, anchor=anchor,
-                             patch_per_block=None, image_dtype=image.dtype,
-                             device_id=None)
+    if weights.size > 32:
+        # For large kernels, make sure we have adequate shared memory
+        _check_smem_availability(ndim, axis, weights.size, anchor=anchor,
+                                 patch_per_block=None, image_dtype=image.dtype,
+                                 device_id=None)
 
     # CUDA kernels assume C-contiguous memory layout
-    image = cp.ascontiguousarray(image)
+    if not image.flags.c_contiguous:
+        image = cp.ascontiguousarray(image)
 
     complex_output = image.dtype.kind == 'c'
-
-    weights_dtype = util._get_weights_dtype(image, weights)  # TODO: currently casts all int types to float64
-    weights = cp.ascontiguousarray(weights, weights_dtype)
+    # Note: important to set use_cucim_casting=True for performance with
+    #       8 and 16-bit integer types. This causes the weights to get cast to
+    #       float32 rather than float64.
+    weights_dtype = util._get_weights_dtype(
+        image, weights, use_cucim_casting=True
+    )
+    if not weights.flags.c_contiguous or weights.dtype != weights_dtype:
+        weights = cp.ascontiguousarray(weights, weights_dtype)
 
     # promote output to nearest complex dtype if necessary
     complex_output = complex_output or weights.dtype.kind == 'c'
@@ -486,10 +510,10 @@ def _shmem_convolve1d(image, weights, axis=-1, output=None, mode="reflect",
     if needs_temp:
         output, temp = util._get_output(output.dtype, input), output
 
-    index_c_type = util._get_inttype(image)
-    image_c_type = _get_c_type(image.dtype)
-    weights_c_type = _get_c_type(weights.dtype)
-    output_c_type = _get_c_type(output.dtype)
+    # index_c_type = util._get_inttype(image)
+    image_c_type = _dtype_char_to_c_types[image.dtype.char]
+    weights_c_type = _dtype_char_to_c_types[weights.dtype.char]
+    output_c_type = _dtype_char_to_c_types[output.dtype.char]
 
     #     block, patch_per_block, halo_size = get_constants(src.ndim, axis, kernel.size, anchor, patch_per_block=patch_per_block)
     # print(f"{halo_size=}")
@@ -504,11 +528,9 @@ def _shmem_convolve1d(image, weights, axis=-1, output=None, mode="reflect",
         mode=mode,
         cval=cval,
         patch_per_block=None,
+        flip_kernel=convolution,
     )
-    grid = _get_grid(
-        image.shape, block=block, axis=axis, patch_per_block=patch_per_block
-    )
-
+    grid = _get_grid(image.shape, block, axis, patch_per_block)
     conv_axis_kernel(
         grid,
         block,

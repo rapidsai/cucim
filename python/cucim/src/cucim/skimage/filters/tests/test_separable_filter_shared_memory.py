@@ -31,7 +31,7 @@ def _get_rtol_atol(dtype):
     real_dtype = cp.array([], dtype=dtype).real.dtype
     rtol = atol = 1e-5
     if real_dtype == cp.float64:
-        rtol = atol = 1e-10
+        rtol = atol = 1e-12
     elif real_dtype == cp.float16:
         rtol = atol = 1e-3
     return rtol, atol
@@ -194,7 +194,7 @@ def test_separable_image_and_kernel_dtypes(axis, image_dtype, kernel_dtype):
 
     _compare_implementations(
         (64, 32),
-        kernel_size=15,
+        kernel_size=3,
         axis=axis,
         dtype=image_dtype,
         mode='nearest',
@@ -223,7 +223,7 @@ def test_separable_input_and_output_dtypes(
             pytest.skip(reason='cannot cast complex values to real')
     _compare_implementations(
         (64, 32),
-        kernel_size=5,
+        kernel_size=3,
         axis=axis,
         dtype=image_dtype,
         mode='nearest',

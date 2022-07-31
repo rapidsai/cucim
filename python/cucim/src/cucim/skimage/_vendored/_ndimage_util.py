@@ -19,12 +19,16 @@ def _check_cval(mode, cval, integer_output):
                                   "outputs with integer dtype.")
 
 
-def _get_weights_dtype(input, weights):
+def _get_weights_dtype(input, weights, use_cucim_casting=False):
     if weights.dtype.kind == "c" or input.dtype.kind == "c":
         return cupy.promote_types(input.real.dtype, cupy.complex64)
     elif weights.dtype.kind in 'iub':
-        # convert integer dtype weights to double as in SciPy
-        return cupy.float64
+        if use_cucim_casting:
+            from cucim.skimage._shared.utils import _supported_float_type
+            return _supported_float_type(weights.dtype)
+        else:
+            # convert integer dtype weights to double as in SciPy
+            return cupy.float64
     return cupy.promote_types(input.real.dtype, cupy.float32)
 
 
