@@ -233,7 +233,7 @@ def _get_correlate_kernel(mode, w_shape, int_type, offsets, cval):
 
 
 def _run_1d_correlates(input, params, get_weights, output, mode, cval,
-                       origin=0, **filter_kwargs):
+                       origin=0, zero_fill_outputs=False, **filter_kwargs):
     """
     Enhanced version of _run_1d_filters that uses correlate1d as the filter
     function. The params are a list of values to pass to the get_weights
@@ -248,7 +248,8 @@ def _run_1d_correlates(input, params, get_weights, output, mode, cval,
     wghts = [wghts[param] for param in params]
     return _filters_core._run_1d_filters(
         [None if w is None else correlate1d for w in wghts],
-        input, wghts, output, mode, cval, origin, **filter_kwargs)
+        input, wghts, output, mode, cval, origin, zero_fill_outputs,
+        **filter_kwargs)
 
 
 def uniform_filter1d(input, size, axis=-1, output=None, mode="reflect",
@@ -571,14 +572,14 @@ def generic_laplace(input, derivative2, output=None, mode="reflect",
     ndim = input.ndim
     modes = _util._fix_sequence_arg(mode, ndim, 'mode',
                                     _util._check_mode)
-    output = _util._get_output(output, input)
+    output = _util._get_output(output, input, zero_fill=False)
     if ndim == 0:
         output[:] = input
         return output
     derivative2(input, 0, output, modes[0], cval,
                 *extra_arguments, **extra_keywords)
     if ndim > 1:
-        tmp = _util._get_output(output.dtype, input)
+        tmp = _util._get_output(output.dtype, input, zero_fill=False)
         for i in range(1, ndim):
             derivative2(input, i, tmp, modes[i], cval,
                         *extra_arguments, **extra_keywords)
@@ -701,7 +702,7 @@ def generic_gradient_magnitude(input, derivative, output=None,
     ndim = input.ndim
     modes = _util._fix_sequence_arg(mode, ndim, 'mode',
                                     _util._check_mode)
-    output = _util._get_output(output, input)
+    output = _util._get_output(output, input, zero_fill=False)
     if ndim == 0:
         output[:] = input
         return output
@@ -709,7 +710,7 @@ def generic_gradient_magnitude(input, derivative, output=None,
                *extra_arguments, **extra_keywords)
     output *= output
     if ndim > 1:
-        tmp = _util._get_output(output.dtype, input)
+        tmp = _util._get_output(output.dtype, input, zero_fill=False)
         for i in range(1, ndim):
             derivative(input, i, tmp, modes[i], cval,
                        *extra_arguments, **extra_keywords)

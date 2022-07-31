@@ -32,24 +32,26 @@ def _get_weights_dtype(input, weights, use_cucim_casting=False):
     return cupy.promote_types(input.real.dtype, cupy.float32)
 
 
-def _get_output(output, input, shape=None, complex_output=False):
+def _get_output(output, input, shape=None, complex_output=False,
+                zero_fill=True):
+    allocator = cupy.zeros if zero_fill else cupy.empty
     shape = input.shape if shape is None else shape
     if output is None:
         if complex_output:
             _dtype = cupy.promote_types(input.dtype, cupy.complex64)
         else:
             _dtype = input.dtype
-        output = cupy.zeros(shape, dtype=_dtype)
+        output = allocator(shape, dtype=_dtype)
     elif isinstance(output, (type, cupy.dtype)):
         if complex_output and cupy.dtype(output).kind != 'c':
             warnings.warn("promoting specified output dtype to complex")
             output = cupy.promote_types(output, cupy.complex64)
-        output = cupy.zeros(shape, dtype=output)
+        output = allocator(shape, dtype=output)
     elif isinstance(output, str):
         output = numpy.sctypeDict[output]
         if complex_output and cupy.dtype(output).kind != 'c':
             raise RuntimeError("output must have complex dtype")
-        output = cupy.zeros(shape, dtype=output)
+        output = allocator(shape, dtype=output)
     elif output.shape != shape:
         raise RuntimeError("output shape not correct")
     elif complex_output and output.dtype.kind != 'c':
