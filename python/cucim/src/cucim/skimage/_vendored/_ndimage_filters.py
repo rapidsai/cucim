@@ -169,12 +169,13 @@ def _correlate_or_convolve(input, weights, output, mode, cval, origin,
     elif weights.dtype.kind == "c":
         # numpy.correlate conjugates weights rather than input.
         weights = weights.conj()
-    weights_dtype = _util._get_weights_dtype(input, weights)
+    weights_dtype = _util._get_weights_dtype(input, weights, use_cucim_casting=True)  # noqa
     offsets = _filters_core._origins_to_offsets(origins, weights.shape)
     kernel = _get_correlate_kernel(mode, weights.shape, int_type,
                                    offsets, cval)
     output = _filters_core._call_kernel(kernel, input, weights, output,
-                                        weights_dtype=weights_dtype)
+                                        weights_dtype=weights_dtype,
+                                        zero_fill_output=False)
     return output
 
 

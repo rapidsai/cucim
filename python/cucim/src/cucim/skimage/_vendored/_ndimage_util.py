@@ -99,53 +99,118 @@ def _get_inttype(input):
 
 
 def _generate_boundary_condition_ops(mode, ix, xsize, int_t="int",
-                                     float_ix=False):
+                                     float_ix=False, separate=False):
+    """Generate boundary conditions
+
+    If separate = True, a pair of conditions for the (lower, upper) boundary
+    are provided instead of a single expression.
+    """
     min_func = "fmin" if float_ix else "min"
     max_func = "fmax" if float_ix else "max"
     if mode in ['reflect', 'grid-mirror']:
-        ops = '''
-        if ({ix} < 0) {{
-            {ix} = - 1 -{ix};
-        }}
-        {ix} %= {xsize} * 2;
-        {ix} = {min}({ix}, 2 * {xsize} - 1 - {ix});'''.format(
-            ix=ix, xsize=xsize, min=min_func)
-    elif mode == 'mirror':
-        ops = '''
-        if ({xsize} == 1) {{
-            {ix} = 0;
-        }} else {{
+        if separate:
+            ops_upper = f'''
+            {ix} %= {xsize} * 2;
+            {ix} = {min_func}({ix}, 2 * {xsize} - 1 - {ix});
+            '''
+            ops_lower = f'''
             if ({ix} < 0) {{
-                {ix} = -{ix};
+                {ix} = - 1 -{ix};
             }}
-            {ix} = 1 + ({ix} - 1) % (({xsize} - 1) * 2);
-            {ix} = {min}({ix}, 2 * {xsize} - 2 - {ix});
-        }}'''.format(ix=ix, xsize=xsize, min=min_func)
+            ''' + ops_upper
+            ops = (ops_lower, ops_upper)
+        else:
+            ops = f'''
+            if ({ix} < 0) {{
+                {ix} = - 1 -{ix};
+            }}
+            {ix} %= {xsize} * 2;
+            {ix} = {min_func}({ix}, 2 * {xsize} - 1 - {ix});'''
+    elif mode == 'mirror':
+        if separate:
+            temp1 = f'''
+            if ({xsize} == 1) {{
+                {ix} = 0;
+            }} else {{
+            '''
+            temp2 = f'''
+                if ({ix} < 0) {{
+                    {ix} = -{ix};
+                }}
+            '''
+            temp3 = f'''
+                {ix} = 1 + ({ix} - 1) % (({xsize} - 1) * 2);
+                {ix} = {min_func}({ix}, 2 * {xsize} - 2 - {ix});
+            }}'''
+            ops_lower = temp1 + temp2 + temp3
+            ops_upper = temp1 + temp3
+            ops = (ops_lower, ops_upper)
+        else:
+            ops = f'''
+            if ({xsize} == 1) {{
+                {ix} = 0;
+            }} else {{
+                if ({ix} < 0) {{
+                    {ix} = -{ix};
+                }}
+                {ix} = 1 + ({ix} - 1) % (({xsize} - 1) * 2);
+                {ix} = {min_func}({ix}, 2 * {xsize} - 2 - {ix});
+            }}'''
     elif mode == 'nearest':
-        ops = '''
-        {ix} = {min}({max}(({T}){ix}, ({T})0), ({T})({xsize} - 1));'''.format(
-            ix=ix, xsize=xsize, min=min_func, max=max_func,
-            # force using 64-bit signed integer for ptrdiff_t,
-            # see cupy/cupy#6048
-            T=('int' if int_t == 'int' else 'long long'))
+        T = 'int' if int_t == 'int' else 'long long'
+        if separate:
+            ops_lower = f'''{ix} = {max_func}(({T}){ix}, ({T})0);'''
+            ops_upper = f'''{ix} = {min_func}(({T}){ix}, ({T})({xsize} - 1));'''  # noqa
+            ops = (ops_lower, ops_upper)
+        else:
+            ops = f'''{ix} = {min_func}({max_func}(({T}){ix}, ({T})0), ({T})({xsize} - 1));'''  # noqa
     elif mode == 'grid-wrap':
-        ops = '''
-        {ix} %= {xsize};
-        if ({ix} < 0) {{
-            {ix} += {xsize};
-        }}'''.format(ix=ix, xsize=xsize)
+        if separate:
+            ops_upper = f'''
+            {ix} %= {xsize};
+            '''
+            ops_lower = ops_upper + f'''
+            if ({ix} < 0) {{
+                {ix} += {xsize};
+            }}'''
+            ops = (ops_lower, ops_upper)
+        else:
+            ops = f'''
+            {ix} %= {xsize};
+            if ({ix} < 0) {{
+                {ix} += {xsize};
+            }}'''
+
     elif mode == 'wrap':
-        ops = '''
-        if ({ix} < 0) {{
-            {ix} += ({sz} - 1) * (({int_t})(-{ix} / ({sz} - 1)) + 1);
-        }} else if ({ix} > ({sz} - 1)) {{
-            {ix} -= ({sz} - 1) * ({int_t})({ix} / ({sz} - 1));
-        }};'''.format(ix=ix, sz=xsize, int_t=int_t)
+        if separate:
+            ops_lower = f'''{ix} += ({sz} - 1) * (({int_t})(-{ix} / ({sz} - 1)) + 1);'''
+            ops_upper = f'''{ix} -= ({sz} - 1) * ({int_t})({ix} / ({sz} - 1));'''
+            ops = (ops_lower, ops_upper)
+        else:
+            ops = f'''
+            if ({ix} < 0) {{
+                {ix} += ({sz} - 1) * (({int_t})(-{ix} / ({sz} - 1)) + 1);
+            }} else if ({ix} > ({sz} - 1)) {{
+                {ix} -= ({sz} - 1) * ({int_t})({ix} / ({sz} - 1));
+            }};'''
     elif mode in ['constant', 'grid-constant']:
-        ops = '''
-        if (({ix} < 0) || {ix} >= {xsize}) {{
-            {ix} = -1;
-        }}'''.format(ix=ix, xsize=xsize)
+        if separate:
+            ops_lower = f'''
+            if ({ix} < 0) {{
+                {ix} = -1;
+            }}'''
+            ops_upper = f'''
+            if ({ix} >= {xsize}) {{
+                {ix} = -1;
+            }}'''
+            ops = (ops_lower, ops_upper)
+        else:
+            ops = f'''
+            if (({ix} < 0) || {ix} >= {xsize}) {{
+                {ix} = -1;
+            }}'''
+        if separate:
+            ops = (ops, ops)
     return ops
 
 
