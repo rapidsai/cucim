@@ -95,10 +95,11 @@ class remove_arg:
         parameters = inspect.signature(func).parameters
         arg_idx = list(parameters.keys()).index(self.arg_name)
         warning_msg = (
-            f"{self.arg_name} argument is deprecated and will be removed "
-            f"in version {self.changed_version}. To avoid this warning, "
-            f"please do not use the {self.arg_name} argument. Please "
-            f"see {func.__name__} documentation for more details.")
+            f"{self.arg_name} argument is deprecated in upstream scikit-image "
+            f"and will be removed in cuCIM {self.changed_version}. To avoid "
+            f"this warning, please do not use the {self.arg_name} argument. "
+            f"Please see {func.__name__} documentation for more details."
+        )
 
         if self.help_msg is not None:
             warning_msg += f" {self.help_msg}"
@@ -206,7 +207,7 @@ class deprecate_kwarg:
             self.warning_msg = ("`{old_arg}` is a deprecated argument name "
                                 "for `{func_name}`. ")
             if removed_version is not None:
-                self.warning_msg += (f'It will be removed in '
+                self.warning_msg += (f'It will be removed in cuCIM '
                                      f'version {removed_version}.')
             self.warning_msg += "Please use `{new_arg}` instead."
         else:
@@ -248,10 +249,11 @@ class deprecate_multichannel_kwarg(deprecate_kwarg):
 
     """
 
-    def __init__(self, removed_version='1.0', multichannel_position=None):
+    def __init__(self, removed_version='2023.02.00',
+                 multichannel_position=None):
         super().__init__(
             kwarg_mapping={'multichannel': 'channel_axis'},
-            deprecated_version='0.19',
+            deprecated_version='22.02.00',
             warning_msg=None,
             removed_version=removed_version)
         self.position = multichannel_position
@@ -293,7 +295,7 @@ class deprecate_multichannel_kwarg(deprecate_kwarg):
 
         if func.__doc__ is not None:
             newdoc = docstring_add_deprecated(
-                func, {'multichannel': 'channel_axis'}, '0.19')
+                func, {'multichannel': 'channel_axis'}, '22.02.00')
             fixed_func.__doc__ = newdoc
         return fixed_func
 

@@ -6,6 +6,7 @@ from itertools import combinations_with_replacement
 import cupy as cp
 import numpy as np
 
+from .._shared._gradient import gradient
 from cucim.skimage import feature, filters
 from cucim.skimage._shared import utils
 from cucim.skimage.util import img_as_float32
@@ -14,7 +15,7 @@ from cucim.skimage.util import img_as_float32
 def _texture_filter(gaussian_filtered):
     combos = combinations_with_replacement
     H_elems = [
-        cp.gradient(cp.gradient(gaussian_filtered)[ax0], axis=ax1)
+        gradient(gradient(gaussian_filtered)[ax0], axis=ax1)
         for ax0, ax1 in combos(range(gaussian_filtered.ndim), 2)
     ]
     eigvals = feature.hessian_matrix_eigvals(H_elems)

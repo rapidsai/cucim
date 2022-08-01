@@ -343,12 +343,6 @@ def random_walker(data, labels, beta=130, mode='cg_j', tol=1.e-3, copy=True,
           probability that label `label_nb` reaches the pixel `(i, j)`
           first.
 
-    See Also
-    --------
-    skimage.morphology.watershed : watershed segmentation
-        A segmentation algorithm based on mathematical morphology
-        and "flooding" of regions from markers.
-
     Notes
     -----
     Multichannel inputs are scaled with all channel data combined. Ensure all

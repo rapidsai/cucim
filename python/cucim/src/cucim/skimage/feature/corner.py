@@ -9,6 +9,7 @@ from scipy import spatial  # TODO: use RAPIDS cuSpatial?
 from cucim.skimage.util import img_as_float
 
 # from ..transform import integral_image
+from .._shared._gradient import gradient
 from .._shared.utils import _supported_float_type
 from .peak import peak_local_max
 from .util import _prepare_grayscale_input_nD
@@ -217,14 +218,14 @@ def hessian_matrix(image, sigma=1, mode='constant', cval=0, order='rc'):
     gaussian_filtered = gaussian(image, sigma=sigma, mode=mode, cval=cval,
                                  channel_axis=channel_axis)
 
-    gradients = cp.gradient(gaussian_filtered)
+    gradients = gradient(gaussian_filtered)
     axes = range(image.ndim)
 
     if order == "rc":
         axes = reversed(axes)
 
     H_elems = [
-        cp.gradient(gradients[ax0], axis=ax1)
+        gradient(gradients[ax0], axis=ax1)
         for ax0, ax1 in combinations_with_replacement(axes, 2)
     ]
 
