@@ -1,6 +1,6 @@
 import cupy as cp
 from cupy.testing import assert_array_equal
-from skimage.data import astronaut, cells3d
+from skimage.data import astronaut
 
 from cucim.skimage.color import rgb2gray
 from cucim.skimage.filters import gaussian
@@ -47,6 +47,7 @@ def test_blur_effect_channel_axis():
 
 def test_blur_effect_3d():
     """Test that the blur metric works on a 3D image."""
+    cells3d = pytest.importorskip('skimage.data.cells3d')
     image_3d = cp.array(cells3d()[:, 1, :, :])  # grab just the nuclei
     B0 = blur_effect(image_3d)
     B1 = blur_effect(gaussian(image_3d, sigma=1))
