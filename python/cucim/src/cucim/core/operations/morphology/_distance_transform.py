@@ -79,8 +79,8 @@ def distance_transform_edt(image, sampling=None, return_distances=True,
     number of dimensions.
 
     Note that the `indices` output may differ from the one given by
-    ``scipy.ndimage.distance_transform_edt`` in the case of input pixels that are
-    equidistant from multiple background points.
+    :func:`scipy.ndimage.distance_transform_edt` in the case of input pixels
+    that are equidistant from multiple background points.
 
     The parallel banding algorithm implemented here was originally described in
     [1]_. The kernels used here correspond to the revised PBA+ implementation
