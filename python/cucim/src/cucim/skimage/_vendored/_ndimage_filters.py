@@ -4,9 +4,9 @@ import warnings
 import cupy
 import numpy
 
+from cucim.skimage._vendored import _internal as internal
 from cucim.skimage._vendored import _ndimage_filters_core as _filters_core
 from cucim.skimage._vendored import _ndimage_util as _util
-from cucim.skimage._vendored import _internal as internal
 
 
 def correlate(input, weights, output=None, mode='reflect', cval=0.0, origin=0):
@@ -183,10 +183,10 @@ def _correlate_or_convolve1d(input, weights, axis, output, mode, cval, origin,
     # Calls fast shared-memory convolution when possible, otherwise falls back
     # to the vendored elementwise _correlate_or_convolve
     if algorithm is None:
-       if input.ndim == 2 and weights.size <= 256:
-           algorithm = 'shared_memory'
-       else:
-           algorithm = 'elementwise'
+        if input.ndim == 2 and weights.size <= 256:
+            algorithm = 'shared_memory'
+        else:
+            algorithm = 'elementwise'
     elif algorithm not in ['shared_memory', 'elementwise']:
         raise ValueError(
             "algorithm must be 'shared_memory', 'elementwise' or None"
@@ -195,8 +195,7 @@ def _correlate_or_convolve1d(input, weights, axis, output, mode, cval, origin,
         mode = 'grid-wrap'
     if algorithm == 'shared_memory':
         from cucim.skimage.filters._separable_conv_shmem import (
-            _shmem_convolve1d, ResourceLimitError
-        )
+            ResourceLimitError, _shmem_convolve1d)
         if input.ndim not in [2, 3]:
             raise NotImplementedError(
                 f"shared_memory not implemented for ndim={input.ndim}"
@@ -428,7 +427,7 @@ def _gaussian_kernel1d(sigma, order, radius, dtype=cupy.float64):
     if order < 0:
         raise ValueError('order must be non-negative')
     sigma2 = sigma * sigma
-    x = numpy.arange(-radius, radius+1)
+    x = numpy.arange(-radius, radius + 1)
     phi_x = numpy.exp(-0.5 / sigma2 * x ** 2)
     phi_x /= phi_x.sum()
 
@@ -444,7 +443,7 @@ def _gaussian_kernel1d(sigma, order, radius, dtype=cupy.float64):
     q = numpy.zeros(order + 1)
     q[0] = 1
     D = numpy.diag(exponent_range[1:], 1)  # D @ q(x) = q'(x)
-    P = numpy.diag(numpy.ones(order)/-sigma2, -1)  # P @ q(x) = q(x) * p'(x)
+    P = numpy.diag(numpy.ones(order) / -sigma2, -1)  # P @ q(x) = q(x) * p'(x)
     Q_deriv = D + P
     for _ in range(order):
         q = Q_deriv.dot(q)
@@ -520,6 +519,7 @@ def _prewitt_or_sobel(input, axis, output, mode, cval, weights, algorithm):
     axis = internal._normalize_axis_index(axis, input.ndim)
 
     weights_dtype = cupy.promote_types(input.dtype, cupy.float32)
+
     def get(is_diff, dtype=weights_dtype):
         return cupy.array([-1, 0, 1], dtype=dtype) if is_diff else weights  # noqa
 
@@ -986,7 +986,7 @@ def rank_filter(input, rank, size=None, footprint=None, output=None,
     .. seealso:: :func:`scipy.ndimage.rank_filter`
     """
     rank = int(rank)
-    return _rank_filter(input, lambda fs: rank+fs if rank < 0 else rank,
+    return _rank_filter(input, lambda fs: rank + fs if rank < 0 else rank,
                         size, footprint, output, mode, cval, origin)
 
 
@@ -1019,7 +1019,7 @@ def median_filter(input, size=None, footprint=None, output=None,
 
     .. seealso:: :func:`scipy.ndimage.median_filter`
     """
-    return _rank_filter(input, lambda fs: fs//2,
+    return _rank_filter(input, lambda fs: fs // 2,
                         size, footprint, output, mode, cval, origin)
 
 
@@ -1118,7 +1118,7 @@ __device__ void sort(X *array, int size) {{
 def _get_shell_gap(filter_size):
     gap = 1
     while gap < filter_size:
-        gap = 3*gap+1
+        gap = 3 * gap + 1
     return gap
 
 
@@ -1175,137 +1175,3 @@ def _get_rank_kernel(filter_size, rank, mode, w_shape, offsets, cval,
         'int iv = 0;\nX values[{}];'.format(array_size),
         'values[iv++] = {value};' + found_post, post,
         mode, w_shape, int_type, offsets, cval, preamble=sorter)
-
-
-def generic_filter(input, function, size=None, footprint=None,
-                   output=None, mode="reflect", cval=0.0, origin=0):
-    """Compute a multi-dimensional filter using the provided raw kernel or
-    reduction kernel.
-
-    Unlike the scipy.ndimage function, this does not support the
-    ``extra_arguments`` or ``extra_keywordsdict`` arguments and has significant
-    restrictions on the ``function`` provided.
-
-    Args:
-        input (cupy.ndarray): The input array.
-        function (cupy.ReductionKernel or cupy.RawKernel):
-            The kernel or function to apply to each region.
-        size (int or sequence of int): One of ``size`` or ``footprint`` must be
-            provided. If ``footprint`` is given, ``size`` is ignored. Otherwise
-            ``footprint = cupy.ones(size)`` with ``size`` automatically made to
-            match the number of dimensions in ``input``.
-        footprint (cupy.ndarray): a boolean array which specifies which of the
-            elements within this shape will get passed to the filter function.
-        output (cupy.ndarray, dtype or None): The array in which to place the
-            output. Default is is same dtype as the input.
-        mode (str): The array borders are handled according to the given mode
-            (``'reflect'``, ``'constant'``, ``'nearest'``, ``'mirror'``,
-            ``'wrap'``). Default is ``'reflect'``.
-        cval (scalar): Value to fill past edges of input if mode is
-            ``'constant'``. Default is ``0.0``.
-        origin (scalar or tuple of scalar): The origin parameter controls the
-            placement of the filter, relative to the center of the current
-            element of the input. Default of 0 is equivalent to
-            ``(0,)*input.ndim``.
-
-    Returns:
-        cupy.ndarray: The result of the filtering.
-
-    .. note::
-        If the `function` is a :class:`cupy.RawKernel` then it must be for a
-        function that has the following signature. Unlike most functions, this
-        should not utilize `blockDim`/`blockIdx`/`threadIdx`::
-
-            __global__ void func(double *buffer, int filter_size,
-                                 double *return_value)
-
-        If the `function` is a :class:`cupy.ReductionKernel` then it must be
-        for a kernel that takes 1 array input and produces 1 'scalar' output.
-
-    .. seealso:: :func:`scipy.ndimage.generic_filter`
-    """
-    _, footprint, _ = _filters_core._check_size_footprint_structure(
-        input.ndim, size, footprint, None, 2, True)
-    filter_size = int(footprint.sum())
-    origins, int_type = _filters_core._check_nd_args(input, footprint,
-                                                     mode, origin, 'footprint')
-    in_dtype = input.dtype
-    sub = _filters_generic._get_sub_kernel(function)
-    if footprint.size == 0:
-        return cupy.zeros_like(input)
-    output = _util._get_output(output, input)
-    offsets = _filters_core._origins_to_offsets(origins, footprint.shape)
-    args = (filter_size, mode, footprint.shape, offsets, float(cval), int_type)
-    if isinstance(sub, cupy.RawKernel):
-        kernel = _filters_generic._get_generic_filter_raw(sub, *args)
-    elif isinstance(sub, cupy.ReductionKernel):
-        kernel = _filters_generic._get_generic_filter_red(
-            sub, in_dtype, output.dtype, *args)
-    return _filters_core._call_kernel(kernel, input, footprint, output,
-                                      weights_dtype=bool)
-
-
-def generic_filter1d(input, function, filter_size, axis=-1, output=None,
-                     mode="reflect", cval=0.0, origin=0):
-    """Compute a 1D filter along the given axis using the provided raw kernel.
-
-    Unlike the scipy.ndimage function, this does not support the
-    ``extra_arguments`` or ``extra_keywordsdict`` arguments and has significant
-    restrictions on the ``function`` provided.
-
-    Args:
-        input (cupy.ndarray): The input array.
-        function (cupy.RawKernel): The kernel to apply along each axis.
-        filter_size (int): Length of the filter.
-        axis (int): The axis of input along which to calculate. Default is -1.
-        output (cupy.ndarray, dtype or None): The array in which to place the
-            output. Default is is same dtype as the input.
-        mode (str): The array borders are handled according to the given mode
-            (``'reflect'``, ``'constant'``, ``'nearest'``, ``'mirror'``,
-            ``'wrap'``). Default is ``'reflect'``.
-        cval (scalar): Value to fill past edges of input if mode is
-            ``'constant'``. Default is ``0.0``.
-        origin (int): The origin parameter controls the placement of the
-            filter, relative to the center of the current element of the
-            input. Default is ``0``.
-
-    Returns:
-        cupy.ndarray: The result of the filtering.
-
-    .. note::
-        The provided function (as a RawKernel) must have the following
-        signature. Unlike most functions, this should not utilize
-        `blockDim`/`blockIdx`/`threadIdx`::
-
-            __global__ void func(double *input_line, ptrdiff_t input_length,
-                                 double *output_line, ptrdiff_t output_length)
-
-    .. seealso:: :func:`scipy.ndimage.generic_filter1d`
-    """
-    # This filter is very different than all other filters (including
-    # generic_filter and all 1d filters) and it has a customized solution.
-    # It is also likely fairly terrible, but only so much can be done when
-    # matching the scipy interface of having the sub-kernel work on entire
-    # lines of data.
-    if input.dtype.kind == 'c':
-        raise TypeError('Complex type not supported')
-    if not isinstance(function, cupy.RawKernel):
-        raise TypeError('bad function type')
-    if filter_size < 1:
-        raise RuntimeError('invalid filter size')
-    axis = internal._normalize_axis_index(axis, input.ndim)
-    origin = _util._check_origin(origin, filter_size)
-    _util._check_mode(mode)
-    output = _util._get_output(output, input)
-    in_ctype = cupy._core._scalar.get_typename(input.dtype)
-    out_ctype = cupy._core._scalar.get_typename(output.dtype)
-    int_type = _util._get_inttype(input)
-    n_lines = input.size // input.shape[axis]
-    kernel = _filters_generic._get_generic_filter1d(
-        function, input.shape[axis], n_lines, filter_size,
-        origin, mode, float(cval), in_ctype, out_ctype, int_type)
-    data = cupy.array(
-        (axis, input.ndim) + input.shape + input.strides + output.strides,
-        dtype=cupy.int32 if int_type == 'int' else cupy.int64)
-    kernel(((n_lines+128-1) // 128,), (128,), (input, output, data))
-    return output

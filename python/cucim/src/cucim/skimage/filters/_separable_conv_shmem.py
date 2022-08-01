@@ -1,15 +1,11 @@
 import math
-import warnings
 
 import cupy as cp
-import cucim.skimage._vendored.ndimage as ndi
 
-from cucim.skimage._shared.utils import _supported_float_type
+from cucim.skimage._vendored import _ndimage_util as util
 from cucim.skimage._vendored._internal import _normalize_axis_index
 from cucim.skimage._vendored._ndimage_filters_core import (
-    _ndimage_CAST_FUNCTION, _ndimage_includes
-)
-from cucim.skimage._vendored import _ndimage_util as util
+    _ndimage_CAST_FUNCTION, _ndimage_includes)
 
 
 def _get_constants(ndim, axis, kernel_size, anchor, patch_per_block=None):
@@ -166,9 +162,8 @@ def _get_code_stage1_shared_memory_load_2d(ndim, axis, mode, cval):
     """
 
     if ndim == 2 and axis == 0:
-        boundary_code = None
         if mode not in ['constant', 'grid-constant']:
-            boundary_code_lower, boundary_code_upper = util._generate_boundary_condition_ops(mode, 'row', 'n_rows', separate=True)
+            boundary_code_lower, boundary_code_upper = util._generate_boundary_condition_ops(mode, 'row', 'n_rows', separate=True)  # noqa
 
         # as in OpenCV's column_filter.hpp
         code = """
@@ -196,13 +191,13 @@ def _get_code_stage1_shared_memory_load_2d(ndim, axis, mode, cval):
             #pragma unroll
             for (int j = 0; j < HALO_SIZE; ++j) {
                 row = yStart - (HALO_SIZE - j) * BLOCK_DIM_Y;
-        """
+        """  # noqa
         if mode == 'constant':
             code += f"""
                 if (row < 0)
                     smem[threadIdx.y + j * BLOCK_DIM_Y][threadIdx.x] = static_cast<T>({cval});
                 else
-            """
+            """  # noqa
         else:
             code += boundary_code_lower
         code += """
@@ -228,13 +223,13 @@ def _get_code_stage1_shared_memory_load_2d(ndim, axis, mode, cval):
             #pragma unroll
             for (int j = 0; j < PATCH_PER_BLOCK; ++j) {
                 row = yStart + j * BLOCK_DIM_Y;
-        """
+        """  # noqa
         if mode == 'constant':
             code += f"""
                 if (row >= n_rows)
                     smem[threadIdx.y + (HALO_SIZE + j) * BLOCK_DIM_Y][threadIdx.x] = static_cast<T>({cval});
                 else
-            """
+            """  # noqa
         else:
             code += boundary_code_upper
         code += """
@@ -246,24 +241,23 @@ def _get_code_stage1_shared_memory_load_2d(ndim, axis, mode, cval):
             for (int j = 0; j < HALO_SIZE; ++j)
             {
                 row = yStart + (PATCH_PER_BLOCK + j) * BLOCK_DIM_Y;
-        """
+        """  # noqa
         if mode == 'constant':
             code += f"""
                 if (row >= n_rows)
                     smem[threadIdx.y + (PATCH_PER_BLOCK + HALO_SIZE + j) * BLOCK_DIM_Y][threadIdx.x] = static_cast<T>({cval});
                 else
-            """
+            """  # noqa
         else:
             code += boundary_code_upper
         code += """
                     smem[threadIdx.y + (PATCH_PER_BLOCK + HALO_SIZE + j) * BLOCK_DIM_Y][threadIdx.x] = src_col[row * row_stride];
             }
         }
-        """
+        """  # noqa
     elif ndim == 2 and axis == 1:
-        boundary_code = None
         if mode not in ['constant', 'grid-constant']:
-            boundary_code_lower, boundary_code_upper = util._generate_boundary_condition_ops(mode, 'col', 'n_cols', separate=True)
+            boundary_code_lower, boundary_code_upper = util._generate_boundary_condition_ops(mode, 'col', 'n_cols', separate=True)  # noqa
 
         # as in OpenCV's row_filter.hpp
         code = """
@@ -290,13 +284,13 @@ def _get_code_stage1_shared_memory_load_2d(ndim, axis, mode, cval):
             #pragma unroll
             for (int j = 0; j < HALO_SIZE; ++j){
                 col = xStart - (HALO_SIZE - j) * BLOCK_DIM_X;
-        """
+        """  # noqa
         if mode == 'constant':
             code += f"""
                 if (col < 0)
                     smem[threadIdx.y][threadIdx.x + j * BLOCK_DIM_X] = static_cast<T>({cval});
                 else
-            """
+            """  # noqa
         else:
             code += boundary_code_lower
         code += """
@@ -321,13 +315,13 @@ def _get_code_stage1_shared_memory_load_2d(ndim, axis, mode, cval):
             #pragma unroll
             for (int j = 0; j < PATCH_PER_BLOCK; ++j) {
                 col = xStart + j * BLOCK_DIM_X;
-        """
+        """  # noqa
         if mode == 'constant':
             code += f"""
                 if (col >= n_cols)
                     smem[threadIdx.y][threadIdx.x + (HALO_SIZE + j) * BLOCK_DIM_X] = static_cast<T>({cval});
                 else
-            """
+            """  # noqa
         else:
             code += boundary_code_upper
         code += """
@@ -338,20 +332,20 @@ def _get_code_stage1_shared_memory_load_2d(ndim, axis, mode, cval):
             #pragma unroll
             for (int j = 0; j < HALO_SIZE; ++j){
                 col = xStart + (PATCH_PER_BLOCK + j) * BLOCK_DIM_X;
-        """
+        """  # noqa
         if mode == 'constant':
             code += f"""
                 if (col >= n_cols)
                     smem[threadIdx.y][threadIdx.x + (PATCH_PER_BLOCK + HALO_SIZE + j) * BLOCK_DIM_X] = static_cast<T>({cval});
                 else
-            """
+            """  # noqa
         else:
             code += boundary_code_upper
         code += """
                     smem[threadIdx.y][threadIdx.x + (PATCH_PER_BLOCK + HALO_SIZE + j) * BLOCK_DIM_X] = src_row[col];
             }
         }
-        """
+        """  # noqa
 
     code += """
         __syncthreads();
@@ -368,9 +362,8 @@ def _get_code_stage1_shared_memory_load_3d(ndim, axis, mode, cval):
     """
 
     if ndim == 3 and axis == 0:
-        boundary_code = None
         if mode not in ['constant', 'grid-constant']:
-            boundary_code_lower, boundary_code_upper = util._generate_boundary_condition_ops(mode, 'row', 's_0', separate=True)
+            boundary_code_lower, boundary_code_upper = util._generate_boundary_condition_ops(mode, 'row', 's_0', separate=True)  # noqa
 
         # as in OpenCV's column_filter.hpp
         code = """
@@ -401,13 +394,13 @@ def _get_code_stage1_shared_memory_load_3d(ndim, axis, mode, cval):
             #pragma unroll
             for (int j = 0; j < HALO_SIZE; ++j) {
                 row = zStart - (HALO_SIZE - j) * BLOCK_DIM_Z;
-        """
+        """  # noqa
         if mode == 'constant':
             code += f"""
                 if (row < 0)
                     smem[threadIdx.z + j * BLOCK_DIM_Z][threadIdx.y][threadIdx.x] = static_cast<T>({cval});
                 else
-            """
+            """  # noqa
         else:
             code += boundary_code_lower
         code += """
@@ -433,13 +426,13 @@ def _get_code_stage1_shared_memory_load_3d(ndim, axis, mode, cval):
             #pragma unroll
             for (int j = 0; j < PATCH_PER_BLOCK; ++j) {
                 row = zStart + j * BLOCK_DIM_Z;
-        """
+        """  # noqa
         if mode == 'constant':
             code += f"""
                 if (row >= s_0)
                     smem[threadIdx.z + (HALO_SIZE + j) * BLOCK_DIM_Z][threadIdx.y][threadIdx.x] = static_cast<T>({cval});
                 else
-            """
+            """  # noqa
         else:
             code += boundary_code_upper
         code += """
@@ -451,24 +444,23 @@ def _get_code_stage1_shared_memory_load_3d(ndim, axis, mode, cval):
             for (int j = 0; j < HALO_SIZE; ++j)
             {
                 row = zStart + (PATCH_PER_BLOCK + j) * BLOCK_DIM_Z;
-        """
+        """  # noqa
         if mode == 'constant':
             code += f"""
                 if (row >= s_0)
                     smem[threadIdx.z + (PATCH_PER_BLOCK + HALO_SIZE + j) * BLOCK_DIM_Z][threadIdx.y][threadIdx.x] = static_cast<T>({cval});
                 else
-            """
+            """  # noqa
         else:
             code += boundary_code_upper
         code += """
                     smem[threadIdx.z + (PATCH_PER_BLOCK + HALO_SIZE + j) * BLOCK_DIM_Z][threadIdx.y][threadIdx.x] = src_col[row * stride_0];
             }
         }
-        """
+        """  # noqa
     elif ndim == 3 and axis == 1:
-        boundary_code = None
         if mode not in ['constant', 'grid-constant']:
-            boundary_code_lower, boundary_code_upper = util._generate_boundary_condition_ops(mode, 'row', 's_1', separate=True)
+            boundary_code_lower, boundary_code_upper = util._generate_boundary_condition_ops(mode, 'row', 's_1', separate=True)  # noqa
 
         # as in OpenCV's column_filter.hpp
         code = """
@@ -499,13 +491,13 @@ def _get_code_stage1_shared_memory_load_3d(ndim, axis, mode, cval):
             #pragma unroll
             for (int j = 0; j < HALO_SIZE; ++j) {
                 row = yStart - (HALO_SIZE - j) * BLOCK_DIM_Y;
-        """
+        """  # noqa
         if mode == 'constant':
             code += f"""
                 if (row < 0)
                     smem[threadIdx.z][threadIdx.y + j * BLOCK_DIM_Y][threadIdx.x] = static_cast<T>({cval});
                 else
-            """
+            """  # noqa
         else:
             code += boundary_code_lower
         code += """
@@ -531,13 +523,13 @@ def _get_code_stage1_shared_memory_load_3d(ndim, axis, mode, cval):
             #pragma unroll
             for (int j = 0; j < PATCH_PER_BLOCK; ++j) {
                 row = yStart + j * BLOCK_DIM_Y;
-        """
+        """  # noqa
         if mode == 'constant':
             code += f"""
                 if (row >= s_1)
                     smem[threadIdx.z][threadIdx.y + (HALO_SIZE + j) * BLOCK_DIM_Y][threadIdx.x] = static_cast<T>({cval});
                 else
-            """
+            """  # noqa
         else:
             code += boundary_code_upper
         code += """
@@ -549,24 +541,23 @@ def _get_code_stage1_shared_memory_load_3d(ndim, axis, mode, cval):
             for (int j = 0; j < HALO_SIZE; ++j)
             {
                 row = yStart + (PATCH_PER_BLOCK + j) * BLOCK_DIM_Y;
-        """
+        """  # noqa
         if mode == 'constant':
             code += f"""
                 if (row >= s_1)
                     smem[threadIdx.z][threadIdx.y + (PATCH_PER_BLOCK + HALO_SIZE + j) * BLOCK_DIM_Y][threadIdx.x] = static_cast<T>({cval});
                 else
-            """
+            """  # noqa
         else:
             code += boundary_code_upper
         code += """
                     smem[threadIdx.z][threadIdx.y + (PATCH_PER_BLOCK + HALO_SIZE + j) * BLOCK_DIM_Y][threadIdx.x] = src_col[row * stride_1];
             }
         }
-        """
+        """  # noqa
     elif ndim == 3 and axis == 2:
-        boundary_code = None
         if mode not in ['constant', 'grid-constant']:
-            boundary_code_lower, boundary_code_upper = util._generate_boundary_condition_ops(mode, 'col', 's_2', separate=True)
+            boundary_code_lower, boundary_code_upper = util._generate_boundary_condition_ops(mode, 'col', 's_2', separate=True)  # noqa
 
         # as in OpenCV's row_filter.hpp
         code = """
@@ -595,13 +586,13 @@ def _get_code_stage1_shared_memory_load_3d(ndim, axis, mode, cval):
             #pragma unroll
             for (int j = 0; j < HALO_SIZE; ++j){
                 col = xStart - (HALO_SIZE - j) * BLOCK_DIM_X;
-        """
+        """  # noqa
         if mode == 'constant':
             code += f"""
                 if (col < 0)
                     smem[threadIdx.z][threadIdx.y][threadIdx.x + j * BLOCK_DIM_X] = static_cast<T>({cval});
                 else
-            """
+            """  # noqa
         else:
             code += boundary_code_lower
         code += """
@@ -626,13 +617,13 @@ def _get_code_stage1_shared_memory_load_3d(ndim, axis, mode, cval):
             #pragma unroll
             for (int j = 0; j < PATCH_PER_BLOCK; ++j) {
                 col = xStart + j * BLOCK_DIM_X;
-        """
+        """  # noqa
         if mode == 'constant':
             code += f"""
                 if (col >= s_2)
                     smem[threadIdx.z][threadIdx.y][threadIdx.x + (HALO_SIZE + j) * BLOCK_DIM_X] = static_cast<T>({cval});
                 else
-            """
+            """  # noqa
         else:
             code += boundary_code_upper
         code += """
@@ -643,20 +634,20 @@ def _get_code_stage1_shared_memory_load_3d(ndim, axis, mode, cval):
             #pragma unroll
             for (int j = 0; j < HALO_SIZE; ++j){
                 col = xStart + (PATCH_PER_BLOCK + j) * BLOCK_DIM_X;
-        """
+        """  # noqa
         if mode == 'constant':
             code += f"""
                 if (col >= s_2)
                     smem[threadIdx.z][threadIdx.y][threadIdx.x + (PATCH_PER_BLOCK + HALO_SIZE + j) * BLOCK_DIM_X] = static_cast<T>({cval});
                 else
-            """
+            """  # noqa
         else:
             code += boundary_code_upper
         code += """
                     smem[threadIdx.z][threadIdx.y][threadIdx.x + (PATCH_PER_BLOCK + HALO_SIZE + j) * BLOCK_DIM_X] = src_row[col];
             }
         }
-        """
+        """  # noqa
 
     code += """
         __syncthreads();
@@ -692,7 +683,7 @@ def _get_code_stage2_convolve_2d(ndim, axis, flip_kernel):
         """
         inner = f"""
                 sum = sum + static_cast<W>(smem[threadIdx.y + (HALO_SIZE + j) * BLOCK_DIM_Y - anchor + k][threadIdx.x]) * kernel[{kernel_idx}];
-        """
+        """  # noqa
     elif ndim == 2 and axis == 1:
         code += """
         const int x = xStart + j * BLOCK_DIM_X;
@@ -702,7 +693,7 @@ def _get_code_stage2_convolve_2d(ndim, axis, flip_kernel):
         """
         inner = f"""
                 sum = sum + static_cast<W>(smem[threadIdx.y][threadIdx.x + (HALO_SIZE + j) * BLOCK_DIM_X - anchor + k]) * kernel[{kernel_idx}];
-        """
+        """  # noqa
     code += f"""
             W sum = static_cast<W>(0);
 
@@ -737,7 +728,7 @@ def _get_code_stage2_convolve_3d(ndim, axis, flip_kernel):
         """
         inner = f"""
                 sum = sum + static_cast<W>(smem[threadIdx.z + (HALO_SIZE + j) * BLOCK_DIM_Z - anchor + k][threadIdx.y][threadIdx.x]) * kernel[{kernel_idx}];
-        """
+        """  # noqa
     elif ndim == 3 and axis == 1:
         code += """
         const int y = yStart + j * BLOCK_DIM_Y;
@@ -747,7 +738,7 @@ def _get_code_stage2_convolve_3d(ndim, axis, flip_kernel):
         """
         inner = f"""
                 sum = sum + static_cast<W>(smem[threadIdx.z][threadIdx.y + (HALO_SIZE + j) * BLOCK_DIM_Y - anchor + k][threadIdx.x]) * kernel[{kernel_idx}];
-        """
+        """  # noqa
     elif ndim == 3 and axis == 2:
         code += """
         const int x = xStart + j * BLOCK_DIM_X;
@@ -757,7 +748,7 @@ def _get_code_stage2_convolve_3d(ndim, axis, flip_kernel):
         """
         inner = f"""
                 sum = sum + static_cast<W>(smem[threadIdx.z][threadIdx.y][threadIdx.x + (HALO_SIZE + j) * BLOCK_DIM_X - anchor + k]) * kernel[{kernel_idx}];
-        """
+        """  # noqa
     code += f"""
             W sum = static_cast<W>(0);
 
@@ -779,11 +770,6 @@ def _get_code_stage2_convolve(ndim, axis, flip_kernel):
     elif ndim == 3:
         return _get_code_stage2_convolve_3d(ndim, axis, flip_kernel)
 
-
-# Note: in OpenCV T is always float, float3 or float4  (so can replace saturate_cast with simply static_cast)
-#                 D is can be floating or integer dtype and does need saturation
-# Note: the version below is only single-channel
-# Note: need to insert appropriate boundary condition for row/col
 
 @cp.memoize(for_each_device=True)
 def _get_separable_conv_kernel_src(
@@ -833,13 +819,13 @@ def _get_separable_conv_kernel_src(
         extern "C"{{
         __global__ void {func_name}(const T *src, D *dst, const W* kernel, const int anchor, int n_rows, int n_cols)
         {{
-        """
+        """  # noqa
     elif ndim == 3:
         code += f"""
         extern "C"{{
         __global__ void {func_name}(const T *src, D *dst, const W* kernel, const int anchor, int s_0, int s_1, int s_2)
         {{
-        """
+        """  # noqa
     code += _get_code_stage1_shared_memory_load(ndim, axis, mode, cval)
     code += _get_code_stage2_convolve(ndim, axis, flip_kernel)
     code += """
@@ -978,8 +964,6 @@ def _shmem_convolve1d(image, weights, axis=-1, output=None, mode="reflect",
     weights_c_type = _dtype_char_to_c_types[weights.dtype.char]
     output_c_type = _dtype_char_to_c_types[output.dtype.char]
 
-    #     block, patch_per_block, halo_size = get_constants(src.ndim, axis, kernel.size, anchor, patch_per_block=patch_per_block)
-    # print(f"{halo_size=}")
     conv_axis_kernel, block, patch_per_block = _get_separable_conv_kernel(
         weights.size,
         axis=axis,

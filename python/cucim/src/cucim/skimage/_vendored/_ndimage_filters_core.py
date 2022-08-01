@@ -3,6 +3,7 @@ import warnings
 
 import cupy
 import numpy
+
 try:
     from cupy_backends.cuda.api import runtime
     _is_hip = runtime.is_hip
@@ -14,7 +15,7 @@ from cucim.skimage._vendored import _ndimage_util as _util
 
 
 def _origins_to_offsets(origins, w_shape):
-    return tuple(x//2+o for x, o in zip(w_shape, origins))
+    return tuple(x // 2 + o for x, o in zip(w_shape, origins))
 
 
 def _check_size_footprint_structure(ndim, size, footprint, structure,
@@ -29,7 +30,7 @@ def _check_size_footprint_structure(ndim, size, footprint, structure,
     if size is not None:
         warnings.warn("ignoring size because {} is set".format(
             'structure' if footprint is None else 'footprint'),
-            UserWarning, stacklevel=stacklevel+1)
+            UserWarning, stacklevel=stacklevel + 1)
 
     if footprint is not None:
         footprint = cupy.array(footprint, bool, True, 'C')
@@ -53,10 +54,10 @@ def _convert_1d_args(ndim, weights, origin, axis):
     if weights.ndim != 1 or weights.size < 1:
         raise RuntimeError('incorrect filter size')
     axis = internal._normalize_axis_index(axis, ndim)
-    w_shape = [1]*ndim
+    w_shape = [1] * ndim
     w_shape[axis] = weights.size
     weights = weights.reshape(w_shape)
-    origins = [0]*ndim
+    origins = [0] * ndim
     origins[axis] = _util._check_origin(origin, weights.size)
     return weights, tuple(origins)
 
@@ -83,7 +84,6 @@ def _run_1d_filters(filters, input, args, output, mode, cval, origin=0,
     The args is a list of values that are passed for the arg value to the
     filter. Individual filters can be None causing that axis to be skipped.
     """
-    output_orig = output
     output = _util._get_output(output, input)
     modes = _util._fix_sequence_arg(mode, input.ndim, 'mode',
                                     _util._check_mode)

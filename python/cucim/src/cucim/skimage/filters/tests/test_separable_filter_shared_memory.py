@@ -1,11 +1,12 @@
 import cupy as cp
 import pytest
 
-from cucim.skimage._vendored.ndimage import (
-    convolve1d, correlate1d, gaussian_filter, gaussian_filter1d,
-    gaussian_gradient_magnitude, gaussian_laplace, laplace, prewitt, sobel,
-    uniform_filter, uniform_filter1d,
-)
+from cucim.skimage._vendored.ndimage import (convolve1d, correlate1d,
+                                             gaussian_filter, gaussian_filter1d,
+                                             gaussian_gradient_magnitude,
+                                             gaussian_laplace, laplace, prewitt,
+                                             sobel, uniform_filter,
+                                             uniform_filter1d)
 
 
 def _get_image(shape, dtype, seed=123):
@@ -56,12 +57,20 @@ def _compare_implementations(
             output_dtype = image.dtype
         output1 = cp.empty(image.shape, dtype=output_dtype)
         output2 = cp.empty(image.shape, dtype=output_dtype)
-        function(image, kernel, output=output1, algorithm='elementwise', **kwargs)
-        function(image, kernel, output=output2, algorithm='shared_memory', **kwargs)
+        function(
+            image, kernel, output=output1, algorithm='elementwise', **kwargs
+        )
+        function(
+            image, kernel, output=output2, algorithm='shared_memory', **kwargs
+        )
         cp.testing.assert_allclose(output1, output2, rtol=rtol, atol=atol)
         return
-    output1 = function(image, kernel, output=output_dtype, algorithm='elementwise', **kwargs)
-    output2 = function(image, kernel, output=output_dtype, algorithm='shared_memory', **kwargs)
+    output1 = function(
+        image, kernel, output=output_dtype, algorithm='elementwise', **kwargs
+    )
+    output2 = function(
+        image, kernel, output=output_dtype, algorithm='shared_memory', **kwargs
+    )
     cp.testing.assert_allclose(output1, output2, rtol=rtol, atol=atol)
     return
 
@@ -88,8 +97,12 @@ def _compare_implementations_other(
         function(image, output=output2, algorithm='shared_memory', **kwargs)
         cp.testing.assert_allclose(output1, output2, rtol=rtol, atol=atol)
         return
-    output1 = function(image, output=output_dtype, algorithm='elementwise', **kwargs)
-    output2 = function(image, output=output_dtype, algorithm='shared_memory', **kwargs)
+    output1 = function(
+        image, output=output_dtype, algorithm='elementwise', **kwargs
+    )
+    output2 = function(
+        image, output=output_dtype, algorithm='shared_memory', **kwargs
+    )
     cp.testing.assert_allclose(output1, output2, rtol=rtol, atol=atol)
     return
 
@@ -160,17 +173,19 @@ def test_separable_elementwise_very_large_size_fallback(shape, axis):
     ('nearest', 'reflect', 'wrap', 'mirror', 'constant', ('constant', 1)),
 )
 def test_separable_image_shapes_and_modes(shape, axis, kernel_size, mode):
+
     if isinstance(mode, tuple):
         mode, cval = mode
     else:
         cval = 0
+
     _compare_implementations(
         shape,
         kernel_size=kernel_size,
         axis=axis,
         dtype=cp.float32,
         mode=mode,
-        cval=1,
+        cval=cval,
         origin=0,
     )
 
@@ -180,6 +195,8 @@ image_dtypes_tested = (
     cp.int8, cp.uint8, cp.int16, cp.uint16, cp.int32, cp.uint32, cp.int64,
     cp.uint64,
 )
+
+
 @pytest.mark.parametrize('axis', (0, 1))
 @pytest.mark.parametrize('image_dtype', image_dtypes_tested)
 @pytest.mark.parametrize(
@@ -202,11 +219,6 @@ def test_separable_image_and_kernel_dtypes(axis, image_dtype, kernel_dtype):
     )
 
 
-image_dtypes_tested = (
-    cp.float16, cp.float32, cp.float64, cp.complex64, cp.complex128, bool,
-    cp.int8, cp.uint8, cp.int16, cp.uint16, cp.int32, cp.uint32, cp.int64,
-    cp.uint64,
-)
 @pytest.mark.parametrize('axis', (0, 1))
 @pytest.mark.parametrize('image_dtype', image_dtypes_tested)
 @pytest.mark.parametrize(
@@ -231,7 +243,6 @@ def test_separable_input_and_output_dtypes(
         output_dtype=output_dtype,
         output_preallocated=output_preallocated,
     )
-
 
 
 @pytest.mark.parametrize('shape', ((64, 57),))
@@ -260,7 +271,7 @@ def test_separable_internal_kernel(
     Test case to make sure the 'algorithm' kwarg works for all other separable
     ndimage filters as well.
     """
-    out = _compare_implementations_other(
+    _compare_implementations_other(
         shape,
         dtype=cp.float32,
         mode='nearest',
@@ -320,6 +331,6 @@ def test_separable_image_shapes_and_modes_3d(shape, axis, kernel_size, mode):
         axis=axis,
         dtype=cp.float32,
         mode=mode,
-        cval=1,
+        cval=cval,
         origin=0,
     )

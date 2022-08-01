@@ -68,4 +68,4 @@ except ImportError:
 if hasattr(math, 'prod'):
     prod = math.prod
 else:
-    prod = np.prod
+    prod = numpy.prod

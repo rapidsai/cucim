@@ -181,15 +181,15 @@ def _generate_boundary_condition_ops(mode, ix, xsize, int_t="int",
 
     elif mode == 'wrap':
         if separate:
-            ops_lower = f'''{ix} += ({sz} - 1) * (({int_t})(-{ix} / ({sz} - 1)) + 1);'''
-            ops_upper = f'''{ix} -= ({sz} - 1) * ({int_t})({ix} / ({sz} - 1));'''
+            ops_lower = f'''{ix} += ({xsize} - 1) * (({int_t})(-{ix} / ({xsize} - 1)) + 1);'''  # noqa
+            ops_upper = f'''{ix} -= ({xsize} - 1) * ({int_t})({ix} / ({xsize} - 1));'''  # noqa
             ops = (ops_lower, ops_upper)
         else:
             ops = f'''
             if ({ix} < 0) {{
-                {ix} += ({sz} - 1) * (({int_t})(-{ix} / ({sz} - 1)) + 1);
-            }} else if ({ix} > ({sz} - 1)) {{
-                {ix} -= ({sz} - 1) * ({int_t})({ix} / ({sz} - 1));
+                {ix} += ({xsize} - 1) * (({int_t})(-{ix} / ({xsize} - 1)) + 1);
+            }} else if ({ix} > ({xsize} - 1)) {{
+                {ix} -= ({xsize} - 1) * ({int_t})({ix} / ({xsize} - 1));
             }};'''
     elif mode in ['constant', 'grid-constant']:
         if separate:
