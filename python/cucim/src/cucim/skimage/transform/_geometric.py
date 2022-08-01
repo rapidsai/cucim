@@ -1421,10 +1421,8 @@ class SimilarityTransform(EuclideanTransform):
             if translation is None:
                 translation = (0,) * dimensionality
             if dimensionality == 2:
-                ax = (0, 1)
                 c, s = _cos(rotation), _sin(rotation)
-                matrix[ax, ax] = c
-                matrix[ax, ax[::-1]] = -s, s
+                matrix[:2, :2] = xp.array([[c, -s], [s, c]], dtype=float)
             else:  # 3D rotation
                 matrix[:3, :3] = xp.asarray(_euler_rotation_matrix(rotation))
 
