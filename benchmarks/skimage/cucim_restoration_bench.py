@@ -1,3 +1,4 @@
+import argparse
 import math
 import os
 import pickle
@@ -97,23 +98,35 @@ class DeconvolutionBench(ImageBench):
         self.args_gpu = (imaged, psfd)
 
 
-pfile = "cucim_restoration_results.pickle"
-if os.path.exists(pfile):
-    with open(pfile, "rb") as f:
-        all_results = pickle.load(f)
-else:
-    all_results = pd.DataFrame()
-dtypes = [np.float32]
+
+def main(args):
+
+    pfile = "cucim_restoration_results.pickle"
+    if os.path.exists(pfile):
+        with open(pfile, "rb") as f:
+            all_results = pickle.load(f)
+    else:
+        all_results = pd.DataFrame()
+
+    dtypes = [np.dtype(args.dtype)]
+    # image sizes/shapes
+    shape = tuple(list(map(int,(args.img_size.split(',')))))
+    run_cpu = not args.no_cpu
 
 
-for function_name, fixed_kwargs, var_kwargs, allow_color, allow_nd in [
-    # _denoise.py
-    ("denoise_tv_chambolle", dict(), dict(weight=[0.02]), True, True),
-    # j_invariant.py
-    ("calibrate_denoiser", dict(), dict(), False, True),
-]:
+    for function_name, fixed_kwargs, var_kwargs, allow_color, allow_nd in [
+        # _denoise.py
+        ("denoise_tv_chambolle", dict(), dict(weight=[0.02]), True, True),
+        # j_invariant.py
+        ("calibrate_denoiser", dict(), dict(), False, True),
+        # deconvolution.py
+        ("wiener", dict(balance=100.0), dict(), False, False),
+        ("unsupervised_wiener", dict(), dict(), False, False),
+        ("richardson_lucy", dict(), dict(num_iter=[5]), False, True),
+    ]:
 
-    for shape in [(512, 512), (1980, 1080), (1980, 1080, 3), (128, 128, 128)]:
+        if function_name != args.func_name:
+            continue
 
         ndim = len(shape)
         if not allow_nd:
@@ -126,63 +139,65 @@ for function_name, fixed_kwargs, var_kwargs, allow_color, allow_nd in [
         if shape[-1] == 3 and not allow_color:
             continue
 
-        if function_name == "denoise_tv_chambolle":
-            fixed_kwargs["channel_axis"] = -1 if shape[-1] == 3 else None
+        if function_name in ['denoise_tv_chambolle', 'calibrate_denoiser']:
 
-        if function_name == "calibrate_denoiser":
-            denoise_class = CalibratedDenoiseBench
-        else:
-            denoise_class = DenoiseBench
+            if function_name == "denoise_tv_chambolle":
+                fixed_kwargs["channel_axis"] = -1 if shape[-1] == 3 else None
 
-        B = denoise_class(
-            function_name=function_name,
-            shape=shape,
-            dtypes=dtypes,
-            fixed_kwargs=fixed_kwargs,
-            var_kwargs=var_kwargs,
-            module_cpu=skimage.restoration,
-            module_gpu=cucim.skimage.restoration,
-        )
-        results = B.run_benchmark(duration=1)
-        all_results = pd.concat([all_results, results["full"]])
-
-
-# function_name, fixed_kwargs, var_kwargs, allow_color, allow_nd = ('unsupervised_wiener', dict(), dict(), False, True)
-for function_name, fixed_kwargs, var_kwargs, allow_color, allow_nd in [
-    # deconvolution.py
-    ("wiener", dict(balance=100.0), dict(), False, False),
-    ("unsupervised_wiener", dict(), dict(), False, False),
-    ("richardson_lucy", dict(), dict(num_iter=[5]), False, True),
-]:
-
-    for shape in [(512, 512), (3840, 2160), (3840, 2160, 3), (192, 192, 192)]:
-
-        ndim = len(shape)
-        if not allow_nd:
-            if not allow_color:
-                if ndim > 2:
-                    continue
+            if function_name == "calibrate_denoiser":
+                denoise_class = CalibratedDenoiseBench
             else:
-                if ndim > 3 or (ndim == 3 and shape[-1] not in [3, 4]):
-                    continue
-        if shape[-1] == 3 and not allow_color:
-            continue
+                denoise_class = DenoiseBench
 
-        B = DeconvolutionBench(
-            function_name=function_name,
-            shape=shape,
-            dtypes=dtypes,
-            fixed_kwargs=fixed_kwargs,
-            var_kwargs=var_kwargs,
-            module_cpu=skimage.restoration,
-            module_gpu=cucim.skimage.restoration,
-        )
-        results = B.run_benchmark(duration=1)
-        all_results = pd.concat([all_results, results["full"]])
+            B = denoise_class(
+                function_name=function_name,
+                shape=shape,
+                dtypes=dtypes,
+                fixed_kwargs=fixed_kwargs,
+                var_kwargs=var_kwargs,
+                module_cpu=skimage.restoration,
+                module_gpu=cucim.skimage.restoration,
+                run_cpu=run_cpu,
+            )
+            results = B.run_benchmark(duration=args.duration)
+            all_results = pd.concat([all_results, results["full"]])
+
+        elif function_name in ['wiener', 'unsupervised_wiener', 'richardson_lucy']:
+
+            B = DeconvolutionBench(
+                function_name=function_name,
+                shape=shape,
+                dtypes=dtypes,
+                fixed_kwargs=fixed_kwargs,
+                var_kwargs=var_kwargs,
+                module_cpu=skimage.restoration,
+                module_gpu=cucim.skimage.restoration,
+                run_cpu=run_cpu,
+            )
+            results = B.run_benchmark(duration=args.duration)
+            all_results = pd.concat([all_results, results["full"]])
+
+    fbase = os.path.splitext(pfile)[0]
+    all_results.to_csv(fbase + ".csv")
+    all_results.to_pickle(pfile)
+    try:
+        import tabular
+
+        with open(fbase + ".md", "wt") as f:
+            f.write(all_results.to_markdown())
+    except ImportError:
+        pass
 
 
-fbase = os.path.splitext(pfile)[0]
-all_results.to_csv(fbase + ".csv")
-all_results.to_pickle(pfile)
-with open(fbase + ".md", "wt") as f:
-    f.write(all_results.to_markdown())
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Benchmarking cuCIM restoration functions')
+    func_name_choices = ['denoise_tv_chambolle', 'calibrate_denoiser', 'wiener', 'unsupervised_wiener', 'richardson_lucy']
+    dtype_choices = ['float16', 'float32', 'float64', 'int8', 'int16', 'int32', 'int64', 'uint8', 'uint16', 'uint32', 'uint64']
+    parser.add_argument('-i','--img_size', type=str, help='Size of input image (omit color channel, it will be appended as needed)', required=True)
+    parser.add_argument('-d','--dtype', type=str, help='Dtype of input image', choices = dtype_choices, required=True)
+    parser.add_argument('-f','--func_name', type=str, help='function to benchmark', choices = func_name_choices, required=True)
+    parser.add_argument('-t','--duration', type=int, help='time to run benchmark', required=True)
+    parser.add_argument('--no_cpu', action='store_true', help='disable cpu measurements', default=False)
+
+    args = parser.parse_args()
+    main(args)

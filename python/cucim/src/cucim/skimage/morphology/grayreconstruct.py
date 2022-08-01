@@ -15,8 +15,8 @@ import numpy as np
 from .._shared.utils import deprecate_kwarg
 
 
-@deprecate_kwarg(kwarg_mapping={'selem': 'footprint'}, removed_version="1.0",
-                 deprecated_version="0.19")
+@deprecate_kwarg(kwarg_mapping={'selem': 'footprint'},
+                 removed_version="23.02.00", deprecated_version="22.02.00")
 def reconstruction(seed, mask, method='dilation', footprint=None, offset=None):
     """Perform a morphological reconstruction of an image.
 
