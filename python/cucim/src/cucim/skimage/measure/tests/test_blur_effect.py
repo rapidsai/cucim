@@ -1,4 +1,5 @@
 import cupy as cp
+import pytest
 from cupy.testing import assert_array_equal
 from skimage.data import astronaut
 
