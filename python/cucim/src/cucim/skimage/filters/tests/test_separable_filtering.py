@@ -204,9 +204,6 @@ image_dtypes_tested = (
 )
 def test_separable_image_and_kernel_dtypes(axis, image_dtype, kernel_dtype):
     """Test many kernel and image dtype combinations"""
-    # if cp.dtype(image_dtype).kind == 'c' and kernel_dtype is not None:
-    #     if not cp.dtype(kernel_dtype).kind == 'c':
-    #         pytest.skip(reason='cannot cast complex values to real')
 
     _compare_implementations(
         (64, 32),
@@ -231,7 +228,7 @@ def test_separable_input_and_output_dtypes(
     """Test many kernel and image dtype combinations"""
     if cp.dtype(image_dtype).kind == 'c' and output_dtype is not None:
         if not cp.dtype(output_dtype).kind == 'c':
-            pytest.skip(reason='cannot cast complex values to real')
+            pytest.skip('cannot cast complex values to real')
     _compare_implementations(
         (64, 32),
         kernel_size=3,
