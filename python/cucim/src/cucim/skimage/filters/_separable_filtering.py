@@ -4,14 +4,9 @@ import cupy as cp
 import numpy as np
 
 from cucim.skimage._vendored import _ndimage_util as util
-from cucim.skimage._vendored._internal import _normalize_axis_index
+from cucim.skimage._vendored._internal import _normalize_axis_index, prod
 from cucim.skimage._vendored._ndimage_filters_core import (
     _ndimage_CAST_FUNCTION, _ndimage_includes)
-
-if hasattr(math, 'prod'):
-    prod = math.prod
-else:
-    prod = np.prod
 
 
 def _get_constants(ndim, axis, kernel_size, anchor, patch_per_block=None):
@@ -64,7 +59,7 @@ def _get_constants(ndim, axis, kernel_size, anchor, patch_per_block=None):
         # can have out of bounds access unless patch_per_block >= halo_size
         patch_per_block = max(patch_per_block, halo_size)
     else:
-        raise NotImplementedError("TODO")
+        raise NotImplementedError("Only 2D and 3D are currently supported")
     block = (block_x, block_y, block_z)
     return block, patch_per_block, halo_size
 

@@ -1,3 +1,4 @@
+import cmath
 import math
 import warnings
 
@@ -461,11 +462,11 @@ def affine_transform(input, matrix, offset=0.0, output_shape=None, output=None,
 def _minmax(coor, minc, maxc):
     if coor[0] < minc[0]:
         minc[0] = coor[0]
-    if coor[0] > maxc[0]:
+    elif coor[0] > maxc[0]:
         maxc[0] = coor[0]
     if coor[1] < minc[1]:
         minc[1] = coor[1]
-    if coor[1] > maxc[1]:
+    elif coor[1] > maxc[1]:
         maxc[1] = coor[1]
     return minc, maxc
 
@@ -523,9 +524,9 @@ def rotate(input, angle, axes=(1, 0), reshape=True, output=None, order=3,
         raise ValueError('invalid rotation plane specified')
 
     ndim = input_arr.ndim
-    rad = numpy.deg2rad(angle)
-    sin = math.sin(rad)
-    cos = math.cos(rad)
+    rad = math.radians(angle)
+    sincos = cmath.rect(1, rad)
+    cos, sin = sincos.real, sincos.imag
 
     # determine offsets and output shape as in scipy.ndimage.rotate
     rot_matrix = numpy.array([[cos, sin],

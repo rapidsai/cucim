@@ -4,12 +4,6 @@ import warnings
 import cupy
 import numpy
 
-try:
-    from cupy_backends.cuda.api import runtime
-    _is_hip = runtime.is_hip
-except (ImportError, AttributeError):
-    _is_hip = False
-
 from cucim.skimage._vendored import _internal as internal
 from cucim.skimage._vendored import _ndimage_util as _util
 
@@ -160,13 +154,7 @@ def _call_kernel(kernel, input, weights, output, structure=None,
     return output
 
 
-if _is_hip:
-    _ndimage_includes = r'''
-// workaround for HIP: line begins with #include
-#include <cupy/math_constants.h>\n
-'''
-else:
-    _ndimage_includes = r'''
+_ndimage_includes = r'''
 #include <type_traits>  // let Jitify handle this
 #include <cupy/math_constants.h>
 

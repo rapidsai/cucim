@@ -1,4 +1,6 @@
 import math
+from functools import reduce
+from operator import mul
 
 import cupy
 import numpy
@@ -68,4 +70,4 @@ except ImportError:
 if hasattr(math, 'prod'):
     prod = math.prod
 else:
-    prod = numpy.prod
+    prod = lambda iterable, *, start=1: reduce(mul, iterable, start)
