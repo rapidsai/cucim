@@ -133,6 +133,7 @@ def test_median_hist_dtypes(
     expected = ndimage.median_filter(img, size=footprint.shape, mode=mode)
     assert_allclose(expected, out)
 
+
 # TODO: Determine source of isolated remote test failures when 16-bit range
 #       is > 1024. Could not reproduce locally.
 @pytest.mark.parametrize('mode', ['reflect', ])
@@ -148,15 +149,15 @@ def test_median_hist_dtypes(
         (cp.uint16, (0, 510)),
         (cp.uint16, (500, 550)),
         (cp.uint16, (0, 1024)),
-        # (cp.uint16, (0, 2048)),
-        # (cp.uint16, (1024, 3185)),
+        (cp.uint16, (0, 2048)),
+        (cp.uint16, (1024, 3185)),
         (cp.int16, (0, 256)),
         (cp.int16, (-15, 15)),
         (cp.int16, (128, 384)),
         (cp.int16, (-128, 384)),
         (cp.int16, (-400, 400)),
-        # (cp.int16, (-1024, 2048)),
-        # (cp.int16, (150, 2048)),
+        (cp.int16, (-1024, 2048)),
+        (cp.int16, (150, 2048)),
     ]
 )
 def test_median_hist_16bit_offsets(mode, footprint_shape, int_dtype, irange):
