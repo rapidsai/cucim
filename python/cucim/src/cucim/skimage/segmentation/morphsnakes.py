@@ -3,10 +3,12 @@ from itertools import cycle
 
 import cupy as cp
 import numpy as np
+from cupyx import rsqrt
 from cupyx.scipy import ndimage as ndi
 
 from cucim import _misc
 
+from .._shared._gradient import gradient
 from .._shared.utils import check_nD, deprecate_kwarg
 
 __all__ = ['morphological_chan_vese',
@@ -29,64 +31,53 @@ class _fcycle(object):
 
 
 # SI and IS operators for 2D and 3D.
-_P2 = [np.eye(3),
-       np.array([[0, 1, 0]] * 3),
-       np.flipud(np.eye(3)),
-       np.rot90([[0, 1, 0]] * 3)]
-_P3 = [np.zeros((3, 3, 3)) for i in range(9)]
-
-_P3[0][:, :, 1] = 1
-_P3[1][:, 1, :] = 1
-_P3[2][1, :, :] = 1
-_P3[3][:, [0, 1, 2], [0, 1, 2]] = 1
-_P3[4][:, [0, 1, 2], [2, 1, 0]] = 1
-_P3[5][[0, 1, 2], :, [0, 1, 2]] = 1
-_P3[6][[0, 1, 2], :, [2, 1, 0]] = 1
-_P3[7][[0, 1, 2], [0, 1, 2], :] = 1
-_P3[8][[0, 1, 2], [2, 1, 0], :] = 1
+def _get_P2():
+    _P2 = [cp.eye(3),
+           cp.array([[0, 1, 0]] * 3),
+           cp.array(np.flipud(np.eye(3))),
+           cp.array(np.rot90([[0, 1, 0]] * 3))]
+    return _P2
 
 
-def sup_inf(u):
+def _get_P3():
+    _P3 = [np.zeros((3, 3, 3)) for i in range(9)]
+
+    _P3[0][:, :, 1] = 1
+    _P3[1][:, 1, :] = 1
+    _P3[2][1, :, :] = 1
+    _P3[3][:, [0, 1, 2], [0, 1, 2]] = 1
+    _P3[4][:, [0, 1, 2], [2, 1, 0]] = 1
+    _P3[5][[0, 1, 2], :, [0, 1, 2]] = 1
+    _P3[6][[0, 1, 2], :, [2, 1, 0]] = 1
+    _P3[7][[0, 1, 2], [0, 1, 2], :] = 1
+    _P3[8][[0, 1, 2], [2, 1, 0], :] = 1
+    return [cp.array(p) for p in _P3]
+
+
+def sup_inf(u, footprints, workspace=None):
     """SI operator."""
-
-    if _misc.ndim(u) == 2:
-        P = _P2
-    elif _misc.ndim(u) == 3:
-        P = _P3
+    if workspace is None:
+        erosions = cp.empty(((len(footprints),) + u.shape), dtype=u.dtype)
     else:
-        raise ValueError("u has an invalid number of dimensions "
-                         "(should be 2 or 3)")
-
-    erosions = []
-    for P_i in P:
-        e = ndi.binary_erosion(u, cp.asarray(P_i)).astype(np.int8, copy=False)
-        erosions.append(e)
-
-    return cp.stack(erosions, axis=0).max(0)
+        erosions = workspace
+    for i, footprint in enumerate(footprints):
+        erosions[i, ...] = ndi.binary_erosion(u, footprint)
+    return erosions.max(0)
 
 
-def inf_sup(u):
+def inf_sup(u, footprints, workspace=None):
     """IS operator."""
-
-    if _misc.ndim(u) == 2:
-        P = _P2
-    elif _misc.ndim(u) == 3:
-        P = _P3
+    if workspace is None:
+        dilations = cp.empty(((len(footprints),) + u.shape), dtype=u.dtype)
     else:
-        raise ValueError("u has an invalid number of dimensions "
-                         "(should be 2 or 3)")
-
-    dilations = []
-    for P_i in P:
-        d = ndi.binary_dilation(u, cp.asarray(P_i)).astype(np.int8,
-                                                           copy=False)
-        dilations.append(d)
-
-    return cp.stack(dilations, axis=0).min(0)
+        dilations = workspace
+    for i, footprint in enumerate(footprints):
+        dilations[i, ...] = ndi.binary_dilation(u, footprint)
+    return dilations.min(0)
 
 
-_curvop = _fcycle([lambda u: sup_inf(inf_sup(u)),   # SIoIS
-                   lambda u: inf_sup(sup_inf(u))])  # ISoSI
+_curvop = _fcycle([lambda u, f, w: sup_inf(inf_sup(u, f, w), f, w),   # SIoIS
+                   lambda u, f, w: inf_sup(sup_inf(u, f, w), f, w)])  # ISoSI
 
 
 def _check_input(image, init_level_set):
@@ -187,6 +178,11 @@ def checkerboard_level_set(image_shape, square_size=5):
     return res
 
 
+@cp.fuse()
+def _fused_inverse_kernel(gradnorm, alpha):
+    return rsqrt(1.0 + alpha * gradnorm)
+
+
 def inverse_gaussian_gradient(image, alpha=100.0, sigma=5.0):
     """Inverse of gradient magnitude.
 
@@ -216,7 +212,30 @@ def inverse_gaussian_gradient(image, alpha=100.0, sigma=5.0):
         `morphological_geodesic_active_contour`.
     """
     gradnorm = ndi.gaussian_gradient_magnitude(image, sigma, mode='nearest')
-    return 1.0 / cp.sqrt(1.0 + alpha * gradnorm)
+    return _fused_inverse_kernel(gradnorm, alpha)
+
+
+@cp.fuse()
+def _abs_grad_kernel(gx, gy):
+    return cp.abs(gx) + cp.abs(gy)
+
+
+@cp.fuse()
+def _fused_variance_kernel(
+    image, c1, c2, lam1, lam2, abs_du,
+):
+    difference_term = image - c1
+    difference_term *= difference_term
+    difference_term *= lam1
+    term2 = image - c2
+    term2 *= term2
+    term2 *= lam2
+    difference_term -= term2
+
+    aux = abs_du * difference_term
+    aux_lt0 = aux < 0
+    aux_gt0 = aux > 0
+    return aux_lt0, aux_gt0
 
 
 @deprecate_kwarg({'iterations': 'num_iter'},
@@ -299,28 +318,37 @@ def morphological_chan_vese(image, num_iter, init_level_set='checkerboard',
 
     u = (init_level_set > 0).astype(cp.int8)
 
-    iter_callback(u)
+    if _misc.ndim(u) == 2:
+        footprints = _get_P2()
+    elif _misc.ndim(u) == 3:
+        footprints = _get_P3()
+    else:
+        raise ValueError("u has an invalid number of dimensions "
+                         "(should be 2 or 3)")
+    workspace = cp.empty(((len(footprints),) + u.shape), dtype=u.dtype)
 
-    for _ in range(num_iter):
+    iter_callback(u)
+    for i in range(num_iter):
 
         # inside = u > 0
         # outside = u <= 0
-        c0 = (image * (1 - u)).sum() / float((1 - u).sum() + 1e-8)
-        c1 = (image * u).sum() / float(u.sum() + 1e-8)
+        c0 = (image * (1 - u)).sum()
+        c0 /= float((1 - u).sum() + 1e-8)
+        c1 = (image * u).sum()
+        c1 /= float(u.sum() + 1e-8)
 
         # Image attachment
-        du = cp.gradient(u)
-        abs_du = cp.abs(cp.stack(du, axis=0)).sum(0)
-        aux = abs_du * (
-            lambda1 * (image - c1) ** 2 - lambda2 * (image - c0) ** 2
+        du = gradient(u)
+        abs_du = _abs_grad_kernel(du[0], du[1])
+        aux_lt0, aux_gt0 = _fused_variance_kernel(
+            image, c1, c0, lambda1, lambda2, abs_du
         )
-
-        u[aux < 0] = 1
-        u[aux > 0] = 0
+        u[aux_lt0] = 1
+        u[aux_gt0] = 0
 
         # Smoothing
         for _ in range(smoothing):
-            u = _curvop(u)
+            u = _curvop(u, footprints, workspace)
 
         iter_callback(u)
 
@@ -420,12 +448,21 @@ def morphological_geodesic_active_contour(gimage, num_iter,
         threshold = cp.percentile(image, 40)
 
     structure = cp.ones((3,) * len(image.shape), dtype=cp.int8)
-    dimage = cp.gradient(image)
+    dimage = gradient(image)
     # threshold_mask = image > threshold
     if balloon != 0:
         threshold_mask_balloon = image > threshold / cp.abs(balloon)
 
     u = (init_level_set > 0).astype(cp.int8)
+
+    if _misc.ndim(u) == 2:
+        footprints = _get_P2()
+    elif _misc.ndim(u) == 3:
+        footprints = _get_P3()
+    else:
+        raise ValueError("u has an invalid number of dimensions "
+                         "(should be 2 or 3)")
+    workspace = cp.empty(((len(footprints),) + u.shape), dtype=u.dtype)
 
     iter_callback(u)
 
@@ -441,7 +478,7 @@ def morphological_geodesic_active_contour(gimage, num_iter,
 
         # Image attachment
         aux = cp.zeros_like(image)
-        du = cp.gradient(u)
+        du = gradient(u)
         for el1, el2 in zip(dimage, du):
             aux += el1 * el2
         u[aux > 0] = 1
@@ -449,7 +486,7 @@ def morphological_geodesic_active_contour(gimage, num_iter,
 
         # Smoothing
         for _ in range(smoothing):
-            u = _curvop(u)
+            u = _curvop(u, footprints, workspace)
 
         iter_callback(u)
 
