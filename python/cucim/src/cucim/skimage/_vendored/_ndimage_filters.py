@@ -198,7 +198,7 @@ def _correlate_or_convolve1d(input, weights, axis, output, mode, cval, origin,
         from cucim.skimage.filters._separable_conv_shmem import (
             _shmem_convolve1d, ResourceLimitError
         )
-        if input.ndim != 2:
+        if input.ndim not in [2, 3]:
             raise NotImplementedError(
                 f"shared_memory not implemented for ndim={input.ndim}"
             )

@@ -425,7 +425,7 @@ def _get_code_stage1_shared_memory_load_3d(ndim, axis, mode, cval):
             //Lower halo
             #pragma unroll
             for (int j = 0; j < HALO_SIZE; ++j)
-                smem[threadIdx.z + (PATCH_PER_BLOCK + HALO_SIZE + j) * BLOCK_DIM_Z][threadIdx.x][threadIdx.y] = src_col[(zStart + (PATCH_PER_BLOCK + j) * BLOCK_DIM_Z) * stride_0];
+                smem[threadIdx.z + (PATCH_PER_BLOCK + HALO_SIZE + j) * BLOCK_DIM_Z][threadIdx.y][threadIdx.x] = src_col[(zStart + (PATCH_PER_BLOCK + j) * BLOCK_DIM_Z) * stride_0];
         }
         else
         {
@@ -472,9 +472,9 @@ def _get_code_stage1_shared_memory_load_3d(ndim, axis, mode, cval):
 
         # as in OpenCV's column_filter.hpp
         code = """
-        __shared__ T smem[BLOCK_DIM_Z][(PATCH_PER_BLOCK + 2 * HALO_SIZE) * BLOCK_DIM_Z][BLOCK_DIM_X];
+        __shared__ T smem[BLOCK_DIM_Z][(PATCH_PER_BLOCK + 2 * HALO_SIZE) * BLOCK_DIM_Y][BLOCK_DIM_X];
         const int x = blockIdx.x * BLOCK_DIM_X + threadIdx.x;
-        const int z = blockIdx.z * BLOCK_DIM_z + threadIdx.z;
+        const int z = blockIdx.z * BLOCK_DIM_Z + threadIdx.z;
         if ((x >= s_2) || (z >= s_0)) {
             return;
         }
@@ -523,7 +523,7 @@ def _get_code_stage1_shared_memory_load_3d(ndim, axis, mode, cval):
             //Lower halo
             #pragma unroll
             for (int j = 0; j < HALO_SIZE; ++j)
-                smem[threadIdx.z][threadIdx.y + (PATCH_PER_BLOCK + HALO_SIZE + j) * BLOCK_DIM_Y][threadIdx.x][threadIdx.y] = src_col[(yStart + (PATCH_PER_BLOCK + j) * BLOCK_DIM_Y) * stride_1];
+                smem[threadIdx.z][threadIdx.y + (PATCH_PER_BLOCK + HALO_SIZE + j) * BLOCK_DIM_Y][threadIdx.x] = src_col[(yStart + (PATCH_PER_BLOCK + j) * BLOCK_DIM_Y) * stride_1];
         }
         else
         {
@@ -570,7 +570,7 @@ def _get_code_stage1_shared_memory_load_3d(ndim, axis, mode, cval):
 
         # as in OpenCV's row_filter.hpp
         code = """
-        __shared__ T smem[BLOCK_DIM_Y][(PATCH_PER_BLOCK + 2 * HALO_SIZE) * BLOCK_DIM_X];
+        __shared__ T smem[BLOCK_DIM_Z][BLOCK_DIM_Y][(PATCH_PER_BLOCK + 2 * HALO_SIZE) * BLOCK_DIM_X];
         const int y = blockIdx.y * BLOCK_DIM_Y + threadIdx.y;
         const int z = blockIdx.z * BLOCK_DIM_Z + threadIdx.z;
         if ((y >= s_1) || (z >= s_0)) {
