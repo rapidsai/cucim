@@ -323,7 +323,3 @@ def test_separable_image_shapes_and_modes_3d(shape, axis, kernel_size, mode):
         cval=1,
         origin=0,
     )
-
-# TODO: add separable min and max as well
-# TODO: extend to nd
-# TODO: extend to multi-channel data
