@@ -1,11 +1,17 @@
 import math
 
 import cupy as cp
+import numpy as np
 
 from cucim.skimage._vendored import _ndimage_util as util
 from cucim.skimage._vendored._internal import _normalize_axis_index
 from cucim.skimage._vendored._ndimage_filters_core import (
     _ndimage_CAST_FUNCTION, _ndimage_includes)
+
+if hasattr(math, 'prod'):
+    prod = math.prod
+else:
+    prod = np.prod
 
 
 def _get_constants(ndim, axis, kernel_size, anchor, patch_per_block=None):
@@ -80,7 +86,7 @@ def _get_smem_shape(ndim, axis, block, patch_per_block, halo_size, anchor=None,
             shape = (bz, by, (patch_per_block + 2 * halo_size) * bx)
     else:
         raise NotImplementedError("TODO")
-    nbytes = cp.dtype(image_dtype).itemsize * math.prod(shape)
+    nbytes = cp.dtype(image_dtype).itemsize * prod(shape)
     return shape, nbytes
 
 
