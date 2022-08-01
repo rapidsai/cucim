@@ -1,7 +1,6 @@
 import math
 
 import cupy as cp
-import numpy as np
 
 from cucim.skimage._vendored import _ndimage_util as util
 from cucim.skimage._vendored._internal import _normalize_axis_index, prod

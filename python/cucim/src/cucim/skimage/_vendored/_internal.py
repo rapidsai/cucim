@@ -70,4 +70,6 @@ except ImportError:
 if hasattr(math, 'prod'):
     prod = math.prod
 else:
-    prod = lambda iterable, *, start=1: reduce(mul, iterable, start)
+
+    def prod(iterable, *, start=1):
+        return reduce(mul, iterable, start)
