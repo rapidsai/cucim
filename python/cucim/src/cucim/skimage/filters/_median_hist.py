@@ -7,15 +7,10 @@ import numpy as np
 
 from .._shared.utils import _to_np_mode
 
-try:
-    # Device Attributes require CuPy > 6.0.b3
-    d = cp.cuda.Device()
-    cuda_MaxBlockDimX = d.attributes["MaxBlockDimX"]
-    cuda_MaxGridDimX = d.attributes["MaxGridDimX"]
-except (cp.cuda.runtime.CUDARuntimeError, AttributeError):
-    # guess
-    cuda_MaxBlockDimX = 1024
-    cuda_MaxGridDimX = 2147483647
+if hasattr(math, 'prod'):
+    prod = math.prod
+else:
+    prod = np.prod
 
 
 def _dtype_to_CUDA_int_type(dtype):
@@ -37,7 +32,7 @@ def _dtype_to_CUDA_int_type(dtype):
 
 def _get_hist_dtype(footprint_shape):
     """Determine C++ type and cupy.dtype to use for the histogram."""
-    max_possible_count = math.prod(footprint_shape)
+    max_possible_count = prod(footprint_shape)
 
     if max_possible_count < 128:
         dtype = cp.int8

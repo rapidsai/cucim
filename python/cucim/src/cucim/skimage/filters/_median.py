@@ -1,4 +1,3 @@
-import math
 from warnings import warn
 
 import cupy as cp
@@ -7,6 +6,15 @@ from cupyx.scipy import ndimage as ndi
 
 from .._shared.utils import deprecate_kwarg
 from ._median_hist import _can_use_histogram, _median_hist, KernelResourceError
+
+try:
+    from math import prod
+except ImportError:
+    from functools import reduce
+    from operator import mul
+
+    def prod(x):
+        return reduce(mul, x)
 
 
 @deprecate_kwarg(kwarg_mapping={'selem': 'footprint'}, removed_version="1.0",
@@ -132,7 +140,7 @@ def median(image, footprint=None, out=None, mode='nearest', cval=0.0,
     use_histogram = can_use_histogram
     if algorithm == 'auto':
         # prefer sorting-based algorithm if footprint shape is small
-        use_histogram = use_histogram and math.prod(footprint.shape) > 150
+        use_histogram = use_histogram and prod(footprint.shape) > 150
 
     if use_histogram:
         try:
