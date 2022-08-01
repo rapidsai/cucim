@@ -11,7 +11,7 @@ from ._pba_3d import _pba_3d
 def distance_transform_edt(image, sampling=None, return_distances=True,
                            return_indices=False, distances=None, indices=None,
                            *, block_params=None, float64_distances=False):
-    """Exact Euclidean distance transform.
+    r"""Exact Euclidean distance transform.
 
     This function calculates the distance transform of the `input`, by
     replacing each foreground (non-zero) element, with its shortest distance to
@@ -68,17 +68,18 @@ def distance_transform_edt(image, sampling=None, return_distances=True,
 
     Notes
     -----
-    The Euclidean distance transform gives values of the Euclidean distance::
+    The Euclidean distance transform gives values of the Euclidean distance.
 
-                    n
-      y_i = sqrt(sum (x[i]-b[i])**2)
-                    i
+    .. math::
 
-    where b[i] is the background point (value 0) with the smallest Euclidean
-    distance to input points x[i], and n is the number of dimensions.
+      y_i = \sqrt{\sum_{i}^{n} (x[i] - b[i])^2}
+
+    where :math:`b[i]` is the background point (value 0) with the smallest
+    Euclidean distance to input points :math:`x[i]`, and :math:`n` is the
+    number of dimensions.
 
     Note that the `indices` output may differ from the one given by
-    `scipy.ndimage.distance_transform_edt` in the case of input pixels that are
+    ``scipy.ndimage.distance_transform_edt`` in the case of input pixels that are
     equidistant from multiple background points.
 
     The parallel banding algorithm implemented here was originally described in
@@ -88,7 +89,7 @@ def distance_transform_edt(image, sampling=None, return_distances=True,
 
     References
     ----------
-    ..[1] Thanh-Tung Cao, Ke Tang, Anis Mohamed, and Tiow-Seng Tan. 2010.
+    .. [1] Thanh-Tung Cao, Ke Tang, Anis Mohamed, and Tiow-Seng Tan. 2010.
         Parallel Banding Algorithm to compute exact distance transform with the
         GPU. In Proceedings of the 2010 ACM SIGGRAPH symposium on Interactive
         3D Graphics and Games (I3D ’10). Association for Computing Machinery,
