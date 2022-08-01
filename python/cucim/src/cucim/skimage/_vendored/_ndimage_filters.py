@@ -234,7 +234,7 @@ def _get_correlate_kernel(mode, w_shape, int_type, offsets, cval):
 
 
 def _run_1d_correlates(input, params, get_weights, output, mode, cval,
-                       origin=0, zero_fill_outputs=False, **filter_kwargs):
+                       origin=0, zero_fill_output=False, **filter_kwargs):
     """
     Enhanced version of _run_1d_filters that uses correlate1d as the filter
     function. The params are a list of values to pass to the get_weights
@@ -249,7 +249,7 @@ def _run_1d_correlates(input, params, get_weights, output, mode, cval,
     wghts = [wghts[param] for param in params]
     return _filters_core._run_1d_filters(
         [None if w is None else correlate1d for w in wghts],
-        input, wghts, output, mode, cval, origin, zero_fill_outputs,
+        input, wghts, output, mode, cval, origin, zero_fill_output,
         **filter_kwargs)
 
 

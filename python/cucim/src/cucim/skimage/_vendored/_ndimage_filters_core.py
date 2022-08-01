@@ -96,14 +96,21 @@ def _run_1d_filters(filters, input, args, output, mode, cval, origin=0,
         return output
     # We can't operate in-place efficiently, so use a 2-buffer system
     temp = _util._get_output(output.dtype, input, zero_fill=zero_fill_output) if n_filters > 1 else None   # noqa
-    first = True
     iterator = zip(filters, args, modes, origins)
-    for axis, (fltr, arg, mode, origin) in enumerate(iterator):
+    (fltr, arg, mode, origin) = next(iterator)
+    if n_filters % 2 == 0:
+        fltr(input, arg, 0, temp, mode, cval, origin, **filter_kwargs)
+        input = temp
+    else:
+        fltr(input, arg, 0, output, mode, cval, origin, **filter_kwargs)
+        if n_filters == 1:
+            return output
+        input, output = output, temp
+    for axis, (fltr, arg, mode, origin) in enumerate(iterator, start=1):
         if fltr is None:
             continue
         fltr(input, arg, axis, output, mode, cval, origin, **filter_kwargs)
-        input, output = output, temp if first else input
-        first = False
+        input, output = output, input
     if isinstance(output_orig, cupy.ndarray) and input is not output_orig:
         output_orig[:] = input
         input = output_orig
