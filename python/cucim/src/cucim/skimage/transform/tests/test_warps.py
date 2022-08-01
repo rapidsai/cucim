@@ -40,7 +40,6 @@ def test_stackcopy():
         assert_array_almost_equal(x[..., i], y)
 
 
-@cp.testing.with_requires('cupy>=10.0')
 def test_warp_tform():
     x = cp.zeros((5, 5), dtype=cp.double)
     x[2, 2] = 1
@@ -529,7 +528,7 @@ def test_warp_identity():
     assert cp.all(0 == warped_rgb_img[:, :, 1])
 
 
-@cp.testing.with_requires('cupy>=10.0')
+@cp.testing.with_requires('cupy>=9.0.0b2')
 def test_warp_coords_example():
     image = cp.array(astronaut().astype(cp.float32))
     assert 3 == image.shape[2]
@@ -653,7 +652,6 @@ def test_invalid():
         warp(cp.ones((4, 3, 3, 3)), SimilarityTransform())
 
 
-@cp.testing.with_requires('cupy>=10.0')
 def test_inverse():
     tform = SimilarityTransform(scale=0.5, rotation=0.1)
     inverse_tform = SimilarityTransform(matrix=cp.linalg.inv(tform.params))

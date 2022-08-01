@@ -121,7 +121,6 @@ def test_similarity_estimation():
     assert_array_almost_equal(tform3.params, tform2.params)
 
 
-@cp.testing.with_requires('cupy>=10.0')
 def test_similarity_init():
     # init with implicit parameters
     scale = 0.1
@@ -447,7 +446,6 @@ def test_polynomial_inverse():
         PolynomialTransform().inverse(0)
 
 
-@cp.testing.with_requires('cupy>=10.0')
 def test_union():
     tform1 = SimilarityTransform(scale=0.1, rotation=0.3)
     tform2 = SimilarityTransform(scale=0.1, rotation=0.9)
