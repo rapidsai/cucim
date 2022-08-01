@@ -49,15 +49,15 @@ def _get_constants(ndim, axis, kernel_size, anchor, patch_per_block=None):
             halo_size = math.ceil(halo_pixels_needed / block_x)
         elif axis == 1:
             # as in OpenCV's column_filter.hpp
-            block_x = 16
+            block_x = 32
             block_y = 4
             block_z = 4
             halo_size = math.ceil(halo_pixels_needed / block_y)
         elif axis == 0:
             # as in OpenCV's row_filter.hpp
-            block_x = 32  # 16 in CUDA example
-            block_y = 4   # 4 in CUDA example
-            block_z = 4   # 4 in CUDA example
+            block_x = 32
+            block_y = 4
+            block_z = 4
             halo_size = math.ceil(halo_pixels_needed / block_z)
         # can have out of bounds access unless patch_per_block >= halo_size
         patch_per_block = max(patch_per_block, halo_size)
@@ -436,7 +436,7 @@ def _get_code_stage1_shared_memory_load_3d(ndim, axis, mode, cval):
         """
         if mode == 'constant':
             code += f"""
-                if (row >= n_rows)
+                if (row >= s_0)
                     smem[threadIdx.z + (HALO_SIZE + j) * BLOCK_DIM_Z][threadIdx.y][threadIdx.x] = static_cast<T>({cval});
                 else
             """
@@ -454,7 +454,7 @@ def _get_code_stage1_shared_memory_load_3d(ndim, axis, mode, cval):
         """
         if mode == 'constant':
             code += f"""
-                if (row >= n_rows)
+                if (row >= s_0)
                     smem[threadIdx.z + (PATCH_PER_BLOCK + HALO_SIZE + j) * BLOCK_DIM_Z][threadIdx.y][threadIdx.x] = static_cast<T>({cval});
                 else
             """
@@ -534,7 +534,7 @@ def _get_code_stage1_shared_memory_load_3d(ndim, axis, mode, cval):
         """
         if mode == 'constant':
             code += f"""
-                if (row >= n_rows)
+                if (row >= s_1)
                     smem[threadIdx.z][threadIdx.y + (HALO_SIZE + j) * BLOCK_DIM_Y][threadIdx.x] = static_cast<T>({cval});
                 else
             """
@@ -552,7 +552,7 @@ def _get_code_stage1_shared_memory_load_3d(ndim, axis, mode, cval):
         """
         if mode == 'constant':
             code += f"""
-                if (row >= n_rows)
+                if (row >= s_1)
                     smem[threadIdx.z][threadIdx.y + (PATCH_PER_BLOCK + HALO_SIZE + j) * BLOCK_DIM_Y][threadIdx.x] = static_cast<T>({cval});
                 else
             """
@@ -629,7 +629,7 @@ def _get_code_stage1_shared_memory_load_3d(ndim, axis, mode, cval):
         """
         if mode == 'constant':
             code += f"""
-                if (col >= n_cols)
+                if (col >= s_2)
                     smem[threadIdx.z][threadIdx.y][threadIdx.x + (HALO_SIZE + j) * BLOCK_DIM_X] = static_cast<T>({cval});
                 else
             """
@@ -646,7 +646,7 @@ def _get_code_stage1_shared_memory_load_3d(ndim, axis, mode, cval):
         """
         if mode == 'constant':
             code += f"""
-                if (col >= n_cols)
+                if (col >= s_2)
                     smem[threadIdx.z][threadIdx.y][threadIdx.x + (PATCH_PER_BLOCK + HALO_SIZE + j) * BLOCK_DIM_X] = static_cast<T>({cval});
                 else
             """

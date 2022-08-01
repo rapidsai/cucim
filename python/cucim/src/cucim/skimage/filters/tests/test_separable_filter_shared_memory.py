@@ -152,7 +152,6 @@ def test_separable_elementwise_very_large_size_fallback(shape, axis):
     )
 
 
-# test large and small sizes, highly anisotropic sizes
 @pytest.mark.parametrize('shape', ((4000, 2000), (1, 1), (5, 500), (1500, 5)))
 @pytest.mark.parametrize('axis', (-1, -2))
 @pytest.mark.parametrize('kernel_size', (1, 38, 129))
@@ -269,6 +268,61 @@ def test_separable_internal_kernel(
         func_kwargs=func_kwargs,
     )
 
+
+@pytest.mark.parametrize('shape', ((16, 24, 32), (192, 128, 160)))
+@pytest.mark.parametrize('axis', (0, 1, 2))
+@pytest.mark.parametrize('kernel_size', tuple(range(1, 17, 3)))
+@pytest.mark.parametrize('function', [convolve1d, correlate1d])
+def test_separable_kernel_sizes_3d(
+    shape, axis, kernel_size, function
+):
+    _compare_implementations(
+        shape,
+        kernel_size=kernel_size,
+        axis=axis,
+        dtype=cp.float32,
+        mode='nearest',
+        origin=0,
+        function=function,
+    )
+
+
+@pytest.mark.parametrize('axis', (0, 1, 2))
+@pytest.mark.parametrize('kernel_size', (65, 129, 198))
+def test_separable_large_kernel_3d(axis, kernel_size):
+    _compare_implementations(
+        shape=(256, 128, 96),
+        kernel_size=kernel_size,
+        axis=axis,
+        dtype=cp.float32,
+        mode='reflect',
+        origin=0,
+    )
+
+
+@pytest.mark.parametrize(
+    'shape', ((64, 5, 64), (5, 64, 64), (64, 64, 5), (32, 32, 32))
+)
+@pytest.mark.parametrize('axis', (-1, -2, -3))
+@pytest.mark.parametrize('kernel_size', (9,))
+@pytest.mark.parametrize(
+    'mode',
+    ('nearest', 'reflect', 'wrap', 'mirror', 'constant', ('constant', 1)),
+)
+def test_separable_image_shapes_and_modes_3d(shape, axis, kernel_size, mode):
+    if isinstance(mode, tuple):
+        mode, cval = mode
+    else:
+        cval = 0
+    _compare_implementations(
+        shape,
+        kernel_size=kernel_size,
+        axis=axis,
+        dtype=cp.float32,
+        mode=mode,
+        cval=1,
+        origin=0,
+    )
 
 # TODO: add separable min and max as well
 # TODO: extend to nd
