@@ -194,7 +194,7 @@ def _correlate_or_convolve1d(input, weights, axis, output, mode, cval, origin,
     if mode == 'wrap':
         mode = 'grid-wrap'
     if algorithm == 'shared_memory':
-        from cucim.skimage.filters._separable_conv_shmem import (
+        from cucim.skimage.filters._separable_filtering import (
             ResourceLimitError, _shmem_convolve1d)
         if input.ndim not in [2, 3]:
             raise NotImplementedError(
