@@ -1,3 +1,5 @@
+import math
+
 import cupy
 import numpy
 
@@ -61,3 +63,9 @@ except ImportError:
             res.append(axis)
 
         return tuple(sorted(res))
+
+
+if hasattr(math, 'prod'):
+    prod = math.prod
+else:
+    prod = np.prod

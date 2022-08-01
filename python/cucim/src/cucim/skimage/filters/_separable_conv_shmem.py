@@ -966,8 +966,7 @@ def _shmem_convolve1d(image, weights, axis=-1, output=None, mode="reflect",
 
     # promote output to nearest complex dtype if necessary
     complex_output = complex_output or weights.dtype.kind == 'c'
-    output = util._get_output(output, image, None, complex_output,
-                              zero_fill=False)
+    output = util._get_output(output, image, None, complex_output)
 
     # handle potential overlap between input and output arrays
     needs_temp = cp.shares_memory(output, image, 'MAY_SHARE_BOUNDS')

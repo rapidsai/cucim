@@ -174,8 +174,7 @@ def _correlate_or_convolve(input, weights, output, mode, cval, origin,
     kernel = _get_correlate_kernel(mode, weights.shape, int_type,
                                    offsets, cval)
     output = _filters_core._call_kernel(kernel, input, weights, output,
-                                        weights_dtype=weights_dtype,
-                                        zero_fill_output=False)
+                                        weights_dtype=weights_dtype)
     return output
 
 
@@ -234,7 +233,7 @@ def _get_correlate_kernel(mode, w_shape, int_type, offsets, cval):
 
 
 def _run_1d_correlates(input, params, get_weights, output, mode, cval,
-                       origin=0, zero_fill_output=False, **filter_kwargs):
+                       origin=0, **filter_kwargs):
     """
     Enhanced version of _run_1d_filters that uses correlate1d as the filter
     function. The params are a list of values to pass to the get_weights
@@ -249,8 +248,7 @@ def _run_1d_correlates(input, params, get_weights, output, mode, cval,
     wghts = [wghts[param] for param in params]
     return _filters_core._run_1d_filters(
         [None if w is None else correlate1d for w in wghts],
-        input, wghts, output, mode, cval, origin, zero_fill_output,
-        **filter_kwargs)
+        input, wghts, output, mode, cval, origin, **filter_kwargs)
 
 
 def uniform_filter1d(input, size, axis=-1, output=None, mode="reflect",
@@ -573,14 +571,14 @@ def generic_laplace(input, derivative2, output=None, mode="reflect",
     ndim = input.ndim
     modes = _util._fix_sequence_arg(mode, ndim, 'mode',
                                     _util._check_mode)
-    output = _util._get_output(output, input, zero_fill=False)
+    output = _util._get_output(output, input)
     if ndim == 0:
         output[:] = input
         return output
     derivative2(input, 0, output, modes[0], cval,
                 *extra_arguments, **extra_keywords)
     if ndim > 1:
-        tmp = _util._get_output(output.dtype, input, zero_fill=False)
+        tmp = _util._get_output(output.dtype, input)
         for i in range(1, ndim):
             derivative2(input, i, tmp, modes[i], cval,
                         *extra_arguments, **extra_keywords)
@@ -703,7 +701,7 @@ def generic_gradient_magnitude(input, derivative, output=None,
     ndim = input.ndim
     modes = _util._fix_sequence_arg(mode, ndim, 'mode',
                                     _util._check_mode)
-    output = _util._get_output(output, input, zero_fill=False)
+    output = _util._get_output(output, input)
     if ndim == 0:
         output[:] = input
         return output
@@ -711,7 +709,7 @@ def generic_gradient_magnitude(input, derivative, output=None,
                *extra_arguments, **extra_keywords)
     output *= output
     if ndim > 1:
-        tmp = _util._get_output(output.dtype, input, zero_fill=False)
+        tmp = _util._get_output(output.dtype, input)
         for i in range(1, ndim):
             derivative(input, i, tmp, modes[i], cval,
                        *extra_arguments, **extra_keywords)
@@ -754,3 +752,560 @@ def gaussian_gradient_magnitude(input, sigma, output=None, mode="reflect",
         return gaussian_filter(input, sigma, order, output, mode, cval,
                                algorithm=algorithm, **kwargs)
     return generic_gradient_magnitude(input, derivative, output, mode, cval)
+
+
+def minimum_filter(input, size=None, footprint=None, output=None,
+                   mode="reflect", cval=0.0, origin=0):
+    """Multi-dimensional minimum filter.
+
+    Args:
+        input (cupy.ndarray): The input array.
+        size (int or sequence of int): One of ``size`` or ``footprint`` must be
+            provided. If ``footprint`` is given, ``size`` is ignored. Otherwise
+            ``footprint = cupy.ones(size)`` with ``size`` automatically made to
+            match the number of dimensions in ``input``.
+        footprint (cupy.ndarray): a boolean array which specifies which of the
+            elements within this shape will get passed to the filter function.
+        output (cupy.ndarray, dtype or None): The array in which to place the
+            output. Default is is same dtype as the input.
+        mode (str): The array borders are handled according to the given mode
+            (``'reflect'``, ``'constant'``, ``'nearest'``, ``'mirror'``,
+            ``'wrap'``). Default is ``'reflect'``.
+        cval (scalar): Value to fill past edges of input if mode is
+            ``'constant'``. Default is ``0.0``.
+        origin (int or sequence of int): The origin parameter controls the
+            placement of the filter, relative to the center of the current
+            element of the input. Default of 0 is equivalent to
+            ``(0,)*input.ndim``.
+
+    Returns:
+        cupy.ndarray: The result of the filtering.
+
+    .. seealso:: :func:`scipy.ndimage.minimum_filter`
+    """
+    return _min_or_max_filter(input, size, footprint, None, output, mode,
+                              cval, origin, 'min')
+
+
+def maximum_filter(input, size=None, footprint=None, output=None,
+                   mode="reflect", cval=0.0, origin=0):
+    """Multi-dimensional maximum filter.
+
+    Args:
+        input (cupy.ndarray): The input array.
+        size (int or sequence of int): One of ``size`` or ``footprint`` must be
+            provided. If ``footprint`` is given, ``size`` is ignored. Otherwise
+            ``footprint = cupy.ones(size)`` with ``size`` automatically made to
+            match the number of dimensions in ``input``.
+        footprint (cupy.ndarray): a boolean array which specifies which of the
+            elements within this shape will get passed to the filter function.
+        output (cupy.ndarray, dtype or None): The array in which to place the
+            output. Default is is same dtype as the input.
+        mode (str): The array borders are handled according to the given mode
+            (``'reflect'``, ``'constant'``, ``'nearest'``, ``'mirror'``,
+            ``'wrap'``). Default is ``'reflect'``.
+        cval (scalar): Value to fill past edges of input if mode is
+            ``'constant'``. Default is ``0.0``.
+        origin (int or sequence of int): The origin parameter controls the
+            placement of the filter, relative to the center of the current
+            element of the input. Default of 0 is equivalent to
+            ``(0,)*input.ndim``.
+
+    Returns:
+        cupy.ndarray: The result of the filtering.
+
+    .. seealso:: :func:`scipy.ndimage.maximum_filter`
+    """
+    return _min_or_max_filter(input, size, footprint, None, output, mode,
+                              cval, origin, 'max')
+
+
+def _min_or_max_filter(input, size, ftprnt, structure, output, mode, cval,
+                       origin, func):
+    # structure is used by morphology.grey_erosion() and grey_dilation()
+    # and not by the regular min/max filters
+
+    sizes, ftprnt, structure = _filters_core._check_size_footprint_structure(
+        input.ndim, size, ftprnt, structure)
+    if cval is cupy.nan:
+        raise NotImplementedError("NaN cval is unsupported")
+
+    if sizes is not None:
+        # Seperable filter, run as a series of 1D filters
+        fltr = minimum_filter1d if func == 'min' else maximum_filter1d
+        return _filters_core._run_1d_filters(
+            [fltr if size > 1 else None for size in sizes],
+            input, sizes, output, mode, cval, origin)
+
+    origins, int_type = _filters_core._check_nd_args(input, ftprnt,
+                                                     mode, origin, 'footprint')
+    if structure is not None and structure.ndim != input.ndim:
+        raise RuntimeError('structure array has incorrect shape')
+
+    if ftprnt.size == 0:
+        return cupy.zeros_like(input)
+    offsets = _filters_core._origins_to_offsets(origins, ftprnt.shape)
+    kernel = _get_min_or_max_kernel(mode, ftprnt.shape, func,
+                                    offsets, float(cval), int_type,
+                                    has_structure=structure is not None,
+                                    has_central_value=bool(ftprnt[offsets]))
+    return _filters_core._call_kernel(kernel, input, ftprnt, output,
+                                      structure, weights_dtype=bool)
+
+
+def minimum_filter1d(input, size, axis=-1, output=None, mode="reflect",
+                     cval=0.0, origin=0):
+    """Compute the minimum filter along a single axis.
+
+    Args:
+        input (cupy.ndarray): The input array.
+        size (int): Length of the minimum filter.
+        axis (int): The axis of input along which to calculate. Default is -1.
+        output (cupy.ndarray, dtype or None): The array in which to place the
+            output. Default is is same dtype as the input.
+        mode (str): The array borders are handled according to the given mode
+            (``'reflect'``, ``'constant'``, ``'nearest'``, ``'mirror'``,
+            ``'wrap'``). Default is ``'reflect'``.
+        cval (scalar): Value to fill past edges of input if mode is
+            ``'constant'``. Default is ``0.0``.
+        origin (int): The origin parameter controls the placement of the
+            filter, relative to the center of the current element of the
+            input. Default is ``0``.
+
+    Returns:
+        cupy.ndarray: The result of the filtering.
+
+    .. seealso:: :func:`scipy.ndimage.minimum_filter1d`
+    """
+    return _min_or_max_1d(input, size, axis, output, mode, cval, origin, 'min')
+
+
+def maximum_filter1d(input, size, axis=-1, output=None, mode="reflect",
+                     cval=0.0, origin=0):
+    """Compute the maximum filter along a single axis.
+
+    Args:
+        input (cupy.ndarray): The input array.
+        size (int): Length of the maximum filter.
+        axis (int): The axis of input along which to calculate. Default is -1.
+        output (cupy.ndarray, dtype or None): The array in which to place the
+            output. Default is is same dtype as the input.
+        mode (str): The array borders are handled according to the given mode
+            (``'reflect'``, ``'constant'``, ``'nearest'``, ``'mirror'``,
+            ``'wrap'``). Default is ``'reflect'``.
+        cval (scalar): Value to fill past edges of input if mode is
+            ``'constant'``. Default is ``0.0``.
+        origin (int): The origin parameter controls the placement of the
+            filter, relative to the center of the current element of the
+            input. Default is ``0``.
+
+    Returns:
+        cupy.ndarray: The result of the filtering.
+
+    .. seealso:: :func:`scipy.ndimage.maximum_filter1d`
+    """
+    return _min_or_max_1d(input, size, axis, output, mode, cval, origin, 'max')
+
+
+def _min_or_max_1d(input, size, axis=-1, output=None, mode="reflect", cval=0.0,
+                   origin=0, func='min'):
+    ftprnt = cupy.ones(size, dtype=bool)
+    ftprnt, origin = _filters_core._convert_1d_args(input.ndim, ftprnt,
+                                                    origin, axis)
+    origins, int_type = _filters_core._check_nd_args(input, ftprnt,
+                                                     mode, origin, 'footprint')
+    offsets = _filters_core._origins_to_offsets(origins, ftprnt.shape)
+    kernel = _get_min_or_max_kernel(mode, ftprnt.shape, func, offsets,
+                                    float(cval), int_type, has_weights=False)
+    return _filters_core._call_kernel(kernel, input, None, output,
+                                      weights_dtype=bool)
+
+
+@cupy._util.memoize(for_each_device=True)
+def _get_min_or_max_kernel(mode, w_shape, func, offsets, cval, int_type,
+                           has_weights=True, has_structure=False,
+                           has_central_value=True):
+    # When there are no 'weights' (the footprint, for the 1D variants) then
+    # we need to make sure intermediate results are stored as doubles for
+    # consistent results with scipy.
+    ctype = 'X' if has_weights else 'double'
+    value = '{value}'
+    if not has_weights:
+        value = 'cast<double>({})'.format(value)
+
+    # Having a non-flat structure biases the values
+    if has_structure:
+        value += ('-' if func == 'min' else '+') + 'cast<X>(sval)'
+
+    if has_central_value:
+        pre = '{} value = x[i];'
+        found = 'value = {func}({value}, value);'
+    else:
+        # If the central pixel is not included in the footprint we cannot
+        # assume `x[i]` is not below the min or above the max and thus cannot
+        # seed with that value. Instead we keep track of having set `value`.
+        pre = '{} value; bool set = false;'
+        found = 'value = set ? {func}({value}, value) : {value}; set=true;'
+
+    return _filters_core._generate_nd_kernel(
+        func, pre.format(ctype),
+        found.format(func=func, value=value), 'y = cast<Y>(value);',
+        mode, w_shape, int_type, offsets, cval, ctype=ctype,
+        has_weights=has_weights, has_structure=has_structure)
+
+
+def rank_filter(input, rank, size=None, footprint=None, output=None,
+                mode="reflect", cval=0.0, origin=0):
+    """Multi-dimensional rank filter.
+
+    Args:
+        input (cupy.ndarray): The input array.
+        rank (int): The rank of the element to get. Can be negative to count
+            from the largest value, e.g. ``-1`` indicates the largest value.
+        size (int or sequence of int): One of ``size`` or ``footprint`` must be
+            provided. If ``footprint`` is given, ``size`` is ignored. Otherwise
+            ``footprint = cupy.ones(size)`` with ``size`` automatically made to
+            match the number of dimensions in ``input``.
+        footprint (cupy.ndarray): a boolean array which specifies which of the
+            elements within this shape will get passed to the filter function.
+        output (cupy.ndarray, dtype or None): The array in which to place the
+            output. Default is is same dtype as the input.
+        mode (str): The array borders are handled according to the given mode
+            (``'reflect'``, ``'constant'``, ``'nearest'``, ``'mirror'``,
+            ``'wrap'``). Default is ``'reflect'``.
+        cval (scalar): Value to fill past edges of input if mode is
+            ``'constant'``. Default is ``0.0``.
+        origin (int or sequence of int): The origin parameter controls the
+            placement of the filter, relative to the center of the current
+            element of the input. Default of 0 is equivalent to
+            ``(0,)*input.ndim``.
+
+    Returns:
+        cupy.ndarray: The result of the filtering.
+
+    .. seealso:: :func:`scipy.ndimage.rank_filter`
+    """
+    rank = int(rank)
+    return _rank_filter(input, lambda fs: rank+fs if rank < 0 else rank,
+                        size, footprint, output, mode, cval, origin)
+
+
+def median_filter(input, size=None, footprint=None, output=None,
+                  mode="reflect", cval=0.0, origin=0):
+    """Multi-dimensional median filter.
+
+    Args:
+        input (cupy.ndarray): The input array.
+        size (int or sequence of int): One of ``size`` or ``footprint`` must be
+            provided. If ``footprint`` is given, ``size`` is ignored. Otherwise
+            ``footprint = cupy.ones(size)`` with ``size`` automatically made to
+            match the number of dimensions in ``input``.
+        footprint (cupy.ndarray): a boolean array which specifies which of the
+            elements within this shape will get passed to the filter function.
+        output (cupy.ndarray, dtype or None): The array in which to place the
+            output. Default is is same dtype as the input.
+        mode (str): The array borders are handled according to the given mode
+            (``'reflect'``, ``'constant'``, ``'nearest'``, ``'mirror'``,
+            ``'wrap'``). Default is ``'reflect'``.
+        cval (scalar): Value to fill past edges of input if mode is
+            ``'constant'``. Default is ``0.0``.
+        origin (int or sequence of int): The origin parameter controls the
+            placement of the filter, relative to the center of the current
+            element of the input. Default of 0 is equivalent to
+            ``(0,)*input.ndim``.
+
+    Returns:
+        cupy.ndarray: The result of the filtering.
+
+    .. seealso:: :func:`scipy.ndimage.median_filter`
+    """
+    return _rank_filter(input, lambda fs: fs//2,
+                        size, footprint, output, mode, cval, origin)
+
+
+def percentile_filter(input, percentile, size=None, footprint=None,
+                      output=None, mode="reflect", cval=0.0, origin=0):
+    """Multi-dimensional percentile filter.
+
+    Args:
+        input (cupy.ndarray): The input array.
+        percentile (scalar): The percentile of the element to get (from ``0``
+            to ``100``). Can be negative, thus ``-20`` equals ``80``.
+        size (int or sequence of int): One of ``size`` or ``footprint`` must be
+            provided. If ``footprint`` is given, ``size`` is ignored. Otherwise
+            ``footprint = cupy.ones(size)`` with ``size`` automatically made to
+            match the number of dimensions in ``input``.
+        footprint (cupy.ndarray): a boolean array which specifies which of the
+            elements within this shape will get passed to the filter function.
+        output (cupy.ndarray, dtype or None): The array in which to place the
+            output. Default is is same dtype as the input.
+        mode (str): The array borders are handled according to the given mode
+            (``'reflect'``, ``'constant'``, ``'nearest'``, ``'mirror'``,
+            ``'wrap'``). Default is ``'reflect'``.
+        cval (scalar): Value to fill past edges of input if mode is
+            ``'constant'``. Default is ``0.0``.
+        origin (int or sequence of int): The origin parameter controls the
+            placement of the filter, relative to the center of the current
+            element of the input. Default of 0 is equivalent to
+            ``(0,)*input.ndim``.
+
+    Returns:
+        cupy.ndarray: The result of the filtering.
+
+    .. seealso:: :func:`scipy.ndimage.percentile_filter`
+    """
+    percentile = float(percentile)
+    if percentile < 0.0:
+        percentile += 100.0
+    if percentile < 0.0 or percentile > 100.0:
+        raise RuntimeError('invalid percentile')
+    if percentile == 100.0:
+        def get_rank(fs):
+            return fs - 1
+    else:
+        def get_rank(fs):
+            return int(float(fs) * percentile / 100.0)
+    return _rank_filter(input, get_rank,
+                        size, footprint, output, mode, cval, origin)
+
+
+def _rank_filter(input, get_rank, size=None, footprint=None, output=None,
+                 mode="reflect", cval=0.0, origin=0):
+    _, footprint, _ = _filters_core._check_size_footprint_structure(
+        input.ndim, size, footprint, None, force_footprint=True)
+    if cval is cupy.nan:
+        raise NotImplementedError("NaN cval is unsupported")
+    origins, int_type = _filters_core._check_nd_args(input, footprint,
+                                                     mode, origin, 'footprint')
+    if footprint.size == 0:
+        return cupy.zeros_like(input)
+    filter_size = int(footprint.sum())
+    rank = get_rank(filter_size)
+    if rank < 0 or rank >= filter_size:
+        raise RuntimeError('rank not within filter footprint size')
+    if rank == 0:
+        return _min_or_max_filter(input, None, footprint, None, output, mode,
+                                  cval, origins, 'min')
+    if rank == filter_size - 1:
+        return _min_or_max_filter(input, None, footprint, None, output, mode,
+                                  cval, origins, 'max')
+    offsets = _filters_core._origins_to_offsets(origins, footprint.shape)
+    kernel = _get_rank_kernel(filter_size, rank, mode, footprint.shape,
+                              offsets, float(cval), int_type)
+    return _filters_core._call_kernel(kernel, input, footprint, output,
+                                      weights_dtype=bool)
+
+
+__SHELL_SORT = '''
+__device__ void sort(X *array, int size) {{
+    int gap = {gap};
+    while (gap > 1) {{
+        gap /= 3;
+        for (int i = gap; i < size; ++i) {{
+            X value = array[i];
+            int j = i - gap;
+            while (j >= 0 && value < array[j]) {{
+                array[j + gap] = array[j];
+                j -= gap;
+            }}
+            array[j + gap] = value;
+        }}
+    }}
+}}'''
+
+
+@cupy._util.memoize()
+def _get_shell_gap(filter_size):
+    gap = 1
+    while gap < filter_size:
+        gap = 3*gap+1
+    return gap
+
+
+@cupy._util.memoize(for_each_device=True)
+def _get_rank_kernel(filter_size, rank, mode, w_shape, offsets, cval,
+                     int_type):
+    s_rank = min(rank, filter_size - rank - 1)
+    # The threshold was set based on the measurements on a V100
+    # TODO(leofang, anaruse): Use Optuna to automatically tune the threshold,
+    # as it may vary depending on the GPU in use, compiler version, dtype,
+    # filter size, etc.
+    if s_rank <= 80:
+        # When s_rank is small and register usage is low, this partial
+        # selection sort approach is faster than general sorting approach
+        # using shell sort.
+        if s_rank == rank:
+            comp_op = '<'
+        else:
+            comp_op = '>'
+        array_size = s_rank + 2
+        found_post = '''
+            if (iv > {rank} + 1) {{{{
+                int target_iv = 0;
+                X target_val = values[0];
+                for (int jv = 1; jv <= {rank} + 1; jv++) {{{{
+                    if (target_val {comp_op} values[jv]) {{{{
+                        target_val = values[jv];
+                        target_iv = jv;
+                    }}}}
+                }}}}
+                if (target_iv <= {rank}) {{{{
+                    values[target_iv] = values[{rank} + 1];
+                }}}}
+                iv = {rank} + 1;
+            }}}}'''.format(rank=s_rank, comp_op=comp_op)
+        post = '''
+            X target_val = values[0];
+            for (int jv = 1; jv <= {rank}; jv++) {{
+                if (target_val {comp_op} values[jv]) {{
+                    target_val = values[jv];
+                }}
+            }}
+            y=cast<Y>(target_val);'''.format(rank=s_rank, comp_op=comp_op)
+        sorter = ''
+    else:
+        array_size = filter_size
+        found_post = ''
+        post = 'sort(values,{});\ny=cast<Y>(values[{}]);'.format(
+            filter_size, rank)
+        sorter = __SHELL_SORT.format(gap=_get_shell_gap(filter_size))
+
+    return _filters_core._generate_nd_kernel(
+        'rank_{}_{}'.format(filter_size, rank),
+        'int iv = 0;\nX values[{}];'.format(array_size),
+        'values[iv++] = {value};' + found_post, post,
+        mode, w_shape, int_type, offsets, cval, preamble=sorter)
+
+
+def generic_filter(input, function, size=None, footprint=None,
+                   output=None, mode="reflect", cval=0.0, origin=0):
+    """Compute a multi-dimensional filter using the provided raw kernel or
+    reduction kernel.
+
+    Unlike the scipy.ndimage function, this does not support the
+    ``extra_arguments`` or ``extra_keywordsdict`` arguments and has significant
+    restrictions on the ``function`` provided.
+
+    Args:
+        input (cupy.ndarray): The input array.
+        function (cupy.ReductionKernel or cupy.RawKernel):
+            The kernel or function to apply to each region.
+        size (int or sequence of int): One of ``size`` or ``footprint`` must be
+            provided. If ``footprint`` is given, ``size`` is ignored. Otherwise
+            ``footprint = cupy.ones(size)`` with ``size`` automatically made to
+            match the number of dimensions in ``input``.
+        footprint (cupy.ndarray): a boolean array which specifies which of the
+            elements within this shape will get passed to the filter function.
+        output (cupy.ndarray, dtype or None): The array in which to place the
+            output. Default is is same dtype as the input.
+        mode (str): The array borders are handled according to the given mode
+            (``'reflect'``, ``'constant'``, ``'nearest'``, ``'mirror'``,
+            ``'wrap'``). Default is ``'reflect'``.
+        cval (scalar): Value to fill past edges of input if mode is
+            ``'constant'``. Default is ``0.0``.
+        origin (scalar or tuple of scalar): The origin parameter controls the
+            placement of the filter, relative to the center of the current
+            element of the input. Default of 0 is equivalent to
+            ``(0,)*input.ndim``.
+
+    Returns:
+        cupy.ndarray: The result of the filtering.
+
+    .. note::
+        If the `function` is a :class:`cupy.RawKernel` then it must be for a
+        function that has the following signature. Unlike most functions, this
+        should not utilize `blockDim`/`blockIdx`/`threadIdx`::
+
+            __global__ void func(double *buffer, int filter_size,
+                                 double *return_value)
+
+        If the `function` is a :class:`cupy.ReductionKernel` then it must be
+        for a kernel that takes 1 array input and produces 1 'scalar' output.
+
+    .. seealso:: :func:`scipy.ndimage.generic_filter`
+    """
+    _, footprint, _ = _filters_core._check_size_footprint_structure(
+        input.ndim, size, footprint, None, 2, True)
+    filter_size = int(footprint.sum())
+    origins, int_type = _filters_core._check_nd_args(input, footprint,
+                                                     mode, origin, 'footprint')
+    in_dtype = input.dtype
+    sub = _filters_generic._get_sub_kernel(function)
+    if footprint.size == 0:
+        return cupy.zeros_like(input)
+    output = _util._get_output(output, input)
+    offsets = _filters_core._origins_to_offsets(origins, footprint.shape)
+    args = (filter_size, mode, footprint.shape, offsets, float(cval), int_type)
+    if isinstance(sub, cupy.RawKernel):
+        kernel = _filters_generic._get_generic_filter_raw(sub, *args)
+    elif isinstance(sub, cupy.ReductionKernel):
+        kernel = _filters_generic._get_generic_filter_red(
+            sub, in_dtype, output.dtype, *args)
+    return _filters_core._call_kernel(kernel, input, footprint, output,
+                                      weights_dtype=bool)
+
+
+def generic_filter1d(input, function, filter_size, axis=-1, output=None,
+                     mode="reflect", cval=0.0, origin=0):
+    """Compute a 1D filter along the given axis using the provided raw kernel.
+
+    Unlike the scipy.ndimage function, this does not support the
+    ``extra_arguments`` or ``extra_keywordsdict`` arguments and has significant
+    restrictions on the ``function`` provided.
+
+    Args:
+        input (cupy.ndarray): The input array.
+        function (cupy.RawKernel): The kernel to apply along each axis.
+        filter_size (int): Length of the filter.
+        axis (int): The axis of input along which to calculate. Default is -1.
+        output (cupy.ndarray, dtype or None): The array in which to place the
+            output. Default is is same dtype as the input.
+        mode (str): The array borders are handled according to the given mode
+            (``'reflect'``, ``'constant'``, ``'nearest'``, ``'mirror'``,
+            ``'wrap'``). Default is ``'reflect'``.
+        cval (scalar): Value to fill past edges of input if mode is
+            ``'constant'``. Default is ``0.0``.
+        origin (int): The origin parameter controls the placement of the
+            filter, relative to the center of the current element of the
+            input. Default is ``0``.
+
+    Returns:
+        cupy.ndarray: The result of the filtering.
+
+    .. note::
+        The provided function (as a RawKernel) must have the following
+        signature. Unlike most functions, this should not utilize
+        `blockDim`/`blockIdx`/`threadIdx`::
+
+            __global__ void func(double *input_line, ptrdiff_t input_length,
+                                 double *output_line, ptrdiff_t output_length)
+
+    .. seealso:: :func:`scipy.ndimage.generic_filter1d`
+    """
+    # This filter is very different than all other filters (including
+    # generic_filter and all 1d filters) and it has a customized solution.
+    # It is also likely fairly terrible, but only so much can be done when
+    # matching the scipy interface of having the sub-kernel work on entire
+    # lines of data.
+    if input.dtype.kind == 'c':
+        raise TypeError('Complex type not supported')
+    if not isinstance(function, cupy.RawKernel):
+        raise TypeError('bad function type')
+    if filter_size < 1:
+        raise RuntimeError('invalid filter size')
+    axis = internal._normalize_axis_index(axis, input.ndim)
+    origin = _util._check_origin(origin, filter_size)
+    _util._check_mode(mode)
+    output = _util._get_output(output, input)
+    in_ctype = cupy._core._scalar.get_typename(input.dtype)
+    out_ctype = cupy._core._scalar.get_typename(output.dtype)
+    int_type = _util._get_inttype(input)
+    n_lines = input.size // input.shape[axis]
+    kernel = _filters_generic._get_generic_filter1d(
+        function, input.shape[axis], n_lines, filter_size,
+        origin, mode, float(cval), in_ctype, out_ctype, int_type)
+    data = cupy.array(
+        (axis, input.ndim) + input.shape + input.strides + output.strides,
+        dtype=cupy.int32 if int_type == 'int' else cupy.int64)
+    kernel(((n_lines+128-1) // 128,), (128,), (input, output, data))
+    return output

@@ -76,7 +76,7 @@ def _check_nd_args(input, weights, mode, origin, wghts_name='filter weights'):
 
 
 def _run_1d_filters(filters, input, args, output, mode, cval, origin=0,
-                    zero_fill_output=True, **filter_kwargs):
+                    **filter_kwargs):
     """
     Runs a series of 1D filters forming an nd filter. The filters must be a
     list of callables that take input, arg, axis, output, mode, cval, origin.
@@ -84,7 +84,7 @@ def _run_1d_filters(filters, input, args, output, mode, cval, origin=0,
     filter. Individual filters can be None causing that axis to be skipped.
     """
     output_orig = output
-    output = _util._get_output(output, input, zero_fill=zero_fill_output)
+    output = _util._get_output(output, input)
     modes = _util._fix_sequence_arg(mode, input.ndim, 'mode',
                                     _util._check_mode)
     # for filters, "wrap" is a synonym for "grid-wrap".
@@ -95,9 +95,8 @@ def _run_1d_filters(filters, input, args, output, mode, cval, origin=0,
         output[:] = input
         return output
     # We can't operate in-place efficiently, so use a 2-buffer system
-    temp = _util._get_output(output.dtype, input, zero_fill=zero_fill_output) if n_filters > 1 else None   # noqa
+    temp = _util._get_output(output.dtype, input) if n_filters > 1 else None   # noqa
     iterator = zip(filters, args, modes, origins)
-    fltr = None
     for axis, (fltr, arg, mode, origin) in enumerate(iterator):
         if fltr is None:
             continue
@@ -120,8 +119,7 @@ def _run_1d_filters(filters, input, args, output, mode, cval, origin=0,
 
 
 def _call_kernel(kernel, input, weights, output, structure=None,
-                 weights_dtype=numpy.float64, structure_dtype=numpy.float64,
-                 zero_fill_output=True):
+                 weights_dtype=numpy.float64, structure_dtype=numpy.float64):
     """
     Calls a constructed ElementwiseKernel. The kernel must take an input image,
     an optional array of weights, an optional array for the structure, and an
@@ -150,10 +148,10 @@ def _call_kernel(kernel, input, weights, output, structure=None,
     if structure is not None:
         structure = cupy.ascontiguousarray(structure, structure_dtype)
         args.append(structure)
-    output = _util._get_output(output, input, None, complex_output, zero_fill=zero_fill_output)  # noqa
+    output = _util._get_output(output, input, None, complex_output)  # noqa
     needs_temp = cupy.shares_memory(output, input, 'MAY_SHARE_BOUNDS')
     if needs_temp:
-        output, temp = _util._get_output(output.dtype, input, None, complex_output, zero_fill=zero_fill_output), output  # noqa
+        output, temp = _util._get_output(output.dtype, input, None, complex_output), output  # noqa
     args.append(output)
     kernel(*args)
     if needs_temp:
