@@ -91,8 +91,9 @@ def _denoise_tv_chambolle_nd(image, weight=0.1, eps=2.0e-4, max_num_iter=200):
     return out
 
 
-@utils.deprecate_kwarg({'n_iter_max': 'max_num_iter'}, removed_version="1.0",
-                       deprecated_version="0.19.2")
+@utils.deprecate_kwarg({'n_iter_max': 'max_num_iter'},
+                       removed_version="23.02.00",
+                       deprecated_version="22.06.00")
 @utils.deprecate_multichannel_kwarg(multichannel_position=4)
 def denoise_tv_chambolle(image, weight=0.1, eps=2.0e-4, max_num_iter=200,
                          multichannel=False, *, channel_axis=None):

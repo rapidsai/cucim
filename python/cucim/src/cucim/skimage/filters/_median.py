@@ -17,8 +17,9 @@ except ImportError:
         return reduce(mul, x)
 
 
-@deprecate_kwarg(kwarg_mapping={'selem': 'footprint'}, removed_version="1.0",
-                 deprecated_version="0.19")
+@deprecate_kwarg(kwarg_mapping={'selem': 'footprint'},
+                 removed_version="23.02.00",
+                 deprecated_version="22.02.00")
 def median(image, footprint=None, out=None, mode='nearest', cval=0.0,
            behavior='ndimage', *, algorithm='auto', algorithm_kwargs={}):
     """Return local median of an image.
