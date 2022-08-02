@@ -5,12 +5,6 @@ import numpy
 
 from cucim.skimage._vendored import _ndimage_util as _util
 
-includes = r'''
-// workaround for HIP: line begins with #include
-#include <type_traits>  // let Jitify handle this
-#include <cupy/math_constants.h>
-'''
-
 
 _CAST_FUNCTION = """
 // Implements a casting function to make it compatible with scipy
@@ -148,7 +142,7 @@ def _generate_nd_kernel(name, pre, found, post, mode, w_shape, int_type,
         name += '_with_structure'
     if has_mask:
         name += '_with_mask'
-    preamble = includes + _CAST_FUNCTION + preamble
+    preamble = _CAST_FUNCTION + preamble
     options += ('--std=c++11', '-DCUPY_USE_JITIFY')
     return cupy.ElementwiseKernel(in_params, out_params, operation, name,
                                   reduce_dims=False, preamble=preamble,
