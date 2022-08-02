@@ -55,12 +55,9 @@ def image_to_absorbance(image, source_intensity=255.0, dtype=cp.float32):
     -----
     If `image` has an integer dtype it will be clipped to range
     ``[1, source_intensity]``, while float image inputs are clipped to range
-    ``[source_intensity/255, source_intensity]. The minimum is to avoid log(0).
-    Absorbance is then given by
-
-    .. math::
-
-        absorbance = \\log{\\frac{image}{source_intensity}}.
+    ``[source_intensity/255, source_intensity]``.
+    The minimum is to avoid log(0). Absorbance is then given by
+    ``absorbance = log(image / source_intensity)``.
     """
     dtype = cp.dtype(dtype)
     if dtype.kind != "f":
