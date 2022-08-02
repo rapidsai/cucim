@@ -412,7 +412,7 @@ def chan_vese(image, mu=0.25, lambda1=1.0, lambda2=1.0, tol=1e-3,
         energies = []
     phivar = tol + 1
 
-    while(phivar > tol and i < max_num_iter):
+    while phivar > tol and i < max_num_iter:
         # Save old level set values
         oldphi = phi
 
