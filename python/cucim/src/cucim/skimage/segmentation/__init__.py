@@ -1,3 +1,4 @@
+from ._chan_vese import chan_vese
 from ._clear_border import clear_border
 from ._expand_labels import expand_labels
 from ._join import join_segmentations, relabel_sequential
@@ -15,6 +16,7 @@ __all__ = [
     "clear_border",
     "join_segmentations",
     "relabel_sequential",
+    "chan_vese",
     "morphological_geodesic_active_contour",
     "morphological_chan_vese",
     "inverse_gaussian_gradient",
