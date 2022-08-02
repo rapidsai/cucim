@@ -109,6 +109,16 @@ def test_load_image_resolution_metadata(testimg_tiff_stripe_4096_4096_256_jpeg_r
     unit_value = resolution_unit.lower() if resolution_unit != "NONE" else ""
     assert metadata['tiff']['resolution_unit'] == unit_value
 
+    # Check if lower resolution image's metadata has lower physical spacing.
+    num_levels = img.resolutions['level_count']
+    for level in range(num_levels):
+        lowres_img = img.read_region((0, 0), (100, 100), level=level)
+        lowres_downsample = img.resolutions["level_downsamples"][level]
+        assert all(map(lambda a, b: math.isclose(a, b, rel_tol=0.1),
+                       lowres_img.spacing(),
+                       (y_spacing / lowres_downsample,
+                        x_spacing / lowres_downsample, 1.0)))
+
 
 def test_load_rgba_image_metadata(tmpdir):
     """Test accessing RGBA image's metadata.
