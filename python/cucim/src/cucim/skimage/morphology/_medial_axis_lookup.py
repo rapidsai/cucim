@@ -2,8 +2,8 @@ import numpy as np
 
 # medial axis lookup tables (independent of image content)
 #
-# Note: lookup table generation scripts are available at:
-# https://github.com/scikit-image/scikit-image/blob/main/tools/precompute/medial_axis_lookup_table.py  # noqa
+# Note: lookup table generated using scikit-image code from
+# https://github.com/scikit-image/scikit-image/blob/38b595d60befe3a0b4c0742995b9737200a079c6/skimage/morphology/_skeletonize.py#L449-L458  # noqa
 
 lookup_table = np.array(
     [

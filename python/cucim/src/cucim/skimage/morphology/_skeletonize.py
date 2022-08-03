@@ -46,7 +46,7 @@ _G123P_LUT = np.array([0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0,
                        0, 0, 0, 0, 0, 0, 0, 0, 0], dtype=bool)
 
 
-@deprecate_kwarg({'max_iter': 'max_num_iter'}, removed_version="1.0",
+@deprecate_kwarg({"max_iter": "max_num_iter"}, removed_version="1.0",
                  deprecated_version="0.19")
 def thin(image, max_num_iter=None):
     """
@@ -138,7 +138,7 @@ def thin(image, max_num_iter=None):
         # perform the two "subiterations" described in the paper
         for lut in [G123_LUT, G123P_LUT]:
             # correlate image with neighborhood mask
-            N = ndi.correlate(skel, mask, mode='constant')
+            N = ndi.correlate(skel, mask, mode="constant")
             # take deletion decision from this subiteration's LUT
             D = cp.take(lut, N)
             # perform deletion
@@ -360,6 +360,6 @@ def _table_lookup(image, table):
         [[256, 128, 64], [32, 16, 8], [4, 2, 1]],
         dtype=cp.int16
     )
-    indexer = ndi.convolve(image, kernel, output=np.int16, mode='constant')
+    indexer = ndi.convolve(image, kernel, output=np.int16, mode="constant")
     image = table[indexer]
     return image
