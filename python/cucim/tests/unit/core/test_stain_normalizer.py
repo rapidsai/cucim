@@ -22,15 +22,15 @@ from cucim.core.operations.color import (normalize_colors_pca,
 
 class TestStainExtractorMacenko():
     @pytest.mark.parametrize(
-        'image',
+        'image, ErrorClass',
         [
-            cp.full((3, 2, 4), -1),   # negative value
-            cp.full((3, 2, 4), 256),  # out of range value
-            None,
-            cp.full((3, 2, 4), 240),  # uniformly below the beta threshold
-        ]
+            (cp.full((3, 2, 4), -1), ValueError),   # negative value
+            (cp.full((3, 2, 4), 256), ValueError),  # out of range value
+            (None, TypeError),
+            (cp.full((3, 2, 4), 240), ValueError),  # uniformly below the beta threshold  # noqa
+        ],
     )
-    def test_transparent_image(self, image):
+    def test_transparent_image(self, image, ErrorClass):
         """
         Test HE stain extraction on an image that comprises
         only transparent pixels - pixels with absorbance below the
@@ -38,12 +38,8 @@ class TestStainExtractorMacenko():
         since once the transparent pixels are removed, there are no
         remaining pixels to compute eigenvectors.
         """
-        if image is None:
-            with pytest.raises(TypeError):
-                stain_extraction_pca(image)
-        else:
-            with pytest.raises(ValueError):
-                stain_extraction_pca(image)
+        with pytest.raises(ErrorClass):
+            stain_extraction_pca(image)
 
     @pytest.mark.parametrize(
         'image',

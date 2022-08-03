@@ -55,6 +55,13 @@ intensity
     :members:
     :undoc-members:
 
+morphology
+----------
+
+.. automodule:: cucim.core.operations.morphology
+    :members:
+    :undoc-members:
+
 spatial
 -------
 

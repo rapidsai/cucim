@@ -39,6 +39,7 @@ extensions = [
     'sphinx.ext.intersphinx',
     'sphinx.ext.autodoc',
     'sphinx.ext.autosummary',
+    'sphinx.ext.mathjax',
     'numpydoc',
     'doi_role',
     'IPython.sphinxext.ipython_console_highlighting',
@@ -172,8 +173,14 @@ texinfo_documents = [
 ]
 
 
-# Example configuration for intersphinx: refer to the Python standard library.
-intersphinx_mapping = {'https://docs.python.org/': None}
+# Configuration for intersphinx: refer to other projects documentation.
+intersphinx_mapping = {
+    'python': ('https://docs.python.org/', None),
+    'cupy': ('https://docs.cupy.dev/en/stable/', None),
+    'numpy': ('https://numpy.org/doc/stable', None),
+    'scipy': ('https://docs.scipy.org/doc/scipy/', None),
+    'skimage': ('https://scikit-image.org/docs/stable/', None),
+}
 
 
 # Config numpydoc
@@ -182,5 +189,5 @@ numpydoc_class_members_toctree = False
 
 
 def setup(app):
-    app.add_css_file('params.css')
     app.add_css_file("https://docs.rapids.ai/assets/css/custom.css")
+    app.add_js_file("https://docs.rapids.ai/assets/js/custom.js")

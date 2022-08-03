@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import math
-import warnings
 from typing import Union
 
 import cupy as cp
@@ -56,12 +55,9 @@ def image_to_absorbance(image, source_intensity=255.0, dtype=cp.float32):
     -----
     If `image` has an integer dtype it will be clipped to range
     ``[1, source_intensity]``, while float image inputs are clipped to range
-    ``[source_intensity/255, source_intensity]. The minimum is to avoid log(0).
-    Absorbance is then given by
-
-    .. math::
-
-        absorbance = \\log{\\frac{image}{source_intensity}}.
+    ``[source_intensity/255, source_intensity]``.
+    The minimum is to avoid log(0). Absorbance is then given by
+    ``absorbance = log(image / source_intensity)``.
     """
     dtype = cp.dtype(dtype)
     if dtype.kind != "f":
@@ -209,9 +205,7 @@ def _covariance(a):
     ddof = 1
     fact = X.shape[1] - ddof
     if fact <= 0:
-        warnings.warn("Degrees of freedom <= 0 for slice",
-                      RuntimeWarning, stacklevel=2)
-        fact = 0.0
+        raise RuntimeError("Degrees of freedom <= 0")
 
     X -= X.mean(axis=1, keepdims=True)
     if not X.flags.f_contiguous:
@@ -315,9 +309,9 @@ def stain_extraction_pca(image, source_intensity=240, alpha=1, beta=0.345,
 
     # remove transparent pixels
     absorbance = absorbance[:, cp.any(absorbance > beta, axis=0)]
-    if absorbance.size == 0:
+    if absorbance.size == 0 or absorbance.shape[1] <= 1:
         raise ValueError(
-            "All pixels of the input image are below the threshold."
+            "Multiple pixels of the input must be above the `beta` threshold."
         )
 
     # compute eigenvectors (do small 3x3 matrix calculations on the host)

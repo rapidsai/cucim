@@ -21,6 +21,7 @@ Please see https://github.com/rapidsai/cucim/releases/tag/v22.08.00a for the lat
 ## 🚀 New Features
 
 - add missing `cucim.skimage.segmentation.clear_border` function ([#267](https://github.com/rapidsai/cucim/pull/267)) [@grlee77](https://github.com/grlee77)
+- add `cucim.core.operations.color.stain_extraction_pca` and `cucim.core.operations.color.normalize_colors_pca` for digital pathology H&E stain extraction and normalization ([#273](https://github.com/rapidsai/cucim/pull/273)) [@grlee77](https://github.com/grlee77), [@drbeh](https://github.com/drbeh)
 
 ## 🛠️ Improvements
 
@@ -31,6 +32,7 @@ Please see https://github.com/rapidsai/cucim/releases/tag/v22.08.00a for the lat
 - Promote small integer types to single rather than double precision ([#278](https://github.com/rapidsai/cucim/pull/278)) [@grlee77](https://github.com/grlee77)
 - improve efficiency of histogram-based thresholding functions ([#276](https://github.com/rapidsai/cucim/pull/276)) [@grlee77](https://github.com/grlee77)
 - Remove unused dependencies in GPU tests job ([#268](https://github.com/rapidsai/cucim/pull/268)) [@Ethyling](https://github.com/Ethyling)
+- Enable footprint decomposition for morphology ([#274](https://github.com/rapidsai/cucim/pull/274)) [@grlee77](https://github.com/grlee77)
 - Use conda compilers ([#232](https://github.com/rapidsai/cucim/pull/232)) [@Ethyling](https://github.com/Ethyling)
 - Build packages using mambabuild ([#216](https://github.com/rapidsai/cucim/pull/216)) [@Ethyling](https://github.com/Ethyling)
 
