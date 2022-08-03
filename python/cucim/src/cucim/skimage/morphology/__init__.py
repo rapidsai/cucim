@@ -1,4 +1,4 @@
-from ._skeletonize import thin
+from ._skeletonize import medial_axis, thin
 from .binary import (binary_closing, binary_dilation, binary_erosion,
                      binary_opening)
 from .footprints import (ball, cube, diamond, disk, octagon, octahedron,
@@ -32,4 +32,5 @@ __all__ = [
     "remove_small_objects",
     "remove_small_holes",
     "thin",
+    "medial_axis",
 ]
