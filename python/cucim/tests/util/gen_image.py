@@ -16,6 +16,7 @@
 import argparse
 import logging
 import os
+import tifffile
 
 try:
     from .gen_tiff import TiffGenerator
@@ -28,16 +29,23 @@ GENERATOR_MAP = {
 
 
 class ImageGenerator:
-    def __init__(self, dest, recipes, logger=None):
+    def __init__(self, dest, recipes, resolutions=None, logger=None):
         self.logger = logger or logging.getLogger(__name__)
         self.dest = dest
         self.recipes = recipes
+
+        if resolutions is None:
+            resolutions = [(1, 1, "CENTIMETER")] * len(recipes)
+        if len(resolutions) != len(recipes):
+            raise RuntimeError(
+                'Number of resolutions must be equal to number of recipes')
+        self.resolutions = resolutions
 
     def gen(self):
 
         results = []
 
-        for recipe in self.recipes:
+        for recipe, resolution in zip(self.recipes, self.resolutions):
             items = recipe.split(':')
             item_len = len(items)
             if not (1 <= item_len <= 6):
@@ -69,10 +77,16 @@ class ImageGenerator:
                 raise RuntimeError(
                     f'No data generated from [pattern={pattern},'
                     + f' image_size={image_size}, tile_size={tile_size},'
-                    + f' compression={compression}].')
+                    + f' compression={compression}, resolution={resolution}].')
 
             file_name = f'{kind}_{pattern}_{image_size_str}_{tile_size}'
-
+            if resolution is None or len(resolution) == 2:
+                unit = None
+            elif len(resolution) == 3:
+                unit = resolution[2]
+                resolution = resolution[:2]
+            if unit is None:
+                unit = tifffile.RESUNIT.NONE
             image_path = generator_obj.save_image(image_data,
                                                   dest_folder,
                                                   file_name=file_name,
@@ -81,7 +95,9 @@ class ImageGenerator:
                                                   pattern=pattern,
                                                   image_size=image_size,
                                                   tile_size=tile_size,
-                                                  compression=compression)
+                                                  compression=compression,
+                                                  resolution=resolution,
+                                                  resolutionunit=unit)
             self.logger.info('  Generated %s...', image_path)
             results.append(image_path)
 
