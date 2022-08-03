@@ -16,7 +16,7 @@ for shape in "${param_shape[@]}"; do
 done
 
 # these do not require an integer-valued input image
-param_filt=(inverse_gaussian_gradient morphological_geodesic_active_contour morphological_chan_vese)
+param_filt=(inverse_gaussian_gradient morphological_geodesic_active_contour morphological_chan_vese chan_vese)
 param_dt=(float32)
 for shape in "${param_shape[@]}"; do
     for filt in "${param_filt[@]}"; do

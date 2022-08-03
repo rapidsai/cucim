@@ -212,6 +212,16 @@ def main(args):
             False,
             False,
         ),
+        (
+            "chan_vese",
+            dict(),
+            # Reduced number of iterations so scikit-image comparison will not
+            # take minutes to complete. Empirically, approximately the same
+            # acceleration was measured for 10 or 100 iterations.
+            dict(max_num_iter=[10], init_level_set=["checkerboard", "disk"]),
+            False,
+            False,
+        ),
         # omit: disk_level_set (simple array generation function)
         # omit: checkerboard_level_set (simple array generation function)
     ]:
@@ -254,7 +264,7 @@ def main(args):
             all_results = pd.concat([all_results, results["full"]])
 
 
-        elif function_name in ["inverse_gaussian_gradient", "morphological_geodesic_active_contour", "morphological_chan_vese"]:
+        elif function_name in ["inverse_gaussian_gradient", "morphological_geodesic_active_contour", "morphological_chan_vese", "chan_vese"]:
 
             if function_name == "morphological_geodesic_active_contour":
                 bench_class = MorphGeodesicBench
@@ -287,7 +297,7 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Benchmarking cuCIM segmentation functions')
-    func_name_choices = ["clear_border", "expand_labels", "relabel_sequential", "find_boundaries", "mark_boundaries", "random_walker", "inverse_gaussian_gradient", "morphological_geodesic_active_contour", "morphological_chan_vese"]
+    func_name_choices = ["clear_border", "expand_labels", "relabel_sequential", "find_boundaries", "mark_boundaries", "random_walker", "inverse_gaussian_gradient", "morphological_geodesic_active_contour", "morphological_chan_vese", "chan_vese"]
     label_dtype_choices = ['int8', 'int16', 'int32', 'int64', 'uint8', 'uint16', 'uint32', 'uint64']
     dtype_choices = ['float16', 'float32', 'float64', 'int8', 'int16', 'int32', 'int64', 'uint8', 'uint16', 'uint32', 'uint64']
     parser.add_argument('-i','--img_size', type=str, help='Size of input image (omit color channel, it will be appended as needed)', required=True)
