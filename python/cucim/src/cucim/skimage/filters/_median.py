@@ -2,8 +2,8 @@ from warnings import warn
 
 import cupy as cp
 import numpy as np
-from cupyx.scipy import ndimage as ndi
 
+import cucim.skimage._vendored.ndimage as ndi
 from .._shared.utils import deprecate_kwarg
 from ._median_hist import _can_use_histogram, _median_hist, KernelResourceError
 

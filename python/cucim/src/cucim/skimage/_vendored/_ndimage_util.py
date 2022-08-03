@@ -5,6 +5,33 @@ import cupy
 import numpy
 
 
+def _is_integer_output(output, input):
+    if output is None:
+        return input.dtype.kind in 'iu'
+    elif isinstance(output, cupy.ndarray):
+        return output.dtype.kind in 'iu'
+    return cupy.dtype(output).kind in 'iu'
+
+
+def _check_cval(mode, cval, integer_output):
+    if mode == 'constant' and integer_output and not cupy.isfinite(cval):
+        raise NotImplementedError("Non-finite cval is not supported for "
+                                  "outputs with integer dtype.")
+
+
+def _get_weights_dtype(input, weights, use_cucim_casting=False):
+    if weights.dtype.kind == "c" or input.dtype.kind == "c":
+        return cupy.promote_types(input.real.dtype, cupy.complex64)
+    elif weights.dtype.kind in 'iub':
+        if use_cucim_casting:
+            from cucim.skimage._shared.utils import _supported_float_type
+            return _supported_float_type(weights.dtype)
+        else:
+            # convert integer dtype weights to double as in SciPy
+            return cupy.float64
+    return cupy.promote_types(input.real.dtype, cupy.float32)
+
+
 def _get_output(output, input, shape=None, complex_output=False):
     shape = input.shape if shape is None else shape
     if output is None:
@@ -12,17 +39,17 @@ def _get_output(output, input, shape=None, complex_output=False):
             _dtype = cupy.promote_types(input.dtype, cupy.complex64)
         else:
             _dtype = input.dtype
-        output = cupy.zeros(shape, dtype=_dtype)
+        output = cupy.empty(shape, dtype=_dtype)
     elif isinstance(output, (type, cupy.dtype)):
         if complex_output and cupy.dtype(output).kind != 'c':
             warnings.warn("promoting specified output dtype to complex")
             output = cupy.promote_types(output, cupy.complex64)
-        output = cupy.zeros(shape, dtype=output)
+        output = cupy.empty(shape, dtype=output)
     elif isinstance(output, str):
         output = numpy.sctypeDict[output]
         if complex_output and cupy.dtype(output).kind != 'c':
             raise RuntimeError("output must have complex dtype")
-        output = cupy.zeros(shape, dtype=output)
+        output = cupy.empty(shape, dtype=output)
     elif output.shape != shape:
         raise RuntimeError("output shape not correct")
     elif complex_output and output.dtype.kind != 'c':
@@ -44,19 +71,19 @@ def _fix_sequence_arg(arg, ndim, name, conv=lambda x: x):
     return lst
 
 
+def _check_origin(origin, width):
+    origin = int(origin)
+    if (width // 2 + origin < 0) or (width // 2 + origin >= width):
+        raise ValueError('invalid origin')
+    return origin
+
+
 def _check_mode(mode):
     if mode not in ('reflect', 'constant', 'nearest', 'mirror', 'wrap',
                     'grid-mirror', 'grid-wrap', 'grid-reflect'):
         msg = f'boundary mode not supported (actual: {mode})'
         raise RuntimeError(msg)
     return mode
-
-
-def _check_origin(origin, width):
-    origin = int(origin)
-    if (width // 2 + origin < 0) or (width // 2 + origin >= width):
-        raise ValueError('invalid origin')
-    return origin
 
 
 def _get_inttype(input):
@@ -70,53 +97,118 @@ def _get_inttype(input):
 
 
 def _generate_boundary_condition_ops(mode, ix, xsize, int_t="int",
-                                     float_ix=False):
+                                     float_ix=False, separate=False):
+    """Generate boundary conditions
+
+    If separate = True, a pair of conditions for the (lower, upper) boundary
+    are provided instead of a single expression.
+    """
     min_func = "fmin" if float_ix else "min"
     max_func = "fmax" if float_ix else "max"
     if mode in ['reflect', 'grid-mirror']:
-        ops = '''
-        if ({ix} < 0) {{
-            {ix} = - 1 -{ix};
-        }}
-        {ix} %= {xsize} * 2;
-        {ix} = {min}({ix}, 2 * {xsize} - 1 - {ix});'''.format(
-            ix=ix, xsize=xsize, min=min_func)
-    elif mode == 'mirror':
-        ops = '''
-        if ({xsize} == 1) {{
-            {ix} = 0;
-        }} else {{
+        if separate:
+            ops_upper = f'''
+            {ix} %= {xsize} * 2;
+            {ix} = {min_func}({ix}, 2 * {xsize} - 1 - {ix});
+            '''
+            ops_lower = f'''
             if ({ix} < 0) {{
-                {ix} = -{ix};
+                {ix} = - 1 -{ix};
             }}
-            {ix} = 1 + ({ix} - 1) % (({xsize} - 1) * 2);
-            {ix} = {min}({ix}, 2 * {xsize} - 2 - {ix});
-        }}'''.format(ix=ix, xsize=xsize, min=min_func)
+            ''' + ops_upper
+            ops = (ops_lower, ops_upper)
+        else:
+            ops = f'''
+            if ({ix} < 0) {{
+                {ix} = - 1 -{ix};
+            }}
+            {ix} %= {xsize} * 2;
+            {ix} = {min_func}({ix}, 2 * {xsize} - 1 - {ix});'''
+    elif mode == 'mirror':
+        if separate:
+            temp1 = f'''
+            if ({xsize} == 1) {{
+                {ix} = 0;
+            }} else {{
+            '''
+            temp2 = f'''
+                if ({ix} < 0) {{
+                    {ix} = -{ix};
+                }}
+            '''
+            temp3 = f'''
+                {ix} = 1 + ({ix} - 1) % (({xsize} - 1) * 2);
+                {ix} = {min_func}({ix}, 2 * {xsize} - 2 - {ix});
+            }}'''
+            ops_lower = temp1 + temp2 + temp3
+            ops_upper = temp1 + temp3
+            ops = (ops_lower, ops_upper)
+        else:
+            ops = f'''
+            if ({xsize} == 1) {{
+                {ix} = 0;
+            }} else {{
+                if ({ix} < 0) {{
+                    {ix} = -{ix};
+                }}
+                {ix} = 1 + ({ix} - 1) % (({xsize} - 1) * 2);
+                {ix} = {min_func}({ix}, 2 * {xsize} - 2 - {ix});
+            }}'''
     elif mode == 'nearest':
-        ops = '''
-        {ix} = {min}({max}(({T}){ix}, ({T})0), ({T})({xsize} - 1));'''.format(
-            ix=ix, xsize=xsize, min=min_func, max=max_func,
-            # force using 64-bit signed integer for ptrdiff_t,
-            # see cupy/cupy#6048
-            T=('int' if int_t == 'int' else 'long long'))
+        T = 'int' if int_t == 'int' else 'long long'
+        if separate:
+            ops_lower = f'''{ix} = {max_func}(({T}){ix}, ({T})0);'''
+            ops_upper = f'''{ix} = {min_func}(({T}){ix}, ({T})({xsize} - 1));'''  # noqa
+            ops = (ops_lower, ops_upper)
+        else:
+            ops = f'''{ix} = {min_func}({max_func}(({T}){ix}, ({T})0), ({T})({xsize} - 1));'''  # noqa
     elif mode == 'grid-wrap':
-        ops = '''
-        {ix} %= {xsize};
-        if ({ix} < 0) {{
-            {ix} += {xsize};
-        }}'''.format(ix=ix, xsize=xsize)
+        if separate:
+            ops_upper = f'''
+            {ix} %= {xsize};
+            '''
+            ops_lower = ops_upper + f'''
+            if ({ix} < 0) {{
+                {ix} += {xsize};
+            }}'''
+            ops = (ops_lower, ops_upper)
+        else:
+            ops = f'''
+            {ix} %= {xsize};
+            if ({ix} < 0) {{
+                {ix} += {xsize};
+            }}'''
+
     elif mode == 'wrap':
-        ops = '''
-        if ({ix} < 0) {{
-            {ix} += ({sz} - 1) * (({int_t})(-{ix} / ({sz} - 1)) + 1);
-        }} else if ({ix} > ({sz} - 1)) {{
-            {ix} -= ({sz} - 1) * ({int_t})({ix} / ({sz} - 1));
-        }};'''.format(ix=ix, sz=xsize, int_t=int_t)
+        if separate:
+            ops_lower = f'''{ix} += ({xsize} - 1) * (({int_t})(-{ix} / ({xsize} - 1)) + 1);'''  # noqa
+            ops_upper = f'''{ix} -= ({xsize} - 1) * ({int_t})({ix} / ({xsize} - 1));'''  # noqa
+            ops = (ops_lower, ops_upper)
+        else:
+            ops = f'''
+            if ({ix} < 0) {{
+                {ix} += ({xsize} - 1) * (({int_t})(-{ix} / ({xsize} - 1)) + 1);
+            }} else if ({ix} > ({xsize} - 1)) {{
+                {ix} -= ({xsize} - 1) * ({int_t})({ix} / ({xsize} - 1));
+            }};'''
     elif mode in ['constant', 'grid-constant']:
-        ops = '''
-        if (({ix} < 0) || {ix} >= {xsize}) {{
-            {ix} = -1;
-        }}'''.format(ix=ix, xsize=xsize)
+        if separate:
+            ops_lower = f'''
+            if ({ix} < 0) {{
+                {ix} = -1;
+            }}'''
+            ops_upper = f'''
+            if ({ix} >= {xsize}) {{
+                {ix} = -1;
+            }}'''
+            ops = (ops_lower, ops_upper)
+        else:
+            ops = f'''
+            if (({ix} < 0) || {ix} >= {xsize}) {{
+                {ix} = -1;
+            }}'''
+        if separate:
+            ops = (ops, ops)
     return ops
 
 

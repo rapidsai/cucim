@@ -9,7 +9,7 @@ import math
 
 import cupy as cp
 import numpy as np
-from cupyx.scipy import ndimage as ndi
+import cucim.skimage._vendored.ndimage as ndi
 from cupyx.scipy import sparse
 from cupyx.scipy.sparse.linalg import cg, spsolve
 

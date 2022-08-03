@@ -1,7 +1,7 @@
 from warnings import warn
 
 import cupy as cp
-import cupyx.scipy.ndimage as ndi
+import cucim.skimage._vendored.ndimage as ndi
 import numpy as np
 from scipy.ndimage import find_objects as cpu_find_objects
 

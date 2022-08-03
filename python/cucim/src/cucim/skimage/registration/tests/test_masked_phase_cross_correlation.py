@@ -4,7 +4,7 @@ import pytest
 from cupyx.scipy.ndimage import fourier_shift
 from cupyx.scipy.ndimage import shift as real_shift
 from numpy.testing import assert_almost_equal
-from skimage.data import brain, camera
+from skimage.data import camera
 from skimage.io import imread
 
 from cucim.skimage._shared.fft import fftmodule as fft
@@ -67,6 +67,7 @@ def test_masked_registration_random_masks():
 def test_masked_registration_3d_contiguous_mask():
     """masked_register_translation should be able to register translations
     between volumes with contiguous masks."""
+    brain = pytest.importorskip('skimage.data.brain')
     ref_vol = cp.array(brain()[:, ::2, ::2])
 
     offset = (1, -5, 10)

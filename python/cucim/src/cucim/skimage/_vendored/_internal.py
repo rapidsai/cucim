@@ -1,3 +1,7 @@
+import math
+from functools import reduce
+from operator import mul
+
 import cupy
 import numpy
 
@@ -61,3 +65,11 @@ except ImportError:
             res.append(axis)
 
         return tuple(sorted(res))
+
+
+if hasattr(math, 'prod'):
+    prod = math.prod
+else:
+
+    def prod(iterable, *, start=1):
+        return reduce(mul, iterable, start)
