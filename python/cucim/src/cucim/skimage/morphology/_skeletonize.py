@@ -1,5 +1,5 @@
 import cupy as cp
-import cupyx.scipy.ndimage as ndi
+import cucim.skimage._vendored.ndimage as ndi
 import numpy as np
 
 from .._shared.utils import check_nD, deprecate_kwarg

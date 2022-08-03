@@ -4,7 +4,7 @@ from itertools import cycle
 import cupy as cp
 import numpy as np
 from cupyx import rsqrt
-from cupyx.scipy import ndimage as ndi
+import cucim.skimage._vendored.ndimage as ndi
 
 from cucim import _misc
 

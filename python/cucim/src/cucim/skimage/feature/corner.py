@@ -3,7 +3,7 @@ from warnings import warn
 
 import cupy as cp
 import numpy as np
-from cupyx.scipy import ndimage as ndi
+import cucim.skimage._vendored.ndimage as ndi
 from scipy import spatial  # TODO: use RAPIDS cuSpatial?
 
 from cucim.skimage.util import img_as_float
