@@ -2,7 +2,7 @@
 param_shape=(512,512 3840,2160 3840,2160,3 192,192,192)
 
 # these require an integer-valued label image
-param_filt=(clear_border relabel_sequential find_boundaries mark_boundaries random_walker)
+param_filt=(clear_border expand_labels relabel_sequential find_boundaries mark_boundaries random_walker)
 param_dt=(float32)
 param_dt_label=(uint8 uint32)
 for shape in "${param_shape[@]}"; do
