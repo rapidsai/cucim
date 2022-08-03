@@ -16,6 +16,7 @@
 import argparse
 import logging
 import os
+import tifffile
 
 try:
     from .gen_tiff import TiffGenerator
@@ -79,7 +80,13 @@ class ImageGenerator:
                     + f' compression={compression}, resolution={resolution}].')
 
             file_name = f'{kind}_{pattern}_{image_size_str}_{tile_size}'
-
+            if resolution is None or len(resolution) == 2:
+                unit = None
+            elif len(resolution) == 3:
+                unit = resolution[2]
+                resolution = resolution[:2]
+            if unit is None:
+                unit = tifffile.RESUNIT.NONE
             image_path = generator_obj.save_image(image_data,
                                                   dest_folder,
                                                   file_name=file_name,
@@ -89,7 +96,8 @@ class ImageGenerator:
                                                   image_size=image_size,
                                                   tile_size=tile_size,
                                                   compression=compression,
-                                                  resolution=resolution)
+                                                  resolution=resolution,
+                                                  resolutionunit=unit)
             self.logger.info('  Generated %s...', image_path)
             results.append(image_path)
 
