@@ -680,10 +680,11 @@ CuImage CuImage::read_region(std::vector<int64_t>&& location,
         location.emplace_back(0);
         location.emplace_back(0);
     }
+
+    const ResolutionInfo& res_info = resolutions();
     // If `size` is not specified, size would be (width, height) of the image at the specified `level`.
     if (size.empty())
     {
-        const ResolutionInfo& res_info = resolutions();
         const auto level_count = res_info.level_count();
         if (level_count == 0)
         {
@@ -853,19 +854,36 @@ CuImage CuImage::read_region(std::vector<int64_t>&& location,
         // The first dimension is for 'batch' ('N')
         spacing_units.emplace_back(std::string_view{ "batch" });
     }
+    const auto& level_downsample = res_info.level_downsample(level);
     for (; index < ndim; ++index)
     {
-        int64_t dim_char = dim_indices_.index(dims[index]);
+        int64_t dim_index = dim_indices_.index(dims[index]);
+        if (dim_index < 0)
+        {
+            throw std::runtime_error(fmt::format("[Error] Invalid dimension name: {}", dims[index]));
+        }
 
-        const char* str_ptr = image_metadata_->spacing_units[dim_char];
-        size_t str_len = strlen(image_metadata_->spacing_units[dim_char]);
+        const char* str_ptr = image_metadata_->spacing_units[dim_index];
+        size_t str_len = strlen(image_metadata_->spacing_units[dim_index]);
 
         char* spacing_unit = static_cast<char*>(resource.allocate(str_len + 1));
         memcpy(spacing_unit, str_ptr, str_len);
         spacing_unit[str_len] = '\0';
-        // std::pmr::string spacing_unit{ image_metadata_->spacing_units[dim_char], &resource };
+        // std::pmr::string spacing_unit{ image_metadata_->spacing_units[dim_index], &resource };
 
         spacing_units.emplace_back(std::string_view{ spacing_unit });
+
+        // Update spacing based on level_downsample
+        char dim_char = image_metadata_->dims[dim_index];
+        switch (dim_char)
+        {
+        case 'X':
+        case 'Y':
+            spacing[index] /= level_downsample;
+            break;
+        default:
+            break;
+        }
     }
 
     std::pmr::vector<float> origin(&resource);

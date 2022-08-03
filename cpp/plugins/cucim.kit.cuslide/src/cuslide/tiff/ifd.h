@@ -72,6 +72,9 @@ public:
     std::string& software();
     std::string& model();
     std::string& image_description();
+    uint16_t resolution_unit() const;
+    float x_resolution() const;
+    float y_resolution() const;
     uint32_t width() const;
     uint32_t height() const;
     uint32_t tile_width() const;
@@ -109,6 +112,10 @@ private:
     std::string software_;
     std::string model_;
     std::string image_description_;
+    uint16_t resolution_unit_ = 1; // 1 = No absolute unit of measurement, 2 = Inch, 3 = Centimeter
+    float x_resolution_ = 1.0f;
+    float y_resolution_ = 1.0f;
+
     uint32_t flags_ = 0;
     uint32_t width_ = 0;
     uint32_t height_ = 0;
