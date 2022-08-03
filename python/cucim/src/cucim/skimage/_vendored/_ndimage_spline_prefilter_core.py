@@ -1,7 +1,7 @@
 """
 Spline poles and boundary handling implemented as in SciPy
 
-https://github.com/scipy/scipy/blob/master/scipy/ndimage/src/ni_splines.c
+https://github.com/scipy/scipy/blob/ee6ae72f83a0995aeb34929aed881d3f36fccfda/scipy/ndimage/src/ni_splines.c  # noqa
 """
 import functools
 import math
