@@ -149,15 +149,15 @@ def test_median_hist_dtypes(
         (cp.uint16, (0, 510)),
         (cp.uint16, (500, 550)),
         (cp.uint16, (0, 1024)),
-        # (cp.uint16, (0, 2048)),
-        # (cp.uint16, (1024, 3185)),
+        pytest.param(cp.uint16, (0, 2048), marks=pytest.mark.skip(reason="isolated failure on CI only")),  # noqa
+        pytest.param(cp.uint16, (1024, 3185), marks=pytest.mark.skip(reason="isolated failure on CI only")),  # noqa
         (cp.int16, (0, 256)),
         (cp.int16, (-15, 15)),
         (cp.int16, (128, 384)),
         (cp.int16, (-128, 384)),
         (cp.int16, (-400, 400)),
-        # (cp.int16, (-1024, 2048)),
-        # (cp.int16, (150, 2048)),
+        pytest.param(cp.int16, (-1024, 2048), marks=pytest.mark.skip(reason="isolated failure on CI only")),  # noqa
+        pytest.param(cp.int16, (150, 2048), marks=pytest.mark.skip(reason="isolated failure on CI only")),  # noqa
     ]
 )
 def test_median_hist_16bit_offsets(mode, footprint_shape, int_dtype, irange):
