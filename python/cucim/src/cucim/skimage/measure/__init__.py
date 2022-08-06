@@ -4,7 +4,8 @@ from ._moments import (centroid, inertia_tensor, inertia_tensor_eigvals,
                        moments, moments_central, moments_coords,
                        moments_coords_central, moments_hu, moments_normalized)
 from ._polygon import approximate_polygon, subdivide_polygon
-from ._regionprops import perimeter, regionprops, regionprops_table
+from ._regionprops import (euler_number, perimeter, perimeter_crofton,
+                           regionprops, regionprops_table)
 from .block import block_reduce
 from .entropy import shannon_entropy
 from .profile import profile_line
