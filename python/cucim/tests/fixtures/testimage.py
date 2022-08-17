@@ -21,9 +21,9 @@ from pytest_lazyfixture import lazy_fixture
 from ..util.gen_image import ImageGenerator
 
 
-def gen_image(tmpdir_factory, recipe):
+def gen_image(tmpdir_factory, recipe, resolution=None):
     dataset_path = tmpdir_factory.mktemp('datasets').strpath
-    dataset_gen = ImageGenerator(dataset_path, [recipe])
+    dataset_gen = ImageGenerator(dataset_path, [recipe], [resolution])
     image_path = dataset_gen.gen()
     return (dataset_path, image_path[0])
 
@@ -63,9 +63,8 @@ def testimg_tiff_stripe_32x24_16_raw(tmpdir_factory):
 def testimg_tiff_stripe_32x24_16(request):
     return request.param
 
+
 # tiff_stripe_4096x4096_256
-
-
 @pytest.fixture(scope='session')
 def testimg_tiff_stripe_4096x4096_256_jpeg(tmpdir_factory):
     dataset_path, image_path = gen_image(
@@ -136,4 +135,46 @@ def testimg_tiff_stripe_100000x100000_256_raw(tmpdir_factory):
     lazy_fixture('testimg_tiff_stripe_100000x100000_256_raw')
 ])
 def testimg_tiff_stripe_100000x100000_256(request):
+    return request.param
+
+
+# testimg_tiff_stripe_4096_4096_256_jpeg_resolution
+@pytest.fixture(scope='session')
+def testimg_tiff_stripe_4096_4096_256_jpeg_resolution_3_5_centimeter(
+        tmpdir_factory):
+    resolution = (0.3, 0.5, "CENTIMETER")
+    dataset_path, image_path = gen_image(
+        tmpdir_factory, 'tiff::stripe:4096x4096:256:jpeg', resolution)
+    yield image_path, resolution
+    # Clean up fake dataset folder
+    shutil.rmtree(dataset_path)
+
+
+@pytest.fixture(scope='session')
+def testimg_tiff_stripe_4096_4096_256_jpeg_resolution_4_7_inch(tmpdir_factory):
+    resolution = (0.4, 0.7, "INCH")
+    dataset_path, image_path = gen_image(
+        tmpdir_factory, 'tiff::stripe:4096x4096:256:jpeg', resolution)
+    yield image_path, resolution
+    # Clean up fake dataset folder
+    shutil.rmtree(dataset_path)
+
+
+@pytest.fixture(scope='session')
+def testimg_tiff_stripe_4096_4096_256_jpeg_resolution_9_1_none(tmpdir_factory):
+    resolution = (9, 1, "NONE")
+    dataset_path, image_path = gen_image(
+        tmpdir_factory, 'tiff::stripe:4096x4096:256:jpeg', resolution)
+    yield image_path, resolution
+    # Clean up fake dataset folder
+    shutil.rmtree(dataset_path)
+
+
+@pytest.fixture(scope='session', params=[
+    lazy_fixture(
+        'testimg_tiff_stripe_4096_4096_256_jpeg_resolution_3_5_centimeter'),
+    lazy_fixture('testimg_tiff_stripe_4096_4096_256_jpeg_resolution_4_7_inch'),
+    lazy_fixture('testimg_tiff_stripe_4096_4096_256_jpeg_resolution_9_1_none'),
+])
+def testimg_tiff_stripe_4096_4096_256_jpeg_resolution(request):
     return request.param

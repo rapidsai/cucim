@@ -12,7 +12,7 @@ All rights reserved.
 Original author: Lee Kamentsky
 """
 import cupy as cp
-import cupyx.scipy.ndimage as ndi
+import cucim.skimage._vendored.ndimage as ndi
 
 from cucim.skimage.util import dtype_limits
 
@@ -201,7 +201,7 @@ def _generate_nonmaximum_suppression_op(large_int=False):
 @cp.memoize(for_each_device=True)
 def _get_nonmax_kernel(large_int=False):
     in_params = ('raw T isobel, raw T jsobel, raw T magnitude, '
-                 'raw uint8 eroded_mask, T low_threshold')
+                 'raw uint8 eroded_mask, float64 low_threshold')
     out_params = 'T out'
     name = 'cupyx_skimage_canny_nonmaximum_suppression'
     if large_int:

@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import math
-import warnings
 from typing import Union
 
 import cupy as cp
@@ -56,12 +55,9 @@ def image_to_absorbance(image, source_intensity=255.0, dtype=cp.float32):
     -----
     If `image` has an integer dtype it will be clipped to range
     ``[1, source_intensity]``, while float image inputs are clipped to range
-    ``[source_intensity/255, source_intensity]. The minimum is to avoid log(0).
-    Absorbance is then given by
-
-    .. math::
-
-        absorbance = \\log{\\frac{image}{source_intensity}}.
+    ``[source_intensity/255, source_intensity]``.
+    The minimum is to avoid log(0). Absorbance is then given by
+    ``absorbance = log(image / source_intensity)``.
     """
     dtype = cp.dtype(dtype)
     if dtype.kind != "f":
@@ -209,9 +205,7 @@ def _covariance(a):
     ddof = 1
     fact = X.shape[1] - ddof
     if fact <= 0:
-        warnings.warn("Degrees of freedom <= 0 for slice",
-                      RuntimeWarning, stacklevel=2)
-        fact = 0.0
+        raise RuntimeError("Degrees of freedom <= 0")
 
     X -= X.mean(axis=1, keepdims=True)
     if not X.flags.f_contiguous:
@@ -314,10 +308,10 @@ def stain_extraction_pca(image, source_intensity=240, alpha=1, beta=0.345,
     )
 
     # remove transparent pixels
-    absorbance = absorbance[:, cp.all(absorbance > beta, axis=0)]
-    if absorbance.size == 0:
+    absorbance = absorbance[:, cp.any(absorbance > beta, axis=0)]
+    if absorbance.size == 0 or absorbance.shape[1] <= 1:
         raise ValueError(
-            "All pixels of the input image are below the threshold."
+            "Multiple pixels of the input must be above the `beta` threshold."
         )
 
     # compute eigenvectors (do small 3x3 matrix calculations on the host)
@@ -383,7 +377,10 @@ def _get_raw_concentrations(src_stain_coeff, absorbance):
 def _normalized_from_concentrations(conc_raw, max_percentile, ref_stain_coeff,
                                     ref_max_conc, source_intensity,
                                     original_shape, channel_axis):
-    """Determine normalized image from concentrations."""
+    """Determine normalized image from concentrations.
+
+    Note: This function will also modify conc_raw in-place.
+    """
 
     # verify conc_raw is shape (2, n_pixels)
     if conc_raw.ndim != 2 or conc_raw.shape[0] != 2:
@@ -410,10 +407,10 @@ def _normalized_from_concentrations(conc_raw, max_percentile, ref_stain_coeff,
          for ch_raw in conc_raw]
     )
     normalization_factors = ref_max_conc / max_conc
-    conc_norm = conc_raw * normalization_factors[:, cp.newaxis]
+    conc_raw *= normalization_factors[:, cp.newaxis]
 
     # reconstruct the image based on the reference stain matrix
-    absorbance_norm = ref_stain_coeff.dot(conc_norm)
+    absorbance_norm = ref_stain_coeff.dot(conc_raw)
     image_norm = absorbance_to_image(
         absorbance_norm, source_intensity=source_intensity, dtype=np.uint8
     )
@@ -527,8 +524,8 @@ def normalize_colors_pca(
     image_norm = _normalized_from_concentrations(
         conc_raw=conc_raw,
         max_percentile=100 - alpha,
-        ref_max_conc=cp.asarray(ref_max_conc),
-        ref_stain_coeff=cp.asarray(ref_stain_coeff),
+        ref_max_conc=cp.asarray(ref_max_conc, dtype=conc_raw.dtype),
+        ref_stain_coeff=cp.asarray(ref_stain_coeff, dtype=conc_raw.dtype),
         source_intensity=source_intensity,
         channel_axis=channel_axis,
         original_shape=image.shape,

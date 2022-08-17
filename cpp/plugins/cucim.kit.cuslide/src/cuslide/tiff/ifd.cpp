@@ -63,6 +63,9 @@ IFD::IFD(TIFF* tiff, uint16_t index, ifd_offset_t offset) : tiff_(tiff), ifd_ind
     model_ = std::string(model_char_ptr ? model_char_ptr : "");
     TIFFGetField(tif, TIFFTAG_IMAGEDESCRIPTION, &model_char_ptr);
     image_description_ = std::string(model_char_ptr ? model_char_ptr : "");
+    TIFFGetField(tif, TIFFTAG_RESOLUTIONUNIT, &resolution_unit_);
+    TIFFGetField(tif, TIFFTAG_XRESOLUTION, &x_resolution_);
+    TIFFGetField(tif, TIFFTAG_YRESOLUTION, &y_resolution_);
 
     TIFFDirectory& tif_dir = tif->tif_dir;
     flags_ = tif->tif_flags;
@@ -450,6 +453,18 @@ std::string& IFD::model()
 std::string& IFD::image_description()
 {
     return image_description_;
+}
+uint16_t IFD::resolution_unit() const
+{
+    return resolution_unit_;
+}
+float IFD::x_resolution() const
+{
+    return x_resolution_;
+}
+float IFD::y_resolution() const
+{
+    return y_resolution_;
 }
 uint32_t IFD::width() const
 {

@@ -3,7 +3,7 @@ import itertools
 
 import cupy as cp
 import numpy as np
-from cupyx.scipy import ndimage as ndi
+import cucim.skimage._vendored.ndimage as ndi
 
 from .._shared.utils import _supported_float_type
 from ..metrics import mean_squared_error

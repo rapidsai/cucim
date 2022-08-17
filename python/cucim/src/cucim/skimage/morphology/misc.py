@@ -2,7 +2,7 @@
 import functools
 
 import cupy as cp
-from cupyx.scipy import ndimage as ndi
+import cucim.skimage._vendored.ndimage as ndi
 
 from .._shared.utils import remove_arg, warn
 
@@ -73,7 +73,7 @@ def remove_small_objects(ar, min_size=64, connectivity=1, in_place=False,
         labelling if `ar` is bool.
     in_place : bool, optional (default: False)
         If ``True``, remove the objects in the input array itself.
-        Otherwise, make a copy. Deprecated since version 0.19. Please
+        Otherwise, make a copy. Deprecated since version 22.02.00. Please
         use `out` instead.
     out : ndarray
         Array of the same shape as `ar`, into which the output is
@@ -172,7 +172,7 @@ def remove_small_holes(ar, area_threshold=64, connectivity=1, in_place=False,
         The connectivity defining the neighborhood of a pixel.
     in_place : bool, optional (default: False)
         If `True`, remove the connected components in the input array
-        itself. Otherwise, make a copy. Deprecated since version 0.19.
+        itself. Otherwise, make a copy. Deprecated since version 22.02.00.
         Please use `out` instead.
     out : ndarray
         Array of the same shape as `ar` and bool dtype, into which the

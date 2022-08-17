@@ -2,7 +2,7 @@ import math
 
 import cupy as cp
 import numpy as np
-from cupyx.scipy import ndimage as ndi
+import cucim.skimage._vendored.ndimage as ndi
 
 from .._shared.utils import (_to_ndimage_mode, _validate_interpolation_order,
                              channel_as_last_axis, convert_to_float,
@@ -260,8 +260,8 @@ def rescale(image, scale, order=None, mode='reflect', cval=0, clip=True,
         Otherwise, this parameter indicates which axis of the array corresponds
         to channels.
 
-        .. versionadded:: 0.19
-           ``channel_axis`` was added in 0.19.
+        .. versionadded:: 22.02.00
+           ``channel_axis`` was added in 22.02.00.
 
     Notes
     -----
@@ -766,18 +766,32 @@ def _clip_warp_output(input_image, output_image, mode, cval, clip):
     """
     if clip:
         min_val = input_image.min().item()
-        max_val = input_image.max().item()
+        if np.isnan(min_val):
+            # NaNs detected, use NaN-safe min/max
+            min_func = cp.nanmin
+            max_func = cp.nanmax
+            min_val = min_func(input_image).item()
+        else:
+            min_func = cp.min
+            max_func = cp.max
+        max_val = max_func(input_image).item()
 
-        preserve_cval = (mode == 'constant' and not
-                         (min_val <= cval <= max_val))
+        # Check if cval has been used such that it expands the effective input
+        # range
+        preserve_cval = (
+            mode == 'constant'
+            and not min_val <= cval <= max_val
+            and min_func(output_image) <= cval <= max_func(output_image)
+        )
 
+        # expand min/max range to account for cval
         if preserve_cval:
-            cval_mask = output_image == cval
+            # cast cval to the same dtype as the input image
+            cval = input_image.dtype.type(cval)
+            min_val = min(min_val, cval)
+            max_val = max(max_val, cval)
 
         cp.clip(output_image, min_val, max_val, out=output_image)
-
-        if preserve_cval:
-            output_image[cval_mask] = cval
 
 
 def warp(image, inverse_map, map_args={}, output_shape=None, order=None,
@@ -1080,8 +1094,8 @@ def warp_polar(image, center=None, *, radius=None, output_shape=None,
         Otherwise, this parameter indicates which axis of the array corresponds
         to channels.
 
-        .. versionadded:: 0.19
-           ``channel_axis`` was added in 0.19.
+        .. versionadded:: 22.02.00
+           ``channel_axis`` was added in 22.02.00.
     **kwargs : keyword arguments
         Passed to `transform.warp`.
 

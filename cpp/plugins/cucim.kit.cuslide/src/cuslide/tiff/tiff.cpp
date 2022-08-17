@@ -387,6 +387,9 @@ void TIFF::resolve_vendor_format()
     auto& first_ifd = ifds_[0];
     std::string& model = first_ifd->model();
     std::string& software = first_ifd->software();
+    const uint16_t resolution_unit = first_ifd->resolution_unit();
+    const float x_resolution = first_ifd->x_resolution();
+    const float y_resolution = first_ifd->y_resolution();
 
     // Detect Aperio SVS format
     {
@@ -416,6 +419,20 @@ void TIFF::resolve_vendor_format()
 
         tiff_metadata.emplace("model", model);
         tiff_metadata.emplace("software", software);
+        switch (resolution_unit)
+        {
+        case 2:
+            tiff_metadata.emplace("resolution_unit", "inch");
+            break;
+        case 3:
+            tiff_metadata.emplace("resolution_unit", "centimeter");
+            break;
+        default:
+            tiff_metadata.emplace("resolution_unit", "");
+            break;
+        }
+        tiff_metadata.emplace("x_resolution", x_resolution);
+        tiff_metadata.emplace("y_resolution", y_resolution);
 
         (*json_metadata).emplace("tiff", std::move(tiff_metadata));
     }

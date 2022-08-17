@@ -6,10 +6,13 @@
 
 **NOTE:** For the latest stable [README.md](https://github.com/rapidsai/cucim/blob/main/README.md) ensure you are on the `main` branch.
 
-- [GTC 2021 cuCIM: A GPU Image I/O and Processing Toolkit [S32194]](https://www.nvidia.com/en-us/on-demand/search/?facet.mimetype[]=event%20session&layout=list&page=1&q=cucim&sort=date)
-  - [video](https://www.nvidia.com/en-us/on-demand/session/gtcspring21-s32194/)
+- [GTC 2022 Accelerating Storage IO to GPUs with Magnum IO [S41347]](https://events.rainfocus.com/widget/nvidia/gtcspring2022/sessioncatalog/session/1634960000577001Etxp)
+  - cuCIM's GDS API examples: <https://github.com/NVIDIA/MagnumIO/tree/main/gds/readers/cucim-gds>
 - [SciPy 2021 cuCIM - A GPU image I/O and processing library](https://www.scipy2021.scipy.org/)
   - [video](https://youtu.be/G46kOOM9xbQ)
+- [GTC 2021 cuCIM: A GPU Image I/O and Processing Toolkit [S32194]](https://www.nvidia.com/en-us/on-demand/search/?facet.mimetype[]=event%20session&layout=list&page=1&q=cucim&sort=date)
+  - [video](https://www.nvidia.com/en-us/on-demand/session/gtcspring21-s32194/)
+
 
 ## Quick Start
 
@@ -24,7 +27,7 @@ pip install scipy scikit-image cupy-cuda110
 
 ### Jupyter Notebooks
 
-Please check out our [Welcome](https://github.com/rapidsai/cucim/blob/branch-22.06/notebooks/Welcome.ipynb) notebook.
+Please check out our [Welcome](https://github.com/rapidsai/cucim/blob/branch-22.08/notebooks/Welcome.ipynb) notebook.
 
 ### Open Image
 
@@ -97,15 +100,15 @@ visualize(region)
 
 Aperio SVS (.svs) image format is supported since cuCIM [v21.10.01](https://github.com/rapidsai/cucim/wiki/release_notes_v21.10.01#support-aperio-svs-svs).
 
-Please check [this notebook](https://nbviewer.org/github/rapidsai/cucim/blob/branch-22.06/notebooks/Supporting_Aperio_SVS_Format.ipynb) to see how to use the feature.
+Please check [this notebook](https://nbviewer.org/github/rapidsai/cucim/blob/branch-22.08/notebooks/Supporting_Aperio_SVS_Format.ipynb) to see how to use the feature.
 
 ### Using Cache
 
-Please look at this [notebook](https://nbviewer.jupyter.org/github/rapidsai/cucim/blob/branch-22.06/notebooks/Using_Cache.ipynb).
+Please look at this [notebook](https://nbviewer.jupyter.org/github/rapidsai/cucim/blob/branch-22.08/notebooks/Using_Cache.ipynb).
 
 ### Accessing File with GDS
 
-Please look at this [notebook](https://nbviewer.jupyter.org/github/rapidsai/cucim/blob/branch-22.06/notebooks/Accessing_File_with_GDS.ipynb).
+Please look at this [notebook](https://nbviewer.jupyter.org/github/rapidsai/cucim/blob/branch-22.08/notebooks/Accessing_File_with_GDS.ipynb).
 
 ### NVTX Support for Performance Analysis
 
@@ -178,4 +181,4 @@ is used in this project.
 
 Apache-2.0 License (see `LICENSE` file).
 
-Copyright (c) 2020-2021, NVIDIA CORPORATION.
+Copyright (c) 2020-2022, NVIDIA CORPORATION.

@@ -21,7 +21,9 @@ from cucim.skimage.util.dtype import dtype_range
 def test_wrong_source_range():
     im = cp.array([-1, 100], dtype=cp.int8)
     with pytest.raises(ValueError):
-        frequencies, bin_centers = exposure.histogram(im, source_range="foobar")
+        frequencies, bin_centers = exposure.histogram(
+            im, source_range="foobar"
+        )
 
 
 def test_negative_overflow():
@@ -48,6 +50,15 @@ def test_int_range_image():
     assert len(bin_centers) == len(frequencies)
     assert bin_centers[0] == 10
     assert bin_centers[-1] == 100
+
+
+def test_multichannel_int_range_image():
+    im = cp.array([[10, 5], [100, 102]], dtype=np.int8)
+    frequencies, bin_centers = exposure.histogram(im, channel_axis=-1)
+    for ch in range(im.shape[-1]):
+        assert len(frequencies[ch]) == len(bin_centers)
+    assert bin_centers[0] == 5
+    assert bin_centers[-1] == 102
 
 
 def test_peak_uint_range_dtype():
@@ -286,11 +297,7 @@ def test_rescale_in_range_clip():
 def test_rescale_out_range(dtype):
     """Check that output range is correct.
 
-    .. versionchanged:: 0.17
-        This function used to return dtype matching the input dtype. It now
-        matches the output.
-
-    .. versionchanged:: 0.19
+    .. versionchanged:: 22.02.00
         float16 and float32 inputs now result in float32 output. Formerly they
         would give float64 outputs.
     """

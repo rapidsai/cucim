@@ -9,7 +9,7 @@ import math
 
 import cupy as cp
 import numpy as np
-from cupyx.scipy import ndimage as ndi
+import cucim.skimage._vendored.ndimage as ndi
 from cupyx.scipy import sparse
 from cupyx.scipy.sparse.linalg import cg, spsolve
 
@@ -342,12 +342,6 @@ def random_walker(data, labels, beta=130, mode='cg_j', tol=1.e-3, copy=True,
           `(nlabels, labels.shape)`. `output[label_nb, i, j]` is the
           probability that label `label_nb` reaches the pixel `(i, j)`
           first.
-
-    See Also
-    --------
-    skimage.morphology.watershed : watershed segmentation
-        A segmentation algorithm based on mathematical morphology
-        and "flooding" of regions from markers.
 
     Notes
     -----
