@@ -2,8 +2,14 @@ import math
 import cupy as cp
 import numpy as np
 
-import colorcet
-import matplotlib.pyplot as plt
+try:
+    import colorcet
+    import matplotlib.pyplot as plt
+except ImportError as e:
+    print("This demo requires the matplotlib and colorcet packages.")
+    raise(e)
+
+from skimage import data
 
 from cucim.core.operations.morphology import distance_transform_edt
 from cucim.skimage.color import label2rgb
@@ -92,5 +98,38 @@ for x, y in zip(xx, yy):
     axes[0, 0].plot(y, x, 'w.')
     # overlay in rgb_labels
     axes[1, 2].plot(y, x, 'w.')
+plt.tight_layout()
+
+
+"""
+As a second demo, we apply the distance transform to a binary image of a
+horse (and its inverse). The distance transform computes the Euclidean distance
+from each foreground point to the nearest background point.
+"""
+
+horse = data.horse()
+horse_inv = ~horse
+
+distances = distance_transform_edt(
+    cp.asarray(horse), return_distances=True, return_indices=False
+)
+distances_inv = distance_transform_edt(
+    cp.asarray(horse_inv), return_distances=True, return_indices=False
+)
+
+distances = cp.asnumpy(distances)
+distances_inv = cp.asnumpy(distances_inv)
+
+fig, axes = plt.subplots(2, 2, figsize=(7, 7))
+axes[0][0].imshow(horse_inv, cmap=plt.cm.gray)
+axes[0][0].set_title('Foreground horse')
+axes[0][1].imshow(horse, cmap=plt.cm.gray)
+axes[0][1].set_title('Background horse')
+axes[1][0].imshow(distances_inv)
+axes[1][0].set_title('Distance\n(foreground horse)')
+axes[1][1].imshow(distances)
+axes[1][1].set_title('Distance\n(background horse)')
+for ax in axes.ravel():
+    ax.set_axis_off()
 plt.tight_layout()
 plt.show()
