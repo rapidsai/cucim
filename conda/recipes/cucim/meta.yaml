@@ -29,7 +29,7 @@ requirements:
     - python {{ python_version }}.*
     - libcucim {{ version }}.*
     - click
-    - cupy >=9,<11.0.0a0
+    - cupy >=9,<12.0.0a0
     - numpy 1.19
     - scipy
     - scikit-image >=0.19.0,<0.20.0a0
@@ -38,7 +38,7 @@ requirements:
     - python {{ python_version }}.*
     - libcucim {{ version }}.*
     - click
-    - cupy >=9,<11.0.0a0
+    - cupy >=9,<12.0.0a0
     - {{ pin_compatible('numpy') }}
     - scipy
     - scikit-image >=0.19.0,<0.20.0a0
