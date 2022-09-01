@@ -2,9 +2,53 @@
 
 Please see https://github.com/rapidsai/cucim/releases/tag/v22.10.00a for the latest changes to this development branch.
 
-# cuCIM 22.08.00 (Date TBD)
+# cuCIM 22.08.00 (17 Aug 2022)
 
-Please see https://github.com/rapidsai/cucim/releases/tag/v22.08.00a for the latest changes to this development branch.
+## 🚨 Breaking Changes
+
+- Stain extraction: use a less strict condition across channels when thresholding ([#316](https://github.com/rapidsai/cucim/pull/316)) [@grlee77](https://github.com/grlee77)
+
+## 🐛 Bug Fixes
+
+- create SimilarityTransform using CuPy 9.x-compatible indexing ([#365](https://github.com/rapidsai/cucim/pull/365)) [@grlee77](https://github.com/grlee77)
+- Add `__init__.py` in `cucim.core` ([#359](https://github.com/rapidsai/cucim/pull/359)) [@jakirkham](https://github.com/jakirkham)
+- Stain extraction: use a less strict condition across channels when thresholding ([#316](https://github.com/rapidsai/cucim/pull/316)) [@grlee77](https://github.com/grlee77)
+- Incorporate bug fixes from skimage 0.19.3 ([#312](https://github.com/rapidsai/cucim/pull/312)) [@grlee77](https://github.com/grlee77)
+- fix RawKernel bug for canny filter when quantiles are used ([#310](https://github.com/rapidsai/cucim/pull/310)) [@grlee77](https://github.com/grlee77)
+
+## 📖 Documentation
+
+- Defer loading of `custom.js` ([#383](https://github.com/rapidsai/cucim/pull/383)) [@galipremsagar](https://github.com/galipremsagar)
+- add cucim.core.morphology to API docs + other docstring fixes ([#367](https://github.com/rapidsai/cucim/pull/367)) [@grlee77](https://github.com/grlee77)
+- Update README.md ([#361](https://github.com/rapidsai/cucim/pull/361)) [@HesAnEasyCoder](https://github.com/HesAnEasyCoder)
+- remove unimplemented functions from See Also and fix version numbers in deprecation warnings ([#356](https://github.com/rapidsai/cucim/pull/356)) [@grlee77](https://github.com/grlee77)
+- Forward-merge branch-22.06 to branch-22.08 ([#344](https://github.com/rapidsai/cucim/pull/344)) [@grlee77](https://github.com/grlee77)
+- Update README.md ([#315](https://github.com/rapidsai/cucim/pull/315)) [@HesAnEasyCoder](https://github.com/HesAnEasyCoder)
+- Update index.rst ([#314](https://github.com/rapidsai/cucim/pull/314)) [@HesAnEasyCoder](https://github.com/HesAnEasyCoder)
+- Update PyPI package documentation for v22.06.00 ([#311](https://github.com/rapidsai/cucim/pull/311)) [@gigony](https://github.com/gigony)
+
+## 🚀 New Features
+
+- Add segmentation with the Chan-Vese active contours method ([#343](https://github.com/rapidsai/cucim/pull/343)) [@grlee77](https://github.com/grlee77)
+- Add cucim.skimage.morphology.medial_axis ([#342](https://github.com/rapidsai/cucim/pull/342)) [@grlee77](https://github.com/grlee77)
+- Add cucim.skimage.segmentation.expand_labels ([#341](https://github.com/rapidsai/cucim/pull/341)) [@grlee77](https://github.com/grlee77)
+- Add Euclidean distance transform for images/volumes ([#318](https://github.com/rapidsai/cucim/pull/318)) [@grlee77](https://github.com/grlee77)
+
+## 🛠️ Improvements
+
+- Revert &quot;Allow CuPy 11&quot; ([#362](https://github.com/rapidsai/cucim/pull/362)) [@galipremsagar](https://github.com/galipremsagar)
+- Fix issues with day &amp; night modes in python docs ([#360](https://github.com/rapidsai/cucim/pull/360)) [@galipremsagar](https://github.com/galipremsagar)
+- Allow CuPy 11 ([#357](https://github.com/rapidsai/cucim/pull/357)) [@jakirkham](https://github.com/jakirkham)
+- more efficient separable convolution ([#355](https://github.com/rapidsai/cucim/pull/355)) [@grlee77](https://github.com/grlee77)
+- Support resolution and spacing metadata ([#349](https://github.com/rapidsai/cucim/pull/349)) [@gigony](https://github.com/gigony)
+- Performance optimizations to morphological segmentation functions ([#340](https://github.com/rapidsai/cucim/pull/340)) [@grlee77](https://github.com/grlee77)
+- benchmarks: avoid use of deprecated pandas API ([#339](https://github.com/rapidsai/cucim/pull/339)) [@grlee77](https://github.com/grlee77)
+- Reduce memory overhead and improve performance of normalize_colors_pca ([#328](https://github.com/rapidsai/cucim/pull/328)) [@grlee77](https://github.com/grlee77)
+- Protect against obscure divide by zero error in edge case of `normalize_colors_pca` ([#327](https://github.com/rapidsai/cucim/pull/327)) [@grlee77](https://github.com/grlee77)
+- complete parametrization of cucim.skimage benchmarks ([#324](https://github.com/rapidsai/cucim/pull/324)) [@grlee77](https://github.com/grlee77)
+- parameterization of `filters` and `features` benchmarks (v2) ([#322](https://github.com/rapidsai/cucim/pull/322)) [@grlee77](https://github.com/grlee77)
+- Add a fast histogram-based median filter ([#317](https://github.com/rapidsai/cucim/pull/317)) [@grlee77](https://github.com/grlee77)
+- Remove custom compiler environment variables ([#307](https://github.com/rapidsai/cucim/pull/307)) [@ajschmidt8](https://github.com/ajschmidt8)
 
 # cuCIM 22.06.00 (7 Jun 2022)
 
