@@ -1,40 +1,10 @@
-import functools
 import math
-import numbers
 import os
 
 import cupy
 import numpy as np
 
-from ._pba_2d import _get_block_size
-
-try:
-    # math.lcm was introduced in Python 3.9
-    from math import lcm
-except ImportError:
-
-    """Fallback implementation of least common multiple (lcm)
-
-    TODO: remove once minimum Python requirement is >= 3.9
-    """
-
-    def _lcm(a, b):
-        return abs(b * (a // math.gcd(a, b)))
-
-    @functools.lru_cache()
-    def lcm(*args):
-        nargs = len(args)
-        if not all(isinstance(a, numbers.Integral) for a in args):
-            raise TypeError("all arguments must be integers")
-        if nargs == 0:
-            return 1
-        res = int(args[0])
-        if nargs == 1:
-            return abs(res)
-        for i in range(1, nargs):
-            x = int(args[i])
-            res = _lcm(res, x)
-        return res
+from ._pba_2d import _get_block_size, lcm
 
 
 pba3d_defines_template = """

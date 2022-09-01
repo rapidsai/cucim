@@ -1,7 +1,39 @@
+import functools
 import math
+import numbers
 import os
 
+
 import cupy
+
+try:
+    # math.lcm was introduced in Python 3.9
+    from math import lcm
+except ImportError:
+
+    """Fallback implementation of least common multiple (lcm)
+
+    TODO: remove once minimum Python requirement is >= 3.9
+    """
+
+    def _lcm(a, b):
+        return abs(b * (a // math.gcd(a, b)))
+
+    @functools.lru_cache()
+    def lcm(*args):
+        nargs = len(args)
+        if not all(isinstance(a, numbers.Integral) for a in args):
+            raise TypeError("all arguments must be integers")
+        if nargs == 0:
+            return 1
+        res = int(args[0])
+        if nargs == 1:
+            return abs(res)
+        for i in range(1, nargs):
+            x = int(args[i])
+            res = _lcm(res, x)
+        return res
+
 
 pba2d_defines_template = """
 
@@ -119,27 +151,39 @@ def _pba_2d(arr, sampling=None, return_distances=True, return_indices=False,
         # if len(sampling) != 2:
         #     raise ValueError("sampling must be a sequence of two values.")
 
-    padded_size = math.ceil(max(arr.shape) / block_size) * block_size
     if block_params is None:
-        # should be <= size / 64. sy must be a multiple of m1
-        m1 = max(1, min(padded_size // block_size, 32))
+        padded_size = math.ceil(max(arr.shape) / block_size) * block_size
 
+        # should be <= size / block_size. sy must be a multiple of m1
+        m1 = padded_size // block_size
         # size must be a multiple of m2
-        m2 = max(1, min(padded_size // block_size, 32))
+        m2 = max(1, min(padded_size // block_size, block_size))
         # m2 must also be a power of two
         m2 = 2**math.floor(math.log2(m2))
         if padded_size % m2 != 0:
             raise RuntimeError("error in setting default m2")
-
-        # should be <= 64. texture size must be a multiple of m3
         m3 = min(min(m1, m2), 2)
     else:
+        if any(p < 1 for p in block_params):
+            raise ValueError("(m1, m2, m3) in blockparams must be >= 1")
         m1, m2, m3 = block_params
+        if math.log2(m2) % 1 > 1e-5:
+            raise ValueError("m2 must be a power of 2")
+        multiple = lcm(block_size, m1, m2, m3)
+        padded_size = math.ceil(max(arr.shape) / multiple) * multiple
 
     if m1 > padded_size // block_size:
-        raise ValueError("m1 too large. must be <= arr.shape[0] // 32")
+        raise ValueError(
+            f"m1 too large. must be <= padded arr.shape[0] // {block_size}"
+        )
     if m2 > padded_size // block_size:
-        raise ValueError("m2 too large. must be <= arr.shape[1] // 32")
+        raise ValueError(
+            f"m2 too large. must be <= padded arr.shape[1] // {block_size}"
+        )
+    if m3 > padded_size // block_size:
+        raise ValueError(
+            f"m3 too large. must be <= padded arr.shape[1] // {block_size}"
+        )
     for m in (m1, m2, m3):
         if padded_size % m != 0:
             raise ValueError(
