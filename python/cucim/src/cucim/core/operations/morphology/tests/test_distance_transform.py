@@ -32,7 +32,7 @@ def assert_percentile_equal(arr1, arr2, pct=95):
         ((384, 256), (1.5, 1.5)),
         ((14, 32, 50), None),
         ((50, 32, 24), (2, 2, 2)),
-    ]
+    ],
 )
 @pytest.mark.parametrize('density', [5, 50, 95])
 @pytest.mark.parametrize('block_params', [None, (1, 1, 1)])
@@ -63,6 +63,60 @@ def test_distance_transform_edt(
         cp.testing.assert_allclose(out, expected)
     elif return_indices:
         assert_percentile_equal(out, expected, pct=95)
+
+
+@pytest.mark.parametrize(
+    'shape',
+    (
+        [(s,) * 2 for s in range(512, 512 + 32)]
+        + [(s,) * 2 for s in range(1024, 1024 + 16)]
+        + [(s,) * 2 for s in range(2050, 2050)]
+        + [(s,) * 2 for s in range(4100, 4100)]
+    ),
+)
+@pytest.mark.parametrize('density', [2, 98])
+def test_distance_transform_edt_additional_shapes(shape, density):
+
+    kwargs_scipy = dict(return_distances=True, return_indices=False)
+    kwargs_cucim = copy(kwargs_scipy)
+    img = binary_image(shape, pct_true=density)
+    distances = distance_transform_edt(img, **kwargs_cucim)
+    expected = ndi_cpu.distance_transform_edt(cp.asnumpy(img), **kwargs_scipy)
+    cp.testing.assert_allclose(distances, expected)
+
+
+@pytest.mark.parametrize(
+    'shape',
+    [(s,) * 2 for s in range(1024, 1024 + 4)],
+)
+@pytest.mark.parametrize(
+    'block_params',
+    [(1, 1, 1), (5, 4, 2), (3, 8, 4), (7, 16, 1), (11, 32, 3), (1, 1, 16)]
+)
+def test_distance_transform_edt_block_params(shape, block_params):
+
+    kwargs_scipy = dict(return_distances=True, return_indices=False)
+    kwargs_cucim = copy(kwargs_scipy)
+    kwargs_cucim['block_params'] = block_params
+    img = binary_image(shape, pct_true=4)
+    distances = distance_transform_edt(img, **kwargs_cucim)
+    expected = ndi_cpu.distance_transform_edt(cp.asnumpy(img), **kwargs_scipy)
+    cp.testing.assert_allclose(distances, expected)
+
+
+@pytest.mark.parametrize(
+    'block_params', [
+        (0, 1, 1), (1, 0, 1), (1, 1, 0),  # no elements can be < 1
+        (1, 3, 1), (1, 5, 1), (1, 7, 1),  # 2nd element must be a power of 2
+        (128, 1, 1),  # m1 too large for the array size
+        (1, 128, 1),  # m2 too large for the array size
+        (1, 1, 128),  # m3 too large for the array size
+    ]
+)
+def test_distance_transform_edt_block_params_invalid(block_params):
+    img = binary_image((512, 512), pct_true=4)
+    with pytest.raises(ValueError):
+        distance_transform_edt(img, block_params=block_params)
 
 
 @pytest.mark.parametrize('return_indices', [False, True])
