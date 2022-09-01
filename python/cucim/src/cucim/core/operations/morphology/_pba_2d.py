@@ -154,7 +154,7 @@ def _pba_2d(arr, sampling=None, return_distances=True, return_indices=False,
     if block_params is None:
         padded_size = math.ceil(max(arr.shape) / block_size) * block_size
 
-        # should be <= size / 64. sy must be a multiple of m1
+        # should be <= size / block_size. sy must be a multiple of m1
         m1 = padded_size // block_size
         # size must be a multiple of m2
         m2 = max(1, min(padded_size // block_size, block_size))
@@ -162,23 +162,28 @@ def _pba_2d(arr, sampling=None, return_distances=True, return_indices=False,
         m2 = 2**math.floor(math.log2(m2))
         if padded_size % m2 != 0:
             raise RuntimeError("error in setting default m2")
-        # should be <= 64. image size must be a multiple of m3
         m3 = min(min(m1, m2), 2)
     else:
         if any(p < 1 for p in block_params):
             raise ValueError("(m1, m2, m3) in blockparams must be >= 1")
-        m1, m2, m3 = map(int, block_params)
+        m1, m2, m3 = block_params
         if math.log2(m2) % 1 > 1e-5:
             raise ValueError("m2 must be a power of 2")
         multiple = lcm(block_size, m1, m2, m3)
         padded_size = math.ceil(max(arr.shape) / multiple) * multiple
 
     if m1 > padded_size // block_size:
-        raise ValueError("m1 too large. must be <= arr.shape[0] // 32")
+        raise ValueError(
+            f"m1 too large. must be <= padded arr.shape[0] // {block_size}"
+        )
     if m2 > padded_size // block_size:
-        raise ValueError("m2 too large. must be <= arr.shape[1] // 32")
+        raise ValueError(
+            f"m2 too large. must be <= padded arr.shape[1] // {block_size}"
+        )
     if m3 > padded_size // block_size:
-        raise ValueError("m3 too large. must be <= arr.shape[1] // 32")
+        raise ValueError(
+            f"m3 too large. must be <= padded arr.shape[1] // {block_size}"
+        )
     for m in (m1, m2, m3):
         if padded_size % m != 0:
             raise ValueError(
