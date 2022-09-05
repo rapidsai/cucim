@@ -134,23 +134,30 @@ def encode3d(arr, marker=-2147483648, bit_depth=32, size_max=1024):
     return image
 
 
+def _get_decode3d_code(size_max, int_type=''):
+    # bit shifts here must match those used in the encode3d kernel
+    if size_max > 1024:
+        code = f"""
+        {int_type} x = (encoded >> 40) & 0xfffff;
+        {int_type} y = (encoded >> 20) & 0xfffff;
+        {int_type} z = encoded & 0xfffff;
+        """
+    else:
+        code = f"""
+        {int_type} x = (encoded >> 20) & 0x3ff;
+        {int_type} y = (encoded >> 10) & 0x3ff;
+        {int_type} z = encoded & 0x3ff;
+        """
+    return code
+
+
 @cupy.memoize(for_each_device=True)
 def _get_decode3d_kernel(size_max):
     """Unpack 3 coordinates encoded as a single integer."""
 
-    # bit shifts here must match those used in the encode3d kernel
-    if size_max > 1024:
-        code = """
-        x = (encoded >> 40) & 0xfffff;
-        y = (encoded >> 20) & 0xfffff;
-        z = encoded & 0xfffff;
-        """
-    else:
-        code = """
-        x = (encoded >> 20) & 0x3ff;
-        y = (encoded >> 10) & 0x3ff;
-        z = encoded & 0x3ff;
-        """
+    # int_type = '' here because x, y, z were already allocated externally
+    code = _get_decode3d_code(size_max, int_type='')
+
     return cupy.ElementwiseKernel(
         in_params="E encoded",
         out_params="I x, I y, I z",
@@ -258,20 +265,7 @@ def _get_decode_as_distance_kernel(size_max, large_dist=False):
     int_type = 'int'
 
     # Step 1: decode the (z, y, x) coordinate
-
-    # bit shifts here must match those used in the encode3d kernel
-    if size_max > 1024:
-        code = f"""
-        {int_type} x = (encoded[i] >> 40) & 0xfffff;
-        {int_type} y = (encoded[i] >> 20) & 0xfffff;
-        {int_type} z = encoded[i] & 0xfffff;
-        """
-    else:
-        code = f"""
-        {int_type} x = (encoded[i] >> 20) & 0x3ff;
-        {int_type} y = (encoded[i] >> 10) & 0x3ff;
-        {int_type} z = encoded[i] & 0x3ff;
-        """
+    code = _get_decode3d_code(size_max, int_type=int_type)
 
     # Step 2: compute the Euclidean distance based on this (z, y, x).
     code += _generate_shape(
@@ -281,7 +275,7 @@ def _get_decode_as_distance_kernel(size_max, large_dist=False):
     code += _generate_distance_computation(int_type, dist_int_type)
 
     return cupy.ElementwiseKernel(
-        in_params="raw E encoded",
+        in_params="E encoded",
         out_params="raw F dist",
         operation=code,
         options=('--std=c++11',),
@@ -401,10 +395,7 @@ def _pba_3d(arr, sampling=None, return_distances=True, return_indices=False,
                 size_max=size_max,
                 large_dist=large_dist,
             )
-            encoded = cupy.ascontiguousarray(
-                output[:orig_sz, :orig_sy, :orig_sx]
-            )
-            kern(encoded, dist, size=encoded.size)
+            kern(output[:orig_sz, :orig_sy, :orig_sx], dist)
             return (dist,)
 
     if return_indices:
