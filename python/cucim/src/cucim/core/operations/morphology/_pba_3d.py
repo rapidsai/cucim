@@ -4,7 +4,8 @@ import os
 import cupy
 import numpy as np
 
-from ._pba_2d import _get_block_size, lcm
+from ._pba_2d import _get_block_size, _generate_shape, _generate_indices_ops, lcm
+from cucim.skimage._vendored._ndimage_util import _get_inttype
 
 
 pba3d_defines_template = """
@@ -152,6 +153,50 @@ def _determine_padding(shape, block_size, m1, m2, m3, blockx, blocky):
     return padding_width
 
 
+def _get_distance_kernel_code(int_type, dist_int_type, raw_out_var=True):
+    code = _generate_shape(
+        ndim=3, int_type=int_type, var_name='dist', raw_var=raw_out_var
+    )
+    code += _generate_indices_ops(ndim=3, int_type=int_type)
+    code += f"""
+    {int_type} tmp;
+    {dist_int_type} sq_dist;
+    tmp = z[i] - ind_0;
+    sq_dist = tmp * tmp;
+    tmp = y[i] - ind_1;
+    sq_dist += tmp * tmp;
+    tmp = x[i] - ind_2;
+    sq_dist += tmp * tmp;
+    dist[i] = sqrt(static_cast<F>(sq_dist));
+    """
+    return code
+
+
+def _get_distance_kernel(int_type, dist_int_type):
+    """Returns kernel computing the Euclidean distance from coordinates."""
+    operation = _get_distance_kernel_code(
+        int_type, dist_int_type, raw_out_var=True
+    )
+    return cupy.ElementwiseKernel(
+        in_params="raw I z, raw I y, raw I x",
+        out_params="raw F dist",
+        operation=operation,
+        options=('--std=c++11',),
+    )
+
+
+def _compute_distance_from_coords(x, y, z, x0, y0, z0):
+    tmp = (x - x0)
+    dist = tmp * tmp
+    tmp = (y - y0)
+    dist += tmp * tmp
+    tmp = (z - z0)
+    dist += tmp * tmp
+    dist = dist.astype(cupy.float32)
+    cupy.sqrt(dist, out=dist)
+    return dist
+
+
 def _pba_3d(arr, sampling=None, return_distances=True, return_indices=False,
             block_params=None, check_warp_size=False, *,
             float64_distances=False):
@@ -256,24 +301,19 @@ def _pba_3d(arr, sampling=None, return_distances=True, return_indices=False,
 
     vals = ()
     if return_distances:
-        # TODO: custom kernel for more efficient distance computation
-        orig_shape = (orig_sz, orig_sy, orig_sx)
-        z0, y0, x0 = cupy.meshgrid(
-            *(cupy.arange(s, dtype=cupy.int32) for s in orig_shape),
-            indexing='ij',
-            sparse=True
+        dtype_out = cupy.float64 if float64_distances else cupy.float32
+        dist = cupy.zeros(z.shape, dtype=dtype_out)
+
+        # make sure maximum possible distance doesn't overflow
+        max_possible_dist = sum((s - 1)**2 for s in z.shape)
+        dist_int_type = 'int' if max_possible_dist < 2**31 else 'ptrdiff_t'
+
+        distance_kernel = _get_distance_kernel(
+            int_type=_get_inttype(dist),
+            dist_int_type=dist_int_type,
         )
-        tmp = (x - x0)
-        dist = tmp * tmp
-        tmp = (y - y0)
-        dist += tmp * tmp
-        tmp = (z - z0)
-        dist += tmp * tmp
-        if float64_distances:
-            dist = cupy.sqrt(dist)
-        else:
-            dist = dist.astype(cupy.float32)
-            cupy.sqrt(dist, out=dist)
+        distance_kernel(z, y, x, dist, size=dist.size)
+
         vals = vals + (dist,)
     if return_indices:
         indices = cupy.stack((z, y, x), axis=0)
