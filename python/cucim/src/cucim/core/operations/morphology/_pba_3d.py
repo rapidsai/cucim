@@ -4,7 +4,8 @@ import os
 import cupy
 import numpy as np
 
-from ._pba_2d import _get_block_size, _generate_shape, _generate_indices_ops, lcm
+from ._pba_2d import (_get_block_size, _generate_shape, _generate_indices_ops,
+                      lcm)
 from cucim.skimage._vendored._ndimage_util import _get_inttype
 
 
@@ -81,7 +82,43 @@ def get_pba3d_src(block_size_3d=32, marker=-2147483648, max_int=2147483647,
     return pba3d_code
 
 
-# TODO: custom kernel for encode3d
+@cupy.memoize(for_each_device=True)
+def _get_encode3d_kernel(size_max, marker=-2147483648):
+    """Pack array coordinates into a single integer."""
+    if size_max > 1024:
+        int_type = 'ptrdiff_t'  # int64_t
+    else:
+        int_type = 'int'        # int32_t
+
+    # value must match TOID macro in the C++ code!
+    if size_max > 1024:
+        value = """(((x) << 40) | ((y) << 20) | (z))"""
+    else:
+        value = """(((x) << 20) | ((y) << 10) | (z))"""
+
+    code = f"""
+    if (arr[i]) {{
+        out[i] = {marker};
+    }} else {{
+        {int_type} shape_2 = arr.shape()[2];
+        {int_type} shape_1 = arr.shape()[1];
+        {int_type} _i = i;
+        {int_type} x = _i % shape_2;
+        _i /= shape_2;
+        {int_type} y = _i % shape_1;
+        _i /= shape_1;
+        {int_type} z = _i;
+        out[i] = {value};
+    }}
+    """
+    return cupy.ElementwiseKernel(
+        in_params="raw B arr",
+        out_params="raw I out",
+        operation=code,
+        options=('--std=c++11',),
+    )
+
+
 def encode3d(arr, marker=-2147483648, bit_depth=32, size_max=1024):
     if arr.ndim != 3:
         raise ValueError("only 3d arr suppported")
@@ -92,28 +129,43 @@ def encode3d(arr, marker=-2147483648, bit_depth=32, size_max=1024):
     else:
         dtype = np.int32
     image = cupy.zeros(arr.shape, dtype=dtype, order='C')
-    cond = arr == 0
-    z, y, x = cupy.where(cond)
-    # z, y, x so that x is the contiguous axis
-    # (must match TOID macro in the C++ code!)
-    if size_max > 1024:
-        image[cond] = (((x) << 40) | ((y) << 20) | (z))
-    else:
-        image[cond] = (((x) << 20) | ((y) << 10) | (z))
-    image[arr != 0] = marker  # 1 << 32
+    kern = _get_encode3d_kernel(size_max, marker=marker)
+    kern(arr, image, size=image.size)
     return image
 
 
-# TODO: custom kernel for decode3d
-def decode3d(output, size_max=1024):
+@cupy.memoize(for_each_device=True)
+def _get_decode3d_kernel(size_max):
+    """Unpack 3 coordinates encoded as a single integer."""
+
+    # bit shifts here must match those used in the encode3d kernel
     if size_max > 1024:
-        x = (output >> 40) & 0xfffff
-        y = (output >> 20) & 0xfffff
-        z = output & 0xfffff
+        code = """
+        x = (encoded >> 40) & 0xfffff;
+        y = (encoded >> 20) & 0xfffff;
+        z = encoded & 0xfffff;
+        """
     else:
-        x = (output >> 20) & 0x3ff
-        y = (output >> 10) & 0x3ff
-        z = output & 0x3ff
+        code = """
+        x = (encoded >> 20) & 0x3ff;
+        y = (encoded >> 10) & 0x3ff;
+        z = encoded & 0x3ff;
+        """
+    return cupy.ElementwiseKernel(
+        in_params="E encoded",
+        out_params="I x, I y, I z",
+        operation=code,
+        options=('--std=c++11',),
+    )
+
+
+def decode3d(encoded, size_max=1024):
+    coord_dtype = cupy.int32 if size_max < 2**31 else cupy.int64
+    x = cupy.empty_like(encoded, dtype=coord_dtype)
+    y = cupy.empty_like(x)
+    z = cupy.empty_like(x)
+    kern = _get_decode3d_kernel(size_max)
+    kern(encoded, x, y, z)
     return (x, y, z)
 
 
@@ -172,6 +224,7 @@ def _get_distance_kernel_code(int_type, dist_int_type, raw_out_var=True):
     return code
 
 
+@cupy.memoize(for_each_device=True)
 def _get_distance_kernel(int_type, dist_int_type):
     """Returns kernel computing the Euclidean distance from coordinates."""
     operation = _get_distance_kernel_code(
@@ -183,18 +236,6 @@ def _get_distance_kernel(int_type, dist_int_type):
         operation=operation,
         options=('--std=c++11',),
     )
-
-
-def _compute_distance_from_coords(x, y, z, x0, y0, z0):
-    tmp = (x - x0)
-    dist = tmp * tmp
-    tmp = (y - y0)
-    dist += tmp * tmp
-    tmp = (z - z0)
-    dist += tmp * tmp
-    dist = dist.astype(cupy.float32)
-    cupy.sqrt(dist, out=dist)
-    return dist
 
 
 def _pba_3d(arr, sampling=None, return_distances=True, return_indices=False,

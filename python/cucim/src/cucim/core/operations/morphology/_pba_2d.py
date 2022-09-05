@@ -93,26 +93,50 @@ def _get_block_size(check_warp_size=False):
         return 32
 
 
+@cupy.memoize(for_each_device=True)
+def _get_pack_kernel(int_type, marker=-32768):
+    """Pack coordinates into array of type short2 (or int2).
+
+    This kernel works with 2D input data, `arr` (typically boolean).
+
+    The output array, `out` will be 3D with a signed integer dtype.
+    It will have size 2 on the last axis so that it can be viewed as a CUDA
+    vector type such as `int2` or `float2`.
+    """
+    code = f"""
+    if (arr[i]) {{
+        out[2*i] = {marker};
+        out[2*i + 1] = {marker};
+    }} else {{
+        int shape_1 = arr.shape()[1];
+        int _i = i;
+        int ind_1 = _i % shape_1;
+        _i /= shape_1;
+        out[2*i] = ind_1;   // out.x
+        out[2*i + 1] = _i;  // out.y
+    }}
+    """
+    return cupy.ElementwiseKernel(
+        in_params="raw B arr",
+        out_params="raw I out",
+        operation=code,
+        options=('--std=c++11',),
+    )
+
+
 def _pack_int2(arr, marker=-32768, int_dtype=cupy.int16):
     if arr.ndim != 2:
         raise ValueError("only 2d arr suppported")
-    input_x = cupy.zeros(arr.shape, dtype=int_dtype)
-    input_y = cupy.zeros(arr.shape, dtype=int_dtype)
-    # TODO: create custom kernel for setting values in input_x, input_y
-    cond = arr == 0
-    y, x = cupy.where(cond)
-    input_x[cond] = x
-    mask = arr != 0
-    input_x[mask] = marker  # 1 << 32
-    input_y[cond] = y
-    input_y[mask] = marker  # 1 << 32
     int2_dtype = cupy.dtype({'names': ['x', 'y'], 'formats': [int_dtype] * 2})
-    # in C++ code x is the contiguous axis and corresponds to width
-    #             y is the non-contiguous axis and corresponds to height
-    # given that, store input_x as the last axis here
-    return cupy.squeeze(
-        cupy.stack((input_x, input_y), axis=-1).view(int2_dtype)
+    out = cupy.zeros(arr.shape + (2,), dtype=int_dtype)
+    assert out.size == 2 * arr.size
+    pack_kernel = _get_pack_kernel(
+        int_type='short' if int_dtype == cupy.int16 else 'int',
+        marker=marker
     )
+    pack_kernel(arr, out, size=arr.size)
+    out = cupy.squeeze(out.view(int2_dtype))
+    return out
 
 
 def _unpack_int2(img, make_copy=False, int_dtype=cupy.int16):
@@ -169,6 +193,7 @@ def _get_distance_kernel_code(int_type, dist_int_type, raw_out_var=True):
     return code
 
 
+@cupy.memoize(for_each_device=True)
 def _get_distance_kernel(int_type, dist_int_type):
     """Returns kernel computing the Euclidean distance from coordinates."""
     operation = _get_distance_kernel_code(
@@ -180,7 +205,6 @@ def _get_distance_kernel(int_type, dist_int_type):
         operation=operation,
         options=('--std=c++11',),
     )
-
 
 
 def _pba_2d(arr, sampling=None, return_distances=True, return_indices=False,
