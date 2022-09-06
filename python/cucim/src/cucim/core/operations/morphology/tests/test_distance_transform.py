@@ -30,11 +30,12 @@ def assert_percentile_equal(arr1, arr2, pct=95):
     [
         ((256, 128), None),
         ((384, 256), (1.5, 1.5)),
+        ((384, 256), (2.25, .85)),
         ((14, 32, 50), None),
         ((50, 32, 24), (2, 2, 2)),
     ],
 )
-@pytest.mark.parametrize('density', [5, 50, 95])
+@pytest.mark.parametrize('density', ['single_point', 5, 50, 95])
 @pytest.mark.parametrize('block_params', [None, (1, 1, 1)])
 def test_distance_transform_edt(
     shape, sampling, return_distances, return_indices, density, block_params
@@ -50,19 +51,28 @@ def test_distance_transform_edt(
     )
     kwargs_cucim = copy(kwargs_scipy)
     kwargs_cucim['block_params'] = block_params
-    img = binary_image(shape, pct_true=density)
+    if density == 'single_point':
+        img = cp.ones(shape, dtype=bool)
+        img[tuple(s // 2 for s in shape)] = 0
+    else:
+        img = binary_image(shape, pct_true=density)
+
     out = distance_transform_edt(img, **kwargs_cucim)
     expected = ndi_cpu.distance_transform_edt(cp.asnumpy(img), **kwargs_scipy)
+    if sampling is None:
+        target_pct = 95
+    else:
+        target_pct = 90
     if return_indices and return_distances:
         assert len(out) == 2
-        cp.testing.assert_allclose(out[0], expected[0])
+        cp.testing.assert_allclose(out[0], expected[0], rtol=1e-6)
         # May differ at a small % of coordinates where multiple points were
         # equidistant.
-        assert_percentile_equal(out[1], expected[1], pct=95)
+        assert_percentile_equal(out[1], expected[1], pct=target_pct)
     elif return_distances:
-        cp.testing.assert_allclose(out, expected)
+        cp.testing.assert_allclose(out, expected, rtol=1e-6)
     elif return_indices:
-        assert_percentile_equal(out, expected, pct=95)
+        assert_percentile_equal(out, expected, pct=target_pct)
 
 
 @pytest.mark.parametrize(
@@ -124,12 +134,11 @@ def test_distance_transform_edt_block_params_invalid(block_params):
 @pytest.mark.parametrize(
     'shape, sampling',
     [
-        ((384, 256), (1, 3)),
         ((50, 32, 24), (1, 2, 4)),
     ]
 )
 @pytest.mark.parametrize('density', [5, 50, 95])
-def test_distance_transform_edt_nonuniform_sampling(
+def test_distance_transform_edt_nonuniform_sampling_unsupported(
     shape, sampling, return_distances, return_indices, density
 ):
 

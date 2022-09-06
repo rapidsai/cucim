@@ -148,7 +148,7 @@ def distance_transform_edt(image, sampling=None, return_distances=True,
             "preallocated indices image is not supported"
         )
     scalar_sampling = None
-    if sampling is not None:
+    if image.ndim == 3 and sampling is not None:
         sampling = np.unique(np.atleast_1d(sampling))
         if len(sampling) == 1:
             scalar_sampling = float(sampling)

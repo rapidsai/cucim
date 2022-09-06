@@ -207,6 +207,35 @@ def _get_distance_kernel(int_type, dist_int_type):
     )
 
 
+def _get_aniso_distance_kernel_code(int_type, raw_out_var=True):
+    code = _generate_shape(
+        ndim=2, int_type=int_type, var_name='dist', raw_var=raw_out_var
+    )
+    code += _generate_indices_ops(ndim=2, int_type=int_type)
+    code += f"""
+    F tmp;
+    F sq_dist;
+    tmp = static_cast<F>(y[i] - ind_0) * sampling[0];
+    sq_dist = tmp * tmp;
+    tmp = static_cast<F>(x[i] - ind_1) * sampling[1];
+    sq_dist += tmp * tmp;
+    dist[i] = sqrt(sq_dist);
+    """
+    return code
+
+
+@cupy.memoize(for_each_device=True)
+def _get_aniso_distance_kernel(int_type):
+    """Returns kernel computing the Euclidean distance from coordinates."""
+    operation = _get_aniso_distance_kernel_code(int_type, raw_out_var=True)
+    return cupy.ElementwiseKernel(
+        in_params="raw I y, raw I x, raw F sampling",
+        out_params="raw F dist",
+        operation=operation,
+        options=('--std=c++11',),
+    )
+
+
 def _pba_2d(arr, sampling=None, return_distances=True, return_indices=False,
             block_params=None, check_warp_size=False, *,
             float64_distances=False):
@@ -219,11 +248,6 @@ def _pba_2d(arr, sampling=None, return_distances=True, return_indices=False,
     # Note: could query warp size here, but for now just assume 32 to avoid
     #       overhead of querying properties
     block_size = _get_block_size(check_warp_size)
-
-    if sampling is not None:
-        raise NotImplementedError("sampling not yet supported")
-        # if len(sampling) != 2:
-        #     raise ValueError("sampling must be a sequence of two values.")
 
     if block_params is None:
         padded_size = math.ceil(max(arr.shape) / block_size) * block_size
@@ -306,13 +330,21 @@ def _pba_2d(arr, sampling=None, return_distances=True, return_indices=False,
     kernelFloodUp = pba2d.get_function('kernelFloodUp')
     kernelPropagateInterband = pba2d.get_function('kernelPropagateInterband')
     kernelUpdateVertical = pba2d.get_function('kernelUpdateVertical')
-    kernelProximatePoints = pba2d.get_function('kernelProximatePoints')
     kernelCreateForwardPointers = pba2d.get_function(
         'kernelCreateForwardPointers'
     )
-    kernelMergeBands = pba2d.get_function('kernelMergeBands')
     kernelDoubleToSingleList = pba2d.get_function('kernelDoubleToSingleList')
-    kernelColor = pba2d.get_function('kernelColor')
+
+    if sampling is None:
+        kernelProximatePoints = pba2d.get_function('kernelProximatePoints')
+        kernelMergeBands = pba2d.get_function('kernelMergeBands')
+        kernelColor = pba2d.get_function('kernelColor')
+    else:
+        kernelProximatePoints = pba2d.get_function(
+            'kernelProximatePointsWithSpacing'
+        )
+        kernelMergeBands = pba2d.get_function('kernelMergeBandsWithSpacing')
+        kernelColor = pba2d.get_function('kernelColorWithSpacing')
 
     block = (block_size, 1, 1)
     grid = (math.ceil(size / block[0]), m1, 1)
@@ -347,10 +379,18 @@ def _pba_2d(arr, sampling=None, return_distances=True, return_indices=False,
     block = (block_size, 1, 1)
     grid = (math.ceil(size / block[0]), m2, 1)
     bandSize2 = size // m2
+    if sampling is None:
+        sampling_args = ()
+    else:
+        # Originally the shape is (y, x) and sampling[1] corresponds to y.
+        # However, kernelUpdateVertical transposed the image, so
+        # we are now working with (x, y) instead. Need sampling ordered
+        # accordingly.
+        sampling_args = (sampling[0], sampling[1])
     kernelProximatePoints(
         grid,
         block,
-        (output, input_arr, size, bandSize2),
+        (output, input_arr, size, bandSize2) + sampling_args,
     )
     kernelCreateForwardPointers(
         grid,
@@ -364,7 +404,7 @@ def _pba_2d(arr, sampling=None, return_distances=True, return_indices=False,
         kernelMergeBands(
             grid,
             block,
-            (output, input_arr, input_arr, size, size // noBand),
+            (output, input_arr, input_arr, size, size // noBand) + sampling_args,  # noqa
         )
         noBand //= 2
     # Replace the forward link with the X coordinate of the seed to remove
@@ -382,7 +422,7 @@ def _pba_2d(arr, sampling=None, return_distances=True, return_indices=False,
     kernelColor(
         grid,
         block,
-        (input_arr, output, size),
+        (input_arr, output, size) + sampling_args,
     )
 
     output = _unpack_int2(output, make_copy=False, int_dtype=int_dtype)
@@ -399,11 +439,19 @@ def _pba_2d(arr, sampling=None, return_distances=True, return_indices=False,
         max_possible_dist = sum((s - 1)**2 for s in y.shape)
         dist_int_type = 'int' if max_possible_dist < 2**31 else 'ptrdiff_t'
 
-        distance_kernel = _get_distance_kernel(
-            int_type=_get_inttype(dist),
-            dist_int_type=dist_int_type,
-        )
-        distance_kernel(y, x, dist, size=dist.size)
+        if sampling is None:
+            distance_kernel = _get_distance_kernel(
+                int_type=_get_inttype(dist),
+                dist_int_type=dist_int_type,
+            )
+            distance_kernel(y, x, dist, size=dist.size)
+        else:
+            distance_kernel = _get_aniso_distance_kernel(
+                int_type=_get_inttype(dist),
+            )
+            sampling = cupy.asarray(sampling, dtype=dtype_out)
+            distance_kernel(y, x, sampling, dist, size=dist.size)
+
         vals = vals + (dist,)
     if return_indices:
         indices = cupy.stack((y, x), axis=0)
