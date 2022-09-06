@@ -386,6 +386,7 @@ def _pba_2d(arr, sampling=None, return_distances=True, return_indices=False,
         # However, kernelUpdateVertical transposed the image, so
         # we are now working with (x, y) instead. Need sampling ordered
         # accordingly.
+        sampling = tuple(map(float, sampling))
         sampling_args = (sampling[0], sampling[1])
     kernelProximatePoints(
         grid,

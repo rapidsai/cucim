@@ -147,16 +147,15 @@ def distance_transform_edt(image, sampling=None, return_distances=True,
         raise NotImplementedError(
             "preallocated indices image is not supported"
         )
+
     scalar_sampling = None
-    if image.ndim == 3 and sampling is not None:
-        sampling = np.unique(np.atleast_1d(sampling))
-        if len(sampling) == 1:
-            scalar_sampling = float(sampling)
+    if sampling is not None:
+        unique_sampling = np.unique(np.atleast_1d(sampling))
+        if len(unique_sampling) == 1:
+            # In the isotropic case, can use the kernels without sample scaling
+            # and just adjust the final distance accordingly.
+            scalar_sampling = float(unique_sampling)
             sampling = None
-        else:
-            raise NotImplementedError(
-                "non-uniform values in sampling is not currently supported"
-            )
 
     if image.ndim == 3:
         pba_func = _pba_3d
