@@ -30,15 +30,6 @@ def coords_to_labels(coords):
     return relabel_sequential(labels)[0]
 
 
-def hexstr_to_rgb(hex):
-    """Convert a color specified as a hex strings to a normalized RGB 3-tuple.
-
-    For example, "#8c3bff" -> (0.5490, 0.2314, 1.0)
-    """
-    hex = hex.lstrip("#")
-    return tuple(int(hex[i:i + 2], 16)/255. for i in (0, 2, 4))
-
-
 shape = (200, 200)
 size = math.prod(shape)
 ntrue = .001 * size
@@ -61,13 +52,8 @@ labels = coords_to_labels(coords)
 #       code below for visualizing the colored Voronoi cells has not been
 #       optimized and may run slowly for larger image sizes.
 
-# create a suitable RGB colormap (using method of Glasbey et. al.)
-n_labels = int(labels.max())
-color_list = colorcet.glasbey[:n_labels]
-color_list = [hexstr_to_rgb(c) for c in color_list]
-
-# colorize the labels image
-rgb_labels = label2rgb(labels, colors=color_list)
+# Colorize the labels image, using a suitable categorical colormap
+rgb_labels = label2rgb(labels, colors=colorcet.cm.glasbey.colors)
 
 # copy to host and visualize results
 image, distances, coords, rgb_labels = map(
