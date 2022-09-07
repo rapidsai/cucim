@@ -63,7 +63,7 @@ def _get_constants(ndim, axis, kernel_size, anchor, patch_per_block=None):
     return block, patch_per_block, halo_size
 
 
-def _get_smem_shape(ndim, axis, block, patch_per_block, halo_size, anchor=None,
+def _get_smem_shape(ndim, axis, block, patch_per_block, halo_size,
                     image_dtype=cp.float32):
     bx, by, bz = block
     if ndim == 2:
@@ -128,7 +128,12 @@ def _check_smem_availability(ndim, axis, kernel_size, anchor=None,
         ndim, axis, kernel_size, anchor=anchor, patch_per_block=patch_per_block
     )
     shape, nbytes = _get_smem_shape(
-        ndim, axis, block, patch_per_block, halo_size, image_dtype
+        ndim=ndim,
+        axis=axis,
+        block=block,
+        patch_per_block=patch_per_block,
+        halo_size=halo_size,
+        image_dtype=image_dtype
     )
     props = _get_shmem_limits(device_id=device_id)
     if nbytes > props['shared_block']:
