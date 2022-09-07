@@ -8,6 +8,14 @@ from cucim.skimage._vendored import _internal as internal
 from cucim.skimage._vendored import _ndimage_filters_core as _filters_core
 from cucim.skimage._vendored import _ndimage_util as _util
 
+from cucim.skimage.filters._separable_filtering import (ResourceLimitError,
+                                                        _shmem_convolve1d)
+try:
+    from cupy.cuda.compiler import CompileException
+    compile_errors = (ResourceLimitError, CompileException)
+except ImportError:
+    compile_errors = (ResourceLimitError,)
+
 
 def correlate(input, weights, output=None, mode='reflect', cval=0.0, origin=0):
     """Multi-dimensional correlate.
@@ -194,8 +202,6 @@ def _correlate_or_convolve1d(input, weights, axis, output, mode, cval, origin,
     if mode == 'wrap':
         mode = 'grid-wrap'
     if algorithm == 'shared_memory':
-        from cucim.skimage.filters._separable_filtering import (
-            ResourceLimitError, _shmem_convolve1d)
         if input.ndim not in [2, 3]:
             raise NotImplementedError(
                 f"shared_memory not implemented for ndim={input.ndim}"
@@ -205,7 +211,7 @@ def _correlate_or_convolve1d(input, weights, axis, output, mode, cval, origin,
                                     mode=mode, cval=cval, origin=origin,
                                     convolution=convolution)
             return out
-        except ResourceLimitError:
+        except compile_errors:
             # fallback to elementwise if inadequate shared memory available
             warnings.warn(
                 "Inadequate resources for algorithm='shared_memory: "
