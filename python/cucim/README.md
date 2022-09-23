@@ -27,7 +27,7 @@ pip install scipy scikit-image cupy-cuda110
 
 ### Jupyter Notebooks
 
-Please check out our [Welcome](https://github.com/rapidsai/cucim/blob/branch-22.10/notebooks/Welcome.ipynb) notebook.
+Please check out our [Welcome](https://github.com/rapidsai/cucim/blob/branch-22.12/notebooks/Welcome.ipynb) notebook.
 
 ### Open Image
 
@@ -100,15 +100,15 @@ visualize(region)
 
 Aperio SVS (.svs) image format is supported since cuCIM [v21.10.01](https://github.com/rapidsai/cucim/wiki/release_notes_v21.10.01#support-aperio-svs-svs).
 
-Please check [this notebook](https://nbviewer.org/github/rapidsai/cucim/blob/branch-22.10/notebooks/Supporting_Aperio_SVS_Format.ipynb) to see how to use the feature.
+Please check [this notebook](https://nbviewer.org/github/rapidsai/cucim/blob/branch-22.12/notebooks/Supporting_Aperio_SVS_Format.ipynb) to see how to use the feature.
 
 ### Using Cache
 
-Please look at this [notebook](https://nbviewer.jupyter.org/github/rapidsai/cucim/blob/branch-22.10/notebooks/Using_Cache.ipynb).
+Please look at this [notebook](https://nbviewer.jupyter.org/github/rapidsai/cucim/blob/branch-22.12/notebooks/Using_Cache.ipynb).
 
 ### Accessing File with GDS
 
-Please look at this [notebook](https://nbviewer.jupyter.org/github/rapidsai/cucim/blob/branch-22.10/notebooks/Accessing_File_with_GDS.ipynb).
+Please look at this [notebook](https://nbviewer.jupyter.org/github/rapidsai/cucim/blob/branch-22.12/notebooks/Accessing_File_with_GDS.ipynb).
 
 ### NVTX Support for Performance Analysis
 
