@@ -7,6 +7,7 @@ from .corner import (corner_foerstner, corner_harris, corner_kitchen_rosenfeld,
                      hessian_matrix_det, hessian_matrix_eigvals, shape_index,
                      structure_tensor, structure_tensor_eigenvalues)
 from .peak import peak_local_max
+from .blob import blob_dog, blob_log, blob_doh
 from .template import match_template
 
 
@@ -62,4 +63,7 @@ __all__ = ['canny',
            # 'corner_orientations',
            'match_template',
            'register_translation',
-           'masked_register_translation']
+           'masked_register_translation',
+           'blob_dog',
+           'blob_log',
+           'blob_doh']
