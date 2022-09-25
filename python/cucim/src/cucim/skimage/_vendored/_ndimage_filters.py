@@ -190,7 +190,9 @@ def _correlate_or_convolve1d(input, weights, axis, output, mode, cval, origin,
                              convolution=False, algorithm=None):
     # Calls fast shared-memory convolution when possible, otherwise falls back
     # to the vendored elementwise _correlate_or_convolve
+    default_algorithm = False
     if algorithm is None:
+        default_algorithm = True
         if input.ndim == 2 and weights.size <= 256:
             algorithm = 'shared_memory'
         else:
@@ -213,10 +215,12 @@ def _correlate_or_convolve1d(input, weights, axis, output, mode, cval, origin,
             return out
         except compile_errors:
             # fallback to elementwise if inadequate shared memory available
-            warnings.warn(
-                "Inadequate resources for algorithm='shared_memory: "
-                "falling back to the elementwise implementation"
-            )
+            if not default_algorithm:
+                # only warn if 'shared_memory' was explicitly requested
+                warnings.warn(
+                    "Inadequate resources for algorithm='shared_memory: "
+                    "falling back to the elementwise implementation"
+                )
             algorithm = 'elementwise'
     if algorithm == 'elementwise':
         weights, origins = _filters_core._convert_1d_args(
