@@ -4,9 +4,10 @@ import cupy as cp
 import pytest
 from cupy.testing import assert_almost_equal
 
+from skimage.draw import disk
+from skimage.draw.draw3d import ellipsoid
+
 from cucim.skimage import feature
-from cucim.skimage.draw import disk
-from cucim.skimage.draw.draw3d import ellipsoid
 from cucim.skimage.feature import blob_dog, blob_doh, blob_log
 from cucim.skimage.feature.blob import _blob_overlap
 
@@ -19,13 +20,13 @@ def test_blob_dog(dtype, threshold_type):
     r2 = math.sqrt(2)
     img = cp.ones((512, 512), dtype=dtype)
 
-    xs, ys = disk((400, 130), 5)
+    xs, ys = cp.asarray(disk((400, 130), 5))
     img[xs, ys] = 255
 
-    xs, ys = disk((100, 300), 25)
+    xs, ys = cp.asarray(disk((100, 300), 25))
     img[xs, ys] = 255
 
-    xs, ys = disk((200, 350), 45)
+    xs, ys = cp.asarray(disk((200, 350), 45))
     img[xs, ys] = 255
 
     if threshold_type == 'absolute':
@@ -78,7 +79,7 @@ def test_blob_dog_3d(dtype, threshold_type):
     # Testing 3D
     r = 10
     pad = 10
-    im3 = ellipsoid(r, r, r)
+    im3 = cp.asarray(ellipsoid(r, r, r))
     im3 = cp.pad(im3, pad, mode='constant')
 
     if threshold_type == 'absolute':
@@ -113,7 +114,7 @@ def test_blob_dog_3d_anisotropic(dtype, threshold_type):
     # Testing 3D anisotropic
     r = 10
     pad = 10
-    im3 = ellipsoid(r / 2, r, r)
+    im3 = cp.asarray(ellipsoid(r / 2, r, r))
     im3 = cp.pad(im3, pad, mode='constant')
 
     if threshold_type == 'absolute':
@@ -147,7 +148,7 @@ def test_blob_dog_excl_border():
 
     # image where blob is 5 px from borders, radius 5
     img = cp.ones((512, 512))
-    xs, ys = disk((5, 5), 5)
+    xs, ys = cp.asarray(disk((5, 5), 5))
     img[xs, ys] = 255
     blobs = blob_dog(
         img,
@@ -195,16 +196,16 @@ def test_blob_log(dtype, threshold_type):
     r2 = math.sqrt(2)
     img = cp.ones((256, 256), dtype=dtype)
 
-    xs, ys = disk((200, 65), 5)
+    xs, ys = cp.asarray(disk((200, 65), 5))
     img[xs, ys] = 255
 
-    xs, ys = disk((80, 25), 15)
+    xs, ys = cp.asarray(disk((80, 25), 15))
     img[xs, ys] = 255
 
-    xs, ys = disk((50, 150), 25)
+    xs, ys = cp.asarray(disk((50, 150), 25))
     img[xs, ys] = 255
 
-    xs, ys = disk((100, 175), 30)
+    xs, ys = cp.asarray(disk((100, 175), 30))
     img[xs, ys] = 255
 
     if threshold_type == 'absolute':
@@ -281,10 +282,10 @@ def test_blob_log(dtype, threshold_type):
 def test_blob_log_no_warnings():
     img = cp.ones((11, 11))
 
-    xs, ys = disk((5, 5), 2)
+    xs, ys = cp.asarray(disk((5, 5), 2))
     img[xs, ys] = 255
 
-    xs, ys = disk((7, 6), 2)
+    xs, ys = cp.asarray(disk((7, 6), 2))
     img[xs, ys] = 255
 
     blob_log(img, max_sigma=20, num_sigma=10, threshold=.1)
@@ -294,7 +295,7 @@ def test_blob_log_3d():
     # Testing 3D
     r = 6
     pad = 10
-    im3 = ellipsoid(r, r, r)
+    im3 = cp.asarray(ellipsoid(r, r, r))
     im3 = cp.pad(im3, pad, mode='constant')
 
     blobs = blob_log(im3, min_sigma=3, max_sigma=10)
@@ -311,7 +312,7 @@ def test_blob_log_3d_anisotropic():
     # Testing 3D anisotropic
     r = 6
     pad = 10
-    im3 = ellipsoid(r / 2, r, r)
+    im3 = cp.asarray(ellipsoid(r / 2, r, r))
     im3 = cp.pad(im3, pad, mode='constant')
 
     blobs = blob_log(
@@ -333,7 +334,7 @@ def test_blob_log_3d_anisotropic():
 def test_blob_log_exclude_border():
     # image where blob is 5 px from borders, radius 5
     img = cp.ones((512, 512))
-    xs, ys = disk((5, 5), 5)
+    xs, ys = cp.asarray(disk((5, 5), 5))
     img[xs, ys] = 255
 
     blobs = blob_log(
@@ -360,16 +361,16 @@ def test_blob_log_exclude_border():
 def test_blob_doh(dtype, threshold_type):
     img = cp.ones((512, 512), dtype=dtype)
 
-    xs, ys = disk((400, 130), 20)
+    xs, ys = cp.asarray(disk((400, 130), 20))
     img[xs, ys] = 255
 
-    xs, ys = disk((460, 50), 30)
+    xs, ys = cp.asarray(disk((460, 50), 30))
     img[xs, ys] = 255
 
-    xs, ys = disk((100, 300), 40)
+    xs, ys = cp.asarray(disk((100, 300), 40))
     img[xs, ys] = 255
 
-    xs, ys = disk((200, 350), 50)
+    xs, ys = cp.asarray(disk((200, 350), 50))
     img[xs, ys] = 255
 
     if threshold_type == 'absolute':
@@ -421,16 +422,16 @@ def test_blob_doh(dtype, threshold_type):
 def test_blob_doh_log_scale():
     img = cp.ones((512, 512), dtype=cp.uint8)
 
-    xs, ys = disk((400, 130), 20)
+    xs, ys = cp.asarray(disk((400, 130), 20))
     img[xs, ys] = 255
 
-    xs, ys = disk((460, 50), 30)
+    xs, ys = cp.asarray(disk((460, 50), 30))
     img[xs, ys] = 255
 
-    xs, ys = disk((100, 300), 40)
+    xs, ys = cp.asarray(disk((100, 300), 40))
     img[xs, ys] = 255
 
-    xs, ys = disk((200, 350), 50)
+    xs, ys = cp.asarray(disk((200, 350), 50))
     img[xs, ys] = 255
 
     blobs = blob_doh(
@@ -475,10 +476,10 @@ def test_blob_doh_no_peaks():
 def test_blob_doh_overlap():
     img = cp.ones((256, 256), dtype=cp.uint8)
 
-    xs, ys = disk((100, 100), 20)
+    xs, ys = cp.asarray(disk((100, 100), 20))
     img[xs, ys] = 255
 
-    xs, ys = disk((120, 100), 30)
+    xs, ys = cp.asarray(disk((120, 100), 30))
     img[xs, ys] = 255
 
     blobs = blob_doh(
@@ -495,9 +496,9 @@ def test_blob_doh_overlap():
 def test_blob_log_overlap_3d():
     r1, r2 = 7, 6
     pad1, pad2 = 11, 12
-    blob1 = ellipsoid(r1, r1, r1)
+    blob1 = cp.asarray(ellipsoid(r1, r1, r1))
     blob1 = cp.pad(blob1, pad1, mode='constant')
-    blob2 = ellipsoid(r2, r2, r2)
+    blob2 = cp.asarray(ellipsoid(r2, r2, r2))
     blob2 = cp.pad(blob2, [(pad2, pad2), (pad2 - 9, pad2 + 9),
                            (pad2, pad2)],
                    mode='constant')
@@ -535,9 +536,9 @@ def test_blob_log_anisotropic():
 def test_blob_log_overlap_3d_anisotropic():
     r1, r2 = 7, 6
     pad1, pad2 = 11, 12
-    blob1 = ellipsoid(r1, r1, r1)
+    blob1 = cp.asarray(ellipsoid(r1, r1, r1))
     blob1 = cp.pad(blob1, pad1, mode='constant')
-    blob2 = ellipsoid(r2, r2, r2)
+    blob2 = cp.asarray(ellipsoid(r2, r2, r2))
     blob2 = cp.pad(blob2, [(pad2, pad2), (pad2 - 9, pad2 + 9),
                            (pad2, pad2)],
                    mode='constant')
