@@ -51,8 +51,10 @@ tests:                                 # [linux64]
     - cucim                            # [linux64]
 
 about:
-  home: http://rapids.ai/
+  home: https://developer.nvidia.com/multidimensional-image-processing
   summary: cucim Python package
   license: Apache-2.0
   license_family: Apache
   license_file: LICENSE
+  doc_url: https://docs.rapids.ai/api/cucim/stable/
+  dev_url: https://github.com/rapidsai/cucim
