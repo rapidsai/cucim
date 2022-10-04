@@ -52,7 +52,7 @@ tests:                                 # [linux64]
 
 about:
   home: http://rapids.ai/
+  summary: cucim Python package
   license: Apache-2.0
   license_family: Apache
   license_file: LICENSE
-  summary: cucim Python package

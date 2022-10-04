@@ -45,7 +45,7 @@ requirements:
 
 about:
   home: http://rapids.ai/
+  summary: libcucim C++ library
   license: Apache-2.0
   license_family: Apache
   license_file: LICENSE
-  summary: libcucim C++ library
