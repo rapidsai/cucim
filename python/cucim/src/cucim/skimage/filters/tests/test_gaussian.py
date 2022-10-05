@@ -184,3 +184,15 @@ def test_dog_invalid_sigma2():
         difference_of_gaussians(image, 3, 2)
     with pytest.raises(ValueError):
         difference_of_gaussians(image, (1, 5), (2, 4))
+
+
+@pytest.mark.parametrize(
+    'dtype', [cp.uint8, cp.float16, cp.float32, cp.float64]
+)
+@pytest.mark.parametrize('sigma', range(1, 40, 5))
+def test_shared_mem_check_fix(dtype, sigma):
+    # Verify fix for gh-408 (no compilation errors occur).
+    # Prior to the fix in gh-409, some float64 cases failed.
+    # The exact range that fails depends on the shared memory limit
+    # of the GPU, so we test with a range of sigmas here.
+    gaussian(cp.ones((512, 512), dtype=dtype), sigma=sigma)
