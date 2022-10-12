@@ -138,6 +138,7 @@ def main(args):
         ("white_tophat", dict(), dict(), False, True),
         ("black_tophat", dict(), dict(), False, True),
         # _skeletonize.py
+        ("medial_axis", dict(random_state=123), dict(return_distance=[False, True]), False, False),
         ("thin", dict(), dict(), False, True),
         # grayreconstruct.py
         ("reconstruction", dict(), dict(), False, True),
@@ -149,7 +150,7 @@ def main(args):
             continue
 
         ndim = len(shape)
-        if function_name == 'thin':
+        if function_name in ['thin', 'medial_axis']:
             if ndim != 2:
                 raise ValueError("only 2d benchmark data has been implemented")
 
@@ -263,7 +264,7 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Benchmarking cuCIM morphology functions')
-    func_name_choices = ['binary_erosion', 'binary_dilation', 'binary_opening', 'binary_closing', 'remove_small_objects', 'remove_small_holes', 'erosion', 'dilation', 'opening', 'closing', 'white_tophat', 'black_tophat', 'thin', 'reconstruction']
+    func_name_choices = ['binary_erosion', 'binary_dilation', 'binary_opening', 'binary_closing', 'remove_small_objects', 'remove_small_holes', 'erosion', 'dilation', 'opening', 'closing', 'white_tophat', 'black_tophat', 'thin', 'medial_axis', 'reconstruction']
     dtype_choices = ['float16', 'float32', 'float64', 'int8', 'int16', 'int32', 'int64', 'uint8', 'uint16', 'uint32', 'uint64']
     parser.add_argument('-i','--img_size', type=str, help='Size of input image (omit color channel, it will be appended as needed)', required=True)
     parser.add_argument('-d','--dtype', type=str, help='Dtype of input image', choices = dtype_choices, required=True)

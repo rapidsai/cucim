@@ -1,3 +1,26 @@
+# cuCIM 22.10.00 (12 Oct 2022)
+
+## 🐛 Bug Fixes
+
+- Correctly use dtype when computing shared memory requirements of separable convolution ([#409](https://github.com/rapidsai/cucim/pull/409)) [@grlee77](https://github.com/grlee77)
+- Forward-merge branch-22.08 to branch-22.10 ([#403](https://github.com/rapidsai/cucim/pull/403)) [@jakirkham](https://github.com/jakirkham)
+- Add missing imports of euler_number and perimeter_crofton ([#386](https://github.com/rapidsai/cucim/pull/386)) [@grlee77](https://github.com/grlee77)
+
+## 📖 Documentation
+
+- update pypi CHANGELOG.md for releases 22.08.00 and 22.08.01 ([#404](https://github.com/rapidsai/cucim/pull/404)) [@grlee77](https://github.com/grlee77)
+- Update README.md ([#396](https://github.com/rapidsai/cucim/pull/396)) [@HesAnEasyCoder](https://github.com/HesAnEasyCoder)
+
+## 🚀 New Features
+
+- Allow cupy 11 ([#399](https://github.com/rapidsai/cucim/pull/399)) [@galipremsagar](https://github.com/galipremsagar)
+- Add cucim.skimage.feature.match_descriptors ([#338](https://github.com/rapidsai/cucim/pull/338)) [@grlee77](https://github.com/grlee77)
+
+## 🛠️ Improvements
+
+- Merge docs and add links ([#415](https://github.com/rapidsai/cucim/pull/415)) [@jakirkham](https://github.com/jakirkham)
+- Add benchmarks for scikit-image functions introduced in 22.08 ([#378](https://github.com/rapidsai/cucim/pull/378)) [@grlee77](https://github.com/grlee77)
+
 # cuCIM 22.08.00 (17 Aug 2022)
 
 ## 🚨 Breaking Changes

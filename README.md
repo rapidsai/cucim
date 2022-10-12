@@ -28,6 +28,8 @@ cuCIM supports the following formats:
 - [GTC 2021 cuCIM: A GPU Image I/O and Processing Toolkit [S32194]](https://www.nvidia.com/en-us/on-demand/search/?facet.mimetype[]=event%20session&layout=list&page=1&q=cucim&sort=date)
   - [video](https://www.nvidia.com/en-us/on-demand/session/gtcspring21-s32194/)
 
+**[Developer Page](https://developer.nvidia.com/multidimensional-image-processing)**
+
 **Blogs**
 - [Enhanced Image Analysis with Multidimensional Image Processing](https://developer.nvidia.com/blog/enhanced-image-analysis-with-multidimensional-image-processing/)
 - [Accelerating Scikit-Image API with cuCIM: n-Dimensional Image Processing and IO on GPUs](https://developer.nvidia.com/blog/cucim-rapid-n-dimensional-image-processing-and-i-o-on-gpus/)
@@ -68,7 +70,7 @@ pip install scipy scikit-image cupy-cuda110
 
 ### Notebooks
 
-Please check out our [Welcome](notebooks/Welcome.ipynb) notebook ([NBViewer](https://nbviewer.jupyter.org/github/rapidsai/cucim/blob/branch-22.08/notebooks/Welcome.ipynb))
+Please check out our [Welcome](notebooks/Welcome.ipynb) notebook ([NBViewer](https://nbviewer.jupyter.org/github/rapidsai/cucim/blob/branch-22.10/notebooks/Welcome.ipynb))
 
 #### Downloading sample images
 
@@ -108,4 +110,4 @@ is used in this project.
 
 Apache-2.0 License (see [LICENSE](LICENSE) file).
 
-Copyright (c) 2020-2021, NVIDIA CORPORATION.
+Copyright (c) 2020-2022, NVIDIA CORPORATION.
