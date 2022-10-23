@@ -110,4 +110,4 @@ is used in this project.
 
 Apache-2.0 License (see [LICENSE](LICENSE) file).
 
-Copyright (c) 2020-2021, NVIDIA CORPORATION.
+Copyright (c) 2020-2022, NVIDIA CORPORATION.

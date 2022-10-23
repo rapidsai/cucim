@@ -44,8 +44,10 @@ requirements:
     - libwebp-base  # [linux or osx]
 
 about:
-  home: http://rapids.ai/
+  home: https://developer.nvidia.com/multidimensional-image-processing
+  summary: libcucim C++ library
   license: Apache-2.0
   license_family: Apache
   license_file: LICENSE
-  summary: libcucim C++ library
+  doc_url: https://docs.rapids.ai/api/cucim/stable/
+  dev_url: https://github.com/rapidsai/cucim
