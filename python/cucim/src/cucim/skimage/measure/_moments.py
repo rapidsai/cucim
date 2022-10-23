@@ -4,6 +4,7 @@ import cupy as cp
 import numpy as np
 
 from .._shared.utils import _supported_float_type, check_nD
+from ._moments_analytical import moments_raw_to_central
 
 
 def moments_coords(coords, order=3):
@@ -258,7 +259,10 @@ def moments_central(image, center=None, order=3, **kwargs):
            [ 0.,  0.,  0.,  0.]])
     """
     if center is None:
-        center = centroid(image)
+        # Note: No need for an explicit call to centroid.
+        #       The centroid will be obtained from the raw moments.
+        moments_raw = moments(image, order=order)
+        return moments_raw_to_central(moments_raw)
     float_dtype = _supported_float_type(image.dtype)
     calc = image.astype(float_dtype, copy=False)
     powers = cp.arange(order + 1, dtype=float_dtype)
@@ -341,7 +345,7 @@ def moments_normalized(mu, order=3):
 def moments_hu(nu):
     """Calculate Hu's set of image moments (2D-only).
 
-    Note that this set of moments is proofed to be translation, scale and
+    Note that this set of moments is proved to be translation, scale and
     rotation invariant.
 
     Parameters

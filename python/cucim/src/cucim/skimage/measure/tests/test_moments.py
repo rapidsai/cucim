@@ -1,3 +1,5 @@
+import itertools
+
 import cupy as cp
 import numpy as np
 import pytest
@@ -13,6 +15,41 @@ from cucim.skimage.measure import (centroid, inertia_tensor,
                                    moments_central, moments_coords,
                                    moments_coords_central, moments_hu,
                                    moments_normalized)
+
+
+def compare_moments(m1, m2, thresh=1e-8):
+    """Compare two moments arrays.
+
+    Compares only values in the upper-left triangle of m1, m2 since
+    values below the diagonal exceed the specified order and are not computed
+    when the analytical computation is used.
+
+    Also, there the first-order central moments will be exactly zero with the
+    analytical calculation, but will not be zero due to limited floating point
+    precision when using a numerical computation. Here we just specify the
+    tolerance as a fraction of the maximum absolute value in the moments array.
+    """
+    m1 = cp.asnumpy(m1)
+    m2 = cp.asnumpy(m2)
+
+    # make sure location of any NaN values match and then ignore the NaN values
+    # in the subsequent comparisons
+    nan_idx1 = np.where(np.isnan(m1.ravel()))[0]
+    nan_idx2 = np.where(np.isnan(m2.ravel()))[0]
+    assert len(nan_idx1) == len(nan_idx2)
+    assert np.all(nan_idx1 == nan_idx2)
+    m1[np.isnan(m1)] = 0
+    m2[np.isnan(m2)] = 0
+
+    max_val = np.abs(m1[m1 != 0]).max()
+    for orders in itertools.product(*((range(m1.shape[0]),) * m1.ndim)):
+        if sum(orders) > m1.shape[0] - 1:
+            m1[orders] = 0
+            m2[orders] = 0
+            continue
+        abs_diff = abs(m1[orders] - m2[orders])
+        rel_diff = abs_diff / max_val
+        assert rel_diff < thresh
 
 
 @pytest.mark.parametrize('dtype', [cp.float32, cp.float64])
@@ -41,7 +78,8 @@ def test_moments_central(dtype):
 
     # check for proper centroid computation
     mu_calc_centroid = moments_central(image)
-    assert_array_equal(mu, mu_calc_centroid)
+    thresh = 1e-6 if dtype == np.float32 else 1e-14
+    compare_moments(mu, mu_calc_centroid, thresh=thresh)
 
     # shift image by dx=2, dy=2
     image2 = cp.zeros((20, 20), dtype=dtype)
@@ -52,16 +90,16 @@ def test_moments_central(dtype):
     mu2 = moments_central(image2, (14.5 + 2, 14.5 + 2))
     assert mu2.dtype == dtype
     # central moments must be translation invariant
-    assert_array_equal(mu, mu2)
+    compare_moments(mu, mu2, thresh=thresh)
 
 
 def test_moments_coords():
-    image = cp.zeros((20, 20), dtype=cp.double)
+    image = cp.zeros((20, 20), dtype=cp.float64)
     image[13:17, 13:17] = 1
     mu_image = moments(image)
 
     coords = cp.array([[r, c] for r in range(13, 17)
-                       for c in range(13, 17)], dtype=cp.double)
+                       for c in range(13, 17)], dtype=cp.float64)
     mu_coords = moments_coords(coords)
     assert_array_almost_equal(mu_coords, mu_image)
 
@@ -141,6 +179,32 @@ def test_moments_normalized_3d():
     coords = cp.where(image)
     mu_coords = moments_coords_central(coords)
     assert_array_almost_equal(mu_coords, mu_image)
+
+
+@pytest.mark.parametrize('dtype', [np.uint8, np.int32, np.float32, np.float64])
+@pytest.mark.parametrize('order', [1, 2, 3, 4])
+@pytest.mark.parametrize('ndim', [2, 3, 4])
+def test_analytical_moments_calculation(dtype, order, ndim):
+    if ndim == 2:
+        shape = (256, 256)
+    elif ndim == 3:
+        shape = (64, 64, 64)
+    else:
+        shape = (16, ) * ndim
+    rng = np.random.default_rng(1234)
+    if np.dtype(dtype).kind in 'iu':
+        x = rng.integers(0, 256, shape, dtype=dtype)
+    else:
+        x = rng.standard_normal(shape, dtype=dtype)
+    x = cp.asarray(x)
+    # setting center=None will use the analytical expressions
+    m1 = moments_central(x, center=None, order=order)
+    # providing explicit centroid will bypass the analytical code path
+    m2 = moments_central(x, center=centroid(x), order=order)
+
+    # ensure numeric and analytical central moments are close
+    thresh = 1e-4 if _supported_float_type(x.dtype) == np.float32 else 1e-11
+    compare_moments(m1, m2, thresh=thresh)
 
 
 def test_moments_normalized_invalid():
