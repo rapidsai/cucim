@@ -199,7 +199,8 @@ def moments_raw_to_central(moments_raw):
     if ndim in [2, 3] and order < 4:
         # fast path with analytical GPU kernels
         # (avoids any host/device transfers)
-        return _moments_raw_to_central_fast(moments_raw)
+        moments_central = _moments_raw_to_central_fast(moments_raw)
+        return moments_central.astype(moments_raw.dtype, copy=False)
 
     # Fallback to general formula applied on the host
     m = cp.asnumpy(moments_raw)  # synchronize
