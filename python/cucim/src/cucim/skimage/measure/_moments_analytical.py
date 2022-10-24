@@ -158,7 +158,6 @@ def _moments_raw_to_central_fast(moments_raw):
     """
     ndim = moments_raw.ndim
     order = moments_raw.shape[0] - 1
-    float_dtype = moments_raw.dtype
     # convert to float64 during the computation for better accuracy
     moments_raw = moments_raw.astype(cp.float64, copy=False)
     moments_central = cp.zeros_like(moments_raw)
@@ -166,7 +165,6 @@ def _moments_raw_to_central_fast(moments_raw):
         raise ValueError(
             "This function only supports 2D or 3D moments of order < 4."
         )
-    m = moments_raw
     if ndim == 2:
         if order < 2:
             operation = _order0_or_1
@@ -206,7 +204,7 @@ def moments_raw_to_central(moments_raw):
     m = cp.asnumpy(moments_raw)  # synchronize
     moments_central = np.zeros_like(moments_raw)
     # centers as computed in centroid above
-    centers = tuple(m[tuple(np.eye(ndim, dtype=int))] / m[(0,)*ndim])
+    centers = tuple(m[tuple(np.eye(ndim, dtype=int))] / m[(0,) * ndim])
 
     if ndim == 2:
         # This is the general 2D formula from
@@ -221,7 +219,7 @@ def moments_raw_to_central(moments_raw):
                     for j in range(q + 1):
                         term2 = math.comb(q, j)
                         term2 *= (-centers[1]) ** (q - j)
-                        moments_central[p, q] += term1*term2*m[i, j]
+                        moments_central[p, q] += term1 * term2 * m[i, j]
         return moments_central
 
     # The nested loops below are an n-dimensional extension of the 2D formula

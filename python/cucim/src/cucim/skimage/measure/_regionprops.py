@@ -1,8 +1,7 @@
 import inspect
+import math
 from functools import wraps
-from math import atan2
 from math import pi as PI
-from math import sqrt
 from warnings import warn
 
 import cupy as cp
@@ -16,6 +15,10 @@ from ._regionprops_utils import euler_number, perimeter, perimeter_crofton
 __all__ = ['regionprops', 'euler_number', 'perimeter', 'perimeter_crofton']
 
 
+# All values in this PROPS dict correspond to current scikit-image property
+# names. The keys in this PROPS dict correspond to older names used in prior
+# releases. For backwards compatibility, these older names will continue to
+# work, but will not be documented.
 PROPS = {
     'Area': 'area',
     'BoundingBox': 'bbox',
@@ -85,10 +88,10 @@ PROPS = {
 }
 
 COL_DTYPES = {
-    'area': int,
-    'area_bbox': int,
-    'area_convex': int,
-    'area_filled': int,
+    'area': float,
+    'area_bbox': float,
+    'area_convex': float,
+    'area_filled': float,
     'axis_major_length': float,
     'axis_minor_length': float,
     'bbox': int,
@@ -130,6 +133,19 @@ COL_DTYPES = {
 OBJECT_COLUMNS = [col for col, dtype in COL_DTYPES.items() if dtype == object]
 
 PROP_VALS = set(PROPS.values())
+
+_require_intensity_image = (
+    'image_intensity',
+    'intensity_max',
+    'intensity_mean',
+    'intensity_min',
+    'moments_weighted',
+    'moments_weighted_central',
+    'centroid_weighted',
+    'centroid_weighted_local',
+    'moments_weighted_hu',
+    'moments_weighted_normalized',
+)
 
 
 def _infer_number_of_required_args(func):
@@ -219,8 +235,9 @@ def only2d(method):
     @wraps(method)
     def func2d(self, *args, **kwargs):
         if self._ndim > 2:
-            raise NotImplementedError('Property %s is not implemented for '
-                                      '3D images' % method.__name__)
+            raise NotImplementedError(
+                f"Property {method.__name__} is not implemented for 3D images"
+            )
         return method(self, *args, **kwargs)
     return func2d
 
@@ -228,9 +245,9 @@ def only2d(method):
 def _inertia_eigvals_to_axes_lengths_3D(inertia_tensor_eigvals):
     """Compute ellipsoid axis lengths from inertia tensor eigenvalues.
 
-    Paramters
+    Parameters
     ---------
-    inertia_tensor_eigvals : seqeunce of float
+    inertia_tensor_eigvals : sequence of float
         A sequence of 3 floating point eigenvalues, sorted in descending order.
 
     Returns
@@ -264,7 +281,7 @@ def _inertia_eigvals_to_axes_lengths_3D(inertia_tensor_eigvals):
     for ax in range(2, -1, -1):
         w = sum(v * -1 if i == ax else v
                 for i, v in enumerate(inertia_tensor_eigvals))
-        axis_lengths.append(sqrt(10 * w))
+        axis_lengths.append(math.sqrt(10 * w))
     return axis_lengths
 
 
@@ -274,7 +291,7 @@ class RegionProperties:
     """
 
     def __init__(self, slice, label, label_image, intensity_image,
-                 cache_active, *, extra_properties=None):
+                 cache_active, *, extra_properties=None, spacing=None):
 
         if intensity_image is not None:
             ndim = label_image.ndim
@@ -298,6 +315,11 @@ class RegionProperties:
         self._ndim = label_image.ndim
         self._multichannel = multichannel
         self._spatial_axes = tuple(range(self._ndim))
+        self._spacing = spacing if spacing is not None else (1.,) * self._ndim
+        if isinstance(self._spacing, cp.ndarray):
+            self._pixel_area = cp.product(self._spacing)
+        else:
+            self._pixel_area = math.prod(self._spacing)
 
         self._extra_properties = {}
         if extra_properties is not None:
@@ -315,6 +337,11 @@ class RegionProperties:
             }
 
     def __getattr__(self, attr):
+        if self._intensity_image is None and attr in _require_intensity_image:
+            raise AttributeError(
+                f"Attribute '{attr}' unavailable when `intensity_image` "
+                f"has not been specified."
+            )
         if attr in self._extra_properties:
             func = self._extra_properties[attr]
             n_args = _infer_number_of_required_args(func)
@@ -341,6 +368,14 @@ class RegionProperties:
                     f'be 1 or 2, but {attr} takes {n_args} arguments.'
                 )
         elif attr in PROPS and attr.lower() == attr:
+            if (
+                self._intensity_image is None
+                and PROPS[attr] in _require_intensity_image
+            ):
+                raise AttributeError(
+                    f"Attribute '{attr}' unavailable when `intensity_image` "
+                    f"has not been specified."
+                )
             # retrieve deprecated property (excluding old CamelCase ones)
             return getattr(self, PROPS[attr])
         else:
@@ -356,8 +391,13 @@ class RegionProperties:
 
     @property
     @_cached
+    def num_pixels(self):
+        return np.sum(self.image)
+
+    @property
+    @_cached
     def area(self):
-        return cp.sum(self.image)
+        return cp.sum(self.image) * self._pixel_area
 
     @property
     def bbox(self):
@@ -372,16 +412,16 @@ class RegionProperties:
 
     @property
     def area_bbox(self):
-        return self.image.size
+        return self.image.size * self._pixel_area
 
     @property
     def centroid(self):
-        return tuple(cp.asnumpy(self.coords.mean(axis=0)))
+        return tuple(cp.asnumpy(self.coords_scaled.mean(axis=0)))
 
     @property
     @_cached
     def area_convex(self):
-        return cp.sum(self.image_convex)
+        return cp.sum(self.image_convex) * self._pixel_area
 
     @property
     @_cached
@@ -396,6 +436,12 @@ class RegionProperties:
             cp.uint8)
 
     @property
+    def coords_scaled(self):
+        indices = cp.nonzero(self.image)
+        return cp.vstack([(indices[i] + self.slice[i].start) * s
+                          for i, s in zip(range(self._ndim), self._spacing)]).T
+
+    @property
     def coords(self):
         indices = cp.nonzero(self.image)
         return cp.vstack([indices[i] + self.slice[i].start
@@ -407,12 +453,12 @@ class RegionProperties:
         l1, l2 = self.inertia_tensor_eigvals
         if l1 == 0:
             return 0
-        return sqrt(1 - l2 / l1)
+        return math.sqrt(1 - l2 / l1)
 
     @property
     def equivalent_diameter_area(self):
         if self._ndim == 2:
-            return sqrt(4 * self.area / PI)
+            return math.sqrt(4 * self.area / PI)
         return (2 * self._ndim * self.area / PI) ** (1 / self._ndim)
 
     @property
@@ -424,7 +470,7 @@ class RegionProperties:
 
     @property
     def extent(self):
-        return self.area / self.image.size
+        return self.area / self.area_bbox
 
     @property
     def feret_diameter_max(self):
@@ -443,12 +489,12 @@ class RegionProperties:
         elif self._ndim == 3:
             coordinates, _, _, _ = marching_cubes(identity_convex_hull,
                                                   level=0.5)
-        distances = pdist(coordinates, 'sqeuclidean')
-        return sqrt(np.max(distances))
+        distances = pdist(coordinates * self._spacing, 'sqeuclidean')
+        return math.sqrt(np.max(distances))
 
     @property
     def area_filled(self):
-        return cp.sum(self.image_filled)
+        return cp.sum(self.image_filled) * self._pixel_area
 
     @property
     @_cached
@@ -465,7 +511,7 @@ class RegionProperties:
     @_cached
     def inertia_tensor(self):
         mu = self.moments_central
-        return _moments.inertia_tensor(self.image, mu)
+        return _moments.inertia_tensor(self.image, mu, spacing=self._spacing)
 
     @property
     @_cached
@@ -512,11 +558,11 @@ class RegionProperties:
     def axis_major_length(self):
         if self._ndim == 2:
             l1 = self.inertia_tensor_eigvals[0]
-            return 4 * sqrt(l1)
+            return 4 * math.sqrt(l1)
         elif self._ndim == 3:
             # equivalent to _inertia_eigvals_to_axes_lengths_3D(ev)[0]
             ev = self.inertia_tensor_eigvals
-            return sqrt(10 * (ev[0] + ev[1] - ev[2]))
+            return math.sqrt(10 * (ev[0] + ev[1] - ev[2]))
         else:
             raise ValueError("axis_major_length only available in 2D and 3D")
 
@@ -524,36 +570,39 @@ class RegionProperties:
     def axis_minor_length(self):
         if self._ndim == 2:
             l2 = self.inertia_tensor_eigvals[-1]
-            return 4 * sqrt(l2)
+            return 4 * math.sqrt(l2)
         elif self._ndim == 3:
             # equivalent to _inertia_eigvals_to_axes_lengths_3D(ev)[-1]
             ev = self.inertia_tensor_eigvals
-            return sqrt(10 * (-ev[0] + ev[1] + ev[2]))
+            return math.sqrt(10 * (-ev[0] + ev[1] + ev[2]))
         else:
             raise ValueError("axis_minor_length only available in 2D and 3D")
 
     @property
     @_cached
     def moments(self):
-        M = _moments.moments(self.image.astype(cp.uint8), 3)
+        M = _moments.moments(self.image.astype(cp.uint8), 3, spacing=self._spacing)
         return M
 
     @property
     @_cached
     def moments_central(self):
         mu = _moments.moments_central(self.image.astype(cp.uint8),
-                                      self.centroid_local, order=3)
+                                      self.centroid_local, order=3, spacing=self._spacing)
         return mu
 
     @property
     @only2d
     def moments_hu(self):
+        if any(s != 1.0 for s in self._spacing):
+            raise NotImplementedError('`moments_hu` supports spacing = (1, 1) only')
         return _moments.moments_hu(self.moments_normalized)
 
     @property
     @_cached
     def moments_normalized(self):
-        return _moments.moments_normalized(self.moments_central, 3)
+        return _moments.moments_normalized(self.moments_central, 3,
+                                           spacing=self._spacing)
 
     @property
     @only2d
@@ -565,17 +614,21 @@ class RegionProperties:
             else:
                 return PI / 4.0
         else:
-            return 0.5 * atan2(-2 * b, c - a)
+            return 0.5 * math.atan2(-2 * b, c - a)
 
     @property
     @only2d
     def perimeter(self):
-        return perimeter(self.image, 4)
+        if len(np.unique(self._spacing)) != 1:
+            raise NotImplementedError('`perimeter` supports isotropic spacings only')
+        return perimeter(self.image, 4) * self._spacing[0]
 
     @property
     @only2d
     def perimeter_crofton(self):
-        return perimeter_crofton(self.image, 4)
+        if len(np.unique(self._spacing)) != 1:
+            raise NotImplementedError('`perimeter` supports isotropic spacings only')
+        return perimeter_crofton(self.image, 4) * self._spacing[0]
 
     @property
     def solidity(self):
@@ -599,12 +652,12 @@ class RegionProperties:
         image = self._image_intensity_double()
         if self._multichannel:
             moments = cp.stack(
-                [_moments.moments(image[..., i], order=3)
+                [_moments.moments(image[..., i], order=3, spacing=self._spacing)
                     for i in range(image.shape[-1])],
-                axis=-1
+                axis=-1,
             )
         else:
-            moments = _moments.moments(image, order=3)
+            moments = _moments.moments(image, order=3, spacing=self._spacing)
         return moments
 
     @property
@@ -615,19 +668,21 @@ class RegionProperties:
         if self._multichannel:
             moments_list = [
                 _moments.moments_central(
-                    image[..., i], center=ctr[..., i], order=3
+                    image[..., i], center=ctr[..., i], order=3, spacing=self._spacing
                 )
                 for i in range(image.shape[-1])
             ]
             moments = cp.stack(moments_list, axis=-1)
         else:
-            moments = _moments.moments_central(image, ctr, order=3)
+            moments = _moments.moments_central(image, ctr, order=3, spacing=self._spacing)
         return moments
 
     @property
     @only2d
     def moments_weighted_hu(self):
-        nu = self.weighted_moments_normalized
+        if not (np.array(self._spacing) == np.array([1, 1])).all():
+            raise NotImplementedError('`moments_hu` supports spacing = (1, 1) only')
+        nu = self.moments_weighted_normalized
         if self._multichannel:
             nchannels = self._intensity_image.shape[-1]
             return cp.stack(
@@ -644,29 +699,22 @@ class RegionProperties:
         if self._multichannel:
             nchannels = self._intensity_image.shape[-1]
             return cp.stack(
-                [_moments.moments_normalized(mu[..., i], order=3)
+                [_moments.moments_normalized(mu[..., i], order=3,
+                                             spacing=self._spacing)
                  for i in range(nchannels)],
                 axis=-1,
             )
         else:
-            return _moments.moments_normalized(mu, order=3)
-        return _moments.moments_normalized(self.moments_weighted_central, 3)
+            return _moments.moments_normalized(mu, order=3,
+                                               spacing=self._spacing)
+        return _moments.moments_normalized(self.moments_weighted_central, 3,
+                                           spacing=self._spacing)
 
     def __iter__(self):
         props = PROP_VALS
 
         if self._intensity_image is None:
-            unavailable_props = ('image_intensity',
-                                 'intensity_max',
-                                 'intensity_mean',
-                                 'intensity_min',
-                                 'moments_weighted',
-                                 'moments_weighted_central',
-                                 'centroid_weighted',
-                                 'centroid_weighted_local',
-                                 'moments_weighted_hu',
-                                 'moments_weighted_normalized')
-
+            unavailable_props = _require_intensity_image
             props = props.difference(unavailable_props)
 
         return iter(sorted(props))
@@ -860,7 +908,7 @@ def _props_to_dict(regions, properties=('label', 'bbox'), separator='-'):
 def regionprops_table(label_image, intensity_image=None,
                       properties=('label', 'bbox'),
                       *,
-                      cache=True, separator='-', extra_properties=None):
+                      cache=True, separator='-', extra_properties=None, spacing=None):
     """Compute image properties and return them as a pandas-compatible table.
 
     The table is a dictionary mapping column names to value arrays. See Notes
@@ -905,10 +953,12 @@ def regionprops_table(label_image, intensity_image=None,
         skimage. The name of the property is derived from the function name,
         the dtype is inferred by calling the function on a small sample.
         If the name of an extra property clashes with the name of an existing
-        property the extra property wil not be visible and a UserWarning is
+        property the extra property will not be visible and a UserWarning is
         issued. A property computation function must take a region mask as its
         first argument. If the property requires an intensity image, it must
         accept the intensity image as the second argument.
+    spacing: tuple of float, shape (ndim, )
+        The pixel spacing along each axis of the image.
 
     Returns
     -------
@@ -994,7 +1044,7 @@ def regionprops_table(label_image, intensity_image=None,
 
     """
     regions = regionprops(label_image, intensity_image=intensity_image,
-                          cache=cache, extra_properties=extra_properties)
+                          cache=cache, extra_properties=extra_properties, spacing=spacing)
     if extra_properties is not None:
         properties = (
             list(properties) + [prop.__name__ for prop in extra_properties]
@@ -1010,7 +1060,7 @@ def regionprops_table(label_image, intensity_image=None,
                 dtype=intensity_image.dtype,
             )
         regions = regionprops(label_image, intensity_image=intensity_image,
-                              cache=cache, extra_properties=extra_properties)
+                              cache=cache, extra_properties=extra_properties, spacing=spacing)
 
         out_d = _props_to_dict(regions, properties=properties,
                                separator=separator)
@@ -1022,7 +1072,7 @@ def regionprops_table(label_image, intensity_image=None,
 
 
 def regionprops(label_image, intensity_image=None, cache=True,
-                coordinates=None, *, extra_properties=None):
+                coordinates=None, *, extra_properties=None, spacing=None):
     r"""Measure properties of labeled image regions.
 
     Parameters
@@ -1067,10 +1117,12 @@ def regionprops(label_image, intensity_image=None, cache=True,
         skimage. The name of the property is derived from the function name,
         the dtype is inferred by calling the function on a small sample.
         If the name of an extra property clashes with the name of an existing
-        property the extra property wil not be visible and a UserWarning is
+        property the extra property will not be visible and a UserWarning is
         issued. A property computation function must take a region mask as its
         first argument. If the property requires an intensity image, it must
         accept the intensity image as the second argument.
+    spacing: tuple of float, shape (ndim, )
+        The pixel spacing along each axis of the image.
 
     Returns
     -------
@@ -1082,16 +1134,17 @@ def regionprops(label_image, intensity_image=None, cache=True,
     -----
     The following properties can be accessed as attributes or keys:
 
-    **area** : int
-        Number of pixels of the region.
-    **area_bbox** : int
-        Number of pixels of bounding box.
-    **area_convex** : int
-        Number of pixels of convex hull image, which is the smallest convex
+    **num_pixels** : int
+        Number of foreground pixels.
+    **area** : float
+        Area of the region i.e. number of pixels of the region scaled by pixel-area.
+    **area_bbox** : float
+        Area of the bounding box i.e. number of pixels of bounding box scaled by pixel-area.
+    **area_convex** : float
+        Are of the convex hull image, which is the smallest convex
         polygon that encloses the region.
-    **area_filled** : int
-        Number of pixels of the region will all the holes filled in. Describes
-        the area of the image_filled.
+    **area_filled** : float
+        Area of the region with all the holes filled in.
     **axis_major_length** : float
         The length of the major axis of the ellipse that has the same
         normalized second central moments as the region.
@@ -1113,6 +1166,8 @@ def regionprops(label_image, intensity_image=None, cache=True,
     **centroid_weighted_local** : array
         Centroid coordinate tuple ``(row, col)``, relative to region bounding
         box, weighted with intensity image.
+    **coords_scaled** : (N, 2) ndarray
+        Coordinate list ``(row, col)``of the region scaled by ``spacing``.
     **coords** : (N, 2) ndarray
         Coordinate list ``(row, col)`` of the region.
     **eccentricity** : float
@@ -1313,7 +1368,7 @@ def regionprops(label_image, intensity_image=None, cache=True,
         label = i + 1
 
         props = RegionProperties(sl, label, label_image, intensity_image,
-                                 cache, extra_properties=extra_properties)
+                                 cache, spacing=spacing, extra_properties=extra_properties)
         regions.append(props)
 
     return regions
