@@ -281,6 +281,63 @@ def moments_central(image, center=None, order=3, *, spacing=None, **kwargs):
     return calc
 
 
+def _get_moments_norm_operation(ndim, order, unit_scale=True):
+    """Full normalization computation kernel for 2D or 3D cases.
+
+    Variants with or without scaling are provided.
+    """
+    operation = f"""
+        double mu0 = static_cast<double>(mu[0]);
+        double ndim = {ndim};
+        int _i = i;
+        int coord_i;
+        int order_of_current_index = 0;
+        int n_rows = order + 1;
+        double denom;
+    """
+
+    if not unit_scale:
+        operation += """
+        double s_pow;"""
+
+    operation += f"""
+        for (int d=0; d<{ndim}; d++)"""
+    operation += """
+        {
+            // This loop computes the coordinate index along each axis of the
+            // matrix in turn and sums them up to get the order of the moment
+            // at the current index in mu.
+            coord_i = _i % n_rows;
+            _i /= n_rows;
+            order_of_current_index += coord_i;
+        }
+        if ((order_of_current_index > order) || (order_of_current_index < 2))
+        {
+            continue;
+        }
+    """
+    if unit_scale:
+        operation += """
+        denom = pow(mu0, static_cast<double>(order_of_current_index) / ndim + 1);
+        nu = mu[i] / denom;"""
+    else:
+        operation += """
+        s_pow = pow(scale, static_cast<double>(order_of_current_index));
+        denom = pow(mu0, static_cast<double>(order_of_current_index) / ndim + 1);
+        nu = (mu[i] / s_pow) / denom;"""
+    return operation
+
+
+@cp.memoize()
+def _get_normalize_kernel(ndim, order, unit_scale=True):
+    return cp.ElementwiseKernel(
+        'raw F mu, int32 order, float64 scale',
+        'F nu',
+        operation=_get_moments_norm_operation(ndim, order, unit_scale),
+        name=f"moments_normmalize_2d_kernel"
+    )
+
+
 def moments_normalized(mu, order=3, spacing=None):
     """Calculate all normalized central image moments up to a certain order.
 
@@ -311,12 +368,6 @@ def moments_normalized(mu, order=3, spacing=None):
            Berlin, 1993.
     .. [4] https://en.wikipedia.org/wiki/Image_moment
 
-    Notes
-    -----
-    Due to the small array sizes, this function should be faster on the CPU.
-    Consider transfering ``mu`` to the host and running
-    ``skimage.measure.moments_normalized``.
-
     Examples
     --------
     >>> import cupy as cp
@@ -342,20 +393,12 @@ def moments_normalized(mu, order=3, spacing=None):
             scale = spacing.min()
         else:
             scale = min(spacing)
-    # CuPy Backend: For the tiny mu and nu arrays, it is faster to run this
-    #               computation on the host and then transfer back to the GPU.
-    mu = cp.asnumpy(mu)
-    nu = np.zeros_like(mu)
-    mu0 = mu.ravel()[0]
-    for powers in itertools.product(range(order + 1), repeat=mu.ndim):
-        if sum(powers) < 2:
-            nu[powers] = cp.nan
-        elif scale != 1.0:
-            nu[powers] = ((mu[powers] / scale ** sum(powers))
-                          / (mu0 ** (sum(powers) / nu.ndim + 1)))
-        else:
-            nu[powers] = mu[powers] / (mu0 ** (sum(powers) / nu.ndim + 1))
-    return cp.array(nu)
+    # compute using in a single kernel for the 2D or 3D cases
+    unit_scale = scale == 1.0
+    kernel = _get_normalize_kernel(mu.ndim, order, unit_scale)
+    nu = cp.full(mu.shape, cp.nan, dtype=mu.dtype)
+    kernel(mu, order, scale, nu)
+    return nu
 
 
 def moments_hu(nu):
