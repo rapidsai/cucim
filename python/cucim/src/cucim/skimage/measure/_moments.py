@@ -221,9 +221,9 @@ def moments(image, order=3, *, spacing=None):
         else:
             delta = _delta[:dim_length] * spacing[dim]
             powers_of_delta = delta ** powers
-        calc = cp.rollaxis(calc, dim, image.ndim)
+        calc = cp.moveaxis(calc, source=dim, destination=-1)
         calc = cp.dot(calc, powers_of_delta)
-        calc = cp.rollaxis(calc, -1, dim)
+        calc = cp.moveaxis(calc, source=-1, destination=dim)
     return calc
 
 
@@ -292,9 +292,9 @@ def moments_central(image, center=None, order=3, *, spacing=None, **kwargs):
     for dim, dim_length in enumerate(image.shape):
         delta = _delta[:dim_length] * spacing[dim] - center[dim]
         powers_of_delta = delta ** powers
-        calc = cp.rollaxis(calc, dim, image.ndim)
+        calc = cp.moveaxis(calc, source=dim, destination=-1)
         calc = cp.dot(calc, powers_of_delta)
-        calc = cp.rollaxis(calc, -1, dim)
+        calc = cp.moveaxis(calc, source=-1, destination=dim)
     return calc
 
 
