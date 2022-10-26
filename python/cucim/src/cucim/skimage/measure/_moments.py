@@ -208,7 +208,23 @@ def moments(image, order=3, *, spacing=None):
     >>> centroid
     (array(14.5), array(14.5))
     """
-    return moments_central(image, (0,) * image.ndim, order=order, spacing=spacing)
+    float_dtype = _supported_float_type(image.dtype)
+    calc = image.astype(float_dtype, copy=False)
+    powers = cp.arange(order + 1, dtype=float_dtype)
+    _delta = cp.arange(max(image.shape), dtype=float_dtype)[:, cp.newaxis]
+    if spacing is None:
+        # when spacing is not used can compute the powers outside the loop
+        _powers_of_delta = _delta ** powers
+    for dim, dim_length in enumerate(image.shape):
+        if spacing is None:
+            powers_of_delta = _powers_of_delta[:dim_length]
+        else:
+            delta = _delta[:dim_length] * spacing[dim]
+            powers_of_delta = delta ** powers
+        calc = cp.rollaxis(calc, dim, image.ndim)
+        calc = cp.dot(calc, powers_of_delta)
+        calc = cp.rollaxis(calc, -1, dim)
+    return calc
 
 
 def moments_central(image, center=None, order=3, *, spacing=None, **kwargs):
@@ -272,9 +288,10 @@ def moments_central(image, center=None, order=3, *, spacing=None, **kwargs):
     float_dtype = _supported_float_type(image.dtype)
     calc = image.astype(float_dtype, copy=False)
     powers = cp.arange(order + 1, dtype=float_dtype)
+    _delta = cp.arange(max(image.shape), dtype=float_dtype)[:, cp.newaxis]
     for dim, dim_length in enumerate(image.shape):
-        delta = cp.arange(dim_length, dtype=float_dtype) * spacing[dim] - center[dim]
-        powers_of_delta = delta[:, cp.newaxis] ** powers
+        delta = _delta[:dim_length] * spacing[dim] - center[dim]
+        powers_of_delta = delta ** powers
         calc = cp.rollaxis(calc, dim, image.ndim)
         calc = cp.dot(calc, powers_of_delta)
         calc = cp.rollaxis(calc, -1, dim)
