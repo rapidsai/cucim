@@ -498,18 +498,17 @@ def centroid(image, *, spacing=None):
     --------
     >>> import cupy as cp
     >>> from cucim.skimage.measure import centroid
-    >>> image = cp.zeros((20, 20), dtype=np.float64)
+    >>> image = cp.zeros((20, 20), dtype=cp.float64)
     >>> image[13:17, 13:17] = 0.5
     >>> image[10:12, 10:12] = 1
     >>> centroid(image)
     array([13.16666667, 13.16666667])
     """
-    M = moments_central(image, center=(0,) * image.ndim, order=1, spacing=spacing)
-    center = (
-        M[tuple(cp.eye(image.ndim, dtype=int))]  # array of weighted sums
-        # for each axis
-        / M[(0,) * image.ndim]
-    )  # weighted sum of all points
+    mu = moments(image, order=1, spacing=spacing)
+    ndim = image.ndim
+    mu0 = mu[(0,) * ndim]
+    center = mu[tuple((0,)*dim + (1,) + (0,)*(ndim - dim - 1) for dim in range(ndim))]
+    center /= mu0
     return center
 
 
