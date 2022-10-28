@@ -189,14 +189,16 @@ def test_2d_cropped_camera_image(dtype):
     zeros = cp.zeros((100, 100))
     ones = cp.ones((100, 100))
 
+    tol = 1e-7 if dtype == 'float64' else 1e-5
+
     assert_allclose(meijering(a_black, black_ridges=True),
-                    meijering(a_white, black_ridges=False))
+                    meijering(a_white, black_ridges=False), atol=tol, rtol=tol)
 
     assert_allclose(sato(a_black, black_ridges=True, mode='reflect'),
-                    sato(a_white, black_ridges=False, mode='reflect'))
+                    sato(a_white, black_ridges=False, mode='reflect'), atol=tol, rtol=tol)
 
-    assert_allclose(frangi(a_black, black_ridges=True), zeros, atol=1e-3)
-    assert_allclose(frangi(a_white, black_ridges=False), zeros, atol=1e-3)
+    assert_allclose(frangi(a_black, black_ridges=True),
+                    frangi(a_white, black_ridges=False), atol=tol, rtol=tol)
 
     assert_allclose(hessian(a_black, black_ridges=True, mode='reflect'),
                     ones, atol=1 - 1e-7)
@@ -223,16 +225,17 @@ def test_3d_cropped_camera_image(dtype):
 
     zeros = cp.zeros((100, 100, 3))
     ones = cp.ones((100, 100, 3))
+    tol = 1e-7 if dtype == 'float64' else 4e-4
 
     # TODO: determine why the following allclose checks occassionally fail
     assert_allclose(meijering(a_black, black_ridges=True),
-                    meijering(a_white, black_ridges=False))
+                    meijering(a_white, black_ridges=False), atol=tol, rtol=tol)
 
     assert_allclose(sato(a_black, black_ridges=True, mode='reflect'),
-                    sato(a_white, black_ridges=False, mode='reflect'))
+                    sato(a_white, black_ridges=False, mode='reflect'), atol=tol, rtol=tol)
 
-    assert_allclose(frangi(a_black, black_ridges=True), zeros, atol=1e-3)
-    assert_allclose(frangi(a_white, black_ridges=False), zeros, atol=1e-3)
+    assert_allclose(frangi(a_black, black_ridges=True),
+                    frangi(a_white, black_ridges=False), atol=tol, rtol=tol)
 
     assert_allclose(hessian(a_black, black_ridges=True, mode='reflect'),
                     ones, atol=1 - 1e-7)
@@ -240,9 +243,9 @@ def test_3d_cropped_camera_image(dtype):
                     ones, atol=1 - 1e-7)
 
 
-@pytest.mark.parametrize('func, tol', [(frangi, 1e-7),
-                                       (meijering, 2e-2),
-                                       (sato, 1e-3),
+@pytest.mark.parametrize('func, tol', [(frangi, 1e-2),
+                                       (meijering, 1e-2),
+                                       (sato, 2e-3),
                                        (hessian, 2e-2)])
 def test_border_management(func, tol):
     img = rgb2gray(cp.array(retina()[300:500, 700:900]))
