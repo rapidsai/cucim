@@ -518,6 +518,13 @@ def shape_index(image, sigma=1, mode="constant", cval=0):
         return (2.0 / np.pi) * np.arctan((l2 + l1) / (l2 - l1))
 
 
+@cp.fuse()
+def _kitchen_rosenfeld_inner(imx, imy, imxx, imxy, imyy):
+    numerator = imxx * imy ** 2 + imyy * imx ** 2 - 2 * imxy * imx * imy
+    denominator = imx ** 2 + imy ** 2
+    return numerator, denominator
+
+
 def corner_kitchen_rosenfeld(image, mode="constant", cval=0):
     """Compute Kitchen and Rosenfeld corner measure response image.
 
@@ -556,29 +563,33 @@ def corner_kitchen_rosenfeld(image, mode="constant", cval=0):
 
     imy, imx = _compute_derivatives(image, mode=mode, cval=cval)
     imxy, imxx = _compute_derivatives(imx, mode=mode, cval=cval)
-    imyy, imyx = _compute_derivatives(imy, mode=mode, cval=cval)
+    imyy, _ = _compute_derivatives(imy, mode=mode, cval=cval)
 
-    # numerator = imxx * imy ** 2 + imyy * imx ** 2 - 2 * imxy * imx * imy
-    numerator = imxx * imy
-    numerator *= imy
-    tmp = imyy * imx
-    tmp *= imx
-    numerator += tmp
-    tmp = 2 * imxy
-    tmp *= imx
-    tmp *= imy
-    numerator -= tmp
-
-    # denominator = imx ** 2 + imy ** 2
-    denominator = imx * imx
-    denominator += imy * imy
-
+    numerator, denominator = _kitchen_rosenfeld_inner(imx, imy, imxx, imxy, imyy)
     response = cp.zeros_like(image, dtype=float_dtype)
 
     mask = denominator != 0
     response[mask] = numerator[mask] / denominator[mask]
 
     return response
+
+
+@cp.fuse
+def _corner_harris_inner_k(Arr, Acc, Arc, k):
+    # determinant
+    detA = Arr * Acc - Arc * Arc
+    # trace
+    traceA = Arr + Acc
+    return detA - k * traceA * traceA
+
+
+@cp.fuse
+def _corner_harris_inner(Arr, Acc, Arc, eps):
+    # determinant
+    detA = Arr * Acc - Arc * Arc
+    # trace
+    traceA = Arr + Acc
+    return 2 * detA / (traceA + eps)
 
 
 def corner_harris(image, method="k", k=0.05, eps=1e-6, sigma=1):
@@ -645,21 +656,17 @@ def corner_harris(image, method="k", k=0.05, eps=1e-6, sigma=1):
            [7, 7]])
 
     """
-
     Arr, Arc, Acc = structure_tensor(image, sigma, order="rc")
-
-    # determinant
-    detA = Arr * Acc
-    detA -= Arc * Arc
-    # trace
-    traceA = Arr + Acc
-
     if method == "k":
-        response = detA - k * traceA * traceA
+        response = _corner_harris_inner_k(Arr, Acc, Arc, k)
     else:
-        response = 2 * detA / (traceA + eps)
-
+        response = _corner_harris_inner_k(Arr, Acc, Arc, eps)
     return response
+
+
+@cp.fuse()
+def _shi_tomasi_fused(Arr, Acc, Arc):
+    return ((Arr + Acc) - cp.sqrt((Arr - Acc) ** 2 + 4 * Arc ** 2)) / 2
 
 
 def corner_shi_tomasi(image, sigma=1):
@@ -716,23 +723,26 @@ def corner_shi_tomasi(image, sigma=1):
            [7, 7]])
 
     """
-
     Arr, Arc, Acc = structure_tensor(image, sigma, order="rc")
-
     # minimum eigenvalue of A
+    return _shi_tomasi_fused(Arr, Acc, Arc)
 
-    # response = ((Axx + Ayy) - np.sqrt((Axx - Ayy) ** 2 + 4 * Axy ** 2)) / 2
-    tmp = Arr - Acc
-    tmp *= tmp
-    tmp2 = 4 * Arc
-    tmp2 *= Arc
-    tmp += tmp2
-    cp.sqrt(tmp, out=tmp)
-    tmp /= 2
-    response = Arr + Acc
-    response -= tmp
 
-    return response
+@cp.fuse
+def _forstner_inner(Arr, Acc, Arc):
+    # determinant
+    detA = Arr * Acc - Arc * Arc
+    # trace
+    traceA = Arr + Acc
+    mask = traceA != 0
+    return detA, traceA, mask
+
+
+@cp.fuse
+def _forstner_inner2(trace_masked, det_masked):
+    w_masked = det_masked / trace_masked
+    q_masked = 4 * det_masked / (trace_masked * trace_masked)
+    return w_masked, q_masked
 
 
 def corner_foerstner(image, sigma=1):
@@ -802,23 +812,14 @@ def corner_foerstner(image, sigma=1):
     """
 
     Arr, Arc, Acc = structure_tensor(image, sigma, order="rc")
-
-    # determinant
-    detA = Arr * Acc
-    detA -= Arc * Arc
-    # trace
-    traceA = Arr + Acc
+    # determinant and trace
+    detA, traceA, mask = _forstner_inner(Arr, Acc, Arc)
 
     w = cp.zeros_like(image, dtype=detA.dtype)
     q = cp.zeros_like(w)
-
-    mask = traceA != 0
-
-    w[mask] = detA[mask] / traceA[mask]
-    tsq = traceA[mask]
-    tsq *= tsq
-    q[mask] = 4 * detA[mask] / tsq
-
+    _w, _q = _forstner_inner2(traceA[mask], detA[mask])
+    w[mask] = _w
+    q[mask] = _q
     return w, q
 
 
