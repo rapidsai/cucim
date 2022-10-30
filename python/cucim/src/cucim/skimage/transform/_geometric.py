@@ -43,14 +43,14 @@ def _center_and_normalize_points(points):
 
     Parameters
     ----------
-    points : (N, D) array
+    points : (N, D) ndarray
         The coordinates of the image points.
 
     Returns
     -------
-    matrix : (D+1, D+1) array
+    matrix : (D+1, D+1) ndarray
         The transformation matrix to obtain the new points.
-    new_points : (N, D) array
+    new_points : (N, D) ndarray
         The transformed image points.
     has_nan : bool
         Indicates if all points were identical causing rms=0.
@@ -107,9 +107,9 @@ def _umeyama(src, dst, estimate_scale):
 
     Parameters
     ----------
-    src : (M, N) array
+    src : (M, N) ndarray
         Source coordinates.
-    dst : (M, N) array
+    dst : (M, N) ndarray
         Destination coordinates.
     estimate_scale : bool
         Whether to estimate scaling factor.
@@ -145,11 +145,11 @@ def _umeyama(src, dst, estimate_scale):
     A = dst_demean.T @ src_demean / num
 
     # Eq. (39).
-    d = xp.ones((dim,), dtype=xp.double)
+    d = xp.ones((dim,), dtype=xp.float64)
     if xp.linalg.det(A) < 0:
         d[dim - 1] = -1
 
-    T = xp.eye(dim + 1, dtype=xp.double)
+    T = xp.eye(dim + 1, dtype=xp.float64)
 
     U, S, V = xp.linalg.svd(A)
 
@@ -180,7 +180,7 @@ def _umeyama(src, dst, estimate_scale):
     return T
 
 
-class GeometricTransform(object):
+class GeometricTransform:
     """Base class for geometric transformations.
 
     """
@@ -189,12 +189,12 @@ class GeometricTransform(object):
 
         Parameters
         ----------
-        coords : (N, 2) array
+        coords : (N, 2) ndarray
             Source coordinates.
 
         Returns
         -------
-        coords : (N, 2) array
+        coords : (N, 2) ndarray
             Destination coordinates.
 
         """
@@ -205,12 +205,12 @@ class GeometricTransform(object):
 
         Parameters
         ----------
-        coords : (N, 2) array
+        coords : (N, 2) ndarray
             Destination coordinates.
 
         Returns
         -------
-        coords : (N, 2) array
+        coords : (N, 2) ndarray
             Source coordinates.
 
         """
@@ -224,14 +224,14 @@ class GeometricTransform(object):
 
         Parameters
         ----------
-        src : (N, 2) array
+        src : (N, 2) ndarray
             Source coordinates.
-        dst : (N, 2) array
+        dst : (N, 2) ndarray
             Destination coordinates.
 
         Returns
         -------
-        residuals : (N, ) array
+        residuals : (N, ) ndarray
             Residual for coordinate.
 
         """
@@ -265,12 +265,12 @@ class FundamentalMatrixTransform(GeometricTransform):
 
     Parameters
     ----------
-    matrix : (3, 3) array, optional
+    matrix : (3, 3) ndarray, optional
         Fundamental matrix.
 
     Attributes
     ----------
-    params : (3, 3) array
+    params : (3, 3) ndarray
         Fundamental matrix.
 
     """
@@ -297,12 +297,12 @@ class FundamentalMatrixTransform(GeometricTransform):
 
         Parameters
         ----------
-        coords : (N, 2) array
+        coords : (N, 2) ndarray
             Source coordinates.
 
         Returns
         -------
-        coords : (N, 3) array
+        coords : (N, 3) ndarray
             Epipolar lines in the destination image.
 
         """
@@ -315,12 +315,12 @@ class FundamentalMatrixTransform(GeometricTransform):
 
         Parameters
         ----------
-        coords : (N, 2) array
+        coords : (N, 2) ndarray
             Destination coordinates.
 
         Returns
         -------
-        coords : (N, 3) array
+        coords : (N, 3) ndarray
             Epipolar lines in the source image.
 
         """
@@ -335,20 +335,20 @@ class FundamentalMatrixTransform(GeometricTransform):
 
         Parameters
         ----------
-        src : (N, 2) array
+        src : (N, 2) ndarray
             Source coordinates.
-        dst : (N, 2) array
+        dst : (N, 2) ndarray
             Destination coordinates.
 
         Returns
         -------
-        F_normalized : (3, 3) array
+        F_normalized : (3, 3) ndarray
             The normalized solution to the homogeneous system. If the system
             is not well-conditioned, this matrix contains NaNs.
-        src_matrix : (3, 3) array
+        src_matrix : (3, 3) ndarray
             The transformation matrix to obtain the normalized source
             coordinates.
-        dst_matrix : (3, 3) array
+        dst_matrix : (3, 3) ndarray
             The transformation matrix to obtain the normalized destination
             coordinates.
 
@@ -394,9 +394,9 @@ class FundamentalMatrixTransform(GeometricTransform):
 
         Parameters
         ----------
-        src : (N, 2) array
+        src : (N, 2) ndarray
             Source coordinates.
-        dst : (N, 2) array
+        dst : (N, 2) ndarray
             Destination coordinates.
 
         Returns
@@ -428,14 +428,14 @@ class FundamentalMatrixTransform(GeometricTransform):
 
         Parameters
         ----------
-        src : (N, 2) array
+        src : (N, 2) ndarray
             Source coordinates.
-        dst : (N, 2) array
+        dst : (N, 2) ndarray
             Destination coordinates.
 
         Returns
         -------
-        residuals : (N, ) array
+        residuals : (N, ) ndarray
             Sampson distance.
 
         """
@@ -474,17 +474,17 @@ class EssentialMatrixTransform(FundamentalMatrixTransform):
 
     Parameters
     ----------
-    rotation : (3, 3) array, optional
+    rotation : (3, 3) ndarray, optional
         Rotation matrix of the relative camera motion.
-    translation : (3, 1) array, optional
+    translation : (3, 1) ndarray, optional
         Translation vector of the relative camera motion. The vector must
         have unit length.
-    matrix : (3, 3) array, optional
+    matrix : (3, 3) ndarray, optional
         Essential matrix.
 
     Attributes
     ----------
-    params : (3, 3) array
+    params : (3, 3) ndarray
         Essential matrix.
 
     """
@@ -539,9 +539,9 @@ class EssentialMatrixTransform(FundamentalMatrixTransform):
 
         Parameters
         ----------
-        src : (N, 2) array
+        src : (N, 2) ndarray
             Source coordinates.
-        dst : (N, 2) array
+        dst : (N, 2) ndarray
             Destination coordinates.
 
         Returns
@@ -596,7 +596,7 @@ class ProjectiveTransform(GeometricTransform):
 
     Parameters
     ----------
-    matrix : (D+1, D+1) array, optional
+    matrix : (D+1, D+1) ndarray, optional
         Homogeneous transformation matrix.
     dimensionality : int, optional
         The number of dimensions of the transform. This is ignored if
@@ -604,7 +604,7 @@ class ProjectiveTransform(GeometricTransform):
 
     Attributes
     ----------
-    params : (D+1, D+1) array
+    params : (D+1, D+1) ndarray
         Homogeneous transformation matrix.
 
     """
@@ -665,12 +665,12 @@ class ProjectiveTransform(GeometricTransform):
 
         Parameters
         ----------
-        coords : (N, D) array
+        coords : (N, D) ndarray
             Source coordinates.
 
         Returns
         -------
-        coords_out : (N, D) array
+        coords_out : (N, D) ndarray
             Destination coordinates.
 
         """
@@ -681,12 +681,12 @@ class ProjectiveTransform(GeometricTransform):
 
         Parameters
         ----------
-        coords : (N, D) array
+        coords : (N, D) ndarray
             Destination coordinates.
 
         Returns
         -------
-        coords_out : (N, D) array
+        coords_out : (N, D) ndarray
             Source coordinates.
 
         """
@@ -744,11 +744,11 @@ class ProjectiveTransform(GeometricTransform):
 
         Parameters
         ----------
-        src : (N, 2) array
+        src : (N, 2) ndarray
             Source coordinates.
-        dst : (N, 2) array
+        dst : (N, 2) ndarray
             Destination coordinates.
-        weights : (N,) array, optional
+        weights : (N,) ndarray, optional
             Relative weight values for each pair of points.
 
         Returns
@@ -899,10 +899,10 @@ class AffineTransform(ProjectiveTransform):
 
     Parameters
     ----------
-    matrix : (D+1, D+1) array, optional
+    matrix : (D+1, D+1) ndarray, optional
         Homogeneous transformation matrix. If this matrix is provided, it is an
         error to provide any of scale, rotation, shear, or translation.
-    scale : {s as float or (sx, sy) as array, list or tuple}, optional
+    scale : {s as float or (sx, sy) as ndarray, list or tuple}, optional
         Scale factor(s). If a single value, it will be assigned to both
         sx and sy. Only available for 2D.
 
@@ -914,7 +914,7 @@ class AffineTransform(ProjectiveTransform):
     shear : float, optional
         Shear angle in counter-clockwise direction as radians. Only available
         for 2D.
-    translation : (tx, ty) as array, list or tuple, optional
+    translation : (tx, ty) as ndarray, list or tuple, optional
         Translation parameters. Only available for 2D.
     dimensionality : int, optional
         The dimensionality of the transform. This is not used if any other
@@ -922,7 +922,7 @@ class AffineTransform(ProjectiveTransform):
 
     Attributes
     ----------
-    params : (D+1, D+1) array
+    params : (D+1, D+1) ndarray
         Homogeneous transformation matrix.
 
     Raises
@@ -1043,9 +1043,9 @@ class PiecewiseAffineTransform(GeometricTransform):
 
         Parameters
         ----------
-        src : (N, D) array
+        src : (N, D) ndarray
             Source coordinates.
-        dst : (N, D) array
+        dst : (N, D) ndarray
             Destination coordinates.
 
         Returns
@@ -1091,18 +1091,18 @@ class PiecewiseAffineTransform(GeometricTransform):
 
         Parameters
         ----------
-        coords : (N, D) array
+        coords : (N, D) ndarray
             Source coordinates.
 
         Returns
         -------
-        coords : (N, D) array
+        coords : (N, D) ndarray
             Transformed coordinates.
 
         """
 
         xp = cp.get_array_module(coords)
-        out = xp.empty_like(coords, xp.double)
+        out = xp.empty_like(coords, xp.float64)
 
         # determine triangle index for each coordinate
         # coords must be on host for calls to _tesselation methods
@@ -1129,18 +1129,18 @@ class PiecewiseAffineTransform(GeometricTransform):
 
         Parameters
         ----------
-        coords : (N, D) array
+        coords : (N, D) ndarray
             Source coordinates.
 
         Returns
         -------
-        coords : (N, D) array
+        coords : (N, D) ndarray
             Transformed coordinates.
 
         """
 
         xp = cp.get_array_module(coords)
-        out = xp.empty_like(coords, xp.double)
+        out = xp.empty_like(coords, xp.float64)
 
         # determine triangle index for each coordinate
         # coords must be on host for calls to _tesselation methods
@@ -1173,7 +1173,7 @@ def _euler_rotation(axis, angle):
 
     Returns
     -------
-    Ri : array of float, shape (3, 3)
+    Ri : ndarray of float, shape (3, 3)
         The rotation matrix along axis `axis`.
     """
     i = axis
@@ -1199,14 +1199,14 @@ def _euler_rotation_matrix(angles, axes=None):
 
     Parameters
     ----------
-    angles : array of float, shape (3,)
+    angles : ndarray of float, shape (3,)
         The transformation angles in radians.
     axes : list of int
         The axes about which to produce the rotation. Defaults to 0, 1, 2.
 
     Returns
     -------
-    R : array of float, shape (3, 3)
+    R : ndarray of float, shape (3, 3)
         The Euler rotation matrix.
     """
     if axes is None:
@@ -1241,7 +1241,7 @@ class EuclideanTransform(ProjectiveTransform):
 
     Parameters
     ----------
-    matrix : (D+1, D+1) array, optional
+    matrix : (D+1, D+1) ndarray, optional
         Homogeneous transformation matrix.
     rotation : float or sequence of float, optional
         Rotation angle in counter-clockwise direction as radians. If given as
@@ -1256,7 +1256,7 @@ class EuclideanTransform(ProjectiveTransform):
 
     Attributes
     ----------
-    params : (D+1, D+1) array
+    params : (D+1, D+1) ndarray
         Homogeneous transformation matrix.
 
     References
@@ -1327,9 +1327,9 @@ class EuclideanTransform(ProjectiveTransform):
 
         Parameters
         ----------
-        src : (N, D) array
+        src : (N, D) ndarray
             Source coordinates.
-        dst : (N, D) array
+        dst : (N, D) ndarray
             Destination coordinates.
 
         Returns
@@ -1347,17 +1347,25 @@ class EuclideanTransform(ProjectiveTransform):
 
     @property
     def rotation(self):
-        return math.atan2(self.params[1, 0], self.params[1, 1])
+        if self.dimensionality == 2:
+            return math.atan2(self.params[1, 0], self.params[1, 1])
+        elif self.dimensionality == 3:
+            # Returning 3D Euler rotation matrix
+            return self.params[:3, :3]
+        else:
+            raise NotImplementedError(
+                'Rotation only implemented for 2D and 3D transforms.'
+            )
 
     @property
     def translation(self):
-        return self.params[0:2, 2]
+        return self.params[0:self.dimensionality, self.dimensionality]
 
 
 class SimilarityTransform(EuclideanTransform):
-    """2D similarity transformation.
+    """Similarity transformation.
 
-    Has the following form::
+    Has the following form in 2D::
 
         X = a0 * x - b0 * y + a1 =
           = s * x * cos(rotation) - s * y * sin(rotation) + a1
@@ -1377,7 +1385,7 @@ class SimilarityTransform(EuclideanTransform):
 
     Parameters
     ----------
-    matrix : (dim+1, dim+1) array, optional
+    matrix : (dim+1, dim+1) ndarray, optional
         Homogeneous transformation matrix.
     scale : float, optional
         Scale factor. Implemented only for 2D and 3D.
@@ -1385,12 +1393,12 @@ class SimilarityTransform(EuclideanTransform):
         Rotation angle in counter-clockwise direction as radians.
         Implemented only for 2D and 3D. For 3D, this is given in XZX Euler
         angles.
-    translation : (dim,) array-like, optional
+    translation : (dim,) ndarray-like, optional
         x, y[, z] translation parameters. Implemented only for 2D and 3D.
 
     Attributes
     ----------
-    params : (dim+1, dim+1) array
+    params : (dim+1, dim+1) ndarray
         Homogeneous transformation matrix.
 
     """
@@ -1443,9 +1451,9 @@ class SimilarityTransform(EuclideanTransform):
 
         Parameters
         ----------
-        src : (N, 2) array
+        src : (N, 2) ndarray
             Source coordinates.
-        dst : (N, 2) array
+        dst : (N, 2) ndarray
             Destination coordinates.
 
         Returns
@@ -1464,8 +1472,13 @@ class SimilarityTransform(EuclideanTransform):
     @property
     def scale(self):
         # det = scale**(# of dimensions), therefore scale = det**(1/2)
-        return math.sqrt(np.linalg.det(cp.asnumpy(self.params)))
-
+        if self.dimensionality == 2:
+            return math.sqrt(np.linalg.det(cp.asnumpy(self.params)))
+        elif self.dimensionality == 3:
+            return math.pow(np.linalg.det(cp.asnumpy(self.params)), 1 / 3)
+        else:
+            raise NotImplementedError(
+                'Scale is only implemented for 2D and 3D.')
 
 class PolynomialTransform(GeometricTransform):
     """2D polynomial transformation.
@@ -1477,13 +1490,13 @@ class PolynomialTransform(GeometricTransform):
 
     Parameters
     ----------
-    params : (2, N) array, optional
+    params : (2, N) ndarray, optional
         Polynomial coefficients where `N * 2 = (order + 1) * (order + 2)`. So,
         a_ji is defined in `params[0, :]` and b_ji in `params[1, :]`.
 
     Attributes
     ----------
-    params : (2, N) array
+    params : (2, N) ndarray
         Polynomial coefficients where `N * 2 = (order + 1) * (order + 2)`. So,
         a_ji is defined in `params[0, :]` and b_ji in `params[1, :]`.
 
@@ -1544,13 +1557,13 @@ class PolynomialTransform(GeometricTransform):
 
         Parameters
         ----------
-        src : (N, 2) array
+        src : (N, 2) ndarray
             Source coordinates.
-        dst : (N, 2) array
+        dst : (N, 2) ndarray
             Destination coordinates.
         order : int, optional
             Polynomial order (number of coefficients is order + 1).
-        weights : (N,) array, optional
+        weights : (N,) ndarray, optional
             Relative weight values for each pair of points.
 
         Returns
@@ -1602,12 +1615,12 @@ class PolynomialTransform(GeometricTransform):
 
         Parameters
         ----------
-        coords : (N, 2) array
+        coords : (N, 2) ndarray
             source coordinates
 
         Returns
         -------
-        coords : (N, 2) array
+        coords : (N, 2) ndarray
             Transformed coordinates.
 
         """
@@ -1661,7 +1674,7 @@ def estimate_transform(ttype, src, dst, *args, **kwargs):
     ttype : {'euclidean', similarity', 'affine', 'piecewise-affine', \
              'projective', 'polynomial'}
         Type of transform.
-    kwargs : array or int
+    kwargs : ndarray or int
         Function parameters (src, dst, n, angle)::
 
             NAME / TTYPE        FUNCTION PARAMETERS
@@ -1727,14 +1740,14 @@ def matrix_transform(coords, matrix):
 
     Parameters
     ----------
-    coords : (N, 2) array
+    coords : (N, 2) ndarray
         x, y coordinates to transform
-    matrix : (3, 3) array
+    matrix : (3, 3) ndarray
         Homogeneous transformation matrix.
 
     Returns
     -------
-    coords : (N, 2) array
+    coords : (N, 2) ndarray
         Transformed coordinates.
 
     """
