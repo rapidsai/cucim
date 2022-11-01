@@ -374,6 +374,11 @@ def moments_normalized(mu, order=3, spacing=None):
     nu : (``order + 1``,[ ...,] ``order + 1``) array
         Normalized central image moments.
 
+    Notes
+    -----
+    Differs from the scikit-image implementation in that any moments greater
+    than the requested `order` will be set to ``nan``.
+
     References
     ----------
     .. [1] Wilhelm Burger, Mark Burge. Principles of Digital Image Processing:
