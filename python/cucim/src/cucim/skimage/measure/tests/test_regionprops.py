@@ -575,10 +575,10 @@ def test_axis_minor_length():
     # MATLAB has different interpretation of ellipse than found in literature,
     # here implemented as found in literature
     target_length = 9.739302807263
-    assert_almost_equal(length, target_length)
+    assert_almost_equal(length, target_length, decimal=5)
 
     length = regionprops(SAMPLE, spacing=(1.5, 1.5))[0].axis_minor_length
-    assert_almost_equal(length, 1.5 * target_length)
+    assert_almost_equal(length, 1.5 * target_length, decimal=5)
 
     from skimage.draw import ellipse
     img = cp.zeros((10, 12), dtype=np.uint8)
@@ -904,9 +904,9 @@ def test_moments_weighted_normalized():
     # fmt: off
     ref = np.array(
         [[np.nan,        np.nan, 0.2301467830, -0.0162529732],         # noqa
-         [np.nan, -0.0160405109, 0.0457932622, -0.0104598869],         # noqa
-         [0.0873590903, -0.0031421072, 0.0165315478, -0.0028544152],   # noqa
-         [-0.0161217406, -0.0031376984, 0.0043903193, -0.0011057191]]  # noqa
+         [np.nan, -0.0160405109, 0.0457932622, np.nan],         # noqa
+         [0.0873590903, -0.0031421072, np.nan, np.nan],   # noqa
+         [-0.0161217406, np.nan, np.nan, np.nan]]  # noqa
     )
     # fmt: on
     assert_array_almost_equal(wnu, ref)
@@ -921,15 +921,9 @@ def test_moments_weighted_normalized():
     assert_almost_equal(wnu[0, 3], -0.0162529732)
     assert_almost_equal(wnu[1, 1], -0.0160405109)
     assert_almost_equal(wnu[1, 2], 0.0457932622)
-    assert_almost_equal(wnu[1, 3], -0.0104598869)
     assert_almost_equal(wnu[2, 0], 0.0873590903)
     assert_almost_equal(wnu[2, 1], -0.0031421072)
-    assert_almost_equal(wnu[2, 2], 0.0165315478)
-    assert_almost_equal(wnu[2, 3], -0.0028544152)
     assert_almost_equal(wnu[3, 0], -0.0161217406)
-    assert_almost_equal(wnu[3, 1], -0.0031376984)
-    assert_almost_equal(wnu[3, 2], 0.0043903193)
-    assert_almost_equal(wnu[3, 3], -0.0011057191)
 
 
 def test_label_sequence():
