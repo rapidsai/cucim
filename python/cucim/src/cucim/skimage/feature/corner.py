@@ -565,7 +565,9 @@ def corner_kitchen_rosenfeld(image, mode="constant", cval=0):
     imxy, imxx = _compute_derivatives(imx, mode=mode, cval=cval)
     imyy, _ = _compute_derivatives(imy, mode=mode, cval=cval)
 
-    numerator, denominator = _kitchen_rosenfeld_inner(imx, imy, imxx, imxy, imyy)
+    numerator, denominator = _kitchen_rosenfeld_inner(
+        imx, imy, imxx, imxy, imyy
+    )
     response = cp.zeros_like(image, dtype=float_dtype)
 
     mask = denominator != 0
