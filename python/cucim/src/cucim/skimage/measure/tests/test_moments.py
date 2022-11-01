@@ -252,7 +252,7 @@ def test_analytical_moments_calculation(dtype, order, ndim):
     m2 = moments_central(x, center=centroid(x), order=order)
 
     # ensure numeric and analytical central moments are close
-    thresh = 1e-4 if _supported_float_type(x.dtype) == np.float32 else 1e-11
+    thresh = 5e-4 if _supported_float_type(x.dtype) == np.float32 else 1e-11
     compare_moments(m1, m2, thresh=thresh)
 
 
