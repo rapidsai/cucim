@@ -269,7 +269,6 @@ def sato(image, sigmas=range(1, 10, 2), black_ridges=True,
         # the same behavior.
         eigvals[eigvals < 1e-12] = 0.0
 
-
         # Compute normalized tubeness (eqs. (9) and (22), ref. [1]_) as the
         # geometric mean of eigvals other than the lowest one
         # (hessian_matrix_eigvals returns eigvals in decreasing order), clipped

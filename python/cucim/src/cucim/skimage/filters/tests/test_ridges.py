@@ -186,7 +186,6 @@ def test_2d_cropped_camera_image(dtype):
         a_black = img_as_float64(a_black)
     a_white = invert(a_black)
 
-    zeros = cp.zeros((100, 100))
     ones = cp.ones((100, 100))
 
     tol = 1e-7 if dtype == 'float64' else 1e-5
@@ -195,7 +194,8 @@ def test_2d_cropped_camera_image(dtype):
                     meijering(a_white, black_ridges=False), atol=tol, rtol=tol)
 
     assert_allclose(sato(a_black, black_ridges=True, mode='reflect'),
-                    sato(a_white, black_ridges=False, mode='reflect'), atol=tol, rtol=tol)
+                    sato(a_white, black_ridges=False, mode='reflect'),
+                    atol=tol, rtol=tol)
 
     assert_allclose(frangi(a_black, black_ridges=True),
                     frangi(a_white, black_ridges=False), atol=tol, rtol=tol)
@@ -223,7 +223,6 @@ def test_3d_cropped_camera_image(dtype):
     a_black = cp.dstack([a_black, a_black, a_black])
     a_white = invert(a_black)
 
-    zeros = cp.zeros((100, 100, 3))
     ones = cp.ones((100, 100, 3))
     tol = 1e-7 if dtype == 'float64' else 4e-4
 
@@ -232,7 +231,8 @@ def test_3d_cropped_camera_image(dtype):
                     meijering(a_white, black_ridges=False), atol=tol, rtol=tol)
 
     assert_allclose(sato(a_black, black_ridges=True, mode='reflect'),
-                    sato(a_white, black_ridges=False, mode='reflect'), atol=tol, rtol=tol)
+                    sato(a_white, black_ridges=False, mode='reflect'),
+                    atol=tol, rtol=tol)
 
     assert_allclose(frangi(a_black, black_ridges=True),
                     frangi(a_white, black_ridges=False), atol=tol, rtol=tol)
