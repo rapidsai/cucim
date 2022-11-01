@@ -56,7 +56,7 @@ _order3_2d = """
     mc[6] = (m[6] - 2*cy*m[5] - cx*m[2] + 2*cy*cx*m[1]);
     mc[12] = m[12] - 3*cx*m[8] + 2*cx*cx*m[4];
     mc[3] = m[3] - 3*cy*m[2] + 2*cy*cy*m[1];
-"""
+"""  # noqa
 
 
 # Note for 2D kernels using C-order raveled indices
@@ -137,7 +137,7 @@ _order3_3d = """
     mc[33] = (cx*cx*m[1] - 2*cx*m[17] + cz*(cx*m[16] - m[32]) + m[33]);
     mc[36] = (cx*cx*m[4] - 2*cx*m[20] + cy*(cx*m[16] - m[32]) + m[36]);
     mc[48] = (2*cx*cx*m[16] - 3*cx*m[32] + m[48]);
-"""
+"""  # noqa
 
 
 def _moments_raw_to_central_fast(moments_raw):

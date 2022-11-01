@@ -50,28 +50,35 @@ INTENSITY_SAMPLE_3D = SAMPLE_3D.copy()
 
 def get_moment_function(img, spacing=(1, 1)):
     rows, cols = img.shape
-    Y, X = np.meshgrid(cp.linspace(0, rows * spacing[0], rows, endpoint=False),
-                       cp.linspace(0, cols * spacing[1], cols, endpoint=False), indexing='ij')
+    Y, X = np.meshgrid(
+        cp.linspace(0, rows * spacing[0], rows, endpoint=False),
+        cp.linspace(0, cols * spacing[1], cols, endpoint=False),
+        indexing='ij'
+    )
     return lambda p, q: cp.sum(Y ** p * X ** q * img)
 
 
 def get_moment3D_function(img, spacing=(1, 1, 1)):
     slices, rows, cols = img.shape
-    Z, Y, X = np.meshgrid(cp.linspace(0, slices * spacing[0], slices, endpoint=False),
-                          cp.linspace(0, rows * spacing[1], rows, endpoint=False),
-                          cp.linspace(0, cols * spacing[2], cols, endpoint=False), indexing='ij')
+    Z, Y, X = np.meshgrid(
+        cp.linspace(0, slices * spacing[0], slices, endpoint=False),
+        cp.linspace(0, rows * spacing[1], rows, endpoint=False),
+        cp.linspace(0, cols * spacing[2], cols, endpoint=False),
+        indexing='ij'
+    )
     return lambda p, q, r: cp.sum(Z ** p * Y ** q * X ** r * img)
 
 
 def get_central_moment_function(img, spacing=(1, 1)):
     rows, cols = img.shape
-    Y, X = np.meshgrid(cp.linspace(0, rows * spacing[0], rows, endpoint=False),
-                       cp.linspace(0, cols * spacing[1], cols, endpoint=False), indexing='ij')
-
+    Y, X = np.meshgrid(
+        cp.linspace(0, rows * spacing[0], rows, endpoint=False),
+        cp.linspace(0, cols * spacing[1], cols, endpoint=False),
+        indexing='ij'
+    )
     Mpq = get_moment_function(img, spacing=spacing)
     cY = Mpq(1, 0) / Mpq(0, 0)
     cX = Mpq(0, 1) / Mpq(0, 0)
-
     return lambda p, q: cp.sum((Y - cY) ** p * (X - cX) ** q * img)
 
 
@@ -147,17 +154,18 @@ def test_feret_diameter_max():
     test_result = regionprops(SAMPLE)[0].feret_diameter_max
     assert cp.abs(test_result - comparator_result) < 1
     comparator_result_spacing = 10
-    test_result_spacing = regionprops(SAMPLE, spacing=[1, 0.1])[0].feret_diameter_max
+    test_result_spacing = regionprops(SAMPLE, spacing=[1, 0.1])[0].feret_diameter_max  # noqa
     assert cp.abs(test_result_spacing - comparator_result_spacing) < 1
     # square, test that Feret diameter is sqrt(2) * square side
     img = cp.zeros((20, 20), dtype=cp.uint8)
     img[2:-2, 2:-2] = 1
     feret_diameter_max = regionprops(img)[0].feret_diameter_max
     assert cp.abs(feret_diameter_max - 16 * math.sqrt(2)) < 1
-    # Due to marching-squares with a level of .5 the diagonal goes from (0, 0.5) to (16, 15.5).
+    # Due to marching-squares with a level of .5 the diagonal goes
+    # from (0, 0.5) to (16, 15.5).
     assert cp.abs(feret_diameter_max - np.sqrt(16 ** 2 + (16 - 1) ** 2)) < 1e-6
     spacing = (2, 1)
-    feret_diameter_max = regionprops(img, spacing=spacing)[0].feret_diameter_max
+    feret_diameter_max = regionprops(img, spacing=spacing)[0].feret_diameter_max  # noqa
     # For anisotropic spacing the shift is applied to the smaller spacing.
     assert cp.abs(feret_diameter_max - cp.sqrt(
         (spacing[0] * 16 - (spacing[0] <= spacing[1])) ** 2 +
@@ -170,12 +178,14 @@ def test_feret_diameter_max_3d():
     img[2:-2, 2:-2] = 1
     img_3d = cp.dstack((img,) * 3)
     feret_diameter_max = regionprops(img_3d)[0].feret_diameter_max
-    # Due to marching-cubes with a level of .5 -1=2*0.5 has to be subtracted from two axes.
-    # There are three combinations (x-1, y-1, z), (x-1, y, z-1), (x, y-1, z-1). The option
-    # yielding the longest diagonal is the computed max_feret_diameter.
-    assert cp.abs(feret_diameter_max - cp.sqrt((16 - 1) ** 2 + 16 ** 2 + (3 - 1) ** 2)) < 1e-6
+    # Due to marching-cubes with a level of .5 -1=2*0.5 has to be subtracted
+    # from two axes. There are three combinations
+    # (x-1, y-1, z), (x-1, y, z-1), (x, y-1, z-1).
+    # The option yielding the longest diagonal is the computed
+    # max_feret_diameter.
+    assert cp.abs(feret_diameter_max - cp.sqrt((16 - 1) ** 2 + 16 ** 2 + (3 - 1) ** 2)) < 1e-6  # noqa
     spacing = (1, 2, 3)
-    feret_diameter_max = regionprops(img_3d, spacing=spacing)[0].feret_diameter_max
+    feret_diameter_max = regionprops(img_3d, spacing=spacing)[0].feret_diameter_max  # noqa
     # The longest of the three options is the max_feret_diameter
     assert cp.abs(feret_diameter_max - cp.sqrt(
         (spacing[0] * (16 - 1)) ** 2 +
@@ -214,9 +224,13 @@ def test_bbox():
     SAMPLE_mod = SAMPLE.copy()
     SAMPLE_mod[:, -1] = 0
     bbox = regionprops(SAMPLE_mod)[0].bbox
-    assert_array_almost_equal(bbox, (0, 0, SAMPLE.shape[0], SAMPLE.shape[1] - 1))
+    assert_array_almost_equal(
+        bbox, (0, 0, SAMPLE.shape[0], SAMPLE.shape[1] - 1)
+    )
     bbox = regionprops(SAMPLE_mod, spacing=(3, 2))[0].bbox
-    assert_array_almost_equal(bbox, (0, 0, SAMPLE.shape[0], SAMPLE.shape[1] - 1))
+    assert_array_almost_equal(
+        bbox, (0, 0, SAMPLE.shape[0], SAMPLE.shape[1] - 1)
+    )
 
     bbox = regionprops(SAMPLE_3D)[0].bbox
     assert_array_almost_equal(bbox, (1, 1, 1, 4, 3, 3))
@@ -670,7 +684,9 @@ def test_orientation():
     assert_almost_equal(orient_diag, -np.arccos(0.5 / math.sqrt(1 + 0.5 ** 2)))
     orient_diag = regionprops(cp.fliplr(cp.flipud(diag)))[0].orientation
     assert_almost_equal(orient_diag, -math.pi / 4)
-    orient_diag = regionprops(np.fliplr(np.flipud(diag)), spacing=(1, 2))[0].orientation
+    orient_diag = regionprops(
+        np.fliplr(np.flipud(diag)), spacing=(1, 2)
+    )[0].orientation
     assert_almost_equal(orient_diag, np.arccos(0.5 / math.sqrt(1 + 0.5 ** 2)))
 
 
@@ -789,7 +805,9 @@ def test_centroid_weighted():
     Mpq = get_moment_function(INTENSITY_SAMPLE, spacing=spacing)
     cY = float(Mpq(0, 1) / Mpq(0, 0))
     cX = float(Mpq(1, 0) / Mpq(0, 0))
-    centroid = regionprops(SAMPLE, intensity_image=INTENSITY_SAMPLE, spacing=spacing)[0].centroid_weighted
+    centroid = regionprops(
+        SAMPLE, intensity_image=INTENSITY_SAMPLE, spacing=spacing
+    )[0].centroid_weighted
     centroid = tuple(float(c) for c in centroid)
     assert_almost_equal(centroid, (cX, cY))
     assert_almost_equal(centroid, tuple(2 * c for c in target_centroid))
@@ -798,7 +816,9 @@ def test_centroid_weighted():
     Mpq = get_moment_function(INTENSITY_SAMPLE, spacing=spacing)
     cY = float(Mpq(0, 1) / Mpq(0, 0))
     cX = float(Mpq(1, 0) / Mpq(0, 0))
-    centroid = regionprops(SAMPLE, intensity_image=INTENSITY_SAMPLE, spacing=spacing)[0].centroid_weighted
+    centroid = regionprops(
+        SAMPLE, intensity_image=INTENSITY_SAMPLE, spacing=spacing
+    )[0].centroid_weighted
     centroid = tuple(float(c) for c in centroid)
     assert_almost_equal(centroid, (cX, cY))
 
@@ -892,7 +912,9 @@ def test_moments_weighted_normalized():
     assert_array_almost_equal(wnu, ref)
 
     spacing = (3, 3)
-    wnu = regionprops(SAMPLE, intensity_image=INTENSITY_SAMPLE, spacing=spacing)[0].moments_weighted_normalized
+    wnu = regionprops(
+        SAMPLE, intensity_image=INTENSITY_SAMPLE, spacing=spacing
+    )[0].moments_weighted_normalized
 
     # Normalized moments are scale invariant
     assert_almost_equal(wnu[0, 2], 0.2301467830)

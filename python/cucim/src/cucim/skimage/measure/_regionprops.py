@@ -581,21 +581,29 @@ class RegionProperties:
     @property
     @_cached
     def moments(self):
-        M = _moments.moments(self.image.astype(cp.uint8), 3, spacing=self._spacing)
+        M = _moments.moments(
+            self.image.astype(cp.uint8), 3, spacing=self._spacing
+        )
         return M
 
     @property
     @_cached
     def moments_central(self):
-        mu = _moments.moments_central(self.image.astype(cp.uint8),
-                                      self.centroid_local, order=3, spacing=self._spacing)
+        mu = _moments.moments_central(
+            self.image.astype(cp.uint8),
+            self.centroid_local,
+            order=3,
+            spacing=self._spacing
+        )
         return mu
 
     @property
     @only2d
     def moments_hu(self):
         if any(s != 1.0 for s in self._spacing):
-            raise NotImplementedError('`moments_hu` supports spacing = (1, 1) only')
+            raise NotImplementedError(
+                '`moments_hu` supports spacing = (1, 1) only'
+            )
         return _moments.moments_hu(self.moments_normalized)
 
     @property
@@ -620,14 +628,18 @@ class RegionProperties:
     @only2d
     def perimeter(self):
         if len(np.unique(self._spacing)) != 1:
-            raise NotImplementedError('`perimeter` supports isotropic spacings only')
+            raise NotImplementedError(
+                '`perimeter` supports isotropic spacings only'
+            )
         return perimeter(self.image, 4) * self._spacing[0]
 
     @property
     @only2d
     def perimeter_crofton(self):
         if len(np.unique(self._spacing)) != 1:
-            raise NotImplementedError('`perimeter` supports isotropic spacings only')
+            raise NotImplementedError(
+                '`perimeter` supports isotropic spacings only'
+            )
         return perimeter_crofton(self.image, 4) * self._spacing[0]
 
     @property
@@ -652,8 +664,9 @@ class RegionProperties:
         image = self._image_intensity_double()
         if self._multichannel:
             moments = cp.stack(
-                [_moments.moments(image[..., i], order=3, spacing=self._spacing)
-                    for i in range(image.shape[-1])],
+                [_moments.moments(image[..., i], order=3,
+                                  spacing=self._spacing)
+                 for i in range(image.shape[-1])],
                 axis=-1,
             )
         else:
@@ -668,20 +681,27 @@ class RegionProperties:
         if self._multichannel:
             moments_list = [
                 _moments.moments_central(
-                    image[..., i], center=ctr[..., i], order=3, spacing=self._spacing
+                    image[..., i],
+                    center=ctr[..., i],
+                    order=3,
+                    spacing=self._spacing
                 )
                 for i in range(image.shape[-1])
             ]
             moments = cp.stack(moments_list, axis=-1)
         else:
-            moments = _moments.moments_central(image, ctr, order=3, spacing=self._spacing)
+            moments = _moments.moments_central(
+                image, ctr, order=3, spacing=self._spacing
+            )
         return moments
 
     @property
     @only2d
     def moments_weighted_hu(self):
         if not (np.array(self._spacing) == np.array([1, 1])).all():
-            raise NotImplementedError('`moments_hu` supports spacing = (1, 1) only')
+            raise NotImplementedError(
+                '`moments_hu` supports spacing = (1, 1) only'
+            )
         nu = self.moments_weighted_normalized
         if self._multichannel:
             nchannels = self._intensity_image.shape[-1]
@@ -908,7 +928,8 @@ def _props_to_dict(regions, properties=('label', 'bbox'), separator='-'):
 def regionprops_table(label_image, intensity_image=None,
                       properties=('label', 'bbox'),
                       *,
-                      cache=True, separator='-', extra_properties=None, spacing=None):
+                      cache=True, separator='-', extra_properties=None,
+                      spacing=None):
     """Compute image properties and return them as a pandas-compatible table.
 
     The table is a dictionary mapping column names to value arrays. See Notes
@@ -1044,7 +1065,8 @@ def regionprops_table(label_image, intensity_image=None,
 
     """
     regions = regionprops(label_image, intensity_image=intensity_image,
-                          cache=cache, extra_properties=extra_properties, spacing=spacing)
+                          cache=cache, extra_properties=extra_properties,
+                          spacing=spacing)
     if extra_properties is not None:
         properties = (
             list(properties) + [prop.__name__ for prop in extra_properties]
@@ -1060,7 +1082,8 @@ def regionprops_table(label_image, intensity_image=None,
                 dtype=intensity_image.dtype,
             )
         regions = regionprops(label_image, intensity_image=intensity_image,
-                              cache=cache, extra_properties=extra_properties, spacing=spacing)
+                              cache=cache, extra_properties=extra_properties,
+                              spacing=spacing)
 
         out_d = _props_to_dict(regions, properties=properties,
                                separator=separator)
@@ -1324,7 +1347,7 @@ def regionprops(label_image, intensity_image=None, cache=True,
     >>> props[1]['pixelcount']
     array(42)
 
-    """
+    """  # noqa
 
     if label_image.ndim not in (2, 3):
         raise TypeError('Only 2-D and 3-D images supported.')
@@ -1368,7 +1391,8 @@ def regionprops(label_image, intensity_image=None, cache=True,
         label = i + 1
 
         props = RegionProperties(sl, label, label_image, intensity_image,
-                                 cache, spacing=spacing, extra_properties=extra_properties)
+                                 cache, spacing=spacing,
+                                 extra_properties=extra_properties)
         regions.append(props)
 
     return regions

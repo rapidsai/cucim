@@ -336,12 +336,12 @@ def _get_moments_norm_operation(ndim, order, unit_scale=True):
     if unit_scale:
         operation += """
         denom = pow(mu0, static_cast<double>(order_of_current_index) / ndim + 1);
-        nu = mu[i] / denom;"""
+        nu = mu[i] / denom;"""  # noqa
     else:
         operation += """
         s_pow = pow(scale, static_cast<double>(order_of_current_index));
         denom = pow(mu0, static_cast<double>(order_of_current_index) / ndim + 1);
-        nu = (mu[i] / s_pow) / denom;"""
+        nu = (mu[i] / s_pow) / denom;"""  # noqa
     return operation
 
 
@@ -507,7 +507,8 @@ def centroid(image, *, spacing=None):
     mu = moments(image, order=1, spacing=spacing)
     ndim = image.ndim
     mu0 = mu[(0,) * ndim]
-    center = mu[tuple((0,)*dim + (1,) + (0,)*(ndim - dim - 1) for dim in range(ndim))]
+    center = mu[tuple((0,) * dim + (1,) + (0,) * (ndim - dim - 1)
+                for dim in range(ndim))]
     center /= mu0
     return center
 
@@ -549,7 +550,8 @@ def inertia_tensor(image, mu=None, *, spacing=None, xp=cp):
            Scientific Applications. (Chapter 8: Tensor Methods) Springer, 1993.
     """
     if mu is None:
-        mu = moments_central(image, order=2, spacing=spacing)  # don't need higher-order moments
+        # don't need higher-order moments
+        mu = moments_central(image, order=2, spacing=spacing)
     # CuPy Backend: mu and result are tiny, so faster on the CPU
     mu = cp.asnumpy(mu)
     mu0 = mu[(0,) * image.ndim]
