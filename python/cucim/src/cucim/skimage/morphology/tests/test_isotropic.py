@@ -20,11 +20,15 @@ def test_non_square_image():
 
 def test_isotropic_erosion():
     isotropic_res = morphology.isotropic_erosion(bw_img, 3)
-    binary_res = img_as_bool(morphology.binary_erosion(bw_img, morphology.disk(3)))
+    binary_res = img_as_bool(
+        morphology.binary_erosion(bw_img, morphology.disk(3))
+    )
     assert_array_equal(isotropic_res, binary_res)
 
 
-def _disk_with_spacing(radius, dtype=cp.uint8, *, strict_radius=True, spacing=None):
+def _disk_with_spacing(
+    radius, dtype=cp.uint8, *, strict_radius=True, spacing=None
+):
     # Identical to morphology.disk, but with a spacing parameter and without
     # decomposition. This is different from morphology.ellipse which produces a
     # slightly different footprint.
@@ -41,9 +45,11 @@ def _disk_with_spacing(radius, dtype=cp.uint8, *, strict_radius=True, spacing=No
 
 
 def test_isotropic_erosion_spacing():
-    isotropic_res = morphology.isotropic_dilation(bw_img, 6, spacing=(1,2))
+    isotropic_res = morphology.isotropic_dilation(bw_img, 6, spacing=(1, 2))
     binary_res = img_as_bool(
-        morphology.binary_dilation(bw_img, _disk_with_spacing(6, spacing=(1,2)))
+        morphology.binary_dilation(
+            bw_img, _disk_with_spacing(6, spacing=(1, 2))
+        )
     )
     assert_array_equal(isotropic_res, binary_res)
 
@@ -58,13 +64,17 @@ def test_isotropic_dilation():
 
 def test_isotropic_closing():
     isotropic_res = morphology.isotropic_closing(bw_img, 3)
-    binary_res = img_as_bool(morphology.binary_closing(bw_img, morphology.disk(3)))
+    binary_res = img_as_bool(
+        morphology.binary_closing(bw_img, morphology.disk(3))
+    )
     assert_array_equal(isotropic_res, binary_res)
 
 
 def test_isotropic_opening():
     isotropic_res = morphology.isotropic_opening(bw_img, 3)
-    binary_res = img_as_bool(morphology.binary_opening(bw_img, morphology.disk(3)))
+    binary_res = img_as_bool(
+        morphology.binary_opening(bw_img, morphology.disk(3))
+    )
     assert_array_equal(isotropic_res, binary_res)
 
 
@@ -72,7 +82,9 @@ def test_footprint_overflow():
     img = cp.zeros((20, 20), dtype=bool)
     img[2:19, 2:19] = True
     isotropic_res = morphology.isotropic_erosion(img, 9)
-    binary_res = img_as_bool(morphology.binary_erosion(img, morphology.disk(9)))
+    binary_res = img_as_bool(
+        morphology.binary_erosion(img, morphology.disk(9))
+    )
     assert_array_equal(isotropic_res, binary_res)
 
 
