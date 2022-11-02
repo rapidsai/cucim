@@ -1,7 +1,6 @@
 import functools
 import math
 from itertools import combinations_with_replacement
-from warnings import warn
 
 import cupy as cp
 import numpy as np
@@ -12,7 +11,6 @@ from cucim.skimage.util import img_as_float
 
 # from ..transform import integral_image
 from .._shared._gradient import gradient
-from .._shared.filters import gaussian
 from .._shared.utils import _supported_float_type, warn
 from .peak import peak_local_max
 from .util import _prepare_grayscale_input_nD
@@ -231,7 +229,7 @@ def _hessian_matrix_with_gaussian(image, sigma=1, mode='reflect', cval=0,
     # orders in 2D = ([1, 0], [0, 1])
     #        in 3D = ([1, 0, 0], [0, 1, 0], [0, 0, 1])
     #        etc.
-    orders = tuple([0] * d + [1] + [0]*(ndim - d - 1) for d in range(ndim))
+    orders = tuple([0] * d + [1] + [0] * (ndim - d - 1) for d in range(ndim))
     gradients = [gaussian_(image, order=orders[d]) for d in range(ndim)]
 
     # 2.) apply the derivative along another axis as well
@@ -337,7 +335,7 @@ def hessian_matrix(image, sigma=1, mode='constant', cval=0, order='rc',
 
     # Autodetection as done internally to Gaussian, but set it here to silence
     # a warning.
-	# TODO: eventually remove this as this behavior of gaussian is deprecated
+    # TODO: eventually remove this as this behavior of gaussian is deprecated
     channel_axis = -1 if (image.ndim == 3 and image.shape[-1] == 3) else None
 
     gaussian_filtered = gaussian(image, sigma=sigma, mode=mode, cval=cval,
