@@ -54,7 +54,11 @@ def _ssim_fused_grad1(cov_norm, ux, uy, uxx, uyy, uxy, data_range, K1, K2):
     B2 = vx + vy + C2
     D = B1 * B2
     S = (A1 * A2) / D
-    return S, A1, A2, B1, B2, D
+
+    grad_temp1 = A1 / D
+    grad_temp2 = -S / B2
+    grad_temp3 = (ux * (A2 - A1) - uy * (B2 - B1) * S) / D
+    return S, grad_temp1, grad_temp2, grad_temp3
 
 
 @utils.deprecate_multichannel_kwarg()
@@ -274,7 +278,7 @@ def structural_similarity(im1, im2,
     if not gradient:
         S = _ssim_fused(cov_norm, ux, uy, uxx, uyy, uxy, data_range, K1, K2)
     else:
-        S, A1, A2, B1, B2, D = _ssim_fused_grad1(
+        S, grad_temp1, grad_temp2, grad_temp3 = _ssim_fused_grad1(
             cov_norm, ux, uy, uxx, uyy, uxy, data_range, K1, K2
         )
 
@@ -286,10 +290,9 @@ def structural_similarity(im1, im2,
 
     if gradient:
         # The following is Eqs. 7-8 of Avanaki 2009.
-        grad = filter_func(A1 / D, **filter_args) * im1
-        grad += filter_func(-S / B2, **filter_args) * im2
-        grad += filter_func((ux * (A2 - A1) - uy * (B2 - B1) * S) / D,
-                            **filter_args)
+        grad = filter_func(grad_temp1, **filter_args) * im1
+        grad += filter_func(grad_temp2, **filter_args) * im2
+        grad += filter_func(grad_temp3, **filter_args)
         grad *= (2 / im1.size)
 
         if full:
