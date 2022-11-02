@@ -12,6 +12,51 @@ from ..util.dtype import dtype_range
 __all__ = ['structural_similarity']
 
 
+@cp.fuse()
+def _ssim_fused(cov_norm, ux, uy, uxx, uyy, uxy, data_range, K1, K2):
+    """core SSIM computation"""
+    vx = cov_norm * (uxx - ux * ux)
+    vy = cov_norm * (uyy - uy * uy)
+    vxy = cov_norm * (uxy - ux * uy)
+
+    C1 = (K1 * data_range)
+    C1 *= C1
+    C2 = (K2 * data_range)
+    C2 *= C2
+
+    A1 = 2 * ux * uy + C1
+    A2 = 2 * vxy + C2
+    B1 = ux * ux + uy * uy + C1
+    B2 = vx + vy + C2
+    D = B1 * B2
+    S = (A1 * A2) / D
+    return S
+
+
+@cp.fuse()
+def _ssim_fused_grad1(cov_norm, ux, uy, uxx, uyy, uxy, data_range, K1, K2):
+    """core SSIM computation
+
+    identical to _ssim_fused except that there are multiple return values
+    """
+    vx = cov_norm * (uxx - ux * ux)
+    vy = cov_norm * (uyy - uy * uy)
+    vxy = cov_norm * (uxy - ux * uy)
+
+    C1 = (K1 * data_range)
+    C1 *= C1
+    C2 = (K2 * data_range)
+    C2 *= C2
+
+    A1 = 2 * ux * uy + C1
+    A2 = 2 * vxy + C2
+    B1 = ux * ux + uy * uy + C1
+    B2 = vx + vy + C2
+    D = B1 * B2
+    S = (A1 * A2) / D
+    return S, A1, A2, B1, B2, D
+
+
 @utils.deprecate_multichannel_kwarg()
 def structural_similarity(im1, im2,
                           *,
@@ -20,6 +65,8 @@ def structural_similarity(im1, im2,
                           gaussian_weights=False, full=False, **kwargs):
     """
     Compute the mean structural similarity index between two images.
+    Please pay attention to the `data_range` parameter with floating-point
+    images.
 
     Parameters
     ----------
@@ -34,7 +81,9 @@ def structural_similarity(im1, im2,
     data_range : float, optional
         The data range of the input image (distance between minimum and
         maximum possible values). By default, this is estimated from the image
-        data-type.
+        data type. This estimate may be wrong for floating-point image data.
+        Therefore it is recommended to always pass this value explicitly
+        (see note below).
     channel_axis : int or None, optional
         If None, the image is assumed to be a grayscale (single channel) image.
         Otherwise, this parameter indicates which axis of the array corresponds
@@ -73,6 +122,17 @@ def structural_similarity(im1, im2,
 
     Notes
     -----
+    If `data_range` is not specified, the range is automatically guessed
+    based on the image data type. However for floating-point image data, this
+    estimate yields a result double the value of the desired range, as the
+    `dtype_range` in `skimage.util.dtype.py` has defined intervals from -1 to
+    +1. This yields an estimate of 2, instead of 1, which is most often
+    required when working with image data (as negative light intentsities are
+    nonsensical). In case of working with YCbCr-like color data, note that
+    these ranges are different per channel (Cb and Cr have double the range
+    of Y), so one cannot calculate a channel-averaged SSIM with a single call
+    to this function, as identical ranges are assumed for each channel.
+
     To match the implementation of Wang et. al. [1]_, set `gaussian_weights`
     to True, `sigma` to 1.5, and `use_sample_covariance` to False.
 
@@ -210,20 +270,13 @@ def structural_similarity(im1, im2,
     uxx = filter_func(im1 * im1, **filter_args)
     uyy = filter_func(im2 * im2, **filter_args)
     uxy = filter_func(im1 * im2, **filter_args)
-    vx = cov_norm * (uxx - ux * ux)
-    vy = cov_norm * (uyy - uy * uy)
-    vxy = cov_norm * (uxy - ux * uy)
 
-    R = data_range
-    C1 = (K1 * R) ** 2
-    C2 = (K2 * R) ** 2
-
-    A1, A2, B1, B2 = ((2 * ux * uy + C1,
-                       2 * vxy + C2,
-                       ux ** 2 + uy ** 2 + C1,
-                       vx + vy + C2))
-    D = B1 * B2
-    S = (A1 * A2) / D
+    if not gradient:
+        S = _ssim_fused(cov_norm, ux, uy, uxx, uyy, uxy, data_range, K1, K2)
+    else:
+        S, A1, A2, B1, B2, D = _ssim_fused_grad1(
+            cov_norm, ux, uy, uxx, uyy, uxy, data_range, K1, K2
+        )
 
     # to avoid edge effects will ignore filter radius strip around edges
     pad = (win_size - 1) // 2
