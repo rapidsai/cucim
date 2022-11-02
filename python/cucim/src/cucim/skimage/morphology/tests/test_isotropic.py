@@ -1,5 +1,6 @@
 import cupy as cp
 import numpy as np
+import pytest
 from cupy.testing import assert_array_equal
 from skimage import data
 
@@ -44,6 +45,7 @@ def _disk_with_spacing(
     return cp.asarray((X ** 2 + Y ** 2) <= radius ** 2, dtype=dtype)
 
 
+@pytest.mark.xfail(reason="will fail until gh-406 is merged")
 def test_isotropic_erosion_spacing():
     isotropic_res = morphology.isotropic_dilation(bw_img, 6, spacing=(1, 2))
     binary_res = img_as_bool(
