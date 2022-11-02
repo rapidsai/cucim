@@ -59,6 +59,14 @@ class BinaryMorphologyBench(ImageBench):
         self.args_gpu = (imaged,)
 
 
+class IsotropicMorphologyBench(ImageBench):
+    def set_args(self, dtype):
+        imaged = cp.random.standard_normal(self.shape).astype(dtype) > 0
+        image = cp.asnumpy(imaged)
+        self.args_cpu = (image,)
+        self.args_gpu = (imaged,)
+
+
 class SkeletonizeBench(ImageBench):
     def set_args(self, dtype):
         h = ~skimage.data.horse()
@@ -127,6 +135,10 @@ def main(args):
         ("binary_dilation", dict(), dict(), False, True),
         ("binary_opening", dict(), dict(), False, True),
         ("binary_closing", dict(), dict(), False, True),
+        ("isotropic_erosion", dict(), dict(radius=[5, 10, 20]), False, True),
+        ("isotropic_dilation", dict(), dict(radius=[5, 10, 20]), False, True),
+        ("isotropic_opening", dict(), dict(radius=[5, 10, 20]), False, True),
+        ("isotropic_closing", dict(), dict(radius=[5, 10, 20]), False, True),
         # misc.py
         ("remove_small_objects", dict(), dict(), False, True),
         ("remove_small_holes", dict(), dict(), False, True),
@@ -149,6 +161,10 @@ def main(args):
         if function_name != args.func_name:
             continue
 
+        if not allow_color:
+            if len(shape) > 2 and shape[-1] == 3:
+                continue
+
         ndim = len(shape)
         if function_name in ['thin', 'medial_axis']:
             if ndim != 2:
@@ -168,9 +184,7 @@ def main(args):
                 run_cpu=run_cpu,
             )
 
-            results = B.run_benchmark(duration=args.duration)
-            all_results = pd.concat([all_results, results["full"]])
-        elif function_name.startswith('binary_'):
+        if function_name.startswith('binary'):
 
             if not allow_nd and ndim > 2:
                 continue
@@ -191,9 +205,22 @@ def main(args):
                     module_gpu=cucim.skimage.morphology,
                     run_cpu=run_cpu,
                 )
-                results = B.run_benchmark(duration=args.duration)
-                all_results = pd.concat([all_results, results["full"]])
 
+        elif function_name.startswith('isotropic'):
+
+            if not allow_nd and ndim > 2:
+                continue
+
+            B = IsotropicMorphologyBench(
+                function_name=function_name,
+                shape=shape,
+                dtypes=[bool],
+                fixed_kwargs=fixed_kwargs,
+                var_kwargs=var_kwargs,
+                module_cpu=skimage.morphology,
+                module_gpu=cucim.skimage.morphology,
+                run_cpu=run_cpu,
+            )
 
         elif function_name in ['remove_small_holes', 'remove_small_objects']:
             if not allow_nd and ndim > 2:
@@ -216,9 +243,6 @@ def main(args):
                 module_gpu=cucim.skimage.morphology,
                 run_cpu=run_cpu,
             )
-            results = B.run_benchmark(duration=args.duration)
-            all_results = pd.concat([all_results, results["full"]])
-
         else:
 
             if not allow_nd:
@@ -247,8 +271,8 @@ def main(args):
                 module_gpu=cucim.skimage.morphology,
                 run_cpu=run_cpu,
             )
-            results = B.run_benchmark(duration=args.duration)
-            all_results = pd.concat([all_results, results["full"]])
+        results = B.run_benchmark(duration=args.duration)
+        all_results = pd.concat([all_results, results["full"]])
 
     fbase = os.path.splitext(pfile)[0]
     all_results.to_csv(fbase + ".csv")
@@ -264,7 +288,15 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Benchmarking cuCIM morphology functions')
-    func_name_choices = ['binary_erosion', 'binary_dilation', 'binary_opening', 'binary_closing', 'remove_small_objects', 'remove_small_holes', 'erosion', 'dilation', 'opening', 'closing', 'white_tophat', 'black_tophat', 'thin', 'medial_axis', 'reconstruction']
+    # fmt: off
+    func_name_choices = [
+        'binary_erosion', 'binary_dilation', 'binary_opening',
+        'binary_closing', 'isotropic_erosion', 'isotropic_dilation',
+        'isotropic_opening', 'isotropic_closing','remove_small_objects',
+        'remove_small_holes', 'erosion', 'dilation', 'opening', 'closing',
+        'white_tophat', 'black_tophat', 'thin', 'medial_axis', 'reconstruction'
+    ]
+    # fmt: on
     dtype_choices = ['float16', 'float32', 'float64', 'int8', 'int16', 'int32', 'int64', 'uint8', 'uint16', 'uint32', 'uint64']
     parser.add_argument('-i','--img_size', type=str, help='Size of input image (omit color channel, it will be appended as needed)', required=True)
     parser.add_argument('-d','--dtype', type=str, help='Dtype of input image', choices = dtype_choices, required=True)
