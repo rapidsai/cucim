@@ -195,7 +195,7 @@ def denoise_tv_chambolle(image, weight=0.1, eps=2.0e-4, max_num_iter=200,
     >>> mask += 0.2*cp.random.randn(*mask.shape)
     >>> res = denoise_tv_chambolle(mask, weight=100)
 
-    """
+    """  # noqa
 
     im_type = image.dtype
     if not im_type.kind == 'f':

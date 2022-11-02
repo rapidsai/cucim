@@ -1,5 +1,4 @@
 from itertools import combinations_with_replacement
-from warnings import warn
 
 import cupy as cp
 import numpy as np

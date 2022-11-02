@@ -1480,6 +1480,7 @@ class SimilarityTransform(EuclideanTransform):
             raise NotImplementedError(
                 'Scale is only implemented for 2D and 3D.')
 
+
 class PolynomialTransform(GeometricTransform):
     """2D polynomial transformation.
 

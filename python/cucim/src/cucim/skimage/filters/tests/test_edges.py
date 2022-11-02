@@ -608,6 +608,7 @@ MAX_FARID_ND = cp.array([
     dtype=float)
 # fmt: on
 
+
 @pytest.mark.parametrize(
     ('func', 'max_edge'),
     [(filters.prewitt, MAX_SOBEL_ND),
