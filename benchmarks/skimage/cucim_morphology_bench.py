@@ -53,7 +53,7 @@ class BinaryMorphologyBench(ImageBench):
         )
 
     def set_args(self, dtype):
-        imaged = cp.random.standard_normal(self.shape).astype(dtype) > 0
+        imaged = (cp.random.standard_normal(self.shape) > 0).astype(dtype)
         image = cp.asnumpy(imaged)
         self.args_cpu = (image,)
         self.args_gpu = (imaged,)
@@ -61,7 +61,7 @@ class BinaryMorphologyBench(ImageBench):
 
 class IsotropicMorphologyBench(ImageBench):
     def set_args(self, dtype):
-        imaged = cp.random.standard_normal(self.shape).astype(dtype) > 0
+        imaged = (cp.random.standard_normal(self.shape) > 0).astype(dtype)
         image = cp.asnumpy(imaged)
         self.args_cpu = (image,)
         self.args_gpu = (imaged,)
