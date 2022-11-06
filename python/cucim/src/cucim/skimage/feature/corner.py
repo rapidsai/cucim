@@ -525,6 +525,29 @@ def _kitchen_rosenfeld_inner(imx, imy, imxx, imxy, imyy):
     return numerator, denominator
 
 
+@cp.memoize()
+def _get_kitchen_rosenfeld_kernel():
+
+    return cp.ElementwiseKernel(
+        in_params='F imx, F imy, F imxx, F imxy, F imyy',
+        out_params='F response',
+        operation="""
+        F numerator, denominator, imx_sq, imy_sq;
+        imx_sq = imx * imx;
+        imy_sq = imy * imy;
+        denominator = imx_sq;
+        denominator += imy_sq;
+        if (denominator == 0) {
+            response = 0.0;
+        } else {
+            numerator = imxx * imy_sq + imyy * imx_sq - 2 * imxy * imx * imy;
+            response = numerator / denominator;
+        }
+        """,  # noqa
+        name='cucim_feature_kitchen_rosenfeld'
+    )
+
+
 def corner_kitchen_rosenfeld(image, mode="constant", cval=0):
     """Compute Kitchen and Rosenfeld corner measure response image.
 
@@ -565,33 +588,45 @@ def corner_kitchen_rosenfeld(image, mode="constant", cval=0):
     imxy, imxx = _compute_derivatives(imx, mode=mode, cval=cval)
     imyy, _ = _compute_derivatives(imy, mode=mode, cval=cval)
 
-    numerator, denominator = _kitchen_rosenfeld_inner(
-        imx, imy, imxx, imxy, imyy
+    kernel = _get_kitchen_rosenfeld_kernel()
+    response = cp.empty_like(image)
+    return kernel(imx, imy, imxx, imxy, imyy, response)
+
+
+@cp.memoize()
+def _get_corner_harris_k_kernel():
+
+    return cp.ElementwiseKernel(
+        in_params='F Arr, F Acc, F Arc, float64 k',
+        out_params='F response',
+        operation="""
+        F detA, traceA;
+        // determinant
+        detA = Arr * Acc - Arc * Arc;
+        // trace
+        traceA = Arr + Acc;
+        response = detA - k * traceA * traceA;
+        """,
+        name='cucim_skimage_feature_corner_harris_k'
     )
-    response = cp.zeros_like(image, dtype=float_dtype)
-
-    mask = denominator != 0
-    response[mask] = numerator[mask] / denominator[mask]
-
-    return response
 
 
-@cp.fuse
-def _corner_harris_inner_k(Arr, Acc, Arc, k):
-    # determinant
-    detA = Arr * Acc - Arc * Arc
-    # trace
-    traceA = Arr + Acc
-    return detA - k * traceA * traceA
+@cp.memoize()
+def _get_corner_harris_kernel():
 
-
-@cp.fuse
-def _corner_harris_inner(Arr, Acc, Arc, eps):
-    # determinant
-    detA = Arr * Acc - Arc * Arc
-    # trace
-    traceA = Arr + Acc
-    return 2 * detA / (traceA + eps)
+    return cp.ElementwiseKernel(
+        in_params='F Arr, F Acc, F Arc, float64 eps',
+        out_params='F response',
+        operation="""
+        F detA, traceA;
+        // determinant
+        detA = Arr * Acc - Arc * Arc;
+        // trace
+        traceA = Arr + Acc;
+        response = 2 * detA / (traceA + eps);
+        """,
+        name='cucim_skimage_feature_corner_harris_k'
+    )
 
 
 def corner_harris(image, method="k", k=0.05, eps=1e-6, sigma=1):
@@ -659,16 +694,30 @@ def corner_harris(image, method="k", k=0.05, eps=1e-6, sigma=1):
 
     """
     Arr, Arc, Acc = structure_tensor(image, sigma, order="rc")
+    response = cp.zeros_like(Arr)
     if method == "k":
-        response = _corner_harris_inner_k(Arr, Acc, Arc, k)
+        kernel = _get_corner_harris_k_kernel()
+        kernel(Arr, Acc, Arc, k, response)
     else:
-        response = _corner_harris_inner_k(Arr, Acc, Arc, eps)
+        kernel = _get_corner_harris_kernel()
+        kernel(Arr, Acc, Arc, eps, response)
     return response
 
 
-@cp.fuse()
-def _shi_tomasi_fused(Arr, Acc, Arc):
-    return ((Arr + Acc) - cp.sqrt((Arr - Acc) ** 2 + 4 * Arc ** 2)) / 2
+@cp.memoize()
+def _get_shi_tomasi_kernel():
+
+    return cp.ElementwiseKernel(
+        in_params='F Arr, F Acc, F Arc',
+        out_params='F response',
+        operation="""
+        F tmp;
+        tmp = (Arr - Acc);
+        tmp *= tmp;
+        response = (Arr + Acc - sqrt(tmp + 4 * Arc * Arc)) / 2.0;
+        """,
+        name='cucim_skimage_feature_shi_tomasi'
+    )
 
 
 def corner_shi_tomasi(image, sigma=1):
@@ -727,24 +776,34 @@ def corner_shi_tomasi(image, sigma=1):
     """
     Arr, Arc, Acc = structure_tensor(image, sigma, order="rc")
     # minimum eigenvalue of A
-    return _shi_tomasi_fused(Arr, Acc, Arc)
+    response = cp.zeros_like(Arr)
+    kernel = _get_shi_tomasi_kernel()
+    return kernel(Arr, Acc, Arc, response)
 
 
-@cp.fuse
-def _forstner_inner(Arr, Acc, Arc):
-    # determinant
-    detA = Arr * Acc - Arc * Arc
-    # trace
-    traceA = Arr + Acc
-    mask = traceA != 0
-    return detA, traceA, mask
+@cp.memoize()
+def _get_forstner_kernel():
 
+    return cp.ElementwiseKernel(
+        in_params='F Arr, F Acc, F Arc',
+        out_params='F w, F q',
+        operation="""
+        F detA, traceA;
 
-@cp.fuse
-def _forstner_inner2(trace_masked, det_masked):
-    w_masked = det_masked / trace_masked
-    q_masked = 4 * det_masked / (trace_masked * trace_masked)
-    return w_masked, q_masked
+        // determinant
+        detA = Arr * Acc - Arc * Arc;
+        // trace
+        traceA = Arr + Acc;
+        if (traceA == 0) {
+            w = 0;
+            q = 0;
+        } else {
+            w = detA / traceA;
+            q = 4 * detA / (traceA * traceA);
+        }
+        """,
+        name='cucim_skimage_feature_forstner'
+    )
 
 
 def corner_foerstner(image, sigma=1):
@@ -812,17 +871,11 @@ def corner_foerstner(image, sigma=1):
            [7, 7]])
 
     """
-
     Arr, Arc, Acc = structure_tensor(image, sigma, order="rc")
-    # determinant and trace
-    detA, traceA, mask = _forstner_inner(Arr, Acc, Arc)
-
-    w = cp.zeros_like(image, dtype=detA.dtype)
-    q = cp.zeros_like(w)
-    _w, _q = _forstner_inner2(traceA[mask], detA[mask])
-    w[mask] = _w
-    q[mask] = _q
-    return w, q
+    w = cp.empty_like(Arr)
+    q = cp.empty_like(Arr)
+    kernel = _get_forstner_kernel()
+    return kernel(Arr, Acc, Arc, w, q)
 
 
 def corner_peaks(
