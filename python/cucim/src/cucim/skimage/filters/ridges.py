@@ -8,6 +8,7 @@ image intensities to detect tube-like structures where the intensity changes
 perpendicular but not along the structure.
 """
 
+import math
 from warnings import warn
 
 import cupy as cp
@@ -184,7 +185,7 @@ def meijering(image, sigmas=range(1, 10, 2), alpha=None,
         # Sometimes where skimage returns 0, it returns very small values
         # (1e-15-1e-14). Here we set values < 1e-12 to 0 to better replicate
         # the same behavior.
-        eigvals[eigvals < 1e-12] = 0.0
+        eigvals[abs(eigvals) < 1e-12] = 0.0
 
         # Compute normalized eigenvalues l_i = e_i + sum_{j!=i} alpha * e_j.
         vals = cp.tensordot(mtx, eigvals, 1)
@@ -267,7 +268,7 @@ def sato(image, sigmas=range(1, 10, 2), black_ridges=True,
         # Sometimes where skimage returns 0, it returns very small values
         # (1e-15-1e-14). Here we set values < 1e-12 to 0 to better replicate
         # the same behavior.
-        eigvals[eigvals < 1e-12] = 0.0
+        eigvals[abs(eigvals) < 1e-12] = 0.0
 
         # Compute normalized tubeness (eqs. (9) and (22), ref. [1]_) as the
         # geometric mean of eigvals other than the lowest one
@@ -278,6 +279,104 @@ def sato(image, sigmas=range(1, 10, 2), black_ridges=True,
         vals *= sigma ** 2
         filtered_max = cp.maximum(filtered_max, vals)
     return filtered_max  # Return pixel-wise max over all sigmas.
+
+
+@cp.memoize()
+def _get_frangi2d_sum_kernel():
+
+    return cp.ElementwiseKernel(
+        in_params='F lambda1, F lambda2',  # noqa
+        out_params='F r_g',
+        operation="""
+        // Compute sensitivity to areas of high variance/texture/structure,
+        // see equation (12)in reference [1]_
+        r_g = lambda1 * lambda1;
+        r_g += lambda2 * lambda2;
+        """,
+        name='cucim_skimage_filters_frangi3d_inner'
+    )
+
+
+@cp.memoize()
+def _get_frangi2d_inner_kernel():
+
+    return cp.ElementwiseKernel(
+        in_params='F lambda1, F lambda2, F r_g, float64 beta_sq, float64 gamma_sq',  # noqa
+        out_params='F result',
+        operation="""
+        F r_b;
+
+        // Compute sensitivity to deviation from a blob-like structure,
+        // see equations (10) and (15) in reference [1]_,
+        // np.abs(lambda2) in 2D, np.sqrt(np.abs(lambda2 * lambda3)) in 3D
+        // CuPy Backend: cp.multiply does not have a reduce method
+        // filtered_raw = np.abs(np.multiply.reduce(lambdas))**(1/len(lambdas))
+        r_b = abs(lambda1) / max(lambda2, static_cast<F>(1.0e-10));
+        r_b *= r_b;
+
+        // Filtered image, eq. (15).  Our implementation relies on the
+        // blobness exponential factor underflowing to zero whenever the second
+        // or third eigenvalues are negative (we clip them to 1e-10, to make
+        // r_b very large).
+        result = exp(-r_b / beta_sq);
+        result *= 1.0 - exp(-r_g / gamma_sq);
+        """,
+        name='cucim_skimage_filters_frangi2d_inner'
+    )
+
+
+@cp.memoize()
+def _get_frangi3d_sum_kernel():
+
+    return cp.ElementwiseKernel(
+        in_params='F lambda1, F lambda2, F lambda3',  # noqa
+        out_params='F r_g',
+        operation="""
+        // Compute sensitivity to areas of high variance/texture/structure,
+        // see equation (12)in reference [1]_
+        r_g = lambda1 * lambda1;
+        r_g += lambda2 * lambda2;
+        r_g += lambda3 * lambda3;
+        """,
+        name='cucim_skimage_filters_frangi3d_inner'
+    )
+
+
+@cp.memoize()
+def _get_frangi3d_inner_kernel():
+
+    return cp.ElementwiseKernel(
+        in_params='F lambda1, F lambda2, F lambda3, F r_g, float64 alpha_sq, float64 beta_sq, float64 gamma_sq',  # noqa
+        out_params='F result',
+        operation="""
+        F r_a, r_b;
+
+        F lam2 = max(lambda2, static_cast<F>(1.0e-10));
+        F lam3 = max(lambda3, static_cast<F>(1.0e-10));
+
+        // Compute sensitivity to deviation from a plate-like
+        // structure (see equations (11) and (15) in reference [1]_).
+        r_a = lam2 / lam3;
+        r_a *= r_a;
+
+        // Compute sensitivity to deviation from a blob-like structure,
+        // see equations (10) and (15) in reference [1]_,
+        // np.abs(lambda2) in 2D, np.sqrt(np.abs(lambda2 * lambda3)) in 3D
+        // CuPy Backend: cp.multiply does not have a reduce method
+        // filtered_raw = np.abs(np.multiply.reduce(lambdas))**(1/len(lambdas))
+        r_b = (lambda1 * lambda1) / (lam2 * lam3);
+
+        // Filtered image, eq. (13).  Our implementation relies on the
+        // blobness exponential factor underflowing to zero whenever the second
+        // or third eigenvalues are negative (we clip them to 1e-10, to make
+        // r_b very large).
+        result = 1.0 - exp(-r_a / alpha_sq);
+        result *= exp(-r_b / beta_sq);
+        result *= 1.0 - exp(-r_g / gamma_sq);
+
+        """,
+        name='cucim_skimage_filters_frangi3d_inner'
+    )
 
 
 def frangi(image, sigmas=range(1, 10, 2), scale_range=None,
@@ -362,46 +461,59 @@ def frangi(image, sigmas=range(1, 10, 2), scale_range=None,
     if not black_ridges:  # Normalize to black ridges.
         image = -image
 
-    # Generate empty array for storing maximum value
-    # from different (sigma) scales
-    filtered_max = cp.zeros_like(image)
-    for sigma in sigmas:  # Filter for all sigmas.
+    alpha_sq = 2 * alpha * alpha
+    beta_sq = 2 * beta * beta
+    if gamma is not None:
+        gamma_sq = 2 * gamma * gamma
+
+    ndim = image.ndim
+    if ndim == 2:
+        inner_kernel = _get_frangi2d_inner_kernel()
+    elif ndim == 3:
+        inner_kernel = _get_frangi3d_inner_kernel()
+
+    vals = cp.empty(image.shape, dtype=image.dtype)
+    ev_sq_sum = cp.empty_like(vals)
+    for i, sigma in enumerate(sigmas):  # Filter for all sigmas.
         eigvals = hessian_matrix_eigvals(hessian_matrix(
             image, sigma, mode=mode, cval=cval, use_gaussian_derivatives=True))
 
-        # cucim's hessian_matrix differs numerically from the one in skimage.
-        # Sometimes where skimage returns 0, it returns very small values
-        # (1e-15-1e-14). Here we set values < 1e-12 to 0 to better replicate
-        # the same behavior.
-        eigvals[eigvals < 1e-12] = 0.0
+        # Sort eigenvalues by ascending magnitude
+        # (hessian_matrix_eigvals are sorted in descending order, but not by
+        #  magnitude)
+        eigvals = cp.take_along_axis(eigvals, cp.abs(eigvals).argsort(0), 0)
 
-        # Sort eigenvalues by magnitude.
-        eigvals = cp.take_along_axis(eigvals, abs(eigvals).argsort(0), 0)
-        lambda1 = eigvals[0]
-        if image.ndim == 2:
-            lambda2, = cp.maximum(eigvals[1:], 1e-10)
-            r_a = cp.inf  # implied by eq. (15).
-            r_b = cp.abs(lambda1) / lambda2  # eq. (15).
-        else:  # ndim == 3
-            lambda2, lambda3 = cp.maximum(eigvals[1:], 1e-10)
-            r_a = lambda2 / lambda3  # eq. (11).
-            r_b = cp.abs(lambda1) / cp.sqrt(lambda2 * lambda3)  # eq. (10).
-        s = cp.sqrt((eigvals ** 2).sum(0))  # eq. (12).
+        # compute squared sum of the eigenvalues
+        if ndim == 2:
+            ev_sq_sum_kernel = _get_frangi2d_sum_kernel()
+            ev_sq_sum_kernel(eigvals[0], eigvals[1], ev_sq_sum)
+        else:
+            ev_sq_sum_kernel = _get_frangi3d_sum_kernel()
+            ev_sq_sum_kernel(eigvals[0], eigvals[1], eigvals[2], ev_sq_sum)
+
         if gamma is None:
-            gamma = s.max() / 2
-            if gamma == 0:
-                gamma = 1  # If s == 0 everywhere, gamma doesn't matter.
-        # Filtered image, eq. (13) and (15).  Our implementation relies on the
-        # blobness exponential factor underflowing to zero whenever the second
-        # or third eigenvalues are negative (we clip them to 1e-10, to make r_b
-        # very large).
-        vals = 1.0 - cp.exp(-r_a**2 / (2 * alpha**2))  # plate sensitivity
-        vals = vals.astype(image.dtype, copy=False)
-        vals = vals * cp.exp(-r_b**2 / (2 * beta**2))  # blobness
-        vals *= 1.0 - cp.exp(-s**2 / (2 * gamma**2))  # structuredness
-        filtered_max = cp.maximum(filtered_max, vals)
-    if filtered_max.dtype != image.dtype:
-        1 / 0
+            s_max = float(ev_sq_sum.max())
+            gamma = math.sqrt(s_max) / 2.0
+            if s_max == 0:
+                gamma_sq = 2.0  # If s == 0 everywhere, gamma doesn't matter.
+            else:
+                gamma_sq = max(2 * gamma * gamma, 1e-10)
+
+        if ndim == 2:
+            inner_kernel(
+                eigvals[0], eigvals[1], ev_sq_sum, beta_sq, gamma_sq, vals
+            )
+        else:
+            inner_kernel(
+                eigvals[0], eigvals[1], eigvals[2], ev_sq_sum, alpha_sq,
+                beta_sq, gamma_sq, vals
+            )
+
+        # Store maximum value from different (sigma) scales
+        if i == 0:
+            filtered_max = vals.copy()
+        else:
+            filtered_max = cp.maximum(filtered_max, vals)
     return filtered_max  # Return pixel-wise max over all sigmas.
 
 

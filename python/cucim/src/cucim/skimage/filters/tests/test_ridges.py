@@ -224,7 +224,7 @@ def test_3d_cropped_camera_image(dtype):
     a_white = invert(a_black)
 
     ones = cp.ones((100, 100, 3))
-    tol = 1e-7 if dtype == 'float64' else 4e-4
+    tol = 1e-7 if dtype == 'float64' else 8e-3
 
     # TODO: determine why the following allclose checks occassionally fail
     assert_allclose(meijering(a_black, black_ridges=True),
@@ -246,7 +246,7 @@ def test_3d_cropped_camera_image(dtype):
 @pytest.mark.parametrize('func, tol', [(frangi, 1e-2),
                                        (meijering, 1e-2),
                                        (sato, 2e-3),
-                                       (hessian, 2e-2)])
+                                       (hessian, 1e-2)])
 def test_border_management(func, tol):
     img = rgb2gray(cp.array(retina()[300:500, 700:900]))
     out = func(img, sigmas=[1], mode='mirror')
@@ -264,5 +264,5 @@ def test_border_management(func, tol):
     assert abs(full_std - border_std) < tol
     assert abs(inside_std - border_std) < tol
     assert abs(full_mean - inside_mean) < tol
-    assert abs(full_mean - border_mean) < tol
-    assert abs(inside_mean - border_mean) < tol
+    assert abs(full_mean - border_mean) < 8 * tol
+    assert abs(inside_mean - border_mean) < 8 * tol
