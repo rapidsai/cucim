@@ -12,53 +12,50 @@ from ..util.dtype import dtype_range
 __all__ = ['structural_similarity']
 
 
-@cp.fuse()
-def _ssim_fused(cov_norm, ux, uy, uxx, uyy, uxy, data_range, K1, K2):
-    """core SSIM computation"""
-    vx = cov_norm * (uxx - ux * ux)
-    vy = cov_norm * (uyy - uy * uy)
-    vxy = cov_norm * (uxy - ux * uy)
+_ssim_operation = """
+    F vx, vy, vxy, C1, C2, A1, A2, B1, B2, D;
+    vx = cov_norm * (uxx - ux * ux);
+    vy = cov_norm * (uyy - uy * uy);
+    vxy = cov_norm * (uxy - ux * uy);
 
-    C1 = (K1 * data_range)
-    C1 *= C1
-    C2 = (K2 * data_range)
-    C2 *= C2
+    C1 = (K1 * data_range);
+    C1 *= C1;
+    C2 = (K2 * data_range);
+    C2 *= C2;
 
-    A1 = 2 * ux * uy + C1
-    A2 = 2 * vxy + C2
-    B1 = ux * ux + uy * uy + C1
-    B2 = vx + vy + C2
-    D = B1 * B2
-    S = (A1 * A2) / D
-    return S
+    A1 = 2 * ux * uy + C1;
+    A2 = 2 * vxy + C2;
+    B1 = ux * ux + uy * uy + C1;
+    B2 = vx + vy + C2;
+    D = B1 * B2;
+    ssim = (A1 * A2) / D;
+"""
 
 
-@cp.fuse()
-def _ssim_fused_grad1(cov_norm, ux, uy, uxx, uyy, uxy, data_range, K1, K2):
-    """core SSIM computation
+@cp.memoize()
+def _get_ssim_kernel():
 
-    identical to _ssim_fused except that there are multiple return values
-    """
-    vx = cov_norm * (uxx - ux * ux)
-    vy = cov_norm * (uyy - uy * uy)
-    vxy = cov_norm * (uxy - ux * uy)
+    return cp.ElementwiseKernel(
+        in_params='F cov_norm, F ux, F uy, F uxx, F uyy, F uxy, float64 data_range, float64 K1, float64 K2',  # noqa
+        out_params='F ssim',
+        operation=_ssim_operation,
+        name='cucim_ssim'
+    )
 
-    C1 = (K1 * data_range)
-    C1 *= C1
-    C2 = (K2 * data_range)
-    C2 *= C2
 
-    A1 = 2 * ux * uy + C1
-    A2 = 2 * vxy + C2
-    B1 = ux * ux + uy * uy + C1
-    B2 = vx + vy + C2
-    D = B1 * B2
-    S = (A1 * A2) / D
+@cp.memoize()
+def _get_ssim_grad_kernel():
 
-    grad_temp1 = A1 / D
-    grad_temp2 = -S / B2
-    grad_temp3 = (ux * (A2 - A1) - uy * (B2 - B1) * S) / D
-    return S, grad_temp1, grad_temp2, grad_temp3
+    return cp.ElementwiseKernel(
+        in_params='F cov_norm, F ux, F uy, F uxx, F uyy, F uxy, float64 data_range, float64 K1, float64 K2',  # noqa
+        out_params='F ssim, F grad_temp1, F grad_temp2, F grad_temp3',
+        operation=_ssim_operation + """
+            grad_temp1 = A1 / D;
+            grad_temp2 = -ssim / B2;
+            grad_temp3 = (ux * (A2 - A1) - uy * (B2 - B1) * ssim) / D;
+        """,
+        name='cucim_ssim'
+    )
 
 
 @utils.deprecate_multichannel_kwarg()
@@ -276,11 +273,17 @@ def structural_similarity(im1, im2,
     uxy = filter_func(im1 * im2, **filter_args)
 
     if not gradient:
-        S = _ssim_fused(cov_norm, ux, uy, uxx, uyy, uxy, data_range, K1, K2)
+        S = cp.empty_like(ux)
+        kernel = _get_ssim_kernel()
+        kernel(cov_norm, ux, uy, uxx, uyy, uxy, data_range, K1, K2, S)
     else:
-        S, grad_temp1, grad_temp2, grad_temp3 = _ssim_fused_grad1(
-            cov_norm, ux, uy, uxx, uyy, uxy, data_range, K1, K2
-        )
+        S = cp.empty_like(ux)
+        grad_temp1 = cp.empty_like(ux)
+        grad_temp2 = cp.empty_like(ux)
+        grad_temp3 = cp.empty_like(ux)
+        kernel = _get_ssim_grad_kernel()
+        kernel(cov_norm, ux, uy, uxx, uyy, uxy, data_range, K1, K2, S,
+               grad_temp1, grad_temp2, grad_temp3)
 
     # to avoid edge effects will ignore filter radius strip around edges
     pad = (win_size - 1) // 2
