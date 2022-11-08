@@ -259,6 +259,19 @@ def test_rotate_resize_90():
     assert x90.shape == (230, 470)
 
 
+@pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])
+@pytest.mark.parametrize('resize', [False, True])
+@pytest.mark.parametrize('ndim', [2, 3, 4])
+def test_rotate_nd(dtype, resize, ndim):
+    # verify fix for issue: https://github.com/rapidsai/cucim/issues/431
+    x = cp.zeros((5, 5) + (4,) * (ndim - 2), dtype=dtype)
+    x[1, 1] = 1
+    x_out = rotate(x, 15, resize=resize)
+    assert x_out.ndim == x.ndim
+    assert x_out.shape[2:] == x.shape[2:]
+    assert x_out.dtype == _supported_float_type(dtype)
+
+
 def test_rescale():
     # same scale factor
     x = cp.zeros((5, 5), dtype=cp.double)
