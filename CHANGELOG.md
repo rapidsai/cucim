@@ -1,3 +1,7 @@
+# cuCIM 23.02.00 (Date TBD)
+
+Please see https://github.com/rapidsai/cucim/releases/tag/v23.02.00a for the latest changes to this development branch.
+
 # cuCIM 22.12.00 (Date TBD)
 
 Please see https://github.com/rapidsai/cucim/releases/tag/v22.12.00a for the latest changes to this development branch.
