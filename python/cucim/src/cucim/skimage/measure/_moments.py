@@ -4,8 +4,6 @@ import cupy as cp
 import numpy as np
 
 from .._shared.utils import _supported_float_type, check_nD
-from ..feature.corner import (_image_orthogonal_matrix22_eigvals,
-                              _image_orthogonal_matrix33_eigvals)
 
 
 def moments_coords(coords, order=3):
@@ -517,6 +515,14 @@ def inertia_tensor(image, mu=None, *, xp=cp):
     """
     if mu is None:
         mu = moments_central(image, order=2)  # don't need higher-order moments
+    else:
+        if mu.shape[0] < 3:
+            raise ValueError("mu must contain second order moments")
+        if mu.shape[0] > 3:
+            # if higher than 2nd order moments are present trim the array to
+            # match the expectations of the _get_inertia_tensor* kernels.
+            mu = mu[(slice(0, 3),) * mu.ndim]
+        mu = cp.ascontiguousarray(mu)
     if image.ndim == 2:
         result = cp.empty((2, 2), dtype=mu.dtype)
         kern = _get_inertia_tensor_2x2_kernel()
@@ -585,7 +591,10 @@ def inertia_tensor_eigvals(image, mu=None, T=None, *, xp=cp):
     This is much faster if the central moments (``mu``) are provided, or,
     alternatively, one can provide the inertia tensor (``T``) directly.
     """
-    # For such tiny arrays it is best to perform the computation on the CPU.
+    # avoid circular import
+    from ..feature.corner import (_image_orthogonal_matrix22_eigvals,
+                                  _image_orthogonal_matrix33_eigvals)
+
     if T is None:
         T = inertia_tensor(image, mu)
     if image.ndim == 2:
