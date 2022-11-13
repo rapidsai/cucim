@@ -431,6 +431,54 @@ def centroid(image):
     return center
 
 
+def _get_inertia_tensor_2x2_kernel():
+    operation = """
+    F mu0, mxx, mxy, myy;
+    mu0 = mu[0];
+    mxx = mu[6];
+    myy = mu[2];
+    mxy = mu[4];
+
+    result[0] = myy / mu0;
+    result[1] = result[2] = -mxy / mu0;
+    result[3] = mxx / mu0;
+    """
+    return cp.ElementwiseKernel(
+        in_params='raw F mu',
+        out_params='raw F result',
+        operation=operation,
+        name='cucim_skimage_measure_inertia_tensor_2x2'
+    )
+
+
+def _get_inertia_tensor_3x3_kernel():
+    operation = """
+    F mu0, mxx, myy, mzz, mxy, mxz, myz;
+    mu0 = mu[0];   // mu[0, 0, 0]
+    mxx = mu[18];  // mu[2, 0, 0]
+    myy = mu[6];   // mu[0, 2, 0]
+    mzz = mu[2];   // mu[0, 0, 2]
+
+    mxy = mu[12];  // mu[1, 1, 0]
+    mxz = mu[10];  // mu[1, 0, 1]
+    myz = mu[4];   // mu[0, 1, 1]
+
+    result[0] = (myy + mzz) / mu0;
+    result[4] = (mxx + mzz) / mu0;
+    result[8] = (mxx + myy) / mu0;
+
+    result[1] = result[3] = -mxy / mu0;
+    result[2] = result[6] = -mxz / mu0;
+    result[5] = result[7] = -myz / mu0;
+    """
+    return cp.ElementwiseKernel(
+        in_params='raw F mu',
+        out_params='raw F result',
+        operation=operation,
+        name='cucim_skimage_measure_inertia_tensor_3x3'
+    )
+
+
 def inertia_tensor(image, mu=None, *, xp=cp):
     """Compute the inertia tensor of the input image.
 
@@ -467,25 +515,35 @@ def inertia_tensor(image, mu=None, *, xp=cp):
     """
     if mu is None:
         mu = moments_central(image, order=2)  # don't need higher-order moments
-    # CuPy Backend: mu and result are tiny, so faster on the CPU
-    mu = cp.asnumpy(mu)
-    mu0 = mu[(0,) * image.ndim]
-    # nD expression to get coordinates ([2, 0], [0, 2]) (2D),
-    # ([2, 0, 0], [0, 2, 0], [0, 0, 2]) (3D), etc.
-    corners2 = tuple(2 * np.eye(image.ndim, dtype=int))
-    # See https://ocw.mit.edu/courses/aeronautics-and-astronautics/
-    #             16-07-dynamics-fall-2009/lecture-notes/MIT16_07F09_Lec26.pdf
-    # Iii is the sum of second-order moments of every axis *except* i, not the
-    # second order moment of axis i.
-    # See also https://github.com/scikit-image/scikit-image/issues/3229
-    result = np.diag((np.sum(mu[corners2]) - mu[corners2]) / mu0)
+    if image.ndim == 2:
+        result = cp.empty((2, 2), dtype=mu.dtype)
+        kern = _get_inertia_tensor_2x2_kernel()
+        kern(mu, result, size=1)
+    elif image.ndim == 3:
+        result = cp.empty((3, 3), dtype=mu.dtype)
+        kern = _get_inertia_tensor_3x3_kernel()
+        kern(mu, result, size=1)
+    else:
+        # CuPy Backend: mu and result are tiny, so faster on the CPU
+        mu = cp.asnumpy(mu)
+        mu0 = mu[(0,) * image.ndim]
+        # nD expression to get coordinates ([2, 0], [0, 2]) (2D),
+        # ([2, 0, 0], [0, 2, 0], [0, 0, 2]) (3D), etc.
+        corners2 = tuple(2 * np.eye(image.ndim, dtype=int))
+        # See https://ocw.mit.edu/courses/aeronautics-and-astronautics/
+        #             16-07-dynamics-fall-2009/lecture-notes/MIT16_07F09_Lec26.pdf
+        # Iii is the sum of second-order moments of every axis *except* i, not the
+        # second order moment of axis i.
+        # See also https://github.com/scikit-image/scikit-image/issues/3229
+        result = np.diag((np.sum(mu[corners2]) - mu[corners2]) / mu0)
 
-    for dims in itertools.combinations(range(image.ndim), 2):
-        mu_index = np.zeros(image.ndim, dtype=int)
-        mu_index[list(dims)] = 1
-        result[dims] = -mu[tuple(mu_index)] / mu0
-        result.T[dims] = -mu[tuple(mu_index)] / mu0
-    return xp.asarray(result)
+        for dims in itertools.combinations(range(image.ndim), 2):
+            mu_index = np.zeros(image.ndim, dtype=int)
+            mu_index[list(dims)] = 1
+            result[dims] = -mu[tuple(mu_index)] / mu0
+            result.T[dims] = -mu[tuple(mu_index)] / mu0
+        result = xp.asarray(result)
+    return result
 
 
 def inertia_tensor_eigvals(image, mu=None, T=None, *, xp=cp):
@@ -527,13 +585,25 @@ def inertia_tensor_eigvals(image, mu=None, T=None, *, xp=cp):
     """
     # For such tiny arrays it is best to perform the computation on the CPU.
     if T is None:
-        T = inertia_tensor(image, mu, xp=np)
+        T = inertia_tensor(image, mu)
+    if image.ndim == 2:
+        eigvals = _image_orthogonal_matrix22_eigvals(
+            T[0, 0], T[0, 1], T[1, 1], sort='descending', abs_sort=False
+        );
+        cp.maximum(eigvals, 0.0, out=eigvals)
+    elif image.ndim == 3:
+        eigvals = _image_orthogonal_matrix33_eigvals(
+            T[0, 0], T[0, 1], T[0, 2], T[1, 1], T[1, 2], T[2, 2],
+            sort='descending', abs_sort=False
+        );
+        cp.maximum(eigvals, 0.0, out=eigvals)
     else:
-        T = cp.asnumpy(T)
-    eigvals = np.linalg.eigvalsh(T)
+        # sort in descending order
+        eigvals = cp.sort(cp.linalg.eigvalsh(T))[::-1]
+        # call without out argument so copy will be made -> positive strides
+        eigvals = cp.maximum(eigvals, 0.0)
     # Floating point precision problems could make a positive
     # semidefinite matrix have an eigenvalue that is very slightly
     # negative. This can cause problems down the line, so set values
     # very near zero to zero.
-    eigvals = np.clip(eigvals, 0, None, out=eigvals)
-    return xp.asarray(sorted(eigvals, reverse=True))
+    return eigvals
