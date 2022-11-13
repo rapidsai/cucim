@@ -4,6 +4,8 @@ import cupy as cp
 import numpy as np
 
 from .._shared.utils import _supported_float_type, check_nD
+from ..feature.corner import (_image_orthogonal_matrix22_eigvals,
+                              _image_orthogonal_matrix33_eigvals)
 
 
 def moments_coords(coords, order=3):
@@ -531,9 +533,9 @@ def inertia_tensor(image, mu=None, *, xp=cp):
         # ([2, 0, 0], [0, 2, 0], [0, 0, 2]) (3D), etc.
         corners2 = tuple(2 * np.eye(image.ndim, dtype=int))
         # See https://ocw.mit.edu/courses/aeronautics-and-astronautics/
-        #             16-07-dynamics-fall-2009/lecture-notes/MIT16_07F09_Lec26.pdf
-        # Iii is the sum of second-order moments of every axis *except* i, not the
-        # second order moment of axis i.
+        #          16-07-dynamics-fall-2009/lecture-notes/MIT16_07F09_Lec26.pdf
+        # Iii is the sum of second-order moments of every axis *except* i, not
+        # the second order moment of axis i.
         # See also https://github.com/scikit-image/scikit-image/issues/3229
         result = np.diag((np.sum(mu[corners2]) - mu[corners2]) / mu0)
 
@@ -589,13 +591,15 @@ def inertia_tensor_eigvals(image, mu=None, T=None, *, xp=cp):
     if image.ndim == 2:
         eigvals = _image_orthogonal_matrix22_eigvals(
             T[0, 0], T[0, 1], T[1, 1], sort='descending', abs_sort=False
-        );
+        )
         cp.maximum(eigvals, 0.0, out=eigvals)
     elif image.ndim == 3:
+        # fmt: off
         eigvals = _image_orthogonal_matrix33_eigvals(
             T[0, 0], T[0, 1], T[0, 2], T[1, 1], T[1, 2], T[2, 2],
             sort='descending', abs_sort=False
-        );
+        )
+        # fmt: on
         cp.maximum(eigvals, 0.0, out=eigvals)
     else:
         # sort in descending order

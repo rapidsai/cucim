@@ -485,7 +485,9 @@ def _image_orthogonal_matrix22_eigvals(
     """  # noqa
     if M00.dtype.kind != "f":
         raise ValueError("expected real-valued floating point matrices")
-    kernel = _get_real_symmetric_2x2_eigvals_kernel(sort=sort, abs_sort=abs_sort)
+    kernel = _get_real_symmetric_2x2_eigvals_kernel(
+        sort=sort, abs_sort=abs_sort
+    )
     eigs = cp.empty((2,) + M00.shape, dtype=M00.dtype)
     kernel(M00, M01, M11, eigs[0], eigs[1])
     return eigs
@@ -606,7 +608,9 @@ def _image_orthogonal_matrix33_eigvals(
     """  # noqa
     if a.dtype.kind != "f":
         raise ValueError("expected real-valued floating point matrices")
-    kernel = _get_real_symmetric_3x3_eigvals_kernel(sort=sort, abs_sort=abs_sort)
+    kernel = _get_real_symmetric_3x3_eigvals_kernel(
+        sort=sort, abs_sort=abs_sort
+    )
     eigs = cp.empty((3,) + a.shape, dtype=a.dtype)
     kernel(a, b, c, d, e, f, eigs[0], eigs[1], eigs[2])
     return eigs
