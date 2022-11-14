@@ -399,6 +399,15 @@ def hessian_matrix_det(image, sigma=1, approximate=True):
         # integral = integral_image(image)
         # return cp.asarray(_hessian_matrix_det(integral, sigma))
     else:  # slower brute-force implementation for nD images
+        if image.ndim in [2, 3]:
+            # Compute determinant as the product of the eigenvalues.
+            # This avoids the huge memory overhead of forming
+            # `_symmetric_image` as in the code below.
+            # Could optimize further by computing the determinant directly
+            # using ElementwiseKernels rather than reusing the eigenvalue ones.
+            H = hessian_matrix(image, sigma)
+            evs = hessian_matrix_eigvals(H)
+            return cp.prod(evs)
         hessian_mat_array = _symmetric_image(hessian_matrix(image, sigma))
         return cp.linalg.det(hessian_mat_array)
 
