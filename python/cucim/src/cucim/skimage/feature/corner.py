@@ -506,13 +506,19 @@ def _image_orthogonal_matrix22_eigvals(
 def _get_real_symmetric_3x3_eigvals_kernel(sort='ascending', abs_sort=False):
 
     operation = """
-    F x1, x2, phi;
-    F d_sq = d * d;
-    F e_sq = e * e;
-    F f_sq = f * f;
-    F tmpa = (2*a - b - c);
-    F tmpb = (2*b - a - c);
-    F tmpc = (2*c - a - b);
+    double x1, x2, phi;
+    double a = static_cast<double>(aa);
+    double b = static_cast<double>(bb);
+    double c = static_cast<double>(cc);
+    double d = static_cast<double>(dd);
+    double e = static_cast<double>(ee);
+    double f = static_cast<double>(ff);
+    double d_sq = d * d;
+    double e_sq = e * e;
+    double f_sq = f * f;
+    double tmpa = (2*a - b - c);
+    double tmpb = (2*b - a - c);
+    double tmpc = (2*c - a - b);
     x2 = - tmpa * tmpb * tmpc;
     x2 += 9 * (tmpc*d_sq + tmpb*f_sq + tmpa*e_sq);
     x2 -= 54 * (d * e * f);
@@ -523,14 +529,14 @@ def _get_real_symmetric_3x3_eigvals_kernel(sort='ascending', abs_sort=False):
     } else {
         // grlee77: added max() here for numerical stability
         // (avoid NaN values in test_hessian_matrix_eigvals_3d)
-        F arg = max(4*x1*x1*x1 - x2*x2, static_cast<F>(0.0));
+        double arg = max(4*x1*x1*x1 - x2*x2, 0.0);
         phi = atan(sqrt(arg)/x2);
         if (x2 < 0) {
             phi += M_PI;
         }
     }
-    F x1_term = (2.0 / 3.0) * sqrt(x1);
-    F abc = (a + b + c) / 3.0;
+    double x1_term = (2.0 / 3.0) * sqrt(x1);
+    double abc = (a + b + c) / 3.0;
     lam1 = abc - x1_term * cos(phi / 3.0);
     lam2 = abc + x1_term * cos((phi - M_PI) / 3.0);
     lam3 = abc + x1_term * cos((phi + M_PI) / 3.0);
@@ -570,7 +576,7 @@ def _get_real_symmetric_3x3_eigvals_kernel(sort='ascending', abs_sort=False):
         prefix=prefix, var1=var1, var2="lam2", var3=var3
     )
     return cp.ElementwiseKernel(
-        in_params="F a, F b, F c, F d, F e, F f",
+        in_params="F aa, F bb, F cc, F dd, F ee, F ff",
         out_params="F lam1, F lam2, F lam3",
         operation=operation,
         name="cucim_skimage_symmetric_eig33_kernel")

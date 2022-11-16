@@ -178,8 +178,9 @@ def meijering(image, sigmas=range(1, 10, 2), alpha=None,
     # from different (sigma) scales
     filtered_max = cp.zeros_like(image)
     for sigma in sigmas:  # Filter for all sigmas.
-        eigvals = hessian_matrix_eigvals(hessian_matrix(
-            image, sigma, mode=mode, cval=cval, use_gaussian_derivatives=True))
+        H = hessian_matrix(image, sigma, mode=mode, cval=cval,
+                           use_gaussian_derivatives=True)
+        eigvals = hessian_matrix_eigvals(H)
 
         # cucim's hessian_matrix differs numerically from the one in skimage.
         # Sometimes where skimage returns 0, it returns very small values
@@ -261,8 +262,9 @@ def sato(image, sigmas=range(1, 10, 2), black_ridges=True,
     # from different (sigma) scales
     filtered_max = cp.zeros_like(image)
     for sigma in sigmas:  # Filter for all sigmas.
-        eigvals = hessian_matrix_eigvals(hessian_matrix(
-            image, sigma, mode=mode, cval=cval, use_gaussian_derivatives=True))
+        H = hessian_matrix(image, sigma, mode=mode, cval=cval,
+                           use_gaussian_derivatives=True)
+        eigvals = hessian_matrix_eigvals(H)
 
         # cucim's hessian_matrix differs numerically from the one in skimage.
         # Sometimes where skimage returns 0, it returns very small values
@@ -475,8 +477,9 @@ def frangi(image, sigmas=range(1, 10, 2), scale_range=None,
     vals = cp.empty(image.shape, dtype=image.dtype)
     ev_sq_sum = cp.empty_like(vals)
     for i, sigma in enumerate(sigmas):  # Filter for all sigmas.
-        eigvals = hessian_matrix_eigvals(hessian_matrix(
-            image, sigma, mode=mode, cval=cval, use_gaussian_derivatives=True))
+        H = hessian_matrix(image, sigma, mode=mode, cval=cval,
+                           use_gaussian_derivatives=True)
+        eigvals = hessian_matrix_eigvals(H)
 
         # Sort eigenvalues by ascending magnitude
         # (hessian_matrix_eigvals are sorted in descending order, but not by
