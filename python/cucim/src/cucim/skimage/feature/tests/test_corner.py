@@ -123,7 +123,8 @@ def test_structure_tensor_sigma(ndim):
 def test_hessian_matrix(dtype):
     square = cp.zeros((5, 5), dtype=dtype)
     square[2, 2] = 4
-    Hrr, Hrc, Hcc = hessian_matrix(square, sigma=0.1, order="rc")
+    Hrr, Hrc, Hcc = hessian_matrix(square, sigma=0.1, order="rc",
+                                   use_gaussian_derivatives=False)
     out_dtype = _supported_float_type(dtype)
     assert all(a.dtype == out_dtype for a in (Hrr, Hrc, Hcc))
     # fmt: off
@@ -146,11 +147,17 @@ def test_hessian_matrix(dtype):
                                                [0, 0,  2, 0, 0]]))  # noqa
     # fmt: on
 
+    with expected_warnings(["use_gaussian_derivatives currently defaults"]):
+        # FutureWarning warning when use_gaussian_derivatives is not
+        # specified.
+        hessian_matrix(square, sigma=0.1, order="rc")
+
 
 def test_hessian_matrix_3d():
     cube = cp.zeros((5, 5, 5))
     cube[2, 2, 2] = 4
-    Hs = hessian_matrix(cube, sigma=0.1, order='rc')
+    Hs = hessian_matrix(cube, sigma=0.1, order='rc',
+                        use_gaussian_derivatives=False)
     assert len(Hs) == 6, (f"incorrect number of Hessian images ({len(Hs)}) for 3D")  # noqa
     # fmt: off
     assert_array_almost_equal(
@@ -196,7 +203,8 @@ def test_structure_tensor_eigenvalues_3d():
 def test_hessian_matrix_eigvals(dtype):
     square = cp.zeros((5, 5), dtype=dtype)
     square[2, 2] = 4
-    H = hessian_matrix(square, sigma=0.1, order='rc')
+    H = hessian_matrix(square, sigma=0.1, order='rc',
+                       use_gaussian_derivatives=False)
     l1, l2 = hessian_matrix_eigvals(H)
     out_dtype = _supported_float_type(dtype)
     assert all(a.dtype == out_dtype for a in (l1, l2))
@@ -217,7 +225,7 @@ def test_hessian_matrix_eigvals(dtype):
 @pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])
 def test_hessian_matrix_eigvals_3d(im3d, dtype):
     im3d = im3d.astype(dtype, copy=False)
-    H = hessian_matrix(im3d)
+    H = hessian_matrix(im3d, use_gaussian_derivatives=False)
     E = hessian_matrix_eigvals(H)
     E = cp.asnumpy(E)
     out_dtype = _supported_float_type(dtype)

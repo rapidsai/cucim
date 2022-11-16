@@ -121,7 +121,7 @@ def denoise_tv_chambolle(image, weight=0.1, eps=2.0e-4, max_num_iter=200,
 
     Parameters
     ----------
-    image : cp.ndarray
+    image : ndarray
         Input image to be denoised. If its dtype is not float, it gets
         converted with :func:`~.img_as_float`.
     weight : float, optional
@@ -149,7 +149,7 @@ def denoise_tv_chambolle(image, weight=0.1, eps=2.0e-4, max_num_iter=200,
 
     Returns
     -------
-    u : cndarray
+    u : ndarray
         Denoised image.
 
     Notes
