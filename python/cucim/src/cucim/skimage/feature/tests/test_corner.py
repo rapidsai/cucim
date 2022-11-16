@@ -16,6 +16,7 @@ from cucim.skimage.feature import (corner_foerstner, corner_harris,
                                    peak_local_max, shape_index,
                                    structure_tensor,
                                    structure_tensor_eigenvalues)
+from cucim.skimage.feature.corner import _symmetric_image
 from cucim.skimage.morphology import cube
 
 
@@ -258,6 +259,31 @@ def test_hessian_matrix_det():
     # TODO: approximate=True case not implemented
     det = hessian_matrix_det(image, 5, approximate=False)
     assert_array_almost_equal(det, 0, decimal=3)
+
+
+def _reference_eigvals_computation(S_elems):
+    """Legacy eigenvalue implementation based on cp.linalg.eigvalsh."""
+    matrices = _symmetric_image(S_elems)
+    # eigvalsh returns eigenvalues in increasing order. We want decreasing
+    eigs = cp.linalg.eigvalsh(matrices)[..., ::-1]
+    leading_axes = tuple(range(eigs.ndim - 1))
+    eigs = cp.transpose(eigs, (eigs.ndim - 1,) + leading_axes)
+    return eigs
+
+
+@pytest.mark.parametrize(
+    'shape', [(64, 64), (512, 1024), (8, 16, 24)]
+)
+@pytest.mark.parametrize('dtype', [np.float32, np.float64])
+def test_custom_eigvals_kernels_vs_linalg_eigvalsh(shape, dtype):
+    rng = cp.random.default_rng(seed=5)
+    img = rng.integers(0, 256, shape)
+    H = hessian_matrix(img)
+    H = tuple(h.astype(dtype, copy=False) for h in H)
+    evs1 = _reference_eigvals_computation(H)
+    evs2 = hessian_matrix_eigvals(H)
+    atol = 1e-10
+    cp.testing.assert_allclose(evs1, evs2, atol=atol)
 
 
 @pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])
