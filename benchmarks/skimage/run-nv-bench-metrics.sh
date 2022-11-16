@@ -5,7 +5,19 @@ param_dt=(float32 uint8)
 for shape in "${param_shape[@]}"; do
     for filt in "${param_filt[@]}"; do
         for dt in "${param_dt[@]}"; do
-            python cucim_metrics_bench.py -f $filt -i $shape -d $dt -t 10
+            python cucim_metrics_bench.py -f $filt -i $shape -d $dt -t 4
+        done
+    done
+done
+
+# can only use integer dtypes and non-color images for the segmentation metrics
+param_shape=(512,512 3840,2160 192,192,192)
+param_filt=(adapted_rand_error contingency_table variation_of_information)
+param_dt=(uint8)
+for shape in "${param_shape[@]}"; do
+    for filt in "${param_filt[@]}"; do
+        for dt in "${param_dt[@]}"; do
+            python cucim_metrics_bench.py -f $filt -i $shape -d $dt -t 4
         done
     done
 done
