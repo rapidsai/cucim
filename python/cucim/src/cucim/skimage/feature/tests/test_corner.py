@@ -252,15 +252,6 @@ def test_hessian_matrix_eigvals_3d(im3d, dtype):
     assert np.min(response2) < 0
     assert np.max(response0) > 0
 
-
-def test_hessian_matrix_det():
-    image = cp.zeros((5, 5))
-    image[2, 2] = 1
-    # TODO: approximate=True case not implemented
-    det = hessian_matrix_det(image, 5, approximate=False)
-    assert_array_almost_equal(det, 0, decimal=3)
-
-
 def _reference_eigvals_computation(S_elems):
     """Legacy eigenvalue implementation based on cp.linalg.eigvalsh."""
     matrices = _symmetric_image(S_elems)
@@ -284,6 +275,14 @@ def test_custom_eigvals_kernels_vs_linalg_eigvalsh(shape, dtype):
     evs2 = hessian_matrix_eigvals(H)
     atol = 1e-10
     cp.testing.assert_allclose(evs1, evs2, atol=atol)
+
+
+def test_hessian_matrix_det():
+    image = cp.zeros((5, 5))
+    image[2, 2] = 1
+    # TODO: approximate=True case not implemented
+    det = hessian_matrix_det(image, 5, approximate=False)
+    assert_array_almost_equal(det, 0, decimal=3)
 
 
 @pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])

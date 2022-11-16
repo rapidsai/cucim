@@ -407,7 +407,7 @@ def hessian_matrix_det(image, sigma=1, approximate=True):
             # using ElementwiseKernels rather than reusing the eigenvalue ones.
             H = hessian_matrix(image, sigma)
             evs = hessian_matrix_eigvals(H)
-            return cp.prod(evs)
+            return cp.prod(evs, axis=0)
         hessian_mat_array = _symmetric_image(hessian_matrix(image, sigma))
         return cp.linalg.det(hessian_mat_array)
 
