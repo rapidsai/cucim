@@ -387,36 +387,242 @@ def hessian_matrix_det(image, sigma=1, approximate=True):
         # integral = integral_image(image)
         # return cp.asarray(_hessian_matrix_det(integral, sigma))
     else:  # slower brute-force implementation for nD images
+        if image.ndim in [2, 3]:
+            # Compute determinant as the product of the eigenvalues.
+            # This avoids the huge memory overhead of forming
+            # `_symmetric_image` as in the code below.
+            # Could optimize further by computing the determinant directly
+            # using ElementwiseKernels rather than reusing the eigenvalue ones.
+            H = hessian_matrix(image, sigma)
+            evs = hessian_matrix_eigvals(H)
+            return cp.prod(evs, axis=0)
         hessian_mat_array = _symmetric_image(hessian_matrix(image, sigma))
         return cp.linalg.det(hessian_mat_array)
 
 
-@cp.fuse()
-def _image_orthogonal_matrix22_eigvals(M00, M01, M11):
+@cp.memoize()
+def _get_real_symmetric_2x2_eigvals_kernel(sort='ascending', abs_sort=False):
+
+    operation = """
+    F tmp1, tmp2;
+    double m00 = static_cast<double>(M00);
+    double m01 = static_cast<double>(M01);
+    double m11 = static_cast<double>(M11);
+    tmp1 = m01 * m01;
+    tmp1 *= 4;
+
+    tmp2 = m00 - m11;
+    tmp2 *= tmp2;
+    tmp2 += tmp1;
+    tmp2 = sqrt(tmp2);
+    tmp2 /= 2;
+
+    tmp1 = m00 + m11;
+    tmp1 /= 2;
     """
-    analytical formula below optimized for in-place computations.
+    if sort == 'ascending':
+        operation += """
+        lam1 = tmp1 - tmp2;
+        lam2 = tmp1 + tmp2;
+        """
+        if abs_sort:
+            operation += """
+            F stmp;
+            if (abs(lam1) > abs(lam2)) {
+                stmp = lam1;
+                lam1 = lam2;
+                lam2 = stmp;
+            }
+            """
+    elif sort == 'descending':
+        operation += """
+        lam1 = tmp1 + tmp2;
+        lam2 = tmp1 - tmp2;
+        """
+        if abs_sort:
+            operation += """
+            F stmp;
+            if (abs(lam1) < abs(lam2)) {
+                stmp = lam1;
+                lam1 = lam2;
+                lam2 = stmp;
+            }
+            """
+    else:
+        raise ValueError(f"unknown sort type: {sort}")
+    return cp.ElementwiseKernel(
+        in_params="F M00, F M01, F M11",
+        out_params="F lam1, F lam2",
+        operation=operation,
+        name="cucim_skimage_symmetric_eig22_kernel")
+
+
+def _image_orthogonal_matrix22_eigvals(
+    M00, M01, M11, sort='descending', abs_sort=False
+):
+    r"""Analytical expressions of the eigenvalues of a symmetric 2 x 2 matrix.
     It corresponds to::
 
     l1 = (M00 + M11) / 2 + cp.sqrt(4 * M01 ** 2 + (M00 - M11) ** 2) / 2
     l2 = (M00 + M11) / 2 - cp.sqrt(4 * M01 ** 2 + (M00 - M11) ** 2) / 2
+
+    Parameters
+    ----------
+    M00, M01, M11 : cp.ndarray
+        Images corresponding to the individual components of the matrix. For
+        example, ``M01 = M[0, 1]``.
+    sort : {"ascending", "descending"}, optional
+        Eigenvalues should be sorted in the specified order.
+    abs_sort : boolean, optional
+        If ``True``, sort based on the absolute values.
+
+    References
+    ----------
+    .. [1] C. Deledalle, L. Denis, S. Tabti, F. Tupin. Closed-form expressions
+        of the eigen decomposition of 2 x 2 and 3 x 3 Hermitian matrices.
+        [Research Report] Université de Lyon. 2017.
+        https://hal.archives-ouvertes.fr/hal-01501221/file/matrix_exp_and_log_formula.pdf
+    """  # noqa
+    if M00.dtype.kind != "f":
+        raise ValueError("expected real-valued floating point matrices")
+    kernel = _get_real_symmetric_2x2_eigvals_kernel(
+        sort=sort, abs_sort=abs_sort
+    )
+    eigs = cp.empty((2,) + M00.shape, dtype=M00.dtype)
+    kernel(M00, M01, M11, eigs[0], eigs[1])
+    return eigs
+
+
+@cp.memoize()
+def _get_real_symmetric_3x3_eigvals_kernel(sort='ascending', abs_sort=False):
+
+    operation = """
+    double x1, x2, phi;
+    double a = static_cast<double>(aa);
+    double b = static_cast<double>(bb);
+    double c = static_cast<double>(cc);
+    double d = static_cast<double>(dd);
+    double e = static_cast<double>(ee);
+    double f = static_cast<double>(ff);
+    double d_sq = d * d;
+    double e_sq = e * e;
+    double f_sq = f * f;
+    double tmpa = (2*a - b - c);
+    double tmpb = (2*b - a - c);
+    double tmpc = (2*c - a - b);
+    x2 = - tmpa * tmpb * tmpc;
+    x2 += 9 * (tmpc*d_sq + tmpb*f_sq + tmpa*e_sq);
+    x2 -= 54 * (d * e * f);
+    x1 = a*a + b*b + c*c - a*b - a*c - b*c + 3 * (d_sq + e_sq + f_sq);
+
+    if (x2 == 0.0) {
+        phi = M_PI / 2.0;
+    } else {
+        // grlee77: added max() here for numerical stability
+        // (avoid NaN values in test_hessian_matrix_eigvals_3d)
+        double arg = max(4*x1*x1*x1 - x2*x2, 0.0);
+        phi = atan(sqrt(arg)/x2);
+        if (x2 < 0) {
+            phi += M_PI;
+        }
+    }
+    double x1_term = (2.0 / 3.0) * sqrt(x1);
+    double abc = (a + b + c) / 3.0;
+    lam1 = abc - x1_term * cos(phi / 3.0);
+    lam2 = abc + x1_term * cos((phi - M_PI) / 3.0);
+    lam3 = abc + x1_term * cos((phi + M_PI) / 3.0);
     """
-    tmp1 = M01 * M01
-    tmp1 *= 4
+    sort_template = """
+        F stmp;
+        if ({prefix}{var1} > {prefix}{var2}) {{
+            stmp = {var2};
+            {var2} = {var1};
+            {var1} = stmp;
+        }} if ({prefix}{var1} > {prefix}{var3}) {{
+            stmp = {var3};
+            {var3} = {var1};
+            {var1} = stmp;
+        }} if ({prefix}{var2} > {prefix}{var3}) {{
+            stmp = {var3};
+            {var3} = {var2};
+            {var2} = stmp;
+        }}
+    """
+    if abs_sort:
+        operation += """
+        F abs_lam1 = abs(lam1);
+        F abs_lam2 = abs(lam2);
+        F abs_lam3 = abs(lam3);
+        """
+        prefix = "abs_"
+    else:
+        prefix = ""
+    if sort == 'ascending':
+        var1 = "lam1"
+        var3 = "lam3"
+    elif sort == 'descending':
+        var1 = "lam3"
+        var3 = "lam1"
+    operation += sort_template.format(
+        prefix=prefix, var1=var1, var2="lam2", var3=var3
+    )
+    return cp.ElementwiseKernel(
+        in_params="F aa, F bb, F cc, F dd, F ee, F ff",
+        out_params="F lam1, F lam2, F lam3",
+        operation=operation,
+        name="cucim_skimage_symmetric_eig33_kernel")
 
-    tmp2 = M00 - M11
-    tmp2 *= tmp2
-    tmp2 += tmp1
-    cp.sqrt(tmp2, out=tmp2)
-    tmp2 /= 2
 
-    tmp1 = M00 + M11
-    tmp1 /= 2
-    l1 = tmp1 + tmp2
-    l2 = tmp1 - tmp2
-    return l1, l2
+def _image_orthogonal_matrix33_eigvals(
+    a, d, f, b, e, c, sort='descending', abs_sort=False
+):
+    r"""Analytical expressions of the eigenvalues of a symmetric 3 x 3 matrix.
+
+    Follows the expressions given for hermitian symmetric 3 x 3 matrices in
+    [1]_, but simplified to handle real-valued matrices only.
+
+    We are computing moments at each voxel of the volume, so each of ``a``,
+    ``d``, ``f``, ``b``, ``e``, and ``c`` will be equal in shape to the 3D
+    volume.
+
+    Invidual arguments correspond to the following moment matrix entries
+
+    .. math::
+
+    M = \begin{bmatrix}
+    a & d & f\\
+    d & b & e\\
+    f & e & c
+    \end{bmatrix}
+
+    Parameters
+    ----------
+    a, d, f, b, e, c : cp.ndarray
+        Images corresponding to the individual components of the matrix, `M`,
+        shown above. For example, ``d = M[0, 1]``.
+    sort : {"ascending", "descending"}, optional
+        Eigenvalues should be sorted in the specified order.
+    abs_sort : boolean, optional
+        If ``True``, sort based on the absolute values.
+
+    References
+    ----------
+    .. [1] C. Deledalle, L. Denis, S. Tabti, F. Tupin. Closed-form expressions
+        of the eigen decomposition of 2 x 2 and 3 x 3 Hermitian matrices.
+        [Research Report] Université de Lyon. 2017.
+        https://hal.archives-ouvertes.fr/hal-01501221/file/matrix_exp_and_log_formula.pdf
+    """  # noqa
+    if a.dtype.kind != "f":
+        raise ValueError("expected real-valued floating point matrices")
+    kernel = _get_real_symmetric_3x3_eigvals_kernel(
+        sort=sort, abs_sort=abs_sort
+    )
+    eigs = cp.empty((3,) + a.shape, dtype=a.dtype)
+    kernel(a, b, c, d, e, f, eigs[0], eigs[1], eigs[2])
+    return eigs
 
 
-def _symmetric_compute_eigenvalues(S_elems):
+def _symmetric_compute_eigenvalues(S_elems, sort='descending', abs_sort=False):
     """Compute eigenvalues from the upper-diagonal entries of a symmetric
     matrix.
 
@@ -425,6 +631,10 @@ def _symmetric_compute_eigenvalues(S_elems):
     S_elems : list of ndarray
         The upper-diagonal elements of the matrix, as returned by
         `hessian_matrix` or `structure_tensor`.
+    sort : {"ascending", "descending"}, optional
+        Eigenvalues should be sorted in the specified order.
+    abs_sort : boolean, optional
+        If ``True``, sort based on the absolute values.
 
     Returns
     -------
@@ -434,14 +644,26 @@ def _symmetric_compute_eigenvalues(S_elems):
         ith-largest eigenvalue at position (j, k).
     """
 
-    if len(S_elems) == 3:  # Use fast Cython code for 2D
-        eigs = cp.stack(_image_orthogonal_matrix22_eigvals(*S_elems))
+    if len(S_elems) == 3:  # Use fast analytical kernel for 2D
+        eigs = _image_orthogonal_matrix22_eigvals(
+            *S_elems, sort=sort, abs_sort=abs_sort
+        )
+    elif len(S_elems) == 6:  # Use fast analytical kernel for 3D
+        eigs = _image_orthogonal_matrix33_eigvals(
+            *S_elems, sort=sort, abs_sort=abs_sort
+        )
     else:
+        # n-dimensional case. warning: extremely memory inefficient!
         matrices = _symmetric_image(S_elems)
         # eigvalsh returns eigenvalues in increasing order. We want decreasing
-        eigs = cp.linalg.eigvalsh(matrices)[..., ::-1]
+        eigs = cp.linalg.eigvalsh(matrices)
         leading_axes = tuple(range(eigs.ndim - 1))
         eigs = cp.transpose(eigs, (eigs.ndim - 1,) + leading_axes)
+        if abs_sort:
+            # (sort by magnitude)
+            eigs = cp.take_along_axis(eigs, cp.abs(eigs).argsort(0), 0)
+        if sort == 'descending':
+            eigs = eigs[::-1, ...]
     return eigs
 
 
@@ -508,18 +730,6 @@ def structure_tensor_eigenvalues(A_elems):
     structure_tensor
     """
     return _symmetric_compute_eigenvalues(A_elems)
-
-
-"""
-TODO: add an _image_symmetric_real33_eigvals() based on:
-Oliver K. Smith. 1961.
-Eigenvalues of a symmetric 3 × 3 matrix.
-Commun. ACM 4, 4 (April 1961), 168.
-DOI:https://doi.org/10.1145/355578.366316
-
-def _image_symmetric_real33_eigvals(M00, M01, M02, M11, M12, M22):
-
-"""
 
 
 def hessian_matrix_eigvals(H_elems):
