@@ -3,6 +3,7 @@ import math
 import cupy as cp
 import cupyx.scipy.ndimage as ndi
 import numpy as np
+from .._shared.utils import deprecate_kwarg
 
 # Don't allocate STREL_* on GPU as we don't know in advance which device
 # fmt: off
@@ -95,7 +96,7 @@ def euler_number(image, connectivity=None):
     4-connected, then background is 8-connected, and conversely.
 
     The computation of the Euler characteristic is based on an integral
-    geometry formula in discretized space. In practice, a neighbourhood
+    geometry formula in discretized space. In practice, a neighborhood
     configuration is constructed, and a LUT is applied for each
     configuration. The coefficients used are the ones of Ohser et al.
 
@@ -191,16 +192,19 @@ def euler_number(image, connectivity=None):
         return int(0.125 * coefs @ h)
 
 
-def perimeter(image, neighbourhood=4):
+@deprecate_kwarg(kwarg_mapping={'neighbourhood': 'neighborhood'},
+                 removed_version="2023.06.00",
+                 deprecated_version="2022.12.00")
+def perimeter(image, neighborhood=4):
     """Calculate total perimeter of all objects in binary image.
 
     Parameters
     ----------
     image : (N, M) ndarray
         2D binary image.
-    neighbourhood : 4 or 8, optional
+    neighborhood : 4 or 8, optional
         Neighborhood connectivity for border pixel determination. It is used to
-        compute the contour. A higher neighbourhood widens the border on which
+        compute the contour. A higher neighborhood widens the border on which
         the perimeter is computed.
 
     Returns
@@ -232,7 +236,7 @@ def perimeter(image, neighbourhood=4):
     if image.ndim != 2:
         raise NotImplementedError('`perimeter` supports 2D images only')
 
-    if neighbourhood == 4:
+    if neighborhood == 4:
         strel = STREL_4
     else:
         strel = STREL_8
@@ -241,7 +245,7 @@ def perimeter(image, neighbourhood=4):
     eroded_image = ndi.binary_erosion(image, strel, border_value=0)
     border_image = image - eroded_image
 
-    perimeter_weights = cp.zeros(50, dtype=cp.double)
+    perimeter_weights = cp.zeros(50, dtype=cp.float64)
     perimeter_weights[[5, 7, 15, 17, 25, 27]] = 1
     perimeter_weights[[21, 33]] = math.sqrt(2)
     perimeter_weights[[13, 23]] = (1 + math.sqrt(2)) / 2
