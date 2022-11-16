@@ -252,6 +252,7 @@ def test_hessian_matrix_eigvals_3d(im3d, dtype):
     assert np.min(response2) < 0
     assert np.max(response0) > 0
 
+
 def _reference_eigvals_computation(S_elems):
     """Legacy eigenvalue implementation based on cp.linalg.eigvalsh."""
     matrices = _symmetric_image(S_elems)

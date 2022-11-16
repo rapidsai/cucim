@@ -481,8 +481,8 @@ def frangi(image, sigmas=range(1, 10, 2), scale_range=None,
         H = hessian_matrix(image, sigma, mode=mode, cval=cval,
                            use_gaussian_derivatives=True)
 
-        # using _symmetric_compute_eigenvalues rather than hessian_matrix_eigvals
-        # so we can directly sort by ascending magnitude
+        # Use _symmetric_compute_eigenvalues rather than
+        # hessian_matrix_eigvals so we can directly sort by ascending magnitude
         eigvals = _symmetric_compute_eigenvalues(
             H, sort='ascending', abs_sort=True
         )
