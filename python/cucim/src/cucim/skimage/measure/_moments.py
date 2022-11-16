@@ -633,7 +633,7 @@ def inertia_tensor(image, mu=None, *, spacing=None):
             mu_index[list(dims)] = 1
             result[dims] = -mu[tuple(mu_index)] / mu0
             result.T[dims] = -mu[tuple(mu_index)] / mu0
-        result = xp.asarray(result)
+        result = cp.asarray(result)
     return result
 
 
