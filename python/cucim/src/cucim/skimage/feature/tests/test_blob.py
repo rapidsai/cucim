@@ -2,7 +2,6 @@ import math
 
 import cupy as cp
 import pytest
-from cupy.testing import assert_almost_equal
 
 from skimage.draw import disk
 from skimage.draw.draw3d import ellipsoid
@@ -16,7 +15,6 @@ from cucim.skimage.feature import blob_dog, blob_doh, blob_log
 )
 @pytest.mark.parametrize('threshold_type', ['absolute', 'relative'])
 def test_blob_dog(dtype, threshold_type):
-    r2 = math.sqrt(2)
     img = cp.ones((512, 512), dtype=dtype)
 
     xs, ys = cp.asarray(disk((400, 130), 5))
@@ -45,7 +43,10 @@ def test_blob_dog(dtype, threshold_type):
         threshold=threshold,
         threshold_rel=threshold_rel,
     )
-    radius = lambda x: r2 * x[2]
+
+    def radius(x):
+        return math.sqrt(2) * x[2]
+
     s = sorted(blobs, key=radius)
     thresh = 5
     ratio_thresh = 0.25
@@ -192,7 +193,6 @@ def test_nd_blob_no_peaks_shape(function_name, ndim, anisotropic):
 )
 @pytest.mark.parametrize('threshold_type', ['absolute', 'relative'])
 def test_blob_log(dtype, threshold_type):
-    r2 = math.sqrt(2)
     img = cp.ones((256, 256), dtype=dtype)
 
     xs, ys = cp.asarray(disk((200, 65), 5))
@@ -220,7 +220,9 @@ def test_blob_log(dtype, threshold_type):
     blobs = blob_log(img, min_sigma=5, max_sigma=20, threshold=threshold,
                      threshold_rel=threshold_rel)
 
-    radius = lambda x: r2 * x[2]
+    def radius(x):
+        return math.sqrt(2) * x[2]
+
     s = sorted(blobs, key=radius)
     thresh = 3
 
@@ -393,7 +395,9 @@ def test_blob_doh(dtype, threshold_type):
         threshold=threshold,
         threshold_rel=threshold_rel)
 
-    radius = lambda x: x[2]
+    def radius(x):
+        return x[2]
+
     s = sorted(blobs, key=radius)
     thresh = 4
 
@@ -441,7 +445,9 @@ def test_blob_doh_log_scale():
         log_scale=True,
         threshold=.05)
 
-    radius = lambda x: x[2]
+    def radius(x):
+        return x[2]
+
     s = sorted(blobs, key=radius)
     thresh = 10
 
@@ -507,10 +513,6 @@ def test_blob_log_overlap_3d():
     assert len(blobs) == 1
 
 
-# Note:
-# test_blob_overlap_3d_anisotropic() can not be done because the _blob_overlap is implemented as c++ / cuda code
-
-
 def test_blob_log_anisotropic():
     image = cp.zeros((50, 50))
     image[20, 10:20] = 1
@@ -521,11 +523,7 @@ def test_blob_log_anisotropic():
     assert len(ani_blobs) == 1  # single anisotropic blob found
 
 
-# Note:
-# test_blob_log_overlap_3d_anisotropic() can not be done because the _blob_overlap is implemented as c++ / cuda code
-
-
 def test_no_blob():
     im = cp.zeros((10, 10))
-    blobs = blob_log(im,  min_sigma=2, max_sigma=5, num_sigma=4)
+    blobs = blob_log(im, min_sigma=2, max_sigma=5, num_sigma=4)
     assert len(blobs) == 0

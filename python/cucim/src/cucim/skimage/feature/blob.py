@@ -16,16 +16,17 @@ from .peak import peak_local_max
 # http://www.cs.utah.edu/~jfishbau/advimproc/project1/ (04.04.2013)
 # Theory behind: https://en.wikipedia.org/wiki/Blob_detection (04.04.2013)
 
-blob_file = "blob.cu"
-
 
 def _dtype_to_cuda_float_type(dtype):
     """Maps a float data type from cupy to cuda.
+
     Returns a cuda (c++) data type.
+
     Parameters
     ----------
     dtype : cupy dtype
         A cupy dtype from type float.
+
     Returns
     -------
     cpp_float_type : cuda (c++) data type
@@ -41,37 +42,43 @@ def _dtype_to_cuda_float_type(dtype):
     return cpp_float_types[dtype.type]
 
 
-def _get_prune_blob_kernel(dtype) -> cp.RawModule:
+def _get_prune_blob_rawmodule(dtype) -> cp.RawModule:
     """Loads the kernel according to dtype /cuda/blob.cu
     Returns a cupy RawModule.
+
     Parameters
     ----------
     dtype : cupy dtype
         Only the cupy dtypes float32 and float64 are supported.
+
     Returns
     -------
     RawModule : cupy RawModule
-        A cupy RawModule containing the __global__ functions _prune_blobs and _prune_blobs_kdtree
+        A cupy RawModule containing the __global__ functions `_prune_blobs`
+        and `_prune_blobs_kdtree`.
     """
-    global blob_file
-
     blob_t = _dtype_to_cuda_float_type(dtype)
 
     _preamble = f"""
 #define BLOB_T {blob_t}
     """
 
-    kernel_directory = os.path.join(os.path.normpath(os.path.dirname(__file__)), 'cuda')
-    with open(os.path.join(kernel_directory, blob_file), 'rt') as f:
+    kernel_directory = os.path.join(
+        os.path.normpath(os.path.dirname(__file__)), 'cuda'
+    )
+    with open(os.path.join(kernel_directory, "blob.cu"), 'rt') as f:
         _code = '\n'.join(f.readlines())
 
-    return cp.RawModule(code=_preamble + _code,
-                        options=('--std=c++11',),
-                        name_expressions=["_prune_blobs", "_prune_blobs_kdtree"])
+    return cp.RawModule(
+        code=_preamble + _code,
+        options=('--std=c++11',),
+        name_expressions=["_prune_blobs", "_prune_blobs_kdtree"]
+    )
 
 
 def _prune_blobs(blobs_array, overlap, *, sigma_dim=1):
     """Eliminated blobs with area overlap.
+
     Parameters
     ----------
     blobs_array : ndarray
@@ -87,14 +94,16 @@ def _prune_blobs(blobs_array, overlap, *, sigma_dim=1):
     sigma_dim : int, optional
         The number of columns in ``blobs_array`` corresponding to sigmas rather
         than positions.
+
     Returns
     -------
     A : ndarray
-        `array` with overlapping blobs removed.
+        `blobs_array` with overlapping blobs removed.
     """
 
     # from here, the kernel does the calculation
-    _prune_blobs_kernel = _get_prune_blob_kernel(blobs_array.dtype).get_function("_prune_blobs")
+    blobs_module = _get_prune_blob_rawmodule(blobs_array.dtype)
+    _prune_blobs_kernel = blobs_module.get_function("_prune_blobs")
 
     block_size = 64
     grid_size = int(math.ceil(blobs_array.shape[0] / block_size))
@@ -110,6 +119,7 @@ def _prune_blobs(blobs_array, overlap, *, sigma_dim=1):
 
 def _prune_blobs_kdtree(blobs_array, overlap, *, sigma_dim=1):
     """Eliminated blobs with area overlap.
+
     Parameters
     ----------
     blobs_array : ndarray
@@ -125,27 +135,32 @@ def _prune_blobs_kdtree(blobs_array, overlap, *, sigma_dim=1):
     sigma_dim : int, optional
         The number of columns in ``blobs_array`` corresponding to sigmas rather
         than positions.
+
     Returns
     -------
     A : ndarray
         `array` with overlapping blobs removed.
+
     Notes
     -----
-    This function is using scipy's spatial.cKDTree, so the blobs_array will be copied to CPU RAM and the CPU does the
-    job. For larger blobs_array the GPU does this faster. This function will be updated as soon as the function
-    cupyx.scipy.spatial.cKDTree is implemented.
+    This function is using scipy's `spatial.cKDTree`, so the blobs_array will
+    be copied to CPU RAM and the CPU does the job. For larger blobs_array the
+    GPU does this faster. This function will be updated as soon as the function
+    `cupyx.scipy.spatial.cKDTree` is implemented.
     """
 
     sigma = blobs_array[:, -sigma_dim:].max()
     distance = 2 * sigma * math.sqrt(blobs_array.shape[1] - sigma_dim)
-    # ToDo: replace with cupyx.scipy.spatial.cKDTree as soon as the function is implemented
+    # TODO: replace with cupyx.scipy.spatial.cKDTree as soon as the function is
+    #       implemented
     tree = spatial.cKDTree(cp.asnumpy(blobs_array[:, :-sigma_dim]))
     pairs = cp.array(list(tree.query_pairs(distance)))
     if len(pairs) == 0:
         return blobs_array
     else:
         # from here, the kernel does the calculation
-        _prune_blobs_kernel = _get_prune_blob_kernel(blobs_array.dtype).get_function("_prune_blobs_kdtree")
+        blobs_module = _get_prune_blob_rawmodule(blobs_array.dtype)
+        _prune_blobs_kernel = blobs_module.get_function("_prune_blobs_kdtree")
 
         block_size = 64
         grid_size = int(math.ceil(blobs_array.shape[0] / block_size))
@@ -234,6 +249,7 @@ def blob_dog(image, min_sigma=1, max_sigma=50, sigma_ratio=1.6, threshold=0.5,
         `exclude_border`-pixels of the border of the image.
         If zero or False, peaks are identified regardless of their
         distance from the border.
+
     Returns
     -------
     A : (n, image.ndim + sigma) ndarray
@@ -245,16 +261,19 @@ def blob_dog(image, min_sigma=1, max_sigma=50, sigma_ratio=1.6, threshold=0.5,
         deviation of the Gaussian kernel which detected the blob. When an
         anisotropic gaussian is used (sigmas per dimension), the detected sigma
         is returned for each dimension.
+
     See also
     --------
     cucim.skimage.filters.difference_of_gaussians
+
     References
     ----------
-    .. [1] https://en.wikipedia.org/wiki/Blob_detection#The_difference_of_Gaussians_approach
+    .. [1] https://en.wikipedia.org/wiki/Blob_detection#The_difference_of_Gaussians_approach  # noqa
     .. [2] Lowe, D. G. "Distinctive Image Features from Scale-Invariant
         Keypoints." International Journal of Computer Vision 60, 91–110 (2004).
         https://www.cs.ubc.ca/~lowe/papers/ijcv04.pdf
         :DOI:`10.1023/B:VISI.0000029664.99615.94`
+
     Examples
     --------
     >>> from cucim.skimage import data, feature
@@ -284,6 +303,7 @@ def blob_dog(image, min_sigma=1, max_sigma=50, sigma_ratio=1.6, threshold=0.5,
            [ 55., 157.,  10.],
            [ 57.,  41.,  10.],
            [260.,  47.,  16.]])
+
     Notes
     -----
     The radius of each blob is approximately :math:`\sqrt{2}\sigma` for
@@ -415,6 +435,7 @@ def blob_log(image, min_sigma=1, max_sigma=50, num_sigma=10, threshold=.2,
         `exclude_border`-pixels of the border of the image.
         If zero or False, peaks are identified regardless of their
         distance from the border.
+
     Returns
     -------
     A : (n, image.ndim + sigma) ndarray
@@ -426,9 +447,11 @@ def blob_log(image, min_sigma=1, max_sigma=50, num_sigma=10, threshold=.2,
         deviation of the Gaussian kernel which detected the blob. When an
         anisotropic gaussian is used (sigmas per dimension), the detected sigma
         is returned for each dimension.
+
     References
     ----------
-    .. [1] https://en.wikipedia.org/wiki/Blob_detection#The_Laplacian_of_Gaussian
+    .. [1] https://en.wikipedia.org/wiki/Blob_detection#The_Laplacian_of_Gaussian  # noqa
+
     Examples
     --------
     >>> from cucim.skimage import data, feature, exposure
@@ -526,10 +549,12 @@ def blob_log(image, min_sigma=1, max_sigma=50, num_sigma=10, threshold=.2,
 def blob_doh(image, min_sigma=1, max_sigma=30, num_sigma=10, threshold=0.01,
              overlap=.5, log_scale=False, *, threshold_rel=None):
     """Finds blobs in the given grayscale image.
+
     Blobs are found using the Determinant of Hessian method [1]_. For each blob
     found, the method returns its coordinates and the standard deviation
     of the Gaussian Kernel used for the Hessian matrix whose determinant
     detected the blob. Determinant of Hessians is approximated using [2]_.
+
     Parameters
     ----------
     image : 2D ndarray
@@ -561,6 +586,7 @@ def blob_doh(image, min_sigma=1, max_sigma=30, num_sigma=10, threshold=0.01,
         stack of Determinant-of-Hessian (DoH) images computed internally. This
         should have a value between 0 and 1. If None, `threshold` is used
         instead.
+
     Returns
     -------
     A : (n, 3) ndarray
@@ -568,12 +594,14 @@ def blob_doh(image, min_sigma=1, max_sigma=30, num_sigma=10, threshold=0.01,
         where ``(y,x)`` are coordinates of the blob and ``sigma`` is the
         standard deviation of the Gaussian kernel of the Hessian Matrix whose
         determinant detected the blob.
+
     References
     ----------
-    .. [1] https://en.wikipedia.org/wiki/Blob_detection#The_determinant_of_the_Hessian
+    .. [1] https://en.wikipedia.org/wiki/Blob_detection#The_determinant_of_the_Hessian  # noqa
     .. [2] Herbert Bay, Andreas Ess, Tinne Tuytelaars, Luc Van Gool,
            "SURF: Speeded Up Robust Features"
            ftp://ftp.vision.ee.ethz.ch/publications/articles/eth_biwi_00517.pdf
+
     Examples
     --------
     >>> from cucim.skimage import data, feature
@@ -596,6 +624,7 @@ def blob_doh(image, min_sigma=1, max_sigma=30, num_sigma=10, threshold=0.01,
            [123.        ,  44.        ,  23.55555556],
            [260.        , 173.        ,  30.        ],
            [197.        ,  44.        ,  20.33333333]])
+
     Notes
     -----
     The radius of each blob is approximately `sigma`.
