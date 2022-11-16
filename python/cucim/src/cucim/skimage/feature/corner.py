@@ -634,7 +634,7 @@ def _image_orthogonal_matrix33_eigvals(
     return eigs
 
 
-def _symmetric_compute_eigenvalues(S_elems, fast_3d=True):
+def _symmetric_compute_eigenvalues(S_elems, sort='descending', abs_sort=False):
     """Compute eigenvalues from the upperdiagonal entries of a symmetric matrix
 
     Parameters
@@ -642,6 +642,10 @@ def _symmetric_compute_eigenvalues(S_elems, fast_3d=True):
     S_elems : list of ndarray
         The upper-diagonal elements of the matrix, as returned by
         `hessian_matrix` or `structure_tensor`.
+    sort : {"ascending", "descending"}, optional
+        Eigenvalues should be sorted in the specified order.
+    abs_sort : boolean, optional
+        If ``True``, sort based on the absolute values.
 
     Returns
     -------
@@ -653,19 +657,24 @@ def _symmetric_compute_eigenvalues(S_elems, fast_3d=True):
 
     if len(S_elems) == 3:  # Use fast analytical kernel for 2D
         eigs = _image_orthogonal_matrix22_eigvals(
-            *S_elems, sort='descending', abs_sort=False
+            *S_elems, sort=sort, abs_sort=abs_sort
         )
-    elif fast_3d and len(S_elems) == 6:  # Use fast analytical kernel for 3D
+    elif len(S_elems) == 6:  # Use fast analytical kernel for 3D
         eigs = _image_orthogonal_matrix33_eigvals(
-            *S_elems, sort='descending', abs_sort=False
+            *S_elems, sort=sort, abs_sort=abs_sort
         )
     else:
         # n-dimensional case. warning: extremely memory inefficient!
         matrices = _symmetric_image(S_elems)
         # eigvalsh returns eigenvalues in increasing order. We want decreasing
-        eigs = cp.linalg.eigvalsh(matrices)[..., ::-1]
+        eigs = cp.linalg.eigvalsh(matrices)
         leading_axes = tuple(range(eigs.ndim - 1))
         eigs = cp.transpose(eigs, (eigs.ndim - 1,) + leading_axes)
+        if abs_sort:
+            # (sort by magnitude)
+            eigs = cp.take_along_axis(eigs, cp.abs(eigs).argsort(0), 0)
+        if sort == 'descending':
+            eigs = eigs[::-1, ...]
     return eigs
 
 

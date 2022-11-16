@@ -15,7 +15,8 @@ import cupy as cp
 import numpy as np
 
 from .._shared.utils import _supported_float_type, check_nD, deprecated
-from ..feature.corner import hessian_matrix, hessian_matrix_eigvals
+from ..feature.corner import (_symmetric_compute_eigenvalues, hessian_matrix,
+                              hessian_matrix_eigvals)
 from ..util import img_as_float
 
 
@@ -479,12 +480,12 @@ def frangi(image, sigmas=range(1, 10, 2), scale_range=None,
     for i, sigma in enumerate(sigmas):  # Filter for all sigmas.
         H = hessian_matrix(image, sigma, mode=mode, cval=cval,
                            use_gaussian_derivatives=True)
-        eigvals = hessian_matrix_eigvals(H)
 
-        # Sort eigenvalues by ascending magnitude
-        # (hessian_matrix_eigvals are sorted in descending order, but not by
-        #  magnitude)
-        eigvals = cp.take_along_axis(eigvals, cp.abs(eigvals).argsort(0), 0)
+        # using _symmetric_compute_eigenvalues rather than hessian_matrix_eigvals
+        # so we can directly sort by ascending magnitude
+        eigvals = _symmetric_compute_eigenvalues(
+            H, sort='ascending', abs_sort=True
+        )
 
         # compute squared sum of the eigenvalues
         if ndim == 2:
