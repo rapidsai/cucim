@@ -4,6 +4,7 @@ import cupy as cp
 import numpy as np
 
 from .._shared.utils import _supported_float_type, check_nD
+from ._moments_analytical import moments_raw_to_central
 
 
 def moments_coords(coords, order=3):
@@ -161,7 +162,7 @@ def moments_coords_central(coords, center=None, order=3):
     return Mc
 
 
-def moments(image, order=3):
+def moments(image, order=3, *, spacing=None):
     """Calculate all raw image moments up to a certain order.
 
     The following properties can be calculated from raw image moments:
@@ -177,6 +178,8 @@ def moments(image, order=3):
         Rasterized shape as image.
     order : int, optional
         Maximum order of moments. Default is 3.
+    spacing: tuple of float, shape (ndim, )
+        The pixel spacing along each axis of the image.
 
     Returns
     -------
@@ -205,10 +208,26 @@ def moments(image, order=3):
     >>> centroid
     (array(14.5), array(14.5))
     """
-    return moments_central(image, (0,) * image.ndim, order=order)
+    float_dtype = _supported_float_type(image.dtype)
+    calc = image.astype(float_dtype, copy=False)
+    powers = cp.arange(order + 1, dtype=float_dtype)
+    _delta = cp.arange(max(image.shape), dtype=float_dtype)[:, cp.newaxis]
+    if spacing is None:
+        # when spacing is not used can compute the powers outside the loop
+        _powers_of_delta = _delta ** powers
+    for dim, dim_length in enumerate(image.shape):
+        if spacing is None:
+            powers_of_delta = _powers_of_delta[:dim_length]
+        else:
+            delta = _delta[:dim_length] * spacing[dim]
+            powers_of_delta = delta ** powers
+        calc = cp.moveaxis(calc, source=dim, destination=-1)
+        calc = cp.dot(calc, powers_of_delta)
+        calc = cp.moveaxis(calc, source=-1, destination=dim)
+    return calc
 
 
-def moments_central(image, center=None, order=3, **kwargs):
+def moments_central(image, center=None, order=3, *, spacing=None, **kwargs):
     """Calculate all central image moments up to a certain order.
 
     The center coordinates (cr, cc) can be calculated from the raw moments as:
@@ -226,6 +245,8 @@ def moments_central(image, center=None, order=3, **kwargs):
         is not provided.
     order : int, optional
         The maximum order of moments computed.
+    spacing: tuple of float, shape (ndim, )
+        The pixel spacing along each axis of the image.
 
     Returns
     -------
@@ -258,20 +279,83 @@ def moments_central(image, center=None, order=3, **kwargs):
            [ 0.,  0.,  0.,  0.]])
     """
     if center is None:
-        center = centroid(image)
+        # Note: No need for an explicit call to centroid.
+        #       The centroid will be obtained from the raw moments.
+        moments_raw = moments(image, order=order, spacing=spacing)
+        return moments_raw_to_central(moments_raw)
+    if spacing is None:
+        spacing = np.ones(image.ndim)
     float_dtype = _supported_float_type(image.dtype)
     calc = image.astype(float_dtype, copy=False)
     powers = cp.arange(order + 1, dtype=float_dtype)
+    _delta = cp.arange(max(image.shape), dtype=float_dtype)[:, cp.newaxis]
     for dim, dim_length in enumerate(image.shape):
-        delta = cp.arange(dim_length, dtype=float_dtype) - center[dim]
-        powers_of_delta = delta[:, cp.newaxis] ** powers
-        calc = cp.rollaxis(calc, dim, image.ndim)
+        delta = _delta[:dim_length] * spacing[dim] - center[dim]
+        powers_of_delta = delta ** powers
+        calc = cp.moveaxis(calc, source=dim, destination=-1)
         calc = cp.dot(calc, powers_of_delta)
-        calc = cp.rollaxis(calc, -1, dim)
+        calc = cp.moveaxis(calc, source=-1, destination=dim)
     return calc
 
 
-def moments_normalized(mu, order=3):
+def _get_moments_norm_operation(ndim, order, unit_scale=True):
+    """Full normalization computation kernel for 2D or 3D cases.
+
+    Variants with or without scaling are provided.
+    """
+    operation = f"""
+        double mu0 = static_cast<double>(mu[0]);
+        double ndim = {ndim};
+        int _i = i;
+        int coord_i;
+        int order_of_current_index = 0;
+        int n_rows = order + 1;
+        double denom;
+    """
+
+    if not unit_scale:
+        operation += """
+        double s_pow;"""
+
+    operation += f"""
+        for (int d=0; d<{ndim}; d++)"""
+    operation += """
+        {
+            // This loop computes the coordinate index along each axis of the
+            // matrix in turn and sums them up to get the order of the moment
+            // at the current index in mu.
+            coord_i = _i % n_rows;
+            _i /= n_rows;
+            order_of_current_index += coord_i;
+        }
+        if ((order_of_current_index > order) || (order_of_current_index < 2))
+        {
+            continue;
+        }
+    """
+    if unit_scale:
+        operation += """
+        denom = pow(mu0, static_cast<double>(order_of_current_index) / ndim + 1);
+        nu = mu[i] / denom;"""  # noqa
+    else:
+        operation += """
+        s_pow = pow(scale, static_cast<double>(order_of_current_index));
+        denom = pow(mu0, static_cast<double>(order_of_current_index) / ndim + 1);
+        nu = (mu[i] / s_pow) / denom;"""  # noqa
+    return operation
+
+
+@cp.memoize()
+def _get_normalize_kernel(ndim, order, unit_scale=True):
+    return cp.ElementwiseKernel(
+        'raw F mu, int32 order, float64 scale',
+        'F nu',
+        operation=_get_moments_norm_operation(ndim, order, unit_scale),
+        name=f"moments_normmalize_2d_kernel"
+    )
+
+
+def moments_normalized(mu, order=3, spacing=None):
     """Calculate all normalized central image moments up to a certain order.
 
     Note that normalized central moments are translation and scale invariant
@@ -290,6 +374,11 @@ def moments_normalized(mu, order=3):
     nu : (``order + 1``,[ ...,] ``order + 1``) array
         Normalized central image moments.
 
+    Notes
+    -----
+    Differs from the scikit-image implementation in that any moments greater
+    than the requested `order` will be set to ``nan``.
+
     References
     ----------
     .. [1] Wilhelm Burger, Mark Burge. Principles of Digital Image Processing:
@@ -300,12 +389,6 @@ def moments_normalized(mu, order=3):
            Features, from Lecture notes in computer science, p. 676. Springer,
            Berlin, 1993.
     .. [4] https://en.wikipedia.org/wiki/Image_moment
-
-    Notes
-    -----
-    Due to the small array sizes, this function should be faster on the CPU.
-    Consider transfering ``mu`` to the host and running
-    ``skimage.measure.moments_normalized``.
 
     Examples
     --------
@@ -325,23 +408,25 @@ def moments_normalized(mu, order=3):
     """
     if any(s <= order for s in mu.shape):
         raise ValueError("Shape of image moments must be >= `order`")
-    # CuPy Backend: For the tiny mu and nu arrays, it is faster to run this
-    #               computation on the host and then transfer back to the GPU.
-    mu = cp.asnumpy(mu)
-    nu = np.zeros_like(mu)
-    mu0 = mu.ravel()[0]
-    for powers in itertools.product(range(order + 1), repeat=mu.ndim):
-        if sum(powers) < 2:
-            nu[powers] = cp.nan
+    if spacing is None:
+        scale = 1.0
+    else:
+        if isinstance(spacing, cp.ndarray):
+            scale = spacing.min()
         else:
-            nu[powers] = mu[powers] / (mu0 ** (sum(powers) / nu.ndim + 1))
-    return cp.array(nu)
+            scale = min(spacing)
+    # compute using in a single kernel for the 2D or 3D cases
+    unit_scale = scale == 1.0
+    kernel = _get_normalize_kernel(mu.ndim, order, unit_scale)
+    nu = cp.full(mu.shape, cp.nan, dtype=mu.dtype)
+    kernel(mu, order, scale, nu)
+    return nu
 
 
 def moments_hu(nu):
     """Calculate Hu's set of image moments (2D-only).
 
-    Note that this set of moments is proofed to be translation, scale and
+    Note that this set of moments is proved to be translation, scale and
     rotation invariant.
 
     Parameters
@@ -399,13 +484,15 @@ def moments_hu(nu):
     return cp.asarray(moments_hu(cp.asnumpy(nu)), dtype=float_dtype)
 
 
-def centroid(image):
+def centroid(image, *, spacing=None):
     """Return the (weighted) centroid of an image.
 
     Parameters
     ----------
     image : array
         The input image.
+    spacing: tuple of float, shape (ndim, )
+        The pixel spacing along each axis of the image.
 
     Returns
     -------
@@ -416,18 +503,18 @@ def centroid(image):
     --------
     >>> import cupy as cp
     >>> from cucim.skimage.measure import centroid
-    >>> image = cp.zeros((20, 20), dtype=np.float64)
+    >>> image = cp.zeros((20, 20), dtype=cp.float64)
     >>> image[13:17, 13:17] = 0.5
     >>> image[10:12, 10:12] = 1
     >>> centroid(image)
     array([13.16666667, 13.16666667])
     """
-    M = moments_central(image, center=(0,) * image.ndim, order=1)
-    center = (
-        M[tuple(cp.eye(image.ndim, dtype=int))]  # array of weighted sums
-        # for each axis
-        / M[(0,) * image.ndim]
-    )  # weighted sum of all points
+    mu = moments(image, order=1, spacing=spacing)
+    ndim = image.ndim
+    mu0 = mu[(0,) * ndim]
+    center = mu[tuple((0,) * dim + (1,) + (0,) * (ndim - dim - 1)
+                for dim in range(ndim))]
+    center /= mu0
     return center
 
 
@@ -479,7 +566,7 @@ def _get_inertia_tensor_3x3_kernel():
     )
 
 
-def inertia_tensor(image, mu=None, *, xp=cp):
+def inertia_tensor(image, mu=None, *, spacing=None):
     """Compute the inertia tensor of the input image.
 
     Parameters
@@ -493,13 +580,8 @@ def inertia_tensor(image, mu=None, *, xp=cp):
         (for example, `skimage.measure.regionprops`), then it is more
         efficient to pre-compute them and pass them to the inertia tensor
         call.
-
-    Additional Parameters
-    ---------------------
-    xp : {numpy, cupy}
-        This setting determines whether the tensor returned is on the host or
-        GPU. Note that this option does not exist in the scikit-image
-        implementation.
+    spacing : tuple of float, optional
+        The pixel spacing along each axis of the image.
 
     Returns
     -------
@@ -514,7 +596,8 @@ def inertia_tensor(image, mu=None, *, xp=cp):
            Scientific Applications. (Chapter 8: Tensor Methods) Springer, 1993.
     """
     if mu is None:
-        mu = moments_central(image, order=2)  # don't need higher-order moments
+        # don't need higher-order moments
+        mu = moments_central(image, order=2, spacing=spacing)
     else:
         if mu.shape[0] < 3:
             raise ValueError("mu must contain second order moments")
@@ -554,7 +637,7 @@ def inertia_tensor(image, mu=None, *, xp=cp):
     return result
 
 
-def inertia_tensor_eigvals(image, mu=None, T=None, *, xp=cp):
+def inertia_tensor_eigvals(image, mu=None, T=None, *, spacing=None):
     """Compute the eigenvalues of the inertia tensor of the image.
 
     The inertia tensor measures covariance of the image intensity along
@@ -571,13 +654,8 @@ def inertia_tensor_eigvals(image, mu=None, T=None, *, xp=cp):
     T : array, shape ``(image.ndim, image.ndim)``
         The pre-computed inertia tensor. If ``T`` is given, ``mu`` and
         ``image`` are ignored.
-
-    Additional Parameters
-    ---------------------
-    xp : {numpy, cupy}
-        This setting determines whether the tensor returned is on the host or
-        GPU. Note that this option does not exist in the scikit-image
-        implementation.
+    spacing : tuple of float, optional
+        The pixel spacing along each axis of the image.
 
     Returns
     -------
@@ -596,7 +674,7 @@ def inertia_tensor_eigvals(image, mu=None, T=None, *, xp=cp):
                                   _image_orthogonal_matrix33_eigvals)
 
     if T is None:
-        T = inertia_tensor(image, mu)
+        T = inertia_tensor(image, mu, spacing=spacing)
     if image.ndim == 2:
         eigvals = _image_orthogonal_matrix22_eigvals(
             T[0, 0], T[0, 1], T[1, 1], sort='descending', abs_sort=False
