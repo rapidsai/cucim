@@ -423,6 +423,10 @@ def rotate(image, angle, resize=False, center=None, order=None,
     symmetric, the result would be [0, 1, 2, 2, 1, 0, 0], while for reflect it
     would be [0, 1, 2, 1, 0, 1, 2].
 
+    If ``image.ndim > 2``, the rotation occurs for the first two dimensions of
+    the array. Unlike the scikit-image implementation, more than one additional
+    axis may be present on the array.
+
     Examples
     --------
     >>> from skimage import data
@@ -479,7 +483,7 @@ def rotate(image, angle, resize=False, center=None, order=None,
         maxr = corners[:, 1].max()
         out_rows = maxr - minr + 1
         out_cols = maxc - minc + 1
-        output_shape = np.around((out_rows, out_cols))
+        output_shape = (round(out_rows), round(out_cols))
 
         # fit output image in new shape
         translation = (minc, minr)
@@ -493,11 +497,21 @@ def rotate(image, angle, resize=False, center=None, order=None,
     tform.params[:2, :2] = tform.params[:2, :2].T
     tform.params[:2, 2] = tform.params[1::-1, 2]
 
+    if image.ndim == 2:
+        affine_params = tform.params
+    elif image.ndim > 2:
+        # note: only the first two dimensions are the ones being rotated
+        #       embed 2D affine into larger identity matrix.
+        affine_params = np.eye(image.ndim + 1)
+        affine_params[:3, :3] = tform.params
+        # keep original shape on the excess dimensions
+        output_shape = output_shape + image.shape[2:]
+
     # transfer the coordinate transform to the GPU
-    tform.params = cp.asarray(tform.params)
+    affine_params = cp.asarray(affine_params)
 
     return _ndimage_affine(
-        image, tform.params, output_shape=output_shape, order=order,
+        image, affine_params, output_shape=output_shape, order=order,
         mode=mode, cval=cval, clip=clip, preserve_range=preserve_range
     )
 

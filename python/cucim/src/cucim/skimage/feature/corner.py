@@ -1,5 +1,6 @@
+import functools
+import math
 from itertools import combinations_with_replacement
-from warnings import warn
 
 import cupy as cp
 import numpy as np
@@ -10,7 +11,7 @@ from cucim.skimage.util import img_as_float
 
 # from ..transform import integral_image
 from .._shared._gradient import gradient
-from .._shared.utils import _supported_float_type
+from .._shared.utils import _supported_float_type, warn
 from .peak import peak_local_max
 from .util import _prepare_grayscale_input_nD
 
@@ -153,8 +154,96 @@ def structure_tensor(image, sigma=1, mode="constant", cval=0, order=None):
     return A_elems
 
 
-def hessian_matrix(image, sigma=1, mode='constant', cval=0, order='rc'):
-    """Compute the Hessian matrix.
+def _hessian_matrix_with_gaussian(image, sigma=1, mode='reflect', cval=0,
+                                  order='rc'):
+    """Compute the Hessian via convolutions with Gaussian derivatives.
+
+    In 2D, the Hessian matrix is defined as:
+        H = [Hrr Hrc]
+            [Hrc Hcc]
+
+    which is computed by convolving the image with the second derivatives
+    of the Gaussian kernel in the respective r- and c-directions.
+
+    The implementation here also supports n-dimensional data.
+
+    Parameters
+    ----------
+    image : ndarray
+        Input image.
+    sigma : float or sequence of float, optional
+        Standard deviation used for the Gaussian kernel, which sets the
+        amount of smoothing in terms of pixel-distances. It is
+        advised to not choose a sigma much less than 1.0, otherwise
+        aliasing artifacts may occur.
+    mode : {'constant', 'reflect', 'wrap', 'nearest', 'mirror'}, optional
+        How to handle values outside the image borders.
+    cval : float, optional
+        Used in conjunction with mode 'constant', the value outside
+        the image boundaries.
+    order : {'rc', 'xy'}, optional
+        This parameter allows for the use of reverse or forward order of
+        the image axes in gradient computation. 'rc' indicates the use of
+        the first axis initially (Hrr, Hrc, Hcc), whilst 'xy' indicates the
+        usage of the last axis initially (Hxx, Hxy, Hyy)
+
+    Returns
+    -------
+    H_elems : list of ndarray
+        Upper-diagonal elements of the hessian matrix for each pixel in the
+        input image. In 2D, this will be a three element list containing [Hrr,
+        Hrc, Hcc]. In nD, the list will contain ``(n**2 + n) / 2`` arrays.
+
+    """
+    image = img_as_float(image)
+    float_dtype = _supported_float_type(image.dtype)
+    image = image.astype(float_dtype, copy=False)
+
+    if np.isscalar(sigma):
+        sigma = (sigma,) * image.ndim
+
+    # This function uses `scipy.ndimage.gaussian_filter` with the order
+    # argument to compute convolutions. For example, specifying
+    # ``order=[1, 0]`` would apply convolution with a first-order derivative of
+    # the Gaussian along the first axis and simple Gaussian smoothing along the
+    # second.
+
+    # For small sigma, the SciPy Gaussian filter suffers from aliasing and edge
+    # artifacts, given that the filter will approximate a sinc or sinc
+    # derivative which only goes to 0 very slowly (order 1/n**2). Thus, we use
+    # a much larger truncate value to reduce any edge artifacts.
+    truncate = 8 if all(s > 1 for s in sigma) else 100
+    sq1_2 = 1 / math.sqrt(2)
+    sigma_scaled = tuple(sq1_2 * s for s in sigma)
+    common_kwargs = dict(sigma=sigma_scaled, mode=mode, cval=cval,
+                         truncate=truncate)
+    gaussian_ = functools.partial(ndi.gaussian_filter, **common_kwargs)
+
+    # Apply two successive first order Gaussian derivative operations, as
+    # detailed in:
+    # https://dsp.stackexchange.com/questions/78280/are-scipy-second-order-gaussian-derivatives-correct  # noqa
+
+    # 1.) First order along one axis while smoothing (order=0) along the other
+    ndim = image.ndim
+
+    # orders in 2D = ([1, 0], [0, 1])
+    #        in 3D = ([1, 0, 0], [0, 1, 0], [0, 0, 1])
+    #        etc.
+    orders = tuple([0] * d + [1] + [0] * (ndim - d - 1) for d in range(ndim))
+    gradients = [gaussian_(image, order=orders[d]) for d in range(ndim)]
+
+    # 2.) apply the derivative along another axis as well
+    axes = range(ndim)
+    if order == 'rc':
+        axes = reversed(axes)
+    H_elems = [gaussian_(gradients[ax0], order=orders[ax1])
+               for ax0, ax1 in combinations_with_replacement(axes, 2)]
+    return H_elems
+
+
+def hessian_matrix(image, sigma=1, mode='constant', cval=0, order='rc',
+                   use_gaussian_derivatives=None):
+    r"""Compute the Hessian matrix.
 
     In 2D, the Hessian matrix is defined as::
 
@@ -183,6 +272,9 @@ def hessian_matrix(image, sigma=1, mode='constant', cval=0, order='rc'):
         the image axes in gradient computation. 'rc' indicates the use of
         the first axis initially (Hrr, Hrc, Hcc), whilst 'xy' indicates the
         usage of the last axis initially (Hxx, Hxy, Hyy)
+    use_gaussian_derivatives : boolean, optional
+        Indicates whether the Hessian is computed by convolving with Gaussian
+        derivatives, or by a simple finite-difference operation.
 
     Returns
     -------
@@ -191,13 +283,32 @@ def hessian_matrix(image, sigma=1, mode='constant', cval=0, order='rc'):
         input image. In 2D, this will be a three element list containing [Hrr,
         Hrc, Hcc]. In nD, the list will contain ``(n**2 + n) / 2`` arrays.
 
+
+    Notes
+    -----
+    The distributive property of derivatives and convolutions allows us to
+    restate the derivative of an image, I, smoothed with a Gaussian kernel, G,
+    as the convolution of the image with the derivative of G.
+
+    .. math::
+
+        \frac{\partial }{\partial x_i}(I * G) =
+        I * \left( \frac{\partial }{\partial x_i} G \right)
+
+    When ``use_gaussian_derivatives`` is ``True``, this property is used to
+    compute the second order derivatives that make up the Hessian matrix.
+
+    When ``use_gaussian_derivatives`` is ``False``, simple finite differences
+    on a Gaussian-smoothed image are used instead.
+
     Examples
     --------
     >>> import cupy as cp
     >>> from cucim.skimage.feature import hessian_matrix
     >>> square = cp.zeros((5, 5))
     >>> square[2, 2] = 4
-    >>> Hrr, Hrc, Hcc = hessian_matrix(square, sigma=0.1, order='rc')
+    >>> Hrr, Hrc, Hcc = hessian_matrix(square, sigma=0.1, order='rc',
+    ...                                use_gaussian_derivatives=False)
     >>> Hrc
     array([[ 0.,  0.,  0.,  0.,  0.],
            [ 0.,  1.,  0., -1.,  0.],
@@ -211,8 +322,20 @@ def hessian_matrix(image, sigma=1, mode='constant', cval=0, order='rc'):
     float_dtype = _supported_float_type(image.dtype)
     image = image.astype(float_dtype, copy=False)
 
+    if use_gaussian_derivatives is None:
+        use_gaussian_derivatives = False
+        warn("use_gaussian_derivatives currently defaults to False, but will "
+             "change to True in a future version. Please specify this "
+             "argument explicitly to maintain the current behavior",
+             category=FutureWarning, stacklevel=2)
+
+    if use_gaussian_derivatives:
+        return _hessian_matrix_with_gaussian(image, sigma=sigma, mode=mode,
+                                             cval=cval, order=order)
+
     # Autodetection as done internally to Gaussian, but set it here to silence
     # a warning.
+    # TODO: eventually remove this as this behavior of gaussian is deprecated
     channel_axis = -1 if (image.ndim == 3 and image.shape[-1] == 3) else None
 
     gaussian_filtered = gaussian(image, sigma=sigma, mode=mode, cval=cval,
@@ -276,36 +399,242 @@ def hessian_matrix_det(image, sigma=1, approximate=True):
         # integral = integral_image(image)
         # return cp.asarray(_hessian_matrix_det(integral, sigma))
     else:  # slower brute-force implementation for nD images
+        if image.ndim in [2, 3]:
+            # Compute determinant as the product of the eigenvalues.
+            # This avoids the huge memory overhead of forming
+            # `_symmetric_image` as in the code below.
+            # Could optimize further by computing the determinant directly
+            # using ElementwiseKernels rather than reusing the eigenvalue ones.
+            H = hessian_matrix(image, sigma)
+            evs = hessian_matrix_eigvals(H)
+            return cp.prod(evs, axis=0)
         hessian_mat_array = _symmetric_image(hessian_matrix(image, sigma))
         return cp.linalg.det(hessian_mat_array)
 
 
-@cp.fuse()
-def _image_orthogonal_matrix22_eigvals(M00, M01, M11):
+@cp.memoize()
+def _get_real_symmetric_2x2_eigvals_kernel(sort='ascending', abs_sort=False):
+
+    operation = """
+    F tmp1, tmp2;
+    double m00 = static_cast<double>(M00);
+    double m01 = static_cast<double>(M01);
+    double m11 = static_cast<double>(M11);
+    tmp1 = m01 * m01;
+    tmp1 *= 4;
+
+    tmp2 = m00 - m11;
+    tmp2 *= tmp2;
+    tmp2 += tmp1;
+    tmp2 = sqrt(tmp2);
+    tmp2 /= 2;
+
+    tmp1 = m00 + m11;
+    tmp1 /= 2;
     """
-    analytical formula below optimized for in-place computations.
+    if sort == 'ascending':
+        operation += """
+        lam1 = tmp1 - tmp2;
+        lam2 = tmp1 + tmp2;
+        """
+        if abs_sort:
+            operation += """
+            F stmp;
+            if (abs(lam1) > abs(lam2)) {
+                stmp = lam1;
+                lam1 = lam2;
+                lam2 = stmp;
+            }
+            """
+    elif sort == 'descending':
+        operation += """
+        lam1 = tmp1 + tmp2;
+        lam2 = tmp1 - tmp2;
+        """
+        if abs_sort:
+            operation += """
+            F stmp;
+            if (abs(lam1) < abs(lam2)) {
+                stmp = lam1;
+                lam1 = lam2;
+                lam2 = stmp;
+            }
+            """
+    else:
+        raise ValueError(f"unknown sort type: {sort}")
+    return cp.ElementwiseKernel(
+        in_params="F M00, F M01, F M11",
+        out_params="F lam1, F lam2",
+        operation=operation,
+        name="cucim_skimage_symmetric_eig22_kernel")
+
+
+def _image_orthogonal_matrix22_eigvals(
+    M00, M01, M11, sort='descending', abs_sort=False
+):
+    r"""Analytical expressions of the eigenvalues of a symmetric 2 x 2 matrix.
     It corresponds to::
 
     l1 = (M00 + M11) / 2 + cp.sqrt(4 * M01 ** 2 + (M00 - M11) ** 2) / 2
     l2 = (M00 + M11) / 2 - cp.sqrt(4 * M01 ** 2 + (M00 - M11) ** 2) / 2
+
+    Parameters
+    ----------
+    M00, M01, M11 : cp.ndarray
+        Images corresponding to the individual components of the matrix. For
+        example, ``M01 = M[0, 1]``.
+    sort : {"ascending", "descending"}, optional
+        Eigenvalues should be sorted in the specified order.
+    abs_sort : boolean, optional
+        If ``True``, sort based on the absolute values.
+
+    References
+    ----------
+    .. [1] C. Deledalle, L. Denis, S. Tabti, F. Tupin. Closed-form expressions
+        of the eigen decomposition of 2 x 2 and 3 x 3 Hermitian matrices.
+        [Research Report] Université de Lyon. 2017.
+        https://hal.archives-ouvertes.fr/hal-01501221/file/matrix_exp_and_log_formula.pdf
+    """  # noqa
+    if M00.dtype.kind != "f":
+        raise ValueError("expected real-valued floating point matrices")
+    kernel = _get_real_symmetric_2x2_eigvals_kernel(
+        sort=sort, abs_sort=abs_sort
+    )
+    eigs = cp.empty((2,) + M00.shape, dtype=M00.dtype)
+    kernel(M00, M01, M11, eigs[0], eigs[1])
+    return eigs
+
+
+@cp.memoize()
+def _get_real_symmetric_3x3_eigvals_kernel(sort='ascending', abs_sort=False):
+
+    operation = """
+    double x1, x2, phi;
+    double a = static_cast<double>(aa);
+    double b = static_cast<double>(bb);
+    double c = static_cast<double>(cc);
+    double d = static_cast<double>(dd);
+    double e = static_cast<double>(ee);
+    double f = static_cast<double>(ff);
+    double d_sq = d * d;
+    double e_sq = e * e;
+    double f_sq = f * f;
+    double tmpa = (2*a - b - c);
+    double tmpb = (2*b - a - c);
+    double tmpc = (2*c - a - b);
+    x2 = - tmpa * tmpb * tmpc;
+    x2 += 9 * (tmpc*d_sq + tmpb*f_sq + tmpa*e_sq);
+    x2 -= 54 * (d * e * f);
+    x1 = a*a + b*b + c*c - a*b - a*c - b*c + 3 * (d_sq + e_sq + f_sq);
+
+    if (x2 == 0.0) {
+        phi = M_PI / 2.0;
+    } else {
+        // grlee77: added max() here for numerical stability
+        // (avoid NaN values in test_hessian_matrix_eigvals_3d)
+        double arg = max(4*x1*x1*x1 - x2*x2, 0.0);
+        phi = atan(sqrt(arg)/x2);
+        if (x2 < 0) {
+            phi += M_PI;
+        }
+    }
+    double x1_term = (2.0 / 3.0) * sqrt(x1);
+    double abc = (a + b + c) / 3.0;
+    lam1 = abc - x1_term * cos(phi / 3.0);
+    lam2 = abc + x1_term * cos((phi - M_PI) / 3.0);
+    lam3 = abc + x1_term * cos((phi + M_PI) / 3.0);
     """
-    tmp1 = M01 * M01
-    tmp1 *= 4
+    sort_template = """
+        F stmp;
+        if ({prefix}{var1} > {prefix}{var2}) {{
+            stmp = {var2};
+            {var2} = {var1};
+            {var1} = stmp;
+        }} if ({prefix}{var1} > {prefix}{var3}) {{
+            stmp = {var3};
+            {var3} = {var1};
+            {var1} = stmp;
+        }} if ({prefix}{var2} > {prefix}{var3}) {{
+            stmp = {var3};
+            {var3} = {var2};
+            {var2} = stmp;
+        }}
+    """
+    if abs_sort:
+        operation += """
+        F abs_lam1 = abs(lam1);
+        F abs_lam2 = abs(lam2);
+        F abs_lam3 = abs(lam3);
+        """
+        prefix = "abs_"
+    else:
+        prefix = ""
+    if sort == 'ascending':
+        var1 = "lam1"
+        var3 = "lam3"
+    elif sort == 'descending':
+        var1 = "lam3"
+        var3 = "lam1"
+    operation += sort_template.format(
+        prefix=prefix, var1=var1, var2="lam2", var3=var3
+    )
+    return cp.ElementwiseKernel(
+        in_params="F aa, F bb, F cc, F dd, F ee, F ff",
+        out_params="F lam1, F lam2, F lam3",
+        operation=operation,
+        name="cucim_skimage_symmetric_eig33_kernel")
 
-    tmp2 = M00 - M11
-    tmp2 *= tmp2
-    tmp2 += tmp1
-    cp.sqrt(tmp2, out=tmp2)
-    tmp2 /= 2
 
-    tmp1 = M00 + M11
-    tmp1 /= 2
-    l1 = tmp1 + tmp2
-    l2 = tmp1 - tmp2
-    return l1, l2
+def _image_orthogonal_matrix33_eigvals(
+    a, d, f, b, e, c, sort='descending', abs_sort=False
+):
+    r"""Analytical expressions of the eigenvalues of a symmetric 3 x 3 matrix.
+
+    Follows the expressions given for hermitian symmetric 3 x 3 matrices in
+    [1]_, but simplified to handle real-valued matrices only.
+
+    We are computing moments at each voxel of the volume, so each of ``a``,
+    ``d``, ``f``, ``b``, ``e``, and ``c`` will be equal in shape to the 3D
+    volume.
+
+    Invidual arguments correspond to the following moment matrix entries
+
+    .. math::
+
+    M = \begin{bmatrix}
+    a & d & f\\
+    d & b & e\\
+    f & e & c
+    \end{bmatrix}
+
+    Parameters
+    ----------
+    a, d, f, b, e, c : cp.ndarray
+        Images corresponding to the individual components of the matrix, `M`,
+        shown above. For example, ``d = M[0, 1]``.
+    sort : {"ascending", "descending"}, optional
+        Eigenvalues should be sorted in the specified order.
+    abs_sort : boolean, optional
+        If ``True``, sort based on the absolute values.
+
+    References
+    ----------
+    .. [1] C. Deledalle, L. Denis, S. Tabti, F. Tupin. Closed-form expressions
+        of the eigen decomposition of 2 x 2 and 3 x 3 Hermitian matrices.
+        [Research Report] Université de Lyon. 2017.
+        https://hal.archives-ouvertes.fr/hal-01501221/file/matrix_exp_and_log_formula.pdf
+    """  # noqa
+    if a.dtype.kind != "f":
+        raise ValueError("expected real-valued floating point matrices")
+    kernel = _get_real_symmetric_3x3_eigvals_kernel(
+        sort=sort, abs_sort=abs_sort
+    )
+    eigs = cp.empty((3,) + a.shape, dtype=a.dtype)
+    kernel(a, b, c, d, e, f, eigs[0], eigs[1], eigs[2])
+    return eigs
 
 
-def _symmetric_compute_eigenvalues(S_elems):
+def _symmetric_compute_eigenvalues(S_elems, sort='descending', abs_sort=False):
     """Compute eigenvalues from the upperdiagonal entries of a symmetric matrix
 
     Parameters
@@ -313,6 +642,10 @@ def _symmetric_compute_eigenvalues(S_elems):
     S_elems : list of ndarray
         The upper-diagonal elements of the matrix, as returned by
         `hessian_matrix` or `structure_tensor`.
+    sort : {"ascending", "descending"}, optional
+        Eigenvalues should be sorted in the specified order.
+    abs_sort : boolean, optional
+        If ``True``, sort based on the absolute values.
 
     Returns
     -------
@@ -322,14 +655,26 @@ def _symmetric_compute_eigenvalues(S_elems):
         ith-largest eigenvalue at position (j, k).
     """
 
-    if len(S_elems) == 3:  # Use fast Cython code for 2D
-        eigs = cp.stack(_image_orthogonal_matrix22_eigvals(*S_elems))
+    if len(S_elems) == 3:  # Use fast analytical kernel for 2D
+        eigs = _image_orthogonal_matrix22_eigvals(
+            *S_elems, sort=sort, abs_sort=abs_sort
+        )
+    elif len(S_elems) == 6:  # Use fast analytical kernel for 3D
+        eigs = _image_orthogonal_matrix33_eigvals(
+            *S_elems, sort=sort, abs_sort=abs_sort
+        )
     else:
+        # n-dimensional case. warning: extremely memory inefficient!
         matrices = _symmetric_image(S_elems)
         # eigvalsh returns eigenvalues in increasing order. We want decreasing
-        eigs = cp.linalg.eigvalsh(matrices)[..., ::-1]
+        eigs = cp.linalg.eigvalsh(matrices)
         leading_axes = tuple(range(eigs.ndim - 1))
         eigs = cp.transpose(eigs, (eigs.ndim - 1,) + leading_axes)
+        if abs_sort:
+            # (sort by magnitude)
+            eigs = cp.take_along_axis(eigs, cp.abs(eigs).argsort(0), 0)
+        if sort == 'descending':
+            eigs = eigs[::-1, ...]
     return eigs
 
 
@@ -398,18 +743,6 @@ def structure_tensor_eigenvalues(A_elems):
     return _symmetric_compute_eigenvalues(A_elems)
 
 
-"""
-TODO: add an _image_symmetric_real33_eigvals() based on:
-Oliver K. Smith. 1961.
-Eigenvalues of a symmetric 3 × 3 matrix.
-Commun. ACM 4, 4 (April 1961), 168.
-DOI:https://doi.org/10.1145/355578.366316
-
-def _image_symmetric_real33_eigvals(M00, M01, M02, M11, M12, M22):
-
-"""
-
-
 def hessian_matrix_eigvals(H_elems):
     """Compute eigenvalues of Hessian matrix.
 
@@ -433,7 +766,8 @@ def hessian_matrix_eigvals(H_elems):
     ...                                      hessian_matrix_eigvals)
     >>> square = cp.zeros((5, 5))
     >>> square[2, 2] = 4
-    >>> H_elems = hessian_matrix(square, sigma=0.1, order='rc')
+    >>> H_elems = hessian_matrix(square, sigma=0.1, order='rc',
+    ...                          use_gaussian_derivatives=False)
     >>> hessian_matrix_eigvals(H_elems)[0]
     array([[ 0.,  0.,  2.,  0.,  0.],
            [ 0.,  1.,  0.,  1.,  0.],
@@ -510,7 +844,8 @@ def shape_index(image, sigma=1, mode="constant", cval=0):
            [ nan,  nan, -0.5,  nan,  nan]])
     """
 
-    H = hessian_matrix(image, sigma=sigma, mode=mode, cval=cval, order="rc")
+    H = hessian_matrix(image, sigma=sigma, mode=mode, cval=cval, order="rc",
+                       use_gaussian_derivatives=False)
     l1, l2 = hessian_matrix_eigvals(H)
 
     # don't warn on divide by 0 as occurs in the docstring example

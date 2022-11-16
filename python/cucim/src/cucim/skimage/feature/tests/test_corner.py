@@ -16,6 +16,7 @@ from cucim.skimage.feature import (corner_foerstner, corner_harris,
                                    peak_local_max, shape_index,
                                    structure_tensor,
                                    structure_tensor_eigenvalues)
+from cucim.skimage.feature.corner import _symmetric_image
 from cucim.skimage.morphology import cube
 
 
@@ -124,7 +125,8 @@ def test_structure_tensor_sigma(ndim):
 def test_hessian_matrix(dtype):
     square = cp.zeros((5, 5), dtype=dtype)
     square[2, 2] = 4
-    Hrr, Hrc, Hcc = hessian_matrix(square, sigma=0.1, order="rc")
+    Hrr, Hrc, Hcc = hessian_matrix(square, sigma=0.1, order="rc",
+                                   use_gaussian_derivatives=False)
     out_dtype = _supported_float_type(dtype)
     assert all(a.dtype == out_dtype for a in (Hrr, Hrc, Hcc))
     # fmt: off
@@ -147,11 +149,17 @@ def test_hessian_matrix(dtype):
                                                [0, 0,  2, 0, 0]]))  # noqa
     # fmt: on
 
+    with expected_warnings(["use_gaussian_derivatives currently defaults"]):
+        # FutureWarning warning when use_gaussian_derivatives is not
+        # specified.
+        hessian_matrix(square, sigma=0.1, order="rc")
+
 
 def test_hessian_matrix_3d():
     cube = cp.zeros((5, 5, 5))
     cube[2, 2, 2] = 4
-    Hs = hessian_matrix(cube, sigma=0.1, order='rc')
+    Hs = hessian_matrix(cube, sigma=0.1, order='rc',
+                        use_gaussian_derivatives=False)
     assert len(Hs) == 6, "incorrect number of Hessian images (%i) for 3D" % len(
         Hs
     )
@@ -199,7 +207,8 @@ def test_structure_tensor_eigenvalues_3d():
 def test_hessian_matrix_eigvals(dtype):
     square = cp.zeros((5, 5), dtype=dtype)
     square[2, 2] = 4
-    H = hessian_matrix(square, sigma=0.1, order='rc')
+    H = hessian_matrix(square, sigma=0.1, order='rc',
+                       use_gaussian_derivatives=False)
     l1, l2 = hessian_matrix_eigvals(H)
     out_dtype = _supported_float_type(dtype)
     assert all(a.dtype == out_dtype for a in (l1, l2))
@@ -220,7 +229,7 @@ def test_hessian_matrix_eigvals(dtype):
 @pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])
 def test_hessian_matrix_eigvals_3d(im3d, dtype):
     im3d = im3d.astype(dtype, copy=False)
-    H = hessian_matrix(im3d)
+    H = hessian_matrix(im3d, use_gaussian_derivatives=False)
     E = hessian_matrix_eigvals(H)
     E = cp.asnumpy(E)
     out_dtype = _supported_float_type(dtype)
@@ -242,6 +251,31 @@ def test_hessian_matrix_eigvals_3d(im3d, dtype):
     assert np.argmin(response2) < np.argmax(response0)
     assert np.min(response2) < 0
     assert np.max(response0) > 0
+
+
+def _reference_eigvals_computation(S_elems):
+    """Legacy eigenvalue implementation based on cp.linalg.eigvalsh."""
+    matrices = _symmetric_image(S_elems)
+    # eigvalsh returns eigenvalues in increasing order. We want decreasing
+    eigs = cp.linalg.eigvalsh(matrices)[..., ::-1]
+    leading_axes = tuple(range(eigs.ndim - 1))
+    eigs = cp.transpose(eigs, (eigs.ndim - 1,) + leading_axes)
+    return eigs
+
+
+@pytest.mark.parametrize(
+    'shape', [(64, 64), (512, 1024), (8, 16, 24)]
+)
+@pytest.mark.parametrize('dtype', [np.float32, np.float64])
+def test_custom_eigvals_kernels_vs_linalg_eigvalsh(shape, dtype):
+    rng = cp.random.default_rng(seed=5)
+    img = rng.integers(0, 256, shape)
+    H = hessian_matrix(img)
+    H = tuple(h.astype(dtype, copy=False) for h in H)
+    evs1 = _reference_eigvals_computation(H)
+    evs2 = hessian_matrix_eigvals(H)
+    atol = 1e-10
+    cp.testing.assert_allclose(evs1, evs2, atol=atol)
 
 
 def test_hessian_matrix_det():
