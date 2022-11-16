@@ -417,16 +417,19 @@ def _get_real_symmetric_2x2_eigvals_kernel(sort='ascending', abs_sort=False):
 
     operation = """
     F tmp1, tmp2;
-    tmp1 = M01 * M01;
+    double m00 = static_cast<double>(M00);
+    double m01 = static_cast<double>(M01);
+    double m11 = static_cast<double>(M11);
+    tmp1 = m01 * m01;
     tmp1 *= 4;
 
-    tmp2 = M00 - M11;
+    tmp2 = m00 - m11;
     tmp2 *= tmp2;
     tmp2 += tmp1;
     tmp2 = sqrt(tmp2);
     tmp2 /= 2;
 
-    tmp1 = M00 + M11;
+    tmp1 = m00 + m11;
     tmp1 /= 2;
     """
     if sort == 'ascending':
