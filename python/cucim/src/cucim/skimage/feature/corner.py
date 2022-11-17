@@ -764,7 +764,7 @@ def hessian_matrix_eigvals(H_elems):
     --------
     >>> import cupy as cp
     >>> from cucim.skimage.feature import (hessian_matrix,
-    ...                                      hessian_matrix_eigvals)
+    ...                                    hessian_matrix_eigvals)
     >>> square = cp.zeros((5, 5))
     >>> square[2, 2] = 4
     >>> H_elems = hessian_matrix(square, sigma=0.1, order='rc',

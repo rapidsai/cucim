@@ -2,6 +2,7 @@ import math
 import os
 
 import cupy as cp
+import numpy as np
 from cupyx.scipy.ndimage import gaussian_laplace
 
 from .._shared.filters import gaussian
@@ -146,6 +147,21 @@ def _format_exclude_border(img_ndim, exclude_border):
         )
 
 
+def _prep_sigmas(ndim, min_sigma, max_sigma):
+    # if both min and max sigma are scalar, function returns only one sigma
+    scalar_max = np.isscalar(max_sigma)
+    scalar_min = np.isscalar(min_sigma)
+    scalar_sigma = scalar_max and scalar_min
+
+    # Gaussian filter requires that sequence-type sigmas have same
+    # dimensionality as image. This broadcasts scalar kernels
+    if scalar_max:
+        max_sigma = (max_sigma,) * ndim
+    if scalar_min:
+        min_sigma = (min_sigma,) * ndim
+    return scalar_sigma, min_sigma, max_sigma
+
+
 def blob_dog(image, min_sigma=1, max_sigma=50, sigma_ratio=1.6, threshold=0.5,
              overlap=.5, *, threshold_rel=None, exclude_border=False):
     r"""Finds blobs in the given grayscale image.
@@ -257,30 +273,24 @@ def blob_dog(image, min_sigma=1, max_sigma=50, sigma_ratio=1.6, threshold=0.5,
     float_dtype = _supported_float_type(image.dtype)
     image = image.astype(float_dtype, copy=False)
 
-    # if both min and max sigma are scalar, function returns only one sigma
-    scalar_sigma = cp.isscalar(max_sigma) and cp.isscalar(min_sigma)
-
-    # Gaussian filter requires that sequence-type sigmas have same
-    # dimensionality as image. This broadcasts scalar kernels
-    if cp.isscalar(max_sigma):
-        max_sigma = cp.full(image.ndim, max_sigma, dtype=float_dtype)
-    if cp.isscalar(min_sigma):
-        min_sigma = cp.full(image.ndim, min_sigma, dtype=float_dtype)
-
-    # Convert sequence types to array
-    min_sigma = cp.asarray(min_sigma, dtype=float_dtype)
-    max_sigma = cp.asarray(max_sigma, dtype=float_dtype)
+    # Determine if provixed sigmas are scalar and broadcast to image.ndim
+    scalar_sigma, min_sigma, max_sigma = _prep_sigmas(image.ndim, min_sigma,
+                                                      max_sigma)
 
     if sigma_ratio <= 1.0:
         raise ValueError('sigma_ratio must be > 1.0')
 
     # k such that min_sigma*(sigma_ratio**k) > max_sigma
-    k = int(cp.mean(cp.log(max_sigma / min_sigma) / cp.log(sigma_ratio) + 1))
+    log_ratio = math.log(sigma_ratio)
+    k = sum(math.log(max_s / min_s) / log_ratio + 1
+            for max_s, min_s in zip(max_sigma, min_sigma))
+    k /= len(min_sigma)
+    k = int(k)
 
     # a geometric progression of standard deviations for gaussian kernels
-    sigma_list = cp.array([min_sigma * (sigma_ratio ** i)
-                           for i in range(k + 1)])
-
+    ratio_powers = tuple(sigma_ratio ** i for i in range(k + 1))
+    sigma_list = tuple(tuple(s * p for s in min_sigma)
+                       for p in ratio_powers)
     gaussian_images = [gaussian(image, s, mode='reflect') for s in sigma_list]
 
     # normalization factor for consistency in DoG magnitude
@@ -313,6 +323,7 @@ def blob_dog(image, min_sigma=1, max_sigma=50, sigma_ratio=1.6, threshold=0.5,
 
     # translate final column of lm, which contains the index of the
     # sigma that produced the maximum intensity value, into the sigma
+    sigma_list = cp.asarray(sigma_list)
     sigmas_of_peaks = sigma_list[local_maxima[:, -1]]
 
     if scalar_sigma:
@@ -428,32 +439,25 @@ def blob_log(image, min_sigma=1, max_sigma=50, num_sigma=10, threshold=.2,
     float_dtype = _supported_float_type(image.dtype)
     image = image.astype(float_dtype, copy=False)
 
-    # if both min and max are scalar, function returns only one sigma
-    scalar_sigma = (
-        True if cp.isscalar(max_sigma) and cp.isscalar(min_sigma) else False
-    )
-
-    # Gaussian filter requires that sequence-type sigmas have same
-    # dimensionality as image. This broadcasts scalar kernels
-    if cp.isscalar(max_sigma):
-        max_sigma = cp.full(image.ndim, max_sigma, dtype=float_dtype)
-    if cp.isscalar(min_sigma):
-        min_sigma = cp.full(image.ndim, min_sigma, dtype=float_dtype)
-
-    # Convert sequence types to array
-    min_sigma = cp.asarray(min_sigma, dtype=float_dtype)
-    max_sigma = cp.asarray(max_sigma, dtype=float_dtype)
+    # Determine if provixed sigmas are scalar and broadcast to image.ndim
+    scalar_sigma, min_sigma, max_sigma = _prep_sigmas(image.ndim, min_sigma,
+                                                      max_sigma)
 
     if log_scale:
-        start = cp.log10(min_sigma)
-        stop = cp.log10(max_sigma)
-        sigma_list = cp.logspace(start, stop, num_sigma)
+        start = tuple(math.log10(s) for s in min_sigma)
+        stop = tuple(math.log10(s) for s in max_sigma)
+        sigma_list = np.logspace(start, stop, num_sigma)
     else:
-        sigma_list = cp.linspace(min_sigma, max_sigma, num_sigma)
+        sigma_list = np.linspace(min_sigma, max_sigma, num_sigma)
+
+    def _mean_sq(s):
+        # mean-squared for small tuples (avoid numpy/cupy overhead)
+        m = sum(s) / len(s)
+        return m * m
 
     # computing gaussian laplace
     # average s**2 provides scale invariance
-    gl_images = [-gaussian_laplace(image, s) * cp.mean(s) ** 2
+    gl_images = [-gaussian_laplace(image, s) * _mean_sq(s)
                  for s in sigma_list]
 
     image_cube = cp.stack(gl_images, axis=-1)
@@ -476,6 +480,7 @@ def blob_log(image, min_sigma=1, max_sigma=50, num_sigma=10, threshold=.2,
 
     # translate final column of lm, which contains the index of the
     # sigma that produced the maximum intensity value, into the sigma
+    sigma_list = cp.asarray(sigma_list)
     sigmas_of_peaks = sigma_list[local_maxima[:, -1]]
 
     if scalar_sigma:
@@ -589,9 +594,9 @@ def blob_doh(image, min_sigma=1, max_sigma=30, num_sigma=10, threshold=0.01,
 
     if log_scale:
         start, stop = math.log(min_sigma, 10), math.log(max_sigma, 10)
-        sigma_list = cp.logspace(start, stop, num_sigma)
+        sigma_list = np.logspace(start, stop, num_sigma)
     else:
-        sigma_list = cp.linspace(min_sigma, max_sigma, num_sigma)
+        sigma_list = np.linspace(min_sigma, max_sigma, num_sigma)
 
     hessian_images = [_hessian_matrix_det(image, s) for s in sigma_list]
     image_cube = cp.dstack(hessian_images)
@@ -608,5 +613,6 @@ def blob_doh(image, min_sigma=1, max_sigma=30, num_sigma=10, threshold=0.01,
     # Convert local_maxima to float type of input image
     lm = local_maxima.astype(float_dtype)
     # Convert the last index to its corresponding scale value
+    sigma_list = cp.asarray(sigma_list)
     lm[:, -1] = sigma_list[local_maxima[:, -1]]
     return _prune_blobs(lm, overlap)
