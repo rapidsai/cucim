@@ -94,14 +94,13 @@ def test_structure_tensor_3d_rc_only():
 def test_structure_tensor_orders():
     square = cp.zeros((5, 5))
     square[2, 2] = 1
-    with expected_warnings(['the default order of the structure']):
-        A_elems_default = structure_tensor(square, sigma=0.1)
+    A_elems_default = structure_tensor(square, sigma=0.1)
     A_elems_xy = structure_tensor(square, sigma=0.1, order='xy')
     A_elems_rc = structure_tensor(square, sigma=0.1, order='rc')
-    for elem_xy, elem_def in zip(A_elems_xy, A_elems_default):
+    for elem_rc, elem_def in zip(A_elems_rc, A_elems_default):
+        assert_array_equal(elem_rc, elem_def)
+    for elem_xy, elem_def in zip(A_elems_xy, A_elems_default[::-1]):
         assert_array_equal(elem_xy, elem_def)
-    for elem_xy, elem_rc in zip(A_elems_xy, A_elems_rc[::-1]):
-        assert_array_equal(elem_xy, elem_rc)
 
 
 @pytest.mark.parametrize('ndim', [2, 3])
@@ -160,9 +159,7 @@ def test_hessian_matrix_3d():
     cube[2, 2, 2] = 4
     Hs = hessian_matrix(cube, sigma=0.1, order='rc',
                         use_gaussian_derivatives=False)
-    assert len(Hs) == 6, "incorrect number of Hessian images (%i) for 3D" % len(
-        Hs
-    )
+    assert len(Hs) == 6, (f"incorrect number of Hessian images ({len(Hs)}) for 3D")  # noqa
     # fmt: off
     assert_array_almost_equal(
         Hs[2][:, 2, :], cp.asarray([[0,  0,  0,  0,  0],    # noqa
@@ -491,7 +488,7 @@ def test_rotated_img():
 #     img[25, 25] = 1e-10
 #     corner = peak_local_max(corner_harris(img),
 #                             min_distance=10, threshold_rel=0, num_peaks=1)
-#     subpix = corner_subpix(img, cp.asarray([[25, 25]]))
+#     subpix = corner_subpix(img, corner)
 #     assert_array_equal(subpix[0], (cp.nan, cp.nan))
 
 
