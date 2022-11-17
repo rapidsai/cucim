@@ -36,7 +36,7 @@ moond = cp.array(data.moon())
 
 
 class TestSimpleImage:
-    def setup(self):
+    def setup_method(self):
         # fmt: off
         self.image = cp.array([[0, 0, 1, 3, 5],
                                [0, 1, 4, 3, 4],
@@ -657,9 +657,9 @@ def test_triangle_flip():
 #     "window_size, mean_kernel",
 #     [(11, cp.full((11,) * 2,  1 / 11 ** 2)),
 #      ((11, 11), cp.full((11, 11), 1 / 11 ** 2)),
-#      ((9, 13), cp.full((9, 13), 1 / np.prod((9, 13)))),
-#      ((13, 9), cp.full((13, 9), 1 / np.prod((13, 9)))),
-#      ((1, 9), cp.full((1, 9), 1 / np.prod((1, 9))))
+#      ((9, 13), cp.full((9, 13), 1 / math.prod((9, 13)))),
+#      ((13, 9), cp.full((13, 9), 1 / math.prod((13, 9)))),
+#      ((1, 9), cp.full((1, 9), 1 / math.prod((1, 9))))
 #      ]
 # )
 # def test_mean_std_2d(window_size, mean_kernel):
@@ -677,7 +677,7 @@ def test_triangle_flip():
 #         (5, cp.full((5,) * 3, 1 / 5) ** 3),
 #         ((5, 5, 5), cp.full((5, 5, 5), 1 / 5 ** 3)),
 #         ((1, 5, 5), cp.full((1, 5, 5), 1 / 5 ** 2)),
-#         ((3, 5, 7), cp.full((3, 5, 7), 1 / np.prod((3, 5, 7))))]
+#         ((3, 5, 7), cp.full((3, 5, 7), 1 / math.prod((3, 5, 7))))]
 # )
 # def test_mean_std_3d(window_size, mean_kernel):
 #     image = cp.asarray(np.random.rand(40, 40, 40))

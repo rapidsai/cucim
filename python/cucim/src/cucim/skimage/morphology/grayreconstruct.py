@@ -11,8 +11,12 @@ Original author: Lee Kamentsky
 """
 import cupy as cp
 import numpy as np
+import skimage
+from packaging.version import Version
 
 from .._shared.utils import deprecate_kwarg
+
+old_reconstruction_pyx = Version(skimage.__version__) < Version('0.20.0')
 
 
 @deprecate_kwarg(kwarg_mapping={'selem': 'footprint'},
@@ -150,7 +154,7 @@ def reconstruction(seed, mask, method='dilation', footprint=None, offset=None):
     else:
         if isinstance(footprint, cp.ndarray):
             footprint = cp.asnumpy(footprint)
-        footprint = footprint.astype(bool)
+        footprint = footprint.astype(bool, copy=True)
 
     if offset is None:
         if not all([d % 2 == 1 for d in footprint.shape]):
@@ -179,44 +183,48 @@ def reconstruction(seed, mask, method='dilation', footprint=None, offset=None):
         pad_value = cp.max(seed).item()
     else:
         raise ValueError("Reconstruction method can be one of 'erosion' "
-                         "or 'dilation'. Got '%s'." % method)
-
-    # TODO: potentially allow int64 if seed image is too large for int32
-    #       skimage currently only supports int32, though
-    int_dtype = np.int32
-
+                         f"or 'dilation'. Got '{method}'.")
     # CuPy Backend: modified to allow images_dtype based on input dtype
     #               instead of float64
     images_dtype = np.promote_types(seed.dtype, mask.dtype)
     images = cp.full(dims, pad_value, dtype=images_dtype)
     images[(0, *inside_slices)] = seed
     images[(1, *inside_slices)] = mask
+    isize = images.size
+    if old_reconstruction_pyx:
+        # scikit-image < 0.20 Cython code only supports int32_t
+        signed_int_dtype = np.int32
+        unsigned_int_dtype = np.uint32
+    else:
+        # determine whether image is large enough to require 64-bit integers
+        # use -isize so we get a signed dtype rather than an unsigned one
+        signed_int_dtype = np.result_type(np.min_scalar_type(-isize), np.int32)
+        # the corresponding unsigned type has same char, but uppercase
+        unsigned_int_dtype = np.dtype(signed_int_dtype.char.upper())
 
     # Create a list of strides across the array to get the neighbors within
     # a flattened array
     value_stride = np.array(images.strides[1:]) // images.dtype.itemsize
     image_stride = images.strides[0] // images.dtype.itemsize
     footprint_mgrid = np.mgrid[[slice(-o, d - o)
-                               for d, o in zip(footprint.shape, offset)]]
+                                for d, o in zip(footprint.shape, offset)]]
     footprint_offsets = footprint_mgrid[:, footprint].transpose()
-    nb_strides = [
-        np.sum(value_stride * footprint_offset)
-        for footprint_offset in footprint_offsets
-    ]
-    nb_strides = np.array(nb_strides, int_dtype)
+    nb_strides = np.array([np.sum(value_stride * footprint_offset)
+                           for footprint_offset in footprint_offsets],
+                          signed_int_dtype)
 
     # CuPy Backend: changed flatten to ravel to avoid copy
     images = images.ravel()
 
     # Erosion goes smallest to largest; dilation goes largest to smallest.
-    index_sorted = cp.argsort(images).astype(int_dtype, copy=False)
+    index_sorted = cp.argsort(images).astype(signed_int_dtype, copy=False)
     if method == 'dilation':
         index_sorted = index_sorted[::-1]
 
     # Make a linked list of pixels sorted by value. -1 is the list terminator.
     index_sorted = cp.asnumpy(index_sorted)
-    prev = np.full(len(images), -1, np.int32)
-    next = np.full(len(images), -1, np.int32)
+    prev = np.full(isize, -1, signed_int_dtype)
+    next = np.full(isize, -1, signed_int_dtype)
     prev[index_sorted[1:]] = index_sorted[:-1]
     next[index_sorted[:-1]] = index_sorted[1:]
 
@@ -229,9 +237,9 @@ def reconstruction(seed, mask, method='dilation', footprint=None, offset=None):
 
     # TODO: implement reconstruction_loop on the GPU? For now, run it on host.
     start = index_sorted[0]
-
-    value_rank = cp.asnumpy(value_rank)
-    reconstruction_loop(value_rank, prev, next, nb_strides, start, image_stride)
+    value_rank = cp.asnumpy(value_rank.astype(unsigned_int_dtype, copy=False))
+    reconstruction_loop(value_rank, prev, next, nb_strides, start,
+                        image_stride)
 
     # Reshape reconstructed image to original image shape and remove padding.
     value_rank = cp.asarray(value_rank[:image_stride])

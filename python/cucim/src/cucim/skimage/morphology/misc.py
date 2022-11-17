@@ -47,7 +47,7 @@ def _check_dtype_supported(ar):
     # Should use `issubdtype` for bool below, but there's a bug in numpy 1.7
     if not (ar.dtype == bool or cp.issubdtype(ar.dtype, cp.integer)):
         raise TypeError("Only bool or integer image types are supported. "
-                        "Got %s." % ar.dtype)
+                        f"Got {ar.dtype}.")
 
 
 @remove_arg("in_place", changed_version="1.0",
