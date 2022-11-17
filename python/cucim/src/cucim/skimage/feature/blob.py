@@ -42,7 +42,8 @@ def _dtype_to_cuda_float_type(dtype):
     return cpp_float_types[dtype.type]
 
 
-def _get_prune_blob_rawmodule(dtype) -> cp.RawModule:
+@cp.memoize()
+def _get_prune_blob_rawmodule(dtype, large_int) -> cp.RawModule:
     """Loads the kernel according to dtype /cuda/blob.cu
     Returns a cupy RawModule.
 
@@ -58,9 +59,11 @@ def _get_prune_blob_rawmodule(dtype) -> cp.RawModule:
         and `_prune_blobs_kdtree`.
     """
     blob_t = _dtype_to_cuda_float_type(dtype)
+    int_t = 'long long' if large_int else 'int'
 
     _preamble = f"""
 #define BLOB_T {blob_t}
+#define INT_T {int_t}
     """
 
     kernel_directory = os.path.join(
@@ -102,7 +105,8 @@ def _prune_blobs(blobs_array, overlap, *, sigma_dim=1):
     """
 
     # from here, the kernel does the calculation
-    blobs_module = _get_prune_blob_rawmodule(blobs_array.dtype)
+    blobs_module = _get_prune_blob_rawmodule(blobs_array.dtype,
+                                             max(blobs_array.shape) > 2**31)
     _prune_blobs_kernel = blobs_module.get_function("_prune_blobs")
 
     block_size = 64
@@ -159,7 +163,10 @@ def _prune_blobs_kdtree(blobs_array, overlap, *, sigma_dim=1):
         return blobs_array
     else:
         # from here, the kernel does the calculation
-        blobs_module = _get_prune_blob_rawmodule(blobs_array.dtype)
+        blobs_module = _get_prune_blob_rawmodule(
+            blobs_array.dtype,
+            max(blobs_array.shape + (pairs.shape[0],)) >> 2**31
+        )
         _prune_blobs_kernel = blobs_module.get_function("_prune_blobs_kdtree")
 
         block_size = 64

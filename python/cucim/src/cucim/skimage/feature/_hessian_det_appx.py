@@ -29,7 +29,8 @@ def _dtype_to_cuda_float_type(dtype):
     return cpp_float_types[dtype.type]
 
 
-def _get_hessian_det_appx_kernel(dtype) -> cp.RawModule:
+@cp.memoize()
+def _get_hessian_det_appx_kernel(dtype, large_int) -> cp.RawModule:
     """Loads all kernels in cuda/_hessian_det_appx.cu.
     Returns a cupy RawModule.
 
@@ -46,8 +47,11 @@ def _get_hessian_det_appx_kernel(dtype) -> cp.RawModule:
     """
     image_t = _dtype_to_cuda_float_type(dtype)
 
+    int_t = 'long long' if large_int else 'int'
+
     _preamble = f"""
 #define IMAGE_T {image_t}
+#define INT_T {int_t}
         """
 
     kernel_directory = os.path.join(
@@ -94,7 +98,7 @@ def _hessian_matrix_det(img: cp.ndarray, sigma) -> cp.ndarray:
     the result obtained if someone computed the Hessian and took its
     determinant.
     """
-    rawmodule = _get_hessian_det_appx_kernel(img.dtype)
+    rawmodule = _get_hessian_det_appx_kernel(img.dtype, max(img.shape) > 2**31)
     _hessian_det_appx_kernel = rawmodule.get_function("_hessian_matrix_det")
 
     out = cp.empty_like(img, dtype=img.dtype)

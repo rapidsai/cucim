@@ -79,8 +79,8 @@ inline int _clip(const int x, const int low, const int high)
 */
 __device__
 inline IMAGE_T _integ(const IMAGE_T * img,
-                     const long long img_rows,
-                     const long long img_cols,
+                     const INT_T img_rows,
+                     const INT_T img_cols,
                      int r,
                      int c,
                      const int rl,
@@ -130,8 +130,8 @@ inline IMAGE_T _integ(const IMAGE_T * img,
 extern "C" __global__
 void _hessian_matrix_det(
         const IMAGE_T* img,
-        const long long img_rows,
-        const long long img_cols,
+        const INT_T img_rows,
+        const INT_T img_cols,
         const double sigma,
         IMAGE_T* out)
 {

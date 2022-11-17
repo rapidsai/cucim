@@ -132,9 +132,9 @@ inline BLOB_T _compute_sphere_overlap(const BLOB_T d, const BLOB_T r1, const BLO
 
 */
 __device__
-inline BLOB_T _blob_overlap(BLOB_T* blob1, BLOB_T* blob2, const long long sigma_dim, const long long n) {
+inline BLOB_T _blob_overlap(BLOB_T* blob1, BLOB_T* blob2, const INT_T sigma_dim, const INT_T n) {
 
-    const long long ndim = n - sigma_dim;
+    const INT_T ndim = n - sigma_dim;
     BLOB_T pos1 = 0.0;
     BLOB_T pos2 = 0.0;
     BLOB_T _sum = 0.0;
@@ -159,7 +159,7 @@ inline BLOB_T _blob_overlap(BLOB_T* blob1, BLOB_T* blob2, const long long sigma_
     {
         r1 = 1.0;
         r2 = blob2[n-1] / blob1[n-1];
-        for (long long _i=0; _i < ndim; _i++)
+        for (INT_T _i=0; _i < ndim; _i++)
         {
             pos1 = blob1[_i] / (blob1[min(n-sigma_dim+_i, n-1)] * root_ndim);
             pos2 = blob2[_i] / (blob1[min(n-sigma_dim+_i, n-1)] * root_ndim);
@@ -171,7 +171,7 @@ inline BLOB_T _blob_overlap(BLOB_T* blob1, BLOB_T* blob2, const long long sigma_
 
         r1 = blob1[n-1] / blob2[n-1];
         r2 = 1.0;
-        for (long long _i=0; _i < ndim; _i++)
+        for (INT_T _i=0; _i < ndim; _i++)
         {
             pos1 = blob1[_i] / (blob2[min(n-sigma_dim+_i, n-1)] * root_ndim);
             pos2 = blob2[_i] / (blob2[min(n-sigma_dim+_i, n-1)] * root_ndim);
@@ -204,20 +204,20 @@ inline BLOB_T _blob_overlap(BLOB_T* blob1, BLOB_T* blob2, const long long sigma_
 
 extern "C" __global__
 void _prune_blobs_kdtree(
-        const long long* pairs,
-        const long long n_pairs,
+        const INT_T* pairs,
+        const INT_T n_pairs,
         BLOB_T * blobs_array,
-        const long long n_rows,
-        const long long n_cols,
+        const INT_T n_rows,
+        const INT_T n_cols,
         const double overlap,
-        long long sigma_dim)
+        INT_T sigma_dim)
 
 {
     // *************************************************************************
     // This function is derived from Scikit-Image _prune_blobs (v0.19.2):
     // *************************************************************************
 
-    long long tid = blockDim.x * blockIdx.x + threadIdx.x;
+    INT_T tid = blockDim.x * blockIdx.x + threadIdx.x;
     BLOB_T *blob1;
     BLOB_T *blob2;
     if (tid >= n_pairs)
@@ -225,8 +225,8 @@ void _prune_blobs_kdtree(
         return;  // all done
     }
 
-    blob1 = &blobs_array[(long long)pairs[tid * 2]*n_cols];
-    blob2 = &blobs_array[(long long)pairs[tid * 2 + 1]*n_cols];
+    blob1 = &blobs_array[(INT_T)pairs[tid * 2]*n_cols];
+    blob2 = &blobs_array[(INT_T)pairs[tid * 2 + 1]*n_cols];
 
     BLOB_T _result = _blob_overlap(blob1, blob2, sigma_dim, n_cols);
 
@@ -248,17 +248,17 @@ void _prune_blobs_kdtree(
 extern "C" __global__
 void _prune_blobs(
         BLOB_T * blobs_array,
-        const long long n_rows,
-        const long long n_cols,
+        const INT_T n_rows,
+        const INT_T n_cols,
         const double overlap,
-        long long sigma_dim)
+        INT_T sigma_dim)
 {
 
     // *************************************************************************
     // This function is derived from Scikit-Image _prune_blobs (v0.11.x):
     // *************************************************************************
 
-    long long tid = blockDim.x * blockIdx.x + threadIdx.x;
+    INT_T tid = blockDim.x * blockIdx.x + threadIdx.x;
     BLOB_T *blob1;
     BLOB_T *blob2;
 
@@ -267,7 +267,7 @@ void _prune_blobs(
         return;  // all done
     }
 
-    for(long long k=0; k<n_rows; k++)
+    for(INT_T k=0; k<n_rows; k++)
     {
         // blob[tid] --> blob1
         // blob[k  ] --> blob2
@@ -278,8 +278,8 @@ void _prune_blobs(
             continue;
         }
 
-        blob1 = &blobs_array[(long long)tid*n_cols];
-        blob2 = &blobs_array[(long long)k*n_cols];
+        blob1 = &blobs_array[(INT_T)tid*n_cols];
+        blob2 = &blobs_array[(INT_T)k*n_cols];
 
         if (_blob_overlap(blob1, blob2, sigma_dim, n_cols) > overlap)
         {
