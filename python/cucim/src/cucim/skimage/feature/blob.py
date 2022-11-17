@@ -3,7 +3,6 @@ import os
 
 import cupy as cp
 from cupyx.scipy.ndimage import gaussian_laplace
-from scipy import spatial
 
 from .._shared.filters import gaussian
 from .._shared.utils import _supported_float_type, check_nD
@@ -55,8 +54,7 @@ def _get_prune_blob_rawmodule(dtype, large_int) -> cp.RawModule:
     Returns
     -------
     RawModule : cupy RawModule
-        A cupy RawModule containing the __global__ functions `_prune_blobs`
-        and `_prune_blobs_kdtree`.
+        A cupy RawModule containing the __global__ functions `_prune_blobs`.
     """
     blob_t = _dtype_to_cuda_float_type(dtype)
     int_t = 'long long' if large_int else 'int'
@@ -75,7 +73,7 @@ def _get_prune_blob_rawmodule(dtype, large_int) -> cp.RawModule:
     return cp.RawModule(
         code=_preamble + _code,
         options=('--std=c++11',),
-        name_expressions=["_prune_blobs", "_prune_blobs_kdtree"]
+        name_expressions=["_prune_blobs"]
     )
 
 
@@ -118,67 +116,6 @@ def _prune_blobs(blobs_array, overlap, *, sigma_dim=1):
                          float(overlap),
                          int(sigma_dim))
                         )
-    return blobs_array[blobs_array[:, -1] > 0, :]
-
-
-def _prune_blobs_kdtree(blobs_array, overlap, *, sigma_dim=1):
-    """Eliminated blobs with area overlap.
-
-    Parameters
-    ----------
-    blobs_array : ndarray
-        A 2d array with each row representing 3 (or 4) values,
-        ``(row, col, sigma)`` or ``(pln, row, col, sigma)`` in 3D,
-        where ``(row, col)`` (``(pln, row, col)``) are coordinates of the blob
-        and ``sigma`` is the standard deviation of the Gaussian kernel which
-        detected the blob.
-        This array must not have a dimension of size 0.
-    overlap : float
-        A value between 0 and 1. If the fraction of area overlapping for 2
-        blobs is greater than `overlap` the smaller blob is eliminated.
-    sigma_dim : int, optional
-        The number of columns in ``blobs_array`` corresponding to sigmas rather
-        than positions.
-
-    Returns
-    -------
-    A : ndarray
-        `array` with overlapping blobs removed.
-
-    Notes
-    -----
-    This function is using scipy's `spatial.cKDTree`, so the blobs_array will
-    be copied to CPU RAM and the CPU does the job. For larger blobs_array the
-    GPU does this faster. This function will be updated as soon as the function
-    `cupyx.scipy.spatial.cKDTree` is implemented.
-    """
-
-    sigma = blobs_array[:, -sigma_dim:].max()
-    distance = 2 * sigma * math.sqrt(blobs_array.shape[1] - sigma_dim)
-    # TODO: replace with cupyx.scipy.spatial.cKDTree as soon as the function is
-    #       implemented
-    tree = spatial.cKDTree(cp.asnumpy(blobs_array[:, :-sigma_dim]))
-    pairs = cp.array(list(tree.query_pairs(distance)))
-    if len(pairs) == 0:
-        return blobs_array
-    else:
-        # from here, the kernel does the calculation
-        blobs_module = _get_prune_blob_rawmodule(
-            blobs_array.dtype,
-            max(blobs_array.shape + (pairs.shape[0],)) >> 2**31
-        )
-        _prune_blobs_kernel = blobs_module.get_function("_prune_blobs_kdtree")
-
-        block_size = 64
-        grid_size = int(math.ceil(blobs_array.shape[0] / block_size))
-        _prune_blobs_kernel((grid_size,), (block_size,),
-                            (pairs.ravel(), pairs.shape[0],
-                             blobs_array.ravel(),
-                             int(blobs_array.shape[0]),
-                             int(blobs_array.shape[1]),
-                             float(overlap),
-                             int(sigma_dim))
-                            )
     return blobs_array[blobs_array[:, -1] > 0, :]
 
 

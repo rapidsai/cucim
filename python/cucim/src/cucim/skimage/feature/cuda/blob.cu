@@ -203,49 +203,6 @@ inline BLOB_T _blob_overlap(BLOB_T* blob1, BLOB_T* blob2, const INT_T sigma_dim,
 
 
 extern "C" __global__
-void _prune_blobs_kdtree(
-        const INT_T* pairs,
-        const INT_T n_pairs,
-        BLOB_T * blobs_array,
-        const INT_T n_rows,
-        const INT_T n_cols,
-        const double overlap,
-        INT_T sigma_dim)
-
-{
-    // *************************************************************************
-    // This function is derived from Scikit-Image _prune_blobs (v0.19.2):
-    // *************************************************************************
-
-    INT_T tid = blockDim.x * blockIdx.x + threadIdx.x;
-    BLOB_T *blob1;
-    BLOB_T *blob2;
-    if (tid >= n_pairs)
-    {
-        return;  // all done
-    }
-
-    blob1 = &blobs_array[(INT_T)pairs[tid * 2]*n_cols];
-    blob2 = &blobs_array[(INT_T)pairs[tid * 2 + 1]*n_cols];
-
-    BLOB_T _result = _blob_overlap(blob1, blob2, sigma_dim, n_cols);
-
-    if (_result > overlap) //
-    {
-        // note: this test works even in the anisotropic case because all sigmas increase together.
-        if (blob1[n_cols-1] > blob2[n_cols-1])
-        {
-            blob2[n_cols-1] = 0.0;
-        }
-        else
-        {
-            blob1[n_cols-1] = 0.0;
-        }
-    }
-}
-
-
-extern "C" __global__
 void _prune_blobs(
         BLOB_T * blobs_array,
         const INT_T n_rows,
