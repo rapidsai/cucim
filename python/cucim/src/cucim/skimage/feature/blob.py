@@ -236,8 +236,10 @@ def blob_dog(image, min_sigma=1, max_sigma=50, sigma_ratio=1.6, threshold=0.5,
 
     Examples
     --------
-    >>> from cucim.skimage import data, feature
-    >>> coins = data.coins()
+    >>> import cupy as cp
+    >>> from skimage import data
+    >>> from cucim.skimage import feature
+    >>> coins = cp.array(data.coins())
     >>> feature.blob_dog(coins, threshold=.05, min_sigma=10, max_sigma=40)
     array([[128., 155.,  10.],
            [198., 155.,  10.],
@@ -410,8 +412,10 @@ def blob_log(image, min_sigma=1, max_sigma=50, num_sigma=10, threshold=.2,
 
     Examples
     --------
-    >>> from cucim.skimage import data, feature, exposure
-    >>> img = data.coins()
+    >>> import cupy as cp
+    >>> from skimage import data
+    >>> from cucim.skimage import feature, exposure
+    >>> img = cp.array(data.coins())
     >>> img = exposure.equalize_hist(img)  # improves detection
     >>> feature.blob_log(img, threshold = .3)
     array([[124.        , 336.        ,  11.88888889],
@@ -553,8 +557,10 @@ def blob_doh(image, min_sigma=1, max_sigma=30, num_sigma=10, threshold=0.01,
 
     Examples
     --------
-    >>> from cucim.skimage import data, feature
-    >>> img = data.coins()
+    >>> import cupy as cp
+    >>> from skimage import data
+    >>> from cucim.skimage import feature
+    >>> img = cp.array(data.coins())
     >>> feature.blob_doh(img)
     array([[197.        , 153.        ,  20.33333333],
            [124.        , 336.        ,  20.33333333],
