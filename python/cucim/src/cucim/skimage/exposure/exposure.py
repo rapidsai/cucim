@@ -522,7 +522,7 @@ def rescale_intensity(image, in_range="image", out_range="dtype"):
     -----
     .. versionchanged:: 0.17
         The dtype of the output array has changed to match the output dtype, or
-        float if the output range is specified by a pair of floats.
+        float if the output range is specified by a pair of values.
 
     See Also
     --------
@@ -615,8 +615,8 @@ def _assert_non_negative(image):
 
 def _adjust_gamma_u8(image, gamma, gain):
     """LUT based implmentation of gamma adjustement."""
-    lut = (255 * gain * (np.linspace(0, 1, 256) ** gamma))
-    lut = np.minimum(lut, 255).astype('uint8')
+    lut = 255 * gain * (np.linspace(0, 1, 256) ** gamma)
+    lut = np.minimum(np.rint(lut), 255).astype('uint8')
     lut = cp.asarray(lut)
     return lut[image]
 

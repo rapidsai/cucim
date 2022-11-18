@@ -16,6 +16,7 @@ from cucim.skimage.feature import (corner_foerstner, corner_harris,
                                    peak_local_max, shape_index,
                                    structure_tensor,
                                    structure_tensor_eigenvalues)
+from cucim.skimage.feature.corner import _symmetric_image
 from cucim.skimage.morphology import cube
 
 
@@ -93,14 +94,13 @@ def test_structure_tensor_3d_rc_only():
 def test_structure_tensor_orders():
     square = cp.zeros((5, 5))
     square[2, 2] = 1
-    with expected_warnings(['the default order of the structure']):
-        A_elems_default = structure_tensor(square, sigma=0.1)
+    A_elems_default = structure_tensor(square, sigma=0.1)
     A_elems_xy = structure_tensor(square, sigma=0.1, order='xy')
     A_elems_rc = structure_tensor(square, sigma=0.1, order='rc')
-    for elem_xy, elem_def in zip(A_elems_xy, A_elems_default):
+    for elem_rc, elem_def in zip(A_elems_rc, A_elems_default):
+        assert_array_equal(elem_rc, elem_def)
+    for elem_xy, elem_def in zip(A_elems_xy, A_elems_default[::-1]):
         assert_array_equal(elem_xy, elem_def)
-    for elem_xy, elem_rc in zip(A_elems_xy, A_elems_rc[::-1]):
-        assert_array_equal(elem_xy, elem_rc)
 
 
 @pytest.mark.parametrize('ndim', [2, 3])
@@ -159,9 +159,7 @@ def test_hessian_matrix_3d():
     cube[2, 2, 2] = 4
     Hs = hessian_matrix(cube, sigma=0.1, order='rc',
                         use_gaussian_derivatives=False)
-    assert len(Hs) == 6, "incorrect number of Hessian images (%i) for 3D" % len(
-        Hs
-    )
+    assert len(Hs) == 6, (f"incorrect number of Hessian images ({len(Hs)}) for 3D")  # noqa
     # fmt: off
     assert_array_almost_equal(
         Hs[2][:, 2, :], cp.asarray([[0,  0,  0,  0,  0],    # noqa
@@ -250,6 +248,31 @@ def test_hessian_matrix_eigvals_3d(im3d, dtype):
     assert np.argmin(response2) < np.argmax(response0)
     assert np.min(response2) < 0
     assert np.max(response0) > 0
+
+
+def _reference_eigvals_computation(S_elems):
+    """Legacy eigenvalue implementation based on cp.linalg.eigvalsh."""
+    matrices = _symmetric_image(S_elems)
+    # eigvalsh returns eigenvalues in increasing order. We want decreasing
+    eigs = cp.linalg.eigvalsh(matrices)[..., ::-1]
+    leading_axes = tuple(range(eigs.ndim - 1))
+    eigs = cp.transpose(eigs, (eigs.ndim - 1,) + leading_axes)
+    return eigs
+
+
+@pytest.mark.parametrize(
+    'shape', [(64, 64), (512, 1024), (8, 16, 24)]
+)
+@pytest.mark.parametrize('dtype', [np.float32, np.float64])
+def test_custom_eigvals_kernels_vs_linalg_eigvalsh(shape, dtype):
+    rng = cp.random.default_rng(seed=5)
+    img = rng.integers(0, 256, shape)
+    H = hessian_matrix(img)
+    H = tuple(h.astype(dtype, copy=False) for h in H)
+    evs1 = _reference_eigvals_computation(H)
+    evs2 = hessian_matrix_eigvals(H)
+    atol = 1e-10
+    cp.testing.assert_allclose(evs1, evs2, atol=atol)
 
 
 def test_hessian_matrix_det():
@@ -465,7 +488,7 @@ def test_rotated_img():
 #     img[25, 25] = 1e-10
 #     corner = peak_local_max(corner_harris(img),
 #                             min_distance=10, threshold_rel=0, num_peaks=1)
-#     subpix = corner_subpix(img, cp.asarray([[25, 25]]))
+#     subpix = corner_subpix(img, corner)
 #     assert_array_equal(subpix[0], (cp.nan, cp.nan))
 
 

@@ -201,6 +201,9 @@ def _solve_linear_system(lap_sparse, B, tol, mode):
 def _preprocess(labels):
 
     label_values, inv_idx = cp.unique(labels, return_inverse=True)
+    if label_values.max() <= 0:
+        raise ValueError('No seeds provided in label image: please ensure '
+                         'it contains at least one positive value')
     if not (label_values == 0).any():
         utils.warn(
             'Random walker only segments unlabeled areas, where labels == 0. '
@@ -298,7 +301,7 @@ def random_walker(data, labels, beta=130, mode='cg_j', tol=1.e-3, copy=True,
           less memory-consuming than the brute force method for large images,
           but it is quite slow.
         - 'cg_j' (conjugate gradient with Jacobi preconditionner): the
-          Jacobi preconditionner is applyed during the Conjugate
+          Jacobi preconditionner is applied during the Conjugate
           gradient method iterations. This may accelerate the
           convergence of the 'cg' method.
         - 'cg_mg' (conjugate gradient with multigrid preconditioner): a
