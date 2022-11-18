@@ -2,13 +2,15 @@ import argparse
 import os
 import pickle
 
-import cucim.skimage
-import cucim.skimage.metrics
 import cupy as cp
 import numpy as np
 import pandas as pd
 import skimage
 import skimage.metrics
+
+import cucim.skimage
+import cucim.skimage.metrics
+from cucim.skimage import data, measure
 
 from _image_bench import ImageBench
 
@@ -23,6 +25,56 @@ class MetricsBench(ImageBench):
         imaged2 = imaged2.clip(0, 1.0)
         self.args_cpu = (cp.asnumpy(imaged), cp.asnumpy(imaged2))
         self.args_gpu = (imaged, imaged2)
+
+
+class SegmentationMetricBench(ImageBench):
+    def __init__(
+        self,
+        function_name,
+        shape,
+        dtypes=np.float32,
+        fixed_kwargs={},
+        var_kwargs={},
+        index_str=None,
+        module_cpu=skimage.metrics,
+        module_gpu=cucim.skimage.metrics,
+        run_cpu=True,
+    ):
+
+        super().__init__(
+            function_name=function_name,
+            shape=shape,
+            dtypes=dtypes,
+            fixed_kwargs=fixed_kwargs,
+            var_kwargs=var_kwargs,
+            index_str=index_str,
+            module_cpu=module_cpu,
+            module_gpu=module_gpu,
+            run_cpu=run_cpu,
+        )
+
+    def _generate_labels(self, dtype, seed=5):
+        ndim = len(self.shape)
+        blobs_kwargs = dict(blob_size_fraction=0.05,
+                            volume_fraction=0.35,
+                            seed=seed)
+        # binary blobs only creates square outputs
+        labels = measure.label(
+            data.binary_blobs(max(self.shape), n_dim=ndim, **blobs_kwargs)
+        )
+        print(f"# labels generated = {labels.max()}")
+
+        # crop to rectangular
+        labels = labels[tuple(slice(s) for s in self.shape)]
+        return labels.astype(dtype, copy=False)
+
+    def set_args(self, dtype):
+        labels1_d = self._generate_labels(dtype, seed=5)
+        labels2_d = self._generate_labels(dtype, seed=3)
+        labels1 = cp.asnumpy(labels1_d)
+        labels2 = cp.asnumpy(labels2_d)
+        self.args_cpu = (labels1, labels2)
+        self.args_gpu = (labels1_d, labels2_d)
 
 
 def main(args):
@@ -59,7 +111,9 @@ def main(args):
         ),
         ("peak_signal_noise_ratio", dict(data_range=1.0), dict(), True, True),
         ("normalized_mutual_information", dict(bins=100), dict(), True, True),
-
+        ("adapted_rand_error", dict(), dict(), False, True),
+        ("contingency_table", dict(), dict(normalize=[False, True]), False, True),
+        ("variation_of_information", dict(), dict(), False, True),
     ]:
         if function_name != args.func_name:
             continue
@@ -78,16 +132,42 @@ def main(args):
         if function_name in ["structural_similarity"]:
             fixed_kwargs["channel_axis"] = -1 if shape[-1] == 3 else None
 
-        B = MetricsBench(
-            function_name=function_name,
-            shape=shape,
-            dtypes=dtypes,
-            fixed_kwargs=fixed_kwargs,
-            var_kwargs=var_kwargs,
-            module_cpu=skimage.metrics,
-            module_gpu=cucim.skimage.metrics,
-            run_cpu=run_cpu,
-        )
+        if function_name in [
+            "structural_similarity",
+            "mean_squared_error",
+            "normalized_root_mse",
+            "peak_signal_noise_ratio",
+            "normalized_mutual_information"
+        ]:
+            B = MetricsBench(
+                function_name=function_name,
+                shape=shape,
+                dtypes=dtypes,
+                fixed_kwargs=fixed_kwargs,
+                var_kwargs=var_kwargs,
+                module_cpu=skimage.metrics,
+                module_gpu=cucim.skimage.metrics,
+                run_cpu=run_cpu,
+            )
+        elif function_name in [
+            "adapted_rand_error",
+            "contingency_table",
+            "variation_of_information",
+        ]:
+            B = SegmentationMetricBench(
+                function_name=function_name,
+                shape=shape,
+                dtypes=dtypes,
+                fixed_kwargs=fixed_kwargs,
+                var_kwargs=var_kwargs,
+                module_cpu=skimage.metrics,
+                module_gpu=cucim.skimage.metrics,
+                run_cpu=run_cpu,
+            )
+        else:
+            raise ValueError(
+                f"benchmark function not configured for {function_name}"
+            )
         results = B.run_benchmark(duration=args.duration)
         all_results = pd.concat([all_results, results["full"]])
 
@@ -101,7 +181,7 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Benchmarking cuCIM metrics functions')
-    func_name_choices = ['structural_similarity', 'mean_squared_error', 'normalized_root_mse', 'peak_signal_noise_ratio', 'normalized_mutual_information']
+    func_name_choices = ['structural_similarity', 'mean_squared_error', 'normalized_root_mse', 'peak_signal_noise_ratio', 'normalized_mutual_information', 'adapted_rand_error', 'contingency_table', 'variation_of_information']  # noqa
     dtype_choices = ['float16', 'float32', 'float64', 'int8', 'int16', 'int32', 'int64', 'uint8', 'uint16', 'uint32', 'uint64']
     parser.add_argument('-i','--img_size', type=str, help='Size of input image', required=True)
     parser.add_argument('-d','--dtype', type=str, help='Dtype of input image', choices=dtype_choices, required=True)

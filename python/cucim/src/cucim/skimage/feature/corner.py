@@ -46,7 +46,7 @@ def _compute_derivatives(image, mode="constant", cval=0):
     return derivatives
 
 
-def structure_tensor(image, sigma=1, mode="constant", cval=0, order=None):
+def structure_tensor(image, sigma=1, mode="constant", cval=0, order='rc'):
     """Compute structure tensor using sum of squared differences.
 
     The (2-dimensional) structure tensor A is defined as::
@@ -74,11 +74,11 @@ def structure_tensor(image, sigma=1, mode="constant", cval=0, order=None):
         Used in conjunction with mode 'constant', the value outside
         the image boundaries.
     order : {'rc', 'xy'}, optional
-        NOTE: Only applies in 2D. Higher dimensions must always use 'rc' order.
-        This parameter allows for the use of reverse or forward order of
-        the image axes in gradient computation. 'rc' indicates the use of
-        the first axis initially (Arr, Arc, Acc), whilst 'xy' indicates the
-        usage of the last axis initially (Axx, Axy, Ayy).
+        NOTE: 'xy' is only an option for 2D images, higher dimensions must
+        always use 'rc' order. This parameter allows for the use of reverse or
+        forward order of the image axes in gradient computation. 'rc' indicates
+        the use of the first axis initially (Arr, Arc, Acc), whilst 'xy'
+        indicates the usage of the last axis initially (Axx, Axy, Ayy).
 
     Returns
     -------
@@ -114,28 +114,16 @@ def structure_tensor(image, sigma=1, mode="constant", cval=0, order=None):
     if order == "xy" and image.ndim > 2:
         raise ValueError('Only "rc" order is supported for dim > 2.')
 
-    if order is None:
-        if image.ndim == 2:
-            # The legacy 2D code followed (x, y) convention, so we swap the
-            # axis order to maintain compatibility with old code
-            warn(
-                "deprecation warning: the default order of the structure "
-                'tensor values will be "row-column" instead of "xy" starting '
-                'in skimage version 0.20. Use order="rc" or order="xy" to '
-                'set this explicitly.  (Specify order="xy" to maintain the '
-                "old behavior.)",
-                category=FutureWarning,
-                stacklevel=2,
-            )
-            order = "xy"
-        else:
-            order = "rc"
+    if order not in ["rc", "xy"]:
+        raise ValueError(
+            f'order {order} is invalid. Must be either "rc" or "xy"'
+        )
 
     if not np.isscalar(sigma):
         sigma = tuple(sigma)
         if len(sigma) != image.ndim:
-            raise ValueError('sigma must have as many elements as image '
-                             'has axes')
+            raise ValueError("sigma must have as many elements as image "
+                             "has axes")
 
     image = _prepare_grayscale_input_nD(image)
 
@@ -636,7 +624,8 @@ def _image_orthogonal_matrix33_eigvals(
 
 
 def _symmetric_compute_eigenvalues(S_elems, sort='descending', abs_sort=False):
-    """Compute eigenvalues from the upperdiagonal entries of a symmetric matrix
+    """Compute eigenvalues from the upper-diagonal entries of a symmetric
+    matrix.
 
     Parameters
     ----------
@@ -1106,7 +1095,6 @@ def corner_foerstner(image, sigma=1):
            detection and precise location of distinct points, corners and
            centres of circular features. In Proc. ISPRS intercommission
            conference on fast processing of photogrammetric data (pp. 281-305).
-           https://cseweb.ucsd.edu/classes/sp02/cse252/foerstner/foerstner.pdf
     .. [2] https://en.wikipedia.org/wiki/Corner_detection
 
     Examples
