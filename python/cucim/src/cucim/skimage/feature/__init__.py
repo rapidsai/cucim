@@ -8,6 +8,7 @@ from .corner import (corner_foerstner, corner_harris, corner_kitchen_rosenfeld,
                      structure_tensor, structure_tensor_eigenvalues)
 from .match import match_descriptors
 from .peak import peak_local_max
+from .blob import blob_dog, blob_log, blob_doh
 from .template import match_template
 
 
@@ -32,4 +33,7 @@ __all__ = ['canny',
            # 'corner_fast',
            # 'corner_orientations',
            'match_template',
-           'match_descriptors']
+           'match_descriptors',
+           'blob_dog',
+           'blob_log',
+           'blob_doh']

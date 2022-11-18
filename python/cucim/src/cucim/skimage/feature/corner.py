@@ -12,6 +12,8 @@ from cucim.skimage.util import img_as_float
 # from ..transform import integral_image
 from .._shared._gradient import gradient
 from .._shared.utils import _supported_float_type, warn
+from ..transform import integral_image
+from ._hessian_det_appx import _hessian_matrix_det
 from .peak import peak_local_max
 from .util import _prepare_grayscale_input_nD
 
@@ -383,9 +385,8 @@ def hessian_matrix_det(image, sigma=1, approximate=True):
     float_dtype = _supported_float_type(image.dtype)
     image = image.astype(float_dtype, copy=False)
     if image.ndim == 2 and approximate:
-        raise NotImplementedError("approximate=True case not implemented")
-        # integral = integral_image(image)
-        # return cp.asarray(_hessian_matrix_det(integral, sigma))
+        integral = integral_image(image)
+        return cp.asarray(_hessian_matrix_det(integral, sigma))
     else:  # slower brute-force implementation for nD images
         if image.ndim in [2, 3]:
             # Compute determinant as the product of the eigenvalues.
@@ -752,7 +753,7 @@ def hessian_matrix_eigvals(H_elems):
     --------
     >>> import cupy as cp
     >>> from cucim.skimage.feature import (hessian_matrix,
-    ...                                      hessian_matrix_eigvals)
+    ...                                    hessian_matrix_eigvals)
     >>> square = cp.zeros((5, 5))
     >>> square[2, 2] = 4
     >>> H_elems = hessian_matrix(square, sigma=0.1, order='rc',

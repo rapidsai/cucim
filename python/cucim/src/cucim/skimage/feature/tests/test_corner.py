@@ -275,11 +275,12 @@ def test_custom_eigvals_kernels_vs_linalg_eigvalsh(shape, dtype):
     cp.testing.assert_allclose(evs1, evs2, atol=atol)
 
 
-def test_hessian_matrix_det():
+@pytest.mark.parametrize('approximate', [False, True])
+def test_hessian_matrix_det(approximate):
     image = cp.zeros((5, 5))
     image[2, 2] = 1
     # TODO: approximate=True case not implemented
-    det = hessian_matrix_det(image, 5, approximate=False)
+    det = hessian_matrix_det(image, 5, approximate=approximate)
     assert_array_almost_equal(det, 0, decimal=3)
 
 
