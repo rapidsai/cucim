@@ -162,7 +162,7 @@ def svs2tif(input_file, output_folder, tile_size, overlap,
                     else:
                         subfiletype = SUBFILETYPE_NONE
 
-                    tif.save(
+                    tif.write(
                         src_arr,
                         software="Glencoe/Faas pyramid",
                         metadata={"axes": "YXC"},
@@ -174,7 +174,7 @@ def svs2tif(input_file, output_folder, tile_size, overlap,
                             y_resolution // 2 ** level,
                             resolution_unit,
                         ),
-                        compress=("jpeg", 95),  # requires imagecodecs
+                        compression=("jpeg", 95),  # requires imagecodecs
                         subfiletype=subfiletype,
                     )
                 logger.info("Done.")
