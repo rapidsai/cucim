@@ -8,17 +8,27 @@ def _match_cumulative_cdf(source, template):
     Return modified source array so that the cumulative density function of
     its values matches the cumulative density function of the template.
     """
-    src_values, src_unique_indices, src_counts = cp.unique(source.ravel(),
-                                                           return_inverse=True,
-                                                           return_counts=True)
-    tmpl_values, tmpl_counts = cp.unique(template.ravel(), return_counts=True)
+    if source.dtype.kind == 'u':
+        src_lookup = source.reshape(-1)
+        src_counts = cp.bincount(src_lookup)
+        tmpl_counts = cp.bincount(template.reshape(-1))
+
+        # omit values where the count was 0
+        tmpl_values = cp.nonzero(tmpl_counts)[0]
+        tmpl_counts = tmpl_counts[tmpl_values]
+    else:
+        src_values, src_lookup, src_counts = cp.unique(source.reshape(-1),
+                                                       return_inverse=True,
+                                                       return_counts=True)
+        tmpl_values, tmpl_counts = cp.unique(template.reshape(-1),
+                                             return_counts=True)
 
     # calculate normalized quantiles for each array
     src_quantiles = cp.cumsum(src_counts) / source.size
     tmpl_quantiles = cp.cumsum(tmpl_counts) / template.size
 
     interp_a_values = cp.interp(src_quantiles, tmpl_quantiles, tmpl_values)
-    return interp_a_values[src_unique_indices].reshape(source.shape)
+    return interp_a_values[src_lookup].reshape(source.shape)
 
 
 @utils.channel_as_last_axis(channel_arg_positions=(0, 1))

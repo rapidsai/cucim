@@ -169,11 +169,12 @@ def _clahe(image, kernel_size, clip_limit, nbins):
     hist_blocks = hist_blocks.reshape((_misc.prod(ns_hist), -1))
 
     # Calculate actual clip limit
+    kernel_elements = _misc.prod(kernel_size)
     if clip_limit > 0.0:
-        clim = int(max(clip_limit * _misc.prod(kernel_size), 1))
+        clim = int(max(clip_limit * kernel_elements, 1))
     else:
         # largest possible value, i.e., do not clip (AHE)
-        clim = np.product(kernel_size)
+        clim = kernel_elements
 
     # Note: for 4096, 4096 input and default args, shapes are:
     #    hist_blocks.shape = (64, 262144)
@@ -189,7 +190,7 @@ def _clahe(image, kernel_size, clip_limit, nbins):
         ))
     else:
         hist = cp.apply_along_axis(clip_histogram, -1, hist, clip_limit=clim)
-    hist = map_histogram(hist, 0, NR_OF_GRAY - 1, _misc.prod(kernel_size))
+    hist = map_histogram(hist, 0, NR_OF_GRAY - 1, kernel_elements)
     hist = hist.reshape(hist_block_assembled_shape[:ndim] + (-1,))
 
     # duplicate leading mappings in each dim
