@@ -842,13 +842,6 @@ def shape_index(image, sigma=1, mode="constant", cval=0):
         return (2.0 / np.pi) * np.arctan((l2 + l1) / (l2 - l1))
 
 
-@cp.fuse()
-def _kitchen_rosenfeld_inner(imx, imy, imxx, imxy, imyy):
-    numerator = imxx * imy ** 2 + imyy * imx ** 2 - 2 * imxy * imx * imy
-    denominator = imx ** 2 + imy ** 2
-    return numerator, denominator
-
-
 @cp.memoize()
 def _get_kitchen_rosenfeld_kernel():
 
@@ -913,7 +906,7 @@ def corner_kitchen_rosenfeld(image, mode="constant", cval=0):
     imyy, _ = _compute_derivatives(imy, mode=mode, cval=cval)
 
     kernel = _get_kitchen_rosenfeld_kernel()
-    response = cp.empty_like(image)
+    response = cp.empty_like(image, order='C')
     return kernel(imx, imy, imxx, imxy, imyy, response)
 
 
