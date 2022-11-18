@@ -187,12 +187,21 @@ def test_distance_transform_inplace_distance_errors(ndim):
         distances = cp.empty(img.shape + (2,), dtype=cp.float32)
         distance_transform_edt(img, distances=distances)
 
+    # can't provide indices array when return_indices is False
+    with pytest.raises(RuntimeError):
+        distances = cp.empty(img.shape, dtype=cp.float32)
+        distance_transform_edt(img, distances=distances,
+                               return_distances=False, return_indices=True)
+
 
 @pytest.mark.parametrize('ndim', [2, 3])
 @pytest.mark.parametrize('sampling', [None, 'iso', 'aniso'])
 @pytest.mark.parametrize('dtype', [cp.int16, cp.uint16, cp.uint32, cp.int32,
                                    cp.uint64, cp.int64])
-def test_distance_transform_inplace_indices(ndim, sampling, dtype):
+@pytest.mark.parametrize('return_distances', [False, True])
+def test_distance_transform_inplace_indices(
+    ndim, sampling, dtype, return_distances
+):
     img = binary_image((32, ) * ndim, pct_true=80)
     if ndim == 3 and dtype in [cp.int16, cp.uint16]:
         pytest.skip(reason="3d case requires at least 32-bit integer output")
@@ -201,13 +210,17 @@ def test_distance_transform_inplace_indices(ndim, sampling, dtype):
     elif sampling == 'aniso':
         sampling = tuple(range(1, ndim + 1))
     common_kwargs = dict(
-        sampling=sampling, return_distances=False, return_indices=True
+        sampling=sampling, return_distances=return_distances,
+        return_indices=True
     )
     # verify that in-place and out-of-place results agree
     indices = cp.empty((ndim,) + img.shape, dtype=dtype)
     distance_transform_edt(img, indices=indices, **common_kwargs)
     expected = distance_transform_edt(img, **common_kwargs)
-    cp.testing.assert_array_equal(indices, expected)
+    if return_distances:
+        cp.testing.assert_array_equal(indices, expected[1])
+    else:
+        cp.testing.assert_array_equal(indices, expected)
 
 
 @pytest.mark.parametrize('ndim', [2, 3])
@@ -229,6 +242,11 @@ def test_distance_transform_inplace_indices_errors(ndim):
     with pytest.raises(RuntimeError):
         indices = cp.empty((ndim,), dtype=cp.float32)
         distance_transform_edt(img, indices=indices, **common_kwargs)
+
+    # can't provide indices array when return_indices is False
+    with pytest.raises(RuntimeError):
+        indices = cp.empty((ndim,) + img.shape, dtype=cp.int32)
+        distance_transform_edt(img, indices=indices, return_indices=False)
 
 
 @pytest.mark.parametrize('sx', list(range(4)))

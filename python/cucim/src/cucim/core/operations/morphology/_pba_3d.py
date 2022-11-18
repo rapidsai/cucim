@@ -4,8 +4,10 @@ import os
 import cupy
 import numpy as np
 
-from ._pba_2d import (_distance_tranform_arg_check, _get_block_size,
-                      _generate_shape, _generate_indices_ops, lcm)
+from ._pba_2d import (_check_distances, _check_indices,
+                      _distance_tranform_arg_check, _get_block_size,
+                      _generate_shape, _generate_indices_ops,
+                      lcm)
 from cucim.skimage._vendored._ndimage_util import _get_inttype
 
 
@@ -442,11 +444,7 @@ def _pba_3d(arr, sampling=None, return_distances=True, return_indices=False,
         out_shape = (orig_sz, orig_sy, orig_sx)
         dtype_out = cupy.float64 if float64_distances else cupy.float32
         if dt_inplace:
-            if distances.shape != out_shape:
-                raise RuntimeError("distances array has wrong shape")
-            if distances.dtype != dtype_out:
-                raise RuntimeError(
-                    f"distances array must have dtype: {dtype_out}")
+            _check_distances(distances, out_shape, dtype_out)
         else:
             distances = cupy.zeros(out_shape, dtype=dtype_out)
 
@@ -486,16 +484,7 @@ def _pba_3d(arr, sampling=None, return_distances=True, return_indices=False,
         vals = vals + (distances,)
     if return_indices:
         if indices_inplace:
-            if indices.shape != (arr.ndim,) + arr.shape:
-                raise RuntimeError("indices array has wrong shape")
-            if indices.dtype.kind not in 'iu':
-                raise RuntimeError(
-                    f"indices array must have an integer dtype"
-                )
-            elif indices.dtype.itemsize < x.dtype.itemsize:
-                raise RuntimeError(
-                    f"indices dtype must have itemsize > {x.dtype.itemsize}"
-                )
+            _check_indices(indices, (arr.ndim,) + arr.shape, x.dtype.itemsize)
             indices[0, ...] = z
             indices[1, ...] = y
             indices[2, ...] = x
