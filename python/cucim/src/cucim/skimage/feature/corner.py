@@ -5,11 +5,10 @@ from itertools import combinations_with_replacement
 import cupy as cp
 import numpy as np
 import cucim.skimage._vendored.ndimage as ndi
-from scipy import spatial  # TODO: use RAPIDS cuSpatial?
+from scipy import spatial  # TODO: use cuSpatial if cKDTree becomes available
 
 from cucim.skimage.util import img_as_float
 
-# from ..transform import integral_image
 from .._shared._gradient import gradient
 from .._shared.utils import _supported_float_type, warn
 from ..transform import integral_image
@@ -1107,7 +1106,7 @@ def corner_shi_tomasi(image, sigma=1):
 
 
 @cp.memoize()
-def _get_forstner_kernel():
+def _get_foerstner_kernel():
 
     return cp.ElementwiseKernel(
         in_params='F Arr, F Acc, F Arc',
@@ -1198,7 +1197,7 @@ def corner_foerstner(image, sigma=1):
     Arr, Arc, Acc = structure_tensor(image, sigma, order="rc")
     w = cp.empty_like(Arr)
     q = cp.empty_like(Arr)
-    kernel = _get_forstner_kernel()
+    kernel = _get_foerstner_kernel()
     return kernel(Arr, Acc, Arc, w, q)
 
 
