@@ -29,8 +29,15 @@ def test_image_converter_stripe_4096x4096_256_jpeg(
     num_workers = os.cpu_count()
     file_name = "test_image_converter_stripe_4096x4096_256_jpeg-output.tif"
     output_path = tmp_path / file_name
-    tiff.svs2tif(testimg_tiff_stripe_4096x4096_256_jpeg, Path(tmp_path),
-                 tile_size, overlap, num_workers, file_name)
+    tiff.svs2tif(
+        testimg_tiff_stripe_4096x4096_256_jpeg,
+        output_folder=Path(tmp_path),
+        tile_size=tile_size,
+        overlap=overlap,
+        num_workers=num_workers,
+        output_filename=file_name,
+    )
+
     assert os.path.exists(output_path)
 
     with tifffile.TiffFile(output_path) as tif:
