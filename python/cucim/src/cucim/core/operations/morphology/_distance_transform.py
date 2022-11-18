@@ -33,14 +33,17 @@ def distance_transform_edt(image, sampling=None, return_distances=True,
         Whether to calculate the distance transform.
     return_indices : bool, optional
         Whether to calculate the feature transform.
-    distances : float32 cupy.ndarray, optional
+    distances : cupy.ndarray, optional
         An output array to store the calculated distance transform, instead of
-        returning it. `return_distances` must be True. It must be the same
-        shape as `image`.
-    indices : int32 cupy.ndarray, optional
+        returning it. `return_distances` must be ``True``. It must be the same
+        shape as `image`. Should have dtype ``cp.float32`` if
+        `float64_distances` is ``False``, otherwise it should be
+        ``cp.float64``.
+    indices : cupy.ndarray, optional
         An output array to store the calculated feature transform, instead of
-        returning it. `return_indicies` must be True. Its shape must be
-        `(image.ndim,) + image.shape`.
+        returning it. `return_indicies` must be ``True``. Its shape must be
+        ``(image.ndim,) + image.shape``. Its dtype must be a signed or unsigned
+        integer type of at least 16-bits in 2D or 32-bits in 3D.
 
     Other Parameters
     ----------------
@@ -56,14 +59,16 @@ def distance_transform_edt(image, sampling=None, return_distances=True,
 
     Returns
     -------
-    distances : float64 ndarray, optional
+    distances : cupy.ndarray, optional
         The calculated distance transform. Returned only when
-        `return_distances` is True and `distances` is not supplied. It will
-        have the same shape as `image`.
-    indices : int32 ndarray, optional
+        `return_distances` is ``True`` and `distances` is not supplied. It will
+        have the same shape as `image`. Will have dtype `cp.float64` if
+        `float64_distances` is ``True``, otherwise it will have dtype
+        ``cp.float32``.
+    indices : ndarray, optional
         The calculated feature transform. It has an image-shaped array for each
         dimension of the image. See example below. Returned only when
-        `return_indices` is True and `indices` is not supplied.
+        `return_indices` is ``True`` and `indices` is not supplied.
 
     Notes
     -----
@@ -138,15 +143,6 @@ def distance_transform_edt(image, sampling=None, return_distances=True,
             [0, 0, 3, 3, 4]]])
 
     """
-    if distances is not None:
-        raise NotImplementedError(
-            "preallocated distances image is not supported"
-        )
-    if indices is not None:
-        raise NotImplementedError(
-            "preallocated indices image is not supported"
-        )
-
     scalar_sampling = None
     if sampling is not None:
         unique_sampling = np.unique(np.atleast_1d(sampling))
@@ -169,11 +165,16 @@ def distance_transform_edt(image, sampling=None, return_distances=True,
         sampling=sampling,
         return_distances=return_distances,
         return_indices=return_indices,
-        block_params=block_params
+        block_params=block_params,
+        distances=distances,
+        indices=indices,
     )
 
     if return_distances and scalar_sampling is not None:
-        vals = (vals[0] * scalar_sampling,) + vals[1:]
+        # inplace multiply in case distance != None
+        vals = list(vals)
+        vals[0] *= scalar_sampling
+        vals = tuple(vals)
 
     if len(vals) == 1:
         vals = vals[0]

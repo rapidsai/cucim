@@ -67,8 +67,8 @@ def _init_marker(int_dtype):
 
 
 @cupy.memoize(True)
-def get_pba2d_src(block_size_2d=64, marker=-32768, pixel_int2_t='short2'):
-    make_pixel_func = 'make_' + pixel_int2_t
+def get_pba2d_src(block_size_2d=64, marker=-32768, pixel_int2_t="short2"):
+    make_pixel_func = "make_" + pixel_int2_t
 
     pba2d_code = pba2d_defines_template.format(
         block_size_2d=block_size_2d,
@@ -76,9 +76,9 @@ def get_pba2d_src(block_size_2d=64, marker=-32768, pixel_int2_t='short2'):
         pixel_int2_t=pixel_int2_t,
         make_pixel_func=make_pixel_func
     )
-    kernel_directory = os.path.join(os.path.dirname(__file__), 'cuda')
-    with open(os.path.join(kernel_directory, 'pba_kernels_2d.h'), 'rt') as f:
-        pba2d_kernels = '\n'.join(f.readlines())
+    kernel_directory = os.path.join(os.path.dirname(__file__), "cuda")
+    with open(os.path.join(kernel_directory, "pba_kernels_2d.h"), "rt") as f:
+        pba2d_kernels = "\n".join(f.readlines())
 
     pba2d_code += pba2d_kernels
     return pba2d_code
@@ -88,7 +88,7 @@ def _get_block_size(check_warp_size=False):
     if check_warp_size:
         dev = cupy.cuda.runtime.getDevice()
         device_properties = cupy.cuda.runtime.getDeviceProperties(dev)
-        return int(device_properties['warpSize'])
+        return int(device_properties["warpSize"])
     else:
         return 32
 
@@ -120,18 +120,18 @@ def _get_pack_kernel(int_type, marker=-32768):
         in_params="raw B arr",
         out_params="raw I out",
         operation=code,
-        options=('--std=c++11',),
+        options=("--std=c++11",),
     )
 
 
 def _pack_int2(arr, marker=-32768, int_dtype=cupy.int16):
     if arr.ndim != 2:
         raise ValueError("only 2d arr suppported")
-    int2_dtype = cupy.dtype({'names': ['x', 'y'], 'formats': [int_dtype] * 2})
+    int2_dtype = cupy.dtype({"names": ["x", "y"], "formats": [int_dtype] * 2})
     out = cupy.zeros(arr.shape + (2,), dtype=int_dtype)
     assert out.size == 2 * arr.size
     pack_kernel = _get_pack_kernel(
-        int_type='short' if int_dtype == cupy.int16 else 'int',
+        int_type="short" if int_dtype == cupy.int16 else "int",
         marker=marker
     )
     pack_kernel(arr, out, size=arr.size)
@@ -159,7 +159,7 @@ def _determine_padding(shape, padded_size, block_size):
     return padding_width
 
 
-def _generate_shape(ndim, int_type, var_name='out', raw_var=True):
+def _generate_shape(ndim, int_type, var_name="out", raw_var=True):
     code = ""
     if not raw_var:
         var_name = "_raw_" + var_name
@@ -169,16 +169,16 @@ def _generate_shape(ndim, int_type, var_name='out', raw_var=True):
 
 
 def _generate_indices_ops(ndim, int_type):
-    code = f'{int_type} _i = i;\n'
+    code = f"{int_type} _i = i;\n"
     for j in range(ndim - 1, 0, -1):
-        code += f'{int_type} ind_{j} = _i % shape_{j};\n_i /= shape_{j};\n'
-    code += f'{int_type} ind_0 = _i;'
+        code += f"{int_type} ind_{j} = _i % shape_{j};\n_i /= shape_{j};\n"
+    code += f"{int_type} ind_0 = _i;"
     return code
 
 
 def _get_distance_kernel_code(int_type, dist_int_type, raw_out_var=True):
     code = _generate_shape(
-        ndim=2, int_type=int_type, var_name='dist', raw_var=raw_out_var
+        ndim=2, int_type=int_type, var_name="dist", raw_var=raw_out_var
     )
     code += _generate_indices_ops(ndim=2, int_type=int_type)
     code += f"""
@@ -203,13 +203,13 @@ def _get_distance_kernel(int_type, dist_int_type):
         in_params="raw I y, raw I x",
         out_params="raw F dist",
         operation=operation,
-        options=('--std=c++11',),
+        options=("--std=c++11",),
     )
 
 
 def _get_aniso_distance_kernel_code(int_type, raw_out_var=True):
     code = _generate_shape(
-        ndim=2, int_type=int_type, var_name='dist', raw_var=raw_out_var
+        ndim=2, int_type=int_type, var_name="dist", raw_var=raw_out_var
     )
     code += _generate_indices_ops(ndim=2, int_type=int_type)
     code += f"""
@@ -232,13 +232,36 @@ def _get_aniso_distance_kernel(int_type):
         in_params="raw I y, raw I x, raw F sampling",
         out_params="raw F dist",
         operation=operation,
-        options=('--std=c++11',),
+        options=("--std=c++11",),
     )
+
+
+def _distance_tranform_arg_check(distances_out, indices_out,
+                                 return_distances, return_indices):
+    """Raise a RuntimeError if the arguments are invalid"""
+    error_msgs = []
+    if (not return_distances) and (not return_indices):
+        error_msgs.append(
+            "at least one of return_distances/return_indices must be True")
+    if distances_out and not return_distances:
+        error_msgs.append(
+            "return_distances must be True if distances is supplied"
+        )
+    if indices_out and not return_indices:
+        error_msgs.append("return_indices must be True if indices is supplied")
+    if error_msgs:
+        raise RuntimeError(", ".join(error_msgs))
 
 
 def _pba_2d(arr, sampling=None, return_distances=True, return_indices=False,
             block_params=None, check_warp_size=False, *,
-            float64_distances=False):
+            float64_distances=False, distances=None, indices=None):
+
+    indices_inplace = isinstance(indices, cupy.ndarray)
+    dt_inplace = isinstance(distances, cupy.ndarray)
+    _distance_tranform_arg_check(
+        dt_inplace, indices_inplace, return_distances, return_indices
+    )
 
     # input_arr: a 2D image
     #    For each site at (x, y), the pixel at coordinate (x, y) should contain
@@ -292,7 +315,7 @@ def _pba_2d(arr, sampling=None, return_distances=True, return_indices=False,
     shape_max = max(arr.shape)
     if shape_max <= 32768:
         int_dtype = cupy.int16
-        pixel_int2_type = 'short2'
+        pixel_int2_type = "short2"
     else:
         if shape_max > (1 << 24):
             # limit to coordinate range to 2**24 due to use of __mul24 in
@@ -302,20 +325,20 @@ def _pba_2d(arr, sampling=None, return_distances=True, return_indices=False,
                 f"shape {arr.shape}"
             )
         int_dtype = cupy.int32
-        pixel_int2_type = 'int2'
+        pixel_int2_type = "int2"
 
     marker = _init_marker(int_dtype)
 
     orig_sy, orig_sx = arr.shape
     padding_width = _determine_padding(arr.shape, padded_size, block_size)
     if padding_width is not None:
-        arr = cupy.pad(arr, padding_width, mode='constant', constant_values=1)
+        arr = cupy.pad(arr, padding_width, mode="constant", constant_values=1)
     size = arr.shape[0]
 
     input_arr = _pack_int2(arr, marker=marker, int_dtype=int_dtype)
     output = cupy.zeros_like(input_arr)
 
-    int2_dtype = cupy.dtype({'names': ['x', 'y'], 'formats': [int_dtype] * 2})
+    int2_dtype = cupy.dtype({"names": ["x", "y"], "formats": [int_dtype] * 2})
     margin = cupy.empty((2 * m1 * size,), dtype=int2_dtype)
 
     # phase 1 of PBA. m1 must divide texture size and be <= 64
@@ -326,25 +349,25 @@ def _pba_2d(arr, sampling=None, return_distances=True, return_indices=False,
             pixel_int2_t=pixel_int2_type,
         )
     )
-    kernelFloodDown = pba2d.get_function('kernelFloodDown')
-    kernelFloodUp = pba2d.get_function('kernelFloodUp')
-    kernelPropagateInterband = pba2d.get_function('kernelPropagateInterband')
-    kernelUpdateVertical = pba2d.get_function('kernelUpdateVertical')
+    kernelFloodDown = pba2d.get_function("kernelFloodDown")
+    kernelFloodUp = pba2d.get_function("kernelFloodUp")
+    kernelPropagateInterband = pba2d.get_function("kernelPropagateInterband")
+    kernelUpdateVertical = pba2d.get_function("kernelUpdateVertical")
     kernelCreateForwardPointers = pba2d.get_function(
-        'kernelCreateForwardPointers'
+        "kernelCreateForwardPointers"
     )
-    kernelDoubleToSingleList = pba2d.get_function('kernelDoubleToSingleList')
+    kernelDoubleToSingleList = pba2d.get_function("kernelDoubleToSingleList")
 
     if sampling is None:
-        kernelProximatePoints = pba2d.get_function('kernelProximatePoints')
-        kernelMergeBands = pba2d.get_function('kernelMergeBands')
-        kernelColor = pba2d.get_function('kernelColor')
+        kernelProximatePoints = pba2d.get_function("kernelProximatePoints")
+        kernelMergeBands = pba2d.get_function("kernelMergeBands")
+        kernelColor = pba2d.get_function("kernelColor")
     else:
         kernelProximatePoints = pba2d.get_function(
-            'kernelProximatePointsWithSpacing'
+            "kernelProximatePointsWithSpacing"
         )
-        kernelMergeBands = pba2d.get_function('kernelMergeBandsWithSpacing')
-        kernelColor = pba2d.get_function('kernelColorWithSpacing')
+        kernelMergeBands = pba2d.get_function("kernelMergeBandsWithSpacing")
+        kernelColor = pba2d.get_function("kernelColorWithSpacing")
 
     block = (block_size, 1, 1)
     grid = (math.ceil(size / block[0]), m1, 1)
@@ -434,27 +457,48 @@ def _pba_2d(arr, sampling=None, return_distances=True, return_indices=False,
     vals = ()
     if return_distances:
         dtype_out = cupy.float64 if float64_distances else cupy.float32
-        dist = cupy.zeros(y.shape, dtype=dtype_out)
+        if dt_inplace:
+            if distances.shape != y.shape:
+                raise RuntimeError("distances array has wrong shape")
+            if distances.dtype != dtype_out:
+                raise RuntimeError(
+                    f"distances array must have dtype: {dtype_out}")
+        else:
+            distances = cupy.zeros(y.shape, dtype=dtype_out)
 
-        # make sure maximum possible distance doesn't overflow
+        # make sure maximum possible distance doesn"t overflow
         max_possible_dist = sum((s - 1)**2 for s in y.shape)
-        dist_int_type = 'int' if max_possible_dist < 2**31 else 'ptrdiff_t'
+        dist_int_type = "int" if max_possible_dist < 2**31 else "ptrdiff_t"
 
         if sampling is None:
             distance_kernel = _get_distance_kernel(
-                int_type=_get_inttype(dist),
+                int_type=_get_inttype(distances),
                 dist_int_type=dist_int_type,
             )
-            distance_kernel(y, x, dist, size=dist.size)
+            distance_kernel(y, x, distances, size=distances.size)
         else:
             distance_kernel = _get_aniso_distance_kernel(
-                int_type=_get_inttype(dist),
+                int_type=_get_inttype(distances),
             )
             sampling = cupy.asarray(sampling, dtype=dtype_out)
-            distance_kernel(y, x, sampling, dist, size=dist.size)
+            distance_kernel(y, x, sampling, distances, size=distances.size)
 
-        vals = vals + (dist,)
+        vals = vals + (distances,)
     if return_indices:
-        indices = cupy.stack((y, x), axis=0)
+        if indices_inplace:
+            if indices.shape != (arr.ndim,) + arr.shape:
+                raise RuntimeError("indices array has wrong shape")
+            if indices.dtype.kind not in 'iu':
+                raise RuntimeError(
+                    f"indices array must have an integer dtype"
+                )
+            elif indices.dtype.itemsize < x.dtype.itemsize:
+                raise RuntimeError(
+                    f"indices dtype must have itemsize > {x.dtype.itemsize}"
+                )
+            indices[0, ...] = y
+            indices[1, ...] = x
+        else:
+            indices = cupy.stack((y, x), axis=0)
         vals = vals + (indices,)
     return vals

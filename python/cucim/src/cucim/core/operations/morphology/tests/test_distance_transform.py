@@ -154,6 +154,83 @@ def test_distance_transform_edt_2d_aniso(sx, sy):
     cp.testing.assert_allclose(out, expected)
 
 
+@pytest.mark.parametrize('ndim', [2, 3])
+@pytest.mark.parametrize('sampling', [None, 'iso', 'aniso'])
+def test_distance_transform_inplace_distance(ndim, sampling):
+    img = binary_image((32, ) * ndim, pct_true=80)
+    distances = cp.empty(img.shape, dtype=cp.float32)
+    if sampling == 'iso':
+        sampling = (1.5,) * ndim
+    elif sampling == 'aniso':
+        sampling = tuple(range(1, ndim + 1))
+    distance_transform_edt(img, sampling=sampling, distances=distances)
+    expected = ndi_cpu.distance_transform_edt(
+        cp.asnumpy(img), sampling=sampling
+    )
+    cp.testing.assert_allclose(distances, expected)
+
+
+@pytest.mark.parametrize('ndim', [2, 3])
+def test_distance_transform_inplace_distance_errors(ndim):
+    img = binary_image((32, ) * ndim, pct_true=80)
+
+    # for binary input, distances output is float32. Other dtypes raise
+    with pytest.raises(RuntimeError):
+        distances = cp.empty(img.shape, dtype=cp.float64)
+        distance_transform_edt(img, distances=distances)
+    with pytest.raises(RuntimeError):
+        distances = cp.empty(img.shape, dtype=cp.int32)
+        distance_transform_edt(img, distances=distances)
+
+    # wrong shape
+    with pytest.raises(RuntimeError):
+        distances = cp.empty(img.shape + (2,), dtype=cp.float32)
+        distance_transform_edt(img, distances=distances)
+
+
+@pytest.mark.parametrize('ndim', [2, 3])
+@pytest.mark.parametrize('sampling', [None, 'iso', 'aniso'])
+@pytest.mark.parametrize('dtype', [cp.int16, cp.uint16, cp.uint32, cp.int32,
+                                   cp.uint64, cp.int64])
+def test_distance_transform_inplace_indices(ndim, sampling, dtype):
+    img = binary_image((32, ) * ndim, pct_true=80)
+    if ndim == 3 and dtype in [cp.int16, cp.uint16]:
+        pytest.skip(reason="3d case requires at least 32-bit integer output")
+    if sampling == 'iso':
+        sampling = (1.5,) * ndim
+    elif sampling == 'aniso':
+        sampling = tuple(range(1, ndim + 1))
+    common_kwargs = dict(
+        sampling=sampling, return_distances=False, return_indices=True
+    )
+    # verify that in-place and out-of-place results agree
+    indices = cp.empty((ndim,) + img.shape, dtype=dtype)
+    distance_transform_edt(img, indices=indices, **common_kwargs)
+    expected = distance_transform_edt(img, **common_kwargs)
+    cp.testing.assert_array_equal(indices, expected)
+
+
+@pytest.mark.parametrize('ndim', [2, 3])
+def test_distance_transform_inplace_indices_errors(ndim):
+    img = binary_image((32, ) * ndim, pct_true=80)
+    common_kwargs = dict(return_distances=False, return_indices=True)
+
+    # int8 has itemsize too small
+    with pytest.raises(RuntimeError):
+        indices = cp.empty((ndim,) + img.shape, dtype=cp.int8)
+        distance_transform_edt(img, indices=indices, **common_kwargs)
+
+    # float not allowed
+    with pytest.raises(RuntimeError):
+        indices = cp.empty((ndim,) + img.shape, dtype=cp.float64)
+        distance_transform_edt(img, indices=indices, **common_kwargs)
+
+    # wrong shape
+    with pytest.raises(RuntimeError):
+        indices = cp.empty((ndim,), dtype=cp.float32)
+        distance_transform_edt(img, indices=indices, **common_kwargs)
+
+
 @pytest.mark.parametrize('sx', list(range(4)))
 @pytest.mark.parametrize('sy', list(range(4)))
 @pytest.mark.parametrize('sz', list(range(4)))
@@ -162,6 +239,7 @@ def test_distance_transform_edt_3d_aniso(sx, sy, sz):
     shape = (16 + sz, 32 + sy, 48 + sx)
     img = binary_image(shape, pct_true=80)
     out = distance_transform_edt(img)
+    print(f"{out.dtype=}")
     expected = ndi_cpu.distance_transform_edt(cp.asnumpy(img))
     cp.testing.assert_allclose(out, expected)
 
