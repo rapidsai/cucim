@@ -6,7 +6,6 @@ from skimage.data import camera, chelsea
 # from cucim.skimage.restoration import denoise_wavelet
 from skimage.restoration import denoise_wavelet
 
-from cucim.skimage._shared.testing import expected_warnings
 from cucim.skimage._shared.utils import _supported_float_type
 from cucim.skimage.data import binary_blobs
 from cucim.skimage.metrics import mean_squared_error as mse

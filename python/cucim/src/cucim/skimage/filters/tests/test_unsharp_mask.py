@@ -1,6 +1,5 @@
 import cupy as cp
 import pytest
-from skimage._shared._warnings import expected_warnings
 
 from cucim.skimage._shared.utils import _supported_float_type
 from cucim.skimage.filters import unsharp_mask

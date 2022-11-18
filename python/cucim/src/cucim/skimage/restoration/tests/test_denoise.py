@@ -7,7 +7,6 @@ from cupy.testing import assert_array_equal
 from skimage import color, data, img_as_float
 
 from cucim.skimage import restoration
-from cucim.skimage._shared.testing import expected_warnings
 from cucim.skimage._shared.utils import _supported_float_type, slice_at_axis
 from cucim.skimage.metrics import structural_similarity
 

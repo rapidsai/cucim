@@ -1,6 +1,5 @@
 import numpy as np
 
-from .._shared import utils
 from .._shared.filters import gaussian
 from ..util import img_as_float
 

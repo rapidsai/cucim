@@ -8,7 +8,6 @@ import numpy as np
 
 from .._shared._gradient import gradient
 from cucim.skimage import feature, filters
-from cucim.skimage._shared import utils
 from cucim.skimage.util import img_as_float32
 
 

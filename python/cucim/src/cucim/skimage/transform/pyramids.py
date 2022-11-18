@@ -2,7 +2,6 @@ import math
 
 import cupy as cp
 
-from .._shared import utils
 from .._shared.filters import gaussian
 from .._shared.utils import convert_to_float
 from ..transform import resize

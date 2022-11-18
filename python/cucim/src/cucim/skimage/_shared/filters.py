@@ -10,7 +10,6 @@ import cupy as cp
 import cucim.skimage._vendored.ndimage as ndi
 
 
-from .._shared import utils
 from .._shared.utils import _supported_float_type, convert_to_float, warn
 
 
@@ -30,6 +29,7 @@ class ChannelAxisNotSet(metaclass=_PatchClassRepr):
     This automatic behavior was broken in v0.19, recovered but deprecated in
     v0.20 and will be removed in v0.21.
     """
+
 
 def gaussian(image, sigma=1, output=None, mode='nearest', cval=0,
              preserve_range=False, truncate=4.0, *,
