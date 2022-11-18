@@ -58,12 +58,11 @@ def _get_ssim_grad_kernel():
     )
 
 
-@utils.deprecate_multichannel_kwarg()
 def structural_similarity(im1, im2,
                           *,
                           win_size=None, gradient=False, data_range=None,
-                          channel_axis=None, multichannel=False,
-                          gaussian_weights=False, full=False, **kwargs):
+                          channel_axis=None, gaussian_weights=False,
+                          full=False, **kwargs):
     """
     Compute the mean structural similarity index between two images.
     Please pay attention to the `data_range` parameter with floating-point
@@ -89,10 +88,6 @@ def structural_similarity(im1, im2,
         If None, the image is assumed to be a grayscale (single channel) image.
         Otherwise, this parameter indicates which axis of the array corresponds
         to channels.
-    multichannel : bool, optional
-        If True, treat the last dimension of the array as channels. Similarity
-        calculations are done independently for each channel then averaged.
-        This argument is deprecated: specify `channel_axis` instead.
     gaussian_weights : bool, optional
         If True, each patch has its mean and variance spatially weighted by a
         normalized Gaussian kernel of width sigma=1.5.

@@ -29,10 +29,9 @@ def _check_factor(factor):
         raise ValueError('scale factor must be greater than 1')
 
 
-@utils.deprecate_multichannel_kwarg(multichannel_position=6)
 def pyramid_reduce(image, downscale=2, sigma=None, order=1,
-                   mode='reflect', cval=0, multichannel=False,
-                   preserve_range=False, *, channel_axis=None):
+                   mode='reflect', cval=0, preserve_range=False, *,
+                   channel_axis=None):
     """Smooth and then downsample image.
 
     Parameters
@@ -53,10 +52,6 @@ def pyramid_reduce(image, downscale=2, sigma=None, order=1,
         cval is the value when mode is equal to 'constant'.
     cval : float, optional
         Value to fill past edges of input if mode is 'constant'.
-    multichannel : bool, optional
-        Whether the last axis of the image is to be interpreted as multiple
-        channels or another spatial dimension. This argument is deprecated:
-        specify `channel_axis` instead.
     preserve_range : bool, optional
         Whether to keep the original range of values. Otherwise, the input
         image is converted according to the conventions of `img_as_float`.
@@ -99,10 +94,9 @@ def pyramid_reduce(image, downscale=2, sigma=None, order=1,
     return out
 
 
-@utils.deprecate_multichannel_kwarg(multichannel_position=6)
 def pyramid_expand(image, upscale=2, sigma=None, order=1,
-                   mode='reflect', cval=0, multichannel=False,
-                   preserve_range=False, *, channel_axis=None):
+                   mode='reflect', cval=0, preserve_range=False, *,
+                   channel_axis=None):
     """Upsample and then smooth image.
 
     Parameters
@@ -123,10 +117,6 @@ def pyramid_expand(image, upscale=2, sigma=None, order=1,
         cval is the value when mode is equal to 'constant'.
     cval : float, optional
         Value to fill past edges of input if mode is 'constant'.
-    multichannel : bool, optional
-        Whether the last axis of the image is to be interpreted as multiple
-        channels or another spatial dimension. This argument is deprecated:
-        specify `channel_axis` instead.
     preserve_range : bool, optional
         Whether to keep the original range of values. Otherwise, the input
         image is converted according to the conventions of `img_as_float`.
@@ -168,10 +158,9 @@ def pyramid_expand(image, upscale=2, sigma=None, order=1,
     return out
 
 
-@utils.deprecate_multichannel_kwarg(multichannel_position=7)
 def pyramid_gaussian(image, max_layer=-1, downscale=2, sigma=None, order=1,
-                     mode='reflect', cval=0, multichannel=False,
-                     preserve_range=False, *, channel_axis=None):
+                     mode='reflect', cval=0, preserve_range=False, *,
+                     channel_axis=None):
     """Yield images of the Gaussian pyramid formed by the input image.
 
     Recursively applies the `pyramid_reduce` function to the image, and yields
@@ -203,10 +192,6 @@ def pyramid_gaussian(image, max_layer=-1, downscale=2, sigma=None, order=1,
         cval is the value when mode is equal to 'constant'.
     cval : float, optional
         Value to fill past edges of input if mode is 'constant'.
-    multichannel : bool, optional
-        Whether the last axis of the image is to be interpreted as multiple
-        channels or another spatial dimension. This argument is deprecated:
-        specify `channel_axis` instead.
     preserve_range : bool, optional
         Whether to keep the original range of values. Otherwise, the input
         image is converted according to the conventions of `img_as_float`.
@@ -256,10 +241,9 @@ def pyramid_gaussian(image, max_layer=-1, downscale=2, sigma=None, order=1,
         yield layer_image
 
 
-@utils.deprecate_multichannel_kwarg(multichannel_position=7)
 def pyramid_laplacian(image, max_layer=-1, downscale=2, sigma=None, order=1,
-                      mode='reflect', cval=0, multichannel=False,
-                      preserve_range=False, *, channel_axis=None):
+                      mode='reflect', cval=0, preserve_range=False, *,
+                      channel_axis=None):
     """Yield images of the laplacian pyramid formed by the input image.
 
     Each layer contains the difference between the downsampled and the
@@ -294,10 +278,6 @@ def pyramid_laplacian(image, max_layer=-1, downscale=2, sigma=None, order=1,
         cval is the value when mode is equal to 'constant'.
     cval : float, optional
         Value to fill past edges of input if mode is 'constant'.
-    multichannel : bool, optional
-        Whether the last axis of the image is to be interpreted as multiple
-        channels or another spatial dimension. This argument is deprecated:
-        specify `channel_axis` instead.
     preserve_range : bool, optional
         Whether to keep the original range of values. Otherwise, the input
         image is converted according to the conventions of `img_as_float`.

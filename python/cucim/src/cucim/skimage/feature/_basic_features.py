@@ -99,10 +99,8 @@ def _mutiscale_basic_features_singlechannel(
     return features
 
 
-@utils.deprecate_multichannel_kwarg(multichannel_position=1)
 def multiscale_basic_features(
     image,
-    multichannel=False,
     intensity=True,
     edges=True,
     texture=True,
@@ -122,9 +120,6 @@ def multiscale_basic_features(
     ----------
     image : ndarray
         Input image, which can be grayscale or multichannel.
-    multichannel : bool, default False
-        True if the last dimension corresponds to color channels.
-        This argument is deprecated: specify `channel_axis` instead.
     intensity : bool, default True
         If True, pixel intensities averaged over the different scales
         are added to the feature set.

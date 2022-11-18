@@ -89,21 +89,6 @@ def test_denoise_tv_chambolle_multichannel(channel_axis):
     assert_array_equal(denoised[_at(0)], denoised0)
 
 
-def test_denoise_tv_chambolle_multichannel_deprecation():
-    denoised0 = restoration.denoise_tv_chambolle(astro[..., 0], weight=0.1)
-
-    with expected_warnings(["`multichannel` is a deprecated argument"]):
-        denoised = restoration.denoise_tv_chambolle(astro, weight=0.1,
-                                                    multichannel=True)
-
-    # providing multichannel argument positionally also warns
-    with expected_warnings(["Providing the `multichannel` argument"]):
-        denoised = restoration.denoise_tv_chambolle(astro, 0.1, 2e-4, 200,
-                                                    True)
-
-    assert_array_equal(denoised[..., 0], denoised0)
-
-
 def test_denoise_tv_chambolle_float_result_range():
     # astronaut image
     img = astro_gray
