@@ -806,10 +806,9 @@ test() {
 
 install_python_test_deps_() {
     if [ -n "${CONDA_PREFIX}" ]; then
-        # https://github.com/rapidsai/cucim/pull/349#issuecomment-1203335731
-        # Do not update or change already-installed dependencies.
-        run_command conda install -c conda-forge -y --freeze-installed \
-            --file ${TOP}/python/cucim/requirements-test.txt
+        # Install test dependencies from pip because conda does not have all the dependencies (e.g., opencv-python).
+        # (https://github.com/rapidsai/cucim/pull/433)
+        run_command pip install -r ${TOP}/python/cucim/requirements-test.txt
     else
         if [ -n "${VIRTUAL_ENV}" ]; then
             run_command pip3 install -r ${TOP}/python/cucim/requirements-test.txt

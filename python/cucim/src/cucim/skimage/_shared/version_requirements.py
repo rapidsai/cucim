@@ -3,31 +3,6 @@ import sys
 from packaging import version as _version
 
 
-def ensure_python_version(min_version):
-    if not isinstance(min_version, tuple):
-        min_version = (min_version, )
-    if sys.version_info < min_version:
-        # since ensure_python_version is in the critical import path,
-        # we lazy import it.
-        from platform import python_version
-
-        raise ImportError("""
-
-You are running cucim on an unsupported version of Python.
-
-Unfortunately, cucim no longer supports your installed version of Python (%s).
-You therefore have two options: either upgrade to
-Python %s, or install an older version of cucim.
-
-Please also consider updating `pip` and `setuptools`:
-
- $ pip install pip setuptools --upgrade
-
-Newer versions of these tools avoid installing packages incompatible
-with your version of Python.
-""" % (python_version(), '.'.join([str(v) for v in min_version])))
-
-
 def _check_version(actver, version, cmp_op):
     """
     Check version string of an active module against a required version.
