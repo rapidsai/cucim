@@ -36,7 +36,7 @@ _ssim_operation = """
 def _get_ssim_kernel():
 
     return cp.ElementwiseKernel(
-        in_params='F cov_norm, F ux, F uy, F uxx, F uyy, F uxy, float64 data_range, float64 K1, float64 K2',  # noqa
+        in_params='float64 cov_norm, F ux, F uy, F uxx, F uyy, F uxy, float64 data_range, float64 K1, float64 K2',  # noqa
         out_params='F ssim',
         operation=_ssim_operation,
         name='cucim_ssim'
@@ -47,7 +47,7 @@ def _get_ssim_kernel():
 def _get_ssim_grad_kernel():
 
     return cp.ElementwiseKernel(
-        in_params='F cov_norm, F ux, F uy, F uxx, F uyy, F uxy, float64 data_range, float64 K1, float64 K2',  # noqa
+        in_params='float64 cov_norm, F ux, F uy, F uxx, F uyy, F uxy, float64 data_range, float64 K1, float64 K2',  # noqa
         out_params='F ssim, F grad_temp1, F grad_temp2, F grad_temp3',
         operation=_ssim_operation + """
             grad_temp1 = A1 / D;
@@ -160,6 +160,12 @@ def structural_similarity(im1, im2,
     check_shape_equality(im1, im2)
     float_type = _supported_float_type(im1.dtype)
 
+    if isinstance(data_range, cp.ndarray):
+        if data_range.ndim != 0:
+            raise ValueError("data_range must be a scalar")
+        # need a host scalar
+        data_range = float(data_range)
+
     if channel_axis is not None:
         # loop over channels
         args = dict(win_size=win_size,
@@ -248,7 +254,7 @@ def structural_similarity(im1, im2,
             warn("Inputs have mismatched dtypes.  Setting data_range based on "
                  "im1.dtype.", stacklevel=2)
         dmin, dmax = dtype_range[im1.dtype.type]
-        data_range = dmax - dmin
+        data_range = float(dmax - dmin)
         if cp.issubdtype(im1.dtype, cp.integer) and (im1.dtype != cp.uint8):
             warn("Setting data_range based on im1.dtype. " +
                  ("data_range = %.0f. " % data_range) +
