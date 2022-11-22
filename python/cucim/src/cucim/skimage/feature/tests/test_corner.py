@@ -129,11 +129,11 @@ def test_hessian_matrix(dtype):
     out_dtype = _supported_float_type(dtype)
     assert all(a.dtype == out_dtype for a in (Hrr, Hrc, Hcc))
     # fmt: off
-    assert_array_almost_equal(Hrr, cp.asarray([[0, 0,  0, 0, 0],    # noqa
+    assert_array_almost_equal(Hrr, cp.asarray([[0, 0,  2, 0, 0],    # noqa
                                                [0, 0,  0, 0, 0],    # noqa
-                                               [2, 0, -2, 0, 2],    # noqa
+                                               [0, 0, -2, 0, 0],    # noqa
                                                [0, 0,  0, 0, 0],    # noqa
-                                               [0, 0,  0, 0, 0]]))  # noqa
+                                               [0, 0,  2, 0, 0]]))  # noqa
 
     assert_array_almost_equal(Hrc, cp.asarray([[0,  0, 0,  0, 0],    # noqa
                                                [0,  1, 0, -1, 0],    # noqa
@@ -141,17 +141,36 @@ def test_hessian_matrix(dtype):
                                                [0, -1, 0,  1, 0],    # noqa
                                                [0,  0, 0,  0, 0]]))  # noqa
 
-    assert_array_almost_equal(Hcc, cp.asarray([[0, 0,  2, 0, 0],    # noqa
+    assert_array_almost_equal(Hcc, cp.asarray([[0, 0,  0, 0, 0],    # noqa
                                                [0, 0,  0, 0, 0],    # noqa
-                                               [0, 0, -2, 0, 0],    # noqa
+                                               [2, 0, -2, 0, 2],    # noqa
                                                [0, 0,  0, 0, 0],    # noqa
-                                               [0, 0,  2, 0, 0]]))  # noqa
+                                               [0, 0,  0, 0, 0]]))  # noqa
     # fmt: on
 
     with expected_warnings(["use_gaussian_derivatives currently defaults"]):
         # FutureWarning warning when use_gaussian_derivatives is not
         # specified.
         hessian_matrix(square, sigma=0.1, order="rc")
+
+
+@pytest.mark.parametrize('use_gaussian_derivatives', [False, True])
+def test_hessian_matrix_order(use_gaussian_derivatives):
+    square = cp.zeros((5, 5), dtype=float)
+    square[2, 2] = 4
+
+    Hxx, Hxy, Hyy = hessian_matrix(
+        square, sigma=0.1, order="xy",
+        use_gaussian_derivatives=use_gaussian_derivatives)
+
+    Hrr, Hrc, Hcc = hessian_matrix(
+        square, sigma=0.1, order="rc",
+        use_gaussian_derivatives=use_gaussian_derivatives)
+
+    # verify results are equivalent, just reversed in order
+    cp.testing.assert_allclose(Hxx, Hcc, atol=1e-30)
+    cp.testing.assert_allclose(Hxy, Hrc, atol=1e-30)
+    cp.testing.assert_allclose(Hyy, Hrr, atol=1e-30)
 
 
 def test_hessian_matrix_3d():
@@ -168,6 +187,21 @@ def test_hessian_matrix_3d():
                                     [0, -1,  0,  1,  0],    # noqa
                                     [0,  0,  0,  0,  0]]))  # noqa
     # fmt: on
+
+
+@pytest.mark.parametrize('use_gaussian_derivatives', [False, True])
+def test_hessian_matrix_3d_xy(use_gaussian_derivatives):
+
+    img = cp.ones((5, 5, 5))
+
+    # order="xy" is only permitted for 2D
+    with pytest.raises(ValueError):
+        hessian_matrix(img, sigma=0.1, order="xy",
+                       use_gaussian_derivatives=use_gaussian_derivatives)
+
+    with pytest.raises(ValueError):
+        hessian_matrix(img, sigma=0.1, order='nonexistant',
+                       use_gaussian_derivatives=use_gaussian_derivatives)
 
 
 @pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])
