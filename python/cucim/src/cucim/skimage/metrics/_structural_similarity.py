@@ -134,8 +134,9 @@ def structural_similarity(im1, im2,
     of Y), so one cannot calculate a channel-averaged SSIM with a single call
     to this function, as identical ranges are assumed for each channel.
 
-    To match the implementation of Wang et. al. [1]_, set `gaussian_weights`
-    to True, `sigma` to 1.5, and `use_sample_covariance` to False.
+    To match the implementation of Wang et al. [1]_, set `gaussian_weights`
+    to True, `sigma` to 1.5, `use_sample_covariance` to False, and
+    specify the `data_range` argument.
 
     .. versionchanged:: 0.16
         This function was renamed from ``skimage.measure.compare_ssim`` to
@@ -236,11 +237,22 @@ def structural_similarity(im1, im2,
         raise ValueError('Window size must be odd.')
 
     if data_range is None:
+        if (cp.issubdtype(im1.dtype, cp.floating) or
+            cp.issubdtype(im2.dtype, cp.floating)):
+            raise ValueError(
+                'Since image dtype is floating point, you must specify '
+                'the data_range parameter. Please read the documentation '
+                'carefully (including the note). It is recommended that '
+                'you always specify the data_range anyway.')
         if im1.dtype != im2.dtype:
-            warn("Inputs have mismatched dtype.  Setting data_range based on "
+            warn("Inputs have mismatched dtypes.  Setting data_range based on "
                  "im1.dtype.", stacklevel=2)
         dmin, dmax = dtype_range[im1.dtype.type]
         data_range = dmax - dmin
+        if cp.issubdtype(im1.dtype, cp.integer) and (im1.dtype != cp.uint8):
+            warn("Setting data_range based on im1.dtype. " +
+                 ("data_range = %.0f. " % data_range) +
+                 "Please specify data_range explicitly to avoid mistakes.", stacklevel=2)
 
     ndim = im1.ndim
 
