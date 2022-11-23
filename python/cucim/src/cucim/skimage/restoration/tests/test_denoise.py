@@ -167,4 +167,5 @@ def test_denoise_tv_chambolle_weighting():
     denoised_2d = restoration.denoise_tv_chambolle(img2d, weight=w)
     denoised_4d = restoration.denoise_tv_chambolle(img4d, weight=w)
     assert (structural_similarity(denoised_2d,
-                                  denoised_4d[:, :, 0, 0]) > 0.99)
+                                  denoised_4d[:, :, 0, 0],
+                                  data_range=1.0) > 0.98)
