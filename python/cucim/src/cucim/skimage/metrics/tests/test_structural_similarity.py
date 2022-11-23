@@ -238,7 +238,9 @@ def test_mssim_vs_legacy(dtype):
 
 
 def test_mssim_mixed_dtype():
-    mssim = structural_similarity(cam, cam_noisy.astype(cam.dtype), data_range=255.0)
+    mssim = structural_similarity(
+        cam, cam_noisy.astype(cam.dtype), data_range=255.0
+    )
     with expected_warnings(["Inputs have mismatched dtypes"]):
         mssim_mixed = structural_similarity(cam, cam_noisy.astype(cp.int16))
     assert_almost_equal(mssim, mssim_mixed)

@@ -242,8 +242,10 @@ def structural_similarity(im1, im2,
         raise ValueError('Window size must be odd.')
 
     if data_range is None:
-        if (cp.issubdtype(im1.dtype, cp.floating) or
-            cp.issubdtype(im2.dtype, cp.floating)):
+        if (
+            cp.issubdtype(im1.dtype, cp.floating) or
+            cp.issubdtype(im2.dtype, cp.floating)
+        ):
             raise ValueError(
                 'Since image dtype is floating point, you must specify '
                 'the data_range parameter. Please read the documentation '
@@ -257,7 +259,8 @@ def structural_similarity(im1, im2,
         if cp.issubdtype(im1.dtype, cp.integer) and (im1.dtype != cp.uint8):
             warn("Setting data_range based on im1.dtype. " +
                  ("data_range = %.0f. " % data_range) +
-                 "Please specify data_range explicitly to avoid mistakes.", stacklevel=2)
+                 "Please specify data_range explicitly to avoid mistakes.",
+                 stacklevel=2)
 
     ndim = im1.ndim
 
