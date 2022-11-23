@@ -140,19 +140,6 @@ class LZ4NVCOMP(Codec):
         decompressed = self._compressor.decompress(buf)
         return ndarray_copy(decompressed, out)
 
-    # def get_config(self):
-    #     # cc_config = self.compressor.get_config() if self.compressor else None
-    #     return {
-    #         "id": self.codec_id,
-    #         "compressor_config": None,  # cc_config,
-    #     }
-
-    # @classmethod
-    # def from_config(cls, config):
-    #     # cc_config = config.get("compressor_config", None)
-    #     # compressor = get_codec(cc_config) if cc_config else None
-    #     return cls()  # compressor=compressor)
-
     def __repr__(self):
         r = '%s' % type(self).__name__
         return r
