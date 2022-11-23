@@ -56,7 +56,8 @@ def filter_tile(
 
 
 def svs2tif(input_file, output_folder, tile_size, overlap,
-            num_workers=os.cpu_count(), output_filename="image.tif"):
+            num_workers=os.cpu_count(), compression="jpeg",
+            output_filename="image.tif"):
     output_folder = str(output_folder)
 
     logger.info("Parameters")
@@ -65,7 +66,17 @@ def svs2tif(input_file, output_folder, tile_size, overlap,
     logger.info("        tile size: %d", tile_size)
     logger.info("          overlap: %d", overlap)
     logger.info("      num_workers: %d", num_workers)
+    logger.info("      compression: %s", compression)
     logger.info("  output filename: %s", output_filename)
+
+    if compression is not None:
+        # handles only jpeg or None (no compression)
+        if compression.lower() == "jpeg":
+            compression = ("jpeg", 95)
+        else:
+            raise ValueError(
+                f"Unsupported compression: {compression}."
+                + " Should be 'jpeg' or None.")
 
     with OpenSlide(input_file) as slide:
         properties = slide.properties
@@ -162,7 +173,7 @@ def svs2tif(input_file, output_folder, tile_size, overlap,
                     else:
                         subfiletype = SUBFILETYPE_NONE
 
-                    tif.save(
+                    tif.write(
                         src_arr,
                         software="Glencoe/Faas pyramid",
                         metadata={"axes": "YXC"},
@@ -174,7 +185,7 @@ def svs2tif(input_file, output_folder, tile_size, overlap,
                             y_resolution // 2 ** level,
                             resolution_unit,
                         ),
-                        compress=("jpeg", 95),  # requires imagecodecs
+                        compression=compression,  # requires imagecodecs
                         subfiletype=subfiletype,
                     )
                 logger.info("Done.")

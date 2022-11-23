@@ -4,9 +4,7 @@ import os
 import pickle
 
 import cucim.skimage
-import cucim.skimage.data
-import cucim.skimage.exposure
-import cucim.skimage.segmentation
+from cucim.skimage import data, exposure, measure, segmentation
 import cupy as cp
 import numpy as np
 import pandas as pd
@@ -21,7 +19,6 @@ class LabelBench(ImageBench):
         self,
         function_name,
         shape,
-        contiguous_labels=True,
         dtypes=np.float32,
         fixed_kwargs={},
         var_kwargs={},
@@ -30,8 +27,6 @@ class LabelBench(ImageBench):
         module_gpu=cucim.skimage.measure,
         run_cpu=True,
     ):
-
-        self.contiguous_labels = contiguous_labels
 
         super().__init__(
             function_name=function_name,
@@ -45,22 +40,24 @@ class LabelBench(ImageBench):
             run_cpu=run_cpu,
         )
 
-    def set_args(self, dtype):
-        a = np.array(
-            [
-                [0, 0, 1, 1, 0, 0, 0, 0],
-                [0, 0, 0, 1, 0, 0, 4, 0],
-                [2, 2, 0, 0, 3, 0, 4, 4],
-                [0, 0, 0, 0, 0, 5, 0, 0],
-            ],
-            dtype=dtype,
+    def _generate_labels(self, dtype):
+        ndim = len(self.shape)
+        blobs_kwargs = dict(blob_size_fraction=0.05,
+                            volume_fraction=0.35,
+                            seed=5)
+        # binary blobs only creates square outputs
+        labels = measure.label(
+            data.binary_blobs(max(self.shape), n_dim=ndim, **blobs_kwargs)
         )
-        tiling = tuple(s // a_s for s, a_s in zip(self.shape, a.shape))
-        if self.contiguous_labels:
-            labels = np.kron(a, np.ones(tiling, dtype=a.dtype))
-        else:
-            labels = np.tile(a, tiling)
-        labels_d = cp.asarray(labels)
+        print(f"# labels generated = {labels.max()}")
+
+        # crop to rectangular
+        labels = labels[tuple(slice(s) for s in self.shape)]
+        return labels.astype(dtype, copy=False)
+
+    def set_args(self, dtype):
+        labels_d = self._generate_labels(dtype)
+        labels = cp.asnumpy(labels_d)
         self.args_cpu = (labels,)
         self.args_gpu = (labels_d,)
 
@@ -68,21 +65,8 @@ class LabelBench(ImageBench):
 class LabelAndImageBench(LabelBench):
 
     def set_args(self, dtype):
-        a = np.array(
-            [
-                [0, 0, 1, 1, 0, 0, 0, 0],
-                [0, 0, 0, 1, 0, 0, 4, 0],
-                [2, 2, 0, 0, 3, 0, 4, 4],
-                [0, 0, 0, 0, 0, 5, 0, 0],
-            ],
-            dtype=dtype,
-        )
-        tiling = tuple(s // a_s for s, a_s in zip(self.shape, a.shape))
-        if self.contiguous_labels:
-            labels = np.kron(a, np.ones(tiling, dtype=a.dtype))
-        else:
-            labels = np.tile(a, tiling)
-        labels_d = cp.asarray(labels)
+        labels_d = self._generate_labels(dtype)
+        labels = cp.asnumpy(labels_d)
         image_d = cp.random.standard_normal(labels.shape).astype(np.float32)
         image = cp.asnumpy(image_d)
         self.args_cpu = (image, labels)
@@ -150,7 +134,6 @@ class RandomWalkerBench(ImageBench):
         self.args_gpu = (data, markers)
 
 
-
 def main(args):
 
     pfile = "cucim_segmentation_results.pickle"
@@ -171,6 +154,14 @@ def main(args):
         (
             "clear_border",
             dict(),
+            dict(),
+            False,
+            True,
+        ),
+        # _expand_labels.py
+        (
+            "expand_labels",
+            dict(distance=1),
             dict(),
             False,
             True,
@@ -221,6 +212,16 @@ def main(args):
             False,
             False,
         ),
+        (
+            "chan_vese",
+            dict(),
+            # Reduced number of iterations so scikit-image comparison will not
+            # take minutes to complete. Empirically, approximately the same
+            # acceleration was measured for 10 or 100 iterations.
+            dict(max_num_iter=[10], init_level_set=["checkerboard", "disk"]),
+            False,
+            False,
+        ),
         # omit: disk_level_set (simple array generation function)
         # omit: checkerboard_level_set (simple array generation function)
     ]:
@@ -239,7 +240,7 @@ def main(args):
         if shape[-1] == 3 and not allow_color:
             continue
 
-        if function_name in ["clear_border", "relabel_sequential", "find_boundaries", "mark_boundaries", "random_walker"]:
+        if function_name in ["clear_border", "expand_labels", "relabel_sequential", "find_boundaries", "mark_boundaries", "random_walker"]:
             if function_name == 'random_walker':
                 fixed_kwargs['channel_axis'] = -1 if shape[-1] == 3 else None
 
@@ -263,7 +264,7 @@ def main(args):
             all_results = pd.concat([all_results, results["full"]])
 
 
-        elif function_name in ["inverse_gaussian_gradient", "morphological_geodesic_active_contour", "morphological_chan_vese"]:
+        elif function_name in ["inverse_gaussian_gradient", "morphological_geodesic_active_contour", "morphological_chan_vese", "chan_vese"]:
 
             if function_name == "morphological_geodesic_active_contour":
                 bench_class = MorphGeodesicBench
@@ -296,7 +297,7 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Benchmarking cuCIM segmentation functions')
-    func_name_choices = ["clear_border", "relabel_sequential", "find_boundaries", "mark_boundaries", "random_walker", "inverse_gaussian_gradient", "morphological_geodesic_active_contour", "morphological_chan_vese"]
+    func_name_choices = ["clear_border", "expand_labels", "relabel_sequential", "find_boundaries", "mark_boundaries", "random_walker", "inverse_gaussian_gradient", "morphological_geodesic_active_contour", "morphological_chan_vese", "chan_vese"]
     label_dtype_choices = ['int8', 'int16', 'int32', 'int64', 'uint8', 'uint16', 'uint32', 'uint64']
     dtype_choices = ['float16', 'float32', 'float64', 'int8', 'int16', 'int32', 'int64', 'uint8', 'uint16', 'uint32', 'uint64']
     parser.add_argument('-i','--img_size', type=str, help='Size of input image (omit color channel, it will be appended as needed)', required=True)

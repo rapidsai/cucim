@@ -14,15 +14,15 @@
 
 ## Installation
 
-Please download the latest SDK package (`cuCIM-v22.10.00-linux.tar.gz`).
+Please download the latest SDK package (`cuCIM-v22.12.00-linux.tar.gz`).
 
 Untar the downloaded file.
 
 ```bash
-mkdir -p cuCIM-v22.10.00
-tar -xzvf cuCIM-v22.10.00-linux.tar.gz -C cuCIM-v22.10.00
+mkdir -p cuCIM-v22.12.00
+tar -xzvf cuCIM-v22.12.00-linux.tar.gz -C cuCIM-v22.12.00
 
-cd cuCIM-v22.10.00
+cd cuCIM-v22.12.00
 ```
 
 ## Run command
@@ -147,7 +147,7 @@ Its execution would show some metadata information and create two files -- `outp
 ```
 $ ./bin/tiff_image notebooks/input/image.tif .
 [Plugin: cucim.kit.cuslide] Loading...
-[Plugin: cucim.kit.cuslide] Loading the dynamic library from: cucim.kit.cuslide@22.10.00.so
+[Plugin: cucim.kit.cuslide] Loading the dynamic library from: cucim.kit.cuslide@22.12.00.so
 [Plugin: cucim.kit.cuslide] loaded successfully. Version: 0
 Initializing plugin: cucim.kit.cuslide (interfaces: [cucim::io::IImageFormat v0.1]) (impl: cucim.kit.cuslide)
 is_loaded: true

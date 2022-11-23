@@ -36,7 +36,7 @@ opts = dict(
     ),
     long_description_content_type='text/markdown',
     author='NVIDIA Corporation',
-    url='https://github.com/rapidsai/cucim',
+    url='https://developer.nvidia.com/multidimensional-image-processing',
     packages=find_packages('src'),
     package_dir={'cucim': 'src/cucim'},
     include_package_data=True,
@@ -73,8 +73,9 @@ opts = dict(
         'Topic :: Scientific/Engineering :: Image Processing',
     ],
     project_urls={
-        'Documentation': 'https://cucim.readthedocs.io/',
-        'Changelog': 'https://cucim.readthedocs.io/en/latest/changelog.html',
+        'Source': 'https://github.com/rapidsai/cucim',
+        'Documentation': 'https://docs.rapids.ai/api/cucim/stable/',
+        'Changelog': 'https://github.com/rapidsai/cucim/blob/main/CHANGELOG.md',
         'Issue Tracker': 'https://github.com/rapidsai/cucim/issues',
     },
     keywords=[

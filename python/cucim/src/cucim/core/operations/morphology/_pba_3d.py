@@ -480,7 +480,6 @@ def _pba_3d(arr, sampling=None, return_distances=True, return_indices=False,
             kern = _get_aniso_distance_kernel(int_type=_get_inttype(distances))
             sampling = cupy.asarray(sampling, dtype=distances.dtype)
             kern(z, y, x, sampling, distances)
-
         vals = vals + (distances,)
     if return_indices:
         if indices_inplace:
