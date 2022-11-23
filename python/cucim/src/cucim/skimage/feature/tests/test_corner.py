@@ -4,6 +4,7 @@ import pytest
 from cupy.testing import assert_array_almost_equal, assert_array_equal
 from numpy.testing import assert_equal
 from skimage import data, draw
+from skimage.feature import hessian_matrix_det as hessian_matrix_det_cpu
 
 from cucim.skimage import img_as_float
 from cucim.skimage._shared._warnings import expected_warnings
@@ -313,9 +314,35 @@ def test_custom_eigvals_kernels_vs_linalg_eigvalsh(shape, dtype):
 def test_hessian_matrix_det(approximate):
     image = cp.zeros((5, 5))
     image[2, 2] = 1
-    # TODO: approximate=True case not implemented
     det = hessian_matrix_det(image, 5, approximate=approximate)
     assert_array_almost_equal(det, 0, decimal=3)
+
+
+@pytest.mark.parametrize('approximate', [False, True])
+@pytest.mark.parametrize('ndim', [2, 3])
+@pytest.mark.parametrize(
+    'dtype', [cp.uint8, cp.float16, cp.float32, cp.float64]
+)
+def test_hessian_matrix_det_vs_skimage(approximate, ndim, dtype):
+    if approximate and ndim != 2:
+        pytest.skip(reason="approximate only implemented for 2D images")
+    if approximate:
+        sigma = 3
+    else:
+        sigma = 1.5
+    rng = cp.random.default_rng(5)
+    if np.dtype(dtype).kind in 'iu':
+        image = rng.integers(0, 256, (16,) * ndim, dtype=dtype)
+    else:
+        image = rng.standard_normal((16,) * ndim).astype(dtype=dtype)
+    float_type = _supported_float_type(image.dtype)
+    expected = hessian_matrix_det_cpu(
+        cp.asnumpy(image), sigma, approximate=approximate
+    )
+    det = hessian_matrix_det(image, sigma, approximate=approximate)
+    assert det.dtype == float_type
+    tol = 1e-12 if det.dtype == np.float64 else 1e-6
+    cp.testing.assert_allclose(det, expected, rtol=tol, atol=tol)
 
 
 @pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])

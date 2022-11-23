@@ -354,6 +354,31 @@ def hessian_matrix(image, sigma=1, mode='constant', cval=0, order='rc',
     return H_elems
 
 
+@cp.memoize()
+def _get_real_symmetric_2x2_det_kernel():
+    return cp.ElementwiseKernel(
+        in_params="F M00, F M01, F M11",
+        out_params="F det",
+        operation="det = M00 * M11 - M01 * M01;",
+        name="cucim_skimage_symmetric_det22_kernel")
+
+
+@cp.memoize()
+def _get_real_symmetric_3x3_det_kernel():
+
+    operation = """
+    det = M00 * (M11 * M22 - M12 * M12);
+    det -= M01 * (M01 * M22 - M12 * M02);
+    det += M02 * (M01 * M12 - M11 * M02);
+    """
+
+    return cp.ElementwiseKernel(
+        in_params="F M00, F M01, F M02, F M11, F M12, F M22",
+        out_params="F det",
+        operation=operation,
+        name="cucim_skimage_symmetric_det33_kernel")
+
+
 def hessian_matrix_det(image, sigma=1, approximate=True):
     """Compute the approximate Hessian Determinant over an image.
 
@@ -395,19 +420,31 @@ def hessian_matrix_det(image, sigma=1, approximate=True):
     image = image.astype(float_dtype, copy=False)
     if image.ndim == 2 and approximate:
         integral = integral_image(image)
-        return cp.asarray(_hessian_matrix_det(integral, sigma))
+        # integral image will promote to float64 for accuracy, but we can
+        # cast back to float_dtype here.
+        integral = integral.astype(float_dtype, copy=False)
+        return _hessian_matrix_det(integral, sigma)
     else:  # slower brute-force implementation for nD images
         if image.ndim in [2, 3]:
-            # Compute determinant as the product of the eigenvalues.
-            # This avoids the huge memory overhead of forming
-            # `_symmetric_image` as in the code below.
-            # Could optimize further by computing the determinant directly
-            # using ElementwiseKernels rather than reusing the eigenvalue ones.
+            det = cp.empty_like(image)
+            if image.ndim == 2:
+                kernel = _get_real_symmetric_2x2_det_kernel()
+            else:
+                kernel = _get_real_symmetric_3x3_det_kernel()
             H = hessian_matrix(image, sigma)
-            evs = hessian_matrix_eigvals(H)
-            return cp.prod(evs, axis=0)
-        hessian_mat_array = _symmetric_image(hessian_matrix(image, sigma))
-        return cp.linalg.det(hessian_mat_array)
+            kernel(*H, det)
+        else:
+            # # Compute determinant as the product of the eigenvalues.
+            # # This avoids the huge memory overhead of forming
+            # # `_symmetric_image` as in the code below.
+            # # Could optimize further by computing the determinant directly
+            # # using ElementwiseKernels rather than reusing the eigenvalue ones.
+            # H = hessian_matrix(image, sigma)
+            # evs = hessian_matrix_eigvals(H)
+            # return cp.prod(evs, axis=0)
+            hessian_mat_array = _symmetric_image(hessian_matrix(image, sigma))
+            det = cp.linalg.det(hessian_mat_array)
+        return det
 
 
 @cp.memoize()
