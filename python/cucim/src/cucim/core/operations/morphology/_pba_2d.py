@@ -6,6 +6,8 @@ import os
 
 import cupy
 
+from cucim.skimage._vendored._ndimage_util import _get_inttype
+
 try:
     # math.lcm was introduced in Python 3.9
     from math import lcm
@@ -91,26 +93,50 @@ def _get_block_size(check_warp_size=False):
         return 32
 
 
+@cupy.memoize(for_each_device=True)
+def _get_pack_kernel(int_type, marker=-32768):
+    """Pack coordinates into array of type short2 (or int2).
+
+    This kernel works with 2D input data, `arr` (typically boolean).
+
+    The output array, `out` will be 3D with a signed integer dtype.
+    It will have size 2 on the last axis so that it can be viewed as a CUDA
+    vector type such as `int2` or `float2`.
+    """
+    code = f"""
+    if (arr[i]) {{
+        out[2*i] = {marker};
+        out[2*i + 1] = {marker};
+    }} else {{
+        int shape_1 = arr.shape()[1];
+        int _i = i;
+        int ind_1 = _i % shape_1;
+        _i /= shape_1;
+        out[2*i] = ind_1;   // out.x
+        out[2*i + 1] = _i;  // out.y
+    }}
+    """
+    return cupy.ElementwiseKernel(
+        in_params="raw B arr",
+        out_params="raw I out",
+        operation=code,
+        options=('--std=c++11',),
+    )
+
+
 def _pack_int2(arr, marker=-32768, int_dtype=cupy.int16):
     if arr.ndim != 2:
         raise ValueError("only 2d arr suppported")
-    input_x = cupy.zeros(arr.shape, dtype=int_dtype)
-    input_y = cupy.zeros(arr.shape, dtype=int_dtype)
-    # TODO: create custom kernel for setting values in input_x, input_y
-    cond = arr == 0
-    y, x = cupy.where(cond)
-    input_x[cond] = x
-    mask = arr != 0
-    input_x[mask] = marker  # 1 << 32
-    input_y[cond] = y
-    input_y[mask] = marker  # 1 << 32
     int2_dtype = cupy.dtype({'names': ['x', 'y'], 'formats': [int_dtype] * 2})
-    # in C++ code x is the contiguous axis and corresponds to width
-    #             y is the non-contiguous axis and corresponds to height
-    # given that, store input_x as the last axis here
-    return cupy.squeeze(
-        cupy.stack((input_x, input_y), axis=-1).view(int2_dtype)
+    out = cupy.zeros(arr.shape + (2,), dtype=int_dtype)
+    assert out.size == 2 * arr.size
+    pack_kernel = _get_pack_kernel(
+        int_type='short' if int_dtype == cupy.int16 else 'int',
+        marker=marker
     )
+    pack_kernel(arr, out, size=arr.size)
+    out = cupy.squeeze(out.view(int2_dtype))
+    return out
 
 
 def _unpack_int2(img, make_copy=False, int_dtype=cupy.int16):
@@ -131,6 +157,54 @@ def _determine_padding(shape, padded_size, block_size):
     else:
         padding_width = None
     return padding_width
+
+
+def _generate_shape(ndim, int_type, var_name='out', raw_var=True):
+    code = ""
+    if not raw_var:
+        var_name = "_raw_" + var_name
+    for i in range(ndim):
+        code += f"{int_type} shape_{i} = {var_name}.shape()[{i}];\n"
+    return code
+
+
+def _generate_indices_ops(ndim, int_type):
+    code = f'{int_type} _i = i;\n'
+    for j in range(ndim - 1, 0, -1):
+        code += f'{int_type} ind_{j} = _i % shape_{j};\n_i /= shape_{j};\n'
+    code += f'{int_type} ind_0 = _i;'
+    return code
+
+
+def _get_distance_kernel_code(int_type, dist_int_type, raw_out_var=True):
+    code = _generate_shape(
+        ndim=2, int_type=int_type, var_name='dist', raw_var=raw_out_var
+    )
+    code += _generate_indices_ops(ndim=2, int_type=int_type)
+    code += f"""
+    {int_type} tmp;
+    {dist_int_type} sq_dist;
+    tmp = y[i] - ind_0;
+    sq_dist = tmp * tmp;
+    tmp = x[i] - ind_1;
+    sq_dist += tmp * tmp;
+    dist[i] = sqrt(static_cast<F>(sq_dist));
+    """
+    return code
+
+
+@cupy.memoize(for_each_device=True)
+def _get_distance_kernel(int_type, dist_int_type):
+    """Returns kernel computing the Euclidean distance from coordinates."""
+    operation = _get_distance_kernel_code(
+        int_type, dist_int_type, raw_out_var=True
+    )
+    return cupy.ElementwiseKernel(
+        in_params="raw I y, raw I x",
+        out_params="raw F dist",
+        operation=operation,
+        options=('--std=c++11',),
+    )
 
 
 def _pba_2d(arr, sampling=None, return_distances=True, return_indices=False,
@@ -316,27 +390,20 @@ def _pba_2d(arr, sampling=None, return_distances=True, return_indices=False,
     x = output[:orig_sy, :orig_sx, 0]
     y = output[:orig_sy, :orig_sx, 1]
 
-    # raise NotImplementedError("TODO")
     vals = ()
     if return_distances:
-        # TODO: custom kernel for more efficient distance computation
-        y0, x0 = cupy.meshgrid(
-            *(
-                cupy.arange(s, dtype=cupy.int32)
-                for s in (orig_sy, orig_sx)
-            ),
-            indexing='ij',
-            sparse=True,
+        dtype_out = cupy.float64 if float64_distances else cupy.float32
+        dist = cupy.zeros(y.shape, dtype=dtype_out)
+
+        # make sure maximum possible distance doesn't overflow
+        max_possible_dist = sum((s - 1)**2 for s in y.shape)
+        dist_int_type = 'int' if max_possible_dist < 2**31 else 'ptrdiff_t'
+
+        distance_kernel = _get_distance_kernel(
+            int_type=_get_inttype(dist),
+            dist_int_type=dist_int_type,
         )
-        tmp = (x - x0)
-        dist = tmp * tmp
-        tmp = (y - y0)
-        dist += tmp * tmp
-        if float64_distances:
-            dist = cupy.sqrt(dist)
-        else:
-            dist = dist.astype(cupy.float32)
-            cupy.sqrt(dist, out=dist)
+        distance_kernel(y, x, dist, size=dist.size)
         vals = vals + (dist,)
     if return_indices:
         indices = cupy.stack((y, x), axis=0)
