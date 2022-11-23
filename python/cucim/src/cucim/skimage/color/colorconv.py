@@ -1259,7 +1259,7 @@ def lab2xyz(lab, illuminant="D65", observer="2", *, channel_axis=-1):
     nwarn = int(cp.count_nonzero(warnings))
     if nwarn > 0:  # synchronize!
         warn(f'Color data out of range: Z < 0 in {nwarn} pixels',
-             stacklevel=2)
+             stacklevel=3)
     return xyz
 
 
