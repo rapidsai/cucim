@@ -4,7 +4,9 @@ import os
 import cupy
 import numpy as np
 
-from ._pba_2d import _get_block_size, lcm
+from ._pba_2d import (_get_block_size, _generate_shape, _generate_indices_ops,
+                      lcm)
+from cucim.skimage._vendored._ndimage_util import _get_inttype
 
 
 pba3d_defines_template = """
@@ -80,7 +82,43 @@ def get_pba3d_src(block_size_3d=32, marker=-2147483648, max_int=2147483647,
     return pba3d_code
 
 
-# TODO: custom kernel for encode3d
+@cupy.memoize(for_each_device=True)
+def _get_encode3d_kernel(size_max, marker=-2147483648):
+    """Pack array coordinates into a single integer."""
+    if size_max > 1024:
+        int_type = 'ptrdiff_t'  # int64_t
+    else:
+        int_type = 'int'        # int32_t
+
+    # value must match TOID macro in the C++ code!
+    if size_max > 1024:
+        value = """(((x) << 40) | ((y) << 20) | (z))"""
+    else:
+        value = """(((x) << 20) | ((y) << 10) | (z))"""
+
+    code = f"""
+    if (arr[i]) {{
+        out[i] = {marker};
+    }} else {{
+        {int_type} shape_2 = arr.shape()[2];
+        {int_type} shape_1 = arr.shape()[1];
+        {int_type} _i = i;
+        {int_type} x = _i % shape_2;
+        _i /= shape_2;
+        {int_type} y = _i % shape_1;
+        _i /= shape_1;
+        {int_type} z = _i;
+        out[i] = {value};
+    }}
+    """
+    return cupy.ElementwiseKernel(
+        in_params="raw B arr",
+        out_params="raw I out",
+        operation=code,
+        options=('--std=c++11',),
+    )
+
+
 def encode3d(arr, marker=-2147483648, bit_depth=32, size_max=1024):
     if arr.ndim != 3:
         raise ValueError("only 3d arr suppported")
@@ -91,28 +129,50 @@ def encode3d(arr, marker=-2147483648, bit_depth=32, size_max=1024):
     else:
         dtype = np.int32
     image = cupy.zeros(arr.shape, dtype=dtype, order='C')
-    cond = arr == 0
-    z, y, x = cupy.where(cond)
-    # z, y, x so that x is the contiguous axis
-    # (must match TOID macro in the C++ code!)
-    if size_max > 1024:
-        image[cond] = (((x) << 40) | ((y) << 20) | (z))
-    else:
-        image[cond] = (((x) << 20) | ((y) << 10) | (z))
-    image[arr != 0] = marker  # 1 << 32
+    kern = _get_encode3d_kernel(size_max, marker=marker)
+    kern(arr, image, size=image.size)
     return image
 
 
-# TODO: custom kernel for decode3d
-def decode3d(output, size_max=1024):
+def _get_decode3d_code(size_max, int_type=''):
+    # bit shifts here must match those used in the encode3d kernel
     if size_max > 1024:
-        x = (output >> 40) & 0xfffff
-        y = (output >> 20) & 0xfffff
-        z = output & 0xfffff
+        code = f"""
+        {int_type} x = (encoded >> 40) & 0xfffff;
+        {int_type} y = (encoded >> 20) & 0xfffff;
+        {int_type} z = encoded & 0xfffff;
+        """
     else:
-        x = (output >> 20) & 0x3ff
-        y = (output >> 10) & 0x3ff
-        z = output & 0x3ff
+        code = f"""
+        {int_type} x = (encoded >> 20) & 0x3ff;
+        {int_type} y = (encoded >> 10) & 0x3ff;
+        {int_type} z = encoded & 0x3ff;
+        """
+    return code
+
+
+@cupy.memoize(for_each_device=True)
+def _get_decode3d_kernel(size_max):
+    """Unpack 3 coordinates encoded as a single integer."""
+
+    # int_type = '' here because x, y, z were already allocated externally
+    code = _get_decode3d_code(size_max, int_type='')
+
+    return cupy.ElementwiseKernel(
+        in_params="E encoded",
+        out_params="I x, I y, I z",
+        operation=code,
+        options=('--std=c++11',),
+    )
+
+
+def decode3d(encoded, size_max=1024):
+    coord_dtype = cupy.int32 if size_max < 2**31 else cupy.int64
+    x = cupy.empty_like(encoded, dtype=coord_dtype)
+    y = cupy.empty_like(x)
+    z = cupy.empty_like(x)
+    kern = _get_decode3d_kernel(size_max)
+    kern(encoded, x, y, z)
     return (x, y, z)
 
 
@@ -150,6 +210,76 @@ def _determine_padding(shape, block_size, m1, m2, m3, blockx, blocky):
     else:
         padding_width = None
     return padding_width
+
+
+def _generate_distance_computation(int_type, dist_int_type):
+    """
+    Compute euclidean distance from current coordinate (ind_0, ind_1, ind_2) to
+    the coordinates of the nearest point (z, y, x)."""
+    return f"""
+    {int_type} tmp = z - ind_0;
+    {dist_int_type} sq_dist = tmp * tmp;
+    tmp = y - ind_1;
+    sq_dist += tmp * tmp;
+    tmp = x - ind_2;
+    sq_dist += tmp * tmp;
+    dist[i] = sqrt(static_cast<F>(sq_dist));
+    """
+
+
+def _get_distance_kernel_code(int_type, dist_int_type, raw_out_var=True):
+    code = _generate_shape(
+        ndim=3, int_type=int_type, var_name='dist', raw_var=raw_out_var
+    )
+    code += _generate_indices_ops(ndim=3, int_type=int_type)
+    code += _generate_distance_computation(int_type, dist_int_type)
+    return code
+
+
+@cupy.memoize(for_each_device=True)
+def _get_distance_kernel(int_type, large_dist=False):
+    """Returns kernel computing the Euclidean distance from coordinates."""
+    dist_int_type = 'ptrdiff_t' if large_dist else 'int'
+    operation = _get_distance_kernel_code(
+        int_type, dist_int_type, raw_out_var=True
+    )
+    return cupy.ElementwiseKernel(
+        in_params="I z, I y, I x",
+        out_params="raw F dist",
+        operation=operation,
+        options=('--std=c++11',),
+    )
+
+
+@cupy.memoize(for_each_device=True)
+def _get_decode_as_distance_kernel(size_max, large_dist=False):
+    """Fused decode3d and distance computation.
+
+    This kernel is for use when `return_distances=True`, but
+    `return_indices=False`. It replaces the separate calls to
+    `_get_decode3d_kernel` and `_get_distance_kernel`, avoiding the overhead of
+    generating full arrays containing the coordinates since the coordinate
+    arrays are not going to be returned.
+    """
+    dist_int_type = 'ptrdiff_t' if large_dist else 'int'
+    int_type = 'int'
+
+    # Step 1: decode the (z, y, x) coordinate
+    code = _get_decode3d_code(size_max, int_type=int_type)
+
+    # Step 2: compute the Euclidean distance based on this (z, y, x).
+    code += _generate_shape(
+        ndim=3, int_type=int_type, var_name='dist', raw_var=True
+    )
+    code += _generate_indices_ops(ndim=3, int_type=int_type)
+    code += _generate_distance_computation(int_type, dist_int_type)
+
+    return cupy.ElementwiseKernel(
+        in_params="E encoded",
+        out_params="raw F dist",
+        operation=code,
+        options=('--std=c++11',),
+    )
 
 
 def _pba_3d(arr, sampling=None, return_distances=True, return_indices=False,
@@ -248,32 +378,35 @@ def _pba_3d(arr, sampling=None, return_distances=True, return_indices=False,
         block,
         (pba_images[1 - buffer_idx], pba_images[buffer_idx], size),
     )
-
     output = pba_images[buffer_idx]
-    if return_distances or return_indices:
+
+    if return_distances:
+        out_shape = (orig_sz, orig_sy, orig_sx)
+        dtype_out = cupy.float64 if float64_distances else cupy.float32
+        dist = cupy.zeros(out_shape, dtype=dtype_out)
+
+        # make sure maximum possible distance doesn't overflow
+        max_possible_dist = sum((s - 1)**2 for s in out_shape)
+        large_dist = max_possible_dist >= 2**31
+
+        if not return_indices:
+            # Compute distances without forming explicit coordinate arrays.
+            kern = _get_decode_as_distance_kernel(
+                size_max=size_max,
+                large_dist=large_dist,
+            )
+            kern(output[:orig_sz, :orig_sy, :orig_sx], dist)
+            return (dist,)
+
+    if return_indices:
         x, y, z = decode3d(output[:orig_sz, :orig_sy, :orig_sx],
                            size_max=size_max)
-
     vals = ()
     if return_distances:
-        # TODO: custom kernel for more efficient distance computation
-        orig_shape = (orig_sz, orig_sy, orig_sx)
-        z0, y0, x0 = cupy.meshgrid(
-            *(cupy.arange(s, dtype=cupy.int32) for s in orig_shape),
-            indexing='ij',
-            sparse=True
+        kern = _get_distance_kernel(
+            int_type=_get_inttype(dist), large_dist=large_dist,
         )
-        tmp = (x - x0)
-        dist = tmp * tmp
-        tmp = (y - y0)
-        dist += tmp * tmp
-        tmp = (z - z0)
-        dist += tmp * tmp
-        if float64_distances:
-            dist = cupy.sqrt(dist)
-        else:
-            dist = dist.astype(cupy.float32)
-            cupy.sqrt(dist, out=dist)
+        kern(z, y, x, dist)
         vals = vals + (dist,)
     if return_indices:
         indices = cupy.stack((z, y, x), axis=0)
