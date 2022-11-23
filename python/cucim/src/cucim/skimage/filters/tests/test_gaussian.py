@@ -205,5 +205,5 @@ def test_deprecated_automatic_channel_detection():
     assert not cp.array_equal(filtered_rgb, filtered_gray)
 
     # Check how the proxy value shows up in the rendered function signature
-    from skimage._shared.filters import ChannelAxisNotSet
+    from cucim.skimage._shared.filters import ChannelAxisNotSet
     assert repr(ChannelAxisNotSet) == "<ChannelAxisNotSet>"
