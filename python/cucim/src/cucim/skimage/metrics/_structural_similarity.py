@@ -32,9 +32,8 @@ _ssim_operation = """
 """
 
 
-@cp.memoize()
+@cp.memoize(for_each_device=True)
 def _get_ssim_kernel():
-
     return cp.ElementwiseKernel(
         in_params='float64 cov_norm, F ux, F uy, F uxx, F uyy, F uxy, float64 data_range, float64 K1, float64 K2',  # noqa
         out_params='F ssim',
@@ -43,9 +42,8 @@ def _get_ssim_kernel():
     )
 
 
-@cp.memoize()
+@cp.memoize(for_each_device=True)
 def _get_ssim_grad_kernel():
-
     return cp.ElementwiseKernel(
         in_params='float64 cov_norm, F ux, F uy, F uxx, F uyy, F uxy, float64 data_range, float64 K1, float64 K2',  # noqa
         out_params='F ssim, F grad_temp1, F grad_temp2, F grad_temp3',

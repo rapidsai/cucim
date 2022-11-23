@@ -354,7 +354,7 @@ def hessian_matrix(image, sigma=1, mode='constant', cval=0, order='rc',
     return H_elems
 
 
-@cp.memoize()
+@cp.memoize(for_each_device=True)
 def _get_real_symmetric_2x2_det_kernel():
     return cp.ElementwiseKernel(
         in_params="F M00, F M01, F M11",
@@ -363,15 +363,13 @@ def _get_real_symmetric_2x2_det_kernel():
         name="cucim_skimage_symmetric_det22_kernel")
 
 
-@cp.memoize()
+@cp.memoize(for_each_device=True)
 def _get_real_symmetric_3x3_det_kernel():
-
     operation = """
     det = M00 * (M11 * M22 - M12 * M12);
     det -= M01 * (M01 * M22 - M12 * M02);
     det += M02 * (M01 * M12 - M11 * M02);
     """
-
     return cp.ElementwiseKernel(
         in_params="F M00, F M01, F M02, F M11, F M12, F M22",
         out_params="F det",
@@ -447,7 +445,7 @@ def hessian_matrix_det(image, sigma=1, approximate=True):
         return det
 
 
-@cp.memoize()
+@cp.memoize(for_each_device=True)
 def _get_real_symmetric_2x2_eigvals_kernel(sort='ascending', abs_sort=False):
 
     operation = """
@@ -540,7 +538,7 @@ def _image_orthogonal_matrix22_eigvals(
     return eigs
 
 
-@cp.memoize()
+@cp.memoize(for_each_device=True)
 def _get_real_symmetric_3x3_eigvals_kernel(sort='ascending', abs_sort=False):
 
     operation = """
@@ -889,9 +887,8 @@ def shape_index(image, sigma=1, mode="constant", cval=0):
         return (2.0 / np.pi) * np.arctan((l2 + l1) / (l2 - l1))
 
 
-@cp.memoize()
+@cp.memoize(for_each_device=True)
 def _get_kitchen_rosenfeld_kernel():
-
     return cp.ElementwiseKernel(
         in_params='F imx, F imy, F imxx, F imxy, F imyy',
         out_params='F response',
@@ -957,9 +954,8 @@ def corner_kitchen_rosenfeld(image, mode="constant", cval=0):
     return kernel(imx, imy, imxx, imxy, imyy, response)
 
 
-@cp.memoize()
+@cp.memoize(for_each_device=True)
 def _get_corner_harris_k_kernel():
-
     return cp.ElementwiseKernel(
         in_params='F Arr, F Acc, F Arc, float64 k',
         out_params='F response',
@@ -975,9 +971,8 @@ def _get_corner_harris_k_kernel():
     )
 
 
-@cp.memoize()
+@cp.memoize(for_each_device=True)
 def _get_corner_harris_kernel():
-
     return cp.ElementwiseKernel(
         in_params='F Arr, F Acc, F Arc, float64 eps',
         out_params='F response',
@@ -1068,9 +1063,8 @@ def corner_harris(image, method="k", k=0.05, eps=1e-6, sigma=1):
     return response
 
 
-@cp.memoize()
+@cp.memoize(for_each_device=True)
 def _get_shi_tomasi_kernel():
-
     return cp.ElementwiseKernel(
         in_params='F Arr, F Acc, F Arc',
         out_params='F response',
@@ -1145,9 +1139,8 @@ def corner_shi_tomasi(image, sigma=1):
     return kernel(Arr, Acc, Arc, response)
 
 
-@cp.memoize()
+@cp.memoize(for_each_device=True)
 def _get_foerstner_kernel():
-
     return cp.ElementwiseKernel(
         in_params='F Arr, F Acc, F Arc',
         out_params='F w, F q',

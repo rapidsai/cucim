@@ -93,7 +93,7 @@ def compute_hessian_eigenvalues(image, sigma, sorting='none',
     return hessian_eigenvalues
 
 
-@cp.memoize()
+@cp.memoize(for_each_device=True)
 def _get_circulant_init_kernel(ndim, alpha):
     operation = f"""
     for (int x=0; x < {ndim}; x++) {{
@@ -284,9 +284,8 @@ def sato(image, sigmas=range(1, 10, 2), black_ridges=True,
     return filtered_max  # Return pixel-wise max over all sigmas.
 
 
-@cp.memoize()
+@cp.memoize(for_each_device=True)
 def _get_frangi2d_sum_kernel():
-
     return cp.ElementwiseKernel(
         in_params='F lambda1, F lambda2',  # noqa
         out_params='F r_g',
@@ -300,9 +299,8 @@ def _get_frangi2d_sum_kernel():
     )
 
 
-@cp.memoize()
+@cp.memoize(for_each_device=True)
 def _get_frangi2d_inner_kernel():
-
     return cp.ElementwiseKernel(
         in_params='F lambda1, F lambda2, F r_g, float64 beta_sq, float64 gamma_sq',  # noqa
         out_params='F result',
@@ -328,9 +326,8 @@ def _get_frangi2d_inner_kernel():
     )
 
 
-@cp.memoize()
+@cp.memoize(for_each_device=True)
 def _get_frangi3d_sum_kernel():
-
     return cp.ElementwiseKernel(
         in_params='F lambda1, F lambda2, F lambda3',  # noqa
         out_params='F r_g',
@@ -345,9 +342,8 @@ def _get_frangi3d_sum_kernel():
     )
 
 
-@cp.memoize()
+@cp.memoize(for_each_device=True)
 def _get_frangi3d_inner_kernel():
-
     return cp.ElementwiseKernel(
         in_params='F lambda1, F lambda2, F lambda3, F r_g, float64 alpha_sq, float64 beta_sq, float64 gamma_sq',  # noqa
         out_params='F result',
