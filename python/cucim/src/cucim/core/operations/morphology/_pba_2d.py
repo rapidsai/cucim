@@ -3,7 +3,6 @@ import math
 import numbers
 import os
 
-
 import cupy
 
 try:

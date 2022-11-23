@@ -2,7 +2,6 @@ import math
 
 import cupy as cp
 import pytest
-
 from skimage.draw import disk
 from skimage.draw.draw3d import ellipsoid
 

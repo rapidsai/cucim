@@ -7,8 +7,8 @@ The unit tests remain under skimage/filters/tests/
 from collections.abc import Iterable
 
 import cupy as cp
-import cucim.skimage._vendored.ndimage as ndi
 
+import cucim.skimage._vendored.ndimage as ndi
 
 from .._shared import utils
 from .._shared.utils import _supported_float_type, convert_to_float

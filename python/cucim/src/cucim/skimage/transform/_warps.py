@@ -2,6 +2,7 @@ import math
 
 import cupy as cp
 import numpy as np
+
 import cucim.skimage._vendored.ndimage as ndi
 
 from .._shared.utils import (_to_ndimage_mode, _validate_interpolation_order,

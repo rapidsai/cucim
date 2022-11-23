@@ -3,6 +3,7 @@ import itertools
 
 import cupy as cp
 import numpy as np
+
 import cucim.skimage._vendored.ndimage as ndi
 
 from .._shared.utils import _supported_float_type

@@ -1,4 +1,5 @@
 import cupy as cp
+
 import cucim.skimage._vendored.ndimage as ndi
 
 from ..color import rgb2gray

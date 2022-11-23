@@ -4,9 +4,9 @@ from itertools import combinations_with_replacement
 
 import cupy as cp
 import numpy as np
-import cucim.skimage._vendored.ndimage as ndi
 from scipy import spatial  # TODO: use cuSpatial if cKDTree becomes available
 
+import cucim.skimage._vendored.ndimage as ndi
 from cucim.skimage.util import img_as_float
 
 from .._shared._gradient import gradient

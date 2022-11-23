@@ -6,7 +6,6 @@ import numpy as np
 
 from ._pba_2d import _get_block_size, lcm
 
-
 pba3d_defines_template = """
 
 #define MARKER     {marker}

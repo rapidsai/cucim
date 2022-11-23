@@ -1,7 +1,8 @@
 import cupy as cp
 import cupyx.scipy.sparse as sparse
-from ._contingency_table import contingency_table
+
 from .._shared.utils import check_shape_equality
+from ._contingency_table import contingency_table
 
 __all__ = ['variation_of_information']
 

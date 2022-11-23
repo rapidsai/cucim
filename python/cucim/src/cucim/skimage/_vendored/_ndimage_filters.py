@@ -7,9 +7,9 @@ import numpy
 from cucim.skimage._vendored import _internal as internal
 from cucim.skimage._vendored import _ndimage_filters_core as _filters_core
 from cucim.skimage._vendored import _ndimage_util as _util
-
 from cucim.skimage.filters._separable_filtering import (ResourceLimitError,
                                                         _shmem_convolve1d)
+
 try:
     from cupy.cuda.compiler import CompileException
     compile_errors = (ResourceLimitError, CompileException)

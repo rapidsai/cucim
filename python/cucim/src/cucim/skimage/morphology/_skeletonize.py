@@ -1,9 +1,9 @@
 import warnings
 
 import cupy as cp
-import cucim.skimage._vendored.ndimage as ndi
 import numpy as np
 
+import cucim.skimage._vendored.ndimage as ndi
 from cucim.core.operations.morphology import distance_transform_edt
 
 from .._shared.utils import check_nD, deprecate_kwarg
