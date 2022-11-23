@@ -432,14 +432,7 @@ def hessian_matrix_det(image, sigma=1, approximate=True):
             H = hessian_matrix(image, sigma)
             kernel(*H, det)
         else:
-            # # Compute determinant as the product of the eigenvalues.
-            # # This avoids the huge memory overhead of forming
-            # # `_symmetric_image` as in the code below.
-            # # Could optimize further by computing the determinant directly
-            # # using ElementwiseKernels rather than reusing the eigenvalue ones.
-            # H = hessian_matrix(image, sigma)
-            # evs = hessian_matrix_eigvals(H)
-            # return cp.prod(evs, axis=0)
+            # general, n-dimensional case (warning: high memory usage)
             hessian_mat_array = _symmetric_image(hessian_matrix(image, sigma))
             det = cp.linalg.det(hessian_mat_array)
         return det
