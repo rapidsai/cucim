@@ -63,7 +63,7 @@ specified storage level.
 used by the benchmarking scripts described above.
 
 
-### some commands from GDSDirect guide for checking system status
+### Some commands from GDSDirect guide for checking system status
 
 Below are some useful diagnostic commands extracted from the
 [GPUDirect Storage docs](https://docs.nvidia.com/gpudirect-storage/index.html).
