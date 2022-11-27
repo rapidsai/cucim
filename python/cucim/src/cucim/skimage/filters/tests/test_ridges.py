@@ -214,19 +214,27 @@ def test_ridge_output_dtype(func, dtype):
 
 
 @pytest.mark.parametrize('dtype', ['float64', 'uint8'])
-def test_3d_cropped_camera_image(dtype):
+@pytest.mark.parametrize('uniform_stack', [False, True])
+def test_3d_cropped_camera_image(dtype, uniform_stack):
 
     a_black = crop(cp.asarray(camera()), ((200, 212), (100, 312)))
     assert a_black.dtype == cp.uint8
     if dtype == 'float64':
         a_black = img_as_float64(a_black)
-    a_black = cp.dstack([a_black, a_black, a_black])
+    if uniform_stack:
+        # Hessian along last axis will be 0 due to identical image content
+        a_black = cp.dstack([a_black, a_black, a_black, a_black, a_black])
+    else:
+        # stack using shift to give a non-zero Hessian on the last axis
+        a_black = cp.stack(
+            [cp.roll(a_black, shift=n, axis=0) for n in range(5)],
+            axis=-1
+        )
+    tol = 1e-10 if dtype == 'float64' else 4e-3
     a_white = invert(a_black)
 
-    ones = cp.ones((100, 100, 3))
-    tol = 1e-7 if dtype == 'float64' else 8e-3
+    ones = cp.ones(a_black.shape)
 
-    # TODO: determine why the following allclose checks occassionally fail
     assert_allclose(meijering(a_black, black_ridges=True),
                     meijering(a_white, black_ridges=False), atol=tol, rtol=tol)
 

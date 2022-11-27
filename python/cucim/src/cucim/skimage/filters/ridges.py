@@ -201,7 +201,6 @@ def meijering(image, sigmas=range(1, 10, 2), alpha=None,
         if max_val > 0:
             vals /= max_val
         filtered_max = cp.maximum(filtered_max, vals)
-        # print(f"{black_ridges=}, {image.max()=}, {sigma=}, {filtered_max=}")
 
     return filtered_max  # Return pixel-wise max over all sigmas.
 

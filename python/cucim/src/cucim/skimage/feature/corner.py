@@ -423,17 +423,17 @@ def hessian_matrix_det(image, sigma=1, approximate=True):
         integral = integral.astype(float_dtype, copy=False)
         return _hessian_matrix_det(integral, sigma)
     else:  # slower brute-force implementation for nD images
+        H = hessian_matrix(image, sigma, use_gaussian_derivatives=False)
         if image.ndim in [2, 3]:
             det = cp.empty_like(image)
             if image.ndim == 2:
                 kernel = _get_real_symmetric_2x2_det_kernel()
             else:
                 kernel = _get_real_symmetric_3x3_det_kernel()
-            H = hessian_matrix(image, sigma)
             kernel(*H, det)
         else:
             # general, n-dimensional case (warning: high memory usage)
-            hessian_mat_array = _symmetric_image(hessian_matrix(image, sigma))
+            hessian_mat_array = _symmetric_image(H)
             det = cp.linalg.det(hessian_mat_array)
         return det
 
@@ -552,6 +552,10 @@ def _get_real_symmetric_3x3_eigvals_kernel(sort='ascending', abs_sort=False):
     x2 += 9 * (tmpc*d_sq + tmpb*f_sq + tmpa*e_sq);
     x2 -= 54 * (d * e * f);
     x1 = a*a + b*b + c*c - a*b - a*c - b*c + 3 * (d_sq + e_sq + f_sq);
+
+    // grlee77: added max() here for numerical stability
+    // (avoid NaN values in ridge filter test cases)
+    x1 = max(x1, 0.0);
 
     if (x2 == 0.0) {
         phi = M_PI / 2.0;
@@ -677,9 +681,23 @@ def _symmetric_compute_eigenvalues(S_elems, sort='descending', abs_sort=False):
     Returns
     -------
     eigs : ndarray
-        The eigenvalues of the matrix, in decreasing order. The eigenvalues are
-        the leading dimension. That is, ``eigs[i, j, k]`` contains the
-        ith-largest eigenvalue at position (j, k).
+        The eigenvalues of the matrix, sorted in the specified order. The
+        eigenvalues are the leading dimension. That is, ``eigs[i, j, k]``
+        contains the ith eigenvalue at position (j, k).
+
+    Notes
+    -----
+    In 2D and 3D, analytical formulas as given in [1]_ are used. For the nD
+    case, the implementation is memory-inefficient as a large intermediate
+    matrix is formed and used with NumPy's general symmetric eigenvalue
+    solver.
+
+    References
+    ----------
+    .. [1] C. Deledalle, L. Denis, S. Tabti, F. Tupin. Closed-form expressions
+        of the eigen decomposition of 2 x 2 and 3 x 3 Hermitian matrices.
+        [Research Report] Université de Lyon. 2017.
+        https://hal.archives-ouvertes.fr/hal-01501221/file/matrix_exp_and_log_formula.pdf
     """
 
     if len(S_elems) == 3:  # Use fast analytical kernel for 2D
