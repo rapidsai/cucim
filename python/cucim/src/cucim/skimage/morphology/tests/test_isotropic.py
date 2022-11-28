@@ -1,6 +1,5 @@
 import cupy as cp
 import numpy as np
-import pytest
 from cupy.testing import assert_array_equal
 from skimage import data
 

@@ -36,8 +36,18 @@ def isotropic_erosion(image, radius, out=None, spacing=None):
         The result of the morphological erosion taking values in
         ``[False, True]``.
 
+    Notes
+    -----
+    Empirically, on an RTX A6000 GPU, it was observed that
+    ``isotropic_erosion`` is faster than ``binary_erosion`` with
+    ``decomposition=None`` at radius 12 in 2D and radius 3 in 3D. It becomes
+    faster than ``binary_erosion`` with ``decomposition="sequence"`` at radius
+    14 in 2D and radius 5 in 3D. In practice, the exact point at which these
+    isotropic functions become faster than their binary counterparts will also
+    be dependent on image shape and content.
+
     References
-    ---------------
+    ----------
     .. [1] Cuisenaire, O. and Macq, B., "Fast Euclidean morphological operators
         using local distance transformation by propagation, and applications,"
         Image Processing And Its Applications, 1999. Seventh International
@@ -49,7 +59,6 @@ def isotropic_erosion(image, radius, out=None, spacing=None):
         Volume 13, Issue 3, 1992, Pages 161-166.
         :DOI:`10.1016/0167-8655(92)90055-5`
     """
-
     dist = distance_transform_edt(image, sampling=spacing)
     return cp.greater(dist, radius, out=out)
 
@@ -86,8 +95,18 @@ def isotropic_dilation(image, radius, out=None, spacing=None):
         The result of the morphological dilation with values in
         ``[False, True]``.
 
+    Notes
+    -----
+    Empirically, on an RTX A6000 GPU, it was observed that
+    ``isotropic_dilation`` is faster than ``binary_dilation`` with
+    ``decomposition=None`` at radius 12 in 2D and radius 3 in 3D. It becomes
+    faster than ``binary_dilation`` with ``decomposition="sequence"`` at radius
+    14 in 2D and radius 5 in 3D. In practice, the exact point at which these
+    isotropic functions become faster than their binary counterparts will also
+    be dependent on image shape and content.
+
     References
-    ---------------
+    ----------
     .. [1] Cuisenaire, O. and Macq, B., "Fast Euclidean morphological operators
         using local distance transformation by propagation, and applications,"
         Image Processing And Its Applications, 1999. Seventh International
@@ -99,7 +118,6 @@ def isotropic_dilation(image, radius, out=None, spacing=None):
         Volume 13, Issue 3, 1992, Pages 161-166.
         :DOI:`10.1016/0167-8655(92)90055-5`
     """
-
     dist = distance_transform_edt(cp.logical_not(image), sampling=spacing)
     return cp.less_equal(dist, radius, out=out)
 
@@ -134,8 +152,18 @@ def isotropic_opening(image, radius, out=None, spacing=None):
     opened : ndarray of bool
         The result of the morphological opening.
 
+    Notes
+    -----
+    Empirically, on an RTX A6000 GPU, it was observed that
+    ``isotropic_opening`` is faster than ``binary_opening`` with
+    ``decomposition=None`` at radius 12 in 2D and radius 3 in 3D. It becomes
+    faster than ``binary_erosion`` with ``decomposition="sequence"`` at radius
+    14 in 2D and radius 5 in 3D. In practice, the exact point at which these
+    isotropic functions become faster than their binary counterparts will also
+    be dependent on image shape and content.
+
     References
-    ---------------
+    ----------
     .. [1] Cuisenaire, O. and Macq, B., "Fast Euclidean morphological operators
         using local distance transformation by propagation, and applications,"
         Image Processing And Its Applications, 1999. Seventh International
@@ -147,7 +175,6 @@ def isotropic_opening(image, radius, out=None, spacing=None):
         Volume 13, Issue 3, 1992, Pages 161-166.
         :DOI:`10.1016/0167-8655(92)90055-5`
     """
-
     eroded = isotropic_erosion(image, radius, out=out, spacing=spacing)
     return isotropic_dilation(eroded, radius, out=out, spacing=spacing)
 
@@ -182,8 +209,18 @@ def isotropic_closing(image, radius, out=None, spacing=None):
     closed : ndarray of bool
         The result of the morphological closing.
 
+    Notes
+    -----
+    Empirically, on an RTX A6000 GPU, it was observed that
+    ``isotropic_closing`` is faster than ``binary_closing`` with
+    ``decomposition=None`` at radius 12 in 2D and radius 3 in 3D. It becomes
+    faster than ``binary_erosion`` with ``decomposition="sequence"`` at radius
+    14 in 2D and radius 5 in 3D. In practice, the exact point at which these
+    isotropic functions become faster than their binary counterparts will also
+    be dependent on image shape and content.
+
     References
-    ---------------
+    ----------
     .. [1] Cuisenaire, O. and Macq, B., "Fast Euclidean morphological operators
         using local distance transformation by propagation, and applications,"
         Image Processing And Its Applications, 1999. Seventh International
@@ -195,6 +232,5 @@ def isotropic_closing(image, radius, out=None, spacing=None):
         Volume 13, Issue 3, 1992, Pages 161-166.
         :DOI:`10.1016/0167-8655(92)90055-5`
     """
-
     dilated = isotropic_dilation(image, radius, out=out, spacing=spacing)
     return isotropic_erosion(dilated, radius, out=out, spacing=spacing)
