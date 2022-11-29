@@ -60,7 +60,13 @@ def isotropic_erosion(image, radius, out=None, spacing=None):
         :DOI:`10.1016/0167-8655(92)90055-5`
     """
     dist = distance_transform_edt(image, sampling=spacing)
-    return cp.greater(dist, radius, out=out)
+    if out is not None:
+        # Copying instead of using the out= kwarg here since one CI test run
+        # on CentOS 7 failed for test_out_argument otherwise.
+        out[:] = cp.greater(dist, radius)
+    else:
+        out = cp.greater(dist, radius)
+    return out
 
 
 def isotropic_dilation(image, radius, out=None, spacing=None):
@@ -119,7 +125,13 @@ def isotropic_dilation(image, radius, out=None, spacing=None):
         :DOI:`10.1016/0167-8655(92)90055-5`
     """
     dist = distance_transform_edt(cp.logical_not(image), sampling=spacing)
-    return cp.less_equal(dist, radius, out=out)
+    if out is not None:
+        # Copying instead of using the out= kwarg here since one CI test run
+        # on CentOS 7 failed for test_out_argument otherwise.
+        out[:] = cp.less_equal(dist, radius)
+    else:
+        out = cp.less_equal(dist, radius)
+    return out
 
 
 def isotropic_opening(image, radius, out=None, spacing=None):
@@ -175,7 +187,7 @@ def isotropic_opening(image, radius, out=None, spacing=None):
         Volume 13, Issue 3, 1992, Pages 161-166.
         :DOI:`10.1016/0167-8655(92)90055-5`
     """
-    eroded = isotropic_erosion(image, radius, out=out, spacing=spacing)
+    eroded = isotropic_erosion(image, radius, spacing=spacing)
     return isotropic_dilation(eroded, radius, out=out, spacing=spacing)
 
 
@@ -232,5 +244,5 @@ def isotropic_closing(image, radius, out=None, spacing=None):
         Volume 13, Issue 3, 1992, Pages 161-166.
         :DOI:`10.1016/0167-8655(92)90055-5`
     """
-    dilated = isotropic_dilation(image, radius, out=out, spacing=spacing)
+    dilated = isotropic_dilation(image, radius, spacing=spacing)
     return isotropic_erosion(dilated, radius, out=out, spacing=spacing)
