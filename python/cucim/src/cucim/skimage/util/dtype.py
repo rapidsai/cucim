@@ -27,13 +27,19 @@ _integer_ranges = {t: (cp.iinfo(t).min, cp.iinfo(t).max)
                    for t in _integer_types}
 dtype_range = {bool: (False, True),
                cp.bool_: (False, True),
-               cp.bool8: (False, True),
                float: (-1, 1),
                cp.float_: (-1, 1),
                cp.float16: (-1, 1),
                cp.float32: (-1, 1),
                cp.float64: (-1, 1)}
 dtype_range.update(_integer_ranges)
+
+with warnings.catch_warnings():
+    warnings.filterwarnings('ignore', category=DeprecationWarning)
+
+    # cp.bool8 is a deprecated alias of cp.bool_
+    if hasattr(cp, 'bool8'):
+        dtype_range[cp.bool8] = (False, True)
 
 _supported_types = list(dtype_range.keys())
 
