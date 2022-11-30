@@ -1153,13 +1153,6 @@ def test_column_dtypes_correct():
             )
 
 
-def test_deprecated_coords_argument():
-    with expected_warnings(['coordinates keyword argument']):
-        regionprops(SAMPLE, coordinates='rc')
-    with pytest.raises(ValueError):
-        regionprops(SAMPLE, coordinates='xy')
-
-
 def pixelcount(regionmask):
     """a short test for an extra property"""
     return cp.sum(regionmask)

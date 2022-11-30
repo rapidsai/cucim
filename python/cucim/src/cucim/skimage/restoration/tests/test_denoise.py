@@ -7,7 +7,6 @@ from cupy.testing import assert_array_equal
 from skimage import color, data, img_as_float
 
 from cucim.skimage import restoration
-from cucim.skimage._shared.testing import expected_warnings
 from cucim.skimage._shared.utils import _supported_float_type, slice_at_axis
 from cucim.skimage.metrics import structural_similarity
 
@@ -87,21 +86,6 @@ def test_denoise_tv_chambolle_multichannel(channel_axis):
     _at = functools.partial(slice_at_axis,
                             axis=channel_axis % astro3.ndim)
     assert_array_equal(denoised[_at(0)], denoised0)
-
-
-def test_denoise_tv_chambolle_multichannel_deprecation():
-    denoised0 = restoration.denoise_tv_chambolle(astro[..., 0], weight=0.1)
-
-    with expected_warnings(["`multichannel` is a deprecated argument"]):
-        denoised = restoration.denoise_tv_chambolle(astro, weight=0.1,
-                                                    multichannel=True)
-
-    # providing multichannel argument positionally also warns
-    with expected_warnings(["Providing the `multichannel` argument"]):
-        denoised = restoration.denoise_tv_chambolle(astro, 0.1, 2e-4, 200,
-                                                    True)
-
-    assert_array_equal(denoised[..., 0], denoised0)
 
 
 def test_denoise_tv_chambolle_float_result_range():

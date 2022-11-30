@@ -155,21 +155,6 @@ def test_structural_similarity_multichannel(channel_axis):
         structural_similarity(Xc, Yc, win_size=7, channel_axis=None)
 
 
-def test_structural_similarity_multichannel_deprecated():
-    N = 100
-    X = (cp.random.rand(N, N) * 255).astype(cp.uint8)
-    Y = (cp.random.rand(N, N) * 255).astype(cp.uint8)
-
-    S1 = structural_similarity(X, Y, win_size=3)
-
-    # replicate across three channels.  should get identical value
-    Xc = cp.tile(X[..., cp.newaxis], (1, 1, 3))
-    Yc = cp.tile(Y[..., cp.newaxis], (1, 1, 3))
-    with expected_warnings(["`multichannel` is a deprecated argument"]):
-        S2 = structural_similarity(Xc, Yc, multichannel=True, win_size=3)
-    assert_almost_equal(S1, S2)
-
-
 @pytest.mark.parametrize('dtype', [cp.uint8, cp.float32, cp.float64])
 def test_structural_similarity_nD(dtype):
     # test 1D through 4D on small random arrays

@@ -94,9 +94,8 @@ def _denoise_tv_chambolle_nd(image, weight=0.1, eps=2.0e-4, max_num_iter=200):
 @utils.deprecate_kwarg({'n_iter_max': 'max_num_iter'},
                        removed_version="23.02.00",
                        deprecated_version="22.06.00")
-@utils.deprecate_multichannel_kwarg(multichannel_position=4)
-def denoise_tv_chambolle(image, weight=0.1, eps=2.0e-4, max_num_iter=200,
-                         multichannel=False, *, channel_axis=None):
+def denoise_tv_chambolle(image, weight=0.1, eps=2.0e-4, max_num_iter=200, *,
+                         channel_axis=None):
     r"""Perform total variation denoising in nD.
 
     Given :math:`f`, a noisy image (input data),
@@ -134,11 +133,6 @@ def denoise_tv_chambolle(image, weight=0.1, eps=2.0e-4, max_num_iter=200,
         The algorithm stops when :math:`|E_{n-1} - E_n| < \varepsilon * E_0`.
     max_num_iter : int, optional
         Maximal number of iterations used for the optimization.
-    multichannel : bool, optional
-        Whether or not to apply denoising separately to each channel.
-        Should always be set to ``True`` for color images, otherwise the
-        denoising is also applied in the channels dimension.
-        This argument is deprecated: specify `channel_axis` instead.
     channel_axis : int or None, optional
         If ``None``, the image is assumed to be grayscale (single-channel).
         Otherwise, this parameter indicates which axis of the array corresponds

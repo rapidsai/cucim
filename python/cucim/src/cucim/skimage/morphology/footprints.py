@@ -7,8 +7,6 @@ import numpy as np
 
 from cucim.skimage import morphology
 
-from .._shared.utils import deprecate_kwarg
-
 # Precomputed ball and disk decompositions were saved as 2D arrays where the
 # radius of the desired decomposition is used to index into the first axis of
 # the array. The values at a given radius corresponds to the number of
@@ -174,9 +172,6 @@ def _decompose_size(size, kernel_size=3):
     return 1 + (size - kernel_size) // (kernel_size - 1)
 
 
-@deprecate_kwarg({'height': 'ncols', 'width': 'nrows'},
-                 deprecated_version='21.06.00',
-                 removed_version='22.02.00')
 def rectangle(nrows, ncols, dtype=cp.uint8, *, decomposition=None):
     """Generates a flat, rectangular-shaped footprint.
 
