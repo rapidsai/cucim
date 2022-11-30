@@ -42,7 +42,7 @@ def _dtype_to_cuda_float_type(dtype):
     return cpp_float_types[dtype.type]
 
 
-@cp.memoize()
+@cp.memoize(for_each_device=True)
 def _get_prune_blob_rawmodule(dtype, large_int) -> cp.RawModule:
     """Loads the kernel according to dtype /cuda/blob.cu
     Returns a cupy RawModule.

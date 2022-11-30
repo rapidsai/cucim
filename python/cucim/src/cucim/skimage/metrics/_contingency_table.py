@@ -1,5 +1,5 @@
-import cupyx.scipy.sparse as sparse
 import cupy as cp
+import cupyx.scipy.sparse as sparse
 
 __all__ = ['contingency_table']
 

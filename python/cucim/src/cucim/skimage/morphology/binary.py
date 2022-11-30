@@ -4,6 +4,7 @@ Binary morphological operations
 import functools
 
 import cupy as cp
+
 import cucim.skimage._vendored.ndimage as ndi
 
 from .._shared.utils import deprecate_kwarg

@@ -10,7 +10,6 @@ from ._pba_2d import (_check_distances, _check_indices,
                       lcm)
 from cucim.skimage._vendored._ndimage_util import _get_inttype
 
-
 pba3d_defines_template = """
 
 #define MARKER     {marker}

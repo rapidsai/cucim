@@ -11,10 +11,10 @@ from skimage.segmentation import slic
 
 from cucim.skimage import transform
 from cucim.skimage._shared._warnings import expected_warnings
-from cucim.skimage.measure._regionprops import \
-    _inertia_eigvals_to_axes_lengths_3D  # noqa
 from cucim.skimage.measure import (euler_number, perimeter, perimeter_crofton,
                                    regionprops, regionprops_table)
+from cucim.skimage.measure._regionprops import \
+    _inertia_eigvals_to_axes_lengths_3D  # noqa
 from cucim.skimage.measure._regionprops import (COL_DTYPES, OBJECT_COLUMNS,
                                                 PROPS, _parse_docs,
                                                 _props_to_dict,
@@ -1151,13 +1151,6 @@ def test_column_dtypes_correct():
             assert False, (
                 f'{col} dtype {t} {msg} {COL_DTYPES[col]}'
             )
-
-
-def test_deprecated_coords_argument():
-    with expected_warnings(['coordinates keyword argument']):
-        regionprops(SAMPLE, coordinates='rc')
-    with pytest.raises(ValueError):
-        regionprops(SAMPLE, coordinates='xy')
 
 
 def pixelcount(regionmask):

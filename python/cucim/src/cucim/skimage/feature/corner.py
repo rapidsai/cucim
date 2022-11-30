@@ -4,9 +4,9 @@ from itertools import combinations_with_replacement
 
 import cupy as cp
 import numpy as np
-import cucim.skimage._vendored.ndimage as ndi
 from scipy import spatial  # TODO: use cuSpatial if cKDTree becomes available
 
+import cucim.skimage._vendored.ndimage as ndi
 from cucim.skimage.util import img_as_float
 
 from .._shared._gradient import gradient
@@ -171,10 +171,11 @@ def _hessian_matrix_with_gaussian(image, sigma=1, mode='reflect', cval=0,
         Used in conjunction with mode 'constant', the value outside
         the image boundaries.
     order : {'rc', 'xy'}, optional
-        This parameter allows for the use of reverse or forward order of
-        the image axes in gradient computation. 'rc' indicates the use of
-        the first axis initially (Hrr, Hrc, Hcc), whilst 'xy' indicates the
-        usage of the last axis initially (Hxx, Hxy, Hyy)
+        NOTE: 'xy' is only an option for 2D images, higher dimensions must
+        always use 'rc' order. This parameter allows for the use of reverse or
+        forward order of the image axes in gradient computation. 'rc' indicates
+        the use of the first axis initially (Hrr, Hrc, Hcc), whilst 'xy'
+        indicates the usage of the last axis initially (Hxx, Hxy, Hyy).
 
     Returns
     -------
@@ -187,6 +188,10 @@ def _hessian_matrix_with_gaussian(image, sigma=1, mode='reflect', cval=0,
     image = img_as_float(image)
     float_dtype = _supported_float_type(image.dtype)
     image = image.astype(float_dtype, copy=False)
+    if image.ndim > 2 and order == "xy":
+        raise ValueError("Order 'xy' is only supported for 2D images.")
+    if order not in ["rc", "xy"]:
+        raise ValueError(f"unrecognized order: {order}")
 
     if np.isscalar(sigma):
         sigma = (sigma,) * image.ndim
@@ -223,7 +228,7 @@ def _hessian_matrix_with_gaussian(image, sigma=1, mode='reflect', cval=0,
 
     # 2.) apply the derivative along another axis as well
     axes = range(ndim)
-    if order == 'rc':
+    if order == 'xy':
         axes = reversed(axes)
     H_elems = [gaussian_(gradients[ax0], order=orders[ax1])
                for ax0, ax1 in combinations_with_replacement(axes, 2)]
@@ -257,10 +262,11 @@ def hessian_matrix(image, sigma=1, mode='constant', cval=0, order='rc',
         Used in conjunction with mode 'constant', the value outside
         the image boundaries.
     order : {'rc', 'xy'}, optional
-        This parameter allows for the use of reverse or forward order of
-        the image axes in gradient computation. 'rc' indicates the use of
-        the first axis initially (Hrr, Hrc, Hcc), whilst 'xy' indicates the
-        usage of the last axis initially (Hxx, Hxy, Hyy)
+        NOTE: 'xy' is only an option for 2D images, higher dimensions must
+        always use 'rc' order. This parameter allows for the use of reverse or
+        forward order of the image axes in gradient computation. 'rc' indicates
+        the use of the first axis initially (Hrr, Hrc, Hcc), whilst 'xy'
+        indicates the usage of the last axis initially (Hxx, Hxy, Hyy).
     use_gaussian_derivatives : boolean, optional
         Indicates whether the Hessian is computed by convolving with Gaussian
         derivatives, or by a simple finite-difference operation.
@@ -310,6 +316,10 @@ def hessian_matrix(image, sigma=1, mode='constant', cval=0, order='rc',
     image = img_as_float(image)
     float_dtype = _supported_float_type(image.dtype)
     image = image.astype(float_dtype, copy=False)
+    if image.ndim > 2 and order == "xy":
+        raise ValueError("Order 'xy' is only supported for 2D images.")
+    if order not in ["rc", "xy"]:
+        raise ValueError(f"unrecognized order: {order}")
 
     if use_gaussian_derivatives is None:
         use_gaussian_derivatives = False
@@ -333,7 +343,7 @@ def hessian_matrix(image, sigma=1, mode='constant', cval=0, order='rc',
     gradients = gradient(gaussian_filtered)
     axes = range(image.ndim)
 
-    if order == "rc":
+    if order == "xy":
         axes = reversed(axes)
 
     H_elems = [
@@ -342,6 +352,29 @@ def hessian_matrix(image, sigma=1, mode='constant', cval=0, order='rc',
     ]
 
     return H_elems
+
+
+@cp.memoize(for_each_device=True)
+def _get_real_symmetric_2x2_det_kernel():
+    return cp.ElementwiseKernel(
+        in_params="F M00, F M01, F M11",
+        out_params="F det",
+        operation="det = M00 * M11 - M01 * M01;",
+        name="cucim_skimage_symmetric_det22_kernel")
+
+
+@cp.memoize(for_each_device=True)
+def _get_real_symmetric_3x3_det_kernel():
+    operation = """
+    det = M00 * (M11 * M22 - M12 * M12);
+    det -= M01 * (M01 * M22 - M12 * M02);
+    det += M02 * (M01 * M12 - M11 * M02);
+    """
+    return cp.ElementwiseKernel(
+        in_params="F M00, F M01, F M02, F M11, F M12, F M22",
+        out_params="F det",
+        operation=operation,
+        name="cucim_skimage_symmetric_det33_kernel")
 
 
 def hessian_matrix_det(image, sigma=1, approximate=True):
@@ -385,22 +418,27 @@ def hessian_matrix_det(image, sigma=1, approximate=True):
     image = image.astype(float_dtype, copy=False)
     if image.ndim == 2 and approximate:
         integral = integral_image(image)
-        return cp.asarray(_hessian_matrix_det(integral, sigma))
+        # integral image will promote to float64 for accuracy, but we can
+        # cast back to float_dtype here.
+        integral = integral.astype(float_dtype, copy=False)
+        return _hessian_matrix_det(integral, sigma)
     else:  # slower brute-force implementation for nD images
+        H = hessian_matrix(image, sigma, use_gaussian_derivatives=False)
         if image.ndim in [2, 3]:
-            # Compute determinant as the product of the eigenvalues.
-            # This avoids the huge memory overhead of forming
-            # `_symmetric_image` as in the code below.
-            # Could optimize further by computing the determinant directly
-            # using ElementwiseKernels rather than reusing the eigenvalue ones.
-            H = hessian_matrix(image, sigma)
-            evs = hessian_matrix_eigvals(H)
-            return cp.prod(evs, axis=0)
-        hessian_mat_array = _symmetric_image(hessian_matrix(image, sigma))
-        return cp.linalg.det(hessian_mat_array)
+            det = cp.empty_like(image)
+            if image.ndim == 2:
+                kernel = _get_real_symmetric_2x2_det_kernel()
+            else:
+                kernel = _get_real_symmetric_3x3_det_kernel()
+            kernel(*H, det)
+        else:
+            # general, n-dimensional case (warning: high memory usage)
+            hessian_mat_array = _symmetric_image(H)
+            det = cp.linalg.det(hessian_mat_array)
+        return det
 
 
-@cp.memoize()
+@cp.memoize(for_each_device=True)
 def _get_real_symmetric_2x2_eigvals_kernel(sort='ascending', abs_sort=False):
 
     operation = """
@@ -493,7 +531,7 @@ def _image_orthogonal_matrix22_eigvals(
     return eigs
 
 
-@cp.memoize()
+@cp.memoize(for_each_device=True)
 def _get_real_symmetric_3x3_eigvals_kernel(sort='ascending', abs_sort=False):
 
     operation = """
@@ -514,6 +552,10 @@ def _get_real_symmetric_3x3_eigvals_kernel(sort='ascending', abs_sort=False):
     x2 += 9 * (tmpc*d_sq + tmpb*f_sq + tmpa*e_sq);
     x2 -= 54 * (d * e * f);
     x1 = a*a + b*b + c*c - a*b - a*c - b*c + 3 * (d_sq + e_sq + f_sq);
+
+    // grlee77: added max() here for numerical stability
+    // (avoid NaN values in ridge filter test cases)
+    x1 = max(x1, 0.0);
 
     if (x2 == 0.0) {
         phi = M_PI / 2.0;
@@ -639,9 +681,23 @@ def _symmetric_compute_eigenvalues(S_elems, sort='descending', abs_sort=False):
     Returns
     -------
     eigs : ndarray
-        The eigenvalues of the matrix, in decreasing order. The eigenvalues are
-        the leading dimension. That is, ``eigs[i, j, k]`` contains the
-        ith-largest eigenvalue at position (j, k).
+        The eigenvalues of the matrix, sorted in the specified order. The
+        eigenvalues are the leading dimension. That is, ``eigs[i, j, k]``
+        contains the ith eigenvalue at position (j, k).
+
+    Notes
+    -----
+    In 2D and 3D, analytical formulas as given in [1]_ are used. For the nD
+    case, the implementation is memory-inefficient as a large intermediate
+    matrix is formed and used with NumPy's general symmetric eigenvalue
+    solver.
+
+    References
+    ----------
+    .. [1] C. Deledalle, L. Denis, S. Tabti, F. Tupin. Closed-form expressions
+        of the eigen decomposition of 2 x 2 and 3 x 3 Hermitian matrices.
+        [Research Report] Université de Lyon. 2017.
+        https://hal.archives-ouvertes.fr/hal-01501221/file/matrix_exp_and_log_formula.pdf
     """
 
     if len(S_elems) == 3:  # Use fast analytical kernel for 2D
@@ -842,9 +898,8 @@ def shape_index(image, sigma=1, mode="constant", cval=0):
         return (2.0 / np.pi) * np.arctan((l2 + l1) / (l2 - l1))
 
 
-@cp.memoize()
+@cp.memoize(for_each_device=True)
 def _get_kitchen_rosenfeld_kernel():
-
     return cp.ElementwiseKernel(
         in_params='F imx, F imy, F imxx, F imxy, F imyy',
         out_params='F response',
@@ -910,9 +965,8 @@ def corner_kitchen_rosenfeld(image, mode="constant", cval=0):
     return kernel(imx, imy, imxx, imxy, imyy, response)
 
 
-@cp.memoize()
+@cp.memoize(for_each_device=True)
 def _get_corner_harris_k_kernel():
-
     return cp.ElementwiseKernel(
         in_params='F Arr, F Acc, F Arc, float64 k',
         out_params='F response',
@@ -928,9 +982,8 @@ def _get_corner_harris_k_kernel():
     )
 
 
-@cp.memoize()
+@cp.memoize(for_each_device=True)
 def _get_corner_harris_kernel():
-
     return cp.ElementwiseKernel(
         in_params='F Arr, F Acc, F Arc, float64 eps',
         out_params='F response',
@@ -1021,9 +1074,8 @@ def corner_harris(image, method="k", k=0.05, eps=1e-6, sigma=1):
     return response
 
 
-@cp.memoize()
+@cp.memoize(for_each_device=True)
 def _get_shi_tomasi_kernel():
-
     return cp.ElementwiseKernel(
         in_params='F Arr, F Acc, F Arc',
         out_params='F response',
@@ -1098,9 +1150,8 @@ def corner_shi_tomasi(image, sigma=1):
     return kernel(Arr, Acc, Arc, response)
 
 
-@cp.memoize()
+@cp.memoize(for_each_device=True)
 def _get_foerstner_kernel():
-
     return cp.ElementwiseKernel(
         in_params='F Arr, F Acc, F Arc',
         out_params='F w, F q',

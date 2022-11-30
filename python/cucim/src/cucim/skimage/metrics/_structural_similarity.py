@@ -1,6 +1,7 @@
 import functools
 
 import cupy as cp
+
 import cucim.skimage._vendored.ndimage as ndi
 
 from .._shared import utils
@@ -32,22 +33,20 @@ _ssim_operation = """
 """
 
 
-@cp.memoize()
+@cp.memoize(for_each_device=True)
 def _get_ssim_kernel():
-
     return cp.ElementwiseKernel(
-        in_params='F cov_norm, F ux, F uy, F uxx, F uyy, F uxy, float64 data_range, float64 K1, float64 K2',  # noqa
+        in_params='float64 cov_norm, F ux, F uy, F uxx, F uyy, F uxy, float64 data_range, float64 K1, float64 K2',  # noqa
         out_params='F ssim',
         operation=_ssim_operation,
         name='cucim_ssim'
     )
 
 
-@cp.memoize()
+@cp.memoize(for_each_device=True)
 def _get_ssim_grad_kernel():
-
     return cp.ElementwiseKernel(
-        in_params='F cov_norm, F ux, F uy, F uxx, F uyy, F uxy, float64 data_range, float64 K1, float64 K2',  # noqa
+        in_params='float64 cov_norm, F ux, F uy, F uxx, F uyy, F uxy, float64 data_range, float64 K1, float64 K2',  # noqa
         out_params='F ssim, F grad_temp1, F grad_temp2, F grad_temp3',
         operation=_ssim_operation + """
             grad_temp1 = A1 / D;
@@ -58,12 +57,11 @@ def _get_ssim_grad_kernel():
     )
 
 
-@utils.deprecate_multichannel_kwarg()
 def structural_similarity(im1, im2,
                           *,
                           win_size=None, gradient=False, data_range=None,
-                          channel_axis=None, multichannel=False,
-                          gaussian_weights=False, full=False, **kwargs):
+                          channel_axis=None, gaussian_weights=False,
+                          full=False, **kwargs):
     """
     Compute the mean structural similarity index between two images.
     Please pay attention to the `data_range` parameter with floating-point
@@ -89,10 +87,6 @@ def structural_similarity(im1, im2,
         If None, the image is assumed to be a grayscale (single channel) image.
         Otherwise, this parameter indicates which axis of the array corresponds
         to channels.
-    multichannel : bool, optional
-        If True, treat the last dimension of the array as channels. Similarity
-        calculations are done independently for each channel then averaged.
-        This argument is deprecated: specify `channel_axis` instead.
     gaussian_weights : bool, optional
         If True, each patch has its mean and variance spatially weighted by a
         normalized Gaussian kernel of width sigma=1.5.
@@ -134,8 +128,9 @@ def structural_similarity(im1, im2,
     of Y), so one cannot calculate a channel-averaged SSIM with a single call
     to this function, as identical ranges are assumed for each channel.
 
-    To match the implementation of Wang et. al. [1]_, set `gaussian_weights`
-    to True, `sigma` to 1.5, and `use_sample_covariance` to False.
+    To match the implementation of Wang et al. [1]_, set `gaussian_weights`
+    to True, `sigma` to 1.5, `use_sample_covariance` to False, and
+    specify the `data_range` argument.
 
     .. versionchanged:: 0.16
         This function was renamed from ``skimage.measure.compare_ssim`` to
@@ -158,6 +153,12 @@ def structural_similarity(im1, im2,
     """
     check_shape_equality(im1, im2)
     float_type = _supported_float_type(im1.dtype)
+
+    if isinstance(data_range, cp.ndarray):
+        if data_range.ndim != 0:
+            raise ValueError("data_range must be a scalar")
+        # need a host scalar
+        data_range = float(data_range)
 
     if channel_axis is not None:
         # loop over channels
@@ -236,11 +237,25 @@ def structural_similarity(im1, im2,
         raise ValueError('Window size must be odd.')
 
     if data_range is None:
+        if (
+            cp.issubdtype(im1.dtype, cp.floating) or
+            cp.issubdtype(im2.dtype, cp.floating)
+        ):
+            raise ValueError(
+                'Since image dtype is floating point, you must specify '
+                'the data_range parameter. Please read the documentation '
+                'carefully (including the note). It is recommended that '
+                'you always specify the data_range anyway.')
         if im1.dtype != im2.dtype:
-            warn("Inputs have mismatched dtype.  Setting data_range based on "
+            warn("Inputs have mismatched dtypes.  Setting data_range based on "
                  "im1.dtype.", stacklevel=2)
         dmin, dmax = dtype_range[im1.dtype.type]
-        data_range = dmax - dmin
+        data_range = float(dmax - dmin)
+        if cp.issubdtype(im1.dtype, cp.integer) and (im1.dtype != cp.uint8):
+            warn("Setting data_range based on im1.dtype. " +
+                 ("data_range = %.0f. " % data_range) +
+                 "Please specify data_range explicitly to avoid mistakes.",
+                 stacklevel=2)
 
     ndim = im1.ndim
 

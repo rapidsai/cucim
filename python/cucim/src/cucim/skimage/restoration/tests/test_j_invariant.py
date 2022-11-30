@@ -6,7 +6,6 @@ from skimage.data import camera, chelsea
 # from cucim.skimage.restoration import denoise_wavelet
 from skimage.restoration import denoise_wavelet
 
-from cucim.skimage._shared.testing import expected_warnings
 from cucim.skimage._shared.utils import _supported_float_type
 from cucim.skimage.data import binary_blobs
 from cucim.skimage.metrics import mean_squared_error as mse
@@ -25,7 +24,7 @@ noisy_img_3d = random_noise(test_img_3d, mode="gaussian", var=0.1)
 # TODO: replace with CuPy version once completed
 def _denoise_wavelet(image, rescale_sigma=True, **kwargs):
 
-    if 'channel_axis' in kwargs and skimage.__version__ < '22.02.00':
+    if 'channel_axis' in kwargs and skimage.__version__ < '0.19.0':
         # convert channel_axis to older multichannel kwarg for skimage 0.18.x
         channel_axis = kwargs.pop('channel_axis')
         kwargs['multichannel'] = False if channel_axis is None else True
@@ -58,19 +57,6 @@ def test_invariant_denoise_color(dtype):
     original_mse = mse(noisy_img_color, test_img_color)
     assert denoised_mse < original_mse
     assert denoised_img_color.dtype == _supported_float_type(dtype)
-
-
-def test_invariant_denoise_color_deprecated():
-
-    # can remove \A\Z here if only testing with cuCIM 22.02.00
-    with expected_warnings([r"`multichannel` is a deprecated argument|\A\Z"]):
-        denoised_img_color = _invariant_denoise(
-            noisy_img_color, _denoise_wavelet,
-            denoiser_kwargs=dict(multichannel=True))
-
-    denoised_mse = mse(denoised_img_color, test_img_color)
-    original_mse = mse(noisy_img_color, test_img_color)
-    assert denoised_mse < original_mse
 
 
 def test_invariant_denoise_3d():

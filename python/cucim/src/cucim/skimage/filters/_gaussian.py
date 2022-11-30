@@ -1,16 +1,14 @@
 import numpy as np
 
-from .._shared import utils
 from .._shared.filters import gaussian
 from ..util import img_as_float
 
 __all__ = ['gaussian', 'difference_of_gaussians']
 
 
-@utils.deprecate_multichannel_kwarg()
 def difference_of_gaussians(image, low_sigma, high_sigma=None, *,
                             mode='nearest', cval=0, channel_axis=None,
-                            truncate=4.0, multichannel=False):
+                            truncate=4.0):
     """Find features between ``low_sigma`` and ``high_sigma`` in size.
 
     This function uses the Difference of Gaussians method for applying
@@ -50,11 +48,6 @@ def difference_of_gaussians(image, low_sigma, high_sigma=None, *,
         to channels.
     truncate : float, optional (default is 4.0)
         Truncate the filter at this many standard deviations.
-    multichannel : bool, optional (default: False)
-        Whether the last axis of the image is to be interpreted as multiple
-        channels. If True, each channel is filtered separately (channels are
-        not mixed together). This argument is deprecated: specify
-        `channel_axis` instead.
 
     Returns
     -------
@@ -91,13 +84,13 @@ def difference_of_gaussians(image, low_sigma, high_sigma=None, *,
     >>> from cucim.skimage.filters import difference_of_gaussians
     >>> astro = cp.asarray(astronaut())
     >>> filtered_image = difference_of_gaussians(astro, 2, 10,
-    ...                                          multichannel=True)
+    ...                                          channel_axis=-1)
 
     Apply a Laplacian of Gaussian filter as approximated by the Difference
     of Gaussians filter:
 
     >>> filtered_image = difference_of_gaussians(astro, 2,
-    ...                                          multichannel=True)
+    ...                                          channel_axis=-1)
 
     Apply a Difference of Gaussians filter to a grayscale image using different
     sigma values for each axis:

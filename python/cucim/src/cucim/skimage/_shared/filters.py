@@ -7,17 +7,33 @@ The unit tests remain under skimage/filters/tests/
 from collections.abc import Iterable
 
 import cupy as cp
+
 import cucim.skimage._vendored.ndimage as ndi
 
-
-from .._shared import utils
-from .._shared.utils import _supported_float_type, convert_to_float
+from .._shared.utils import _supported_float_type, convert_to_float, warn
 
 
-@utils.deprecate_multichannel_kwarg(multichannel_position=5)
+class _PatchClassRepr(type):
+    """Control class representations in rendered signatures."""
+    def __repr__(cls):
+        return f"<{cls.__name__}>"
+
+
+class ChannelAxisNotSet(metaclass=_PatchClassRepr):
+    """Signal that the `channel_axis` parameter is not set.
+    This is a proxy object, used to signal to `skimage.filters.gaussian` that
+    the `channel_axis` parameter has not been set, in which case the function
+    will determine whether a color channel is present. We cannot use ``None``
+    for this purpose as it has its own meaning which indicates that the given
+    image is grayscale.
+    This automatic behavior was broken in v0.19, recovered but deprecated in
+    v0.20 and will be removed in v0.21.
+    """
+
+
 def gaussian(image, sigma=1, output=None, mode='nearest', cval=0,
-             multichannel=None, preserve_range=False, truncate=4.0, *,
-             channel_axis=None):
+             preserve_range=False, truncate=4.0, *,
+             channel_axis=ChannelAxisNotSet):
     """Multi-dimensional Gaussian filter.
 
     Parameters
@@ -39,13 +55,6 @@ def gaussian(image, sigma=1, output=None, mode='nearest', cval=0,
     cval : scalar, optional
         Value to fill past edges of input if ``mode`` is 'constant'. Default
         is 0.0
-    multichannel : bool, optional (default: None)
-        Whether the last axis of the image is to be interpreted as multiple
-        channels. If True, each channel is filtered separately (channels are
-        not mixed together). Only 3 channels are supported. If ``None``,
-        the function will attempt to guess this, and raise a warning if
-        ambiguous, when the array has shape (M, N, 3).
-        This argument is deprecated: specify `channel_axis` instead.
     preserve_range : bool, optional
         Whether to keep the original range of values. Otherwise, the input
         image is converted according to the conventions of ``img_as_float``.
@@ -57,6 +66,14 @@ def gaussian(image, sigma=1, output=None, mode='nearest', cval=0,
         If None, the image is assumed to be a grayscale (single channel) image.
         Otherwise, this parameter indicates which axis of the array corresponds
         to channels.
+
+        .. warning::
+            Automatic detection of the color channel based on the old deprecated
+            ``multichannel=None`` was broken in version 0.19. In 0.20 this
+            behavior is recovered. The last axis of an `image` with dimensions
+            (M, N, 3) is interpreted as a color channel if `channel_axis` is
+            not set. Starting with 2023.03.06, ``channel_axis=None`` will be
+            used as the new default value.
 
     Returns
     -------
@@ -109,12 +126,19 @@ def gaussian(image, sigma=1, output=None, mode='nearest', cval=0,
     >>> filtered_img = gaussian(image, sigma=1, channel_axis=-1)
 
     """
-    if image.ndim == 3 and image.shape[-1] == 3 and channel_axis is None:
-        msg = ("Images with dimensions (M, N, 3) are interpreted as 2D+RGB "
-               "by default. Use `multichannel=False` to interpret as "
-               "3D image with last dimension of length 3.")
-        utils.warn(RuntimeWarning(msg))
-        channel_axis = -1
+    if channel_axis is ChannelAxisNotSet:
+        if image.ndim == 3 and image.shape[-1] == 3:
+            warn(
+                "Automatic detection of the color channel was deprecated in "
+                "v0.19, and `channel_axis=None` will be the new default in "
+                "v0.21. Set `channel_axis=-1` explicitly to silence this "
+                "warning.",
+                FutureWarning,
+                stacklevel=2,
+            )
+            channel_axis = -1
+        else:
+            channel_axis = None
 
     # CuPy Backend: refactor to avoid overhead of cp.any(cp.asarray(sigma))
     sigma_msg = "Sigma values less than zero are not valid"
