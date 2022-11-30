@@ -29,7 +29,7 @@ def _dtype_to_cuda_float_type(dtype):
     return cpp_float_types[dtype.type]
 
 
-@cp.memoize()
+@cp.memoize(for_each_device=True)
 def _get_hessian_det_appx_kernel(dtype, large_int) -> cp.RawModule:
     """Loads all kernels in cuda/_hessian_det_appx.cu.
     Returns a cupy RawModule.

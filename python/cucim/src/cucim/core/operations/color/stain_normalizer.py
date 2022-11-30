@@ -18,7 +18,6 @@ from typing import Union
 import cupy as cp
 import numpy as np
 
-
 __all__ = [
     "absorbance_to_image",
     "image_to_absorbance",

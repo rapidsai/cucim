@@ -2,6 +2,7 @@
 import functools
 
 import cupy as cp
+
 import cucim.skimage._vendored.ndimage as ndi
 
 from .._shared.utils import remove_arg, warn

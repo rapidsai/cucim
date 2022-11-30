@@ -9,9 +9,10 @@ import math
 
 import cupy as cp
 import numpy as np
-import cucim.skimage._vendored.ndimage as ndi
 from cupyx.scipy import sparse
 from cupyx.scipy.sparse.linalg import cg, spsolve
+
+import cucim.skimage._vendored.ndimage as ndi
 
 from .._shared import utils
 from ..util import img_as_float

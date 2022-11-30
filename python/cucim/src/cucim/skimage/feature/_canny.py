@@ -12,8 +12,8 @@ All rights reserved.
 Original author: Lee Kamentsky
 """
 import cupy as cp
-import cucim.skimage._vendored.ndimage as ndi
 
+import cucim.skimage._vendored.ndimage as ndi
 from cucim.skimage.util import dtype_limits
 
 from .._shared.filters import gaussian

@@ -3,7 +3,6 @@ import math
 import numbers
 import os
 
-
 import cupy
 
 from cucim.skimage._vendored._ndimage_util import _get_inttype

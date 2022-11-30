@@ -4,7 +4,6 @@ import math
 import cupy as cp
 import numpy as np
 
-
 _order0_or_1 = """
     mc[0] = m[0];
 """
