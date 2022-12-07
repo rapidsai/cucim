@@ -523,9 +523,9 @@ def _get_inertia_tensor_2x2_kernel():
     kernel_directory = os.path.join(
         os.path.normpath(os.path.dirname(__file__)), 'cuda'
     )
-    with open(os.path.join(kernel_directory, "moments.h"), 'rt') as f:
-        preamble = f.read()
-
+    preamble = """
+    #include "moments.h"
+    """
     operation = """
     inertia_tensor_2x2(&mu[0], &result[0]);
     """
@@ -534,7 +534,8 @@ def _get_inertia_tensor_2x2_kernel():
         out_params='raw F result',
         preamble=preamble,
         operation=operation,
-        name='cucim_skimage_measure_inertia_tensor_2x2'
+        name='cucim_skimage_measure_inertia_tensor_2x2',
+        options=(f"-I{kernel_directory}",),
     )
 
 
