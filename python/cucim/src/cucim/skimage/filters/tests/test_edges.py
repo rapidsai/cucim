@@ -541,8 +541,8 @@ MAX_SOBEL_0 = cp.array([
      [0, 0, 0]],
     [[1, 1, 1],
      [1, 1, 1],
-     [1, 1, 1]],
-]).astype(float)
+     [1, 1, 1]]],
+    dtype=float)
 
 # maximum Sobel 3D edge in magnitude
 MAX_SOBEL_ND = cp.array([
@@ -556,8 +556,8 @@ MAX_SOBEL_ND = cp.array([
 
     [[1, 1, 0],
      [1, 1, 0],
-     [1, 1, 0]]
-]).astype(float)
+     [1, 1, 0]]],
+    dtype=float)
 
 # maximum Scharr 3D edge in magnitude. This illustrates the better rotation
 # invariance of the Scharr filter!
@@ -570,8 +570,42 @@ MAX_SCHARR_ND = cp.array([
      [0, 1, 1]],
     [[0, 0, 1],
      [0, 1, 1],
-     [1, 1, 1]]
-]).astype(float)
+     [1, 1, 1]]],
+    dtype=float)
+
+# maximum Farid 3D edge on axis 0
+MAX_FARID_0 = cp.zeros((5, 5, 5), dtype=float)
+MAX_FARID_0[2:, :, :] = 1
+
+# maximum Farid 3D edge in magnitude (not necessarily the true maximum,
+# but this was the empirical max over the blobs image as in the test below).
+MAX_FARID_ND = cp.array([
+    [[1, 0, 0, 0, 0],
+     [1, 1, 1, 1, 0],
+     [1, 1, 1, 1, 1],
+     [1, 1, 1, 1, 1],
+     [1, 1, 1, 1, 1]],
+    [[0, 0, 0, 0, 0],
+     [1, 1, 0, 0, 0],
+     [1, 1, 1, 1, 0],
+     [1, 1, 1, 1, 1],
+     [1, 1, 1, 1, 1]],
+    [[0, 0, 0, 0, 0],
+     [1, 0, 0, 0, 0],
+     [1, 1, 1, 0, 0],
+     [1, 1, 1, 1, 0],
+     [1, 1, 1, 1, 1]],
+    [[0, 0, 0, 0, 0],
+     [0, 0, 0, 0, 0],
+     [1, 0, 0, 0, 0],
+     [1, 1, 1, 0, 0],
+     [1, 1, 1, 1, 1]],
+    [[0, 0, 0, 0, 0],
+     [0, 0, 0, 0, 0],
+     [0, 0, 0, 0, 0],
+     [0, 0, 0, 0, 0],
+     [1, 1, 1, 1, 1]]],
+    dtype=float)
 # fmt: on
 
 
@@ -579,21 +613,42 @@ MAX_SCHARR_ND = cp.array([
     ('func', 'max_edge'),
     [(filters.prewitt, MAX_SOBEL_ND),
      (filters.sobel, MAX_SOBEL_ND),
-     (filters.scharr, MAX_SCHARR_ND)]
+     (filters.scharr, MAX_SCHARR_ND),
+     (filters.farid, MAX_FARID_ND)]
 )
 def test_3d_edge_filters(func, max_edge):
-    blobs = binary_blobs(length=128, n_dim=3)
+    blobs = binary_blobs(length=128, n_dim=3, seed=5)
     edges = func(blobs)
-    assert_allclose(cp.max(edges), func(max_edge)[1, 1, 1])
+    center = max_edge.shape[0] // 2
+    if center == 2:
+        # exact edge as defined in MAX_FARID_0 not present in blobs data
+        rtol = 1e-3
+    else:
+        rtol = 1e-7
+    assert_allclose(cp.max(edges),
+                    func(max_edge)[center, center, center],
+                    rtol=rtol)
 
 
 @pytest.mark.parametrize(
-    'func', (filters.prewitt, filters.sobel, filters.scharr)
+    ('func', 'max_edge'),
+    [(filters.prewitt, MAX_SOBEL_0),
+     (filters.sobel, MAX_SOBEL_0),
+     (filters.scharr, MAX_SOBEL_0),
+     (filters.farid, MAX_FARID_0)]
 )
-def test_3d_edge_filters_single_axis(func):
-    blobs = binary_blobs(length=128, n_dim=3)
+def test_3d_edge_filters_single_axis(func, max_edge):
+    blobs = binary_blobs(length=128, n_dim=3, seed=5)
     edges0 = func(blobs, axis=0)
-    assert_allclose(cp.max(edges0), func(MAX_SOBEL_0, axis=0)[1, 1, 1])
+    center = max_edge.shape[0] // 2
+    if center == 2:
+        # exact edge as defined in MAX_FARID_0 not present in blobs data
+        rtol = 1e-3
+    else:
+        rtol = 1e-7
+    assert_allclose(cp.max(edges0),
+                    func(max_edge, axis=0)[center, center, center],
+                    rtol=rtol)
 
 
 @pytest.mark.parametrize(

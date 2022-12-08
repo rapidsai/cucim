@@ -12,8 +12,8 @@ All rights reserved.
 Original author: Lee Kamentsky
 """
 import cupy as cp
-import cucim.skimage._vendored.ndimage as ndi
 
+import cucim.skimage._vendored.ndimage as ndi
 from cucim.skimage.util import dtype_limits
 
 from .._shared.filters import gaussian
@@ -91,8 +91,9 @@ def _preprocess(image, mask, sigma, mode, cval):
         # Compute the fractional contribution of masked pixels by applying
         # the function to the mask (which gets you the fraction of the
         # pixel data that's due to significant points)
-        bleed_over = gaussian(mask.astype(cp.float32), **gaussian_kwargs)
-        bleed_over += cp.finfo(cp.float32).eps
+        bleed_over = gaussian(mask.astype(float_type, copy=False),
+                              **gaussian_kwargs)
+        bleed_over += cp.finfo(float_type).eps
 
     # Smooth the masked image
     smoothed_image = gaussian(masked_image, **gaussian_kwargs)
@@ -106,7 +107,7 @@ def _preprocess(image, mask, sigma, mode, cval):
     return smoothed_image, eroded_mask
 
 
-def _generate_nonmaximum_suppression_op(large_int=False):
+def _generate_nonmaximum_suppression_bilinear_op(large_int=False):
     """CUDA inner loop code for non-maximum suppression
 
     Parameters
@@ -203,18 +204,18 @@ def _get_nonmax_kernel(large_int=False):
     in_params = ('raw T isobel, raw T jsobel, raw T magnitude, '
                  'raw uint8 eroded_mask, float64 low_threshold')
     out_params = 'T out'
-    name = 'cupyx_skimage_canny_nonmaximum_suppression'
+    name = 'cupyx_skimage_canny_nonmaximum_suppression_bilinear'
     if large_int:
         name += '_large'
     return cp.ElementwiseKernel(
         in_params,
         out_params,
-        operation=_generate_nonmaximum_suppression_op(large_int),
+        operation=_generate_nonmaximum_suppression_bilinear_op(large_int),
         name=name,
     )
 
 
-def _nonmaximum_suppression(
+def _nonmaximum_suppression_bilinear(
     isobel, jsobel, magnitude, eroded_mask, low_threshold
 ):
 
@@ -275,7 +276,7 @@ def canny(image, sigma=1., low_threshold=None, high_threshold=None, mask=None,
 
     See also
     --------
-    skimage.sobel
+    skimage.filters.sobel
 
     Notes
     -----
@@ -386,7 +387,7 @@ def canny(image, sigma=1., low_threshold=None, high_threshold=None, mask=None,
         )
 
     # Non-maximum suppression
-    low_masked = _nonmaximum_suppression(
+    low_masked = _nonmaximum_suppression_bilinear(
         isobel, jsobel, magnitude, eroded_mask, low_threshold
     )
 

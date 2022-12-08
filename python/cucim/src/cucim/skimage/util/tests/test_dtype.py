@@ -110,18 +110,18 @@ def test_copy():
 
 
 def test_bool():
-    img_ = cp.zeros((10, 10), bool)
-    img8 = cp.zeros((10, 10), cp.bool8)
+    img = cp.zeros((10, 10), bool)
+    img_ = cp.zeros((10, 10), cp.bool_)
+    img[1, 1] = True
     img_[1, 1] = True
-    img8[1, 1] = True
     for (func, dt) in [(img_as_int, cp.int16),
                        (img_as_float, cp.float64),
                        (img_as_uint, cp.uint16),
                        (img_as_ubyte, cp.ubyte)]:
+        converted = func(img)
+        assert cp.sum(converted) == dtype_range[dt][1]
         converted_ = func(img_)
         assert cp.sum(converted_) == dtype_range[dt][1]
-        converted8 = func(img8)
-        assert cp.sum(converted8) == dtype_range[dt][1]
 
 
 def test_clobber():

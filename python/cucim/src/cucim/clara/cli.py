@@ -49,12 +49,17 @@ def main():
 @click.option('--tile-size', type=int, default=256)
 @click.option('--overlap', type=int, default=0)
 @click.option('--num-workers', type=int, default=os.cpu_count())
+@click.option('--compression', type=str, default='jpeg')
 @click.option('--output-filename', type=str, default='image.tif')
 def convert(src_file, dest_folder, tile_size, overlap, num_workers,
-            output_filename):
+            compression, output_filename):
     """Convert file format"""
     from .converter import tiff
     logging.basicConfig(level=logging.INFO)
 
+    compression = compression.lower()
+    if compression in ['raw', 'none']:
+        compression = None
+
     tiff.svs2tif(src_file, Path(dest_folder), tile_size, overlap, num_workers,
-                 output_filename)
+                 compression, output_filename)

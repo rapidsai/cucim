@@ -6,13 +6,13 @@ from collections.abc import Iterable
 
 import cupy as cp
 import numpy as np
-import cucim.skimage._vendored.ndimage as ndi
 from skimage.filters import threshold_isodata as _threshold_isodata_cpu
 from skimage.filters import threshold_minimum as _threshold_minimum_cpu
 from skimage.filters import threshold_multiotsu as _threshold_multiotsu_cpu
 from skimage.filters import threshold_otsu as _threshold_otsu_cpu
 from skimage.filters import threshold_yen as _threshold_yen_cpu
 
+import cucim.skimage._vendored.ndimage as ndi
 from cucim import _misc
 
 from .._shared.filters import gaussian
@@ -87,7 +87,7 @@ def _try_all(image, methods=None, figsize=None, num_cols=2, verbose=True):
         try:
             ax[i].imshow(cp.asnumpy(func(image, **_kwargs)), cmap=plt.cm.gray)
         except Exception as e:
-            ax[i].text(0.5, 0.5, "%s" % type(e).__name__,
+            ax[i].text(0.5, 0.5, f"{type(e).__name__}",
                        ha="center", va="center", transform=ax[i].transAxes)
         i += 1
         if verbose:
@@ -100,7 +100,7 @@ def _try_all(image, methods=None, figsize=None, num_cols=2, verbose=True):
     return fig, ax
 
 
-@require("matplotlib", ">=3.0.3")
+@require("matplotlib", ">=3.3")
 def try_all_threshold(image, figsize=(8, 5), verbose=True):
     """Returns a figure comparing the outputs of different thresholding methods.
 
@@ -181,7 +181,7 @@ def threshold_local(image, block_size=3, method='gaussian', offset=0,
         Odd size of pixel neighborhood which is used to calculate the
         threshold value (e.g. 3, 5, 7, ..., 21, ...).
     method : {'generic', 'gaussian', 'mean', 'median'}, optional
-        Method used to determine adaptive threshold for local neighbourhood in
+        Method used to determine adaptive threshold for local neighborhood in
         weighted mean image.
 
         * 'generic': use custom function (see ``param`` parameter)
@@ -201,7 +201,7 @@ def threshold_local(image, block_size=3, method='gaussian', offset=0,
     param : {int, function}, optional
         Either specify sigma for 'gaussian' method or function object for
         'generic' method. This functions takes the flat array of local
-        neighbourhood as a single argument and returns the calculated
+        neighborhood as a single argument and returns the calculated
         threshold for the centre pixel.
     cval : float, optional
         Value to fill past edges of input if mode is 'constant'.
@@ -315,7 +315,7 @@ def _validate_image_histogram(image, hist, nbins=None, normalize=False):
         counts, bin_centers = histogram(
             image.ravel(), nbins, source_range='image', normalize=normalize
         )
-    return counts.astype(float), bin_centers
+    return counts.astype(cp.float32, copy=False), bin_centers
 
 
 def threshold_otsu(image=None, nbins=256, *, hist=None):
@@ -511,7 +511,7 @@ def threshold_isodata(image=None, nbins=256, return_all=False, *, hist=None):
     # small size counts, bin_centers -> faster on the host
     counts = cp.asnumpy(counts)
     bin_centers = cp.asnumpy(bin_centers)
-    counts = counts.astype(cp.float32)
+    counts = counts.astype(cp.float32, copy=False)
     return cp.asarray(
         _threshold_isodata_cpu(
             nbins=nbins,
@@ -693,7 +693,7 @@ def threshold_li(image, *, tolerance=None, initial_guess=None,
     if image.dtype.kind in 'iu':
         hist, bin_centers = histogram(image.reshape(-1),
                                       source_range='image')
-        hist = hist.astype(float)
+        hist = hist.astype(cp.float32, copy=False)
         while abs(t_next - t_curr) > tolerance:
             t_curr = t_next
             foreground = bin_centers > t_curr
@@ -791,7 +791,7 @@ def threshold_minimum(image=None, nbins=256, max_num_iter=10000, *, hist=None):
     """
 
     counts, bin_centers = _validate_image_histogram(image, hist, nbins)
-    counts = cp.asnumpy(counts)
+    counts = cp.asnumpy(counts).astype(np.float32, copy=False)
     bin_centers = cp.asnumpy(bin_centers)
     return cp.asarray(
         _threshold_minimum_cpu(
@@ -874,7 +874,7 @@ def threshold_triangle(image, nbins=256):
     # Find peak, lowest and highest gray levels.
     arg_peak_height = cp.argmax(hist)
     peak_height = hist[arg_peak_height]
-    arg_low_level, arg_high_level = cp.where(hist > 0)[0][[0, -1]]
+    arg_low_level, arg_high_level = cp.flatnonzero(hist)[[0, -1]]
 
     # Flip is True if left tail is shorter.
     flip = arg_peak_height - arg_low_level < arg_high_level - arg_peak_height
@@ -1246,8 +1246,7 @@ def threshold_multiotsu(image=None, classes=3, nbins=256, *, hist=None):
     # calculating the histogram and the probability of each gray level.
     prob, bin_centers = _validate_image_histogram(image, hist, nbins,
                                                   normalize=True)
-    prob = prob.astype('float32')
-    prob = cp.asnumpy(prob)
+    prob = cp.asnumpy(prob).astype(cp.float32, copy=False)
     bin_centers = cp.asnumpy(bin_centers)
     return cp.asarray(
         _threshold_multiotsu_cpu(

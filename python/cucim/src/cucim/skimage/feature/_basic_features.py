@@ -6,10 +6,10 @@ from itertools import combinations_with_replacement
 import cupy as cp
 import numpy as np
 
-from .._shared._gradient import gradient
 from cucim.skimage import feature, filters
-from cucim.skimage._shared import utils
 from cucim.skimage.util import img_as_float32
+
+from .._shared._gradient import gradient
 
 
 def _texture_filter(gaussian_filtered):
@@ -63,10 +63,10 @@ def _mutiscale_basic_features_singlechannel(
         at different scales are added to the feature set.
     sigma_min : float, optional
         Smallest value of the Gaussian kernel used to average local
-        neighbourhoods before extracting features.
+        neighborhoods before extracting features.
     sigma_max : float, optional
         Largest value of the Gaussian kernel used to average local
-        neighbourhoods before extracting features.
+        neighborhoods before extracting features.
     num_sigma : int, optional
         Number of values of the Gaussian kernel between sigma_min and sigma_max.
         If None, sigma_min multiplied by powers of 2 are used.
@@ -99,10 +99,8 @@ def _mutiscale_basic_features_singlechannel(
     return features
 
 
-@utils.deprecate_multichannel_kwarg(multichannel_position=1)
 def multiscale_basic_features(
     image,
-    multichannel=False,
     intensity=True,
     edges=True,
     texture=True,
@@ -122,9 +120,6 @@ def multiscale_basic_features(
     ----------
     image : ndarray
         Input image, which can be grayscale or multichannel.
-    multichannel : bool, default False
-        True if the last dimension corresponds to color channels.
-        This argument is deprecated: specify `channel_axis` instead.
     intensity : bool, default True
         If True, pixel intensities averaged over the different scales
         are added to the feature set.
@@ -136,10 +131,10 @@ def multiscale_basic_features(
         at different scales are added to the feature set.
     sigma_min : float, optional
         Smallest value of the Gaussian kernel used to average local
-        neighbourhoods before extracting features.
+        neighborhoods before extracting features.
     sigma_max : float, optional
         Largest value of the Gaussian kernel used to average local
-        neighbourhoods before extracting features.
+        neighborhoods before extracting features.
     num_sigma : int, optional
         Number of values of the Gaussian kernel between sigma_min and sigma_max.
         If None, sigma_min multiplied by powers of 2 are used.

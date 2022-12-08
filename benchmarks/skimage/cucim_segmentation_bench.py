@@ -56,7 +56,7 @@ class LabelBench(ImageBench):
         return labels.astype(dtype, copy=False)
 
     def set_args(self, dtype):
-        labels_d = self._genereate_labels(dtype)
+        labels_d = self._generate_labels(dtype)
         labels = cp.asnumpy(labels_d)
         self.args_cpu = (labels,)
         self.args_gpu = (labels_d,)
@@ -65,7 +65,7 @@ class LabelBench(ImageBench):
 class LabelAndImageBench(LabelBench):
 
     def set_args(self, dtype):
-        labels_d = self._genereate_labels(dtype)
+        labels_d = self._generate_labels(dtype)
         labels = cp.asnumpy(labels_d)
         image_d = cp.random.standard_normal(labels.shape).astype(np.float32)
         image = cp.asnumpy(image_d)

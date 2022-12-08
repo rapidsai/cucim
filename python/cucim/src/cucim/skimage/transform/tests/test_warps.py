@@ -41,7 +41,7 @@ def test_stackcopy():
 
 
 def test_warp_tform():
-    x = cp.zeros((5, 5), dtype=cp.double)
+    x = cp.zeros((5, 5), dtype=cp.float64)
     x[2, 2] = 1
     theta = -math.pi / 2
     tform = SimilarityTransform(
@@ -56,9 +56,9 @@ def test_warp_tform():
 
 
 def test_warp_callable():
-    x = cp.zeros((5, 5), dtype=cp.double)
+    x = cp.zeros((5, 5), dtype=cp.float64)
     x[2, 2] = 1
-    refx = cp.zeros((5, 5), dtype=cp.double)
+    refx = cp.zeros((5, 5), dtype=cp.float64)
     refx[1, 1] = 1
 
     def shift(xy):
@@ -70,9 +70,9 @@ def test_warp_callable():
 
 @cp.testing.with_requires('cupy>=9.0.0b2')
 def test_warp_matrix():
-    x = cp.zeros((5, 5), dtype=cp.double)
+    x = cp.zeros((5, 5), dtype=cp.float64)
     x[2, 2] = 1
-    refx = cp.zeros((5, 5), dtype=cp.double)
+    refx = cp.zeros((5, 5), dtype=cp.float64)
     refx[1, 1] = 1
 
     matrix = cp.asarray([[1, 0, 1], [0, 1, 1], [0, 0, 1]])
@@ -88,10 +88,10 @@ def test_warp_nd():
     for dim in range(2, 8):
         shape = dim * (5,)
 
-        x = cp.zeros(shape, dtype=cp.double)
+        x = cp.zeros(shape, dtype=cp.float64)
         x_c = dim * (2,)
         x[x_c] = 1
-        refx = cp.zeros(shape, dtype=cp.double)
+        refx = cp.zeros(shape, dtype=cp.float64)
         refx_c = dim * (1,)
         refx[refx_c] = 1
 
@@ -105,7 +105,7 @@ def test_warp_nd():
 
 @cp.testing.with_requires('cupy>=9.0.0b2')
 def test_warp_clip():
-    x = cp.zeros((5, 5), dtype=cp.double)
+    x = cp.zeros((5, 5), dtype=cp.float64)
     x[2, 2] = 1
 
     outx = rescale(x, 3, order=3, clip=False, anti_aliasing=False,
@@ -191,7 +191,7 @@ def test_warp_clip_cval_not_used(order):
 
 
 def test_homography():
-    x = cp.zeros((5, 5), dtype=cp.double)
+    x = cp.zeros((5, 5), dtype=cp.float64)
     x[1, 1] = 1
     theta = -math.pi / 2
     # fmt: off
@@ -216,7 +216,7 @@ def test_rotate(dtype):
 
 
 def test_rotate_resize():
-    x = cp.zeros((10, 10), dtype=cp.double)
+    x = cp.zeros((10, 10), dtype=cp.float64)
 
     x45 = rotate(x, 45, resize=False)
     assert x45.shape == (10, 10)
@@ -227,9 +227,9 @@ def test_rotate_resize():
 
 
 def test_rotate_center():
-    x = cp.zeros((10, 10), dtype=cp.double)
+    x = cp.zeros((10, 10), dtype=cp.float64)
     x[4, 4] = 1
-    refx = cp.zeros((10, 10), dtype=cp.double)
+    refx = cp.zeros((10, 10), dtype=cp.float64)
     refx[2, 5] = 1
     x20 = rotate(x, 20, order=0, center=(0, 0))
     assert_array_almost_equal(x20, refx)
@@ -238,10 +238,10 @@ def test_rotate_center():
 
 
 def test_rotate_resize_center():
-    x = cp.zeros((10, 10), dtype=cp.double)
+    x = cp.zeros((10, 10), dtype=cp.float64)
     x[0, 0] = 1
 
-    ref_x45 = cp.zeros((14, 14), dtype=cp.double)
+    ref_x45 = cp.zeros((14, 14), dtype=cp.float64)
     ref_x45[6, 0] = 1
     ref_x45[7, 0] = 1
 
@@ -255,13 +255,26 @@ def test_rotate_resize_center():
 
 
 def test_rotate_resize_90():
-    x90 = rotate(cp.zeros((470, 230), dtype=cp.double), 90, resize=True)
+    x90 = rotate(cp.zeros((470, 230), dtype=cp.float64), 90, resize=True)
     assert x90.shape == (230, 470)
+
+
+@pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])
+@pytest.mark.parametrize('resize', [False, True])
+@pytest.mark.parametrize('ndim', [2, 3, 4])
+def test_rotate_nd(dtype, resize, ndim):
+    # verify fix for issue: https://github.com/rapidsai/cucim/issues/431
+    x = cp.zeros((5, 5) + (4,) * (ndim - 2), dtype=dtype)
+    x[1, 1] = 1
+    x_out = rotate(x, 15, resize=resize)
+    assert x_out.ndim == x.ndim
+    assert x_out.shape[2:] == x.shape[2:]
+    assert x_out.dtype == _supported_float_type(dtype)
 
 
 def test_rescale():
     # same scale factor
-    x = cp.zeros((5, 5), dtype=cp.double)
+    x = cp.zeros((5, 5), dtype=cp.float64)
     x[1, 1] = 1
     scaled = rescale(x, 2, order=0,
                      channel_axis=None, anti_aliasing=False, mode='constant')
@@ -270,7 +283,7 @@ def test_rescale():
     assert_array_almost_equal(scaled, ref)
 
     # different scale factors
-    x = cp.zeros((5, 5), dtype=cp.double)
+    x = cp.zeros((5, 5), dtype=cp.float64)
     x[1, 1] = 1
 
     scaled = rescale(x, (2, 1), order=0,
@@ -292,7 +305,7 @@ def test_rescale_invalid_scale():
 
 def test_rescale_multichannel():
     # 1D + channels
-    x = cp.zeros((8, 3), dtype=cp.double)
+    x = cp.zeros((8, 3), dtype=cp.float64)
     scaled = rescale(x, 2, order=0, channel_axis=-1, anti_aliasing=False,
                      mode='constant')
     assert scaled.shape == (16, 3)
@@ -302,7 +315,7 @@ def test_rescale_multichannel():
     assert scaled.shape == (16, 6)
 
     # 2D + channels
-    x = cp.zeros((8, 8, 3), dtype=cp.double)
+    x = cp.zeros((8, 8, 3), dtype=cp.float64)
     scaled = rescale(x, 2, order=0, channel_axis=-1, anti_aliasing=False,
                      mode='constant')
     assert scaled.shape == (16, 16, 3)
@@ -312,7 +325,7 @@ def test_rescale_multichannel():
     assert scaled.shape == (16, 16, 6)
 
     # 3D + channels
-    x = cp.zeros((8, 8, 8, 3), dtype=cp.double)
+    x = cp.zeros((8, 8, 8, 3), dtype=cp.float64)
     scaled = rescale(x, 2, order=0, channel_axis=-1, anti_aliasing=False,
                      mode='constant')
     assert scaled.shape == (16, 16, 16, 3)
@@ -322,23 +335,9 @@ def test_rescale_multichannel():
     assert scaled.shape == (16, 16, 16, 6)
 
 
-def test_rescale_multichannel_deprecated_multiscale():
-    x = cp.zeros((5, 5, 3), dtype=cp.double)
-    with expected_warnings(["`multichannel` is a deprecated argument"]):
-        scaled = rescale(x, (2, 1), order=0, multichannel=True,
-                         anti_aliasing=False, mode='constant')
-    assert scaled.shape == (10, 5, 3)
-
-    # repeat prior test, but check for positional multichannel _warnings
-    with expected_warnings(["Providing the `multichannel` argument"]):
-        scaled = rescale(x, (2, 1), 0, 'constant', 0, True, False, True,
-                         anti_aliasing=False)
-    assert scaled.shape == (10, 5, 3)
-
-
 @pytest.mark.parametrize('channel_axis', [0, 1, 2, -1])
 def test_rescale_channel_axis_multiscale(channel_axis):
-    x = cp.zeros((5, 5, 3), dtype=cp.double)
+    x = cp.zeros((5, 5, 3), dtype=cp.float64)
     x = cp.moveaxis(x, -1, channel_axis)
     scaled = rescale(x, scale=(2, 1), order=0, channel_axis=channel_axis,
                      anti_aliasing=False, mode='constant')
@@ -347,17 +346,17 @@ def test_rescale_channel_axis_multiscale(channel_axis):
 
 
 def test_rescale_multichannel_defaults():
-    x = cp.zeros((8, 3), dtype=cp.double)
+    x = cp.zeros((8, 3), dtype=cp.float64)
     scaled = rescale(x, 2, order=0, anti_aliasing=False, mode='constant')
     assert_equal(scaled.shape, (16, 6))
 
-    x = cp.zeros((8, 8, 3), dtype=cp.double)
+    x = cp.zeros((8, 8, 3), dtype=cp.float64)
     scaled = rescale(x, 2, order=0, anti_aliasing=False, mode='constant')
     assert_equal(scaled.shape, (16, 16, 6))
 
 
 def test_resize2d():
-    x = cp.zeros((5, 5), dtype=cp.double)
+    x = cp.zeros((5, 5), dtype=cp.float64)
     x[1, 1] = 1
     resized = resize(x, (10, 10), order=0, anti_aliasing=False,
                      mode='constant')
@@ -368,7 +367,7 @@ def test_resize2d():
 
 def test_resize3d_keep():
     # keep 3rd dimension
-    x = cp.zeros((5, 5, 3), dtype=cp.double)
+    x = cp.zeros((5, 5, 3), dtype=cp.float64)
     x[1, 1, :] = 1
     resized = resize(x, (10, 10), order=0, anti_aliasing=False,
                      mode='constant')
@@ -385,7 +384,7 @@ def test_resize3d_keep():
 
 def test_resize3d_resize():
     # resize 3rd dimension
-    x = cp.zeros((5, 5, 3), dtype=cp.double)
+    x = cp.zeros((5, 5, 3), dtype=cp.float64)
     x[1, 1, :] = 1
     resized = resize(x, (10, 10, 1), order=0, anti_aliasing=False,
                      mode='constant')
@@ -396,7 +395,7 @@ def test_resize3d_resize():
 
 def test_resize3d_2din_3dout():
     # 3D output with 2D input
-    x = cp.zeros((5, 5), dtype=cp.double)
+    x = cp.zeros((5, 5), dtype=cp.float64)
     x[1, 1] = 1
     resized = resize(x, (10, 10, 1), order=0, anti_aliasing=False,
                      mode='constant')
@@ -407,7 +406,7 @@ def test_resize3d_2din_3dout():
 
 def test_resize2d_4d():
     # resize with extra output dimensions
-    x = cp.zeros((5, 5), dtype=cp.double)
+    x = cp.zeros((5, 5), dtype=cp.float64)
     x[1, 1] = 1
     out_shape = (10, 10, 1, 1)
     resized = resize(x, out_shape, order=0, anti_aliasing=False,
@@ -431,7 +430,7 @@ def test_resize_nd():
 
 def test_resize3d_bilinear():
     # bilinear 3rd dimension
-    x = cp.zeros((5, 5, 2), dtype=cp.double)
+    x = cp.zeros((5, 5, 2), dtype=cp.float64)
     x[1, 1, 0] = 0
     x[1, 1, 1] = 1
     resized = resize(x, (10, 10, 1), order=1, mode='constant',
@@ -553,7 +552,7 @@ def test_downsize(dtype):
 
 
 def test_downsize_anti_aliasing():
-    x = cp.zeros((10, 10), dtype=cp.double)
+    x = cp.zeros((10, 10), dtype=cp.float64)
     x[2, 2] = 1
     scaled = resize(x, (5, 5), order=1, anti_aliasing=True, mode='constant')
     assert_equal(scaled.shape, (5, 5))
@@ -580,7 +579,7 @@ def test_downsize_anti_aliasing():
 
 
 def test_downsize_anti_aliasing_invalid_stddev():
-    x = cp.zeros((10, 10), dtype=cp.double)
+    x = cp.zeros((10, 10), dtype=cp.float64)
     with pytest.raises(ValueError):
         resize(x, (5, 5), order=0, anti_aliasing=True, anti_aliasing_sigma=-1,
                mode='constant')
@@ -608,7 +607,7 @@ def test_downscale(dtype):
 
 
 def test_downscale_anti_aliasing():
-    x = cp.zeros((10, 10), dtype=cp.double)
+    x = cp.zeros((10, 10), dtype=cp.float64)
     x[2, 2] = 1
     scaled = rescale(x, 0.5, order=1, anti_aliasing=True,
                      channel_axis=None, mode='constant')
@@ -655,7 +654,7 @@ def test_invalid():
 def test_inverse():
     tform = SimilarityTransform(scale=0.5, rotation=0.1)
     inverse_tform = SimilarityTransform(matrix=cp.linalg.inv(tform.params))
-    image = cp.arange(10 * 10).reshape(10, 10).astype(cp.double)
+    image = cp.arange(10 * 10).reshape(10, 10).astype(cp.float64)
     assert_array_equal(warp(image, inverse_tform), warp(image, tform.inverse))
 
 
@@ -877,7 +876,7 @@ def test_nonzero_order_warp_dtype(dtype, order):
 
 
 def test_resize_local_mean2d():
-    x = cp.zeros((5, 5), dtype=np.double)
+    x = cp.zeros((5, 5), dtype=np.float64)
     x[1, 1] = 1
     resized = resize_local_mean(x, (10, 10))
     ref = cp.zeros((10, 10))
@@ -889,7 +888,7 @@ def test_resize_local_mean2d():
 def test_resize_local_mean3d_keep(channel_axis):
     # keep 3rd dimension
     nch = 3
-    x = cp.zeros((5, 5, nch), dtype=np.double)
+    x = cp.zeros((5, 5, nch), dtype=np.float64)
     x[1, 1, :] = 1
     # move channels to expected dimension
     x = cp.moveaxis(x, -1, channel_axis)
@@ -916,7 +915,7 @@ def test_resize_local_mean3d_keep(channel_axis):
 
 def test_resize_local_mean3d_resize():
     # resize 3rd dimension
-    x = cp.zeros((5, 5, 3), dtype=cp.double)
+    x = cp.zeros((5, 5, 3), dtype=cp.float64)
     x[1, 1, :] = 1
     resized = resize_local_mean(x, (10, 10, 1))
     ref = cp.zeros((10, 10, 1))
@@ -930,7 +929,7 @@ def test_resize_local_mean3d_resize():
 
 def test_resize_local_mean3d_2din_3dout():
     # 3D output with 2D input
-    x = cp.zeros((5, 5), dtype=cp.double)
+    x = cp.zeros((5, 5), dtype=cp.float64)
     x[1, 1] = 1
     resized = resize_local_mean(x, (10, 10, 1))
     ref = cp.zeros((10, 10, 1))
@@ -940,7 +939,7 @@ def test_resize_local_mean3d_2din_3dout():
 
 def test_resize_local_mean2d_4d():
     # resize with extra output dimensions
-    x = cp.zeros((5, 5), dtype=cp.double)
+    x = cp.zeros((5, 5), dtype=cp.float64)
     x[1, 1] = 1
     out_shape = (10, 10, 1, 1)
     resized = resize_local_mean(x, out_shape)
@@ -961,7 +960,7 @@ def test_resize_local_mean_nd(dim):
 
 
 def test_resize_local_mean3d():
-    x = cp.zeros((5, 5, 2), dtype=cp.double)
+    x = cp.zeros((5, 5, 2), dtype=cp.float64)
     x[1, 1, 0] = 0
     x[1, 1, 1] = 1
     resized = resize_local_mean(x, (10, 10, 1))
@@ -1000,3 +999,14 @@ def test_resize_local_mean_dtype():
                              preserve_range=False).dtype == x_f32.dtype
     assert resize_local_mean(x_f32, (10, 10),
                              preserve_range=True).dtype == x_f32.dtype
+
+
+def test_nn_resize_int_img():
+    """scikit-image issue gh-6467"""
+    img = cp.zeros((12, 12), dtype=cp.int16)
+    img[4:8, 1:4] = 5
+    img[4:8, 7:10] = 7
+
+    resized = resize(img, (8, 8), order=0)
+
+    assert cp.array_equal(cp.unique(resized), cp.unique(img))

@@ -238,68 +238,6 @@ class deprecate_kwarg:
         return fixed_func
 
 
-class deprecate_multichannel_kwarg(deprecate_kwarg):
-    """Decorator for deprecating multichannel keyword in favor of channel_axis.
-
-    Parameters
-    ----------
-    removed_version : str
-        The package version in which the deprecated argument will be
-        removed.
-
-    """
-
-    def __init__(self, removed_version='2023.02.00',
-                 multichannel_position=None):
-        super().__init__(
-            kwarg_mapping={'multichannel': 'channel_axis'},
-            deprecated_version='22.02.00',
-            warning_msg=None,
-            removed_version=removed_version)
-        self.position = multichannel_position
-
-    def __call__(self, func):
-        @functools.wraps(func)
-        def fixed_func(*args, **kwargs):
-
-            if self.position is not None and len(args) > self.position:
-                warning_msg = (
-                    "Providing the `multichannel` argument positionally to "
-                    "{func_name} is deprecated. Use the `channel_axis` kwarg "
-                    "instead."
-                )
-                warnings.warn(warning_msg.format(func_name=func.__name__),
-                              FutureWarning,
-                              stacklevel=2)
-                if 'channel_axis' in kwargs:
-                    raise ValueError(
-                        "Cannot provide both a `channel_axis` kwarg and a "
-                        "positional `multichannel` value."
-                    )
-                else:
-                    channel_axis = -1 if args[self.position] else None
-                    kwargs['channel_axis'] = channel_axis
-
-            if 'multichannel' in kwargs:
-                #  warn that the function interface has changed:
-                warnings.warn(self.warning_msg.format(
-                    old_arg='multichannel', func_name=func.__name__,
-                    new_arg='channel_axis'), FutureWarning, stacklevel=2)
-
-                # multichannel = True -> last axis corresponds to channels
-                convert = {True: -1, False: None}
-                kwargs['channel_axis'] = convert[kwargs.pop('multichannel')]
-
-            # Call the function with the fixed arguments
-            return func(*args, **kwargs)
-
-        if func.__doc__ is not None:
-            newdoc = docstring_add_deprecated(
-                func, {'multichannel': 'channel_axis'}, '22.02.00')
-            fixed_func.__doc__ = newdoc
-        return fixed_func
-
-
 class channel_as_last_axis():
     """Decorator for automatically making channels axis last for all arrays.
 
@@ -345,7 +283,7 @@ class channel_as_last_axis():
                 channel_axis = (channel_axis,)
             if len(channel_axis) > 1:
                 raise ValueError(
-                    "only a single channel axis is currently suported")
+                    "only a single channel axis is currently supported")
 
             if channel_axis == (-1,) or channel_axis == -1:
                 return func(*args, **kwargs)
@@ -402,14 +340,12 @@ class deprecated(object):
 
         alt_msg = ''
         if self.alt_func is not None:
-            alt_msg = ' Use ``%s`` instead.' % self.alt_func
+            alt_msg = f' Use ``{self.alt_func}`` instead.'
         rmv_msg = ''
         if self.removed_version is not None:
-            rmv_msg = (' and will be removed in version %s' %
-                       self.removed_version)
+            rmv_msg = f' and will be removed in version {self.removed_version}'
 
-        msg = ('Function ``%s`` is deprecated' % func.__name__
-               + rmv_msg + '.' + alt_msg)
+        msg = f'Function ``{func.__name__}`` is deprecated{rmv_msg}.{alt_msg}'
 
         @functools.wraps(func)
         def wrapped(*args, **kwargs):
@@ -695,7 +631,7 @@ def _validate_interpolation_order(image_dtype, order):
     if image_dtype == bool and order != 0:
         raise ValueError(
             "Input image dtype is bool. Interpolation is not defined "
-            "with bool data type. Please set order to 0 or explicitely "
+            "with bool data type. Please set order to 0 or explicitly "
             "cast input image to another data type.")
 
     return order
@@ -717,10 +653,10 @@ def _to_ndimage_mode(mode):
                                  wrap='wrap')
     if mode not in mode_translation_dict:
         raise ValueError(
-            (f"Unknown mode: '{mode}', or cannot translate mode. The "
-             f"mode should be one of 'constant', 'edge', 'symmetric', "
-             f"'reflect', or 'wrap'. See the documentation of numpy.pad for "
-             f"more info."))
+            f"Unknown mode: '{mode}', or cannot translate mode. The "
+            f"mode should be one of 'constant', 'edge', 'symmetric', "
+            f"'reflect', or 'wrap'. See the documentation of numpy.pad for "
+            f"more info.")
     return _fix_ndimage_mode(mode_translation_dict[mode])
 
 

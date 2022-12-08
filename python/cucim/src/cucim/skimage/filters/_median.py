@@ -4,8 +4,9 @@ import cupy as cp
 import numpy as np
 
 import cucim.skimage._vendored.ndimage as ndi
+
 from .._shared.utils import deprecate_kwarg
-from ._median_hist import _can_use_histogram, _median_hist, KernelResourceError
+from ._median_hist import KernelResourceError, _can_use_histogram, _median_hist
 
 try:
     from math import prod

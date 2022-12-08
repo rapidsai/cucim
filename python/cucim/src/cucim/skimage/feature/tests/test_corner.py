@@ -4,6 +4,7 @@ import pytest
 from cupy.testing import assert_array_almost_equal, assert_array_equal
 from numpy.testing import assert_equal
 from skimage import data, draw
+from skimage.feature import hessian_matrix_det as hessian_matrix_det_cpu
 
 from cucim.skimage import img_as_float
 from cucim.skimage._shared._warnings import expected_warnings
@@ -16,6 +17,7 @@ from cucim.skimage.feature import (corner_foerstner, corner_harris,
                                    peak_local_max, shape_index,
                                    structure_tensor,
                                    structure_tensor_eigenvalues)
+from cucim.skimage.feature.corner import _symmetric_image
 from cucim.skimage.morphology import cube
 
 
@@ -93,14 +95,13 @@ def test_structure_tensor_3d_rc_only():
 def test_structure_tensor_orders():
     square = cp.zeros((5, 5))
     square[2, 2] = 1
-    with expected_warnings(['the default order of the structure']):
-        A_elems_default = structure_tensor(square, sigma=0.1)
+    A_elems_default = structure_tensor(square, sigma=0.1)
     A_elems_xy = structure_tensor(square, sigma=0.1, order='xy')
     A_elems_rc = structure_tensor(square, sigma=0.1, order='rc')
-    for elem_xy, elem_def in zip(A_elems_xy, A_elems_default):
+    for elem_rc, elem_def in zip(A_elems_rc, A_elems_default):
+        assert_array_equal(elem_rc, elem_def)
+    for elem_xy, elem_def in zip(A_elems_xy, A_elems_default[::-1]):
         assert_array_equal(elem_xy, elem_def)
-    for elem_xy, elem_rc in zip(A_elems_xy, A_elems_rc[::-1]):
-        assert_array_equal(elem_xy, elem_rc)
 
 
 @pytest.mark.parametrize('ndim', [2, 3])
@@ -124,15 +125,16 @@ def test_structure_tensor_sigma(ndim):
 def test_hessian_matrix(dtype):
     square = cp.zeros((5, 5), dtype=dtype)
     square[2, 2] = 4
-    Hrr, Hrc, Hcc = hessian_matrix(square, sigma=0.1, order="rc")
+    Hrr, Hrc, Hcc = hessian_matrix(square, sigma=0.1, order="rc",
+                                   use_gaussian_derivatives=False)
     out_dtype = _supported_float_type(dtype)
     assert all(a.dtype == out_dtype for a in (Hrr, Hrc, Hcc))
     # fmt: off
-    assert_array_almost_equal(Hrr, cp.asarray([[0, 0,  0, 0, 0],    # noqa
+    assert_array_almost_equal(Hrr, cp.asarray([[0, 0,  2, 0, 0],    # noqa
                                                [0, 0,  0, 0, 0],    # noqa
-                                               [2, 0, -2, 0, 2],    # noqa
+                                               [0, 0, -2, 0, 0],    # noqa
                                                [0, 0,  0, 0, 0],    # noqa
-                                               [0, 0,  0, 0, 0]]))  # noqa
+                                               [0, 0,  2, 0, 0]]))  # noqa
 
     assert_array_almost_equal(Hrc, cp.asarray([[0,  0, 0,  0, 0],    # noqa
                                                [0,  1, 0, -1, 0],    # noqa
@@ -140,21 +142,44 @@ def test_hessian_matrix(dtype):
                                                [0, -1, 0,  1, 0],    # noqa
                                                [0,  0, 0,  0, 0]]))  # noqa
 
-    assert_array_almost_equal(Hcc, cp.asarray([[0, 0,  2, 0, 0],    # noqa
+    assert_array_almost_equal(Hcc, cp.asarray([[0, 0,  0, 0, 0],    # noqa
                                                [0, 0,  0, 0, 0],    # noqa
-                                               [0, 0, -2, 0, 0],    # noqa
+                                               [2, 0, -2, 0, 2],    # noqa
                                                [0, 0,  0, 0, 0],    # noqa
-                                               [0, 0,  2, 0, 0]]))  # noqa
+                                               [0, 0,  0, 0, 0]]))  # noqa
     # fmt: on
+
+    with expected_warnings(["use_gaussian_derivatives currently defaults"]):
+        # FutureWarning warning when use_gaussian_derivatives is not
+        # specified.
+        hessian_matrix(square, sigma=0.1, order="rc")
+
+
+@pytest.mark.parametrize('use_gaussian_derivatives', [False, True])
+def test_hessian_matrix_order(use_gaussian_derivatives):
+    square = cp.zeros((5, 5), dtype=float)
+    square[2, 2] = 4
+
+    Hxx, Hxy, Hyy = hessian_matrix(
+        square, sigma=0.1, order="xy",
+        use_gaussian_derivatives=use_gaussian_derivatives)
+
+    Hrr, Hrc, Hcc = hessian_matrix(
+        square, sigma=0.1, order="rc",
+        use_gaussian_derivatives=use_gaussian_derivatives)
+
+    # verify results are equivalent, just reversed in order
+    cp.testing.assert_allclose(Hxx, Hcc, atol=1e-30)
+    cp.testing.assert_allclose(Hxy, Hrc, atol=1e-30)
+    cp.testing.assert_allclose(Hyy, Hrr, atol=1e-30)
 
 
 def test_hessian_matrix_3d():
     cube = cp.zeros((5, 5, 5))
     cube[2, 2, 2] = 4
-    Hs = hessian_matrix(cube, sigma=0.1, order='rc')
-    assert len(Hs) == 6, "incorrect number of Hessian images (%i) for 3D" % len(
-        Hs
-    )
+    Hs = hessian_matrix(cube, sigma=0.1, order='rc',
+                        use_gaussian_derivatives=False)
+    assert len(Hs) == 6, (f"incorrect number of Hessian images ({len(Hs)}) for 3D")  # noqa
     # fmt: off
     assert_array_almost_equal(
         Hs[2][:, 2, :], cp.asarray([[0,  0,  0,  0,  0],    # noqa
@@ -163,6 +188,21 @@ def test_hessian_matrix_3d():
                                     [0, -1,  0,  1,  0],    # noqa
                                     [0,  0,  0,  0,  0]]))  # noqa
     # fmt: on
+
+
+@pytest.mark.parametrize('use_gaussian_derivatives', [False, True])
+def test_hessian_matrix_3d_xy(use_gaussian_derivatives):
+
+    img = cp.ones((5, 5, 5))
+
+    # order="xy" is only permitted for 2D
+    with pytest.raises(ValueError):
+        hessian_matrix(img, sigma=0.1, order="xy",
+                       use_gaussian_derivatives=use_gaussian_derivatives)
+
+    with pytest.raises(ValueError):
+        hessian_matrix(img, sigma=0.1, order='nonexistant',
+                       use_gaussian_derivatives=use_gaussian_derivatives)
 
 
 @pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])
@@ -199,7 +239,8 @@ def test_structure_tensor_eigenvalues_3d():
 def test_hessian_matrix_eigvals(dtype):
     square = cp.zeros((5, 5), dtype=dtype)
     square[2, 2] = 4
-    H = hessian_matrix(square, sigma=0.1, order='rc')
+    H = hessian_matrix(square, sigma=0.1, order='rc',
+                       use_gaussian_derivatives=False)
     l1, l2 = hessian_matrix_eigvals(H)
     out_dtype = _supported_float_type(dtype)
     assert all(a.dtype == out_dtype for a in (l1, l2))
@@ -220,7 +261,7 @@ def test_hessian_matrix_eigvals(dtype):
 @pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])
 def test_hessian_matrix_eigvals_3d(im3d, dtype):
     im3d = im3d.astype(dtype, copy=False)
-    H = hessian_matrix(im3d)
+    H = hessian_matrix(im3d, use_gaussian_derivatives=False)
     E = hessian_matrix_eigvals(H)
     E = cp.asnumpy(E)
     out_dtype = _supported_float_type(dtype)
@@ -244,12 +285,64 @@ def test_hessian_matrix_eigvals_3d(im3d, dtype):
     assert np.max(response0) > 0
 
 
-def test_hessian_matrix_det():
+def _reference_eigvals_computation(S_elems):
+    """Legacy eigenvalue implementation based on cp.linalg.eigvalsh."""
+    matrices = _symmetric_image(S_elems)
+    # eigvalsh returns eigenvalues in increasing order. We want decreasing
+    eigs = cp.linalg.eigvalsh(matrices)[..., ::-1]
+    leading_axes = tuple(range(eigs.ndim - 1))
+    eigs = cp.transpose(eigs, (eigs.ndim - 1,) + leading_axes)
+    return eigs
+
+
+@pytest.mark.parametrize(
+    'shape', [(64, 64), (512, 1024), (8, 16, 24)]
+)
+@pytest.mark.parametrize('dtype', [np.float32, np.float64])
+def test_custom_eigvals_kernels_vs_linalg_eigvalsh(shape, dtype):
+    rng = cp.random.default_rng(seed=5)
+    img = rng.integers(0, 256, shape)
+    H = hessian_matrix(img)
+    H = tuple(h.astype(dtype, copy=False) for h in H)
+    evs1 = _reference_eigvals_computation(H)
+    evs2 = hessian_matrix_eigvals(H)
+    atol = 1e-10
+    cp.testing.assert_allclose(evs1, evs2, atol=atol)
+
+
+@pytest.mark.parametrize('approximate', [False, True])
+def test_hessian_matrix_det(approximate):
     image = cp.zeros((5, 5))
     image[2, 2] = 1
-    # TODO: approximate=True case not implemented
-    det = hessian_matrix_det(image, 5, approximate=False)
+    det = hessian_matrix_det(image, 5, approximate=approximate)
     assert_array_almost_equal(det, 0, decimal=3)
+
+
+@pytest.mark.parametrize('approximate', [False, True])
+@pytest.mark.parametrize('ndim', [2, 3])
+@pytest.mark.parametrize(
+    'dtype', [cp.uint8, cp.float16, cp.float32, cp.float64]
+)
+def test_hessian_matrix_det_vs_skimage(approximate, ndim, dtype):
+    if approximate and ndim != 2:
+        pytest.skip(reason="approximate only implemented for 2D images")
+    if approximate:
+        sigma = 3
+    else:
+        sigma = 1.5
+    rng = cp.random.default_rng(5)
+    if np.dtype(dtype).kind in 'iu':
+        image = rng.integers(0, 256, (16,) * ndim, dtype=dtype)
+    else:
+        image = rng.standard_normal((16,) * ndim).astype(dtype=dtype)
+    float_type = _supported_float_type(image.dtype)
+    expected = hessian_matrix_det_cpu(
+        cp.asnumpy(image), sigma, approximate=approximate
+    )
+    det = hessian_matrix_det(image, sigma, approximate=approximate)
+    assert det.dtype == float_type
+    tol = 1e-12 if det.dtype == np.float64 else 1e-6
+    cp.testing.assert_allclose(det, expected, rtol=tol, atol=tol)
 
 
 @pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])
@@ -457,7 +550,7 @@ def test_rotated_img():
 #     img[25, 25] = 1e-10
 #     corner = peak_local_max(corner_harris(img),
 #                             min_distance=10, threshold_rel=0, num_peaks=1)
-#     subpix = corner_subpix(img, cp.asarray([[25, 25]]))
+#     subpix = corner_subpix(img, corner)
 #     assert_array_equal(subpix[0], (cp.nan, cp.nan))
 
 

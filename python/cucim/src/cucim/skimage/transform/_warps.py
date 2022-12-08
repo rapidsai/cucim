@@ -2,11 +2,12 @@ import math
 
 import cupy as cp
 import numpy as np
+
 import cucim.skimage._vendored.ndimage as ndi
 
 from .._shared.utils import (_to_ndimage_mode, _validate_interpolation_order,
                              channel_as_last_axis, convert_to_float,
-                             deprecate_multichannel_kwarg, safe_as_int, warn)
+                             safe_as_int, warn)
 from ..measure import block_reduce
 from ._geometric import (AffineTransform, ProjectiveTransform,
                          SimilarityTransform)
@@ -114,6 +115,8 @@ def resize(image, output_shape, order=None, mode='reflect', cval=0, clip=True,
         to downsampling. It is crucial to filter when downsampling
         the image to avoid aliasing artifacts. If not specified, it is set to
         True when downsampling an image whose data type is not bool.
+        It is also set to False when using nearest neighbor interpolation
+        (``order`` == 0) with integer input data type.
     anti_aliasing_sigma : {float, tuple of floats}, optional
         Standard deviation for Gaussian filtering used when anti-aliasing.
         By default, this value is chosen as (s - 1) / 2 where s is the
@@ -146,8 +149,10 @@ def resize(image, output_shape, order=None, mode='reflect', cval=0, clip=True,
         image = image.astype(cp.float32, copy=False)
 
     if anti_aliasing is None:
-        anti_aliasing = (not input_type == bool and
-                         any(x < y for x, y in zip(output_shape, input_shape)))
+        anti_aliasing = (
+            not input_type == bool and
+            not (cp.issubdtype(input_type, cp.integer) and order == 0) and
+            any(x < y for x, y in zip(output_shape, input_shape)))
 
     if input_type == bool and anti_aliasing:
         raise ValueError("anti_aliasing must be False for boolean images")
@@ -196,11 +201,9 @@ def resize(image, output_shape, order=None, mode='reflect', cval=0, clip=True,
 
 
 @channel_as_last_axis()
-@deprecate_multichannel_kwarg(multichannel_position=7)
 def rescale(image, scale, order=None, mode='reflect', cval=0, clip=True,
-            preserve_range=False, multichannel=False,
-            anti_aliasing=None, anti_aliasing_sigma=None, *,
-            channel_axis=None):
+            preserve_range=False, anti_aliasing=None, anti_aliasing_sigma=None,
+            *, channel_axis=None):
     """Scale image by a certain factor.
 
     Performs interpolation to up-scale or down-scale N-dimensional images.
@@ -242,10 +245,6 @@ def rescale(image, scale, order=None, mode='reflect', cval=0, clip=True,
         image is converted according to the conventions of `img_as_float`.
         Also see
         https://scikit-image.org/docs/dev/user_guide/data_types.html
-    multichannel : bool, optional
-        Whether the last axis of the image is to be interpreted as multiple
-        channels or another spatial dimension. This argument is deprecated:
-        specify `channel_axis` instead.
     anti_aliasing : bool, optional
         Whether to apply a Gaussian filter to smooth the image prior
         to down-scaling. It is crucial to filter when down-sampling
@@ -423,6 +422,10 @@ def rotate(image, angle, resize=False, center=None, order=None,
     symmetric, the result would be [0, 1, 2, 2, 1, 0, 0], while for reflect it
     would be [0, 1, 2, 1, 0, 1, 2].
 
+    If ``image.ndim > 2``, the rotation occurs for the first two dimensions of
+    the array. Unlike the scikit-image implementation, more than one additional
+    axis may be present on the array.
+
     Examples
     --------
     >>> from skimage import data
@@ -479,7 +482,7 @@ def rotate(image, angle, resize=False, center=None, order=None,
         maxr = corners[:, 1].max()
         out_rows = maxr - minr + 1
         out_cols = maxc - minc + 1
-        output_shape = np.around((out_rows, out_cols))
+        output_shape = (round(out_rows), round(out_cols))
 
         # fit output image in new shape
         translation = (minc, minr)
@@ -493,11 +496,21 @@ def rotate(image, angle, resize=False, center=None, order=None,
     tform.params[:2, :2] = tform.params[:2, :2].T
     tform.params[:2, 2] = tform.params[1::-1, 2]
 
+    if image.ndim == 2:
+        affine_params = tform.params
+    elif image.ndim > 2:
+        # note: only the first two dimensions are the ones being rotated
+        #       embed 2D affine into larger identity matrix.
+        affine_params = np.eye(image.ndim + 1)
+        affine_params[:3, :3] = tform.params
+        # keep original shape on the excess dimensions
+        output_shape = output_shape + image.shape[2:]
+
     # transfer the coordinate transform to the GPU
-    tform.params = cp.asarray(tform.params)
+    affine_params = cp.asarray(affine_params)
 
     return _ndimage_affine(
-        image, tform.params, output_shape=output_shape, order=order,
+        image, affine_params, output_shape=output_shape, order=order,
         mode=mode, cval=cval, clip=clip, preserve_range=preserve_range
     )
 
@@ -1062,10 +1075,8 @@ def _log_polar_mapping(output_coords, k_angle, k_radius, center):
 
 
 @channel_as_last_axis()
-@deprecate_multichannel_kwarg()
 def warp_polar(image, center=None, *, radius=None, output_shape=None,
-               scaling='linear', multichannel=False, channel_axis=None,
-               **kwargs):
+               scaling='linear', channel_axis=None, **kwargs):
     """Remap image to polar or log-polar coordinates space.
 
     Parameters
@@ -1084,11 +1095,6 @@ def warp_polar(image, center=None, *, radius=None, output_shape=None,
     scaling : {'linear', 'log'}, optional
         Specify whether the image warp is polar or log-polar. Defaults to
         'linear'.
-    multichannel : bool, optional
-        Whether the image is a 3-D array in which the third axis is to be
-        interpreted as multiple channels. If set to `False` (default), only 2-D
-        arrays are accepted. This argument is deprecated: specify
-        `channel_axis` instead.
     channel_axis : int or None, optional
         If None, the image is assumed to be a grayscale (single channel) image.
         Otherwise, this parameter indicates which axis of the array corresponds

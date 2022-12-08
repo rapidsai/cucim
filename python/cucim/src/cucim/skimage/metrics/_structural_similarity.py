@@ -1,6 +1,7 @@
 import functools
 
 import cupy as cp
+
 import cucim.skimage._vendored.ndimage as ndi
 
 from .._shared import utils
@@ -12,14 +13,59 @@ from ..util.dtype import dtype_range
 __all__ = ['structural_similarity']
 
 
-@utils.deprecate_multichannel_kwarg()
+_ssim_operation = """
+    F vx, vy, vxy, C1, C2, A1, A2, B1, B2, D;
+    vx = cov_norm * (uxx - ux * ux);
+    vy = cov_norm * (uyy - uy * uy);
+    vxy = cov_norm * (uxy - ux * uy);
+
+    C1 = (K1 * data_range);
+    C1 *= C1;
+    C2 = (K2 * data_range);
+    C2 *= C2;
+
+    A1 = 2 * ux * uy + C1;
+    A2 = 2 * vxy + C2;
+    B1 = ux * ux + uy * uy + C1;
+    B2 = vx + vy + C2;
+    D = B1 * B2;
+    ssim = (A1 * A2) / D;
+"""
+
+
+@cp.memoize(for_each_device=True)
+def _get_ssim_kernel():
+    return cp.ElementwiseKernel(
+        in_params='float64 cov_norm, F ux, F uy, F uxx, F uyy, F uxy, float64 data_range, float64 K1, float64 K2',  # noqa
+        out_params='F ssim',
+        operation=_ssim_operation,
+        name='cucim_ssim'
+    )
+
+
+@cp.memoize(for_each_device=True)
+def _get_ssim_grad_kernel():
+    return cp.ElementwiseKernel(
+        in_params='float64 cov_norm, F ux, F uy, F uxx, F uyy, F uxy, float64 data_range, float64 K1, float64 K2',  # noqa
+        out_params='F ssim, F grad_temp1, F grad_temp2, F grad_temp3',
+        operation=_ssim_operation + """
+            grad_temp1 = A1 / D;
+            grad_temp2 = -ssim / B2;
+            grad_temp3 = (ux * (A2 - A1) - uy * (B2 - B1) * ssim) / D;
+        """,
+        name='cucim_ssim'
+    )
+
+
 def structural_similarity(im1, im2,
                           *,
                           win_size=None, gradient=False, data_range=None,
-                          channel_axis=None, multichannel=False,
-                          gaussian_weights=False, full=False, **kwargs):
+                          channel_axis=None, gaussian_weights=False,
+                          full=False, **kwargs):
     """
     Compute the mean structural similarity index between two images.
+    Please pay attention to the `data_range` parameter with floating-point
+    images.
 
     Parameters
     ----------
@@ -34,15 +80,13 @@ def structural_similarity(im1, im2,
     data_range : float, optional
         The data range of the input image (distance between minimum and
         maximum possible values). By default, this is estimated from the image
-        data-type.
+        data type. This estimate may be wrong for floating-point image data.
+        Therefore it is recommended to always pass this value explicitly
+        (see note below).
     channel_axis : int or None, optional
         If None, the image is assumed to be a grayscale (single channel) image.
         Otherwise, this parameter indicates which axis of the array corresponds
         to channels.
-    multichannel : bool, optional
-        If True, treat the last dimension of the array as channels. Similarity
-        calculations are done independently for each channel then averaged.
-        This argument is deprecated: specify `channel_axis` instead.
     gaussian_weights : bool, optional
         If True, each patch has its mean and variance spatially weighted by a
         normalized Gaussian kernel of width sigma=1.5.
@@ -73,8 +117,20 @@ def structural_similarity(im1, im2,
 
     Notes
     -----
-    To match the implementation of Wang et. al. [1]_, set `gaussian_weights`
-    to True, `sigma` to 1.5, and `use_sample_covariance` to False.
+    If `data_range` is not specified, the range is automatically guessed
+    based on the image data type. However for floating-point image data, this
+    estimate yields a result double the value of the desired range, as the
+    `dtype_range` in `skimage.util.dtype.py` has defined intervals from -1 to
+    +1. This yields an estimate of 2, instead of 1, which is most often
+    required when working with image data (as negative light intentsities are
+    nonsensical). In case of working with YCbCr-like color data, note that
+    these ranges are different per channel (Cb and Cr have double the range
+    of Y), so one cannot calculate a channel-averaged SSIM with a single call
+    to this function, as identical ranges are assumed for each channel.
+
+    To match the implementation of Wang et al. [1]_, set `gaussian_weights`
+    to True, `sigma` to 1.5, `use_sample_covariance` to False, and
+    specify the `data_range` argument.
 
     .. versionchanged:: 0.16
         This function was renamed from ``skimage.measure.compare_ssim`` to
@@ -97,6 +153,12 @@ def structural_similarity(im1, im2,
     """
     check_shape_equality(im1, im2)
     float_type = _supported_float_type(im1.dtype)
+
+    if isinstance(data_range, cp.ndarray):
+        if data_range.ndim != 0:
+            raise ValueError("data_range must be a scalar")
+        # need a host scalar
+        data_range = float(data_range)
 
     if channel_axis is not None:
         # loop over channels
@@ -175,11 +237,25 @@ def structural_similarity(im1, im2,
         raise ValueError('Window size must be odd.')
 
     if data_range is None:
+        if (
+            cp.issubdtype(im1.dtype, cp.floating) or
+            cp.issubdtype(im2.dtype, cp.floating)
+        ):
+            raise ValueError(
+                'Since image dtype is floating point, you must specify '
+                'the data_range parameter. Please read the documentation '
+                'carefully (including the note). It is recommended that '
+                'you always specify the data_range anyway.')
         if im1.dtype != im2.dtype:
-            warn("Inputs have mismatched dtype.  Setting data_range based on "
+            warn("Inputs have mismatched dtypes.  Setting data_range based on "
                  "im1.dtype.", stacklevel=2)
         dmin, dmax = dtype_range[im1.dtype.type]
-        data_range = dmax - dmin
+        data_range = float(dmax - dmin)
+        if cp.issubdtype(im1.dtype, cp.integer) and (im1.dtype != cp.uint8):
+            warn("Setting data_range based on im1.dtype. " +
+                 ("data_range = %.0f. " % data_range) +
+                 "Please specify data_range explicitly to avoid mistakes.",
+                 stacklevel=2)
 
     ndim = im1.ndim
 
@@ -210,20 +286,19 @@ def structural_similarity(im1, im2,
     uxx = filter_func(im1 * im1, **filter_args)
     uyy = filter_func(im2 * im2, **filter_args)
     uxy = filter_func(im1 * im2, **filter_args)
-    vx = cov_norm * (uxx - ux * ux)
-    vy = cov_norm * (uyy - uy * uy)
-    vxy = cov_norm * (uxy - ux * uy)
 
-    R = data_range
-    C1 = (K1 * R) ** 2
-    C2 = (K2 * R) ** 2
-
-    A1, A2, B1, B2 = ((2 * ux * uy + C1,
-                       2 * vxy + C2,
-                       ux ** 2 + uy ** 2 + C1,
-                       vx + vy + C2))
-    D = B1 * B2
-    S = (A1 * A2) / D
+    if not gradient:
+        S = cp.empty_like(ux)
+        kernel = _get_ssim_kernel()
+        kernel(cov_norm, ux, uy, uxx, uyy, uxy, data_range, K1, K2, S)
+    else:
+        S = cp.empty_like(ux)
+        grad_temp1 = cp.empty_like(ux)
+        grad_temp2 = cp.empty_like(ux)
+        grad_temp3 = cp.empty_like(ux)
+        kernel = _get_ssim_grad_kernel()
+        kernel(cov_norm, ux, uy, uxx, uyy, uxy, data_range, K1, K2, S,
+               grad_temp1, grad_temp2, grad_temp3)
 
     # to avoid edge effects will ignore filter radius strip around edges
     pad = (win_size - 1) // 2
@@ -233,10 +308,9 @@ def structural_similarity(im1, im2,
 
     if gradient:
         # The following is Eqs. 7-8 of Avanaki 2009.
-        grad = filter_func(A1 / D, **filter_args) * im1
-        grad += filter_func(-S / B2, **filter_args) * im2
-        grad += filter_func((ux * (A2 - A1) - uy * (B2 - B1) * S) / D,
-                            **filter_args)
+        grad = filter_func(grad_temp1, **filter_args) * im1
+        grad += filter_func(grad_temp2, **filter_args) * im2
+        grad += filter_func(grad_temp3, **filter_args)
         grad *= (2 / im1.size)
 
         if full:
