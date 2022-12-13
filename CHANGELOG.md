@@ -2,9 +2,43 @@
 
 Please see https://github.com/rapidsai/cucim/releases/tag/v23.02.00a for the latest changes to this development branch.
 
-# cuCIM 22.12.00 (Date TBD)
+# cuCIM 22.12.00 (8 Dec 2022)
 
-Please see https://github.com/rapidsai/cucim/releases/tag/v22.12.00a for the latest changes to this development branch.
+## 🚨 Breaking Changes
+
+- Implement additional deprecations carried out for scikit-image 0.20 ([#451](https://github.com/rapidsai/cucim/pull/451)) [@grlee77](https://github.com/grlee77)
+- improved implementation of ridge filters (bug fixes and reduced memory footprint) ([#423](https://github.com/rapidsai/cucim/pull/423)) [@grlee77](https://github.com/grlee77)
+
+## 🐛 Bug Fixes
+
+- pin to cmake !3.25.0 on CI to avoid bug with CUDA+conda during build ([#444](https://github.com/rapidsai/cucim/pull/444)) [@grlee77](https://github.com/grlee77)
+- update incorrect argument and deprecated function for tifffile.TiffWriter ([#433](https://github.com/rapidsai/cucim/pull/433)) [@JoohyungLee0106](https://github.com/JoohyungLee0106)
+- Fix rotate behavior for ndim &gt; 2 ([#432](https://github.com/rapidsai/cucim/pull/432)) [@grlee77](https://github.com/grlee77)
+
+## 📖 Documentation
+
+- add whole-slide tiled read/write demos for measuring GPUDirect Storage (GDS) I/O performance ([#452](https://github.com/rapidsai/cucim/pull/452)) [@grlee77](https://github.com/grlee77)
+- Add demo for distance_transform_edt ([#394](https://github.com/rapidsai/cucim/pull/394)) [@grlee77](https://github.com/grlee77)
+
+## 🚀 New Features
+
+- Support no-compression method in converter ([#443](https://github.com/rapidsai/cucim/pull/443)) [@gigony](https://github.com/gigony)
+- add three segmentation metrics ([#425](https://github.com/rapidsai/cucim/pull/425)) [@grlee77](https://github.com/grlee77)
+- add isotropic binary morphology functions ([#421](https://github.com/rapidsai/cucim/pull/421)) [@grlee77](https://github.com/grlee77)
+- Add blob feature detectors (blob_dog, blob_log, blob_doh) ([#413](https://github.com/rapidsai/cucim/pull/413)) [@monzelr](https://github.com/monzelr)
+
+## 🛠️ Improvements
+
+- additional minor updates (skimage 0.20) ([#455](https://github.com/rapidsai/cucim/pull/455)) [@grlee77](https://github.com/grlee77)
+- Implement additional deprecations carried out for scikit-image 0.20 ([#451](https://github.com/rapidsai/cucim/pull/451)) [@grlee77](https://github.com/grlee77)
+- Faster `hessian_matrix_*` and `structure_tensor_eigvals` via analytical eigenvalues for the 3D case ([#434](https://github.com/rapidsai/cucim/pull/434)) [@grlee77](https://github.com/grlee77)
+- use fused kernels to reduce overhead in corner detector implementations ([#426](https://github.com/rapidsai/cucim/pull/426)) [@grlee77](https://github.com/grlee77)
+- Misc updates for consistency with scikit-image 0.20 ([#424](https://github.com/rapidsai/cucim/pull/424)) [@grlee77](https://github.com/grlee77)
+- improved implementation of ridge filters (bug fixes and reduced memory footprint) ([#423](https://github.com/rapidsai/cucim/pull/423)) [@grlee77](https://github.com/grlee77)
+- analytical moments computations, support pixel spacings in moments and regionprops ([#422](https://github.com/rapidsai/cucim/pull/422)) [@grlee77](https://github.com/grlee77)
+- Forward merge branch-22.10 to branch-22.12 ([#420](https://github.com/rapidsai/cucim/pull/420)) [@grlee77](https://github.com/grlee77)
+- Support `sampling` kwarg for `distance_transform_edt` (take pixel/voxel sizes into account) ([#407](https://github.com/rapidsai/cucim/pull/407)) [@grlee77](https://github.com/grlee77)
+- Improve performance of Euclidean distance transform ([#406](https://github.com/rapidsai/cucim/pull/406)) [@grlee77](https://github.com/grlee77)
 
 # cuCIM 22.10.00 (12 Oct 2022)
 
