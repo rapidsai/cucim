@@ -3,7 +3,6 @@
 {% set version = environ.get('GIT_DESCRIBE_TAG', '0.0.0.dev').lstrip('v') + environ.get('VERSION_SUFFIX', '') %}
 {% set minor_version = version.split('.')[0] + '.' + version.split('.')[2] %}
 {% set py_version = environ['CONDA_PY'] %}
-{% set python_version = environ['PYTHON_VER'] %}
 {% set cuda_version = '.'.join(environ['RAPIDS_CUDA_VERSION'].split('.')[:2]) %}
 {% set cuda_major = cuda_version.split('.')[0] %}
 
@@ -27,11 +26,11 @@ requirements:
     - sysroot_{{ target_platform }} {{ sysroot_version }}
   host:
     - click
-    - cudatoolkit {{ cuda_version }}.*
+    - cudatoolkit ={{ cuda_version }}
     - cupy >=9,<12.0.0a0
-    - libcucim {{ version }}.*
+    - libcucim ={{ version }}
     - numpy 1.19
-    - python {{ python_version }}.*
+    - python
     - scikit-image >=0.19.0,<0.20.0a0
     - scipy
   run:
@@ -39,15 +38,15 @@ requirements:
     - {{ pin_compatible('numpy') }}
     - click
     - cupy >=9,<12.0.0a0
-    - libcucim {{ version }}.*
+    - libcucim ={{ version }}
     # - openslide # skipping here but benchmark binary would needs openslide library
-    - python {{ python_version }}.*
+    - python
     - scikit-image >=0.19.0,<0.20.0a0
     - scipy
 
 tests:                                 # [linux64]
   requirements:                        # [linux64]
-    - cudatoolkit {{ cuda_version }}.* # [linux64]
+    - cudatoolkit ={{ cuda_version }}  # [linux64]
   imports:                             # [linux64]
     - cucim                            # [linux64]
 
