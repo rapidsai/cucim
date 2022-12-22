@@ -24,6 +24,11 @@ rapids-logger "Downloading artifacts from previous jobs"
 CPP_CHANNEL=$(rapids-download-conda-from-s3 cpp)
 PYTHON_CHANNEL=$(rapids-download-conda-from-s3 python)
 
+RAPIDS_TESTS_DIR=${RAPIDS_TESTS_DIR:-"${PWD}/test-results"}
+RAPIDS_COVERAGE_DIR=${RAPIDS_COVERAGE_DIR:-"${PWD}/coverage-results"}
+mkdir -p "${RAPIDS_TESTS_DIR}" "${RAPIDS_COVERAGE_DIR}"
+SUITEERROR=0
+
 rapids-print-env
 
 rapids-mamba-retry install \
@@ -34,5 +39,26 @@ rapids-mamba-retry install \
 rapids-logger "Check GPU usage"
 nvidia-smi
 
+set +e
+
 rapids-logger "pytest cucim"
-./run test python all
+pushd python/cucim
+pytest \
+  --cache-clear \
+  --junitxml="${RAPIDS_TESTS_DIR}/junit-cucim.xml" \
+  --numprocesses=8 \
+  --dist=loadscope \
+  --cov-config=.coveragerc \
+  --cov=cucim \
+  --cov-report=xml:"${RAPIDS_COVERAGE_DIR}/cucim-coverage.xml" \
+  --cov-report=term \
+  src \
+  tests/unit \
+  tests/performance
+exitcode=$?
+
+if (( ${exitcode} != 0 )); then
+    SUITEERROR=${exitcode}
+    echo "FAILED: 1 or more tests in cucim"
+fi
+popd
