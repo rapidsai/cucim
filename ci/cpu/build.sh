@@ -36,6 +36,10 @@ echo "PYTHON_VER  : ${PYTHON_VER}"
 export GPUCI_CONDA_RETRY_MAX=1
 export GPUCI_CONDA_RETRY_SLEEP=30
 
+# Workaround to keep Jenkins builds working
+# until we migrate fully to GitHub Actions
+export RAPIDS_CUDA_VERSION="${CUDA}"
+
 export CONDA_BLD_DIR="${WORKSPACE}/.conda-bld"
 
 ################################################################################
