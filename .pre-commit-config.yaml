@@ -5,19 +5,19 @@
 exclude: '^(\.tox|ci/templates|\.bumpversion\.cfg)(/|$)'
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: master
+    rev: v4.4.0
     hooks:
       - id: trailing-whitespace
       - id: end-of-file-fixer
       - id: debug-statements
-  - repo: https://github.com/pycqa/isort
-    rev: 5.6.4
+  - repo: https://github.com/PyCQA/isort
+    rev: 5.11.4
     hooks:
       - id: isort
         files: ^python/cucim/src/.*
         args: ["--settings-path=python/cucim/setup.cfg"]
-  - repo: https://gitlab.com/pycqa/flake8
-    rev: master
+  - repo: https://github.com/PyCQA/flake8
+    rev: 6.0.0
     hooks:
       - id: flake8
         files: ^python/cucim/.*
