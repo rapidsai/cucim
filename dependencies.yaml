@@ -14,22 +14,12 @@ files:
       - py_version
       - run
       - test_python
-  test_cpp:
-    output: none
-    includes:
-      - cudatoolkit
-      - libidentify_stream_usage_build
   test_python:
     output: none
     includes:
       - cudatoolkit
       - py_version
       - test_python
-  test_notebooks:
-    output: none
-    includes:
-      - notebooks
-      - py_version
   checks:
     output: none
     includes:
@@ -38,8 +28,6 @@ files:
 channels:
   - rapidsai
   - rapidsai-nightly
-  - dask/label/dev
-  - pytorch
   - conda-forge
   - nvidia
 dependencies:
