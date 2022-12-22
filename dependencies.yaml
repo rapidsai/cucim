@@ -8,7 +8,7 @@ files:
     includes:
       - build
       - cudatoolkit
-      - develop
+      - checks
       - doc
       - notebooks
       - py_version
@@ -33,7 +33,7 @@ files:
   checks:
     output: none
     includes:
-      - develop
+      - checks
       - py_version
 channels:
   - rapidsai
@@ -78,6 +78,11 @@ dependencies:
               cuda: "11.5"
             packages:
               - &nvcc_aarch64_115 nvcc_linux-aarch64=11.5
+  checks:
+    common:
+      - output_types: [conda, requirements]
+        packages:
+          - pre-commit
   cudatoolkit:
     specific:
       - output_types: conda
@@ -94,11 +99,6 @@ dependencies:
               cuda: "11.5"
             packages:
               - cudatoolkit=11.5
-  develop:
-    common:
-      - output_types: [conda, requirements]
-        packages:
-          - pre-commit
   doc:
     common:
       - output_types: [conda, requirements]
@@ -133,9 +133,18 @@ dependencies:
               - python>=3.8,<3.10
   run:
     common:
-      - output_types: [conda, requirements]
+      - output_types: conda
         packages:
-          - typing_extensions
+          - click
+          - cupy >=9,<12.0.0a0
+          - jbig
+          - jpeg
+          - libwebp-base
+          - scikit-image >=0.19.0,<0.20.0a0
+          - scipy
+          - xz
+          - zlib
+          - zstd
   test_python:
     common:
       - output_types: [conda, requirements]
