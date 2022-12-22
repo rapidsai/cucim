@@ -140,11 +140,16 @@ dependencies:
           - jbig
           - jpeg
           - libwebp-base
+          - numpy
           - scikit-image >=0.19.0,<0.20.0a0
           - scipy
           - xz
           - zlib
           - zstd
+          # Not sure where these go, if anywhere:
+          # - openslide
+          # - xorg-libxcb
+          # - yasm
   test_python:
     common:
       - output_types: [conda, requirements]
