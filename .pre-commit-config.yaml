@@ -20,4 +20,5 @@ repos:
     rev: 6.0.0
     hooks:
       - id: flake8
+        args: ["--config=python/cucim/setup.cfg"]
         files: ^python/cucim/.*
