@@ -38,7 +38,7 @@ requirements:
     - jbig
     - jpeg
     - libwebp-base  # [linux or osx]
-    # - openslide # skipping here but benchmark binary would needs openslide library
+    # - openslide # skipping here but benchmark binary would need openslide library
     - xz
     - zlib
     - zstd
