@@ -40,7 +40,7 @@ requirements:
   host:
     - click
     - cudatoolkit ={{ cuda_version }}
-    - cupy >=9,<12.0.0a0
+    - cupy >=10,<12.0.0a0
     - libcucim ={{ version }}
     - numpy 1.19
     - python
@@ -50,7 +50,7 @@ requirements:
     - {{ pin_compatible('cudatoolkit', max_pin='x', min_pin='x') }}
     - {{ pin_compatible('numpy') }}
     - click
-    - cupy >=9,<12.0.0a0
+    - cupy >=10,<12.0.0a0
     - libcucim ={{ version }}
     # - openslide # skipping here but benchmark binary would need openslide library
     - python

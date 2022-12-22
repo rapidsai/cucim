@@ -136,7 +136,7 @@ dependencies:
       - output_types: conda
         packages:
           - click
-          - cupy >=9,<12.0.0a0
+          - cupy >=10,<12.0.0a0
           - jbig
           - jpeg
           - libwebp-base
