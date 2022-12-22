@@ -4,12 +4,14 @@
 #   pre-commit install-hooks
 exclude: '^(\.tox|ci/templates|\.bumpversion\.cfg)(/|$)'
 repos:
-  - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.4.0
-    hooks:
-      - id: trailing-whitespace
-      - id: end-of-file-fixer
-      - id: debug-statements
+  # TODO: re-enable this after GitHub Actions migration, it currently makes a
+  # large number of changes that shouldn't go in the GitHub Actions PR.
+  #- repo: https://github.com/pre-commit/pre-commit-hooks
+  #  rev: v4.4.0
+  #  hooks:
+  #    - id: trailing-whitespace
+  #    - id: end-of-file-fixer
+  #    - id: debug-statements
   - repo: https://github.com/PyCQA/isort
     rev: 5.11.4
     hooks:

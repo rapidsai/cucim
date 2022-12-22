@@ -4,11 +4,11 @@ import os
 import cupy
 import numpy as np
 
-from ._pba_2d import (_check_distances, _check_indices,
-                      _distance_tranform_arg_check, _get_block_size,
-                      _generate_shape, _generate_indices_ops,
-                      lcm)
 from cucim.skimage._vendored._ndimage_util import _get_inttype
+
+from ._pba_2d import (_check_distances, _check_indices,
+                      _distance_tranform_arg_check, _generate_indices_ops,
+                      _generate_shape, _get_block_size, lcm)
 
 pba3d_defines_template = """
 
