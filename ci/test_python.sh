@@ -62,3 +62,5 @@ if (( ${exitcode} != 0 )); then
     echo "FAILED: 1 or more tests in cucim"
 fi
 popd
+
+exit ${SUITEERROR}
