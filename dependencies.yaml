@@ -153,7 +153,9 @@ dependencies:
           - tifffile>=2022.7.28
       - output_types: [conda]
         packages:
-          - opencv>=4.6
+          - pip
+          - pip:
+            - opencv-python-headless>=4.6
       - output_types: [requirements]
         packages:
           - opencv-python-headless>=4.6
