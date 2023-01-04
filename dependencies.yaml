@@ -10,7 +10,6 @@ files:
       - cudatoolkit
       - checks
       - doc
-      - notebooks
       - py_version
       - run
       - test_python
@@ -97,13 +96,6 @@ dependencies:
           - pydata-sphinx-theme
           - recommonmark
           - sphinx
-  notebooks:
-    common:
-      - output_types: [conda, requirements]
-        packages:
-          - ipython
-          - notebook
-          - scipy
   py_version:
     specific:
       - output_types: conda

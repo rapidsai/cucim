@@ -21,7 +21,6 @@ dependencies:
 - libwebp-base
 - nbsphinx
 - ninja
-- notebook
 - numpy
 - numpydoc
 - nvcc_linux-64=11.5
