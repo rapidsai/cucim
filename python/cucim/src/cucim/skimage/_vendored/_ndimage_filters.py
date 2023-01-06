@@ -848,7 +848,8 @@ def _min_or_max_filter(input, size, ftprnt, structure, output, mode, cval,
             input, sizes, output, mode, cval, origin)
 
     origins, int_type = _filters_core._check_nd_args(input, ftprnt,
-                                                     mode, origin, 'footprint')
+                                                     mode, origin, 'footprint',
+                                                     sizes=sizes)
     if structure is not None and structure.ndim != input.ndim:
         raise RuntimeError('structure array has incorrect shape')
 
@@ -1081,29 +1082,56 @@ def percentile_filter(input, percentile, size=None, footprint=None,
 
 def _rank_filter(input, get_rank, size=None, footprint=None, output=None,
                  mode="reflect", cval=0.0, origin=0):
-    _, footprint, _ = _filters_core._check_size_footprint_structure(
-        input.ndim, size, footprint, None, force_footprint=True)
+    sizes, footprint, _ = _filters_core._check_size_footprint_structure(
+        input.ndim, size, footprint, None, force_footprint=False)
     if cval is cupy.nan:
         raise NotImplementedError("NaN cval is unsupported")
     origins, int_type = _filters_core._check_nd_args(input, footprint,
-                                                     mode, origin, 'footprint')
-    if footprint.size == 0:
+                                                     mode, origin, 'footprint',
+                                                     sizes=sizes)
+    has_weights = True
+    if sizes is not None:
+        has_weights = False
+        filter_size = internal.prod(sizes)
+        if filter_size == 0:
+            return cupy.zeros_like(input)
+        footprint_shape = tuple(sizes)
+    elif footprint.size == 0:
         return cupy.zeros_like(input)
-    filter_size = int(footprint.sum())
+    else:
+        footprint_shape = footprint.shape
+        filter_size = int(footprint.sum())
+        if filter_size == footprint.size:
+            # can omit passing the footprint if it is all ones
+            sizes = footprint.shape
+            has_weights = False
+
     rank = get_rank(filter_size)
     if rank < 0 or rank >= filter_size:
         raise RuntimeError('rank not within filter footprint size')
     if rank == 0:
-        return _min_or_max_filter(input, None, footprint, None, output, mode,
-                                  cval, origins, 'min')
-    if rank == filter_size - 1:
-        return _min_or_max_filter(input, None, footprint, None, output, mode,
-                                  cval, origins, 'max')
-    offsets = _filters_core._origins_to_offsets(origins, footprint.shape)
-    kernel = _get_rank_kernel(filter_size, rank, mode, footprint.shape,
-                              offsets, float(cval), int_type)
-    return _filters_core._call_kernel(kernel, input, footprint, output,
-                                      weights_dtype=bool)
+        min_max_op = 'min'
+    elif rank == filter_size - 1:
+        min_max_op = 'max'
+    else:
+        min_max_op = None
+    if min_max_op is not None:
+        if sizes is not None:
+            return _min_or_max_filter(input, sizes[0], None, None, output, mode,
+                                      cval, origins, min_max_op)
+        else:
+            return _min_or_max_filter(input, None, footprint, None, output, mode,
+                                      cval, origins, min_max_op)
+    offsets = _filters_core._origins_to_offsets(origins, footprint_shape)
+    kernel = _get_rank_kernel(filter_size, rank, mode, footprint_shape,
+                              offsets, float(cval), int_type,
+                              has_weights=has_weights)
+    if has_weights:
+        return _filters_core._call_kernel(kernel, input, footprint, output,
+                                          weights_dtype=bool)
+    else:
+        return _filters_core._call_kernel(kernel, input, None, output,
+                                          weights_dtype=bool)
 
 
 __SHELL_SORT = '''
@@ -1134,7 +1162,7 @@ def _get_shell_gap(filter_size):
 
 @cupy._util.memoize(for_each_device=True)
 def _get_rank_kernel(filter_size, rank, mode, w_shape, offsets, cval,
-                     int_type):
+                     int_type, has_weights):
     s_rank = min(rank, filter_size - rank - 1)
     # The threshold was set based on the measurements on a V100
     # TODO(leofang, anaruse): Use Optuna to automatically tune the threshold,
@@ -1184,4 +1212,5 @@ def _get_rank_kernel(filter_size, rank, mode, w_shape, offsets, cval,
         'rank_{}_{}'.format(filter_size, rank),
         'int iv = 0;\nX values[{}];'.format(array_size),
         'values[iv++] = {value};' + found_post, post,
-        mode, w_shape, int_type, offsets, cval, preamble=sorter)
+        mode, w_shape, int_type, offsets, cval, has_weights=has_weights,
+        preamble=sorter)
