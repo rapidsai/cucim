@@ -41,6 +41,7 @@ dependencies:
 - sysroot_linux-64==2.17
 - tifffile>=2022.7.28
 - xz
+- yasm
 - zlib
 - zstd
 - pip:
