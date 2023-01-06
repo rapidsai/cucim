@@ -147,13 +147,17 @@ def test_similarity_estimation():
 
 
 def test_3d_similarity_estimation():
-    src_points = cp.random.rand(1000, 3)
+    # Note: some choices of seed will produce poorly conditioned values,
+    #       leading to NaN in the estimate. We fix the seed here to avoid this.
+    seed = 10
+    rng = cp.random.default_rng(seed)
+    src_points = rng.random(size=(1000, 3))
 
     # Random transformation for testing
-    angles = cp.random.random((3,)) * 2 * np.pi - np.pi
-    scale = cp.random.randint(0, 20)
+    angles = rng.random(size=(3,)) * 2 * np.pi - np.pi
+    scale = rng.integers(0, 20, size=(1,))[0]
     rotation_matrix = cp.array(_euler_rotation_matrix(angles)) * scale
-    translation_vector = cp.random.random((3,))
+    translation_vector = rng.random((3,))
     dst_points = []
     for pt in src_points:
         pt_r = pt.reshape(3, 1)
