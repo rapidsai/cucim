@@ -17,7 +17,7 @@ include ../../LICENSE
 include ../../LICENSE-3rdparty.md
 include README.md
 
-include tox.ini .travis.yml .appveyor.yml .readthedocs.yml .pre-commit-config.yaml
+include tox.ini .travis.yml .appveyor.yml .readthedocs.yml
 
 include versioneer.py
 include src/cucim/clara/*.so*
