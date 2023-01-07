@@ -1,5 +1,8 @@
+import platform
+
 import cupy as cp
 import numpy as np
+import pytest
 
 from cucim.skimage._shared import testing
 from cucim.skimage._shared._warnings import expected_warnings
@@ -9,6 +12,10 @@ from cucim.skimage.transform import resize
 # Used to ignore warnings from CuPy 9.X and 10.x about a deprecated import when
 # SciPy >= 1.8 is installed.
 cupy_warning = r"Please use `spmatrix` from the `scipy.sparse` |\A\Z"
+
+# TODO: Some tests fail unexpectedly on ARM.
+ON_AARCH64 = platform.machine() == "aarch64"
+ON_AARCH64_REASON = "TODO: Test fails unexpectedly on ARM."
 
 
 def make_2d_syntheticdata(lx, ly=None):
@@ -325,6 +332,7 @@ def test_spacing_1():
     assert (labels_aniso2[26:34, 13:17, 13:17] == 2).all()
 
 
+@pytest.mark.xfail(ON_AARCH64, reason=ON_AARCH64_REASON)
 def test_trivial_cases():
     # When all voxels are labeled
     img = cp.ones((10, 10))

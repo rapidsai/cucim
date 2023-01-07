@@ -6,7 +6,6 @@ from skimage import data
 from cucim.skimage import color, morphology
 from cucim.skimage.util import img_as_bool
 
-
 img = color.rgb2gray(cp.asarray(data.astronaut()))
 bw_img = img > 100 / 255.
 
