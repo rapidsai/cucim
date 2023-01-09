@@ -73,10 +73,9 @@
                             // specify list of file-systems to prevent IO using cuFile (e.g ["lustre", "wekafs"])
                             "filesystems": [ ]
             },
-        
+
             "miscellaneous": {
                             // enable only for enforcing strict checks at API level for debugging
                             "api_check_aggressive": false
 	    }
 }
-
