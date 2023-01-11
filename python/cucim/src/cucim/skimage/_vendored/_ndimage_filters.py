@@ -1126,12 +1126,8 @@ def _rank_filter(input, get_rank, size=None, footprint=None, output=None,
     kernel = _get_rank_kernel(filter_size, rank, mode, footprint_shape,
                               offsets, float(cval), int_type,
                               has_weights=has_weights)
-    if has_weights:
-        return _filters_core._call_kernel(kernel, input, footprint, output,
-                                          weights_dtype=bool)
-    else:
-        return _filters_core._call_kernel(kernel, input, None, output,
-                                          weights_dtype=bool)
+    return _filters_core._call_kernel(kernel, input, None, output,
+                                      weights_dtype=bool)
 
 
 __SHELL_SORT = '''

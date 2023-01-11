@@ -29,12 +29,16 @@ def median(image, footprint=None, out=None, mode='nearest', cval=0.0,
     ----------
     image : array-like
         Input image.
-    footprint : ndarray, optional
-        If ``behavior=='rank'``, ``footprint`` is a 2-D array of 1's and 0's.
-        If ``behavior=='ndimage'``, ``footprint`` is a N-D array of 1's and 0's
-        with the same number of dimension than ``image``.
-        If None, ``footprint`` will be a N-D array with 3 elements for each
-        dimension (e.g., vector, square, cube, etc.)
+    footprint : ndarray, tuple of int, or None
+        If ``None``, ``footprint`` will be a N-D array with 3 elements for each
+        dimension (e.g., vector, square, cube, etc.). If `footprint` is a
+        tuple of integers, it will be an array of ones with the given shape.
+        Otherwise, if ``behavior=='rank'``, ``footprint`` is a 2-D array of 1's
+        and 0's. If ``behavior=='ndimage'``, ``footprint`` is a N-D array of
+        1's and 0's with the same number of dimension as ``image``.
+        Note that upstream scikit-image currently does not support supplying
+        a tuple for `footprint`. It is added here to avoid overhead of
+        generating a small weights array in cases where it is not needed.
     out : ndarray, (same dtype as image), optional
         If None, a new array is allocated.
     mode : {'reflect', 'constant', 'nearest', 'mirror','‘wrap'}, optional
@@ -121,12 +125,19 @@ def median(image, footprint=None, out=None, mode='nearest', cval=0.0,
         # return generic.median(image, selem=selem, out=out)
 
     if footprint is None:
-        footprint = ndi.generate_binary_structure(image.ndim, image.ndim)
+        footprint_shape = (3,) * image.ndim
+    elif isinstance(footprint, tuple):
+        if len(footprint) != image.ndim:
+            raise ValueError("tuple footprint must have ndim matching image")
+        footprint_shape = footprint
+        footprint = None
+    else:
+        footprint_shape = footprint.shape
 
     if algorithm == 'sorting':
         can_use_histogram = False
     elif algorithm in ['auto', 'histogram']:
-        can_use_histogram, reason = _can_use_histogram(image, footprint)
+        can_use_histogram, reason = _can_use_histogram(image, footprint, footprint_shape)
     else:
         raise ValueError(f"unknown algorithm: {algorithm}")
 
@@ -142,7 +153,7 @@ def median(image, footprint=None, out=None, mode='nearest', cval=0.0,
     use_histogram = can_use_histogram
     if algorithm == 'auto':
         # prefer sorting-based algorithm if footprint shape is small
-        use_histogram = use_histogram and prod(footprint.shape) > 150
+        use_histogram = use_histogram and prod(footprint_shape) > 150
 
     if use_histogram:
         try:
@@ -162,8 +173,16 @@ def median(image, footprint=None, out=None, mode='nearest', cval=0.0,
 
             # TODO: Can't currently pass an output array into _median_hist as a
             #       new array currently needs to be created during padding.
-            temp = _median_hist(image, footprint, mode=mode, cval=cval,
-                                **algorithm_kwargs)
+
+            # pass shape if explicit footprint isn't needed
+            # (use new variable name in case KernelResourceError occurs)
+            temp = _median_hist(
+                image,
+                footprint_shape if footprint is None else footprint,
+                mode=mode,
+                cval=cval,
+                **algorithm_kwargs
+            )
             if output_array_provided:
                 out[:] = temp
             else:
@@ -175,12 +194,13 @@ def median(image, footprint=None, out=None, mode='nearest', cval=0.0,
             # Fall back to sorting-based implementation if we encounter a
             # resource limit (e.g. insufficient shared memory per block).
             warn("Kernel resource error encountered in histogram-based "
-                 f"median kerne: {e}\n"
+                 f"median kernel: {e}\n"
                  "Falling back to sorting-based median instead.")
 
     if algorithm_kwargs:
         warn(f"algorithm_kwargs={algorithm_kwargs} ignored for sorting-based "
              f"algorithm")
 
-    return ndi.median_filter(image, footprint=footprint, output=out, mode=mode,
-                             cval=cval)
+    size = footprint_shape if footprint is None else None
+    return ndi.median_filter(image, size=size, footprint=footprint, output=out,
+                             mode=mode, cval=cval)

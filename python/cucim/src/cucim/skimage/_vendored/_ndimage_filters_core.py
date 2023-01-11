@@ -118,7 +118,7 @@ def _run_1d_filters(filters, input, args, output, mode, cval, origin=0,
     return input
 
 
-def _call_kernel(kernel, input, weights=None, output=None, structure=None,
+def _call_kernel(kernel, input, weights, output, structure=None,
                  weights_dtype=numpy.float64, structure_dtype=numpy.float64):
     """
     Calls a constructed ElementwiseKernel. The kernel must take an input image,
