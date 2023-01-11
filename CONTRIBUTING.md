@@ -107,18 +107,19 @@ cd $CUCIM_HOME
 ```
 ## Local Development using Conda Environment (for gcc 9.x and nvcc 11.0.x)
 
-Conda can be used to setup GCC 9.x, CUDA Toolkit (including nvcc) 11.0.x, and other dependent libraries (as shown in `./conda/environments/env.yml`) for building cuCIM.
+Conda can be used to setup an environment which includes all of the necessary dependencies (as shown in `./conda/environments/all_cuda-118_arch-x86_64.yaml`) for building cuCIM.
 
 Otherwise, you may need to install dependencies (such as zlib, xz, yasm) through your OS's package manager (`apt`, `yum`, and so on).
 
 
 ### Creating the Conda Development Environment `cucim`
 
-Note that `./conda/environments/env.yml` is currently set to use gcc 9.x (gxx_linux-64) and CUDA 11.0.x (cudatoolkit & cudatoolkit-dev). If you want to change the version of gcc or CUDA toolkit
-package, please update `./conda/environments/env.yml` before executing the following commands.
+Note that `./conda/environments/all_cuda-118_arch-x86_64.yaml` is currently set to use specific versions of gcc (gxx_linux-64) and CUDA (cudatoolkit & cudatoolkit-dev).
+
+If you want to change the version of gcc or CUDA toolkit package, please update `./conda/environments/all_cuda-118_arch-x86_64.yaml` before executing the following commands.
 
 ```bash
-conda env create -f ./conda/environments/env.yml
+conda env create -n cucim -f ./conda/environments/all_cuda-118_arch-x86_64.yaml
 # activate the environment
 conda activate cucim
 ```
