@@ -43,7 +43,7 @@ requirements:
     - cudatoolkit ={{ cuda_version }}
     - cupy >=10,<12.0.0a0
     - libcucim ={{ version }}
-    - numpy >=1.21.3
+    - numpy >=1.21.3,<1.24
     - python
     - scikit-image >=0.19.0,<0.20.0a0
     - scipy
