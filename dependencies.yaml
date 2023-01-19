@@ -106,7 +106,7 @@ dependencies:
           - numpydoc
           - pydata-sphinx-theme
           - recommonmark
-          - sphinx
+          - sphinx<=5.3.0
   py_version:
     specific:
       - output_types: conda
