@@ -9,7 +9,7 @@ files:
       - build
       - cudatoolkit
       - checks
-      - doc
+      - docs
       - py_version
       - run
       - test_python
@@ -23,6 +23,12 @@ files:
     output: none
     includes:
       - checks
+      - py_version
+  docs:
+    output: none
+    includes:
+      - cudatoolkit
+      - docs
       - py_version
 channels:
   - rapidsai
@@ -91,7 +97,7 @@ dependencies:
               cuda: "11.8"
             packages:
               - cudatoolkit=11.8
-  doc:
+  docs:
     common:
       - output_types: [conda, requirements]
         packages:
