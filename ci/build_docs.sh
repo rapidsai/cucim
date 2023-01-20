@@ -1,3 +1,5 @@
+#!/bin/bash
+
 set -euo pipefail
 
 rapids-logger "Create test conda environment"
