@@ -9,7 +9,7 @@ files:
       - build
       - cudatoolkit
       - checks
-      - doc
+      - docs
       - py_version
       - run
       - test_python
@@ -23,6 +23,12 @@ files:
     output: none
     includes:
       - checks
+      - py_version
+  docs:
+    output: none
+    includes:
+      - cudatoolkit
+      - docs
       - py_version
 channels:
   - rapidsai
@@ -91,7 +97,7 @@ dependencies:
               cuda: "11.8"
             packages:
               - cudatoolkit=11.8
-  doc:
+  docs:
     common:
       - output_types: [conda, requirements]
         packages:
@@ -100,7 +106,9 @@ dependencies:
           - numpydoc
           - pydata-sphinx-theme
           - recommonmark
-          - sphinx
+          # TODO: sphinx upper version limit can likely be removed after pydata 0.13
+          # is released. See https://github.com/pydata/pydata-sphinx-theme/issues/1094
+          - sphinx<6
   py_version:
     specific:
       - output_types: conda
