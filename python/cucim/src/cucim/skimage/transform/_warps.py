@@ -8,6 +8,7 @@ import cucim.skimage._vendored.ndimage as ndi
 from .._shared.utils import (_to_ndimage_mode, _validate_interpolation_order,
                              channel_as_last_axis, convert_to_float,
                              safe_as_int, warn)
+from .._vendored import pad
 from ..measure import block_reduce
 from ._geometric import (AffineTransform, ProjectiveTransform,
                          SimilarityTransform)
@@ -1203,14 +1204,14 @@ def _local_mean_weights(old_size, new_size, grid_mode, dtype):
         new_breaks = cp.linspace(0, old_size, num=new_size + 1, dtype=dtype)
     else:
         old, new = old_size - 1, new_size - 1
-        old_breaks = cp.pad(cp.linspace(0.5, old - 0.5, old, dtype=dtype),
-                            1, 'constant', constant_values=(0, old))
+        old_breaks = pad(cp.linspace(0.5, old - 0.5, old, dtype=dtype),
+                         1, 'constant', constant_values=(0, old))
         if new == 0:
             val = np.inf
         else:
             val = 0.5 * old / new
-        new_breaks = cp.pad(cp.linspace(val, old - val, new, dtype=dtype),
-                            1, 'constant', constant_values=(0, old))
+        new_breaks = pad(cp.linspace(val, old - val, new, dtype=dtype),
+                         1, 'constant', constant_values=(0, old))
 
     upper = cp.minimum(new_breaks[1:, np.newaxis], old_breaks[np.newaxis, 1:])
     lower = cp.maximum(new_breaks[:-1, np.newaxis],

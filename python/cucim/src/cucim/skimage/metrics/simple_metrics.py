@@ -2,6 +2,7 @@ import cupy as cp
 from cupyx.scipy.stats import entropy
 
 from .._shared.utils import _supported_float_type, check_shape_equality, warn
+from .._vendored import pad
 from ..util.dtype import dtype_range
 
 __all__ = ['mean_squared_error',
@@ -188,7 +189,7 @@ def _pad_to(arr, shape):
         raise ValueError(f'Target shape {shape} cannot be smaller than input'
                          f'shape {arr.shape} along any axis.')
     padding = [(0, s - i) for s, i in zip(shape, arr.shape)]
-    return cp.pad(arr, pad_width=padding, mode='constant', constant_values=0)
+    return pad(arr, pad_width=padding, mode='constant', constant_values=0)
 
 
 def normalized_mutual_information(image0, image1, *, bins=100):

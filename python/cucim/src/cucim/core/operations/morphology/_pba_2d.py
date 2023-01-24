@@ -5,6 +5,7 @@ import os
 
 import cupy
 
+from cucim.skimage._vendored import pad
 from cucim.skimage._vendored._ndimage_util import _get_inttype
 
 try:
@@ -352,7 +353,7 @@ def _pba_2d(arr, sampling=None, return_distances=True, return_indices=False,
     orig_sy, orig_sx = arr.shape
     padding_width = _determine_padding(arr.shape, padded_size, block_size)
     if padding_width is not None:
-        arr = cupy.pad(arr, padding_width, mode="constant", constant_values=1)
+        arr = pad(arr, padding_width, mode="constant", constant_values=1)
     size = arr.shape[0]
 
     input_arr = _pack_int2(arr, marker=marker, int_dtype=int_dtype)

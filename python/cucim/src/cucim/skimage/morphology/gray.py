@@ -8,6 +8,7 @@ import cupy as cp
 import cucim.skimage._vendored.ndimage as ndi
 
 from .._shared.utils import deprecate_kwarg
+from .._vendored import pad
 from ..util import crop
 from .footprints import _footprint_is_sequence, _shape_from_sequence
 from .misc import default_footprint
@@ -144,7 +145,7 @@ def pad_for_eccentric_footprints(func):
                 axis_pad_width = 0
             pad_widths.append((axis_pad_width,) * 2)
         if padding:
-            image = cp.pad(image, pad_widths, mode='edge')
+            image = pad(image, pad_widths, mode='edge')
             out_temp = cp.empty_like(image)
         else:
             out_temp = out
