@@ -137,7 +137,9 @@ def median(image, footprint=None, out=None, mode='nearest', cval=0.0,
     if algorithm == 'sorting':
         can_use_histogram = False
     elif algorithm in ['auto', 'histogram']:
-        can_use_histogram, reason = _can_use_histogram(image, footprint, footprint_shape)
+        can_use_histogram, reason = _can_use_histogram(
+            image, footprint, footprint_shape
+        )
     else:
         raise ValueError(f"unknown algorithm: {algorithm}")
 

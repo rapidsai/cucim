@@ -458,7 +458,9 @@ def _median_hist(image, footprint, output=None, mode='mirror', cval=0,
     else:
         footprint_shape = footprint.shape
         med_pos = footprint.size // 2
-    compatible_image, reason = _can_use_histogram(image, footprint, footprint_shape)
+    compatible_image, reason = _can_use_histogram(
+        image, footprint, footprint_shape
+    )
     if not compatible_image:
         raise ValueError(reason)
 

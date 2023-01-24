@@ -62,10 +62,14 @@ def _check_nd_args(input, weights, mode, origin, wghts_name='filter weights',
     if weights is not None:
         # Weights must always be less than 2 GiB
         if weights.nbytes >= (1 << 31):
-            raise RuntimeError('weights must be 2 GiB or less, use FFTs instead')
+            raise RuntimeError(
+                "weights must be 2 GiB or less, use FFTs instead"
+            )
         weight_dims = [x for x in weights.shape if x != 0]
         if len(weight_dims) != input.ndim:
-            raise RuntimeError('{} array has incorrect shape'.format(wghts_name))
+            raise RuntimeError(
+                "{} array has incorrect shape".format(wghts_name)
+            )
     elif sizes is None:
         raise ValueError("must specify either weights array or sizes")
     else:

@@ -1117,11 +1117,11 @@ def _rank_filter(input, get_rank, size=None, footprint=None, output=None,
         min_max_op = None
     if min_max_op is not None:
         if sizes is not None:
-            return _min_or_max_filter(input, sizes[0], None, None, output, mode,
-                                      cval, origins, min_max_op)
+            return _min_or_max_filter(input, sizes[0], None, None, output,
+                                      mode, cval, origins, min_max_op)
         else:
-            return _min_or_max_filter(input, None, footprint, None, output, mode,
-                                      cval, origins, min_max_op)
+            return _min_or_max_filter(input, None, footprint, None, output,
+                                      mode, cval, origins, min_max_op)
     offsets = _filters_core._origins_to_offsets(origins, footprint_shape)
     kernel = _get_rank_kernel(filter_size, rank, mode, footprint_shape,
                               offsets, float(cval), int_type,
