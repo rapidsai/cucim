@@ -7,11 +7,11 @@ import numpy
 from cupy import _core
 from cupy.cuda import runtime
 
-from cucim.skimage._vendored import pad
 from cucim.skimage._vendored import _ndimage_interp_kernels as _interp_kernels
 from cucim.skimage._vendored import \
     _ndimage_spline_prefilter_core as _spline_prefilter_core
 from cucim.skimage._vendored import _ndimage_util as _util
+from cucim.skimage._vendored import pad
 from cucim.skimage._vendored._internal import _normalize_axis_index, prod
 
 
@@ -291,7 +291,7 @@ def map_coordinates(input, coordinates, output=None, order=3,
 
     if mode == 'opencv' or mode == '_opencv_edge':
         input = pad(input, [(1, 1)] * input.ndim, 'constant',
-                         constant_values=cval)
+                    constant_values=cval)
         coordinates = cupy.add(coordinates, 1)
         mode = 'constant'
 

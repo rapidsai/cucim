@@ -3,6 +3,7 @@ import math
 import cupy as cp
 import cupyx.scipy.ndimage as ndi
 import numpy as np
+
 from cucim.skimage._vendored import pad
 
 from .._shared.utils import deprecate_kwarg

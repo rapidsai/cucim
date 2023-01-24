@@ -7,9 +7,8 @@ kernels, otherwise the existing implementations as in cupy.pad are used.
 
 import numbers
 
-import numpy
-
 import cupy
+import numpy
 
 ###############################################################################
 # Private utility functions.
@@ -412,8 +411,6 @@ def _as_pairs(x, ndim, as_index=False):
     x_view.shape = (ndim, 2)
     return x_view.tolist()
 
-# def _pad_dispatcher(array, pad_width, mode=None, **kwargs):
-#    return (array,)
 
 def _use_elementwise_kernel(arr, mode, kwargs):
     """Determine if we can use an ElementwiseKernel from pad_elementwise.py"""

@@ -2,9 +2,10 @@ import cupy as cp
 import numpy as np
 from cupyx import rsqrt  # reciprocal sqrt
 
+from cucim.core.operations.morphology import distance_transform_edt
+
 from .._shared.utils import _supported_float_type, deprecate_kwarg
 from .._vendored import pad
-from cucim.core.operations.morphology import distance_transform_edt
 
 
 @cp.fuse()

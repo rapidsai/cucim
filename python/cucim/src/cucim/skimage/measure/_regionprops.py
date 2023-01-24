@@ -9,9 +9,10 @@ import numpy as np
 from cupyx.scipy import ndimage as ndi
 from scipy.ndimage import find_objects as cpu_find_objects
 
+from cucim.skimage._vendored import pad
+
 from . import _moments
 from ._regionprops_utils import euler_number, perimeter, perimeter_crofton
-from cucim.skimage._vendored import pad
 
 __all__ = ['regionprops', 'euler_number', 'perimeter', 'perimeter_crofton']
 

@@ -111,7 +111,7 @@ def test_blob_dog_3d(dtype, threshold_type):
 )
 @pytest.mark.parametrize('threshold_type', ['absolute', 'relative'])
 def test_blob_dog_3d_anisotropic(dtype, threshold_type):
-    # Testing 3D anisotropicpad_width
+    # Testing 3D anisotropic
     r = 10
     pad_width = 10
     im3 = cp.asarray(ellipsoid(r / 2, r, r))
