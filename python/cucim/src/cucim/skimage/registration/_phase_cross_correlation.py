@@ -250,14 +250,12 @@ def phase_cross_correlation(reference_image, moving_image, *,
     cross_correlation = fft.ifftn(image_product)
 
     # Locate maximum
-    maxima = cp.unravel_index(
-        cp.argmax(cp.abs(cross_correlation)), cross_correlation.shape
-    )
-    midpoints = cp.asarray([np.fix(axis_size / 2) for axis_size in shape])
+    maxima = np.unravel_index(int(cp.argmax(cp.abs(cross_correlation))), cross_correlation.shape)
+    midpoints = tuple(float(axis_size // 2) for axis_size in shape)
 
     float_dtype = image_product.real.dtype
-    shifts = cp.stack([m.astype(float_dtype, copy=False) for m in maxima])
-    shifts[shifts > midpoints] -= cp.asarray(shape)[shifts > midpoints]
+    shifts = tuple(_max - axis_size if _max > mid else _max
+                   for _max, mid, axis_size in zip(maxima, midpoints, shape))
 
     if upsample_factor == 1:
         if return_error:
@@ -271,29 +269,31 @@ def phase_cross_correlation(reference_image, moving_image, *,
     # If upsampling > 1, then refine estimate with matrix multiply DFT
     else:
         # Initial shift estimate in upsampled grid
-        shifts = cp.around(shifts * upsample_factor) / upsample_factor
+        # shifts = cp.around(shifts * upsample_factor) / upsample_factor
+        upsample_factor = float(upsample_factor)
+        shifts = tuple(round(s * upsample_factor) / upsample_factor
+                       for s in shifts)
         upsampled_region_size = math.ceil(upsample_factor * 1.5)
         # Center of output array at dftshift + 1
-        dftshift = np.fix(upsampled_region_size / 2.0)
-        upsample_factor = float(upsample_factor)
+        dftshift = float(upsampled_region_size // 2)
         # Matrix multiply DFT around the current shift estimate
-        sample_region_offset = dftshift - shifts * upsample_factor
+        sample_region_offset = tuple(
+            dftshift - s * upsample_factor for s in shifts
+        )
         cross_correlation = _upsampled_dft(image_product.conj(),
                                            upsampled_region_size,
                                            upsample_factor,
                                            sample_region_offset).conj()
+        print(f"{dftshift=}, pre {shifts=}, {upsampled_region_size=}, {upsample_factor=}")
 
         # Locate maximum and map back to original pixel grid
-        maxima = cp.unravel_index(cp.argmax(cp.abs(cross_correlation)),
+        maxima = np.unravel_index(int(cp.argmax(cp.abs(cross_correlation))),
                                   cross_correlation.shape)
         CCmax = cross_correlation[maxima]
 
-        maxima = (
-            cp.stack([m.astype(float_dtype, copy=False) for m in maxima])
-            - dftshift
-        )
-
-        shifts += maxima / upsample_factor
+        maxima = tuple(float(m) - dftshift for m in maxima)
+        shifts = tuple(s + m / upsample_factor for s, m in zip(shifts, maxima))
+        print(f"{sample_region_offset=}, {maxima=}, {shifts=}")
 
         if return_error:
             src_amp = cp.abs(src_freq)
@@ -305,9 +305,9 @@ def phase_cross_correlation(reference_image, moving_image, *,
 
     # If its only one row or column the shift along that dimension has no
     # effect. We set to zero.
-    for dim in range(src_freq.ndim):
-        if shape[dim] == 1:
-            shifts[dim] = 0
+    shifts = tuple(
+        s if axis_size != 1 else 0 for s, axis_size in zip(shifts, shape)
+    )
 
     if return_error:
         # Redirect user to masked_phase_cross_correlation if NaNs are observed

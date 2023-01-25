@@ -67,7 +67,8 @@ def test_real_input(dtype):
     result, error, diffphase = phase_cross_correlation(reference_image,
                                                        shifted_image,
                                                        upsample_factor=100)
-    assert result.dtype == _supported_float_type(dtype)
+    assert isinstance(result, tuple)
+    assert all(isinstance(s, float) for s in result)
     assert_allclose(result[:2], -cp.array(subpixel_shift), atol=0.05)
 
 
