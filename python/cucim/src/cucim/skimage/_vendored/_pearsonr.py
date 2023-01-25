@@ -8,7 +8,10 @@ return type changed to a PearsonRResult object that also has a
 `confidence_interval` method. Since we do not need that method in the cuCIM
 API, a simple tuple-based return is used
 """
+import warnings
+
 import cupy as cp
+import numpy as np
 from scipy import special
 
 
@@ -33,7 +36,7 @@ class PearsonRNearConstantInputWarning(RuntimeWarning):
 
 
 # Note: adapted from scipy.stats._stats_py.pearsonr in SciPy 1.8.1
-def pearsonr(x, y):
+def pearsonr(x, y, *, disable_checks=False):
     r"""
     Pearson correlation coefficient and p-value for testing non-correlation.
 
@@ -63,7 +66,7 @@ def pearsonr(x, y):
     -----
     PearsonRConstantInputWarning
         Raised if an input is a constant array.  The correlation coefficient
-        is not defined in this case, so ``np.nan`` is returned.
+        is not defined in this case, so ``cp.nan`` is returned.
 
     PearsonRNearConstantInputWarning
         Raised if an input is "nearly" constant.  The array ``x`` is considered
@@ -158,7 +161,7 @@ def pearsonr(x, y):
 
     This should be close to the exact value given by
 
-    >>> 1/np.sqrt(1 + s**2)
+    >>> 1/cp.sqrt(1 + s**2)
     0.8944271909999159
 
     For s=0.5, we observe a high level of correlation. In general, a large
@@ -173,7 +176,7 @@ def pearsonr(x, y):
     cov(x, y) = E[x*y]. By definition, this equals E[x*abs(x)] which is zero
     by symmetry. The following lines of code illustrate this observation:
 
-    >>> y = np.abs(x)
+    >>> y = cp.abs(x)
     >>> stats.pearsonr(x, y)
     (-0.016172891856853524, 0.7182823678751942) # may vary
 
@@ -182,7 +185,7 @@ def pearsonr(x, y):
     A simple calculation shows that corr(x, y) = sqrt(2/Pi) = 0.797...,
     implying a high level of correlation:
 
-    >>> y = np.where(x < 0, x, 0)
+    >>> y = cp.where(x < 0, x, 0)
     >>> stats.pearsonr(x, y)
     (0.8537091583771509, 3.183461621422181e-143) # may vary
 
@@ -197,10 +200,11 @@ def pearsonr(x, y):
     if n < 2:
         raise ValueError('x and y must have length at least 2.')
 
-    # If an input is constant, the correlation coefficient is not defined.
-    if (x == x[0]).all() or (y == y[0]).all():
-        warnings.warn(PearsonRConstantInputWarning())
-        return np.nan, np.nan
+    if not disable_checks:
+        # If an input is constant, the correlation coefficient is not defined.
+        if (x == x[0]).all() or (y == y[0]).all():
+            warnings.warn(PearsonRConstantInputWarning())
+            return cp.nan, cp.nan
 
     # dtype is the data type for the calculations.  This expression ensures
     # that the data type is at least 64 bit floating point.  It might have
@@ -232,12 +236,13 @@ def pearsonr(x, y):
         normxm = cp.linalg.norm(xm)
         normym = cp.linalg.norm(ym)
 
-    threshold = 1e-13
-    if normxm < threshold*abs(xmean) or normym < threshold*abs(ymean):
-        # If all the values in x (likewise y) are very close to the mean,
-        # the loss of precision that occurs in the subtraction xm = x - xmean
-        # might result in large errors in r.
-        warnings.warn(PearsonRNearConstantInputWarning())
+    if not disable_checks:
+        threshold = 1e-13
+        if normxm < threshold*abs(xmean) or normym < threshold*abs(ymean):
+            # If all the values in x (likewise y) are very close to the mean,
+            # the loss of precision that occurs in the subtraction xm = x - xmean
+            # might result in large errors in r.
+            warnings.warn(PearsonRNearConstantInputWarning())
 
     r = float(cp.dot(xm/normxm, ym/normym))
 
@@ -256,4 +261,12 @@ def pearsonr(x, y):
     ab = n/2 - 1
     # scalar valued, so use special.btdtr from SciPy, not CuPy
     prob = 2 * special.btdtr(ab, ab, 0.5*(1.0 - abs(r)))
+    if disable_checks:
+        # warn only based on output values to avoid overhead of host/device
+        # synchronization needed for the disabled checks above.
+        if np.isnan(r) or np.isnan(prob):
+            warnings.warn(
+                "NaN encountered during Pearson R calculation. This may occur "
+                "in same cases such as a nearly constant-valued input."
+            )
     return r, prob
