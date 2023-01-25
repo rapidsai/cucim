@@ -3,9 +3,11 @@ Port of Manuel Guizar's code from:
 http://www.mathworks.com/matlabcentral/fileexchange/18401-efficient-subpixel-image-registration-by-cross-correlation
 """
 
+import itertools
 import math
 
 import cupy as cp
+import cupyx.scipy.ndimage as ndi
 import numpy as np
 
 from .._shared.fft import fftmodule as fft
@@ -113,8 +115,75 @@ def _compute_error(cross_correlation_max, src_amp, target_amp):
     return cp.sqrt(cp.abs(error))
 
 
+def _disambiguate_shift(reference_image, moving_image, shift):
+    """Determine the correct real-space shift based on periodic shift.
+
+    When determining a translation shift from phase cross-correlation in
+    Fourier space, the shift is only correct to within a period of the image
+    size along each axis, resulting in $2^n$ possible shifts, where $n$ is the
+    number of dimensions of the image. This function checks the
+    cross-correlation in real space for each of those shifts, and returns the
+    one with the highest cross-correlation.
+
+    The strategy we use is to perform the shift on the moving image *using the
+    'grid-wrap' mode* in `scipy.ndimage`. The moving image's original borders
+    then define $2^n$ quadrants, which we cross-correlate with the reference
+    image in turn using slicing. The entire operation is thus $O(2^n + m)$,
+    where $m$ is the number of pixels in the image (and typically dominates).
+
+    Parameters
+    ----------
+    reference_image : numpy array
+        The reference (non-moving) image.
+    moving_image : numpy array
+        The moving image: applying the shift to this image overlays it on the
+        reference image. Must be the same shape as the reference image.
+    shift : tuple of float
+        The shift to apply to each axis of the moving image, *modulo* image
+        size. The length of ``shift`` must be equal to ``moving_image.ndim``.
+
+    Returns
+    -------
+    real_shift : tuple of float
+        The shift disambiguated in real space.
+    """
+    shape = reference_image.shape
+    positive_shift = [shift_i % s for shift_i, s in zip(shift, shape)]
+    negative_shift = [shift_i - s
+                      for shift_i, s in zip(positive_shift, shape)]
+    subpixel = any(s % 1 !=0 for s in shift)
+    interp_order = 3 if subpixel else 0
+    shifted = ndi.shift(
+        moving_image, shift, mode='grid-wrap', order=interp_order
+    )
+    indices = tuple(round(s) for s in positive_shift)
+    splits_per_dim = [(slice(0, i), slice(i, None)) for i in indices]
+    max_corr = -1.0
+    max_slice = None
+    for test_slice in itertools.product(*splits_per_dim):
+        reference_tile = cp.reshape(reference_image[test_slice], -1)
+        moving_tile = cp.reshape(shifted[test_slice], -1)
+        corr = -1.0
+        if reference_tile.size > 2:
+            corr = float(cp.corrcoef(reference_tile, moving_tile)[0, 1])
+        if corr > max_corr:
+            max_corr = corr
+            max_slice = test_slice
+    real_shift_acc = []
+    for sl, pos_shift, neg_shift in zip(
+        max_slice, positive_shift, negative_shift
+    ):
+        real_shift_acc.append(pos_shift if sl.stop is None else neg_shift)
+    if not subpixel:
+        real_shift = tuple(map(int, real_shift_acc))
+    else:
+        real_shift = tuple(real_shift_acc)
+    return real_shift
+
+
 def phase_cross_correlation(reference_image, moving_image, *,
                             upsample_factor=1, space="real",
+                            disambiguate=False,
                             return_error=True, reference_mask=None,
                             moving_mask=None, overlap_ratio=0.3,
                             normalization="phase"):
@@ -145,10 +214,16 @@ def phase_cross_correlation(reference_image, moving_image, *,
         data will bypass FFT of input data. Case insensitive. Not
         used if any of ``reference_mask`` or ``moving_mask`` is not
         None.
+    disambiguate : bool
+        The shift returned by this function is only accurate *modulo* the
+        image shape, due to the periodic nature of the Fourier transform. If
+        this parameter is set to ``True``, the *real* space cross-correlation
+        is computed for each possible shift, and the shift with the highest
+        cross-correlation within the overlapping area is returned.
     return_error : bool, optional
-        Returns error and phase difference if on, otherwise only
-        shifts are returned. Has noeffect if any of ``reference_mask`` or
-        ``moving_mask`` is not None. In this case only shifts is returned.
+        Returns error and phase difference if "always" is given. If False, or
+        either ``reference_mask`` or ``moving_mask`` are given, only the shift
+        is returned.
     reference_mask : ndarray
         Boolean mask for ``reference_image``. The mask should evaluate
         to ``True`` (or 1) on valid pixels. ``reference_mask`` should
@@ -172,10 +247,10 @@ def phase_cross_correlation(reference_image, moving_image, *,
 
     Returns
     -------
-    shifts : ndarray
+    shift : tuple
         Shift vector (in pixels) required to register ``moving_image``
         with ``reference_image``. Axis ordering is consistent with
-        numpy (e.g. Z, Y, X)
+        the axis order of the input array.
     error : float
         Translation invariant normalized RMS error between
         ``reference_image`` and ``moving_image``.
@@ -251,11 +326,11 @@ def phase_cross_correlation(reference_image, moving_image, *,
 
     # Locate maximum
     maxima = np.unravel_index(int(cp.argmax(cp.abs(cross_correlation))), cross_correlation.shape)
-    midpoints = tuple(float(axis_size // 2) for axis_size in shape)
+    midpoint = tuple(float(axis_size // 2) for axis_size in shape)
 
     float_dtype = image_product.real.dtype
-    shifts = tuple(_max - axis_size if _max > mid else _max
-                   for _max, mid, axis_size in zip(maxima, midpoints, shape))
+    shift = tuple(_max - axis_size if _max > mid else _max
+                  for _max, mid, axis_size in zip(maxima, midpoint, shape))
 
     if upsample_factor == 1:
         if return_error:
@@ -269,22 +344,21 @@ def phase_cross_correlation(reference_image, moving_image, *,
     # If upsampling > 1, then refine estimate with matrix multiply DFT
     else:
         # Initial shift estimate in upsampled grid
-        # shifts = cp.around(shifts * upsample_factor) / upsample_factor
+        # shift = cp.around(shift * upsample_factor) / upsample_factor
         upsample_factor = float(upsample_factor)
-        shifts = tuple(round(s * upsample_factor) / upsample_factor
-                       for s in shifts)
+        shift = tuple(round(s * upsample_factor) / upsample_factor
+                      for s in shift)
         upsampled_region_size = math.ceil(upsample_factor * 1.5)
         # Center of output array at dftshift + 1
         dftshift = float(upsampled_region_size // 2)
         # Matrix multiply DFT around the current shift estimate
         sample_region_offset = tuple(
-            dftshift - s * upsample_factor for s in shifts
+            dftshift - s * upsample_factor for s in shift
         )
         cross_correlation = _upsampled_dft(image_product.conj(),
                                            upsampled_region_size,
                                            upsample_factor,
                                            sample_region_offset).conj()
-        print(f"{dftshift=}, pre {shifts=}, {upsampled_region_size=}, {upsample_factor=}")
 
         # Locate maximum and map back to original pixel grid
         maxima = np.unravel_index(int(cp.argmax(cp.abs(cross_correlation))),
@@ -292,8 +366,7 @@ def phase_cross_correlation(reference_image, moving_image, *,
         CCmax = cross_correlation[maxima]
 
         maxima = tuple(float(m) - dftshift for m in maxima)
-        shifts = tuple(s + m / upsample_factor for s, m in zip(shifts, maxima))
-        print(f"{sample_region_offset=}, {maxima=}, {shifts=}")
+        shift = tuple(s + m / upsample_factor for s, m in zip(shift, maxima))
 
         if return_error:
             src_amp = cp.abs(src_freq)
@@ -305,9 +378,15 @@ def phase_cross_correlation(reference_image, moving_image, *,
 
     # If its only one row or column the shift along that dimension has no
     # effect. We set to zero.
-    shifts = tuple(
-        s if axis_size != 1 else 0 for s, axis_size in zip(shifts, shape)
+    shift = tuple(
+        s if axis_size != 1 else 0 for s, axis_size in zip(shift, shape)
     )
+
+    if disambiguate:
+        if space.lower() != 'real':
+            reference_image = fft.ifftn(reference_image)
+            moving_image = fft.ifftn(moving_image)
+        shift = _disambiguate_shift(reference_image, moving_image, shift)
 
     if return_error:
         # Redirect user to masked_phase_cross_correlation if NaNs are observed
@@ -320,7 +399,7 @@ def phase_cross_correlation(reference_image, moving_image, *,
                 "reference_mask=~np.isnan(reference_image), "
                 "moving_mask=~np.isnan(moving_image))")
 
-        return shifts, _compute_error(CCmax, src_amp, target_amp),\
+        return shift, _compute_error(CCmax, src_amp, target_amp),\
             _compute_phasediff(CCmax)
     else:
-        return shifts
+        return shift
