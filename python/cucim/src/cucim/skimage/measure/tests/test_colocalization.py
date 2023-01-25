@@ -1,7 +1,7 @@
 import cupy as cp
 import numpy as np
-
 import pytest
+
 from cucim.skimage.measure import (intersection_coeff, manders_coloc_coeff,
                                    manders_overlap_coeff, pearson_corr_coeff)
 
