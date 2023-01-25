@@ -7,7 +7,7 @@ from collections.abc import Iterable
 import cupy as cp
 import numpy as np
 
-from ._warnings import all_warnings, warn
+from ._warnings import all_warnings, warn  # noqa
 
 
 class skimage_deprecation(Warning):

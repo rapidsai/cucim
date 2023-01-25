@@ -215,7 +215,7 @@ def pearsonr(x, y, *, disable_checks=False):
         # faster on host for such a small inputs
         x = cp.asnumpy(x)
         y = cp.asnumpy(y)
-        return dtype(np.sign(x[1] - x[0])*np.sign(y[1] - y[0])), 1.0
+        return dtype(np.sign(x[1] - x[0]) * np.sign(y[1] - y[0])), 1.0
 
     xmean = x.mean(dtype=dtype)
     ymean = y.mean(dtype=dtype)
@@ -225,26 +225,22 @@ def pearsonr(x, y, *, disable_checks=False):
     xm = x.astype(dtype) - xmean
     ym = y.astype(dtype) - ymean
 
-    if False:
-        # TODO: need cupyx.scipy.linalg.norm in CuPy
-        # Unlike cp.linalg.norm or the expression sqrt((xm*xm).sum()),
-        # scipy.linalg.norm(xm) does not overflow if xm is, for example,
-        # [-5e210, 5e210, 3e200, -3e200]
-        normxm = linalg.norm(xm)
-        normym = linalg.norm(ym)
-    else:
-        normxm = cp.linalg.norm(xm)
-        normym = cp.linalg.norm(ym)
+    # TODO: use cupyx.scipy.linalg.norm from CuPy once available
+    # Unlike cp.linalg.norm or the expression sqrt((xm*xm).sum()),
+    # scipy.linalg.norm(xm) does not overflow if xm is, for example,
+    # [-5e210, 5e210, 3e200, -3e200]
+    normxm = cp.linalg.norm(xm)
+    normym = cp.linalg.norm(ym)
 
     if not disable_checks:
         threshold = 1e-13
-        if normxm < threshold*abs(xmean) or normym < threshold*abs(ymean):
+        if normxm < threshold * abs(xmean) or normym < threshold * abs(ymean):
             # If all the values in x (likewise y) are very close to the mean,
-            # the loss of precision that occurs in the subtraction xm = x - xmean
-            # might result in large errors in r.
+            # the loss of precision that occurs in the subtraction
+            # xm = x - xmean might result in large errors in r.
             warnings.warn(PearsonRNearConstantInputWarning())
 
-    r = float(cp.dot(xm/normxm, ym/normym))
+    r = float(cp.dot(xm / normxm, ym / normym))
 
     # Presumably, if abs(r) > 1, then it is only some small artifact of
     # floating point arithmetic.
@@ -258,9 +254,9 @@ def pearsonr(x, y, *, disable_checks=False):
     # shape parameters do not change.  Then -abs(r) used in `cdf(-abs(r))`
     # becomes x = (-abs(r) + 1)/2 = 0.5*(1 - abs(r)).  (r is cast to float64
     # to avoid a TypeError raised by btdtr when r is higher precision.)
-    ab = n/2 - 1
+    ab = n / 2 - 1
     # scalar valued, so use special.btdtr from SciPy, not CuPy
-    prob = 2 * special.btdtr(ab, ab, 0.5*(1.0 - abs(r)))
+    prob = 2 * special.btdtr(ab, ab, 0.5 * (1.0 - abs(r)))
     if disable_checks:
         # warn only based on output values to avoid overhead of host/device
         # synchronization needed for the disabled checks above.
