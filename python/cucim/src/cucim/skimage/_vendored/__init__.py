@@ -4,3 +4,4 @@ not yet been merged to CuPy master.
 """
 
 from cucim.skimage._vendored.signaltools import *  # noqa
+from cucim.skimage._vendored._pearsonr import pearsonr
