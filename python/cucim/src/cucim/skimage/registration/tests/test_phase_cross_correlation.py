@@ -10,7 +10,6 @@ from skimage.data import camera, eagle
 from cucim.skimage import img_as_float
 from cucim.skimage._shared._warnings import expected_warnings
 from cucim.skimage._shared.fft import fftmodule as fft
-from cucim.skimage._shared.utils import _supported_float_type
 from cucim.skimage.data import binary_blobs
 from cucim.skimage.registration._phase_cross_correlation import (
     _upsampled_dft, phase_cross_correlation)
@@ -176,9 +175,9 @@ def test_mismatch_offsets_size():
 
 
 @pytest.mark.parametrize(
-        ('shift0', 'shift1'),
-        itertools.product((100, -100, 350, -350), (100, -100, 350, -350)),
-        )
+    ('shift0', 'shift1'),
+    itertools.product((100, -100, 350, -350), (100, -100, 350, -350)),
+)
 def test_disambiguate_2d(shift0, shift1):
     image = cp.array(eagle()[500:, 900:])  # use a highly textured image region
     shift = (shift0, shift1)
@@ -189,8 +188,8 @@ def test_disambiguate_2d(shift0, shift1):
         else:
             origin0.append(-s)
     origin1 = np.array(origin0) + shift
-    slice0 = tuple(slice(o, o+450) for o in origin0)
-    slice1 = tuple(slice(o, o+450) for o in origin1)
+    slice0 = tuple(slice(o, o + 450) for o in origin0)
+    slice1 = tuple(slice(o, o + 450) for o in origin1)
     reference = image[slice0]
     moving = image[slice1]
     computed_shift, _, _ = phase_cross_correlation(

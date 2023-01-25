@@ -151,7 +151,7 @@ def _disambiguate_shift(reference_image, moving_image, shift):
     positive_shift = [shift_i % s for shift_i, s in zip(shift, shape)]
     negative_shift = [shift_i - s
                       for shift_i, s in zip(positive_shift, shape)]
-    subpixel = any(s % 1 !=0 for s in shift)
+    subpixel = any(s % 1 != 0 for s in shift)
     interp_order = 3 if subpixel else 0
     shifted = ndi.shift(
         moving_image, shift, mode='grid-wrap', order=interp_order
@@ -325,10 +325,10 @@ def phase_cross_correlation(reference_image, moving_image, *,
     cross_correlation = fft.ifftn(image_product)
 
     # Locate maximum
-    maxima = np.unravel_index(int(cp.argmax(cp.abs(cross_correlation))), cross_correlation.shape)
+    maxima = np.unravel_index(
+        int(cp.argmax(cp.abs(cross_correlation))), cross_correlation.shape
+    )
     midpoint = tuple(float(axis_size // 2) for axis_size in shape)
-
-    float_dtype = image_product.real.dtype
     shift = tuple(_max - axis_size if _max > mid else _max
                   for _max, mid, axis_size in zip(maxima, midpoint, shape))
 
