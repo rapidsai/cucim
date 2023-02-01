@@ -1,6 +1,6 @@
 import cupy as cp
 
-from .._shared.utils import check_shape_equality, as_binary_ndarray
+from .._shared.utils import as_binary_ndarray, check_shape_equality
 from .._vendored import pearsonr
 
 __all__ = [
