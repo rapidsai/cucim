@@ -168,7 +168,7 @@ def _generate_boundary_condition_ops(mode, ix, xsize, int_t="int",
             {ix} %= {xsize};
             '''
             ops_lower = ops_upper + f'''
-            if ({ix} < 0) {{
+            while ({ix} < 0) {{
                 {ix} += {xsize};
             }}'''
             ops = (ops_lower, ops_upper)
