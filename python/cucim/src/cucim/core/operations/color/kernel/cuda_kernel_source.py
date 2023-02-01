@@ -205,7 +205,7 @@ __global__ void huejitter_kernel(unsigned char *input_rgb, \
     float s = __uint2float_rn((unsigned int)s_char);
     float v = __uint2float_rn((unsigned int)v_char);
 
-    if (s == 0) {
+    if (v == 0) {
       // write zero and out
       output_rgb[idx] = 0;
       output_rgb[idx+pitch] = 0;
