@@ -27,6 +27,7 @@ from cucim import _misc
 from cucim.skimage.exposure.exposure import rescale_intensity
 
 from .._shared.utils import _supported_float_type
+from .._vendored import pad
 from ..color.adapt_rgb import adapt_rgb, hsv_value
 from ..util import img_as_uint
 
@@ -141,9 +142,11 @@ def _clahe(image, kernel_size, clip_limit, nbins):
     pad_end_per_dim = [(k - s % k) % k + math.ceil(k / 2.)
                        for k, s in zip(kernel_size, image.shape)]
 
-    image = cp.pad(image, [[p_i, p_f] for p_i, p_f in
-                           zip(pad_start_per_dim, pad_end_per_dim)],
-                   mode='reflect')
+    image = pad(
+        image,
+        [[p_i, p_f] for p_i, p_f in zip(pad_start_per_dim, pad_end_per_dim)],
+        mode='reflect',
+    )
 
     # determine gray value bins
     bin_size = 1 + NR_OF_GRAY // nbins
@@ -194,9 +197,9 @@ def _clahe(image, kernel_size, clip_limit, nbins):
     hist = hist.reshape(hist_block_assembled_shape[:ndim] + (-1,))
 
     # duplicate leading mappings in each dim
-    map_array = cp.pad(hist,
-                       [(1, 1) for _ in range(ndim)] + [(0, 0)],
-                       mode='edge')
+    map_array = pad(
+        hist, [(1, 1) for _ in range(ndim)] + [(0, 0)], mode='edge'
+    )
 
     # Perform multilinear interpolation of graylevel mappings
     # using the convention described here:

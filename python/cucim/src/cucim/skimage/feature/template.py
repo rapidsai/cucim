@@ -3,6 +3,7 @@ import cupy as cp
 from cucim import _misc
 
 from .._shared.utils import _supported_float_type, check_nD
+from .._vendored import pad
 
 # from cupyx.scipy import signal
 
@@ -141,10 +142,10 @@ def match_template(image, template, pad_input=False, mode='constant',
 
     pad_width = tuple((width, width) for width in template.shape)
     if mode == 'constant':
-        image = cp.pad(image, pad_width=pad_width, mode=mode,
-                       constant_values=constant_values)
+        image = pad(image, pad_width=pad_width, mode=mode,
+                    constant_values=constant_values)
     else:
-        image = cp.pad(image, pad_width=pad_width, mode=mode)
+        image = pad(image, pad_width=pad_width, mode=mode)
 
     # Use special case for 2-D images for much better performance in
     # computation of integral images

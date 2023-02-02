@@ -2,6 +2,7 @@ import cupy as cp
 import numpy as np
 
 from .._shared.utils import _supported_float_type, _to_np_mode
+from .._vendored import pad
 
 
 def _validate_window_size(axis_sizes):
@@ -118,7 +119,7 @@ def correlate_sparse(image, kernel, mode='reflect'):
     else:
         np_mode = _to_np_mode(mode)
         _validate_window_size(kernel.shape)
-        padded_image = cp.pad(
+        padded_image = pad(
             image,
             [(w // 2, w // 2) for w in kernel.shape],
             mode=np_mode,
