@@ -9,6 +9,8 @@ import numpy as np
 from cupyx.scipy import ndimage as ndi
 from scipy.ndimage import find_objects as cpu_find_objects
 
+from cucim.skimage._vendored import pad
+
 from . import _moments
 from ._regionprops_utils import euler_number, perimeter, perimeter_crofton
 
@@ -479,7 +481,7 @@ class RegionProperties:
 
         # TODO: implement marching cubes, etc.
         warn("feret diameter_max currently not implemented on GPU.")
-        identity_convex_hull = cp.pad(
+        identity_convex_hull = pad(
             self.image_convex, 2, mode="constant", constant_values=0
         )
         identity_convex_hull = cp.asnumpy(identity_convex_hull)

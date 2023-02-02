@@ -12,6 +12,7 @@ import skimage
 import skimage.measure
 
 from _image_bench import ImageBench
+from cucim_metrics_bench import MetricsBench
 
 
 class LabelBench(ImageBench):
@@ -132,6 +133,32 @@ class FiltersBench(ImageBench):
         self.args_gpu = (imaged,)
 
 
+class BinaryImagePairBench(ImageBench):
+    def set_args(self, dtype):
+        rng = cp.random.default_rng(seed=123)
+        img0d = rng.integers(0, 2, self.shape, dtype=cp.uint8).view(bool)
+        img1d = rng.integers(0, 2, self.shape, dtype=cp.uint8).view(bool)
+        img0 = cp.asnumpy(img0d)
+        img1 = cp.asnumpy(img1d)
+
+        self.args_cpu = (img0, img1)
+        self.args_gpu = (img0d, img1d)
+
+
+class MandersColocBench(ImageBench):
+    def set_args(self, dtype):
+        # image
+        imaged = cp.testing.shaped_arange(self.shape, dtype=dtype)
+        imaged = imaged / imaged.max()
+
+        # binary mask
+        rng = cp.random.default_rng(seed=123)
+        maskd = rng.integers(0, 2, self.shape, dtype=cp.uint8).view(bool)
+
+        self.args_cpu = (cp.asnumpy(imaged), cp.asnumpy(maskd))
+        self.args_gpu = (imaged, maskd)
+
+
 def main(args):
 
     pfile = "cucim_measure_results.pickle"
@@ -188,6 +215,12 @@ def main(args):
             True,
             False,
         ),  # variable block_size configured below
+
+        # binary image overlap measures
+        ("intersection_coeff", dict(mask=None), dict(), False, True),
+        ("manders_coloc_coeff", dict(mask=None), dict(), False, True),
+        ("manders_overlap_coeff", dict(mask=None), dict(), False, True),
+        ("pearson_corr_coeff", dict(mask=None), dict(), False, True),
     ]:
 
         if function_name != args.func_name:
@@ -225,8 +258,29 @@ def main(args):
                     module_gpu=cucim.skimage.measure,
                     run_cpu=run_cpu,
                 )
-                results = B.run_benchmark(duration=args.duration)
-                all_results = pd.concat([all_results, results["full"]])
+        elif function_name in ['intersection_coeff', 'manders_coloc_coeff',
+                               'manders_overlap_coeff', 'pearson_corr_coeff']:
+
+            if function_name in ["pearson_corr_coeff", "manders_overlap_coeff"]:
+                # arguments are two images of matching dtype
+                Tester = MetricsBench
+            elif function_name == "manders_coloc_coeff":
+                # arguments are one image + binary mask
+                Tester = MandersColocBench
+            else:
+                # arguments are two binary images
+                Tester = BinaryImagePairBench
+
+            B = Tester(
+                function_name=function_name,
+                shape=shape,
+                dtypes=dtypes,
+                fixed_kwargs=fixed_kwargs,
+                var_kwargs=var_kwargs,
+                module_cpu=skimage.measure,
+                module_gpu=cucim.skimage.measure,
+                run_cpu=run_cpu,
+            )
         else:
 
 
@@ -268,8 +322,8 @@ def main(args):
                 module_gpu=cucim.skimage.measure,
                 run_cpu=run_cpu,
             )
-            results = B.run_benchmark(duration=args.duration)
-            all_results = pd.concat([all_results, results["full"]])
+        results = B.run_benchmark(duration=args.duration)
+        all_results = pd.concat([all_results, results["full"]])
 
     fbase = os.path.splitext(pfile)[0]
     all_results.to_csv(fbase + ".csv")
@@ -280,8 +334,8 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Benchmarking cuCIM measure functions')
-    func_name_choices = ['label', 'regionprops', 'moments', 'moments_central', 'centroid', 'inertia_tensor', 'inertia_tensor_eigvals', 'block_reduce', 'shannon_entropy', 'profile_line']
-    dtype_choices = ['float16', 'float32', 'float64', 'int8', 'int16', 'int32', 'int64', 'uint8', 'uint16', 'uint32', 'uint64']
+    func_name_choices = ['label', 'regionprops', 'moments', 'moments_central', 'centroid', 'inertia_tensor', 'inertia_tensor_eigvals', 'block_reduce', 'shannon_entropy', 'profile_line', 'intersection_coeff', 'manders_coloc_coeff', 'manders_overlap_coeff', 'pearson_corr_coeff']
+    dtype_choices = ['bool', 'float16', 'float32', 'float64', 'int8', 'int16', 'int32', 'int64', 'uint8', 'uint16', 'uint32', 'uint64']
     parser.add_argument('-i','--img_size', type=str, help='Size of input image', required=True)
     parser.add_argument('-d','--dtype', type=str, help='Dtype of input image', choices=dtype_choices, required=True)
     parser.add_argument('-f','--func_name', type=str, help='function to benchmark', choices=func_name_choices, required=True)

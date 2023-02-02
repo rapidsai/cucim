@@ -11,6 +11,7 @@ from skimage.segmentation import slic
 
 from cucim.skimage import transform
 from cucim.skimage._shared._warnings import expected_warnings
+from cucim.skimage._vendored import pad
 from cucim.skimage.measure import (euler_number, perimeter, perimeter_crofton,
                                    regionprops, regionprops_table)
 from cucim.skimage.measure._regionprops import \
@@ -239,7 +240,7 @@ def test_bbox():
 
 
 def test_area_bbox():
-    padded = cp.pad(SAMPLE, 5, mode='constant')
+    padded = pad(SAMPLE, 5, mode='constant')
     bbox_area = regionprops(padded)[0].area_bbox
     assert_array_almost_equal(bbox_area, SAMPLE.size)
 
@@ -391,7 +392,7 @@ def test_coordinates_scaled():
 
 
 def test_slice():
-    padded = cp.pad(SAMPLE, ((2, 4), (5, 2)), mode="constant")
+    padded = pad(SAMPLE, ((2, 4), (5, 2)), mode="constant")
     nrow, ncol = SAMPLE.shape
     result = regionprops(padded)[0].slice
     expected = (slice(2, 2 + nrow), slice(5, 5 + ncol))

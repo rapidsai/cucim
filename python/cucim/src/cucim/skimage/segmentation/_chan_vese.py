@@ -5,6 +5,7 @@ from cupyx import rsqrt  # reciprocal sqrt
 from cucim.core.operations.morphology import distance_transform_edt
 
 from .._shared.utils import _supported_float_type, deprecate_kwarg
+from .._vendored import pad
 
 
 @cp.fuse()
@@ -23,7 +24,7 @@ def _fused_curvature(phi, x_start, x_end, y_start, y_end, ul, ur, ll, lr):
 def _cv_curvature(phi):
     """Returns the 'curvature' of a level set 'phi'.
     """
-    P = cp.pad(phi, 1, mode='edge')
+    P = pad(phi, 1, mode='edge')
     y_start = P[:-2, 1:-1]
     y_end = P[2:, 1:-1]
     x_start = P[1:-1, :-2]
@@ -103,7 +104,7 @@ def _cv_calculate_variation(image, phi, mu, lambda1, lambda2, dt):
     """Returns the variation of level set 'phi' based on algorithm parameters.
     """
     eta = 1e-16
-    P = cp.pad(phi, 1, mode='edge')
+    P = pad(phi, 1, mode='edge')
 
     x_end = P[1:-1, 2:]
     x_mid = P[1:-1, 1:-1]
