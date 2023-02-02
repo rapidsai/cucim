@@ -69,16 +69,22 @@ def test_selem_kwarg_deprecation(image):
         (3, 3), (5, 5), (9, 15), (2, 2), (1, 1), (2, 7), (23, 23), (15, 35),
     ]
 )
+@pytest.mark.parametrize('footprint_tuple', (False, True))
 @pytest.mark.parametrize('out', [None, cp.uint8, cp.float32, 'array'])
-def test_median_behavior(camera, behavior, func, mode, footprint_shape, out):
-    footprint = cp.ones(footprint_shape, dtype=bool)
+def test_median_behavior(
+    camera, behavior, func, mode, footprint_shape, footprint_tuple, out
+):
+    if footprint_tuple:
+        footprint = footprint_shape
+    else:
+        footprint = cp.ones(footprint_shape, dtype=bool)
     cam2 = camera[:, :177]  # use anisotropic size
     assert cam2.dtype == cp.uint8
     if out == 'array':
         out = cp.zeros_like(cam2)
     assert_allclose(
         median(cam2, footprint, mode=mode, behavior=behavior, out=out),
-        func(cam2, size=footprint.shape, mode=mode, output=out),
+        func(cam2, size=footprint_shape, mode=mode, output=out),
     )
 
 
