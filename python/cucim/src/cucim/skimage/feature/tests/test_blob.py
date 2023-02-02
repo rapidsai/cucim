@@ -6,6 +6,7 @@ from skimage.draw import disk
 from skimage.draw.draw3d import ellipsoid
 
 from cucim.skimage import feature
+from cucim.skimage._vendored import pad
 from cucim.skimage.feature import blob_dog, blob_doh, blob_log
 
 
@@ -77,9 +78,9 @@ def test_blob_dog(dtype, threshold_type):
 def test_blob_dog_3d(dtype, threshold_type):
     # Testing 3D
     r = 10
-    pad = 10
+    pad_width = 10
     im3 = cp.asarray(ellipsoid(r, r, r))
-    im3 = cp.pad(im3, pad, mode='constant')
+    im3 = pad(im3, pad_width, mode='constant')
 
     if threshold_type == 'absolute':
         threshold = 0.001
@@ -99,9 +100,9 @@ def test_blob_dog_3d(dtype, threshold_type):
     b = blobs[0]
 
     assert b.shape == (4,)
-    assert b[0] == r + pad + 1
-    assert b[1] == r + pad + 1
-    assert b[2] == r + pad + 1
+    assert b[0] == r + pad_width + 1
+    assert b[1] == r + pad_width + 1
+    assert b[2] == r + pad_width + 1
     assert abs(math.sqrt(3) * b[3] - r) < 1.1
 
 
@@ -112,9 +113,9 @@ def test_blob_dog_3d(dtype, threshold_type):
 def test_blob_dog_3d_anisotropic(dtype, threshold_type):
     # Testing 3D anisotropic
     r = 10
-    pad = 10
+    pad_width = 10
     im3 = cp.asarray(ellipsoid(r / 2, r, r))
-    im3 = cp.pad(im3, pad, mode='constant')
+    im3 = pad(im3, pad_width, mode='constant')
 
     if threshold_type == 'absolute':
         threshold = 0.001
@@ -134,9 +135,9 @@ def test_blob_dog_3d_anisotropic(dtype, threshold_type):
     b = blobs[0]
 
     assert b.shape == (6,)
-    assert b[0] == r / 2 + pad + 1
-    assert b[1] == r + pad + 1
-    assert b[2] == r + pad + 1
+    assert b[0] == r / 2 + pad_width + 1
+    assert b[1] == r + pad_width + 1
+    assert b[2] == r + pad_width + 1
     assert abs(math.sqrt(3) * b[3] - r / 2) < 1.1
     assert abs(math.sqrt(3) * b[4] - r) < 1.1
     assert abs(math.sqrt(3) * b[5] - r) < 1.1
@@ -294,26 +295,26 @@ def test_blob_log_no_warnings():
 def test_blob_log_3d():
     # Testing 3D
     r = 6
-    pad = 10
+    pad_width = 10
     im3 = cp.asarray(ellipsoid(r, r, r))
-    im3 = cp.pad(im3, pad, mode='constant')
+    im3 = pad(im3, pad_width, mode='constant')
 
     blobs = blob_log(im3, min_sigma=3, max_sigma=10)
     b = blobs[0]
 
     assert b.shape == (4,)
-    assert b[0] == r + pad + 1
-    assert b[1] == r + pad + 1
-    assert b[2] == r + pad + 1
+    assert b[0] == r + pad_width + 1
+    assert b[1] == r + pad_width + 1
+    assert b[2] == r + pad_width + 1
     assert abs(math.sqrt(3) * b[3] - r) < 1
 
 
 def test_blob_log_3d_anisotropic():
     # Testing 3D anisotropic
     r = 6
-    pad = 10
+    pad_width = 10
     im3 = cp.asarray(ellipsoid(r / 2, r, r))
-    im3 = cp.pad(im3, pad, mode='constant')
+    im3 = pad(im3, pad_width, mode='constant')
 
     blobs = blob_log(
         im3,
@@ -323,9 +324,9 @@ def test_blob_log_3d_anisotropic():
 
     b = blobs[0]
     assert b.shape == (6,)
-    assert b[0] == r / 2 + pad + 1
-    assert b[1] == r + pad + 1
-    assert b[2] == r + pad + 1
+    assert b[0] == r / 2 + pad_width + 1
+    assert b[1] == r + pad_width + 1
+    assert b[2] == r + pad_width + 1
     assert abs(math.sqrt(3) * b[3] - r / 2) < 1
     assert abs(math.sqrt(3) * b[4] - r) < 1
     assert abs(math.sqrt(3) * b[5] - r) < 1
@@ -501,11 +502,10 @@ def test_blob_log_overlap_3d():
     r1, r2 = 7, 6
     pad1, pad2 = 11, 12
     blob1 = cp.asarray(ellipsoid(r1, r1, r1))
-    blob1 = cp.pad(blob1, pad1, mode='constant')
+    blob1 = pad(blob1, pad1, mode='constant')
     blob2 = cp.asarray(ellipsoid(r2, r2, r2))
-    blob2 = cp.pad(blob2, [(pad2, pad2), (pad2 - 9, pad2 + 9),
-                           (pad2, pad2)],
-                   mode='constant')
+    blob2 = pad(blob2, [(pad2, pad2), (pad2 - 9, pad2 + 9), (pad2, pad2)],
+                mode='constant')
     im3 = cp.logical_or(blob1, blob2)
 
     blobs = blob_log(im3, min_sigma=2, max_sigma=10, overlap=0.1)

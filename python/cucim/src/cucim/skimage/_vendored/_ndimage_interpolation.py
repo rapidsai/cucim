@@ -11,6 +11,7 @@ from cucim.skimage._vendored import _ndimage_interp_kernels as _interp_kernels
 from cucim.skimage._vendored import \
     _ndimage_spline_prefilter_core as _spline_prefilter_core
 from cucim.skimage._vendored import _ndimage_util as _util
+from cucim.skimage._vendored import pad
 from cucim.skimage._vendored._internal import _normalize_axis_index, prod
 
 
@@ -223,7 +224,7 @@ def _prepad_for_spline_filter(input, mode, cval):
             kwargs = dict(mode='constant', constant_values=cval)
         else:
             kwargs = dict(mode='edge')
-        padded = cupy.pad(input, npad, **kwargs)
+        padded = pad(input, npad, **kwargs)
     else:
         npad = 0
         padded = input
@@ -236,7 +237,7 @@ def _filter_input(image, prefilter, mode, cval, order):
     Spline orders > 1 need a prefiltering stage to preserve resolution.
 
     For boundary modes without analytical spline boundary conditions, some
-    prepadding of the input with cupy.pad is used to maintain accuracy.
+    prepadding of the input with pad is used to maintain accuracy.
     ``npad`` is an integer corresponding to the amount of padding at each edge
     of the array.
     """
@@ -289,8 +290,8 @@ def map_coordinates(input, coordinates, output=None, order=3,
     _check_parameter('map_coordinates', order, mode)
 
     if mode == 'opencv' or mode == '_opencv_edge':
-        input = cupy.pad(input, [(1, 1)] * input.ndim, 'constant',
-                         constant_values=cval)
+        input = pad(input, [(1, 1)] * input.ndim, 'constant',
+                    constant_values=cval)
         coordinates = cupy.add(coordinates, 1)
         mode = 'constant'
 

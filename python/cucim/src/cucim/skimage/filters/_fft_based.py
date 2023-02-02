@@ -5,6 +5,7 @@ import cupyx.scipy.fft as fft
 import numpy as np
 
 from .._shared.utils import _supported_float_type
+from .._vendored import pad
 
 
 def _get_nd_butterworth_filter(shape, factor, order, high_pass, real,
@@ -157,7 +158,7 @@ def butterworth(
         raise ValueError("npad must be >= 0")
     elif npad > 0:
         center_slice = tuple(slice(npad, s + npad) for s in image.shape)
-        image = cp.pad(image, npad, mode='edge')
+        image = pad(image, npad, mode='edge')
     fft_shape = (image.shape if channel_axis is None
                  else np.delete(image.shape, channel_axis))
     is_real = cp.isrealobj(image)

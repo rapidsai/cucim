@@ -4,6 +4,8 @@ import cupy as cp
 import cupyx.scipy.ndimage as ndi
 import numpy as np
 
+from cucim.skimage._vendored import pad
+
 from .._shared.utils import deprecate_kwarg
 
 # Don't allocate STREL_* on GPU as we don't know in advance which device
@@ -146,7 +148,7 @@ def euler_number(image, connectivity=None):
 
     # as image can be a label image, transform it to binary
     image = (image > 0).astype(int)
-    image = cp.pad(image, pad_width=1, mode='constant')
+    image = pad(image, pad_width=1, mode='constant')
 
     # check connectivity
     if connectivity is None:
@@ -323,7 +325,7 @@ def perimeter_crofton(image, directions=4):
 
     # as image could be a label image, transform it to binary image
     image = (image > 0).astype(cp.uint8)
-    image = cp.pad(image, pad_width=1, mode="constant")
+    image = pad(image, pad_width=1, mode="constant")
     XF = ndi.convolve(image, cp.array([[0, 0, 0], [0, 1, 4], [0, 2, 8]]),
                       mode='constant', cval=0)
 

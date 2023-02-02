@@ -7,6 +7,7 @@ import cupy as cp
 import numpy as np
 
 from .._shared.utils import _to_np_mode
+from .._vendored import pad
 
 if hasattr(math, 'prod'):
     prod = math.prod
@@ -495,7 +496,7 @@ def _median_hist(image, footprint, output=None, mode='mirror', cval=0,
             pad_kwargs = dict(mode=mode, constant_values=cval)
         else:
             pad_kwargs = dict(mode=mode)
-        image = cp.pad(image, npad, **pad_kwargs)
+        image = pad(image, npad, **pad_kwargs)
         # must update n_rows, n_cols after padding!
         n_rows, n_cols = image.shape[:2]
 

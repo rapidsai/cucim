@@ -9,6 +9,7 @@ from skimage.feature import hessian_matrix_det as hessian_matrix_det_cpu
 from cucim.skimage import img_as_float
 from cucim.skimage._shared._warnings import expected_warnings
 from cucim.skimage._shared.utils import _supported_float_type
+from cucim.skimage._vendored import pad
 from cucim.skimage.color import rgb2gray
 from cucim.skimage.feature import (corner_foerstner, corner_harris,
                                    corner_kitchen_rosenfeld, corner_peaks,
@@ -24,9 +25,9 @@ from cucim.skimage.morphology import cube
 @pytest.fixture
 def im3d():
     r = 10
-    pad = 10
+    pad_width = 10
     im3 = draw.ellipsoid(r, r, r)
-    im3 = np.pad(im3, pad, mode='constant').astype(np.uint8)
+    im3 = np.pad(im3, pad_width, mode='constant').astype(np.uint8)
     return cp.asarray(im3)
 
 
@@ -226,9 +227,9 @@ def test_structure_tensor_eigenvalues(dtype):
 
 
 def test_structure_tensor_eigenvalues_3d():
-    image = cp.pad(cube(9), 5, mode='constant') * 1000
-    boundary = (cp.pad(cube(9), 5, mode='constant')
-                - cp.pad(cube(7), 6, mode='constant')).astype(bool)
+    image = pad(cube(9), 5, mode='constant') * 1000
+    boundary = (pad(cube(9), 5, mode='constant')
+                - pad(cube(7), 6, mode='constant')).astype(bool)
     A_elems = structure_tensor(image, sigma=0.1)
     e0, e1, e2 = structure_tensor_eigenvalues(A_elems)
     # e0 should detect facets

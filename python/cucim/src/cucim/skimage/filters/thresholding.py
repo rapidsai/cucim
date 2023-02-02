@@ -18,6 +18,7 @@ from cucim import _misc
 from .._shared.filters import gaussian
 from .._shared.utils import _supported_float_type, deprecate_kwarg, warn
 from .._shared.version_requirements import require
+from .._vendored import pad
 from ..exposure import histogram
 from ..transform import integral_image
 from ..util import dtype_limits
@@ -955,8 +956,8 @@ def _mean_std(image, w):
 
     float_dtype = _supported_float_type(image.dtype)
     pad_width = tuple((k // 2 + 1, k // 2) for k in w)
-    padded = cp.pad(image.astype(float_dtype, copy=False), pad_width,
-                    mode='reflect')
+    padded = pad(image.astype(float_dtype, copy=False), pad_width,
+                 mode='reflect')
 
     # Note: keep float64 integral images for accuracy. Outputs of
     # _correlate_sparse can later be safely cast to float_dtype

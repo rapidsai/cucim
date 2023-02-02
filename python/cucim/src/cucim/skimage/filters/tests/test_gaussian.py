@@ -3,6 +3,7 @@ import numpy as np
 import pytest
 
 from cucim.skimage._shared._warnings import expected_warnings
+from cucim.skimage._vendored import pad
 from cucim.skimage.filters._gaussian import difference_of_gaussians, gaussian
 
 
@@ -182,7 +183,7 @@ def test_shared_mem_check_fix(dtype, sigma):
 def test_deprecated_automatic_channel_detection():
     rgb = cp.zeros((5, 5, 3))
     rgb[1, 1] = cp.arange(1, 4)
-    gray = cp.pad(rgb, pad_width=((0, 0), (0, 0), (1, 0)))
+    gray = pad(rgb, pad_width=((0, 0), (0, 0), (1, 0)))
 
     # Warning is raised if channel_axis is not set and shape is (M, N, 3)
     with pytest.warns(
