@@ -1201,13 +1201,16 @@ def _get_lab_to_xyz_kernel(xyz_ref_white, name='lab2xyz'):
 
 @channel_as_last_axis()
 def lab2xyz(lab, illuminant="D65", observer="2", *, channel_axis=-1):
-    """CIE-LAB to XYZcolor space conversion.
+    """Convert image in CIE-LAB to XYZ color space.
 
     Parameters
     ----------
     lab : (..., 3, ...) array_like
-        The image in Lab format. By default, the final dimension denotes
+        The input image in CIE-LAB color space.
+        Unless `channel_axis` is set, the final dimension denotes the CIE-LAB
         channels.
+        The L* values range from 0 to 100;
+        the a* and b* values range from -128 to 127.
     illuminant : {"A", "B", "C", "D50", "D55", "D65", "D75", "E"}, optional
         The name of the illuminant (the function is NOT case sensitive).
     observer : {"2", "10", "R"}, optional
@@ -1219,7 +1222,7 @@ def lab2xyz(lab, illuminant="D65", observer="2", *, channel_axis=-1):
     Returns
     -------
     out : (..., 3, ...) ndarray
-        The image in XYZ format. Same dimensions as input.
+        The image in XYZ color space. Same dimensions as input.
 
     Raises
     ------
@@ -1233,14 +1236,14 @@ def lab2xyz(lab, illuminant="D65", observer="2", *, channel_axis=-1):
 
     Notes
     -----
-    By default Observer="2", Illuminant="D65". CIE XYZ tristimulus values x_ref
-    = 95.047, y_ref = 100., z_ref = 108.883. See function 'get_xyz_coords' for
-    a list of supported illuminants.
+    The CIE XYZ tristimulus values are x_ref = 95.047, y_ref = 100., and
+    z_ref = 108.883. See function :func:`~.get_xyz_coords` for a list of
+    supported illuminants.
 
     References
     ----------
     .. [1] http://www.easyrgb.com/index.php?X=MATH&H=07
-    .. [2] https://en.wikipedia.org/wiki/Lab_color_space
+    .. [2] https://en.wikipedia.org/wiki/CIELAB_color_space
     """
     lab = _prepare_colorarray(lab, force_c_contiguous=True,
                               channel_axis=channel_axis)
@@ -1311,13 +1314,16 @@ def rgb2lab(rgb, illuminant="D65", observer="2", *, channel_axis=-1):
 
 @channel_as_last_axis()
 def lab2rgb(lab, illuminant="D65", observer="2", *, channel_axis=-1):
-    """Lab to RGB color space conversion.
+    """Convert image in CIE-LAB to sRGB color space.
 
     Parameters
     ----------
     lab : (..., 3, ...) array_like
-        The image in Lab format. By default, the final dimension denotes
+        The input image in CIE-LAB color space.
+        Unless `channel_axis` is set, the final dimension denotes the CIE-LAB
         channels.
+        The L* values range from 0 to 100;
+        the a* and b* values range from -128 to 127.
     illuminant : {"A", "B", "C", "D50", "D55", "D65", "D75", "E"}, optional
         The name of the illuminant (the function is NOT case sensitive).
     observer : {"2", "10", "R"}, optional
@@ -1339,13 +1345,14 @@ def lab2rgb(lab, illuminant="D65", observer="2", *, channel_axis=-1):
     Notes
     -----
     This function uses lab2xyz and xyz2rgb.
-    By default Observer="2", Illuminant="D65". CIE XYZ tristimulus values
-    x_ref=95.047, y_ref=100., z_ref=108.883. See function `get_xyz_coords` for
-    a list of supported illuminants.
+    The CIE XYZ tristimulus values are x_ref = 95.047, y_ref = 100., and
+    z_ref = 108.883. See function :func:`~.get_xyz_coords` for a list of
+    supported illuminants.
 
     References
     ----------
     .. [1] https://en.wikipedia.org/wiki/Standard_illuminant
+    .. [2] https://en.wikipedia.org/wiki/CIELAB_color_space
     """
     return xyz2rgb(lab2xyz(lab, illuminant, observer))
 
