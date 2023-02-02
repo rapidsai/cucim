@@ -230,7 +230,7 @@ def _check_global_scratch_space_size(
     return (n_fine + n_coarse) * cp.dtype(hist_dtype).itemsize
 
 
-def _can_use_histogram(image, footprint):
+def _can_use_histogram(image, footprint, footprint_shape=None):
     """Validate compatibility with histogram-based median.
 
     Parameters
@@ -255,23 +255,32 @@ def _can_use_histogram(image, footprint):
         return False, "Only 8 and 16-bit integer image types (signed or "
         "unsigned)."
 
+    if footprint is None:
+        if footprint_shape is None:
+            raise ValueError(
+                "must provide either footprint or footprint_shape"
+            )
+    else:
+        footprint_shape = footprint.shape
+
     # only odd-sized footprints are supported
-    if not all(s % 2 == 1 for s in footprint.shape):
+    if not all(s % 2 == 1 for s in footprint_shape):
         return False, "footprint must have odd size on both axes"
 
-    if any(s == 1 for s in footprint.shape):
+    if any(s == 1 for s in footprint_shape):
         return False, "footprint must have size >= 3"
 
     # footprint radius can't be larger than the image
     # TODO: need to check if we need this exact restriction
     #       (may be specific to OpenCV's boundary handling)
-    radii = tuple(s // 2 for s in footprint.shape)
+    radii = tuple(s // 2 for s in footprint_shape)
     if any(r > s for r, s in zip(radii, image.shape)):
         return False, "footprint half-width cannot exceed the image extent"
 
-    # only fully populated footprint is supported
-    if not np.all(footprint):  # synchronizes!
-        return False, "footprint must be 1 everywhere"
+    if footprint is not None:
+        # only fully populated footprint is supported
+        if not np.all(footprint):  # synchronizes!
+            return False, "footprint must be 1 everywhere"
 
     return True, None
 
@@ -439,7 +448,19 @@ def _median_hist(image, footprint, output=None, mode='mirror', cval=0,
             "Use of a user-defined output array has not been implemented"
         )
 
-    compatible_image, reason = _can_use_histogram(image, footprint)
+    if footprint is None:
+        footprint_shape = (3,) * image.ndim
+        med_pos = prod(footprint_shape) // 2
+    elif isinstance(footprint, tuple):
+        footprint_shape = footprint
+        footprint = None
+        med_pos = prod(footprint_shape) // 2
+    else:
+        footprint_shape = footprint.shape
+        med_pos = footprint.size // 2
+    compatible_image, reason = _can_use_histogram(
+        image, footprint, footprint_shape
+    )
     if not compatible_image:
         raise ValueError(reason)
 
@@ -451,13 +472,12 @@ def _median_hist(image, footprint, output=None, mode='mirror', cval=0,
     if image.dtype.kind not in 'iu':
         raise ValueError("only integer-type images are accepted")
 
-    radii = tuple(s // 2 for s in footprint.shape)
+    radii = tuple(s // 2 for s in footprint_shape)
     # med_pos is the index corresponding to the median
     # (calculation here assumes all elements of the footprint are True)
-    med_pos = footprint.size // 2
 
     params = _get_kernel_params(
-        image, footprint.shape, value_range, partitions
+        image, footprint_shape, value_range, partitions
     )
 
     # pad as necessary to avoid boundary artifacts
