@@ -106,13 +106,13 @@ def match_template(image, template, pad_input=False, mode='constant',
            [ 0.,  0.,  0.,  0., -1.,  0.],
            [ 0.,  0.,  0.,  0.,  0.,  0.]])
     >>> result = match_template(image, template)
-    >>> cp.round(result, 3)
+    >>> cp.around(result, 3)
     array([[ 1.   , -0.125,  0.   ,  0.   ],
            [-0.125, -0.125,  0.   ,  0.   ],
            [ 0.   ,  0.   ,  0.125,  0.125],
            [ 0.   ,  0.   ,  0.125, -1.   ]])
     >>> result = match_template(image, template, pad_input=True)
-    >>> cp.round(result, 3)
+    >>> cp.around(result, 3)
     array([[-0.125, -0.125, -0.125,  0.   ,  0.   ,  0.   ],
            [-0.125,  1.   , -0.125,  0.   ,  0.   ,  0.   ],
            [-0.125, -0.125, -0.125,  0.   ,  0.   ,  0.   ],
