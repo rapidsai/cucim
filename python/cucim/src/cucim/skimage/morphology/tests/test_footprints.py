@@ -177,11 +177,15 @@ def test_footprint_dtype(function, args, supports_sequence_decomposition,
                          dtype):
     # make sure footprint dtype matches what was requested
     footprint = function(*args, dtype=dtype)
-    assert footprint.dtype == dtype
+    if not isinstance(footprint, tuple):
+        assert footprint.dtype == dtype
 
     if supports_sequence_decomposition:
         sequence = function(*args, dtype=dtype, decomposition='sequence')
-        assert all([fp_tuple[0].dtype == dtype for fp_tuple in sequence])
+        assert all(
+            [fp_tuple[0].dtype == dtype
+             for fp_tuple in sequence if not isinstance(fp_tuple[0], tuple)]
+        )
 
 
 @pytest.mark.parametrize("function", ["disk", "ball"])
