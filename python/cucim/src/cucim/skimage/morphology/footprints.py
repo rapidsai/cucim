@@ -114,7 +114,7 @@ def footprint_from_sequence(footprints):
     return morphology.binary_dilation(imag, footprints)
 
 
-def square(width, dtype=cp.uint8, *, decomposition=None):
+def square(width, dtype=None, *, decomposition=None):
     """Generates a flat, square-shaped footprint.
 
     Every pixel along the perimeter has a chessboard distance
@@ -127,8 +127,11 @@ def square(width, dtype=cp.uint8, *, decomposition=None):
 
     Other Parameters
     ----------------
-    dtype : data-type, optional
-        The data type of the footprint.
+    dtype : data-type or None, optional
+        The data type of the footprint. When None, a tuple will be returned in
+        place of the actual footprint array. This can be be passed to grayscale
+        and binary morphology functions in place of an explicit array to avoid
+        array allocation overhead.
     decomposition : {None, 'separable', 'sequence'}, optional
         If None, a single array is returned. For 'sequence', a tuple of smaller
         footprints is returned. Applying this series of smaller footprints will
@@ -163,15 +166,27 @@ def square(width, dtype=cp.uint8, *, decomposition=None):
     The 'sequence' decomposition mode only supports odd valued `width`. If
     `width` is even, the sequence used will be identical to the 'separable'
     mode.
+
     """
     if decomposition is None:
-        return cp.ones((width, width), dtype=dtype)
+        if dtype is None:
+            return (width, width)
+        else:
+            return cp.ones((width, width), dtype=dtype)
 
     if decomposition == 'separable' or width % 2 == 0:
-        sequence = (((width, 1), 1), ((1, width), 1))
+        if dtype is None:
+            sequence = (((width, 1), 1), ((1, width), 1))
+        else:
+            sequence = ((cp.ones((width, 1), dtype=dtype), 1),
+                        (cp.ones((1, width), dtype=dtype), 1))
     elif decomposition == 'sequence':
         # only handles odd widths
-        sequence = (((3, 3), _decompose_size(width, 3)),)
+        if dtype is None:
+            sequence = (((3, 3), _decompose_size(width, 3)),)
+        else:
+            sequence = ((cp.ones((3, 3), dtype=dtype),
+                        _decompose_size(width, 3)),)
     else:
         raise ValueError(f"Unrecognized decomposition: {decomposition}")
     return sequence
@@ -190,7 +205,7 @@ def _decompose_size(size, kernel_size=3):
     return 1 + (size - kernel_size) // (kernel_size - 1)
 
 
-def rectangle(nrows, ncols, dtype=cp.uint8, *, decomposition=None):
+def rectangle(nrows, ncols, dtype=None, *, decomposition=None):
     """Generates a flat, rectangular-shaped footprint.
 
     Every pixel in the rectangle generated for a given width and given height
@@ -205,8 +220,11 @@ def rectangle(nrows, ncols, dtype=cp.uint8, *, decomposition=None):
 
     Other Parameters
     ----------------
-    dtype : data-type, optional
-        The data type of the footprint.
+    dtype : data-type or None, optional
+        The data type of the footprint. When None, a tuple will be returned in
+        place of the actual footprint array. This can be be passed to grayscale
+        and binary morphology functions in place of an explicit array to avoid
+        array allocation overhead.
     decomposition : {None, 'separable', 'sequence'}, optional
         If None, a single array is returned. For 'sequence', a tuple of smaller
         footprints is returned. Applying this series of smaller footprints will
@@ -246,27 +264,49 @@ def rectangle(nrows, ncols, dtype=cp.uint8, *, decomposition=None):
       version 0.18.0. Use ``nrows`` and ``ncols`` instead.
     """
     if decomposition is None:  # TODO: check optimal width setting here
-        return cp.ones((nrows, ncols), dtype=dtype)
+        if dtype is None:
+            return (nrows, ncols)
+        else:
+            return cp.ones((nrows, ncols), dtype=dtype)
 
     even_rows = nrows % 2 == 0
     even_cols = ncols % 2 == 0
     if decomposition == 'separable' or even_rows or even_cols:
-        sequence = [((nrows, 1), 1), ((1, ncols), 1)]
+        if dtype is None:
+            sequence = [((nrows, 1), 1), ((1, ncols), 1)]
+        else:
+            sequence = [
+                (cp.ones((nrows, 1), dtype=dtype), 1),
+                (cp.ones((1, ncols), dtype=dtype), 1),
+            ]
     elif decomposition == 'sequence':
         # this branch only support odd nrows, ncols
         sq_size = 3
         sq_reps = _decompose_size(min(nrows, ncols), sq_size)
-        sequence = [((3, 3), sq_reps)]
+        if dtype is None:
+            sequence = [((3, 3), sq_reps)]
+        else:
+            sequence = [(cp.ones((3, 3), dtype=dtype), sq_reps)]
         if nrows > ncols:
             nextra = nrows - ncols
-            sequence.append(
-                ((nextra + 1, 1), 1)
-            )
+            if dtype is None:
+                sequence.append(
+                    ((nextra + 1, 1), 1)
+                )
+            else:
+                sequence.append(
+                    (cp.ones((nextra + 1, 1), dtype=dtype), 1)
+                )
         elif ncols > nrows:
             nextra = ncols - nrows
-            sequence.append(
-                ((1, nextra + 1), 1)
-            )
+            if dtype is None:
+                sequence.append(
+                    ((1, nextra + 1), 1)
+                )
+            else:
+                sequence.append(
+                    (cp.ones((1, nextra + 1), dtype=dtype), 1)
+                )
     else:
         raise ValueError(f"Unrecognized decomposition: {decomposition}")
     return tuple(sequence)
@@ -330,7 +370,7 @@ def diamond(radius, dtype=cp.uint8, *, decomposition=None):
     return footprint
 
 
-def _nsphere_series_decomposition(radius, ndim, dtype=cp.uint8):
+def _nsphere_series_decomposition(radius, ndim, dtype=None):
     """Generate a sequence of footprints approximating an n-sphere.
 
     Morphological operations with an n-sphere (hypersphere) footprint can be
@@ -385,12 +425,16 @@ def _nsphere_series_decomposition(radius, ndim, dtype=cp.uint8):
     num_t_series, num_diamond, num_square = precomputed_decompositions[radius]
 
     sequence = []
+    if dtype is None:
+        _dtype = cp.uint8
+    else:
+        _dtype = dtype
     if num_t_series > 0:
         # shape (3, ) * ndim "T-shaped" footprints
-        all_t = _t_shaped_element_series(ndim=ndim, dtype=dtype)
+        all_t = _t_shaped_element_series(ndim=ndim, dtype=_dtype)
         [sequence.append((t, num_t_series)) for t in all_t]
     if num_diamond > 0:
-        d = np.zeros((3,) * ndim, dtype=dtype)
+        d = np.zeros((3,) * ndim, dtype=_dtype)
         sl = [slice(1, 2)] * ndim
         for ax in range(ndim):
             sl[ax] = slice(None)
@@ -398,7 +442,10 @@ def _nsphere_series_decomposition(radius, ndim, dtype=cp.uint8):
             sl[ax] = slice(1, 2)
         sequence.append((cp.asarray(d), num_diamond))
     if num_square > 0:
-        sequence.append(((3, ) * ndim, num_square))
+        if dtype is None:
+            sequence.append(((3, ) * ndim, num_square))
+        else:
+            sequence.append((cp.ones((3, ) * ndim, dtype=_dtype), num_square))
     return tuple(sequence)
 
 
@@ -664,7 +711,7 @@ def ellipse(width, height, dtype=cp.uint8, *, decomposition=None):
     return sequence
 
 
-def cube(width, dtype=cp.uint8, *, decomposition=None):
+def cube(width, dtype=None, *, decomposition=None):
     """ Generates a cube-shaped footprint.
 
     This is the 3D equivalent of a square.
@@ -678,8 +725,11 @@ def cube(width, dtype=cp.uint8, *, decomposition=None):
 
     Other Parameters
     ----------------
-    dtype : data-type, optional
-        The data type of the footprint.
+    dtype : data-type or None, optional
+        The data type of the footprint. When None, a tuple will be returned in
+        place of the actual footprint array. This can be be passed to grayscale
+        and binary morphology functions in place of an explicit array to avoid
+        array allocation overhead.
     decomposition : {None, 'separable', 'sequence'}, optional
         If None, a single array is returned. For 'sequence', a tuple of smaller
         footprints is returned. Applying this series of smaller footprints will
@@ -712,14 +762,29 @@ def cube(width, dtype=cp.uint8, *, decomposition=None):
     mode.
     """
     if decomposition is None:
-        return cp.ones((width, width, width), dtype=dtype)
+        if dtype is None:
+            return (width, width, width)
+        else:
+            return cp.ones((width, width, width), dtype=dtype)
     if decomposition == 'separable' or width % 2 == 0:
-        sequence = (((width, 1, 1), 1), ((1, width, 1), 1), ((1, 1, width), 1))
+        if dtype is None:
+            sequence = (((width, 1, 1), 1), ((1, width, 1), 1), ((1, 1, width), 1))
+        else:
+            sequence = (
+                (cp.ones((width, 1, 1), dtype=dtype), 1),
+                (cp.ones((1, width, 1), dtype=dtype), 1),
+                (cp.ones((1, 1, width), dtype=dtype), 1),
+            )
     elif decomposition == 'sequence':
         # only handles odd widths
-        sequence = (
-            ((3, 3, 3), _decompose_size(width, 3)),
-        )
+        if dtype is None:
+            sequence = (
+                ((3, 3, 3), _decompose_size(width, 3)),
+            )
+        else:
+            sequence = (
+                (cp.ones((3, 3, 3), dtype=dtype), _decompose_size(width, 3)),
+            )
     else:
         raise ValueError(f"Unrecognized decomposition: {decomposition}")
     return sequence

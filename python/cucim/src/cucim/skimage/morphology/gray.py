@@ -260,7 +260,7 @@ def erosion(image, footprint=None, out=None, shift_x=False, shift_y=False):
             raise ValueError(
                 "footprint.ndim={len(footprint)}, image.ndim={image.ndim}"
             )
-        if image.ndim == 2 and any(s % 2 for s in footprint):
+        if image.ndim == 2 and any(s % 2 == 0 for s in footprint):
             # only odd-shaped footprints are properly handled for tuples
             footprint = cp.ones(footprint, dtype=bool)
         else:
@@ -609,6 +609,14 @@ def white_tophat(image, footprint=None, out=None):
         out_ = out
     if _footprint_is_sequence(footprint):
         return _white_tophat_seqence(image_, footprint, out_)
+    elif isinstance(footprint, tuple):
+        if len(footprint) != image.ndim:
+            raise ValueError(
+                "footprint.ndim={len(footprint)}, image.ndim={image.ndim}"
+            )
+        ndi.white_tophat(image, size=footprint, output=out)
+        return out
+
     out_ = ndi.white_tophat(image_, footprint=footprint, output=out_)
     return out
 

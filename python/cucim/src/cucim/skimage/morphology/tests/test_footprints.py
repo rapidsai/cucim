@@ -19,7 +19,7 @@ class TestSElem:
     def test_square_footprint(self):
         """Test square footprints"""
         for k in range(0, 5):
-            actual_mask = footprints.square(k)
+            actual_mask = footprints.square(k, dtype=cp.uint8)
             expected_mask = np.ones((k, k), dtype='uint8')
             assert_array_equal(expected_mask, actual_mask)
 
@@ -27,14 +27,14 @@ class TestSElem:
         """Test rectangle footprints"""
         for i in range(0, 5):
             for j in range(0, 5):
-                actual_mask = footprints.rectangle(i, j)
+                actual_mask = footprints.rectangle(i, j, dtype=cp.uint8)
                 expected_mask = np.ones((i, j), dtype='uint8')
                 assert_array_equal(expected_mask, actual_mask)
 
     def test_cube_footprint(self):
         """Test cube footprints"""
         for k in range(0, 5):
-            actual_mask = footprints.cube(k)
+            actual_mask = footprints.cube(k, dtype=cp.uint8)
             expected_mask = np.ones((k, k, k), dtype='uint8')
             assert_array_equal(expected_mask, actual_mask)
 
@@ -177,15 +177,11 @@ def test_footprint_dtype(function, args, supports_sequence_decomposition,
                          dtype):
     # make sure footprint dtype matches what was requested
     footprint = function(*args, dtype=dtype)
-    if not isinstance(footprint, tuple):
-        assert footprint.dtype == dtype
+    assert footprint.dtype == dtype
 
     if supports_sequence_decomposition:
         sequence = function(*args, dtype=dtype, decomposition='sequence')
-        assert all(
-            [fp_tuple[0].dtype == dtype
-             for fp_tuple in sequence if not isinstance(fp_tuple[0], tuple)]
-        )
+        assert all([fp_tuple[0].dtype == dtype for fp_tuple in sequence])
 
 
 @pytest.mark.parametrize("function", ["disk", "ball"])
