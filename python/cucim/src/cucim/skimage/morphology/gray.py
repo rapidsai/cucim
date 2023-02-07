@@ -64,7 +64,14 @@ def _shift_footprint(footprint, shift_x, shift_y):
     out : 2D array, shape (M + int(shift_x), N + int(shift_y))
         The shifted footprint.
     """
-    if isinstance(footprint, tuple) or footprint.ndim != 2:
+    if isinstance(footprint, tuple):
+        if len(footprint) == 2 and any(s % 2 == 0 for s in footprint):
+            # have to use an explicit array to shift the footprint below
+            footprint = cp.ones(footprint, dtype=bool)
+        else:
+            # no shift needed
+            return footprint
+    if footprint.ndim != 2:
         # do nothing for 1D or 3D or higher footprints
         return footprint
     m, n = footprint.shape
