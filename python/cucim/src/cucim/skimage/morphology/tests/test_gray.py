@@ -369,14 +369,14 @@ def test_rectangle_decomposition(cam_image, function, nrows, ncols,
                  "black_tophat"],
 )
 @pytest.mark.parametrize("radius", (2, 3))
-@pytest.mark.parametrize("decomposition", ['separable', 'sequence'])
+@pytest.mark.parametrize("decomposition", ['sequence'])
 def test_diamond_decomposition(cam_image, function, radius, decomposition):
     """Validate footprint decomposition for various shapes.
 
     comparison is made to the case without decomposition.
     """
-    footprint_ndarray = morphology.square(radius, decomposition=None)
-    footprint = morphology.square(radius, decomposition=decomposition)
+    footprint_ndarray = morphology.diamond(radius, decomposition=None)
+    footprint = morphology.diamond(radius, decomposition=decomposition)
     func = getattr(morphology, function)
     expected = func(cam_image, footprint=footprint_ndarray)
     out = func(cam_image, footprint=footprint)
