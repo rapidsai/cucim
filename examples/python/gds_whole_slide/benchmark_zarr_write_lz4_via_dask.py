@@ -66,13 +66,15 @@ kvikio.defaults.num_threads_reset(16)
 write_time_means = np.zeros(((len(dtypes), len(chunk_shapes), len(compressors), 2)), dtype=float)
 write_time_stds = np.zeros_like(write_time_means)
 for i, dtype in enumerate(dtypes):
-    if dtype == 'uint8':
+    if np.dtype(dtype) == np.uint8:
         img = image_gpu
         assert img.dtype == cp.uint8
-    else:
+    elif np.dtype(dtype) == np.uint16:
         img = image_gpu.astype(dtype)
     else:
-        raise NotImplementedError("only testing for uint8 and uint16")
+        raise NotImplementedError(
+            "LZ4 compression can only be tested for uint8 and uint16"
+        )
     for j, chunk_shape in enumerate(chunk_shapes):
         for k, compressor in enumerate(compressors):
             kwargs = dict(
