@@ -120,7 +120,7 @@ def _absorbance_to_image_int(absorbance, source_intensity, min_val, max_val):
     rgb = cp.exp(-absorbance) * source_intensity
     # prevent overflow/underflow
     rgb = cp.minimum(cp.maximum(rgb, min_val), max_val)
-    return cp.round(rgb)
+    return cp.around(rgb)
 
 
 @cp.fuse()
@@ -128,7 +128,7 @@ def _absorbance_to_image_uint8(absorbance, source_intensity):
     rgb = cp.exp(-absorbance) * source_intensity
     # prevent overflow/underflow
     rgb = cp.minimum(cp.maximum(rgb, 0), 255)
-    return cp.round(rgb).astype(cp.uint8)
+    return cp.around(rgb).astype(cp.uint8)
 
 
 def absorbance_to_image(absorbance, source_intensity=255, dtype=cp.uint8):
