@@ -66,14 +66,16 @@ def _get_binary_erosion_kernel(
     name = 'binary_erosion'
     if false_val:
         name += '_invert'
+    has_weights = not all_weights_nonzero
+
     return _filters_core._generate_nd_kernel(
         name,
         pre,
         found,
         '',
-        'constant', w_shape, int_type, offsets, 0, ctype='Y', has_weights=True,
-        has_structure=False, has_mask=masked, binary_morphology=True,
-        all_weights_nonzero=all_weights_nonzero)
+        'constant', w_shape, int_type, offsets, 0, ctype='Y',
+        has_weights=has_weights, has_structure=False, has_mask=masked,
+        binary_morphology=True)
 
 
 def _center_is_true(structure, origin):
@@ -219,12 +221,19 @@ def _binary_erosion(input, structure, iterations, mask, output, border_value,
         structure.shape, int_type, offsets, center_is_true, border_value,
         invert, masked, all_weights_nonzero,
     )
+    if all_weights_nonzero:
+        if masked:
+            in_args = (input, mask)
+        else:
+            in_args = (input,)
+    else:
+        if masked:
+            in_args = (input, structure, mask)
+        else:
+            in_args = (input, structure)
 
     if iterations == 1:
-        if masked:
-            output = erode_kernel(input, structure, mask, output)
-        else:
-            output = erode_kernel(input, structure, output)
+        output = erode_kernel(*in_args, output)
     elif center_is_true and not brute_force:
         raise NotImplementedError(
             'only brute_force iteration has been implemented'
@@ -236,19 +245,23 @@ def _binary_erosion(input, structure, iterations, mask, output, border_value,
         tmp_out = output
         if iterations >= 1 and not iterations & 1:
             tmp_in, tmp_out = tmp_out, tmp_in
-        if masked:
-            tmp_out = erode_kernel(input, structure, mask, tmp_out)
-        else:
-            tmp_out = erode_kernel(input, structure, tmp_out)
+        tmp_out = erode_kernel(*in_args, tmp_out)
         # TODO: kernel doesn't return the changed status, so determine it here
         changed = not (input == tmp_out).all()  # synchronize!
         ii = 1
         while ii < iterations or ((iterations < 1) and changed):
             tmp_in, tmp_out = tmp_out, tmp_in
-            if masked:
-                tmp_out = erode_kernel(tmp_in, structure, mask, tmp_out)
+            if all_weights_nonzero:
+                if masked:
+                    in_args = (tmp_in, mask)
+                else:
+                    in_args = (tmp_in,)
             else:
-                tmp_out = erode_kernel(tmp_in, structure, tmp_out)
+                if masked:
+                    in_args = (tmp_in, structure, mask)
+                else:
+                    in_args = (tmp_in, structure)
+            tmp_out = erode_kernel(*in_args, tmp_out)
             changed = not (tmp_in == tmp_out).all()
             ii += 1
             if not changed and (not ii & 1):  # synchronize!
