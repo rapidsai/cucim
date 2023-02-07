@@ -35,9 +35,11 @@ def _footprint_is_sequence(footprint):
             )
             and isinstance(t[1], Integral)
         )
-
     if isinstance(footprint, Sequence):
-        if not all(_validate_sequence_element(t) for t in footprint):
+        if all(isinstance(t, int) for t in footprint):
+            # allow pass through of a single shape tuple
+            return False
+        elif not all(_validate_sequence_element(t) for t in footprint):
             raise ValueError(
                 "All elements of footprint sequence must be a 2-tuple where "
                 "the first element of the tuple is an ndarray and the second "
