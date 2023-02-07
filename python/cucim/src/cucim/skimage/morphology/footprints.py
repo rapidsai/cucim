@@ -82,7 +82,7 @@ def _shape_from_sequence(footprints, require_odd_size=False):
         fp, nreps = footprints[0]
         fp_shape = _footprint_shape(fp)
         _odd_size(fp_shape[d], require_odd_size)
-        shape[d] = fp_shape[d] + (nreps - 1) * (fp.shape[d] - 1)
+        shape[d] = fp_shape[d] + (nreps - 1) * (fp_shape[d] - 1)
         for fp, nreps in footprints[1:]:
             fp_shape = _footprint_shape(fp)
             _odd_size(fp_shape[d], require_odd_size)

@@ -60,10 +60,10 @@ def test_binary_opening():
 def _get_decomp_test_data(function, ndim=2):
     if function == 'binary_erosion':
         img = cp.ones((17, ) * ndim, dtype=cp.uint8)
-        img[8, 8] = 0
+        img[(8, ) * ndim] = 0
     elif function == 'binary_dilation':
         img = cp.zeros((17, ) * ndim, dtype=cp.uint8)
-        img[8, 8] = 1
+        img[(8, ) * ndim] = 1
     else:
         img = cp.asarray(data.binary_blobs(32, n_dim=ndim, seed=1))
     return img
@@ -329,3 +329,23 @@ def test_binary_output_3d():
 
     np.testing.assert_equal(int_opened.dtype, np.uint8)
     np.testing.assert_equal(int_closed.dtype, np.uint8)
+
+
+@pytest.mark.parametrize(
+    "function",
+    ["binary_erosion", "binary_dilation", "binary_closing", "binary_opening"],
+)
+@pytest.mark.parametrize("ndim", [1, 2, 3])
+def test_tuple_as_footprint(function, ndim):
+    """Validate footprint decomposition for various shapes.
+
+    comparison is made to the case without decomposition.
+    """
+    footprint_shape = tuple(range(2, ndim + 2))
+    footprint_ndarray = cp.ones(footprint_shape, dtype=bool)
+
+    img = _get_decomp_test_data(function, ndim=ndim)
+    func = getattr(morphology, function)
+    expected = func(img, footprint=footprint_ndarray)
+    out = func(img, footprint=footprint_shape)
+    testing.assert_array_equal(expected, out)

@@ -1,6 +1,7 @@
 import cupy as cp
 import numpy as np
 import pytest
+from cupy import testing
 from cupyx.scipy import ndimage as ndi
 from skimage import data
 
@@ -443,3 +444,28 @@ def test_octahedron_decomposition(cell3d_image, function, radius,
     expected = func(cell3d_image, footprint=footprint_ndarray)
     out = func(cell3d_image, footprint=footprint)
     cp.testing.assert_array_equal(expected, out)
+
+
+@pytest.mark.parametrize(
+    "function",
+    ["erosion", "dilation", "closing", "opening"],
+)
+@pytest.mark.parametrize("ndim", [2, 3])
+@pytest.mark.parametrize("odd_only", [False, True])
+def test_tuple_as_footprint(function, ndim, odd_only):
+    """Validate footprint decomposition for various shapes.
+
+    comparison is made to the case without decomposition.
+    """
+    if odd_only:
+        footprint_shape = (3,) * ndim
+    else:
+        footprint_shape = tuple(range(2, 2 + ndim))
+    footprint_ndarray = cp.ones(footprint_shape, dtype=bool)
+
+    rng = cp.random.default_rng(5)
+    img = rng.standard_normal((16,) * ndim, dtype=cp.float32)
+    func = getattr(morphology, function)
+    expected = func(img, footprint=footprint_ndarray)
+    out = func(img, footprint=footprint_shape)
+    testing.assert_array_equal(expected, out)

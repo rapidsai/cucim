@@ -681,7 +681,6 @@ def grey_erosion(input, size=None, footprint=None, structure=None, output=None,
 
     .. seealso:: :func:`scipy.ndimage.grey_erosion`
     """
-
     if size is None and footprint is None and structure is None:
         raise ValueError('size, footprint or structure must be specified')
 
