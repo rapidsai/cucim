@@ -28,7 +28,11 @@ def _footprint_is_sequence(footprint):
         return (
             isinstance(t, Sequence)
             and len(t) == 2
-            and hasattr(t[0], '__cuda_array_interface__')
+            and (
+                hasattr(t[0], '__cuda_array_interface__')
+                # can be a shape tuple for square/rectangular footprints
+                or isinstance(t[0], tuple)
+            )
             and isinstance(t[1], Integral)
         )
 
@@ -43,6 +47,17 @@ def _footprint_is_sequence(footprint):
         raise ValueError("footprint must be either an ndarray or Sequence")
     return True
 
+def _footprint_shape(footprint):
+    if isinstance(footprint, tuple):
+        return footprint
+    return footprint.shape
+
+
+def _footprint_ndim(footprint):
+    if isinstance(footprint, tuple):
+        return len(footprint)
+    return footprint.ndim
+
 
 def _shape_from_sequence(footprints, require_odd_size=False):
     """Determine the shape of composite footprint
@@ -52,7 +67,7 @@ def _shape_from_sequence(footprints, require_odd_size=False):
     """
     if not _footprint_is_sequence(footprints):
         raise ValueError("expected a sequence of footprints")
-    ndim = footprints[0][0].ndim
+    ndim = _footprint_ndim(footprints[0][0])
     shape = [0] * ndim
 
     def _odd_size(size, require_odd_size):
@@ -63,11 +78,13 @@ def _shape_from_sequence(footprints, require_odd_size=False):
 
     for d in range(ndim):
         fp, nreps = footprints[0]
-        _odd_size(fp.shape[d], require_odd_size)
-        shape[d] = fp.shape[d] + (nreps - 1) * (fp.shape[d] - 1)
+        fp_shape = _footprint_shape(fp)
+        _odd_size(fp_shape[d], require_odd_size)
+        shape[d] = fp_shape[d] + (nreps - 1) * (fp.shape[d] - 1)
         for fp, nreps in footprints[1:]:
-            _odd_size(fp.shape[d], require_odd_size)
-            shape[d] += nreps * (fp.shape[d] - 1)
+            fp_shape = _footprint_shape(fp)
+            _odd_size(fp_shape[d], require_odd_size)
+            shape[d] += nreps * (fp_shape[d] - 1)
     return tuple(shape)
 
 
@@ -149,14 +166,13 @@ def square(width, dtype=cp.uint8, *, decomposition=None):
         return cp.ones((width, width), dtype=dtype)
 
     if decomposition == 'separable' or width % 2 == 0:
-        sequence = [(cp.ones((width, 1), dtype=dtype), 1),
-                    (cp.ones((1, width), dtype=dtype), 1)]
+        sequence = (((width, 1), 1), ((1, width), 1))
     elif decomposition == 'sequence':
         # only handles odd widths
-        sequence = [(cp.ones((3, 3), dtype=dtype), _decompose_size(width, 3))]
+        sequence = (((3, 3), _decompose_size(width, 3)),)
     else:
         raise ValueError(f"Unrecognized decomposition: {decomposition}")
-    return tuple(sequence)
+    return sequence
 
 
 def _decompose_size(size, kernel_size=3):
@@ -233,22 +249,21 @@ def rectangle(nrows, ncols, dtype=cp.uint8, *, decomposition=None):
     even_rows = nrows % 2 == 0
     even_cols = ncols % 2 == 0
     if decomposition == 'separable' or even_rows or even_cols:
-        sequence = [(cp.ones((nrows, 1), dtype=dtype), 1),
-                    (cp.ones((1, ncols), dtype=dtype), 1)]
+        sequence = [((nrows, 1), 1), ((1, ncols), 1)]
     elif decomposition == 'sequence':
         # this branch only support odd nrows, ncols
         sq_size = 3
         sq_reps = _decompose_size(min(nrows, ncols), sq_size)
-        sequence = [(cp.ones((3, 3), dtype=dtype), sq_reps)]
+        sequence = [((3, 3), sq_reps)]
         if nrows > ncols:
             nextra = nrows - ncols
             sequence.append(
-                (cp.ones((nextra + 1, 1), dtype=dtype), 1)
+                ((nextra + 1, 1), 1)
             )
         elif ncols > nrows:
             nextra = ncols - nrows
             sequence.append(
-                (cp.ones((1, nextra + 1), dtype=dtype), 1)
+                ((1, nextra + 1), 1)
             )
     else:
         raise ValueError(f"Unrecognized decomposition: {decomposition}")
@@ -381,8 +396,7 @@ def _nsphere_series_decomposition(radius, ndim, dtype=cp.uint8):
             sl[ax] = slice(1, 2)
         sequence.append((cp.asarray(d), num_diamond))
     if num_square > 0:
-        sq = cp.ones((3, ) * ndim, dtype=dtype)
-        sequence.append((sq, num_square))
+        sequence.append(((3, ) * ndim, num_square))
     return tuple(sequence)
 
 
@@ -698,17 +712,15 @@ def cube(width, dtype=cp.uint8, *, decomposition=None):
     if decomposition is None:
         return cp.ones((width, width, width), dtype=dtype)
     if decomposition == 'separable' or width % 2 == 0:
-        sequence = [(cp.ones((width, 1, 1), dtype=dtype), 1),
-                    (cp.ones((1, width, 1), dtype=dtype), 1),
-                    (cp.ones((1, 1, width), dtype=dtype), 1)]
+        sequence = (((width, 1, 1), 1), ((1, width, 1), 1), ((1, 1, width), 1))
     elif decomposition == 'sequence':
         # only handles odd widths
-        sequence = [
-            (cp.ones((3, 3, 3), dtype=dtype), _decompose_size(width, 3))
-        ]
+        sequence = (
+            ((3, 3, 3), _decompose_size(width, 3)),
+        )
     else:
         raise ValueError(f"Unrecognized decomposition: {decomposition}")
-    return tuple(sequence)
+    return sequence
 
 
 def octahedron(radius, dtype=cp.uint8, *, decomposition=None):
