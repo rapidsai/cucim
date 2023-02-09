@@ -4,11 +4,12 @@ import os
 import cupy
 import numpy as np
 
-from ._pba_2d import (_check_distances, _check_indices,
-                      _distance_tranform_arg_check, _get_block_size,
-                      _generate_shape, _generate_indices_ops,
-                      lcm)
+from cucim.skimage._vendored import pad
 from cucim.skimage._vendored._ndimage_util import _get_inttype
+
+from ._pba_2d import (_check_distances, _check_indices,
+                      _distance_tranform_arg_check, _generate_indices_ops,
+                      _generate_shape, _get_block_size, lcm)
 
 pba3d_defines_template = """
 
@@ -366,7 +367,7 @@ def _pba_3d(arr, sampling=None, return_distances=True, return_indices=False,
         arr.shape, block_size, m1, m2, m3, blockx, blocky
     )
     if padding_width is not None:
-        arr = cupy.pad(arr, padding_width, mode="constant", constant_values=1)
+        arr = pad(arr, padding_width, mode="constant", constant_values=1)
     size = arr.shape[0]
 
     # pba algorithm was implemented to use 32-bit integer to store compressed

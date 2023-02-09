@@ -1,3 +1,37 @@
+# cuCIM 23.02.00 (9 Feb 2023)
+
+## 🚨 Breaking Changes
+
+- Add disambiguation option to phase_cross_correlation (skimage 0.20 feature) ([#486](https://github.com/rapidsai/cucim/pull/486)) [@grlee77](https://github.com/grlee77)
+
+## 🐛 Bug Fixes
+
+- apply bug fix to vendored ndimage code ([#494](https://github.com/rapidsai/cucim/pull/494)) [@grlee77](https://github.com/grlee77)
+- Closes #490 -- fixes bug in hue jitter ([#491](https://github.com/rapidsai/cucim/pull/491)) [@benlansdell](https://github.com/benlansdell)
+- Fix random seed used in test_3d_similarity_estimation ([#472](https://github.com/rapidsai/cucim/pull/472)) [@grlee77](https://github.com/grlee77)
+
+## 📖 Documentation
+
+- Fix documentation author ([#475](https://github.com/rapidsai/cucim/pull/475)) [@bdice](https://github.com/bdice)
+
+## 🚀 New Features
+
+- Add colocalization measures ([#488](https://github.com/rapidsai/cucim/pull/488)) [@grlee77](https://github.com/grlee77)
+- Add disambiguation option to phase_cross_correlation (skimage 0.20 feature) ([#486](https://github.com/rapidsai/cucim/pull/486)) [@grlee77](https://github.com/grlee77)
+
+## 🛠️ Improvements
+
+- Update shared workflow branches ([#501](https://github.com/rapidsai/cucim/pull/501)) [@ajschmidt8](https://github.com/ajschmidt8)
+- Update `isort` version to 5.12.0 ([#492](https://github.com/rapidsai/cucim/pull/492)) [@ajschmidt8](https://github.com/ajschmidt8)
+- Improve rank filtering performance by removing use of footprint kernel when possible ([#485](https://github.com/rapidsai/cucim/pull/485)) [@grlee77](https://github.com/grlee77)
+- use vendored version of cupy.pad with added performance optimizations ([#482](https://github.com/rapidsai/cucim/pull/482)) [@grlee77](https://github.com/grlee77)
+- add docs builds to Github Actions ([#481](https://github.com/rapidsai/cucim/pull/481)) [@AjayThorve](https://github.com/AjayThorve)
+- Update `numpy` version specifier ([#480](https://github.com/rapidsai/cucim/pull/480)) [@ajschmidt8](https://github.com/ajschmidt8)
+- Build CUDA `11.8` and Python `3.10` Packages ([#476](https://github.com/rapidsai/cucim/pull/476)) [@ajschmidt8](https://github.com/ajschmidt8)
+- Add GitHub Actions Workflows. ([#471](https://github.com/rapidsai/cucim/pull/471)) [@bdice](https://github.com/bdice)
+- Fix conflicts in &quot;Forward-merge branch-22.12 to branch-23.02&quot; ([#468](https://github.com/rapidsai/cucim/pull/468)) [@jakirkham](https://github.com/jakirkham)
+- Enable copy_prs. ([#465](https://github.com/rapidsai/cucim/pull/465)) [@bdice](https://github.com/bdice)
+
 # cuCIM 22.12.00 (8 Dec 2022)
 
 ## 🚨 Breaking Changes

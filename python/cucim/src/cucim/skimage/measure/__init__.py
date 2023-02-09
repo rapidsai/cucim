@@ -1,4 +1,6 @@
 from ._blur_effect import blur_effect
+from ._colocalization import (intersection_coeff, manders_coloc_coeff,
+                              manders_overlap_coeff, pearson_corr_coeff)
 from ._label import label
 from ._moments import (centroid, inertia_tensor, inertia_tensor_eigvals,
                        moments, moments_central, moments_coords,
@@ -30,4 +32,8 @@ __all__ = [
     "profile_line",
     "label",
     "shannon_entropy",
+    "intersection_coeff",
+    "manders_coloc_coeff",
+    "manders_overlap_coeff",
+    "pearson_corr_coeff",
 ]

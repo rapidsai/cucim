@@ -10,9 +10,10 @@ python/            @rapidsai/cucim-python-codeowners
 **/cmake/          @rapidsai/cucim-cmake-codeowners
 
 #build/ops code owners
-.github/           @rapidsai/ops-codeowners 
+.github/           @rapidsai/ops-codeowners
 ci/                @rapidsai/ops-codeowners
 conda/             @rapidsai/ops-codeowners
 **/Dockerfile      @rapidsai/ops-codeowners
 **/.dockerignore   @rapidsai/ops-codeowners
 docker/            @rapidsai/ops-codeowners
+dependencies.yaml  @rapidsai/ops-codeowners

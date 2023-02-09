@@ -161,7 +161,7 @@ def _adjust_saturation(input_arr, saturation):
 
 # hue jitter
 def _adjust_hue(input_arr, hue):
-    if not(-0.5 <= hue <= 0.5):
+    if not (-0.5 <= hue <= 0.5):
         raise ValueError('hue factor({}) is not in [-0.5, 0.5].'.
                          format(hue))
 

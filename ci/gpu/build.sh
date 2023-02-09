@@ -38,6 +38,10 @@ echo "CUDA_VERSION: ${CUDA_VERSION}"
 echo "CUDA_VER    : ${CUDA_VER}"
 echo "PYTHON_VER  : ${PYTHON_VER}"
 
+# Workaround to keep Jenkins builds working
+# until we migrate fully to GitHub Actions
+export RAPIDS_CUDA_VERSION="${CUDA}"
+
 ################################################################################
 # SETUP - Check environment
 ################################################################################
