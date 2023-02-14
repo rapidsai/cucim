@@ -67,7 +67,7 @@ def _preprocess_resize_output_shape(image, output_shape):
     return image, output_shape
 
 
-def resize(image, output_shape, order=None, mode='reflect', cval=0, clip=True,
+def resize(image, output_shape, order=None, mode='reflect', cval=0, clip=None,
            preserve_range=False, anti_aliasing=None, anti_aliasing_sigma=None):
     """Resize image to match a certain size.
 
@@ -105,8 +105,8 @@ def resize(image, output_shape, order=None, mode='reflect', cval=0, clip=True,
         the image boundaries.
     clip : bool, optional
         Whether to clip the output to the range of values of the input image.
-        This is enabled by default, since higher order interpolation may
-        produce values outside the given input range.
+        If `order` > 1, this will be enabled by default, since higher order
+        interpolation may produce values outside the given input range.
     preserve_range : bool, optional
         Whether to keep the original range of values. Otherwise, the input
         image is converted according to the conventions of `img_as_float`.
@@ -145,6 +145,9 @@ def resize(image, output_shape, order=None, mode='reflect', cval=0, clip=True,
     image, output_shape = _preprocess_resize_output_shape(image, output_shape)
     input_shape = image.shape
     input_type = image.dtype
+
+    if clip is None:
+        clip = True if order > 1 else False
 
     if input_type == cp.float16:
         image = image.astype(cp.float32, copy=False)
@@ -200,7 +203,7 @@ def resize(image, output_shape, order=None, mode='reflect', cval=0, clip=True,
 
 
 @channel_as_last_axis()
-def rescale(image, scale, order=None, mode='reflect', cval=0, clip=True,
+def rescale(image, scale, order=None, mode='reflect', cval=0, clip=None,
             preserve_range=False, anti_aliasing=None, anti_aliasing_sigma=None,
             *, channel_axis=None):
     """Scale image by a certain factor.
@@ -237,8 +240,8 @@ def rescale(image, scale, order=None, mode='reflect', cval=0, clip=True,
         the image boundaries.
     clip : bool, optional
         Whether to clip the output to the range of values of the input image.
-        This is enabled by default, since higher order interpolation may
-        produce values outside the given input range.
+        If `order` > 1, this will be enabled by default, since higher order
+        interpolation may produce values outside the given input range.
     preserve_range : bool, optional
         Whether to keep the original range of values. Otherwise, the input
         image is converted according to the conventions of `img_as_float`.
@@ -282,6 +285,8 @@ def rescale(image, scale, order=None, mode='reflect', cval=0, clip=True,
     """
     scale = np.atleast_1d(scale)
     multichannel = channel_axis is not None
+    if clip is None:
+        clip = True if order > 1 else False
     if len(scale) > 1:
         if ((not multichannel and len(scale) != image.ndim) or
                 (multichannel and len(scale) != image.ndim - 1)):
@@ -405,8 +410,8 @@ def rotate(image, angle, resize=False, center=None, order=None,
         the image boundaries.
     clip : bool, optional
         Whether to clip the output to the range of values of the input image.
-        This is enabled by default, since higher order interpolation may
-        produce values outside the given input range.
+        If `order` > 1, this will be enabled by default, since higher order
+        interpolation may produce values outside the given input range.
     preserve_range : bool, optional
         Whether to keep the original range of values. Otherwise, the input
         image is converted according to the conventions of `img_as_float`.
@@ -438,7 +443,6 @@ def rotate(image, angle, resize=False, center=None, order=None,
     (512, 512)
 
     """
-
     rows, cols = image.shape[0], image.shape[1]
     if image.dtype == cp.float16:
         image = image.astype(cp.float32)
@@ -449,6 +453,8 @@ def rotate(image, angle, resize=False, center=None, order=None,
     else:
         center = np.asarray(center)
         centered = np.array_equal(center, img_center)
+    if clip is None:
+        clip = True if order > 1 else False
 
     if centered and not resize:
         # can use cupyx.scipy.ndimage.rotate
@@ -583,7 +589,7 @@ def _swirl_mapping(xy, center, rotation, strength, radius):
 
 
 def swirl(image, center=None, strength=1, radius=100, rotation=0,
-          output_shape=None, order=None, mode='reflect', cval=0, clip=True,
+          output_shape=None, order=None, mode='reflect', cval=0, clip=None,
           preserve_range=False):
     """Perform a swirl transformation.
 
@@ -624,8 +630,8 @@ def swirl(image, center=None, strength=1, radius=100, rotation=0,
         the image boundaries.
     clip : bool, optional
         Whether to clip the output to the range of values of the input image.
-        This is enabled by default, since higher order interpolation may
-        produce values outside the given input range.
+        If `order` > 1, this will be enabled by default, since higher order
+        interpolation may produce values outside the given input range.
     preserve_range : bool, optional
         Whether to keep the original range of values. Otherwise, the input
         image is converted according to the conventions of `img_as_float`.
@@ -635,6 +641,8 @@ def swirl(image, center=None, strength=1, radius=100, rotation=0,
     """
     if center is None:
         center = np.array(image.shape)[:2][::-1] / 2
+    if clip is None:
+        clip = True if order > 1 else False
 
     warp_args = {'center': center,
                  'rotation': rotation,
@@ -772,8 +780,8 @@ def _clip_warp_output(input_image, output_image, mode, cval, clip):
         the image boundaries.
     clip : bool, optional
         Whether to clip the output to the range of values of the input image.
-        This is enabled by default, since higher order interpolation may
-        produce values outside the given input range.
+        If `order` > 1, this will be enabled by default, since higher order
+        interpolation may produce values outside the given input range.
 
     """
     if clip:
@@ -815,7 +823,7 @@ def _clip_warp_output(input_image, output_image, mode, cval, clip):
 
 
 def warp(image, inverse_map, map_args={}, output_shape=None, order=None,
-         mode='constant', cval=0., clip=True, preserve_range=False):
+         mode='constant', cval=0., clip=None, preserve_range=False):
     """Warp an image according to a given coordinate transformation.
 
     Parameters
@@ -878,8 +886,8 @@ def warp(image, inverse_map, map_args={}, output_shape=None, order=None,
         the image boundaries.
     clip : bool, optional
         Whether to clip the output to the range of values of the input image.
-        This is enabled by default, since higher order interpolation may
-        produce values outside the given input range.
+        If `order` > 1, this will be enabled by default, since higher order
+        interpolation may produce values outside the given input range.
     preserve_range : bool, optional
         Whether to keep the original range of values. Otherwise, the input
         image is converted according to the conventions of `img_as_float`.
@@ -959,6 +967,8 @@ def warp(image, inverse_map, map_args={}, output_shape=None, order=None,
     if image.size == 0:
         raise ValueError("Cannot warp empty image with dimensions",
                          image.shape)
+    if clip is None:
+        clip = True if order > 1 else False
 
     order = _validate_interpolation_order(image.dtype, order)
 
