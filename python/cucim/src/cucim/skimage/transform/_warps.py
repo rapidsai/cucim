@@ -164,9 +164,7 @@ def resize(image, output_shape, order=None, mode='reflect', cval=0, clip=True,
         image = convert_to_float(image, preserve_range)
 
     # Save input value range for clip
-    img_bounds = (
-        cp.array([image.min(), image.max()]) if clip else None
-    )
+    img_bounds = (image.min(), image.max()) if clip else None
 
     # Translate modes used by np.pad to those used by scipy.ndimage
     ndi_mode = _to_ndimage_mode(mode)
@@ -779,16 +777,24 @@ def _clip_warp_output(input_image, output_image, mode, cval, clip):
 
     """
     if clip:
-        min_val = input_image.min().item()
-        if np.isnan(min_val):
-            # NaNs detected, use NaN-safe min/max
-            min_func = cp.nanmin
-            max_func = cp.nanmax
-            min_val = min_func(input_image).item()
+        if isinstance(input_image, tuple) and len(input_image) == 2:
+            min_val, max_val = input_image
+            # copy device scalars to host if necessary
+            if isinstance(min_val, cp.ndarray):
+                min_val = min_val.item()
+            if isinstance(max_val, cp.ndarray):
+                max_val = max_val.item()
         else:
-            min_func = cp.min
-            max_func = cp.max
-        max_val = max_func(input_image).item()
+            min_val = input_image.min().item()
+            if np.isnan(min_val):
+                # NaNs detected, use NaN-safe min/max
+                min_func = cp.nanmin
+                max_func = cp.nanmax
+                min_val = min_func(input_image).item()
+            else:
+                min_func = cp.min
+                max_func = cp.max
+            max_val = max_func(input_image).item()
 
         # Check if cval has been used such that it expands the effective input
         # range
