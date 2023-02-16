@@ -66,10 +66,11 @@ kvikio.defaults.num_threads_reset(16)
 write_time_means = np.zeros(((len(dtypes), len(chunk_shapes), len(compressors), 2)), dtype=float)
 write_time_stds = np.zeros_like(write_time_means)
 for i, dtype in enumerate(dtypes):
-    if np.dtype(dtype) == np.uint8:
+    dtype = np.dtype(dtype)
+    if dtype == np.uint8:
         img = image_gpu
         assert img.dtype == cp.uint8
-    elif np.dtype(dtype) == np.uint16:
+    elif dtype == np.uint16:
         img = image_gpu.astype(dtype)
     else:
         raise NotImplementedError(
