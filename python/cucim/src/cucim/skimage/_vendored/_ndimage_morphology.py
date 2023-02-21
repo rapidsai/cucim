@@ -365,13 +365,14 @@ def binary_dilation(input, structure=None, iterations=1, mask=None,
     Args:
         input(cupy.ndarray): The input binary array_like to be dilated.
             Non-zero (True) elements form the subset to be dilated.
-        structure(cupy.ndarray or tuple or int, optional): The structuring element used for the
-            erosion. Non-zero elements are considered True. If no structuring
-            element is provided an element is generated with a square
-            connectivity equal to one. (Default value = None). If a tuple of
-            integers is provided, a structuring element of the specified shape
-            is used (all elements True). If an integer is provided, the
-            structuring element will have the same size along all axes.
+        structure(cupy.ndarray or tuple or int, optional): The structuring
+            element used for the erosion. Non-zero elements are considered
+            True. If no structuring element is provided an element is generated
+            with a square connectivity equal to one. (Default value = None). If
+            a tuple of integers is provided, a structuring element of the
+            specified shape is used (all elements True). If an integer is
+            provided, the structuring element will have the same size along all
+            axes.
         iterations(int, optional): The dilation is repeated ``iterations``
             times (one, by default). If iterations is less than 1, the dilation
             is repeated until the result does not change anymore. Only an
