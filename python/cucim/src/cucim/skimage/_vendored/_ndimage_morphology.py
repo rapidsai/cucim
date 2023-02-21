@@ -289,12 +289,12 @@ def _binary_erosion(input, structure, iterations, mask, output, border_value,
     return output
 
 
-def _prep_structure(structure):
+def _prep_structure(structure, ndim):
     if structure is None:
-        structure = generate_binary_structure(input.ndim, 1)
+        structure = generate_binary_structure(ndim, 1)
         return structure, structure.shape, True
     if isinstance(structure, int):
-        structure = (structure,) * input.ndim
+        structure = (structure,) * ndim
     elif isinstance(structure, list):
         structure = tuple(structure)
     if isinstance(structure, tuple):
@@ -353,7 +353,7 @@ def binary_erosion(input, structure=None, iterations=1, mask=None, output=None,
 
     .. seealso:: :func:`scipy.ndimage.binary_erosion`
     """
-    structure, _, _ = _prep_structure(structure)
+    structure, _, _ = _prep_structure(structure, input.ndim)
     return _binary_erosion(input, structure, iterations, mask, output,
                            border_value, origin, 0, brute_force)
 
@@ -401,7 +401,8 @@ def binary_dilation(input, structure=None, iterations=1, mask=None,
 
     .. seealso:: :func:`scipy.ndimage.binary_dilation`
     """
-    structure, structure_shape, symmetric = _prep_structure(structure)
+    structure, structure_shape, symmetric = _prep_structure(structure,
+                                                            input.ndim)
     origin = _util._fix_sequence_arg(origin, input.ndim, 'origin', int)
     if not symmetric:
         structure = structure[tuple([slice(None, None, -1)] * structure.ndim)]
@@ -460,7 +461,7 @@ def binary_opening(input, structure=None, iterations=1, output=None, origin=0,
 
     .. seealso:: :func:`scipy.ndimage.binary_opening`
     """
-    structure, _, _ = _prep_structure(structure)
+    structure, _, _ = _prep_structure(structure, input.ndim)
     tmp = binary_erosion(input, structure, iterations, mask, None,
                          border_value, origin, brute_force)
     return binary_dilation(tmp, structure, iterations, mask, output,
@@ -514,7 +515,7 @@ def binary_closing(input, structure=None, iterations=1, output=None, origin=0,
 
     .. seealso:: :func:`scipy.ndimage.binary_closing`
     """
-    structure, _, _ = _prep_structure(structure)
+    structure, _, _ = _prep_structure(structure, input.ndim)
     tmp = binary_dilation(input, structure, iterations, mask, None,
                           border_value, origin, brute_force)
     return binary_erosion(tmp, structure, iterations, mask, output,
