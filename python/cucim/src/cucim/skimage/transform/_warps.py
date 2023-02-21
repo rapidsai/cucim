@@ -146,9 +146,6 @@ def resize(image, output_shape, order=None, mode='reflect', cval=0, clip=None,
     input_shape = image.shape
     input_type = image.dtype
 
-    if clip is None:
-        clip = True if order > 1 else False
-
     if input_type == cp.float16:
         image = image.astype(cp.float32, copy=False)
 
@@ -165,6 +162,9 @@ def resize(image, output_shape, order=None, mode='reflect', cval=0, clip=None,
     order = _validate_interpolation_order(input_type, order)
     if order > 0:
         image = convert_to_float(image, preserve_range)
+
+    if clip is None:
+        clip = True if order > 1 else False
 
     # Save input value range for clip
     img_bounds = (image.min(), image.max()) if clip else None
@@ -285,8 +285,6 @@ def rescale(image, scale, order=None, mode='reflect', cval=0, clip=None,
     """
     scale = np.atleast_1d(scale)
     multichannel = channel_axis is not None
-    if clip is None:
-        clip = True if order > 1 else False
     if len(scale) > 1:
         if ((not multichannel and len(scale) != image.ndim) or
                 (multichannel and len(scale) != image.ndim - 1)):
@@ -453,8 +451,6 @@ def rotate(image, angle, resize=False, center=None, order=None,
     else:
         center = np.asarray(center)
         centered = np.array_equal(center, img_center)
-    if clip is None:
-        clip = True if order > 1 else False
 
     if centered and not resize:
         # can use cupyx.scipy.ndimage.rotate
@@ -641,8 +637,6 @@ def swirl(image, center=None, strength=1, radius=100, rotation=0,
     """
     if center is None:
         center = np.array(image.shape)[:2][::-1] / 2
-    if clip is None:
-        clip = True if order > 1 else False
 
     warp_args = {'center': center,
                  'rotation': rotation,
@@ -967,10 +961,10 @@ def warp(image, inverse_map, map_args={}, output_shape=None, order=None,
     if image.size == 0:
         raise ValueError("Cannot warp empty image with dimensions",
                          image.shape)
+    order = _validate_interpolation_order(image.dtype, order)
+
     if clip is None:
         clip = True if order > 1 else False
-
-    order = _validate_interpolation_order(image.dtype, order)
 
     if image.dtype.kind == "c":
         if not preserve_range:
