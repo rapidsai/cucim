@@ -49,6 +49,7 @@ def _footprint_is_sequence(footprint):
         raise ValueError("footprint must be either an ndarray or Sequence")
     return True
 
+
 def _footprint_shape(footprint):
     if isinstance(footprint, tuple):
         return footprint
@@ -768,7 +769,9 @@ def cube(width, dtype=None, *, decomposition=None):
             return cp.ones((width, width, width), dtype=dtype)
     if decomposition == 'separable' or width % 2 == 0:
         if dtype is None:
-            sequence = (((width, 1, 1), 1), ((1, width, 1), 1), ((1, 1, width), 1))
+            sequence = (
+                ((width, 1, 1), 1), ((1, width, 1), 1), ((1, 1, width), 1)
+            )
         else:
             sequence = (
                 (cp.ones((width, 1, 1), dtype=dtype), 1),
