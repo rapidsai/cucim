@@ -19,7 +19,6 @@ from cucim.skimage.feature import (corner_foerstner, corner_harris,
                                    structure_tensor,
                                    structure_tensor_eigenvalues)
 from cucim.skimage.feature.corner import _symmetric_image
-from cucim.skimage.morphology import cube
 
 
 @pytest.fixture
