@@ -178,7 +178,9 @@ def _binary_erosion(input, structure, iterations, mask, output, border_value,
         # transfer to CPU for use in determining if it is fully dense
         # structure_cpu = cupy.asnumpy(structure)
         if structure.ndim != input.ndim:
-            raise RuntimeError('structure and input must have same dimensionality')
+            raise RuntimeError(
+                'structure and input must have same dimensionality'
+            )
         if not structure.flags.c_contiguous:
             structure = cupy.ascontiguousarray(structure)
         if structure.size < 1:
@@ -315,13 +317,14 @@ def binary_erosion(input, structure=None, iterations=1, mask=None, output=None,
     Args:
         input(cupy.ndarray): The input binary array_like to be eroded.
             Non-zero (True) elements form the subset to be eroded.
-        structure(cupy.ndarray or tuple or int, optional): The structuring element used for the
-            erosion. Non-zero elements are considered True. If no structuring
-            element is provided an element is generated with a square
-            connectivity equal to one. (Default value = None). If a tuple of
-            integers is provided, a structuring element of the specified shape
-            is used (all elements True). If an integer is provided, the
-            structuring element will have the same size along all axes.
+        structure(cupy.ndarray or tuple or int, optional): The structuring
+            element used for the erosion. Non-zero elements are considered
+            True. If no structuring element is provided an element is generated
+            with a square connectivity equal to one. (Default value = None). If
+            a tuple of integers is provided, a structuring element of the
+            specified shape is used (all elements True). If an integer is
+            provided, the structuring element will have the same size along all
+            axes.
         iterations(int, optional): The erosion is repeated ``iterations`` times
             (one, by default). If iterations is less than 1, the erosion is
             repeated until the result does not change anymore. Only an integer
@@ -420,13 +423,14 @@ def binary_opening(input, structure=None, iterations=1, output=None, origin=0,
     Args:
         input(cupy.ndarray): The input binary array to be opened.
             Non-zero (True) elements form the subset to be opened.
-        structure(cupy.ndarray or tuple or int, optional): The structuring element used for the
-            erosion. Non-zero elements are considered True. If no structuring
-            element is provided an element is generated with a square
-            connectivity equal to one. (Default value = None). If a tuple of
-            integers is provided, a structuring element of the specified shape
-            is used (all elements True). If an integer is provided, the
-            structuring element will have the same size along all axes.
+        structure(cupy.ndarray or tuple or int, optional): The structuring
+            element used for the erosion. Non-zero elements are considered
+            True. If no structuring element is provided an element is generated
+            with a square connectivity equal to one. (Default value = None). If
+            a tuple of integers is provided, a structuring element of the
+            specified shape is used (all elements True). If an integer is
+            provided, the structuring element will have the same size along all
+            axes.
         iterations(int, optional): The opening is repeated ``iterations`` times
             (one, by default). If iterations is less than 1, the opening is
             repeated until the result does not change anymore. Only an integer
@@ -473,13 +477,14 @@ def binary_closing(input, structure=None, iterations=1, output=None, origin=0,
     Args:
         input(cupy.ndarray): The input binary array to be closed.
             Non-zero (True) elements form the subset to be closed.
-        structure(cupy.ndarray or tuple or int, optional): The structuring element used for the
-            erosion. Non-zero elements are considered True. If no structuring
-            element is provided an element is generated with a square
-            connectivity equal to one. (Default value = None). If a tuple of
-            integers is provided, a structuring element of the specified shape
-            is used (all elements True). If an integer is provided, the
-            structuring element will have the same size along all axes.
+        structure(cupy.ndarray or tuple or int, optional): The structuring
+            element used for the erosion. Non-zero elements are considered
+            True. If no structuring element is provided an element is generated
+            with a square connectivity equal to one. (Default value = None). If
+            a tuple of integers is provided, a structuring element of the
+            specified shape is used (all elements True). If an integer is
+            provided, the structuring element will have the same size along all
+            axes.
         iterations(int, optional): The closing is repeated ``iterations`` times
             (one, by default). If iterations is less than 1, the closing is
             repeated until the result does not change anymore. Only an integer
