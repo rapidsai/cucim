@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import math
@@ -21,6 +21,7 @@ from skimage.draw.draw import circle_perimeter_aa
 from cucim.skimage._shared._warnings import expected_warnings
 from cucim.skimage._shared.utils import _supported_float_type
 from cucim.skimage.feature.peak import peak_local_max
+from cucim.skimage.morphology import binary_erosion
 from cucim.skimage.transform._geometric import (
     AffineTransform,
     ProjectiveTransform,
@@ -1147,3 +1148,140 @@ def test_nn_resize_int_img():
     resized = resize(img, (8, 8), order=0)
 
     assert cp.array_equal(cp.unique(resized), cp.unique(img))
+
+
+def _get_rtol_atol(order):
+    if order <= 1:
+        rtol = 1e-5
+        atol = 1e-5
+    else:
+        # allow modest difference for numerical tolerance for spline boundary rounding
+        rtol = 5e-3
+        atol = 5e-3
+    return rtol, atol
+
+
+@pytest.mark.parametrize("order", [0, 1, 2, 3, 4, 5])
+def test_resize_batch(order):
+    img = cp.asarray(astronaut()[:128, :128, :])
+
+    # Resize with batch mode (channel axis treated as batch)
+    resized_batch = resize(img, (256, 256), order=order)
+    assert resized_batch.shape == (256, 256, 3)
+
+    # Resize each channel individually and stack
+    resized_individual = cp.stack(
+        [resize(img[:, :, c], (256, 256), order=order) for c in range(3)],
+        axis=-1,
+    )
+
+    rtol, atol = _get_rtol_atol(order)
+    cp.testing.assert_allclose(
+        resized_batch, resized_individual, rtol=rtol, atol=atol
+    )
+
+
+@pytest.mark.parametrize("order", [0, 1, 3, 5])
+def test_rescale_batch(order):
+    img = cp.asarray(astronaut()[:128, :128, :])
+
+    # Rescale with channel_axis specified
+    rescaled_batch = rescale(img, 2, order=order, channel_axis=-1)
+    assert rescaled_batch.shape == (256, 256, 3)
+
+    # Rescale each channel individually and stack
+    rescaled_individual = cp.stack(
+        [rescale(img[:, :, c], 2, order=order) for c in range(3)],
+        axis=-1,
+    )
+    rtol, atol = _get_rtol_atol(order)
+    cp.testing.assert_allclose(
+        rescaled_batch, rescaled_individual, rtol=rtol, atol=atol
+    )
+
+
+@pytest.mark.parametrize("order", [0, 1, 2, 3, 4, 5])
+@pytest.mark.parametrize(
+    "mode", ["constant", "edge", "reflect", "symmetric", "wrap"]
+)
+def test_rotate_batch(order, mode):
+    img = cp.asarray(astronaut()[:128, :128, :], dtype=cp.float64)
+
+    # Rotate RGB image
+    rotated_batch = rotate(img, 30, order=order, mode=mode, resize=False)
+    assert rotated_batch.shape == (128, 128, 3)
+
+    # Rotate each channel individually and stack
+    rotated_individual = cp.stack(
+        [
+            rotate(img[:, :, c], 30, order=order, mode=mode, resize=False)
+            for c in range(3)
+        ],
+        axis=-1,
+    )
+    rtol, atol = _get_rtol_atol(order)
+    if order > 1 and mode == "constant":
+        # For order > 1 and mode='constant', boundary pixels can differ due to
+        # prefilter boundary handling differences. Visual inspection shows that images
+        # look equivalent. Here we mask out boundary region to compare only interior
+        # pixels.
+
+        # Create mask of non-zero pixels in expected result and erode the edges by a
+        # couple of pixels
+        mask = cp.any(rotated_individual > 1, axis=-1)
+        footprint = cp.ones((5, 5), dtype=bool)
+        interior_mask = binary_erosion(mask, footprint=footprint)
+
+        cp.testing.assert_allclose(
+            rotated_batch * interior_mask[..., cp.newaxis],
+            rotated_individual * interior_mask[..., cp.newaxis],
+            rtol=rtol,
+            atol=atol,
+        )
+    else:
+        cp.testing.assert_allclose(
+            rotated_batch, rotated_individual, rtol=rtol, atol=atol
+        )
+
+
+@pytest.mark.parametrize("order", [0, 1, 3, 5])
+def test_warp_polar_batch(order):
+    img = cp.asarray(astronaut()[:128, :128, :], dtype=cp.float64)
+
+    # Warp polar with channel_axis specified
+    warped_batch = warp_polar(img, channel_axis=-1, order=order)
+    assert warped_batch.shape[-1] == 3  # channels preserved
+
+    # Warp each channel individually and stack
+    warped_individual = cp.stack(
+        [warp_polar(img[:, :, c], order=order) for c in range(3)],
+        axis=-1,
+    )
+    rtol, atol = _get_rtol_atol(order)
+    cp.testing.assert_allclose(
+        warped_batch, warped_individual, rtol=rtol, atol=atol
+    )
+
+
+@pytest.mark.parametrize("grid_mode", [True, False])
+def test_resize_local_mean_batch(grid_mode):
+    img = cp.asarray(astronaut()[:128, :128, :], dtype=cp.float64)
+
+    # Resize with channel_axis specified
+    resized_batch = resize_local_mean(
+        img, (256, 256), channel_axis=-1, grid_mode=grid_mode
+    )
+    assert resized_batch.shape == (256, 256, 3)
+
+    # Resize each channel individually and stack
+    resized_individual = cp.stack(
+        [
+            resize_local_mean(img[:, :, c], (256, 256), grid_mode=grid_mode)
+            for c in range(3)
+        ],
+        axis=-1,
+    )
+    rtol = atol = 1e-5
+    cp.testing.assert_allclose(
+        resized_batch, resized_individual, rtol=rtol, atol=atol
+    )

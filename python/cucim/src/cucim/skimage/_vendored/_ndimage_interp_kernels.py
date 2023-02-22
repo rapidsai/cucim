@@ -22,7 +22,7 @@ math_constants_preamble = r"""
 spline_weights_inline = _spline_kernel_weights.spline_weights_inline
 
 
-def _get_coord_map(ndim, nprepad=0, float_type=None):
+def _get_coord_map(ndim, nprepad=0, float_type=None, batch_axes=None):
     """Extract target coordinate from coords array (for map_coordinates).
 
     Notes
@@ -41,19 +41,34 @@ def _get_coord_map(ndim, nprepad=0, float_type=None):
     y will be indexed by the CIndexer, _ind.
     Thus ncoords = _ind.size();
 
+    For batch axes (identity mapping), the output index is used directly:
+
+        c_j = in_coord[j]
+
     """
+    if batch_axes is None:
+        batch_axes = ()
     ops = []
-    ops.append("ptrdiff_t ncoords = _ind.size();")
+    # only need ncoords if there are non-batch axes
+    if len(batch_axes) < ndim:
+        ops.append("ptrdiff_t ncoords = _ind.size();")
     pre = f" + (W){nprepad}" if nprepad > 0 else ""
     for j in range(ndim):
-        ops.append(
-            f"""
+        if j in batch_axes:
+            # batch axis: use identity (output index = input coordinate)
+            ops.append(
+                f"""
+    W c_{j} = (W)in_coord[{j}]{pre};"""
+            )
+        else:
+            ops.append(
+                f"""
     W c_{j} = coords[i + {j} * ncoords]{pre};"""
-        )
+            )
     return ops
 
 
-def _get_coord_zoom_and_shift(ndim, nprepad=0, float_type=None):
+def _get_coord_zoom_and_shift(ndim, nprepad=0, float_type=None, batch_axes=None):
     """Compute target coordinate based on a shift followed by a zoom.
 
     This version zooms from the center of the edge pixels.
@@ -64,24 +79,37 @@ def _get_coord_zoom_and_shift(ndim, nprepad=0, float_type=None):
 
         in_coord[ndim]: array containing the source coordinate
         zoom[ndim]: array containing the zoom for each axis
-        shift[ndim]: array containing the zoom for each axis
+        shift[ndim]: array containing the shift for each axis
 
     computes::
 
         c_j = zoom[j] * (in_coord[j] - shift[j])
 
+    For batch axes (zoom == 1 and shift == 0), the identity is used:
+
+        c_j = in_coord[j]
+
     """
+    if batch_axes is None:
+        batch_axes = ()
     ops = []
     pre = f" + (W){nprepad}" if nprepad > 0 else ""
     for j in range(ndim):
-        ops.append(
-            f"""
+        if j in batch_axes:
+            # identity transform for batch axes
+            ops.append(
+                f"""
+    W c_{j} = (W)in_coord[{j}]{pre};"""
+            )
+        else:
+            ops.append(
+                f"""
     W c_{j} = zoom[{j}] * ((W)in_coord[{j}] - shift[{j}]){pre};"""
-        )
+            )
     return ops
 
 
-def _get_coord_zoom_and_shift_grid(ndim, nprepad=0, float_type=None):
+def _get_coord_zoom_and_shift_grid(ndim, nprepad=0, float_type=None, batch_axes=None):
     """Compute target coordinate based on a shift followed by a zoom.
 
     This version zooms from the outer edges of the grid pixels.
@@ -92,25 +120,38 @@ def _get_coord_zoom_and_shift_grid(ndim, nprepad=0, float_type=None):
 
         in_coord[ndim]: array containing the source coordinate
         zoom[ndim]: array containing the zoom for each axis
-        shift[ndim]: array containing the zoom for each axis
+        shift[ndim]: array containing the shift for each axis
 
     computes::
 
         c_j = zoom[j] * (in_coord[j] - shift[j] + 0.5) - 0.5
 
+    For batch axes (zoom == 1 and shift == 0), the identity is used:
+
+        c_j = in_coord[j]
+
     """
+    if batch_axes is None:
+        batch_axes = ()
     ops = []
     pre = f" + (W){nprepad}" if nprepad > 0 else ""
     for j in range(ndim):
-        ops.append(
-            f"""
+        if j in batch_axes:
+            # identity transform for batch axes
+            ops.append(
+                f"""
+    W c_{j} = (W)in_coord[{j}]{pre};"""
+            )
+        else:
+            ops.append(
+                f"""
     W c_{j} = zoom[{j}] * ((W)in_coord[{j}] - shift[j] + ({float_type})0.5)
               - (W)0.5{pre};"""
-        )
+            )
     return ops
 
 
-def _get_coord_zoom(ndim, nprepad=0, float_type=None):
+def _get_coord_zoom(ndim, nprepad=0, float_type=None, batch_axes=None):
     """Compute target coordinate based on a zoom.
 
     This version zooms from the center of the edge pixels.
@@ -126,18 +167,31 @@ def _get_coord_zoom(ndim, nprepad=0, float_type=None):
 
         c_j = zoom[j] * in_coord[j]
 
+    For batch axes (zoom == 1), the identity is used:
+
+        c_j = in_coord[j]
+
     """
+    if batch_axes is None:
+        batch_axes = ()
     ops = []
     pre = f" + (W){nprepad}" if nprepad > 0 else ""
     for j in range(ndim):
-        ops.append(
-            f"""
+        if j in batch_axes:
+            # identity transform for batch axes
+            ops.append(
+                f"""
+    W c_{j} = (W)in_coord[{j}]{pre};"""
+            )
+        else:
+            ops.append(
+                f"""
     W c_{j} = zoom[{j}] * (W)in_coord[{j}]{pre};"""
-        )
+            )
     return ops
 
 
-def _get_coord_zoom_grid(ndim, nprepad=0, float_type="double"):
+def _get_coord_zoom_grid(ndim, nprepad=0, float_type="double", batch_axes=None):
     """Compute target coordinate based on a zoom (grid_mode=True version).
 
     This version zooms from the outer edges of the grid pixels.
@@ -153,17 +207,32 @@ def _get_coord_zoom_grid(ndim, nprepad=0, float_type="double"):
 
         c_j = zoom[j] * (in_coord[j] + 0.5) - 0.5
 
+    For batch axes (zoom == 1), the identity is used:
+
+        c_j = in_coord[j]
+
     """
+    if batch_axes is None:
+        batch_axes = ()
     ops = []
     pre = f" + (W){nprepad}" if nprepad > 0 else ""
     for j in range(ndim):
-        ops.append(f"""
+        if j in batch_axes:
+            # identity transform for batch axes
+            ops.append(
+                f"""
+    W c_{j} = (W)in_coord[{j}]{pre};"""
+            )
+        else:
+            ops.append(
+                f"""
     W c_{j} = zoom[{j}] * ((W)in_coord[{j}] + ({float_type})0.5)
-                           - ({float_type})0.5{pre};""")
+                           - ({float_type})0.5{pre};"""
+            )
     return ops
 
 
-def _get_coord_shift(ndim, nprepad=0, float_type=None):
+def _get_coord_shift(ndim, nprepad=0, float_type=None, batch_axes=None):
     """Compute target coordinate based on a shift.
 
     Notes
@@ -171,24 +240,37 @@ def _get_coord_shift(ndim, nprepad=0, float_type=None):
     Assumes the following variables have been initialized on the device::
 
         in_coord[ndim]: array containing the source coordinate
-        shift[ndim]: array containing the zoom for each axis
+        shift[ndim]: array containing the shift for each axis
 
     computes::
 
         c_j = in_coord[j] - shift[j]
 
+    For batch axes (shift == 0), the identity is used:
+
+        c_j = in_coord[j]
+
     """
+    if batch_axes is None:
+        batch_axes = ()
     ops = []
     pre = f" + (W){nprepad}" if nprepad > 0 else ""
     for j in range(ndim):
-        ops.append(
-            f"""
+        if j in batch_axes:
+            # identity transform for batch axes
+            ops.append(
+                f"""
+    W c_{j} = (W)in_coord[{j}]{pre};"""
+            )
+        else:
+            ops.append(
+                f"""
     W c_{j} = (W)in_coord[{j}] - shift[{j}]{pre};"""
-        )
+            )
     return ops
 
 
-def _get_coord_affine(ndim, nprepad=0, float_type=None):
+def _get_coord_affine(ndim, nprepad=0, float_type=None, batch_axes=None):
     """Compute target coordinate based on a homogeneous transformation matrix.
 
     The homogeneous matrix has shape (ndim, ndim + 1). It corresponds to
@@ -207,24 +289,37 @@ def _get_coord_affine(ndim, nprepad=0, float_type=None):
         c_0 = mat[0] * in_coords[0] + mat[1] * in_coords[1] + aff[2];
         c_1 = mat[3] * in_coords[0] + mat[4] * in_coords[1] + aff[5];
 
+    For batch axes (identity row with zero offset), the identity is used:
+
+        c_j = in_coord[j]
+
     """
+    if batch_axes is None:
+        batch_axes = ()
     ops = []
     pre = f" + (W){nprepad}" if nprepad > 0 else ""
     ncol = ndim + 1
     for j in range(ndim):
-        ops.append(
-            f"""
-            W c_{j} = (W)0.0;"""
-        )
-        for k in range(ndim):
+        if j in batch_axes:
+            # identity transform for batch axes
             ops.append(
                 f"""
-            c_{j} += mat[{ncol * j + k}] * (W)in_coord[{k}];"""
+            W c_{j} = (W)in_coord[{j}]{pre};"""
             )
-        ops.append(
-            f"""
+        else:
+            ops.append(
+                f"""
+            W c_{j} = (W)0.0;"""
+            )
+            for k in range(ndim):
+                ops.append(
+                    f"""
+            c_{j} += mat[{ncol * j + k}] * (W)in_coord[{k}];"""
+                )
+            ops.append(
+                f"""
             c_{j} += mat[{ncol * j + ndim}]{pre};"""
-        )
+            )
     return ops
 
 
@@ -267,6 +362,7 @@ def _generate_interp_custom(
     nprepad=0,
     float_dtype=cupy.float64,
     omit_in_coord=False,
+    batch_axes=None,
 ):
     """
     Args:
@@ -288,11 +384,17 @@ def _generate_interp_custom(
         omit_in_coord (bool): omit computation of unraveled input coordinates
             when not needed. This is an optimization for use by
             ``map_coordinates`` where the coordinates are already known.
+        batch_axes (tuple or None): tuple of axis indices that are "batch"
+            dimensions where no interpolation is needed (zoom == 1 and
+            shift == 0). For these axes, the identity transform is used and
+            interpolation is skipped.
 
     Returns:
         operation (str): code body for the ElementwiseKernel
         name (str): name for the ElementwiseKernel
     """
+    if batch_axes is None:
+        batch_axes = ()
 
     ops = []
     float_type = cupy._core._scalar.get_typename(float_dtype)
@@ -318,7 +420,8 @@ def _generate_interp_custom(
         ops.append(_unravel_loop_index(yshape, uint_t))
 
     # compute the transformed (target) coordinates, c_j
-    ops = ops + coord_func(ndim, nprepad, float_type)
+    # coord_func uses identity transform for any batch (untransformed) axes
+    ops = ops + coord_func(ndim, nprepad, float_type=float_type, batch_axes=batch_axes)
 
     if cval is numpy.nan:
         cval = "(Y)CUDART_NAN"
@@ -350,43 +453,52 @@ def _generate_interp_custom(
                 f"{float_type} dcoord;"
             )  # mode 'wrap' requires this to work
         for j in range(ndim):
-            # determine nearest neighbor
-            if mode == "wrap":
+            if j in batch_axes:
+                # batch axis: use identity, no interpolation needed
                 ops.append(
                     f"""
-                dcoord = c_{j};"""
+            {int_t} cf_{j} = ({int_t})in_coord[{j}];
+            {int_t} ic_{j} = cf_{j} * sx_{j};"""
                 )
             else:
-                ops.append(
-                    f"""{int_t} cf_{j} = (
-                            {int_t})floor(({float_type})c_{j}
-                                          + ({float_type})0.5);"""
-                )
-
-            # handle boundary
-            if mode != "constant":
-                if mode == "wrap":
-                    ixvar = "dcoord"
-                    float_ix = True
-                else:
-                    ixvar = f"cf_{j}"
-                    float_ix = False
-                ops.append(
-                    _util._generate_boundary_condition_ops(
-                        mode, ixvar, f"xsize_{j}", int_t, float_ix
-                    )
-                )
+                # determine nearest neighbor
                 if mode == "wrap":
                     ops.append(
                         f"""
-                {int_t} cf_{j} = ({int_t})floor(dcoord + ({float_type})0.5);"""
+                    dcoord = c_{j};"""
+                    )
+                else:
+                    ops.append(
+                    f"""{int_t} cf_{j} = (
+                            {int_t})floor(({float_type})c_{j}
+                                          + ({float_type})0.5);"""
                     )
 
-            # sum over ic_j will give the raveled coordinate in the input
-            ops.append(
-                f"""
-            {int_t} ic_{j} = cf_{j} * sx_{j};"""
-            )
+                # handle boundary
+                if mode != "constant":
+                    if mode == "wrap":
+                        ixvar = "dcoord"
+                        float_ix = True
+                    else:
+                        ixvar = f"cf_{j}"
+                        float_ix = False
+                    ops.append(
+                        _util._generate_boundary_condition_ops(
+                            mode, ixvar, f"xsize_{j}", int_t, float_ix
+                        )
+                    )
+                    if mode == "wrap":
+                        ops.append(
+                            f"""
+                    {int_t} cf_{j} = ({int_t})floor(dcoord
+                                      + ({float_type})0.5);"""
+                        )
+
+                # sum over ic_j will give the raveled coordinate in the input
+                ops.append(
+                    f"""
+                {int_t} ic_{j} = cf_{j} * sx_{j};"""
+                )
         _coord_idx = " + ".join([f"ic_{j}" for j in range(ndim)])
         if mode == "grid-constant":
             _cond = " || ".join([f"(ic_{j} < 0)" for j in range(ndim)])
@@ -406,73 +518,83 @@ def _generate_interp_custom(
 
     elif order == 1:
         for j in range(ndim):
-            # get coordinates for linear interpolation along axis j
-            ops.append(
-                f"""
-            {int_t} cf_{j} = ({int_t})floor(({float_type})c_{j});
-            {int_t} cc_{j} = cf_{j} + 1;
-            {int_t} n_{j} = (c_{j} == cf_{j}) ? 1 : 2;  // points needed
-            """
-            )
-
-            if mode == "wrap":
+            if j in batch_axes:
+                # batch axis: use identity, no interpolation needed
+                # just set w_{j} = 1.0 and ic_{j} = in_coord[{j}] * sx_{j}
                 ops.append(
                     f"""
-                {float_type} dcoordf = c_{j};
-                {float_type} dcoordc = c_{j} + 1;"""
+            W w_{j} = (W)1.0;
+            {int_t} ic_{j} = (({int_t})in_coord[{j}]) * sx_{j};
+            {{  // dummy scope for batch axis {j}"""
                 )
             else:
-                # handle boundaries for extension modes.
+                # get coordinates for linear interpolation along axis j
                 ops.append(
                     f"""
-                {int_t} cf_bounded_{j} = cf_{j};
-                {int_t} cc_bounded_{j} = cc_{j};"""
+                {int_t} cf_{j} = ({int_t})floor((double)c_{j});
+                {int_t} cc_{j} = cf_{j} + 1;
+                {int_t} n_{j} = (c_{j} == cf_{j}) ? 1 : 2;  // points needed
+                """
                 )
 
-            if mode != "constant":
-                if mode == "wrap":
-                    ixvar = "dcoordf"
-                    float_ix = True
-                else:
-                    ixvar = f"cf_bounded_{j}"
-                    float_ix = False
-                ops.append(
-                    _util._generate_boundary_condition_ops(
-                        mode, ixvar, f"xsize_{j}", int_t, float_ix
-                    )
-                )
-
-                ixvar = "dcoordc" if mode == "wrap" else f"cc_bounded_{j}"
-                ops.append(
-                    _util._generate_boundary_condition_ops(
-                        mode, ixvar, f"xsize_{j}", int_t, float_ix
-                    )
-                )
                 if mode == "wrap":
                     ops.append(
                         f"""
-                    {int_t} cf_bounded_{j} = ({int_t})floor(dcoordf);
-                    {int_t} cc_bounded_{j} = ({int_t})floor(dcoordf
-                                              + ({float_type})1.0);
-                    """
+                    {float_type} dcoordf = c_{j};
+                    {float_type} dcoordc = c_{j} + ({float_type})1.0;"""
+                    )
+                else:
+                    # handle boundaries for extension modes.
+                    ops.append(
+                        f"""
+                    {int_t} cf_bounded_{j} = cf_{j};
+                    {int_t} cc_bounded_{j} = cc_{j};"""
                     )
 
-            ops.append(
-                f"""
-            for (int s_{j} = 0; s_{j} < n_{j}; s_{j}++)
-                {{
-                    W w_{j};
-                    {int_t} ic_{j};
-                    if (s_{j} == 0)
+                if mode != "constant":
+                    if mode == "wrap":
+                        ixvar = "dcoordf"
+                        float_ix = True
+                    else:
+                        ixvar = f"cf_bounded_{j}"
+                        float_ix = False
+                    ops.append(
+                        _util._generate_boundary_condition_ops(
+                            mode, ixvar, f"xsize_{j}", int_t, float_ix
+                        )
+                    )
+
+                    ixvar = "dcoordc" if mode == "wrap" else f"cc_bounded_{j}"
+                    ops.append(
+                        _util._generate_boundary_condition_ops(
+                            mode, ixvar, f"xsize_{j}", int_t, float_ix
+                        )
+                    )
+                    if mode == "wrap":
+                        ops.append(
+                            f"""
+                        {int_t} cf_bounded_{j} = ({int_t})floor(dcoordf);;
+                        {int_t} cc_bounded_{j} = ({int_t})floor(dcoordf
+                                                  + ({float_type})1.0);;
+                        """
+                        )
+
+                ops.append(
+                    f"""
+                for (int s_{j} = 0; s_{j} < n_{j}; s_{j}++)
                     {{
-                        w_{j} = (W)cc_{j} - c_{j};
-                        ic_{j} = cf_bounded_{j} * sx_{j};
-                    }} else
-                    {{
-                        w_{j} = c_{j} - (W)cf_{j};
-                        ic_{j} = cc_bounded_{j} * sx_{j};
-                    }}"""
-            )
+                        W w_{j};
+                        {int_t} ic_{j};
+                        if (s_{j} == 0)
+                        {{
+                            w_{j} = (W)cc_{j} - c_{j};
+                            ic_{j} = cf_bounded_{j} * sx_{j};
+                        }} else
+                        {{
+                            w_{j} = c_{j} - (W)cf_{j};
+                            ic_{j} = cc_bounded_{j} * sx_{j};
+                        }}"""
+                )
     elif order > 1:
         if mode == "grid-constant":
             spline_mode = "constant"
@@ -482,78 +604,85 @@ def _generate_interp_custom(
             spline_mode = _spline_prefilter_core._get_spline_mode(mode)
 
         # wx, wy are temporary variables used during spline weight computation
-        ops.append(
-            f"""
+        # (only needed for non-batch axes)
+        non_batch_axes = [j for j in range(ndim) if j not in batch_axes]
+        if non_batch_axes:
+            ops.append(
+                f"""
             W wx, wy;
             {int_t} start;"""
-        )
+            )
         for j in range(ndim):
-            # determine weights along the current axis
-            ops.append(
-                f"""
-            W weights_{j}[{order + 1}];"""
-            )
-            ops.append(
-                spline_weights_inline[order].format(
-                    j=j,
-                    order=order,
-                    F=float_type,
-                )
-            )
-
-            # get starting coordinate for spline interpolation along axis j
-            if mode in ["wrap"]:
-                ops.append(f"{float_type} dcoord = c_{j};")
-                coord_var = "dcoord"
-                ops.append(
-                    _util._generate_boundary_condition_ops(
-                        mode, coord_var, f"xsize_{j}", int_t, True
-                    )
-                )
-            else:
-                coord_var = f"({float_type})c_{j}"
-
-            if order & 1:
-                op_str = """
-                start = ({int_t})floor({coord_var}) - {order_2};"""
-            else:
-                op_str = """
-                start = ({int_t})floor(
-                    {coord_var} + ({float_type})0.5) - {order_2};"""
-            ops.append(
-                op_str.format(
-                    int_t=int_t,
-                    float_type=float_type,
-                    coord_var=coord_var,
-                    order_2=order // 2,
-                )
-            )
-
-            # set of coordinate values within spline footprint along axis j
-            ops.append(f"""{int_t} ci_{j}[{order + 1}];""")
-            for k in range(order + 1):
-                ixvar = f"ci_{j}[{k}]"
+            if j in batch_axes:
+                # batch axis: use identity, no interpolation needed
+                # just set w_{j} = 1.0 and ic_{j} = in_coord[{j}] * sx_{j}
                 ops.append(
                     f"""
-                {ixvar} = start + {k};"""
+            W w_{j} = (W)1.0;
+            {int_t} ic_{j} = (({int_t})in_coord[{j}]) * sx_{j};
+            {{  // dummy scope for batch axis {j}"""
+                )
+            else:
+                # determine weights along the current axis
+                ops.append(
+                    f"""
+                W weights_{j}[{order + 1}];"""
                 )
                 ops.append(
-                    _util._generate_boundary_condition_ops(
-                        spline_mode, ixvar, f"xsize_{j}", int_t
+                    spline_weights_inline[order].format(j=j, order=order)
+                )
+
+                # get starting coordinate for spline interpolation along axis j
+                if mode in ["wrap"]:
+                    ops.append(f"{float_type} dcoord = c_{j};")
+                    coord_var = "dcoord"
+                    ops.append(
+                        _util._generate_boundary_condition_ops(
+                            mode, coord_var, f"xsize_{j}", int_t, True
+                        )
+                    )
+                else:
+                    coord_var = f"({float_type})c_{j}"
+
+                if order & 1:
+                    op_str = """
+                    start = ({int_t})floor({coord_var}) - {order_2};"""
+                else:
+                    op_str = """
+                    start = ({int_t})floor(
+                        {coord_var} + ({float_type})0.5) - {order_2};"""
+                ops.append(
+                    op_str.format(
+                        int_t=int_t, coord_var=coord_var,
+                        float_type=float_type, order_2=order // 2
                     )
                 )
 
-            # loop over the order + 1 values in the spline filter
-            ops.append(
-                f"""
-            W w_{j};
-            {int_t} ic_{j};
-            for (int k_{j} = 0; k_{j} <= {order}; k_{j}++)
-                {{
-                    w_{j} = weights_{j}[k_{j}];
-                    ic_{j} = ci_{j}[k_{j}] * sx_{j};
-            """
-            )
+                # set of coordinate values within spline footprint along axis j
+                ops.append(f"""{int_t} ci_{j}[{order + 1}];""")
+                for k in range(order + 1):
+                    ixvar = f"ci_{j}[{k}]"
+                    ops.append(
+                        f"""
+                    {ixvar} = start + {k};"""
+                    )
+                    ops.append(
+                        _util._generate_boundary_condition_ops(
+                            spline_mode, ixvar, f"xsize_{j}", int_t
+                        )
+                    )
+
+                # loop over the order + 1 values in the spline filter
+                ops.append(
+                    f"""
+                W w_{j};
+                {int_t} ic_{j};
+                for (int k_{j} = 0; k_{j} <= {order}; k_{j}++)
+                    {{
+                        w_{j} = weights_{j}[k_{j}];
+                        ic_{j} = ci_{j}[k_{j}] * sx_{j};
+                """
+                )
 
     if order > 0:
         _weight = " * ".join([f"w_{j}" for j in range(ndim)])
@@ -597,6 +726,8 @@ def _generate_interp_custom(
     )
     if uint_t == "size_t":
         name += "_i64"
+    if batch_axes:
+        name += "_batch_" + "_".join([str(j) for j in sorted(batch_axes)])
     return operation, name
 
 
@@ -611,9 +742,13 @@ def _get_map_kernel(
     integer_output=False,
     nprepad=0,
     float_dtype=cupy.double,
+    batch_axes=None,
 ):
     in_params = "raw X x, raw W coords"
     out_params = "Y y"
+    # if there are batch axes, we need in_coord to be computed
+    # (batch axes use in_coord[j] instead of reading from coords)
+    omit_in_coord = not batch_axes
     operation, name = _generate_interp_custom(
         coord_func=_get_coord_map,
         ndim=ndim,
@@ -627,6 +762,7 @@ def _get_map_kernel(
         nprepad=nprepad,
         float_dtype=float_dtype,
         omit_in_coord=True,  # input image coordinates are not needed
+        batch_axes=batch_axes,
     )
     return cupy.ElementwiseKernel(
         in_params, out_params, operation, name, preamble=math_constants_preamble
@@ -644,6 +780,7 @@ def _get_shift_kernel(
     integer_output=False,
     nprepad=0,
     float_dtype=cupy.double,
+    batch_axes=None,
 ):
     in_params = "raw X x, raw W shift"
     out_params = "Y y"
@@ -659,6 +796,7 @@ def _get_shift_kernel(
         integer_output=integer_output,
         nprepad=nprepad,
         float_dtype=float_dtype,
+        batch_axes=batch_axes,
     )
     return cupy.ElementwiseKernel(
         in_params, out_params, operation, name, preamble=math_constants_preamble
@@ -677,6 +815,7 @@ def _get_zoom_shift_kernel(
     grid_mode=False,
     nprepad=0,
     float_dtype=cupy.double,
+    batch_axes=None,
 ):
     in_params = "raw X x, raw W shift, raw W zoom"
     out_params = "Y y"
@@ -696,6 +835,7 @@ def _get_zoom_shift_kernel(
         integer_output=integer_output,
         nprepad=nprepad,
         float_dtype=float_dtype,
+        batch_axes=batch_axes,
     )
     return cupy.ElementwiseKernel(
         in_params, out_params, operation, name, preamble=math_constants_preamble
@@ -714,6 +854,7 @@ def _get_zoom_kernel(
     grid_mode=False,
     nprepad=0,
     float_dtype=cupy.double,
+    batch_axes=None,
 ):
     in_params = "raw X x, raw W zoom"
     out_params = "Y y"
@@ -729,6 +870,7 @@ def _get_zoom_kernel(
         integer_output=integer_output,
         nprepad=nprepad,
         float_dtype=float_dtype,
+        batch_axes=batch_axes,
     )
     return cupy.ElementwiseKernel(
         in_params, out_params, operation, name, preamble=math_constants_preamble
@@ -746,6 +888,7 @@ def _get_affine_kernel(
     integer_output=False,
     nprepad=0,
     float_dtype=cupy.double,
+    batch_axes=None,
 ):
     in_params = "raw X x, raw W mat"
     out_params = "Y y"
@@ -761,6 +904,7 @@ def _get_affine_kernel(
         integer_output=integer_output,
         nprepad=nprepad,
         float_dtype=float_dtype,
+        batch_axes=batch_axes,
     )
     return cupy.ElementwiseKernel(
         in_params, out_params, operation, name, preamble=math_constants_preamble
