@@ -6,6 +6,7 @@ from skimage import data
 
 from cucim.skimage._shared.testing import expected_warnings
 from cucim.skimage.filters import median
+from cucim.skimage import morphology
 
 try:
     from math import prod
@@ -249,3 +250,17 @@ def test_median_preserve_dtype(image, dtype):
 )
 def test_median(img, behavior):
     median(img, behavior=behavior)
+
+
+def test_median_nonsquare():
+    """Test non-uniform footprint.
+
+    https://github.com/rapidsai/cucim/issues/520
+    """
+    rng = cp.random.default_rng()
+    img = rng.integers(0, 256, (128, 128), dtype=cp.uint8)
+    footprint = morphology.disk(5)
+    mode = 'nearest'
+    out = median(img, footprint, mode=mode, behavior='ndimage')
+    expected = ndimage.median_filter(img, footprint=footprint, mode=mode)
+    cp.testing.assert_array_equal(out, expected)
