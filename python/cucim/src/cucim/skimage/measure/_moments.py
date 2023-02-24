@@ -1,4 +1,5 @@
 import itertools
+import os
 
 import cupy as cp
 import numpy as np
@@ -519,22 +520,22 @@ def centroid(image, *, spacing=None):
 
 
 def _get_inertia_tensor_2x2_kernel():
+    kernel_directory = os.path.join(
+        os.path.normpath(os.path.dirname(__file__)), 'cuda'
+    )
+    preamble = """
+    #include "moments.h"
+    """
     operation = """
-    F mu0, mxx, mxy, myy;
-    mu0 = mu[0];
-    mxx = mu[6];
-    myy = mu[2];
-    mxy = mu[4];
-
-    result[0] = myy / mu0;
-    result[1] = result[2] = -mxy / mu0;
-    result[3] = mxx / mu0;
+    inertia_tensor_2x2(&mu[0], &result[0]);
     """
     return cp.ElementwiseKernel(
         in_params='raw F mu',
         out_params='raw F result',
+        preamble=preamble,
         operation=operation,
-        name='cucim_skimage_measure_inertia_tensor_2x2'
+        name='cucim_skimage_measure_inertia_tensor_2x2',
+        options=(f"-I{kernel_directory}",),
     )
 
 
