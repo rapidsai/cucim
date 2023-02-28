@@ -4,9 +4,9 @@ from cupy.testing import assert_allclose
 from cupyx.scipy import ndimage
 from skimage import data
 
+from cucim.skimage import morphology
 from cucim.skimage._shared.testing import expected_warnings
 from cucim.skimage.filters import median
-from cucim.skimage import morphology
 
 try:
     from math import prod
