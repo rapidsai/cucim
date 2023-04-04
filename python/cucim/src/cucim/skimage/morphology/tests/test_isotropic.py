@@ -91,7 +91,7 @@ def test_out_argument():
     for func in (morphology.isotropic_erosion, morphology.isotropic_dilation,
                  morphology.isotropic_opening, morphology.isotropic_closing):
         radius = 3
-        img = cp.ones((10, 10))
+        img = cp.ones((10, 10), dtype=bool)
         img[2:5, 2:5] = 0
         out = cp.zeros_like(img)
         out_saved = out.copy()
