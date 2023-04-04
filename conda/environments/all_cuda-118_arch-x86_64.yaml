@@ -13,7 +13,7 @@ dependencies:
 - cudatoolkit=11.8
 - cupy >=10,<12.0.0a0
 - cxx-compiler
-- gcc_linux-64=9.*
+- gcc_linux-64=11.*
 - imagecodecs>=2021.6.8
 - ipython
 - jbig

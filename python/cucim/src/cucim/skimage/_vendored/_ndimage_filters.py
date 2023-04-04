@@ -1110,6 +1110,9 @@ def _rank_filter(input, get_rank, size=None, footprint=None, output=None,
             sizes = footprint.shape
             has_weights = False
 
+    if not has_weights:
+        footprint = None
+
     rank = get_rank(filter_size)
     if rank < 0 or rank >= filter_size:
         raise RuntimeError('rank not within filter footprint size')
@@ -1130,7 +1133,7 @@ def _rank_filter(input, get_rank, size=None, footprint=None, output=None,
     kernel = _get_rank_kernel(filter_size, rank, mode, footprint_shape,
                               offsets, float(cval), int_type,
                               has_weights=has_weights)
-    return _filters_core._call_kernel(kernel, input, None, output,
+    return _filters_core._call_kernel(kernel, input, footprint, output,
                                       weights_dtype=bool)
 
 
