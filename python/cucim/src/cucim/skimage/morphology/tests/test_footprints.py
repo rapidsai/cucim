@@ -19,7 +19,7 @@ class TestSElem:
     def test_square_footprint(self):
         """Test square footprints"""
         for k in range(0, 5):
-            actual_mask = footprints.square(k)
+            actual_mask = footprints.square(k, dtype=cp.uint8)
             expected_mask = np.ones((k, k), dtype='uint8')
             assert_array_equal(expected_mask, actual_mask)
 
@@ -27,14 +27,14 @@ class TestSElem:
         """Test rectangle footprints"""
         for i in range(0, 5):
             for j in range(0, 5):
-                actual_mask = footprints.rectangle(i, j)
+                actual_mask = footprints.rectangle(i, j, dtype=cp.uint8)
                 expected_mask = np.ones((i, j), dtype='uint8')
                 assert_array_equal(expected_mask, actual_mask)
 
     def test_cube_footprint(self):
         """Test cube footprints"""
         for k in range(0, 5):
-            actual_mask = footprints.cube(k)
+            actual_mask = footprints.cube(k, dtype=cp.uint8)
             expected_mask = np.ones((k, k, k), dtype='uint8')
             assert_array_equal(expected_mask, actual_mask)
 
