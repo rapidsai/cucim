@@ -17,7 +17,7 @@ if (NOT TARGET deps::pybind11)
     FetchContent_Declare(
             deps-pybind11
             GIT_REPOSITORY https://github.com/pybind/pybind11.git
-            GIT_TAG v2.6.2
+            GIT_TAG v2.10.3
             GIT_SHALLOW TRUE
     )
     FetchContent_GetProperties(deps-pybind11)
