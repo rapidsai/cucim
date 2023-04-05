@@ -5,6 +5,6 @@ from .zoom import rand_zoom, zoom
 __all__ = [
     "normalize_data",
     "scale_intensity_range",
-    "zoom", 
+    "zoom",
     "rand_zoom"
 ]

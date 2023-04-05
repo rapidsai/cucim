@@ -16,4 +16,3 @@ make html
 ```
 
 Outputs to `build/html/index.html`
-

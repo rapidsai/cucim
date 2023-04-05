@@ -368,4 +368,3 @@ The following list is on the road |:smile:|
 - Generalize `CuImage::ensure_init()`
   - 'LINUX' path separator is used. Need to make it generalize once filesystem library is available
   - `cucim/cpp/src/cucim.cpp:520`
-

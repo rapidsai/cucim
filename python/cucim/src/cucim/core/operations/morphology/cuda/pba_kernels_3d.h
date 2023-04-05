@@ -1,7 +1,7 @@
 // Euclidean Distance Transform
-// 
-// Kernels for the 3D version of the Parallel Banding Algorithm (PBA+). 
-// 
+//
+// Kernels for the 3D version of the Parallel Banding Algorithm (PBA+).
+//
 // MIT license: see 3rdparty/LICENSE.pba+
 //
 // Modifications by Gregory Lee (2022) (NVIDIA)
