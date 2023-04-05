@@ -198,7 +198,7 @@ def resize(image, output_shape, order=None, mode='reflect', cval=0, clip=None,
     zoom_factors = [1 / f for f in factors]
     out = ndi.zoom(image, zoom_factors, order=order, mode=ndi_mode,
                    cval=cval, grid_mode=True)
-    _clip_warp_output(img_bounds, out, mode, cval, clip)
+    _clip_warp_output(img_bounds, out, mode, cval, order, clip)
     return out
 
 
@@ -336,8 +336,7 @@ def _ndimage_affine(image, matrix, output_shape, order, mode, cval, clip,
                                   mode=ndi_mode, order=order, cval=cval,
                                   output_shape=tuple(output_shape))
 
-    _clip_warp_output(image, warped, mode, cval, clip)
-
+    _clip_warp_output(image, warped, mode, cval, order, clip)
     return warped
 
 
@@ -365,7 +364,7 @@ def _ndimage_rotate(image, angle, resize, order, mode, cval, clip,
     ndi_mode = _to_ndimage_mode(mode)
     warped = ndi.rotate(image, angle, reshape=resize, prefilter=prefilter,
                         mode=ndi_mode, order=order, cval=cval)
-    _clip_warp_output(image, warped, mode, cval, clip)
+    _clip_warp_output(image, warped, mode, cval, order, clip)
     return warped
 
 
@@ -751,11 +750,12 @@ def warp_coords(coord_map, shape, dtype=cp.float64):
     return coords
 
 
-def _clip_warp_output(input_image, output_image, mode, cval, clip):
+def _clip_warp_output(input_image, output_image, mode, cval, order, clip):
     """Clip output image to range of values of input image.
 
     Note that this function modifies the values of `output_image` in-place
-    and it is only modified if ``clip=True``.
+    and it is only modified if ``clip=True`` (or clip is ``None`` and
+    `order` > 1).
 
     Parameters
     ----------
@@ -766,54 +766,59 @@ def _clip_warp_output(input_image, output_image, mode, cval, clip):
 
     Other parameters
     ----------------
-    mode : {'constant', 'edge', 'symmetric', 'reflect', 'wrap'}, optional
+    mode : {'constant', 'edge', 'symmetric', 'reflect', 'wrap'}
         Points outside the boundaries of the input are filled according
         to the given mode.  Modes match the behaviour of `numpy.pad`.
-    cval : float, optional
+    cval : float
         Used in conjunction with mode 'constant', the value outside
         the image boundaries.
-    clip : bool, optional
+    order : int
+        The interpolation order used. If `clip` is ``None`` and `order` <= 1,
+        no clipping will be applied.
+    clip : bool or None
         Whether to clip the output to the range of values of the input image.
         If `order` > 1, this will be enabled by default, since higher order
         interpolation may produce values outside the given input range.
 
     """
-    if clip:
-        if isinstance(input_image, tuple) and len(input_image) == 2:
-            min_val, max_val = input_image
-            # copy device scalars to host if necessary
-            if isinstance(min_val, cp.ndarray):
-                min_val = min_val.item()
-            if isinstance(max_val, cp.ndarray):
-                max_val = max_val.item()
+    if (clip is None and order <= 1) or not clip:
+        # no clipping by default for order = 0 or 1
+        return
+    if isinstance(input_image, tuple) and len(input_image) == 2:
+        min_val, max_val = input_image
+        # copy device scalars to host if necessary
+        if isinstance(min_val, cp.ndarray):
+            min_val = min_val.item()
+        if isinstance(max_val, cp.ndarray):
+            max_val = max_val.item()
+    else:
+        min_val = input_image.min().item()
+        if np.isnan(min_val):
+            # NaNs detected, use NaN-safe min/max
+            min_func = cp.nanmin
+            max_func = cp.nanmax
+            min_val = min_func(input_image).item()
         else:
-            min_val = input_image.min().item()
-            if np.isnan(min_val):
-                # NaNs detected, use NaN-safe min/max
-                min_func = cp.nanmin
-                max_func = cp.nanmax
-                min_val = min_func(input_image).item()
-            else:
-                min_func = cp.min
-                max_func = cp.max
-            max_val = max_func(input_image).item()
+            min_func = cp.min
+            max_func = cp.max
+        max_val = max_func(input_image).item()
 
-        # Check if cval has been used such that it expands the effective input
-        # range
-        preserve_cval = (
-            mode == 'constant'
-            and not min_val <= cval <= max_val
-            and min_func(output_image) <= cval <= max_func(output_image)
-        )
+    # Check if cval has been used such that it expands the effective input
+    # range
+    preserve_cval = (
+        mode == 'constant'
+        and not min_val <= cval <= max_val
+        and min_func(output_image) <= cval <= max_func(output_image)
+    )
 
-        # expand min/max range to account for cval
-        if preserve_cval:
-            # cast cval to the same dtype as the input image
-            cval = input_image.dtype.type(cval)
-            min_val = min(min_val, cval)
-            max_val = max(max_val, cval)
+    # expand min/max range to account for cval
+    if preserve_cval:
+        # cast cval to the same dtype as the input image
+        cval = input_image.dtype.type(cval)
+        min_val = min(min_val, cval)
+        max_val = max(max_val, cval)
 
-        cp.clip(output_image, min_val, max_val, out=output_image)
+    cp.clip(output_image, min_val, max_val, out=output_image)
 
 
 def warp(image, inverse_map, map_args={}, output_shape=None, order=None,
@@ -963,9 +968,6 @@ def warp(image, inverse_map, map_args={}, output_shape=None, order=None,
                          image.shape)
     order = _validate_interpolation_order(image.dtype, order)
 
-    if clip is None:
-        clip = True if order > 1 else False
-
     if image.dtype.kind == "c":
         if not preserve_range:
             raise NotImplementedError("TODO")
@@ -1018,8 +1020,7 @@ def warp(image, inverse_map, map_args={}, output_shape=None, order=None,
     warped = ndi.map_coordinates(image, coords, prefilter=prefilter,
                                  mode=ndi_mode, order=order, cval=cval)
 
-    _clip_warp_output(image, warped, mode, cval, clip)
-
+    _clip_warp_output(image, warped, mode, cval, order, clip)
     return warped
 
 
