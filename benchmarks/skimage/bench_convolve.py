@@ -136,4 +136,3 @@ for function, func_kwargs in [
                     t_elem = perf1.gpu_times * 1000.
                     t_shared = perf2.gpu_times * 1000.
                     print(f"{function.__name__} | {func_kwargs} | {shape} | {cp.dtype(dtype).name} | {mode} | {output_preallocated} | {t_elem.mean():0.3f} +/- {t_elem.std():0.3f}  | {t_shared.mean():0.3f} +/- {t_shared.std():0.3f} | {t_elem.mean() / t_shared.mean():0.3f}")
-
