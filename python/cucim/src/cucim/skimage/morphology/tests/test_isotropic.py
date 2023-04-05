@@ -1,5 +1,6 @@
 import cupy as cp
 import numpy as np
+import pytest
 from cupy.testing import assert_array_equal
 from skimage import data
 
@@ -87,14 +88,19 @@ def test_footprint_overflow():
     assert_array_equal(isotropic_res, binary_res)
 
 
-def test_out_argument():
+@pytest.mark.parametrize('out_dtype', [bool, cp.uint8, cp.int32])
+def test_out_argument(out_dtype):
     for func in (morphology.isotropic_erosion, morphology.isotropic_dilation,
                  morphology.isotropic_opening, morphology.isotropic_closing):
         radius = 3
         img = cp.ones((10, 10), dtype=bool)
         img[2:5, 2:5] = 0
-        out = cp.zeros_like(img)
+        out = cp.zeros_like(img, dtype=out_dtype)
         out_saved = out.copy()
-        func(img, radius, out=out)
-        assert cp.any(out != out_saved)
-        assert_array_equal(out, func(img, radius))
+        if out_dtype not in [bool, cp.uint8]:
+            with pytest.raises(ValueError):
+                func(img, radius, out=out)
+        else:
+            func(img, radius, out=out)
+            assert cp.any(out != out_saved)
+            assert_array_equal(out, func(img, radius))

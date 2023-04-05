@@ -6,6 +6,36 @@ import cupy as cp
 from cucim.core.operations.morphology import distance_transform_edt
 
 
+def _check_output(out, shape):
+    """Check shape and dtype of output array.
+
+    Parameters
+    ----------
+    out : cp.ndarray or None
+        The array to check
+    shape : tuple of int
+        The expected shape
+
+    Returns
+    -------
+    out : cp.ndarray
+        The original array (or boolean view of a uint8 array).
+    """
+    if out is None:
+        return None
+    if out.shape != shape:
+        raise ValueError("out.shape must match image.shape")
+    if not out.flags.c_contiguous:
+        raise ValueError("out array must have C-contiguous memory layout")
+    if out.dtype == bool:
+        return out
+    elif out.dtype == cp.uint8:
+        # view uint8 as bool
+        return out.view(bool)
+    else:
+        raise ValueError("provided out array should have boolean type")
+
+
 def isotropic_erosion(image, radius, out=None, spacing=None):
     """Return binary morphological erosion of an image.
 
@@ -60,11 +90,10 @@ def isotropic_erosion(image, radius, out=None, spacing=None):
         Volume 13, Issue 3, 1992, Pages 161-166.
         :DOI:`10.1016/0167-8655(92)90055-5`
     """
+    out = _check_output(out, image.shape)
     dist = distance_transform_edt(image, sampling=spacing)
     if out is not None:
-        # Copying instead of using the out= kwarg here since one CI test run
-        # on CentOS 7 failed for test_out_argument otherwise.
-        out[:] = cp.greater(dist, radius)
+        cp.greater(dist, radius, out=out)
     else:
         out = cp.greater(dist, radius)
     return out
@@ -125,11 +154,10 @@ def isotropic_dilation(image, radius, out=None, spacing=None):
         Volume 13, Issue 3, 1992, Pages 161-166.
         :DOI:`10.1016/0167-8655(92)90055-5`
     """
+    out = _check_output(out, image.shape)
     dist = distance_transform_edt(cp.logical_not(image), sampling=spacing)
     if out is not None:
-        # Copying instead of using the out= kwarg here since one CI test run
-        # on CentOS 7 failed for test_out_argument otherwise.
-        out[:] = cp.less_equal(dist, radius)
+        cp.less_equal(dist, radius, out=out)
     else:
         out = cp.less_equal(dist, radius)
     return out
@@ -188,6 +216,7 @@ def isotropic_opening(image, radius, out=None, spacing=None):
         Volume 13, Issue 3, 1992, Pages 161-166.
         :DOI:`10.1016/0167-8655(92)90055-5`
     """
+    out = _check_output(out, image.shape)
     eroded = isotropic_erosion(image, radius, spacing=spacing)
     return isotropic_dilation(eroded, radius, out=out, spacing=spacing)
 
@@ -245,5 +274,6 @@ def isotropic_closing(image, radius, out=None, spacing=None):
         Volume 13, Issue 3, 1992, Pages 161-166.
         :DOI:`10.1016/0167-8655(92)90055-5`
     """
+    out = _check_output(out, image.shape)
     dilated = isotropic_dilation(image, radius, spacing=spacing)
     return isotropic_erosion(dilated, radius, out=out, spacing=spacing)
