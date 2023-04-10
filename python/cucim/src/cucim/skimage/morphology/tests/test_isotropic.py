@@ -1,3 +1,5 @@
+import platform
+
 import cupy as cp
 import numpy as np
 import pytest
@@ -13,6 +15,7 @@ bw_img = img > 100 / 255.
 # TODO: Some tests fail unexpectedly on ARM.
 ON_AARCH64 = platform.machine() == "aarch64"
 ON_AARCH64_REASON = "TODO: Test fails unexpectedly on ARM."
+
 
 def test_non_square_image():
     isotropic_res = morphology.isotropic_erosion(bw_img[:100, :200], 3)
