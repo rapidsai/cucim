@@ -101,8 +101,8 @@ def moments_coords_central(coords, center=None, order=3):
     point, this no longer holds:
 
     >>> coords2 = cp.concatenate((coords, cp.array([[17, 17]])), axis=0)
-    >>> cp.round(moments_coords_central(coords2),
-    ...          decimals=2)  # doctest: +NORMALIZE_WHITESPACE
+    >>> cp.around(moments_coords_central(coords2),
+    ...           decimals=2)  # doctest: +NORMALIZE_WHITESPACE
     array([[17.  ,  0.  , 22.12, -2.49],
            [ 0.  ,  3.53,  1.73,  7.4 ],
            [25.88,  6.02, 36.63,  8.83],

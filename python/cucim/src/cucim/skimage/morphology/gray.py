@@ -25,13 +25,24 @@ def _iterate_gray_func(gray_func, image, footprints, out):
     (e.g. `scipy.ndimage.binary_erosion`).
     """
     fp, num_iter = footprints[0]
-    gray_func(image, footprint=fp, output=out)
+    tuple_fp = isinstance(fp, tuple)
+    if tuple_fp:
+        gray_func(image, size=fp, output=out)
+    else:
+        gray_func(image, footprint=fp, output=out)
     for _ in range(1, num_iter):
-        gray_func(out.copy(), footprint=fp, output=out)
+        if tuple_fp:
+            gray_func(out.copy(), size=fp, output=out)
+        else:
+            gray_func(out.copy(), footprint=fp, output=out)
     for fp, num_iter in footprints[1:]:
+        tuple_fp = isinstance(fp, tuple)
         # Note: out.copy() because the computation cannot be in-place!
         for _ in range(num_iter):
-            gray_func(out.copy(), footprint=fp, output=out)
+            if tuple_fp:
+                gray_func(out.copy(), size=fp, output=out)
+            else:
+                gray_func(out.copy(), footprint=fp, output=out)
     return out
 
 
@@ -53,6 +64,13 @@ def _shift_footprint(footprint, shift_x, shift_y):
     out : 2D array, shape (M + int(shift_x), N + int(shift_y))
         The shifted footprint.
     """
+    if isinstance(footprint, tuple):
+        if len(footprint) == 2 and any(s % 2 == 0 for s in footprint):
+            # have to use an explicit array to shift the footprint below
+            footprint = cp.ones(footprint, dtype=bool)
+        else:
+            # no shift needed
+            return footprint
     if footprint.ndim != 2:
         # do nothing for 1D or 3D or higher footprints
         return footprint
@@ -101,6 +119,9 @@ def _invert_footprint(footprint):
     ----------
     .. [1] https://github.com/scipy/scipy/blob/ec20ababa400e39ac3ffc9148c01ef86d5349332/scipy/ndimage/morphology.py#L1285  # noqa
     """
+    if isinstance(footprint, tuple):
+        # fully populated rectangle is symmetric
+        return footprint
     inverted = footprint[(slice(None, None, -1),) * footprint.ndim]
     return inverted
 
@@ -135,6 +156,8 @@ def pad_for_eccentric_footprints(func):
             # Note: in practice none of our built-in footprint sequences will
             #       require padding (all are symmetric and have odd sizes)
             footprint_shape = _shape_from_sequence(footprint)
+        elif isinstance(footprint, tuple):
+            footprint_shape = footprint
         else:
             footprint_shape = footprint.shape
         for axis_len in footprint_shape:
@@ -232,6 +255,18 @@ def erosion(image, footprint=None, out=None, shift_x=False, shift_y=False):
                            for fp, n in footprint)
         return _iterate_gray_func(ndi.grey_erosion, image, footprints, out)
 
+    if isinstance(footprint, tuple):
+        if len(footprint) != image.ndim:
+            raise ValueError(
+                "footprint.ndim={len(footprint)}, image.ndim={image.ndim}"
+            )
+        if image.ndim == 2 and any(s % 2 == 0 for s in footprint):
+            # only odd-shaped footprints are properly handled for tuples
+            footprint = cp.ones(footprint, dtype=bool)
+        else:
+            ndi.grey_erosion(image, size=footprint, output=out)
+            return out
+
     footprint = _shift_footprint(footprint, shift_x, shift_y)
     ndi.grey_erosion(image, footprint=footprint, output=out)
     return out
@@ -314,6 +349,18 @@ def dilation(image, footprint=None, out=None, shift_x=False, shift_y=False):
             for fp, n in footprint
         )
         return _iterate_gray_func(ndi.grey_dilation, image, footprints, out)
+
+    if isinstance(footprint, tuple):
+        if len(footprint) != image.ndim:
+            raise ValueError(
+                "footprint.ndim={len(footprint)}, image.ndim={image.ndim}"
+            )
+        if image.ndim == 2 and any(s % 2 == 0 for s in footprint):
+            # only odd-shaped footprints are properly handled for tuples
+            footprint = cp.ones(footprint, dtype=bool)
+        else:
+            ndi.grey_dilation(image, size=footprint, output=out)
+            return out
 
     footprint = _shift_footprint(footprint, shift_x, shift_y)
     # Inside ndi.grey_dilation, the footprint is inverted,
@@ -562,6 +609,14 @@ def white_tophat(image, footprint=None, out=None):
         out_ = out
     if _footprint_is_sequence(footprint):
         return _white_tophat_seqence(image_, footprint, out_)
+    elif isinstance(footprint, tuple):
+        if len(footprint) != image.ndim:
+            raise ValueError(
+                "footprint.ndim={len(footprint)}, image.ndim={image.ndim}"
+            )
+        ndi.white_tophat(image, size=footprint, output=out)
+        return out
+
     out_ = ndi.white_tophat(image_, footprint=footprint, output=out_)
     return out
 

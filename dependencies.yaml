@@ -52,13 +52,13 @@ dependencies:
           - matrix:
               arch: x86_64
             packages:
-              - gcc_linux-64=9.*
+              - gcc_linux-64=11.*
               - sysroot_linux-64==2.17
               - yasm
           - matrix:
               arch: aarch64
             packages:
-              - gcc_linux-aarch64=9.*
+              - gcc_linux-aarch64=11.*
               - sysroot_linux-aarch64==2.17
       - output_types: conda
         matrices:
@@ -138,7 +138,7 @@ dependencies:
           - jpeg
           - libwebp-base
           - numpy >=1.21.3
-          - scikit-image >=0.19.0,<0.20.0a0
+          - scikit-image >=0.19.0,<0.21.0a0
           - scipy
           - xz
           - zlib

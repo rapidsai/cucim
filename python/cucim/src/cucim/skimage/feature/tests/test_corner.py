@@ -19,7 +19,6 @@ from cucim.skimage.feature import (corner_foerstner, corner_harris,
                                    structure_tensor,
                                    structure_tensor_eigenvalues)
 from cucim.skimage.feature.corner import _symmetric_image
-from cucim.skimage.morphology import cube
 
 
 @pytest.fixture
@@ -227,9 +226,11 @@ def test_structure_tensor_eigenvalues(dtype):
 
 
 def test_structure_tensor_eigenvalues_3d():
-    image = pad(cube(9), 5, mode='constant') * 1000
-    boundary = (pad(cube(9), 5, mode='constant')
-                - pad(cube(7), 6, mode='constant')).astype(bool)
+    cube9 = cp.ones((9,) * 3, dtype=cp.uint8)
+    cube7 = cp.ones((7,) * 3, dtype=cp.uint8)
+    image = pad(cube9, 5, mode='constant') * 1000
+    boundary = (pad(cube9, 5, mode='constant')
+                - pad(cube7, 6, mode='constant')).astype(bool)
     A_elems = structure_tensor(image, sigma=0.1)
     e0, e1, e2 = structure_tensor_eigenvalues(A_elems)
     # e0 should detect facets

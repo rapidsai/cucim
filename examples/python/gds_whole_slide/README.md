@@ -50,7 +50,7 @@ resolution level from an uncompressed multi-resolution TIFF image.
 uncompressed Zarr file with a tile size matching the TIFF image.
 
 - **benchmark_zarr_write.py** : Benchmark writing of a CuPy array to an
-uncompressed Zarr file of the specified chunk size. 
+uncompressed Zarr file of the specified chunk size.
 
 - **benchmark_zarr_write_lz4_via_dask.py** : Use Dask and
 `kvikio.zarr.GDSStore` to write LZ4 lossless compressed Zarr array with the
@@ -98,7 +98,7 @@ cat /proc/driver/nvidia-fs/stats
 ```
 e.g.
 ```
-GDS Version: 1.4.0.29 
+GDS Version: 1.4.0.29
 NVFS statistics(ver: 4.0)
 NVFS Driver(version: 2.13.5)
 Mellanox PeerDirect Supported: False

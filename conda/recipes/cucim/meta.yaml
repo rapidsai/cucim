@@ -1,10 +1,11 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.
+# Copyright (c) 2021-2023, NVIDIA CORPORATION.
 
-{% set version = environ.get('GIT_DESCRIBE_TAG', '0.0.0.dev').lstrip('v') + environ.get('VERSION_SUFFIX', '') %}
+{% set version = environ.get('GIT_DESCRIBE_TAG', '0.0.0.dev').lstrip('v') %}
 {% set minor_version = version.split('.')[0] + '.' + version.split('.')[2] %}
 {% set py_version = environ['CONDA_PY'] %}
 {% set cuda_version = '.'.join(environ['RAPIDS_CUDA_VERSION'].split('.')[:2]) %}
 {% set cuda_major = cuda_version.split('.')[0] %}
+{% set date_string = environ['RAPIDS_DATE_STRING'] %}
 
 package:
   name: cucim
@@ -15,10 +16,11 @@ source:
 
 build:
   number: {{ GIT_DESCRIBE_NUMBER }}
-  string: cuda_{{ cuda_major }}_py{{ py_version }}_{{ GIT_DESCRIBE_HASH }}_{{ GIT_DESCRIBE_NUMBER }}
+  string: cuda_{{ cuda_major }}_py{{ py_version }}_{{ date_string }}_{{ GIT_DESCRIBE_HASH }}_{{ GIT_DESCRIBE_NUMBER }}
   script_env:
     - AWS_ACCESS_KEY_ID
     - AWS_SECRET_ACCESS_KEY
+    - AWS_SESSION_TOKEN
     - CMAKE_C_COMPILER_LAUNCHER
     - CMAKE_CUDA_COMPILER_LAUNCHER
     - CMAKE_CXX_COMPILER_LAUNCHER
@@ -29,6 +31,7 @@ build:
     - SCCACHE_REGION
     - SCCACHE_S3_KEY_PREFIX=cucim-aarch64 # [aarch64]
     - SCCACHE_S3_KEY_PREFIX=cucim-linux64 # [linux64]
+    - SCCACHE_S3_USE_SSL
 
 requirements:
   build:
@@ -45,7 +48,7 @@ requirements:
     - libcucim ={{ version }}
     - numpy 1.21
     - python
-    - scikit-image >=0.19.0,<0.20.0a0
+    - scikit-image >=0.19.0,<0.21.0a0
     - scipy
   run:
     - {{ pin_compatible('cudatoolkit', max_pin='x', min_pin='x') }}
@@ -55,15 +58,14 @@ requirements:
     - libcucim ={{ version }}
     # - openslide # skipping here but benchmark binary would need openslide library
     - python
-    - scikit-image >=0.19.0,<0.20.0a0
+    - scikit-image >=0.19.0,<0.21.0a0
     - scipy
 
-# TODO: Remove the linux64 tags on tests after disabling gpuCI / Jenkins
-tests:                                 # [linux64]
-  requirements:                        # [linux64]
-    - cudatoolkit ={{ cuda_version }}  # [linux64]
-  imports:                             # [linux64]
-    - cucim                            # [linux64]
+tests:
+  requirements:
+    - cudatoolkit ={{ cuda_version }}
+  imports:
+    - cucim
 
 about:
   home: https://developer.nvidia.com/multidimensional-image-processing

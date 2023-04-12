@@ -172,7 +172,7 @@ class ImageBench(object):
                 )
                 print("Number of Repetitions : ", rep_kwargs_gpu)
                 perf_gpu = repeat(self.func_gpu, self.args_gpu, kw_gpu, **rep_kwargs_gpu)
-                
+
                 df.at[index, "shape"] = f"{self.shape}"
                 # df.at[index,  "description"] = index
                 df.at[index, "function_name"] = self.function_name

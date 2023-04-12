@@ -13,7 +13,7 @@
 # limitations under the License.
 #
 
-FROM gigony/manylinux2014-x64:20201013-46b1bff
+FROM dockcross/manylinux2014-x64:20230215-2dd9a1c
 
 ENV DEFAULT_DOCKCROSS_IMAGE gigony/manylinux2014-x64:cuda111
 ENV PATH=/usr/local/cuda/bin/:$PATH
@@ -22,7 +22,7 @@ ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64/:/usr/local/cuda/nvvm/lib64:${LD_LIBRA
 
 RUN curl -LO https://developer.download.nvidia.com/compute/cuda/11.1.0/local_installers/cuda_11.1.0_455.23.05_linux.run && \
     chmod +x cuda_*.run && \
-    ./cuda_*.run --silent --no-opengl-libs --toolkit && \
+    ./cuda_*.run --silent --no-opengl-libs --toolkit --override && \
     rm -f cuda_*.run;
 
 RUN curl -LO https://developer.download.nvidia.com/compute/cuda/repos/rhel7/x86_64/libnvjpeg2k0-0.0.1.17-1.x86_64.rpm && \
