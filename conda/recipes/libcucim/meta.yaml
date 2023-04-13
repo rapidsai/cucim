@@ -46,7 +46,7 @@ requirements:
     - cudatoolkit ={{ cuda_version }}
     - jbig
     - jpeg
-    - libwebp-base  # [linux or osx]
+    - libwebp-base {{ libwebp_base_version }}  # [linux or osx]
     - openslide
     - xz
     - zlib
