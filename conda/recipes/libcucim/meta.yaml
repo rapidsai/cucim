@@ -58,7 +58,6 @@ requirements:
     - {{ pin_compatible('libwebp-base', max_pin='x.x') }}
     - jbig
     - jpeg
-    - libwebp-base  # [linux or osx]
     # - openslide # skipping here but benchmark binary would need openslide library
     - xz
     - zlib
