@@ -16,6 +16,8 @@ source:
 build:
   number: {{ GIT_DESCRIBE_NUMBER }}
   string: cuda{{ cuda_major }}_{{ date_string }}_{{ GIT_DESCRIBE_HASH }}_{{ GIT_DESCRIBE_NUMBER }}
+  ignore_run_exports:
+    - libwebp-base
   script_env:
     - AWS_ACCESS_KEY_ID
     - AWS_SECRET_ACCESS_KEY
@@ -46,16 +48,16 @@ requirements:
     - cudatoolkit ={{ cuda_version }}
     - jbig
     - jpeg
-    - libwebp-base  # [linux or osx]
+    - libwebp-base {{ libwebp_base_version }}  # [linux or osx]
     - openslide
     - xz
     - zlib
     - zstd
   run:
     - {{ pin_compatible('cudatoolkit', max_pin='x', min_pin='x') }}
+    - {{ pin_compatible('libwebp-base', max_pin='x.x') }}
     - jbig
     - jpeg
-    - libwebp-base  # [linux or osx]
     # - openslide # skipping here but benchmark binary would need openslide library
     - xz
     - zlib
