@@ -44,7 +44,7 @@ set +e
 
 rapids-logger "pytest cucim"
 pushd python/cucim
-pytest \
+timeout 20m pytest \
   --cache-clear \
   --junitxml="${RAPIDS_TESTS_DIR}/junit-cucim.xml" \
   --numprocesses=8 \
@@ -53,6 +53,7 @@ pytest \
   --cov=cucim \
   --cov-report=xml:"${RAPIDS_COVERAGE_DIR}/cucim-coverage.xml" \
   --cov-report=term \
+  -v \
   src \
   tests/unit \
   tests/performance
