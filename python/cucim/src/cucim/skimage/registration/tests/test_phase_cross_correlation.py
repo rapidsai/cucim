@@ -180,9 +180,12 @@ def test_mismatch_offsets_size():
 )
 def test_disambiguate_2d(shift0, shift1):
     image = cp.array(eagle()[500:, 900:])  # use a highly textured image region
-    # protect against some versions of scikit-image + imagio loading as RGB instead of Grayscale
+
+    # Protect against some versions of scikit-image + imagio loading as
+    # RGB instead of grayscale.
     if image.ndim == 3:
         image = image[..., 0]
+
     shift = (shift0, shift1)
     origin0 = []
     for s in shift:
