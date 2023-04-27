@@ -59,9 +59,23 @@ void CuFileStub::load()
 #if !CUCIM_STATIC_GDS
         if (handle_ == nullptr)
         {
-            // Note: Load the dynamic library with RTLD_NODELETE flag because libcufile.so uses therad_local which can
+            // Note: Load the dynamic library with RTLD_NODELETE flag because libcufile.so uses thread_local which can
             // cause a segmentation fault if the library is dynamically loaded/unloaded. (See #158)
-            handle_ = cucim::dynlib::load_library("libcufile.so", RTLD_LAZY | RTLD_LOCAL | RTLD_NODELETE);
+            // CUDA versions before CUDA 11.7.1 did not ship libcufile.so.0, so this is
+            // a workaround that adds support for all prior versions of libcufile.
+            handle_ = cucim::dynlib::load_library(
+                {
+                    "libcufile.so.0",
+                    "libcufile.so.1.3.0" /* 11.7.0 */,
+                    "libcufile.so.1.2.1" /* 11.6.2, 11.6.1 */,
+                    "libcufile.so.1.2.0" /* 11.6.0 */,
+                    "libcufile.so.1.1.1" /* 11.5.1 */,
+                    "libcufile.so.1.1.0" /* 11.5.0 */,
+                    "libcufile.so.1.0.2" /* 11.4.4, 11.4.3, 11.4.2 */,
+                    "libcufile.so.1.0.1" /* 11.4.1 */,
+                    "libcufile.so.1.0.0" /* 11.4.0 */
+                },
+                RTLD_LAZY | RTLD_LOCAL | RTLD_NODELETE);
             if (handle_ == nullptr)
             {
                 return;
