@@ -79,7 +79,7 @@ The following list is on the road |:smile:|
 - Design a CT bone segmentation filter
 - Provide a robust CI/CD system
 - Define KPIs and publish report
-- Update project to use the latest [Carbonite SDK](https://docs.omniverse.nvidia.com/prod_kit/prod_kit/developer_api.html#carbonite-sdk) for supporting plug-in architecture
+- Update project to use the latest [Carbonite SDK](https://docs.omniverse.nvidia.com/kit/docs/carbonite/latest/docs/carb/Framework.html) for supporting plug-in architecture
 
 ## TODOs
 
@@ -169,7 +169,7 @@ The following list is on the road |:smile:|
 
 - Support Philips iSyntax format
   - <https://thepathologist.com/fileadmin/issues/App_Notes/0016-024-app-note-Philips__iSyntax_for_Digital_Pathology.pdf>
-  - <https://www.openpathology.philips.com/wp-content/uploads/isyntax/4522%20207%2043941_2020_04_24%20Pathology%20iSyntax%20image%20format.pdf>
+  - <https://www.usa.philips.com/healthcare/sites/pathology/about/sdk>
 
 ### Image Filter
 
@@ -346,7 +346,7 @@ The following list is on the road |:smile:|
   - `python/cucim/docs/conf.py:71`
   - <https://www.sphinx-doc.org/en/master/usage/configuration.html?highlight=linkcheck#options-for-the-linkcheck-builder>
 - {fa}`check,text-success mr-1` Force-reinstall cucim Python package in the Tox environment whenever `gen_docs` or `gen_docs_dev` command is executed -- [v0.2.0](../release_notes/v0.2.0.md)
-  - <https://tox.readthedocs.io/en/latest/config.html#conf-usedevelop>
+  - <https://tox.readthedocs.io/en/latest/config.html>
 - Simplify method signatures in Python API Docs
   - `cucim._cucim.CuImage` -> `cucim.CuImage`
 - Use new feature to reference a cross-link with header (from v0.13.0 of [myst-parser](https://pypi.org/project/myst-parser/))
@@ -356,7 +356,7 @@ The following list is on the road |:smile:|
 
 ### Plugin-system (Carbonite)
 
-- Update project to use the latest [Carbonite SDK](https://docs.omniverse.nvidia.com/prod_kit/prod_kit/developer_api.html#carbonite-sdk) for supporting plug-in architecture -- [v0.22.0](../release_notes/v0.22.0.md)
+- Update project to use the latest [Carbonite SDK](https://docs.omniverse.nvidia.com/kit/docs/carbonite/latest/docs/carb/Framework.html) for supporting plug-in architecture -- [v0.22.0](../release_notes/v0.22.0.md)
   - Migrate to use Carbonite SDK as it is
   - Update to use Minimal Carbonite SDK
 
