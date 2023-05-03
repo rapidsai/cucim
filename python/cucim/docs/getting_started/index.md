@@ -77,7 +77,7 @@ The folder has the following four files.
 `TUPAC-TR-488.svs` and `TUPAC-TR-467.svs` are from the dataset
 of Tumor Proliferation Assessment Challenge 2016 (TUPAC16 | MICCAI Grand Challenge).
 
-- Website: <http://tupac.tue-image.nl/node/3>
+- Website: <https://tupac.grand-challenge.org/>
 - Data link: <https://drive.google.com/drive/u/0/folders/0B--ztKW0d17XYlBqOXppQmw0M2M>
 
 #### Converted files
