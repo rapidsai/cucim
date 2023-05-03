@@ -48,7 +48,6 @@ requirements:
   host:
     - cudatoolkit ={{ cuda_version }}
     - jbig
-    - jpeg
     - libwebp-base {{ libwebp_base_version }}  # [linux or osx]
     - openslide
     - xz
@@ -58,7 +57,6 @@ requirements:
     - {{ pin_compatible('cudatoolkit', max_pin='x', min_pin='x') }}
     - {{ pin_compatible('libwebp-base', max_pin='x.x') }}
     - jbig
-    - jpeg
     # - openslide # skipping here but benchmark binary would need openslide library
     - xz
     - zlib
