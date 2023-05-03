@@ -20,7 +20,7 @@
 
 ## 🛠️ Improvements
 
-- allow scikit-image 0.20 as well ([#536](https://github.com/rapidsai/cucim/pull/536)) [@grlee77](https://github.com/grlee77)
+- Allow scikit-image 0.20 as well ([#536](https://github.com/rapidsai/cucim/pull/536)) [@grlee77](https://github.com/grlee77)
 - Pass AWS_SESSION_TOKEN and SCCACHE_S3_USE_SSL vars to conda build ([#525](https://github.com/rapidsai/cucim/pull/525)) [@ajschmidt8](https://github.com/ajschmidt8)
 - Update aarch64 to GCC 11 ([#524](https://github.com/rapidsai/cucim/pull/524)) [@bdice](https://github.com/bdice)
 - Update to GCC 11 ([#522](https://github.com/rapidsai/cucim/pull/522)) [@bdice](https://github.com/bdice)
