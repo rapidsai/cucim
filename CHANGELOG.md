@@ -1,3 +1,39 @@
+# cuCIM 23.04.01 (14 Apr 2023)
+
+## 🛠️ Improvements
+
+- Pin libwebp-base ([#541](https://github.com/rapidsai/cucim/pull/541)) [@ajschmidt8](https://github.com/ajschmidt8)
+
+
+# cuCIM 23.04.00 (13 Apr 2023)
+
+## 🚨 Breaking Changes
+
+- Fix inefficiency in handling clipping of image range in resize and other transforms ([#516](https://github.com/rapidsai/cucim/pull/516)) [@grlee77](https://github.com/grlee77)
+
+## 🐛 Bug Fixes
+
+- Fix bug in median filter with non-uniform footprint ([#521](https://github.com/rapidsai/cucim/pull/521)) [@grlee77](https://github.com/grlee77)
+- use cp.around instead of cp.round for CuPy 10.x compatiblity ([#508](https://github.com/rapidsai/cucim/pull/508)) [@grlee77](https://github.com/grlee77)
+- Fix error in LZ4-compressed Zarr writing demo ([#506](https://github.com/rapidsai/cucim/pull/506)) [@grlee77](https://github.com/grlee77)
+- Normalize whitespace.([#474](https://github.com/rapidsai/cucim/pull/474)) [@bdice](https://github.com/bdice)
+
+## 🛠️ Improvements
+
+- Allow scikit-image 0.20 as well ([#536](https://github.com/rapidsai/cucim/pull/536)) [@grlee77](https://github.com/grlee77)
+- Pass AWS_SESSION_TOKEN and SCCACHE_S3_USE_SSL vars to conda build ([#525](https://github.com/rapidsai/cucim/pull/525)) [@ajschmidt8](https://github.com/ajschmidt8)
+- Update aarch64 to GCC 11 ([#524](https://github.com/rapidsai/cucim/pull/524)) [@bdice](https://github.com/bdice)
+- Update to GCC 11 ([#522](https://github.com/rapidsai/cucim/pull/522)) [@bdice](https://github.com/bdice)
+- Upgrade dockcross and pybind11 ([#519](https://github.com/rapidsai/cucim/pull/519)) [@gigony](https://github.com/gigony)
+- Binary morphology: omit weights array when possible ([#517](https://github.com/rapidsai/cucim/pull/517)) [@grlee77](https://github.com/grlee77)
+- Fix inefficiency in handling clipping of image range in resize and other transforms ([#516](https://github.com/rapidsai/cucim/pull/516)) [@grlee77](https://github.com/grlee77)
+- Fix GHA build workflow ([#515](https://github.com/rapidsai/cucim/pull/515)) [@AjayThorve](https://github.com/AjayThorve)
+- Reduce error handling verbosity in CI tests scripts ([#511](https://github.com/rapidsai/cucim/pull/511)) [@AjayThorve](https://github.com/AjayThorve)
+- Update shared workflow branches ([#510](https://github.com/rapidsai/cucim/pull/510)) [@ajschmidt8](https://github.com/ajschmidt8)
+- Remove gpuCI scripts. ([#505](https://github.com/rapidsai/cucim/pull/505)) [@bdice](https://github.com/bdice)
+- Move date to build string in conda recipe ([#497](https://github.com/rapidsai/cucim/pull/497)) [@ajschmidt8](https://github.com/ajschmidt8)
+
+
 # cuCIM 23.02.00 (9 Feb 2023)
 
 ## 🚨 Breaking Changes
