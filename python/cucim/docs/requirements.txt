@@ -2,7 +2,7 @@ Sphinx==4.5.0
 sphinx-autobuild
 myst-parser
 sphinx-book-theme
-numpy<1.24
+numpy
 matplotlib
 ipywidgets
 pandas
