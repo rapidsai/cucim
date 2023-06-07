@@ -872,15 +872,15 @@ download_testdata_desc() { echo 'Download test data from Docker Hub
 }
 download_testdata() {
     c_echo W "Downloading test data..."
-    run_command mkdir -p ${TOP}/notebooks/input
-    if [ ! -e ${TOP}/notebooks/input/image.tif ]; then
-        run_command rm -rf ${TOP}/notebooks/input
+    run_command mkdir -p "${TOP}/notebooks/input"
+    if [ ! -e "${TOP}/notebooks/input/image.tif" ]; then
+        run_command rm -rf "${TOP}/notebooks/input"
         id=$(docker create gigony/svs-testdata:little-big)
-        run_command docker cp $id:/input ${TOP}/notebooks
+        run_command docker cp $id:/input "${TOP}/notebooks"
         run_command docker rm -v $id
-        c_echo G "Test data is downloaded to ${TOP}/notebooks/input!"
+        c_echo G "Test data is downloaded to '${TOP}/notebooks/input'!"
     else
-        c_echo G "Test data already exists at ${TOP}/notebooks/input!"
+        c_echo G "Test data already exists at '${TOP}/notebooks/input'!"
     fi
 }
 

@@ -5,6 +5,7 @@ http://www.mathworks.com/matlabcentral/fileexchange/18401-efficient-subpixel-ima
 
 import itertools
 import math
+import warnings
 
 import cupy as cp
 import cupyx.scipy.ndimage as ndi
@@ -220,7 +221,7 @@ def phase_cross_correlation(reference_image, moving_image, *,
         this parameter is set to ``True``, the *real* space cross-correlation
         is computed for each possible shift, and the shift with the highest
         cross-correlation within the overlapping area is returned.
-    return_error : bool, optional
+    return_error : bool, {"always"}, optional
         Returns error and phase difference if "always" is given. If False, or
         either ``reference_mask`` or ``moving_mask`` are given, only the shift
         is returned.
@@ -253,10 +254,14 @@ def phase_cross_correlation(reference_image, moving_image, *,
         the axis order of the input array.
     error : float
         Translation invariant normalized RMS error between
-        ``reference_image`` and ``moving_image``.
+        ``reference_image`` and ``moving_image``. For masked cross-correlation
+        this error is not available and NaN is returned if ``return_error``
+        is "always".
     phasediff : float
         Global phase difference between the two images (should be
-        zero if images are non-negative).
+        zero if images are non-negative). For masked cross-correlation
+        this phase difference is not available and NaN is returned if
+        ``return_error`` is "always".
 
     Notes
     -----
@@ -294,10 +299,25 @@ def phase_cross_correlation(reference_image, moving_image, *,
            Pattern Recognition, pp. 2918-2925 (2010).
            :DOI:`10.1109/CVPR.2010.5540032`
     """
+    def warn_return_error():
+        warnings.warn(
+            "In scikit-image 0.22, phase_cross_correlation will start "
+            "returning a tuple or 3 items (shift, error, phasediff) always. "
+            "To enable the new return behavior and silence this warning, use "
+            "return_error='always'.",
+            category=FutureWarning,
+            stacklevel=3,
+        )
+
     if (reference_mask is not None) or (moving_mask is not None):
-        return _masked_phase_cross_correlation(reference_image, moving_image,
-                                               reference_mask, moving_mask,
-                                               overlap_ratio)
+        shift = _masked_phase_cross_correlation(reference_image, moving_image,
+                                                reference_mask, moving_mask,
+                                                overlap_ratio)
+        if return_error == "always":
+            return shift, np.nan, np.nan
+        else:
+            warn_return_error()
+            return shift
 
     # images must be the same shape
     if reference_image.shape != moving_image.shape:

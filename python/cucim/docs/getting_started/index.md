@@ -14,15 +14,15 @@
 
 ## Installation
 
-Please download the latest SDK package (`cuCIM-v23.04.01-linux.tar.gz`).
+Please download the latest SDK package (`cuCIM-v23.06.00-linux.tar.gz`).
 
 Untar the downloaded file.
 
 ```bash
-mkdir -p cuCIM-v23.04.01
-tar -xzvf cuCIM-v23.04.01-linux.tar.gz -C cuCIM-v23.04.01
+mkdir -p cuCIM-v23.06.00
+tar -xzvf cuCIM-v23.06.00-linux.tar.gz -C cuCIM-v23.06.00
 
-cd cuCIM-v23.04.01
+cd cuCIM-v23.06.00
 ```
 
 ## Run command
@@ -77,7 +77,7 @@ The folder has the following four files.
 `TUPAC-TR-488.svs` and `TUPAC-TR-467.svs` are from the dataset
 of Tumor Proliferation Assessment Challenge 2016 (TUPAC16 | MICCAI Grand Challenge).
 
-- Website: <http://tupac.tue-image.nl/node/3>
+- Website: <https://tupac.grand-challenge.org/>
 - Data link: <https://drive.google.com/drive/u/0/folders/0B--ztKW0d17XYlBqOXppQmw0M2M>
 
 #### Converted files
@@ -147,7 +147,7 @@ Its execution would show some metadata information and create two files -- `outp
 ```
 $ ./bin/tiff_image notebooks/input/image.tif .
 [Plugin: cucim.kit.cuslide] Loading...
-[Plugin: cucim.kit.cuslide] Loading the dynamic library from: cucim.kit.cuslide@23.04.01.so
+[Plugin: cucim.kit.cuslide] Loading the dynamic library from: cucim.kit.cuslide@23.06.00.so
 [Plugin: cucim.kit.cuslide] loaded successfully. Version: 0
 Initializing plugin: cucim.kit.cuslide (interfaces: [cucim::io::IImageFormat v0.1]) (impl: cucim.kit.cuslide)
 is_loaded: true

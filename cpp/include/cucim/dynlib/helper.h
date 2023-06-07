@@ -30,6 +30,7 @@
 #include "../macros/defines.h"
 
 #include <string>
+#include <vector>
 
 #if CUCIM_PLATFORM_LINUX
 #    include <dlfcn.h>
@@ -69,6 +70,25 @@ inline LibraryHandle load_library(const char* library_name, int mode = -1)
     {
         return dlopen(library_name, mode);
     }
+#else
+#    error "This platform is not supported!"
+#endif
+}
+
+inline LibraryHandle load_library(const std::vector<const char*>& names,
+                                  int mode = -1)
+{
+#if CUCIM_PLATFORM_LINUX
+    LibraryHandle handle_ = nullptr;
+    for (const char* name : names)
+    {
+        handle_= load_library(name, mode);
+        if (handle_ != nullptr)
+        {
+            return handle_;
+        }
+    }
+    return nullptr;
 #else
 #    error "This platform is not supported!"
 #endif

@@ -1,3 +1,42 @@
+# cuCIM 23.06.00 (7 Jun 2023)
+
+## 🚨 Breaking Changes
+
+- Support Python 3.9 build/tests ([#547](https://github.com/rapidsai/cucim/pull/547)) [@shwina](https://github.com/shwina)
+
+## 🐛 Bug Fixes
+
+- Fix SHA256 check failure in test suite ([#564](https://github.com/rapidsai/cucim/pull/564)) [@grlee77](https://github.com/grlee77)
+- Handle space character in ./run download_testdata ([#556](https://github.com/rapidsai/cucim/pull/556)) [@gigony](https://github.com/gigony)
+- Fix `return_error=&#39;always&#39;` behavior in phase_cross_correlation ([#549](https://github.com/rapidsai/cucim/pull/549)) [@grlee77](https://github.com/grlee77)
+- Only load versioned `libcufile` ([#548](https://github.com/rapidsai/cucim/pull/548)) [@jakirkham](https://github.com/jakirkham)
+- add a 20 minute timeout for pytest runs on CI ([#545](https://github.com/rapidsai/cucim/pull/545)) [@grlee77](https://github.com/grlee77)
+- protect against possible out of bounds memory access in 2D distance transform ([#540](https://github.com/rapidsai/cucim/pull/540)) [@grlee77](https://github.com/grlee77)
+
+## 📖 Documentation
+
+- Fix doc building via `run build_package` ([#553](https://github.com/rapidsai/cucim/pull/553)) [@grlee77](https://github.com/grlee77)
+- update changelog for release 23.04.00 and 23.04.01 ([#552](https://github.com/rapidsai/cucim/pull/552)) [@grlee77](https://github.com/grlee77)
+
+## 🛠️ Improvements
+
+- Allow numpy 1.24. ([#563](https://github.com/rapidsai/cucim/pull/563)) [@bdice](https://github.com/bdice)
+- run docs nightly too ([#560](https://github.com/rapidsai/cucim/pull/560)) [@AyodeAwe](https://github.com/AyodeAwe)
+- Update cupy dependency ([#558](https://github.com/rapidsai/cucim/pull/558)) [@vyasr](https://github.com/vyasr)
+- Remove libjpeg dependency ([#557](https://github.com/rapidsai/cucim/pull/557)) [@gigony](https://github.com/gigony)
+- Enable sccache hits from local builds ([#551](https://github.com/rapidsai/cucim/pull/551)) [@AyodeAwe](https://github.com/AyodeAwe)
+- Revert shared workflows branch ([#550](https://github.com/rapidsai/cucim/pull/550)) [@ajschmidt8](https://github.com/ajschmidt8)
+- Support Python 3.9 build/tests ([#547](https://github.com/rapidsai/cucim/pull/547)) [@shwina](https://github.com/shwina)
+- Remove usage of rapids-get-rapids-version-from-git ([#546](https://github.com/rapidsai/cucim/pull/546)) [@jjacobelli](https://github.com/jjacobelli)
+- Use ARC V2 self-hosted runners for GPU jobs ([#538](https://github.com/rapidsai/cucim/pull/538)) [@jjacobelli](https://github.com/jjacobelli)
+- Remove underscore in build string. ([#528](https://github.com/rapidsai/cucim/pull/528)) [@bdice](https://github.com/bdice)
+
+# cuCIM 23.04.01 (14 Apr 2023)
+
+## 🛠️ Improvements
+
+- Pin libwebp-base ([#541](https://github.com/rapidsai/cucim/pull/541)) [@ajschmidt8](https://github.com/ajschmidt8)
+
 # cuCIM 23.04.00 (6 Apr 2023)
 
 ## 🚨 Breaking Changes

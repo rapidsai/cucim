@@ -16,7 +16,7 @@ source:
 
 build:
   number: {{ GIT_DESCRIBE_NUMBER }}
-  string: cuda_{{ cuda_major }}_py{{ py_version }}_{{ date_string }}_{{ GIT_DESCRIBE_HASH }}_{{ GIT_DESCRIBE_NUMBER }}
+  string: cuda{{ cuda_major }}_py{{ py_version }}_{{ date_string }}_{{ GIT_DESCRIBE_HASH }}_{{ GIT_DESCRIBE_NUMBER }}
   script_env:
     - AWS_ACCESS_KEY_ID
     - AWS_SECRET_ACCESS_KEY
@@ -32,6 +32,7 @@ build:
     - SCCACHE_S3_KEY_PREFIX=cucim-aarch64 # [aarch64]
     - SCCACHE_S3_KEY_PREFIX=cucim-linux64 # [linux64]
     - SCCACHE_S3_USE_SSL
+    - SCCACHE_S3_NO_CREDENTIALS
 
 requirements:
   build:
@@ -44,7 +45,7 @@ requirements:
   host:
     - click
     - cudatoolkit ={{ cuda_version }}
-    - cupy >=10,<12.0.0a0
+    - cupy >=12.0.0
     - libcucim ={{ version }}
     - numpy 1.21
     - python
@@ -54,7 +55,7 @@ requirements:
     - {{ pin_compatible('cudatoolkit', max_pin='x', min_pin='x') }}
     - {{ pin_compatible('numpy') }}
     - click
-    - cupy >=10,<12.0.0a0
+    - cupy >=12.0.0
     - libcucim ={{ version }}
     # - openslide # skipping here but benchmark binary would need openslide library
     - python
