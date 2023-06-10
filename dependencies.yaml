@@ -72,6 +72,16 @@ dependencies:
               cuda: "11.8"
             packages:
               - nvcc_linux-aarch64=11.8
+          - matrix:
+              arch: x86_64
+              cuda: "12.0"
+            packages:
+              - cuda-nvcc_linux-64=12.0
+          - matrix:
+              arch: aarch64
+              cuda: "12.0"
+            packages:
+              - cuda-nvcc_linux-aarch64=12.0
   checks:
     common:
       - output_types: [conda, requirements]
@@ -97,6 +107,12 @@ dependencies:
               cuda: "11.8"
             packages:
               - cudatoolkit=11.8
+          - matrix:
+              cuda: "12.0"
+            packages:
+              - cuda-cudart-dev=12.0
+              - libnvjpeg-dev=12.0
+              - libcufile-dev=1.5
   docs:
     common:
       - output_types: [conda, requirements]
