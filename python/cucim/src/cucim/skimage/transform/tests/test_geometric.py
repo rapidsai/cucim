@@ -274,11 +274,13 @@ def test_affine_shear(xp):
     shear = 0.1
     # expected horizontal shear transform
     cx = -np.tan(shear)
+    # fmt: off
     expected = xp.array([
         [1, cx, 0],
-        [0,  1, 0],
-        [0,  0, 1]
+        [0,  1, 0],  # noqa: E241
+        [0,  0, 1],  # noqa: E241
     ])
+    # fmt: on
 
     tform = AffineTransform(shear=shear, xp=xp)
     xp.testing.assert_array_almost_equal(tform.params, expected)
@@ -287,11 +289,13 @@ def test_affine_shear(xp):
     # expected x, y shear transform
     cx = -np.tan(shear[0])
     cy = -np.tan(shear[1])
+    # fmt: off
     expected = xp.array([
-        [ 1, cx, 0],
-        [cy,  1, 0],
-        [ 0,  0, 1]
+        [ 1, cx, 0],  # noqa: E201
+        [cy,  1, 0],  # noqa: E241
+        [ 0,  0, 1],  # noqa: E241, E201
     ])
+    # fmt: on
 
     tform = AffineTransform(shear=shear, xp=xp)
     xp.testing.assert_array_almost_equal(tform.params, expected)

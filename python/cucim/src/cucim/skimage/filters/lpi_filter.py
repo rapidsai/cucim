@@ -96,7 +96,7 @@ class LPIFilter2D:
         if self._cache is None or np.any(self._cache.shape != oshape):
             coords = cp.mgrid[
                 [slice(0 + offset, float(n + offset))
-                for (n, offset) in zip(dshape, even_offset)]
+                 for (n, offset) in zip(dshape, even_offset)]
             ]
             # this steps over two sets of coordinates,
             # not over the coordinates individually

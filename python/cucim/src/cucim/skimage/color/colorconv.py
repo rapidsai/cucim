@@ -56,7 +56,7 @@ import numpy as np
 from scipy import linalg
 
 from .._shared.utils import (_supported_float_type, channel_as_last_axis,
-                             identity, deprecate_func)
+                             deprecate_func, identity)
 from ..util import dtype, dtype_limits
 
 
@@ -576,8 +576,8 @@ _illuminants = \
 def xyz_tristimulus_values(*, illuminant, observer, dtype=None):
     """Get the CIE XYZ tristimulus values.
 
-    Given an illuminant and observer, this function returns the CIE XYZ tristimulus
-    values [2]_ scaled such that :math:`Y = 1`.
+    Given an illuminant and observer, this function returns the CIE XYZ
+    tristimulus values [2]_ scaled such that :math:`Y = 1`.
 
     Parameters
     ----------
@@ -629,12 +629,12 @@ def xyz_tristimulus_values(*, illuminant, observer, dtype=None):
 
     Examples
     --------
-    Get the CIE XYZ tristimulus values for a "D65" illuminant for a 10 degree field of
-    view
+    Get the CIE XYZ tristimulus values for a "D65" illuminant for a 10 degree
+    field of view
 
     >>> xyz_tristimulus_values(illuminant="D65", observer="10")
     array([0.94809668, 1.        , 1.07305136])
-    """
+    """  # noqa
     illuminant = illuminant.upper()
     observer = observer.upper()
     try:
@@ -1335,7 +1335,6 @@ def lab2xyz(lab, illuminant="D65", observer="2", *, channel_axis=-1):
     return xyz
 
 
-
 def _lab2xyz(lab, illuminant, observer, channel_axis):
     """Convert CIE-LAB to XYZ color space.
 
@@ -1353,7 +1352,9 @@ def _lab2xyz(lab, illuminant, observer, channel_axis):
     lab = _prepare_colorarray(lab, force_c_contiguous=True,
                               channel_axis=channel_axis)
 
-    xyz_ref_white = xyz_tristimulus_values(illuminant=illuminant, observer=observer)
+    xyz_ref_white = xyz_tristimulus_values(
+        illuminant=illuminant, observer=observer
+    )
 
     name = f'lab2xyz_{lab.dtype.char}'
     kern = _get_lab_to_xyz_kernel(xyz_ref_white, name=name)
@@ -1554,8 +1555,8 @@ def xyz2luv(xyz, illuminant="D65", observer="2", *, channel_axis=-1):
     -----
     By default XYZ conversion weights use observer=2A. Reference whitepoint
     for D65 Illuminant, with XYZ tristimulus values of ``(95.047, 100.,
-    108.883)``. See function :func:`~.xyz_tristimulus_values` for a list of supported
-    illuminants.
+    108.883)``. See function :func:`~.xyz_tristimulus_values` for a list of
+    supported illuminants.
 
     References
     ----------
@@ -1660,7 +1661,8 @@ def luv2xyz(luv, illuminant="D65", observer="2", *, channel_axis=-1):
     -----
     XYZ conversion weights use observer=2A. Reference whitepoint for D65
     Illuminant, with XYZ tristimulus values of ``(95.047, 100., 108.883)``. See
-    function :func:`~.xyz_tristimulus_values` for a list of supported illuminants.
+    function :func:`~.xyz_tristimulus_values` for a list of supported
+    illuminants.
 
     References
     ----------

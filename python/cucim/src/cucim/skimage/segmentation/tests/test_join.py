@@ -24,7 +24,6 @@ def test_join_segmentations():
                       [4, 5, 5, 3]])
     assert_array_equal(j, j_ref)
 
-
     # test correct mapping
     j, m1, m2 = join_segmentations(s1, s2, return_mapping=True)
     assert_array_equal(m1[j], s1)

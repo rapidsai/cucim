@@ -89,8 +89,8 @@ def _generate_grid_slice(shape, *, offset, stride=3):
     return mask
 
 
-def denoise_invariant(image, denoise_function, *, stride=4,
-                       masks=None, denoiser_kwargs=None):
+def denoise_invariant(image, denoise_function, *, stride=4, masks=None,
+                      denoiser_kwargs=None):
     """Apply a J-invariant version of `denoise_function`.
 
     Parameters
@@ -137,8 +137,9 @@ def denoise_invariant(image, denoise_function, *, stride=4,
 
     References
     ----------
-    .. [1] J. Batson & L. Royer. Noise2Self: Blind Denoising by Self-Supervision,
-       International Conference on Machine Learning, p. 524-533 (2019).
+    .. [1] J. Batson & L. Royer. Noise2Self: Blind Denoising by
+       Self-Supervision, International Conference on Machine Learning,
+       p. 524-533 (2019).
     """
     image = img_as_float(image)
 

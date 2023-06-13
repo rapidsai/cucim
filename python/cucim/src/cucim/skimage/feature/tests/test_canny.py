@@ -156,13 +156,14 @@ class TestCanny():
         for mode in ('constant', 'nearest', 'reflect'):
             cp.testing.assert_array_equal(
                 feature.canny(image, mode=mode),
-                feature.canny(image, mode=mode, mask=cp.ones_like(image, dtype=bool))
-        )
+                feature.canny(image, mode=mode,
+                              mask=cp.ones_like(image, dtype=bool))
+            )
 
     @pytest.mark.parametrize('dtype', (cp.int64, cp.uint64))
     def test_unsupported_int64(self, dtype):
         image = cp.zeros((10, 10), dtype=dtype)
         image[3, 3] = cp.iinfo(dtype).max
-        match="64-bit or larger integer images are not supported"
+        match = "64-bit or larger integer images are not supported"
         with pytest.raises(ValueError, match=match):
             feature.canny(image)

@@ -1,7 +1,6 @@
 import functools
 import inspect
 import numbers
-import sys
 import warnings
 from collections.abc import Iterable
 
@@ -9,6 +8,7 @@ import cupy as cp
 import numpy as np
 
 from ._warnings import all_warnings, warn  # noqa
+
 __all__ = ['deprecate_func', 'get_bound_method_class', 'all_warnings',
            'safe_as_int', 'check_shape_equality', 'check_nD', 'warn',
            'reshape_nd', 'identity', 'slice_at_axis']
@@ -135,6 +135,7 @@ class remove_arg(_DecoratorBaseClass):
             warning_msg += f" {self.help_msg}"
 
         stack_rank = _get_stack_rank(func)
+
         @functools.wraps(func)
         def fixed_func(*args, **kwargs):
             stacklevel = 1 + self.get_stack_length(func) - stack_rank
@@ -251,6 +252,7 @@ class deprecate_kwarg(_DecoratorBaseClass):
     def __call__(self, func):
 
         stack_rank = _get_stack_rank(func)
+
         @functools.wraps(func)
         def fixed_func(*args, **kwargs):
             stacklevel = 1 + self.get_stack_length(func) - stack_rank
@@ -380,7 +382,7 @@ class deprecate_func(_DecoratorBaseClass):
     """
 
     def __init__(self, *, deprecated_version, removed_version=None, hint=None):
-        self.deprecated_version=deprecated_version
+        self.deprecated_version = deprecated_version
         self.removed_version = removed_version
         self.hint = hint
 
@@ -391,7 +393,9 @@ class deprecate_func(_DecoratorBaseClass):
             f"{self.deprecated_version}"
         )
         if self.removed_version:
-            message += f" and will be removed in version {self.removed_version}."
+            message += (
+                f" and will be removed in version {self.removed_version}."
+            )
         if self.hint:
             message += f" {self.hint.rstrip('.')}."
 

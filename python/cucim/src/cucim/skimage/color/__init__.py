@@ -9,9 +9,9 @@ from .colorconv import (ahx_from_rgb, bex_from_rgb, bpx_from_rgb, bro_from_rgb,
                         rgb_from_bex, rgb_from_bpx, rgb_from_bro, rgb_from_fgx,
                         rgb_from_gdx, rgb_from_hax, rgb_from_hdx, rgb_from_hed,
                         rgb_from_hpx, rgb_from_rbd, rgba2rgb, rgbcie2rgb,
-                        separate_stains, xyz2lab, xyz2luv, xyz2rgb, ycbcr2rgb,
-                        ydbdr2rgb, yiq2rgb, ypbpr2rgb, yuv2rgb,
-                        xyz_tristimulus_values)
+                        separate_stains, xyz2lab, xyz2luv, xyz2rgb,
+                        xyz_tristimulus_values, ycbcr2rgb, ydbdr2rgb, yiq2rgb,
+                        ypbpr2rgb, yuv2rgb)
 from .colorlabel import color_dict, label2rgb
 from .delta_e import deltaE_cie76, deltaE_ciede94, deltaE_ciede2000, deltaE_cmc
 

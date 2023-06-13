@@ -171,8 +171,6 @@ def _cv_difference_from_average_term(image, Hphi, lambda_pos, lambda_neg):
 def _fused_edge_length(mu, phi, x_start, x_end, y_start, y_end):
     fy = (y_end - y_start) / 2.0
     fx = (x_end - x_start) / 2.0
-    fyy = y_end + y_start - 2 * phi
-    fxx = x_end + x_start - 2 * phi
     grad2 = fx**2 + fy**2
 
     del_phi = 1.0 / (1.0 + phi * phi)  # _cv_delta(phi)
