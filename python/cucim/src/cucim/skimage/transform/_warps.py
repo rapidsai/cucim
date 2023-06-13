@@ -166,9 +166,6 @@ def resize(image, output_shape, order=None, mode='reflect', cval=0, clip=None,
     if clip is None:
         clip = True if order > 1 else False
 
-    # Save input value range for clip
-    img_bounds = (image.min(), image.max()) if clip else None
-
     # Translate modes used by np.pad to those used by scipy.ndimage
     ndi_mode = _to_ndimage_mode(mode)
     if anti_aliasing:
@@ -192,13 +189,15 @@ def resize(image, output_shape, order=None, mode='reflect', cval=0, clip=None,
         _ndi_mode = {'grid-constant': 'constant', 'grid-wrap':'wrap'}.get(ndi_mode, ndi_mode)  # noqa
         # keep ndi.gaussian_filter rather than cucim.skimage.filters.gaussian
         # to avoid undesired dtype coercion
-        image = ndi.gaussian_filter(image, anti_aliasing_sigma, cval=cval,
-                                    mode=_ndi_mode)
+        filtered = ndi.gaussian_filter(image, anti_aliasing_sigma, cval=cval,
+                                       mode=_ndi_mode)
+    else:
+        filtered = image
 
     zoom_factors = [1 / f for f in factors]
-    out = ndi.zoom(image, zoom_factors, order=order, mode=ndi_mode,
+    out = ndi.zoom(filtered, zoom_factors, order=order, mode=ndi_mode,
                    cval=cval, grid_mode=True)
-    _clip_warp_output(img_bounds, out, mode, cval, order, clip)
+    _clip_warp_output(image, out, mode, cval, order, clip)
     return out
 
 
@@ -821,7 +820,7 @@ def _clip_warp_output(input_image, output_image, mode, cval, order, clip):
     cp.clip(output_image, min_val, max_val, out=output_image)
 
 
-def warp(image, inverse_map, map_args={}, output_shape=None, order=None,
+def warp(image, inverse_map, map_args=None, output_shape=None, order=None,
          mode='constant', cval=0., clip=None, preserve_range=False):
     """Warp an image according to a given coordinate transformation.
 
@@ -963,6 +962,9 @@ def warp(image, inverse_map, map_args={}, output_shape=None, order=None,
     >>> warped = warp(cube, coords)
 
     """  # noqa
+    if map_args is None:
+        map_args = {}
+
     if image.size == 0:
         raise ValueError("Cannot warp empty image with dimensions",
                          image.shape)
