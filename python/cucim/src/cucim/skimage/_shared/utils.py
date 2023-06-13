@@ -1,6 +1,7 @@
 import functools
 import inspect
 import numbers
+import sys
 import warnings
 from collections.abc import Iterable
 
@@ -8,18 +9,48 @@ import cupy as cp
 import numpy as np
 
 from ._warnings import all_warnings, warn  # noqa
+__all__ = ['deprecate_func', 'get_bound_method_class', 'all_warnings',
+           'safe_as_int', 'check_shape_equality', 'check_nD', 'warn',
+           'reshape_nd', 'identity', 'slice_at_axis']
 
 
-class skimage_deprecation(Warning):
-    """Create our own deprecation class, since Python >= 2.7
-    silences deprecations by default.
+def _get_stack_rank(func):
+    """Return function rank in the call stack."""
+    if _is_wrapped(func):
+        return 1 + _get_stack_rank(func.__wrapped__)
+    else:
+        return 0
 
+
+def _is_wrapped(func):
+    return "__wrapped__" in dir(func)
+
+
+def _get_stack_length(func):
+    """Return function call stack length."""
+    return _get_stack_rank(func.__globals__.get(func.__name__, func))
+
+
+class _DecoratorBaseClass:
+    """Used to manage decorators' warnings stacklevel.
+
+    The `_stack_length` class variable is used to store the number of
+    times a function is wrapped by a decorator.
+
+    Let `stack_length` be the total number of times a decorated
+    function is wrapped, and `stack_rank` be the rank of the decorator
+    in the decorators stack. The stacklevel of a warning is then
+    `stacklevel = 1 + stack_length - stack_rank`.
     """
 
-    pass
+    _stack_length = {}
+
+    def get_stack_length(self, func):
+        return self._stack_length.get(func.__name__,
+                                      _get_stack_length(func))
 
 
-class change_default_value:
+class change_default_value(_DecoratorBaseClass):
     """Decorator for changing the default value of an argument.
 
     Parameters
@@ -48,6 +79,7 @@ class change_default_value:
         arg_idx = list(parameters.keys()).index(self.arg_name)
         old_value = parameters[self.arg_name].default
 
+        stack_rank = _get_stack_rank(func)
         if self.warning_msg is None:
             self.warning_msg = (
                 f"The new recommended value for {self.arg_name} is "
@@ -59,15 +91,17 @@ class change_default_value:
 
         @functools.wraps(func)
         def fixed_func(*args, **kwargs):
+            stacklevel = 1 + self.get_stack_length(func) - stack_rank
             if len(args) < arg_idx + 1 and self.arg_name not in kwargs.keys():
                 # warn that arg_name default value changed:
-                warnings.warn(self.warning_msg, FutureWarning, stacklevel=2)
+                warnings.warn(self.warning_msg, FutureWarning,
+                              stacklevel=stacklevel)
             return func(*args, **kwargs)
 
         return fixed_func
 
 
-class remove_arg:
+class remove_arg(_DecoratorBaseClass):
     """Decorator to remove an argument from function's signature.
 
     Parameters
@@ -100,21 +134,24 @@ class remove_arg:
         if self.help_msg is not None:
             warning_msg += f" {self.help_msg}"
 
+        stack_rank = _get_stack_rank(func)
         @functools.wraps(func)
         def fixed_func(*args, **kwargs):
+            stacklevel = 1 + self.get_stack_length(func) - stack_rank
             if len(args) > arg_idx or self.arg_name in kwargs.keys():
                 # warn that arg_name is deprecated
-                warnings.warn(warning_msg, FutureWarning, stacklevel=2)
+                warnings.warn(warning_msg, FutureWarning,
+                              stacklevel=stacklevel)
             return func(*args, **kwargs)
 
         return fixed_func
 
 
-def docstring_add_deprecated(func, kwarg_mapping, deprecated_version):
+def _docstring_add_deprecated(func, kwarg_mapping, deprecated_version):
     """Add deprecated kwarg(s) to the "Other Params" section of a docstring.
 
     Parameters
-    ---------
+    ----------
     func : function
         The function whose docstring we wish to update.
     kwarg_mapping : dict
@@ -176,7 +213,7 @@ def docstring_add_deprecated(func, kwarg_mapping, deprecated_version):
     return final_docstring
 
 
-class deprecate_kwarg:
+class deprecate_kwarg(_DecoratorBaseClass):
     """Decorator ensuring backward compatibility when argument names are
     modified in a function definition.
 
@@ -213,14 +250,17 @@ class deprecate_kwarg:
 
     def __call__(self, func):
 
+        stack_rank = _get_stack_rank(func)
         @functools.wraps(func)
         def fixed_func(*args, **kwargs):
+            stacklevel = 1 + self.get_stack_length(func) - stack_rank
             for old_arg, new_arg in self.kwarg_mapping.items():
                 if old_arg in kwargs:
                     #  warn that the function interface has changed:
                     warnings.warn(self.warning_msg.format(
                         old_arg=old_arg, func_name=func.__name__,
-                        new_arg=new_arg), FutureWarning, stacklevel=2)
+                        new_arg=new_arg), FutureWarning,
+                        stacklevel=stacklevel)
                     # Substitute new_arg to old_arg
                     kwargs[new_arg] = kwargs.pop(old_arg)
 
@@ -228,13 +268,13 @@ class deprecate_kwarg:
             return func(*args, **kwargs)
 
         if func.__doc__ is not None:
-            newdoc = docstring_add_deprecated(func, self.kwarg_mapping,
-                                              self.deprecated_version)
+            newdoc = _docstring_add_deprecated(func, self.kwarg_mapping,
+                                               self.deprecated_version)
             fixed_func.__doc__ = newdoc
         return fixed_func
 
 
-class channel_as_last_axis():
+class channel_as_last_axis:
     """Decorator for automatically making channels axis last for all arrays.
 
     This decorator reorders axes for compatibility with functions that only
@@ -311,53 +351,64 @@ class channel_as_last_axis():
         return fixed_func
 
 
-class deprecated(object):
-    """Decorator to mark deprecated functions with warning.
+class deprecate_func(_DecoratorBaseClass):
+    """Decorate a deprecated function and warn when it is called.
 
     Adapted from <http://wiki.python.org/moin/PythonDecoratorLibrary>.
 
     Parameters
     ----------
-    alt_func : str
-        If given, tell user what function to use instead.
-    behavior : {'warn', 'raise'}
-        Behavior during call to deprecated function: 'warn' = warn user that
-        function is deprecated; 'raise' = raise error.
+    deprecated_version : str
+        The package version when the deprecation was introduced.
     removed_version : str
         The package version in which the deprecated function will be removed.
+    hint : str, optional
+        A hint on how to address this deprecation,
+        e.g., "Use `skimage.submodule.alternative_func` instead."
+    Examples
+    --------
+    >>> @deprecate_func(
+    ...     deprecated_version="1.0.0",
+    ...     removed_version="1.2.0",
+    ...     hint="Use `bar` instead."
+    ... )
+    ... def foo():
+    ...     pass
+    Calling ``foo`` will warn with::
+        FutureWarning: `foo` is deprecated since version 1.0.0
+        and will be removed in version 1.2.0. Use `bar` instead.
     """
 
-    def __init__(self, alt_func=None, behavior='warn', removed_version=None):
-        self.alt_func = alt_func
-        self.behavior = behavior
+    def __init__(self, *, deprecated_version, removed_version=None, hint=None):
+        self.deprecated_version=deprecated_version
         self.removed_version = removed_version
+        self.hint = hint
 
     def __call__(self, func):
 
-        alt_msg = ''
-        if self.alt_func is not None:
-            alt_msg = f' Use ``{self.alt_func}`` instead.'
-        rmv_msg = ''
-        if self.removed_version is not None:
-            rmv_msg = f' and will be removed in version {self.removed_version}'
+        message = (
+            f"`{func.__name__}` is deprecated since version "
+            f"{self.deprecated_version}"
+        )
+        if self.removed_version:
+            message += f" and will be removed in version {self.removed_version}."
+        if self.hint:
+            message += f" {self.hint.rstrip('.')}."
 
-        msg = f'Function ``{func.__name__}`` is deprecated{rmv_msg}.{alt_msg}'
+        stack_rank = _get_stack_rank(func)
 
         @functools.wraps(func)
         def wrapped(*args, **kwargs):
-            if self.behavior == 'warn':
-                func_code = func.__code__
-                warnings.simplefilter('always', skimage_deprecation)
-                warnings.warn_explicit(msg,
-                                       category=skimage_deprecation,
-                                       filename=func_code.co_filename,
-                                       lineno=func_code.co_firstlineno + 1)
-            elif self.behavior == 'raise':
-                raise skimage_deprecation(msg)
+            stacklevel = 1 + self.get_stack_length(func) - stack_rank
+            warnings.warn(
+                message,
+                category=FutureWarning,
+                stacklevel=stacklevel
+            )
             return func(*args, **kwargs)
 
         # modify doc string to display deprecation warning
-        doc = '**Deprecated function**.' + alt_msg
+        doc = f'**Deprecated:** {message}'
         if wrapped.__doc__ is None:
             wrapped.__doc__ = doc
         else:

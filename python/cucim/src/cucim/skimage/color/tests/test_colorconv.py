@@ -666,9 +666,13 @@ class TestColorconv():
         a, b = cp.meshgrid(cp.arange(-100, 100), cp.arange(-100, 100))
         L = cp.ones(a.shape)
         lab = cp.dstack((L, a, b))
+        regex = (
+            "Conversion from CIE-LAB to XYZ color space resulted in "
+            "\\d+ negative Z values that have been clipped to zero"
+        )
         for value in [0, 10, 20]:
             lab[:, :, 0] = value
-            with expected_warnings(['Color data out of range']):
+            with pytest.warns(UserWarning, match=regex):
                 lab2xyz(lab)
 
     @pytest.mark.parametrize("channel_axis", [0, 1, -1, -2])
@@ -799,6 +803,17 @@ class TestColorconv():
                          for pt in cp.asnumpy(rgb).reshape(-1, 3)]
                         )
         assert_array_almost_equal(yiq, gt, decimal=2)
+
+    @pytest.mark.parametrize("func", [lab2rgb, lab2xyz])
+    def test_warning_stacklevel(self, func):
+        regex = (
+            "Conversion from CIE-LAB.* XYZ.*color space resulted in "
+            "1 negative Z values that have been clipped to zero"
+        )
+        with pytest.warns(UserWarning, match=regex) as messages:
+            func(lab=cp.array([[[0, 0, 300.]]]))
+        assert len(messages) == 1
+        assert messages[0].filename == __file__, "warning points at wrong file"
 
 
 def test_gray2rgb():

@@ -14,13 +14,13 @@ from warnings import warn
 import cupy as cp
 import numpy as np
 
-from .._shared.utils import _supported_float_type, check_nD, deprecated
+from .._shared.utils import _supported_float_type, check_nD, deprecate_func
 from ..feature.corner import (_symmetric_compute_eigenvalues, hessian_matrix,
                               hessian_matrix_eigvals)
 from ..util import img_as_float
 
 
-@deprecated(removed_version="2023.06.01")
+@deprecate_func(deprecated_version="", removed_version="2023.06.01")
 def compute_hessian_eigenvalues(image, sigma, sorting='none',
                                 mode='constant', cval=0,
                                 use_gaussian_derivatives=False):

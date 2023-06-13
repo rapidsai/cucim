@@ -1,4 +1,3 @@
-from .._shared.utils import deprecated
 from ._basic_features import multiscale_basic_features
 from ._canny import canny
 from ._daisy import daisy
