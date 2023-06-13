@@ -1,6 +1,6 @@
 from ._denoise import denoise_tv_chambolle
 from .deconvolution import richardson_lucy, unsupervised_wiener, wiener
-from .j_invariant import calibrate_denoiser
+from .j_invariant import calibrate_denoiser, denoise_invariant
 
 __all__ = [
     "wiener",
@@ -8,4 +8,5 @@ __all__ = [
     "richardson_lucy",
     "denoise_tv_chambolle",
     "calibrate_denoiser",
+    "denoise_invariant",
 ]
