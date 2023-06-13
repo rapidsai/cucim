@@ -3,7 +3,7 @@ import cupy as cp
 from ..util._map_array import ArrayMap, map_array
 
 
-def join_segmentations(s1, s2):
+def join_segmentations(s1, s2, return_mapping: bool = False):
     """Return the join of the two input segmentations.
 
     The join J of S1 and S2 is defined as the segmentation in which two
@@ -14,11 +14,18 @@ def join_segmentations(s1, s2):
     ----------
     s1, s2 : numpy arrays
         s1 and s2 are label fields of the same shape.
+    return_mapping : bool, optional
+        If true, return mappings for joined segmentation labels to the original
+        labels.
 
     Returns
     -------
     j : numpy array
         The join segmentation of s1 and s2.
+    map_j_to_s1 : ArrayMap, optional
+        Mapping from labels of the joined segmentation j to labels of s1.
+    map_j_to_s2 : ArrayMap, optional
+        Mapping from labels of the joined segmentation j to labels of s2.
 
     Examples
     --------
@@ -38,11 +45,19 @@ def join_segmentations(s1, s2):
     if s1.shape != s2.shape:
         raise ValueError("Cannot join segmentations of different shape. "
                          f"s1.shape: {s1.shape}, s2.shape: {s2.shape}")
-    s1 = relabel_sequential(s1)[0]
-    s2 = relabel_sequential(s2)[0]
-    j = (s2.max() + 1) * s1 + s2
-    j = relabel_sequential(j)[0]
-    return j
+    s1_relabeled, _, backward_map1 = relabel_sequential(s1)
+    s2_relabeled, _, backward_map2 = relabel_sequential(s2)
+    factor = s2.max() + 1
+    j_initial = factor * s1_relabeled + s2_relabeled
+    j, _, map_j_to_j_initial = relabel_sequential(j_initial)
+    if not return_mapping:
+        return j
+    # Determine label mapping
+    labels_j = cp.unique(j_initial)
+    labels_s1_relabeled, labels_s2_relabeled = cp.divmod(labels_j, factor)
+    map_j_to_s1 = ArrayMap(map_j_to_j_initial.in_values, backward_map1[labels_s1_relabeled])
+    map_j_to_s2 = ArrayMap(map_j_to_j_initial.in_values, backward_map2[labels_s2_relabeled])
+    return j, map_j_to_s1, map_j_to_s2
 
 
 def relabel_sequential(label_field, offset=1):
