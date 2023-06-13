@@ -351,6 +351,9 @@ def canny(image, sigma=1., low_threshold=None, high_threshold=None, mask=None,
     # mask by one and then mask the output. We also mask out the border points
     # because who knows what lies beyond the edge of the image?
 
+    if (image.dtype.kind in 'iu' and image.dtype.itemsize >= 8):
+        raise ValueError("64-bit or larger integer images are not supported")
+
     check_nD(image, 2)
     dtype_max = dtype_limits(image, clip_negative=False)[1]
 
