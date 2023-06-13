@@ -704,6 +704,10 @@ def threshold_li(image, *, tolerance=None, initial_guess=None,
                                    weights=hist[foreground])
             mean_back = np.average(bin_centers[background],
                                    weights=hist[background])
+
+            if mean_back == 0:
+                break
+
             eps = 100 * np.finfo(float).eps
             mean_back = float(mean_back)
             mean_fore = float(mean_fore)
@@ -725,6 +729,9 @@ def threshold_li(image, *, tolerance=None, initial_guess=None,
             eps = 100 * np.finfo(float).eps
             mean_fore = float(cp.mean(image[foreground]))
             mean_back = float(cp.mean(image[~foreground]))
+
+            if mean_back == 0:
+                break
 
             t_next = ((mean_back - mean_fore) /
                       (math.log(mean_back + eps) - math.log(mean_fore + eps)))
