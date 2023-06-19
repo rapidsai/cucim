@@ -235,6 +235,13 @@ def _nonmaximum_suppression_bilinear(
     kernel = _get_nonmax_kernel(large_int=large_int)
 
     out = cp.empty_like(magnitude)
+
+    if isinstance(low_threshold, cp.ndarray):
+        # if array scalar was provided, make sure dtype matches other arrays
+        if low_threshold.ndim > 0:
+            raise ValueError("expected scalar low_treshold")
+        low_threshold = float(low_threshold)
+
     kernel(isobel, jsobel, magnitude, eroded_mask, low_threshold, out)
     return out
 
