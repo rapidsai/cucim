@@ -17,6 +17,7 @@ dependencies:
 - imagecodecs>=2021.6.8
 - ipython
 - jbig
+- lazy_loader>=0.1
 - libwebp-base
 - nbsphinx
 - ninja
