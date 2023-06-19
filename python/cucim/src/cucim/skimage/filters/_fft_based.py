@@ -159,8 +159,8 @@ def butterworth(
     elif npad > 0:
         center_slice = tuple(slice(npad, s + npad) for s in image.shape)
         image = pad(image, npad, mode='edge')
-    fft_shape = (image.shape if channel_axis is None
-                 else np.delete(image.shape, channel_axis))
+    fft_shape = tuple(image.shape if channel_axis is None
+                      else np.delete(image.shape, channel_axis))
     is_real = cp.isrealobj(image)
     float_dtype = _supported_float_type(image.dtype, allow_complex=True)
     image = image.astype(float_dtype, copy=False)
