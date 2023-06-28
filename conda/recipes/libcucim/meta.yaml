@@ -71,7 +71,7 @@ requirements:
     - zlib
     - zstd
   run:
-    - cuda-version {{ cuda_spec }}
+    - {{ pin_compatible('cuda-version', max_pin='x', min_pin='x') }}
     {% if cuda_major == "11" %}
     - cudatoolkit
     - libcufile {{ cuda11_libcufile_run_version }}      # [linux64]
