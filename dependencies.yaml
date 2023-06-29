@@ -75,13 +75,6 @@ dependencies:
               - cuda-version=11.8
               - nvcc_linux-aarch64=11.8
           - matrix:
-              arch: x86_64
-              cuda: "12.0"
-            packages:
-              - cuda-version=12.0
-              - cuda-nvcc
-          - matrix:
-              arch: aarch64
               cuda: "12.0"
             packages:
               - cuda-version=12.0
