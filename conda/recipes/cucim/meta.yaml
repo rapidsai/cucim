@@ -51,9 +51,6 @@ requirements:
   host:
     - click
     - cuda-version ={{ cuda_version }}
-    {% if cuda_major == "11" %}
-    - cudatoolkit
-    {% endif %}
     - cupy >=12.0.0
     - libcucim ={{ version }}
     - numpy 1.21

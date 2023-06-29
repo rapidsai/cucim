@@ -54,7 +54,6 @@ requirements:
   host:
     - cuda-version ={{ cuda_version }}
     {% if cuda_major == "11" %}
-    - cudatoolkit
     - libcufile {{ cuda11_libcufile_host_version }}      # [linux64]
     - libcufile-dev {{ cuda11_libcufile_host_version }}  # [linux64]
     {% else %}
