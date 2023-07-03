@@ -72,8 +72,14 @@ def _bincount_histogram(image, source_range, bin_centers=None):
     """
     if bin_centers is None:
         bin_centers = _bincount_histogram_centers(image, source_range)
-    image_min, image_max = bin_centers[0], bin_centers[-1]
-    image = _offset_array(image, image_min.item(), image_max.item())  # synchronize  # noqa
+    image_min, image_max = bin_centers[0].item(), bin_centers[-1].item()
+    image = _offset_array(image, image_min, image_max)  # synchronize  # noqa
+
+    # Casting back to unsigned dtype seems necessary to avoid incorrect
+    # results for larger integer ranges with CUDA 12.x.
+    unsigned_dtype_char = image.dtype.char.upper()
+    image = image.astype(unsigned_dtype_char, copy=False)
+
     hist = cp.bincount(
         image.ravel(), minlength=image_max - min(image_min, 0) + 1
     )
