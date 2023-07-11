@@ -472,10 +472,12 @@ def test_resize_clip(order, preserve_range, anti_aliasing, dtype):
     x = cp.ones((5, 5), dtype=dtype)
     if dtype == cp.uint8:
         x *= 255
+    else:
+        x[0, 0] = cp.NaN
     resized = resize(x, (3, 3), order=order, preserve_range=preserve_range,
                      anti_aliasing=anti_aliasing)
 
-    assert abs(float(resized.max()) - expected_max) < 1e-14
+    assert abs(float(cp.nanmax(resized)) - expected_max) < 1e-14
 
 
 @pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])

@@ -153,10 +153,10 @@ def thin(image, max_num_iter=None):
 # --------- Skeletonization by medial axis transform --------
 
 
-def _get_tiebreaker(n, random_seed):
+def _get_tiebreaker(n, seed):
     # CuPy generator doesn't currently have the permutation method, so
     # fall back to cp.random.permutation instead.
-    cp.random.seed(random_seed)
+    cp.random.seed(seed)
     if n < 2 << 31:
         dtype = np.int32
     else:
@@ -165,7 +165,12 @@ def _get_tiebreaker(n, random_seed):
     return tiebreaker
 
 
-def medial_axis(image, mask=None, return_distance=False, *, random_state=None):
+@deprecate_kwarg(
+    {'random_state': 'seed'},
+    deprecated_version='23.08',
+    removed_version='24.06'
+)
+def medial_axis(image, mask=None, return_distance=False, *, seed=None):
     """Compute the medial axis transform of a binary image.
 
     Parameters
@@ -177,13 +182,12 @@ def medial_axis(image, mask=None, return_distance=False, *, random_state=None):
         value in `mask` are used for computing the medial axis.
     return_distance : bool, optional
         If true, the distance transform is returned as well as the skeleton.
-    random_state : {None, int, `numpy.random.Generator`}, optional
-        If `random_state` is None the `numpy.random.Generator` singleton is
+    seed : {None, int, `numpy.random.Generator`}, optional
+        If `seed` is None, the `numpy.random.Generator` singleton is used.
+        If `seed` is an int, a new ``Generator`` instance is used, seeded with
+        `seed`.
+        If `seed` is already a ``Generator`` instance, then that instance is
         used.
-        If `random_state` is an int, a new ``Generator`` instance is used,
-        seeded with `random_state`.
-        If `random_state` is already a ``Generator`` instance then that
-        instance is used.
 
         .. versionadded:: 0.19
 
@@ -295,7 +299,7 @@ def medial_axis(image, mask=None, return_distance=False, *, random_state=None):
     # We use a random # for tiebreaking. Assign each pixel in the image a
     # predictable, random # so that masking doesn't affect arbitrary choices
     # of skeletons
-    tiebreaker = _get_tiebreaker(n=distance.size, random_seed=random_state)
+    tiebreaker = _get_tiebreaker(n=distance.size, seed=seed)
     order = cp.lexsort(
         cp.stack(
             (tiebreaker, corner_score[masked_image], distance),

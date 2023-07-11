@@ -25,7 +25,8 @@ ON_AARCH64_REASON = "TODO: Test fails unexpectedly on ARM."
 
 def test_wrong_source_range():
     im = cp.array([-1, 100], dtype=cp.int8)
-    with pytest.raises(ValueError):
+    match = "Incorrect value for `source_range` argument"
+    with pytest.raises(ValueError, match=match):
         frequencies, bin_centers = exposure.histogram(
             im, source_range="foobar"
         )
@@ -590,6 +591,12 @@ def norm_brightness_err(img1, img2):
     ambe = cp.abs(img1.mean() - img2.mean())
     nbe = ambe / dtype_range[img1.dtype.type][1]
     return nbe
+
+
+def test_adapthist_incorrect_kernel_size():
+    img = cp.ones((8, 8), dtype=float)
+    with pytest.raises(ValueError, match="Incorrect value of `kernel_size`"):
+        exposure.equalize_adapthist(img, (3, 3, 3))
 
 
 # Test Gamma Correction

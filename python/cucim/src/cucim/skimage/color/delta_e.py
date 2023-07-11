@@ -29,7 +29,7 @@ from .colorconv import _cart2polar_2pi, lab2lch
 
 def _float_inputs(lab1, lab2, allow_float32=True):
     if allow_float32:
-        float_dtype = _supported_float_type([lab1.dtype, lab2.dtype])
+        float_dtype = _supported_float_type((lab1.dtype, lab2.dtype))
     else:
         float_dtype = cp.float64
     lab1 = lab1.astype(float_dtype, copy=False)
@@ -375,7 +375,7 @@ def get_dH2(lab1, lab2, *, channel_axis=-1):
     """
     # This function needs double precision internally for accuracy
     input_is_float_32 = _supported_float_type(
-        [lab1.dtype, lab2.dtype]
+        (lab1.dtype, lab2.dtype)
     ) == cp.float32
     lab1, lab2 = _float_inputs(lab1, lab2, allow_float32=False)
     a1, b1 = cp.moveaxis(lab1, source=channel_axis, destination=0)[1:3]
