@@ -4,7 +4,9 @@ __getattr__, __dir__, __all__ = lazy.attach(
     __name__,
     # submodules={'rank'},
     submod_attrs={
-        'lpi_filter': ['filter_inverse', 'wiener', 'LPIFilter2D'],
+        'lpi_filter': [
+            'filter_forward', 'filter_inverse', 'wiener', 'LPIFilter2D'
+        ],
         '_gaussian': ['gaussian', 'difference_of_gaussians'],
         'edges': ['sobel', 'sobel_h', 'sobel_v',
                   'scharr', 'scharr_h', 'scharr_v',
@@ -14,12 +16,14 @@ __getattr__, __dir__, __all__ = lazy.attach(
                   'farid', 'farid_h', 'farid_v'],
         '_rank_order': ['rank_order'],
         '_gabor': ['gabor_kernel', 'gabor'],
-        'thresholding': ['threshold_local', 'threshold_otsu', 'threshold_yen',
-                         'threshold_isodata', 'threshold_li', 'threshold_minimum',
-                         'threshold_mean', 'threshold_triangle',
-                         'threshold_niblack', 'threshold_sauvola',
-                         'threshold_multiotsu', 'try_all_threshold',
-                         'apply_hysteresis_threshold'],
+        'thresholding': [
+            'threshold_local', 'threshold_otsu', 'threshold_yen',
+            'threshold_isodata', 'threshold_li', 'threshold_minimum',
+            'threshold_mean', 'threshold_triangle',
+            'threshold_niblack', 'threshold_sauvola',
+            'threshold_multiotsu', 'try_all_threshold',
+            'apply_hysteresis_threshold'
+        ],
         'ridges': ['meijering', 'sato', 'frangi', 'hessian'],
         '_median': ['median'],
         '_sparse': ['correlate_sparse'],
