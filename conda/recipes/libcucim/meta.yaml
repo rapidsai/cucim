@@ -57,8 +57,9 @@ requirements:
     - libcufile {{ cuda11_libcufile_host_version }}      # [linux64]
     - libcufile-dev {{ cuda11_libcufile_host_version }}  # [linux64]
     {% else %}
-    - libcufile-dev  # [linux64]
-    - libnvjpeg-dev  # [linux64]
+    - libcufile-dev     # [linux64]
+    - libnvjpeg-dev     # [linux64]
+    - libnvjpeg-static  # [linux64]
     {% endif %}
     - jbig
     - libwebp-base {{ libwebp_base_version }}  # [linux or osx]
@@ -75,7 +76,6 @@ requirements:
     {% else %}
     - cuda-nvrtc
     - libcufile  # [linux64]
-    - libnvjpeg  # [linux64]
     {% endif %}
     - {{ pin_compatible('libwebp-base', max_pin='x.x') }}
     - jbig
