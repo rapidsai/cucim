@@ -54,8 +54,9 @@ requirements:
   host:
     - cuda-version ={{ cuda_version }}
     {% if cuda_major == "11" %}
-    - libcufile {{ cuda11_libcufile_host_version }}      # [linux64]
-    - libcufile-dev {{ cuda11_libcufile_host_version }}  # [linux64]
+    - libcufile {{ cuda11_libcufile_host_version }}         # [linux64]
+    - libcufile-dev {{ cuda11_libcufile_host_version }}     # [linux64]
+    - libnvjpeg-dev {{ cuda11_libnvjpeg_host_version }}     # [linux64]
     {% else %}
     - libcufile-dev     # [linux64]
     - libnvjpeg-dev     # [linux64]

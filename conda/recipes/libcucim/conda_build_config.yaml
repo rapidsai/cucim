@@ -25,3 +25,6 @@ cuda11_libcufile_host_version:
 
 cuda11_libcufile_run_version:
   - ">=1.0.0.82,<=1.4.0.31"
+
+cuda11_libnvjpeg_host_version:
+  - "11.6.0.55"
