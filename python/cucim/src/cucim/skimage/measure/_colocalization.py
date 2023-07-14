@@ -1,4 +1,5 @@
 import cupy as cp
+from cupy.cuda import driver
 
 from .._shared.utils import as_binary_ndarray, check_shape_equality
 from .._vendored import pearsonr
@@ -182,6 +183,11 @@ def _get_manders_overlap_coeff(image0, image1):
     return cp.sum(cp.multiply(image0, image1)) / denom
 
 
+def _get_manders_overlap_coeff_no_fusion(image0, image1):
+    denom = (cp.sum(cp.square(image0)) * (cp.sum(cp.square(image1)))) ** 0.5
+    return cp.sum(cp.multiply(image0, image1)) / denom
+
+
 def manders_overlap_coeff(image0, image1, mask=None):
     r"""Manders' overlap coefficient
 
@@ -261,7 +267,15 @@ def manders_overlap_coeff(image0, image1, mask=None):
     if image1.min() < 0:
         raise ValueError("image1 contains negative values")
 
-    return _get_manders_overlap_coeff(image0, image1)
+    try:
+        return _get_manders_overlap_coeff(image0, image1)
+    except driver.CUDADriverError:
+        # One case on CI recently failed to fuse kernels. I was unable to
+        # reproduce this locally with the same NumPy and CuPy versions.
+        warnings.warn(
+            "kernel fusion failed, falling back to non-fused implementation"
+        )
+        return _get_manders_overlap_coeff_no_fusion(image0, image1)
 
 
 def intersection_coeff(image0_mask, image1_mask, mask=None):
