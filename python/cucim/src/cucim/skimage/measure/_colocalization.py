@@ -179,7 +179,7 @@ def manders_coloc_coeff(image0, image1_mask, mask=None):
 @cp.fuse()
 def _get_manders_overlap_coeff(image0, image1):
     denom = cp.linalg.norm(image0) * cp.linalg.norm(image1)
-    return cp.sum(cp.multiply(image0, image1)) / denom
+    return cp.vdot(image0, image1) / denom
 
 
 def manders_overlap_coeff(image0, image1, mask=None):
