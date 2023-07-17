@@ -137,7 +137,7 @@ dependencies:
           - jbig
           - libwebp-base
           - numpy >=1.21.3
-          - scikit-image >=0.19.0,<0.21.0a0
+          - scikit-image >=0.19.0,<0.22.0a0
           - scipy
           - xz
           - zlib
