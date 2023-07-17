@@ -48,7 +48,7 @@ requirements:
   host:
     - cudatoolkit ={{ cuda_version }}
     - jbig
-    - libwebp-base {{ libwebp_base_version }}  # [linux or osx]
+    - libwebp-base {{ libwebp_base_version }}
     - openslide
     - xz
     - zlib
