@@ -56,12 +56,12 @@ requirements:
     {% if cuda_major == "11" %}
     - libcufile {{ cuda11_libcufile_host_version }}         # [linux64]
     - libcufile-dev {{ cuda11_libcufile_host_version }}     # [linux64]
-    - libnvjpeg {{ cuda11_libnvjpeg_host_version }}         # [linux64]
-    - libnvjpeg-dev {{ cuda11_libnvjpeg_host_version }}     # [linux64]
+    - libnvjpeg {{ cuda11_libnvjpeg_host_version }}
+    - libnvjpeg-dev {{ cuda11_libnvjpeg_host_version }}
     {% else %}
     - libcufile-dev     # [linux64]
-    - libnvjpeg-dev     # [linux64]
-    - libnvjpeg-static  # [linux64]
+    - libnvjpeg-dev
+    - libnvjpeg-static
     {% endif %}
     - jbig
     - libwebp-base {{ libwebp_base_version }}  # [linux or osx]
