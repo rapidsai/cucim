@@ -21,6 +21,7 @@ dependencies:
 - jbig
 - libcufile-dev
 - libnvjpeg-dev
+- libnvjpeg-static
 - libwebp-base
 - nbsphinx
 - ninja

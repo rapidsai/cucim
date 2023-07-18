@@ -87,6 +87,7 @@ dependencies:
               - cuda-nvcc
               - libcufile-dev
               - libnvjpeg-dev
+              - libnvjpeg-static
   checks:
     common:
       - output_types: [conda, requirements]
