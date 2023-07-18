@@ -18,6 +18,10 @@ dependencies:
 - imagecodecs>=2021.6.8
 - ipython
 - jbig
+- libcufile-dev=1.4.0.31
+- libcufile=1.4.0.31
+- libnvjpeg-dev=11.6.0.55
+- libnvjpeg=11.6.0.55
 - libwebp-base
 - nbsphinx
 - ninja
