@@ -146,8 +146,10 @@ def wiener(image, psf, balance, reg=None, is_real=True, clip=True):
     return deconv
 
 
+@deprecate_kwarg({'random_state': 'seed'}, removed_version="23.08.00",
+                 deprecated_version="24.06.00")
 def unsupervised_wiener(image, psf, reg=None, user_params=None, is_real=True,
-                        clip=True, *, random_state=None):
+                        clip=True, *, seed=None):
     """Unsupervised Wiener-Hunt deconvolution.
 
     Return the deconvolution with a Wiener-Hunt approach, where the
@@ -172,13 +174,12 @@ def unsupervised_wiener(image, psf, reg=None, user_params=None, is_real=True,
     clip : boolean, optional
        True by default. If true, pixel values of the result above 1 or
        under -1 are thresholded for skimage pipeline compatibility.
-    random_state : {None, int, `cupy.random.Generator`}, optional
-        If `random_state` is None the `cupy.random.Generator` singleton is
+    seed : {None, int, `numpy.random.Generator`}, optional
+        If `seed` is None, the `numpy.random.Generator` singleton is used.
+        If `seed` is an int, a new ``Generator`` instance is used, seeded with
+        `seed`.
+        If `seed` is already a ``Generator`` instance, then that instance is
         used.
-        If `random_state` is an int, a new ``Generator`` instance is used,
-        seeded with `random_state`.
-        If `random_state` is already a ``Generator`` instance then that
-        instance is used.
 
     Returns
     -------
@@ -304,10 +305,10 @@ def unsupervised_wiener(image, psf, reg=None, user_params=None, is_real=True,
         data_spectrum = uft.ufft2(image)
 
     try:
-        rng = cp.random.default_rng(random_state)
+        rng = cp.random.default_rng(seed)
     except AttributeError:
         # older CuPy without default_rng
-        rng = cp.random.RandomState(random_state)
+        rng = cp.random.RandomState(seed)
 
     # Gibbs sampling
     for iteration in range(params["max_num_iter"]):
@@ -383,8 +384,6 @@ def unsupervised_wiener(image, psf, reg=None, user_params=None, is_real=True,
     return (x_postmean, {'noise': gn_chain, 'prior': gx_chain})
 
 
-@deprecate_kwarg({'iterations': 'num_iter'}, removed_version="23.02.00",
-                 deprecated_version="22.02.00")
 def richardson_lucy(image, psf, num_iter=50, clip=True, filter_epsilon=None):
     """Richardson-Lucy deconvolution.
 

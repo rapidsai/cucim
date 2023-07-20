@@ -7,13 +7,13 @@ __all__ = [
 'farid',
 'farid_h',
 'farid_v',
+'filter_forward',
 'filter_inverse',
 'frangi',
 'gabor',
 'gabor_kernel',
 'gaussian',
 'hessian',
-'inverse',
 'laplace',
 'median',
 'meijering',
@@ -59,7 +59,7 @@ from ._window import window
 from .edges import (farid, farid_h, farid_v, laplace, prewitt, prewitt_h,
                     prewitt_v, roberts, roberts_neg_diag, roberts_pos_diag,
                     scharr, scharr_h, scharr_v, sobel, sobel_h, sobel_v)
-from .lpi_filter import LPIFilter2D, filter_inverse, inverse, wiener
+from .lpi_filter import LPIFilter2D, filter_forward, filter_inverse, wiener
 from .ridges import frangi, hessian, meijering, sato
 from .thresholding import (apply_hysteresis_threshold, threshold_isodata,
                            threshold_li, threshold_local, threshold_mean,

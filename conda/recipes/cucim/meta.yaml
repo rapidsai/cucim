@@ -49,7 +49,7 @@ requirements:
     - libcucim ={{ version }}
     - numpy 1.21
     - python
-    - scikit-image >=0.19.0,<0.21.0a0
+    - scikit-image >=0.19.0,<0.22.0a0
     - scipy
   run:
     - {{ pin_compatible('cudatoolkit', max_pin='x', min_pin='x') }}
@@ -60,7 +60,7 @@ requirements:
     - libcucim ={{ version }}
     # - openslide # skipping here but benchmark binary would need openslide library
     - python
-    - scikit-image >=0.19.0,<0.21.0a0
+    - scikit-image >=0.19.0,<0.22.0a0
     - scipy
 
 tests:
