@@ -75,8 +75,6 @@ requirements:
     {% if cuda_major == "11" %}
     - cudatoolkit
     - libcufile {{ cuda11_libcufile_run_version }}      # [linux64]
-    {% else %}
-    - libcufile  # [linux64]
     {% endif %}
     - {{ pin_compatible('libwebp-base', max_pin='x.x') }}
     - jbig
