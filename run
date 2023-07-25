@@ -520,11 +520,11 @@ copy_nvjpeg_files_() {
     targets_dir="targets/${targets_dir}"
     if [[ ! -z "${CONDA_PREFIX+x}" ]]
     then
-      nvjpeg_search="${CONDA_PREFIX:-}/include:${CONDA_PREFIX:-}/lib ${CONDA_PREFIX:-}/${targets_dir}/include:${CONDA_PREFIX:-}/${targets_dir}/lib ${cufile_search}"
+      nvjpeg_search="${CONDA_PREFIX:-}/include:${CONDA_PREFIX:-}/lib ${CONDA_PREFIX:-}/${targets_dir}/include:${CONDA_PREFIX:-}/${targets_dir}/lib ${nvjpeg_search}"
     fi
     if [[ ! -z "${PREFIX+x}" ]]
     then
-      nvjpeg_search="${PREFIX:-}/include:${PREFIX:-}/lib ${PREFIX:-}/${targets_dir}/include:${PREFIX:-}/${targets_dir}/lib ${cufile_search}"
+      nvjpeg_search="${PREFIX:-}/include:${PREFIX:-}/lib ${PREFIX:-}/${targets_dir}/include:${PREFIX:-}/${targets_dir}/lib ${nvjpeg_search}"
     fi
     local cuda_version="11.6"
     local nvjpeg_version="11-6_11.6.0.55-1"
