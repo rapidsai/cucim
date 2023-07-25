@@ -76,7 +76,6 @@ requirements:
     - cudatoolkit
     - libcufile {{ cuda11_libcufile_run_version }}      # [linux64]
     {% else %}
-    - cuda-nvrtc
     - libcufile  # [linux64]
     {% endif %}
     - {{ pin_compatible('libwebp-base', max_pin='x.x') }}
