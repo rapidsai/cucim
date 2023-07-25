@@ -4,7 +4,6 @@ CUCIM_BUILD_TYPE=${CUCIM_BUILD_TYPE:-release}
 
 echo "CC          : ${CC}"
 echo "CXX         : ${CXX}"
-echo "CUDA        : ${CUDA}"
 
 # CUDA needs to include $PREFIX/include as system include path
 export CUDAFLAGS="-isystem $BUILD_PREFIX/include -isystem $PREFIX/include "
