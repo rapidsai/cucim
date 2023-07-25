@@ -434,7 +434,7 @@ copy_gds_files_() {
     local root_folder=${1:-${TOP}}
     local cufile_search="${root_folder}/temp/cuda/include:${root_folder}/temp/cuda/lib64"
     local targets_dir=""
-    if [[ "$(uname -m)" == "x86-64" ]]
+    if [[ "$(uname -m)" == "x86_64" ]]
     then
       targets_dir="targets/x86_64-linux"
     elif [[ "$(uname -m)" == "aarch64" ]]
@@ -507,7 +507,7 @@ copy_nvjpeg_files_() {
     local arch_name="$(get_arch_name_)"
     local nvjpeg_search="${root_folder}/temp/cuda/include:${root_folder}/temp/cuda/lib64"
     local targets_dir=""
-    if [[ "$(uname -m)" == "x86-64" ]]
+    if [[ "$(uname -m)" == "x86_64" ]]
     then
       targets_dir="targets/x86_64-linux"
     elif [[ "$(uname -m)" == "aarch64" ]]
