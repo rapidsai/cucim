@@ -444,7 +444,6 @@ copy_gds_files_() {
       echo "Unknown architecture"
       exit 1
     fi
-    targets_dir="targets/${targets_dir}"
     if [[ ! -z "${CONDA_PREFIX+x}" ]]
     then
       cufile_search="${CONDA_PREFIX:-}/include:${CONDA_PREFIX:-}/lib ${CONDA_PREFIX:-}/${targets_dir}/include:${CONDA_PREFIX:-}/${targets_dir}/lib ${cufile_search}"
@@ -517,7 +516,6 @@ copy_nvjpeg_files_() {
       echo "Unknown architecture"
       exit 1
     fi
-    targets_dir="targets/${targets_dir}"
     if [[ ! -z "${CONDA_PREFIX+x}" ]]
     then
       nvjpeg_search="${CONDA_PREFIX:-}/include:${CONDA_PREFIX:-}/lib ${CONDA_PREFIX:-}/${targets_dir}/include:${CONDA_PREFIX:-}/${targets_dir}/lib ${nvjpeg_search}"
