@@ -1,9 +1,3 @@
-from .._shared import lazy
+import lazy_loader as lazy
 
-__getattr__, __dir__, __all__ = lazy.attach(
-    __name__,
-    submodules={},
-    submod_attrs={
-        '_binary_blobs': ['binary_blobs'],
-    }
-)
+__getattr__, __dir__, __all__ = lazy.attach_stub(__name__, __file__)
