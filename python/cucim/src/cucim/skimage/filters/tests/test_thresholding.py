@@ -282,20 +282,17 @@ class TestSimpleImage:
         assert_array_equal(ref, out)
 
 
-@cp.testing.with_requires("scikit-image>=0.18")
 def test_otsu_camera_image():
     camera = util.img_as_ubyte(camerad)
     assert 101 < threshold_otsu(camera) < 103
 
 
-@cp.testing.with_requires("scikit-image>=0.18")
 def test_otsu_camera_image_histogram():
     camera = util.img_as_ubyte(camerad)
     hist = histogram(camera.ravel(), 256, source_range="image")
     assert 101 < threshold_otsu(hist=hist) < 103
 
 
-@cp.testing.with_requires("scikit-image>=0.18")
 def test_otsu_camera_image_counts():
     camera = util.img_as_ubyte(camerad)
     counts, bin_centers = histogram(camera.ravel(), 256, source_range="image")
@@ -341,7 +338,6 @@ def test_otsu_one_color_image_3d():
     assert threshold_otsu(img) == 1
 
 
-@cp.testing.with_requires("scikit-image>=0.18")
 def test_li_camera_image():
     image = util.img_as_ubyte(camerad)
     threshold = threshold_li(image)
@@ -431,20 +427,17 @@ def test_li_pathological_arrays():
     assert cp.all(cp.isfinite(thresholds))
 
 
-@cp.testing.with_requires("scikit-image>=0.18")
 def test_yen_camera_image():
     camera = util.img_as_ubyte(camerad)
     assert 145 < threshold_yen(camera) < 147
 
 
-@cp.testing.with_requires("scikit-image>=0.18")
 def test_yen_camera_image_histogram():
     camera = util.img_as_ubyte(camerad)
     hist = histogram(camera.ravel(), 256, source_range="image")
     assert 145 < threshold_yen(hist=hist) < 147
 
 
-@cp.testing.with_requires("scikit-image>=0.18")
 def test_yen_camera_image_counts():
     camera = util.img_as_ubyte(camerad)
     counts, bin_centers = histogram(camera.ravel(), 256, source_range='image')
@@ -467,7 +460,6 @@ def test_local_even_block_size_error():
         threshold_local(img, block_size=4)
 
 
-@cp.testing.with_requires("scikit-image>=0.18")
 def test_isodata_camera_image():
     camera = util.img_as_ubyte(camerad)
 
@@ -479,7 +471,6 @@ def test_isodata_camera_image():
     assert_array_equal(threshold_isodata(camera, return_all=True), [102, 103])
 
 
-@cp.testing.with_requires("scikit-image>=0.18")
 def test_isodata_camera_image_histogram():
     camera = util.img_as_ubyte(camerad)
     hist = histogram(camera.ravel(), 256, source_range='image')
@@ -487,7 +478,6 @@ def test_isodata_camera_image_histogram():
     assert threshold == 102
 
 
-@cp.testing.with_requires("scikit-image>=0.18")
 def test_isodata_camera_image_counts():
     camera = util.img_as_ubyte(camerad)
     counts, bin_centers = histogram(camera.ravel(), 256, source_range='image')
@@ -551,7 +541,6 @@ def test_isodata_moon_image_negative_float():
     # fmt: on
 
 
-@cp.testing.with_requires("scikit-image>=0.18")
 def test_threshold_minimum():
     camera = util.img_as_ubyte(camerad)
 
@@ -563,7 +552,6 @@ def test_threshold_minimum():
     assert_array_equal(threshold, 114)
 
 
-@cp.testing.with_requires("scikit-image>=0.18")
 def test_threshold_minimum_histogram():
     camera = util.img_as_ubyte(camerad)
     hist = histogram(camera.ravel(), 256, source_range='image')
@@ -578,7 +566,6 @@ def test_threshold_minimum_deprecated_max_iter_kwarg():
         threshold_minimum(hist=hist, max_iter=5000)
 
 
-@cp.testing.with_requires("scikit-image>=0.18")
 def test_threshold_minimum_counts():
     camera = util.img_as_ubyte(camerad)
     counts, bin_centers = histogram(camera.ravel(), 256, source_range='image')
@@ -774,7 +761,6 @@ def test_multiotsu_more_classes_then_values():
         threshold_multiotsu(img, classes=4)
 
 
-# @testing.with_requires("scikit-image>=0.18")
 # @pytest.mark.parametrize(
 #     "thresholding, lower, upper",
 #     [
