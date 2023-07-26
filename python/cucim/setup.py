@@ -39,6 +39,7 @@ opts = dict(
     url='https://developer.nvidia.com/multidimensional-image-processing',
     packages=find_packages('src'),
     package_dir={'cucim': 'src/cucim'},
+    package_data={"": ["*.pyi", "*.h", "*.cu"]},
     include_package_data=True,
     zip_safe=False,
     classifiers=[
@@ -56,11 +57,10 @@ opts = dict(
         'Programming Language :: C++',
         'Programming Language :: Python',
         'Programming Language :: Python :: 3',
-        'Programming Language :: Python :: 3.6',
-        'Programming Language :: Python :: 3.7',
         'Programming Language :: Python :: 3.8',
         'Programming Language :: Python :: 3.9',
         'Programming Language :: Python :: 3.10',
+        'Programming Language :: Python :: 3.11',
         # 'Operating System :: OS Independent',
         # 'Operating System :: Unix',
         # 'Operating System :: POSIX',
@@ -87,7 +87,7 @@ opts = dict(
     setup_requires=SETUP_REQUIRES,
     install_requires=[
         # TODO: Check cupy dependency based on cuda version
-        'click', 'numpy',  # 'scipy', 'scikit-image'
+        'click', 'numpy', "lazy_loader>=0.1",  # 'scipy', 'scikit-image'
         # eg: 'aspectlib==1.1.1', 'six>=1.7',
     ],
     extras_require={
