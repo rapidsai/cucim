@@ -1,7 +1,6 @@
 import cupy as cp
 import numpy as np
 import pytest
-import skimage
 from skimage.data import camera, chelsea
 # from cucim.skimage.restoration import denoise_wavelet
 from skimage.restoration import denoise_wavelet

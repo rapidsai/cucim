@@ -1,7 +1,6 @@
 import cupy as cp
 import numpy as np
 import pytest
-from cupy import testing
 from cupyx.scipy import ndimage as ndi
 from scipy import signal
 
