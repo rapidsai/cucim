@@ -1,7 +1,6 @@
 import cupy as cp
 import numpy as np
 import pytest
-import skimage
 from skimage.data import camera, chelsea
 # from cucim.skimage.restoration import denoise_wavelet
 from skimage.restoration import denoise_wavelet
@@ -23,12 +22,6 @@ noisy_img_3d = random_noise(test_img_3d, mode="gaussian", var=0.1)
 
 # TODO: replace with CuPy version once completed
 def _denoise_wavelet(image, rescale_sigma=True, **kwargs):
-
-    if 'channel_axis' in kwargs and skimage.__version__ < '0.19.0':
-        # convert channel_axis to older multichannel kwarg for skimage 0.18.x
-        channel_axis = kwargs.pop('channel_axis')
-        kwargs['multichannel'] = False if channel_axis is None else True
-
     return cp.asarray(
         denoise_wavelet(
             cp.asnumpy(image), rescale_sigma=rescale_sigma, **kwargs

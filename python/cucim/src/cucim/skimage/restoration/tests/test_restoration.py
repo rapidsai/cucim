@@ -1,7 +1,6 @@
 import cupy as cp
 import numpy as np
 import pytest
-from cupy import testing
 from cupyx.scipy import ndimage as ndi
 from scipy import signal
 
@@ -136,7 +135,6 @@ def test_unsupervised_wiener_deprecated_user_param():
         )
 
 
-@cp.testing.with_requires("scikit-image>=0.18")
 def test_image_shape():
     """Test that shape of output image in deconvolution is same as input.
 
@@ -177,7 +175,6 @@ def test_richardson_lucy():
 
 @pytest.mark.parametrize('dtype_image', [cp.float16, cp.float32, cp.float64])
 @pytest.mark.parametrize('dtype_psf', [cp.float32, cp.float64])
-@testing.with_requires("scikit-image>=0.18")
 def test_richardson_lucy_filtered(dtype_image, dtype_psf):
     if dtype_image == cp.float64:
         atol = 1e-8

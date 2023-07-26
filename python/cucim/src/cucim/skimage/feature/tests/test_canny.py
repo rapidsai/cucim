@@ -76,7 +76,6 @@ class TestCanny():
         result2 = feature.canny(cp.zeros((20, 20)), 4, 0, 0)
         assert cp.all(result1 == result2)
 
-    @cp.testing.with_requires("scikit-image>=0.18")
     @pytest.mark.parametrize('image_dtype', [cp.uint8, cp.int32, cp.float32,
                                              cp.float64])
     def test_use_quantiles(self, image_dtype):
