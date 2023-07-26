@@ -22,6 +22,6 @@ include tox.ini .travis.yml .appveyor.yml .readthedocs.yml
 include versioneer.py
 include src/cucim/clara/*.so*
 
-recursive-include src/cucim *.pyx *.pxd *.pxi *.py *.pyi *.h *.ini *.npy *.txt *.in *.md
+recursive-include src/cucim *.py *.pyi *.cu *.h *.npy *.txt *.in *.md
 
 global-exclude *.py[cod] __pycache__/*
