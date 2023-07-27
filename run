@@ -234,6 +234,30 @@ retry() {
     return 0
 }
 
+get_arch() {
+    local platform="${1:-$(uname -p)}"
+    local platform_str
+
+    case "${platform}" in
+        amd64|x86_64|x86|linux/amd64)
+            platform_str="x86_64"
+            ;;
+        arm64|aarch64|arm|linux/arm64)
+            platform_str="aarch64"
+            ;;
+    esac
+
+    echo -n "${platform_str}"
+}
+
+is_aarch64() {
+    get_arch | grep -q "aarch64" && return 0 || return 1
+}
+
+is_x86_64() {
+    get_arch | grep -q "x86_64" && return 0 || return 1
+}
+
 #==================================================================================
 # Section: Build
 #==================================================================================
@@ -434,22 +458,18 @@ copy_gds_files_() {
     local root_folder=${1:-${TOP}}
     local cufile_search="${root_folder}/temp/cuda/include:${root_folder}/temp/cuda/lib64"
     local targets_dir=""
-    if [[ "$(arch)" == "x86_64" ]]
-    then
+    if is_x86_64; then
       targets_dir="targets/x86_64-linux"
-    elif [[ "$(arch)" == "aarch64" ]]
-    then
+    elif is_aarch64; then
       targets_dir="targets/sbsa-linux"
     else
       echo "Unknown architecture"
       exit 1
     fi
-    if [[ ! -z "${CONDA_PREFIX+x}" ]]
-    then
+    if [ ! -z "${CONDA_PREFIX+x}" ]; then
       cufile_search="${CONDA_PREFIX:-}/include:${CONDA_PREFIX:-}/lib ${CONDA_PREFIX:-}/${targets_dir}/include:${CONDA_PREFIX:-}/${targets_dir}/lib ${cufile_search}"
     fi
-    if [[ ! -z "${PREFIX+x}" ]]
-    then
+    if [ ! -z "${PREFIX+x}" ]; then
       cufile_search="${PREFIX:-}/include:${PREFIX:-}/lib ${PREFIX:-}/${targets_dir}/include:${PREFIX:-}/${targets_dir}/lib ${cufile_search}"
     fi
     local gds_version=1.0.0
@@ -478,8 +498,11 @@ copy_gds_files_() {
         pushd ${temp_tgz_dir}
         run_command wget https://developer.download.nvidia.com/gds/redist/rel-${gds_version}/gds-redistrib-${gds_version}.tgz
         run_command tar xzvf gds-redistrib-${gds_version}.tgz
+        # There are no GDS binaries for aarch64 SBSA yet, but we need cufile.h for building cufile_stub
         run_command cp -P gds-redistrib-${gds_version}/targets/x86_64-linux/include/cufile.h ${root_folder}/temp/cuda/include/
-        run_command cp -P gds-redistrib-${gds_version}/targets/x86_64-linux/lib/* ${root_folder}/temp/cuda/lib64/
+        if is_x86_64; then
+            run_command cp -P gds-redistrib-${gds_version}/targets/x86_64-linux/lib/* ${root_folder}/temp/cuda/lib64/
+        fi
         popd > /dev/null
         run_command rm -r ${temp_tgz_dir}
     else
@@ -506,22 +529,18 @@ copy_nvjpeg_files_() {
     local arch_name="$(get_arch_name_)"
     local nvjpeg_search="${root_folder}/temp/cuda/include:${root_folder}/temp/cuda/lib64"
     local targets_dir=""
-    if [[ "$(arch)" == "x86_64" ]]
-    then
+    if is_x86_64; then
       targets_dir="targets/x86_64-linux"
-    elif [[ "$(arch)" == "aarch64" ]]
-    then
+    elif is_aarch64; then
       targets_dir="targets/sbsa-linux"
     else
       echo "Unknown architecture"
       exit 1
     fi
-    if [[ ! -z "${CONDA_PREFIX+x}" ]]
-    then
+    if [ ! -z "${CONDA_PREFIX+x}" ]; then
       nvjpeg_search="${CONDA_PREFIX:-}/include:${CONDA_PREFIX:-}/lib ${CONDA_PREFIX:-}/${targets_dir}/include:${CONDA_PREFIX:-}/${targets_dir}/lib ${nvjpeg_search}"
     fi
-    if [[ ! -z "${PREFIX+x}" ]]
-    then
+    if [ ! -z "${PREFIX+x}" ]; then
       nvjpeg_search="${PREFIX:-}/include:${PREFIX:-}/lib ${PREFIX:-}/${targets_dir}/include:${PREFIX:-}/${targets_dir}/lib ${nvjpeg_search}"
     fi
     local cuda_version="11.6"
