@@ -30,7 +30,7 @@ def test_read_region_cuda_memleak(testimg_tiff_stripe_4096x4096_256_jpeg):
     gpu = gpus[0]
     mem_usage_history = [gpu.memoryUsed]
 
-    for i in range(5):
+    for i in range(10):
         _ = img.read_region(device='cuda')
         gpus = GPUtil.getGPUs()
         gpu = gpus[0]
@@ -40,8 +40,10 @@ def test_read_region_cuda_memleak(testimg_tiff_stripe_4096x4096_256_jpeg):
 
     # The difference in memory usage should be less than 180MB.
     # Note: Since we cannot measure GPU memory usage for a process,
-    #       we use a rough number (experimentally measured).
-    assert mem_usage_history[4] - mem_usage_history[1] < 180.0
+    #       we use a rough number.
+    #       (experimentally measured, assuming that each image load
+    #        consumes around 50MB of GPU memory).
+    assert mem_usage_history[5] - mem_usage_history[9] < 180.0
 
 
 def test_read_region_cpu_memleak(testimg_tiff_stripe_4096x4096_256):
