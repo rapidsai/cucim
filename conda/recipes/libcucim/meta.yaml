@@ -68,7 +68,7 @@ requirements:
     - libnvjpeg-static
     {% endif %}
     - jbig
-    - libwebp-base {{ libwebp_base_version }}
+    - libwebp-base
     - nvtx-c >=3.1.0
     - openslide
     - xz
