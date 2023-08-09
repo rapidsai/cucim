@@ -1,3 +1,30 @@
+# cuCIM 23.08.00 (9 Aug 2023)
+
+## 🚨 Breaking Changes
+
+- Sync cuCIM API with scikit-image 0.21 ([#573](https://github.com/rapidsai/cucim/pull/573)) [@grlee77](https://github.com/grlee77)
+
+## 🐛 Bug Fixes
+
+- Remove libwebp-base upper bound. ([#599](https://github.com/rapidsai/cucim/pull/599)) [@bdice](https://github.com/bdice)
+- Fix ignore_run_exports_from. ([#596](https://github.com/rapidsai/cucim/pull/596)) [@bdice](https://github.com/bdice)
+- Add ignore_run_exports for CUDA 11 ([#593](https://github.com/rapidsai/cucim/pull/593)) [@raydouglass](https://github.com/raydouglass)
+- Use linalg &amp; inline `_get_manders_overlap_coeff` ([#578](https://github.com/rapidsai/cucim/pull/578)) [@jakirkham](https://github.com/jakirkham)
+- Fix canny and butterworth (recent CuPy and NumPy compatibility) ([#574](https://github.com/rapidsai/cucim/pull/574)) [@grlee77](https://github.com/grlee77)
+
+## 🛠️ Improvements
+
+- Postponed the assessment of GPU memory for testing ([#601](https://github.com/rapidsai/cucim/pull/601)) [@gigony](https://github.com/gigony)
+- Do not use x86_64 GDS binaries for aarch64 ([#590](https://github.com/rapidsai/cucim/pull/590)) [@gigony](https://github.com/gigony)
+- remove checks for versions of scikit-image that are no longer supported ([#587](https://github.com/rapidsai/cucim/pull/587)) [@grlee77](https://github.com/grlee77)
+- Allow scikit-image 0.21.0 ([#580](https://github.com/rapidsai/cucim/pull/580)) [@jakirkham](https://github.com/jakirkham)
+- Drop unneeded selector on `libwebp-base` ([#579](https://github.com/rapidsai/cucim/pull/579)) [@jakirkham](https://github.com/jakirkham)
+- switch from bundled lazy loading code to the public lazy_loader package ([#575](https://github.com/rapidsai/cucim/pull/575)) [@grlee77](https://github.com/grlee77)
+- Sync cuCIM API with scikit-image 0.21 ([#573](https://github.com/rapidsai/cucim/pull/573)) [@grlee77](https://github.com/grlee77)
+- cuCIM: Build CUDA 12 packages ([#572](https://github.com/rapidsai/cucim/pull/572)) [@jakirkham](https://github.com/jakirkham)
+- use rapids-upload-docs script ([#570](https://github.com/rapidsai/cucim/pull/570)) [@AyodeAwe](https://github.com/AyodeAwe)
+- Remove documentation build scripts for Jenkins ([#567](https://github.com/rapidsai/cucim/pull/567)) [@ajschmidt8](https://github.com/ajschmidt8)
+
 # cuCIM 23.06.00 (7 Jun 2023)
 
 ## 🚨 Breaking Changes
