@@ -60,35 +60,17 @@ dtype_limits
 
 """
 
-from ._shared import lazy
+import lazy_loader as lazy
 
-submodules = [
-    'color',
-    'data',
-    'exposure',
-    'feature',
-    'filters',
-    'measure',
-    'metrics',
-    'morphology',
-    'registration',
-    'restoration',
-    'segmentation',
-    'transform',
-    'util',
-]
-
-
-__getattr__, __lazy_dir__, _ = lazy.attach(
-    __name__,
-    submodules,
-    {'util.dtype': ['dtype_limits', 'img_as_bool', 'img_as_float',
-                    'img_as_float32', 'img_as_float64', 'img_as_int',
-                    'img_as_ubyte', 'img_as_uint'],
-     'util.lookfor': ['lookfor'],
-    }
-)
+__getattr__, __lazy_dir__, _ = lazy.attach_stub(__name__, __file__)
 
 
 def __dir__():
     return __lazy_dir__()
+
+
+# Legacy imports into the root namespace; not advertised in __all__
+from .util.dtype import (dtype_limits, img_as_bool, img_as_float,
+                         img_as_float32, img_as_float64, img_as_int,
+                         img_as_ubyte, img_as_uint)
+from .util.lookfor import lookfor

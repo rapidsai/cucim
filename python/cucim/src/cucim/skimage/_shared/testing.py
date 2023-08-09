@@ -15,14 +15,11 @@ fixture = pytest.fixture
 
 have_fetch = True
 try:
-    # scikit-image 0.19
+    # scikit-image >=0.19
     from skimage.data._fetchers import _fetch
 except ImportError:
-    # scikit-image 0.18
-    try:
-        from skimage.data import _fetch
-    except ImportError:
-        have_fetch = False
+    # skip this test if private API changed on scikit-image end
+    have_fetch = False
 
 
 def fetch(data_filename):

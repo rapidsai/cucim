@@ -59,13 +59,9 @@ except ImportError:
     del _version
 
 
-from .skimage._shared import lazy
+import lazy_loader as lazy
 
-__getattr__, __lazy_dir__, _ = lazy.attach(
-    __name__,
-    submodules,
-    submod_attrs,
-)
+__getattr__, __lazy_dir__, _ = lazy.attach_stub(__name__, __file__)
 
 
 def __dir__():

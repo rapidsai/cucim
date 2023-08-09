@@ -18,22 +18,22 @@ rapids-print-env
 rapids-logger "Downloading artifacts from previous jobs"
 CPP_CHANNEL=$(rapids-download-conda-from-s3 cpp)
 PYTHON_CHANNEL=$(rapids-download-conda-from-s3 python)
-VERSION_NUMBER="23.06"
 
 rapids-mamba-retry install \
     --channel "${CPP_CHANNEL}" \
     --channel "${PYTHON_CHANNEL}" \
     cucim libcucim
 
-# Build Python docs
+export RAPIDS_VERSION_NUMBER="23.08"
+export RAPIDS_DOCS_DIR="$(mktemp -d)"
+
 rapids-logger "Build Python docs"
 pushd docs
 sphinx-build -b dirhtml ./source _html
 sphinx-build -b text ./source _text
+mkdir -p "${RAPIDS_DOCS_DIR}/cucim/"{html,txt}
+mv _html/* "${RAPIDS_DOCS_DIR}/cucim/html"
+mv _text/* "${RAPIDS_DOCS_DIR}/cucim/txt"
 popd
 
-if [[ "${RAPIDS_BUILD_TYPE}" != "pull-request" ]]; then
-  rapids-logger "Upload Docs to S3"
-  aws s3 sync --no-progress --delete docs/_html "s3://rapidsai-docs/cucim/${VERSION_NUMBER}/html"
-  aws s3 sync --no-progress --delete docs/_text "s3://rapidsai-docs/cucim/${VERSION_NUMBER}/txt"
-fi
+rapids-upload-docs

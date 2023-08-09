@@ -7,7 +7,7 @@ import cupy as cp
 import numpy as np
 from cupyx.scipy import fft
 
-from .._shared.utils import _supported_float_type, check_nD, deprecated
+from .._shared.utils import _supported_float_type, check_nD, deprecate_func
 
 eps = np.finfo(float).eps
 
@@ -19,7 +19,7 @@ def _min_limit(x, val=eps):
 
 def _center(x, oshape):
     """Return an array of shape ``oshape`` from the center of array ``x``."""
-    start = (np.array(x.shape) - np.array(oshape)) // 2 + 1
+    start = (np.array(x.shape) - np.array(oshape)) // 2
     out = x[tuple(slice(s, s + n) for s, n in zip(start, oshape))]
     return out
 
@@ -65,11 +65,10 @@ class LPIFilter2D:
 
         Examples
         --------
-        Gaussian filter: Use a 1-D gaussian in each direction without
-        normalization coefficients.
+        Gaussian filter without normalization of coefficients:
 
         >>> def filt_func(r, c, sigma = 1):
-        ...     return cp.exp(-cp.hypot(r, c)/sigma)
+        ...     return cp.exp(-(r**2 + c**2)/(2 * sigma**2))
         >>> filter = LPIFilter2D(filt_func)
 
         """
@@ -83,14 +82,22 @@ class LPIFilter2D:
     def _prepare(self, data):
         """Calculate filter and data FFT in preparation for filtering."""
         dshape = np.array(data.shape)
-        dshape += dshape % 2 == 0  # all filter dimensions must be uneven
-        oshape = np.array(data.shape) * 2 - 1
+        # all filter dimensions must be uneven
+        even_offset = tuple(int(s % 2 == 0) for s in data.shape)
+        dshape = tuple(
+            s + offset for s, offset in zip(data.shape, even_offset)
+        )
+
+        oshape = tuple(s * 2 - 1 for s in data.shape)
 
         float_dtype = _supported_float_type(data.dtype)
         data = data.astype(float_dtype, copy=False)
 
         if self._cache is None or np.any(self._cache.shape != oshape):
-            coords = cp.mgrid[[slice(0, float(n)) for n in dshape]]
+            coords = cp.mgrid[
+                [slice(0 + offset, float(n + offset))
+                 for (n, offset) in zip(dshape, even_offset)]
+            ]
             # this steps over two sets of coordinates,
             # not over the coordinates individually
             for k, coord in enumerate(coords):
@@ -127,7 +134,7 @@ class LPIFilter2D:
         return out
 
 
-def filter_forward(data, impulse_response=None, filter_params={},
+def filter_forward(data, impulse_response=None, filter_params=None,
                    predefined_filter=None):
     """Apply the given filter to data.
 
@@ -137,7 +144,7 @@ def filter_forward(data, impulse_response=None, filter_params={},
         Input data.
     impulse_response : callable `f(r, c, **filter_params)`
         Impulse response of the filter.  See LPIFilter2D.__init__.
-    filter_params : dict
+    filter_params : dict, optional
         Additional keyword parameters to the impulse_response function.
 
     Other Parameters
@@ -148,32 +155,35 @@ def filter_forward(data, impulse_response=None, filter_params={},
 
     Examples
     --------
+    Gaussian filter without normalization:
 
-    Gaussian filter:
-
-    >>> import cupy as cp
-    >>> def filt_func(r, c):
-    ...     return cp.exp(-cp.hypot(r, c)/1)
+    >>> def filt_func(r, c, sigma=1):
+    ...     return cp.exp(-(r**2 + c**2)/(2 * sigma**2))
     >>>
     >>> from skimage import data
     >>> filtered = filter_forward(cp.array(data.coins()), filt_func)
 
     """
+    if filter_params is None:
+        filter_params = {}
     check_nD(data, 2, 'data')
     if predefined_filter is None:
         predefined_filter = LPIFilter2D(impulse_response, **filter_params)
     return predefined_filter(data)
 
 
-@deprecated(alt_func='cucim.skimage.filters.lpi_filter.filter_inverse',
-            removed_version='2023.06.00')
-def inverse(data, impulse_response=None, filter_params={}, max_gain=2,
+@deprecate_func(
+    hint="use cucim.skimage.filters.lpi_filter.filter_inverse instead",
+    deprecated_version="",
+    removed_version="2023.12.00",
+)
+def inverse(data, impulse_response=None, filter_params=None, max_gain=2,
             predefined_filter=None):
     return filter_inverse(data, impulse_response, filter_params,
                           max_gain, predefined_filter)
 
 
-def filter_inverse(data, impulse_response=None, filter_params={}, max_gain=2,
+def filter_inverse(data, impulse_response=None, filter_params=None, max_gain=2,
                    predefined_filter=None):
     """Apply the filter in reverse to the given data.
 
@@ -182,21 +192,24 @@ def filter_inverse(data, impulse_response=None, filter_params={}, max_gain=2,
     data : (M, N) ndarray
         Input data.
     impulse_response : callable `f(r, c, **filter_params)`
-        Impulse response of the filter.  See LPIFilter2D.__init__.
-    filter_params : dict
+        Impulse response of the filter.  See :class:`~.LPIFilter2D`. This is a
+        required argument unless a `predifined_filter` is provided.
+    filter_params : dict, optional
         Additional keyword parameters to the impulse_response function.
-    max_gain : float
+    max_gain : float, optional
         Limit the filter gain.  Often, the filter contains zeros, which would
         cause the inverse filter to have infinite gain.  High gain causes
         amplification of artefacts, so a conservative limit is recommended.
 
     Other Parameters
     ----------------
-    predefined_filter : LPIFilter2D
+    predefined_filter : LPIFilter2D, optional
         If you need to apply the same filter multiple times over different
         images, construct the LPIFilter2D and specify it here.
 
     """
+    if filter_params is None:
+        filter_params = {}
     check_nD(data, 2, 'data')
     if predefined_filter is None:
         filt = LPIFilter2D(impulse_response, **filter_params)
@@ -213,7 +226,7 @@ def filter_inverse(data, impulse_response=None, filter_params={}, max_gain=2,
     return _center(cp.abs(fft.ifftshift(fft.ifftn(G * F))), data.shape)
 
 
-def wiener(data, impulse_response=None, filter_params={}, K=0.25,
+def wiener(data, impulse_response=None, filter_params=None, K=0.25,
            predefined_filter=None):
     """Minimum Mean Square Error (Wiener) inverse filter.
 
@@ -226,7 +239,7 @@ def wiener(data, impulse_response=None, filter_params={}, K=0.25,
         image.
     impulse_response : callable `f(r, c, **filter_params)`
         Impulse response of the filter.  See LPIFilter2D.__init__.
-    filter_params : dict
+    filter_params : dict, optional
         Additional keyword parameters to the impulse_response function.
 
     Other Parameters
@@ -236,6 +249,8 @@ def wiener(data, impulse_response=None, filter_params={}, K=0.25,
         images, construct the LPIFilter2D and specify it here.
 
     """
+    if filter_params is None:
+        filter_params = {}
     check_nD(data, 2, 'data')
 
     if not isinstance(K, float):

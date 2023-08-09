@@ -18,7 +18,7 @@ development/index -->
 
 # cuCIM Documentation
 
-Current latest version is [Version 23.06.00](release_notes/v23.06.00.md).
+Current latest version is [Version 23.08.00](release_notes/v23.08.00.md).
 
 **cuCIM** a toolkit to provide GPU accelerated I/O, image  processing & computer vision primitives for N-Dimensional images with a focus on biomedical imaging.
 

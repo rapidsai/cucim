@@ -1,7 +1,6 @@
 import cupy as cp
 import numpy as np
 import pytest
-from cupy import testing
 from cupyx.scipy import ndimage as ndi
 from scipy import signal
 
@@ -82,8 +81,7 @@ def test_unsupervised_wiener(dtype):
 
     psf = cp.asarray(psf, dtype=dtype)
     data = cp.asarray(data, dtype=dtype)
-    deconvolved, _ = restoration.unsupervised_wiener(data, psf,
-                                                     random_state=seed)
+    deconvolved, _ = restoration.unsupervised_wiener(data, psf, seed=seed)
     float_type = _supported_float_type(dtype)
     assert deconvolved.dtype == float_type
 
@@ -109,7 +107,7 @@ def test_unsupervised_wiener(dtype):
         user_params={"callback": lambda x: None,
                      "max_num_iter": 200,
                      "min_num_iter": 30},
-        random_state=seed,
+        seed=seed,
     )[0]
     assert deconvolved2.real.dtype == float_type
 
@@ -129,14 +127,14 @@ def test_unsupervised_wiener_deprecated_user_param():
     otf = uft.ir2tf(psf, data.shape, is_real=False)
     _, laplacian = uft.laplacian(2, data.shape)
     with expected_warnings(["`max_iter` is a deprecated key",
-                            "`min_iter` is a deprecated key"]):
+                            "`min_iter` is a deprecated key",
+                            "`random_state` is a deprecated argument name"]):
         restoration.unsupervised_wiener(
             data, otf, reg=laplacian, is_real=False,
             user_params={"max_iter": 200, "min_iter": 30}, random_state=5
         )
 
 
-@cp.testing.with_requires("scikit-image>=0.18")
 def test_image_shape():
     """Test that shape of output image in deconvolution is same as input.
 
@@ -175,20 +173,8 @@ def test_richardson_lucy():
     cp.testing.assert_allclose(deconvolved, np.load(path), rtol=1e-4)
 
 
-def test_richardson_lucy_deprecated_iterations_kwarg():
-    psf = np.ones((5, 5)) / 25
-    data = signal.convolve2d(cp.asnumpy(test_img), psf, 'same')
-    np.random.seed(0)
-    data += 0.1 * data.std() * np.random.standard_normal(data.shape)
-    data = cp.array(data)
-    psf = cp.array(psf)
-    with expected_warnings(["`iterations` is a deprecated argument"]):
-        restoration.richardson_lucy(data, psf, iterations=5)
-
-
 @pytest.mark.parametrize('dtype_image', [cp.float16, cp.float32, cp.float64])
 @pytest.mark.parametrize('dtype_psf', [cp.float32, cp.float64])
-@testing.with_requires("scikit-image>=0.18")
 def test_richardson_lucy_filtered(dtype_image, dtype_psf):
     if dtype_image == cp.float64:
         atol = 1e-8

@@ -235,6 +235,13 @@ def _nonmaximum_suppression_bilinear(
     kernel = _get_nonmax_kernel(large_int=large_int)
 
     out = cp.empty_like(magnitude)
+
+    if isinstance(low_threshold, cp.ndarray):
+        # if array scalar was provided, make sure dtype matches other arrays
+        if low_threshold.ndim > 0:
+            raise ValueError("expected scalar low_treshold")
+        low_threshold = float(low_threshold)
+
     kernel(isobel, jsobel, magnitude, eroded_mask, low_threshold, out)
     return out
 
@@ -350,6 +357,9 @@ def canny(image, sigma=1., low_threshold=None, high_threshold=None, mask=None,
     # that is "infected" by the masked point, so it's enough to erode the
     # mask by one and then mask the output. We also mask out the border points
     # because who knows what lies beyond the edge of the image?
+
+    if (image.dtype.kind in 'iu' and image.dtype.itemsize >= 8):
+        raise ValueError("64-bit or larger integer images are not supported")
 
     check_nD(image, 2)
     dtype_max = dtype_limits(image, clip_negative=False)[1]

@@ -176,12 +176,6 @@ def manders_coloc_coeff(image0, image1_mask, mask=None):
     return cp.sum(image0 * image1_mask) / img_sum
 
 
-@cp.fuse()
-def _get_manders_overlap_coeff(image0, image1):
-    denom = (cp.sum(cp.square(image0)) * (cp.sum(cp.square(image1)))) ** 0.5
-    return cp.sum(cp.multiply(image0, image1)) / denom
-
-
 def manders_overlap_coeff(image0, image1, mask=None):
     r"""Manders' overlap coefficient
 
@@ -261,7 +255,8 @@ def manders_overlap_coeff(image0, image1, mask=None):
     if image1.min() < 0:
         raise ValueError("image1 contains negative values")
 
-    return _get_manders_overlap_coeff(image0, image1)
+    denom = cp.linalg.norm(image0) * cp.linalg.norm(image1)
+    return cp.vdot(image0, image1) / denom
 
 
 def intersection_coeff(image0_mask, image1_mask, mask=None):

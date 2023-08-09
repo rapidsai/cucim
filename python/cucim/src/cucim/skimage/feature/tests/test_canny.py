@@ -76,8 +76,7 @@ class TestCanny():
         result2 = feature.canny(cp.zeros((20, 20)), 4, 0, 0)
         assert cp.all(result1 == result2)
 
-    @cp.testing.with_requires("scikit-image>=0.18")
-    @pytest.mark.parametrize('image_dtype', [cp.uint8, cp.int64, cp.float32,
+    @pytest.mark.parametrize('image_dtype', [cp.uint8, cp.int32, cp.float32,
                                              cp.float64])
     def test_use_quantiles(self, image_dtype):
         dtype = cp.dtype(image_dtype)
@@ -146,3 +145,24 @@ class TestCanny():
             feature.canny(image_float, 1.0, low, high),
             feature.canny(image_uint8, 1.0, 255 * low, 255 * high)
         )
+
+    def test_full_mask_matches_no_mask(self):
+        """The masked and unmasked algorithms should return the same result.
+
+        """
+        image = cp.array(data.camera())
+
+        for mode in ('constant', 'nearest', 'reflect'):
+            cp.testing.assert_array_equal(
+                feature.canny(image, mode=mode),
+                feature.canny(image, mode=mode,
+                              mask=cp.ones_like(image, dtype=bool))
+            )
+
+    @pytest.mark.parametrize('dtype', (cp.int64, cp.uint64))
+    def test_unsupported_int64(self, dtype):
+        image = cp.zeros((10, 10), dtype=dtype)
+        image[3, 3] = cp.iinfo(dtype).max
+        match = "64-bit or larger integer images are not supported"
+        with pytest.raises(ValueError, match=match):
+            feature.canny(image)
