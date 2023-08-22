@@ -3,6 +3,8 @@
 ## 🚨 Breaking Changes
 
 - Sync cuCIM API with scikit-image 0.21 ([#573](https://github.com/rapidsai/cucim/pull/573)) [@grlee77](https://github.com/grlee77)
+- The `random_state` argument of medial_axis and unsupervised_wiener is now deprecated and will be removed in the future. The new argument name, `seed`, should be used instead. ([#573](https://github.com/rapidsai/cucim/pull/573)) [@grlee77](https://github.com/grlee77)
+- The existing function `cucim.skimage.color.get_xyz_coords` has been renamed `cucim.skimage.color.xyz_tristimulus_values`. The former function name is deprecated and will be removed in the future. ([#573](https://github.com/rapidsai/cucim/pull/573)) [@grlee77](https://github.com/grlee77)
 
 ## 🐛 Bug Fixes
 
@@ -11,9 +13,14 @@
 - Add ignore_run_exports for CUDA 11 ([#593](https://github.com/rapidsai/cucim/pull/593)) [@raydouglass](https://github.com/raydouglass)
 - Use linalg &amp; inline `_get_manders_overlap_coeff` ([#578](https://github.com/rapidsai/cucim/pull/578)) [@jakirkham](https://github.com/jakirkham)
 - Fix canny and butterworth (recent CuPy and NumPy compatibility) ([#574](https://github.com/rapidsai/cucim/pull/574)) [@grlee77](https://github.com/grlee77)
+- A bug was fixed in 2D shear calculations for AffineTransform. ([#573](https://github.com/rapidsai/cucim/pull/573)) [@grlee77](https://github.com/grlee77)
+- A bug was fixed in the energy calculation of `cucim.skimage.segmentation.chan_vese`. This fix may result in different output from previous versions. ([#573](https://github.com/rapidsai/cucim/pull/573)) [@grlee77](https://github.com/grlee77)
 
 ## 🛠️ Improvements
 
+- The formerly private function `_invariant_denoise` has been renamed `denoise_invariant` and is now part of the public `cucim.skimage.restoration` API ([#573](https://github.com/rapidsai/cucim/pull/573)) [@grlee77](https://github.com/grlee77)
+- A new `return_mapping` option was added to `cucim.skimage.segmentation.join_segmentations`. This provides an additional output with a mapping between the labels in the joined segmentation and the original ones. ([#573](https://github.com/rapidsai/cucim/pull/573)) [@grlee77](https://github.com/grlee77)
+- Added support for y-axis shear to the 2D AffineTransform. ([#573](https://github.com/rapidsai/cucim/pull/573)) [@grlee77](https://github.com/grlee77)
 - Postponed the assessment of GPU memory for testing ([#601](https://github.com/rapidsai/cucim/pull/601)) [@gigony](https://github.com/gigony)
 - Do not use x86_64 GDS binaries for aarch64 ([#590](https://github.com/rapidsai/cucim/pull/590)) [@gigony](https://github.com/gigony)
 - remove checks for versions of scikit-image that are no longer supported ([#587](https://github.com/rapidsai/cucim/pull/587)) [@grlee77](https://github.com/grlee77)
