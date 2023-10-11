@@ -1,3 +1,18 @@
+# cuCIM 23.10.00 (11 Oct 2023)
+
+## 🐛 Bug Fixes
+
+- Use `conda mambabuild` not `mamba mambabuild` ([#607](https://github.com/rapidsai/cucim/pull/607)) [@bdice](https://github.com/bdice)
+
+## 📖 Documentation
+
+- minor updates to release 23.08 changelog ([#605](https://github.com/rapidsai/cucim/pull/605)) [@grlee77](https://github.com/grlee77)
+
+## 🛠️ Improvements
+
+- Update image names ([#609](https://github.com/rapidsai/cucim/pull/609)) [@AyodeAwe](https://github.com/AyodeAwe)
+- Use `copy-pr-bot` ([#606](https://github.com/rapidsai/cucim/pull/606)) [@ajschmidt8](https://github.com/ajschmidt8)
+
 # cuCIM 23.08.00 (9 Aug 2023)
 
 ## 🚨 Breaking Changes
