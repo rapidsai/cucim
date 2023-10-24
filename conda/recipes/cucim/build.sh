@@ -18,6 +18,6 @@ cp -P python/install/lib/* python/cucim/src/cucim/clara/
 pushd python/cucim
 
 echo "PYTHON: ${PYTHON}"
-$PYTHON -m pip install .
+$PYTHON -m pip install . -vv
 
 popd

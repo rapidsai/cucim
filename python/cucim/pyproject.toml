@@ -110,7 +110,7 @@ license-files = ["LICENSE"]
 include-package-data = true
 
 [tool.setuptools.packages.find]
-where = ["src/cucim"]
+where = ["src"]
 
 [tool.setuptools.package-data]
 mypkg = ["*.pyi", "*.h", "*.cu"]
