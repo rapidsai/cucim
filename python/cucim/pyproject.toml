@@ -1,0 +1,26 @@
+# Copyright (c) 2023, NVIDIA CORPORATION. All rights reserved.
+# See file LICENSE for terms.
+
+[tool.pytest.ini_options]
+# If a pytest section is found in one of the possible config files
+# (pytest.ini, tox.ini or setup.cfg), then pytest will not look for any others,
+# so if you add a pytest config section elsewhere,
+# you will need to delete this section from setup.cfg.
+norecursedirs = "migrations"
+python_files = [
+    "test_*.py",
+    "*_test.py",
+    "tests.py",
+]
+addopts = [
+    "-ra",
+    "--strict-markers",
+    # --doctest-modules",
+    # --doctest-glob=\*.rst",
+    "--tb=short",
+    "--ignore-glob=build*",
+]
+testpaths = [
+    "src",
+    "tests",
+]
