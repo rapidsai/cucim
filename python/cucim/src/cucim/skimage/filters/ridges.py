@@ -24,9 +24,14 @@ from ..util import img_as_float
 
 
 @deprecate_func(deprecated_version="", removed_version="2023.06.01")
-def compute_hessian_eigenvalues(image, sigma, sorting='none',
-                                mode='constant', cval=0,
-                                use_gaussian_derivatives=False):
+def compute_hessian_eigenvalues(
+    image,
+    sigma,
+    sorting="none",
+    mode="constant",
+    cval=0,
+    use_gaussian_derivatives=False,
+):
     """
     Compute Hessian eigenvalues of nD images.
 
@@ -68,8 +73,11 @@ def compute_hessian_eigenvalues(image, sigma, sorting='none',
 
     # Make nD hessian
     hessian_matrix_kwargs = dict(
-        sigma=sigma, order='rc', mode=mode, cval=cval,
-        use_gaussian_derivatives=use_gaussian_derivatives
+        sigma=sigma,
+        order="rc",
+        mode=mode,
+        cval=cval,
+        use_gaussian_derivatives=use_gaussian_derivatives,
     )
     hessian_elements = hessian_matrix(image, **hessian_matrix_kwargs)
 
@@ -81,14 +89,13 @@ def compute_hessian_eigenvalues(image, sigma, sorting='none',
     # Compute Hessian eigenvalues
     hessian_eigenvalues = hessian_matrix_eigvals(hessian_elements)
 
-    if sorting == 'abs':
-
+    if sorting == "abs":
         # Sort eigenvalues by absolute values in ascending order
         hessian_eigenvalues = cp.take_along_axis(
-            hessian_eigenvalues, abs(hessian_eigenvalues).argsort(0), 0)
+            hessian_eigenvalues, abs(hessian_eigenvalues).argsort(0), 0
+        )
 
-    elif sorting == 'val':
-
+    elif sorting == "val":
         # Sort eigenvalues by values in ascending order
         hessian_eigenvalues = cp.sort(hessian_eigenvalues, axis=0)
 
@@ -113,11 +120,18 @@ def _get_circulant_init_kernel(ndim, alpha):
         "",
         "raw F out",
         operation=operation,
-        name=f"cucim_circulant_init_{ndim}d_alpha{int(1000*alpha)}")
+        name=f"cucim_circulant_init_{ndim}d_alpha{int(1000*alpha)}",
+    )
 
 
-def meijering(image, sigmas=range(1, 10, 2), alpha=None,
-              black_ridges=True, mode='reflect', cval=0):
+def meijering(
+    image,
+    sigmas=range(1, 10, 2),
+    alpha=None,
+    black_ridges=True,
+    mode="reflect",
+    cval=0,
+):
     """
     Filter an image with the Meijering neuriteness filter.
 
@@ -182,8 +196,9 @@ def meijering(image, sigmas=range(1, 10, 2), alpha=None,
     # from different (sigma) scales
     filtered_max = cp.zeros_like(image)
     for sigma in sigmas:  # Filter for all sigmas.
-        H = hessian_matrix(image, sigma, mode=mode, cval=cval,
-                           use_gaussian_derivatives=True)
+        H = hessian_matrix(
+            image, sigma, mode=mode, cval=cval, use_gaussian_derivatives=True
+        )
         eigvals = hessian_matrix_eigvals(H)
 
         # cucim's hessian_matrix differs numerically from the one in skimage.
@@ -195,8 +210,7 @@ def meijering(image, sigmas=range(1, 10, 2), alpha=None,
         # Compute normalized eigenvalues l_i = e_i + sum_{j!=i} alpha * e_j.
         vals = cp.tensordot(mtx, eigvals, 1)
         # Get largest normalized eigenvalue (by magnitude) at each pixel.
-        vals = cp.take_along_axis(
-            vals, abs(vals).argmax(0)[None], 0).squeeze(0)
+        vals = cp.take_along_axis(vals, abs(vals).argmax(0)[None], 0).squeeze(0)
         # Remove negative values.
         vals = cp.maximum(vals, 0)
         # Normalize to max = 1 (unless everything is already zero).
@@ -208,8 +222,9 @@ def meijering(image, sigmas=range(1, 10, 2), alpha=None,
     return filtered_max  # Return pixel-wise max over all sigmas.
 
 
-def sato(image, sigmas=range(1, 10, 2), black_ridges=True,
-         mode='reflect', cval=0):
+def sato(
+    image, sigmas=range(1, 10, 2), black_ridges=True, mode="reflect", cval=0
+):
     """
     Filter an image with the Sato tubeness filter.
 
@@ -265,8 +280,9 @@ def sato(image, sigmas=range(1, 10, 2), black_ridges=True,
     # from different (sigma) scales
     filtered_max = cp.zeros_like(image)
     for sigma in sigmas:  # Filter for all sigmas.
-        H = hessian_matrix(image, sigma, mode=mode, cval=cval,
-                           use_gaussian_derivatives=True)
+        H = hessian_matrix(
+            image, sigma, mode=mode, cval=cval, use_gaussian_derivatives=True
+        )
         eigvals = hessian_matrix_eigvals(H)
 
         # cucim's hessian_matrix differs numerically from the one in skimage.
@@ -281,7 +297,7 @@ def sato(image, sigmas=range(1, 10, 2), black_ridges=True,
         # to 0, multiplied by sigma^2.
         eigvals = eigvals[:-1]
         vals = cp.prod(cp.maximum(eigvals, 0), 0) ** (1 / len(eigvals))
-        vals *= sigma ** 2
+        vals *= sigma**2
         filtered_max = cp.maximum(filtered_max, vals)
     return filtered_max  # Return pixel-wise max over all sigmas.
 
@@ -289,23 +305,23 @@ def sato(image, sigmas=range(1, 10, 2), black_ridges=True,
 @cp.memoize(for_each_device=True)
 def _get_frangi2d_sum_kernel():
     return cp.ElementwiseKernel(
-        in_params='F lambda1, F lambda2',  # noqa
-        out_params='F r_g',
+        in_params="F lambda1, F lambda2",  # noqa
+        out_params="F r_g",
         operation="""
         // Compute sensitivity to areas of high variance/texture/structure,
         // see equation (12)in reference [1]_
         r_g = lambda1 * lambda1;
         r_g += lambda2 * lambda2;
         """,
-        name='cucim_skimage_filters_frangi3d_inner'
+        name="cucim_skimage_filters_frangi3d_inner",
     )
 
 
 @cp.memoize(for_each_device=True)
 def _get_frangi2d_inner_kernel():
     return cp.ElementwiseKernel(
-        in_params='F lambda1, F lambda2, F r_g, float64 beta_sq, float64 gamma_sq',  # noqa
-        out_params='F result',
+        in_params="F lambda1, F lambda2, F r_g, float64 beta_sq, float64 gamma_sq",  # noqa
+        out_params="F result",
         operation="""
         F r_b;
 
@@ -324,15 +340,15 @@ def _get_frangi2d_inner_kernel():
         result = exp(-r_b / beta_sq);
         result *= 1.0 - exp(-r_g / gamma_sq);
         """,
-        name='cucim_skimage_filters_frangi2d_inner'
+        name="cucim_skimage_filters_frangi2d_inner",
     )
 
 
 @cp.memoize(for_each_device=True)
 def _get_frangi3d_sum_kernel():
     return cp.ElementwiseKernel(
-        in_params='F lambda1, F lambda2, F lambda3',  # noqa
-        out_params='F r_g',
+        in_params="F lambda1, F lambda2, F lambda3",  # noqa
+        out_params="F r_g",
         operation="""
         // Compute sensitivity to areas of high variance/texture/structure,
         // see equation (12)in reference [1]_
@@ -340,15 +356,15 @@ def _get_frangi3d_sum_kernel():
         r_g += lambda2 * lambda2;
         r_g += lambda3 * lambda3;
         """,
-        name='cucim_skimage_filters_frangi3d_inner'
+        name="cucim_skimage_filters_frangi3d_inner",
     )
 
 
 @cp.memoize(for_each_device=True)
 def _get_frangi3d_inner_kernel():
     return cp.ElementwiseKernel(
-        in_params='F lambda1, F lambda2, F lambda3, F r_g, float64 alpha_sq, float64 beta_sq, float64 gamma_sq',  # noqa
-        out_params='F result',
+        in_params="F lambda1, F lambda2, F lambda3, F r_g, float64 alpha_sq, float64 beta_sq, float64 gamma_sq",  # noqa
+        out_params="F result",
         operation="""
         F r_a, r_b;
 
@@ -376,13 +392,22 @@ def _get_frangi3d_inner_kernel():
         result *= 1.0 - exp(-r_g / gamma_sq);
 
         """,
-        name='cucim_skimage_filters_frangi3d_inner'
+        name="cucim_skimage_filters_frangi3d_inner",
     )
 
 
-def frangi(image, sigmas=range(1, 10, 2), scale_range=None,
-           scale_step=None, alpha=0.5, beta=0.5, gamma=None,
-           black_ridges=True, mode='reflect', cval=0):
+def frangi(
+    image,
+    sigmas=range(1, 10, 2),
+    scale_range=None,
+    scale_step=None,
+    alpha=0.5,
+    beta=0.5,
+    gamma=None,
+    black_ridges=True,
+    mode="reflect",
+    cval=0,
+):
     """
     Filter an image with the Frangi vesselness filter.
 
@@ -452,9 +477,11 @@ def frangi(image, sigmas=range(1, 10, 2), scale_range=None,
     .. [3] Ellis, D. G.: https://github.com/ellisdg/frangi3d/tree/master/frangi
     """
     if scale_range is not None and scale_step is not None:
-        warn('Use keyword parameter `sigmas` instead of `scale_range` and '
-             '`scale_range` which will be removed in version 0.17.',
-             stacklevel=2)
+        warn(
+            "Use keyword parameter `sigmas` instead of `scale_range` and "
+            "`scale_range` which will be removed in version 0.17.",
+            stacklevel=2,
+        )
         sigmas = np.arange(scale_range[0], scale_range[1], scale_step)
 
     check_nD(image, [2, 3])  # Check image dimensions.
@@ -476,13 +503,14 @@ def frangi(image, sigmas=range(1, 10, 2), scale_range=None,
     vals = cp.empty(image.shape, dtype=image.dtype)
     ev_sq_sum = cp.empty_like(vals)
     for i, sigma in enumerate(sigmas):  # Filter for all sigmas.
-        H = hessian_matrix(image, sigma, mode=mode, cval=cval,
-                           use_gaussian_derivatives=True)
+        H = hessian_matrix(
+            image, sigma, mode=mode, cval=cval, use_gaussian_derivatives=True
+        )
 
         # Use _symmetric_compute_eigenvalues rather than
         # hessian_matrix_eigvals so we can directly sort by ascending magnitude
         eigvals = _symmetric_compute_eigenvalues(
-            H, sort='ascending', abs_sort=True
+            H, sort="ascending", abs_sort=True
         )
 
         # compute squared sum of the eigenvalues
@@ -507,8 +535,14 @@ def frangi(image, sigmas=range(1, 10, 2), scale_range=None,
             )
         else:
             inner_kernel(
-                eigvals[0], eigvals[1], eigvals[2], ev_sq_sum, alpha_sq,
-                beta_sq, gamma_sq, vals
+                eigvals[0],
+                eigvals[1],
+                eigvals[2],
+                ev_sq_sum,
+                alpha_sq,
+                beta_sq,
+                gamma_sq,
+                vals,
             )
 
         # Store maximum value from different (sigma) scales
@@ -519,9 +553,18 @@ def frangi(image, sigmas=range(1, 10, 2), scale_range=None,
     return filtered_max  # Return pixel-wise max over all sigmas.
 
 
-def hessian(image, sigmas=range(1, 10, 2), scale_range=None, scale_step=None,
-            alpha=0.5, beta=0.5, gamma=15, black_ridges=True, mode='reflect',
-            cval=0):
+def hessian(
+    image,
+    sigmas=range(1, 10, 2),
+    scale_range=None,
+    scale_step=None,
+    alpha=0.5,
+    beta=0.5,
+    gamma=15,
+    black_ridges=True,
+    mode="reflect",
+    cval=0,
+):
     """Filter an image with the Hybrid Hessian filter.
 
     This filter can be used to detect continuous edges, e.g. vessels,
@@ -582,10 +625,18 @@ def hessian(image, sigmas=range(1, 10, 2), scale_range=None, scale_step=None,
         :DOI:`10.1007/978-3-319-16811-1_40`
     .. [2] Kroon, D. J.: Hessian based Frangi vesselness filter.
     """
-    filtered = frangi(image, sigmas=sigmas, scale_range=scale_range,
-                      scale_step=scale_step, alpha=alpha, beta=beta,
-                      gamma=gamma, black_ridges=black_ridges, mode=mode,
-                      cval=cval)
+    filtered = frangi(
+        image,
+        sigmas=sigmas,
+        scale_range=scale_range,
+        scale_step=scale_step,
+        alpha=alpha,
+        beta=beta,
+        gamma=gamma,
+        black_ridges=black_ridges,
+        mode=mode,
+        cval=cval,
+    )
 
     filtered[filtered <= 0] = 1
     return filtered

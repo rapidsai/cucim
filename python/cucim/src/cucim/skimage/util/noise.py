@@ -2,10 +2,10 @@ import cupy as cp
 
 from .dtype import img_as_float
 
-__all__ = ['random_noise']
+__all__ = ["random_noise"]
 
 
-def random_noise(image, mode='gaussian', seed=None, clip=True, **kwargs):
+def random_noise(image, mode="gaussian", seed=None, clip=True, **kwargs):
     """
     Function to add random noise of various types to a floating-point image.
 
@@ -103,27 +103,30 @@ def random_noise(image, mode='gaussian', seed=None, clip=True, **kwargs):
         cp.random.seed(seed=seed)
 
     allowedtypes = {
-        'gaussian': 'gaussian_values',
-        'localvar': 'localvar_values',
-        'poisson': 'poisson_values',
-        'salt': 'sp_values',
-        'pepper': 'sp_values',
-        's&p': 's&p_values',
-        'speckle': 'gaussian_values'}
+        "gaussian": "gaussian_values",
+        "localvar": "localvar_values",
+        "poisson": "poisson_values",
+        "salt": "sp_values",
+        "pepper": "sp_values",
+        "s&p": "s&p_values",
+        "speckle": "gaussian_values",
+    }
 
     kwdefaults = {
-        'mean': 0.0,
-        'var': 0.01,
-        'amount': 0.05,
-        'salt_vs_pepper': 0.5,
-        'local_vars': cp.zeros_like(image) + 0.01}
+        "mean": 0.0,
+        "var": 0.01,
+        "amount": 0.05,
+        "salt_vs_pepper": 0.5,
+        "local_vars": cp.zeros_like(image) + 0.01,
+    }
 
     allowedkwargs = {
-        'gaussian_values': ['mean', 'var'],
-        'localvar_values': ['local_vars'],
-        'sp_values': ['amount'],
-        's&p_values': ['amount', 'salt_vs_pepper'],
-        'poisson_values': []}
+        "gaussian_values": ["mean", "var"],
+        "localvar_values": ["local_vars"],
+        "sp_values": ["amount"],
+        "s&p_values": ["amount", "salt_vs_pepper"],
+        "poisson_values": [],
+    }
 
     for key in kwargs:
         if key not in allowedkwargs[allowedtypes[mode]]:
@@ -135,15 +138,16 @@ def random_noise(image, mode='gaussian', seed=None, clip=True, **kwargs):
     for kw in allowedkwargs[allowedtypes[mode]]:
         kwargs.setdefault(kw, kwdefaults[kw])
 
-    if mode == 'gaussian':
-        noise = cp.random.normal(kwargs['mean'], kwargs['var'] ** 0.5,
-                                 image.shape)
+    if mode == "gaussian":
+        noise = cp.random.normal(
+            kwargs["mean"], kwargs["var"] ** 0.5, image.shape
+        )
         out = image + noise
 
-    elif mode == 'localvar':
+    elif mode == "localvar":
         # Ensure local variance input is correct
-        if (kwargs['local_vars'] <= 0).any():
-            raise ValueError('All values of `local_vars` must be > 0.')
+        if (kwargs["local_vars"] <= 0).any():
+            raise ValueError("All values of `local_vars` must be > 0.")
 
         # Safe shortcut usage broadcasts kwargs['local_vars'] as a ufunc
 
@@ -153,7 +157,7 @@ def random_noise(image, mode='gaussian', seed=None, clip=True, **kwargs):
             0, kwargs["local_vars"] ** 0.5, kwargs["local_vars"].shape
         )
 
-    elif mode == 'poisson':
+    elif mode == "poisson":
         # Determine unique values in image & calculate the next power of two
         vals = len(cp.unique(image))
         vals = 2 ** cp.ceil(cp.log2(vals))
@@ -170,31 +174,42 @@ def random_noise(image, mode='gaussian', seed=None, clip=True, **kwargs):
         if low_clip == -1.0:
             out = out * (old_max + 1.0) - 1.0
 
-    elif mode == 'salt':
+    elif mode == "salt":
         # Re-call function with mode='s&p' and p=1 (all salt noise)
-        out = random_noise(image, mode='s&p', seed=seed,
-                           amount=kwargs['amount'], salt_vs_pepper=1.)
+        out = random_noise(
+            image,
+            mode="s&p",
+            seed=seed,
+            amount=kwargs["amount"],
+            salt_vs_pepper=1.0,
+        )
 
-    elif mode == 'pepper':
+    elif mode == "pepper":
         # Re-call function with mode='s&p' and p=1 (all pepper noise)
-        out = random_noise(image, mode='s&p', seed=seed,
-                           amount=kwargs['amount'], salt_vs_pepper=0.)
+        out = random_noise(
+            image,
+            mode="s&p",
+            seed=seed,
+            amount=kwargs["amount"],
+            salt_vs_pepper=0.0,
+        )
 
-    elif mode == 's&p':
+    elif mode == "s&p":
         out = image.copy()
-        p = kwargs['amount']
-        q = kwargs['salt_vs_pepper']
-        flipped = cp.random.choice([True, False], size=image.shape,
-                                   p=[p, 1 - p])
-        salted = cp.random.choice([True, False], size=image.shape,
-                                  p=[q, 1 - q])
+        p = kwargs["amount"]
+        q = kwargs["salt_vs_pepper"]
+        flipped = cp.random.choice(
+            [True, False], size=image.shape, p=[p, 1 - p]
+        )
+        salted = cp.random.choice([True, False], size=image.shape, p=[q, 1 - q])
         peppered = ~salted
         out[flipped & salted] = 1
         out[flipped & peppered] = low_clip
 
-    elif mode == 'speckle':
-        noise = cp.random.normal(kwargs['mean'], kwargs['var'] ** 0.5,
-                                 image.shape)
+    elif mode == "speckle":
+        noise = cp.random.normal(
+            kwargs["mean"], kwargs["var"] ** 0.5, image.shape
+        )
         out = image + image * noise
 
     # Clip back to original range, if necessary

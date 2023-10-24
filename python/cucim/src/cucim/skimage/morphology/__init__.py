@@ -1,13 +1,36 @@
 from ._skeletonize import medial_axis, thin
-from .binary import (binary_closing, binary_dilation, binary_erosion,
-                     binary_opening)
-from .footprints import (ball, cube, diamond, disk, octagon, octahedron,
-                         rectangle, square, star)
-from .gray import (black_tophat, closing, dilation, erosion, opening,
-                   white_tophat)
+from .binary import (
+    binary_closing,
+    binary_dilation,
+    binary_erosion,
+    binary_opening,
+)
+from .footprints import (
+    ball,
+    cube,
+    diamond,
+    disk,
+    octagon,
+    octahedron,
+    rectangle,
+    square,
+    star,
+)
+from .gray import (
+    black_tophat,
+    closing,
+    dilation,
+    erosion,
+    opening,
+    white_tophat,
+)
 from .grayreconstruct import reconstruction
-from .isotropic import (isotropic_closing, isotropic_dilation,
-                        isotropic_erosion, isotropic_opening)
+from .isotropic import (
+    isotropic_closing,
+    isotropic_dilation,
+    isotropic_erosion,
+    isotropic_opening,
+)
 from .misc import remove_small_holes, remove_small_objects
 
 __all__ = [

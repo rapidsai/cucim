@@ -8,7 +8,7 @@ from cucim.skimage.filters import window
 @pytest.mark.parametrize("size", [5, 6])
 @pytest.mark.parametrize("ndim", [2, 3, 4])
 def test_window_shape_isotropic(size, ndim):
-    w = window('hann', (size,) * ndim)
+    w = window("hann", (size,) * ndim)
     assert w.ndim == ndim
     assert w.shape[1:] == w.shape[:-1]
     for i in range(1, ndim - 1):
@@ -17,13 +17,13 @@ def test_window_shape_isotropic(size, ndim):
 
 @pytest.mark.parametrize("shape", [(8, 16), (16, 8), (2, 3, 4)])
 def test_window_shape_anisotropic(shape):
-    w = window('hann', shape)
+    w = window("hann", shape)
     assert w.shape == shape
 
 
 @pytest.mark.parametrize("shape", [[17, 33], [17, 97]])
 def test_window_anisotropic_amplitude(shape):
-    w = window(('tukey', 0.8), shape)
+    w = window(("tukey", 0.8), shape)
 
     # The shape is stretched to give approximately the same range on each axis,
     # so the center profile should have a similar mean value.
@@ -42,8 +42,8 @@ def test_window_type(wintype):
 
 @pytest.mark.parametrize("size", [10, 11])
 def test_window_1d(size):
-    w = window('hann', size)
-    w1 = get_window('hann', size, fftbins=False)
+    w = window("hann", size)
+    w1 = get_window("hann", size, fftbins=False)
     assert cp.allclose(w, w1)
 
 

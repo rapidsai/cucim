@@ -81,13 +81,15 @@ def clear_border(labels, buffer_size=0, bgval=0, mask=None, *, out=None):
         raise ValueError("buffer size may not be greater than labels size")
 
     if out is not None:
-        cp.copyto(out, labels, casting='no')
+        cp.copyto(out, labels, casting="no")
     else:
         out = labels.copy()
 
     if mask is not None:
-        err_msg = (f'labels and mask should have the same shape but '
-                   f'are {out.shape} and {mask.shape}')
+        err_msg = (
+            f"labels and mask should have the same shape but "
+            f"are {out.shape} and {mask.shape}"
+        )
         if out.shape != mask.shape:
             raise ValueError(err_msg)
         if mask.dtype != bool:

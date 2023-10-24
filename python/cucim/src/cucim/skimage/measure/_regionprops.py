@@ -14,7 +14,7 @@ from cucim.skimage._vendored import pad
 from . import _moments
 from ._regionprops_utils import euler_number, perimeter, perimeter_crofton
 
-__all__ = ['regionprops', 'euler_number', 'perimeter', 'perimeter_crofton']
+__all__ = ["regionprops", "euler_number", "perimeter", "perimeter_crofton"]
 
 
 # All values in this PROPS dict correspond to current scikit-image property
@@ -22,114 +22,114 @@ __all__ = ['regionprops', 'euler_number', 'perimeter', 'perimeter_crofton']
 # releases. For backwards compatibility, these older names will continue to
 # work, but will not be documented.
 PROPS = {
-    'Area': 'area',
-    'BoundingBox': 'bbox',
-    'BoundingBoxArea': 'area_bbox',
-    'bbox_area': 'area_bbox',
-    'CentralMoments': 'moments_central',
-    'Centroid': 'centroid',
-    'ConvexArea': 'area_convex',
-    'convex_area': 'area_convex',
+    "Area": "area",
+    "BoundingBox": "bbox",
+    "BoundingBoxArea": "area_bbox",
+    "bbox_area": "area_bbox",
+    "CentralMoments": "moments_central",
+    "Centroid": "centroid",
+    "ConvexArea": "area_convex",
+    "convex_area": "area_convex",
     # 'ConvexHull',
-    'ConvexImage': 'image_convex',
-    'convex_image': 'image_convex',
-    'Coordinates': 'coords',
-    'Eccentricity': 'eccentricity',
-    'EquivDiameter': 'equivalent_diameter_area',
-    'equivalent_diameter': 'equivalent_diameter_area',
-    'EulerNumber': 'euler_number',
-    'Extent': 'extent',
+    "ConvexImage": "image_convex",
+    "convex_image": "image_convex",
+    "Coordinates": "coords",
+    "Eccentricity": "eccentricity",
+    "EquivDiameter": "equivalent_diameter_area",
+    "equivalent_diameter": "equivalent_diameter_area",
+    "EulerNumber": "euler_number",
+    "Extent": "extent",
     # 'Extrema',
-    'FeretDiameter': 'feret_diameter_max',
-    'FeretDiameterMax': 'feret_diameter_max',
-    'FilledArea': 'area_filled',
-    'filled_area': 'area_filled',
-    'FilledImage': 'image_filled',
-    'filled_image': 'image_filled',
-    'HuMoments': 'moments_hu',
-    'Image': 'image',
-    'InertiaTensor': 'inertia_tensor',
-    'InertiaTensorEigvals': 'inertia_tensor_eigvals',
-    'IntensityImage': 'image_intensity',
-    'intensity_image': 'image_intensity',
-    'Label': 'label',
-    'LocalCentroid': 'centroid_local',
-    'local_centroid': 'centroid_local',
-    'MajorAxisLength': 'axis_major_length',
-    'major_axis_length': 'axis_major_length',
-    'MaxIntensity': 'intensity_max',
-    'max_intensity': 'intensity_max',
-    'MeanIntensity': 'intensity_mean',
-    'mean_intensity': 'intensity_mean',
-    'MinIntensity': 'intensity_min',
-    'min_intensity': 'intensity_min',
-    'MinorAxisLength': 'axis_minor_length',
-    'minor_axis_length': 'axis_minor_length',
-    'Moments': 'moments',
-    'NormalizedMoments': 'moments_normalized',
-    'Orientation': 'orientation',
-    'Perimeter': 'perimeter',
-    'CroftonPerimeter': 'perimeter_crofton',
+    "FeretDiameter": "feret_diameter_max",
+    "FeretDiameterMax": "feret_diameter_max",
+    "FilledArea": "area_filled",
+    "filled_area": "area_filled",
+    "FilledImage": "image_filled",
+    "filled_image": "image_filled",
+    "HuMoments": "moments_hu",
+    "Image": "image",
+    "InertiaTensor": "inertia_tensor",
+    "InertiaTensorEigvals": "inertia_tensor_eigvals",
+    "IntensityImage": "image_intensity",
+    "intensity_image": "image_intensity",
+    "Label": "label",
+    "LocalCentroid": "centroid_local",
+    "local_centroid": "centroid_local",
+    "MajorAxisLength": "axis_major_length",
+    "major_axis_length": "axis_major_length",
+    "MaxIntensity": "intensity_max",
+    "max_intensity": "intensity_max",
+    "MeanIntensity": "intensity_mean",
+    "mean_intensity": "intensity_mean",
+    "MinIntensity": "intensity_min",
+    "min_intensity": "intensity_min",
+    "MinorAxisLength": "axis_minor_length",
+    "minor_axis_length": "axis_minor_length",
+    "Moments": "moments",
+    "NormalizedMoments": "moments_normalized",
+    "Orientation": "orientation",
+    "Perimeter": "perimeter",
+    "CroftonPerimeter": "perimeter_crofton",
     # 'PixelIdxList',
     # 'PixelList',
-    'Slice': 'slice',
-    'Solidity': 'solidity',
+    "Slice": "slice",
+    "Solidity": "solidity",
     # 'SubarrayIdx'
-    'WeightedCentralMoments': 'moments_weighted_central',
-    'weighted_moments_central': 'moments_weighted_central',
-    'WeightedCentroid': 'centroid_weighted',
-    'weighted_centroid': 'centroid_weighted',
-    'WeightedHuMoments': 'moments_weighted_hu',
-    'weighted_moments_hu': 'moments_weighted_hu',
-    'WeightedLocalCentroid': 'centroid_weighted_local',
-    'weighted_local_centroid': 'centroid_weighted_local',
-    'WeightedMoments': 'moments_weighted',
-    'weighted_moments': 'moments_weighted',
-    'WeightedNormalizedMoments': 'moments_weighted_normalized',
-    'weighted_moments_normalized': 'moments_weighted_normalized',
+    "WeightedCentralMoments": "moments_weighted_central",
+    "weighted_moments_central": "moments_weighted_central",
+    "WeightedCentroid": "centroid_weighted",
+    "weighted_centroid": "centroid_weighted",
+    "WeightedHuMoments": "moments_weighted_hu",
+    "weighted_moments_hu": "moments_weighted_hu",
+    "WeightedLocalCentroid": "centroid_weighted_local",
+    "weighted_local_centroid": "centroid_weighted_local",
+    "WeightedMoments": "moments_weighted",
+    "weighted_moments": "moments_weighted",
+    "WeightedNormalizedMoments": "moments_weighted_normalized",
+    "weighted_moments_normalized": "moments_weighted_normalized",
 }
 
 COL_DTYPES = {
-    'area': float,
-    'area_bbox': float,
-    'area_convex': float,
-    'area_filled': float,
-    'axis_major_length': float,
-    'axis_minor_length': float,
-    'bbox': int,
-    'centroid': float,
-    'centroid_local': float,
-    'centroid_weighted': float,
-    'centroid_weighted_local': float,
-    'coords': object,
-    'eccentricity': float,
-    'equivalent_diameter_area': float,
-    'euler_number': int,
-    'extent': float,
-    'feret_diameter_max': float,
-    'image': object,
-    'image_convex': object,
-    'image_filled': object,
-    'image_intensity': object,
-    'inertia_tensor': float,
-    'inertia_tensor_eigvals': float,
-    'intensity_max': float,
-    'intensity_mean': float,
-    'intensity_min': float,
-    'label': int,
-    'moments': float,
-    'moments_central': float,
-    'moments_hu': float,
-    'moments_normalized': float,
-    'moments_weighted': float,
-    'moments_weighted_central': float,
-    'moments_weighted_hu': float,
-    'moments_weighted_normalized': float,
-    'orientation': float,
-    'perimeter': float,
-    'perimeter_crofton': float,
-    'slice': object,
-    'solidity': float,
+    "area": float,
+    "area_bbox": float,
+    "area_convex": float,
+    "area_filled": float,
+    "axis_major_length": float,
+    "axis_minor_length": float,
+    "bbox": int,
+    "centroid": float,
+    "centroid_local": float,
+    "centroid_weighted": float,
+    "centroid_weighted_local": float,
+    "coords": object,
+    "eccentricity": float,
+    "equivalent_diameter_area": float,
+    "euler_number": int,
+    "extent": float,
+    "feret_diameter_max": float,
+    "image": object,
+    "image_convex": object,
+    "image_filled": object,
+    "image_intensity": object,
+    "inertia_tensor": float,
+    "inertia_tensor_eigvals": float,
+    "intensity_max": float,
+    "intensity_mean": float,
+    "intensity_min": float,
+    "label": int,
+    "moments": float,
+    "moments_central": float,
+    "moments_hu": float,
+    "moments_normalized": float,
+    "moments_weighted": float,
+    "moments_weighted_central": float,
+    "moments_weighted_hu": float,
+    "moments_weighted_normalized": float,
+    "orientation": float,
+    "perimeter": float,
+    "perimeter_crofton": float,
+    "slice": object,
+    "solidity": float,
 }
 
 OBJECT_COLUMNS = [col for col, dtype in COL_DTYPES.items() if dtype == object]
@@ -137,16 +137,16 @@ OBJECT_COLUMNS = [col for col, dtype in COL_DTYPES.items() if dtype == object]
 PROP_VALS = set(PROPS.values())
 
 _require_intensity_image = (
-    'image_intensity',
-    'intensity_max',
-    'intensity_mean',
-    'intensity_min',
-    'moments_weighted',
-    'moments_weighted_central',
-    'centroid_weighted',
-    'centroid_weighted_local',
-    'moments_weighted_hu',
-    'moments_weighted_normalized',
+    "image_intensity",
+    "intensity_max",
+    "intensity_mean",
+    "intensity_min",
+    "moments_weighted",
+    "moments_weighted_central",
+    "centroid_weighted",
+    "centroid_weighted_local",
+    "moments_weighted_hu",
+    "moments_weighted_normalized",
 )
 
 
@@ -241,6 +241,7 @@ def only2d(method):
                 f"Property {method.__name__} is not implemented for 3D images"
             )
         return method(self, *args, **kwargs)
+
     return func2d
 
 
@@ -281,8 +282,10 @@ def _inertia_eigvals_to_axes_lengths_3D(inertia_tensor_eigvals):
     """  # noqa: E501
     axis_lengths = []
     for ax in range(2, -1, -1):
-        w = sum(v * -1 if i == ax else v
-                for i, v in enumerate(inertia_tensor_eigvals))
+        w = sum(
+            v * -1 if i == ax else v
+            for i, v in enumerate(inertia_tensor_eigvals)
+        )
         axis_lengths.append(math.sqrt(10 * w))
     return axis_lengths
 
@@ -292,15 +295,27 @@ class RegionProperties:
     on the available region properties.
     """
 
-    def __init__(self, slice, label, label_image, intensity_image,
-                 cache_active, *, extra_properties=None, spacing=None):
-
+    def __init__(
+        self,
+        slice,
+        label,
+        label_image,
+        intensity_image,
+        cache_active,
+        *,
+        extra_properties=None,
+        spacing=None,
+    ):
         if intensity_image is not None:
             ndim = label_image.ndim
-            if not (intensity_image.shape[:ndim] == label_image.shape
-                    and intensity_image.ndim in [ndim, ndim + 1]):
-                raise ValueError('Label and intensity image shapes must match,'
-                                 ' except for channel (last) axis.')
+            if not (
+                intensity_image.shape[:ndim] == label_image.shape
+                and intensity_image.ndim in [ndim, ndim + 1]
+            ):
+                raise ValueError(
+                    "Label and intensity image shapes must match,"
+                    " except for channel (last) axis."
+                )
             multichannel = label_image.shape < intensity_image.shape
         else:
             multichannel = False
@@ -317,7 +332,7 @@ class RegionProperties:
         self._ndim = label_image.ndim
         self._multichannel = multichannel
         self._spatial_axes = tuple(range(self._ndim))
-        self._spacing = spacing if spacing is not None else (1.,) * self._ndim
+        self._spacing = spacing if spacing is not None else (1.0,) * self._ndim
         if isinstance(self._spacing, cp.ndarray):
             self._pixel_area = cp.product(self._spacing)
         else:
@@ -351,23 +366,23 @@ class RegionProperties:
             if n_args == 2:
                 if self._intensity_image is not None:
                     if self._multichannel:
-                        multichannel_list = [func(self.image,
-                                                  self.image_intensity[..., i])
-                                             for i in range(
-                            self.image_intensity.shape[-1])]
+                        multichannel_list = [
+                            func(self.image, self.image_intensity[..., i])
+                            for i in range(self.image_intensity.shape[-1])
+                        ]
                         return cp.stack(multichannel_list, axis=-1)
                     else:
                         return func(self.image, self.image_intensity)
                 else:
                     raise AttributeError(
-                        f'intensity image required to calculate {attr}'
+                        f"intensity image required to calculate {attr}"
                     )
             elif n_args == 1:
                 return func(self.image)
             else:
                 raise AttributeError(
-                    f'Custom regionprop function\'s number of arguments must '
-                    f'be 1 or 2, but {attr} takes {n_args} arguments.'
+                    f"Custom regionprop function's number of arguments must "
+                    f"be 1 or 2, but {attr} takes {n_args} arguments."
                 )
         elif attr in PROPS and attr.lower() == attr:
             if (
@@ -409,8 +424,10 @@ class RegionProperties:
         A tuple of the bounding box's start coordinates for each dimension,
         followed by the end coordinates for each dimension
         """
-        return tuple([self.slice[i].start for i in range(self._ndim)] +
-                     [self.slice[i].stop for i in range(self._ndim)])
+        return tuple(
+            [self.slice[i].start for i in range(self._ndim)]
+            + [self.slice[i].stop for i in range(self._ndim)]
+        )
 
     @property
     def area_bbox(self):
@@ -435,19 +452,25 @@ class RegionProperties:
         # CuPy Backend: explicitly cast to uint8 to avoid the issue see in
         #               reported in https://github.com/cupy/cupy/issues/4354
         return cp.asarray(convex_hull_image(cp.asnumpy(self.image))).astype(
-            cp.uint8)
+            cp.uint8
+        )
 
     @property
     def coords_scaled(self):
         indices = cp.nonzero(self.image)
-        return cp.vstack([(indices[i] + self.slice[i].start) * s
-                          for i, s in zip(range(self._ndim), self._spacing)]).T
+        return cp.vstack(
+            [
+                (indices[i] + self.slice[i].start) * s
+                for i, s in zip(range(self._ndim), self._spacing)
+            ]
+        ).T
 
     @property
     def coords(self):
         indices = cp.nonzero(self.image)
-        return cp.vstack([indices[i] + self.slice[i].start
-                          for i in range(self._ndim)]).T
+        return cp.vstack(
+            [indices[i] + self.slice[i].start for i in range(self._ndim)]
+        ).T
 
     @property
     @only2d
@@ -466,8 +489,9 @@ class RegionProperties:
     @property
     def euler_number(self):
         if self._ndim not in [2, 3]:
-            raise NotImplementedError('Euler number is implemented for '
-                                      '2D or 3D images only')
+            raise NotImplementedError(
+                "Euler number is implemented for " "2D or 3D images only"
+            )
         return euler_number(self.image, self._ndim)
 
     @property
@@ -486,12 +510,14 @@ class RegionProperties:
         )
         identity_convex_hull = cp.asnumpy(identity_convex_hull)
         if self._ndim == 2:
-            coordinates = np.vstack(find_contours(identity_convex_hull, 0.5,
-                                                  fully_connected='high'))
+            coordinates = np.vstack(
+                find_contours(identity_convex_hull, 0.5, fully_connected="high")
+            )
         elif self._ndim == 3:
-            coordinates, _, _, _ = marching_cubes(identity_convex_hull,
-                                                  level=0.5)
-        distances = pdist(coordinates * self._spacing, 'sqeuclidean')
+            coordinates, _, _, _ = marching_cubes(
+                identity_convex_hull, level=0.5
+            )
+        distances = pdist(coordinates * self._spacing, "sqeuclidean")
         return math.sqrt(np.max(distances))
 
     @property
@@ -518,14 +544,15 @@ class RegionProperties:
     @property
     @_cached
     def inertia_tensor_eigvals(self):
-        return _moments.inertia_tensor_eigvals(self.image,
-                                               T=self.inertia_tensor)
+        return _moments.inertia_tensor_eigvals(
+            self.image, T=self.inertia_tensor
+        )
 
     @property
     @_cached
     def image_intensity(self):
         if self._intensity_image is None:
-            raise AttributeError('No intensity image specified.')
+            raise AttributeError("No intensity image specified.")
         image = (
             self.image
             if not self._multichannel
@@ -539,8 +566,9 @@ class RegionProperties:
     @property
     def centroid_local(self):
         M = self.moments
-        return tuple(M[tuple(cp.eye(self._ndim, dtype=int))] /
-                     M[(0,) * self._ndim])
+        return tuple(
+            M[tuple(cp.eye(self._ndim, dtype=int))] / M[(0,) * self._ndim]
+        )
 
     @property
     def intensity_max(self):
@@ -595,7 +623,7 @@ class RegionProperties:
             self.image.astype(cp.uint8),
             self.centroid_local,
             order=3,
-            spacing=self._spacing
+            spacing=self._spacing,
         )
         return mu
 
@@ -604,15 +632,16 @@ class RegionProperties:
     def moments_hu(self):
         if any(s != 1.0 for s in self._spacing):
             raise NotImplementedError(
-                '`moments_hu` supports spacing = (1, 1) only'
+                "`moments_hu` supports spacing = (1, 1) only"
             )
         return _moments.moments_hu(self.moments_normalized)
 
     @property
     @_cached
     def moments_normalized(self):
-        return _moments.moments_normalized(self.moments_central, 3,
-                                           spacing=self._spacing)
+        return _moments.moments_normalized(
+            self.moments_central, 3, spacing=self._spacing
+        )
 
     @property
     @only2d
@@ -631,7 +660,7 @@ class RegionProperties:
     def perimeter(self):
         if len(np.unique(self._spacing)) != 1:
             raise NotImplementedError(
-                '`perimeter` supports isotropic spacings only'
+                "`perimeter` supports isotropic spacings only"
             )
         return perimeter(self.image, 4) * self._spacing[0]
 
@@ -640,7 +669,7 @@ class RegionProperties:
     def perimeter_crofton(self):
         if len(np.unique(self._spacing)) != 1:
             raise NotImplementedError(
-                '`perimeter` supports isotropic spacings only'
+                "`perimeter` supports isotropic spacings only"
             )
         return perimeter_crofton(self.image, 4) * self._spacing[0]
 
@@ -651,14 +680,12 @@ class RegionProperties:
     @property
     def centroid_weighted(self):
         ctr = self.centroid_weighted_local
-        return tuple(idx + slc.start
-                     for idx, slc in zip(ctr, self.slice))
+        return tuple(idx + slc.start for idx, slc in zip(ctr, self.slice))
 
     @property
     def centroid_weighted_local(self):
         M = self.moments_weighted
-        return (M[tuple(cp.eye(self._ndim, dtype=int))] /
-                M[(0,) * self._ndim])
+        return M[tuple(cp.eye(self._ndim, dtype=int))] / M[(0,) * self._ndim]
 
     @property
     @_cached
@@ -666,9 +693,12 @@ class RegionProperties:
         image = self._image_intensity_double()
         if self._multichannel:
             moments = cp.stack(
-                [_moments.moments(image[..., i], order=3,
-                                  spacing=self._spacing)
-                 for i in range(image.shape[-1])],
+                [
+                    _moments.moments(
+                        image[..., i], order=3, spacing=self._spacing
+                    )
+                    for i in range(image.shape[-1])
+                ],
                 axis=-1,
             )
         else:
@@ -686,7 +716,7 @@ class RegionProperties:
                     image[..., i],
                     center=ctr[..., i],
                     order=3,
-                    spacing=self._spacing
+                    spacing=self._spacing,
                 )
                 for i in range(image.shape[-1])
             ]
@@ -702,7 +732,7 @@ class RegionProperties:
     def moments_weighted_hu(self):
         if not (np.array(self._spacing) == np.array([1, 1])).all():
             raise NotImplementedError(
-                '`moments_hu` supports spacing = (1, 1) only'
+                "`moments_hu` supports spacing = (1, 1) only"
             )
         nu = self.moments_weighted_normalized
         if self._multichannel:
@@ -721,16 +751,21 @@ class RegionProperties:
         if self._multichannel:
             nchannels = self._intensity_image.shape[-1]
             return cp.stack(
-                [_moments.moments_normalized(mu[..., i], order=3,
-                                             spacing=self._spacing)
-                 for i in range(nchannels)],
+                [
+                    _moments.moments_normalized(
+                        mu[..., i], order=3, spacing=self._spacing
+                    )
+                    for i in range(nchannels)
+                ],
                 axis=-1,
             )
         else:
-            return _moments.moments_normalized(mu, order=3,
-                                               spacing=self._spacing)
-        return _moments.moments_normalized(self.moments_weighted_central, 3,
-                                           spacing=self._spacing)
+            return _moments.moments_normalized(
+                mu, order=3, spacing=self._spacing
+            )
+        return _moments.moments_normalized(
+            self.moments_weighted_central, 3, spacing=self._spacing
+        )
 
     def __iter__(self):
         props = PROP_VALS
@@ -760,8 +795,9 @@ class RegionProperties:
                     np.testing.assert_equal(v1, v2)
                 else:
                     # so that NaNs are equal
-                    cp.testing.assert_array_equal(getattr(self, key, None),
-                                                  getattr(other, key, None))
+                    cp.testing.assert_array_equal(
+                        getattr(self, key, None), getattr(other, key, None)
+                    )
             except AssertionError:
                 return False
 
@@ -772,7 +808,7 @@ class RegionProperties:
 _RegionProperties = RegionProperties
 
 
-def _props_to_dict(regions, properties=('label', 'bbox'), separator='-'):
+def _props_to_dict(regions, properties=("label", "bbox"), separator="-"):
     """Convert image region properties list into a column dictionary.
 
     Parameters
@@ -927,11 +963,16 @@ def _props_to_dict(regions, properties=('label', 'bbox'), separator='-'):
     return out
 
 
-def regionprops_table(label_image, intensity_image=None,
-                      properties=('label', 'bbox'),
-                      *,
-                      cache=True, separator='-', extra_properties=None,
-                      spacing=None):
+def regionprops_table(
+    label_image,
+    intensity_image=None,
+    properties=("label", "bbox"),
+    *,
+    cache=True,
+    separator="-",
+    extra_properties=None,
+    spacing=None,
+):
     """Compute image properties and return them as a pandas-compatible table.
 
     The table is a dictionary mapping column names to value arrays. See Notes
@@ -1066,13 +1107,17 @@ def regionprops_table(label_image, intensity_image=None,
     4      5       112.50        113.0        114.0
 
     """
-    regions = regionprops(label_image, intensity_image=intensity_image,
-                          cache=cache, extra_properties=extra_properties,
-                          spacing=spacing)
+    regions = regionprops(
+        label_image,
+        intensity_image=intensity_image,
+        cache=cache,
+        extra_properties=extra_properties,
+        spacing=spacing,
+    )
     if extra_properties is not None:
-        properties = (
-            list(properties) + [prop.__name__ for prop in extra_properties]
-        )
+        properties = list(properties) + [
+            prop.__name__ for prop in extra_properties
+        ]
     if len(regions) == 0:
         ndim = label_image.ndim
         label_image = np.zeros((3,) * ndim, dtype=int)
@@ -1083,21 +1128,30 @@ def regionprops_table(label_image, intensity_image=None,
                 label_image.shape + intensity_image.shape[ndim:],
                 dtype=intensity_image.dtype,
             )
-        regions = regionprops(label_image, intensity_image=intensity_image,
-                              cache=cache, extra_properties=extra_properties,
-                              spacing=spacing)
+        regions = regionprops(
+            label_image,
+            intensity_image=intensity_image,
+            cache=cache,
+            extra_properties=extra_properties,
+            spacing=spacing,
+        )
 
-        out_d = _props_to_dict(regions, properties=properties,
-                               separator=separator)
+        out_d = _props_to_dict(
+            regions, properties=properties, separator=separator
+        )
         return {k: v[:0] for k, v in out_d.items()}
 
-    return _props_to_dict(
-        regions, properties=properties, separator=separator
-    )
+    return _props_to_dict(regions, properties=properties, separator=separator)
 
 
-def regionprops(label_image, intensity_image=None, cache=True, *,
-                extra_properties=None, spacing=None):
+def regionprops(
+    label_image,
+    intensity_image=None,
+    cache=True,
+    *,
+    extra_properties=None,
+    spacing=None,
+):
     r"""Measure properties of labeled image regions.
 
     Parameters
@@ -1338,19 +1392,19 @@ def regionprops(label_image, intensity_image=None, cache=True, *,
     """  # noqa
 
     if label_image.ndim not in (2, 3):
-        raise TypeError('Only 2-D and 3-D images supported.')
+        raise TypeError("Only 2-D and 3-D images supported.")
 
     if not cp.issubdtype(label_image.dtype, cp.integer):
         if cp.issubdtype(label_image.dtype, bool):
             raise TypeError(
-                'Non-integer image types are ambiguous: '
-                'use skimage.measure.label to label the connected'
-                'components of label_image,'
-                'or label_image.astype(np.uint8) to interpret'
-                'the True values as a single label.')
+                "Non-integer image types are ambiguous: "
+                "use skimage.measure.label to label the connected"
+                "components of label_image,"
+                "or label_image.astype(np.uint8) to interpret"
+                "the True values as a single label."
+            )
         else:
-            raise TypeError(
-                'Non-integer label_image types are ambiguous')
+            raise TypeError("Non-integer label_image types are ambiguous")
 
     regions = []
 
@@ -1362,9 +1416,15 @@ def regionprops(label_image, intensity_image=None, cache=True, *,
 
         label = i + 1
 
-        props = RegionProperties(sl, label, label_image, intensity_image,
-                                 cache, spacing=spacing,
-                                 extra_properties=extra_properties)
+        props = RegionProperties(
+            sl,
+            label,
+            label_image,
+            intensity_image,
+            cache,
+            spacing=spacing,
+            extra_properties=extra_properties,
+        )
         regions.append(props)
 
     return regions
@@ -1374,9 +1434,10 @@ def _parse_docs():
     import re
     import textwrap
 
-    doc = regionprops.__doc__ or ''
-    matches = re.finditer(r'\*\*(\w+)\*\* \:.*?\n(.*?)(?=\n    [\*\S]+)',
-                          doc, flags=re.DOTALL)
+    doc = regionprops.__doc__ or ""
+    matches = re.finditer(
+        r"\*\*(\w+)\*\* \:.*?\n(.*?)(?=\n    [\*\S]+)", doc, flags=re.DOTALL
+    )
     prop_doc = {m.group(1): textwrap.dedent(m.group(2)) for m in matches}
 
     return prop_doc
@@ -1385,8 +1446,9 @@ def _parse_docs():
 def _install_properties_docs():
     prop_doc = _parse_docs()
 
-    for p in [member for member in dir(RegionProperties)
-              if not member.startswith('_')]:
+    for p in [
+        member for member in dir(RegionProperties) if not member.startswith("_")
+    ]:
         getattr(RegionProperties, p).__doc__ = prop_doc[p]
 
 

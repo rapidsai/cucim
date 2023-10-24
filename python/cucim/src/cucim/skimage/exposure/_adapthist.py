@@ -24,12 +24,11 @@ from .._vendored import pad
 from ..color.adapt_rgb import adapt_rgb, hsv_value
 from ..util import img_as_uint
 
-NR_OF_GRAY = 2 ** 14  # number of grayscale levels to use in CLAHE algorithm
+NR_OF_GRAY = 2**14  # number of grayscale levels to use in CLAHE algorithm
 
 
 @adapt_rgb(hsv_value)
-def equalize_adapthist(image, kernel_size=None,
-                       clip_limit=0.01, nbins=256):
+def equalize_adapthist(image, kernel_size=None, clip_limit=0.01, nbins=256):
     """Contrast Limited Adaptive Histogram Equalization (CLAHE).
 
     An algorithm for local contrast enhancement, that uses histograms computed
@@ -90,7 +89,7 @@ def equalize_adapthist(image, kernel_size=None,
     elif isinstance(kernel_size, numbers.Number):
         kernel_size = (kernel_size,) * image.ndim
     elif len(kernel_size) != image.ndim:
-        raise ValueError(f'Incorrect value of `kernel_size`: {kernel_size}')
+        raise ValueError(f"Incorrect value of `kernel_size`: {kernel_size}")
 
     kernel_size = [int(k) for k in kernel_size]
 
@@ -132,13 +131,15 @@ def _clahe(image, kernel_size, clip_limit, nbins):
     # - is preceded by half a kernel size
     pad_start_per_dim = [k // 2 for k in kernel_size]
 
-    pad_end_per_dim = [(k - s % k) % k + math.ceil(k / 2.)
-                       for k, s in zip(kernel_size, image.shape)]
+    pad_end_per_dim = [
+        (k - s % k) % k + math.ceil(k / 2.0)
+        for k, s in zip(kernel_size, image.shape)
+    ]
 
     image = pad(
         image,
         [[p_i, p_f] for p_i, p_f in zip(pad_start_per_dim, pad_end_per_dim)],
-        mode='reflect',
+        mode="reflect",
     )
 
     # determine gray value bins
@@ -154,8 +155,9 @@ def _clahe(image, kernel_size, clip_limit, nbins):
     hist_blocks_shape = functools.reduce(
         operator.add, [(s, k) for s, k in zip(ns_hist, kernel_size)]
     )
-    hist_blocks_axis_order = (tuple(range(0, ndim * 2, 2)) +
-                              tuple(range(1, ndim * 2, 2)))
+    hist_blocks_axis_order = tuple(range(0, ndim * 2, 2)) + tuple(
+        range(1, ndim * 2, 2)
+    )
     hist_slices = [
         slice(k // 2, k // 2 + n * k) for k, n in zip(kernel_size, ns_hist)
     ]
@@ -181,18 +183,18 @@ def _clahe(image, kernel_size, clip_limit, nbins):
         #    faster to loop over the arrays on the host
         #    (hist is small and clip_histogram has too much overhead)
         # TODO: implement clip_histogram kernel to avoid synchronization?
-        hist = cp.asarray(np.apply_along_axis(  # synchronize!
-            clip_histogram, -1, cp.asnumpy(hist), clip_limit=clim
-        ))
+        hist = cp.asarray(
+            np.apply_along_axis(  # synchronize!
+                clip_histogram, -1, cp.asnumpy(hist), clip_limit=clim
+            )
+        )
     else:
         hist = cp.apply_along_axis(clip_histogram, -1, hist, clip_limit=clim)
     hist = map_histogram(hist, 0, NR_OF_GRAY - 1, kernel_elements)
     hist = hist.reshape(hist_block_assembled_shape[:ndim] + (-1,))
 
     # duplicate leading mappings in each dim
-    map_array = pad(
-        hist, [(1, 1) for _ in range(ndim)] + [(0, 0)], mode='edge'
-    )
+    map_array = pad(hist, [(1, 1) for _ in range(ndim)] + [(0, 0)], mode="edge")
 
     # Perform multilinear interpolation of graylevel mappings
     # using the convention described here:
@@ -209,12 +211,14 @@ def _clahe(image, kernel_size, clip_limit, nbins):
     blocks = image.reshape(blocks_shape)
     blocks = blocks.transpose(blocks_axis_order)
     blocks_flattened_shape = blocks.shape
-    blocks = blocks.reshape((_misc.prod(ns_proc),
-                             _misc.prod(blocks.shape[ndim:])))
+    blocks = blocks.reshape(
+        (_misc.prod(ns_proc), _misc.prod(blocks.shape[ndim:]))
+    )
 
     # calculate interpolation coefficients
-    coeffs = cp.meshgrid(*tuple([cp.arange(k) / k
-                                 for k in kernel_size[::-1]]), indexing='ij')
+    coeffs = cp.meshgrid(
+        *tuple([cp.arange(k) / k for k in kernel_size[::-1]]), indexing="ij"
+    )
     coeffs = [cp.transpose(c).flatten() for c in coeffs]
     inv_coeffs = [1 - c for c in coeffs]
 
@@ -222,9 +226,9 @@ def _clahe(image, kernel_size, clip_limit, nbins):
     # regions in each direction
     result = cp.zeros(blocks.shape, dtype=cp.float32)
     for iedge, edge in enumerate(itertools.product(*((range(2),) * ndim))):
-
-        edge_maps = map_array[tuple(slice(e, e + n)
-                                    for e, n in zip(edge, ns_proc))]
+        edge_maps = map_array[
+            tuple(slice(e, e + n) for e, n in zip(edge, ns_proc))
+        ]
         edge_maps = edge_maps.reshape((_misc.prod(ns_proc), -1))
 
         # apply map
@@ -250,9 +254,14 @@ def _clahe(image, kernel_size, clip_limit, nbins):
     result = result.reshape(image.shape)
 
     # undo padding
-    unpad_slices = tuple([slice(p_i, s - p_f) for p_i, p_f, s in
-                          zip(pad_start_per_dim, pad_end_per_dim,
-                              image.shape)])
+    unpad_slices = tuple(
+        [
+            slice(p_i, s - p_f)
+            for p_i, p_f, s in zip(
+                pad_start_per_dim, pad_end_per_dim, image.shape
+            )
+        ]
+    )
     result = result[unpad_slices]
 
     return result

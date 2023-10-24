@@ -47,7 +47,7 @@ pba3d_defines_encode_32bit = """
 #define GET_Y(value)    (((value) >> 10) & 0x3ff)
 #define GET_Z(value)    ((NOTSITE((value))) ? MAX_INT : ((value) & 0x3ff))
 
-""" # noqa
+"""  # noqa
 
 
 # 64bit version of ENCODE/DECODE to allow a 20-bit integer per coordinate axis.
@@ -70,12 +70,13 @@ pba3d_defines_encode_64bit = """
 #define GET_Y(value)    (((value) >> 20) & 0xfffff)
 #define GET_Z(value)    ((NOTSITE((value))) ? MAX_INT : ((value) & 0xfffff))
 
-""" # noqa
+"""  # noqa
 
 
 @cupy.memoize(True)
-def get_pba3d_src(block_size_3d=32, marker=-2147483648, max_int=2147483647,
-                  size_max=1024):
+def get_pba3d_src(
+    block_size_3d=32, marker=-2147483648, max_int=2147483647, size_max=1024
+):
     pba3d_code = pba3d_defines_template.format(
         block_size_3d=block_size_3d, marker=marker, max_int=max_int
     )
@@ -96,7 +97,7 @@ def _get_encode3d_kernel(size_max, marker=-2147483648):
     if size_max > 1024:
         int_type = "ptrdiff_t"  # int64_t
     else:
-        int_type = "int"        # int32_t
+        int_type = "int"  # int32_t
 
     # value must match TOID macro in the C++ code!
     if size_max > 1024:
@@ -213,7 +214,9 @@ def _determine_padding(shape, block_size, m1, m2, m3, blockx, blocky):
     if aniso or round_up:
         smax = max(sz, sy, sx)
         padding_width = (
-            (0, smax - orig_sz), (0, smax - orig_sy), (0, smax - orig_sx)
+            (0, smax - orig_sz),
+            (0, smax - orig_sy),
+            (0, smax - orig_sx),
         )
     else:
         padding_width = None
@@ -287,9 +290,7 @@ def _get_aniso_distance_kernel_code(int_type, raw_out_var=True):
 def _get_aniso_distance_kernel(int_type):
     """Returns kernel computing the Euclidean distance from coordinates with
     axis spacing != 1."""
-    operation = _get_aniso_distance_kernel_code(
-        int_type, raw_out_var=True
-    )
+    operation = _get_aniso_distance_kernel_code(int_type, raw_out_var=True)
     return cupy.ElementwiseKernel(
         in_params="I z, I y, I x, raw F sampling",
         out_params="raw F dist",
@@ -334,10 +335,18 @@ def _get_decode_as_distance_kernel(size_max, large_dist=False, sampling=None):
     )
 
 
-def _pba_3d(arr, sampling=None, return_distances=True, return_indices=False,
-            block_params=None, check_warp_size=False, *,
-            float64_distances=False, distances=None, indices=None):
-
+def _pba_3d(
+    arr,
+    sampling=None,
+    return_distances=True,
+    return_indices=False,
+    block_params=None,
+    check_warp_size=False,
+    *,
+    float64_distances=False,
+    distances=None,
+    indices=None,
+):
     indices_inplace = isinstance(indices, cupy.ndarray)
     dt_inplace = isinstance(distances, cupy.ndarray)
     _distance_tranform_arg_check(
@@ -402,9 +411,7 @@ def _pba_3d(arr, sampling=None, return_distances=True, return_indices=False,
         sampling_args = (sampling[2], sampling[1], sampling[0])
 
     kernelFloodZ(
-        grid,
-        block,
-        (pba_images[buffer_idx], pba_images[1 - buffer_idx], size)
+        grid, block, (pba_images[buffer_idx], pba_images[1 - buffer_idx], size)
     )
     buffer_idx = 1 - buffer_idx
 
@@ -413,7 +420,8 @@ def _pba_3d(arr, sampling=None, return_distances=True, return_indices=False,
     kernelMaurerAxis(
         grid,
         block,
-        (pba_images[buffer_idx], pba_images[1 - buffer_idx], size) + sampling_args,  # noqa
+        (pba_images[buffer_idx], pba_images[1 - buffer_idx], size)
+        + sampling_args,  # noqa
     )
 
     block = (block_size, m3, 1)
@@ -421,7 +429,8 @@ def _pba_3d(arr, sampling=None, return_distances=True, return_indices=False,
     kernelColorAxis(
         grid,
         block,
-        (pba_images[1 - buffer_idx], pba_images[buffer_idx], size) + sampling_args,  # noqa
+        (pba_images[1 - buffer_idx], pba_images[buffer_idx], size)
+        + sampling_args,  # noqa
     )
 
     if sampling is not None:
@@ -434,7 +443,8 @@ def _pba_3d(arr, sampling=None, return_distances=True, return_indices=False,
     kernelMaurerAxis(
         grid,
         block,
-        (pba_images[buffer_idx], pba_images[1 - buffer_idx], size) + sampling_args,  # noqa
+        (pba_images[buffer_idx], pba_images[1 - buffer_idx], size)
+        + sampling_args,  # noqa
     )
 
     block = (block_size, m3, 1)
@@ -442,7 +452,8 @@ def _pba_3d(arr, sampling=None, return_distances=True, return_indices=False,
     kernelColorAxis(
         grid,
         block,
-        (pba_images[1 - buffer_idx], pba_images[buffer_idx], size) + sampling_args,  # noqa
+        (pba_images[1 - buffer_idx], pba_images[buffer_idx], size)
+        + sampling_args,  # noqa
     )
     output = pba_images[buffer_idx]
 
@@ -455,15 +466,13 @@ def _pba_3d(arr, sampling=None, return_distances=True, return_indices=False,
             distances = cupy.zeros(out_shape, dtype=dtype_out)
 
         # make sure maximum possible distance doesn't overflow
-        max_possible_dist = sum((s - 1)**2 for s in out_shape)
+        max_possible_dist = sum((s - 1) ** 2 for s in out_shape)
         large_dist = max_possible_dist >= 2**31
 
         if not return_indices:
             # Compute distances without forming explicit coordinate arrays.
             kern = _get_decode_as_distance_kernel(
-                size_max=size_max,
-                large_dist=large_dist,
-                sampling=sampling
+                size_max=size_max, large_dist=large_dist, sampling=sampling
             )
             if sampling is None:
                 kern(output[:orig_sz, :orig_sy, :orig_sx], distances)
@@ -473,13 +482,15 @@ def _pba_3d(arr, sampling=None, return_distances=True, return_indices=False,
             return (distances,)
 
     if return_indices:
-        x, y, z = decode3d(output[:orig_sz, :orig_sy, :orig_sx],
-                           size_max=size_max)
+        x, y, z = decode3d(
+            output[:orig_sz, :orig_sy, :orig_sx], size_max=size_max
+        )
     vals = ()
     if return_distances:
         if sampling is None:
             kern = _get_distance_kernel(
-                int_type=_get_inttype(distances), large_dist=large_dist,
+                int_type=_get_inttype(distances),
+                large_dist=large_dist,
             )
             kern(z, y, x, distances)
         else:

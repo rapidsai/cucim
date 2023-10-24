@@ -20,10 +20,11 @@ from ...util.io import open_image_cucim
 
 def test_read_region_cuda_memleak(testimg_tiff_stripe_4096x4096_256_jpeg):
     import GPUtil
+
     gpus = GPUtil.getGPUs()
 
     if len(gpus) == 0:
-        pytest.skip('No gpu available')
+        pytest.skip("No gpu available")
 
     img = open_image_cucim(testimg_tiff_stripe_4096x4096_256_jpeg)
 
@@ -31,7 +32,7 @@ def test_read_region_cuda_memleak(testimg_tiff_stripe_4096x4096_256_jpeg):
     mem_usage_history = [gpu.memoryUsed]
 
     for i in range(10):
-        _ = img.read_region(device='cuda')
+        _ = img.read_region(device="cuda")
         gpus = GPUtil.getGPUs()
         gpu = gpus[0]
         mem_usage_history.append(gpu.memoryUsed)
@@ -50,6 +51,7 @@ def test_read_region_cpu_memleak(testimg_tiff_stripe_4096x4096_256):
     import os
 
     import psutil
+
     process = psutil.Process(os.getpid())
 
     img = open_image_cucim(testimg_tiff_stripe_4096x4096_256)
@@ -71,17 +73,20 @@ def test_read_random_region_cpu_memleak(testimg_tiff_stripe_4096x4096_256):
     import random
 
     import psutil
+
     process = psutil.Process(os.getpid())
 
     img = open_image_cucim(testimg_tiff_stripe_4096x4096_256)
 
     iteration = 1000
     mem_usage_history = [process.memory_info().rss] * iteration
-    level_count = img.resolutions['level_count']
+    level_count = img.resolutions["level_count"]
 
     for i in range(iteration):
-        location = (random.randrange(-2048, 4096 + 2048),
-                    random.randrange(-2048, 4096 + 2048))
+        location = (
+            random.randrange(-2048, 4096 + 2048),
+            random.randrange(-2048, 4096 + 2048),
+        )
         level = random.randrange(0, level_count)
         _ = img.read_region(location, (256, 256), level)
         mem_usage_history[i] = process.memory_info().rss

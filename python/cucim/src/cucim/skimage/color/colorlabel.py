@@ -8,15 +8,26 @@ from ..util import img_as_float
 from . import rgb_colors
 from .colorconv import gray2rgb, hsv2rgb, rgb2hsv
 
-__all__ = ['color_dict', 'label2rgb', 'DEFAULT_COLORS']
+__all__ = ["color_dict", "label2rgb", "DEFAULT_COLORS"]
 
 
-DEFAULT_COLORS = ('red', 'blue', 'yellow', 'magenta', 'green',
-                  'indigo', 'darkorange', 'cyan', 'pink', 'yellowgreen')
+DEFAULT_COLORS = (
+    "red",
+    "blue",
+    "yellow",
+    "magenta",
+    "green",
+    "indigo",
+    "darkorange",
+    "cyan",
+    "pink",
+    "yellowgreen",
+)
 
 
-color_dict = {k: v for k, v in rgb_colors.__dict__.items()
-              if isinstance(v, tuple)}
+color_dict = {
+    k: v for k, v in rgb_colors.__dict__.items() if isinstance(v, tuple)
+}
 
 
 def _rgb_vector(color):
@@ -70,9 +81,19 @@ def _match_label_with_color(label, colors, bg_label, bg_color):
     return mapped_labels, color_cycle
 
 
-def label2rgb(label, image=None, colors=None, alpha=0.3,
-              bg_label=0, bg_color=(0, 0, 0), image_alpha=1, kind='overlay',
-              *, saturation=0, channel_axis=-1):
+def label2rgb(
+    label,
+    image=None,
+    colors=None,
+    alpha=0.3,
+    bg_label=0,
+    bg_color=(0, 0, 0),
+    image_alpha=1,
+    kind="overlay",
+    *,
+    saturation=0,
+    channel_axis=-1,
+):
     """Return an RGB image where color-coded labels are painted over the image.
 
     Parameters
@@ -120,19 +141,34 @@ def label2rgb(label, image=None, colors=None, alpha=0.3,
     """
     if image is not None:
         image = np.moveaxis(image, source=channel_axis, destination=-1)
-    if kind == 'overlay':
-        rgb = _label2rgb_overlay(label, image, colors, alpha, bg_label,
-                                 bg_color, image_alpha, saturation)
-    elif kind == 'avg':
+    if kind == "overlay":
+        rgb = _label2rgb_overlay(
+            label,
+            image,
+            colors,
+            alpha,
+            bg_label,
+            bg_color,
+            image_alpha,
+            saturation,
+        )
+    elif kind == "avg":
         rgb = _label2rgb_avg(label, image, bg_label, bg_color)
     else:
         raise ValueError("`kind` must be either 'overlay' or 'avg'.")
     return np.moveaxis(rgb, source=-1, destination=channel_axis)
 
 
-def _label2rgb_overlay(label, image=None, colors=None, alpha=0.3,
-                       bg_label=-1, bg_color=None, image_alpha=1,
-                       saturation=0):
+def _label2rgb_overlay(
+    label,
+    image=None,
+    colors=None,
+    alpha=0.3,
+    bg_label=-1,
+    bg_color=None,
+    image_alpha=1,
+    saturation=0,
+):
     """Return an RGB image where color-coded labels are painted over the image.
 
     Parameters
@@ -168,7 +204,7 @@ def _label2rgb_overlay(label, image=None, colors=None, alpha=0.3,
         value in `label` with the image, at a certain alpha value.
     """
     if not 0 <= saturation <= 1:
-        warn(f'saturation must be in range [0, 1], got {saturation}')
+        warn(f"saturation must be in range [0, 1], got {saturation}")
 
     if colors is None:
         colors = DEFAULT_COLORS
@@ -179,14 +215,14 @@ def _label2rgb_overlay(label, image=None, colors=None, alpha=0.3,
         # Opacity doesn't make sense if no image exists.
         alpha = 1
     else:
-        if (image.shape[:label.ndim] != label.shape
-                or image.ndim > label.ndim + 1):
+        if (
+            image.shape[: label.ndim] != label.shape
+            or image.ndim > label.ndim + 1
+        ):
             raise ValueError("`image` and `label` must be the same shape")
 
         if image.ndim == label.ndim + 1 and image.shape[-1] != 3:
-            raise ValueError(
-                "`image` must be RGB (image.shape[-1] must be 3)."
-            )
+            raise ValueError("`image` must be RGB (image.shape[-1] must be 3).")
 
         if image.min() < 0:
             warn("Negative intensities in `image` are not supported")
@@ -214,7 +250,8 @@ def _label2rgb_overlay(label, image=None, colors=None, alpha=0.3,
     label = label.astype(new_type)
 
     mapped_labels_flat, color_cycle = _match_label_with_color(
-        label, colors, bg_label, bg_color)
+        label, colors, bg_label, bg_color
+    )
 
     if len(mapped_labels_flat) == 0:
         return image
@@ -259,7 +296,7 @@ def _label2rgb_avg(label_field, image, bg_label=0, bg_color=(0, 0, 0)):
     """
     out = cp.zeros(label_field.shape + (3,), dtype=image.dtype)
     labels = cp.unique(label_field)
-    bg = (labels == bg_label)
+    bg = labels == bg_label
     if bg.any():
         labels = labels[labels != bg_label]
         mask = (label_field == bg_label).nonzero()

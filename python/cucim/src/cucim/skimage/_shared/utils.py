@@ -9,9 +9,18 @@ import numpy as np
 
 from ._warnings import all_warnings, warn  # noqa
 
-__all__ = ['deprecate_func', 'get_bound_method_class', 'all_warnings',
-           'safe_as_int', 'check_shape_equality', 'check_nD', 'warn',
-           'reshape_nd', 'identity', 'slice_at_axis']
+__all__ = [
+    "deprecate_func",
+    "get_bound_method_class",
+    "all_warnings",
+    "safe_as_int",
+    "check_shape_equality",
+    "check_nD",
+    "warn",
+    "reshape_nd",
+    "identity",
+    "slice_at_axis",
+]
 
 
 def _get_stack_rank(func):
@@ -46,8 +55,7 @@ class _DecoratorBaseClass:
     _stack_length = {}
 
     def get_stack_length(self, func):
-        return self._stack_length.get(func.__name__,
-                                      _get_stack_length(func))
+        return self._stack_length.get(func.__name__, _get_stack_length(func))
 
 
 class change_default_value(_DecoratorBaseClass):
@@ -67,8 +75,9 @@ class change_default_value(_DecoratorBaseClass):
 
     """
 
-    def __init__(self, arg_name, *, new_value, changed_version,
-                 warning_msg=None):
+    def __init__(
+        self, arg_name, *, new_value, changed_version, warning_msg=None
+    ):
         self.arg_name = arg_name
         self.new_value = new_value
         self.warning_msg = warning_msg
@@ -87,15 +96,17 @@ class change_default_value(_DecoratorBaseClass):
                 f"the default {self.arg_name} value is {old_value}. "
                 f"From version {self.changed_version}, the {self.arg_name} "
                 f"default value will be {self.new_value}. To avoid "
-                f"this warning, please explicitly set {self.arg_name} value.")
+                f"this warning, please explicitly set {self.arg_name} value."
+            )
 
         @functools.wraps(func)
         def fixed_func(*args, **kwargs):
             stacklevel = 1 + self.get_stack_length(func) - stack_rank
             if len(args) < arg_idx + 1 and self.arg_name not in kwargs.keys():
                 # warn that arg_name default value changed:
-                warnings.warn(self.warning_msg, FutureWarning,
-                              stacklevel=stacklevel)
+                warnings.warn(
+                    self.warning_msg, FutureWarning, stacklevel=stacklevel
+                )
             return func(*args, **kwargs)
 
         return fixed_func
@@ -141,8 +152,7 @@ class remove_arg(_DecoratorBaseClass):
             stacklevel = 1 + self.get_stack_length(func) - stack_rank
             if len(args) > arg_idx or self.arg_name in kwargs.keys():
                 # warn that arg_name is deprecated
-                warnings.warn(warning_msg, FutureWarning,
-                              stacklevel=stacklevel)
+                warnings.warn(warning_msg, FutureWarning, stacklevel=stacklevel)
             return func(*args, **kwargs)
 
         return fixed_func
@@ -178,13 +188,13 @@ def _docstring_add_deprecated(func, kwarg_mapping, deprecated_version):
 
     Doc = FunctionDoc(func)
     for old_arg, new_arg in kwarg_mapping.items():
-        desc = [f'Deprecated in favor of `{new_arg}`.',
-                '',
-                f'.. deprecated:: {deprecated_version}']
-        Doc['Other Parameters'].append(
-            Parameter(name=old_arg,
-                      type='DEPRECATED',
-                      desc=desc)
+        desc = [
+            f"Deprecated in favor of `{new_arg}`.",
+            "",
+            f".. deprecated:: {deprecated_version}",
+        ]
+        Doc["Other Parameters"].append(
+            Parameter(name=old_arg, type="DEPRECATED", desc=desc)
         )
     new_docstring = str(Doc)
 
@@ -193,7 +203,7 @@ def _docstring_add_deprecated(func, kwarg_mapping, deprecated_version):
     # .. function:: func.__name__
     #
     # and some additional blank lines. We strip these off below.
-    split = new_docstring.split('\n')
+    split = new_docstring.split("\n")
     no_header = split[1:]
     while not no_header[0].strip():
         no_header.pop(0)
@@ -203,13 +213,13 @@ def _docstring_add_deprecated(func, kwarg_mapping, deprecated_version):
     # where it is not.
     descr = no_header.pop(0)
     while no_header[0].strip():
-        descr += '\n    ' + no_header.pop(0)
-    descr += '\n\n'
+        descr += "\n    " + no_header.pop(0)
+    descr += "\n\n"
     # '\n    ' rather than '\n' here to restore the original indentation.
-    final_docstring = descr + '\n    '.join(no_header)
+    final_docstring = descr + "\n    ".join(no_header)
     # strip any extra spaces from ends of lines
-    final_docstring = '\n'.join(
-        [line.rstrip() for line in final_docstring.split('\n')]
+    final_docstring = "\n".join(
+        [line.rstrip() for line in final_docstring.split("\n")]
     )
     return final_docstring
 
@@ -234,15 +244,24 @@ class deprecate_kwarg(_DecoratorBaseClass):
 
     """
 
-    def __init__(self, kwarg_mapping, deprecated_version, warning_msg=None,
-                 removed_version=None):
+    def __init__(
+        self,
+        kwarg_mapping,
+        deprecated_version,
+        warning_msg=None,
+        removed_version=None,
+    ):
         self.kwarg_mapping = kwarg_mapping
         if warning_msg is None:
-            self.warning_msg = ("`{old_arg}` is a deprecated argument name "
-                                "for `{func_name}`. ")
+            self.warning_msg = (
+                "`{old_arg}` is a deprecated argument name "
+                "for `{func_name}`. "
+            )
             if removed_version is not None:
-                self.warning_msg += (f'It will be removed in cuCIM '
-                                     f'version {removed_version}.')
+                self.warning_msg += (
+                    f"It will be removed in cuCIM "
+                    f"version {removed_version}."
+                )
             self.warning_msg += "Please use `{new_arg}` instead."
         else:
             self.warning_msg = warning_msg
@@ -250,7 +269,6 @@ class deprecate_kwarg(_DecoratorBaseClass):
         self.deprecated_version = deprecated_version
 
     def __call__(self, func):
-
         stack_rank = _get_stack_rank(func)
 
         @functools.wraps(func)
@@ -259,10 +277,15 @@ class deprecate_kwarg(_DecoratorBaseClass):
             for old_arg, new_arg in self.kwarg_mapping.items():
                 if old_arg in kwargs:
                     #  warn that the function interface has changed:
-                    warnings.warn(self.warning_msg.format(
-                        old_arg=old_arg, func_name=func.__name__,
-                        new_arg=new_arg), FutureWarning,
-                        stacklevel=stacklevel)
+                    warnings.warn(
+                        self.warning_msg.format(
+                            old_arg=old_arg,
+                            func_name=func.__name__,
+                            new_arg=new_arg,
+                        ),
+                        FutureWarning,
+                        stacklevel=stacklevel,
+                    )
                     # Substitute new_arg to old_arg
                     kwargs[new_arg] = kwargs.pop(old_arg)
 
@@ -270,8 +293,9 @@ class deprecate_kwarg(_DecoratorBaseClass):
             return func(*args, **kwargs)
 
         if func.__doc__ is not None:
-            newdoc = _docstring_add_deprecated(func, self.kwarg_mapping,
-                                               self.deprecated_version)
+            newdoc = _docstring_add_deprecated(
+                func, self.kwarg_mapping, self.deprecated_version
+            )
             fixed_func.__doc__ = newdoc
         return fixed_func
 
@@ -299,8 +323,13 @@ class channel_as_last_axis:
         where some or all are multichannel.
 
     """
-    def __init__(self, channel_arg_positions=(0,), channel_kwarg_names=(),
-                 multichannel_output=True):
+
+    def __init__(
+        self,
+        channel_arg_positions=(0,),
+        channel_kwarg_names=(),
+        multichannel_output=True,
+    ):
         self.arg_positions = set(channel_arg_positions)
         self.kwarg_names = set(channel_kwarg_names)
         self.multichannel_output = multichannel_output
@@ -308,8 +337,7 @@ class channel_as_last_axis:
     def __call__(self, func):
         @functools.wraps(func)
         def fixed_func(*args, **kwargs):
-
-            channel_axis = kwargs.get('channel_axis', None)
+            channel_axis = kwargs.get("channel_axis", None)
 
             if channel_axis is None:
                 return func(*args, **kwargs)
@@ -321,7 +349,8 @@ class channel_as_last_axis:
                 channel_axis = (channel_axis,)
             if len(channel_axis) > 1:
                 raise ValueError(
-                    "only a single channel axis is currently supported")
+                    "only a single channel axis is currently supported"
+                )
 
             if channel_axis == (-1,) or channel_axis == -1:
                 return func(*args, **kwargs)
@@ -387,7 +416,6 @@ class deprecate_func(_DecoratorBaseClass):
         self.hint = hint
 
     def __call__(self, func):
-
         message = (
             f"`{func.__name__}` is deprecated since version "
             f"{self.deprecated_version}"
@@ -405,26 +433,22 @@ class deprecate_func(_DecoratorBaseClass):
         def wrapped(*args, **kwargs):
             stacklevel = 1 + self.get_stack_length(func) - stack_rank
             warnings.warn(
-                message,
-                category=FutureWarning,
-                stacklevel=stacklevel
+                message, category=FutureWarning, stacklevel=stacklevel
             )
             return func(*args, **kwargs)
 
         # modify doc string to display deprecation warning
-        doc = f'**Deprecated:** {message}'
+        doc = f"**Deprecated:** {message}"
         if wrapped.__doc__ is None:
             wrapped.__doc__ = doc
         else:
-            wrapped.__doc__ = doc + '\n\n    ' + wrapped.__doc__
+            wrapped.__doc__ = doc + "\n\n    " + wrapped.__doc__
 
         return wrapped
 
 
 def get_bound_method_class(m):
-    """Return the class for a bound method.
-
-    """
+    """Return the class for a bound method."""
     return m.__self__.__class__
 
 
@@ -477,20 +501,21 @@ def safe_as_int(val, atol=1e-3):
     53
 
     """
-    mod = np.asarray(val) % 1                # Extract mantissa
+    mod = np.asarray(val) % 1  # Extract mantissa
 
     # Check for and subtract any mod values > 0.5 from 1
-    if mod.ndim == 0:                        # Scalar input, cannot be indexed
+    if mod.ndim == 0:  # Scalar input, cannot be indexed
         if mod > 0.5:
             mod = 1 - mod
-    else:                                    # Iterable input, now ndarray
+    else:  # Iterable input, now ndarray
         mod[mod > 0.5] = 1 - mod[mod > 0.5]  # Test on each side of nearest int
 
     try:
         np.testing.assert_allclose(mod, 0, atol=atol)
     except AssertionError:
-        raise ValueError(f'Integer argument required but received '
-                         f'{val}, check inputs.')
+        raise ValueError(
+            f"Integer argument required but received " f"{val}, check inputs."
+        )
 
     return np.round(val).astype(np.int64)
 
@@ -499,7 +524,7 @@ def check_shape_equality(*images):
     """Check that all images have the same shape"""
     image0 = images[0]
     if not all(image0.shape == image.shape for image in images[1:]):
-        raise ValueError('Input images must have the same dimensions.')
+        raise ValueError("Input images must have the same dimensions.")
     return
 
 
@@ -563,7 +588,7 @@ def reshape_nd(arr, ndim, dim):
     return np.reshape(arr, new_shape)
 
 
-def check_nD(array, ndim, arg_name='image'):
+def check_nD(array, ndim, arg_name="image"):
     """
     Verify an array meets the desired ndims and array isn't empty.
 
@@ -585,7 +610,7 @@ def check_nD(array, ndim, arg_name='image'):
         raise ValueError(msg_empty_array % (arg_name))
     if array.ndim not in ndim:
         raise ValueError(
-            msg_incorrect_dim % (arg_name, '-or-'.join([str(n) for n in ndim]))
+            msg_incorrect_dim % (arg_name, "-or-".join([str(n) for n in ndim]))
         )
 
 
@@ -612,8 +637,10 @@ def check_random_state(seed):
         return cp.random.RandomState(seed)
     if isinstance(seed, cp.random.RandomState):
         return seed
-    raise ValueError('%r cannot be used to seed a numpy.random.RandomState'
-                     ' instance' % seed)
+    raise ValueError(
+        "%r cannot be used to seed a numpy.random.RandomState"
+        " instance" % seed
+    )
 
 
 def convert_to_float(image, preserve_range):
@@ -643,7 +670,7 @@ def convert_to_float(image, preserve_range):
     if preserve_range:
         # Convert image to double only if it is not single or double
         # precision float
-        if image.dtype.char not in 'df':
+        if image.dtype.char not in "df":
             image = image.astype(_supported_float_type(image.dtype))
     else:
         from ..util.dtype import img_as_float
@@ -677,22 +704,25 @@ def _validate_interpolation_order(image_dtype, order):
         return 0 if image_dtype == bool else 1
 
     if order < 0 or order > 5:
-        raise ValueError("Spline interpolation order has to be in the "
-                         "range 0-5.")
+        raise ValueError(
+            "Spline interpolation order has to be in the " "range 0-5."
+        )
 
     if image_dtype == bool and order != 0:
         raise ValueError(
             "Input image dtype is bool. Interpolation is not defined "
             "with bool data type. Please set order to 0 or explicitly "
-            "cast input image to another data type.")
+            "cast input image to another data type."
+        )
 
     return order
 
 
 def _to_np_mode(mode):
     """Convert padding modes from `ndi.correlate` to `np.pad`."""
-    mode_translation_dict = dict(nearest='edge', reflect='symmetric',
-                                 mirror='reflect')
+    mode_translation_dict = dict(
+        nearest="edge", reflect="symmetric", mirror="reflect"
+    )
     if mode in mode_translation_dict:
         mode = mode_translation_dict[mode]
     return mode
@@ -700,42 +730,47 @@ def _to_np_mode(mode):
 
 def _to_ndimage_mode(mode):
     """Convert from `numpy.pad` mode name to the corresponding ndimage mode."""
-    mode_translation_dict = dict(constant='constant', edge='nearest',
-                                 symmetric='reflect', reflect='mirror',
-                                 wrap='wrap')
+    mode_translation_dict = dict(
+        constant="constant",
+        edge="nearest",
+        symmetric="reflect",
+        reflect="mirror",
+        wrap="wrap",
+    )
     if mode not in mode_translation_dict:
         raise ValueError(
             f"Unknown mode: '{mode}', or cannot translate mode. The "
             f"mode should be one of 'constant', 'edge', 'symmetric', "
             f"'reflect', or 'wrap'. See the documentation of numpy.pad for "
-            f"more info.")
+            f"more info."
+        )
     return _fix_ndimage_mode(mode_translation_dict[mode])
 
 
 def _fix_ndimage_mode(mode):
     # SciPy 1.6.0 introduced grid variants of constant and wrap which
     # have less surprising behavior for images. Use these when available
-    grid_modes = {'constant': 'grid-constant', 'wrap': 'grid-wrap'}
+    grid_modes = {"constant": "grid-constant", "wrap": "grid-wrap"}
     return grid_modes.get(mode, mode)
 
 
 new_float_type = {
     # preserved types
-    'f': cp.float32,     # float32
-    'd': cp.float64,     # float64
-    'F': cp.complex64,   # complex64
-    'D': cp.complex128,  # complex128
+    "f": cp.float32,  # float32
+    "d": cp.float64,  # float64
+    "F": cp.complex64,  # complex64
+    "D": cp.complex128,  # complex128
     # promoted float types
-    'e': cp.float32,     # float16
+    "e": cp.float32,  # float16
     # truncated float types
-    'g': cp.float64,     # float128 (doesn't exist on windows)
-    'G': cp.complex128,  # complex256 (doesn't exist on windows)
+    "g": cp.float64,  # float128 (doesn't exist on windows)
+    "G": cp.complex128,  # complex256 (doesn't exist on windows)
     # integer types that can be exactly represented in float32
-    'b': cp.float32,     # int8
-    'B': cp.float32,     # uint8
-    'h': cp.float32,     # int16
-    'H': cp.float32,     # uint16
-    '?': cp.float32,     # bool
+    "b": cp.float32,  # int8
+    "B": cp.float32,  # uint8
+    "h": cp.float32,  # int16
+    "H": cp.float32,  # uint16
+    "?": cp.float32,  # bool
 }
 
 
@@ -765,7 +800,7 @@ def _supported_float_type(input_dtype, allow_complex=False):
     if isinstance(input_dtype, Iterable) and not isinstance(input_dtype, str):
         return cp.result_type(*(_supported_float_type(d) for d in input_dtype))
     input_dtype = cp.dtype(input_dtype)
-    if not allow_complex and input_dtype.kind == 'c':
+    if not allow_complex and input_dtype.kind == "c":
         raise ValueError("complex valued input is not supported")
     return new_float_type.get(input_dtype.char, cp.float64)
 

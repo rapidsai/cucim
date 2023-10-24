@@ -171,7 +171,7 @@ def manders_coloc_coeff(image0, image1_mask, mask=None):
         raise ValueError("image contains negative values")
 
     img_sum = cp.sum(image0)
-    if (img_sum == 0):
+    if img_sum == 0:
         return 0
     return cp.sum(image0 * image1_mask) / img_sum
 

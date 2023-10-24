@@ -117,7 +117,10 @@ def _kernel_connect(greyscale_mode=False, int_t="int"):
     )
 
     return cupy.ElementwiseKernel(
-        in_params, "raw Y y", code, "cucim_skimage_measure_label_connect",
+        in_params,
+        "raw Y y",
+        code,
+        "cucim_skimage_measure_label_connect",
     )
 
 

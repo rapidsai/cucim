@@ -113,8 +113,9 @@ def test_relabel_sequential_signed_overflow():
     imax = cp.iinfo(cp.int32).max
     labels = cp.array([0, 1, 99, 42, 42], dtype=cp.int32)
     output, fw, inv = relabel_sequential(labels, offset=imax)
-    reference = cp.array([0, imax, imax + 2, imax + 1, imax + 1],
-                         dtype=cp.uint32)
+    reference = cp.array(
+        [0, imax, imax + 2, imax + 1, imax + 1], dtype=cp.uint32
+    )
     assert_array_equal(output, reference)
     assert output.dtype == reference.dtype
 
@@ -126,12 +127,23 @@ def test_very_large_labels():
     assert int(cp.max(output)) == imax + 2
 
 
-@pytest.mark.parametrize('dtype', (np.byte, np.short, np.intc, int,
-                                   np.longlong, np.ubyte, np.ushort,
-                                   np.uintc, np.uint, np.ulonglong))
-@pytest.mark.parametrize('data_already_sequential', (False, True))
-def test_relabel_sequential_int_dtype_stability(data_already_sequential,
-                                                dtype):
+@pytest.mark.parametrize(
+    "dtype",
+    (
+        np.byte,
+        np.short,
+        np.intc,
+        int,
+        np.longlong,
+        np.ubyte,
+        np.ushort,
+        np.uintc,
+        np.uint,
+        np.ulonglong,
+    ),
+)
+@pytest.mark.parametrize("data_already_sequential", (False, True))
+def test_relabel_sequential_int_dtype_stability(data_already_sequential, dtype):
     if data_already_sequential:
         ar = cp.asarray([1, 3, 0, 2, 5, 4], dtype=dtype)
     else:
@@ -156,10 +168,9 @@ def test_relabel_sequential_negative_values():
         relabel_sequential(ar)
 
 
-@pytest.mark.parametrize('offset', (0, -3))
-@pytest.mark.parametrize('data_already_sequential', (False, True))
-def test_relabel_sequential_nonpositive_offset(data_already_sequential,
-                                               offset):
+@pytest.mark.parametrize("offset", (0, -3))
+@pytest.mark.parametrize("data_already_sequential", (False, True))
+def test_relabel_sequential_nonpositive_offset(data_already_sequential, offset):
     if data_already_sequential:
         ar = cp.array([1, 3, 0, 2, 5, 4])
     else:
@@ -168,11 +179,12 @@ def test_relabel_sequential_nonpositive_offset(data_already_sequential,
         relabel_sequential(ar, offset=offset)
 
 
-@pytest.mark.parametrize('offset', (1, 5))
-@pytest.mark.parametrize('with0', (False, True))
-@pytest.mark.parametrize('input_starts_at_offset', (False, True))
-def test_relabel_sequential_already_sequential(offset, with0,
-                                               input_starts_at_offset):
+@pytest.mark.parametrize("offset", (1, 5))
+@pytest.mark.parametrize("with0", (False, True))
+@pytest.mark.parametrize("input_starts_at_offset", (False, True))
+def test_relabel_sequential_already_sequential(
+    offset, with0, input_starts_at_offset
+):
     if with0:
         ar = cp.array([1, 3, 0, 2, 5, 4])
     else:

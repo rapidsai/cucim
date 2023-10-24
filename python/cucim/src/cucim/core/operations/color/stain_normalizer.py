@@ -80,9 +80,13 @@ def image_to_absorbance(image, source_intensity=255.0, dtype=cp.float32):
     return absorbance
 
 
-def _image_to_absorbance_matrix(image, source_intensity=240,
-                                image_type="intensity", channel_axis=0,
-                                dtype=cp.float32):
+def _image_to_absorbance_matrix(
+    image,
+    source_intensity=240,
+    image_type="intensity",
+    channel_axis=0,
+    dtype=cp.float32,
+):
     """Convert image to an absorbance and reshape to (3, n_pixels).
 
     See ``image_to_absorbance`` for parameter descriptions
@@ -104,9 +108,7 @@ def _image_to_absorbance_matrix(image, source_intensity=240,
 
     # reshape to form a (n_channels, n_pixels) matrix
     if channel_axis != 0:
-        absorbance = cp.moveaxis(
-            absorbance, source=channel_axis, destination=0
-        )
+        absorbance = cp.moveaxis(absorbance, source=channel_axis, destination=0)
     return absorbance.reshape((c, -1))
 
 
@@ -233,8 +235,15 @@ def _prep_channel_axis(channel_axis, ndim):
     return channel_axis % ndim
 
 
-def stain_extraction_pca(image, source_intensity=240, alpha=1, beta=0.345,
-                         *, channel_axis=0, image_type="intensity"):
+def stain_extraction_pca(
+    image,
+    source_intensity=240,
+    alpha=1,
+    beta=0.345,
+    *,
+    channel_axis=0,
+    image_type="intensity",
+):
     """Extract the matrix of H & E stain coefficient from an image.
 
     Uses a method that selects stain vectors based on the angle distribution
@@ -351,7 +360,6 @@ def stain_extraction_pca(image, source_intensity=240, alpha=1, beta=0.345,
 
 
 def _get_raw_concentrations(src_stain_coeff, absorbance):
-
     if absorbance.ndim != 2 or absorbance.shape[0] != 3:
         raise ValueError("`absorbance` must be shape (3, n_pixels)")
 
@@ -360,22 +368,26 @@ def _get_raw_concentrations(src_stain_coeff, absorbance):
     # pseudo-inverse
     coeff_pinv = cp.dot(
         cp.linalg.inv(cp.dot(src_stain_coeff.T, src_stain_coeff)),
-        src_stain_coeff.T
+        src_stain_coeff.T,
     )
     if cp.any(cp.isnan(coeff_pinv)):
         # fall back to cp.linalg.lstsq if pseudo-inverse above failed
-        conc_raw = cp.linalg.lstsq(
-            src_stain_coeff, absorbance, rcond=None
-        )[0]
+        conc_raw = cp.linalg.lstsq(src_stain_coeff, absorbance, rcond=None)[0]
     else:
         conc_raw = cp.dot(cp.asarray(coeff_pinv, order="F"), absorbance)
 
     return conc_raw
 
 
-def _normalized_from_concentrations(conc_raw, max_percentile, ref_stain_coeff,
-                                    ref_max_conc, source_intensity,
-                                    original_shape, channel_axis):
+def _normalized_from_concentrations(
+    conc_raw,
+    max_percentile,
+    ref_stain_coeff,
+    ref_max_conc,
+    source_intensity,
+    original_shape,
+    channel_axis,
+):
     """Determine normalized image from concentrations.
 
     Note: This function will also modify conc_raw in-place.
@@ -402,8 +414,10 @@ def _normalized_from_concentrations(conc_raw, max_percentile, ref_stain_coeff,
     # Note: calling percentile separately for each channel is faster than:
     #       max_conc = cp.percentile(conc_raw, 100 - alpha, axis=1)
     max_conc = cp.concatenate(
-        [cp.percentile(ch_raw, max_percentile)[np.newaxis]
-         for ch_raw in conc_raw]
+        [
+            cp.percentile(ch_raw, max_percentile)[np.newaxis]
+            for ch_raw in conc_raw
+        ]
     )
     normalization_factors = ref_max_conc / max_conc
     conc_raw *= normalization_factors[:, cp.newaxis]
@@ -416,32 +430,30 @@ def _normalized_from_concentrations(conc_raw, max_percentile, ref_stain_coeff,
 
     # restore original shape for each channel
     spatial_shape = (
-        original_shape[:channel_axis] + original_shape[channel_axis + 1:]
+        original_shape[:channel_axis] + original_shape[channel_axis + 1 :]
     )
     image_norm = cp.reshape(image_norm, (3,) + spatial_shape)
 
     # move channels from axis 0 to channel_axis
     if channel_axis != 0:
-        image_norm = cp.moveaxis(
-            image_norm, source=0, destination=channel_axis
-        )
+        image_norm = cp.moveaxis(image_norm, source=0, destination=channel_axis)
     # restore original shape
     return image_norm
 
 
 def normalize_colors_pca(
-        image,
-        source_intensity: float = 240.0,
-        alpha: float = 1.0,
-        beta: float = 0.345,
-        ref_stain_coeff: Union[tuple, cp.ndarray] = (
-            (0.5626, 0.2159),
-            (0.7201, 0.8012),
-            (0.4062, 0.5581),
-        ),
-        ref_max_conc: Union[tuple, cp.ndarray] = (1.9705, 1.0308),
-        image_type: str = "intensity",
-        channel_axis: int = 0,
+    image,
+    source_intensity: float = 240.0,
+    alpha: float = 1.0,
+    beta: float = 0.345,
+    ref_stain_coeff: Union[tuple, cp.ndarray] = (
+        (0.5626, 0.2159),
+        (0.7201, 0.8012),
+        (0.4062, 0.5581),
+    ),
+    ref_max_conc: Union[tuple, cp.ndarray] = (1.9705, 1.0308),
+    image_type: str = "intensity",
+    channel_axis: int = 0,
 ):
     """Extract the matrix of stain coefficient from the image.
 
@@ -505,7 +517,7 @@ def normalize_colors_pca(
         image,
         source_intensity=source_intensity,
         image_type=image_type,
-        channel_axis=channel_axis
+        channel_axis=channel_axis,
     )
 
     # channels_axis=0 for the shape (3, n_pixels) absorbance matrix

@@ -63,14 +63,13 @@ from cucim.skimage.color import (
 )
 from cucim.skimage.util import img_as_float, img_as_float32, img_as_ubyte
 
-data_dir = os.path.join(os.path.dirname(__file__), 'data')
+data_dir = os.path.join(os.path.dirname(__file__), "data")
 
 
-class TestColorconv():
-
+class TestColorconv:
     img_rgb = cp.asarray(data.colorwheel())
     img_grayscale = cp.asarray(data.camera())
-    # ftm: off
+    # fmt: off
     img_rgba = cp.array([[[0, 0.5, 1, 0],
                           [0, 0.5, 1, 1],
                           [0, 0.5, 1, 0.5]]]).astype(float)
@@ -103,7 +102,7 @@ class TestColorconv():
                             [[32.303, -9.400, -130.358]],   # blue
                             [[46.228, -43.774, 56.589]],   # green
                             ])
-    # ftm: on
+    # fmt: on
 
     # RGBA to RGB
     @pytest.mark.parametrize("channel_axis", [0, 1, 2, -1, -2, -3])
@@ -114,12 +113,12 @@ class TestColorconv():
         rgb = rgba2rgb(rgba, channel_axis=channel_axis)
         rgb = cp.moveaxis(rgb, source=channel_axis, destination=-1)
 
-        # ftm: off
+        # fmt: off
         expected = cp.asarray([[[1, 1, 1],
                                 [0, 0.5, 1],
                                 [0.5, 0.75, 1]]]).astype(float)
 
-        # ftm: on
+        # fmt: on
         assert_equal(rgb.shape, expected.shape)
         assert_array_almost_equal(rgb, expected)
 
@@ -159,8 +158,12 @@ class TestColorconv():
         hsv = hsv.reshape(-1, 3)
 
         # ground truth from colorsys
-        gt = np.asarray([colorsys.rgb_to_hsv(pt[0], pt[1], pt[2])
-                         for pt in cp.asnumpy(rgb).reshape(-1, 3)])
+        gt = np.asarray(
+            [
+                colorsys.rgb_to_hsv(pt[0], pt[1], pt[2])
+                for pt in cp.asnumpy(rgb).reshape(-1, 3)
+            ]
+        )
         assert_array_almost_equal(hsv, gt)
 
     def test_rgb2hsv_error_grayscale(self):
@@ -215,7 +218,7 @@ class TestColorconv():
     # RGB to XYZ
     @pytest.mark.parametrize("channel_axis", [0, 1, -1, -2])
     def test_rgb2xyz_conversion(self, channel_axis):
-        # ftm: off
+        # fmt: off
         gt = cp.asarray([[[0.950456, 1.      , 1.088754],    # noqa
                           [0.538003, 0.787329, 1.06942 ],    # noqa
                           [0.592876, 0.28484 , 0.969561],    # noqa
@@ -224,7 +227,7 @@ class TestColorconv():
                           [0.35758 , 0.71516 , 0.119193],    # noqa
                           [0.412453, 0.212671, 0.019334],    # noqa
                           [0.      , 0.      , 0.      ]]])  # noqa
-        # ftm: on
+        # fmt: on
 
         img = cp.moveaxis(
             self.colbars_array, source=-1, destination=channel_axis
@@ -242,19 +245,20 @@ class TestColorconv():
 
     def test_rgb2xyz_dtype(self):
         img = self.colbars_array
-        img32 = img.astype('float32')
+        img32 = img.astype("float32")
 
         assert rgb2xyz(img).dtype == img.dtype
         assert rgb2xyz(img32).dtype == img32.dtype
 
     # XYZ to RGB
     def test_xyz2rgb_conversion(self):
-        assert_array_almost_equal(xyz2rgb(rgb2xyz(self.colbars_array)),
-                                  self.colbars_array)
+        assert_array_almost_equal(
+            xyz2rgb(rgb2xyz(self.colbars_array)), self.colbars_array
+        )
 
     def test_xyz2rgb_dtype(self):
         img = rgb2xyz(self.colbars_array)
-        img32 = img.astype('float32')
+        img32 = img.astype("float32")
 
         assert xyz2rgb(img).dtype == img.dtype
         assert xyz2rgb(img32).dtype == img32.dtype
@@ -265,8 +269,10 @@ class TestColorconv():
         img_rgb = img_as_float(self.img_rgb)
 
         img_rgb = cp.moveaxis(img_rgb, source=-1, destination=channel_axis)
-        round_trip = xyz2rgb(rgb2xyz(img_rgb, channel_axis=channel_axis),
-                             channel_axis=channel_axis)
+        round_trip = xyz2rgb(
+            rgb2xyz(img_rgb, channel_axis=channel_axis),
+            channel_axis=channel_axis,
+        )
 
         assert_allclose(round_trip, img_rgb, rtol=1e-5, atol=1e-5)
 
@@ -283,13 +289,14 @@ class TestColorconv():
         img_in = cp.moveaxis(img_in, source=-1, destination=channel_axis)
         img_out = rgb2hed(
             hed2rgb(img_in, channel_axis=channel_axis),
-            channel_axis=channel_axis
+            channel_axis=channel_axis,
         )
         assert_array_almost_equal(img_out, img_in)
 
     # RGB<->BRO roundtrip with ubyte image
     def test_bro_rgb_roundtrip(self):
         from cucim.skimage.color.colorconv import bro_from_rgb, rgb_from_bro
+
         img_in = img_as_ubyte(self.img_stains)
         img_out = combine_stains(img_in, rgb_from_bro)
         img_out = separate_stains(img_out, bro_from_rgb)
@@ -299,6 +306,7 @@ class TestColorconv():
     @pytest.mark.parametrize("channel_axis", [0, 1, -1])
     def test_bro_rgb_roundtrip_float(self, channel_axis):
         from skimage.color.colorconv import bro_from_rgb, rgb_from_bro
+
         img_in = self.img_stains
         img_in = cp.moveaxis(img_in, source=-1, destination=channel_axis)
         img_out = combine_stains(
@@ -312,7 +320,7 @@ class TestColorconv():
     # RGB to RGB CIE
     @pytest.mark.parametrize("channel_axis", [0, 1, -1, -2])
     def test_rgb2rgbcie_conversion(self, channel_axis):
-        # ftm: off
+        # fmt: off
         gt = cp.asarray([[[ 0.1488856 ,  0.18288098,  0.19277574],    # noqa
                           [ 0.01163224,  0.16649536,  0.18948516],    # noqa
                           [ 0.12259182,  0.03308008,  0.17298223],    # noqa
@@ -321,7 +329,7 @@ class TestColorconv():
                           [ 0.02629378,  0.1498009 ,  0.01979351],    # noqa
                           [ 0.13725336,  0.01638562,  0.00329059],    # noqa
                           [ 0.        ,  0.        ,  0.        ]]])  # noqa
-        # ftm: on
+        # fmt: on
 
         img = np.moveaxis(
             self.colbars_array, source=-1, destination=channel_axis
@@ -332,8 +340,8 @@ class TestColorconv():
         assert_array_almost_equal(out, gt)
 
     def test_rgb2rgbcie_dtype(self):
-        img = self.colbars_array.astype('float64')
-        img32 = img.astype('float32')
+        img = self.colbars_array.astype("float64")
+        img32 = img.astype("float32")
 
         assert rgb2rgbcie(img).dtype == img.dtype
         assert rgb2rgbcie(img32).dtype == img32.dtype
@@ -344,28 +352,38 @@ class TestColorconv():
         rgb = cp.moveaxis(
             self.colbars_array, source=-1, destination=channel_axis
         )
-        round_trip = rgbcie2rgb(rgb2rgbcie(rgb, channel_axis=channel_axis),
-                                channel_axis=channel_axis)
+        round_trip = rgbcie2rgb(
+            rgb2rgbcie(rgb, channel_axis=channel_axis),
+            channel_axis=channel_axis,
+        )
         # only roundtrip test, we checked rgb2rgbcie above already
         assert_array_almost_equal(round_trip, rgb)
 
     def test_rgbcie2rgb_dtype(self):
-        img = rgb2rgbcie(self.colbars_array).astype('float64')
-        img32 = img.astype('float32')
+        img = rgb2rgbcie(self.colbars_array).astype("float64")
+        img32 = img.astype("float32")
 
         assert rgbcie2rgb(img).dtype == img.dtype
         assert rgbcie2rgb(img32).dtype == img32.dtype
 
     @pytest.mark.parametrize("channel_axis", [0, -1])
     def test_convert_colorspace(self, channel_axis):
-        colspaces = ['HSV', 'RGB CIE', 'XYZ', 'YCbCr', 'YPbPr', 'YDbDr']
+        colspaces = ["HSV", "RGB CIE", "XYZ", "YCbCr", "YPbPr", "YDbDr"]
         colfuncs_from = [
-            hsv2rgb, rgbcie2rgb, xyz2rgb,
-            ycbcr2rgb, ypbpr2rgb, ydbdr2rgb
+            hsv2rgb,
+            rgbcie2rgb,
+            xyz2rgb,
+            ycbcr2rgb,
+            ypbpr2rgb,
+            ydbdr2rgb,
         ]
         colfuncs_to = [
-            rgb2hsv, rgb2rgbcie, rgb2xyz,
-            rgb2ycbcr, rgb2ypbpr, rgb2ydbdr
+            rgb2hsv,
+            rgb2rgbcie,
+            rgb2xyz,
+            rgb2ycbcr,
+            rgb2ypbpr,
+            rgb2ydbdr,
         ]
 
         colbars_array = cp.moveaxis(
@@ -375,22 +393,24 @@ class TestColorconv():
         kw = dict(channel_axis=channel_axis)
 
         assert_array_almost_equal(
-            convert_colorspace(colbars_array, 'RGB', 'RGB', **kw),
-            colbars_array)
+            convert_colorspace(colbars_array, "RGB", "RGB", **kw), colbars_array
+        )
 
         for i, space in enumerate(colspaces):
             # print(f"space={space}")
             gt = colfuncs_from[i](colbars_array, **kw)
             assert_array_almost_equal(
-                convert_colorspace(colbars_array, space, 'RGB', **kw), gt)
+                convert_colorspace(colbars_array, space, "RGB", **kw), gt
+            )
             gt = colfuncs_to[i](colbars_array, **kw)
             assert_array_almost_equal(
-                convert_colorspace(colbars_array, 'RGB', space, **kw), gt)
+                convert_colorspace(colbars_array, "RGB", space, **kw), gt
+            )
 
         with pytest.raises(ValueError):
-            convert_colorspace(colbars_array, 'nokey', 'XYZ', **kw)
+            convert_colorspace(colbars_array, "nokey", "XYZ", **kw)
         with pytest.raises(ValueError):
-            convert_colorspace(colbars_array, 'RGB', 'nokey', **kw)
+            convert_colorspace(colbars_array, "RGB", "nokey", **kw)
 
     @pytest.mark.parametrize("channel_axis", [0, 1, -1, -2])
     def test_rgb2gray(self, channel_axis):
@@ -416,8 +436,8 @@ class TestColorconv():
             rgb2gray(np.empty((5, 5)))
 
     def test_rgb2gray_dtype(self):
-        img = cp.random.rand(10, 10, 3).astype('float64')
-        img32 = img.astype('float32')
+        img = cp.random.rand(10, 10, 3).astype("float64")
+        img32 = img.astype("float32")
 
         assert rgb2gray(img).dtype == img.dtype
         assert rgb2gray(img32).dtype == img32.dtype
@@ -426,25 +446,26 @@ class TestColorconv():
     # http://www.easyrgb.com/index.php?X=CALC
     # Note: easyrgb website displays xyz*100
     def test_xyz2lab(self):
-        assert_array_almost_equal(xyz2lab(self.xyz_array),
-                                  self.lab_array, decimal=3)
+        assert_array_almost_equal(
+            xyz2lab(self.xyz_array), self.lab_array, decimal=3
+        )
 
         # Test the conversion with the rest of the illuminants.
         for i in ["A", "B", "C", "d50", "d55", "d65"]:
             i = i.lower()
             for obs in ["2", "10", "R"]:
                 obs = obs.lower()
-                fname = os.path.join(data_dir, f'lab_array_{i}_{obs}.npy')
+                fname = os.path.join(data_dir, f"lab_array_{i}_{obs}.npy")
                 lab_array_i_obs = np.load(fname)
-                assert_array_almost_equal(lab_array_i_obs,
-                                          xyz2lab(self.xyz_array, i, obs),
-                                          decimal=2)
+                assert_array_almost_equal(
+                    lab_array_i_obs, xyz2lab(self.xyz_array, i, obs), decimal=2
+                )
         for i in ["d75", "e"]:
-            fname = os.path.join(data_dir, f'lab_array_{i}_2.npy')
+            fname = os.path.join(data_dir, f"lab_array_{i}_2.npy")
             lab_array_i_obs = np.load(fname)
-            assert_array_almost_equal(lab_array_i_obs,
-                                      xyz2lab(self.xyz_array, i, "2"),
-                                      decimal=2)
+            assert_array_almost_equal(
+                lab_array_i_obs, xyz2lab(self.xyz_array, i, "2"), decimal=2
+            )
 
     @pytest.mark.parametrize("channel_axis", [0, 1, -1, -2])
     def test_xyz2lab_channel_axis(self, channel_axis):
@@ -455,37 +476,40 @@ class TestColorconv():
         assert_array_almost_equal(lab, self.lab_array, decimal=3)
 
     def test_xyz2lab_dtype(self):
-        img = self.xyz_array.astype('float64')
-        img32 = img.astype('float32')
+        img = self.xyz_array.astype("float64")
+        img32 = img.astype("float32")
 
         assert xyz2lab(img).dtype == img.dtype
         assert xyz2lab(img32).dtype == img32.dtype
 
     def test_lab2xyz(self):
-        assert_array_almost_equal(lab2xyz(self.lab_array),
-                                  self.xyz_array, decimal=3)
+        assert_array_almost_equal(
+            lab2xyz(self.lab_array), self.xyz_array, decimal=3
+        )
 
         # Test the conversion with the rest of the illuminants.
         for i in ["A", "B", "C", "d50", "d55", "d65"]:
             i = i.lower()
             for obs in ["2", "10", "R"]:
                 obs = obs.lower()
-                fname = os.path.join(data_dir, f'lab_array_{i}_{obs}.npy')
+                fname = os.path.join(data_dir, f"lab_array_{i}_{obs}.npy")
                 lab_array_i_obs = cp.array(np.load(fname))
-                assert_array_almost_equal(lab2xyz(lab_array_i_obs, i, obs),
-                                          self.xyz_array, decimal=3)
+                assert_array_almost_equal(
+                    lab2xyz(lab_array_i_obs, i, obs), self.xyz_array, decimal=3
+                )
         for i in ["d75", "e"]:
-            fname = os.path.join(data_dir, f'lab_array_{i}_2.npy')
+            fname = os.path.join(data_dir, f"lab_array_{i}_2.npy")
             lab_array_i_obs = cp.array(np.load(fname))
-            assert_array_almost_equal(lab2xyz(lab_array_i_obs, i, "2"),
-                                      self.xyz_array, decimal=3)
+            assert_array_almost_equal(
+                lab2xyz(lab_array_i_obs, i, "2"), self.xyz_array, decimal=3
+            )
 
         # And we include a call to test the exception handling in the code.
         with pytest.raises(ValueError):
-            lab2xyz(lab_array_i_obs, "NaI", "2")   # Not an illuminant
+            lab2xyz(lab_array_i_obs, "NaI", "2")  # Not an illuminant
 
         with pytest.raises(ValueError):
-            lab2xyz(lab_array_i_obs, "d50", "42")   # Not a degree
+            lab2xyz(lab_array_i_obs, "d50", "42")  # Not a degree
 
     @pytest.mark.parametrize("channel_axis", [0, 1, -1, -2])
     def test_lab2xyz_channel_axis(self, channel_axis):
@@ -496,8 +520,8 @@ class TestColorconv():
         assert_array_almost_equal(xyz, self.xyz_array, decimal=3)
 
     def test_lab2xyz_dtype(self):
-        img = self.lab_array.astype('float64')
-        img32 = img.astype('float32')
+        img = self.lab_array.astype("float64")
+        img32 = img.astype("float32")
 
         assert lab2xyz(img).dtype == img.dtype
         assert lab2xyz(img32).dtype == img32.dtype
@@ -509,7 +533,7 @@ class TestColorconv():
         [website](http://brucelindbloom.com/index.html?ColorCalculator.html).
         """
         # Obtained with D65 white point, sRGB model and gamma
-        # ftm: off
+        # fmt: off
         gt_for_colbars = cp.asarray([
             [100, 0, 0],
             [97.1393, -21.5537, 94.4780],
@@ -520,10 +544,11 @@ class TestColorconv():
             [32.2970, 79.1875, -107.8602],
             [0, 0, 0]]).T
 
-        # ftm: on
+        # fmt: on
         gt_array = cp.swapaxes(gt_for_colbars.reshape(3, 4, 2), 0, 2)
-        assert_array_almost_equal(rgb2lab(self.colbars_array), gt_array,
-                                  decimal=2)
+        assert_array_almost_equal(
+            rgb2lab(self.colbars_array), gt_array, decimal=2
+        )
 
     @pytest.mark.parametrize("channel_axis", [0, 1, -1, -2])
     def test_lab_rgb_roundtrip(self, channel_axis):
@@ -533,7 +558,7 @@ class TestColorconv():
         assert_allclose(
             lab2rgb(
                 rgb2lab(img_rgb, channel_axis=channel_axis),
-                channel_axis=channel_axis
+                channel_axis=channel_axis,
             ),
             img_rgb,
             rtol=1e-5,
@@ -541,15 +566,15 @@ class TestColorconv():
         )
 
     def test_rgb2lab_dtype(self):
-        img = self.colbars_array.astype('float64')
-        img32 = img.astype('float32')
+        img = self.colbars_array.astype("float64")
+        img32 = img.astype("float32")
 
         assert rgb2lab(img).dtype == img.dtype
         assert rgb2lab(img32).dtype == img32.dtype
 
     def test_lab2rgb_dtype(self):
-        img = self.lab_array.astype('float64')
-        img32 = img.astype('float32')
+        img = self.lab_array.astype("float64")
+        img32 = img.astype("float32")
 
         assert lab2rgb(img).dtype == img.dtype
         assert lab2rgb(img32).dtype == img32.dtype
@@ -558,25 +583,26 @@ class TestColorconv():
     # http://www.easyrgb.com/index.php?X=CALC
     # Note: easyrgb website displays xyz*100
     def test_xyz2luv(self):
-        assert_array_almost_equal(xyz2luv(self.xyz_array),
-                                  self.luv_array, decimal=3)
+        assert_array_almost_equal(
+            xyz2luv(self.xyz_array), self.luv_array, decimal=3
+        )
 
         # Test the conversion with the rest of the illuminants.
         for i in ["A", "B", "C", "d50", "d55", "d65"]:
             i = i.lower()
             for obs in ["2", "10", "R"]:
                 obs = obs.lower()
-                fname = os.path.join(data_dir, f'luv_array_{i}_{obs}.npy')
+                fname = os.path.join(data_dir, f"luv_array_{i}_{obs}.npy")
                 luv_array_i_obs = np.load(fname)
-                assert_array_almost_equal(luv_array_i_obs,
-                                          xyz2luv(self.xyz_array, i, obs),
-                                          decimal=2)
+                assert_array_almost_equal(
+                    luv_array_i_obs, xyz2luv(self.xyz_array, i, obs), decimal=2
+                )
         for i in ["d75", "e"]:
-            fname = os.path.join(data_dir, f'luv_array_{i}_2.npy')
+            fname = os.path.join(data_dir, f"luv_array_{i}_2.npy")
             luv_array_i_obs = np.load(fname)
-            assert_array_almost_equal(luv_array_i_obs,
-                                      xyz2luv(self.xyz_array, i, "2"),
-                                      decimal=2)
+            assert_array_almost_equal(
+                luv_array_i_obs, xyz2luv(self.xyz_array, i, "2"), decimal=2
+            )
 
     @pytest.mark.parametrize("channel_axis", [0, 1, -1, -2])
     def test_xyz2luv_channel_axis(self, channel_axis):
@@ -587,30 +613,33 @@ class TestColorconv():
         assert_array_almost_equal(luv, self.luv_array, decimal=3)
 
     def test_xyz2luv_dtype(self):
-        img = self.xyz_array.astype('float64')
-        img32 = img.astype('float32')
+        img = self.xyz_array.astype("float64")
+        img32 = img.astype("float32")
 
         assert xyz2luv(img).dtype == img.dtype
         assert xyz2luv(img32).dtype == img32.dtype
 
     def test_luv2xyz(self):
-        assert_array_almost_equal(luv2xyz(self.luv_array),
-                                  self.xyz_array, decimal=3)
+        assert_array_almost_equal(
+            luv2xyz(self.luv_array), self.xyz_array, decimal=3
+        )
 
         # Test the conversion with the rest of the illuminants.
         for i in ["A", "B", "C", "d50", "d55", "d65"]:
             i = i.lower()
             for obs in ["2", "10", "R"]:
                 obs = obs.lower()
-                fname = os.path.join(data_dir, f'luv_array_{i}_{obs}.npy')
+                fname = os.path.join(data_dir, f"luv_array_{i}_{obs}.npy")
                 luv_array_i_obs = cp.array(np.load(fname))
-                assert_array_almost_equal(luv2xyz(luv_array_i_obs, i, obs),
-                                          self.xyz_array, decimal=3)
+                assert_array_almost_equal(
+                    luv2xyz(luv_array_i_obs, i, obs), self.xyz_array, decimal=3
+                )
         for i in ["d75", "e"]:
-            fname = os.path.join(data_dir, f'luv_array_{i}_2.npy')
+            fname = os.path.join(data_dir, f"luv_array_{i}_2.npy")
             luv_array_i_obs = cp.array(np.load(fname))
-            assert_array_almost_equal(luv2xyz(luv_array_i_obs, i, "2"),
-                                      self.xyz_array, decimal=3)
+            assert_array_almost_equal(
+                luv2xyz(luv_array_i_obs, i, "2"), self.xyz_array, decimal=3
+            )
 
     @pytest.mark.parametrize("channel_axis", [0, 1, -1, -2])
     def test_luv2xyz_channel_axis(self, channel_axis):
@@ -621,8 +650,8 @@ class TestColorconv():
         assert_array_almost_equal(xyz, self.xyz_array, decimal=3)
 
     def test_luv2xyz_dtype(self):
-        img = self.luv_array.astype('float64')
-        img32 = img.astype('float32')
+        img = self.luv_array.astype("float64")
+        img32 = img.astype("float32")
 
         assert luv2xyz(img).dtype == img.dtype
         assert luv2xyz(img32).dtype == img32.dtype
@@ -634,7 +663,7 @@ class TestColorconv():
         [website](http://brucelindbloom.com/index.html?ColorCalculator.html).
         """
         # Obtained with D65 white point, sRGB model and gamma
-        # ftm: off
+        # fmt: off
         gt_for_colbars = cp.asarray([
             [100, 0, 0],
             [97.1393, 7.7056, 106.7866],
@@ -645,21 +674,22 @@ class TestColorconv():
             [32.2970, -9.4054, -130.3423],
             [0, 0, 0]]).T
 
-        # ftm: on
+        # fmt: on
         gt_array = cp.swapaxes(gt_for_colbars.reshape(3, 4, 2), 0, 2)
-        assert_array_almost_equal(rgb2luv(self.colbars_array),
-                                  gt_array, decimal=2)
+        assert_array_almost_equal(
+            rgb2luv(self.colbars_array), gt_array, decimal=2
+        )
 
     def test_rgb2luv_dtype(self):
-        img = self.colbars_array.astype('float64')
-        img32 = img.astype('float32')
+        img = self.colbars_array.astype("float64")
+        img32 = img.astype("float32")
 
         assert rgb2luv(img).dtype == img.dtype
         assert rgb2luv(img32).dtype == img32.dtype
 
     def test_luv2rgb_dtype(self):
-        img = self.luv_array.astype('float64')
-        img32 = img.astype('float32')
+        img = self.luv_array.astype("float64")
+        img32 = img.astype("float32")
 
         assert luv2rgb(img).dtype == img.dtype
         assert luv2rgb(img32).dtype == img32.dtype
@@ -671,7 +701,7 @@ class TestColorconv():
         assert_allclose(
             luv2rgb(
                 rgb2luv(img_rgb, channel_axis=channel_axis),
-                channel_axis=channel_axis
+                channel_axis=channel_axis,
             ),
             img_rgb,
             rtol=1e-4,
@@ -684,13 +714,13 @@ class TestColorconv():
         lab_array[1] = [50, 12, -85]
         lab_array[2] = [90, -4, -47]
         lab_array = cp.asarray(lab_array)
-        # ftm: off
+        # fmt: off
         rgb_array = cp.asarray([[[0.501, 0.481, 0]],
                                 [[0, 0.482, 1.]],
                                 [[0.578, 0.914, 1.]],
                                 ])
 
-        # ftm: on
+        # fmt: on
         assert_array_almost_equal(lab2rgb(lab_array), rgb_array, decimal=3)
 
     def test_lab_full_gamut(self):
@@ -778,51 +808,61 @@ class TestColorconv():
         img_rgb = img_as_float(self.img_rgb)[::16, ::16]
         img_rgb = cp.moveaxis(img_rgb, source=-1, destination=channel_axis)
         assert_allclose(
-            yuv2rgb(rgb2yuv(img_rgb, channel_axis=channel_axis),
-                    channel_axis=channel_axis),
+            yuv2rgb(
+                rgb2yuv(img_rgb, channel_axis=channel_axis),
+                channel_axis=channel_axis,
+            ),
             img_rgb,
             rtol=1e-5,
             atol=1e-5,
         )
         assert_allclose(
-            yiq2rgb(rgb2yiq(img_rgb, channel_axis=channel_axis),
-                    channel_axis=channel_axis),
+            yiq2rgb(
+                rgb2yiq(img_rgb, channel_axis=channel_axis),
+                channel_axis=channel_axis,
+            ),
             img_rgb,
             rtol=1e-5,
             atol=1e-5,
         )
         assert_allclose(
-            ypbpr2rgb(rgb2ypbpr(img_rgb, channel_axis=channel_axis),
-                      channel_axis=channel_axis),
+            ypbpr2rgb(
+                rgb2ypbpr(img_rgb, channel_axis=channel_axis),
+                channel_axis=channel_axis,
+            ),
             img_rgb,
             rtol=1e-5,
             atol=1e-5,
         )
         assert_allclose(
-            ycbcr2rgb(rgb2ycbcr(img_rgb, channel_axis=channel_axis),
-                      channel_axis=channel_axis),
+            ycbcr2rgb(
+                rgb2ycbcr(img_rgb, channel_axis=channel_axis),
+                channel_axis=channel_axis,
+            ),
             img_rgb,
             rtol=1e-5,
             atol=1e-5,
         )
         assert_allclose(
-            ydbdr2rgb(rgb2ydbdr(img_rgb, channel_axis=channel_axis),
-                      channel_axis=channel_axis),
+            ydbdr2rgb(
+                rgb2ydbdr(img_rgb, channel_axis=channel_axis),
+                channel_axis=channel_axis,
+            ),
             img_rgb,
             rtol=1e-5,
             atol=1e-5,
         )
 
     def test_rgb2yuv_dtype(self):
-        img = self.colbars_array.astype('float64')
-        img32 = img.astype('float32')
+        img = self.colbars_array.astype("float64")
+        img32 = img.astype("float32")
 
         assert rgb2yuv(img).dtype == img.dtype
         assert rgb2yuv(img32).dtype == img32.dtype
 
     def test_yuv2rgb_dtype(self):
-        img = rgb2yuv(self.colbars_array).astype('float64')
-        img32 = img.astype('float32')
+        img = rgb2yuv(self.colbars_array).astype("float64")
+        img32 = img.astype("float32")
 
         assert yuv2rgb(img).dtype == img.dtype
         assert yuv2rgb(img32).dtype == img32.dtype
@@ -830,9 +870,12 @@ class TestColorconv():
     def test_rgb2yiq_conversion(self):
         rgb = img_as_float(self.img_rgb)[::16, ::16]
         yiq = rgb2yiq(rgb).reshape(-1, 3)
-        gt = np.asarray([colorsys.rgb_to_yiq(pt[0], pt[1], pt[2])
-                         for pt in cp.asnumpy(rgb).reshape(-1, 3)]
-                        )
+        gt = np.asarray(
+            [
+                colorsys.rgb_to_yiq(pt[0], pt[1], pt[2])
+                for pt in cp.asnumpy(rgb).reshape(-1, 3)
+            ]
+        )
         assert_array_almost_equal(yiq, gt, decimal=2)
 
     @pytest.mark.parametrize("func", [lab2rgb, lab2xyz])
@@ -842,7 +885,7 @@ class TestColorconv():
             "1 negative Z values that have been clipped to zero"
         )
         with pytest.warns(UserWarning, match=regex) as messages:
-            func(lab=cp.array([[[0, 0, 300.]]]))
+            func(lab=cp.array([[[0, 0, 300.0]]]))
         assert len(messages) == 1
         assert messages[0].filename == __file__, "warning points at wrong file"
 
@@ -851,9 +894,7 @@ def test_gray2rgb():
     x = cp.asarray([0, 0.5, 1])
     w = gray2rgb(x)
     # fmt off
-    expected_output = cp.asarray([[0, 0, 0],
-                                  [0.5, 0.5, 0.5],
-                                  [1, 1, 1]])
+    expected_output = cp.asarray([[0, 0, 0], [0.5, 0.5, 0.5], [1, 1, 1]])
     # fmt on
     assert_array_equal(w, expected_output)
 
@@ -891,8 +932,7 @@ def test_gray2rgba(shape, channel_axis):
 
     # Shape check
     new_axis_loc = channel_axis % rgba.ndim
-    assert_equal(rgba.shape,
-                 shape[:new_axis_loc] + (4, ) + shape[new_axis_loc:])
+    assert_equal(rgba.shape, shape[:new_axis_loc] + (4,) + shape[new_axis_loc:])
 
     # dtype check
     assert rgba.dtype == img.dtype
@@ -915,8 +955,7 @@ def test_gray2rgb_channel_axis(shape, channel_axis):
 
     # Shape check
     new_axis_loc = channel_axis % rgb.ndim
-    assert_equal(rgb.shape,
-                 shape[:new_axis_loc] + (3, ) + shape[new_axis_loc:])
+    assert_equal(rgb.shape, shape[:new_axis_loc] + (3,) + shape[new_axis_loc:])
 
     # dtype check
     assert rgb.dtype == img.dtype
@@ -924,7 +963,7 @@ def test_gray2rgb_channel_axis(shape, channel_axis):
 
 def test_gray2rgba_dtype():
     img_f64 = cp.random.random((5, 5))
-    img_f32 = img_f64.astype('float32')
+    img_f32 = img_f64.astype("float32")
     img_u8 = img_as_ubyte(img_f64)
     img_int = img_u8.astype(int)
 
@@ -965,7 +1004,7 @@ def test_gray2rgba_alpha():
 
     # Invalid shape
     alpha = cp.random.random((5, 5, 1))
-    expected_err_msg = ("alpha.shape must match image.shape")
+    expected_err_msg = "alpha.shape must match image.shape"
 
     with pytest.raises(ValueError) as err:
         rgba = gray2rgba(img, alpha)
@@ -973,8 +1012,9 @@ def test_gray2rgba_alpha():
 
 
 @pytest.mark.parametrize("func", [rgb2gray, gray2rgb, gray2rgba])
-@pytest.mark.parametrize("shape", ([(3, ), (2, 3), (4, 5, 3), (5, 4, 5, 3),
-                                    (4, 5, 4, 5, 3)]))
+@pytest.mark.parametrize(
+    "shape", ([(3,), (2, 3), (4, 5, 3), (5, 4, 5, 3), (4, 5, 4, 5, 3)])
+)
 def test_nD_gray_conversion(func, shape):
     img = cp.random.rand(*shape)
     out = func(img)
@@ -982,22 +1022,42 @@ def test_nD_gray_conversion(func, shape):
     assert out.shape[:common_ndim] == shape[:common_ndim]
 
 
-@pytest.mark.parametrize("func", [rgb2hsv, hsv2rgb,
-                                  rgb2xyz, xyz2rgb,
-                                  rgb2hed, hed2rgb,
-                                  rgb2rgbcie, rgbcie2rgb,
-                                  xyz2lab, lab2xyz,
-                                  lab2rgb, rgb2lab,
-                                  xyz2luv, luv2xyz,
-                                  luv2rgb, rgb2luv,
-                                  lab2lch, lch2lab,
-                                  rgb2yuv, yuv2rgb,
-                                  rgb2yiq, yiq2rgb,
-                                  rgb2ypbpr, ypbpr2rgb,
-                                  rgb2ycbcr, ycbcr2rgb,
-                                  rgb2ydbdr, ydbdr2rgb])
-@pytest.mark.parametrize("shape", ([(3, ), (2, 3), (4, 5, 3), (5, 4, 5, 3),
-                                    (4, 5, 4, 5, 3)]))
+@pytest.mark.parametrize(
+    "func",
+    [
+        rgb2hsv,
+        hsv2rgb,
+        rgb2xyz,
+        xyz2rgb,
+        rgb2hed,
+        hed2rgb,
+        rgb2rgbcie,
+        rgbcie2rgb,
+        xyz2lab,
+        lab2xyz,
+        lab2rgb,
+        rgb2lab,
+        xyz2luv,
+        luv2xyz,
+        luv2rgb,
+        rgb2luv,
+        lab2lch,
+        lch2lab,
+        rgb2yuv,
+        yuv2rgb,
+        rgb2yiq,
+        yiq2rgb,
+        rgb2ypbpr,
+        ypbpr2rgb,
+        rgb2ycbcr,
+        ycbcr2rgb,
+        rgb2ydbdr,
+        ydbdr2rgb,
+    ],
+)
+@pytest.mark.parametrize(
+    "shape", ([(3,), (2, 3), (4, 5, 3), (5, 4, 5, 3), (4, 5, 4, 5, 3)])
+)
 def test_nD_color_conversion(func, shape):
     img = cp.random.rand(*shape)
     out = func(img)
@@ -1005,8 +1065,9 @@ def test_nD_color_conversion(func, shape):
     assert out.shape == img.shape
 
 
-@pytest.mark.parametrize("shape", ([(4, ), (2, 4), (4, 5, 4), (5, 4, 5, 4),
-                                    (4, 5, 4, 5, 4)]))
+@pytest.mark.parametrize(
+    "shape", ([(4,), (2, 4), (4, 5, 4), (5, 4, 5, 4), (4, 5, 4, 5, 4)])
+)
 def test_rgba2rgb_nD(shape):
     img = cp.random.rand(*shape)
     out = rgba2rgb(img)
@@ -1016,22 +1077,22 @@ def test_rgba2rgb_nD(shape):
     assert out.shape == expected_shape
 
 
-@pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])
+@pytest.mark.parametrize("dtype", [cp.float16, cp.float32, cp.float64])
 def test_rgba2rgb_dtypes(dtype):
-    rgba = cp.array([[[0, 0.5, 1, 0],
-                      [0, 0.5, 1, 1],
-                      [0, 0.5, 1, 0.5]]]).astype(dtype=dtype)
+    rgba = cp.array(
+        [[[0, 0.5, 1, 0], [0, 0.5, 1, 1], [0, 0.5, 1, 0.5]]]
+    ).astype(dtype=dtype)
     rgb = rgba2rgb(rgba)
     float_dtype = _supported_float_type(rgba.dtype)
     assert rgb.dtype == float_dtype
-    expected = cp.array([[[1, 1, 1],
-                          [0, 0.5, 1],
-                          [0.5, 0.75, 1]]]).astype(float)
+    expected = cp.array([[[1, 1, 1], [0, 0.5, 1], [0.5, 0.75, 1]]]).astype(
+        float
+    )
     assert rgb.shape == expected.shape
     assert_array_almost_equal(rgb, expected)
 
 
-@pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])
+@pytest.mark.parametrize("dtype", [cp.float16, cp.float32, cp.float64])
 def test_lab_lch_roundtrip_dtypes(dtype):
     rgb = cp.asarray(data.colorwheel())
     rgb = img_as_float(rgb).astype(dtype=dtype, copy=False)
@@ -1043,7 +1104,7 @@ def test_lab_lch_roundtrip_dtypes(dtype):
     assert_array_almost_equal(lab2, lab, decimal=decimal)
 
 
-@pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])
+@pytest.mark.parametrize("dtype", [cp.float16, cp.float32, cp.float64])
 def test_rgb2hsv_dtypes(dtype):
     rgb = cp.asarray(data.colorwheel())
     rgb = img_as_float(rgb)[::16, ::16]
@@ -1053,8 +1114,10 @@ def test_rgb2hsv_dtypes(dtype):
     assert hsv.dtype == float_dtype
     # ground truth from colorsys
     gt = cp.asarray(
-        [colorsys.rgb_to_hsv(pt[0], pt[1], pt[2])
-         for pt in cp.asnumpy(rgb).reshape(-1, 3)]
+        [
+            colorsys.rgb_to_hsv(pt[0], pt[1], pt[2])
+            for pt in cp.asnumpy(rgb).reshape(-1, 3)
+        ]
     )
     decimal = 3 if float_dtype == cp.float32 else 7
     assert_array_almost_equal(hsv, gt, decimal=decimal)

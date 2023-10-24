@@ -16,12 +16,15 @@ from packaging.version import Version
 
 from .._shared.utils import deprecate_kwarg
 
-old_reconstruction_pyx = Version(skimage.__version__) < Version('0.20.0')
+old_reconstruction_pyx = Version(skimage.__version__) < Version("0.20.0")
 
 
-@deprecate_kwarg(kwarg_mapping={'selem': 'footprint'},
-                 removed_version="23.02.00", deprecated_version="22.02.00")
-def reconstruction(seed, mask, method='dilation', footprint=None, offset=None):
+@deprecate_kwarg(
+    kwarg_mapping={"selem": "footprint"},
+    removed_version="23.02.00",
+    deprecated_version="22.02.00",
+)
+def reconstruction(seed, mask, method="dilation", footprint=None, offset=None):
     """Perform a morphological reconstruction of an image.
 
     Morphological reconstruction by dilation is similar to basic morphological
@@ -133,13 +136,17 @@ def reconstruction(seed, mask, method='dilation', footprint=None, offset=None):
     from ..filters._rank_order import rank_order
 
     assert tuple(seed.shape) == tuple(mask.shape)
-    if method == 'dilation' and cp.any(seed > mask):  # synchronize!
-        raise ValueError("Intensity of seed image must be less than that "
-                         "of the mask image for reconstruction by dilation.")
+    if method == "dilation" and cp.any(seed > mask):  # synchronize!
+        raise ValueError(
+            "Intensity of seed image must be less than that "
+            "of the mask image for reconstruction by dilation."
+        )
 
-    elif method == 'erosion' and cp.any(seed < mask):  # synchronize!
-        raise ValueError("Intensity of seed image must be greater than that "
-                         "of the mask image for reconstruction by erosion.")
+    elif method == "erosion" and cp.any(seed < mask):  # synchronize!
+        raise ValueError(
+            "Intensity of seed image must be greater than that "
+            "of the mask image for reconstruction by erosion."
+        )
 
     try:
         from skimage.morphology._grayreconstruct import reconstruction_loop
@@ -172,18 +179,21 @@ def reconstruction(seed, mask, method='dilation', footprint=None, offset=None):
     footprint[tuple(slice(d, d + 1) for d in offset)] = False
 
     # Make padding for edges of reconstructed image so we can ignore boundaries
-    dims = (2, ) + \
-        tuple(s1 + s2 - 1 for s1, s2 in zip(seed.shape, footprint.shape))
+    dims = (2,) + tuple(
+        s1 + s2 - 1 for s1, s2 in zip(seed.shape, footprint.shape)
+    )
     inside_slices = tuple(slice(o, o + s) for o, s in zip(offset, seed.shape))
     # Set padded region to minimum image intensity and mask along first axis so
     # we can interleave image and mask pixels when sorting.
-    if method == 'dilation':
+    if method == "dilation":
         pad_value = cp.min(seed).item()
-    elif method == 'erosion':
+    elif method == "erosion":
         pad_value = cp.max(seed).item()
     else:
-        raise ValueError("Reconstruction method can be one of 'erosion' "
-                         f"or 'dilation'. Got '{method}'.")
+        raise ValueError(
+            "Reconstruction method can be one of 'erosion' "
+            f"or 'dilation'. Got '{method}'."
+        )
     # CuPy Backend: modified to allow images_dtype based on input dtype
     #               instead of float64
     images_dtype = np.promote_types(seed.dtype, mask.dtype)
@@ -206,19 +216,24 @@ def reconstruction(seed, mask, method='dilation', footprint=None, offset=None):
     # a flattened array
     value_stride = np.array(images.strides[1:]) // images.dtype.itemsize
     image_stride = images.strides[0] // images.dtype.itemsize
-    footprint_mgrid = np.mgrid[[slice(-o, d - o)
-                                for d, o in zip(footprint.shape, offset)]]
+    footprint_mgrid = np.mgrid[
+        [slice(-o, d - o) for d, o in zip(footprint.shape, offset)]
+    ]
     footprint_offsets = footprint_mgrid[:, footprint].transpose()
-    nb_strides = np.array([np.sum(value_stride * footprint_offset)
-                           for footprint_offset in footprint_offsets],
-                          signed_int_dtype)
+    nb_strides = np.array(
+        [
+            np.sum(value_stride * footprint_offset)
+            for footprint_offset in footprint_offsets
+        ],
+        signed_int_dtype,
+    )
 
     # CuPy Backend: changed flatten to ravel to avoid copy
     images = images.ravel()
 
     # Erosion goes smallest to largest; dilation goes largest to smallest.
     index_sorted = cp.argsort(images).astype(signed_int_dtype, copy=False)
-    if method == 'dilation':
+    if method == "dilation":
         index_sorted = index_sorted[::-1]
 
     # Make a linked list of pixels sorted by value. -1 is the list terminator.
@@ -229,17 +244,16 @@ def reconstruction(seed, mask, method='dilation', footprint=None, offset=None):
     next[index_sorted[:-1]] = index_sorted[1:]
 
     # Cython inner-loop compares the rank of pixel values.
-    if method == 'dilation':
+    if method == "dilation":
         value_rank, value_map = rank_order(images)
-    elif method == 'erosion':
+    elif method == "erosion":
         value_rank, value_map = rank_order(-images)
         value_map = -value_map
 
     # TODO: implement reconstruction_loop on the GPU? For now, run it on host.
     start = index_sorted[0]
     value_rank = cp.asnumpy(value_rank.astype(unsigned_int_dtype, copy=False))
-    reconstruction_loop(value_rank, prev, next, nb_strides, start,
-                        image_stride)
+    reconstruction_loop(value_rank, prev, next, nb_strides, start, image_stride)
 
     # Reshape reconstructed image to original image shape and remove padding.
     value_rank = cp.asarray(value_rank[:image_stride])

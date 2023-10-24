@@ -18,10 +18,7 @@ import cupy
 import numpy as np
 
 
-def image_flip(
-    img: Any,
-    spatial_axis: tuple()
-) -> Any:
+def image_flip(img: Any, spatial_axis: tuple()) -> Any:
     """
     Shape preserving order reversal of elements in input array
     along the given spatial axis
@@ -65,11 +62,7 @@ def image_flip(
     return result
 
 
-def image_rotate_90(
-    img: Any,
-    k: int,
-    spatial_axis: tuple()
-) -> Any:
+def image_rotate_90(img: Any, k: int, spatial_axis: tuple()) -> Any:
     """
     Rotate input array by 90 degrees along the given axis
 
@@ -117,7 +110,7 @@ def rand_image_flip(
     img: Any,
     spatial_axis: tuple(),
     prob: float = 0.1,
-    whole_batch: bool = False
+    whole_batch: bool = False,
 ) -> Any:
     """
     Randomly flips the image along axis.
@@ -170,7 +163,7 @@ def rand_image_rotate_90(
     spatial_axis: tuple(),
     prob: float = 0.1,
     max_k: int = 3,
-    whole_batch: bool = False
+    whole_batch: bool = False,
 ) -> Any:
     """
     With probability `prob`, input arrays are rotated by 90 degrees

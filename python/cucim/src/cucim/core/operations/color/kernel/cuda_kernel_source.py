@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-cuda_kernel_code = r'''
+cuda_kernel_code = r"""
 extern "C" {
 __global__ void brightnessjitter_kernel(unsigned char *input_rgb, \
                                         unsigned char *output_rgb, \
@@ -260,4 +260,4 @@ __global__ void huejitter_kernel(unsigned char *input_rgb, \
     }
   }
 }
-}'''
+}"""

@@ -91,11 +91,14 @@ def _denoise_tv_chambolle_nd(image, weight=0.1, eps=2.0e-4, max_num_iter=200):
     return out
 
 
-@utils.deprecate_kwarg({'n_iter_max': 'max_num_iter'},
-                       removed_version="23.02.00",
-                       deprecated_version="22.06.00")
-def denoise_tv_chambolle(image, weight=0.1, eps=2.0e-4, max_num_iter=200, *,
-                         channel_axis=None):
+@utils.deprecate_kwarg(
+    {"n_iter_max": "max_num_iter"},
+    removed_version="23.02.00",
+    deprecated_version="22.06.00",
+)
+def denoise_tv_chambolle(
+    image, weight=0.1, eps=2.0e-4, max_num_iter=200, *, channel_axis=None
+):
     r"""Perform total variation denoising in nD.
 
     Given :math:`f`, a noisy image (input data),
@@ -192,7 +195,7 @@ def denoise_tv_chambolle(image, weight=0.1, eps=2.0e-4, max_num_iter=200, *,
     """  # noqa
 
     im_type = image.dtype
-    if not im_type.kind == 'f':
+    if not im_type.kind == "f":
         image = img_as_float(image)
 
     # enforce float16->float32 and float128->float64
@@ -204,8 +207,9 @@ def denoise_tv_chambolle(image, weight=0.1, eps=2.0e-4, max_num_iter=200, *,
         _at = functools.partial(utils.slice_at_axis, axis=channel_axis)
         out = cp.zeros_like(image)
         for c in range(image.shape[channel_axis]):
-            out[_at(c)] = _denoise_tv_chambolle_nd(image[_at(c)], weight, eps,
-                                                   max_num_iter)
+            out[_at(c)] = _denoise_tv_chambolle_nd(
+                image[_at(c)], weight, eps, max_num_iter
+            )
     else:
         out = _denoise_tv_chambolle_nd(image, weight, eps, max_num_iter)
     return out

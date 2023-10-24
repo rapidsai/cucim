@@ -108,36 +108,55 @@ def convert_colorspace(arr, fromspace, tospace, *, channel_axis=-1):
     >>> img = cp.array(data.astronaut())
     >>> img_hsv = convert_colorspace(img, 'RGB', 'HSV')
     """
-    fromdict = {'rgb': identity, 'hsv': hsv2rgb, 'rgb cie': rgbcie2rgb,
-                'xyz': xyz2rgb, 'yuv': yuv2rgb, 'yiq': yiq2rgb,
-                'ypbpr': ypbpr2rgb, 'ycbcr': ycbcr2rgb, 'ydbdr': ydbdr2rgb}
-    todict = {'rgb': identity, 'hsv': rgb2hsv, 'rgb cie': rgb2rgbcie,
-              'xyz': rgb2xyz, 'yuv': rgb2yuv, 'yiq': rgb2yiq,
-              'ypbpr': rgb2ypbpr, 'ycbcr': rgb2ycbcr, 'ydbdr': rgb2ydbdr}
+    fromdict = {
+        "rgb": identity,
+        "hsv": hsv2rgb,
+        "rgb cie": rgbcie2rgb,
+        "xyz": xyz2rgb,
+        "yuv": yuv2rgb,
+        "yiq": yiq2rgb,
+        "ypbpr": ypbpr2rgb,
+        "ycbcr": ycbcr2rgb,
+        "ydbdr": ydbdr2rgb,
+    }
+    todict = {
+        "rgb": identity,
+        "hsv": rgb2hsv,
+        "rgb cie": rgb2rgbcie,
+        "xyz": rgb2xyz,
+        "yuv": rgb2yuv,
+        "yiq": rgb2yiq,
+        "ypbpr": rgb2ypbpr,
+        "ycbcr": rgb2ycbcr,
+        "ydbdr": rgb2ydbdr,
+    }
 
     fromspace = fromspace.lower()
     tospace = tospace.lower()
     if fromspace not in fromdict:
-        msg = f'`fromspace` has to be one of {fromdict.keys()}'
+        msg = f"`fromspace` has to be one of {fromdict.keys()}"
         raise ValueError(msg)
     if tospace not in todict:
-        msg = f'`tospace` has to be one of {todict.keys()}'
+        msg = f"`tospace` has to be one of {todict.keys()}"
         raise ValueError(msg)
 
     return todict[tospace](
         fromdict[fromspace](arr, channel_axis=channel_axis),
-        channel_axis=channel_axis
+        channel_axis=channel_axis,
     )
 
 
-def _prepare_colorarray(arr, force_copy=False, force_c_contiguous=True,
-                        channel_axis=-1):
+def _prepare_colorarray(
+    arr, force_copy=False, force_c_contiguous=True, channel_axis=-1
+):
     """Check the shape of the array and convert it to
     floating point representation.
     """
     if arr.shape[channel_axis] != 3:
-        msg = (f'the input array must have size 3 along `channel_axis`, '
-               f'got {arr.shape}')
+        msg = (
+            f"the input array must have size 3 along `channel_axis`, "
+            f"got {arr.shape}"
+        )
         raise ValueError(msg)
     float_dtype = _supported_float_type(arr.dtype)
     if float_dtype == cp.float32:
@@ -158,7 +177,7 @@ def _validate_channel_axis(channel_axis, ndim):
 
 
 @cp.memoize(for_each_device=True)
-def _rgba2rgb_kernel(background, name='rgba2rgb'):
+def _rgba2rgb_kernel(background, name="rgba2rgb"):
     code = """
     X alpha = rgba[4*i + 3];
     X val;
@@ -169,10 +188,8 @@ def _rgba2rgb_kernel(background, name='rgba2rgb'):
         rgb[3*i + {ch}] = min(max(val, (X)0.0), (X)1.0);
         """
     return cp.ElementwiseKernel(
-        'raw X rgba',
-        'raw X rgb',
-        code,
-        name='cucim_skimage_color_' + name)
+        "raw X rgba", "raw X rgb", code, name="cucim_skimage_color_" + name
+    )
 
 
 @channel_as_last_axis()  # current CUDA kernel assumes channel_axis is last
@@ -217,8 +234,10 @@ def rgba2rgb(rgba, background=(1, 1, 1), *, channel_axis=-1):
     channel_axis = channel_axis % rgba.ndim
 
     if rgba.shape[channel_axis] != 4:
-        msg = (f'the input array must have size 4 along `channel_axis`, '
-               f'got {rgba.shape}')
+        msg = (
+            f"the input array must have size 4 along `channel_axis`, "
+            f"got {rgba.shape}"
+        )
         raise ValueError(msg)
 
     float_dtype = _supported_float_type(rgba.dtype)
@@ -233,13 +252,16 @@ def rgba2rgb(rgba, background=(1, 1, 1), *, channel_axis=-1):
         background = cp.asnumpy(background)  # synchronize
     background = tuple(float(b) for b in background)
     if len(background) != 3:
-        raise ValueError('background must be an array-like containing 3 RGB '
-                         f'values. Got {len(background)} items')
+        raise ValueError(
+            "background must be an array-like containing 3 RGB "
+            f"values. Got {len(background)} items"
+        )
     if any((b < 0 or b > 1) for b in background):
-        raise ValueError('background RGB values must be floats between '
-                         '0 and 1.')
+        raise ValueError(
+            "background RGB values must be floats between " "0 and 1."
+        )
 
-    name = f'rgba2rgb_{rgba.dtype.char}'
+    name = f"rgba2rgb_{rgba.dtype.char}"
     kern = _rgba2rgb_kernel(background, name)
     rgb = cp.empty(rgba.shape[:-1] + (3,), dtype=rgba.dtype)
     kern(rgba, rgb, size=rgb.size // 3)
@@ -247,7 +269,7 @@ def rgba2rgb(rgba, background=(1, 1, 1), *, channel_axis=-1):
 
 
 @cp.memoize(for_each_device=True)
-def _rgb_to_hsv_kernel(name='rgb2hsv'):
+def _rgb_to_hsv_kernel(name="rgb2hsv"):
     code = """
     X minv = rgb[3*i];
     X maxv = rgb[3*i];
@@ -286,10 +308,8 @@ def _rgb_to_hsv_kernel(name='rgb2hsv'):
     hsv[3*i + 2] = maxv;
     """
     return cp.ElementwiseKernel(
-        'raw X rgb',
-        'raw X hsv',
-        code,
-        name='cucim_skimage_color_' + name)
+        "raw X rgb", "raw X hsv", code, name="cucim_skimage_color_" + name
+    )
 
 
 @channel_as_last_axis()
@@ -336,11 +356,12 @@ def rgb2hsv(rgb, *, channel_axis=-1):
     if input_is_one_pixel:
         rgb = rgb[np.newaxis, ...]
 
-    rgb = _prepare_colorarray(rgb, force_c_contiguous=True,
-                              channel_axis=channel_axis)
+    rgb = _prepare_colorarray(
+        rgb, force_c_contiguous=True, channel_axis=channel_axis
+    )
     hsv = cp.empty_like(rgb)
 
-    name = f'rgb2hsv_{rgb.dtype.char}'
+    name = f"rgb2hsv_{rgb.dtype.char}"
     kern = _rgb_to_hsv_kernel(name=name)
     kern(rgb, hsv, size=rgb.size // 3)
 
@@ -351,7 +372,7 @@ def rgb2hsv(rgb, *, channel_axis=-1):
 
 
 @cp.memoize(for_each_device=True)
-def _hsv_to_rgb_kernel(name='hsv2rgb'):
+def _hsv_to_rgb_kernel(name="hsv2rgb"):
     code = """
     int hi = (int)floor(hsv[3*i] * 6.0);
 
@@ -395,10 +416,8 @@ def _hsv_to_rgb_kernel(name='hsv2rgb'):
     }
     """
     return cp.ElementwiseKernel(
-        'raw X hsv',
-        'raw X rgb',
-        code,
-        name='cucim_skimage_color_' + name)
+        "raw X hsv", "raw X rgb", code, name="cucim_skimage_color_" + name
+    )
 
 
 @channel_as_last_axis()
@@ -441,12 +460,13 @@ def hsv2rgb(hsv, *, channel_axis=-1):
     >>> img_hsv = rgb2hsv(img)
     >>> img_rgb = hsv2rgb(img_hsv)
     """
-    hsv = _prepare_colorarray(hsv, force_c_contiguous=True,
-                              channel_axis=channel_axis)
+    hsv = _prepare_colorarray(
+        hsv, force_c_contiguous=True, channel_axis=channel_axis
+    )
 
     rgb = cp.empty_like(hsv)
 
-    name = f'hsv2rgb_{hsv.dtype.char}'
+    name = f"hsv2rgb_{hsv.dtype.char}"
     kern = _hsv_to_rgb_kernel(name=name)
     kern(hsv, rgb, size=hsv.size // 3)
     return rgb
@@ -456,7 +476,7 @@ def hsv2rgb(hsv, *, channel_axis=-1):
 # Primaries for the coordinate systems
 # ---------------------------------------------------------------
 cie_primaries = np.array([700, 546.1, 435.8])
-sb_primaries = np.array([1. / 155, 1. / 190, 1. / 225]) * 1e5
+sb_primaries = np.array([1.0 / 155, 1.0 / 190, 1.0 / 225]) * 1e5
 
 # ---------------------------------------------------------------
 # Matrices that define conversion between different color spaces
@@ -507,22 +527,30 @@ ypbpr_from_rgb = np.array([[ 0.299   ,  0.587   ,  0.114   ],   # noqa
 
 rgb_from_ypbpr = linalg.inv(ypbpr_from_rgb)
 
-ycbcr_from_rgb = np.array([[ 65.481,   128.553,    24.966],   # noqa
-                           [-37.797,   -74.203,   112.0  ],   # noqa
-                           [ 112.0 ,   -93.786,   -18.214]])  # noqa
+ycbcr_from_rgb = np.array(
+    [
+        [65.481, 128.553, 24.966],  # noqa
+        [-37.797, -74.203, 112.0],  # noqa
+        [112.0, -93.786, -18.214],
+    ]
+)  # noqa
 
 rgb_from_ycbcr = linalg.inv(ycbcr_from_rgb)
 
-ydbdr_from_rgb = np.array([[ 0.299,   0.587,    0.114],   # noqa
-                           [-0.45 ,  -0.883,    1.333],   # noqa
-                           [-1.333,   1.116,    0.217]])  # noqa
+ydbdr_from_rgb = np.array(
+    [
+        [0.299, 0.587, 0.114],  # noqa
+        [-0.45, -0.883, 1.333],  # noqa
+        [-1.333, 1.116, 0.217],
+    ]
+)  # noqa
 
 rgb_from_ydbdr = linalg.inv(ydbdr_from_rgb)
 
 
 # CIE LAB constants for Observer=2A, Illuminant=D65
 # NOTE: this is actually the XYZ values for the illuminant above.
-lab_ref_white = np.array([0.95047, 1., 1.08883])
+lab_ref_white = np.array([0.95047, 1.0, 1.08883])
 
 # XYZ coordinates of the illuminants, scaled to [0, 1]. For each illuminant I
 # we have:
@@ -550,31 +578,44 @@ lab_ref_white = np.array([0.95047, 1., 1.08883])
 #    ----------
 #    .. [1] https://en.wikipedia.org/wiki/Standard_illuminant
 
-_illuminants = \
-    {"A": {'2': (1.098466069456375, 1, 0.3558228003436005),
-           '10': (1.111420406956693, 1, 0.3519978321919493),
-           'R': (1.098466069456375, 1, 0.3558228003436005)},
-     "B": {'2': (0.9909274480248003, 1, 0.8531327322886154),
-           '10': (0.9917777147717607, 1, 0.8434930535866175),
-           'R': (0.9909274480248003, 1, 0.8531327322886154)},
-     "C": {'2': (0.980705971659919, 1, 1.1822494939271255),
-           '10': (0.9728569189782166, 1, 1.1614480488951577),
-           'R': (0.980705971659919, 1, 1.1822494939271255)},
-     "D50": {'2': (0.9642119944211994, 1, 0.8251882845188288),
-             '10': (0.9672062750333777, 1, 0.8142801513128616),
-             'R': (0.9639501491621826, 1, 0.8241280285499208)},
-     "D55": {'2': (0.956797052643698, 1, 0.9214805860173273),
-             '10': (0.9579665682254781, 1, 0.9092525159847462),
-             'R': (0.9565317453467969, 1, 0.9202554587037198)},
-     "D65": {'2': (0.95047, 1., 1.08883),   # This was: `lab_ref_white`
-             '10': (0.94809667673716, 1, 1.0730513595166162),
-             'R': (0.9532057125493769, 1, 1.0853843816469158)},
-     "D75": {'2': (0.9497220898840717, 1, 1.226393520724154),
-             '10': (0.9441713925645873, 1, 1.2064272211720228),
-             'R': (0.9497220898840717, 1, 1.226393520724154)},
-     "E": {'2': (1.0, 1.0, 1.0),
-           '10': (1.0, 1.0, 1.0),
-           'R': (1.0, 1.0, 1.0)}}
+_illuminants = {
+    "A": {
+        "2": (1.098466069456375, 1, 0.3558228003436005),
+        "10": (1.111420406956693, 1, 0.3519978321919493),
+        "R": (1.098466069456375, 1, 0.3558228003436005),
+    },
+    "B": {
+        "2": (0.9909274480248003, 1, 0.8531327322886154),
+        "10": (0.9917777147717607, 1, 0.8434930535866175),
+        "R": (0.9909274480248003, 1, 0.8531327322886154),
+    },
+    "C": {
+        "2": (0.980705971659919, 1, 1.1822494939271255),
+        "10": (0.9728569189782166, 1, 1.1614480488951577),
+        "R": (0.980705971659919, 1, 1.1822494939271255),
+    },
+    "D50": {
+        "2": (0.9642119944211994, 1, 0.8251882845188288),
+        "10": (0.9672062750333777, 1, 0.8142801513128616),
+        "R": (0.9639501491621826, 1, 0.8241280285499208),
+    },
+    "D55": {
+        "2": (0.956797052643698, 1, 0.9214805860173273),
+        "10": (0.9579665682254781, 1, 0.9092525159847462),
+        "R": (0.9565317453467969, 1, 0.9202554587037198),
+    },
+    "D65": {
+        "2": (0.95047, 1.0, 1.08883),  # This was: `lab_ref_white`
+        "10": (0.94809667673716, 1, 1.0730513595166162),
+        "R": (0.9532057125493769, 1, 1.0853843816469158),
+    },
+    "D75": {
+        "2": (0.9497220898840717, 1, 1.226393520724154),
+        "10": (0.9441713925645873, 1, 1.2064272211720228),
+        "R": (0.9497220898840717, 1, 1.226393520724154),
+    },
+    "E": {"2": (1.0, 1.0, 1.0), "10": (1.0, 1.0, 1.0), "R": (1.0, 1.0, 1.0)},
+}
 
 
 def xyz_tristimulus_values(*, illuminant, observer, dtype=None):
@@ -644,8 +685,10 @@ def xyz_tristimulus_values(*, illuminant, observer, dtype=None):
     try:
         return _illuminants[illuminant][observer]
     except KeyError:
-        raise ValueError(f'Unknown illuminant/observer combination '
-                         f'(`{illuminant}`, `{observer}`)')
+        raise ValueError(
+            f"Unknown illuminant/observer combination "
+            f"(`{illuminant}`, `{observer}`)"
+        )
 
 
 @deprecate_func(

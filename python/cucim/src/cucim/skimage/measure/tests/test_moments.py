@@ -61,8 +61,8 @@ def compare_moments(m1, m2, thresh=1e-8):
         assert rel_diff < thresh
 
 
-@pytest.mark.parametrize('dtype', [cp.float32, cp.float64])
-@pytest.mark.parametrize('anisotropic', [False, True, None])
+@pytest.mark.parametrize("dtype", [cp.float32, cp.float64])
+@pytest.mark.parametrize("anisotropic", [False, True, None])
 def test_moments(anisotropic, dtype):
     image = cp.zeros((20, 20), dtype=dtype)
     image[14, 14] = 1
@@ -84,8 +84,8 @@ def test_moments(anisotropic, dtype):
     assert_almost_equal(m[0, 1] / m[0, 0], 14.5 * spacing[1], decimal=decimal)
 
 
-@pytest.mark.parametrize('dtype', [cp.float32, cp.float64])
-@pytest.mark.parametrize('anisotropic', [False, True, None])
+@pytest.mark.parametrize("dtype", [cp.float32, cp.float64])
+@pytest.mark.parametrize("anisotropic", [False, True, None])
 def test_moments_central(anisotropic, dtype):
     image = cp.zeros((20, 20), dtype=dtype)
     image[14, 14] = 1
@@ -101,8 +101,9 @@ def test_moments_central(anisotropic, dtype):
         # check for proper centroid computation
         mu_calc_centroid = moments_central(image)
     else:
-        mu = moments_central(image, (14.5 * spacing[0], 14.5 * spacing[1]),
-                             spacing=spacing)
+        mu = moments_central(
+            image, (14.5 * spacing[0], 14.5 * spacing[1]), spacing=spacing
+        )
         # check for proper centroid computation
         mu_calc_centroid = moments_central(image, spacing=spacing)
     assert mu.dtype == dtype
@@ -121,7 +122,7 @@ def test_moments_central(anisotropic, dtype):
         mu2 = moments_central(
             image2,
             ((14.5 + 2) * spacing[0], (14.5 + 2) * spacing[1]),
-            spacing=spacing
+            spacing=spacing,
         )
     assert mu2.dtype == dtype
     # central moments must be translation invariant
@@ -133,13 +134,14 @@ def test_moments_coords():
     image[13:17, 13:17] = 1
     mu_image = moments(image)
 
-    coords = cp.array([[r, c] for r in range(13, 17)
-                       for c in range(13, 17)], dtype=cp.float64)
+    coords = cp.array(
+        [[r, c] for r in range(13, 17) for c in range(13, 17)], dtype=cp.float64
+    )
     mu_coords = moments_coords(coords)
     assert_array_almost_equal(mu_coords, mu_image)
 
 
-@pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])
+@pytest.mark.parametrize("dtype", [cp.float16, cp.float32, cp.float64])
 def test_moments_coords_dtype(dtype):
     image = cp.zeros((20, 20), dtype=dtype)
     image[13:17, 13:17] = 1
@@ -149,8 +151,9 @@ def test_moments_coords_dtype(dtype):
     assert mu_image.dtype == expected_dtype
 
     coords = cp.asarray(
-        np.array([[r, c] for r in range(13, 17)
-                  for c in range(13, 17)], dtype=dtype)
+        np.array(
+            [[r, c] for r in range(13, 17) for c in range(13, 17)], dtype=dtype
+        )
     )
     mu_coords = moments_coords(coords)
     assert mu_coords.dtype == expected_dtype
@@ -182,8 +185,9 @@ def test_moments_central_coords():
     mu_image = moments_central(image, (14.5, 14.5))
 
     coords = cp.asarray(
-        np.array([[r, c] for r in range(16, 20)
-                  for c in range(16, 20)], dtype=float)
+        np.array(
+            [[r, c] for r in range(16, 20) for c in range(16, 20)], dtype=float
+        )
     )
     mu_coords = moments_coords_central(coords, (14.5, 14.5))
     decimal = 6
@@ -205,7 +209,7 @@ def test_moments_normalized():
     assert_array_almost_equal(nu, nu2, decimal=1)
 
 
-@pytest.mark.parametrize('anisotropic', [False, True])
+@pytest.mark.parametrize("anisotropic", [False, True])
 def test_moments_normalized_spacing(anisotropic):
     image = cp.zeros((20, 20), dtype=np.double)
     image[13:17, 13:17] = 1
@@ -239,18 +243,18 @@ def test_moments_normalized_3d():
     assert_array_almost_equal(mu_coords, mu_image)
 
 
-@pytest.mark.parametrize('dtype', [np.uint8, np.int32, np.float32, np.float64])
-@pytest.mark.parametrize('order', [1, 2, 3, 4])
-@pytest.mark.parametrize('ndim', [2, 3, 4])
+@pytest.mark.parametrize("dtype", [np.uint8, np.int32, np.float32, np.float64])
+@pytest.mark.parametrize("order", [1, 2, 3, 4])
+@pytest.mark.parametrize("ndim", [2, 3, 4])
 def test_analytical_moments_calculation(dtype, order, ndim):
     if ndim == 2:
         shape = (256, 256)
     elif ndim == 3:
         shape = (64, 64, 64)
     else:
-        shape = (16, ) * ndim
+        shape = (16,) * ndim
     rng = np.random.default_rng(1234)
-    if np.dtype(dtype).kind in 'iu':
+    if np.dtype(dtype).kind in "iu":
         x = rng.integers(0, 256, shape, dtype=dtype)
     else:
         x = rng.standard_normal(shape, dtype=dtype)
@@ -289,7 +293,7 @@ def test_moments_hu():
     assert_array_almost_equal(hu, hu2, decimal=1)
 
 
-@pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])
+@pytest.mark.parametrize("dtype", [cp.float16, cp.float32, cp.float64])
 def test_moments_dtype(dtype):
     image = cp.zeros((20, 20), dtype=dtype)
     image[13:15, 13:17] = 1
@@ -305,7 +309,7 @@ def test_moments_dtype(dtype):
     assert hu.dtype == expected_dtype
 
 
-@pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])
+@pytest.mark.parametrize("dtype", [cp.float16, cp.float32, cp.float64])
 def test_centroid(dtype):
     image = cp.zeros((20, 20), dtype=dtype)
     image[14, 14:16] = 1
@@ -320,7 +324,7 @@ def test_centroid(dtype):
     assert_allclose(image_centroid, (14.25, 14.5), rtol=rtol)
 
 
-@pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])
+@pytest.mark.parametrize("dtype", [cp.float16, cp.float32, cp.float64])
 def test_inertia_tensor_2d(dtype):
     image = cp.zeros((40, 40), dtype=dtype)
     image[15:25, 5:35] = 1  # big horizontal rectangle (aligned with axis 1)
@@ -358,8 +362,9 @@ def test_inertia_tensor_3d():
                   [        0,          0, 1]])  # noqa
     # fmt: on
     expected_vr = R @ v0
-    assert (cp.allclose(vr, expected_vr, atol=1e-3, rtol=0.01) or
-            cp.allclose(-vr, expected_vr, atol=1e-3, rtol=0.01))
+    assert cp.allclose(vr, expected_vr, atol=1e-3, rtol=0.01) or cp.allclose(
+        -vr, expected_vr, atol=1e-3, rtol=0.01
+    )
 
 
 def test_inertia_tensor_eigvals():

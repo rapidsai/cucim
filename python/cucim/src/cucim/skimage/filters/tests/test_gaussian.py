@@ -37,38 +37,51 @@ def test_energy_decrease():
     assert gaussian_a.std() < a.std()
 
 
-@pytest.mark.parametrize('channel_axis', [0, 1, -1])
+@pytest.mark.parametrize("channel_axis", [0, 1, -1])
 def test_multichannel(channel_axis):
     a = np.zeros((5, 5, 3))
     a[1, 1] = np.arange(1, 4)
     a = np.moveaxis(a, -1, channel_axis)
     a = cp.asarray(a)
-    gaussian_rgb_a = gaussian(a, sigma=1, mode='reflect', preserve_range=True,
-                              channel_axis=channel_axis)
+    gaussian_rgb_a = gaussian(
+        a,
+        sigma=1,
+        mode="reflect",
+        preserve_range=True,
+        channel_axis=channel_axis,
+    )
     # Check that the mean value is conserved in each channel
     # (color channels are not mixed together)
     spatial_axes = tuple(
         [ax for ax in range(a.ndim) if ax != channel_axis % a.ndim]
     )
-    assert cp.allclose(a.mean(axis=spatial_axes),
-                       gaussian_rgb_a.mean(axis=spatial_axes))
+    assert cp.allclose(
+        a.mean(axis=spatial_axes), gaussian_rgb_a.mean(axis=spatial_axes)
+    )
 
     if channel_axis % a.ndim == 2:
         # Test legacy behavior equivalent to old (channel_axis = -1)
-        with expected_warnings(['Automatic detection of the color channel']):
-            gaussian_rgb_a = gaussian(a, sigma=1, mode='reflect',
-                                      preserve_range=True)
+        with expected_warnings(["Automatic detection of the color channel"]):
+            gaussian_rgb_a = gaussian(
+                a, sigma=1, mode="reflect", preserve_range=True
+            )
 
         # Check that the mean value is conserved in each channel
         # (color channels are not mixed together)
-        assert cp.allclose(a.mean(axis=spatial_axes),
-                           gaussian_rgb_a.mean(axis=spatial_axes))
+        assert cp.allclose(
+            a.mean(axis=spatial_axes), gaussian_rgb_a.mean(axis=spatial_axes)
+        )
     # Iterable sigma
-    gaussian_rgb_a = gaussian(a, sigma=[1, 2], mode='reflect',
-                              channel_axis=channel_axis,
-                              preserve_range=True)
-    assert cp.allclose(a.mean(axis=spatial_axes),
-                       gaussian_rgb_a.mean(axis=spatial_axes))
+    gaussian_rgb_a = gaussian(
+        a,
+        sigma=[1, 2],
+        mode="reflect",
+        channel_axis=channel_axis,
+        preserve_range=True,
+    )
+    assert cp.allclose(
+        a.mean(axis=spatial_axes), gaussian_rgb_a.mean(axis=spatial_axes)
+    )
 
 
 def test_preserve_range():
@@ -104,14 +117,13 @@ def test_4d_ok():
     assert cp.allclose(res.sum(), 1)
 
 
-@pytest.mark.parametrize(
-    "dtype", [cp.float32, cp.float64]
-)
+@pytest.mark.parametrize("dtype", [cp.float32, cp.float64])
 def test_preserve_output(dtype):
     image = cp.arange(9, dtype=dtype).reshape((3, 3))
     output = cp.zeros_like(image, dtype=dtype)
-    gaussian_image = gaussian(image, sigma=1, output=output,
-                              preserve_range=True)
+    gaussian_image = gaussian(
+        image, sigma=1, output=output, preserve_range=True
+    )
     assert gaussian_image is output
 
 
@@ -119,8 +131,7 @@ def test_output_error():
     image = cp.arange(9, dtype=cp.float32).reshape((3, 3))
     output = cp.zeros_like(image, dtype=cp.uint8)
     with pytest.raises(ValueError):
-        gaussian(image, sigma=1, output=output,
-                 preserve_range=True)
+        gaussian(image, sigma=1, output=output, preserve_range=True)
 
 
 @pytest.mark.parametrize("s", [1, (2, 3)])
@@ -169,9 +180,9 @@ def test_dog_invalid_sigma2():
 
 
 @pytest.mark.parametrize(
-    'dtype', [cp.uint8, cp.float16, cp.float32, cp.float64]
+    "dtype", [cp.uint8, cp.float16, cp.float32, cp.float64]
 )
-@pytest.mark.parametrize('sigma', range(1, 40, 5))
+@pytest.mark.parametrize("sigma", range(1, 40, 5))
 def test_shared_mem_check_fix(dtype, sigma):
     # Verify fix for gh-408 (no compilation errors occur).
     # Prior to the fix in gh-409, some float64 cases failed.
@@ -188,7 +199,7 @@ def test_deprecated_automatic_channel_detection():
     # Warning is raised if channel_axis is not set and shape is (M, N, 3)
     with pytest.warns(
         FutureWarning,
-        match="Automatic detection .* was deprecated .* Set `channel_axis=-1`"
+        match="Automatic detection .* was deprecated .* Set `channel_axis=-1`",
     ):
         filtered_rgb = gaussian(rgb, sigma=1, mode="reflect")
     # Check that the mean value is conserved in each channel
@@ -207,4 +218,5 @@ def test_deprecated_automatic_channel_detection():
 
     # Check how the proxy value shows up in the rendered function signature
     from cucim.skimage._shared.filters import ChannelAxisNotSet
+
     assert repr(ChannelAxisNotSet) == "<ChannelAxisNotSet>"

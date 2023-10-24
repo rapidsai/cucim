@@ -7,9 +7,17 @@ from ._pba_3d import _pba_3d
 #       support chamfer/chessboard and taxicab/manhattan distances too?
 
 
-def distance_transform_edt(image, sampling=None, return_distances=True,
-                           return_indices=False, distances=None, indices=None,
-                           *, block_params=None, float64_distances=False):
+def distance_transform_edt(
+    image,
+    sampling=None,
+    return_distances=True,
+    return_indices=False,
+    distances=None,
+    indices=None,
+    *,
+    block_params=None,
+    float64_distances=False,
+):
     r"""Exact Euclidean distance transform.
 
     This function calculates the distance transform of the `input`, by
@@ -158,7 +166,8 @@ def distance_transform_edt(image, sampling=None, return_distances=True,
         pba_func = _pba_2d
     else:
         raise NotImplementedError(
-            "Only 2D and 3D distance transforms are supported.")
+            "Only 2D and 3D distance transforms are supported."
+        )
 
     vals = pba_func(
         image,

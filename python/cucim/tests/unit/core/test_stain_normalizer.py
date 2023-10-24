@@ -22,14 +22,17 @@ from cucim.core.operations.color import (
 )
 
 
-class TestStainExtractorMacenko():
+class TestStainExtractorMacenko:
     @pytest.mark.parametrize(
-        'image, ErrorClass',
+        "image, ErrorClass",
         [
-            (cp.full((3, 2, 4), -1), ValueError),   # negative value
+            (cp.full((3, 2, 4), -1), ValueError),  # negative value
             (cp.full((3, 2, 4), 256), ValueError),  # out of range value
             (None, TypeError),
-            (cp.full((3, 2, 4), 240), ValueError),  # uniformly below the beta threshold  # noqa
+            (
+                cp.full((3, 2, 4), 240),
+                ValueError,
+            ),  # uniformly below the beta threshold  # noqa
         ],
     )
     def test_transparent_image(self, image, ErrorClass):
@@ -44,12 +47,12 @@ class TestStainExtractorMacenko():
             stain_extraction_pca(image)
 
     @pytest.mark.parametrize(
-        'image',
+        "image",
         [
             None,
             cp.full((3, 2, 4), 100),  # uniform, above beta absorbance thresh.
             cp.full((3, 2, 4), 150),  # uniform, above beta absorbance thresh.
-        ]
+        ],
     )
     def test_identical_result_vectors(self, image):
         """
@@ -68,7 +71,7 @@ class TestStainExtractorMacenko():
             cp.testing.assert_array_equal(result[:, 0], result[:, 1])
 
     @pytest.mark.parametrize(
-        'image, expected',
+        "image, expected",
         [
             (None, None),
             # uniformly zero -> two identical stains extracted
@@ -78,9 +81,9 @@ class TestStainExtractorMacenko():
                     [
                         [0.0, 0.0],
                         [0.70710678, 0.70710678],
-                        [0.70710678, 0.70710678]
+                        [0.70710678, 0.70710678],
                     ]
-                )
+                ),
             ),
             # input pixels not uniformly filled, leading to two different
             # stains extracted
@@ -100,7 +103,7 @@ class TestStainExtractorMacenko():
                     ]
                 ),
             ),
-        ]
+        ],
     )
     def test_result_value(self, image, expected):
         """
@@ -137,15 +140,15 @@ class TestStainExtractorMacenko():
             cp.testing.assert_allclose(result, expected)
 
 
-class TestStainNormalizerMacenko():
+class TestStainNormalizerMacenko:
     @pytest.mark.parametrize(
-        'image',
+        "image",
         [
-            cp.full((3, 2, 4), -1),   # negative value case
+            cp.full((3, 2, 4), -1),  # negative value case
             cp.full((3, 2, 4), 256),  # out of range value
             None,
             cp.full((3, 2, 5), 240),  # uniformly below the beta threshold
-        ]
+        ],
     )
     def test_transparent_image(self, image):
         """
@@ -163,7 +166,7 @@ class TestStainNormalizerMacenko():
                 normalize_colors_pca(image)
 
     @pytest.mark.parametrize(
-        'kwargs, image, expected',
+        "kwargs, image, expected",
         [
             # 1.) invalid image
             ({}, None, None),
@@ -236,7 +239,7 @@ class TestStainNormalizerMacenko():
                     ]
                 ),
             ],
-        ]
+        ],
     )
     def test_result_value(self, kwargs, image, expected):
         """Test that an input image returns an expected normalized image."""

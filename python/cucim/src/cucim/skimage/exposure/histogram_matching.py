@@ -8,7 +8,7 @@ def _match_cumulative_cdf(source, template):
     Return modified source array so that the cumulative density function of
     its values matches the cumulative density function of the template.
     """
-    if source.dtype.kind == 'u':
+    if source.dtype.kind == "u":
         src_lookup = source.reshape(-1)
         src_counts = cp.bincount(src_lookup)
         tmpl_counts = cp.bincount(template.reshape(-1))
@@ -17,11 +17,12 @@ def _match_cumulative_cdf(source, template):
         tmpl_values = cp.nonzero(tmpl_counts)[0]
         tmpl_counts = tmpl_counts[tmpl_values]
     else:
-        src_values, src_lookup, src_counts = cp.unique(source.reshape(-1),
-                                                       return_inverse=True,
-                                                       return_counts=True)
-        tmpl_values, tmpl_counts = cp.unique(template.reshape(-1),
-                                             return_counts=True)
+        src_values, src_lookup, src_counts = cp.unique(
+            source.reshape(-1), return_inverse=True, return_counts=True
+        )
+        tmpl_values, tmpl_counts = cp.unique(
+            template.reshape(-1), return_counts=True
+        )
 
     # calculate normalized quantiles for each array
     src_quantiles = cp.cumsum(src_counts) / source.size
@@ -66,23 +67,27 @@ def match_histograms(image, reference, *, channel_axis=None):
 
     """
     if image.ndim != reference.ndim:
-        raise ValueError('Image and reference must have the same number '
-                         'of channels.')
+        raise ValueError(
+            "Image and reference must have the same number " "of channels."
+        )
 
     if channel_axis is not None:
         if image.shape[channel_axis] != reference.shape[channel_axis]:
-            raise ValueError('Number of channels in the input image and '
-                             'reference image must match!')
+            raise ValueError(
+                "Number of channels in the input image and "
+                "reference image must match!"
+            )
 
         matched = cp.empty(image.shape, dtype=image.dtype)
         for channel in range(image.shape[-1]):
-            matched_channel = _match_cumulative_cdf(image[..., channel],
-                                                    reference[..., channel])
+            matched_channel = _match_cumulative_cdf(
+                image[..., channel], reference[..., channel]
+            )
             matched[..., channel] = matched_channel
     else:
         matched = _match_cumulative_cdf(image, reference)
 
-    if matched.dtype.kind == 'f':
+    if matched.dtype.kind == "f":
         # output a float32 result when the input is float16 or float32
         out_dtype = utils._supported_float_type(image.dtype)
         matched = matched.astype(out_dtype, copy=False)

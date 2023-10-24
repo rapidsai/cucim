@@ -14,7 +14,7 @@ from ._medial_axis_lookup import (
 
 # --------- Skeletonization and thinning based on Guo and Hall 1989 ---------
 
-
+# fmt: off
 _G123_LUT = np.array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0,
                       0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0,
                       0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1,
@@ -45,10 +45,14 @@ _G123P_LUT = np.array([0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0,
                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1,
                        0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                        0, 0, 0, 0, 0, 0, 0, 0, 0], dtype=bool)
+# fmt: on
 
 
-@deprecate_kwarg({"max_iter": "max_num_iter"}, removed_version="23.02.00",
-                 deprecated_version="22.02.00")
+@deprecate_kwarg(
+    {"max_iter": "max_num_iter"},
+    removed_version="23.02.00",
+    deprecated_version="22.02.00",
+)
 def thin(image, max_num_iter=None):
     """
     Perform morphological thinning of a binary image.
@@ -122,9 +126,9 @@ def thin(image, max_num_iter=None):
     skel = cp.asarray(image, dtype=bool).astype(cp.uint8)
 
     # neighborhood mask
-    mask = cp.asarray([[ 8,  4,   2],  # noqa
-                       [16,  0,   1],  # noqa
-                       [32, 64, 128]], dtype=cp.uint8)
+    mask = cp.asarray(
+        [[8, 4, 2], [16, 0, 1], [32, 64, 128]], dtype=cp.uint8  # noqa  # noqa
+    )
 
     G123_LUT = cp.asarray(_G123_LUT)
     G123P_LUT = cp.asarray(_G123P_LUT)
@@ -167,9 +171,9 @@ def _get_tiebreaker(n, seed):
 
 
 @deprecate_kwarg(
-    {'random_state': 'seed'},
-    deprecated_version='23.08',
-    removed_version='24.06'
+    {"random_state": "seed"},
+    deprecated_version="23.08",
+    removed_version="24.06",
 )
 def medial_axis(image, mask=None, return_distance=False, *, seed=None):
     """Compute the medial axis transform of a binary image.
@@ -302,10 +306,7 @@ def medial_axis(image, mask=None, return_distance=False, *, seed=None):
     # of skeletons
     tiebreaker = _get_tiebreaker(n=distance.size, seed=seed)
     order = cp.lexsort(
-        cp.stack(
-            (tiebreaker, corner_score[masked_image], distance),
-            axis=0
-        )
+        cp.stack((tiebreaker, corner_score[masked_image], distance), axis=0)
     )
 
     # Call _skeletonize_loop on the CPU. It requires a single pass over the
@@ -361,10 +362,7 @@ def _table_lookup(image, table):
     # at each point in the image
     #
     # max possible value of indexer is 512, so just use int16 dtype
-    kernel = cp.array(
-        [[256, 128, 64], [32, 16, 8], [4, 2, 1]],
-        dtype=cp.int16
-    )
+    kernel = cp.array([[256, 128, 64], [32, 16, 8], [4, 2, 1]], dtype=cp.int16)
     indexer = ndi.convolve(image, kernel, output=np.int16, mode="constant")
     image = table[indexer]
     return image

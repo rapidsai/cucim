@@ -26,8 +26,9 @@ def _find_boundaries_subpixel(label_img):
     ndim = label_img.ndim
     max_label = cp.iinfo(label_img.dtype).max
 
-    label_img_expanded = cp.full([(2 * s - 1) for s in label_img.shape],
-                                 max_label, label_img.dtype)
+    label_img_expanded = cp.full(
+        [(2 * s - 1) for s in label_img.shape], max_label, label_img.dtype
+    )
     pixels = (slice(None, None, 2),) * ndim
     label_img_expanded[pixels] = label_img
 
@@ -35,7 +36,7 @@ def _find_boundaries_subpixel(label_img):
     #                     ElementwiseKernel that counts # of unique values.
 
     # at most 2**ndim non max_label pixels in a 3**ndim shape neighborhood
-    max_possible_unique = 2 ** ndim
+    max_possible_unique = 2**ndim
 
     # Count the number of unique values aside from max_label or
     # the background.
@@ -43,7 +44,7 @@ def _find_boundaries_subpixel(label_img):
     rank_prev = ndi.minimum_filter(label_img_expanded, size=3)
     for n in range(1, max_possible_unique + 1):
         rank = ndi.rank_filter(label_img_expanded, n, size=3)
-        n_unique += (rank != rank_prev)
+        n_unique += rank != rank_prev
         rank_prev = rank
 
     # Boundaries occur where there is more than 1 unique value
@@ -161,26 +162,28 @@ def find_boundaries(label_img, connectivity=1, mode="thick", background=0):
            [False,  True,  True, False, False],
            [False,  True,  True, False, False]])
     """
-    if label_img.dtype == 'bool':
+    if label_img.dtype == "bool":
         label_img = label_img.astype(cp.uint8)
     ndim = label_img.ndim
     footprint = ndi.generate_binary_structure(ndim, connectivity)
-    if mode != 'subpixel':
-        boundaries = (dilation(label_img, footprint)
-                      != erosion(label_img, footprint))
-        if mode == 'inner':
+    if mode != "subpixel":
+        boundaries = dilation(label_img, footprint) != erosion(
+            label_img, footprint
+        )
+        if mode == "inner":
             foreground_image = label_img != background
             boundaries &= foreground_image
-        elif mode == 'outer':
+        elif mode == "outer":
             max_label = cp.iinfo(label_img.dtype).max
             background_image = label_img == background
             footprint = ndi.generate_binary_structure(ndim, ndim)
             inverted_background = cp.array(label_img, copy=True)
             inverted_background[background_image] = max_label
-            adjacent_objects = ((dilation(label_img, footprint) !=
-                                 erosion(inverted_background, footprint)) &
-                                ~background_image)
-            boundaries &= (background_image | adjacent_objects)
+            adjacent_objects = (
+                dilation(label_img, footprint)
+                != erosion(inverted_background, footprint)
+            ) & ~background_image
+            boundaries &= background_image | adjacent_objects
         return boundaries
     else:
         boundaries = _find_boundaries_subpixel(label_img)
@@ -188,9 +191,16 @@ def find_boundaries(label_img, connectivity=1, mode="thick", background=0):
 
 
 # Cupy Backend: added order keyword-only parameter
-def mark_boundaries(image, label_img, color=(1, 1, 0),
-                    outline_color=None, mode='outer', background_label=0,
-                    *, order=3):
+def mark_boundaries(
+    image,
+    label_img,
+    color=(1, 1, 0),
+    outline_color=None,
+    mode="outer",
+    background_label=0,
+    *,
+    order=3,
+):
     """Return image with boundaries between labeled regions highlighted.
 
     Parameters
@@ -231,15 +241,20 @@ def mark_boundaries(image, label_img, color=(1, 1, 0),
     marked = marked.astype(float_dtype, copy=False)
     if marked.ndim == 2:
         marked = gray2rgb(marked)
-    if mode == 'subpixel':
+    if mode == "subpixel":
         # Here, we want to interpose an extra line of pixels between
         # each original line - except for the last axis which holds
         # the RGB information. ``ndi.zoom`` then performs the (cubic)
         # interpolation, filling in the values of the interposed pixels
-        marked = ndi.zoom(marked, [2 - 1 / s for s in marked.shape[:-1]] + [1],
-                          mode='mirror', order=order)
-    boundaries = find_boundaries(label_img, mode=mode,
-                                 background=background_label)
+        marked = ndi.zoom(
+            marked,
+            [2 - 1 / s for s in marked.shape[:-1]] + [1],
+            mode="mirror",
+            order=order,
+        )
+    boundaries = find_boundaries(
+        label_img, mode=mode, background=background_label
+    )
     if outline_color is not None:
         outlines = dilation(boundaries, square(3))
         marked[outlines] = outline_color

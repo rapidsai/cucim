@@ -11,16 +11,16 @@ from cucim import _misc
 from .._shared._gradient import gradient
 from .._shared.utils import check_nD, deprecate_kwarg
 
-__all__ = ['morphological_chan_vese',
-           'morphological_geodesic_active_contour',
-           'inverse_gaussian_gradient',
-           'disk_level_set',
-           'checkerboard_level_set'
-           ]
+__all__ = [
+    "morphological_chan_vese",
+    "morphological_geodesic_active_contour",
+    "inverse_gaussian_gradient",
+    "disk_level_set",
+    "checkerboard_level_set",
+]
 
 
 class _fcycle:
-
     def __init__(self, iterable):
         """Call functions from the iterable each time it is called."""
         self.funcs = cycle(iterable)
@@ -32,10 +32,12 @@ class _fcycle:
 
 # SI and IS operators for 2D and 3D.
 def _get_P2():
-    _P2 = [cp.eye(3),
-           cp.array([[0, 1, 0]] * 3),
-           cp.array(np.flipud(np.eye(3))),
-           cp.array(np.rot90([[0, 1, 0]] * 3))]
+    _P2 = [
+        cp.eye(3),
+        cp.array([[0, 1, 0]] * 3),
+        cp.array(np.flipud(np.eye(3))),
+        cp.array(np.rot90([[0, 1, 0]] * 3)),
+    ]
     return _P2
 
 
@@ -76,8 +78,12 @@ def inf_sup(u, footprints, workspace=None):
     return dilations.min(0)
 
 
-_curvop = _fcycle([lambda u, f, w: sup_inf(inf_sup(u, f, w), f, w),   # SIoIS
-                   lambda u, f, w: inf_sup(sup_inf(u, f, w), f, w)])  # ISoSI
+_curvop = _fcycle(
+    [
+        lambda u, f, w: sup_inf(inf_sup(u, f, w), f, w),  # SIoIS
+        lambda u, f, w: inf_sup(sup_inf(u, f, w), f, w),
+    ]
+)  # ISoSI
 
 
 def _check_input(image, init_level_set):
@@ -85,8 +91,10 @@ def _check_input(image, init_level_set):
     check_nD(image, [2, 3])
 
     if len(image.shape) != len(init_level_set.shape):
-        raise ValueError("The dimensions of the initial level set do not "
-                         "match the dimensions of the image.")
+        raise ValueError(
+            "The dimensions of the initial level set do not "
+            "match the dimensions of the image."
+        )
 
 
 def _init_level_set(init_level_set, image_shape):
@@ -95,13 +103,14 @@ def _init_level_set(init_level_set, image_shape):
     If `init_level_set` is not a string, it is returned as is.
     """
     if isinstance(init_level_set, str):
-        if init_level_set == 'checkerboard':
+        if init_level_set == "checkerboard":
             res = checkerboard_level_set(image_shape)
-        elif init_level_set == 'disk':
+        elif init_level_set == "disk":
             res = disk_level_set(image_shape)
         else:
-            raise ValueError("`init_level_set` not in "
-                             "['checkerboard', 'circle', 'disk']")
+            raise ValueError(
+                "`init_level_set` not in " "['checkerboard', 'circle', 'disk']"
+            )
     else:
         res = init_level_set
     return res
@@ -211,7 +220,7 @@ def inverse_gaussian_gradient(image, alpha=100.0, sigma=5.0):
         Preprocessed image (or volume) suitable for
         `morphological_geodesic_active_contour`.
     """
-    gradnorm = ndi.gaussian_gradient_magnitude(image, sigma, mode='nearest')
+    gradnorm = ndi.gaussian_gradient_magnitude(image, sigma, mode="nearest")
     return _fused_inverse_kernel(gradnorm, alpha)
 
 
@@ -222,7 +231,12 @@ def _abs_grad_kernel(gx, gy):
 
 @cp.fuse()
 def _fused_variance_kernel(
-    image, c1, c2, lam1, lam2, abs_du,
+    image,
+    c1,
+    c2,
+    lam1,
+    lam2,
+    abs_du,
 ):
     difference_term = image - c1
     difference_term *= difference_term
@@ -238,12 +252,20 @@ def _fused_variance_kernel(
     return aux_lt0, aux_gt0
 
 
-@deprecate_kwarg({'iterations': 'num_iter'},
-                 removed_version="23.02.00",
-                 deprecated_version="22.02.00")
-def morphological_chan_vese(image, num_iter, init_level_set='checkerboard',
-                            smoothing=1, lambda1=1, lambda2=1,
-                            iter_callback=lambda x: None):
+@deprecate_kwarg(
+    {"iterations": "num_iter"},
+    removed_version="23.02.00",
+    deprecated_version="22.02.00",
+)
+def morphological_chan_vese(
+    image,
+    num_iter,
+    init_level_set="checkerboard",
+    smoothing=1,
+    lambda1=1,
+    lambda2=1,
+    iter_callback=lambda x: None,
+):
     """Morphological Active Contours without Edges (MorphACWE)
 
     Active contours without edges implemented with morphological operators. It
@@ -323,13 +345,13 @@ def morphological_chan_vese(image, num_iter, init_level_set='checkerboard',
     elif _misc.ndim(u) == 3:
         footprints = _get_P3()
     else:
-        raise ValueError("u has an invalid number of dimensions "
-                         "(should be 2 or 3)")
+        raise ValueError(
+            "u has an invalid number of dimensions " "(should be 2 or 3)"
+        )
     workspace = cp.empty(((len(footprints),) + u.shape), dtype=u.dtype)
 
     iter_callback(u)
     for i in range(num_iter):
-
         # inside = u > 0
         # outside = u <= 0
         c0 = (image * (1 - u)).sum()
@@ -355,13 +377,20 @@ def morphological_chan_vese(image, num_iter, init_level_set='checkerboard',
     return u
 
 
-@deprecate_kwarg({'iterations': 'num_iter'},
-                 removed_version="23.02.00",
-                 deprecated_version="22.02.00")
-def morphological_geodesic_active_contour(gimage, num_iter,
-                                          init_level_set='disk', smoothing=1,
-                                          threshold='auto', balloon=0,
-                                          iter_callback=lambda x: None):
+@deprecate_kwarg(
+    {"iterations": "num_iter"},
+    removed_version="23.02.00",
+    deprecated_version="22.02.00",
+)
+def morphological_geodesic_active_contour(
+    gimage,
+    num_iter,
+    init_level_set="disk",
+    smoothing=1,
+    threshold="auto",
+    balloon=0,
+    iter_callback=lambda x: None,
+):
     """Morphological Geodesic Active Contours (MorphGAC).
 
     Geodesic active contours implemented with morphological operators. It can
@@ -444,7 +473,7 @@ def morphological_geodesic_active_contour(gimage, num_iter,
 
     _check_input(image, init_level_set)
 
-    if threshold == 'auto':
+    if threshold == "auto":
         threshold = cp.percentile(image, 40)
 
     structure = cp.ones((3,) * len(image.shape), dtype=cp.int8)
@@ -460,14 +489,14 @@ def morphological_geodesic_active_contour(gimage, num_iter,
     elif _misc.ndim(u) == 3:
         footprints = _get_P3()
     else:
-        raise ValueError("u has an invalid number of dimensions "
-                         "(should be 2 or 3)")
+        raise ValueError(
+            "u has an invalid number of dimensions " "(should be 2 or 3)"
+        )
     workspace = cp.empty(((len(footprints),) + u.shape), dtype=u.dtype)
 
     iter_callback(u)
 
     for _ in range(num_iter):
-
         # Balloon
         if balloon > 0:
             aux = ndi.binary_dilation(u, structure)

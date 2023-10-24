@@ -33,8 +33,7 @@ VSCHARR_WEIGHTS = HSCHARR_WEIGHTS.T
 
 PREWITT_EDGE = np.array([1, 0, -1])
 PREWITT_SMOOTH = np.full((3,), 1 / 3)
-HPREWITT_WEIGHTS = (PREWITT_EDGE.reshape((3, 1))
-                    * PREWITT_SMOOTH.reshape((1, 3)))
+HPREWITT_WEIGHTS = PREWITT_EDGE.reshape((3, 1)) * PREWITT_SMOOTH.reshape((1, 3))
 VPREWITT_WEIGHTS = HPREWITT_WEIGHTS.T
 
 # 2D-only filter weights
@@ -137,8 +136,16 @@ def _reshape_nd(arr, ndim, dim):
     return cp.reshape(arr, kernel_shape)
 
 
-def _generic_edge_filter(image, *, smooth_weights, edge_weights=[1, 0, -1],
-                         axis=None, mode='reflect', cval=0.0, mask=None):
+def _generic_edge_filter(
+    image,
+    *,
+    smooth_weights,
+    edge_weights=[1, 0, -1],
+    axis=None,
+    mode="reflect",
+    cval=0.0,
+    mask=None,
+):
     """Apply a generic, n-dimensional edge filter.
 
     The filter is computed by applying the edge weights along one dimension
@@ -181,7 +188,7 @@ def _generic_edge_filter(image, *, smooth_weights, edge_weights=[1, 0, -1],
         axes = axis
     return_magnitude = len(axes) > 1
 
-    if image.dtype.kind == 'f':
+    if image.dtype.kind == "f":
         float_dtype = _supported_float_type(image.dtype)
         image = image.astype(float_dtype, copy=False)
     else:
@@ -200,14 +207,19 @@ def _generic_edge_filter(image, *, smooth_weights, edge_weights=[1, 0, -1],
     #               moderately faster for large 2D images and substantially
     #               faster in 3D and higher dimensions.
     for i, edge_dim in enumerate(axes):
-        ax_output = ndi.convolve1d(image, edge_weights, axis=edge_dim,
-                                   mode=mode, output=float_dtype)
+        ax_output = ndi.convolve1d(
+            image, edge_weights, axis=edge_dim, mode=mode, output=float_dtype
+        )
         smooth_axes = list(set(range(ndim)) - {edge_dim})
         for smooth_dim in smooth_axes:
             # TODO: why did this benchmark slower if output=ax_output was used?
-            ax_output = ndi.convolve1d(ax_output, smooth_weights,
-                                       axis=smooth_dim, mode=mode,
-                                       output=float_dtype)
+            ax_output = ndi.convolve1d(
+                ax_output,
+                smooth_weights,
+                axis=smooth_dim,
+                mode=mode,
+                output=float_dtype,
+            )
         if return_magnitude:
             ax_output *= ax_output
         if i == 0:
@@ -220,7 +232,7 @@ def _generic_edge_filter(image, *, smooth_weights, edge_weights=[1, 0, -1],
     return output
 
 
-def sobel(image, mask=None, *, axis=None, mode='reflect', cval=0.0):
+def sobel(image, mask=None, *, axis=None, mode="reflect", cval=0.0):
     """Find edges in an image using the Sobel filter.
 
     Parameters
@@ -271,8 +283,9 @@ def sobel(image, mask=None, *, axis=None, mode='reflect', cval=0.0):
     >>> camera = cp.array(data.camera())
     >>> edges = filters.sobel(camera)
     """
-    output = _generic_edge_filter(image, smooth_weights=SOBEL_SMOOTH,
-                                  axis=axis, mode=mode, cval=cval)
+    output = _generic_edge_filter(
+        image, smooth_weights=SOBEL_SMOOTH, axis=axis, mode=mode, cval=cval
+    )
     output = _mask_filter_result(output, mask)
     return output
 
@@ -337,7 +350,7 @@ def sobel_v(image, mask=None):
     return sobel(image, mask=mask, axis=1)
 
 
-def scharr(image, mask=None, *, axis=None, mode='reflect', cval=0.0):
+def scharr(image, mask=None, *, axis=None, mode="reflect", cval=0.0):
     """Find the edge magnitude using the Scharr transform.
 
     Parameters
@@ -393,8 +406,9 @@ def scharr(image, mask=None, *, axis=None, mode='reflect', cval=0.0):
     >>> camera = cp.array(data.camera())
     >>> edges = filters.scharr(camera)
     """
-    output = _generic_edge_filter(image, smooth_weights=SCHARR_SMOOTH,
-                                  axis=axis, mode=mode, cval=cval)
+    output = _generic_edge_filter(
+        image, smooth_weights=SCHARR_SMOOTH, axis=axis, mode=mode, cval=cval
+    )
     output = _mask_filter_result(output, mask)
     return output
 
@@ -468,7 +482,7 @@ def scharr_v(image, mask=None):
     return scharr(image, mask=mask, axis=1)
 
 
-def prewitt(image, mask=None, *, axis=None, mode='reflect', cval=0.0):
+def prewitt(image, mask=None, *, axis=None, mode="reflect", cval=0.0):
     """Find the edge magnitude using the Prewitt transform.
 
     Parameters
@@ -521,8 +535,9 @@ def prewitt(image, mask=None, *, axis=None, mode='reflect', cval=0.0):
     >>> camera = cp.array(data.camera())
     >>> edges = filters.prewitt(camera)
     """
-    output = _generic_edge_filter(image, smooth_weights=PREWITT_SMOOTH,
-                                  axis=axis, mode=mode, cval=cval)
+    output = _generic_edge_filter(
+        image, smooth_weights=PREWITT_SMOOTH, axis=axis, mode=mode, cval=cval
+    )
     output = _mask_filter_result(output, mask)
     return output
 
@@ -661,7 +676,7 @@ def roberts_pos_diag(image, mask=None):
 
     """
     check_nD(image, 2)
-    if image.dtype.kind == 'f':
+    if image.dtype.kind == "f":
         float_dtype = _supported_float_type(image.dtype)
         image = image.astype(float_dtype, copy=False)
     else:
@@ -701,7 +716,7 @@ def roberts_neg_diag(image, mask=None):
 
     """
     check_nD(image, 2)
-    if image.dtype.kind == 'f':
+    if image.dtype.kind == "f":
         float_dtype = _supported_float_type(image.dtype)
         image = image.astype(float_dtype, copy=False)
     else:
@@ -738,7 +753,7 @@ def laplace(image, ksize=3, mask=None):
     skimage.restoration.uft.laplacian().
 
     """
-    if image.dtype.kind == 'f':
+    if image.dtype.kind == "f":
         float_dtype = _supported_float_type(image.dtype)
         image = image.astype(float_dtype, copy=False)
     else:
@@ -756,7 +771,7 @@ def laplace(image, ksize=3, mask=None):
     return _mask_filter_result(result, mask)
 
 
-def farid(image, mask=None, *, axis=None, mode='reflect', cval=0.0):
+def farid(image, mask=None, *, axis=None, mode="reflect", cval=0.0):
     """Find the edge magnitude using the Farid transform.
 
     Parameters
@@ -814,9 +829,14 @@ def farid(image, mask=None, *, axis=None, mode='reflect', cval=0.0):
     >>> from cucim.skimage import filters
     >>> edges = filters.farid(camera)
     """
-    output = _generic_edge_filter(image, smooth_weights=farid_smooth,
-                                  edge_weights=farid_edge, axis=axis,
-                                  mode=mode, cval=cval)
+    output = _generic_edge_filter(
+        image,
+        smooth_weights=farid_smooth,
+        edge_weights=farid_edge,
+        axis=axis,
+        mode=mode,
+        cval=cval,
+    )
     output = _mask_filter_result(output, mask)
     return output
 
@@ -852,7 +872,7 @@ def farid_h(image, *, mask=None):
            Computer Analysis of Images and Patterns, Kiel, Germany. Sep, 1997.
     """
     check_nD(image, 2)
-    if image.dtype.kind == 'f':
+    if image.dtype.kind == "f":
         float_dtype = _supported_float_type(image.dtype)
         image = image.astype(float_dtype, copy=False)
     else:
@@ -889,7 +909,7 @@ def farid_v(image, *, mask=None):
            13(4): 496-508, 2004. :DOI:`10.1109/TIP.2004.823819`
     """
     check_nD(image, 2)
-    if image.dtype.kind == 'f':
+    if image.dtype.kind == "f":
         float_dtype = _supported_float_type(image.dtype)
         image = image.astype(float_dtype, copy=False)
     else:

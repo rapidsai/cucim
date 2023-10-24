@@ -20,8 +20,10 @@ class PearsonRConstantInputWarning(RuntimeWarning):
 
     def __init__(self, msg=None):
         if msg is None:
-            msg = ("An input array is constant; the correlation coefficient "
-                   "is not defined.")
+            msg = (
+                "An input array is constant; the correlation coefficient "
+                "is not defined."
+            )
         self.args = (msg,)
 
 
@@ -30,8 +32,10 @@ class PearsonRNearConstantInputWarning(RuntimeWarning):
 
     def __init__(self, msg=None):
         if msg is None:
-            msg = ("An input array is nearly constant; the computed "
-                   "correlation coefficient may be inaccurate.")
+            msg = (
+                "An input array is nearly constant; the computed "
+                "correlation coefficient may be inaccurate."
+            )
         self.args = (msg,)
 
 
@@ -195,10 +199,10 @@ def pearsonr(x, y, *, disable_checks=False):
     # inputs must be 1D
     n = len(x)
     if n != len(y):
-        raise ValueError('x and y must have the same length.')
+        raise ValueError("x and y must have the same length.")
 
     if n < 2:
-        raise ValueError('x and y must have length at least 2.')
+        raise ValueError("x and y must have length at least 2.")
 
     if not disable_checks:
         # If an input is constant, the correlation coefficient is not defined.

@@ -23,26 +23,25 @@ def assert_percentile_equal(arr1, arr2, pct=95):
     assert mismatch < pct_mismatch
 
 
-@pytest.mark.parametrize('return_indices', [False, True])
-@pytest.mark.parametrize('return_distances', [False, True])
+@pytest.mark.parametrize("return_indices", [False, True])
+@pytest.mark.parametrize("return_distances", [False, True])
 @pytest.mark.parametrize(
-    'shape, sampling',
+    "shape, sampling",
     [
         ((256, 128), None),
         ((384, 256), (1.5, 1.5)),
         ((384, 256), (3, 2)),  # integer-valued anisotropic
-        ((384, 256), (2.25, .85)),
+        ((384, 256), (2.25, 0.85)),
         ((14, 32, 50), None),
-        ((50, 32, 24), (2., 2., 2.)),
+        ((50, 32, 24), (2.0, 2.0, 2.0)),
         ((50, 32, 24), (3, 1, 2)),  # integer-valued anisotropic
     ],
 )
-@pytest.mark.parametrize('density', ['single_point', 5, 50, 95])
-@pytest.mark.parametrize('block_params', [None, (1, 1, 1)])
+@pytest.mark.parametrize("density", ["single_point", 5, 50, 95])
+@pytest.mark.parametrize("block_params", [None, (1, 1, 1)])
 def test_distance_transform_edt(
     shape, sampling, return_distances, return_indices, density, block_params
 ):
-
     if not (return_indices or return_distances):
         return
 
@@ -52,8 +51,8 @@ def test_distance_transform_edt(
         return_indices=return_indices,
     )
     kwargs_cucim = copy(kwargs_scipy)
-    kwargs_cucim['block_params'] = block_params
-    if density == 'single_point':
+    kwargs_cucim["block_params"] = block_params
+    if density == "single_point":
         img = cp.ones(shape, dtype=bool)
         img[tuple(s // 2 for s in shape)] = 0
     else:
@@ -78,7 +77,7 @@ def test_distance_transform_edt(
 
 
 @pytest.mark.parametrize(
-    'shape',
+    "shape",
     (
         [(s,) * 2 for s in range(512, 512 + 32)]
         + [(s,) * 2 for s in range(1024, 1024 + 16)]
@@ -86,9 +85,8 @@ def test_distance_transform_edt(
         + [(s,) * 2 for s in range(4100, 4100)]
     ),
 )
-@pytest.mark.parametrize('density', [2, 98])
+@pytest.mark.parametrize("density", [2, 98])
 def test_distance_transform_edt_additional_shapes(shape, density):
-
     kwargs_scipy = dict(return_distances=True, return_indices=False)
     kwargs_cucim = copy(kwargs_scipy)
     img = binary_image(shape, pct_true=density)
@@ -98,18 +96,17 @@ def test_distance_transform_edt_additional_shapes(shape, density):
 
 
 @pytest.mark.parametrize(
-    'shape',
+    "shape",
     [(s,) * 2 for s in range(1024, 1024 + 4)],
 )
 @pytest.mark.parametrize(
-    'block_params',
-    [(1, 1, 1), (5, 4, 2), (3, 8, 4), (7, 16, 1), (11, 32, 3), (1, 1, 16)]
+    "block_params",
+    [(1, 1, 1), (5, 4, 2), (3, 8, 4), (7, 16, 1), (11, 32, 3), (1, 1, 16)],
 )
 def test_distance_transform_edt_block_params(shape, block_params):
-
     kwargs_scipy = dict(return_distances=True, return_indices=False)
     kwargs_cucim = copy(kwargs_scipy)
-    kwargs_cucim['block_params'] = block_params
+    kwargs_cucim["block_params"] = block_params
     img = binary_image(shape, pct_true=4)
     distances = distance_transform_edt(img, **kwargs_cucim)
     expected = ndi_cpu.distance_transform_edt(cp.asnumpy(img), **kwargs_scipy)
@@ -117,13 +114,18 @@ def test_distance_transform_edt_block_params(shape, block_params):
 
 
 @pytest.mark.parametrize(
-    'block_params', [
-        (0, 1, 1), (1, 0, 1), (1, 1, 0),  # no elements can be < 1
-        (1, 3, 1), (1, 5, 1), (1, 7, 1),  # 2nd element must be a power of 2
+    "block_params",
+    [
+        (0, 1, 1),
+        (1, 0, 1),
+        (1, 1, 0),  # no elements can be < 1
+        (1, 3, 1),
+        (1, 5, 1),
+        (1, 7, 1),  # 2nd element must be a power of 2
         (128, 1, 1),  # m1 too large for the array size
         (1, 128, 1),  # m2 too large for the array size
         (1, 1, 128),  # m3 too large for the array size
-    ]
+    ],
 )
 def test_distance_transform_edt_block_params_invalid(block_params):
     img = binary_image((512, 512), pct_true=4)
@@ -131,11 +133,11 @@ def test_distance_transform_edt_block_params_invalid(block_params):
         distance_transform_edt(img, block_params=block_params)
 
 
-@pytest.mark.parametrize('value', [0, 1, 3])
-@pytest.mark.parametrize('ndim', [2, 3])
+@pytest.mark.parametrize("value", [0, 1, 3])
+@pytest.mark.parametrize("ndim", [2, 3])
 def test_distance_transform_edt_uniform_valued(value, ndim):
     """ensure default block_params is robust to anisotropic shape."""
-    img = cp.full((48, ) * ndim, value, dtype=cp.uint8)
+    img = cp.full((48,) * ndim, value, dtype=cp.uint8)
     # ensure there is at least 1 pixel at background intensity
     img[(slice(24, 25),) * ndim] = 0
     out = distance_transform_edt(img)
@@ -143,8 +145,8 @@ def test_distance_transform_edt_uniform_valued(value, ndim):
     cp.testing.assert_allclose(out, expected)
 
 
-@pytest.mark.parametrize('sx', list(range(16)))
-@pytest.mark.parametrize('sy', list(range(16)))
+@pytest.mark.parametrize("sx", list(range(16)))
+@pytest.mark.parametrize("sy", list(range(16)))
 def test_distance_transform_edt_2d_aniso(sx, sy):
     """ensure default block_params is robust to anisotropic shape."""
     shape = (128 + sy, 128 + sx)
@@ -154,14 +156,14 @@ def test_distance_transform_edt_2d_aniso(sx, sy):
     cp.testing.assert_allclose(out, expected)
 
 
-@pytest.mark.parametrize('ndim', [2, 3])
-@pytest.mark.parametrize('sampling', [None, 'iso', 'aniso'])
+@pytest.mark.parametrize("ndim", [2, 3])
+@pytest.mark.parametrize("sampling", [None, "iso", "aniso"])
 def test_distance_transform_inplace_distance(ndim, sampling):
-    img = binary_image((32, ) * ndim, pct_true=80)
+    img = binary_image((32,) * ndim, pct_true=80)
     distances = cp.empty(img.shape, dtype=cp.float32)
-    if sampling == 'iso':
+    if sampling == "iso":
         sampling = (1.5,) * ndim
-    elif sampling == 'aniso':
+    elif sampling == "aniso":
         sampling = tuple(range(1, ndim + 1))
     distance_transform_edt(img, sampling=sampling, distances=distances)
     expected = ndi_cpu.distance_transform_edt(
@@ -170,9 +172,9 @@ def test_distance_transform_inplace_distance(ndim, sampling):
     cp.testing.assert_allclose(distances, expected)
 
 
-@pytest.mark.parametrize('ndim', [2, 3])
+@pytest.mark.parametrize("ndim", [2, 3])
 def test_distance_transform_inplace_distance_errors(ndim):
-    img = binary_image((32, ) * ndim, pct_true=80)
+    img = binary_image((32,) * ndim, pct_true=80)
 
     # for binary input, distances output is float32. Other dtypes raise
     with pytest.raises(RuntimeError):
@@ -190,28 +192,34 @@ def test_distance_transform_inplace_distance_errors(ndim):
     # can't provide indices array when return_indices is False
     with pytest.raises(RuntimeError):
         distances = cp.empty(img.shape, dtype=cp.float32)
-        distance_transform_edt(img, distances=distances,
-                               return_distances=False, return_indices=True)
+        distance_transform_edt(
+            img,
+            distances=distances,
+            return_distances=False,
+            return_indices=True,
+        )
 
 
-@pytest.mark.parametrize('ndim', [2, 3])
-@pytest.mark.parametrize('sampling', [None, 'iso', 'aniso'])
-@pytest.mark.parametrize('dtype', [cp.int16, cp.uint16, cp.uint32, cp.int32,
-                                   cp.uint64, cp.int64])
-@pytest.mark.parametrize('return_distances', [False, True])
+@pytest.mark.parametrize("ndim", [2, 3])
+@pytest.mark.parametrize("sampling", [None, "iso", "aniso"])
+@pytest.mark.parametrize(
+    "dtype", [cp.int16, cp.uint16, cp.uint32, cp.int32, cp.uint64, cp.int64]
+)
+@pytest.mark.parametrize("return_distances", [False, True])
 def test_distance_transform_inplace_indices(
     ndim, sampling, dtype, return_distances
 ):
-    img = binary_image((32, ) * ndim, pct_true=80)
+    img = binary_image((32,) * ndim, pct_true=80)
     if ndim == 3 and dtype in [cp.int16, cp.uint16]:
         pytest.skip(reason="3d case requires at least 32-bit integer output")
-    if sampling == 'iso':
+    if sampling == "iso":
         sampling = (1.5,) * ndim
-    elif sampling == 'aniso':
+    elif sampling == "aniso":
         sampling = tuple(range(1, ndim + 1))
     common_kwargs = dict(
-        sampling=sampling, return_distances=return_distances,
-        return_indices=True
+        sampling=sampling,
+        return_distances=return_distances,
+        return_indices=True,
     )
     # verify that in-place and out-of-place results agree
     indices = cp.empty((ndim,) + img.shape, dtype=dtype)
@@ -223,9 +231,9 @@ def test_distance_transform_inplace_indices(
         cp.testing.assert_array_equal(indices, expected)
 
 
-@pytest.mark.parametrize('ndim', [2, 3])
+@pytest.mark.parametrize("ndim", [2, 3])
 def test_distance_transform_inplace_indices_errors(ndim):
-    img = binary_image((32, ) * ndim, pct_true=80)
+    img = binary_image((32,) * ndim, pct_true=80)
     common_kwargs = dict(return_distances=False, return_indices=True)
 
     # int8 has itemsize too small
@@ -249,9 +257,9 @@ def test_distance_transform_inplace_indices_errors(ndim):
         distance_transform_edt(img, indices=indices, return_indices=False)
 
 
-@pytest.mark.parametrize('sx', list(range(4)))
-@pytest.mark.parametrize('sy', list(range(4)))
-@pytest.mark.parametrize('sz', list(range(4)))
+@pytest.mark.parametrize("sx", list(range(4)))
+@pytest.mark.parametrize("sy", list(range(4)))
+@pytest.mark.parametrize("sz", list(range(4)))
 def test_distance_transform_edt_3d_aniso(sx, sy, sz):
     """ensure default block_params is robust to anisotropic shape."""
     shape = (16 + sz, 32 + sy, 48 + sx)
@@ -262,7 +270,7 @@ def test_distance_transform_edt_3d_aniso(sx, sy, sz):
     cp.testing.assert_allclose(out, expected)
 
 
-@pytest.mark.parametrize('ndim', [1, 4, 5])
+@pytest.mark.parametrize("ndim", [1, 4, 5])
 def test_distance_transform_edt_unsupported_ndim(ndim):
     with pytest.raises(NotImplementedError):
         distance_transform_edt(cp.zeros((8,) * ndim))

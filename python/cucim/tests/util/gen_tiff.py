@@ -20,13 +20,10 @@ from tempfile import mkdtemp
 import numpy as np
 from tifffile import TiffWriter
 
-COMPRESSION_MAP = {'jpeg': ('jpeg', 95),
-                   'deflate': 'deflate',
-                   'raw': None}
+COMPRESSION_MAP = {"jpeg": ("jpeg", 95), "deflate": "deflate", "raw": None}
 
 
 class TiffGenerator:
-
     def get_image(self, pattern, image_size):
         try:
             func = getattr(self, pattern)
@@ -37,9 +34,20 @@ class TiffGenerator:
             return func(image_size)
         return None
 
-    def save_image(self, image_data, dest_folder, file_name, kind, subpath,
-                   pattern, image_size, tile_size, compression, resolution,
-                   resolutionunit):
+    def save_image(
+        self,
+        image_data,
+        dest_folder,
+        file_name,
+        kind,
+        subpath,
+        pattern,
+        image_size,
+        tile_size,
+        compression,
+        resolution,
+        resolutionunit,
+    ):
         # You can add pyramid images (0: largest resolution)
         if isinstance(image_data, list):
             arr_stack = image_data
@@ -54,7 +62,8 @@ class TiffGenerator:
 
         # save as tif
         tiff_file_name = str(
-            (Path(dest_folder) / f'{file_name}.tif').absolute())
+            (Path(dest_folder) / f"{file_name}.tif").absolute()
+        )
 
         level_resolution = None
         with TiffWriter(tiff_file_name, bigtiff=True) as tif:
@@ -62,8 +71,10 @@ class TiffGenerator:
                 src_arr = arr_stack[level]
 
                 if resolution:
-                    level_resolution = (resolution[0] / (level + 1),
-                                        resolution[1] / (level + 1))
+                    level_resolution = (
+                        resolution[0] / (level + 1),
+                        resolution[1] / (level + 1),
+                    )
 
                 tif.write(
                     src_arr,
@@ -80,7 +91,6 @@ class TiffGenerator:
         return tiff_file_name
 
     def stripe(self, image_size):
-
         if 256 <= image_size[0] <= 4096:
             pyramid = True
         else:
@@ -102,9 +112,10 @@ class TiffGenerator:
             area = reduce(lambda x, y: x * y, size)
             # Use mmap if image size is larger than 1GB
             if area * 3 > 2**20 * 1024:
-                file_name = str(Path(mkdtemp()) / 'memmap.dat')
-                array = np.memmap(file_name, dtype=np.uint8,
-                                  mode='w+', shape=tuple(shape))
+                file_name = str(Path(mkdtemp()) / "memmap.dat")
+                array = np.memmap(
+                    file_name, dtype=np.uint8, mode="w+", shape=tuple(shape)
+                )
             else:
                 array = np.zeros(shape, dtype=np.uint8)
 

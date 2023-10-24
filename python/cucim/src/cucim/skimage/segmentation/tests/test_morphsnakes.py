@@ -13,7 +13,7 @@ from cucim.skimage.segmentation import (
 
 def gaussian_blob():
     coords = cp.mgrid[-5:6, -5:6]
-    sqrdistances = (coords ** 2).sum(0)
+    sqrdistances = (coords**2).sum(0)
     return cp.exp(-sqrdistances / 10)
 
 
@@ -24,8 +24,9 @@ def test_morphsnakes_incorrect_image_shape():
     with pytest.raises(ValueError):
         morphological_chan_vese(img, num_iter=1, init_level_set=ls)
     with pytest.raises(ValueError):
-        morphological_geodesic_active_contour(img, num_iter=1,
-                                              init_level_set=ls)
+        morphological_geodesic_active_contour(
+            img, num_iter=1, init_level_set=ls
+        )
 
 
 def test_morphsnakes_incorrect_ndim():
@@ -35,8 +36,9 @@ def test_morphsnakes_incorrect_ndim():
     with pytest.raises(ValueError):
         morphological_chan_vese(img, num_iter=1, init_level_set=ls)
     with pytest.raises(ValueError):
-        morphological_geodesic_active_contour(img, num_iter=1,
-                                              init_level_set=ls)
+        morphological_geodesic_active_contour(
+            img, num_iter=1, init_level_set=ls
+        )
 
 
 def test_morphsnakes_black():
@@ -49,15 +51,15 @@ def test_morphsnakes_black():
     acwe_ls = morphological_chan_vese(img, num_iter=6, init_level_set=ls)
     assert_array_equal(acwe_ls, ref_zeros)
 
-    gac_ls = morphological_geodesic_active_contour(img, num_iter=6,
-                                                   init_level_set=ls)
+    gac_ls = morphological_geodesic_active_contour(
+        img, num_iter=6, init_level_set=ls
+    )
 
     assert_array_equal(gac_ls, ref_zeros)
 
-    gac_ls2 = morphological_geodesic_active_contour(img, num_iter=6,
-                                                    init_level_set=ls,
-                                                    balloon=1, threshold=-1,
-                                                    smoothing=0)
+    gac_ls2 = morphological_geodesic_active_contour(
+        img, num_iter=6, init_level_set=ls, balloon=1, threshold=-1, smoothing=0
+    )
 
     assert_array_equal(gac_ls2, ref_ones)
 
@@ -75,8 +77,9 @@ def test_morphsnakes_iterations_kwarg_deprecation():
     assert_array_equal(acwe_ls, ref_zeros)
 
     with expected_warnings(["`iterations` is a deprecated argument"]):
-        gac_ls = morphological_geodesic_active_contour(img, iterations=6,
-                                                       init_level_set=ls)
+        gac_ls = morphological_geodesic_active_contour(
+            img, iterations=6, init_level_set=ls
+        )
     assert_array_equal(gac_ls, ref_zeros)
 
 
@@ -112,9 +115,9 @@ def test_morphsnakes_simple_shape_geodesic_active_contour():
                     [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]],
                    dtype=cp.int8)
     # fmt: on
-    gac_ls = morphological_geodesic_active_contour(gimg, num_iter=10,
-                                                   init_level_set=ls,
-                                                   balloon=-1)
+    gac_ls = morphological_geodesic_active_contour(
+        gimg, num_iter=10, init_level_set=ls, balloon=-1
+    )
 
     assert_array_equal(gac_ls, ref)
     assert gac_ls.dtype == cp.int8
@@ -122,7 +125,7 @@ def test_morphsnakes_simple_shape_geodesic_active_contour():
 
 def test_init_level_sets():
     image = cp.zeros((6, 6))
-    checkerboard_ls = morphological_chan_vese(image, 0, 'checkerboard')
+    checkerboard_ls = morphological_chan_vese(image, 0, "checkerboard")
     # fmt: off
     checkerboard_ref = cp.array([[0, 0, 0, 0, 0, 1],
                                  [0, 0, 0, 0, 0, 1],
@@ -152,8 +155,7 @@ def test_morphsnakes_3d():
     def callback(x):
         evolution.append(x.sum())
 
-    ls = morphological_chan_vese(image, 5, 'disk',
-                                 iter_callback=callback)
+    ls = morphological_chan_vese(image, 5, "disk", iter_callback=callback)
 
     # Check that the initial disk level set is correct
     assert evolution[0] == 81

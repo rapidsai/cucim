@@ -28,7 +28,7 @@ def scale_intensity_range(
     b_min: float,
     a_max: float,
     a_min: float,
-    clip: bool = False
+    clip: bool = False,
 ) -> Any:
     """
     Apply intensity scaling to the input array.
@@ -76,7 +76,7 @@ def scale_intensity_range(
     to_numpy = False
     if isinstance(img, np.ndarray):
         to_numpy = True
-        cupy_img = cupy.asarray(img, dtype=cupy.float32, order='C')
+        cupy_img = cupy.asarray(img, dtype=cupy.float32, order="C")
     elif not isinstance(img, cupy.ndarray):
         raise TypeError("img must be a cupy.ndarray or numpy.ndarray")
     else:
@@ -96,8 +96,8 @@ def scale_intensity_range(
     x = (b_max - b_min) / (a_max - a_min)
     y = a_min * x - b_min
     if clip is False:
-        b_max = float('inf')
-        b_min = float('-inf')
+        b_max = float("inf")
+        b_min = float("-inf")
 
     sh = img.shape
     total_size = np.prod(sh)
@@ -106,10 +106,19 @@ def scale_intensity_range(
 
     result = cupy.empty(img.shape, dtype=cupy_img.dtype)
 
-    scale((gridx, 1, 1), (blockx, 1, 1),
-          (cupy_img, result, np.float32(x), np.float32(y),
-          np.float32(b_min), np.float32(b_max),
-          np.int32(total_size)))
+    scale(
+        (gridx, 1, 1),
+        (blockx, 1, 1),
+        (
+            cupy_img,
+            result,
+            np.float32(x),
+            np.float32(y),
+            np.float32(b_min),
+            np.float32(b_max),
+            np.int32(total_size),
+        ),
+    )
 
     if img.dtype != cupy.float32:
         result = result.astype(img.dtype)

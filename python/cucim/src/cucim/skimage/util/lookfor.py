@@ -28,4 +28,4 @@ def lookfor(what):
     cucim.skimage.registration.optical_flow_tvl1
         Coarse to fine optical flow estimator.
     """
-    return np.lookfor(what, sys.modules[__name__.split('.')[0]])
+    return np.lookfor(what, sys.modules[__name__.split(".")[0]])

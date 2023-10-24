@@ -34,13 +34,12 @@ def test_vi():
 
 
 def test_vi_ignore_labels():
-    im1 = cp.array([[1, 0],
-                    [2, 3]], dtype='uint8')
-    im2 = cp.array([[1, 1],
-                    [1, 0]], dtype='uint8')
+    im1 = cp.array([[1, 0], [2, 3]], dtype="uint8")
+    im2 = cp.array([[1, 1], [1, 0]], dtype="uint8")
 
-    false_splits, false_merges = variation_of_information(im1, im2,
-                                                          ignore_labels=[0])
+    false_splits, false_merges = variation_of_information(
+        im1, im2, ignore_labels=[0]
+    )
     assert (false_splits, false_merges) == (0, 2 / 3)
 
 
@@ -49,15 +48,15 @@ def test_are():
     im_test = cp.array([[1, 2], [3, 1]])
     assert_almost_equal(
         tuple(map(float, adapted_rand_error(im_true, im_test))),
-        (0.3333333, 0.5, 1.0)
+        (0.3333333, 0.5, 1.0),
     )
     assert_almost_equal(
         tuple(map(float, adapted_rand_error(im_true, im_test, alpha=0))),
-        (0, 0.5, 1.0)
+        (0, 0.5, 1.0),
     )
     assert_almost_equal(
         tuple(map(float, adapted_rand_error(im_true, im_test, alpha=1))),
-        (0.5, 0.5, 1.0)
+        (0.5, 0.5, 1.0),
     )
 
     with pytest.raises(ValueError):

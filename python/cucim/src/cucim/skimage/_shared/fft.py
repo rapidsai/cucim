@@ -10,4 +10,4 @@ from cupyx.scipy.fft import next_fast_len
 
 fftmodule = cupyx.scipy.fft
 
-__all__ = ['fftmodule', 'next_fast_len']
+__all__ = ["fftmodule", "next_fast_len"]

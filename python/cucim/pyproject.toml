@@ -2,6 +2,7 @@
 # See file LICENSE for terms.
 
 [tool.isort]
+profile = "black"
 force_single_line = false
 line_length = 80
 forced_separate = "test_cucim"
@@ -85,24 +86,24 @@ line-length = 80
 [tool.ruff.per-file-ignores]
 # "src/cucim/skimage/util/tests/test_shape.py" = ["E201", "E202"]
 
-# [tool.black]
-# line-length = 80
-# target-version = ["py39"]
-# include = '\.py?$'
-# exclude = '''
-# /(
-#     thirdparty |
-#     \.eggs |
-#     \.git |
-#     \.hg |
-#     \.mypy_cache |
-#     \.tox |
-#     \.venv |
-#     _build |
-#     build |
-#     dist |
-# )/
-# '''
+[tool.black]
+line-length = 80
+target-version = ["py39"]
+include = '\.py?$'
+exclude = '''
+/(
+    thirdparty |
+    \.eggs |
+    \.git |
+    \.hg |
+    \.mypy_cache |
+    \.tox |
+    \.venv |
+    _build |
+    build |
+    dist |
+)/
+'''
 
 [tool.setuptools]
 license-files = ["LICENSE"]

@@ -65,8 +65,9 @@ def _get_constants(ndim, axis, kernel_size, anchor, patch_per_block=None):
     return block, patch_per_block, halo_size
 
 
-def _get_smem_shape(ndim, axis, block, patch_per_block, halo_size,
-                    image_dtype=cp.float32):
+def _get_smem_shape(
+    ndim, axis, block, patch_per_block, halo_size, image_dtype=cp.float32
+):
     bx, by, bz = block
     if ndim == 2:
         if axis == 0:
@@ -90,31 +91,31 @@ def _get_warp_size(device_id=None):
     if device_id is None:
         device_id = cp.cuda.runtime.getDevice()
     device_props = cp.cuda.runtime.getDeviceProperties(device_id)
-    return device_props['warpSize']
+    return device_props["warpSize"]
 
 
 def _get_shmem_limits(device_id=None):
     if device_id is None:
         device_id = cp.cuda.runtime.getDevice()
     device_props = cp.cuda.runtime.getDeviceProperties(device_id)
-    shared_mp = device_props.get('sharedMemPerMultiprocessor', None)
-    shared_block = device_props.get('sharedMemPerBlock', None)
-    shared_block_optin = device_props.get('sharedMemPerBlockOptin', None)
-    global_l1_cache_supported = device_props.get('globalL1CacheSupported', None)
-    local_l1_cache_supported = device_props.get('localL1CacheSupported', None)
-    l2_size = device_props.get('l2CacheSize', None)
-    warp_size = device_props.get('warpSize', None)
-    regs_per_block = device_props.get('regsPerBlock', None)
+    shared_mp = device_props.get("sharedMemPerMultiprocessor", None)
+    shared_block = device_props.get("sharedMemPerBlock", None)
+    shared_block_optin = device_props.get("sharedMemPerBlockOptin", None)
+    global_l1_cache_supported = device_props.get("globalL1CacheSupported", None)
+    local_l1_cache_supported = device_props.get("localL1CacheSupported", None)
+    l2_size = device_props.get("l2CacheSize", None)
+    warp_size = device_props.get("warpSize", None)
+    regs_per_block = device_props.get("regsPerBlock", None)
     return {
-        'device_id': device_id,
-        'shared_mp': shared_mp,
-        'shared_block': shared_block,
-        'shared_block_optin': shared_block_optin,
-        'global_l1_cache_supported': global_l1_cache_supported,
-        'local_l1_cache_supported': local_l1_cache_supported,
-        'l2_size': l2_size,
-        'warp_size': warp_size,
-        'regs_per_block': regs_per_block,
+        "device_id": device_id,
+        "shared_mp": shared_mp,
+        "shared_block": shared_block,
+        "shared_block_optin": shared_block_optin,
+        "global_l1_cache_supported": global_l1_cache_supported,
+        "local_l1_cache_supported": local_l1_cache_supported,
+        "l2_size": l2_size,
+        "warp_size": warp_size,
+        "regs_per_block": regs_per_block,
     }
 
 
@@ -123,9 +124,15 @@ class ResourceLimitError(RuntimeError):
 
 
 @cp.memoize(for_each_device=True)
-def _check_smem_availability(ndim, axis, kernel_size, anchor=None,
-                             patch_per_block=None, image_dtype=cp.float32,
-                             device_id=None):
+def _check_smem_availability(
+    ndim,
+    axis,
+    kernel_size,
+    anchor=None,
+    patch_per_block=None,
+    image_dtype=cp.float32,
+    device_id=None,
+):
     block, patch_per_block, halo_size = _get_constants(
         ndim, axis, kernel_size, anchor=anchor, patch_per_block=patch_per_block
     )
@@ -135,28 +142,28 @@ def _check_smem_availability(ndim, axis, kernel_size, anchor=None,
         block=block,
         patch_per_block=patch_per_block,
         halo_size=halo_size,
-        image_dtype=image_dtype
+        image_dtype=image_dtype,
     )
     props = _get_shmem_limits(device_id=device_id)
-    if nbytes > props['shared_block']:
+    if nbytes > props["shared_block"]:
         raise ResourceLimitError("inadequate shared memory available")
 
 
 _dtype_char_to_c_types = {
-    'e': 'float16',
-    'f': 'float',
-    'd': 'double',
-    'F': 'complex<float>',
-    'D': 'complex<double>',
-    '?': 'char',
-    'b': 'char',
-    'h': 'short',
-    'i': 'int',
-    'l': 'long long',
-    'B': 'unsigned char',
-    'H': 'unsigned short',
-    'I': 'unsigned int',
-    'L': 'unsigned long long',
+    "e": "float16",
+    "f": "float",
+    "d": "double",
+    "F": "complex<float>",
+    "D": "complex<double>",
+    "?": "char",
+    "b": "char",
+    "h": "short",
+    "i": "int",
+    "l": "long long",
+    "B": "unsigned char",
+    "H": "unsigned short",
+    "I": "unsigned int",
+    "L": "unsigned long long",
 }
 
 
@@ -169,8 +176,13 @@ def _get_code_stage1_shared_memory_load_2d(ndim, axis, mode, cval):
     """
 
     if ndim == 2 and axis == 0:
-        if mode not in ['constant', 'grid-constant']:
-            boundary_code_lower, boundary_code_upper = util._generate_boundary_condition_ops(mode, 'row', 'n_rows', separate=True)  # noqa
+        if mode not in ["constant", "grid-constant"]:
+            (
+                boundary_code_lower,
+                boundary_code_upper,
+            ) = util._generate_boundary_condition_ops(
+                mode, "row", "n_rows", separate=True
+            )  # noqa
 
         # as in OpenCV's column_filter.hpp
         code = """
@@ -199,7 +211,7 @@ def _get_code_stage1_shared_memory_load_2d(ndim, axis, mode, cval):
             for (int j = 0; j < HALO_SIZE; ++j) {
                 row = yStart - (HALO_SIZE - j) * BLOCK_DIM_Y;
         """  # noqa
-        if mode == 'constant':
+        if mode == "constant":
             code += f"""
                 if (row < 0)
                     smem[threadIdx.y + j * BLOCK_DIM_Y][threadIdx.x] = static_cast<T>({cval});
@@ -231,7 +243,7 @@ def _get_code_stage1_shared_memory_load_2d(ndim, axis, mode, cval):
             for (int j = 0; j < PATCH_PER_BLOCK; ++j) {
                 row = yStart + j * BLOCK_DIM_Y;
         """  # noqa
-        if mode == 'constant':
+        if mode == "constant":
             code += f"""
                 if (row >= n_rows)
                     smem[threadIdx.y + (HALO_SIZE + j) * BLOCK_DIM_Y][threadIdx.x] = static_cast<T>({cval});
@@ -249,7 +261,7 @@ def _get_code_stage1_shared_memory_load_2d(ndim, axis, mode, cval):
             {
                 row = yStart + (PATCH_PER_BLOCK + j) * BLOCK_DIM_Y;
         """  # noqa
-        if mode == 'constant':
+        if mode == "constant":
             code += f"""
                 if (row >= n_rows)
                     smem[threadIdx.y + (PATCH_PER_BLOCK + HALO_SIZE + j) * BLOCK_DIM_Y][threadIdx.x] = static_cast<T>({cval});
@@ -263,8 +275,13 @@ def _get_code_stage1_shared_memory_load_2d(ndim, axis, mode, cval):
         }
         """  # noqa
     elif ndim == 2 and axis == 1:
-        if mode not in ['constant', 'grid-constant']:
-            boundary_code_lower, boundary_code_upper = util._generate_boundary_condition_ops(mode, 'col', 'n_cols', separate=True)  # noqa
+        if mode not in ["constant", "grid-constant"]:
+            (
+                boundary_code_lower,
+                boundary_code_upper,
+            ) = util._generate_boundary_condition_ops(
+                mode, "col", "n_cols", separate=True
+            )  # noqa
 
         # as in OpenCV's row_filter.hpp
         code = """
@@ -292,7 +309,7 @@ def _get_code_stage1_shared_memory_load_2d(ndim, axis, mode, cval):
             for (int j = 0; j < HALO_SIZE; ++j){
                 col = xStart - (HALO_SIZE - j) * BLOCK_DIM_X;
         """  # noqa
-        if mode == 'constant':
+        if mode == "constant":
             code += f"""
                 if (col < 0)
                     smem[threadIdx.y][threadIdx.x + j * BLOCK_DIM_X] = static_cast<T>({cval});
@@ -323,7 +340,7 @@ def _get_code_stage1_shared_memory_load_2d(ndim, axis, mode, cval):
             for (int j = 0; j < PATCH_PER_BLOCK; ++j) {
                 col = xStart + j * BLOCK_DIM_X;
         """  # noqa
-        if mode == 'constant':
+        if mode == "constant":
             code += f"""
                 if (col >= n_cols)
                     smem[threadIdx.y][threadIdx.x + (HALO_SIZE + j) * BLOCK_DIM_X] = static_cast<T>({cval});
@@ -340,7 +357,7 @@ def _get_code_stage1_shared_memory_load_2d(ndim, axis, mode, cval):
             for (int j = 0; j < HALO_SIZE; ++j){
                 col = xStart + (PATCH_PER_BLOCK + j) * BLOCK_DIM_X;
         """  # noqa
-        if mode == 'constant':
+        if mode == "constant":
             code += f"""
                 if (col >= n_cols)
                     smem[threadIdx.y][threadIdx.x + (PATCH_PER_BLOCK + HALO_SIZE + j) * BLOCK_DIM_X] = static_cast<T>({cval});
@@ -369,8 +386,13 @@ def _get_code_stage1_shared_memory_load_3d(ndim, axis, mode, cval):
     """
 
     if ndim == 3 and axis == 0:
-        if mode not in ['constant', 'grid-constant']:
-            boundary_code_lower, boundary_code_upper = util._generate_boundary_condition_ops(mode, 'row', 's_0', separate=True)  # noqa
+        if mode not in ["constant", "grid-constant"]:
+            (
+                boundary_code_lower,
+                boundary_code_upper,
+            ) = util._generate_boundary_condition_ops(
+                mode, "row", "s_0", separate=True
+            )  # noqa
 
         # as in OpenCV's column_filter.hpp
         code = """
@@ -402,7 +424,7 @@ def _get_code_stage1_shared_memory_load_3d(ndim, axis, mode, cval):
             for (int j = 0; j < HALO_SIZE; ++j) {
                 row = zStart - (HALO_SIZE - j) * BLOCK_DIM_Z;
         """  # noqa
-        if mode == 'constant':
+        if mode == "constant":
             code += f"""
                 if (row < 0)
                     smem[threadIdx.z + j * BLOCK_DIM_Z][threadIdx.y][threadIdx.x] = static_cast<T>({cval});
@@ -434,7 +456,7 @@ def _get_code_stage1_shared_memory_load_3d(ndim, axis, mode, cval):
             for (int j = 0; j < PATCH_PER_BLOCK; ++j) {
                 row = zStart + j * BLOCK_DIM_Z;
         """  # noqa
-        if mode == 'constant':
+        if mode == "constant":
             code += f"""
                 if (row >= s_0)
                     smem[threadIdx.z + (HALO_SIZE + j) * BLOCK_DIM_Z][threadIdx.y][threadIdx.x] = static_cast<T>({cval});
@@ -452,7 +474,7 @@ def _get_code_stage1_shared_memory_load_3d(ndim, axis, mode, cval):
             {
                 row = zStart + (PATCH_PER_BLOCK + j) * BLOCK_DIM_Z;
         """  # noqa
-        if mode == 'constant':
+        if mode == "constant":
             code += f"""
                 if (row >= s_0)
                     smem[threadIdx.z + (PATCH_PER_BLOCK + HALO_SIZE + j) * BLOCK_DIM_Z][threadIdx.y][threadIdx.x] = static_cast<T>({cval});
@@ -466,8 +488,13 @@ def _get_code_stage1_shared_memory_load_3d(ndim, axis, mode, cval):
         }
         """  # noqa
     elif ndim == 3 and axis == 1:
-        if mode not in ['constant', 'grid-constant']:
-            boundary_code_lower, boundary_code_upper = util._generate_boundary_condition_ops(mode, 'row', 's_1', separate=True)  # noqa
+        if mode not in ["constant", "grid-constant"]:
+            (
+                boundary_code_lower,
+                boundary_code_upper,
+            ) = util._generate_boundary_condition_ops(
+                mode, "row", "s_1", separate=True
+            )  # noqa
 
         # as in OpenCV's column_filter.hpp
         code = """
@@ -499,7 +526,7 @@ def _get_code_stage1_shared_memory_load_3d(ndim, axis, mode, cval):
             for (int j = 0; j < HALO_SIZE; ++j) {
                 row = yStart - (HALO_SIZE - j) * BLOCK_DIM_Y;
         """  # noqa
-        if mode == 'constant':
+        if mode == "constant":
             code += f"""
                 if (row < 0)
                     smem[threadIdx.z][threadIdx.y + j * BLOCK_DIM_Y][threadIdx.x] = static_cast<T>({cval});
@@ -531,7 +558,7 @@ def _get_code_stage1_shared_memory_load_3d(ndim, axis, mode, cval):
             for (int j = 0; j < PATCH_PER_BLOCK; ++j) {
                 row = yStart + j * BLOCK_DIM_Y;
         """  # noqa
-        if mode == 'constant':
+        if mode == "constant":
             code += f"""
                 if (row >= s_1)
                     smem[threadIdx.z][threadIdx.y + (HALO_SIZE + j) * BLOCK_DIM_Y][threadIdx.x] = static_cast<T>({cval});
@@ -549,7 +576,7 @@ def _get_code_stage1_shared_memory_load_3d(ndim, axis, mode, cval):
             {
                 row = yStart + (PATCH_PER_BLOCK + j) * BLOCK_DIM_Y;
         """  # noqa
-        if mode == 'constant':
+        if mode == "constant":
             code += f"""
                 if (row >= s_1)
                     smem[threadIdx.z][threadIdx.y + (PATCH_PER_BLOCK + HALO_SIZE + j) * BLOCK_DIM_Y][threadIdx.x] = static_cast<T>({cval});
@@ -563,8 +590,13 @@ def _get_code_stage1_shared_memory_load_3d(ndim, axis, mode, cval):
         }
         """  # noqa
     elif ndim == 3 and axis == 2:
-        if mode not in ['constant', 'grid-constant']:
-            boundary_code_lower, boundary_code_upper = util._generate_boundary_condition_ops(mode, 'col', 's_2', separate=True)  # noqa
+        if mode not in ["constant", "grid-constant"]:
+            (
+                boundary_code_lower,
+                boundary_code_upper,
+            ) = util._generate_boundary_condition_ops(
+                mode, "col", "s_2", separate=True
+            )  # noqa
 
         # as in OpenCV's row_filter.hpp
         code = """
@@ -594,7 +626,7 @@ def _get_code_stage1_shared_memory_load_3d(ndim, axis, mode, cval):
             for (int j = 0; j < HALO_SIZE; ++j){
                 col = xStart - (HALO_SIZE - j) * BLOCK_DIM_X;
         """  # noqa
-        if mode == 'constant':
+        if mode == "constant":
             code += f"""
                 if (col < 0)
                     smem[threadIdx.z][threadIdx.y][threadIdx.x + j * BLOCK_DIM_X] = static_cast<T>({cval});
@@ -625,7 +657,7 @@ def _get_code_stage1_shared_memory_load_3d(ndim, axis, mode, cval):
             for (int j = 0; j < PATCH_PER_BLOCK; ++j) {
                 col = xStart + j * BLOCK_DIM_X;
         """  # noqa
-        if mode == 'constant':
+        if mode == "constant":
             code += f"""
                 if (col >= s_2)
                     smem[threadIdx.z][threadIdx.y][threadIdx.x + (HALO_SIZE + j) * BLOCK_DIM_X] = static_cast<T>({cval});
@@ -642,7 +674,7 @@ def _get_code_stage1_shared_memory_load_3d(ndim, axis, mode, cval):
             for (int j = 0; j < HALO_SIZE; ++j){
                 col = xStart + (PATCH_PER_BLOCK + j) * BLOCK_DIM_X;
         """  # noqa
-        if mode == 'constant':
+        if mode == "constant":
             code += f"""
                 if (col >= s_2)
                     smem[threadIdx.z][threadIdx.y][threadIdx.x + (PATCH_PER_BLOCK + HALO_SIZE + j) * BLOCK_DIM_X] = static_cast<T>({cval});
@@ -780,8 +812,17 @@ def _get_code_stage2_convolve(ndim, axis, flip_kernel):
 
 @cp.memoize(for_each_device=True)
 def _get_separable_conv_kernel_src(
-    kernel_size, axis, ndim, anchor, image_c_type, kernel_c_type,
-    output_c_type, mode, cval, patch_per_block=None, flip_kernel=False
+    kernel_size,
+    axis,
+    ndim,
+    anchor,
+    image_c_type,
+    kernel_c_type,
+    output_c_type,
+    mode,
+    cval,
+    patch_per_block=None,
+    flip_kernel=False,
 ):
     blocks, patch_per_block, halo_size = _get_constants(
         ndim, axis, kernel_size, anchor, patch_per_block
@@ -789,14 +830,21 @@ def _get_separable_conv_kernel_src(
     block_x, block_y, block_z = blocks
 
     mode_str = mode
-    if 'constant' in mode_str:
-        mode_str += f'_{cval:0.2f}'.replace('.', '_')
-    mode_str = mode_str.replace('-', '_')
+    if "constant" in mode_str:
+        mode_str += f"_{cval:0.2f}".replace(".", "_")
+    mode_str = mode_str.replace("-", "_")
     if flip_kernel:
-        func_name = f'convolve_s{kernel_size}_{ndim}d_ax{axis}_{mode_str}'
+        func_name = f"convolve_s{kernel_size}_{ndim}d_ax{axis}_{mode_str}"
     else:
-        func_name = f'correlate_s{kernel_size}_{ndim}d_ax{axis}_{mode_str}'
-    func_name += f"_T{image_c_type}_W{kernel_c_type}_D{output_c_type}".replace('complex<', 'c').replace('>', '').replace('long ', 'l').replace('unsigned ', 'u')  # noqa
+        func_name = f"correlate_s{kernel_size}_{ndim}d_ax{axis}_{mode_str}"
+    func_name += (
+        f"_T{image_c_type}_W{kernel_c_type}_D{output_c_type}".replace(
+            "complex<", "c"
+        )
+        .replace(">", "")
+        .replace("long ", "l")
+        .replace("unsigned ", "u")
+    )  # noqa
     func_name += f"_patch{patch_per_block}_halo{halo_size}"
     # func_name += f"_bx{block_x}_by{block_y}" // these are fixed per axis
 
@@ -843,10 +891,19 @@ def _get_separable_conv_kernel_src(
 
 
 @cp.memoize(for_each_device=True)
-def _get_separable_conv_kernel(kernel_size, axis, ndim, image_c_type,
-                               kernel_c_type, output_c_type, anchor=None,
-                               mode='nearest', cval=0,
-                               patch_per_block=None, flip_kernel=False):
+def _get_separable_conv_kernel(
+    kernel_size,
+    axis,
+    ndim,
+    image_c_type,
+    kernel_c_type,
+    output_c_type,
+    anchor=None,
+    mode="nearest",
+    cval=0,
+    patch_per_block=None,
+    flip_kernel=False,
+):
     func_name, block, patch_per_block, code = _get_separable_conv_kernel_src(
         kernel_size=kernel_size,
         axis=axis,
@@ -860,7 +917,7 @@ def _get_separable_conv_kernel(kernel_size, axis, ndim, image_c_type,
         patch_per_block=patch_per_block,
         flip_kernel=flip_kernel,
     )
-    options = ('--std=c++11', '-DCUPY_USE_JITIFY')
+    options = ("--std=c++11", "-DCUPY_USE_JITIFY")
     m = cp.RawModule(code=code, options=options)
     return m.get_function(func_name), block, patch_per_block
 
@@ -914,9 +971,16 @@ def _get_grid(shape, block, axis, patch_per_block):
     return grid
 
 
-def _shmem_convolve1d(image, weights, axis=-1, output=None, mode="reflect",
-                      cval=0.0, origin=0, convolution=False):
-
+def _shmem_convolve1d(
+    image,
+    weights,
+    axis=-1,
+    output=None,
+    mode="reflect",
+    cval=0.0,
+    origin=0,
+    convolution=False,
+):
     ndim = image.ndim
     if weights.ndim != 1:
         raise ValueError("expected 1d weight array")
@@ -939,15 +1003,21 @@ def _shmem_convolve1d(image, weights, axis=-1, output=None, mode="reflect",
 
     if weights.size > 32:
         # For large kernels, make sure we have adequate shared memory
-        _check_smem_availability(ndim, axis, weights.size, anchor=anchor,
-                                 patch_per_block=None, image_dtype=image.dtype,
-                                 device_id=None)
+        _check_smem_availability(
+            ndim,
+            axis,
+            weights.size,
+            anchor=anchor,
+            patch_per_block=None,
+            image_dtype=image.dtype,
+            device_id=None,
+        )
 
     # CUDA kernels assume C-contiguous memory layout
     if not image.flags.c_contiguous:
         image = cp.ascontiguousarray(image)
 
-    complex_output = image.dtype.kind == 'c'
+    complex_output = image.dtype.kind == "c"
     # Note: important to set use_cucim_casting=True for performance with
     #       8 and 16-bit integer types. This causes the weights to get cast to
     #       float32 rather than float64.
@@ -958,11 +1028,11 @@ def _shmem_convolve1d(image, weights, axis=-1, output=None, mode="reflect",
         weights = cp.ascontiguousarray(weights, weights_dtype)
 
     # promote output to nearest complex dtype if necessary
-    complex_output = complex_output or weights.dtype.kind == 'c'
+    complex_output = complex_output or weights.dtype.kind == "c"
     output = util._get_output(output, image, None, complex_output)
 
     # handle potential overlap between input and output arrays
-    needs_temp = cp.shares_memory(output, image, 'MAY_SHARE_BOUNDS')
+    needs_temp = cp.shares_memory(output, image, "MAY_SHARE_BOUNDS")
     if needs_temp:
         output, temp = util._get_output(output.dtype, input), output
 

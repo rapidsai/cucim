@@ -3,9 +3,13 @@ from ._clear_border import clear_border
 from ._expand_labels import expand_labels
 from ._join import join_segmentations, relabel_sequential
 from .boundaries import find_boundaries, mark_boundaries
-from .morphsnakes import (checkerboard_level_set, disk_level_set,
-                          inverse_gaussian_gradient, morphological_chan_vese,
-                          morphological_geodesic_active_contour)
+from .morphsnakes import (
+    checkerboard_level_set,
+    disk_level_set,
+    inverse_gaussian_gradient,
+    morphological_chan_vese,
+    morphological_geodesic_active_contour,
+)
 from .random_walker_segmentation import random_walker
 
 __all__ = [

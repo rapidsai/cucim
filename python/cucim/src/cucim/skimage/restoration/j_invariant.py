@@ -37,7 +37,7 @@ def _interpolate_image(image, *, multichannel=False):
     # CuPy Backend: refactored below to avoid for loop
     if multichannel:
         conv_filter = conv_filter[..., np.newaxis]
-    interp = ndi.convolve(image, conv_filter, mode='mirror')
+    interp = ndi.convolve(image, conv_filter, mode="mirror")
     return interp
 
 
@@ -89,8 +89,9 @@ def _generate_grid_slice(shape, *, offset, stride=3):
     return mask
 
 
-def denoise_invariant(image, denoise_function, *, stride=4, masks=None,
-                      denoiser_kwargs=None):
+def denoise_invariant(
+    image, denoise_function, *, stride=4, masks=None, denoiser_kwargs=None
+):
     """Apply a J-invariant version of `denoise_function`.
 
     Parameters
@@ -150,20 +151,23 @@ def denoise_invariant(image, denoise_function, *, stride=4, masks=None,
     if denoiser_kwargs is None:
         denoiser_kwargs = {}
 
-    if 'multichannel' in denoiser_kwargs:
-        multichannel = denoiser_kwargs['multichannel']
+    if "multichannel" in denoiser_kwargs:
+        multichannel = denoiser_kwargs["multichannel"]
     else:
-        multichannel = denoiser_kwargs.get('channel_axis', None) is not None
+        multichannel = denoiser_kwargs.get("channel_axis", None) is not None
 
     interp = _interpolate_image(image, multichannel=multichannel)
     output = cp.zeros_like(image)
 
     if masks is None:
         spatialdims = image.ndim if not multichannel else image.ndim - 1
-        n_masks = stride ** spatialdims
-        masks = (_generate_grid_slice(image.shape[:spatialdims],
-                                      offset=idx, stride=stride)
-                 for idx in range(n_masks))
+        n_masks = stride**spatialdims
+        masks = (
+            _generate_grid_slice(
+                image.shape[:spatialdims], offset=idx, stride=stride
+            )
+            for idx in range(n_masks)
+        )
 
     for mask in masks:
         input_image = image.copy()
@@ -194,9 +198,15 @@ def _product_from_dict(dictionary):
         yield dict(zip(keys, element))
 
 
-def calibrate_denoiser(image, denoise_function, denoise_parameters, *,
-                       stride=4, approximate_loss=True,
-                       extra_output=False):
+def calibrate_denoiser(
+    image,
+    denoise_function,
+    denoise_parameters,
+    *,
+    stride=4,
+    approximate_loss=True,
+    extra_output=False,
+):
     """Calibrate a denoising function and return optimal J-invariant version.
 
     The returned function is partially evaluated with optimal parameter values
@@ -270,10 +280,11 @@ def calibrate_denoiser(image, denoise_function, denoise_parameters, *,
 
     """  # noqa
     parameters_tested, losses = _calibrate_denoiser_search(
-        image, denoise_function,
+        image,
+        denoise_function,
         denoise_parameters=denoise_parameters,
         stride=stride,
-        approximate_loss=approximate_loss
+        approximate_loss=approximate_loss,
     )
 
     idx = np.argmin(losses)
@@ -292,8 +303,14 @@ def calibrate_denoiser(image, denoise_function, denoise_parameters, *,
         return best_denoise_function
 
 
-def _calibrate_denoiser_search(image, denoise_function, denoise_parameters, *,
-                               stride=4, approximate_loss=True):
+def _calibrate_denoiser_search(
+    image,
+    denoise_function,
+    denoise_parameters,
+    *,
+    stride=4,
+    approximate_loss=True,
+):
     """Return a parameter search history with losses for a denoise function.
 
     Parameters
@@ -325,28 +342,30 @@ def _calibrate_denoiser_search(image, denoise_function, denoise_parameters, *,
     losses = []
 
     for denoiser_kwargs in parameters_tested:
-        if 'multichannel' in denoiser_kwargs:
-            multichannel = denoiser_kwargs['multichannel']
+        if "multichannel" in denoiser_kwargs:
+            multichannel = denoiser_kwargs["multichannel"]
         else:
-            multichannel = \
-                denoiser_kwargs.get('channel_axis', None) is not None
+            multichannel = denoiser_kwargs.get("channel_axis", None) is not None
         if not approximate_loss:
             denoised = denoise_invariant(
-                image, denoise_function,
+                image,
+                denoise_function,
                 stride=stride,
-                denoiser_kwargs=denoiser_kwargs
+                denoiser_kwargs=denoiser_kwargs,
             )
             loss = mean_squared_error(image, denoised)
         else:
             spatialdims = image.ndim if not multichannel else image.ndim - 1
-            n_masks = stride ** spatialdims
-            mask = _generate_grid_slice(image.shape[:spatialdims],
-                                        offset=n_masks // 2, stride=stride)
+            n_masks = stride**spatialdims
+            mask = _generate_grid_slice(
+                image.shape[:spatialdims], offset=n_masks // 2, stride=stride
+            )
 
             masked_denoised = denoise_invariant(
-                image, denoise_function,
+                image,
+                denoise_function,
                 masks=[mask],
-                denoiser_kwargs=denoiser_kwargs
+                denoiser_kwargs=denoiser_kwargs,
             )
 
             loss = mean_squared_error(image[mask], masked_denoised[mask])
