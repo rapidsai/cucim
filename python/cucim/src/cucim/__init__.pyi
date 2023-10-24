@@ -27,9 +27,6 @@ try:
     _is_clara_available = True
     submodules += ['clara']
 except ImportError:
-    from ._version import get_versions
-    __version__ = get_versions()['version']
-    del get_versions
-    del _version
+    __version__ = "23.12.00"
 
 __all__ = submodules + ['__version__', 'is_available']

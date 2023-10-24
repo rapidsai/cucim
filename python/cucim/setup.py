@@ -5,7 +5,6 @@ import io
 import sys
 from os.path import dirname, join
 
-import versioneer
 from setuptools import find_packages, setup
 
 # Give setuptools a hint to complain if it's too old a version
@@ -26,8 +25,7 @@ def read(*names, **kwargs):
 
 opts = dict(
     name='cucim',
-    version=read('VERSION').strip(),  # versioneer.get_version(),
-    cmdclass=versioneer.get_cmdclass(),
+    version=read('VERSION').strip(),
     license='Apache-2.0',
     description='cuCIM - an extensible toolkit designed to provide GPU accelerated I/O, computer vision & image processing primitives for N-Dimensional images with a focus on biomedical imaging.',  # noqa
     long_description='%s\n%s' % (
