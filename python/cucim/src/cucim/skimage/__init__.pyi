@@ -1,19 +1,19 @@
 import lazy_loader as lazy  # noqa: F401
 
 submodules = [
-    'color',
-    'data',
-    'exposure',
-    'feature',
-    'filters',
-    'measure',
-    'metrics',
-    'morphology',
-    'registration',
-    'restoration',
-    'segmentation',
-    'transform',
-    'util',
+    "color",
+    "data",
+    "exposure",
+    "feature",
+    "filters",
+    "measure",
+    "metrics",
+    "morphology",
+    "registration",
+    "restoration",
+    "segmentation",
+    "transform",
+    "util",
 ]
 
 __all__ = submodules

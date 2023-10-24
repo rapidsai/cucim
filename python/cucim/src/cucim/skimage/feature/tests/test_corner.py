@@ -224,7 +224,7 @@ def test_hessian_matrix_3d_xy(use_gaussian_derivatives):
         hessian_matrix(
             img,
             sigma=0.1,
-            order="nonexistant",
+            order="nonexistent",
             use_gaussian_derivatives=use_gaussian_derivatives,
         )
 

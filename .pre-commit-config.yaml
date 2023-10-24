@@ -15,10 +15,22 @@ repos:
     hooks:
       - id: isort
         files: ^python/cucim/src/.*
-        args: ["--settings-path=python/cucim/setup.cfg"]
-  - repo: https://github.com/PyCQA/flake8
-    rev: 6.0.0
+        args: ["--settings-path=python/cucim/pyproject.toml"]
+  - repo: https://github.com/psf/black
+    rev: 23.3.0
     hooks:
-      - id: flake8
-        args: ["--config=python/cucim/setup.cfg"]
-        files: ^python/cucim/.*
+      - id: black
+        files: (python|legate)/.*
+        args: ["--config", "python/cucim/pyproject.toml"]
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.0.278
+    hooks:
+      - id: ruff
+        files: python/.*$
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.2.4
+    hooks:
+      - id: codespell
+        args: [--toml, python/cucim/pyproject.toml]
+        additional_dependencies:
+          - tomli
