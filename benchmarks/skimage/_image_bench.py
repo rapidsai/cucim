@@ -33,7 +33,6 @@ class ImageBench(object):
         fixed_kwargs={},
         var_kwargs={},
         index_str=None,  # extra string to append to dataframe index
-        # set_args_kwargs={},  # for passing additional arguments to custom set_args method
         module_cpu=scipy.ndimage,
         module_gpu=cupyx.scipy.ndimage,
         function_is_generator=False,
@@ -181,7 +180,7 @@ class ImageBench(object):
                 df.at[index, "dtype"] = np.dtype(dtype).name
                 df.at[index, "ndim"] = len(self.shape)
 
-                if self.run_cpu == True:
+                if self.run_cpu is True:
                     perf = repeat(
                         self.func_cpu, self.args_cpu, kw_cpu, **rep_kwargs_cpu
                     )

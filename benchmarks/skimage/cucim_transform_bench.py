@@ -154,6 +154,7 @@ def main(args):
             module_cpu=skimage.transform,
             module_gpu=cucim.skimage.transform,
             function_is_generator=function_is_generator,
+            run_cpu=run_cpu,
         )
         results = B.run_benchmark(duration=args.duration)
         all_results = pd.concat([all_results, results["full"]])
@@ -162,7 +163,7 @@ def main(args):
     all_results.to_csv(fbase + ".csv")
     all_results.to_pickle(pfile)
     try:
-        import tabular
+        import tabular  # noqa: F401
 
         with open(fbase + ".md", "wt") as f:
             f.write(all_results.to_markdown())

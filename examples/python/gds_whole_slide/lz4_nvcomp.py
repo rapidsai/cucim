@@ -20,9 +20,9 @@ def ensure_ndarray(buf):
 def ensure_contiguous_ndarray(buf, max_buffer_size=None, flatten=True):
     """Convenience function to coerce `buf` to ndarray-like array.
     Also ensures that the returned value exports fully contiguous memory,
-    and supports the new-style buffer interface. If the optional max_buffer_size is
-    provided, raise a ValueError if the number of bytes consumed by the returned
-    array exceeds this value.
+    and supports the new-style buffer interface. If the optional max_buffer_size
+    is provided, raise a ValueError if the number of bytes consumed by the
+    returned array exceeds this value.
 
     Parameters
     ----------
@@ -52,7 +52,8 @@ def ensure_contiguous_ndarray(buf, max_buffer_size=None, flatten=True):
     if arr.dtype == object:
         raise TypeError("object arrays are not supported")
 
-    # check for datetime or timedelta ndarray, the buffer interface doesn't support those
+    # check for datetime or timedelta ndarray, the buffer interface doesn't
+    # support those
     if arr.dtype.kind in "Mm":
         arr = arr.view(np.int64)
 

@@ -98,7 +98,7 @@ for i, dtype in enumerate(dtypes):
                 write_time_means[i, j, k, m] = t.mean()
                 write_time_stds[i, j, k, m] = t.std()
                 print(
-                    f"Duration ({cp.dtype(dtype).name} write, {chunk_shape=}, {backend=}, {gds_enabled=}): "
+                    f"Duration ({cp.dtype(dtype).name} write, {chunk_shape=}, {backend=}, {gds_enabled=}): "  # noqa: E501
                     f"{t.mean()} s +/- {t.std()} s"
                 )
 out_name = "write_times.npz"

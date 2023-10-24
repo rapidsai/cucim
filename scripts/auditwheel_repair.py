@@ -14,10 +14,7 @@
 # limitations under the License.
 
 import functools
-import glob
 import re
-import sys
-from os.path import join
 from unittest.mock import patch
 
 import auditwheel.elfutils
@@ -95,7 +92,7 @@ def inwheelctx_enter(self):
 
 
 # # sys.argv replacement
-# testargs = ["auditwheel_repair.py", "repair", "--plat", "manylinux2014_x86_64", "-w", "wherehouse", "cuclara_image-0.1.1-py3-none-manylinux2014_x86_64.whl"]
+# testargs = ["auditwheel_repair.py", "repair", "--plat", "manylinux2014_x86_64", "-w", "wherehouse", "cuclara_image-0.1.1-py3-none-manylinux2014_x86_64.whl"]  # noqa: E501
 # with patch.object(sys, 'argv', testargs):
 
 if __name__ == "__main__":

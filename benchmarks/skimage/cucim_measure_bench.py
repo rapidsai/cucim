@@ -239,7 +239,7 @@ def main(args):
 
             for contiguous_labels in [True, False]:
                 if contiguous_labels:
-                    index_str = f"contiguous"
+                    index_str = "contiguous"
                 else:
                     index_str = None
                 B = Tester(

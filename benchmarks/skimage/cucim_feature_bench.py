@@ -38,9 +38,9 @@ class BlobDetectionBench(ImageBench):
             locs = np.unravel_index(offsets, img.shape)
             for loc in zip(*locs):
                 loc = tuple(
-                    min(l, s - es) for l, s, es in zip(loc, img.shape, e.shape)
+                    min(p, s - es) for p, s, es in zip(loc, img.shape, e.shape)
                 )
-                sl = tuple(slice(l, l + es) for l, es in zip(loc, e.shape))
+                sl = tuple(slice(p, p + es) for p, es in zip(loc, e.shape))
                 img[sl] = e
         else:
             raise NotImplementedError("unsupported ndim")
@@ -82,7 +82,8 @@ def main(args):
             True,
         ),
         ("canny", dict(sigma=1.8), dict(), False, False),
-        # reduced default rings, histograms, orientations to fit daisy at (3840, 2160) into GPU memory
+        # reduced default rings, histograms, orientations to fit daisy at
+        # (3840, 2160) into GPU memory
         (
             "daisy",
             dict(step=4, radius=15, rings=2, histograms=5, orientations=4),
@@ -152,8 +153,6 @@ def main(args):
         else:
             continue
 
-        # if function_name in ["corner_peaks", "peak_local_max"] and np.prod(shape) > 1000000:
-        # skip any large sizes that take too long
         ndim = len(shape)
         run_cpu = not args.no_cpu
         if not allow_nd:

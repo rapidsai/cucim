@@ -83,8 +83,6 @@ def main(args):
         if function_name != args.func_name:
             continue
 
-        ndim = len(shape)
-
         if function_name == "match_histograms":
             channel_axis = -1 if shape[-1] in [3, 4] else None
 
@@ -106,7 +104,8 @@ def main(args):
                 continue
 
             if function_name == "equalize_adapthist":
-                #  TODO: fix equalize_adapthist for size (3840, 2160) and kernel_size = [16, 16]
+                #  TODO: fix equalize_adapthist for size (3840, 2160)
+                #        and kernel_size = [16, 16]
                 size_factors = [4, 8, 16]
                 kernel_sizes = []
                 for size_factor in size_factors:

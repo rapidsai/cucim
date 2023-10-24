@@ -3,10 +3,9 @@ Benchmark locally modified ndimage functions vs. their CuPy counterparts
 """
 import cupy as cp
 import cupyx.scipy.ndimage as ndi
-import pytest
 from cupyx.profiler import benchmark
 
-from cucim.skimage._vendored.ndimage import (
+from cucim.skimage._vendored.ndimage import (  # noqa: F401
     convolve1d,
     correlate1d,
     gaussian_filter,
@@ -134,7 +133,6 @@ def _compare_implementations_other(
         if output_dtype is None:
             output_dtype = image.dtype
         output1 = cp.empty(image.shape, dtype=output_dtype)
-        output2 = cp.empty(image.shape, dtype=output_dtype)
         kwargs.update(dict(output=output1))
         perf1 = benchmark(
             function_ref,
@@ -177,10 +175,10 @@ def _compare_implementations_other(
 
 print("\n\n")
 print(
-    "function | shape | dtype | mode | kernel size | preallocated | axis | dur (ms), CuPy | dur (ms), cuCIM | acceleration "
+    "function | shape | dtype | mode | kernel size | preallocated | axis | dur (ms), CuPy | dur (ms), cuCIM | acceleration "  # noqa: E501
 )
 print(
-    "---------|-------|-------|------|-------------|--------------|------|----------------|-----------------|--------------"
+    "---------|-------|-------|------|-------------|--------------|------|----------------|-----------------|--------------"  # noqa: E501
 )
 for function in [convolve1d]:
     for shape in [(512, 512), (3840, 2160), (64, 64, 64), (256, 256, 256)]:
@@ -203,15 +201,15 @@ for function in [convolve1d]:
                             t_elem = perf1.gpu_times * 1000.0
                             t_shared = perf2.gpu_times * 1000.0
                             print(
-                                f"{function.__name__} | {shape} | {cp.dtype(dtype).name} | {mode} | {kernel_size=} | prealloc={output_preallocated} | {axis=} | {t_elem.mean():0.3f} +/- {t_elem.std():0.3f}  | {t_shared.mean():0.3f} +/- {t_shared.std():0.3f} | {t_elem.mean() / t_shared.mean():0.3f}"
+                                f"{function.__name__} | {shape} | {cp.dtype(dtype).name} | {mode} | {kernel_size=} | prealloc={output_preallocated} | {axis=} | {t_elem.mean():0.3f} +/- {t_elem.std():0.3f}  | {t_shared.mean():0.3f} +/- {t_shared.std():0.3f} | {t_elem.mean() / t_shared.mean():0.3f}"  # noqa: E501
                             )
 
 
 print(
-    "function | kwargs | shape | dtype | mode | preallocated | dur (ms), CuPy | dur (ms), cuCIM | acceleration "
+    "function | kwargs | shape | dtype | mode | preallocated | dur (ms), CuPy | dur (ms), cuCIM | acceleration "  # noqa: E501
 )
 print(
-    "---------|--------|-------|-------|------|--------------|----------------|-----------------|--------------"
+    "---------|--------|-------|-------|------|--------------|----------------|-----------------|--------------"  # noqa: E501
 )
 for function, func_kwargs in [
     # (gaussian_filter1d, dict(sigma=1.0, axis=0)),
@@ -245,5 +243,5 @@ for function, func_kwargs in [
                     t_elem = perf1.gpu_times * 1000.0
                     t_shared = perf2.gpu_times * 1000.0
                     print(
-                        f"{function.__name__} | {func_kwargs} | {shape} | {cp.dtype(dtype).name} | {mode} | {output_preallocated} | {t_elem.mean():0.3f} +/- {t_elem.std():0.3f}  | {t_shared.mean():0.3f} +/- {t_shared.std():0.3f} | {t_elem.mean() / t_shared.mean():0.3f}"
+                        f"{function.__name__} | {func_kwargs} | {shape} | {cp.dtype(dtype).name} | {mode} | {output_preallocated} | {t_elem.mean():0.3f} +/- {t_elem.std():0.3f}  | {t_shared.mean():0.3f} +/- {t_shared.std():0.3f} | {t_elem.mean() / t_shared.mean():0.3f}"  # noqa: E501
                     )

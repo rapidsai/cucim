@@ -158,7 +158,7 @@ for zarr_chunk_shape in [
                     "tiled" if apply_kernel_tilewise else "global"
                 )
                 gds_description = "with GDS" if gds_enabled else "without GDS"
-                label = f"{computation=}, {kernel_description}, chunk_shape={zarr_chunk_shape}, {gds_description}"
+                label = f"{computation=}, {kernel_description}, chunk_shape={zarr_chunk_shape}, {gds_description}"  # noqa: E501
                 print(f"Duration ({label}): {t.mean()} s +/- {t.std()} s")
 
                 times.append(t.mean())
@@ -242,4 +242,4 @@ on dgx-02
     Duration (computation='sobel', tiled, chunk_shape=(4096, 4096, 3), without GDS): 5.430656982421875 s +/- 0.01277270507812478 s
     Duration (computation='sobel', tiled, chunk_shape=(4096, 4096, 3), with GDS): 3.1940713500976563 s +/- 0.19852391299904837 s
 
-"""
+"""  # noqa: E501

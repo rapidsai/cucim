@@ -15,8 +15,6 @@ from demo_implementation import cupy_to_zarr, get_n_tiles, read_tiled
 from lz4_nvcomp import LZ4NVCOMP
 from tifffile import TiffFile
 
-from cucim.core.operations.color import image_to_absorbance
-
 data_dir = os.environ.get("WHOLE_SLIDE_DATA_DIR", os.path.dirname("__file__"))
 fname = os.path.join(data_dir, "resize.tiff")
 if not os.path.exists(fname):
@@ -55,7 +53,7 @@ image_gpu = read_tiled(fname, **kwargs)[0]
 
 # benchmark writing these CuPy outputs to Zarr with various chunk sizes
 # Note: nvcomp only supports integer and unsigned dtypes.
-# https://github.com/rapidsai/kvikio/blob/b0c6cedf43d1bc240c3ef1b38ebb9d89574a08ee/python/kvikio/nvcomp.py#L12-L21  # noqa
+# https://github.com/rapidsai/kvikio/blob/b0c6cedf43d1bc240c3ef1b38ebb9d89574a08ee/python/kvikio/nvcomp.py#L12-L21  # noqa: E501
 
 dtypes = ["uint16"]
 chunk_shapes = [
@@ -107,7 +105,7 @@ for i, dtype in enumerate(dtypes):
                 write_time_means[i, j, k, m] = t.mean()
                 write_time_stds[i, j, k, m] = t.std()
                 print(
-                    f"Duration ({cp.dtype(dtype).name} write, {chunk_shape=}, {compressor=}, {gds_enabled=}): "
+                    f"Duration ({cp.dtype(dtype).name} write, {chunk_shape=}, {compressor=}, {gds_enabled=}): "  # noqa: E501
                     f"{t.mean()} s +/- {t.std()} s"
                 )
 
@@ -171,4 +169,4 @@ Duration (uint16 write, chunk_shape=(4096, 4096, 3), compressor=None, gds_enable
 Duration (uint16 write, chunk_shape=(4096, 4096, 3), compressor=LZ4NVCOMP, gds_enabled=False): 0.8166022583007813 s +/- 0.19712617258152443 s
 Duration (uint16 write, chunk_shape=(4096, 4096, 3), compressor=LZ4NVCOMP, gds_enabled=True): 0.7342889607747396 s +/- 0.025796103217999546 s
 
-"""
+"""  # noqa: E501

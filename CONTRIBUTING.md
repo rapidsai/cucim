@@ -71,19 +71,29 @@ conda install isort black ruff
 pip install isort black ruff
 ```
 
-These tools are used to auto-format the Python code in the repository. Additionally, there is a CI check in place to enforce that the committed code follows our standards. You can use the tools to automatically format your python code by running:
+These tools are used to auto-format the Python code in the repository. Additionally, there is a CI check in place to enforce that the committed code follows our standards. To run only for the python/cucim folder, change to that folder and run
+
+```bash
+isort .
+black .
+ruff .
+```
+
+To also check formatting in top-level folders like `benchmarks`, `examples` and `experiments`, these tools can also be run from the top level of the repository as follows:
 
 ```bash
 isort --settings-path="python/cucim/pyproject.toml" .
-ruff python/cucim
 black --config python/cucim/pyproject.toml .
+ruff .
 ```
 
-In addition to these tools, [codespell]() can be used to help diagnose and interactively fix spelling errors in both Python and C++ code. It can also be run from the top level of the repository in interactive mode using:
+In addition to these tools, [codespell](https://github.com/codespell-project/codespell) can be used to help diagnose and interactively fix spelling errors in both Python and C++ code. It can also be run from the top level of the repository in interactive mode using:
 
 ```bash
 codespell --toml python/cucim/pyproject.toml . -i 3 -w
 ```
+
+If codespell is finding false positives in newly added code, the `ignore-words-list` entry of the `tool.codespell` section in `pyproject.toml` can be updated as needed.
 
 ### Get libcucim Dependencies
 

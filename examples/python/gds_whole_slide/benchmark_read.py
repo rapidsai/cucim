@@ -244,4 +244,4 @@ duration (kvikio-pread (n_buffer=256) (gds_enabled=True)) = 0.5998859683766086
         duration (kvikio-pread (n_buffer=16) (gds_enabled=True)) = 0.9027577819824221
         duration (kvikio-pread (n_buffer=64) (gds_enabled=True)) = 0.7827104492187501
         duration (kvikio-pread (n_buffer=256) (gds_enabled=True)) = 0.756464599609375
-"""
+"""  # noqa: E501

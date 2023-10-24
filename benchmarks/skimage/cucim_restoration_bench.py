@@ -179,7 +179,7 @@ def main(args):
     all_results.to_csv(fbase + ".csv")
     all_results.to_pickle(pfile)
     try:
-        import tabular
+        import tabular  # noqa: F401
 
         with open(fbase + ".md", "wt") as f:
             f.write(all_results.to_markdown())

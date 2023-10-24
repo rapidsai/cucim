@@ -53,7 +53,7 @@ def load_tile_openslide(slide, start_loc, patch_size):
 def load_tile_openslide_chunk(inp_file, start_loc_list, patch_size):
     with OpenSlide(inp_file) as slide:
         for start_loc in start_loc_list:
-            region = slide.read_region(start_loc, 0, [patch_size, patch_size])
+            _ = slide.read_region(start_loc, 0, [patch_size, patch_size])
 
 
 def load_tile_cucim(slide, start_loc, patch_size):
@@ -64,7 +64,7 @@ def load_tile_cucim_chunk(inp_file, start_loc_list, patch_size):
     try:
         slide = CuImage(inp_file)
         for start_loc in start_loc_list:
-            region = slide.read_region(start_loc, [patch_size, patch_size], 0)
+            _ = slide.read_region(start_loc, [patch_size, patch_size], 0)
     except Exception as e:
         print(e)
 
@@ -106,19 +106,19 @@ def load_tile_rasterio_chunk(input_file, start_loc_list, patch_size):
 def load_tile_openslide_chunk_mp(inp_file, start_loc_list, patch_size):
     with OpenSlide(inp_file) as slide:
         for start_loc in start_loc_list:
-            region = slide.read_region(start_loc, 0, [patch_size, patch_size])
+            _ = slide.read_region(start_loc, 0, [patch_size, patch_size])
 
 
 def load_tile_cucim_chunk_mp(inp_file, start_loc_list, patch_size):
     slide = CuImage(inp_file)
     for start_loc in start_loc_list:
-        region = slide.read_region(start_loc, [patch_size, patch_size], 0)
+        _ = slide.read_region(start_loc, [patch_size, patch_size], 0)
 
 
 def load_tile_rasterio_chunk_mp(input_file, start_loc_list, patch_size):
     slide = rasterio.open(input_file, num_threads=1)
     for start_loc in start_loc_list:
-        region = np.moveaxis(
+        _ = np.moveaxis(
             slide.read(
                 [1, 2, 3],
                 window=Window.from_slices(
@@ -223,7 +223,7 @@ def experiment_thread(
             rasterio_time = timer.elapsed_time()
 
         print("  ", psutil.virtual_memory())
-        output_text = f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')},thread,{cache_strategy},{input_file},{start_location},{patch_size},{num_workers},{openslide_time},{cucim_time},{rasterio_time},{openslide_time / cucim_time},{rasterio_time / cucim_time},{cache_size},{cache.hit_count},{cache.miss_count}\n"
+        output_text = f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')},thread,{cache_strategy},{input_file},{start_location},{patch_size},{num_workers},{openslide_time},{cucim_time},{rasterio_time},{openslide_time / cucim_time},{rasterio_time / cucim_time},{cache_size},{cache.hit_count},{cache.miss_count}\n"  # noqa: E501
         with open("experiment.txt", "a+") as f:
             f.write(output_text)
         print(output_text)
@@ -324,7 +324,7 @@ def experiment_process(
             rasterio_time = timer.elapsed_time()
 
         print("  ", psutil.virtual_memory())
-        output_text = f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')},process,{cache_strategy},{input_file},{start_location},{patch_size},{num_workers},{openslide_time},{cucim_time},{rasterio_time},{openslide_time / cucim_time},{rasterio_time / cucim_time},{cache_size},{cache.hit_count},{cache.miss_count}\n"
+        output_text = f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')},process,{cache_strategy},{input_file},{start_location},{patch_size},{num_workers},{openslide_time},{cucim_time},{rasterio_time},{openslide_time / cucim_time},{rasterio_time / cucim_time},{cache_size},{cache.hit_count},{cache.miss_count}\n"  # noqa: E501
         with open("experiment.txt", "a+") as f:
             f.write(output_text)
         print(output_text)

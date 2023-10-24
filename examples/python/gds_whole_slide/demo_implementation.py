@@ -1,4 +1,5 @@
 import os
+import warnings
 
 import cupy as cp
 import dask.array as da
@@ -19,7 +20,7 @@ from cucim.clara import filesystem
 Developed with Dask 2022.05.2
 zarr >= 2.13.2
 kvikio >= 2022.10.00  (but had to use a recent development branch on my system to properly find libcufile.so)
-"""
+"""  # noqa: E501
 
 
 def get_n_tiles(page):
@@ -59,13 +60,13 @@ def _get_tile_multiindex(page, index, n_tiles):
     multi_index : tuple of int
         Starting index for the tile along each axis in the output array.
     """
-    d, l, w = n_tiles
-    wl = w * l
-    wld = wl * d
+    d, h, w = n_tiles
+    wh = w * h
+    whd = wh * d
     multi_index = (
-        index // wld,
-        (index // wl) % d * page.tiledepth,
-        (index // w) % l * page.tilelength,
+        index // whd,
+        (index // wh) % d * page.tiledepth,
+        (index // w) % h * page.tilelength,
         index % w * page.tilewidth,
         0,
     )
@@ -262,7 +263,6 @@ def read_alltiles_bulk(fname, level, clear_cache=True):
 def get_tile_buffers(fname, level, n_buffer):
     with TiffFile(fname) as tif:
         page = tif.pages[level]
-        n_chan = page.shaped[-1]
 
         (
             rounded_offsets,
@@ -417,7 +417,7 @@ def read_tiled(
                     for n in range(n_buffer)
                 )
             elif tile_buffers[0].size < buffer_bytecount:
-                warning.warn(
+                warnings.warn(
                     "reallocating tile buffers to accommodate data size"
                 )
                 tile_buffers = tuple(
@@ -449,7 +449,7 @@ def read_tiled(
             any_truncated = any(truncation_check_needed)
             page_shape = page.shaped[
                 1:
-            ]  # # Any reason to prefer page.keyframe.imagedepth, etc. here as opposed to page.shape or page.shaped?
+            ]  # Any reason to prefer page.keyframe.imagedepth, etc. here as opposed to page.shape or page.shaped?    # noqa: E501
 
             if backend == "kvikio-raw_read":
 
@@ -523,7 +523,8 @@ def read_tiled(
                             size = future.get()
                             if size != rounded_bytecount:
                                 raise ValueError(
-                                    "failed to read the expected number of bytes"
+                                    "failed to read the expected number of "
+                                    "bytes"
                                 )
                         tile = tile[0]  # omit depth axis
                         if tile_func is None:
@@ -547,7 +548,7 @@ def read_tiled(
                 # Determine offsets into `out_array` for the current tile
                 # and determine slices to truncate the tile if needed.
                 offset_indices = _get_tile_multiindex(page, index, n_tiles)
-                (s, d, l, w, _) = offset_indices
+                (s, d, h, w, _) = offset_indices
                 if any_truncated:
                     trunc_sl = _truncation_slices(
                         truncation_check_needed,
@@ -572,7 +573,7 @@ def read_tiled(
                 all_futures.append(read_output)
                 all_tiles.append(tile)
                 all_slices.append(
-                    (slice(l, l + tile_shape[1]), slice(w, w + tile_shape[2]))
+                    (slice(h, h + tile_shape[1]), slice(w, w + tile_shape[2]))
                 )
 
             for tile, sl, future in zip(all_tiles, all_slices, all_futures):
@@ -720,7 +721,6 @@ def cupy_to_zarr(
                 index_mod = index % n_buffer
                 if index == 0:
                     # initialize lists for storage of future results
-                    all_tiles = []
                     all_handles = []
                     all_futures = []
                 elif index_mod == 0:
@@ -736,7 +736,6 @@ def cupy_to_zarr(
                         # reset the lists to prepare for the next n_buffer tiles
                         all_futures = []
                         all_handles = []
-                        all_tiles = []
 
                 tile = image[
                     start0 : start0 + c0,

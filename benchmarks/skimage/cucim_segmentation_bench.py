@@ -11,7 +11,7 @@ import skimage.segmentation
 from _image_bench import ImageBench
 
 import cucim.skimage
-from cucim.skimage import data, exposure, measure, segmentation
+from cucim.skimage import data, measure
 
 
 class LabelBench(ImageBench):
@@ -262,6 +262,7 @@ def main(args):
                 var_kwargs=var_kwargs,
                 module_cpu=skimage.segmentation,
                 module_gpu=cucim.skimage.segmentation,
+                run_cpu=run_cpu,
             )
             results = B.run_benchmark(duration=args.duration)
             all_results = pd.concat([all_results, results["full"]])
@@ -285,6 +286,7 @@ def main(args):
                 var_kwargs=var_kwargs,
                 module_cpu=skimage.segmentation,
                 module_gpu=cucim.skimage.segmentation,
+                run_cpu=run_cpu,
             )
             results = B.run_benchmark(duration=args.duration)
             all_results = pd.concat([all_results, results["full"]])
@@ -293,7 +295,7 @@ def main(args):
     all_results.to_csv(fbase + ".csv")
     all_results.to_pickle(pfile)
     try:
-        import tabular
+        import tabular  # noqa: F401
 
         with open(fbase + ".md", "wt") as f:
             f.write(all_results.to_markdown())

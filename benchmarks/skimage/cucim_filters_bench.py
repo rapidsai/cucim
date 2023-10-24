@@ -62,7 +62,8 @@ def main(args):
         # lpi_filter.py
         # TODO: benchmark wiener
         # ridges.py
-        # TODO: had to set meijering, etc allow_nd to False just due to insufficient GPU memory
+        # TODO: Had to set meijering, etc allow_nd to False just due to
+        #       insufficient GPU memory
         (
             "meijering",
             dict(sigmas=range(1, 10, 2), alpha=None),
