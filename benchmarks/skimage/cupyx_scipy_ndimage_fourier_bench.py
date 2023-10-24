@@ -5,7 +5,6 @@ import cupy
 import cupy as cp
 import numpy as np
 import pandas as pd
-
 from _image_bench import ImageBench
 
 pfile = "fourier_results.pickle"

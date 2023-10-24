@@ -3,16 +3,16 @@ import math
 import os
 import pickle
 
-import cucim.skimage
-import cucim.skimage.measure
 import cupy as cp
 import numpy as np
 import pandas as pd
 import skimage
 import skimage.measure
-
 from _image_bench import ImageBench
 from cucim_metrics_bench import MetricsBench
+
+import cucim.skimage
+import cucim.skimage.measure
 
 
 class LabelBench(ImageBench):

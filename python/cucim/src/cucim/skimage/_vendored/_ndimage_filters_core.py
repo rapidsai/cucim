@@ -4,8 +4,10 @@ import warnings
 import cupy
 import numpy
 
-from cucim.skimage._vendored import _internal as internal
-from cucim.skimage._vendored import _ndimage_util as _util
+from cucim.skimage._vendored import (
+    _internal as internal,
+    _ndimage_util as _util,
+)
 
 
 def _origins_to_offsets(origins, w_shape):

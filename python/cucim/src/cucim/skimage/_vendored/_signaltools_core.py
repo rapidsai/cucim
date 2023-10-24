@@ -5,8 +5,7 @@ from cupyx.scipy import fft
 
 from cucim.skimage._vendored._ndimage_filters import _get_correlate_kernel
 
-from . import _internal as internal
-from . import _ndimage_util as _util
+from . import _internal as internal, _ndimage_util as _util
 
 
 def _check_conv_inputs(in1, in2, mode, convolution=True):

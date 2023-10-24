@@ -1,9 +1,17 @@
 import pytest
-from numpy.testing import (TestCase, assert_, assert_allclose,  # noqa
-                           assert_almost_equal, assert_array_almost_equal,
-                           assert_array_almost_equal_nulp, assert_array_equal,
-                           assert_array_less, assert_equal, assert_no_warnings,
-                           assert_warns)
+from numpy.testing import (  # noqa
+    TestCase,
+    assert_,
+    assert_allclose,
+    assert_almost_equal,
+    assert_array_almost_equal,
+    assert_array_almost_equal_nulp,
+    assert_array_equal,
+    assert_array_less,
+    assert_equal,
+    assert_no_warnings,
+    assert_warns,
+)
 
 from ._warnings import expected_warnings  # noqa
 

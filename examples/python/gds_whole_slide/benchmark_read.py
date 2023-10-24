@@ -5,9 +5,14 @@ import kvikio
 import kvikio.defaults
 import numpy as np
 from cupyx.profiler import benchmark
+from demo_implementation import (
+    get_n_tiles,
+    get_tile_buffers,
+    read_openslide,
+    read_tifffile,
+    read_tiled,
+)
 from tifffile import TiffFile
-
-from demo_implementation import read_openslide, read_tifffile, read_tiled, get_n_tiles, get_tile_buffers
 
 data_dir = os.environ.get('WHOLE_SLIDE_DATA_DIR', os.path.dirname('__file__'))
 fname = os.path.join(data_dir, 'resize.tiff')

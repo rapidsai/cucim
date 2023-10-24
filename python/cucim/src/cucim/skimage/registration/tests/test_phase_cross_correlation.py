@@ -12,7 +12,9 @@ from cucim.skimage._shared._warnings import expected_warnings
 from cucim.skimage._shared.fft import fftmodule as fft
 from cucim.skimage.data import binary_blobs
 from cucim.skimage.registration._phase_cross_correlation import (
-    _upsampled_dft, phase_cross_correlation)
+    _upsampled_dft,
+    phase_cross_correlation,
+)
 
 
 @pytest.mark.parametrize('normalization', [None, 'phase'])

@@ -3,18 +3,18 @@ import math
 import os
 import pickle
 
-import cucim.skimage
-import cucim.skimage.restoration
 import cupy as cp
 import cupyx.scipy.ndimage as ndi
 import numpy as np
 import pandas as pd
 import skimage
 import skimage.restoration
-from cucim.skimage.restoration import denoise_tv_chambolle as tv_gpu
+from _image_bench import ImageBench
 from skimage.restoration import denoise_tv_chambolle as tv_cpu
 
-from _image_bench import ImageBench
+import cucim.skimage
+import cucim.skimage.restoration
+from cucim.skimage.restoration import denoise_tv_chambolle as tv_gpu
 
 
 class DenoiseBench(ImageBench):

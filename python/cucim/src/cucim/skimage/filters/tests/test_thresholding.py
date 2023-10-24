@@ -1,12 +1,17 @@
 import cupy as cp
 import numpy as np
 import pytest
-from cupy.testing import (assert_allclose, assert_array_almost_equal,
-                          assert_array_equal)
+from cupy.testing import (
+    assert_allclose,
+    assert_array_almost_equal,
+    assert_array_equal,
+)
 from skimage import data
 from skimage.draw import disk
-from skimage.filters._multiotsu import (_get_multiotsu_thresh_indices,
-                                        _get_multiotsu_thresh_indices_lut)
+from skimage.filters._multiotsu import (
+    _get_multiotsu_thresh_indices,
+    _get_multiotsu_thresh_indices_lut,
+)
 
 # from cupyx.scipy import ndimage as ndi
 from cucim.skimage import util
@@ -15,17 +20,21 @@ from cucim.skimage._shared._warnings import expected_warnings
 from cucim.skimage._shared.utils import _supported_float_type
 from cucim.skimage.color import rgb2gray
 from cucim.skimage.exposure import histogram
-from cucim.skimage.filters.thresholding import (_cross_entropy,
-                                                threshold_isodata, threshold_li,
-                                                threshold_local, threshold_mean,
-                                                threshold_minimum,
-                                                threshold_multiotsu,
-                                                threshold_niblack,
-                                                threshold_otsu,
-                                                threshold_sauvola,
-                                                threshold_triangle,
-                                                threshold_yen,
-                                                try_all_threshold)
+from cucim.skimage.filters.thresholding import (
+    _cross_entropy,
+    threshold_isodata,
+    threshold_li,
+    threshold_local,
+    threshold_mean,
+    threshold_minimum,
+    threshold_multiotsu,
+    threshold_niblack,
+    threshold_otsu,
+    threshold_sauvola,
+    threshold_triangle,
+    threshold_yen,
+    try_all_threshold,
+)
 
 # transfer images to GPU
 astronautd = cp.array(data.astronaut())

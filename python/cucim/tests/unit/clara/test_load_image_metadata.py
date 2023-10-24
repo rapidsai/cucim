@@ -13,8 +13,9 @@
 # limitations under the License.
 #
 
-from ...util.io import open_image_cucim
 import math
+
+from ...util.io import open_image_cucim
 
 
 def test_load_image_metadata(testimg_tiff_stripe_32x24_16):
@@ -127,6 +128,7 @@ def test_load_rgba_image_metadata(tmpdir):
     """
     import numpy as np
     from tifffile import imwrite
+
     from cucim import CuImage
 
     # Test with a 4-channel image
@@ -163,9 +165,11 @@ def test_load_slow_path_warning(tmpdir, capfd):
 
     - https://github.com/rapidsai/cucim/issues/230
     """
-    import numpy as np
     import re
+
+    import numpy as np
     from tifffile import imwrite
+
     from cucim import CuImage
 
     # Test with a 1-channel image

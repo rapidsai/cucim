@@ -12,14 +12,23 @@ from skimage.segmentation import slic
 from cucim.skimage import transform
 from cucim.skimage._shared._warnings import expected_warnings
 from cucim.skimage._vendored import pad
-from cucim.skimage.measure import (euler_number, perimeter, perimeter_crofton,
-                                   regionprops, regionprops_table)
+from cucim.skimage.measure import (
+    euler_number,
+    perimeter,
+    perimeter_crofton,
+    regionprops,
+    regionprops_table,
+)
 from cucim.skimage.measure._regionprops import \
     _inertia_eigvals_to_axes_lengths_3D  # noqa
-from cucim.skimage.measure._regionprops import (COL_DTYPES, OBJECT_COLUMNS,
-                                                PROPS, _parse_docs,
-                                                _props_to_dict,
-                                                _require_intensity_image)
+from cucim.skimage.measure._regionprops import (
+    COL_DTYPES,
+    OBJECT_COLUMNS,
+    PROPS,
+    _parse_docs,
+    _props_to_dict,
+    _require_intensity_image,
+)
 
 # fmt: off
 SAMPLE = cp.array(

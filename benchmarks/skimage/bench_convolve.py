@@ -7,9 +7,17 @@ import pytest
 from cupyx.profiler import benchmark
 
 from cucim.skimage._vendored.ndimage import (
-    convolve1d, correlate1d, gaussian_filter, gaussian_filter1d,
-    gaussian_gradient_magnitude, gaussian_laplace, laplace, prewitt, sobel,
-    uniform_filter, uniform_filter1d,
+    convolve1d,
+    correlate1d,
+    gaussian_filter,
+    gaussian_filter1d,
+    gaussian_gradient_magnitude,
+    gaussian_laplace,
+    laplace,
+    prewitt,
+    sobel,
+    uniform_filter,
+    uniform_filter1d,
 )
 
 d = cp.cuda.Device()

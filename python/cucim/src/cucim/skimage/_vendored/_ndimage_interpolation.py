@@ -7,11 +7,12 @@ import numpy
 from cupy import _core
 from cupy.cuda import runtime
 
-from cucim.skimage._vendored import _ndimage_interp_kernels as _interp_kernels
-from cucim.skimage._vendored import \
-    _ndimage_spline_prefilter_core as _spline_prefilter_core
-from cucim.skimage._vendored import _ndimage_util as _util
-from cucim.skimage._vendored import pad
+from cucim.skimage._vendored import (
+    _ndimage_interp_kernels as _interp_kernels,
+    _ndimage_spline_prefilter_core as _spline_prefilter_core,
+    _ndimage_util as _util,
+    pad,
+)
 from cucim.skimage._vendored._internal import _normalize_axis_index, prod
 
 

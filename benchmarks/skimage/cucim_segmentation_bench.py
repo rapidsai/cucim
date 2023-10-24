@@ -3,15 +3,15 @@ import math
 import os
 import pickle
 
-import cucim.skimage
-from cucim.skimage import data, exposure, measure, segmentation
 import cupy as cp
 import numpy as np
 import pandas as pd
 import skimage
 import skimage.segmentation
-
 from _image_bench import ImageBench
+
+import cucim.skimage
+from cucim.skimage import data, exposure, measure, segmentation
 
 
 class LabelBench(ImageBench):

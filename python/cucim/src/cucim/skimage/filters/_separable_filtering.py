@@ -5,7 +5,9 @@ import cupy as cp
 from cucim.skimage._vendored import _ndimage_util as util
 from cucim.skimage._vendored._internal import _normalize_axis_index, prod
 from cucim.skimage._vendored._ndimage_filters_core import (
-    _ndimage_CAST_FUNCTION, _ndimage_includes)
+    _ndimage_CAST_FUNCTION,
+    _ndimage_includes,
+)
 
 
 def _get_constants(ndim, axis, kernel_size, anchor, patch_per_block=None):

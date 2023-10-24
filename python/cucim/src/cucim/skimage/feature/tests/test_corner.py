@@ -11,13 +11,20 @@ from cucim.skimage._shared._warnings import expected_warnings
 from cucim.skimage._shared.utils import _supported_float_type
 from cucim.skimage._vendored import pad
 from cucim.skimage.color import rgb2gray
-from cucim.skimage.feature import (corner_foerstner, corner_harris,
-                                   corner_kitchen_rosenfeld, corner_peaks,
-                                   corner_shi_tomasi, hessian_matrix,
-                                   hessian_matrix_det, hessian_matrix_eigvals,
-                                   peak_local_max, shape_index,
-                                   structure_tensor,
-                                   structure_tensor_eigenvalues)
+from cucim.skimage.feature import (
+    corner_foerstner,
+    corner_harris,
+    corner_kitchen_rosenfeld,
+    corner_peaks,
+    corner_shi_tomasi,
+    hessian_matrix,
+    hessian_matrix_det,
+    hessian_matrix_eigvals,
+    peak_local_max,
+    shape_index,
+    structure_tensor,
+    structure_tensor_eigenvalues,
+)
 from cucim.skimage.feature.corner import _symmetric_image
 
 

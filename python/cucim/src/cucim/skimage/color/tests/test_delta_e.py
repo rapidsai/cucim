@@ -3,13 +3,20 @@
 import cupy as cp
 import numpy as np
 import pytest
-from cupy.testing import (assert_allclose, assert_array_almost_equal,
-                          assert_array_equal)
+from cupy.testing import (
+    assert_allclose,
+    assert_array_almost_equal,
+    assert_array_equal,
+)
 
 from cucim.skimage._shared.testing import expected_warnings, fetch
 from cucim.skimage._shared.utils import _supported_float_type
-from cucim.skimage.color.delta_e import (deltaE_cie76, deltaE_ciede94,
-                                         deltaE_ciede2000, deltaE_cmc)
+from cucim.skimage.color.delta_e import (
+    deltaE_cie76,
+    deltaE_ciede94,
+    deltaE_ciede2000,
+    deltaE_cmc,
+)
 
 
 @pytest.mark.parametrize("channel_axis", [0, 1, -1])

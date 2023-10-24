@@ -7,7 +7,6 @@ import cupyx.scipy.ndimage
 import numpy as np
 import pandas as pd
 import scipy
-
 from _image_bench import ImageBench
 
 

@@ -7,9 +7,9 @@ import kvikio.defaults
 import numpy as np
 import openslide
 import tifffile
-from tifffile import TiffFile
 from kvikio.cufile import IOFuture
 from kvikio.zarr import GDSStore
+from tifffile import TiffFile
 from zarr import DirectoryStore
 from zarr.creation import init_array
 

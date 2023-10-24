@@ -3,8 +3,11 @@ import pytest
 from cupy.testing import assert_array_equal
 from numpy.testing import assert_almost_equal, assert_equal
 
-from cucim.skimage.metrics import (adapted_rand_error, contingency_table,
-                                   variation_of_information)
+from cucim.skimage.metrics import (
+    adapted_rand_error,
+    contingency_table,
+    variation_of_information,
+)
 
 
 def test_contingency_table():

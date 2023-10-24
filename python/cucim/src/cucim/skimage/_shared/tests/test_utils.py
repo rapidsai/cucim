@@ -5,11 +5,14 @@ import cupy as cp
 import numpy as np
 import pytest
 
-from cucim.skimage._shared.utils import (_supported_float_type,
-                                         _validate_interpolation_order,
-                                         change_default_value,
-                                         channel_as_last_axis, check_nD,
-                                         deprecate_kwarg)
+from cucim.skimage._shared.utils import (
+    _supported_float_type,
+    _validate_interpolation_order,
+    change_default_value,
+    channel_as_last_axis,
+    check_nD,
+    deprecate_kwarg,
+)
 
 complex_dtypes = [np.complex64, np.complex128]
 if hasattr(np, 'complex256'):

@@ -6,17 +6,24 @@ import numpy as np
 import pytest
 from cupy.testing import assert_array_almost_equal, assert_array_equal
 
-from cucim.skimage.transform import (AffineTransform, EssentialMatrixTransform,
-                                     EuclideanTransform,
-                                     FundamentalMatrixTransform,
-                                     PiecewiseAffineTransform,
-                                     PolynomialTransform, ProjectiveTransform,
-                                     SimilarityTransform, estimate_transform,
-                                     matrix_transform)
-from cucim.skimage.transform._geometric import (GeometricTransform,
-                                                _affine_matrix_from_vector,
-                                                _center_and_normalize_points,
-                                                _euler_rotation_matrix)
+from cucim.skimage.transform import (
+    AffineTransform,
+    EssentialMatrixTransform,
+    EuclideanTransform,
+    FundamentalMatrixTransform,
+    PiecewiseAffineTransform,
+    PolynomialTransform,
+    ProjectiveTransform,
+    SimilarityTransform,
+    estimate_transform,
+    matrix_transform,
+)
+from cucim.skimage.transform._geometric import (
+    GeometricTransform,
+    _affine_matrix_from_vector,
+    _center_and_normalize_points,
+    _euler_rotation_matrix,
+)
 
 # fmt: off
 SRC = cp.array([

@@ -3,18 +3,27 @@ import itertools
 import cupy as cp
 import numpy as np
 import pytest
-from cupy.testing import (assert_allclose, assert_array_almost_equal,
-                          assert_array_equal)
+from cupy.testing import (
+    assert_allclose,
+    assert_array_almost_equal,
+    assert_array_equal,
+)
 from cupyx.scipy import ndimage as ndi
 from numpy.testing import assert_almost_equal
 from skimage import draw
 
 from cucim.skimage._shared.utils import _supported_float_type
-from cucim.skimage.measure import (centroid, inertia_tensor,
-                                   inertia_tensor_eigvals, moments,
-                                   moments_central, moments_coords,
-                                   moments_coords_central, moments_hu,
-                                   moments_normalized)
+from cucim.skimage.measure import (
+    centroid,
+    inertia_tensor,
+    inertia_tensor_eigvals,
+    moments,
+    moments_central,
+    moments_coords,
+    moments_coords_central,
+    moments_hu,
+    moments_normalized,
+)
 
 
 def compare_moments(m1, m2, thresh=1e-8):

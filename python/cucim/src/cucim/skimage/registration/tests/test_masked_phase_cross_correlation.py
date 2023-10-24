@@ -1,8 +1,7 @@
 import cupy as cp
 import numpy as np
 import pytest
-from cupyx.scipy.ndimage import fourier_shift
-from cupyx.scipy.ndimage import shift as real_shift
+from cupyx.scipy.ndimage import fourier_shift, shift as real_shift
 from numpy.testing import assert_almost_equal
 from skimage.data import camera
 from skimage.io import imread
@@ -10,12 +9,13 @@ from skimage.io import imread
 from cucim.skimage._shared.fft import fftmodule as fft
 from cucim.skimage._shared.testing import fetch
 from cucim.skimage._shared.utils import _supported_float_type
-from cucim.skimage.registration._masked_phase_cross_correlation import \
-    _masked_phase_cross_correlation as masked_register_translation
-from cucim.skimage.registration._masked_phase_cross_correlation import \
-    cross_correlate_masked
-from cucim.skimage.registration._phase_cross_correlation import \
-    phase_cross_correlation
+from cucim.skimage.registration._masked_phase_cross_correlation import (
+    _masked_phase_cross_correlation as masked_register_translation,
+    cross_correlate_masked,
+)
+from cucim.skimage.registration._phase_cross_correlation import (
+    phase_cross_correlation,
+)
 
 
 def test_masked_registration_vs_phase_cross_correlation():

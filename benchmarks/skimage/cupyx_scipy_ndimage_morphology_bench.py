@@ -9,7 +9,6 @@ import numpy as np
 import pandas as pd
 import scipy
 import scipy.ndimage as ndi
-
 from _image_bench import ImageBench
 
 

@@ -6,17 +6,17 @@ import operator
 import os
 import pickle
 
-import cucim.skimage
-import cucim.skimage.morphology
 import cupy as cp
 import numpy as np
 import pandas as pd
+import scipy.ndimage as ndi
 import skimage
 import skimage.data
 import skimage.morphology
-import scipy.ndimage as ndi
-
 from _image_bench import ImageBench
+
+import cucim.skimage
+import cucim.skimage.morphology
 
 
 class BinaryMorphologyBench(ImageBench):

@@ -16,8 +16,10 @@
 import cupy as cp
 import pytest
 
-from cucim.core.operations.color import (normalize_colors_pca,
-                                         stain_extraction_pca)
+from cucim.core.operations.color import (
+    normalize_colors_pca,
+    stain_extraction_pca,
+)
 
 
 class TestStainExtractorMacenko():

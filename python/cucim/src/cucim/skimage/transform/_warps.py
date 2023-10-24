@@ -5,13 +5,21 @@ import numpy as np
 
 import cucim.skimage._vendored.ndimage as ndi
 
-from .._shared.utils import (_to_ndimage_mode, _validate_interpolation_order,
-                             channel_as_last_axis, convert_to_float,
-                             safe_as_int, warn)
+from .._shared.utils import (
+    _to_ndimage_mode,
+    _validate_interpolation_order,
+    channel_as_last_axis,
+    convert_to_float,
+    safe_as_int,
+    warn,
+)
 from .._vendored import pad
 from ..measure import block_reduce
-from ._geometric import (AffineTransform, ProjectiveTransform,
-                         SimilarityTransform)
+from ._geometric import (
+    AffineTransform,
+    ProjectiveTransform,
+    SimilarityTransform,
+)
 
 HOMOGRAPHY_TRANSFORMS = (
     SimilarityTransform,

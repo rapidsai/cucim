@@ -7,9 +7,10 @@ import cucim.skimage._vendored.ndimage as ndi
 from cucim.core.operations.morphology import distance_transform_edt
 
 from .._shared.utils import check_nD, deprecate_kwarg
-from ._medial_axis_lookup import \
-    cornerness_table as _medial_axis_cornerness_table
-from ._medial_axis_lookup import lookup_table as _medial_axis_lookup_table
+from ._medial_axis_lookup import (
+    cornerness_table as _medial_axis_cornerness_table,
+    lookup_table as _medial_axis_lookup_table,
+)
 
 # --------- Skeletonization and thinning based on Guo and Hall 1989 ---------
 

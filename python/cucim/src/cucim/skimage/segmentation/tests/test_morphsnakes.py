@@ -3,10 +3,12 @@ import pytest
 from cupy.testing import assert_array_equal
 
 from cucim.skimage._shared.testing import expected_warnings
-from cucim.skimage.segmentation import (disk_level_set,
-                                        inverse_gaussian_gradient,
-                                        morphological_chan_vese,
-                                        morphological_geodesic_active_contour)
+from cucim.skimage.segmentation import (
+    disk_level_set,
+    inverse_gaussian_gradient,
+    morphological_chan_vese,
+    morphological_geodesic_active_contour,
+)
 
 
 def gaussian_blob():

@@ -15,8 +15,11 @@ import cupy as cp
 import numpy as np
 
 from .._shared.utils import _supported_float_type, check_nD, deprecate_func
-from ..feature.corner import (_symmetric_compute_eigenvalues, hessian_matrix,
-                              hessian_matrix_eigvals)
+from ..feature.corner import (
+    _symmetric_compute_eigenvalues,
+    hessian_matrix,
+    hessian_matrix_eigvals,
+)
 from ..util import img_as_float
 
 

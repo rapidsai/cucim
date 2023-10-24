@@ -3,15 +3,15 @@ import math
 import os
 import pickle
 
-import cucim.skimage
-import cucim.skimage.registration
 import cupy as cp
 import numpy as np
 import pandas as pd
 import skimage
 import skimage.registration
-
 from _image_bench import ImageBench
+
+import cucim.skimage
+import cucim.skimage.registration
 
 
 class RegistrationBench(ImageBench):

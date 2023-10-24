@@ -6,11 +6,13 @@ from collections.abc import Iterable
 
 import cupy as cp
 import numpy as np
-from skimage.filters import threshold_isodata as _threshold_isodata_cpu
-from skimage.filters import threshold_minimum as _threshold_minimum_cpu
-from skimage.filters import threshold_multiotsu as _threshold_multiotsu_cpu
-from skimage.filters import threshold_otsu as _threshold_otsu_cpu
-from skimage.filters import threshold_yen as _threshold_yen_cpu
+from skimage.filters import (
+    threshold_isodata as _threshold_isodata_cpu,
+    threshold_minimum as _threshold_minimum_cpu,
+    threshold_multiotsu as _threshold_multiotsu_cpu,
+    threshold_otsu as _threshold_otsu_cpu,
+    threshold_yen as _threshold_yen_cpu,
+)
 
 import cucim.skimage._vendored.ndimage as ndi
 from cucim import _misc

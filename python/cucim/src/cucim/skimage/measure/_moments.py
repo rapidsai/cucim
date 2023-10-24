@@ -670,8 +670,10 @@ def inertia_tensor_eigvals(image, mu=None, T=None, *, spacing=None):
     alternatively, one can provide the inertia tensor (``T``) directly.
     """
     # avoid circular import
-    from ..feature.corner import (_image_orthogonal_matrix22_eigvals,
-                                  _image_orthogonal_matrix33_eigvals)
+    from ..feature.corner import (
+        _image_orthogonal_matrix22_eigvals,
+        _image_orthogonal_matrix33_eigvals,
+    )
 
     if T is None:
         T = inertia_tensor(image, mu, spacing=spacing)

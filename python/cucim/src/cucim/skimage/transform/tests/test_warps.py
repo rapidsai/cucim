@@ -3,8 +3,11 @@ import math
 import cupy as cp
 import numpy as np
 import pytest
-from cupy.testing import (assert_allclose, assert_array_almost_equal,
-                          assert_array_equal)
+from cupy.testing import (
+    assert_allclose,
+    assert_array_almost_equal,
+    assert_array_equal,
+)
 from cupyx.scipy.ndimage import map_coordinates
 from numpy.testing import assert_almost_equal, assert_equal
 from skimage.color.colorconv import rgb2gray
@@ -14,15 +17,25 @@ from skimage.draw.draw import circle_perimeter_aa
 from cucim.skimage._shared._warnings import expected_warnings
 from cucim.skimage._shared.utils import _supported_float_type
 from cucim.skimage.feature.peak import peak_local_max
-from cucim.skimage.transform._geometric import (AffineTransform,
-                                                ProjectiveTransform,
-                                                SimilarityTransform)
-from cucim.skimage.transform._warps import (_linear_polar_mapping,
-                                            _log_polar_mapping, _stackcopy,
-                                            downscale_local_mean, rescale,
-                                            resize, resize_local_mean, rotate,
-                                            swirl, warp, warp_coords,
-                                            warp_polar)
+from cucim.skimage.transform._geometric import (
+    AffineTransform,
+    ProjectiveTransform,
+    SimilarityTransform,
+)
+from cucim.skimage.transform._warps import (
+    _linear_polar_mapping,
+    _log_polar_mapping,
+    _stackcopy,
+    downscale_local_mean,
+    rescale,
+    resize,
+    resize_local_mean,
+    rotate,
+    swirl,
+    warp,
+    warp_coords,
+    warp_polar,
+)
 from cucim.skimage.util.dtype import _convert, img_as_float
 
 # from skimage._shared.testing import test_parallel

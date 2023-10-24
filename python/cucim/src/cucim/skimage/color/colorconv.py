@@ -55,8 +55,12 @@ import cupy as cp
 import numpy as np
 from scipy import linalg
 
-from .._shared.utils import (_supported_float_type, channel_as_last_axis,
-                             deprecate_func, identity)
+from .._shared.utils import (
+    _supported_float_type,
+    channel_as_last_axis,
+    deprecate_func,
+    identity,
+)
 from ..util import dtype, dtype_limits
 
 

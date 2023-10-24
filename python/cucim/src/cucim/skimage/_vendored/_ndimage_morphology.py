@@ -5,10 +5,12 @@ import cupy
 import numpy
 from cupy import _core
 
-from cucim.skimage._vendored import _internal as internal
-from cucim.skimage._vendored import _ndimage_filters as _filters
-from cucim.skimage._vendored import _ndimage_filters_core as _filters_core
-from cucim.skimage._vendored import _ndimage_util as _util
+from cucim.skimage._vendored import (
+    _internal as internal,
+    _ndimage_filters as _filters,
+    _ndimage_filters_core as _filters_core,
+    _ndimage_util as _util,
+)
 
 
 @cupy.memoize(for_each_device=True)

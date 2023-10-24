@@ -18,6 +18,18 @@ submodules = [
 
 __all__ = submodules
 
-from . import (color, data, exposure, feature, filters, measure, metrics,
-               morphology, registration, restoration, segmentation, transform,
-               util)
+from . import (
+    color,
+    data,
+    exposure,
+    feature,
+    filters,
+    measure,
+    metrics,
+    morphology,
+    registration,
+    restoration,
+    segmentation,
+    transform,
+    util,
+)

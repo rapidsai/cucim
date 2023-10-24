@@ -5,8 +5,14 @@ import numpy as np
 import pytest
 from cupy.testing import assert_array_equal
 
-from cucim.skimage import (img_as_float, img_as_float32, img_as_float64,
-                           img_as_int, img_as_ubyte, img_as_uint)
+from cucim.skimage import (
+    img_as_float,
+    img_as_float32,
+    img_as_float64,
+    img_as_int,
+    img_as_ubyte,
+    img_as_uint,
+)
 from cucim.skimage._shared._warnings import expected_warnings
 from cucim.skimage.util.dtype import _convert, convert
 

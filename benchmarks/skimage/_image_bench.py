@@ -1,10 +1,10 @@
 import itertools
 import math
+import re
+import subprocess
 import time
 import types
 from collections import abc
-import re
-import subprocess
 
 import cupy as cp
 import cupyx.scipy.ndimage
@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 import scipy.ndimage
 import skimage.data
+
 from cucim.time import repeat
 
 

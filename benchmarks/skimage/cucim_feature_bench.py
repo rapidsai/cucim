@@ -1,20 +1,19 @@
+import argparse
 import math
 import os
 import pickle
-import argparse
 
 import cupy as cp
 import numpy as np
 import pandas as pd
 import skimage
 import skimage.feature
+from _image_bench import ImageBench
 from skimage import data, draw
 
 import cucim.skimage
 import cucim.skimage.feature
 from cucim.skimage import exposure
-
-from _image_bench import ImageBench
 
 
 class BlobDetectionBench(ImageBench):

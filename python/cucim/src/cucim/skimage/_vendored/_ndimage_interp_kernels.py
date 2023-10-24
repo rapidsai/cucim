@@ -1,11 +1,11 @@
 import cupy
 import numpy
 
-from cucim.skimage._vendored import \
-    _ndimage_spline_kernel_weights as _spline_kernel_weights
-from cucim.skimage._vendored import \
-    _ndimage_spline_prefilter_core as _spline_prefilter_core
-from cucim.skimage._vendored import _ndimage_util as _util
+from cucim.skimage._vendored import (
+    _ndimage_spline_kernel_weights as _spline_kernel_weights,
+    _ndimage_spline_prefilter_core as _spline_prefilter_core,
+    _ndimage_util as _util,
+)
 
 math_constants_preamble = r'''
 // workaround for HIP: line begins with #include
