@@ -131,7 +131,7 @@ def difference_of_gaussians(image, low_sigma, high_sigma=None, *,
         raise ValueError('high_sigma must have length equal to number of'
                          ' spatial dimensions of input')
 
-    if any(h < l for h, l in zip(high_sigma, low_sigma)):
+    if any(s_hi < s_low for s_hi, s_low in zip(high_sigma, low_sigma)):
         raise ValueError('high_sigma must be equal to or larger than'
                          'low_sigma for all axes')
 

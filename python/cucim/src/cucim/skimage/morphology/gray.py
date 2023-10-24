@@ -117,8 +117,8 @@ def _invert_footprint(footprint):
 
     References
     ----------
-    .. [1] https://github.com/scipy/scipy/blob/ec20ababa400e39ac3ffc9148c01ef86d5349332/scipy/ndimage/morphology.py#L1285  # noqa
-    """
+    .. [1] https://github.com/scipy/scipy/blob/ec20ababa400e39ac3ffc9148c01ef86d5349332/scipy/ndimage/morphology.py#L1285
+    """  # noqa: E501
     if isinstance(footprint, tuple):
         # fully populated rectangle is symmetric
         return footprint

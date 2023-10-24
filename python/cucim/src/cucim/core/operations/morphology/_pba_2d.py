@@ -47,7 +47,7 @@ pba2d_defines_template = """
 #define pixel_int2_t {pixel_int2_t}                // typically short2 (int2 for images with > 32k pixels per side)
 #define make_pixel(x, y)  {make_pixel_func}(x, y)  // typically make_short2 (make_int2 images with > 32k pixels per side
 
-"""  # noqa
+"""  # noqa: E501
 
 
 def _init_marker(int_dtype):
@@ -212,7 +212,7 @@ def _get_aniso_distance_kernel_code(int_type, raw_out_var=True):
         ndim=2, int_type=int_type, var_name="dist", raw_var=raw_out_var
     )
     code += _generate_indices_ops(ndim=2, int_type=int_type)
-    code += f"""
+    code += """
     F tmp;
     F sq_dist;
     tmp = static_cast<F>(y[i] - ind_0) * sampling[0];
@@ -266,7 +266,7 @@ def _check_indices(indices, shape, itemsize):
         raise RuntimeError("indices array has wrong shape")
     if indices.dtype.kind not in 'iu':
         raise RuntimeError(
-            f"indices array must have an integer dtype"
+            "indices array must have an integer dtype"
         )
     elif indices.dtype.itemsize < itemsize:
         raise RuntimeError(

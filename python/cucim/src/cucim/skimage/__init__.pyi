@@ -1,4 +1,4 @@
-import lazy_loader as lazy
+import lazy_loader as lazy  # noqa: F401
 
 submodules = [
     'color',
@@ -18,7 +18,7 @@ submodules = [
 
 __all__ = submodules
 
-from . import (
+from . import (  # noqa: F401, E402
     color,
     data,
     exposure,

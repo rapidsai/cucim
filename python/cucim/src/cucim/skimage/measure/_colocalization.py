@@ -70,8 +70,8 @@ def pearson_corr_coeff(image0, image1, mask=None):
 
     References
     ----------
-    .. [1] https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.pearsonr.html  # noqa
-    .. [2] https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.spearmanr.html  # noqa
+    .. [1] https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.pearsonr.html
+    .. [2] https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.spearmanr.html
     .. [3] Dunn, K. W., Kamocka, M. M., & McDonald, J. H. (2011). A practical
            guide to evaluating colocalization in biological microscopy.
            American journal of physiology. Cell physiology, 300(4), C723–C742.
@@ -80,7 +80,7 @@ def pearson_corr_coeff(image0, image1, mask=None):
            subcellular colocalization analysis in light microscopy. Journal of
            Microscopy, 224: 213-232.
            https://doi.org/10.1111/j.1365-2818.2006.01706.x
-    """
+    """  # noqa: E501
     if mask is not None:
         mask = as_binary_ndarray(mask, variable_name="mask")
         check_shape_equality(image0, image1, mask)

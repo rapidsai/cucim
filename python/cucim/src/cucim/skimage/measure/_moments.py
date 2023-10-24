@@ -351,7 +351,7 @@ def _get_normalize_kernel(ndim, order, unit_scale=True):
         'raw F mu, int32 order, float64 scale',
         'F nu',
         operation=_get_moments_norm_operation(ndim, order, unit_scale),
-        name=f"moments_normmalize_2d_kernel"
+        name="moments_normmalize_2d_kernel",
     )
 
 

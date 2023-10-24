@@ -263,7 +263,7 @@ def _generate_aniso_distance_computation():
     """
     Compute euclidean distance from current coordinate (ind_0, ind_1, ind_2) to
     the coordinates of the nearest point (z, y, x)."""
-    return f"""
+    return """
     F tmp = static_cast<F>(z - ind_0) * sampling[0];
     F sq_dist = tmp * tmp;
     tmp = static_cast<F>(y - ind_1) * sampling[1];

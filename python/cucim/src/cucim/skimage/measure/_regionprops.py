@@ -277,8 +277,8 @@ def _inertia_eigvals_to_axes_lengths_3D(inertia_tensor_eigvals):
 
     References
     ----------
-    ..[1] https://en.wikipedia.org/wiki/List_of_moments_of_inertia#List_of_3D_inertia_tensors  # noqa
-    """
+    ..[1] https://en.wikipedia.org/wiki/List_of_moments_of_inertia#List_of_3D_inertia_tensors
+    """  # noqa: E501
     axis_lengths = []
     for ax in range(2, -1, -1):
         w = sum(v * -1 if i == ax else v

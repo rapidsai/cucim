@@ -357,10 +357,10 @@ def diamond(radius, dtype=cp.uint8, *, decomposition=None):
     """
     if decomposition is None:
         # CuPy Backend: grid is usually small -> faster to generate it in NumPy
-        L = np.arange(0, radius * 2 + 1)
-        I, J = np.meshgrid(L, L, sparse=True)
+        sz = np.arange(0, radius * 2 + 1)
+        ii, jj = np.meshgrid(sz, sz, sparse=True)
         return cp.asarray(
-            np.abs(I - radius) + np.abs(J - radius) <= radius, dtype=dtype
+            np.abs(ii - radius) + np.abs(jj - radius) <= radius, dtype=dtype
         )
     elif decomposition == 'sequence':
         fp = diamond(1, dtype=dtype, decomposition=None)
