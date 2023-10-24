@@ -27,10 +27,11 @@ repos:
     hooks:
       - id: ruff
         files: python/.*$
+        args: ["--exclude", "__init__.py"]
   - repo: https://github.com/codespell-project/codespell
     rev: v2.2.4
     hooks:
       - id: codespell
-        args: [--toml, python/cucim/pyproject_.toml]
+        args: ["--toml", "python/cucim/pyproject_.toml"]
         additional_dependencies:
           - tomli
