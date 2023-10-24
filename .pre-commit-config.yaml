@@ -15,13 +15,13 @@ repos:
     hooks:
       - id: isort
         files: ^python/cucim/src/.*
-        args: ["--settings-path=python/cucim/pyproject.toml"]
+        args: ["--settings-path=python/cucim/pyproject_.toml"]
   - repo: https://github.com/psf/black
     rev: 23.3.0
     hooks:
       - id: black
         files: (python|legate)/.*
-        args: ["--config", "python/cucim/pyproject.toml"]
+        args: ["--config", "python/cucim/pyproject_.toml"]
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.0.278
     hooks:
@@ -31,6 +31,6 @@ repos:
     rev: v2.2.4
     hooks:
       - id: codespell
-        args: [--toml, python/cucim/pyproject.toml]
+        args: [--toml, python/cucim/pyproject_.toml]
         additional_dependencies:
           - tomli
