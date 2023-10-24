@@ -37,9 +37,8 @@ class ImageBench(object):
         module_cpu=scipy.ndimage,
         module_gpu=cupyx.scipy.ndimage,
         function_is_generator=False,
-        run_cpu=True
+        run_cpu=True,
     ):
-
         self.shape = shape
         self.function_name = function_name
         self.fixed_kwargs_cpu = self._update_kwargs_arrays(fixed_kwargs, "cpu")
@@ -172,7 +171,9 @@ class ImageBench(object):
                     self.func_gpu, self.args_gpu, kw_gpu, duration, cpu=False
                 )
                 print("Number of Repetitions : ", rep_kwargs_gpu)
-                perf_gpu = repeat(self.func_gpu, self.args_gpu, kw_gpu, **rep_kwargs_gpu)
+                perf_gpu = repeat(
+                    self.func_gpu, self.args_gpu, kw_gpu, **rep_kwargs_gpu
+                )
 
                 df.at[index, "shape"] = f"{self.shape}"
                 # df.at[index,  "description"] = index
@@ -181,8 +182,12 @@ class ImageBench(object):
                 df.at[index, "ndim"] = len(self.shape)
 
                 if self.run_cpu == True:
-                    perf = repeat(self.func_cpu, self.args_cpu, kw_cpu, **rep_kwargs_cpu)
-                    df.at[index, "GPU accel"] = perf.cpu_times.mean() / perf_gpu.gpu_times.mean()
+                    perf = repeat(
+                        self.func_cpu, self.args_cpu, kw_cpu, **rep_kwargs_cpu
+                    )
+                    df.at[index, "GPU accel"] = (
+                        perf.cpu_times.mean() / perf_gpu.gpu_times.mean()
+                    )
                     df.at[index, "CPU: host (mean)"] = perf.cpu_times.mean()
                     df.at[index, "CPU: host (std)"] = perf.cpu_times.std()
 
@@ -192,14 +197,22 @@ class ImageBench(object):
                 df.at[index, "GPU: device (std)"] = perf_gpu.gpu_times.std()
                 with cp.cuda.Device() as device:
                     props = cp.cuda.runtime.getDeviceProperties(device.id)
-                    gpu_name = props['name'].decode()
+                    gpu_name = props["name"].decode()
 
-                df.at[index, "GPU: DEV Name"] = [gpu_name for i in range(len(df))]
+                df.at[index, "GPU: DEV Name"] = [
+                    gpu_name for i in range(len(df))
+                ]
                 cmd = "cat /proc/cpuinfo"
                 cpuinfo = subprocess.check_output(cmd, shell=True).strip()
-                cpu_name = re.search("\nmodel name.*\n", cpuinfo.decode()).group(0).strip('\n')
-                cpu_name = cpu_name.replace('model name\t: ', '')
-                df.at[index, "CPU: DEV Name"] = [cpu_name for i in range(len(df))]
+                cpu_name = (
+                    re.search("\nmodel name.*\n", cpuinfo.decode())
+                    .group(0)
+                    .strip("\n")
+                )
+                cpu_name = cpu_name.replace("model name\t: ", "")
+                df.at[index, "CPU: DEV Name"] = [
+                    cpu_name for i in range(len(df))
+                ]
 
                 # accelerations[arr_index] = df.at[index,  "GPU accel"]
                 if verbose:

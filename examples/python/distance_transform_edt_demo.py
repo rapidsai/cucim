@@ -8,7 +8,7 @@ try:
     import matplotlib.pyplot as plt
 except ImportError as e:
     print("This demo requires the matplotlib and colorcet packages.")
-    raise(e)
+    raise (e)
 
 from skimage import data
 
@@ -33,7 +33,7 @@ def coords_to_labels(coords):
 
 shape = (200, 200)
 size = math.prod(shape)
-ntrue = .001 * size
+ntrue = 0.001 * size
 p_true = ntrue / size
 p_false = 1 - p_true
 
@@ -68,23 +68,23 @@ for x, y in zip(xx, yy):
 
 fig, axes = plt.subplots(2, 3, figsize=(8, 7))
 axes[0][0].imshow(image, cmap=plt.cm.gray)
-axes[0][0].set_title('seed points')
+axes[0][0].set_title("seed points")
 axes[0][1].imshow(distances, cmap=plt.cm.gray)
-axes[0][1].set_title('Euclidean distance\n(to nearest seed)')
+axes[0][1].set_title("Euclidean distance\n(to nearest seed)")
 axes[1][0].imshow(coords[0], cmap=plt.cm.gray)
-axes[1][0].set_title('y coordinate\nof neareset seed')
+axes[1][0].set_title("y coordinate\nof neareset seed")
 axes[1][1].imshow(coords[1], cmap=plt.cm.gray)
-axes[1][1].set_title('x coordinate\nof neareset seed')
+axes[1][1].set_title("x coordinate\nof neareset seed")
 axes[1][2].imshow(rgb_labels)
-axes[1][2].set_title('discrete Voronoi')
+axes[1][2].set_title("discrete Voronoi")
 for ax in axes.ravel():
     ax.set_axis_off()
 # overlay larger markers at the seed points for better visibility
 for x, y in zip(xx, yy):
     # overlay in image
-    axes[0, 0].plot(y, x, 'w.')
+    axes[0, 0].plot(y, x, "w.")
     # overlay in rgb_labels
-    axes[1, 2].plot(y, x, 'w.')
+    axes[1, 2].plot(y, x, "w.")
 plt.tight_layout()
 
 
@@ -109,13 +109,13 @@ distances_inv = cp.asnumpy(distances_inv)
 
 fig, axes = plt.subplots(2, 2, figsize=(7, 7))
 axes[0][0].imshow(horse_inv, cmap=plt.cm.gray)
-axes[0][0].set_title('Foreground horse')
+axes[0][0].set_title("Foreground horse")
 axes[0][1].imshow(horse, cmap=plt.cm.gray)
-axes[0][1].set_title('Background horse')
+axes[0][1].set_title("Background horse")
 axes[1][0].imshow(distances_inv)
-axes[1][0].set_title('Distance\n(foreground horse)')
+axes[1][0].set_title("Distance\n(foreground horse)")
 axes[1][1].imshow(distances)
-axes[1][1].set_title('Distance\n(background horse)')
+axes[1][1].set_title("Distance\n(background horse)")
 for ax in axes.ravel():
     ax.set_axis_off()
 plt.tight_layout()

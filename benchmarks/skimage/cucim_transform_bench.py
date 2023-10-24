@@ -13,7 +13,6 @@ import cucim.skimage.transform
 
 
 def main(args):
-
     pfile = "cucim_transform_results.pickle"
     if os.path.exists(pfile):
         with open(pfile, "rb") as f:
@@ -23,7 +22,7 @@ def main(args):
 
     dtypes = [np.dtype(args.dtype)]
     # image sizes/shapes
-    shape = tuple(list(map(int,(args.img_size.split(',')))))
+    shape = tuple(list(map(int, (args.img_size.split(",")))))
     run_cpu = not args.no_cpu
 
     for function_name, fixed_kwargs, var_kwargs, allow_color, allow_nd in [
@@ -56,7 +55,13 @@ def main(args):
             False,
             False,
         ),
-        ("downscale_local_mean", dict(), dict(), True, True),  # factors handled in loop below
+        (
+            "downscale_local_mean",
+            dict(),
+            dict(),
+            True,
+            True,
+        ),  # factors handled in loop below
         (
             "swirl",
             dict(strength=1, preserve_range=True),
@@ -85,7 +90,6 @@ def main(args):
             True,
         ),
     ]:
-
         if function_name != args.func_name:
             continue
 
@@ -102,10 +106,18 @@ def main(args):
 
         ndim_spatial = ndim - 1 if shape[-1] == 3 else ndim
 
-        if function_name in ["rescale", "warp_polar", "pyramid_gaussian", "pyramid_laplacian"]:
+        if function_name in [
+            "rescale",
+            "warp_polar",
+            "pyramid_gaussian",
+            "pyramid_laplacian",
+        ]:
             fixed_kwargs["channel_axis"] = -1 if ndim_spatial < ndim else None
 
-        function_is_generator = function_name in ["pyramid_gaussian", "pyramid_laplacian"]
+        function_is_generator = function_name in [
+            "pyramid_gaussian",
+            "pyramid_laplacian",
+        ]
 
         if function_name in ["rescale", "resize", "resize_local_mean"]:
             scales = [0.75, 1.25]
@@ -116,10 +128,13 @@ def main(args):
                 if ndim_spatial < ndim:
                     # don't resize along channels dimension
                     out_shapes = [
-                        tuple([int(s_ * s) for s_ in shape[:-1]]) + (shape[-1],) for s in scales
+                        tuple([int(s_ * s) for s_ in shape[:-1]]) + (shape[-1],)
+                        for s in scales
                     ]
                 else:
-                    out_shapes = [tuple([int(s_ * s) for s_ in shape]) for s in scales]
+                    out_shapes = [
+                        tuple([int(s_ * s) for s_ in shape]) for s in scales
+                    ]
                 var_kwargs["output_shape"] = out_shapes
 
         elif function_name == "downscale_local_mean":
@@ -155,15 +170,70 @@ def main(args):
         pass
 
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Benchmarking cuCIM transform functions')
-    func_name_choices = ['resize', 'resize_local_mean', 'rescale', 'rotate', 'downscale_local_mean', 'warp_polar', 'integral_image', 'pyramid_gaussian', 'pyramid_laplacian']
-    dtype_choices = ['float16', 'float32', 'float64', 'int8', 'int16', 'int32', 'int64', 'uint8', 'uint16', 'uint32', 'uint64']
-    parser.add_argument('-i','--img_size', type=str, help='Size of input image (omit color channel, it will be appended as needed)', required=True)
-    parser.add_argument('-d','--dtype', type=str, help='Dtype of input image', choices = dtype_choices, required=True)
-    parser.add_argument('-f','--func_name', type=str, help='function to benchmark', choices = func_name_choices, required=True)
-    parser.add_argument('-t','--duration', type=int, help='time to run benchmark', required=True)
-    parser.add_argument('--no_cpu', action='store_true', help='disable cpu measurements', default=False)
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="Benchmarking cuCIM transform functions"
+    )
+    func_name_choices = [
+        "resize",
+        "resize_local_mean",
+        "rescale",
+        "rotate",
+        "downscale_local_mean",
+        "warp_polar",
+        "integral_image",
+        "pyramid_gaussian",
+        "pyramid_laplacian",
+    ]
+    dtype_choices = [
+        "float16",
+        "float32",
+        "float64",
+        "int8",
+        "int16",
+        "int32",
+        "int64",
+        "uint8",
+        "uint16",
+        "uint32",
+        "uint64",
+    ]
+    parser.add_argument(
+        "-i",
+        "--img_size",
+        type=str,
+        help="Size of input image (omit color channel, it will be appended as needed)",
+        required=True,
+    )
+    parser.add_argument(
+        "-d",
+        "--dtype",
+        type=str,
+        help="Dtype of input image",
+        choices=dtype_choices,
+        required=True,
+    )
+    parser.add_argument(
+        "-f",
+        "--func_name",
+        type=str,
+        help="function to benchmark",
+        choices=func_name_choices,
+        required=True,
+    )
+    parser.add_argument(
+        "-t",
+        "--duration",
+        type=int,
+        help="time to run benchmark",
+        required=True,
+    )
+    parser.add_argument(
+        "--no_cpu",
+        action="store_true",
+        help="disable cpu measurements",
+        default=False,
+    )
 
     args = parser.parse_args()
     main(args)

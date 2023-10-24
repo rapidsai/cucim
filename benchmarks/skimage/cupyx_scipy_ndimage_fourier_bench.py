@@ -23,7 +23,9 @@ for shape in [(512, 512), (3840, 2160), (192, 192, 192)]:
     class FourierBench(ImageBench):
         def set_args(self, dtype):
             cplx_dt = np.promote_types(dtype, np.complex64)
-            imaged = cupy.testing.shaped_random(self.shape, xp=cp, dtype=cplx_dt)
+            imaged = cupy.testing.shaped_random(
+                self.shape, xp=cp, dtype=cplx_dt
+            )
             image = cp.asnumpy(imaged)
             self.args_cpu = (image,)
             self.args_gpu = (imaged,)

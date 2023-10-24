@@ -19,13 +19,14 @@ class InterpolationBench(ImageBench):
 
 class MapCoordinatesBench(ImageBench):
     def set_args(self, dtype):
-
         imaged = cupy.testing.shaped_random(self.shape, xp=cp, dtype=dtype)
         image = cp.asnumpy(imaged)
 
         rstate = cp.random.RandomState(5)
         ndim = len(self.shape)
-        coordsd = cp.indices(self.shape) + 0.1 * rstate.standard_normal((ndim,) + self.shape)
+        coordsd = cp.indices(self.shape) + 0.1 * rstate.standard_normal(
+            (ndim,) + self.shape
+        )
         coords = cupy.asnumpy(coordsd)
 
         self.args_cpu = (image, coords)
@@ -68,7 +69,11 @@ for shape in [(512, 512), (3840, 2160), (4608, 3456), (192, 192, 192)]:
             dict(output=None, output_shape=None, prefilter=prefilter),
             dict(mode=modes, order=orders),
         ),
-        ("zoom", dict(output=None, zoom=1.1, prefilter=prefilter), dict(mode=modes, order=orders)),
+        (
+            "zoom",
+            dict(output=None, zoom=1.1, prefilter=prefilter),
+            dict(mode=modes, order=orders),
+        ),
         (
             "shift",
             dict(output=None, shift=1.5, prefilter=prefilter),
@@ -76,7 +81,13 @@ for shape in [(512, 512), (3840, 2160), (4608, 3456), (192, 192, 192)]:
         ),
         (
             "rotate",
-            dict(output=None, reshape=True, axes=(0, 1), angle=30, prefilter=prefilter),
+            dict(
+                output=None,
+                reshape=True,
+                axes=(0, 1),
+                angle=30,
+                prefilter=prefilter,
+            ),
             dict(mode=modes, order=orders),
         ),
         (
@@ -101,7 +112,6 @@ for shape in [(512, 512), (3840, 2160), (4608, 3456), (192, 192, 192)]:
             ),
         ),
     ]:
-
         if fname == "affine_transform1":
             # affine_transform case 1: the general affine matrix code path
             fname = fname[:-1]

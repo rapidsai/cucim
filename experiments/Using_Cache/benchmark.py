@@ -73,16 +73,34 @@ identity = rasterio.Affine(1, 0, 0, 0, 1, 0)
 
 
 def load_tile_rasterio(slide, start_loc, tile_size):
-    _ = np.moveaxis(slide.read([1, 2, 3],
-                               window=Window.from_slices((start_loc[0], start_loc[0] + tile_size), (start_loc[1], start_loc[1] + tile_size))), 0, -1)
+    _ = np.moveaxis(
+        slide.read(
+            [1, 2, 3],
+            window=Window.from_slices(
+                (start_loc[0], start_loc[0] + tile_size),
+                (start_loc[1], start_loc[1] + tile_size),
+            ),
+        ),
+        0,
+        -1,
+    )
 
 
 def load_tile_rasterio_chunk(input_file, start_loc_list, patch_size):
     identity = rasterio.Affine(1, 0, 0, 0, 1, 0)
     slide = rasterio.open(input_file, transform=identity, num_threads=1)
     for start_loc in start_loc_list:
-        _ = np.moveaxis(slide.read([1, 2, 3],
-                                   window=Window.from_slices((start_loc[0], start_loc[0] + patch_size), (start_loc[1], start_loc[1] + patch_size))), 0, -1)
+        _ = np.moveaxis(
+            slide.read(
+                [1, 2, 3],
+                window=Window.from_slices(
+                    (start_loc[0], start_loc[0] + patch_size),
+                    (start_loc[1], start_loc[1] + patch_size),
+                ),
+            ),
+            0,
+            -1,
+        )
 
 
 def load_tile_openslide_chunk_mp(inp_file, start_loc_list, patch_size):
@@ -100,12 +118,24 @@ def load_tile_cucim_chunk_mp(inp_file, start_loc_list, patch_size):
 def load_tile_rasterio_chunk_mp(input_file, start_loc_list, patch_size):
     slide = rasterio.open(input_file, num_threads=1)
     for start_loc in start_loc_list:
-        region = np.moveaxis(slide.read([1, 2, 3],
-                                        window=Window.from_slices((start_loc[0], start_loc[0] + patch_size), (start_loc[1], start_loc[1] + patch_size))), 0, -1)
+        region = np.moveaxis(
+            slide.read(
+                [1, 2, 3],
+                window=Window.from_slices(
+                    (start_loc[0], start_loc[0] + patch_size),
+                    (start_loc[1], start_loc[1] + patch_size),
+                ),
+            ),
+            0,
+            -1,
+        )
 
 
-def experiment_thread(cache_strategy, input_file, num_threads, start_location, patch_size):
+def experiment_thread(
+    cache_strategy, input_file, num_threads, start_location, patch_size
+):
     import psutil
+
     print("  ", psutil.virtual_memory())
     # range(1, num_threads + 1): # (num_threads,):
     for num_workers in range(1, num_threads + 1):
@@ -116,12 +146,16 @@ def experiment_thread(cache_strategy, input_file, num_threads, start_location, p
         with OpenSlide(input_file) as slide:
             width, height = slide.dimensions
 
-            start_loc_data = [(sx, sy)
-                              for sy in range(start_location, height, patch_size)
-                              for sx in range(start_location, width, patch_size)]
+            start_loc_data = [
+                (sx, sy)
+                for sy in range(start_location, height, patch_size)
+                for sx in range(start_location, width, patch_size)
+            ]
             chunk_size = len(start_loc_data) // num_workers
-            start_loc_list_iter = [start_loc_data[i:i+chunk_size]
-                                   for i in range(0, len(start_loc_data), chunk_size)]
+            start_loc_list_iter = [
+                start_loc_data[i : i + chunk_size]
+                for i in range(0, len(start_loc_data), chunk_size)
+            ]
             with Timer("  Thread elapsed time (OpenSlide)") as timer:
                 with concurrent.futures.ThreadPoolExecutor(
                     max_workers=num_workers
@@ -130,22 +164,27 @@ def experiment_thread(cache_strategy, input_file, num_threads, start_location, p
                         load_tile_openslide_chunk,
                         repeat(input_file),
                         start_loc_list_iter,
-                        repeat(patch_size)
+                        repeat(patch_size),
                     )
                 openslide_time = timer.elapsed_time()
         print("  ", psutil.virtual_memory())
 
         cache_size = psutil.virtual_memory().available // 1024 // 1024 // 20
         cache = CuImage.cache(
-            cache_strategy, memory_capacity=cache_size, record_stat=True)
+            cache_strategy, memory_capacity=cache_size, record_stat=True
+        )
         cucim_time = 0
         slide = CuImage(input_file)
-        start_loc_data = [(sx, sy)
-                          for sy in range(start_location, height, patch_size)
-                          for sx in range(start_location, width, patch_size)]
+        start_loc_data = [
+            (sx, sy)
+            for sy in range(start_location, height, patch_size)
+            for sx in range(start_location, width, patch_size)
+        ]
         chunk_size = len(start_loc_data) // num_workers
-        start_loc_list_iter = [start_loc_data[i:i+chunk_size]
-                               for i in range(0, len(start_loc_data), chunk_size)]
+        start_loc_list_iter = [
+            start_loc_data[i : i + chunk_size]
+            for i in range(0, len(start_loc_data), chunk_size)
+        ]
         with Timer("  Thread elapsed time (cuCIM)") as timer:
             with concurrent.futures.ThreadPoolExecutor(
                 max_workers=num_workers
@@ -154,18 +193,22 @@ def experiment_thread(cache_strategy, input_file, num_threads, start_location, p
                     load_tile_cucim_chunk,
                     repeat(input_file),
                     start_loc_list_iter,
-                    repeat(patch_size)
+                    repeat(patch_size),
                 )
             cucim_time = timer.elapsed_time()
         print(f"  hit: {cache.hit_count}   miss: {cache.miss_count}")
         print("  ", psutil.virtual_memory())
 
-        start_loc_data = [(sx, sy)
-                          for sy in range(start_location, height, patch_size)
-                          for sx in range(start_location, width, patch_size)]
+        start_loc_data = [
+            (sx, sy)
+            for sy in range(start_location, height, patch_size)
+            for sx in range(start_location, width, patch_size)
+        ]
         chunk_size = len(start_loc_data) // num_workers
-        start_loc_list_iter = [start_loc_data[i:i+chunk_size]
-                               for i in range(0, len(start_loc_data), chunk_size)]
+        start_loc_list_iter = [
+            start_loc_data[i : i + chunk_size]
+            for i in range(0, len(start_loc_data), chunk_size)
+        ]
 
         with Timer("  Thread elapsed time (rasterio)") as timer:
             with concurrent.futures.ThreadPoolExecutor(
@@ -175,7 +218,7 @@ def experiment_thread(cache_strategy, input_file, num_threads, start_location, p
                     load_tile_rasterio_chunk,
                     repeat(input_file),
                     start_loc_list_iter,
-                    repeat(patch_size)
+                    repeat(patch_size),
                 )
             rasterio_time = timer.elapsed_time()
 
@@ -186,8 +229,11 @@ def experiment_thread(cache_strategy, input_file, num_threads, start_location, p
         print(output_text)
 
 
-def experiment_process(cache_strategy, input_file, num_processes, start_location, patch_size):
+def experiment_process(
+    cache_strategy, input_file, num_processes, start_location, patch_size
+):
     import psutil
+
     print("  ", psutil.virtual_memory())
     for num_workers in range(1, num_processes + 1):
         openslide_time = 1
@@ -197,12 +243,16 @@ def experiment_process(cache_strategy, input_file, num_processes, start_location
         with OpenSlide(input_file) as slide:
             width, height = slide.dimensions
 
-            start_loc_data = [(sx, sy)
-                              for sy in range(start_location, height, patch_size)
-                              for sx in range(start_location, width, patch_size)]
+            start_loc_data = [
+                (sx, sy)
+                for sy in range(start_location, height, patch_size)
+                for sx in range(start_location, width, patch_size)
+            ]
             chunk_size = len(start_loc_data) // num_workers
-            start_loc_list_iter = [start_loc_data[i:i+chunk_size]
-                                   for i in range(0, len(start_loc_data), chunk_size)]
+            start_loc_list_iter = [
+                start_loc_data[i : i + chunk_size]
+                for i in range(0, len(start_loc_data), chunk_size)
+            ]
 
             with Timer("  Process elapsed time (OpenSlide)") as timer:
                 with concurrent.futures.ProcessPoolExecutor(
@@ -212,7 +262,7 @@ def experiment_process(cache_strategy, input_file, num_processes, start_location
                         load_tile_openslide_chunk_mp,
                         repeat(input_file),
                         start_loc_list_iter,
-                        repeat(patch_size)
+                        repeat(patch_size),
                     )
                 openslide_time = timer.elapsed_time()
         print("  ", psutil.virtual_memory())
@@ -221,15 +271,20 @@ def experiment_process(cache_strategy, input_file, num_processes, start_location
         if cache_strategy == "shared_memory":
             cache_size = cache_size * num_workers
         cache = CuImage.cache(
-            cache_strategy, memory_capacity=cache_size, record_stat=True)
+            cache_strategy, memory_capacity=cache_size, record_stat=True
+        )
         cucim_time = 0
         slide = CuImage(input_file)
-        start_loc_data = [(sx, sy)
-                          for sy in range(start_location, height, patch_size)
-                          for sx in range(start_location, width, patch_size)]
+        start_loc_data = [
+            (sx, sy)
+            for sy in range(start_location, height, patch_size)
+            for sx in range(start_location, width, patch_size)
+        ]
         chunk_size = len(start_loc_data) // num_workers
-        start_loc_list_iter = [start_loc_data[i:i+chunk_size]
-                               for i in range(0, len(start_loc_data), chunk_size)]
+        start_loc_list_iter = [
+            start_loc_data[i : i + chunk_size]
+            for i in range(0, len(start_loc_data), chunk_size)
+        ]
 
         with Timer("  Process elapsed time (cuCIM)") as timer:
             with concurrent.futures.ProcessPoolExecutor(
@@ -239,18 +294,22 @@ def experiment_process(cache_strategy, input_file, num_processes, start_location
                     load_tile_cucim_chunk_mp,
                     repeat(input_file),
                     start_loc_list_iter,
-                    repeat(patch_size)
+                    repeat(patch_size),
                 )
             cucim_time = timer.elapsed_time()
         print("  ", psutil.virtual_memory())
 
         rasterio_time = 0
-        start_loc_data = [(sx, sy)
-                          for sy in range(start_location, height, patch_size)
-                          for sx in range(start_location, width, patch_size)]
+        start_loc_data = [
+            (sx, sy)
+            for sy in range(start_location, height, patch_size)
+            for sx in range(start_location, width, patch_size)
+        ]
         chunk_size = len(start_loc_data) // num_workers
-        start_loc_list_iter = [start_loc_data[i:i+chunk_size]
-                               for i in range(0, len(start_loc_data), chunk_size)]
+        start_loc_list_iter = [
+            start_loc_data[i : i + chunk_size]
+            for i in range(0, len(start_loc_data), chunk_size)
+        ]
 
         with Timer("  Process elapsed time (rasterio)") as timer:
             with concurrent.futures.ProcessPoolExecutor(
@@ -260,7 +319,7 @@ def experiment_process(cache_strategy, input_file, num_processes, start_location
                     load_tile_rasterio_chunk_mp,
                     repeat(input_file),
                     start_loc_list_iter,
-                    repeat(patch_size)
+                    repeat(patch_size),
                 )
             rasterio_time = timer.elapsed_time()
 

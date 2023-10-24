@@ -57,12 +57,12 @@ from auditwheel.wheeltools import InWheelCtx
 
 
 # Parameters
-PYTHON_EXTENSION_LIBRARIES = [
-    r'cucim/libcucim\.so\.\d{1,2}'
-]
+PYTHON_EXTENSION_LIBRARIES = [r"cucim/libcucim\.so\.\d{1,2}"]
 
 # 1) auditwheel.elfutils.elf_is_python_extension replacement
 orig_elf_is_python_extension = auditwheel.elfutils.elf_is_python_extension
+
+
 @functools.wraps(orig_elf_is_python_extension)
 def elf_is_python_extension(fn, elf):
     if any(map(lambda x: re.fullmatch(x, fn), PYTHON_EXTENSION_LIBRARIES)):
@@ -70,8 +70,11 @@ def elf_is_python_extension(fn, elf):
         return True, 3
     return orig_elf_is_python_extension(fn, elf)
 
+
 # 3) auditwheel.wheeltools.InWheelCtx.__enter__ replacement
 orig_inwheelctx_enter = InWheelCtx.__enter__
+
+
 @functools.wraps(orig_inwheelctx_enter)
 def inwheelctx_enter(self):
     rtn = orig_inwheelctx_enter(self)
@@ -90,12 +93,15 @@ def inwheelctx_enter(self):
 
     return rtn
 
+
 # # sys.argv replacement
 # testargs = ["auditwheel_repair.py", "repair", "--plat", "manylinux2014_x86_64", "-w", "wherehouse", "cuclara_image-0.1.1-py3-none-manylinux2014_x86_64.whl"]
 # with patch.object(sys, 'argv', testargs):
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     # Patch
-    with patch.object(auditwheel.elfutils, 'elf_is_python_extension', elf_is_python_extension):
-        with patch.object(InWheelCtx, '__enter__', inwheelctx_enter):
+    with patch.object(
+        auditwheel.elfutils, "elf_is_python_extension", elf_is_python_extension
+    ):
+        with patch.object(InWheelCtx, "__enter__", inwheelctx_enter):
             main()

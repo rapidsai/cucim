@@ -75,6 +75,14 @@ These tools are used to auto-format the Python code in the repository. Additiona
 
 ```bash
 isort --settings-path="python/cucim/pyproject.toml" .
+ruff python/cucim
+black --config python/cucim/pyproject.toml .
+```
+
+In addition to these tools, [codespell]() can be used to help diagnose and interactively fix spelling errors in both Python and C++ code. It can also be run from the top level of the repository in interactive mode using:
+
+```bash
+codespell --toml python/cucim/pyproject.toml . -i 3 -w
 ```
 
 ### Get libcucim Dependencies

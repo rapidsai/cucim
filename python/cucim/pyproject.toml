@@ -92,6 +92,7 @@ target-version = ["py39"]
 include = '\.py?$'
 exclude = '''
 /(
+    3rdparty |
     thirdparty |
     \.eggs |
     \.git |
@@ -100,8 +101,15 @@ exclude = '''
     \.tox |
     \.venv |
     _build |
+    _deps |
+    cpp |
+    ci |
     build |
+    build-debug |
+    build-release |
     dist |
+    docker |
+    docs |
 )/
 '''
 

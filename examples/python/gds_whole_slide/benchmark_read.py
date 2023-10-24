@@ -14,8 +14,8 @@ from demo_implementation import (
 )
 from tifffile import TiffFile
 
-data_dir = os.environ.get('WHOLE_SLIDE_DATA_DIR', os.path.dirname('__file__'))
-fname = os.path.join(data_dir, 'resize.tiff')
+data_dir = os.environ.get("WHOLE_SLIDE_DATA_DIR", os.path.dirname("__file__"))
+fname = os.path.join(data_dir, "resize.tiff")
 if not os.path.exists(fname):
     raise RuntimeError(f"Could not find data file: {fname}")
 
@@ -60,10 +60,10 @@ perf_openslide = benchmark(
     (fname, level),
     n_warmup=0,
     n_repeat=100,
-    max_duration=max_duration
+    max_duration=max_duration,
 )
 times.append(perf_openslide.gpu_times.mean())
-labels.append('openslide')
+labels.append("openslide")
 print(f"duration ({labels[-1]}) = {times[-1]}")
 
 perf_tifffile = benchmark(
@@ -71,10 +71,10 @@ perf_tifffile = benchmark(
     (fname, level),
     n_warmup=0,
     n_repeat=100,
-    max_duration=max_duration
+    max_duration=max_duration,
 )
 times.append(perf_tifffile.gpu_times.mean())
-labels.append('tifffile')
+labels.append("tifffile")
 print(f"duration ({labels[-1]}) = {times[-1]}")
 
 for gds_enabled in [False, True]:
@@ -84,7 +84,7 @@ for gds_enabled in [False, True]:
     p = benchmark(
         read_tiled,
         (fname, [level]),
-        kwargs=dict(backend='kvikio-raw_read', tile_buffers=tile_buffers),
+        kwargs=dict(backend="kvikio-raw_read", tile_buffers=tile_buffers),
         n_warmup=1,
         n_repeat=100,
         max_duration=max_duration,
@@ -103,7 +103,7 @@ for gds_enabled in [False, True]:
         p = benchmark(
             read_tiled,
             (fname, [level]),
-            kwargs=dict(backend='kvikio-read', tile_buffers=tile_buffers),
+            kwargs=dict(backend="kvikio-read", tile_buffers=tile_buffers),
             n_warmup=1,
             n_repeat=100,
             max_duration=max_duration,
@@ -130,12 +130,14 @@ for gds_enabled in [False, True]:
         p = benchmark(
             read_tiled,
             (fname, [level]),
-            kwargs=dict(backend='kvikio-pread',
-                        n_buffer=n_buffer,
-                        tile_buffers=tile_buffers),
+            kwargs=dict(
+                backend="kvikio-pread",
+                n_buffer=n_buffer,
+                tile_buffers=tile_buffers,
+            ),
             n_warmup=1,
             n_repeat=100,
-            max_duration=max_duration
+            max_duration=max_duration,
         )
         if gds_enabled:
             perf_kvikio_pread.append(p)
@@ -151,11 +153,11 @@ if preregister_buffers:
 
 kvikio.defaults.compat_mode_reset(False)
 
-out_name = 'read_times.npz'
+out_name = "read_times.npz"
 # auto-increment filename to avoid overwriting old results
 cnt = 1
 while os.path.exists(out_name):
-    out_name = f'read_times{cnt}.npz'
+    out_name = f"read_times{cnt}.npz"
     cnt += 1
 np.savez(out_name, times=np.asarray(times), labels=np.asarray(labels))
 
