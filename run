@@ -1059,7 +1059,7 @@ install_tox_() {
 
 gen_docs_desc() { echo 'Generate document
 
-Generated docs would be avaialable at ${TOP}/dist/docs.
+Generated docs would be available at ${TOP}/dist/docs.
 
 Returns:
   None
@@ -1100,7 +1100,7 @@ gen_docs_dev_desc() { echo 'Generate document
 
 Launch dev-server for sphinx.
 
-Generated docs would be avaialable at ${TOP}/python/cucim/dist/docs.
+Generated docs would be available at ${TOP}/python/cucim/dist/docs.
 
 Arguments:
   -p <port> - port number
@@ -1152,7 +1152,7 @@ gen_docs_dev() {
 publish_docs_desc() { echo 'Publish generated documents to the server
 
 Publish generated documents to $GITLAB_PUBLISH_PROJECT_URL
-The web page is available at the followings:
+The web page is available at the following:
 - $GITLAB_PUBLISH_PROJECT_URL
 
 Arguments:

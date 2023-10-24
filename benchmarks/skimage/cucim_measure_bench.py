@@ -187,7 +187,7 @@ def main(args):
         # _moments.py
         ("moments", dict(), dict(order=[1, 2, 3, 4]), False, False),
         ("moments_central", dict(), dict(order=[1, 2, 3]), False, True),
-        # omited from benchmarks (only tiny arrays): moments_normalized, moments_hu
+        # omitted from benchmarks (only tiny arrays): moments_normalized, moments_hu
         ("centroid", dict(), dict(), False, True),
         ("inertia_tensor", dict(), dict(), False, True),
         ("inertia_tensor_eigvals", dict(), dict(), False, True),

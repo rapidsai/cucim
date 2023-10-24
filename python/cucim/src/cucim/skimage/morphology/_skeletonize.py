@@ -308,7 +308,7 @@ def medial_axis(image, mask=None, return_distance=False, *, seed=None):
         )
     )
 
-    # Call _skeletonize_loop on the CPU. It requies a single pass over the
+    # Call _skeletonize_loop on the CPU. It requires a single pass over the
     # full array using a specific pixel order, so cannot be run multithreaded!
     order = cp.asnumpy(order.astype(cp.int32, copy=False))
     table = cp.asnumpy(table.astype(cp.uint8, copy=False))

@@ -104,7 +104,7 @@ def zoom(
             if smem_size < max_smem:
                 return param, smem_size
 
-        raise Exception("Random Zoom couldnt find a \
+        raise Exception("Random Zoom couldn't find a \
                          shared memory configuration")
 
     # input pitch

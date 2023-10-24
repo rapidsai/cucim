@@ -112,7 +112,7 @@ def _truncation_slices(check_needed, page_shape, offsets, tile_shape, n_tiles):
     Parameters
     ----------
     check_needed : 3-tuple of bool
-        Any axis whos page size is not evenly divisible by the tile size will
+        Any axis whose page size is not evenly divisible by the tile size will
         have a True entry in this tuple.
     page_shape : tuple of int
         The shape of the current TIFF page (depth, length, width[, channels])
@@ -304,7 +304,7 @@ def read_tiled(fname, levels=[0], backend='kvikio-pread', n_buffer=100,
         reads.
     n_buffer : int, optional
         Scratch space equal to `n_buffer` TIFF tiles will be allocated.
-        Providing scratch space for multiple tiles helps the peformance in the
+        Providing scratch space for multiple tiles helps the performance in the
         recommended asynchronous 'kvikio-pread' mode.
     tile_func : function, optional
         A CuPy-based function to apply to each tile after it is read. Must
@@ -400,7 +400,7 @@ def read_tiled(fname, levels=[0], backend='kvikio-pread', n_buffer=100,
                     cp.empty(buffer_bytecount, dtype=cp.uint8) for n in range(n_buffer)
                 )
             elif tile_buffers[0].size < buffer_bytecount:
-                warning.warn("reallocating tile buffers to accomodate data size")
+                warning.warn("reallocating tile buffers to accommodate data size")
                 tile_buffers = tuple(
                     cp.empty(buffer_bytecount, dtype=cp.uint8) for n in range(n_buffer)
                 )
@@ -474,7 +474,7 @@ def read_tiled(fname, levels=[0], backend='kvikio-pread', n_buffer=100,
             ):
                 index_mod = index % n_buffer
                 if index == 0:
-                    # intialize lists for storage of future results
+                    # initialize lists for storage of future results
                     all_futures = []
                     all_tiles = []
                     all_slices = []
@@ -667,7 +667,7 @@ def cupy_to_zarr(
 
                 index_mod = index % n_buffer
                 if index == 0:
-                    # intialize lists for storage of future results
+                    # initialize lists for storage of future results
                     all_tiles = []
                     all_handles = []
                     all_futures = []

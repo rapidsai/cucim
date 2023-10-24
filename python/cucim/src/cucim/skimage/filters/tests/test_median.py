@@ -33,7 +33,7 @@ def camera():
     return cp.array(data.camera())
 
 
-# TODO: mode='rank' disabled until it has been implmented
+# TODO: mode='rank' disabled until it has been implemented
 @pytest.mark.parametrize(
     "mode, cval, behavior, warning_type",
     [('nearest', 0.0, 'ndimage', []),

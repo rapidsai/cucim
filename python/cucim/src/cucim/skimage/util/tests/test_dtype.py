@@ -160,10 +160,10 @@ float_dtype_list = [float, float, cp.double, cp.single, cp.float32,
 
 
 def test_float_conversion_dtype():
-    """Test any convertion from a float dtype to an other."""
+    """Test any conversion from a float dtype to an other."""
     x = cp.array([-1, 1])
 
-    # Test all combinations of dtypes convertions
+    # Test all combinations of dtypes conversions
     dtype_combin = np.array(np.meshgrid(float_dtype_list,
                                         float_dtype_list)).T.reshape(-1, 2)
 
@@ -177,7 +177,7 @@ def test_float_conversion_dtype_warns():
     """Test that convert issues a warning when called"""
     x = np.array([-1, 1])
 
-    # Test all combinations of dtypes convertions
+    # Test all combinations of dtypes conversions
     dtype_combin = np.array(np.meshgrid(float_dtype_list,
                                         float_dtype_list)).T.reshape(-1, 2)
 

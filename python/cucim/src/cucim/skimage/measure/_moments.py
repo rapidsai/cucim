@@ -442,7 +442,7 @@ def moments_hu(nu):
     Notes
     -----
     Due to the small array sizes, this function will be faster on the CPU.
-    Consider transfering ``nu`` to the host and running
+    Consider transferring ``nu`` to the host and running
     ``skimage.measure.moments_hu`` if the moments are not needed on the
     device.
 

@@ -157,7 +157,7 @@ def test_ndim():
         regionprops(cp.zeros((10, 10, 10, 2), dtype=int))
 
 
-@pytest.mark.skip('feret_diameter_max not implmented on the GPU')
+@pytest.mark.skip('feret_diameter_max not implemented on the GPU')
 def test_feret_diameter_max():
     # comparator result is based on SAMPLE from manually-inspected computations
     comparator_result = 18
@@ -182,7 +182,7 @@ def test_feret_diameter_max():
         (spacing[1] * 16 - (spacing[1] < spacing[0])) ** 2)) < 1e-6
 
 
-@pytest.mark.skip('feret_diameter_max not implmented on the GPU')
+@pytest.mark.skip('feret_diameter_max not implemented on the GPU')
 def test_feret_diameter_max_3d():
     img = cp.zeros((20, 20), dtype=cp.uint8)
     img[2:-2, 2:-2] = 1

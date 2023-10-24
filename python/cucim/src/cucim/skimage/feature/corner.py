@@ -627,7 +627,7 @@ def _image_orthogonal_matrix33_eigvals(
     ``d``, ``f``, ``b``, ``e``, and ``c`` will be equal in shape to the 3D
     volume.
 
-    Invidual arguments correspond to the following moment matrix entries
+    Individual arguments correspond to the following moment matrix entries
 
     .. math::
 

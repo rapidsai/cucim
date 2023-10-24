@@ -70,12 +70,12 @@ def median(image, footprint=None, out=None, mode='nearest', cval=0.0,
         Determines which algorithm is used to compute the median. The default
         of 'auto' will attempt to use a histogram-based algorithm for 2D
         images with 8 or 16-bit integer data types. Otherwise a sorting-based
-        algorithm will be used. Note: this paramter is cuCIM-specific and does
+        algorithm will be used. Note: this parameter is cuCIM-specific and does
         not exist in upstream scikit-image.
     algorithm_kwargs : dict
         Any additional algorithm-specific keywords. Currently can only be used
         to set the number of parallel partitions for the 'histogram' algorithm.
-        (e.g. ``algorithm_kwargs={'partitions': 256}``). Note: this paramter is
+        (e.g. ``algorithm_kwargs={'partitions': 256}``). Note: this parameter is
         cuCIM-specific and does not exist in upstream scikit-image.
 
     Returns

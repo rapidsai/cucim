@@ -224,7 +224,7 @@ __global__ void huejitter_kernel(unsigned char *input_rgb, \
       float uq = (q <= 0.0f) ? 0.0f : ((q >= 255.0f) ? 255.0f : q);
       float ut = (t <= 0.0f) ? 0.0f : ((t >= 255.0f) ? 255.0f : t);
 
-      // todo: make atleast 16-bit stores
+      // todo: make at least 16-bit stores
       switch ((int)i % 6) {
         case 0:
           output_rgb[idx]         = (unsigned char)__float2uint_rn(v);

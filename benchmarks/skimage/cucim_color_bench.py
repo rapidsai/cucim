@@ -79,15 +79,15 @@ class LabelBench(ImageBench):
             label = np.kron(a, np.ones(tiling, dtype=a.dtype))
         else:
             label = np.tile(a, tiling)
-        labeld = cp.asarray(label)
-        imaged = cupy.testing.shaped_random(labeld.shape, xp=cp, dtype=dtype, scale=1.0)
+        labelled = cp.asarray(label)
+        imaged = cupy.testing.shaped_random(labelled.shape, xp=cp, dtype=dtype, scale=1.0)
         image = cp.asnumpy(imaged)
         self.args_cpu = (
             label,
             image,
         )
         self.args_gpu = (
-            labeld,
+            labelled,
             imaged,
         )
 

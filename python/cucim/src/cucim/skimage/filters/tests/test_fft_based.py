@@ -38,7 +38,7 @@ def test_butterworth_cutoff(cutoff, order, high_pass, squared_butterworth):
         high_pass=high_pass, real=False,
         squared_butterworth=squared_butterworth,
     )
-    # select DC frequence on first axis to get profile along a single axis
+    # select DC frequency on first axis to get profile along a single axis
     wfilt_profile = cp.abs(wfilt[0])
     wfilt_profile = cp.asnumpy(wfilt_profile)
 

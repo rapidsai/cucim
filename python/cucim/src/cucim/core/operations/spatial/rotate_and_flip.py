@@ -71,7 +71,7 @@ def image_rotate_90(
     spatial_axis: tuple()
 ) -> Any:
     """
-    Rotate input array by 90 degress along the given axis
+    Rotate input array by 90 degrees along the given axis
 
     Parameters
     ----------

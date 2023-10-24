@@ -687,7 +687,7 @@ def test_degenerate(xp=cp):
     assert not tform.estimate(src, dst)
     assert xp.all(xp.isnan(tform.params))
 
-    # The tesselation on the following points produces one degenerate affine
+    # The tessellation on the following points produces one degenerate affine
     # warp within PiecewiseAffineTransform.
     src = xp.asarray([
         [0, 192, 256], [0, 256, 256], [5, 0, 192], [5, 64, 0], [5, 64, 64],
