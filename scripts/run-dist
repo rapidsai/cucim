@@ -307,14 +307,14 @@ launch_notebooks() {
 
     run_command cp ${TOP}/*.whl ${TOP}/notebooks
 
-    run_command nvidia-docker build -t cucim-jupyter${gds_postfix} -f ${TOP}/docker/Dockerfile-jupyter${gds_postfix} ${TOP}
+    run_command docker build --runtime nvidia -t cucim-jupyter${gds_postfix} -f ${TOP}/docker/Dockerfile-jupyter${gds_postfix} ${TOP}
 
     [ $? -ne 0 ] && return 1
 
     c_echo W "Port " G "$port" W " would be used...(" B "http://$(hostname -I | cut -d' ' -f 1):${port}" W ")"
 
     if [ -z "${gds_postfix}" ]; then
-        run_command nvidia-docker run --gpus all -it --rm \
+        run_command docker run --runtime nvidia --gpus all -it --rm \
             -v ${TOP}/notebooks:/notebooks \
             -p ${port}:${port} \
             cucim-jupyter \
