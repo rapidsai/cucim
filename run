@@ -756,7 +756,7 @@ build_python_package_() {
     for PYBIN in ${pybins}; do # /opt/python/*/bin
         # run_command "${PYBIN}/python3" setup.py bdist_wheel -p $PLAT -d ${TEMP_PYPKG_DIR}
         # no pip equivalent of -p for platform?
-        run_command "${PYBIN}/python3" -m pip wheel . --wheel-dir ${TEMP_PYPKG_DIR}
+        run_command "${PYBIN}/python3" -m pip wheel . --wheel-dir ${TEMP_PYPKG_DIR} -vv
     done
 
     # Do not bundle external shared libraries for now.
