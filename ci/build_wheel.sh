@@ -42,6 +42,7 @@ then
     yum install yasm openslide-devel -y
 else
     echo "apt package manager was found"
+    apt update
     apt install yasm libopenslide-dev -y
 fi
 
