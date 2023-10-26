@@ -44,14 +44,25 @@ else
     echo "apt package manager was found"
     apt update
     apt install yasm libopenslide-dev -y
+    dpkg -L libopenslide-dev
+
+    # temporarily add a sleep here to slow down the aarch64 workers to allow
+    # x86_64 cases to try to run instead of being cancelled if the aarch64
+    # case failed
+    sleep 10m
 fi
 
 # First build the C++ lib using CMake via the run script
 ./run build_local libcucim ${CMAKE_BUILD_TYPE}
 
 # Build the C++ cuslide and cumed plugins
-./run build_local libcuslide ${CMAKE_BUILD_TYPE}
-./run build_local libcumed ${CMAKE_BUILD_TYPE}
+./run build_local cuslide ${CMAKE_BUILD_TYPE}
+cp -P -r cpp/plugins/cucim.kit.cuslide/install/lib/* ./install/lib/
+cp -P -r cpp/plugins/cucim.kit.cuslide/install/bin/* ./install/bin/
+
+./run build_local cumed ${CMAKE_BUILD_TYPE}
+cp -P -r cpp/plugins/cucim.kit.cumed/install/lib/* ./install/lib/
+cp -P -r cpp/plugins/cucim.kit.cumed/install/bin/* ./install/bin/
 
 # problems: boost-header-only takes a long time to download
 
@@ -59,8 +70,9 @@ fi
 ./run build_local cucim ${CMAKE_BUILD_TYPE}
 
 # Copy the resulting cucim pybind11 shared library into the Python package src folder
-# cp -P python/install/lib/* python/cucim/src/cucim/clara/
-cp -P python/build-${CMAKE_BUILD_TYPE}/lib/cucim/* python/cucim/src/cucim/clara/
+cp -P python/install/lib/* python/cucim/src/cucim/clara/
+# also need these files in the clara wheel
+cp -P install/lib/* python/cucim/src/cucim/clara/
 
 cd "${package_dir}"
 
