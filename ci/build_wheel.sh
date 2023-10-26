@@ -25,13 +25,16 @@ pyproject_file="${package_dir}/pyproject.toml"
 sed -i "s/^version = .*/version = \"${version_override}\"/g" ${pyproject_file}
 sed -i "s/name = \"${package_name}\"/name = \"${package_name}${PACKAGE_CUDA_SUFFIX}\"/g" ${pyproject_file}
 
-python -m pip install --upgrade pip
+pip install --upgrade pip
 
 #CMake version in the container is too old, install a new version in the python venv
-python -m pip install "cmake>=3.26.4" ninja
+pip install "cmake>=3.26.4" ninja
+
+echo `which cmake`
 
 # apply patch to omit building tests and benchmark binaries so libopenslide isn't required
 git apply ci/cmake-omit-benchmarks-examples-tests.patch
+
 
 # First build the C++ lib using CMake via the run script
 ./run build_local libcucim release
