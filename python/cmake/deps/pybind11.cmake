@@ -19,6 +19,7 @@ if (NOT TARGET deps::pybind11)
             GIT_REPOSITORY https://github.com/pybind/pybind11.git
             GIT_TAG v2.11.1
             GIT_SHALLOW TRUE
+            PATCH_COMMAND git apply "${CMAKE_CURRENT_LIST_DIR}/pybind11_pr4857_4877.patch" || true
     )
     FetchContent_GetProperties(deps-pybind11)
     if (NOT deps-pybind11_POPULATED)
