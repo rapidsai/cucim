@@ -370,7 +370,7 @@ build_local_cucim_() {
         -DPYTHON_LIBRARY=${python_library} \
         -DPYTHON_INCLUDE_DIR=${python_include_dir}
     ${CMAKE_CMD} --build ${build_folder} --config ${build_type_str} --target cucim -- -j $(nproc)
-    ${CMAKE_CMD} --build ${build_folder} --config ${build_type_str} --target install -- -j $(nproc)
+    # ${CMAKE_CMD} --build ${build_folder} --config ${build_type_str} --target install -- -j $(nproc)
 
     popd
 }

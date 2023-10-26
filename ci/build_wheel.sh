@@ -6,6 +6,8 @@ set -euo pipefail
 package_name="cucim"
 package_dir="python/cucim"
 
+CMAKE_BUILD_TYPE="release"
+
 source rapids-configure-sccache
 source rapids-date-string
 
@@ -37,16 +39,17 @@ git apply ci/cmake-omit-benchmarks-examples-tests.patch
 
 
 # First build the C++ lib using CMake via the run script
-./run build_local libcucim release
+./run build_local libcucim ${CMAKE_BUILD_TYPE}
 
 # problems: boost-header-only takes a long time to download
 # Fails to build any files requiring libopenslide as it isn't on the system
 
 # Compile the Python bindings
-./run build_local cucim release
+./run build_local cucim ${CMAKE_BUILD_TYPE}
 
 # Copy the resulting cucim pybind11 shared library into the Python package src folder
-cp -P python/install/lib/* python/cucim/src/cucim/clara/
+# cp -P python/install/lib/* python/cucim/src/cucim/clara/
+cp -P python/build-${CMAKE_BUILD_TYPE}/lib/cucim/* python/cucim/src/cucim/clara/
 
 cd "${package_dir}"
 
