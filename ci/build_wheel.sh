@@ -36,7 +36,7 @@ echo `which cmake`
 
 # apply patch to omit building tests and benchmark binaries so libopenslide isn't required
 git apply ci/cmake-omit-benchmarks-examples-tests.patch
-
+git apply ci/disable-cucim-install-step.patch
 
 # First build the C++ lib using CMake via the run script
 ./run build_local libcucim ${CMAKE_BUILD_TYPE}
