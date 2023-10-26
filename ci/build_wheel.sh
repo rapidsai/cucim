@@ -34,15 +34,25 @@ pip install "cmake>=3.26.4" ninja
 
 echo `which cmake`
 
-# apply patch to omit building tests and benchmark binaries so libopenslide isn't required
-git apply ci/cmake-omit-benchmarks-examples-tests.patch
-git apply ci/disable-cucim-install-step.patch
+# Building the libjpeg-turbo dependency requires YASM
+# Also need to install openslide dev libraries on the system
+if ! command -v apt &> /dev/null
+then
+    echo "apt package manager not found, attempting to use yum"
+    yum install yasm openslide-devel -y
+else
+    echo "apt package manager was found"
+    apt install yasm libopenslide-dev -y
+fi
 
 # First build the C++ lib using CMake via the run script
 ./run build_local libcucim ${CMAKE_BUILD_TYPE}
 
+# Build the C++ cuslide and cumed plugins
+./run build_local libcuslide ${CMAKE_BUILD_TYPE}
+./run build_local libcumed ${CMAKE_BUILD_TYPE}
+
 # problems: boost-header-only takes a long time to download
-# Fails to build any files requiring libopenslide as it isn't on the system
 
 # Compile the Python bindings
 ./run build_local cucim ${CMAKE_BUILD_TYPE}
