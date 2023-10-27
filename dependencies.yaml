@@ -245,8 +245,6 @@ dependencies:
       - output_types: [conda, requirements, pyproject]
         packages:
           - GPUtil>=1.4.0
-          - imagecodecs>=2021.6.8
-          - openslide-python>=1.1.2
           - psutil>=5.8.0
           - pytest-cov>=2.12.1
           - pytest-lazy-fixture>=0.6.3
@@ -255,9 +253,18 @@ dependencies:
           - tifffile>=2022.7.28
       - output_types: [conda]
         packages:
+          # TODO: fix dependencies and move imagecodecs & openslide-python back up to the common
+          #   section above. (doesn't seem that imagecodecs has an arm64 wheel)
+          - imagecodecs>=2021.6.8
+          - openslide-python>=1.1.2
           - pip
           - pip:
             - opencv-python-headless>=4.6
+      - output_types: [requirements]
+        packages:
+          # TODO: fix dependencies and move this back up to the common section above
+          - imagecodecs>=2021.6.8
+          - openslide-python>=1.1.2
       - output_types: [requirements, pyproject]
         packages:
           - opencv-python-headless>=4.6
