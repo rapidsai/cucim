@@ -5,6 +5,7 @@ import numpy as np
 # Note: lookup table generated using scikit-image code from
 # https://github.com/scikit-image/scikit-image/blob/38b595d60befe3a0b4c0742995b9737200a079c6/skimage/morphology/_skeletonize.py#L449-L458  # noqa
 
+# fmt: off
 lookup_table = np.array(
     [
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 1, 1,
@@ -65,3 +66,4 @@ cornerness_table = np.array(
     ],
     dtype=np.uint8,
 )
+# fmt: on

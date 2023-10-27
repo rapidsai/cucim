@@ -95,7 +95,7 @@ def test_daisy_normalization():
     for i in range(descs.shape[0]):
         for j in range(descs.shape[1]):
             for k in range(0, desc_dims, orientations):
-                dtmp = descs[i, j, k:k + orientations]
+                dtmp = descs[i, j, k : k + orientations]
                 assert_array_almost_equal(cp.sqrt(cp.sum(dtmp * dtmp)), 1)
 
     img = cp.zeros((50, 50))

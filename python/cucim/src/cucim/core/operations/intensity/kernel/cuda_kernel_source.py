@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-cuda_kernel_code = r'''
+cuda_kernel_code = r"""
 extern "C" {
 __global__ void normalize_data_by_range(float *in, float *out, \
                                         float norm_factor, \
@@ -260,4 +260,4 @@ __global__ void zoomout_edge_pad(float *output_tensor, int height, int width,
     }
   }
 }
-}'''
+}"""

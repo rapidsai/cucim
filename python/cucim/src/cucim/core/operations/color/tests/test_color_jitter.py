@@ -24,22 +24,22 @@ def test_color_jitter_bad_params():
     arr = get_image_array()
     with pytest.raises(ValueError):
         arr1 = arr.flatten()
-        ccl.color_jitter(arr1, .25, .75, .25, .04)
+        ccl.color_jitter(arr1, 0.25, 0.75, 0.25, 0.04)
     with pytest.raises(TypeError):
-        img = Image.fromarray(arr.T, 'RGB')
-        ccl.color_jitter(img, .25, .75, .25, .04)
+        img = Image.fromarray(arr.T, "RGB")
+        ccl.color_jitter(img, 0.25, 0.75, 0.25, 0.04)
 
 
 def test_color_jitter_numpyinput():
     arr = get_image_array()
-    np_output = ccl.color_jitter(arr, .25, .75, .25, .04)
+    np_output = ccl.color_jitter(arr, 0.25, 0.75, 0.25, 0.04)
     verify_result(np_output, arr)
 
 
 def test_color_jitter_cupyinput():
     arr = get_image_array()
     cupy_arr = cupy.asarray(arr)
-    cupy_output = ccl.color_jitter(cupy_arr, .25, .75, .25, .04)
+    cupy_output = ccl.color_jitter(cupy_arr, 0.25, 0.75, 0.25, 0.04)
     np_output = cupy.asnumpy(cupy_output)
     verify_result(np_output, arr)
 
@@ -48,7 +48,7 @@ def test_color_jitter_cupy_cast():
     arr = get_image_array()
     cupy_arr = cupy.asarray(arr)
     cupy_arr = cupy_arr.astype(cupy.float32)
-    cupy_output = ccl.color_jitter(cupy_arr, .25, .75, .25, .04)
+    cupy_output = ccl.color_jitter(cupy_arr, 0.25, 0.75, 0.25, 0.04)
     assert cupy_output.dtype == cupy.float32
 
 
@@ -61,7 +61,7 @@ def test_color_jitter_factor():
 def test_color_jitter_batchinput():
     arr = get_image_array()
     arr_batch = np.stack((arr,) * 8, axis=0)
-    np_output = ccl.color_jitter(arr_batch, .25, .75, .25, .04)
+    np_output = ccl.color_jitter(arr_batch, 0.25, 0.75, 0.25, 0.04)
     assert np_output.shape[0] == 8
     verify_result(np_output, arr_batch)
 
@@ -69,9 +69,8 @@ def test_color_jitter_batchinput():
 def test_rand_color_jitter_batchinput():
     arr = get_image_array()
     arr_batch = np.stack((arr,) * 8, axis=0)
-    np_output = ccl.rand_color_jitter(arr_batch,
-                                      .25, .75, .25, .04,
-                                      prob=1.0,
-                                      whole_batch=True)
+    np_output = ccl.rand_color_jitter(
+        arr_batch, 0.25, 0.75, 0.25, 0.04, prob=1.0, whole_batch=True
+    )
     assert np_output.shape[0] == 8
     verify_result(np_output, arr_batch)

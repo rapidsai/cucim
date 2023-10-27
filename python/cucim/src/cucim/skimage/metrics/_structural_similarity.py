@@ -10,7 +10,7 @@ from .._shared.utils import _supported_float_type, check_shape_equality, warn
 from ..util.arraycrop import crop
 from ..util.dtype import dtype_range
 
-__all__ = ['structural_similarity']
+__all__ = ["structural_similarity"]
 
 
 _ssim_operation = """
@@ -36,32 +36,40 @@ _ssim_operation = """
 @cp.memoize(for_each_device=True)
 def _get_ssim_kernel():
     return cp.ElementwiseKernel(
-        in_params='float64 cov_norm, F ux, F uy, F uxx, F uyy, F uxy, float64 data_range, float64 K1, float64 K2',  # noqa
-        out_params='F ssim',
+        in_params="float64 cov_norm, F ux, F uy, F uxx, F uyy, F uxy, float64 data_range, float64 K1, float64 K2",  # noqa
+        out_params="F ssim",
         operation=_ssim_operation,
-        name='cucim_ssim'
+        name="cucim_ssim",
     )
 
 
 @cp.memoize(for_each_device=True)
 def _get_ssim_grad_kernel():
     return cp.ElementwiseKernel(
-        in_params='float64 cov_norm, F ux, F uy, F uxx, F uyy, F uxy, float64 data_range, float64 K1, float64 K2',  # noqa
-        out_params='F ssim, F grad_temp1, F grad_temp2, F grad_temp3',
-        operation=_ssim_operation + """
+        in_params="float64 cov_norm, F ux, F uy, F uxx, F uyy, F uxy, float64 data_range, float64 K1, float64 K2",  # noqa
+        out_params="F ssim, F grad_temp1, F grad_temp2, F grad_temp3",
+        operation=_ssim_operation
+        + """
             grad_temp1 = A1 / D;
             grad_temp2 = -ssim / B2;
             grad_temp3 = (ux * (A2 - A1) - uy * (B2 - B1) * ssim) / D;
         """,
-        name='cucim_ssim'
+        name="cucim_ssim",
     )
 
 
-def structural_similarity(im1, im2,
-                          *,
-                          win_size=None, gradient=False, data_range=None,
-                          channel_axis=None, gaussian_weights=False,
-                          full=False, **kwargs):
+def structural_similarity(
+    im1,
+    im2,
+    *,
+    win_size=None,
+    gradient=False,
+    data_range=None,
+    channel_axis=None,
+    gaussian_weights=False,
+    full=False,
+    **kwargs,
+):
     """
     Compute the mean structural similarity index between two images.
     Please pay attention to the `data_range` parameter with floating-point
@@ -162,12 +170,14 @@ def structural_similarity(im1, im2,
 
     if channel_axis is not None:
         # loop over channels
-        args = dict(win_size=win_size,
-                    gradient=gradient,
-                    data_range=data_range,
-                    channel_axis=None,
-                    gaussian_weights=gaussian_weights,
-                    full=full)
+        args = dict(
+            win_size=win_size,
+            gradient=gradient,
+            data_range=data_range,
+            channel_axis=None,
+            gaussian_weights=gaussian_weights,
+            full=full,
+        )
         args.update(kwargs)
         nch = im1.shape[channel_axis]
         mssim = cp.empty(nch, dtype=float_type)
@@ -178,8 +188,9 @@ def structural_similarity(im1, im2,
         channel_axis = channel_axis % im1.ndim
         _at = functools.partial(utils.slice_at_axis, axis=channel_axis)
         for ch in range(nch):
-            ch_result = structural_similarity(im1[_at(ch)],
-                                              im2[_at(ch)], **args)
+            ch_result = structural_similarity(
+                im1[_at(ch)], im2[_at(ch)], **args
+            )
             if gradient and full:
                 mssim[ch], G[_at(ch)], S[_at(ch)] = ch_result
             elif gradient:
@@ -198,16 +209,16 @@ def structural_similarity(im1, im2,
         else:
             return mssim
 
-    K1 = kwargs.pop('K1', 0.01)
-    K2 = kwargs.pop('K2', 0.03)
-    sigma = kwargs.pop('sigma', 1.5)
+    K1 = kwargs.pop("K1", 0.01)
+    K2 = kwargs.pop("K2", 0.03)
+    sigma = kwargs.pop("sigma", 1.5)
     if K1 < 0:
         raise ValueError("K1 must be positive")
     if K2 < 0:
         raise ValueError("K2 must be positive")
     if sigma < 0:
         raise ValueError("sigma must be positive")
-    use_sample_covariance = kwargs.pop('use_sample_covariance', True)
+    use_sample_covariance = kwargs.pop("use_sample_covariance", True)
 
     if gaussian_weights:
         # Set to give an 11-tap filter with the default sigma of 1.5 to match
@@ -224,53 +235,59 @@ def structural_similarity(im1, im2,
 
     if any(s < win_size for s in im1.shape):
         raise ValueError(
-            'win_size exceeds image extent. '
-            'Either ensure that your images are '
-            'at least 7x7; or pass win_size explicitly '
-            'in the function call, with an odd value '
-            'less than or equal to the smaller side of your '
-            'images. If your images are multichannel '
-            '(with color channels), set channel_axis to '
-            'the axis number corresponding to the channels.')
+            "win_size exceeds image extent. "
+            "Either ensure that your images are "
+            "at least 7x7; or pass win_size explicitly "
+            "in the function call, with an odd value "
+            "less than or equal to the smaller side of your "
+            "images. If your images are multichannel "
+            "(with color channels), set channel_axis to "
+            "the axis number corresponding to the channels."
+        )
 
     if not (win_size % 2 == 1):
-        raise ValueError('Window size must be odd.')
+        raise ValueError("Window size must be odd.")
 
     if data_range is None:
-        if (
-            cp.issubdtype(im1.dtype, cp.floating) or
-            cp.issubdtype(im2.dtype, cp.floating)
+        if cp.issubdtype(im1.dtype, cp.floating) or cp.issubdtype(
+            im2.dtype, cp.floating
         ):
             raise ValueError(
-                'Since image dtype is floating point, you must specify '
-                'the data_range parameter. Please read the documentation '
-                'carefully (including the note). It is recommended that '
-                'you always specify the data_range anyway.')
+                "Since image dtype is floating point, you must specify "
+                "the data_range parameter. Please read the documentation "
+                "carefully (including the note). It is recommended that "
+                "you always specify the data_range anyway."
+            )
         if im1.dtype != im2.dtype:
-            warn("Inputs have mismatched dtypes.  Setting data_range based on "
-                 "im1.dtype.", stacklevel=2)
+            warn(
+                "Inputs have mismatched dtypes.  Setting data_range based on "
+                "im1.dtype.",
+                stacklevel=2,
+            )
         dmin, dmax = dtype_range[im1.dtype.type]
         data_range = float(dmax - dmin)
         if cp.issubdtype(im1.dtype, cp.integer) and (im1.dtype != cp.uint8):
-            warn("Setting data_range based on im1.dtype. " +
-                 ("data_range = %.0f. " % data_range) +
-                 "Please specify data_range explicitly to avoid mistakes.",
-                 stacklevel=2)
+            warn(
+                "Setting data_range based on im1.dtype. "
+                + ("data_range = %.0f. " % data_range)
+                + "Please specify data_range explicitly to avoid mistakes.",
+                stacklevel=2,
+            )
 
     ndim = im1.ndim
 
     if gaussian_weights:
         filter_func = gaussian
-        filter_args = {'sigma': sigma, 'truncate': truncate, 'mode': 'reflect'}
+        filter_args = {"sigma": sigma, "truncate": truncate, "mode": "reflect"}
     else:
         filter_func = ndi.uniform_filter
-        filter_args = {'size': win_size}
+        filter_args = {"size": win_size}
 
     # ndimage filters need floating point data
     im1 = im1.astype(float_type, copy=False)
     im2 = im2.astype(float_type, copy=False)
 
-    NP = win_size ** ndim
+    NP = win_size**ndim
 
     # filter has already normalized by NP
     if use_sample_covariance:
@@ -297,8 +314,21 @@ def structural_similarity(im1, im2,
         grad_temp2 = cp.empty_like(ux)
         grad_temp3 = cp.empty_like(ux)
         kernel = _get_ssim_grad_kernel()
-        kernel(cov_norm, ux, uy, uxx, uyy, uxy, data_range, K1, K2, S,
-               grad_temp1, grad_temp2, grad_temp3)
+        kernel(
+            cov_norm,
+            ux,
+            uy,
+            uxx,
+            uyy,
+            uxy,
+            data_range,
+            K1,
+            K2,
+            S,
+            grad_temp1,
+            grad_temp2,
+            grad_temp3,
+        )
 
     # to avoid edge effects will ignore filter radius strip around edges
     pad = (win_size - 1) // 2
@@ -311,7 +341,7 @@ def structural_similarity(im1, im2,
         grad = filter_func(grad_temp1, **filter_args) * im1
         grad += filter_func(grad_temp2, **filter_args) * im2
         grad += filter_func(grad_temp3, **filter_args)
-        grad *= (2 / im1.size)
+        grad *= 2 / im1.size
 
         if full:
             return mssim, grad, S

@@ -32,9 +32,7 @@ SUBFILETYPE_REDUCEDIMAGE = 1
 logger = logging.getLogger(__name__)
 
 
-def filter_tile(
-    tiles, dim_index, index, tile_size, output_array
-):
+def filter_tile(tiles, dim_index, index, tile_size, output_array):
     try:
         x, y = index
         tile = tiles.get_tile(dim_index, index)
@@ -49,15 +47,22 @@ def filter_tile(
 
         tile_arr = np.array(tile)  # H x W x C
 
-        output_array[ay: ay + tile_height, ax: ax + tile_width, :] = tile_arr[
-            :tile_height, :tile_width]
+        output_array[ay : ay + tile_height, ax : ax + tile_width, :] = tile_arr[
+            :tile_height, :tile_width
+        ]
     except Exception as e:
         logger.exception(e)
 
 
-def svs2tif(input_file, output_folder, tile_size, overlap,
-            num_workers=os.cpu_count(), compression="jpeg",
-            output_filename="image.tif"):
+def svs2tif(
+    input_file,
+    output_folder,
+    tile_size,
+    overlap,
+    num_workers=os.cpu_count(),
+    compression="jpeg",
+    output_filename="image.tif",
+):
     output_folder = str(output_folder)
 
     logger.info("Parameters")
@@ -76,7 +81,8 @@ def svs2tif(input_file, output_folder, tile_size, overlap,
         else:
             raise ValueError(
                 f"Unsupported compression: {compression}."
-                + " Should be 'jpeg' or None.")
+                + " Should be 'jpeg' or None."
+            )
 
     with OpenSlide(input_file) as slide:
         properties = slide.properties
@@ -105,7 +111,6 @@ def svs2tif(input_file, output_folder, tile_size, overlap,
             if max(img_w, img_h) < tile_size:
                 break
         try:
-
             # Multithread processing for each tile in the largest
             # image (index 0)
             logger.info("Processing tiles...")
@@ -113,7 +118,8 @@ def svs2tif(input_file, output_folder, tile_size, overlap,
             tile_pos_x, tile_pos_y = tiles.level_tiles[dim_index]
             index_iter = np.ndindex(tile_pos_x, tile_pos_y)
             with concurrent.futures.ThreadPoolExecutor(
-                    max_workers=num_workers) as executor:
+                max_workers=num_workers
+            ) as executor:
                 executor.map(
                     filter_tile,
                     repeat(tiles),
@@ -128,8 +134,11 @@ def svs2tif(input_file, output_folder, tile_size, overlap,
                 src_arr = np_memmap[index - 1]
                 target_arr = np_memmap[index]
                 target_arr[:] = cv2.resize(
-                    src_arr, (0, 0), fx=0.5, fy=0.5,
-                    interpolation=cv2.INTER_AREA
+                    src_arr,
+                    (0, 0),
+                    fx=0.5,
+                    fy=0.5,
+                    interpolation=cv2.INTER_AREA,
                 )
                 # th, tw = target_arr.shape[:2]
                 # target_arr[:] = src_arr[
@@ -148,17 +157,19 @@ def svs2tif(input_file, output_folder, tile_size, overlap,
                 y_resolution = float(properties.get("tiff.YResolution"))
             else:
                 resolution_unit = properties.get("tiff.ResolutionUnit", "inch")
-                if properties.get("tiff.ResolutionUnit",
-                                  "inch").lower() == "inch":
+                if (
+                    properties.get("tiff.ResolutionUnit", "inch").lower()
+                    == "inch"
+                ):
                     numerator = 25400  # Microns in Inch
                 else:
                     numerator = 10000  # Microns in CM
-                x_resolution = int(numerator
-                                   // float(properties.get('openslide.mpp-x',
-                                                           1)))
-                y_resolution = int(numerator
-                                   // float(properties.get('openslide.mpp-y',
-                                                           1)))
+                x_resolution = int(
+                    numerator // float(properties.get("openslide.mpp-x", 1))
+                )
+                y_resolution = int(
+                    numerator // float(properties.get("openslide.mpp-y", 1))
+                )
 
             # Write TIFF file
             with TiffWriter(output_file, bigtiff=True) as tif:
@@ -166,8 +177,12 @@ def svs2tif(input_file, output_folder, tile_size, overlap,
                 for level in range(len(np_memmap)):
                     src_arr = np_memmap[level]
                     height, width = src_arr.shape[:2]
-                    logger.info("Saving Level %d image (%d x %d)...",
-                                level, width, height)
+                    logger.info(
+                        "Saving Level %d image (%d x %d)...",
+                        level,
+                        width,
+                        height,
+                    )
                     if level:
                         subfiletype = SUBFILETYPE_REDUCEDIMAGE
                     else:
@@ -181,8 +196,8 @@ def svs2tif(input_file, output_folder, tile_size, overlap,
                         photometric="RGB",
                         planarconfig="CONTIG",
                         resolution=(
-                            x_resolution // 2 ** level,
-                            y_resolution // 2 ** level,
+                            x_resolution // 2**level,
+                            y_resolution // 2**level,
                             resolution_unit,
                         ),
                         compression=compression,  # requires imagecodecs

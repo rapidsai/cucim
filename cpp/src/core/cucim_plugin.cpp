@@ -400,7 +400,7 @@ bool Plugin::initialize()
 
     is_in_initialization_ = true;
 
-    // failed to load the plugin library iself => fail and allow the caller to try again later.
+    // failed to load the plugin library itself => fail and allow the caller to try again later.
     if (load(next_version_++))
     {
         //        // run the pre-startup function for the plugin.

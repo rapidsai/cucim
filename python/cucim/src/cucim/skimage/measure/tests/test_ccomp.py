@@ -1,6 +1,7 @@
 # Note: These test cases originated in skimage/morphology/tests/test_ccomp.py
 
 import cupy as cp
+
 # import numpy as np
 from cupy.testing import assert_array_equal
 
@@ -283,13 +284,19 @@ class TestConnectedComponents3d:
         x = cp.array((0, 1, 2, 2, 1, 1, 0, 0))
         xlen = len(x)
         y = cp.array((0, 1, 2, 2, 3, 3, 0, 0))
-        reshapes = ((xlen,),
-                    (1, xlen), (xlen, 1),
-                    (1, xlen, 1), (xlen, 1, 1), (1, 1, xlen))
+        reshapes = (
+            (xlen,),
+            (1, xlen),
+            (xlen, 1),
+            (1, xlen, 1),
+            (xlen, 1, 1),
+            (1, 1, xlen),
+        )
         for reshape in reshapes:
             x2 = x.reshape(reshape)
             labelled = label(x2)
             assert_array_equal(y, labelled.flatten())
+
 
 # CuPy Backend: unlike scikit-image, the CUDA implementation is nD
 #    def test_nd(self):

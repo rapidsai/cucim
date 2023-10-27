@@ -84,9 +84,7 @@ class LPIFilter2D:
         dshape = np.array(data.shape)
         # all filter dimensions must be uneven
         even_offset = tuple(int(s % 2 == 0) for s in data.shape)
-        dshape = tuple(
-            s + offset for s, offset in zip(data.shape, even_offset)
-        )
+        dshape = tuple(s + offset for s, offset in zip(data.shape, even_offset))
 
         oshape = tuple(s * 2 - 1 for s in data.shape)
 
@@ -95,8 +93,10 @@ class LPIFilter2D:
 
         if self._cache is None or np.any(self._cache.shape != oshape):
             coords = cp.mgrid[
-                [slice(0 + offset, float(n + offset))
-                 for (n, offset) in zip(dshape, even_offset)]
+                [
+                    slice(0 + offset, float(n + offset))
+                    for (n, offset) in zip(dshape, even_offset)
+                ]
             ]
             # this steps over two sets of coordinates,
             # not over the coordinates individually
@@ -105,8 +105,9 @@ class LPIFilter2D:
             coords = coords.reshape(2, -1).T  # coordinate pairs (r,c)
             coords = coords.astype(float_dtype, copy=False)
 
-            f = self.impulse_response(coords[:, 0], coords[:, 1],
-                                      **self.filter_params).reshape(dshape)
+            f = self.impulse_response(
+                coords[:, 0], coords[:, 1], **self.filter_params
+            ).reshape(dshape)
 
             f = _pad(f, oshape)
             F = fft.fftn(f)
@@ -127,15 +128,16 @@ class LPIFilter2D:
         data : (M, N) ndarray
 
         """
-        check_nD(data, 2, 'data')
+        check_nD(data, 2, "data")
         F, G = self._prepare(data)
         out = fft.ifftn(F * G)
         out = cp.abs(_center(out, data.shape))
         return out
 
 
-def filter_forward(data, impulse_response=None, filter_params=None,
-                   predefined_filter=None):
+def filter_forward(
+    data, impulse_response=None, filter_params=None, predefined_filter=None
+):
     """Apply the given filter to data.
 
     Parameters
@@ -166,7 +168,7 @@ def filter_forward(data, impulse_response=None, filter_params=None,
     """
     if filter_params is None:
         filter_params = {}
-    check_nD(data, 2, 'data')
+    check_nD(data, 2, "data")
     if predefined_filter is None:
         predefined_filter = LPIFilter2D(impulse_response, **filter_params)
     return predefined_filter(data)
@@ -177,14 +179,25 @@ def filter_forward(data, impulse_response=None, filter_params=None,
     deprecated_version="",
     removed_version="2023.12.00",
 )
-def inverse(data, impulse_response=None, filter_params=None, max_gain=2,
-            predefined_filter=None):
-    return filter_inverse(data, impulse_response, filter_params,
-                          max_gain, predefined_filter)
+def inverse(
+    data,
+    impulse_response=None,
+    filter_params=None,
+    max_gain=2,
+    predefined_filter=None,
+):
+    return filter_inverse(
+        data, impulse_response, filter_params, max_gain, predefined_filter
+    )
 
 
-def filter_inverse(data, impulse_response=None, filter_params=None, max_gain=2,
-                   predefined_filter=None):
+def filter_inverse(
+    data,
+    impulse_response=None,
+    filter_params=None,
+    max_gain=2,
+    predefined_filter=None,
+):
     """Apply the filter in reverse to the given data.
 
     Parameters
@@ -210,7 +223,7 @@ def filter_inverse(data, impulse_response=None, filter_params=None, max_gain=2,
     """
     if filter_params is None:
         filter_params = {}
-    check_nD(data, 2, 'data')
+    check_nD(data, 2, "data")
     if predefined_filter is None:
         filt = LPIFilter2D(impulse_response, **filter_params)
     else:
@@ -226,8 +239,13 @@ def filter_inverse(data, impulse_response=None, filter_params=None, max_gain=2,
     return _center(cp.abs(fft.ifftshift(fft.ifftn(G * F))), data.shape)
 
 
-def wiener(data, impulse_response=None, filter_params=None, K=0.25,
-           predefined_filter=None):
+def wiener(
+    data,
+    impulse_response=None,
+    filter_params=None,
+    K=0.25,
+    predefined_filter=None,
+):
     """Minimum Mean Square Error (Wiener) inverse filter.
 
     Parameters
@@ -251,10 +269,10 @@ def wiener(data, impulse_response=None, filter_params=None, K=0.25,
     """
     if filter_params is None:
         filter_params = {}
-    check_nD(data, 2, 'data')
+    check_nD(data, 2, "data")
 
     if not isinstance(K, float):
-        check_nD(K, 2, 'K')
+        check_nD(K, 2, "K")
 
     if predefined_filter is None:
         filt = LPIFilter2D(impulse_response, **filter_params)

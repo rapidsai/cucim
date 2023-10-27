@@ -17,16 +17,19 @@ submodules = []
 
 try:
     import cupy
+
     _is_cupy_available = True
-    submodules += ['core', 'skimage']
+    submodules += ["core", "skimage"]
+    del cupy
 except ImportError:
     pass
 
 try:
-    from .clara import CuImage, __version__, cli
+    from .clara import CuImage, __version__, cli  # noqa: F401
+
     _is_clara_available = True
-    submodules += ['clara']
+    submodules += ["clara"]
 except ImportError:
     __version__ = "23.12.00"
 
-__all__ = submodules + ['__version__', 'is_available']
+__all__ = submodules + ["__version__", "is_available"]  # noqa: F822

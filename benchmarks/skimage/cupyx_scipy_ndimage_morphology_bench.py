@@ -1,4 +1,3 @@
-import math
 import os
 import pickle
 
@@ -9,7 +8,6 @@ import numpy as np
 import pandas as pd
 import scipy
 import scipy.ndimage as ndi
-
 from _image_bench import ImageBench
 
 
@@ -27,7 +25,6 @@ class BinaryMorphologyBench(ImageBench):
         module_cpu=scipy.ndimage,
         module_gpu=cupyx.scipy.ndimage,
     ):
-
         array_kwargs = dict(structure=structure, mask=mask)
         if "structure" in fixed_kwargs:
             raise ValueError("fixed_kwargs cannot contain 'structure'")
@@ -66,7 +63,6 @@ class MorphologyBench(ImageBench):
         module_cpu=scipy.ndimage,
         module_gpu=cupyx.scipy.ndimage,
     ):
-
         array_kwargs = dict(structure=structure, footprint=footprint)
         if "structure" in fixed_kwargs:
             raise ValueError("fixed_kwargs cannot contain 'structure'")

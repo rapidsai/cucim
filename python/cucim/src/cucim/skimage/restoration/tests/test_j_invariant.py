@@ -2,6 +2,7 @@ import cupy as cp
 import numpy as np
 import pytest
 from skimage.data import camera, chelsea
+
 # from cucim.skimage.restoration import denoise_wavelet
 from skimage.restoration import denoise_wavelet
 
@@ -38,7 +39,7 @@ def test_denoise_invariant():
     assert denoised_mse < original_mse
 
 
-@pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])
+@pytest.mark.parametrize("dtype", [cp.float16, cp.float32, cp.float64])
 def test_denoise_invariant_color(dtype):
     denoised_img_color = denoise_invariant(
         noisy_img_color.astype(dtype),
@@ -61,24 +62,27 @@ def test_denoise_invariant_3d():
 
 
 def test_calibrate_denoiser_extra_output():
-    parameter_ranges = {'sigma': np.linspace(0.1, 1, 5) / 2}
+    parameter_ranges = {"sigma": np.linspace(0.1, 1, 5) / 2}
     _, (parameters_tested, losses) = calibrate_denoiser(
         noisy_img,
         _denoise_wavelet,
         denoise_parameters=parameter_ranges,
-        extra_output=True
+        extra_output=True,
     )
 
-    all_denoised = [denoise_invariant(noisy_img, _denoise_wavelet,
-                                      denoiser_kwargs=denoiser_kwargs)
-                    for denoiser_kwargs in parameters_tested]
+    all_denoised = [
+        denoise_invariant(
+            noisy_img, _denoise_wavelet, denoiser_kwargs=denoiser_kwargs
+        )
+        for denoiser_kwargs in parameters_tested
+    ]
 
     ground_truth_losses = [float(mse(img, test_img)) for img in all_denoised]
     assert np.argmin(losses) == np.argmin(ground_truth_losses)
 
 
 def test_calibrate_denoiser():
-    parameter_ranges = {'sigma': np.linspace(0.1, 1, 5) / 2}
+    parameter_ranges = {"sigma": np.linspace(0.1, 1, 5) / 2}
 
     denoiser = calibrate_denoiser(
         noisy_img, _denoise_wavelet, denoise_parameters=parameter_ranges
@@ -104,7 +108,7 @@ def test_calibrate_denoiser_tv():
 def test_input_image_not_modified():
     input_image = noisy_img.copy()
 
-    parameter_ranges = {'sigma': np.random.random(5) / 2}
+    parameter_ranges = {"sigma": np.random.random(5) / 2}
     calibrate_denoiser(
         input_image, _denoise_wavelet, denoise_parameters=parameter_ranges
     )

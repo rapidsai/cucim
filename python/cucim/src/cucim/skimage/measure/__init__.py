@@ -1,13 +1,30 @@
 from ._blur_effect import blur_effect
-from ._colocalization import (intersection_coeff, manders_coloc_coeff,
-                              manders_overlap_coeff, pearson_corr_coeff)
+from ._colocalization import (
+    intersection_coeff,
+    manders_coloc_coeff,
+    manders_overlap_coeff,
+    pearson_corr_coeff,
+)
 from ._label import label
-from ._moments import (centroid, inertia_tensor, inertia_tensor_eigvals,
-                       moments, moments_central, moments_coords,
-                       moments_coords_central, moments_hu, moments_normalized)
+from ._moments import (
+    centroid,
+    inertia_tensor,
+    inertia_tensor_eigvals,
+    moments,
+    moments_central,
+    moments_coords,
+    moments_coords_central,
+    moments_hu,
+    moments_normalized,
+)
 from ._polygon import approximate_polygon, subdivide_polygon
-from ._regionprops import (euler_number, perimeter, perimeter_crofton,
-                           regionprops, regionprops_table)
+from ._regionprops import (
+    euler_number,
+    perimeter,
+    perimeter_crofton,
+    regionprops,
+    regionprops_table,
+)
 from .block import block_reduce
 from .entropy import shannon_entropy
 from .profile import profile_line

@@ -1,19 +1,18 @@
 import os
 from time import time
 
-import cucim.skimage.filters
 import cupy as cp
-import numpy as np
 import kvikio
 import kvikio.defaults
-from cucim.core.operations.color import image_to_absorbance
+import numpy as np
 from cupyx.profiler import benchmark
-
 from demo_implementation import cupy_to_zarr, read_tiled
 
+import cucim.skimage.filters
+from cucim.core.operations.color import image_to_absorbance
 
-data_dir = os.environ.get('WHOLE_SLIDE_DATA_DIR', os.path.dirname('__file__'))
-fname = os.path.join(data_dir, 'resize.tiff')
+data_dir = os.environ.get("WHOLE_SLIDE_DATA_DIR", os.path.dirname("__file__"))
+fname = os.path.join(data_dir, "resize.tiff")
 if not os.path.exists(fname):
     raise RuntimeError(f"Could not find data file: {fname}")
 
@@ -41,9 +40,8 @@ def round_trip(
     zarr_kwargs=dict(overwrite=True, compressor=None),
     verbose_times=False,
 ):
-
     if output_path is None:
-        output_path = f'./image-{cp.dtype(out_dtype).name}.zarr'
+        output_path = f"./image-{cp.dtype(out_dtype).name}.zarr"
 
     if apply_kernel_tilewise:
         tile_func = kernel_func
@@ -57,11 +55,11 @@ def round_trip(
     data_gpu = read_tiled(
         fname,
         levels=[level],
-        backend='kvikio-pread',
+        backend="kvikio-pread",
         n_buffer=n_buffer,
         tile_func=tile_func,
         tile_func_kwargs=tile_func_kwargs,
-        out_dtype=out_dtype
+        out_dtype=out_dtype,
     )[0]
     if verbose_times:
         dur_read = time() - tstart
@@ -84,7 +82,7 @@ def round_trip(
         tstart = time()
     cupy_to_zarr(
         data_gpu,
-        backend='dask',  # 'kvikio-pwrite',
+        backend="dask",  # 'kvikio-pwrite',
         output_path=output_path,
         chunk_shape=zarr_chunk_shape,
         zarr_kwargs=zarr_kwargs,
@@ -101,26 +99,30 @@ apply_kernel_tilewise = True
 times = []
 labels = []
 n_buffer = 32
-for zarr_chunk_shape in [(512, 512, 3), (1024, 1024, 3), (2048, 2048, 3), (4096, 4096, 3)]:
-    for computation in ['absorbance', 'median', 'gaussian', 'sobel']:
-
+for zarr_chunk_shape in [
+    (512, 512, 3),
+    (1024, 1024, 3),
+    (2048, 2048, 3),
+    (4096, 4096, 3),
+]:
+    for computation in ["absorbance", "median", "gaussian", "sobel"]:
         if computation is None:
             kernel_func = None
             kernel_func_kwargs = {}
             out_dtype = cp.uint8
-        elif computation == 'absorbance':
+        elif computation == "absorbance":
             kernel_func = image_to_absorbance
             kernel_func_kwargs = {}
             out_dtype = cp.float32
-        elif computation == 'median':
+        elif computation == "median":
             kernel_func = cucim.skimage.filters.median
             kernel_func_kwargs = dict(footprint=cp.ones((5, 5, 1), dtype=bool))
             out_dtype = cp.uint8
-        elif computation == 'gaussian':
+        elif computation == "gaussian":
             kernel_func = cucim.skimage.filters.gaussian
             kernel_func_kwargs = dict(sigma=2.5, channel_axis=-1)
             out_dtype = cp.uint8
-        elif computation == 'sobel':
+        elif computation == "sobel":
             kernel_func = cucim.skimage.filters.sobel
             kernel_func_kwargs = dict(axis=(0, 1))
             out_dtype = cp.float32
@@ -152,19 +154,21 @@ for zarr_chunk_shape in [(512, 512, 3), (1024, 1024, 3), (2048, 2048, 3), (4096,
                 )
                 t = perf.gpu_times
 
-                kernel_description = 'tiled' if apply_kernel_tilewise else 'global'
-                gds_description = 'with GDS' if gds_enabled else 'without GDS'
-                label = f"{computation=}, {kernel_description}, chunk_shape={zarr_chunk_shape}, {gds_description}"
+                kernel_description = (
+                    "tiled" if apply_kernel_tilewise else "global"
+                )
+                gds_description = "with GDS" if gds_enabled else "without GDS"
+                label = f"{computation=}, {kernel_description}, chunk_shape={zarr_chunk_shape}, {gds_description}"  # noqa: E501
                 print(f"Duration ({label}): {t.mean()} s +/- {t.std()} s")
 
                 times.append(t.mean())
                 labels.append(label)
 
-out_name = 'round_trip_times.npz'
+out_name = "round_trip_times.npz"
 # auto-increment filename to avoid overwriting old results
 cnt = 1
 while os.path.exists(out_name):
-    out_name = f'round_trip_times{cnt}.npz'
+    out_name = f"round_trip_times{cnt}.npz"
     cnt += 1
 np.savez(out_name, times=np.asarray(times), labels=np.asarray(labels))
 
@@ -238,4 +242,4 @@ on dgx-02
     Duration (computation='sobel', tiled, chunk_shape=(4096, 4096, 3), without GDS): 5.430656982421875 s +/- 0.01277270507812478 s
     Duration (computation='sobel', tiled, chunk_shape=(4096, 4096, 3), with GDS): 3.1940713500976563 s +/- 0.19852391299904837 s
 
-"""
+"""  # noqa: E501

@@ -12,7 +12,6 @@ try:
     # math.lcm was introduced in Python 3.9
     from math import lcm
 except ImportError:
-
     """Fallback implementation of least common multiple (lcm)
 
     TODO: remove once minimum Python requirement is >= 3.9
@@ -47,7 +46,7 @@ pba2d_defines_template = """
 #define pixel_int2_t {pixel_int2_t}                // typically short2 (int2 for images with > 32k pixels per side)
 #define make_pixel(x, y)  {make_pixel_func}(x, y)  // typically make_short2 (make_int2 images with > 32k pixels per side
 
-"""  # noqa
+"""  # noqa: E501
 
 
 def _init_marker(int_dtype):
@@ -74,7 +73,7 @@ def get_pba2d_src(block_size_2d=64, marker=-32768, pixel_int2_t="short2"):
         block_size_2d=block_size_2d,
         marker=marker,
         pixel_int2_t=pixel_int2_t,
-        make_pixel_func=make_pixel_func
+        make_pixel_func=make_pixel_func,
     )
     kernel_directory = os.path.join(os.path.dirname(__file__), "cuda")
     with open(os.path.join(kernel_directory, "pba_kernels_2d.h"), "rt") as f:
@@ -126,13 +125,12 @@ def _get_pack_kernel(int_type, marker=-32768):
 
 def _pack_int2(arr, marker=-32768, int_dtype=cupy.int16):
     if arr.ndim != 2:
-        raise ValueError("only 2d arr suppported")
+        raise ValueError("only 2d arr supported")
     int2_dtype = cupy.dtype({"names": ["x", "y"], "formats": [int_dtype] * 2})
     out = cupy.zeros(arr.shape + (2,), dtype=int_dtype)
     assert out.size == 2 * arr.size
     pack_kernel = _get_pack_kernel(
-        int_type="short" if int_dtype == cupy.int16 else "int",
-        marker=marker
+        int_type="short" if int_dtype == cupy.int16 else "int", marker=marker
     )
     pack_kernel(arr, out, size=arr.size)
     out = cupy.squeeze(out.view(int2_dtype))
@@ -151,9 +149,7 @@ def _determine_padding(shape, padded_size, block_size):
     # shape is not isotropic
     orig_sy, orig_sx = shape
     if orig_sx != padded_size or orig_sy != padded_size:
-        padding_width = (
-            (0, padded_size - orig_sy), (0, padded_size - orig_sx)
-        )
+        padding_width = ((0, padded_size - orig_sy), (0, padded_size - orig_sx))
     else:
         padding_width = None
     return padding_width
@@ -212,7 +208,7 @@ def _get_aniso_distance_kernel_code(int_type, raw_out_var=True):
         ndim=2, int_type=int_type, var_name="dist", raw_var=raw_out_var
     )
     code += _generate_indices_ops(ndim=2, int_type=int_type)
-    code += f"""
+    code += """
     F tmp;
     F sq_dist;
     tmp = static_cast<F>(y[i] - ind_0) * sampling[0];
@@ -236,13 +232,15 @@ def _get_aniso_distance_kernel(int_type):
     )
 
 
-def _distance_tranform_arg_check(distances_out, indices_out,
-                                 return_distances, return_indices):
+def _distance_tranform_arg_check(
+    distances_out, indices_out, return_distances, return_indices
+):
     """Raise a RuntimeError if the arguments are invalid"""
     error_msgs = []
     if (not return_distances) and (not return_indices):
         error_msgs.append(
-            "at least one of return_distances/return_indices must be True")
+            "at least one of return_distances/return_indices must be True"
+        )
     if distances_out and not return_distances:
         error_msgs.append(
             "return_distances must be True if distances is supplied"
@@ -257,27 +255,30 @@ def _check_distances(distances, shape, dtype):
     if distances.shape != shape:
         raise RuntimeError("distances array has wrong shape")
     if distances.dtype != dtype:
-        raise RuntimeError(
-            f"distances array must have dtype: {dtype}")
+        raise RuntimeError(f"distances array must have dtype: {dtype}")
 
 
 def _check_indices(indices, shape, itemsize):
     if indices.shape != shape:
         raise RuntimeError("indices array has wrong shape")
-    if indices.dtype.kind not in 'iu':
-        raise RuntimeError(
-            f"indices array must have an integer dtype"
-        )
+    if indices.dtype.kind not in "iu":
+        raise RuntimeError("indices array must have an integer dtype")
     elif indices.dtype.itemsize < itemsize:
-        raise RuntimeError(
-            f"indices dtype must have itemsize > {itemsize}"
-        )
+        raise RuntimeError(f"indices dtype must have itemsize > {itemsize}")
 
 
-def _pba_2d(arr, sampling=None, return_distances=True, return_indices=False,
-            block_params=None, check_warp_size=False, *,
-            float64_distances=False, distances=None, indices=None):
-
+def _pba_2d(
+    arr,
+    sampling=None,
+    return_distances=True,
+    return_indices=False,
+    block_params=None,
+    check_warp_size=False,
+    *,
+    float64_distances=False,
+    distances=None,
+    indices=None,
+):
     indices_inplace = isinstance(indices, cupy.ndarray)
     dt_inplace = isinstance(distances, cupy.ndarray)
     _distance_tranform_arg_check(
@@ -301,7 +302,7 @@ def _pba_2d(arr, sampling=None, return_distances=True, return_indices=False,
         # size must be a multiple of m2
         m2 = max(1, min(padded_size // block_size, block_size))
         # m2 must also be a power of two
-        m2 = 2**math.floor(math.log2(m2))
+        m2 = 2 ** math.floor(math.log2(m2))
         if padded_size % m2 != 0:
             raise RuntimeError("error in setting default m2")
         m3 = min(min(m1, m2), 2)
@@ -442,14 +443,15 @@ def _pba_2d(arr, sampling=None, return_distances=True, return_indices=False,
         block,
         (input_arr, input_arr, size, bandSize2),
     )
-    # Repeatly merging two bands into one
+    # Repeatedly merging two bands into one
     noBand = m2
     while noBand > 1:
         grid = (math.ceil(size / block[0]), noBand // 2)
         kernelMergeBands(
             grid,
             block,
-            (output, input_arr, input_arr, size, size // noBand) + sampling_args,  # noqa
+            (output, input_arr, input_arr, size, size // noBand)
+            + sampling_args,  # noqa
         )
         noBand //= 2
     # Replace the forward link with the X coordinate of the seed to remove
@@ -484,7 +486,7 @@ def _pba_2d(arr, sampling=None, return_distances=True, return_indices=False,
             distances = cupy.zeros(y.shape, dtype=dtype_out)
 
         # make sure maximum possible distance doesn"t overflow
-        max_possible_dist = sum((s - 1)**2 for s in y.shape)
+        max_possible_dist = sum((s - 1) ** 2 for s in y.shape)
         dist_int_type = "int" if max_possible_dist < 2**31 else "ptrdiff_t"
 
         if sampling is None:

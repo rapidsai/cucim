@@ -15,9 +15,10 @@ def _fft_centered(x):
     return fftmodule.fftshift(fftmodule.fftn(fftmodule.fftshift(x)))
 
 
-@pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64,
-                                   cp.uint8, cp.int32])
-@pytest.mark.parametrize('squared_butterworth', [False, True])
+@pytest.mark.parametrize(
+    "dtype", [cp.float16, cp.float32, cp.float64, cp.uint8, cp.int32]
+)
+@pytest.mark.parametrize("squared_butterworth", [False, True])
 def test_butterworth_2D_zeros_dtypes(dtype, squared_butterworth):
     im = cp.zeros((4, 4), dtype=dtype)
     filtered = butterworth(im, squared_butterworth=squared_butterworth)
@@ -26,19 +27,21 @@ def test_butterworth_2D_zeros_dtypes(dtype, squared_butterworth):
     assert_array_equal(im, filtered)
 
 
-@pytest.mark.parametrize('squared_butterworth', [False, True])
-@pytest.mark.parametrize('high_pass', [False, True])
+@pytest.mark.parametrize("squared_butterworth", [False, True])
+@pytest.mark.parametrize("high_pass", [False, True])
 # order chosen large enough that lowpass stopband always approaches 0
-@pytest.mark.parametrize('order', [6, 10])
-@pytest.mark.parametrize('cutoff', [0.2, 0.3])
+@pytest.mark.parametrize("order", [6, 10])
+@pytest.mark.parametrize("cutoff", [0.2, 0.3])
 def test_butterworth_cutoff(cutoff, order, high_pass, squared_butterworth):
-
     wfilt = _get_nd_butterworth_filter(
-        shape=(512, 512), factor=cutoff, order=order,
-        high_pass=high_pass, real=False,
+        shape=(512, 512),
+        factor=cutoff,
+        order=order,
+        high_pass=high_pass,
+        real=False,
         squared_butterworth=squared_butterworth,
     )
-    # select DC frequence on first axis to get profile along a single axis
+    # select DC frequency on first axis to get profile along a single axis
     wfilt_profile = cp.abs(wfilt[0])
     wfilt_profile = cp.asnumpy(wfilt_profile)
 
@@ -62,14 +65,14 @@ def test_butterworth_cutoff(cutoff, order, high_pass, squared_butterworth):
         assert abs(wfilt_profile[f_cutoff] - 1 / math.sqrt(2)) < tol
 
 
-@pytest.mark.parametrize('cutoff', [-0.01, 0.51])
+@pytest.mark.parametrize("cutoff", [-0.01, 0.51])
 def test_butterworth_invalid_cutoff(cutoff):
     with pytest.raises(ValueError):
         butterworth(cp.ones((4, 4)), cutoff_frequency_ratio=cutoff)
 
 
 @pytest.mark.parametrize("high_pass", [True, False])
-@pytest.mark.parametrize('squared_butterworth', [False, True])
+@pytest.mark.parametrize("squared_butterworth", [False, True])
 def test_butterworth_2D(high_pass, squared_butterworth):
     # rough check of high-pass vs. low-pass behavior via relative energy
 
@@ -110,11 +113,11 @@ def test_butterworth_2D(high_pass, squared_butterworth):
 
 
 @pytest.mark.parametrize("high_pass", [True, False])
-@pytest.mark.parametrize('dtype', [cp.float32, cp.float64])
-@pytest.mark.parametrize('squared_butterworth', [False, True])
+@pytest.mark.parametrize("dtype", [cp.float32, cp.float64])
+@pytest.mark.parametrize("squared_butterworth", [False, True])
 def test_butterworth_2D_realfft(high_pass, dtype, squared_butterworth):
     """Filtering a real-valued array is equivalent to filtering a
-       complex-valued array where the imaginary part is zero.
+    complex-valued array where the imaginary part is zero.
     """
     im = cp.random.randn(32, 64).astype(dtype)
     kwargs = dict(
@@ -164,8 +167,8 @@ def test_butterworth_4D_channel(chan, dtype):
 
 def test_butterworth_correctness_bw():
     small = cp.array(coins()[180:190, 260:270], dtype=float)
-    filtered = butterworth(small,
-                           cutoff_frequency_ratio=0.2)
+    filtered = butterworth(small, cutoff_frequency_ratio=0.2)
+    # fmt: off
     correct = cp.array(
         [
             [ 28.63019362, -17.69023786,  26.95346957,  20.57423019, -15.1933463 , -28.05828136, -35.25135674, -25.70376951, -43.37121955, -16.87688457],  # noqa
@@ -180,15 +183,16 @@ def test_butterworth_correctness_bw():
             [-50.53430811,  12.14152989,  17.69341877,   9.1858496 ,  12.1470914 ,   1.45865179,  61.08961357,  29.76775029, -11.04603619,  24.18621404],  # noqa
         ]
     )
+    # fmt: on
     assert_allclose(filtered, correct)
 
 
 def test_butterworth_correctness_rgb():
     small = cp.array(astronaut()[135:145, 205:215], dtype=float)
-    filtered = butterworth(small,
-                           cutoff_frequency_ratio=0.3,
-                           high_pass=True,
-                           channel_axis=-1)
+    filtered = butterworth(
+        small, cutoff_frequency_ratio=0.3, high_pass=True, channel_axis=-1
+    )
+    # fmt: off
     correct = cp.array([
         [
             [-5.30292781e-01,  2.17985072e+00,  2.86622486e+00],  # noqa
@@ -317,4 +321,5 @@ def test_butterworth_correctness_rgb():
             [ 6.17010624e+00,  1.56199152e+01,  1.79889524e+01],  # noqa
         ],
     ])
+    # fmt: on
     assert_allclose(filtered, correct)

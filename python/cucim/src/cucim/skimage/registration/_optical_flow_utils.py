@@ -59,8 +59,9 @@ def resize_flow(flow, shape):
     for _ in shape:
         scale_factor = scale_factor[..., cp.newaxis]
 
-    rflow = scale_factor * ndi.zoom(flow, [1] + scale, order=0,
-                                    mode='nearest', prefilter=False)
+    rflow = scale_factor * ndi.zoom(
+        flow, [1] + scale, order=0, mode="nearest", prefilter=False
+    )
 
     return rflow
 
@@ -99,8 +100,9 @@ def get_pyramid(I, downscale=2.0, nlevel=10, min_size=16):  # noqa
     return pyramid[::-1]
 
 
-def coarse_to_fine(I0, I1, solver, downscale=2, nlevel=10, min_size=16,
-                   dtype=np.float32):
+def coarse_to_fine(
+    I0, I1, solver, downscale=2, nlevel=10, min_size=16, dtype=np.float32
+):
     """Generic coarse to fine solver.
 
     Parameters
@@ -130,18 +132,20 @@ def coarse_to_fine(I0, I1, solver, downscale=2, nlevel=10, min_size=16,
     if I0.shape != I1.shape:
         raise ValueError("Input images should have the same shape")
 
-    if np.dtype(dtype).char not in 'efdg':
-        raise ValueError("Only floating point data type are valid"
-                         " for optical flow")
+    if np.dtype(dtype).char not in "efdg":
+        raise ValueError(
+            "Only floating point data type are valid" " for optical flow"
+        )
 
-    pyramid = list(zip(get_pyramid(_convert(I0, dtype),
-                                   downscale, nlevel, min_size),
-                       get_pyramid(_convert(I1, dtype),
-                                   downscale, nlevel, min_size)))
+    pyramid = list(
+        zip(
+            get_pyramid(_convert(I0, dtype), downscale, nlevel, min_size),
+            get_pyramid(_convert(I1, dtype), downscale, nlevel, min_size),
+        )
+    )
 
     # Initialization to 0 at coarsest level.
-    flow = cp.zeros((pyramid[0][0].ndim, ) + pyramid[0][0].shape,
-                    dtype=dtype)
+    flow = cp.zeros((pyramid[0][0].ndim,) + pyramid[0][0].shape, dtype=dtype)
 
     flow = solver(pyramid[0][0], pyramid[0][1], flow)
 

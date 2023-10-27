@@ -20,7 +20,7 @@ from cucim.skimage._vendored._ndimage_util import _fix_sequence_arg
 _prod = _misc.prod
 
 
-def convolve(in1, in2, mode='full', method='auto'):
+def convolve(in1, in2, mode="full", method="auto"):
     """Convolve two N-dimensional arrays.
 
     Convolve ``in1`` and ``in2``, with the output size determined by the
@@ -67,7 +67,7 @@ def convolve(in1, in2, mode='full', method='auto'):
     return _correlate(in1, in2, mode, method, True)
 
 
-def correlate(in1, in2, mode='full', method='auto'):
+def correlate(in1, in2, mode="full", method="auto"):
     """Cross-correlate two N-dimensional arrays.
 
     Cross-correlate ``in1`` and ``in2``, with the output size determined by the
@@ -114,19 +114,20 @@ def correlate(in1, in2, mode='full', method='auto'):
     return _correlate(in1, in2, mode, method, False)
 
 
-def _correlate(in1, in2, mode='full', method='auto', convolution=False):
+def _correlate(in1, in2, mode="full", method="auto", convolution=False):
     quick_out = _st_core._check_conv_inputs(in1, in2, mode, convolution)
     if quick_out is not None:
         return quick_out
-    if method not in ('auto', 'direct', 'fft'):
+    if method not in ("auto", "direct", "fft"):
         raise ValueError('acceptable methods are "auto", "direct", or "fft"')
 
-    if method == 'auto':
+    if method == "auto":
         method = choose_conv_method(in1, in2, mode=mode)
 
-    if method == 'direct':
-        return _st_core._direct_correlate(in1, in2, mode, in1.dtype,
-                                          convolution)
+    if method == "direct":
+        return _st_core._direct_correlate(
+            in1, in2, mode, in1.dtype, convolution
+        )
 
     # if method == 'fft':
     inputs_swapped = _st_core._inputs_swap_needed(mode, in1.shape, in2.shape)
@@ -136,7 +137,7 @@ def _correlate(in1, in2, mode='full', method='auto', convolution=False):
         in2 = _st_core._reverse_and_conj(in2)
     out = fftconvolve(in1, in2, mode)
     result_type = cupy.result_type(in1, in2)
-    if result_type.kind in 'ui':
+    if result_type.kind in "ui":
         out = out.round()
     out = out.astype(result_type, copy=False)
     if not convolution and inputs_swapped:
@@ -144,7 +145,7 @@ def _correlate(in1, in2, mode='full', method='auto', convolution=False):
     return out
 
 
-def fftconvolve(in1, in2, mode='full', axes=None):
+def fftconvolve(in1, in2, mode="full", axes=None):
     """Convolve two N-dimensional arrays using FFT.
 
     Convolve ``in1`` and ``in2`` using the fast Fourier transform method, with
@@ -185,8 +186,10 @@ def fftconvolve(in1, in2, mode='full', axes=None):
     if out is not None:
         return out
     in1, in2, axes = _st_core._init_freq_conv_axes(in1, in2, mode, axes, False)
-    shape = [max(x1, x2) if a not in axes else x1 + x2 - 1
-             for a, (x1, x2) in enumerate(zip(in1.shape, in2.shape))]
+    shape = [
+        max(x1, x2) if a not in axes else x1 + x2 - 1
+        for a, (x1, x2) in enumerate(zip(in1.shape, in2.shape))
+    ]
     out = _st_core._freq_domain_conv(in1, in2, axes, shape, calc_fast_len=True)
     return _st_core._apply_conv_mode(out, in1.shape, in2.shape, mode, axes)
 
@@ -323,7 +326,7 @@ def _timeit_fast(stmt="pass", setup="pass", repeat=3):
     # determine number of calls per rep so total time for 1 rep >= 5 ms
     x = 0
     for p in range(0, 10):
-        number = 10 ** p
+        number = 10**p
         x = timer.timeit(number)  # seconds
         if x >= 5e-3 / 10:  # 5 ms for final test, 1/10th that for this one
             break
@@ -341,6 +344,7 @@ def _timeit_fast(stmt="pass", setup="pass", repeat=3):
 
 # TODO: grlee77: tune this for CUDA when measure=False rather than falling
 #                back to the choices made by SciPy
+
 
 def choose_conv_method(in1, in2, mode="full", measure=False):
     """
@@ -480,7 +484,7 @@ def choose_conv_method(in1, in2, mode="full", measure=False):
     return "direct"
 
 
-def convolve2d(in1, in2, mode='full', boundary='fill', fillvalue=0):
+def convolve2d(in1, in2, mode="full", boundary="fill", fillvalue=0):
     """Convolve two 2-dimensional arrays.
 
     Convolve ``in1`` and ``in2`` with output size determined by ``mode``, and
@@ -522,7 +526,7 @@ def convolve2d(in1, in2, mode='full', boundary='fill', fillvalue=0):
     return _correlate2d(in1, in2, mode, boundary, fillvalue, True)
 
 
-def correlate2d(in1, in2, mode='full', boundary='fill', fillvalue=0):
+def correlate2d(in1, in2, mode="full", boundary="fill", fillvalue=0):
     """Cross-correlate two 2-dimensional arrays.
 
     Cross correlate ``in1`` and ``in2`` with output size determined by
@@ -570,23 +574,39 @@ def correlate2d(in1, in2, mode='full', boundary='fill', fillvalue=0):
 
 def _correlate2d(in1, in2, mode, boundary, fillvalue, convolution=False):
     if not (in1.ndim == in2.ndim == 2):
-        raise ValueError('{} inputs must both be 2-D arrays'.format(
-            'convolve2d' if convolution else 'correlate2d'))
+        raise ValueError(
+            "{} inputs must both be 2-D arrays".format(
+                "convolve2d" if convolution else "correlate2d"
+            )
+        )
     _boundaries = {
-        'fill': 'constant', 'pad': 'constant',
-        'wrap': 'wrap', 'circular': 'wrap',
-        'symm': 'reflect', 'symmetric': 'reflect',
+        "fill": "constant",
+        "pad": "constant",
+        "wrap": "wrap",
+        "circular": "wrap",
+        "symm": "reflect",
+        "symmetric": "reflect",
     }
     boundary = _boundaries.get(boundary)
     if boundary is None:
-        raise ValueError('Acceptable boundary flags are "fill" (or "pad"), '
-                         '"circular" (or "wrap"), and '
-                         '"symmetric" (or "symm").')
+        raise ValueError(
+            'Acceptable boundary flags are "fill" (or "pad"), '
+            '"circular" (or "wrap"), and '
+            '"symmetric" (or "symm").'
+        )
     quick_out = _st_core._check_conv_inputs(in1, in2, mode, convolution)
     if quick_out is not None:
         return quick_out
-    return _st_core._direct_correlate(in1, in2, mode, in1.dtype, convolution,
-                                      boundary, fillvalue, not convolution)
+    return _st_core._direct_correlate(
+        in1,
+        in2,
+        mode,
+        in1.dtype,
+        convolution,
+        boundary,
+        fillvalue,
+        not convolution,
+    )
 
 
 def wiener(im, mysize=None, noise=None):
@@ -608,7 +628,7 @@ def wiener(im, mysize=None, noise=None):
 
     .. seealso:: :func:`scipy.signal.wiener`
     """
-    if im.dtype.kind == 'c':
+    if im.dtype.kind == "c":
         # TODO: adding support for complex types requires ndimage filters
         # to support complex types (which they could easily if not for the
         # scipy compatibility requirement of forbidding complex and using
@@ -616,14 +636,14 @@ def wiener(im, mysize=None, noise=None):
         raise TypeError("complex types not currently supported")
     if mysize is None:
         mysize = 3
-    mysize = _fix_sequence_arg(mysize, im.ndim, 'mysize', int)
+    mysize = _fix_sequence_arg(mysize, im.ndim, "mysize", int)
     im = im.astype(float, copy=False)
 
     # Estimate the local mean
-    local_mean = uniform_filter(im, mysize, mode='constant')
+    local_mean = uniform_filter(im, mysize, mode="constant")
 
     # Estimate the local variance
-    local_var = uniform_filter(im * im, mysize, mode='constant')
+    local_var = uniform_filter(im * im, mysize, mode="constant")
     local_var -= local_mean * local_mean
 
     # Estimate the noise power if needed.
@@ -660,13 +680,15 @@ def order_filter(a, domain, rank):
     .. seealso:: :func:`cupyx.scipy.ndimage.rank_filter`
     .. seealso:: :func:`scipy.signal.order_filter`
     """
-    if a.dtype.kind in 'bc' or a.dtype == cupy.float16:
+    if a.dtype.kind in "bc" or a.dtype == cupy.float16:
         # scipy doesn't support these types
         raise ValueError("data type not supported")
     if any(x % 2 != 1 for x in domain.shape):
-        raise ValueError("Each dimension of domain argument "
-                         " should have an odd number of elements.")
-    return rank_filter(a, rank, footprint=domain, mode='constant')
+        raise ValueError(
+            "Each dimension of domain argument "
+            " should have an odd number of elements."
+        )
+    return rank_filter(a, rank, footprint=domain, mode="constant")
 
 
 def medfilt(volume, kernel_size=None):
@@ -689,19 +711,21 @@ def medfilt(volume, kernel_size=None):
     .. seealso:: :func:`cupyx.scipy.ndimage.median_filter`
     .. seealso:: :func:`scipy.signal.medfilt`
     """
-    if volume.dtype.kind == 'c':
+    if volume.dtype.kind == "c":
         # scipy doesn't support complex
         # (and rank_filter raise TypeError)
         raise ValueError("complex types not supported")
     # output is forced to float64 to match scipy
     kernel_size = _get_kernel_size(kernel_size, volume.ndim)
     if any(k > s for k, s in zip(kernel_size, volume.shape)):
-        warnings.warn('kernel_size exceeds volume extent: '
-                      'volume will be zero-padded')
+        warnings.warn(
+            "kernel_size exceeds volume extent: " "volume will be zero-padded"
+        )
 
     size = np.prod(kernel_size)
-    return rank_filter(volume, size // 2, size=kernel_size,
-                       output=float, mode='constant')
+    return rank_filter(
+        volume, size // 2, size=kernel_size, output=float, mode="constant"
+    )
 
 
 def medfilt2d(input, kernel_size=3):
@@ -731,16 +755,16 @@ def medfilt2d(input, kernel_size=3):
         # Scipy's version only supports uint8, float32, and float64
         raise ValueError("only supports uint8, float32, and float64")
     if input.ndim != 2:
-        raise ValueError('input must be 2d')
+        raise ValueError("input must be 2d")
     kernel_size = _get_kernel_size(kernel_size, input.ndim)
     order = kernel_size[0] * kernel_size[1] // 2
-    return rank_filter(input, order, size=kernel_size, mode='constant')
+    return rank_filter(input, order, size=kernel_size, mode="constant")
 
 
 def _get_kernel_size(kernel_size, ndim):
     if kernel_size is None:
         kernel_size = (3,) * ndim
-    kernel_size = _fix_sequence_arg(kernel_size, ndim, 'kernel_size', int)
+    kernel_size = _fix_sequence_arg(kernel_size, ndim, "kernel_size", int)
     if any((k % 2) != 1 for k in kernel_size):
         raise ValueError("Each element of kernel_size should be odd")
     return kernel_size

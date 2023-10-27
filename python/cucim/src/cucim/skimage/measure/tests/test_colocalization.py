@@ -2,8 +2,12 @@ import cupy as cp
 import numpy as np
 import pytest
 
-from cucim.skimage.measure import (intersection_coeff, manders_coloc_coeff,
-                                   manders_overlap_coeff, pearson_corr_coeff)
+from cucim.skimage.measure import (
+    intersection_coeff,
+    manders_coloc_coeff,
+    manders_overlap_coeff,
+    pearson_corr_coeff,
+)
 
 
 def test_invalid_input():
@@ -74,7 +78,7 @@ def test_pcc():
 
 def test_mcc():
     img1 = cp.array([[j for j in range(4)] for i in range(4)])
-    mask = cp.array([[i <= 1 for j in range(4)]for i in range(4)])
+    mask = cp.array([[i <= 1 for j in range(4)] for i in range(4)])
     assert manders_coloc_coeff(img1, mask) == 0.5
 
     # test negative values

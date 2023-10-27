@@ -92,7 +92,9 @@ def _mutiscale_basic_features_singlechannel(
     )
     singlescale_func = functools.partial(
         _singlescale_basic_features_singlechannel,
-        intensity=intensity, edges=edges, texture=texture
+        intensity=intensity,
+        edges=edges,
+        texture=texture,
     )
     out_sigmas = [singlescale_func(img, s) for s in sigmas]
     features = itertools.chain.from_iterable(out_sigmas)

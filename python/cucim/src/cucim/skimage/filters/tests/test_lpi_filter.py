@@ -16,14 +16,14 @@ class TestLPIFilter2D:
         self.f = LPIFilter2D(self.filt_func)
 
     @pytest.mark.parametrize(
-        'c_slice', [slice(None), slice(0, -5), slice(0, -20)]
+        "c_slice", [slice(None), slice(0, -5), slice(0, -20)]
     )
     def test_ip_shape(self, c_slice):
         x = self.img[:, c_slice]
         assert self.f(x).shape == x.shape
 
     @pytest.mark.parametrize(
-        'dtype', [cp.uint8, cp.float16, cp.float32, cp.float64]
+        "dtype", [cp.uint8, cp.float16, cp.float32, cp.float64]
     )
     def test_filter_inverse(self, dtype):
         img = self.img.astype(dtype, copy=False)
@@ -47,7 +47,7 @@ class TestLPIFilter2D:
         assert (g - g1[::-1, ::-1]).sum() < 55
 
     @pytest.mark.parametrize(
-        'dtype', [cp.uint8, cp.float16, cp.float32, cp.float64]
+        "dtype", [cp.uint8, cp.float16, cp.float32, cp.float64]
     )
     def test_wiener(self, dtype):
         img = self.img.astype(dtype, copy=False)

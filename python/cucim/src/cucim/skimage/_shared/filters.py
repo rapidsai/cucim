@@ -15,6 +15,7 @@ from .._shared.utils import _supported_float_type, convert_to_float, warn
 
 class _PatchClassRepr(type):
     """Control class representations in rendered signatures."""
+
     def __repr__(cls):
         return f"<{cls.__name__}>"
 
@@ -31,9 +32,17 @@ class ChannelAxisNotSet(metaclass=_PatchClassRepr):
     """
 
 
-def gaussian(image, sigma=1, output=None, mode='nearest', cval=0,
-             preserve_range=False, truncate=4.0, *,
-             channel_axis=ChannelAxisNotSet):
+def gaussian(
+    image,
+    sigma=1,
+    output=None,
+    mode="nearest",
+    cval=0,
+    preserve_range=False,
+    truncate=4.0,
+    *,
+    channel_axis=ChannelAxisNotSet,
+):
     """Multi-dimensional Gaussian filter.
 
     Parameters
@@ -162,6 +171,7 @@ def gaussian(image, sigma=1, output=None, mode='nearest', cval=0,
         output = cp.empty_like(image)
     elif not cp.issubdtype(output.dtype, cp.floating):
         raise ValueError("Provided output data type is not float")
-    ndi.gaussian_filter(image, sigma, output=output, mode=mode, cval=cval,
-                        truncate=truncate)
+    ndi.gaussian_filter(
+        image, sigma, output=output, mode=mode, cval=cval, truncate=truncate
+    )
     return output

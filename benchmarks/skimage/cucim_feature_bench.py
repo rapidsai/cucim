@@ -1,20 +1,19 @@
+import argparse
 import math
 import os
 import pickle
-import argparse
 
 import cupy as cp
 import numpy as np
 import pandas as pd
 import skimage
 import skimage.feature
+from _image_bench import ImageBench
 from skimage import data, draw
 
 import cucim.skimage
 import cucim.skimage.feature
 from cucim.skimage import exposure
-
-from _image_bench import ImageBench
 
 
 class BlobDetectionBench(ImageBench):
@@ -24,7 +23,7 @@ class BlobDetectionBench(ImageBench):
             # create 2D image by tiling the coins image
             img = cp.array(data.coins())
             img = exposure.equalize_hist(img)  # improves detection
-            n_tile = (math.ceil(s/s0) for s, s0 in zip(self.shape, img.shape))
+            n_tile = (math.ceil(s / s0) for s, s0 in zip(self.shape, img.shape))
             img = cp.tile(img, n_tile)
             img = img[tuple(slice(s) for s in img.shape)]
             img = img.astype(dtype, copy=False)
@@ -38,8 +37,10 @@ class BlobDetectionBench(ImageBench):
             offsets = rng.integers(0, np.prod(img.shape), num_ellipse)
             locs = np.unravel_index(offsets, img.shape)
             for loc in zip(*locs):
-                loc = tuple(min(l, s - es) for l, s, es in zip(loc, img.shape, e.shape))
-                sl = tuple(slice(l, l + es) for l, es in zip(loc, e.shape))
+                loc = tuple(
+                    min(p, s - es) for p, s, es in zip(loc, img.shape, e.shape)
+                )
+                sl = tuple(slice(p, p + es) for p, es in zip(loc, e.shape))
                 img[sl] = e
         else:
             raise NotImplementedError("unsupported ndim")
@@ -63,7 +64,6 @@ class MatchTemplateBench(ImageBench):
 
 
 def main(args):
-
     pfile = "cucim_feature_results.pickle"
     if os.path.exists(pfile):
         with open(pfile, "rb") as f:
@@ -74,9 +74,16 @@ def main(args):
     dtypes = [np.dtype(args.dtype)]
 
     for function_name, fixed_kwargs, var_kwargs, allow_color, allow_nd in [
-        ("multiscale_basic_features", dict(edges=True), dict(texture=[True, False]), True, True),
+        (
+            "multiscale_basic_features",
+            dict(edges=True),
+            dict(texture=[True, False]),
+            True,
+            True,
+        ),
         ("canny", dict(sigma=1.8), dict(), False, False),
-        # reduced default rings, histograms, orientations to fit daisy at (3840, 2160) into GPU memory
+        # reduced default rings, histograms, orientations to fit daisy at
+        # (3840, 2160) into GPU memory
         (
             "daisy",
             dict(step=4, radius=15, rings=2, histograms=5, orientations=4),
@@ -84,29 +91,68 @@ def main(args):
             False,
             False,
         ),
-        ("structure_tensor", dict(sigma=1, mode="reflect", order="rc"), dict(), False, True),
-        ("hessian_matrix", dict(sigma=1, mode="reflect", order="rc"), dict(), False, True),
-        ("hessian_matrix_det", dict(sigma=1, approximate=False), dict(), False, True),
+        (
+            "structure_tensor",
+            dict(sigma=1, mode="reflect", order="rc"),
+            dict(),
+            False,
+            True,
+        ),
+        (
+            "hessian_matrix",
+            dict(sigma=1, mode="reflect", order="rc"),
+            dict(),
+            False,
+            True,
+        ),
+        (
+            "hessian_matrix_det",
+            dict(sigma=1, approximate=False),
+            dict(),
+            False,
+            True,
+        ),
         ("shape_index", dict(sigma=1, mode="reflect"), dict(), False, False),
-        ("corner_kitchen_rosenfeld", dict(mode="reflect"), dict(), False, False),
-        ("corner_harris", dict(k=0.05, eps=1e-6, sigma=1), dict(method=["k", "eps"]), False, False),
+        (
+            "corner_kitchen_rosenfeld",
+            dict(mode="reflect"),
+            dict(),
+            False,
+            False,
+        ),
+        (
+            "corner_harris",
+            dict(k=0.05, eps=1e-6, sigma=1),
+            dict(method=["k", "eps"]),
+            False,
+            False,
+        ),
         ("corner_shi_tomasi", dict(sigma=1), dict(), False, False),
         ("corner_foerstner", dict(sigma=1), dict(), False, False),
         ("corner_peaks", dict(), dict(min_distance=(2, 3, 5)), False, True),
-        ("match_template", dict(), dict(pad_input=[False], mode=["reflect"]), False, True),
+        (
+            "match_template",
+            dict(),
+            dict(pad_input=[False], mode=["reflect"]),
+            False,
+            True,
+        ),
         # blob detectors. fixed kwargs here are taken from the docstring examples
-        ("blob_dog", dict(threshold=.05, min_sigma=10, max_sigma=40), dict(), False, True),
-        ("blob_log", dict(threshold=.3), dict(), False, True),
+        (
+            "blob_dog",
+            dict(threshold=0.05, min_sigma=10, max_sigma=40),
+            dict(),
+            False,
+            True,
+        ),
+        ("blob_log", dict(threshold=0.3), dict(), False, True),
         ("blob_doh", dict(), dict(), False, False),
     ]:
-
         if function_name == args.func_name:
-            shape = tuple(list(map(int,(args.img_size.split(",")))))
+            shape = tuple(list(map(int, (args.img_size.split(",")))))
         else:
             continue
 
-        #if function_name in ["corner_peaks", "peak_local_max"] and np.prod(shape) > 1000000:
-            # skip any large sizes that take too long
         ndim = len(shape)
         run_cpu = not args.no_cpu
         if not allow_nd:
@@ -139,7 +185,6 @@ def main(args):
                 run_cpu=run_cpu,
             )
         elif function_name != "match_template":
-
             if function_name == "multiscale_basic_features":
                 fixed_kwargs["channel_axis"] = -1 if shape[-1] == 3 else None
                 if ndim == 3 and shape[-1] != 3:
@@ -157,7 +202,6 @@ def main(args):
                 run_cpu=run_cpu,
             )
         else:
-
             B = MatchTemplateBench(
                 function_name=function_name,
                 shape=shape,

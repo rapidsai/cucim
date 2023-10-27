@@ -3,29 +3,36 @@
 import cupy as cp
 import numpy as np
 import pytest
-from cupy.testing import (assert_allclose, assert_array_almost_equal,
-                          assert_array_equal)
+from cupy.testing import (
+    assert_allclose,
+    assert_array_almost_equal,
+    assert_array_equal,
+)
 
 from cucim.skimage._shared.testing import expected_warnings, fetch
 from cucim.skimage._shared.utils import _supported_float_type
-from cucim.skimage.color.delta_e import (deltaE_cie76, deltaE_ciede94,
-                                         deltaE_ciede2000, deltaE_cmc)
+from cucim.skimage.color.delta_e import (
+    deltaE_cie76,
+    deltaE_ciede94,
+    deltaE_ciede2000,
+    deltaE_cmc,
+)
 
 
 @pytest.mark.parametrize("channel_axis", [0, 1, -1])
-@pytest.mark.parametrize('dtype', [cp.float32, cp.float64])
+@pytest.mark.parametrize("dtype", [cp.float32, cp.float64])
 def test_ciede2000_dE(dtype, channel_axis):
     data = load_ciede2000_data()
     N = len(data)
     lab1 = np.zeros((N, 3), dtype=dtype)
-    lab1[:, 0] = data['L1']
-    lab1[:, 1] = data['a1']
-    lab1[:, 2] = data['b1']
+    lab1[:, 0] = data["L1"]
+    lab1[:, 1] = data["a1"]
+    lab1[:, 2] = data["b1"]
 
     lab2 = np.zeros((N, 3), dtype=dtype)
-    lab2[:, 0] = data['L2']
-    lab2[:, 1] = data['a2']
-    lab2[:, 2] = data['b2']
+    lab2[:, 0] = data["L2"]
+    lab2[:, 1] = data["a2"]
+    lab2[:, 2] = data["b2"]
 
     lab1 = cp.moveaxis(cp.asarray(lab1), source=-1, destination=channel_axis)
     lab2 = cp.moveaxis(cp.asarray(lab2), source=-1, destination=channel_axis)
@@ -35,54 +42,55 @@ def test_ciede2000_dE(dtype, channel_axis):
     # Note: lower float64 accuracy than scikit-image
     # rtol = 1e-2 if dtype == cp.float32 else 1e-4
     rtol = 1e-2
-    assert_allclose(dE2, data['dE'], rtol=rtol)
+    assert_allclose(dE2, data["dE"], rtol=rtol)
 
 
 def load_ciede2000_data():
-    dtype = [('pair', int),
-             ('1', int),
-             ('L1', float),
-             ('a1', float),
-             ('b1', float),
-             ('a1_prime', float),
-             ('C1_prime', float),
-             ('h1_prime', float),
-             ('hbar_prime', float),
-             ('G', float),
-             ('T', float),
-             ('SL', float),
-             ('SC', float),
-             ('SH', float),
-             ('RT', float),
-             ('dE', float),
-             ('2', int),
-             ('L2', float),
-             ('a2', float),
-             ('b2', float),
-             ('a2_prime', float),
-             ('C2_prime', float),
-             ('h2_prime', float),
-             ]
+    dtype = [
+        ("pair", int),
+        ("1", int),
+        ("L1", float),
+        ("a1", float),
+        ("b1", float),
+        ("a1_prime", float),
+        ("C1_prime", float),
+        ("h1_prime", float),
+        ("hbar_prime", float),
+        ("G", float),
+        ("T", float),
+        ("SL", float),
+        ("SC", float),
+        ("SH", float),
+        ("RT", float),
+        ("dE", float),
+        ("2", int),
+        ("L2", float),
+        ("a2", float),
+        ("b2", float),
+        ("a2_prime", float),
+        ("C2_prime", float),
+        ("h2_prime", float),
+    ]
 
     # note: ciede_test_data.txt contains several intermediate quantities
-    path = fetch('color/tests/ciede2000_test_data.txt')
+    path = fetch("color/tests/ciede2000_test_data.txt")
     return np.loadtxt(path, dtype=dtype)
 
 
 @pytest.mark.parametrize("channel_axis", [0, 1, -1])
-@pytest.mark.parametrize('dtype', [cp.float32, cp.float64])
+@pytest.mark.parametrize("dtype", [cp.float32, cp.float64])
 def test_cie76(dtype, channel_axis):
     data = load_ciede2000_data()
     N = len(data)
     lab1 = np.zeros((N, 3), dtype=dtype)
-    lab1[:, 0] = data['L1']
-    lab1[:, 1] = data['a1']
-    lab1[:, 2] = data['b1']
+    lab1[:, 0] = data["L1"]
+    lab1[:, 1] = data["a1"]
+    lab1[:, 2] = data["b1"]
 
     lab2 = np.zeros((N, 3), dtype=dtype)
-    lab2[:, 0] = data['L2']
-    lab2[:, 1] = data['a2']
-    lab2[:, 2] = data['b2']
+    lab2[:, 0] = data["L2"]
+    lab2[:, 1] = data["a2"]
+    lab2[:, 2] = data["b2"]
 
     lab1 = cp.moveaxis(cp.asarray(lab1), source=-1, destination=channel_axis)
     lab2 = cp.moveaxis(cp.asarray(lab2), source=-1, destination=channel_axis)
@@ -105,19 +113,19 @@ def test_cie76(dtype, channel_axis):
 
 
 @pytest.mark.parametrize("channel_axis", [0, 1, -1])
-@pytest.mark.parametrize('dtype', [cp.float32, cp.float64])
+@pytest.mark.parametrize("dtype", [cp.float32, cp.float64])
 def test_ciede94(dtype, channel_axis):
     data = load_ciede2000_data()
     N = len(data)
     lab1 = np.zeros((N, 3), dtype=dtype)
-    lab1[:, 0] = data['L1']
-    lab1[:, 1] = data['a1']
-    lab1[:, 2] = data['b1']
+    lab1[:, 0] = data["L1"]
+    lab1[:, 1] = data["a1"]
+    lab1[:, 2] = data["b1"]
 
     lab2 = np.zeros((N, 3), dtype=dtype)
-    lab2[:, 0] = data['L2']
-    lab2[:, 1] = data['a2']
-    lab2[:, 2] = data['b2']
+    lab2[:, 0] = data["L2"]
+    lab2[:, 1] = data["a2"]
+    lab2[:, 2] = data["b2"]
 
     lab1 = cp.moveaxis(cp.asarray(lab1), source=-1, destination=channel_axis)
     lab2 = cp.moveaxis(cp.asarray(lab2), source=-1, destination=channel_axis)
@@ -140,19 +148,19 @@ def test_ciede94(dtype, channel_axis):
 
 
 @pytest.mark.parametrize("channel_axis", [0, 1, -1])
-@pytest.mark.parametrize('dtype', [cp.float32, cp.float64])
+@pytest.mark.parametrize("dtype", [cp.float32, cp.float64])
 def test_cmc(dtype, channel_axis):
     data = load_ciede2000_data()
     N = len(data)
     lab1 = np.zeros((N, 3), dtype=dtype)
-    lab1[:, 0] = data['L1']
-    lab1[:, 1] = data['a1']
-    lab1[:, 2] = data['b1']
+    lab1[:, 0] = data["L1"]
+    lab1[:, 1] = data["a1"]
+    lab1[:, 2] = data["b1"]
 
     lab2 = np.zeros((N, 3), dtype=dtype)
-    lab2[:, 0] = data['L2']
-    lab2[:, 1] = data['a2']
-    lab2[:, 2] = data['b2']
+    lab2[:, 0] = data["L2"]
+    lab2[:, 1] = data["a2"]
+    lab2[:, 2] = data["b2"]
 
     lab1 = cp.moveaxis(cp.asarray(lab1), source=-1, destination=channel_axis)
     lab2 = cp.moveaxis(cp.asarray(lab2), source=-1, destination=channel_axis)
@@ -190,7 +198,7 @@ def test_cmc(dtype, channel_axis):
 
 def test_cmc_single_item():
     # Single item case:
-    lab1 = lab2 = cp.array([0., 1.59607713, 0.87755709])
+    lab1 = lab2 = cp.array([0.0, 1.59607713, 0.87755709])
     assert_array_equal(deltaE_cmc(lab1, lab2), 0)
 
     lab2[0] += cp.finfo(float).eps

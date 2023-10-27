@@ -111,16 +111,14 @@ def test_invalid_block_size():
 def test_default_block_size():
     image = cp.arange(4 * 6).reshape(4, 6)
     out = block_reduce(image, func=cp.min)
-    expected = cp.array([[0, 2, 4],
-                         [12, 14, 16]])
+    expected = cp.array([[0, 2, 4], [12, 14, 16]])
     assert_array_equal(expected, out)
 
 
 def test_scalar_block_size():
     image = cp.arange(6 * 6).reshape(6, 6)
     out = block_reduce(image, 3, func=cp.min)
-    expected1 = cp.array([[0, 3],
-                         [18, 21]])
+    expected1 = cp.array([[0, 3], [18, 21]])
     assert_array_equal(expected1, out)
     expected2 = block_reduce(image, (3, 3), func=cp.min)
     assert_array_equal(expected2, out)
@@ -153,8 +151,9 @@ def test_func_kwargs_different_dtype():
                      dtype=cp.float64)
     # fmt: on
 
-    out = block_reduce(image, (2, 2), func=cp.mean,
-                       func_kwargs={'dtype': cp.float16})
+    out = block_reduce(
+        image, (2, 2), func=cp.mean, func_kwargs={"dtype": cp.float16}
+    )
     expected = cp.array([[0.6855, 0.3164], [0.4922, 0.521]], dtype=cp.float16)
 
     # Note: had to set decimal=3 for float16 to pass here when using CuPy

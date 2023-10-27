@@ -21,8 +21,9 @@ def get_zoomed_data(zoomout=False):
     if not zoomout:
         img1 = Image.open(os.path.join(os.path.abspath(dirname), "zoomed.png"))
     else:
-        img1 = Image.open(os.path.join(os.path.abspath(dirname),
-                          "zoomout_padded.png"))
+        img1 = Image.open(
+            os.path.join(os.path.abspath(dirname), "zoomout_padded.png")
+        )
     arr_o = np.asarray(img1)
     arr_o = np.transpose(arr_o)
     return arr_o
@@ -34,7 +35,7 @@ def test_zoom_param():
         arr1 = arr.flatten()
         its.zoom(arr1, [1.1, 1.1])
     with pytest.raises(TypeError):
-        img = Image.fromarray(arr.T, 'RGB')
+        img = Image.fromarray(arr.T, "RGB")
         its.zoom(img, [1.1, 1.1])
 
 

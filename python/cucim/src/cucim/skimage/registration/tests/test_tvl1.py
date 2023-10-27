@@ -27,7 +27,7 @@ def _sin_flow_gen(image0, max_motion=4.5, npics=5):
         first component and the corresponding warped image.
 
     """
-    grid = cp.meshgrid(*[cp.arange(n) for n in image0.shape], indexing='ij')
+    grid = cp.meshgrid(*[cp.arange(n) for n in image0.shape], indexing="ij")
     grid = cp.stack(grid)
     # TODO: make upstream scikit-image PR changing gt_flow dtype to float
     gt_flow = cp.zeros_like(grid, dtype=float)
@@ -38,7 +38,7 @@ def _sin_flow_gen(image0, max_motion=4.5, npics=5):
     return gt_flow, image1
 
 
-@pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])
+@pytest.mark.parametrize("dtype", [cp.float16, cp.float32, cp.float64])
 def test_2d_motion(dtype):
     # Generate synthetic data
     rnd = cp.random.RandomState(0)
@@ -57,7 +57,7 @@ def test_2d_motion(dtype):
             optical_flow_tvl1(image0, image1, attachment=5, dtype=dtype)
 
 
-@pytest.mark.parametrize('dtype', [cp.float32, cp.float64])
+@pytest.mark.parametrize("dtype", [cp.float32, cp.float64])
 def test_3d_motion(dtype):
     # Generate synthetic data
     rnd = np.random.RandomState(0)
