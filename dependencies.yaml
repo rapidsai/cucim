@@ -253,7 +253,7 @@ dependencies:
           - tifffile>=2022.7.28
       - output_types: [conda]
         packages:
-          # TODO: fix dependencies and move imagecodecs & openslide-python back up to the common
+          # TODO: move imagecodecs & openslide-python back up to the common
           #   section above. (doesn't seem that imagecodecs has an arm64 wheel)
           - imagecodecs>=2021.6.8
           - openslide-python>=1.1.2
@@ -273,11 +273,3 @@ dependencies:
           # listed as optional. They are needed in order to run the full test
           # suite, including the `cucim.clara` package.
           - click
-          # - jbig
-          # - libwebp-base
-          # - xz
-          # - zlib
-          # - zstd
-          # Not sure where these go, if anywhere:
-          # - openslide
-          # - xorg-libxcb

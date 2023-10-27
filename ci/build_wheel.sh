@@ -38,9 +38,6 @@ else
     echo "apt package manager was found"
     apt update
     apt install yasm libopenslide-dev -y
-    # dpkg -L libopenslide-dev
-
-    # git apply ci/omit-cuslide-benchmarks-and-tests.patch
 fi
 
 # First build the C++ lib using CMake via the run script
@@ -49,22 +46,18 @@ fi
 # Build the C++ cuslide and cumed plugins
 ./run build_local cuslide ${CMAKE_BUILD_TYPE}
 cp -P -r cpp/plugins/cucim.kit.cuslide/install/lib/* ./install/lib/
-# omit copying potentially non-existent binaries due to patch above.
-# they don't go in the wheel anyways
-# cp -P -r cpp/plugins/cucim.kit.cuslide/install/bin/* ./install/bin/
+# omit copying binaries as they don't go in the wheel
 
 ./run build_local cumed ${CMAKE_BUILD_TYPE}
 cp -P -r cpp/plugins/cucim.kit.cumed/install/lib/* ./install/lib/
-# cp -P -r cpp/plugins/cucim.kit.cumed/install/bin/* ./install/bin/
-
-# problems: boost-header-only takes a long time to download
+# omit copying binaries as they don't go in the wheel
 
 # Compile the Python bindings
 ./run build_local cucim ${CMAKE_BUILD_TYPE}
 
 # Copy the resulting cucim pybind11 shared library into the Python package src folder
 cp -P python/install/lib/* python/cucim/src/cucim/clara/
-# also need these files in the clara wheel
+# also need these plugin / libcucim shared libraries in the clara wheel
 cp -P install/lib/*.so python/cucim/src/cucim/clara/
 
 cd "${package_dir}"
