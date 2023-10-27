@@ -72,7 +72,7 @@ cp -P -r cpp/plugins/cucim.kit.cumed/install/bin/* ./install/bin/
 # Copy the resulting cucim pybind11 shared library into the Python package src folder
 cp -P python/install/lib/* python/cucim/src/cucim/clara/
 # also need these files in the clara wheel
-cp -P install/lib/* python/cucim/src/cucim/clara/
+cp -P install/lib/*.so python/cucim/src/cucim/clara/
 
 cd "${package_dir}"
 
