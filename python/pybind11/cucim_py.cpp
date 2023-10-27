@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -107,7 +107,7 @@ PYBIND11_MODULE(_cucim, m)
     py::class_<CuImage, std::shared_ptr<CuImage>>(m, "CuImage", py::dynamic_attr()) //
         .def(py::init<const std::string&>(), doc::CuImage::doc_CuImage, py::call_guard<py::gil_scoped_release>(), //
              py::arg("path")) //
-        .def_static("cache", &py_cache, doc::CuImage::doc_cache, py::call_guard<py::gil_scoped_release>(), //
+        .def_static("cache", &py_cache, doc::CuImage::doc_cache, //
                     py::arg("type") = py::none()) //
         .def_static("profiler", &py_profiler, doc::CuImage::doc_profiler, py::call_guard<py::gil_scoped_release>()) //
         .def_property_readonly_static("is_trace_enabled", &py_is_trace_enabled, doc::CuImage::doc_is_trace_enabled,
