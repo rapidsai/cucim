@@ -37,6 +37,7 @@ sed_runner 's/release = .*/release = '"'${NEXT_FULL_TAG}'"'/g' docs/source/conf.
 sed_runner "s/^version = .*/version = \"${NEXT_FULL_TAG}\"/g" python/cucim/pyproject.toml
 sed_runner "s/${CURRENT_LONG_TAG}/${NEXT_FULL_TAG}/g" VERSION
 sed_runner "s/${CURRENT_LONG_TAG}/${NEXT_FULL_TAG}/g" python/cucim/VERSION
+sed_runner "s/__version__ = .*/__version__ = \"${NEXT_FULL_TAG}\"/g" python/cucim/src/cucim/__init__.pyi
 sed_runner "s/${CURRENT_LONG_TAG}/${NEXT_FULL_TAG}/g" cpp/plugins/cucim.kit.cuslide/VERSION
 sed_runner "s/${CURRENT_LONG_TAG}/${NEXT_FULL_TAG}/g" cpp/plugins/cucim.kit.cumed/VERSION
 sed_runner "s#\[Version ${CURRENT_LONG_TAG}\](release_notes/v${CURRENT_LONG_TAG}.md)#\[Version ${NEXT_FULL_TAG}\](release_notes/v${NEXT_FULL_TAG}.md)#g" python/cucim/docs/index.md
