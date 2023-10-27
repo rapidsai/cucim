@@ -266,11 +266,11 @@ dependencies:
           # listed as optional. They are needed in order to run the full test
           # suite, including the `cucim.clara` package.
           - click
-          - jbig
-          - libwebp-base
-          - xz
-          - zlib
-          - zstd
+          # - jbig
+          # - libwebp-base
+          # - xz
+          # - zlib
+          # - zstd
           # Not sure where these go, if anywhere:
           # - openslide
           # - xorg-libxcb
