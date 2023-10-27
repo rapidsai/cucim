@@ -13,8 +13,7 @@ python -m pip install $(echo ./dist/cucim*.whl)[test]
 if [ "$(arch)" == "aarch64" && ${RAPIDS_BUILD_TYPE} == "pull-request" ]; then
     python ./ci/wheel_smoke_test.py
 else
-    # python -m pytest ./python/cucim
-    # omit clara subset until dependency installs are fixed
-    python -m pytest ./python/cucim/src/cucim/core/
-    python -m pytest ./python/cucim/src/cucim/skimage/
+    # Note: imagecodecs is currently not installed on aarch64, so a handful of
+    #       test cases will be skipped in that case
+    python -m pytest ./python/cucim
 fi

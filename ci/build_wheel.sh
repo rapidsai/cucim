@@ -38,9 +38,9 @@ else
     echo "apt package manager was found"
     apt update
     apt install yasm libopenslide-dev -y
-    dpkg -L libopenslide-dev
+    # dpkg -L libopenslide-dev
 
-    git apply ci/omit-cuslide-benchmarks-and-tests.patch
+    # git apply ci/omit-cuslide-benchmarks-and-tests.patch
 fi
 
 # First build the C++ lib using CMake via the run script

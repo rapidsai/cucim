@@ -22,7 +22,9 @@ if (NOT TARGET deps::openslide)
         set(OPENSLIDE_LIB_PATH "$ENV{CONDA_PREFIX}/lib/libopenslide.so")
     elseif (EXISTS /usr/lib/x86_64-linux-gnu/libopenslide.so)
         set(OPENSLIDE_LIB_PATH /usr/lib/x86_64-linux-gnu/libopenslide.so)
-    else () # CentOS 6
+    elseif (EXISTS /usr/lib/aarch64-linux-gnu/libopenslide.so)
+        set(OPENSLIDE_LIB_PATH /usr/lib/aarch64-linux-gnu/libopenslide.so)
+    else () # CentOS (x86_64)
         set(OPENSLIDE_LIB_PATH /usr/lib64/libopenslide.so)
     endif ()
 
