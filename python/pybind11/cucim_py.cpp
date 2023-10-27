@@ -557,6 +557,10 @@ py::object py_associated_image(const CuImage& cuimg, const std::string& name, co
 py::object py_cuimage_iterator_next(CuImageIterator<CuImage>& it)
 {
     bool stop_iteration = (it.index() == it.size());
+    if (stop_iteration)
+    {
+        throw py::stop_iteration();
+    }
 
     // Get the next batch of images.
     ++it;
@@ -572,10 +576,6 @@ py::object py_cuimage_iterator_next(CuImageIterator<CuImage>& it)
         if (loader)
         {
             _set_array_interface(cuimg_obj);
-        }
-        if (stop_iteration)
-        {
-            throw py::stop_iteration();
         }
         return cuimg_obj;
     }
