@@ -15,7 +15,12 @@
 
 import math
 
+import pytest
+
 from ...util.io import open_image_cucim
+
+# skip if imagecodecs package not available (needed by ImageGenerator utility)
+pytest.importorskip("imagecodecs")
 
 
 def test_load_image_metadata(testimg_tiff_stripe_32x24_16):

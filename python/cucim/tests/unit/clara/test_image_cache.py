@@ -13,6 +13,11 @@
 # limitations under the License.
 #
 
+import pytest
+
+# skip if imagecodecs package not available (needed by ImageGenerator utility)
+pytest.importorskip("imagecodecs")
+
 
 def test_get_nocache():
     from cucim import CuImage

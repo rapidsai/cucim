@@ -16,6 +16,11 @@
 import os
 from pathlib import Path
 
+import pytest
+
+# skip if imagecodecs package not available (needed by ImageGenerator utility)
+pytest.importorskip("imagecodecs")
+
 
 def test_image_converter_stripe_4096x4096_256_jpeg(
     tmp_path, testimg_tiff_stripe_4096x4096_256_jpeg
