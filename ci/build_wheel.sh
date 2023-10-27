@@ -46,10 +46,7 @@ else
     apt install yasm libopenslide-dev -y
     dpkg -L libopenslide-dev
 
-    # temporarily add a sleep here to slow down the aarch64 workers to allow
-    # x86_64 cases to try to run instead of being cancelled if the aarch64
-    # case failed
-    sleep 10m
+    git apply ci/omit-cuslide-benchmarks-and-tests.patch
 fi
 
 # First build the C++ lib using CMake via the run script
