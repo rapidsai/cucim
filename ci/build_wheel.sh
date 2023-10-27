@@ -17,15 +17,9 @@ version_override="$(rapids-pip-wheel-version ${RAPIDS_DATE_STRING})"
 
 RAPIDS_PY_CUDA_SUFFIX="$(rapids-wheel-ctk-name-gen ${RAPIDS_CUDA_VERSION})"
 
-# This is the version of the suffix with a preceding hyphen. It's used
-# everywhere except in the final wheel name.
-PACKAGE_CUDA_SUFFIX="-${RAPIDS_PY_CUDA_SUFFIX}"
-
-# Patch project metadata files to include the CUDA version suffix and version override.
-pyproject_file="${package_dir}/pyproject.toml"
-
-sed -i "s/^version = .*/version = \"${version_override}\"/g" ${pyproject_file}
-sed -i "s/name = \"${package_name}\"/name = \"${package_name}${PACKAGE_CUDA_SUFFIX}\"/g" ${pyproject_file}
+ci/release/apply_wheel_modifications.sh ${version_override} "-${RAPIDS_PY_CUDA_SUFFIX}"
+echo "The package name and/or version was modified in the package source. The git diff is:"
+git diff
 
 pip install --upgrade pip
 
