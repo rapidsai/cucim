@@ -34,6 +34,7 @@ function sed_runner() {
 sed_runner 's/version = .*/version = '"'${NEXT_SHORT_TAG}'"'/g' docs/source/conf.py
 sed_runner 's/release = .*/release = '"'${NEXT_FULL_TAG}'"'/g' docs/source/conf.py
 
+sed_runner "s/^version = .*/version = \"${NEXT_FULL_TAG}\"/g" python/cucim/pyproject.toml
 sed_runner "s/${CURRENT_LONG_TAG}/${NEXT_FULL_TAG}/g" VERSION
 sed_runner "s/${CURRENT_LONG_TAG}/${NEXT_FULL_TAG}/g" python/cucim/VERSION
 sed_runner "s/__version__ = .*/__version__ = \"${NEXT_FULL_TAG}\"/g" python/cucim/src/cucim/__init__.pyi
