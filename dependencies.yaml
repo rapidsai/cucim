@@ -253,8 +253,6 @@ dependencies:
           - tifffile>=2022.7.28
       - output_types: [conda]
         packages:
-          # TODO: move imagecodecs & openslide-python back up to the common
-          #   section above. (doesn't seem that imagecodecs has an arm64 wheel)
           - imagecodecs>=2021.6.8
           - openslide-python>=1.1.2
           - pip
@@ -262,14 +260,14 @@ dependencies:
             - opencv-python-headless>=4.6
       - output_types: [requirements]
         packages:
-          # TODO: fix dependencies and move this back up to the common section above
           - imagecodecs>=2021.6.8
           - openslide-python>=1.1.2
+      - output_types: [pyproject]
+        packages:
+          # skip packages on arm64 that don't provide a wheel
+          - imagecodecs>=2021.6.8; platform_machine=='x86_64'
+          - openslide-python>=1.1.2; platform_machine=='x86_64'
       - output_types: [requirements, pyproject]
         packages:
           - opencv-python-headless>=4.6
-          # All dependencies below this point are specific to `cucim.clara` and
-          # are not needed for either `cucim.core` or `cucim.skimage`, so are
-          # listed as optional. They are needed in order to run the full test
-          # suite, including the `cucim.clara` package.
           - click
