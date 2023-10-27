@@ -1,6 +1,6 @@
 /*
  * Apache License, Version 2.0
- * Copyright 2021 NVIDIA Corporation
+ * Copyright 2021-2023 NVIDIA Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -86,6 +86,9 @@ ThreadBatchDataLoader::ThreadBatchDataLoader(LoadFunc load_func,
 
 ThreadBatchDataLoader::~ThreadBatchDataLoader()
 {
+    // Wait until all tasks are done.
+    while (wait_batch() > 0);
+
     cucim::io::DeviceType device_type = out_device_.type();
     for (auto& raster_ptr : raster_data_)
     {

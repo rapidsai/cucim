@@ -200,7 +200,7 @@ PYBIND11_MODULE(_cucim, m)
             },
             py::call_guard<py::gil_scoped_release>());
 
-    py::class_<CuImageIterator<CuImage>>(m, "CuImageIterator") //
+    py::class_<CuImageIterator<CuImage>, std::shared_ptr<CuImageIterator<CuImage>>>(m, "CuImageIterator") //
         .def(py::init<std::shared_ptr<CuImage>, bool>(), doc::CuImageIterator::doc_CuImageIterator,
              py::arg("cuimg"), //
              py::arg("ending") = false, py::call_guard<py::gil_scoped_release>())
@@ -212,8 +212,8 @@ PYBIND11_MODULE(_cucim, m)
             py::call_guard<py::gil_scoped_release>())
         .def(
             "__iter__", //
-            [](CuImageIterator<CuImage>& it) { //
-                return CuImageIterator<CuImage>(it); //
+            [](CuImageIterator<CuImage>* it) { //
+                return it; //
             }, //
             py::call_guard<py::gil_scoped_release>())
         .def("__next__", &py_cuimage_iterator_next, py::call_guard<py::gil_scoped_release>())
@@ -517,11 +517,11 @@ py::object py_read_region(const CuImage& cuimg,
     auto loader = region_ptr->loader();
     if (batch_size > 1 || (loader && loader->size() > 1))
     {
-        auto iter_ptr = region_ptr->begin();
+        auto iter_ptr = std::make_shared<CuImageIterator<CuImage>>(region_ptr->shared_from_this());
 
         py::gil_scoped_acquire scope_guard;
 
-        py::object iter = py::cast(iter_ptr);
+        py::object iter = py::cast(iter_ptr, py::return_value_policy::take_ownership);
 
         return iter;
     }
