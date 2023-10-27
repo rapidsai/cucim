@@ -20,36 +20,6 @@ index 0ab2e17..2a42462 100644
          )
  
  install(TARGETS ${INSTALL_TARGETS}
-diff --git a/ci/omit-cuslide-benchmarks-and-tests.patch b/ci/omit-cuslide-benchmarks-and-tests.patch
-index 6394bf2..e69de29 100644
---- a/ci/omit-cuslide-benchmarks-and-tests.patch
-+++ b/ci/omit-cuslide-benchmarks-and-tests.patch
-@@ -1,25 +0,0 @@
--diff --git a/cpp/plugins/cucim.kit.cuslide/CMakeLists.txt b/cpp/plugins/cucim.kit.cuslide/CMakeLists.txt
--index 37dbca4..18b301a 100644
----- a/cpp/plugins/cucim.kit.cuslide/CMakeLists.txt
--+++ b/cpp/plugins/cucim.kit.cuslide/CMakeLists.txt
--@@ -258,16 +258,16 @@ set_target_properties(${CUCIM_PLUGIN_NAME} PROPERTIES OUTPUT_NAME "${CUCIM_PLUGI
-- ################################################################################
-- # Add tests
-- #########################################################std#######################
---add_subdirectory(tests)
---add_subdirectory(benchmarks)
--+# add_subdirectory(tests)
--+# add_subdirectory(benchmarks)
-- 
-- ################################################################################
-- # Install
-- ################################################################################
-- set(INSTALL_TARGETS
--         ${CUCIM_PLUGIN_NAME}
---        cuslide_tests
---        cuslide_benchmarks
--+        # cuslide_tests
--+        # cuslide_benchmarks
--         )
-- 
-- install(TARGETS ${INSTALL_TARGETS}
 diff --git a/cpp/CMakeLists.txt b/cpp/CMakeLists.txt
 index 67409a6..d2230b3 100644
 --- a/cpp/CMakeLists.txt
@@ -64,15 +34,17 @@ index 67409a6..d2230b3 100644
  #################################################################################
  ## Add bindings
 diff --git a/cpp/plugins/cucim.kit.cuslide/CMakeLists.txt b/cpp/plugins/cucim.kit.cuslide/CMakeLists.txt
-index 37dbca4..18b301a 100644
+index 37dbca4..3cb57a6 100644
 --- a/cpp/plugins/cucim.kit.cuslide/CMakeLists.txt
 +++ b/cpp/plugins/cucim.kit.cuslide/CMakeLists.txt
-@@ -258,16 +258,16 @@ set_target_properties(${CUCIM_PLUGIN_NAME} PROPERTIES OUTPUT_NAME "${CUCIM_PLUGI
+@@ -257,17 +257,17 @@ set_target_properties(${CUCIM_PLUGIN_NAME} PROPERTIES OUTPUT_NAME "${CUCIM_PLUGI
+ 
  ################################################################################
  # Add tests
- #########################################################std#######################
+-#########################################################std#######################
 -add_subdirectory(tests)
 -add_subdirectory(benchmarks)
++################################################################################
 +# add_subdirectory(tests)
 +# add_subdirectory(benchmarks)
  
