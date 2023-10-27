@@ -55,11 +55,13 @@ fi
 # Build the C++ cuslide and cumed plugins
 ./run build_local cuslide ${CMAKE_BUILD_TYPE}
 cp -P -r cpp/plugins/cucim.kit.cuslide/install/lib/* ./install/lib/
-cp -P -r cpp/plugins/cucim.kit.cuslide/install/bin/* ./install/bin/
+# omit copying potentially non-existent binaries due to patch above.
+# they don't go in the wheel anyways
+# cp -P -r cpp/plugins/cucim.kit.cuslide/install/bin/* ./install/bin/
 
 ./run build_local cumed ${CMAKE_BUILD_TYPE}
 cp -P -r cpp/plugins/cucim.kit.cumed/install/lib/* ./install/lib/
-cp -P -r cpp/plugins/cucim.kit.cumed/install/bin/* ./install/bin/
+# cp -P -r cpp/plugins/cucim.kit.cumed/install/bin/* ./install/bin/
 
 # problems: boost-header-only takes a long time to download
 
