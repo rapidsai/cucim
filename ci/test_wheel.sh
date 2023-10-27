@@ -17,3 +17,4 @@ else
     # omit clara subset until dependency installs are fixed
     python -m pytest ./python/cucim/src/cucim/core/
     python -m pytest ./python/cucim/src/cucim/skimage/
+fi
