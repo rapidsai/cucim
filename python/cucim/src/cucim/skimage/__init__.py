@@ -70,7 +70,14 @@ def __dir__():
 
 
 # Legacy imports into the root namespace; not advertised in __all__
-from .util.dtype import (dtype_limits, img_as_bool, img_as_float,
-                         img_as_float32, img_as_float64, img_as_int,
-                         img_as_ubyte, img_as_uint)
+from .util.dtype import (
+    dtype_limits,
+    img_as_bool,
+    img_as_float,
+    img_as_float32,
+    img_as_float64,
+    img_as_int,
+    img_as_ubyte,
+    img_as_uint,
+)
 from .util.lookfor import lookfor

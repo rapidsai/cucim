@@ -43,8 +43,10 @@ def join_segmentations(s1, s2, return_mapping: bool = False):
            [4, 5, 5, 3]])
     """
     if s1.shape != s2.shape:
-        raise ValueError("Cannot join segmentations of different shape. "
-                         f"s1.shape: {s1.shape}, s2.shape: {s2.shape}")
+        raise ValueError(
+            "Cannot join segmentations of different shape. "
+            f"s1.shape: {s1.shape}, s2.shape: {s2.shape}"
+        )
     s1_relabeled, _, backward_map1 = relabel_sequential(s1)
     s2_relabeled, _, backward_map2 = relabel_sequential(s2)
     factor = s2.max() + 1
@@ -55,10 +57,12 @@ def join_segmentations(s1, s2, return_mapping: bool = False):
     # Determine label mapping
     labels_j = cp.unique(j_initial)
     labels_s1_relabeled, labels_s2_relabeled = cp.divmod(labels_j, factor)
-    map_j_to_s1 = ArrayMap(map_j_to_j_initial.in_values,
-                           backward_map1[labels_s1_relabeled])
-    map_j_to_s2 = ArrayMap(map_j_to_j_initial.in_values,
-                           backward_map2[labels_s2_relabeled])
+    map_j_to_s1 = ArrayMap(
+        map_j_to_j_initial.in_values, backward_map1[labels_s1_relabeled]
+    )
+    map_j_to_s2 = ArrayMap(
+        map_j_to_j_initial.in_values, backward_map2[labels_s2_relabeled]
+    )
     return j, map_j_to_s1, map_j_to_s2
 
 

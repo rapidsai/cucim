@@ -36,7 +36,7 @@ except AttributeError:
     pass
 
 
-@pytest.mark.parametrize('dtype', float_dtypes)
+@pytest.mark.parametrize("dtype", float_dtypes)
 def test_denoise_tv_chambolle_2d(dtype):
     # astronaut image
     img = astro_gray.astype(dtype, copy=True)
@@ -58,19 +58,21 @@ def test_denoise_tv_chambolle_2d(dtype):
 
     grad = ndi.morphological_gradient(cp.asnumpy(img), size=((3, 3)))
     grad_denoised = ndi.morphological_gradient(
-        cp.asnumpy(denoised_astro), size=((3, 3)))
+        cp.asnumpy(denoised_astro), size=((3, 3))
+    )
     # test if the total variation has decreased
     assert grad_denoised.dtype == float_dtype
-    assert np.sqrt((grad_denoised ** 2).sum()) < np.sqrt((grad ** 2).sum())
+    assert np.sqrt((grad_denoised**2).sum()) < np.sqrt((grad**2).sum())
 
 
-@pytest.mark.parametrize('channel_axis', [0, 1, 2, -1])
+@pytest.mark.parametrize("channel_axis", [0, 1, 2, -1])
 def test_denoise_tv_chambolle_multichannel(channel_axis):
     denoised0 = restoration.denoise_tv_chambolle(astro[..., 0], weight=0.1)
 
     img = cp.moveaxis(astro, -1, channel_axis)
-    denoised = restoration.denoise_tv_chambolle(img, weight=0.1,
-                                                channel_axis=channel_axis)
+    denoised = restoration.denoise_tv_chambolle(
+        img, weight=0.1, channel_axis=channel_axis
+    )
     _at = functools.partial(slice_at_axis, axis=channel_axis % img.ndim)
     assert_array_equal(denoised[_at(0)], denoised0)
 
@@ -81,10 +83,10 @@ def test_denoise_tv_chambolle_multichannel(channel_axis):
     denoised0 = restoration.denoise_tv_chambolle(astro3[..., 0], weight=0.1)
 
     astro3 = cp.moveaxis(astro3, -1, channel_axis)
-    denoised = restoration.denoise_tv_chambolle(astro3, weight=0.1,
-                                                channel_axis=channel_axis)
-    _at = functools.partial(slice_at_axis,
-                            axis=channel_axis % astro3.ndim)
+    denoised = restoration.denoise_tv_chambolle(
+        astro3, weight=0.1, channel_axis=channel_axis
+    )
+    _at = functools.partial(slice_at_axis, axis=channel_axis % astro3.ndim)
     assert_array_equal(denoised[_at(0)], denoised0)
 
 
@@ -93,8 +95,7 @@ def test_denoise_tv_chambolle_float_result_range():
     img = astro_gray
     int_astro = cp.multiply(img, 255).astype(np.uint8)
     assert cp.max(int_astro) > 1
-    denoised_int_astro = restoration.denoise_tv_chambolle(int_astro,
-                                                          weight=0.1)
+    denoised_int_astro = restoration.denoise_tv_chambolle(int_astro, weight=0.1)
     # test if the value range of output float data is within [0.0:1.0]
     assert denoised_int_astro.dtype == _supported_float_type(int_astro.dtype)
     assert cp.max(denoised_int_astro) <= 1.0
@@ -104,7 +105,7 @@ def test_denoise_tv_chambolle_float_result_range():
 def test_denoise_tv_chambolle_3d():
     """Apply the TV denoising algorithm on a 3D image representing a sphere."""
     x, y, z = cp.ogrid[0:40, 0:40, 0:40]
-    mask = (x - 22) ** 2 + (y - 20) ** 2 + (z - 17) ** 2 < 8 ** 2
+    mask = (x - 22) ** 2 + (y - 20) ** 2 + (z - 17) ** 2 < 8**2
     mask = 100 * mask.astype(float)
     mask += 60
     mask += 20 * cp.random.rand(*mask.shape)
@@ -128,7 +129,7 @@ def test_denoise_tv_chambolle_1d():
 
 
 def test_denoise_tv_chambolle_4d():
-    """ TV denoising for a 4D input."""
+    """TV denoising for a 4D input."""
     im = 255 * cp.random.rand(8, 8, 8, 8)
     im = im.astype(np.uint8)
     res = restoration.denoise_tv_chambolle(im, weight=0.1)
@@ -150,6 +151,9 @@ def test_denoise_tv_chambolle_weighting():
     w = 0.2
     denoised_2d = restoration.denoise_tv_chambolle(img2d, weight=w)
     denoised_4d = restoration.denoise_tv_chambolle(img4d, weight=w)
-    assert (structural_similarity(denoised_2d,
-                                  denoised_4d[:, :, 0, 0],
-                                  data_range=1.0) > 0.98)
+    assert (
+        structural_similarity(
+            denoised_2d, denoised_4d[:, :, 0, 0], data_range=1.0
+        )
+        > 0.98
+    )

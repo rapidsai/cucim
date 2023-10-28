@@ -1,4 +1,5 @@
 import os
+import warnings
 
 import cupy as cp
 import dask.array as da
@@ -7,9 +8,9 @@ import kvikio.defaults
 import numpy as np
 import openslide
 import tifffile
-from tifffile import TiffFile
 from kvikio.cufile import IOFuture
 from kvikio.zarr import GDSStore
+from tifffile import TiffFile
 from zarr import DirectoryStore
 from zarr.creation import init_array
 
@@ -19,7 +20,7 @@ from cucim.clara import filesystem
 Developed with Dask 2022.05.2
 zarr >= 2.13.2
 kvikio >= 2022.10.00  (but had to use a recent development branch on my system to properly find libcufile.so)
-"""
+"""  # noqa: E501
 
 
 def get_n_tiles(page):
@@ -59,13 +60,13 @@ def _get_tile_multiindex(page, index, n_tiles):
     multi_index : tuple of int
         Starting index for the tile along each axis in the output array.
     """
-    d, l, w = n_tiles
-    wl = w * l
-    wld = wl * d
+    d, h, w = n_tiles
+    wh = w * h
+    whd = wh * d
     multi_index = (
-        index // wld,
-        (index // wl) % d * page.tiledepth,
-        (index // w) % l * page.tilelength,
+        index // whd,
+        (index // wh) % d * page.tiledepth,
+        (index // w) % h * page.tilelength,
         index % w * page.tilewidth,
         0,
     )
@@ -86,7 +87,7 @@ def _decode(data, tile_shape, truncation_slices):
         last tile along a given dimension when the page size is not an even
         multiple of the tile width.
     """
-    if not hasattr(data, '__cuda_array_interface__'):
+    if not hasattr(data, "__cuda_array_interface__"):
         data = np.frombuffer(data, np.uint8)
     data.shape = tile_shape
     # truncate any tiles that extend past the image boundary
@@ -112,7 +113,7 @@ def _truncation_slices(check_needed, page_shape, offsets, tile_shape, n_tiles):
     Parameters
     ----------
     check_needed : 3-tuple of bool
-        Any axis whos page size is not evenly divisible by the tile size will
+        Any axis whose page size is not evenly divisible by the tile size will
         have a True entry in this tuple.
     page_shape : tuple of int
         The shape of the current TIFF page (depth, length, width[, channels])
@@ -155,9 +156,7 @@ def read_openslide(fname, level, clear_cache=True):
 
     slide = openslide.OpenSlide(fname)
     out = slide.read_region(
-        location=(0, 0),
-        level=level,
-        size=slide.level_dimensions[level]
+        location=(0, 0), level=level, size=slide.level_dimensions[level]
     )
     # convert from PIL image to NumPy array
     out = np.asarray(out)
@@ -202,7 +201,9 @@ def _get_aligned_read_props(offsets, bytecounts, alignment=4096):
     rounded_offsets = (offsets // alignment) * alignment
     buffer_offsets = offsets - rounded_offsets
     rounded_bytecounts = buffer_offsets + bytecounts
-    rounded_bytecounts = np.ceil(rounded_bytecounts / alignment).astype(int) * alignment
+    rounded_bytecounts = (
+        np.ceil(rounded_bytecounts / alignment).astype(int) * alignment
+    )
 
     # truncate last bytecounts entry to avoid possibly exceeding file extent
     last = offsets[-1] + bytecounts[-1]
@@ -262,12 +263,15 @@ def read_alltiles_bulk(fname, level, clear_cache=True):
 def get_tile_buffers(fname, level, n_buffer):
     with TiffFile(fname) as tif:
         page = tif.pages[level]
-        n_chan = page.shaped[-1]
 
-        rounded_offsets, rounded_bytecounts, buffer_offsets = _get_aligned_read_props(
+        (
+            rounded_offsets,
+            rounded_bytecounts,
+            buffer_offsets,
+        ) = _get_aligned_read_props(
             offsets=page.dataoffsets,
             bytecounts=page.databytecounts,
-            alignment=4096
+            alignment=4096,
         )
         # Allocate buffer based on size of the largest tile after rounding
         # up to the nearest multiple of 4096.
@@ -283,10 +287,18 @@ def get_tile_buffers(fname, level, n_buffer):
     return tile_buffers
 
 
-def read_tiled(fname, levels=[0], backend='kvikio-pread', n_buffer=100,
-               tile_func=None, tile_func_kwargs={}, out_dtype=None,
-               clear_cache=True, preregister_memory_buffers=False,
-               tile_buffers=None):
+def read_tiled(
+    fname,
+    levels=[0],
+    backend="kvikio-pread",
+    n_buffer=100,
+    tile_func=None,
+    tile_func_kwargs={},
+    out_dtype=None,
+    clear_cache=True,
+    preregister_memory_buffers=False,
+    tile_buffers=None,
+):
     """Read an uncompressed, tiled multiresolution TIFF image to GPU memory.
 
     Parameters
@@ -304,7 +316,7 @@ def read_tiled(fname, levels=[0], backend='kvikio-pread', n_buffer=100,
         reads.
     n_buffer : int, optional
         Scratch space equal to `n_buffer` TIFF tiles will be allocated.
-        Providing scratch space for multiple tiles helps the peformance in the
+        Providing scratch space for multiple tiles helps the performance in the
         recommended asynchronous 'kvikio-pread' mode.
     tile_func : function, optional
         A CuPy-based function to apply to each tile after it is read. Must
@@ -354,16 +366,16 @@ def read_tiled(fname, levels=[0], backend='kvikio-pread', n_buffer=100,
             n_buffer = len(tile_buffers)
 
     with TiffFile(fname) as tif:
-
         if isinstance(levels, int):
             levels = (levels,)
-        if levels == 'all':
+        if levels == "all":
             pages = tuple(tif.pages[n] for n in range(len(tif.pages)))
         elif isinstance(levels, (tuple, list)):
             pages = tuple(tif.pages[n] for n in levels)
         else:
-            raise ValueError("pages must be a tuple or list of int or the "
-                             "string 'all'")
+            raise ValueError(
+                "pages must be a tuple or list of int or the " "string 'all'"
+            )
 
         # sanity check: identical tile size for all TIFF pages
         #               todo: is this always true?
@@ -381,10 +393,14 @@ def read_tiled(fname, levels=[0], backend='kvikio-pread', n_buffer=100,
                 out_dtype = page.dtype
             out_array = cp.ndarray(shape=page.shape, dtype=out_dtype)
 
-            rounded_offsets, rounded_bytecounts, buffer_offsets = _get_aligned_read_props(
+            (
+                rounded_offsets,
+                rounded_bytecounts,
+                buffer_offsets,
+            ) = _get_aligned_read_props(
                 offsets=page.dataoffsets,
                 bytecounts=page.databytecounts,
-                alignment=4096
+                alignment=4096,
             )
             # Allocate buffer based on size of the largest tile after rounding
             # up to the nearest multiple of 4096.
@@ -397,12 +413,16 @@ def read_tiled(fname, levels=[0], backend='kvikio-pread', n_buffer=100,
             # note: tile_buffer is C-contiguous so tile_buffer[i] is contiguous
             if tile_buffers is None:
                 tile_buffers = tuple(
-                    cp.empty(buffer_bytecount, dtype=cp.uint8) for n in range(n_buffer)
+                    cp.empty(buffer_bytecount, dtype=cp.uint8)
+                    for n in range(n_buffer)
                 )
             elif tile_buffers[0].size < buffer_bytecount:
-                warning.warn("reallocating tile buffers to accomodate data size")
+                warnings.warn(
+                    "reallocating tile buffers to accommodate data size"
+                )
                 tile_buffers = tuple(
-                    cp.empty(buffer_bytecount, dtype=cp.uint8) for n in range(n_buffer)
+                    cp.empty(buffer_bytecount, dtype=cp.uint8)
+                    for n in range(n_buffer)
                 )
             else:
                 buffer_bytecount = tile_buffers[0].size
@@ -418,22 +438,26 @@ def read_tiled(fname, levels=[0], backend='kvikio-pread', n_buffer=100,
                 page.tiledepth,
                 page.tilelength,
                 page.tilewidth,
-                page.samplesperpixel
+                page.samplesperpixel,
             )
             keyframe = page.keyframe
             truncation_check_needed = (
                 (keyframe.imagedepth % page.tiledepth != 0),
                 (keyframe.imagelength % page.tilelength != 0),
-                (keyframe.imagewidth % page.tilewidth != 0)
+                (keyframe.imagewidth % page.tilewidth != 0),
             )
             any_truncated = any(truncation_check_needed)
-            page_shape = page.shaped[1:]  # # Any reason to prefer page.keyframe.imagedepth, etc. here as opposed to page.shape or page.shaped?
+            page_shape = page.shaped[
+                1:
+            ]  # Any reason to prefer page.keyframe.imagedepth, etc. here as opposed to page.shape or page.shaped?    # noqa: E501
 
-            if backend == 'kvikio-raw_read':
+            if backend == "kvikio-raw_read":
 
                 def read_tile_raw(fh, tile_buffer, bytecount, offset):
                     """returns the # of bytes read"""
-                    size = fh.raw_read(tile_buffer[:bytecount], file_offset=offset)
+                    size = fh.raw_read(
+                        tile_buffer[:bytecount], file_offset=offset
+                    )
                     if size != bytecount:
                         raise ValueError(
                             "failed to read the expected number of bytes"
@@ -442,7 +466,7 @@ def read_tiled(fname, levels=[0], backend='kvikio-pread', n_buffer=100,
 
                 kv_read = read_tile_raw
 
-            elif backend == 'kvikio-read':
+            elif backend == "kvikio-read":
 
                 def read_tile(fh, tile_buffer, bytecount, offset):
                     """returns the # of bytes read"""
@@ -455,11 +479,13 @@ def read_tiled(fname, levels=[0], backend='kvikio-pread', n_buffer=100,
 
                 kv_read = read_tile
 
-            elif backend == 'kvikio-pread':
+            elif backend == "kvikio-pread":
 
                 def read_tile_async(fh, tile_buffer, bytecount, offset):
                     """returns a future"""
-                    future = fh.pread(tile_buffer[:bytecount], file_offset=offset)
+                    future = fh.pread(
+                        tile_buffer[:bytecount], file_offset=offset
+                    )
                     # future.get()
                     return future
 
@@ -469,23 +495,36 @@ def read_tiled(fname, levels=[0], backend='kvikio-pread', n_buffer=100,
 
             # note: page.databytecounts contains the size of all tiles in
             #       bytes. It will only vary in the case of compressed data
-            for index, (offset, tile_bytecount, rounded_bytecount, buffer_offset) in enumerate(
-                zip(rounded_offsets, page.databytecounts, rounded_bytecounts, buffer_offsets)
+            for index, (
+                offset,
+                tile_bytecount,
+                rounded_bytecount,
+                buffer_offset,
+            ) in enumerate(
+                zip(
+                    rounded_offsets,
+                    page.databytecounts,
+                    rounded_bytecounts,
+                    buffer_offsets,
+                )
             ):
                 index_mod = index % n_buffer
                 if index == 0:
-                    # intialize lists for storage of future results
+                    # initialize lists for storage of future results
                     all_futures = []
                     all_tiles = []
                     all_slices = []
                 elif index_mod == 0:
                     # process the prior group of n_buffer futures
-                    for tile, sl, future in zip(all_tiles, all_slices, all_futures):
+                    for tile, sl, future in zip(
+                        all_tiles, all_slices, all_futures
+                    ):
                         if isinstance(future, IOFuture):
                             size = future.get()
                             if size != rounded_bytecount:
                                 raise ValueError(
-                                    "failed to read the expected number of bytes"
+                                    "failed to read the expected number of "
+                                    "bytes"
                                 )
                         tile = tile[0]  # omit depth axis
                         if tile_func is None:
@@ -509,14 +548,14 @@ def read_tiled(fname, levels=[0], backend='kvikio-pread', n_buffer=100,
                 # Determine offsets into `out_array` for the current tile
                 # and determine slices to truncate the tile if needed.
                 offset_indices = _get_tile_multiindex(page, index, n_tiles)
-                (s, d, l, w, _) = offset_indices
+                (s, d, h, w, _) = offset_indices
                 if any_truncated:
                     trunc_sl = _truncation_slices(
                         truncation_check_needed,
                         page_shape,
                         offset_indices[1:4],
                         tile_shape,
-                        n_tiles
+                        n_tiles,
                     )
                 else:
                     trunc_sl = None
@@ -526,10 +565,16 @@ def read_tiled(fname, levels=[0], backend='kvikio-pread', n_buffer=100,
                 # tile start.
                 buffer_start = buffer_offset
                 buffer_end = buffer_start + tile_bytecount
-                tile = _decode(tile_buffers[index_mod][buffer_start:buffer_end], tile_shape, trunc_sl)
+                tile = _decode(
+                    tile_buffers[index_mod][buffer_start:buffer_end],
+                    tile_shape,
+                    trunc_sl,
+                )
                 all_futures.append(read_output)
                 all_tiles.append(tile)
-                all_slices.append((slice(l, l + tile_shape[1]), slice(w, w + tile_shape[2])))
+                all_slices.append(
+                    (slice(h, h + tile_shape[1]), slice(w, w + tile_shape[2]))
+                )
 
             for tile, sl, future in zip(all_tiles, all_slices, all_futures):
                 if isinstance(future, IOFuture):
@@ -551,9 +596,9 @@ def read_tiled(fname, levels=[0], backend='kvikio-pread', n_buffer=100,
 
 def _cupy_to_zarr_via_dask(
     image,
-    output_path='./example-output.zarr',
+    output_path="./example-output.zarr",
     chunk_shape=(2048, 2048, 3),
-    zarr_kwargs=dict(overwrite=False, compressor=None)
+    zarr_kwargs=dict(overwrite=False, compressor=None),
 ):
     """Write output to Zarr via GDSStore"""
     store = GDSStore(output_path)
@@ -565,10 +610,10 @@ def _cupy_to_zarr_via_dask(
 
 def _cupy_to_zarr_kvikio_write_sync(
     image,
-    output_path='./example-output.zarr',
+    output_path="./example-output.zarr",
     chunk_shape=(2048, 2048, 3),
     zarr_kwargs=dict(overwrite=False, compressor=None),
-    backend='kvikio-raw_write',
+    backend="kvikio-raw_write",
 ):
     """Write output to Zarr via GDSStore"""
 
@@ -579,17 +624,24 @@ def _cupy_to_zarr_kvikio_write_sync(
 
     output_path = os.path.realpath(output_path)
     store = DirectoryStore(output_path)
-    init_array(store, shape=image.shape, chunks=chunk_shape, dtype=image.dtype,
-               **zarr_kwargs)
+    init_array(
+        store,
+        shape=image.shape,
+        chunks=chunk_shape,
+        dtype=image.dtype,
+        **zarr_kwargs,
+    )
 
     c0, c1, c2 = chunk_shape
     s0, s1, s2 = image.shape
     for i0, start0 in enumerate(range(0, s0, c0)):
         for i1, start1 in enumerate(range(0, s1, c1)):
             for i2, start2 in enumerate(range(0, s2, c2)):
-                tile = image[start0:start0 + c0,
-                             start1:start1 + c1,
-                             start2:start2 + c2]
+                tile = image[
+                    start0 : start0 + c0,
+                    start1 : start1 + c1,
+                    start2 : start2 + c2,
+                ]
                 if tile.shape == chunk_shape:
                     # copy so the tile is contiguous in memory
                     tile = tile.copy()
@@ -600,15 +652,15 @@ def _cupy_to_zarr_kvikio_write_sync(
                         (0, c2 - tile.shape[2]),
                     )
                     tile = cp.pad(
-                        tile, pad_width, mode='constant', constant_values=0
+                        tile, pad_width, mode="constant", constant_values=0
                     )
 
-                chunk_key = '.'.join(map(str, (i0, i1, i2)))
+                chunk_key = ".".join(map(str, (i0, i1, i2)))
                 fname = os.path.join(output_path, chunk_key)
                 with kvikio.CuFile(fname, "w") as fh:
-                    if backend == 'kvikio-raw_write':
+                    if backend == "kvikio-raw_write":
                         size = fh.raw_write(tile)
-                    elif backend == 'kvikio-write':
+                    elif backend == "kvikio-write":
                         size = fh.write(tile)
                     else:
                         raise ValueError(f"unknown backend {backend}")
@@ -618,17 +670,14 @@ def _cupy_to_zarr_kvikio_write_sync(
 
 def cupy_to_zarr(
     image,
-    output_path='./example-output.zarr',
+    output_path="./example-output.zarr",
     chunk_shape=(512, 512, 3),
     n_buffer=16,
     zarr_kwargs=dict(overwrite=False, compressor=None),
-    backend='kvikio-pwrite',
+    backend="kvikio-pwrite",
 ):
-    """Write output to Zarr via GDSStore
-
-
-    """
-    if backend == 'dask':
+    """Write output to Zarr via GDSStore"""
+    if backend == "dask":
         return _cupy_to_zarr_via_dask(
             image,
             output_path=output_path,
@@ -636,7 +685,7 @@ def cupy_to_zarr(
             zarr_kwargs=zarr_kwargs,
         )
 
-    elif backend in ['kvikio-write', 'kvikio-raw_write']:
+    elif backend in ["kvikio-write", "kvikio-raw_write"]:
         return _cupy_to_zarr_kvikio_write_sync(
             image,
             output_path=output_path,
@@ -644,7 +693,7 @@ def cupy_to_zarr(
             zarr_kwargs=zarr_kwargs,
             backend=backend,
         )
-    elif backend != 'kvikio-pwrite':
+    elif backend != "kvikio-pwrite":
         raise ValueError(f"unrecognized backend: {backend}")
 
     # 1.) create a zarr store
@@ -653,8 +702,13 @@ def cupy_to_zarr(
     #     overwrite = True.
     output_path = os.path.realpath(output_path)
     store = DirectoryStore(output_path)
-    init_array(store, shape=image.shape, chunks=chunk_shape, dtype=image.dtype,
-               **zarr_kwargs)
+    init_array(
+        store,
+        shape=image.shape,
+        chunks=chunk_shape,
+        dtype=image.dtype,
+        **zarr_kwargs,
+    )
 
     # asynchronous write using pwrite
     index = 0
@@ -664,11 +718,9 @@ def cupy_to_zarr(
     for i0, start0 in enumerate(range(0, s0, c0)):
         for i1, start1 in enumerate(range(0, s1, c1)):
             for i2, start2 in enumerate(range(0, s2, c2)):
-
                 index_mod = index % n_buffer
                 if index == 0:
-                    # intialize lists for storage of future results
-                    all_tiles = []
+                    # initialize lists for storage of future results
                     all_handles = []
                     all_futures = []
                 elif index_mod == 0:
@@ -684,11 +736,12 @@ def cupy_to_zarr(
                         # reset the lists to prepare for the next n_buffer tiles
                         all_futures = []
                         all_handles = []
-                        all_tiles = []
 
-                tile = image[start0:start0 + c0,
-                             start1:start1 + c1,
-                             start2:start2 + c2]
+                tile = image[
+                    start0 : start0 + c0,
+                    start1 : start1 + c1,
+                    start2 : start2 + c2,
+                ]
                 if tile.shape == chunk_shape:
                     # copy so the tile is contiguous in memory
                     tile_cache[index_mod] = tile
@@ -699,10 +752,10 @@ def cupy_to_zarr(
                         (0, c2 - tile.shape[2]),
                     )
                     tile_cache[index_mod] = cp.pad(
-                        tile, pad_width, mode='constant', constant_values=0
+                        tile, pad_width, mode="constant", constant_values=0
                     )
 
-                chunk_key = '.'.join(map(str, (i0, i1, i2)))
+                chunk_key = ".".join(map(str, (i0, i1, i2)))
                 fname = os.path.join(output_path, chunk_key)
 
                 fh = kvikio.CuFile(fname, "w")
@@ -715,8 +768,6 @@ def cupy_to_zarr(
         if isinstance(future, IOFuture):
             size = future.get()
             if size != tile_cache[0].nbytes:
-                raise ValueError(
-                    "failed to write the expected number of bytes"
-                )
+                raise ValueError("failed to write the expected number of bytes")
         fh.close()
     return

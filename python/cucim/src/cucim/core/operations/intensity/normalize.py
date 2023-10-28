@@ -27,7 +27,7 @@ def normalize_data(
     norm_constant: float,
     min_value: float,
     max_value: float,
-    type: str = 'range'
+    type: str = "range",
 ) -> Any:
     """
     Apply intensity normalization to the input array.
@@ -69,19 +69,23 @@ def normalize_data(
                                           10, 0 , 255)
     """
     if max_value - min_value == 0.0:
-        raise ValueError("Minimum and Maximum intensity \
-                          same in input data")
+        raise ValueError(
+            "Minimum and Maximum intensity \
+                          same in input data"
+        )
 
-    if type not in ['range', 'atan']:
-        raise ValueError("Incorrect normalization type. \
+    if type not in ["range", "atan"]:
+        raise ValueError(
+            "Incorrect normalization type. \
                           Supported types are: \
                               range based: 1,\
-                              atangent based: 2")
+                              atangent based: 2"
+        )
 
     to_numpy = False
     if isinstance(img, np.ndarray):
         to_numpy = True
-        cupy_img = cupy.asarray(img, dtype=cupy.float32, order='C')
+        cupy_img = cupy.asarray(img, dtype=cupy.float32, order="C")
     elif not isinstance(img, cupy.ndarray):
         raise TypeError("img must be a cupy.ndarray or numpy.ndarray")
     else:
@@ -98,7 +102,7 @@ def normalize_data(
 
     normalize = CUDA_KERNELS.get_function("normalize_data_by_range")
 
-    if type == 'atan':
+    if type == "atan":
         normalize = CUDA_KERNELS.get_function("normalize_data_by_atan")
 
     value_range = max_value - min_value
@@ -110,10 +114,17 @@ def normalize_data(
 
     result = cupy.empty(img.shape, dtype=cupy_img.dtype)
 
-    normalize((gridx, 1, 1), (blockx, 1, 1),
-              (cupy_img, result, np.float32(norm_factor),
-               np.float32(min_value),
-               np.int32(total_size)))
+    normalize(
+        (gridx, 1, 1),
+        (blockx, 1, 1),
+        (
+            cupy_img,
+            result,
+            np.float32(norm_factor),
+            np.float32(min_value),
+            np.int32(total_size),
+        ),
+    )
 
     if img.dtype != cupy.float32:
         result = result.astype(img.dtype)

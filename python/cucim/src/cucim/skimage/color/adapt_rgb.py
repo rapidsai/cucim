@@ -5,7 +5,7 @@ import cupy as cp
 from .. import color
 from ..util.dtype import _convert
 
-__all__ = ['adapt_rgb', 'hsv_value', 'each_channel']
+__all__ = ["adapt_rgb", "hsv_value", "each_channel"]
 
 
 def is_rgb_like(image, channel_axis=-1):
@@ -30,6 +30,7 @@ def adapt_rgb(apply_to_rgb):
         Function that returns a filtered image from an image-filter and RGB
         image. This will only be called if the image is RGB-like.
     """
+
     def decorator(image_filter):
         @functools.wraps(image_filter)
         def image_filter_adapted(image, *args, **kwargs):
@@ -37,7 +38,9 @@ def adapt_rgb(apply_to_rgb):
                 return apply_to_rgb(image_filter, image, *args, **kwargs)
             else:
                 return image_filter(image, *args, **kwargs)
+
         return image_filter_adapted
+
     return decorator
 
 
@@ -73,6 +76,7 @@ def each_channel(image_filter, image, *args, **kwargs):
     image : array
         Input image.
     """
-    c_new = [image_filter(c, *args, **kwargs)
-             for c in cp.moveaxis(image, -1, 0)]
+    c_new = [
+        image_filter(c, *args, **kwargs) for c in cp.moveaxis(image, -1, 0)
+    ]
     return cp.stack(c_new, axis=-1)

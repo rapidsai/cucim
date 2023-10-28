@@ -7,7 +7,7 @@ import numpy
 
 try:
     # try importing Cython-based private axis handling functions from CuPy
-    if hasattr(cupy, '_core'):
+    if hasattr(cupy, "_core"):
         # CuPy 10 renames core->_core
         from cupy._core.internal import _normalize_axis_index  # NOQA
         from cupy._core.internal import _normalize_axis_indices  # NOQA
@@ -67,7 +67,7 @@ except ImportError:
         return tuple(sorted(res))
 
 
-if hasattr(math, 'prod'):
+if hasattr(math, "prod"):
     prod = math.prod
 else:
 

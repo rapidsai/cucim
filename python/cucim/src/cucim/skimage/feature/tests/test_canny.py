@@ -8,17 +8,19 @@ from cucim.skimage import feature
 from cucim.skimage.util import img_as_float
 
 
-class TestCanny():
+class TestCanny:
     def test_00_00_zeros(self):
         """Test that the Canny filter finds no points for a blank field"""
-        result = feature.canny(cp.zeros((20, 20)), 4, 0, 0, cp.ones((20, 20),
-                               bool))
+        result = feature.canny(
+            cp.zeros((20, 20)), 4, 0, 0, cp.ones((20, 20), bool)
+        )
         assert not cp.any(result)
 
     def test_00_01_zeros_mask(self):
         """Test that the Canny filter finds no points in a masked image"""
-        result = (feature.canny(cp.random.uniform(size=(20, 20)), 4, 0, 0,
-                                cp.zeros((20, 20), bool)))
+        result = feature.canny(
+            cp.random.uniform(size=(20, 20)), 4, 0, 0, cp.zeros((20, 20), bool)
+        )
         assert not cp.any(result)
 
     def test_01_01_circle(self):
@@ -71,32 +73,42 @@ class TestCanny():
             feature.canny(cp.zeros((20, 20, 20)), 4, 0, 0)
 
     def test_mask_none(self):
-        result1 = feature.canny(cp.zeros((20, 20)), 4, 0, 0, cp.ones((20, 20),
-                                bool))
+        result1 = feature.canny(
+            cp.zeros((20, 20)), 4, 0, 0, cp.ones((20, 20), bool)
+        )
         result2 = feature.canny(cp.zeros((20, 20)), 4, 0, 0)
         assert cp.all(result1 == result2)
 
-    @pytest.mark.parametrize('image_dtype', [cp.uint8, cp.int32, cp.float32,
-                                             cp.float64])
+    @pytest.mark.parametrize(
+        "image_dtype", [cp.uint8, cp.int32, cp.float32, cp.float64]
+    )
     def test_use_quantiles(self, image_dtype):
         dtype = cp.dtype(image_dtype)
         image = cp.asarray(data.camera()[::100, ::100])
-        if dtype.kind == 'f':
+        if dtype.kind == "f":
             image = img_as_float(image)
         image = image.astype(dtype)
 
         # Correct output produced manually with quantiles
         # of 0.8 and 0.6 for high and low respectively
         correct_output = cp.asarray(
-            [[False, False, False, False, False, False],
-             [False,  True,  True,  True, False, False],   # noqa
-             [False, False, False,  True, False, False],   # noqa
-             [False, False, False,  True, False, False],   # noqa
-             [False, False,  True,  True, False, False],   # noqa
-             [False, False, False, False, False, False]])
+            [
+                [False, False, False, False, False, False],
+                [False, True, True, True, False, False],  # noqa
+                [False, False, False, True, False, False],  # noqa
+                [False, False, False, True, False, False],  # noqa
+                [False, False, True, True, False, False],  # noqa
+                [False, False, False, False, False, False],
+            ]
+        )
 
-        result = feature.canny(image, low_threshold=0.6, high_threshold=0.8,
-                               use_quantiles=True, mode='nearest')
+        result = feature.canny(
+            image,
+            low_threshold=0.6,
+            high_threshold=0.8,
+            use_quantiles=True,
+            mode="nearest",
+        )
 
         assert_array_equal(result, correct_output)
 
@@ -108,26 +120,34 @@ class TestCanny():
         image = img_as_float(cp.array(data.camera()[::50, ::50]))
 
         with pytest.raises(ValueError):
-            feature.canny(image, use_quantiles=True,
-                          low_threshold=0.5, high_threshold=3.6)
+            feature.canny(
+                image, use_quantiles=True, low_threshold=0.5, high_threshold=3.6
+            )
 
         with pytest.raises(ValueError):
-            feature.canny(image, use_quantiles=True,
-                          low_threshold=-5, high_threshold=0.5)
+            feature.canny(
+                image, use_quantiles=True, low_threshold=-5, high_threshold=0.5
+            )
 
         with pytest.raises(ValueError):
-            feature.canny(image, use_quantiles=True,
-                          low_threshold=99, high_threshold=0.9)
+            feature.canny(
+                image, use_quantiles=True, low_threshold=99, high_threshold=0.9
+            )
 
         with pytest.raises(ValueError):
-            feature.canny(image, use_quantiles=True,
-                          low_threshold=0.5, high_threshold=-100)
+            feature.canny(
+                image,
+                use_quantiles=True,
+                low_threshold=0.5,
+                high_threshold=-100,
+            )
 
         # Example from issue #4282
         image = data.camera()
         with pytest.raises(ValueError):
-            feature.canny(image, use_quantiles=True,
-                          low_threshold=50, high_threshold=150)
+            feature.canny(
+                image, use_quantiles=True, low_threshold=50, high_threshold=150
+            )
 
     def test_dtype(self):
         """Check that the same output is produced regardless of image dtype."""
@@ -143,23 +163,22 @@ class TestCanny():
 
         assert_array_equal(
             feature.canny(image_float, 1.0, low, high),
-            feature.canny(image_uint8, 1.0, 255 * low, 255 * high)
+            feature.canny(image_uint8, 1.0, 255 * low, 255 * high),
         )
 
     def test_full_mask_matches_no_mask(self):
-        """The masked and unmasked algorithms should return the same result.
-
-        """
+        """The masked and unmasked algorithms should return the same result."""
         image = cp.array(data.camera())
 
-        for mode in ('constant', 'nearest', 'reflect'):
+        for mode in ("constant", "nearest", "reflect"):
             cp.testing.assert_array_equal(
                 feature.canny(image, mode=mode),
-                feature.canny(image, mode=mode,
-                              mask=cp.ones_like(image, dtype=bool))
+                feature.canny(
+                    image, mode=mode, mask=cp.ones_like(image, dtype=bool)
+                ),
             )
 
-    @pytest.mark.parametrize('dtype', (cp.int64, cp.uint64))
+    @pytest.mark.parametrize("dtype", (cp.int64, cp.uint64))
     def test_unsupported_int64(self, dtype):
         image = cp.zeros((10, 10), dtype=dtype)
         image[3, 3] = cp.iinfo(dtype).max

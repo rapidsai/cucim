@@ -11,9 +11,9 @@ from cucim.skimage.feature import blob_dog, blob_doh, blob_log
 
 
 @pytest.mark.parametrize(
-    'dtype', [cp.uint8, cp.float16, cp.float32, cp.float64]
+    "dtype", [cp.uint8, cp.float16, cp.float32, cp.float64]
 )
-@pytest.mark.parametrize('threshold_type', ['absolute', 'relative'])
+@pytest.mark.parametrize("threshold_type", ["absolute", "relative"])
 def test_blob_dog(dtype, threshold_type):
     img = cp.ones((512, 512), dtype=dtype)
 
@@ -26,13 +26,13 @@ def test_blob_dog(dtype, threshold_type):
     xs, ys = cp.asarray(disk((200, 350), 45))
     img[xs, ys] = 255
 
-    if threshold_type == 'absolute':
+    if threshold_type == "absolute":
         threshold = 2.0
-        if img.dtype.kind != 'f':
+        if img.dtype.kind != "f":
             # account for internal scaling to [0, 1] by img_as_float
             threshold /= img.ptp()
         threshold_rel = None
-    elif threshold_type == 'relative':
+    elif threshold_type == "relative":
         threshold = None
         threshold_rel = 0.5
 
@@ -72,20 +72,20 @@ def test_blob_dog(dtype, threshold_type):
 
 
 @pytest.mark.parametrize(
-    'dtype', [cp.uint8, cp.float16, cp.float32, cp.float64]
+    "dtype", [cp.uint8, cp.float16, cp.float32, cp.float64]
 )
-@pytest.mark.parametrize('threshold_type', ['absolute', 'relative'])
+@pytest.mark.parametrize("threshold_type", ["absolute", "relative"])
 def test_blob_dog_3d(dtype, threshold_type):
     # Testing 3D
     r = 10
     pad_width = 10
     im3 = cp.asarray(ellipsoid(r, r, r))
-    im3 = pad(im3, pad_width, mode='constant')
+    im3 = pad(im3, pad_width, mode="constant")
 
-    if threshold_type == 'absolute':
+    if threshold_type == "absolute":
         threshold = 0.001
         threshold_rel = 0
-    elif threshold_type == 'relative':
+    elif threshold_type == "relative":
         threshold = 0
         threshold_rel = 0.5
 
@@ -107,20 +107,20 @@ def test_blob_dog_3d(dtype, threshold_type):
 
 
 @pytest.mark.parametrize(
-    'dtype', [cp.uint8, cp.float16, cp.float32, cp.float64]
+    "dtype", [cp.uint8, cp.float16, cp.float32, cp.float64]
 )
-@pytest.mark.parametrize('threshold_type', ['absolute', 'relative'])
+@pytest.mark.parametrize("threshold_type", ["absolute", "relative"])
 def test_blob_dog_3d_anisotropic(dtype, threshold_type):
     # Testing 3D anisotropic
     r = 10
     pad_width = 10
     im3 = cp.asarray(ellipsoid(r / 2, r, r))
-    im3 = pad(im3, pad_width, mode='constant')
+    im3 = pad(im3, pad_width, mode="constant")
 
-    if threshold_type == 'absolute':
+    if threshold_type == "absolute":
         threshold = 0.001
         threshold_rel = None
-    elif threshold_type == 'relative':
+    elif threshold_type == "relative":
         threshold = None
         threshold_rel = 0.5
 
@@ -171,9 +171,9 @@ def test_blob_dog_excl_border():
     assert blobs.shape[0] == 0, msg
 
 
-@pytest.mark.parametrize('anisotropic', [False, True])
-@pytest.mark.parametrize('ndim', [1, 2, 3, 4])
-@pytest.mark.parametrize('function_name', ['blob_dog', 'blob_log'])
+@pytest.mark.parametrize("anisotropic", [False, True])
+@pytest.mark.parametrize("ndim", [1, 2, 3, 4])
+@pytest.mark.parametrize("function_name", ["blob_dog", "blob_log"])
 def test_nd_blob_no_peaks_shape(function_name, ndim, anisotropic):
     # uniform image so no blobs will be found
     z = cp.zeros((16,) * ndim, dtype=cp.float32)
@@ -189,9 +189,9 @@ def test_nd_blob_no_peaks_shape(function_name, ndim, anisotropic):
 
 
 @pytest.mark.parametrize(
-    'dtype', [cp.uint8, cp.float16, cp.float32, cp.float64]
+    "dtype", [cp.uint8, cp.float16, cp.float32, cp.float64]
 )
-@pytest.mark.parametrize('threshold_type', ['absolute', 'relative'])
+@pytest.mark.parametrize("threshold_type", ["absolute", "relative"])
 def test_blob_log(dtype, threshold_type):
     img = cp.ones((256, 256), dtype=dtype)
 
@@ -207,18 +207,23 @@ def test_blob_log(dtype, threshold_type):
     xs, ys = cp.asarray(disk((100, 175), 30))
     img[xs, ys] = 255
 
-    if threshold_type == 'absolute':
+    if threshold_type == "absolute":
         threshold = 1
-        if img.dtype.kind != 'f':
+        if img.dtype.kind != "f":
             # account for internal scaling to [0, 1] by img_as_float
             threshold /= img.ptp()
         threshold_rel = None
-    elif threshold_type == 'relative':
+    elif threshold_type == "relative":
         threshold = None
         threshold_rel = 0.5
 
-    blobs = blob_log(img, min_sigma=5, max_sigma=20, threshold=threshold,
-                     threshold_rel=threshold_rel)
+    blobs = blob_log(
+        img,
+        min_sigma=5,
+        max_sigma=20,
+        threshold=threshold,
+        threshold_rel=threshold_rel,
+    )
 
     def radius(x):
         return math.sqrt(2) * x[2]
@@ -253,7 +258,8 @@ def test_blob_log(dtype, threshold_type):
         max_sigma=20,
         threshold=threshold,
         threshold_rel=threshold_rel,
-        log_scale=True)
+        log_scale=True,
+    )
 
     b = s[0]
     assert abs(b[0] - 200) <= thresh
@@ -289,7 +295,7 @@ def test_blob_log_no_warnings():
     xs, ys = cp.asarray(disk((7, 6), 2))
     img[xs, ys] = 255
 
-    blob_log(img, max_sigma=20, num_sigma=10, threshold=.1)
+    blob_log(img, max_sigma=20, num_sigma=10, threshold=0.1)
 
 
 def test_blob_log_3d():
@@ -297,7 +303,7 @@ def test_blob_log_3d():
     r = 6
     pad_width = 10
     im3 = cp.asarray(ellipsoid(r, r, r))
-    im3 = pad(im3, pad_width, mode='constant')
+    im3 = pad(im3, pad_width, mode="constant")
 
     blobs = blob_log(im3, min_sigma=3, max_sigma=10)
     b = blobs[0]
@@ -314,7 +320,7 @@ def test_blob_log_3d_anisotropic():
     r = 6
     pad_width = 10
     im3 = cp.asarray(ellipsoid(r / 2, r, r))
-    im3 = pad(im3, pad_width, mode='constant')
+    im3 = pad(im3, pad_width, mode="constant")
 
     blobs = blob_log(
         im3,
@@ -358,7 +364,7 @@ def test_blob_log_exclude_border():
 
 
 @pytest.mark.parametrize("dtype", [cp.uint8, cp.float16, cp.float32])
-@pytest.mark.parametrize('threshold_type', ['absolute', 'relative'])
+@pytest.mark.parametrize("threshold_type", ["absolute", "relative"])
 def test_blob_doh(dtype, threshold_type):
     img = cp.ones((512, 512), dtype=dtype)
 
@@ -374,16 +380,16 @@ def test_blob_doh(dtype, threshold_type):
     xs, ys = cp.asarray(disk((200, 350), 50))
     img[xs, ys] = 255
 
-    if threshold_type == 'absolute':
+    if threshold_type == "absolute":
         # Note: have to either scale up threshold or rescale the image to the
         #       range [0, 1] internally.
         threshold = 0.05
-        if img.dtype.kind == 'f':
+        if img.dtype.kind == "f":
             # account for lack of internal scaling to [0, 1] by img_as_float
             ptp = img.ptp()
-            threshold *= ptp ** 2
+            threshold *= ptp**2
         threshold_rel = None
-    elif threshold_type == 'relative':
+    elif threshold_type == "relative":
         threshold = None
         threshold_rel = 0.5
 
@@ -393,7 +399,8 @@ def test_blob_doh(dtype, threshold_type):
         max_sigma=60,
         num_sigma=10,
         threshold=threshold,
-        threshold_rel=threshold_rel)
+        threshold_rel=threshold_rel,
+    )
 
     def radius(x):
         return x[2]
@@ -443,7 +450,8 @@ def test_blob_doh_log_scale():
         max_sigma=60,
         num_sigma=10,
         log_scale=True,
-        threshold=.05)
+        threshold=0.05,
+    )
 
     def radius(x):
         return x[2]
@@ -488,11 +496,7 @@ def test_blob_doh_overlap():
     img[xs, ys] = 255
 
     blobs = blob_doh(
-        img,
-        min_sigma=1,
-        max_sigma=60,
-        num_sigma=10,
-        threshold=.05
+        img, min_sigma=1, max_sigma=60, num_sigma=10, threshold=0.05
     )
 
     assert len(blobs) == 1
@@ -502,10 +506,13 @@ def test_blob_log_overlap_3d():
     r1, r2 = 7, 6
     pad1, pad2 = 11, 12
     blob1 = cp.asarray(ellipsoid(r1, r1, r1))
-    blob1 = pad(blob1, pad1, mode='constant')
+    blob1 = pad(blob1, pad1, mode="constant")
     blob2 = cp.asarray(ellipsoid(r2, r2, r2))
-    blob2 = pad(blob2, [(pad2, pad2), (pad2 - 9, pad2 + 9), (pad2, pad2)],
-                mode='constant')
+    blob2 = pad(
+        blob2,
+        [(pad2, pad2), (pad2 - 9, pad2 + 9), (pad2, pad2)],
+        mode="constant",
+    )
     im3 = cp.logical_or(blob1, blob2)
 
     blobs = blob_log(im3, min_sigma=2, max_sigma=10, overlap=0.1)
@@ -517,8 +524,9 @@ def test_blob_log_anisotropic():
     image[20, 10:20] = 1
     isotropic_blobs = blob_log(image, min_sigma=0.5, max_sigma=2, num_sigma=3)
     assert len(isotropic_blobs) > 1  # many small blobs found in line
-    ani_blobs = blob_log(image, min_sigma=[0.5, 5], max_sigma=[2, 20],
-                         num_sigma=3)  # 10x anisotropy, line is 1x10
+    ani_blobs = blob_log(
+        image, min_sigma=[0.5, 5], max_sigma=[2, 20], num_sigma=3
+    )  # 10x anisotropy, line is 1x10
     assert len(ani_blobs) == 1  # single anisotropic blob found
 
 

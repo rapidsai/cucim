@@ -19,8 +19,9 @@ def _affine_matrix_from_vector(v):
     d = (1 + math.sqrt(1 + 4 * nparam)) / 2 - 1
     dimensionality = round(d)  # round to prevent approx errors
     if d != dimensionality:
-        raise ValueError('Invalid number of elements for '
-                         f'linearized matrix: {nparam}')
+        raise ValueError(
+            "Invalid number of elements for " f"linearized matrix: {nparam}"
+        )
     matrix = np.eye(dimensionality + 1)
     matrix[:-1, :] = np.reshape(v, (dimensionality, dimensionality + 1))
     return matrix
@@ -78,9 +79,11 @@ def _center_and_normalize_points(points):
     # small value; ie, we don't need to worry about numerical stability here,
     # only actual 0.
     if rms == 0:
-        return (xp.full((d + 1, d + 1), xp.nan),
-                xp.full_like(points, xp.nan),
-                True)
+        return (
+            xp.full((d + 1, d + 1), xp.nan),
+            xp.full_like(points, xp.nan),
+            True,
+        )
 
     norm_factor = math.sqrt(d) / rms
 
@@ -181,9 +184,8 @@ def _umeyama(src, dst, estimate_scale):
 
 
 class GeometricTransform:
-    """Base class for geometric transformations.
+    """Base class for geometric transformations."""
 
-    """
     def __call__(self, coords):
         """Apply forward transformation.
 
@@ -239,9 +241,7 @@ class GeometricTransform:
         return xp.sqrt(xp.sum((self(src) - dst) ** 2, axis=1))
 
     def __add__(self, other):
-        """Combine this transformation with another.
-
-        """
+        """Combine this transformation with another."""
         raise NotImplementedError()
 
 
@@ -679,14 +679,14 @@ class ProjectiveTransform(GeometricTransform):
             dst[:, ndim] = tmp
 
         # rescale to homogeneous coordinates
-        dst[:, :ndim] /= dst[:, ndim:ndim + 1]
+        dst[:, :ndim] /= dst[:, ndim : ndim + 1]
 
         return dst[:, :ndim]
 
     def __array__(self, dtype=None):
         """Return the transform parameters as an array.
 
-         Note, __array__ is not currently supported by CuPy
+        Note, __array__ is not currently supported by CuPy
         """
         if dtype is None:
             return self.params
@@ -802,12 +802,12 @@ class ProjectiveTransform(GeometricTransform):
         A = xp.zeros((n * d, (d + 1) ** 2))
         for ddim in range(d):
             A[
-                ddim * n:(ddim + 1) * n, ddim * (d + 1):ddim * (d + 1) + d
+                ddim * n : (ddim + 1) * n, ddim * (d + 1) : ddim * (d + 1) + d
             ] = src
-            A[ddim * n:(ddim + 1) * n, ddim * (d + 1) + d] = 1
-            A[ddim * n:(ddim + 1) * n, -d - 1:-1] = src
-            A[ddim * n:(ddim + 1) * n, -1] = -1
-            A[ddim * n:(ddim + 1) * n, -d - 1:] *= -dst[:, ddim:(ddim + 1)]
+            A[ddim * n : (ddim + 1) * n, ddim * (d + 1) + d] = 1
+            A[ddim * n : (ddim + 1) * n, -d - 1 : -1] = src
+            A[ddim * n : (ddim + 1) * n, -1] = -1
+            A[ddim * n : (ddim + 1) * n, -d - 1 :] *= -dst[:, ddim : (ddim + 1)]
 
         # Select relevant columns, depending on params
         A = A[:, list(self._coeffs) + [-1]]
@@ -878,8 +878,8 @@ class ProjectiveTransform(GeometricTransform):
 
     def __nice__(self):
         """common 'paramstr' used by __str__ and __repr__"""
-        npstring = np.array2string(cp.asnumpy(self.params), separator=', ')
-        paramstr = 'matrix=\n' + textwrap.indent(npstring, '    ')
+        npstring = np.array2string(cp.asnumpy(self.params), separator=", ")
+        paramstr = "matrix=\n" + textwrap.indent(npstring, "    ")
         return paramstr
 
     def __repr__(self):
@@ -887,14 +887,14 @@ class ProjectiveTransform(GeometricTransform):
         paramstr = self.__nice__()
         classname = self.__class__.__name__
         classstr = classname
-        return '<{}({}) at {}>'.format(classstr, paramstr, hex(id(self)))
+        return "<{}({}) at {}>".format(classstr, paramstr, hex(id(self)))
 
     def __str__(self):
         """Add standard str formatting around a __nice__ string"""
         paramstr = self.__nice__()
         classname = self.__class__.__name__
         classstr = classname
-        return '<{}({})>'.format(classstr, paramstr)
+        return "<{}({})>".format(classstr, paramstr)
 
     @property
     def dimensionality(self):
@@ -1010,17 +1010,29 @@ class AffineTransform(ProjectiveTransform):
            https://en.wikipedia.org/wiki/Shear_mapping
     """
 
-    def __init__(self, matrix=None, scale=None, rotation=None, shear=None,
-                 translation=None, *, dimensionality=2, xp=cp):
-        params = any(param is not None
-                     for param in (scale, rotation, shear, translation))
+    def __init__(
+        self,
+        matrix=None,
+        scale=None,
+        rotation=None,
+        shear=None,
+        translation=None,
+        *,
+        dimensionality=2,
+        xp=cp,
+    ):
+        params = any(
+            param is not None for param in (scale, rotation, shear, translation)
+        )
 
         # these parameters get overwritten if a higher-D matrix is given
         self._coeffs = range(dimensionality * (dimensionality + 1))
 
         if params and matrix is not None:
-            raise ValueError("You cannot specify the transformation matrix and"
-                             " the implicit parameters at the same time.")
+            raise ValueError(
+                "You cannot specify the transformation matrix and"
+                " the implicit parameters at the same time."
+            )
 
         if params and dimensionality > 2:
             raise ValueError("Parameter input is only supported in 2D.")
@@ -1082,7 +1094,7 @@ class AffineTransform(ProjectiveTransform):
         else:
             ss = xp.sum(self.params * self.params, axis=0)
             ss[1] = ss[1] / (math.tan(self.shear) ** 2 + 1)
-            return xp.sqrt(ss)[:self.dimensionality]
+            return xp.sqrt(ss)[: self.dimensionality]
 
     @property
     def rotation(self):
@@ -1103,7 +1115,7 @@ class AffineTransform(ProjectiveTransform):
 
     @property
     def translation(self):
-        return self.params[0:self.dimensionality, self.dimensionality]
+        return self.params[0 : self.dimensionality, self.dimensionality]
 
 
 # CuPy Backend: TODO: PiecewiseAffineTransform is inefficient currently
@@ -1294,8 +1306,7 @@ def _euler_rotation(axis, angle):
     i = axis
     s = (-1) ** i * _sin(angle)
     c = _cos(angle)
-    R2 = np.array([[c, -s],  # noqa
-                   [s, c]])  # noqa
+    R2 = np.array([[c, -s], [s, c]])  # noqa  # noqa
     Ri = np.eye(3)
     # We need the axes other than the rotation axis, in the right order:
     # 0 -> (1, 2); 1 -> (0, 2); 2 -> (0, 1).
@@ -1379,13 +1390,22 @@ class EuclideanTransform(ProjectiveTransform):
     .. [1] https://en.wikipedia.org/wiki/Rotation_matrix#In_three_dimensions
     """
 
-    def __init__(self, matrix=None, rotation=None, translation=None, *,
-                 dimensionality=2, xp=cp,):
+    def __init__(
+        self,
+        matrix=None,
+        rotation=None,
+        translation=None,
+        *,
+        dimensionality=2,
+        xp=cp,
+    ):
         params_given = rotation is not None or translation is not None
 
         if params_given and matrix is not None:
-            raise ValueError("You cannot specify the transformation matrix and"
-                             " the implicit parameters at the same time.")
+            raise ValueError(
+                "You cannot specify the transformation matrix and"
+                " the implicit parameters at the same time."
+            )
         elif matrix is not None:
             if matrix.shape[0] != matrix.shape[1]:
                 raise ValueError("Invalid shape of transformation matrix.")
@@ -1469,12 +1489,12 @@ class EuclideanTransform(ProjectiveTransform):
             return self.params[:3, :3]
         else:
             raise NotImplementedError(
-                'Rotation only implemented for 2D and 3D transforms.'
+                "Rotation only implemented for 2D and 3D transforms."
             )
 
     @property
     def translation(self):
-        return self.params[0:self.dimensionality, self.dimensionality]
+        return self.params[0 : self.dimensionality, self.dimensionality]
 
 
 class SimilarityTransform(EuclideanTransform):
@@ -1518,15 +1538,26 @@ class SimilarityTransform(EuclideanTransform):
 
     """
 
-    def __init__(self, matrix=None, scale=None, rotation=None,
-                 translation=None, *, dimensionality=2, xp=cp):
+    def __init__(
+        self,
+        matrix=None,
+        scale=None,
+        rotation=None,
+        translation=None,
+        *,
+        dimensionality=2,
+        xp=cp,
+    ):
         self.params = None
-        params = any(param is not None
-                     for param in (scale, rotation, translation))
+        params = any(
+            param is not None for param in (scale, rotation, translation)
+        )
 
         if params and matrix is not None:
-            raise ValueError("You cannot specify the transformation matrix and"
-                             " the implicit parameters at the same time.")
+            raise ValueError(
+                "You cannot specify the transformation matrix and"
+                " the implicit parameters at the same time."
+            )
         elif matrix is not None:
             if matrix.ndim != 2 or matrix.shape[0] != matrix.shape[1]:
                 raise ValueError("Invalid shape of transformation matrix.")
@@ -1535,7 +1566,7 @@ class SimilarityTransform(EuclideanTransform):
                 dimensionality = matrix.shape[0] - 1
         if params:
             if dimensionality not in (2, 3):
-                raise ValueError('Parameters only supported for 2D and 3D.')
+                raise ValueError("Parameters only supported for 2D and 3D.")
             matrix = xp.eye(dimensionality + 1, dtype=float)
             if scale is None:
                 scale = 1
@@ -1593,7 +1624,8 @@ class SimilarityTransform(EuclideanTransform):
             return math.pow(np.linalg.det(cp.asnumpy(self.params)), 1 / 3)
         else:
             raise NotImplementedError(
-                'Scale is only implemented for 2D and 3D.')
+                "Scale is only implemented for 2D and 3D."
+            )
 
 
 class PolynomialTransform(GeometricTransform):
@@ -1703,8 +1735,8 @@ class PolynomialTransform(GeometricTransform):
         pidx = 0
         for j in range(order + 1):
             for i in range(j + 1):
-                A[:rows, pidx] = xs ** (j - i) * ys ** i
-                A[rows:, pidx + u // 2] = xs ** (j - i) * ys ** i
+                A[:rows, pidx] = xs ** (j - i) * ys**i
+                A[rows:, pidx + u // 2] = xs ** (j - i) * ys**i
                 pidx += 1
 
         A[:rows, -1] = xd
@@ -1751,29 +1783,30 @@ class PolynomialTransform(GeometricTransform):
         pidx = 0
         for j in range(order + 1):
             for i in range(j + 1):
-                dst[:, 0] += self.params[0, pidx] * x ** (j - i) * y ** i
-                dst[:, 1] += self.params[1, pidx] * x ** (j - i) * y ** i
+                dst[:, 0] += self.params[0, pidx] * x ** (j - i) * y**i
+                dst[:, 1] += self.params[1, pidx] * x ** (j - i) * y**i
                 pidx += 1
 
         return dst
 
     def inverse(self, coords):
         raise Exception(
-            'There is no explicit way to do the inverse polynomial '
-            'transformation. Instead, estimate the inverse transformation '
-            'parameters by exchanging source and destination coordinates,'
-            'then apply the forward transformation.')
+            "There is no explicit way to do the inverse polynomial "
+            "transformation. Instead, estimate the inverse transformation "
+            "parameters by exchanging source and destination coordinates,"
+            "then apply the forward transformation."
+        )
 
 
 TRANSFORMS = {
-    'euclidean': EuclideanTransform,
-    'similarity': SimilarityTransform,
-    'affine': AffineTransform,
-    'piecewise-affine': PiecewiseAffineTransform,
-    'projective': ProjectiveTransform,
-    'fundamental': FundamentalMatrixTransform,
-    'essential': EssentialMatrixTransform,
-    'polynomial': PolynomialTransform,
+    "euclidean": EuclideanTransform,
+    "similarity": SimilarityTransform,
+    "affine": AffineTransform,
+    "piecewise-affine": PiecewiseAffineTransform,
+    "projective": ProjectiveTransform,
+    "fundamental": FundamentalMatrixTransform,
+    "essential": EssentialMatrixTransform,
+    "polynomial": PolynomialTransform,
 }
 
 
@@ -1842,8 +1875,9 @@ def estimate_transform(ttype, src, dst, *args, **kwargs):
     """
     ttype = ttype.lower()
     if ttype not in TRANSFORMS:
-        raise ValueError('the transformation type \'%s\' is not'
-                         'implemented' % ttype)
+        raise ValueError(
+            "the transformation type '%s' is not" "implemented" % ttype
+        )
 
     tform = TRANSFORMS[ttype](dimensionality=src.shape[1])
     tform.estimate(src, dst, *args, **kwargs)

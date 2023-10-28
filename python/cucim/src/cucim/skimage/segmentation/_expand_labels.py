@@ -6,21 +6,23 @@ from cucim.core.operations.morphology import distance_transform_edt
 def expand_labels(label_image, distance=1):
     """Expand labels in label image by ``distance`` pixels without overlapping.
 
-    Given a label image, ``expand_labels`` grows label regions (connected components)
-    outwards by up to ``distance`` pixels without overflowing into neighboring regions.
-    More specifically, each background pixel that is within Euclidean distance
-    of <= ``distance`` pixels of a connected component is assigned the label of that
-    connected component.
-    Where multiple connected components are within ``distance`` pixels of a background
-    pixel, the label value of the closest connected component will be assigned (see
-    Notes for the case of multiple labels at equal distance).
+    Given a label image, ``expand_labels`` grows label regions (connected
+    components) outwards by up to ``distance`` pixels without overflowing into
+    neighboring regions. More specifically, each background pixel that is
+    within Euclidean distance of <= ``distance`` pixels of a connected
+    component is assigned the label of that connected component.
+
+    Where multiple connected components are within ``distance`` pixels of a
+    background pixel, the label value of the closest connected component will
+    be assigned (see Notes for the case of multiple labels at equal distance).
 
     Parameters
     ----------
     label_image : ndarray of dtype int
         label image
     distance : float
-        Euclidean distance in pixels by which to grow the labels. Default is one.
+        Euclidean distance in pixels by which to grow the labels. Default is
+        one.
 
     Returns
     -------
@@ -30,12 +32,12 @@ def expand_labels(label_image, distance=1):
     Notes
     -----
     Where labels are spaced more than ``distance`` pixels are apart, this is
-    equivalent to a morphological dilation with a disc or hyperball of radius ``distance``.
-    However, in contrast to a morphological dilation, ``expand_labels`` will
-    not expand a label region into a neighboring region.
+    equivalent to a morphological dilation with a disc or hyperball of radius
+    ``distance``. However, in contrast to a morphological dilation,
+    ``expand_labels`` will not expand a label region into a neighboring region.
 
-    This implementation of ``expand_labels`` is derived from CellProfiler [1]_, where
-    it is known as module "IdentifySecondaryObjects (Distance-N)" [2]_.
+    This implementation of ``expand_labels`` is derived from CellProfiler [1]_,
+    where it is known as module "IdentifySecondaryObjects (Distance-N)" [2]_.
 
     There is an important edge case when a pixel has the same distance to
     multiple regions, as it is not defined which region expands into that
@@ -44,12 +46,12 @@ def expand_labels(label_image, distance=1):
 
     See Also
     --------
-    :func:`cucim.skimage.measure.label`, :func:`cucim.skimage.morphology.dilation`  # noqa
+    :func:`cucim.skimage.measure.label`, :func:`cucim.skimage.morphology.dilation`
 
     References
     ----------
     .. [1] https://cellprofiler.org
-    .. [2] https://github.com/CellProfiler/CellProfiler/blob/082930ea95add7b72243a4fa3d39ae5145995e9c/cellprofiler/modules/identifysecondaryobjects.py#L559  # noqa
+    .. [2] https://github.com/CellProfiler/CellProfiler/blob/082930ea95add7b72243a4fa3d39ae5145995e9c/cellprofiler/modules/identifysecondaryobjects.py#L559
 
     Examples
     --------
@@ -77,7 +79,7 @@ def expand_labels(label_image, distance=1):
     array([[2, 1, 1, 0],
            [2, 2, 0, 0],
            [2, 3, 3, 0]])
-    """
+    """  # noqa: E501
 
     distances, nearest_label_coords = distance_transform_edt(
         label_image == 0, return_indices=True

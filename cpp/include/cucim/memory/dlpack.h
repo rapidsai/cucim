@@ -24,7 +24,7 @@ namespace cucim::memory
 {
 
 /**
-* @brief Return a string providing the basic type of the homogenous array in NumPy.
+* @brief Return a string providing the basic type of the homogeneous array in NumPy.
 *
 * Note: This method assumes little-endian for now.
 *
@@ -108,7 +108,7 @@ public:
         return tensor_->dtype;
     }
     /**
-     * @brief Return a string providing the basic type of the homogenous array in NumPy.
+     * @brief Return a string providing the basic type of the homogeneous array in NumPy.
      *
      * Note: This method assumes little-endian for now.
      *

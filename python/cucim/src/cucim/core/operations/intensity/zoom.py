@@ -23,10 +23,7 @@ from .kernel.cuda_kernel_source import cuda_kernel_code
 CUDA_KERNELS = cupy.RawModule(code=cuda_kernel_code)
 
 
-def zoom(
-    img: Any,
-    zoom_factor: Sequence[float]
-):
+def zoom(img: Any, zoom_factor: Sequence[float]):
     """Zooms an ND image
 
     Parameters
@@ -83,8 +80,12 @@ def zoom(
         C, H, W = img.shape
         N = 1
 
-    output_size_cu = [N, C, int(math.floor(H * zoom_factor[0])),
-                      int(math.floor(W * zoom_factor[1]))]
+    output_size_cu = [
+        N,
+        C,
+        int(math.floor(H * zoom_factor[0])),
+        int(math.floor(W * zoom_factor[1])),
+    ]
 
     if output_size_cu[2] == H and output_size_cu[3] == W:
         return img
@@ -95,34 +96,43 @@ def zoom(
         # compare for 48KB for standard CC optimal occupancy
         # array is H, W but kernel is x--> W, y-->H
         for param in cu_block_options:
-            h_stretch = [math.floor((0 * H) / output_size_cu[2]),
-                         math.ceil((param[1] * H) / output_size_cu[2])]
-            w_stretch = [math.floor((0 * W) / output_size_cu[3]),
-                         math.ceil((param[0] * W) / output_size_cu[3])]
+            h_stretch = [
+                math.floor((0 * H) / output_size_cu[2]),
+                math.ceil((param[1] * H) / output_size_cu[2]),
+            ]
+            w_stretch = [
+                math.floor((0 * W) / output_size_cu[3]),
+                math.ceil((param[0] * W) / output_size_cu[3]),
+            ]
 
             smem_size = (h_stretch[1] + 1) * (w_stretch[1] + 1) * 4
             if smem_size < max_smem:
                 return param, smem_size
 
-        raise Exception("Random Zoom couldnt find a \
-                         shared memory configuration")
+        raise Exception(
+            "Random Zoom couldn't find a \
+                         shared memory configuration"
+        )
 
     # input pitch
     pitch = H * W
 
     # get block size
     block_config, smem_size = get_block_size(output_size_cu, H, W)
-    grid = (int((output_size_cu[3] - 1) / block_config[0] + 1),
-            int((output_size_cu[2] - 1) / block_config[1] + 1), C * N)
+    grid = (
+        int((output_size_cu[3] - 1) / block_config[0] + 1),
+        int((output_size_cu[2] - 1) / block_config[1] + 1),
+        C * N,
+    )
 
     is_zoom_out = output_size_cu[2] < H and output_size_cu[3] < W
     is_zoom_in = output_size_cu[2] > H and output_size_cu[3] > W
 
     pad_dims = [[0, 0]] * 2  # zoom out
     slice_dims = [[0, 0]] * 2  # zoom in
-    for idx, (orig, zoom) in enumerate(zip((H, W),
-                                       (output_size_cu[2],
-                                        output_size_cu[3]))):
+    for idx, (orig, zoom) in enumerate(
+        zip((H, W), (output_size_cu[2], output_size_cu[3]))
+    ):
         diff = orig - zoom
         half = abs(diff) // 2
         if diff > 0:
@@ -135,42 +145,73 @@ def zoom(
     if is_zoom_in:
         # slice
         kernel = CUDA_KERNELS.get_function("zoom_in_kernel")
-        kernel(grid, block_config,
-               args=(cupy_img, result, np.int32(H), np.int32(W),
-                     np.int32(output_size_cu[2]),
-                     np.int32(output_size_cu[3]),
-                     np.int32(pitch), np.int32(slice_dims[0][0]),
-                     np.int32(slice_dims[0][1]),
-                     np.int32(slice_dims[1][0]),
-                     np.int32(slice_dims[1][1])),
-               shared_mem=smem_size)
+        kernel(
+            grid,
+            block_config,
+            args=(
+                cupy_img,
+                result,
+                np.int32(H),
+                np.int32(W),
+                np.int32(output_size_cu[2]),
+                np.int32(output_size_cu[3]),
+                np.int32(pitch),
+                np.int32(slice_dims[0][0]),
+                np.int32(slice_dims[0][1]),
+                np.int32(slice_dims[1][0]),
+                np.int32(slice_dims[1][1]),
+            ),
+            shared_mem=smem_size,
+        )
     elif is_zoom_out:
         # pad
         kernel = CUDA_KERNELS.get_function("zoom_out_kernel")
-        kernel(grid, block_config,
-               args=(cupy_img, result, np.int32(H), np.int32(W),
-                     np.int32(output_size_cu[2]),
-                     np.int32(output_size_cu[3]),
-                     np.int32(pitch), np.int32(pad_dims[0][0]),
-                     np.int32(pad_dims[0][1]),
-                     np.int32(pad_dims[1][0]),
-                     np.int32(pad_dims[1][1])),
-               shared_mem=smem_size)
+        kernel(
+            grid,
+            block_config,
+            args=(
+                cupy_img,
+                result,
+                np.int32(H),
+                np.int32(W),
+                np.int32(output_size_cu[2]),
+                np.int32(output_size_cu[3]),
+                np.int32(pitch),
+                np.int32(pad_dims[0][0]),
+                np.int32(pad_dims[0][1]),
+                np.int32(pad_dims[1][0]),
+                np.int32(pad_dims[1][1]),
+            ),
+            shared_mem=smem_size,
+        )
         # padding kernel
         kernel = CUDA_KERNELS.get_function("zoomout_edge_pad")
-        grid = (int((W - 1) / block_config[0] + 1),
-                int((H - 1) / block_config[1] + 1),
-                C * N)
-        kernel(grid, block_config,
-               args=(result, np.int32(H), np.int32(W), np.int32(pitch),
-                     np.int32(pad_dims[0][0]), np.int32(pad_dims[1][0]),
-                     np.int32(pad_dims[0][0] + output_size_cu[2]),
-                     np.int32(pad_dims[1][0] + output_size_cu[3])))
+        grid = (
+            int((W - 1) / block_config[0] + 1),
+            int((H - 1) / block_config[1] + 1),
+            C * N,
+        )
+        kernel(
+            grid,
+            block_config,
+            args=(
+                result,
+                np.int32(H),
+                np.int32(W),
+                np.int32(pitch),
+                np.int32(pad_dims[0][0]),
+                np.int32(pad_dims[1][0]),
+                np.int32(pad_dims[0][0] + output_size_cu[2]),
+                np.int32(pad_dims[1][0] + output_size_cu[3]),
+            ),
+        )
 
     else:
-        raise Exception("Can only handle simultaneous \
+        raise Exception(
+            "Can only handle simultaneous \
                         expansion(or shrinkage) in both H,W dimension, \
-                        check zoom factors")
+                        check zoom factors"
+        )
 
     if img.dtype != np.float32:
         result = result.astype(img.dtype)
@@ -187,8 +228,9 @@ def get_zoom_factor(
 ):
     R = np.random.RandomState()
     try:
-        zoom_factor = [R.uniform(low, high)
-                       for low, high in zip(min_zoom, max_zoom)]
+        zoom_factor = [
+            R.uniform(low, high) for low, high in zip(min_zoom, max_zoom)
+        ]
     except Exception:
         zoom_factor = [R.uniform(min_zoom, max_zoom)]
 
@@ -203,7 +245,7 @@ def rand_zoom(
     min_zoom: Union[Sequence[float], float] = 0.9,
     max_zoom: Union[Sequence[float], float] = 1.1,
     prob: float = 0.1,
-    whole_batch: bool = False
+    whole_batch: bool = False,
 ):
     """
     Randomly Calls zoom with random zoom factor

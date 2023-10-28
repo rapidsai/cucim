@@ -16,11 +16,7 @@ from cucim.skimage._vendored._ndimage_filters import correlate  # NOQA
 from cucim.skimage._vendored._ndimage_filters import correlate1d  # NOQA
 from cucim.skimage._vendored._ndimage_filters import gaussian_filter  # NOQA
 from cucim.skimage._vendored._ndimage_filters import gaussian_filter1d  # NOQA
-from cucim.skimage._vendored._ndimage_filters import \
-    gaussian_gradient_magnitude  # NOQA
 from cucim.skimage._vendored._ndimage_filters import gaussian_laplace  # NOQA
-from cucim.skimage._vendored._ndimage_filters import \
-    generic_gradient_magnitude  # NOQA
 from cucim.skimage._vendored._ndimage_filters import generic_laplace  # NOQA
 from cucim.skimage._vendored._ndimage_filters import laplace  # NOQA
 from cucim.skimage._vendored._ndimage_filters import maximum_filter  # NOQA
@@ -34,42 +30,42 @@ from cucim.skimage._vendored._ndimage_filters import rank_filter  # NOQA
 from cucim.skimage._vendored._ndimage_filters import sobel  # NOQA
 from cucim.skimage._vendored._ndimage_filters import uniform_filter  # NOQA
 from cucim.skimage._vendored._ndimage_filters import uniform_filter1d  # NOQA
+from cucim.skimage._vendored._ndimage_filters import (  # NOQA
+    gaussian_gradient_magnitude,
+    generic_gradient_magnitude,
+)
+
 # interpolation
-from cucim.skimage._vendored._ndimage_interpolation import \
-    affine_transform  # NOQA
-from cucim.skimage._vendored._ndimage_interpolation import \
-    map_coordinates  # NOQA
 from cucim.skimage._vendored._ndimage_interpolation import rotate  # NOQA
 from cucim.skimage._vendored._ndimage_interpolation import shift  # NOQA
 from cucim.skimage._vendored._ndimage_interpolation import spline_filter  # NOQA
-from cucim.skimage._vendored._ndimage_interpolation import \
-    spline_filter1d  # NOQA
 from cucim.skimage._vendored._ndimage_interpolation import zoom  # NOQA
+from cucim.skimage._vendored._ndimage_interpolation import (  # NOQA
+    affine_transform,
+    map_coordinates,
+    spline_filter1d,
+)
+
 # morphology
 from cucim.skimage._vendored._ndimage_morphology import binary_closing  # NOQA
 from cucim.skimage._vendored._ndimage_morphology import binary_dilation  # NOQA
 from cucim.skimage._vendored._ndimage_morphology import binary_erosion  # NOQA
-from cucim.skimage._vendored._ndimage_morphology import \
-    binary_fill_holes  # NOQA
-from cucim.skimage._vendored._ndimage_morphology import \
-    binary_hit_or_miss  # NOQA
 from cucim.skimage._vendored._ndimage_morphology import binary_opening  # NOQA
-from cucim.skimage._vendored._ndimage_morphology import \
-    binary_propagation  # NOQA
 from cucim.skimage._vendored._ndimage_morphology import black_tophat  # NOQA
-from cucim.skimage._vendored._ndimage_morphology import \
-    generate_binary_structure  # NOQA
 from cucim.skimage._vendored._ndimage_morphology import grey_closing  # NOQA
 from cucim.skimage._vendored._ndimage_morphology import grey_dilation  # NOQA
 from cucim.skimage._vendored._ndimage_morphology import grey_erosion  # NOQA
 from cucim.skimage._vendored._ndimage_morphology import grey_opening  # NOQA
-from cucim.skimage._vendored._ndimage_morphology import \
-    iterate_structure  # NOQA
-from cucim.skimage._vendored._ndimage_morphology import \
-    morphological_gradient  # NOQA
-from cucim.skimage._vendored._ndimage_morphology import \
-    morphological_laplace  # NOQA
 from cucim.skimage._vendored._ndimage_morphology import white_tophat  # NOQA
+from cucim.skimage._vendored._ndimage_morphology import (  # NOQA
+    binary_fill_holes,
+    binary_hit_or_miss,
+    binary_propagation,
+    generate_binary_structure,
+    iterate_structure,
+    morphological_gradient,
+    morphological_laplace,
+)
 
 # Import the rest of the cupyx.scipy.ndimage API here
 

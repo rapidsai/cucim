@@ -62,7 +62,7 @@ def invert(image, signed_float=False):
     >>> invert(img4, signed_float=True)
     array([[-0.  , -1.  ,  1.  ,  0.25]])
     """
-    if image.dtype == 'bool':
+    if image.dtype == "bool":
         inverted = ~image
     elif np.issubdtype(image.dtype, np.unsignedinteger):
         max_val = dtype_limits(image, clip_negative=False)[1]

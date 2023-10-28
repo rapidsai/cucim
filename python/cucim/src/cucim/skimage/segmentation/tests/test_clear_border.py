@@ -5,6 +5,7 @@ from cucim.skimage.segmentation import clear_border
 
 
 def test_clear_border():
+    # fmt: off
     image = cp.array(
         [[0, 0, 0, 0, 0, 0, 0, 1, 0],
          [1, 1, 0, 0, 1, 0, 0, 1, 0],
@@ -13,6 +14,7 @@ def test_clear_border():
          [0, 1, 1, 1, 1, 1, 1, 1, 0],
          [0, 0, 0, 0, 0, 0, 0, 0, 0]]
     )
+    # fmt: on
 
     # test default case
     result = clear_border(image.copy())
@@ -30,12 +32,16 @@ def test_clear_border():
     assert_array_equal(result, cp.full_like(image, 2))
 
     # test mask
-    mask = cp.array([[0, 0, 1, 1, 1, 1, 1, 1, 1],
-                     [0, 0, 1, 1, 1, 1, 1, 1, 1],
-                     [1, 1, 1, 1, 1, 1, 1, 1, 1],
-                     [1, 1, 1, 1, 1, 1, 1, 1, 1],
-                     [1, 1, 1, 1, 1, 1, 1, 1, 1],
-                     [1, 1, 1, 1, 1, 1, 1, 1, 1]]).astype(bool)
+    mask = cp.array(
+        [
+            [0, 0, 1, 1, 1, 1, 1, 1, 1],
+            [0, 0, 1, 1, 1, 1, 1, 1, 1],
+            [1, 1, 1, 1, 1, 1, 1, 1, 1],
+            [1, 1, 1, 1, 1, 1, 1, 1, 1],
+            [1, 1, 1, 1, 1, 1, 1, 1, 1],
+            [1, 1, 1, 1, 1, 1, 1, 1, 1],
+        ]
+    ).astype(bool)
     result = clear_border(image.copy(), mask=mask)
     ref = image.copy()
     ref[1:3, 0:2] = 0
@@ -43,6 +49,7 @@ def test_clear_border():
 
 
 def test_clear_border_3d():
+    # fmt: off
     image = cp.array(
         [[[0, 0, 0, 0],
           [0, 0, 0, 0],
@@ -57,6 +64,7 @@ def test_clear_border_3d():
           [0, 0, 0, 0],
           [0, 0, 0, 0]]]
     )
+    # fmt: on
     # test default case
     result = clear_border(image.copy())
     ref = image.copy()
@@ -78,6 +86,7 @@ def test_clear_border_3d():
 
 
 def test_clear_border_non_binary():
+    # fmt: off
     image = cp.array([[1, 2, 3, 1, 2],
                       [3, 3, 5, 4, 2],
                       [3, 4, 5, 4, 2],
@@ -88,12 +97,13 @@ def test_clear_border_non_binary():
                          [0, 0, 5, 4, 0],
                          [0, 4, 5, 4, 0],
                          [0, 0, 0, 0, 0]])
-
+    # fmt: on
     assert_array_equal(result, expected)
     assert not cp.all(image == result)
 
 
 def test_clear_border_non_binary_3d():
+    # fmt: off
     image3d = cp.array(
         [[[1, 2, 3, 1, 2],
           [3, 3, 3, 4, 2],
@@ -124,12 +134,14 @@ def test_clear_border_non_binary_3d():
           [0, 0, 0, 0, 0],
           [0, 0, 0, 0, 0]]]
     )
+    # fmt: on
 
     assert_array_equal(result, expected)
     assert not cp.all(image3d == result)
 
 
 def test_clear_border_non_binary_inplace():
+    # fmt: off
     image = cp.array([[1, 2, 3, 1, 2],
                       [3, 3, 5, 4, 2],
                       [3, 4, 5, 4, 2],
@@ -139,12 +151,13 @@ def test_clear_border_non_binary_inplace():
                          [0, 0, 5, 4, 0],
                          [0, 4, 5, 4, 0],
                          [0, 0, 0, 0, 0]])
-
+    # fmt: on
     assert_array_equal(result, expected)
     assert_array_equal(image, result)
 
 
 def test_clear_border_non_binary_inplace_3d():
+    # fmt: off
     image3d = cp.array(
         [[[1, 2, 3, 1, 2],
           [3, 3, 3, 4, 2],
@@ -175,12 +188,13 @@ def test_clear_border_non_binary_inplace_3d():
           [0, 0, 0, 0, 0],
           [0, 0, 0, 0, 0]]]
     )
-
+    # fmt: on
     assert_array_equal(result, expected)
     assert_array_equal(image3d, result)
 
 
 def test_clear_border_non_binary_out():
+    # fmt: off
     image = cp.array([[1, 2, 3, 1, 2],
                       [3, 3, 5, 4, 2],
                       [3, 4, 5, 4, 2],
@@ -191,12 +205,13 @@ def test_clear_border_non_binary_out():
                          [0, 0, 5, 4, 0],
                          [0, 4, 5, 4, 0],
                          [0, 0, 0, 0, 0]])
-
+    # fmt: on
     assert_array_equal(result, expected)
     assert_array_equal(out, result)
 
 
 def test_clear_border_non_binary_out_3d():
+    # fmt: off
     image3d = cp.array(
         [[[1, 2, 3, 1, 2],
           [3, 3, 3, 4, 2],
@@ -228,6 +243,7 @@ def test_clear_border_non_binary_out_3d():
           [0, 0, 0, 0, 0],
           [0, 0, 0, 0, 0]]]
     )
+    # fmt: on
 
     assert_array_equal(result, expected)
     assert_array_equal(out, result)

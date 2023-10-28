@@ -148,7 +148,7 @@ def euler_number(image, connectivity=None):
 
     # as image can be a label image, transform it to binary
     image = (image > 0).astype(int)
-    image = pad(image, pad_width=1, mode='constant')
+    image = pad(image, pad_width=1, mode="constant")
 
     # check connectivity
     if connectivity is None:
@@ -158,7 +158,6 @@ def euler_number(image, connectivity=None):
     # variable coefs is attributed to each configuration in order to get
     # the Euler characteristic.
     if image.ndim == 2:
-
         config = cp.array([[0, 0, 0], [0, 1, 4], [0, 2, 8]])
         if connectivity == 1:
             coefs = EULER_COEFS2D_4
@@ -168,8 +167,9 @@ def euler_number(image, connectivity=None):
     else:  # 3D images
         if connectivity == 2:
             raise NotImplementedError(
-                'For 3D images, Euler number is implemented '
-                'for connectivities 1 and 3 only')
+                "For 3D images, Euler number is implemented "
+                "for connectivities 1 and 3 only"
+            )
 
         # fmt: off
         config = cp.array([[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
@@ -185,7 +185,7 @@ def euler_number(image, connectivity=None):
     # XF has values in the 0-255 range in 3D, and in the 0-15 range in 2D,
     # with one unique value for each binary configuration of the
     # 27-voxel cube in 3D / 8-pixel square in 2D, up to symmetries
-    XF = ndi.convolve(image, config, mode='constant', cval=0)
+    XF = ndi.convolve(image, config, mode="constant", cval=0)
     h = cp.bincount(XF.ravel(), minlength=bins)
 
     coefs = cp.asarray(coefs)
@@ -195,9 +195,11 @@ def euler_number(image, connectivity=None):
         return int(0.125 * coefs @ h)
 
 
-@deprecate_kwarg(kwarg_mapping={'neighbourhood': 'neighborhood'},
-                 removed_version="2023.06.00",
-                 deprecated_version="2022.12.00")
+@deprecate_kwarg(
+    kwarg_mapping={"neighbourhood": "neighborhood"},
+    removed_version="2023.06.00",
+    deprecated_version="2022.12.00",
+)
 def perimeter(image, neighborhood=4):
     """Calculate total perimeter of all objects in binary image.
 
@@ -237,7 +239,7 @@ def perimeter(image, neighborhood=4):
 
     """
     if image.ndim != 2:
-        raise NotImplementedError('`perimeter` supports 2D images only')
+        raise NotImplementedError("`perimeter` supports 2D images only")
 
     if neighborhood == 4:
         strel = STREL_4
@@ -253,10 +255,12 @@ def perimeter(image, neighborhood=4):
     perimeter_weights[[21, 33]] = math.sqrt(2)
     perimeter_weights[[13, 23]] = (1 + math.sqrt(2)) / 2
 
-    perimeter_image = ndi.convolve(border_image, cp.array([[10, 2, 10],
-                                                           [2, 1, 2],
-                                                           [10, 2, 10]]),
-                                   mode='constant', cval=0)
+    perimeter_image = ndi.convolve(
+        border_image,
+        cp.array([[10, 2, 10], [2, 1, 2], [10, 2, 10]]),
+        mode="constant",
+        cval=0,
+    )
 
     # You can also write
     # return perimeter_weights[perimeter_image].sum()
@@ -320,14 +324,17 @@ def perimeter_crofton(image, directions=4):
     array(7837.07740694)
     """
     if image.ndim != 2:
-        raise NotImplementedError(
-            '`perimeter_crofton` supports 2D images only')
+        raise NotImplementedError("`perimeter_crofton` supports 2D images only")
 
     # as image could be a label image, transform it to binary image
     image = (image > 0).astype(cp.uint8)
     image = pad(image, pad_width=1, mode="constant")
-    XF = ndi.convolve(image, cp.array([[0, 0, 0], [0, 1, 4], [0, 2, 8]]),
-                      mode='constant', cval=0)
+    XF = ndi.convolve(
+        image,
+        cp.array([[0, 0, 0], [0, 1, 4], [0, 2, 8]]),
+        mode="constant",
+        cval=0,
+    )
 
     h = cp.bincount(XF.ravel(), minlength=16)
 

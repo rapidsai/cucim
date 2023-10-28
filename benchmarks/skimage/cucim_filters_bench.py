@@ -1,18 +1,18 @@
+import argparse
 import os
 import pickle
-import argparse
 
-import cucim.skimage
-import cucim.skimage.filters
 import numpy as np
 import pandas as pd
 import skimage
 import skimage.filters
-
 from _image_bench import ImageBench
 
-def main(args):
+import cucim.skimage
+import cucim.skimage.filters
 
+
+def main(args):
     pfile = "cucim_filters_results.pickle"
     if os.path.exists(pfile):
         with open(pfile, "rb") as f:
@@ -62,7 +62,8 @@ def main(args):
         # lpi_filter.py
         # TODO: benchmark wiener
         # ridges.py
-        # TODO: had to set meijering, etc allow_nd to False just due to insufficient GPU memory
+        # TODO: Had to set meijering, etc allow_nd to False just due to
+        #       insufficient GPU memory
         (
             "meijering",
             dict(sigmas=range(1, 10, 2), alpha=None),
@@ -107,16 +108,40 @@ def main(args):
         ("threshold_minimum", dict(), dict(nbins=[64, 256]), False, True),
         ("threshold_mean", dict(), dict(), False, True),
         ("threshold_triangle", dict(), dict(nbins=[64, 256]), False, True),
-        ("threshold_niblack", dict(), dict(window_size=[7, 15, 65]), False, True),
-        ("threshold_sauvola", dict(), dict(window_size=[7, 15, 65]), False, True),
-        ("apply_hysteresis_threshold", dict(low=0.15, high=0.6), dict(), False, True),
-        ("threshold_multiotsu", dict(), dict(nbins=[64, 256], classes=[3]), False, True),
+        (
+            "threshold_niblack",
+            dict(),
+            dict(window_size=[7, 15, 65]),
+            False,
+            True,
+        ),
+        (
+            "threshold_sauvola",
+            dict(),
+            dict(window_size=[7, 15, 65]),
+            False,
+            True,
+        ),
+        (
+            "apply_hysteresis_threshold",
+            dict(low=0.15, high=0.6),
+            dict(),
+            False,
+            True,
+        ),
+        (
+            "threshold_multiotsu",
+            dict(),
+            dict(nbins=[64, 256], classes=[3]),
+            False,
+            True,
+        ),
     ]:
         if function_name != args.func_name:
             continue
         else:
             # image sizes/shapes
-            shape = tuple(list(map(int,(args.img_size.split(',')))))
+            shape = tuple(list(map(int, (args.img_size.split(",")))))
 
             # for shape in [(512, 512), (3840, 2160), (3840, 2160, 3), (192, 192, 192)]:
 
@@ -136,16 +161,16 @@ def main(args):
 
         if function_name == "gabor" and np.prod(shape) > 1000000:
             # avoid cases that are too slow on the CPU
-            var_kwargs["frequency"] = [f for f in var_kwargs["frequency"] if f >= 0.1]
+            var_kwargs["frequency"] = [
+                f for f in var_kwargs["frequency"] if f >= 0.1
+            ]
 
         if function_name == "median":
             footprints = []
             ndim = len(shape)
             footprint_sizes = [3, 5, 7, 9] if ndim == 2 else [3, 5, 7]
             for footprint_size in footprint_sizes:
-                footprints.append(
-                    np.ones((footprint_size,) * ndim, dtype=bool)
-                )
+                footprints.append(np.ones((footprint_size,) * ndim, dtype=bool))
             var_kwargs["footprint"] = footprints
 
         if function_name in ["gaussian", "unsharp_mask"]:
@@ -171,15 +196,84 @@ def main(args):
         f.write(all_results.to_markdown())
 
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Benchmarking cuCIM Filters')
-    func_name_choices = ['gabor', 'gaussian', 'median', 'rank_order', 'unsharp_mask', 'sobel', 'prewitt', 'scharr', 'roberts', 'roberts_pos_diag', 'roberts_neg_diag', 'farid', 'laplace', 'meijering', 'sato', 'frangi', 'hessian', 'threshold_isodata', 'threshold_otsu', 'threshold_yen', 'threshold_local', 'threshold_li', 'threshold_minimum', 'threshold_mean', 'threshold_triangle', 'threshold_niblack', 'threshold_sauvola', 'apply_hysteresis_threshold', 'threshold_multiotsu']
-    dtype_choices = ['float16', 'float32', 'float64', 'int8', 'int16', 'int32', 'int64', 'uint8', 'uint16', 'uint32', 'uint64']
-    parser.add_argument('-i','--img_size', type=str, help='Size of input image', required=True)
-    parser.add_argument('-d','--dtype', type=str, help='Dtype of input image', choices=dtype_choices, required=True)
-    parser.add_argument('-f','--func_name', type=str, help='function to benchmark', choices=func_name_choices, required=True)
-    parser.add_argument('-t','--duration', type=int, help='time to run benchmark', required=True)
-    parser.add_argument('--no_cpu', action='store_true', help='disable cpu measurements', default=False)
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Benchmarking cuCIM Filters")
+    func_name_choices = [
+        "gabor",
+        "gaussian",
+        "median",
+        "rank_order",
+        "unsharp_mask",
+        "sobel",
+        "prewitt",
+        "scharr",
+        "roberts",
+        "roberts_pos_diag",
+        "roberts_neg_diag",
+        "farid",
+        "laplace",
+        "meijering",
+        "sato",
+        "frangi",
+        "hessian",
+        "threshold_isodata",
+        "threshold_otsu",
+        "threshold_yen",
+        "threshold_local",
+        "threshold_li",
+        "threshold_minimum",
+        "threshold_mean",
+        "threshold_triangle",
+        "threshold_niblack",
+        "threshold_sauvola",
+        "apply_hysteresis_threshold",
+        "threshold_multiotsu",
+    ]
+    dtype_choices = [
+        "float16",
+        "float32",
+        "float64",
+        "int8",
+        "int16",
+        "int32",
+        "int64",
+        "uint8",
+        "uint16",
+        "uint32",
+        "uint64",
+    ]
+    parser.add_argument(
+        "-i", "--img_size", type=str, help="Size of input image", required=True
+    )
+    parser.add_argument(
+        "-d",
+        "--dtype",
+        type=str,
+        help="Dtype of input image",
+        choices=dtype_choices,
+        required=True,
+    )
+    parser.add_argument(
+        "-f",
+        "--func_name",
+        type=str,
+        help="function to benchmark",
+        choices=func_name_choices,
+        required=True,
+    )
+    parser.add_argument(
+        "-t",
+        "--duration",
+        type=int,
+        help="time to run benchmark",
+        required=True,
+    )
+    parser.add_argument(
+        "--no_cpu",
+        action="store_true",
+        help="disable cpu measurements",
+        default=False,
+    )
 
     args = parser.parse_args()
     main(args)

@@ -6,14 +6,23 @@ try:
     # CuPy's cdist will only work if pylibraft is available
     import pylibraft  # noqa
     from cupyx.scipy.spatial.distance import cdist
+
     have_gpu_cdist = True
 except ImportError:
     from scipy.spatial.distance import cdist
+
     have_gpu_cdist = False
 
 
-def match_descriptors(descriptors1, descriptors2, metric=None, p=2,
-                      max_distance=cp.inf, cross_check=True, max_ratio=1.0):
+def match_descriptors(
+    descriptors1,
+    descriptors2,
+    metric=None,
+    p=2,
+    max_distance=cp.inf,
+    cross_check=True,
+    max_ratio=1.0,
+):
     """Brute-force matching of descriptors.
 
     For each descriptor in the first set this matcher finds the closest
@@ -65,25 +74,27 @@ def match_descriptors(descriptors1, descriptors2, metric=None, p=2,
 
     if metric is None:
         if cp.issubdtype(descriptors1.dtype, bool):
-            metric = 'hamming'
+            metric = "hamming"
         else:
-            metric = 'euclidean'
+            metric = "euclidean"
 
     kwargs = {}
     # Scipy raises an error if p is passed as an extra argument when it isn't
     # necessary for the chosen metric.
-    if metric == 'minkowski':
-        kwargs['p'] = p
+    if metric == "minkowski":
+        kwargs["p"] = p
 
     if not have_gpu_cdist:
-        warnings.warn("pylibraft not found, falling back to SciPy "
-                      "implementation of cdist on the CPU")
+        warnings.warn(
+            "pylibraft not found, falling back to SciPy "
+            "implementation of cdist on the CPU"
+        )
         distances = cp.array(
             cdist(
                 cp.asnumpy(descriptors1),
                 cp.asnumpy(descriptors2),
                 metric=metric,
-                **kwargs
+                **kwargs,
             )
         )
     else:
@@ -108,8 +119,9 @@ def match_descriptors(descriptors1, descriptors2, metric=None, p=2,
         distances[indices1, indices2] = cp.inf
         second_best_indices2 = cp.argmin(distances[indices1], axis=1)
         second_best_distances = distances[indices1, second_best_indices2]
-        second_best_distances[second_best_distances == 0] \
-            = cp.finfo(cp.float64).eps
+        second_best_distances[second_best_distances == 0] = cp.finfo(
+            cp.float64
+        ).eps
         ratio = best_distances / second_best_distances
         mask = ratio < max_ratio
         indices1 = indices1[mask]

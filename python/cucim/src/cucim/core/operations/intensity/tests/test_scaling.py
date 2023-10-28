@@ -29,7 +29,7 @@ def test_scale_param():
     with pytest.raises(ValueError):
         its.scale_intensity_range(arr, 0.0, 255.0, 1.0, 1.0, False)
     with pytest.raises(TypeError):
-        img = Image.fromarray(arr.T, 'RGB')
+        img = Image.fromarray(arr.T, "RGB")
         its.scale_intensity_range(img, 0.0, 255.0, -1.0, 1.0, False)
 
 
@@ -44,8 +44,9 @@ def test_scale_cupy_input():
     arr = get_input_arr()
     scaled_arr = get_scaled_data()
     cupy_arr = cupy.asarray(arr)
-    cupy_output = its.scale_intensity_range(cupy_arr,
-                                            0.0, 255.0, -1.0, 1.0, False)
+    cupy_output = its.scale_intensity_range(
+        cupy_arr, 0.0, 255.0, -1.0, 1.0, False
+    )
     np_output = cupy.asnumpy(cupy_output)
     assert np.allclose(np_output, scaled_arr)
 

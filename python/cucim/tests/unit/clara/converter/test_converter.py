@@ -18,8 +18,8 @@ from pathlib import Path
 
 
 def test_image_converter_stripe_4096x4096_256_jpeg(
-        tmp_path,
-        testimg_tiff_stripe_4096x4096_256_jpeg):
+    tmp_path, testimg_tiff_stripe_4096x4096_256_jpeg
+):
     import tifffile
 
     from cucim.clara.converter import tiff

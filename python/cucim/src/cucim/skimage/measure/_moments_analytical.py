@@ -180,10 +180,10 @@ def _moments_raw_to_central_fast(moments_raw):
             operation = _order3_3d
 
     kernel = cp.ElementwiseKernel(
-        'raw F m',
-        'raw F mc',
+        "raw F m",
+        "raw F mc",
         operation=operation,
-        name=f"order{order}_{ndim}d_kernel"
+        name=f"order{order}_{ndim}d_kernel",
     )
     # run a single-threaded kernel, so we can avoid device->host->device copy
     kernel(moments_raw, moments_central, size=1)

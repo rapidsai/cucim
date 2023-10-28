@@ -12,12 +12,27 @@ __all__ = ["gabor_kernel", "gabor"]
 def _sigma_prefactor(bandwidth):
     b = bandwidth
     # See http://www.cs.rug.nl/~imaging/simplecell.html
-    return 1.0 / math.pi * math.sqrt(math.log(2) / 2.0) * \
-        (2.0 ** b + 1) / (2.0 ** b - 1)
+    return (
+        1.0
+        / math.pi
+        * math.sqrt(math.log(2) / 2.0)
+        * (2.0**b + 1)
+        / (2.0**b - 1)
+    )
 
 
-def gabor_kernel(frequency, theta=0, bandwidth=1, sigma_x=None, sigma_y=None,
-                 n_stds=3, offset=0, dtype=None, *, float_dtype=None):
+def gabor_kernel(
+    frequency,
+    theta=0,
+    bandwidth=1,
+    sigma_x=None,
+    sigma_y=None,
+    n_stds=3,
+    offset=0,
+    dtype=None,
+    *,
+    float_dtype=None,
+):
     """Return complex 2D Gabor filter kernel.
 
     Gabor kernel is a Gaussian kernel modulated by a complex harmonic function.
@@ -96,7 +111,7 @@ def gabor_kernel(frequency, theta=0, bandwidth=1, sigma_x=None, sigma_y=None,
     elif dtype is None:
         dtype = cp.complex128
 
-    if cp.dtype(dtype).kind != 'c':
+    if cp.dtype(dtype).kind != "c":
         raise ValueError("dtype must be complex")
 
     ct = math.cos(theta)
@@ -107,16 +122,18 @@ def gabor_kernel(frequency, theta=0, bandwidth=1, sigma_x=None, sigma_y=None,
     y0 = math.ceil(
         max(abs(n_stds * sigma_y * ct), abs(n_stds * sigma_x * st), 1)
     )
-    y, x = cp.meshgrid(cp.arange(-y0, y0 + 1),
-                       cp.arange(-x0, x0 + 1),
-                       indexing='ij',
-                       sparse=True)
+    y, x = cp.meshgrid(
+        cp.arange(-y0, y0 + 1),
+        cp.arange(-x0, x0 + 1),
+        indexing="ij",
+        sparse=True,
+    )
     rotx = x * ct + y * st
     roty = -x * st + y * ct
 
     g = cp.empty(roty.shape, dtype=dtype)
     cp.exp(
-        -0.5 * ((rotx * rotx) / sigma_x ** 2 + (roty * roty) / sigma_y ** 2),
+        -0.5 * ((rotx * rotx) / sigma_x**2 + (roty * roty) / sigma_y**2),
         out=g,
     )
     g /= 2 * math.pi * sigma_x * sigma_y
@@ -125,8 +142,18 @@ def gabor_kernel(frequency, theta=0, bandwidth=1, sigma_x=None, sigma_y=None,
     return g
 
 
-def gabor(image, frequency, theta=0, bandwidth=1, sigma_x=None,
-          sigma_y=None, n_stds=3, offset=0, mode='reflect', cval=0):
+def gabor(
+    image,
+    frequency,
+    theta=0,
+    bandwidth=1,
+    sigma_x=None,
+    sigma_y=None,
+    n_stds=3,
+    offset=0,
+    mode="reflect",
+    cval=0,
+):
     """Return real and imaginary responses to Gabor filter.
 
     The real and imaginary parts of the Gabor filter kernel are applied to the
@@ -200,15 +227,23 @@ def gabor(image, frequency, theta=0, bandwidth=1, sigma_x=None,
     """  # noqa
     check_nD(image, 2)
     # do not cast integer types to float!
-    if image.dtype.kind == 'f':
+    if image.dtype.kind == "f":
         float_dtype = _supported_float_type(image.dtype)
         image = image.astype(float_dtype, copy=False)
         kernel_dtype = cp.promote_types(image.dtype, cp.complex64)
     else:
         kernel_dtype = cp.complex128
 
-    g = gabor_kernel(frequency, theta, bandwidth, sigma_x, sigma_y, n_stds,
-                     offset, dtype=kernel_dtype)
+    g = gabor_kernel(
+        frequency,
+        theta,
+        bandwidth,
+        sigma_x,
+        sigma_y,
+        n_stds,
+        offset,
+        dtype=kernel_dtype,
+    )
 
     # separate real and imaginary calls in order to preserve integer dtypes
     filtered_real = ndi.convolve(image, g.real, mode=mode, cval=cval)

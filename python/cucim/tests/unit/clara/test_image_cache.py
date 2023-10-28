@@ -16,6 +16,7 @@
 
 def test_get_nocache():
     from cucim import CuImage
+
     cache = CuImage.cache()
 
     assert int(cache.type) == 0
@@ -32,13 +33,14 @@ def test_get_nocache():
     #  {'type': 'nocache', 'memory_capacity': 1024, 'capacity': 5461,
     #   'mutex_pool_capacity': 11117, 'list_padding': 10000,
     #   'extra_shared_memory_size': 100, 'record_stat': False}
-    assert config['type'] == 'nocache'
-    assert not config['record_stat']
+    assert config["type"] == "nocache"
+    assert not config["record_stat"]
 
 
 def test_get_per_process_cache():
     from cucim import CuImage
-    cache = CuImage.cache('per_process', memory_capacity=2048)
+
+    cache = CuImage.cache("per_process", memory_capacity=2048)
     assert int(cache.type) == 1
     assert cache.memory_size == 0
     assert cache.memory_capacity == 2**20 * 2048
@@ -53,14 +55,15 @@ def test_get_per_process_cache():
     #  {'type': 'per_process', 'memory_capacity': 2048, 'capacity': 10922,
     #   'mutex_pool_capacity': 11117, 'list_padding': 10000,
     #   'extra_shared_memory_size': 100, 'record_stat': False}
-    assert config['type'] == 'per_process'
-    assert config['memory_capacity'] == 2048
-    assert not config['record_stat']
+    assert config["type"] == "per_process"
+    assert config["memory_capacity"] == 2048
+    assert not config["record_stat"]
 
 
 def test_get_shared_memory_cache():
     from cucim import CuImage
-    cache = CuImage.cache('shared_memory', memory_capacity=2048)
+
+    cache = CuImage.cache("shared_memory", memory_capacity=2048)
     assert int(cache.type) == 2
     assert cache.memory_size == 0
     # It allocates additional memory
@@ -76,9 +79,9 @@ def test_get_shared_memory_cache():
     #  {'type': 'shared_memory', 'memory_capacity': 2048, 'capacity': 10922,
     #   'mutex_pool_capacity': 11117, 'list_padding': 10000,
     #   'extra_shared_memory_size': 100, 'record_stat': False}
-    assert config['type'] == 'shared_memory'
-    assert config['memory_capacity'] == 2048
-    assert not config['record_stat']
+    assert config["type"] == "shared_memory"
+    assert config["memory_capacity"] == 2048
+    assert not config["record_stat"]
 
 
 def test_preferred_memory_capacity(testimg_tiff_stripe_32x24_16_jpeg):
@@ -88,23 +91,25 @@ def test_preferred_memory_capacity(testimg_tiff_stripe_32x24_16_jpeg):
     img = CuImage(testimg_tiff_stripe_32x24_16_jpeg)
 
     # same with `img.resolutions["level_dimensions"][0]`
-    image_size = img.size('XY')  # 32x24
-    tile_size = img.resolutions['level_tile_sizes'][0]  # 16x16
+    image_size = img.size("XY")  # 32x24
+    tile_size = img.resolutions["level_tile_sizes"][0]  # 16x16
     patch_size = (tile_size[0] * 2, tile_size[0] * 2)
-    bytes_per_pixel = 3                                # default: 3
+    bytes_per_pixel = 3  # default: 3
 
     # Below three statements are the same.
     memory_capacity = preferred_memory_capacity(img, patch_size=patch_size)
     memory_capacity2 = preferred_memory_capacity(
-        None, image_size, tile_size, patch_size, bytes_per_pixel)
+        None, image_size, tile_size, patch_size, bytes_per_pixel
+    )
     memory_capacity3 = preferred_memory_capacity(
-        None, image_size, patch_size=patch_size)
+        None, image_size, patch_size=patch_size
+    )
 
     assert memory_capacity == memory_capacity2  # 1 == 1
     assert memory_capacity2 == memory_capacity3  # 1 == 1
 
     # You can also manually set capacity` (e.g., `capacity=500`)
-    cache = CuImage.cache('per_process', memory_capacity=memory_capacity)
+    cache = CuImage.cache("per_process", memory_capacity=memory_capacity)
     assert int(cache.type) == 1
     assert cache.memory_size == 0
     assert cache.memory_capacity == 2**20 * 1
@@ -115,8 +120,12 @@ def test_preferred_memory_capacity(testimg_tiff_stripe_32x24_16_jpeg):
     assert cache.miss_count == 0
 
     basic_memory_capacity = preferred_memory_capacity(
-        None, image_size=(1024 * 1024, 1024 * 1024), tile_size=(256, 256),
-        patch_size=(256, 256), bytes_per_pixel=3)
+        None,
+        image_size=(1024 * 1024, 1024 * 1024),
+        tile_size=(256, 256),
+        patch_size=(256, 256),
+        bytes_per_pixel=3,
+    )
     assert basic_memory_capacity == 1536  # https://godbolt.org/z/jY7G84xzT
 
 
@@ -125,13 +134,21 @@ def test_reserve_more_cache_memory():
     from cucim.clara.cache import preferred_memory_capacity
 
     memory_capacity = preferred_memory_capacity(
-        None, image_size=(1024 * 1024, 1024 * 1024), tile_size=(256, 256),
-        patch_size=(256, 256), bytes_per_pixel=3)
+        None,
+        image_size=(1024 * 1024, 1024 * 1024),
+        tile_size=(256, 256),
+        patch_size=(256, 256),
+        bytes_per_pixel=3,
+    )
     new_memory_capacity = preferred_memory_capacity(
-        None, image_size=(1024 * 1024, 1024 * 1024), tile_size=(256, 256),
-        patch_size=(512, 512), bytes_per_pixel=3)
+        None,
+        image_size=(1024 * 1024, 1024 * 1024),
+        tile_size=(256, 256),
+        patch_size=(512, 512),
+        bytes_per_pixel=3,
+    )
 
-    cache = CuImage.cache('per_process', memory_capacity=memory_capacity)
+    cache = CuImage.cache("per_process", memory_capacity=memory_capacity)
     assert int(cache.type) == 1
     assert cache.memory_size == 0
     assert cache.memory_capacity == 2**20 * 1536
@@ -162,7 +179,7 @@ def test_reserve_more_cache_memory():
     assert cache.hit_count == 0
     assert cache.miss_count == 0
 
-    cache = CuImage.cache('no_cache')
+    cache = CuImage.cache("no_cache")
     # Set new cache will reset memory size
     assert int(cache.type) == 0
     assert cache.memory_size == 0
@@ -181,7 +198,8 @@ def test_cache_hit_miss(testimg_tiff_stripe_32x24_16_jpeg):
     img = CuImage(testimg_tiff_stripe_32x24_16_jpeg)
     memory_capacity = preferred_memory_capacity(img, patch_size=(16, 16))
     cache = CuImage.cache(
-        'per_process', memory_capacity=memory_capacity, record_stat=True)
+        "per_process", memory_capacity=memory_capacity, record_stat=True
+    )
 
     img.read_region((0, 0), (8, 8))
     assert (cache.hit_count, cache.miss_count) == (0, 1)
@@ -206,7 +224,7 @@ def test_cache_hit_miss(testimg_tiff_stripe_32x24_16_jpeg):
     assert cache.size == 1
     assert cache.capacity == 5
 
-    cache = CuImage.cache('no_cache')
+    cache = CuImage.cache("no_cache")
 
     assert int(cache.type) == 0
     assert cache.memory_size == 0

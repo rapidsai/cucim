@@ -8,7 +8,7 @@ from ..util.dtype import img_as_float
 def _unsharp_mask_single_channel(image, radius, amount, vrange):
     """Single channel implementation of the unsharp masking filter."""
 
-    blurred = gaussian(image, sigma=radius, mode='reflect')
+    blurred = gaussian(image, sigma=radius, mode="reflect")
 
     result = image + (image - blurred) * amount
     if vrange is not None:
@@ -16,8 +16,9 @@ def _unsharp_mask_single_channel(image, radius, amount, vrange):
     return result
 
 
-def unsharp_mask(image, radius=1.0, amount=1.0, preserve_range=False, *,
-                 channel_axis=None):
+def unsharp_mask(
+    image, radius=1.0, amount=1.0, preserve_range=False, *, channel_axis=None
+):
     """Unsharp masking filter.
 
     The sharp details are identified as the difference between the original
@@ -134,7 +135,8 @@ def unsharp_mask(image, radius=1.0, amount=1.0, preserve_range=False, *,
         for channel in range(image.shape[channel_axis]):
             sl = utils.slice_at_axis(channel, channel_axis)
             result[sl] = _unsharp_mask_single_channel(
-                fimg[sl], radius, amount, vrange)
+                fimg[sl], radius, amount, vrange
+            )
         return result
     else:
         return _unsharp_mask_single_channel(fimg, radius, amount, vrange)

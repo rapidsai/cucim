@@ -7,7 +7,7 @@ from cucim.skimage._shared.utils import _supported_float_type
 from cucim.skimage.segmentation import chan_vese
 
 
-@pytest.mark.parametrize('dtype', [cp.float32, cp.float64])
+@pytest.mark.parametrize("dtype", [cp.float32, cp.float64])
 def test_chan_vese_flat_level_set(dtype):
     # because the algorithm evolves the level set around the
     # zero-level, it the level-set has no zero level, the algorithm
@@ -39,7 +39,7 @@ def test_chan_vese_simple_shape():
 
 
 @pytest.mark.parametrize(
-    'dtype', [cp.uint8, cp.float16, cp.float32, cp.float64]
+    "dtype", [cp.uint8, cp.float16, cp.float32, cp.float64]
 )
 def test_chan_vese_extended_output(dtype):
     img = cp.zeros((10, 10), dtype=dtype)
@@ -53,15 +53,20 @@ def test_chan_vese_extended_output(dtype):
 
 def test_chan_vese_remove_noise():
     ref = cp.zeros((10, 10))
-    ref[1:6, 1:6] = cp.array([[0, 1, 1, 1, 0],
-                              [1, 1, 1, 1, 1],
-                              [1, 1, 1, 1, 1],
-                              [1, 1, 1, 1, 1],
-                              [0, 1, 1, 1, 0]])
+    ref[1:6, 1:6] = cp.array(
+        [
+            [0, 1, 1, 1, 0],
+            [1, 1, 1, 1, 1],
+            [1, 1, 1, 1, 1],
+            [1, 1, 1, 1, 1],
+            [0, 1, 1, 1, 0],
+        ]
+    )
     img = ref.copy()
     img[8, 3] = 1
-    result = chan_vese(img, mu=0.3, tol=1e-3, max_num_iter=100, dt=10,
-                       init_level_set="disk").astype(float)
+    result = chan_vese(
+        img, mu=0.3, tol=1e-3, max_num_iter=100, dt=10, init_level_set="disk"
+    ).astype(float)
     assert_array_equal(result, ref)
 
 
@@ -77,8 +82,9 @@ def test_chan_vese_gap_closing():
     ref[8:15, :] = cp.ones((7, 20))
     img = ref.copy()
     img[:, 6] = cp.zeros(20)
-    result = chan_vese(img, mu=0.7, tol=1e-3, max_num_iter=1000, dt=1000,
-                       init_level_set="disk").astype(float)
+    result = chan_vese(
+        img, mu=0.7, tol=1e-3, max_num_iter=1000, dt=1000, init_level_set="disk"
+    ).astype(float)
     assert_array_equal(result, ref)
 
 

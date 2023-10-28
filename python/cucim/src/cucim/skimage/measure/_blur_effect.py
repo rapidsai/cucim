@@ -5,7 +5,7 @@ import cucim.skimage._vendored.ndimage as ndi
 from ..color import rgb2gray
 from ..util import img_as_float
 
-__all__ = ['blur_effect']
+__all__ = ["blur_effect"]
 
 
 def blur_effect(image, h_size=11, channel_axis=None, reduce_func=max):
@@ -57,10 +57,10 @@ def blur_effect(image, h_size=11, channel_axis=None, reduce_func=max):
             # ensure color channels are in the final dimension
             image = cp.moveaxis(image, channel_axis, -1)
         except cp.AxisError:
-            print('channel_axis must be one of the image array dimensions')
+            print("channel_axis must be one of the image array dimensions")
             raise
         except TypeError:
-            print('channel_axis must be an integer')
+            print("channel_axis must be an integer")
             raise
         image = rgb2gray(image)
     n_axes = image.ndim
@@ -69,6 +69,7 @@ def blur_effect(image, h_size=11, channel_axis=None, reduce_func=max):
     B = []
 
     from ..filters import sobel
+
     host_scalars = True
     slices = tuple([slice(2, s - 1) for s in shape])
     for ax in range(n_axes):

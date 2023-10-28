@@ -8,13 +8,14 @@ from cucim.skimage import color, morphology
 from cucim.skimage.util import img_as_bool
 
 img = color.rgb2gray(cp.asarray(data.astronaut()))
-bw_img = img > 100 / 255.
+bw_img = img > 100 / 255.0
 
 
 def test_non_square_image():
     isotropic_res = morphology.isotropic_erosion(bw_img[:100, :200], 3)
-    binary_res = img_as_bool(morphology.binary_erosion(
-        bw_img[:100, :200], morphology.disk(3)))
+    binary_res = img_as_bool(
+        morphology.binary_erosion(bw_img[:100, :200], morphology.disk(3))
+    )
     assert_array_equal(isotropic_res, binary_res)
 
 
@@ -41,7 +42,7 @@ def _disk_with_spacing(
 
     if not strict_radius:
         radius += 0.5
-    return cp.asarray((X ** 2 + Y ** 2) <= radius ** 2, dtype=dtype)
+    return cp.asarray((X**2 + Y**2) <= radius**2, dtype=dtype)
 
 
 def test_isotropic_erosion_spacing():
@@ -57,8 +58,8 @@ def test_isotropic_erosion_spacing():
 def test_isotropic_dilation():
     isotropic_res = morphology.isotropic_dilation(bw_img, 3)
     binary_res = img_as_bool(
-        morphology.binary_dilation(
-            bw_img, morphology.disk(3)))
+        morphology.binary_dilation(bw_img, morphology.disk(3))
+    )
     assert_array_equal(isotropic_res, binary_res)
 
 
@@ -82,16 +83,18 @@ def test_footprint_overflow():
     img = cp.zeros((20, 20), dtype=bool)
     img[2:19, 2:19] = True
     isotropic_res = morphology.isotropic_erosion(img, 9)
-    binary_res = img_as_bool(
-        morphology.binary_erosion(img, morphology.disk(9))
-    )
+    binary_res = img_as_bool(morphology.binary_erosion(img, morphology.disk(9)))
     assert_array_equal(isotropic_res, binary_res)
 
 
-@pytest.mark.parametrize('out_dtype', [bool, cp.uint8, cp.int32])
+@pytest.mark.parametrize("out_dtype", [bool, cp.uint8, cp.int32])
 def test_out_argument(out_dtype):
-    for func in (morphology.isotropic_erosion, morphology.isotropic_dilation,
-                 morphology.isotropic_opening, morphology.isotropic_closing):
+    for func in (
+        morphology.isotropic_erosion,
+        morphology.isotropic_dilation,
+        morphology.isotropic_opening,
+        morphology.isotropic_closing,
+    ):
         radius = 3
         img = cp.ones((10, 10), dtype=bool)
         img[2:5, 2:5] = 0

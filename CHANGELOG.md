@@ -95,7 +95,7 @@
 ## 🐛 Bug Fixes
 
 - Fix bug in median filter with non-uniform footprint ([#521](https://github.com/rapidsai/cucim/pull/521)) [@grlee77](https://github.com/grlee77)
-- use cp.around instead of cp.round for CuPy 10.x compatiblity ([#508](https://github.com/rapidsai/cucim/pull/508)) [@grlee77](https://github.com/grlee77)
+- use cp.around instead of cp.round for CuPy 10.x compatibility ([#508](https://github.com/rapidsai/cucim/pull/508)) [@grlee77](https://github.com/grlee77)
 - Fix error in LZ4-compressed Zarr writing demo ([#506](https://github.com/rapidsai/cucim/pull/506)) [@grlee77](https://github.com/grlee77)
 - Normalize whitespace. ([#474](https://github.com/rapidsai/cucim/pull/474)) [@bdice](https://github.com/bdice)
 

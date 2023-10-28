@@ -10,7 +10,7 @@ from cucim.skimage.feature import match_template, peak_local_max
 from cucim.skimage.morphology import diamond
 
 
-@pytest.mark.parametrize('dtype', [cp.float32, cp.float64])
+@pytest.mark.parametrize("dtype", [cp.float32, cp.float64])
 def test_template(dtype):
     size = 100
     # Float prefactors ensure that image range is between 0 and 1
@@ -19,7 +19,7 @@ def test_template(dtype):
     target = target.astype(dtype, copy=False)
     target_positions = [(50, 50), (200, 200)]
     for x, y in target_positions:
-        image[x:x + size, y:y + size] = target
+        image[x : x + size, y : y + size] = target
     np.random.seed(1)
     image += 0.1 * np.random.uniform(size=(400, 400)).astype(dtype, copy=False)
     image = cp.asarray(image)
@@ -56,12 +56,12 @@ def test_normalization():
     ipos, jpos = (2, 3)
     ineg, jneg = (12, 11)
     image = cp.full((N, N), 0.5)
-    image[ipos:ipos + n, jpos:jpos + n] = 1
-    image[ineg:ineg + n, jneg:jneg + n] = 0
+    image[ipos : ipos + n, jpos : jpos + n] = 1
+    image[ineg : ineg + n, jneg : jneg + n] = 0
 
     # white square with a black border
     template = cp.zeros((n + 2, n + 2))
-    template[1:1 + n, 1:1 + n] = 1
+    template[1 : 1 + n, 1 : 1 + n] = 1
 
     result = match_template(image, template)
 
@@ -117,12 +117,13 @@ def test_pad_input():
     image = 0.5 * cp.ones((9, 19))
     mid = slice(2, 7)
     image[mid, :3] -= template[:, -3:]  # half min template centered at 0
-    image[mid, 4:9] += template         # full max template centered at 6
-    image[mid, -9:-4] -= template       # full min template centered at 12
+    image[mid, 4:9] += template  # full max template centered at 6
+    image[mid, -9:-4] -= template  # full min template centered at 12
     image[mid, -3:] += template[:, :3]  # half max template centered at 18
 
-    result = match_template(image, template, pad_input=True,
-                            constant_values=float(image.mean()))
+    result = match_template(
+        image, template, pad_input=True, constant_values=float(image.mean())
+    )
 
     # get the max and min results.
     sorted_result = cp.argsort(result.ravel())

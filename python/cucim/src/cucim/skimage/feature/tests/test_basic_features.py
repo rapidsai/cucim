@@ -5,8 +5,8 @@ import pytest
 from cucim.skimage.feature import multiscale_basic_features
 
 
-@pytest.mark.parametrize('edges', (False, True))
-@pytest.mark.parametrize('texture', (False, True))
+@pytest.mark.parametrize("edges", (False, True))
+@pytest.mark.parametrize("texture", (False, True))
 def test_multiscale_basic_features_gray(edges, texture):
     img = np.zeros((20, 20))
     img[:10] = 1
@@ -22,7 +22,7 @@ def test_multiscale_basic_features_gray(edges, texture):
     assert features.shape[:-1] == img.shape[:]
 
 
-@pytest.mark.parametrize('channel_axis', [0, 1, 2, -1, -2])
+@pytest.mark.parametrize("channel_axis", [0, 1, 2, -1, -2])
 def test_multiscale_basic_features_channel_axis(channel_axis):
     num_channels = 5
     shape_spatial = (10, 10)
@@ -37,8 +37,9 @@ def test_multiscale_basic_features_channel_axis(channel_axis):
     n_sigmas = 2
 
     # features for all channels are concatenated along the last axis
-    features = multiscale_basic_features(img, sigma_min=1, sigma_max=2,
-                                         channel_axis=channel_axis)
+    features = multiscale_basic_features(
+        img, sigma_min=1, sigma_max=2, channel_axis=channel_axis
+    )
     assert features.shape[-1] == 5 * n_sigmas * 4
     assert features.shape[:-1] == cp.moveaxis(img, channel_axis, -1).shape[:-1]
 

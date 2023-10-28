@@ -3,15 +3,15 @@ import math
 import os
 import pickle
 
-import cucim.skimage
-from cucim.skimage import data, exposure, measure, segmentation
 import cupy as cp
 import numpy as np
 import pandas as pd
 import skimage
 import skimage.segmentation
-
 from _image_bench import ImageBench
+
+import cucim.skimage
+from cucim.skimage import data, measure
 
 
 class LabelBench(ImageBench):
@@ -27,7 +27,6 @@ class LabelBench(ImageBench):
         module_gpu=cucim.skimage.measure,
         run_cpu=True,
     ):
-
         super().__init__(
             function_name=function_name,
             shape=shape,
@@ -42,9 +41,9 @@ class LabelBench(ImageBench):
 
     def _generate_labels(self, dtype):
         ndim = len(self.shape)
-        blobs_kwargs = dict(blob_size_fraction=0.05,
-                            volume_fraction=0.35,
-                            seed=5)
+        blobs_kwargs = dict(
+            blob_size_fraction=0.05, volume_fraction=0.35, seed=5
+        )
         # binary blobs only creates square outputs
         labels = measure.label(
             data.binary_blobs(max(self.shape), n_dim=ndim, **blobs_kwargs)
@@ -63,7 +62,6 @@ class LabelBench(ImageBench):
 
 
 class LabelAndImageBench(LabelBench):
-
     def set_args(self, dtype):
         labels_d = self._generate_labels(dtype)
         labels = cp.asnumpy(labels_d)
@@ -100,12 +98,10 @@ class MorphGeodesicBench(ImageBench):
 
 
 class RandomWalkerBench(ImageBench):
-
-
     def set_args(self, dtype):
         # Note: dtype only used for merkers array, data is hard-coded as float32
 
-        if np.dtype(dtype).kind not in 'iu':
+        if np.dtype(dtype).kind not in "iu":
             raise ValueError("random_walker markers require integer dtype")
 
         n_dim = len(self.shape)
@@ -135,7 +131,6 @@ class RandomWalkerBench(ImageBench):
 
 
 def main(args):
-
     pfile = "cucim_segmentation_results.pickle"
     if os.path.exists(pfile):
         with open(pfile, "rb") as f:
@@ -146,7 +141,7 @@ def main(args):
     dtypes = [np.dtype(args.dtype)]
     dtypes_label = [np.dtype(args.dtype_label)]
     # image sizes/shapes
-    shape = tuple(list(map(int,(args.img_size.split(',')))))
+    shape = tuple(list(map(int, (args.img_size.split(",")))))
     run_cpu = not args.no_cpu
 
     for function_name, fixed_kwargs, var_kwargs, allow_color, allow_nd in [
@@ -178,7 +173,9 @@ def main(args):
         (
             "find_boundaries",
             dict(),
-            dict(connectivity=[1], mode=["thick", "inner", "outer", "subpixel"]),
+            dict(
+                connectivity=[1], mode=["thick", "inner", "outer", "subpixel"]
+            ),
             False,
             True,
         ),
@@ -191,8 +188,8 @@ def main(args):
         ),
         (
             "random_walker",
-            dict(beta=4, tol=1.e-4, prob_tol=1.e-2),
-            dict(mode=['cg', 'cg_j']),
+            dict(beta=4, tol=1.0e-4, prob_tol=1.0e-2),
+            dict(mode=["cg", "cg_j"]),
             False,
             True,
         ),
@@ -225,7 +222,6 @@ def main(args):
         # omit: disk_level_set (simple array generation function)
         # omit: checkerboard_level_set (simple array generation function)
     ]:
-
         if function_name != args.func_name:
             continue
 
@@ -240,13 +236,20 @@ def main(args):
         if shape[-1] == 3 and not allow_color:
             continue
 
-        if function_name in ["clear_border", "expand_labels", "relabel_sequential", "find_boundaries", "mark_boundaries", "random_walker"]:
-            if function_name == 'random_walker':
-                fixed_kwargs['channel_axis'] = -1 if shape[-1] == 3 else None
+        if function_name in [
+            "clear_border",
+            "expand_labels",
+            "relabel_sequential",
+            "find_boundaries",
+            "mark_boundaries",
+            "random_walker",
+        ]:
+            if function_name == "random_walker":
+                fixed_kwargs["channel_axis"] = -1 if shape[-1] == 3 else None
 
-            if function_name == 'mark_boundaries':
+            if function_name == "mark_boundaries":
                 bench_func = LabelAndImageBench
-            elif function_name == 'random_walker':
+            elif function_name == "random_walker":
                 bench_func = RandomWalkerBench
             else:
                 bench_func = LabelBench
@@ -259,13 +262,17 @@ def main(args):
                 var_kwargs=var_kwargs,
                 module_cpu=skimage.segmentation,
                 module_gpu=cucim.skimage.segmentation,
+                run_cpu=run_cpu,
             )
             results = B.run_benchmark(duration=args.duration)
             all_results = pd.concat([all_results, results["full"]])
 
-
-        elif function_name in ["inverse_gaussian_gradient", "morphological_geodesic_active_contour", "morphological_chan_vese", "chan_vese"]:
-
+        elif function_name in [
+            "inverse_gaussian_gradient",
+            "morphological_geodesic_active_contour",
+            "morphological_chan_vese",
+            "chan_vese",
+        ]:
             if function_name == "morphological_geodesic_active_contour":
                 bench_class = MorphGeodesicBench
             else:
@@ -279,6 +286,7 @@ def main(args):
                 var_kwargs=var_kwargs,
                 module_cpu=skimage.segmentation,
                 module_gpu=cucim.skimage.segmentation,
+                run_cpu=run_cpu,
             )
             results = B.run_benchmark(duration=args.duration)
             all_results = pd.concat([all_results, results["full"]])
@@ -287,7 +295,7 @@ def main(args):
     all_results.to_csv(fbase + ".csv")
     all_results.to_pickle(pfile)
     try:
-        import tabular
+        import tabular  # noqa: F401
 
         with open(fbase + ".md", "wt") as f:
             f.write(all_results.to_markdown())
@@ -295,17 +303,89 @@ def main(args):
         pass
 
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Benchmarking cuCIM segmentation functions')
-    func_name_choices = ["clear_border", "expand_labels", "relabel_sequential", "find_boundaries", "mark_boundaries", "random_walker", "inverse_gaussian_gradient", "morphological_geodesic_active_contour", "morphological_chan_vese", "chan_vese"]
-    label_dtype_choices = ['int8', 'int16', 'int32', 'int64', 'uint8', 'uint16', 'uint32', 'uint64']
-    dtype_choices = ['float16', 'float32', 'float64', 'int8', 'int16', 'int32', 'int64', 'uint8', 'uint16', 'uint32', 'uint64']
-    parser.add_argument('-i','--img_size', type=str, help='Size of input image (omit color channel, it will be appended as needed)', required=True)
-    parser.add_argument('-d','--dtype', type=str, help='Dtype of input image', choices = dtype_choices, required=True)
-    parser.add_argument('--dtype_label', type=str, help='Dtype of input image', choices = label_dtype_choices, required=False, default='uint8')
-    parser.add_argument('-f','--func_name', type=str, help='function to benchmark', choices = func_name_choices, required=True)
-    parser.add_argument('-t','--duration', type=int, help='time to run benchmark', required=True)
-    parser.add_argument('--no_cpu', action='store_true', help='disable cpu measurements', default=False)
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="Benchmarking cuCIM segmentation functions"
+    )
+    func_name_choices = [
+        "clear_border",
+        "expand_labels",
+        "relabel_sequential",
+        "find_boundaries",
+        "mark_boundaries",
+        "random_walker",
+        "inverse_gaussian_gradient",
+        "morphological_geodesic_active_contour",
+        "morphological_chan_vese",
+        "chan_vese",
+    ]
+    label_dtype_choices = [
+        "int8",
+        "int16",
+        "int32",
+        "int64",
+        "uint8",
+        "uint16",
+        "uint32",
+        "uint64",
+    ]
+    dtype_choices = [
+        "float16",
+        "float32",
+        "float64",
+        "int8",
+        "int16",
+        "int32",
+        "int64",
+        "uint8",
+        "uint16",
+        "uint32",
+        "uint64",
+    ]
+    parser.add_argument(
+        "-i",
+        "--img_size",
+        type=str,
+        help="Size of input image (omit color channel, it will be appended as needed)",
+        required=True,
+    )
+    parser.add_argument(
+        "-d",
+        "--dtype",
+        type=str,
+        help="Dtype of input image",
+        choices=dtype_choices,
+        required=True,
+    )
+    parser.add_argument(
+        "--dtype_label",
+        type=str,
+        help="Dtype of input image",
+        choices=label_dtype_choices,
+        required=False,
+        default="uint8",
+    )
+    parser.add_argument(
+        "-f",
+        "--func_name",
+        type=str,
+        help="function to benchmark",
+        choices=func_name_choices,
+        required=True,
+    )
+    parser.add_argument(
+        "-t",
+        "--duration",
+        type=int,
+        help="time to run benchmark",
+        required=True,
+    )
+    parser.add_argument(
+        "--no_cpu",
+        action="store_true",
+        help="disable cpu measurements",
+        default=False,
+    )
 
     args = parser.parse_args()
     main(args)

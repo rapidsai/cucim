@@ -43,23 +43,41 @@ def main():
 
 
 @main.command()
-@click.argument('src_file', type=click.Path(exists=True))
-@click.argument('dest_folder', type=click.Path(
-    exists=True, dir_okay=True, file_okay=False), default=Path('.'))
-@click.option('--tile-size', type=int, default=256)
-@click.option('--overlap', type=int, default=0)
-@click.option('--num-workers', type=int, default=os.cpu_count())
-@click.option('--compression', type=str, default='jpeg')
-@click.option('--output-filename', type=str, default='image.tif')
-def convert(src_file, dest_folder, tile_size, overlap, num_workers,
-            compression, output_filename):
+@click.argument("src_file", type=click.Path(exists=True))
+@click.argument(
+    "dest_folder",
+    type=click.Path(exists=True, dir_okay=True, file_okay=False),
+    default=Path("."),
+)
+@click.option("--tile-size", type=int, default=256)
+@click.option("--overlap", type=int, default=0)
+@click.option("--num-workers", type=int, default=os.cpu_count())
+@click.option("--compression", type=str, default="jpeg")
+@click.option("--output-filename", type=str, default="image.tif")
+def convert(
+    src_file,
+    dest_folder,
+    tile_size,
+    overlap,
+    num_workers,
+    compression,
+    output_filename,
+):
     """Convert file format"""
     from .converter import tiff
+
     logging.basicConfig(level=logging.INFO)
 
     compression = compression.lower()
-    if compression in ['raw', 'none']:
+    if compression in ["raw", "none"]:
         compression = None
 
-    tiff.svs2tif(src_file, Path(dest_folder), tile_size, overlap, num_workers,
-                 compression, output_filename)
+    tiff.svs2tif(
+        src_file,
+        Path(dest_folder),
+        tile_size,
+        overlap,
+        num_workers,
+        compression,
+        output_filename,
+    )

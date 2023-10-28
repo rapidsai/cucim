@@ -8,23 +8,21 @@ from numcodecs.abc import Codec
 def ensure_ndarray(buf):
     if isinstance(buf, cp.ndarray):
         arr = buf
-    elif hasattr(buf, '__cuda_array_interface__'):
+    elif hasattr(buf, "__cuda_array_interface__"):
         arr = cp.asarray(buf, copy=False)
-    elif hasattr(buf, '__array_interface__'):
+    elif hasattr(buf, "__array_interface__"):
         arr = cp.asarray(np.asarray(buf))
     else:
         raise ValueError("expected a cupy.ndarray")
     return arr
 
 
-def ensure_contiguous_ndarray(
-    buf, max_buffer_size=None, flatten=True
-):
+def ensure_contiguous_ndarray(buf, max_buffer_size=None, flatten=True):
     """Convenience function to coerce `buf` to ndarray-like array.
     Also ensures that the returned value exports fully contiguous memory,
-    and supports the new-style buffer interface. If the optional max_buffer_size is
-    provided, raise a ValueError if the number of bytes consumed by the returned
-    array exceeds this value.
+    and supports the new-style buffer interface. If the optional max_buffer_size
+    is provided, raise a ValueError if the number of bytes consumed by the
+    returned array exceeds this value.
 
     Parameters
     ----------
@@ -54,7 +52,8 @@ def ensure_contiguous_ndarray(
     if arr.dtype == object:
         raise TypeError("object arrays are not supported")
 
-    # check for datetime or timedelta ndarray, the buffer interface doesn't support those
+    # check for datetime or timedelta ndarray, the buffer interface doesn't
+    # support those
     if arr.dtype.kind in "Mm":
         arr = arr.view(np.int64)
 
@@ -67,7 +66,9 @@ def ensure_contiguous_ndarray(
         raise ValueError("an array with contiguous memory is required")
 
     if max_buffer_size is not None and arr.nbytes > max_buffer_size:
-        msg = "Codec does not support buffers of > {} bytes".format(max_buffer_size)
+        msg = "Codec does not support buffers of > {} bytes".format(
+            max_buffer_size
+        )
         raise ValueError(msg)
 
     return arr
@@ -120,28 +121,34 @@ class LZ4NVCOMP(Codec):
 
     """
 
-    codec_id = 'lz4nvcomp'
+    codec_id = "lz4nvcomp"
     max_buffer_size = 0x7E000000
 
-    def __init__(self, compressor=None):  # , acceleration=1  (nvcomp lz4 doesn't take an acceleration argument)
+    def __init__(
+        self, compressor=None
+    ):  # , acceleration=1  (nvcomp lz4 doesn't take an acceleration argument)
         # self.acceleration = acceleration
         self._compressor = None
 
     def encode(self, buf):
         buf = ensure_contiguous_ndarray(buf, self.max_buffer_size)
-        if self._compressor is None: # or self._compressor.data_type != buf.dtype:
+        if (
+            self._compressor is None
+        ):  # or self._compressor.data_type != buf.dtype:
             self._compressor = LZ4Manager(data_type=buf.dtype)
         return self._compressor.compress(buf)  # , self.acceleration)
 
     def decode(self, buf, out=None):
         buf = ensure_contiguous_ndarray(buf, self.max_buffer_size)
-        if self._compressor is None: # or self._compressor.data_type != buf.dtype:
+        if (
+            self._compressor is None
+        ):  # or self._compressor.data_type != buf.dtype:
             self._compressor = LZ4Manager(data_type=buf.dtype)
         decompressed = self._compressor.decompress(buf)
         return ndarray_copy(decompressed, out)
 
     def __repr__(self):
-        r = '%s' % type(self).__name__
+        r = "%s" % type(self).__name__
         return r
 
 

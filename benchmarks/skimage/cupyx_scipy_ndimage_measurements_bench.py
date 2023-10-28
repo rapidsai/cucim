@@ -9,7 +9,6 @@ import numpy as np
 import pandas as pd
 import scipy
 import scipy.ndimage as ndi
-
 from _image_bench import ImageBench
 
 
@@ -27,7 +26,6 @@ class LabelBench(ImageBench):
         module_cpu=scipy.ndimage,
         module_gpu=cupyx.scipy.ndimage,
     ):
-
         self.contiguous_labels = contiguous_labels
         array_kwargs = dict(structure=structure)
         if "structure" in fixed_kwargs:
@@ -78,7 +76,6 @@ class MeasurementsBench(ImageBench):
         module_cpu=scipy.ndimage,
         module_gpu=cupyx.scipy.ndimage,
     ):
-
         self.nlabels = nlabels
         self.use_index = use_index
         super().__init__(
@@ -127,7 +124,10 @@ for shape in [(512, 512), (3840, 2160), (192, 192, 192)]:
     ndim = len(shape)
 
     for fname, var_kwargs in [
-        ("label", {}),  # dict(greyscale_mode=[False, True]) not available in cupyx
+        (
+            "label",
+            {},
+        ),  # dict(greyscale_mode=[False, True]) not available in cupyx
     ]:
         for contiguous_labels in [True, False]:
             if contiguous_labels:

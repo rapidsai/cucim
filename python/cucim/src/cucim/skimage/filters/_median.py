@@ -18,11 +18,22 @@ except ImportError:
         return reduce(mul, x)
 
 
-@deprecate_kwarg(kwarg_mapping={'selem': 'footprint'},
-                 removed_version="23.02.00",
-                 deprecated_version="22.02.00")
-def median(image, footprint=None, out=None, mode='nearest', cval=0.0,
-           behavior='ndimage', *, algorithm='auto', algorithm_kwargs={}):
+@deprecate_kwarg(
+    kwarg_mapping={"selem": "footprint"},
+    removed_version="23.02.00",
+    deprecated_version="22.02.00",
+)
+def median(
+    image,
+    footprint=None,
+    out=None,
+    mode="nearest",
+    cval=0.0,
+    behavior="ndimage",
+    *,
+    algorithm="auto",
+    algorithm_kwargs={},
+):
     """Return local median of an image.
 
     Parameters
@@ -70,12 +81,12 @@ def median(image, footprint=None, out=None, mode='nearest', cval=0.0,
         Determines which algorithm is used to compute the median. The default
         of 'auto' will attempt to use a histogram-based algorithm for 2D
         images with 8 or 16-bit integer data types. Otherwise a sorting-based
-        algorithm will be used. Note: this paramter is cuCIM-specific and does
+        algorithm will be used. Note: this parameter is cuCIM-specific and does
         not exist in upstream scikit-image.
     algorithm_kwargs : dict
         Any additional algorithm-specific keywords. Currently can only be used
         to set the number of parallel partitions for the 'histogram' algorithm.
-        (e.g. ``algorithm_kwargs={'partitions': 256}``). Note: this paramter is
+        (e.g. ``algorithm_kwargs={'partitions': 256}``). Note: this parameter is
         cuCIM-specific and does not exist in upstream scikit-image.
 
     Returns
@@ -115,11 +126,13 @@ def median(image, footprint=None, out=None, mode='nearest', cval=0.0,
     >>> med = median(img, disk(5))
 
     """
-    if behavior == 'rank':
-        if mode != 'nearest' or not np.isclose(cval, 0.0):
-            warn("Change 'behavior' to 'ndimage' if you want to use the "
-                 "parameters 'mode' or 'cval'. They will be discarded "
-                 "otherwise.")
+    if behavior == "rank":
+        if mode != "nearest" or not np.isclose(cval, 0.0):
+            warn(
+                "Change 'behavior' to 'ndimage' if you want to use the "
+                "parameters 'mode' or 'cval'. They will be discarded "
+                "otherwise."
+            )
         raise NotImplementedError("rank behavior not currently implemented")
         # TODO: implement median rank filter
         # return generic.median(image, selem=selem, out=out)
@@ -134,16 +147,16 @@ def median(image, footprint=None, out=None, mode='nearest', cval=0.0,
     else:
         footprint_shape = footprint.shape
 
-    if algorithm == 'sorting':
+    if algorithm == "sorting":
         can_use_histogram = False
-    elif algorithm in ['auto', 'histogram']:
+    elif algorithm in ["auto", "histogram"]:
         can_use_histogram, reason = _can_use_histogram(
             image, footprint, footprint_shape
         )
     else:
         raise ValueError(f"unknown algorithm: {algorithm}")
 
-    if algorithm == 'histogram' and not can_use_histogram:
+    if algorithm == "histogram" and not can_use_histogram:
         raise ValueError(
             "The histogram-based algorithm was requested, but it cannot "
             f"be used for this image and footprint (reason: {reason})."
@@ -153,7 +166,7 @@ def median(image, footprint=None, out=None, mode='nearest', cval=0.0,
     # Empirically, shapes above (13, 13) and above on RTX A6000 have faster
     # execution for the histogram-based approach.
     use_histogram = can_use_histogram
-    if algorithm == 'auto':
+    if algorithm == "auto":
         # prefer sorting-based algorithm if footprint shape is small
         use_histogram = use_histogram and prod(footprint_shape) > 150
 
@@ -183,7 +196,7 @@ def median(image, footprint=None, out=None, mode='nearest', cval=0.0,
                 footprint_shape if footprint is None else footprint,
                 mode=mode,
                 cval=cval,
-                **algorithm_kwargs
+                **algorithm_kwargs,
             )
             if output_array_provided:
                 out[:] = temp
@@ -195,14 +208,19 @@ def median(image, footprint=None, out=None, mode='nearest', cval=0.0,
         except KernelResourceError as e:
             # Fall back to sorting-based implementation if we encounter a
             # resource limit (e.g. insufficient shared memory per block).
-            warn("Kernel resource error encountered in histogram-based "
-                 f"median kernel: {e}\n"
-                 "Falling back to sorting-based median instead.")
+            warn(
+                "Kernel resource error encountered in histogram-based "
+                f"median kernel: {e}\n"
+                "Falling back to sorting-based median instead."
+            )
 
     if algorithm_kwargs:
-        warn(f"algorithm_kwargs={algorithm_kwargs} ignored for sorting-based "
-             f"algorithm")
+        warn(
+            f"algorithm_kwargs={algorithm_kwargs} ignored for sorting-based "
+            f"algorithm"
+        )
 
     size = footprint_shape if footprint is None else None
-    return ndi.median_filter(image, size=size, footprint=footprint, output=out,
-                             mode=mode, cval=cval)
+    return ndi.median_filter(
+        image, size=size, footprint=footprint, output=out, mode=mode, cval=cval
+    )

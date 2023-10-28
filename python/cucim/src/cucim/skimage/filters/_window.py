@@ -129,4 +129,4 @@ def window(window_type, shape, warp_kwargs=None):
     if warp_kwargs is None:
         warp_kwargs = {}
 
-    return warp(w, coords, mode='constant', cval=0.0, **warp_kwargs)
+    return warp(w, coords, mode="constant", cval=0.0, **warp_kwargs)

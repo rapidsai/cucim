@@ -97,7 +97,6 @@ def repeat(
 def _repeat(
     func, args, kwargs, n_repeat, name, n_warmup, max_duration, devices
 ):
-
     events_1 = []
     events_2 = []
 

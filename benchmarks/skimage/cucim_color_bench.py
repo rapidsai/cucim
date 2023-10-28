@@ -2,8 +2,6 @@ import argparse
 import os
 import pickle
 
-import cucim.skimage
-import cucim.skimage.color
 import cupy
 import cupy as cp
 import cupyx.scipy.ndimage
@@ -12,16 +10,31 @@ import pandas as pd
 import scipy
 import skimage
 import skimage.color
-
 from _image_bench import ImageBench
 
-func_name_choices = ['convert_colorspace', 'rgb2hed', 'hed2rgb', 'lab2lch', 'lch2lab', 'xyz2lab', 'lab2xyz', 'rgba2rgb', 'label2rgb']
+import cucim.skimage
+import cucim.skimage.color
+
+func_name_choices = [
+    "convert_colorspace",
+    "rgb2hed",
+    "hed2rgb",
+    "lab2lch",
+    "lch2lab",
+    "xyz2lab",
+    "lab2xyz",
+    "rgba2rgb",
+    "label2rgb",
+]
+
 
 class ColorBench(ImageBench):
     def set_args(self, dtype):
         if self.shape[-1] != 3:
             raise ValueError("shape must be 3 on the last axis")
-        imaged = cupy.testing.shaped_random(self.shape, xp=cp, dtype=dtype, scale=1.0)
+        imaged = cupy.testing.shaped_random(
+            self.shape, xp=cp, dtype=dtype, scale=1.0
+        )
         image = cp.asnumpy(imaged)
         self.args_cpu = (image,)
         self.args_gpu = (imaged,)
@@ -31,7 +44,9 @@ class RGBABench(ImageBench):
     def set_args(self, dtype):
         if self.shape[-1] != 4:
             raise ValueError("shape must be 4 on the last axis")
-        imaged = cupy.testing.shaped_random(self.shape, xp=cp, dtype=dtype, scale=1.0)
+        imaged = cupy.testing.shaped_random(
+            self.shape, xp=cp, dtype=dtype, scale=1.0
+        )
         image = cp.asnumpy(imaged)
         self.args_cpu = (image,)
         self.args_gpu = (imaged,)
@@ -79,21 +94,22 @@ class LabelBench(ImageBench):
             label = np.kron(a, np.ones(tiling, dtype=a.dtype))
         else:
             label = np.tile(a, tiling)
-        labeld = cp.asarray(label)
-        imaged = cupy.testing.shaped_random(labeld.shape, xp=cp, dtype=dtype, scale=1.0)
+        labelled = cp.asarray(label)
+        imaged = cupy.testing.shaped_random(
+            labelled.shape, xp=cp, dtype=dtype, scale=1.0
+        )
         image = cp.asnumpy(imaged)
         self.args_cpu = (
             label,
             image,
         )
         self.args_gpu = (
-            labeld,
+            labelled,
             imaged,
         )
 
 
 def main(args):
-
     pfile = "cucim_color_results.pickle"
     if os.path.exists(pfile):
         with open(pfile, "rb") as f:
@@ -103,21 +119,28 @@ def main(args):
 
     dtypes = [np.dtype(args.dtype)]
     # image sizes/shapes
-    shape = tuple(list(map(int,(args.img_size.split(',')))))
+    shape = tuple(list(map(int, (args.img_size.split(",")))))
     run_cpu = not args.no_cpu
 
     all_colorspaces = False
 
-    ndim = len(shape)
-
     for function_name in func_name_choices:
-
         if function_name != args.func_name:
             continue
 
-        if function_name == 'convert_colorspace':
+        if function_name == "convert_colorspace":
             if all_colorspaces:
-                color_spaces = ["RGB", "HSV", "RGB CIE", "XYZ", "YUV", "YIQ", "YPbPr", "YCbCr", "YDbDr"]
+                color_spaces = [
+                    "RGB",
+                    "HSV",
+                    "RGB CIE",
+                    "XYZ",
+                    "YUV",
+                    "YIQ",
+                    "YPbPr",
+                    "YCbCr",
+                    "YDbDr",
+                ]
             else:
                 color_spaces = ["RGB", "HSV", "YUV", "XYZ"]
             for fromspace in color_spaces:
@@ -139,7 +162,7 @@ def main(args):
                     results = B.run_benchmark(duration=args.duration)
                     all_results = pd.concat([all_results, results["full"]])
 
-        elif function_name == 'rgba2rgb':
+        elif function_name == "rgba2rgb":
             B = RGBABench(
                 function_name="rgba2rgb",
                 shape=shape[:-1] + (4,),
@@ -153,8 +176,7 @@ def main(args):
             results = B.run_benchmark(duration=args.duration)
             all_results = pd.concat([all_results, results["full"]])
 
-        elif function_name == 'label2rgb':
-
+        elif function_name == "label2rgb":
             for contiguous_labels in [True, False]:
                 if contiguous_labels:
                     index_str = "contiguous"
@@ -176,7 +198,12 @@ def main(args):
                 all_results = pd.concat([all_results, results["full"]])
 
         elif function_name in [
-            'rgb2hed', 'hed2rgb', 'lab2lch', 'lch2lab', 'xyz2lab', 'lab2xyz'
+            "rgb2hed",
+            "hed2rgb",
+            "lab2lch",
+            "lch2lab",
+            "xyz2lab",
+            "lab2xyz",
         ]:
             B = ColorBench(
                 function_name=function_name,
@@ -195,7 +222,7 @@ def main(args):
     all_results.to_csv(fbase + ".csv")
     all_results.to_pickle(pfile)
     try:
-        import tabular
+        import tabular  # noqa: F401
 
         with open(fbase + ".md", "wt") as f:
             f.write(all_results.to_markdown())
@@ -203,14 +230,59 @@ def main(args):
         pass
 
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Benchmarking cuCIM color conversion functions')
-    dtype_choices = ['float16', 'float32', 'float64', 'int8', 'int16', 'int32', 'int64', 'uint8', 'uint16', 'uint32', 'uint64']
-    parser.add_argument('-i','--img_size', type=str, help='Size of input image (omit color channel, it will be appended as needed)', required=True)
-    parser.add_argument('-d','--dtype', type=str, help='Dtype of input image', choices = dtype_choices, required=True)
-    parser.add_argument('-f','--func_name', type=str, help='function to benchmark', choices = func_name_choices, required=True)
-    parser.add_argument('-t','--duration', type=int, help='time to run benchmark', required=True)
-    parser.add_argument('--no_cpu', action='store_true', help='disable cpu measurements', default=False)
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="Benchmarking cuCIM color conversion functions"
+    )
+    dtype_choices = [
+        "float16",
+        "float32",
+        "float64",
+        "int8",
+        "int16",
+        "int32",
+        "int64",
+        "uint8",
+        "uint16",
+        "uint32",
+        "uint64",
+    ]
+    parser.add_argument(
+        "-i",
+        "--img_size",
+        type=str,
+        help="Size of input image (omit color channel, it will be appended as needed)",
+        required=True,
+    )
+    parser.add_argument(
+        "-d",
+        "--dtype",
+        type=str,
+        help="Dtype of input image",
+        choices=dtype_choices,
+        required=True,
+    )
+    parser.add_argument(
+        "-f",
+        "--func_name",
+        type=str,
+        help="function to benchmark",
+        choices=func_name_choices,
+        required=True,
+    )
+    parser.add_argument(
+        "-t",
+        "--duration",
+        type=int,
+        help="time to run benchmark",
+        required=True,
+    )
+    parser.add_argument(
+        "--no_cpu",
+        action="store_true",
+        help="disable cpu measurements",
+        default=False,
+    )
 
     args = parser.parse_args()
     main(args)

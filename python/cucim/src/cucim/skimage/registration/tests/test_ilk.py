@@ -7,9 +7,9 @@ from cucim.skimage._shared.utils import _supported_float_type
 from cucim.skimage.registration import optical_flow_ilk
 
 
-@pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])
-@pytest.mark.parametrize('gaussian', [True, False])
-@pytest.mark.parametrize('prefilter', [True, False])
+@pytest.mark.parametrize("dtype", [cp.float16, cp.float32, cp.float64])
+@pytest.mark.parametrize("gaussian", [True, False])
+@pytest.mark.parametrize("prefilter", [True, False])
 def test_2d_motion(dtype, gaussian, prefilter):
     # Generate synthetic data
     rnd = np.random.default_rng(0)
@@ -19,21 +19,30 @@ def test_2d_motion(dtype, gaussian, prefilter):
     image1 = image1.astype(dtype, copy=False)
     float_dtype = _supported_float_type(dtype)
     # Estimate the flow
-    flow = optical_flow_ilk(image0, image1,
-                            gaussian=gaussian, prefilter=prefilter,
-                            dtype=float_dtype)
+    flow = optical_flow_ilk(
+        image0,
+        image1,
+        gaussian=gaussian,
+        prefilter=prefilter,
+        dtype=float_dtype,
+    )
     assert flow.dtype == float_dtype
     # Assert that the average absolute error is less then half a pixel
     assert abs(flow - gt_flow).mean() < 0.5
 
     if dtype != float_dtype:
         with pytest.raises(ValueError):
-            optical_flow_ilk(image0, image1, gaussian=gaussian,
-                             prefilter=prefilter, dtype=dtype)
+            optical_flow_ilk(
+                image0,
+                image1,
+                gaussian=gaussian,
+                prefilter=prefilter,
+                dtype=dtype,
+            )
 
 
-@pytest.mark.parametrize('gaussian', [True, False])
-@pytest.mark.parametrize('prefilter', [True, False])
+@pytest.mark.parametrize("gaussian", [True, False])
+@pytest.mark.parametrize("prefilter", [True, False])
 def test_3d_motion(gaussian, prefilter):
     # Generate synthetic data
     rnd = np.random.default_rng(123)
@@ -41,8 +50,9 @@ def test_3d_motion(gaussian, prefilter):
     image0 = cp.asarray(image0)
     gt_flow, image1 = _sin_flow_gen(image0, npics=3)
     # Estimate the flow
-    flow = optical_flow_ilk(image0, image1, radius=5,
-                            gaussian=gaussian, prefilter=prefilter)
+    flow = optical_flow_ilk(
+        image0, image1, radius=5, gaussian=gaussian, prefilter=prefilter
+    )
 
     # Assert that the average absolute error is less then half a pixel
     assert abs(flow - gt_flow).mean() < 0.5
@@ -75,14 +85,14 @@ def test_optical_flow_dtype():
     image0 = cp.asarray(image0)
     gt_flow, image1 = _sin_flow_gen(image0)
     # Estimate the flow at double precision
-    flow_f64 = optical_flow_ilk(image0, image1, dtype='float64')
+    flow_f64 = optical_flow_ilk(image0, image1, dtype="float64")
 
-    assert flow_f64.dtype == 'float64'
+    assert flow_f64.dtype == "float64"
 
     # Estimate the flow at single precision
-    flow_f32 = optical_flow_ilk(image0, image1, dtype='float32')
+    flow_f32 = optical_flow_ilk(image0, image1, dtype="float32")
 
-    assert flow_f32.dtype == 'float32'
+    assert flow_f32.dtype == "float32"
 
     # Assert that floating point precision does not affect the quality
     # of the estimated flow
@@ -102,4 +112,4 @@ def test_wrong_dtype():
     rnd = np.random.default_rng(0)
     img = rnd.normal(size=(256, 256))
     with pytest.raises(ValueError):
-        u, v = optical_flow_ilk(img, img, dtype='int')
+        u, v = optical_flow_ilk(img, img, dtype="int")

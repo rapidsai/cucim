@@ -24,13 +24,19 @@ def _iterate_binary_func(binary_func, image, footprint, out):
     #     `brute_force=True`. Update here if a more efficient method for
     #     `iterations > 1` is added.
     fp, num_iter = footprint[0]
-    binary_func(image, structure=fp, output=out, iterations=num_iter,
-                brute_force=True)
+    binary_func(
+        image, structure=fp, output=out, iterations=num_iter, brute_force=True
+    )
     for fp, num_iter in footprint[1:]:
         # Note: out.copy() because the computation cannot be in-place!
         #       SciPy <= 1.7 did not automatically make a copy if needed.
-        binary_func(out.copy(), structure=fp, output=out, iterations=num_iter,
-                    brute_force=True)
+        binary_func(
+            out.copy(),
+            structure=fp,
+            output=out,
+            iterations=num_iter,
+            brute_force=True,
+        )
     return out
 
 
@@ -38,9 +44,11 @@ def _iterate_binary_func(binary_func, image, footprint, out):
 # default with the same dimension as the input image and size 3 along each
 # axis.
 @default_footprint
-@deprecate_kwarg(kwarg_mapping={'selem': 'footprint'},
-                 removed_version="23.02.00",
-                 deprecated_version="22.02.00")
+@deprecate_kwarg(
+    kwarg_mapping={"selem": "footprint"},
+    removed_version="23.02.00",
+    deprecated_version="22.02.00",
+)
 def binary_erosion(image, footprint=None, out=None):
     """Return fast binary morphological erosion of an image.
 
@@ -79,7 +87,7 @@ def binary_erosion(image, footprint=None, out=None):
     would apply a 9x1 footprint followed by a 1x9 footprint resulting in a net
     effect that is the same as ``footprint=cp.ones((9, 9))``, but with lower
     computational cost. Most of the builtin footprints such as
-    ``skimage.morphology.disk`` provide an option to automically generate a
+    ``skimage.morphology.disk`` provide an option to automatically generate a
     footprint sequence of this type.
 
     """
@@ -90,15 +98,18 @@ def binary_erosion(image, footprint=None, out=None):
         binary_func = functools.partial(ndi.binary_erosion, border_value=True)
         return _iterate_binary_func(binary_func, image, footprint, out)
 
-    ndi.binary_erosion(image, structure=footprint, output=out,
-                       border_value=True)
+    ndi.binary_erosion(
+        image, structure=footprint, output=out, border_value=True
+    )
     return out
 
 
 @default_footprint
-@deprecate_kwarg(kwarg_mapping={'selem': 'footprint'},
-                 removed_version="23.02.00",
-                 deprecated_version="22.02.00")
+@deprecate_kwarg(
+    kwarg_mapping={"selem": "footprint"},
+    removed_version="23.02.00",
+    deprecated_version="22.02.00",
+)
 def binary_dilation(image, footprint=None, out=None):
     """Return fast binary morphological dilation of an image.
 
@@ -137,7 +148,7 @@ def binary_dilation(image, footprint=None, out=None):
     would apply a 9x1 footprint followed by a 1x9 footprint resulting in a net
     effect that is the same as ``footprint=cp.ones((9, 9))``, but with lower
     computational cost. Most of the builtin footprints such as
-    ``skimage.morphology.disk`` provide an option to automically generate a
+    ``skimage.morphology.disk`` provide an option to automatically generate a
     footprint sequence of this type.
 
     """
@@ -152,9 +163,11 @@ def binary_dilation(image, footprint=None, out=None):
 
 
 @default_footprint
-@deprecate_kwarg(kwarg_mapping={'selem': 'footprint'},
-                 removed_version="23.02.00",
-                 deprecated_version="22.02.00")
+@deprecate_kwarg(
+    kwarg_mapping={"selem": "footprint"},
+    removed_version="23.02.00",
+    deprecated_version="22.02.00",
+)
 def binary_opening(image, footprint=None, out=None):
     """Return fast binary morphological opening of an image.
 
@@ -193,7 +206,7 @@ def binary_opening(image, footprint=None, out=None):
     would apply a 9x1 footprint followed by a 1x9 footprint resulting in a net
     effect that is the same as ``footprint=cp.ones((9, 9))``, but with lower
     computational cost. Most of the builtin footprints such as
-    ``skimage.morphology.disk`` provide an option to automically generate a
+    ``skimage.morphology.disk`` provide an option to automatically generate a
     footprint sequence of this type.
 
     """
@@ -203,9 +216,11 @@ def binary_opening(image, footprint=None, out=None):
 
 
 @default_footprint
-@deprecate_kwarg(kwarg_mapping={'selem': 'footprint'},
-                 removed_version="23.02.00",
-                 deprecated_version="22.02.00")
+@deprecate_kwarg(
+    kwarg_mapping={"selem": "footprint"},
+    removed_version="23.02.00",
+    deprecated_version="22.02.00",
+)
 def binary_closing(image, footprint=None, out=None):
     """Return fast binary morphological closing of an image.
 
@@ -244,7 +259,7 @@ def binary_closing(image, footprint=None, out=None):
     would apply a 9x1 footprint followed by a 1x9 footprint resulting in a net
     effect that is the same as ``footprint=cp.ones((9, 9))``, but with lower
     computational cost. Most of the builtin footprints such as
-    ``skimage.morphology.disk`` provide an option to automically generate a
+    ``skimage.morphology.disk`` provide an option to automatically generate a
     footprint sequence of this type.
 
     """

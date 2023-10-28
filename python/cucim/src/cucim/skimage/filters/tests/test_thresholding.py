@@ -1,12 +1,17 @@
 import cupy as cp
 import numpy as np
 import pytest
-from cupy.testing import (assert_allclose, assert_array_almost_equal,
-                          assert_array_equal)
+from cupy.testing import (
+    assert_allclose,
+    assert_array_almost_equal,
+    assert_array_equal,
+)
 from skimage import data
 from skimage.draw import disk
-from skimage.filters._multiotsu import (_get_multiotsu_thresh_indices,
-                                        _get_multiotsu_thresh_indices_lut)
+from skimage.filters._multiotsu import (
+    _get_multiotsu_thresh_indices,
+    _get_multiotsu_thresh_indices_lut,
+)
 
 # from cupyx.scipy import ndimage as ndi
 from cucim.skimage import util
@@ -15,17 +20,21 @@ from cucim.skimage._shared._warnings import expected_warnings
 from cucim.skimage._shared.utils import _supported_float_type
 from cucim.skimage.color import rgb2gray
 from cucim.skimage.exposure import histogram
-from cucim.skimage.filters.thresholding import (_cross_entropy,
-                                                threshold_isodata, threshold_li,
-                                                threshold_local, threshold_mean,
-                                                threshold_minimum,
-                                                threshold_multiotsu,
-                                                threshold_niblack,
-                                                threshold_otsu,
-                                                threshold_sauvola,
-                                                threshold_triangle,
-                                                threshold_yen,
-                                                try_all_threshold)
+from cucim.skimage.filters.thresholding import (
+    _cross_entropy,
+    threshold_isodata,
+    threshold_li,
+    threshold_local,
+    threshold_mean,
+    threshold_minimum,
+    threshold_multiotsu,
+    threshold_niblack,
+    threshold_otsu,
+    threshold_sauvola,
+    threshold_triangle,
+    threshold_yen,
+    try_all_threshold,
+)
 
 # transfer images to GPU
 astronautd = cp.array(data.astronaut())
@@ -54,7 +63,7 @@ class TestSimpleImage:
         fig, ax = try_all_threshold(self.image)
         all_texts = [axis.texts for axis in ax if axis.texts != []]
         text_content = [text.get_text() for x in all_texts for text in x]
-        assert 'RuntimeError' in text_content
+        assert "RuntimeError" in text_content
 
     def test_otsu(self):
         assert threshold_otsu(self.image) == 2
@@ -131,10 +140,11 @@ class TestSimpleImage:
         np.random.seed(0)
         imfloat = cp.array(np.random.rand(256, 256))
         assert 0.49 < threshold_isodata(imfloat, nbins=1024) < 0.51
-        assert all(0.49 < threshold_isodata(imfloat, nbins=1024,
-                                            return_all=True))
+        assert all(
+            0.49 < threshold_isodata(imfloat, nbins=1024, return_all=True)
+        )
 
-    @pytest.mark.parametrize('ndim', [2, 3])
+    @pytest.mark.parametrize("ndim", [2, 3])
     def test_threshold_local_gaussian(self, ndim):
         # fmt: off
         ref = cp.array(
@@ -162,9 +172,8 @@ class TestSimpleImage:
                               param=1 / 3)
         assert_array_equal(ref, image > out)
 
-    @pytest.mark.parametrize('ndim', [2, 3])
+    @pytest.mark.parametrize("ndim", [2, 3])
     def test_threshold_local_mean(self, ndim):
-
         # fmt: off
         ref = cp.array(
             [[False, False, False, False,  True],  # noqa
@@ -188,32 +197,35 @@ class TestSimpleImage:
                                   mode='reflect')
             assert_array_equal(ref, image > out)
 
-    @pytest.mark.parametrize('block_size', [(3, ), (3, 3, 3)])
+    @pytest.mark.parametrize("block_size", [(3,), (3, 3, 3)])
     def test_threshold_local_invalid_block_size(self, block_size):
         # len(block_size) != image.ndim
         with pytest.raises(ValueError):
-            threshold_local(self.image, block_size, method='mean')
+            threshold_local(self.image, block_size, method="mean")
 
-    @pytest.mark.parametrize('ndim', [2, 3])
+    @pytest.mark.parametrize("ndim", [2, 3])
     def test_threshold_local_median(self, ndim):
         ref = cp.array(
-            [[False, False, False, False,  True],  # noqa
-             [False, False,  True, False, False],  # noqa
-             [False, False,  True, False, False],  # noqa
-             [False, False,  True,  True, False],  # noqa
-             [False,  True, False, False, False]]  # noqa
+            [
+                [False, False, False, False, True],  # noqa
+                [False, False, True, False, False],  # noqa
+                [False, False, True, False, False],  # noqa
+                [False, False, True, True, False],  # noqa
+                [False, True, False, False, False],
+            ]  # noqa
         )
         if ndim == 2:
             image = self.image
         else:
-            image = cp.stack((self.image, ) * 5, axis=-1)
-            ref = cp.stack((ref, ) * 5, axis=-1)
-        out = threshold_local(image, 3, method='median', mode='reflect')
+            image = cp.stack((self.image,) * 5, axis=-1)
+            ref = cp.stack((ref,) * 5, axis=-1)
+        out = threshold_local(image, 3, method="median", mode="reflect")
         assert_array_equal(ref, image > out)
 
     def test_threshold_local_median_constant_mode(self):
-        out = threshold_local(self.image, 3, method='median',
-                              mode='constant', cval=20)
+        out = threshold_local(
+            self.image, 3, method="median", mode="constant", cval=20
+        )
 
         # fmt: off
         expected = cp.array(
@@ -324,7 +336,7 @@ def test_otsu_coins_image_as_float():
 
 def test_otsu_astro_image():
     img = util.img_as_ubyte(astronautd)
-    with expected_warnings(['grayscale']):
+    with expected_warnings(["grayscale"]):
         assert 109 < threshold_otsu(img) < 111
 
 
@@ -421,7 +433,7 @@ def test_li_pathological_arrays():
     e = cp.array([1, 1])
     f = cp.asarray([1, 2])
     arrays = [a, b, c, d, e, f]
-    with np.errstate(divide='ignore'):
+    with np.errstate(divide="ignore"):
         # ignoring "divide by zero encountered in log" error from np.log(0)
         thresholds = cp.array([float(threshold_li(arr)) for arr in arrays])
     assert cp.all(cp.isfinite(thresholds))
@@ -440,7 +452,7 @@ def test_yen_camera_image_histogram():
 
 def test_yen_camera_image_counts():
     camera = util.img_as_ubyte(camerad)
-    counts, bin_centers = histogram(camera.ravel(), 256, source_range='image')
+    counts, bin_centers = histogram(camera.ravel(), 256, source_range="image")
     assert 145 < threshold_yen(hist=counts) < 147
 
 
@@ -464,8 +476,16 @@ def test_isodata_camera_image():
     camera = util.img_as_ubyte(camerad)
 
     threshold = threshold_isodata(camera)
-    assert np.floor((camera[camera <= threshold].mean() +
-                     camera[camera > threshold].mean()) / 2.0) == threshold
+    assert (
+        np.floor(
+            (
+                camera[camera <= threshold].mean()
+                + camera[camera > threshold].mean()
+            )
+            / 2.0
+        )
+        == threshold
+    )
     assert threshold == 102
 
     assert_array_equal(threshold_isodata(camera, return_all=True), [102, 103])
@@ -473,14 +493,14 @@ def test_isodata_camera_image():
 
 def test_isodata_camera_image_histogram():
     camera = util.img_as_ubyte(camerad)
-    hist = histogram(camera.ravel(), 256, source_range='image')
+    hist = histogram(camera.ravel(), 256, source_range="image")
     threshold = threshold_isodata(hist=hist)
     assert threshold == 102
 
 
 def test_isodata_camera_image_counts():
     camera = util.img_as_ubyte(camerad)
-    counts, bin_centers = histogram(camera.ravel(), 256, source_range='image')
+    counts, bin_centers = histogram(camera.ravel(), 256, source_range="image")
     threshold = threshold_isodata(hist=counts)
     assert threshold == 102
 
@@ -489,8 +509,13 @@ def test_isodata_coins_image():
     coins = util.img_as_ubyte(coinsd)
 
     threshold = threshold_isodata(coins)
-    assert np.floor((coins[coins <= threshold].mean() +
-                     coins[coins > threshold].mean()) / 2.0) == threshold
+    assert (
+        np.floor(
+            (coins[coins <= threshold].mean() + coins[coins > threshold].mean())
+            / 2.0
+        )
+        == threshold
+    )
     assert threshold == 107
 
     assert_array_equal(threshold_isodata(coins, return_all=True), [107])
@@ -500,14 +525,24 @@ def test_isodata_moon_image():
     moon = util.img_as_ubyte(moond)
 
     threshold = threshold_isodata(moon)
-    assert np.floor((moon[moon <= threshold].mean() +
-                     moon[moon > threshold].mean()) / 2.0) == threshold
+    assert (
+        np.floor(
+            (moon[moon <= threshold].mean() + moon[moon > threshold].mean())
+            / 2.0
+        )
+        == threshold
+    )
     assert threshold == 86
 
     thresholds = threshold_isodata(moon, return_all=True)
     for threshold in thresholds:
-        assert np.floor((moon[moon <= threshold].mean() +
-                         moon[moon > threshold].mean()) / 2.0) == threshold
+        assert (
+            np.floor(
+                (moon[moon <= threshold].mean() + moon[moon > threshold].mean())
+                / 2.0
+            )
+            == threshold
+        )
     assert_array_equal(thresholds, [86, 87, 88, 122, 123, 124, 139, 140])
 
 
@@ -516,14 +551,24 @@ def test_isodata_moon_image_negative_int():
     moon -= 100
 
     threshold = threshold_isodata(moon)
-    assert np.floor((moon[moon <= threshold].mean() +
-                     moon[moon > threshold].mean()) / 2.0) == threshold
+    assert (
+        np.floor(
+            (moon[moon <= threshold].mean() + moon[moon > threshold].mean())
+            / 2.0
+        )
+        == threshold
+    )
     assert threshold == -14
 
     thresholds = threshold_isodata(moon, return_all=True)
     for threshold in thresholds:
-        assert np.floor((moon[moon <= threshold].mean() +
-                         moon[moon > threshold].mean()) / 2.0) == threshold
+        assert (
+            np.floor(
+                (moon[moon <= threshold].mean() + moon[moon > threshold].mean())
+                / 2.0
+            )
+            == threshold
+        )
     assert_array_equal(thresholds, [-14, -13, -12, 22, 23, 24, 39, 40])
 
 
@@ -554,21 +599,21 @@ def test_threshold_minimum():
 
 def test_threshold_minimum_histogram():
     camera = util.img_as_ubyte(camerad)
-    hist = histogram(camera.ravel(), 256, source_range='image')
+    hist = histogram(camera.ravel(), 256, source_range="image")
     threshold = threshold_minimum(hist=hist)
     assert_array_equal(threshold, 85)
 
 
 def test_threshold_minimum_deprecated_max_iter_kwarg():
     camera = util.img_as_ubyte(camerad)
-    hist = histogram(camera.ravel(), 256, source_range='image')
+    hist = histogram(camera.ravel(), 256, source_range="image")
     with expected_warnings(["`max_iter` is a deprecated argument"]):
         threshold_minimum(hist=hist, max_iter=5000)
 
 
 def test_threshold_minimum_counts():
     camera = util.img_as_ubyte(camerad)
-    counts, bin_centers = histogram(camera.ravel(), 256, source_range='image')
+    counts, bin_centers = histogram(camera.ravel(), 256, source_range="image")
     threshold = threshold_minimum(hist=counts)
     assert_array_equal(threshold, 85)
 
@@ -607,18 +652,34 @@ def test_triangle_float_images():
     text = cp.array(data.text())
     int_bins = int(text.max() - text.min() + 1)
     # Set nbins to match the uint case and threshold as float.
-    assert round(float(threshold_triangle(
-        text.astype(float), nbins=int_bins))) == 104
+    assert (
+        round(float(threshold_triangle(text.astype(float), nbins=int_bins)))
+        == 104
+    )
     # Check that rescaling image to floats in unit interval is equivalent.
     assert (
         round(float(threshold_triangle(text / 255.0, nbins=int_bins) * 255))
         == 104
     )
     # Repeat for inverted image.
-    assert round(float(threshold_triangle(
-        cp.invert(text).astype(float), nbins=int_bins))) == 151
-    assert round(float(threshold_triangle(
-        cp.invert(text) / 255, nbins=int_bins) * 255)) == 151
+    assert (
+        round(
+            float(
+                threshold_triangle(
+                    cp.invert(text).astype(float), nbins=int_bins
+                )
+            )
+        )
+        == 151
+    )
+    assert (
+        round(
+            float(
+                threshold_triangle(cp.invert(text) / 255, nbins=int_bins) * 255
+            )
+        )
+        == 151
+    )
 
 
 def test_triangle_flip():
@@ -677,7 +738,8 @@ def test_triangle_flip():
 
 
 @pytest.mark.parametrize(
-    "threshold_func", [threshold_local, threshold_niblack, threshold_sauvola],
+    "threshold_func",
+    [threshold_local, threshold_niblack, threshold_sauvola],
 )
 @pytest.mark.parametrize("dtype", [cp.uint8, cp.int16, cp.float16, cp.float32])
 def test_variable_dtypes(threshold_func, dtype):
@@ -709,11 +771,11 @@ def test_niblack_sauvola_pathological_image():
 
 
 def test_bimodal_multiotsu_hist():
-    for name in ['camera', 'moon', 'coins', 'text', 'clock', 'page']:
+    for name in ["camera", "moon", "coins", "text", "clock", "page"]:
         img = cp.array(getattr(data, name)())
         assert threshold_otsu(img) == threshold_multiotsu(img, 2)
 
-    for name in ['chelsea', 'coffee', 'astronaut', 'rocket']:
+    for name in ["chelsea", "coffee", "astronaut", "rocket"]:
         img = rgb2gray(cp.array(getattr(data, name)()))
         assert threshold_otsu(img) == threshold_multiotsu(img, 2)
 
@@ -726,13 +788,12 @@ def test_check_multiotsu_results():
                              [0, 1, 2, 3, 4]])
     # fmt: on
     for idx in range(3, 6):
-        thr_multi = threshold_multiotsu(image,
-                                        classes=idx)
+        thr_multi = threshold_multiotsu(image, classes=idx)
         assert len(thr_multi) == idx - 1
 
 
 def test_multiotsu_output():
-    image = cp.zeros((100, 100), dtype='int')
+    image = cp.zeros((100, 100), dtype="int")
     coords = [(25, 25), (50, 50), (75, 75)]
     values = [64, 128, 192]
     for coor, val in zip(coords, values):
@@ -745,7 +806,7 @@ def test_multiotsu_output():
 
 def test_multiotsu_astro_image():
     img = util.img_as_ubyte(astronautd)
-    with expected_warnings(['grayscale']):
+    with expected_warnings(["grayscale"]):
         assert_array_almost_equal(threshold_multiotsu(img), [58, 149])
 
 
@@ -782,13 +843,12 @@ def test_multiotsu_more_classes_then_values():
 @pytest.mark.skip("_get_multiotsu_thresh_indices functions not implemented yet")
 def test_multiotsu_lut():
     for classes in [2, 3, 4]:
-        for name in ['camera', 'moon', 'coins', 'text', 'clock', 'page']:
+        for name in ["camera", "moon", "coins", "text", "clock", "page"]:
             img = cp.array(getattr(data, name)())
-            prob, bin_centers = histogram(img.ravel(),
-                                          nbins=256,
-                                          source_range='image',
-                                          normalize=True)
-            prob = prob.astype('float32')
+            prob, bin_centers = histogram(
+                img.ravel(), nbins=256, source_range="image", normalize=True
+            )
+            prob = prob.astype("float32")
 
             result_lut = _get_multiotsu_thresh_indices_lut(prob, classes - 1)
             result = _get_multiotsu_thresh_indices(prob, classes - 1)
@@ -803,7 +863,7 @@ def test_multiotsu_missing_img_and_hist():
 
 def test_multiotsu_hist_parameter():
     for classes in [2, 3, 4]:
-        for name in ['camera', 'moon', 'coins', 'text', 'clock', 'page']:
+        for name in ["camera", "moon", "coins", "text", "clock", "page"]:
             img = cp.array(getattr(data, name)())
             sk_hist = histogram(img, nbins=256)
             #

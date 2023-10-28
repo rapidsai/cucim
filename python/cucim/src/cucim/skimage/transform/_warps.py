@@ -5,13 +5,21 @@ import numpy as np
 
 import cucim.skimage._vendored.ndimage as ndi
 
-from .._shared.utils import (_to_ndimage_mode, _validate_interpolation_order,
-                             channel_as_last_axis, convert_to_float,
-                             safe_as_int, warn)
+from .._shared.utils import (
+    _to_ndimage_mode,
+    _validate_interpolation_order,
+    channel_as_last_axis,
+    convert_to_float,
+    safe_as_int,
+    warn,
+)
 from .._vendored import pad
 from ..measure import block_reduce
-from ._geometric import (AffineTransform, ProjectiveTransform,
-                         SimilarityTransform)
+from ._geometric import (
+    AffineTransform,
+    ProjectiveTransform,
+    SimilarityTransform,
+)
 
 HOMOGRAPHY_TRANSFORMS = (
     SimilarityTransform,
@@ -55,20 +63,31 @@ def _preprocess_resize_output_shape(image, output_shape):
     input_shape = image.shape
     if output_ndim > image.ndim:
         # append dimensions to input_shape
-        input_shape += (1, ) * (output_ndim - image.ndim)
+        input_shape += (1,) * (output_ndim - image.ndim)
         image = cp.reshape(image, input_shape)
     elif output_ndim == image.ndim - 1:
         # multichannel case: append shape of last axis
-        output_shape = output_shape + (image.shape[-1], )
+        output_shape = output_shape + (image.shape[-1],)
     elif output_ndim < image.ndim:
-        raise ValueError("output_shape length cannot be smaller than the "
-                         "image number of dimensions")
+        raise ValueError(
+            "output_shape length cannot be smaller than the "
+            "image number of dimensions"
+        )
 
     return image, output_shape
 
 
-def resize(image, output_shape, order=None, mode='reflect', cval=0, clip=None,
-           preserve_range=False, anti_aliasing=None, anti_aliasing_sigma=None):
+def resize(
+    image,
+    output_shape,
+    order=None,
+    mode="reflect",
+    cval=0,
+    clip=None,
+    preserve_range=False,
+    anti_aliasing=None,
+    anti_aliasing_sigma=None,
+):
     """Resize image to match a certain size.
 
     Performs interpolation to up-size or down-size N-dimensional images. Note
@@ -151,9 +170,10 @@ def resize(image, output_shape, order=None, mode='reflect', cval=0, clip=None,
 
     if anti_aliasing is None:
         anti_aliasing = (
-            not input_type == bool and
-            not (cp.issubdtype(input_type, cp.integer) and order == 0) and
-            any(x < y for x, y in zip(output_shape, input_shape)))
+            not input_type == bool
+            and not (cp.issubdtype(input_type, cp.integer) and order == 0)
+            and any(x < y for x, y in zip(output_shape, input_shape))
+        )
 
     if input_type == bool and anti_aliasing:
         raise ValueError("anti_aliasing must be False for boolean images")
@@ -177,34 +197,59 @@ def resize(image, output_shape, order=None, mode='reflect', cval=0, clip=None,
             elif len(anti_aliasing_sigma) != len(factors):
                 raise ValueError("invalid anti_aliasing_sigma length")
             if any(sigma < 0 for sigma in anti_aliasing_sigma):
-                raise ValueError("Anti-aliasing standard deviation must be "
-                                 "greater than or equal to zero")
-            elif any(((sigma > 0) & (factor <= 1))
-                     for factor, sigma in zip(factors, anti_aliasing_sigma)):
-                warn("Anti-aliasing standard deviation greater than zero but "
-                     "not down-sampling along all axes")
+                raise ValueError(
+                    "Anti-aliasing standard deviation must be "
+                    "greater than or equal to zero"
+                )
+            elif any(
+                ((sigma > 0) & (factor <= 1))
+                for factor, sigma in zip(factors, anti_aliasing_sigma)
+            ):
+                warn(
+                    "Anti-aliasing standard deviation greater than zero but "
+                    "not down-sampling along all axes"
+                )
 
         # TODO: CuPy itself should do this grid-constant->constant conversion
         #       make upstream PR for SciPy-compatible behavior
-        _ndi_mode = {'grid-constant': 'constant', 'grid-wrap':'wrap'}.get(ndi_mode, ndi_mode)  # noqa
+        _ndi_mode = {"grid-constant": "constant", "grid-wrap": "wrap"}.get(
+            ndi_mode, ndi_mode
+        )  # noqa
         # keep ndi.gaussian_filter rather than cucim.skimage.filters.gaussian
         # to avoid undesired dtype coercion
-        filtered = ndi.gaussian_filter(image, anti_aliasing_sigma, cval=cval,
-                                       mode=_ndi_mode)
+        filtered = ndi.gaussian_filter(
+            image, anti_aliasing_sigma, cval=cval, mode=_ndi_mode
+        )
     else:
         filtered = image
 
     zoom_factors = [1 / f for f in factors]
-    out = ndi.zoom(filtered, zoom_factors, order=order, mode=ndi_mode,
-                   cval=cval, grid_mode=True)
+    out = ndi.zoom(
+        filtered,
+        zoom_factors,
+        order=order,
+        mode=ndi_mode,
+        cval=cval,
+        grid_mode=True,
+    )
     _clip_warp_output(image, out, mode, cval, order, clip)
     return out
 
 
 @channel_as_last_axis()
-def rescale(image, scale, order=None, mode='reflect', cval=0, clip=None,
-            preserve_range=False, anti_aliasing=None, anti_aliasing_sigma=None,
-            *, channel_axis=None):
+def rescale(
+    image,
+    scale,
+    order=None,
+    mode="reflect",
+    cval=0,
+    clip=None,
+    preserve_range=False,
+    anti_aliasing=None,
+    anti_aliasing_sigma=None,
+    *,
+    channel_axis=None,
+):
     """Scale image by a certain factor.
 
     Performs interpolation to up-scale or down-scale N-dimensional images.
@@ -285,10 +330,12 @@ def rescale(image, scale, order=None, mode='reflect', cval=0, clip=None,
     scale = np.atleast_1d(scale)
     multichannel = channel_axis is not None
     if len(scale) > 1:
-        if ((not multichannel and len(scale) != image.ndim) or
-                (multichannel and len(scale) != image.ndim - 1)):
-            raise ValueError("Supply a single scale, or one value per spatial "
-                             "axis")
+        if (not multichannel and len(scale) != image.ndim) or (
+            multichannel and len(scale) != image.ndim - 1
+        ):
+            raise ValueError(
+                "Supply a single scale, or one value per spatial " "axis"
+            )
         if multichannel:
             scale = np.concatenate((scale, [1]))
     orig_shape = np.asarray(image.shape)
@@ -296,21 +343,28 @@ def rescale(image, scale, order=None, mode='reflect', cval=0, clip=None,
     if multichannel:  # don't scale channel dimension
         output_shape[-1] = orig_shape[-1]
 
-    return resize(image, output_shape, order=order, mode=mode, cval=cval,
-                  clip=clip, preserve_range=preserve_range,
-                  anti_aliasing=anti_aliasing,
-                  anti_aliasing_sigma=anti_aliasing_sigma)
+    return resize(
+        image,
+        output_shape,
+        order=order,
+        mode=mode,
+        cval=cval,
+        clip=clip,
+        preserve_range=preserve_range,
+        anti_aliasing=anti_aliasing,
+        anti_aliasing_sigma=anti_aliasing_sigma,
+    )
 
 
-def _ndimage_affine(image, matrix, output_shape, order, mode, cval, clip,
-                    preserve_range):
+def _ndimage_affine(
+    image, matrix, output_shape, order, mode, cval, clip, preserve_range
+):
     """Thin wrapper around scipy.ndimage.affine_transform
 
     Validates input and handles clipping of output in the same way as ``warp``.
     """
     if image.size == 0:
-        raise ValueError("Cannot warp empty image with dimensions",
-                         image.shape)
+        raise ValueError("Cannot warp empty image with dimensions", image.shape)
 
     order = _validate_interpolation_order(image.dtype, order)
 
@@ -331,23 +385,29 @@ def _ndimage_affine(image, matrix, output_shape, order, mode, cval, clip,
     prefilter = order > 1
 
     ndi_mode = _to_ndimage_mode(mode)
-    warped = ndi.affine_transform(image, matrix, prefilter=prefilter,
-                                  mode=ndi_mode, order=order, cval=cval,
-                                  output_shape=tuple(output_shape))
+    warped = ndi.affine_transform(
+        image,
+        matrix,
+        prefilter=prefilter,
+        mode=ndi_mode,
+        order=order,
+        cval=cval,
+        output_shape=tuple(output_shape),
+    )
 
     _clip_warp_output(image, warped, mode, cval, order, clip)
     return warped
 
 
-def _ndimage_rotate(image, angle, resize, order, mode, cval, clip,
-                    preserve_range):
+def _ndimage_rotate(
+    image, angle, resize, order, mode, cval, clip, preserve_range
+):
     """Thin wrapper around scipy.ndimage.rotate
 
     Validates input and handles clipping of output in the same way as ``warp``.
     """
     if image.size == 0:
-        raise ValueError("Cannot warp empty image with dimensions",
-                         image.shape)
+        raise ValueError("Cannot warp empty image with dimensions", image.shape)
 
     order = _validate_interpolation_order(image.dtype, order)
 
@@ -361,14 +421,30 @@ def _ndimage_rotate(image, angle, resize, order, mode, cval, clip,
     prefilter = order > 1
 
     ndi_mode = _to_ndimage_mode(mode)
-    warped = ndi.rotate(image, angle, reshape=resize, prefilter=prefilter,
-                        mode=ndi_mode, order=order, cval=cval)
+    warped = ndi.rotate(
+        image,
+        angle,
+        reshape=resize,
+        prefilter=prefilter,
+        mode=ndi_mode,
+        order=order,
+        cval=cval,
+    )
     _clip_warp_output(image, warped, mode, cval, order, clip)
     return warped
 
 
-def rotate(image, angle, resize=False, center=None, order=None,
-           mode='constant', cval=0, clip=True, preserve_range=False):
+def rotate(
+    image,
+    angle,
+    resize=False,
+    center=None,
+    order=None,
+    mode="constant",
+    cval=0,
+    clip=True,
+    preserve_range=False,
+):
     """Rotate image by a certain angle around its center.
 
     Parameters
@@ -442,7 +518,7 @@ def rotate(image, angle, resize=False, center=None, order=None,
     rows, cols = image.shape[0], image.shape[1]
     if image.dtype == cp.float16:
         image = image.astype(cp.float32)
-    img_center = np.array((cols, rows)) / 2. - 0.5
+    img_center = np.array((cols, rows)) / 2.0 - 0.5
     if center is None:
         center = img_center
         centered = True
@@ -453,8 +529,14 @@ def rotate(image, angle, resize=False, center=None, order=None,
     if centered and not resize:
         # can use cupyx.scipy.ndimage.rotate
         return _ndimage_rotate(
-            image, angle, resize, order=order, mode=mode, cval=cval, clip=clip,
-            preserve_range=preserve_range
+            image,
+            angle,
+            resize,
+            order=order,
+            mode=mode,
+            cval=cval,
+            clip=clip,
+            preserve_range=preserve_range,
         )
 
     # rotation around center
@@ -509,8 +591,14 @@ def rotate(image, angle, resize=False, center=None, order=None,
     affine_params = cp.asarray(affine_params)
 
     return _ndimage_affine(
-        image, affine_params, output_shape=output_shape, order=order,
-        mode=mode, cval=cval, clip=clip, preserve_range=preserve_range
+        image,
+        affine_params,
+        output_shape=output_shape,
+        order=order,
+        mode=mode,
+        cval=cval,
+        clip=clip,
+        preserve_range=preserve_range,
     )
 
 
@@ -582,9 +670,19 @@ def _swirl_mapping(xy, center, rotation, strength, radius):
     return xy
 
 
-def swirl(image, center=None, strength=1, radius=100, rotation=0,
-          output_shape=None, order=None, mode='reflect', cval=0, clip=None,
-          preserve_range=False):
+def swirl(
+    image,
+    center=None,
+    strength=1,
+    radius=100,
+    rotation=0,
+    output_shape=None,
+    order=None,
+    mode="reflect",
+    cval=0,
+    clip=None,
+    preserve_range=False,
+):
     """Perform a swirl transformation.
 
     Parameters
@@ -636,14 +734,24 @@ def swirl(image, center=None, strength=1, radius=100, rotation=0,
     if center is None:
         center = np.array(image.shape)[:2][::-1] / 2
 
-    warp_args = {'center': center,
-                 'rotation': rotation,
-                 'strength': strength,
-                 'radius': radius}
+    warp_args = {
+        "center": center,
+        "rotation": rotation,
+        "strength": strength,
+        "radius": radius,
+    }
 
-    return warp(image, _swirl_mapping, map_args=warp_args,
-                output_shape=output_shape, order=order, mode=mode, cval=cval,
-                clip=clip, preserve_range=preserve_range)
+    return warp(
+        image,
+        _swirl_mapping,
+        map_args=warp_args,
+        output_shape=output_shape,
+        order=order,
+        mode=mode,
+        cval=cval,
+        clip=clip,
+        preserve_range=preserve_range,
+    )
 
 
 def _stackcopy(a, b):
@@ -805,7 +913,7 @@ def _clip_warp_output(input_image, output_image, mode, cval, order, clip):
     # Check if cval has been used such that it expands the effective input
     # range
     preserve_cval = (
-        mode == 'constant'
+        mode == "constant"
         and not min_val <= cval <= max_val
         and min_func(output_image) <= cval <= max_func(output_image)
     )
@@ -820,8 +928,17 @@ def _clip_warp_output(input_image, output_image, mode, cval, order, clip):
     cp.clip(output_image, min_val, max_val, out=output_image)
 
 
-def warp(image, inverse_map, map_args=None, output_shape=None, order=None,
-         mode='constant', cval=0., clip=None, preserve_range=False):
+def warp(
+    image,
+    inverse_map,
+    map_args=None,
+    output_shape=None,
+    order=None,
+    mode="constant",
+    cval=0.0,
+    clip=None,
+    preserve_range=False,
+):
     """Warp an image according to a given coordinate transformation.
 
     Parameters
@@ -966,8 +1083,7 @@ def warp(image, inverse_map, map_args=None, output_shape=None, order=None,
         map_args = {}
 
     if image.size == 0:
-        raise ValueError("Cannot warp empty image with dimensions",
-                         image.shape)
+        raise ValueError("Cannot warp empty image with dimensions", image.shape)
     order = _validate_interpolation_order(image.dtype, order)
 
     if image.dtype.kind == "c":
@@ -985,7 +1101,10 @@ def warp(image, inverse_map, map_args=None, output_shape=None, order=None,
     else:
         output_shape = safe_as_int(output_shape)
 
-    if isinstance(inverse_map, cp.ndarray) and inverse_map.shape == (3, 3,):
+    if isinstance(inverse_map, cp.ndarray) and inverse_map.shape == (
+        3,
+        3,
+    ):
         # inverse_map is a transformation matrix as numpy array,
         # this is only used for order >= 4.
         inverse_map = ProjectiveTransform(matrix=inverse_map)
@@ -999,9 +1118,11 @@ def warp(image, inverse_map, map_args=None, output_shape=None, order=None,
         # coordinates. This is only supported for 2(+1)-D images.
 
         if image.ndim < 2 or image.ndim > 3:
-            raise ValueError("Only 2-D images (grayscale or color) are "
-                             "supported, when providing a callable "
-                             "`inverse_map`.")
+            raise ValueError(
+                "Only 2-D images (grayscale or color) are "
+                "supported, when providing a callable "
+                "`inverse_map`."
+            )
 
         def coord_map(*args):
             return inverse_map(*args, **map_args)
@@ -1010,8 +1131,7 @@ def warp(image, inverse_map, map_args=None, output_shape=None, order=None,
             # Input image is 2D and has color channel, but output_shape is
             # given for 2-D images. Automatically add the color channel
             # dimensionality.
-            output_shape = (output_shape[0], output_shape[1],
-                            input_shape[2])
+            output_shape = (output_shape[0], output_shape[1], input_shape[2])
 
         coords = warp_coords(coord_map, output_shape)
 
@@ -1019,8 +1139,14 @@ def warp(image, inverse_map, map_args=None, output_shape=None, order=None,
     prefilter = order > 1
 
     ndi_mode = _to_ndimage_mode(mode)
-    warped = ndi.map_coordinates(image, coords, prefilter=prefilter,
-                                 mode=ndi_mode, order=order, cval=cval)
+    warped = ndi.map_coordinates(
+        image,
+        coords,
+        prefilter=prefilter,
+        mode=ndi_mode,
+        order=order,
+        cval=cval,
+    )
 
     _clip_warp_output(image, warped, mode, cval, order, clip)
     return warped
@@ -1089,8 +1215,16 @@ def _log_polar_mapping(output_coords, k_angle, k_radius, center):
 
 
 @channel_as_last_axis()
-def warp_polar(image, center=None, *, radius=None, output_shape=None,
-               scaling='linear', channel_axis=None, **kwargs):
+def warp_polar(
+    image,
+    center=None,
+    *,
+    radius=None,
+    output_shape=None,
+    scaling="linear",
+    channel_axis=None,
+    **kwargs,
+):
     """Remap image to polar or log-polar coordinates space.
 
     Parameters
@@ -1150,19 +1284,23 @@ def warp_polar(image, center=None, *, radius=None, output_shape=None,
     """
     multichannel = channel_axis is not None
     if image.ndim != 2 and not multichannel:
-        raise ValueError(f'Input array must be 2-dimensional when '
-                         f'`channel_axis=None`, got {image.ndim}')
+        raise ValueError(
+            f"Input array must be 2-dimensional when "
+            f"`channel_axis=None`, got {image.ndim}"
+        )
 
     if image.ndim != 3 and multichannel:
-        raise ValueError(f'Input array must be 3-dimensional when '
-                         f'`channel_axis` is specified, got {image.ndim}')
+        raise ValueError(
+            f"Input array must be 3-dimensional when "
+            f"`channel_axis` is specified, got {image.ndim}"
+        )
 
     if center is None:
         center = (np.array(image.shape)[:2] / 2) - 0.5
 
     if radius is None:
         w, h = np.array(image.shape)[:2] / 2
-        radius = np.sqrt(w ** 2 + h ** 2)
+        radius = np.sqrt(w**2 + h**2)
 
     if output_shape is None:
         height = 360
@@ -1173,20 +1311,21 @@ def warp_polar(image, center=None, *, radius=None, output_shape=None,
         height = output_shape[0]
         width = output_shape[1]
 
-    if scaling == 'linear':
+    if scaling == "linear":
         k_radius = width / radius
         map_func = _linear_polar_mapping
-    elif scaling == 'log':
+    elif scaling == "log":
         k_radius = width / math.log(radius)
         map_func = _log_polar_mapping
     else:
         raise ValueError("Scaling value must be in {'linear', 'log'}")
 
     k_angle = height / (2 * np.pi)
-    warp_args = {'k_angle': k_angle, 'k_radius': k_radius, 'center': center}
+    warp_args = {"k_angle": k_angle, "k_radius": k_radius, "center": center}
 
-    warped = warp(image, map_func, map_args=warp_args,
-                  output_shape=output_shape, **kwargs)
+    warped = warp(
+        image, map_func, map_args=warp_args, output_shape=output_shape, **kwargs
+    )
 
     return warped
 
@@ -1217,18 +1356,25 @@ def _local_mean_weights(old_size, new_size, grid_mode, dtype):
         new_breaks = cp.linspace(0, old_size, num=new_size + 1, dtype=dtype)
     else:
         old, new = old_size - 1, new_size - 1
-        old_breaks = pad(cp.linspace(0.5, old - 0.5, old, dtype=dtype),
-                         1, 'constant', constant_values=(0, old))
+        old_breaks = pad(
+            cp.linspace(0.5, old - 0.5, old, dtype=dtype),
+            1,
+            "constant",
+            constant_values=(0, old),
+        )
         if new == 0:
             val = np.inf
         else:
             val = 0.5 * old / new
-        new_breaks = pad(cp.linspace(val, old - val, new, dtype=dtype),
-                         1, 'constant', constant_values=(0, old))
+        new_breaks = pad(
+            cp.linspace(val, old - val, new, dtype=dtype),
+            1,
+            "constant",
+            constant_values=(0, old),
+        )
 
     upper = cp.minimum(new_breaks[1:, np.newaxis], old_breaks[np.newaxis, 1:])
-    lower = cp.maximum(new_breaks[:-1, np.newaxis],
-                       old_breaks[np.newaxis, :-1])
+    lower = cp.maximum(new_breaks[:-1, np.newaxis], old_breaks[np.newaxis, :-1])
 
     weights = cp.maximum(upper - lower, 0)
     weights /= weights.sum(axis=1, keepdims=True)
@@ -1236,8 +1382,14 @@ def _local_mean_weights(old_size, new_size, grid_mode, dtype):
     return weights
 
 
-def resize_local_mean(image, output_shape, grid_mode=True,
-                      preserve_range=False, *, channel_axis=None):
+def resize_local_mean(
+    image,
+    output_shape,
+    grid_mode=True,
+    preserve_range=False,
+    *,
+    channel_axis=None,
+):
     """Resize an array with the local mean / bilinear scaling.
 
     Parameters
@@ -1326,8 +1478,9 @@ def resize_local_mean(image, output_shape, grid_mode=True,
             # move channels to last position in output_shape
             channel_axis = channel_axis % image.ndim
             output_shape = (
-                output_shape[:channel_axis] + output_shape[channel_axis:] +
-                (nc,)
+                output_shape[:channel_axis]
+                + output_shape[channel_axis:]
+                + (nc,)
             )
         else:
             raise ValueError(
@@ -1336,13 +1489,13 @@ def resize_local_mean(image, output_shape, grid_mode=True,
             )
         resized = image
     else:
-        resized, output_shape = _preprocess_resize_output_shape(image,
-                                                                output_shape)
+        resized, output_shape = _preprocess_resize_output_shape(
+            image, output_shape
+        )
     resized = convert_to_float(resized, preserve_range)
     dtype = resized.dtype
 
-    for axis, (old_size, new_size) in enumerate(zip(image.shape,
-                                                    output_shape)):
+    for axis, (old_size, new_size) in enumerate(zip(image.shape, output_shape)):
         if old_size == new_size:
             continue
         weights = _local_mean_weights(old_size, new_size, grid_mode, dtype)

@@ -130,20 +130,32 @@ class TestPeakLocalMax:
         image = cp.asarray(np.random.uniform(size=(20, 30)))
         i, j = cp.mgrid[0:20, 0:30]
         labels = 1 + (i >= 10) + (j >= 15) * 2
-        result = peak.peak_local_max(image, labels=labels,
-                                     min_distance=1, threshold_rel=0,
-                                     num_peaks=cp.inf,
-                                     num_peaks_per_label=2)
+        result = peak.peak_local_max(
+            image,
+            labels=labels,
+            min_distance=1,
+            threshold_rel=0,
+            num_peaks=cp.inf,
+            num_peaks_per_label=2,
+        )
         assert len(result) == 8
-        result = peak.peak_local_max(image, labels=labels,
-                                     min_distance=1, threshold_rel=0,
-                                     num_peaks=cp.inf,
-                                     num_peaks_per_label=1)
+        result = peak.peak_local_max(
+            image,
+            labels=labels,
+            min_distance=1,
+            threshold_rel=0,
+            num_peaks=cp.inf,
+            num_peaks_per_label=1,
+        )
         assert len(result) == 4
-        result = peak.peak_local_max(image, labels=labels,
-                                     min_distance=1, threshold_rel=0,
-                                     num_peaks=2,
-                                     num_peaks_per_label=2)
+        result = peak.peak_local_max(
+            image,
+            labels=labels,
+            min_distance=1,
+            threshold_rel=0,
+            num_peaks=2,
+            num_peaks_per_label=2,
+        )
         assert len(result) == 2
 
     def test_num_peaks3D(self):
@@ -168,9 +180,14 @@ class TestPeakLocalMax:
                     image[imin:imax, jmin:jmax], footprint=footprint
                 )
         expected = expected == image
-        peak_idx = peak.peak_local_max(image, labels=labels, min_distance=1,
-                                       threshold_rel=0, footprint=footprint,
-                                       exclude_border=False)
+        peak_idx = peak.peak_local_max(
+            image,
+            labels=labels,
+            min_distance=1,
+            threshold_rel=0,
+            footprint=footprint,
+            exclude_border=False,
+        )
         result = cp.zeros_like(expected, dtype=bool)
         result[tuple(peak_idx.T)] = True
         assert (result == expected).all()
@@ -189,9 +206,14 @@ class TestPeakLocalMax:
                 )
         expected = cp.stack(cp.nonzero(expected == image), axis=-1)
         expected = expected[cp.argsort(image[tuple(expected.T)])[::-1]]
-        result = peak.peak_local_max(image, labels=labels, min_distance=1,
-                                     threshold_rel=0, footprint=footprint,
-                                     exclude_border=False)
+        result = peak.peak_local_max(
+            image,
+            labels=labels,
+            min_distance=1,
+            threshold_rel=0,
+            footprint=footprint,
+            exclude_border=False,
+        )
         result = result[cp.argsort(image[tuple(result.T)])[::-1]]
         assert (result == expected).all()
 
@@ -201,24 +223,23 @@ class TestPeakLocalMax:
         nd_image[3, 0, 0] = 1
         nd_image[2, 2, 2] = 1
         expected = cp.array([[2, 2, 2]], dtype=int)
-        expectedNoBorder = cp.array([[0, 0, 1], [2, 2, 2], [3, 0, 0]],
-                                    dtype=int)
-        result = peak.peak_local_max(nd_image, min_distance=2,
-                                     exclude_border=2)
+        expectedNoBorder = cp.array(
+            [[0, 0, 1], [2, 2, 2], [3, 0, 0]], dtype=int
+        )
+        result = peak.peak_local_max(nd_image, min_distance=2, exclude_border=2)
         assert_array_equal(result, expected)
         # Check that bools work as expected
         assert_array_equal(
             peak.peak_local_max(nd_image, min_distance=2, exclude_border=2),
-            peak.peak_local_max(nd_image, min_distance=2, exclude_border=True)
+            peak.peak_local_max(nd_image, min_distance=2, exclude_border=True),
         )
         assert_array_equal(
             peak.peak_local_max(nd_image, min_distance=2, exclude_border=0),
-            peak.peak_local_max(nd_image, min_distance=2, exclude_border=False)
+            peak.peak_local_max(nd_image, min_distance=2, exclude_border=False),
         )
 
         # Check both versions with no border
-        result = peak.peak_local_max(nd_image, min_distance=2,
-                                     exclude_border=0)
+        result = peak.peak_local_max(nd_image, min_distance=2, exclude_border=0)
         assert_array_equal(result, expectedNoBorder)
         peak_idx = peak.peak_local_max(nd_image, exclude_border=False)
         result = cp.zeros_like(nd_image, dtype=bool)
@@ -228,18 +249,25 @@ class TestPeakLocalMax:
     def test_empty(self):
         image = cp.zeros((10, 20))
         labels = cp.zeros((10, 20), int)
-        result = peak.peak_local_max(image, labels=labels,
-                                     footprint=cp.ones((3, 3), bool),
-                                     min_distance=1, threshold_rel=0,
-                                     exclude_border=False)
+        result = peak.peak_local_max(
+            image,
+            labels=labels,
+            footprint=cp.ones((3, 3), bool),
+            min_distance=1,
+            threshold_rel=0,
+            exclude_border=False,
+        )
         assert result.shape == (0, image.ndim)
 
     def test_empty_non2d_indices(self):
         image = cp.zeros((10, 10, 10))
-        result = peak.peak_local_max(image,
-                                     footprint=cp.ones((3, 3, 3), bool),
-                                     min_distance=1, threshold_rel=0,
-                                     exclude_border=False)
+        result = peak.peak_local_max(
+            image,
+            footprint=cp.ones((3, 3, 3), bool),
+            min_distance=1,
+            threshold_rel=0,
+            exclude_border=False,
+        )
         assert result.shape == (0, image.ndim)
 
     def test_one_point(self):
@@ -247,10 +275,14 @@ class TestPeakLocalMax:
         labels = cp.zeros((10, 20), int)
         image[5, 5] = 1
         labels[5, 5] = 1
-        peak_idx = peak.peak_local_max(image, labels=labels,
-                                       footprint=cp.ones((3, 3), bool),
-                                       min_distance=1, threshold_rel=0,
-                                       exclude_border=False)
+        peak_idx = peak.peak_local_max(
+            image,
+            labels=labels,
+            footprint=cp.ones((3, 3), bool),
+            min_distance=1,
+            threshold_rel=0,
+            exclude_border=False,
+        )
         result = np.zeros_like(image, dtype=bool)
         result[tuple(peak_idx.T)] = True
         assert cp.all(result == (labels == 1))
@@ -261,10 +293,14 @@ class TestPeakLocalMax:
         image[5, 5:6] = 1
         labels[5, 5:6] = 1
         expected = np.stack(np.where(labels == 1), axis=-1)
-        result = peak.peak_local_max(image, labels=labels,
-                                     footprint=cp.ones((3, 3), bool),
-                                     min_distance=1, threshold_rel=0,
-                                     exclude_border=False)
+        result = peak.peak_local_max(
+            image,
+            labels=labels,
+            footprint=cp.ones((3, 3), bool),
+            min_distance=1,
+            threshold_rel=0,
+            exclude_border=False,
+        )
         assert_array_equal(result, expected)
 
     def test_adjacent_and_different(self):
@@ -275,14 +311,22 @@ class TestPeakLocalMax:
         labels[5, 5:6] = 1
         expected = image == 1
         expected = cp.stack(cp.where(image == 1), axis=-1)
-        result = peak.peak_local_max(image, labels=labels,
-                                     footprint=cp.ones((3, 3), bool),
-                                     min_distance=1, threshold_rel=0,
-                                     exclude_border=False)
+        result = peak.peak_local_max(
+            image,
+            labels=labels,
+            footprint=cp.ones((3, 3), bool),
+            min_distance=1,
+            threshold_rel=0,
+            exclude_border=False,
+        )
         assert_array_equal(result, expected)
-        result = peak.peak_local_max(image, labels=labels,
-                                     min_distance=1, threshold_rel=0,
-                                     exclude_border=False)
+        result = peak.peak_local_max(
+            image,
+            labels=labels,
+            min_distance=1,
+            threshold_rel=0,
+            exclude_border=False,
+        )
         assert_array_equal(result, expected)
 
     def test_not_adjacent_and_different(self):
@@ -292,10 +336,14 @@ class TestPeakLocalMax:
         image[5, 8] = 0.5
         labels[image > 0] = 1
         expected = cp.stack(cp.where(labels == 1), axis=-1)
-        result = peak.peak_local_max(image, labels=labels,
-                                     footprint=cp.ones((3, 3), bool),
-                                     min_distance=1, threshold_rel=0,
-                                     exclude_border=False)
+        result = peak.peak_local_max(
+            image,
+            labels=labels,
+            footprint=cp.ones((3, 3), bool),
+            min_distance=1,
+            threshold_rel=0,
+            exclude_border=False,
+        )
         assert_array_equal(result, expected)
 
     def test_two_objects(self):
@@ -306,10 +354,14 @@ class TestPeakLocalMax:
         labels[5, 5] = 1
         labels[5, 15] = 2
         expected = cp.stack(cp.where(labels > 0), axis=-1)
-        result = peak.peak_local_max(image, labels=labels,
-                                     footprint=cp.ones((3, 3), bool),
-                                     min_distance=1, threshold_rel=0,
-                                     exclude_border=False)
+        result = peak.peak_local_max(
+            image,
+            labels=labels,
+            footprint=cp.ones((3, 3), bool),
+            min_distance=1,
+            threshold_rel=0,
+            exclude_border=False,
+        )
         assert_array_equal(result, expected)
 
     def test_adjacent_different_objects(self):
@@ -320,10 +372,14 @@ class TestPeakLocalMax:
         labels[5, 5] = 1
         labels[5, 6] = 2
         expected = cp.stack(cp.where(labels > 0), axis=-1)
-        result = peak.peak_local_max(image, labels=labels,
-                                     footprint=cp.ones((3, 3), bool),
-                                     min_distance=1, threshold_rel=0,
-                                     exclude_border=False)
+        result = peak.peak_local_max(
+            image,
+            labels=labels,
+            footprint=cp.ones((3, 3), bool),
+            min_distance=1,
+            threshold_rel=0,
+            exclude_border=False,
+        )
         assert_array_equal(result, expected)
 
     def test_four_quadrants(self):
@@ -339,11 +395,14 @@ class TestPeakLocalMax:
                     image[imin:imax, jmin:jmax], footprint=footprint
                 )
         expected = expected == image
-        peak_idx = peak.peak_local_max(image, labels=labels,
-                                       footprint=footprint,
-                                       min_distance=1,
-                                       threshold_rel=0,
-                                       exclude_border=False)
+        peak_idx = peak.peak_local_max(
+            image,
+            labels=labels,
+            footprint=footprint,
+            min_distance=1,
+            threshold_rel=0,
+            exclude_border=False,
+        )
         result = cp.zeros_like(image, dtype=bool)
         result[tuple(peak_idx.T)] = True
         assert cp.all(result == expected)
@@ -354,17 +413,21 @@ class TestPeakLocalMax:
         """
         image = cp.asarray(np.random.uniform(size=(10, 20)))
         footprint = cp.asarray([[1]])
-        peak_idx = peak.peak_local_max(image, labels=cp.ones((10, 20), int),
-                                       footprint=footprint,
-                                       min_distance=1, threshold_rel=0,
-                                       threshold_abs=-1,
-                                       exclude_border=False)
+        peak_idx = peak.peak_local_max(
+            image,
+            labels=cp.ones((10, 20), int),
+            footprint=footprint,
+            min_distance=1,
+            threshold_rel=0,
+            threshold_abs=-1,
+            exclude_border=False,
+        )
         result = cp.zeros_like(image, dtype=bool)
         result[tuple(peak_idx.T)] = True
         assert cp.all(result)
-        peak_idx = peak.peak_local_max(image, footprint=footprint,
-                                       threshold_abs=-1,
-                                       exclude_border=False)
+        peak_idx = peak.peak_local_max(
+            image, footprint=footprint, threshold_abs=-1, exclude_border=False
+        )
         result = cp.zeros_like(image, dtype=bool)
         result[tuple(peak_idx.T)] = True
         assert cp.all(result)
@@ -381,13 +444,14 @@ class TestPeakLocalMax:
             peak.peak_local_max(image, min_distance=6, threshold_rel=0),
             [[15, 15, 15]],
         )
-        assert sorted(peak.peak_local_max(image, min_distance=10,
-                                          threshold_rel=0,
-                                          exclude_border=False).tolist()) == \
-            [[5, 5, 5], [15, 15, 15]]
-        assert sorted(peak.peak_local_max(image, min_distance=5,
-                                          threshold_rel=0).tolist()) == \
-            [[5, 5, 5], [15, 15, 15]]
+        assert sorted(
+            peak.peak_local_max(
+                image, min_distance=10, threshold_rel=0, exclude_border=False
+            ).tolist()
+        ) == [[5, 5, 5], [15, 15, 15]]
+        assert sorted(
+            peak.peak_local_max(image, min_distance=5, threshold_rel=0).tolist()
+        ) == [[5, 5, 5], [15, 15, 15]]
 
     def test_4D(self):
         image = cp.zeros((30, 30, 30, 30))
@@ -421,8 +485,10 @@ class TestPeakLocalMax:
 
         image[2, 2] = 0
         with expected_warnings(["When min_distance < 1"]):
-            assert len(peak.peak_local_max(image,
-                                           min_distance=0)) == image.size - 1
+            assert (
+                len(peak.peak_local_max(image, min_distance=0))
+                == image.size - 1
+            )
 
     def test_peak_at_border(self):
         image = cp.full((10, 10), -2)
@@ -459,8 +525,10 @@ def test_exclude_border(indices):
         expected_peaks = 0
     else:
         expected_peaks = 1
-    assert len(peak.peak_local_max(
-        image, min_distance=1, exclude_border=True)) == expected_peaks
+    assert (
+        len(peak.peak_local_max(image, min_distance=1, exclude_border=True))
+        == expected_peaks
+    )
 
     # exclude_border = (1, 0) means it will be found unless it's on the edge of
     # the first dimension.
@@ -468,8 +536,9 @@ def test_exclude_border(indices):
         expected_peaks = 0
     else:
         expected_peaks = 1
-    assert len(peak.peak_local_max(
-        image, exclude_border=(1, 0))) == expected_peaks
+    assert (
+        len(peak.peak_local_max(image, exclude_border=(1, 0))) == expected_peaks
+    )
 
     # exclude_border = (0, 1) means it will be found unless it's on the edge of
     # the second dimension.
@@ -477,8 +546,9 @@ def test_exclude_border(indices):
         expected_peaks = 0
     else:
         expected_peaks = 1
-    assert len(peak.peak_local_max(
-        image, exclude_border=(0, 1))) == expected_peaks
+    assert (
+        len(peak.peak_local_max(image, exclude_border=(0, 1))) == expected_peaks
+    )
 
 
 def test_exclude_border_errors():
@@ -495,7 +565,7 @@ def test_exclude_border_errors():
     # exclude_border is a tuple of the right cardinality but contains
     # non-integer values.
     with pytest.raises(ValueError):
-        assert peak.peak_local_max(image, exclude_border=(1, 'a'))
+        assert peak.peak_local_max(image, exclude_border=(1, "a"))
 
     # exclude_border is a tuple of the right cardinality but contains a
     # negative value.
@@ -523,7 +593,7 @@ def test_input_values_with_labels():
     assert_array_equal(img, img_before)
 
 
-class TestProminentPeaks():
+class TestProminentPeaks:
     def test_isolated_peaks(self):
         image = cp.zeros((15, 15))
         x0, y0, i0 = (12, 8, 1)
@@ -578,10 +648,14 @@ class TestProminentPeaks():
         image[5, 5] = 1
         labels[5, 5] = 3
         labelsin = labels.copy()
-        peak.peak_local_max(image, labels=labels,
-                            footprint=cp.ones((3, 3), bool),
-                            min_distance=1, threshold_rel=0,
-                            exclude_border=False)
+        peak.peak_local_max(
+            image,
+            labels=labels,
+            footprint=cp.ones((3, 3), bool),
+            min_distance=1,
+            threshold_rel=0,
+            exclude_border=False,
+        )
         assert cp.all(labels == labelsin)
 
     def test_many_objects(self):
@@ -589,12 +663,13 @@ class TestProminentPeaks():
         x, y = np.indices((500, 500))
         x_c = x // 20 * 20 + 10
         y_c = y // 20 * 20 + 10
-        mask[(x - x_c) ** 2 + (y - y_c) ** 2 < 8 ** 2] = True
+        mask[(x - x_c) ** 2 + (y - y_c) ** 2 < 8**2] = True
         labels, num_objs = ndimage_cpu.label(mask)
         dist = ndimage_cpu.distance_transform_edt(mask)
 
         dist = cp.asarray(dist)
         labels = cp.asarray(labels)
-        local_max = peak.peak_local_max(dist, min_distance=20,
-                                        exclude_border=False, labels=labels)
+        local_max = peak.peak_local_max(
+            dist, min_distance=20, exclude_border=False, labels=labels
+        )
         assert len(local_max) == 625
