@@ -157,7 +157,7 @@ def distance_transform_edt(
         if len(unique_sampling) == 1:
             # In the isotropic case, can use the kernels without sample scaling
             # and just adjust the final distance accordingly.
-            scalar_sampling = float(unique_sampling)
+            scalar_sampling = float(unique_sampling[0])
             sampling = None
 
     if image.ndim == 3:
