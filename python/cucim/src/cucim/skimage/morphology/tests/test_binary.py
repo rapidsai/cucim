@@ -65,7 +65,7 @@ def _get_decomp_test_data(function, ndim=2):
         img = cp.zeros((17,) * ndim, dtype=cp.uint8)
         img[(8,) * ndim] = 1
     else:
-        img = cp.asarray(data.binary_blobs(32, n_dim=ndim, seed=1))
+        img = cp.asarray(data.binary_blobs(32, n_dim=ndim, rng=1))
     return img
 
 
