@@ -14,6 +14,12 @@ if [ "$(arch)" == "aarch64" && ${RAPIDS_BUILD_TYPE} == "pull-request" ]; then
     python ./ci/wheel_smoke_test.py
 else
     # skip `test_converter`` (which requires openslide-python and libopenslide)
-    # (a segfault was observed when using the system libopenslide-dev)
-    python -m pytest ./python/cucim -k "not test_converter"
+    # (A segfault was observed when using the system libopenslide-dev.
+    #  No segfault was seen when testing locally using conda-forge's openslide-python)
+    if [[ ${RAPIDS_PY_CUDA_SUFFIX} == "cu12" ]]; then
+        python -m pytest ./python/cucim -k "not test_converter"
+    else
+        # temporarily disable all clara tests to check if segfault is avoided
+        python -m pytest ./python/cucim -k "not clara"
+    fi
 fi
