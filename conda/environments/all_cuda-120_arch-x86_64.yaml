@@ -24,12 +24,14 @@ dependencies:
 - libnvjpeg-dev
 - libnvjpeg-static
 - libwebp-base
+- matplotlib
 - nbsphinx
 - ninja
 - numpy>=1.21.3
 - numpydoc
 - openslide-python>=1.1.2
 - pip
+- pooch>=1.6.0
 - pre-commit
 - psutil>=5.8.0
 - pydata-sphinx-theme
