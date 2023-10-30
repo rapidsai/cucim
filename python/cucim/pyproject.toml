@@ -225,9 +225,9 @@ exclude = '''
 # this is only to allow you to run codespell interactively
 # e.g. via
 #   codespell --toml python/cucim/pyproject.toml . -i 3 -w
-skip = "build*,dist,.cache,html,_build,_deps,3rdparty,_static,generated,latex,.git,*.ipynb,test_data/input/LICENSE-3rdparty,jitify_testing"
+skip = "build*,dist,.cache,html,_build,_deps,3rdparty/*,_static,generated,latex,.git,*.ipynb,test_data/input/LICENSE-3rdparty,jitify_testing"
 # ignore-regex = ""
-ignore-words-list = "ans,coo,boun,bui,gool,hart,lond,nd,paeth,unser,wronly"
+ignore-words-list = "ans,coo,boun,bui,gool,hart,lond,manuel,nd,paeth,unser,wronly"
 quiet-level = 3
 
 # to undo: ./test_data/input/LICENSE-3rdparty
