@@ -23,7 +23,7 @@ repos:
         files: (python|legate)/.*
         args: ["--config", "python/cucim/pyproject.toml"]
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.0.278
+    rev: v0.1.3
     hooks:
       - id: ruff
         files: python/.*$
