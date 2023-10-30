@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -107,7 +107,7 @@ PYBIND11_MODULE(_cucim, m)
     py::class_<CuImage, std::shared_ptr<CuImage>>(m, "CuImage", py::dynamic_attr()) //
         .def(py::init<const std::string&>(), doc::CuImage::doc_CuImage, py::call_guard<py::gil_scoped_release>(), //
              py::arg("path")) //
-        .def_static("cache", &py_cache, doc::CuImage::doc_cache, py::call_guard<py::gil_scoped_release>(), //
+        .def_static("cache", &py_cache, doc::CuImage::doc_cache, //
                     py::arg("type") = py::none()) //
         .def_static("profiler", &py_profiler, doc::CuImage::doc_profiler, py::call_guard<py::gil_scoped_release>()) //
         .def_property_readonly_static("is_trace_enabled", &py_is_trace_enabled, doc::CuImage::doc_is_trace_enabled,
@@ -200,7 +200,7 @@ PYBIND11_MODULE(_cucim, m)
             },
             py::call_guard<py::gil_scoped_release>());
 
-    py::class_<CuImageIterator<CuImage>>(m, "CuImageIterator") //
+    py::class_<CuImageIterator<CuImage>, std::shared_ptr<CuImageIterator<CuImage>>>(m, "CuImageIterator") //
         .def(py::init<std::shared_ptr<CuImage>, bool>(), doc::CuImageIterator::doc_CuImageIterator,
              py::arg("cuimg"), //
              py::arg("ending") = false, py::call_guard<py::gil_scoped_release>())
@@ -212,8 +212,8 @@ PYBIND11_MODULE(_cucim, m)
             py::call_guard<py::gil_scoped_release>())
         .def(
             "__iter__", //
-            [](CuImageIterator<CuImage>& it) { //
-                return CuImageIterator<CuImage>(it); //
+            [](CuImageIterator<CuImage>* it) { //
+                return it; //
             }, //
             py::call_guard<py::gil_scoped_release>())
         .def("__next__", &py_cuimage_iterator_next, py::call_guard<py::gil_scoped_release>())
@@ -517,11 +517,11 @@ py::object py_read_region(const CuImage& cuimg,
     auto loader = region_ptr->loader();
     if (batch_size > 1 || (loader && loader->size() > 1))
     {
-        auto iter_ptr = region_ptr->begin();
+        auto iter_ptr = std::make_shared<CuImageIterator<CuImage>>(region_ptr->shared_from_this());
 
         py::gil_scoped_acquire scope_guard;
 
-        py::object iter = py::cast(iter_ptr);
+        py::object iter = py::cast(iter_ptr, py::return_value_policy::take_ownership);
 
         return iter;
     }
@@ -557,6 +557,10 @@ py::object py_associated_image(const CuImage& cuimg, const std::string& name, co
 py::object py_cuimage_iterator_next(CuImageIterator<CuImage>& it)
 {
     bool stop_iteration = (it.index() == it.size());
+    if (stop_iteration)
+    {
+        throw py::stop_iteration();
+    }
 
     // Get the next batch of images.
     ++it;
@@ -572,10 +576,6 @@ py::object py_cuimage_iterator_next(CuImageIterator<CuImage>& it)
         if (loader)
         {
             _set_array_interface(cuimg_obj);
-        }
-        if (stop_iteration)
-        {
-            throw py::stop_iteration();
         }
         return cuimg_obj;
     }
