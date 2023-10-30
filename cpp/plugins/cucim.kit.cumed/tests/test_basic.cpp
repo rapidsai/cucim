@@ -16,7 +16,7 @@
 
 #include "config.h"
 
-#include <catch2/catch.hpp>
+#include <catch2/catch_test_macros.hpp>
 #include <chrono>
 
 TEST_CASE("Verify file", "[test_basic.cpp]")

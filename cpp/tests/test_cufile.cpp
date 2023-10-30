@@ -17,7 +17,7 @@
 #include "cucim/logger/timer.h"
 #include "config.h"
 
-#include <catch2/catch.hpp>
+#include <catch2/catch_test_macros.hpp>
 #include <fmt/format.h>
 #include <cucim/filesystem/cufile_driver.h>
 #include <chrono>

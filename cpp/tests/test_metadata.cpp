@@ -20,7 +20,7 @@
 #include "cucim/core/framework.h"
 #include "cucim/io/format/image_format.h"
 
-#include <catch2/catch.hpp>
+#include <catch2/catch_test_macros.hpp>
 #include <fmt/format.h>
 #include <chrono>
 #include <cstdlib>

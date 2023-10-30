@@ -60,6 +60,6 @@ target_link_libraries(cucim_tests
             Threads::Threads # -lpthread
         )
 
-include(ParseAndAddCatchTests)
-# See https://github.com/catchorg/Catch2/blob/master/docs/cmake-integration.md#parseandaddcatchtestscmake for other options
-ParseAndAddCatchTests(cucim_tests)
+include(Catch)
+# See https://github.com/catchorg/Catch2/blob/devel/docs/cmake-integration.md#catchcmake-and-catchaddtestscmake for other options
+catch_discover_tests(cucim_tests)
