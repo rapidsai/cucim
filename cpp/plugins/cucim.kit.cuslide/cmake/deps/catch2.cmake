@@ -17,7 +17,7 @@ if (NOT TARGET deps::catch2)
     FetchContent_Declare(
             deps-catch2
             GIT_REPOSITORY https://github.com/catchorg/Catch2.git
-            GIT_TAG v2.13.1
+            GIT_TAG v3.4.0
             GIT_SHALLOW TRUE
     )
     FetchContent_GetProperties(deps-catch2)
@@ -29,8 +29,9 @@ if (NOT TARGET deps::catch2)
 
     add_subdirectory(${deps-catch2_SOURCE_DIR} ${deps-catch2_BINARY_DIR} EXCLUDE_FROM_ALL)
 
-    # Include Append catch2's cmake module path so that we can use `include(ParseAndAddCatchTests)`.
-    list(APPEND CMAKE_MODULE_PATH "${deps-catch2_SOURCE_DIR}/contrib")
+    # Include Append catch2's cmake module path so that we can use `include(Catch)`.
+    # https://github.com/catchorg/Catch2/blob/devel/docs/cmake-integration.md#catchcmake-and-catchaddtestscmake
+    list(APPEND CMAKE_MODULE_PATH "${deps-catch2_SOURCE_DIR}/extras")
     set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} PARENT_SCOPE)
 
     add_library(deps::catch2 INTERFACE IMPORTED GLOBAL)
