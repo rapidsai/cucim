@@ -143,8 +143,6 @@ def main(args):
             # image sizes/shapes
             shape = tuple(list(map(int, (args.img_size.split(",")))))
 
-            # for shape in [(512, 512), (3840, 2160), (3840, 2160, 3), (192, 192, 192)]:
-
         if function_name in ["gaussian", "unsharp_mask"]:
             fixed_kwargs["channel_axis"] = -1 if shape[-1] == 3 else None
 

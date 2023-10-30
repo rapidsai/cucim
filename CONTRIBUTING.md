@@ -59,22 +59,21 @@ The following instructions are for developers and contributors to cuCIM OSS deve
 #### Python
 
 
-cuCIM uses [isort](https://readthedocs.org/projects/isort/), [ruff](https://docs.astral.sh/ruff/) and [black](https://black.readthedocs.io/en/stable/) to ensure a consistent code format
-throughout the project. `isort`, and `flake8` can be installed with
+cuCIM uses [ruff](https://docs.astral.sh/ruff/) and [black](https://black.readthedocs.io/en/stable/) to ensure a consistent code format
+throughout the project. `ruff`, and `black` can be installed with
 `conda` or `pip`:
 
 ```bash
-conda install isort black ruff
+conda install black ruff
 ```
 
 ```bash
-pip install isort black ruff
+pip install black ruff
 ```
 
 These tools are used to auto-format the Python code in the repository. Additionally, there is a CI check in place to enforce that the committed code follows our standards. To run only for the python/cucim folder, change to that folder and run
 
 ```bash
-isort .
 black .
 ruff .
 ```
@@ -82,9 +81,8 @@ ruff .
 To also check formatting in top-level folders like `benchmarks`, `examples` and `experiments`, these tools can also be run from the top level of the repository as follows:
 
 ```bash
-isort --settings-path="python/cucim/pyproject.toml" .
 black --config python/cucim/pyproject.toml .
-ruff .
+ruff --config python/cucim/pyproject.toml .
 ```
 
 In addition to these tools, [codespell](https://github.com/codespell-project/codespell) can be used to help diagnose and interactively fix spelling errors in both Python and C++ code. It can also be run from the top level of the repository in interactive mode using:

@@ -346,7 +346,10 @@ if __name__ == "__main__":
         "-i",
         "--img_size",
         type=str,
-        help="Size of input image (omit color channel, it will be appended as needed)",
+        help=(
+            "Size of input image (omit color channel, it will be appended "
+            "as needed)"
+        ),
         required=True,
     )
     parser.add_argument(
