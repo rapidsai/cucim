@@ -31,36 +31,29 @@ pip install "cmake>=3.26.4" ninja
 if ! command -v apt &> /dev/null
 then
     echo "apt package manager not found, attempting to use yum"
-    yum install yasm openslide-devel which -y
+    yum install yasm openslide-devel -y
 else
     echo "apt package manager was found"
     apt update
     apt install yasm libopenslide-dev -y
 fi
 
-echo `which cmake`
-echo `which python`
-echo `python --version`
-
 # First build the C++ lib using CMake via the run script
 ./run build_local libcucim ${CMAKE_BUILD_TYPE}
 
-# Build the C++ cuslide and cumed plugins
-./run build_local cuslide ${CMAKE_BUILD_TYPE}
-cp -P -r cpp/plugins/cucim.kit.cuslide/install/lib/* ./install/lib/
-# omit copying binaries as they don't go in the wheel
+# Current `pip wheel` build assumes all shared libraries exist in this path
+PYTHON_CLARA_SO_PREFIX_PATH="./python/cucim/src/cucim/clara/"
 
+# Build the C++ cuslide and cumed plugins
+# (omit copying binaries as they don't go in the wheel)
+./run build_local cuslide ${CMAKE_BUILD_TYPE}
+cp -P -r cpp/plugins/cucim.kit.cuslide/install/lib/* ${PYTHON_CLARA_SO_PREFIX_PATH}
 ./run build_local cumed ${CMAKE_BUILD_TYPE}
-cp -P -r cpp/plugins/cucim.kit.cumed/install/lib/* ./install/lib/
-# omit copying binaries as they don't go in the wheel
+cp -P -r cpp/plugins/cucim.kit.cumed/install/lib/* ${PYTHON_CLARA_SO_PREFIX_PATH}
 
 # Compile the Python bindings
 ./run build_local cucim ${CMAKE_BUILD_TYPE}
-
-# Copy the resulting cucim pybind11 shared library into the Python package src folder
-cp -P python/install/lib/* python/cucim/src/cucim/clara/
-# also need these plugin / libcucim shared libraries in the clara wheel
-cp -P install/lib/*.so python/cucim/src/cucim/clara/
+cp -P install/lib/*.so ${PYTHON_CLARA_SO_PREFIX_PATH}
 
 cd "${package_dir}"
 
