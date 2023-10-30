@@ -26,19 +26,21 @@ pip install --upgrade pip
 #CMake version in the container is too old, install a new version in the python venv
 pip install "cmake>=3.26.4" ninja
 
-echo `which cmake`
-
 # Building the libjpeg-turbo dependency requires YASM
 # Also need to install openslide dev libraries on the system
 if ! command -v apt &> /dev/null
 then
     echo "apt package manager not found, attempting to use yum"
-    yum install yasm openslide-devel -y
+    yum install yasm openslide-devel which -y
 else
     echo "apt package manager was found"
     apt update
     apt install yasm libopenslide-dev -y
 fi
+
+echo `which cmake`
+echo `which python`
+echo `python --version`
 
 # First build the C++ lib using CMake via the run script
 ./run build_local libcucim ${CMAKE_BUILD_TYPE}
