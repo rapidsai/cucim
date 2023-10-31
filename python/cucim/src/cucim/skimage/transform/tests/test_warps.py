@@ -81,7 +81,6 @@ def test_warp_callable():
     assert_array_almost_equal(outx, refx)
 
 
-@cp.testing.with_requires("cupy>=9.0.0b2")
 def test_warp_matrix():
     x = cp.zeros((5, 5), dtype=cp.float64)
     x[2, 2] = 1
@@ -116,7 +115,6 @@ def test_warp_nd():
         assert_array_almost_equal(outx, refx)
 
 
-@cp.testing.with_requires("cupy>=9.0.0b2")
 def test_warp_clip():
     x = cp.zeros((5, 5), dtype=cp.float64)
     x[2, 2] = 1
@@ -573,7 +571,6 @@ def test_warp_identity():
     assert cp.all(0 == warped_rgb_img[:, :, 1])
 
 
-@cp.testing.with_requires("cupy>=9.0.0b2")
 def test_warp_coords_example():
     image = cp.array(astronaut().astype(cp.float32))
     assert 3 == image.shape[2]
