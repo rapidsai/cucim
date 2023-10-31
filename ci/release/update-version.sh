@@ -40,9 +40,6 @@ echo "${NEXT_FULL_TAG}" > VERSION
 # update VERSION files used by C++/CMake (TODO: avoid these duplicate copies)
 NEXT_CPP_LONG_TAG=${NEXT_MAJOR}.${NEXT_MINOR}.${NEXT_PATCH}  # no leading 'v' or trailing 'a'
 echo "${NEXT_CPP_LONG_TAG}" > VERSION_CPP
-sed_runner "s/${CURRENT_LONG_TAG}/${NEXT_CPP_LONG_TAG}/g" python/cucim/VERSION
-sed_runner "s/${CURRENT_LONG_TAG}/${NEXT_CPP_LONG_TAG}/g" cpp/plugins/cucim.kit.cuslide/VERSION
-sed_runner "s/${CURRENT_LONG_TAG}/${NEXT_CPP_LONG_TAG}/g" cpp/plugins/cucim.kit.cumed/VERSION
 
 sed_runner "s#\[Version ${CURRENT_LONG_TAG}\](release_notes/v${CURRENT_LONG_TAG}.md)#\[Version ${NEXT_FULL_TAG}\](release_notes/v${NEXT_FULL_TAG}.md)#g" python/cucim/docs/index.md
 sed_runner "s/v${CURRENT_LONG_TAG}/v${NEXT_FULL_TAG}/g" python/cucim/docs/getting_started/index.md
