@@ -13,6 +13,8 @@
 # limitations under the License.
 #
 
+from ._version import __git_commit__, __version__
+
 submodules = []
 
 try:
@@ -25,11 +27,15 @@ except ImportError:
     pass
 
 try:
-    from .clara import CuImage, __version__, cli  # noqa: F401
+    from .clara import CuImage, cli  # noqa: F401
 
     _is_clara_available = True
     submodules += ["clara"]
 except ImportError:
-    __version__ = "23.12.00"
+    pass
 
-__all__ = submodules + ["__version__", "is_available"]  # noqa: F822
+__all__ = submodules + [  # noqa: F822
+    "__git_commit__",
+    "__version__",
+    "is_available",
+]

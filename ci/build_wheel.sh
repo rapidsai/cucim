@@ -5,29 +5,28 @@ set -euo pipefail
 
 package_name="cucim"
 package_dir="python/cucim"
+package_src_dir="${package_dir}/src"
 
 CMAKE_BUILD_TYPE="release"
 
 source rapids-configure-sccache
 source rapids-date-string
 
-# Use gha-tools rapids-pip-wheel-version to generate wheel version then
-# update the necessary files
-version_override="$(rapids-pip-wheel-version ${RAPIDS_DATE_STRING})"
+version=$(rapids-generate-version)
+commit=$(git rev-parse HEAD)
 
 RAPIDS_PY_CUDA_SUFFIX="$(rapids-wheel-ctk-name-gen ${RAPIDS_CUDA_VERSION})"
 
 # Patch project metadata files to include the CUDA version suffix and version override.
 pyproject_file="${package_dir}/pyproject.toml"
 
-# pyproject.toml versions
-sed -i "s/^version = .*/version = \"${VERSION}\"/g" ${pyproject_file}
-
-CUDA_SUFFIX="-${RAPIDS_PY_CUDA_SUFFIX}"
+PACKAGE_CUDA_SUFFIX="-${RAPIDS_PY_CUDA_SUFFIX}"
 # update package name to have the cuda suffix
-sed -i "s/name = \"${package_name}\"/name = \"${package_name}${CUDA_SUFFIX}\"/g" ${pyproject_file}
+sed -i "s/name = \"${package_name}\"/name = \"${package_name}${PACKAGE_CUDA_SUFFIX}\"/g" ${pyproject_file}
+echo "${version}" > VERSION
+sed -i "/^__git_commit__/ s/= .*/= \"${commit}\"/g" "${package_src_dir}/_version.py"
 
-if [[ $CUDA_SUFFIX == "-cu12" ]]; then
+if [[ ${PACKAGE_CUDA_SUFFIX} == "-cu12" ]]; then
     # change pyproject.toml to use CUDA 12.x version of cupy
     sed -i "s/cupy-cuda11x/cupy-cuda12x/g" ${pyproject_file}
 fi

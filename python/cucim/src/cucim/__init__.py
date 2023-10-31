@@ -40,6 +40,8 @@ _is_clara_available = False
 submodules = []
 submod_attrs = {}
 
+from ._version import __git_commit__, __version__
+
 try:
     import cupy
 
@@ -49,18 +51,13 @@ except ImportError:
     pass
 
 try:
-    from .clara import CuImage, __version__, cli
+    from .clara import CuImage, cli
 
     _is_clara_available = True
     submodules += ["clara"]
     submod_attrs["clara"] = ["CuImage", "cli"]
 except ImportError:
-    from ._version import get_versions
-
-    __version__ = get_versions()["version"]
-    del get_versions
-    del _version
-
+    pass
 
 import lazy_loader as lazy
 
@@ -68,7 +65,7 @@ __getattr__, __lazy_dir__, _ = lazy.attach_stub(__name__, __file__)
 
 
 def __dir__():
-    return __lazy_dir__() + ["__version__", "is_available"]
+    return __lazy_dir__() + ["__git_commit__", "__version__", "is_available"]
 
 
 def is_available(module_name: str = "") -> bool:

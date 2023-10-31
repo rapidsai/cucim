@@ -10,7 +10,7 @@ requires = [
 
 [project]
 name = "cucim"
-version = "23.12.00"
+dynamic = ["version"]
 description = "cuCIM - an extensible toolkit designed to provide GPU accelerated I/O, computer vision & image processing primitives for N-Dimensional images with a focus on biomedical imaging."
 # TODO: tried also adding CHANGELOG.md as in setup.py's long_description, but ruff complained about it
 readme = { file = "README.md", content-type = "text/markdown" }
@@ -94,15 +94,16 @@ cucim = "cucim.clara.cli:main"
 
 [tool.setuptools]
 license-files = ["LICENSE"]
-# By default, include-package-data is true in pyproject.toml, so you do
-# NOT have to specify this line.
 include-package-data = true
+
+[tool.setuptools.dynamic]
+version = {file = "src/cucim/VERSION"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
-mypkg = ["*.pyi", "*.h", "*.cu"]
+mypkg = ["*.pyi", "*.h", "*.cu", "VERSION"]
 
 [tool.isort]
 profile = "black"
