@@ -65,15 +65,12 @@ PYTHON_CLARA_SO_PREFIX_PATH="./python/cucim/src/cucim/clara/"
 
 # Build the C++ cuslide and cumed plugins
 # (omit copying binaries as they don't go in the wheel)
-echo "cuslide version: `cat cpp/plugins/cucim.kit.cuslide/VERSION`"
 ./run build_local cuslide ${CMAKE_BUILD_TYPE}
 cp -P -r cpp/plugins/cucim.kit.cuslide/install/lib/* ${PYTHON_CLARA_SO_PREFIX_PATH}
-echo "cumed version: `cat cpp/plugins/cucim.kit.cumed/VERSION`"
 ./run build_local cumed ${CMAKE_BUILD_TYPE}
 cp -P -r cpp/plugins/cucim.kit.cumed/install/lib/* ${PYTHON_CLARA_SO_PREFIX_PATH}
 
 # Compile the Python bindings
-echo "cucim bindings version: `cat VERSION_CPP`"
 ./run build_local cucim ${CMAKE_BUILD_TYPE}
 cp -P install/lib/*.so ${PYTHON_CLARA_SO_PREFIX_PATH}
 
