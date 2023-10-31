@@ -102,9 +102,10 @@ def test_tiff_iterator(testimg_tiff_stripe_4096x4096_256):
     See issue gh-598: https://github.com/rapidsai/cucim/issues/598
     """
 
-    import numpy as np
-    import random
     import os
+    import random
+
+    import numpy as np
     import psutil
 
     slide_path = testimg_tiff_stripe_4096x4096_256
