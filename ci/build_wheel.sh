@@ -28,6 +28,7 @@ PACKAGE_CUDA_SUFFIX="-${RAPIDS_PY_CUDA_SUFFIX}"
 sed -i "s/name = \"${package_name}\"/name = \"${package_name}${PACKAGE_CUDA_SUFFIX}\"/g" ${pyproject_file}
 echo "${version}" > VERSION
 echo "${version_cpp}" > VERSION_CPP
+echo "${version_cpp}" > "${package_dir}/VERSION"
 sed -i "/^__git_commit__/ s/= .*/= \"${commit}\"/g" "${package_src_dir}/_version.py"
 
 if [[ ${PACKAGE_CUDA_SUFFIX} == "-cu12" ]]; then

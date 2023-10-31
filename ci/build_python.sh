@@ -19,6 +19,7 @@ version_cpp=${version%a*}
 commit=$(git rev-parse HEAD)
 
 echo "${version}" > VERSION
+echo "${version_cpp}" > "${package_dir}/VERSION"
 echo "${version_cpp}" > VERSION_CPP
 sed -i "/^__git_commit__/ s/= .*/= \"${commit}\"/g" "${package_dir}/${package_name}/_version.py"
 
