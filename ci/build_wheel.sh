@@ -5,7 +5,7 @@ set -euo pipefail
 
 package_name="cucim"
 package_dir="python/cucim"
-package_src_dir="${package_dir}/src"
+package_src_dir="${package_dir}/src/${package_name}"
 
 CMAKE_BUILD_TYPE="release"
 
