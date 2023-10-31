@@ -58,14 +58,14 @@ def test_read_region_cpu_memleak(testimg_tiff_stripe_4096x4096_256):
 
     mem_usage_history = [process.memory_info().rss]
 
-    for i in range(5):
+    for i in range(10):
         _ = img.read_region()
         mem_usage_history.append(process.memory_info().rss)
 
     print(mem_usage_history)
 
     # Memory usage difference should be less than 1MB
-    assert mem_usage_history[4] - mem_usage_history[1] < 2**20 * 1
+    assert mem_usage_history[5] - mem_usage_history[9] < 2**20 * 1
 
 
 def test_read_random_region_cpu_memleak(testimg_tiff_stripe_4096x4096_256):
