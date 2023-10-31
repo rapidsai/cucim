@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.
+# Copyright (c) 2021-2023, NVIDIA CORPORATION.
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -199,3 +199,40 @@ def test_cuda_array_interface_support(testimg_tiff_stripe_32x24_16_jpeg):
     assert array_interface["version"] == 3
     assert array_interface["mask"] is None
     assert array_interface["stream"] == 1
+
+
+def test_tiff_iterator(testimg_tiff_stripe_4096x4096_256):
+    """Test that the iterator of read_region works as expected.
+    See issue gh-592: https://github.com/rapidsai/cucim/issues/592
+    """
+
+    level = 0
+    size = (256, 256)
+
+    with open_image_cucim(testimg_tiff_stripe_4096x4096_256) as slide:
+        x = slide.read_region([(0, 0), (0, 0)], size, level, num_workers=1)
+        x = slide.read_region([(0, 0), (0, 0)], size, level, num_workers=1)
+
+    with open_image_cucim(testimg_tiff_stripe_4096x4096_256) as slide:
+        x = slide.read_region([(0, 0), (0, 0)], size, level, num_workers=1)
+        _ = next(x)
+        x = slide.read_region([(0, 0), (0, 0)], size, level, num_workers=1)
+        x = slide.read_region([(0, 0), (0, 0)], size, level, num_workers=1)
+
+    with open_image_cucim(testimg_tiff_stripe_4096x4096_256) as slide:
+        x = slide.read_region([(0, 0), (0, 0)], size, level, num_workers=1)
+        _ = next(x)
+        x = slide.read_region([(0, 0), (0, 0)], size, level, num_workers=1)
+        _ = next(x)
+        x = slide.read_region([(0, 0), (0, 0)], size, level, num_workers=1)
+        _ = next(x)
+        x = slide.read_region(
+            [(0, 0), (0, 0), (0, 0)], size, level, num_workers=1
+        )
+        _ = next(x)
+        x = slide.read_region([(0, 0), (0, 0)], size, level, num_workers=1)
+        _ = next(x)
+        x = slide.read_region([(0, 0), (0, 0)], size, level, num_workers=1)
+        _ = next(x)
+        x = slide.read_region([(0, 0), (0, 0)], size, level, num_workers=1)
+        _ = next(x)

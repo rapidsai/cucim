@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2023, NVIDIA CORPORATION.
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -98,3 +98,73 @@ def test_read_random_region_cpu_memleak(testimg_tiff_stripe_4096x4096_256):
 
     # Memory usage difference should be smaller than (iteration) * 100 bytes
     assert mem_usage_history[-1] - mem_usage_history[1] < iteration * 100
+
+
+def test_tiff_iterator(testimg_tiff_stripe_4096x4096_256):
+    """Verify that the iterator of read_region does not cause a memory leak.
+    See issue gh-598: https://github.com/rapidsai/cucim/issues/598
+    """
+
+    import numpy as np
+    import random
+    import os
+    import psutil
+
+    slide_path = testimg_tiff_stripe_4096x4096_256
+
+    level = 0
+    size = (300, 300)
+    batch_size = 64
+    num_workers = 16
+
+    # This may be a non-integer number, to have the last iteration return a
+    # number of patches < batch_size
+    num_batches = 4.3
+    locations = [
+        (random.randint(0, 1000), random.randint(2000, 3000))
+        for _ in range(int(batch_size * num_batches))
+    ]
+    print(
+        f"Number of locations: {len(locations)}, batch size: {batch_size}, "
+        "number of workers: {num_workers}"
+    )
+
+    def get_total_mem_usage():
+        current_process = psutil.Process(os.getpid())
+        mem = current_process.memory_info().rss
+        for child in current_process.children(recursive=True):
+            mem += child.memory_info().rss
+        return mem
+
+    with open_image_cucim(slide_path) as slide:
+        start_mem = None
+        mem_usage_history = []
+        for i in range(101):
+            gen = slide.read_region(
+                locations,
+                size,
+                level,
+                batch_size=batch_size,
+                num_workers=num_workers,
+            )
+            for x in gen:
+                _ = np.asarray(x)
+
+            if i % 10 == 0:
+                if start_mem is None:
+                    start_mem = get_total_mem_usage()
+                    print(
+                        f"starting with: {(start_mem) // (1024 * 1024)}"
+                        " MB of memory consumption"
+                    )
+                else:
+                    memory_increase = (get_total_mem_usage() - start_mem) // (
+                        1024 * 1024
+                    )
+                    mem_usage_history.append(memory_increase)
+                    print(
+                        f"mem increase (iteration: {i:3d}): "
+                        "{memory_increase:4d} MB"
+                    )
+        # Memory usage difference should be less than 20MB
+        assert mem_usage_history[-1] - mem_usage_history[1] < 20
