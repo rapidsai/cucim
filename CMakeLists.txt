@@ -23,7 +23,7 @@ cmake_minimum_required(VERSION 3.18)
 
 # Set VERSION and BUILD
 unset(VERSION CACHE)
-file(STRINGS ${CMAKE_CURRENT_LIST_DIR}/VERSION VERSION)
+file(STRINGS ${CMAKE_CURRENT_LIST_DIR}/VERSION_CPP VERSION)
 set(PROJECT_VERSION_BUILD dev)
 
 # Append local cmake module path

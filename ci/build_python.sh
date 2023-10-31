@@ -13,9 +13,13 @@ package_name="cucim"
 package_dir="python/cucim/src"
 
 version=$(rapids-generate-version)
+# for CMake VERSION need to truncate any trailing 'a'
+version_cpp=${version%a*}
+
 commit=$(git rev-parse HEAD)
 
 echo "${version}" > VERSION
+echo "${version_cpp}" > VERSION_CPP
 sed -i "/^__git_commit__/ s/= .*/= \"${commit}\"/g" "${package_dir}/${package_name}/_version.py"
 
 rapids-logger "Begin py build"

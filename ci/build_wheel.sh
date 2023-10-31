@@ -15,6 +15,9 @@ source rapids-date-string
 version=$(rapids-generate-version)
 commit=$(git rev-parse HEAD)
 
+# for CMake VERSION_CPP need to truncate any trailing 'a'
+version_cpp=${version%a*}
+
 RAPIDS_PY_CUDA_SUFFIX="$(rapids-wheel-ctk-name-gen ${RAPIDS_CUDA_VERSION})"
 
 # Patch project metadata files to include the CUDA version suffix and version override.
@@ -24,6 +27,7 @@ PACKAGE_CUDA_SUFFIX="-${RAPIDS_PY_CUDA_SUFFIX}"
 # update package name to have the cuda suffix
 sed -i "s/name = \"${package_name}\"/name = \"${package_name}${PACKAGE_CUDA_SUFFIX}\"/g" ${pyproject_file}
 echo "${version}" > VERSION
+echo "${version_cpp}" > VERSION_CPP
 sed -i "/^__git_commit__/ s/= .*/= \"${commit}\"/g" "${package_src_dir}/_version.py"
 
 if [[ ${PACKAGE_CUDA_SUFFIX} == "-cu12" ]]; then
