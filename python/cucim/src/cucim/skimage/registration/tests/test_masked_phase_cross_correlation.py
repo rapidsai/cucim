@@ -75,8 +75,10 @@ def test_masked_registration_random_masks():
 def test_masked_registration_3d_contiguous_mask():
     """masked_register_translation should be able to register translations
     between volumes with contiguous masks."""
-    brain = pytest.importorskip("skimage.data.brain")
-    ref_vol = cp.array(brain()[:, ::2, ::2])
+    data = pytest.importorskip("skimage.data")
+    if not hasattr(data, "brain"):
+        pytest.skip("brain data not available in this version of scikit-image")
+    ref_vol = cp.array(data.brain()[:, ::2, ::2])
 
     offset = (1, -5, 10)
 

@@ -46,8 +46,12 @@ def test_blur_effect_channel_axis():
 
 def test_blur_effect_3d():
     """Test that the blur metric works on a 3D image."""
-    cells3d = pytest.importorskip("skimage.data.cells3d")
-    image_3d = cp.array(cells3d()[:, 1, :, :])  # grab just the nuclei
+    data = pytest.importorskip("skimage.data")
+    if not hasattr(data, "cells3d"):
+        pytest.skip(
+            "cells3d data not available in this version of scikit-image"
+        )
+    image_3d = cp.array(data.cells3d()[:, 1, :, :])  # grab just the nuclei
     B0 = blur_effect(image_3d)
     B1 = blur_effect(gaussian(image_3d, sigma=1))
     B2 = blur_effect(gaussian(image_3d, sigma=4))
