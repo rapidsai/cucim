@@ -83,7 +83,7 @@ def inwheelctx_enter(self):
     # with open(wheel_path, 'r') as f:
     #     wheel_text = f.read()
 
-    # wheel_text = wheel_text.replace('Root-Is-Purelib: true', 'Root-Is-Purelib: false')
+    # wheel_text = wheel_text.replace('Root-Is-Purelib: true', 'Root-Is-Purelib: false')  # noqa: E501
 
     # with open(wheel_path, 'w') as f:
     #     f.write(wheel_text)

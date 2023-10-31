@@ -42,13 +42,13 @@ def ensure_contiguous_ndarray(buf, max_buffer_size=None, flatten=True):
 
     Notes
     -----
-    This function will not create a copy under any circumstances, it is guaranteed to
-    return a view on memory exported by `buf`.
+    This function will not create a copy under any circumstances, it is
+    guaranteed to return a view on memory exported by `buf`.
     """
     arr = ensure_ndarray(buf)
 
-    # check for object arrays, these are just memory pointers, actual memory holding
-    # item data is scattered elsewhere
+    # check for object arrays, these are just memory pointers, actual memory
+    # holding item data is scattered elsewhere
     if arr.dtype == object:
         raise TypeError("object arrays are not supported")
 

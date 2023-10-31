@@ -1,7 +1,6 @@
 import os
 import pickle
 
-import cupy
 import cupy as cp
 import cupyx.scipy.ndimage
 import numpy as np
@@ -143,7 +142,7 @@ for shape in [(512, 512), (3840, 2160), (192, 192, 192)]:
                 structure=structure,
                 mask=None,
                 index_str=index_str,
-                # Note: Benchmark runner will change brute_force to True for the GPU
+                # Note: Benchmark runner will change brute_force to True for the GPU  # noqa: E501
                 fixed_kwargs=dict(output=None),
                 var_kwargs=var_kwargs,
             )

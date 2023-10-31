@@ -137,7 +137,7 @@ def main(args):
             False,
             True,
         ),
-        # blob detectors. fixed kwargs here are taken from the docstring examples
+        # blob detectors, fixed kwargs are taken from the docstring examples
         (
             "blob_dog",
             dict(threshold=0.05, min_sigma=10, max_sigma=40),
