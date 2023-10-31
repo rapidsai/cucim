@@ -252,10 +252,10 @@ dependencies:
           - pytest>=6.2.4
           - tifffile>=2022.7.28
           - pooch>=1.6.0  # needed to download scikit-image sample data
-          - matplotlib-base
       - output_types: [conda]
         packages:
-          # - imagecodecs>=2021.6.8
+          - imagecodecs>=2021.6.8
+          - matplotlib-base
           - openslide-python>=1.1.2
           - pip
           - pip:
@@ -272,5 +272,6 @@ dependencies:
       #     - openslide-python>=1.1.2; platform_machine=='x86_64'
       - output_types: [requirements, pyproject]
         packages:
+          - matplotlib
           - opencv-python-headless>=4.6
           - click
