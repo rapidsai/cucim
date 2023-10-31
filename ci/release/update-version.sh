@@ -21,6 +21,7 @@ CURRENT_LONG_TAG=${CURRENT_MAJOR}.${CURRENT_MINOR}.${CURRENT_PATCH}
 #Get <major>.<minor> for next version
 NEXT_MAJOR=$(echo $NEXT_FULL_TAG | awk '{split($0, a, "."); print a[1]}')
 NEXT_MINOR=$(echo $NEXT_FULL_TAG | awk '{split($0, a, "."); print a[2]}')
+NEXT_PATCH=$(echo $NEXT_FULL_TAG | awk '{split($0, a, "."); print a[3]}')
 NEXT_SHORT_TAG=${NEXT_MAJOR}.${NEXT_MINOR}
 
 echo "Preparing release $CURRENT_TAG => $NEXT_FULL_TAG"
@@ -37,9 +38,10 @@ sed_runner 's/release = .*/release = '"'${NEXT_FULL_TAG}'"'/g' docs/source/conf.
 # Centralized version file update
 echo "${NEXT_FULL_TAG}" > VERSION
 # update VERSION files used by C++/CMake (TODO: avoid these duplicate copies)
-sed_runner "s/${CURRENT_LONG_TAG}/${NEXT_FULL_TAG}/g" python/cucim/VERSION
-sed_runner "s/${CURRENT_LONG_TAG}/${NEXT_FULL_TAG}/g" cpp/plugins/cucim.kit.cuslide/VERSION
-sed_runner "s/${CURRENT_LONG_TAG}/${NEXT_FULL_TAG}/g" cpp/plugins/cucim.kit.cumed/VERSION
+NEXT_CPP_LONG_TAG=${NEXT_MAJOR}.${NEXT_MINOR}.${NEXT_PATCH}  # no leading 'v' or trailing 'a'
+sed_runner "s/${CURRENT_LONG_TAG}/${NEXT_CPP_LONG_TAG}/g" python/cucim/VERSION
+sed_runner "s/${CURRENT_LONG_TAG}/${NEXT_CPP_LONG_TAG}/g" cpp/plugins/cucim.kit.cuslide/VERSION
+sed_runner "s/${CURRENT_LONG_TAG}/${NEXT_CPP_LONG_TAG}/g" cpp/plugins/cucim.kit.cumed/VERSION
 
 sed_runner "s#\[Version ${CURRENT_LONG_TAG}\](release_notes/v${CURRENT_LONG_TAG}.md)#\[Version ${NEXT_FULL_TAG}\](release_notes/v${NEXT_FULL_TAG}.md)#g" python/cucim/docs/index.md
 sed_runner "s/v${CURRENT_LONG_TAG}/v${NEXT_FULL_TAG}/g" python/cucim/docs/getting_started/index.md
