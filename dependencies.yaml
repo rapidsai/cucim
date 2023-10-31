@@ -255,7 +255,7 @@ dependencies:
           - matplotlib-base
       - output_types: [conda]
         packages:
-          - imagecodecs>=2021.6.8
+          # - imagecodecs>=2021.6.8
           - openslide-python>=1.1.2
           - pip
           - pip:
@@ -264,11 +264,12 @@ dependencies:
         packages:
           - imagecodecs>=2021.6.8
           - openslide-python>=1.1.2
-      - output_types: [pyproject]
-        packages:
-          # skip packages on arm64 that don't provide a wheel
-          - imagecodecs>=2021.6.8; platform_machine=='x86_64'
-          - openslide-python>=1.1.2; platform_machine=='x86_64'
+      # temporarily remove imagecodecs / openslide-python from wheel tests
+      # - output_types: [pyproject]
+      #   packages:
+      #     # skip packages on arm64 that don't provide a wheel
+      #     - imagecodecs>=2021.6.8; platform_machine=='x86_64'
+      #     - openslide-python>=1.1.2; platform_machine=='x86_64'
       - output_types: [requirements, pyproject]
         packages:
           - opencv-python-headless>=4.6
