@@ -157,7 +157,8 @@ class ImageBench(object):
                 var_kwargs_cpu = self._update_kwargs_arrays(var_kwargs1, "cpu")
                 var_kwargs_gpu = self._update_kwargs_arrays(var_kwargs1, "gpu")
 
-                # Note: brute_force=True on 'gpu' because False is not implemented
+                # Note: brute_force=True on 'gpu' because False is not
+                # implemented
                 if "brute_force" in var_kwargs_gpu:
                     var_kwargs_gpu["brute_force"] = True
 

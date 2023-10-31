@@ -17,7 +17,7 @@ SAMPLE1D_EXPANDED_3 = cp.array(
 # to avoid bias, but as we are relying on the index map returned
 # by the scipy.ndimage distance transform, what actually happens
 # is determined by the upstream implementation of the distance
-# tansform, thus we don't give any guarantees for the edge case pixels.
+# transform, thus we don't give any guarantees for the edge case pixels.
 #
 # Regardless, it seems prudent to have a test including an edge case
 # so we can detect whether future upstream changes in scipy.ndimage

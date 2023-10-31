@@ -148,7 +148,7 @@ def experiment_thread(
         print(f"  hit: {cache.hit_count}   miss: {cache.miss_count}")
         print("  ", psutil.virtual_memory())
 
-        output_text = f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')},thread,{cache_strategy},{input_file},{start_location},{patch_size},{num_workers},{openslide_time},{cucim_time},{rasterio_time},{openslide_time / cucim_time},{rasterio_time / cucim_time},{cache_size},{cache.hit_count},{cache.miss_count}\n"   # noqa: E501
+        output_text = f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')},thread,{cache_strategy},{input_file},{start_location},{patch_size},{num_workers},{openslide_time},{cucim_time},{rasterio_time},{openslide_time / cucim_time},{rasterio_time / cucim_time},{cache_size},{cache.hit_count},{cache.miss_count}\n"  # noqa: E501
         with open("experiment.txt", "a+") as f:
             f.write(output_text)
         print(output_text)
