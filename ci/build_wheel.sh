@@ -17,7 +17,21 @@ version_override="$(rapids-pip-wheel-version ${RAPIDS_DATE_STRING})"
 
 RAPIDS_PY_CUDA_SUFFIX="$(rapids-wheel-ctk-name-gen ${RAPIDS_CUDA_VERSION})"
 
-ci/release/apply_wheel_modifications.sh ${version_override} "-${RAPIDS_PY_CUDA_SUFFIX}"
+# Patch project metadata files to include the CUDA version suffix and version override.
+pyproject_file="${package_dir}/pyproject.toml"
+
+# pyproject.toml versions
+sed -i "s/^version = .*/version = \"${VERSION}\"/g" ${pyproject_file}
+
+CUDA_SUFFIX="-${RAPIDS_PY_CUDA_SUFFIX}"
+# update package name to have the cuda suffix
+sed -i "s/name = \"${package_name}\"/name = \"${package_name}${CUDA_SUFFIX}\"/g" ${pyproject_file}
+
+if [[ $CUDA_SUFFIX == "-cu12" ]]; then
+    # change pyproject.toml to use CUDA 12.x version of cupy
+    sed -i "s/cupy-cuda11x/cupy-cuda12x/g" ${pyproject_file}
+fi
+
 echo "The package name and/or version was modified in the package source. The git diff is:"
 git diff
 
