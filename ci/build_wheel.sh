@@ -41,8 +41,12 @@ git diff
 
 pip install --upgrade pip
 
-#CMake version in the container is too old, install a new version in the python venv
-pip install "cmake>=3.26.4" ninja
+# Install pip build dependencies (not yet using pyproject.toml)
+rapids-dependency-file-generator \
+  --file_key "py_build" \
+  --output "requirements" \
+  --matrix "cuda=${RAPIDS_CUDA_VERSION%.*};arch=$(arch);py=${RAPIDS_PY_VERSION}" | tee build_requirements.txt
+pip install -r build_requirements.txt
 
 # Building the libjpeg-turbo dependency requires YASM
 # Also need to install openslide dev libraries on the system
