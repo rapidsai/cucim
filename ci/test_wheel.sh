@@ -13,8 +13,6 @@ python -m pip install $(echo ./dist/cucim*.whl)[test]
 if [[ "$(arch)" == "aarch64" && ${RAPIDS_BUILD_TYPE} == "pull-request" ]]; then
     python ./ci/wheel_smoke_test.py
 else
-    # skip `test_converter`` (which requires openslide-python and libopenslide)
-    # (A segfault was observed when using the system libopenslide-dev.
-    #  No segfault was seen when testing locally using conda-forge's openslide-python)
-    python -m pytest ./python/cucim -k "not test_converter"
+    # TODO: revisit enabling imagecodecs package during testing
+    python -m pytest ./python/cucim
 fi
