@@ -62,21 +62,7 @@ fi
 
 # First build the C++ lib using CMake via the run script
 echo "libcucim version: `cat VERSION_CPP`"
-./run build_local libcucim ${CMAKE_BUILD_TYPE}
-
-# Current `pip wheel` build assumes all shared libraries exist in this path
-PYTHON_CLARA_SO_PREFIX_PATH="./python/cucim/src/cucim/clara/"
-
-# Build the C++ cuslide and cumed plugins
-# (omit copying binaries as they don't go in the wheel)
-./run build_local cuslide ${CMAKE_BUILD_TYPE}
-cp -P -r cpp/plugins/cucim.kit.cuslide/install/lib/* ${PYTHON_CLARA_SO_PREFIX_PATH}
-./run build_local cumed ${CMAKE_BUILD_TYPE}
-cp -P -r cpp/plugins/cucim.kit.cumed/install/lib/* ${PYTHON_CLARA_SO_PREFIX_PATH}
-
-# Compile the Python bindings
-./run build_local cucim ${CMAKE_BUILD_TYPE}
-cp -P install/lib/*.so ${PYTHON_CLARA_SO_PREFIX_PATH}
+./run build_local all ${CMAKE_BUILD_TYPE}
 
 cd "${package_dir}"
 
