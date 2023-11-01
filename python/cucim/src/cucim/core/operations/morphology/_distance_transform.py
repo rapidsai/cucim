@@ -1,4 +1,4 @@
-import numpy as np
+import cupy as cp
 
 from ._pba_2d import _pba_2d
 from ._pba_3d import _pba_3d
@@ -153,11 +153,11 @@ def distance_transform_edt(
     """
     scalar_sampling = None
     if sampling is not None:
-        unique_sampling = np.unique(np.atleast_1d(sampling))
+        unique_sampling = cp.unique(cp.atleast_1d(sampling))
         if len(unique_sampling) == 1:
             # In the isotropic case, can use the kernels without sample scaling
             # and just adjust the final distance accordingly.
-            scalar_sampling = float(unique_sampling[0])
+            scalar_sampling = float(unique_sampling)
             sampling = None
 
     if image.ndim == 3:
