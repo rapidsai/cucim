@@ -62,7 +62,7 @@ Tracker = "https://github.com/rapidsai/cucim/issues"
 test = [
     "GPUtil>=1.4.0",
     "click",
-    "matplotlib-base",
+    "matplotlib",
     "opencv-python-headless>=4.6",
     "pooch>=1.6.0",
     "psutil>=5.8.0",
