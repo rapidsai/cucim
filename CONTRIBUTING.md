@@ -271,7 +271,7 @@ sed -i "s/cupy-cuda11x/cupy-cuda12x/g" python/cucim/pyproject.toml
 ```
 This will switch the CuPy dependency to one based on CUDA 12.x instead of 11.x.
 
-The wheel can then be build using.
+The wheel can then be built using:
 
 ```bash
 python -m pip wheel python/cucim/ -w dist -vvv --no-deps --disable-pip-version-check
