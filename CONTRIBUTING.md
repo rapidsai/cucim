@@ -263,19 +263,21 @@ conda install -y -c ${CONDA_BLD_DIR} -c conda-forge \
 
 ## Building a package (for distribution. Including a wheel package for pip)
 
-**Build**
+**Wheel Build**
 
-You can execute the following command to build a wheel file for pip.
+If you are using CUDA 12.x, please update pyproject.toml as follows before building the wheel
+```bash
+sed -i "s/cupy-cuda11x/cupy-cuda12x/g" python/cucim/pyproject.toml
+```
+This will switch the CuPy dependency to one based on CUDA 12.x instead of 11.x.
+
+The wheel can then be build using.
 
 ```bash
-./run build_package
+python -m pip wheel python/cucim/ -w dist -vvv --no-deps --disable-pip-version-check
 ```
 
-The command would use `./temp` folder as a local build folder and build a distribution package into `dist` folder using [dockcross](https://github.com/dockcross/dockcross)'s manylinux2014 docker image.
-
-`./run build_package` will reuse local `./temp` folder to reduce the build time.
-
-If C++ code or dependent packages are updated so the build is failing somehow, please retry it after deleting the `temp` folder under the repository root.
+**Note:** It is possible to build the wheel in this way even without compiling the C++ library first, but in that case the `cucim.clara` module will not be importable.
 
 **Install**
 
