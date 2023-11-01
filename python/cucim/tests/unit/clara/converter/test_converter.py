@@ -18,8 +18,9 @@ from pathlib import Path
 
 import pytest
 
-# skip if imagecodecs package not available (needed by ImageGenerator utility)
+# skip if imagecodecs and openslide packages are not available
 pytest.importorskip("imagecodecs")
+pytest.importorskip("openslide")
 
 
 def test_image_converter_stripe_4096x4096_256_jpeg(
