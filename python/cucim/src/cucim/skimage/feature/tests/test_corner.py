@@ -492,8 +492,8 @@ def test_corner_foerstner_dtype(dtype):
 def test_noisy_square_image():
     im = cp.zeros((50, 50)).astype(float)
     im[:25, :25] = 1.0
-    np.random.seed(seed=1234)  # result is specific to this NumPy seed
-    im = im + cp.asarray(np.random.uniform(size=im.shape)) * 0.2
+    rng = np.random.default_rng(1234)  # result is specific to this NumPy seed
+    im = im + cp.asarray(rng.uniform(size=im.shape)) * 0.2
 
     # # Moravec
     # results = peak_local_max(corner_moravec(im),

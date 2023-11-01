@@ -148,9 +148,14 @@ def wiener(image, psf, balance, reg=None, is_real=True, clip=True):
 
 
 @deprecate_kwarg(
-    {"random_state": "seed"},
+    {"random_state": "rng"},
     removed_version="23.08.00",
     deprecated_version="24.06.00",
+)
+@deprecate_kwarg(
+    {"seed": "rng"},
+    removed_version="23.08.00",
+    deprecated_version="24.12.00",
 )
 def unsupervised_wiener(
     image,
@@ -160,7 +165,7 @@ def unsupervised_wiener(
     is_real=True,
     clip=True,
     *,
-    seed=None,
+    rng=None,
 ):
     """Unsupervised Wiener-Hunt deconvolution.
 
@@ -186,12 +191,11 @@ def unsupervised_wiener(
     clip : boolean, optional
        True by default. If true, pixel values of the result above 1 or
        under -1 are thresholded for skimage pipeline compatibility.
-    seed : {None, int, `numpy.random.Generator`}, optional
-        If `seed` is None, the `numpy.random.Generator` singleton is used.
-        If `seed` is an int, a new ``Generator`` instance is used, seeded with
-        `seed`.
-        If `seed` is already a ``Generator`` instance, then that instance is
-        used.
+    rng : {`cupy.random.Generator`, int}, optional
+        Pseudo-random number generator.
+        By default, a PCG64 generator is used
+        (see :func:`cupy.random.default_rng`).
+        If `rng` is an int, it is used to seed the generator.
 
     Returns
     -------
@@ -233,7 +237,8 @@ def unsupervised_wiener(
     >>> img = color.rgb2gray(cp.array(data.astronaut()))
     >>> psf = cp.ones((5, 5)) / 25
     >>> img = ndi.uniform_filter(img, size=psf.shape)
-    >>> img += 0.1 * img.std() * cp.random.standard_normal(img.shape)
+    >>> rng = cp.random.default_rng()
+    >>> img += 0.1 * img.std() * rng.standard_normal(img.shape)
     >>> deconvolved_img = restoration.unsupervised_wiener(img, psf)
 
     Notes
@@ -321,11 +326,7 @@ def unsupervised_wiener(
     else:
         data_spectrum = uft.ufft2(image)
 
-    try:
-        rng = cp.random.default_rng(seed)
-    except AttributeError:
-        # older CuPy without default_rng
-        rng = cp.random.RandomState(seed)
+    rng = cp.random.default_rng(rng)
 
     # Gibbs sampling
     for iteration in range(params["max_num_iter"]):

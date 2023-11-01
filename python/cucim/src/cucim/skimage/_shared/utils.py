@@ -638,8 +638,7 @@ def check_random_state(seed):
     if isinstance(seed, cp.random.RandomState):
         return seed
     raise ValueError(
-        "%r cannot be used to seed a numpy.random.RandomState"
-        " instance" % seed
+        "%r cannot be used to seed a cupy.random.RandomState" " instance" % seed
     )
 
 
