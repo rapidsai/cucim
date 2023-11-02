@@ -42,7 +42,7 @@ class LabelBench(ImageBench):
     def _generate_labels(self, dtype):
         ndim = len(self.shape)
         blobs_kwargs = dict(
-            blob_size_fraction=0.05, volume_fraction=0.35, seed=5
+            blob_size_fraction=0.05, volume_fraction=0.35, rng=5
         )
         # binary blobs only creates square outputs
         labels = measure.label(
@@ -107,7 +107,7 @@ class RandomWalkerBench(ImageBench):
         n_dim = len(self.shape)
         data = cucim.skimage.img_as_float(
             cucim.skimage.data.binary_blobs(
-                length=max(self.shape), n_dim=n_dim, seed=1
+                length=max(self.shape), n_dim=n_dim, rng=1
             )
         )
         data = data[tuple(slice(s) for s in self.shape)]

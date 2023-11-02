@@ -51,10 +51,10 @@ class SegmentationMetricBench(ImageBench):
             run_cpu=run_cpu,
         )
 
-    def _generate_labels(self, dtype, seed=5):
+    def _generate_labels(self, dtype, rng=5):
         ndim = len(self.shape)
         blobs_kwargs = dict(
-            blob_size_fraction=0.05, volume_fraction=0.35, seed=seed
+            blob_size_fraction=0.05, volume_fraction=0.35, rng=rng
         )
         # binary blobs only creates square outputs
         labels = measure.label(
@@ -67,8 +67,8 @@ class SegmentationMetricBench(ImageBench):
         return labels.astype(dtype, copy=False)
 
     def set_args(self, dtype):
-        labels1_d = self._generate_labels(dtype, seed=5)
-        labels2_d = self._generate_labels(dtype, seed=3)
+        labels1_d = self._generate_labels(dtype, rng=5)
+        labels2_d = self._generate_labels(dtype, rng=3)
         labels1 = cp.asnumpy(labels1_d)
         labels2 = cp.asnumpy(labels2_d)
         self.args_cpu = (labels1, labels2)
