@@ -143,6 +143,19 @@ def test_unsupervised_wiener_deprecated_user_param():
             random_state=5,
         )
 
+    with expected_warnings(
+        [
+            "`seed` is a deprecated argument name",
+        ]
+    ):
+        restoration.unsupervised_wiener(
+            data,
+            otf,
+            reg=laplacian,
+            is_real=False,
+            seed=5,
+        )
+
 
 def test_image_shape():
     """Test that shape of output image in deconvolution is same as input.
