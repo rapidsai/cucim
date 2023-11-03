@@ -67,7 +67,6 @@ jobs:
       date: ${{ inputs.date }}
       sha: ${{ inputs.sha }}
   wheel-build:
-    needs: [cpp-build]
     secrets: inherit
     uses: rapidsai/shared-workflows/.github/workflows/wheels-build.yaml@branch-23.12
     with:
