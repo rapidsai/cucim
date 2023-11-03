@@ -48,17 +48,6 @@ rapids-dependency-file-generator \
   --matrix "cuda=${RAPIDS_CUDA_VERSION%.*};arch=$(arch);py=${RAPIDS_PY_VERSION}" | tee build_requirements.txt
 pip install -r build_requirements.txt
 
-# Building the libjpeg-turbo dependency requires YASM
-# Also need to install openslide dev libraries on the system
-if ! command -v apt &> /dev/null
-then
-    echo "apt package manager not found, attempting to use yum"
-    yum install yasm openslide-devel -y
-else
-    echo "apt package manager was found"
-    apt update
-    apt install yasm libopenslide-dev -y
-fi
 
 # First build the C++ lib using CMake via the run script
 echo "libcucim version: `cat VERSION_CPP`"
