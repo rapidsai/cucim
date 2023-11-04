@@ -1,11 +1,63 @@
 import cupy as cp
 
+from .._shared.utils import deprecate_kwarg
 from .dtype import img_as_float
 
 __all__ = ["random_noise"]
 
 
-def random_noise(image, mode="gaussian", seed=None, clip=True, **kwargs):
+def _normal(rng, mean, std, shape):
+    """Generate normal distribution using the provided rng
+
+    This function is only necessary because CuPy is currently missing
+    `rng.normal`.
+    """
+    if hasattr(rng, "normal"):
+        return rng.normal(mean, std, shape)
+    noise = rng.standard_normal(shape)
+    if isinstance(std, cp.ndarray) or std != 1.0:
+        noise *= std
+    if isinstance(mean, cp.ndarray) or mean != 0.0:
+        noise += mean
+    return noise
+
+
+def _bernoulli(p, shape, *, rng):
+    """
+    Bernoulli trials at a given probability of a given size.
+
+    This function is meant as a lower-memory alternative to calls such as
+    `np.random.choice([True, False], size=image.shape, p=[p, 1-p])`.
+    While `np.random.choice` can handle many classes, for the 2-class case
+    (Bernoulli trials), this function is much more efficient.
+
+    Parameters
+    ----------
+    p : float
+        The probability that any given trial returns `True`.
+    shape : int or tuple of ints
+        The shape of the ndarray to return.
+    rng : `cupy.random.Generator`
+        ``Generator`` instance, typically obtained via
+        `cp.random.default_rng()`.
+
+    Returns
+    -------
+    out : ndarray[bool]
+        The results of Bernoulli trials in the given `size` where success
+        occurs with probability `p`.
+    """
+    if p == 0:
+        return cp.zeros(shape, dtype=bool)
+    if p == 1:
+        return cp.ones(shape, dtype=bool)
+    return rng.random(shape) <= p
+
+
+@deprecate_kwarg(
+    {"seed": "rng"}, deprecated_version="23.12", removed_version="24.12"
+)
+def random_noise(image, mode="gaussian", rng=None, clip=True, **kwargs):
     """
     Function to add random noise of various types to a floating-point image.
 
@@ -34,9 +86,14 @@ def random_noise(image, mode="gaussian", seed=None, clip=True, **kwargs):
         'speckle'
             Multiplicative noise using ``out = image + n * image``, where ``n``
             is Gaussian noise with specified mean & variance.
-    seed : int, optional
-        If provided, this will set the random seed before generating noise,
-        for valid pseudo-random comparisons.
+    rng : {`cupy.random.Generator`, int}, optional
+        Pseudo-random number generator.
+        By default, a PCG64 generator is used
+        (see :func:`cupy.random.default_rng`).
+        If `rng` is an int, it is used to seed the generator.
+
+        Note: `cupy.random.Generator` is not yet fully supported. Please use an
+        integer seed instead.
     clip : bool, optional
         If True (default), the output will be clipped after noise applied
         for modes `'speckle'`, `'poisson'`, and `'gaussian'`. This is
@@ -99,8 +156,8 @@ def random_noise(image, mode="gaussian", seed=None, clip=True, **kwargs):
         low_clip = 0.0
 
     image = img_as_float(image)
-    if seed is not None:
-        cp.random.seed(seed=seed)
+
+    rng = cp.random.default_rng(rng)
 
     allowedtypes = {
         "gaussian": "gaussian_values",
@@ -139,9 +196,7 @@ def random_noise(image, mode="gaussian", seed=None, clip=True, **kwargs):
         kwargs.setdefault(kw, kwdefaults[kw])
 
     if mode == "gaussian":
-        noise = cp.random.normal(
-            kwargs["mean"], kwargs["var"] ** 0.5, image.shape
-        )
+        noise = _normal(rng, kwargs["mean"], kwargs["var"] ** 0.5, image.shape)
         out = image + noise
 
     elif mode == "localvar":
@@ -153,8 +208,8 @@ def random_noise(image, mode="gaussian", seed=None, clip=True, **kwargs):
 
         # CuPy Backend: Must supply size argument to get around a CuPy bug
         #       https://github.com/cupy/cupy/pull/4457
-        out = image + cp.random.normal(
-            0, kwargs["local_vars"] ** 0.5, kwargs["local_vars"].shape
+        out = image + _normal(
+            rng, 0, kwargs["local_vars"] ** 0.5, kwargs["local_vars"].shape
         )
 
     elif mode == "poisson":
@@ -168,7 +223,7 @@ def random_noise(image, mode="gaussian", seed=None, clip=True, **kwargs):
             image = (image + 1.0) / (old_max + 1.0)
 
         # Generating noise for each unique value in image.
-        out = cp.random.poisson(image * vals) / float(vals)
+        out = rng.poisson(image * vals) / float(vals)
 
         # Return image to original range if input was signed
         if low_clip == -1.0:
@@ -179,7 +234,7 @@ def random_noise(image, mode="gaussian", seed=None, clip=True, **kwargs):
         out = random_noise(
             image,
             mode="s&p",
-            seed=seed,
+            rng=rng,
             amount=kwargs["amount"],
             salt_vs_pepper=1.0,
         )
@@ -189,7 +244,7 @@ def random_noise(image, mode="gaussian", seed=None, clip=True, **kwargs):
         out = random_noise(
             image,
             mode="s&p",
-            seed=seed,
+            rng=rng,
             amount=kwargs["amount"],
             salt_vs_pepper=0.0,
         )
@@ -198,18 +253,14 @@ def random_noise(image, mode="gaussian", seed=None, clip=True, **kwargs):
         out = image.copy()
         p = kwargs["amount"]
         q = kwargs["salt_vs_pepper"]
-        flipped = cp.random.choice(
-            [True, False], size=image.shape, p=[p, 1 - p]
-        )
-        salted = cp.random.choice([True, False], size=image.shape, p=[q, 1 - q])
+        flipped = _bernoulli(p, image.shape, rng=rng)
+        salted = _bernoulli(q, image.shape, rng=rng)
         peppered = ~salted
         out[flipped & salted] = 1
         out[flipped & peppered] = low_clip
 
     elif mode == "speckle":
-        noise = cp.random.normal(
-            kwargs["mean"], kwargs["var"] ** 0.5, image.shape
-        )
+        noise = _normal(rng, kwargs["mean"], kwargs["var"] ** 0.5, image.shape)
         out = image + image * noise
 
     # Clip back to original range, if necessary

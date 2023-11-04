@@ -1,4 +1,5 @@
 import cupy as cp
+import numpy as np
 import pytest
 from cupy.testing import assert_array_equal
 from skimage import data
@@ -93,7 +94,7 @@ class TestMedialAxis:
         result = medial_axis(cp.zeros((10, 10), bool), cp.zeros((10, 10), bool))
         assert not cp.any(result)
 
-    def test_vertical_line(self):
+    def _test_vertical_line(self, **kwargs):
         """Test a thick vertical line, issue #3861"""
         img = cp.zeros((9, 9))
         img[:, 2] = 1
@@ -103,8 +104,34 @@ class TestMedialAxis:
         expected = cp.full(img.shape, False)
         expected[:, 3] = True
 
-        result = medial_axis(img)
+        result = medial_axis(img, **kwargs)
         assert_array_equal(result, expected)
+
+    def test_vertical_line(self):
+        """Test a thick vertical line, issue #3861"""
+        self._test_vertical_line()
+
+    def test_rng_numpy(self):
+        # NumPy Generator allowed
+        self._test_vertical_line(rng=np.random.default_rng())
+
+    def test_rng_cupy(self):
+        # CuPy Generator not currently supported
+        with pytest.raises(ValueError):
+            self._test_vertical_line(rng=cp.random.default_rng())
+
+    def test_rng_int(self):
+        self._test_vertical_line(rng=15)
+
+    def test_vertical_line_seed(self):
+        """seed was deprecated (now use rng)"""
+        with pytest.warns(FutureWarning):
+            self._test_vertical_line(seed=15)
+
+    def test_vertical_line_random_state(self):
+        """random_state was deprecated (now use rng)"""
+        with pytest.warns(FutureWarning):
+            self._test_vertical_line(random_state=15)
 
     def test_01_01_rectangle(self):
         """Test skeletonize on a rectangle"""

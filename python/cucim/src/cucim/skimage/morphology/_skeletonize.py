@@ -171,11 +171,14 @@ def _get_tiebreaker(n, seed):
 
 
 @deprecate_kwarg(
-    {"random_state": "seed"},
+    {"random_state": "rng"},
     deprecated_version="23.08",
     removed_version="24.06",
 )
-def medial_axis(image, mask=None, return_distance=False, *, seed=None):
+@deprecate_kwarg(
+    {"seed": "rng"}, deprecated_version="23.12", removed_version="24.12"
+)
+def medial_axis(image, mask=None, return_distance=False, *, rng=None):
     """Compute the medial axis transform of a binary image.
 
     Parameters
@@ -187,14 +190,17 @@ def medial_axis(image, mask=None, return_distance=False, *, seed=None):
         value in `mask` are used for computing the medial axis.
     return_distance : bool, optional
         If true, the distance transform is returned as well as the skeleton.
-    seed : {None, int, `numpy.random.Generator`}, optional
-        If `seed` is None, the `numpy.random.Generator` singleton is used.
-        If `seed` is an int, a new ``Generator`` instance is used, seeded with
-        `seed`.
-        If `seed` is already a ``Generator`` instance, then that instance is
-        used.
+    rng : {`numpy.random.Generator`, int}, optional
+        Pseudo-random number generator.
+        By default, a PCG64 generator is used
+        (see :func:`numpy.random.default_rng`).
+        If `rng` is an int, it is used to seed the generator.
 
-        .. versionadded:: 0.19
+        The PRNG determines the order in which pixels are processed for
+        tiebreaking.
+
+        Note: Due to a missing `permute` method on CuPy's random Generator
+        class, only a `numpy.random.Generator` is currently supported.
 
     Returns
     -------
@@ -304,7 +310,16 @@ def medial_axis(image, mask=None, return_distance=False, *, seed=None):
     # We use a random # for tiebreaking. Assign each pixel in the image a
     # predictable, random # so that masking doesn't affect arbitrary choices
     # of skeletons
-    tiebreaker = _get_tiebreaker(n=distance.size, seed=seed)
+
+    if rng is None or isinstance(rng, int):
+        tiebreaker = _get_tiebreaker(n=distance.size, seed=rng)
+    elif isinstance(rng, np.random.Generator):
+        generator = np.random.default_rng(rng)
+        tiebreaker = cp.asarray(generator.permutation(np.arange(distance.size)))
+    else:
+        raise ValueError(
+            f"{type(rng)} class not yet supported for use in " "`medial_axis`."
+        )
     order = cp.lexsort(
         cp.stack((tiebreaker, corner_score[masked_image], distance), axis=0)
     )

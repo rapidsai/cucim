@@ -640,7 +640,7 @@ MAX_FARID_ND = cp.array([
     ],
 )
 def test_3d_edge_filters(func, max_edge):
-    blobs = binary_blobs(length=128, n_dim=3, seed=5)
+    blobs = binary_blobs(length=128, n_dim=3, rng=5)
     edges = func(blobs)
     center = max_edge.shape[0] // 2
     if center == 2:
@@ -663,7 +663,7 @@ def test_3d_edge_filters(func, max_edge):
     ],
 )
 def test_3d_edge_filters_single_axis(func, max_edge):
-    blobs = binary_blobs(length=128, n_dim=3, seed=5)
+    blobs = binary_blobs(length=128, n_dim=3, rng=5)
     edges0 = func(blobs, axis=0)
     center = max_edge.shape[0] // 2
     if center == 2:

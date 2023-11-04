@@ -342,7 +342,7 @@ def _reference_eigvals_computation(S_elems):
 def test_custom_eigvals_kernels_vs_linalg_eigvalsh(shape, dtype):
     rng = cp.random.default_rng(seed=5)
     img = rng.integers(0, 256, shape)
-    H = hessian_matrix(img)
+    H = hessian_matrix(img, use_gaussian_derivatives=False)
     H = tuple(h.astype(dtype, copy=False) for h in H)
     evs1 = _reference_eigvals_computation(H)
     evs2 = hessian_matrix_eigvals(H)
@@ -492,8 +492,8 @@ def test_corner_foerstner_dtype(dtype):
 def test_noisy_square_image():
     im = cp.zeros((50, 50)).astype(float)
     im[:25, :25] = 1.0
-    np.random.seed(seed=1234)  # result is specific to this NumPy seed
-    im = im + cp.asarray(np.random.uniform(size=im.shape)) * 0.2
+    rng = np.random.default_rng(1234)  # result is specific to this NumPy seed
+    im = im + cp.asarray(rng.uniform(size=im.shape)) * 0.2
 
     # # Moravec
     # results = peak_local_max(corner_moravec(im),
