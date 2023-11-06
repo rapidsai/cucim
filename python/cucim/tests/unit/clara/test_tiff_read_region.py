@@ -18,6 +18,9 @@ import pytest
 
 from ...util.io import open_image_cucim
 
+# skip if imagecodecs package not available (needed by ImageGenerator utility)
+pytest.importorskip("imagecodecs")
+
 
 def test_tiff_stripe_inner(testimg_tiff_stripe_32x24_16):
     cucim_img = open_image_cucim(testimg_tiff_stripe_32x24_16)

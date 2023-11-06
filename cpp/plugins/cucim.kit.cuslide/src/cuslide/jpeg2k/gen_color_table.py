@@ -177,8 +177,12 @@ static constexpr int16_t B_Cb[256]  = {
 def gen_list(values: list, width: int, align: int = 8):
     text = []
     for i in range(0, len(values), width):
-        text.append(", ".join(("{:>"+str(align)+"}").format(item)
-                              for item in values[i:i + width]))
+        text.append(
+            ", ".join(
+                ("{:>" + str(align) + "}").format(item)
+                for item in values[i : i + width]
+            )
+        )
     return ",\n    ".join(text)
 
 
@@ -189,14 +193,16 @@ def main(output_file_name: str) -> int:
     b_cb = gen_list(list(gen_b_cb()), 10, 4)
 
     with open(output_file_name, "w") as f:
-        f.write(TEMPLATE %
-                {"r_cr": r_cr, "g_cb": g_cb, "g_cr": g_cr, "b_cb": b_cb})
+        f.write(
+            TEMPLATE % {"r_cr": r_cr, "g_cb": g_cb, "g_cr": g_cr, "b_cb": b_cb}
+        )
 
     return 0
 
 
 if __name__ == "__main__":
     import sys
+
     if len(sys.argv) != 2:
         print("Usage: gen_color_table.py <output_file_name>")
         sys.exit(1)

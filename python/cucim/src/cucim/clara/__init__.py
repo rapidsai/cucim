@@ -18,15 +18,7 @@ import os
 from . import cli, converter
 
 # import hidden methods
-from ._cucim import (
-    CuImage,
-    DLDataType,
-    DLDataTypeCode,
-    __version__,
-    cache,
-    filesystem,
-    io,
-)
+from ._cucim import CuImage, DLDataType, DLDataTypeCode, cache, filesystem, io
 
 __all__ = [
     "cli",
@@ -37,7 +29,6 @@ __all__ = [
     "io",
     "cache",
     "converter",
-    "__version__",
 ]
 
 

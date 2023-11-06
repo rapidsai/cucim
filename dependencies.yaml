@@ -245,32 +245,27 @@ dependencies:
       - output_types: [conda, requirements, pyproject]
         packages:
           - GPUtil>=1.4.0
-          - imagecodecs>=2021.6.8
-          - openslide-python>=1.1.2
           - psutil>=5.8.0
           - pytest-cov>=2.12.1
           - pytest-lazy-fixture>=0.6.3
           - pytest-xdist
           - pytest>=6.2.4
           - tifffile>=2022.7.28
+          - pooch>=1.6.0  # needed to download scikit-image sample data
       - output_types: [conda]
         packages:
+          - imagecodecs>=2021.6.8
+          - matplotlib-base
+          - openslide-python>=1.1.2
           - pip
           - pip:
             - opencv-python-headless>=4.6
       - output_types: [requirements, pyproject]
         packages:
+          # temporarily remove imagecodecs / openslide-python from wheel tests
+          # # skip packages on arm64 that don't provide a wheel
+          # - imagecodecs>=2021.6.8; platform_machine=='x86_64'
+          # - openslide-python>=1.1.2; platform_machine=='x86_64'
+          - matplotlib
           - opencv-python-headless>=4.6
-          # All dependencies below this point are specific to `cucim.clara` and
-          # are not needed for either `cucim.core` or `cucim.skimage`, so are
-          # listed as optional. They are needed in order to run the full test
-          # suite, including the `cucim.clara` package.
           - click
-          - jbig
-          - libwebp-base
-          - xz
-          - zlib
-          - zstd
-          # Not sure where these go, if anywhere:
-          # - openslide
-          # - xorg-libxcb

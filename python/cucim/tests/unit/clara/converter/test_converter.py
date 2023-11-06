@@ -16,6 +16,12 @@
 import os
 from pathlib import Path
 
+import pytest
+
+# skip if imagecodecs and openslide packages are not available
+pytest.importorskip("imagecodecs")
+pytest.importorskip("openslide")
+
 
 def test_image_converter_stripe_4096x4096_256_jpeg(
     tmp_path, testimg_tiff_stripe_4096x4096_256_jpeg

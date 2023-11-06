@@ -17,6 +17,9 @@ import pytest
 
 from ...util.io import open_image_cucim
 
+# skip if imagecodecs package not available (needed by ImageGenerator utility)
+pytest.importorskip("imagecodecs")
+
 
 def test_read_region_cuda_memleak(testimg_tiff_stripe_4096x4096_256_jpeg):
     import GPUtil
