@@ -36,18 +36,12 @@ if [[ ${PACKAGE_CUDA_SUFFIX} == "-cu12" ]]; then
     sed -i "s/cupy-cuda11x/cupy-cuda12x/g" ${pyproject_file}
 fi
 
-echo "The package name and/or version was modified in the package source. The git diff is:"
-git diff
-
-pip install --upgrade pip
-
 # Install pip build dependencies (not yet using pyproject.toml)
 rapids-dependency-file-generator \
   --file_key "py_build" \
   --output "requirements" \
   --matrix "cuda=${RAPIDS_CUDA_VERSION%.*};arch=$(arch);py=${RAPIDS_PY_VERSION}" | tee build_requirements.txt
 pip install -r build_requirements.txt
-
 
 # First build the C++ lib using CMake via the run script
 echo "libcucim version: `cat VERSION_CPP`"
