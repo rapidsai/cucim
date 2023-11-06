@@ -10,18 +10,15 @@ export CMAKE_GENERATOR=Ninja
 rapids-print-env
 
 package_name="cucim"
-package_dir="python/cucim/src"
+package_dir="python/cucim"
+package_src_dir="${package_dir}/src/${package_name}"
 
 version=$(rapids-generate-version)
-# for CMake VERSION need to truncate any trailing 'a'
-version_cpp=${version%a*}
 
 commit=$(git rev-parse HEAD)
 
 echo "${version}" > VERSION
-echo "${version_cpp}" > "${package_dir}/VERSION"
-echo "${version_cpp}" > VERSION_CPP
-sed -i "/^__git_commit__/ s/= .*/= \"${commit}\"/g" "${package_dir}/${package_name}/_version.py"
+sed -i "/^__git_commit__/ s/= .*/= \"${commit}\"/g" "${package_src_dir}/_version.py"
 
 rapids-logger "Begin py build"
 

@@ -36,7 +36,6 @@ sed_runner 's/release = .*/release = '"'${NEXT_FULL_TAG}'"'/g' docs/source/conf.
 
 # Centralized version file update
 echo "${NEXT_FULL_TAG}" > VERSION
-echo "${NEXT_FULL_TAG}" > VERSION_CPP
 
 sed_runner "s#\[Version ${CURRENT_LONG_TAG}\](release_notes/v${CURRENT_LONG_TAG}.md)#\[Version ${NEXT_FULL_TAG}\](release_notes/v${NEXT_FULL_TAG}.md)#g" python/cucim/docs/index.md
 sed_runner "s/v${CURRENT_LONG_TAG}/v${NEXT_FULL_TAG}/g" python/cucim/docs/getting_started/index.md
