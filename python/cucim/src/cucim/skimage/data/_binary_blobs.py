@@ -1,8 +1,14 @@
 import cupy as cp
 
+from .._shared.filters import gaussian
+from .._shared.utils import deprecate_kwarg
 
+
+@deprecate_kwarg(
+    {"seed": "rng"}, deprecated_version="23.12.00", removed_version="24.12.00"
+)
 def binary_blobs(
-    length=512, blob_size_fraction=0.1, n_dim=2, volume_fraction=0.5, seed=None
+    length=512, blob_size_fraction=0.1, n_dim=2, volume_fraction=0.5, rng=None
 ):
     """
     Generate synthetic binary image with several rounded blob-like objects.
@@ -19,12 +25,10 @@ def binary_blobs(
     volume_fraction : float, default 0.5
         Fraction of image pixels covered by the blobs (where the output is 1).
         Should be in [0, 1].
-    seed : {None, int, `cupy.random.Generator`}, optional
-        If `seed` is None the `cupy.random.Generator` singleton is used.
-        If `seed` is an int, a new ``Generator`` instance is used,
-        seeded with `seed`.
-        If `seed` is already a ``Generator`` instance then that instance is
-        used.
+    rng : {`cupy.random.Generator`, int}, optional
+        Pseudo-random number generator.
+        By default, a PCG64 generator is used (see :func:`cupy.random.default_rng`).
+        If `rng` is an int, it is used to seed the generator.
 
     Returns
     -------
@@ -34,7 +38,7 @@ def binary_blobs(
     Notes
     -----
     Warning: CuPy does not give identical randomly generated numbers as NumPy,
-    so using a specific seed here will not give an identical pattern to the
+    so using a specific `rng` here will not give an identical pattern to the
     scikit-image implementation.
 
     The behavior for a given random seed may also change across CuPy major
@@ -45,19 +49,16 @@ def binary_blobs(
     --------
     >>> from cucim.skimage import data
     >>> # tiny size (5, 5)
-    >>> blobs = data.binary_blobs(length=5, blob_size_fraction=0.2, seed=1)
+    >>> blobs = data.binary_blobs(length=5, blob_size_fraction=0.2)
     >>> # larger size
     >>> blobs = data.binary_blobs(length=256, blob_size_fraction=0.1)
     >>> # Finer structures
     >>> blobs = data.binary_blobs(length=256, blob_size_fraction=0.05)
     >>> # Blobs cover a smaller volume fraction of the image
     >>> blobs = data.binary_blobs(length=256, volume_fraction=0.3)
-    """
-    # filters is quite an expensive import since it imports all of scipy.signal
-    # We lazy import here
-    from .._shared.filters import gaussian
+    """  # noqa: E501
 
-    rs = cp.random.default_rng(seed)
+    rs = cp.random.default_rng(rng)
     shape = tuple([length] * n_dim)
     mask = cp.zeros(shape)
     n_pts = max(int(1.0 / blob_size_fraction) ** n_dim, 1)

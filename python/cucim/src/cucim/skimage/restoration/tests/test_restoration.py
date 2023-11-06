@@ -80,7 +80,7 @@ def test_unsupervised_wiener(dtype):
 
     psf = cp.asarray(psf, dtype=dtype)
     data = cp.asarray(data, dtype=dtype)
-    deconvolved, _ = restoration.unsupervised_wiener(data, psf, seed=seed)
+    deconvolved, _ = restoration.unsupervised_wiener(data, psf, rng=seed)
     float_type = _supported_float_type(dtype)
     assert deconvolved.dtype == float_type
 
@@ -108,7 +108,7 @@ def test_unsupervised_wiener(dtype):
             "max_num_iter": 200,
             "min_num_iter": 30,
         },
-        seed=seed,
+        rng=seed,
     )[0]
     assert deconvolved2.real.dtype == float_type
 
@@ -141,6 +141,19 @@ def test_unsupervised_wiener_deprecated_user_param():
             is_real=False,
             user_params={"max_iter": 200, "min_iter": 30},
             random_state=5,
+        )
+
+    with expected_warnings(
+        [
+            "`seed` is a deprecated argument name",
+        ]
+    ):
+        restoration.unsupervised_wiener(
+            data,
+            otf,
+            reg=laplacian,
+            is_real=False,
+            seed=5,
         )
 
 
