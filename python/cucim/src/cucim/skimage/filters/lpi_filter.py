@@ -7,7 +7,7 @@ import cupy as cp
 import numpy as np
 from cupyx.scipy import fft
 
-from .._shared.utils import _supported_float_type, check_nD, deprecate_func
+from .._shared.utils import _supported_float_type, check_nD
 
 eps = np.finfo(float).eps
 
@@ -172,23 +172,6 @@ def filter_forward(
     if predefined_filter is None:
         predefined_filter = LPIFilter2D(impulse_response, **filter_params)
     return predefined_filter(data)
-
-
-@deprecate_func(
-    hint="use cucim.skimage.filters.lpi_filter.filter_inverse instead",
-    deprecated_version="",
-    removed_version="2023.12.00",
-)
-def inverse(
-    data,
-    impulse_response=None,
-    filter_params=None,
-    max_gain=2,
-    predefined_filter=None,
-):
-    return filter_inverse(
-        data, impulse_response, filter_params, max_gain, predefined_filter
-    )
 
 
 def filter_inverse(
