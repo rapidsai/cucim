@@ -10,7 +10,6 @@ from skimage import data, draw
 from skimage.segmentation import slic
 
 from cucim.skimage import transform
-from cucim.skimage._shared._warnings import expected_warnings
 from cucim.skimage._vendored import pad
 from cucim.skimage.measure import (
     euler_number,
@@ -756,8 +755,7 @@ def test_perimeter():
     per = regionprops(SAMPLE, spacing=(2, 2))[0].perimeter
     assert_almost_equal(per, 2 * target_per)
 
-    with expected_warnings(["`neighbourhood` is a deprecated argument name"]):
-        per = perimeter(SAMPLE.astype(float), neighbourhood=8)
+    per = perimeter(SAMPLE.astype(float), neighborhood=8)
     assert_almost_equal(per, 46.8284271247)
 
     with pytest.raises(NotImplementedError):

@@ -149,13 +149,13 @@ def wiener(image, psf, balance, reg=None, is_real=True, clip=True):
 
 @deprecate_kwarg(
     {"random_state": "rng"},
-    removed_version="23.08.00",
-    deprecated_version="24.06.00",
+    removed_version="24.12.00",
+    deprecated_version="23.08.00",
 )
 @deprecate_kwarg(
     {"seed": "rng"},
-    removed_version="23.08.00",
-    deprecated_version="24.12.00",
+    removed_version="24.12.00",
+    deprecated_version="23.12.00",
 )
 def unsupervised_wiener(
     image,

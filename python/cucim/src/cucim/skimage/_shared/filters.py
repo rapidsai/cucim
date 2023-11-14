@@ -81,8 +81,8 @@ def gaussian(
             ``multichannel=None`` was broken in version 0.19. In 0.20 this
             behavior is recovered. The last axis of an `image` with dimensions
             (M, N, 3) is interpreted as a color channel if `channel_axis` is
-            not set. Starting with 2023.03.06, ``channel_axis=None`` will be
-            used as the new default value.
+            not set. Starting with release 23.04.02, ``channel_axis=None`` will
+            be used as the new default value.
 
     Returns
     -------
