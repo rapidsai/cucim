@@ -6,8 +6,6 @@ import numpy as np
 
 from cucim.skimage._vendored import pad
 
-from .._shared.utils import deprecate_kwarg
-
 # Don't allocate STREL_* on GPU as we don't know in advance which device
 # fmt: off
 STREL_4 = np.array([[0, 1, 0],
@@ -195,11 +193,6 @@ def euler_number(image, connectivity=None):
         return int(0.125 * coefs @ h)
 
 
-@deprecate_kwarg(
-    kwarg_mapping={"neighbourhood": "neighborhood"},
-    removed_version="2023.06.00",
-    deprecated_version="2022.12.00",
-)
 def perimeter(image, neighborhood=4):
     """Calculate total perimeter of all objects in binary image.
 
@@ -232,9 +225,9 @@ def perimeter(image, neighborhood=4):
     >>> # coins image (binary)
     >>> img_coins = cp.array(data.coins() > 110)
     >>> # total perimeter of all objects in the image
-    >>> perimeter(img_coins, neighbourhood=4)  # doctest: +ELLIPSIS
+    >>> perimeter(img_coins, neighborhood=4)  # doctest: +ELLIPSIS
     array(7796.86799644)
-    >>> perimeter(img_coins, neighbourhood=8)  # doctest: +ELLIPSIS
+    >>> perimeter(img_coins, neighborhood=8)  # doctest: +ELLIPSIS
     array(8806.26807333)
 
     """
