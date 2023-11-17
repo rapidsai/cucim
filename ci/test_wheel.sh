@@ -9,6 +9,9 @@ RAPIDS_PY_WHEEL_NAME="cucim_${RAPIDS_PY_CUDA_SUFFIX}" rapids-download-wheels-fro
 # echo to expand wildcard before adding `[extra]` requires for pip
 python -m pip install $(echo ./dist/cucim*.whl)[test]
 
+# append folder containing libopenslide.so.0 to LD_LIBRARY_PATH
+export LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:/usr/lib/x86_64-linux-gnu"
+
 # Run smoke tests for aarch64 pull requests
 if [[ "$(arch)" == "aarch64" && ${RAPIDS_BUILD_TYPE} == "pull-request" ]]; then
     python ./ci/wheel_smoke_test.py
