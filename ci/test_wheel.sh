@@ -14,7 +14,7 @@ if [[ "$(arch)" == "aarch64" && ${RAPIDS_BUILD_TYPE} == "pull-request" ]]; then
     python ./ci/wheel_smoke_test.py
 else
 
-    DEBIAN_FRONTEND=noninteractive apt install -y --no-install-recommends libopenslide-dev
+    DEBIAN_FRONTEND=noninteractive apt install -y --no-install-recommends libopenslide0
 
     # verify if openslide package has been installed
     echo `dpkg -l | grep openslide`
