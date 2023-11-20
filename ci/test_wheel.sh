@@ -17,18 +17,6 @@ else
     DEBIAN_FRONTEND=noninteractive apt update
     DEBIAN_FRONTEND=noninteractive apt install -y --no-install-recommends libopenslide0
 
-    # verify if openslide package has been installed
-    echo `dpkg -l | grep openslide`
-
-    # append folder containing libopenslide.so.0 to LD_LIBRARY_PATH (should not be needed)
-    export LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:/usr/lib/$(arch)-linux-gnu"
-
-    # try importing like openslide-python does
-    echo `python -c "import ctypes; print(ctypes.cdll.LoadLibrary('libopenslide.so.0')); print('\n')"`
-
-    # try importing with full path
-    echo `python -c "import ctypes; print(ctypes.cdll.LoadLibrary('/usr/lib/x86_64-linux-gnu/libopenslide.so.0')); print('\n')"`
-
     # TODO: fix and remove two test cases skipped here
     #   test_cache_hit_miss currently fails
     #   test_converter passes, but a segfault occurs on pytest exit when it is enabled
