@@ -103,6 +103,9 @@ where = ["src"]
 [tool.setuptools.package-data]
 mypkg = ["*.pyi", "*.h", "*.cu", "VERSION"]
 
+[tool.distutils.bdist_wheel]
+universal = false
+
 [tool.pytest.ini_options]
 # If a pytest section is found in one of the possible config files
 # (pytest.ini, tox.ini or setup.cfg), then pytest will not look for any others,
