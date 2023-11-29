@@ -45,6 +45,10 @@ cd "${package_dir}"
 
 python -m pip wheel . -w dist -vvv --no-deps --disable-pip-version-check
 
+# Fix Python wheel tag to be restricted to CPython and version dependent
+WHEEL_PYTHON_TAG=`python -c 'import sys; print("cp{0}{1}".format(*sys.version_info[:2]))'`
+python -m wheel tags --remove --python-tag="${WHEEL_PYTHON_TAG}" --abi-tag="${WHEEL_PYTHON_TAG}" dist/*
+
 mkdir -p final_dist
 python -m auditwheel repair -w final_dist dist/*
 
