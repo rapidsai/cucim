@@ -50,7 +50,7 @@ python -m pip wheel . -w dist -vvv --no-deps --disable-pip-version-check
 # tags that incorrectly indicate it is a universal wheel. To fix this, we need to modify the wheel
 # to have CPython ABI and Python tags matching the version of Python that the Python bindings were
 # built with.
-WHEEL_PYTHON_TAG=`python -c 'import sys; print("cp{0}{1}".format(*sys.version_info[:2]))'`
+WHEEL_PYTHON_TAG=cp$(echo ${RAPIDS_PY_VERSION} | sed 's/\.//g')
 python -m wheel tags --remove --python-tag="${WHEEL_PYTHON_TAG}" --abi-tag="${WHEEL_PYTHON_TAG}" dist/*
 
 mkdir -p final_dist
