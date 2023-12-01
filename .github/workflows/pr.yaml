@@ -20,32 +20,32 @@ jobs:
       - wheel-build
       - wheel-tests
     secrets: inherit
-    uses: rapidsai/shared-workflows/.github/workflows/pr-builder.yaml@branch-23.12
+    uses: rapidsai/shared-workflows/.github/workflows/pr-builder.yaml@branch-24.02
   checks:
     secrets: inherit
-    uses: rapidsai/shared-workflows/.github/workflows/checks.yaml@branch-23.12
+    uses: rapidsai/shared-workflows/.github/workflows/checks.yaml@branch-24.02
   conda-cpp-build:
     needs: checks
     secrets: inherit
-    uses: rapidsai/shared-workflows/.github/workflows/conda-cpp-build.yaml@branch-23.12
+    uses: rapidsai/shared-workflows/.github/workflows/conda-cpp-build.yaml@branch-24.02
     with:
       build_type: pull-request
   conda-python-build:
     needs: conda-cpp-build
     secrets: inherit
-    uses: rapidsai/shared-workflows/.github/workflows/conda-python-build.yaml@branch-23.12
+    uses: rapidsai/shared-workflows/.github/workflows/conda-python-build.yaml@branch-24.02
     with:
       build_type: pull-request
   conda-python-tests:
     needs: conda-python-build
     secrets: inherit
-    uses: rapidsai/shared-workflows/.github/workflows/conda-python-tests.yaml@branch-23.12
+    uses: rapidsai/shared-workflows/.github/workflows/conda-python-tests.yaml@branch-24.02
     with:
       build_type: pull-request
   docs-build:
     needs: conda-python-build
     secrets: inherit
-    uses: rapidsai/shared-workflows/.github/workflows/custom-job.yaml@branch-23.12
+    uses: rapidsai/shared-workflows/.github/workflows/custom-job.yaml@branch-24.02
     with:
       build_type: pull-request
       node_type: "gpu-v100-latest-1"
@@ -55,14 +55,14 @@ jobs:
   wheel-build:
     needs: checks
     secrets: inherit
-    uses: rapidsai/shared-workflows/.github/workflows/wheels-build.yaml@branch-23.12
+    uses: rapidsai/shared-workflows/.github/workflows/wheels-build.yaml@branch-24.02
     with:
       build_type: pull-request
       script: ci/build_wheel.sh
   wheel-tests:
     needs: wheel-build
     secrets: inherit
-    uses: rapidsai/shared-workflows/.github/workflows/wheels-test.yaml@branch-23.12
+    uses: rapidsai/shared-workflows/.github/workflows/wheels-test.yaml@branch-24.02
     with:
       build_type: pull-request
       script: ci/test_wheel.sh
