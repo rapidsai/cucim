@@ -31,8 +31,8 @@ function sed_runner() {
 }
 
 # RTD update
-sed_runner 's/version = .*/version = '"'${NEXT_SHORT_TAG}'"'/g' docs/source/conf.py
-sed_runner 's/release = .*/release = '"'${NEXT_FULL_TAG}'"'/g' docs/source/conf.py
+sed_runner 's/version = .*/version = "'"${NEXT_SHORT_TAG}"'"/g' docs/source/conf.py
+sed_runner 's/release = .*/release = "'"${NEXT_FULL_TAG}"'"/g' docs/source/conf.py
 
 # Centralized version file update
 echo "${NEXT_FULL_TAG}" > VERSION
