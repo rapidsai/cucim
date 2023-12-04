@@ -262,10 +262,9 @@ dependencies:
             - opencv-python-headless>=4.6
       - output_types: [requirements, pyproject]
         packages:
-          # temporarily remove imagecodecs / openslide-python from wheel tests
-          # # skip packages on arm64 that don't provide a wheel
-          # - imagecodecs>=2021.6.8; platform_machine=='x86_64'
-          # - openslide-python>=1.1.2; platform_machine=='x86_64'
+          # skip packages on arm64 that don't provide a wheel
+          - imagecodecs>=2021.6.8; platform_machine=='x86_64'
+          - openslide-python>=1.1.2; platform_machine=='x86_64'
           - matplotlib
           - opencv-python-headless>=4.6
           - click
