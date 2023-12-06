@@ -49,10 +49,9 @@ def test_rand_flip_batchinput():
     arr = get_input_arr()
     flip_arr = get_flipped_data()
     arr_batch = np.stack((arr,) * 8, axis=0)
-    np_output = spt.rand_image_flip(arr_batch,
-                                    prob=1.0,
-                                    spatial_axis=(2, 3),
-                                    whole_batch=True)
+    np_output = spt.rand_image_flip(
+        arr_batch, prob=1.0, spatial_axis=(2, 3), whole_batch=True
+    )
 
     assert np_output.shape[0] == 8
 

@@ -20,8 +20,8 @@ def _dtype_to_cuda_float_type(dtype):
         Supported cuda data type
     """
     cpp_float_types = {
-        cp.float32: 'float',
-        cp.float64: 'double',
+        cp.float32: "float",
+        cp.float64: "double",
     }
     dtype = cp.dtype(dtype)
     if dtype.type not in cpp_float_types:
@@ -47,7 +47,7 @@ def _get_hessian_det_appx_kernel(dtype, large_int) -> cp.RawModule:
     """
     image_t = _dtype_to_cuda_float_type(dtype)
 
-    int_t = 'long long' if large_int else 'int'
+    int_t = "long long" if large_int else "int"
 
     _preamble = f"""
 #define IMAGE_T {image_t}
@@ -55,14 +55,17 @@ def _get_hessian_det_appx_kernel(dtype, large_int) -> cp.RawModule:
         """
 
     kernel_directory = os.path.join(
-        os.path.normpath(os.path.dirname(__file__)), 'cuda')
+        os.path.normpath(os.path.dirname(__file__)), "cuda"
+    )
     cu_file = os.path.join(kernel_directory, "_hessian_det_appx.cu")
-    with open(cu_file, 'rt') as f:
+    with open(cu_file, "rt") as f:
         _code = f.read()
 
-    return cp.RawModule(code=_preamble + _code,
-                        options=('--std=c++11',),
-                        name_expressions=["_hessian_matrix_det"])
+    return cp.RawModule(
+        code=_preamble + _code,
+        options=("--std=c++11",),
+        name_expressions=["_hessian_matrix_det"],
+    )
 
 
 def _hessian_matrix_det(img: cp.ndarray, sigma) -> cp.ndarray:
@@ -98,7 +101,9 @@ def _hessian_matrix_det(img: cp.ndarray, sigma) -> cp.ndarray:
     the result obtained if someone computed the Hessian and took its
     determinant.
     """
-    rawmodule = _get_hessian_det_appx_kernel(img.dtype, max(img.shape) > 2**31)
+    rawmodule = _get_hessian_det_appx_kernel(
+        img.dtype, max(img.shape) > 2**31
+    )
     _hessian_det_appx_kernel = rawmodule.get_function("_hessian_matrix_det")
 
     out = cp.empty_like(img, dtype=img.dtype)
@@ -108,6 +113,6 @@ def _hessian_matrix_det(img: cp.ndarray, sigma) -> cp.ndarray:
     _hessian_det_appx_kernel(
         (grid_size,),
         (block_size,),
-        (img.ravel(), img.shape[0], img.shape[1], float(sigma), out)
+        (img.ravel(), img.shape[0], img.shape[1], float(sigma), out),
     )
     return out

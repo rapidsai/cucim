@@ -5,10 +5,10 @@ n-dimensional array.
 
 import cupy as cp
 
-__all__ = ['crop']
+__all__ = ["crop"]
 
 
-def crop(ar, crop_width, copy=False, order='K'):
+def crop(ar, crop_width, copy=False, order="K"):
     """Crop array `ar` by `crop_width` along each dimension.
 
     Parameters
@@ -63,8 +63,7 @@ def crop(ar, crop_width, copy=False, order='K'):
             "a single pair, or a single integer"
         )
 
-    slices = tuple(slice(a, ar.shape[i] - b)
-                   for i, (a, b) in enumerate(crops))
+    slices = tuple(slice(a, ar.shape[i] - b) for i, (a, b) in enumerate(crops))
     if copy:
         cropped = cp.array(ar[slices], order=order, copy=True)
     else:

@@ -40,24 +40,24 @@ _is_clara_available = False
 submodules = []
 submod_attrs = {}
 
+from ._version import __git_commit__, __version__
+
 try:
     import cupy
+
     _is_cupy_available = True
-    submodules += ['core', 'skimage']
+    submodules += ["core", "skimage"]
 except ImportError:
     pass
 
 try:
-    from .clara import CuImage, __version__, cli
-    _is_clara_available = True
-    submodules += ['clara']
-    submod_attrs['clara'] = ['CuImage', 'cli']
-except ImportError:
-    from ._version import get_versions
-    __version__ = get_versions()['version']
-    del get_versions
-    del _version
+    from .clara import CuImage, cli
 
+    _is_clara_available = True
+    submodules += ["clara"]
+    submod_attrs["clara"] = ["CuImage", "cli"]
+except ImportError:
+    pass
 
 import lazy_loader as lazy
 
@@ -65,7 +65,7 @@ __getattr__, __lazy_dir__, _ = lazy.attach_stub(__name__, __file__)
 
 
 def __dir__():
-    return __lazy_dir__() + ['__version__', 'is_available']
+    return __lazy_dir__() + ["__git_commit__", "__version__", "is_available"]
 
 
 def is_available(module_name: str = "") -> bool:
@@ -87,7 +87,7 @@ def is_available(module_name: str = "") -> bool:
     """
     if module_name in ("skimage", "core"):
         return _is_cupy_available
-    elif module_name == 'clara':
+    elif module_name == "clara":
         return _is_clara_available
     else:
         return _is_cupy_available and _is_clara_available

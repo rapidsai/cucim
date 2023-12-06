@@ -13,8 +13,14 @@ from ..util import crop
 from .footprints import _footprint_is_sequence, _shape_from_sequence
 from .misc import default_footprint
 
-__all__ = ['erosion', 'dilation', 'opening', 'closing', 'white_tophat',
-           'black_tophat']
+__all__ = [
+    "erosion",
+    "dilation",
+    "opening",
+    "closing",
+    "white_tophat",
+    "black_tophat",
+]
 
 
 def _iterate_gray_func(gray_func, image, footprints, out):
@@ -117,8 +123,8 @@ def _invert_footprint(footprint):
 
     References
     ----------
-    .. [1] https://github.com/scipy/scipy/blob/ec20ababa400e39ac3ffc9148c01ef86d5349332/scipy/ndimage/morphology.py#L1285  # noqa
-    """
+    .. [1] https://github.com/scipy/scipy/blob/ec20ababa400e39ac3ffc9148c01ef86d5349332/scipy/ndimage/morphology.py#L1285
+    """  # noqa: E501
     if isinstance(footprint, tuple):
         # fully populated rectangle is symmetric
         return footprint
@@ -146,6 +152,7 @@ def pad_for_eccentric_footprints(func):
     --------
     opening, closing.
     """
+
     @functools.wraps(func)
     def func_out(image, footprint, out=None, *args, **kwargs):
         pad_widths = []
@@ -168,7 +175,7 @@ def pad_for_eccentric_footprints(func):
                 axis_pad_width = 0
             pad_widths.append((axis_pad_width,) * 2)
         if padding:
-            image = pad(image, pad_widths, mode='edge')
+            image = pad(image, pad_widths, mode="edge")
             out_temp = cp.empty_like(image)
         else:
             out_temp = out
@@ -178,12 +185,16 @@ def pad_for_eccentric_footprints(func):
         else:
             out = out_temp
         return out
+
     return func_out
 
 
 @default_footprint
-@deprecate_kwarg(kwarg_mapping={'selem': 'footprint'},
-                 removed_version="23.02.00", deprecated_version="22.02.00")
+@deprecate_kwarg(
+    kwarg_mapping={"selem": "footprint"},
+    removed_version="23.02.00",
+    deprecated_version="22.02.00",
+)
 def erosion(image, footprint=None, out=None, shift_x=False, shift_y=False):
     """Return grayscale morphological erosion of an image.
 
@@ -226,7 +237,7 @@ def erosion(image, footprint=None, out=None, shift_x=False, shift_y=False):
     would apply a 9x1 footprint followed by a 1x9 footprint resulting in a net
     effect that is the same as ``footprint=cp.ones((9, 9))``, but with lower
     computational cost. Most of the builtin footprints such as
-    ``skimage.morphology.disk`` provide an option to automically generate a
+    ``skimage.morphology.disk`` provide an option to automatically generate a
     footprint sequence of this type.
 
     Examples
@@ -251,8 +262,9 @@ def erosion(image, footprint=None, out=None, shift_x=False, shift_y=False):
         out = cp.empty_like(image)
 
     if _footprint_is_sequence(footprint):
-        footprints = tuple((_shift_footprint(fp, shift_x, shift_y), n)
-                           for fp, n in footprint)
+        footprints = tuple(
+            (_shift_footprint(fp, shift_x, shift_y), n) for fp, n in footprint
+        )
         return _iterate_gray_func(ndi.grey_erosion, image, footprints, out)
 
     if isinstance(footprint, tuple):
@@ -273,8 +285,11 @@ def erosion(image, footprint=None, out=None, shift_x=False, shift_y=False):
 
 
 @default_footprint
-@deprecate_kwarg(kwarg_mapping={'selem': 'footprint'},
-                 removed_version="23.02.00", deprecated_version="22.02.00")
+@deprecate_kwarg(
+    kwarg_mapping={"selem": "footprint"},
+    removed_version="23.02.00",
+    deprecated_version="22.02.00",
+)
 def dilation(image, footprint=None, out=None, shift_x=False, shift_y=False):
     """Return grayscale morphological dilation of an image.
 
@@ -318,7 +333,7 @@ def dilation(image, footprint=None, out=None, shift_x=False, shift_y=False):
     would apply a 9x1 footprint followed by a 1x9 footprint resulting in a net
     effect that is the same as ``footprint=cp.ones((9, 9))``, but with lower
     computational cost. Most of the builtin footprints such as
-    ``skimage.morphology.disk`` provide an option to automically generate a
+    ``skimage.morphology.disk`` provide an option to automatically generate a
     footprint sequence of this type.
 
     Examples
@@ -373,8 +388,11 @@ def dilation(image, footprint=None, out=None, shift_x=False, shift_y=False):
     return out
 
 
-@deprecate_kwarg(kwarg_mapping={'selem': 'footprint'},
-                 removed_version="23.02.00", deprecated_version="22.02.00")
+@deprecate_kwarg(
+    kwarg_mapping={"selem": "footprint"},
+    removed_version="23.02.00",
+    deprecated_version="22.02.00",
+)
 @default_footprint
 @pad_for_eccentric_footprints
 def opening(image, footprint=None, out=None):
@@ -412,7 +430,7 @@ def opening(image, footprint=None, out=None):
     would apply a 9x1 footprint followed by a 1x9 footprint resulting in a net
     effect that is the same as ``footprint=cp.ones((9, 9))``, but with lower
     computational cost. Most of the builtin footprints such as
-    ``skimage.morphology.disk`` provide an option to automically generate a
+    ``skimage.morphology.disk`` provide an option to automatically generate a
     footprint sequence of this type.
 
     Examples
@@ -439,8 +457,11 @@ def opening(image, footprint=None, out=None):
     return out
 
 
-@deprecate_kwarg(kwarg_mapping={'selem': 'footprint'},
-                 removed_version="23.02.00", deprecated_version="22.02.00")
+@deprecate_kwarg(
+    kwarg_mapping={"selem": "footprint"},
+    removed_version="23.02.00",
+    deprecated_version="22.02.00",
+)
 @default_footprint
 @pad_for_eccentric_footprints
 def closing(image, footprint=None, out=None):
@@ -478,7 +499,7 @@ def closing(image, footprint=None, out=None):
     would apply a 9x1 footprint followed by a 1x9 footprint resulting in a net
     effect that is the same as ``footprint=cp.ones((9, 9))``, but with lower
     computational cost. Most of the builtin footprints such as
-    ``skimage.morphology.disk`` provide an option to automically generate a
+    ``skimage.morphology.disk`` provide an option to automatically generate a
     footprint sequence of this type.
 
     Examples
@@ -523,8 +544,11 @@ def _white_tophat_seqence(image, footprints, out):
 
 
 @default_footprint
-@deprecate_kwarg(kwarg_mapping={'selem': 'footprint'},
-                 removed_version="23.02.00", deprecated_version="22.02.00")
+@deprecate_kwarg(
+    kwarg_mapping={"selem": "footprint"},
+    removed_version="23.02.00",
+    deprecated_version="22.02.00",
+)
 def white_tophat(image, footprint=None, out=None):
     """Return white top hat of an image.
 
@@ -559,7 +583,7 @@ def white_tophat(image, footprint=None, out=None):
     would apply a 9x1 footprint followed by a 1x9 footprint resulting in a net
     effect that is the same as ``footprint=cp.ones((9, 9))``, but with lower
     computational cost. Most of the builtin footprints such as
-    ``skimage.morphology.disk`` provide an option to automically generate a
+    ``skimage.morphology.disk`` provide an option to automatically generate a
     footprint sequence of this type.
 
     See Also
@@ -622,8 +646,11 @@ def white_tophat(image, footprint=None, out=None):
 
 
 @default_footprint
-@deprecate_kwarg(kwarg_mapping={'selem': 'footprint'},
-                 removed_version="23.02.00", deprecated_version="22.02.00")
+@deprecate_kwarg(
+    kwarg_mapping={"selem": "footprint"},
+    removed_version="23.02.00",
+    deprecated_version="22.02.00",
+)
 def black_tophat(image, footprint=None, out=None):
     """Return black top hat of an image.
 
@@ -659,7 +686,7 @@ def black_tophat(image, footprint=None, out=None):
     would apply a 9x1 footprint followed by a 1x9 footprint resulting in a net
     effect that is the same as ``footprint=cp.ones((9, 9))``, but with lower
     computational cost. Most of the builtin footprints such as
-    ``skimage.morphology.disk`` provide an option to automically generate a
+    ``skimage.morphology.disk`` provide an option to automatically generate a
     footprint sequence of this type.
 
     See Also

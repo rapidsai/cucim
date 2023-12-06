@@ -37,7 +37,7 @@ print(img.dims)
 # A tuple of dimension sizes (in the order of `dims`).
 print(img.shape)
 # Returns size as a tuple for the given dimension order.
-print(img.size('XYC'))
+print(img.size("XYC"))
 # The data type of the image.
 print(img.dtype)
 # A channel name list.
@@ -106,16 +106,19 @@ for num_workers in range(1, num_threads + 1):
         for h in range(start_location, height, tile_size):
             for w in range(start_location, width, tile_size):
                 count += 1
-        start_loc_iter = ((w, h)
-                          for h in range(start_location, height, tile_size)
-                          for w in range(start_location, width, tile_size))
+        start_loc_iter = (
+            (w, h)
+            for h in range(start_location, height, tile_size)
+            for w in range(start_location, width, tile_size)
+        )
         with Timer("  Thread elapsed time (OpenSlide)") as timer:
             with concurrent.futures.ThreadPoolExecutor(
                 max_workers=num_workers
             ) as executor:
                 executor.map(
                     lambda start_loc: load_tile_openslide(
-                        slide, start_loc, tile_size),
+                        slide, start_loc, tile_size
+                    ),
                     start_loc_iter,
                 )
             openslide_time = timer.elapsed_time()
@@ -123,9 +126,11 @@ for num_workers in range(1, num_threads + 1):
 
     cucim_time = 0
     slide = CuImage(input_file)
-    start_loc_iter = ((w, h)
-                      for h in range(start_location, height, tile_size)
-                      for w in range(start_location, width, tile_size))
+    start_loc_iter = (
+        (w, h)
+        for h in range(start_location, height, tile_size)
+        for w in range(start_location, width, tile_size)
+    )
     with Timer("  Thread elapsed time (cuCIM)") as timer:
         with concurrent.futures.ThreadPoolExecutor(
             max_workers=num_workers
@@ -136,10 +141,16 @@ for num_workers in range(1, num_threads + 1):
             )
         cucim_time = timer.elapsed_time()
         cucim_tot_time += cucim_time
-    print("  Performance gain (OpenSlide/cuCIM): {}".format(
-        openslide_time / cucim_time))
+    print(
+        "  Performance gain (OpenSlide/cuCIM): {}".format(
+            openslide_time / cucim_time
+        )
+    )
 
 print("Total time (OpenSlide):", openslide_tot_time)
 print("Total time (cuCIM):", cucim_tot_time)
-print("Average performance gain (OpenSlide/cuCIM): {}".format(
-    openslide_tot_time / cucim_tot_time))
+print(
+    "Average performance gain (OpenSlide/cuCIM): {}".format(
+        openslide_tot_time / cucim_tot_time
+    )
+)

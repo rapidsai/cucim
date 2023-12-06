@@ -155,7 +155,7 @@ A channel name list.
 PYDOC(spacing, R"doc(
 Returns physical size in tuple.
 
-If `dim_order` is specified, it returns phisical size for the dimensions.
+If `dim_order` is specified, it returns physical size for the dimensions.
 If a dimension given by the `dim_order` doesn't exist, it returns 1.0 by default for the missing dimension.
 
 Args:

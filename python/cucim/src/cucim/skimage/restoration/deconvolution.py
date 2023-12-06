@@ -134,8 +134,9 @@ def wiener(image, psf, balance, reg=None, is_real=True, clip=True):
     areg2 *= areg2
     wiener_filter = cp.conj(trans_func) / (atf2 + balance * areg2)
     if is_real:
-        deconv = uft.uirfftn(wiener_filter * uft.urfftn(image),
-                             shape=image.shape)
+        deconv = uft.uirfftn(
+            wiener_filter * uft.urfftn(image), shape=image.shape
+        )
     else:
         deconv = uft.uifftn(wiener_filter * uft.ufftn(image))
 
@@ -146,10 +147,26 @@ def wiener(image, psf, balance, reg=None, is_real=True, clip=True):
     return deconv
 
 
-@deprecate_kwarg({'random_state': 'seed'}, removed_version="23.08.00",
-                 deprecated_version="24.06.00")
-def unsupervised_wiener(image, psf, reg=None, user_params=None, is_real=True,
-                        clip=True, *, seed=None):
+@deprecate_kwarg(
+    {"random_state": "rng"},
+    removed_version="24.12.00",
+    deprecated_version="23.08.00",
+)
+@deprecate_kwarg(
+    {"seed": "rng"},
+    removed_version="24.12.00",
+    deprecated_version="23.12.00",
+)
+def unsupervised_wiener(
+    image,
+    psf,
+    reg=None,
+    user_params=None,
+    is_real=True,
+    clip=True,
+    *,
+    rng=None,
+):
     """Unsupervised Wiener-Hunt deconvolution.
 
     Return the deconvolution with a Wiener-Hunt approach, where the
@@ -174,12 +191,11 @@ def unsupervised_wiener(image, psf, reg=None, user_params=None, is_real=True,
     clip : boolean, optional
        True by default. If true, pixel values of the result above 1 or
        under -1 are thresholded for skimage pipeline compatibility.
-    seed : {None, int, `numpy.random.Generator`}, optional
-        If `seed` is None, the `numpy.random.Generator` singleton is used.
-        If `seed` is an int, a new ``Generator`` instance is used, seeded with
-        `seed`.
-        If `seed` is already a ``Generator`` instance, then that instance is
-        used.
+    rng : {`cupy.random.Generator`, int}, optional
+        Pseudo-random number generator.
+        By default, a PCG64 generator is used
+        (see :func:`cupy.random.default_rng`).
+        If `rng` is an int, it is used to seed the generator.
 
     Returns
     -------
@@ -221,7 +237,8 @@ def unsupervised_wiener(image, psf, reg=None, user_params=None, is_real=True,
     >>> img = color.rgb2gray(cp.array(data.astronaut()))
     >>> psf = cp.ones((5, 5)) / 25
     >>> img = ndi.uniform_filter(img, size=psf.shape)
-    >>> img += 0.1 * img.std() * cp.random.standard_normal(img.shape)
+    >>> rng = cp.random.default_rng()
+    >>> img += 0.1 * img.std() * rng.standard_normal(img.shape)
     >>> deconvolved_img = restoration.unsupervised_wiener(img, psf)
 
     Notes
@@ -251,18 +268,23 @@ def unsupervised_wiener(image, psf, reg=None, user_params=None, is_real=True,
     """
 
     if user_params is not None:
-        for s in ('max', 'min'):
-            if (s + '_iter') in user_params:
+        for s in ("max", "min"):
+            if (s + "_iter") in user_params:
                 warning_msg = (
-                    f'`{s}_iter` is a deprecated key for `user_params`. '
-                    f'It will be removed in version 1.0. '
-                    f'Use `{s}_num_iter` instead.'
+                    f"`{s}_iter` is a deprecated key for `user_params`. "
+                    f"It will be removed in version 1.0. "
+                    f"Use `{s}_num_iter` instead."
                 )
                 warnings.warn(warning_msg, FutureWarning)
-                user_params[s + '_num_iter'] = user_params.pop(s + '_iter')
+                user_params[s + "_num_iter"] = user_params.pop(s + "_iter")
 
-    params = {'threshold': 1e-4, 'max_num_iter': 200,
-              'min_num_iter': 30, 'burnin': 15, 'callback': None}
+    params = {
+        "threshold": 1e-4,
+        "max_num_iter": 200,
+        "min_num_iter": 30,
+        "burnin": 15,
+        "callback": None,
+    }
     params.update(user_params or {})
 
     if reg is None:
@@ -304,11 +326,7 @@ def unsupervised_wiener(image, psf, reg=None, user_params=None, is_real=True,
     else:
         data_spectrum = uft.ufft2(image)
 
-    try:
-        rng = cp.random.default_rng(seed)
-    except AttributeError:
-        # older CuPy without default_rng
-        rng = cp.random.RandomState(seed)
+    rng = cp.random.default_rng(rng)
 
     # Gibbs sampling
     for iteration in range(params["max_num_iter"]):
@@ -337,41 +355,40 @@ def unsupervised_wiener(image, psf, reg=None, user_params=None, is_real=True,
         gn_chain.append(
             rng.gamma(
                 image.size / 2,
-                2 / uft.image_quad_norm(data_spectrum -
-                                        x_sample *
-                                        trans_fct)
+                2 / uft.image_quad_norm(data_spectrum - x_sample * trans_fct),
             ).astype(float_type, copy=False)
         )
 
         # sample of Eq. 31 p(gx | x^k, gn^k-1, y)
         gx_chain.append(
             rng.gamma(
-                (image.size - 1) / 2,
-                2 / uft.image_quad_norm(x_sample * reg)
+                (image.size - 1) / 2, 2 / uft.image_quad_norm(x_sample * reg)
             ).astype(float_type, copy=False)
         )
 
         # current empirical average
-        if iteration > params['burnin']:
+        if iteration > params["burnin"]:
             x_postmean = prev_x_postmean + x_sample
 
-        if iteration > (params['burnin'] + 1):
-            current = x_postmean / (iteration - params['burnin'])
-            previous = prev_x_postmean / (iteration - params['burnin'] - 1)
-            delta = cp.sum(cp.abs(current - previous)) / \
-                cp.sum(cp.abs(x_postmean)) / (iteration - params['burnin'])
+        if iteration > (params["burnin"] + 1):
+            current = x_postmean / (iteration - params["burnin"])
+            previous = prev_x_postmean / (iteration - params["burnin"] - 1)
+            delta = (
+                cp.sum(cp.abs(current - previous))
+                / cp.sum(cp.abs(x_postmean))
+                / (iteration - params["burnin"])
+            )
 
         prev_x_postmean = x_postmean
 
         # stop of the algorithm
-        if (
-            (iteration > params['min_num_iter'])
-            and (delta < params['threshold'])
+        if (iteration > params["min_num_iter"]) and (
+            delta < params["threshold"]
         ):
             break
 
     # Empirical average \approx POSTMEAN Eq. 44
-    x_postmean = x_postmean / (iteration - params['burnin'])
+    x_postmean = x_postmean / (iteration - params["burnin"])
     if is_real:
         x_postmean = uft.uirfft2(x_postmean, shape=image.shape)
     else:
@@ -381,7 +398,7 @@ def unsupervised_wiener(image, psf, reg=None, user_params=None, is_real=True,
         x_postmean[x_postmean > 1] = 1
         x_postmean[x_postmean < -1] = -1
 
-    return (x_postmean, {'noise': gn_chain, 'prior': gx_chain})
+    return (x_postmean, {"noise": gn_chain, "prior": gx_chain})
 
 
 def richardson_lucy(image, psf, num_iter=50, clip=True, filter_epsilon=None):
@@ -438,12 +455,12 @@ def richardson_lucy(image, psf, num_iter=50, clip=True, filter_epsilon=None):
     eps = 1e-12
 
     for _ in range(num_iter):
-        conv = signal.convolve(im_deconv, psf, mode='same') + eps
+        conv = signal.convolve(im_deconv, psf, mode="same") + eps
         if filter_epsilon:
             relative_blur = cp.where(conv < filter_epsilon, 0, image / conv)
         else:
             relative_blur = image / conv
-        im_deconv *= signal.convolve(relative_blur, psf_mirror, mode='same')
+        im_deconv *= signal.convolve(relative_blur, psf_mirror, mode="same")
 
     if clip:
         im_deconv[im_deconv > 1] = 1

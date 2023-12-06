@@ -17,7 +17,7 @@ SAMPLE1D_EXPANDED_3 = cp.array(
 # to avoid bias, but as we are relying on the index map returned
 # by the scipy.ndimage distance transform, what actually happens
 # is determined by the upstream implementation of the distance
-# tansform, thus we don't give any guarantees for the edge case pixels.
+# transform, thus we don't give any guarantees for the edge case pixels.
 #
 # Regardless, it seems prudent to have a test including an edge case
 # so we can detect whether future upstream changes in scipy.ndimage
@@ -103,27 +103,24 @@ SAMPLE3D = cp.array(
             [0, 0, 0, 0],
             [0, 0, 0, 0],
         ],
-
         [
             [0, 0, 0, 0],
             [0, 3, 3, 0],
             [0, 0, 0, 0],
             [0, 0, 0, 0],
         ],
-
         [
             [0, 0, 0, 0],
             [0, 3, 0, 0],
             [0, 0, 0, 0],
             [0, 0, 5, 0],
         ],
-
         [
             [0, 0, 0, 0],
             [0, 0, 0, 0],
             [0, 0, 0, 0],
             [0, 0, 5, 0],
-        ]
+        ],
     ]
 )
 
@@ -135,33 +132,28 @@ SAMPLE3D_EXPANDED_2 = cp.array(
             [3, 3, 3, 3],
             [0, 3, 5, 0],
         ],
-
         [
             [3, 3, 3, 3],
             [3, 3, 3, 3],
             [3, 3, 3, 3],
             [0, 5, 5, 5],
         ],
-
         [
             [3, 3, 3, 3],
             [3, 3, 3, 3],
             [3, 3, 5, 5],
             [5, 5, 5, 5],
         ],
-
         [
             [3, 3, 3, 0],
             [3, 3, 3, 0],
             [3, 3, 5, 5],
             [5, 5, 5, 5],
-        ]
+        ],
     ]
 )
 
-SAMPLE_EDGECASE_BEHAVIOUR = cp.array(
-    [[0, 1, 0, 0], [2, 0, 0, 0], [0, 3, 0, 0]]
-)
+SAMPLE_EDGECASE_BEHAVIOUR = cp.array([[0, 1, 0, 0], [2, 0, 0, 0], [0, 3, 0, 0]])
 
 
 @pytest.mark.parametrize(
@@ -172,8 +164,8 @@ SAMPLE_EDGECASE_BEHAVIOUR = cp.array(
         (SAMPLE2D, SAMPLE2D_EXPANDED_1_5, 1.5),
         (EDGECASE1D, EDGECASE1D_EXPANDED_3, 3),
         (EDGECASE2D, EDGECASE2D_EXPANDED_4, 4),
-        (SAMPLE3D, SAMPLE3D_EXPANDED_2, 2)
-    ]
+        (SAMPLE3D, SAMPLE3D_EXPANDED_2, 2),
+    ],
 )
 def test_expand_labels(input_array, expected_output, expand_distance):
     if input_array.ndim == 1:
@@ -184,8 +176,8 @@ def test_expand_labels(input_array, expected_output, expand_distance):
         assert_array_equal(expanded, expected_output)
 
 
-@pytest.mark.parametrize('ndim', [2, 3])
-@pytest.mark.parametrize('distance', range(6))
+@pytest.mark.parametrize("ndim", [2, 3])
+@pytest.mark.parametrize("distance", range(6))
 def test_binary_blobs(ndim, distance):
     """Check some invariants with label expansion.
 
@@ -211,7 +203,7 @@ def test_binary_blobs(ndim, distance):
 
 
 def test_edge_case_behaviour():
-    """ Check edge case behavior to detect upstream changes
+    """Check edge case behavior to detect upstream changes
 
     For edge cases where a pixel has the same distance to several regions,
     lexicographical order seems to determine which region gets to expand

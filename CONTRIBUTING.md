@@ -58,26 +58,40 @@ The following instructions are for developers and contributors to cuCIM OSS deve
 
 #### Python
 
-cuCIM uses [isort](https://readthedocs.org/projects/isort/), and
-[flake8](http://flake8.pycqa.org/en/latest/) to ensure a consistent code format
-throughout the project. `isort`, and `flake8` can be installed with
+
+cuCIM uses [ruff](https://docs.astral.sh/ruff/) and [black](https://black.readthedocs.io/en/stable/) to ensure a consistent code format
+throughout the project. `ruff`, and `black` can be installed with
 `conda` or `pip`:
 
 ```bash
-conda install isort flake8
+conda install black ruff
 ```
 
 ```bash
-pip install isort flake8
+pip install black ruff
 ```
 
-These tools are used to auto-format the Python code in the repository. Additionally, there is a CI check in place to enforce
-that the committed code follows our standards. You can use the tools to
-automatically format your python code by running:
+These tools are used to auto-format the Python code in the repository. Additionally, there is a CI check in place to enforce that the committed code follows our standards. To run only for the python/cucim folder, change to that folder and run
 
 ```bash
-isort --atomic python/**/*.py
+black .
+ruff .
 ```
+
+To also check formatting in top-level folders like `benchmarks`, `examples` and `experiments`, these tools can also be run from the top level of the repository as follows:
+
+```bash
+black --config python/cucim/pyproject.toml .
+ruff --config python/cucim/pyproject.toml .
+```
+
+In addition to these tools, [codespell](https://github.com/codespell-project/codespell) can be used to help diagnose and interactively fix spelling errors in both Python and C++ code. It can also be run from the top level of the repository in interactive mode using:
+
+```bash
+codespell --toml python/cucim/pyproject.toml . -i 3 -w
+```
+
+If codespell is finding false positives in newly added code, the `ignore-words-list` entry of the `tool.codespell` section in `pyproject.toml` can be updated as needed.
 
 ### Get libcucim Dependencies
 
@@ -249,19 +263,21 @@ conda install -y -c ${CONDA_BLD_DIR} -c conda-forge \
 
 ## Building a package (for distribution. Including a wheel package for pip)
 
-**Build**
+**Wheel Build**
 
-You can execute the following command to build a wheel file for pip.
+If you are using CUDA 12.x, please update pyproject.toml as follows before building the wheel
+```bash
+sed -i "s/cupy-cuda11x/cupy-cuda12x/g" python/cucim/pyproject.toml
+```
+This will switch the CuPy dependency to one based on CUDA 12.x instead of 11.x.
+
+The wheel can then be built using:
 
 ```bash
-./run build_package
+python -m pip wheel python/cucim/ -w dist -vvv --no-deps --disable-pip-version-check
 ```
 
-The command would use `./temp` folder as a local build folder and build a distribution package into `dist` folder using [dockcross](https://github.com/dockcross/dockcross)'s manylinux2014 docker image.
-
-`./run build_package` will reuse local `./temp` folder to reduce the build time.
-
-If C++ code or dependent packages are updated so the build is failing somehow, please retry it after deleting the `temp` folder under the repository root.
+**Note:** It is possible to build the wheel in this way even without compiling the C++ library first, but in that case the `cucim.clara` module will not be importable.
 
 **Install**
 

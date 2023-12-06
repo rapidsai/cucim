@@ -14,15 +14,16 @@
  * limitations under the License.
  */
 
-//#define CATCH_CONFIG_MAIN
-//#include <catch2/catch.hpp>
+// #define CATCH_CONFIG_MAIN
+// #include <catch2/catch_test_macros.hpp>
 
 // Implement main explicitly to handle additional parameters.
 #define CATCH_CONFIG_RUNNER
 #include "config.h"
 #include "cucim/core/framework.h"
 
-#include <catch2/catch.hpp>
+#include <catch2/catch_test_macros.hpp>
+#include <catch2/catch_session.hpp>
 #include <string>
 #include <fmt/format.h>
 

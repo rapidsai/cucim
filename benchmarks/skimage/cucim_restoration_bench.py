@@ -3,18 +3,18 @@ import math
 import os
 import pickle
 
-import cucim.skimage
-import cucim.skimage.restoration
 import cupy as cp
 import cupyx.scipy.ndimage as ndi
 import numpy as np
 import pandas as pd
 import skimage
 import skimage.restoration
-from cucim.skimage.restoration import denoise_tv_chambolle as tv_gpu
+from _image_bench import ImageBench
 from skimage.restoration import denoise_tv_chambolle as tv_cpu
 
-from _image_bench import ImageBench
+import cucim.skimage
+import cucim.skimage.restoration
+from cucim.skimage.restoration import denoise_tv_chambolle as tv_gpu
 
 
 class DenoiseBench(ImageBench):
@@ -98,9 +98,7 @@ class DeconvolutionBench(ImageBench):
         self.args_gpu = (imaged, psfd)
 
 
-
 def main(args):
-
     pfile = "cucim_restoration_results.pickle"
     if os.path.exists(pfile):
         with open(pfile, "rb") as f:
@@ -110,9 +108,8 @@ def main(args):
 
     dtypes = [np.dtype(args.dtype)]
     # image sizes/shapes
-    shape = tuple(list(map(int,(args.img_size.split(',')))))
+    shape = tuple(list(map(int, (args.img_size.split(",")))))
     run_cpu = not args.no_cpu
-
 
     for function_name, fixed_kwargs, var_kwargs, allow_color, allow_nd in [
         # _denoise.py
@@ -124,7 +121,6 @@ def main(args):
         ("unsupervised_wiener", dict(), dict(), False, False),
         ("richardson_lucy", dict(), dict(num_iter=[5]), False, True),
     ]:
-
         if function_name != args.func_name:
             continue
 
@@ -139,8 +135,7 @@ def main(args):
         if shape[-1] == 3 and not allow_color:
             continue
 
-        if function_name in ['denoise_tv_chambolle', 'calibrate_denoiser']:
-
+        if function_name in ["denoise_tv_chambolle", "calibrate_denoiser"]:
             if function_name == "denoise_tv_chambolle":
                 fixed_kwargs["channel_axis"] = -1 if shape[-1] == 3 else None
 
@@ -162,8 +157,11 @@ def main(args):
             results = B.run_benchmark(duration=args.duration)
             all_results = pd.concat([all_results, results["full"]])
 
-        elif function_name in ['wiener', 'unsupervised_wiener', 'richardson_lucy']:
-
+        elif function_name in [
+            "wiener",
+            "unsupervised_wiener",
+            "richardson_lucy",
+        ]:
             B = DeconvolutionBench(
                 function_name=function_name,
                 shape=shape,
@@ -181,7 +179,7 @@ def main(args):
     all_results.to_csv(fbase + ".csv")
     all_results.to_pickle(pfile)
     try:
-        import tabular
+        import tabular  # noqa: F401
 
         with open(fbase + ".md", "wt") as f:
             f.write(all_results.to_markdown())
@@ -189,15 +187,69 @@ def main(args):
         pass
 
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Benchmarking cuCIM restoration functions')
-    func_name_choices = ['denoise_tv_chambolle', 'calibrate_denoiser', 'wiener', 'unsupervised_wiener', 'richardson_lucy']
-    dtype_choices = ['float16', 'float32', 'float64', 'int8', 'int16', 'int32', 'int64', 'uint8', 'uint16', 'uint32', 'uint64']
-    parser.add_argument('-i','--img_size', type=str, help='Size of input image (omit color channel, it will be appended as needed)', required=True)
-    parser.add_argument('-d','--dtype', type=str, help='Dtype of input image', choices = dtype_choices, required=True)
-    parser.add_argument('-f','--func_name', type=str, help='function to benchmark', choices = func_name_choices, required=True)
-    parser.add_argument('-t','--duration', type=int, help='time to run benchmark', required=True)
-    parser.add_argument('--no_cpu', action='store_true', help='disable cpu measurements', default=False)
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="Benchmarking cuCIM restoration functions"
+    )
+    func_name_choices = [
+        "denoise_tv_chambolle",
+        "calibrate_denoiser",
+        "wiener",
+        "unsupervised_wiener",
+        "richardson_lucy",
+    ]
+    dtype_choices = [
+        "float16",
+        "float32",
+        "float64",
+        "int8",
+        "int16",
+        "int32",
+        "int64",
+        "uint8",
+        "uint16",
+        "uint32",
+        "uint64",
+    ]
+    parser.add_argument(
+        "-i",
+        "--img_size",
+        type=str,
+        help=(
+            "Size of input image (omit color channel, it will be appended "
+            "as needed)"
+        ),
+        required=True,
+    )
+    parser.add_argument(
+        "-d",
+        "--dtype",
+        type=str,
+        help="Dtype of input image",
+        choices=dtype_choices,
+        required=True,
+    )
+    parser.add_argument(
+        "-f",
+        "--func_name",
+        type=str,
+        help="function to benchmark",
+        choices=func_name_choices,
+        required=True,
+    )
+    parser.add_argument(
+        "-t",
+        "--duration",
+        type=int,
+        help="time to run benchmark",
+        required=True,
+    )
+    parser.add_argument(
+        "--no_cpu",
+        action="store_true",
+        help="disable cpu measurements",
+        default=False,
+    )
 
     args = parser.parse_args()
     main(args)

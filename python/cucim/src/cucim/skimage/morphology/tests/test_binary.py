@@ -21,8 +21,8 @@ def test_non_square_image():
 
 
 @pytest.mark.parametrize(
-    'function',
-    ['binary_erosion', 'binary_dilation', 'binary_closing', 'binary_opening']
+    "function",
+    ["binary_erosion", "binary_dilation", "binary_closing", "binary_opening"],
 )
 def test_selem_kwarg_deprecation(function):
     with expected_warnings(["`selem` is a deprecated argument name"]):
@@ -58,14 +58,14 @@ def test_binary_opening():
 
 
 def _get_decomp_test_data(function, ndim=2):
-    if function == 'binary_erosion':
-        img = cp.ones((17, ) * ndim, dtype=cp.uint8)
-        img[(8, ) * ndim] = 0
-    elif function == 'binary_dilation':
-        img = cp.zeros((17, ) * ndim, dtype=cp.uint8)
-        img[(8, ) * ndim] = 1
+    if function == "binary_erosion":
+        img = cp.ones((17,) * ndim, dtype=cp.uint8)
+        img[(8,) * ndim] = 0
+    elif function == "binary_dilation":
+        img = cp.zeros((17,) * ndim, dtype=cp.uint8)
+        img[(8,) * ndim] = 1
     else:
-        img = cp.asarray(data.binary_blobs(32, n_dim=ndim, seed=1))
+        img = cp.asarray(data.binary_blobs(32, n_dim=ndim, rng=1))
     return img
 
 
@@ -74,7 +74,7 @@ def _get_decomp_test_data(function, ndim=2):
     ["binary_erosion", "binary_dilation", "binary_closing", "binary_opening"],
 )
 @pytest.mark.parametrize("size", (3, 4, 11))
-@pytest.mark.parametrize("decomposition", ['separable', 'sequence'])
+@pytest.mark.parametrize("decomposition", ["separable", "sequence"])
 def test_square_decomposition(function, size, decomposition):
     """Validate footprint decomposition for various shapes.
 
@@ -95,7 +95,7 @@ def test_square_decomposition(function, size, decomposition):
 )
 @pytest.mark.parametrize("nrows", (3, 4, 11))
 @pytest.mark.parametrize("ncols", (3, 4, 11))
-@pytest.mark.parametrize("decomposition", ['separable', 'sequence'])
+@pytest.mark.parametrize("decomposition", ["separable", "sequence"])
 def test_rectangle_decomposition(function, nrows, ncols, decomposition):
     """Validate footprint decomposition for various shapes.
 
@@ -116,7 +116,7 @@ def test_rectangle_decomposition(function, nrows, ncols, decomposition):
 )
 @pytest.mark.parametrize("m", (0, 1, 2, 3, 4, 5))
 @pytest.mark.parametrize("n", (0, 1, 2, 3, 4, 5))
-@pytest.mark.parametrize("decomposition", ['sequence'])
+@pytest.mark.parametrize("decomposition", ["sequence"])
 def test_octagon_decomposition(function, m, n, decomposition):
     """Validate footprint decomposition for various shapes.
 
@@ -140,7 +140,7 @@ def test_octagon_decomposition(function, m, n, decomposition):
     ["binary_erosion", "binary_dilation", "binary_closing", "binary_opening"],
 )
 @pytest.mark.parametrize("radius", (1, 2, 5))
-@pytest.mark.parametrize("decomposition", ['sequence'])
+@pytest.mark.parametrize("decomposition", ["sequence"])
 def test_diamond_decomposition(function, radius, decomposition):
     """Validate footprint decomposition for various shapes.
 
@@ -160,7 +160,7 @@ def test_diamond_decomposition(function, radius, decomposition):
     ["binary_erosion", "binary_dilation", "binary_closing", "binary_opening"],
 )
 @pytest.mark.parametrize("size", (3, 4, 5))
-@pytest.mark.parametrize("decomposition", ['separable', 'sequence'])
+@pytest.mark.parametrize("decomposition", ["separable", "sequence"])
 def test_cube_decomposition(function, size, decomposition):
     """Validate footprint decomposition for various shapes.
 
@@ -180,7 +180,7 @@ def test_cube_decomposition(function, size, decomposition):
     ["binary_erosion", "binary_dilation", "binary_closing", "binary_opening"],
 )
 @pytest.mark.parametrize("radius", (1, 2, 3))
-@pytest.mark.parametrize("decomposition", ['sequence'])
+@pytest.mark.parametrize("decomposition", ["sequence"])
 def test_octahedron_decomposition(function, radius, decomposition):
     """Validate footprint decomposition for various shapes.
 
@@ -215,8 +215,12 @@ def test_out_argument():
         testing.assert_array_equal(out, func(img, footprint))
 
 
-binary_functions = [morphology.binary_erosion, morphology.binary_dilation,
-                    morphology.binary_opening, morphology.binary_closing]
+binary_functions = [
+    morphology.binary_erosion,
+    morphology.binary_dilation,
+    morphology.binary_opening,
+    morphology.binary_closing,
+]
 
 
 @pytest.mark.parametrize("function", binary_functions)
@@ -256,7 +260,8 @@ def test_3d_fallback_default_footprint():
 
 
 binary_3d_fallback_functions = [
-    morphology.binary_opening, morphology.binary_closing
+    morphology.binary_opening,
+    morphology.binary_closing,
 ]
 
 
@@ -274,9 +279,9 @@ def test_3d_fallback_cube_footprint(function):
 
 def test_2d_ndimage_equivalence():
     image = cp.zeros((9, 9), cp.uint16)
-    image[2:-2, 2:-2] = 2 ** 14
-    image[3:-3, 3:-3] = 2 ** 15
-    image[4, 4] = 2 ** 16 - 1
+    image[2:-2, 2:-2] = 2**14
+    image[3:-3, 3:-3] = 2**15
+    image[4, 4] = 2**16 - 1
 
     bin_opened = morphology.binary_opening(image)
     bin_closed = morphology.binary_closing(image)
@@ -291,9 +296,9 @@ def test_2d_ndimage_equivalence():
 
 def test_binary_output_2d():
     image = cp.zeros((9, 9), cp.uint16)
-    image[2:-2, 2:-2] = 2 ** 14
-    image[3:-3, 3:-3] = 2 ** 15
-    image[4, 4] = 2 ** 16 - 1
+    image[2:-2, 2:-2] = 2**14
+    image[3:-3, 3:-3] = 2**15
+    image[4, 4] = 2**16 - 1
 
     bin_opened = morphology.binary_opening(image)
     bin_closed = morphology.binary_closing(image)
@@ -312,9 +317,9 @@ def test_binary_output_2d():
 
 def test_binary_output_3d():
     image = cp.zeros((9, 9, 9), cp.uint16)
-    image[2:-2, 2:-2, 2:-2] = 2 ** 14
-    image[3:-3, 3:-3, 3:-3] = 2 ** 15
-    image[4, 4, 4] = 2 ** 16 - 1
+    image[2:-2, 2:-2, 2:-2] = 2**14
+    image[3:-3, 3:-3, 3:-3] = 2**15
+    image[4, 4, 4] = 2**16 - 1
 
     bin_opened = morphology.binary_opening(image)
     bin_closed = morphology.binary_closing(image)

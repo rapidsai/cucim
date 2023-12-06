@@ -1,4 +1,4 @@
-import numpy as np
+import cupy as cp
 
 from ._pba_2d import _pba_2d
 from ._pba_3d import _pba_3d
@@ -7,9 +7,17 @@ from ._pba_3d import _pba_3d
 #       support chamfer/chessboard and taxicab/manhattan distances too?
 
 
-def distance_transform_edt(image, sampling=None, return_distances=True,
-                           return_indices=False, distances=None, indices=None,
-                           *, block_params=None, float64_distances=False):
+def distance_transform_edt(
+    image,
+    sampling=None,
+    return_distances=True,
+    return_indices=False,
+    distances=None,
+    indices=None,
+    *,
+    block_params=None,
+    float64_distances=False,
+):
     r"""Exact Euclidean distance transform.
 
     This function calculates the distance transform of the `input`, by
@@ -145,7 +153,7 @@ def distance_transform_edt(image, sampling=None, return_distances=True,
     """
     scalar_sampling = None
     if sampling is not None:
-        unique_sampling = np.unique(np.atleast_1d(sampling))
+        unique_sampling = cp.unique(cp.atleast_1d(sampling))
         if len(unique_sampling) == 1:
             # In the isotropic case, can use the kernels without sample scaling
             # and just adjust the final distance accordingly.
@@ -158,7 +166,8 @@ def distance_transform_edt(image, sampling=None, return_distances=True,
         pba_func = _pba_2d
     else:
         raise NotImplementedError(
-            "Only 2D and 3D distance transforms are supported.")
+            "Only 2D and 3D distance transforms are supported."
+        )
 
     vals = pba_func(
         image,

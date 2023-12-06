@@ -3,16 +3,16 @@ import math
 import os
 import pickle
 
-import cucim.skimage
-import cucim.skimage.measure
 import cupy as cp
 import numpy as np
 import pandas as pd
 import skimage
 import skimage.measure
-
 from _image_bench import ImageBench
 from cucim_metrics_bench import MetricsBench
+
+import cucim.skimage
+import cucim.skimage.measure
 
 
 class LabelBench(ImageBench):
@@ -29,7 +29,6 @@ class LabelBench(ImageBench):
         module_gpu=cucim.skimage.measure,
         run_cpu=True,
     ):
-
         self.contiguous_labels = contiguous_labels
 
         super().__init__(
@@ -77,7 +76,6 @@ class RegionpropsBench(ImageBench):
         module_gpu=cucim.skimage.measure,
         run_cpu=True,
     ):
-
         self.contiguous_labels = contiguous_labels
 
         super().__init__(
@@ -160,7 +158,6 @@ class MandersColocBench(ImageBench):
 
 
 def main(args):
-
     pfile = "cucim_measure_results.pickle"
     if os.path.exists(pfile):
         with open(pfile, "rb") as f:
@@ -170,7 +167,7 @@ def main(args):
 
     dtypes = [np.dtype(args.dtype)]
     # image sizes/shapes
-    shape = tuple(list(map(int,(args.img_size.split(',')))))
+    shape = tuple(list(map(int, (args.img_size.split(",")))))
     run_cpu = not args.no_cpu
 
     for function_name, fixed_kwargs, var_kwargs, allow_color, allow_nd in [
@@ -187,7 +184,7 @@ def main(args):
         # _moments.py
         ("moments", dict(), dict(order=[1, 2, 3, 4]), False, False),
         ("moments_central", dict(), dict(order=[1, 2, 3]), False, True),
-        # omited from benchmarks (only tiny arrays): moments_normalized, moments_hu
+        # omitted from benchmarks (only tiny arrays): moments_normalized, moments_hu  # noqa: E501
         ("centroid", dict(), dict(), False, True),
         ("inertia_tensor", dict(), dict(), False, True),
         ("inertia_tensor_eigvals", dict(), dict(), False, True),
@@ -215,14 +212,12 @@ def main(args):
             True,
             False,
         ),  # variable block_size configured below
-
         # binary image overlap measures
         ("intersection_coeff", dict(mask=None), dict(), False, True),
         ("manders_coloc_coeff", dict(mask=None), dict(), False, True),
         ("manders_overlap_coeff", dict(mask=None), dict(), False, True),
         ("pearson_corr_coeff", dict(mask=None), dict(), False, True),
     ]:
-
         if function_name != args.func_name:
             continue
 
@@ -237,13 +232,14 @@ def main(args):
         if shape[-1] == 3 and not allow_color:
             continue
 
-        if function_name in ['label', 'regionprops']:
-
-            Tester = LabelBench if function_name == "label" else RegionpropsBench
+        if function_name in ["label", "regionprops"]:
+            Tester = (
+                LabelBench if function_name == "label" else RegionpropsBench
+            )
 
             for contiguous_labels in [True, False]:
                 if contiguous_labels:
-                    index_str = f"contiguous"
+                    index_str = "contiguous"
                 else:
                     index_str = None
                 B = Tester(
@@ -258,9 +254,12 @@ def main(args):
                     module_gpu=cucim.skimage.measure,
                     run_cpu=run_cpu,
                 )
-        elif function_name in ['intersection_coeff', 'manders_coloc_coeff',
-                               'manders_overlap_coeff', 'pearson_corr_coeff']:
-
+        elif function_name in [
+            "intersection_coeff",
+            "manders_coloc_coeff",
+            "manders_overlap_coeff",
+            "pearson_corr_coeff",
+        ]:
             if function_name in ["pearson_corr_coeff", "manders_overlap_coeff"]:
                 # arguments are two images of matching dtype
                 Tester = MetricsBench
@@ -282,16 +281,18 @@ def main(args):
                 run_cpu=run_cpu,
             )
         else:
-
-
             if function_name == "gabor" and np.prod(shape) > 1000000:
                 # avoid cases that are too slow on the CPU
-                var_kwargs["frequency"] = [f for f in var_kwargs["frequency"] if f >= 0.1]
+                var_kwargs["frequency"] = [
+                    f for f in var_kwargs["frequency"] if f >= 0.1
+                ]
 
             if function_name == "block_reduce":
                 ndim = len(shape)
                 if shape[-1] == 3:
-                    block_sizes = [(b,) * (ndim - 1) + (3,) for b in (16, 32, 64)]
+                    block_sizes = [
+                        (b,) * (ndim - 1) + (3,) for b in (16, 32, 64)
+                    ]
                 else:
                     block_sizes = [(b,) * ndim for b in (16, 32, 64)]
                 var_kwargs["block_size"] = block_sizes
@@ -332,15 +333,72 @@ def main(args):
         f.write(all_results.to_markdown())
 
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Benchmarking cuCIM measure functions')
-    func_name_choices = ['label', 'regionprops', 'moments', 'moments_central', 'centroid', 'inertia_tensor', 'inertia_tensor_eigvals', 'block_reduce', 'shannon_entropy', 'profile_line', 'intersection_coeff', 'manders_coloc_coeff', 'manders_overlap_coeff', 'pearson_corr_coeff']
-    dtype_choices = ['bool', 'float16', 'float32', 'float64', 'int8', 'int16', 'int32', 'int64', 'uint8', 'uint16', 'uint32', 'uint64']
-    parser.add_argument('-i','--img_size', type=str, help='Size of input image', required=True)
-    parser.add_argument('-d','--dtype', type=str, help='Dtype of input image', choices=dtype_choices, required=True)
-    parser.add_argument('-f','--func_name', type=str, help='function to benchmark', choices=func_name_choices, required=True)
-    parser.add_argument('-t','--duration', type=int, help='time to run benchmark', required=True)
-    parser.add_argument('--no_cpu', action='store_true', help='disable cpu measurements', default=False)
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="Benchmarking cuCIM measure functions"
+    )
+    func_name_choices = [
+        "label",
+        "regionprops",
+        "moments",
+        "moments_central",
+        "centroid",
+        "inertia_tensor",
+        "inertia_tensor_eigvals",
+        "block_reduce",
+        "shannon_entropy",
+        "profile_line",
+        "intersection_coeff",
+        "manders_coloc_coeff",
+        "manders_overlap_coeff",
+        "pearson_corr_coeff",
+    ]
+    dtype_choices = [
+        "bool",
+        "float16",
+        "float32",
+        "float64",
+        "int8",
+        "int16",
+        "int32",
+        "int64",
+        "uint8",
+        "uint16",
+        "uint32",
+        "uint64",
+    ]
+    parser.add_argument(
+        "-i", "--img_size", type=str, help="Size of input image", required=True
+    )
+    parser.add_argument(
+        "-d",
+        "--dtype",
+        type=str,
+        help="Dtype of input image",
+        choices=dtype_choices,
+        required=True,
+    )
+    parser.add_argument(
+        "-f",
+        "--func_name",
+        type=str,
+        help="function to benchmark",
+        choices=func_name_choices,
+        required=True,
+    )
+    parser.add_argument(
+        "-t",
+        "--duration",
+        type=int,
+        help="time to run benchmark",
+        required=True,
+    )
+    parser.add_argument(
+        "--no_cpu",
+        action="store_true",
+        help="disable cpu measurements",
+        default=False,
+    )
 
     args = parser.parse_args()
     main(args)

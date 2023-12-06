@@ -20,13 +20,15 @@ from cucim.skimage.morphology import reconstruction
 def test_zeros():
     """Test reconstruction with image and mask of zeros"""
     assert_array_almost_equal(
-        reconstruction(cp.zeros((5, 7)), cp.zeros((5, 7))), 0)
+        reconstruction(cp.zeros((5, 7)), cp.zeros((5, 7))), 0
+    )
 
 
 def test_image_equals_mask():
     """Test reconstruction where the image and mask are the same"""
     assert_array_almost_equal(
-        reconstruction(cp.ones((7, 5)), cp.ones((7, 5))), 1)
+        reconstruction(cp.ones((7, 5)), cp.ones((7, 5))), 1
+    )
 
 
 def test_image_less_than_mask():
@@ -82,18 +84,16 @@ def test_fill_hole():
     seed = cp.array([0, 8, 8, 8, 8, 8, 8, 8, 8, 0])
     mask = cp.array([0, 3, 6, 2, 1, 1, 1, 4, 2, 0])
     result = reconstruction(seed, mask, method="erosion")
-    assert_array_almost_equal(
-        result, cp.array([0, 3, 6, 4, 4, 4, 4, 4, 2, 0])
-    )
+    assert_array_almost_equal(result, cp.array([0, 3, 6, 4, 4, 4, 4, 4, 2, 0]))
 
 
 def test_invalid_seed():
     seed = cp.ones((5, 5))
     mask = cp.ones((5, 5))
     with pytest.raises(ValueError):
-        reconstruction(seed * 2, mask, method='dilation')
+        reconstruction(seed * 2, mask, method="dilation")
     with pytest.raises(ValueError):
-        reconstruction(seed * 0.5, mask, method='erosion')
+        reconstruction(seed * 0.5, mask, method="erosion")
 
 
 def test_invalid_footprint():
@@ -131,8 +131,13 @@ def test_invalid_offset_not_none():
                      [1, 1, 1, 1, 1, 4, 4, 4]])
     # fmt: on
     with pytest.raises(ValueError):
-        reconstruction(image, mask, method='dilation',
-                       footprint=cp.ones((3, 3)), offset=cp.array([3, 0]))
+        reconstruction(
+            image,
+            mask,
+            method="dilation",
+            footprint=cp.ones((3, 3)),
+            offset=cp.array([3, 0]),
+        )
 
 
 def test_offset_not_none():
@@ -142,8 +147,15 @@ def test_offset_not_none():
     expected = cp.array([0, 3, 6, 6, 6, 6, 6, 4, 4, 0])
 
     assert_array_almost_equal(
-        reconstruction(seed, mask, method='dilation',
-                       footprint=cp.ones(3), offset=cp.array([0])), expected)
+        reconstruction(
+            seed,
+            mask,
+            method="dilation",
+            footprint=cp.ones(3),
+            offset=cp.array([0]),
+        ),
+        expected,
+    )
 
 
 def test_reconstruction_float_inputs():

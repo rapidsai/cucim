@@ -17,13 +17,13 @@ def _check_version(actver, version, cmp_op):
     Distributed under the terms of the BSD License.
     """
     try:
-        if cmp_op == '>':
+        if cmp_op == ">":
             return _version.parse(actver) > _version.parse(version)
-        elif cmp_op == '>=':
+        elif cmp_op == ">=":
             return _version.parse(actver) >= _version.parse(version)
-        elif cmp_op == '=':
+        elif cmp_op == "=":
             return _version.parse(actver) == _version.parse(version)
-        elif cmp_op == '<':
+        elif cmp_op == "<":
             return _version.parse(actver) < _version.parse(version)
         else:
             return False
@@ -33,9 +33,8 @@ def _check_version(actver, version, cmp_op):
 
 def get_module_version(module_name):
     """Return module version or None if version can't be retrieved."""
-    mod = __import__(module_name,
-                     fromlist=[module_name.rpartition('.')[-1]])
-    return getattr(mod, '__version__', getattr(mod, 'VERSION', None))
+    mod = __import__(module_name, fromlist=[module_name.rpartition(".")[-1]])
+    return getattr(mod, "__version__", getattr(mod, "VERSION", None))
 
 
 def is_installed(name, version=None):
@@ -61,7 +60,7 @@ def is_installed(name, version=None):
     Original Copyright (C) 2009-2011 Pierre Raybaut
     Licensed under the terms of the MIT License.
     """
-    if name.lower() == 'python':
+    if name.lower() == "python":
         actver = sys.version[:6]
     else:
         try:
@@ -75,14 +74,15 @@ def is_installed(name, version=None):
         # we lazy import re
         import re
 
-        match = re.search('[0-9]', version)
+        match = re.search("[0-9]", version)
         assert match is not None, "Invalid version number"
-        symb = version[:match.start()]
+        symb = version[: match.start()]
         if not symb:
-            symb = '='
-        assert symb in ('>=', '>', '=', '<'),\
+            symb = "="
+        assert symb in (">=", ">", "=", "<"), (
             "Invalid version condition '%s'" % symb
-        version = version[match.start():]
+        )
+        version = version[match.start() :]
         return _check_version(actver, version, symb)
 
 
@@ -120,7 +120,9 @@ def require(name, version=None):
                 if version is not None:
                     msg += " %s" % version
                 raise ImportError(msg + '"')
+
         return func_wrapped
+
     return decorator
 
 
@@ -145,5 +147,4 @@ def get_module(module_name, version=None):
     """
     if not is_installed(module_name, version):
         return None
-    return __import__(module_name,
-                      fromlist=[module_name.rpartition('.')[-1]])
+    return __import__(module_name, fromlist=[module_name.rpartition(".")[-1]])

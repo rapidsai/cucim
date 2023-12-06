@@ -88,7 +88,7 @@ def _cv_calculate_variation(image, phi, mu, lambda1, lambda2, dt):
     C1-4 notation is taken.
     """
     eta = 1e-16
-    P = pad(phi, 1, mode='edge')
+    P = pad(phi, 1, mode="edge")
 
     x_end = P[1:-1, 2:]
     x_mid = P[1:-1, 1:-1]
@@ -111,15 +111,15 @@ def _cv_calculate_variation(image, phi, mu, lambda1, lambda2, dt):
 
 
 @cp.fuse()
-def _cv_heavyside(x, eps=1.):
+def _cv_heavyside(x, eps=1.0):
     """Returns the result of a regularised heavyside function of the
     input value(s).
     """
-    return 0.5 * (1. + (2. / cp.pi) * cp.arctan(x / eps))
+    return 0.5 * (1.0 + (2.0 / cp.pi) * cp.arctan(x / eps))
 
 
 @cp.fuse()
-def _cv_delta(x, eps=1.):
+def _cv_delta(x, eps=1.0):
     """Returns the result of a regularised dirac function of the
     input value(s).
     """
@@ -134,8 +134,7 @@ def _fused_inplace_eps_div(num, denom, eps):
 
 
 def _cv_calculate_averages(image, H, Hinv):
-    """Returns the average values 'inside' and 'outside'.
-    """
+    """Returns the average values 'inside' and 'outside'."""
     Hsum = cp.sum(H)
     Hinvsum = cp.sum(Hinv)
     avg_inside = cp.sum(image * H)
@@ -160,7 +159,7 @@ def _cv_difference_from_average_term(image, Hphi, lambda_pos, lambda_neg):
     """Returns the 'energy' contribution due to the difference from
     the average value within a region at each point.
     """
-    Hinv = 1. - Hphi
+    Hinv = 1.0 - Hphi
     (c1, c2) = _cv_calculate_averages(image, Hphi, Hinv)
     out = _fused_difference_op1(image, c1, Hphi, lambda_pos)
     out += _fused_difference_op1(image, c2, Hinv, lambda_neg)
@@ -179,9 +178,8 @@ def _fused_edge_length(mu, phi, x_start, x_end, y_start, y_end):
 
 
 def _cv_edge_length_term(phi, mu):
-    """Returns the 'curvature' of a level set 'phi'.
-    """
-    P = pad(phi, 1, mode='edge')
+    """Returns the 'curvature' of a level set 'phi'."""
+    P = pad(phi, 1, mode="edge")
     y_start = P[:-2, 1:-1]
     y_end = P[2:, 1:-1]
     x_start = P[1:-1, :-2]
@@ -236,7 +234,7 @@ def _cv_large_disk(image_size):
     res = cp.ones(image_size, dtype=bool)
     centerY = int((image_size[0] - 1) / 2)
     centerX = int((image_size[1] - 1) / 2)
-    res[centerY, centerX] = 0.
+    res[centerY, centerX] = 0.0
     radius = float(min(centerX, centerY))
     out = radius - distance_transform_edt(res)
     out /= radius
@@ -251,7 +249,7 @@ def _cv_small_disk(image_size):
     res = cp.ones(image_size, dtype=bool)
     centerY = int((image_size[0] - 1) / 2)
     centerX = int((image_size[1] - 1) / 2)
-    res[centerY, centerX] = 0.
+    res[centerY, centerX] = 0.0
     radius = float(min(centerX, centerY)) / 2.0
     out = radius - distance_transform_edt(res)
     out /= radius * 3
@@ -259,14 +257,13 @@ def _cv_small_disk(image_size):
 
 
 def _cv_init_level_set(init_level_set, image_shape, dtype=cp.float64):
-    """Generates an initial level set function conditional on input arguments.
-    """
-    if type(init_level_set) == str:
-        if init_level_set == 'checkerboard':
+    """Generates an initial level set function conditional on input arguments."""  # noqa: E501
+    if isinstance(init_level_set, str):
+        if init_level_set == "checkerboard":
             res = _cv_checkerboard(image_shape, 5, dtype)
-        elif init_level_set == 'disk':
+        elif init_level_set == "disk":
             res = _cv_large_disk(image_shape)
-        elif init_level_set == 'small disk':
+        elif init_level_set == "small disk":
             res = _cv_small_disk(image_shape)
         else:
             raise ValueError("Incorrect name for starting level set preset.")
@@ -275,11 +272,22 @@ def _cv_init_level_set(init_level_set, image_shape, dtype=cp.float64):
     return res.astype(dtype, copy=False)
 
 
-@deprecate_kwarg({'max_iter': 'max_num_iter'}, removed_version="23.02.00",
-                 deprecated_version="22.02.00")
-def chan_vese(image, mu=0.25, lambda1=1.0, lambda2=1.0, tol=1e-3,
-              max_num_iter=500, dt=0.5, init_level_set='checkerboard',
-              extended_output=False):
+@deprecate_kwarg(
+    {"max_iter": "max_num_iter"},
+    removed_version="23.02.00",
+    deprecated_version="22.02.00",
+)
+def chan_vese(
+    image,
+    mu=0.25,
+    lambda1=1.0,
+    lambda2=1.0,
+    tol=1e-3,
+    max_num_iter=500,
+    dt=0.5,
+    init_level_set="checkerboard",
+    extended_output=False,
+):
     """Chan-Vese segmentation algorithm.
 
     Active contour model by evolving a level set. Can be used to
@@ -410,8 +418,10 @@ def chan_vese(image, mu=0.25, lambda1=1.0, lambda2=1.0, tol=1e-3,
     float_dtype = _supported_float_type(image.dtype)
     phi = _cv_init_level_set(init_level_set, image.shape, dtype=float_dtype)
     if type(phi) != cp.ndarray or phi.shape != image.shape:
-        raise ValueError("The dimensions of initial level set do not "
-                         "match the dimensions of image.")
+        raise ValueError(
+            "The dimensions of initial level set do not "
+            "match the dimensions of image."
+        )
 
     image = image.astype(float_dtype, copy=False)
     image = image - cp.min(image)

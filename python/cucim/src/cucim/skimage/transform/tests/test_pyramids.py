@@ -13,27 +13,29 @@ image = cp.asarray(data.astronaut())
 image_gray = image[..., 0]
 
 
-@pytest.mark.parametrize('channel_axis', [0, 1, -1])
+@pytest.mark.parametrize("channel_axis", [0, 1, -1])
 def test_pyramid_reduce_rgb(channel_axis):
     image = cp.array(data.astronaut())
     rows, cols, dim = image.shape
     image_ = cp.moveaxis(image, source=-1, destination=channel_axis)
-    out_ = pyramids.pyramid_reduce(image_, downscale=2,
-                                   channel_axis=channel_axis)
+    out_ = pyramids.pyramid_reduce(
+        image_, downscale=2, channel_axis=channel_axis
+    )
     out = cp.moveaxis(out_, channel_axis, -1)
     assert_array_equal(out.shape, (rows / 2, cols / 2, dim))
 
 
 def test_pyramid_reduce_gray():
     rows, cols = image_gray.shape
-    out1 = pyramids.pyramid_reduce(image_gray, downscale=2,
-                                   channel_axis=None)
+    out1 = pyramids.pyramid_reduce(image_gray, downscale=2, channel_axis=None)
     assert_array_equal(out1.shape, (rows / 2, cols / 2))
     assert_almost_equal(float(out1.ptp()), 1.0, decimal=2)
-    out2 = pyramids.pyramid_reduce(image_gray, downscale=2,
-                                   channel_axis=None, preserve_range=True)
-    assert_almost_equal(float(out2.ptp()) / float(image_gray.ptp()), 1.0,
-                        decimal=2)
+    out2 = pyramids.pyramid_reduce(
+        image_gray, downscale=2, channel_axis=None, preserve_range=True
+    )
+    assert_almost_equal(
+        float(out2.ptp()) / float(image_gray.ptp()), 1.0, decimal=2
+    )
 
 
 def test_pyramid_reduce_gray_defaults():
@@ -47,19 +49,18 @@ def test_pyramid_reduce_gray_defaults():
 
 def test_pyramid_reduce_nd():
     for ndim in [1, 2, 3, 4]:
-        img = cp.random.randn(*((8, ) * ndim))
+        img = cp.random.randn(*((8,) * ndim))
         out = pyramids.pyramid_reduce(img, downscale=2, channel_axis=None)
         expected_shape = cp.asarray(img.shape) / 2
         assert_array_equal(out.shape, expected_shape)
 
 
-@pytest.mark.parametrize('channel_axis', [0, 1, 2, -1, -2, -3])
+@pytest.mark.parametrize("channel_axis", [0, 1, 2, -1, -2, -3])
 def test_pyramid_expand_rgb(channel_axis):
     image = cp.array(data.astronaut())
     rows, cols, dim = image.shape
     image = cp.moveaxis(image, source=-1, destination=channel_axis)
-    out = pyramids.pyramid_expand(image, upscale=2,
-                                  channel_axis=channel_axis)
+    out = pyramids.pyramid_expand(image, upscale=2, channel_axis=channel_axis)
     expected_shape = [rows * 2, cols * 2]
     expected_shape.insert(channel_axis % image.ndim, dim)
     assert_array_equal(out.shape, expected_shape)
@@ -74,31 +75,32 @@ def test_pyramid_expand_gray():
 def test_pyramid_expand_nd():
     for ndim in [1, 2, 3, 4]:
         img = cp.random.randn(*((4,) * ndim))
-        out = pyramids.pyramid_expand(img, upscale=2,
-                                      channel_axis=None)
+        out = pyramids.pyramid_expand(img, upscale=2, channel_axis=None)
         expected_shape = cp.asarray(img.shape) * 2
         assert_array_equal(out.shape, expected_shape)
 
 
-@pytest.mark.parametrize('channel_axis', [0, 1, 2, -1, -2, -3])
+@pytest.mark.parametrize("channel_axis", [0, 1, 2, -1, -2, -3])
 def test_build_gaussian_pyramid_rgb(channel_axis):
     image = cp.array(data.astronaut())
     rows, cols, dim = image.shape
     image = cp.moveaxis(image, source=-1, destination=channel_axis)
-    pyramid = pyramids.pyramid_gaussian(image, downscale=2,
-                                        channel_axis=channel_axis)
+    pyramid = pyramids.pyramid_gaussian(
+        image, downscale=2, channel_axis=channel_axis
+    )
     for layer, out in enumerate(pyramid):
-        layer_shape = [rows / 2 ** layer, cols / 2 ** layer]
+        layer_shape = [rows / 2**layer, cols / 2**layer]
         layer_shape.insert(channel_axis % image.ndim, dim)
         assert out.shape == tuple(layer_shape)
 
 
 def test_build_gaussian_pyramid_gray():
     rows, cols = image_gray.shape
-    pyramid = pyramids.pyramid_gaussian(image_gray, downscale=2,
-                                        channel_axis=None)
+    pyramid = pyramids.pyramid_gaussian(
+        image_gray, downscale=2, channel_axis=None
+    )
     for layer, out in enumerate(pyramid):
-        layer_shape = (rows / 2 ** layer, cols / 2 ** layer)
+        layer_shape = (rows / 2**layer, cols / 2**layer)
         assert_array_equal(out.shape, layer_shape)
 
 
@@ -106,7 +108,7 @@ def test_build_gaussian_pyramid_gray_defaults():
     rows, cols = image_gray.shape
     pyramid = pyramids.pyramid_gaussian(image_gray)
     for layer, out in enumerate(pyramid):
-        layer_shape = (rows / 2 ** layer, cols / 2 ** layer)
+        layer_shape = (rows / 2**layer, cols / 2**layer)
         assert_array_equal(out.shape, layer_shape)
 
 
@@ -114,22 +116,22 @@ def test_build_gaussian_pyramid_nd():
     for ndim in [1, 2, 3, 4]:
         img = cp.random.randn(*((8,) * ndim))
         original_shape = cp.asarray(img.shape)
-        pyramid = pyramids.pyramid_gaussian(img, downscale=2,
-                                            channel_axis=None)
+        pyramid = pyramids.pyramid_gaussian(img, downscale=2, channel_axis=None)
         for layer, out in enumerate(pyramid):
-            layer_shape = original_shape / 2 ** layer
+            layer_shape = original_shape / 2**layer
             assert_array_equal(out.shape, layer_shape)
 
 
-@pytest.mark.parametrize('channel_axis', [0, 1, 2, -1, -2, -3])
+@pytest.mark.parametrize("channel_axis", [0, 1, 2, -1, -2, -3])
 def test_build_laplacian_pyramid_rgb(channel_axis):
     image = cp.array(data.astronaut())
     rows, cols, dim = image.shape
     image = cp.moveaxis(image, source=-1, destination=channel_axis)
-    pyramid = pyramids.pyramid_laplacian(image, downscale=2,
-                                         channel_axis=channel_axis)
+    pyramid = pyramids.pyramid_laplacian(
+        image, downscale=2, channel_axis=channel_axis
+    )
     for layer, out in enumerate(pyramid):
-        layer_shape = [rows / 2 ** layer, cols / 2 ** layer]
+        layer_shape = [rows / 2**layer, cols / 2**layer]
         layer_shape.insert(channel_axis % image.ndim, dim)
         assert out.shape == tuple(layer_shape)
 
@@ -138,7 +140,7 @@ def test_build_laplacian_pyramid_defaults():
     rows, cols = image_gray.shape
     pyramid = pyramids.pyramid_laplacian(image_gray)
     for layer, out in enumerate(pyramid):
-        layer_shape = (rows / 2 ** layer, cols / 2 ** layer)
+        layer_shape = (rows / 2**layer, cols / 2**layer)
         assert_array_equal(out.shape, layer_shape)
 
 
@@ -146,14 +148,15 @@ def test_build_laplacian_pyramid_nd():
     for ndim in [1, 2, 3, 4]:
         img = cp.random.randn(*(16,) * ndim)
         original_shape = cp.asarray(img.shape)
-        pyramid = pyramids.pyramid_laplacian(img, downscale=2,
-                                             channel_axis=None)
+        pyramid = pyramids.pyramid_laplacian(
+            img, downscale=2, channel_axis=None
+        )
         for layer, out in enumerate(pyramid):
-            layer_shape = original_shape / 2 ** layer
+            layer_shape = original_shape / 2**layer
             assert_array_equal(out.shape, layer_shape)
 
 
-@pytest.mark.parametrize('channel_axis', [0, 1, 2, -1, -2, -3])
+@pytest.mark.parametrize("channel_axis", [0, 1, 2, -1, -2, -3])
 def test_laplacian_pyramid_max_layers(channel_axis):
     for downscale in [2, 3, 5, 7]:
         if channel_axis is None:
@@ -167,11 +170,11 @@ def test_laplacian_pyramid_max_layers(channel_axis):
             shape.insert(channel_axis % ndim, n_channels)
             shape = tuple(shape)
         img = cp.ones(shape)
-        pyramid = pyramids.pyramid_laplacian(img, downscale=downscale,
-                                             channel_axis=channel_axis)
+        pyramid = pyramids.pyramid_laplacian(
+            img, downscale=downscale, channel_axis=channel_axis
+        )
         max_layer = math.ceil(math.log(max(shape_without_channels), downscale))
         for layer, out in enumerate(pyramid):
-
             if channel_axis is None:
                 out_shape_without_channels = out.shape
             else:
@@ -199,10 +202,10 @@ def test_check_factor():
 
 
 @pytest.mark.parametrize(
-    'dtype', ['float16', 'float32', 'float64', 'uint8', 'int64']
+    "dtype", ["float16", "float32", "float64", "uint8", "int64"]
 )
 @pytest.mark.parametrize(
-    'pyramid_func', [pyramids.pyramid_gaussian, pyramids.pyramid_laplacian]
+    "pyramid_func", [pyramids.pyramid_gaussian, pyramids.pyramid_laplacian]
 )
 def test_pyramid_dtype_support(pyramid_func, dtype):
     img = cp.ones((32, 8), dtype=dtype)

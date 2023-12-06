@@ -13,7 +13,9 @@
 # limitations under the License.
 #
 
+
 def open_image_cucim(file_path):
     from cucim import CuImage
+
     img = CuImage(file_path)
     return img

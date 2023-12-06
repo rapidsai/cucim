@@ -27,7 +27,7 @@ def test_arraymap_long_str():
     in_values = cp.unique(labels)
     out_values = cp.random.random(in_values.shape)
     m = ArrayMap(in_values, out_values)
-    assert len(str(m).split('\n')) == m._max_str_lines + 2
+    assert len(str(m).split("\n")) == m._max_str_lines + 2
 
 
 def test_arraymap_update():

@@ -5,7 +5,7 @@ import math
 
 import numpy
 
-if hasattr(math, 'prod'):
+if hasattr(math, "prod"):
     prod = math.prod  # available in Python 3.8+ only
 else:
     prod = numpy.prod

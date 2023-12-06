@@ -32,8 +32,7 @@ def test_uint_image(channel_axis):
     labels = cp.zeros((10, 10), dtype=cp.int64)
     labels[1:3, 1:3] = 1
     labels[6:9, 6:9] = 2
-    output = label2rgb(labels, image=img, bg_label=0,
-                       channel_axis=channel_axis)
+    output = label2rgb(labels, image=img, bg_label=0, channel_axis=channel_axis)
     # Make sure that the output is made of floats and in the correct range
     assert cp.issubdtype(output.dtype, cp.floating)
     assert output.max() <= 1
@@ -48,8 +47,9 @@ def test_rgb():
     label = cp.arange(3).reshape(1, -1)
     colors = [(1, 0, 0), (0, 1, 0), (0, 0, 1)]
     # Set alphas just in case the defaults change
-    rgb = label2rgb(label, image=image, colors=colors, alpha=1,
-                    image_alpha=1, bg_label=-1)
+    rgb = label2rgb(
+        label, image=image, colors=colors, alpha=1, image_alpha=1, bg_label=-1
+    )
     assert_array_almost_equal(rgb, [colors])
 
 
@@ -57,8 +57,7 @@ def test_alpha():
     image = cp.random.uniform(size=(3, 3))
     label = cp.random.randint(0, 9, size=(3, 3))
     # If we set `alpha = 0`, then rgb should match image exactly.
-    rgb = label2rgb(label, image=image, alpha=0, image_alpha=1,
-                    bg_label=-1)
+    rgb = label2rgb(label, image=image, alpha=0, image_alpha=1, bg_label=-1)
     assert_array_almost_equal(rgb[..., 0], image)
     assert_array_almost_equal(rgb[..., 1], image)
     assert_array_almost_equal(rgb[..., 2], image)
@@ -76,19 +75,21 @@ def test_image_alpha():
     label = cp.arange(3).reshape(1, -1)
     colors = [(1, 0, 0), (0, 1, 0), (0, 0, 1)]
     # If we set `image_alpha = 0`, then rgb should match label colors exactly.
-    rgb = label2rgb(label, image=image, colors=colors, alpha=1,
-                    image_alpha=0, bg_label=-1)
+    rgb = label2rgb(
+        label, image=image, colors=colors, alpha=1, image_alpha=0, bg_label=-1
+    )
     assert_array_almost_equal(rgb, [colors])
 
 
 def test_color_names():
     image = cp.ones((1, 3))
     label = cp.arange(3).reshape(1, -1)
-    cnames = ['red', 'lime', 'blue']
+    cnames = ["red", "lime", "blue"]
     colors = [(1, 0, 0), (0, 1, 0), (0, 0, 1)]
     # Set alphas just in case the defaults change
-    rgb = label2rgb(label, image=image, colors=cnames, alpha=1,
-                    image_alpha=1, bg_label=-1)
+    rgb = label2rgb(
+        label, image=image, colors=cnames, alpha=1, image_alpha=1, bg_label=-1
+    )
     assert_array_almost_equal(rgb, [colors])
 
 
@@ -97,8 +98,14 @@ def test_bg_and_color_cycle():
     label = cp.arange(10).reshape(1, -1)
     colors = [(1, 0, 0), (0, 0, 1)]
     bg_color = (0, 0, 0)
-    rgb = label2rgb(label, image=image, bg_label=0, bg_color=bg_color,
-                    colors=colors, alpha=1)
+    rgb = label2rgb(
+        label,
+        image=image,
+        bg_label=0,
+        bg_color=bg_color,
+        colors=colors,
+        alpha=1,
+    )
     assert_array_almost_equal(rgb[0, 0], bg_color)
     for pixel, color in zip(rgb[0, 1:], itertools.cycle(colors)):
         assert_array_almost_equal(pixel, color)
@@ -106,18 +113,24 @@ def test_bg_and_color_cycle():
 
 def test_negative_labels():
     labels = cp.array([0, -1, -2, 0])
-    rout = cp.array([(0., 0., 0.), (0., 0., 1.), (1., 0., 0.), (0., 0., 0.)])
+    rout = cp.array(
+        [(0.0, 0.0, 0.0), (0.0, 0.0, 1.0), (1.0, 0.0, 0.0), (0.0, 0.0, 0.0)]
+    )
     assert_array_almost_equal(
-        rout, label2rgb(labels, bg_label=0, alpha=1, image_alpha=1))
+        rout, label2rgb(labels, bg_label=0, alpha=1, image_alpha=1)
+    )
 
 
 def test_nonconsecutive():
     labels = cp.array([0, 2, 4, 0])
     colors = [(1, 0, 0), (0, 0, 1)]
-    rout = cp.array([(1., 0., 0.), (0., 0., 1.), (1., 0., 0.), (1., 0., 0.)])
+    rout = cp.array(
+        [(1.0, 0.0, 0.0), (0.0, 0.0, 1.0), (1.0, 0.0, 0.0), (1.0, 0.0, 0.0)]
+    )
     assert_array_almost_equal(
-        rout, label2rgb(labels, colors=colors, alpha=1,
-                        image_alpha=1, bg_label=-1))
+        rout,
+        label2rgb(labels, colors=colors, alpha=1, image_alpha=1, bg_label=-1),
+    )
 
 
 def test_label_consistency():
@@ -129,8 +142,9 @@ def test_label_consistency():
     rgb_1 = label2rgb(label_1, colors=colors, bg_label=-1)
     rgb_2 = label2rgb(label_2, colors=colors, bg_label=-1)
     for label_id in label_2.ravel():
-        assert_array_almost_equal(rgb_1[label_1 == label_id],
-                                  rgb_2[label_2 == label_id])
+        assert_array_almost_equal(
+            rgb_1[label_1 == label_id], rgb_2[label_2 == label_id]
+        )
 
 
 def test_leave_labels_alone():
@@ -211,7 +225,7 @@ def test_bg_color_rgb_string():
     labels[6:9, 6:9] = 2
     img = cp.asarray(img)
     labels = cp.asarray(labels)
-    output = label2rgb(labels, image=img, alpha=0.9, bg_label=0, bg_color='red')
+    output = label2rgb(labels, image=img, alpha=0.9, bg_label=0, bg_color="red")
     assert output[0, 0, 0] > 0.9  # red channel
 
 
@@ -222,16 +236,16 @@ def test_avg_with_2d_image():
     labels[6:9, 6:9] = 2
     img = cp.asarray(img)
     labels = cp.asarray(labels)
-    assert_no_warnings(label2rgb, labels, image=img, bg_label=0, kind='avg')
+    assert_no_warnings(label2rgb, labels, image=img, bg_label=0, kind="avg")
 
 
-@pytest.mark.parametrize('image_type', ['rgb', 'gray', None])
+@pytest.mark.parametrize("image_type", ["rgb", "gray", None])
 def test_label2rgb_nd(image_type):
     # validate 1D and 3D cases by testing their output relative to the 2D case
     shape = (10, 10)
-    if image_type == 'rgb':
+    if image_type == "rgb":
         img = cp.random.randint(0, 255, shape + (3,), dtype=np.uint8)
-    elif image_type == 'gray':
+    elif image_type == "gray":
         img = cp.random.randint(0, 255, shape, dtype=np.uint8)
     else:
         img = None
@@ -253,7 +267,7 @@ def test_label2rgb_nd(image_type):
     assert_array_equal(labeled_1d, expected)
 
     # Labeling a 3D stack of duplicates gives the same result in each plane
-    image_3d = cp.stack((img, ) * 4) if image_type is not None else None
+    image_3d = cp.stack((img,) * 4) if image_type is not None else None
     labels_3d = cp.stack((labels,) * 4)
     labeled_3d = label2rgb(labels_3d, image=image_3d, bg_label=0)
     for labeled_plane in labeled_3d:
@@ -284,8 +298,9 @@ def test_overlay_full_saturation():
     labels[5:, 5:] = 2
     labels[:3, :3] = 0
     alpha = 0.3
-    rgb = label2rgb(labels, image=rgb_img, alpha=alpha,
-                    bg_label=0, saturation=1)
+    rgb = label2rgb(
+        labels, image=rgb_img, alpha=alpha, bg_label=0, saturation=1
+    )
     # check that rgb part of input image is preserved, where labels=0
     assert_array_almost_equal(rgb_img[:3, :3] * (1 - alpha), rgb[:3, :3])
 
@@ -297,8 +312,9 @@ def test_overlay_custom_saturation():
     labels[:3, :3] = 0
     alpha = 0.3
     saturation = 0.3
-    rgb = label2rgb(labels, image=rgb_img, alpha=alpha,
-                    bg_label=0, saturation=saturation)
+    rgb = label2rgb(
+        labels, image=rgb_img, alpha=alpha, bg_label=0, saturation=saturation
+    )
 
     hsv = rgb2hsv(rgb_img)
     hsv[..., 1] *= saturation
@@ -312,8 +328,6 @@ def test_saturation_warning():
     rgb_img = cp.random.uniform(size=(10, 10, 3))
     labels = cp.ones((10, 10), dtype=np.int64)
     with expected_warnings(["saturation must be in range"]):
-        label2rgb(labels, image=rgb_img,
-                  bg_label=0, saturation=2)
+        label2rgb(labels, image=rgb_img, bg_label=0, saturation=2)
     with expected_warnings(["saturation must be in range"]):
-        label2rgb(labels, image=rgb_img,
-                  bg_label=0, saturation=-1)
+        label2rgb(labels, image=rgb_img, bg_label=0, saturation=-1)

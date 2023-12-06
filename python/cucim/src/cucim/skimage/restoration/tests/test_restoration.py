@@ -39,7 +39,7 @@ def _get_rtol_atol(dtype):
     return rtol, atol
 
 
-@pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])
+@pytest.mark.parametrize("dtype", [cp.float16, cp.float32, cp.float64])
 def test_wiener(dtype):
     psf = np.ones((5, 5), dtype=dtype) / 25
     data = signal.convolve2d(cp.asnumpy(test_img), psf, "same")
@@ -53,26 +53,25 @@ def test_wiener(dtype):
     assert deconvolved.dtype == _supported_float_type(dtype)
 
     rtol, atol = _get_rtol_atol(dtype)
-    path = fetch('restoration/tests/camera_wiener.npy')
-    cp.testing.assert_allclose(
-        deconvolved, np.load(path), rtol=rtol, atol=atol)
+    path = fetch("restoration/tests/camera_wiener.npy")
+    cp.testing.assert_allclose(deconvolved, np.load(path), rtol=rtol, atol=atol)
 
     _, laplacian = uft.laplacian(2, data.shape)
     otf = uft.ir2tf(psf, data.shape, is_real=False)
     assert otf.real.dtype == _supported_float_type(dtype)
-    deconvolved = restoration.wiener(data, otf, 0.05,
-                                     reg=laplacian,
-                                     is_real=False)
+    deconvolved = restoration.wiener(
+        data, otf, 0.05, reg=laplacian, is_real=False
+    )
     assert deconvolved.real.dtype == _supported_float_type(dtype)
-    cp.testing.assert_allclose(cp.real(deconvolved),
-                               np.load(path),
-                               rtol=rtol, atol=atol)
+    cp.testing.assert_allclose(
+        cp.real(deconvolved), np.load(path), rtol=rtol, atol=atol
+    )
 
 
-@pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])
+@pytest.mark.parametrize("dtype", [cp.float16, cp.float32, cp.float64])
 def test_unsupervised_wiener(dtype):
     psf = np.ones((5, 5), dtype=dtype) / 25
-    data = signal.convolve2d(cp.asnumpy(test_img), psf, 'same')
+    data = signal.convolve2d(cp.asnumpy(test_img), psf, "same")
     seed = 16829302
     # keep old-style RandomState here for compatibility with previously stored
     # reference data in camera_unsup.npy and camera_unsup2.npy
@@ -81,7 +80,7 @@ def test_unsupervised_wiener(dtype):
 
     psf = cp.asarray(psf, dtype=dtype)
     data = cp.asarray(data, dtype=dtype)
-    deconvolved, _ = restoration.unsupervised_wiener(data, psf, seed=seed)
+    deconvolved, _ = restoration.unsupervised_wiener(data, psf, rng=seed)
     float_type = _supported_float_type(dtype)
     assert deconvolved.dtype == float_type
 
@@ -104,10 +103,12 @@ def test_unsupervised_wiener(dtype):
         otf,
         reg=laplacian,
         is_real=False,
-        user_params={"callback": lambda x: None,
-                     "max_num_iter": 200,
-                     "min_num_iter": 30},
-        seed=seed,
+        user_params={
+            "callback": lambda x: None,
+            "max_num_iter": 200,
+            "min_num_iter": 30,
+        },
+        rng=seed,
     )[0]
     assert deconvolved2.real.dtype == float_type
 
@@ -121,17 +122,38 @@ def test_unsupervised_wiener(dtype):
 
 def test_unsupervised_wiener_deprecated_user_param():
     psf = np.ones((5, 5), dtype=float) / 25
-    data = signal.convolve2d(cp.asnumpy(test_img), psf, 'same')
+    data = signal.convolve2d(cp.asnumpy(test_img), psf, "same")
     data = cp.array(data)
     psf = cp.array(psf)
     otf = uft.ir2tf(psf, data.shape, is_real=False)
     _, laplacian = uft.laplacian(2, data.shape)
-    with expected_warnings(["`max_iter` is a deprecated key",
-                            "`min_iter` is a deprecated key",
-                            "`random_state` is a deprecated argument name"]):
+    with expected_warnings(
+        [
+            "`max_iter` is a deprecated key",
+            "`min_iter` is a deprecated key",
+            "`random_state` is a deprecated argument name",
+        ]
+    ):
         restoration.unsupervised_wiener(
-            data, otf, reg=laplacian, is_real=False,
-            user_params={"max_iter": 200, "min_iter": 30}, random_state=5
+            data,
+            otf,
+            reg=laplacian,
+            is_real=False,
+            user_params={"max_iter": 200, "min_iter": 30},
+            random_state=5,
+        )
+
+    with expected_warnings(
+        [
+            "`seed` is a deprecated argument name",
+        ]
+    ):
+        restoration.unsupervised_wiener(
+            data,
+            otf,
+            reg=laplacian,
+            is_real=False,
+            seed=5,
         )
 
 
@@ -161,7 +183,7 @@ def test_image_shape():
 def test_richardson_lucy():
     rstate = np.random.RandomState(0)
     psf = np.ones((5, 5)) / 25
-    data = signal.convolve2d(cp.asnumpy(test_img), psf, 'same')
+    data = signal.convolve2d(cp.asnumpy(test_img), psf, "same")
     np.random.seed(0)
     data += 0.1 * data.std() * rstate.standard_normal(data.shape)
 
@@ -169,12 +191,12 @@ def test_richardson_lucy():
     psf = cp.asarray(psf)
     deconvolved = restoration.richardson_lucy(data, psf, 5)
 
-    path = fetch('restoration/tests/camera_rl.npy')
+    path = fetch("restoration/tests/camera_rl.npy")
     cp.testing.assert_allclose(deconvolved, np.load(path), rtol=1e-4)
 
 
-@pytest.mark.parametrize('dtype_image', [cp.float16, cp.float32, cp.float64])
-@pytest.mark.parametrize('dtype_psf', [cp.float32, cp.float64])
+@pytest.mark.parametrize("dtype_image", [cp.float16, cp.float32, cp.float64])
+@pytest.mark.parametrize("dtype_psf", [cp.float32, cp.float64])
 def test_richardson_lucy_filtered(dtype_image, dtype_psf):
     if dtype_image == cp.float64:
         atol = 1e-8
@@ -185,12 +207,11 @@ def test_richardson_lucy_filtered(dtype_image, dtype_psf):
 
     psf = cp.ones((5, 5), dtype=dtype_psf) / 25
     data = cp.array(
-        signal.convolve2d(cp.asnumpy(test_img_astro), cp.asnumpy(psf), 'same'),
-        dtype=dtype_image)
-    deconvolved = restoration.richardson_lucy(data, psf, 5,
-                                              filter_epsilon=1e-6)
+        signal.convolve2d(cp.asnumpy(test_img_astro), cp.asnumpy(psf), "same"),
+        dtype=dtype_image,
+    )
+    deconvolved = restoration.richardson_lucy(data, psf, 5, filter_epsilon=1e-6)
     assert deconvolved.dtype == _supported_float_type(data.dtype)
 
-    path = fetch('restoration/tests/astronaut_rl.npy')
-    cp.testing.assert_allclose(deconvolved, np.load(path), rtol=1e-3,
-                               atol=atol)
+    path = fetch("restoration/tests/astronaut_rl.npy")
+    cp.testing.assert_allclose(deconvolved, np.load(path), rtol=1e-3, atol=atol)

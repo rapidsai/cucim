@@ -1,11 +1,17 @@
 from .._shared.utils import check_shape_equality
 from ._contingency_table import contingency_table
 
-__all__ = ['adapted_rand_error']
+__all__ = ["adapted_rand_error"]
 
 
-def adapted_rand_error(image_true=None, image_test=None, *, table=None,
-                       ignore_labels=(0,), alpha=0.5):
+def adapted_rand_error(
+    image_true=None,
+    image_test=None,
+    *,
+    table=None,
+    ignore_labels=(0,),
+    alpha=0.5,
+):
     r"""Compute Adapted Rand error as defined by the SNEMI3D contest. [1]_
 
     Parameters
@@ -67,13 +73,14 @@ def adapted_rand_error(image_true=None, image_test=None, *, table=None,
         check_shape_equality(image_true, image_test)
 
     if table is None:
-        p_ij = contingency_table(image_true, image_test,
-                                 ignore_labels=ignore_labels, normalize=False)
+        p_ij = contingency_table(
+            image_true, image_test, ignore_labels=ignore_labels, normalize=False
+        )
     else:
         p_ij = table
 
     if alpha < 0.0 or alpha > 1.0:
-        raise ValueError('alpha must be between 0 and 1')
+        raise ValueError("alpha must be between 0 and 1")
 
     # Sum of the joint distribution squared
     sum_p_ij2 = p_ij.data @ p_ij.data - p_ij.sum()
@@ -91,6 +98,6 @@ def adapted_rand_error(image_true=None, image_test=None, *, table=None,
     recall = sum_p_ij2 / sum_b2
 
     fscore = sum_p_ij2 / (alpha * sum_a2 + (1 - alpha) * sum_b2)
-    are = 1. - fscore
+    are = 1.0 - fscore
 
     return are, precision, recall

@@ -14,19 +14,20 @@ from cucim.skimage.util import img_as_ubyte, img_as_uint
 @pytest.fixture
 def cam_image():
     from skimage import data
+
     return cp.ascontiguousarray(cp.array(data.camera()[64:112, 64:96]))
 
 
 @pytest.fixture
 def cell3d_image():
     from skimage import data
+
     return cp.ascontiguousarray(
         cp.array(data.cells3d()[30:48, 0, 20:36, 20:32])
     )
 
 
 class TestMorphology:
-
     # These expected outputs were generated with skimage v0.12.1
     # using:
     #
@@ -36,34 +37,46 @@ class TestMorphology:
     #   np.savez_compressed('gray_morph_output.npz', **output)
 
     def _build_expected_output(self):
-        funcs = (morphology.erosion, morphology.dilation, morphology.opening,
-                 morphology.closing, morphology.white_tophat,
-                 morphology.black_tophat)
-        footprints_2D = (morphology.square, morphology.diamond,
-                         morphology.disk, morphology.star)
+        funcs = (
+            morphology.erosion,
+            morphology.dilation,
+            morphology.opening,
+            morphology.closing,
+            morphology.white_tophat,
+            morphology.black_tophat,
+        )
+        footprints_2D = (
+            morphology.square,
+            morphology.diamond,
+            morphology.disk,
+            morphology.star,
+        )
 
-        image = img_as_ubyte(transform.downscale_local_mean(
-            color.rgb2gray(cp.array(data.coffee())), (20, 20)))
+        image = img_as_ubyte(
+            transform.downscale_local_mean(
+                color.rgb2gray(cp.array(data.coffee())), (20, 20)
+            )
+        )
 
         output = {}
         for n in range(1, 4):
             for footprint in footprints_2D:
                 for func in funcs:
-                    key = '{0}_{1}_{2}'.format(
-                        footprint.__name__, n, func.__name__)
+                    key = "{0}_{1}_{2}".format(
+                        footprint.__name__, n, func.__name__
+                    )
                     output[key] = func(image, footprint(n))
 
         return output
 
     def test_gray_morphology(self):
-        expected = dict(np.load(fetch('data/gray_morph_output.npz')))
+        expected = dict(np.load(fetch("data/gray_morph_output.npz")))
         calculated = self._build_expected_output()
         for k, v in calculated.items():
             cp.testing.assert_array_equal(cp.asarray(expected[k]), v)
 
 
 class TestEccentricStructuringElements:
-
     def setup_method(self):
         self.black_pixel = 255 * cp.ones((4, 4), dtype=cp.uint8)
         self.black_pixel[1, 1] = 0
@@ -120,9 +133,14 @@ class TestEccentricStructuringElements:
             assert cp.all(tophat == 0)
 
 
-gray_functions = [morphology.erosion, morphology.dilation,
-                  morphology.opening, morphology.closing,
-                  morphology.white_tophat, morphology.black_tophat]
+gray_functions = [
+    morphology.erosion,
+    morphology.dilation,
+    morphology.opening,
+    morphology.closing,
+    morphology.white_tophat,
+    morphology.black_tophat,
+]
 
 
 @pytest.mark.parametrize("function", gray_functions)
@@ -182,10 +200,10 @@ def test_3d_fallback_white_tophat():
     image[3, 2:5, 2:5] = 1
     image[4, 3:5, 3:5] = 1
 
-    with expected_warnings([r'operator.*deprecated|\A\Z']):
+    with expected_warnings([r"operator.*deprecated|\A\Z"]):
         new_image = morphology.white_tophat(image)
     footprint = ndi.generate_binary_structure(3, 1)
-    with expected_warnings([r'operator.*deprecated|\A\Z']):
+    with expected_warnings([r"operator.*deprecated|\A\Z"]):
         image_expected = ndi.white_tophat(
             image.view(dtype=cp.uint8), footprint=footprint
         )
@@ -198,10 +216,10 @@ def test_3d_fallback_black_tophat():
     image[3, 2:5, 2:5] = 0
     image[4, 3:5, 3:5] = 0
 
-    with expected_warnings([r'operator.*deprecated|\A\Z']):
+    with expected_warnings([r"operator.*deprecated|\A\Z"]):
         new_image = morphology.black_tophat(image)
     footprint = ndi.generate_binary_structure(3, 1)
-    with expected_warnings([r'operator.*deprecated|\A\Z']):
+    with expected_warnings([r"operator.*deprecated|\A\Z"]):
         image_expected = ndi.black_tophat(
             image.view(dtype=cp.uint8), footprint=footprint
         )
@@ -316,8 +334,15 @@ def test_deprecated_import():
 
 
 @pytest.mark.parametrize(
-    'function', ['erosion', 'dilation', 'closing', 'opening', 'white_tophat',
-                 'black_tophat'],
+    "function",
+    [
+        "erosion",
+        "dilation",
+        "closing",
+        "opening",
+        "white_tophat",
+        "black_tophat",
+    ],
 )
 def test_selem_kwarg_deprecation(function):
     with expected_warnings(["`selem` is a deprecated argument name"]):
@@ -325,11 +350,18 @@ def test_selem_kwarg_deprecation(function):
 
 
 @pytest.mark.parametrize(
-    "function", ["erosion", "dilation", "closing", "opening", "white_tophat",
-                 "black_tophat"],
+    "function",
+    [
+        "erosion",
+        "dilation",
+        "closing",
+        "opening",
+        "white_tophat",
+        "black_tophat",
+    ],
 )
 @pytest.mark.parametrize("size", (7,))
-@pytest.mark.parametrize("decomposition", ['separable', 'sequence'])
+@pytest.mark.parametrize("decomposition", ["separable", "sequence"])
 def test_square_decomposition(cam_image, function, size, decomposition):
     """Validate footprint decomposition for various shapes.
 
@@ -344,14 +376,22 @@ def test_square_decomposition(cam_image, function, size, decomposition):
 
 
 @pytest.mark.parametrize(
-    "function", ["erosion", "dilation", "closing", "opening", "white_tophat",
-                 "black_tophat"],
+    "function",
+    [
+        "erosion",
+        "dilation",
+        "closing",
+        "opening",
+        "white_tophat",
+        "black_tophat",
+    ],
 )
 @pytest.mark.parametrize("nrows", (3, 11))
 @pytest.mark.parametrize("ncols", (3, 11))
-@pytest.mark.parametrize("decomposition", ['separable', 'sequence'])
-def test_rectangle_decomposition(cam_image, function, nrows, ncols,
-                                 decomposition):
+@pytest.mark.parametrize("decomposition", ["separable", "sequence"])
+def test_rectangle_decomposition(
+    cam_image, function, nrows, ncols, decomposition
+):
     """Validate footprint decomposition for various shapes.
 
     comparison is made to the case without decomposition.
@@ -365,11 +405,18 @@ def test_rectangle_decomposition(cam_image, function, nrows, ncols,
 
 
 @pytest.mark.parametrize(
-    "function", ["erosion", "dilation", "closing", "opening", "white_tophat",
-                 "black_tophat"],
+    "function",
+    [
+        "erosion",
+        "dilation",
+        "closing",
+        "opening",
+        "white_tophat",
+        "black_tophat",
+    ],
 )
 @pytest.mark.parametrize("radius", (2, 3))
-@pytest.mark.parametrize("decomposition", ['sequence'])
+@pytest.mark.parametrize("decomposition", ["sequence"])
 def test_diamond_decomposition(cam_image, function, radius, decomposition):
     """Validate footprint decomposition for various shapes.
 
@@ -384,12 +431,19 @@ def test_diamond_decomposition(cam_image, function, radius, decomposition):
 
 
 @pytest.mark.parametrize(
-    "function", ["erosion", "dilation", "closing", "opening", "white_tophat",
-                 "black_tophat"],
+    "function",
+    [
+        "erosion",
+        "dilation",
+        "closing",
+        "opening",
+        "white_tophat",
+        "black_tophat",
+    ],
 )
 @pytest.mark.parametrize("m", (0, 1, 3, 5))
 @pytest.mark.parametrize("n", (0, 1, 2, 3))
-@pytest.mark.parametrize("decomposition", ['sequence'])
+@pytest.mark.parametrize("decomposition", ["sequence"])
 def test_octagon_decomposition(cam_image, function, m, n, decomposition):
     """Validate footprint decomposition for various shapes.
 
@@ -408,11 +462,18 @@ def test_octagon_decomposition(cam_image, function, m, n, decomposition):
 
 
 @pytest.mark.parametrize(
-    "function", ["erosion", "dilation", "closing", "opening", "white_tophat",
-                 "black_tophat"],
+    "function",
+    [
+        "erosion",
+        "dilation",
+        "closing",
+        "opening",
+        "white_tophat",
+        "black_tophat",
+    ],
 )
 @pytest.mark.parametrize("size", (5,))
-@pytest.mark.parametrize("decomposition", ['separable', 'sequence'])
+@pytest.mark.parametrize("decomposition", ["separable", "sequence"])
 def test_cube_decomposition(cell3d_image, function, size, decomposition):
     """Validate footprint decomposition for various shapes.
 
@@ -427,13 +488,21 @@ def test_cube_decomposition(cell3d_image, function, size, decomposition):
 
 
 @pytest.mark.parametrize(
-    "function", ["erosion", "dilation", "closing", "opening", "white_tophat",
-                 "black_tophat"],
+    "function",
+    [
+        "erosion",
+        "dilation",
+        "closing",
+        "opening",
+        "white_tophat",
+        "black_tophat",
+    ],
 )
 @pytest.mark.parametrize("radius", (3,))
-@pytest.mark.parametrize("decomposition", ['sequence'])
-def test_octahedron_decomposition(cell3d_image, function, radius,
-                                  decomposition):
+@pytest.mark.parametrize("decomposition", ["sequence"])
+def test_octahedron_decomposition(
+    cell3d_image, function, radius, decomposition
+):
     """Validate footprint decomposition for various shapes.
 
     comparison is made to the case without decomposition.

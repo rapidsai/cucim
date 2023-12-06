@@ -33,13 +33,13 @@ def test_gabor_kernel_bandwidth():
     assert kernel.shape == (9, 9)
 
 
-@pytest.mark.parametrize('dtype', [cp.complex64, cp.complex128])
+@pytest.mark.parametrize("dtype", [cp.complex64, cp.complex128])
 def test_gabor_kernel_dtype(dtype):
     kernel = gabor_kernel(1, bandwidth=1, dtype=dtype)
     assert kernel.dtype == dtype
 
 
-@pytest.mark.parametrize('dtype', [cp.uint8, cp.float32])
+@pytest.mark.parametrize("dtype", [cp.uint8, cp.float32])
 def test_gabor_kernel_invalid_dtype(dtype):
     with pytest.raises(ValueError):
         kernel = gabor_kernel(1, bandwidth=1, dtype=dtype)
@@ -55,8 +55,9 @@ def test_gabor_kernel_sum():
     for sigma_x in range(1, 10, 2):
         for sigma_y in range(1, 10, 2):
             for frequency in range(0, 10, 2):
-                kernel = gabor_kernel(frequency + 0.1, theta=0,
-                                      sigma_x=sigma_x, sigma_y=sigma_y)
+                kernel = gabor_kernel(
+                    frequency + 0.1, theta=0, sigma_x=sigma_x, sigma_y=sigma_y
+                )
                 # make sure gaussian distribution is covered nearly 100%
                 assert_almost_equal(float(cp.abs(kernel).sum()), 1, 2)
 
@@ -66,16 +67,25 @@ def test_gabor_kernel_theta():
         for sigma_y in range(1, 10, 2):
             for frequency in range(0, 10, 2):
                 for theta in range(0, 10, 2):
-                    kernel0 = gabor_kernel(frequency + 0.1, theta=theta,
-                                           sigma_x=sigma_x, sigma_y=sigma_y)
-                    kernel180 = gabor_kernel(frequency, theta=theta + np.pi,
-                                             sigma_x=sigma_x, sigma_y=sigma_y)
+                    kernel0 = gabor_kernel(
+                        frequency + 0.1,
+                        theta=theta,
+                        sigma_x=sigma_x,
+                        sigma_y=sigma_y,
+                    )
+                    kernel180 = gabor_kernel(
+                        frequency,
+                        theta=theta + np.pi,
+                        sigma_x=sigma_x,
+                        sigma_y=sigma_y,
+                    )
 
-                    assert_array_almost_equal(cp.abs(kernel0),
-                                              cp.abs(kernel180))
+                    assert_array_almost_equal(
+                        cp.abs(kernel0), cp.abs(kernel180)
+                    )
 
 
-@pytest.mark.parametrize('dtype', [cp.float32, cp.float64])
+@pytest.mark.parametrize("dtype", [cp.float32, cp.float64])
 def test_gabor(dtype):
     Y, X = cp.mgrid[:40, :40]
     frequencies = (0.1, 0.3)
@@ -98,14 +108,14 @@ def test_gabor(dtype):
     assert responses[1, 1] > responses[1, 0]
 
 
-@pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])
+@pytest.mark.parametrize("dtype", [cp.float16, cp.float32, cp.float64])
 def test_gabor_float_dtype(dtype):
     image = cp.ones((16, 16), dtype=dtype)
     y = gabor(image, 0.3)
     assert all(arr.dtype == _supported_float_type(image.dtype) for arr in y)
 
 
-@pytest.mark.parametrize('dtype', [cp.uint8, cp.int32, cp.intp])
+@pytest.mark.parametrize("dtype", [cp.uint8, cp.int32, cp.intp])
 def test_gabor_int_dtype(dtype):
     image = cp.full((16, 16), 128, dtype=dtype)
     y = gabor(image, 0.3)

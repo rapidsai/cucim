@@ -14,15 +14,15 @@
 
 ## Installation
 
-Please download the latest SDK package (`cuCIM-v23.10.00-linux.tar.gz`).
+Please download the latest SDK package (`cuCIM-v23.12.00-linux.tar.gz`).
 
 Untar the downloaded file.
 
 ```bash
-mkdir -p cuCIM-v23.10.00
-tar -xzvf cuCIM-v23.10.00-linux.tar.gz -C cuCIM-v23.10.00
+mkdir -p cuCIM-v23.12.00
+tar -xzvf cuCIM-v23.12.00-linux.tar.gz -C cuCIM-v23.12.00
 
-cd cuCIM-v23.10.00
+cd cuCIM-v23.12.00
 ```
 
 ## Run command
@@ -99,7 +99,7 @@ After executing the command, type a password for the instance and open a web bro
 ```bash
 ...
 Port 10001 would be used...(http://172.26.120.129:10001)
-2021-02-13 01:12:44 $ nvidia-docker run --gpus all -it --rm -v /home/repo/cucim/notebooks:/notebooks -p 10001:10001 cucim-jupyter -c echo -n 'Enter New Password: '; jupyter lab --ServerApp.password="$(python3 -u -c "from jupyter_server.auth import passwd;pw=input();print(passwd(pw));" | egrep 'sha|argon')" --ServerApp.root_dir=/notebooks --allow-root --port=10001 --ip=0.0.0.0 --no-browser
+2021-02-13 01:12:44 $ docker run --runtime nvidia --gpus all -it --rm -v /home/repo/cucim/notebooks:/notebooks -p 10001:10001 cucim-jupyter -c echo -n 'Enter New Password: '; jupyter lab --ServerApp.password="$(python3 -u -c "from jupyter_server.auth import passwd;pw=input();print(passwd(pw));" | egrep 'sha|argon')" --ServerApp.root_dir=/notebooks --allow-root --port=10001 --ip=0.0.0.0 --no-browser
 Enter New Password: <password>
 [I 2021-02-13 01:12:47.981 ServerApp] dask_labextension | extension was successfully linked.
 [I 2021-02-13 01:12:47.981 ServerApp] jupyter_server_proxy | extension was successfully linked.
@@ -147,7 +147,7 @@ Its execution would show some metadata information and create two files -- `outp
 ```
 $ ./bin/tiff_image notebooks/input/image.tif .
 [Plugin: cucim.kit.cuslide] Loading...
-[Plugin: cucim.kit.cuslide] Loading the dynamic library from: cucim.kit.cuslide@23.10.00.so
+[Plugin: cucim.kit.cuslide] Loading the dynamic library from: cucim.kit.cuslide@23.12.00.so
 [Plugin: cucim.kit.cuslide] loaded successfully. Version: 0
 Initializing plugin: cucim.kit.cuslide (interfaces: [cucim::io::IImageFormat v0.1]) (impl: cucim.kit.cuslide)
 is_loaded: true

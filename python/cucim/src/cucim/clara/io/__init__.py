@@ -15,4 +15,4 @@
 
 from cucim.clara._cucim.io import *
 
-__all__ = ['DeviceType', 'Device']
+__all__ = ["DeviceType", "Device"]

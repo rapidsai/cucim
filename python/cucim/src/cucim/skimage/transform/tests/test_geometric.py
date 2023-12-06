@@ -6,17 +6,24 @@ import numpy as np
 import pytest
 from cupy.testing import assert_array_almost_equal, assert_array_equal
 
-from cucim.skimage.transform import (AffineTransform, EssentialMatrixTransform,
-                                     EuclideanTransform,
-                                     FundamentalMatrixTransform,
-                                     PiecewiseAffineTransform,
-                                     PolynomialTransform, ProjectiveTransform,
-                                     SimilarityTransform, estimate_transform,
-                                     matrix_transform)
-from cucim.skimage.transform._geometric import (GeometricTransform,
-                                                _affine_matrix_from_vector,
-                                                _center_and_normalize_points,
-                                                _euler_rotation_matrix)
+from cucim.skimage.transform import (
+    AffineTransform,
+    EssentialMatrixTransform,
+    EuclideanTransform,
+    FundamentalMatrixTransform,
+    PiecewiseAffineTransform,
+    PolynomialTransform,
+    ProjectiveTransform,
+    SimilarityTransform,
+    estimate_transform,
+    matrix_transform,
+)
+from cucim.skimage.transform._geometric import (
+    GeometricTransform,
+    _affine_matrix_from_vector,
+    _center_and_normalize_points,
+    _euler_rotation_matrix,
+)
 
 # fmt: off
 SRC = cp.array([
@@ -43,11 +50,16 @@ DST = cp.array([
 
 
 def test_estimate_transform():
-    for tform in ('euclidean', 'similarity', 'affine', 'projective',
-                  'polynomial'):
+    for tform in (
+        "euclidean",
+        "similarity",
+        "affine",
+        "projective",
+        "polynomial",
+    ):
         estimate_transform(tform, SRC[:2, :], DST[:2, :])
     with pytest.raises(ValueError):
-        estimate_transform('foobar', SRC[:2, :], DST[:2, :])
+        estimate_transform("foobar", SRC[:2, :], DST[:2, :])
 
 
 def test_matrix_transform():
@@ -57,13 +69,13 @@ def test_matrix_transform():
 
 def test_euclidean_estimation():
     # exact solution
-    tform = estimate_transform('euclidean', SRC[:2, :], SRC[:2, :] + 10)
+    tform = estimate_transform("euclidean", SRC[:2, :], SRC[:2, :] + 10)
     assert_array_almost_equal(tform(SRC[:2, :]), SRC[:2, :] + 10)
     assert_array_almost_equal(tform.params[0, 0], tform.params[1, 1])
     assert_array_almost_equal(tform.params[0, 1], -tform.params[1, 0])
 
     # over-determined
-    tform2 = estimate_transform('euclidean', SRC, DST)
+    tform2 = estimate_transform("euclidean", SRC, DST)
     assert_array_almost_equal(tform2.inverse(tform2(SRC)), SRC)
     assert_array_almost_equal(tform2.params[0, 0], tform2.params[1, 1])
     assert_array_almost_equal(tform2.params[0, 1], -tform2.params[1, 0])
@@ -84,8 +96,9 @@ def test_3d_euclidean_estimation():
     dst_points = []
     for pt in src_points:
         pt_r = pt.reshape(3, 1)
-        dst = cp.matmul(rotation_matrix, pt_r) + \
-            translation_vector.reshape(3, 1)
+        dst = cp.matmul(rotation_matrix, pt_r) + translation_vector.reshape(
+            3, 1
+        )
         dst = dst.reshape(3)
         dst_points.append(dst)
 
@@ -129,13 +142,13 @@ def test_euclidean_init():
 
 def test_similarity_estimation():
     # exact solution
-    tform = estimate_transform('similarity', SRC[:2, :], DST[:2, :])
+    tform = estimate_transform("similarity", SRC[:2, :], DST[:2, :])
     assert_array_almost_equal(tform(SRC[:2, :]), DST[:2, :])
     assert_array_almost_equal(tform.params[0, 0], tform.params[1, 1])
     assert_array_almost_equal(tform.params[0, 1], -tform.params[1, 0])
 
     # over-determined
-    tform2 = estimate_transform('similarity', SRC, DST)
+    tform2 = estimate_transform("similarity", SRC, DST)
     assert_array_almost_equal(tform2.inverse(tform2(SRC)), SRC)
     assert_array_almost_equal(tform2.params[0, 0], tform2.params[1, 1])
     assert_array_almost_equal(tform2.params[0, 1], -tform2.params[1, 0])
@@ -161,8 +174,9 @@ def test_3d_similarity_estimation():
     dst_points = []
     for pt in src_points:
         pt_r = pt.reshape(3, 1)
-        dst = cp.matmul(rotation_matrix, pt_r) + \
-            translation_vector.reshape(3, 1)
+        dst = cp.matmul(rotation_matrix, pt_r) + translation_vector.reshape(
+            3, 1
+        )
         dst = dst.reshape(3)
         dst_points.append(dst)
 
@@ -183,8 +197,9 @@ def test_similarity_init():
     scale = 0.1
     rotation = 1
     translation = (1, 1)
-    tform = SimilarityTransform(scale=scale, rotation=rotation,
-                                translation=translation)
+    tform = SimilarityTransform(
+        scale=scale, rotation=rotation, translation=translation
+    )
     assert_array_almost_equal(tform.scale, scale)
     assert_array_almost_equal(tform.rotation, rotation)
     assert_array_almost_equal(tform.translation, translation)
@@ -199,8 +214,9 @@ def test_similarity_init():
     scale = 0.1
     rotation = 0
     translation = (1, 1)
-    tform = SimilarityTransform(scale=scale, rotation=rotation,
-                                translation=translation)
+    tform = SimilarityTransform(
+        scale=scale, rotation=rotation, translation=translation
+    )
     assert_array_almost_equal(tform.scale, scale)
     assert_array_almost_equal(tform.rotation, rotation)
     assert_array_almost_equal(tform.translation, translation)
@@ -209,8 +225,9 @@ def test_similarity_init():
     scale = 0.1
     rotation = np.pi / 2
     translation = (1, 1)
-    tform = SimilarityTransform(scale=scale, rotation=rotation,
-                                translation=translation)
+    tform = SimilarityTransform(
+        scale=scale, rotation=rotation, translation=translation
+    )
     assert_array_almost_equal(tform.scale, scale)
     assert_array_almost_equal(tform.rotation, rotation)
     assert_array_almost_equal(tform.translation, translation)
@@ -220,9 +237,13 @@ def test_similarity_init():
     scale = 1.0
     rotation = np.pi / 2
     translation = (0, 0)
-    params = np.array([[0, -1, 1.33226763e-15],
-                       [1, 2.22044605e-16, -1.33226763e-15],
-                       [0, 0, 1]])
+    params = np.array(
+        [
+            [0, -1, 1.33226763e-15],
+            [1, 2.22044605e-16, -1.33226763e-15],
+            [0, 0, 1],
+        ]
+    )
     tform = SimilarityTransform(params)
     assert_array_almost_equal(tform.scale, scale)
     assert_array_almost_equal(tform.rotation, rotation)
@@ -231,11 +252,11 @@ def test_similarity_init():
 
 def test_affine_estimation():
     # exact solution
-    tform = estimate_transform('affine', SRC[:3, :], DST[:3, :])
+    tform = estimate_transform("affine", SRC[:3, :], DST[:3, :])
     assert_array_almost_equal(tform(SRC[:3, :]), DST[:3, :])
 
     # over-determined
-    tform2 = estimate_transform('affine', SRC, DST)
+    tform2 = estimate_transform("affine", SRC, DST)
     assert_array_almost_equal(tform2.inverse(tform2(SRC)), SRC)
 
     # via estimate method
@@ -250,8 +271,9 @@ def test_affine_init():
     rotation = 1
     shear = 0.1
     translation = (1, 1)
-    tform = AffineTransform(scale=scale, rotation=rotation, shear=shear,
-                            translation=translation)
+    tform = AffineTransform(
+        scale=scale, rotation=rotation, shear=shear, translation=translation
+    )
     assert_array_almost_equal(tform.scale, scale)
     assert_array_almost_equal(tform.rotation, rotation)
     assert_array_almost_equal(tform.shear, shear)
@@ -265,8 +287,10 @@ def test_affine_init():
     assert_array_almost_equal(tform2.translation, translation)
 
     # scalar vs. tuple scale arguments
-    assert_array_almost_equal(AffineTransform(scale=0.5).scale,
-                              AffineTransform(scale=(0.5, 0.5)).scale)
+    assert_array_almost_equal(
+        AffineTransform(scale=0.5).scale,
+        AffineTransform(scale=(0.5, 0.5)).scale,
+    )
 
 
 @pytest.mark.parametrize("xp", [np, cp])
@@ -322,7 +346,7 @@ def test_fundamental_matrix_estimation(xp):
                     0.878616, 0.602447, 0.642616, 1.028681]).reshape(-1, 2)  # noqa
     # fmt: on
 
-    tform = estimate_transform('fundamental', src, dst)
+    tform = estimate_transform("fundamental", src, dst)
 
     # Reference values obtained using COLMAP SfM library.
     # fmt: off
@@ -340,44 +364,52 @@ def test_fundamental_matrix_estimation(xp):
 @pytest.mark.parametrize("xp", [np, cp])
 def test_fundamental_matrix_residuals(xp):
     essential_matrix_tform = EssentialMatrixTransform(
-        rotation=xp.eye(3), translation=xp.array([1, 0, 0]), xp=xp)
+        rotation=xp.eye(3), translation=xp.array([1, 0, 0]), xp=xp
+    )
     tform = FundamentalMatrixTransform()
     tform.params = essential_matrix_tform.params
     src = xp.array([[0, 0], [0, 0], [0, 0]])
     dst = xp.array([[2, 0], [2, 1], [2, 2]])
     assert_array_almost_equal(
-        tform.residuals(src, dst) ** 2, xp.array([0, 0.5, 2]))
+        tform.residuals(src, dst) ** 2, xp.array([0, 0.5, 2])
+    )
 
 
 @pytest.mark.parametrize("xp", [np, cp])
 def test_fundamental_matrix_forward(xp):
     essential_matrix_tform = EssentialMatrixTransform(
-        rotation=xp.eye(3), translation=xp.array([1, 0, 0]), xp=xp)
+        rotation=xp.eye(3), translation=xp.array([1, 0, 0]), xp=xp
+    )
     tform = FundamentalMatrixTransform()
     tform.params = essential_matrix_tform.params
     src = xp.array([[0, 0], [0, 1], [1, 1]])
     assert_array_almost_equal(
-        tform(src), xp.array([[0, -1, 0], [0, -1, 1], [0, -1, 1]]))
+        tform(src), xp.array([[0, -1, 0], [0, -1, 1], [0, -1, 1]])
+    )
 
 
 @pytest.mark.parametrize("xp", [np, cp])
 def test_fundamental_matrix_inverse(xp):
     essential_matrix_tform = EssentialMatrixTransform(
-        rotation=xp.eye(3), translation=xp.array([1, 0, 0]), xp=xp)
+        rotation=xp.eye(3), translation=xp.array([1, 0, 0]), xp=xp
+    )
     tform = FundamentalMatrixTransform()
     tform.params = essential_matrix_tform.params
     src = xp.array([[0, 0], [0, 1], [1, 1]])
     assert_array_almost_equal(
-        tform.inverse(src), xp.array([[0, 1, 0], [0, 1, -1], [0, 1, -1]]))
+        tform.inverse(src), xp.array([[0, 1, 0], [0, 1, -1], [0, 1, -1]])
+    )
 
 
 @pytest.mark.parametrize("xp", [np, cp])
 def test_essential_matrix_init(xp):
-    tform = EssentialMatrixTransform(rotation=xp.eye(3),
-                                     translation=xp.array([0, 0, 1]), xp=xp)
+    tform = EssentialMatrixTransform(
+        rotation=xp.eye(3), translation=xp.array([0, 0, 1]), xp=xp
+    )
 
     assert_array_equal(
-        tform.params, xp.array([0, -1, 0, 1, 0, 0, 0, 0, 0]).reshape(3, 3))
+        tform.params, xp.array([0, -1, 0, 1, 0, 0, 0, 0, 0]).reshape(3, 3)
+    )
 
 
 @pytest.mark.parametrize("xp", [np, cp])
@@ -392,7 +424,7 @@ def test_essential_matrix_estimation(xp):
                     0.839509, 0.087290, 1.779735, 1.116857,  # noqa
                     0.878616, 0.602447, 0.642616, 1.028681]).reshape(-1, 2)  # noqa
     # fmt: on
-    tform = estimate_transform('essential', src, dst)
+    tform = estimate_transform("essential", src, dst)
 
     # Reference values obtained using COLMAP SfM library.
     # fmt: off
@@ -409,39 +441,45 @@ def test_essential_matrix_estimation(xp):
 
 @pytest.mark.parametrize("xp", [np, cp])
 def test_essential_matrix_forward(xp):
-    tform = EssentialMatrixTransform(rotation=xp.eye(3),
-                                     translation=xp.array([1, 0, 0]), xp=xp)
+    tform = EssentialMatrixTransform(
+        rotation=xp.eye(3), translation=xp.array([1, 0, 0]), xp=xp
+    )
     src = xp.array([[0, 0], [0, 1], [1, 1]])
     assert_array_almost_equal(
-        tform(src), xp.array([[0, -1, 0], [0, -1, 1], [0, -1, 1]]))
+        tform(src), xp.array([[0, -1, 0], [0, -1, 1], [0, -1, 1]])
+    )
 
 
 @pytest.mark.parametrize("xp", [np, cp])
 def test_essential_matrix_inverse(xp):
-    tform = EssentialMatrixTransform(rotation=xp.eye(3),
-                                     translation=xp.array([1, 0, 0]), xp=xp)
+    tform = EssentialMatrixTransform(
+        rotation=xp.eye(3), translation=xp.array([1, 0, 0]), xp=xp
+    )
     src = xp.array([[0, 0], [0, 1], [1, 1]])
-    assert_array_almost_equal(tform.inverse(src),
-                              xp.array([[0, 1, 0], [0, 1, -1], [0, 1, -1]]))
+    assert_array_almost_equal(
+        tform.inverse(src), xp.array([[0, 1, 0], [0, 1, -1], [0, 1, -1]])
+    )
 
 
 @pytest.mark.parametrize("xp", [np, cp])
 def test_essential_matrix_residuals(xp):
-    tform = EssentialMatrixTransform(rotation=xp.eye(3),
-                                     translation=xp.array([1, 0, 0]), xp=xp)
+    tform = EssentialMatrixTransform(
+        rotation=xp.eye(3), translation=xp.array([1, 0, 0]), xp=xp
+    )
     src = xp.array([[0, 0], [0, 0], [0, 0]])
     dst = xp.array([[2, 0], [2, 1], [2, 2]])
     assert_array_almost_equal(
-        tform.residuals(src, dst) ** 2, xp.array([0, 0.5, 2]))
+        tform.residuals(src, dst) ** 2, xp.array([0, 0.5, 2])
+    )
 
 
 def test_projective_estimation():
     # exact solution
-    tform = estimate_transform('projective', SRC[:4, :], DST[:4, :])
+    tform = estimate_transform("projective", SRC[:4, :], DST[:4, :])
     assert_array_almost_equal(tform(SRC[:4, :]), DST[:4, :])
 
     # over-determined
-    tform2 = estimate_transform('projective', SRC, DST)
+    tform2 = estimate_transform("projective", SRC, DST)
     assert_array_almost_equal(tform2.inverse(tform2(SRC)), SRC)
 
     # via estimate method
@@ -451,33 +489,34 @@ def test_projective_estimation():
 
 
 def test_projective_weighted_estimation():
-
     # Exact solution with same points, and unity weights
-    tform = estimate_transform('projective', SRC[:4, :], DST[:4, :])
-    tform_w = estimate_transform('projective',
-                                 SRC[:4, :], DST[:4, :], cp.ones(4))
+    tform = estimate_transform("projective", SRC[:4, :], DST[:4, :])
+    tform_w = estimate_transform(
+        "projective", SRC[:4, :], DST[:4, :], cp.ones(4)
+    )
     assert_array_almost_equal(tform.params, tform_w.params)
 
     # Over-determined solution with same points, and unity weights
-    tform = estimate_transform('projective', SRC, DST)
-    tform_w = estimate_transform('projective',
-                                 SRC, DST, cp.ones(SRC.shape[0]))
+    tform = estimate_transform("projective", SRC, DST)
+    tform_w = estimate_transform("projective", SRC, DST, cp.ones(SRC.shape[0]))
     assert_array_almost_equal(tform.params, tform_w.params)
 
     # Repeating a point, but setting its weight small, should give nearly
     # the same result.
     point_weights = cp.ones(SRC.shape[0] + 1)
     point_weights[0] = 1.0e-15
-    tform1 = estimate_transform('projective', SRC, DST)
-    tform2 = estimate_transform('projective',
-                                SRC[cp.arange(-1, SRC.shape[0]), :],
-                                DST[cp.arange(-1, SRC.shape[0]), :],
-                                point_weights)
+    tform1 = estimate_transform("projective", SRC, DST)
+    tform2 = estimate_transform(
+        "projective",
+        SRC[cp.arange(-1, SRC.shape[0]), :],
+        DST[cp.arange(-1, SRC.shape[0]), :],
+        point_weights,
+    )
     assert_array_almost_equal(tform1.params, tform2.params, decimal=3)
 
 
 def test_projective_init():
-    tform = estimate_transform('projective', SRC, DST)
+    tform = estimate_transform("projective", SRC, DST)
     # init with transformation matrix
     tform2 = ProjectiveTransform(tform.params)
     assert_array_almost_equal(tform2.params, tform.params)
@@ -485,7 +524,7 @@ def test_projective_init():
 
 def test_polynomial_estimation():
     # over-determined
-    tform = estimate_transform('polynomial', SRC, DST, order=10)
+    tform = estimate_transform("polynomial", SRC, DST, order=10)
     assert_array_almost_equal(tform(SRC), DST, 6)
 
     # via estimate method
@@ -496,37 +535,37 @@ def test_polynomial_estimation():
 
 def test_polynomial_weighted_estimation():
     # Over-determined solution with same points, and unity weights
-    tform = estimate_transform('polynomial', SRC, DST, order=10)
-    tform_w = estimate_transform('polynomial',
-                                 SRC,
-                                 DST,
-                                 order=10,
-                                 weights=cp.ones(SRC.shape[0]))
+    tform = estimate_transform("polynomial", SRC, DST, order=10)
+    tform_w = estimate_transform(
+        "polynomial", SRC, DST, order=10, weights=cp.ones(SRC.shape[0])
+    )
     assert_array_almost_equal(tform.params, tform_w.params)
 
     # Repeating a point, but setting its weight small, should give nearly
     # the same result.
     point_weights = cp.ones(SRC.shape[0] + 1)
     point_weights[0] = 1.0e-15
-    tform1 = estimate_transform('polynomial', SRC, DST, order=10)
-    tform2 = estimate_transform('polynomial',
-                                SRC[cp.arange(-1, SRC.shape[0]), :],
-                                DST[cp.arange(-1, SRC.shape[0]), :],
-                                order=10,
-                                weights=point_weights)
+    tform1 = estimate_transform("polynomial", SRC, DST, order=10)
+    tform2 = estimate_transform(
+        "polynomial",
+        SRC[cp.arange(-1, SRC.shape[0]), :],
+        DST[cp.arange(-1, SRC.shape[0]), :],
+        order=10,
+        weights=point_weights,
+    )
     assert_array_almost_equal(tform1.params, tform2.params, decimal=4)
 
 
 def test_polynomial_init():
-    tform = estimate_transform('polynomial', SRC, DST, order=10)
+    tform = estimate_transform("polynomial", SRC, DST, order=10)
     # init with transformation parameters
     tform2 = PolynomialTransform(tform.params)
     assert_array_almost_equal(tform2.params, tform.params)
 
 
 def test_polynomial_default_order():
-    tform = estimate_transform('polynomial', SRC, DST)
-    tform2 = estimate_transform('polynomial', SRC, DST, order=2)
+    tform = estimate_transform("polynomial", SRC, DST)
+    tform2 = estimate_transform("polynomial", SRC, DST, order=2)
     assert_array_almost_equal(tform2.params, tform.params)
 
 
@@ -538,13 +577,13 @@ def test_polynomial_inverse():
 def test_union():
     tform1 = SimilarityTransform(scale=0.1, rotation=0.3)
     tform2 = SimilarityTransform(scale=0.1, rotation=0.9)
-    tform3 = SimilarityTransform(scale=0.1 ** 2, rotation=0.3 + 0.9)
+    tform3 = SimilarityTransform(scale=0.1**2, rotation=0.3 + 0.9)
     tform = tform1 + tform2
     assert_array_almost_equal(tform.params, tform3.params)
 
     tform1 = AffineTransform(scale=(0.1, 0.1), rotation=0.3)
     tform2 = SimilarityTransform(scale=0.1, rotation=0.9)
-    tform3 = SimilarityTransform(scale=0.1 ** 2, rotation=0.3 + 0.9)
+    tform3 = SimilarityTransform(scale=0.1**2, rotation=0.3 + 0.9)
     tform = tform1 + tform2
     assert_array_almost_equal(tform.params, tform3.params)
     assert tform.__class__ == ProjectiveTransform
@@ -632,14 +671,17 @@ def test_invalid_input(xp):
     with pytest.raises(ValueError):
         EssentialMatrixTransform(rotation=xp.eye(3))
     with pytest.raises(ValueError):
-        EssentialMatrixTransform(rotation=xp.eye(3),
-                                 translation=xp.zeros((2,)), xp=xp)
+        EssentialMatrixTransform(
+            rotation=xp.eye(3), translation=xp.zeros((2,)), xp=xp
+        )
     with pytest.raises(ValueError):
-        EssentialMatrixTransform(rotation=xp.eye(3),
-                                 translation=xp.zeros((2,)), xp=xp)
+        EssentialMatrixTransform(
+            rotation=xp.eye(3), translation=xp.zeros((2,)), xp=xp
+        )
     with pytest.raises(ValueError):
-        EssentialMatrixTransform(rotation=xp.eye(3),
-                                 translation=xp.zeros((3,)), xp=xp)
+        EssentialMatrixTransform(
+            rotation=xp.eye(3), translation=xp.zeros((3,)), xp=xp
+        )
 
 
 def test_degenerate(xp=cp):
@@ -680,17 +722,35 @@ def test_degenerate(xp=cp):
     assert not tform.estimate(src, dst)
     assert xp.all(xp.isnan(tform.params))
 
-    # The tesselation on the following points produces one degenerate affine
+    # The tessellation on the following points produces one degenerate affine
     # warp within PiecewiseAffineTransform.
-    src = xp.asarray([
-        [0, 192, 256], [0, 256, 256], [5, 0, 192], [5, 64, 0], [5, 64, 64],
-        [5, 64, 256], [5, 192, 192], [5, 256, 256], [0, 192, 256],
-    ])
+    src = xp.asarray(
+        [
+            [0, 192, 256],
+            [0, 256, 256],
+            [5, 0, 192],
+            [5, 64, 0],
+            [5, 64, 64],
+            [5, 64, 256],
+            [5, 192, 192],
+            [5, 256, 256],
+            [0, 192, 256],
+        ]
+    )
 
-    dst = xp.asarray([
-        [0, 142, 206], [0, 206, 206], [5, -50, 142], [5, 14, 0], [5, 14, 64],
-        [5, 14, 206], [5, 142, 142], [5, 206, 206], [0, 142, 206],
-    ])
+    dst = xp.asarray(
+        [
+            [0, 142, 206],
+            [0, 206, 206],
+            [5, -50, 142],
+            [5, 14, 0],
+            [5, 14, 64],
+            [5, 14, 206],
+            [5, 142, 142],
+            [5, 206, 206],
+            [0, 142, 206],
+        ]
+    )
     tform = PiecewiseAffineTransform()
     assert not tform.estimate(src, dst)
     assert np.all(np.isnan(tform.affines[4].params))  # degenerate affine
@@ -701,7 +761,7 @@ def test_degenerate(xp=cp):
         assert not xp.all(xp.isnan(affine.params))
 
 
-@pytest.mark.parametrize('xp', [np, cp])
+@pytest.mark.parametrize("xp", [np, cp])
 def test_normalize_degenerate_points(xp):
     """Return nan matrix *of appropriate size* when point is repeated."""
     pts = xp.array([[73.42834308, 94.2977623]] * 3)
@@ -726,8 +786,8 @@ def test_projective_repr(xp):
     # fmt: on
     # Hack the escaped regex to allow whitespace before each number for
     # compatibility with different numpy versions.
-    want = want.replace('0\\.', ' *0\\.')
-    want = want.replace('1\\.', ' *1\\.')
+    want = want.replace("0\\.", " *0\\.")
+    want = want.replace("1\\.", " *1\\.")
     assert re.match(want, repr(tform))
 
 
@@ -745,8 +805,8 @@ def test_projective_str(xp):
     # fmt: on
     # Hack the escaped regex to allow whitespace before each number for
     # compatibility with different numpy versions.
-    want = want.replace('0\\.', ' *0\\.')
-    want = want.replace('1\\.', ' *1\\.')
+    want = want.replace("0\\.", " *0\\.")
+    want = want.replace("1\\.", " *1\\.")
     print(want)
     assert re.match(want, str(tform))
 
@@ -769,10 +829,12 @@ def test_estimate_affine_3d(xp):
     src = np.random.random((25, ndim)) * 2 ** np.arange(7, 7 + ndim)
     src = xp.asarray(src)
     matrix = xp.array(
-        [[4.8, 0.1, 0.2, 25],
-         [0.0, 1.0, 0.1, 30],
-         [0.0, 0.0, 1.0, -2],
-         [0.0, 0.0, 0.0, 1.]]
+        [
+            [4.8, 0.1, 0.2, 25],
+            [0.0, 1.0, 0.1, 30],
+            [0.0, 0.0, 1.0, -2],
+            [0.0, 0.0, 0.0, 1.0],
+        ]
     )
     tf = AffineTransform(matrix=matrix)
     dst = tf(src)
@@ -802,9 +864,7 @@ def test_fundamental_3d_not_implemented():
 
 
 def test_affine_transform_from_linearized_parameters():
-    mat = np.concatenate(
-        (np.random.random((3, 4)), np.eye(4)[-1:]), axis=0
-    )
+    mat = np.concatenate((np.random.random((3, 4)), np.eye(4)[-1:]), axis=0)
     v = mat[:-1].ravel()
     mat_from_v = _affine_matrix_from_vector(v)
     tf = AffineTransform(matrix=mat_from_v)
@@ -851,11 +911,11 @@ def test_euclidean_param_defaults(xp):
 @pytest.mark.parametrize("xp", [np, cp])
 def test_similarity_transform_params(xp):
     with pytest.raises(ValueError):
-        _ = SimilarityTransform(translation=(4, 5, 6, 7), dimensionality=4,
-                                xp=xp)
+        _ = SimilarityTransform(
+            translation=(4, 5, 6, 7), dimensionality=4, xp=xp
+        )
     tf = SimilarityTransform(scale=4, dimensionality=3, xp=xp)
-    assert_array_equal(tf(xp.asarray([[1, 1, 1]])),
-                       xp.asarray([[4, 4, 4]]))
+    assert_array_equal(tf(xp.asarray([[1, 1, 1]])), xp.asarray([[4, 4, 4]]))
 
 
 @pytest.mark.parametrize("xp", [np, cp])

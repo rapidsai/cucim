@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -53,13 +53,13 @@ void init_cache(py::module& cache)
                       py::call_guard<py::gil_scoped_release>())
         .def_property("free_memory", &ImageCache::free_memory, nullptr, doc::ImageCache::doc_free_memory,
                       py::call_guard<py::gil_scoped_release>())
-        .def("record", &py_record, doc::ImageCache::doc_record, py::call_guard<py::gil_scoped_release>(), //
+        .def("record", &py_record, doc::ImageCache::doc_record, //
              py::arg("value") = py::none())
         .def_property("hit_count", &ImageCache::hit_count, nullptr, doc::ImageCache::doc_hit_count,
                       py::call_guard<py::gil_scoped_release>())
         .def_property("miss_count", &ImageCache::miss_count, nullptr, doc::ImageCache::doc_miss_count,
                       py::call_guard<py::gil_scoped_release>())
-        .def("reserve", &py_image_cache_reserve, doc::ImageCache::doc_reserve, py::call_guard<py::gil_scoped_release>(), //
+        .def("reserve", &py_image_cache_reserve, doc::ImageCache::doc_reserve, //
              py::arg("memory_capacity"));
 
     cache.def("preferred_memory_capacity", &py_preferred_memory_capacity, doc::doc_preferred_memory_capacity, //
@@ -67,8 +67,7 @@ void init_cache(py::module& cache)
               py::arg("image_size") = std::nullopt, //
               py::arg("tile_size") = std::nullopt, //
               py::arg("patch_size") = std::nullopt, //
-              py::arg("bytes_per_pixel") = 3, //
-              py::call_guard<py::gil_scoped_release>());
+              py::arg("bytes_per_pixel") = 3);
 }
 
 bool py_record(ImageCache& cache, py::object value)

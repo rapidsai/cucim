@@ -34,18 +34,18 @@ function sed_runner() {
 sed_runner 's/version = .*/version = '"'${NEXT_SHORT_TAG}'"'/g' docs/source/conf.py
 sed_runner 's/release = .*/release = '"'${NEXT_FULL_TAG}'"'/g' docs/source/conf.py
 
-sed_runner "s/${CURRENT_LONG_TAG}/${NEXT_FULL_TAG}/g" VERSION
-sed_runner "s/${CURRENT_LONG_TAG}/${NEXT_FULL_TAG}/g" python/cucim/VERSION
-sed_runner "s/${CURRENT_LONG_TAG}/${NEXT_FULL_TAG}/g" cpp/plugins/cucim.kit.cuslide/VERSION
-sed_runner "s/${CURRENT_LONG_TAG}/${NEXT_FULL_TAG}/g" cpp/plugins/cucim.kit.cumed/VERSION
+# Centralized version file update
+echo "${NEXT_FULL_TAG}" > VERSION
+
 sed_runner "s#\[Version ${CURRENT_LONG_TAG}\](release_notes/v${CURRENT_LONG_TAG}.md)#\[Version ${NEXT_FULL_TAG}\](release_notes/v${NEXT_FULL_TAG}.md)#g" python/cucim/docs/index.md
 sed_runner "s/v${CURRENT_LONG_TAG}/v${NEXT_FULL_TAG}/g" python/cucim/docs/getting_started/index.md
 sed_runner "s#cucim.kit.cuslide@${CURRENT_LONG_TAG}.so#cucim.kit.cuslide@${NEXT_FULL_TAG}.so#g" python/cucim/docs/getting_started/index.md
 sed_runner "s#cucim.kit.cuslide@${CURRENT_LONG_TAG}.so#cucim.kit.cuslide@${NEXT_FULL_TAG}.so#g" cucim.code-workspace
 sed_runner "s#branch-${CURRENT_MAJOR}.${CURRENT_MINOR}#branch-${NEXT_MAJOR}.${NEXT_MINOR}#g" README.md
 sed_runner "s#branch-${CURRENT_MAJOR}.${CURRENT_MINOR}#branch-${NEXT_MAJOR}.${NEXT_MINOR}#g" python/cucim/README.md
+sed_runner "s#branch-${CURRENT_MAJOR}.${CURRENT_MINOR}#branch-${NEXT_MAJOR}.${NEXT_MINOR}#g" python/cucim/pyproject.toml
 
 for FILE in .github/workflows/*.yaml; do
-  sed_runner "/shared-action-workflows/ s/@.*/@branch-${NEXT_SHORT_TAG}/g" "${FILE}"
+  sed_runner "/shared-workflows/ s/@.*/@branch-${NEXT_SHORT_TAG}/g" "${FILE}"
 done
 sed_runner "s/RAPIDS_VERSION_NUMBER=\".*/RAPIDS_VERSION_NUMBER=\"${NEXT_SHORT_TAG}\"/g" ci/build_docs.sh

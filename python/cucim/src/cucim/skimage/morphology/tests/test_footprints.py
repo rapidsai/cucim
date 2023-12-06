@@ -20,7 +20,7 @@ class TestSElem:
         """Test square footprints"""
         for k in range(0, 5):
             actual_mask = footprints.square(k, dtype=cp.uint8)
-            expected_mask = np.ones((k, k), dtype='uint8')
+            expected_mask = np.ones((k, k), dtype="uint8")
             assert_array_equal(expected_mask, actual_mask)
 
     def test_rectangle_footprint(self):
@@ -28,14 +28,14 @@ class TestSElem:
         for i in range(0, 5):
             for j in range(0, 5):
                 actual_mask = footprints.rectangle(i, j, dtype=cp.uint8)
-                expected_mask = np.ones((i, j), dtype='uint8')
+                expected_mask = np.ones((i, j), dtype="uint8")
                 assert_array_equal(expected_mask, actual_mask)
 
     def test_cube_footprint(self):
         """Test cube footprints"""
         for k in range(0, 5):
             actual_mask = footprints.cube(k, dtype=cp.uint8)
-            expected_mask = np.ones((k, k, k), dtype='uint8')
+            expected_mask = np.ones((k, k, k), dtype="uint8")
             assert_array_equal(expected_mask, actual_mask)
 
     def strel_worker(self, fn, func):
@@ -80,8 +80,9 @@ class TestSElem:
 
     def test_footprint_octahedron(self):
         """Test octahedron footprints"""
-        self.strel_worker_3d("data/diamond-matlab-output.npz",
-                             footprints.octahedron)
+        self.strel_worker_3d(
+            "data/diamond-matlab-output.npz", footprints.octahedron
+        )
 
     def test_footprint_octagon(self):
         """Test octagon footprints"""
@@ -158,7 +159,7 @@ class TestSElem:
 
 
 @pytest.mark.parametrize(
-    'function, args, supports_sequence_decomposition',
+    "function, args, supports_sequence_decomposition",
     [
         (footprints.disk, (3,), True),
         (footprints.ball, (3,), True),
@@ -170,28 +171,31 @@ class TestSElem:
         (footprints.ellipse, (3, 4), False),
         (footprints.octagon, (3, 4), True),
         (footprints.star, (3,), False),
-    ]
+    ],
 )
 @pytest.mark.parametrize("dtype", [np.uint8, np.float64])
-def test_footprint_dtype(function, args, supports_sequence_decomposition,
-                         dtype):
+def test_footprint_dtype(
+    function, args, supports_sequence_decomposition, dtype
+):
     # make sure footprint dtype matches what was requested
     footprint = function(*args, dtype=dtype)
     assert footprint.dtype == dtype
 
     if supports_sequence_decomposition:
-        sequence = function(*args, dtype=dtype, decomposition='sequence')
+        sequence = function(*args, dtype=dtype, decomposition="sequence")
         assert all([fp_tuple[0].dtype == dtype for fp_tuple in sequence])
 
 
 @pytest.mark.parametrize("function", ["disk", "ball"])
-@pytest.mark.parametrize("radius", [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 50, 75,
-                                    100])
+@pytest.mark.parametrize(
+    "radius", [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 50, 75, 100]
+)
 def test_nsphere_series_approximation(function, radius):
     fp_func = getattr(footprints, function)
     expected = fp_func(radius, strict_radius=False, decomposition=None)
-    footprint_sequence = fp_func(radius, strict_radius=False,
-                                 decomposition="sequence")
+    footprint_sequence = fp_func(
+        radius, strict_radius=False, decomposition="sequence"
+    )
     approximate = footprints.footprint_from_sequence(footprint_sequence)
     assert approximate.shape == expected.shape
 
@@ -209,8 +213,9 @@ def test_nsphere_series_approximation(function, radius):
 def test_disk_crosses_approximation(radius, strict_radius):
     fp_func = footprints.disk
     expected = fp_func(radius, strict_radius=strict_radius, decomposition=None)
-    footprint_sequence = fp_func(radius, strict_radius=strict_radius,
-                                 decomposition="crosses")
+    footprint_sequence = fp_func(
+        radius, strict_radius=strict_radius, decomposition="crosses"
+    )
     approximate = footprints.footprint_from_sequence(footprint_sequence)
     assert approximate.shape == expected.shape
 

@@ -7,7 +7,6 @@ import cupyx.scipy.ndimage
 import numpy as np
 import pandas as pd
 import scipy
-
 from _image_bench import ImageBench
 
 
@@ -23,7 +22,6 @@ class ConvolveBench(ImageBench):
         module_cpu=scipy.ndimage,
         module_gpu=cupyx.scipy.ndimage,
     ):
-
         self.weights_shape = weights_shape
 
         super().__init__(
@@ -78,22 +76,29 @@ for shape in [(512, 512), (3840, 2160), (192, 192, 192)]:
         ("gaussian_filter", dict(mode=["nearest"], sigma=[0.33, 1, 3, 4, 9])),
         (
             "gaussian_filter1d",
-            dict(mode=["nearest"], sigma=[0.33, 3, 9], axis=[0, -1], order=[0, 1]),
+            dict(
+                mode=["nearest"], sigma=[0.33, 3, 9], axis=[0, -1], order=[0, 1]
+            ),
         ),
         ("maximum_filter", dict(mode=["nearest"], size=[3, 5, 7])),
         ("maximum_filter1d", dict(mode=["nearest"], size=[3, 7], axis=[0, -1])),
         ("minimum_filter", dict(mode=["nearest"], size=[3, 5, 7])),
         ("minimum_filter1d", dict(mode=["nearest"], size=[3, 7], axis=[0, -1])),
         ("median_filter", dict(mode=["nearest"], size=[3, 5, 7])),
-        ("percentile_filter", dict(mode=["nearest"], size=[3, 5, 7], percentile=[30])),
+        (
+            "percentile_filter",
+            dict(mode=["nearest"], size=[3, 5, 7], percentile=[30]),
+        ),
         ("rank_filter", dict(mode=["nearest"], size=[3, 5, 7], rank=[-2])),
         ("prewitt", dict(mode=["nearest"], axis=[0, -1])),
         ("sobel", dict(mode=["nearest"], axis=[0, -1])),
         ("laplace", dict(mode=["nearest"])),
         ("gaussian_laplace", dict(mode=["nearest"], sigma=[0.33, 3, 9])),
-        ("gaussian_gradient_magnitude", dict(mode=["nearest"], sigma=[0.33, 3, 9])),
+        (
+            "gaussian_gradient_magnitude",
+            dict(mode=["nearest"], sigma=[0.33, 3, 9]),
+        ),
     ]:
-
         B = FilterBench(
             function_name=fname,
             shape=shape,

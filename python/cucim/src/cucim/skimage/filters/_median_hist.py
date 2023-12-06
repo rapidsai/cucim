@@ -9,7 +9,7 @@ import numpy as np
 from .._shared.utils import _to_np_mode
 from .._vendored import pad
 
-if hasattr(math, 'prod'):
+if hasattr(math, "prod"):
     prod = math.prod
 else:
     prod = np.prod
@@ -17,14 +17,14 @@ else:
 
 def _dtype_to_CUDA_int_type(dtype):
     cpp_int_types = {
-        cp.uint8: 'unsigned char',
-        cp.uint16: 'unsigned short',
-        cp.uint32: 'unsigned int',
-        cp.uint64: 'unsigned long long',
-        cp.int8: 'signed char',
-        cp.int16: 'short',
-        cp.int32: 'int',
-        cp.int64: 'long long',
+        cp.uint8: "unsigned char",
+        cp.uint16: "unsigned short",
+        cp.uint32: "unsigned int",
+        cp.uint64: "unsigned long long",
+        cp.int8: "signed char",
+        cp.int16: "short",
+        cp.int32: "int",
+        cp.int64: "long long",
     }
     dtype = cp.dtype(dtype)
     if dtype.type not in cpp_int_types:
@@ -46,11 +46,11 @@ def _get_hist_dtype(footprint_shape):
 
 
 def _gen_global_definitions(
-    image_t='unsigned char',
+    image_t="unsigned char",
     hist_offset=0,
-    hist_int_t='int',
+    hist_int_t="int",
     hist_size=256,
-    hist_size_coarse=8
+    hist_size_coarse=8,
 ):
     """Generate C++ #define statements needed for the CUDA kernels.
 
@@ -59,9 +59,7 @@ def _gen_global_definitions(
     """
 
     if hist_size % hist_size_coarse != 0:
-        raise ValueError(
-            "`hist_size` must be a multiple of `hist_size_coarse`"
-        )
+        raise ValueError("`hist_size` must be a multiple of `hist_size_coarse`")
     hist_size_fine = hist_size // hist_size_coarse
     log2_coarse = math.log2(hist_size_coarse)
     log2_fine = math.log2(hist_size_fine)
@@ -195,9 +193,9 @@ def _get_median_rawkernel(
         hist_size_coarse=hist_size_coarse,
     )
 
-    kernel_directory = os.path.join(os.path.dirname(__file__), 'cuda')
-    with open(os.path.join(kernel_directory, 'histogram_median.cu'), 'rt') as f:
-        rank_filter_kernel = '\n'.join(f.readlines())
+    kernel_directory = os.path.join(os.path.dirname(__file__), "cuda")
+    with open(os.path.join(kernel_directory, "histogram_median.cu"), "rt") as f:
+        rank_filter_kernel = "\n".join(f.readlines())
 
     return cp.RawKernel(
         code=preamble + rank_filter_kernel,
@@ -210,11 +208,11 @@ def _check_shared_memory_requirement_bytes(
 ):
     """computes amount of shared memory required by cuRankFilterMultiBlock"""
     s = np.dtype(hist_dtype).itemsize
-    shared_size = hist_size_coarse * s                     # for HCoarse
-    shared_size += hist_size_fine * s                      # for HCoarseScane
-    shared_size += hist_size_coarse * hist_size_fine * s   # for HFine
-    shared_size += hist_size_coarse * 4                    # for luc
-    shared_size += 12                                      # three more ints
+    shared_size = hist_size_coarse * s  # for HCoarse
+    shared_size += hist_size_fine * s  # for HCoarseScane
+    shared_size += hist_size_coarse * hist_size_fine * s  # for HFine
+    shared_size += hist_size_coarse * 4  # for luc
+    shared_size += 12  # three more ints
     return shared_size
 
 
@@ -258,9 +256,7 @@ def _can_use_histogram(image, footprint, footprint_shape=None):
 
     if footprint is None:
         if footprint_shape is None:
-            raise ValueError(
-                "must provide either footprint or footprint_shape"
-            )
+            raise ValueError("must provide either footprint or footprint_shape")
     else:
         footprint_shape = footprint.shape
 
@@ -290,8 +286,13 @@ class KernelResourceError(RuntimeError):
     pass
 
 
-def _get_kernel_params(image, footprint_shape, value_range='auto',
-                       partitions=None, hist_size_coarse=None):
+def _get_kernel_params(
+    image,
+    footprint_shape,
+    value_range="auto",
+    partitions=None,
+    hist_size_coarse=None,
+):
     """Determine kernel launch parameters and #define values for its code.
 
     Parameters
@@ -328,22 +329,22 @@ def _get_kernel_params(image, footprint_shape, value_range='auto',
         See comments next to the KernelParams declaration below for details.
     """
 
-    if value_range == 'auto':
+    if value_range == "auto":
         if image.dtype.itemsize < 2:
-            value_range = 'dtype'
+            value_range = "dtype"
         else:
             # to save memory, try using actual value range for >8-bit images
             # (e.g. DICOM images often have 12-bit range)
-            value_range = 'image'
+            value_range = "image"
 
-    if value_range == 'dtype':
+    if value_range == "dtype":
         if image.dtype.itemsize > 2:
             raise ValueError(
                 "dtype range only supported for 8 and 16-bit integer dtypes."
             )
         iinfo = cp.iinfo(image.dtype)
         minv, maxv = iinfo.min, iinfo.max
-    elif value_range == 'image':
+    elif value_range == "image":
         minv = int(image.min())
         maxv = int(image.max())
     else:
@@ -354,14 +355,14 @@ def _get_kernel_params(image, footprint_shape, value_range='auto',
             )
         minv, maxv = value_range
 
-    if image.dtype.kind == 'u':
+    if image.dtype.kind == "u":
         # cannot subtract a positive offset in the unsigned case
         minv = min(minv, 0)
     hist_offset = 0 if minv == 0 else -minv
     hist_size = maxv - minv + 1
     hist_size = max(hist_size, 256)  # use at least 256 bins
     # round hist_size up to the nearest power of 2
-    hist_size = round(2**math.ceil(math.log2(hist_size)))
+    hist_size = round(2 ** math.ceil(math.log2(hist_size)))
     hist_size = max(hist_size, 32)
 
     if hist_size_coarse is None:
@@ -410,24 +411,24 @@ def _get_kernel_params(image, footprint_shape, value_range='auto',
             hist_dtype, hist_size_coarse, hist_size_fine
         )
         d = cp.cuda.Device()
-        smem_available = d.attributes['MaxSharedMemoryPerBlock']
+        smem_available = d.attributes["MaxSharedMemoryPerBlock"]
         if smem_size > smem_available:
             raise KernelResourceError(
                 f"Shared memory requirement of {smem_size} bytes per block"
                 f"exceeds the device limit of {smem_available}."
             )
     CUDAParams = namedtuple(
-        'HistogramMedianKernelParams',
+        "HistogramMedianKernelParams",
         [
-            'grid',
-            'block',
-            'hist_size',           # total number of histogram bins
-            'hist_size_coarse',    # number of coarse-level histogram bins
-            'hist_dtype',          # cupy.dtype of the histogram
-            'hist_int_t',          # C++ type of the histogram
-            'hist_offset',         # offset from 0 for the first bin
-            'partitions'           # number of parallel bands to use
-        ]
+            "grid",
+            "block",
+            "hist_size",  # total number of histogram bins
+            "hist_size_coarse",  # number of coarse-level histogram bins
+            "hist_dtype",  # cupy.dtype of the histogram
+            "hist_int_t",  # C++ type of the histogram
+            "hist_offset",  # offset from 0 for the first bin
+            "partitions",  # number of parallel bands to use
+        ],
     )
     return CUDAParams(
         grid,
@@ -441,9 +442,15 @@ def _get_kernel_params(image, footprint_shape, value_range='auto',
     )
 
 
-def _median_hist(image, footprint, output=None, mode='mirror', cval=0,
-                 value_range='auto', partitions=None):
-
+def _median_hist(
+    image,
+    footprint,
+    output=None,
+    mode="mirror",
+    cval=0,
+    value_range="auto",
+    partitions=None,
+):
     if output is not None:
         raise NotImplementedError(
             "Use of a user-defined output array has not been implemented"
@@ -468,31 +475,29 @@ def _median_hist(image, footprint, output=None, mode='mirror', cval=0,
     # kernel pointer offset calculations assume C-contiguous image data
     image = cp.ascontiguousarray(image)
     n_rows, n_cols = image.shape[:2]
-    if image.dtype.kind == 'b':
+    if image.dtype.kind == "b":
         image = image.view(cp.uint8)
-    if image.dtype.kind not in 'iu':
+    if image.dtype.kind not in "iu":
         raise ValueError("only integer-type images are accepted")
 
     radii = tuple(s // 2 for s in footprint_shape)
     # med_pos is the index corresponding to the median
     # (calculation here assumes all elements of the footprint are True)
 
-    params = _get_kernel_params(
-        image, footprint_shape, value_range, partitions
-    )
+    params = _get_kernel_params(image, footprint_shape, value_range, partitions)
 
     # pad as necessary to avoid boundary artifacts
     # Don't have to pad along axis 0 if mode is already 'nearest' because the
     # kernel already assumes 'nearest' mode internally.
     autopad = True
-    pad_both_axes = mode != 'nearest'
+    pad_both_axes = mode != "nearest"
     if autopad:
         if pad_both_axes:
             npad = tuple((r, r) for r in radii)
         else:
             npad = ((0, 0),) * (image.ndim - 1) + ((radii[-1], radii[-1]),)
         mode = _to_np_mode(mode)
-        if mode == 'constant':
+        if mode == "constant":
             pad_kwargs = dict(mode=mode, constant_values=cval)
         else:
             pad_kwargs = dict(mode=mode)
@@ -532,5 +537,5 @@ def _median_hist(image, footprint, output=None, mode='mirror', cval=0,
             out_sl = tuple(slice(r, -r) for r in radii)
             out = out[out_sl]
         else:
-            out = out[..., radii[-1]:-radii[-1]]
+            out = out[..., radii[-1] : -radii[-1]]
     return out

@@ -233,7 +233,7 @@ fi
 TTY_ARGS=
 tty -s && [ -z "$MSYS" ] && TTY_ARGS=-ti
 CONTAINER_NAME=dockcross_$RANDOM
-nvidia-docker run $TTY_ARGS --name $CONTAINER_NAME \
+docker run --runtime nvidia $TTY_ARGS --name $CONTAINER_NAME \
     -v "$HOST_PWD":/work \
     $HOST_VOLUMES \
     "${USER_IDS[@]}" \

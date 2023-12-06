@@ -13,23 +13,25 @@ dependencies:
 - cuda-cudart-dev
 - cuda-nvcc
 - cuda-version=12.0
-- cupy >=12.0.0
+- cupy>=12.0.0
 - cxx-compiler
 - gcc_linux-64=11.*
 - imagecodecs>=2021.6.8
 - ipython
 - jbig
-- lazy_loader >=0.1
+- lazy_loader>=0.1
 - libcufile-dev
 - libnvjpeg-dev
 - libnvjpeg-static
 - libwebp-base
+- matplotlib-base
 - nbsphinx
 - ninja
-- numpy >=1.21.3
+- numpy>=1.21.3
 - numpydoc
 - openslide-python>=1.1.2
 - pip
+- pooch>=1.6.0
 - pre-commit
 - psutil>=5.8.0
 - pydata-sphinx-theme
@@ -39,7 +41,7 @@ dependencies:
 - pytest>=6.2.4
 - python>=3.8,<3.11
 - recommonmark
-- scikit-image >=0.19.0,<0.22.0a0
+- scikit-image>=0.19.0,<0.22.0a0
 - scipy
 - sphinx<6
 - sysroot_linux-64==2.17

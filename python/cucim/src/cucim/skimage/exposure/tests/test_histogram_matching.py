@@ -9,10 +9,13 @@ from cucim.skimage._shared.utils import _supported_float_type
 from cucim.skimage.exposure import histogram_matching
 
 
-@pytest.mark.parametrize('array, template, expected_array', [
-    (cp.arange(10), cp.arange(100), cp.arange(9, 100, 10)),
-    (cp.random.rand(4), cp.ones(3), cp.ones(4))
-])
+@pytest.mark.parametrize(
+    "array, template, expected_array",
+    [
+        (cp.arange(10), cp.arange(100), cp.arange(9, 100, 10)),
+        (cp.random.rand(4), cp.ones(3), cp.ones(4)),
+    ],
+)
 def test_match_array_values(array, template, expected_array):
     # when
     matched = histogram_matching._match_cumulative_cdf(array, template)
@@ -22,19 +25,19 @@ def test_match_array_values(array, template, expected_array):
 
 
 class TestMatchHistogram:
-
     image_rgb = cp.asarray(data.chelsea())
     template_rgb = cp.asarray(data.astronaut())
 
-    @pytest.mark.parametrize('channel_axis', (0, 1, -1))
+    @pytest.mark.parametrize("channel_axis", (0, 1, -1))
     def test_match_histograms_channel_axis(self, channel_axis):
         """Assert that pdf of matched image is close to the reference's pdf for
         all channels and all values of matched"""
 
         image = cp.moveaxis(self.image_rgb, -1, channel_axis)
         reference = cp.moveaxis(self.template_rgb, -1, channel_axis)
-        matched = exposure.match_histograms(image, reference,
-                                            channel_axis=channel_axis)
+        matched = exposure.match_histograms(
+            image, reference, channel_axis=channel_axis
+        )
         assert matched.dtype == image.dtype
         matched = cp.moveaxis(matched, channel_axis, -1)
         reference = cp.moveaxis(reference, channel_axis, -1)
@@ -48,14 +51,14 @@ class TestMatchHistogram:
             matched_values, matched_quantiles = matched_pdf[channel]
 
             for i, matched_value in enumerate(matched_values):
-                closest_id = (
-                    np.abs(reference_values - matched_value)
-                ).argmin()
-                assert_array_almost_equal(matched_quantiles[i],
-                                          reference_quantiles[closest_id],
-                                          decimal=1)
+                closest_id = (np.abs(reference_values - matched_value)).argmin()
+                assert_array_almost_equal(
+                    matched_quantiles[i],
+                    reference_quantiles[closest_id],
+                    decimal=1,
+                )
 
-    @pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])
+    @pytest.mark.parametrize("dtype", [cp.float16, cp.float32, cp.float64])
     def test_match_histograms_float_dtype(self, dtype):
         """float16 or float32 inputs give float32 output"""
         image = self.image_rgb.astype(dtype, copy=False)
@@ -63,10 +66,13 @@ class TestMatchHistogram:
         matched = exposure.match_histograms(image, reference)
         assert matched.dtype == _supported_float_type(dtype)
 
-    @pytest.mark.parametrize('image, reference', [
-        (image_rgb, template_rgb[:, :, 0]),
-        (image_rgb[:, :, 0], template_rgb)
-    ])
+    @pytest.mark.parametrize(
+        "image, reference",
+        [
+            (image_rgb, template_rgb[:, :, 0]),
+            (image_rgb[:, :, 0], template_rgb),
+        ],
+    )
     def test_raises_value_error_on_channels_mismatch(self, image, reference):
         with pytest.raises(ValueError):
             exposure.match_histograms(image, reference)

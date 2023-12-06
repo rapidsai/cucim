@@ -45,7 +45,7 @@ def _compute_derivatives(image, mode="constant", cval=0):
     return derivatives
 
 
-def structure_tensor(image, sigma=1, mode="constant", cval=0, order='rc'):
+def structure_tensor(image, sigma=1, mode="constant", cval=0, order="rc"):
     """Compute structure tensor using sum of squared differences.
 
     The (2-dimensional) structure tensor A is defined as::
@@ -121,8 +121,9 @@ def structure_tensor(image, sigma=1, mode="constant", cval=0, order='rc'):
     if not np.isscalar(sigma):
         sigma = tuple(sigma)
         if len(sigma) != image.ndim:
-            raise ValueError("sigma must have as many elements as image "
-                             "has axes")
+            raise ValueError(
+                "sigma must have as many elements as image " "has axes"
+            )
 
     image = _prepare_grayscale_input_nD(image)
 
@@ -136,15 +137,19 @@ def structure_tensor(image, sigma=1, mode="constant", cval=0, order='rc'):
     channel_axis = -1 if (image.ndim == 3 and image.shape[-1] == 3) else None
 
     # structure tensor
-    A_elems = [gaussian(der0 * der1, sigma, mode=mode, cval=cval,
-                        channel_axis=channel_axis)
-               for der0, der1 in combinations_with_replacement(derivatives, 2)]
+    A_elems = [
+        gaussian(
+            der0 * der1, sigma, mode=mode, cval=cval, channel_axis=channel_axis
+        )
+        for der0, der1 in combinations_with_replacement(derivatives, 2)
+    ]
 
     return A_elems
 
 
-def _hessian_matrix_with_gaussian(image, sigma=1, mode='reflect', cval=0,
-                                  order='rc'):
+def _hessian_matrix_with_gaussian(
+    image, sigma=1, mode="reflect", cval=0, order="rc"
+):
     """Compute the Hessian via convolutions with Gaussian derivatives.
 
     In 2D, the Hessian matrix is defined as:
@@ -209,8 +214,9 @@ def _hessian_matrix_with_gaussian(image, sigma=1, mode='reflect', cval=0,
     truncate = 8 if all(s > 1 for s in sigma) else 100
     sq1_2 = 1 / math.sqrt(2)
     sigma_scaled = tuple(sq1_2 * s for s in sigma)
-    common_kwargs = dict(sigma=sigma_scaled, mode=mode, cval=cval,
-                         truncate=truncate)
+    common_kwargs = dict(
+        sigma=sigma_scaled, mode=mode, cval=cval, truncate=truncate
+    )
     gaussian_ = functools.partial(ndi.gaussian_filter, **common_kwargs)
 
     # Apply two successive first order Gaussian derivative operations, as
@@ -228,15 +234,23 @@ def _hessian_matrix_with_gaussian(image, sigma=1, mode='reflect', cval=0,
 
     # 2.) apply the derivative along another axis as well
     axes = range(ndim)
-    if order == 'xy':
+    if order == "xy":
         axes = reversed(axes)
-    H_elems = [gaussian_(gradients[ax0], order=orders[ax1])
-               for ax0, ax1 in combinations_with_replacement(axes, 2)]
+    H_elems = [
+        gaussian_(gradients[ax0], order=orders[ax1])
+        for ax0, ax1 in combinations_with_replacement(axes, 2)
+    ]
     return H_elems
 
 
-def hessian_matrix(image, sigma=1, mode='constant', cval=0, order='rc',
-                   use_gaussian_derivatives=None):
+def hessian_matrix(
+    image,
+    sigma=1,
+    mode="constant",
+    cval=0,
+    order="rc",
+    use_gaussian_derivatives=None,
+):
     r"""Compute the Hessian matrix.
 
     In 2D, the Hessian matrix is defined as::
@@ -323,22 +337,27 @@ def hessian_matrix(image, sigma=1, mode='constant', cval=0, order='rc',
 
     if use_gaussian_derivatives is None:
         use_gaussian_derivatives = False
-        warn("use_gaussian_derivatives currently defaults to False, but will "
-             "change to True in a future version. Please specify this "
-             "argument explicitly to maintain the current behavior",
-             category=FutureWarning, stacklevel=2)
+        warn(
+            "use_gaussian_derivatives currently defaults to False, but will "
+            "change to True in a future version. Please specify this "
+            "argument explicitly to maintain the current behavior",
+            category=FutureWarning,
+            stacklevel=2,
+        )
 
     if use_gaussian_derivatives:
-        return _hessian_matrix_with_gaussian(image, sigma=sigma, mode=mode,
-                                             cval=cval, order=order)
+        return _hessian_matrix_with_gaussian(
+            image, sigma=sigma, mode=mode, cval=cval, order=order
+        )
 
     # Autodetection as done internally to Gaussian, but set it here to silence
     # a warning.
     # TODO: eventually remove this as this behavior of gaussian is deprecated
     channel_axis = -1 if (image.ndim == 3 and image.shape[-1] == 3) else None
 
-    gaussian_filtered = gaussian(image, sigma=sigma, mode=mode, cval=cval,
-                                 channel_axis=channel_axis)
+    gaussian_filtered = gaussian(
+        image, sigma=sigma, mode=mode, cval=cval, channel_axis=channel_axis
+    )
 
     gradients = gradient(gaussian_filtered)
     axes = range(image.ndim)
@@ -360,7 +379,8 @@ def _get_real_symmetric_2x2_det_kernel():
         in_params="F M00, F M01, F M11",
         out_params="F det",
         operation="det = M00 * M11 - M01 * M01;",
-        name="cucim_skimage_symmetric_det22_kernel")
+        name="cucim_skimage_symmetric_det22_kernel",
+    )
 
 
 @cp.memoize(for_each_device=True)
@@ -374,7 +394,8 @@ def _get_real_symmetric_3x3_det_kernel():
         in_params="F M00, F M01, F M02, F M11, F M12, F M22",
         out_params="F det",
         operation=operation,
-        name="cucim_skimage_symmetric_det33_kernel")
+        name="cucim_skimage_symmetric_det33_kernel",
+    )
 
 
 def hessian_matrix_det(image, sigma=1, approximate=True):
@@ -439,8 +460,7 @@ def hessian_matrix_det(image, sigma=1, approximate=True):
 
 
 @cp.memoize(for_each_device=True)
-def _get_real_symmetric_2x2_eigvals_kernel(sort='ascending', abs_sort=False):
-
+def _get_real_symmetric_2x2_eigvals_kernel(sort="ascending", abs_sort=False):
     operation = """
     F tmp1, tmp2;
     double m00 = static_cast<double>(M00);
@@ -458,7 +478,7 @@ def _get_real_symmetric_2x2_eigvals_kernel(sort='ascending', abs_sort=False):
     tmp1 = m00 + m11;
     tmp1 /= 2;
     """
-    if sort == 'ascending':
+    if sort == "ascending":
         operation += """
         lam1 = tmp1 - tmp2;
         lam2 = tmp1 + tmp2;
@@ -472,7 +492,7 @@ def _get_real_symmetric_2x2_eigvals_kernel(sort='ascending', abs_sort=False):
                 lam2 = stmp;
             }
             """
-    elif sort == 'descending':
+    elif sort == "descending":
         operation += """
         lam1 = tmp1 + tmp2;
         lam2 = tmp1 - tmp2;
@@ -492,11 +512,12 @@ def _get_real_symmetric_2x2_eigvals_kernel(sort='ascending', abs_sort=False):
         in_params="F M00, F M01, F M11",
         out_params="F lam1, F lam2",
         operation=operation,
-        name="cucim_skimage_symmetric_eig22_kernel")
+        name="cucim_skimage_symmetric_eig22_kernel",
+    )
 
 
 def _image_orthogonal_matrix22_eigvals(
-    M00, M01, M11, sort='descending', abs_sort=False
+    M00, M01, M11, sort="descending", abs_sort=False
 ):
     r"""Analytical expressions of the eigenvalues of a symmetric 2 x 2 matrix.
     It corresponds to::
@@ -532,8 +553,7 @@ def _image_orthogonal_matrix22_eigvals(
 
 
 @cp.memoize(for_each_device=True)
-def _get_real_symmetric_3x3_eigvals_kernel(sort='ascending', abs_sort=False):
-
+def _get_real_symmetric_3x3_eigvals_kernel(sort="ascending", abs_sort=False):
     operation = """
     double x1, x2, phi;
     double a = static_cast<double>(aa);
@@ -599,10 +619,10 @@ def _get_real_symmetric_3x3_eigvals_kernel(sort='ascending', abs_sort=False):
         prefix = "abs_"
     else:
         prefix = ""
-    if sort == 'ascending':
+    if sort == "ascending":
         var1 = "lam1"
         var3 = "lam3"
-    elif sort == 'descending':
+    elif sort == "descending":
         var1 = "lam3"
         var3 = "lam1"
     operation += sort_template.format(
@@ -612,11 +632,12 @@ def _get_real_symmetric_3x3_eigvals_kernel(sort='ascending', abs_sort=False):
         in_params="F aa, F bb, F cc, F dd, F ee, F ff",
         out_params="F lam1, F lam2, F lam3",
         operation=operation,
-        name="cucim_skimage_symmetric_eig33_kernel")
+        name="cucim_skimage_symmetric_eig33_kernel",
+    )
 
 
 def _image_orthogonal_matrix33_eigvals(
-    a, d, f, b, e, c, sort='descending', abs_sort=False
+    a, d, f, b, e, c, sort="descending", abs_sort=False
 ):
     r"""Analytical expressions of the eigenvalues of a symmetric 3 x 3 matrix.
 
@@ -627,7 +648,7 @@ def _image_orthogonal_matrix33_eigvals(
     ``d``, ``f``, ``b``, ``e``, and ``c`` will be equal in shape to the 3D
     volume.
 
-    Invidual arguments correspond to the following moment matrix entries
+    Individual arguments correspond to the following moment matrix entries
 
     .. math::
 
@@ -664,7 +685,7 @@ def _image_orthogonal_matrix33_eigvals(
     return eigs
 
 
-def _symmetric_compute_eigenvalues(S_elems, sort='descending', abs_sort=False):
+def _symmetric_compute_eigenvalues(S_elems, sort="descending", abs_sort=False):
     """Compute eigenvalues from the upper-diagonal entries of a symmetric
     matrix.
 
@@ -718,7 +739,7 @@ def _symmetric_compute_eigenvalues(S_elems, sort='descending', abs_sort=False):
         if abs_sort:
             # (sort by magnitude)
             eigs = cp.take_along_axis(eigs, cp.abs(eigs).argsort(0), 0)
-        if sort == 'descending':
+        if sort == "descending":
             eigs = eigs[::-1, ...]
     return eigs
 
@@ -740,8 +761,9 @@ def _symmetric_image(S_elems):
         containing the matrix corresponding to each coordinate.
     """
     image = S_elems[0]
-    symmetric_image = cp.zeros(image.shape + (image.ndim, image.ndim),
-                               dtype=image.dtype)
+    symmetric_image = cp.zeros(
+        image.shape + (image.ndim, image.ndim), dtype=image.dtype
+    )
     for idx, (row, col) in enumerate(
         combinations_with_replacement(range(image.ndim), 2)
     ):
@@ -889,20 +911,26 @@ def shape_index(image, sigma=1, mode="constant", cval=0):
            [ nan,  nan, -0.5,  nan,  nan]])
     """
 
-    H = hessian_matrix(image, sigma=sigma, mode=mode, cval=cval, order="rc",
-                       use_gaussian_derivatives=False)
+    H = hessian_matrix(
+        image,
+        sigma=sigma,
+        mode=mode,
+        cval=cval,
+        order="rc",
+        use_gaussian_derivatives=False,
+    )
     l1, l2 = hessian_matrix_eigvals(H)
 
     # don't warn on divide by 0 as occurs in the docstring example
-    with np.errstate(divide='ignore', invalid='ignore'):
+    with np.errstate(divide="ignore", invalid="ignore"):
         return (2.0 / np.pi) * np.arctan((l2 + l1) / (l2 - l1))
 
 
 @cp.memoize(for_each_device=True)
 def _get_kitchen_rosenfeld_kernel():
     return cp.ElementwiseKernel(
-        in_params='F imx, F imy, F imxx, F imxy, F imyy',
-        out_params='F response',
+        in_params="F imx, F imy, F imxx, F imxy, F imyy",
+        out_params="F response",
         operation="""
         F numerator, denominator, imx_sq, imy_sq;
         imx_sq = imx * imx;
@@ -916,7 +944,7 @@ def _get_kitchen_rosenfeld_kernel():
             response = numerator / denominator;
         }
         """,  # noqa
-        name='cucim_feature_kitchen_rosenfeld'
+        name="cucim_feature_kitchen_rosenfeld",
     )
 
 
@@ -961,15 +989,15 @@ def corner_kitchen_rosenfeld(image, mode="constant", cval=0):
     imyy, _ = _compute_derivatives(imy, mode=mode, cval=cval)
 
     kernel = _get_kitchen_rosenfeld_kernel()
-    response = cp.empty_like(image, order='C')
+    response = cp.empty_like(image, order="C")
     return kernel(imx, imy, imxx, imxy, imyy, response)
 
 
 @cp.memoize(for_each_device=True)
 def _get_corner_harris_k_kernel():
     return cp.ElementwiseKernel(
-        in_params='F Arr, F Acc, F Arc, float64 k',
-        out_params='F response',
+        in_params="F Arr, F Acc, F Arc, float64 k",
+        out_params="F response",
         operation="""
         F detA, traceA;
         // determinant
@@ -978,15 +1006,15 @@ def _get_corner_harris_k_kernel():
         traceA = Arr + Acc;
         response = detA - k * traceA * traceA;
         """,
-        name='cucim_skimage_feature_corner_harris_k'
+        name="cucim_skimage_feature_corner_harris_k",
     )
 
 
 @cp.memoize(for_each_device=True)
 def _get_corner_harris_kernel():
     return cp.ElementwiseKernel(
-        in_params='F Arr, F Acc, F Arc, float64 eps',
-        out_params='F response',
+        in_params="F Arr, F Acc, F Arc, float64 eps",
+        out_params="F response",
         operation="""
         F detA, traceA;
         // determinant
@@ -995,7 +1023,7 @@ def _get_corner_harris_kernel():
         traceA = Arr + Acc;
         response = 2 * detA / (traceA + eps);
         """,
-        name='cucim_skimage_feature_corner_harris_k'
+        name="cucim_skimage_feature_corner_harris_k",
     )
 
 
@@ -1077,15 +1105,15 @@ def corner_harris(image, method="k", k=0.05, eps=1e-6, sigma=1):
 @cp.memoize(for_each_device=True)
 def _get_shi_tomasi_kernel():
     return cp.ElementwiseKernel(
-        in_params='F Arr, F Acc, F Arc',
-        out_params='F response',
+        in_params="F Arr, F Acc, F Arc",
+        out_params="F response",
         operation="""
         F tmp;
         tmp = (Arr - Acc);
         tmp *= tmp;
         response = (Arr + Acc - sqrt(tmp + 4 * Arc * Arc)) / 2.0;
         """,
-        name='cucim_skimage_feature_shi_tomasi'
+        name="cucim_skimage_feature_shi_tomasi",
     )
 
 
@@ -1153,8 +1181,8 @@ def corner_shi_tomasi(image, sigma=1):
 @cp.memoize(for_each_device=True)
 def _get_foerstner_kernel():
     return cp.ElementwiseKernel(
-        in_params='F Arr, F Acc, F Arc',
-        out_params='F w, F q',
+        in_params="F Arr, F Acc, F Arc",
+        out_params="F w, F q",
         operation="""
         F detA, traceA;
 
@@ -1170,7 +1198,7 @@ def _get_foerstner_kernel():
             q = 4 * detA / (traceA * traceA);
         }
         """,
-        name='cucim_skimage_feature_forstner'
+        name="cucim_skimage_feature_forstner",
     )
 
 

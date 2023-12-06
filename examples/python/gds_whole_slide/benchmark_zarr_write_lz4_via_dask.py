@@ -10,16 +10,13 @@ import os
 import cupy as cp
 import kvikio.defaults
 import numpy as np
-from cucim.core.operations.color import image_to_absorbance
 from cupyx.profiler import benchmark
+from demo_implementation import cupy_to_zarr, get_n_tiles, read_tiled
+from lz4_nvcomp import LZ4NVCOMP
 from tifffile import TiffFile
 
-from demo_implementation import read_tiled, get_n_tiles, cupy_to_zarr
-from lz4_nvcomp import LZ4NVCOMP
-
-
-data_dir = os.environ.get('WHOLE_SLIDE_DATA_DIR', os.path.dirname('__file__'))
-fname = os.path.join(data_dir, 'resize.tiff')
+data_dir = os.environ.get("WHOLE_SLIDE_DATA_DIR", os.path.dirname("__file__"))
+fname = os.path.join(data_dir, "resize.tiff")
 if not os.path.exists(fname):
     raise RuntimeError(f"Could not find data file: {fname}")
 
@@ -51,19 +48,26 @@ print(f"\tstored as {total_tiles} tiles of shape {tile_shape}")
 
 
 # read the uint8 TIFF
-kwargs = dict(levels=[level], backend='kvikio-pread', n_buffer=n_buffer)
+kwargs = dict(levels=[level], backend="kvikio-pread", n_buffer=n_buffer)
 image_gpu = read_tiled(fname, **kwargs)[0]
 
 # benchmark writing these CuPy outputs to Zarr with various chunk sizes
 # Note: nvcomp only supports integer and unsigned dtypes.
-# https://github.com/rapidsai/kvikio/blob/b0c6cedf43d1bc240c3ef1b38ebb9d89574a08ee/python/kvikio/nvcomp.py#L12-L21  # noqa
+# https://github.com/rapidsai/kvikio/blob/b0c6cedf43d1bc240c3ef1b38ebb9d89574a08ee/python/kvikio/nvcomp.py#L12-L21  # noqa: E501
 
-dtypes = ['uint16']
-chunk_shapes = [(512, 512, 3), (1024, 1024, 3), (2048, 2048, 3), (4096, 4096, 3)]
-backend = 'dask'
+dtypes = ["uint16"]
+chunk_shapes = [
+    (512, 512, 3),
+    (1024, 1024, 3),
+    (2048, 2048, 3),
+    (4096, 4096, 3),
+]
+backend = "dask"
 compressors = [None, LZ4NVCOMP()]
 kvikio.defaults.num_threads_reset(16)
-write_time_means = np.zeros(((len(dtypes), len(chunk_shapes), len(compressors), 2)), dtype=float)
+write_time_means = np.zeros(
+    ((len(dtypes), len(chunk_shapes), len(compressors), 2)), dtype=float
+)
 write_time_stds = np.zeros_like(write_time_means)
 for i, dtype in enumerate(dtypes):
     dtype = np.dtype(dtype)
@@ -79,7 +83,9 @@ for i, dtype in enumerate(dtypes):
     for j, chunk_shape in enumerate(chunk_shapes):
         for k, compressor in enumerate(compressors):
             kwargs = dict(
-                output_path=f'./image-{dtype}-chunk{chunk_shape[0]}.zarr' if compressor is None else f'./image-{dtype}-chunk{chunk_shape[0]}-lz4.zarr',
+                output_path=f"./image-{dtype}-chunk{chunk_shape[0]}.zarr"
+                if compressor is None
+                else f"./image-{dtype}-chunk{chunk_shape[0]}-lz4.zarr",
                 chunk_shape=chunk_shape,
                 zarr_kwargs=dict(overwrite=True, compressor=compressor),
                 n_buffer=64,
@@ -87,21 +93,32 @@ for i, dtype in enumerate(dtypes):
             )
             for m, gds_enabled in enumerate([False, True]):
                 kvikio.defaults.compat_mode_reset(not gds_enabled)
-                perf_write_float32 = benchmark(cupy_to_zarr, (img,), kwargs=kwargs, n_warmup=1, n_repeat=7, max_duration=max_duration)
+                perf_write_float32 = benchmark(
+                    cupy_to_zarr,
+                    (img,),
+                    kwargs=kwargs,
+                    n_warmup=1,
+                    n_repeat=7,
+                    max_duration=max_duration,
+                )
                 t = perf_write_float32.gpu_times
                 write_time_means[i, j, k, m] = t.mean()
                 write_time_stds[i, j, k, m] = t.std()
-                print(f"Duration ({cp.dtype(dtype).name} write, {chunk_shape=}, {compressor=}, {gds_enabled=}): "
-                   f"{t.mean()} s +/- {t.std()} s")
+                print(
+                    f"Duration ({cp.dtype(dtype).name} write, {chunk_shape=}, {compressor=}, {gds_enabled=}): "  # noqa: E501
+                    f"{t.mean()} s +/- {t.std()} s"
+                )
 
-out_name = 'write_times_lz4.npz'
+out_name = "write_times_lz4.npz"
 # auto-increment filename to avoid overwriting old results
 cnt = 1
 while os.path.exists(out_name):
-    out_name = f'write_times_lz4{cnt}.npz'
+    out_name = f"write_times_lz4{cnt}.npz"
     cnt += 1
 
-np.savez(out_name, write_time_means=write_time_means, write_time_stds=write_time_stds)
+np.savez(
+    out_name, write_time_means=write_time_means, write_time_stds=write_time_stds
+)
 
 
 """
@@ -152,4 +169,4 @@ Duration (uint16 write, chunk_shape=(4096, 4096, 3), compressor=None, gds_enable
 Duration (uint16 write, chunk_shape=(4096, 4096, 3), compressor=LZ4NVCOMP, gds_enabled=False): 0.8166022583007813 s +/- 0.19712617258152443 s
 Duration (uint16 write, chunk_shape=(4096, 4096, 3), compressor=LZ4NVCOMP, gds_enabled=True): 0.7342889607747396 s +/- 0.025796103217999546 s
 
-"""
+"""  # noqa: E501

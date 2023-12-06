@@ -214,13 +214,13 @@ def moments(image, order=3, *, spacing=None):
     _delta = cp.arange(max(image.shape), dtype=float_dtype)[:, cp.newaxis]
     if spacing is None:
         # when spacing is not used can compute the powers outside the loop
-        _powers_of_delta = _delta ** powers
+        _powers_of_delta = _delta**powers
     for dim, dim_length in enumerate(image.shape):
         if spacing is None:
             powers_of_delta = _powers_of_delta[:dim_length]
         else:
             delta = _delta[:dim_length] * spacing[dim]
-            powers_of_delta = delta ** powers
+            powers_of_delta = delta**powers
         calc = cp.moveaxis(calc, source=dim, destination=-1)
         calc = cp.dot(calc, powers_of_delta)
         calc = cp.moveaxis(calc, source=-1, destination=dim)
@@ -291,7 +291,7 @@ def moments_central(image, center=None, order=3, *, spacing=None, **kwargs):
     _delta = cp.arange(max(image.shape), dtype=float_dtype)[:, cp.newaxis]
     for dim, dim_length in enumerate(image.shape):
         delta = _delta[:dim_length] * spacing[dim] - center[dim]
-        powers_of_delta = delta ** powers
+        powers_of_delta = delta**powers
         calc = cp.moveaxis(calc, source=dim, destination=-1)
         calc = cp.dot(calc, powers_of_delta)
         calc = cp.moveaxis(calc, source=-1, destination=dim)
@@ -348,10 +348,10 @@ def _get_moments_norm_operation(ndim, order, unit_scale=True):
 @cp.memoize()
 def _get_normalize_kernel(ndim, order, unit_scale=True):
     return cp.ElementwiseKernel(
-        'raw F mu, int32 order, float64 scale',
-        'F nu',
+        "raw F mu, int32 order, float64 scale",
+        "F nu",
         operation=_get_moments_norm_operation(ndim, order, unit_scale),
-        name=f"moments_normmalize_2d_kernel"
+        name="moments_normmalize_2d_kernel",
     )
 
 
@@ -442,7 +442,7 @@ def moments_hu(nu):
     Notes
     -----
     Due to the small array sizes, this function will be faster on the CPU.
-    Consider transfering ``nu`` to the host and running
+    Consider transferring ``nu`` to the host and running
     ``skimage.measure.moments_hu`` if the moments are not needed on the
     device.
 
@@ -512,8 +512,11 @@ def centroid(image, *, spacing=None):
     mu = moments(image, order=1, spacing=spacing)
     ndim = image.ndim
     mu0 = mu[(0,) * ndim]
-    center = mu[tuple((0,) * dim + (1,) + (0,) * (ndim - dim - 1)
-                for dim in range(ndim))]
+    center = mu[
+        tuple(
+            (0,) * dim + (1,) + (0,) * (ndim - dim - 1) for dim in range(ndim)
+        )
+    ]
     center /= mu0
     return center
 
@@ -531,10 +534,10 @@ def _get_inertia_tensor_2x2_kernel():
     result[3] = mxx / mu0;
     """
     return cp.ElementwiseKernel(
-        in_params='raw F mu',
-        out_params='raw F result',
+        in_params="raw F mu",
+        out_params="raw F result",
         operation=operation,
-        name='cucim_skimage_measure_inertia_tensor_2x2'
+        name="cucim_skimage_measure_inertia_tensor_2x2",
     )
 
 
@@ -559,10 +562,10 @@ def _get_inertia_tensor_3x3_kernel():
     result[5] = result[7] = -myz / mu0;
     """
     return cp.ElementwiseKernel(
-        in_params='raw F mu',
-        out_params='raw F result',
+        in_params="raw F mu",
+        out_params="raw F result",
         operation=operation,
-        name='cucim_skimage_measure_inertia_tensor_3x3'
+        name="cucim_skimage_measure_inertia_tensor_3x3",
     )
 
 
@@ -670,14 +673,16 @@ def inertia_tensor_eigvals(image, mu=None, T=None, *, spacing=None):
     alternatively, one can provide the inertia tensor (``T``) directly.
     """
     # avoid circular import
-    from ..feature.corner import (_image_orthogonal_matrix22_eigvals,
-                                  _image_orthogonal_matrix33_eigvals)
+    from ..feature.corner import (
+        _image_orthogonal_matrix22_eigvals,
+        _image_orthogonal_matrix33_eigvals,
+    )
 
     if T is None:
         T = inertia_tensor(image, mu, spacing=spacing)
     if image.ndim == 2:
         eigvals = _image_orthogonal_matrix22_eigvals(
-            T[0, 0], T[0, 1], T[1, 1], sort='descending', abs_sort=False
+            T[0, 0], T[0, 1], T[1, 1], sort="descending", abs_sort=False
         )
         cp.maximum(eigvals, 0.0, out=eigvals)
     elif image.ndim == 3:

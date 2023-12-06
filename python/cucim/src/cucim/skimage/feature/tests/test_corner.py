@@ -11,13 +11,20 @@ from cucim.skimage._shared._warnings import expected_warnings
 from cucim.skimage._shared.utils import _supported_float_type
 from cucim.skimage._vendored import pad
 from cucim.skimage.color import rgb2gray
-from cucim.skimage.feature import (corner_foerstner, corner_harris,
-                                   corner_kitchen_rosenfeld, corner_peaks,
-                                   corner_shi_tomasi, hessian_matrix,
-                                   hessian_matrix_det, hessian_matrix_eigvals,
-                                   peak_local_max, shape_index,
-                                   structure_tensor,
-                                   structure_tensor_eigenvalues)
+from cucim.skimage.feature import (
+    corner_foerstner,
+    corner_harris,
+    corner_kitchen_rosenfeld,
+    corner_peaks,
+    corner_shi_tomasi,
+    hessian_matrix,
+    hessian_matrix_det,
+    hessian_matrix_eigvals,
+    peak_local_max,
+    shape_index,
+    structure_tensor,
+    structure_tensor_eigenvalues,
+)
 from cucim.skimage.feature.corner import _symmetric_image
 
 
@@ -26,15 +33,15 @@ def im3d():
     r = 10
     pad_width = 10
     im3 = draw.ellipsoid(r, r, r)
-    im3 = np.pad(im3, pad_width, mode='constant').astype(np.uint8)
+    im3 = np.pad(im3, pad_width, mode="constant").astype(np.uint8)
     return cp.asarray(im3)
 
 
-@pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])
+@pytest.mark.parametrize("dtype", [cp.float16, cp.float32, cp.float64])
 def test_structure_tensor(dtype):
     square = cp.zeros((5, 5), dtype=dtype)
     square[2, 2] = 1
-    Arr, Arc, Acc = structure_tensor(square, sigma=0.1, order='rc')
+    Arr, Arc, Acc = structure_tensor(square, sigma=0.1, order="rc")
     out_dtype = _supported_float_type(dtype)
     assert all(a.dtype == out_dtype for a in (Arr, Arc, Acc))
     # fmt: off
@@ -56,7 +63,7 @@ def test_structure_tensor(dtype):
     # fmt: on
 
 
-@pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])
+@pytest.mark.parametrize("dtype", [cp.float16, cp.float32, cp.float64])
 def test_structure_tensor_3d(dtype):
     cube = cp.zeros((5, 5, 5), dtype=dtype)
     cube[2, 2, 2] = 1
@@ -85,8 +92,8 @@ def test_structure_tensor_3d(dtype):
 def test_structure_tensor_3d_rc_only():
     cube = cp.zeros((5, 5, 5))
     with pytest.raises(ValueError):
-        structure_tensor(cube, sigma=0.1, order='xy')
-    A_elems_rc = structure_tensor(cube, sigma=0.1, order='rc')
+        structure_tensor(cube, sigma=0.1, order="xy")
+    A_elems_rc = structure_tensor(cube, sigma=0.1, order="rc")
     A_elems_none = structure_tensor(cube, sigma=0.1)
     for a_rc, a_none in zip(A_elems_rc, A_elems_none):
         assert_array_equal(a_rc, a_none)
@@ -96,37 +103,38 @@ def test_structure_tensor_orders():
     square = cp.zeros((5, 5))
     square[2, 2] = 1
     A_elems_default = structure_tensor(square, sigma=0.1)
-    A_elems_xy = structure_tensor(square, sigma=0.1, order='xy')
-    A_elems_rc = structure_tensor(square, sigma=0.1, order='rc')
+    A_elems_xy = structure_tensor(square, sigma=0.1, order="xy")
+    A_elems_rc = structure_tensor(square, sigma=0.1, order="rc")
     for elem_rc, elem_def in zip(A_elems_rc, A_elems_default):
         assert_array_equal(elem_rc, elem_def)
     for elem_xy, elem_def in zip(A_elems_xy, A_elems_default[::-1]):
         assert_array_equal(elem_xy, elem_def)
 
 
-@pytest.mark.parametrize('ndim', [2, 3])
+@pytest.mark.parametrize("ndim", [2, 3])
 def test_structure_tensor_sigma(ndim):
     img = cp.zeros((5,) * ndim)
     img[[2] * ndim] = 1
-    A_default = structure_tensor(img, sigma=0.1, order='rc')
-    A_tuple = structure_tensor(img, sigma=(0.1,) * ndim, order='rc')
-    A_list = structure_tensor(img, sigma=[0.1] * ndim, order='rc')
+    A_default = structure_tensor(img, sigma=0.1, order="rc")
+    A_tuple = structure_tensor(img, sigma=(0.1,) * ndim, order="rc")
+    A_list = structure_tensor(img, sigma=[0.1] * ndim, order="rc")
     for elem_tup, elem_def in zip(A_tuple, A_default):
         assert_array_equal(elem_tup, elem_def)
     for elem_list, elem_def in zip(A_list, A_default):
         assert_array_equal(elem_list, elem_def)
     with pytest.raises(ValueError):
-        structure_tensor(img, sigma=(0.1,) * (ndim - 1), order='rc')
+        structure_tensor(img, sigma=(0.1,) * (ndim - 1), order="rc")
     with pytest.raises(ValueError):
-        structure_tensor(img, sigma=[0.1] * (ndim + 1), order='rc')
+        structure_tensor(img, sigma=[0.1] * (ndim + 1), order="rc")
 
 
-@pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])
+@pytest.mark.parametrize("dtype", [cp.float16, cp.float32, cp.float64])
 def test_hessian_matrix(dtype):
     square = cp.zeros((5, 5), dtype=dtype)
     square[2, 2] = 4
-    Hrr, Hrc, Hcc = hessian_matrix(square, sigma=0.1, order="rc",
-                                   use_gaussian_derivatives=False)
+    Hrr, Hrc, Hcc = hessian_matrix(
+        square, sigma=0.1, order="rc", use_gaussian_derivatives=False
+    )
     out_dtype = _supported_float_type(dtype)
     assert all(a.dtype == out_dtype for a in (Hrr, Hrc, Hcc))
     # fmt: off
@@ -155,18 +163,24 @@ def test_hessian_matrix(dtype):
         hessian_matrix(square, sigma=0.1, order="rc")
 
 
-@pytest.mark.parametrize('use_gaussian_derivatives', [False, True])
+@pytest.mark.parametrize("use_gaussian_derivatives", [False, True])
 def test_hessian_matrix_order(use_gaussian_derivatives):
     square = cp.zeros((5, 5), dtype=float)
     square[2, 2] = 4
 
     Hxx, Hxy, Hyy = hessian_matrix(
-        square, sigma=0.1, order="xy",
-        use_gaussian_derivatives=use_gaussian_derivatives)
+        square,
+        sigma=0.1,
+        order="xy",
+        use_gaussian_derivatives=use_gaussian_derivatives,
+    )
 
     Hrr, Hrc, Hcc = hessian_matrix(
-        square, sigma=0.1, order="rc",
-        use_gaussian_derivatives=use_gaussian_derivatives)
+        square,
+        sigma=0.1,
+        order="rc",
+        use_gaussian_derivatives=use_gaussian_derivatives,
+    )
 
     # verify results are equivalent, just reversed in order
     cp.testing.assert_allclose(Hxx, Hcc, atol=1e-30)
@@ -177,9 +191,12 @@ def test_hessian_matrix_order(use_gaussian_derivatives):
 def test_hessian_matrix_3d():
     cube = cp.zeros((5, 5, 5))
     cube[2, 2, 2] = 4
-    Hs = hessian_matrix(cube, sigma=0.1, order='rc',
-                        use_gaussian_derivatives=False)
-    assert len(Hs) == 6, (f"incorrect number of Hessian images ({len(Hs)}) for 3D")  # noqa
+    Hs = hessian_matrix(
+        cube, sigma=0.1, order="rc", use_gaussian_derivatives=False
+    )
+    assert (
+        len(Hs) == 6
+    ), f"incorrect number of Hessian images ({len(Hs)}) for 3D"  # noqa
     # fmt: off
     assert_array_almost_equal(
         Hs[2][:, 2, :], cp.asarray([[0,  0,  0,  0,  0],    # noqa
@@ -190,59 +207,82 @@ def test_hessian_matrix_3d():
     # fmt: on
 
 
-@pytest.mark.parametrize('use_gaussian_derivatives', [False, True])
+@pytest.mark.parametrize("use_gaussian_derivatives", [False, True])
 def test_hessian_matrix_3d_xy(use_gaussian_derivatives):
-
     img = cp.ones((5, 5, 5))
 
     # order="xy" is only permitted for 2D
     with pytest.raises(ValueError):
-        hessian_matrix(img, sigma=0.1, order="xy",
-                       use_gaussian_derivatives=use_gaussian_derivatives)
+        hessian_matrix(
+            img,
+            sigma=0.1,
+            order="xy",
+            use_gaussian_derivatives=use_gaussian_derivatives,
+        )
 
     with pytest.raises(ValueError):
-        hessian_matrix(img, sigma=0.1, order='nonexistant',
-                       use_gaussian_derivatives=use_gaussian_derivatives)
+        hessian_matrix(
+            img,
+            sigma=0.1,
+            order="nonexistent",
+            use_gaussian_derivatives=use_gaussian_derivatives,
+        )
 
 
-@pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])
+@pytest.mark.parametrize("dtype", [cp.float16, cp.float32, cp.float64])
 def test_structure_tensor_eigenvalues(dtype):
     square = cp.zeros((5, 5), dtype=dtype)
     square[2, 2] = 1
-    A_elems = structure_tensor(square, sigma=0.1, order='rc')
+    A_elems = structure_tensor(square, sigma=0.1, order="rc")
     l1, l2 = structure_tensor_eigenvalues(A_elems)
     out_dtype = _supported_float_type(dtype)
     assert all(a.dtype == out_dtype for a in (l1, l2))
-    assert_array_equal(l1, cp.asarray([[0, 0, 0, 0, 0],
-                                       [0, 2, 4, 2, 0],
-                                       [0, 4, 0, 4, 0],
-                                       [0, 2, 4, 2, 0],
-                                       [0, 0, 0, 0, 0]]))
-    assert_array_equal(l2, cp.asarray([[0, 0, 0, 0, 0],
-                                       [0, 0, 0, 0, 0],
-                                       [0, 0, 0, 0, 0],
-                                       [0, 0, 0, 0, 0],
-                                       [0, 0, 0, 0, 0]]))
+    assert_array_equal(
+        l1,
+        cp.asarray(
+            [
+                [0, 0, 0, 0, 0],
+                [0, 2, 4, 2, 0],
+                [0, 4, 0, 4, 0],
+                [0, 2, 4, 2, 0],
+                [0, 0, 0, 0, 0],
+            ]
+        ),
+    )
+    assert_array_equal(
+        l2,
+        cp.asarray(
+            [
+                [0, 0, 0, 0, 0],
+                [0, 0, 0, 0, 0],
+                [0, 0, 0, 0, 0],
+                [0, 0, 0, 0, 0],
+                [0, 0, 0, 0, 0],
+            ]
+        ),
+    )
 
 
 def test_structure_tensor_eigenvalues_3d():
     cube9 = cp.ones((9,) * 3, dtype=cp.uint8)
     cube7 = cp.ones((7,) * 3, dtype=cp.uint8)
-    image = pad(cube9, 5, mode='constant') * 1000
-    boundary = (pad(cube9, 5, mode='constant')
-                - pad(cube7, 6, mode='constant')).astype(bool)
+    image = pad(cube9, 5, mode="constant") * 1000
+    boundary = (
+        pad(cube9, 5, mode="constant") - pad(cube7, 6, mode="constant")
+    ).astype(bool)
     A_elems = structure_tensor(image, sigma=0.1)
     e0, e1, e2 = structure_tensor_eigenvalues(A_elems)
     # e0 should detect facets
     assert np.all(e0[boundary] != 0)
 
 
-@pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])
+@pytest.mark.parametrize("dtype", [cp.float16, cp.float32, cp.float64])
 def test_hessian_matrix_eigvals(dtype):
     square = cp.zeros((5, 5), dtype=dtype)
     square[2, 2] = 4
-    H = hessian_matrix(square, sigma=0.1, order='rc',
-                       use_gaussian_derivatives=False)
+    H = hessian_matrix(
+        square, sigma=0.1, order="rc", use_gaussian_derivatives=False
+    )
     l1, l2 = hessian_matrix_eigvals(H)
     out_dtype = _supported_float_type(dtype)
     assert all(a.dtype == out_dtype for a in (l1, l2))
@@ -260,7 +300,7 @@ def test_hessian_matrix_eigvals(dtype):
     # fmt: on
 
 
-@pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])
+@pytest.mark.parametrize("dtype", [cp.float16, cp.float32, cp.float64])
 def test_hessian_matrix_eigvals_3d(im3d, dtype):
     im3d = im3d.astype(dtype, copy=False)
     H = hessian_matrix(im3d, use_gaussian_derivatives=False)
@@ -297,14 +337,12 @@ def _reference_eigvals_computation(S_elems):
     return eigs
 
 
-@pytest.mark.parametrize(
-    'shape', [(64, 64), (512, 1024), (8, 16, 24)]
-)
-@pytest.mark.parametrize('dtype', [np.float32, np.float64])
+@pytest.mark.parametrize("shape", [(64, 64), (512, 1024), (8, 16, 24)])
+@pytest.mark.parametrize("dtype", [np.float32, np.float64])
 def test_custom_eigvals_kernels_vs_linalg_eigvalsh(shape, dtype):
     rng = cp.random.default_rng(seed=5)
     img = rng.integers(0, 256, shape)
-    H = hessian_matrix(img)
+    H = hessian_matrix(img, use_gaussian_derivatives=False)
     H = tuple(h.astype(dtype, copy=False) for h in H)
     evs1 = _reference_eigvals_computation(H)
     evs2 = hessian_matrix_eigvals(H)
@@ -312,7 +350,7 @@ def test_custom_eigvals_kernels_vs_linalg_eigvalsh(shape, dtype):
     cp.testing.assert_allclose(evs1, evs2, atol=atol)
 
 
-@pytest.mark.parametrize('approximate', [False, True])
+@pytest.mark.parametrize("approximate", [False, True])
 def test_hessian_matrix_det(approximate):
     image = cp.zeros((5, 5))
     image[2, 2] = 1
@@ -320,10 +358,10 @@ def test_hessian_matrix_det(approximate):
     assert_array_almost_equal(det, 0, decimal=3)
 
 
-@pytest.mark.parametrize('approximate', [False, True])
-@pytest.mark.parametrize('ndim', [2, 3])
+@pytest.mark.parametrize("approximate", [False, True])
+@pytest.mark.parametrize("ndim", [2, 3])
 @pytest.mark.parametrize(
-    'dtype', [cp.uint8, cp.float16, cp.float32, cp.float64]
+    "dtype", [cp.uint8, cp.float16, cp.float32, cp.float64]
 )
 def test_hessian_matrix_det_vs_skimage(approximate, ndim, dtype):
     if approximate and ndim != 2:
@@ -333,7 +371,7 @@ def test_hessian_matrix_det_vs_skimage(approximate, ndim, dtype):
     else:
         sigma = 1.5
     rng = cp.random.default_rng(5)
-    if np.dtype(dtype).kind in 'iu':
+    if np.dtype(dtype).kind in "iu":
         image = rng.integers(0, 256, (16,) * ndim, dtype=dtype)
     else:
         image = rng.standard_normal((16,) * ndim).astype(dtype=dtype)
@@ -347,7 +385,7 @@ def test_hessian_matrix_det_vs_skimage(approximate, ndim, dtype):
     cp.testing.assert_allclose(det, expected, rtol=tol, atol=tol)
 
 
-@pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])
+@pytest.mark.parametrize("dtype", [cp.float16, cp.float32, cp.float64])
 def test_hessian_matrix_det_3d(im3d, dtype):
     im3d = im3d.astype(dtype, copy=False)
     D = hessian_matrix_det(im3d)
@@ -405,45 +443,48 @@ def test_square_image():
     # assert len(results) == 57
 
     # Harris
-    results = peak_local_max(corner_harris(im, method='k'),
-                             min_distance=10, threshold_rel=0)
+    results = peak_local_max(
+        corner_harris(im, method="k"), min_distance=10, threshold_rel=0
+    )
     # interest at corner
     assert len(results) == 1
 
-    results = peak_local_max(corner_harris(im, method='eps'),
-                             min_distance=10, threshold_rel=0)
+    results = peak_local_max(
+        corner_harris(im, method="eps"), min_distance=10, threshold_rel=0
+    )
     # interest at corner
     assert len(results) == 1
 
     # Shi-Tomasi
-    results = peak_local_max(corner_shi_tomasi(im),
-                             min_distance=10, threshold_rel=0)
+    results = peak_local_max(
+        corner_shi_tomasi(im), min_distance=10, threshold_rel=0
+    )
     # interest at corner
     assert len(results) == 1
 
 
-@pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])
+@pytest.mark.parametrize("dtype", [cp.float16, cp.float32, cp.float64])
 @pytest.mark.parametrize(
-    'func',
+    "func",
     [
         # corner_moravec,
         corner_harris,
         corner_shi_tomasi,
         corner_kitchen_rosenfeld,
-    ]
+    ],
 )
 def test_corner_dtype(dtype, func):
     im = cp.zeros((50, 50), dtype=dtype)
-    im[:25, :25] = 1.
+    im[:25, :25] = 1.0
     out_dtype = _supported_float_type(dtype)
     corners = func(im)
     assert corners.dtype == out_dtype
 
 
-@pytest.mark.parametrize('dtype', [cp.float16, cp.float32, cp.float64])
+@pytest.mark.parametrize("dtype", [cp.float16, cp.float32, cp.float64])
 def test_corner_foerstner_dtype(dtype):
     im = cp.zeros((50, 50), dtype=dtype)
-    im[:25, :25] = 1.
+    im[:25, :25] = 1.0
     out_dtype = _supported_float_type(dtype)
     assert all(arr.dtype == out_dtype for arr in corner_foerstner(im))
 
@@ -451,8 +492,8 @@ def test_corner_foerstner_dtype(dtype):
 def test_noisy_square_image():
     im = cp.zeros((50, 50)).astype(float)
     im[:25, :25] = 1.0
-    np.random.seed(seed=1234)  # result is specic to this NumPy seed
-    im = im + cp.asarray(np.random.uniform(size=im.shape)) * 0.2
+    rng = np.random.default_rng(1234)  # result is specific to this NumPy seed
+    im = im + cp.asarray(rng.uniform(size=im.shape)) * 0.2
 
     # # Moravec
     # results = peak_local_max(corner_moravec(im),
@@ -461,16 +502,19 @@ def test_noisy_square_image():
     # assert results.any()
 
     # Harris
-    results = peak_local_max(corner_harris(im, method='k'),
-                             min_distance=10, threshold_rel=0)
+    results = peak_local_max(
+        corner_harris(im, method="k"), min_distance=10, threshold_rel=0
+    )
     assert len(results) == 1
-    results = peak_local_max(corner_harris(im, method='eps'),
-                             min_distance=10, threshold_rel=0)
+    results = peak_local_max(
+        corner_harris(im, method="eps"), min_distance=10, threshold_rel=0
+    )
     assert len(results) == 1
 
     # Shi-Tomasi
-    results = peak_local_max(corner_shi_tomasi(im, sigma=1.5),
-                             min_distance=10, threshold_rel=0)
+    results = peak_local_max(
+        corner_shi_tomasi(im, sigma=1.5), min_distance=10, threshold_rel=0
+    )
     assert len(results) == 1
 
 
@@ -482,14 +526,16 @@ def test_squared_dot():
     # Moravec fails
 
     # Harris
-    results = peak_local_max(corner_harris(im),
-                             min_distance=10, threshold_rel=0)
+    results = peak_local_max(
+        corner_harris(im), min_distance=10, threshold_rel=0
+    )
 
     assert (results == cp.asarray([[6, 6]])).all()
 
     # Shi-Tomasi
-    results = peak_local_max(corner_shi_tomasi(im),
-                             min_distance=10, threshold_rel=0)
+    results = peak_local_max(
+        corner_shi_tomasi(im), min_distance=10, threshold_rel=0
+    )
 
     assert (results == cp.asarray([[6, 6]])).all()
 
@@ -584,8 +630,9 @@ def test_num_peaks():
 
     for i in range(20):
         n = cp.random.randint(1, 21)
-        results = peak_local_max(img_corners,
-                                 min_distance=10, threshold_rel=0, num_peaks=n)
+        results = peak_local_max(
+            img_corners, min_distance=10, threshold_rel=0, num_peaks=n
+        )
         assert results.shape[0] == n
 
 
@@ -594,19 +641,22 @@ def test_corner_peaks():
     response[2:5, 2:5] = 1
     response[8:10, 0:2] = 1
 
-    corners = corner_peaks(response, exclude_border=False, min_distance=10,
-                           threshold_rel=0)
+    corners = corner_peaks(
+        response, exclude_border=False, min_distance=10, threshold_rel=0
+    )
     assert corners.shape == (1, 2)
 
-    corners = corner_peaks(response, exclude_border=False, min_distance=5,
-                           threshold_rel=0)
+    corners = corner_peaks(
+        response, exclude_border=False, min_distance=5, threshold_rel=0
+    )
     assert corners.shape == (2, 2)
 
     corners = corner_peaks(response, exclude_border=False, min_distance=1)
     assert corners.shape == (5, 2)
 
-    corners = corner_peaks(response, exclude_border=False, min_distance=1,
-                           indices=False)
+    corners = corner_peaks(
+        response, exclude_border=False, min_distance=1, indices=False
+    )
     assert cp.sum(corners) == 5
 
 

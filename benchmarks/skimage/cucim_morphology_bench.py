@@ -6,17 +6,17 @@ import operator
 import os
 import pickle
 
-import cucim.skimage
-import cucim.skimage.morphology
 import cupy as cp
 import numpy as np
 import pandas as pd
+import scipy.ndimage as ndi
 import skimage
 import skimage.data
 import skimage.morphology
-import scipy.ndimage as ndi
-
 from _image_bench import ImageBench
+
+import cucim.skimage
+import cucim.skimage.morphology
 
 
 class BinaryMorphologyBench(ImageBench):
@@ -33,7 +33,6 @@ class BinaryMorphologyBench(ImageBench):
         module_gpu=cucim.skimage.morphology,
         run_cpu=True,
     ):
-
         array_kwargs = dict(footprint=footprint)
         if "footprint" in fixed_kwargs:
             raise ValueError("fixed_kwargs cannot contain 'footprint'")
@@ -72,7 +71,7 @@ class SkeletonizeBench(ImageBench):
         h = ~skimage.data.horse()
         nrow = math.ceil(self.shape[0] / h.shape[0])
         ncol = math.ceil(self.shape[1] / h.shape[1])
-        image = np.tile(h, (nrow, ncol))[:self.shape[0], :self.shape[1]]
+        image = np.tile(h, (nrow, ncol))[: self.shape[0], : self.shape[1]]
         imaged = cp.asarray(image)
         self.args_cpu = (image,)
         self.args_gpu = (imaged,)
@@ -80,7 +79,9 @@ class SkeletonizeBench(ImageBench):
 
 class ReconstructionBench(ImageBench):
     def set_args(self, dtype):
-        coords = cp.meshgrid(*[cp.linspace(0, 6 * cp.pi, s) for s in self.shape], sparse=True)
+        coords = cp.meshgrid(
+            *[cp.linspace(0, 6 * cp.pi, s) for s in self.shape], sparse=True
+        )
         bumps = functools.reduce(operator.add, [cp.sin(c) for c in coords])
         h = 0.6
         seed = bumps - h
@@ -116,7 +117,6 @@ class RemoveSmallHolesBench(RemoveSmallObjectsBench):
 
 
 def main(args):
-
     pfile = "cucim_morphology_results.pickle"
     if os.path.exists(pfile):
         with open(pfile, "rb") as f:
@@ -126,7 +126,7 @@ def main(args):
 
     dtypes = [np.dtype(args.dtype)]
     # image sizes/shapes
-    shape = tuple(list(map(int,(args.img_size.split(',')))))
+    shape = tuple(list(map(int, (args.img_size.split(",")))))
     run_cpu = not args.no_cpu
 
     for function_name, fixed_kwargs, var_kwargs, allow_color, allow_nd in [
@@ -150,14 +150,19 @@ def main(args):
         ("white_tophat", dict(), dict(), False, True),
         ("black_tophat", dict(), dict(), False, True),
         # _skeletonize.py
-        ("medial_axis", dict(random_state=123), dict(return_distance=[False, True]), False, False),
+        (
+            "medial_axis",
+            dict(random_state=123),
+            dict(return_distance=[False, True]),
+            False,
+            False,
+        ),
         ("thin", dict(), dict(), False, True),
         # grayreconstruct.py
         ("reconstruction", dict(), dict(), False, True),
         # footprints.py
         # OMIT the functions from this file (each creates a structuring element)
     ]:
-
         if function_name != args.func_name:
             continue
 
@@ -166,7 +171,7 @@ def main(args):
                 continue
 
         ndim = len(shape)
-        if function_name in ['thin', 'medial_axis']:
+        if function_name in ["thin", "medial_axis"]:
             if ndim != 2:
                 raise ValueError("only 2d benchmark data has been implemented")
 
@@ -184,8 +189,7 @@ def main(args):
                 run_cpu=run_cpu,
             )
 
-        if function_name.startswith('binary'):
-
+        if function_name.startswith("binary"):
             if not allow_nd and ndim > 2:
                 continue
 
@@ -206,8 +210,7 @@ def main(args):
                     run_cpu=run_cpu,
                 )
 
-        elif function_name.startswith('isotropic'):
-
+        elif function_name.startswith("isotropic"):
             if not allow_nd and ndim > 2:
                 continue
 
@@ -222,7 +225,7 @@ def main(args):
                 run_cpu=run_cpu,
             )
 
-        elif function_name in ['remove_small_holes', 'remove_small_objects']:
+        elif function_name in ["remove_small_holes", "remove_small_objects"]:
             if not allow_nd and ndim > 2:
                 continue
 
@@ -244,7 +247,6 @@ def main(args):
                 run_cpu=run_cpu,
             )
         else:
-
             if not allow_nd:
                 if not allow_color:
                     if ndim > 2:
@@ -278,7 +280,7 @@ def main(args):
     all_results.to_csv(fbase + ".csv")
     all_results.to_pickle(pfile)
     try:
-        import tabular
+        import tabular  # noqa: F401
 
         with open(fbase + ".md", "wt") as f:
             f.write(all_results.to_markdown())
@@ -286,8 +288,10 @@ def main(args):
         pass
 
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Benchmarking cuCIM morphology functions')
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="Benchmarking cuCIM morphology functions"
+    )
     # fmt: off
     func_name_choices = [
         'binary_erosion', 'binary_dilation', 'binary_opening',
@@ -297,12 +301,58 @@ if __name__ == '__main__':
         'white_tophat', 'black_tophat', 'thin', 'medial_axis', 'reconstruction'
     ]
     # fmt: on
-    dtype_choices = ['float16', 'float32', 'float64', 'int8', 'int16', 'int32', 'int64', 'uint8', 'uint16', 'uint32', 'uint64']
-    parser.add_argument('-i','--img_size', type=str, help='Size of input image (omit color channel, it will be appended as needed)', required=True)
-    parser.add_argument('-d','--dtype', type=str, help='Dtype of input image', choices = dtype_choices, required=True)
-    parser.add_argument('-f','--func_name', type=str, help='function to benchmark', choices = func_name_choices, required=True)
-    parser.add_argument('-t','--duration', type=int, help='time to run benchmark', required=True)
-    parser.add_argument('--no_cpu', action='store_true', help='disable cpu measurements', default=False)
+    dtype_choices = [
+        "float16",
+        "float32",
+        "float64",
+        "int8",
+        "int16",
+        "int32",
+        "int64",
+        "uint8",
+        "uint16",
+        "uint32",
+        "uint64",
+    ]
+    parser.add_argument(
+        "-i",
+        "--img_size",
+        type=str,
+        help=(
+            "Size of input image (omit color channel, it will be appended "
+            "as needed)"
+        ),
+        required=True,
+    )
+    parser.add_argument(
+        "-d",
+        "--dtype",
+        type=str,
+        help="Dtype of input image",
+        choices=dtype_choices,
+        required=True,
+    )
+    parser.add_argument(
+        "-f",
+        "--func_name",
+        type=str,
+        help="function to benchmark",
+        choices=func_name_choices,
+        required=True,
+    )
+    parser.add_argument(
+        "-t",
+        "--duration",
+        type=int,
+        help="time to run benchmark",
+        required=True,
+    )
+    parser.add_argument(
+        "--no_cpu",
+        action="store_true",
+        help="disable cpu measurements",
+        default=False,
+    )
 
     args = parser.parse_args()
     main(args)

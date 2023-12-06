@@ -1,9 +1,17 @@
 import pytest
-from numpy.testing import (TestCase, assert_, assert_allclose,  # noqa
-                           assert_almost_equal, assert_array_almost_equal,
-                           assert_array_almost_equal_nulp, assert_array_equal,
-                           assert_array_less, assert_equal, assert_no_warnings,
-                           assert_warns)
+from numpy.testing import (  # noqa
+    TestCase,
+    assert_,
+    assert_allclose,
+    assert_almost_equal,
+    assert_array_almost_equal,
+    assert_array_almost_equal_nulp,
+    assert_array_equal,
+    assert_array_less,
+    assert_equal,
+    assert_no_warnings,
+    assert_warns,
+)
 
 from ._warnings import expected_warnings  # noqa
 
@@ -29,6 +37,6 @@ def fetch(data_filename):
             # CuPy Backend: TODO: avoid call to non-public _fetch method
             return _fetch(data_filename)
         except (ConnectionError, ModuleNotFoundError):
-            pytest.skip(f'Unable to download {data_filename}')
+            pytest.skip(f"Unable to download {data_filename}")
     else:
-        pytest.skip('skimage _fetch utility not found')
+        pytest.skip("skimage _fetch utility not found")

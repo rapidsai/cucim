@@ -33,8 +33,8 @@ def _dtype_to_cuda_float_type(dtype):
         Supported cuda data type
     """
     cpp_float_types = {
-        cp.float32: 'float',
-        cp.float64: 'double',
+        cp.float32: "float",
+        cp.float64: "double",
     }
     dtype = cp.dtype(dtype)
     if dtype.type not in cpp_float_types:
@@ -58,7 +58,7 @@ def _get_prune_blob_rawmodule(dtype, large_int) -> cp.RawModule:
         A cupy RawModule containing the __global__ functions `_prune_blobs`.
     """
     blob_t = _dtype_to_cuda_float_type(dtype)
-    int_t = 'long long' if large_int else 'int'
+    int_t = "long long" if large_int else "int"
 
     _preamble = f"""
 #define BLOB_T {blob_t}
@@ -66,15 +66,15 @@ def _get_prune_blob_rawmodule(dtype, large_int) -> cp.RawModule:
     """
 
     kernel_directory = os.path.join(
-        os.path.normpath(os.path.dirname(__file__)), 'cuda'
+        os.path.normpath(os.path.dirname(__file__)), "cuda"
     )
-    with open(os.path.join(kernel_directory, "blob.cu"), 'rt') as f:
+    with open(os.path.join(kernel_directory, "blob.cu"), "rt") as f:
         _code = f.read()
 
     return cp.RawModule(
         code=_preamble + _code,
-        options=('--std=c++11',),
-        name_expressions=["_prune_blobs"]
+        options=("--std=c++11",),
+        name_expressions=["_prune_blobs"],
     )
 
 
@@ -104,19 +104,24 @@ def _prune_blobs(blobs_array, overlap, *, sigma_dim=1):
     """
 
     # from here, the kernel does the calculation
-    blobs_module = _get_prune_blob_rawmodule(blobs_array.dtype,
-                                             max(blobs_array.shape) > 2**31)
+    blobs_module = _get_prune_blob_rawmodule(
+        blobs_array.dtype, max(blobs_array.shape) > 2**31
+    )
     _prune_blobs_kernel = blobs_module.get_function("_prune_blobs")
 
     block_size = 64
     grid_size = int(math.ceil(blobs_array.shape[0] / block_size))
-    _prune_blobs_kernel((grid_size,), (block_size,),
-                        (blobs_array.ravel(),
-                         int(blobs_array.shape[0]),
-                         int(blobs_array.shape[1]),
-                         float(overlap),
-                         int(sigma_dim))
-                        )
+    _prune_blobs_kernel(
+        (grid_size,),
+        (block_size,),
+        (
+            blobs_array.ravel(),
+            int(blobs_array.shape[0]),
+            int(blobs_array.shape[1]),
+            float(overlap),
+            int(sigma_dim),
+        ),
+    )
     return blobs_array[blobs_array[:, -1] > 0, :]
 
 
@@ -128,12 +133,14 @@ def _format_exclude_border(img_ndim, exclude_border):
         if len(exclude_border) != img_ndim:
             raise ValueError(
                 "`exclude_border` should have the same length as the "
-                "dimensionality of the image.")
+                "dimensionality of the image."
+            )
         for exclude in exclude_border:
             if not isinstance(exclude, int):
                 raise ValueError(
                     "exclude border, when expressed as a tuple, must only "
-                    "contain ints.")
+                    "contain ints."
+                )
         return exclude_border
     elif isinstance(exclude_border, int):
         return (exclude_border,) * img_ndim + (0,)
@@ -143,7 +150,7 @@ def _format_exclude_border(img_ndim, exclude_border):
         return (0,) * (img_ndim + 1)
     else:
         raise ValueError(
-            f'Unsupported value ({exclude_border}) for exclude_border'
+            f"Unsupported value ({exclude_border}) for exclude_border"
         )
 
 
@@ -162,8 +169,17 @@ def _prep_sigmas(ndim, min_sigma, max_sigma):
     return scalar_sigma, min_sigma, max_sigma
 
 
-def blob_dog(image, min_sigma=1, max_sigma=50, sigma_ratio=1.6, threshold=0.5,
-             overlap=.5, *, threshold_rel=None, exclude_border=False):
+def blob_dog(
+    image,
+    min_sigma=1,
+    max_sigma=50,
+    sigma_ratio=1.6,
+    threshold=0.5,
+    overlap=0.5,
+    *,
+    threshold_rel=None,
+    exclude_border=False,
+):
     r"""Finds blobs in the given grayscale image.
     Blobs are found using the Difference of Gaussian (DoG) method [1]_, [2]_.
     For each blob found, the method returns its coordinates and the standard
@@ -228,7 +244,7 @@ def blob_dog(image, min_sigma=1, max_sigma=50, sigma_ratio=1.6, threshold=0.5,
 
     References
     ----------
-    .. [1] https://en.wikipedia.org/wiki/Blob_detection#The_difference_of_Gaussians_approach  # noqa
+    .. [1] https://en.wikipedia.org/wiki/Blob_detection#The_difference_of_Gaussians_approach
     .. [2] Lowe, D. G. "Distinctive Image Features from Scale-Invariant
         Keypoints." International Journal of Computer Vision 60, 91–110 (2004).
         https://www.cs.ubc.ca/~lowe/papers/ijcv04.pdf
@@ -270,37 +286,39 @@ def blob_dog(image, min_sigma=1, max_sigma=50, sigma_ratio=1.6, threshold=0.5,
     -----
     The radius of each blob is approximately :math:`\sqrt{2}\sigma` for
     a 2-D image and :math:`\sqrt{3}\sigma` for a 3-D image.
-    """
+    """  # noqa: E501
     image = img_as_float(image)
     float_dtype = _supported_float_type(image.dtype)
     image = image.astype(float_dtype, copy=False)
 
     # Determine if provixed sigmas are scalar and broadcast to image.ndim
-    scalar_sigma, min_sigma, max_sigma = _prep_sigmas(image.ndim, min_sigma,
-                                                      max_sigma)
+    scalar_sigma, min_sigma, max_sigma = _prep_sigmas(
+        image.ndim, min_sigma, max_sigma
+    )
 
     if sigma_ratio <= 1.0:
-        raise ValueError('sigma_ratio must be > 1.0')
+        raise ValueError("sigma_ratio must be > 1.0")
 
     # k such that min_sigma*(sigma_ratio**k) > max_sigma
     log_ratio = math.log(sigma_ratio)
-    k = sum(math.log(max_s / min_s) / log_ratio + 1
-            for max_s, min_s in zip(max_sigma, min_sigma))
+    k = sum(
+        math.log(max_s / min_s) / log_ratio + 1
+        for max_s, min_s in zip(max_sigma, min_sigma)
+    )
     k /= len(min_sigma)
     k = int(k)
 
     # a geometric progression of standard deviations for gaussian kernels
-    ratio_powers = tuple(sigma_ratio ** i for i in range(k + 1))
-    sigma_list = tuple(tuple(s * p for s in min_sigma)
-                       for p in ratio_powers)
+    ratio_powers = tuple(sigma_ratio**i for i in range(k + 1))
+    sigma_list = tuple(tuple(s * p for s in min_sigma) for p in ratio_powers)
 
     # computing difference between two successive Gaussian blurred images
     # to obtain an approximation of the scale invariant Laplacian of the
     # Gaussian operator
     dog_image_cube = cp.empty(image.shape + (k,), dtype=float_dtype)
-    gaussian_previous = gaussian(image, sigma_list[0], mode='reflect')
+    gaussian_previous = gaussian(image, sigma_list[0], mode="reflect")
     for i, s in enumerate(sigma_list[1:]):
-        gaussian_current = gaussian(image, s, mode='reflect')
+        gaussian_current = gaussian(image, s, mode="reflect")
         dog_image_cube[..., i] = gaussian_previous - gaussian_current
         gaussian_previous = gaussian_current
 
@@ -341,9 +359,18 @@ def blob_dog(image, min_sigma=1, max_sigma=50, sigma_ratio=1.6, threshold=0.5,
     return _prune_blobs(lm, overlap, sigma_dim=sigma_dim)
 
 
-def blob_log(image, min_sigma=1, max_sigma=50, num_sigma=10, threshold=.2,
-             overlap=.5, log_scale=False, *, threshold_rel=None,
-             exclude_border=False):
+def blob_log(
+    image,
+    min_sigma=1,
+    max_sigma=50,
+    num_sigma=10,
+    threshold=0.2,
+    overlap=0.5,
+    log_scale=False,
+    *,
+    threshold_rel=None,
+    exclude_border=False,
+):
     r"""Finds blobs in the given grayscale image.
     Blobs are found using the Laplacian of Gaussian (LoG) method [1]_.
     For each blob found, the method returns its coordinates and the standard
@@ -408,7 +435,7 @@ def blob_log(image, min_sigma=1, max_sigma=50, num_sigma=10, threshold=.2,
 
     References
     ----------
-    .. [1] https://en.wikipedia.org/wiki/Blob_detection#The_Laplacian_of_Gaussian  # noqa
+    .. [1] https://en.wikipedia.org/wiki/Blob_detection#The_Laplacian_of_Gaussian
 
     Examples
     --------
@@ -439,14 +466,15 @@ def blob_log(image, min_sigma=1, max_sigma=50, num_sigma=10, threshold=.2,
     -----
     The radius of each blob is approximately :math:`\sqrt{2}\sigma` for
     a 2-D image and :math:`\sqrt{3}\sigma` for a 3-D image.
-    """
+    """  # noqa: E501
     image = img_as_float(image)
     float_dtype = _supported_float_type(image.dtype)
     image = image.astype(float_dtype, copy=False)
 
     # Determine if provixed sigmas are scalar and broadcast to image.ndim
-    scalar_sigma, min_sigma, max_sigma = _prep_sigmas(image.ndim, min_sigma,
-                                                      max_sigma)
+    scalar_sigma, min_sigma, max_sigma = _prep_sigmas(
+        image.ndim, min_sigma, max_sigma
+    )
 
     if log_scale:
         start = tuple(math.log10(s) for s in min_sigma)
@@ -472,7 +500,7 @@ def blob_log(image, min_sigma=1, max_sigma=50, num_sigma=10, threshold=.2,
         threshold_abs=threshold,
         threshold_rel=threshold_rel,
         exclude_border=exclude_border,
-        footprint=cp.ones((3,) * (image.ndim + 1))
+        footprint=cp.ones((3,) * (image.ndim + 1)),
     )
 
     # Catch no peaks
@@ -499,8 +527,17 @@ def blob_log(image, min_sigma=1, max_sigma=50, num_sigma=10, threshold=.2,
     return _prune_blobs(lm, overlap, sigma_dim=sigma_dim)
 
 
-def blob_doh(image, min_sigma=1, max_sigma=30, num_sigma=10, threshold=0.01,
-             overlap=.5, log_scale=False, *, threshold_rel=None):
+def blob_doh(
+    image,
+    min_sigma=1,
+    max_sigma=30,
+    num_sigma=10,
+    threshold=0.01,
+    overlap=0.5,
+    log_scale=False,
+    *,
+    threshold_rel=None,
+):
     """Finds blobs in the given grayscale image.
 
     Blobs are found using the Determinant of Hessian method [1]_. For each blob
@@ -550,7 +587,7 @@ def blob_doh(image, min_sigma=1, max_sigma=30, num_sigma=10, threshold=0.01,
 
     References
     ----------
-    .. [1] https://en.wikipedia.org/wiki/Blob_detection#The_determinant_of_the_Hessian  # noqa
+    .. [1] https://en.wikipedia.org/wiki/Blob_detection#The_determinant_of_the_Hessian
     .. [2] Herbert Bay, Andreas Ess, Tinne Tuytelaars, Luc Van Gool,
            "SURF: Speeded Up Robust Features"
            ftp://ftp.vision.ee.ethz.ch/publications/articles/eth_biwi_00517.pdf
@@ -590,7 +627,7 @@ def blob_doh(image, min_sigma=1, max_sigma=30, num_sigma=10, threshold=0.01,
     of Gaussians for larger `sigma` takes more time. The downside is that
     this method can't be used for detecting blobs of radius less than `3px`
     due to the box filters used in the approximation of Hessian Determinant.
-    """
+    """  # noqa: E501
     check_nD(image, 2)
 
     image = img_as_float(image)
@@ -609,11 +646,13 @@ def blob_doh(image, min_sigma=1, max_sigma=30, num_sigma=10, threshold=0.01,
     for i, s in enumerate(sigma_list):
         image_cube[..., i] = _hessian_matrix_det(image, s)
 
-    local_maxima = peak_local_max(image_cube,
-                                  threshold_abs=threshold,
-                                  threshold_rel=threshold_rel,
-                                  exclude_border=False,
-                                  footprint=cp.ones((3,) * image_cube.ndim))
+    local_maxima = peak_local_max(
+        image_cube,
+        threshold_abs=threshold,
+        threshold_rel=threshold_rel,
+        exclude_border=False,
+        footprint=cp.ones((3,) * image_cube.ndim),
+    )
 
     # Catch no peaks
     if local_maxima.size == 0:

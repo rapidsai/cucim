@@ -13,23 +13,29 @@
 # limitations under the License.
 #
 
+from ._version import __git_commit__, __version__
+
 submodules = []
 
 try:
     import cupy
+
     _is_cupy_available = True
-    submodules += ['core', 'skimage']
+    submodules += ["core", "skimage"]
+    del cupy
 except ImportError:
     pass
 
 try:
-    from .clara import CuImage, __version__, cli
-    _is_clara_available = True
-    submodules += ['clara']
-except ImportError:
-    from ._version import get_versions
-    __version__ = get_versions()['version']
-    del get_versions
-    del _version
+    from .clara import CuImage, cli  # noqa: F401
 
-__all__ = submodules + ['__version__', 'is_available']
+    _is_clara_available = True
+    submodules += ["clara"]
+except ImportError:
+    pass
+
+__all__ = submodules + [  # noqa: F822
+    "__git_commit__",
+    "__version__",
+    "is_available",
+]

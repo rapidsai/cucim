@@ -1,6 +1,6 @@
 /*
  * Apache License, Version 2.0
- * Copyright 2021 NVIDIA Corporation
+ * Copyright 2021-2023 NVIDIA Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -86,6 +86,9 @@ ThreadBatchDataLoader::ThreadBatchDataLoader(LoadFunc load_func,
 
 ThreadBatchDataLoader::~ThreadBatchDataLoader()
 {
+    // Wait until all tasks are done.
+    while (wait_batch() > 0);
+
     cucim::io::DeviceType device_type = out_device_.type();
     for (auto& raster_ptr : raster_data_)
     {
@@ -207,7 +210,8 @@ uint8_t* ThreadBatchDataLoader::next_data()
 {
     if (num_workers_ == 0) // (location_len == 1 && batch_size == 1)
     {
-        // If it reads entire image with multi threads (using loader), release raster memory from batch data loader.
+        // If it reads entire image with multi threads (using loader), release raster memory from batch data loader
+        // by setting it to nullptr so that it will not be freed by ~ThreadBatchDataLoader (destructor).
         uint8_t* batch_raster_ptr = raster_data_[0];
         raster_data_[0] = nullptr;
         return batch_raster_ptr;
@@ -215,11 +219,7 @@ uint8_t* ThreadBatchDataLoader::next_data()
 
     if (processed_batch_count_ * batch_size_ >= location_len_)
     {
-        // Remove buffer items that are no longer needed.
-        for (size_t i = 0; i < buffer_item_len_; ++i)
-        {
-            raster_data_[i] = nullptr;
-        }
+        // If all batches are processed, return nullptr.
         return nullptr;
     }
 
