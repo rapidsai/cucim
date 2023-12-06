@@ -70,7 +70,7 @@ requirements:
     - jbig
     - libwebp-base
     - nvtx-c >=3.1.0
-    - openslide
+    - openslide <4
     - xz
     - zlib
     - zstd
