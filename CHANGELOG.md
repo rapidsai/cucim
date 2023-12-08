@@ -1,3 +1,31 @@
+# cuCIM 23.12.00 (6 Dec 2023)
+
+## 🐛 Bug Fixes
+
+- Retag wheels to be `cpXY` ([#644](https://github.com/rapidsai/cucim/pull/644)) [@jakirkham](https://github.com/jakirkham)
+- remove leftover pyproject_.toml file ([#632](https://github.com/rapidsai/cucim/pull/632)) [@grlee77](https://github.com/grlee77)
+- update version string (e.g. for CHANGELOG link) in pyproject.toml ([#630](https://github.com/rapidsai/cucim/pull/630)) [@grlee77](https://github.com/grlee77)
+- fix import order in test case ([#624](https://github.com/rapidsai/cucim/pull/624)) [@grlee77](https://github.com/grlee77)
+- Standardize on `rng` over `seed` and fix miscellaneous deprecation warnings ([#621](https://github.com/rapidsai/cucim/pull/621)) [@grlee77](https://github.com/grlee77)
+- Fix iterator-related memory issues ([#620](https://github.com/rapidsai/cucim/pull/620)) [@gigony](https://github.com/gigony)
+
+## 🚀 New Features
+
+- build wheels on CI ([#619](https://github.com/rapidsai/cucim/pull/619)) [@grlee77](https://github.com/grlee77)
+
+## 🛠️ Improvements
+
+- carry out removals of previously deprecated functions/kwargs ([#631](https://github.com/rapidsai/cucim/pull/631)) [@grlee77](https://github.com/grlee77)
+- Improve memory leak check stability in test_read_region_cpu_memleak test ([#623](https://github.com/rapidsai/cucim/pull/623)) [@gigony](https://github.com/gigony)
+- Update linting tool versions and replace isort with ruff ([#622](https://github.com/rapidsai/cucim/pull/622)) [@grlee77](https://github.com/grlee77)
+- Update packages (pybind11 and catch2) and do not use nvidia-docker command ([#618](https://github.com/rapidsai/cucim/pull/618)) [@gigony](https://github.com/gigony)
+- Replace setup.py with pyproject toml ([#617](https://github.com/rapidsai/cucim/pull/617)) [@grlee77](https://github.com/grlee77)
+- update linters and move their configurations from setup.cfg to pyproject.toml ([#616](https://github.com/rapidsai/cucim/pull/616)) [@grlee77](https://github.com/grlee77)
+- remove versioneer ([#615](https://github.com/rapidsai/cucim/pull/615)) [@grlee77](https://github.com/grlee77)
+- Update `shared-action-workflows` references ([#614](https://github.com/rapidsai/cucim/pull/614)) [@AyodeAwe](https://github.com/AyodeAwe)
+- Use branch-23.12 workflows. ([#613](https://github.com/rapidsai/cucim/pull/613)) [@bdice](https://github.com/bdice)
+- cucim: Build CUDA 12.0 ARM conda packages. ([#610](https://github.com/rapidsai/cucim/pull/610)) [@bdice](https://github.com/bdice)
+
 # cuCIM 23.10.00 (11 Oct 2023)
 
 ## 🐛 Bug Fixes
