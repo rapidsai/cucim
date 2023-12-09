@@ -65,7 +65,7 @@ test = [
     "imagecodecs>=2021.6.8; platform_machine=='x86_64'",
     "matplotlib",
     "opencv-python-headless>=4.6",
-    "openslide-python>=1.1.2; platform_machine=='x86_64'",
+    "openslide-python>=1.3.0; platform_machine=='x86_64'",
     "pooch>=1.6.0",
     "psutil>=5.8.0",
     "pytest-cov>=2.12.1",
