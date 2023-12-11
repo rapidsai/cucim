@@ -91,7 +91,10 @@ docs = [
 cucim = "cucim.clara.cli:main"
 
 [tool.setuptools]
-license-files = ["LICENSE"]
+license-files = [
+    "LICENSE",
+    "LICENSE-3rdparty.md",
+]
 include-package-data = true
 
 [tool.setuptools.dynamic]
