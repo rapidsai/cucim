@@ -1,0 +1,1 @@
+../../LICENSE-3rdparty.md
