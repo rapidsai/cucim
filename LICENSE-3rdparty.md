@@ -287,9 +287,3 @@ PBA+
   - https://github.com/orzzzjq/Parallel-Banding-Algorithm-plus/blob/master/LICENSE
 - Copyright: School of Computing, National University of Singapore
 - Usage: PBA+ is used to implement the Euclidean distance transform.
-
-dockcross
-- License: MIT License
-  - https://github.com/dockcross/dockcross/blob/master/LICENSE
-- Copyright: Steeve Morin, Rob Burns, Matthew McCormick, Jean-Christophe-Fillion-Robin, Bensuperpc
-- Usage: Building Python wheels for Linux
