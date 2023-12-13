@@ -1,7 +1,4 @@
 # https://packaging.python.org/guides/using-manifest-in/
-graft src
-graft tests
-
 include .editorconfig
 
 include src/cucim/VERSION
