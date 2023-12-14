@@ -18,6 +18,7 @@ build:
   string: cuda{{ cuda_major }}_{{ date_string }}_{{ GIT_DESCRIBE_HASH }}_{{ GIT_DESCRIBE_NUMBER }}
   ignore_run_exports:
     - libwebp-base
+    - openslide
   ignore_run_exports_from:
     {% if cuda_major == "11" %}
     - {{ compiler('cuda11') }}
@@ -70,7 +71,7 @@ requirements:
     - jbig
     - libwebp-base
     - nvtx-c >=3.1.0
-    - openslide <4
+    - openslide
     - xz
     - zlib
     - zstd
@@ -82,10 +83,11 @@ requirements:
     {% endif %}
     - {{ pin_compatible('libwebp-base', max_pin='x.x') }}
     - jbig
-    # - openslide # skipping here but benchmark binary would need openslide library
     - xz
     - zlib
     - zstd
+  run_constrained:
+    - {{ pin_compatible('openslide') }}
 
 about:
   home: https://developer.nvidia.com/multidimensional-image-processing
