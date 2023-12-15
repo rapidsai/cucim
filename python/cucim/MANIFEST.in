@@ -1,23 +1,12 @@
 # https://packaging.python.org/guides/using-manifest-in/
-graft docs
-graft src
-graft ci
-graft tests
-
-include .bumpversion.cfg
-include .coveragerc
-include .cookiecutterrc
 include .editorconfig
 
-include VERSION
-include AUTHORS.md
+include src/cucim/VERSION
 include CHANGELOG.md
 include CONTRIBUTING.md
-include ../../LICENSE
-include ../../LICENSE-3rdparty.md
+include LICENSE
+include LICENSE-3rdparty.md
 include README.md
-
-include tox.ini .travis.yml .appveyor.yml .readthedocs.yml
 
 include src/cucim/clara/*.so*
 
