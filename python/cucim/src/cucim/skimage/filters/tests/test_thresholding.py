@@ -640,6 +640,13 @@ def test_mean():
     assert threshold_mean(img) == 1.0
 
 
+@pytest.mark.parametrize("dtype", [cp.uint8, cp.int16, cp.float16, cp.float32])
+def test_triangle_uniform_images(dtype):
+    assert threshold_triangle(cp.zeros((10, 10), dtype=dtype)) == 0
+    assert threshold_triangle(cp.ones((10, 10), dtype=dtype)) == 1
+    assert threshold_triangle(cp.full((10, 10), 2, dtype=dtype)) == 2
+
+
 def test_triangle_uint_images():
     text = cp.array(data.text())
     assert threshold_triangle(cp.invert(text)) == 151
