@@ -1,12 +1,3 @@
-from ._denoise import denoise_tv_chambolle
-from .deconvolution import richardson_lucy, unsupervised_wiener, wiener
-from .j_invariant import calibrate_denoiser, denoise_invariant
+import lazy_loader as lazy
 
-__all__ = [
-    "wiener",
-    "unsupervised_wiener",
-    "richardson_lucy",
-    "denoise_tv_chambolle",
-    "calibrate_denoiser",
-    "denoise_invariant",
-]
+__getattr__, __dir__, __all__ = lazy.attach_stub(__name__, __file__)
