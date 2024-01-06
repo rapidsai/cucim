@@ -89,9 +89,10 @@ def block_reduce(image, block_size=2, func=cp.sum, cval=0, func_kwargs=None):
             after_width = 0
         pad_width.append((0, after_width))
 
-    image = pad(
-        image, pad_width=pad_width, mode="constant", constant_values=cval
-    )
+    if any(after_width > 0 for _, after_width in pad_width):
+        image = pad(
+            image, pad_width=pad_width, mode="constant", constant_values=cval
+        )
 
     blocked = view_as_blocks(image, block_size)
 
