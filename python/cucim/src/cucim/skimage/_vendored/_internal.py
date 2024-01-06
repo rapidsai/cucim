@@ -5,6 +5,14 @@ from operator import mul
 import cupy
 import numpy
 
+# TODO: when minimum numpy dependency is 1.25 use:
+# np..exceptions.AxisError instead of AxisError
+# and remove this try-except
+try:
+    from numpy import AxisError
+except ImportError:
+    from numpy.exceptions import AxisError
+
 try:
     # try importing Cython-based private axis handling functions from CuPy
     if hasattr(cupy, "_core"):
@@ -37,7 +45,7 @@ except ImportError:
         if axis < 0:
             axis += ndim
         if not (0 <= axis < ndim):
-            raise numpy.AxisError("axis out of bounds")
+            raise AxisError("axis out of bounds")
         return axis
 
     def _normalize_axis_indices(axes, ndim):  # NOQA

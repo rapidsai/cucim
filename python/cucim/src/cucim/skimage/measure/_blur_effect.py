@@ -5,6 +5,14 @@ import cucim.skimage._vendored.ndimage as ndi
 from ..color import rgb2gray
 from ..util import img_as_float
 
+# TODO: when minimum numpy dependency is 1.25 use:
+# np..exceptions.AxisError instead of AxisError
+# and remove this try-except
+try:
+    from numpy import AxisError
+except ImportError:
+    from numpy.exceptions import AxisError
+
 __all__ = ["blur_effect"]
 
 
@@ -56,7 +64,7 @@ def blur_effect(image, h_size=11, channel_axis=None, reduce_func=max):
         try:
             # ensure color channels are in the final dimension
             image = cp.moveaxis(image, channel_axis, -1)
-        except cp.AxisError:
+        except AxisError:
             print("channel_axis must be one of the image array dimensions")
             raise
         except TypeError:

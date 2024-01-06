@@ -63,6 +63,14 @@ from cucim.skimage.color import (
 )
 from cucim.skimage.util import img_as_float, img_as_float32, img_as_ubyte
 
+# TODO: when minimum numpy dependency is 1.25 use:
+# np..exceptions.AxisError instead of AxisError
+# and remove this try-except
+try:
+    from numpy import AxisError
+except ImportError:
+    from numpy.exceptions import AxisError
+
 data_dir = os.path.join(os.path.dirname(__file__), "data")
 
 
@@ -133,7 +141,7 @@ class TestColorconv:
 
     @pytest.mark.parametrize("channel_axis", [-4, 3])
     def test_rgba2rgb_error_channel_axis_out_of_range(self, channel_axis):
-        with pytest.raises(np.AxisError):
+        with pytest.raises(AxisError):
             rgba2rgb(self.img_rgba, channel_axis=channel_axis)
 
     def test_rgba2rgb_error_rgb(self):
