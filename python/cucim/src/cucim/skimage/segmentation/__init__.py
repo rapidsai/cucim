@@ -1,3 +1,6 @@
+"""Algorithms to partition images into meaningful regions or boundaries.
+"""
+
 from ._chan_vese import chan_vese
 from ._clear_border import clear_border
 from ._expand_labels import expand_labels
