@@ -3,7 +3,6 @@ from functools import reduce
 from operator import mul
 
 import cupy
-import numpy
 
 # TODO: when minimum numpy dependency is 1.25 use:
 # np..exceptions.AxisError instead of AxisError
