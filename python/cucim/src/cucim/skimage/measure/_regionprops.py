@@ -192,18 +192,18 @@ def _infer_regionprop_dtype(func, *, intensity, ndim):
     dtype : NumPy data type
         The data type of the returned property.
     """
-    labels = [1, 2]
-    sample = cp.zeros((3,) * ndim, dtype=np.intp)
-    sample[(0,) * ndim] = labels[0]
-    sample[(slice(1, None),) * ndim] = labels[1]
-    propmasks = [(sample == n) for n in labels]
+    mask_1 = np.ones((1,) * ndim, dtype=bool)
+    mask_1 = np.pad(mask_1, (0, 1), constant_values=False)
+    mask_2 = np.ones((2,) * ndim, dtype=bool)
+    mask_2 = np.pad(mask_2, (1, 0), constant_values=False)
+    propmasks = [cp.array(mask_1), cp.array(mask_2)]
 
     rng = cp.random.default_rng()
 
     if intensity and _infer_number_of_required_args(func) == 2:
 
         def _func(mask):
-            return func(mask, rng.random(sample.shape))
+            return func(mask, rng.random(mask.shape))
 
     else:
         _func = func
@@ -921,7 +921,7 @@ def _props_to_dict(regions, properties=("label", "bbox"), separator="-"):
             or prop in OBJECT_COLUMNS
             or dtype is np.object_
         ):
-            if prop in OBJECT_COLUMNS:
+            if prop in OBJECT_COLUMNS or dtype is np.object_:
                 # keep objects in a NumPy array
                 column_buffer = np.empty(n, dtype=dtype)
                 for i in range(n):
