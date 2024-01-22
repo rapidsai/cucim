@@ -2,12 +2,13 @@
 # to know which symbols are exported. See
 # https://peps.python.org/pep-0484/#stub-files
 
-__all__ = ['wiener',
-           'unsupervised_wiener',
-           'richardson_lucy',
-           'denoise_tv_chambolle',
-           'denoise_invariant',
-           'calibrate_denoiser',
+__all__ = [
+    "wiener",
+    "unsupervised_wiener",
+    "richardson_lucy",
+    "denoise_tv_chambolle",
+    "denoise_invariant",
+    "calibrate_denoiser",
 ]
 
 from ._denoise import denoise_tv_chambolle

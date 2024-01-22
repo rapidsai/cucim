@@ -113,7 +113,7 @@ def wiener(image, psf, balance, reg=None, is_real=True, clip=True):
     .. [2] B. R. Hunt "A matrix theory proof of the discrete
            convolution theorem", IEEE Trans. on Audio and
            Electroacoustics, vol. au-19, no. 4, pp. 285-288, dec. 1971
-    """
+    """  # noqa: E501
     if reg is None:
         reg, _ = uft.laplacian(image.ndim, image.shape, is_real=is_real)
     if not cp.iscomplexobj(reg):
