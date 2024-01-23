@@ -31,9 +31,8 @@ mkdir -p "${RAPIDS_TESTS_DIR}" "${RAPIDS_COVERAGE_DIR}"
 rapids-print-env
 
 rapids-mamba-retry install \
-  --channel "${CPP_CHANNEL}" \
-  --channel "${PYTHON_CHANNEL}" \
-  libcucim cucim
+  "${CPP_CHANNEL}::libcucim" \
+  "${PYTHON_CHANNEL}::cucim"
 
 rapids-logger "Check GPU usage"
 nvidia-smi
