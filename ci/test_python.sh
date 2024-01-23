@@ -44,6 +44,7 @@ set +e
 
 rapids-logger "pytest cucim"
 pushd python/cucim
+export CUPY_DUMP_CUDA_SOURCE_ON_ERROR=1
 timeout 20m pytest \
   --cache-clear \
   --junitxml="${RAPIDS_TESTS_DIR}/junit-cucim.xml" \
