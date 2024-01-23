@@ -11,6 +11,7 @@ __all__ = [
     "approximate_polygon",
     "subdivide_polygon",
     "block_reduce",
+    "centroid",
     "moments",
     "moments_central",
     "moments_coords",
@@ -38,6 +39,7 @@ from ._colocalization import (
 )
 from ._label import label
 from ._moments import (
+    centroid,
     inertia_tensor,
     inertia_tensor_eigvals,
     moments,
