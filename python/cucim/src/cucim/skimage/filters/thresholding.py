@@ -916,7 +916,7 @@ def threshold_triangle(image, nbins=256):
         # integer-valued image with constant intensity will have just 1 bin
         return image.ravel()[0]
 
-    # In most cases, nbins is small so it is more efficient to process hist on the CPU
+    # In most cases, nbins is small so it is better to process hist on the CPU
     if nbins > 100000:
         xp = cp
     else:
