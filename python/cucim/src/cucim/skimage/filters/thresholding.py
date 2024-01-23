@@ -902,6 +902,8 @@ def threshold_triangle(image, nbins=256):
 
     Examples
     --------
+    >>> import cupy as cp
+    >>> from cucim.skimage.filters import threshold_triangle
     >>> from skimage.data import camera
     >>> image = cp.array(camera())
     >>> thresh = threshold_triangle(image)
@@ -910,16 +912,25 @@ def threshold_triangle(image, nbins=256):
     # nbins is ignored for integer arrays
     # so, we recalculate the effective nbins.
     hist, bin_centers = histogram(image.ravel(), nbins, source_range="image")
+    if hist.size == 1:
+        # integer-valued image with constant intensity will have just 1 bin
+        return image.ravel()[0]
+
+    # In most cases, nbins is small so it is more efficient to process hist on the CPU
+    if nbins > 100000:
+        xp = cp
+    else:
+        xp = np
+        hist = cp.asnumpy(hist)
+
     nbins = len(hist)
-
     # Find peak, lowest and highest gray levels.
-    arg_peak_height = cp.argmax(hist)
-    peak_height = hist[arg_peak_height]
-    arg_low_level, arg_high_level = cp.flatnonzero(hist)[[0, -1]]
-
+    arg_peak_height = xp.argmax(hist)
+    arg_low_level, arg_high_level = xp.flatnonzero(hist)[[0, -1]]
     if arg_low_level == arg_high_level:
         # Image has constant intensity.
         return image.ravel()[0]
+    peak_height = hist[arg_peak_height]
 
     # Flip is True if left tail is shorter.
     flip = arg_peak_height - arg_low_level < arg_high_level - arg_peak_height
@@ -934,11 +945,11 @@ def threshold_triangle(image, nbins=256):
 
     # Set up the coordinate system.
     width = arg_peak_height - arg_low_level
-    x1 = cp.arange(width)
+    x1 = xp.arange(width)
     y1 = hist[x1 + arg_low_level]
 
     # Normalize.
-    norm = cp.sqrt(peak_height**2 + width**2)
+    norm = xp.sqrt(peak_height**2 + width**2)
     try:
         peak_height /= norm
         width /= norm
@@ -956,7 +967,7 @@ def threshold_triangle(image, nbins=256):
     # the length, but here we omit it as it does not affect the location of the
     # minimum.
     length = peak_height * x1 - width * y1
-    arg_level = cp.argmax(length) + arg_low_level
+    arg_level = xp.argmax(length) + arg_low_level
 
     if flip:
         arg_level = nbins - arg_level - 1
