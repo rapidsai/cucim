@@ -54,6 +54,7 @@ timeout 20m pytest \
   --cov=cucim \
   --cov-report=xml:"${RAPIDS_COVERAGE_DIR}/cucim-coverage.xml" \
   --cov-report=term \
+  --maxfail=5 \
   -v \
   src \
   tests/unit \
