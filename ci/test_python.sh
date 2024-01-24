@@ -7,6 +7,8 @@ set -euo pipefail
 
 . /opt/conda/etc/profile.d/conda.sh
 
+export RAPIDS_VERSION_NUMBER="24.02"
+
 rapids-logger "Generate Python testing dependencies"
 rapids-dependency-file-generator \
   --output conda \
