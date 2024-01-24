@@ -38,6 +38,7 @@ files:
       table: build-system
     includes:
       - build
+      - cuda_version
   py_run:
     output: pyproject
     pyproject_dir: python/cucim
