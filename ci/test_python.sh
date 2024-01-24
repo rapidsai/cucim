@@ -7,6 +7,8 @@ set -euo pipefail
 
 . /opt/conda/etc/profile.d/conda.sh
 
+export RAPIDS_VERSION_NUMBER="24.02"
+
 rapids-logger "Generate Python testing dependencies"
 rapids-dependency-file-generator \
   --output conda \
@@ -33,7 +35,8 @@ rapids-print-env
 rapids-mamba-retry install \
   --channel "${CPP_CHANNEL}" \
   --channel "${PYTHON_CHANNEL}" \
-  libcucim cucim
+  "libcucim=${RAPIDS_VERSION_NUMBER}" \
+  "cucim=${RAPIDS_VERSION_NUMBER}"
 
 rapids-logger "Check GPU usage"
 nvidia-smi
