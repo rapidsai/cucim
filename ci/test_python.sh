@@ -35,7 +35,8 @@ rapids-print-env
 rapids-mamba-retry install \
   --channel "${CPP_CHANNEL}" \
   --channel "${PYTHON_CHANNEL}" \
-  libcucim cucim
+  "libcucim=${RAPIDS_VERSION_NUMBER}" \
+  "cucim=${RAPIDS_VERSION_NUMBER}"
 
 rapids-logger "Check GPU usage"
 nvidia-smi
