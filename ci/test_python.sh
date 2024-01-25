@@ -35,6 +35,7 @@ rapids-print-env
 rapids-mamba-retry install \
   --channel "${CPP_CHANNEL}" \
   --channel "${PYTHON_CHANNEL}" \
+  "cuda-version=${RAPIDS_CUDA_VERSION%.*}" \
   "libcucim=${RAPIDS_VERSION_NUMBER}" \
   "cucim=${RAPIDS_VERSION_NUMBER}"
 
