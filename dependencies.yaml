@@ -193,7 +193,7 @@ dependencies:
         packages:
           - ipython
           - nbsphinx
-          - numpydoc
+          - numpydoc>=1.5
           - pydata-sphinx-theme
           - recommonmark
           # TODO: sphinx upper version limit can likely be removed after pydata 0.13
@@ -276,3 +276,7 @@ dependencies:
           - matplotlib
           - opencv-python-headless>=4.6
           - click
+      - output_types: [pyproject]
+        packages:
+          # Already added to requirements via docs. This is for tests.
+          - numpydoc>=1.5

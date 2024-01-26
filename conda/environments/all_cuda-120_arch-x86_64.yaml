@@ -28,7 +28,7 @@ dependencies:
 - nbsphinx
 - ninja
 - numpy>=1.21.3
-- numpydoc
+- numpydoc>=1.5
 - openslide-python>=1.3.0
 - pip
 - pooch>=1.6.0
