@@ -608,11 +608,13 @@ install_python_test_deps_() {
         # (https://github.com/rapidsai/cucim/pull/433)
         run_command pip install -r ${TOP}/python/cucim/requirements-test.txt
     else
+        pushd "${TOP}/python/cucim"
         if [ -n "${VIRTUAL_ENV}" ]; then
-            run_command pip3 install -r ${TOP}/python/cucim/requirements-test.txt
+            run_command pip3 install -e .[test]
         else
-            run_command pip3 install --user -r ${TOP}/python/cucim/requirements-test.txt
+            run_command pip3 install --user -e .[test]
         fi
+	popd
     fi
     hash -r
 }
