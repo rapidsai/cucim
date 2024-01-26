@@ -18,7 +18,7 @@ if (NOT TARGET deps::libopenjpeg)
     FetchContent_Declare(
             deps-libopenjpeg
             GIT_REPOSITORY https://github.com/uclouvain/openjpeg.git
-            GIT_TAG v2.4.0
+            GIT_TAG v2.5.0
             GIT_SHALLOW TRUE
     )
     FetchContent_GetProperties(deps-libopenjpeg)
