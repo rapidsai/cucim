@@ -6,7 +6,7 @@ from ..color import rgb2gray
 from ..util import img_as_float
 
 # TODO: when minimum numpy dependency is 1.25 use:
-# np..exceptions.AxisError instead of AxisError
+# np.exceptions.AxisError instead of AxisError
 # and remove this try-except
 try:
     from numpy import AxisError

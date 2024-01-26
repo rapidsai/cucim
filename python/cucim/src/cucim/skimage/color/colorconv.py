@@ -64,7 +64,7 @@ from .._shared.utils import (
 from ..util import dtype, dtype_limits
 
 # TODO: when minimum numpy dependency is 1.25 use:
-# np..exceptions.AxisError instead of AxisError
+# np.exceptions.AxisError instead of AxisError
 # and remove this try-except
 try:
     from numpy import AxisError
