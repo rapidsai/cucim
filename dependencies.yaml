@@ -223,7 +223,7 @@ dependencies:
       - output_types: [conda, requirements, pyproject]
         packages:
           - lazy_loader>=0.1
-          - scikit-image>=0.19.0,<0.22.0a0
+          - scikit-image>=0.19.0,<0.23.0a0
           - scipy
       - output_types: conda
         packages:
