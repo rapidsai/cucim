@@ -2,7 +2,6 @@ import cupy as cp
 import numpy as np
 import pytest
 from skimage.data import camera, chelsea
-from skimage.restoration import denoise_wavelet
 
 from cucim.skimage._shared.utils import _supported_float_type
 from cucim.skimage.data import binary_blobs
@@ -19,7 +18,8 @@ noisy_img_color = random_noise(test_img_color, mode="gaussian", var=0.01)
 noisy_img_3d = random_noise(test_img_3d, mode="gaussian", var=0.1)
 
 # skip tests if skimage.restoration module cannot be imported
-pytest.importorskip("skimage.restoration")
+skimage_restoration = pytest.importorskip("skimage.restoration")
+denoise_wavelet = skimage_restoration.denoise_wavelet
 
 
 # TODO: replace with CuPy version once completed
