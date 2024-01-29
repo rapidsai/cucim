@@ -5,13 +5,13 @@ http://www.mathworks.com/matlabcentral/fileexchange/18401-efficient-subpixel-ima
 
 import itertools
 import math
-import warnings
 
 import cupy as cp
 import cupyx.scipy.ndimage as ndi
 import numpy as np
 
 from .._shared.fft import fftmodule as fft
+from .._shared.utils import remove_arg
 from ._masked_phase_cross_correlation import _masked_phase_cross_correlation
 
 
@@ -188,6 +188,7 @@ def _disambiguate_shift(reference_image, moving_image, shift):
     return real_shift
 
 
+@remove_arg("return_error", changed_version="24.06")
 def phase_cross_correlation(
     reference_image,
     moving_image,
@@ -234,10 +235,6 @@ def phase_cross_correlation(
         this parameter is set to ``True``, the *real* space cross-correlation
         is computed for each possible shift, and the shift with the highest
         cross-correlation within the overlapping area is returned.
-    return_error : bool, {"always"}, optional
-        Returns error and phase difference if "always" is given. If False, or
-        either ``reference_mask`` or ``moving_mask`` are given, only the shift
-        is returned.
     reference_mask : ndarray
         Boolean mask for ``reference_image``. The mask should evaluate
         to ``True`` (or 1) on valid pixels. ``reference_mask`` should
@@ -268,13 +265,11 @@ def phase_cross_correlation(
     error : float
         Translation invariant normalized RMS error between
         ``reference_image`` and ``moving_image``. For masked cross-correlation
-        this error is not available and NaN is returned if ``return_error``
-        is "always".
+        this error is not available and NaN is returned.
     phasediff : float
         Global phase difference between the two images (should be
         zero if images are non-negative). For masked cross-correlation
-        this phase difference is not available and NaN is returned if
-        ``return_error`` is "always".
+        this phase difference is not available and NaN is returned.
 
     Notes
     -----
@@ -312,15 +307,11 @@ def phase_cross_correlation(
            Pattern Recognition, pp. 2918-2925 (2010).
            :DOI:`10.1109/CVPR.2010.5540032`
     """
-
-    def warn_return_error():
-        warnings.warn(
-            "In scikit-image 0.22, phase_cross_correlation will start "
-            "returning a tuple or 3 items (shift, error, phasediff) always. "
-            "To enable the new return behavior and silence this warning, use "
-            "return_error='always'.",
-            category=FutureWarning,
-            stacklevel=3,
+    if not return_error:
+        raise ValueError(
+            "return_error must be True (or 'always'), False is no longer "
+            "supported as of cuCIM 24.02 and the `return_error` kwarg will be "
+            "removed in cuCIM 24.06."
         )
 
     if (reference_mask is not None) or (moving_mask is not None):
@@ -331,11 +322,7 @@ def phase_cross_correlation(
             moving_mask,
             overlap_ratio,
         )
-        if return_error == "always":
-            return shift, np.nan, np.nan
-        else:
-            warn_return_error()
-            return shift
+        return shift, np.nan, np.nan
 
     # images must be the same shape
     if reference_image.shape != moving_image.shape:
@@ -373,14 +360,13 @@ def phase_cross_correlation(
     )
 
     if upsample_factor == 1:
-        if return_error:
-            sabs = cp.abs(src_freq)
-            sabs *= sabs
-            tabs = cp.abs(target_freq)
-            tabs *= tabs
-            src_amp = np.sum(sabs) / src_freq.size
-            target_amp = np.sum(tabs) / target_freq.size
-            CCmax = cross_correlation[maxima]
+        sabs = cp.abs(src_freq)
+        sabs *= sabs
+        tabs = cp.abs(target_freq)
+        tabs *= tabs
+        src_amp = np.sum(sabs) / src_freq.size
+        target_amp = np.sum(tabs) / target_freq.size
+        CCmax = cross_correlation[maxima]
     # If upsampling > 1, then refine estimate with matrix multiply DFT
     else:
         # Initial shift estimate in upsampled grid
@@ -412,13 +398,12 @@ def phase_cross_correlation(
         maxima = tuple(float(m) - dftshift for m in maxima)
         shift = tuple(s + m / upsample_factor for s, m in zip(shift, maxima))
 
-        if return_error:
-            src_amp = cp.abs(src_freq)
-            src_amp *= src_amp
-            src_amp = cp.sum(src_amp)
-            target_amp = cp.abs(target_freq)
-            target_amp *= target_amp
-            target_amp = cp.sum(target_amp)
+        src_amp = cp.abs(src_freq)
+        src_amp *= src_amp
+        src_amp = cp.sum(src_amp)
+        target_amp = cp.abs(target_freq)
+        target_amp *= target_amp
+        target_amp = cp.sum(target_amp)
 
     # If its only one row or column the shift along that dimension has no
     # effect. We set to zero.
@@ -432,22 +417,19 @@ def phase_cross_correlation(
             moving_image = fft.ifftn(moving_image)
         shift = _disambiguate_shift(reference_image, moving_image, shift)
 
-    if return_error:
-        # Redirect user to masked_phase_cross_correlation if NaNs are observed
-        if cp.isnan(CCmax) or cp.isnan(src_amp) or cp.isnan(target_amp):
-            raise ValueError(
-                "NaN values found, please remove NaNs from your "
-                "input data or use the `reference_mask`/`moving_mask` "
-                "keywords, eg: "
-                "phase_cross_correlation(reference_image, moving_image, "
-                "reference_mask=~np.isnan(reference_image), "
-                "moving_mask=~np.isnan(moving_image))"
-            )
-
-        return (
-            shift,
-            _compute_error(CCmax, src_amp, target_amp),
-            _compute_phasediff(CCmax),
+    # Redirect user to masked_phase_cross_correlation if NaNs are observed
+    if cp.isnan(CCmax) or cp.isnan(src_amp) or cp.isnan(target_amp):
+        raise ValueError(
+            "NaN values found, please remove NaNs from your "
+            "input data or use the `reference_mask`/`moving_mask` "
+            "keywords, eg: "
+            "phase_cross_correlation(reference_image, moving_image, "
+            "reference_mask=~np.isnan(reference_image), "
+            "moving_mask=~np.isnan(moving_image))"
         )
-    else:
-        return shift
+
+    return (
+        shift,
+        _compute_error(CCmax, src_amp, target_amp),
+        _compute_phasediff(CCmax),
+    )

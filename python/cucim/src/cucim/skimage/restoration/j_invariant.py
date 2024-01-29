@@ -141,7 +141,17 @@ def denoise_invariant(
     .. [1] J. Batson & L. Royer. Noise2Self: Blind Denoising by
        Self-Supervision, International Conference on Machine Learning,
        p. 524-533 (2019).
-    """
+
+    Examples
+    --------
+    >>> import cucim.skimage
+    >>> import cupy as cp
+    >>> import skimage
+    >>> from cucim.skimage.restoration import denoise_invariant, denoise_tv_chambolle
+    >>> image = cucim.skimage.util.img_as_float(cp.asarray(skimage.data.chelsea()))
+    >>> noisy = cucim.skimage.util.random_noise(image, var=0.2 ** 2)
+    >>> denoised = denoise_invariant(noisy, denoise_function=denoise_tv_chambolle)
+    """  # noqa: E501
     image = img_as_float(image)
 
     # promote float16->float32 if needed
@@ -273,7 +283,7 @@ def calibrate_denoiser(
     ...                                          calibrate_denoiser)
     >>> img = color.rgb2gray(cp.array(data.astronaut()[:50, :50]))
     >>> noisy = img + 0.5 * img.std() * cp.random.randn(*img.shape)
-    >>> parameters = {'weight': cp.arange(0.01, 0.5, 0.05)}
+    >>> parameters = {'weight': cp.arange(0.01, 0.3, 0.02)}
     >>> denoising_function = calibrate_denoiser(noisy, denoise_tv_chambolle,
     ...                                         denoise_parameters=parameters)
     >>> denoised_img = denoising_function(img)

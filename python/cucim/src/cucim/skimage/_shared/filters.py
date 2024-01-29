@@ -10,26 +10,7 @@ import cupy as cp
 
 import cucim.skimage._vendored.ndimage as ndi
 
-from .._shared.utils import _supported_float_type, convert_to_float, warn
-
-
-class _PatchClassRepr(type):
-    """Control class representations in rendered signatures."""
-
-    def __repr__(cls):
-        return f"<{cls.__name__}>"
-
-
-class ChannelAxisNotSet(metaclass=_PatchClassRepr):
-    """Signal that the `channel_axis` parameter is not set.
-    This is a proxy object, used to signal to `skimage.filters.gaussian` that
-    the `channel_axis` parameter has not been set, in which case the function
-    will determine whether a color channel is present. We cannot use ``None``
-    for this purpose as it has its own meaning which indicates that the given
-    image is grayscale.
-    This automatic behavior was broken in v0.19, recovered but deprecated in
-    v0.20 and will be removed in v0.21.
-    """
+from .._shared.utils import _supported_float_type, convert_to_float
 
 
 def gaussian(
@@ -41,7 +22,7 @@ def gaussian(
     preserve_range=False,
     truncate=4.0,
     *,
-    channel_axis=ChannelAxisNotSet,
+    channel_axis=None,
 ):
     """Multi-dimensional Gaussian filter.
 
@@ -77,12 +58,10 @@ def gaussian(
         to channels.
 
         .. warning::
-            Automatic detection of the color channel based on the old deprecated
-            ``multichannel=None`` was broken in version 0.19. In 0.20 this
-            behavior is recovered. The last axis of an `image` with dimensions
-            (M, N, 3) is interpreted as a color channel if `channel_axis` is
-            not set. Starting with release 23.04.02, ``channel_axis=None`` will
-            be used as the new default value.
+            In versions prior to 24.02, the last axis of an `image` with
+            dimensions (M, N, 3) was interpreted as a color channel if
+            `channel_axis` was not set. Starting with release 24.02,
+            ``channel_axis=None`` will be used as the new default value.
 
     Returns
     -------
@@ -133,21 +112,7 @@ def gaussian(
     >>> from skimage.data import astronaut
     >>> image = cp.array(astronaut())
     >>> filtered_img = gaussian(image, sigma=1, channel_axis=-1)
-
     """
-    if channel_axis is ChannelAxisNotSet:
-        if image.ndim == 3 and image.shape[-1] == 3:
-            warn(
-                "Automatic detection of the color channel was deprecated in "
-                "v0.19, and `channel_axis=None` will be the new default in "
-                "v0.21. Set `channel_axis=-1` explicitly to silence this "
-                "warning.",
-                FutureWarning,
-                stacklevel=2,
-            )
-            channel_axis = -1
-        else:
-            channel_axis = None
 
     # CuPy Backend: refactor to avoid overhead of cp.any(cp.asarray(sigma))
     sigma_msg = "Sigma values less than zero are not valid"
