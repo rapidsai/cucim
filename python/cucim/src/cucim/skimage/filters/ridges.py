@@ -58,7 +58,7 @@ def meijering(
     wrinkles, rivers. It can be used to calculate the fraction of the
     whole image containing such objects.
 
-    Calculates the eigenvectors of the Hessian to compute the similarity of
+    Calculates the eigenvalues of the Hessian to compute the similarity of
     an image region to neurites, according to the method described in [1]_.
 
     Parameters
@@ -151,7 +151,7 @@ def sato(
     wrinkles, rivers. It can be used to calculate the fraction of the
     whole image containing such objects.
 
-    Defined only for 2-D and 3-D images. Calculates the eigenvectors of the
+    Defined only for 2-D and 3-D images. Calculates the eigenvalues of the
     Hessian to compute the similarity of an image region to tubes, according to
     the method described in [1]_.
 
@@ -334,7 +334,7 @@ def frangi(
     wrinkles, rivers. It can be used to calculate the fraction of the
     whole image containing such objects.
 
-    Defined only for 2-D and 3-D images. Calculates the eigenvectors of the
+    Defined only for 2-D and 3-D images. Calculates the eigenvalues of the
     Hessian to compute the similarity of an image region to vessels, according
     to the method described in [1]_.
 

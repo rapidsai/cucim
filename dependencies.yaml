@@ -193,7 +193,7 @@ dependencies:
         packages:
           - ipython
           - nbsphinx
-          - numpydoc
+          - numpydoc>=1.5
           - pydata-sphinx-theme
           - recommonmark
           # TODO: sphinx upper version limit can likely be removed after pydata 0.13
@@ -223,7 +223,7 @@ dependencies:
       - output_types: [conda, requirements, pyproject]
         packages:
           - lazy_loader>=0.1
-          - scikit-image>=0.19.0,<0.22.0a0
+          - scikit-image>=0.19.0,<0.23.0a0
           - scipy
       - output_types: conda
         packages:
@@ -260,6 +260,7 @@ dependencies:
           - pytest-xdist
           - tifffile>=2022.7.28
           - pooch>=1.6.0  # needed to download scikit-image sample data
+          - pywavelets>=1.0
       - output_types: [conda]
         packages:
           - imagecodecs>=2021.6.8
@@ -276,3 +277,7 @@ dependencies:
           - matplotlib
           - opencv-python-headless>=4.6
           - click
+      - output_types: [pyproject]
+        packages:
+          # Already added to requirements via docs. This is for tests.
+          - numpydoc>=1.5

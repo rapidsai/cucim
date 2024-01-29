@@ -141,7 +141,7 @@ def test_wrong_input():
     template = cp.ones((5, 5))
     with expected_warnings([r"invalid value encountered in true_divide|\A\Z"]):
         with pytest.raises(ValueError):
-            phase_cross_correlation(template, image, return_error=True)
+            phase_cross_correlation(template, image)
 
 
 def test_4d_input_pixel():
@@ -202,7 +202,9 @@ def test_disambiguate_2d(shift0, shift1):
     reference = image[slice0]
     moving = image[slice1]
     computed_shift, _, _ = phase_cross_correlation(
-        reference, moving, disambiguate=True, return_error="always"
+        reference,
+        moving,
+        disambiguate=True,
     )
     np.testing.assert_equal(shift, computed_shift)
 
@@ -215,6 +217,9 @@ def test_disambiguate_zero_shift():
     """
     image = cp.array(camera())
     computed_shift, _, _ = phase_cross_correlation(
-        image, image, disambiguate=True, return_error="always"
+        image,
+        image,
+        disambiguate=True,
+        return_error="always",
     )
     assert computed_shift == (0, 0)
