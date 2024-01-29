@@ -640,12 +640,28 @@ def test_mean():
     assert threshold_mean(img) == 1.0
 
 
-def test_triangle_uint_images():
-    text = cp.array(data.text())
-    assert threshold_triangle(cp.invert(text)) == 151
-    assert threshold_triangle(text) == 104
-    assert threshold_triangle(coinsd) == 80
-    assert threshold_triangle(cp.invert(coinsd)) == 175
+# also run cases with nbins > 100000 to also test CuPy-based code path.
+@pytest.mark.parametrize("kwargs", [{}, {"nbins": 300000}])
+@pytest.mark.parametrize("dtype", [cp.uint8, cp.int16, cp.float16, cp.float32])
+def test_triangle_uniform_images(dtype, kwargs):
+    assert threshold_triangle(cp.zeros((10, 10), dtype=dtype), **kwargs) == 0
+    assert threshold_triangle(cp.ones((10, 10), dtype=dtype), **kwargs) == 1
+    assert threshold_triangle(cp.full((10, 10), 2, dtype=dtype), **kwargs) == 2
+
+
+# also run cases with nbins > 100000 to also test CuPy-based code path.
+@pytest.mark.parametrize("kwargs", [{}, {"nbins": 300000}])
+@pytest.mark.parametrize(
+    "data, expected_value",
+    [
+        (cp.invert(cp.array(data.text())), 151),
+        (cp.array(data.text()), 104),
+        (coinsd, 80),
+        (cp.invert(coinsd), 175),
+    ],
+)
+def test_triangle_uint_images(data, expected_value, kwargs):
+    assert threshold_triangle(data, **kwargs) == expected_value
 
 
 def test_triangle_float_images():

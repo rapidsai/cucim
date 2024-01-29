@@ -2,8 +2,6 @@ import cupy as cp
 import numpy as np
 import pytest
 
-from cucim.skimage._shared._warnings import expected_warnings
-from cucim.skimage._vendored import pad
 from cucim.skimage.filters._gaussian import difference_of_gaussians, gaussian
 
 
@@ -60,17 +58,12 @@ def test_multichannel(channel_axis):
     )
 
     if channel_axis % a.ndim == 2:
-        # Test legacy behavior equivalent to old (channel_axis = -1)
-        with expected_warnings(["Automatic detection of the color channel"]):
-            gaussian_rgb_a = gaussian(
-                a, sigma=1, mode="reflect", preserve_range=True
-            )
-
         # Check that the mean value is conserved in each channel
         # (color channels are not mixed together)
         assert cp.allclose(
             a.mean(axis=spatial_axes), gaussian_rgb_a.mean(axis=spatial_axes)
         )
+
     # Iterable sigma
     gaussian_rgb_a = gaussian(
         a,
@@ -189,34 +182,3 @@ def test_shared_mem_check_fix(dtype, sigma):
     # The exact range that fails depends on the shared memory limit
     # of the GPU, so we test with a range of sigmas here.
     gaussian(cp.ones((512, 512), dtype=dtype), sigma=sigma)
-
-
-def test_deprecated_automatic_channel_detection():
-    rgb = cp.zeros((5, 5, 3))
-    rgb[1, 1] = cp.arange(1, 4)
-    gray = pad(rgb, pad_width=((0, 0), (0, 0), (1, 0)))
-
-    # Warning is raised if channel_axis is not set and shape is (M, N, 3)
-    with pytest.warns(
-        FutureWarning,
-        match="Automatic detection .* was deprecated .* Set `channel_axis=-1`",
-    ):
-        filtered_rgb = gaussian(rgb, sigma=1, mode="reflect")
-    # Check that the mean value is conserved in each channel
-    # (color channels are not mixed together)
-    assert cp.allclose(filtered_rgb.mean(axis=(0, 1)), rgb.mean(axis=(0, 1)))
-
-    # No warning if channel_axis is not set and shape is not (M, N, 3)
-    filtered_gray = gaussian(gray, sigma=1, mode="reflect")
-
-    # No warning is raised if channel_axis is explicitly set
-    filtered_rgb2 = gaussian(rgb, sigma=1, mode="reflect", channel_axis=-1)
-    assert cp.array_equal(filtered_rgb, filtered_rgb2)
-    filtered_gray2 = gaussian(gray, sigma=1, mode="reflect", channel_axis=None)
-    assert cp.array_equal(filtered_gray, filtered_gray2)
-    assert not cp.array_equal(filtered_rgb, filtered_gray)
-
-    # Check how the proxy value shows up in the rendered function signature
-    from cucim.skimage._shared.filters import ChannelAxisNotSet
-
-    assert repr(ChannelAxisNotSet) == "<ChannelAxisNotSet>"
