@@ -76,7 +76,7 @@ def wiener(image, psf, balance, reg=None, is_real=True, clip=True):
     unknown original image, the Wiener filter is
 
     .. math::
-       \hat x = F^\dagger (|\Lambda_H|^2 + \lambda |\Lambda_D|^2)
+       \hat x = F^\dagger \left( |\Lambda_H|^2 + \lambda |\Lambda_D|^2 \right)^{-1}
        \Lambda_H^\dagger F y
 
     where :math:`F` and :math:`F^\dagger` are the Fourier and inverse
@@ -113,7 +113,7 @@ def wiener(image, psf, balance, reg=None, is_real=True, clip=True):
     .. [2] B. R. Hunt "A matrix theory proof of the discrete
            convolution theorem", IEEE Trans. on Audio and
            Electroacoustics, vol. au-19, no. 4, pp. 285-288, dec. 1971
-    """
+    """  # noqa: E501
     if reg is None:
         reg, _ = uft.laplacian(image.ndim, image.shape, is_real=is_real)
     if not cp.iscomplexobj(reg):
@@ -307,7 +307,7 @@ def unsupervised_wiener(
     prev_x_postmean = cp.zeros(trans_fct.shape, dtype=float_type)
 
     # Difference between two successive mean
-    delta = np.NAN
+    delta = np.nan
 
     # Initial state of the chain
     gn_chain, gx_chain = [1], [1]

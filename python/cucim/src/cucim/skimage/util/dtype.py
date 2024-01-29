@@ -3,6 +3,7 @@ import warnings
 from warnings import warn
 
 import cupy as cp
+import numpy as np
 
 from .._shared.utils import _supported_float_type
 
@@ -46,7 +47,6 @@ dtype_range = {
     bool: (False, True),
     cp.bool_: (False, True),
     float: (-1, 1),
-    cp.float_: (-1, 1),
     cp.float16: (-1, 1),
     cp.float32: (-1, 1),
     cp.float64: (-1, 1),
@@ -279,7 +279,7 @@ def _convert(image, dtype, force_copy=False, uniform=False):
     #   is a subclass of that type (e.g. `cp.floating` will allow
     #   `float32` and `float64` arrays through)
 
-    if cp.issubdtype(dtype_in, cp.obj2sctype(dtype)):
+    if cp.issubdtype(dtype_in, np.core.numerictypes.obj2sctype(dtype)):
         if force_copy:
             image = image.copy()
         return image
