@@ -28,3 +28,8 @@ repos:
         args: ["--toml", "python/cucim/pyproject.toml"]
         additional_dependencies:
           - tomli
+  - repo: https://github.com/rapidsai/dependency-file-generator
+    rev: v1.8.0
+    hooks:
+        - id: rapids-dependency-file-generator
+          args: ["--clean"]
