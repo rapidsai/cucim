@@ -49,13 +49,17 @@ cuCIM supports the following formats:
 
 #### [Conda (stable)](https://anaconda.org/rapidsai/cucim)
 
-> conda create -n cucim -c rapidsai -c conda-forge cucim cuda-version=`<CUDA version>`
+```bash
+conda create -n cucim -c rapidsai -c conda-forge cucim cuda-version=`<CUDA version>`
+```
 
 `<CUDA version>` should be 11.2+ (e.g., `11.2`, `12.0`, etc.)
 
 #### [Conda (nightlies)](https://anaconda.org/rapidsai-nightly/cucim)
 
-> conda create -n cucim -c rapidsai-nightly -c conda-forge cucim cuda-version=`<CUDA version>`
+```bash
+conda create -n cucim -c rapidsai-nightly -c conda-forge cucim cuda-version=`<CUDA version>`
+```
 
 `<CUDA version>` should be 11.2+ (e.g., `11.2`, `12.0`, etc.)
 
