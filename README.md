@@ -73,10 +73,6 @@ Alternatively install for CUDA 11:
 pip install cucim-cu11
 ```
 
-# Install dependencies for `cucim.skimage` (CuPy can target CUDA 11 or CUDA 12)
-pip install scipy scikit-image <cupy-cuda11x or cupy-cuda12x>
-```
-
 ### Notebooks
 
 Please check out our [Welcome](notebooks/Welcome.ipynb) notebook ([NBViewer](https://nbviewer.jupyter.org/github/rapidsai/cucim/blob/branch-24.02/notebooks/Welcome.ipynb))
