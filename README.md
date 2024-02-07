@@ -64,13 +64,13 @@ cuCIM supports the following formats:
 Install for CUDA 12:
 
 ```bash
-pip install cupy-cuda12x cucim-cu12
+pip install cucim-cu12
 ```
 
 Alternatively install for CUDA 11:
 
 ```bash
-pip install cupy-cuda11x cucim-cu11
+pip install cucim-cu11
 ```
 
 # Install dependencies for `cucim.skimage` (CuPy can target CUDA 11 or CUDA 12)
