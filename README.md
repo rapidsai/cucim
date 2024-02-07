@@ -61,8 +61,17 @@ cuCIM supports the following formats:
 
 ### [PyPI](https://pypi.org/project/cucim/)
 
+Install for CUDA 12:
+
 ```bash
-pip install cucim
+pip install cupy-cuda12x cucim-cu12
+```
+
+Alternatively install for CUDA 11:
+
+```bash
+pip install cupy-cuda11x cucim-cu11
+```
 
 # Install dependencies for `cucim.skimage` (CuPy can target CUDA 11 or CUDA 12)
 pip install scipy scikit-image <cupy-cuda11x or cupy-cuda12x>
