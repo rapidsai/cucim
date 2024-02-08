@@ -24,6 +24,7 @@ build:
     - {{ compiler('cuda11') }}
     {% else %}
     - {{ compiler('cuda') }}
+    - cuda-cudart-dev
     - libcufile-dev  # [linux64]
     - libnvjpeg-dev
     {% endif %}
@@ -68,6 +69,7 @@ requirements:
     - libnvjpeg {{ cuda11_libnvjpeg_host_version }}
     - libnvjpeg-dev {{ cuda11_libnvjpeg_host_version }}
     {% else %}
+    - cuda-cudart-dev
     - libcufile-dev     # [linux64]
     - libnvjpeg-dev
     - libnvjpeg-static
@@ -85,6 +87,7 @@ requirements:
     - cudatoolkit
     - libcufile {{ cuda11_libcufile_run_version }}  # [linux64]
     {% else %}
+    - cuda-cudart
     - libcufile  # [linux64]
     - libnvjpeg
     {% endif %}
