@@ -614,7 +614,7 @@ install_python_test_deps_() {
         else
             run_command pip3 install --user -e .[test]
         fi
-	popd
+        popd
     fi
     hash -r
 }
