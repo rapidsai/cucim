@@ -172,13 +172,6 @@ dependencies:
       - output_types: conda
         matrices:
           - matrix:
-              arch: x86_64
-              cuda: "11.8"
-            packages:
-              - libnvjpeg=11.6.0.55
-              - libnvjpeg-dev=11.6.0.55
-          - matrix:
-              arch: aarch64
               cuda: "11.8"
             packages:
               - libnvjpeg=11.6.0.55
