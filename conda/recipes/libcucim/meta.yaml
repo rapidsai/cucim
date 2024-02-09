@@ -22,6 +22,11 @@ build:
   ignore_run_exports_from:
     {% if cuda_major == "11" %}
     - {{ compiler('cuda11') }}
+    {% else %}
+    - {{ compiler('cuda') }}
+    - cuda-cudart-dev
+    - libcufile-dev  # [linux64]
+    - libnvjpeg-dev
     {% endif %}
   script_env:
     - AWS_ACCESS_KEY_ID
@@ -64,6 +69,7 @@ requirements:
     - libnvjpeg {{ cuda11_libnvjpeg_host_version }}
     - libnvjpeg-dev {{ cuda11_libnvjpeg_host_version }}
     {% else %}
+    - cuda-cudart-dev
     - libcufile-dev     # [linux64]
     - libnvjpeg-dev
     - libnvjpeg-static
@@ -79,7 +85,11 @@ requirements:
     - {{ pin_compatible('cuda-version', max_pin='x', min_pin='x') }}
     {% if cuda_major == "11" %}
     - cudatoolkit
-    - libcufile {{ cuda11_libcufile_run_version }}      # [linux64]
+    - libcufile {{ cuda11_libcufile_run_version }}  # [linux64]
+    {% else %}
+    - cuda-cudart
+    - libcufile  # [linux64]
+    - libnvjpeg
     {% endif %}
     - {{ pin_compatible('libwebp-base', max_pin='x.x') }}
     - jbig
