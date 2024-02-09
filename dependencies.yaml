@@ -115,24 +115,15 @@ dependencies:
               cuda: "11.8"
             packages:
               - nvcc_linux-64=11.8
-              - libcufile=1.4.0.31
-              - libcufile-dev=1.4.0.31
-              - libnvjpeg=11.6.0.55
-              - libnvjpeg-dev=11.6.0.55
           - matrix:
               arch: aarch64
               cuda: "11.8"
             packages:
               - nvcc_linux-aarch64=11.8
-              - libnvjpeg=11.6.0.55
-              - libnvjpeg-dev=11.6.0.55
           - matrix:
               cuda: "12.*"
             packages:
               - cuda-nvcc
-              - libcufile-dev
-              - libnvjpeg-dev
-              - libnvjpeg-static
   checks:
     common:
       - output_types: [conda, requirements]
@@ -178,7 +169,40 @@ dependencies:
               cuda: "12.*"
             packages:
               - cuda-cudart-dev
+      - output_types: conda
+        matrices:
+          - matrix:
+              arch: x86_64
+              cuda: "11.8"
+            packages:
+              - libnvjpeg=11.6.0.55
+              - libnvjpeg-dev=11.6.0.55
+          - matrix:
+              arch: aarch64
+              cuda: "11.8"
+            packages:
+              - libnvjpeg=11.6.0.55
+              - libnvjpeg-dev=11.6.0.55
+          - matrix:
+              cuda: "12.*"
+            packages:
               - libnvjpeg-dev
+              - libnvjpeg-static
+      - output_types: conda
+        matrices:
+          - matrix:
+              arch: aarch64
+            packages:
+          - matrix:
+              arch: x86_64
+              cuda: "11.8"
+            packages:
+              - libcufile=1.4.0.31
+              - libcufile-dev=1.4.0.31
+          - matrix:
+              arch: x86_64
+              cuda: "12.*"
+            packages:
               - libcufile-dev
   develop:
     common:
