@@ -59,7 +59,7 @@ requirements:
     - libcucim ={{ version }}
     - numpy 1.21
     - python
-    - scikit-image >=0.19.0,<0.22.0a0
+    - scikit-image >=0.19.0,<0.23.0a0
     - scipy
   run:
     - {{ pin_compatible('cuda-version', max_pin='x', min_pin='x') }}
@@ -68,10 +68,11 @@ requirements:
     - cupy >=12.0.0
     - lazy_loader >=0.1
     - libcucim ={{ version }}
-    # - openslide # skipping here but benchmark binary would need openslide library
     - python
-    - scikit-image >=0.19.0,<0.22.0a0
+    - scikit-image >=0.19.0,<0.23.0a0
     - scipy
+  run_constrained:
+    - openslide-python >=1.3.0
 
 tests:
   requirements:
@@ -84,6 +85,8 @@ about:
   summary: cucim Python package
   license: Apache-2.0
   license_family: Apache
-  license_file: LICENSE
+  license_file:
+    - LICENSE
+    - LICENSE-3rdparty.md
   doc_url: https://docs.rapids.ai/api/cucim/stable/
   dev_url: https://github.com/rapidsai/cucim

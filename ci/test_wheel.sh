@@ -9,10 +9,21 @@ RAPIDS_PY_WHEEL_NAME="cucim_${RAPIDS_PY_CUDA_SUFFIX}" rapids-download-wheels-fro
 # echo to expand wildcard before adding `[extra]` requires for pip
 python -m pip install $(echo ./dist/cucim*.whl)[test]
 
+CUDA_MAJOR_VERSION=${RAPIDS_CUDA_VERSION:0:2}
+
 # Run smoke tests for aarch64 pull requests
 if [[ "$(arch)" == "aarch64" && ${RAPIDS_BUILD_TYPE} == "pull-request" ]]; then
     python ./ci/wheel_smoke_test.py
 else
-    # TODO: revisit enabling imagecodecs package during testing
-    python -m pytest ./python/cucim
+
+    DEBIAN_FRONTEND=noninteractive apt update
+    DEBIAN_FRONTEND=noninteractive apt install -y --no-install-recommends libopenslide0
+
+    if [[ ${CUDA_MAJOR_VERSION} == "11" ]]; then
+        # Omit I/O-related tests in ./python/cucim/tests due to known CUDA bug
+        # with dynamic loading of libcufile.
+        python -m pytest ./python/cucim/src/
+    else
+        python -m pytest ./python/cucim
+    fi
 fi

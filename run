@@ -262,24 +262,6 @@ is_x86_64() {
 # Section: Build
 #==================================================================================
 
-build_manylinux2014_desc() { echo 'Build manylinux2014 image
-
-Arguments:
-  $1 - cuda version (e.g., 110, 111)
-'
-}
-build_manylinux2014() {
-    local cuda_version="${1:-110}"
-    run_command docker build -f ${TOP}/Dockerfile-cuda${cuda_version} -t gigony/manylinux2014-x64:cuda${cuda_version} ${TOP}
-
-    read -n 1 -r -p "$(c_str R "Do you want to update dockcross-manylinux2014-x64 with " G "cuda${cuda_version}" R " (y/n)?")"
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        sed -i -e "s/manylinux2014-x64:cuda.../manylinux2014-x64:cuda${cuda_version}/g" ${TOP}/dockcross-manylinux2014-x64
-        c_echo W "Done"
-    fi
-}
-
 build_local_libcucim_() {
     local source_folder=${1:-${TOP}}
     local build_type=${2:-debug}
@@ -626,11 +608,13 @@ install_python_test_deps_() {
         # (https://github.com/rapidsai/cucim/pull/433)
         run_command pip install -r ${TOP}/python/cucim/requirements-test.txt
     else
+        pushd "${TOP}/python/cucim"
         if [ -n "${VIRTUAL_ENV}" ]; then
-            run_command pip3 install -r ${TOP}/python/cucim/requirements-test.txt
+            run_command pip3 install -e .[test]
         else
-            run_command pip3 install --user -r ${TOP}/python/cucim/requirements-test.txt
+            run_command pip3 install --user -e .[test]
         fi
+	popd
     fi
     hash -r
 }

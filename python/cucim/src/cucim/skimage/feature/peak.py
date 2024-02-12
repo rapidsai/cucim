@@ -23,7 +23,7 @@ def _get_high_intensity_peaks(image, mask, num_peaks, min_distance, p_norm):
     coord = cp.nonzero(mask)
     intensities = image[coord]
     # Highest peak first
-    idx_maxsort = cp.argsort(-intensities)
+    idx_maxsort = cp.argsort(-intensities, kind="stable")
     coord = cp.column_stack(coord)[idx_maxsort]
 
     if np.isfinite(num_peaks):

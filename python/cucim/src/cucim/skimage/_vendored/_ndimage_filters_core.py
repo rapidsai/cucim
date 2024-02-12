@@ -190,7 +190,6 @@ _ndimage_includes = r"""
 
 template<> struct std::is_floating_point<float16> : std::true_type {};
 template<> struct std::is_signed<float16> : std::true_type {};
-template<class T> struct std::is_signed<complex<T>> : std::is_signed<T> {};
 """
 
 

@@ -49,28 +49,37 @@ cuCIM supports the following formats:
 
 #### [Conda (stable)](https://anaconda.org/rapidsai/cucim)
 
-> conda create -n cucim -c rapidsai -c conda-forge cucim cudatoolkit=`<CUDA version>`
+```bash
+conda create -n cucim -c rapidsai -c conda-forge cucim cuda-version=`<CUDA version>`
+```
 
-`<CUDA version>` should be 11.0+ (e.g., `11.0`, `11.2`, etc.)
+`<CUDA version>` should be 11.2+ (e.g., `11.2`, `12.0`, etc.)
 
 #### [Conda (nightlies)](https://anaconda.org/rapidsai-nightly/cucim)
 
-> conda create -n cucim -c rapidsai-nightly -c conda-forge cucim cudatoolkit=`<CUDA version>`
+```bash
+conda create -n cucim -c rapidsai-nightly -c conda-forge cucim cuda-version=`<CUDA version>`
+```
 
-`<CUDA version>` should be 11.0+ (e.g., `11.0`, `11.2`, etc)
+`<CUDA version>` should be 11.2+ (e.g., `11.2`, `12.0`, etc.)
 
 ### [PyPI](https://pypi.org/project/cucim/)
 
-```bash
-pip install cucim
+Install for CUDA 12:
 
-# Install dependencies for `cucim.skimage` (assuming that CUDA 11.0 is used for CuPy)
-pip install scipy scikit-image cupy-cuda110
+```bash
+pip install cucim-cu12
+```
+
+Alternatively install for CUDA 11:
+
+```bash
+pip install cucim-cu11
 ```
 
 ### Notebooks
 
-Please check out our [Welcome](notebooks/Welcome.ipynb) notebook ([NBViewer](https://nbviewer.jupyter.org/github/rapidsai/cucim/blob/branch-23.12/notebooks/Welcome.ipynb))
+Please check out our [Welcome](notebooks/Welcome.ipynb) notebook ([NBViewer](https://nbviewer.jupyter.org/github/rapidsai/cucim/blob/branch-24.02/notebooks/Welcome.ipynb))
 
 #### Downloading sample images
 
