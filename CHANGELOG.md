@@ -1,3 +1,30 @@
+# cuCIM 24.02.00 (12 Feb 2024)
+
+## 🐛 Bug Fixes
+
+- Fix CUDA trove classifiers &amp; update README install instructions ([#695](https://github.com/rapidsai/cucim/pull/695)) [@jakirkham](https://github.com/jakirkham)
+- Exclude PyTest 8 ([#689](https://github.com/rapidsai/cucim/pull/689)) [@jakirkham](https://github.com/jakirkham)
+- Update OpenJPEG to 2.5.0 ([#685](https://github.com/rapidsai/cucim/pull/685)) [@jakirkham](https://github.com/jakirkham)
+- Fix CI (pt. 2) ([#680](https://github.com/rapidsai/cucim/pull/680)) [@jakirkham](https://github.com/jakirkham)
+- Fix CI issues ([#676](https://github.com/rapidsai/cucim/pull/676)) [@jakirkham](https://github.com/jakirkham)
+- Remove update to symlink ([#674](https://github.com/rapidsai/cucim/pull/674)) [@raydouglass](https://github.com/raydouglass)
+- Add 3rd party license file in Conda packages ([#654](https://github.com/rapidsai/cucim/pull/654)) [@jakirkham](https://github.com/jakirkham)
+- Fix style issue in `docs/source/conf.py` ([#648](https://github.com/rapidsai/cucim/pull/648)) [@jakirkham](https://github.com/jakirkham)
+
+## 🛠️ Improvements
+
+- Consolidate test requirements in `dependencies.yaml` ([#683](https://github.com/rapidsai/cucim/pull/683)) [@jakirkham](https://github.com/jakirkham)
+- Remove usages of rapids-env-update ([#673](https://github.com/rapidsai/cucim/pull/673)) [@KyleFromNVIDIA](https://github.com/KyleFromNVIDIA)
+- refactor CUDA versions in dependencies.yaml ([#671](https://github.com/rapidsai/cucim/pull/671)) [@jameslamb](https://github.com/jameslamb)
+- minor updates/fixes for consistency with scikit-image 0.22 ([#670](https://github.com/rapidsai/cucim/pull/670)) [@grlee77](https://github.com/grlee77)
+- Update CODEOWNERS ([#669](https://github.com/rapidsai/cucim/pull/669)) [@ajschmidt8](https://github.com/ajschmidt8)
+- remove redundant notebook ([#668](https://github.com/rapidsai/cucim/pull/668)) [@grlee77](https://github.com/grlee77)
+- remove .idea folder (CLion IDE configuration) ([#667](https://github.com/rapidsai/cucim/pull/667)) [@grlee77](https://github.com/grlee77)
+- Cleanup old ci and docs subfolders and related files under python/cucim ([#666](https://github.com/rapidsai/cucim/pull/666)) [@grlee77](https://github.com/grlee77)
+- remove various files related to old wheel building mechanism ([#665](https://github.com/rapidsai/cucim/pull/665)) [@grlee77](https://github.com/grlee77)
+- Relax `openslide` pin ([#653](https://github.com/rapidsai/cucim/pull/653)) [@jakirkham](https://github.com/jakirkham)
+- install imagecodecs and openslide-python dependencies so additional tests will run ([#634](https://github.com/rapidsai/cucim/pull/634)) [@grlee77](https://github.com/grlee77)
+
 # cuCIM 23.12.00 (6 Dec 2023)
 
 ## 🐛 Bug Fixes
