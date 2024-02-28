@@ -8,13 +8,12 @@ import kvikio.defaults
 import numpy as np
 import openslide
 import tifffile
+from cucim.clara import filesystem
 from kvikio.cufile import IOFuture
 from kvikio.zarr import GDSStore
 from tifffile import TiffFile
 from zarr import DirectoryStore
 from zarr.creation import init_array
-
-from cucim.clara import filesystem
 
 """
 Developed with Dask 2022.05.2
