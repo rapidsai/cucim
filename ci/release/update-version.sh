@@ -42,7 +42,6 @@ sed_runner "s/v${CURRENT_LONG_TAG}/v${NEXT_FULL_TAG}/g" python/cucim/docs/gettin
 sed_runner "s#cucim.kit.cuslide@${CURRENT_LONG_TAG}.so#cucim.kit.cuslide@${NEXT_FULL_TAG}.so#g" python/cucim/docs/getting_started/index.md
 sed_runner "s#cucim.kit.cuslide@${CURRENT_LONG_TAG}.so#cucim.kit.cuslide@${NEXT_FULL_TAG}.so#g" cucim.code-workspace
 sed_runner "s#branch-${CURRENT_MAJOR}.${CURRENT_MINOR}#branch-${NEXT_MAJOR}.${NEXT_MINOR}#g" README.md
-sed_runner "s#branch-${CURRENT_MAJOR}.${CURRENT_MINOR}#branch-${NEXT_MAJOR}.${NEXT_MINOR}#g" python/cucim/pyproject.toml
 
 for FILE in .github/workflows/*.yaml; do
   sed_runner "/shared-workflows/ s/@.*/@branch-${NEXT_SHORT_TAG}/g" "${FILE}"
