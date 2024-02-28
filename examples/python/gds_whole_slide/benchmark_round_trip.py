@@ -1,15 +1,14 @@
 import os
 from time import time
 
+import cucim.skimage.filters
 import cupy as cp
 import kvikio
 import kvikio.defaults
 import numpy as np
+from cucim.core.operations.color import image_to_absorbance
 from cupyx.profiler import benchmark
 from demo_implementation import cupy_to_zarr, read_tiled
-
-import cucim.skimage.filters
-from cucim.core.operations.color import image_to_absorbance
 
 data_dir = os.environ.get("WHOLE_SLIDE_DATA_DIR", os.path.dirname("__file__"))
 fname = os.path.join(data_dir, "resize.tiff")
