@@ -51,7 +51,7 @@ timeout 20m pytest \
   --cache-clear \
   --junitxml="${RAPIDS_TESTS_DIR}/junit-cucim.xml" \
   --numprocesses=8 \
-  --dist=loadscope \
+  --dist=worksteal \
   --cov-config=.coveragerc \
   --cov=cucim \
   --cov-report=xml:"${RAPIDS_COVERAGE_DIR}/cucim-coverage.xml" \
