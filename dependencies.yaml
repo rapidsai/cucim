@@ -245,12 +245,12 @@ dependencies:
       - output_types: [conda, requirements, pyproject]
         packages:
           - lazy_loader>=0.1
+          - numpy>=1.23.4,<2.0a0
           - scikit-image>=0.19.0,<0.23.0a0
           - scipy
       - output_types: conda
         packages:
           - cupy>=12.0.0
-          - numpy>=1.23.4,<2.0a0
           # All dependencies below this point are specific to `cucim.clara` and
           # are not needed for either `cucim.core` or `cucim.skimage`. I did
           # not include these under a "pyproject" output so that it is still
