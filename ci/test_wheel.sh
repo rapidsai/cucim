@@ -11,27 +11,21 @@ python -m pip install $(echo ./dist/cucim*.whl)[test]
 
 CUDA_MAJOR_VERSION=${RAPIDS_CUDA_VERSION:0:2}
 
-# Run smoke tests for aarch64 pull requests
-if [[ "$(arch)" == "aarch64" && ${RAPIDS_BUILD_TYPE} == "pull-request" ]]; then
-    python ./ci/wheel_smoke_test.py
+DEBIAN_FRONTEND=noninteractive apt update
+DEBIAN_FRONTEND=noninteractive apt install -y --no-install-recommends libopenslide0
+
+if [[ ${CUDA_MAJOR_VERSION} == "11" ]]; then
+    # Omit I/O-related tests in ./python/cucim/tests due to known CUDA bug
+    # with dynamic loading of libcufile.
+    python -m pytest \
+      --junitxml="${RAPIDS_TESTS_DIR}/junit-cucim.xml" \
+      --numprocesses=8 \
+      --dist=worksteal \
+      ./python/cucim/src/
 else
-
-    DEBIAN_FRONTEND=noninteractive apt update
-    DEBIAN_FRONTEND=noninteractive apt install -y --no-install-recommends libopenslide0
-
-    if [[ ${CUDA_MAJOR_VERSION} == "11" ]]; then
-        # Omit I/O-related tests in ./python/cucim/tests due to known CUDA bug
-        # with dynamic loading of libcufile.
-        python -m pytest \
-          --junitxml="${RAPIDS_TESTS_DIR}/junit-cucim.xml" \
-          --numprocesses=8 \
-          --dist=worksteal \
-          ./python/cucim/src/
-    else
-        python -m pytest \
-          --junitxml="${RAPIDS_TESTS_DIR}/junit-cucim.xml" \
-          --numprocesses=8 \
-          --dist=worksteal \
-          ./python/cucim
-    fi
+    python -m pytest \
+      --junitxml="${RAPIDS_TESTS_DIR}/junit-cucim.xml" \
+      --numprocesses=8 \
+      --dist=worksteal \
+      ./python/cucim
 fi
