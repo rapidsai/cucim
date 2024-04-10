@@ -1,3 +1,29 @@
+# cuCIM 24.04.00 (10 Apr 2024)
+
+## 🐛 Bug Fixes
+
+- Require `click` as a wheel dependency ([#719](https://github.com/rapidsai/cucim/pull/719)) [@jakirkham](https://github.com/jakirkham)
+- Fix docs upload directory ([#714](https://github.com/rapidsai/cucim/pull/714)) [@raydouglass](https://github.com/raydouglass)
+- Fix `popd` indent in `run` ([#693](https://github.com/rapidsai/cucim/pull/693)) [@jakirkham](https://github.com/jakirkham)
+- Re-run `ci/release/update-version.sh 24.04.00` ([#690](https://github.com/rapidsai/cucim/pull/690)) [@jakirkham](https://github.com/jakirkham)
+
+## 🚀 New Features
+
+- Support CUDA 12.2 ([#672](https://github.com/rapidsai/cucim/pull/672)) [@jameslamb](https://github.com/jameslamb)
+
+## 🛠️ Improvements
+
+- Use `conda env create --yes` instead of `--force` ([#716](https://github.com/rapidsai/cucim/pull/716)) [@bdice](https://github.com/bdice)
+- Add upper bound to prevent usage of NumPy 2 ([#712](https://github.com/rapidsai/cucim/pull/712)) [@bdice](https://github.com/bdice)
+- Remove hard-coding of RAPIDS version ([#711](https://github.com/rapidsai/cucim/pull/711)) [@KyleFromNVIDIA](https://github.com/KyleFromNVIDIA)
+- Switch `pytest-xdist` algorithm to `worksteal` ([#708](https://github.com/rapidsai/cucim/pull/708)) [@bdice](https://github.com/bdice)
+- Simplify version update script ([#705](https://github.com/rapidsai/cucim/pull/705)) [@jakirkham](https://github.com/jakirkham)
+- Add support for Python 3.11, require NumPy 1.23+ ([#704](https://github.com/rapidsai/cucim/pull/704)) [@jameslamb](https://github.com/jameslamb)
+- target branch-24.04 for GitHub Actions workflows ([#702](https://github.com/rapidsai/cucim/pull/702)) [@jameslamb](https://github.com/jameslamb)
+- Refactor CUDA libraries in dependencies.yaml ([#699](https://github.com/rapidsai/cucim/pull/699)) [@bdice](https://github.com/bdice)
+- Update ops-bot.yaml ([#694](https://github.com/rapidsai/cucim/pull/694)) [@AyodeAwe](https://github.com/AyodeAwe)
+- add rapids-dependency-file-generator pre-commmit hook ([#682](https://github.com/rapidsai/cucim/pull/682)) [@jameslamb](https://github.com/jameslamb)
+
 # cuCIM 24.02.00 (12 Feb 2024)
 
 ## 🐛 Bug Fixes
