@@ -1,8 +1,6 @@
-import cupy as cp
-
 import cucim
 import cucim.skimage
-
+import cupy as cp
 
 if __name__ == "__main__":
     # verify that all top-level modules are available

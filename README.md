@@ -79,7 +79,7 @@ pip install cucim-cu11
 
 ### Notebooks
 
-Please check out our [Welcome](notebooks/Welcome.ipynb) notebook ([NBViewer](https://nbviewer.jupyter.org/github/rapidsai/cucim/blob/branch-24.02/notebooks/Welcome.ipynb))
+Please check out our [Welcome](notebooks/Welcome.ipynb) notebook ([NBViewer](https://nbviewer.org/github/rapidsai/cucim/blob/main/notebooks/Welcome.ipynb))
 
 #### Downloading sample images
 

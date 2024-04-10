@@ -3,7 +3,7 @@ files:
   all:
     output: conda
     matrix:
-      cuda: ["11.8", "12.0"]
+      cuda: ["11.8", "12.2"]
       arch: [x86_64]
     includes:
       - build
@@ -114,28 +114,16 @@ dependencies:
               arch: x86_64
               cuda: "11.8"
             packages:
-              - cuda-version=11.8
               - nvcc_linux-64=11.8
-              - libcufile=1.4.0.31
-              - libcufile-dev=1.4.0.31
-              - libnvjpeg=11.6.0.55
-              - libnvjpeg-dev=11.6.0.55
           - matrix:
               arch: aarch64
               cuda: "11.8"
             packages:
-              - cuda-version=11.8
               - nvcc_linux-aarch64=11.8
-              - libnvjpeg=11.6.0.55
-              - libnvjpeg-dev=11.6.0.55
           - matrix:
-              cuda: "12.0"
+              cuda: "12.*"
             packages:
-              - cuda-version=12.0
               - cuda-nvcc
-              - libcufile-dev
-              - libnvjpeg-dev
-              - libnvjpeg-static
   checks:
     common:
       - output_types: [conda, requirements]
@@ -165,6 +153,10 @@ dependencies:
               cuda: "12.0"
             packages:
               - cuda-version=12.0
+          - matrix:
+              cuda: "12.2"
+            packages:
+              - cuda-version=12.2
   cuda:
     specific:
       - output_types: conda
@@ -177,7 +169,33 @@ dependencies:
               cuda: "12.*"
             packages:
               - cuda-cudart-dev
+      - output_types: conda
+        matrices:
+          - matrix:
+              cuda: "11.8"
+            packages:
+              - libnvjpeg=11.6.0.55
+              - libnvjpeg-dev=11.6.0.55
+          - matrix:
+              cuda: "12.*"
+            packages:
               - libnvjpeg-dev
+              - libnvjpeg-static
+      - output_types: conda
+        matrices:
+          - matrix:
+              arch: aarch64
+            packages:
+          - matrix:
+              arch: x86_64
+              cuda: "11.8"
+            packages:
+              - libcufile=1.4.0.31
+              - libcufile-dev=1.4.0.31
+          - matrix:
+              arch: x86_64
+              cuda: "12.*"
+            packages:
               - libcufile-dev
   develop:
     common:
@@ -216,26 +234,30 @@ dependencies:
             packages:
               - python=3.10
           - matrix:
+              py: "3.11"
             packages:
-              - python>=3.8,<3.11
+              - python=3.11
+          - matrix:
+            packages:
+              - python>=3.8,<3.12
   run:
     common:
       - output_types: [conda, requirements, pyproject]
         packages:
+          - click
           - lazy_loader>=0.1
+          - numpy>=1.23.4,<2.0a0
           - scikit-image>=0.19.0,<0.23.0a0
           - scipy
       - output_types: conda
         packages:
           - cupy>=12.0.0
-          - numpy>=1.21.3
           # All dependencies below this point are specific to `cucim.clara` and
           # are not needed for either `cucim.core` or `cucim.skimage`. I did
           # not include these under a "pyproject" output so that it is still
           # possible to run `pip install .` from the python/cucim folder
           # without having build the C++ library at all. This allows, usage of
           # usage of `cucim.skimage` on Windows, for example.
-          - click
           - jbig
           - libwebp-base
           - xz
@@ -247,7 +269,6 @@ dependencies:
       - output_types: [requirements, pyproject]
         packages:
           - cupy-cuda11x>=12.0.0
-          - numpy
   test_python:
     common:
       - output_types: [conda, requirements, pyproject]
@@ -276,7 +297,6 @@ dependencies:
           - openslide-python>=1.3.0; platform_machine=='x86_64'
           - matplotlib
           - opencv-python-headless>=4.6
-          - click
       - output_types: [pyproject]
         packages:
           # Already added to requirements via docs. This is for tests.

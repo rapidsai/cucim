@@ -22,8 +22,16 @@ else
     if [[ ${CUDA_MAJOR_VERSION} == "11" ]]; then
         # Omit I/O-related tests in ./python/cucim/tests due to known CUDA bug
         # with dynamic loading of libcufile.
-        python -m pytest ./python/cucim/src/
+        python -m pytest \
+          --junitxml="${RAPIDS_TESTS_DIR}/junit-cucim.xml" \
+          --numprocesses=8 \
+          --dist=worksteal \
+          ./python/cucim/src/
     else
-        python -m pytest ./python/cucim
+        python -m pytest \
+          --junitxml="${RAPIDS_TESTS_DIR}/junit-cucim.xml" \
+          --numprocesses=8 \
+          --dist=worksteal \
+          ./python/cucim
     fi
 fi

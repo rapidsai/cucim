@@ -5,9 +5,9 @@
 
 set -euo pipefail
 
-. /opt/conda/etc/profile.d/conda.sh
+RAPIDS_VERSION_NUMBER=$(rapids-generate-version)
 
-export RAPIDS_VERSION_NUMBER="24.02"
+. /opt/conda/etc/profile.d/conda.sh
 
 rapids-logger "Generate Python testing dependencies"
 rapids-dependency-file-generator \
@@ -15,7 +15,7 @@ rapids-dependency-file-generator \
   --file_key test_python \
   --matrix "cuda=${RAPIDS_CUDA_VERSION%.*};arch=$(arch);py=${RAPIDS_PY_VERSION}" | tee env.yaml
 
-rapids-mamba-retry env create --force -f env.yaml -n test
+rapids-mamba-retry env create --yes -f env.yaml -n test
 
 # Temporarily allow unbound variables for conda activation.
 set +u
@@ -51,7 +51,7 @@ timeout 20m pytest \
   --cache-clear \
   --junitxml="${RAPIDS_TESTS_DIR}/junit-cucim.xml" \
   --numprocesses=8 \
-  --dist=loadscope \
+  --dist=worksteal \
   --cov-config=.coveragerc \
   --cov=cucim \
   --cov-report=xml:"${RAPIDS_COVERAGE_DIR}/cucim-coverage.xml" \
