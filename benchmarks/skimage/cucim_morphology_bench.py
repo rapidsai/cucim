@@ -151,7 +151,7 @@ def main(args):
         # _skeletonize.py
         (
             "medial_axis",
-            dict(random_state=123),
+            dict(rng=123),
             dict(return_distance=[False, True]),
             False,
             False,
