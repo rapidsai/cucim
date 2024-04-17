@@ -1,4 +1,5 @@
 """A vendored subset of cupyx.scipy.ndimage._filters"""
+import math
 import warnings
 
 import cupy
@@ -1386,7 +1387,7 @@ def _rank_filter(
     has_weights = True
     if sizes is not None:
         has_weights = False
-        filter_size = internal.prod(sizes)
+        filter_size = math.prod(sizes)
         if filter_size == 0:
             return cupy.zeros_like(input)
         footprint_shape = tuple(sizes)

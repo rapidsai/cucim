@@ -9,11 +9,6 @@ import numpy as np
 from .._shared.utils import _to_np_mode
 from .._vendored import pad
 
-if hasattr(math, "prod"):
-    prod = math.prod
-else:
-    prod = np.prod
-
 
 def _dtype_to_CUDA_int_type(dtype):
     cpp_int_types = {
@@ -34,7 +29,7 @@ def _dtype_to_CUDA_int_type(dtype):
 
 def _get_hist_dtype(footprint_shape):
     """Determine C++ type and cupy.dtype to use for the histogram."""
-    max_possible_count = prod(footprint_shape)
+    max_possible_count = math.prod(footprint_shape)
 
     if max_possible_count < 128:
         dtype = cp.int8
@@ -458,11 +453,11 @@ def _median_hist(
 
     if footprint is None:
         footprint_shape = (3,) * image.ndim
-        med_pos = prod(footprint_shape) // 2
+        med_pos = math.prod(footprint_shape) // 2
     elif isinstance(footprint, tuple):
         footprint_shape = footprint
         footprint = None
-        med_pos = prod(footprint_shape) // 2
+        med_pos = math.prod(footprint_shape) // 2
     else:
         footprint_shape = footprint.shape
         med_pos = footprint.size // 2

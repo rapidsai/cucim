@@ -13,7 +13,7 @@ from cucim.skimage._vendored import (
     _ndimage_util as _util,
     pad,
 )
-from cucim.skimage._vendored._internal import _normalize_axis_index, prod
+from cucim.skimage._vendored._internal import _normalize_axis_index
 
 
 def _check_parameter(func_name, order, mode):
@@ -326,7 +326,7 @@ def map_coordinates(
         input = input.astype(cupy.float32)
     coordinates = _check_coordinates(coordinates, order)
     filtered, nprepad = _filter_input(input, prefilter, mode, cval, order)
-    large_int = max(prod(input.shape), coordinates.shape[0]) > 1 << 31
+    large_int = max(math.prod(input.shape), coordinates.shape[0]) > 1 << 31
     kern = _interp_kernels._get_map_kernel(
         input.ndim,
         large_int,
@@ -485,7 +485,7 @@ def affine_transform(
 
     integer_output = output.dtype.kind in "iu"
     _util._check_cval(mode, cval, integer_output)
-    large_int = max(prod(input.shape), prod(output_shape)) > 1 << 31
+    large_int = max(math.prod(input.shape), math.prod(output_shape)) > 1 << 31
     if matrix.ndim == 1:
         offset = cupy.asarray(offset, dtype=cupy.float64)
         offset = -offset / matrix
@@ -708,7 +708,7 @@ def shift(
         filtered, nprepad = _filter_input(input, prefilter, mode, cval, order)
         integer_output = output.dtype.kind in "iu"
         _util._check_cval(mode, cval, integer_output)
-        large_int = prod(input.shape) > 1 << 31
+        large_int = math.prod(input.shape) > 1 << 31
         kern = _interp_kernels._get_shift_kernel(
             input.ndim,
             large_int,
@@ -845,7 +845,9 @@ def zoom(
         filtered, nprepad = _filter_input(input, prefilter, mode, cval, order)
         integer_output = output.dtype.kind in "iu"
         _util._check_cval(mode, cval, integer_output)
-        large_int = max(prod(input.shape), prod(output_shape)) > 1 << 31
+        large_int = (
+            max(math.prod(input.shape), math.prod(output_shape)) > 1 << 31
+        )
         kern = _interp_kernels._get_zoom_kernel(
             input.ndim,
             large_int,

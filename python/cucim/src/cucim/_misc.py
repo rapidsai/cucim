@@ -1,14 +1,7 @@
 """Misc utility functions that are not from SciPy, NumPy or scikit-image.
 
 """
-import math
-
-import numpy
-
-if hasattr(math, "prod"):
-    prod = math.prod  # available in Python 3.8+ only
-else:
-    prod = numpy.prod
+import numpy as np
 
 
 def ndim(a):
@@ -46,4 +39,4 @@ def ndim(a):
     try:
         return a.ndim
     except AttributeError:
-        return numpy.asarray(a).ndim
+        return np.asarray(a).ndim

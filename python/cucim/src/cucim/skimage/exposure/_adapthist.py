@@ -15,8 +15,6 @@ import operator
 import cupy as cp
 import numpy as np
 
-# TODO: replace _misc.prod with math.prod once minimum Python >= 3.88
-from cucim import _misc
 from cucim.skimage.exposure.exposure import rescale_intensity
 
 from .._shared.utils import _supported_float_type
@@ -164,10 +162,10 @@ def _clahe(image, kernel_size, clip_limit, nbins):
     hist_blocks = image[tuple(hist_slices)].reshape(hist_blocks_shape)
     hist_blocks = hist_blocks.transpose(hist_blocks_axis_order)
     hist_block_assembled_shape = hist_blocks.shape
-    hist_blocks = hist_blocks.reshape((_misc.prod(ns_hist), -1))
+    hist_blocks = hist_blocks.reshape((math.prod(ns_hist), -1))
 
     # Calculate actual clip limit
-    kernel_elements = _misc.prod(kernel_size)
+    kernel_elements = math.prod(kernel_size)
     if clip_limit > 0.0:
         clim = int(max(clip_limit * kernel_elements, 1))
     else:
@@ -212,7 +210,7 @@ def _clahe(image, kernel_size, clip_limit, nbins):
     blocks = blocks.transpose(blocks_axis_order)
     blocks_flattened_shape = blocks.shape
     blocks = blocks.reshape(
-        (_misc.prod(ns_proc), _misc.prod(blocks.shape[ndim:]))
+        (math.prod(ns_proc), math.prod(blocks.shape[ndim:]))
     )
 
     # calculate interpolation coefficients
@@ -229,7 +227,7 @@ def _clahe(image, kernel_size, clip_limit, nbins):
         edge_maps = map_array[
             tuple(slice(e, e + n) for e, n in zip(edge, ns_proc))
         ]
-        edge_maps = edge_maps.reshape((_misc.prod(ns_proc), -1))
+        edge_maps = edge_maps.reshape((math.prod(ns_proc), -1))
 
         # apply map
         edge_mapped = cp.take_along_axis(edge_maps, blocks, axis=-1)

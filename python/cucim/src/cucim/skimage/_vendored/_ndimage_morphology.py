@@ -1,3 +1,4 @@
+import math
 import operator
 import warnings
 
@@ -6,7 +7,6 @@ import numpy
 from cupy import _core
 
 from cucim.skimage._vendored import (
-    _internal as internal,
     _ndimage_filters as _filters,
     _ndimage_filters_core as _filters_core,
     _ndimage_util as _util,
@@ -243,7 +243,7 @@ def _binary_erosion(
     offsets = _filters_core._origins_to_offsets(origin, structure_shape)
     if not default_structure:
         if isinstance(structure, tuple):
-            nnz = internal.prod(structure_shape)
+            nnz = math.prod(structure_shape)
             all_weights_nonzero = True
             center_is_true = True
         else:
