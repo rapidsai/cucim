@@ -14,7 +14,6 @@ from ._pba_2d import (
     _generate_indices_ops,
     _generate_shape,
     _get_block_size,
-    lcm,
 )
 
 pba3d_defines_template = """
@@ -188,7 +187,7 @@ def decode3d(encoded, size_max=1024):
 def _determine_padding(shape, block_size, m1, m2, m3, blockx, blocky):
     # TODO: can possibly revise to consider only particular factors for LCM on
     #       a given axis
-    LCM = lcm(block_size, m1, m2, m3, blockx, blocky)
+    LCM = math.lcm(block_size, m1, m2, m3, blockx, blocky)
     orig_sz, orig_sy, orig_sx = shape
     round_up = False
     if orig_sx % LCM != 0:
