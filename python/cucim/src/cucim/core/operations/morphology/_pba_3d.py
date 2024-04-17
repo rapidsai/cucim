@@ -85,7 +85,7 @@ def get_pba3d_src(
     else:
         pba3d_code += pba3d_defines_encode_32bit
     kernel_directory = os.path.join(os.path.dirname(__file__), "cuda")
-    with open(os.path.join(kernel_directory, "pba_kernels_3d.h"), "rt") as f:
+    with open(os.path.join(kernel_directory, "pba_kernels_3d.h")) as f:
         pba3d_kernels = "\n".join(f.readlines())
     pba3d_code += pba3d_kernels
     return pba3d_code

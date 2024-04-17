@@ -98,7 +98,7 @@ def svs2tif(
         width, height = slide_dimensions
         img_w, img_h = width, height
         for level in range(tiles.level_count):
-            memmap_filename = Path(output_folder, "level{}.mmap".format(level))
+            memmap_filename = Path(output_folder, f"level{level}.mmap")
             memmap_shape = (img_h, img_w, 3)
             np_memmap_arr = np.memmap(
                 memmap_filename, dtype=np.uint8, mode="w+", shape=memmap_shape

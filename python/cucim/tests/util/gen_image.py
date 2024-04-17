@@ -67,9 +67,7 @@ class ImageGenerator:
 
             generator_obj = GENERATOR_MAP.get(kind)
             if generator_obj is None:
-                raise RuntimeError(
-                    "There is no generator for '{}'".format(kind)
-                )
+                raise RuntimeError(f"There is no generator for '{kind}'")
 
             image_data = generator_obj.get_image(
                 pattern=pattern, image_size=image_size

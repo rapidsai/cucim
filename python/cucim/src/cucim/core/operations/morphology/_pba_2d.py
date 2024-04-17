@@ -20,7 +20,7 @@ except ImportError:
     def _lcm(a, b):
         return abs(b * (a // math.gcd(a, b)))
 
-    @functools.lru_cache()
+    @functools.lru_cache
     def lcm(*args):
         nargs = len(args)
         if not all(isinstance(a, numbers.Integral) for a in args):
@@ -76,7 +76,7 @@ def get_pba2d_src(block_size_2d=64, marker=-32768, pixel_int2_t="short2"):
         make_pixel_func=make_pixel_func,
     )
     kernel_directory = os.path.join(os.path.dirname(__file__), "cuda")
-    with open(os.path.join(kernel_directory, "pba_kernels_2d.h"), "rt") as f:
+    with open(os.path.join(kernel_directory, "pba_kernels_2d.h")) as f:
         pba2d_kernels = "\n".join(f.readlines())
 
     pba2d_code += pba2d_kernels

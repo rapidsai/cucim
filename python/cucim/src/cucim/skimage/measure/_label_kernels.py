@@ -76,7 +76,7 @@ def _kernel_connect(greyscale_mode=False, int_t="int"):
     # Note: atomicCAS is implemented for int, unsigned short, unsigned int, and
     # unsigned long long
 
-    code = """
+    code = f"""
         if (y[i] < 0) continue;
         for (int dr = 0; dr < ndirs; dr++) {{
             {int_t} j = i;
@@ -112,9 +112,7 @@ def _kernel_connect(greyscale_mode=False, int_t="int"):
                 }}
             }}
         }}
-        """.format(
-        x_condition=x_condition, int_t=int_t
-    )
+        """
 
     return cupy.ElementwiseKernel(
         in_params,

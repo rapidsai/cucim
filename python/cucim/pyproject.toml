@@ -132,7 +132,7 @@ testpaths = [
 
 [tool.ruff]
 # see: https://docs.astral.sh/ruff/rules/
-select = ["E", "F", "W", "I"]
+select = ["E", "F", "W", "I", "UP"]
 fixable = ["ALL"]
 exclude = [
     # TODO: Remove this in a follow-up where we fix __all__.

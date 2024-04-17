@@ -1157,8 +1157,10 @@ def gray2rgba(image, alpha=None, *, channel_axis=-1):
         alpha = alpha_max
 
     if not cp.can_cast(alpha, image.dtype):
-        warn("alpha can't be safely cast to image dtype {}"
-             .format(image.dtype.name), stacklevel=2)
+        warn(
+            f"alpha can't be safely cast to image dtype {image.dtype.name}",
+            stacklevel=2
+        )
 
     if np.isscalar(alpha):
         alpha = cp.full(image.shape, alpha, dtype=image.dtype)

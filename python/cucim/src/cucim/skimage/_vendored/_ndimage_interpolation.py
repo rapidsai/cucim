@@ -38,7 +38,7 @@ def _check_parameter(func_name, order, mode):
         "opencv",
         "_opencv_edge",
     ):
-        raise ValueError("boundary mode ({}) is not supported".format(mode))
+        raise ValueError(f"boundary mode ({mode}) is not supported")
 
 
 def _get_spline_output(input, output):

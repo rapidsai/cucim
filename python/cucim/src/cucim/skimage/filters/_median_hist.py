@@ -194,7 +194,7 @@ def _get_median_rawkernel(
     )
 
     kernel_directory = os.path.join(os.path.dirname(__file__), "cuda")
-    with open(os.path.join(kernel_directory, "histogram_median.cu"), "rt") as f:
+    with open(os.path.join(kernel_directory, "histogram_median.cu")) as f:
         rank_filter_kernel = "\n".join(f.readlines())
 
     return cp.RawKernel(

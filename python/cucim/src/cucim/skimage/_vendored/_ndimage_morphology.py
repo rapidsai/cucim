@@ -33,53 +33,43 @@ def _get_binary_erosion_kernel(
         false_val = 0
 
     if masked:
-        pre = """
+        pre = f"""
             bool mv = (bool)mask[i];
             bool _in = (bool)x[i];
             if (!mv) {{
                 y = cast<Y>(_in);
                 return;
-            }} else if ({center_is_true} && _in == {false_val}) {{
+            }} else if ({int(center_is_true)} && _in == {false_val}) {{
                 y = cast<Y>(_in);
                 return;
-            }}""".format(
-            center_is_true=int(center_is_true), false_val=false_val
-        )
+            }}"""
     else:
-        pre = """
+        pre = f"""
             bool _in = (bool)x[i];
-            if ({center_is_true} && _in == {false_val}) {{
+            if ({int(center_is_true)} && _in == {false_val}) {{
                 y = cast<Y>(_in);
                 return;
-            }}""".format(
-            center_is_true=int(center_is_true), false_val=false_val
-        )
+            }}"""
     pre = (
         pre
-        + """
-            y = cast<Y>({true_val});""".format(
-            true_val=true_val
-        )
+        + f"""
+            y = cast<Y>({true_val});"""
     )
 
     # {{{{ required because format is called again within _generate_nd_kernel
-    found = """
+    found = f"""
         if ({{cond}}) {{{{
-            if (!{border_value}) {{{{
-                y = cast<Y>({false_val});
+            if (!{int(border_value)}) {{{{
+                y = cast<Y>({int(false_val)});
                 return;
             }}}}
         }}}} else {{{{
-            bool nn = {{value}} ? {true_val} : {false_val};
+            bool nn = {{value}} ? {int(true_val)} : {int(false_val)};
             if (!nn) {{{{
-                y = cast<Y>({false_val});
+                y = cast<Y>({int(false_val)});
                 return;
             }}}}
-        }}}}""".format(
-        true_val=int(true_val),
-        false_val=int(false_val),
-        border_value=int(border_value),
-    )
+        }}}}"""
 
     name = "binary_erosion"
     if false_val:

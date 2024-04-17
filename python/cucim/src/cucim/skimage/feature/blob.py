@@ -68,7 +68,7 @@ def _get_prune_blob_rawmodule(dtype, large_int) -> cp.RawModule:
     kernel_directory = os.path.join(
         os.path.normpath(os.path.dirname(__file__)), "cuda"
     )
-    with open(os.path.join(kernel_directory, "blob.cu"), "rt") as f:
+    with open(os.path.join(kernel_directory, "blob.cu")) as f:
         _code = f.read()
 
     return cp.RawModule(

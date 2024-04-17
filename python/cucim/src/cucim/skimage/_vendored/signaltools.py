@@ -212,7 +212,7 @@ def _conv_ops(x_shape, h_shape, mode):
     else:
         raise ValueError(
             "Acceptable mode flags are 'valid',"
-            " 'same', or 'full', not mode={}".format(mode)
+            f" 'same', or 'full', not mode={mode}"
         )
 
     s1, s2 = x_shape, h_shape

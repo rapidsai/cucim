@@ -1181,7 +1181,7 @@ def _get_min_or_max_kernel(
     ctype = "X" if has_weights else "double"
     value = "{value}"
     if not has_weights:
-        value = "cast<double>({})".format(value)
+        value = f"cast<double>({value})"
 
     # Having a non-flat structure biases the values
     if has_structure:
@@ -1497,45 +1497,39 @@ def _get_rank_kernel(
         else:
             comp_op = ">"
         array_size = s_rank + 2
-        found_post = """
-            if (iv > {rank} + 1) {{{{
+        found_post = f"""
+            if (iv > {s_rank} + 1) {{{{
                 int target_iv = 0;
                 X target_val = values[0];
-                for (int jv = 1; jv <= {rank} + 1; jv++) {{{{
+                for (int jv = 1; jv <= {s_rank} + 1; jv++) {{{{
                     if (target_val {comp_op} values[jv]) {{{{
                         target_val = values[jv];
                         target_iv = jv;
                     }}}}
                 }}}}
-                if (target_iv <= {rank}) {{{{
-                    values[target_iv] = values[{rank} + 1];
+                if (target_iv <= {s_rank}) {{{{
+                    values[target_iv] = values[{s_rank} + 1];
                 }}}}
-                iv = {rank} + 1;
-            }}}}""".format(
-            rank=s_rank, comp_op=comp_op
-        )
-        post = """
+                iv = {s_rank} + 1;
+            }}}}"""
+        post = f"""
             X target_val = values[0];
-            for (int jv = 1; jv <= {rank}; jv++) {{
+            for (int jv = 1; jv <= {s_rank}; jv++) {{
                 if (target_val {comp_op} values[jv]) {{
                     target_val = values[jv];
                 }}
             }}
-            y=cast<Y>(target_val);""".format(
-            rank=s_rank, comp_op=comp_op
-        )
+            y=cast<Y>(target_val);"""
         sorter = ""
     else:
         array_size = filter_size
         found_post = ""
-        post = "sort(values,{});\ny=cast<Y>(values[{}]);".format(
-            filter_size, rank
-        )
+        post = f"sort(values,{filter_size});\ny=cast<Y>(values[{rank}]);"
         sorter = __SHELL_SORT.format(gap=_get_shell_gap(filter_size))
 
     return _filters_core._generate_nd_kernel(
-        "rank_{}_{}".format(filter_size, rank),
-        "int iv = 0;\nX values[{}];".format(array_size),
+        f"rank_{filter_size}_{rank}",
+        f"int iv = 0;\nX values[{array_size}];",
         "values[iv++] = {value};" + found_post,
         post,
         mode,
