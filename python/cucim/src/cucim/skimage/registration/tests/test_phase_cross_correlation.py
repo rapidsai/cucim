@@ -220,6 +220,5 @@ def test_disambiguate_zero_shift():
         image,
         image,
         disambiguate=True,
-        return_error="always",
     )
     assert computed_shift == (0, 0)

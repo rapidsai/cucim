@@ -171,11 +171,6 @@ def _get_tiebreaker(n, seed):
 
 
 @deprecate_kwarg(
-    {"random_state": "rng"},
-    deprecated_version="23.08",
-    removed_version="24.06",
-)
-@deprecate_kwarg(
     {"seed": "rng"}, deprecated_version="23.12", removed_version="24.12"
 )
 def medial_axis(image, mask=None, return_distance=False, *, rng=None):

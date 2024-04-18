@@ -128,11 +128,6 @@ class TestMedialAxis:
         with pytest.warns(FutureWarning):
             self._test_vertical_line(seed=15)
 
-    def test_vertical_line_random_state(self):
-        """random_state was deprecated (now use rng)"""
-        with pytest.warns(FutureWarning):
-            self._test_vertical_line(random_state=15)
-
     def test_01_01_rectangle(self):
         """Test skeletonize on a rectangle"""
         image = cp.zeros((9, 15), bool)
