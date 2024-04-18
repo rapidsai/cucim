@@ -25,6 +25,7 @@ echo "${version}" > VERSION
 sed -i "/^__git_commit__/ s/= .*/= \"${commit}\"/g" "${package_src_dir}/_version.py"
 
 rapids-logger "Begin py build"
+conda config --set path_conflict prevent
 
 CPP_CHANNEL=$(rapids-download-conda-from-s3 cpp)
 
