@@ -72,6 +72,7 @@ def test_read_region_cpu_memleak(testimg_tiff_stripe_4096x4096_256):
 
 
 def test_read_random_region_cpu_memleak(testimg_tiff_stripe_4096x4096_256):
+    import gc
     import os
     import random
 
@@ -81,9 +82,11 @@ def test_read_random_region_cpu_memleak(testimg_tiff_stripe_4096x4096_256):
 
     img = open_image_cucim(testimg_tiff_stripe_4096x4096_256)
 
-    iteration = 1000
+    iteration = 10000
     mem_usage_history = [process.memory_info().rss] * iteration
     level_count = img.resolutions["level_count"]
+
+    memory_increment_count = 0
 
     for i in range(iteration):
         location = (
@@ -92,12 +95,26 @@ def test_read_random_region_cpu_memleak(testimg_tiff_stripe_4096x4096_256):
         )
         level = random.randrange(0, level_count)
         _ = img.read_region(location, (256, 256), level)
+        if i == 0 or i == iteration - 1:
+            gc.collect()
         mem_usage_history[i] = process.memory_info().rss
+        if i > 0:
+            if mem_usage_history[i] - mem_usage_history[i - 1] > 0:
+                memory_increment_count += 1
+                print(
+                    f"mem increase (iteration: {i:3d}): "
+                    f"{mem_usage_history[i] - mem_usage_history[i - 1]:4d} "
+                    "bytes"
+                )
 
     print(mem_usage_history)
 
-    # Memory usage difference should be smaller than (iteration) * 100 bytes
-    assert mem_usage_history[-1] - mem_usage_history[1] < iteration * 100
+    # The expected memory usage difference should be smaller than
+    # <iteration> * 256 * 3 bytes
+    # (one line of pixels in the tile image is 256 * 3 bytes)
+    assert mem_usage_history[-1] - mem_usage_history[1] < iteration * 256 * 3
+    # The memory usage increment should be less than 1% of the iteration count.
+    assert memory_increment_count < iteration * 0.01
 
 
 def test_tiff_iterator(testimg_tiff_stripe_4096x4096_256):
