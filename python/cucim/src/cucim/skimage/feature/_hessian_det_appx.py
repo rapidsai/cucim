@@ -58,7 +58,7 @@ def _get_hessian_det_appx_kernel(dtype, large_int) -> cp.RawModule:
         os.path.normpath(os.path.dirname(__file__)), "cuda"
     )
     cu_file = os.path.join(kernel_directory, "_hessian_det_appx.cu")
-    with open(cu_file, "rt") as f:
+    with open(cu_file) as f:
         _code = f.read()
 
     return cp.RawModule(

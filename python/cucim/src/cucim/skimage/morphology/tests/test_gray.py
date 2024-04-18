@@ -62,9 +62,7 @@ class TestMorphology:
         for n in range(1, 4):
             for footprint in footprints_2D:
                 for func in funcs:
-                    key = "{0}_{1}_{2}".format(
-                        footprint.__name__, n, func.__name__
-                    )
+                    key = f"{footprint.__name__}_{n}_{func.__name__}"
                     output[key] = func(image, footprint(n))
 
         return output

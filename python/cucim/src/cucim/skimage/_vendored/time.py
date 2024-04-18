@@ -11,7 +11,7 @@ import cupy
 import numpy
 
 
-class _PerfCaseResult(object):
+class _PerfCaseResult:
     def __init__(self, name, ts, devices):
         assert ts.ndim == 2
         assert ts.shape[0] == len(devices) + 1
@@ -34,7 +34,7 @@ class _PerfCaseResult(object):
         assert t.size > 0
         t_us = t * 1e6
 
-        s = "    {}:{:9.03f} us".format(device_name, t_us.mean())
+        s = f"    {device_name}:{t_us.mean():9.03f} us"
         if t.size > 1:
             s += "   +/-{:6.03f} (min:{:9.03f} / max:{:9.03f}) us".format(
                 t_us.std(), t_us.min(), t_us.max()
@@ -46,7 +46,7 @@ class _PerfCaseResult(object):
         if show_gpu:
             for i, d in enumerate(self._devices):
                 results.append(
-                    self._to_str_per_item("GPU-{}".format(d), self._ts[1 + i])
+                    self._to_str_per_item(f"GPU-{d}", self._ts[1 + i])
                 )
         return "{:<20s}:{}".format(self.name, " ".join(results))
 

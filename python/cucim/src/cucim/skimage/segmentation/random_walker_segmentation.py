@@ -447,8 +447,8 @@ def random_walker(
     # Parse input data
     if mode not in ("cg_mg", "cg", "bf", "cg_j", None):
         raise ValueError(
-            "{mode} is not a valid mode. Valid modes are 'cg_mg',"
-            " 'cg', 'cg_j', 'bf' and None".format(mode=mode)
+            f"{mode} is not a valid mode. Valid modes are 'cg_mg',"
+            " 'cg', 'cg_j', 'bf' and None"
         )
 
     if data.dtype.kind == "f":

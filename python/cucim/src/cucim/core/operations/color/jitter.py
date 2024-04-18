@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import numbers
-from typing import Any, List, Optional, Tuple
+from typing import Any, Optional
 
 import cupy
 import numpy as np
@@ -29,25 +29,19 @@ def _check_input(
     if isinstance(value, numbers.Number):
         if value < 0:
             raise ValueError(
-                "If {} is a single number, \
-                             it must be non negative.".format(
-                    name
-                )
+                f"If {name} is a single number, \
+                             it must be non negative."
             )
         value = [center - float(value), center + float(value)]
         if clip_first_on_zero:
             value[0] = max(value[0], 0.0)
     elif isinstance(value, (tuple, list)) and len(value) == 2:
         if not bound[0] <= value[0] <= value[1] <= bound[1]:
-            raise ValueError(
-                "{} values should be between {}".format(name, bound)
-            )
+            raise ValueError(f"{name} values should be between {bound}")
     else:
         raise TypeError(
-            "{} should be a single number or a \
-                        list/tuple with length 2.".format(
-                name
-            )
+            f"{name} should be a single number or a \
+                        list/tuple with length 2."
         )
     # if value is 0 or (1., 1.) for brightness/contrast/saturation
     # or (0., 0.) for hue, do nothing
@@ -57,11 +51,11 @@ def _check_input(
 
 
 def _get_params(
-    brightness: Optional[List[float]],
-    contrast: Optional[List[float]],
-    saturation: Optional[List[float]],
-    hue: Optional[List[float]],
-) -> Tuple[
+    brightness: Optional[list[float]],
+    contrast: Optional[list[float]],
+    saturation: Optional[list[float]],
+    hue: Optional[list[float]],
+) -> tuple[
     np.ndarray,
     Optional[float],
     Optional[float],
@@ -184,7 +178,7 @@ def _adjust_saturation(input_arr, saturation):
 # hue jitter
 def _adjust_hue(input_arr, hue):
     if not (-0.5 <= hue <= 0.5):
-        raise ValueError("hue factor({}) is not in [-0.5, 0.5].".format(hue))
+        raise ValueError(f"hue factor({hue}) is not in [-0.5, 0.5].")
 
     if len(input_arr.shape) == 4:
         N, C, H, W = input_arr.shape

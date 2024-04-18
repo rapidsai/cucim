@@ -140,17 +140,13 @@ def test_masked_registration_padfield_data():
     for xi, yi in shifts:
         fixed_image = cp.array(
             imread(
-                fetch(
-                    "registration/tests/data/OriginalX{:d}Y{:d}.png"
-                    "".format(xi, yi)
-                )
+                fetch(f"registration/tests/data/OriginalX{xi:d}Y{yi:d}.png" "")
             )
         )
         moving_image = cp.array(
             imread(
                 fetch(
-                    "registration/tests/data/TransformedX{:d}Y{:d}.png"
-                    "".format(xi, yi)
+                    f"registration/tests/data/TransformedX{xi:d}Y{yi:d}.png" ""
                 )
             )
         )
@@ -270,7 +266,7 @@ def test_cross_correlate_masked_side_effects():
     # CuPy Backed: had to refactor (cannot set write=False)
     # for arr in (arr1, arr2, m1, m2):
     #    arr.setflags(write=False)
-    arr1c, arr2c, m1c, m2c = [a.copy() for a in (arr1, arr2, m1, m2)]
+    arr1c, arr2c, m1c, m2c = (a.copy() for a in (arr1, arr2, m1, m2))
 
     cross_correlate_masked(arr1, arr2, m1, m2)
 

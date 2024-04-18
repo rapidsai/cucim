@@ -69,7 +69,7 @@ class TestThin:
         assert_array_equal(result, expected)
 
     def test_baddim(self):
-        for ii in [cp.zeros((3)), cp.zeros((3, 3, 3))]:
+        for ii in [cp.zeros(3), cp.zeros((3, 3, 3))]:
             with pytest.raises(ValueError):
                 thin(ii)
 

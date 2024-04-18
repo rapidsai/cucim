@@ -1,6 +1,6 @@
-import cupy as cp
+import math
 
-from cucim import _misc
+import cupy as cp
 
 from .._shared.utils import _supported_float_type, check_nD
 from .._vendored import pad
@@ -168,7 +168,7 @@ def match_template(
 
     # perform mean and sum in float64 for accuracy
     template_mean = template.mean(dtype=cp.float64)
-    template_volume = _misc.prod(template.shape)
+    template_volume = math.prod(template.shape)
     template_ssd = template - template_mean
     template_ssd *= template_ssd
     template_ssd = cp.sum(template_ssd, dtype=cp.float64)

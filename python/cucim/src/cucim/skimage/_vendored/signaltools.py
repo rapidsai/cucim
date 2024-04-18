@@ -6,6 +6,7 @@ The version of ``choose_conv_method`` here differs from the one in CuPy and
 does not restrict the choice of fftconvolve to only 1D arrays.
 """
 
+import math
 import timeit
 import warnings
 
@@ -13,11 +14,10 @@ import cupy
 import numpy as np
 from cupyx.scipy.ndimage import rank_filter, uniform_filter
 
-from cucim import _misc
 from cucim.skimage._vendored import _signaltools_core as _st_core
 from cucim.skimage._vendored._ndimage_util import _fix_sequence_arg
 
-_prod = _misc.prod
+_prod = math.prod
 
 
 def convolve(in1, in2, mode="full", method="auto"):
@@ -212,7 +212,7 @@ def _conv_ops(x_shape, h_shape, mode):
     else:
         raise ValueError(
             "Acceptable mode flags are 'valid',"
-            " 'same', or 'full', not mode={}".format(mode)
+            f" 'same', or 'full', not mode={mode}"
         )
 
     s1, s2 = x_shape, h_shape
@@ -722,7 +722,7 @@ def medfilt(volume, kernel_size=None):
             "kernel_size exceeds volume extent: " "volume will be zero-padded"
         )
 
-    size = np.prod(kernel_size)
+    size = _prod(kernel_size)
     return rank_filter(
         volume, size // 2, size=kernel_size, output=float, mode="constant"
     )

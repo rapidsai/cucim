@@ -15,7 +15,6 @@ from skimage.filters import (
 )
 
 import cucim.skimage._vendored.ndimage as ndi
-from cucim import _misc
 
 from .._shared.filters import gaussian
 from .._shared.utils import _supported_float_type, deprecate_kwarg, warn
@@ -1028,7 +1027,7 @@ def _mean_std(image, w):
         for indices in kernel_indices
     ]
 
-    total_window_size = _misc.prod(w)
+    total_window_size = math.prod(w)
     kernel_shape = tuple(_w + 1 for _w in w)
     m = _correlate_sparse(integral, kernel_shape, kernel_indices, kernel_values)
     m = m.astype(float_dtype, copy=False)
