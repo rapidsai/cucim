@@ -71,9 +71,8 @@ def euler_number(image, connectivity=None):
 
     Parameters
     ----------
-    image: (N, M) ndarray or (N, M, D) ndarray.
-        2D or 3D images.
-        If image is not binary, all values strictly greater than zero
+    image: (M, N[, P]) ndarray
+        Input image. If image is not binary, all values greater than zero
         are considered as the object.
     connectivity : int, optional
         Maximum number of orthogonal hops to consider a pixel/voxel
@@ -198,8 +197,8 @@ def perimeter(image, neighborhood=4):
 
     Parameters
     ----------
-    image : (N, M) ndarray
-        2D binary image.
+    image : (M, N) ndarray
+        Binary input image.
     neighborhood : 4 or 8, optional
         Neighborhood connectivity for border pixel determination. It is used to
         compute the contour. A higher neighborhood widens the border on which
@@ -269,8 +268,8 @@ def perimeter_crofton(image, directions=4):
 
     Parameters
     ----------
-    image : (N, M) ndarray
-        2D image. If image is not binary, all values strictly greater than zero
+    image : (M, N) ndarray
+        Input image. If image is not binary, all values greater than zero
         are considered as the object.
     directions : 2 or 4, optional
         Number of directions used to approximate the Crofton perimeter. By
