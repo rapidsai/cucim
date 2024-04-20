@@ -39,7 +39,8 @@ def _rgb_vector(color):
     Parameters
     ----------
     color : str or array
-        Color name in `color_dict` or RGB float values between [0, 1].
+        Color name in `cucim.skimage.color.color_dict` or RGB float values
+        between [0, 1].
     """
     if isinstance(color, str):
         color = color_dict[color]
@@ -60,6 +61,9 @@ def _match_label_with_color(label, colors, bg_label, bg_color):
 
     # map labels to their ranks among all labels from small to large
     unique_labels, mapped_labels = cp.unique(label, return_inverse=True)
+    # output of unique with return_inverse=True is no longer flat in NumPy 2.0
+    # guarding against a potential corresponding future change for CuPy here
+    mapped_labels = mapped_labels.reshape(-1)
 
     # get rank of bg_label
     bg_label_rank_list = mapped_labels[label.ravel() == bg_label]
@@ -114,8 +118,8 @@ def label2rgb(
         `bg_color` is `None`, and `kind` is `overlay`,
         background is not painted by any colors.
     bg_color : str or array, optional
-        Background color. Must be a name in `color_dict` or RGB float values
-        between [0, 1].
+        Background color. Must be a name in `cucim.skimage.color.color_dict` or
+        RGB float values between [0, 1].
     image_alpha : float [0, 1], optional
         Opacity of the image.
     kind : string, one of {'overlay', 'avg'}
@@ -188,8 +192,8 @@ def _label2rgb_overlay(
         Label that's treated as the background. If `bg_label` is specified and
         `bg_color` is `None`, background is not painted by any colors.
     bg_color : str or array, optional
-        Background color. Must be a name in `color_dict` or RGB float values
-        between [0, 1].
+        Background color. Must be a name in `cucim.skimage.color.color_dict` or
+        RGB float values between [0, 1].
     image_alpha : float [0, 1], optional
         Opacity of the image.
     saturation : float [0, 1], optional
