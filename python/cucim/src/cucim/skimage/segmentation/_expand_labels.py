@@ -3,18 +3,19 @@ import cupy as cp
 from cucim.core.operations.morphology import distance_transform_edt
 
 
-def expand_labels(label_image, distance=1):
+def expand_labels(label_image, distance=1, spacing=1):
     """Expand labels in label image by ``distance`` pixels without overlapping.
 
     Given a label image, ``expand_labels`` grows label regions (connected
-    components) outwards by up to ``distance`` pixels without overflowing into
-    neighboring regions. More specifically, each background pixel that is
-    within Euclidean distance of <= ``distance`` pixels of a connected
-    component is assigned the label of that connected component.
-
-    Where multiple connected components are within ``distance`` pixels of a
-    background pixel, the label value of the closest connected component will
-    be assigned (see Notes for the case of multiple labels at equal distance).
+    outwards by up to ``distance`` units without overflowing into neighboring
+    regions. More specifically, each background pixel that is within Euclidean
+    distance of <= ``distance`` pixels of a connected component is assigned the
+    label of that connected component. The `spacing` parameter can be used to
+    specify the spacing rate of the distance transform used to calculate the
+    Euclidean distance for anisotropic images where multiple connected
+    components are within ``distance`` pixels of a background pixel, the label
+    value of the closest connected component will be assigned (see Notes for
+    the case of multiple labels at equal distance).
 
     Parameters
     ----------
@@ -23,6 +24,10 @@ def expand_labels(label_image, distance=1):
     distance : float
         Euclidean distance in pixels by which to grow the labels. Default is
         one.
+    spacing : float, or sequence of float, optional
+        Spacing of elements along each dimension. If a sequence, must be of length
+        equal to the input rank; if a single number, this is used for all axes. If
+        not specified, a grid spacing of unity is implied.
 
     Returns
     -------
@@ -79,10 +84,14 @@ def expand_labels(label_image, distance=1):
     array([[2, 1, 1, 0],
            [2, 2, 0, 0],
            [2, 3, 3, 0]])
+    >>> expand_labels(labels2d, 1, spacing=[1, 0.5])
+    array([[1, 1, 1, 1],
+           [2, 2, 2, 0],
+           [3, 3, 3, 3]])
     """  # noqa: E501
 
     distances, nearest_label_coords = distance_transform_edt(
-        label_image == 0, return_indices=True
+        label_image == 0, sampling=spacing, return_indices=True
     )
     labels_out = cp.zeros_like(label_image)
     dilate_mask = distances <= distance
