@@ -100,13 +100,13 @@ def footprint_from_sequence(footprints):
     footprints : tuple of 2-tuples
         A sequence of footprint tuples where the first element of each tuple
         is an array corresponding to a footprint and the second element is the
-        number of times it is to be applied. Currently all footprints should
+        number of times it is to be applied. Currently, all footprints should
         have odd size.
 
     Returns
     -------
     footprint : ndarray
-        An single array equivalent to applying the sequence of `footprints`.
+        An single array equivalent to applying the sequence of ``footprints``.
     """
 
     # Create a single pixel image of sufficient size and apply binary dilation.
@@ -137,10 +137,10 @@ def square(width, dtype=None, *, decomposition=None):
     decomposition : {None, 'separable', 'sequence'}, optional
         If None, a single array is returned. For 'sequence', a tuple of smaller
         footprints is returned. Applying this series of smaller footprints will
-        given an identical result to a single, larger footprint, but often with
+        give an identical result to a single, larger footprint, but often with
         better computational performance. See Notes for more details.
         With 'separable', this function uses separable 1D footprints for each
-        axis. Whether 'seqeunce' or 'separable' is computationally faster may
+        axis. Whether 'sequence' or 'separable' is computationally faster may
         be architecture-dependent.
 
     Returns
@@ -1054,3 +1054,57 @@ def star(a, dtype=cp.uint8):
     footprint[footprint > 0] = 1
 
     return cp.array(footprint.astype(dtype, copy=False))
+
+
+def pad_footprint(footprint, *, pad_end=True):
+    """Pad the footprint to an odd size along each dimension.
+
+    Parameters
+    ----------
+    footprint : ndarray or tuple
+        The input footprint or sequence of footprints
+    pad_end : bool, optional
+        If ``True``, pads at the end of each dimension (right side), otherwise
+        pads on the front (left side).
+
+    Returns
+    -------
+    padded : ndarray or tuple
+        The footprint, padded to an odd size along each dimension.
+
+    Examples
+    --------
+    >>> import cupy as cp
+    >>> from cucim.skimage.morphology.footprints import pad_footprint
+    >>> footprint = cp.array([[0, 0],
+    ...                       [1, 1],
+    ...                       [1, 1]], cp.uint8)
+    >>> pad_footprint(footprint)
+    array([[0, 0, 0],
+           [1, 1, 0],
+           [1, 1, 0]], dtype=uint8)
+
+    """
+    if _footprint_is_sequence(footprint):
+        return tuple(
+            (pad_footprint(fp, pad_end=pad_end), n) for fp, n in footprint
+        )
+
+    if isinstance(footprint, tuple):
+        if all(s % 2 for s in footprint):
+            # can use tuple directly if all dimensions have odd length
+            return footprint
+        # Use a padded array instead of the tuple of any sizes were even
+        padded_shape = tuple(s if s % 2 else s + 1 for s in footprint)
+        padded = np.zeros(padded_shape, dtype=cp.uint8)
+        padded[tuple(slice(0, s) for s in footprint)] = 1
+        return cp.asarray(padded)
+
+    # return as is if already odd size on all axes
+    if all(s % 2 for s in footprint.shape):
+        return footprint
+    padding = [
+        ((0, 1) if pad_end else (1, 0)) if sz % 2 == 0 else (0, 0)
+        for sz in footprint.shape
+    ]
+    return cp.pad(footprint, padding)
