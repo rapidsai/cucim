@@ -1091,7 +1091,7 @@ def rgb2gray(rgb, *, channel_axis=-1):
     return gray
 
 
-def gray2rgba(image, alpha=None, *, channel_axis=-1):
+def gray2rgba(image, alpha=None, *, channel_axis=-1, check_alpha=True):
     """Create a RGBA representation of a gray-level image.
 
     Parameters
@@ -1105,6 +1105,10 @@ def gray2rgba(image, alpha=None, *, channel_axis=-1):
     channel_axis : int, optional
         This parameter indicates which axis of the output array will correspond
         to channels.
+    check_alpha : bool, optional
+        Checking for unsafe casting of alpha adds overhead, so can be disabled
+        on request. Note: This kwarg is not present in scikit-image (it always
+        checks the alpha array).
 
     Returns
     -------
@@ -1113,22 +1117,36 @@ def gray2rgba(image, alpha=None, *, channel_axis=-1):
         image shape.
     """
 
-    alpha_min, alpha_max = dtype_limits(image, clip_negative=False)
-
     if alpha is None:
-        alpha = alpha_max
-
-    if not cp.can_cast(alpha, image.dtype):
-        warn(
-            f"alpha can't be safely cast to image dtype {image.dtype.name}",
-            stacklevel=2
-        )
+        _, alpha = dtype_limits(image, clip_negative=False)
 
     if np.isscalar(alpha):
-        alpha = cp.full(image.shape, alpha, dtype=image.dtype)
-    elif alpha.shape != image.shape:
-        raise ValueError("alpha.shape must match image.shape")
-    rgba = np.stack((image,) * 3 + (alpha,), axis=channel_axis)
+        if check_alpha:
+            # do not use np.can_cast here for NumPy 2.0 compatibility
+            with np.errstate(over="ignore", under="ignore"):
+                alpha_cast = np.asarray(alpha).astype(image.dtype)
+            if alpha_cast != alpha:
+                warn(
+                    'alpha cannot be safely cast to image dtype '
+                    f'{image.dtype.name}',
+                    stacklevel=2
+                )
+        alpha_arr = cp.full(image.shape, alpha, dtype=image.dtype)
+    else:
+        alpha_arr = cp.asarray(alpha).astype(image.dtype, copy=False)
+        if check_alpha and not cp.array_equal(alpha, alpha_arr):
+            warn(
+                'alpha cannot be safely cast to image dtype '
+                f'{image.dtype.name}',
+                stacklevel=2
+            )
+        if alpha_arr.shape != image.shape:
+            try:
+                alpha_arr = cp.broadcast_to(alpha_arr, image.shape)
+            except ValueError as e:
+                raise ValueError("alpha.shape must match image.shape") from e
+
+    rgba = np.stack((image,) * 3 + (alpha_arr,), axis=channel_axis)
     return rgba
 
 

@@ -1009,8 +1009,8 @@ def test_gray2rgba_alpha():
 
     # Warning about alpha cast
     alpha = 0.5
-    with expected_warnings(["alpha can't be safely cast to image dtype"]):
-        rgba = gray2rgba(img_u8, alpha)
+    with expected_warnings(["alpha cannot be safely cast to image dtype"]):
+        rgba = gray2rgba(img_u8, alpha, check_alpha=True)
         assert_array_equal(rgba[..., :3], gray2rgb(img_u8))
 
     # Invalid shape
@@ -1020,6 +1020,24 @@ def test_gray2rgba_alpha():
     with pytest.raises(ValueError) as err:
         rgba = gray2rgba(img, alpha)
     assert expected_err_msg == str(err.value)
+
+
+@pytest.mark.parametrize(
+    "alpha,dtype",
+    [
+        (-1, cp.uint8),
+        (300, cp.int8),
+        (0.5, int),
+        (0.5, cp.uint8),
+        (cp.finfo(cp.float64).max, cp.float32),
+    ],
+)
+def test_gray2rgba_alpha_fail_cast(alpha, dtype):
+    image = cp.ones((5, 5), dtype=dtype)
+    with pytest.warns(UserWarning, match="alpha cannot be safely cast"):
+        gray2rgba(image, alpha=alpha, check_alpha=True)
+
+    gray2rgba(image, alpha=alpha, check_alpha=False)
 
 
 @pytest.mark.parametrize("func", [rgb2gray, gray2rgb, gray2rgba])
