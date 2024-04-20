@@ -6,15 +6,9 @@ import numpy as np
 
 import cucim.skimage._vendored.ndimage as ndi
 
-from .._shared.utils import deprecate_kwarg
 from ._median_hist import KernelResourceError, _can_use_histogram, _median_hist
 
 
-@deprecate_kwarg(
-    kwarg_mapping={"selem": "footprint"},
-    removed_version="23.02.00",
-    deprecated_version="22.02.00",
-)
 def median(
     image,
     footprint=None,
@@ -127,7 +121,7 @@ def median(
             )
         raise NotImplementedError("rank behavior not currently implemented")
         # TODO: implement median rank filter
-        # return generic.median(image, selem=selem, out=out)
+        # return generic.median(image, footprint=footprint, out=out)
 
     if footprint is None:
         footprint_shape = (3,) * image.ndim

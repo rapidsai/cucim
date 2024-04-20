@@ -21,7 +21,7 @@ def _smooth(image, sigma, mode, cval, channel_axis):
     gaussian(
         image,
         sigma,
-        output=smoothed,
+        out=smoothed,
         mode=mode,
         cval=cval,
         channel_axis=channel_axis,

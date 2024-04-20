@@ -2,7 +2,6 @@ import cupy as cp
 import pytest
 from cupy.testing import assert_array_equal
 
-from cucim.skimage._shared._warnings import expected_warnings
 from cucim.skimage._shared.utils import _supported_float_type
 from cucim.skimage.segmentation import chan_vese
 
@@ -86,12 +85,6 @@ def test_chan_vese_gap_closing():
         img, mu=0.7, tol=1e-3, max_num_iter=1000, dt=1000, init_level_set="disk"
     ).astype(float)
     assert_array_equal(result, ref)
-
-
-def test_chan_vese_max_iter_deprecation():
-    img = cp.zeros((20, 20))
-    with expected_warnings(["`max_iter` is a deprecated argument"]):
-        chan_vese(img, max_iter=10)
 
 
 def test_chan_vese_incorrect_level_set():

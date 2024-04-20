@@ -9,7 +9,7 @@ import cucim.skimage._vendored.ndimage as ndi
 from cucim import _misc
 
 from .._shared._gradient import gradient
-from .._shared.utils import check_nD, deprecate_kwarg
+from .._shared.utils import check_nD
 
 __all__ = [
     "morphological_chan_vese",
@@ -252,11 +252,6 @@ def _fused_variance_kernel(
     return aux_lt0, aux_gt0
 
 
-@deprecate_kwarg(
-    {"iterations": "num_iter"},
-    removed_version="23.02.00",
-    deprecated_version="22.02.00",
-)
 def morphological_chan_vese(
     image,
     num_iter,
@@ -377,11 +372,6 @@ def morphological_chan_vese(
     return u
 
 
-@deprecate_kwarg(
-    {"iterations": "num_iter"},
-    removed_version="23.02.00",
-    deprecated_version="22.02.00",
-)
 def morphological_geodesic_active_contour(
     gimage,
     num_iter,

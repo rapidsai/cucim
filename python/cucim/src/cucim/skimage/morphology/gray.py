@@ -7,7 +7,6 @@ import cupy as cp
 
 import cucim.skimage._vendored.ndimage as ndi
 
-from .._shared.utils import deprecate_kwarg
 from .._vendored import pad
 from ..util import crop
 from .footprints import _footprint_is_sequence, _shape_from_sequence
@@ -190,11 +189,6 @@ def pad_for_eccentric_footprints(func):
 
 
 @default_footprint
-@deprecate_kwarg(
-    kwarg_mapping={"selem": "footprint"},
-    removed_version="23.02.00",
-    deprecated_version="22.02.00",
-)
 def erosion(image, footprint=None, out=None, shift_x=False, shift_y=False):
     """Return grayscale morphological erosion of an image.
 
@@ -285,11 +279,6 @@ def erosion(image, footprint=None, out=None, shift_x=False, shift_y=False):
 
 
 @default_footprint
-@deprecate_kwarg(
-    kwarg_mapping={"selem": "footprint"},
-    removed_version="23.02.00",
-    deprecated_version="22.02.00",
-)
 def dilation(image, footprint=None, out=None, shift_x=False, shift_y=False):
     """Return grayscale morphological dilation of an image.
 
@@ -388,11 +377,6 @@ def dilation(image, footprint=None, out=None, shift_x=False, shift_y=False):
     return out
 
 
-@deprecate_kwarg(
-    kwarg_mapping={"selem": "footprint"},
-    removed_version="23.02.00",
-    deprecated_version="22.02.00",
-)
 @default_footprint
 @pad_for_eccentric_footprints
 def opening(image, footprint=None, out=None):
@@ -457,11 +441,6 @@ def opening(image, footprint=None, out=None):
     return out
 
 
-@deprecate_kwarg(
-    kwarg_mapping={"selem": "footprint"},
-    removed_version="23.02.00",
-    deprecated_version="22.02.00",
-)
 @default_footprint
 @pad_for_eccentric_footprints
 def closing(image, footprint=None, out=None):
@@ -544,11 +523,6 @@ def _white_tophat_seqence(image, footprints, out):
 
 
 @default_footprint
-@deprecate_kwarg(
-    kwarg_mapping={"selem": "footprint"},
-    removed_version="23.02.00",
-    deprecated_version="22.02.00",
-)
 def white_tophat(image, footprint=None, out=None):
     """Return white top hat of an image.
 
@@ -646,11 +620,6 @@ def white_tophat(image, footprint=None, out=None):
 
 
 @default_footprint
-@deprecate_kwarg(
-    kwarg_mapping={"selem": "footprint"},
-    removed_version="23.02.00",
-    deprecated_version="22.02.00",
-)
 def black_tophat(image, footprint=None, out=None):
     """Return black top hat of an image.
 

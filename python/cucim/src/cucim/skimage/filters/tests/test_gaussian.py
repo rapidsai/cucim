@@ -2,6 +2,7 @@ import cupy as cp
 import numpy as np
 import pytest
 
+from cucim.skimage._shared.testing import assert_stacklevel
 from cucim.skimage.filters._gaussian import difference_of_gaussians, gaussian
 
 
@@ -90,7 +91,7 @@ def test_preserve_range():
     )
 
     img = cp.array([[10.0, -10.0], [-4, 3]], dtype=np.float32)
-    gaussian(img, 1)
+    gaussian(img, sigma=1)
 
 
 def test_1d_ok():
@@ -113,18 +114,16 @@ def test_4d_ok():
 @pytest.mark.parametrize("dtype", [cp.float32, cp.float64])
 def test_preserve_output(dtype):
     image = cp.arange(9, dtype=dtype).reshape((3, 3))
-    output = cp.zeros_like(image, dtype=dtype)
-    gaussian_image = gaussian(
-        image, sigma=1, output=output, preserve_range=True
-    )
-    assert gaussian_image is output
+    out = cp.zeros_like(image, dtype=dtype)
+    gaussian_image = gaussian(image, sigma=1, out=out, preserve_range=True)
+    assert gaussian_image is out
 
 
 def test_output_error():
     image = cp.arange(9, dtype=cp.float32).reshape((3, 3))
-    output = cp.zeros_like(image, dtype=cp.uint8)
-    with pytest.raises(ValueError):
-        gaussian(image, sigma=1, output=output, preserve_range=True)
+    out = cp.zeros_like(image, dtype=cp.uint8)
+    with pytest.raises(ValueError, match="dtype of `out` must be floating"):
+        gaussian(image, sigma=1, out=out, preserve_range=True)
 
 
 @pytest.mark.parametrize("s", [1, (2, 3)])
@@ -136,8 +135,12 @@ def test_difference_of_gaussians(s, s2, channel_axis):
         n_channels = 5
         image = np.stack((image,) * n_channels, channel_axis)
     image = cp.asarray(image)
-    im1 = gaussian(image, s, preserve_range=True, channel_axis=channel_axis)
-    im2 = gaussian(image, s2, preserve_range=True, channel_axis=channel_axis)
+    im1 = gaussian(
+        image, sigma=s, preserve_range=True, channel_axis=channel_axis
+    )
+    im2 = gaussian(
+        image, sigma=s2, preserve_range=True, channel_axis=channel_axis
+    )
     dog = im1 - im2
     dog2 = difference_of_gaussians(image, s, s2, channel_axis=channel_axis)
     assert cp.allclose(dog, dog2)
@@ -146,9 +149,9 @@ def test_difference_of_gaussians(s, s2, channel_axis):
 @pytest.mark.parametrize("s", [1, (1, 2)])
 def test_auto_sigma2(s):
     image = cp.random.rand(10, 10)
-    im1 = gaussian(image, s)
+    im1 = gaussian(image, sigma=s)
     s2 = 1.6 * np.array(s)
-    im2 = gaussian(image, s2)
+    im2 = gaussian(image, sigma=s2)
     dog = im1 - im2
     dog2 = difference_of_gaussians(image, s, s2)
     assert cp.allclose(dog, dog2)
@@ -170,6 +173,16 @@ def test_dog_invalid_sigma2():
         difference_of_gaussians(image, 3, 2)
     with pytest.raises(ValueError):
         difference_of_gaussians(image, (1, 5), (2, 4))
+
+
+def test_deprecated_gaussian_output():
+    image = cp.array([0, 1, 0], dtype=float)
+    desired = cp.array([0.24197145, 0.39894347, 0.24197145])
+    with pytest.warns(FutureWarning, match="Parameter `output` is") as record:
+        gaussian(image, output=image)
+    assert_stacklevel(record)
+    assert len(record) == 1
+    cp.testing.assert_array_almost_equal(desired, image)
 
 
 @pytest.mark.parametrize(

@@ -6,7 +6,6 @@ from cupyx.scipy import ndimage as ndi
 from skimage import data
 
 from cucim.skimage import color, morphology
-from cucim.skimage._shared._warnings import expected_warnings
 from cucim.skimage.util import img_as_bool
 
 img = color.rgb2gray(cp.array(data.astronaut()))
@@ -18,15 +17,6 @@ def test_non_square_image():
     binary_res = morphology.binary_erosion(bw_img[:100, :200], footprint)
     gray_res = img_as_bool(morphology.erosion(bw_img[:100, :200], footprint))
     testing.assert_array_equal(binary_res, gray_res)
-
-
-@pytest.mark.parametrize(
-    "function",
-    ["binary_erosion", "binary_dilation", "binary_closing", "binary_opening"],
-)
-def test_selem_kwarg_deprecation(function):
-    with expected_warnings(["`selem` is a deprecated argument name"]):
-        getattr(morphology, function)(bw_img, selem=morphology.square(3))
 
 
 def test_binary_erosion():

@@ -17,7 +17,7 @@ from skimage.filters import (
 import cucim.skimage._vendored.ndimage as ndi
 
 from .._shared.filters import gaussian
-from .._shared.utils import _supported_float_type, deprecate_kwarg, warn
+from .._shared.utils import _supported_float_type, warn
 from .._shared.version_requirements import require
 from .._vendored import pad
 from ..exposure import histogram
@@ -270,7 +270,7 @@ def threshold_local(
             sigma = tuple([(b - 1) / 6.0 for b in block_size])
         else:
             sigma = param
-        gaussian(image, sigma, output=thresh_image, mode=mode, cval=cval)
+        gaussian(image, sigma=sigma, out=thresh_image, mode=mode, cval=cval)
     elif method == "mean":
         ndi.uniform_filter(
             image, block_size, output=thresh_image, mode=mode, cval=cval
@@ -774,11 +774,6 @@ def threshold_li(
     return threshold
 
 
-@deprecate_kwarg(
-    {"max_iter": "max_num_iter"},
-    removed_version="23.02.00",
-    deprecated_version="22.02.00",
-)
 def threshold_minimum(image=None, nbins=256, max_num_iter=10000, *, hist=None):
     """Return threshold value based on minimum method.
 

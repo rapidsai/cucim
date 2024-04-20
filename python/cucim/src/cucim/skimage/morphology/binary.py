@@ -7,7 +7,6 @@ import cupy as cp
 
 import cucim.skimage._vendored.ndimage as ndi
 
-from .._shared.utils import deprecate_kwarg
 from .footprints import _footprint_is_sequence
 from .misc import default_footprint
 
@@ -44,11 +43,6 @@ def _iterate_binary_func(binary_func, image, footprint, out):
 # default with the same dimension as the input image and size 3 along each
 # axis.
 @default_footprint
-@deprecate_kwarg(
-    kwarg_mapping={"selem": "footprint"},
-    removed_version="23.02.00",
-    deprecated_version="22.02.00",
-)
 def binary_erosion(image, footprint=None, out=None):
     """Return fast binary morphological erosion of an image.
 
@@ -105,11 +99,6 @@ def binary_erosion(image, footprint=None, out=None):
 
 
 @default_footprint
-@deprecate_kwarg(
-    kwarg_mapping={"selem": "footprint"},
-    removed_version="23.02.00",
-    deprecated_version="22.02.00",
-)
 def binary_dilation(image, footprint=None, out=None):
     """Return fast binary morphological dilation of an image.
 
@@ -163,11 +152,6 @@ def binary_dilation(image, footprint=None, out=None):
 
 
 @default_footprint
-@deprecate_kwarg(
-    kwarg_mapping={"selem": "footprint"},
-    removed_version="23.02.00",
-    deprecated_version="22.02.00",
-)
 def binary_opening(image, footprint=None, out=None):
     """Return fast binary morphological opening of an image.
 
@@ -216,11 +200,6 @@ def binary_opening(image, footprint=None, out=None):
 
 
 @default_footprint
-@deprecate_kwarg(
-    kwarg_mapping={"selem": "footprint"},
-    removed_version="23.02.00",
-    deprecated_version="22.02.00",
-)
 def binary_closing(image, footprint=None, out=None):
     """Return fast binary morphological closing of an image.
 

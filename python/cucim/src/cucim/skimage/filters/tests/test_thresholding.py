@@ -604,13 +604,6 @@ def test_threshold_minimum_histogram():
     assert_array_equal(threshold, 85)
 
 
-def test_threshold_minimum_deprecated_max_iter_kwarg():
-    camera = util.img_as_ubyte(camerad)
-    hist = histogram(camera.ravel(), 256, source_range="image")
-    with expected_warnings(["`max_iter` is a deprecated argument"]):
-        threshold_minimum(hist=hist, max_iter=5000)
-
-
 def test_threshold_minimum_counts():
     camera = util.img_as_ubyte(camerad)
     counts, bin_centers = histogram(camera.ravel(), 256, source_range="image")
