@@ -117,7 +117,8 @@ def median(
             warn(
                 "Change 'behavior' to 'ndimage' if you want to use the "
                 "parameters 'mode' or 'cval'. They will be discarded "
-                "otherwise."
+                "otherwise.",
+                stacklevel=2,
             )
         raise NotImplementedError("rank behavior not currently implemented")
         # TODO: implement median rank filter
