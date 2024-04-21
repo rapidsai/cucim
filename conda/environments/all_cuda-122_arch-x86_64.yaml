@@ -42,7 +42,7 @@ dependencies:
 - python>=3.8,<3.12
 - pywavelets>=1.0
 - recommonmark
-- scikit-image>=0.19.0,<0.23.0a0
+- scikit-image>=0.19.0,<0.24.0a0
 - scipy
 - sphinx<6
 - sysroot_linux-64==2.17
