@@ -38,6 +38,7 @@ gray_morphology_funcs = (
     "white_tophat",
     "black_tophat",
 )
+gray_modes = sorted(gray._SUPPORTED_MODES)
 
 
 class TestMorphology:
@@ -101,7 +102,7 @@ class TestMorphology:
         assert cp.all(result_ignore <= img)
 
     @pytest.mark.parametrize("func", gray_morphology_funcs)
-    @pytest.mark.parametrize("mode", gray._SUPPORTED_MODES)
+    @pytest.mark.parametrize("mode", gray_modes)
     def test_supported_mode(self, func, mode):
         img = cp.ones((10, 10))
         func = getattr(morphology, func)
