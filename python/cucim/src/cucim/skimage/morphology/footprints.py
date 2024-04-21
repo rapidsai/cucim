@@ -1056,6 +1056,39 @@ def star(a, dtype=cp.uint8):
     return cp.array(footprint.astype(dtype, copy=False))
 
 
+def mirror_footprint(footprint):
+    """Mirror each dimension in the footprint.
+
+    Parameters
+    ----------
+    footprint : ndarray or tuple
+        The input footprint or sequence of footprints
+
+    Returns
+    -------
+    inverted : ndarray or tuple
+        The footprint, mirrored along each dimension.
+
+    Examples
+    --------
+    >>> import cupy as cp
+    >>> from cucim.skimage.morphology.footprints import mirror_footprint
+    >>> footprint = cp.array([[0, 0, 0],
+    ...                       [0, 1, 1],
+    ...                       [0, 1, 1]], cp.uint8)
+    >>> mirror_footprint(footprint)
+    array([[1, 1, 0],
+           [1, 1, 0],
+           [0, 0, 0]], dtype=uint8)
+
+    """
+    if _footprint_is_sequence(footprint):
+        return tuple((mirror_footprint(fp), n) for fp, n in footprint)
+    elif isinstance(footprint, tuple):
+        return footprint
+    return footprint[(slice(None, None, -1),) * footprint.ndim]
+
+
 def pad_footprint(footprint, *, pad_end=True):
     """Pad the footprint to an odd size along each dimension.
 
@@ -1090,6 +1123,8 @@ def pad_footprint(footprint, *, pad_end=True):
             (pad_footprint(fp, pad_end=pad_end), n) for fp, n in footprint
         )
 
+    # Unlike skimage, CuPy needs to support tuple to avoid the overhead of
+    # allocating a tiny footprint array on the GPU when possible.
     if isinstance(footprint, tuple):
         if all(s % 2 for s in footprint):
             # can use tuple directly if all dimensions have odd length
@@ -1097,7 +1132,10 @@ def pad_footprint(footprint, *, pad_end=True):
         # Use a padded array instead of the tuple of any sizes were even
         padded_shape = tuple(s if s % 2 else s + 1 for s in footprint)
         padded = np.zeros(padded_shape, dtype=cp.uint8)
-        padded[tuple(slice(0, s) for s in footprint)] = 1
+        if pad_end:
+            padded[tuple(slice(0, s) for s in footprint)] = 1
+        else:
+            padded[tuple(slice(-s, None) for s in footprint)] = 1
         return cp.asarray(padded)
 
     # return as is if already odd size on all axes

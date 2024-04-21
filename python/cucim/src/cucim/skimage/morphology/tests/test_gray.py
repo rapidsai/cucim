@@ -1,13 +1,16 @@
 import cupy as cp
 import numpy as np
 import pytest
+import skimage
 from cupy import testing
 from cupyx.scipy import ndimage as ndi
-from skimage import data
+from packaging.version import Version
+from skimage import data, morphology as morphology_cpu
 
 from cucim.skimage import color, morphology, transform
 from cucim.skimage._shared._warnings import expected_warnings
-from cucim.skimage._shared.testing import fetch
+from cucim.skimage._shared.testing import assert_stacklevel
+from cucim.skimage.morphology import gray
 from cucim.skimage.util import img_as_ubyte, img_as_uint
 
 
@@ -27,122 +30,163 @@ def cell3d_image():
     )
 
 
-class TestMorphology:
-    # These expected outputs were generated with skimage v0.12.1
-    # using:
-    #
-    #   from skimage.morphology.tests.test_gray import TestMorphology
-    #   import numpy as np
-    #   output = TestMorphology()._build_expected_output()
-    #   np.savez_compressed('gray_morph_output.npz', **output)
+gray_morphology_funcs = (
+    "erosion",
+    "dilation",
+    "opening",
+    "closing",
+    "white_tophat",
+    "black_tophat",
+)
 
-    def _build_expected_output(self):
-        funcs = (
-            morphology.erosion,
-            morphology.dilation,
-            morphology.opening,
-            morphology.closing,
-            morphology.white_tophat,
-            morphology.black_tophat,
-        )
-        footprints_2D = (
-            morphology.square,
-            morphology.diamond,
-            morphology.disk,
-            morphology.star,
-        )
+
+class TestMorphology:
+    @pytest.mark.parametrize(
+        "footprint, footprint_kwargs",
+        (
+            (morphology.square, dict(decomposition=None)),
+            (morphology.diamond, dict(decomposition=None)),
+            (morphology.disk, dict(decomposition=None)),
+            (morphology.star, {}),
+        ),
+    )
+    @pytest.mark.parametrize("func", gray_morphology_funcs)
+    @pytest.mark.parametrize("n", range(1, 5))
+    def test_gray_morphology(self, footprint, footprint_kwargs, func, n):
+        if (n % 2 == 0) and (Version(skimage.__version__) < Version("0.23.0")):
+            # even sized footprint bug fixes require recent skimage
+            pytest.skip("direct CPU comparison requires skimage >= 0.23.0")
 
         image = img_as_ubyte(
             transform.downscale_local_mean(
                 color.rgb2gray(cp.array(data.coffee())), (20, 20)
             )
         )
+        gpu_fp = footprint(n, **footprint_kwargs)
+        if isinstance(gpu_fp, tuple):
+            # skimage doesn't support a tuple footprint
+            cpu_fp = np.ones(gpu_fp, dtype=np.uint8)
+        else:
+            cpu_fp = cp.asnumpy(gpu_fp)
+        cpu_func = getattr(morphology_cpu, func)
+        cpu_result = cpu_func(cp.asnumpy(image), cpu_fp)
 
-        output = {}
-        for n in range(1, 4):
-            for footprint in footprints_2D:
-                for func in funcs:
-                    key = f"{footprint.__name__}_{n}_{func.__name__}"
-                    output[key] = func(image, footprint(n))
+        gpu_func = getattr(morphology, func)
+        gpu_result = gpu_func(image, gpu_fp)
 
-        return output
+        cp.testing.assert_array_equal(cpu_result, gpu_result)
 
-    def test_gray_morphology(self):
-        expected = dict(np.load(fetch("data/gray_morph_output.npz")))
-        calculated = self._build_expected_output()
-        for k, v in calculated.items():
-            cp.testing.assert_array_equal(cp.asarray(expected[k]), v)
+    def test_gray_closing_extensive(self):
+        img = cp.array(data.coins())
+        footprint = cp.array([[0, 0, 1], [0, 1, 1], [1, 1, 1]])
+
+        # Default mode="reflect" is not extensive for backwards-compatibility
+        result_default = morphology.closing(img, footprint=footprint)
+        assert not cp.all(result_default >= img)
+
+        result = morphology.closing(img, footprint=footprint, mode="ignore")
+        assert cp.all(result >= img)
+
+    def test_gray_opening_anti_extensive(self):
+        img = cp.array(data.coins())
+        footprint = cp.array([[0, 0, 1], [0, 1, 1], [1, 1, 1]])
+
+        # Default mode="reflect" is not extensive for backwards-compatibility
+        result_default = morphology.opening(img, footprint=footprint)
+        assert not cp.all(result_default <= img)
+
+        result_ignore = morphology.opening(
+            img, footprint=footprint, mode="ignore"
+        )
+        assert cp.all(result_ignore <= img)
+
+    @pytest.mark.parametrize("func", gray_morphology_funcs)
+    @pytest.mark.parametrize("mode", gray._SUPPORTED_MODES)
+    def test_supported_mode(self, func, mode):
+        img = cp.ones((10, 10))
+        func = getattr(morphology, func)
+        func(img, mode=mode)
+
+    @pytest.mark.parametrize("func", gray_morphology_funcs)
+    @pytest.mark.parametrize("mode", ["", "symmetric", 3, None])
+    def test_unsupported_mode(self, func, mode):
+        img = cp.ones((10, 10))
+        with pytest.raises(ValueError, match="unsupported mode"):
+            func = getattr(morphology, func)
+            func(img, mode=mode)
+
+
+eccentric_footprint_args = [
+    (morphology.square, (2,)),
+    (morphology.rectangle, (2, 2)),
+    (morphology.rectangle, (2, 1)),
+    (morphology.rectangle, (1, 2)),
+]
+eccentric_params = ("footprint_func, args", eccentric_footprint_args)
 
 
 class TestEccentricStructuringElements:
     def setup_method(self):
-        self.black_pixel = 255 * cp.ones((4, 4), dtype=cp.uint8)
-        self.black_pixel[1, 1] = 0
+        self.black_pixel = 255 * cp.ones((6, 6), dtype=cp.uint8)
+        self.black_pixel[2, 2] = 0
         self.white_pixel = 255 - self.black_pixel
-        self.footprints = [
-            morphology.square(2),
-            morphology.rectangle(2, 2),
-            morphology.rectangle(2, 1),
-            morphology.rectangle(1, 2),
-        ]
 
-    def test_dilate_erode_symmetry(self):
-        for s in self.footprints:
-            c = morphology.erosion(self.black_pixel, s)
-            d = morphology.dilation(self.white_pixel, s)
-            assert cp.all(c == (255 - d))
+    @pytest.mark.parametrize(*eccentric_params)
+    def test_dilate_erode_symmetry(self, footprint_func, args):
+        s = footprint_func(*args)
+        c = morphology.erosion(self.black_pixel, s)
+        d = morphology.dilation(self.white_pixel, s)
+        assert cp.all(c == (255 - d))
 
-    def test_open_black_pixel(self):
-        for s in self.footprints:
-            gray_open = morphology.opening(self.black_pixel, s)
-            assert cp.all(gray_open == self.black_pixel)
+    @pytest.mark.parametrize(*eccentric_params)
+    def test_open_black_pixel(self, footprint_func, args):
+        s = footprint_func(*args)
+        gray_open = morphology.opening(self.black_pixel, s)
+        assert cp.all(gray_open == self.black_pixel)
 
-    def test_close_white_pixel(self):
-        for s in self.footprints:
-            gray_close = morphology.closing(self.white_pixel, s)
-            assert cp.all(gray_close == self.white_pixel)
+    @pytest.mark.parametrize(*eccentric_params)
+    def test_close_white_pixel(self, footprint_func, args):
+        s = footprint_func(*args)
+        gray_close = morphology.closing(self.white_pixel, s)
+        assert cp.all(gray_close == self.white_pixel)
 
-    def test_open_white_pixel(self):
-        for s in self.footprints:
-            assert cp.all(morphology.opening(self.white_pixel, s) == 0)
+    @pytest.mark.parametrize(*eccentric_params)
+    def test_open_white_pixel(self, footprint_func, args):
+        s = footprint_func(*args)
+        assert cp.all(morphology.opening(self.white_pixel, s) == 0)
 
-    def test_close_black_pixel(self):
-        for s in self.footprints:
-            assert cp.all(morphology.closing(self.black_pixel, s) == 255)
+    @pytest.mark.parametrize(*eccentric_params)
+    def test_close_black_pixel(self, footprint_func, args):
+        s = footprint_func(*args)
+        assert cp.all(morphology.closing(self.black_pixel, s) == 255)
 
-    def test_white_tophat_white_pixel(self):
-        for s in self.footprints:
-            tophat = morphology.white_tophat(self.white_pixel, s)
-            cp.testing.assert_array_equal(tophat, self.white_pixel)
+    @pytest.mark.parametrize(*eccentric_params)
+    def test_white_tophat_white_pixel(self, footprint_func, args):
+        s = footprint_func(*args)
+        tophat = morphology.white_tophat(self.white_pixel, s)
+        cp.testing.assert_array_equal(tophat, self.white_pixel)
 
-    def test_black_tophat_black_pixel(self):
-        for s in self.footprints:
-            tophat = morphology.black_tophat(self.black_pixel, s)
-            cp.testing.assert_array_equal(tophat, 255 - self.black_pixel)
+    @pytest.mark.parametrize(*eccentric_params)
+    def test_black_tophat_black_pixel(self, footprint_func, args):
+        s = footprint_func(*args)
+        tophat = morphology.black_tophat(self.black_pixel, s)
+        cp.testing.assert_array_equal(tophat, self.white_pixel)
 
-    def test_white_tophat_black_pixel(self):
-        for s in self.footprints:
-            tophat = morphology.white_tophat(self.black_pixel, s)
-            assert cp.all(tophat == 0)
+    @pytest.mark.parametrize(*eccentric_params)
+    def test_white_tophat_black_pixel(self, footprint_func, args):
+        s = footprint_func(*args)
+        tophat = morphology.white_tophat(self.black_pixel, s)
+        assert cp.all(tophat == 0)
 
-    def test_black_tophat_white_pixel(self):
-        for s in self.footprints:
-            tophat = morphology.black_tophat(self.white_pixel, s)
-            assert cp.all(tophat == 0)
-
-
-gray_functions = [
-    morphology.erosion,
-    morphology.dilation,
-    morphology.opening,
-    morphology.closing,
-    morphology.white_tophat,
-    morphology.black_tophat,
-]
+    @pytest.mark.parametrize(*eccentric_params)
+    def test_black_tophat_white_pixel(self, footprint_func, args):
+        s = footprint_func(*args)
+        tophat = morphology.black_tophat(self.white_pixel, s)
+        assert cp.all(tophat == 0)
 
 
-@pytest.mark.parametrize("function", gray_functions)
-def test_default_footprint(function):
+@pytest.mark.parametrize("func_name", gray_morphology_funcs)
+def test_default_footprint(func_name):
     footprint = morphology.diamond(radius=1)
     # fmt: off
     image = cp.array([[0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
@@ -159,6 +203,7 @@ def test_default_footprint(function):
                       [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
                       [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]], cp.uint8)
     # fmt: on
+    function = getattr(morphology, func_name)
     im_expected = function(image, footprint)
     im_test = function(image)
     cp.testing.assert_array_equal(im_expected, im_test)
@@ -323,12 +368,6 @@ def test_1d_erosion():
     expected = cp.array([1, 1, 2, 1, 1])
     eroded = morphology.erosion(image)
     cp.testing.assert_array_equal(eroded, expected)
-
-
-def test_deprecated_import():
-    msg = "Importing from cucim.skimage.morphology.grey is deprecated."
-    with expected_warnings([msg + r"|\A\Z"]):
-        from cucim.skimage.morphology.grey import erosion  # noqa
 
 
 @pytest.mark.parametrize(
@@ -520,3 +559,16 @@ def test_tuple_as_footprint(function, ndim, odd_only):
     expected = func(img, footprint=footprint_ndarray)
     out = func(img, footprint=footprint_shape)
     testing.assert_array_equal(expected, out)
+
+
+@pytest.mark.parametrize("func", [morphology.erosion, morphology.dilation])
+@pytest.mark.parametrize("name", ["shift_x", "shift_y"])
+@pytest.mark.parametrize("value", [True, False, None])
+def test_deprecated_shift(func, name, value):
+    img = cp.ones(10)
+    func(img)  # Shouldn't warn
+
+    regex = "`shift_x` and `shift_y` are deprecated"
+    with pytest.warns(FutureWarning, match=regex) as record:
+        func(img, **{name: value})
+    assert_stacklevel(record)
