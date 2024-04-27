@@ -4,7 +4,7 @@ from itertools import combinations_with_replacement
 
 import cupy as cp
 import numpy as np
-from scipy import spatial  # TODO: use cuSpatial if cKDTree becomes available
+from scipy import spatial  # TODO: use cuSpatial if KDTree becomes available
 
 import cucim.skimage._vendored.ndimage as ndi
 from cucim.skimage.util import img_as_float
@@ -1370,7 +1370,7 @@ def corner_peaks(
         coords = cp.asnumpy(coords)
 
         # Use KDtree to find the peaks that are too close to each other
-        tree = spatial.cKDTree(coords)
+        tree = spatial.KDTree(coords)
 
         rejected_peaks_indices = set()
         for idx, point in enumerate(coords):

@@ -1,9 +1,9 @@
 import cupy as cp
 import numpy as np
-from scipy.spatial import cKDTree, distance
+from scipy.spatial import KDTree, distance
 
 
-# TODO: avoid host/device transfers (currently needed for cKDTree)
+# TODO: avoid host/device transfers (currently needed for KDTree)
 def _ensure_spacing(coord, spacing, p_norm, max_out):
     """Returns a subset of coord where a minimum spacing is guaranteed.
 
@@ -30,7 +30,7 @@ def _ensure_spacing(coord, spacing, p_norm, max_out):
     """
 
     # Use KDtree to find the peaks that are too close to each other
-    tree = cKDTree(coord)
+    tree = KDTree(coord)
 
     indices = tree.query_ball_point(coord, r=spacing, p=p_norm)
     rejected_peaks_indices = set()
