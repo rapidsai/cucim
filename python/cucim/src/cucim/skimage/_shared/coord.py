@@ -106,6 +106,8 @@ def ensure_spacing(
     if len(coords):
         coords = cp.atleast_2d(coords)
         coords = cp.asnumpy(coords)
+        if not np.isscalar(spacing):
+            spacing = cp.asnumpy(spacing)
         if min_split_size is None:
             batch_list = [coords]
         else:
