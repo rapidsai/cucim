@@ -129,6 +129,10 @@ testpaths = [
     "src",
     "tests",
 ]
+filterwarnings = [
+    "error::FutureWarning",
+    "error::DeprecationWarning",
+]
 
 [tool.ruff]
 # see: https://docs.astral.sh/ruff/rules/
