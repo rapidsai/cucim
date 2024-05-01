@@ -132,6 +132,8 @@ testpaths = [
 filterwarnings = [
     "error::FutureWarning",
     "error::DeprecationWarning",
+    # https://github.com/cupy/cupy/blob/main/cupy/testing/_helper.py#L56
+    "ignore:pkg_resources is deprecated as an API:DeprecationWarning",
 ]
 
 [tool.ruff]
