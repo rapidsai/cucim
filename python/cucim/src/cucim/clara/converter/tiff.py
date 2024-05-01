@@ -199,8 +199,8 @@ def svs2tif(
                         resolution=(
                             x_resolution // 2**level,
                             y_resolution // 2**level,
-                            resolution_unit,
                         ),
+                        resolutionunit=resolution_unit,
                         compression=compression,  # requires imagecodecs
                         compressionargs=compressionargs,
                         subfiletype=subfiletype,
