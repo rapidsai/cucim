@@ -257,7 +257,7 @@ def pearsonr(x, y, *, disable_checks=False):
     # on [0, 1].  To use it, we make the transformation  x = (r + 1)/2; the
     # shape parameters do not change.  Then -abs(r) used in `cdf(-abs(r))`
     # becomes x = (-abs(r) + 1)/2 = 0.5*(1 - abs(r)).  (r is cast to float64
-    # to avoid a TypeError raised by btdtr when r is higher precision.)
+    # to avoid a TypeError raised by betainc when r is higher precision.)
     ab = n / 2 - 1
     # scalar valued, so use special.betainc from SciPy, not CuPy
     prob = 2 * special.betainc(ab, ab, 0.5 * (1.0 - abs(r)))
