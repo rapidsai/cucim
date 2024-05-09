@@ -57,6 +57,7 @@ class TiffGenerator:
             raise RuntimeError("'image_data' is neithor list or numpy.ndarray")
 
         compression = COMPRESSION_MAP.get(compression)
+        compressionargs = None
         if not compression:
             compression = "jpeg"
         if compression == "jpeg":
