@@ -62,8 +62,6 @@ class TiffGenerator:
             compression = "jpeg"
         if compression == "jpeg":
             compressionargs = {"level": 95}
-        else:
-            compressionargs = None
 
         # save as tif
         tiff_file_name = str(
