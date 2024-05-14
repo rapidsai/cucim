@@ -20,7 +20,7 @@ from tempfile import mkdtemp
 import numpy as np
 from tifffile import TiffWriter
 
-COMPRESSION_MAP = {"jpeg": ("jpeg", 95), "deflate": "deflate", "raw": None}
+COMPRESSION_MAP = {"jpeg": "jpeg", "deflate": "deflate", "raw": None}
 
 
 class TiffGenerator:
@@ -57,8 +57,11 @@ class TiffGenerator:
             raise RuntimeError("'image_data' is neithor list or numpy.ndarray")
 
         compression = COMPRESSION_MAP.get(compression)
+        compressionargs = None
         if not compression:
-            compression = ("jpeg", 95)
+            compression = "jpeg"
+        if compression == "jpeg":
+            compressionargs = {"level": 95}
 
         # save as tif
         tiff_file_name = str(
@@ -84,6 +87,7 @@ class TiffGenerator:
                     photometric="RGB",
                     planarconfig="CONTIG",
                     compression=compression,  # requires imagecodecs
+                    compressionargs=compressionargs,
                     subfiletype=1 if level else 0,
                     resolution=level_resolution,
                     resolutionunit=resolutionunit,
