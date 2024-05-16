@@ -1,14 +1,20 @@
 import cupy as cp
 
 from .._shared.filters import gaussian
-from .._shared.utils import deprecate_kwarg
+from .._shared.utils import DEPRECATED, deprecate_parameter
 
 
-@deprecate_kwarg(
-    {"seed": "rng"}, deprecated_version="23.12.00", removed_version="24.12.00"
+@deprecate_parameter(
+    "seed", new_name="rng", start_version="23.12.00", stop_version="24.12.00"
 )
 def binary_blobs(
-    length=512, blob_size_fraction=0.1, n_dim=2, volume_fraction=0.5, rng=None
+    length=512,
+    blob_size_fraction=0.1,
+    n_dim=2,
+    volume_fraction=0.5,
+    rng=None,
+    *,
+    seed=DEPRECATED,
 ):
     """
     Generate synthetic binary image with several rounded blob-like objects.
@@ -57,7 +63,6 @@ def binary_blobs(
     >>> # Blobs cover a smaller volume fraction of the image
     >>> blobs = data.binary_blobs(length=256, volume_fraction=0.3)
     """  # noqa: E501
-
     rs = cp.random.default_rng(rng)
     shape = tuple([length] * n_dim)
     mask = cp.zeros(shape)

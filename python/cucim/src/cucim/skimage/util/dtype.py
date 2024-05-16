@@ -18,28 +18,30 @@ __all__ = [
     "dtype_limits",
 ]
 
-# For integers Numpy uses `_integer_types` basis internally, and builds a leaky
-# `cupy.XintYY` abstraction on top of it. This leads to situations when, for
-# example, there are two cupy.Xint64 dtypes with the same attributes but
-# different object references. In order to avoid any potential issues,
-# we use the basis dtypes here. For more information, see:
-# - https://github.com/scikit-image/scikit-image/issues/3043
-# For convenience, for these dtypes we indicate also the possible bit depths
-# (some of them are platform specific). For the details, see:
-# http://www.unix.org/whitepapers/64bit.html
+# Some of these may or may not be aliases depending on architecture & platform
 _integer_types = (
-    cp.byte,
-    cp.ubyte,  # 8 bits
-    cp.short,
-    cp.ushort,  # 16 bits
-    cp.intc,
-    cp.uintc,  # 16 or 32 or 64 bits
+    np.int8,
+    np.byte,
+    np.int16,
+    np.short,
+    np.int32,
+    np.int64,
+    np.longlong,
+    np.int_,
+    np.intp,
+    np.intc,
     int,
-    cp.int_,
-    cp.uint,  # 32 or 64 bits
-    cp.longlong,
-    cp.ulonglong,
-)  # 64 bits
+    np.uint8,
+    np.ubyte,
+    np.uint16,
+    np.ushort,
+    np.uint32,
+    np.uint64,
+    np.ulonglong,
+    np.uint,
+    np.uintp,
+    np.uintc,
+)
 _integer_ranges = {
     t: (cp.iinfo(t).min, cp.iinfo(t).max) for t in _integer_types
 }
@@ -279,7 +281,7 @@ def _convert(image, dtype, force_copy=False, uniform=False):
     #   is a subclass of that type (e.g. `cp.floating` will allow
     #   `float32` and `float64` arrays through)
 
-    if cp.issubdtype(dtype_in, np.core.numerictypes.obj2sctype(dtype)):
+    if cp.issubdtype(dtype_in, dtype):
         if force_copy:
             image = image.copy()
         return image

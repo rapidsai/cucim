@@ -63,7 +63,7 @@ def meijering(
 
     Parameters
     ----------
-    image : (N, M[, ..., P]) ndarray
+    image : (N, M[, ...]) ndarray
         Array with input image data.
     sigmas : iterable of floats, optional
         Sigmas used as scales of filter
@@ -157,7 +157,7 @@ def sato(
 
     Parameters
     ----------
-    image : (N, M[, P]) ndarray
+    image : (M, N[, P]) ndarray
         Array with input image data.
     sigmas : iterable of floats, optional
         Sigmas used as scales of filter.
@@ -172,7 +172,7 @@ def sato(
 
     Returns
     -------
-    out : (N, M[, P]) ndarray
+    out : (M, N[, P]) ndarray
         Filtered image (maximum of pixels across all scales).
 
     See also
@@ -340,7 +340,7 @@ def frangi(
 
     Parameters
     ----------
-    image : (N, M[, P]) ndarray
+    image : (M, N[, P]) ndarray
         Array with input image data.
     sigmas : iterable of floats, optional
         Sigmas used as scales of filter, i.e.,
@@ -370,7 +370,7 @@ def frangi(
 
     Returns
     -------
-    out : (N, M[, P]) ndarray
+    out : (M, N[, P]) ndarray
         Filtered image (maximum of pixels across all scales).
 
     Notes
@@ -496,7 +496,7 @@ def hessian(
 
     Parameters
     ----------
-    image : (N, M[, P]) ndarray
+    image : (M, N[, P]) ndarray
         Array with input image data.
     sigmas : iterable of floats, optional
         Sigmas used as scales of filter, i.e.,
@@ -522,7 +522,7 @@ def hessian(
 
     Returns
     -------
-    out : (N, M[, P]) ndarray
+    out : (M, N[, P]) ndarray
         Filtered image (maximum of pixels across all scales).
 
     Notes

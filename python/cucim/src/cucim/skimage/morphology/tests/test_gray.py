@@ -342,22 +342,6 @@ def test_deprecated_import():
         "black_tophat",
     ],
 )
-def test_selem_kwarg_deprecation(function):
-    with expected_warnings(["`selem` is a deprecated argument name"]):
-        getattr(morphology, function)(cp.zeros((4, 4)), selem=cp.ones((3, 3)))
-
-
-@pytest.mark.parametrize(
-    "function",
-    [
-        "erosion",
-        "dilation",
-        "closing",
-        "opening",
-        "white_tophat",
-        "black_tophat",
-    ],
-)
 @pytest.mark.parametrize("size", (7,))
 @pytest.mark.parametrize("decomposition", ["separable", "sequence"])
 def test_square_decomposition(cam_image, function, size, decomposition):

@@ -5,8 +5,9 @@ import numpy as np
 
 import cucim.skimage._vendored.ndimage as ndi
 from cucim.core.operations.morphology import distance_transform_edt
+from cucim.skimage._shared.utils import DEPRECATED, deprecate_parameter
 
-from .._shared.utils import check_nD, deprecate_kwarg
+from .._shared.utils import check_nD
 from ._medial_axis_lookup import (
     cornerness_table as _medial_axis_cornerness_table,
     lookup_table as _medial_axis_lookup_table,
@@ -48,11 +49,6 @@ _G123P_LUT = np.array([0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0,
 # fmt: on
 
 
-@deprecate_kwarg(
-    {"max_iter": "max_num_iter"},
-    removed_version="23.02.00",
-    deprecated_version="22.02.00",
-)
 def thin(image, max_num_iter=None):
     """
     Perform morphological thinning of a binary image.
@@ -170,10 +166,12 @@ def _get_tiebreaker(n, seed):
     return tiebreaker
 
 
-@deprecate_kwarg(
-    {"seed": "rng"}, deprecated_version="23.12", removed_version="24.12"
+@deprecate_parameter(
+    "seed", new_name="rng", start_version="23.12", stop_version="24.12"
 )
-def medial_axis(image, mask=None, return_distance=False, *, rng=None):
+def medial_axis(
+    image, mask=None, return_distance=False, *, seed=DEPRECATED, rng=None
+):
     """Compute the medial axis transform of a binary image.
 
     Parameters

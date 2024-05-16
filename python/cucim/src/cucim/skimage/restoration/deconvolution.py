@@ -4,7 +4,11 @@ import warnings
 import cupy as cp
 import numpy as np
 
-from .._shared.utils import _supported_float_type, deprecate_kwarg
+from .._shared.utils import (
+    DEPRECATED,
+    _supported_float_type,
+    deprecate_parameter,
+)
 from . import uft
 
 __keywords__ = "restoration, image, deconvolution"
@@ -147,15 +151,17 @@ def wiener(image, psf, balance, reg=None, is_real=True, clip=True):
     return deconv
 
 
-@deprecate_kwarg(
-    {"random_state": "rng"},
-    removed_version="24.12.00",
-    deprecated_version="23.08.00",
+@deprecate_parameter(
+    "random_state",
+    new_name="rng",
+    start_version="23.08.00",
+    stop_version="24.12.00",
 )
-@deprecate_kwarg(
-    {"seed": "rng"},
-    removed_version="24.12.00",
-    deprecated_version="23.12.00",
+@deprecate_parameter(
+    "seed",
+    new_name="rng",
+    start_version="23.08.00",
+    stop_version="24.12.00",
 )
 def unsupervised_wiener(
     image,
@@ -166,6 +172,8 @@ def unsupervised_wiener(
     clip=True,
     *,
     rng=None,
+    random_state=DEPRECATED,
+    seed=DEPRECATED,
 ):
     """Unsupervised Wiener-Hunt deconvolution.
 

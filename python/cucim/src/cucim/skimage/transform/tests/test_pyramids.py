@@ -1,4 +1,5 @@
 import math
+import warnings
 
 import cupy as cp
 import pytest
@@ -208,7 +209,16 @@ def test_check_factor():
     "pyramid_func", [pyramids.pyramid_gaussian, pyramids.pyramid_laplacian]
 )
 def test_pyramid_dtype_support(pyramid_func, dtype):
-    img = cp.ones((32, 8), dtype=dtype)
+    with warnings.catch_warnings():
+        # Ignore arch specific warning on arm64, armhf, ppc64el, riscv64, s390x
+        # https://github.com/scikit-image/scikit-image/issues/7391
+        warnings.filterwarnings(
+            action="ignore",
+            category=RuntimeWarning,
+            message="invalid value encountered in cast",
+        )
+        img = cp.random.randn(32, 8).astype(dtype)
+
     pyramid = pyramid_func(img)
 
     float_dtype = _supported_float_type(dtype)

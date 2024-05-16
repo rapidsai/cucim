@@ -74,8 +74,10 @@ def uifftn(inarray, dim=None):
 
     Returns
     -------
-    outarray : ndarray (same shape than inarray)
-        The unitary inverse N-D Fourier transform of ``inarray``.
+    outarray : ndarray
+        The unitary inverse nD Fourier transform of ``inarray``. Has the same
+        shape as ``inarray``.
+
 
     Examples
     --------
@@ -101,7 +103,7 @@ def urfftn(inarray, dim=None):
 
     Parameters
     ----------
-    inarray : ndarray, shape (M, N, ..., P)
+    inarray : ndarray, shape (M[, ...], P)
         The array to transform.
     dim : int, optional
         The last axis along which to compute the transform. All
@@ -109,7 +111,7 @@ def urfftn(inarray, dim=None):
 
     Returns
     -------
-    outarray : ndarray, shape (M, N, ..., P / 2 + 1)
+    outarray : ndarray, shape (M[, ...], P / 2 + 1)
         The unitary N-D real Fourier transform of ``inarray``.
 
     Notes
@@ -254,12 +256,12 @@ def urfft2(inarray):
 
     Parameters
     ----------
-    inarray : ndarray, shape (M, N, ..., P)
+    inarray : ndarray, shape (M[, ...], P)
         The array to transform.
 
     Returns
     -------
-    outarray : ndarray, shape (M, N, ..., 2 * (P - 1))
+    outarray : ndarray, shape (M[, ...], 2 * (P - 1))
         The unitary 2-D real Fourier transform of ``inarray``.
 
     See Also
@@ -289,7 +291,7 @@ def uirfft2(inarray, shape=None):
 
     Parameters
     ----------
-    inarray : ndarray, shape (M, N, ..., P)
+    inarray : ndarray, shape (M[, ...], P)
         The array to transform.
     shape : tuple of int, optional
         The shape of the output. The shape of ``rfft`` is ambiguous in
@@ -298,7 +300,7 @@ def uirfft2(inarray, shape=None):
 
     Returns
     -------
-    outarray : ndarray, shape (M, N, ..., 2 * (P - 1))
+    outarray : ndarray, shape (M[, ...], 2 * (P - 1))
         The unitary 2-D inverse real Fourier transform of ``inarray``.
 
     See Also

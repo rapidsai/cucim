@@ -5,6 +5,7 @@ http://www.mathworks.com/matlabcentral/fileexchange/18401-efficient-subpixel-ima
 
 import itertools
 import math
+import warnings
 
 import cupy as cp
 import cupyx.scipy.ndimage as ndi
@@ -115,9 +116,20 @@ def _compute_error(cross_correlation_max, src_amp, target_amp):
     target_amp : float
         The normalized average image intensity of the target image
     """
-    error = 1.0 - cross_correlation_max * cross_correlation_max.conj() / (
-        src_amp * target_amp
-    )
+    amp = src_amp * target_amp
+    if amp == 0:
+        warnings.warn(
+            "Could not determine RMS error between images with the normalized "
+            f"average intensities {src_amp!r} and {target_amp!r}. Either the "
+            "reference or moving image may be empty.",
+            UserWarning,
+            stacklevel=3,
+        )
+
+    with np.errstate(invalid="ignore"):
+        error = 1.0 - cross_correlation_max * cross_correlation_max.conj() / (
+            amp
+        )
 
     return cp.sqrt(cp.abs(error))
 
@@ -175,6 +187,14 @@ def _disambiguate_shift(reference_image, moving_image, shift):
         if corr > max_corr:
             max_corr = corr
             max_slice = test_slice
+    if max_slice is None:
+        warnings.warn(
+            "Could not determine real-space shift for periodic shift "
+            f"{shift!r} as requested by `disambiguate=True` (disambiguation "
+            "is degenerate).",
+            stacklevel=3,
+        )
+        return shift
     real_shift_acc = []
     for sl, pos_shift, neg_shift in zip(
         max_slice, positive_shift, negative_shift

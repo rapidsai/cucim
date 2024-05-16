@@ -5,7 +5,7 @@ from cupyx.scipy import ndimage as ndi
 from scipy import signal
 
 from cucim.skimage import restoration
-from cucim.skimage._shared.testing import expected_warnings, fetch
+from cucim.skimage._shared.testing import fetch
 from cucim.skimage._shared.utils import _supported_float_type
 from cucim.skimage.color import rgb2gray
 from cucim.skimage.restoration import uft
@@ -118,43 +118,6 @@ def test_unsupervised_wiener(dtype):
     #               Verified similar appearance qualitatively.
     # path = fetch("restoration/tests/camera_unsup2.npy")
     # cp.testing.assert_allclose(cp.real(deconvolved), np.load(path), rtol=1e-3)
-
-
-def test_unsupervised_wiener_deprecated_user_param():
-    psf = np.ones((5, 5), dtype=float) / 25
-    data = signal.convolve2d(cp.asnumpy(test_img), psf, "same")
-    data = cp.array(data)
-    psf = cp.array(psf)
-    otf = uft.ir2tf(psf, data.shape, is_real=False)
-    _, laplacian = uft.laplacian(2, data.shape)
-    with expected_warnings(
-        [
-            "`max_iter` is a deprecated key",
-            "`min_iter` is a deprecated key",
-            "`random_state` is a deprecated argument name",
-        ]
-    ):
-        restoration.unsupervised_wiener(
-            data,
-            otf,
-            reg=laplacian,
-            is_real=False,
-            user_params={"max_iter": 200, "min_iter": 30},
-            random_state=5,
-        )
-
-    with expected_warnings(
-        [
-            "`seed` is a deprecated argument name",
-        ]
-    ):
-        restoration.unsupervised_wiener(
-            data,
-            otf,
-            reg=laplacian,
-            is_real=False,
-            seed=5,
-        )
 
 
 def test_image_shape():

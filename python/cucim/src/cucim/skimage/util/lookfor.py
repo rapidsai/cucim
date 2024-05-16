@@ -1,8 +1,17 @@
 import sys
 
-import numpy as np
+from cucim.skimage._shared.utils import deprecate_func
+
+try:
+    from numpy import lookfor as np_lookfor
+except ImportError:
+    np_lookfor = None
 
 
+@deprecate_func(
+    deprecated_version="24.06",
+    removed_version="24.12",
+)
 def lookfor(what):
     """Do a keyword search on scikit-image docstrings.
 
@@ -11,21 +20,21 @@ def lookfor(what):
     what : str
         Words to look for.
 
+    Notes
+    -----
+    This untested search function is not currently working as expected will be
+    removed as it is unneeded.
+
     Examples
     --------
     >>> import cucim.skimage
     >>> cucim.skimage.lookfor('median')  # doctest: +SKIP
     Search results for 'median'
     ---------------------------
-    cucim.skimage.filters.median
-        Return local median of an image.
-    cucim.skimage.measure.block_reduce
-        Downsample image by applying function `func` to local blocks.
-    cucim.skimage.filters.threshold_local
-        Compute a threshold mask image based on local pixel neighborhood.
-    cucim.skimage.registration.optical_flow_ilk
-        Coarse to fine optical flow estimator.
-    cucim.skimage.registration.optical_flow_tvl1
-        Coarse to fine optical flow estimator.
+    Nothing found.
     """
-    return np.lookfor(what, sys.modules[__name__.split(".")[0]])
+    if np_lookfor is None:
+        raise RuntimeError(
+            "lookfor unavailable (numpy.lookfor was removed in numpy 2.0)"
+        )
+    return np_lookfor(what, sys.modules[__name__.split(".")[0]])

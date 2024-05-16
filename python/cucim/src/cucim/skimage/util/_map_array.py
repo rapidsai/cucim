@@ -29,11 +29,11 @@ def map_array(input_arr, input_vals, output_vals, out=None):
 
     Parameters
     ----------
-    input_arr : array of int, shape (M[, N][, P][, ...])
+    input_arr : array of int, shape (M[, ...])
         The input label image.
-    input_vals : array of int, shape (N,)
+    input_vals : array of int, shape (K,)
         The values to map from.
-    output_vals : array, shape (N,)
+    output_vals : array, shape (K,)
         The values to map to.
     out: array, same shape as `input_arr`
         The output array. Will be created if not provided. It should
@@ -43,6 +43,23 @@ def map_array(input_arr, input_vals, output_vals, out=None):
     -------
     out : array, same shape as `input_arr`
         The array of mapped values.
+
+    Notes
+    -----
+    If `input_arr` contains values that aren't covered by `input_vals`, they
+    are set to 0.
+
+    Examples
+    --------
+    >>> import cupy as cp
+    >>> import cucim.skimage as ski
+    >>> ski.util.map_array(
+    ...    input_arr=cp.array([[0, 2, 2, 0], [3, 4, 5, 0]]),
+    ...    input_vals=cp.array([1, 2, 3, 4, 6]),
+    ...    output_vals=cp.array([6, 7, 8, 9, 10]),
+    ... )
+    array([[0, 7, 7, 0],
+           [8, 9, 0, 0]])
     """
 
     if not cp.issubdtype(input_arr.dtype, cp.integer):
@@ -121,9 +138,9 @@ class ArrayMap:
 
     Parameters
     ----------
-    in_values : array of int, shape (N,)
+    in_values : array of int, shape (K,)
         The source values from which to map.
-    out_values : array, shape (N,)
+    out_values : array, shape (K,)
         The destination values from which to map.
     """
 
