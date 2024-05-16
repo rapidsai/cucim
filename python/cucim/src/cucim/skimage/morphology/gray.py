@@ -780,7 +780,6 @@ def black_tophat(image, footprint=None, out=None, *, mode="reflect", cval=0.0):
     """
     if out is image:
         # We need a temporary image
-        # We need a temporary image
         closed = closing(image, footprint, mode=mode, cval=cval)
         if cp.issubdtype(closed.dtype, bool):
             cp.logical_xor(closed, out, out=out)
