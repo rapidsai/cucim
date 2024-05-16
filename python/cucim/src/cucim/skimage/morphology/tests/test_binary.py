@@ -40,11 +40,35 @@ def test_binary_closing():
     testing.assert_array_equal(binary_res, gray_res)
 
 
+def test_binary_closing_extensive():
+    footprint = cp.array([[0, 0, 1], [0, 1, 1], [1, 1, 1]])
+
+    result_default = morphology.binary_closing(bw_img, footprint=footprint)
+    assert cp.all(result_default >= bw_img)
+
+    # mode="min" is expected to be not extensive
+    result_min = morphology.binary_closing(img, footprint=footprint, mode="min")
+    assert not cp.all(result_min >= bw_img)
+
+
 def test_binary_opening():
     footprint = morphology.square(3)
     binary_res = morphology.binary_opening(bw_img, footprint)
     gray_res = img_as_bool(morphology.opening(bw_img, footprint))
     testing.assert_array_equal(binary_res, gray_res)
+
+
+def test_binary_opening_anti_extensive():
+    footprint = cp.array([[0, 0, 1], [0, 1, 1], [1, 1, 1]])
+
+    result_default = morphology.binary_opening(bw_img, footprint=footprint)
+    assert cp.all(result_default <= bw_img)
+
+    # mode="max" is expected to be not extensive
+    result_max = morphology.binary_opening(
+        bw_img, footprint=footprint, mode="max"
+    )
+    assert not cp.all(result_max <= bw_img)
 
 
 def _get_decomp_test_data(function, ndim=2):
@@ -211,6 +235,21 @@ binary_functions = [
     morphology.binary_opening,
     morphology.binary_closing,
 ]
+
+
+@pytest.mark.parametrize("func", binary_functions)
+@pytest.mark.parametrize("mode", ["max", "min", "ignore"])
+def test_supported_mode(func, mode):
+    img = cp.ones((10, 10), dtype=bool)
+    func(img, mode=mode)
+
+
+@pytest.mark.parametrize("func", binary_functions)
+@pytest.mark.parametrize("mode", ["reflect", 3, None])
+def test_unsupported_mode(func, mode):
+    img = cp.ones((10, 10))
+    with pytest.raises(ValueError, match="unsupported mode"):
+        func(img, mode=mode)
 
 
 @pytest.mark.parametrize("function", binary_functions)
