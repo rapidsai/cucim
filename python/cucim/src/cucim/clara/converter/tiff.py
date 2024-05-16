@@ -73,11 +73,12 @@ def svs2tif(
     logger.info("      num_workers: %d", num_workers)
     logger.info("      compression: %s", compression)
     logger.info("  output filename: %s", output_filename)
-
+    compressionargs = None
     if compression is not None:
         # handles only jpeg or None (no compression)
         if compression.lower() == "jpeg":
-            compression = ("jpeg", 95)
+            compression = "jpeg"
+            compressionargs = {"level": 95}
         else:
             raise ValueError(
                 f"Unsupported compression: {compression}."
@@ -198,9 +199,10 @@ def svs2tif(
                         resolution=(
                             x_resolution // 2**level,
                             y_resolution // 2**level,
-                            resolution_unit,
                         ),
+                        resolutionunit=resolution_unit,
                         compression=compression,  # requires imagecodecs
+                        compressionargs=compressionargs,
                         subfiletype=subfiletype,
                     )
                 logger.info("Done.")
