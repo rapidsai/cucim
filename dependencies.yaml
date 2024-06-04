@@ -37,6 +37,14 @@ files:
     extras:
       table: build-system
     includes:
+      - rapids_build_setuptools
+  py_rapids_build:
+    output: pyproject
+    pyproject_dir: python/cucim
+    extras:
+      table: tool.rapids-build-backend
+      key: requires
+    includes:
       - build
   py_run:
     output: pyproject
@@ -92,7 +100,6 @@ dependencies:
           - cxx-compiler
       - output_types: [requirements, pyproject]
         packages:
-          - setuptools>=24.2.0
           - wheel
     specific:
       - output_types: conda
@@ -240,6 +247,12 @@ dependencies:
           - matrix:
             packages:
               - python>=3.8,<3.12
+  rapids_build_setuptools:
+    common:
+      - output_types: [conda, requirements, pyproject]
+        packages:
+          - rapids-build-backend>=0.3.0,<0.4.0.dev0
+          - setuptools>=24.2.0
   run:
     common:
       - output_types: [conda, requirements, pyproject]
@@ -266,9 +279,18 @@ dependencies:
           # Not sure where these go, if anywhere:
           # - openslide
           # - xorg-libxcb
+    specific:
       - output_types: [requirements, pyproject]
-        packages:
-          - cupy-cuda11x>=12.0.0
+        matrices:
+          - matrix: {cuda: "12.*"}
+            packages:
+              - cupy-cuda12x>=12.0.0
+          - matrix: {cuda: "11.*"}
+            packages:
+              - &cupy_cu11 cupy-cuda11x>=12.0.0
+          - matrix:
+            packages:
+              - *cupy_cu11
   test_python:
     common:
       - output_types: [conda, requirements, pyproject]
