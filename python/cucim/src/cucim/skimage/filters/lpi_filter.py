@@ -233,9 +233,9 @@ def wiener(
 
     Parameters
     ----------
-    data : (M,N) ndarray
+    data : (M, N) ndarray
         Input data.
-    K : float or (M,N) ndarray
+    K : float or (M, N) ndarray
         Ratio between power spectrum of noise and undegraded
         image.
     impulse_response : callable `f(r, c, **filter_params)`

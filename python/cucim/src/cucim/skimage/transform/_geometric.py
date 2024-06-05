@@ -7,6 +7,7 @@ import cupy as cp
 import numpy as np
 from scipy import spatial
 
+from .._shared.compat import NP_COPY_IF_NEEDED
 from .._shared.utils import get_bound_method_class, safe_as_int
 
 _sin, _cos = math.sin, math.cos
@@ -233,7 +234,7 @@ class GeometricTransform:
 
         Returns
         -------
-        residuals : (N, ) ndarray
+        residuals : (N,) ndarray
             Residual for coordinate.
 
         """
@@ -273,6 +274,57 @@ class FundamentalMatrixTransform(GeometricTransform):
     params : (3, 3) ndarray
         Fundamental matrix.
 
+    Examples
+    --------
+    >>> import numpy as np
+    >>> import cucim.skimage as ski
+    >>> tform_matrix = ski.transform.FundamentalMatrixTransform()
+
+    Define source and destination points:
+
+    >>> src = np.array([1.839035, 1.924743,
+    ...                 0.543582, 0.375221,
+    ...                 0.473240, 0.142522,
+    ...                 0.964910, 0.598376,
+    ...                 0.102388, 0.140092,
+    ...                15.994343, 9.622164,
+    ...                 0.285901, 0.430055,
+    ...                 0.091150, 0.254594]).reshape(-1, 2)
+    >>> dst = np.array([1.002114, 1.129644,
+    ...                 1.521742, 1.846002,
+    ...                 1.084332, 0.275134,
+    ...                 0.293328, 0.588992,
+    ...                 0.839509, 0.087290,
+    ...                 1.779735, 1.116857,
+    ...                 0.878616, 0.602447,
+    ...                 0.642616, 1.028681]).reshape(-1, 2)
+
+    Estimate the transformation matrix:
+
+    >>> tform_matrix.estimate(src, dst)
+    True
+    >>> tform_matrix.params
+    array([[-0.21785884,  0.41928191, -0.03430748],
+           [-0.07179414,  0.04516432,  0.02160726],
+           [ 0.24806211, -0.42947814,  0.02210191]])
+
+    Compute the Sampson distance:
+
+    >>> tform_matrix.residuals(src, dst)
+    array([0.0053886 , 0.00526101, 0.08689701, 0.01850534, 0.09418259,
+           0.00185967, 0.06160489, 0.02655136])
+
+    Apply inverse transformation:
+
+    >>> tform_matrix.inverse(dst)
+    array([[-0.0513591 ,  0.04170974,  0.01213043],
+           [-0.21599496,  0.29193419,  0.00978184],
+           [-0.0079222 ,  0.03758889, -0.00915389],
+           [ 0.14187184, -0.27988959,  0.02476507],
+           [ 0.05890075, -0.07354481, -0.00481342],
+           [-0.21985267,  0.36717464, -0.01482408],
+           [ 0.01339569, -0.03388123,  0.00497605],
+           [ 0.03420927, -0.1135812 ,  0.02228236]])
     """
 
     # CuPy Backend: if matrix is None cannot infer array module from it
@@ -435,7 +487,7 @@ class FundamentalMatrixTransform(GeometricTransform):
 
         Returns
         -------
-        residuals : (N, ) ndarray
+        residuals : (N,) ndarray
             Sampson distance.
 
         """
@@ -661,7 +713,8 @@ class ProjectiveTransform(GeometricTransform):
     def _apply_mat(self, coords, matrix):
         xp = cp.get_array_module(coords)
         ndim = matrix.shape[0] - 1
-        coords = xp.array(coords, copy=False, ndmin=2)
+        copy = NP_COPY_IF_NEEDED if xp == np else False
+        coords = xp.array(coords, copy=copy, ndmin=2)
 
         src = xp.concatenate([coords, xp.ones((coords.shape[0], 1))], axis=1)
         dst = src @ matrix.T
@@ -887,14 +940,14 @@ class ProjectiveTransform(GeometricTransform):
         paramstr = self.__nice__()
         classname = self.__class__.__name__
         classstr = classname
-        return "<{}({}) at {}>".format(classstr, paramstr, hex(id(self)))
+        return f"<{classstr}({paramstr}) at {hex(id(self))}>"
 
     def __str__(self):
         """Add standard str formatting around a __nice__ string"""
         paramstr = self.__nice__()
         classname = self.__class__.__name__
         classstr = classname
-        return "<{}({})>".format(classstr, paramstr)
+        return f"<{classstr}({paramstr})>"
 
     @property
     def dimensionality(self):
@@ -1357,7 +1410,7 @@ class EuclideanTransform(ProjectiveTransform):
 
     where the homogeneous transformation matrix is::
 
-        [[a0  b0  a1]
+        [[a0 -b0  a1]
          [b0  a0  b1]
          [0   0    1]]
 

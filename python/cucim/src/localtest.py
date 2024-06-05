@@ -79,7 +79,7 @@ class Timer(ContextDecorator):
     def __exit__(self, exc_type, exc, exc_tb):
         if not self.end:
             self.elapsed_time()
-        print("{} : {}".format(self.message, self.end - self.start))
+        print(f"{self.message} : {self.end - self.start}")
 
 
 num_threads = os.cpu_count()
@@ -142,9 +142,7 @@ for num_workers in range(1, num_threads + 1):
         cucim_time = timer.elapsed_time()
         cucim_tot_time += cucim_time
     print(
-        "  Performance gain (OpenSlide/cuCIM): {}".format(
-            openslide_time / cucim_time
-        )
+        f"  Performance gain (OpenSlide/cuCIM): {openslide_time / cucim_time}"
     )
 
 print("Total time (OpenSlide):", openslide_tot_time)

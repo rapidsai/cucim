@@ -64,6 +64,7 @@ PROPS = {
     "mean_intensity": "intensity_mean",
     "MinIntensity": "intensity_min",
     "min_intensity": "intensity_min",
+    "std_intensity": "intensity_std",
     "MinorAxisLength": "axis_minor_length",
     "minor_axis_length": "axis_minor_length",
     "Moments": "moments",
@@ -119,6 +120,7 @@ COL_DTYPES = {
     "intensity_max": float,
     "intensity_mean": float,
     "intensity_min": float,
+    "intensity_std": float,
     "label": int,
     "moments": float,
     "moments_central": float,
@@ -145,6 +147,7 @@ _require_intensity_image = (
     "intensity_max",
     "intensity_mean",
     "intensity_min",
+    "intensity_std",
     "moments_weighted",
     "moments_weighted_central",
     "centroid_weighted",
@@ -229,7 +232,10 @@ def _cached(f):
         cache = obj._cache
         prop = f.__name__
 
-        if not ((prop in cache) and obj._cache_active):
+        if not obj._cache_active:
+            return f(obj)
+
+        if prop not in cache:
             cache[prop] = f(obj)
 
         return cache[prop]
@@ -589,6 +595,11 @@ class RegionProperties:
         return cp.min(vals, axis=0).astype(cp.float64, copy=False)
 
     @property
+    def intensity_std(self):
+        vals = self.image_intensity[self.image]
+        return cp.std(vals, axis=0)
+
+    @property
     def axis_major_length(self):
         if self._ndim == 2:
             l1 = self.inertia_tensor_eigvals[0]
@@ -817,7 +828,7 @@ def _props_to_dict(regions, properties=("label", "bbox"), separator="-"):
 
     Parameters
     ----------
-    regions : (N,) list
+    regions : (K,) list
         List of RegionProperties objects as returned by :func:`regionprops`.
     properties : tuple or list of str, optional
         Properties that will be included in the resulting dictionary
@@ -986,13 +997,12 @@ def regionprops_table(
 
     Parameters
     ----------
-    label_image : (N, M[, P]) ndarray
+    label_image : (M, N[, P]) ndarray
         Labeled input image. Labels with value 0 are ignored.
     intensity_image : (M, N[, P][, C]) ndarray, optional
         Intensity (i.e., input) image with same size as labeled image, plus
-        optionally an extra dimension for multichannel data. Currently,
-        this extra channel dimension, if present, must be the last axis.
-        Default is None.
+        optionally an extra dimension for multichannel data. The channel
+        dimension, if present, must be the last axis. Default is None.
 
         .. versionchanged:: 0.18.0
             The ability to provide an extra dimension for channels was added.
@@ -1025,7 +1035,7 @@ def regionprops_table(
         issued. A property computation function must take a region mask as its
         first argument. If the property requires an intensity image, it must
         accept the intensity image as the second argument.
-    spacing: tuple of float, shape (ndim, )
+    spacing: tuple of float, shape (ndim,)
         The pixel spacing along each axis of the image.
 
     Returns
@@ -1190,7 +1200,7 @@ def regionprops(
         issued. A property computation function must take a region mask as its
         first argument. If the property requires an intensity image, it must
         accept the intensity image as the second argument.
-    spacing: tuple of float, shape (ndim, )
+    spacing: tuple of float, shape (ndim,)
         The pixel spacing along each axis of the image.
 
     Returns
@@ -1235,9 +1245,9 @@ def regionprops(
     **centroid_weighted_local** : array
         Centroid coordinate tuple ``(row, col)``, relative to region bounding
         box, weighted with intensity image.
-    **coords_scaled** : (N, 2) ndarray
+    **coords_scaled** : (K, 2) ndarray
         Coordinate list ``(row, col)``of the region scaled by ``spacing``.
-    **coords** : (N, 2) ndarray
+    **coords** : (K, 2) ndarray
         Coordinate list ``(row, col)`` of the region.
     **eccentricity** : float
         Eccentricity of the ellipse that has the same second-moments as the
@@ -1278,6 +1288,8 @@ def regionprops(
         Value with the mean intensity in the region.
     **intensity_min** : float
         Value with the least intensity in the region.
+    **intensity_std** : float
+        Standard deviation of the intensity in the region.
     **label** : int
         The label in the labeled input image.
     **moments** : (3, 3) ndarray

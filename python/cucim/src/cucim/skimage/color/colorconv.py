@@ -58,7 +58,6 @@ from scipy import linalg
 from .._shared.utils import (
     _supported_float_type,
     channel_as_last_axis,
-    deprecate_func,
     identity,
 )
 from ..util import dtype, dtype_limits
@@ -80,7 +79,7 @@ def convert_colorspace(arr, fromspace, tospace, *, channel_axis=-1):
 
     Parameters
     ----------
-    arr : (..., 3, ...) array_like
+    arr : (..., C=3, ...) array_like
         The image to convert. By default, the final dimension denotes
         channels.
     fromspace : str
@@ -93,7 +92,7 @@ def convert_colorspace(arr, fromspace, tospace, *, channel_axis=-1):
 
     Returns
     -------
-    out : (..., 3, ...) ndarray
+    out : (..., C=3, ...) ndarray
         The converted image. Same dimensions as input.
 
     Raises
@@ -206,7 +205,7 @@ def rgba2rgb(rgba, background=(1, 1, 1), *, channel_axis=-1):
 
     Parameters
     ----------
-    rgba : (..., 4, ...) array_like
+    rgba : (..., C=4, ...) array_like
         The image in RGBA format. By default, the final dimension denotes
         channels.
     background : array_like
@@ -218,7 +217,7 @@ def rgba2rgb(rgba, background=(1, 1, 1), *, channel_axis=-1):
 
     Returns
     -------
-    out : (..., 3, ...) ndarray
+    out : (..., C=3, ...) ndarray
         The image in RGB format. Same dimensions as input.
 
     Raises
@@ -326,7 +325,7 @@ def rgb2hsv(rgb, *, channel_axis=-1):
 
     Parameters
     ----------
-    rgb : (..., 3, ...) array_like
+    rgb : (..., C=3, ...) array_like
         The image in RGB format. By default, the final dimension denotes
         channels.
     channel_axis : int, optional
@@ -335,13 +334,13 @@ def rgb2hsv(rgb, *, channel_axis=-1):
 
     Returns
     -------
-    out : (..., 3, ...) ndarray
+    out : (..., C=3, ...) ndarray
         The image in HSV format. Same dimensions as input.
 
     Raises
     ------
     ValueError
-        If `rgb` is not at least 2-D with shape (..., 3, ...).
+        If `rgb` is not at least 2-D with shape (..., C=3, ...).
 
     Notes
     -----
@@ -699,43 +698,6 @@ def xyz_tristimulus_values(*, illuminant, observer, dtype=None):
         )
 
 
-@deprecate_func(
-    hint="Use `skimage.color.xyz_tristimulus_values` instead.",
-    deprecated_version="23.08",
-    removed_version="24.06",
-)
-def get_xyz_coords(illuminant, observer, dtype=float):
-    """Get the XYZ coordinates of the given illuminant and observer [1]_.
-
-    Parameters
-    ----------
-    illuminant : {"A", "B", "C", "D50", "D55", "D65", "D75", "E"}, optional
-        The name of the illuminant (the function is NOT case sensitive).
-    observer : {"2", "10", "R"}, optional
-        One of: 2-degree observer, 10-degree observer, or 'R' observer as in
-        R function grDevices::convertColor.
-    dtype: dtype, optional
-        Output data type.
-
-    Returns
-    -------
-    out : array
-        Array with 3 elements containing the XYZ coordinates of the given
-        illuminant.
-
-    Raises
-    ------
-    ValueError
-        If either the illuminant or the observer angle are not supported or
-        unknown.
-
-    References
-    ----------
-    .. [1] https://en.wikipedia.org/wiki/Standard_illuminant
-    """
-    return xyz_tristimulus_values(illuminant=illuminant, observer=observer)
-
-
 # Haematoxylin-Eosin-DAB colorspace
 # From original Ruifrok's paper: A. C. Ruifrok and D. A. Johnston,
 # "Quantification of histochemical staining by color deconvolution,"
@@ -845,12 +807,12 @@ def _convert(matrix, arr, pre='', post='', name='_convert'):
     ----------
     matrix : array_like
         The 3x3 matrix to use.
-    arr : (..., 3) array_like
+    arr : (..., C=3) array_like
         The input array. Final dimension denotes channels.
 
     Returns
     -------
-    out : (..., 3) ndarray
+    out : (..., C=3) ndarray
         The converted array. Same dimensions as input.
     """
     arr = _prepare_colorarray(arr)
@@ -881,7 +843,7 @@ def xyz2rgb(xyz, *, channel_axis=-1):
 
     Parameters
     ----------
-    xyz : (..., 3, ...) array_like
+    xyz : (..., C=3, ...) array_like
         The image in XYZ format. By default, the final dimension denotes
         channels.
     channel_axis : int, optional
@@ -890,13 +852,13 @@ def xyz2rgb(xyz, *, channel_axis=-1):
 
     Returns
     -------
-    out : (..., 3, ...) ndarray
+    out : (..., C=3, ...) ndarray
         The image in RGB format. Same dimensions as input.
 
     Raises
     ------
     ValueError
-        If `xyz` is not at least 2-D with shape (..., 3, ...).
+        If `xyz` is not at least 2-D with shape (..., C=3, ...).
 
     Notes
     -----
@@ -941,7 +903,7 @@ def rgb2xyz(rgb, *, channel_axis=-1):
 
     Parameters
     ----------
-    rgb : (..., 3, ...) array_like
+    rgb : (..., C=3, ...) array_like
         The image in RGB format. By default, the final dimension denotes
         channels.
     channel_axis : int, optional
@@ -950,13 +912,13 @@ def rgb2xyz(rgb, *, channel_axis=-1):
 
     Returns
     -------
-    out : (..., 3, ...) ndarray
+    out : (..., C=3, ...) ndarray
         The image in XYZ format. Same dimensions as input.
 
     Raises
     ------
     ValueError
-        If `rgb` is not at least 2-D with shape (..., 3, ...).
+        If `rgb` is not at least 2-D with shape (..., C=3, ...).
 
     Notes
     -----
@@ -999,7 +961,7 @@ def rgb2rgbcie(rgb, *, channel_axis=-1):
 
     Parameters
     ----------
-    rgb : (..., 3, ...) array_like
+    rgb : (..., C=3, ...) array_like
         The image in RGB format. By default, the final dimension denotes
         channels.
     channel_axis : int, optional
@@ -1008,13 +970,13 @@ def rgb2rgbcie(rgb, *, channel_axis=-1):
 
     Returns
     -------
-    out : (..., 3, ...) ndarray
+    out : (..., C=3, ...) ndarray
         The image in RGB CIE format. Same dimensions as input.
 
     Raises
     ------
     ValueError
-        If `rgb` is not at least 2-D with shape (..., 3, ...).
+        If `rgb` is not at least 2-D with shape (..., C=3, ...).
 
     References
     ----------
@@ -1036,7 +998,7 @@ def rgbcie2rgb(rgbcie, *, channel_axis=-1):
 
     Parameters
     ----------
-    rgbcie : (..., 3, ...) array_like
+    rgbcie : (..., C=3, ...) array_like
         The image in RGB CIE format. By default, the final dimension denotes
         channels.
     channel_axis : int, optional
@@ -1045,13 +1007,13 @@ def rgbcie2rgb(rgbcie, *, channel_axis=-1):
 
     Returns
     -------
-    out : (..., 3, ...) ndarray
+    out : (..., C=3, ...) ndarray
         The image in RGB format. Same dimensions as input.
 
     Raises
     ------
     ValueError
-        If `rgbcie` is not at least 2-D with shape (..., 3, ...).
+        If `rgbcie` is not at least 2-D with shape (..., C=3, ...).
 
     References
     ----------
@@ -1085,7 +1047,7 @@ def rgb2gray(rgb, *, channel_axis=-1):
 
     Parameters
     ----------
-    rgb : (..., 3, ...) array_like
+    rgb : (..., C=3, ...) array_like
         The image in RGB format. By default, the final dimension denotes
         channels.
 
@@ -1098,7 +1060,7 @@ def rgb2gray(rgb, *, channel_axis=-1):
     Raises
     ------
     ValueError
-        If `rgb` is not at least 2-D with shape (..., 3, ...).
+        If `rgb` is not at least 2-D with shape (..., C=3, ...).
 
     Notes
     -----
@@ -1129,7 +1091,7 @@ def rgb2gray(rgb, *, channel_axis=-1):
     return gray
 
 
-def gray2rgba(image, alpha=None, *, channel_axis=-1):
+def gray2rgba(image, alpha=None, *, channel_axis=-1, check_alpha=True):
     """Create a RGBA representation of a gray-level image.
 
     Parameters
@@ -1143,6 +1105,10 @@ def gray2rgba(image, alpha=None, *, channel_axis=-1):
     channel_axis : int, optional
         This parameter indicates which axis of the output array will correspond
         to channels.
+    check_alpha : bool, optional
+        Checking for unsafe casting of alpha adds overhead, so can be disabled
+        on request. Note: This kwarg is not present in scikit-image (it always
+        checks the alpha array).
 
     Returns
     -------
@@ -1151,20 +1117,36 @@ def gray2rgba(image, alpha=None, *, channel_axis=-1):
         image shape.
     """
 
-    alpha_min, alpha_max = dtype_limits(image, clip_negative=False)
-
     if alpha is None:
-        alpha = alpha_max
-
-    if not cp.can_cast(alpha, image.dtype):
-        warn("alpha can't be safely cast to image dtype {}"
-             .format(image.dtype.name), stacklevel=2)
+        _, alpha = dtype_limits(image, clip_negative=False)
 
     if np.isscalar(alpha):
-        alpha = cp.full(image.shape, alpha, dtype=image.dtype)
-    elif alpha.shape != image.shape:
-        raise ValueError("alpha.shape must match image.shape")
-    rgba = np.stack((image,) * 3 + (alpha,), axis=channel_axis)
+        if check_alpha:
+            # do not use np.can_cast here for NumPy 2.0 compatibility
+            with np.errstate(over="ignore", under="ignore"):
+                alpha_cast = np.asarray(alpha).astype(image.dtype)
+            if alpha_cast != alpha:
+                warn(
+                    'alpha cannot be safely cast to image dtype '
+                    f'{image.dtype.name}',
+                    stacklevel=2
+                )
+        alpha_arr = cp.full(image.shape, alpha, dtype=image.dtype)
+    else:
+        alpha_arr = cp.asarray(alpha).astype(image.dtype, copy=False)
+        if check_alpha and not cp.array_equal(alpha, alpha_arr):
+            warn(
+                'alpha cannot be safely cast to image dtype '
+                f'{image.dtype.name}',
+                stacklevel=2
+            )
+        if alpha_arr.shape != image.shape:
+            try:
+                alpha_arr = cp.broadcast_to(alpha_arr, image.shape)
+            except ValueError as e:
+                raise ValueError("alpha.shape must match image.shape") from e
+
+    rgba = np.stack((image,) * 3 + (alpha_arr,), axis=channel_axis)
     return rgba
 
 
@@ -1181,7 +1163,7 @@ def gray2rgb(image, *, channel_axis=-1):
 
     Returns
     -------
-    rgb : (..., 3, ...) ndarray
+    rgb : (..., C=3, ...) ndarray
         RGB image. A new dimension of length 3 is added to input image.
 
     Notes
@@ -1231,7 +1213,7 @@ def xyz2lab(xyz, illuminant="D65", observer="2", *, channel_axis=-1):
 
     Parameters
     ----------
-    xyz : (..., 3, ...) array_like
+    xyz : (..., C=3, ...) array_like
         The image in XYZ format. By default, the final dimension denotes
         channels.
     illuminant : {"A", "B", "C", "D50", "D55", "D65", "D75", "E"}, optional
@@ -1245,13 +1227,13 @@ def xyz2lab(xyz, illuminant="D65", observer="2", *, channel_axis=-1):
 
     Returns
     -------
-    out : (..., 3, ...) ndarray
+    out : (..., C=3, ...) ndarray
         The image in CIE-LAB format. Same dimensions as input.
 
     Raises
     ------
     ValueError
-        If `xyz` is not at least 2-D with shape (..., 3, ...).
+        If `xyz` is not at least 2-D with shape (..., C=3, ...).
     ValueError
         If either the illuminant or the observer angle is unsupported or
         unknown.
@@ -1335,7 +1317,7 @@ def lab2xyz(lab, illuminant="D65", observer="2", *, channel_axis=-1):
 
     Parameters
     ----------
-    lab : (..., 3, ...) array_like
+    lab : (..., C=3, ...) array_like
         The input image in CIE-LAB color space.
         Unless `channel_axis` is set, the final dimension denotes the CIE-LAB
         channels.
@@ -1351,13 +1333,13 @@ def lab2xyz(lab, illuminant="D65", observer="2", *, channel_axis=-1):
 
     Returns
     -------
-    out : (..., 3, ...) ndarray
+    out : (..., C=3, ...) ndarray
         The image in XYZ color space, of same shape as input.
 
     Raises
     ------
     ValueError
-        If `lab` is not at least 2-D with shape (..., 3, ...).
+        If `lab` is not at least 2-D with shape (..., C=3, ...).
     ValueError
         If either the illuminant or the observer angle are not supported or
         unknown.
@@ -1399,7 +1381,7 @@ def _lab2xyz(lab, illuminant, observer, channel_axis):
 
     Returns
     -------
-    out : (..., 3, ...) ndarray
+    out : (..., C=3, ...) ndarray
         The image in XYZ format. Same dimensions as input.
     n_invalid : int
         Number of invalid pixels in the Z channel after conversion.
@@ -1430,7 +1412,7 @@ def rgb2lab(rgb, illuminant="D65", observer="2", *, channel_axis=-1):
 
     Parameters
     ----------
-    rgb : (..., 3, ...) array_like
+    rgb : (..., C=3, ...) array_like
         The image in RGB format. By default, the final dimension denotes
         channels.
     illuminant : {"A", "B", "C", "D50", "D55", "D65", "D75", "E"}, optional
@@ -1443,13 +1425,13 @@ def rgb2lab(rgb, illuminant="D65", observer="2", *, channel_axis=-1):
 
     Returns
     -------
-    out : (..., 3, ...) ndarray
+    out : (..., C=3, ...) ndarray
         The image in Lab format. Same dimensions as input.
 
     Raises
     ------
     ValueError
-        If `rgb` is not at least 2-D with shape (..., 3, ...).
+        If `rgb` is not at least 2-D with shape (..., C=3, ...).
 
     Notes
     -----
@@ -1475,7 +1457,7 @@ def lab2rgb(lab, illuminant="D65", observer="2", *, channel_axis=-1):
 
     Parameters
     ----------
-    lab : (..., 3, ...) array_like
+    lab : (..., C=3, ...) array_like
         The input image in CIE-LAB color space.
         Unless `channel_axis` is set, the final dimension denotes the CIE-LAB
         channels.
@@ -1491,13 +1473,13 @@ def lab2rgb(lab, illuminant="D65", observer="2", *, channel_axis=-1):
 
     Returns
     -------
-    out : (..., 3, ...) ndarray
+    out : (..., C=3, ...) ndarray
         The image in sRGB color space, of same shape as input.
 
     Raises
     ------
     ValueError
-        If `lab` is not at least 2-D with shape (..., 3, ...).
+        If `lab` is not at least 2-D with shape (..., C=3, ...).
 
     Notes
     -----
@@ -1582,7 +1564,7 @@ def xyz2luv(xyz, illuminant="D65", observer="2", *, channel_axis=-1):
 
     Parameters
     ----------
-    xyz : (..., 3, ...) array_like
+    xyz : (..., C=3, ...) array_like
         The image in XYZ format. By default, the final dimension denotes
         channels.
     illuminant : {"A", "B", "C", "D50", "D55", "D65", "D75", "E"}, optional
@@ -1595,13 +1577,13 @@ def xyz2luv(xyz, illuminant="D65", observer="2", *, channel_axis=-1):
 
     Returns
     -------
-    out : (..., 3, ...) ndarray
+    out : (..., C=3, ...) ndarray
         The image in CIE-Luv format. Same dimensions as input.
 
     Raises
     ------
     ValueError
-        If `xyz` is not at least 2-D with shape (..., 3, ...).
+        If `xyz` is not at least 2-D with shape (..., C=3, ...).
     ValueError
         If either the illuminant or the observer angle are not supported or
         unknown.
@@ -1688,7 +1670,7 @@ def luv2xyz(luv, illuminant="D65", observer="2", *, channel_axis=-1):
 
     Parameters
     ----------
-    luv : (..., 3, ...) array_like
+    luv : (..., C=3, ...) array_like
         The image in CIE-Luv format. By default, the final dimension denotes
         channels.
     illuminant : {"A", "B", "C", "D50", "D55", "D65", "D75", "E"}, optional
@@ -1701,13 +1683,13 @@ def luv2xyz(luv, illuminant="D65", observer="2", *, channel_axis=-1):
 
     Returns
     -------
-    out : (..., 3, ...) ndarray
+    out : (..., C=3, ...) ndarray
         The image in XYZ format. Same dimensions as input.
 
     Raises
     ------
     ValueError
-        If `luv` is not at least 2-D with shape (..., 3, ...).
+        If `luv` is not at least 2-D with shape (..., C=3, ...).
     ValueError
         If either the illuminant or the observer angle are not supported or
         unknown.
@@ -1741,7 +1723,7 @@ def rgb2luv(rgb, *, channel_axis=-1):
 
     Parameters
     ----------
-    rgb : (..., 3, ...) array_like
+    rgb : (..., C=3, ...) array_like
         The image in RGB format. By default, the final dimension denotes
         channels.
     channel_axis : int, optional
@@ -1750,13 +1732,13 @@ def rgb2luv(rgb, *, channel_axis=-1):
 
     Returns
     -------
-    out : (..., 3, ...) ndarray
+    out : (..., C=3, ...) ndarray
         The image in CIE Luv format. Same dimensions as input.
 
     Raises
     ------
     ValueError
-        If `rgb` is not at least 2-D with shape (..., 3, ...).
+        If `rgb` is not at least 2-D with shape (..., C=3, ...).
 
     Notes
     -----
@@ -1776,19 +1758,19 @@ def luv2rgb(luv, *, channel_axis=-1):
 
     Parameters
     ----------
-    luv : (..., 3, ...) array_like
+    luv : (..., C=3, ...) array_like
         The image in CIE Luv format. By default, the final dimension denotes
         channels.
 
     Returns
     -------
-    out : (..., 3, ...) ndarray
+    out : (..., C=3, ...) ndarray
         The image in RGB format. Same dimensions as input.
 
     Raises
     ------
     ValueError
-        If `luv` is not at least 2-D with shape (..., 3, ...).
+        If `luv` is not at least 2-D with shape (..., C=3, ...).
 
     Notes
     -----
@@ -1803,7 +1785,7 @@ def rgb2hed(rgb, *, channel_axis=-1):
 
     Parameters
     ----------
-    rgb : (..., 3, ...) array_like
+    rgb : (..., C=3, ...) array_like
         The image in RGB format. By default, the final dimension denotes
         channels.
     channel_axis : int, optional
@@ -1812,13 +1794,13 @@ def rgb2hed(rgb, *, channel_axis=-1):
 
     Returns
     -------
-    out : (..., 3, ...) ndarray
+    out : (..., C=3, ...) ndarray
         The image in HED format. Same dimensions as input.
 
     Raises
     ------
     ValueError
-        If `rgb` is not at least 2-D with shape (..., 3, ...).
+        If `rgb` is not at least 2-D with shape (..., C=3, ...).
 
     References
     ----------
@@ -1844,7 +1826,7 @@ def hed2rgb(hed, *, channel_axis=-1):
 
     Parameters
     ----------
-    hed : (..., 3, ...) array_like
+    hed : (..., C=3, ...) array_like
         The image in the HED color space. By default, the final dimension
         denotes channels.
     channel_axis : int, optional
@@ -1853,13 +1835,13 @@ def hed2rgb(hed, *, channel_axis=-1):
 
     Returns
     -------
-    out : (..., 3, ...) ndarray
+    out : (..., C=3, ...) ndarray
         The image in RGB. Same dimensions as input.
 
     Raises
     ------
     ValueError
-        If `hed` is not at least 2-D with shape (..., 3, ...).
+        If `hed` is not at least 2-D with shape (..., C=3, ...).
 
     References
     ----------
@@ -1906,7 +1888,7 @@ def separate_stains(rgb, conv_matrix, *, channel_axis=-1):
 
     Parameters
     ----------
-    rgb : (..., 3, ...) array_like
+    rgb : (..., C=3, ...) array_like
         The image in RGB format. By default, the final dimension denotes
         channels.
     conv_matrix: ndarray
@@ -1917,13 +1899,13 @@ def separate_stains(rgb, conv_matrix, *, channel_axis=-1):
 
     Returns
     -------
-    out : (..., 3, ...) ndarray
+    out : (..., C=3, ...) ndarray
         The image in stain color space. Same dimensions as input.
 
     Raises
     ------
     ValueError
-        If `rgb` is not at least 2-D with shape (..., 3, ...).
+        If `rgb` is not at least 2-D with shape (..., C=3, ...).
 
     Notes
     -----
@@ -2016,7 +1998,7 @@ def combine_stains(stains, conv_matrix, *, channel_axis=-1):
 
     Parameters
     ----------
-    stains : (..., 3, ...) array_like
+    stains : (..., C=3, ...) array_like
         The image in stain color space. By default, the final dimension denotes
         channels.
     conv_matrix: ndarray
@@ -2027,13 +2009,13 @@ def combine_stains(stains, conv_matrix, *, channel_axis=-1):
 
     Returns
     -------
-    out : (..., 3, ...) ndarray
+    out : (..., C=3, ...) ndarray
         The image in RGB format. Same dimensions as input.
 
     Raises
     ------
     ValueError
-        If `stains` is not at least 2-D with shape (..., 3, ...).
+        If `stains` is not at least 2-D with shape (..., C=3, ...).
 
     Notes
     -----
@@ -2115,7 +2097,7 @@ def lab2lch(lab, *, channel_axis=-1):
 
     Parameters
     ----------
-    lab : (..., 3, ...) array_like
+    lab : (..., C=3, ...) array_like
         The N-D image in CIE-LAB format. The last (``N+1``-th) dimension must
         have at least 3 elements, corresponding to the ``L``, ``a``, and ``b``
         color channels. Subsequent elements are copied.
@@ -2125,7 +2107,7 @@ def lab2lch(lab, *, channel_axis=-1):
 
     Returns
     -------
-    out : (..., 3, ...) ndarray
+    out : (..., C=3, ...) ndarray
         The image in LCH format, in a N-D array with same shape as input `lab`.
 
     Raises
@@ -2190,7 +2172,7 @@ def lch2lab(lch, *, channel_axis=-1):
 
     Parameters
     ----------
-    lch : (..., 3, ...) array_like
+    lch : (..., C=3, ...) array_like
         The N-D image in CIE-LCH format. The last (``N+1``-th) dimension must
         have at least 3 elements, corresponding to the ``L``, ``a``, and ``b``
         color channels.  Subsequent elements are copied.
@@ -2200,7 +2182,7 @@ def lch2lab(lch, *, channel_axis=-1):
 
     Returns
     -------
-    out : (..., 3, ...) ndarray
+    out : (..., C=3, ...) ndarray
         The image in LAB format, with same shape as input `lch`.
 
     Raises
@@ -2251,7 +2233,7 @@ def rgb2yuv(rgb, *, channel_axis=-1):
 
     Parameters
     ----------
-    rgb : (..., 3, ...) array_like
+    rgb : (..., C=3, ...) array_like
         The image in RGB format. By default, the final dimension denotes
         channels.
     channel_axis : int, optional
@@ -2260,13 +2242,13 @@ def rgb2yuv(rgb, *, channel_axis=-1):
 
     Returns
     -------
-    out : (..., 3, ...) ndarray
+    out : (..., C=3, ...) ndarray
         The image in YUV format. Same dimensions as input.
 
     Raises
     ------
     ValueError
-        If `rgb` is not at least 2-D with shape (..., 3, ...).
+        If `rgb` is not at least 2-D with shape (..., C=3, ...).
 
     Notes
     -----
@@ -2286,7 +2268,7 @@ def rgb2yiq(rgb, *, channel_axis=-1):
 
     Parameters
     ----------
-    rgb : (..., 3, ...) array_like
+    rgb : (..., C=3, ...) array_like
         The image in RGB format. By default, the final dimension denotes
         channels.
     channel_axis : int, optional
@@ -2295,13 +2277,13 @@ def rgb2yiq(rgb, *, channel_axis=-1):
 
     Returns
     -------
-    out : (..., 3, ...) ndarray
+    out : (..., C=3, ...) ndarray
         The image in YIQ format. Same dimensions as input.
 
     Raises
     ------
     ValueError
-        If `rgb` is not at least 2-D with shape (..., 3, ...).
+        If `rgb` is not at least 2-D with shape (..., C=3, ...).
     """
     return _convert(yiq_from_rgb, rgb, name='rgb2yiq')
 
@@ -2312,7 +2294,7 @@ def rgb2ypbpr(rgb, *, channel_axis=-1):
 
     Parameters
     ----------
-    rgb : (..., 3, ...) array_like
+    rgb : (..., C=3, ...) array_like
         The image in RGB format. By default, the final dimension denotes
         channels.
     channel_axis : int, optional
@@ -2321,13 +2303,13 @@ def rgb2ypbpr(rgb, *, channel_axis=-1):
 
     Returns
     -------
-    out : (..., 3, ...) ndarray
+    out : (..., C=3, ...) ndarray
         The image in YPbPr format. Same dimensions as input.
 
     Raises
     ------
     ValueError
-        If `rgb` is not at least 2-D with shape (..., 3, ...).
+        If `rgb` is not at least 2-D with shape (..., C=3, ...).
 
     References
     ----------
@@ -2342,7 +2324,7 @@ def rgb2ycbcr(rgb, *, channel_axis=-1):
 
     Parameters
     ----------
-    rgb : (..., 3, ...) array_like
+    rgb : (..., C=3, ...) array_like
         The image in RGB format. By default, the final dimension denotes
         channels.
     channel_axis : int, optional
@@ -2351,13 +2333,13 @@ def rgb2ycbcr(rgb, *, channel_axis=-1):
 
     Returns
     -------
-    out : (..., 3, ...) ndarray
+    out : (..., C=3, ...) ndarray
         The image in YCbCr format. Same dimensions as input.
 
     Raises
     ------
     ValueError
-        If `rgb` is not at least 2-D with shape (..., 3, ...).
+        If `rgb` is not at least 2-D with shape (..., C=3, ...).
 
     Notes
     -----
@@ -2383,7 +2365,7 @@ def rgb2ydbdr(rgb, *, channel_axis=-1):
 
     Parameters
     ----------
-    rgb : (..., 3, ...) array_like
+    rgb : (..., C=3, ...) array_like
         The image in RGB format. By default, the final dimension denotes
         channels.
     channel_axis : int, optional
@@ -2392,13 +2374,13 @@ def rgb2ydbdr(rgb, *, channel_axis=-1):
 
     Returns
     -------
-    out : (..., 3, ...) ndarray
+    out : (..., C=3, ...) ndarray
         The image in YDbDr format. Same dimensions as input.
 
     Raises
     ------
     ValueError
-        If `rgb` is not at least 2-D with shape (..., 3, ...).
+        If `rgb` is not at least 2-D with shape (..., C=3, ...).
 
     Notes
     -----
@@ -2418,19 +2400,19 @@ def yuv2rgb(yuv, *, channel_axis=-1):
 
     Parameters
     ----------
-    yuv : (..., 3, ...) array_like
+    yuv : (..., C=3, ...) array_like
         The image in YUV format. By default, the final dimension denotes
         channels.
 
     Returns
     -------
-    out : (..., 3, ...) ndarray
+    out : (..., C=3, ...) ndarray
         The image in RGB format. Same dimensions as input.
 
     Raises
     ------
     ValueError
-        If `yuv` is not at least 2-D with shape (..., 3, ...).
+        If `yuv` is not at least 2-D with shape (..., C=3, ...).
 
     References
     ----------
@@ -2445,7 +2427,7 @@ def yiq2rgb(yiq, *, channel_axis=-1):
 
     Parameters
     ----------
-    yiq : (..., 3, ...) array_like
+    yiq : (..., C=3, ...) array_like
         The image in YIQ format. By default, the final dimension denotes
         channels.
     channel_axis : int, optional
@@ -2454,13 +2436,13 @@ def yiq2rgb(yiq, *, channel_axis=-1):
 
     Returns
     -------
-    out : (..., 3, ...) ndarray
+    out : (..., C=3, ...) ndarray
         The image in RGB format. Same dimensions as input.
 
     Raises
     ------
     ValueError
-        If `yiq` is not at least 2-D with shape (..., 3, ...).
+        If `yiq` is not at least 2-D with shape (..., C=3, ...).
     """
     return _convert(rgb_from_yiq, yiq, name='yiq2rgb')
 
@@ -2471,7 +2453,7 @@ def ypbpr2rgb(ypbpr, *, channel_axis=-1):
 
     Parameters
     ----------
-    ypbpr : (..., 3, ...) array_like
+    ypbpr : (..., C=3, ...) array_like
         The image in YPbPr format. By default, the final dimension denotes
         channels.
     channel_axis : int, optional
@@ -2480,13 +2462,13 @@ def ypbpr2rgb(ypbpr, *, channel_axis=-1):
 
     Returns
     -------
-    out : (..., 3) ndarray
+    out : (..., C=3) ndarray
         The image in RGB format. Same dimensions as input.
 
     Raises
     ------
     ValueError
-        If `ypbpr` is not at least 2-D with shape (..., 3).
+        If `ypbpr` is not at least 2-D with shape (..., C=3).
 
     References
     ----------
@@ -2501,7 +2483,7 @@ def ycbcr2rgb(ycbcr, *, channel_axis=-1):
 
     Parameters
     ----------
-    ycbcr : (..., 3, ...) array_like
+    ycbcr : (..., C=3, ...) array_like
         The image in YCbCr format. By default, the final dimension denotes
         channels.
     channel_axis : int, optional
@@ -2510,13 +2492,13 @@ def ycbcr2rgb(ycbcr, *, channel_axis=-1):
 
     Returns
     -------
-    out : (..., 3, ...) ndarray
+    out : (..., C=3, ...) ndarray
         The image in RGB format. Same dimensions as input.
 
     Raises
     ------
     ValueError
-        If `ycbcr` is not at least 2-D with shape (..., 3, ...).
+        If `ycbcr` is not at least 2-D with shape (..., C=3, ...).
 
     Notes
     -----
@@ -2543,7 +2525,7 @@ def ydbdr2rgb(ydbdr, *, channel_axis=-1):
 
     Parameters
     ----------
-    ydbdr : (..., 3, ...) array_like
+    ydbdr : (..., C=3, ...) array_like
         The image in YDbDr format. By default, the final dimension denotes
         channels.
     channel_axis : int, optional
@@ -2552,13 +2534,13 @@ def ydbdr2rgb(ydbdr, *, channel_axis=-1):
 
     Returns
     -------
-    out : (..., 3, ...) ndarray
+    out : (..., C=3, ...) ndarray
         The image in RGB format. Same dimensions as input.
 
     Raises
     ------
     ValueError
-        If `ydbdr` is not at least 2-D with shape (..., 3, ...).
+        If `ydbdr` is not at least 2-D with shape (..., C=3, ...).
 
     Notes
     -----

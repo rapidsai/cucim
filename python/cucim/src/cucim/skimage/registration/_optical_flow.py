@@ -1,4 +1,3 @@
-# coding: utf-8
 """TV-L1 optical flow algorithm implementation.
 
 """
@@ -12,7 +11,7 @@ from cupyx.scipy import ndimage as ndi
 from .._shared._gradient import gradient
 from .._shared.utils import _supported_float_type
 from ..transform import warp
-from ._optical_flow_utils import coarse_to_fine, get_warp_points
+from ._optical_flow_utils import _coarse_to_fine, _get_warp_points
 
 
 def _tvl1(
@@ -31,9 +30,9 @@ def _tvl1(
     Parameters
     ----------
     reference_image : ndarray, shape (M, N[, P[, ...]])
-        The first gray scale image of the sequence.
+        The first grayscale image of the sequence.
     moving_image : ndarray, shape (M, N[, P[, ...]])
-        The second gray scale image of the sequence.
+        The second grayscale image of the sequence.
     flow0 : ndarray, shape (image0.ndim, M, N[, P[, ...]])
         Initialization for the vector field.
     attachment : float
@@ -56,7 +55,7 @@ def _tvl1(
 
     Returns
     -------
-    flow : ndarray, shape ((image0.ndim, M, N[, P[, ...]])
+    flow : ndarray, shape (image0.ndim, M, N[, P[, ...]])
         The estimated optical flow components for each axis.
 
     """
@@ -97,7 +96,7 @@ def _tvl1(
             )
 
         image1_warp = warp(
-            moving_image, get_warp_points(grid, flow_current), mode="edge"
+            moving_image, _get_warp_points(grid, flow_current), mode="edge"
         )
         # output_as_array=True stacks the gradients along the first axis
         grad = gradient(image1_warp, output_as_array=True)
@@ -181,14 +180,14 @@ def optical_flow_tvl1(
     Parameters
     ----------
     reference_image : ndarray, shape (M, N[, P[, ...]])
-        The first gray scale image of the sequence.
+        The first grayscale image of the sequence.
     moving_image : ndarray, shape (M, N[, P[, ...]])
-        The second gray scale image of the sequence.
+        The second grayscale image of the sequence.
     attachment : float, optional
         Attachment parameter (:math:`\lambda` in [1]_). The smaller
         this parameter is, the smoother the returned result will be.
     tightness : float, optional
-        Tightness parameter (:math:`\tau` in [1]_). It should have
+        Tightness parameter (:math:`\theta` in [1]_). It should have
         a small value in order to maintain attachment and
         regularization parts in correspondence.
     num_warp : int, optional
@@ -210,7 +209,7 @@ def optical_flow_tvl1(
 
     Returns
     -------
-    flow : ndarray, shape ((image0.ndim, M, N[, P[, ...]])
+    flow : ndarray, shape (image0.ndim, M, N[, P[, ...]])
         The estimated optical flow components for each axis.
 
     Notes
@@ -260,7 +259,7 @@ def optical_flow_tvl1(
         msg = f"dtype={dtype} is not supported. Try 'float32' or 'float64.'"
         raise ValueError(msg)
 
-    return coarse_to_fine(reference_image, moving_image, solver, dtype=dtype)
+    return _coarse_to_fine(reference_image, moving_image, solver, dtype=dtype)
 
 
 def _ilk(
@@ -271,9 +270,9 @@ def _ilk(
     Parameters
     ----------
     reference_image : ndarray, shape (M, N[, P[, ...]])
-        The first gray scale image of the sequence.
+        The first grayscale image of the sequence.
     moving_image : ndarray, shape (M, N[, P[, ...]])
-        The second gray scale image of the sequence.
+        The second grayscale image of the sequence.
     flow0 : ndarray, shape (reference_image.ndim, M, N[, P[, ...]])
         Initialization for the vector field.
     radius : int
@@ -289,7 +288,7 @@ def _ilk(
 
     Returns
     -------
-    flow : ndarray, shape ((reference_image.ndim, M, N[, P[, ...]])
+    flow : ndarray, shape (reference_image.ndim, M, N[, P[, ...]])
         The estimated optical flow components for each axis.
 
     """
@@ -325,7 +324,7 @@ def _ilk(
             flow = ndi.median_filter(flow, (1,) + ndim * (3,))
 
         moving_image_warp = warp(
-            moving_image, get_warp_points(grid, flow), mode="edge"
+            moving_image, _get_warp_points(grid, flow), mode="edge"
         )
         # output_as_array=True stacks the gradients along the first axis
         grad = gradient(moving_image_warp, output_as_array=True)
@@ -371,9 +370,9 @@ def optical_flow_ilk(
     Parameters
     ----------
     reference_image : ndarray, shape (M, N[, P[, ...]])
-        The first gray scale image of the sequence.
+        The first grayscale image of the sequence.
     moving_image : ndarray, shape (M, N[, P[, ...]])
-        The second gray scale image of the sequence.
+        The second grayscale image of the sequence.
     radius : int, optional
         Radius of the window considered around each pixel.
     num_warp : int, optional
@@ -393,7 +392,7 @@ def optical_flow_ilk(
 
     Returns
     -------
-    flow : ndarray, shape ((reference_image.ndim, M, N[, P[, ...]])
+    flow : ndarray, shape (reference_image.ndim, M, N[, P[, ...]])
         The estimated optical flow components for each axis.
 
     Notes
@@ -438,4 +437,4 @@ def optical_flow_ilk(
         msg = f"dtype={dtype} is not supported. Try 'float32' or 'float64.'"
         raise ValueError(msg)
 
-    return coarse_to_fine(reference_image, moving_image, solver, dtype=dtype)
+    return _coarse_to_fine(reference_image, moving_image, solver, dtype=dtype)

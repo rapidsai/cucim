@@ -13,7 +13,7 @@ def approximate_polygon(coords, tolerance):
 
     Parameters
     ----------
-    coords : (N, 2) array
+    coords : (K, 2) array
         Coordinate array.
     tolerance : float
         Maximum distance from original points of polygon to approximated
@@ -22,7 +22,7 @@ def approximate_polygon(coords, tolerance):
 
     Returns
     -------
-    coords : (M, 2) array
+    coords : (L, 2) array
         Approximated polygonal chain where M <= N.
 
     References
@@ -114,7 +114,7 @@ def subdivide_polygon(coords, degree=2, preserve_ends=False):
 
     Parameters
     ----------
-    coords : (N, 2) array
+    coords : (K, 2) array
         Coordinate array.
     degree : {1, 2, 3, 4, 5, 6, 7}, optional
         Degree of B-Spline. Default is 2.
@@ -124,7 +124,7 @@ def subdivide_polygon(coords, degree=2, preserve_ends=False):
 
     Returns
     -------
-    coords : (M, 2) array
+    coords : (L, 2) array
         Subdivided coordinate array.
 
     References

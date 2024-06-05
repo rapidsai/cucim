@@ -67,6 +67,9 @@ def integrate(ii, start, end):
     S : scalar or ndarray
         Integral (sum) over the given window(s).
 
+    See Also
+    --------
+    integral_image : Create an integral image / summed area table.
 
     Examples
     --------

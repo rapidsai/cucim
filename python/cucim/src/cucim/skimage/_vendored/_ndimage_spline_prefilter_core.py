@@ -85,7 +85,7 @@ def _causal_init_code(mode):
         c[0] *= z / (1 - z_n * z_n);
         c[0] += c0;"""
     else:
-        raise ValueError("invalid mode: {}".format(mode))
+        raise ValueError(f"invalid mode: {mode}")
     return code
 
 
@@ -114,7 +114,7 @@ def _anticausal_init_code(mode):
         code += """
         c[(n - 1) * element_stride] *= z / (z - 1);"""
     else:
-        raise ValueError("invalid mode: {}".format(mode))
+        raise ValueError(f"invalid mode: {mode}")
     return code
 
 

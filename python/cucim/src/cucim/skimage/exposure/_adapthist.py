@@ -15,8 +15,6 @@ import operator
 import cupy as cp
 import numpy as np
 
-# TODO: replace _misc.prod with math.prod once minimum Python >= 3.88
-from cucim import _misc
 from cucim.skimage.exposure.exposure import rescale_intensity
 
 from .._shared.utils import _supported_float_type
@@ -37,7 +35,7 @@ def equalize_adapthist(image, kernel_size=None, clip_limit=0.01, nbins=256):
 
     Parameters
     ----------
-    image : (N1, ...,NN[, C]) ndarray
+    image : (M[, ...][, C]) ndarray
         Input image.
     kernel_size : int or array_like, optional
         Defines the shape of contextual regions used in the algorithm. If
@@ -53,7 +51,7 @@ def equalize_adapthist(image, kernel_size=None, clip_limit=0.01, nbins=256):
 
     Returns
     -------
-    out : (N1, ...,NN[, C]) ndarray
+    out : (M[, ...][, C]) ndarray
         Equalized image with float64 dtype.
 
     See Also
@@ -103,7 +101,7 @@ def _clahe(image, kernel_size, clip_limit, nbins):
 
     Parameters
     ----------
-    image : (N1,...,NN) ndarray
+    image : (M[, ...]) ndarray
         Input image.
     kernel_size : int or N-tuple of int
         Defines the shape of contextual regions used in the algorithm.
@@ -115,7 +113,7 @@ def _clahe(image, kernel_size, clip_limit, nbins):
 
     Returns
     -------
-    out : (N1,...,NN) ndarray
+    out : (M[, ...]) ndarray
         Equalized image.
 
     The number of "effective" graylevels in the output image is set by `nbins`;
@@ -164,10 +162,10 @@ def _clahe(image, kernel_size, clip_limit, nbins):
     hist_blocks = image[tuple(hist_slices)].reshape(hist_blocks_shape)
     hist_blocks = hist_blocks.transpose(hist_blocks_axis_order)
     hist_block_assembled_shape = hist_blocks.shape
-    hist_blocks = hist_blocks.reshape((_misc.prod(ns_hist), -1))
+    hist_blocks = hist_blocks.reshape((math.prod(ns_hist), -1))
 
     # Calculate actual clip limit
-    kernel_elements = _misc.prod(kernel_size)
+    kernel_elements = math.prod(kernel_size)
     if clip_limit > 0.0:
         clim = int(max(clip_limit * kernel_elements, 1))
     else:
@@ -212,7 +210,7 @@ def _clahe(image, kernel_size, clip_limit, nbins):
     blocks = blocks.transpose(blocks_axis_order)
     blocks_flattened_shape = blocks.shape
     blocks = blocks.reshape(
-        (_misc.prod(ns_proc), _misc.prod(blocks.shape[ndim:]))
+        (math.prod(ns_proc), math.prod(blocks.shape[ndim:]))
     )
 
     # calculate interpolation coefficients
@@ -229,7 +227,7 @@ def _clahe(image, kernel_size, clip_limit, nbins):
         edge_maps = map_array[
             tuple(slice(e, e + n) for e, n in zip(edge, ns_proc))
         ]
-        edge_maps = edge_maps.reshape((_misc.prod(ns_proc), -1))
+        edge_maps = edge_maps.reshape((math.prod(ns_proc), -1))
 
         # apply map
         edge_mapped = cp.take_along_axis(edge_maps, blocks, axis=-1)

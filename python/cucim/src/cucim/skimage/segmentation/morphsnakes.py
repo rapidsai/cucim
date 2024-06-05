@@ -9,7 +9,7 @@ import cucim.skimage._vendored.ndimage as ndi
 from cucim import _misc
 
 from .._shared._gradient import gradient
-from .._shared.utils import check_nD, deprecate_kwarg
+from .._shared.utils import check_nD
 
 __all__ = [
     "morphological_chan_vese",
@@ -252,11 +252,6 @@ def _fused_variance_kernel(
     return aux_lt0, aux_gt0
 
 
-@deprecate_kwarg(
-    {"iterations": "num_iter"},
-    removed_version="23.02.00",
-    deprecated_version="22.02.00",
-)
 def morphological_chan_vese(
     image,
     num_iter,
@@ -377,11 +372,6 @@ def morphological_chan_vese(
     return u
 
 
-@deprecate_kwarg(
-    {"iterations": "num_iter"},
-    removed_version="23.02.00",
-    deprecated_version="22.02.00",
-)
 def morphological_geodesic_active_contour(
     gimage,
     num_iter,
@@ -404,12 +394,12 @@ def morphological_geodesic_active_contour(
         original image. Instead, this is usually a preprocessed version of the
         original image that enhances and highlights the borders (or other
         structures) of the object to segment.
-        `morphological_geodesic_active_contour` will try to stop the contour
-        evolution in areas where `gimage` is small. See
-        `morphsnakes.inverse_gaussian_gradient` as an example function to
+        :func:`morphological_geodesic_active_contour` will try to stop the
+        contour evolution in areas where `gimage` is small. See
+        :func:`inverse_gaussian_gradient` as an example function to
         perform this preprocessing. Note that the quality of
-        `morphological_geodesic_active_contour` might greatly depend on this
-        preprocessing.
+        :func:`morphological_geodesic_active_contour` might greatly depend on
+        this preprocessing.
     num_iter : uint
         Number of num_iter to run.
     init_level_set : str, (M, N) array, or (L, M, N) array
@@ -425,7 +415,7 @@ def morphological_geodesic_active_contour(
         segmentations.
     threshold : float, optional
         Areas of the image with a value smaller than this threshold will be
-        considered borders. The evolution of the contour will stop in this
+        considered borders. The evolution of the contour will stop in these
         areas.
     balloon : float, optional
         Balloon force to guide the contour in non-informative areas of the

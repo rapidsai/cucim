@@ -881,7 +881,7 @@ def test_linear_warp_polar(dtype):
     assert warped.dtype == _supported_float_type(dtype)
     profile = warped.mean(axis=0)
     peaks = cp.asnumpy(peak_local_max(profile))
-    assert np.alltrue([peak in radii for peak in peaks])
+    assert np.all([peak in radii for peak in peaks])
 
 
 @pytest.mark.parametrize("dtype", [cp.float16, cp.float32, cp.float64])
@@ -906,7 +906,7 @@ def test_log_warp_polar(dtype):
     peaks_coord = peak_local_max(profile)
     peaks_coord.sort(axis=0)
     gaps = cp.asnumpy(peaks_coord[1:] - peaks_coord[:-1])
-    assert np.alltrue([x >= 38 and x <= 40 for x in gaps])
+    assert np.all([x >= 38 and x <= 40 for x in gaps])
 
 
 def test_invalid_scaling_polar():

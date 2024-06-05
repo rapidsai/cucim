@@ -1,6 +1,6 @@
 import cupy as cp
 
-from .._shared.utils import deprecate_kwarg
+from .._shared.utils import DEPRECATED, deprecate_parameter
 from .dtype import img_as_float
 
 __all__ = ["random_noise"]
@@ -54,10 +54,12 @@ def _bernoulli(p, shape, *, rng):
     return rng.random(shape) <= p
 
 
-@deprecate_kwarg(
-    {"seed": "rng"}, deprecated_version="23.12", removed_version="24.12"
+@deprecate_parameter(
+    "seed", new_name="rng", start_version="23.12", stop_version="24.12"
 )
-def random_noise(image, mode="gaussian", rng=None, clip=True, **kwargs):
+def random_noise(
+    image, mode="gaussian", rng=None, clip=True, *, seed=DEPRECATED, **kwargs
+):
     """
     Function to add random noise of various types to a floating-point image.
 

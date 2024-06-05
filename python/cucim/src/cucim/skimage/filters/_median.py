@@ -1,3 +1,4 @@
+import math
 from warnings import warn
 
 import cupy as cp
@@ -5,24 +6,9 @@ import numpy as np
 
 import cucim.skimage._vendored.ndimage as ndi
 
-from .._shared.utils import deprecate_kwarg
 from ._median_hist import KernelResourceError, _can_use_histogram, _median_hist
 
-try:
-    from math import prod
-except ImportError:
-    from functools import reduce
-    from operator import mul
 
-    def prod(x):
-        return reduce(mul, x)
-
-
-@deprecate_kwarg(
-    kwarg_mapping={"selem": "footprint"},
-    removed_version="23.02.00",
-    deprecated_version="22.02.00",
-)
 def median(
     image,
     footprint=None,
@@ -131,11 +117,12 @@ def median(
             warn(
                 "Change 'behavior' to 'ndimage' if you want to use the "
                 "parameters 'mode' or 'cval'. They will be discarded "
-                "otherwise."
+                "otherwise.",
+                stacklevel=2,
             )
         raise NotImplementedError("rank behavior not currently implemented")
         # TODO: implement median rank filter
-        # return generic.median(image, selem=selem, out=out)
+        # return generic.median(image, footprint=footprint, out=out)
 
     if footprint is None:
         footprint_shape = (3,) * image.ndim
@@ -168,7 +155,7 @@ def median(
     use_histogram = can_use_histogram
     if algorithm == "auto":
         # prefer sorting-based algorithm if footprint shape is small
-        use_histogram = use_histogram and prod(footprint_shape) > 150
+        use_histogram = use_histogram and math.prod(footprint_shape) > 150
 
     if use_histogram:
         try:

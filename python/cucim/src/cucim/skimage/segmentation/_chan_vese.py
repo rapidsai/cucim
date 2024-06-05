@@ -4,7 +4,7 @@ from cupyx import rsqrt  # reciprocal sqrt
 
 from cucim.core.operations.morphology import distance_transform_edt
 
-from .._shared.utils import _supported_float_type, deprecate_kwarg
+from .._shared.utils import _supported_float_type
 from .._vendored import pad
 
 
@@ -272,11 +272,6 @@ def _cv_init_level_set(init_level_set, image_shape, dtype=cp.float64):
     return res.astype(dtype, copy=False)
 
 
-@deprecate_kwarg(
-    {"max_iter": "max_num_iter"},
-    removed_version="23.02.00",
-    deprecated_version="22.02.00",
-)
 def chan_vese(
     image,
     mu=0.25,

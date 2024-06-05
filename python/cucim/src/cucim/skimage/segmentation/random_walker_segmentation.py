@@ -15,6 +15,7 @@ from cupyx.scipy.sparse.linalg import cg, spsolve
 import cucim.skimage._vendored.ndimage as ndi
 
 from .._shared import utils
+from .._shared.compat import SCIPY_CG_TOL_PARAM_NAME
 from ..util import img_as_float
 
 # TODO: Implemented multigrid solver option, 'cg_mg'
@@ -202,8 +203,16 @@ def _solve_linear_system(lap_sparse, B, tol, mode):
             # ml = ruge_stuben_solver(lap_sparse)
             # M = ml.aspreconditioner(cycle='V')
             # maxiter = 30
+        rtol = {SCIPY_CG_TOL_PARAM_NAME: tol}
         cg_out = [
-            cg(lap_sparse, B[:, i].toarray(), tol=tol, M=M, maxiter=maxiter)
+            cg(
+                lap_sparse,
+                B[:, i].toarray(),
+                **rtol,
+                atol=0,
+                M=M,
+                maxiter=maxiter,
+            )
             for i in range(B.shape[1])
         ]
         if any([info > 0 for _, info in cg_out]):
@@ -302,13 +311,13 @@ def random_walker(
 
     Parameters
     ----------
-    data : array_like
+    data : (M, N[, P][, C]) ndarray
         Image to be segmented in phases. Gray-level `data` can be two- or
         three-dimensional; multichannel data can be three- or four-
         dimensional with `channel_axis` specifying the dimension containing
         channels. Data spacing is assumed isotropic unless the `spacing`
         keyword argument is used.
-    labels : array of ints, of same shape as `data` without channels dimension
+    labels : (M, N[, P]) array of ints
         Array of seed markers labeled with different positive integers
         for different phases. Zero-labeled pixels are unlabeled pixels.
         Negative labels correspond to inactive pixels that are not taken
@@ -447,8 +456,8 @@ def random_walker(
     # Parse input data
     if mode not in ("cg_mg", "cg", "bf", "cg_j", None):
         raise ValueError(
-            "{mode} is not a valid mode. Valid modes are 'cg_mg',"
-            " 'cg', 'cg_j', 'bf' and None".format(mode=mode)
+            f"{mode} is not a valid mode. Valid modes are 'cg_mg',"
+            " 'cg', 'cg_j', 'bf' and None"
         )
 
     if data.dtype.kind == "f":

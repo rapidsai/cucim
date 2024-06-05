@@ -253,14 +253,14 @@ def pearsonr(x, y, *, disable_checks=False):
     # As explained in the docstring, the p-value can be computed as
     #     p = 2*dist.cdf(-abs(r))
     # where dist is the beta distribution on [-1, 1] with shape parameters
-    # a = b = n/2 - 1.  `special.btdtr` is the CDF for the beta distribution
+    # a = b = n/2 - 1.  `special.betainc` is the CDF for the beta distribution
     # on [0, 1].  To use it, we make the transformation  x = (r + 1)/2; the
     # shape parameters do not change.  Then -abs(r) used in `cdf(-abs(r))`
     # becomes x = (-abs(r) + 1)/2 = 0.5*(1 - abs(r)).  (r is cast to float64
-    # to avoid a TypeError raised by btdtr when r is higher precision.)
+    # to avoid a TypeError raised by betainc when r is higher precision.)
     ab = n / 2 - 1
-    # scalar valued, so use special.btdtr from SciPy, not CuPy
-    prob = 2 * special.btdtr(ab, ab, 0.5 * (1.0 - abs(r)))
+    # scalar valued, so use special.betainc from SciPy, not CuPy
+    prob = 2 * special.betainc(ab, ab, 0.5 * (1.0 - abs(r)))
     if disable_checks:
         # warn only based on output values to avoid overhead of host/device
         # synchronization needed for the disabled checks above.

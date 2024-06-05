@@ -69,7 +69,7 @@ def _fix_sequence_arg(arg, ndim, name, conv=lambda x: x):
         return [conv(arg)] * ndim
     lst = [conv(x) for x in arg]
     if len(lst) != ndim:
-        msg = "{} must have length equal to input rank".format(name)
+        msg = f"{name} must have length equal to input rank"
         raise RuntimeError(msg)
     return lst
 

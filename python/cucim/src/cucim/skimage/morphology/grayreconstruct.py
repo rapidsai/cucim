@@ -14,16 +14,9 @@ import numpy as np
 import skimage
 from packaging.version import Version
 
-from .._shared.utils import deprecate_kwarg
-
 old_reconstruction_pyx = Version(skimage.__version__) < Version("0.20.0")
 
 
-@deprecate_kwarg(
-    kwarg_mapping={"selem": "footprint"},
-    removed_version="23.02.00",
-    deprecated_version="22.02.00",
-)
 def reconstruction(seed, mask, method="dilation", footprint=None, offset=None):
     """Perform a morphological reconstruction of an image.
 

@@ -5,7 +5,6 @@ from cupy.testing import assert_array_equal
 from skimage import data
 from skimage.morphology import thin as thin_cpu
 
-from cucim.skimage._shared._warnings import expected_warnings
 from cucim.skimage.morphology import medial_axis, thin
 
 
@@ -16,22 +15,25 @@ class TestThin:
         ii = cp.array(
             [
                 [0, 0, 0, 0, 0, 0, 0],
-                [0, 1, 1, 1, 1, 1, 0],
+                [0, 1, 2, 3, 4, 5, 0],
                 [0, 1, 0, 1, 1, 1, 0],
                 [0, 1, 1, 1, 1, 1, 0],
-                [0, 1, 1, 1, 1, 1, 0],
+                [0, 6, 1, 1, 1, 1, 0],
                 [0, 1, 1, 1, 1, 1, 0],
                 [0, 0, 0, 0, 0, 0, 0],
             ],
-            dtype=cp.uint8,
+            dtype=float,
         )
         return ii
 
     def test_zeros(self):
-        assert cp.all(thin(cp.zeros((10, 10))) == 0)
+        image = cp.zeros((10, 10), dtype=bool)
+        assert cp.all(thin(image) == 0)
 
-    def test_iter_1(self):
-        result = thin(self.input_image, 1).astype(cp.uint8)
+    @pytest.mark.parametrize("dtype", [bool, float, int])
+    def test_iter_1(self, dtype):
+        image = self.input_image.astype(dtype)
+        result = thin(image, 1).astype(bool)
         expected = cp.array(
             [
                 [0, 0, 0, 0, 0, 0, 0],
@@ -42,18 +44,14 @@ class TestThin:
                 [0, 0, 0, 0, 0, 0, 0],
                 [0, 0, 0, 0, 0, 0, 0],
             ],
-            dtype=cp.uint8,
+            dtype=bool,
         )
         assert_array_equal(result, expected)
 
-    def test_max_iter_kwarg_deprecation(self):
-        result1 = thin(self.input_image, max_num_iter=1).astype(cp.uint8)
-        with expected_warnings(["`max_iter` is a deprecated argument name"]):
-            result2 = thin(self.input_image, max_iter=1).astype(cp.uint8)
-        assert_array_equal(result1, result2)
-
-    def test_noiter(self):
-        result = thin(self.input_image).astype(cp.uint8)
+    @pytest.mark.parametrize("dtype", [bool, float, int])
+    def test_noiter(self, dtype):
+        image = self.input_image.astype(dtype)
+        result = thin(image).astype(bool)
         expected = cp.array(
             [
                 [0, 0, 0, 0, 0, 0, 0],
@@ -64,12 +62,12 @@ class TestThin:
                 [0, 0, 0, 0, 0, 0, 0],
                 [0, 0, 0, 0, 0, 0, 0],
             ],
-            dtype=cp.uint8,
+            dtype=bool,
         )
         assert_array_equal(result, expected)
 
     def test_baddim(self):
-        for ii in [cp.zeros((3)), cp.zeros((3, 3, 3))]:
+        for ii in [cp.zeros(3, dtype=bool), cp.zeros((3, 3, 3), dtype=bool)]:
             with pytest.raises(ValueError):
                 thin(ii)
 
@@ -94,12 +92,12 @@ class TestMedialAxis:
         result = medial_axis(cp.zeros((10, 10), bool), cp.zeros((10, 10), bool))
         assert not cp.any(result)
 
-    def _test_vertical_line(self, **kwargs):
+    def _test_vertical_line(self, dtype, **kwargs):
         """Test a thick vertical line, issue #3861"""
-        img = cp.zeros((9, 9))
+        img = cp.zeros((9, 9), dtype=dtype)
         img[:, 2] = 1
-        img[:, 3] = 1
-        img[:, 4] = 1
+        img[:, 3] = 2
+        img[:, 4] = 3
 
         expected = cp.full(img.shape, False)
         expected[:, 3] = True
@@ -107,31 +105,27 @@ class TestMedialAxis:
         result = medial_axis(img, **kwargs)
         assert_array_equal(result, expected)
 
-    def test_vertical_line(self):
+    @pytest.mark.parametrize("dtype", [bool, float, int])
+    def test_vertical_line(self, dtype):
         """Test a thick vertical line, issue #3861"""
-        self._test_vertical_line()
+        self._test_vertical_line(dtype=dtype)
 
     def test_rng_numpy(self):
         # NumPy Generator allowed
-        self._test_vertical_line(rng=np.random.default_rng())
+        self._test_vertical_line(dtype=bool, rng=np.random.default_rng())
 
     def test_rng_cupy(self):
         # CuPy Generator not currently supported
         with pytest.raises(ValueError):
-            self._test_vertical_line(rng=cp.random.default_rng())
+            self._test_vertical_line(dtype=bool, rng=cp.random.default_rng())
 
     def test_rng_int(self):
-        self._test_vertical_line(rng=15)
+        self._test_vertical_line(dtype=bool, rng=15)
 
     def test_vertical_line_seed(self):
         """seed was deprecated (now use rng)"""
         with pytest.warns(FutureWarning):
-            self._test_vertical_line(seed=15)
-
-    def test_vertical_line_random_state(self):
-        """random_state was deprecated (now use rng)"""
-        with pytest.warns(FutureWarning):
-            self._test_vertical_line(random_state=15)
+            self._test_vertical_line(dtype=bool, seed=15)
 
     def test_01_01_rectangle(self):
         """Test skeletonize on a rectangle"""

@@ -5,8 +5,9 @@ import numpy as np
 
 import cucim.skimage._vendored.ndimage as ndi
 from cucim.core.operations.morphology import distance_transform_edt
+from cucim.skimage._shared.utils import DEPRECATED, deprecate_parameter
 
-from .._shared.utils import check_nD, deprecate_kwarg
+from .._shared.utils import check_nD
 from ._medial_axis_lookup import (
     cornerness_table as _medial_axis_cornerness_table,
     lookup_table as _medial_axis_lookup_table,
@@ -48,11 +49,6 @@ _G123P_LUT = np.array([0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0,
 # fmt: on
 
 
-@deprecate_kwarg(
-    {"max_iter": "max_num_iter"},
-    removed_version="23.02.00",
-    deprecated_version="22.02.00",
-)
 def thin(image, max_num_iter=None):
     """
     Perform morphological thinning of a binary image.
@@ -60,7 +56,9 @@ def thin(image, max_num_iter=None):
     Parameters
     ----------
     image : binary (M, N) ndarray
-        The image to be thinned.
+        The image to thin. If this input isn't already a binary image,
+        it gets converted into one: In this case, zero values are considered
+        background (False), nonzero values are considered foreground (True).
     max_num_iter : int, number of iterations, optional
         Regardless of the value of this parameter, the thinned image
         is returned immediately if an iteration produces no change.
@@ -98,10 +96,10 @@ def thin(image, max_num_iter=None):
 
     Examples
     --------
-    >>> square = np.zeros((7, 7), dtype=np.uint8)
+    >>> square = np.zeros((7, 7), dtype=bool)
     >>> square[1:-1, 2:-2] = 1
     >>> square[0, 1] =  1
-    >>> square
+    >>> square.view(cp.uint8)
     array([[0, 1, 0, 0, 0, 0, 0],
            [0, 0, 1, 1, 1, 0, 0],
            [0, 0, 1, 1, 1, 0, 0],
@@ -110,7 +108,7 @@ def thin(image, max_num_iter=None):
            [0, 0, 1, 1, 1, 0, 0],
            [0, 0, 0, 0, 0, 0, 0]], dtype=uint8)
     >>> skel = thin(square)
-    >>> skel.astype(np.uint8)
+    >>> skel.view(np.uint8)
     array([[0, 1, 0, 0, 0, 0, 0],
            [0, 0, 1, 0, 0, 0, 0],
            [0, 0, 0, 1, 0, 0, 0],
@@ -123,11 +121,11 @@ def thin(image, max_num_iter=None):
     check_nD(image, 2)
 
     # convert image to uint8 with values in {0, 1}
-    skel = cp.asarray(image, dtype=bool).astype(cp.uint8)
+    skel = cp.asarray(image, dtype=bool).view(cp.uint8)
 
     # neighborhood mask
     mask = cp.asarray(
-        [[8, 4, 2], [16, 0, 1], [32, 64, 128]], dtype=cp.uint8  # noqa  # noqa
+        [[8, 4, 2], [16, 0, 1], [32, 64, 128]], dtype=cp.uint8  # noqa
     )
 
     G123_LUT = cp.asarray(_G123_LUT)
@@ -170,21 +168,21 @@ def _get_tiebreaker(n, seed):
     return tiebreaker
 
 
-@deprecate_kwarg(
-    {"random_state": "rng"},
-    deprecated_version="23.08",
-    removed_version="24.06",
+@deprecate_parameter(
+    "seed", new_name="rng", start_version="23.12", stop_version="24.12"
 )
-@deprecate_kwarg(
-    {"seed": "rng"}, deprecated_version="23.12", removed_version="24.12"
-)
-def medial_axis(image, mask=None, return_distance=False, *, rng=None):
+def medial_axis(
+    image, mask=None, return_distance=False, *, seed=DEPRECATED, rng=None
+):
     """Compute the medial axis transform of a binary image.
 
     Parameters
     ----------
     image : binary ndarray, shape (M, N)
-        The image of the shape to be skeletonized.
+        The image of the shape to skeletonize. If this input isn't already a
+        binary image, it gets converted into one: In this case, zero values are
+        considered background (False), nonzero values are considered
+        foreground (True).
     mask : binary ndarray, shape (M, N), optional
         If a mask is given, only those elements in `image` with a true
         value in `mask` are used for computing the medial axis.
@@ -212,7 +210,7 @@ def medial_axis(image, mask=None, return_distance=False, *, rng=None):
 
     See Also
     --------
-    skeletonize
+    skeletonize, thin
 
     Notes
     -----
@@ -239,9 +237,9 @@ def medial_axis(image, mask=None, return_distance=False, *, rng=None):
 
     Examples
     --------
-    >>> square = np.zeros((7, 7), dtype=np.uint8)
+    >>> square = np.zeros((7, 7), dtype=bool)
     >>> square[1:-1, 2:-2] = 1
-    >>> square
+    >>> square.view(cp.uint8)
     array([[0, 0, 0, 0, 0, 0, 0],
            [0, 0, 1, 1, 1, 0, 0],
            [0, 0, 1, 1, 1, 0, 0],
@@ -249,7 +247,7 @@ def medial_axis(image, mask=None, return_distance=False, *, rng=None):
            [0, 0, 1, 1, 1, 0, 0],
            [0, 0, 1, 1, 1, 0, 0],
            [0, 0, 0, 0, 0, 0, 0]], dtype=uint8)
-    >>> medial_axis(square).astype(np.uint8)
+    >>> medial_axis(square).view(cp.uint8)
     array([[0, 0, 0, 0, 0, 0, 0],
            [0, 0, 1, 0, 1, 0, 0],
            [0, 0, 0, 1, 0, 0, 0],

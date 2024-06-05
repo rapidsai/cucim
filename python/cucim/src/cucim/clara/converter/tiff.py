@@ -73,11 +73,12 @@ def svs2tif(
     logger.info("      num_workers: %d", num_workers)
     logger.info("      compression: %s", compression)
     logger.info("  output filename: %s", output_filename)
-
+    compressionargs = None
     if compression is not None:
         # handles only jpeg or None (no compression)
         if compression.lower() == "jpeg":
-            compression = ("jpeg", 95)
+            compression = "jpeg"
+            compressionargs = {"level": 95}
         else:
             raise ValueError(
                 f"Unsupported compression: {compression}."
@@ -98,7 +99,7 @@ def svs2tif(
         width, height = slide_dimensions
         img_w, img_h = width, height
         for level in range(tiles.level_count):
-            memmap_filename = Path(output_folder, "level{}.mmap".format(level))
+            memmap_filename = Path(output_folder, f"level{level}.mmap")
             memmap_shape = (img_h, img_w, 3)
             np_memmap_arr = np.memmap(
                 memmap_filename, dtype=np.uint8, mode="w+", shape=memmap_shape
@@ -198,9 +199,10 @@ def svs2tif(
                         resolution=(
                             x_resolution // 2**level,
                             y_resolution // 2**level,
-                            resolution_unit,
                         ),
+                        resolutionunit=resolution_unit,
                         compression=compression,  # requires imagecodecs
+                        compressionargs=compressionargs,
                         subfiletype=subfiletype,
                     )
                 logger.info("Done.")

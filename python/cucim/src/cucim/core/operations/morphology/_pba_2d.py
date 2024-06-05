@@ -1,40 +1,10 @@
-import functools
 import math
-import numbers
 import os
 
 import cupy
 
 from cucim.skimage._vendored import pad
 from cucim.skimage._vendored._ndimage_util import _get_inttype
-
-try:
-    # math.lcm was introduced in Python 3.9
-    from math import lcm
-except ImportError:
-    """Fallback implementation of least common multiple (lcm)
-
-    TODO: remove once minimum Python requirement is >= 3.9
-    """
-
-    def _lcm(a, b):
-        return abs(b * (a // math.gcd(a, b)))
-
-    @functools.lru_cache()
-    def lcm(*args):
-        nargs = len(args)
-        if not all(isinstance(a, numbers.Integral) for a in args):
-            raise TypeError("all arguments must be integers")
-        if nargs == 0:
-            return 1
-        res = int(args[0])
-        if nargs == 1:
-            return abs(res)
-        for i in range(1, nargs):
-            x = int(args[i])
-            res = _lcm(res, x)
-        return res
-
 
 pba2d_defines_template = """
 
@@ -76,7 +46,7 @@ def get_pba2d_src(block_size_2d=64, marker=-32768, pixel_int2_t="short2"):
         make_pixel_func=make_pixel_func,
     )
     kernel_directory = os.path.join(os.path.dirname(__file__), "cuda")
-    with open(os.path.join(kernel_directory, "pba_kernels_2d.h"), "rt") as f:
+    with open(os.path.join(kernel_directory, "pba_kernels_2d.h")) as f:
         pba2d_kernels = "\n".join(f.readlines())
 
     pba2d_code += pba2d_kernels
@@ -312,7 +282,7 @@ def _pba_2d(
         m1, m2, m3 = block_params
         if math.log2(m2) % 1 > 1e-5:
             raise ValueError("m2 must be a power of 2")
-        multiple = lcm(block_size, m1, m2, m3)
+        multiple = math.lcm(block_size, m1, m2, m3)
         padded_size = math.ceil(max(arr.shape) / multiple) * multiple
 
     if m1 > padded_size // block_size:

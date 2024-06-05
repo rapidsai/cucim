@@ -132,8 +132,7 @@ def _init_freq_conv_axes(in1, in2, mode, axes, sorted_axes=False):
     for ax, (dim1, dim2) in enumerate(zip(s1, s2)):
         if ax not in axes and dim1 != dim2 and dim1 != 1 and dim2 != 1:
             raise ValueError(
-                "incompatible shapes for in1 and in2:"
-                " {} and {}".format(s1, s2)
+                "incompatible shapes for in1 and in2:" f" {s1} and {s2}"
             )
 
     # Check that input sizes are compatible with 'valid' mode.

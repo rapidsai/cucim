@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import math
 from typing import Any
 
 import cupy
@@ -100,7 +101,7 @@ def scale_intensity_range(
         b_min = float("-inf")
 
     sh = img.shape
-    total_size = np.prod(sh)
+    total_size = math.prod(sh)
     blockx = 128
     gridx = int((total_size - 1) / blockx + 1)
 

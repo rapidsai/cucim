@@ -153,26 +153,36 @@ SAMPLE3D_EXPANDED_2 = cp.array(
     ]
 )
 
+SAMPLE3D_EXPAND_SPACING = cp.array(
+    [
+        [[0, 3, 0, 0], [3, 3, 3, 0], [0, 3, 0, 0], [0, 0, 0, 0]],
+        [[0, 3, 3, 0], [3, 3, 3, 3], [0, 3, 3, 0], [0, 0, 0, 0]],
+        [[0, 3, 0, 0], [3, 3, 3, 0], [0, 3, 5, 0], [0, 5, 5, 5]],
+        [[0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 5, 0], [0, 5, 5, 5]],
+    ]
+)
+
 SAMPLE_EDGECASE_BEHAVIOUR = cp.array([[0, 1, 0, 0], [2, 0, 0, 0], [0, 3, 0, 0]])
 
 
 @pytest.mark.parametrize(
-    "input_array, expected_output, expand_distance",
+    "input_array, expected_output, expand_distance, spacing",
     [
-        (SAMPLE1D, SAMPLE1D_EXPANDED_3, 3),
-        (SAMPLE2D, SAMPLE2D_EXPANDED_3, 3),
-        (SAMPLE2D, SAMPLE2D_EXPANDED_1_5, 1.5),
-        (EDGECASE1D, EDGECASE1D_EXPANDED_3, 3),
-        (EDGECASE2D, EDGECASE2D_EXPANDED_4, 4),
-        (SAMPLE3D, SAMPLE3D_EXPANDED_2, 2),
+        (SAMPLE1D, SAMPLE1D_EXPANDED_3, 3, 1),
+        (SAMPLE2D, SAMPLE2D_EXPANDED_3, 3, 1),
+        (SAMPLE2D, SAMPLE2D_EXPANDED_1_5, 1.5, 1),
+        (EDGECASE1D, EDGECASE1D_EXPANDED_3, 3, 1),
+        (EDGECASE2D, EDGECASE2D_EXPANDED_4, 4, 1),
+        (SAMPLE3D, SAMPLE3D_EXPANDED_2, 2, 1),
+        (SAMPLE3D, SAMPLE3D_EXPAND_SPACING, 1, [2, 1, 1]),
     ],
 )
-def test_expand_labels(input_array, expected_output, expand_distance):
+def test_expand_labels(input_array, expected_output, expand_distance, spacing):
     if input_array.ndim == 1:
         with pytest.raises(NotImplementedError):
-            expand_labels(input_array, expand_distance)
+            expand_labels(input_array, expand_distance, spacing)
     else:
-        expanded = expand_labels(input_array, expand_distance)
+        expanded = expand_labels(input_array, expand_distance, spacing)
         assert_array_equal(expanded, expected_output)
 
 

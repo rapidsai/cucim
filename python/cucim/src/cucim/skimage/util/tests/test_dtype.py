@@ -61,7 +61,7 @@ def test_range(dtype, f_and_dt):
         imin = 0
 
     _verify_range(
-        "From %s to %s" % (cp.dtype(dtype), cp.dtype(dt)),
+        f"From {cp.dtype(dtype)} to {cp.dtype(dt)}",
         y,
         omin,
         omax,
@@ -96,7 +96,7 @@ def test_range_extra_dtypes(dtype_in, dt):
 
     omin, omax = dtype_range_extra[dt]
     _verify_range(
-        "From %s to %s" % (cp.dtype(dtype_in), cp.dtype(dt)),
+        f"From {cp.dtype(dtype_in)} to {cp.dtype(dt)}",
         y,
         omin,
         omax,

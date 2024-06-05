@@ -14,7 +14,6 @@ from ._pba_2d import (
     _generate_indices_ops,
     _generate_shape,
     _get_block_size,
-    lcm,
 )
 
 pba3d_defines_template = """
@@ -85,7 +84,7 @@ def get_pba3d_src(
     else:
         pba3d_code += pba3d_defines_encode_32bit
     kernel_directory = os.path.join(os.path.dirname(__file__), "cuda")
-    with open(os.path.join(kernel_directory, "pba_kernels_3d.h"), "rt") as f:
+    with open(os.path.join(kernel_directory, "pba_kernels_3d.h")) as f:
         pba3d_kernels = "\n".join(f.readlines())
     pba3d_code += pba3d_kernels
     return pba3d_code
@@ -188,7 +187,7 @@ def decode3d(encoded, size_max=1024):
 def _determine_padding(shape, block_size, m1, m2, m3, blockx, blocky):
     # TODO: can possibly revise to consider only particular factors for LCM on
     #       a given axis
-    LCM = lcm(block_size, m1, m2, m3, blockx, blocky)
+    LCM = math.lcm(block_size, m1, m2, m3, blockx, blocky)
     orig_sz, orig_sy, orig_sx = shape
     round_up = False
     if orig_sx % LCM != 0:

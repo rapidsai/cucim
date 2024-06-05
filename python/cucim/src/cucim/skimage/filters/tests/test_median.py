@@ -1,3 +1,5 @@
+import math
+
 import cupy as cp
 import pytest
 from cupy.testing import assert_allclose
@@ -7,15 +9,6 @@ from skimage import data
 from cucim.skimage import morphology
 from cucim.skimage._shared.testing import expected_warnings
 from cucim.skimage.filters import median
-
-try:
-    from math import prod
-except ImportError:
-    from functools import reduce
-    from operator import mul
-
-    def prod(x):
-        return reduce(mul, x)
 
 
 @pytest.fixture
@@ -53,11 +46,6 @@ def test_median_warning(image, mode, cval, behavior, warning_type):
             median(image, mode=mode, behavior=behavior)
     else:
         median(image, mode=mode, behavior=behavior)
-
-
-def test_selem_kwarg_deprecation(image):
-    with expected_warnings(["`selem` is a deprecated argument name"]):
-        median(image, selem=None)
 
 
 # TODO: update if rank.median implemented
@@ -138,7 +126,7 @@ def test_median_hist_dtypes(
         img = rng.integers(-128, 384, shape, dtype=int).astype(cp.int16)
 
     # 150 is the value used to auto-select between sorting vs. histogram
-    small_kernel = prod(footprint_shape) < 150
+    small_kernel = math.prod(footprint_shape) < 150
     if algorithm_kwargs and (
         algorithm == "sorting" or (algorithm == "auto" and small_kernel)
     ):
