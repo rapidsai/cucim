@@ -1,3 +1,44 @@
+# cucim 24.06.00 (5 Jun 2024)
+
+## 🚨 Breaking Changes
+
+- The `output` argument of `cucim.skimage.filters.gaussian` has been renamed to `out`. The old name is deprecated and will be removed in release 25.02 (#727)
+- Renamed `get_xyz_coords` function is now removed (use `skimage.color.xyz_tristimulus_values` instead) (#724)
+- Removed deprecated `return_error` kwarg from `phase_cross_correlation` (the error is now always returned) (#724)
+- Removed deprecated `random_state` kwarg from `medial_axis` (it was renamed to `rng` previously) (#724)
+
+## 🐛 Bug Fixes
+
+- Use SciPy&#39;s KDTree instead of deprecated cKDTree ([#733](https://github.com/rapidsai/cucim/pull/733)) [@grlee77](https://github.com/grlee77)
+- Binary and grayscale morphology functions have bug fixes in the case of even-sized/non-symmetric footprints (for details see upstream MR: https://github.com/scikit-image/scikit-image/pull/6695) (#728)
+
+## 🚀 New Features
+
+- `cucim.skimage.measure.regionprops` (and `regionprops_table`) support one new region property: `intensity_std` (#727)
+- `cucim.skimage.segmentation.expand_labels` now supports a `spacing` keyword argument to take a pixel's physical dimensions into account (#727)
+- binary morphology functions have a new `mode` argument that controls how values outside the image boundaries are interpreted (#728)
+- grayscale morphology functions have new `mode` and `cval` arguments that control how boundaries are extended (#728)
+
+## 🛠️ Improvements
+
+- Enable FutureWarnings/DeprecationWarnings as errors ([#734](https://github.com/rapidsai/cucim/pull/734)) [@mroeschke](https://github.com/mroeschke)
+- Migrate to `{{ stdlib(&quot;c&quot;) }}` ([#731](https://github.com/rapidsai/cucim/pull/731)) [@hcho3](https://github.com/hcho3)
+- Implement upstream changes from scikit-image 0.23 (part 2 of 2: morphology) ([#728](https://github.com/rapidsai/cucim/pull/728)) [@grlee77](https://github.com/grlee77)
+- Implement upstream changes from scikit-image 0.23 (part 1 of 2) ([#727](https://github.com/rapidsai/cucim/pull/727)) [@grlee77](https://github.com/grlee77)
+- Update the test criteria for test_read_random_region_cpu_memleak ([#726](https://github.com/rapidsai/cucim/pull/726)) [@gigony](https://github.com/gigony)
+- Remove code needed to support Python &lt; 3.9 and apply ruff&#39;s pyupgrade rules ([#725](https://github.com/rapidsai/cucim/pull/725)) [@grlee77](https://github.com/grlee77)
+- removal of deprecated functions/kwargs scheduled for release 24.06 ([#724](https://github.com/rapidsai/cucim/pull/724)) [@grlee77](https://github.com/grlee77)
+- Enable all tests for `arm` jobs ([#717](https://github.com/rapidsai/cucim/pull/717)) [@galipremsagar](https://github.com/galipremsagar)
+- prevent path conflict ([#713](https://github.com/rapidsai/cucim/pull/713)) [@AyodeAwe](https://github.com/AyodeAwe)
+- Updated cuCIM APIs for consistency with scikit-image 0.23.2 (#727 and #728)
+- Additional modules use `__init__.pyi` instead of just `__init__.py` (#727)
+- Some grayscale tests now compare directly to `skimage` CPU outputs instead fetching previously saved values (#728)
+- Refactored some test cases to better use `pytest.mark.parametrize` (#728)
+- Bumped version pinning for scikit-image to allow 0.23.x to be installed (#728)
+
+## 📖 Documentation
+- Various fixes to documentation strings (consistent shape notation, etc.) (#727)
+
 # cuCIM 24.04.00 (10 Apr 2024)
 
 ## 🐛 Bug Fixes
