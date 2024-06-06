@@ -31,10 +31,8 @@ export RAPIDS_DOCS_DIR="$(mktemp -d)"
 rapids-logger "Build Python docs"
 pushd docs
 sphinx-build -b dirhtml ./source _html
-sphinx-build -b text ./source _text
-mkdir -p "${RAPIDS_DOCS_DIR}/cucim/"{html,txt}
+mkdir -p "${RAPIDS_DOCS_DIR}/cucim/"html
 mv _html/* "${RAPIDS_DOCS_DIR}/cucim/html"
-mv _text/* "${RAPIDS_DOCS_DIR}/cucim/txt"
 popd
 
 rapids-upload-docs
