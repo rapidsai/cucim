@@ -1,8 +1,14 @@
 """A vendored subset of cupyx.scipy.ndimage._util"""
+import operator
 import warnings
+from collections.abc import Iterable
+
+try:
+    from numpy.exceptions import AxisError
+except ImportError:
+    from numpy import AxisError
 
 import cupy
-import numpy
 
 
 def _is_integer_output(output, input):
@@ -49,8 +55,8 @@ def _get_output(output, input, shape=None, complex_output=False):
             output = cupy.promote_types(output, cupy.complex64)
         output = cupy.empty(shape, dtype=output)
     elif isinstance(output, str):
-        output = numpy.sctypeDict[output]
-        if complex_output and cupy.dtype(output).kind != "c":
+        output = cupy.dtype(output)
+        if complex_output and output.kind != "c":
             raise RuntimeError("output must have complex dtype")
         output = cupy.empty(shape, dtype=output)
     elif output.shape != shape:
@@ -95,6 +101,25 @@ def _check_mode(mode):
         msg = f"boundary mode not supported (actual: {mode})"
         raise RuntimeError(msg)
     return mode
+
+
+def _check_axes(axes, ndim):
+    if axes is None:
+        return tuple(range(ndim))
+    elif cupy.isscalar(axes):
+        axes = (operator.index(axes),)
+    elif isinstance(axes, Iterable):
+        for ax in axes:
+            axes = tuple(operator.index(ax) for ax in axes)
+            if ax < -ndim or ax > ndim - 1:
+                raise AxisError(f"specified axis: {ax} is out of range")
+        axes = tuple(ax % ndim if ax < 0 else ax for ax in axes)
+    else:
+        message = "axes must be an integer, iterable of integers, or None"
+        raise ValueError(message)
+    if len(tuple(set(axes))) != len(axes):
+        raise ValueError("axes must be unique")
+    return axes
 
 
 def _get_inttype(input):

@@ -124,12 +124,12 @@ def gaussian(
         raise ValueError(sigma_msg)
 
     if channel_axis is not None:
-        # do not filter across channels
-        if not isinstance(sigma, Iterable):
-            sigma = [sigma] * (image.ndim - 1)
-        if len(sigma) == image.ndim - 1:
-            sigma = list(sigma)
-            sigma.insert(channel_axis % image.ndim, 0)
+        axes = tuple(
+            ax for ax in range(image.ndim) if ax != channel_axis % image.ndim
+        )
+    else:
+        axes = tuple(range(image.ndim))
+
     image = convert_to_float(image, preserve_range)
     float_dtype = _supported_float_type(image.dtype)
     image = image.astype(float_dtype, copy=False)
@@ -147,7 +147,13 @@ def gaussian(
     else:
         out_img = out
     ndi.gaussian_filter(
-        image, sigma, output=out_img, mode=mode, cval=cval, truncate=truncate
+        image,
+        sigma,
+        output=out_img,
+        mode=mode,
+        cval=cval,
+        truncate=truncate,
+        axes=axes,
     )
     if out_img is not None and out_copied:
         image[...] = out_img

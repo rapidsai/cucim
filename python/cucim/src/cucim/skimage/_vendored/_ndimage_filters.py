@@ -188,13 +188,14 @@ def convolve1d(
 def _correlate_or_convolve(
     input, weights, output, mode, cval, origin, convolution=False
 ):
-    origins, int_type = _filters_core._check_nd_args(
+    axes, weights, origins, modes, int_type = _filters_core._check_nd_args(
         input, weights, mode, origin
     )
     if weights.size == 0:
         return cupy.zeros_like(input)
 
-    _util._check_cval(mode, cval, _util._is_integer_output(output, input))
+    for mode in modes:
+        _util._check_cval(mode, cval, _util._is_integer_output(output, input))
 
     if convolution:
         weights = weights[tuple([slice(None, None, -1)] * weights.ndim)]
@@ -211,7 +212,9 @@ def _correlate_or_convolve(
         input, weights, use_cucim_casting=True
     )  # noqa
     offsets = _filters_core._origins_to_offsets(origins, weights.shape)
-    kernel = _get_correlate_kernel(mode, weights.shape, int_type, offsets, cval)
+    kernel = _get_correlate_kernel(
+        modes, weights.shape, int_type, offsets, cval
+    )
     output = _filters_core._call_kernel(
         kernel, input, weights, output, weights_dtype=weights_dtype
     )
@@ -280,13 +283,13 @@ def _correlate_or_convolve1d(
 
 
 @cupy.memoize(for_each_device=True)
-def _get_correlate_kernel(mode, w_shape, int_type, offsets, cval):
+def _get_correlate_kernel(modes, w_shape, int_type, offsets, cval):
     return _filters_core._generate_nd_kernel(
         "correlate",
         "W sum = (W)0;",
         "sum += cast<W>({value}) * wval;",
         "y = cast<Y>(sum);",
-        mode,
+        modes,
         w_shape,
         int_type,
         offsets,
@@ -296,7 +299,15 @@ def _get_correlate_kernel(mode, w_shape, int_type, offsets, cval):
 
 
 def _run_1d_correlates(
-    input, params, get_weights, output, mode, cval, origin=0, **filter_kwargs
+    input,
+    axes,
+    params,
+    get_weights,
+    output,
+    modes,
+    cval,
+    origin=0,
+    **filter_kwargs,
 ):
     """
     Enhanced version of _run_1d_filters that uses correlate1d as the filter
@@ -313,9 +324,10 @@ def _run_1d_correlates(
     return _filters_core._run_1d_filters(
         [None if w is None else correlate1d for w in wghts],
         input,
+        axes,
         wghts,
         output,
-        mode,
+        modes,
         cval,
         origin,
         **filter_kwargs,
@@ -377,6 +389,7 @@ def uniform_filter(
     mode="reflect",
     cval=0.0,
     origin=0,
+    axes=None,
     *,
     algorithm=None,
 ):
@@ -388,15 +401,25 @@ def uniform_filter(
             dimension. A single value applies to all axes.
         output (cupy.ndarray, dtype or None): The array in which to place the
             output. Default is is same dtype as the input.
-        mode (str): The array borders are handled according to the given mode
-            (``'reflect'``, ``'constant'``, ``'nearest'``, ``'mirror'``,
-            ``'wrap'``). Default is ``'reflect'``.
+        mode (str or sequence of str): The array borders are handled according
+            to the given mode (``'reflect'``, ``'constant'``, ``'nearest'``,
+            ``'mirror'``, ``'wrap'``). Default is ``'reflect'``. By passing a
+            sequence of modes with length equal to the number of ``axes`` along
+            which the input array is being filtered, different modes can be
+            specified along each axis. For more details on the supported modes,
+            see :func:`scipy.ndimage.uniform_filter`.
         cval (scalar): Value to fill past edges of input if mode is
             ``'constant'``. Default is ``0.0``.
         origin (int or sequence of int): The origin parameter controls the
             placement of the filter, relative to the center of the current
             element of the input. Default of ``0`` is equivalent to
             ``(0,)*input.ndim``.
+        axes (tuple of int or None): If None, ``input`` is filtered along all
+            axes. Otherwise, ``input`` is filtered along the specified axes.
+            When ``axes`` is specified, any tuples used for ``size``,
+            ``mode`` and/or ``origin`` must match the length of ``axes``. The
+            ith entry in any of these tuples corresponds to the ith entry in
+            ``axes``. Default is ``None``.
 
     Returns:
         cupy.ndarray: The result of the filtering.
@@ -408,7 +431,12 @@ def uniform_filter(
         and input is integral) the results may not perfectly match the results
         from SciPy due to floating-point rounding of intermediate results.
     """
-    sizes = _util._fix_sequence_arg(size, input.ndim, "size", int)
+    axes = _util._check_axes(axes, input.ndim)
+    num_axes = len(axes)
+    sizes = _util._fix_sequence_arg(size, num_axes, "size", int)
+    origins = _util._fix_sequence_arg(origin, num_axes, "origin", int)
+    modes = _util._fix_sequence_arg(mode, num_axes, "mode", str)
+
     weights_dtype = cupy.promote_types(input.dtype, cupy.float32)
 
     def get(size):
@@ -419,7 +447,15 @@ def uniform_filter(
         )  # noqa
 
     return _run_1d_correlates(
-        input, sizes, get, output, mode, cval, origin, algorithm=algorithm
+        input,
+        axes,
+        sizes,
+        get,
+        output,
+        modes,
+        cval,
+        origins,
+        algorithm=algorithm,
     )
 
 
@@ -463,6 +499,10 @@ def gaussian_filter1d(
     .. seealso:: :func:`scipy.ndimage.gaussian_filter1d`
 
     .. note::
+        The Gaussian kernel will have size ``2*radius + 1`` along each axis. If
+        `radius` is None, a default ``radius = round(truncate * sigma)`` will
+        be used.
+
         When the output data type is integral (or when no output is provided
         and input is integral) the results may not perfectly match the results
         from SciPy due to floating-point rounding of intermediate results.
@@ -483,6 +523,8 @@ def gaussian_filter(
     mode="reflect",
     cval=0.0,
     truncate=4.0,
+    radius=None,
+    axes=None,
     *,
     algorithm=None,
 ):
@@ -498,13 +540,28 @@ def gaussian_filter(
             single value applies to all axes.
         output (cupy.ndarray, dtype or None): The array in which to place the
             output. Default is is same dtype as the input.
-        mode (str): The array borders are handled according to the given mode
-            (``'reflect'``, ``'constant'``, ``'nearest'``, ``'mirror'``,
-            ``'wrap'``). Default is ``'reflect'``.
+        mode (str or sequence of str): The array borders are handled according
+            to the given mode (``'reflect'``, ``'constant'``, ``'nearest'``,
+            ``'mirror'``, ``'wrap'``). Default is ``'reflect'``. By passing a
+            sequence of modes with length equal to the number of ``axes`` along
+            which the input array is being filtered, different modes can be
+            specified along each axis. For more details on the supported modes,
+            see :func:`scipy.ndimage.gaussian_filter`.
         cval (scalar): Value to fill past edges of input if mode is
             ``'constant'``. Default is ``0.0``.
         truncate (float): Truncate the filter at this many standard deviations.
             Default is ``4.0``.
+        radius (int, sequence of int, or None): Radius of the Gaussian kernel.
+            The radius are given for each axis as a sequence, or as a single
+            number, in which case it is equal for all axes. If specified, the
+            size of the kernel along each axis will be ``2*radius + 1``, and
+            `truncate` is ignored. Default is ``None``.
+        axes (tuple of int or None): If None, ``input`` is filtered along all
+            axes. Otherwise, ``input`` is filtered along the specified axes.
+            When ``axes`` is specified, any tuples used for ``sigma``,
+            ``order``, ``mode`` and/or ``radius`` must match the length of
+            ``axes``. The ith entry in any of these tuples corresponds to the
+            ith entry in ``axes``. Default is ``None``.
 
     Returns:
         cupy.ndarray: The result of the filtering.
@@ -512,28 +569,55 @@ def gaussian_filter(
     .. seealso:: :func:`scipy.ndimage.gaussian_filter`
 
     .. note::
+        The Gaussian kernel will have size ``2*radius + 1`` along each axis. If
+        `radius` is None, a default ``radius = round(truncate * sigma)`` will
+        be used.
+
         When the output data type is integral (or when no output is provided
         and input is integral) the results may not perfectly match the results
         from SciPy due to floating-point rounding of intermediate results.
     """
-    sigmas = _util._fix_sequence_arg(sigma, input.ndim, "sigma", float)
-    orders = _util._fix_sequence_arg(order, input.ndim, "order", int)
+    axes = _util._check_axes(axes, input.ndim)
+    num_axes = len(axes)
+
+    sigmas = _util._fix_sequence_arg(sigma, num_axes, "sigma", float)
+    sigma_threshold = 1e-15
+    if num_axes == 0 or all(s < sigma_threshold for s in sigmas):
+        if output is None:
+            return input.copy()
+        else:
+            output = _util._get_output(output, input)
+            output[:] = input
+            return output
+    orders = _util._fix_sequence_arg(order, num_axes, "order", int)
+    modes = _util._fix_sequence_arg(mode, num_axes, "mode", str)
+    radiuses = _util._fix_sequence_arg(radius, num_axes, "radius")
     truncate = float(truncate)
     weights_dtype = cupy.promote_types(input, cupy.float32)
 
-    def get(param, dtype=weights_dtype):
-        sigma, order = param
-        radius = int(truncate * float(sigma) + 0.5)
+    # omit any axes with sigma ~= 0.0
+    params = [
+        (axes[ii], sigmas[ii], orders[ii], modes[ii], radiuses[ii])
+        for ii in range(num_axes)
+        if sigmas[ii] > sigma_threshold
+    ]
+    axes, sigmas, orders, modes, radiuses = zip(*params)
+
+    def get(param):
+        _, sigma, order, _, radius = param
+        if radius is None:
+            radius = int(truncate * float(sigma) + 0.5)
         if radius <= 0:
             return None
-        return _gaussian_kernel1d(sigma, order, radius, dtype)
+        return _gaussian_kernel1d(sigma, order, radius, dtype=weights_dtype)
 
     return _run_1d_correlates(
         input,
-        list(zip(sigmas, orders)),
+        axes,
+        params,
         get,
         output,
-        mode,
+        modes,
         cval,
         0,
         algorithm=algorithm,
@@ -638,17 +722,20 @@ def _prewitt_or_sobel(input, axis, output, mode, cval, weights, algorithm):
 
     weights_dtype = cupy.promote_types(input.dtype, cupy.float32)
 
-    def get(is_diff, dtype=weights_dtype):
+    def get(is_diff):
         return (
-            cupy.array([-1, 0, 1], dtype=dtype) if is_diff else weights
+            cupy.array([-1, 0, 1], dtype=weights_dtype) if is_diff else weights
         )  # noqa
 
+    axes = tuple(range(input.ndim))
+    modes = (mode,) * input.ndim
     return _run_1d_correlates(
         input,
+        axes,
         [a == axis for a in range(input.ndim)],
         get,
         output,
-        mode,
+        modes,
         cval,
         algorithm=algorithm,
     )
@@ -952,6 +1039,7 @@ def minimum_filter(
     mode="reflect",
     cval=0.0,
     origin=0,
+    axes=None,
 ):
     """Multi-dimensional minimum filter.
 
@@ -965,15 +1053,25 @@ def minimum_filter(
             elements within this shape will get passed to the filter function.
         output (cupy.ndarray, dtype or None): The array in which to place the
             output. Default is is same dtype as the input.
-        mode (str): The array borders are handled according to the given mode
-            (``'reflect'``, ``'constant'``, ``'nearest'``, ``'mirror'``,
-            ``'wrap'``). Default is ``'reflect'``.
+        mode (str or sequence of str): The array borders are handled according
+            to the given mode (``'reflect'``, ``'constant'``, ``'nearest'``,
+            ``'mirror'``, ``'wrap'``). Default is ``'reflect'``. By passing a
+            sequence of modes with length equal to the number of ``axes`` along
+            which the input array is being filtered, different modes can be
+            specified along each axis. For more details on the supported modes,
+            see :func:`scipy.ndimage.minimum_filter`.
         cval (scalar): Value to fill past edges of input if mode is
             ``'constant'``. Default is ``0.0``.
         origin (int or sequence of int): The origin parameter controls the
             placement of the filter, relative to the center of the current
             element of the input. Default of 0 is equivalent to
             ``(0,)*input.ndim``.
+        axes (tuple of int or None): If None, ``input`` is filtered along all
+            axes. Otherwise, ``input`` is filtered along the specified axes.
+            When ``axes`` is specified, any tuples used for ``size``,
+            ``mode`` and/or ``origin`` must match the length of ``axes``. The
+            ith entry in any of these tuples corresponds to the ith entry in
+            ``axes``. Default is ``None``.
 
     Returns:
         cupy.ndarray: The result of the filtering.
@@ -981,7 +1079,16 @@ def minimum_filter(
     .. seealso:: :func:`scipy.ndimage.minimum_filter`
     """
     return _min_or_max_filter(
-        input, size, footprint, None, output, mode, cval, origin, "min"
+        input,
+        size,
+        footprint,
+        None,
+        output,
+        mode,
+        cval,
+        origin,
+        "min",
+        axes,
     )
 
 
@@ -993,6 +1100,7 @@ def maximum_filter(
     mode="reflect",
     cval=0.0,
     origin=0,
+    axes=None,
 ):
     """Multi-dimensional maximum filter.
 
@@ -1006,15 +1114,25 @@ def maximum_filter(
             elements within this shape will get passed to the filter function.
         output (cupy.ndarray, dtype or None): The array in which to place the
             output. Default is is same dtype as the input.
-        mode (str): The array borders are handled according to the given mode
-            (``'reflect'``, ``'constant'``, ``'nearest'``, ``'mirror'``,
-            ``'wrap'``). Default is ``'reflect'``.
+        mode (str or sequence of str): The array borders are handled according
+            to the given mode (``'reflect'``, ``'constant'``, ``'nearest'``,
+            ``'mirror'``, ``'wrap'``). Default is ``'reflect'``. By passing a
+            sequence of modes with length equal to the number of ``axes`` along
+            which the input array is being filtered, different modes can be
+            specified along each axis. For more details on the supported modes,
+            see :func:`scipy.ndimage.minimum_filter`.
         cval (scalar): Value to fill past edges of input if mode is
             ``'constant'``. Default is ``0.0``.
         origin (int or sequence of int): The origin parameter controls the
             placement of the filter, relative to the center of the current
             element of the input. Default of 0 is equivalent to
             ``(0,)*input.ndim``.
+        axes (tuple of int or None): If None, ``input`` is filtered along all
+            axes. Otherwise, ``input`` is filtered along the specified axes.
+            When ``axes`` is specified, any tuples used for ``size``,
+            ``mode`` and/or ``origin`` must match the length of ``axes``. The
+            ith entry in any of these tuples corresponds to the ith entry in
+            ``axes``. Default is ``None``.
 
     Returns:
         cupy.ndarray: The result of the filtering.
@@ -1022,12 +1140,30 @@ def maximum_filter(
     .. seealso:: :func:`scipy.ndimage.maximum_filter`
     """
     return _min_or_max_filter(
-        input, size, footprint, None, output, mode, cval, origin, "max"
+        input,
+        size,
+        footprint,
+        None,
+        output,
+        mode,
+        cval,
+        origin,
+        "max",
+        axes,
     )
 
 
 def _min_or_max_filter(
-    input, size, ftprnt, structure, output, mode, cval, origin, func
+    input,
+    size,
+    ftprnt,
+    structure,
+    output,
+    mode,
+    cval,
+    origin,
+    func,
+    axes,
 ):
     # structure is used by morphology.grey_erosion() and grey_dilation()
     # and not by the regular min/max filters
@@ -1036,8 +1172,19 @@ def _min_or_max_filter(
         size = ftprnt
         ftprnt = None
 
+    axes, ftprnt, origins, modes, int_type = _filters_core._check_nd_args(
+        input,
+        ftprnt,
+        mode,
+        origin,
+        "footprint",
+        sizes=size,
+        axes=axes,
+        raise_on_zero_size_weight=True,
+    )
+    num_axes = len(axes)
     sizes, ftprnt, structure = _filters_core._check_size_footprint_structure(
-        input.ndim, size, ftprnt, structure
+        num_axes, size, ftprnt, structure
     )
     if cval is cupy.nan:
         raise NotImplementedError("NaN cval is unsupported")
@@ -1048,16 +1195,14 @@ def _min_or_max_filter(
         return _filters_core._run_1d_filters(
             [fltr if size > 1 else None for size in sizes],
             input,
+            axes,
             sizes,
             output,
-            mode,
+            modes,
             cval,
-            origin,
+            origins,
         )
 
-    origins, int_type = _filters_core._check_nd_args(
-        input, ftprnt, mode, origin, "footprint", sizes=sizes
-    )
     if structure is not None and structure.ndim != input.ndim:
         raise RuntimeError("structure array has incorrect shape")
 
@@ -1149,12 +1294,12 @@ def _min_or_max_1d(
     ftprnt, origin = _filters_core._convert_1d_args(
         input.ndim, ftprnt, origin, axis
     )
-    origins, int_type = _filters_core._check_nd_args(
-        input, ftprnt, mode, origin, "footprint"
+    axes, ftprnt, origins, modes, int_type = _filters_core._check_nd_args(
+        input, ftprnt, mode, origin, "footprint", axes=None
     )
     offsets = _filters_core._origins_to_offsets(origins, ftprnt.shape)
     kernel = _get_min_or_max_kernel(
-        mode,
+        modes,
         ftprnt.shape,
         func,
         offsets,
@@ -1226,6 +1371,7 @@ def rank_filter(
     mode="reflect",
     cval=0.0,
     origin=0,
+    axes=None,
 ):
     """Multi-dimensional rank filter.
 
@@ -1250,6 +1396,12 @@ def rank_filter(
             placement of the filter, relative to the center of the current
             element of the input. Default of 0 is equivalent to
             ``(0,)*input.ndim``.
+        axes (tuple of int or None): If None, ``input`` is filtered along all
+            axes. Otherwise, ``input`` is filtered along the specified axes.
+            When ``axes`` is specified, any tuples used for ``size`` and/or
+            ``origin`` must match the length of ``axes``. The ith entry in any
+            of these tuples corresponds to the ith entry in ``axes``. Default
+            is ``None``.
 
     Returns:
         cupy.ndarray: The result of the filtering.
@@ -1266,6 +1418,7 @@ def rank_filter(
         mode,
         cval,
         origin,
+        axes,
     )
 
 
@@ -1277,6 +1430,7 @@ def median_filter(
     mode="reflect",
     cval=0.0,
     origin=0,
+    axes=None,
 ):
     """Multi-dimensional median filter.
 
@@ -1299,6 +1453,12 @@ def median_filter(
             placement of the filter, relative to the center of the current
             element of the input. Default of 0 is equivalent to
             ``(0,)*input.ndim``.
+        axes (tuple of int or None): If None, ``input`` is filtered along all
+            axes. Otherwise, ``input`` is filtered along the specified axes.
+            When ``axes`` is specified, any tuples used for ``size`` and/or
+            ``origin`` must match the length of ``axes``. The ith entry in any
+            of these tuples corresponds to the ith entry in ``axes``. Default
+            is ``None``.
 
     Returns:
         cupy.ndarray: The result of the filtering.
@@ -1306,7 +1466,15 @@ def median_filter(
     .. seealso:: :func:`scipy.ndimage.median_filter`
     """
     return _rank_filter(
-        input, lambda fs: fs // 2, size, footprint, output, mode, cval, origin
+        input,
+        lambda fs: fs // 2,
+        size,
+        footprint,
+        output,
+        mode,
+        cval,
+        origin,
+        axes,
     )
 
 
@@ -1319,6 +1487,7 @@ def percentile_filter(
     mode="reflect",
     cval=0.0,
     origin=0,
+    axes=None,
 ):
     """Multi-dimensional percentile filter.
 
@@ -1343,6 +1512,12 @@ def percentile_filter(
             placement of the filter, relative to the center of the current
             element of the input. Default of 0 is equivalent to
             ``(0,)*input.ndim``.
+        axes (tuple of int or None): If None, ``input`` is filtered along all
+            axes. Otherwise, ``input`` is filtered along the specified axes.
+            When ``axes`` is specified, any tuples used for ``size`` and/or
+            ``origin`` must match the length of ``axes``. The ith entry in any
+            of these tuples corresponds to the ith entry in ``axes``. Default
+            is ``None``.
 
     Returns:
         cupy.ndarray: The result of the filtering.
@@ -1365,7 +1540,7 @@ def percentile_filter(
             return int(float(fs) * percentile / 100.0)
 
     return _rank_filter(
-        input, get_rank, size, footprint, output, mode, cval, origin
+        input, get_rank, size, footprint, output, mode, cval, origin, axes
     )
 
 
@@ -1378,15 +1553,17 @@ def _rank_filter(
     mode="reflect",
     cval=0.0,
     origin=0,
+    axes=None,
 ):
+    axes = _util._check_axes(axes, input.ndim)
+    num_axes = len(axes)
+    default_footprint = footprint is None
     sizes, footprint, _ = _filters_core._check_size_footprint_structure(
-        input.ndim, size, footprint, None, force_footprint=False
+        num_axes, size, footprint, None, force_footprint=False
     )
     if cval is cupy.nan:
         raise NotImplementedError("NaN cval is unsupported")
-    origins, int_type = _filters_core._check_nd_args(
-        input, footprint, mode, origin, "footprint", sizes=sizes
-    )
+
     has_weights = True
     if sizes is not None:
         has_weights = False
@@ -1394,15 +1571,46 @@ def _rank_filter(
         if filter_size == 0:
             return cupy.zeros_like(input)
         footprint_shape = tuple(sizes)
-    elif footprint.size == 0:
-        return cupy.zeros_like(input)
+        (
+            axes,
+            footprint,
+            origins,
+            modes,
+            int_type,
+        ) = _filters_core._check_nd_args(
+            input,
+            None,
+            mode,
+            origin,
+            "footprint",
+            axes=axes,
+            sizes=footprint_shape,
+        )
     else:
-        footprint_shape = footprint.shape
-        filter_size = int(footprint.sum())
-        if filter_size == footprint.size:
-            # can omit passing the footprint if it is all ones
-            sizes = footprint.shape
-            has_weights = False
+        # generate explicit footprint matching axes size
+        # _, footprint, _ = _filters_core._check_size_footprint_structure(
+        #    num_axes, size, footprint, None, force_footprint=True)
+
+        if footprint.size == 0:
+            return cupy.zeros_like(input)
+        (
+            axes,
+            footprint,
+            origins,
+            modes,
+            int_type,
+        ) = _filters_core._check_nd_args(
+            input, footprint, mode, origin, "footprint", axes=axes
+        )
+        if default_footprint:
+            filter_size = footprint.size
+        else:
+            footprint_shape = footprint.shape
+            filter_size = int(footprint.sum())
+            if filter_size == footprint.size:
+                # can omit passing the footprint if it is all ones
+                sizes = footprint.shape
+                has_weights = False
 
     if not has_weights:
         footprint = None
@@ -1424,10 +1632,11 @@ def _rank_filter(
                 None,
                 None,
                 output,
-                mode,
+                modes,
                 cval,
                 origins,
                 min_max_op,
+                axes,
             )
         else:
             return _min_or_max_filter(
@@ -1436,16 +1645,17 @@ def _rank_filter(
                 footprint,
                 None,
                 output,
-                mode,
+                modes,
                 cval,
                 origins,
                 min_max_op,
+                axes,
             )
     offsets = _filters_core._origins_to_offsets(origins, footprint_shape)
     kernel = _get_rank_kernel(
         filter_size,
         rank,
-        mode,
+        modes,
         footprint_shape,
         offsets,
         float(cval),
@@ -1485,7 +1695,7 @@ def _get_shell_gap(filter_size):
 
 @cupy._util.memoize(for_each_device=True)
 def _get_rank_kernel(
-    filter_size, rank, mode, w_shape, offsets, cval, int_type, has_weights
+    filter_size, rank, modes, w_shape, offsets, cval, int_type, has_weights
 ):
     s_rank = min(rank, filter_size - rank - 1)
     # The threshold was set based on the measurements on a V100
@@ -1536,7 +1746,7 @@ def _get_rank_kernel(
         f"int iv = 0;\nX values[{array_size}];",
         "values[iv++] = {value};" + found_post,
         post,
-        mode,
+        modes,
         w_shape,
         int_type,
         offsets,

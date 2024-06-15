@@ -832,7 +832,16 @@ def grey_erosion(
         raise ValueError("size, footprint or structure must be specified")
 
     return _filters._min_or_max_filter(
-        input, size, footprint, structure, output, mode, cval, origin, "min"
+        input,
+        size,
+        footprint,
+        structure,
+        output,
+        mode,
+        cval,
+        origin,
+        "min",
+        None,
     )
 
 
@@ -901,7 +910,16 @@ def grey_dilation(
             origin[i] -= 1
 
     return _filters._min_or_max_filter(
-        input, size, footprint, structure, output, mode, cval, origin, "max"
+        input,
+        size,
+        footprint,
+        structure,
+        output,
+        mode,
+        cval,
+        origin,
+        "max",
+        None,
     )
 
 
