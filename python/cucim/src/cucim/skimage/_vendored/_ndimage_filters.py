@@ -840,6 +840,8 @@ def generic_laplace(
     cval=0.0,
     extra_arguments=(),
     extra_keywords=None,
+    *,
+    axes=None,
 ):
     """Multi-dimensional Laplace filter using a provided second derivative
     function.
@@ -867,6 +869,9 @@ def generic_laplace(
             Sequence of extra positional arguments to pass to ``derivative2``.
         extra_keywords (dict, optional):
             dict of extra keyword arguments to pass ``derivative2``.
+        axes (tuple of int or None): The axes over which to apply the filter.
+            If a `mode` tuple is provided, its length must match the number of
+            axes.
 
     Returns:
         cupy.ndarray: The result of the filtering.
@@ -883,18 +888,25 @@ def generic_laplace(
     ndim = input.ndim
     modes = _util._fix_sequence_arg(mode, ndim, "mode", _util._check_mode)
     output = _util._get_output(output, input)
+    axes = _util._check_axes(axes, ndim)
     if ndim == 0:
         output[:] = input
         return output
     derivative2(
-        input, 0, output, modes[0], cval, *extra_arguments, **extra_keywords
+        input,
+        axes[0],
+        output,
+        modes[0],
+        cval,
+        *extra_arguments,
+        **extra_keywords,
     )
     if ndim > 1:
         tmp = _util._get_output(output.dtype, input)
         for i in range(1, ndim):
             derivative2(
                 input,
-                i,
+                axes[i],
                 tmp,
                 modes[i],
                 cval,
@@ -905,7 +917,9 @@ def generic_laplace(
     return output
 
 
-def laplace(input, output=None, mode="reflect", cval=0.0, *, algorithm=None):
+def laplace(
+    input, output=None, mode="reflect", cval=0.0, *, axes=None, algorithm=None
+):
     """Multi-dimensional Laplace filter based on approximate second
     derivatives.
 
@@ -918,6 +932,10 @@ def laplace(input, output=None, mode="reflect", cval=0.0, *, algorithm=None):
             ``'wrap'``). Default is ``'reflect'``.
         cval (scalar): Value to fill past edges of input if mode is
             ``'constant'``. Default is ``0.0``.
+        axes (tuple of int or None): The axes over which to apply the filter.
+            If a `mode` tuple is provided, its length must match the number of
+            axes.
+
     Returns:
         cupy.ndarray: The result of the filtering.
 
@@ -936,7 +954,7 @@ def laplace(input, output=None, mode="reflect", cval=0.0, *, algorithm=None):
             input, weights, axis, output, mode, cval, algorithm=algorithm
         )
 
-    return generic_laplace(input, derivative2, output, mode, cval)
+    return generic_laplace(input, derivative2, output, mode, cval, axes=axes)
 
 
 def gaussian_laplace(
@@ -946,6 +964,7 @@ def gaussian_laplace(
     mode="reflect",
     cval=0.0,
     *,
+    axes=None,
     algorithm=None,
     **kwargs,
 ):
@@ -962,6 +981,9 @@ def gaussian_laplace(
             ``'wrap'``). Default is ``'reflect'``.
         cval (scalar): Value to fill past edges of input if mode is
             ``'constant'``. Default is ``0.0``.
+        axes (tuple of int or None): The axes over which to apply the filter.
+            If a `sigma` or `mode` tuples are provided, their length must match
+            the number of axes.
         kwargs (dict, optional):
             dict of extra keyword arguments to pass ``gaussian_filter()``.
 
@@ -990,7 +1012,19 @@ def gaussian_laplace(
             **kwargs,
         )
 
-    return generic_laplace(input, derivative2, output, mode, cval)
+    axes = _util._check_axes(axes, input.ndim)
+    num_axes = len(axes)
+    sigma = _util._fix_sequence_arg(sigma, num_axes, "sigma", int)
+    if num_axes < input.ndim:
+        # set sigma = 0 for any axes not being filtered
+        sigma_temp = [
+            0,
+        ] * input.ndim
+        for s, ax in zip(sigma, axes):
+            sigma_temp[ax] = s
+        sigma = sigma_temp
+
+    return generic_laplace(input, derivative2, output, mode, cval, axes=axes)
 
 
 def generic_gradient_magnitude(
@@ -1001,6 +1035,8 @@ def generic_gradient_magnitude(
     cval=0.0,
     extra_arguments=(),
     extra_keywords=None,
+    *,
+    axes=None,
 ):
     """Multi-dimensional gradient magnitude filter using a provided derivative
     function.
@@ -1028,6 +1064,9 @@ def generic_gradient_magnitude(
             Sequence of extra positional arguments to pass to ``derivative2``.
         extra_keywords (dict, optional):
             dict of extra keyword arguments to pass ``derivative2``.
+        axes (tuple of int or None): The axes over which to apply the filter.
+            If a `mode` tuple is provided, its length must match the number of
+            axes.
 
     Returns:
         cupy.ndarray: The result of the filtering.
@@ -1042,21 +1081,29 @@ def generic_gradient_magnitude(
     if extra_keywords is None:
         extra_keywords = {}
     ndim = input.ndim
-    modes = _util._fix_sequence_arg(mode, ndim, "mode", _util._check_mode)
+    axes = _util._check_axes(axes, ndim)
+    num_axes = len(axes)
+    modes = _util._fix_sequence_arg(mode, num_axes, "mode", _util._check_mode)
     output = _util._get_output(output, input)
     if ndim == 0:
         output[:] = input
         return output
     derivative(
-        input, 0, output, modes[0], cval, *extra_arguments, **extra_keywords
+        input,
+        axes[0],
+        output,
+        modes[0],
+        cval,
+        *extra_arguments,
+        **extra_keywords,
     )
     output *= output
     if ndim > 1:
         tmp = _util._get_output(output.dtype, input)
-        for i in range(1, ndim):
+        for i in range(1, num_axes):
             derivative(
                 input,
-                i,
+                axes[i],
                 tmp,
                 modes[i],
                 cval,
@@ -1075,6 +1122,7 @@ def gaussian_gradient_magnitude(
     mode="reflect",
     cval=0.0,
     *,
+    axes=None,
     algorithm=None,
     **kwargs,
 ):
@@ -1093,6 +1141,9 @@ def gaussian_gradient_magnitude(
             ``'constant'``. Default is ``0.0``.
         kwargs (dict, optional):
             dict of extra keyword arguments to pass ``gaussian_filter()``.
+        axes (tuple of int or None): The axes over which to apply the filter.
+            If a `mode` tuple is provided, its length must match the number of
+            axes.
 
     Returns:
         cupy.ndarray: The result of the filtering.
@@ -1119,7 +1170,9 @@ def gaussian_gradient_magnitude(
             **kwargs,
         )
 
-    return generic_gradient_magnitude(input, derivative, output, mode, cval)
+    return generic_gradient_magnitude(
+        input, derivative, output, mode, cval, axes=axes
+    )
 
 
 def minimum_filter(
