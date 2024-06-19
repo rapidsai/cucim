@@ -986,8 +986,8 @@ def _shmem_convolve1d(
     convolution=False,
 ):
     ndim = image.ndim
-    if weights.ndim != 1:
-        raise ValueError("expected 1d weight array")
+    if weights.ndim != 1 or weights.shape[0] < 1:
+        raise RuntimeError("expected a 1d weights array with non-zero size")
     axis = _normalize_axis_index(axis, ndim)
     origin = util._check_origin(origin, weights.size)
     if weights.size == 0:
