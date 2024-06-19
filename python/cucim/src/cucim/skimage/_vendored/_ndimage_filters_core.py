@@ -126,7 +126,6 @@ def _check_nd_args(
         if len(sizes) != num_axes:
             raise ValueError("sizes must match len(axes)")
         weight_dims = sizes
-    origins = _util._fix_sequence_arg(origin, len(weight_dims), "origin", int)
     for origin, width in zip(origins, weight_dims):
         _util._check_origin(origin, width)
     int_type = _util._get_inttype(input)

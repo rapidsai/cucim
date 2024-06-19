@@ -2,6 +2,7 @@
 import math
 import platform
 import warnings
+from collections.abc import Iterable
 
 import cupy
 import numpy
@@ -26,7 +27,57 @@ except ImportError:
 _is_not_windows = platform.system() != "Windows"
 
 
-def correlate(input, weights, output=None, mode="reflect", cval=0.0, origin=0):
+def _expand_origin(ndim_image, axes, origin):
+    num_axes = len(axes)
+    origins = _util._fix_sequence_arg(origin, num_axes, "origin", int)
+    if num_axes < ndim_image:
+        # set origin = 0 for any axes not being filtered
+        origins_temp = [
+            0,
+        ] * ndim_image
+        for o, ax in zip(origins, axes):
+            origins_temp[ax] = o
+        origins = origins_temp
+    return origins
+
+
+def _expand_footprint(ndim_image, axes, footprint, footprint_name="footprint"):
+    num_axes = len(axes)
+    if num_axes < ndim_image:
+        if footprint.ndim != num_axes:
+            raise RuntimeError(
+                f"{footprint_name}.ndim ({footprint.ndim}) "
+                f"must match len(axes) ({num_axes})"
+            )
+
+        footprint = cupy.expand_dims(
+            footprint, tuple(ax for ax in range(ndim_image) if ax not in axes)
+        )
+    return footprint
+
+
+def _expand_mode(ndim_image, axes, mode):
+    num_axes = len(axes)
+    if not isinstance(mode, str) and isinstance(mode, Iterable):
+        # set mode = 'constant' for any axes not being filtered
+        modes = _util._fix_sequence_arg(mode, num_axes, "mode", str)
+        modes_temp = ["constant"] * ndim_image
+        for m, ax in zip(modes, axes):
+            modes_temp[ax] = m
+        mode = modes_temp
+    return mode
+
+
+def correlate(
+    input,
+    weights,
+    output=None,
+    mode="reflect",
+    cval=0.0,
+    origin=0,
+    *,
+    axes=None,
+):
     """Multi-dimensional correlate.
 
     The array is correlated with the given kernel.
@@ -46,6 +97,11 @@ def correlate(input, weights, output=None, mode="reflect", cval=0.0, origin=0):
             placement of the filter, relative to the center of the current
             element of the input. Default of 0 is equivalent to
             ``(0,)*input.ndim``.
+        axes (tuple of int or None, optional):  If None, `input` is filtered
+            along all axes. Otherwise, `input` is filtered along the specified
+            axes. When `axes` is specified, any tuples used for `mode` or
+            `origin` must match the length of `axes`. The ith entry in any of
+            these tuples corresponds to the ith entry in `axes`.
 
     Returns:
         cupy.ndarray: The result of correlate.
@@ -57,10 +113,21 @@ def correlate(input, weights, output=None, mode="reflect", cval=0.0, origin=0):
         and input is integral) the results may not perfectly match the results
         from SciPy due to floating-point rounding of intermediate results.
     """
-    return _correlate_or_convolve(input, weights, output, mode, cval, origin)
+    return _correlate_or_convolve(
+        input, weights, output, mode, cval, origin, False, axes
+    )
 
 
-def convolve(input, weights, output=None, mode="reflect", cval=0.0, origin=0):
+def convolve(
+    input,
+    weights,
+    output=None,
+    mode="reflect",
+    cval=0.0,
+    origin=0,
+    *,
+    axes=None,
+):
     """Multi-dimensional convolution.
 
     The array is convolved with the given kernel.
@@ -80,6 +147,11 @@ def convolve(input, weights, output=None, mode="reflect", cval=0.0, origin=0):
             placement of the filter, relative to the center of the current
             element of the input. Default of 0 is equivalent to
             ``(0,)*input.ndim``.
+        axes (tuple of int or None, optional):  If None, `input` is filtered
+            along all axes. Otherwise, `input` is filtered along the specified
+            axes. When `axes` is specified, any tuples used for `mode` or
+            `origin` must match the length of `axes`. The ith entry in any of
+            these tuples corresponds to the ith entry in `axes`.
 
     Returns:
         cupy.ndarray: The result of convolution.
@@ -92,7 +164,7 @@ def convolve(input, weights, output=None, mode="reflect", cval=0.0, origin=0):
         from SciPy due to floating-point rounding of intermediate results.
     """
     return _correlate_or_convolve(
-        input, weights, output, mode, cval, origin, True
+        input, weights, output, mode, cval, origin, True, axes
     )
 
 
@@ -186,10 +258,10 @@ def convolve1d(
 
 
 def _correlate_or_convolve(
-    input, weights, output, mode, cval, origin, convolution=False
+    input, weights, output, mode, cval, origin, convolution=False, axes=None
 ):
     axes, weights, origins, modes, int_type = _filters_core._check_nd_args(
-        input, weights, mode, origin
+        input, weights, mode, origin, axes=axes
     )
     if weights.size == 0:
         return cupy.zeros_like(input)
@@ -221,6 +293,17 @@ def _correlate_or_convolve(
     return output
 
 
+def _unsupported_shmem_cval(cval, dtype):
+    """returns True if the cval + dtype combination is unsupported for the
+    shared memory kernels."""
+    return (
+        # shared_memory kernels fail to compile for non-finite cval
+        not numpy.isfinite(cval)
+        # incorrect output for negative cval and unsigned integer input
+        or (cval < 0 and dtype.kind == "u")
+    )
+
+
 def _correlate_or_convolve1d(
     input,
     weights,
@@ -241,7 +324,15 @@ def _correlate_or_convolve1d(
             algorithm = "shared_memory"
         else:
             algorithm = "elementwise"
-    elif algorithm not in ["shared_memory", "elementwise"]:
+    elif algorithm == "shared_memory":
+        if mode == "constant" and _unsupported_shmem_cval(cval, input.dtype):
+            # shared_memory case can fail to compile on NaN cval and
+            warnings.warn(
+                f"{cval=} and {input.dtype=} is unsupported for algorithm "
+                "'shared_memory', falling back to elementwise"
+            )
+            algorithm = "elementwise"
+    elif algorithm != "elementwise":
         raise ValueError(
             "algorithm must be 'shared_memory', 'elementwise' or None"
         )
@@ -1203,11 +1294,17 @@ def _min_or_max_filter(
             origins,
         )
 
-    if structure is not None and structure.ndim != input.ndim:
-        raise RuntimeError("structure array has incorrect shape")
-
     if ftprnt.size == 0:
         return cupy.zeros_like(input)
+
+    # expand origins ,footprint and structure if num_axes < input.ndim
+    ftprnt = _expand_footprint(input.ndim, axes, ftprnt)
+    origins = _expand_origin(input.ndim, axes, origin)
+    if structure is not None:
+        structure = _expand_footprint(
+            input.ndim, axes, structure, footprint_name="structure"
+        )
+
     offsets = _filters_core._origins_to_offsets(origins, ftprnt.shape)
     kernel = _get_min_or_max_kernel(
         mode,
@@ -1555,7 +1652,8 @@ def _rank_filter(
     origin=0,
     axes=None,
 ):
-    axes = _util._check_axes(axes, input.ndim)
+    ndim = input.ndim
+    axes = _util._check_axes(axes, ndim)
     num_axes = len(axes)
     default_footprint = footprint is None
     sizes, footprint, _ = _filters_core._check_size_footprint_structure(
@@ -1587,12 +1685,9 @@ def _rank_filter(
             sizes=footprint_shape,
         )
     else:
-        # generate explicit footprint matching axes size
-        # _, footprint, _ = _filters_core._check_size_footprint_structure(
-        #    num_axes, size, footprint, None, force_footprint=True)
-
         if footprint.size == 0:
             return cupy.zeros_like(input)
+
         (
             axes,
             footprint,
@@ -1602,6 +1697,7 @@ def _rank_filter(
         ) = _filters_core._check_nd_args(
             input, footprint, mode, origin, "footprint", axes=axes
         )
+
         if default_footprint:
             filter_size = footprint.size
         else:
@@ -1628,7 +1724,7 @@ def _rank_filter(
         if sizes is not None:
             return _min_or_max_filter(
                 input,
-                sizes[0],
+                sizes,  #  [0],
                 None,
                 None,
                 output,
@@ -1652,6 +1748,13 @@ def _rank_filter(
                 axes,
             )
     offsets = _filters_core._origins_to_offsets(origins, footprint_shape)
+    if num_axes < ndim and not has_weights:
+        offsets = tuple(_expand_origin(ndim, axes, offsets))
+        modes = tuple(_expand_mode(ndim, axes, modes))
+        footprint_shape_temp = [1] * ndim
+        for s, ax in zip(footprint_shape, axes):
+            footprint_shape_temp[ax] = s
+        footprint_shape = tuple(footprint_shape_temp)
     kernel = _get_rank_kernel(
         filter_size,
         rank,
