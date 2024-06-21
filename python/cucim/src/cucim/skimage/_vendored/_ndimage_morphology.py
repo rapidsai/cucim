@@ -797,6 +797,8 @@ def grey_erosion(
     mode="reflect",
     cval=0.0,
     origin=0,
+    *,
+    axes=None,
 ):
     """Calculates a greyscale erosion.
 
@@ -822,6 +824,9 @@ def grey_erosion(
             placement of the filter, relative to the center of the current
             element of the input. Default of 0 is equivalent to
             ``(0,)*input.ndim``.
+        axes (tuple of int or None): The axes over which to apply the filter.
+            If None, `input` is filtered along all axes. If an `origin` tuple
+            is provided, its length must match the number of axes.
 
     Returns:
         cupy.ndarray: The result of greyscale erosion.
@@ -841,7 +846,7 @@ def grey_erosion(
         cval,
         origin,
         "min",
-        None,
+        axes=axes,
     )
 
 
@@ -854,6 +859,8 @@ def grey_dilation(
     mode="reflect",
     cval=0.0,
     origin=0,
+    *,
+    axes=None,
 ):
     """Calculates a greyscale dilation.
 
@@ -879,6 +886,9 @@ def grey_dilation(
             placement of the filter, relative to the center of the current
             element of the input. Default of 0 is equivalent to
             ``(0,)*input.ndim``.
+        axes (tuple of int or None): The axes over which to apply the filter.
+            If None, `input` is filtered along all axes. If an `origin` tuple
+            is provided, its length must match the number of axes.
 
     Returns:
         cupy.ndarray: The result of greyscale dilation.
@@ -895,7 +905,8 @@ def grey_dilation(
         footprint = cupy.array(footprint)
         footprint = footprint[tuple([slice(None, None, -1)] * footprint.ndim)]
 
-    origin = _util._fix_sequence_arg(origin, input.ndim, "origin", int)
+    axes = _util._check_axes(axes, input.ndim)
+    origin = _util._fix_sequence_arg(origin, len(axes), "origin", int)
     for i in range(len(origin)):
         origin[i] = -origin[i]
         if footprint is not None:
@@ -919,7 +930,7 @@ def grey_dilation(
         cval,
         origin,
         "max",
-        None,
+        axes=axes,
     )
 
 
@@ -932,6 +943,8 @@ def grey_closing(
     mode="reflect",
     cval=0.0,
     origin=0,
+    *,
+    axes=None,
 ):
     """Calculates a multi-dimensional greyscale closing.
 
@@ -957,6 +970,9 @@ def grey_closing(
             placement of the filter, relative to the center of the current
             element of the input. Default of 0 is equivalent to
             ``(0,)*input.ndim``.
+        axes (tuple of int or None): The axes over which to apply the filter.
+            If None, `input` is filtered along all axes. If an `origin` tuple
+            is provided, its length must match the number of axes.
 
     Returns:
         cupy.ndarray: The result of greyscale closing.
@@ -968,10 +984,10 @@ def grey_closing(
             "ignoring size because footprint is set", UserWarning, stacklevel=2
         )
     tmp = grey_dilation(
-        input, size, footprint, structure, None, mode, cval, origin
+        input, size, footprint, structure, None, mode, cval, origin, axes=axes
     )
     return grey_erosion(
-        tmp, size, footprint, structure, output, mode, cval, origin
+        tmp, size, footprint, structure, output, mode, cval, origin, axes=axes
     )
 
 
@@ -984,6 +1000,8 @@ def grey_opening(
     mode="reflect",
     cval=0.0,
     origin=0,
+    *,
+    axes=None,
 ):
     """Calculates a multi-dimensional greyscale opening.
 
@@ -1009,6 +1027,9 @@ def grey_opening(
             placement of the filter, relative to the center of the current
             element of the input. Default of 0 is equivalent to
             ``(0,)*input.ndim``.
+        axes (tuple of int or None): The axes over which to apply the filter.
+            If None, `input` is filtered along all axes. If an `origin` tuple
+            is provided, its length must match the number of axes.
 
     Returns:
         cupy.ndarray: The result of greyscale opening.
@@ -1020,10 +1041,10 @@ def grey_opening(
             "ignoring size because footprint is set", UserWarning, stacklevel=2
         )
     tmp = grey_erosion(
-        input, size, footprint, structure, None, mode, cval, origin
+        input, size, footprint, structure, None, mode, cval, origin, axes=axes
     )
     return grey_dilation(
-        tmp, size, footprint, structure, output, mode, cval, origin
+        tmp, size, footprint, structure, output, mode, cval, origin, axes=axes
     )
 
 
@@ -1036,6 +1057,8 @@ def morphological_gradient(
     mode="reflect",
     cval=0.0,
     origin=0,
+    *,
+    axes=None,
 ):
     """
     Multidimensional morphological gradient.
@@ -1066,23 +1089,23 @@ def morphological_gradient(
             placement of the filter, relative to the center of the current
             element of the input. Default of 0 is equivalent to
             ``(0,)*input.ndim``.
+        axes (tuple of int or None): The axes over which to apply the filter.
+            If None, `input` is filtered along all axes. If an `origin` tuple
+            is provided, its length must match the number of axes.
 
     Returns:
         cupy.ndarray: The morphological gradient of the input.
 
     .. seealso:: :func:`scipy.ndimage.morphological_gradient`
     """
-    tmp = grey_dilation(
-        input, size, footprint, structure, None, mode, cval, origin
-    )
+    kwargs = dict(mode=mode, cval=cval, origin=origin, axes=axes)
+    tmp = grey_dilation(input, size, footprint, structure, None, **kwargs)
     if isinstance(output, cupy.ndarray):
-        grey_erosion(
-            input, size, footprint, structure, output, mode, cval, origin
-        )
+        grey_erosion(input, size, footprint, structure, output, **kwargs)
         return cupy.subtract(tmp, output, output)
     else:
         return tmp - grey_erosion(
-            input, size, footprint, structure, None, mode, cval, origin
+            input, size, footprint, structure, None, **kwargs
         )
 
 
@@ -1095,6 +1118,8 @@ def morphological_laplace(
     mode="reflect",
     cval=0.0,
     origin=0,
+    *,
+    axes=None,
 ):
     """
     Multidimensional morphological laplace.
@@ -1122,26 +1147,24 @@ def morphological_laplace(
             placement of the filter, relative to the center of the current
             element of the input. Default of 0 is equivalent to
             ``(0,)*input.ndim``.
+        axes (tuple of int or None): The axes over which to apply the filter.
+            If None, `input` is filtered along all axes. If an `origin` tuple
+            is provided, its length must match the number of axes.
 
     Returns:
         cupy.ndarray: The morphological laplace of the input.
 
     .. seealso:: :func:`scipy.ndimage.morphological_laplace`
     """
-    tmp1 = grey_dilation(
-        input, size, footprint, structure, None, mode, cval, origin
-    )
+    kwargs = dict(mode=mode, cval=cval, origin=origin, axes=axes)
+    tmp1 = grey_dilation(input, size, footprint, structure, None, **kwargs)
     if isinstance(output, cupy.ndarray):
-        grey_erosion(
-            input, size, footprint, structure, output, mode, cval, origin
-        )
+        grey_erosion(input, size, footprint, structure, output, **kwargs)
         cupy.add(tmp1, output, output)
         cupy.subtract(output, input, output)
         return cupy.subtract(output, input, output)
     else:
-        tmp2 = grey_erosion(
-            input, size, footprint, structure, None, mode, cval, origin
-        )
+        tmp2 = grey_erosion(input, size, footprint, structure, None, **kwargs)
         cupy.add(tmp1, tmp2, tmp2)
         cupy.subtract(tmp2, input, tmp2)
         cupy.subtract(tmp2, input, tmp2)
@@ -1157,6 +1180,8 @@ def white_tophat(
     mode="reflect",
     cval=0.0,
     origin=0,
+    *,
+    axes=None,
 ):
     """
     Multidimensional white tophat filter.
@@ -1183,6 +1208,9 @@ def white_tophat(
             placement of the filter, relative to the center of the current
             element of the input. Default of 0 is equivalent to
             ``(0,)*input.ndim``.
+        axes (tuple of int or None): The axes over which to apply the filter.
+            If None, `input` is filtered along all axes. If an `origin` tuple
+            is provided, its length must match the number of axes.
 
     Returns:
         cupy.ndarray: Result of the filter of ``input`` with ``structure``.
@@ -1193,12 +1221,9 @@ def white_tophat(
         warnings.warn(
             "ignoring size because footprint is set", UserWarning, stacklevel=2
         )
-    tmp = grey_erosion(
-        input, size, footprint, structure, None, mode, cval, origin
-    )
-    tmp = grey_dilation(
-        tmp, size, footprint, structure, output, mode, cval, origin
-    )
+    kwargs = dict(mode=mode, cval=cval, origin=origin, axes=axes)
+    tmp = grey_erosion(input, size, footprint, structure, None, **kwargs)
+    tmp = grey_dilation(tmp, size, footprint, structure, output, **kwargs)
     if input.dtype == numpy.bool_ and tmp.dtype == numpy.bool_:
         cupy.bitwise_xor(input, tmp, out=tmp)
     else:
@@ -1215,6 +1240,8 @@ def black_tophat(
     mode="reflect",
     cval=0.0,
     origin=0,
+    *,
+    axes=None,
 ):
     """
     Multidimensional black tophat filter.
@@ -1241,6 +1268,9 @@ def black_tophat(
             placement of the filter, relative to the center of the current
             element of the input. Default of 0 is equivalent to
             ``(0,)*input.ndim``.
+        axes (tuple of int or None): The axes over which to apply the filter.
+            If None, `input` is filtered along all axes. If an `origin` tuple
+            is provided, its length must match the number of axes.
 
     Returns:
         cupy.ndarry : Result of the filter of ``input`` with ``structure``.
@@ -1251,12 +1281,9 @@ def black_tophat(
         warnings.warn(
             "ignoring size because footprint is set", UserWarning, stacklevel=2
         )
-    tmp = grey_dilation(
-        input, size, footprint, structure, None, mode, cval, origin
-    )
-    tmp = grey_erosion(
-        tmp, size, footprint, structure, output, mode, cval, origin
-    )
+    kwargs = dict(mode=mode, cval=cval, origin=origin, axes=axes)
+    tmp = grey_dilation(input, size, footprint, structure, None, **kwargs)
+    tmp = grey_erosion(tmp, size, footprint, structure, output, **kwargs)
     if input.dtype == numpy.bool_ and tmp.dtype == numpy.bool_:
         cupy.bitwise_xor(tmp, input, out=tmp)
     else:

@@ -1350,9 +1350,11 @@ def _min_or_max_filter(
     if ftprnt.size == 0:
         return cupy.zeros_like(input)
 
-    # expand origins ,footprint and structure if num_axes < input.ndim
-    ftprnt = _expand_footprint(input.ndim, axes, ftprnt)
-    origins = _expand_origin(input.ndim, axes, origin)
+    if num_axes < input.ndim:
+        # expand origins ,footprint and structure if num_axes < input.ndim
+        ftprnt = _expand_footprint(input.ndim, axes, ftprnt)
+        origins = _expand_origin(input.ndim, axes, origin)
+
     if structure is not None:
         structure = _expand_footprint(
             input.ndim, axes, structure, footprint_name="structure"
