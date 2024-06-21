@@ -83,27 +83,12 @@ def _check_nd_args(
         _util._check_mode(mode)
     origins = _util._fix_sequence_arg(origin, num_axes, "origin", int)
     if isinstance(weights, cupy.ndarray) and num_axes < input.ndim:
-        # In case of explicit footprint, we insert a singletone dimension
-        # on all non-filtered axes and insert values for origins, modes on any
-        # non-filtered axes.
-
-        # set origin = 0 on any axis not being filtered
-        origins_temp = [
-            0,
-        ] * input.ndim
-        for o, ax in zip(origins, axes):
-            origins_temp[ax] = o
-        origins = origins_temp
-
-        modes_temp = ["constant"] * input.ndim
-        for m, ax in zip(modes, axes):
-            modes_temp[ax] = m
-        modes = modes_temp
-
-        # insert singleton dimension on footprint for non-filtered axes
-        weights = cupy.expand_dims(
-            weights, tuple(ax for ax in range(input.ndim) if ax not in axes)
+        # expand origins ,footprint and structure if num_axes < input.ndim
+        weights = _util._expand_footprint(
+            input.ndim, axes, weights, footprint_name="weights"
         )
+        origins = _util._expand_origin(input.ndim, axes, origins)
+        modes = _util._expand_mode(input.ndim, axes, modes)
 
         # now filter all axes
         axes = tuple(range(input.ndim))

@@ -2,7 +2,6 @@
 import math
 import platform
 import warnings
-from collections.abc import Iterable
 
 import cupy
 import numpy
@@ -25,47 +24,6 @@ except ImportError:
     compile_errors = (ResourceLimitError,)
 
 _is_not_windows = platform.system() != "Windows"
-
-
-def _expand_origin(ndim_image, axes, origin):
-    num_axes = len(axes)
-    origins = _util._fix_sequence_arg(origin, num_axes, "origin", int)
-    if num_axes < ndim_image:
-        # set origin = 0 for any axes not being filtered
-        origins_temp = [
-            0,
-        ] * ndim_image
-        for o, ax in zip(origins, axes):
-            origins_temp[ax] = o
-        origins = origins_temp
-    return origins
-
-
-def _expand_footprint(ndim_image, axes, footprint, footprint_name="footprint"):
-    num_axes = len(axes)
-    if num_axes < ndim_image:
-        if footprint.ndim != num_axes:
-            raise RuntimeError(
-                f"{footprint_name}.ndim ({footprint.ndim}) "
-                f"must match len(axes) ({num_axes})"
-            )
-
-        footprint = cupy.expand_dims(
-            footprint, tuple(ax for ax in range(ndim_image) if ax not in axes)
-        )
-    return footprint
-
-
-def _expand_mode(ndim_image, axes, mode):
-    num_axes = len(axes)
-    if not isinstance(mode, str) and isinstance(mode, Iterable):
-        # set mode = 'constant' for any axes not being filtered
-        modes = _util._fix_sequence_arg(mode, num_axes, "mode", str)
-        modes_temp = ["constant"] * ndim_image
-        for m, ax in zip(modes, axes):
-            modes_temp[ax] = m
-        mode = modes_temp
-    return mode
 
 
 def correlate(
@@ -1352,11 +1310,11 @@ def _min_or_max_filter(
 
     if num_axes < input.ndim:
         # expand origins ,footprint and structure if num_axes < input.ndim
-        ftprnt = _expand_footprint(input.ndim, axes, ftprnt)
-        origins = _expand_origin(input.ndim, axes, origin)
+        ftprnt = _util._expand_footprint(input.ndim, axes, ftprnt)
+        origins = _util._expand_origin(input.ndim, axes, origin)
 
     if structure is not None:
-        structure = _expand_footprint(
+        structure = _util._expand_footprint(
             input.ndim, axes, structure, footprint_name="structure"
         )
 
@@ -1804,8 +1762,8 @@ def _rank_filter(
             )
     offsets = _filters_core._origins_to_offsets(origins, footprint_shape)
     if num_axes < ndim and not has_weights:
-        offsets = tuple(_expand_origin(ndim, axes, offsets))
-        modes = tuple(_expand_mode(ndim, axes, modes))
+        offsets = tuple(_util._expand_origin(ndim, axes, offsets))
+        modes = tuple(_util._expand_mode(ndim, axes, modes))
         footprint_shape_temp = [1] * ndim
         for s, ax in zip(footprint_shape, axes):
             footprint_shape_temp[ax] = s
