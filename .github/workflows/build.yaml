@@ -76,6 +76,8 @@ jobs:
       date: ${{ inputs.date }}
       script: ci/build_wheel.sh
   wheel-publish:
+    permissions:
+      id-token: write
     needs: wheel-build
     secrets: inherit
     uses: rapidsai/shared-workflows/.github/workflows/wheels-publish.yaml@branch-24.08
@@ -84,4 +86,4 @@ jobs:
       branch: ${{ inputs.branch }}
       sha: ${{ inputs.sha }}
       date: ${{ inputs.date }}
-      package-name: cucim
+      package-name: cucim 
