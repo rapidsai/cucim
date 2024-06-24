@@ -19,6 +19,7 @@ jobs:
       - docs-build
       - wheel-build
       - wheel-tests
+      - wheel-publish
     secrets: inherit
     uses: rapidsai/shared-workflows/.github/workflows/pr-builder.yaml@branch-24.08
   checks:
@@ -66,3 +67,13 @@ jobs:
     with:
       build_type: pull-request
       script: ci/test_wheel.sh
+  wheel-publish:
+    needs: wheel-build
+    secrets: inherit
+    uses: rapidsai/shared-workflows/.github/workflows/wheels-publish.yaml@test_pypi_trusted_publish
+    with:
+      build_type: ${{ inputs.build_type || 'branch' }}
+      branch: ${{ inputs.branch }}
+      sha: ${{ inputs.sha }}
+      date: ${{ inputs.date }}
+      package-name: cucim
