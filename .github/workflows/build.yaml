@@ -76,8 +76,6 @@ jobs:
       date: ${{ inputs.date }}
       script: ci/build_wheel.sh
   wheel-publish:
-    permissions:
-      id-token: write
     needs: wheel-build
     secrets: inherit
     uses: rapidsai/shared-workflows/.github/workflows/wheels-publish.yaml@branch-24.08
