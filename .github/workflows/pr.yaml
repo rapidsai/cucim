@@ -72,7 +72,7 @@ jobs:
     secrets: inherit
     uses: rapidsai/shared-workflows/.github/workflows/wheels-publish.yaml@test_pypi_trusted_publish
     with:
-      build_type: ${{ inputs.build_type || 'branch' }}
+      build_type: pull-request
       branch: ${{ inputs.branch }}
       sha: ${{ inputs.sha }}
       date: ${{ inputs.date }}
