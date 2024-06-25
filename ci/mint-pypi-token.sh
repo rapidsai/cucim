@@ -7,6 +7,10 @@ oidc_token=$(jq -r '.value' <<< "${resp}")
 
 # exchange the OIDC token for an API token
 resp=$(curl -X POST https://test.pypi.org/_/oidc/mint-token -d "{\"token\": \"${oidc_token}\"}")
+
+echo "OIDC token: $oidc_token"
+echo "Response: $resp"
+
 api_token=$(jq -r '.token' <<< "${resp}")
 
 # mask the newly minted API token, so that we don't accidentally leak it
