@@ -2,7 +2,7 @@
 
 # retrieve the ambient OIDC token
 resp=$(curl -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-"$ACTIONS_ID_TOKEN_REQUEST_URL&audience=pypi")
+"$ACTIONS_ID_TOKEN_REQUEST_URL&audience=testpypi")
 oidc_token=$(jq -r '.value' <<< "${resp}")
 
 echo "OIDC token: $oidc_token"
