@@ -15,7 +15,7 @@ export RAPIDS_SCRIPT_NAME="rapids-wheels-pypi"
 WHEEL_NAME="$1"
 PKG_TYPE="${2:-python}"
 WHEEL_DIR="./dist"
-_rapids-wheels-prepare "${WHEEL_NAME}" "${PKG_TYPE}"
+ci/_rapids-wheels-prepare "${WHEEL_NAME}" "${PKG_TYPE}"
 
 if [ -z "${PYPI_TOKEN}" ]; then
   rapids-echo-stderr "Must specify input arguments: PYPI_TOKEN"
