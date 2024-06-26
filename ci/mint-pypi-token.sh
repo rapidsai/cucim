@@ -5,6 +5,9 @@ resp=$(curl -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
 "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=pypi")
 oidc_token=$(jq -r '.value' <<< "${resp}")
 
+echo "OIDC token: $oidc_token"
+echo "Response: $resp"
+
 # exchange the OIDC token for an API token
 resp=$(curl -X POST https://test.pypi.org/_/oidc/mint-token -d "{\"token\": \"${oidc_token}\"}")
 

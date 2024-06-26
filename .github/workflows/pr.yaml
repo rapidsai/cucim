@@ -74,6 +74,8 @@ jobs:
       id-token: write
     needs: wheel-build
     steps:
+      - name: mint API token
+        run: ci/mint-pypi-token.sh
       - name: Mint GitHub Token
         uses: rapidsai/shared-actions/mint-pypi-token@mint-pypi-token
         id: mint-token
