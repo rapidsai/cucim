@@ -19,6 +19,7 @@ jobs:
       - docs-build
       - wheel-build
       - wheel-tests
+      - wheel-publish
     secrets: inherit
     uses: rapidsai/shared-workflows/.github/workflows/pr-builder.yaml@branch-24.08
   checks:
