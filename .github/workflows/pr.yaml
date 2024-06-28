@@ -66,3 +66,14 @@ jobs:
     with:
       build_type: pull-request
       script: ci/test_wheel.sh
+  wheel-publish:
+    needs: [wheel-build]
+    secrets: inherit
+    uses: rapidsai/shared-workflows/.github/workflows/wheels-publish.yaml@optionally-publish-to-pypi
+    with:
+      build_type: pull-request
+      branch: ${{ inputs.branch }}
+      sha: ${{ inputs.sha }}
+      date: ${{ inputs.date }}
+      package-name: cucim
+      publish_to_pypi: true
