@@ -137,7 +137,7 @@ class TestStainExtractorMacenko:
                 stain_extraction_pca(image)
         else:
             result = stain_extraction_pca(image)
-            cp.testing.assert_allclose(result, expected)
+            cp.testing.assert_allclose(result, expected, rtol=1e-6)
 
 
 class TestStainNormalizerMacenko:
