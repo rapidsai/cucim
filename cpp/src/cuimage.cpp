@@ -25,6 +25,7 @@
 #    include <cuda_runtime.h>
 #endif
 #include <fmt/format.h>
+#include <fmt/ranges.h>  // allows fmt to format std::array, std::vector, etc.
 
 #include "cucim/profiler/nvtx3.h"
 #include "cucim/util/cuda.h"
@@ -299,7 +300,7 @@ CuImage::~CuImage()
             case io::DeviceType::kCUDAManaged:
             case io::DeviceType::kCPUShared:
             case io::DeviceType::kCUDAShared:
-                fmt::print(stderr, "Device type {} is not supported!\n", device_type);
+                fmt::print(stderr, "Device type {} is not supported!\n", static_cast<int>(device_type));
                 break;
             }
         }
@@ -1231,7 +1232,7 @@ bool CuImage::crop_image(const io::format::ImageReaderRegionRequestDesc& request
     case cucim::io::DeviceType::kCUDAManaged:
     case cucim::io::DeviceType::kCPUShared:
     case cucim::io::DeviceType::kCUDAShared:
-        throw std::runtime_error(fmt::format("Device type {} not supported!", in_device.type()));
+        throw std::runtime_error(fmt::format("Device type {} not supported!", static_cast<int>(in_device.type())));
         break;
     }
 
@@ -1443,7 +1444,7 @@ void CuImageIterator<DataType>::increase_index_()
             case io::DeviceType::kCUDAManaged:
             case io::DeviceType::kCPUShared:
             case io::DeviceType::kCUDAShared:
-                fmt::print(stderr, "Device type {} is not supported!\n", device_type);
+                fmt::print(stderr, "Device type {} is not supported!\n", static_cast<int>(device_type));
                 break;
             }
 

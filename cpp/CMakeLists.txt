@@ -152,8 +152,7 @@ target_link_libraries(${CUCIM_PACKAGE_NAME}
         PUBLIC
             ${CMAKE_DL_LIBS}
             Threads::Threads # -lpthread
-            $<BUILD_INTERFACE:deps::fmt>
-            $<INSTALL_INTERFACE:cucim::fmt-header-only>
+            deps::fmt
         PRIVATE
             CUDA::cudart
             deps::abseil

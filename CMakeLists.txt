@@ -154,9 +154,9 @@ configure_file(${CMAKE_CURRENT_LIST_DIR}/examples/cpp/CMakeLists.txt.examples.re
 ################################################################################
 set(INSTALL_TARGETS
         ${CUCIM_PACKAGE_NAME}
-        fmt-header-only
         cucim_benchmarks
         )
+
 
 install(TARGETS ${INSTALL_TARGETS}
         EXPORT ${CUCIM_PACKAGE_NAME}-targets
@@ -207,7 +207,7 @@ install(DIRECTORY
 
 # Copy 3rdparty headers
 install(DIRECTORY
-            ${deps-fmt_SOURCE_DIR}/include/
+            ${fmt_INCLUDE_DIR}
             ${deps-nvtx3_SOURCE_DIR}/c/include/
             ${deps-nvtx3_SOURCE_DIR}/cpp/include/
         DESTINATION
