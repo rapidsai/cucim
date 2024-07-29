@@ -56,7 +56,7 @@ ThreadPool::operator bool() const
 std::future<void> ThreadPool::enqueue(std::function<void()> task)
 {
     auto future = executor_->async([task]() { task(); });
-    return std::move(future);
+    return future;
 }
 
 void ThreadPool::wait()
