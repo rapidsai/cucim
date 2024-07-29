@@ -207,11 +207,15 @@ install(DIRECTORY
 
 # Copy 3rdparty headers
 install(DIRECTORY
-            ${fmt_INCLUDE_DIR}
-            ${deps-nvtx3_SOURCE_DIR}/c/include/
-            ${deps-nvtx3_SOURCE_DIR}/cpp/include/
-        DESTINATION
-            ${CMAKE_INSTALL_INCLUDEDIR}/${CUCIM_PACKAGE_NAME}/3rdparty)
+        ${fmt_INCLUDE_DIR}/fmt/
+    DESTINATION
+        ${CMAKE_INSTALL_INCLUDEDIR}/${CUCIM_PACKAGE_NAME}/3rdparty/fmt
+)
+install(DIRECTORY
+        ${nvtx3_INCLUDE_DIR}/nvtx3/
+    DESTINATION
+        ${CMAKE_INSTALL_INCLUDEDIR}/${CUCIM_PACKAGE_NAME}/3rdparty/nvtx3
+)
 
 set(CMAKE_EXPORT_PACKAGE_REGISTRY ON)
 export(PACKAGE ${CUCIM_PACKAGE_NAME})
