@@ -123,7 +123,7 @@ superbuild_depend(googletest)
 superbuild_depend(googlebenchmark)
 superbuild_depend(cli11)
 superbuild_depend(pugixml)
-superbuild_depend(json)
+superbuild_depend(nlohmann_json)
 superbuild_depend(libdeflate)
 superbuild_depend(nvjpeg)
 superbuild_depend(libculibos)
@@ -228,7 +228,7 @@ target_link_libraries(${CUCIM_PLUGIN_NAME}
             deps::libopenjpeg
             deps::libopenjpeg-lcms2
             deps::pugixml
-            deps::json
+            deps::nlohmann_json
             deps::libdeflate
         )
 

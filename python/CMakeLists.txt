@@ -99,7 +99,7 @@ add_definitions(-D_GLIBCXX_USE_CXX11_ABI=0) # TODO: create two library, one with
 ################################################################################
 superbuild_depend(pybind11)
 superbuild_depend(fmt)
-superbuild_depend(json)
+superbuild_depend(nlohmann_json)
 superbuild_depend(pybind11_json)
 
 ################################################################################
@@ -171,7 +171,7 @@ target_link_libraries(cucim
     PRIVATE
         cucim::cucim
         deps::fmt
-        deps::json
+        deps::nlohmann_json
         deps::pybind11_json
         )
 

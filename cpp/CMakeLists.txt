@@ -159,7 +159,7 @@ target_link_libraries(${CUCIM_PACKAGE_NAME}
             deps::gds
             deps::libcuckoo
             deps::boost-header-only
-            deps::json
+            deps::nlohmann_json
             deps::nvtx3
             deps::taskflow
         )
