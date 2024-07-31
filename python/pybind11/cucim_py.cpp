@@ -459,8 +459,8 @@ py::object py_read_region(const CuImage& cuimg,
 
         if (mv) // fast copy
         {
-	    py::buffer_info buf = buffer_info(PyMemoryView_GET_BUFFER(mv.ptr()), false);
-	    if (buf)
+            py::buffer_info buf = buffer_info(PyMemoryView_GET_BUFFER(mv.ptr()), false);
+            if (buf)
             {
                 if (buf.format != 'q')
                 {
