@@ -447,20 +447,20 @@ py::object py_read_region(const CuImage& cuimg,
     {
         py::gil_scoped_acquire scope_guard;
 
-        py::memoryview mv;
-        bool has_mv = false;
+        py::object mv_obj(py::none());
         try
         {
-            mv = py::memoryview(location);
-            has_mv = true;
+            mv_obj = py::memoryview(location);
         }
         catch (const std::exception& e)
         {
         }
 
-        if (has_mv) // fast copy
+        if (!mv_obj.is_none()) // fast copy
         {
-            py::buffer_info buf = py::buffer_info(PyMemoryView_GET_BUFFER(mv.ptr()), false);
+            py::memoryview mv(mv_obj);
+            py::buffer_info buf(PyMemoryView_GET_BUFFER(mv.ptr()), false);
+
             if (buf.format != py::format_descriptor<int64_t>::format())
             {
                 throw std::invalid_argument("Expected int64 array-like");
