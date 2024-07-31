@@ -470,7 +470,7 @@ py::object py_read_region(const CuImage& cuimg,
                 throw std::invalid_argument("Expected C-contiguous array-like");
             }
 
-            int64_t* data_array = static_cast<int64_t*>(buf.ptr);
+            const int64_t* data_array = static_cast<const int64_t*>(buf.ptr);
             ssize_t data_size = buf.size;
             locations.reserve(data_size);
             locations.insert(locations.end(), &data_array[0], &data_array[data_size]);
