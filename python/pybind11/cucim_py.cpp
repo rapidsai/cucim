@@ -448,7 +448,7 @@ py::object py_read_region(const CuImage& cuimg,
         py::gil_scoped_acquire scope_guard;
 
         py::memoryview mv;
-        try // fast copy
+        try
         {
             mv = py::memoryview(location);
         }
