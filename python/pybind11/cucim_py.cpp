@@ -19,6 +19,7 @@
 
 #include <fmt/format.h>
 #include <fmt/ranges.h>
+#include <Python.h>
 #include <pybind11/buffer_info.h>
 #include <pybind11/operators.h>
 #include <pybind11/pybind11.h>
