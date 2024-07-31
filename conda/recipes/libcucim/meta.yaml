@@ -74,10 +74,19 @@ requirements:
     - libnvjpeg-dev
     - libnvjpeg-static
     {% endif %}
+    - boost-cpp
+    - catch2
+    - cli11
+    - fmt
     - jbig
+    - libabseil
     - libwebp-base
     - nvtx-c >=3.1.0
+    - nlohmann_json
     - openslide
+    - pybind11
+    - pybind11_json
+    - taskflow
     - xz
     - zlib
     - zstd
