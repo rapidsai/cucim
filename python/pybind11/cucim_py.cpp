@@ -462,7 +462,7 @@ py::object py_read_region(const CuImage& cuimg,
             py::buffer_info buf = buffer_info(PyMemoryView_GET_BUFFER(mv.ptr()), false);
             if (buf)
             {
-                if (buf.format != "q")
+                if (buf.format != py::format_descriptor<int64_t>::format())
                 {
                      throw std::invalid_argument("Expected int64 array-like");
                 }
