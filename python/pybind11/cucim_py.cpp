@@ -447,10 +447,10 @@ py::object py_read_region(const CuImage& cuimg,
     {
         py::gil_scoped_acquire scope_guard;
 
-        py::object mv_obj(py::none());
+        py::object mv_obj = py::none();
         try
         {
-            mv_obj = py::memoryview(location);
+            mv_obj = py::cast(py::memoryview(location));
         }
         catch (const std::exception& e)
         {
