@@ -460,16 +460,13 @@ py::object py_read_region(const CuImage& cuimg,
         if (mv) // fast copy
         {
             py::buffer_info buf = buffer_info(PyMemoryView_GET_BUFFER(mv.ptr()), false);
-            if (buf)
+            if (buf.format != py::format_descriptor<int64_t>::format())
             {
-                if (buf.format != py::format_descriptor<int64_t>::format())
-                {
-                    throw std::invalid_argument("Expected int64 array-like");
-                }
-                if (PyBuffer_IsContiguous(buf.view(), 'C'))
-                {
-                    throw std::invalid_argument("Expected C-contiguous array-like");
-                }
+                throw std::invalid_argument("Expected int64 array-like");
+            }
+            if (PyBuffer_IsContiguous(buf.view(), 'C'))
+            {
+                throw std::invalid_argument("Expected C-contiguous array-like");
             }
 
             int64_t* data_array = static_cast<int64_t*>(buf.ptr);
