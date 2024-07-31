@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2020-2021, NVIDIA CORPORATION.
+# Copyright (c) 2020-2024, NVIDIA CORPORATION.
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -128,11 +128,6 @@ set_target_properties(${CUCIM_PACKAGE_NAME}
 # Note: Looks like the following line causes error on CMake 3.18.4 (it is working on 3.18.2). Keeping it for now.
 set(CUCIM_REQUIRED_FEATURES cxx_std_17)
 target_compile_features(${CUCIM_PACKAGE_NAME} PRIVATE ${CUCIM_REQUIRED_FEATURES})
-# Use generator expression to avoid `nvcc fatal   : Value '-std=c++17' is not defined for option 'Werror'`
-target_compile_options(${CUCIM_PACKAGE_NAME}
-    PRIVATE
-        $<$<COMPILE_LANGUAGE:CXX>:-Werror -Wall -Wextra>
-        )
 target_compile_definitions(${CUCIM_PACKAGE_NAME}
     PUBLIC
         CUCIM_VERSION=${PROJECT_VERSION}

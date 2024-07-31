@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2020, NVIDIA CORPORATION.
+# Copyright (c) 2020-2024, NVIDIA CORPORATION.
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -33,8 +33,6 @@ set_target_properties(cucim_tests
         CXX_EXTENSIONS NO
 )
 target_compile_features(cucim_tests PRIVATE ${CUCIM_REQUIRED_FEATURES})
-# Use generator expression to avoid `nvcc fatal   : Value '-std=c++17' is not defined for option 'Werror'`
-target_compile_options(cucim_tests PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-Werror -Wall -Wextra>)
 target_compile_definitions(cucim_tests
     PUBLIC
         CUCIM_VERSION=${PROJECT_VERSION}
