@@ -60,4 +60,6 @@ target_include_directories(cuslide_tests
 
 include(Catch)
 # See https://github.com/catchorg/Catch2/blob/devel/docs/cmake-integration.md#catchcmake-and-catchaddtestscmake for other options
-catch_discover_tests(cuslide_tests)
+# Do not use catch_discover_tests() since it causes a test to be run at build time
+# and somehow it causes a deadlock during the build.
+# catch_discover_tests(cuslide_tests)
