@@ -465,7 +465,7 @@ py::object py_read_region(const CuImage& cuimg,
             {
                 throw std::invalid_argument("Expected int64 array-like");
             }
-            if (PyBuffer_IsContiguous(buf.view(), 'C'))
+            if (!PyBuffer_IsContiguous(buf.view(), 'C'))
             {
                 throw std::invalid_argument("Expected C-contiguous array-like");
             }
