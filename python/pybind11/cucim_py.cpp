@@ -19,8 +19,10 @@
 
 #include <fmt/format.h>
 #include <fmt/ranges.h>
+#include <pybind11/buffer_info.h>
 #include <pybind11/operators.h>
 #include <pybind11/pybind11.h>
+#include <pybind11/pytypes.h>
 #include <pybind11/stl.h>
 
 #include <cucim/cuimage.h>
@@ -444,10 +446,31 @@ py::object py_read_region(const CuImage& cuimg,
     {
         py::gil_scoped_acquire scope_guard;
 
-        auto arr = pybind11::array_t<int64_t, py::array::c_style | py::array::forcecast>::ensure(location);
-        if (arr) // fast copy
+        py::memoryview mv;
+        try // fast copy
         {
-            py::buffer_info buf = arr.request();
+            mv = py::memoryview(location);
+        }
+        catch (const std::exception& e)
+        {
+            mv = nullptr;
+        }
+
+        if (mv) // fast copy
+        {
+	    py::buffer_info buf = buffer_info(PyMemoryView_GET_BUFFER(mv.ptr()), false);
+	    if (buf)
+            {
+                if (buf.format != 'q')
+                {
+                     throw std::invalid_argument("Expected int64 array-like");
+                }
+                if (PyBuffer_IsContiguous(buf.view(), 'C'))
+                {
+                     throw std::invalid_argument("Expected C-contiguous array-like");
+                }
+            }
+
             int64_t* data_array = static_cast<int64_t*>(buf.ptr);
             ssize_t data_size = buf.size;
             locations.reserve(data_size);
