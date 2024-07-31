@@ -450,7 +450,7 @@ py::object py_read_region(const CuImage& cuimg,
         py::object mv_obj = py::none();
         try
         {
-            mv_obj = py::cast(py::memoryview(location));
+            mv_obj = py::cast<py::object>(py::memoryview(location));
         }
         catch (const std::exception& e)
         {
