@@ -448,16 +448,17 @@ py::object py_read_region(const CuImage& cuimg,
         py::gil_scoped_acquire scope_guard;
 
         py::memoryview mv;
+        bool has_mv = false;
         try
         {
             mv = py::memoryview(location);
+            has_mv = true;
         }
         catch (const std::exception& e)
         {
-            mv = nullptr;
         }
 
-        if (mv) // fast copy
+        if (has_mv) // fast copy
         {
             py::buffer_info buf = buffer_info(PyMemoryView_GET_BUFFER(mv.ptr()), false);
             if (buf.format != py::format_descriptor<int64_t>::format())
