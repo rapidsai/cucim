@@ -101,6 +101,7 @@ requirements:
     - libnvjpeg
     {% endif %}
     - {{ pin_compatible('libwebp-base', max_pin='x.x') }}
+    - libabseil
     - jbig
     - xz
     - zlib
