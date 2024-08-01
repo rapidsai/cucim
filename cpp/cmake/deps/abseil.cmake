@@ -44,6 +44,16 @@ if (NOT TARGET deps::abseil)
             message(STATUS "Fetching abseil sources - done")
         endif ()
 
+        # Create static library
+        cucim_set_build_shared_libs(OFF)
+        set(BUILD_TESTING FALSE) # Disable BUILD_TESTING (cmake-build-debug/_deps/deps-abseil-src/CMakeLists.txt:97)
+        add_subdirectory(${deps-abseil_SOURCE_DIR} ${deps-abseil_BINARY_DIR} EXCLUDE_FROM_ALL)
+
+        # Set PIC to prevent the following error message
+        # : /usr/bin/ld: ../lib/libabsl_strings.a(escaping.cc.o): relocation R_X86_64_PC32 against symbol `_ZN4absl14lts_2020_02_2516numbers_internal8kHexCharE' can not be used when making a shared object; recompile with -fPIC
+        set_target_properties(absl_strings absl_strings_internal absl_int128 absl_raw_logging_internal PROPERTIES POSITION_INDEPENDENT_CODE ON)
+        cucim_restore_build_shared_libs()
+
         add_library(deps::abseil INTERFACE IMPORTED GLOBAL)
         target_link_libraries(deps::abseil INTERFACE absl::strings)
         set(abseil_INCLUDE_DIR ${deps-deps-abseil_SOURCE_DIR} CACHE INTERNAL "" FORCE)
