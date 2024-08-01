@@ -15,7 +15,7 @@
 
 if (NOT TARGET deps::boost-header-only)
     set(Boost_VERSION 1.85.0)
-    set(boost_component_list "interprocess" "config" "intrusive" "move" "assert" "static_assert" "container" "core" "date_time" "smart_ptr" "throw_exception" "utility" "type_traits" "numeric/conversion" "mpl" "preprocessor" "container_hash" "integer" "detail")
+    set(boost_component_list "interprocess" "config" "intrusive" "move" "assert" "static_assert" "container" "core" "date_time" "smart_ptr" "throw_exception" "utility" "type_traits" "numeric/conversion" "mpl" "preprocessor" "container_hash" "integer" "detail" "describe" "mp11")
 
     if (DEFINED ENV{CONDA_PREFIX})
         # Use boost headers from conda environment
