@@ -139,7 +139,6 @@ target_compile_definitions(${CUCIM_PACKAGE_NAME}
         CUCIM_STATIC_GDS=$<BOOL:${CUCIM_STATIC_GDS}>
         CUCIM_SUPPORT_CUDA=$<BOOL:${CUCIM_SUPPORT_CUDA}>
         CUCIM_SUPPORT_NVTX=$<BOOL:${CUCIM_SUPPORT_NVTX}>
-        _GLIBCXX_USE_CXX11_ABI=0  # TODO: create two library, one with CXX11 ABI and one without it.
 )
 
 # Link libraries
