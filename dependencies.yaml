@@ -69,7 +69,7 @@ files:
       key: developer
     includes:
       - develop
-  py_develop:
+  py_docs:
     output: pyproject
     pyproject_dir: python/cucim
     extras:
