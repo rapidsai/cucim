@@ -13,9 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# CUDA_STANDARD 17 is supported from CMAKE 3.18
-# : https://cmake.org/cmake/help/v3.18/prop_tgt/CUDA_STANDARD.html
-cmake_minimum_required(VERSION 3.18)
+cmake_minimum_required(VERSION 3.26.4)
 
 ################################################################################
 # Prerequisite statements

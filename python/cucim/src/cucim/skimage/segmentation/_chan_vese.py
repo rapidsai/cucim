@@ -429,6 +429,7 @@ def chan_vese(
         energies = []
     phivar = tol + 1
 
+    dt = cp.asarray(dt, dtype=float_dtype)
     while phivar > tol and i < max_num_iter:
         # Save old level set values
         oldphi = phi
