@@ -303,7 +303,7 @@ dependencies:
           - psutil>=5.8.0
           - pytest>=6.2.4,<8.0.0a0
           - pytest-cov>=2.12.1
-          - pytest-lazy-fixture>=0.6.3
+          - pytest-lazy-fixtures
           - pytest-xdist
           - tifffile>=2022.7.28
           - pooch>=1.6.0  # needed to download scikit-image sample data

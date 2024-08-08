@@ -1,4 +1,4 @@
-# Copyright (c) 2023, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2023-2024, NVIDIA CORPORATION. All rights reserved.
 # See file LICENSE for terms.
 
 [build-system]
@@ -66,7 +66,7 @@ test = [
     "pooch>=1.6.0",
     "psutil>=5.8.0",
     "pytest-cov>=2.12.1",
-    "pytest-lazy-fixture>=0.6.3",
+    "pytest-lazy-fixtures",
     "pytest-xdist",
     "pytest>=6.2.4,<8.0.0a0",
     "pywavelets>=1.0",
