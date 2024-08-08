@@ -5,7 +5,7 @@
 - Drop NumPy build dependency ([#751](https://github.com/rapidsai/cucim/pull/751)) [@jakirkham](https://github.com/jakirkham)
 - Use workflow branch 24.08 again ([#749](https://github.com/rapidsai/cucim/pull/749)) [@KyleFromNVIDIA](https://github.com/KyleFromNVIDIA)
 - Build and test with CUDA 12.5.1 ([#747](https://github.com/rapidsai/cucim/pull/747)) [@KyleFromNVIDIA](https://github.com/KyleFromNVIDIA)
-- Minor fixes for NumPy 2.0 compatiblity ([#746](https://github.com/rapidsai/cucim/pull/746)) [@grlee77](https://github.com/grlee77)
+- Minor fixes for NumPy 2.0 compatibility ([#746](https://github.com/rapidsai/cucim/pull/746)) [@grlee77](https://github.com/grlee77)
 - skip CMake 3.30.0, require CMake &gt;=3.26.4 ([#745](https://github.com/rapidsai/cucim/pull/745)) [@jameslamb](https://github.com/jameslamb)
 - Use verify-alpha-spec hook ([#744](https://github.com/rapidsai/cucim/pull/744)) [@KyleFromNVIDIA](https://github.com/KyleFromNVIDIA)
 - remove .gitattributes ([#740](https://github.com/rapidsai/cucim/pull/740)) [@jameslamb](https://github.com/jameslamb)
