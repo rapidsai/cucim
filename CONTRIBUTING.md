@@ -133,9 +133,9 @@ Note that `./conda/environments/all_cuda-118_arch-x86_64.yaml` is currently set 
 If you want to change the version of gcc or CUDA toolkit package, please update `./conda/environments/all_cuda-118_arch-x86_64.yaml` before executing the following commands.
 
 ```bash
-conda env create -n cucim -f ./conda/environments/all_cuda-118_arch-x86_64.yaml
+mamba env create -n cucim -f conda/environments/all_cuda-125_arch-x86_64.yaml
 # activate the environment
-conda activate cucim
+mamba activate cucim
 ```
 
 ### Building `libcucim` and install `cucim` (python bindings):

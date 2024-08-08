@@ -343,6 +343,7 @@ build_local_cucim_() {
     local python_library=$(python3 -c "import distutils.sysconfig as sysconfig, os; print(os.path.join(sysconfig.get_config_var('LIBDIR'), sysconfig.get_config_var('LDLIBRARY')))")
     local python_include_dir=$(python3 -c "from distutils.sysconfig import get_python_inc; print(get_python_inc())")
 
+    # https://pybind11.readthedocs.io/en/stable/compiling.html#configuration-variables
     ${CMAKE_CMD} -S ${source_folder} -B ${build_folder} -G "Unix Makefiles" \
         -DCMAKE_EXPORT_COMPILE_COMMANDS:BOOL=TRUE \
         -DCMAKE_BUILD_TYPE=${build_type_str} \

@@ -68,12 +68,12 @@ def test_get_per_process_cache():
 def test_get_shared_memory_cache():
     from cucim import CuImage
 
-    cache = CuImage.cache("shared_memory", memory_capacity=2048)
+    cache = CuImage.cache("shared_memory", memory_capacity=128)
     assert int(cache.type) == 2
     assert cache.memory_size == 0
     # It allocates additional memory
-    assert cache.memory_capacity > 2**20 * 2048
-    assert cache.free_memory > 2**20 * 2048
+    assert cache.memory_capacity > 2**20 * 128
+    assert cache.free_memory > 2**20 * 128
     assert cache.size == 0
     assert cache.capacity > 0
     assert cache.hit_count == 0
@@ -81,11 +81,11 @@ def test_get_shared_memory_cache():
 
     config = cache.config
     # Check essential properties
-    #  {'type': 'shared_memory', 'memory_capacity': 2048, 'capacity': 10922,
-    #   'mutex_pool_capacity': 11117, 'list_padding': 10000,
+    #  {'type': 'shared_memory', 'memory_capacity': 2048, 'capacity': 682,
+    #   'mutex_pool_capacity': 100003, 'list_padding': 10000,
     #   'extra_shared_memory_size': 100, 'record_stat': False}
     assert config["type"] == "shared_memory"
-    assert config["memory_capacity"] == 2048
+    assert config["memory_capacity"] == 128
     assert not config["record_stat"]
 
 

@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2024, NVIDIA CORPORATION.
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -32,8 +32,6 @@ set_target_properties(cumed_tests
         CXX_EXTENSIONS NO
 )
 target_compile_features(cumed_tests PRIVATE ${CUCIM_REQUIRED_FEATURES})
-# Use generator expression to avoid `nvcc fatal   : Value '-std=c++17' is not defined for option 'Werror'`
-target_compile_options(cumed_tests PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-Werror -Wall -Wextra>)
 target_compile_definitions(cumed_tests
     PUBLIC
         CUMED_VERSION=${PROJECT_VERSION}
@@ -59,4 +57,6 @@ target_include_directories(cumed_tests
 
 include(Catch)
 # See https://github.com/catchorg/Catch2/blob/devel/docs/cmake-integration.md#catchcmake-and-catchaddtestscmake for other options
-catch_discover_tests(cumed_tests)
+# Do not use catch_discover_tests() since it causes a test to be run at build time
+# and somehow it causes a deadlock during the build.
+# catch_discover_tests(cumed_tests)

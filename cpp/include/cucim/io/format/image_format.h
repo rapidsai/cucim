@@ -119,10 +119,6 @@ private:
     std::array<uint8_t, IMAGE_METADATA_BUFFER_SIZE> buffer_{};
     std::pmr::monotonic_buffer_resource res_{ buffer_.data(), sizeof(buffer_) };
 
-// manylinux2014 requires gcc4-compatible libstdcxx-abi(gcc is configured with
-// '--with-default-libstdcxx-abi=gcc4-compatible', https://gcc.gnu.org/onlinedocs/libstdc++/manual/configure.html) which
-// forces to set _GLIBCXX_USE_CXX11_ABI=0 so std::pmr::string wouldn't be available on CentOS 7.
-#if _GLIBCXX_USE_CXX11_ABI
     std::pmr::string dims_{ &res_ };
     std::pmr::vector<int64_t> shape_{ &res_ };
     std::pmr::vector<std::string_view> channel_names_{ &res_ };
@@ -137,22 +133,7 @@ private:
     std::pmr::vector<uint32_t> level_tile_sizes_{ &res_ };
 
     std::pmr::vector<std::string_view> image_names_{ &res_ };
-#else
-    std::string dims_;
-    std::pmr::vector<int64_t> shape_{ &res_ };
-    std::pmr::vector<std::string_view> channel_names_{ &res_ };
-    std::pmr::vector<float> spacing_{ &res_ };
-    std::pmr::vector<std::string_view> spacing_units_{ &res_ };
-    std::pmr::vector<float> origin_{ &res_ };
-    std::pmr::vector<float> direction_{ &res_ };
-    std::string coord_sys_;
 
-    std::pmr::vector<int64_t> level_dimensions_{ &res_ };
-    std::pmr::vector<float> level_downsamples_{ &res_ };
-    std::pmr::vector<uint32_t> level_tile_sizes_{ &res_ };
-
-    std::pmr::vector<std::string_view> image_names_{ &res_ };
-#endif
     // Memory for raw_data and json_data needs to be created with cucim_malloc();
 };
 

@@ -20,6 +20,7 @@
 #include <cassert>
 
 #include <fmt/format.h>
+#include <fmt/ranges.h>  // allows fmt to format std::array, std::vector, etc.
 
 #include "cucim/profiler/nvtx3.h"
 #include "cucim/util/cuda.h"
@@ -78,7 +79,7 @@ ThreadBatchDataLoader::ThreadBatchDataLoader(LoadFunc load_func,
         case io::DeviceType::kCUDAManaged:
         case io::DeviceType::kCPUShared:
         case io::DeviceType::kCUDAShared:
-            fmt::print(stderr, "Device type {} is not supported!\n", device_type);
+            fmt::print(stderr, "Device type {} is not supported!\n", static_cast<int>(device_type));
             break;
         }
     }
@@ -112,7 +113,7 @@ ThreadBatchDataLoader::~ThreadBatchDataLoader()
         case io::DeviceType::kCUDAManaged:
         case io::DeviceType::kCPUShared:
         case io::DeviceType::kCUDAShared:
-            fmt::print(stderr, "Device type {} is not supported!", device_type);
+            fmt::print(stderr, "Device type {} is not supported!", static_cast<int>(device_type));
             break;
         }
         raster_ptr = nullptr;
@@ -243,7 +244,7 @@ uint8_t* ThreadBatchDataLoader::next_data()
     case io::DeviceType::kCUDAManaged:
     case io::DeviceType::kCPUShared:
     case io::DeviceType::kCUDAShared:
-        fmt::print(stderr, "Device type {} is not supported!\n", device_type);
+        fmt::print(stderr, "Device type {} is not supported!\n", static_cast<int>(device_type));
         break;
     }
 

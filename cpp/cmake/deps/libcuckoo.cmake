@@ -1,5 +1,5 @@
 # Apache License, Version 2.0
-# Copyright 2021 NVIDIA Corporation
+# Copyright 2021-2024 NVIDIA Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,7 +17,7 @@ if (NOT TARGET deps::libcuckoo)
     FetchContent_Declare(
             deps-libcuckoo
             GIT_REPOSITORY https://github.com/efficient/libcuckoo
-            GIT_TAG v0.3
+            GIT_TAG v0.3.1
             GIT_SHALLOW TRUE
     )
     FetchContent_GetProperties(deps-libcuckoo)
@@ -59,7 +59,7 @@ if (NOT TARGET deps::libcuckoo)
     cucim_restore_build_shared_libs()
 
     add_library(deps::libcuckoo INTERFACE IMPORTED GLOBAL)
-    target_link_libraries(deps::libcuckoo INTERFACE libcuckoo)
+    target_link_libraries(deps::libcuckoo INTERFACE libcuckoo::libcuckoo)
     set(deps-libcuckoo_SOURCE_DIR ${deps-libcuckoo_SOURCE_DIR} CACHE INTERNAL "" FORCE)
     mark_as_advanced(deps-libcuckoo_SOURCE_DIR)
 endif ()

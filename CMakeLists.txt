@@ -96,10 +96,6 @@ option(CUCIM_STATIC_GDS "Use static cufile library" OFF)
 option(CUCIM_SUPPORT_CUDA "Support CUDA" ON)
 option(CUCIM_SUPPORT_NVTX "Support NVTX" ON)
 
-# Setup CXX11 ABI
-# : Adds CXX11 ABI definition to the compiler command line for targets in the current directory,
-#   whether added before or after this command is invoked, and for the ones in sub-directories added after.
-add_definitions(-D_GLIBCXX_USE_CXX11_ABI=0) # TODO: create two library, one with CXX11 ABI and one without it.
 
 ################################################################################
 # Define basic dependencies
@@ -122,7 +118,7 @@ superbuild_depend(googlebenchmark)
 superbuild_depend(openslide)
 superbuild_depend(catch2)
 superbuild_depend(cli11)
-superbuild_depend(json)
+superbuild_depend(nlohmann_json)
 superbuild_depend(libcuckoo)
 superbuild_depend(boost-header-only)
 superbuild_depend(nvtx3)
@@ -154,9 +150,9 @@ configure_file(${CMAKE_CURRENT_LIST_DIR}/examples/cpp/CMakeLists.txt.examples.re
 ################################################################################
 set(INSTALL_TARGETS
         ${CUCIM_PACKAGE_NAME}
-        fmt-header-only
         cucim_benchmarks
         )
+
 
 install(TARGETS ${INSTALL_TARGETS}
         EXPORT ${CUCIM_PACKAGE_NAME}-targets
@@ -207,11 +203,15 @@ install(DIRECTORY
 
 # Copy 3rdparty headers
 install(DIRECTORY
-            ${deps-fmt_SOURCE_DIR}/include/
-            ${deps-nvtx3_SOURCE_DIR}/c/include/
-            ${deps-nvtx3_SOURCE_DIR}/cpp/include/
-        DESTINATION
-            ${CMAKE_INSTALL_INCLUDEDIR}/${CUCIM_PACKAGE_NAME}/3rdparty)
+        ${fmt_INCLUDE_DIR}/fmt/
+    DESTINATION
+        ${CMAKE_INSTALL_INCLUDEDIR}/${CUCIM_PACKAGE_NAME}/3rdparty/fmt
+)
+install(DIRECTORY
+        ${nvtx3_INCLUDE_DIR}/nvtx3/
+    DESTINATION
+        ${CMAKE_INSTALL_INCLUDEDIR}/${CUCIM_PACKAGE_NAME}/3rdparty/nvtx3
+)
 
 set(CMAKE_EXPORT_PACKAGE_REGISTRY ON)
 export(PACKAGE ${CUCIM_PACKAGE_NAME})
