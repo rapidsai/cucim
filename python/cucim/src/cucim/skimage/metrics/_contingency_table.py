@@ -1,6 +1,8 @@
 import cupy as cp
 import cupyx.scipy.sparse as sparse
 
+from .._shared.compat import _full
+
 __all__ = ["contingency_table"]
 
 
@@ -36,7 +38,7 @@ def contingency_table(im_true, im_test, *, ignore_labels=None, normalize=False):
             data /= cp.count_nonzero(data)
     else:
         if normalize:
-            data = cp.full((im_test_r.size,), 1 / im_test_r.size, dtype=float)
+            data = _full((im_test_r.size,), 1 / im_test_r.size, dtype=float)
         else:
             data = cp.ones((im_test_r.size,), dtype=float)
     cont = sparse.coo_matrix((data, (im_true_r, im_test_r))).tocsr()

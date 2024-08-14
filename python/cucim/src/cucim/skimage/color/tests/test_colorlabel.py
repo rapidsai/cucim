@@ -6,8 +6,11 @@ import pytest
 from cupy.testing import assert_array_almost_equal, assert_array_equal
 from numpy.testing import assert_no_warnings
 
+from cucim.skimage._shared.compat import _full
 from cucim.skimage._shared.testing import expected_warnings
 from cucim.skimage.color.colorlabel import hsv2rgb, label2rgb, rgb2hsv
+
+using_numpy2 = np.__version__.split(".")[0] == 2
 
 
 def test_shape_mismatch():
@@ -213,7 +216,7 @@ def test_avg(channel_axis):
 
 def test_negative_intensity():
     labels = cp.arange(100).reshape(10, 10)
-    image = cp.full((10, 10), -1, dtype="float64")
+    image = _full((10, 10), -1, dtype="float64")
     with pytest.warns(UserWarning):
         label2rgb(labels, image, bg_label=-1)
 

@@ -41,7 +41,7 @@ from cucim.skimage.util.dtype import _convert, img_as_float
 # from skimage._shared.testing import test_parallel
 
 
-cp.random.seed(0)
+cp.random.seed(cp.uint32(0))
 
 
 def test_stackcopy():

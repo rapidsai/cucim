@@ -3,6 +3,7 @@ import itertools
 import cupy as cp
 import numpy as np
 
+from .._shared.compat import _full
 from .._shared.utils import _supported_float_type, check_nD
 from ._moments_analytical import moments_raw_to_central
 
@@ -420,7 +421,7 @@ def moments_normalized(mu, order=3, spacing=None):
     # compute using in a single kernel for the 2D or 3D cases
     unit_scale = scale == 1.0
     kernel = _get_normalize_kernel(mu.ndim, order, unit_scale)
-    nu = cp.full(mu.shape, cp.nan, dtype=mu.dtype)
+    nu = _full(mu.shape, cp.nan, dtype=mu.dtype)
     kernel(mu, order, scale, nu)
     return nu
 

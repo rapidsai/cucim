@@ -5,6 +5,7 @@ from cupy.testing import assert_array_equal
 from skimage import data
 from skimage.morphology import thin as thin_cpu
 
+from cucim.skimage._shared.compat import _full
 from cucim.skimage.morphology import medial_axis, thin
 
 
@@ -99,7 +100,7 @@ class TestMedialAxis:
         img[:, 3] = 2
         img[:, 4] = 3
 
-        expected = cp.full(img.shape, False)
+        expected = _full(img.shape, False)
         expected[:, 3] = True
 
         result = medial_axis(img, **kwargs)

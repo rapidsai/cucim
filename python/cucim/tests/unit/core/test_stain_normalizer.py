@@ -20,17 +20,18 @@ from cucim.core.operations.color import (
     normalize_colors_pca,
     stain_extraction_pca,
 )
+from cucim.skimage._shared.compat import _full
 
 
 class TestStainExtractorMacenko:
     @pytest.mark.parametrize(
         "image, ErrorClass",
         [
-            (cp.full((3, 2, 4), -1), ValueError),  # negative value
-            (cp.full((3, 2, 4), 256), ValueError),  # out of range value
+            (_full((3, 2, 4), -1), ValueError),  # negative value
+            (_full((3, 2, 4), 256), ValueError),  # out of range value
             (None, TypeError),
             (
-                cp.full((3, 2, 4), 240),
+                _full((3, 2, 4), 240),
                 ValueError,
             ),  # uniformly below the beta threshold  # noqa
         ],
@@ -50,8 +51,8 @@ class TestStainExtractorMacenko:
         "image",
         [
             None,
-            cp.full((3, 2, 4), 100),  # uniform, above beta absorbance thresh.
-            cp.full((3, 2, 4), 150),  # uniform, above beta absorbance thresh.
+            _full((3, 2, 4), 100),  # uniform, above beta absorbance thresh.
+            _full((3, 2, 4), 150),  # uniform, above beta absorbance thresh.
         ],
     )
     def test_identical_result_vectors(self, image):
@@ -144,10 +145,10 @@ class TestStainNormalizerMacenko:
     @pytest.mark.parametrize(
         "image",
         [
-            cp.full((3, 2, 4), -1),  # negative value case
-            cp.full((3, 2, 4), 256),  # out of range value
+            _full((3, 2, 4), -1),  # negative value case
+            _full((3, 2, 4), 256),  # out of range value
             None,
-            cp.full((3, 2, 5), 240),  # uniformly below the beta threshold
+            _full((3, 2, 5), 240),  # uniformly below the beta threshold
         ],
     )
     def test_transparent_image(self, image):
@@ -185,9 +186,9 @@ class TestStainNormalizerMacenko:
             #   and finally converting to uint8, we get that the stain
             #   normalized image should be 12 everywhere.
             [
-                {"ref_stain_coeff": cp.full((3, 2), 1)},
+                {"ref_stain_coeff": _full((3, 2), 1)},
                 cp.zeros((3, 2, 4)),
-                cp.full((3, 2, 4), 12),
+                _full((3, 2, 4), 12),
             ],
             # 3.) input uniformly zero, and target stain matrix provided.
             # - As in test case 2, the normalized concentration matrix should
@@ -223,7 +224,7 @@ class TestStainNormalizerMacenko:
             #   the absorbance image, and finally converting to uint8, we get
             #   the expected result listed here.
             [
-                {"ref_stain_coeff": cp.full((3, 2), 1)},
+                {"ref_stain_coeff": _full((3, 2), 1)},
                 cp.array(
                     [
                         [[100, 0, 0], [0, 0, 0]],

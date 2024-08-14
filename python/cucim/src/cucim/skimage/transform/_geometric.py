@@ -7,7 +7,7 @@ import cupy as cp
 import numpy as np
 from scipy import spatial
 
-from .._shared.compat import NP_COPY_IF_NEEDED
+from .._shared.compat import NP_COPY_IF_NEEDED, _full
 from .._shared.utils import get_bound_method_class, safe_as_int
 
 _sin, _cos = math.sin, math.cos
@@ -80,9 +80,10 @@ def _center_and_normalize_points(points):
     # small value; ie, we don't need to worry about numerical stability here,
     # only actual 0.
     if rms == 0:
+        full_func = xp.full if xp == np else _full
         return (
-            xp.full((d + 1, d + 1), xp.nan),
-            xp.full_like(points, xp.nan),
+            full_func((d + 1, d + 1), xp.nan),
+            full_func(points.shape, xp.nan, dtype=points.dtype),
             True,
         )
 
@@ -411,17 +412,18 @@ class FundamentalMatrixTransform(GeometricTransform):
             raise ValueError("src.shape[0] must be equal or larger than 8.")
         xp = cp.get_array_module(src)
 
+        full_func = xp.full if xp == np else _full
         # Center and normalize image points for better numerical stability.
         try:
             src_matrix, src, has_nan1 = _center_and_normalize_points(src)
             dst_matrix, dst, has_nan2 = _center_and_normalize_points(dst)
         except ZeroDivisionError:
-            self.params = xp.full((3, 3), xp.nan)
-            return 3 * [xp.full((3, 3), xp.nan)]
+            self.params = full_func((3, 3), xp.nan)
+            return 3 * [full_func((3, 3), xp.nan)]
 
         if has_nan1 or has_nan2:
-            self.params = xp.full((3, 3), xp.nan)
-            return 3 * [xp.full((3, 3), xp.nan)]
+            self.params = full_func((3, 3), xp.nan)
+            return 3 * [full_func((3, 3), xp.nan)]
 
         # Setup homogeneous linear equation as dst' * F * src = 0.
         A = xp.ones((src.shape[0], 9))
@@ -848,8 +850,9 @@ class ProjectiveTransform(GeometricTransform):
         n, d = src.shape
         src_matrix, src, has_nan1 = _center_and_normalize_points(src)
         dst_matrix, dst, has_nan2 = _center_and_normalize_points(dst)
+        full_func = xp.full if xp == np else _full
         if has_nan1 or has_nan2:
-            self.params = xp.full((d + 1, d + 1), xp.nan)
+            self.params = full_func((d + 1, d + 1), xp.nan)
             return False
         # params: a0, a1, a2, b0, b1, b2, c0, c1
         A = xp.zeros((n * d, (d + 1) ** 2))
@@ -878,7 +881,7 @@ class ProjectiveTransform(GeometricTransform):
         # because it is a rank-defective transform, which would map points
         # to a line rather than a plane.
         if xp.isclose(V[-1, -1], 0):
-            self.params = xp.full((d + 1, d + 1), xp.nan)
+            self.params = full_func((d + 1, d + 1), xp.nan)
             return False
 
         H = np.zeros(

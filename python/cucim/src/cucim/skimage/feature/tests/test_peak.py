@@ -8,6 +8,7 @@ from cupyx.scipy import ndimage as ndi
 from scipy import ndimage as ndimage_cpu
 
 from cucim.skimage._shared._warnings import expected_warnings
+from cucim.skimage._shared.compat import _full
 from cucim.skimage.feature import peak
 
 np.random.seed(21)
@@ -51,7 +52,7 @@ class TestPeakLocalMax:
         assert_array_almost_equal(peaks, [(3, 3)])
 
     def test_constant_image(self):
-        image = cp.full((20, 20), 128, dtype=cp.uint8)
+        image = _full((20, 20), 128, dtype=cp.uint8)
         peaks = peak.peak_local_max(image, min_distance=1)
         assert len(peaks) == 0
 
@@ -491,7 +492,7 @@ class TestPeakLocalMax:
             )
 
     def test_peak_at_border(self):
-        image = cp.full((10, 10), -2)
+        image = _full((10, 10), -2)
         image[2, 4] = -1
         image[3, 0] = -1
 

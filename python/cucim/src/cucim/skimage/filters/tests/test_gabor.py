@@ -4,6 +4,7 @@ import pytest
 from cupy.testing import assert_array_almost_equal
 from numpy.testing import assert_almost_equal
 
+from cucim.skimage._shared.compat import _full
 from cucim.skimage._shared.utils import _supported_float_type
 from cucim.skimage.filters._gabor import _sigma_prefactor, gabor, gabor_kernel
 
@@ -117,6 +118,6 @@ def test_gabor_float_dtype(dtype):
 
 @pytest.mark.parametrize("dtype", [cp.uint8, cp.int32, cp.intp])
 def test_gabor_int_dtype(dtype):
-    image = cp.full((16, 16), 128, dtype=dtype)
+    image = _full((16, 16), 128, dtype=dtype)
     y = gabor(image, 0.3)
     assert all(arr.dtype == dtype for arr in y)

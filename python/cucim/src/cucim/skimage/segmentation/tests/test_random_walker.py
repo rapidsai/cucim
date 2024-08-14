@@ -6,6 +6,7 @@ import pytest
 
 from cucim.skimage._shared import testing
 from cucim.skimage._shared._warnings import expected_warnings
+from cucim.skimage._shared.compat import _full
 from cucim.skimage.segmentation import random_walker
 from cucim.skimage.transform import resize
 
@@ -364,7 +365,7 @@ def test_trivial_cases():
     cp.testing.assert_array_equal(test, expected)
 
     # Unlabeled voxels not connected to seed, so nothing can be done
-    img = cp.full((10, 10), False)
+    img = _full((10, 10), False)
     object_A = np.array([(6, 7), (6, 8), (7, 7), (7, 8)])
     object_B = np.array(
         [(3, 1), (4, 1), (2, 2), (3, 2), (4, 2), (2, 3), (3, 3)]
@@ -389,7 +390,7 @@ def test_trivial_cases():
 def test_length2_spacing():
     # If this passes without raising an exception (warnings OK), the new
     #   spacing code is working properly.
-    cp.random.seed(42)
+    cp.random.seed(cp.uint32(42))
     img = cp.ones((10, 10)) + 0.2 * cp.random.normal(size=(10, 10))
     labels = cp.zeros((10, 10), dtype=cp.uint8)
     labels[2, 4] = 1

@@ -5,7 +5,7 @@ from cupy.testing import assert_allclose, assert_array_equal
 
 from cucim.skimage.transform import integral_image, integrate
 
-cp.random.seed(0)
+cp.random.seed(cp.uint32(0))
 x = (cp.random.rand(50, 50) * 255).astype(np.uint8)
 s = integral_image(x)
 

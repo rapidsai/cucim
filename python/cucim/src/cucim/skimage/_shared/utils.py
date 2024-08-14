@@ -743,7 +743,7 @@ def check_random_state(seed):
     if seed is None or seed is cp.random:
         return cp.random.mtrand._rand
     if isinstance(seed, (numbers.Integral, cp.integer)):
-        return cp.random.RandomState(seed)
+        return cp.random.RandomState(cp.uint32(seed))
     if isinstance(seed, cp.random.RandomState):
         return seed
     raise ValueError(

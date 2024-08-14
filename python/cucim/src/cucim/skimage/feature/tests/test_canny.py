@@ -51,7 +51,7 @@ class TestCanny:
     def test_01_02_circle_with_noise(self):
         """Test that the Canny filter finds the circle outlines
         in a noisy image"""
-        cp.random.seed(0)
+        cp.random.seed(cp.uint32(0))
         i, j = cp.mgrid[-200:200, -200:200].astype(float) / 200
         c = cp.abs(cp.sqrt(i * i + j * j) - 0.5) < 0.02
         cf = c.astype(float) * 0.5 + cp.random.uniform(size=c.shape) * 0.5

@@ -16,7 +16,7 @@ cam_noisy = cp.clip(cam + noise, 0, 255)
 cam_noisy = cam_noisy.astype(cam.dtype)
 
 
-cp.random.seed(1234)
+cp.random.seed(cp.uint32(1234))
 
 assert_equal = cp.testing.assert_array_equal
 assert_almost_equal = cp.testing.assert_array_almost_equal
@@ -25,7 +25,7 @@ assert_array_almost_equal = cp.testing.assert_array_almost_equal
 
 def test_structural_similarity_patch_range():
     N = 51
-    rstate = cp.random.RandomState(1234)
+    rstate = cp.random.RandomState(cp.uint32(1234))
     X = (rstate.rand(N, N) * 255).astype(cp.uint8)
     Y = (rstate.rand(N, N) * 255).astype(cp.uint8)
 
@@ -35,7 +35,7 @@ def test_structural_similarity_patch_range():
 
 def test_structural_similarity_image():
     N = 100
-    rstate = cp.random.RandomState(1234)
+    rstate = cp.random.RandomState(cp.uint32(1234))
     X = (rstate.rand(N, N) * 255).astype(cp.uint8)
     Y = (rstate.rand(N, N) * 255).astype(cp.uint8)
 

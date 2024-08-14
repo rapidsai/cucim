@@ -55,6 +55,7 @@ import cupy as cp
 import numpy as np
 from scipy import linalg
 
+from .._shared.compat import _full
 from .._shared.utils import (
     _supported_float_type,
     channel_as_last_axis,
@@ -69,6 +70,9 @@ try:
     from numpy import AxisError
 except ImportError:
     from numpy.exceptions import AxisError
+
+
+using_numpy2 = np.__version__.split(".")[0] == 2
 
 
 def convert_colorspace(arr, fromspace, tospace, *, channel_axis=-1):
@@ -1131,7 +1135,7 @@ def gray2rgba(image, alpha=None, *, channel_axis=-1, check_alpha=True):
                     f'{image.dtype.name}',
                     stacklevel=2
                 )
-        alpha_arr = cp.full(image.shape, alpha, dtype=image.dtype)
+        alpha_arr = _full(image.shape, alpha, dtype=image.dtype)
     else:
         alpha_arr = cp.asarray(alpha).astype(image.dtype, copy=False)
         if check_alpha and not cp.array_equal(alpha, alpha_arr):

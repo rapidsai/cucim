@@ -14,6 +14,8 @@ import numpy as np
 import skimage
 from packaging.version import Version
 
+from .._shared.compat import _full
+
 old_reconstruction_pyx = Version(skimage.__version__) < Version("0.20.0")
 
 
@@ -190,7 +192,7 @@ def reconstruction(seed, mask, method="dilation", footprint=None, offset=None):
     # CuPy Backend: modified to allow images_dtype based on input dtype
     #               instead of float64
     images_dtype = np.promote_types(seed.dtype, mask.dtype)
-    images = cp.full(dims, pad_value, dtype=images_dtype)
+    images = _full(dims, pad_value, dtype=images_dtype)
     images[(0, *inside_slices)] = seed
     images[(1, *inside_slices)] = mask
     isize = images.size

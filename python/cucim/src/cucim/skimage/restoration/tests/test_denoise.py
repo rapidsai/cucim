@@ -10,7 +10,7 @@ from cucim.skimage import restoration
 from cucim.skimage._shared.utils import _supported_float_type, slice_at_axis
 from cucim.skimage.metrics import structural_similarity
 
-cp.random.seed(1234)
+cp.random.seed(cp.uint32(1234))
 
 
 astro = img_as_float(data.astronaut()[:128, :128])
@@ -140,7 +140,7 @@ def test_denoise_tv_chambolle_4d():
 def test_denoise_tv_chambolle_weighting():
     # make sure a specified weight gives consistent results regardless of
     # the number of input image dimensions
-    rstate = cp.random.RandomState(1234)
+    rstate = cp.random.RandomState(cp.uint32(1234))
     img2d = astro_gray.copy()
     img2d += 0.15 * rstate.standard_normal(img2d.shape)
     img2d = cp.clip(img2d, 0, 1)

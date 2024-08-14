@@ -1,5 +1,6 @@
 """Compatibility helpers for dependencies."""
 
+import cupy as cp
 import numpy as np
 from packaging.version import parse
 
@@ -28,3 +29,12 @@ NP_COPY_IF_NEEDED = False if NUMPY_LT_2_0_0 else None
 # deprecated in favor of `rtol`.
 # As of CuPy 13.0, it is still always using 'tol''
 SCIPY_CG_TOL_PARAM_NAME = "tol"  # if CUPY_LT_14 else "rtol"
+
+
+def _full(shape, fill_value, dtype=None, order="C"):
+    if NUMPY_LT_2_0_0:
+        return cp.full(shape, fill_value, dtype, order)
+    else:
+        out = cp.empty(shape, dtype=dtype, order=order)
+        out[:] = fill_value
+        return out

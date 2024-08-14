@@ -2,6 +2,7 @@ import cupy as cp
 
 import cucim.skimage._vendored.ndimage as ndi
 
+from .._shared.compat import _full
 from .._shared.utils import _supported_float_type
 from ..color import gray2rgb
 from ..morphology import dilation, erosion, square
@@ -26,7 +27,7 @@ def _find_boundaries_subpixel(label_img):
     ndim = label_img.ndim
     max_label = cp.iinfo(label_img.dtype).max
 
-    label_img_expanded = cp.full(
+    label_img_expanded = _full(
         [(2 * s - 1) for s in label_img.shape], max_label, label_img.dtype
     )
     pixels = (slice(None, None, 2),) * ndim

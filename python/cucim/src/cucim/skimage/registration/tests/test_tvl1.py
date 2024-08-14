@@ -41,7 +41,7 @@ def _sin_flow_gen(image0, max_motion=4.5, npics=5):
 @pytest.mark.parametrize("dtype", [cp.float16, cp.float32, cp.float64])
 def test_2d_motion(dtype):
     # Generate synthetic data
-    rnd = cp.random.RandomState(0)
+    rnd = cp.random.RandomState(cp.uint32(0))
     image0 = cp.array(rnd.normal(size=(256, 256)).astype(dtype))
     gt_flow, image1 = _sin_flow_gen(image0)
     image1 = image1.astype(dtype, copy=False)

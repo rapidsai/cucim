@@ -4,6 +4,7 @@ import warnings
 import cupy as cp
 import numpy as np
 
+from .._shared.compat import _full
 from .._shared.utils import (
     DEPRECATED,
     _supported_float_type,
@@ -456,7 +457,7 @@ def richardson_lucy(image, psf, num_iter=50, clip=True, filter_epsilon=None):
     float_type = _supported_float_type(image.dtype)
     image = image.astype(float_type, copy=False)
     psf = psf.astype(float_type, copy=False)
-    im_deconv = cp.full(image.shape, 0.5, dtype=float_type)
+    im_deconv = _full(image.shape, 0.5, dtype=float_type)
     psf_mirror = cp.ascontiguousarray(psf[::-1, ::-1])
 
     # Small regularization parameter used to avoid 0 divisions

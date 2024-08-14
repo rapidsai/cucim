@@ -2,6 +2,7 @@ import cupy as cp
 import pytest
 from cupy.testing import assert_array_equal
 
+from cucim.skimage._shared.compat import _full
 from cucim.skimage._shared.utils import _supported_float_type
 from cucim.skimage.segmentation import chan_vese
 
@@ -16,7 +17,7 @@ def test_chan_vese_flat_level_set(dtype):
     # infinite time, the segmentation will still converge.
     img = cp.zeros((10, 10), dtype=dtype)
     img[3:6, 3:6] = 1
-    ls = cp.full((10, 10), 1000, dtype=dtype)
+    ls = _full((10, 10), 1000, dtype=dtype)
     result = chan_vese(img, mu=0.0, tol=1e-3, init_level_set=ls)
     assert_array_equal(result.astype(float), cp.ones((10, 10)))
     result = chan_vese(img, mu=0.0, tol=1e-3, init_level_set=-ls)

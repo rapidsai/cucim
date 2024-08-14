@@ -159,6 +159,9 @@ def thin(image, max_num_iter=None):
 def _get_tiebreaker(n, seed):
     # CuPy generator doesn't currently have the permutation method, so
     # fall back to cp.random.permutation instead.
+    if np.isscalar(seed):
+        # TODO: remove this NumPy 2.0 compat. fix once CUPy 13.3 is released
+        seed = cp.uint32(seed)
     cp.random.seed(seed)
     if n < 2 << 31:
         dtype = np.int32

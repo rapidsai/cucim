@@ -17,6 +17,7 @@ from skimage.filters._multiotsu import (
 from cucim.skimage import util
 from cucim.skimage._shared._dependency_checks import has_mpl
 from cucim.skimage._shared._warnings import expected_warnings
+from cucim.skimage._shared.compat import _full
 from cucim.skimage._shared.utils import _supported_float_type
 from cucim.skimage.color import rgb2gray
 from cucim.skimage.exposure import histogram
@@ -388,7 +389,7 @@ def test_li_astro_image():
 
 
 def test_li_nan_image():
-    image = cp.full((5, 5), cp.nan)
+    image = _full((5, 5), cp.nan)
     assert cp.isnan(threshold_li(image))
 
 
@@ -639,7 +640,7 @@ def test_mean():
 def test_triangle_uniform_images(dtype, kwargs):
     assert threshold_triangle(cp.zeros((10, 10), dtype=dtype), **kwargs) == 0
     assert threshold_triangle(cp.ones((10, 10), dtype=dtype), **kwargs) == 1
-    assert threshold_triangle(cp.full((10, 10), 2, dtype=dtype), **kwargs) == 2
+    assert threshold_triangle(_full((10, 10), 2, dtype=dtype), **kwargs) == 2
 
 
 # also run cases with nbins > 100000 to also test CuPy-based code path.
@@ -775,7 +776,7 @@ def test_niblack_sauvola_pathological_image():
     # resulted in NaNs. Here we check that these are safely caught.
     # see https://github.com/scikit-image/scikit-image/issues/3007
     value = 0.03082192 + 2.19178082e-09
-    src_img = cp.full((4, 4), value).astype(cp.float64)
+    src_img = _full((4, 4), value).astype(cp.float64)
     assert not cp.any(cp.isnan(threshold_niblack(src_img)))
 
 

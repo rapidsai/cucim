@@ -10,6 +10,7 @@ from cupyx.scipy import ndimage as ndi
 
 from .._shared._gradient import gradient
 from .._shared.utils import _supported_float_type
+from .._vendored.ndimage import uniform_filter  # has numpy 2.0 compat fix
 from ..transform import warp
 from ._optical_flow_utils import _coarse_to_fine, _get_warp_points
 
@@ -303,7 +304,7 @@ def _ilk(
         filter_func = partial(gaussian_filter, sigma=sigma, mode="mirror")
     else:
         filter_func = partial(
-            ndi.uniform_filter, size=ndim * (size,), mode="mirror"
+            uniform_filter, size=ndim * (size,), mode="mirror"
         )
 
     flow = flow0

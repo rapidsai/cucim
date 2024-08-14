@@ -5,6 +5,7 @@ import warnings
 import cupy
 import numpy
 
+from cucim.skimage._shared.compat import _full
 from cucim.skimage._vendored import (
     _internal as internal,
     _ndimage_filters_core as _filters_core,
@@ -361,7 +362,7 @@ def uniform_filter1d(
         from SciPy due to floating-point rounding of intermediate results.
     """
     weights_dtype = cupy.promote_types(input.dtype, cupy.float32)
-    weights = cupy.full(size, 1 / size, dtype=weights_dtype)
+    weights = _full(size, 1 / size, dtype=weights_dtype)
     return correlate1d(
         input, weights, axis, output, mode, cval, origin, algorithm=algorithm
     )
@@ -410,9 +411,7 @@ def uniform_filter(
 
     def get(size):
         return (
-            None
-            if size <= 1
-            else cupy.full(size, 1 / size, dtype=weights_dtype)
+            None if size <= 1 else _full(size, 1 / size, dtype=weights_dtype)
         )  # noqa
 
     return _run_1d_correlates(

@@ -1,6 +1,7 @@
 import cupy as cp
 from cupy.testing import assert_array_equal
 
+from cucim.skimage._shared.compat import _full
 from cucim.skimage.segmentation import clear_border
 
 
@@ -29,7 +30,7 @@ def test_clear_border():
 
     # test background value
     result = clear_border(image.copy(), buffer_size=1, bgval=2)
-    assert_array_equal(result, cp.full_like(image, 2))
+    assert_array_equal(result, _full(image.shape, 2, dtype=image.dtype))
 
     # test mask
     mask = cp.array(
@@ -77,12 +78,14 @@ def test_clear_border_3d():
 
     # test background value
     result = clear_border(image.copy(), buffer_size=1, bgval=2)
-    assert_array_equal(result, cp.full_like(image, 2))
+    assert_array_equal(result, _full(image.shape, 2, dtype=image.dtype))
 
     # test floating-point background value
     image_f32 = image.astype(cp.float32)
     result = clear_border(image_f32, buffer_size=1, bgval=2.5)
-    assert_array_equal(result, cp.full_like(image_f32, 2.5))
+    assert_array_equal(
+        result, _full(image_f32.shape, 2.5, dtype=image_f32.dtype)
+    )
 
 
 def test_clear_border_non_binary():

@@ -6,6 +6,7 @@ import pytest
 import scipy.ndimage as ndi_cpu
 
 from cucim.core.operations.morphology import distance_transform_edt
+from cucim.skimage._shared.compat import _full
 
 
 def binary_image(shape, pct_true=50):
@@ -137,7 +138,7 @@ def test_distance_transform_edt_block_params_invalid(block_params):
 @pytest.mark.parametrize("ndim", [2, 3])
 def test_distance_transform_edt_uniform_valued(value, ndim):
     """ensure default block_params is robust to anisotropic shape."""
-    img = cp.full((48,) * ndim, value, dtype=cp.uint8)
+    img = _full((48,) * ndim, value, dtype=cp.uint8)
     # ensure there is at least 1 pixel at background intensity
     img[(slice(24, 25),) * ndim] = 0
     out = distance_transform_edt(img)

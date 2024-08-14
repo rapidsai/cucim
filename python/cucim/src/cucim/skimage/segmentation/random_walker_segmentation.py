@@ -434,7 +434,7 @@ def random_walker(
     Examples
     --------
     >>> import cupy as cp
-    >>> cp.random.seed(0)
+    >>> cp.random.seed(cp.uint32(0))
     >>> a = cp.zeros((10, 10)) + 0.2 * cp.random.rand(10, 10)
     >>> a[5:8, 5:8] += 1
     >>> b = cp.zeros_like(a, dtype=cp.int32)

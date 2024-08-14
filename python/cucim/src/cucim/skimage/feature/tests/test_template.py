@@ -6,6 +6,7 @@ from numpy.testing import assert_equal
 from skimage import data
 
 from cucim.skimage import img_as_float
+from cucim.skimage._shared.compat import _full
 from cucim.skimage.feature import match_template, peak_local_max
 from cucim.skimage.morphology import diamond
 
@@ -55,7 +56,7 @@ def test_normalization():
     N = 20
     ipos, jpos = (2, 3)
     ineg, jneg = (12, 11)
-    image = cp.full((N, N), 0.5)
+    image = _full((N, N), 0.5)
     image[ipos : ipos + n, jpos : jpos + n] = 1
     image[ineg : ineg + n, jneg : jneg + n] = 0
 
