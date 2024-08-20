@@ -73,7 +73,7 @@ requirements:
     {% if cuda_major != "11" %}
     - cuda-cudart
     {% endif %}
-    - numpy >=1.23,<3
+    - numpy >=1.23,<3.0a0
     - click
     - cupy >=12.0.0
     - lazy_loader >=0.1
