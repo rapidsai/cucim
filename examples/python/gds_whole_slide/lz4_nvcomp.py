@@ -66,9 +66,7 @@ def ensure_contiguous_ndarray(buf, max_buffer_size=None, flatten=True):
         raise ValueError("an array with contiguous memory is required")
 
     if max_buffer_size is not None and arr.nbytes > max_buffer_size:
-        msg = "Codec does not support buffers of > {} bytes".format(
-            max_buffer_size
-        )
+        msg = f"Codec does not support buffers of > {max_buffer_size} bytes"
         raise ValueError(msg)
 
     return arr

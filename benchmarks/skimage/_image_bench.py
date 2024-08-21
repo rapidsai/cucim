@@ -23,7 +23,7 @@ def product_dict(**kwargs):
         yield dict(zip(keys, instance))
 
 
-class ImageBench(object):
+class ImageBench:
     def __init__(
         self,
         function_name,

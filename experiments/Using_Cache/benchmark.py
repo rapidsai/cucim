@@ -42,7 +42,7 @@ class Timer(ContextDecorator):
     def __exit__(self, exc_type, exc, exc_tb):
         if not self.end:
             self.elapsed_time()
-        print("{} : {}".format(self.message, self.end - self.start))
+        print(f"{self.message} : {self.end - self.start}")
 
 
 def load_tile_openslide(slide, start_loc, patch_size):

@@ -180,7 +180,7 @@ def main(args):
     try:
         import tabular  # noqa: F401
 
-        with open(fbase + ".md", "wt") as f:
+        with open(fbase + ".md", "w") as f:
             f.write(all_results.to_markdown())
     except ImportError:
         pass

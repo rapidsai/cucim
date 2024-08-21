@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 #
 # Copyright (c) 2018, NVIDIA CORPORATION.
 #
@@ -21,9 +20,9 @@
 #
 import os
 import sys
-from packaging.version import Version
 
 import cucim
+from packaging.version import Version
 
 sys.path.insert(0, os.path.abspath("../.."))
 curpath = os.path.dirname(__file__)

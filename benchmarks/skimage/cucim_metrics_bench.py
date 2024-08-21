@@ -176,7 +176,7 @@ def main(args):
     fbase = os.path.splitext(pfile)[0]
     all_results.to_csv(fbase + ".csv")
     all_results.to_pickle(pfile)
-    with open(fbase + ".md", "wt") as f:
+    with open(fbase + ".md", "w") as f:
         f.write(all_results.to_markdown())
 
 

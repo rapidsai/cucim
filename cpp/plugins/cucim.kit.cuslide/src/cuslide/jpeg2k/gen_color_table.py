@@ -138,7 +138,7 @@ def gen_b_cb():
     """
     b_cb = [0] * 256
     for i in range(256):
-        b_cb[i] = int((1.77204 * (i - 128)))
+        b_cb[i] = int(1.77204 * (i - 128))
     return b_cb
 
 
