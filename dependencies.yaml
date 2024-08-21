@@ -237,10 +237,6 @@ dependencies:
             packages:
               - python=3.8
           - matrix:
-              py: "3.9"
-            packages:
-              - python=3.9
-          - matrix:
               py: "3.10"
             packages:
               - python=3.10
