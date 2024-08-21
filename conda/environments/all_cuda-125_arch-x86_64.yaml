@@ -39,7 +39,7 @@ dependencies:
 - pytest-lazy-fixtures>=1.0.0
 - pytest-xdist
 - pytest>=6.2.4,<8.0.0a0
-- python>=3.9,<3.12
+- python>=3.10,<3.12
 - pywavelets>=1.0
 - recommonmark
 - scikit-image>=0.19.0,<0.24.0a0
