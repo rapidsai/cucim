@@ -65,7 +65,9 @@ def _fused_variance_kernel2(
     difference_term += term2
 
     new_phi = phi + (dt * delta_phi) * (mu * K + difference_term)
-    out = new_phi / (1 + mu * dt * delta_phi * Csum)
+    out_denom = mu * dt * delta_phi * Csum
+    out_denom += out_denom.dtype.type(1)
+    out = new_phi / out_denom
     return out
 
 
@@ -430,6 +432,9 @@ def chan_vese(
     phivar = tol + 1
 
     dt = cp.asarray(dt, dtype=float_dtype)
+    mu = cp.asarray(mu, dtype=float_dtype)
+    lambda1 = cp.asarray(lambda1, dtype=float_dtype)
+    lambda2 = cp.asarray(lambda2, dtype=float_dtype)
     while phivar > tol and i < max_num_iter:
         # Save old level set values
         oldphi = phi
