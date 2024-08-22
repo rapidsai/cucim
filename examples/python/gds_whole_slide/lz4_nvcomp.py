@@ -146,7 +146,7 @@ class LZ4NVCOMP(Codec):
         return ndarray_copy(decompressed, out)
 
     def __repr__(self):
-        r = "%s" % type(self).__name__
+        r = f"{type(self).__name__}"
         return r
 
 
