@@ -243,10 +243,11 @@ libcuckoo
 - Copyright: Carnegie Mellon University and Intel Corporation
 - Usage: Using concurrent hash table implementation for cache mechanism.
 
-pytest-lazy-fixture
+pytest-lazy-fixtures
 - License: MIT License
-  - https://github.com/TvoroG/pytest-lazy-fixture/blob/master/LICENSE
-- Copyright: Marsel Zaripov
+- https://github.com/dev-petrov/pytest-lazy-fixtures
+  - https://github.com/dev-petrov/pytest-lazy-fixtures/blob/master/LICENSE
+- Copyright: Anton Petrov
 - Usage: Using lazy fixture feature in PyTest.
 
 psutil
