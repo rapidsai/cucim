@@ -148,7 +148,5 @@ for num_workers in range(1, num_threads + 1):
 print("Total time (OpenSlide):", openslide_tot_time)
 print("Total time (cuCIM):", cucim_tot_time)
 print(
-    "Average performance gain (OpenSlide/cuCIM): {}".format(
-        openslide_tot_time / cucim_tot_time
-    )
+    f"Average performance gain (OpenSlide/cuCIM): {openslide_tot_time / cucim_tot_time}"  # noqa: E501
 )

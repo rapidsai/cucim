@@ -153,5 +153,5 @@ for shape in [(512, 512), (3840, 2160), (4608, 3456), (192, 192, 192)]:
 fbase = os.path.splitext(pfile)[0]
 all_results.to_csv(fbase + ".csv")
 all_results.to_pickle(pfile)
-with open(fbase + ".md", "wt") as f:
+with open(fbase + ".md", "w") as f:
     f.write(all_results.to_markdown())

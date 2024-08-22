@@ -22,7 +22,7 @@ authors = [
     { name = "NVIDIA Corporation" },
 ]
 license = { text = "Apache 2.0" }
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = [
     "click",
     "cupy-cuda11x>=12.0.0",
@@ -147,9 +147,6 @@ filterwarnings = [
 ]
 
 [tool.ruff]
-# see: https://docs.astral.sh/ruff/rules/
-select = ["E", "F", "W", "I", "UP"]
-fixable = ["ALL"]
 exclude = [
     # TODO: Remove this in a follow-up where we fix __all__.
     ".tox",
@@ -159,17 +156,29 @@ exclude = [
     "dist",
     ".git",
     "__pycache__",
-    "doc/conf.py",
-    "doc/sphinxext",
+    "docs/source/conf.py",
+    "docs/source/ext",
     "__init__.py",
+    "python/cucim/src/cucim/skimage/_vendored",
 ]
 line-length = 80
 fix = true
 
-[tool.ruff.per-file-ignores]
+[tool.ruff.lint]
+# see: https://docs.astral.sh/ruff/rules/
+select = ["E", "F", "W", "I", "UP"]
+ignore = [
+    # (pycodestyle) Use `is` and `is not` for type comparisons, or `isinstance()` for isinstance checks
+    "E721",
+    # (pyupgrade) Use `X | Y` in `isinstance` call instead of `(X, Y)`
+    "UP038",
+]
+fixable = ["ALL"]
+
+[tool.ruff.lint.per-file-ignores]
 # "src/cucim/skimage/util/tests/test_shape.py" = ["E201", "E202"]
 
-[tool.ruff.isort]
+[tool.ruff.lint.isort]
 combine-as-imports = true
 force-single-line = false
 known-first-party = ["cucim"]
@@ -177,7 +186,7 @@ order-by-type = true
 
 [tool.black]
 line-length = 80
-target-version = ["py39"]
+target-version = ["py310"]
 include = '\.py?$'
 exclude = '''
 /(

@@ -666,9 +666,7 @@ def pad(array, pad_width, mode="constant", **kwargs):
         raise ValueError(f"mode '{mode}' is not supported")
     if unsupported_kwargs:
         raise ValueError(
-            "unsupported keyword arguments for mode '{}': {}".format(
-                mode, unsupported_kwargs
-            )
+            f"unsupported keyword arguments for mode '{mode}': {unsupported_kwargs}"
         )
 
     if _use_elementwise_kernel(array, mode, kwargs):

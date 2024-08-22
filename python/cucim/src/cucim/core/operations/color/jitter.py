@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import numbers
-from typing import Any, Optional
+from typing import Any
 
 import cupy
 import numpy as np
@@ -51,17 +51,11 @@ def _check_input(
 
 
 def _get_params(
-    brightness: Optional[list[float]],
-    contrast: Optional[list[float]],
-    saturation: Optional[list[float]],
-    hue: Optional[list[float]],
-) -> tuple[
-    np.ndarray,
-    Optional[float],
-    Optional[float],
-    Optional[float],
-    Optional[float],
-]:
+    brightness: list[float] | None,
+    contrast: list[float] | None,
+    saturation: list[float] | None,
+    hue: list[float] | None,
+) -> tuple[np.ndarray, float | None, float | None, float | None, float | None,]:
     fn_idx = np.random.permutation(4)
 
     b = None

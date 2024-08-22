@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 #
 # Copyright (c) 2018, NVIDIA CORPORATION.
 #
@@ -21,6 +20,7 @@
 #
 import os
 import sys
+
 from packaging.version import Version
 
 import cucim
