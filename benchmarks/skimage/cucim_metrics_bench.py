@@ -2,14 +2,15 @@ import argparse
 import os
 import pickle
 
-import cucim.skimage
-import cucim.skimage.metrics
 import cupy as cp
 import numpy as np
 import pandas as pd
 import skimage
 import skimage.metrics
 from _image_bench import ImageBench
+
+import cucim.skimage
+import cucim.skimage.metrics
 from cucim.skimage import data, measure
 
 

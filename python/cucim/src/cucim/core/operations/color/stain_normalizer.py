@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import math
-from typing import Union
 
 import cupy as cp
 import numpy as np
@@ -446,12 +445,13 @@ def normalize_colors_pca(
     source_intensity: float = 240.0,
     alpha: float = 1.0,
     beta: float = 0.345,
-    ref_stain_coeff: Union[tuple, cp.ndarray] = (
+    ref_stain_coeff: tuple
+    | cp.ndarray = (
         (0.5626, 0.2159),
         (0.7201, 0.8012),
         (0.4062, 0.5581),
     ),
-    ref_max_conc: Union[tuple, cp.ndarray] = (1.9705, 1.0308),
+    ref_max_conc: tuple | cp.ndarray = (1.9705, 1.0308),
     image_type: str = "intensity",
     channel_axis: int = 0,
 ):

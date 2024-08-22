@@ -2,13 +2,14 @@ import argparse
 import os
 import pickle
 
-import cucim.skimage
-import cucim.skimage.transform
 import numpy as np
 import pandas as pd
 import skimage
 import skimage.transform
 from _image_bench import ImageBench
+
+import cucim.skimage
+import cucim.skimage.transform
 
 
 def main(args):

@@ -21,9 +21,10 @@ from time import perf_counter
 
 import numpy as np
 import rasterio
-from cucim import CuImage
 from openslide import OpenSlide
 from rasterio.windows import Window
+
+from cucim import CuImage
 
 
 class Timer(ContextDecorator):

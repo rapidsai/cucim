@@ -19,9 +19,10 @@ from datetime import datetime
 from itertools import repeat
 from time import perf_counter
 
+from openslide import OpenSlide
+
 from cucim import CuImage
 from cucim.clara.filesystem import discard_page_cache  # noqa: F401
-from openslide import OpenSlide
 
 
 class Timer(ContextDecorator):

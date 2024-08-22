@@ -21,8 +21,9 @@
 import os
 import sys
 
-import cucim
 from packaging.version import Version
+
+import cucim
 
 sys.path.insert(0, os.path.abspath("../.."))
 curpath = os.path.dirname(__file__)

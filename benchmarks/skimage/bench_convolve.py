@@ -3,6 +3,8 @@ Benchmark locally modified ndimage functions vs. their CuPy counterparts
 """
 import cupy as cp
 import cupyx.scipy.ndimage as ndi
+from cupyx.profiler import benchmark
+
 from cucim.skimage._vendored.ndimage import (  # noqa: F401
     convolve1d,
     correlate1d,
@@ -16,7 +18,6 @@ from cucim.skimage._vendored.ndimage import (  # noqa: F401
     uniform_filter,
     uniform_filter1d,
 )
-from cupyx.profiler import benchmark
 
 d = cp.cuda.Device()
 

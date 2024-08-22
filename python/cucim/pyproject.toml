@@ -149,6 +149,10 @@ filterwarnings = [
 [tool.ruff]
 # see: https://docs.astral.sh/ruff/rules/
 select = ["E", "F", "W", "I", "UP"]
+ignore = [
+    # (pyupgrade) Use `X | Y` in `isinstance` call instead of `(X, Y)`
+    "UP038",
+]
 fixable = ["ALL"]
 exclude = [
     # TODO: Remove this in a follow-up where we fix __all__.
@@ -159,8 +163,8 @@ exclude = [
     "dist",
     ".git",
     "__pycache__",
-    "doc/conf.py",
-    "doc/sphinxext",
+    "docs/source/conf.py",
+    "docs/source/ext",
     "__init__.py",
 ]
 line-length = 80

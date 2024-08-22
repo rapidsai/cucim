@@ -2,8 +2,6 @@ import argparse
 import os
 import pickle
 
-import cucim.skimage
-import cucim.skimage.color
 import cupy
 import cupy as cp
 import cupyx.scipy.ndimage
@@ -13,6 +11,9 @@ import scipy
 import skimage
 import skimage.color
 from _image_bench import ImageBench
+
+import cucim.skimage
+import cucim.skimage.color
 
 func_name_choices = [
     "convert_colorspace",

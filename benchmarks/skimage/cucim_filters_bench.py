@@ -2,13 +2,14 @@ import argparse
 import os
 import pickle
 
-import cucim.skimage
-import cucim.skimage.filters
 import numpy as np
 import pandas as pd
 import skimage
 import skimage.filters
 from _image_bench import ImageBench
+
+import cucim.skimage
+import cucim.skimage.filters
 
 
 def main(args):

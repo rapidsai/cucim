@@ -2,8 +2,6 @@ import argparse
 import os
 import pickle
 
-import cucim.skimage
-import cucim.skimage.exposure
 import cupy
 import cupy as cp
 import numpy as np
@@ -11,6 +9,9 @@ import pandas as pd
 import skimage
 import skimage.exposure
 from _image_bench import ImageBench
+
+import cucim.skimage
+import cucim.skimage.exposure
 
 
 class ExposureBench(ImageBench):
