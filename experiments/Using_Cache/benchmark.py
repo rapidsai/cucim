@@ -21,9 +21,10 @@ from time import perf_counter
 
 import numpy as np
 import rasterio
-from cucim import CuImage
 from openslide import OpenSlide
 from rasterio.windows import Window
+
+from cucim import CuImage
 
 
 class Timer(ContextDecorator):
@@ -42,7 +43,7 @@ class Timer(ContextDecorator):
     def __exit__(self, exc_type, exc, exc_tb):
         if not self.end:
             self.elapsed_time()
-        print("{} : {}".format(self.message, self.end - self.start))
+        print(f"{self.message} : {self.end - self.start}")
 
 
 def load_tile_openslide(slide, start_loc, patch_size):

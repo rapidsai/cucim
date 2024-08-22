@@ -14,7 +14,7 @@
 
 import math
 from collections.abc import Sequence
-from typing import Any, Union
+from typing import Any
 
 import cupy
 import numpy as np
@@ -224,8 +224,8 @@ def zoom(img: Any, zoom_factor: Sequence[float]):
 
 
 def get_zoom_factor(
-    min_zoom: Union[Sequence[float], float] = 0.9,
-    max_zoom: Union[Sequence[float], float] = 1.1,
+    min_zoom: Sequence[float] | float = 0.9,
+    max_zoom: Sequence[float] | float = 1.1,
 ):
     R = np.random.RandomState()
     try:
@@ -243,8 +243,8 @@ def get_zoom_factor(
 
 def rand_zoom(
     img: Any,
-    min_zoom: Union[Sequence[float], float] = 0.9,
-    max_zoom: Union[Sequence[float], float] = 1.1,
+    min_zoom: Sequence[float] | float = 0.9,
+    max_zoom: Sequence[float] | float = 1.1,
     prob: float = 0.1,
     whole_batch: bool = False,
 ):

@@ -2,13 +2,14 @@ import argparse
 import os
 import pickle
 
-import cucim.skimage
-import cucim.skimage.transform
 import numpy as np
 import pandas as pd
 import skimage
 import skimage.transform
 from _image_bench import ImageBench
+
+import cucim.skimage
+import cucim.skimage.transform
 
 
 def main(args):
@@ -164,7 +165,7 @@ def main(args):
     try:
         import tabular  # noqa: F401
 
-        with open(fbase + ".md", "wt") as f:
+        with open(fbase + ".md", "w") as f:
             f.write(all_results.to_markdown())
     except ImportError:
         pass

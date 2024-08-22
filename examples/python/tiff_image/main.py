@@ -16,8 +16,9 @@
 import json
 
 import numpy as np
-from cucim import CuImage
 from PIL import Image
+
+from cucim import CuImage
 
 img = CuImage("image.tif")
 

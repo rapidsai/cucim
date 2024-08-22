@@ -2,14 +2,15 @@ import argparse
 import os
 import pickle
 
-import cucim.skimage
-import cucim.skimage.metrics
 import cupy as cp
 import numpy as np
 import pandas as pd
 import skimage
 import skimage.metrics
 from _image_bench import ImageBench
+
+import cucim.skimage
+import cucim.skimage.metrics
 from cucim.skimage import data, measure
 
 
@@ -176,7 +177,7 @@ def main(args):
     fbase = os.path.splitext(pfile)[0]
     all_results.to_csv(fbase + ".csv")
     all_results.to_pickle(pfile)
-    with open(fbase + ".md", "wt") as f:
+    with open(fbase + ".md", "w") as f:
         f.write(all_results.to_markdown())
 
 

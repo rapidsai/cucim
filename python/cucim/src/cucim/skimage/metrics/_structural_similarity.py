@@ -269,7 +269,7 @@ def structural_similarity(
         if cp.issubdtype(im1.dtype, cp.integer) and (im1.dtype != cp.uint8):
             warn(
                 "Setting data_range based on im1.dtype. "
-                + ("data_range = %.0f. " % data_range)
+                + f"data_range = {data_range:.0f}. "
                 + "Please specify data_range explicitly to avoid mistakes.",
                 stacklevel=2,
             )
