@@ -65,7 +65,7 @@ requirements:
     - libcucim ={{ version }}
     - python
     - rapids-build-backend >=0.3.0,<0.4.0.dev0
-    - scikit-image >=0.19.0,<0.23.0a0
+    - scikit-image >=0.19.0,<0.25.0a0
     - scipy >=1.6
     - setuptools >=24.2.0
   run:
@@ -79,7 +79,7 @@ requirements:
     - lazy_loader >=0.1
     - libcucim ={{ version }}
     - python
-    - scikit-image >=0.19.0,<0.23.0a0
+    - scikit-image >=0.19.0,<0.25.0a0
     - scipy >=1.6
   run_constrained:
     - openslide-python >=1.3.0
