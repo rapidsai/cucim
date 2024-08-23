@@ -1121,10 +1121,13 @@ def gray2rgba(image, alpha=None, *, channel_axis=-1, check_alpha=True):
         _, alpha = dtype_limits(image, clip_negative=False)
 
     if np.isscalar(alpha):
+        # Convert to NumPy.  As of NumPy 2.1 (and cupy 13.3) `cp.full`
+        # will raise for out-of-bound Python integers otherwise.
+        alpha = np.asarray(alpha)
         if check_alpha:
             # do not use np.can_cast here for NumPy 2.0 compatibility
             with np.errstate(over="ignore", under="ignore"):
-                alpha_cast = np.asarray(alpha).astype(image.dtype)
+                alpha_cast = alpha.astype(image.dtype)
             if alpha_cast != alpha:
                 warn(
                     'alpha cannot be safely cast to image dtype '
