@@ -1,5 +1,6 @@
 """A vendored subset of cupyx.scipy.ndimage._filters"""
 import math
+import platform
 import warnings
 
 import cupy
@@ -21,6 +22,8 @@ try:
     compile_errors = (ResourceLimitError, CompileException)
 except ImportError:
     compile_errors = (ResourceLimitError,)
+
+_is_not_windows = platform.system() != "Windows"
 
 
 def correlate(input, weights, output=None, mode="reflect", cval=0.0, origin=0):
@@ -231,7 +234,7 @@ def _correlate_or_convolve1d(
     default_algorithm = False
     if algorithm is None:
         default_algorithm = True
-        if input.ndim == 2 and weights.size <= 256:
+        if input.ndim == 2 and weights.size <= 256 and _is_not_windows:
             algorithm = "shared_memory"
         else:
             algorithm = "elementwise"
