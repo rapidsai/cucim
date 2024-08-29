@@ -234,7 +234,7 @@ def _correlate_or_convolve1d(
     default_algorithm = False
     if algorithm is None:
         default_algorithm = True
-        if input.ndim == 2 and weights.size <= 256 and _is_not_windows:
+        if _is_not_windows and input.ndim == 2 and weights.size <= 256:
             algorithm = "shared_memory"
         else:
             algorithm = "elementwise"
