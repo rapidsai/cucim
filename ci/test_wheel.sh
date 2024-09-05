@@ -11,8 +11,13 @@ python -m pip install $(echo ./dist/cucim*.whl)[test]
 
 CUDA_MAJOR_VERSION=${RAPIDS_CUDA_VERSION:0:2}
 
-DEBIAN_FRONTEND=noninteractive apt update
-DEBIAN_FRONTEND=noninteractive apt install -y --no-install-recommends libopenslide0
+if type -f yum > /dev/null 2>&1; then
+    yum update -y
+    yum install -y openslide
+else
+    DEBIAN_FRONTEND=noninteractive apt update
+    DEBIAN_FRONTEND=noninteractive apt install -y --no-install-recommends libopenslide0
+fi
 
 if [[ ${CUDA_MAJOR_VERSION} == "11" ]]; then
     # Omit I/O-related tests in ./python/cucim/tests due to known CUDA bug
