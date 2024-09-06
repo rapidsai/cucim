@@ -295,7 +295,6 @@ dependencies:
     common:
       - output_types: [conda, requirements, pyproject]
         packages:
-          - GPUtil>=1.4.0
           - psutil>=5.8.0
           - pytest>=6.2.4,<8.0.0a0
           - pytest-cov>=2.12.1

@@ -6,7 +6,6 @@ channels:
 - conda-forge
 - nvidia
 dependencies:
-- GPUtil>=1.4.0
 - c-compiler
 - click
 - cmake>=3.26.4,!=3.30.0
