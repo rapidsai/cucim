@@ -57,7 +57,6 @@ Tracker = "https://github.com/rapidsai/cucim/issues"
 
 [project.optional-dependencies]
 test = [
-    "cuda-python>=11.7.1,<12.0a0",
     "imagecodecs>=2021.6.8; platform_machine=='x86_64'",
     "matplotlib",
     "numpydoc>=1.5",
