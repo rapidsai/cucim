@@ -23,7 +23,8 @@ pytest.importorskip("imagecodecs")
 
 
 def test_read_region_cuda_memleak(testimg_tiff_stripe_4096x4096_256_jpeg):
-    def get_used_gpu_memory():
+    def get_used_gpu_memory_mib():
+        """Get the used GPU memory in MiB."""
         status, free, total = cuda.cudart.cudaMemGetInfo()
         if status != cuda.cudart.cudaError_t.cudaSuccess:
             raise RuntimeError("Failed to get GPU memory info.")
@@ -36,11 +37,11 @@ def test_read_region_cuda_memleak(testimg_tiff_stripe_4096x4096_256_jpeg):
 
     img = open_image_cucim(testimg_tiff_stripe_4096x4096_256_jpeg)
 
-    mem_usage_history = [get_used_gpu_memory()]
+    mem_usage_history = [get_used_gpu_memory_mib()]
 
     for i in range(10):
         _ = img.read_region(device="cuda")
-        mem_usage_history.append(get_used_gpu_memory())
+        mem_usage_history.append(get_used_gpu_memory_mib())
 
     print(mem_usage_history)
 
