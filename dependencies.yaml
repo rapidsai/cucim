@@ -301,6 +301,7 @@ dependencies:
           - pytest-cov>=2.12.1
           - pytest-lazy-fixtures>=1.0.0
           - pytest-xdist
+          - setuptools>=60.0  # provides 'distutils', keeps 'GPUtil' working on Python 3.12+
           - tifffile>=2022.7.28
           - pooch>=1.6.0  # needed to download scikit-image sample data
           - pywavelets>=1.0

@@ -45,6 +45,7 @@ dependencies:
 - recommonmark
 - scikit-image>=0.19.0,<0.25.0a0
 - scipy>=1.6.0
+- setuptools>=60.0
 - sphinx<6
 - sysroot_linux-64==2.17
 - tifffile>=2022.7.28
