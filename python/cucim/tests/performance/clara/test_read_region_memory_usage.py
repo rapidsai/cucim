@@ -13,6 +13,7 @@
 # limitations under the License.
 #
 
+import cuda.cudart
 import pytest
 
 from ...util.io import open_image_cucim
@@ -22,23 +23,24 @@ pytest.importorskip("imagecodecs")
 
 
 def test_read_region_cuda_memleak(testimg_tiff_stripe_4096x4096_256_jpeg):
-    import GPUtil
+    def get_used_gpu_memory():
+        status, free, total = cuda.cudart.cudaMemGetInfo()
+        if status != cuda.cudart.cudaError_t.cudaSuccess:
+            raise RuntimeError("Failed to get GPU memory info.")
+        memory_used = (total - free) / (2**20)
+        return memory_used
 
-    gpus = GPUtil.getGPUs()
-
-    if len(gpus) == 0:
+    status, num_gpus = cuda.cudart.cudaGetDeviceCount()
+    if status != cuda.cudart.cudaError_t.cudaSuccess or num_gpus == 0:
         pytest.skip("No gpu available")
 
     img = open_image_cucim(testimg_tiff_stripe_4096x4096_256_jpeg)
 
-    gpu = gpus[0]
-    mem_usage_history = [gpu.memoryUsed]
+    mem_usage_history = [get_used_gpu_memory()]
 
     for i in range(10):
         _ = img.read_region(device="cuda")
-        gpus = GPUtil.getGPUs()
-        gpu = gpus[0]
-        mem_usage_history.append(gpu.memoryUsed)
+        mem_usage_history.append(get_used_gpu_memory())
 
     print(mem_usage_history)
 

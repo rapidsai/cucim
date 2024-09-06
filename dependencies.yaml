@@ -295,7 +295,6 @@ dependencies:
     common:
       - output_types: [conda, requirements, pyproject]
         packages:
-          - GPUtil>=1.4.0
           - psutil>=5.8.0
           - pytest>=6.2.4,<8.0.0a0
           - pytest-cov>=2.12.1
@@ -323,3 +322,13 @@ dependencies:
         packages:
           # Already added to requirements via docs. This is for tests.
           - numpydoc>=1.5
+    specific:
+      - output_types: [conda, requirements, pyproject]
+        matrices:
+          - matrix: {cuda: "12.*"}
+            packages:
+              - cuda-python>=12.0,<13.0a0
+          - matrix: {cuda: "11.*"}
+            packages: &test_cuda_python_cu11
+              - cuda-python>=11.7.1,<12.0a0
+          - {matrix: null, packages: *test_cuda_python_cu11}

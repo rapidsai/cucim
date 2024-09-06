@@ -6,12 +6,12 @@ channels:
 - conda-forge
 - nvidia
 dependencies:
-- GPUtil>=1.4.0
 - c-compiler
 - click
 - cmake>=3.26.4,!=3.30.0
 - cuda-cudart-dev
 - cuda-nvcc
+- cuda-python>=12.0,<13.0a0
 - cuda-version=12.5
 - cupy>=12.0.0
 - cxx-compiler
