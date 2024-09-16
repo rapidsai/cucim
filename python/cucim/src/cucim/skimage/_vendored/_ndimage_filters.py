@@ -843,35 +843,37 @@ def generic_laplace(
     """
     if extra_keywords is None:
         extra_keywords = {}
-    ndim = input.ndim
-    modes = _util._fix_sequence_arg(mode, ndim, "mode", _util._check_mode)
+    axes = _util._check_axes(axes, input.ndim)
+    num_axes = len(axes)
     output = _util._get_output(output, input)
-    axes = _util._check_axes(axes, ndim)
-    if ndim == 0:
-        output[:] = input
-        return output
-    derivative2(
-        input,
-        axes[0],
-        output,
-        modes[0],
-        cval,
-        *extra_arguments,
-        **extra_keywords,
-    )
-    if ndim > 1:
-        tmp = _util._get_output(output.dtype, input)
-        for i in range(1, ndim):
-            derivative2(
-                input,
-                axes[i],
-                tmp,
-                modes[i],
-                cval,
-                *extra_arguments,
-                **extra_keywords,
-            )
-            output += tmp
+    if num_axes > 0:
+        modes = _util._fix_sequence_arg(
+            mode, num_axes, "mode", _util._check_mode
+        )
+        derivative2(
+            input,
+            axes[0],
+            output,
+            modes[0],
+            cval,
+            *extra_arguments,
+            **extra_keywords,
+        )
+        if num_axes > 1:
+            tmp = _util._get_output(output.dtype, input)
+            for i in range(1, num_axes):
+                derivative2(
+                    input,
+                    axes[i],
+                    tmp,
+                    modes[i],
+                    cval,
+                    *extra_arguments,
+                    **extra_keywords,
+                )
+                output += tmp
+    else:
+        _core.elementwise_copy(input, output)
     return output
 
 
@@ -956,7 +958,7 @@ def gaussian_laplace(
         from SciPy due to floating-point rounding of intermediate results.
     """
 
-    def derivative2(input, axis, output, mode, cval):
+    def derivative2(input, axis, output, mode, cval, sigma, **kwargs):
         order = [0] * input.ndim
         order[axis] = 2
         return gaussian_filter(
@@ -972,7 +974,7 @@ def gaussian_laplace(
 
     axes = _util._check_axes(axes, input.ndim)
     num_axes = len(axes)
-    sigma = _util._fix_sequence_arg(sigma, num_axes, "sigma", int)
+    sigma = _util._fix_sequence_arg(sigma, num_axes, "sigma", float)
     if num_axes < input.ndim:
         # set sigma = 0 for any axes not being filtered
         sigma_temp = [
@@ -982,7 +984,16 @@ def gaussian_laplace(
             sigma_temp[ax] = s
         sigma = sigma_temp
 
-    return generic_laplace(input, derivative2, output, mode, cval, axes=axes)
+    return generic_laplace(
+        input,
+        derivative2,
+        output,
+        mode,
+        cval,
+        extra_arguments=(sigma,),
+        extra_keywords=kwargs,
+        axes=axes,
+    )
 
 
 def generic_gradient_magnitude(
@@ -1312,6 +1323,7 @@ def _min_or_max_filter(
         # expand origins ,footprint and structure if num_axes < input.ndim
         ftprnt = _util._expand_footprint(input.ndim, axes, ftprnt)
         origins = _util._expand_origin(input.ndim, axes, origin)
+        modes = tuple(_util._expand_mode(input.ndim, axes, modes))
 
     if structure is not None:
         structure = _util._expand_footprint(
@@ -1320,7 +1332,7 @@ def _min_or_max_filter(
 
     offsets = _filters_core._origins_to_offsets(origins, ftprnt.shape)
     kernel = _get_min_or_max_kernel(
-        mode,
+        modes,
         ftprnt.shape,
         func,
         offsets,
@@ -1424,7 +1436,7 @@ def _min_or_max_1d(
 
 @cupy._util.memoize(for_each_device=True)
 def _get_min_or_max_kernel(
-    mode,
+    modes,
     w_shape,
     func,
     offsets,
@@ -1461,7 +1473,7 @@ def _get_min_or_max_kernel(
         pre.format(ctype),
         found.format(func=func, value=value),
         "y = cast<Y>(value);",
-        mode,
+        modes,
         w_shape,
         int_type,
         offsets,
