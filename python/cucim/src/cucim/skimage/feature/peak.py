@@ -31,9 +31,10 @@ def _get_high_intensity_peaks(image, mask, num_peaks, min_distance, p_norm):
     else:
         max_out = None
 
-    coord = ensure_spacing(
-        coord, spacing=min_distance, p_norm=p_norm, max_out=max_out
-    )
+    if min_distance > 1:
+        coord = ensure_spacing(
+            coord, spacing=min_distance, p_norm=p_norm, max_out=max_out
+        )
 
     if len(coord) > num_peaks:
         coord = coord[:num_peaks]
@@ -53,7 +54,7 @@ def _get_peak_mask(image, footprint, threshold, mask=None):
     out = image == image_max
 
     # no peak for a trivial image
-    image_is_trivial = np.all(out) if mask is None else np.all(out[mask])
+    image_is_trivial = cp.all(out) if mask is None else cp.all(out[mask])
     if image_is_trivial:  # synchronize
         out[:] = False
         if mask is not None:
