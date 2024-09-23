@@ -101,6 +101,8 @@ def ensure_spacing(
         A subset of coord where a minimum spacing is guaranteed.
 
     """
+    if spacing == 1:
+        return coords
 
     output = coords
     if len(coords):
