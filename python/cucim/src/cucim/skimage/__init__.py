@@ -80,4 +80,3 @@ from .util.dtype import (
     img_as_ubyte,
     img_as_uint,
 )
-from .util.lookfor import lookfor
