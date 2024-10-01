@@ -89,17 +89,13 @@ include(ExternalProject)
 # Options
 ################################################################################
 
-# Setup CXX11 ABI
-# : Adds CXX11 ABI definition to the compiler command line for targets in the current directory,
-#   whether added before or after this command is invoked, and for the ones in sub-directories added after.
-add_definitions(-D_GLIBCXX_USE_CXX11_ABI=0) # TODO: create two library, one with CXX11 ABI and one without it.
 
 ################################################################################
 # Define dependencies
 ################################################################################
 superbuild_depend(pybind11)
 superbuild_depend(fmt)
-superbuild_depend(json)
+superbuild_depend(nlohmann_json)
 superbuild_depend(pybind11_json)
 
 ################################################################################
@@ -171,7 +167,7 @@ target_link_libraries(cucim
     PRIVATE
         cucim::cucim
         deps::fmt
-        deps::json
+        deps::nlohmann_json
         deps::pybind11_json
         )
 

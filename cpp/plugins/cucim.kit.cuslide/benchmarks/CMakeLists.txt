@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2020, NVIDIA CORPORATION.
+# Copyright (c) 2020-2024, NVIDIA CORPORATION.
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -26,8 +26,6 @@ set_target_properties(cuslide_benchmarks
         CXX_EXTENSIONS NO
 )
 target_compile_features(cuslide_benchmarks PRIVATE ${CUCIM_REQUIRED_FEATURES})
-# Use generator expression to avoid `nvcc fatal   : Value '-std=c++17' is not defined for option 'Werror'`
-target_compile_options(cuslide_benchmarks PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-Werror -Wall -Wextra>)
 target_compile_definitions(cuslide_benchmarks
     PUBLIC
         CUSLIDE_VERSION=${PROJECT_VERSION}

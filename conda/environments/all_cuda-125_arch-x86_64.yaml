@@ -6,7 +6,10 @@ channels:
 - conda-forge
 - nvidia
 dependencies:
+- boost-cpp
 - c-compiler
+- catch2
+- cli11
 - click
 - cmake>=3.26.4,!=3.30.0
 - cuda-cudart-dev
@@ -14,11 +17,13 @@ dependencies:
 - cuda-version=12.5
 - cupy>=12.0.0
 - cxx-compiler
+- fmt
 - gcc_linux-64=11.*
 - imagecodecs>=2021.6.8
 - ipython
 - jbig
 - lazy_loader>=0.1
+- libabseil
 - libcufile-dev
 - libnvjpeg-dev
 - libnvjpeg-static
@@ -26,13 +31,17 @@ dependencies:
 - matplotlib-base
 - nbsphinx
 - ninja
+- nlohmann_json
 - numpy>=1.23.4,<3.0a0
 - numpydoc>=1.5
+- nvtx-c >=3.1.0
 - openslide-python>=1.3.0
 - pip
 - pooch>=1.6.0
 - pre-commit
 - psutil>=5.8.0
+- pybind11
+- pybind11_json
 - pydata-sphinx-theme
 - pytest-cov>=2.12.1
 - pytest-lazy-fixtures>=1.0.0
@@ -45,6 +54,7 @@ dependencies:
 - scipy>=1.6.0
 - sphinx<6
 - sysroot_linux-64==2.17
+- taskflow
 - tifffile>=2022.7.28
 - xz
 - yasm

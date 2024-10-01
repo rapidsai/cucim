@@ -101,6 +101,18 @@ dependencies:
       - output_types: [requirements, pyproject]
         packages:
           - wheel
+      - output_types: [conda]
+        packages:
+          - boost-cpp
+          - catch2
+          - cli11
+          - fmt
+          - libabseil
+          - nvtx-c >=3.1.0
+          - nlohmann_json
+          - pybind11
+          - pybind11_json
+          - taskflow
     specific:
       - output_types: conda
         matrices:

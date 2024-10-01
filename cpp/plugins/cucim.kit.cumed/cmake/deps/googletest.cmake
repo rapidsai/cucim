@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2020, NVIDIA CORPORATION.
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -23,6 +23,8 @@ if (NOT TARGET deps::googletest)
     FetchContent_GetProperties(deps-googletest)
     if (NOT deps-googletest_POPULATED)
         message(STATUS "Fetching googletest sources")
+        # TODO: use FetchContent_MakeAvailable (with EXCLUDE_FROM_ALL option in FetchContent_Declare) when CMake 3.30 is minimum required
+        #       (https://cmake.org/cmake/help/latest/policy/CMP0169.html#policy:CMP0169)
         FetchContent_Populate(deps-googletest)
         message(STATUS "Fetching googletest sources - done")
     endif ()

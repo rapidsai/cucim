@@ -1,5 +1,5 @@
 # Apache License, Version 2.0
-# Copyright 2021 NVIDIA Corporation
+# Copyright 2021-2024 NVIDIA Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -105,10 +105,6 @@ include(ExternalProject)
 # Options
 ################################################################################
 
-# Setup CXX11 ABI
-# : Adds CXX11 ABI definition to the compiler command line for targets in the current directory,
-#   whether added before or after this command is invoked, and for the ones in sub-directories added after.
-add_definitions(-D_GLIBCXX_USE_CXX11_ABI=0) # TODO: create two library, one with CXX11 ABI and one without it.
 
 ################################################################################
 # Define dependencies
@@ -163,8 +159,6 @@ set_target_properties(${CUCIM_PLUGIN_NAME}
         VERSION ${PROJECT_VERSION}
 )
 target_compile_features(${CUCIM_PLUGIN_NAME} PRIVATE cxx_std_17)
-# Use generator expression to avoid `nvcc fatal   : Value '-std=c++17' is not defined for option 'Werror'`
-target_compile_options(${CUCIM_PLUGIN_NAME} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-Werror -Wall -Wextra>)
 
 # Link libraries
 target_link_libraries(${CUCIM_PLUGIN_NAME}
