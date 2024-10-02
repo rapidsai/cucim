@@ -265,17 +265,6 @@ dependencies:
       - output_types: conda
         packages:
           - cupy>=12.0.0
-          # All dependencies below this point are specific to `cucim.clara` and
-          # are not needed for either `cucim.core` or `cucim.skimage`. I did
-          # not include these under a "pyproject" output so that it is still
-          # possible to run `pip install .` from the python/cucim folder
-          # without having build the C++ library at all. This allows, usage of
-          # usage of `cucim.skimage` on Windows, for example.
-          - jbig
-          - libwebp-base
-          - xz
-          - zlib
-          - zstd
           # Not sure where these go, if anywhere:
           # - openslide
           # - xorg-libxcb
