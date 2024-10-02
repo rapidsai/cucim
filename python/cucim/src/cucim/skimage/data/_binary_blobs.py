@@ -1,20 +1,14 @@
 import cupy as cp
 
 from .._shared.filters import gaussian
-from .._shared.utils import DEPRECATED, deprecate_parameter
 
 
-@deprecate_parameter(
-    "seed", new_name="rng", start_version="23.12.00", stop_version="24.12.00"
-)
 def binary_blobs(
     length=512,
     blob_size_fraction=0.1,
     n_dim=2,
     volume_fraction=0.5,
     rng=None,
-    *,
-    seed=DEPRECATED,
 ):
     """
     Generate synthetic binary image with several rounded blob-like objects.
