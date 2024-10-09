@@ -1,3 +1,28 @@
+# cucim 24.10.00 (9 Oct 2024)
+
+## 🐛 Bug Fixes
+
+- Use cupy to measure memory leak ([#777](https://github.com/rapidsai/cucim/pull/777)) [@bdice](https://github.com/bdice)
+- Fix wheel tests for Rocky Linux 8. ([#774](https://github.com/rapidsai/cucim/pull/774)) [@bdice](https://github.com/bdice)
+- Disable custom 2D separable filtering kernels on windows ([#770](https://github.com/rapidsai/cucim/pull/770)) [@grlee77](https://github.com/grlee77)
+- chan_vese: pass all constants to `_fused_variance_kernel2` as device scalars ([#764](https://github.com/rapidsai/cucim/pull/764)) [@grlee77](https://github.com/grlee77)
+- Fix &quot;compatibility&quot; spelling in CHANGELOG ([#759](https://github.com/rapidsai/cucim/pull/759)) [@jakirkham](https://github.com/jakirkham)
+- Fix error in dependencies.yaml causing incomplete pyproject.toml generation ([#757](https://github.com/rapidsai/cucim/pull/757)) [@grlee77](https://github.com/grlee77)
+
+## 🛠️ Improvements
+
+- Do not depends on unused libraries for libtiff ([#785](https://github.com/rapidsai/cucim/pull/785)) [@gigony](https://github.com/gigony)
+- Fix a couple of performance issues in `peak_local_max` (improve performance of blob detectors and `corner_peaks`) ([#782](https://github.com/rapidsai/cucim/pull/782)) [@grlee77](https://github.com/grlee77)
+- update vendored CUDA includes to match CuPy &gt;= 13.3 ([#781](https://github.com/rapidsai/cucim/pull/781)) [@grlee77](https://github.com/grlee77)
+- Use CI workflow branch &#39;branch-24.10&#39; again ([#780](https://github.com/rapidsai/cucim/pull/780)) [@jameslamb](https://github.com/jameslamb)
+- Add support for Python 3.12 ([#773](https://github.com/rapidsai/cucim/pull/773)) [@jameslamb](https://github.com/jameslamb)
+- Update rapidsai/pre-commit-hooks ([#772](https://github.com/rapidsai/cucim/pull/772)) [@KyleFromNVIDIA](https://github.com/KyleFromNVIDIA)
+- bump scikit-image upper bound (allow 0.24.x) ([#769](https://github.com/rapidsai/cucim/pull/769)) [@grlee77](https://github.com/grlee77)
+- Drop Python 3.9 support ([#766](https://github.com/rapidsai/cucim/pull/766)) [@jameslamb](https://github.com/jameslamb)
+- Remove NumPy &lt;2 pin ([#762](https://github.com/rapidsai/cucim/pull/762)) [@seberg](https://github.com/seberg)
+- Update pre-commit hooks ([#760](https://github.com/rapidsai/cucim/pull/760)) [@KyleFromNVIDIA](https://github.com/KyleFromNVIDIA)
+- Switch to pytest-lazy-fixtures ([#756](https://github.com/rapidsai/cucim/pull/756)) [@gigony](https://github.com/gigony)
+
 # cucim 24.08.00 (7 Aug 2024)
 
 ## 🛠️ Improvements
