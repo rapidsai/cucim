@@ -3,8 +3,6 @@ import math
 import os
 import pickle
 
-import cucim.skimage
-import cucim.skimage.restoration
 import cupy as cp
 import cupyx.scipy.ndimage as ndi
 import numpy as np
@@ -12,8 +10,11 @@ import pandas as pd
 import skimage
 import skimage.restoration
 from _image_bench import ImageBench
-from cucim.skimage.restoration import denoise_tv_chambolle as tv_gpu
 from skimage.restoration import denoise_tv_chambolle as tv_cpu
+
+import cucim.skimage
+import cucim.skimage.restoration
+from cucim.skimage.restoration import denoise_tv_chambolle as tv_gpu
 
 
 class DenoiseBench(ImageBench):
@@ -180,7 +181,7 @@ def main(args):
     try:
         import tabular  # noqa: F401
 
-        with open(fbase + ".md", "wt") as f:
+        with open(fbase + ".md", "w") as f:
             f.write(all_results.to_markdown())
     except ImportError:
         pass

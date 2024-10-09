@@ -123,7 +123,7 @@ cd $CUCIM_HOME
 
 Conda can be used to setup an environment which includes all of the necessary dependencies (as shown in `./conda/environments/all_cuda-118_arch-x86_64.yaml`) for building cuCIM.
 
-Otherwise, you may need to install dependencies (such as zlib, xz, yasm) through your OS's package manager (`apt`, `yum`, and so on).
+Otherwise, you may need to install dependencies (such as yasm) through your OS's package manager (`apt`, `yum`, and so on).
 
 
 ### Creating the Conda Development Environment `cucim`

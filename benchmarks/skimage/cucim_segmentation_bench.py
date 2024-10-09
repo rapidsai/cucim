@@ -3,13 +3,14 @@ import math
 import os
 import pickle
 
-import cucim.skimage
 import cupy as cp
 import numpy as np
 import pandas as pd
 import skimage
 import skimage.segmentation
 from _image_bench import ImageBench
+
+import cucim.skimage
 from cucim.skimage import data, measure
 
 
@@ -296,7 +297,7 @@ def main(args):
     try:
         import tabular  # noqa: F401
 
-        with open(fbase + ".md", "wt") as f:
+        with open(fbase + ".md", "w") as f:
             f.write(all_results.to_markdown())
     except ImportError:
         pass

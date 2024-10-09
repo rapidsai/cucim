@@ -17,7 +17,6 @@ build:
   number: {{ GIT_DESCRIBE_NUMBER }}
   string: cuda{{ cuda_major }}_{{ date_string }}_{{ GIT_DESCRIBE_HASH }}_{{ GIT_DESCRIBE_NUMBER }}
   ignore_run_exports:
-    - libwebp-base
     - openslide
   ignore_run_exports_from:
     {% if cuda_major == "11" %}
@@ -74,13 +73,8 @@ requirements:
     - libnvjpeg-dev
     - libnvjpeg-static
     {% endif %}
-    - jbig
-    - libwebp-base
     - nvtx-c >=3.1.0
     - openslide
-    - xz
-    - zlib
-    - zstd
   run:
     - {{ pin_compatible('cuda-version', max_pin='x', min_pin='x') }}
     {% if cuda_major == "11" %}
@@ -91,11 +85,6 @@ requirements:
     - libcufile  # [linux64]
     - libnvjpeg
     {% endif %}
-    - {{ pin_compatible('libwebp-base', max_pin='x.x') }}
-    - jbig
-    - xz
-    - zlib
-    - zstd
   run_constrained:
     - {{ pin_compatible('openslide') }}
 

@@ -19,9 +19,10 @@ from datetime import datetime
 from itertools import repeat
 from time import perf_counter
 
+from openslide import OpenSlide
+
 from cucim import CuImage
 from cucim.clara.filesystem import discard_page_cache  # noqa: F401
-from openslide import OpenSlide
 
 
 class Timer(ContextDecorator):
@@ -40,7 +41,7 @@ class Timer(ContextDecorator):
     def __exit__(self, exc_type, exc, exc_tb):
         if not self.end:
             self.elapsed_time()
-        print("{} : {}".format(self.message, self.end - self.start))
+        print(f"{self.message} : {self.end - self.start}")
 
 
 def load_tile_openslide(slide, start_loc, patch_size):

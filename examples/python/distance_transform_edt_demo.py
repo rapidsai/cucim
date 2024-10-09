@@ -10,10 +10,11 @@ except ImportError as e:
     print("This demo requires the matplotlib and colorcet packages.")
     raise (e)
 
+from skimage import data
+
 from cucim.core.operations.morphology import distance_transform_edt
 from cucim.skimage.color import label2rgb
 from cucim.skimage.segmentation import relabel_sequential
-from skimage import data
 
 
 def coords_to_labels(coords):

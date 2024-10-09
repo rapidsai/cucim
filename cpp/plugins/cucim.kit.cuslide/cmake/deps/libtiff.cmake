@@ -53,6 +53,17 @@ if (NOT TARGET deps::libtiff)
     set(JPEG_LIBRARIES deps::libjpeg-turbo)
     # for jpeglib.h and jconfig.h/jconfigint.h
     set(TIFF_INCLUDES ${deps-libjpeg-turbo_SOURCE_DIR} ${deps-libjpeg-turbo_BINARY_DIR} )
+
+    # Explicitly disable external codecs
+    set(zlib OFF)
+    set(pixarlog OFF)
+    set(lzma OFF)
+    set(old-jpeg OFF)
+    set(jpeg12 OFF)
+    set(zstd OFF)
+    set(jbig OFF)
+    set(webp OFF)
+
     add_subdirectory(${deps-libtiff_SOURCE_DIR} ${deps-libtiff_BINARY_DIR} EXCLUDE_FROM_ALL)
 
     # Disable visibility to not expose unnecessary symbols

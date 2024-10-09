@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 import scipy.ndimage
 import skimage.data
+
 from cucim.time import repeat
 
 
@@ -23,7 +24,7 @@ def product_dict(**kwargs):
         yield dict(zip(keys, instance))
 
 
-class ImageBench(object):
+class ImageBench:
     def __init__(
         self,
         function_name,

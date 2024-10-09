@@ -36,9 +36,7 @@ class _PerfCaseResult:
 
         s = f"    {device_name}:{t_us.mean():9.03f} us"
         if t.size > 1:
-            s += "   +/-{:6.03f} (min:{:9.03f} / max:{:9.03f}) us".format(
-                t_us.std(), t_us.min(), t_us.max()
-            )
+            s += f"   +/-{t_us.std():6.03f} (min:{t_us.min():9.03f} / max:{t_us.max():9.03f}) us"
         return s
 
     def to_str(self, show_gpu=False):

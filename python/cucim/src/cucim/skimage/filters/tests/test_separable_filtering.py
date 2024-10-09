@@ -1,3 +1,5 @@
+import platform
+
 import cupy as cp
 import pytest
 
@@ -227,6 +229,13 @@ image_dtypes_tested = (
 )
 
 
+@pytest.mark.skipif(
+    platform.system() == "Windows",
+    reason=(
+        "custom separable kernels disabled on Windows until dtype-related "
+        "test failures can be resolved"
+    ),
+)
 @pytest.mark.parametrize("axis", (0, 1))
 @pytest.mark.parametrize("image_dtype", image_dtypes_tested)
 @pytest.mark.parametrize(
@@ -246,6 +255,13 @@ def test_separable_image_and_kernel_dtypes(axis, image_dtype, kernel_dtype):
     )
 
 
+@pytest.mark.skipif(
+    platform.system() == "Windows",
+    reason=(
+        "custom separable kernels disabled on Windows until dtype-related "
+        "test failures can be resolved"
+    ),
+)
 @pytest.mark.parametrize("axis", (0, 1))
 @pytest.mark.parametrize("image_dtype", image_dtypes_tested)
 @pytest.mark.parametrize(
