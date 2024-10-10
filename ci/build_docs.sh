@@ -2,8 +2,6 @@
 
 set -euo pipefail
 
-export RAPIDS_VERSION_NUMBER="$(rapids-version-major-minor)"
-
 rapids-logger "Create test conda environment"
 . /opt/conda/etc/profile.d/conda.sh
 
