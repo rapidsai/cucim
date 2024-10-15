@@ -18,19 +18,44 @@ RAPIDS_PY_CUDA_SUFFIX="$(rapids-wheel-ctk-name-gen ${RAPIDS_CUDA_VERSION})"
 
 PACKAGE_CUDA_SUFFIX="-${RAPIDS_PY_CUDA_SUFFIX}"
 
-# Install pip build dependencies (not yet using pyproject.toml)
+rapids-logger "Generating build requirements"
+matrix_selectors="cuda=${RAPIDS_CUDA_VERSION%.*};arch=$(arch);py=${RAPIDS_PY_VERSION};cuda_suffixed=true"
+
 rapids-dependency-file-generator \
-  --file-key "py_build" \
-  --output "requirements" \
-  --matrix "cuda=${RAPIDS_CUDA_VERSION%.*};arch=$(arch);py=${RAPIDS_PY_VERSION}" | tee build_requirements.txt
-pip install -r build_requirements.txt
+  --output requirements \
+  --file-key "py_build_${package_name}" \
+  --matrix "${matrix_selectors}" \
+| tee /tmp/requirements-build.txt
+
+rapids-dependency-file-generator \
+  --output requirements \
+  --file-key "py_rapids_build_${package_name}" \
+  --matrix "${matrix_selectors}" \
+| tee -a /tmp/requirements-build.txt
+
+rapids-logger "Installing build requirements"
+python -m pip install \
+    -v \
+    --prefer-binary \
+    -r /tmp/requirements-build.txt
 
 # First build the C++ lib using CMake via the run script
 ./run build_local all ${CMAKE_BUILD_TYPE}
 
+sccache --show-adv-stats
+
 cd "${package_dir}"
 
-python -m pip wheel . -w dist -vvv --no-deps --disable-pip-version-check
+rapids-logger "Building '${package_name}' wheel"
+python -m pip wheel \
+    -w dist \
+    -v \
+    --no-build-isolation \
+    --no-deps \
+    --disable-pip-version-check \
+    .
+
+sccache --show-adv-stats
 
 mkdir -p final_dist
 python -m auditwheel repair -w final_dist dist/*
