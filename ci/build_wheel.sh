@@ -36,4 +36,26 @@ mkdir -p final_dist
 python -m auditwheel repair -w final_dist dist/*
 ls -1 final_dist | grep -vqz 'none'
 
+# Build the wheel for Windows if the current platform is x86_64 (#763)
+if [ "$(arch)" = "x86_64" ]; then
+  # Install the wheel package
+  python -m pip install wheel
+
+  # Create directories
+  mkdir -p unpacked converted_dist
+  # Unpack the wheel
+  python -m wheel unpack final_dist/*_x86_64.whl -d unpacked
+
+  # Delete unnecessary files/folder (.so files, .libs folder)
+  find unpacked -name '*.so*' -exec rm {} +
+  find unpacked -maxdepth 2 -type d -name '*.libs' -exec rm -r {} +
+
+  # Pack the wheel again
+  python -m wheel pack --dest-dir converted_dist unpacked/*
+
+  # Change the platform tag to win_amd64 and store it in the final_dist folder
+  python -m wheel tags --remove --python-tag=py3 --abi-tag=none --platform-tag=win_amd64 converted_dist/*_x86_64.whl
+  mv converted_dist/*-win_amd64.whl final_dist
+fi
+
 RAPIDS_PY_WHEEL_NAME="${package_name}_${RAPIDS_PY_CUDA_SUFFIX}" rapids-upload-wheels-to-s3 final_dist
