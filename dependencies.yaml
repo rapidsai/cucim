@@ -31,14 +31,14 @@ files:
       - cuda_version
       - docs
       - py_version
-  py_build:
+  py_build_cucim:
     output: pyproject
     pyproject_dir: python/cucim
     extras:
       table: build-system
     includes:
       - rapids_build_setuptools
-  py_rapids_build:
+  py_rapids_build_cucim:
     output: pyproject
     pyproject_dir: python/cucim
     extras:
