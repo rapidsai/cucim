@@ -21,7 +21,7 @@ rapids-dependency-file-generator \
   --output requirements \
   --file-key "py_build_${package_name}" \
   --file-key "py_rapids_build_${package_name}" \
-  --matrix "${matrix_selectors}" \
+  --matrix "cuda=${RAPIDS_CUDA_VERSION%.*};arch=$(arch);py=${RAPIDS_PY_VERSION}" \
 | tee /tmp/requirements-build.txt
 
 rapids-logger "Installing build requirements"
