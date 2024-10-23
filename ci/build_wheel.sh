@@ -15,15 +15,20 @@ rapids-generate-version > ./VERSION
 
 RAPIDS_PY_CUDA_SUFFIX="$(rapids-wheel-ctk-name-gen ${RAPIDS_CUDA_VERSION})"
 
-PACKAGE_CUDA_SUFFIX="-${RAPIDS_PY_CUDA_SUFFIX}"
+rapids-logger "Generating build requirements"
 
-# Install pip build dependencies (not yet using pyproject.toml)
 rapids-dependency-file-generator \
-  --file-key "py_build" \
-  --output "requirements" \
-  --matrix "cuda=${RAPIDS_CUDA_VERSION%.*};arch=$(arch);py=${RAPIDS_PY_VERSION}" | tee build_requirements.txt
+  --output requirements \
+  --file-key "py_build_${package_name}" \
+  --file-key "py_rapids_build_${package_name}" \
+  --matrix "${matrix_selectors}" \
+| tee /tmp/requirements-build.txt
 
-python -m pip install -r build_requirements.txt
+rapids-logger "Installing build requirements"
+python -m pip install \
+    -v \
+    --prefer-binary \
+    -r /tmp/requirements-build.txt
 
 sccache --zero-stats
 
@@ -40,6 +45,7 @@ rapids-logger "Building '${package_name}' wheel"
 python -m pip wheel \
     -w dist \
     -v \
+    --no-build-isolation \
     --no-deps \
     --disable-pip-version-check \
     .
