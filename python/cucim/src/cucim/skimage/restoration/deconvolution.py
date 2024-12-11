@@ -5,9 +5,7 @@ import cupy as cp
 import numpy as np
 
 from .._shared.utils import (
-    DEPRECATED,
     _supported_float_type,
-    deprecate_parameter,
 )
 from . import uft
 
@@ -151,18 +149,6 @@ def wiener(image, psf, balance, reg=None, is_real=True, clip=True):
     return deconv
 
 
-@deprecate_parameter(
-    "random_state",
-    new_name="rng",
-    start_version="23.08.00",
-    stop_version="24.12.00",
-)
-@deprecate_parameter(
-    "seed",
-    new_name="rng",
-    start_version="23.08.00",
-    stop_version="24.12.00",
-)
 def unsupervised_wiener(
     image,
     psf,
@@ -172,8 +158,6 @@ def unsupervised_wiener(
     clip=True,
     *,
     rng=None,
-    random_state=DEPRECATED,
-    seed=DEPRECATED,
 ):
     """Unsupervised Wiener-Hunt deconvolution.
 

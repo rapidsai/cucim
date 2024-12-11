@@ -5,7 +5,6 @@ import numpy as np
 
 import cucim.skimage._vendored.ndimage as ndi
 from cucim.core.operations.morphology import distance_transform_edt
-from cucim.skimage._shared.utils import DEPRECATED, deprecate_parameter
 
 from .._shared.utils import check_nD
 from ._medial_axis_lookup import (
@@ -168,12 +167,7 @@ def _get_tiebreaker(n, seed):
     return tiebreaker
 
 
-@deprecate_parameter(
-    "seed", new_name="rng", start_version="23.12", stop_version="24.12"
-)
-def medial_axis(
-    image, mask=None, return_distance=False, *, seed=DEPRECATED, rng=None
-):
+def medial_axis(image, mask=None, return_distance=False, *, rng=None):
     """Compute the medial axis transform of a binary image.
 
     Parameters

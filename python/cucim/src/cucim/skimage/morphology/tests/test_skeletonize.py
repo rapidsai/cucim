@@ -122,11 +122,6 @@ class TestMedialAxis:
     def test_rng_int(self):
         self._test_vertical_line(dtype=bool, rng=15)
 
-    def test_vertical_line_seed(self):
-        """seed was deprecated (now use rng)"""
-        with pytest.warns(FutureWarning):
-            self._test_vertical_line(dtype=bool, seed=15)
-
     def test_01_01_rectangle(self):
         """Test skeletonize on a rectangle"""
         image = cp.zeros((9, 15), bool)

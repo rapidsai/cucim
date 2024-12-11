@@ -16,14 +16,6 @@ def test_set_seed():
     assert_array_equal(test, random_noise(cam, rng=seed))
 
 
-def test_random_noise_futurewarning():
-    seed = 42
-    cam = cp.asarray(camerad)
-    with pytest.warns(FutureWarning):
-        test = random_noise(cam, seed=seed)
-    assert_array_equal(test, random_noise(cam, rng=seed))
-
-
 def test_salt():
     amount = 0.15
     cam = img_as_float(camerad)

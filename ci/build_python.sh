@@ -16,9 +16,14 @@ rapids-print-env
 rapids-generate-version > ./VERSION
 
 rapids-logger "Begin py build"
-conda config --set path_conflict prevent
+
+# this can be set back to 'prevent' once the xorg-* migrations are completed
+# ref: https://github.com/rapidsai/cucim/issues/800#issuecomment-2529593457
+conda config --set path_conflict warn
 
 CPP_CHANNEL=$(rapids-download-conda-from-s3 cpp)
+
+sccache --zero-stats
 
 # TODO: Remove `--no-test` flag once importing on a CPU
 # node works correctly
@@ -26,5 +31,7 @@ RAPIDS_PACKAGE_VERSION=$(head -1 ./VERSION) rapids-conda-retry mambabuild \
   --no-test \
   --channel "${CPP_CHANNEL}" \
   conda/recipes/cucim
+
+sccache --show-adv-stats
 
 rapids-upload-conda-to-s3 python

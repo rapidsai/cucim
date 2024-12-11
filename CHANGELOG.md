@@ -1,3 +1,17 @@
+# cucim 24.12.00 (11 Dec 2024)
+
+## 🚨 Breaking Changes
+
+- Deprecations: carry out removals scheduled for release 24.12 ([#786](https://github.com/rapidsai/cucim/pull/786)) [@grlee77](https://github.com/grlee77)
+
+## 🛠️ Improvements
+
+- allow path conflicts in conda builds ([#801](https://github.com/rapidsai/cucim/pull/801)) [@jameslamb](https://github.com/jameslamb)
+- enforce wheel size limits, README formatting in CI ([#797](https://github.com/rapidsai/cucim/pull/797)) [@jameslamb](https://github.com/jameslamb)
+- build wheels without build isolation, print sccache stats in builds ([#792](https://github.com/rapidsai/cucim/pull/792)) [@jameslamb](https://github.com/jameslamb)
+- make conda installs in CI stricter ([#791](https://github.com/rapidsai/cucim/pull/791)) [@jameslamb](https://github.com/jameslamb)
+- Deprecations: carry out removals scheduled for release 24.12 ([#786](https://github.com/rapidsai/cucim/pull/786)) [@grlee77](https://github.com/grlee77)
+
 # cucim 24.10.00 (9 Oct 2024)
 
 ## 🐛 Bug Fixes
