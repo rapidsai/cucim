@@ -120,7 +120,7 @@ def thin(image, max_num_iter=None):
     check_nD(image, 2)
 
     # convert image to uint8 with values in {0, 1}
-    skel = cp.asarray(image, dtype=bool).view(cp.uint8)
+    skel = cp.asarray(image, dtype=bool).copy().view(cp.uint8)
 
     # neighborhood mask
     mask = cp.asarray(

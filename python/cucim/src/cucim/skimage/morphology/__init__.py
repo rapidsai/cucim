@@ -1,10 +1,4 @@
-"""Utilities that operate on shapes in images.
-
-These operations are particularly suited for binary images,
-although some may be useful for images of other types as well.
-
-Basic morphological operations include dilation and erosion.
-"""
+"""Morphological algorithms, e.g., closing, opening, skeletonization."""
 
 from ._skeletonize import medial_axis, thin
 from .binary import (
@@ -18,6 +12,8 @@ from .footprints import (
     cube,
     diamond,
     disk,
+    footprint_from_sequence,
+    footprint_rectangle,
     octagon,
     octahedron,
     rectangle,
@@ -56,11 +52,10 @@ __all__ = [
     "closing",
     "white_tophat",
     "black_tophat",
-    "square",
-    "rectangle",
+    "footprint_from_sequence",
+    "footprint_rectangle",
     "diamond",
     "disk",
-    "cube",
     "octahedron",
     "ball",
     "octagon",
