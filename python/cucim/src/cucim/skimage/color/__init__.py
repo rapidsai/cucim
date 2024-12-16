@@ -1,3 +1,5 @@
+"""Color space conversion."""
+
 from .colorconv import (
     ahx_from_rgb,
     bex_from_rgb,

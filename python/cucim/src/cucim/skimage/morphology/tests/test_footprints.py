@@ -11,33 +11,15 @@ import numpy as np
 import pytest
 from cupy.testing import assert_array_equal
 
-from cucim.skimage._shared.testing import fetch
-from cucim.skimage.morphology import footprints
+from cucim.skimage._shared.testing import assert_stacklevel, fetch
+from cucim.skimage.morphology import (
+    footprint_from_sequence,
+    footprint_rectangle,
+    footprints,
+)
 
 
 class TestSElem:
-    def test_square_footprint(self):
-        """Test square footprints"""
-        for k in range(0, 5):
-            actual_mask = footprints.square(k, dtype=cp.uint8)
-            expected_mask = np.ones((k, k), dtype="uint8")
-            assert_array_equal(expected_mask, actual_mask)
-
-    def test_rectangle_footprint(self):
-        """Test rectangle footprints"""
-        for i in range(0, 5):
-            for j in range(0, 5):
-                actual_mask = footprints.rectangle(i, j, dtype=cp.uint8)
-                expected_mask = np.ones((i, j), dtype="uint8")
-                assert_array_equal(expected_mask, actual_mask)
-
-    def test_cube_footprint(self):
-        """Test cube footprints"""
-        for k in range(0, 5):
-            actual_mask = footprints.cube(k, dtype=cp.uint8)
-            expected_mask = np.ones((k, k, k), dtype="uint8")
-            assert_array_equal(expected_mask, actual_mask)
-
     def strel_worker(self, fn, func):
         matlab_masks = np.load(fetch(fn))
         k = 0
@@ -163,11 +145,9 @@ class TestSElem:
     [
         (footprints.disk, (3,), True),
         (footprints.ball, (3,), True),
-        (footprints.square, (3,), True),
-        (footprints.cube, (3,), True),
         (footprints.diamond, (3,), True),
         (footprints.octahedron, (3,), True),
-        (footprints.rectangle, (3, 4), True),
+        (footprint_rectangle, ((3, 5),), True),
         (footprints.ellipse, (3, 4), False),
         (footprints.octagon, (3, 4), True),
         (footprints.star, (3,), False),
@@ -196,7 +176,7 @@ def test_nsphere_series_approximation(function, radius):
     footprint_sequence = fp_func(
         radius, strict_radius=False, decomposition="sequence"
     )
-    approximate = footprints.footprint_from_sequence(footprint_sequence)
+    approximate = footprint_from_sequence(footprint_sequence)
     assert approximate.shape == expected.shape
 
     # verify that maximum error does not exceed some fraction of the size
@@ -216,7 +196,7 @@ def test_disk_crosses_approximation(radius, strict_radius):
     footprint_sequence = fp_func(
         radius, strict_radius=strict_radius, decomposition="crosses"
     )
-    approximate = footprints.footprint_from_sequence(footprint_sequence)
+    approximate = footprint_from_sequence(footprint_sequence)
     assert approximate.shape == expected.shape
 
     # verify that maximum error does not exceed some fraction of the size
@@ -231,7 +211,7 @@ def test_ellipse_crosses_approximation(width, height):
     fp_func = footprints.ellipse
     expected = fp_func(width, height, decomposition=None)
     footprint_sequence = fp_func(width, height, decomposition="crosses")
-    approximate = footprints.footprint_from_sequence(footprint_sequence)
+    approximate = footprint_from_sequence(footprint_sequence)
     assert approximate.shape == expected.shape
 
     # verify that maximum error does not exceed some fraction of the size
@@ -250,3 +230,49 @@ def test_ball_series_approximation_unavailable():
     # ValueError if radius is too large (only precomputed up to radius=100)
     with pytest.raises(ValueError):
         footprints.ball(radius=10000, decomposition="sequence")
+
+
+def assert_decomposition_equal(actual, desired):
+    assert len(actual) == len(desired)
+    for a, d in zip(actual, desired):
+        assert_array_equal(a[0], d[0])
+        assert a[1] == d[1]
+
+
+class Test_footprint_rectangule:
+    @pytest.mark.parametrize("i", [0, 1, 2, 3, 4])
+    @pytest.mark.parametrize("j", [0, 1, 2, 3, 4])
+    def test_rectangle(self, i, j):
+        desired = cp.ones((i, j), dtype="uint8")
+        actual = footprint_rectangle((i, j))
+        assert_array_equal(actual, desired)
+
+    @pytest.mark.parametrize("i", [0, 1, 2, 3, 4])
+    @pytest.mark.parametrize("j", [0, 1, 2, 3, 4])
+    @pytest.mark.parametrize("k", [0, 1, 2, 3, 4])
+    def test_cuboid(self, i, j, k):
+        desired = cp.ones((i, j, k), dtype="uint8")
+        actual = footprint_rectangle((i, j, k))
+        assert_array_equal(actual, desired)
+
+    @pytest.mark.parametrize("shape", [(3,), (5, 5), (5, 5, 7)])
+    @pytest.mark.parametrize("decomposition", ["separable", "sequence"])
+    def test_decomposition(self, shape, decomposition):
+        regular = footprint_rectangle(shape)
+        decomposed = footprint_rectangle(shape, decomposition=decomposition)
+        recomposed = footprint_from_sequence(decomposed)
+        assert_array_equal(recomposed, regular)
+
+    @pytest.mark.parametrize("shape", [(2,), (3, 4)])
+    def test_uneven_sequence_decomposition_warning(self, shape):
+        """Should fall back to decomposition="separable" for uneven footprint
+        size.
+        """
+        desired = footprint_rectangle(shape, decomposition="separable")
+        regex = (
+            "decomposition='sequence' is only supported for uneven footprints"
+        )
+        with pytest.warns(UserWarning, match=regex) as record:
+            actual = footprint_rectangle(shape, decomposition="sequence")
+        assert_stacklevel(record)
+        assert_decomposition_equal(actual, desired)

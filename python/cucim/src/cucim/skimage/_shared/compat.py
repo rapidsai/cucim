@@ -1,5 +1,6 @@
 """Compatibility helpers for dependencies."""
 
+import cupy as cp
 import numpy as np
 from packaging.version import parse
 
@@ -22,9 +23,8 @@ NP_COPY_IF_NEEDED = False if NUMPY_LT_2_0_0 else None
 
 # check CuPy instead of SciPy
 # as of CuPy 13.0, tol is still being used instead of rtol as in latest SciPy
-# CUPY_LT_14 = parse(cp.__version__) < parse("14.0")
+CUPY_LT_14 = parse(cp.__version__) < parse("14.0.0a1")
 
 # Starting in SciPy v1.12, 'scipy.sparse.linalg.cg' keyword argument `tol` is
 # deprecated in favor of `rtol`.
-# As of CuPy 13.0, it is still always using 'tol''
-SCIPY_CG_TOL_PARAM_NAME = "tol"  # if CUPY_LT_14 else "rtol"
+SCIPY_CG_TOL_PARAM_NAME = "tol" if CUPY_LT_14 else "rtol"

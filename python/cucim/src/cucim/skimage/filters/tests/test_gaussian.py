@@ -2,7 +2,6 @@ import cupy as cp
 import numpy as np
 import pytest
 
-from cucim.skimage._shared.testing import assert_stacklevel
 from cucim.skimage.filters._gaussian import difference_of_gaussians, gaussian
 
 
@@ -173,16 +172,6 @@ def test_dog_invalid_sigma2():
         difference_of_gaussians(image, 3, 2)
     with pytest.raises(ValueError):
         difference_of_gaussians(image, (1, 5), (2, 4))
-
-
-def test_deprecated_gaussian_output():
-    image = cp.array([0, 1, 0], dtype=float)
-    desired = cp.array([0.24197145, 0.39894347, 0.24197145])
-    with pytest.warns(FutureWarning, match="Parameter `output` is") as record:
-        gaussian(image, output=image)
-    assert_stacklevel(record)
-    assert len(record) == 1
-    cp.testing.assert_array_almost_equal(desired, image)
 
 
 @pytest.mark.parametrize(

@@ -1,6 +1,5 @@
-"""Common tools to optical flow algorithms.
+"""Common tools to optical flow algorithms."""
 
-"""
 
 import cupy as cp
 import numpy as np

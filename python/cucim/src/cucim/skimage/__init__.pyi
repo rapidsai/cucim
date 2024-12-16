@@ -1,5 +1,3 @@
-import lazy_loader as lazy  # noqa: F401
-
 submodules = [
     "color",
     "data",

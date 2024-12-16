@@ -1,3 +1,8 @@
+"""Generic utilities.
+
+This module contains a number of utility functions to work with images in general.
+"""
+
 from ._invert import invert
 from ._map_array import map_array
 from .arraycrop import crop
