@@ -252,13 +252,16 @@ def medial_axis(image, mask=None, return_distance=False, *, rng=None):
 
     """
     try:
-        from skimage.morphology._skeletonize_cy import _skeletonize_loop
-    except ImportError as e:
-        warnings.warn(
-            "Could not find required private skimage Cython function:\n"
-            "\tskimage.morphology._skeletonize_cy._skeletonize_loop\n"
-        )
-        raise e
+        from skimage.morphology._skeletonize import _skeletonize_loop
+    except ImportError:
+        try:
+            from skimage.morphology._skeletonize_cy import _skeletonize_loop
+        except ImportError as e:
+            warnings.warn(
+                "Could not find required private skimage Cython function:\n"
+                "\tskimage.morphology._skeletonize_cy._skeletonize_loop\n"
+            )
+            raise e
 
     if mask is None:
         # masked_image is modified in-place later so make a copy of the input
