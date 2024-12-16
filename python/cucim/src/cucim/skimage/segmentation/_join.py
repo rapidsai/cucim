@@ -49,7 +49,7 @@ def join_segmentations(s1, s2, return_mapping: bool = False):
         )
     s1_relabeled, _, backward_map1 = relabel_sequential(s1)
     s2_relabeled, _, backward_map2 = relabel_sequential(s2)
-    factor = s2.max() + 1
+    factor = s2.max() + cp.uint8(1)
     j_initial = factor * s1_relabeled + s2_relabeled
     j, _, map_j_to_j_initial = relabel_sequential(j_initial)
     if not return_mapping:
