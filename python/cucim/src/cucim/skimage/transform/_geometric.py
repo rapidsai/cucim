@@ -1359,7 +1359,7 @@ def _euler_rotation_matrix(angles, degrees=False):
         The Euler rotation matrix.
     """
     return spatial.transform.Rotation.from_euler(
-        "XYZ", angles=angles, degrees=degrees
+        "XYZ", angles=cp.asnumpy(angles), degrees=degrees
     ).as_matrix()
 
 
