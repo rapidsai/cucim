@@ -348,7 +348,8 @@ def deltaE_cmc(lab1, lab2, kL=1, kC=1, *, channel_axis=-1):
     c1_4 = C1**4
     F = cp.sqrt(c1_4 / (c1_4 + 1900))
 
-    SL = cp.where(L1 < 16, 0.511, 0.040975 * L1 / (1.0 + 0.01765 * L1))
+    scalar_val = cp.float32(0.511) if lab1.dtype == cp.float32 else 0.511
+    SL = cp.where(L1 < 16, scalar_val, 0.040975 * L1 / (1.0 + 0.01765 * L1))
     SC = 0.638 + 0.0638 * C1 / (1.0 + 0.0131 * C1)
     SH = SC * (F * T + 1 - F)
 
