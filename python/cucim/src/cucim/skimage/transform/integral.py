@@ -148,10 +148,10 @@ def integrate(ii, start, end):
 
         # CuPy Backend: TODO: check efficiency here
         if scalar_output:
-            S += sign * ii[tuple(corner_points[0])] if (not bad[0]) else 0
+            S += sign * int(ii[tuple(corner_points[0])]) if (not bad[0]) else 0
         else:
             for r in range(rows):
                 # add only good rows
                 if not bad[r]:
-                    S[r] += sign * ii[tuple(corner_points[r])]
+                    S[r] += sign * int(ii[tuple(corner_points[r])])
     return S
