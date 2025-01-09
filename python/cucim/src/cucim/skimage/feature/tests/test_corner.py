@@ -264,8 +264,8 @@ def test_structure_tensor_eigenvalues(dtype):
 
 
 def test_structure_tensor_eigenvalues_3d():
-    cube9 = cp.ones((9,) * 3, dtype=cp.uint8)
-    cube7 = cp.ones((7,) * 3, dtype=cp.uint8)
+    cube9 = cp.ones((9,) * 3, dtype=cp.int16)
+    cube7 = cp.ones((7,) * 3, dtype=cp.int16)
     image = pad(cube9, 5, mode="constant") * 1000
     boundary = (
         pad(cube9, 5, mode="constant") - pad(cube7, 6, mode="constant")
