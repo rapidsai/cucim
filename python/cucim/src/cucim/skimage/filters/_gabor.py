@@ -89,7 +89,7 @@ def gabor_kernel(
     >>> # more ripples (equivalent to increasing the size of the
     >>> # Gaussian spread)
     >>> gk = gabor_kernel(frequency=0.2, bandwidth=0.1)
-    >>> fig, ax = plt.suplots()         # doctest: +SKIP
+    >>> fig, ax = plt.subplots()         # doctest: +SKIP
     >>> ax.imshow(cp.asnumpy(gk.real))  # doctest: +SKIP
     >>> plt.show()                      # doctest: +SKIP
     """  # noqa
@@ -214,7 +214,7 @@ def gabor(
     >>> image = cp.array(data.coins())
     >>> # detecting edges in a coin image
     >>> filt_real, filt_imag = gabor(image, frequency=0.6)
-    >>> fix, ax = plt.subplots()          # doctest: +SKIP
+    >>> fig, ax = plt.subplots()          # doctest: +SKIP
     >>> ax.imshow(cp.asnumpy(filt_real))  # doctest: +SKIP
     >>> plt.show()                        # doctest: +SKIP
 

@@ -239,7 +239,7 @@ def assert_decomposition_equal(actual, desired):
         assert a[1] == d[1]
 
 
-class Test_footprint_rectangule:
+class Test_footprint_rectangle:
     @pytest.mark.parametrize("i", [0, 1, 2, 3, 4])
     @pytest.mark.parametrize("j", [0, 1, 2, 3, 4])
     def test_rectangle(self, i, j):
