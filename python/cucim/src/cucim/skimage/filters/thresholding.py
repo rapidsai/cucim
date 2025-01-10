@@ -694,6 +694,7 @@ def threshold_li(
     elif callable(initial_guess):
         t_next = initial_guess(image)
     elif cp.isscalar(initial_guess):  # convert to new, positive image range
+        image_min = float(image_min)
         t_next = initial_guess - image_min
         image_max = cp.max(image) + image_min
         if not 0 < t_next < cp.max(image):

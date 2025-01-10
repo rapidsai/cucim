@@ -22,9 +22,9 @@ NP_COPY_IF_NEEDED = False if NUMPY_LT_2_0_0 else None
 
 
 # check CuPy instead of SciPy
-# as of CuPy 13.0, tol is still being used instead of rtol as in latest SciPy
 CUPY_LT_14 = parse(cp.__version__) < parse("14.0.0a1")
 
 # Starting in SciPy v1.12, 'scipy.sparse.linalg.cg' keyword argument `tol` is
-# deprecated in favor of `rtol`.
+# deprecated in favor of `rtol`. The corresponding change in cupyx.scipy.sparse
+# was made in v14.0
 SCIPY_CG_TOL_PARAM_NAME = "tol" if CUPY_LT_14 else "rtol"
