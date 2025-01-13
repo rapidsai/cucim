@@ -14,7 +14,7 @@ dependencies:
 - cuda-version=12.5
 - cupy>=12.0.0
 - cxx-compiler
-- gcc_linux-64=11.*
+- gcc_linux-64>=11,<14
 - imagecodecs>=2021.6.8
 - ipython
 - lazy_loader>=0.1
@@ -42,7 +42,7 @@ dependencies:
 - scikit-image>=0.19.0,<0.25.0a0
 - scipy>=1.6.0
 - sphinx<6
-- sysroot_linux-64==2.17
+- sysroot_linux-64==2.28
 - tifffile>=2022.7.28
 - yasm
 - pip:
