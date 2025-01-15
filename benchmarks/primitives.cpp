@@ -89,10 +89,10 @@ static void string_memcpy(benchmark::State& state)
         char * c_str = (char*) malloc(size + 1);
         memcpy(c_str, data.data(), size);
         c_str[size] = '\0';
-        free(c_str);
         // Make sure the variable is not optimized away by compiler
         benchmark::DoNotOptimize(c_str);
         benchmark::DoNotOptimize(size);
+        free(c_str);
     }
 }
 BENCHMARK(string_memcpy);
@@ -105,9 +105,9 @@ static void string_strcpy(benchmark::State& state)
         std::string data = "#########################################################################################################################################################################################";
         char * c_str = (char*) malloc(data.size() + 1);
         strcpy(c_str, data.data());
-        free(c_str);
         // Make sure the variable is not optimized away by compiler
         benchmark::DoNotOptimize(c_str);
+        free(c_str);
     }
 }
 BENCHMARK(string_strcpy);
@@ -120,9 +120,9 @@ static void string_strdup(benchmark::State& state)
     {
         std::string data = "#########################################################################################################################################################################################";
         char * c_str = strdup(data.data());
-        free(c_str);
         // Make sure the variable is not optimized away by compiler
         benchmark::DoNotOptimize(c_str);
+        free(c_str);
     }
 }
 BENCHMARK(string_strdup);
@@ -140,12 +140,12 @@ static void alloc_malloc(benchmark::State& state)
             arr[i] = (char*)malloc(10);
             arr[i][0] = i;
         }
+        // Make sure the variable is not optimized away by compiler
+        benchmark::DoNotOptimize(arr);
         for (int i = 0; i < 30000; i++)
         {
             free(arr[i]);
         }
-        // Make sure the variable is not optimized away by compiler
-        benchmark::DoNotOptimize(arr);
     }
 }
 BENCHMARK(alloc_malloc);//->Iterations(100);
@@ -163,12 +163,12 @@ static void alloc_pmr(benchmark::State& state)
             arr[i] = static_cast<char*>(cucim_malloc(10));
             arr[i][0] = i;
         }
+        // Make sure the variable is not optimized away by compiler
+        benchmark::DoNotOptimize(arr);
         for (int i = 0; i < 30000; i++)
         {
             cucim_free(arr[i]);
         }
-        // Make sure the variable is not optimized away by compiler
-        benchmark::DoNotOptimize(arr);
     }
 }
 BENCHMARK(alloc_pmr);//->Iterations(100);
