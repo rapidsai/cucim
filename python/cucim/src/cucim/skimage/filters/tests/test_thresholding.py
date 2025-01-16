@@ -831,24 +831,6 @@ def test_multiotsu_more_classes_then_values():
         threshold_multiotsu(img, classes=4)
 
 
-# @pytest.mark.parametrize(
-#     "thresholding, lower, upper",
-#     [
-#         (threshold_otsu, 86, 88),
-#         (threshold_yen, 197, 199),
-#         (threshold_isodata, 86, 88),
-#         (threshold_mean, 117, 119),
-#         (threshold_triangle, 21, 23),
-#         (threshold_minimum, 75, 77),
-#     ],
-# )
-# def test_thresholds_dask_compatibility(thresholding, lower, upper):
-#     pytest.importorskip('dask', reason="dask python library is not installed")
-#     import dask.array as da
-#     dask_camera = da.from_array(camera, chunks=(256, 256))
-#     assert lower < float(thresholding(dask_camera)) < upper
-
-
 @pytest.mark.skip("_get_multiotsu_thresh_indices functions not implemented yet")
 def test_multiotsu_lut():
     for classes in [2, 3, 4]:

@@ -1,5 +1,6 @@
 import inspect
 import math
+import sys
 from functools import wraps
 from math import pi as PI
 from warnings import warn
@@ -364,6 +365,15 @@ class RegionProperties:
             }
 
     def __getattr__(self, attr):
+        if attr == "__setstate__":
+            # When deserializing this object with pickle, `__setstate__`
+            # is accessed before any other attributes like
+            # `self._intensity_image` are available which leads to a
+            # RecursionError when trying to access them later on in this
+            # function. So guard against this by provoking the default
+            # AttributeError (gh-6465).
+            return self.__getattribute__(attr)
+
         if self._intensity_image is None and attr in _require_intensity_image:
             raise AttributeError(
                 f"Attribute '{attr}' unavailable when `intensity_image` "
@@ -1451,9 +1461,11 @@ def _parse_docs():
     import textwrap
 
     doc = regionprops.__doc__ or ""
-    matches = re.finditer(
-        r"\*\*(\w+)\*\* \:.*?\n(.*?)(?=\n    [\*\S]+)", doc, flags=re.DOTALL
-    )
+    arg_regex = r"\*\*(\w+)\*\* \:.*?\n(.*?)(?=\n    [\*\S]+)"
+    if sys.version_info >= (3, 13):
+        arg_regex = r"\*\*(\w+)\*\* \:.*?\n(.*?)(?=\n[\*\S]+)"
+
+    matches = re.finditer(arg_regex, doc, flags=re.DOTALL)
     prop_doc = {m.group(1): textwrap.dedent(m.group(2)) for m in matches}
 
     return prop_doc

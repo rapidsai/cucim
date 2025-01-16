@@ -10,21 +10,12 @@ import cupy as cp
 
 import cucim.skimage._vendored.ndimage as ndi
 
-from .._shared.utils import (
-    DEPRECATED,
-    _supported_float_type,
-    convert_to_float,
-    deprecate_parameter,
-)
+from .._shared.utils import _supported_float_type, convert_to_float
 
 
-@deprecate_parameter(
-    "output", new_name="out", start_version="24.06", stop_version="25.02"
-)
 def gaussian(
     image,
     sigma=1,
-    output=DEPRECATED,
     mode="nearest",
     cval=0,
     preserve_range=False,
