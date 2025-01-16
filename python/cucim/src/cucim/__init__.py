@@ -59,9 +59,9 @@ try:
 except ImportError:
     pass
 
-import lazy_loader as lazy
+import lazy_loader as _lazy
 
-__getattr__, __lazy_dir__, _ = lazy.attach_stub(__name__, __file__)
+__getattr__, __lazy_dir__, _ = _lazy.attach_stub(__name__, __file__)
 
 
 def __dir__():

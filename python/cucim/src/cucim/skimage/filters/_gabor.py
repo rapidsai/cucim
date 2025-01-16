@@ -79,20 +79,19 @@ def gabor_kernel(
     --------
     >>> import cupy as cp
     >>> from cucim.skimage.filters import gabor_kernel
-    >>> from skimage import io
     >>> from matplotlib import pyplot as plt  # doctest: +SKIP
 
     >>> gk = gabor_kernel(frequency=0.2)
-    >>> plt.figure()                    # doctest: +SKIP
-    >>> io.imshow(cp.asnumpy(gk.real))  # doctest: +SKIP
-    >>> io.show()                       # doctest: +SKIP
+    >>> fig, ax = plt.subplots()        # doctest: +SKIP
+    >>> ax.imshow(cp.asnumpy(gk.real))  # doctest: +SKIP
+    >>> plt.show()                      # doctest: +SKIP
 
     >>> # more ripples (equivalent to increasing the size of the
     >>> # Gaussian spread)
     >>> gk = gabor_kernel(frequency=0.2, bandwidth=0.1)
-    >>> plt.figure()                    # doctest: +SKIP
-    >>> io.imshow(cp.asnumpy(gk.real))  # doctest: +SKIP
-    >>> io.show()                       # doctest: +SKIP
+    >>> fig, ax = plt.subplots()         # doctest: +SKIP
+    >>> ax.imshow(cp.asnumpy(gk.real))  # doctest: +SKIP
+    >>> plt.show()                      # doctest: +SKIP
     """  # noqa
     if sigma_x is None:
         sigma_x = _sigma_prefactor(bandwidth) / frequency
@@ -209,21 +208,21 @@ def gabor(
     --------
     >>> import cupy as cp
     >>> from cucim.skimage.filters import gabor
-    >>> from skimage import data, io
+    >>> from skimage import data
     >>> from matplotlib import pyplot as plt  # doctest: +SKIP
 
     >>> image = cp.array(data.coins())
     >>> # detecting edges in a coin image
     >>> filt_real, filt_imag = gabor(image, frequency=0.6)
-    >>> plt.figure()                        # doctest: +SKIP
-    >>> io.imshow(cp.asnumpy(filt_real))    # doctest: +SKIP
-    >>> io.show()                           # doctest: +SKIP
+    >>> fig, ax = plt.subplots()          # doctest: +SKIP
+    >>> ax.imshow(cp.asnumpy(filt_real))  # doctest: +SKIP
+    >>> plt.show()                        # doctest: +SKIP
 
     >>> # less sensitivity to finer details with the lower frequency kernel
     >>> filt_real, filt_imag = gabor(image, frequency=0.1)
-    >>> plt.figure()                       # doctest: +SKIP
-    >>> io.imshow(cp.asnumpy(filt_real)    # doctest: +SKIP
-    >>> io.show()                          # doctest: +SKIP
+    >>> fig, ax = plt.subplots()          # doctest: +SKIP
+    >>> ax.imshow(cp.asnumpy(filt_real))  # doctest: +SKIP
+    >>> plt.show()                        # doctest: +SKIP
     """  # noqa
     check_nD(image, 2)
     # do not cast integer types to float!
