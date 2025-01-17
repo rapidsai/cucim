@@ -19,10 +19,8 @@ build:
   ignore_run_exports:
     - openslide
   ignore_run_exports_from:
-    {% if cuda_major == "11" %}
-    - {{ compiler('cuda11') }}
-    {% else %}
     - {{ compiler('cuda') }}
+    {% if cuda_major != "11" %}
     - cuda-cudart-dev
     - libcufile-dev  # [linux64]
     - libnvjpeg-dev
@@ -49,7 +47,7 @@ requirements:
     - {{ compiler("c") }}
     - {{ compiler("cxx") }}
     {% if cuda_major == "11" %}
-    - {{ compiler('cuda11') }} ={{ cuda_version }}
+    - {{ compiler('cuda') }} ={{ cuda_version }}
     {% else %}
     - {{ compiler('cuda') }}
     {% endif %}
