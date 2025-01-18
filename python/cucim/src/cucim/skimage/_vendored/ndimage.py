@@ -2,6 +2,7 @@
 # measurements
 # fourier filters
 # additional filters
+from cupyx.scipy.ndimage import distance_transform_edt  # NOQA
 from cupyx.scipy.ndimage import fourier_ellipsoid  # NOQA
 from cupyx.scipy.ndimage import fourier_gaussian  # NOQA
 from cupyx.scipy.ndimage import fourier_shift  # NOQA
@@ -9,6 +10,7 @@ from cupyx.scipy.ndimage import fourier_uniform  # NOQA
 from cupyx.scipy.ndimage import generic_filter  # NOQA
 from cupyx.scipy.ndimage import generic_filter1d  # NOQA
 from cupyx.scipy.ndimage import label  # NOQA
+from cupyx.scipy.ndimage import value_indices  # NOQA
 
 from cucim.skimage._vendored._ndimage_filters import convolve  # NOQA
 from cucim.skimage._vendored._ndimage_filters import convolve1d  # NOQA
@@ -71,9 +73,15 @@ from cucim.skimage._vendored._ndimage_morphology import (  # NOQA
 
 
 try:
+    # `sum_labels` is only available as `sum` in older releases of CuPy
     from cupyx.scipy.ndimage import sum_labels  # NOQA
 except ImportError:
     from cupyx.scipy.ndimage import sum as sum_labels  # NOQA
+try:
+    from cupyx.scipy.ndimage import sum  # NOQA
+except ImportError:
+    # `sum` is deprecated and may be removed in a future version of CuPy
+    pass
 
 from cupyx.scipy.ndimage import center_of_mass  # NOQA
 from cupyx.scipy.ndimage import extrema  # NOQA
