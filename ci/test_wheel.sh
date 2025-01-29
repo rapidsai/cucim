@@ -3,11 +3,11 @@
 
 set -eou pipefail
 
-RAPIDS_PY_CUDA_SUFFIX="$(rapids-wheel-ctk-name-gen ${RAPIDS_CUDA_VERSION})"
+RAPIDS_PY_CUDA_SUFFIX="$(rapids-wheel-ctk-name-gen "${RAPIDS_CUDA_VERSION}")"
 RAPIDS_PY_WHEEL_NAME="cucim_${RAPIDS_PY_CUDA_SUFFIX}" rapids-download-wheels-from-s3 ./dist
 
 # echo to expand wildcard before adding `[extra]` requires for pip
-python -m pip install $(echo ./dist/cucim*.whl)[test]
+python -m pip install "$(echo ./dist/cucim*.whl)[test]"
 
 CUDA_MAJOR_VERSION=${RAPIDS_CUDA_VERSION:0:2}
 
