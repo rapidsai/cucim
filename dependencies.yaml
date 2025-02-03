@@ -237,9 +237,7 @@ dependencies:
           - &numpydoc numpydoc>=1.7
           - pydata-sphinx-theme
           - recommonmark
-          # TODO: sphinx upper version limit can likely be removed after pydata 0.13
-          # is released. See https://github.com/pydata/pydata-sphinx-theme/issues/1094
-          - sphinx<6
+          - sphinx>=8.0.0
   py_version:
     specific:
       - output_types: conda
