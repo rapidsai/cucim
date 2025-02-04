@@ -19,33 +19,48 @@ jobs:
       - docs-build
       - wheel-build
       - wheel-tests
+      - telemetry-setup
     secrets: inherit
-    uses: rapidsai/shared-workflows/.github/workflows/pr-builder.yaml@branch-25.02
+    uses: rapidsai/shared-workflows/.github/workflows/pr-builder.yaml@nvks-runners
+  telemetry-setup:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    env:
+      OTEL_SERVICE_NAME: "pr-cucim"
+    steps:
+      - name: Telemetry setup
+        # This gate is here and not at the job level because we need the job to not be skipped,
+        # since other jobs depend on it.
+        if: ${{ vars.TELEMETRY_ENABLED == 'true' }}
+        uses: rapidsai/shared-actions/telemetry-dispatch-stash-base-env-vars@main
   checks:
     secrets: inherit
-    uses: rapidsai/shared-workflows/.github/workflows/checks.yaml@branch-25.02
+    needs: telemetry-setup
+    uses: rapidsai/shared-workflows/.github/workflows/checks.yaml@nvks-runners
+    with:
+      ignored_pr_jobs: telemetry-summarize
   conda-cpp-build:
     needs: checks
     secrets: inherit
-    uses: rapidsai/shared-workflows/.github/workflows/conda-cpp-build.yaml@branch-25.02
+    uses: rapidsai/shared-workflows/.github/workflows/conda-cpp-build.yaml@nvks-runners
     with:
       build_type: pull-request
   conda-python-build:
     needs: conda-cpp-build
     secrets: inherit
-    uses: rapidsai/shared-workflows/.github/workflows/conda-python-build.yaml@branch-25.02
+    uses: rapidsai/shared-workflows/.github/workflows/conda-python-build.yaml@nvks-runners
     with:
       build_type: pull-request
   conda-python-tests:
     needs: conda-python-build
     secrets: inherit
-    uses: rapidsai/shared-workflows/.github/workflows/conda-python-tests.yaml@branch-25.02
+    uses: rapidsai/shared-workflows/.github/workflows/conda-python-tests.yaml@nvks-runners
     with:
       build_type: pull-request
   docs-build:
     needs: conda-python-build
     secrets: inherit
-    uses: rapidsai/shared-workflows/.github/workflows/custom-job.yaml@branch-25.02
+    uses: rapidsai/shared-workflows/.github/workflows/custom-job.yaml@nvks-runners
     with:
       build_type: pull-request
       node_type: "gpu-v100-latest-1"
@@ -55,14 +70,24 @@ jobs:
   wheel-build:
     needs: checks
     secrets: inherit
-    uses: rapidsai/shared-workflows/.github/workflows/wheels-build.yaml@branch-25.02
+    uses: rapidsai/shared-workflows/.github/workflows/wheels-build.yaml@nvks-runners
     with:
       build_type: pull-request
       script: ci/build_wheel.sh
   wheel-tests:
     needs: wheel-build
     secrets: inherit
-    uses: rapidsai/shared-workflows/.github/workflows/wheels-test.yaml@branch-25.02
+    uses: rapidsai/shared-workflows/.github/workflows/wheels-test.yaml@nvks-runners
     with:
       build_type: pull-request
       script: ci/test_wheel.sh
+
+  telemetry-summarize:
+    # This job must use a self-hosted runner to record telemetry traces.
+    runs-on: linux-amd64-cpu4
+    needs: pr-builder
+    if: ${{ vars.TELEMETRY_ENABLED == 'true' && !cancelled() }}
+    continue-on-error: true
+    steps:
+      - name: Telemetry summarize
+        uses: rapidsai/shared-actions/telemetry-dispatch-summarize@main
