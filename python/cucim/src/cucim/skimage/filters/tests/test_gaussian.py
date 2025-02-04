@@ -19,13 +19,15 @@ def test_negative_sigma():
 def test_null_sigma():
     a = cp.zeros((3, 3))
     a[1, 1] = 1.0
-    assert cp.all(gaussian(a, 0) == a)
+    d = cp.cuda.Device()
+    d.synchronize()
+    cp.testing.assert_array_equal(gaussian(a, sigma=0), a)
 
 
 def test_default_sigma():
     a = cp.zeros((3, 3))
     a[1, 1] = 1.0
-    assert cp.all(gaussian(a) == gaussian(a, sigma=1))
+    cp.testing.assert_array_equal(gaussian(a), gaussian(a, sigma=1))
 
 
 def test_energy_decrease():
