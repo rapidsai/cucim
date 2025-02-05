@@ -25,7 +25,7 @@ rapids-dependency-file-generator \
 | tee /tmp/requirements-build.txt
 
 rapids-logger "Installing build requirements"
-python -m pip install \
+rapids-pip-retry install \
     -v \
     --prefer-binary \
     -r /tmp/requirements-build.txt
@@ -42,7 +42,7 @@ cd "${package_dir}"
 sccache --zero-stats
 
 rapids-logger "Building '${package_name}' wheel"
-python -m pip wheel \
+rapids-pip-retry wheel \
     -w dist \
     -v \
     --no-build-isolation \
