@@ -64,7 +64,7 @@ def _check_coords_in_hull(
         mask_temp = cp.ones((n_coords,), dtype=bool)
         dot_out = cp.empty((n_coords,), dtype=float_dtype)
         for idx in range(n_hull_equations):
-            cp.dot(hull_equations[idx, :ndim], gridcoords, out=dot_out)
+            cp.dot(hull_equations[idx, :ndim], gridcoords, ou4t=dot_out)
             dot_out += hull_equations[idx, ndim:]
             cp.less(dot_out, tolerance, out=mask_temp)
             mask *= mask_temp
@@ -80,6 +80,7 @@ def convex_hull_image(
     *,
     omit_empty_coords_check=False,
     float64_computation=True,
+    cpu_fallback_threshold=None,
 ):
     """Compute the convex hull image of a binary image.
 
@@ -100,19 +101,52 @@ def convex_hull_image(
         some points erroneously being classified as being outside the hull.
     include_borders: bool, optional
         If ``False``, vertices/edges are excluded from the final hull mask.
+
+
+    Extra Parameters
+    ----------------
     omit_empty_coords_check : bool, optional
         If ``True``, skip check that there are not any True values in `image`.
+    float64_computation : bool, optional
+        If False, allow use of 32-bit float during the postprocessing stage
+        that determines whether each pixel falls within the convex hull.
+    cpu_fallback_threshold : non-negative int or None
+        Number of pixels in an image before convex_hull_image will fallback
+        to pure CPU implementation.
 
     Returns
     -------
     hull : (M, N) array of bool
         Binary image with pixels in convex hull set to True.
 
+    Notes
+    -----
+    The parameters listed under "Extra Parameters" above are present only
+    in cuCIM and not in scikit-image.
+
     References
     ----------
     .. [1] https://blogs.mathworks.com/steve/2011/10/04/binary-image-convex-hull-algorithm-notes/
 
     """
+    if cpu_fallback_threshold is None:
+        # Fallback to scikit-image implementation of total number of pixels
+        # is less than this
+        cpu_fallback_threshold = 30000 if image.ndim == 2 else 13000
+
+    if image.size < cpu_fallback_threshold:
+        # Fallback to pure CPU implementation
+        from skimage import morphology as morphology_cpu
+
+        return cp.asarray(
+            morphology_cpu.convex_hull_image(
+                cp.asnumpy(image),
+                offset_coordinates=offset_coordinates,
+                tolerance=tolerance,
+                include_borders=include_borders,
+            )
+        )
+
     if not scipy_available:
         raise ImportError(
             "This function requires SciPy, but it could not import: "
@@ -194,7 +228,13 @@ def convex_hull_image(
     return mask
 
 
-def convex_hull_object(image, *, connectivity=2):
+def convex_hull_object(
+    image,
+    *,
+    connectivity=2,
+    float64_computation=False,
+    cpu_fallback_threshold=None,
+):
     r"""Compute the convex hull image of individual objects in a binary image.
 
     The convex hull is the set of pixels included in the smallest convex
@@ -216,6 +256,14 @@ def convex_hull_object(image, *, connectivity=2):
                    |               /  |  \
                   [ ]           [ ]  [ ]  [ ]
 
+    Extra Parameters
+    ----------------
+    float64_computation : bool, optional
+        If False, allow use of 32-bit float during the postprocessing stage
+    cpu_fallback_threshold : non-negative int or None
+        Number of pixels in an image before convex_hull_image will fallback
+        to pure CPU implementation.
+
     Returns
     -------
     hull : ndarray of bool
@@ -228,6 +276,9 @@ def convex_hull_object(image, *, connectivity=2):
     these regions with logical OR. Be aware the convex hulls of unconnected
     objects may overlap in the result. If this is suspected, consider using
     convex_hull_image separately on each object or adjust ``connectivity``.
+
+    The parameters listed under "Extra Parameters" above are present only
+    in cuCIM and not in scikit-image.
     """
     if connectivity not in tuple(range(1, image.ndim + 1)):
         raise ValueError("`connectivity` must be between 1 and image.ndim.")
@@ -238,7 +289,12 @@ def convex_hull_object(image, *, connectivity=2):
 
     max_label = int(labeled_im.max())
     for i in range(1, max_label + 1):
-        convex_obj = convex_hull_image(labeled_im == i)
+        convex_obj = convex_hull_image(
+            labeled_im == i,
+            omit_empty_coords_check=True,
+            float64_computation=float64_computation,
+            cpu_fallback_threshold=cpu_fallback_threshold,
+        )
         convex_img = cp.logical_or(convex_img, convex_obj)
 
     return convex_img

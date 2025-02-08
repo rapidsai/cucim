@@ -37,13 +37,17 @@ def test_basic():
         dtype=bool,
     )
 
-    assert_array_equal(convex_hull_image(image), expected)
+    assert_array_equal(
+        convex_hull_image(image, cpu_fallback_threshold=0), expected
+    )
 
 
 def test_empty_image():
     image = cp.zeros((6, 6), dtype=bool)
     with expected_warnings(["entirely zero"]):
-        assert_array_equal(convex_hull_image(image), image)
+        assert_array_equal(
+            convex_hull_image(image, cpu_fallback_threshold=0), image
+        )
 
 
 def test_qhull_offset_example():
@@ -181,7 +185,9 @@ def test_qhull_offset_example():
     image[nonzeros] = True
     image = cp.asarray(image)
     expected = image.copy()
-    assert_array_equal(convex_hull_image(image), expected)
+    assert_array_equal(
+        convex_hull_image(image, cpu_fallback_threshold=0), expected
+    )
 
 
 def test_pathological_qhull_example():
@@ -193,7 +199,9 @@ def test_pathological_qhull_example():
         [[0, 0, 0, 1, 1, 1, 0], [0, 1, 1, 1, 1, 1, 1], [1, 1, 1, 1, 1, 0, 0]],
         dtype=bool,
     )
-    assert_array_equal(convex_hull_image(image), expected)
+    assert_array_equal(
+        convex_hull_image(image, cpu_fallback_threshold=0), expected
+    )
 
 
 @pytest.mark.skipif(True, reason="include_borders option not implemented")
@@ -208,7 +216,9 @@ def test_pathological_qhull_labels():
         dtype=bool,
     )
 
-    actual = convex_hull_image(image, include_borders=False)
+    actual = convex_hull_image(
+        image, include_borders=False, cpu_fallback_threshold=0
+    )
     assert_array_equal(actual, expected)
 
 
@@ -244,7 +254,8 @@ def test_object():
     )
 
     assert_array_equal(
-        convex_hull_object(image, connectivity=1), expected_conn_1
+        convex_hull_object(image, connectivity=1, cpu_fallback_threshold=0),
+        expected_conn_1,
     )
 
     expected_conn_2 = cp.array(
@@ -263,35 +274,42 @@ def test_object():
     )
 
     assert_array_equal(
-        convex_hull_object(image, connectivity=2), expected_conn_2
+        convex_hull_object(image, connectivity=2, cpu_fallback_threshold=0),
+        expected_conn_2,
     )
 
     with pytest.raises(ValueError):
-        convex_hull_object(image, connectivity=3)
+        convex_hull_object(image, connectivity=3, cpu_fallback_threshold=0)
 
-    out = convex_hull_object(image, connectivity=1)
+    out = convex_hull_object(image, connectivity=1, cpu_fallback_threshold=0)
     assert_array_equal(out, expected_conn_1)
 
 
 def test_non_c_contiguous():
     # 2D Fortran-contiguous
     image = cp.ones((2, 2), order="F", dtype=bool)
-    assert_array_equal(convex_hull_image(image), image)
+    assert_array_equal(
+        convex_hull_image(image, cpu_fallback_threshold=0), image
+    )
     # 3D Fortran-contiguous
     image = cp.ones((2, 2, 2), order="F", dtype=bool)
-    assert_array_equal(convex_hull_image(image), image)
+    assert_array_equal(
+        convex_hull_image(image, cpu_fallback_threshold=0), image
+    )
     # 3D non-contiguous
     image = cp.transpose(cp.ones((2, 2, 2), dtype=bool), [0, 2, 1])
-    assert_array_equal(convex_hull_image(image), image)
+    assert_array_equal(
+        convex_hull_image(image, cpu_fallback_threshold=0), image
+    )
 
 
 def test_consistent_2d_3d_hulls():
     from cucim.skimage.measure.tests.test_regionprops import SAMPLE as image
 
     image3d = cp.stack((image, image, image))
-    chimage = convex_hull_image(image)
+    chimage = convex_hull_image(image, cpu_fallback_threshold=0)
     chimage[8, 0] = True  # correct for single point exactly on hull edge
-    chimage3d = convex_hull_image(image3d)
+    chimage3d = convex_hull_image(image3d, cpu_fallback_threshold=0)
     assert_array_equal(chimage3d[1], chimage)
 
 
@@ -309,14 +327,18 @@ def test_few_points():
     )
     image3d = cp.stack([image, image, image])
     with assert_warns(UserWarning):
-        chimage3d = convex_hull_image(image3d, offset_coordinates=False)
+        chimage3d = convex_hull_image(
+            image3d, offset_coordinates=False, cpu_fallback_threshold=0
+        )
         assert_array_equal(chimage3d, cp.zeros(image3d.shape, dtype=bool))
 
     # non-zero when using offset_coordinates
     # (This is an improvement over skimage v0.25 implementation due to how
     #  initial points are determined without a separate ConvexHull call before
     #  the addistion of the offset coordinates)
-    chimage3d = convex_hull_image(image3d, offset_coordinates=True)
+    chimage3d = convex_hull_image(
+        image3d, offset_coordinates=True, cpu_fallback_threshold=0
+    )
     chimage3d.sum() > 0
 
 
@@ -345,11 +367,12 @@ def test_diamond(
         offset_coordinates=offset_coordinates,
         omit_empty_coords_check=omit_empty_coords_check,
         float64_computation=float64_computation,
+        cpu_fallback_threshold=0,
     )
     if offset_coordinates:
         assert_array_equal(chimage, expected)
     else:
-        # may not be an exact match if offset coordinates are used
+        # may not be an exact match if offset coordinates are not used
         num_mismatch = cp.sum(chimage != expected)
         percent_mismatch = 100 * num_mismatch / expected.sum()
         if float64_computation:
@@ -378,14 +401,40 @@ def test_octahedron(
         offset_coordinates=offset_coordinates,
         omit_empty_coords_check=omit_empty_coords_check,
         float64_computation=float64_computation,
+        cpu_fallback_threshold=0,
     )
     if offset_coordinates:
         assert_array_equal(chimage, expected)
     else:
-        # may not be an exact match if offset coordinates are used
+        # may not be an exact match if offset coordinates are not used
         num_mismatch = cp.sum(chimage != expected)
         percent_mismatch = 100 * num_mismatch / expected.sum()
         if float64_computation:
             assert percent_mismatch < 5
         else:
             assert percent_mismatch < 20
+
+
+@pytest.mark.parametrize("radius", [1, 10, 100])
+@pytest.mark.parametrize("offset_coordinates", [False, True])
+@pytest.mark.parametrize("cpu_fallback_threshold", [0, None, 1000000000])
+def test_cpu_fallback(radius, offset_coordinates, cpu_fallback_threshold):
+    expected = diamond(radius)
+
+    # plus sign should become a diamond once convex
+    image = cp.zeros_like(expected)
+    image[:, radius] = True
+    image[radius, :] = True
+
+    chimage = convex_hull_image(
+        image,
+        offset_coordinates=offset_coordinates,
+        cpu_fallback_threshold=cpu_fallback_threshold,
+    )
+    if offset_coordinates:
+        assert_array_equal(chimage, expected)
+    else:
+        # may not be an exact match if offset coordinates are not used
+        num_mismatch = cp.sum(chimage != expected)
+        percent_mismatch = 100 * num_mismatch / expected.sum()
+        assert percent_mismatch < 5
