@@ -21,6 +21,7 @@ except ImportError:
 from cucim.skimage._shared.utils import warn
 from cucim.skimage._vendored import ndimage as ndi
 from cucim.skimage.measure._label import label
+from cucim.skimage.measure._regionprops_gpu_utils import _unravel_loop_index
 
 __all__ = [
     "convex_hull_image",
@@ -28,6 +29,7 @@ __all__ = [
 ]
 
 
+@cp.memoize(for_each_device=True)
 def _offsets_diamond(ndim):
     offsets = np.zeros((2 * ndim, ndim))
     for vertex, (axis, offset) in enumerate(product(range(ndim), (-0.5, 0.5))):
@@ -35,41 +37,48 @@ def _offsets_diamond(ndim):
     return cp.asarray(offsets)
 
 
-def _check_coords_in_hull(
-    gridcoords, hull_equations, tolerance, dtype=cp.float64, batch=None
-):
-    ndim, n_coords = gridcoords.shape
-    n_hull_equations = hull_equations.shape[0]
+@cp.memoize(for_each_device=True)
+def get_coords_in_hull_kernel(coord_dtype, float_dtype, ndim):
+    """Keep this kernel for n-dimensional support as the raw_moments kernels
+    currently only support 2D and 3D data.
+    """
+    coord_dtype = cp.dtype(coord_dtype)
+    float_dtype = cp.dtype(float_dtype)
+    uint_t = (
+        "unsigned int" if coord_dtype.itemsize <= 4 else "unsigned long long"
+    )
+    float_t = "float" if float_dtype.itemsize <= 4 else "double"
 
-    float_dtype = cp.promote_types(dtype, gridcoords.dtype)
-    if batch is None:
-        # rough determination if batch mode should be used
-        # If memory required for intermediate do_out array is less than some
-        # threshold use a single batched kernel call.
-        # The specific choice of 1/3 of the free memory available is arbitrary.
-        mem_free_bytes = cp.cuda.Device().mem_info[0]
-        dot_output_mem = (
-            cp.dtype(float_dtype).itemsize * n_coords * n_hull_equations
-        )
-        batch = dot_output_mem <= 0.33 * mem_free_bytes
-
-    if batch:
-        # apply all hull equations at once
-        dot_array = cp.dot(hull_equations[:, :ndim], gridcoords)
-        dot_array += hull_equations[:, ndim:]
-        mask = cp.min(dot_array < tolerance, axis=0)
-    else:
-        # loop over hull equations to preserve memory
-        mask = cp.ones((n_coords,), dtype=bool)
-        mask_temp = cp.ones((n_coords,), dtype=bool)
-        dot_out = cp.empty((n_coords,), dtype=float_dtype)
-        for idx in range(n_hull_equations):
-            cp.dot(hull_equations[idx, :ndim], gridcoords, ou4t=dot_out)
-            dot_out += hull_equations[idx, ndim:]
-            cp.less(dot_out, tolerance, out=mask_temp)
-            mask *= mask_temp
-
-    return mask
+    source = """
+      if (image[i]) {
+        convex_image = true;
+      } else {"""
+    source += _unravel_loop_index("image", ndim, uint_t=uint_t)
+    source += """
+        bool in_hull = true;
+        int n_hull_equations = hull_equations.shape()[0];
+        for (int i_eq = 0; i_eq < n_hull_equations; i_eq++) {"""
+    source += f"""
+          {float_t} v = 0.0;"""
+    for d in range(ndim):
+        source += f"""
+          v += hull_equations[i_eq * {ndim + 1} + {d}] * in_coord[{d}];"""
+    source += f"""
+          v += hull_equations[i_eq * {ndim + 1} + {ndim}];"""
+    source += """
+          if (v > tol) {
+            in_hull = false;
+            break;
+          }
+        }
+        convex_image = in_hull;
+      }\n"""
+    inputs = (
+        f"raw bool image, raw {float_dtype.name} hull_equations, float64 tol"
+    )
+    outputs = "bool convex_image"
+    name = f"cucim_convex_hull_{ndim}d_{coord_dtype.char}_{float_dtype.char}"
+    return cp.ElementwiseKernel(inputs, outputs, source, name=name)
 
 
 def convex_hull_image(
@@ -207,12 +216,7 @@ def convex_hull_image(
         )
         return cp.zeros(image.shape, dtype=bool)
 
-    gridcoords = cp.reshape(
-        cp.mgrid[tuple(map(slice, image.shape))], (ndim, -1)
-    )
     coord_dtype = cp.min_scalar_type(max(image.shape))
-    if gridcoords.dtype != coord_dtype:
-        gridcoords = gridcoords.astype(coord_dtype)
     if float64_computation:
         float_dtype = cp.float64
     else:
@@ -220,12 +224,12 @@ def convex_hull_image(
         # otherwise, use float64
         float_dtype = cp.promote_types(cp.float32, coord_dtype)
 
+    kernel = get_coords_in_hull_kernel(coord_dtype, float_dtype, ndim)
+
+    convex_image = cp.empty_like(image)
     hull_equations = cp.asarray(hull.equations, dtype=float_dtype)
-    coords_in_hull = _check_coords_in_hull(
-        gridcoords, hull_equations, tolerance, dtype=float_dtype
-    )
-    mask = cp.reshape(coords_in_hull, image.shape)
-    return mask
+    kernel(image, hull_equations, tolerance, convex_image)
+    return convex_image
 
 
 def convex_hull_object(
