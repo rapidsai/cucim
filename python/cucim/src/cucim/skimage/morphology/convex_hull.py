@@ -143,11 +143,19 @@ def convex_hull_image(
         # is less than this
         cpu_fallback_threshold = 30000 if image.ndim == 2 else 13000
 
+    # singleton sizes can cause numeric problems in QHull, so squeeze out
+    # these dimensions first (and restore original shape at end)
+    # Note: This fix is not yet in upstream scikit-image as of v0.25.
+    original_shape = image.shape
+    image = cp.squeeze(image)
+    if image.ndim < 2:
+        return image
+
     if image.size < cpu_fallback_threshold:
         # Fallback to pure CPU implementation
         from skimage import morphology as morphology_cpu
 
-        return cp.asarray(
+        convex_image = cp.asarray(
             morphology_cpu.convex_hull_image(
                 cp.asnumpy(image),
                 offset_coordinates=offset_coordinates,
@@ -155,6 +163,7 @@ def convex_hull_image(
                 include_borders=include_borders,
             )
         )
+        return convex_image.reshape(original_shape)
 
     if not scipy_available:
         raise ImportError(
@@ -226,10 +235,12 @@ def convex_hull_image(
 
     kernel = get_coords_in_hull_kernel(coord_dtype, float_dtype, ndim)
 
+    if not image.flags.c_contiguous:
+        image = cp.ascontiguousarray(image)
     convex_image = cp.empty_like(image)
     hull_equations = cp.asarray(hull.equations, dtype=float_dtype)
     kernel(image, hull_equations, tolerance, convex_image)
-    return convex_image
+    return convex_image.reshape(original_shape)
 
 
 def convex_hull_object(
