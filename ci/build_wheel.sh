@@ -13,7 +13,7 @@ source rapids-date-string
 
 rapids-generate-version > ./VERSION
 
-RAPIDS_PY_CUDA_SUFFIX="$(rapids-wheel-ctk-name-gen ${RAPIDS_CUDA_VERSION})"
+RAPIDS_PY_CUDA_SUFFIX="$(rapids-wheel-ctk-name-gen "${RAPIDS_CUDA_VERSION}")"
 
 rapids-logger "Generating build requirements"
 
@@ -25,7 +25,7 @@ rapids-dependency-file-generator \
 | tee /tmp/requirements-build.txt
 
 rapids-logger "Installing build requirements"
-python -m pip install \
+rapids-pip-retry install \
     -v \
     --prefer-binary \
     -r /tmp/requirements-build.txt
@@ -42,7 +42,7 @@ cd "${package_dir}"
 sccache --zero-stats
 
 rapids-logger "Building '${package_name}' wheel"
-python -m pip wheel \
+rapids-pip-retry wheel \
     -w dist \
     -v \
     --no-build-isolation \
@@ -54,6 +54,7 @@ sccache --show-adv-stats
 
 mkdir -p final_dist
 python -m auditwheel repair -w final_dist dist/*
+# shellcheck disable=SC2010
 ls -1 final_dist | grep -vqz 'none'
 
 ../../ci/validate_wheel.sh final_dist

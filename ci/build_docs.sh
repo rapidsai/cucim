@@ -27,7 +27,8 @@ rapids-mamba-retry install \
     "cucim=${RAPIDS_VERSION}" \
     "libcucim=${RAPIDS_VERSION}"
 
-export RAPIDS_DOCS_DIR="$(mktemp -d)"
+RAPIDS_DOCS_DIR="$(mktemp -d)"
+export RAPIDS_DOCS_DIR
 
 rapids-logger "Build Python docs"
 pushd docs

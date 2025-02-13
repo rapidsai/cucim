@@ -1,4 +1,5 @@
 import argparse
+import math
 import os
 import pickle
 
@@ -25,6 +26,10 @@ func_name_choices = [
     "lab2xyz",
     "rgba2rgb",
     "label2rgb",
+    "deltaE_cie76",
+    "deltaE_ciede94",
+    "deltaE_ciede2000",
+    "deltaE_cmc",
 ]
 
 
@@ -38,6 +43,32 @@ class ColorBench(ImageBench):
         image = cp.asnumpy(imaged)
         self.args_cpu = (image,)
         self.args_gpu = (imaged,)
+
+
+class DeltaEBench(ImageBench):
+    def set_args(self, dtype):
+        from skimage import color, data
+
+        # create synthetic lab image pair
+        rgb1 = data.astronaut()
+        lab1 = color.rgb2lab(rgb1)
+        lab2 = color.rgb2lab(np.roll(rgb1, (1, 1), axis=(0, 1)))
+
+        # change to desired dtype
+        lab1 = lab1.astype(dtype, copy=False)
+        lab2 = lab2.astype(dtype, copy=False)
+
+        # tile then crop as needed to get the expected size
+        n_tile0 = math.ceil(self.shape[0] / lab1.shape[0])
+        n_tile1 = math.ceil(self.shape[1] / lab1.shape[1])
+        lab1 = np.tile(lab1, (n_tile0, n_tile1, 1))
+        lab1 = lab1[: self.shape[0], : self.shape[1], :]
+        lab2 = np.tile(lab2, (n_tile0, n_tile1, 1))
+        lab2 = lab2[: self.shape[0], : self.shape[1], :]
+
+        print(f"{lab1.shape=}")
+        self.args_cpu = (lab1, lab2)
+        self.args_gpu = (cp.asarray(lab1), cp.asarray(lab2))
 
 
 class RGBABench(ImageBench):
@@ -162,6 +193,23 @@ def main(args):
                     results = B.run_benchmark(duration=args.duration)
                     all_results = pd.concat([all_results, results["full"]])
 
+        elif function_name.startswith("deltaE"):
+            # only run these functions for floating point data types
+            float_dtypes = [t for t in dtypes if np.dtype(t).kind == "f"]
+
+            B = DeltaEBench(
+                function_name=function_name,
+                shape=shape + (3,),
+                dtypes=float_dtypes,
+                fixed_kwargs={},
+                var_kwargs={},
+                # index_str=f"{fromspace.lower()}2{tospace.lower()}",
+                module_cpu=skimage.color,
+                module_gpu=cucim.skimage.color,
+                run_cpu=run_cpu,
+            )
+            results = B.run_benchmark(duration=args.duration)
+            all_results = pd.concat([all_results, results["full"]])
         elif function_name == "rgba2rgb":
             B = RGBABench(
                 function_name="rgba2rgb",

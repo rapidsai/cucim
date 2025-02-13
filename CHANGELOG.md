@@ -1,3 +1,24 @@
+# cucim 25.02.00 (13 Feb 2025)
+
+## 🐛 Bug Fixes
+
+- Fix primitives benchmark code ([#812](https://github.com/rapidsai/cucim/pull/812)) [@gigony](https://github.com/gigony)
+- CuPy 14.0 compatibility ([#808](https://github.com/rapidsai/cucim/pull/808)) [@grlee77](https://github.com/grlee77)
+
+## 🛠️ Improvements
+
+- Use `rapids-pip-retry` in CI jobs that might need retries ([#824](https://github.com/rapidsai/cucim/pull/824)) [@gforsyth](https://github.com/gforsyth)
+- Revert CUDA 12.8 shared workflow branch changes ([#818](https://github.com/rapidsai/cucim/pull/818)) [@vyasr](https://github.com/vyasr)
+- Build and test with CUDA 12.8.0 ([#815](https://github.com/rapidsai/cucim/pull/815)) [@bdice](https://github.com/bdice)
+- Add shellcheck to pre-commit and fix warnings ([#814](https://github.com/rapidsai/cucim/pull/814)) [@gforsyth](https://github.com/gforsyth)
+- Update vendored ndimage code with axes support ([#813](https://github.com/rapidsai/cucim/pull/813)) [@grlee77](https://github.com/grlee77)
+- Use GCC 13 in CUDA 12 conda builds. ([#811](https://github.com/rapidsai/cucim/pull/811)) [@bdice](https://github.com/bdice)
+- Improve performance of color distance calculations by kernel fusion ([#809](https://github.com/rapidsai/cucim/pull/809)) [@grlee77](https://github.com/grlee77)
+- Incorporate upstream changes from scikit-image 0.25 ([#806](https://github.com/rapidsai/cucim/pull/806)) [@grlee77](https://github.com/grlee77)
+- Update version references in workflow ([#803](https://github.com/rapidsai/cucim/pull/803)) [@AyodeAwe](https://github.com/AyodeAwe)
+- Require approval to run CI on draft PRs ([#798](https://github.com/rapidsai/cucim/pull/798)) [@bdice](https://github.com/bdice)
+- Add breaking change workflow trigger ([#795](https://github.com/rapidsai/cucim/pull/795)) [@AyodeAwe](https://github.com/AyodeAwe)
+
 # cucim 24.12.00 (11 Dec 2024)
 
 ## 🚨 Breaking Changes

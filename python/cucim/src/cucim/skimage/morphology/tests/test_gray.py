@@ -10,7 +10,7 @@ from skimage import data, morphology as morphology_cpu
 from cucim.skimage import color, morphology, transform
 from cucim.skimage._shared._warnings import expected_warnings
 from cucim.skimage._shared.testing import assert_stacklevel
-from cucim.skimage.morphology import gray
+from cucim.skimage.morphology import footprint_rectangle, gray
 from cucim.skimage.util import img_as_ubyte, img_as_uint
 
 
@@ -41,11 +41,15 @@ gray_morphology_funcs = (
 gray_modes = sorted(gray._SUPPORTED_MODES)
 
 
+def square(n, decomposition=None):
+    return footprint_rectangle((n, n), decomposition=decomposition)
+
+
 class TestMorphology:
     @pytest.mark.parametrize(
         "footprint, footprint_kwargs",
         (
-            (morphology.square, dict(decomposition=None)),
+            (square, dict(decomposition=None)),
             (morphology.diamond, dict(decomposition=None)),
             (morphology.disk, dict(decomposition=None)),
             (morphology.star, {}),
@@ -118,10 +122,9 @@ class TestMorphology:
 
 
 eccentric_footprint_args = [
-    (morphology.square, (2,)),
-    (morphology.rectangle, (2, 2)),
-    (morphology.rectangle, (2, 1)),
-    (morphology.rectangle, (1, 2)),
+    (footprint_rectangle, ((2, 2),)),
+    (footprint_rectangle, ((2, 1),)),
+    (footprint_rectangle, ((1, 2),)),
 ]
 eccentric_params = ("footprint_func, args", eccentric_footprint_args)
 
@@ -382,34 +385,8 @@ def test_1d_erosion():
         "black_tophat",
     ],
 )
-@pytest.mark.parametrize("size", (7,))
-@pytest.mark.parametrize("decomposition", ["separable", "sequence"])
-def test_square_decomposition(cam_image, function, size, decomposition):
-    """Validate footprint decomposition for various shapes.
-
-    comparison is made to the case without decomposition.
-    """
-    footprint_ndarray = morphology.square(size, decomposition=None)
-    footprint = morphology.square(size, decomposition=decomposition)
-    func = getattr(morphology, function)
-    expected = func(cam_image, footprint=footprint_ndarray)
-    out = func(cam_image, footprint=footprint)
-    cp.testing.assert_array_equal(expected, out)
-
-
-@pytest.mark.parametrize(
-    "function",
-    [
-        "erosion",
-        "dilation",
-        "closing",
-        "opening",
-        "white_tophat",
-        "black_tophat",
-    ],
-)
-@pytest.mark.parametrize("nrows", (3, 11))
-@pytest.mark.parametrize("ncols", (3, 11))
+@pytest.mark.parametrize("nrows", [3, 7, 11])
+@pytest.mark.parametrize("ncols", [3, 7, 11])
 @pytest.mark.parametrize("decomposition", ["separable", "sequence"])
 def test_rectangle_decomposition(
     cam_image, function, nrows, ncols, decomposition
@@ -418,8 +395,8 @@ def test_rectangle_decomposition(
 
     comparison is made to the case without decomposition.
     """
-    footprint_ndarray = morphology.rectangle(nrows, ncols, decomposition=None)
-    footprint = morphology.rectangle(nrows, ncols, decomposition=decomposition)
+    footprint_ndarray = footprint_rectangle((nrows, ncols), decomposition=None)
+    footprint = footprint_rectangle((nrows, ncols), decomposition=decomposition)
     func = getattr(morphology, function)
     expected = func(cam_image, footprint=footprint_ndarray)
     out = func(cam_image, footprint=footprint)
@@ -466,6 +443,9 @@ def test_diamond_decomposition(cam_image, function, radius, decomposition):
 @pytest.mark.parametrize("m", (0, 1, 3, 5))
 @pytest.mark.parametrize("n", (0, 1, 2, 3))
 @pytest.mark.parametrize("decomposition", ["sequence"])
+@pytest.mark.filterwarnings(
+    "ignore:.*falling back to decomposition='separable':UserWarning:skimage"
+)
 def test_octagon_decomposition(cam_image, function, m, n, decomposition):
     """Validate footprint decomposition for various shapes.
 
@@ -494,15 +474,15 @@ def test_octagon_decomposition(cam_image, function, m, n, decomposition):
         "black_tophat",
     ],
 )
-@pytest.mark.parametrize("size", (5,))
+@pytest.mark.parametrize("shape", [(5, 5, 5), (5, 5, 7)])
 @pytest.mark.parametrize("decomposition", ["separable", "sequence"])
-def test_cube_decomposition(cell3d_image, function, size, decomposition):
+def test_cube_decomposition(cell3d_image, function, shape, decomposition):
     """Validate footprint decomposition for various shapes.
 
     comparison is made to the case without decomposition.
     """
-    footprint_ndarray = morphology.cube(size, decomposition=None)
-    footprint = morphology.cube(size, decomposition=decomposition)
+    footprint_ndarray = footprint_rectangle(shape, decomposition=None)
+    footprint = footprint_rectangle(shape, decomposition=decomposition)
     func = getattr(morphology, function)
     expected = func(cell3d_image, footprint=footprint_ndarray)
     out = func(cell3d_image, footprint=footprint)

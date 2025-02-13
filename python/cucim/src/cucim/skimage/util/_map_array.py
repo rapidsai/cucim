@@ -170,7 +170,7 @@ class ArrayMap:
         return output
 
     # This array method is mainly just here for use in the tests
-    def __array__(self, dtype=None):
+    def __array__(self, dtype=None, copy=None):
         """Return a NumPy array that behaves like the arraymap when indexed.
 
         This array can be very large: it is the size of the largest value

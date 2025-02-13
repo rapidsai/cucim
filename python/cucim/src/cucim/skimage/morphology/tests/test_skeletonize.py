@@ -11,7 +11,7 @@ from cucim.skimage.morphology import medial_axis, thin
 class TestThin:
     @property
     def input_image(self):
-        """image to test thinning with"""
+        # Image to test thinning with
         ii = cp.array(
             [
                 [0, 0, 0, 0, 0, 0, 0],
@@ -26,9 +26,17 @@ class TestThin:
         )
         return ii
 
-    def test_zeros(self):
+    def test_all_zeros(self):
         image = cp.zeros((10, 10), dtype=bool)
         assert cp.all(thin(image) == 0)
+
+    @pytest.mark.parametrize("dtype", [bool, float, int])
+    def test_thin_copies_input(self, dtype):
+        """Ensure thinning does not modify the input image."""
+        image = self.input_image.astype(dtype)
+        original = image.copy()
+        thin(image)
+        cp.testing.assert_array_equal(image, original)
 
     @pytest.mark.parametrize("dtype", [bool, float, int])
     def test_iter_1(self, dtype):
@@ -82,27 +90,27 @@ class TestThin:
 
 
 class TestMedialAxis:
-    def test_00_00_zeros(self):
-        """Test skeletonize on an array of all zeros"""
-        result = medial_axis(cp.zeros((10, 10), bool))
+    def test_all_zeros(self):
+        result = medial_axis(cp.zeros((10, 10), dtype=bool))
         assert not cp.any(result)
 
-    def test_00_01_zeros_masked(self):
-        """Test skeletonize on an array that is completely masked"""
-        result = medial_axis(cp.zeros((10, 10), bool), cp.zeros((10, 10), bool))
+    def test_all_zeros_masked(self):
+        result = medial_axis(
+            cp.zeros((10, 10), dtype=bool), cp.zeros((10, 10), dtype=bool)
+        )
         assert not cp.any(result)
 
     def _test_vertical_line(self, dtype, **kwargs):
         """Test a thick vertical line, issue #3861"""
-        img = cp.zeros((9, 9), dtype=dtype)
-        img[:, 2] = 1
-        img[:, 3] = 2
-        img[:, 4] = 3
+        image = cp.zeros((9, 9), dtype=dtype)
+        image[:, 2] = 1
+        image[:, 3] = 2
+        image[:, 4] = 3
 
-        expected = cp.full(img.shape, False)
+        expected = cp.full(image.shape, False)
         expected[:, 3] = True
 
-        result = medial_axis(img, **kwargs)
+        result = medial_axis(image, **kwargs)
         assert_array_equal(result, expected)
 
     @pytest.mark.parametrize("dtype", [bool, float, int])
@@ -122,14 +130,11 @@ class TestMedialAxis:
     def test_rng_int(self):
         self._test_vertical_line(dtype=bool, rng=15)
 
-    def test_01_01_rectangle(self):
-        """Test skeletonize on a rectangle"""
-        image = cp.zeros((9, 15), bool)
+    def test_rectangle(self):
+        image = cp.zeros((9, 15), dtype=bool)
         image[1:-1, 1:-1] = True
-        #
-        # The result should be four diagonals from the
-        # corners, meeting in a horizontal line
-        #
+        # Excepted are four diagonals from the corners, meeting in a horizontal
+        # line
         expected = cp.array(
             [
                 [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
@@ -149,9 +154,8 @@ class TestMedialAxis:
         result, distance = medial_axis(image, return_distance=True)
         assert distance.max() == 4
 
-    def test_01_02_hole(self):
-        """Test skeletonize on a rectangle with a hole in the middle"""
-        image = cp.zeros((9, 15), bool)
+    def test_rectangle_with_hole(self):
+        image = cp.zeros((9, 15), dtype=bool)
         image[1:-1, 1:-1] = True
         image[4, 4:-4] = False
         expected = cp.array(
@@ -172,8 +176,8 @@ class TestMedialAxis:
         assert cp.all(result == expected)
 
     def test_narrow_image(self):
-        """Test skeletonize on a 1-pixel thin strip"""
-        image = cp.zeros((1, 5), bool)
+        # Image is a 1-pixel thin strip
+        image = cp.zeros((1, 5), dtype=bool)
         image[:, 1:-1] = True
         result = medial_axis(image)
         assert cp.all(result == image)
