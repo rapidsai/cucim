@@ -409,7 +409,8 @@ def binary_erosion(
 
     .. seealso:: :func:`scipy.ndimage.binary_erosion`
     """
-    structure, _, _ = _prep_structure(structure, input.ndim)
+    axes = _util._check_axes(axes, input.ndim)
+    structure, _, _ = _prep_structure(structure, len(axes))
     return _binary_erosion(
         input,
         structure,
@@ -480,6 +481,7 @@ def binary_dilation(
 
     .. seealso:: :func:`scipy.ndimage.binary_dilation`
     """
+    axes = _util._check_axes(axes, input.ndim)
     structure, structure_shape, symmetric = _prep_structure(
         structure, input.ndim
     )
@@ -566,7 +568,8 @@ def binary_opening(
 
     .. seealso:: :func:`scipy.ndimage.binary_opening`
     """
-    structure, _, _ = _prep_structure(structure, input.ndim)
+    axes = _util._check_axes(axes, input.ndim)
+    structure, _, _ = _prep_structure(structure, len(axes))
     tmp = binary_erosion(
         input,
         structure,
@@ -651,7 +654,8 @@ def binary_closing(
 
     .. seealso:: :func:`scipy.ndimage.binary_closing`
     """
-    structure, _, _ = _prep_structure(structure, input.ndim)
+    axes = _util._check_axes(axes, input.ndim)
+    structure, _, _ = _prep_structure(structure, len(axes))
     tmp = binary_dilation(
         input,
         structure,
