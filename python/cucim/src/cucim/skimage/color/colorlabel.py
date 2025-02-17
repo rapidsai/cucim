@@ -1,4 +1,3 @@
-import itertools
 import math
 
 import cupy as cp
@@ -49,41 +48,11 @@ def _rgb_vector(color):
     return np.asarray(color[:3])  # CuPy Backend: leave this array on the host
 
 
-def _match_label_with_color(label, colors, bg_label, bg_color):
-    """Return `unique_labels` and `color_cycle` for label array and color list.
-
-    Colors are cycled for normal labels, but the background color should only
-    be used for the background.
-    """
-    # Temporarily set background color; it will be removed later.
-    if bg_color is None:
-        bg_color = (0, 0, 0)
-    bg_color = _rgb_vector(bg_color)
-
-    # map labels to their ranks among all labels from small to large
-    unique_labels, mapped_labels = cp.unique(label, return_inverse=True)
-    # output of unique with return_inverse=True is no longer flat in NumPy 2.0
-    # guarding against a potential corresponding future change for CuPy here
-    mapped_labels = mapped_labels.reshape(-1)
-
-    # The rank of each label is the index of the color it is matched to in
-    # color cycle. bg_label should always be mapped to the first color, so
-    # its rank must be 0. Other labels should be ranked from small to large
-    # from 1.
-    bg_coords = (label.ravel() == bg_label).nonzero()
-    if bg_coords[0].size > 0:
-        # get rank of bg_label
-        bg_label_rank = mapped_labels[bg_coords[0][0]]
-        if bg_label_rank > 0:
-            mapped_labels[mapped_labels < bg_label_rank] += 1
-            mapped_labels[bg_coords] = 0
-    else:
-        mapped_labels += 1
-
-    # Modify labels and color cycle so background color is used only once.
-    color_cycle = itertools.cycle(colors)
-    color_cycle = itertools.chain([bg_color], color_cycle)
-    return mapped_labels, color_cycle
+@cp.memoize(for_each_device=True)
+def _get_default_colors():
+    return cp.asarray(
+        np.stack([_rgb_vector(c) for c in DEFAULT_COLORS], axis=0)
+    )
 
 
 def label2rgb(
@@ -174,13 +143,57 @@ alpha_scale_and_offset_ = cp.ElementwiseKernel(
 )
 
 
-alpha_blend_ = cp.ElementwiseKernel(
-    "X img1, Y img2, float64 alpha",
-    "Y result",
-    """
-    result = img1 * alpha + (1 - alpha) * img2;
-""",
-    name="alpha_scale_and_offset_",
+_colorize_labels = cp.ElementwiseKernel(
+    in_params=(
+        "X label, raw F colors, raw X bg_label, raw F bg_color, "
+        "raw int64 num_colors"
+    ),
+    out_params="raw Y out",
+    operation="""
+    if (label == bg_label) {
+        out[3*i] = bg_color[0];
+        out[3*i + 1] = bg_color[1];
+        out[3*i + 1] = bg_color[2];
+    } else {
+        int color_index = (label > bg_label) ? label - 1 : label;
+        color_index = color_index % num_colors;
+        out[3*i] = colors[color_index*3];
+        out[3*i + 1] = colors[color_index*3 + 1];
+        out[3*i + 2] = colors[color_index*3 + 2];
+    }\n""",
+    name="cucim_colorize_labels",
+)
+
+_colorize_labels_and_blend = cp.ElementwiseKernel(
+    in_params=(
+        "X label, raw Y image, raw F colors, raw X bg_label, raw F bg_color, "
+        "raw int64 num_colors, raw F alpha, bool remove_background"
+    ),
+    out_params="raw Y out",
+    operation="""
+    F r, g, b;
+    bool is_background = label == bg_label;
+    if (remove_background && is_background) {
+        out[3*i] = image[3*i];
+        out[3*i + 1] = image[3*i + 1];
+        out[3*i + 2] = image[3*i + 2];
+    } else {
+        if (is_background) {
+            r = bg_color[0];
+            g = bg_color[1];
+            b = bg_color[2];
+        } else {
+            int color_index = (label > bg_label) ? label - 1 : label;
+            int color_offset = 3 * (color_index % num_colors);
+            r = colors[color_offset];
+            g = colors[color_offset + 1];
+            b = colors[color_offset + 2];
+        }
+        out[3*i] = r * alpha + (1 - alpha) * image[3*i];
+        out[3*i + 1] = g * alpha + (1 - alpha) * image[3*i + 1];
+        out[3*i + 2] = b * alpha + (1 - alpha) * image[3*i + 2];
+    }\n""",
+    name="cucim_colorize_labels_and_blend",
 )
 
 
@@ -193,6 +206,9 @@ def _label2rgb_overlay(
     bg_color=None,
     image_alpha=1,
     saturation=0,
+    *,
+    normalized_labels=False,
+    max_label=None,
 ):
     """Return an RGB image where color-coded labels are painted over the image.
 
@@ -222,6 +238,15 @@ def _label2rgb_overlay(
         between fully saturated (original RGB, `saturation=1`) and fully
         unsaturated (grayscale, `saturation=0`).
 
+    Extra Parameters
+    ----------------
+    normalized_labels : bool, optional
+        It is recommended to set this to ``True`` if ``bg_label == 0`` and the
+        remaining labels are consecutive integers in the range [1, label_max].
+        Knowing this allows skipping an initial relabeling step.
+    max_label : int, optional
+        Can provide the maximum label if it is already known.
+
     Returns
     -------
     result : array of float, shape (M, N, 3)
@@ -232,8 +257,10 @@ def _label2rgb_overlay(
         warn(f"saturation must be in range [0, 1], got {saturation}")
 
     if colors is None:
-        colors = DEFAULT_COLORS
-    colors = [_rgb_vector(c) for c in colors]
+        colors = _get_default_colors()
+    else:
+        colors = tuple(_rgb_vector(c) for c in colors)
+        colors = cp.asarray(np.stack(colors, axis=0))
 
     if image is not None:
         if (
@@ -261,49 +288,60 @@ def _label2rgb_overlay(
 
     # Ensure that all labels are non-negative so we can index into
     # `label_to_color` correctly.
-    offset = min(int(label.min()), bg_label)
-    if offset != 0:
-        label = label - offset  # Make sure you don't modify the input array.
-        bg_label -= offset
+    if not normalized_labels:
+        min_label = int(label.min())
+        offset = min(min_label, bg_label)
+        if offset != 0:
+            label = label - offset  # Does not modify the input array.
+            bg_label -= offset
 
-    new_type = np.min_scalar_type(int(label.max()))
+    if max_label is None:
+        max_label = int(label.max())
+    new_type = np.min_scalar_type(max_label)
     if new_type == bool:
         new_type = np.uint8
     label = label.astype(new_type, copy=False)
 
-    mapped_labels_flat, color_cycle = _match_label_with_color(
-        label, colors, bg_label, bg_color
-    )
+    if not normalized_labels:
+        from cucim.skimage.util import map_array
 
-    if len(mapped_labels_flat) == 0:
-        return image
+        unique_labels = cp.unique(label)
+        if min_label < bg_label:
+            sequential_labels = cp.arange(unique_labels.size, dtype=label.dtype)
+        else:
+            sequential_labels = cp.arange(
+                -offset, -offset + unique_labels.size, dtype=label.dtype
+            )
+        label = map_array(
+            label,
+            unique_labels,
+            sequential_labels,
+        )
 
-    dense_labels = range(int(mapped_labels_flat.max()) + 1)
-
-    # CuPy Backend: small color_cycle arrays are left on the CPU
-    label_to_color = np.stack([c for i, c in zip(dense_labels, color_cycle)])
-    # CuPy Backend: transfer to GPU after concatenation of small host arrays
-    label_to_color = cp.asarray(label_to_color)
-
-    mapped_labels = mapped_labels_flat.reshape(label.shape)
-    label = mapped_labels
+    if bg_color is None:
+        bg_color = cp.zeros((0,) * 3, dtype=colors.dtype)
+    else:
+        bg_color = cp.asarray(_rgb_vector(bg_color), dtype=colors.dtype)
+    num_colors = colors.shape[0]
 
     if image is None:
-        result = label_to_color[mapped_labels]
-
-        # Remove background label if its color was not specified.
-        remove_background = 0 in mapped_labels_flat and bg_color is None
-        if remove_background:
-            result[label == bg_label] = 0
+        out = cp.zeros(label.shape + (3,), dtype=cp.float32)
+        _colorize_labels(label, colors, bg_label, bg_color, num_colors, out)
     else:
-        result = alpha_blend_(label_to_color[mapped_labels], image, alpha)
-
-        # Remove background label if its color was not specified.
-        remove_background = 0 in mapped_labels_flat and bg_color is None
-        if remove_background:
-            result[label == bg_label] = image[label == bg_label]
-
-    return result
+        out = cp.zeros(label.shape + (3,), dtype=float_dtype)
+        remove_background = cp.any(label == bg_label) and bg_color is None
+        _colorize_labels_and_blend(
+            label,
+            image,
+            colors,
+            bg_label,
+            bg_color,
+            num_colors,
+            alpha,
+            remove_background,
+            out,
+        )
+    return out
 
 
 def _unravel_loop_index_declarations(var_name, ndim, uint_t="unsigned int"):
@@ -418,24 +456,10 @@ def get_roi_sums_and_counts_kernel(coord_dtype, pixels_per_thread=32):
     return cp.ElementwiseKernel(inputs, outputs, source, name=name)
 
 
-# roi_sums_and_counts_ = cp.ElementwiseKernel(
-#     "raw Y img, X label, int32 bg_label",
-#     "raw float64 avg, raw int32 count",
-#     """
-#     if (label != bg_label) {
-#         atomicAdd(&avg[3*label], static_cast<double>(img[3*i]));
-#         atomicAdd(&avg[3*label + 1], static_cast<double>(img[3*i + 1]));
-#         atomicAdd(&avg[3*label + 2], static_cast<double>(img[3*i + 2]));
-#         atomicAdd(&count[label], 1);
-#     }
-# """,
-#     name="roi_sums_and_counts",
-# )
-
 roi_assign_averages_ = cp.ElementwiseKernel(
-    "raw float32 avg, Y label, int32 bg_label, raw X bg_color",
-    "raw X out",
-    """
+    in_params="raw float32 avg, Y label, int32 bg_label, raw X bg_color",
+    out_params="raw X out",
+    operation="""
     if (label != bg_label) {
         out[3*i] = avg[3*label];
         out[3*i + 1] = avg[3*label + 1];
@@ -444,8 +468,7 @@ roi_assign_averages_ = cp.ElementwiseKernel(
         out[3*i] = bg_color[0];
         out[3*i + 1] = bg_color[1];
         out[3*i + 2] = bg_color[2];
-    }
-""",
+    }\n""",
     name="roi_assign_averages",
 )
 
