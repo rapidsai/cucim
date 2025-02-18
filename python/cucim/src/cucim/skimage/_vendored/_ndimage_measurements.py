@@ -206,7 +206,11 @@ def find_objects(input, max_label=0):
     # Since cuCIM does not use Cython, we use a pure Python conversion to slice
     # objects instead.
     bbox_slices = [
-        tuple(slice(int(box[2 * d]), int(box[2 * d + 1])) for d in range(ndim))
+        None
+        if box[0] == int_max
+        else tuple(
+            slice(int(box[2 * d]), int(box[2 * d + 1])) for d in range(ndim)
+        )
         for box in bbox_coords_cpu
     ]
     return bbox_slices
