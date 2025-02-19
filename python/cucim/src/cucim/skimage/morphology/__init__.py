@@ -7,6 +7,10 @@ from .binary import (
     binary_erosion,
     binary_opening,
 )
+from .convex_hull import (
+    convex_hull_image,
+    convex_hull_object,
+)
 from .footprints import (
     ball,
     cube,
@@ -38,6 +42,8 @@ from .isotropic import (
 from .misc import remove_small_holes, remove_small_objects
 
 __all__ = [
+    "convex_hull_image",
+    "convex_hull_object",
     "binary_erosion",
     "binary_dilation",
     "binary_opening",
