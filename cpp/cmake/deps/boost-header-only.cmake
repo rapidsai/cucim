@@ -23,7 +23,7 @@ if (NOT TARGET deps::boost-header-only)
             GIT_TAG boost-${Boost_VERSION}
             GIT_SHALLOW TRUE
             EXCLUDE_FROM_ALL
-            PATCH_COMMAND ${GIT_EXECUTABLE} apply "${CMAKE_CURRENT_LIST_DIR}/boost-header-only.patch" || true
+            PATCH_COMMAND ${GIT_EXECUTABLE} apply "${CMAKE_CURRENT_LIST_DIR}/boost-header-only.patch"
     )
 
     message(STATUS "Fetching boost-header-only sources")

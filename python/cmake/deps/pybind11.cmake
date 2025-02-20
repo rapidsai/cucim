@@ -21,7 +21,7 @@ if (NOT TARGET deps::pybind11)
             GIT_REPOSITORY https://github.com/pybind/pybind11.git
             GIT_TAG v2.11.1
             GIT_SHALLOW TRUE
-            PATCH_COMMAND ${GIT_EXECUTABLE} apply "${CMAKE_CURRENT_LIST_DIR}/pybind11_pr4857_4877.patch" || true
+            PATCH_COMMAND ${GIT_EXECUTABLE} apply "${CMAKE_CURRENT_LIST_DIR}/pybind11_pr4857_4877.patch"
             EXCLUDE_FROM_ALL
     )
     message(STATUS "Fetching pybind11 sources")

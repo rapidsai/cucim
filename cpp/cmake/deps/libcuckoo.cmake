@@ -21,7 +21,7 @@ if (NOT TARGET deps::libcuckoo)
             GIT_REPOSITORY https://github.com/efficient/libcuckoo
             GIT_TAG v0.3
             GIT_SHALLOW TRUE
-            PATCH_COMMAND ${GIT_EXECUTABLE} apply "${CMAKE_CURRENT_LIST_DIR}/libcuckoo.patch" || true
+            PATCH_COMMAND ${GIT_EXECUTABLE} apply "${CMAKE_CURRENT_LIST_DIR}/libcuckoo.patch"
             EXCLUDE_FROM_ALL
     )
     message(STATUS "Fetching libcuckoo sources")
