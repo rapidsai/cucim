@@ -19,13 +19,9 @@ if (NOT TARGET deps::nvtx3)
             GIT_REPOSITORY https://github.com/NVIDIA/NVTX.git
             GIT_TAG 3c98c8425b0376fd8653aac7cfc6a864f3897752
             # GIT_SHALLOW TRUE  # TODO (#168): Uncomment this when the official release of nvtx3-cpp is available
+            EXCLUDE_FROM_ALL
     )
-    FetchContent_GetProperties(deps-nvtx3)
-    if (NOT deps-nvtx3_POPULATED)
-        message(STATUS "Fetching nvtx3 sources")
-        FetchContent_Populate(deps-nvtx3)
-        message(STATUS "Fetching nvtx3 sources - done")
-    endif ()
+    message(STATUS "Fetching nvtx3 sources")
 
     # Create shared library
     cucim_set_build_shared_libs(ON) # since nvtx3 is header-only library, this may not needed.
@@ -33,7 +29,9 @@ if (NOT TARGET deps::nvtx3)
     set(BUILD_TESTS OFF)
     set(BUILD_BENCHMARKS OFF)
 
-    add_subdirectory(${deps-nvtx3_SOURCE_DIR}/cpp ${deps-nvtx3_BINARY_DIR} EXCLUDE_FROM_ALL)
+    FetchContent_MakeAvailable(deps-nvtx3)
+    message(STATUS "Fetching nvtx3 sources - done")
+
     cucim_restore_build_shared_libs()
 
     add_library(deps::nvtx3 INTERFACE IMPORTED GLOBAL)

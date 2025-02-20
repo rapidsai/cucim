@@ -14,42 +14,22 @@
 # limitations under the License.
 
 if (NOT TARGET deps::libcuckoo)
+    find_package(Git REQUIRED)
+
     FetchContent_Declare(
             deps-libcuckoo
             GIT_REPOSITORY https://github.com/efficient/libcuckoo
             GIT_TAG v0.3
             GIT_SHALLOW TRUE
+            PATCH_COMMAND ${GIT_EXECUTABLE} apply "${CMAKE_CURRENT_LIST_DIR}/libcuckoo.patch" || true
+            EXCLUDE_FROM_ALL
     )
-    FetchContent_GetProperties(deps-libcuckoo)
-    if (NOT deps-libcuckoo_POPULATED)
-        message(STATUS "Fetching libcuckoo sources")
-        FetchContent_Populate(deps-libcuckoo)
-        message(STATUS "Fetching libcuckoo sources - done")
-
-        message(STATUS "Applying patch for libcuckoo")
-        find_package(Git)
-        if(Git_FOUND OR GIT_FOUND)
-            execute_process(
-                COMMAND bash -c "${GIT_EXECUTABLE} reset HEAD --hard && ${GIT_EXECUTABLE} apply ${CMAKE_CURRENT_LIST_DIR}/libcuckoo.patch"
-                WORKING_DIRECTORY "${deps-libcuckoo_SOURCE_DIR}"
-                RESULT_VARIABLE exec_result
-                ERROR_VARIABLE exec_error
-                ERROR_STRIP_TRAILING_WHITESPACE
-                OUTPUT_VARIABLE exec_output
-                OUTPUT_STRIP_TRAILING_WHITESPACE
-                )
-            if(exec_result EQUAL 0)
-                message(STATUS "Applying patch for libcuckoo - done")
-            else()
-                message(STATUS "Applying patch for libcuckoo - failed")
-                message(FATAL_ERROR "${exec_output}\n${exec_error}")
-            endif()
-        endif ()
-    endif ()
-
+    message(STATUS "Fetching libcuckoo sources")
     # Create static library
     cucim_set_build_shared_libs(OFF)
-    add_subdirectory(${deps-libcuckoo_SOURCE_DIR} ${deps-libcuckoo_BINARY_DIR} EXCLUDE_FROM_ALL)
+    FetchContent_MakeAvailable(deps-libcuckoo)
+    message(STATUS "Fetching libcuckoo sources - done")
+
     # libcuckoo's CMakeLists.txt is not compatible with `add_subdirectory` method (it uses ${CMAKE_SOURCE_DIR} instead of ${CMAKE_CURRENT_SOURCE_DIR})
     # so add include directories explicitly.
     target_include_directories(libcuckoo INTERFACE

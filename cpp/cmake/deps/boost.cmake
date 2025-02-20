@@ -14,6 +14,9 @@
 #
 
 if (NOT TARGET deps::boost)
+    cmake_policy(PUSH)
+    cmake_policy(SET CMP0169 OLD)
+
     set(Boost_VERSION 1.75.0)
     set(Boost_BUILD_COMPONENTS container)
     set(Boost_BUILD_OPTIONS "threading=multi cxxflags=-fPIC runtime-link=static variant=release link=static address-model=64 --layout=system")
@@ -72,4 +75,6 @@ if (NOT TARGET deps::boost)
 
     set(deps-boost_SOURCE_DIR ${deps-boost_SOURCE_DIR} CACHE INTERNAL "" FORCE)
     mark_as_advanced(deps-boost_SOURCE_DIR)
+
+    cmake_policy(POP)
 endif ()

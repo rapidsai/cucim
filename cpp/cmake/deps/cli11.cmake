@@ -19,15 +19,11 @@ if (NOT TARGET deps::cli11)
             GIT_REPOSITORY https://github.com/CLIUtils/CLI11.git
             GIT_TAG v1.9.1
             GIT_SHALLOW TRUE
+            EXCLUDE_FROM_ALL
     )
-    FetchContent_GetProperties(deps-cli11)
-    if (NOT deps-cli11_POPULATED)
-        message(STATUS "Fetching cli11 sources")
-        FetchContent_Populate(deps-cli11)
-        message(STATUS "Fetching cli11 sources - done")
-    endif ()
-
-    add_subdirectory(${deps-cli11_SOURCE_DIR} ${deps-cli11_BINARY_DIR} EXCLUDE_FROM_ALL)
+    message(STATUS "Fetching cli11 sources")
+    FetchContent_MakeAvailable(deps-cli11)
+    message(STATUS "Fetching cli11 sources - done")
 
     add_library(deps::cli11 INTERFACE IMPORTED GLOBAL)
     target_link_libraries(deps::cli11 INTERFACE CLI11::CLI11)

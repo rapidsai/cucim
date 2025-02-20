@@ -19,18 +19,14 @@ if (NOT TARGET deps::taskflow)
             GIT_REPOSITORY https://github.com/taskflow/taskflow.git
             GIT_TAG v3.2.0
             GIT_SHALLOW TRUE
+            EXCLUDE_FROM_ALL
     )
-    FetchContent_GetProperties(deps-taskflow)
-    if (NOT deps-taskflow_POPULATED)
-        message(STATUS "Fetching taskflow sources")
-        FetchContent_Populate(deps-taskflow)
-        message(STATUS "Fetching taskflow sources - done")
-    endif ()
-
+    message(STATUS "Fetching taskflow sources")
     set(TF_BUILD_TESTS OFF)
     set(TF_BUILD_EXAMPLES OFF)
 
-    add_subdirectory(${deps-taskflow_SOURCE_DIR} ${deps-taskflow_BINARY_DIR} EXCLUDE_FROM_ALL)
+    FetchContent_MakeAvailable(deps-taskflow)
+    message(STATUS "Fetching taskflow sources - done")
 
     add_library(deps::taskflow INTERFACE IMPORTED GLOBAL)
     target_link_libraries(deps::taskflow INTERFACE Taskflow)

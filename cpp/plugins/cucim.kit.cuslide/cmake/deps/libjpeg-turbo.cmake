@@ -26,13 +26,8 @@ if (NOT TARGET deps::libjpeg-turbo)
             GIT_REPOSITORY https://github.com/libjpeg-turbo/libjpeg-turbo.git
             GIT_TAG 2.0.6
             GIT_SHALLOW TRUE
+            EXCLUDE_FROM_ALL
     )
-    FetchContent_GetProperties(deps-libjpeg-turbo)
-    if (NOT deps-libjpeg-turbo_POPULATED)
-        message(STATUS "Fetching libjpeg-turbo sources")
-        FetchContent_Populate(deps-libjpeg-turbo)
-        message(STATUS "Fetching libjpeg-turbo sources - done")
-    endif ()
 
     # Set policies for libjpeg-turbo
     set(CMAKE_PROJECT_INCLUDE_BEFORE "${CMAKE_CURRENT_LIST_DIR}/libjpeg-turbo-policies-fix.cmake")
@@ -48,7 +43,9 @@ if (NOT TARGET deps::libjpeg-turbo)
     set(CMAKE_ASM_NASM_COMPILER yasm)
     set(REQUIRE_SIMD 1) # CMP0077
 
-    add_subdirectory(${deps-libjpeg-turbo_SOURCE_DIR} ${deps-libjpeg-turbo_BINARY_DIR} EXCLUDE_FROM_ALL)
+    message(STATUS "Fetching libjpeg-turbo sources")
+    FetchContent_MakeAvailable(deps-libjpeg-turbo)
+    message(STATUS "Fetching libjpeg-turbo sources - done")
 
     # Disable visibility to not expose unnecessary symbols
     set_target_properties(turbojpeg-static

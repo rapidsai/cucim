@@ -19,18 +19,16 @@ if (NOT TARGET deps::abseil)
             GIT_REPOSITORY https://github.com/abseil/abseil-cpp.git
             GIT_TAG 20200225.2
             GIT_SHALLOW TRUE
+            EXCLUDE_FROM_ALL
     )
-    FetchContent_GetProperties(deps-abseil)
-    if (NOT deps-abseil_POPULATED)
-        message(STATUS "Fetching abseil sources")
-        FetchContent_Populate(deps-abseil)
-        message(STATUS "Fetching abseil sources - done")
-    endif ()
 
     # Create static library
     cucim_set_build_shared_libs(OFF)
-    set(BUILD_TESTING FALSE) # Disable BUILD_TESTING (cmake-build-debug/_deps/deps-abseil-src/CMakeLists.txt:97)
-    add_subdirectory(${deps-abseil_SOURCE_DIR} ${deps-abseil_BINARY_DIR} EXCLUDE_FROM_ALL)
+         # Disable BUILD_TESTING (cmake-build-debug/_deps/deps-abseil-src/CMakeLists.txt:97)
+    set(BUILD_TESTING FALSE)
+    message(STATUS "Fetching abseil sources")
+    FetchContent_MakeAvailable(deps-abseil )
+    message(STATUS "Fetching abseil sources - done")
 
     # Set PIC to prevent the following error message
     # : /usr/bin/ld: ../lib/libabsl_strings.a(escaping.cc.o): relocation R_X86_64_PC32 against symbol `_ZN4absl14lts_2020_02_2516numbers_internal8kHexCharE' can not be used when making a shared object; recompile with -fPIC

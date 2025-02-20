@@ -20,16 +20,11 @@ if (NOT TARGET deps::googletest)
             GIT_TAG release-1.10.0
             GIT_SHALLOW TRUE
     )
-    FetchContent_GetProperties(deps-googletest)
-    if (NOT deps-googletest_POPULATED)
-        message(STATUS "Fetching googletest sources")
-        FetchContent_Populate(deps-googletest)
-        message(STATUS "Fetching googletest sources - done")
-    endif ()
-
+    message(STATUS "Fetching googletest sources")
     # Create static library
     cucim_set_build_shared_libs(OFF)
-    add_subdirectory(${deps-googletest_SOURCE_DIR} ${deps-googletest_BINARY_DIR} EXCLUDE_FROM_ALL)
+    FetchContent_MakeAvailable(deps-googletest)
+    message(STATUS "Fetching googletest sources - done")
     cucim_restore_build_shared_libs()
 
     add_library(deps::googletest INTERFACE IMPORTED GLOBAL)

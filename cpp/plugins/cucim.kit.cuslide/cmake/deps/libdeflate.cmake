@@ -14,6 +14,9 @@
 #
 
 if (NOT TARGET deps::libdeflate)
+    cmake_policy(PUSH)
+    cmake_policy(SET CMP0169 OLD)
+
     FetchContent_Declare(
             deps-libdeflate
             GIT_REPOSITORY https://github.com/ebiggers/libdeflate.git
@@ -56,4 +59,6 @@ if (NOT TARGET deps::libdeflate)
 
     set(deps-libdeflate_SOURCE_DIR ${deps-libdeflate_SOURCE_DIR} CACHE INTERNAL "" FORCE)
     mark_as_advanced(deps-libdeflate_SOURCE_DIR)
+
+    cmake_policy(POP)
 endif ()

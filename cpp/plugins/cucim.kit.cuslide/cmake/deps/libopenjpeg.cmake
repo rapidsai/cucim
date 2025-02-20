@@ -21,12 +21,6 @@ if (NOT TARGET deps::libopenjpeg)
             GIT_TAG v2.5.0
             GIT_SHALLOW TRUE
     )
-    FetchContent_GetProperties(deps-libopenjpeg)
-    if (NOT deps-libopenjpeg_POPULATED)
-        message(STATUS "Fetching libopenjpeg sources")
-        FetchContent_Populate(deps-libopenjpeg)
-        message(STATUS "Fetching libopenjpeg sources - done")
-    endif ()
 
     # Create static library
     # It build a static library when both BUILD_SHARED_LIBS and BUILD_STATIC_LIBS are ON
@@ -35,11 +29,9 @@ if (NOT TARGET deps::libopenjpeg)
     #     if(BUILD_SHARED_LIBS AND BUILD_STATIC_LIBS)
     cucim_set_build_shared_libs(ON)
 
-    ###########################################################################
-    # Build liblcms2 with the source in libopenjpeg
-    ###########################################################################
-
-    add_subdirectory(${deps-libopenjpeg_SOURCE_DIR}/thirdparty/liblcms2 ${deps-libopenjpeg_BINARY_DIR}/thirdparty/liblcms2)
+    message(STATUS "Fetching libopenjpeg sources")
+    FetchContent_MakeAvailable(deps-libopenjpeg)
+    message(STATUS "Fetching libopenjpeg sources - done")
 
     # Override the output library folder path
     set_target_properties(lcms2
