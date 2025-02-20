@@ -32,10 +32,10 @@ rapids-pip-retry install \
 
 sccache --zero-stats
 
-# First build the C++ lib using CMake via the run script
-rapids-logger  "debug path '$PATH' "
-rapids-logger  "debug cmake path '$(which cmake)' "
+rapids-logger "pyenv rehash"
+pyenv rehash
 
+# First build the C++ lib using CMake via the run script
 ./run build_local all ${CMAKE_BUILD_TYPE}
 
 sccache --show-adv-stats
