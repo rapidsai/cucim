@@ -42,7 +42,7 @@ dependencies:
 - recommonmark
 - scikit-image>=0.19.0,<0.26.0a0
 - scipy>=1.11.2
-- sphinx>=8.0.0
+- sphinx>=8.0.0,<8.2.0
 - sysroot_linux-64==2.28
 - tifffile>=2022.8.12
 - yasm
