@@ -17,17 +17,13 @@ if (NOT TARGET deps::boost-header-only)
     find_package(Git REQUIRED)
     set(Boost_VERSION 1.75.0)
     set(boost_component_list "interprocess" "config" "intrusive" "move" "assert" "static_assert" "container" "core" "date_time" "smart_ptr" "throw_exception" "utility" "type_traits" "numeric/conversion" "mpl" "preprocessor" "container_hash" "integer" "detail")
-    FetchContent_Declare(
-            deps-boost-header-only
-            GIT_REPOSITORY https://github.com/boostorg/boost.git
-            GIT_TAG boost-${Boost_VERSION}
-            GIT_SHALLOW TRUE
-            EXCLUDE_FROM_ALL
-            PATCH_COMMAND ${GIT_EXECUTABLE} apply "${CMAKE_CURRENT_LIST_DIR}/boost-header-only.patch" --directory=libs/interprocess
-    )
 
     message(STATUS "Fetching boost-header-only sources")
-    FetchContent_MakeAvailable(deps-boost-header-only)
+    FetchContent_Populate(deps-boost-header-only
+        GIT_REPOSITORY https://github.com/boostorg/boost.git
+        GIT_TAG boost-${Boost_VERSION}
+        GIT_SHALLOW TRUE
+        PATCH_COMMAND ${GIT_EXECUTABLE} apply "${CMAKE_CURRENT_LIST_DIR}/boost-header-only.patch" --directory=libs/interprocess)
     message(STATUS "Fetching boost-header-only sources - done")
 
     FetchContent_GetProperties(deps-boost-header-only)
