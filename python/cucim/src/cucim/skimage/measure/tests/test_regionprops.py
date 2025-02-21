@@ -1,5 +1,6 @@
 import math
 import re
+import warnings
 
 import cupy as cp
 import cupyx.scipy.ndimage as ndi
@@ -160,8 +161,12 @@ def test_ndim():
         regionprops(cp.zeros((10, 10, 10, 2), dtype=int))
 
 
-@pytest.mark.skip("feret_diameter_max not implemented on the GPU")
 def test_feret_diameter_max():
+    warnings.filterwarnings(
+        "ignore",
+        category=UserWarning,
+        message="feret diameter_max currently not implemented on GPU.",
+    )
     # comparator result is based on SAMPLE from manually-inspected computations
     comparator_result = 18
     test_result = regionprops(SAMPLE)[0].feret_diameter_max
@@ -196,8 +201,12 @@ def test_feret_diameter_max():
     )
 
 
-@pytest.mark.skip("feret_diameter_max not implemented on the GPU")
 def test_feret_diameter_max_3d():
+    warnings.filterwarnings(
+        "ignore",
+        category=UserWarning,
+        message="feret diameter_max currently not implemented on GPU.",
+    )
     img = cp.zeros((20, 20), dtype=cp.uint8)
     img[2:-2, 2:-2] = 1
     img_3d = cp.dstack((img,) * 3)
