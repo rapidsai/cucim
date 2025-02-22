@@ -17,8 +17,9 @@ if (NOT TARGET deps::nvtx3)
     FetchContent_Declare(
             deps-nvtx3
             GIT_REPOSITORY https://github.com/NVIDIA/NVTX.git
-            GIT_TAG 3c98c8425b0376fd8653aac7cfc6a864f3897752
-            # GIT_SHALLOW TRUE  # TODO (#168): Uncomment this when the official release of nvtx3-cpp is available
+            GIT_TAG v3.1.1
+            GIT_SHALLOW TRUE
+            SOURCE_SUBDIR c
             EXCLUDE_FROM_ALL
     )
     message(STATUS "Fetching nvtx3 sources")
