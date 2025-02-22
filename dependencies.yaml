@@ -33,6 +33,8 @@ files:
       - cuda_version
       - docs
       - py_version
+      - depends_on_cucim
+      - depends_on_libcucim
   py_build_cucim:
     output: pyproject
     pyproject_dir: python/cucim
@@ -249,7 +251,8 @@ dependencies:
           - &numpydoc numpydoc>=1.7
           - pydata-sphinx-theme
           - recommonmark
-          - sphinx>=8.0.0
+          # the ceiling on sphinx can be removed when https://github.com/spatialaudio/nbsphinx/issues/825 is resolved
+          - sphinx>=8.0.0,<8.2.0
   py_version:
     specific:
       - output_types: conda
