@@ -209,7 +209,6 @@ install(DIRECTORY
 install(DIRECTORY
             ${deps-fmt_SOURCE_DIR}/include/
             ${deps-nvtx3_SOURCE_DIR}/c/include/
-            ${deps-nvtx3_SOURCE_DIR}/cpp/include/
         DESTINATION
             ${CMAKE_INSTALL_INCLUDEDIR}/${CUCIM_PACKAGE_NAME}/3rdparty)
 
