@@ -69,6 +69,16 @@ if (NOT TARGET deps::libopenjpeg)
     set(deps-libopenjpeg_BINARY_DIR ${deps-libopenjpeg_BINARY_DIR} CACHE INTERNAL "" FORCE)
     mark_as_advanced(deps-libopenjpeg_BINARY_DIR)
 
+    ###########################################################################
+    # Build liblcms2 with the source in libopenjpeg
+    ###########################################################################
+
+    add_subdirectory(${deps-libopenjpeg_SOURCE_DIR}/thirdparty/liblcms2 ${deps-libopenjpeg_BINARY_DIR}/thirdparty/liblcms2)
+
+    # Set PIC to prevent the following error message
+    # : /usr/bin/ld: _deps/deps-libopenjpeg-build/thirdparty/lib/liblcms2.a(cmserr.c.o): relocation R_X86_64_PC32 against symbol `_cmsMemPluginChunk' can not be used when making a shared object; recompile with -fPIC
+    #   /usr/bin/ld: final link failed: bad value
+    set_target_properties(lcms2 PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
     # Override the output library folder path
     set_target_properties(lcms2
@@ -81,17 +91,6 @@ if (NOT TARGET deps::libopenjpeg)
         PUBLIC
             OPJ_HAVE_LIBLCMS2=1
     )
-
-    ###########################################################################
-    # Build liblcms2 with the source in libopenjpeg
-    ###########################################################################
-
-    add_subdirectory(${deps-libopenjpeg_SOURCE_DIR}/thirdparty/liblcms2 ${deps-libopenjpeg_BINARY_DIR}/thirdparty/liblcms2)
-
-    # Set PIC to prevent the following error message
-    # : /usr/bin/ld: _deps/deps-libopenjpeg-build/thirdparty/lib/liblcms2.a(cmserr.c.o): relocation R_X86_64_PC32 against symbol `_cmsMemPluginChunk' can not be used when making a shared object; recompile with -fPIC
-    #   /usr/bin/ld: final link failed: bad value
-    set_target_properties(lcms2 PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
     add_library(deps::libopenjpeg-lcms2 INTERFACE IMPORTED GLOBAL)
     target_link_libraries(deps::libopenjpeg-lcms2 INTERFACE lcms2)
