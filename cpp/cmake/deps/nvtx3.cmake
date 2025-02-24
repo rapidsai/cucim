@@ -20,6 +20,7 @@ if (NOT TARGET deps::nvtx3)
             GIT_TAG v3.1.1
             GIT_SHALLOW TRUE
             SOURCE_SUBDIR c
+            EXCLUDE_FROM_ALL
     )
     message(STATUS "Fetching nvtx3 sources")
 
