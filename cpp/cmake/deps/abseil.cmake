@@ -27,7 +27,7 @@ if (NOT TARGET deps::abseil)
          # Disable BUILD_TESTING (cmake-build-debug/_deps/deps-abseil-src/CMakeLists.txt:97)
     set(BUILD_TESTING FALSE)
     message(STATUS "Fetching abseil sources")
-    FetchContent_MakeAvailable(deps-abseil )
+    FetchContent_MakeAvailable(deps-abseil)
     message(STATUS "Fetching abseil sources - done")
 
     # Set PIC to prevent the following error message
