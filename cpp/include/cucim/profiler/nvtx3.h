@@ -136,8 +136,8 @@ struct domain
 
 // Aliases
 using scoped_range = nvtx3::cucim_scoped_range_in<domain>;
-using category = nvtx3::named_category<domain>;
-using message = nvtx3::registered_string<domain>;
+using category = nvtx3::named_category_in<domain>;
+using message = nvtx3::registered_string_in<domain>;
 
 // Category
 struct category_io

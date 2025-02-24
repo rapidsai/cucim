@@ -1,5 +1,5 @@
 # Apache License, Version 2.0
-# Copyright 2020-2021 NVIDIA Corporation
+# Copyright 2020-2025 NVIDIA Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -21,12 +21,6 @@ if (NOT TARGET deps::libopenjpeg)
             GIT_TAG v2.5.0
             GIT_SHALLOW TRUE
     )
-    FetchContent_GetProperties(deps-libopenjpeg)
-    if (NOT deps-libopenjpeg_POPULATED)
-        message(STATUS "Fetching libopenjpeg sources")
-        FetchContent_Populate(deps-libopenjpeg)
-        message(STATUS "Fetching libopenjpeg sources - done")
-    endif ()
 
     # Create static library
     # It build a static library when both BUILD_SHARED_LIBS and BUILD_STATIC_LIBS are ON
@@ -35,45 +29,11 @@ if (NOT TARGET deps::libopenjpeg)
     #     if(BUILD_SHARED_LIBS AND BUILD_STATIC_LIBS)
     cucim_set_build_shared_libs(ON)
 
-    ###########################################################################
-    # Build liblcms2 with the source in libopenjpeg
-    ###########################################################################
-
-    add_subdirectory(${deps-libopenjpeg_SOURCE_DIR}/thirdparty/liblcms2 ${deps-libopenjpeg_BINARY_DIR}/thirdparty/liblcms2)
-
-    # Override the output library folder path
-    set_target_properties(lcms2
-        PROPERTIES
-        OUTPUT_NAME "lcms2"
-        ARCHIVE_OUTPUT_DIRECTORY ${deps-libopenjpeg_BINARY_DIR}/thirdparty/lib)
-
-    # Override definition of OPJ_HAVE_LIBLCMS2 to build color_apply_icc_profile() method
-    target_compile_definitions(lcms2
-        PUBLIC
-            OPJ_HAVE_LIBLCMS2=1
-    )
-
-    # Set PIC to prevent the following error message
-    # : /usr/bin/ld: _deps/deps-libopenjpeg-build/thirdparty/lib/liblcms2.a(cmserr.c.o): relocation R_X86_64_PC32 against symbol `_cmsMemPluginChunk' can not be used when making a shared object; recompile with -fPIC
-    #   /usr/bin/ld: final link failed: bad value
-    set_target_properties(lcms2 PROPERTIES POSITION_INDEPENDENT_CODE ON)
-
-    add_library(deps::libopenjpeg-lcms2 INTERFACE IMPORTED GLOBAL)
-    target_link_libraries(deps::libopenjpeg-lcms2 INTERFACE lcms2)
-    target_include_directories(deps::libopenjpeg-lcms2
-        INTERFACE
-            # lcms2.h is not included in 'lcms2' so manually include
-            ${deps-libopenjpeg_SOURCE_DIR}/thirdparty/liblcms2/include
-    )
-
-    set(deps-libopenjpeg-lcms2_SOURCE_DIR ${deps-libopenjpeg_SOURCE_DIR}/thirdparty/liblcms2 CACHE INTERNAL "" FORCE)
-    mark_as_advanced(deps-libopenjpeg-lcms2_SOURCE_DIR)
-    set(deps-libopenjpeg-lcms2_BINARY_DIR ${deps-libopenjpeg_BINARY_DIR}/thirdparty/liblcms2 CACHE INTERNAL "" FORCE)
-    mark_as_advanced(deps-libopenjpeg-lcms2_BINARY_DIR)
+    message(STATUS "Fetching libopenjpeg sources")
+    FetchContent_MakeAvailable(deps-libopenjpeg)
+    message(STATUS "Fetching libopenjpeg sources - done")
 
     ###########################################################################
-
-    add_subdirectory(${deps-libopenjpeg_SOURCE_DIR} ${deps-libopenjpeg_BINARY_DIR} EXCLUDE_FROM_ALL)
 
     # Disable visibility to not expose unnecessary symbols
     set_target_properties(openjp2_static
@@ -108,4 +68,40 @@ if (NOT TARGET deps::libopenjpeg)
     mark_as_advanced(deps-libopenjpeg_SOURCE_DIR)
     set(deps-libopenjpeg_BINARY_DIR ${deps-libopenjpeg_BINARY_DIR} CACHE INTERNAL "" FORCE)
     mark_as_advanced(deps-libopenjpeg_BINARY_DIR)
+
+    ###########################################################################
+    # Build liblcms2 with the source in libopenjpeg
+    ###########################################################################
+
+    add_subdirectory(${deps-libopenjpeg_SOURCE_DIR}/thirdparty/liblcms2 ${deps-libopenjpeg_BINARY_DIR}/thirdparty/liblcms2)
+
+    # Set PIC to prevent the following error message
+    # : /usr/bin/ld: _deps/deps-libopenjpeg-build/thirdparty/lib/liblcms2.a(cmserr.c.o): relocation R_X86_64_PC32 against symbol `_cmsMemPluginChunk' can not be used when making a shared object; recompile with -fPIC
+    #   /usr/bin/ld: final link failed: bad value
+    set_target_properties(lcms2 PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
+    # Override the output library folder path
+    set_target_properties(lcms2
+        PROPERTIES
+        OUTPUT_NAME "lcms2"
+        ARCHIVE_OUTPUT_DIRECTORY ${deps-libopenjpeg_BINARY_DIR}/thirdparty/lib)
+
+    # Override definition of OPJ_HAVE_LIBLCMS2 to build color_apply_icc_profile() method
+    target_compile_definitions(lcms2
+        PUBLIC
+            OPJ_HAVE_LIBLCMS2=1
+    )
+
+    add_library(deps::libopenjpeg-lcms2 INTERFACE IMPORTED GLOBAL)
+    target_link_libraries(deps::libopenjpeg-lcms2 INTERFACE lcms2)
+    target_include_directories(deps::libopenjpeg-lcms2
+        INTERFACE
+            # lcms2.h is not included in 'lcms2' so manually include
+            ${deps-libopenjpeg_SOURCE_DIR}/thirdparty/liblcms2/include
+    )
+
+    set(deps-libopenjpeg-lcms2_SOURCE_DIR ${deps-libopenjpeg_SOURCE_DIR}/thirdparty/liblcms2 CACHE INTERNAL "" FORCE)
+    mark_as_advanced(deps-libopenjpeg-lcms2_SOURCE_DIR)
+    set(deps-libopenjpeg-lcms2_BINARY_DIR ${deps-libopenjpeg_BINARY_DIR}/thirdparty/liblcms2 CACHE INTERNAL "" FORCE)
+    mark_as_advanced(deps-libopenjpeg-lcms2_BINARY_DIR)
 endif ()
