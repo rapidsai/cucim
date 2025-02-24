@@ -20,6 +20,7 @@ if (NOT TARGET deps::libopenjpeg)
             GIT_REPOSITORY https://github.com/uclouvain/openjpeg.git
             GIT_TAG v2.5.0
             GIT_SHALLOW TRUE
+            SOURCE_SUBDIR thirdparty/liblcms2
     )
 
     # Create static library
