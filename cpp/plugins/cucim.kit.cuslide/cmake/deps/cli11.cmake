@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2020, NVIDIA CORPORATION.
+# Copyright (c) 2020-2025, NVIDIA CORPORATION.
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -22,6 +22,9 @@ if (NOT TARGET deps::cli11)
             EXCLUDE_FROM_ALL
     )
     message(STATUS "Fetching cli11 sources")
+    set(CLI11_BUILD_DOCS OFF)
+    set(CLI11_BUILD_EXAMPLES OFF)
+    set(CLI11_BUILD_TESTS OFF)
     FetchContent_MakeAvailable(deps-cli11)
     message(STATUS "Fetching cli11 sources - done")
 
