@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2020, NVIDIA CORPORATION.
+# Copyright (c) 2020-2025, NVIDIA CORPORATION.
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -19,15 +19,12 @@ if (NOT TARGET deps::catch2)
             GIT_REPOSITORY https://github.com/catchorg/Catch2.git
             GIT_TAG v3.4.0
             GIT_SHALLOW TRUE
+            EXCLUDE_FROM_ALL
     )
-    FetchContent_GetProperties(deps-catch2)
-    if (NOT deps-catch2_POPULATED)
-        message(STATUS "Fetching catch2 sources")
-        FetchContent_Populate(deps-catch2)
-        message(STATUS "Fetching catch2 sources - done")
-    endif ()
 
-    add_subdirectory(${deps-catch2_SOURCE_DIR} ${deps-catch2_BINARY_DIR} EXCLUDE_FROM_ALL)
+    message(STATUS "Fetching catch2 sources")
+    FetchContent_MakeAvailable(deps-catch2)
+    message(STATUS "Fetching catch2 sources - done")
 
     # Include Append catch2's cmake module path so that we can use `include(Catch)`.
     # https://github.com/catchorg/Catch2/blob/devel/docs/cmake-integration.md#catchcmake-and-catchaddtestscmake
