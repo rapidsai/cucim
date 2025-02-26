@@ -96,7 +96,7 @@ dependencies:
       #   python/cucim/src/cucim/clara/ before calling `pip install .`.
       - output_types: [conda, requirements]
         packages:
-          - cmake>=3.26.4,!=3.30.0
+          - cmake>=3.30.4
           - ninja
       - output_types: conda
         packages:
@@ -251,7 +251,8 @@ dependencies:
           - &numpydoc numpydoc>=1.7
           - pydata-sphinx-theme
           - recommonmark
-          - sphinx>=8.0.0
+          # the ceiling on sphinx can be removed when https://github.com/spatialaudio/nbsphinx/issues/825 is resolved
+          - sphinx>=8.0.0,<8.2.0
   py_version:
     specific:
       - output_types: conda
