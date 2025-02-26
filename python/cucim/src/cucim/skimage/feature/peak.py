@@ -2,12 +2,12 @@ from warnings import warn
 
 import cupy as cp
 import numpy as np
-from scipy.ndimage import find_objects as cpu_find_objects
 
 import cucim.skimage._vendored.ndimage as ndi
 
 # from ..filters import rank_order
 from cucim.skimage import measure
+from cucim.skimage._vendored.ndimage import find_objects
 
 from .._shared.coord import ensure_spacing
 
@@ -287,11 +287,7 @@ def peak_local_max(
         # For each label, extract a smaller image enclosing the object of
         # interest, identify num_peaks_per_label peaks and mark them in
         # variable out.
-        try:
-            objects = ndi.find_objects(_labels)
-        except AttributeError:
-            # CuPy Backend: fallback to CPU implementation until implemented
-            objects = cpu_find_objects(cp.asnumpy(_labels))
+        objects = find_objects(_labels)
 
         for label_idx, roi in enumerate(objects):
             if roi is None:

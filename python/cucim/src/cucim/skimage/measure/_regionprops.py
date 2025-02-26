@@ -8,10 +8,10 @@ from warnings import warn
 import cupy as cp
 import numpy as np
 from cupyx.scipy import ndimage as ndi
-from scipy.ndimage import find_objects as cpu_find_objects
 
 from cucim.skimage._shared.distance import pdist_max_blockwise
 from cucim.skimage._vendored import pad
+from cucim.skimage._vendored.ndimage import find_objects
 
 from . import _moments
 from ._regionprops_utils import euler_number, perimeter, perimeter_crofton
@@ -1435,8 +1435,7 @@ def regionprops(
 
     regions = []
 
-    # CuPy Backend: ndimage.find_objects not implemented
-    objects = cpu_find_objects(cp.asnumpy(label_image))  # synchronize!
+    objects = find_objects(label_image)  # synchronize!
     for i, sl in enumerate(objects):
         if sl is None:
             continue
