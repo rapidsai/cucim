@@ -140,6 +140,8 @@ def convex_hull_image(
     """
     if cpu_fallback_threshold is not None and cpu_fallback_threshold < 0:
         raise ValueError("cpu_fallback_threshold must be non-negative")
+    if tolerance <= 0:
+        raise ValueError("tolerance must be positive")   
     if cpu_fallback_threshold is None:
         # Fallback to scikit-image implementation of total number of pixels
         # is less than this
