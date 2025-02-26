@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2020, NVIDIA CORPORATION.
+# Copyright (c) 2020-2025, NVIDIA CORPORATION.
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -24,18 +24,15 @@ if (NOT TARGET deps::rmm)
             GIT_REPOSITORY https://github.com/rapidsai/rmm.git
             GIT_TAG branch-0.17
             GIT_SHALLOW TRUE
+            EXCLUDE_FROM_ALL
     )
-    FetchContent_GetProperties(deps-rmm)
-    if (NOT deps-rmm_POPULATED)
-        message(STATUS "Fetching rmm sources")
-        FetchContent_Populate(deps-rmm)
-        message(STATUS "Fetching rmm sources - done")
-    endif ()
-
+    message(STATUS "Fetching rmm sources")
     # Create shared library
     cucim_set_build_shared_libs(ON) # Since rmm doesn't use BUILD_SHARED_LIBS, it always build shared library
 
-    add_subdirectory(${deps-rmm_SOURCE_DIR} ${deps-rmm_BINARY_DIR} EXCLUDE_FROM_ALL)
+    FetchContent_MakeAvailable(deps-rmm)
+    message(STATUS "Fetching rmm sources - done")
+
     cucim_restore_build_shared_libs()
 
     add_library(deps::rmm INTERFACE IMPORTED GLOBAL)

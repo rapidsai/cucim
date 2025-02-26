@@ -32,6 +32,9 @@ rapids-pip-retry install \
 
 sccache --zero-stats
 
+rapids-logger "pyenv rehash"
+pyenv rehash
+
 # First build the C++ lib using CMake via the run script
 ./run build_local all ${CMAKE_BUILD_TYPE}
 
