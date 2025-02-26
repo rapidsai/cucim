@@ -160,7 +160,8 @@ def convex_hull_image(
         some points erroneously being classified as being outside the hull.
     include_borders: bool, optional
         If ``False``, vertices/edges are excluded from the final hull mask.
-
+        Note that the ``True`` case is not currently implemented in cuCIM and
+        will raise a ``NotImplementedError``.
 
     Extra Parameters
     ----------------
@@ -196,7 +197,8 @@ def convex_hull_image(
         raise ValueError("image must be at least 2D")
     if cpu_fallback_threshold is None:
         # Fallback to scikit-image implementation of total number of pixels
-        # is less than this
+        # is less than this. Values here are approximately when GPU computation
+        # became faster on an NVIDIA RTX A6000.
         cpu_fallback_threshold = 30000 if image.ndim == 2 else 13000
 
     # singleton sizes can cause numeric problems in QHull, so squeeze out
