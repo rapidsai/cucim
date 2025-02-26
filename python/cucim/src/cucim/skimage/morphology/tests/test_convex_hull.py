@@ -339,7 +339,7 @@ def test_few_points():
     chimage3d = convex_hull_image(
         image3d, offset_coordinates=True, cpu_fallback_threshold=0
     )
-    chimage3d.sum() > 0
+    assert chimage3d.sum() > 0
 
 
 """

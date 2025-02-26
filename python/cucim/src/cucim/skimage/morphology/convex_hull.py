@@ -138,6 +138,8 @@ def convex_hull_image(
     .. [1] https://blogs.mathworks.com/steve/2011/10/04/binary-image-convex-hull-algorithm-notes/
 
     """
+    if cpu_fallback_threshold is not None and cpu_fallback_threshold < 0:
+        raise ValueError("cpu_fallback_threshold must be non-negative")
     if cpu_fallback_threshold is None:
         # Fallback to scikit-image implementation of total number of pixels
         # is less than this
@@ -188,7 +190,7 @@ def convex_hull_image(
             "Returning empty image",
             UserWarning,
         )
-        return np.zeros(image.shape, dtype=bool)
+        return cp.zeros(image.shape, dtype=bool)
 
     if image.dtype != cp.dtype(bool):
         if image.dtype == cp.uint8:
@@ -299,7 +301,6 @@ def convex_hull_object(
         raise ValueError("`connectivity` must be between 1 and image.ndim.")
 
     labeled_im = label(image, connectivity=connectivity, background=0)
-    convex_obj = cp.zeros(image.shape, dtype=bool)
     convex_img = cp.zeros(image.shape, dtype=bool)
 
     max_label = int(labeled_im.max())
