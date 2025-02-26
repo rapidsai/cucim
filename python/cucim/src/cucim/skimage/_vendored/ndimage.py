@@ -1,7 +1,5 @@
 # locally defined filters that are more efficient than in CuPy
-# measurements
-# fourier filters
-# additional filters
+
 from cupyx.scipy.ndimage import distance_transform_edt  # NOQA
 from cupyx.scipy.ndimage import fourier_ellipsoid  # NOQA
 from cupyx.scipy.ndimage import fourier_gaussian  # NOQA
@@ -95,3 +93,10 @@ from cupyx.scipy.ndimage import minimum  # NOQA
 from cupyx.scipy.ndimage import minimum_position  # NOQA
 from cupyx.scipy.ndimage import standard_deviation  # NOQA
 from cupyx.scipy.ndimage import variance  # NOQA
+
+try:
+    # only available in CuPy >=13.4
+    from cupyx.scipy.ndimage import find_objects
+except ImportError:
+    # vendored implementation (without internal Cython helper function)
+    from cucim.skimage._vendored._ndimage_measurements import find_objects
