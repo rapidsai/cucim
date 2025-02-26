@@ -483,7 +483,7 @@ def binary_dilation(
     """
     axes = _util._check_axes(axes, input.ndim)
     structure, structure_shape, symmetric = _prep_structure(
-        structure, input.ndim
+        structure, len(axes)
     )
     axes = _util._check_axes(axes, input.ndim)
     origin = _util._fix_sequence_arg(origin, len(axes), "origin", int)
@@ -728,12 +728,12 @@ def binary_hit_or_miss(
 
     .. seealso:: :func:`scipy.ndimage.binary_hit_or_miss`
     """
-    if structure1 is None:
-        structure1 = generate_binary_structure(input.ndim, 1)
-    if structure2 is None:
-        structure2 = cupy.logical_not(structure1)
     axes = _util._check_axes(axes, input.ndim)
     num_axes = len(axes)
+    if structure1 is None:
+        structure1 = generate_binary_structure(num_axes, 1)
+    if structure2 is None:
+        structure2 = cupy.logical_not(structure1)
     origin1 = _util._fix_sequence_arg(origin1, num_axes, "origin1", int)
     if origin2 is None:
         origin2 = origin1
