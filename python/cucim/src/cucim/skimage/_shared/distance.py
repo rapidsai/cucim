@@ -54,9 +54,9 @@ def pdist_max_blockwise(
         Internally, calls to cdist will be made with subsets of coords where
         the subset size is (coords_per_block, ndim).
     compute_argmax : bool, optional
-        If True, the value of the cooridate indices corresponding to the maxima
-        is returned as the second return Value. Otherwise that value will be
-        ``None``.
+        If True, the value of the coordinate indices corresponding to the
+        maxima is returned as the second return Value. Otherwise that value
+        will be ``None``.
     cdist_kwargs = dict, optional
         Can provide any additional kwargs to cdist (e.g. `p` for Minkowski
         norms).
@@ -92,6 +92,9 @@ def pdist_max_blockwise(
 
     where due to the symmetry of the pdist matrix, we don't compute the lower
     triangular blocks.
+
+    Note that this function always uses 32-bit floating point precision for the
+    distance calculations.
     """
 
     if _distance_on_cpu:
@@ -108,12 +111,12 @@ def pdist_max_blockwise(
 
     if not isinstance(coords, (np.ndarray, cp.ndarray)):
         raise TypeError("coords must be a numpy or cupy array")
-    
+
     if coords.ndim != 2:
         raise ValueError(
             f"coords must be a 2-dimensional array, got shape {coords.shape}"
         )
-    
+
     num_coords, _ = coords.shape
     if num_coords == 0:
         raise RuntimeError("No coordinates to process")
@@ -159,7 +162,7 @@ def pdist_max_blockwise(
                 )
                 current_output = temp
             else:
-                # omit out= for the last block as size may be
+                # omit out= for the last block as size may be different
                 out = distance.cdist(
                     coords_block1, coords_block2, metric=metric, **cdist_kwargs
                 )
