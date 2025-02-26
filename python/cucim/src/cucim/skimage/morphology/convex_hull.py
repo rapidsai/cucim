@@ -285,8 +285,10 @@ def convex_hull_image(
     if float64_computation:
         float_dtype = cp.float64
     else:
-        # float32 will be used if coord_dtype is <= 16-bit
-        # otherwise, use float64
+        # coord_dtype will be an unsigned integer type from min_scalar_type.
+        # The promote_types call below will give the following behavior:
+        # - `uint8` or `uint16` dtype will become `float32`
+        # - `uint32` or `uint64` dtype will become `float64`
         float_dtype = cp.promote_types(cp.float32, coord_dtype)
 
     kernel = get_coords_in_hull_kernel(coord_dtype, float_dtype, ndim)
