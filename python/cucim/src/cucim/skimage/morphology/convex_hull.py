@@ -21,12 +21,62 @@ except ImportError:
 from cucim.skimage._shared.utils import warn
 from cucim.skimage._vendored import ndimage as ndi
 from cucim.skimage.measure._label import label
-from cucim.skimage.measure._regionprops_gpu_utils import _unravel_loop_index
 
 __all__ = [
     "convex_hull_image",
     "convex_hull_object",
 ]
+
+
+# Note: in a future MR, _unravel_loop_index will move from this file to a
+# common location where it will also be reused across multiple other
+# regionprops kernels.
+def _unravel_loop_index_declarations(var_name, ndim, uint_t="unsigned int"):
+    if ndim == 1:
+        code = f"""
+        {uint_t} in_coord[1];"""
+        return code
+
+    code = f"""
+        // variables for unraveling a linear index to a coordinate array
+        {uint_t} in_coord[{ndim}];
+        {uint_t} temp_floor;"""
+    for d in range(ndim):
+        code += f"""
+        {uint_t} dim{d}_size = {var_name}.shape()[{d}];"""
+    return code
+
+
+def _unravel_loop_index(
+    var_name,
+    ndim,
+    uint_t="unsigned int",
+    raveled_index="i",
+    omit_declarations=False,
+):
+    """
+    declare a multi-index array in_coord and unravel the 1D index, i into it.
+    This code assumes that the array is a C-ordered array.
+    """
+    code = (
+        ""
+        if omit_declarations
+        else _unravel_loop_index_declarations(var_name, ndim, uint_t)
+    )
+    if ndim == 1:
+        code = f"""
+        in_coord[0] = {raveled_index};\n"""
+        return code
+
+    code += f"{uint_t} temp_idx = {raveled_index};"
+    for d in range(ndim - 1, 0, -1):
+        code += f"""
+        temp_floor = temp_idx / dim{d}_size;
+        in_coord[{d}] = temp_idx - temp_floor * dim{d}_size;
+        temp_idx = temp_floor;"""
+    code += """
+        in_coord[0] = temp_idx;"""
+    return code
 
 
 @cp.memoize(for_each_device=True)
@@ -141,7 +191,7 @@ def convex_hull_image(
     if cpu_fallback_threshold is not None and cpu_fallback_threshold < 0:
         raise ValueError("cpu_fallback_threshold must be non-negative")
     if tolerance <= 0:
-        raise ValueError("tolerance must be positive")   
+        raise ValueError("tolerance must be positive")
     if cpu_fallback_threshold is None:
         # Fallback to scikit-image implementation of total number of pixels
         # is less than this
