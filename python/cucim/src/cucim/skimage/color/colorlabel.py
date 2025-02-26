@@ -153,7 +153,7 @@ _colorize_labels = cp.ElementwiseKernel(
     if (label == bg_label) {
         out[3*i] = bg_color[0];
         out[3*i + 1] = bg_color[1];
-        out[3*i + 1] = bg_color[2];
+        out[3*i + 2] = bg_color[2];
     } else {
         int color_index = (label > bg_label) ? label - 1 : label;
         color_index = color_index % num_colors;
