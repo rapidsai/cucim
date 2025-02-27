@@ -12,6 +12,7 @@ from cupyx.scipy import ndimage as ndi
 from cucim.skimage._shared.distance import pdist_max_blockwise
 from cucim.skimage._vendored import pad
 from cucim.skimage._vendored.ndimage import find_objects
+from cucim.skimage.morphology.convex_hull import convex_hull_image
 
 from . import _moments
 from ._regionprops_utils import euler_number, perimeter, perimeter_crofton
@@ -466,15 +467,9 @@ class RegionProperties:
     @property
     @_cached
     def image_convex(self):
-        # TODO: grlee77: avoid host/device transfers
-        # from ..morphology.convex_hull import convex_hull_image
-        from skimage.morphology.convex_hull import convex_hull_image
-
         # CuPy Backend: explicitly cast to uint8 to avoid the issue see in
         #               reported in https://github.com/cupy/cupy/issues/4354
-        return cp.asarray(convex_hull_image(cp.asnumpy(self.image))).astype(
-            cp.uint8
-        )
+        return convex_hull_image(self.image).view(dtype=cp.uint8)
 
     @property
     def coords_scaled(self):
