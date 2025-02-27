@@ -9,6 +9,7 @@ import cupy as cp
 import numpy as np
 from cupyx.scipy import ndimage as ndi
 
+from cucim.skimage._shared.distance import pdist_max_blockwise
 from cucim.skimage._vendored import pad
 from cucim.skimage._vendored.ndimage import find_objects
 
@@ -520,7 +521,6 @@ class RegionProperties:
 
     @property
     def feret_diameter_max(self):
-        from scipy.spatial.distance import pdist
         from skimage.measure import find_contours, marching_cubes
 
         # TODO: implement marching cubes, etc.
@@ -537,8 +537,9 @@ class RegionProperties:
             coordinates, _, _, _ = marching_cubes(
                 identity_convex_hull, level=0.5
             )
-        distances = pdist(coordinates * self._spacing, "sqeuclidean")
-        return math.sqrt(np.max(distances))
+        scaled_coords = cp.asarray(coordinates * self._spacing)
+        max_distance, _ = pdist_max_blockwise(scaled_coords, "sqeuclidean")
+        return math.sqrt(max_distance)
 
     @property
     def area_filled(self):
