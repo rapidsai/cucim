@@ -34,6 +34,12 @@ from ._regionprops_gpu_intensity_kernels import (
     regionprops_intensity_min_max,
     regionprops_intensity_std,
 )
+from ._regionprops_gpu_misc_kernels import (
+    misc_deps,
+    regionprops_euler,
+    regionprops_perimeter,
+    regionprops_perimeter_crofton,
+)
 from ._regionprops_gpu_moments_kernels import (
     moment_deps,
     regionprops_centroid,
@@ -47,7 +53,7 @@ from ._regionprops_gpu_moments_kernels import (
     regionprops_moments_normalized,
     required_order,
 )
-from ._regionprops_gpu_utils import _get_min_integer_dtype
+from ._regionprops_gpu_utils import _find_close_labels, _get_min_integer_dtype
 
 __all__ = [
     "equivalent_diameter_area",
@@ -60,6 +66,7 @@ __all__ = [
     "regionprops_centroid_weighted",
     "regionprops_coords",
     "regionprops_dict",
+    "regionprops_euler",
     "regionprops_extent",
     "regionprops_feret_diameter_max",
     "regionprops_image",
@@ -73,6 +80,8 @@ __all__ = [
     "regionprops_moments_hu",
     "regionprops_moments_normalized",
     "regionprops_num_pixels",
+    "regionprops_perimeter",
+    "regionprops_perimeter_crofton",
     # extra functions for cuCIM not currently in scikit-image
     "equivalent_spherical_perimeter",  # as in ITK
     "regionprops_num_boundary_pixels",
@@ -137,6 +146,7 @@ property_deps = dict()
 property_deps.update(basic_deps)
 property_deps.update(convex_deps)
 property_deps.update(intensity_deps)
+property_deps.update(misc_deps)
 property_deps.update(moment_deps)
 
 
@@ -558,6 +568,50 @@ def regionprops_dict(
                     ),
                     props_dict=out,
                 )
+
+    compute_perimeter = "perimeter" in required_props
+    compute_perimeter_crofton = "perimeter_crofton" in required_props
+    compute_euler = "euler_number" in required_props
+
+    if compute_euler or compute_perimeter or compute_perimeter_crofton:
+        # precompute list of labels with <2 pixels space between them
+        if label_image.dtype == cp.uint8:
+            labels_mask = label_image.view("bool")
+        else:
+            labels_mask = label_image > 0
+        labels_close = _find_close_labels(
+            label_image, binary_image=labels_mask, max_label=max_label
+        )
+
+        if compute_perimeter:
+            regionprops_perimeter(
+                label_image,
+                neighborhood=4,
+                max_label=max_label,
+                robust=True,
+                labels_close=labels_close,
+                props_dict=out,
+            )
+        if compute_perimeter_crofton:
+            regionprops_perimeter_crofton(
+                label_image,
+                directions=4,
+                max_label=max_label,
+                robust=True,
+                omit_image_edges=False,
+                labels_close=labels_close,
+                props_dict=out,
+            )
+
+        if compute_euler:
+            regionprops_euler(
+                label_image,
+                connectivity=None,
+                max_label=max_label,
+                robust=True,
+                labels_close=labels_close,
+                props_dict=out,
+            )
 
     compute_images = "image" in required_props
     compute_intensity_images = "image_intensity" in required_props
