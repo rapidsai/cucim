@@ -2,6 +2,7 @@ import warnings
 from copy import copy
 
 import cupy as cp
+import numpy as np
 
 from cucim.skimage.measure._regionprops import (
     COL_DTYPES,
@@ -221,6 +222,9 @@ def regionprops_dict(
     max_label=None,
     pixels_per_thread=16,
     robust_perimeter=True,
+    to_table=False,
+    table_separator="-",
+    table_on_host=False,
 ):
     """Compute image properties and return them as a pandas-compatible table.
 
@@ -242,20 +246,20 @@ def regionprops_dict(
         For a list of available properties, please see :func:`regionprops`.
         Users should remember to add "label" to keep track of region
         identities.
-    spacing : tuple of float, shape (ndim,)
+    spacing : tuple of float, shape (ndim,), optional
         The pixel spacing along each axis of the image.
 
     Extra Parameters
     ----------------
-    moment_order : int or None
+    moment_order : int or None, optional
         When computing moment properties, only moments up to this order are
         computed. The default value of None results in the minimum order
         required in order to compute the requested properties. For example,
         properties based on the inertia_tensor require moment_order >= 2.
-    max_label : int or None
+    max_label : int or None, optional
         The maximum label value. If not provided it will be computed from
         `label_image`.
-    pixels_per_thread : int
+    pixels_per_thread : int, optional
         A number of properties support computation of multiple adjacent pixels
         from each GPU thread. The number of adjacent pixels processed
         corresponds to `pixels_per_thread` and can be used as a performance
@@ -269,6 +273,16 @@ def regionprops_dict(
         overhead so can optionally be disabled. This parameter effects the
         following regionprops: {"perimeter", "perimeter_crofton",
         "euler_number"}.
+    to_table : bool, optional
+        If true, split up vector/matrix properties into separate keys for
+        the individual elements to match the output format of
+        `regionprops_table` from scikit-image.
+    table_separator : str, optional
+        Separator character to use during conversion with `to_table`. Unused
+        if `to_table` is false.
+    table_on_host : bool, optional
+        Copy any device arrays back to the host when creating the
+        `regionprops_table` output. Unused if `to_table` is false.
     """
     supported_properties = CURRENT_PROPS_GPU | GLOBAL_PROPS
     properties = set(properties)
@@ -717,4 +731,71 @@ def regionprops_dict(
     # only return the properties that were explicitly requested
     out = {k: out[k] for k in properties}
 
+    if to_table:
+        out = _props_dict_to_table(
+            out,
+            list(out.keys()),
+            separator=table_separator,
+            copy_to_host=table_on_host,
+        )
+    return out
+
+
+def _props_dict_to_table(
+    props_dict,
+    properties,
+    separator="-",
+    copy_to_host=False,
+):
+    out = {}
+    for prop in properties:
+        # Copy the original property name so the output will have the
+        # user-provided property name in the case of deprecated names.
+        orig_prop = prop
+        # determine the current property name for any deprecated property.
+        prop = PROPS_GPU.get(prop, prop)
+        # is_0dim_array = isinstance(rp, cp.ndarray) and rp.ndim == 0
+        rp = props_dict[orig_prop]
+        dtype = COL_DTYPES_GPU[prop]
+
+        is_scalar_prop = False
+        is_multicolumn = False
+        if isinstance(rp, cp.ndarray):
+            is_scalar_prop = rp.ndim == 1
+            is_multicolumn = not is_scalar_prop
+        if is_scalar_prop:
+            if copy_to_host:
+                rp = cp.asnumpy(rp)
+            out[orig_prop] = rp
+        elif is_multicolumn:
+            if copy_to_host:
+                rp = cp.asnumpy(rp)
+            shape = rp.shape[1:]
+            # precompute property column names and locations
+            modified_props = []
+            locs = []
+            for ind in np.ndindex(shape):
+                modified_props.append(
+                    separator.join(map(str, (orig_prop,) + ind))
+                )
+                locs.append((slice(None),) + ind)
+            for i, modified_prop in enumerate(modified_props):
+                out[modified_prop] = rp[locs[i]]
+        elif prop in OBJECT_COLUMNS_GPU:
+            n = len(rp)
+            # keep objects in a NumPy array
+            column_buffer = np.empty(n, dtype=dtype)
+            if copy_to_host:
+                for i in range(n):
+                    column_buffer[i] = cp.asnumpy(rp[i])
+                out[orig_prop] = column_buffer
+            else:
+                for i in range(n):
+                    column_buffer[i] = rp[i]
+                out[orig_prop] = np.copy(column_buffer)
+        else:
+            warnings.warn(
+                f"Type unknown for property: {prop}, storing it as-is."
+            )
+            out[orig_prop] = rp
     return out
