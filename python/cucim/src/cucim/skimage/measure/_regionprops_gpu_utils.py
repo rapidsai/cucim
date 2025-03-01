@@ -1,3 +1,5 @@
+import math
+
 import cupy as cp
 from packaging.version import parse
 
@@ -29,6 +31,23 @@ def _get_min_integer_dtype(max_size, signed=False):
     #    max_sz = 128 -> int16 (signed)   uint8 (unsigned)
     func = cp.min_scalar_type
     return func(-max_size - 1) if signed else func(max_size)
+
+
+def _check_intensity_image_shape(label_image, intensity_image):
+    ndim = label_image.ndim
+    if intensity_image.shape[:ndim] != label_image.shape:
+        raise ValueError(
+            "Initial dimensions of `intensity_image` must match the shape of "
+            "`label_image`. (`intensity_image` may have additional trailing "
+            "channels/batch dimensions)"
+        )
+
+    num_channels = (
+        math.prod(intensity_image.shape[ndim:])
+        if intensity_image.ndim > ndim
+        else 1
+    )
+    return num_channels
 
 
 def _unravel_loop_index_declarations(var_name, ndim, uint_t="unsigned int"):

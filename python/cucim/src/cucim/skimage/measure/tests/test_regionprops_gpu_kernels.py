@@ -16,6 +16,7 @@ from cucim.skimage._vendored import ndimage as ndi
 from cucim.skimage.measure._regionprops import PROPS
 from cucim.skimage.measure._regionprops_gpu import (
     equivalent_diameter_area,
+    need_intensity_image,
     regionprops_area,
     regionprops_area_bbox,
     regionprops_bbox_coords,
@@ -23,9 +24,15 @@ from cucim.skimage.measure._regionprops_gpu import (
     regionprops_dict,
     regionprops_extent,
     regionprops_image,
+    regionprops_intensity_mean,
+    regionprops_intensity_min_max,
+    regionprops_intensity_std,
     regionprops_num_pixels,
 )
 from cucim.skimage.measure._regionprops_gpu_basic_kernels import basic_deps
+from cucim.skimage.measure._regionprops_gpu_intensity_kernels import (
+    intensity_deps,
+)
 
 
 def get_labels_nd(
@@ -173,6 +180,140 @@ def test_extent(ndim, area_dtype, spacing):
 
 
 @pytest.mark.parametrize("precompute_max", [False, True])
+@pytest.mark.parametrize("ndim", [2, 3])
+@pytest.mark.parametrize("image_dtype", [cp.uint16, cp.uint8, cp.float32])
+@pytest.mark.parametrize("mean_dtype", [cp.float32, cp.float64])
+@pytest.mark.parametrize("num_channels", [1, 4])
+def test_mean_intensity(
+    precompute_max, ndim, image_dtype, mean_dtype, num_channels
+):
+    shape = (256, 512) if ndim == 2 else (15, 63, 37)
+    labels = get_labels_nd(shape)
+    intensity_image = get_intensity_image(
+        shape, dtype=image_dtype, num_channels=num_channels
+    )
+
+    max_label = int(cp.max(labels)) if precompute_max else None
+    props_dict = regionprops_intensity_mean(
+        labels, intensity_image, max_label=max_label, mean_dtype=mean_dtype
+    )
+    expected = measure_cpu.regionprops_table(
+        cp.asnumpy(labels),
+        intensity_image=cp.asnumpy(intensity_image),
+        properties=["num_pixels", "intensity_mean"],
+    )
+    assert_array_equal(props_dict["num_pixels"], expected["num_pixels"])
+    if num_channels == 1:
+        assert_allclose(
+            props_dict["intensity_mean"], expected["intensity_mean"], rtol=1e-3
+        )
+    else:
+        for c in range(num_channels):
+            assert_allclose(
+                props_dict["intensity_mean"][..., c],
+                expected[f"intensity_mean-{c}"],
+                rtol=1e-3,
+            )
+
+
+@pytest.mark.parametrize("precompute_max", [False, True])
+@pytest.mark.parametrize("ndim", [2, 3])
+@pytest.mark.parametrize(
+    "image_dtype", [cp.uint16, cp.uint8, cp.float16, cp.float32, cp.float64]
+)
+@pytest.mark.parametrize("op_name", ["intensity_min", "intensity_max"])
+@pytest.mark.parametrize("num_channels", [1, 3])
+def test_intensity_min_and_max(
+    precompute_max, ndim, image_dtype, op_name, num_channels
+):
+    shape = (256, 512) if ndim == 2 else (15, 63, 37)
+    labels = get_labels_nd(shape)
+    intensity_image = get_intensity_image(
+        shape, dtype=image_dtype, num_channels=num_channels
+    )
+
+    max_label = int(cp.max(labels)) if precompute_max else None
+
+    compute_min = op_name == "intensity_min"
+    compute_max = not compute_min
+
+    values = regionprops_intensity_min_max(
+        labels,
+        intensity_image,
+        max_label=max_label,
+        compute_min=compute_min,
+        compute_max=compute_max,
+    )[op_name]
+
+    expected = measure_cpu.regionprops_table(
+        cp.asnumpy(labels),
+        intensity_image=cp.asnumpy(intensity_image),
+        properties=[op_name],
+    )
+    if num_channels == 1:
+        assert_allclose(values, expected[op_name])
+    else:
+        for c in range(num_channels):
+            assert_allclose(values[..., c], expected[f"{op_name}-{c}"])
+
+
+@pytest.mark.parametrize("precompute_max", [False, True])
+@pytest.mark.parametrize("ndim", [2, 3])
+@pytest.mark.parametrize("image_dtype", [cp.uint16, cp.uint8, cp.float32])
+@pytest.mark.parametrize("std_dtype", [cp.float32, cp.float64])
+@pytest.mark.parametrize("num_channels", [1, 5])
+def test_intensity_std(
+    precompute_max, ndim, image_dtype, std_dtype, num_channels
+):
+    shape = (1024, 2048) if ndim == 2 else (40, 64, 80)
+    labels = get_labels_nd(shape)
+    intensity_image = get_intensity_image(
+        shape, dtype=image_dtype, num_channels=num_channels
+    )
+
+    max_label = int(cp.max(labels)) if precompute_max else None
+
+    # add some specifically sized regions
+    if ndim == 2 and precompute_max:
+        # clear small region
+        labels[50:54, 50:56] = 0
+        # add a single pixel labeled region
+        labels[51, 51] = max_label + 1
+        # add a two pixel labeled region
+        labels[53, 53:55] = max_label + 2
+        max_label += 2
+
+    props_dict = regionprops_intensity_std(
+        labels, intensity_image, max_label=max_label, std_dtype=std_dtype
+    )
+    expected = measure_cpu.regionprops_table(
+        cp.asnumpy(labels),
+        intensity_image=cp.asnumpy(intensity_image),
+        properties=["num_pixels", "intensity_mean", "intensity_std"],
+    )
+    assert_array_equal(props_dict["num_pixels"], expected["num_pixels"])
+    if num_channels == 1:
+        assert_allclose(
+            props_dict["intensity_mean"], expected["intensity_mean"], rtol=1e-3
+        )
+        assert_allclose(
+            props_dict["intensity_std"], expected["intensity_std"], rtol=1e-3
+        )
+    else:
+        for c in range(num_channels):
+            assert_allclose(
+                props_dict["intensity_mean"][..., c],
+                expected[f"intensity_mean-{c}"],
+                rtol=1e-3,
+            )
+            assert_allclose(
+                props_dict["intensity_std"][..., c],
+                expected[f"intensity_std-{c}"],
+                rtol=1e-3,
+            )
+
+
+@pytest.mark.parametrize("precompute_max", [False, True])
 @pytest.mark.parametrize("dtype", [cp.uint32, cp.int64])
 @pytest.mark.parametrize("return_slices", [False, True])
 @pytest.mark.parametrize("ndim", [2, 3])
@@ -309,7 +450,9 @@ def test_coords(ndim, spacing):
 
 @pytest.mark.parametrize("ndim", [2, 3])
 @pytest.mark.parametrize("spacing", [None, (1.5, 0.5, 0.76)])
-@pytest.mark.parametrize("property_name", list(basic_deps.keys()))
+@pytest.mark.parametrize(
+    "property_name", list(basic_deps.keys()) + list(intensity_deps.keys())
+)
 def test_regionprops_dict_single_property(ndim, spacing, property_name):
     """Test to verify that any dependencies for a given property are
     automatically handled.
@@ -318,7 +461,7 @@ def test_regionprops_dict_single_property(ndim, spacing, property_name):
     if spacing is not None:
         spacing = spacing[:ndim]
     labels = get_labels_nd(shape)
-    if property_name == "image_intensity":
+    if property_name in need_intensity_image:
         intensity_image = get_intensity_image(
             shape, dtype=cp.uint16, num_channels=1
         )
@@ -352,7 +495,7 @@ def test_regionprops_image_and_coords_sequence(ndim, property_name):
         spacing = spacing[:ndim]
     labels = get_labels_nd(shape)
     max_label = int(labels.max())
-    if property_name == "image_intensity":
+    if property_name in need_intensity_image:
         intensity_image = get_intensity_image(
             shape, dtype=cp.uint16, num_channels=1
         )
