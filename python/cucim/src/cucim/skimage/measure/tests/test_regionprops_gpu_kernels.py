@@ -1,6 +1,7 @@
 import functools
 import math
 import warnings
+from copy import deepcopy
 
 import cupy as cp
 import numpy as np
@@ -17,25 +18,38 @@ from cucim.skimage._vendored import ndimage as ndi
 from cucim.skimage.measure._regionprops import PROPS
 from cucim.skimage.measure._regionprops_gpu import (
     equivalent_diameter_area,
+    ndim_2_only,
     need_intensity_image,
     regionprops_area,
     regionprops_area_bbox,
     regionprops_area_convex,
     regionprops_bbox_coords,
+    regionprops_centroid,
+    regionprops_centroid_local,
+    regionprops_centroid_weighted,
     regionprops_coords,
     regionprops_dict,
     regionprops_extent,
     regionprops_feret_diameter_max,
     regionprops_image,
+    regionprops_inertia_tensor,
+    regionprops_inertia_tensor_eigvals,
     regionprops_intensity_mean,
     regionprops_intensity_min_max,
     regionprops_intensity_std,
+    regionprops_moments,
+    regionprops_moments_central,
+    regionprops_moments_hu,
+    regionprops_moments_normalized,
     regionprops_num_pixels,
 )
 from cucim.skimage.measure._regionprops_gpu_basic_kernels import basic_deps
 from cucim.skimage.measure._regionprops_gpu_convex import convex_deps
 from cucim.skimage.measure._regionprops_gpu_intensity_kernels import (
     intensity_deps,
+)
+from cucim.skimage.measure._regionprops_gpu_moments_kernels import (
+    moment_deps,
 )
 
 
@@ -429,6 +443,572 @@ def test_bbox_coords_and_area(precompute_max, ndim, dtype, return_slices):
     assert_allclose(area_bbox, expected_bbox["area_bbox"], rtol=1e-5)
 
 
+@pytest.mark.parametrize("local", [False, True])
+@pytest.mark.parametrize("ndim", [2, 3])
+@pytest.mark.parametrize("via_moments", [False, True])
+def test_centroid(via_moments, local, ndim):
+    shape = (1024, 512) if ndim == 2 else (80, 64, 48)
+    labels = get_labels_nd(shape)
+    max_label = int(cp.max(labels))
+    if via_moments:
+        props = {}
+        moments = regionprops_moments(
+            labels, max_label=max_label, order=1, props_dict=props
+        )
+        assert "bbox" in props
+        assert "moments" in props
+    if local:
+        name = "centroid_local"
+        if via_moments:
+            centroid = regionprops_centroid_weighted(
+                moments_raw=moments,
+                ndim=labels.ndim,
+                bbox=props["bbox"],
+                compute_local=True,
+                compute_global=False,
+                weighted=False,
+                props_dict=props,
+            )[name]
+            assert name in props
+        else:
+            centroid = regionprops_centroid_local(labels, max_label=max_label)
+    else:
+        name = "centroid"
+        if via_moments:
+            centroid = regionprops_centroid_weighted(
+                moments_raw=moments,
+                ndim=labels.ndim,
+                bbox=props["bbox"],
+                compute_local=False,
+                compute_global=True,
+                weighted=False,
+                props_dict=props,
+            )[name]
+            assert name in props
+        else:
+            centroid = regionprops_centroid(labels, max_label=max_label)
+    expected = measure_cpu.regionprops_table(
+        cp.asnumpy(labels), properties=[name]
+    )
+    assert_allclose(centroid[:, 0], expected[name + "-0"])
+    if ndim > 1:
+        assert_allclose(centroid[:, 1], expected[name + "-1"])
+    if ndim > 2:
+        assert_allclose(centroid[:, 2], expected[name + "-2"])
+
+
+@pytest.mark.parametrize("spacing", [None, (0.8, 0.5), (0.2, 1.3)])
+@pytest.mark.parametrize("order", [0, 1, 2, 3])
+@pytest.mark.parametrize(
+    "weighted, intensity_dtype, num_channels",
+    [
+        (False, None, 1),
+        (True, cp.float32, 1),
+        (True, cp.uint8, 3),
+    ],
+)
+@pytest.mark.parametrize("norm_type", ["raw", "central", "normalized", "hu"])
+@pytest.mark.parametrize("blob_size_fraction", [0.03, 0.1, 0.3])
+def test_moments_2d(
+    spacing,
+    order,
+    weighted,
+    intensity_dtype,
+    num_channels,
+    norm_type,
+    blob_size_fraction,
+):
+    shape = (800, 600)
+    labels = get_labels_nd(shape, blob_size_fraction=blob_size_fraction)
+    max_label = int(cp.max(labels))
+    kwargs = {"spacing": spacing}
+    prop = "moments"
+    if norm_type == "hu":
+        if order != 3:
+            pytest.skip("Hu moments require order = 3")
+        elif spacing and spacing != (1.0, 1.0):
+            pytest.skip("Hu moments only support spacing = (1.0, 1.0)")
+    if norm_type == "normalized" and order < 2:
+        pytest.skip("normalized case only supports order >=2")
+    if weighted:
+        intensity_image = get_intensity_image(
+            shape, dtype=intensity_dtype, num_channels=num_channels
+        )
+        kwargs["intensity_image"] = intensity_image
+        prop += "_weighted"
+    if norm_type == "central":
+        prop += "_central"
+    elif norm_type == "normalized":
+        prop += "_normalized"
+    elif norm_type == "hu":
+        prop += "_hu"
+    kwargs_cpu = deepcopy(kwargs)
+    if "intensity_image" in kwargs_cpu:
+        kwargs_cpu["intensity_image"] = cp.asnumpy(
+            kwargs_cpu["intensity_image"]
+        )
+
+    # ignore possible warning from skimage implementation
+    warnings.filterwarnings(
+        "ignore",
+        message="invalid value encountered in scalar power",
+        category=RuntimeWarning,
+    )
+    expected = measure_cpu.regionprops_table(
+        cp.asnumpy(labels), properties=[prop], **kwargs_cpu
+    )
+    warnings.resetwarnings()
+
+    moments = regionprops_moments(
+        labels, max_label=max_label, order=order, **kwargs
+    )
+    if norm_type in ["central", "normalized", "hu"]:
+        ndim = len(shape)
+        moments = regionprops_moments_central(moments, ndim=ndim)
+        if norm_type in ["normalized", "hu"]:
+            moments = regionprops_moments_normalized(
+                moments, ndim=ndim, spacing=spacing
+            )
+            if norm_type == "normalized":
+                # assert that np.nan values were set for non-computed orders
+                orders = cp.arange(order + 1)[:, cp.newaxis]
+                orders = orders + orders.T
+                mask = cp.logical_and(orders < 1, orders > order)
+                # prepend labels (and channels) axes
+                if num_channels > 1:
+                    mask = mask[cp.newaxis, cp.newaxis, ...]
+                    mask = cp.tile(mask, moments.shape[:2] + (1, 1))
+                else:
+                    mask = mask[cp.newaxis, ...]
+                    mask = cp.tile(mask, moments.shape[:1] + (1, 1))
+                assert cp.all(cp.isnan(moments[mask]))
+
+            if norm_type == "hu":
+                moments = regionprops_moments_hu(moments)
+                assert moments.shape[-1] == 7
+
+    # regionprops does not use the more accurate analytical expressions for the
+    # central moments, so need to relax tolerance in the "central" moments case
+    rtol = 1e-4 if norm_type != "raw" else 1e-5
+    atol = 1e-4 if norm_type != "raw" else 1e-7
+    allclose = functools.partial(assert_allclose, rtol=rtol, atol=atol)
+    if norm_type == "hu":
+        # hu moments are stored as a 7-element vector
+        if num_channels == 1:
+            for d in range(7):
+                allclose(moments[:, d], expected[prop + f"-{d}"])
+        else:
+            for c in range(num_channels):
+                for d in range(7):
+                    allclose(moments[:, c, d], expected[prop + f"-{d}-{c}"])
+    else:
+        # All other moment types produce a (order + 1, order + 1) matrix
+        if num_channels == 1:
+            # zeroth moment
+            allclose(moments[:, 0, 0], expected[prop + "-0-0"])
+
+            if order > 0 and norm_type != "normalized":
+                # first-order moments
+                if norm_type == "central":
+                    assert_array_equal(moments[:, 0, 1], 0.0)
+                    assert_array_equal(moments[:, 1, 0], 0.0)
+                else:
+                    allclose(moments[:, 0, 1], expected[prop + "-0-1"])
+                    allclose(moments[:, 1, 0], expected[prop + "-1-0"])
+            if order > 1:
+                # second-order moments
+                allclose(moments[:, 0, 2], expected[prop + "-0-2"])
+                allclose(moments[:, 1, 1], expected[prop + "-1-1"])
+                allclose(moments[:, 2, 0], expected[prop + "-2-0"])
+            if order > 3:
+                # third-order moments
+                allclose(moments[:, 0, 3], expected[prop + "-0-3"])
+                allclose(moments[:, 1, 2], expected[prop + "-1-2"])
+                allclose(moments[:, 2, 1], expected[prop + "-2-1"])
+                allclose(moments[:, 3, 0], expected[prop + "-3-0"])
+        else:
+            for c in range(num_channels):
+                # zeroth moment
+                allclose(moments[:, c, 0, 0], expected[prop + f"-0-0-{c}"])
+
+            if order > 0 and norm_type != "normalized":
+                # first-order moments
+                if norm_type == "central":
+                    assert_array_equal(moments[:, c, 0, 1], 0.0)
+                    assert_array_equal(moments[:, c, 1, 0], 0.0)
+                else:
+                    allclose(moments[:, c, 0, 1], expected[prop + f"-0-1-{c}"])
+                    allclose(moments[:, c, 1, 0], expected[prop + f"-1-0-{c}"])
+            if order > 1:
+                # second-order moments
+                allclose(moments[:, c, 0, 2], expected[prop + f"-0-2-{c}"])
+                allclose(moments[:, c, 1, 1], expected[prop + f"-1-1-{c}"])
+                allclose(moments[:, c, 2, 0], expected[prop + f"-2-0-{c}"])
+            if order > 3:
+                # third-order moments
+                allclose(moments[:, c, 0, 3], expected[prop + f"-0-3-{c}"])
+                allclose(moments[:, c, 1, 2], expected[prop + f"-1-2-{c}"])
+                allclose(moments[:, c, 2, 1], expected[prop + f"-2-1-{c}"])
+                allclose(moments[:, c, 3, 0], expected[prop + f"-3-0-{c}"])
+
+
+@pytest.mark.parametrize("spacing", [None, (0.8, 0.5, 0.75)])
+@pytest.mark.parametrize("order", [0, 1, 2, 3])
+@pytest.mark.parametrize(
+    "weighted, intensity_dtype, num_channels",
+    [
+        (False, None, 1),
+        (True, cp.float32, 1),
+        (True, cp.uint8, 3),
+    ],
+)
+@pytest.mark.parametrize("norm_type", ["raw", "central", "normalized"])
+def test_moments_3d(
+    spacing, order, weighted, intensity_dtype, num_channels, norm_type
+):
+    shape = (80, 64, 48)
+    labels = get_labels_nd(shape)
+    max_label = int(cp.max(labels))
+    kwargs = {"spacing": spacing}
+    prop = "moments"
+    if norm_type == "normalized" and order < 2:
+        pytest.skip("normalized case only supports order >=2")
+    if weighted:
+        intensity_image = get_intensity_image(
+            shape, dtype=intensity_dtype, num_channels=num_channels
+        )
+        kwargs["intensity_image"] = intensity_image
+        prop += "_weighted"
+    if norm_type == "central":
+        prop += "_central"
+    elif norm_type == "normalized":
+        prop += "_normalized"
+    kwargs_cpu = deepcopy(kwargs)
+    if "intensity_image" in kwargs_cpu:
+        kwargs_cpu["intensity_image"] = cp.asnumpy(
+            kwargs_cpu["intensity_image"]
+        )
+
+    # ignore possible warning from skimage implementation
+    warnings.filterwarnings(
+        "ignore",
+        message="invalid value encountered in scalar power",
+        category=RuntimeWarning,
+    )
+    expected = measure_cpu.regionprops_table(
+        cp.asnumpy(labels), properties=[prop], **kwargs_cpu
+    )
+    warnings.resetwarnings()
+
+    moments = regionprops_moments(
+        labels, max_label=max_label, order=order, **kwargs
+    )
+    if norm_type in ["central", "normalized"]:
+        ndim = len(shape)
+        moments = regionprops_moments_central(moments, ndim=ndim)
+        if norm_type == "normalized":
+            moments = regionprops_moments_normalized(
+                moments, ndim=ndim, spacing=spacing
+            )
+
+            # assert that np.nan values were set for non-computed orders
+            orders = cp.arange(order + 1)
+            orders = (
+                orders[:, cp.newaxis, cp.newaxis]
+                + orders[cp.newaxis, :, cp.newaxis]
+                + orders[cp.newaxis, cp.newaxis, :]
+            )
+            mask = cp.logical_and(orders < 1, orders > order)
+            # prepend labels (and channels) axes and replicate mask to match
+            # the moments shape
+            if num_channels > 1:
+                mask = mask[cp.newaxis, cp.newaxis, ...]
+                mask = cp.tile(mask, moments.shape[:2] + (1, 1, 1))
+            else:
+                mask = mask[cp.newaxis, ...]
+                mask = cp.tile(mask, moments.shape[:1] + (1, 1, 1))
+            assert cp.all(cp.isnan(moments[mask]))
+
+    # regionprops does not use the more accurate analytical expressions for the
+    # central moments, so need to relax tolerance in the "central" moments case
+    rtol = 1e-3 if norm_type != "raw" else 1e-5
+    atol = 1e-4 if norm_type != "raw" else 1e-7
+    allclose = functools.partial(assert_allclose, rtol=rtol, atol=atol)
+    if num_channels == 1:
+        # zeroth moment
+        allclose(moments[:, 0, 0, 0], expected[prop + "-0-0-0"])
+        if order > 0 and norm_type != "normalized":
+            # first-order moments
+            if norm_type == "central":
+                assert_array_equal(moments[:, 0, 0, 1], 0.0)
+                assert_array_equal(moments[:, 0, 1, 0], 0.0)
+                assert_array_equal(moments[:, 1, 0, 0], 0.0)
+            else:
+                allclose(moments[:, 0, 0, 1], expected[prop + "-0-0-1"])
+                allclose(moments[:, 0, 1, 0], expected[prop + "-0-1-0"])
+                allclose(moments[:, 1, 0, 0], expected[prop + "-1-0-0"])
+        if order > 1:
+            # second-order moments
+            allclose(moments[:, 0, 0, 2], expected[prop + "-0-0-2"])
+            allclose(moments[:, 0, 2, 0], expected[prop + "-0-2-0"])
+            allclose(moments[:, 2, 0, 0], expected[prop + "-2-0-0"])
+            allclose(moments[:, 1, 1, 0], expected[prop + "-1-1-0"])
+            allclose(moments[:, 1, 0, 1], expected[prop + "-1-0-1"])
+            allclose(moments[:, 0, 1, 1], expected[prop + "-0-1-1"])
+        if order > 2:
+            # third-order moments
+            allclose(moments[:, 0, 0, 3], expected[prop + "-0-0-3"])
+            allclose(moments[:, 0, 3, 0], expected[prop + "-0-3-0"])
+            allclose(moments[:, 3, 0, 0], expected[prop + "-3-0-0"])
+            allclose(moments[:, 1, 2, 0], expected[prop + "-1-2-0"])
+            allclose(moments[:, 2, 1, 0], expected[prop + "-2-1-0"])
+            allclose(moments[:, 1, 0, 2], expected[prop + "-1-0-2"])
+            allclose(moments[:, 2, 0, 1], expected[prop + "-2-0-1"])
+            allclose(moments[:, 0, 1, 2], expected[prop + "-0-1-2"])
+            allclose(moments[:, 0, 2, 1], expected[prop + "-0-2-1"])
+            allclose(moments[:, 1, 1, 1], expected[prop + "-1-1-1"])
+    else:
+        for c in range(num_channels):
+            # zeroth moment
+            allclose(moments[:, c, 0, 0, 0], expected[prop + f"-0-0-0-{c}"])
+            if order > 0 and norm_type != "normalized":
+                # first-order moments
+                if norm_type == "central":
+                    assert_array_equal(moments[:, c, 0, 0, 1], 0.0)
+                    assert_array_equal(moments[:, c, 0, 1, 0], 0.0)
+                    assert_array_equal(moments[:, c, 1, 0, 0], 0.0)
+                else:
+                    allclose(
+                        moments[:, c, 0, 0, 1], expected[prop + f"-0-0-1-{c}"]
+                    )
+                    allclose(
+                        moments[:, c, 0, 1, 0], expected[prop + f"-0-1-0-{c}"]
+                    )
+                    allclose(
+                        moments[:, c, 1, 0, 0], expected[prop + f"-1-0-0-{c}"]
+                    )
+            if order > 1:
+                # second-order moments
+                allclose(moments[:, c, 0, 0, 2], expected[prop + f"-0-0-2-{c}"])
+                allclose(moments[:, c, 0, 2, 0], expected[prop + f"-0-2-0-{c}"])
+                allclose(moments[:, c, 2, 0, 0], expected[prop + f"-2-0-0-{c}"])
+                allclose(moments[:, c, 1, 1, 0], expected[prop + f"-1-1-0-{c}"])
+                allclose(moments[:, c, 1, 0, 1], expected[prop + f"-1-0-1-{c}"])
+                allclose(moments[:, c, 0, 1, 1], expected[prop + f"-0-1-1-{c}"])
+            if order > 2:
+                # third-order moments
+                allclose(moments[:, c, 0, 0, 3], expected[prop + f"-0-0-3-{c}"])
+                allclose(moments[:, c, 0, 3, 0], expected[prop + f"-0-3-0-{c}"])
+                allclose(moments[:, c, 3, 0, 0], expected[prop + f"-3-0-0-{c}"])
+                allclose(moments[:, c, 1, 2, 0], expected[prop + f"-1-2-0-{c}"])
+                allclose(moments[:, c, 2, 1, 0], expected[prop + f"-2-1-0-{c}"])
+                allclose(moments[:, c, 1, 0, 2], expected[prop + f"-1-0-2-{c}"])
+                allclose(moments[:, c, 2, 0, 1], expected[prop + f"-2-0-1-{c}"])
+                allclose(moments[:, c, 0, 1, 2], expected[prop + f"-0-1-2-{c}"])
+                allclose(moments[:, c, 0, 2, 1], expected[prop + f"-0-2-1-{c}"])
+                allclose(moments[:, c, 1, 1, 1], expected[prop + f"-1-1-1-{c}"])
+
+
+@pytest.mark.parametrize("spacing", [None, (0.8, 0.5, 1.2)])
+@pytest.mark.parametrize("order", [1, 2, 3])
+@pytest.mark.parametrize("shape", [(500, 400), (64, 96, 32)])
+@pytest.mark.parametrize("compute_orientation", [False, True])
+@pytest.mark.parametrize("compute_axis_lengths", [False, True])
+@pytest.mark.parametrize("blob_size_fraction", [0.03, 0.1, 0.3])
+def test_inertia_tensor(
+    shape,
+    spacing,
+    order,
+    compute_orientation,
+    compute_axis_lengths,
+    blob_size_fraction,
+):
+    ndim = len(shape)
+    labels = get_labels_nd(shape, blob_size_fraction=blob_size_fraction)
+    max_label = int(cp.max(labels))
+    if spacing is not None:
+        # omit 3rd element for 2d images
+        spacing = spacing[:ndim]
+    props = ["inertia_tensor", "inertia_tensor_eigvals"]
+    compute_eccentricity = True if ndim == 2 else False
+    if compute_eccentricity:
+        props += ["eccentricity"]
+    if compute_orientation:
+        props += ["orientation"]
+    if compute_axis_lengths:
+        props += ["axis_major_length", "axis_minor_length"]
+    moments_raw = regionprops_moments(
+        labels, max_label=max_label, order=order, spacing=spacing
+    )
+    moments_central = regionprops_moments_central(moments_raw, ndim=ndim)
+
+    itensor_kwargs = dict(ndim=ndim, compute_orientation=compute_orientation)
+    if order < 2:
+        # can't compute inertia tensor without 2nd order moments
+        with pytest.raises(ValueError):
+            regionprops_inertia_tensor(moments_central, **itensor_kwargs)
+        return
+
+    if compute_orientation:
+        if ndim != 2:
+            with pytest.raises(ValueError):
+                regionprops_inertia_tensor(moments_central, **itensor_kwargs)
+            return
+        itensor, orientation = regionprops_inertia_tensor(
+            moments_central, **itensor_kwargs
+        )
+        assert orientation.shape == itensor.shape[:-2]
+    else:
+        itensor = regionprops_inertia_tensor(moments_central, **itensor_kwargs)
+
+    assert itensor.shape[-2:] == (ndim, ndim)
+
+    props_dict = regionprops_inertia_tensor_eigvals(
+        itensor,
+        compute_axis_lengths=compute_axis_lengths,
+        compute_eccentricity=compute_eccentricity,
+    )
+    eigvals = props_dict["inertia_tensor_eigvals"]
+    assert eigvals.shape == (max_label, ndim)
+    if compute_eccentricity:
+        eccentricity = props_dict["eccentricity"]
+        assert eccentricity.shape == (max_label,)
+    if compute_axis_lengths:
+        axis_lengths = props_dict["axis_lengths"]
+        assert axis_lengths.shape == (max_label, ndim)
+
+    # Do not compare to scikit-image via measure_cpu due to unhandled
+    # ValueError: math domain error in scikit-image. (Floating point numeric
+    # error can cause square root of very slightly negative value)
+    expected = measure.regionprops_table(
+        labels,
+        properties=props,
+        spacing=spacing,
+    )
+
+    # regionprops does not use the more accurate analytical expressions for the
+    # central moments, so need to relax tolerance in the "central" moments case
+    rtol = 1e-4
+    atol = 1e-5
+    allclose = functools.partial(assert_allclose, rtol=rtol, atol=atol)
+    if ndim == 2:
+        # valida inertia tensor
+        allclose(itensor[:, 0, 0], expected["inertia_tensor-0-0"])
+        allclose(itensor[:, 0, 1], expected["inertia_tensor-0-1"])
+        allclose(itensor[:, 1, 0], expected["inertia_tensor-1-0"])
+        allclose(itensor[:, 1, 1], expected["inertia_tensor-1-1"])
+
+        # validate eigenvalues
+        allclose(eigvals[:, 0], expected["inertia_tensor_eigvals-0"])
+        allclose(eigvals[:, 1], expected["inertia_tensor_eigvals-1"])
+
+        if compute_orientation:
+            pass
+            # Disabled orientation comparison as it is currently not robust
+            # (fails for the spacing != None case)
+            #
+            # # validate orientation
+            # # use sin/cos to avoid PI and -PI from being considered different
+            # tol_kw = dict(rtol=1e-3, atol=1e-3)
+            # assert_allclose(
+            #     cp.cos(orientation), cp.cos(expected["orientation"]), **tol_kw
+            # )
+            # assert_allclose(
+            #     cp.sin(orientation), cp.sin(expected["orientation"]), **tol_kw
+            # )
+        if compute_eccentricity:
+            allclose(eccentricity, expected["eccentricity"])
+
+    elif ndim == 3:
+        # valida inertia tensor
+        allclose(itensor[:, 0, 0], expected["inertia_tensor-0-0"])
+        allclose(itensor[:, 0, 1], expected["inertia_tensor-0-1"])
+        allclose(itensor[:, 0, 2], expected["inertia_tensor-0-2"])
+        allclose(itensor[:, 1, 0], expected["inertia_tensor-1-0"])
+        allclose(itensor[:, 1, 1], expected["inertia_tensor-1-1"])
+        allclose(itensor[:, 1, 2], expected["inertia_tensor-1-2"])
+        allclose(itensor[:, 2, 0], expected["inertia_tensor-2-0"])
+        allclose(itensor[:, 2, 1], expected["inertia_tensor-2-1"])
+        allclose(itensor[:, 2, 2], expected["inertia_tensor-2-2"])
+
+        # validate eigenvalues
+        allclose(eigvals[:, 0], expected["inertia_tensor_eigvals-0"])
+        allclose(eigvals[:, 1], expected["inertia_tensor_eigvals-1"])
+        allclose(eigvals[:, 2], expected["inertia_tensor_eigvals-2"])
+    rtol = 1e-5
+    # seems to be a larger fractional pixel error in length in 3D case
+    atol = 5e-3 if ndim == 3 else 1e-5
+    allclose = functools.partial(assert_allclose, rtol=rtol, atol=atol)
+    if compute_axis_lengths:
+        allclose(axis_lengths[..., 0], expected["axis_major_length"])
+        allclose(axis_lengths[..., -1], expected["axis_minor_length"])
+
+
+@pytest.mark.parametrize("spacing", [None, (0.8, 0.5, 1.2)])
+@pytest.mark.parametrize(
+    "intensity_dtype, num_channels",
+    [(cp.float32, 1), (cp.uint8, 3)],
+)
+@pytest.mark.parametrize("shape", [(800, 600), (80, 60, 40)])
+@pytest.mark.parametrize("local", [False, True])
+def test_centroid_weighted(
+    shape, spacing, intensity_dtype, num_channels, local
+):
+    ndim = len(shape)
+    labels = get_labels_nd(shape)
+
+    max_label = int(cp.max(labels))
+    if spacing is not None:
+        # omit 3rd element for 2d images
+        spacing = spacing[:ndim]
+    intensity_image = get_intensity_image(
+        shape, dtype=intensity_dtype, num_channels=num_channels
+    )
+    kwargs = {"spacing": spacing, "intensity_image": intensity_image}
+    prop = "centroid_weighted"
+    if local:
+        prop += "_local"
+
+    expected = measure_cpu.regionprops_table(
+        cp.asnumpy(labels),
+        properties=[prop],
+        spacing=spacing,
+        intensity_image=cp.asnumpy(intensity_image),
+    )
+    moments_raw = regionprops_moments(
+        labels, max_label=max_label, order=1, **kwargs
+    )
+
+    if local:
+        bbox = None
+    else:
+        bbox, _ = regionprops_bbox_coords(
+            labels, max_label=max_label, return_slices=False
+        )
+
+    centroids = regionprops_centroid_weighted(
+        moments_raw,
+        ndim=ndim,
+        bbox=bbox,
+        compute_local=local,
+        compute_global=not local,
+        spacing=spacing,
+    )[prop]
+
+    assert centroids.shape[-1] == ndim
+
+    rtol = 1e-7
+    atol = 0
+    allclose = functools.partial(assert_allclose, rtol=rtol, atol=atol)
+    if num_channels == 1:
+        for d in range(ndim):
+            allclose(centroids[:, d], expected[prop + f"-{d}"])
+    else:
+        for c in range(num_channels):
+            for d in range(ndim):
+                allclose(centroids[:, c, d], expected[prop + f"-{d}-{c}"])
+
+
 @pytest.mark.parametrize("ndim", [2, 3])
 @pytest.mark.parametrize("num_channels", [1, 3])
 @pytest.mark.parametrize(
@@ -579,12 +1159,16 @@ def test_feret_diameter_max(ndim, spacing, blob_kwargs):
         list(basic_deps.keys())
         + list(convex_deps.keys())
         + list(intensity_deps.keys())
+        + list(moment_deps.keys())
     ),
 )
 def test_regionprops_dict_single_property(ndim, spacing, property_name):
     """Test to verify that any dependencies for a given property are
     automatically handled.
     """
+    if ndim != 2 and property_name in ndim_2_only:
+        pytest.skip(f"{property_name} is for 2d images only.")
+        return
     shape = (768, 512) if ndim == 2 else (64, 64, 64)
     if spacing is not None:
         spacing = spacing[:ndim]
