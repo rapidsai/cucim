@@ -23,7 +23,11 @@ from ._regionprops_gpu_basic_kernels import (
     regionprops_num_perimeter_pixels,
     regionprops_num_pixels,
 )
-
+from ._regionprops_gpu_convex import (
+    convex_deps,
+    regionprops_area_convex,
+    regionprops_feret_diameter_max,
+)
 from ._regionprops_gpu_intensity_kernels import (
     intensity_deps,
     regionprops_intensity_mean,
@@ -37,10 +41,12 @@ __all__ = [
     "equivalent_diameter_area",
     "regionprops_area",
     "regionprops_area_bbox",
+    "regionprops_area_convex",
     "regionprops_bbox_coords",
     "regionprops_coords",
     "regionprops_dict",
     "regionprops_extent",
+    "regionprops_feret_diameter_max",
     "regionprops_image",
     "regionprops_intensity_mean",
     "regionprops_intensity_min_max",
@@ -103,6 +109,7 @@ OBJECT_COLUMNS_GPU = [
 # get_property_dependencies below).
 property_deps = dict()
 property_deps.update(basic_deps)
+property_deps.update(convex_deps)
 property_deps.update(intensity_deps)
 
 # set of properties that require an intensity_image also be provided
@@ -379,6 +386,21 @@ def regionprops_dict(
             compute_image=compute_images,
             compute_convex=compute_convex,
             offset_coordinates=True,
+        )
+
+    if "area_convex" in required_props:
+        regionprops_area_convex(
+            out["image_convex"], max_label=max_label, props_dict=out
+        )
+
+    if "solidity" in required_props:
+        out["solidity"] = out["area"] / out["area_convex"]
+
+    if "feret_diameter_max" in required_props:
+        regionprops_feret_diameter_max(
+            out["image_convex"],
+            spacing=spacing,
+            props_dict=out,
         )
 
     compute_coords = "coords" in required_props

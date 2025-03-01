@@ -27,6 +27,28 @@ __all__ = [
 ]
 
 
+# For n nonzero elements cupy.nonzero returns a tuple of length ndim where
+# each element is an array of size (n, ) corresponding to the coordinates on
+# a specific axis.
+#
+# Often for regionprops purposes we would rather have a single array of
+# size (n, ndim) instead of a the tuple of arrays.
+#
+# CuPy's `_ndarray_argwhere` (used internally by cupy.nonzero) already provides
+# this but is not part of the public API. To guard against potential future
+# change we provide a less efficient fallback implementation.
+try:
+    from cupy._core._routines_indexing import _ndarray_argwhere
+except ImportError:
+
+    def _ndarray_argwhere(a):
+        """Stack the result of cupy.nonzero into a single array
+
+        output shape will be (num_nonzero, ndim)
+        """
+        return cp.stack(cp.nonzero(a), axis=-1)
+
+
 def _count_wrappers(func):
     """Count the number of wrappers around `func`."""
     unwrapped = func
