@@ -788,8 +788,12 @@ def regionprops_dict(
             out[name] = cp.stack(results, axis=0)
         else:
             out[name] = results
-    # only return the properties that were explicitly requested
-    out = {k: out[k] for k in properties}
+
+    # retain only the properties that were explicitly requested by the user
+    out_properties = list(properties) + list(
+        func.__name__ for func in extra_properties
+    )
+    out = {k: out[k] for k in out_properties}
 
     if to_table:
         out = _props_dict_to_table(

@@ -1146,8 +1146,9 @@ def test_props_to_dict():
     assert_array_equal(out["coords"][1], coords[1])
 
 
-def test_regionprops_table():
-    out = regionprops_table(SAMPLE)
+@pytest.mark.parametrize("batch_processing", [False, True])
+def test_regionprops_table(batch_processing):
+    out = regionprops_table(SAMPLE, batch_processing=batch_processing)
     assert out == {
         "label": cp.array([1]),
         "bbox-0": cp.array([0]),
@@ -1157,7 +1158,10 @@ def test_regionprops_table():
     }
 
     out = regionprops_table(
-        SAMPLE, properties=("label", "area", "bbox"), separator="+"
+        SAMPLE,
+        properties=("label", "area", "bbox"),
+        separator="+",
+        batch_processing=batch_processing,
     )
     assert out == {
         "label": cp.array([1]),
@@ -1168,7 +1172,11 @@ def test_regionprops_table():
         "bbox+3": cp.array([18]),
     }
 
-    out = regionprops_table(SAMPLE_MULTIPLE, properties=("coords",))
+    out = regionprops_table(
+        SAMPLE_MULTIPLE,
+        properties=("coords",),
+        batch_processing=batch_processing,
+    )
     coords = np.empty(2, object)
     coords[0] = cp.stack((cp.arange(10),) * 2, axis=-1)
     coords[1] = cp.array([[3, 7], [4, 7]])
@@ -1177,22 +1185,35 @@ def test_regionprops_table():
     assert_array_equal(out["coords"][1], coords[1])
 
 
-def test_regionprops_table_deprecated_vector_property():
-    out = regionprops_table(SAMPLE, properties=("local_centroid",))
+@pytest.mark.parametrize("batch_processing", [False, True])
+def test_regionprops_table_deprecated_vector_property(batch_processing):
+    out = regionprops_table(
+        SAMPLE,
+        properties=("local_centroid",),
+        batch_processing=batch_processing,
+    )
     for key in out.keys():
         # key reflects the deprecated name, not its new (centroid_local) value
         assert key.startswith("local_centroid")
 
 
-def test_regionprops_table_deprecated_scalar_property():
-    out = regionprops_table(SAMPLE, properties=("bbox_area",))
+@pytest.mark.parametrize("batch_processing", [False, True])
+def test_regionprops_table_deprecated_scalar_property(batch_processing):
+    out = regionprops_table(
+        SAMPLE,
+        properties=("bbox_area",),
+        batch_processing=batch_processing,
+    )
     assert list(out.keys()) == ["bbox_area"]
 
 
-def test_regionprops_table_equal_to_original():
+def test_regionprops_table_equal_to_original_no_batch_processing():
     regions = regionprops(SAMPLE, INTENSITY_FLOAT_SAMPLE)
     out_table = regionprops_table(
-        SAMPLE, INTENSITY_FLOAT_SAMPLE, properties=COL_DTYPES.keys()
+        SAMPLE,
+        INTENSITY_FLOAT_SAMPLE,
+        properties=COL_DTYPES.keys(),
+        batch_processing=False,
     )
 
     for prop, dtype in COL_DTYPES.items():
@@ -1213,11 +1234,54 @@ def test_regionprops_table_equal_to_original():
                     assert_array_equal(rp[loc], out_table[modified_prop][i])
 
 
-def test_regionprops_table_no_regions():
+def test_regionprops_table_batch_close_to_original():
+    regions = regionprops(SAMPLE, INTENSITY_FLOAT_SAMPLE)
+    out_table = regionprops_table(
+        SAMPLE,
+        INTENSITY_FLOAT_SAMPLE,
+        properties=COL_DTYPES.keys(),
+        batch_processing=True,
+    )
+
+    for prop, dtype in COL_DTYPES.items():
+        print(f"{prop=}")
+        for i, reg in enumerate(regions):
+            rp = reg[prop]
+            if (
+                cp.isscalar(rp)
+                or (isinstance(rp, cp.ndarray) and rp.ndim == 0)
+                or prop in OBJECT_COLUMNS
+                or dtype is np.object_
+            ):
+                if prop == "feret_diameter_max":
+                    cp.testing.assert_allclose(
+                        rp, out_table[prop][i], atol=math.sqrt(2)
+                    )
+                elif prop == "slice":
+                    assert_array_equal(rp, out_table[prop][i])
+                else:
+                    assert_array_almost_equal(rp, out_table[prop][i])
+            else:
+                shape = rp.shape if isinstance(rp, cp.ndarray) else (len(rp),)
+                if "moments" in prop:
+                    # will not match because moments > order are not computed in
+                    # the batch_processing=True case.
+                    continue
+                for ind in np.ndindex(shape):
+                    modified_prop = "-".join(map(str, (prop,) + ind))
+                    loc = ind if len(ind) > 1 else ind[0]
+                    assert_array_almost_equal(
+                        rp[loc], out_table[modified_prop][i]
+                    )
+
+
+@pytest.mark.parametrize("batch_processing", [False, True])
+def test_regionprops_table_no_regions(batch_processing):
     out = regionprops_table(
         cp.zeros((2, 2), dtype=int),
         properties=("label", "area", "bbox"),
         separator="+",
+        batch_processing=batch_processing,
     )
     assert len(out) == 6
     assert len(out["label"]) == 0
@@ -1366,12 +1430,14 @@ def test_extra_properties_mixed():
     assert region.pixelcount == cp.sum(SAMPLE == 1)
 
 
-def test_extra_properties_table():
+@pytest.mark.parametrize("batch_processing", [False, True])
+def test_extra_properties_table(batch_processing):
     out = regionprops_table(
         SAMPLE_MULTIPLE,
         intensity_image=INTENSITY_SAMPLE_MULTIPLE,
         properties=("label",),
         extra_properties=(intensity_median, pixelcount, bbox_list),
+        batch_processing=batch_processing,
     )
     assert_array_almost_equal(out["intensity_median"], np.array([2.0, 4.0]))
     assert_array_equal(out["pixelcount"], np.array([10, 2]))
