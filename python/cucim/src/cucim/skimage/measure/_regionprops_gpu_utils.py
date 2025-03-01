@@ -3,6 +3,9 @@ import math
 import cupy as cp
 from packaging.version import parse
 
+from cucim.skimage._vendored import ndimage as ndi
+from cucim.skimage.util import map_array
+
 CUPY_GTE_13_3_0 = parse(cp.__version__) >= parse("13.3.0")
 
 # Need some default includes so uint32_t, uint64_t, etc. are defined
@@ -96,3 +99,25 @@ def _unravel_loop_index(
     code += """
         in_coord[0] = temp_idx;"""
     return code
+
+
+def _reverse_label_values(label_image, max_label):
+    """reverses the value of all labels (keeping background value=0 the same)"""
+    dtype = label_image.dtype
+    labs = cp.asarray(tuple(range(max_label + 1)), dtype=dtype)
+    rev_labs = cp.asarray((0,) + tuple(range(max_label, 0, -1)), dtype=dtype)
+    return map_array(label_image, labs, rev_labs)
+
+
+def _find_close_labels(labels, binary_image, max_label):
+    # check possibly too-close regions for which we may need to
+    # manually recompute the regions perimeter in isolation
+    labels_dilated2 = ndi.grey_dilation(labels, 5, mode="constant")
+    labels2 = labels_dilated2 * binary_image
+    rev_labels = _reverse_label_values(labels, max_label=max_label)
+    rev_labels = ndi.grey_dilation(rev_labels, 5, mode="constant")
+    rev_labels = rev_labels * binary_image
+    labels3 = _reverse_label_values(rev_labels, max_label=max_label)
+    diffs = cp.logical_or(labels != labels2, labels != labels3)
+    labels_close = cp.asnumpy(cp.unique(labels[diffs]))
+    return labels_close
