@@ -948,6 +948,7 @@ def regionprops_table(
     separator="-",
     extra_properties=None,
     spacing=None,
+    batch_processing=True,
 ):
     """Compute image properties and return them as a pandas-compatible table.
 
@@ -998,6 +999,14 @@ def regionprops_table(
         accept the intensity image as the second argument.
     spacing: tuple of float, shape (ndim,)
         The pixel spacing along each axis of the image.
+
+    Extra Parameters
+    ----------------
+    batch_processing : bool, optional
+        If true, use much faster batch processing of region properties. Most
+        properties will be computed for all regions much more efficiently via a
+        single pass over the full image instead of on an individual label
+        basis. In this mode, the `RegionProperties` class is not used at all.
 
     Returns
     -------
@@ -1082,27 +1091,22 @@ def regionprops_table(
     4      5       112.50        113.0        114.0
 
     """
-    regions = regionprops(
-        label_image,
-        intensity_image=intensity_image,
-        cache=cache,
-        extra_properties=extra_properties,
-        spacing=spacing,
-    )
-    if extra_properties is not None:
-        properties = list(properties) + [
-            prop.__name__ for prop in extra_properties
-        ]
-    if len(regions) == 0:
-        ndim = label_image.ndim
-        label_image = np.zeros((3,) * ndim, dtype=int)
-        label_image[(1,) * ndim] = 1
-        label_image = cp.asarray(label_image)
-        if intensity_image is not None:
-            intensity_image = cp.zeros(
-                label_image.shape + intensity_image.shape[ndim:],
-                dtype=intensity_image.dtype,
-            )
+    if batch_processing:
+        from ._regionprops_gpu import regionprops_dict
+
+        table = regionprops_dict(
+            label_image,
+            intensity_image=intensity_image,
+            spacing=spacing,
+            moment_order=None,
+            properties=properties,
+            extra_properties=extra_properties,
+            to_table=True,
+            table_separator=separator,
+            table_on_host=False,
+        )
+        return table
+    else:
         regions = regionprops(
             label_image,
             intensity_image=intensity_image,
@@ -1110,13 +1114,36 @@ def regionprops_table(
             extra_properties=extra_properties,
             spacing=spacing,
         )
+        if extra_properties is not None:
+            properties = list(properties) + [
+                prop.__name__ for prop in extra_properties
+            ]
+        if len(regions) == 0:
+            ndim = label_image.ndim
+            label_image = np.zeros((3,) * ndim, dtype=int)
+            label_image[(1,) * ndim] = 1
+            label_image = cp.asarray(label_image)
+            if intensity_image is not None:
+                intensity_image = cp.zeros(
+                    label_image.shape + intensity_image.shape[ndim:],
+                    dtype=intensity_image.dtype,
+                )
+            regions = regionprops(
+                label_image,
+                intensity_image=intensity_image,
+                cache=cache,
+                extra_properties=extra_properties,
+                spacing=spacing,
+            )
 
-        out_d = _props_to_dict(
+            out_d = _props_to_dict(
+                regions, properties=properties, separator=separator
+            )
+            return {k: v[:0] for k, v in out_d.items()}
+
+        return _props_to_dict(
             regions, properties=properties, separator=separator
         )
-        return {k: v[:0] for k, v in out_d.items()}
-
-    return _props_to_dict(regions, properties=properties, separator=separator)
 
 
 def regionprops(
