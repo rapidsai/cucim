@@ -1,3 +1,4 @@
+import functools
 import math
 import warnings
 
@@ -12,16 +13,19 @@ from skimage import measure as measure_cpu
 
 from cucim.skimage import data, measure
 from cucim.skimage._vendored import ndimage as ndi
+from cucim.skimage.measure._regionprops import PROPS
 from cucim.skimage.measure._regionprops_gpu import (
     equivalent_diameter_area,
     regionprops_area,
     regionprops_area_bbox,
     regionprops_bbox_coords,
     regionprops_coords,
+    regionprops_dict,
     regionprops_extent,
     regionprops_image,
     regionprops_num_pixels,
 )
+from cucim.skimage.measure._regionprops_gpu_basic_kernels import basic_deps
 
 
 def get_labels_nd(
@@ -301,3 +305,107 @@ def test_coords(ndim, spacing):
         assert_allclose(
             coords_scaled[n], expected["coords_scaled"][n], rtol=1e-5
         )
+
+
+@pytest.mark.parametrize("ndim", [2, 3])
+@pytest.mark.parametrize("spacing", [None, (1.5, 0.5, 0.76)])
+@pytest.mark.parametrize("property_name", list(basic_deps.keys()))
+def test_regionprops_dict_single_property(ndim, spacing, property_name):
+    """Test to verify that any dependencies for a given property are
+    automatically handled.
+    """
+    shape = (768, 512) if ndim == 2 else (64, 64, 64)
+    if spacing is not None:
+        spacing = spacing[:ndim]
+    labels = get_labels_nd(shape)
+    if property_name == "image_intensity":
+        intensity_image = get_intensity_image(
+            shape, dtype=cp.uint16, num_channels=1
+        )
+    else:
+        intensity_image = None
+    props = regionprops_dict(
+        labels, intensity_image, properties=[property_name], spacing=spacing
+    )
+    assert property_name in props
+    # any unrequested dependent properties are not retained in the output dict
+    assert len(props) == 1
+
+
+@pytest.mark.parametrize("ndim", [2, 3])
+@pytest.mark.parametrize(
+    "property_name",
+    [
+        "label",
+        "image",
+        "image_convex",
+        "image_intensity",
+        "image_filled",
+        "coords",
+        "coords_scaled",
+    ],
+)
+def test_regionprops_image_and_coords_sequence(ndim, property_name):
+    shape = (768, 512) if ndim == 2 else (64, 64, 64)
+    spacing = (1.5, 0.5, 0.76)
+    if spacing is not None:
+        spacing = spacing[:ndim]
+    labels = get_labels_nd(shape)
+    max_label = int(labels.max())
+    if property_name == "image_intensity":
+        intensity_image = get_intensity_image(
+            shape, dtype=cp.uint16, num_channels=1
+        )
+    else:
+        intensity_image = None
+    props = regionprops_dict(
+        labels,
+        intensity_image,
+        properties=[property_name],
+        spacing=spacing,
+        max_label=max_label,
+    )
+    assert property_name in props
+    result = props[property_name]
+    assert len(result) == max_label
+
+    # compute expected result on CPU
+    labels_cpu = cp.asnumpy(labels)
+    if intensity_image is not None:
+        intensity_image_cpu = cp.asnumpy(intensity_image)
+    else:
+        intensity_image_cpu = None
+    expected = measure_cpu.regionprops_table(
+        labels_cpu,
+        intensity_image_cpu,
+        properties=[property_name],
+        spacing=spacing,
+    )[property_name]
+    assert len(expected) == max_label
+
+    # verify
+    if property_name == "label":
+        assert_array_equal(expected, result)
+    else:
+        if property_name == "coords_scaled":
+            comparison_func = functools.partial(
+                assert_allclose, atol=1e-6, rtol=1e-6
+            )
+        else:
+            comparison_func = assert_array_equal
+        for i, (expected_val, val) in enumerate(zip(expected, result)):
+            comparison_func(expected_val, val)
+    return
+
+
+@pytest.mark.parametrize(
+    "property_name", ["Area", "BoundingBoxArea", "Image", "Slice"]
+)
+def test_regionprops_dict_deprecated_property_names(property_name):
+    shape = (1024, 1024)
+    labels = get_labels_nd(shape)
+    props = regionprops_dict(labels, properties=[property_name])
+    # deprecated name is used in the returned results dict
+    assert property_name in props
+    # non-deprecated version of the name is not also present
+    assert PROPS[property_name] not in props

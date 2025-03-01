@@ -34,6 +34,37 @@ __all__ = [
 ]
 
 
+# Store information on which other properties a given property depends on
+# This information will be used by `regionprops_dict` to make sure that when
+# a particular property is requested any dependent properties are computed
+# first.
+basic_deps = dict()
+basic_deps["area"] = ["num_pixels"]
+basic_deps["area_bbox"] = ["bbox"]
+basic_deps["area_filled"] = ["label_filled", "num_pixels_filled"]
+basic_deps["bbox"] = []
+basic_deps["coords"] = ["num_pixels"]
+basic_deps["coords_scaled"] = ["num_pixels"]
+basic_deps["equivalent_diameter_area"] = ["area"]
+basic_deps["equivalent_spherical_perimeter"] = ["equivalent_diameter_area"]
+basic_deps["extent"] = ["area", "area_bbox"]
+basic_deps["image"] = []
+basic_deps["image_convex"] = []
+basic_deps["image_filled"] = ["label_filled"]
+basic_deps["image_intensity"] = []
+basic_deps["label"] = []
+basic_deps["label_filled"] = []
+basic_deps["num_boundary_pixels"] = []
+basic_deps["num_perimeter_pixels"] = []
+basic_deps["num_pixels"] = []
+basic_deps["num_pixels_filled"] = ["label_filled"]
+basic_deps["perimeter_on_border_ratio"] = [
+    "num_perimeter_pixels",
+    "num_boundary_pixels",
+]
+basic_deps["slice"] = ["bbox"]
+
+
 def _get_bbox_code(uint_t, ndim, array_size):
     """
     Notes
@@ -386,9 +417,11 @@ def regionprops_area(
     if filled:
         - will reuse "num_pixels_filled" from `props_dict` if present
         - will write "area_filled" to `props_dict`
+        - will write "num_pixels_filled" to `props_dict` if not already present
     else:
         - will reuse "num_pixels" from `props_dict` if present
         - will write "area" to `props_dict`
+        - will write "num_pixels" to `props_dict` if not already present
     """
     if props_dict is None:
         props_dict = {}
@@ -406,6 +439,8 @@ def regionprops_area(
             pixels_per_thread=pixels_per_thread,
             props_dict=props_dict,
         )
+        if num_pixels_prop_name not in props_dict:
+            props_dict[num_pixels_prop_name] = num_pixels
 
     area = num_pixels.astype(dtype)
     if spacing is not None:
