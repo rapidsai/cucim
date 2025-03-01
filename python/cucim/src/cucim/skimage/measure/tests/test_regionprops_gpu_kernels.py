@@ -3,6 +3,7 @@ import math
 import warnings
 
 import cupy as cp
+import numpy as np
 import pytest
 from cupy.testing import (
     assert_allclose,
@@ -19,10 +20,12 @@ from cucim.skimage.measure._regionprops_gpu import (
     need_intensity_image,
     regionprops_area,
     regionprops_area_bbox,
+    regionprops_area_convex,
     regionprops_bbox_coords,
     regionprops_coords,
     regionprops_dict,
     regionprops_extent,
+    regionprops_feret_diameter_max,
     regionprops_image,
     regionprops_intensity_mean,
     regionprops_intensity_min_max,
@@ -30,6 +33,7 @@ from cucim.skimage.measure._regionprops_gpu import (
     regionprops_num_pixels,
 )
 from cucim.skimage.measure._regionprops_gpu_basic_kernels import basic_deps
+from cucim.skimage.measure._regionprops_gpu_convex import convex_deps
 from cucim.skimage.measure._regionprops_gpu_intensity_kernels import (
     intensity_deps,
 )
@@ -141,6 +145,72 @@ def test_area(precompute_max, ndim, area_dtype, spacing):
     assert_allclose(
         ed, expected["equivalent_diameter_area"], rtol=1e-5, atol=1e-5
     )
+
+
+@pytest.mark.parametrize("ndim", [2, 3])
+@pytest.mark.parametrize("spacing", [None, (1, 1, 1), (0.5, 0.35, 0.75)])
+@pytest.mark.parametrize(
+    "blob_kwargs", [{}, dict(blob_size_fraction=0.12, volume_fraction=0.3)]
+)
+def test_area_convex_and_solidity(ndim, spacing, blob_kwargs):
+    shape = (256, 512) if ndim == 2 else (64, 64, 80)
+    labels = get_labels_nd(shape, **blob_kwargs)
+    # discard any extra dimensions from spacing
+    if spacing is not None:
+        spacing = spacing[:ndim]
+
+    max_label = int(cp.max(labels))
+    area = regionprops_area(
+        labels,
+        spacing=spacing,
+        max_label=max_label,
+    )
+    _, _, images_convex = regionprops_image(
+        labels,
+        max_label=max_label,
+        compute_convex=True,
+    )
+    area_convex = regionprops_area_convex(
+        images_convex,
+        max_label=max_label,
+        spacing=spacing,
+    )
+    solidity = area / area_convex
+
+    # suppress any QHull warnings coming from the scikit-image implementation
+    warnings.filterwarnings(
+        "ignore",
+        message="Failed to get convex hull image",
+        category=UserWarning,
+    )
+    warnings.filterwarnings(
+        "ignore",
+        message="divide by zero",
+        category=RuntimeWarning,
+    )
+    expected = measure_cpu.regionprops_table(
+        cp.asnumpy(labels),
+        spacing=spacing,
+        properties=["area", "area_convex", "solidity"],
+    )
+    warnings.resetwarnings()
+
+    assert_allclose(area, expected["area"])
+
+    # Note if 3d blobs are size 1 on one of the axes, it can cause QHull to
+    # fail and return a zeros convex image for that label. This has been
+    # resolved for cuCIM, but not yet for scikit-image.
+    # The test case with blob_kwargs != {} was chosen as a known good
+    # setting where such an edge case does NOT occur.
+    if blob_kwargs:
+        assert_allclose(area_convex, expected["area_convex"])
+        assert_allclose(solidity, expected["solidity"])
+    else:
+        # Can't compare to scikit-image in this case
+        # Just make sure the convex area is not smaller than the original
+        rtol = 1e-4
+        assert cp.all(area_convex >= (area - rtol))
+        assert not cp.any(cp.isnan(solidity))
 
 
 @pytest.mark.parametrize("ndim", [2, 3])
@@ -449,9 +519,67 @@ def test_coords(ndim, spacing):
 
 
 @pytest.mark.parametrize("ndim", [2, 3])
+@pytest.mark.parametrize("spacing", [None, (1, 1, 1), (0.5, 0.35, 0.75)])
+@pytest.mark.parametrize(
+    "blob_kwargs", [dict(blob_size_fraction=0.15, volume_fraction=0.1)]
+)
+def test_feret_diameter_max(ndim, spacing, blob_kwargs):
+    shape = (1024, 2048) if ndim == 2 else (64, 80, 48)
+    # use dilate blobs to avoid error from singleton dimension regions in
+    # scikit-image
+    labels = get_labels_nd(shape, dilate_blobs=ndim == 3, **blob_kwargs)
+    # discard any extra dimensions from spacing
+    if spacing is not None:
+        spacing = spacing[:ndim]
+
+    max_label = int(cp.max(labels))
+    _, _, images_convex = regionprops_image(
+        labels,
+        max_label=max_label,
+        compute_convex=True,
+    )
+    feret_diameters = regionprops_feret_diameter_max(
+        images_convex,
+        spacing=spacing,
+    )
+
+    # suppress any QHull warnings coming from the scikit-image implementation
+    warnings.filterwarnings(
+        "ignore",
+        message="Failed to get convex hull image",
+        category=UserWarning,
+    )
+    warnings.filterwarnings(
+        "ignore",
+        message="divide by zero",
+        category=RuntimeWarning,
+    )
+    expected = measure_cpu.regionprops_table(
+        cp.asnumpy(labels),
+        spacing=spacing,
+        properties=["num_pixels", "feret_diameter_max"],
+    )
+    warnings.resetwarnings()
+
+    # print(f"{ndim=}, {spacing=}, {max_label=}")
+    # print(f"num_pixels={expected['num_pixels']}")
+    # print(f"diameters={expected['feret_diameter_max']}")
+    max_diff = np.max(
+        np.abs(feret_diameters.get() - expected["feret_diameter_max"])
+    )
+    # print(f"max_diff = {max_diff}")
+    assert max_diff < math.sqrt(ndim)
+
+
+@pytest.mark.parametrize("ndim", [2, 3])
 @pytest.mark.parametrize("spacing", [None, (1.5, 0.5, 0.76)])
 @pytest.mark.parametrize(
-    "property_name", list(basic_deps.keys()) + list(intensity_deps.keys())
+    "property_name",
+    (
+        list(basic_deps.keys())
+        + list(convex_deps.keys())
+        + list(intensity_deps.keys())
+    ),
 )
 def test_regionprops_dict_single_property(ndim, spacing, property_name):
     """Test to verify that any dependencies for a given property are
