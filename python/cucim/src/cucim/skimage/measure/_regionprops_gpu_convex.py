@@ -92,15 +92,16 @@ def _feret_diameter_max(image_convex, spacing=None, return_argmax=False):
             spacing = cp.asarray(spacing, dtype=cp.float32).reshape(1, -1)
             coords *= spacing
 
-    out = pdist_max_blockwise(
+    squared_dist, index_argmax = pdist_max_blockwise(
         coords,
         metric="sqeuclidean",
         compute_argmax=return_argmax,
         coords_per_block=4000,
     )
+    max_diameter = math.sqrt(float(squared_dist))
     if return_argmax:
-        return math.sqrt(out[0]), out[1]
-    return math.sqrt(out[0])
+        return max_diameter, index_argmax
+    return max_diameter
 
 
 def regionprops_feret_diameter_max(
@@ -140,7 +141,8 @@ def regionprops_feret_diameter_max(
                 image_convex, spacing=spacing, return_argmax=False
             )
             for image_convex in images_convex
-        )
+        ),
+        dtype=cp.float64,
     )
     if props_dict is not None:
         props_dict["feret_diameter_max"] = diameters
