@@ -808,7 +808,7 @@ def binary_propagation(
     )
 
 
-def _binary_fill_holes_non_iterative(input, output=None):
+def _binary_fill_holes_non_iterative(input, structure=None, output=None):
     """Non-iterative method for hole filling.
 
     This algorithm is based on inverting the input and then using `label` to
@@ -832,7 +832,9 @@ def _binary_fill_holes_non_iterative(input, output=None):
 
     # assign unique labels the background and holes
     inverse_binary_mask = ~binary_mask
-    inverse_labels, _ = _measurements.label(inverse_binary_mask)
+    inverse_labels, _ = _measurements.label(
+        inverse_binary_mask, structure=structure
+    )
 
     # After inversion, what was originally the background will now be the
     # first foreground label encountered. This is ensured due to the
@@ -851,6 +853,13 @@ def _binary_fill_holes_non_iterative(input, output=None):
     if output is None:
         output = cupy.ascontiguousarray(temp)
     else:
+        # handle output argument as in _binary_erosion
+        if isinstance(output, cupy.ndarray):
+            if output.dtype.kind == "c":
+                raise TypeError("Complex output type not supported")
+        else:
+            output = bool
+        output = _util._get_output(output, input)
         output[:] = temp
     return output
 
@@ -901,15 +910,13 @@ def binary_fill_holes(
     filter_all_axes = axes == tuple(range(input.ndim))
     if isinstance(origin, int):
         origin = (origin,) * len(axes)
-    if structure is None and all(o == 0 for o in origin) and filter_all_axes:
+    if all(o == 0 for o in origin) and filter_all_axes:
         return _binary_fill_holes_non_iterative(input, output=output)
-    else:
-        if filter_all_axes:
-            warnings.warn(
-                "It is recommended to keep the default structure=None and "
-                "origin=0, so that a faster non-iterative algorithm can be "
-                "used."
-            )
+    elif filter_all_axes:
+        warnings.warn(
+            "It is recommended to keep the default origin=0 so that a faster "
+            "non-iterative algorithm can be used."
+        )
     mask = cupy.logical_not(input)
     tmp = cupy.zeros(mask.shape, bool)
     inplace = isinstance(output, cupy.ndarray)
