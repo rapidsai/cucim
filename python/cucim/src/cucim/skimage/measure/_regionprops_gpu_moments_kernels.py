@@ -22,7 +22,6 @@ __all__ = [
     "regionprops_moments_normalized",
 ]
 
-
 # Store information on which other properties a given property depends on
 # This information will be used by `regionprops_dict` to make sure that when
 # a particular property is requested any dependent properties are computed
