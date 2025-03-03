@@ -128,12 +128,14 @@ def pdist_max_blockwise(
         )
 
     blocks_per_dim = math.ceil(num_coords / coords_per_block)
+    if coords.dtype not in [xp.float32, xp.float64]:
+        coords = coords.astype(xp.float32, copy=False)
     if blocks_per_dim > 1:
         # reuse the same temporary storage array for most blocks
         # (last block in row and column may be smaller)
-        temp = xp.zeros((coords_per_block, coords_per_block), dtype=xp.float32)
-    if coords.dtype not in [xp.float32, xp.float64]:
-        coords = coords.astype(xp.float32, copy=False)
+        temp = xp.zeros(
+            (coords_per_block, coords_per_block), dtype=coords.dtype
+        )
     if not coords.flags.c_contiguous:
         coords = xp.ascontiguousarray(coords)
     max_dist = 0
