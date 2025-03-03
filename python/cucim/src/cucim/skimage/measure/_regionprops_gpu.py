@@ -220,6 +220,7 @@ def regionprops_dict(
     moment_order=None,
     max_label=None,
     pixels_per_thread=16,
+    robust_perimeter=True,
 ):
     """Compute image properties and return them as a pandas-compatible table.
 
@@ -259,6 +260,15 @@ def regionprops_dict(
         from each GPU thread. The number of adjacent pixels processed
         corresponds to `pixels_per_thread` and can be used as a performance
         tuning parameter.
+    robust_perimeter : bool, optional
+        Batch computation of perimeter and euler characteristics can give
+        incorrect results for perimeter pixels that are not more than 1 pixel
+        spacing from another label. If True, a check for this condition is
+        performed and any labels close to another label have their perimeter
+        recomputed in isolation. Doing this check results in performance
+        overhead so can optionally be disabled. This parameter effects the
+        following regionprops: {"perimeter", "perimeter_crofton",
+        "euler_number"}.
     """
     supported_properties = CURRENT_PROPS_GPU | GLOBAL_PROPS
     properties = set(properties)
@@ -579,16 +589,27 @@ def regionprops_dict(
             labels_mask = label_image.view("bool")
         else:
             labels_mask = label_image > 0
-        labels_close = _find_close_labels(
-            label_image, binary_image=labels_mask, max_label=max_label
-        )
+        if robust_perimeter:
+            # avoid repeatedly computing "labels_close" for
+            # perimeter, perimeter_crofton and euler_number regionprops
+            labels_close = _find_close_labels(
+                label_image, binary_image=labels_mask, max_label=max_label
+            )
+            if labels_close.size > 0:
+                print(
+                    f"Found {labels_close.size} regions with <=1 background "
+                    "pixel spacing from another region. Using slower robust "
+                    "perimeter/euler measurements for these regions."
+                )
+        else:
+            labels_close = None
 
         if compute_perimeter:
             regionprops_perimeter(
                 label_image,
                 neighborhood=4,
                 max_label=max_label,
-                robust=True,
+                robust=robust_perimeter,
                 labels_close=labels_close,
                 props_dict=out,
             )
@@ -597,7 +618,7 @@ def regionprops_dict(
                 label_image,
                 directions=4,
                 max_label=max_label,
-                robust=True,
+                robust=robust_perimeter,
                 omit_image_edges=False,
                 labels_close=labels_close,
                 props_dict=out,
@@ -608,7 +629,7 @@ def regionprops_dict(
                 label_image,
                 connectivity=None,
                 max_label=max_label,
-                robust=True,
+                robust=robust_perimeter,
                 labels_close=labels_close,
                 props_dict=out,
             )
