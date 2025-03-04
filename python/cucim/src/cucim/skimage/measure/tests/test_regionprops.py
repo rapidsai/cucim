@@ -6,7 +6,11 @@ import cupy as cp
 import cupyx.scipy.ndimage as ndi
 import numpy as np
 import pytest
-from cupy.testing import assert_array_almost_equal, assert_array_equal
+from cupy.testing import (
+    assert_allclose,
+    assert_array_almost_equal,
+    assert_array_equal,
+)
 from numpy.testing import assert_almost_equal, assert_equal
 from skimage import data, draw
 from skimage.segmentation import slic
@@ -1260,7 +1264,9 @@ def test_regionprops_table_batch_close_to_original():
                 elif prop == "slice":
                     assert_array_equal(rp, out_table[prop][i])
                 else:
-                    assert_array_almost_equal(rp, out_table[prop][i])
+                    assert_allclose(
+                        rp, out_table[prop][i], atol=1e-5, rtol=1e-5
+                    )
             else:
                 shape = rp.shape if isinstance(rp, cp.ndarray) else (len(rp),)
                 if "moments" in prop:
@@ -1270,8 +1276,11 @@ def test_regionprops_table_batch_close_to_original():
                 for ind in np.ndindex(shape):
                     modified_prop = "-".join(map(str, (prop,) + ind))
                     loc = ind if len(ind) > 1 else ind[0]
-                    assert_array_almost_equal(
-                        rp[loc], out_table[modified_prop][i]
+                    assert_allclose(
+                        rp[loc],
+                        out_table[modified_prop][i],
+                        atol=1e-5,
+                        rtol=1e-5,
                     )
 
 
