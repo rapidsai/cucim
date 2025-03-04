@@ -319,7 +319,12 @@ class RegionProperties:
         extra_properties=None,
         spacing=None,
     ):
+        if not isinstance(label_image, cp.ndarray):
+            raise ValueError("label_image image must be a cupy.ndarray")
+
         if intensity_image is not None:
+            if not isinstance(intensity_image, cp.ndarray):
+                raise ValueError("intensity_image image must be a cupy.ndarray")
             ndim = label_image.ndim
             if not (
                 intensity_image.shape[:ndim] == label_image.shape
@@ -1127,6 +1132,13 @@ def regionprops_table(
     4      5       112.50        113.0        114.0
 
     """
+    if not isinstance(label_image, cp.ndarray):
+        raise ValueError("label_image must be a cupy.ndarray")
+    if intensity_image is not None and not isinstance(
+        intensity_image, cp.ndarray
+    ):
+        raise ValueError("intensity_image must be a cupy.ndarray")
+
     regions = regionprops(
         label_image,
         intensity_image=intensity_image,
@@ -1412,6 +1424,12 @@ def regionprops(
     array(42)
 
     """  # noqa
+    if not isinstance(label_image, cp.ndarray):
+        raise ValueError("label_image must be a cupy.ndarray")
+    if intensity_image is not None and not isinstance(
+        intensity_image, cp.ndarray
+    ):
+        raise ValueError("intensity_image must be a cupy.ndarray")
 
     if label_image.ndim not in (2, 3):
         raise TypeError("Only 2-D and 3-D images supported.")

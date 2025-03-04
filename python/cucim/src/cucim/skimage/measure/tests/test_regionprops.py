@@ -132,6 +132,14 @@ def test_all_props_3d():
             pass
 
 
+def test_all_props_error_on_numpy_input():
+    with pytest.raises(ValueError):
+        regionprops(cp.asnumpy(SAMPLE), INTENSITY_SAMPLE)
+
+    with pytest.raises(ValueError):
+        regionprops(SAMPLE, cp.asnumpy(INTENSITY_SAMPLE))
+
+
 def test_num_pixels():
     num_pixels = regionprops(SAMPLE)[0].num_pixels
     assert num_pixels == 72
@@ -1219,6 +1227,17 @@ def test_regionprops_table_no_regions():
     assert len(out["bbox+1"]) == 0
     assert len(out["bbox+2"]) == 0
     assert len(out["bbox+3"]) == 0
+
+
+def test_regionprops_table_error_on_numpy_input():
+    with pytest.raises(ValueError):
+        regionprops_table(
+            cp.asnumpy(SAMPLE), INTENSITY_SAMPLE, properties=["intensity_mean"]
+        )
+    with pytest.raises(ValueError):
+        regionprops_table(
+            SAMPLE, cp.asnumpy(INTENSITY_SAMPLE), properties=["intensity_mean"]
+        )
 
 
 def test_column_dtypes_complete():
