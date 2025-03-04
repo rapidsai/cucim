@@ -207,7 +207,7 @@ def convex_hull_image(
     original_shape = image.shape
     image = cp.squeeze(image)
     if image.ndim < 2:
-        return image
+        return image.reshape(original_shape)
 
     if image.size < cpu_fallback_threshold:
         # Fallback to pure CPU implementation
