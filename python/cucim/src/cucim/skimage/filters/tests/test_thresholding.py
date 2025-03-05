@@ -637,6 +637,14 @@ def test_mean():
 @pytest.mark.parametrize("kwargs", [{}, {"nbins": 300000}])
 @pytest.mark.parametrize("dtype", [cp.uint8, cp.int16, cp.float16, cp.float32])
 def test_triangle_uniform_images(dtype, kwargs):
+    if dtype == cp.float16:
+        # Avoid potential NaN bin edges if nbins exceeds float16 range.
+        # (NaN in bin edges can cause out of bounds CUDA memory access in
+        # `cp.histogram`)
+        if "nbins" in kwargs:
+            kwargs["nbins"] = min(
+                kwargs["nbins"], int(np.finfo(np.float16).max)
+            )
     assert threshold_triangle(cp.zeros((10, 10), dtype=dtype), **kwargs) == 0
     assert threshold_triangle(cp.ones((10, 10), dtype=dtype), **kwargs) == 1
     assert threshold_triangle(cp.full((10, 10), 2, dtype=dtype), **kwargs) == 2
