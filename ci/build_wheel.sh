@@ -6,6 +6,8 @@ set -euo pipefail
 package_name="cucim"
 package_dir="python/cucim"
 
+wheel_dir=${RAPIDS_WHEEL_BLD_OUTPUT_DIR:-"final_dist"}
+
 CMAKE_BUILD_TYPE="release"
 
 source rapids-configure-sccache
@@ -56,10 +58,10 @@ rapids-pip-retry wheel \
 sccache --show-adv-stats
 
 mkdir -p final_dist
-python -m auditwheel repair -w final_dist dist/*
+python -m auditwheel repair -w "${wheel_dir}" dist/*
 # shellcheck disable=SC2010
-ls -1 final_dist | grep -vqz 'none'
+ls -1 "${wheel_dir}" | grep -vqz 'none'
 
-../../ci/validate_wheel.sh final_dist
+../../ci/validate_wheel.sh "${wheel_dir}"
 
-RAPIDS_PY_WHEEL_NAME="${package_name}_${RAPIDS_PY_CUDA_SUFFIX}" rapids-upload-wheels-to-s3 final_dist
+RAPIDS_PY_WHEEL_NAME="${package_name}_${RAPIDS_PY_CUDA_SUFFIX}" rapids-upload-wheels-to-s3 python "${wheel_dir}"
