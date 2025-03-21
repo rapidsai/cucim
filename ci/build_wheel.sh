@@ -6,7 +6,7 @@ set -euo pipefail
 package_name="cucim"
 package_dir="python/cucim"
 
-wheel_dir=${RAPIDS_WHEEL_BLD_OUTPUT_DIR:-"final_dist"}
+wheel_dir=${RAPIDS_WHEEL_BLD_OUTPUT_DIR}
 
 CMAKE_BUILD_TYPE="release"
 
@@ -57,7 +57,6 @@ rapids-pip-retry wheel \
 
 sccache --show-adv-stats
 
-mkdir -p final_dist
 python -m auditwheel repair -w "${wheel_dir}" dist/*
 # shellcheck disable=SC2010
 ls -1 "${wheel_dir}" | grep -vqz 'none'
