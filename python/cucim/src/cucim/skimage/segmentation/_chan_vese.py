@@ -89,7 +89,7 @@ def _cv_calculate_variation(image, phi, mu, lambda1, lambda2, dt):
     similar approach is used by Rami Cohen, and it is from there that the
     C1-4 notation is taken.
     """
-    eta = 1e-16
+    eta = cp.asarray(1e-16, dtype=phi.dtype)
     P = pad(phi, 1, mode="edge")
 
     x_end = P[1:-1, 2:]
@@ -426,15 +426,15 @@ def chan_vese(
         image = image / cp.max(image)
 
     i = 0
-    if extended_output:
-        old_energy = _cv_energy(image, phi, mu, lambda1, lambda2)
-        energies = []
-    phivar = tol + 1
-
-    dt = cp.asarray(dt, dtype=float_dtype)
     mu = cp.asarray(mu, dtype=float_dtype)
     lambda1 = cp.asarray(lambda1, dtype=float_dtype)
     lambda2 = cp.asarray(lambda2, dtype=float_dtype)
+    if extended_output:
+        old_energy = _cv_energy(image, phi, mu, lambda1, lambda2)
+        energies = []
+
+    phivar = tol + 1
+    dt = cp.asarray(dt, dtype=float_dtype)
     while phivar > tol and i < max_num_iter:
         # Save old level set values
         oldphi = phi
