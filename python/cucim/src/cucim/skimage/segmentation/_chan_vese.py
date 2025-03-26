@@ -71,7 +71,7 @@ def _fused_variance_kernel2(
     return out
 
 
-def _cv_calculate_variation(image, phi, mu, lambda1, lambda2, dt):
+def _cv_calculate_variation(image, phi, mu, lambda1, lambda2, dt, eta):
     """Returns the variation of level set 'phi' based on algorithm parameters.
 
     This corresponds to equation (22) of the paper by Pascal Getreuer,
@@ -89,7 +89,6 @@ def _cv_calculate_variation(image, phi, mu, lambda1, lambda2, dt):
     similar approach is used by Rami Cohen, and it is from there that the
     C1-4 notation is taken.
     """
-    eta = cp.asarray(1e-16, dtype=phi.dtype)
     P = pad(phi, 1, mode="edge")
 
     x_end = P[1:-1, 2:]
@@ -413,6 +412,15 @@ def chan_vese(
         raise ValueError("Input image should be a 2D array.")
 
     float_dtype = _supported_float_type(image.dtype)
+
+    # cast Python float constants to device scalars of matching precision
+    mu = cp.asarray(mu, dtype=float_dtype)
+    lambda1 = cp.asarray(lambda1, dtype=float_dtype)
+    lambda2 = cp.asarray(lambda2, dtype=float_dtype)
+    dt = cp.asarray(dt, dtype=float_dtype)
+    tol = cp.asarray(tol, dtype=float_dtype)
+    eta = cp.asarray(1e-16, dtype=float_dtype)
+
     phi = _cv_init_level_set(init_level_set, image.shape, dtype=float_dtype)
     if type(phi) != cp.ndarray or phi.shape != image.shape:
         raise ValueError(
@@ -426,21 +434,17 @@ def chan_vese(
         image = image / cp.max(image)
 
     i = 0
-    mu = cp.asarray(mu, dtype=float_dtype)
-    lambda1 = cp.asarray(lambda1, dtype=float_dtype)
-    lambda2 = cp.asarray(lambda2, dtype=float_dtype)
     if extended_output:
         old_energy = _cv_energy(image, phi, mu, lambda1, lambda2)
         energies = []
 
     phivar = tol + 1
-    dt = cp.asarray(dt, dtype=float_dtype)
     while phivar > tol and i < max_num_iter:
         # Save old level set values
         oldphi = phi
 
         # Calculate new level set
-        phi = _cv_calculate_variation(image, phi, mu, lambda1, lambda2, dt)
+        phi = _cv_calculate_variation(image, phi, mu, lambda1, lambda2, dt, eta)
         phivar = phi - oldphi
         phivar *= phivar
         phivar = cp.sqrt(phivar.mean())
