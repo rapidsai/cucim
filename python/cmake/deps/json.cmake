@@ -17,7 +17,7 @@ if (NOT TARGET deps::json)
     FetchContent_Declare(
             deps-json
             GIT_REPOSITORY https://github.com/nlohmann/json.git
-            GIT_TAG v3.9.1
+            GIT_TAG v3.11.3
             GIT_SHALLOW TRUE
             EXCLUDE_FROM_ALL
     )
