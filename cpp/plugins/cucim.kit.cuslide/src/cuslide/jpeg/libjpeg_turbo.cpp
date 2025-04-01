@@ -285,12 +285,18 @@ int jpeg_decode_buffer(const void* handle,
         THROW("tjDecompress2(): Invalid argument");
 
 #ifndef NO_PUTENV
-    if (flags & TJFLAG_FORCEMMX)
-        putenv("JSIMD_FORCEMMX=1");
-    else if (flags & TJFLAG_FORCESSE)
-        putenv("JSIMD_FORCESSE=1");
-    else if (flags & TJFLAG_FORCESSE2)
-        putenv("JSIMD_FORCESSE2=1");
+    if (flags & TJFLAG_FORCEMMX) {
+        static char mmx[] = "JSIMD_FORCEMMX=1";
+        putenv(mmx);
+    }
+    else if (flags & TJFLAG_FORCESSE) {
+        static char sse[] = "JSIMD_FORCESSE=1";
+        putenv(sse);
+    }
+    else if (flags & TJFLAG_FORCESSE2) {
+        static char sse2[] = "JSIMD_FORCESSE2=1";
+        putenv(sse2);
+    }
 #endif
 
     if (setjmp(instance->jerr.setjmp_buffer))
@@ -350,9 +356,9 @@ int jpeg_decode_buffer(const void* handle,
     for (i = 0; i < (int)dinfo->output_height; i++)
     {
         if (flags & TJFLAG_BOTTOMUP)
-            row_pointer[i] = &dstBuf[(dinfo->output_height - i - 1) * (size_t)pitch];
+            row_pointer[i] = (JSAMPROW)(&dstBuf[(dinfo->output_height - i - 1) * (size_t)pitch]);
         else
-            row_pointer[i] = &dstBuf[i * (size_t)pitch];
+            row_pointer[i] = (JSAMPROW)(&dstBuf[i * (size_t)pitch]);
     }
     while (dinfo->output_scanline < dinfo->output_height)
         jpeg_read_scanlines(dinfo, &row_pointer[dinfo->output_scanline], dinfo->output_height - dinfo->output_scanline);
