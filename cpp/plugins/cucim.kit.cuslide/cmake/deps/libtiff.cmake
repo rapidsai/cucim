@@ -24,7 +24,7 @@ if (NOT TARGET deps::libtiff)
     FetchContent_Declare(
             deps-libtiff
             GIT_REPOSITORY https://gitlab.com/libtiff/libtiff.git
-            GIT_TAG v4.5.0
+            GIT_TAG v4.1.0
             GIT_SHALLOW TRUE
             PATCH_COMMAND ${GIT_EXECUTABLE} apply "${CMAKE_CURRENT_LIST_DIR}/libtiff.patch"
             EXCLUDE_FROM_ALL
