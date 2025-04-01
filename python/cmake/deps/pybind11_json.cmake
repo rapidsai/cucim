@@ -17,7 +17,7 @@ if (NOT TARGET deps::pybind11_json)
     FetchContent_Declare(
             deps-pybind11_json
             GIT_REPOSITORY https://github.com/pybind/pybind11_json.git
-            GIT_TAG 0.2.9
+            GIT_TAG 0.2.15
             GIT_SHALLOW TRUE
             EXCLUDE_FROM_ALL
     )
