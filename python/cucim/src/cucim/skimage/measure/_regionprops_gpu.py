@@ -197,7 +197,7 @@ def regionprops_dict(
     if invalid_names:
         warnings.warn(
             "The following property names were unrecognized and will not be "
-            "computed: {invalid_names}"
+            f"computed: {invalid_names}"
         )
 
     requested_props = set(sorted(valid_names))
@@ -215,14 +215,14 @@ def regionprops_dict(
         if any(invalid_names):
             raise ValueError(
                 f"{label_image.ndim=}, but the following properties are for "
-                "2D label images only: {invalid_names}"
+                f"2D label images only: {invalid_names}"
             )
     if intensity_image is None:
         invalid_names = requested_props & need_intensity_image
         if any(invalid_names):
             raise ValueError(
                 "No intensity_image provided, but the following requested "
-                "properties require one: {invalid_names}"
+                f"properties require one: {invalid_names}"
             )
 
     out = {}

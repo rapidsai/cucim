@@ -188,7 +188,7 @@ def test_bbox_coords_and_area(precompute_max, ndim, dtype, return_slices):
     )
     assert bbox.dtype == cp.uint32
     if not return_slices:
-        slices is None
+        assert slices is None
     else:
         expected_slices = cpu_find_objects(cp.asnumpy(labels))
         assert slices == expected_slices
@@ -395,7 +395,6 @@ def test_regionprops_image_and_coords_sequence(ndim, property_name):
             comparison_func = assert_array_equal
         for i, (expected_val, val) in enumerate(zip(expected, result)):
             comparison_func(expected_val, val)
-    return
 
 
 @pytest.mark.parametrize(

@@ -911,7 +911,7 @@ def binary_fill_holes(
     if isinstance(origin, int):
         origin = (origin,) * len(axes)
     if all(o == 0 for o in origin) and filter_all_axes:
-        return _binary_fill_holes_non_iterative(input, output=output)
+        return _binary_fill_holes_non_iterative(input, output=output, structure=structure)
     elif filter_all_axes:
         warnings.warn(
             "It is recommended to keep the default origin=0 so that a faster "
