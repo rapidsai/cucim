@@ -215,7 +215,7 @@ def _get_intensity_img_kernel_dtypes(image_dtype):
 
 @cp.memoize()
 def _get_intensity_range(image_dtype):
-    """Determine CuPy dtype and C++ type for image sum operations."""
+    """Determine the valid intensity range for the given image dtype."""
     image_dtype = cp.dtype(image_dtype)
     if image_dtype.kind == "f":
         # use double for accuracy of mean/std computations
