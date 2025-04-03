@@ -42,8 +42,8 @@ build:
       CUCIM_BUILD_TYPE=${CUCIM_BUILD_TYPE:-release}
 
       # CUDA needs to include $PREFIX/include as system include path
-      # export CUDAFLAGS="-isystem $BUILD_PREFIX/include -isystem $PREFIX/include "
-      # export LD_LIBRARY_PATH="$BUILD_PREFIX/lib:$PREFIX/lib:$LD_LIBRARY_PATH"
+      export CUDAFLAGS="-isystem $BUILD_PREFIX/include -isystem $PREFIX/include "
+      export LD_LIBRARY_PATH="$BUILD_PREFIX/lib:$PREFIX/lib:$LD_LIBRARY_PATH"
 
       # Build libcucim core
       ./run build_local libcucim ${CUCIM_BUILD_TYPE} ${PREFIX}
@@ -80,6 +80,7 @@ build:
 requirements:
   build:
     - cmake ${{ cmake_version }}
+    - make
     - ninja
     - ${{ compiler("c") }}
     - ${{ compiler("cxx") }}
