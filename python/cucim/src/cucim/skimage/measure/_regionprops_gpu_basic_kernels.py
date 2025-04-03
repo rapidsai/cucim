@@ -804,7 +804,6 @@ def _get_compressed_labels(
     if intensity_image:
         img1d = intensity_image[label_coords]
         return label_coords, labels1d, img1d
-    # max_label = int(labels1d[-1])
     return label_coords, labels1d
 
 
