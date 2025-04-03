@@ -23,14 +23,12 @@ from ._regionprops_gpu_basic_kernels import (
     regionprops_num_perimeter_pixels,
     regionprops_num_pixels,
 )
-
 from ._regionprops_gpu_intensity_kernels import (
     intensity_deps,
     regionprops_intensity_mean,
     regionprops_intensity_min_max,
     regionprops_intensity_std,
 )
-
 from ._regionprops_gpu_utils import _get_min_integer_dtype
 
 __all__ = [
