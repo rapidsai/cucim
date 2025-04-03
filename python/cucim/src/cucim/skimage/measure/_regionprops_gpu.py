@@ -34,7 +34,6 @@ from ._regionprops_gpu_intensity_kernels import (
     regionprops_intensity_min_max,
     regionprops_intensity_std,
 )
-
 from ._regionprops_gpu_utils import _get_min_integer_dtype
 
 __all__ = [
