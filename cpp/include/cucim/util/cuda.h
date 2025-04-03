@@ -28,7 +28,7 @@
         if (cudaSuccess != cuda_status)                                                                                \
         {                                                                                                              \
             fmt::print(stderr, "[Error] CUDA Runtime call {} in line {} of file {} failed with '{}' ({}).\n", #stmt,   \
-                       __LINE__, __FILE__, cudaGetErrorString(cuda_status), cuda_status);                              \
+                       __LINE__, __FILE__, cudaGetErrorString(cuda_status), static_cast<int>(cuda_status));            \
         }                                                                                                              \
     }
 
@@ -39,7 +39,7 @@
         {                                                                                                              \
             throw std::runtime_error(                                                                                  \
                 fmt::format("[Error] CUDA Runtime call {} in line {} of file {} failed with '{}' ({}).\n", #stmt,      \
-                            __LINE__, __FILE__, cudaGetErrorString(cuda_status), cuda_status));                        \
+                            __LINE__, __FILE__, cudaGetErrorString(cuda_status), static_cast<int>(cuda_status)));      \
         }                                                                                                              \
     }
 
@@ -49,7 +49,7 @@
         if (_nvjpeg_status != NVJPEG_STATUS_SUCCESS)                                                                   \
         {                                                                                                              \
             fmt::print("[Error] NVJPEG call {} in line {} of file {} failed with the error code {}.\n", #stmt,         \
-                __LINE__, __FILE__, _nvjpeg_status));                                                                  \
+                __LINE__, __FILE__, static_cast<int>(_nvjpeg_status));                                                 \
         }                                                                                                              \
     }
 
@@ -60,7 +60,7 @@
         {                                                                                                              \
             throw std::runtime_error(                                                                                  \
                 fmt::format("[Error] NVJPEG call {} in line {} of file {} failed with the error code {}.\n", #stmt,    \
-                            __LINE__, __FILE__, _nvjpeg_status));                                                      \
+                            __LINE__, __FILE__, static_cast<int>(_nvjpeg_status)));                                    \
         }                                                                                                              \
     }
 

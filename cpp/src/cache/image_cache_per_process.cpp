@@ -79,7 +79,7 @@ PerProcessImageCacheValue::~PerProcessImageCacheValue()
         case io::DeviceType::kCUDAManaged:
         case io::DeviceType::kCPUShared:
         case io::DeviceType::kCUDAShared:
-            fmt::print(stderr, "Device type {} is not supported!\n", device_type);
+            fmt::print(stderr, "Device type {} is not supported!\n", static_cast<int>(device_type));
             break;
         }
         data = nullptr;
@@ -134,7 +134,7 @@ void* PerProcessImageCache::allocate(std::size_t n)
     case io::DeviceType::kCUDAManaged:
     case io::DeviceType::kCPUShared:
     case io::DeviceType::kCUDAShared:
-        fmt::print(stderr, "Device type {} is not supported!\n", device_type_);
+        fmt::print(stderr, "Device type {} is not supported!\n", static_cast<int>(device_type_));
         break;
     }
     return nullptr;
