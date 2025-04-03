@@ -95,6 +95,7 @@ requirements:
     - openslide
     - if: cuda_major == "11"
       then:
+        - cudatoolkit
         - libnvjpeg =${{ cuda11_libnvjpeg_host_version }}
         - libnvjpeg-dev =${{ cuda11_libnvjpeg_host_version }}
         - if: linux64
