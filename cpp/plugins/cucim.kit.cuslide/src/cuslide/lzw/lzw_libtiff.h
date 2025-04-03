@@ -42,7 +42,10 @@ struct TIFF;
 #define COMPRESSION_LZW 5 /* Lempel-Ziv  & Welch */
 
 /* Signed size type */
-#define TIFF_SSIZE_T signed long
+// Check if TIFF_SSIZE_T is already defined before defining it
+#ifndef TIFF_SSIZE_T
+#define TIFF_SSIZE_T int64_t
+#endif
 typedef TIFF_SSIZE_T tmsize_t;
 typedef tmsize_t tsize_t; /* i/o size in bytes */
 

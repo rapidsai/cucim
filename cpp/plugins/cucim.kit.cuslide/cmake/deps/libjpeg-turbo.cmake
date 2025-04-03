@@ -26,6 +26,7 @@ if (NOT TARGET deps::libjpeg-turbo)
             GIT_REPOSITORY https://github.com/libjpeg-turbo/libjpeg-turbo.git
             GIT_TAG 2.0.6
             GIT_SHALLOW TRUE
+            PATCH_COMMAND ${GIT_EXECUTABLE} apply "${CMAKE_CURRENT_LIST_DIR}/libjpeg-turbo.patch"
             EXCLUDE_FROM_ALL
     )
 
