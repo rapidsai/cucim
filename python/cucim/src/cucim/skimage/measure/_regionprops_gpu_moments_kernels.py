@@ -1160,7 +1160,7 @@ def regionprops_moments_normalized(
     weighted=False,
     props_dict=None,
 ):
-    """Compute the normalizedcentral moments of the labeled regions.
+    """Compute the normalized central moments of the labeled regions.
 
     Computes normalized central moments from central moments.
 
@@ -1310,7 +1310,7 @@ def get_moments_hu_kernel(moments_dtype):
 
 
 def regionprops_moments_hu(moments_normalized, weighted=False, props_dict=None):
-    """Compute the 2D Hu invariant moments from 3rd ordernormalized central
+    """Compute the 2D Hu invariant moments from 3rd order normalized central
     moments.
 
     Writes "moments_hu" to `props_dict` if `weighted` is ``False``
@@ -1696,7 +1696,7 @@ def regionprops_inertia_tensor_eigvals(
     compute_eccentricity=False,
     props_dict=None,
 ):
-    """ "Compute the inertia tensor eigenvalues (and eigenvectors) from the
+    """ Compute the inertia tensor eigenvalues (and eigenvectors) from the
     inertia tensor of each labeled region.
 
     The input to this function is the output of `regionprops_inertia_tensor`.
