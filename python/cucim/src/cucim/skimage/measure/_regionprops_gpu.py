@@ -23,12 +23,14 @@ from ._regionprops_gpu_basic_kernels import (
     regionprops_num_perimeter_pixels,
     regionprops_num_pixels,
 )
+
 from ._regionprops_gpu_intensity_kernels import (
     intensity_deps,
     regionprops_intensity_mean,
     regionprops_intensity_min_max,
     regionprops_intensity_std,
 )
+
 from ._regionprops_gpu_utils import _get_min_integer_dtype
 
 __all__ = [
@@ -102,6 +104,9 @@ OBJECT_COLUMNS_GPU = [
 property_deps = dict()
 property_deps.update(basic_deps)
 property_deps.update(intensity_deps)
+
+# set of properties that require an intensity_image also be provided
+need_intensity_image = {"image_intensity"}
 
 # set of properties that only supports 2D images
 ndim_2_only = set()
@@ -207,7 +212,7 @@ def regionprops_dict(
     if invalid_names:
         warnings.warn(
             "The following property names were unrecognized and will not be "
-            "computed: {invalid_names}"
+            f"computed: {invalid_names}"
         )
 
     requested_props = set(sorted(valid_names))
@@ -225,7 +230,7 @@ def regionprops_dict(
         if any(invalid_names):
             raise ValueError(
                 f"{label_image.ndim=}, but the following properties are for "
-                "2D label images only: {invalid_names}"
+                f"2D label images only: {invalid_names}"
             )
     if intensity_image is None:
         has_intensity = False
@@ -233,7 +238,7 @@ def regionprops_dict(
         if any(invalid_names):
             raise ValueError(
                 "No intensity_image provided, but the following requested "
-                "properties require one: {invalid_names}"
+                f"properties require one: {invalid_names}"
             )
     else:
         has_intensity = True
