@@ -18,7 +18,8 @@ if (NOT TARGET deps::libopenjpeg)
     FetchContent_Declare(
             deps-libopenjpeg
             GIT_REPOSITORY https://github.com/uclouvain/openjpeg.git
-            GIT_TAG v2.5.0
+            GIT_TAG v2.5.3
+            PATCH_COMMAND ${GIT_EXECUTABLE} apply "${CMAKE_CURRENT_LIST_DIR}/libopenjpeg.patch"
             GIT_SHALLOW TRUE
     )
 

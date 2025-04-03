@@ -17,7 +17,7 @@ if (NOT TARGET deps::cli11)
     FetchContent_Declare(
             deps-cli11
             GIT_REPOSITORY https://github.com/CLIUtils/CLI11.git
-            GIT_TAG v1.9.1
+            GIT_TAG v2.5.0
             GIT_SHALLOW TRUE
             EXCLUDE_FROM_ALL
     )
