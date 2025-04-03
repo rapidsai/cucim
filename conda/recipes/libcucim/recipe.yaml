@@ -30,14 +30,20 @@ build:
       - lib/cucim.*.so
   script:
     content: |
+      # Remove `-fdebug-prefix-map` line from CFLAGS and CXXFLAGS so the
+      # incrementing version number in the compile line doesn't break the
+      # cache
+      set -x
+      export CFLAGS=$(echo $CFLAGS | sed -E 's@\-fdebug\-prefix\-map[^ ]*@@g')
+      export CXXFLAGS=$(echo $CXXFLAGS | sed -E 's@\-fdebug\-prefix\-map[^ ]*@@g')
+      set +x
+
+
       CUCIM_BUILD_TYPE=${CUCIM_BUILD_TYPE:-release}
 
       # CUDA needs to include $PREFIX/include as system include path
-      export CUDAFLAGS="-isystem $BUILD_PREFIX/include -isystem $PREFIX/include "
-      export LD_LIBRARY_PATH="$BUILD_PREFIX/lib:$PREFIX/lib:$LD_LIBRARY_PATH"
-
-      # It is assumed that this script is executed from the root of the repo directory by conda-build
-      # (https://conda-forge.org/docs/maintainer/knowledge_base.html#using-cmake)
+      # export CUDAFLAGS="-isystem $BUILD_PREFIX/include -isystem $PREFIX/include "
+      # export LD_LIBRARY_PATH="$BUILD_PREFIX/lib:$PREFIX/lib:$LD_LIBRARY_PATH"
 
       # Build libcucim core
       ./run build_local libcucim ${CUCIM_BUILD_TYPE} ${PREFIX}
