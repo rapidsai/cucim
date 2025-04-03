@@ -21,6 +21,13 @@ source:
 
 build:
   string: cuda${{ cuda_major }}_py${{ py_buildstring }}_${{ date_string }}_${{ head_rev }}
+  dynamic_linking:
+    overlinking_behavior: error
+  prefix_detection:
+    ignore:
+      - lib/libcucim.so
+      - lib/libcucim.so.*
+      - lib/cucim.*.so
   script:
     content: |
       CUCIM_BUILD_TYPE=${CUCIM_BUILD_TYPE:-release}
@@ -112,14 +119,10 @@ requirements:
       - cuda-cudart
       - cuda-version
       - libcufile
+      - libnvjpeg
+      - openslide
       - if: cuda_major == "11"
         then: cudatoolkit
-
-tests:
-  - python:
-      imports:
-        - kvikio
-      pip_check: false
 
 about:
   homepage: https://developer.nvidia.com/multidimensional-image-processing
