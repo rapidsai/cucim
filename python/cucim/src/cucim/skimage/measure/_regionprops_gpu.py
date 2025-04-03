@@ -23,6 +23,12 @@ from ._regionprops_gpu_basic_kernels import (
     regionprops_num_perimeter_pixels,
     regionprops_num_pixels,
 )
+from ._regionprops_gpu_intensity_kernels import (
+    intensity_deps,
+    regionprops_intensity_mean,
+    regionprops_intensity_min_max,
+    regionprops_intensity_std,
+)
 from ._regionprops_gpu_utils import _get_min_integer_dtype
 
 __all__ = [
@@ -34,6 +40,9 @@ __all__ = [
     "regionprops_dict",
     "regionprops_extent",
     "regionprops_image",
+    "regionprops_intensity_mean",
+    "regionprops_intensity_min_max",
+    "regionprops_intensity_std",
     # extra functions for cuCIM not currently in scikit-image
     "equivalent_spherical_perimeter",  # as in ITK
     "regionprops_num_boundary_pixels",
@@ -92,6 +101,7 @@ OBJECT_COLUMNS_GPU = [
 # get_property_dependencies below).
 property_deps = dict()
 property_deps.update(basic_deps)
+property_deps.update(intensity_deps)
 
 # set of properties that require an intensity_image also be provided
 need_intensity_image = {"image_intensity"}
@@ -123,6 +133,9 @@ property_requirements = {
     k: get_property_dependencies(property_deps, k)
     for k in (CURRENT_PROPS_GPU | GLOBAL_PROPS)
 }
+
+# set of properties that require an intensity_image also be provided
+need_intensity_image = set(intensity_deps.keys()) | {"image_intensity"}
 
 
 def regionprops_dict(
@@ -218,12 +231,15 @@ def regionprops_dict(
                 f"2D label images only: {invalid_names}"
             )
     if intensity_image is None:
+        has_intensity = False
         invalid_names = requested_props & need_intensity_image
         if any(invalid_names):
             raise ValueError(
                 "No intensity_image provided, but the following requested "
                 f"properties require one: {invalid_names}"
             )
+    else:
+        has_intensity = True
 
     out = {}
     if max_label is None:
@@ -269,6 +285,42 @@ def regionprops_dict(
                 out[
                     "equivalent_spherical_perimeter"
                 ] = equivalent_spherical_perimeter(out["area"], ndim, ed)
+
+    if has_intensity:
+        if "intensity_std" in required_props:
+            # std also computes mean
+            regionprops_intensity_std(
+                label_image,
+                intensity_image,
+                max_label=max_label,
+                std_dtype=cp.float64,
+                sample_std=False,
+                **perf_kwargs,
+                props_dict=out,
+            )
+
+        elif "intensity_mean" in required_props:
+            regionprops_intensity_mean(
+                label_image,
+                intensity_image,
+                max_label=max_label,
+                mean_dtype=cp.float32,
+                **perf_kwargs,
+                props_dict=out,
+            )
+
+        compute_min = "intensity_min" in required_props
+        compute_max = "intensity_max" in required_props
+        if compute_min or compute_max:
+            regionprops_intensity_min_max(
+                label_image,
+                intensity_image,
+                max_label=max_label,
+                compute_min=compute_min,
+                compute_max=compute_max,
+                **perf_kwargs,
+                props_dict=out,
+            )
 
     compute_bbox = "bbox" in required_props
     if compute_bbox:
