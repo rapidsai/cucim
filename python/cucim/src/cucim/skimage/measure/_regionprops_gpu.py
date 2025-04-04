@@ -251,7 +251,7 @@ def regionprops_dict(
         identities.
     spacing : tuple of float, shape (ndim,), optional
         The pixel spacing along each axis of the image.
-    extra_properties : Iterable of callables
+    extra_properties : Iterable of callables, optional
         Add extra property computation functions that are not included with
         skimage. The name of the property is derived from the function name,
         the dtype is inferred by calling the function on a small sample.
@@ -282,7 +282,7 @@ def regionprops_dict(
         spacing from another label. If True, a check for this condition is
         performed and any labels close to another label have their perimeter
         recomputed in isolation. Doing this check results in performance
-        overhead so can optionally be disabled. This parameter effects the
+        overhead so can optionally be disabled. This parameter affects the
         following regionprops: {"perimeter", "perimeter_crofton",
         "euler_number"}.
     to_table : bool, optional
@@ -820,7 +820,6 @@ def _props_dict_to_table(
         orig_prop = prop
         # determine the current property name for any deprecated property.
         prop = PROPS_GPU.get(prop, prop)
-        # is_0dim_array = isinstance(rp, cp.ndarray) and rp.ndim == 0
         rp = props_dict[orig_prop]
         if prop in extra_property_names:
             dtype = np.object_
