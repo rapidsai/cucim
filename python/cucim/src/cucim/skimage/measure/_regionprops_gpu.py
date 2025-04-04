@@ -34,6 +34,19 @@ from ._regionprops_gpu_intensity_kernels import (
     regionprops_intensity_min_max,
     regionprops_intensity_std,
 )
+from ._regionprops_gpu_moments_kernels import (
+    moment_deps,
+    regionprops_centroid,
+    regionprops_centroid_local,
+    regionprops_centroid_weighted,
+    regionprops_inertia_tensor,
+    regionprops_inertia_tensor_eigvals,
+    regionprops_moments,
+    regionprops_moments_central,
+    regionprops_moments_hu,
+    regionprops_moments_normalized,
+    required_order,
+)
 from ._regionprops_gpu_utils import _get_min_integer_dtype
 
 __all__ = [
@@ -42,14 +55,24 @@ __all__ = [
     "regionprops_area_bbox",
     "regionprops_area_convex",
     "regionprops_bbox_coords",
+    "regionprops_centroid",
+    "regionprops_centroid_local",
+    "regionprops_centroid_weighted",
     "regionprops_coords",
     "regionprops_dict",
     "regionprops_extent",
     "regionprops_feret_diameter_max",
     "regionprops_image",
+    "regionprops_inertia_tensor",
+    "regionprops_inertia_tensor_eigvals",
     "regionprops_intensity_mean",
     "regionprops_intensity_min_max",
     "regionprops_intensity_std",
+    "regionprops_moments",
+    "regionprops_moments_central",
+    "regionprops_moments_hu",
+    "regionprops_moments_normalized",
+    "regionprops_num_pixels",
     # extra functions for cuCIM not currently in scikit-image
     "equivalent_spherical_perimeter",  # as in ITK
     "regionprops_num_boundary_pixels",
@@ -68,6 +91,8 @@ __all__ = [
 PROPS_GPU = copy(PROPS)
 # extra properties not currently in scikit-image
 PROPS_GPU_EXTRA = {
+    "axis_lengths": "axis_lengths",
+    "inertia_tensor_eigenvectors": "inertia_tensor_eigenvectors",
     "num_pixels_filled": "num_pixels_filled",
     # a few extra parameters as in ITK
     "num_perimeter_pixels": "num_perimeter_pixels",
@@ -80,6 +105,8 @@ PROPS_GPU.update(PROPS_GPU_EXTRA)
 CURRENT_PROPS_GPU = set(PROPS_GPU.values())
 
 COL_DTYPES_EXTRA = {
+    "axis_lengths": float,
+    "inertia_tensor_eigenvectors": float,
     "num_pixels_filled": int,
     "num_perimeter_pixels": int,
     "num_boundary_pixels": int,
@@ -110,12 +137,7 @@ property_deps = dict()
 property_deps.update(basic_deps)
 property_deps.update(convex_deps)
 property_deps.update(intensity_deps)
-
-# set of properties that require an intensity_image also be provided
-need_intensity_image = {"image_intensity"}
-
-# set of properties that only supports 2D images
-ndim_2_only = set()
+property_deps.update(moment_deps)
 
 
 def get_property_dependencies(dependencies, node):
@@ -143,7 +165,40 @@ property_requirements = {
 }
 
 # set of properties that require an intensity_image also be provided
-need_intensity_image = set(intensity_deps.keys()) | {"image_intensity"}
+need_intensity_image = (
+    set(intensity_deps.keys())
+    | {"image_intensity"}
+    | set(p for p in CURRENT_PROPS_GPU if "weighted" in p)
+)
+
+# set of properties that can only be computed for 2D regions
+ndim_2_only = {
+    "eccentricity",
+    "moments_hu",
+    "moments_weighted_hu",
+    "orientation",
+    "perimeter",
+    "perimeter_crofton",  # could be updated to nD as in ITK
+}
+
+
+def _check_moment_order(moment_order: int | None, requested_moment_props: set):
+    """Helper function for input validation in `regionprops_dict`.
+
+    Determines the minimum order required across all requested moment
+    properties and validates the `moment_order` kwarg.
+    """
+    min_order_required = max(required_order[p] for p in requested_moment_props)
+    if moment_order is not None:
+        if moment_order < min_order_required:
+            raise ValueError(
+                f"can't compute {requested_moment_props} with moment_order<"
+                f"{min_order_required}, but {moment_order=} was specified."
+            )
+        order = moment_order
+    else:
+        order = min_order_required
+    return order
 
 
 def regionprops_dict(
@@ -152,6 +207,7 @@ def regionprops_dict(
     properties=[],
     *,
     spacing=None,
+    moment_order=None,
     max_label=None,
     pixels_per_thread=16,
 ):
@@ -180,6 +236,11 @@ def regionprops_dict(
 
     Extra Parameters
     ----------------
+    moment_order : int or None
+        When computing moment properties, only moments up to this order are
+        computed. The default value of None results in the minimum order
+        required in order to compute the requested properties. For example,
+        properties based on the inertia_tensor require moment_order >= 2.
     max_label : int or None
         The maximum label value. If not provided it will be computed from
         `label_image`.
@@ -371,15 +432,142 @@ def regionprops_dict(
             out["num_boundary_pixels"] / out["num_perimeter_pixels"]
         )
 
+    compute_unweighted_moments = "moments" in required_props
+    compute_weighted_moments = "moments_weighted" in required_props
+    compute_moments = compute_unweighted_moments or compute_weighted_moments
+    compute_inertia_tensor = "inertia_tensor" in required_props
+
+    if compute_moments:
+        required_moment_props = set(moment_deps.keys()) & required_props
+        # determine minimum necessary order (or validate the user-provided one)
+        order = _check_moment_order(moment_order, required_moment_props)
+
+        imgs = []
+        if compute_unweighted_moments:
+            imgs.append(None)
+        if compute_weighted_moments:
+            imgs.append(intensity_image)
+
+        # compute raw moments (weighted and/or unweighted)
+        for img in imgs:
+            regionprops_moments(
+                label_image,
+                intensity_image=img,
+                max_label=max_label,
+                order=order,
+                spacing=spacing,
+                **perf_kwargs,
+                props_dict=out,
+            )
+
+        compute_centroid_local = (
+            "centroid_local" in required_moment_props
+        )  # noqa:E501
+        compute_centroid = "centroid" in required_moment_props
+        if compute_centroid or compute_centroid_local:
+            regionprops_centroid_weighted(
+                moments_raw=out["moments"],
+                ndim=label_image.ndim,
+                bbox=out["bbox"],
+                compute_local=compute_centroid_local,
+                compute_global=compute_centroid,
+                weighted=False,
+                props_dict=out,
+            )
+
+        compute_centroid_weighted_local = (
+            "centroid_weighted_local" in required_moment_props
+        )
+        compute_centroid_weighted = "centroid_weighted" in required_moment_props
+        if compute_centroid_weighted or compute_centroid_weighted_local:
+            regionprops_centroid_weighted(
+                moments_raw=out["moments_weighted"],
+                ndim=label_image.ndim,
+                bbox=out["bbox"],
+                compute_local=compute_centroid_weighted_local,
+                compute_global=compute_centroid_weighted,
+                weighted=True,
+                props_dict=out,
+            )
+
+        if "moments_central" in required_moment_props:
+            regionprops_moments_central(
+                out["moments"], ndim=ndim, weighted=False, props_dict=out
+            )
+
+            if "moments_normalized" in required_moment_props:
+                regionprops_moments_normalized(
+                    out["moments_central"],
+                    ndim=ndim,
+                    spacing=None,
+                    pixel_correction=False,
+                    weighted=False,
+                    props_dict=out,
+                )
+                if "moments_hu" in required_moment_props:
+                    regionprops_moments_hu(
+                        out["moments_normalized"],
+                        weighted=False,
+                        props_dict=out,
+                    )
+
+        if "moments_weighted_central" in required_moment_props:
+            regionprops_moments_central(
+                out["moments_weighted"], ndim, weighted=True, props_dict=out
+            )
+
+            if "moments_weighted_normalized" in required_moment_props:
+                regionprops_moments_normalized(
+                    out["moments_weighted_central"],
+                    ndim=ndim,
+                    spacing=None,
+                    pixel_correction=False,
+                    weighted=True,
+                    props_dict=out,
+                )
+
+                if "moments_weighted_hu" in required_moment_props:
+                    regionprops_moments_hu(
+                        out["moments_weighted_normalized"],
+                        weighted=True,
+                        props_dict=out,
+                    )
+
+        # inertia tensor computations come after moment computations
+        if compute_inertia_tensor:
+            regionprops_inertia_tensor(
+                out["moments_central"],
+                ndim=ndim,
+                compute_orientation=("orientation" in required_moment_props),
+                props_dict=out,
+            )
+
+            if "inertia_tensor_eigvals" in required_moment_props:
+                compute_axis_lengths = (
+                    "axis_minor_length" in required_moment_props
+                    or "axis_major_length" in required_moment_props
+                )
+                regionprops_inertia_tensor_eigvals(
+                    out["inertia_tensor"],
+                    compute_axis_lengths=compute_axis_lengths,
+                    compute_eccentricity=(
+                        "eccentricity" in required_moment_props
+                    ),
+                    compute_eigenvectors=(
+                        "inertia_tensor_eigenvectors" in required_moment_props
+                    ),
+                    props_dict=out,
+                )
+
     compute_images = "image" in required_props
     compute_intensity_images = "image_intensity" in required_props
     compute_convex = "image_convex" in required_props
     if compute_intensity_images or compute_images or compute_convex:
         regionprops_image(
             label_image,
-            intensity_image=intensity_image
-            if compute_intensity_images
-            else None,  # noqa: E501
+            intensity_image=(
+                intensity_image if compute_intensity_images else None
+            ),
             max_label=max_label,
             props_dict=out,
             compute_image=compute_images,
