@@ -169,24 +169,6 @@ def regionprops_perimeter(
     .. [1] K. Benkrid, D. Crookes. Design and FPGA Implementation of
            a Perimeter Estimator. The Queen's University of Belfast.
            http://www.cs.qub.ac.uk/~d.crookes/webpubs/papers/perimeter.doc
-
-    See Also
-    --------
-    perimeter_crofton
-
-    Examples
-    --------
-    >>> import cupy as cp
-    >>> from skimage import data
-    >>> from cucim.skimage import util
-    >>> from cucim.skimage.measure import label
-    >>> # coins image (binary)
-    >>> img_coins = cp.array(data.coins() > 110)
-    >>> # total perimeter of all objects in the image
-    >>> perimeter(img_coins, neighborhood=4)  # doctest: +ELLIPSIS
-    array(7796.86799644)
-    >>> perimeter(img_coins, neighborhood=8)  # doctest: +ELLIPSIS
-    array(8806.26807333)
     """
     if max_label is None:
         max_label = int(labels.max())
@@ -215,8 +197,6 @@ def regionprops_perimeter(
     )
 
     min_integer_type = _get_min_integer_dtype(max_label, signed=False)
-    # if labels.dtype != min_integer_type:
-    #     labels = labels_dilated.astype(min_integer_type)
 
     # dilate labels by 1 pixel so we can sum with values in XF to give
     # unique histogram bins for each labeled regions (as long as no labeled
@@ -406,10 +386,6 @@ def regionprops_perimeter_crofton(
     If the labeled regions have holes, the hole edges will be included in this
     measurement. If this is not desired, use regionprops_label_filled to fill
     the holes and then pass the filled labels image to this function.
-
-    See Also
-    --------
-    perimeter
 
     References
     ----------
@@ -632,22 +608,6 @@ def regionprops_euler(
            Lattices. In: Mecke K., Stoyan D. (eds) Morphology of Condensed
            Matter. Lecture Notes in Physics, vol 600. Springer, Berlin,
            Heidelberg.
-    --------
-    perimeter_crofton
-
-    Examples
-    --------
-    >>> import cupy as cp
-    >>> from skimage import data
-    >>> from cucim.skimage import util
-    >>> from cucim.skimage.measure import label
-    >>> # coins image (binary)
-    >>> img_coins = cp.array(data.coins() > 110)
-    >>> # total perimeter of all objects in the image
-    >>> perimeter(img_coins, neighborhood=4)  # doctest: +ELLIPSIS
-    array(7796.86799644)
-    >>> perimeter(img_coins, neighborhood=8)  # doctest: +ELLIPSIS
-    array(8806.26807333)
     """
 
     if max_label is None:
