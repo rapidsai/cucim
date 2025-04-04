@@ -1,11 +1,14 @@
 import warnings
+from collections.abc import Callable
 from copy import copy
 
 import cupy as cp
+import numpy as np
 
 from cucim.skimage.measure._regionprops import (
     COL_DTYPES,
     PROPS,
+    _infer_number_of_required_args,
 )
 
 from ._regionprops_gpu_basic_kernels import (
@@ -217,10 +220,14 @@ def regionprops_dict(
     properties=[],
     *,
     spacing=None,
+    extra_properties=None,
     moment_order=None,
     max_label=None,
     pixels_per_thread=16,
     robust_perimeter=True,
+    to_table=False,
+    table_separator="-",
+    table_on_host=False,
 ):
     """Compute image properties and return them as a pandas-compatible table.
 
@@ -242,20 +249,29 @@ def regionprops_dict(
         For a list of available properties, please see :func:`regionprops`.
         Users should remember to add "label" to keep track of region
         identities.
-    spacing : tuple of float, shape (ndim,)
+    spacing : tuple of float, shape (ndim,), optional
         The pixel spacing along each axis of the image.
+    extra_properties : Iterable of callables, optional
+        Add extra property computation functions that are not included with
+        skimage. The name of the property is derived from the function name,
+        the dtype is inferred by calling the function on a small sample.
+        If the name of an extra property clashes with the name of an existing
+        property, the extra property will not be visible and a `UserWarning` is
+        issued. A property computation function must take a region mask as its
+        first argument. If the property requires an intensity image, it must
+        accept the intensity image as the second argument.
 
     Extra Parameters
     ----------------
-    moment_order : int or None
+    moment_order : int or None, optional
         When computing moment properties, only moments up to this order are
         computed. The default value of None results in the minimum order
         required in order to compute the requested properties. For example,
         properties based on the inertia_tensor require moment_order >= 2.
-    max_label : int or None
+    max_label : int or None, optional
         The maximum label value. If not provided it will be computed from
         `label_image`.
-    pixels_per_thread : int
+    pixels_per_thread : int, optional
         A number of properties support computation of multiple adjacent pixels
         from each GPU thread. The number of adjacent pixels processed
         corresponds to `pixels_per_thread` and can be used as a performance
@@ -266,12 +282,24 @@ def regionprops_dict(
         spacing from another label. If True, a check for this condition is
         performed and any labels close to another label have their perimeter
         recomputed in isolation. Doing this check results in performance
-        overhead so can optionally be disabled. This parameter effects the
+        overhead so can optionally be disabled. This parameter affects the
         following regionprops: {"perimeter", "perimeter_crofton",
         "euler_number"}.
+    to_table : bool, optional
+        If true, split up vector/matrix properties into separate keys for
+        the individual elements to match the output format of
+        `regionprops_table` from scikit-image.
+    table_separator : str, optional
+        Separator character to use during conversion with `to_table`. Unused
+        if `to_table` is false.
+    table_on_host : bool, optional
+        Copy any device arrays back to the host when creating the
+        `regionprops_table` output. Unused if `to_table` is false.
     """
     supported_properties = CURRENT_PROPS_GPU | GLOBAL_PROPS
     properties = set(properties)
+    if extra_properties is None:
+        extra_properties = []
 
     valid_names = properties & supported_properties
     invalid_names = set(properties) - valid_names
@@ -634,8 +662,10 @@ def regionprops_dict(
                 props_dict=out,
             )
 
-    compute_images = "image" in required_props
-    compute_intensity_images = "image_intensity" in required_props
+    compute_images = ("image" in required_props) or (len(extra_properties) > 0)
+    compute_intensity_images = ("image_intensity" in required_props) or (
+        (intensity_image is not None) and (len(extra_properties) > 0)
+    )
     compute_convex = "image_convex" in required_props
     if compute_intensity_images or compute_images or compute_convex:
         regionprops_image(
@@ -714,7 +744,134 @@ def regionprops_dict(
     for k, v in restore_legacy_names.items():
         out[v] = out.pop(k)
 
-    # only return the properties that were explicitly requested
-    out = {k: out[k] for k in properties}
+    # allow extra properties to be a list of callable functions
+    # logic is set to match that in regionprops/regionprops_table
+    for func in extra_properties:
+        if not isinstance(func, Callable):
+            raise ValueError(
+                "extra_properties must be a list of callable functions, got "
+                f"{type(func)}"
+            )
+        name = func.__name__
+        n_args = _infer_number_of_required_args(func)
+        images = out["image"]
+        # determine whether func requires intensity image
+        results = []
+        if n_args == 2:
+            if intensity_image is not None:
+                images_intensity = out["image_intensity"]
+                for image, image_intensity in zip(images, images_intensity):
+                    multichannel = label_image.shape < intensity_image.shape
+                    multichannel = label_image.shape < intensity_image.shape
+                    if multichannel:
+                        multichannel_list = [
+                            func(image, images_intensity[..., i])
+                            for i in range(images_intensity.shape[-1])
+                        ]
+                        results.append(cp.stack(multichannel_list, axis=-1))
+                    else:
+                        results.append(func(image, image_intensity))
+            else:
+                raise AttributeError(
+                    f"intensity image required to calculate {name}"
+                )
+        elif n_args == 1:
+            for image in images:
+                results.append(func(image))
+        else:
+            raise AttributeError(
+                f"Custom regionprop function's number of arguments must "
+                f"be 1 or 2, but {name} takes {n_args} arguments."
+            )
+        is_cupy_array = isinstance(results[0], cp.ndarray)
+        if is_cupy_array:
+            out[name] = cp.stack(results, axis=0)
+        else:
+            out[name] = results
 
+    # retain only the properties that were explicitly requested by the user
+    out_properties = list(properties) + list(
+        func.__name__ for func in extra_properties
+    )
+    out = {k: out[k] for k in out_properties}
+
+    if to_table:
+        out = _props_dict_to_table(
+            out,
+            list(out.keys()),
+            separator=table_separator,
+            copy_to_host=table_on_host,
+            extra_property_names=tuple(f.__name__ for f in extra_properties),
+        )
+    return out
+
+
+def _props_dict_to_table(
+    props_dict,
+    properties,
+    extra_property_names=[],
+    separator="-",
+    copy_to_host=False,
+):
+    out = {}
+    for prop in properties:
+        # Copy the original property name so the output will have the
+        # user-provided property name in the case of deprecated names.
+        orig_prop = prop
+        # determine the current property name for any deprecated property.
+        prop = PROPS_GPU.get(prop, prop)
+        rp = props_dict[orig_prop]
+        if prop in extra_property_names:
+            dtype = np.object_
+            if isinstance(rp, cp.ndarray):
+                if rp.dtype.kind in "bui":
+                    dtype = int
+                else:
+                    dtype = float
+            else:
+                dtype = np.object_
+        else:
+            # TODO: also update for GPU-only properties?
+            dtype = COL_DTYPES_GPU[prop]
+
+        is_scalar_prop = False
+        is_multicolumn = False
+        if isinstance(rp, cp.ndarray):
+            is_scalar_prop = rp.ndim == 1
+            is_multicolumn = not is_scalar_prop
+        if is_scalar_prop:
+            if copy_to_host:
+                rp = cp.asnumpy(rp)
+            out[orig_prop] = rp
+        elif is_multicolumn:
+            if copy_to_host:
+                rp = cp.asnumpy(rp)
+            shape = rp.shape[1:]
+            # precompute property column names and locations
+            modified_props = []
+            locs = []
+            for ind in np.ndindex(shape):
+                modified_props.append(
+                    separator.join(map(str, (orig_prop,) + ind))
+                )
+                locs.append((slice(None),) + ind)
+            for i, modified_prop in enumerate(modified_props):
+                out[modified_prop] = rp[locs[i]]
+        elif prop in OBJECT_COLUMNS_GPU or prop in extra_property_names:
+            n = len(rp)
+            # keep objects in a NumPy array
+            column_buffer = np.empty(n, dtype=dtype)
+            if copy_to_host:
+                for i in range(n):
+                    column_buffer[i] = cp.asnumpy(rp[i])
+                out[orig_prop] = column_buffer
+            else:
+                for i in range(n):
+                    column_buffer[i] = rp[i]
+                out[orig_prop] = np.copy(column_buffer)
+        else:
+            warnings.warn(
+                f"Type unknown for property: {prop}, storing it as-is."
+            )
+            out[orig_prop] = rp
     return out
