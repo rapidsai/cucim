@@ -139,6 +139,7 @@ property_deps.update(convex_deps)
 property_deps.update(intensity_deps)
 property_deps.update(moment_deps)
 
+
 def get_property_dependencies(dependencies, node):
     """Get all direct and indirect dependencies for a specific property"""
     visited = set()
@@ -476,10 +477,8 @@ def regionprops_dict(
 
         compute_centroid_weighted_local = (
             "centroid_weighted_local" in required_moment_props
-        )  # noqa: E501
-        compute_centroid_weighted = (
-            "centroid_weighted" in required_moment_props
-        )  # noqa: E501
+        )
+        compute_centroid_weighted = "centroid_weighted" in required_moment_props
         if compute_centroid_weighted or compute_centroid_weighted_local:
             regionprops_centroid_weighted(
                 moments_raw=out["moments_weighted"],
@@ -539,9 +538,7 @@ def regionprops_dict(
             regionprops_inertia_tensor(
                 out["moments_central"],
                 ndim=ndim,
-                compute_orientation=(
-                    "orientation" in required_moment_props
-                ),  # noqa: E501
+                compute_orientation=("orientation" in required_moment_props),
                 props_dict=out,
             )
 
@@ -568,9 +565,9 @@ def regionprops_dict(
     if compute_intensity_images or compute_images or compute_convex:
         regionprops_image(
             label_image,
-            intensity_image=intensity_image
-            if compute_intensity_images
-            else None,  # noqa: E501
+            intensity_image=(
+                intensity_image if compute_intensity_images else None
+            ),
             max_label=max_label,
             props_dict=out,
             compute_image=compute_images,

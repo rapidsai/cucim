@@ -1696,7 +1696,7 @@ def regionprops_inertia_tensor_eigvals(
     compute_eccentricity=False,
     props_dict=None,
 ):
-    """ Compute the inertia tensor eigenvalues (and eigenvectors) from the
+    """Compute the inertia tensor eigenvalues (and eigenvectors) from the
     inertia tensor of each labeled region.
 
     The input to this function is the output of `regionprops_inertia_tensor`.
