@@ -1401,6 +1401,19 @@ def test_extra_properties_intensity():
     assert region.intensity_median == cp.median(INTENSITY_SAMPLE[SAMPLE == 1])
 
 
+def test_extra_properties_intensity_multichannel():
+    n_channels = 4
+    region = regionprops(
+        SAMPLE,
+        intensity_image=cp.stack((INTENSITY_SAMPLE,) * n_channels, axis=-1),
+        extra_properties=(intensity_median,),
+    )[0]
+    for c in range(n_channels):
+        assert region.intensity_median[c] == cp.median(
+            INTENSITY_SAMPLE[SAMPLE == 1]
+        )
+
+
 @pytest.mark.parametrize("intensity_prop", _require_intensity_image)
 def test_intensity_image_required(intensity_prop):
     region = regionprops(SAMPLE)[0]

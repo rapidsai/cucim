@@ -1098,6 +1098,7 @@ def regionprops_table(
     """
     if not isinstance(label_image, cp.ndarray):
         raise ValueError("label_image must be a cupy.ndarray")
+
     if intensity_image is not None and not isinstance(
         intensity_image, cp.ndarray
     ):

@@ -765,7 +765,7 @@ def regionprops_dict(
                     multichannel = label_image.shape < intensity_image.shape
                     if multichannel:
                         multichannel_list = [
-                            func(images, images_intensity[..., i])
+                            func(image, images_intensity[..., i])
                             for i in range(images_intensity.shape[-1])
                         ]
                         results.append(cp.stack(multichannel_list, axis=-1))
