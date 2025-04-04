@@ -139,7 +139,6 @@ property_deps.update(convex_deps)
 property_deps.update(intensity_deps)
 property_deps.update(moment_deps)
 
-
 def get_property_dependencies(dependencies, node):
     """Get all direct and indirect dependencies for a specific property"""
     visited = set()
