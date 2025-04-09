@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2020, NVIDIA CORPORATION.
+# Copyright (c) 2020-2025, NVIDIA CORPORATION.
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -17,19 +17,15 @@ if (NOT TARGET deps::googletest)
     FetchContent_Declare(
             deps-googletest
             GIT_REPOSITORY https://github.com/google/googletest.git
-            GIT_TAG release-1.10.0
+            GIT_TAG v1.16.0
             GIT_SHALLOW TRUE
+            EXCLUDE_FROM_ALL
     )
-    FetchContent_GetProperties(deps-googletest)
-    if (NOT deps-googletest_POPULATED)
-        message(STATUS "Fetching googletest sources")
-        FetchContent_Populate(deps-googletest)
-        message(STATUS "Fetching googletest sources - done")
-    endif ()
-
+    message(STATUS "Fetching googletest sources")
     # Create static library
     cucim_set_build_shared_libs(OFF)
-    add_subdirectory(${deps-googletest_SOURCE_DIR} ${deps-googletest_BINARY_DIR} EXCLUDE_FROM_ALL)
+    FetchContent_MakeAvailable(deps-googletest)
+    message(STATUS "Fetching googletest sources - done")
     cucim_restore_build_shared_libs()
 
     add_library(deps::googletest INTERFACE IMPORTED GLOBAL)

@@ -1,5 +1,5 @@
 # Apache License, Version 2.0
-# Copyright 2020 NVIDIA Corporation
+# Copyright 2020-2025 NVIDIA Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,21 +17,17 @@ if (NOT TARGET deps::pugixml)
     FetchContent_Declare(
             deps-pugixml
             GIT_REPOSITORY https://github.com/zeux/pugixml.git
-            GIT_TAG v1.11.1
+            GIT_TAG v1.15
             GIT_SHALLOW TRUE
+            EXCLUDE_FROM_ALL
     )
-    FetchContent_GetProperties(deps-pugixml)
-    if (NOT deps-pugixml_POPULATED)
-        message(STATUS "Fetching pugixml sources")
-        FetchContent_Populate(deps-pugixml)
-        message(STATUS "Fetching pugixml sources - done")
-    endif ()
+    message(STATUS "Fetching pugixml sources")
 
     # Create static library
     cucim_set_build_shared_libs(OFF)
+    FetchContent_MakeAvailable(deps-pugixml)
 
-    add_subdirectory(${deps-pugixml_SOURCE_DIR} ${deps-pugixml_BINARY_DIR} EXCLUDE_FROM_ALL)
-
+    message(STATUS "Fetching pugixml sources - done")
     # Disable visibility to not expose unnecessary symbols
     set_target_properties(pugixml-static
     PROPERTIES

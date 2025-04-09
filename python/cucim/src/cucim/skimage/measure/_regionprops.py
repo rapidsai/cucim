@@ -8,9 +8,11 @@ from warnings import warn
 import cupy as cp
 import numpy as np
 from cupyx.scipy import ndimage as ndi
-from scipy.ndimage import find_objects as cpu_find_objects
 
+from cucim.skimage._shared.distance import pdist_max_blockwise
 from cucim.skimage._vendored import pad
+from cucim.skimage._vendored.ndimage import find_objects
+from cucim.skimage.morphology.convex_hull import convex_hull_image
 
 from . import _moments
 from ._regionprops_utils import euler_number, perimeter, perimeter_crofton
@@ -317,7 +319,12 @@ class RegionProperties:
         extra_properties=None,
         spacing=None,
     ):
+        if not isinstance(label_image, cp.ndarray):
+            raise ValueError("label_image image must be a cupy.ndarray")
+
         if intensity_image is not None:
+            if not isinstance(intensity_image, cp.ndarray):
+                raise ValueError("intensity_image image must be a cupy.ndarray")
             ndim = label_image.ndim
             if not (
                 intensity_image.shape[:ndim] == label_image.shape
@@ -465,15 +472,9 @@ class RegionProperties:
     @property
     @_cached
     def image_convex(self):
-        # TODO: grlee77: avoid host/device transfers
-        # from ..morphology.convex_hull import convex_hull_image
-        from skimage.morphology.convex_hull import convex_hull_image
-
         # CuPy Backend: explicitly cast to uint8 to avoid the issue see in
         #               reported in https://github.com/cupy/cupy/issues/4354
-        return cp.asarray(convex_hull_image(cp.asnumpy(self.image))).astype(
-            cp.uint8
-        )
+        return convex_hull_image(self.image).view(dtype=cp.uint8)
 
     @property
     def coords_scaled(self):
@@ -520,7 +521,6 @@ class RegionProperties:
 
     @property
     def feret_diameter_max(self):
-        from scipy.spatial.distance import pdist
         from skimage.measure import find_contours, marching_cubes
 
         # TODO: implement marching cubes, etc.
@@ -537,8 +537,9 @@ class RegionProperties:
             coordinates, _, _, _ = marching_cubes(
                 identity_convex_hull, level=0.5
             )
-        distances = pdist(coordinates * self._spacing, "sqeuclidean")
-        return math.sqrt(np.max(distances))
+        scaled_coords = cp.asarray(coordinates * self._spacing)
+        max_distance, _ = pdist_max_blockwise(scaled_coords, "sqeuclidean")
+        return math.sqrt(max_distance)
 
     @property
     def area_filled(self):
@@ -1131,6 +1132,13 @@ def regionprops_table(
     4      5       112.50        113.0        114.0
 
     """
+    if not isinstance(label_image, cp.ndarray):
+        raise ValueError("label_image must be a cupy.ndarray")
+    if intensity_image is not None and not isinstance(
+        intensity_image, cp.ndarray
+    ):
+        raise ValueError("intensity_image must be a cupy.ndarray")
+
     regions = regionprops(
         label_image,
         intensity_image=intensity_image,
@@ -1416,6 +1424,12 @@ def regionprops(
     array(42)
 
     """  # noqa
+    if not isinstance(label_image, cp.ndarray):
+        raise ValueError("label_image must be a cupy.ndarray")
+    if intensity_image is not None and not isinstance(
+        intensity_image, cp.ndarray
+    ):
+        raise ValueError("intensity_image must be a cupy.ndarray")
 
     if label_image.ndim not in (2, 3):
         raise TypeError("Only 2-D and 3-D images supported.")
@@ -1434,8 +1448,7 @@ def regionprops(
 
     regions = []
 
-    # CuPy Backend: ndimage.find_objects not implemented
-    objects = cpu_find_objects(cp.asnumpy(label_image))  # synchronize!
+    objects = find_objects(label_image)  # synchronize!
     for i, sl in enumerate(objects):
         if sl is None:
             continue

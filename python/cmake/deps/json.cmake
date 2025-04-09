@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2020, NVIDIA CORPORATION.
+# Copyright (c) 2020-2025, NVIDIA CORPORATION.
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -17,21 +17,19 @@ if (NOT TARGET deps::json)
     FetchContent_Declare(
             deps-json
             GIT_REPOSITORY https://github.com/nlohmann/json.git
-            GIT_TAG v3.9.1
+            GIT_TAG v3.11.3
             GIT_SHALLOW TRUE
+            EXCLUDE_FROM_ALL
     )
-    FetchContent_GetProperties(deps-json)
-    if (NOT deps-json_POPULATED)
-        message(STATUS "Fetching json sources")
-        FetchContent_Populate(deps-json)
-        message(STATUS "Fetching json sources - done")
-    endif ()
+
+    message(STATUS "Fetching json sources")
 
     # Typically you don't care so much for a third party library's tests to be
     # run from your own project's code.
-    set(JSON_BuildTests OFF CACHE INTERNAL "")
+    option(JSON_BuildTests OFF)
 
-    add_subdirectory(${deps-json_SOURCE_DIR} ${deps-json_BINARY_DIR} EXCLUDE_FROM_ALL)
+    FetchContent_MakeAvailable(deps-json)
+    message(STATUS "Fetching json sources - done")
 
     add_library(deps::json INTERFACE IMPORTED GLOBAL)
     target_link_libraries(deps::json INTERFACE nlohmann_json::nlohmann_json)

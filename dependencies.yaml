@@ -20,6 +20,8 @@ files:
       - cuda_version
       - py_version
       - test_python
+      - depends_on_cucim
+      - depends_on_libcucim
   checks:
     output: none
     includes:
@@ -31,6 +33,8 @@ files:
       - cuda_version
       - docs
       - py_version
+      - depends_on_cucim
+      - depends_on_libcucim
   py_build_cucim:
     output: pyproject
     pyproject_dir: python/cucim
@@ -92,7 +96,7 @@ dependencies:
       #   python/cucim/src/cucim/clara/ before calling `pip install .`.
       - output_types: [conda, requirements]
         packages:
-          - cmake>=3.26.4,!=3.30.0
+          - cmake>=3.30.4
           - ninja
       - output_types: conda
         packages:
@@ -220,6 +224,16 @@ dependencies:
               cuda: "12.*"
             packages:
               - libcufile-dev
+  depends_on_cucim:
+    common:
+      - output_types: conda
+        packages:
+          - cucim==25.4.*,>=0.0.0a0
+  depends_on_libcucim:
+    common:
+      - output_types: conda
+        packages:
+          - libcucim==25.4.*,>=0.0.0a0
   develop:
     common:
       - output_types: [conda, requirements, pyproject]
@@ -234,12 +248,11 @@ dependencies:
         packages:
           - ipython
           - nbsphinx
-          - numpydoc>=1.5
+          - &numpydoc numpydoc>=1.7
           - pydata-sphinx-theme
           - recommonmark
-          # TODO: sphinx upper version limit can likely be removed after pydata 0.13
-          # is released. See https://github.com/pydata/pydata-sphinx-theme/issues/1094
-          - sphinx<6
+          # the ceiling on sphinx can be removed when https://github.com/spatialaudio/nbsphinx/issues/825 is resolved
+          - sphinx>=8.0.0,<8.2.0
   py_version:
     specific:
       - output_types: conda
@@ -264,7 +277,7 @@ dependencies:
       - output_types: [conda, requirements, pyproject]
         packages:
           - rapids-build-backend>=0.3.0,<0.4.0.dev0
-          - setuptools>=24.2.0
+          - setuptools>=61.0.0
   run:
     common:
       - output_types: [conda, requirements, pyproject]
@@ -319,7 +332,6 @@ dependencies:
           - openslide-python>=1.3.0; platform_machine=='x86_64'
           - matplotlib>=3.7
           - opencv-python-headless>=4.6
-      - output_types: [pyproject]
+      - output_types: [pyproject, requirements]
         packages:
-          # Already added to requirements via docs. This is for tests.
-          - numpydoc>=1.7
+          - *numpydoc

@@ -1,5 +1,6 @@
 import math
 import re
+import warnings
 
 import cupy as cp
 import cupyx.scipy.ndimage as ndi
@@ -131,6 +132,14 @@ def test_all_props_3d():
             pass
 
 
+def test_all_props_error_on_numpy_input():
+    with pytest.raises(ValueError):
+        regionprops(cp.asnumpy(SAMPLE), INTENSITY_SAMPLE)
+
+    with pytest.raises(ValueError):
+        regionprops(SAMPLE, cp.asnumpy(INTENSITY_SAMPLE))
+
+
 def test_num_pixels():
     num_pixels = regionprops(SAMPLE)[0].num_pixels
     assert num_pixels == 72
@@ -160,8 +169,12 @@ def test_ndim():
         regionprops(cp.zeros((10, 10, 10, 2), dtype=int))
 
 
-@pytest.mark.skip("feret_diameter_max not implemented on the GPU")
 def test_feret_diameter_max():
+    warnings.filterwarnings(
+        "ignore",
+        category=UserWarning,
+        message="feret diameter_max currently not implemented on GPU.",
+    )
     # comparator result is based on SAMPLE from manually-inspected computations
     comparator_result = 18
     test_result = regionprops(SAMPLE)[0].feret_diameter_max
@@ -196,8 +209,12 @@ def test_feret_diameter_max():
     )
 
 
-@pytest.mark.skip("feret_diameter_max not implemented on the GPU")
 def test_feret_diameter_max_3d():
+    warnings.filterwarnings(
+        "ignore",
+        category=UserWarning,
+        message="feret diameter_max currently not implemented on GPU.",
+    )
     img = cp.zeros((20, 20), dtype=cp.uint8)
     img[2:-2, 2:-2] = 1
     img_3d = cp.dstack((img,) * 3)
@@ -1210,6 +1227,17 @@ def test_regionprops_table_no_regions():
     assert len(out["bbox+1"]) == 0
     assert len(out["bbox+2"]) == 0
     assert len(out["bbox+3"]) == 0
+
+
+def test_regionprops_table_error_on_numpy_input():
+    with pytest.raises(ValueError):
+        regionprops_table(
+            cp.asnumpy(SAMPLE), INTENSITY_SAMPLE, properties=["intensity_mean"]
+        )
+    with pytest.raises(ValueError):
+        regionprops_table(
+            SAMPLE, cp.asnumpy(INTENSITY_SAMPLE), properties=["intensity_mean"]
+        )
 
 
 def test_column_dtypes_complete():

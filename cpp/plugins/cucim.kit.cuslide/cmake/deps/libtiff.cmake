@@ -1,5 +1,5 @@
 # Apache License, Version 2.0
-# Copyright 2020 NVIDIA Corporation
+# Copyright 2020-2025 NVIDIA Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -26,13 +26,11 @@ if (NOT TARGET deps::libtiff)
             GIT_REPOSITORY https://gitlab.com/libtiff/libtiff.git
             GIT_TAG v4.1.0
             GIT_SHALLOW TRUE
+            PATCH_COMMAND ${GIT_EXECUTABLE} apply "${CMAKE_CURRENT_LIST_DIR}/libtiff.patch"
+            EXCLUDE_FROM_ALL
     )
-    FetchContent_GetProperties(deps-libtiff)
-    if (NOT deps-libtiff_POPULATED)
-        message(STATUS "Fetching libtiff sources")
-        FetchContent_Populate(deps-libtiff)
-        message(STATUS "Fetching libtiff sources - done")
-    endif ()
+
+    message(STATUS "Fetching libtiff sources")
 
     # Set policies for libtiff
     set(CMAKE_PROJECT_INCLUDE_BEFORE "${CMAKE_CURRENT_LIST_DIR}/libtiff-policies-fix.cmake")
@@ -64,7 +62,8 @@ if (NOT TARGET deps::libtiff)
     set(jbig OFF)
     set(webp OFF)
 
-    add_subdirectory(${deps-libtiff_SOURCE_DIR} ${deps-libtiff_BINARY_DIR} EXCLUDE_FROM_ALL)
+    FetchContent_MakeAvailable(deps-libtiff)
+    message(STATUS "Fetching libtiff sources - done")
 
     # Disable visibility to not expose unnecessary symbols
     set_target_properties(tiff tiffxx
