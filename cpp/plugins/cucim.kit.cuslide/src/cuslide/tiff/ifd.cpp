@@ -118,8 +118,8 @@ IFD::IFD(TIFF* tiff, uint16_t index, ifd_offset_t offset) : tiff_(tiff), ifd_ind
     image_piece_count_ = tif_dir.td_stripoffset_entry.tdir_count;
 
     image_piece_offsets_.reserve(image_piece_count_);
-    uint64* td_stripoffset_p = tif_dir.td_stripoffset_p;
-    uint64* td_stripbytecount_p = tif_dir.td_stripbytecount_p;
+    uint64_t* td_stripoffset_p = tif_dir.td_stripoffset_p;
+    uint64_t* td_stripbytecount_p = tif_dir.td_stripbytecount_p;
 
     // Copy data to vector
     image_piece_offsets_.insert(image_piece_offsets_.end(), &td_stripoffset_p[0], &td_stripoffset_p[image_piece_count_]);

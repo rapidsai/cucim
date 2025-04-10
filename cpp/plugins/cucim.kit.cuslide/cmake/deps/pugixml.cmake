@@ -17,7 +17,7 @@ if (NOT TARGET deps::pugixml)
     FetchContent_Declare(
             deps-pugixml
             GIT_REPOSITORY https://github.com/zeux/pugixml.git
-            GIT_TAG v1.11.1
+            GIT_TAG v1.15
             GIT_SHALLOW TRUE
             EXCLUDE_FROM_ALL
     )
