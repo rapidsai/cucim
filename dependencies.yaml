@@ -4,7 +4,7 @@ files:
     output: conda
     matrix:
       cuda: ["11.8", "12.8"]
-      arch: [x86_64]
+      arch: [x86_64, aarch64]
     includes:
       - build
       - cuda
@@ -324,7 +324,7 @@ dependencies:
           - openslide-python>=1.3.0
           - pip
           - pip:
-            - opencv-python-headless>=4.6
+              - opencv-python-headless>=4.6
       - output_types: [requirements, pyproject]
         packages:
           # skip packages on arm64 that don't provide a wheel
