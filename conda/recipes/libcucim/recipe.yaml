@@ -80,6 +80,7 @@ build:
 requirements:
   build:
     - cmake ${{ cmake_version }}
+    - binutils
     - make
     - ninja
     - ${{ compiler("c") }}
