@@ -74,6 +74,7 @@ jobs:
     with:
       build_type: pull-request
       script: ci/build_wheel.sh
+      wheel-name: cucim
       package-type: python
   wheel-tests:
     needs: wheel-build
