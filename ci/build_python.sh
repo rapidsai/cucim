@@ -21,7 +21,7 @@ rapids-logger "Begin py build"
 # ref: https://github.com/rapidsai/cucim/issues/800#issuecomment-2529593457
 conda config --set path_conflict warn
 
-CPP_CHANNEL=$(rapids-download-conda-from-s3 cpp)
+CPP_CHANNEL=$(rapids-download-conda-from-github cpp)
 
 sccache --zero-stats
 

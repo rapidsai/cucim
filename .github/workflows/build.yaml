@@ -75,6 +75,7 @@ jobs:
       sha: ${{ inputs.sha }}
       date: ${{ inputs.date }}
       script: ci/build_wheel.sh
+      package-name: cucim
       package-type: python
   wheel-publish:
     needs: wheel-build
