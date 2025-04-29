@@ -10,6 +10,7 @@ This module contains a number of utility functions to work with images in genera
 from ._invert import invert
 from ._map_array import map_array
 from ._montage import montage
+from ._regular_grid import regular_grid
 from .arraycrop import crop
 from .compare import compare_images
 from .dtype import (
@@ -38,6 +39,7 @@ __all__ = [
     "montage",
     "view_as_blocks",
     "view_as_windows",
+    "regular_grid",
     "crop",
     "map_array",
     "random_noise",
