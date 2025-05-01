@@ -1,5 +1,6 @@
 import math
 import os
+import time
 from collections.abc import Iterable
 from warnings import warn
 
@@ -19,7 +20,7 @@ except ImportError:
     slic_available = False
 
 
-def _get_grid_centroids(image, n_centroids):
+def _get_grid_centroids(spatial_shape, n_centroids):
     """Find regularly spaced centroids on the image.
 
     Parameters
@@ -41,41 +42,48 @@ def _get_grid_centroids(image, n_centroids):
     # Approximate when it is faster to compute the grid points on the CPU
     xp = np if n_centroids < 20000 else cp
 
-    d, h, w = image.shape[:3]
-    slices = regular_grid(image.shape[:3], n_centroids)
+    slices = regular_grid(spatial_shape, n_centroids)
     grid_vecs = tuple(
         xp.arange(
-            sl.start, image.shape[i], sl.step if sl.step is not None else 1.0
+            sl.start, spatial_shape[i], sl.step if sl.step is not None else 1.0
         )
         for i, sl in enumerate(slices)
     )
-    grid_z, grid_y, grid_x = xp.meshgrid(*grid_vecs, indexing="ij")
-    centroids = xp.stack(
-        (grid_z.ravel(), grid_y.ravel(), grid_x.ravel()), axis=-1
-    )
+    grids_1d = xp.meshgrid(*grid_vecs, indexing="ij")
+    centroids = xp.stack(tuple(g.ravel() for g in grids_1d), axis=-1)
     steps = tuple(float(s.step) if s.step is not None else 1.0 for s in slices)
     if xp != cp:
         centroids = cp.asarray(centroids)
     return centroids, steps
 
 
-def line_kernel_config(threads_total, block_size=128):
+def line_kernel_config(threads_total, block_size=64):
     block = (block_size, 1, 1)
     grid = ((threads_total + block_size - 1) // block_size, 1, 1)
     return block, grid
 
 
-def box_kernel_config(im_shape, block=(2, 4, 32)):
-    """
-    block = (z=2,y=4,x=32) was hand tested to be very fast
-    on the Quadro P2000, might not be the fastest config for other
-    cards
-    """
-    grid = (
-        (im_shape[0] + block[0] - 1) // block[0],
-        (im_shape[1] + block[1] - 1) // block[1],
-        (im_shape[2] + block[2] - 1) // block[2],
-    )
+def box_kernel_config(im_shape, block=None):
+    """determine launch parameters"""
+    if len(im_shape) == 2:
+        if block is None:
+            block = (8, 32)
+        grid = (
+            (im_shape[0] + block[0] - 1) // block[0],
+            (im_shape[1] + block[1] - 1) // block[1],
+            1,
+        )
+    else:
+        if block is None:
+            # block = (z=2,y=4,x=32) was hand tested to be very fast
+            # on the Quadro P2000, might not be the fastest config for other
+            # cards
+            block = (2, 4, 32)
+        grid = (
+            (im_shape[0] + block[0] - 1) // block[0],
+            (im_shape[1] + block[1] - 1) // block[1],
+            (im_shape[2] + block[2] - 1) // block[2],
+        )
     return block, grid
 
 
@@ -88,26 +96,30 @@ def _slic(
     max_num_iter,
     centers_gpu,
     max_step,
+    start_label,
 ):
-    im_shape_zyx = image.shape[:3]
+    shape_spatial = image.shape[:-1]
 
     spatial_weight = float(max(sp_shape))
     n_centers = int(math.prod(sp_grid))
     n_features = image.shape[-1]
 
     __dirname__ = os.path.dirname(__file__)
-    module_path = os.path.join(__dirname__, "cuda", "slic3d.cu")
+    if len(shape_spatial) == 2:
+        module_path = os.path.join(__dirname__, "cuda", "slic2d.cu")
+    else:
+        module_path = os.path.join(__dirname__, "cuda", "slic3d.cu")
     with open(module_path) as f:
         cuda_source = f.read()
 
     center_block, center_grid = line_kernel_config(int(math.prod(sp_grid)))
-    image_block, image_grid = box_kernel_config(im_shape_zyx)
+    image_block, image_grid = box_kernel_config(shape_spatial)
 
     ss = spatial_weight * spatial_weight
 
     cuda_source_defines = f"""
-#define N_FEATURES { n_features }
-#define N_CLUSTERS { n_centers }
+#define N_PIXEL_FEATURES { n_features }
+#define START_LABEL { start_label }
 """
     cuda_source = 'extern "C" { ' + cuda_source_defines + cuda_source + " }"
     module = cp.RawModule(code=cuda_source, options=("-std=c++11",))
@@ -115,13 +127,14 @@ def _slic(
     gpu_slic_expectation = module.get_function("expectation")
     gpu_slic_maximization = module.get_function("maximization")
 
-    labels_gpu = cp.zeros(image.shape[:3], dtype=cp.uint32)
+    labels_gpu = cp.zeros(shape_spatial, dtype=cp.uint32)
 
     spacing = cp.asarray(spacing, dtype=cp.float32)
 
     # device scalar (passing Python float did not work, so changed to
     # float* in the kernel)
     ss = cp.asarray(ss, dtype=cp.float32)
+
     for _ in range(max_num_iter):
         gpu_slic_expectation(
             image_grid,
@@ -130,15 +143,16 @@ def _slic(
                 image,
                 centers_gpu,
                 labels_gpu,
-                *im_shape_zyx,
+                *shape_spatial,
                 *sp_shape,
                 *sp_grid,
                 spacing,
                 ss,
             ),
         )
-        # cp.cuda.runtime.deviceSynchronize()
+        cp.cuda.runtime.deviceSynchronize()
 
+        start = time.time()
         gpu_slic_maximization(
             center_grid,
             center_block,
@@ -146,13 +160,20 @@ def _slic(
                 image,
                 labels_gpu,
                 centers_gpu,
-                *im_shape_zyx,
+                *shape_spatial,
                 *sp_shape,
+                n_centers,
             ),
         )
-        # cp.cuda.runtime.deviceSynchronize()
+        cp.cuda.runtime.deviceSynchronize()
+        end = time.time()
+        print(f"maximization: {end - start} s")
 
-    return labels_gpu
+    # TODO (grelee): may want to keep the final centroids for use
+    # in GPU-based connectivity enforcement.
+    # centroids = centers_gpu[:, -len(shape_spatial):]
+
+    return labels_gpu  # , centroids
 
 
 # change default to spacing=None
@@ -371,12 +392,10 @@ def slic(
     is_2d = False
     multichannel = channel_axis is not None
     if image.ndim == 2:
-        # 2D grayscale image
-        image = image[cp.newaxis, ..., cp.newaxis]
+        # 2D grayscale image: add channel axis
+        image = image[..., cp.newaxis]
         is_2d = True
     elif image.ndim == 3 and multichannel:
-        # Make 2D multichannel image 3D with depth = 1
-        image = image[cp.newaxis, ...]
         is_2d = True
     elif image.ndim == 3 and not multichannel:
         # Add channel as single last dimension
@@ -391,14 +410,17 @@ def slic(
     if start_label not in [0, 1]:
         raise ValueError("start_label should be 0 or 1.")
 
+    # omit the channel dimension
+    spatial_shape = image.shape[:-1]
+
     # initialize cluster centroids for desired number of segments
     # update_centroids = False
-    centroids, steps = _get_grid_centroids(image, n_segments)
+    centroids, steps = _get_grid_centroids(spatial_shape, n_segments)
 
     n_centroids = centroids.shape[0]
     segments = cp.ascontiguousarray(
         cp.concatenate(
-            [cp.zeros((n_centroids, image.shape[3])), centroids], axis=-1
+            [cp.zeros((n_centroids, image.shape[-1])), centroids], axis=-1
         ),
         dtype=float_dtype,
     )
@@ -409,60 +431,53 @@ def slic(
     ratio = 1.0 / compactness
     image *= ratio
 
-    depth, height, width = image.shape[:3]
-    im_shape_zyx = (depth, height, width)
-
     # TODO (grelee):
     #   check step and ratio parameters and grid generation to make it closely
     #   match scikit-image
 
-    power = 1 / 2 if is_2d else 1 / 3
-    sp_size = int(math.ceil((math.prod(im_shape_zyx) / n_segments) ** power))
-    sp_shape = (
-        # don't allow sp_shape to be larger than image sides
-        min(depth, sp_size),
-        min(height, sp_size),
-        min(width, sp_size),
-    )
+    ndim_spatial = 2 if is_2d else 3
+    power = 1 / ndim_spatial
+    sp_size = int(math.ceil((math.prod(spatial_shape) / n_segments) ** power))
+    # don't allow sp_shape to be larger than image sides
+    sp_shape = tuple(min(s, sp_size) for s in spatial_shape)
     sp_grid = tuple(
-        (im_sz + sz - 1) // sz for im_sz, sz in zip(im_shape_zyx, sp_shape)
+        (im_sz + sz - 1) // sz for im_sz, sz in zip(spatial_shape, sp_shape)
     )
     n_centers = math.prod(sp_grid)
 
     # TODO(grelee): spacing currently on CPU for use with jinja2.Template
     #   may make this a device array and kernel argument later
     if spacing is None:
-        spacing = np.ones(3, dtype=dtype)
+        spacing = np.ones(ndim_spatial, dtype=dtype)
     elif isinstance(spacing, Iterable):
         spacing = np.asarray(spacing, dtype=dtype)
         if is_2d:
             if spacing.size != 2:
                 if spacing.size == 3:
                     warn(
-                        "Input image is 2D: spacing number of "
-                        "elements must be 2. In the future, a ValueError "
-                        "will be raised.",
+                        "Input image is 2D: spacing number of elements must "
+                        "be 2. In the future, a ValueError will be raised.",
                         FutureWarning,
                         stacklevel=2,
                     )
                 else:
                     raise ValueError(
-                        f"Input image is 2D, but spacing has "
-                        f"{spacing.size} elements (expected 2)."
+                        f"Input image is 2D, but spacing has {spacing.size} "
+                        "elements (expected 2)."
                     )
             else:
                 spacing = np.insert(spacing, 0, 1)
         elif spacing.size != 3:
             raise ValueError(
-                f"Input image is 3D, but spacing has "
-                f"{spacing.size} elements (expected 3)."
+                f"Input image is 3D, but spacing has {spacing.size} elements "
+                "(expected 3)."
             )
         spacing = np.ascontiguousarray(spacing, dtype=dtype)
     else:
         raise TypeError("spacing must be None or iterable.")
 
     if np.isscalar(sigma):
-        sigma = np.array([sigma, sigma, sigma], dtype=dtype)
+        sigma = np.array((sigma,) * ndim_spatial, dtype=dtype)
         sigma /= spacing
     elif isinstance(sigma, Iterable):
         sigma = np.asarray(sigma, dtype=dtype)
@@ -470,23 +485,22 @@ def slic(
             if sigma.size != 2:
                 if sigma.size == 3:
                     warn(
-                        "Input image is 2D: sigma number of "
-                        "elements must be 2. In the future, a ValueError "
-                        "will be raised.",
+                        "Input image is 2D: sigma number of elements must be "
+                        "2. In the future, a ValueError will be raised.",
                         FutureWarning,
                         stacklevel=2,
                     )
                 else:
                     raise ValueError(
-                        f"Input image is 2D, but sigma has "
-                        f"{sigma.size} elements (expected 2)."
+                        f"Input image is 2D, but sigma has {sigma.size} "
+                        "elements (expected 2)."
                     )
             else:
                 sigma = np.insert(sigma, 0, 0)
         elif sigma.size != 3:
             raise ValueError(
-                f"Input image is 3D, but sigma has "
-                f"{sigma.size} elements (expected 3)."
+                f"Input image is 3D, but sigma has {sigma.size} elements "
+                "(expected 3)."
             )
 
     if (sigma > 0).any():
@@ -505,19 +519,24 @@ def slic(
         max_num_iter,
         segments,
         max_step,
+        start_label,
     )
     if enforce_connectivity:
-        segment_size = math.prod(im_shape_zyx) / n_centers
+        segment_size = math.prod(spatial_shape) / n_centers
         min_size = int(min_size_factor * segment_size)
         max_size = int(max_size_factor * segment_size)
 
         labels = cp.asnumpy(labels).astype(cp.intp, copy=False)
+
+        if is_2d:
+            # prepend singleton axis for 2D case
+            # (Cython function only supports 3D spatial images)
+            labels = labels[cp.newaxis, ...]
         labels = _enforce_label_connectivity_cython(
             labels, min_size, max_size, start_label=start_label
         )
+        if is_2d:
+            labels = labels[0]
         labels = cp.asarray(labels)
-
-    if is_2d:
-        labels = labels[0]
 
     return labels
