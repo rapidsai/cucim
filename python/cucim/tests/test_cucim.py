@@ -20,7 +20,6 @@ from cucim.clara.cli import main
 
 def test_main():
     runner = CliRunner()
-    result = runner.invoke(main, [])
+    result = runner.invoke(main, ["--help"])
 
-    # assert result.output == '()\n'
     assert result.exit_code == 0
