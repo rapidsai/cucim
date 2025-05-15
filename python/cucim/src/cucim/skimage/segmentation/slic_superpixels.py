@@ -150,6 +150,7 @@ def _slic(
                 ss,
             ),
         )
+        print(f"expectation: {labels_gpu.get()=}")
         cp.cuda.runtime.deviceSynchronize()
 
         start = time.time()
@@ -167,6 +168,8 @@ def _slic(
         )
         cp.cuda.runtime.deviceSynchronize()
         end = time.time()
+        print(f"maximization: {labels_gpu.get()=}")
+        print(f"maximization: {centers_gpu.get()=}")
         print(f"maximization: {end - start} s")
 
     # TODO (grelee): may want to keep the final centroids for use
@@ -213,7 +216,7 @@ def slic(
     mask=None,
     *,
     channel_axis=-1,
-    check_finite=False,
+    check_finite_and_constant=False,
 ):
     """Segments image using k-means clustering in Color-(x,y,z) space.
     Parameters
@@ -275,11 +278,12 @@ def slic(
 
     Extra Parameters
     ----------------
-    check_finite : bool, optional
+    check_finite_and_constant : bool, optional
         Whether to raise an error if any NaN or infinite values are present in
         the image. This check is always done in the scikit-image implementation
         (for regions inside any provided mask), but has device synchronization
-        overhead for CuPy, so is disabled by default in cuCIM.
+        overhead for CuPy, so is disabled by default in cuCIM. When True, also
+        checks for the case where all values in the image are constant.
 
     Returns
     -------
@@ -356,6 +360,12 @@ def slic(
             "input image must be either 2, 3, or 4 dimensional.\n"
             f"The input image.ndim is {image.ndim}"
         )
+    if image.ndim == 2 and channel_axis is not None:
+        raise ValueError(
+            f"channel_axis={channel_axis} indicates multichannel, which is not "
+            "supported for a two-dimensional image; use channel_axis=None if "
+            "the image is grayscale"
+        )
 
     image = img_as_float(image)
     # float_dtype = utils._supported_float_type(image.dtype)
@@ -374,7 +384,7 @@ def slic(
     # input image scale.
     imin = image_values.min()
     imax = image_values.max()
-    if check_finite:
+    if check_finite_and_constant:
         imin_host = float(imin)
         imax_host = float(imax)
         if np.isnan(imin_host):
@@ -383,8 +393,11 @@ def slic(
             raise ValueError(
                 "unmasked infinite values in image are not supported"
             )
+        constant_valued = imax_host == imin_host
+    else:
+        constant_valued = False
     image -= imin
-    if imax != imin:
+    if not constant_valued:
         image /= imax - imin
 
     dtype = image.dtype
@@ -460,13 +473,13 @@ def slic(
                         FutureWarning,
                         stacklevel=2,
                     )
+                    # drop channel dimensions
+                    spacing = spacing[:-1]
                 else:
                     raise ValueError(
                         f"Input image is 2D, but spacing has {spacing.size} "
                         "elements (expected 2)."
                     )
-            else:
-                spacing = np.insert(spacing, 0, 1)
         elif spacing.size != 3:
             raise ValueError(
                 f"Input image is 3D, but spacing has {spacing.size} elements "
@@ -490,13 +503,13 @@ def slic(
                         FutureWarning,
                         stacklevel=2,
                     )
+                    # drop channel dimensions
+                    sigma = sigma[:-1]
                 else:
                     raise ValueError(
                         f"Input image is 2D, but sigma has {sigma.size} "
                         "elements (expected 2)."
                     )
-            else:
-                sigma = np.insert(sigma, 0, 0)
         elif sigma.size != 3:
             raise ValueError(
                 f"Input image is 3D, but sigma has {sigma.size} elements "

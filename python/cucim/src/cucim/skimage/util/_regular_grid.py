@@ -71,7 +71,7 @@ def regular_grid(ar_shape, n_points):
     sorted_dims = tuple(ar_shape[s] for s in sort_dim_idx)
     space_size = float(math.prod(ar_shape))
     if space_size <= n_points:
-        return (slice(None),) * ndim
+        return tuple(slice(0, s) for s in ar_shape)
     step_size = (space_size / n_points) ** (1.0 / ndim)
     if any(s < step_size for s in sorted_dims):
         step_sizes = [
