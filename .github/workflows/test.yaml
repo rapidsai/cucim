@@ -24,6 +24,7 @@ jobs:
       build_type: ${{ inputs.build_type }}
       branch: ${{ inputs.branch }}
       date: ${{ inputs.date }}
+      script: ci/test_python.sh
       sha: ${{ inputs.sha }}
   wheel-tests:
     secrets: inherit
