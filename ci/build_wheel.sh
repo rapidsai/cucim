@@ -10,6 +10,7 @@ CMAKE_BUILD_TYPE="release"
 
 source rapids-configure-sccache
 source rapids-date-string
+source rapids-init-pip
 
 rapids-generate-version > ./VERSION
 
