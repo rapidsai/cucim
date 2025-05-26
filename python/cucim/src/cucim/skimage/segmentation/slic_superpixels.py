@@ -1,6 +1,5 @@
 import math
 import os
-import time
 from collections.abc import Iterable
 from warnings import warn
 
@@ -120,6 +119,7 @@ def _slic(
     cuda_source_defines = f"""
 #define N_PIXEL_FEATURES { n_features }
 #define START_LABEL { start_label }
+#define FLOAT_DTYPE { "double" if image.dtype == np.float64 else "float"}
 """
     cuda_source = 'extern "C" { ' + cuda_source_defines + cuda_source + " }"
     module = cp.RawModule(code=cuda_source, options=("-std=c++11",))
@@ -129,19 +129,13 @@ def _slic(
 
     labels_gpu = cp.zeros(shape_spatial, dtype=cp.uint32)
 
-    spacing = cp.asarray(spacing, dtype=cp.float32)
+    float_dtype = image.dtype
+    spacing = cp.asarray(spacing, dtype=float_dtype)
 
     # device scalar (passing Python float did not work, so changed to
     # float* in the kernel)
-    ss = cp.asarray(ss, dtype=cp.float32)
+    ss = cp.asarray(ss, dtype=float_dtype)
 
-    print(f"{image_grid=}")
-    print(f"{image_block=}")
-    print(f"{shape_spatial=}")
-    print(f"{sp_shape=}")
-    print(f"{sp_grid=}")
-    print(f"{spacing=}")
-    print(f"{ss=}")
     for _ in range(max_num_iter):
         gpu_slic_expectation(
             image_grid,
@@ -157,12 +151,8 @@ def _slic(
                 ss,
             ),
         )
-        print(f"expectation: {labels_gpu.get()=}")
         cp.cuda.runtime.deviceSynchronize()
 
-        start = time.time()
-        # print(f"image: {image.get()=}")
-        print(f"expectation: {centers_gpu.get()=}")
         gpu_slic_maximization(
             center_grid,
             center_block,
@@ -176,10 +166,6 @@ def _slic(
             ),
         )
         cp.cuda.runtime.deviceSynchronize()
-        end = time.time()
-        print(f"maximization: {labels_gpu.get()=}")
-        print(f"maximization: {centers_gpu.get()=}")
-        print(f"maximization: {end - start} s")
 
     # TODO (grelee): may want to keep the final centroids for use
     # in GPU-based connectivity enforcement.
@@ -377,8 +363,7 @@ def slic(
         )
 
     image = img_as_float(image)
-    # float_dtype = utils._supported_float_type(image.dtype)
-    float_dtype = cp.float32  # kernels assume 32-bit float
+    float_dtype = image.dtype
 
     # copy=True so subsequent in-place operations do not modify the
     # function input

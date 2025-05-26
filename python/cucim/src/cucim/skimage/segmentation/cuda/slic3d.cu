@@ -77,29 +77,32 @@ CuPy prepends the following defines in slic_superpixels.py:
 #define N_PIXEL_FEATURES 3  // number of features per pixel (e.g. 3 for RGB)
 #endif
 
-#ifndef START_LABEL
-#define START_LABEL 1
+#ifndef FLOAT_DTYPE
+#define FLOAT_DTYPE double
 #endif
 
-__forceinline__ __device__ double slic_distance(const int3 idx, const float* pixel,
-                                                const long center_addr, const float* centers,
-                                                const float* spacing, float ss)
+#ifndef START_LABEL
+#define START_LABEL 1  // starting label (must be 0 or 1)
+#endif
+
+__forceinline__ __device__ double slic_distance(const int3 idx, const FLOAT_DTYPE* pixel,
+                                                const long center_addr, const FLOAT_DTYPE* centers,
+                                                const FLOAT_DTYPE* spacing, FLOAT_DTYPE ss)
 
 {
   // Color diff
   double color_diff = 0.;
   for (int w = 0; w < N_PIXEL_FEATURES; w++) {
-    float d = pixel[w] - centers[center_addr + w];
+    FLOAT_DTYPE d = pixel[w] - centers[center_addr + w];
     color_diff += d * d;
   }
 
   // Position diff
-  float3 pd;
-  pd.z = (static_cast<float>(idx.z) - centers[center_addr + N_PIXEL_FEATURES]) * spacing[0];
-  pd.y = (static_cast<float>(idx.y) - centers[center_addr + N_PIXEL_FEATURES + 1]) * spacing[1];
-  pd.x = (static_cast<float>(idx.x) - centers[center_addr + N_PIXEL_FEATURES + 2]) * spacing[2];
+  FLOAT_DTYPE pd_z = (static_cast<FLOAT_DTYPE>(idx.z) - centers[center_addr + N_PIXEL_FEATURES]) * spacing[0];
+  FLOAT_DTYPE pd_y = (static_cast<FLOAT_DTYPE>(idx.y) - centers[center_addr + N_PIXEL_FEATURES + 1]) * spacing[1];
+  FLOAT_DTYPE pd_x = (static_cast<FLOAT_DTYPE>(idx.x) - centers[center_addr + N_PIXEL_FEATURES + 2]) * spacing[2];
 
-  double position_diff = pd.z * pd.z + pd.y * pd.y + pd.x * pd.x;
+  double position_diff = pd_z * pd_z + pd_y * pd_y + pd_x * pd_x;
   return color_diff + position_diff / ss;
 }
 
@@ -137,10 +140,10 @@ __forceinline__ __device__ double slic_distance(const int3 idx, const float* pix
 //     centers[linear_cidx * c_stride + N_PIXEL_FEATURES + 2] = cidx.x;
 // }
 
-__global__ void expectation(const float* data, const float* centers, unsigned int* labels,
+__global__ void expectation(const FLOAT_DTYPE* data, const FLOAT_DTYPE* centers, unsigned int* labels,
                             int im_shape_z, int im_shape_y, int im_shape_x, int sp_shape_z,
                             int sp_shape_y, int sp_shape_x, int sp_grid_z, int sp_grid_y,
-                            int sp_grid_x, float* spacing, float* ss)
+                            int sp_grid_x, FLOAT_DTYPE* spacing, FLOAT_DTYPE* ss)
 
 {
   int3 idx;
@@ -156,7 +159,7 @@ __global__ void expectation(const float* data, const float* centers, unsigned in
   const long linear_idx = idx.z * z_stride + idx.y * y_stride + idx.x;
   const long pixel_addr = linear_idx * N_PIXEL_FEATURES;
 
-  float pixel[N_PIXEL_FEATURES];
+  FLOAT_DTYPE pixel[N_PIXEL_FEATURES];
   for (int w = 0; w < N_PIXEL_FEATURES; w++) { pixel[w] = data[pixel_addr + w]; }
 
   int3 cidx;
@@ -200,7 +203,7 @@ __global__ void expectation(const float* data, const float* centers, unsigned in
   labels[linear_idx] = closest_linear_cidx + START_LABEL;
 }
 
-__global__ void maximization(const float* data, const unsigned int* labels, float* centers,
+__global__ void maximization(const FLOAT_DTYPE* data, const unsigned int* labels, FLOAT_DTYPE* centers,
                              int im_shape_z, int im_shape_y, int im_shape_x, int sp_shape_z,
                              int sp_shape_y, int sp_shape_x, long n_clusters)
 
@@ -228,7 +231,7 @@ __global__ void maximization(const float* data, const unsigned int* labels, floa
   to.y = __min(cidx.y + sp_shape_y * ratio, im_shape_y);
   to.x = __min(cidx.x + sp_shape_x * ratio, im_shape_x);
 
-  float f[c_stride];
+  FLOAT_DTYPE f[c_stride];
   for (int k = 0; k < c_stride; k++) { f[k] = 0; }
 
   long z_stride = im_shape_x * im_shape_y;

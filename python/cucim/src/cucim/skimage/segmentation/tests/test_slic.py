@@ -122,9 +122,10 @@ def test_slic_consistency_across_image_magnitude():
         assert_array_equal(seg4, seg5)
     else:
         # TODO: scikit-image does not need these tolerances
-        assert int(cp.sum(seg1 != seg2)) < 0.05 * img_uint8.size
-        assert int(cp.sum(seg1 != seg3)) < 0.05 * img_uint8.size
-        assert int(cp.sum(seg4 != seg5)) < 0.05 * img_uint8.size
+        sz = img_uint8.size
+        assert int(cp.sum(seg1 != seg2)) < 0.001 * sz
+        assert int(cp.sum(seg1 != seg3)) < 0.001 * sz
+        assert int(cp.sum(seg4 != seg5)) < 0.02 * sz
 
     # Floating point cases can have mismatch due to floating point error
     # exact match was observed on x86_64, but mismatches seen no i686.
