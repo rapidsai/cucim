@@ -67,7 +67,7 @@ def box_kernel_config(im_shape, block=None):
     """determine launch parameters"""
     if len(im_shape) == 2:
         if block is None:
-            block = (8, 32)
+            block = (1, 1)  # (8, 32)
         grid = (
             (im_shape[0] + block[0] - 1) // block[0],
             (im_shape[1] + block[1] - 1) // block[1],
@@ -112,7 +112,7 @@ def _slic(
     with open(module_path) as f:
         cuda_source = f.read()
 
-    center_block, center_grid = line_kernel_config(int(math.prod(sp_grid)))
+    center_block, center_grid = line_kernel_config(n_centers)
     image_block, image_grid = box_kernel_config(shape_spatial)
 
     ss = spatial_weight * spatial_weight
@@ -135,6 +135,13 @@ def _slic(
     # float* in the kernel)
     ss = cp.asarray(ss, dtype=cp.float32)
 
+    print(f"{image_grid=}")
+    print(f"{image_block=}")
+    print(f"{shape_spatial=}")
+    print(f"{sp_shape=}")
+    print(f"{sp_grid=}")
+    print(f"{spacing=}")
+    print(f"{ss=}")
     for _ in range(max_num_iter):
         gpu_slic_expectation(
             image_grid,
@@ -154,6 +161,8 @@ def _slic(
         cp.cuda.runtime.deviceSynchronize()
 
         start = time.time()
+        # print(f"image: {image.get()=}")
+        print(f"expectation: {centers_gpu.get()=}")
         gpu_slic_maximization(
             center_grid,
             center_block,

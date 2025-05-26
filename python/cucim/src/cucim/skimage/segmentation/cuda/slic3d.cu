@@ -68,7 +68,7 @@ CuPy prepends the following defines in slic_superpixels.py:
 #define N_PIXEL_FEATURES { n_features }
 */
 
-#define DLIMIT 99999999
+#define DLIMIT 1e308
 
 #define __min(a, b) (((a) < (b)) ? (a) : (b))
 #define __max(a, b) (((a) >= (b)) ? (a) : (b))
@@ -81,13 +81,13 @@ CuPy prepends the following defines in slic_superpixels.py:
 #define START_LABEL 1
 #endif
 
-__forceinline__ __device__ float slic_distance(const int3 idx, const float* pixel,
-                                               const long center_addr, const float* centers,
-                                               const float* spacing, float ss)
+__forceinline__ __device__ double slic_distance(const int3 idx, const float* pixel,
+                                                const long center_addr, const float* centers,
+                                                const float* spacing, float ss)
 
 {
   // Color diff
-  float color_diff = 0;
+  double color_diff = 0.;
   for (int w = 0; w < N_PIXEL_FEATURES; w++) {
     float d = pixel[w] - centers[center_addr + w];
     color_diff += d * d;
@@ -95,13 +95,12 @@ __forceinline__ __device__ float slic_distance(const int3 idx, const float* pixe
 
   // Position diff
   float3 pd;
-  pd.z = (idx.z - centers[center_addr + N_PIXEL_FEATURES]) * spacing[0];
-  pd.y = (idx.y - centers[center_addr + N_PIXEL_FEATURES + 1]) * spacing[1];
-  pd.x = (idx.x - centers[center_addr + N_PIXEL_FEATURES + 2]) * spacing[2];
+  pd.z = (static_cast<float>(idx.z) - centers[center_addr + N_PIXEL_FEATURES]) * spacing[0];
+  pd.y = (static_cast<float>(idx.y) - centers[center_addr + N_PIXEL_FEATURES + 1]) * spacing[1];
+  pd.x = (static_cast<float>(idx.x) - centers[center_addr + N_PIXEL_FEATURES + 2]) * spacing[2];
 
-  float position_diff = pd.z * pd.z + pd.y * pd.y + pd.x * pd.x;
-  float dist = color_diff + position_diff / ss;
-  return dist;
+  double position_diff = pd.z * pd.z + pd.y * pd.y + pd.x * pd.x;
+  return color_diff + position_diff / ss;
 }
 
 // __global__
@@ -169,25 +168,25 @@ __global__ void expectation(const float* data, const float* centers, unsigned in
   cidx.x = max(0, min(idx.x / sp_shape_x, sp_grid_x - 1));
 
   const int c_stride = N_PIXEL_FEATURES + 3;
-  float minimum_distance = DLIMIT;
+  double minimum_distance = DLIMIT;
   const int R = 2;
   const int z_start = max(cidx.z - R, 0);
-  const int z_end = min(cidx.z + R, sp_grid_z - 1);
+  const int z_end = min(cidx.z + R, sp_grid_z);
   const int y_start = max(cidx.y - R, 0);
-  const int y_end = min(cidx.y + R, sp_grid_y - 1);
+  const int y_end = min(cidx.y + R, sp_grid_y);
   const int x_start = max(cidx.x - R, 0);
-  const int x_end = min(cidx.x + R, sp_grid_x - 1);
-  for (int k = z_start; k <= z_end; k++) {
+  const int x_end = min(cidx.x + R, sp_grid_x);
+  for (int k = z_start; k < z_end; k++) {
     long offset_z = k * sp_grid_y * sp_grid_x;
-    for (int j = y_start; j <= y_end; j++) {
+    for (int j = y_start; j < y_end; j++) {
       long offset_y = offset_z + j * sp_grid_x;
-      for (int i = x_start; i <= x_end; i++) {
+      for (int i = x_start; i < x_end; i++) {
         long iter_linear_cidx = offset_y + i;
         long iter_center_addr = iter_linear_cidx * c_stride;
 
         if (centers[iter_center_addr] == DLIMIT) { continue; }
 
-        float dist = slic_distance(idx, pixel, iter_center_addr, centers, spacing, *ss);
+        double dist = slic_distance(idx, pixel, iter_center_addr, centers, spacing, *ss);
 
         // Wrapup
         if (dist < minimum_distance) {
