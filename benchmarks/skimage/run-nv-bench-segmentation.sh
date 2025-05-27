@@ -31,3 +31,14 @@ for shape in "${param_shape[@]}"; do
         done
     done
 done
+
+# these do not require an integer-valued input image
+param_filt=(slic)
+param_dt=(uint8)
+for shape in "${param_shape[@]}"; do
+    for filt in "${param_filt[@]}"; do
+        for dt in "${param_dt[@]}"; do
+            python cucim_segmentation_bench.py -f $filt -i $shape -d $dt -t "$MAX_DURATION"
+        done
+    done
+done

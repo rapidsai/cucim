@@ -214,6 +214,27 @@ def main(args):
             False,
             False,
         ),
+        (
+            "slic",
+            dict(
+                spacing=None,
+                start_label=1,
+                min_size_factor=0.5,
+                max_size_factor=3.0,
+                slic_zero=False,
+                mask=None,
+            ),
+            dict(
+                max_num_iter=[10],
+                n_segments=[64, 256, 1000],
+                compactness=[25.0],
+                convert2lab=[True],
+                sigma=[0],
+                enforce_connectivity=[False],  # True case performs about the same
+            ),
+            True,
+            True,  # (2D and 3D only)
+        ),
         # omit: disk_level_set (simple array generation function)
         # omit: checkerboard_level_set (simple array generation function)
     ]:
@@ -267,11 +288,15 @@ def main(args):
             "morphological_geodesic_active_contour",
             "morphological_chan_vese",
             "chan_vese",
+            "slic",
         ]:
             if function_name == "morphological_geodesic_active_contour":
                 bench_class = MorphGeodesicBench
             else:
                 bench_class = ImageBench
+
+            if function_name == "slic":
+                fixed_kwargs["channel_axis"] = -1 if shape[-1] == 3 else None
 
             B = bench_class(
                 function_name=function_name,
@@ -312,6 +337,7 @@ if __name__ == "__main__":
         "morphological_geodesic_active_contour",
         "morphological_chan_vese",
         "chan_vese",
+        "slic",
     ]
     label_dtype_choices = [
         "int8",
