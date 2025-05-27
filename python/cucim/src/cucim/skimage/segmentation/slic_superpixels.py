@@ -207,6 +207,7 @@ def slic(
     enforce_connectivity=True,
     min_size_factor=0.5,
     max_size_factor=3.0,
+    slic_zero=False,
     start_label=1,
     mask=None,
     *,
@@ -263,13 +264,16 @@ def slic(
         in most of the cases.
     start_label : int, optional
         The labels' index start. Should be 0 or 1.
+    slic_zero: bool, optional
+        Run SLIC-zero, the zero-parameter mode of SLIC. [2]_.
+        ``NotImplementedError`` will be raised if `slic_zero` is not ``False``.
+    mask : ndarray, optional
+        Masked SLIC is currently unimplemented in CuPy. A
+        ``NotImplementedError`` will be raised if `mask` is not ``None``.
     channel_axis : int or None, optional
         If None, the image is assumed to be a grayscale (single channel) image.
         Otherwise, this parameter indicates which axis of the array corresponds
         to channels.
-    mask : ndarray, optional
-        Masked SLIC is currently unimplemented in CuPy. A
-        ``NotImplementedError`` will be raised if `mask` is not ``None``.
 
     Extra Parameters
     ----------------
@@ -348,6 +352,14 @@ def slic(
             "Could not import the private _enforce_label_connectivity_cython "
             "function from scikit-image version '{skimage.__version__}', so "
             "the `slic` algorithm is unavailable."
+        )
+    if mask is not None:
+        raise NotImplementedError(
+            "masked SLIC not implemented in cuCIM: mask must be None"
+        )
+    if slic_zero:
+        raise NotImplementedError(
+            "SLIC0 not implemented in cuCIM: `slice_zero` must be False"
         )
 
     if image.ndim not in [2, 3, 4]:
