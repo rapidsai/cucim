@@ -33,5 +33,3 @@ RAPIDS_PACKAGE_VERSION=$(head -1 ./VERSION) rapids-conda-retry build \
   conda/recipes/cucim
 
 sccache --show-adv-stats
-
-rapids-upload-conda-to-s3 python
