@@ -3,7 +3,7 @@ files:
   all:
     output: conda
     matrix:
-      cuda: ["11.8", "12.8"]
+      cuda: ["12.8"]
       arch: [x86_64, aarch64]
     includes:
       - build
@@ -121,18 +121,6 @@ dependencies:
         matrices:
           - matrix:
               arch: x86_64
-              cuda: "11.8"
-            packages:
-              - gcc_linux-64=11.*
-              - nvcc_linux-64=11.8
-          - matrix:
-              arch: aarch64
-              cuda: "11.8"
-            packages:
-              - gcc_linux-aarch64=11.*
-              - nvcc_linux-aarch64=11.8
-          - matrix:
-              arch: x86_64
               cuda: "12.*"
             packages:
               - gcc_linux-64=13.*
@@ -152,22 +140,6 @@ dependencies:
     specific:
       - output_types: conda
         matrices:
-          - matrix:
-              cuda: "11.2"
-            packages:
-              - cuda-version=11.2
-          - matrix:
-              cuda: "11.4"
-            packages:
-              - cuda-version=11.4
-          - matrix:
-              cuda: "11.5"
-            packages:
-              - cuda-version=11.5
-          - matrix:
-              cuda: "11.8"
-            packages:
-              - cuda-version=11.8
           - matrix:
               cuda: "12.0"
             packages:
@@ -193,20 +165,11 @@ dependencies:
       - output_types: conda
         matrices:
           - matrix:
-              cuda: "11.*"
-            packages:
-              - cudatoolkit
-          - matrix:
               cuda: "12.*"
             packages:
               - cuda-cudart-dev
       - output_types: conda
         matrices:
-          - matrix:
-              cuda: "11.8"
-            packages:
-              - libnvjpeg=11.6.0.55
-              - libnvjpeg-dev=11.6.0.55
           - matrix:
               cuda: "12.*"
             packages:
@@ -217,12 +180,6 @@ dependencies:
           - matrix:
               arch: aarch64
             packages:
-          - matrix:
-              arch: x86_64
-              cuda: "11.8"
-            packages:
-              - libcufile=1.4.0.31
-              - libcufile-dev=1.4.0.31
           - matrix:
               arch: x86_64
               cuda: "12.*"
@@ -304,15 +261,9 @@ dependencies:
     specific:
       - output_types: [requirements, pyproject]
         matrices:
-          - matrix: {cuda: "12.*"}
+          - matrix: # All CUDA 12 versions
             packages:
               - cupy-cuda12x>=12.0.0
-          - matrix: {cuda: "11.*"}
-            packages:
-              - &cupy_cu11 cupy-cuda11x>=12.0.0
-          - matrix:
-            packages:
-              - *cupy_cu11
   test_python:
     common:
       - output_types: [conda, requirements, pyproject]
