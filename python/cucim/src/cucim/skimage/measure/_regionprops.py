@@ -258,51 +258,6 @@ def only2d(method):
     return func2d
 
 
-def _inertia_eigvals_to_axes_lengths_3D(inertia_tensor_eigvals):
-    """Compute ellipsoid axis lengths from inertia tensor eigenvalues.
-
-    Parameters
-    ---------
-    inertia_tensor_eigvals : sequence of float
-        A sequence of 3 floating point eigenvalues, sorted in descending order.
-
-    Returns
-    -------
-    axis_lengths : list of float
-        The ellipsoid axis lengths sorted in descending order.
-
-    Notes
-    -----
-    Let a >= b >= c be the ellipsoid semi-axes and s1 >= s2 >= s3 be the
-    inertia tensor eigenvalues.
-
-    The inertia tensor eigenvalues are given for a solid ellipsoid in [1]_.
-    s1 = 1 / 5 * (a**2 + b**2)
-    s2 = 1 / 5 * (a**2 + c**2)
-    s3 = 1 / 5 * (b**2 + c**2)
-
-    Rearranging to solve for a, b, c in terms of s1, s2, s3 gives
-    a = math.sqrt(5 / 2 * ( s1 + s2 - s3))
-    b = math.sqrt(5 / 2 * ( s1 - s2 + s3))
-    c = math.sqrt(5 / 2 * (-s1 + s2 + s3))
-
-    We can then simply replace sqrt(5/2) by sqrt(10) to get the full axes
-    lengths rather than the semi-axes lengths.
-
-    References
-    ----------
-    ..[1] https://en.wikipedia.org/wiki/List_of_moments_of_inertia#List_of_3D_inertia_tensors
-    """  # noqa: E501
-    axis_lengths = []
-    for ax in range(2, -1, -1):
-        w = sum(
-            v * -1 if i == ax else v
-            for i, v in enumerate(inertia_tensor_eigvals)
-        )
-        axis_lengths.append(math.sqrt(10 * w))
-    return axis_lengths
-
-
 class RegionProperties:
     """Please refer to `skimage.measure.regionprops` for more information
     on the available region properties.
@@ -616,7 +571,6 @@ class RegionProperties:
             l1 = self.inertia_tensor_eigvals[0]
             return 4 * math.sqrt(l1)
         elif self._ndim == 3:
-            # equivalent to _inertia_eigvals_to_axes_lengths_3D(ev)[0]
             ev = self.inertia_tensor_eigvals
             return math.sqrt(10 * (ev[0] + ev[1] - ev[2]))
         else:
@@ -628,9 +582,10 @@ class RegionProperties:
             l2 = self.inertia_tensor_eigvals[-1]
             return 4 * math.sqrt(l2)
         elif self._ndim == 3:
-            # equivalent to _inertia_eigvals_to_axes_lengths_3D(ev)[-1]
             ev = self.inertia_tensor_eigvals
-            return math.sqrt(10 * (-ev[0] + ev[1] + ev[2]))
+            # use max to avoid possibly very small negative value due to
+            # numeric error
+            return math.sqrt(10 * max(-ev[0] + ev[1] + ev[2], 0.0))
         else:
             raise ValueError("axis_minor_length only available in 2D and 3D")
 
@@ -998,6 +953,7 @@ def regionprops_table(
     separator="-",
     extra_properties=None,
     spacing=None,
+    batch_processing=True,
 ):
     """Compute image properties and return them as a pandas-compatible table.
 
@@ -1048,6 +1004,14 @@ def regionprops_table(
         accept the intensity image as the second argument.
     spacing: tuple of float, shape (ndim,)
         The pixel spacing along each axis of the image.
+
+    Extra Parameters
+    ----------------
+    batch_processing : bool, optional
+        If true, use much faster batch processing of region properties. Most
+        properties will be computed for all regions much more efficiently via a
+        single pass over the full image instead of on an individual label
+        basis. In this mode, the `RegionProperties` class is not used at all.
 
     Returns
     -------
@@ -1134,32 +1098,28 @@ def regionprops_table(
     """
     if not isinstance(label_image, cp.ndarray):
         raise ValueError("label_image must be a cupy.ndarray")
+
     if intensity_image is not None and not isinstance(
         intensity_image, cp.ndarray
     ):
         raise ValueError("intensity_image must be a cupy.ndarray")
 
-    regions = regionprops(
-        label_image,
-        intensity_image=intensity_image,
-        cache=cache,
-        extra_properties=extra_properties,
-        spacing=spacing,
-    )
-    if extra_properties is not None:
-        properties = list(properties) + [
-            prop.__name__ for prop in extra_properties
-        ]
-    if len(regions) == 0:
-        ndim = label_image.ndim
-        label_image = np.zeros((3,) * ndim, dtype=int)
-        label_image[(1,) * ndim] = 1
-        label_image = cp.asarray(label_image)
-        if intensity_image is not None:
-            intensity_image = cp.zeros(
-                label_image.shape + intensity_image.shape[ndim:],
-                dtype=intensity_image.dtype,
-            )
+    if batch_processing:
+        from ._regionprops_gpu import regionprops_dict
+
+        table = regionprops_dict(
+            label_image,
+            intensity_image=intensity_image,
+            spacing=spacing,
+            moment_order=None,
+            properties=properties,
+            extra_properties=extra_properties,
+            to_table=True,
+            table_separator=separator,
+            table_on_host=False,
+        )
+        return table
+    else:
         regions = regionprops(
             label_image,
             intensity_image=intensity_image,
@@ -1167,13 +1127,36 @@ def regionprops_table(
             extra_properties=extra_properties,
             spacing=spacing,
         )
+        if extra_properties is not None:
+            properties = list(properties) + [
+                prop.__name__ for prop in extra_properties
+            ]
+        if len(regions) == 0:
+            ndim = label_image.ndim
+            label_image = np.zeros((3,) * ndim, dtype=int)
+            label_image[(1,) * ndim] = 1
+            label_image = cp.asarray(label_image)
+            if intensity_image is not None:
+                intensity_image = cp.zeros(
+                    label_image.shape + intensity_image.shape[ndim:],
+                    dtype=intensity_image.dtype,
+                )
+            regions = regionprops(
+                label_image,
+                intensity_image=intensity_image,
+                cache=cache,
+                extra_properties=extra_properties,
+                spacing=spacing,
+            )
 
-        out_d = _props_to_dict(
+            out_d = _props_to_dict(
+                regions, properties=properties, separator=separator
+            )
+            return {k: v[:0] for k, v in out_d.items()}
+
+        return _props_to_dict(
             regions, properties=properties, separator=separator
         )
-        return {k: v[:0] for k, v in out_d.items()}
-
-    return _props_to_dict(regions, properties=properties, separator=separator)
 
 
 def regionprops(

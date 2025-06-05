@@ -6,7 +6,11 @@ import cupy as cp
 import cupyx.scipy.ndimage as ndi
 import numpy as np
 import pytest
-from cupy.testing import assert_array_almost_equal, assert_array_equal
+from cupy.testing import (
+    assert_allclose,
+    assert_array_almost_equal,
+    assert_array_equal,
+)
 from numpy.testing import assert_almost_equal, assert_equal
 from skimage import data, draw
 from skimage.segmentation import slic
@@ -24,7 +28,6 @@ from cucim.skimage.measure._regionprops import (  # noqa
     COL_DTYPES,
     OBJECT_COLUMNS,
     PROPS,
-    _inertia_eigvals_to_axes_lengths_3D,
     _parse_docs,
     _props_to_dict,
     _require_intensity_image,
@@ -1147,8 +1150,9 @@ def test_props_to_dict():
     assert_array_equal(out["coords"][1], coords[1])
 
 
-def test_regionprops_table():
-    out = regionprops_table(SAMPLE)
+@pytest.mark.parametrize("batch_processing", [False, True])
+def test_regionprops_table(batch_processing):
+    out = regionprops_table(SAMPLE, batch_processing=batch_processing)
     assert out == {
         "label": cp.array([1]),
         "bbox-0": cp.array([0]),
@@ -1158,7 +1162,10 @@ def test_regionprops_table():
     }
 
     out = regionprops_table(
-        SAMPLE, properties=("label", "area", "bbox"), separator="+"
+        SAMPLE,
+        properties=("label", "area", "bbox"),
+        separator="+",
+        batch_processing=batch_processing,
     )
     assert out == {
         "label": cp.array([1]),
@@ -1169,7 +1176,11 @@ def test_regionprops_table():
         "bbox+3": cp.array([18]),
     }
 
-    out = regionprops_table(SAMPLE_MULTIPLE, properties=("coords",))
+    out = regionprops_table(
+        SAMPLE_MULTIPLE,
+        properties=("coords",),
+        batch_processing=batch_processing,
+    )
     coords = np.empty(2, object)
     coords[0] = cp.stack((cp.arange(10),) * 2, axis=-1)
     coords[1] = cp.array([[3, 7], [4, 7]])
@@ -1178,22 +1189,35 @@ def test_regionprops_table():
     assert_array_equal(out["coords"][1], coords[1])
 
 
-def test_regionprops_table_deprecated_vector_property():
-    out = regionprops_table(SAMPLE, properties=("local_centroid",))
+@pytest.mark.parametrize("batch_processing", [False, True])
+def test_regionprops_table_deprecated_vector_property(batch_processing):
+    out = regionprops_table(
+        SAMPLE,
+        properties=("local_centroid",),
+        batch_processing=batch_processing,
+    )
     for key in out.keys():
         # key reflects the deprecated name, not its new (centroid_local) value
         assert key.startswith("local_centroid")
 
 
-def test_regionprops_table_deprecated_scalar_property():
-    out = regionprops_table(SAMPLE, properties=("bbox_area",))
+@pytest.mark.parametrize("batch_processing", [False, True])
+def test_regionprops_table_deprecated_scalar_property(batch_processing):
+    out = regionprops_table(
+        SAMPLE,
+        properties=("bbox_area",),
+        batch_processing=batch_processing,
+    )
     assert list(out.keys()) == ["bbox_area"]
 
 
-def test_regionprops_table_equal_to_original():
+def test_regionprops_table_equal_to_original_no_batch_processing():
     regions = regionprops(SAMPLE, INTENSITY_FLOAT_SAMPLE)
     out_table = regionprops_table(
-        SAMPLE, INTENSITY_FLOAT_SAMPLE, properties=COL_DTYPES.keys()
+        SAMPLE,
+        INTENSITY_FLOAT_SAMPLE,
+        properties=COL_DTYPES.keys(),
+        batch_processing=False,
     )
 
     for prop, dtype in COL_DTYPES.items():
@@ -1214,11 +1238,59 @@ def test_regionprops_table_equal_to_original():
                     assert_array_equal(rp[loc], out_table[modified_prop][i])
 
 
-def test_regionprops_table_no_regions():
+def test_regionprops_table_batch_close_to_original():
+    regions = regionprops(SAMPLE, INTENSITY_FLOAT_SAMPLE)
+    out_table = regionprops_table(
+        SAMPLE,
+        INTENSITY_FLOAT_SAMPLE,
+        properties=COL_DTYPES.keys(),
+        batch_processing=True,
+    )
+
+    for prop, dtype in COL_DTYPES.items():
+        print(f"{prop=}")
+        for i, reg in enumerate(regions):
+            rp = reg[prop]
+            if (
+                cp.isscalar(rp)
+                or (isinstance(rp, cp.ndarray) and rp.ndim == 0)
+                or prop in OBJECT_COLUMNS
+                or dtype is np.object_
+            ):
+                if prop == "feret_diameter_max":
+                    cp.testing.assert_allclose(
+                        rp, out_table[prop][i], atol=math.sqrt(2)
+                    )
+                elif prop == "slice":
+                    assert_array_equal(rp, out_table[prop][i])
+                else:
+                    assert_allclose(
+                        rp, out_table[prop][i], atol=1e-5, rtol=1e-5
+                    )
+            else:
+                shape = rp.shape if isinstance(rp, cp.ndarray) else (len(rp),)
+                if "moments" in prop:
+                    # will not match because moments > order are not computed in
+                    # the batch_processing=True case.
+                    continue
+                for ind in np.ndindex(shape):
+                    modified_prop = "-".join(map(str, (prop,) + ind))
+                    loc = ind if len(ind) > 1 else ind[0]
+                    assert_allclose(
+                        rp[loc],
+                        out_table[modified_prop][i],
+                        atol=1e-5,
+                        rtol=1e-5,
+                    )
+
+
+@pytest.mark.parametrize("batch_processing", [False, True])
+def test_regionprops_table_no_regions(batch_processing):
     out = regionprops_table(
         cp.zeros((2, 2), dtype=int),
         properties=("label", "area", "bbox"),
         separator="+",
+        batch_processing=batch_processing,
     )
     assert len(out) == 6
     assert len(out["label"]) == 0
@@ -1329,6 +1401,19 @@ def test_extra_properties_intensity():
     assert region.intensity_median == cp.median(INTENSITY_SAMPLE[SAMPLE == 1])
 
 
+def test_extra_properties_intensity_multichannel():
+    n_channels = 4
+    region = regionprops(
+        SAMPLE,
+        intensity_image=cp.stack((INTENSITY_SAMPLE,) * n_channels, axis=-1),
+        extra_properties=(intensity_median,),
+    )[0]
+    for c in range(n_channels):
+        assert region.intensity_median[c] == cp.median(
+            INTENSITY_SAMPLE[SAMPLE == 1]
+        )
+
+
 @pytest.mark.parametrize("intensity_prop", _require_intensity_image)
 def test_intensity_image_required(intensity_prop):
     region = regionprops(SAMPLE)[0]
@@ -1367,12 +1452,14 @@ def test_extra_properties_mixed():
     assert region.pixelcount == cp.sum(SAMPLE == 1)
 
 
-def test_extra_properties_table():
+@pytest.mark.parametrize("batch_processing", [False, True])
+def test_extra_properties_table(batch_processing):
     out = regionprops_table(
         SAMPLE_MULTIPLE,
         intensity_image=INTENSITY_SAMPLE_MULTIPLE,
         properties=("label",),
         extra_properties=(intensity_median, pixelcount, bbox_list),
+        batch_processing=batch_processing,
     )
     assert_array_almost_equal(out["intensity_median"], np.array([2.0, 4.0]))
     assert_array_equal(out["pixelcount"], np.array([10, 2]))
@@ -1419,6 +1506,51 @@ def test_multichannel():
             # property uses multiple channels, returns props stacked along
             # final axis
             assert_array_equal(p, p_multi[..., 1])
+
+
+def _inertia_eigvals_to_axes_lengths_3D(inertia_tensor_eigvals):
+    """Compute ellipsoid axis lengths from inertia tensor eigenvalues.
+
+    Parameters
+    ---------
+    inertia_tensor_eigvals : sequence of float
+        A sequence of 3 floating point eigenvalues, sorted in descending order.
+
+    Returns
+    -------
+    axis_lengths : list of float
+        The ellipsoid axis lengths sorted in descending order.
+
+    Notes
+    -----
+    Let a >= b >= c be the ellipsoid semi-axes and s1 >= s2 >= s3 be the
+    inertia tensor eigenvalues.
+
+    The inertia tensor eigenvalues are given for a solid ellipsoid in [1]_.
+    s1 = 1 / 5 * (a**2 + b**2)
+    s2 = 1 / 5 * (a**2 + c**2)
+    s3 = 1 / 5 * (b**2 + c**2)
+
+    Rearranging to solve for a, b, c in terms of s1, s2, s3 gives
+    a = math.sqrt(5 / 2 * ( s1 + s2 - s3))
+    b = math.sqrt(5 / 2 * ( s1 - s2 + s3))
+    c = math.sqrt(5 / 2 * (-s1 + s2 + s3))
+
+    We can then simply replace sqrt(5/2) by sqrt(10) to get the full axes
+    lengths rather than the semi-axes lengths.
+
+    References
+    ----------
+    ..[1] https://en.wikipedia.org/wiki/List_of_moments_of_inertia#List_of_3D_inertia_tensors
+    """  # noqa: E501
+    axis_lengths = []
+    for ax in range(2, -1, -1):
+        w = sum(
+            v * -1 if i == ax else v
+            for i, v in enumerate(inertia_tensor_eigvals)
+        )
+        axis_lengths.append(math.sqrt(10 * w))
+    return axis_lengths
 
 
 def test_3d_ellipsoid_axis_lengths():
