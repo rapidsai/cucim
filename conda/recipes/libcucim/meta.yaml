@@ -20,11 +20,9 @@ build:
     - openslide
   ignore_run_exports_from:
     - {{ compiler('cuda') }}
-    {% if cuda_major != "11" %}
     - cuda-cudart-dev
     - libcufile-dev  # [linux64]
     - libnvjpeg-dev
-    {% endif %}
   script_env:
     - AWS_ACCESS_KEY_ID
     - AWS_SECRET_ACCESS_KEY
@@ -46,11 +44,7 @@ requirements:
   build:
     - {{ compiler("c") }}
     - {{ compiler("cxx") }}
-    {% if cuda_major == "11" %}
-    - {{ compiler('cuda') }} ={{ cuda_version }}
-    {% else %}
     - {{ compiler('cuda') }}
-    {% endif %}
     - cuda-version ={{ cuda_version }}
     - binutils
     - cmake {{ cmake_version }}
@@ -60,29 +54,17 @@ requirements:
     - yasm # [x86_64]
   host:
     - cuda-version ={{ cuda_version }}
-    {% if cuda_major == "11" %}
-    - libcufile {{ cuda11_libcufile_host_version }}         # [linux64]
-    - libcufile-dev {{ cuda11_libcufile_host_version }}     # [linux64]
-    - libnvjpeg {{ cuda11_libnvjpeg_host_version }}
-    - libnvjpeg-dev {{ cuda11_libnvjpeg_host_version }}
-    {% else %}
     - cuda-cudart-dev
     - libcufile-dev     # [linux64]
     - libnvjpeg-dev
     - libnvjpeg-static
-    {% endif %}
     - nvtx-c >=3.1.0
     - openslide
   run:
     - {{ pin_compatible('cuda-version', max_pin='x', min_pin='x') }}
-    {% if cuda_major == "11" %}
-    - cudatoolkit
-    - libcufile {{ cuda11_libcufile_run_version }}  # [linux64]
-    {% else %}
     - cuda-cudart
     - libcufile  # [linux64]
     - libnvjpeg
-    {% endif %}
   run_constrained:
     - {{ pin_compatible('openslide') }}
 
