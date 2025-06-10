@@ -1,3 +1,4 @@
+#!/bin/bash
 # Copyright (c) 2021, NVIDIA CORPORATION.
 
 CUCIM_BUILD_TYPE=${CUCIM_BUILD_TYPE:-release}
@@ -11,13 +12,13 @@ export LD_LIBRARY_PATH="$BUILD_PREFIX/lib:$PREFIX/lib:$LD_LIBRARY_PATH"
 
 # It is assumed that this script is executed from the root of the repo directory by conda-build
 # (https://conda-forge.org/docs/maintainer/knowledge_base.html#using-cmake)
-./run build_local cucim ${CUCIM_BUILD_TYPE}
+./run build_local cucim "${CUCIM_BUILD_TYPE}"
 
 cp -P python/install/lib/* python/cucim/src/cucim/clara/
 
-pushd python/cucim
+pushd python/cucim || exit 1
 
 echo "PYTHON: ${PYTHON}"
 $PYTHON -m pip install --config-settings rapidsai.disable-cuda=true . -vv
 
-popd
+popd || exit 1
