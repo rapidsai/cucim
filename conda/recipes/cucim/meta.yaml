@@ -19,9 +19,7 @@ build:
   string: cuda{{ cuda_major }}_py{{ py_version }}_{{ date_string }}_{{ GIT_DESCRIBE_HASH }}_{{ GIT_DESCRIBE_NUMBER }}
   ignore_run_exports_from:
     - {{ compiler('cuda') }}
-    {% if cuda_major != "11" %}
     - cuda-cudart-dev
-    {% endif %}
   script_env:
     - AWS_ACCESS_KEY_ID
     - AWS_SECRET_ACCESS_KEY
@@ -43,11 +41,7 @@ requirements:
   build:
     - {{ compiler("c") }}
     - {{ compiler("cxx") }}
-    {% if cuda_major == "11" %}
-    - {{ compiler('cuda') }} ={{ cuda_version }}
-    {% else %}
     - {{ compiler('cuda') }}
-    {% endif %}
     - cuda-version ={{ cuda_version }}
     - cmake {{ cmake_version }}
     - make
@@ -56,9 +50,7 @@ requirements:
   host:
     - click
     - cuda-version ={{ cuda_version }}
-    {% if cuda_major != "11" %}
     - cuda-cudart-dev
-    {% endif %}
     - cupy >=12.0.0
     - libcucim ={{ version }}
     - python
@@ -68,9 +60,7 @@ requirements:
     - setuptools >=61.0.0
   run:
     - {{ pin_compatible('cuda-version', max_pin='x', min_pin='x') }}
-    {% if cuda_major != "11" %}
     - cuda-cudart
-    {% endif %}
     - numpy >=1.23,<3.0a0
     - click
     - cupy >=12.0.0
