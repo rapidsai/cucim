@@ -148,8 +148,8 @@ c_str() {
 }
 
 c_echo() {
-    local old_opt
-    old_opt="$(shopt -op xtrace)" # save old xtrace option
+    # shellcheck disable=SC2155
+    local old_opt="$(shopt -op xtrace)" # save old xtrace option
     set +x # unset xtrace
     local text
     text="$(c_str "$@")"
