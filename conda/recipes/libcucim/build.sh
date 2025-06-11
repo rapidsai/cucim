@@ -1,5 +1,5 @@
 #!/bin/bash
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2025, NVIDIA CORPORATION.
 
 CUCIM_BUILD_TYPE=${CUCIM_BUILD_TYPE:-release}
 

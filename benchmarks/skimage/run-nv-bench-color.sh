@@ -12,7 +12,7 @@ done
 
 param_shape=("512,512" "3840,2160")
 param_filt=(deltaE_cie76 deltaE_ciede94 deltaE_ciede2000 deltaE_cmc)
-param_dt=(float32 float64)
+param_dt=("float32" "float64")
 for shape in "${param_shape[@]}"; do
     for filt in "${param_filt[@]}"; do
         for dt in "${param_dt[@]}"; do
