@@ -1,5 +1,4 @@
 #!/bin/bash
-
 for file in ./cu*py
 do
   echo "$file"

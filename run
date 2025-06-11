@@ -16,8 +16,8 @@
 
 init_globals() {
     if [ "$0" != "/bin/bash" ]; then
-        SCRIPT_DIR=$(dirname "$(readlink -f "$0")")
         RUN_SCRIPT_FILE="$(readlink -f "$0")"
+        SCRIPT_DIR=$(dirname "${RUN_SCRIPT_FILE}")
         export RUN_SCRIPT_FILE
     else
         RUN_SCRIPT_FILE="$(readlink -f "${BASH_SOURCE[0]}")"
@@ -387,9 +387,9 @@ build_local() {
     local major_version
     major_version="$(cut -d. -f1 "${TOP}/VERSION")" # major version number
 
-    [ "$build_type" = "debug" ] && build_type_str="Debug"
-    [ "$build_type" = "release" ] && build_type_str="Release"
-    [ "$build_type" = "rel-debug" ] && build_type_str="RelWithDebInfo"
+    [ "${build_type}" = "debug" ] && build_type_str="Debug"
+    [ "${build_type}" = "release" ] && build_type_str="Release"
+    [ "${build_type}" = "rel-debug" ] && build_type_str="RelWithDebInfo"
 
     local old_opt
     old_opt="$(shopt -op errexit);$(shopt -op nounset)" # save old shopts
@@ -438,12 +438,12 @@ build_local() {
             # Copy .so files from libcucim & cuslide/cumed's build folders to cuCIM's Python source folder
             # Since wheel file doesn't support symbolic link (https://github.com/pypa/wheel/issues/203),
             # we don't need to copy symbolic links. Instead copy only libcucim.so.${major_version} (without symbolic link)
-            cp "${TOP}"/build-"$build_type"/lib*/libcucim.so."${major_version}" "${TOP}"/python/cucim/src/cucim/clara/
-            cp -P "${TOP}"/cpp/plugins/cucim.kit.cuslide/build-"$build_type"/lib*/cucim* "${TOP}"/python/cucim/src/cucim/clara/
-            cp -P "${TOP}"/cpp/plugins/cucim.kit.cumed/build-"$build_type"/lib*/cucim* "${TOP}"/python/cucim/src/cucim/clara/
+            cp "${TOP}"/build-"${build_type}"/lib*/libcucim.so."${major_version}" "${TOP}"/python/cucim/src/cucim/clara/
+            cp -P "${TOP}"/cpp/plugins/cucim.kit.cuslide/build-"${build_type}"/lib*/cucim* "${TOP}"/python/cucim/src/cucim/clara/
+            cp -P "${TOP}"/cpp/plugins/cucim.kit.cumed/build-"${build_type}"/lib*/cucim* "${TOP}"/python/cucim/src/cucim/clara/
 
             # Copy .so files from pybind's build folder to cuCIM's Python source folder
-            cp "${TOP}"/python/build-"$build_type"/lib/cucim/_cucim.*.so "${TOP}"/python/cucim/src/cucim/clara/
+            cp "${TOP}"/python/build-"${build_type}"/lib/cucim/_cucim.*.so "${TOP}"/python/cucim/src/cucim/clara/
         fi
     fi
 
