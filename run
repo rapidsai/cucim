@@ -396,21 +396,21 @@ build_local() {
     set -eu
 
     if [ "$subcommand" = "clean_cache" ]; then
-        rm -f "${TOP}/build-*/CMakeCache.txt"
-        rm -f "${TOP}/cpp/plugins/cucim.kit.cuslide/build-*/CMakeCache.txt"
-        rm -f "${TOP}/cpp/plugins/cucim.kit.cumed/build-*/CMakeCache.txt"
-        rm -f "${TOP}/python/build-*/CMakeCache.txt"
+        rm -f "${TOP}"/build-*/CMakeCache.txt
+        rm -f "${TOP}"/cpp/plugins/cucim.kit.cuslide/build-*/CMakeCache.txt
+        rm -f "${TOP}"/cpp/plugins/cucim.kit.cumed/build-*/CMakeCache.txt
+        rm -f "${TOP}"/python/build-*/CMakeCache.txt
     fi
 
     if [ "$subcommand" = "clean" ]; then
-        rm -rf "${TOP}/build-*"
-        rm -rf "${TOP}/install"
-        rm -rf "${TOP}/cpp/plugins/cucim.kit.cuslide/build-*/"
-        rm -rf "${TOP}/cpp/plugins/cucim.kit.cuslide/install"
-        rm -rf "${TOP}/cpp/plugins/cucim.kit.cumed/build-*/"
-        rm -rf "${TOP}/cpp/plugins/cucim.kit.cumed/install"
-        rm -rf "${TOP}/python/build-*"
-        rm -rf "${TOP}/python/install"
+        rm -rf "${TOP}"/build-*
+        rm -rf "${TOP}"/install
+        rm -rf "${TOP}"/cpp/plugins/cucim.kit.cuslide/build-*/
+        rm -rf "${TOP}"/cpp/plugins/cucim.kit.cuslide/install
+        rm -rf "${TOP}"/cpp/plugins/cucim.kit.cumed/build-*/
+        rm -rf "${TOP}"/cpp/plugins/cucim.kit.cumed/install
+        rm -rf "${TOP}"/python/build-*
+        rm -rf "${TOP}"/python/install
     fi
 
     if [ "$subcommand" = "all" ] || [ "$subcommand" = "libcucim" ]; then
@@ -418,19 +418,19 @@ build_local() {
     fi
 
     if [ "$subcommand" = "all" ] || [ "$subcommand" = "cuslide" ]; then
-        build_local_cuslide_ "${TOP}/cpp/plugins/cucim.kit.cuslide" "${build_type}" ${build_type_str} "${prefix}"
+        build_local_cuslide_ "${TOP}"/cpp/plugins/cucim.kit.cuslide "${build_type}" ${build_type_str} "${prefix}"
     fi
 
     if [ "$subcommand" = "all" ] || [ "$subcommand" = "cumed" ]; then
-        build_local_cumed_ "${TOP}/cpp/plugins/cucim.kit.cumed" "${build_type}" ${build_type_str} "${prefix}"
+        build_local_cumed_ "${TOP}"/cpp/plugins/cucim.kit.cumed "${build_type}" ${build_type_str} "${prefix}"
     fi
 
     if [ "$subcommand" = "all" ] || [ "$subcommand" = "cucim" ]; then
-        build_local_cucim_ "${TOP}/python" "${build_type}" ${build_type_str} "${prefix}"
+        build_local_cucim_ "${TOP}"/python "${build_type}" ${build_type_str} "${prefix}"
     fi
 
     # Remove existing library files at python/cucim/src/cucim/clara
-    rm -f "${TOP}/python/cucim/src/cucim/clara/*.so*"
+    rm -f "${TOP}"/python/cucim/src/cucim/clara/*.so*
 
     if [ "$subcommand" = "all" ] || [ "$subcommand" = "cucim" ]; then
         # We don't need to copy binary if executed by conda-build
@@ -438,12 +438,12 @@ build_local() {
             # Copy .so files from libcucim & cuslide/cumed's build folders to cuCIM's Python source folder
             # Since wheel file doesn't support symbolic link (https://github.com/pypa/wheel/issues/203),
             # we don't need to copy symbolic links. Instead copy only libcucim.so.${major_version} (without symbolic link)
-            cp "${TOP}/build-$build_type/lib*/libcucim.so.${major_version}" "${TOP}/python/cucim/src/cucim/clara/"
-            cp -P "${TOP}/cpp/plugins/cucim.kit.cuslide/build-$build_type/lib*/cucim*" "${TOP}/python/cucim/src/cucim/clara/"
-            cp -P "${TOP}/cpp/plugins/cucim.kit.cumed/build-$build_type/lib*/cucim*" "${TOP}/python/cucim/src/cucim/clara/"
+            cp "${TOP}"/build-"$build_type"/lib*/libcucim.so."${major_version}" "${TOP}"/python/cucim/src/cucim/clara/
+            cp -P "${TOP}"/cpp/plugins/cucim.kit.cuslide/build-"$build_type"/lib*/cucim* "${TOP}"/python/cucim/src/cucim/clara/
+            cp -P "${TOP}"/cpp/plugins/cucim.kit.cumed/build-"$build_type"/lib*/cucim* "${TOP}"/python/cucim/src/cucim/clara/
 
             # Copy .so files from pybind's build folder to cuCIM's Python source folder
-            cp "${TOP}/python/build-$build_type/lib/cucim/_cucim.*.so" "${TOP}/python/cucim/src/cucim/clara/"
+            cp "${TOP}"/python/build-"$build_type"/lib/cucim/_cucim.*.so "${TOP}"/python/cucim/src/cucim/clara/
         fi
     fi
 
@@ -506,8 +506,8 @@ copy_gds_files_() {
         run_command mkdir -p "${root_folder}/temp/cuda/include" "${root_folder}/temp/cuda/lib64"
 
         if [ "${cufile_include}" != "${root_folder}/temp/cuda/include" ]; then
-            run_command cp -Pf "${cufile_include}/cufile.h" "${root_folder}/temp/cuda/include/" || true
-            run_command cp -Pf "${cufile_lib}/libcufile*" "${root_folder}/temp/cuda/lib64/" || true
+            run_command cp -Pf "${cufile_include}"/cufile.h "${root_folder}"/temp/cuda/include/ || true
+            run_command cp -Pf "${cufile_lib}"/libcufile* "${root_folder}"/temp/cuda/lib64/ || true
         fi
     fi
 }
@@ -561,9 +561,9 @@ copy_nvjpeg_files_() {
     if [ ! -f "${nvjpeg_include}/nvjpeg.h" ]; then
         c_echo_err Y "nvJPEG library is not available! Downloading the redistributable package to get nvjpeg.h and libraries."
 
-        run_command rm -rf "${root_folder}/temp/cuda/include/*nvjpeg*"
-        run_command rm -rf "${root_folder}/temp/cuda/lib64/*nvjpeg*"
-        run_command mkdir -p "${root_folder}/temp/cuda/include" "${root_folder}/temp/cuda/lib64"
+        run_command rm -rf "${root_folder}"/temp/cuda/include/*nvjpeg*
+        run_command rm -rf "${root_folder}"/temp/cuda/lib64/*nvjpeg*
+        run_command mkdir -p "${root_folder}"/temp/cuda/include "${root_folder}"/temp/cuda/lib64
 
         local temp_tgz_dir
         temp_tgz_dir=$(mktemp -d)
