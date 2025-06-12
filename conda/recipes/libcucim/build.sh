@@ -1,6 +1,8 @@
 #!/bin/bash
 # Copyright (c) 2021-2025, NVIDIA CORPORATION.
 
+set -e -u -o pipefail
+
 CUCIM_BUILD_TYPE=${CUCIM_BUILD_TYPE:-release}
 
 echo "CC          : ${CC}"
