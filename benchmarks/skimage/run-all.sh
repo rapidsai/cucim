@@ -1,5 +1,6 @@
+#!/bin/bash
 for file in ./cu*py
 do
-  echo $file
+  echo "$file"
   time python "$file"
 done
