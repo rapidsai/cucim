@@ -4,6 +4,7 @@
 set -e -u -o pipefail
 
 CUCIM_BUILD_TYPE=${CUCIM_BUILD_TYPE:-release}
+LD_LIBRARY_PATH=${LD_LIBRARY_PATH:-}
 
 echo "CC          : ${CC}"
 echo "CXX         : ${CXX}"
