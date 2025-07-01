@@ -1,3 +1,22 @@
+# cucim 25.06.00 (5 Jun 2025)
+
+## 🛠️ Improvements
+
+- use &#39;rapids-init-pip&#39; in wheel CI, other CI changes ([#881](https://github.com/rapidsai/cucim/pull/881)) [@jameslamb](https://github.com/jameslamb)
+- Finish CUDA 12.9 migration and use branch-25.06 workflows ([#879](https://github.com/rapidsai/cucim/pull/879)) [@bdice](https://github.com/bdice)
+- Build and test with CUDA 12.9.0 ([#877](https://github.com/rapidsai/cucim/pull/877)) [@bdice](https://github.com/bdice)
+- Refactor: Enhance GPU Memory Leak Test for `read_region` ([#874](https://github.com/rapidsai/cucim/pull/874)) [@gigony](https://github.com/gigony)
+- Add support for Python 3.13 ([#873](https://github.com/rapidsai/cucim/pull/873)) [@gforsyth](https://github.com/gforsyth)
+- Download build artifacts from GitHub for CI ([#870](https://github.com/rapidsai/cucim/pull/870)) [@VenkateshJaya](https://github.com/VenkateshJaya)
+- Add ARM conda environments ([#867](https://github.com/rapidsai/cucim/pull/867)) [@bdice](https://github.com/bdice)
+- Moving wheel builds to specified location and uploading build artifacts to Github ([#854](https://github.com/rapidsai/cucim/pull/854)) [@VenkateshJaya](https://github.com/VenkateshJaya)
+- Region Properties Performance Overhaul - Part 6: Public API (regionprops_table) ([#848](https://github.com/rapidsai/cucim/pull/848)) [@grlee77](https://github.com/grlee77)
+- Region Properties Performance Overhaul - Part 5: Perimeter and Euler Characteristic ([#847](https://github.com/rapidsai/cucim/pull/847)) [@grlee77](https://github.com/grlee77)
+- Region Properties Performance Overhaul - Part 4: Moment-Based Properties ([#846](https://github.com/rapidsai/cucim/pull/846)) [@grlee77](https://github.com/grlee77)
+- Region Properties Performance Overhaul - Part 3: Convex Image Properties ([#845](https://github.com/rapidsai/cucim/pull/845)) [@grlee77](https://github.com/grlee77)
+- Region Properties Performance Overhaul - Part 2: Intensity Image Properties ([#844](https://github.com/rapidsai/cucim/pull/844)) [@grlee77](https://github.com/grlee77)
+- Region Properties Performance Overhaul - Part 1: Basic Properties ([#843](https://github.com/rapidsai/cucim/pull/843)) [@grlee77](https://github.com/grlee77)
+
 # cucim 25.04.00 (9 Apr 2025)
 
 ## 🐛 Bug Fixes

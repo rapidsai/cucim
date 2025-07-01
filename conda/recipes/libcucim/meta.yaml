@@ -1,0 +1,80 @@
+# Copyright (c) 2021-2023, NVIDIA CORPORATION.
+
+{% set version = environ['RAPIDS_PACKAGE_VERSION'].lstrip('v') %}
+{% set cuda_version = '.'.join(environ['RAPIDS_CUDA_VERSION'].split('.')[:2]) %}
+{% set cuda_major = cuda_version.split('.')[0] %}
+{% set date_string = environ['RAPIDS_DATE_STRING'] %}
+
+
+package:
+  name: libcucim
+  version: {{ version }}
+
+source:
+  path: ../../..
+
+build:
+  number: {{ GIT_DESCRIBE_NUMBER }}
+  string: cuda{{ cuda_major }}_{{ date_string }}_{{ GIT_DESCRIBE_HASH }}_{{ GIT_DESCRIBE_NUMBER }}
+  ignore_run_exports:
+    - openslide
+  ignore_run_exports_from:
+    - {{ compiler('cuda') }}
+    - cuda-cudart-dev
+    - libcufile-dev  # [linux64]
+    - libnvjpeg-dev
+  script_env:
+    - AWS_ACCESS_KEY_ID
+    - AWS_SECRET_ACCESS_KEY
+    - AWS_SESSION_TOKEN
+    - CMAKE_C_COMPILER_LAUNCHER
+    - CMAKE_CUDA_COMPILER_LAUNCHER
+    - CMAKE_CXX_COMPILER_LAUNCHER
+    - CMAKE_GENERATOR
+    - PARALLEL_LEVEL
+    - SCCACHE_BUCKET
+    - SCCACHE_IDLE_TIMEOUT
+    - SCCACHE_REGION
+    - SCCACHE_S3_KEY_PREFIX=libcucim-aarch64 # [aarch64]
+    - SCCACHE_S3_KEY_PREFIX=libcucim-linux64 # [linux64]
+    - SCCACHE_S3_USE_SSL
+    - SCCACHE_S3_NO_CREDENTIALS
+
+requirements:
+  build:
+    - {{ compiler("c") }}
+    - {{ compiler("cxx") }}
+    - {{ compiler('cuda') }}
+    - cuda-version ={{ cuda_version }}
+    - binutils
+    - cmake {{ cmake_version }}
+    - make
+    - ninja
+    - {{ stdlib("c") }}
+    - yasm # [x86_64]
+  host:
+    - cuda-version ={{ cuda_version }}
+    - cuda-cudart-dev
+    - libcufile-dev     # [linux64]
+    - libnvjpeg-dev
+    - libnvjpeg-static
+    - nvtx-c >=3.1.0
+    - openslide
+  run:
+    - {{ pin_compatible('cuda-version', max_pin='x', min_pin='x') }}
+    - cuda-cudart
+    - libcufile  # [linux64]
+    - libnvjpeg
+  run_constrained:
+    - {{ pin_compatible('openslide') }}
+
+about:
+  home: https://developer.nvidia.com/multidimensional-image-processing
+  summary: libcucim C++ library
+  license: Apache-2.0
+  license_family: Apache
+  license_file:
+    - LICENSE
+    - LICENSE-3rdparty.md
+  doc_url: https://docs.rapids.ai/api/cucim/stable/
+  dev_url: https://github.com/rapidsai/cucim
