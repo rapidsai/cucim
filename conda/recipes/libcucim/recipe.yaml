@@ -53,7 +53,7 @@ build:
       mkdir -p "$PREFIX/bin" "$PREFIX/lib" "$PREFIX/include"
       cp -P -r install/bin/* "$PREFIX/bin/" || true
       cp -P -r install/lib/* "$PREFIX/lib/" || true
-      cp -P -r install/include/* $"PREFIX/include/" || true
+      cp -P -r install/include/* "$PREFIX/include/" || true
 
       # Build plugins
       for plugin_name in cuslide cumed; do
