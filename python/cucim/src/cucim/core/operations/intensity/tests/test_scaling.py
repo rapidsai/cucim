@@ -29,7 +29,7 @@ def test_scale_param():
     with pytest.raises(ValueError):
         its.scale_intensity_range(arr, 0.0, 255.0, 1.0, 1.0, False)
     with pytest.raises(TypeError):
-        img = Image.fromarray(arr.T, "RGB")
+        img = Image.fromarray(arr.T)
         its.scale_intensity_range(img, 0.0, 255.0, -1.0, 1.0, False)
 
 
