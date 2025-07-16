@@ -11,8 +11,6 @@ PYTHON_WHEELHOUSE=$(RAPIDS_PY_WHEEL_NAME="cucim_${RAPIDS_PY_CUDA_SUFFIX}" rapids
 # echo to expand wildcard before adding `[extra]` requires for pip
 rapids-pip-retry install "$(echo ${PYTHON_WHEELHOUSE}/cucim*.whl)[test]"
 
-CUDA_MAJOR_VERSION=${RAPIDS_CUDA_VERSION:0:2}
-
 if type -f yum > /dev/null 2>&1; then
     yum update -y
     yum install -y openslide
