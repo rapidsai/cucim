@@ -541,8 +541,8 @@ copy_nvjpeg_files_() {
     if [ -n "${PREFIX+x}" ]; then
       nvjpeg_search="${PREFIX:-}/include:${PREFIX:-}/lib ${PREFIX:-}/${targets_dir}/include:${PREFIX:-}/${targets_dir}/lib ${nvjpeg_search}"
     fi
-    local cuda_version="11.6"
-    local nvjpeg_version="11-6_11.6.0.55-1"
+    local cuda_version
+    local nvjpeg_version
     local candidate
     local nvjpeg_include
     local nvjpeg_lib

@@ -57,7 +57,6 @@ requirements:
     - cuda-cudart-dev
     - libcufile-dev     # [linux64]
     - libnvjpeg-dev
-    - libnvjpeg-static
     - nvtx-c >=3.1.0
     - openslide
   run:
