@@ -125,8 +125,6 @@ superbuild_depend(cli11)
 superbuild_depend(pugixml)
 superbuild_depend(json)
 superbuild_depend(libdeflate)
-superbuild_depend(nvjpeg)
-superbuild_depend(libculibos)
 
 ################################################################################
 # Find cucim package
@@ -217,7 +215,7 @@ target_compile_options(${CUCIM_PLUGIN_NAME} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-W
 target_link_libraries(${CUCIM_PLUGIN_NAME}
         PRIVATE
             CUDA::cudart
-            deps::nvjpeg
+            CUDA::nvjpeg
             deps::fmt
             cucim::cucim
             deps::libtiff
