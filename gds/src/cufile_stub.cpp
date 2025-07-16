@@ -14,6 +14,10 @@
  * limitations under the License.
  */
 
+#if CUCIM_SUPPORT_GDS
+#    include <cufile.h>
+#endif
+
 #include "cufile_stub.h"
 #include "cucim/dynlib/helper.h"
 #include "cucim/util/platform.h"

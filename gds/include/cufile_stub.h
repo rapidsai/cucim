@@ -16,8 +16,6 @@
 #ifndef CUCIM_CUFILE_STUB_H
 #define CUCIM_CUFILE_STUB_H
 
-#include "cufile.h"
-
 #include "cucim/dynlib/helper.h"
 
 class CuFileStub
