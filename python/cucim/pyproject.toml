@@ -40,7 +40,6 @@ classifiers = [
     "Topic :: Scientific/Engineering",
     "Operating System :: POSIX :: Linux",
     "Environment :: Console",
-    "Environment :: GPU :: NVIDIA CUDA :: 11",
     "Environment :: GPU :: NVIDIA CUDA :: 12",
     "License :: OSI Approved :: Apache Software License",
     "Programming Language :: C++",
