@@ -173,7 +173,6 @@ dependencies:
               cuda: "12.*"
             packages:
               - libnvjpeg-dev
-              - libnvjpeg-static
       - output_types: conda
         matrices:
           - matrix:
