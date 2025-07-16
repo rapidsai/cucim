@@ -4,7 +4,7 @@ from itertools import combinations_with_replacement
 
 import cupy as cp
 import numpy as np
-from scipy import spatial  # TODO: use cuSpatial if KDTree becomes available
+from scipy import spatial
 
 import cucim.skimage._vendored.ndimage as ndi
 from cucim.skimage.util import img_as_float
@@ -1370,7 +1370,7 @@ def corner_peaks(
     )
 
     if len(coords):
-        # TODO: modify to do KDTree on the GPU (cuSpatial?)
+        # TODO: modify to do KDTree on the GPU
         coords = cp.asnumpy(coords)
 
         # Use KDtree to find the peaks that are too close to each other
