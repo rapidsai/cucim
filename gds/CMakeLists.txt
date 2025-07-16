@@ -24,6 +24,9 @@ if (NOT APPLE)
     set(CMAKE_INSTALL_RPATH $ORIGIN)
 endif ()
 
+# Find CUDA Toolkit for cudart and cufile.
+find_package(CUDAToolkit REQUIRED)
+
 ################################################################################
 # Add library: cufile_stub
 ################################################################################
