@@ -37,6 +37,7 @@ sed_runner "s#cucim.kit.cuslide@${CURRENT_LONG_TAG}.so#cucim.kit.cuslide@${NEXT_
 
 for FILE in .github/workflows/*.yaml; do
   sed_runner "/shared-workflows/ s/@.*/@branch-${NEXT_SHORT_TAG}/g" "${FILE}"
+  sed_runner "s/:[0-9]*\\.[0-9]*-/:${NEXT_SHORT_TAG}-/g" "${FILE}"
 done
 
 DEPENDENCIES=(
@@ -49,3 +50,6 @@ for DEP in "${DEPENDENCIES[@]}"; do
   done
   sed_runner "/\"${DEP}==/ s/==.*\"/==${NEXT_SHORT_TAG_PEP440}.*,>=0.0.0a0\"/g" python/cucim/pyproject.toml
 done
+
+# Update CI image tags of the form {rapids_version}-{something}
+sed_runner "s/:[0-9]*\\.[0-9]*-/:${NEXT_SHORT_TAG}-/g" ./CONTRIBUTING.md
