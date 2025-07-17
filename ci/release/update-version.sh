@@ -50,6 +50,3 @@ for DEP in "${DEPENDENCIES[@]}"; do
   done
   sed_runner "/\"${DEP}==/ s/==.*\"/==${NEXT_SHORT_TAG_PEP440}.*,>=0.0.0a0\"/g" python/cucim/pyproject.toml
 done
-
-# Update CI image tags of the form {rapids_version}-{something}
-sed_runner "s/:[0-9]*\\.[0-9]*-/:${NEXT_SHORT_TAG}-/g" ./CONTRIBUTING.md
