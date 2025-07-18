@@ -4,6 +4,7 @@ from itertools import combinations_with_replacement
 
 import cupy as cp
 import numpy as np
+
 # TODO: use CuPy's KDTree once it becomes available
 # xref: https://github.com/rapidsai/cucim/issues/732
 from scipy import spatial
