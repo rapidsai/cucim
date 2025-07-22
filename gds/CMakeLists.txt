@@ -58,9 +58,6 @@ target_compile_options(cufile_stub
 target_link_libraries(cufile_stub
         PUBLIC
             ${CMAKE_DL_LIBS}
-        PRIVATE
-            CUDA::cudart
-            CUDA::cuFile
         )
 
 # Enabling CUCIM_STATIC_GDS statically links cuFile
