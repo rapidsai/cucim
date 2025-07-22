@@ -54,6 +54,12 @@ target_compile_options(cufile_stub
         $<$<COMPILE_LANGUAGE:CXX>:-Werror -Wall -Wextra>
         )
 
+## Include directories
+target_include_directories(cufile_stub
+        PRIVATE
+            CUDAToolkit_INCLUDE_DIRS
+        )
+
 ## Link libraries
 target_link_libraries(cufile_stub
         PUBLIC
