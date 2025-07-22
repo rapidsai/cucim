@@ -215,7 +215,6 @@ target_compile_options(${CUCIM_PLUGIN_NAME} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-W
 target_link_libraries(${CUCIM_PLUGIN_NAME}
         PRIVATE
             CUDA::cudart
-            CUDA::nvjpeg
             deps::fmt
             cucim::cucim
             deps::libtiff
@@ -226,6 +225,18 @@ target_link_libraries(${CUCIM_PLUGIN_NAME}
             deps::json
             deps::libdeflate
         )
+if (TARGET CUDA::nvjpeg_static)
+        target_link_libraries(${CUCIM_PLUGIN_NAME}
+            PRIVATE
+                CUDA::culibos
+                CUDA::nvjpeg_static
+        )
+else()
+        target_link_libraries(${CUCIM_PLUGIN_NAME}
+            PRIVATE
+                CUDA::nvjpeg
+        )
+endif()
 
 target_include_directories(${CUCIM_PLUGIN_NAME}
         PUBLIC
