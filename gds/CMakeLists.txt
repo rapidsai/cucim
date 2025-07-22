@@ -80,11 +80,10 @@ PUBLIC
 target_include_directories(cufile_stub
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/include>
-        $<BUILD_INTERFACE:${GDS_INCLUDE_PATH}>
+        CUDAToolkit_INCLUDE_DIRS
     PRIVATE
         # Add path to cufile.h explicitly. ${TOP}/temp/cuda would be available by `./run copy_gds_files_`
         ${CMAKE_CURRENT_SOURCE_DIR}/../cpp/include # for including helper.h in cucim/dynlib
-        CUDAToolkit_INCLUDE_DIRS
 )
 
 add_library(deps::gds ALIAS cufile_stub)
