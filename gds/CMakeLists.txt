@@ -54,25 +54,20 @@ target_compile_options(cufile_stub
         $<$<COMPILE_LANGUAGE:CXX>:-Werror -Wall -Wextra>
         )
 
-## Include directories
-target_include_directories(cufile_stub
-        PRIVATE
-            CUDAToolkit_INCLUDE_DIRS
-        )
-
 ## Link libraries
-target_link_libraries(cufile_stub
-        PUBLIC
-            ${CMAKE_DL_LIBS}
-        )
-
-# Enabling CUCIM_STATIC_GDS statically links cuFile
 if (CUCIM_STATIC_GDS)
+    # Enabling CUCIM_STATIC_GDS statically links cuFile
     target_link_libraries(cufile_stub
         PUBLIC
             ${CMAKE_DL_LIBS}
         PRIVATE
             CUDA::cuFile_static
+    )
+else()
+    # Use `dlopen` to load cuFile at runtime
+    target_link_libraries(cufile_stub
+        PUBLIC
+            ${CMAKE_DL_LIBS}
     )
 endif()
 
@@ -89,6 +84,7 @@ target_include_directories(cufile_stub
     PRIVATE
         # Add path to cufile.h explicitly. ${TOP}/temp/cuda would be available by `./run copy_gds_files_`
         ${CMAKE_CURRENT_SOURCE_DIR}/../cpp/include # for including helper.h in cucim/dynlib
+        CUDAToolkit_INCLUDE_DIRS
 )
 
 add_library(deps::gds ALIAS cufile_stub)
