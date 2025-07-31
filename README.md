@@ -53,7 +53,7 @@ cuCIM supports the following formats:
 conda create -n cucim -c rapidsai -c conda-forge cucim cuda-version=`<CUDA version>`
 ```
 
-`<CUDA version>` should be 11.2+ (e.g., `11.2`, `12.0`, etc.)
+`<CUDA version>` should be 12.0+ (e.g., `12.0`, etc.)
 
 #### [Conda (nightlies)](https://anaconda.org/rapidsai-nightly/cucim)
 
@@ -61,7 +61,7 @@ conda create -n cucim -c rapidsai -c conda-forge cucim cuda-version=`<CUDA versi
 conda create -n cucim -c rapidsai-nightly -c conda-forge cucim cuda-version=`<CUDA version>`
 ```
 
-`<CUDA version>` should be 11.2+ (e.g., `11.2`, `12.0`, etc.)
+`<CUDA version>` should be 12.0+ (e.g., `12.0`, etc.)
 
 ### [PyPI](https://pypi.org/project/cucim/)
 
@@ -69,12 +69,6 @@ Install for CUDA 12:
 
 ```bash
 pip install cucim-cu12
-```
-
-Alternatively install for CUDA 11:
-
-```bash
-pip install cucim-cu11
 ```
 
 ### Notebooks
