@@ -41,7 +41,7 @@ def test_norm_param():
     with pytest.raises(ValueError):
         its.normalize_data(arr, 10.0, 0, 255, "invalid")
     with pytest.raises(TypeError):
-        img = Image.fromarray(arr.T, "RGB")
+        img = Image.fromarray(arr.T)
         its.normalize_data(img, 10.0, 0, 255)
 
 

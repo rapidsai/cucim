@@ -34,15 +34,26 @@ def test_read_region_cuda_memleak(testimg_tiff_stripe_4096x4096_256_jpeg):
     if num_gpus == 0:
         pytest.skip("No gpu available")
 
+    # Check for Unified Memory
+    # (as in the case of devices using system-on-a-chip, SoC)
+    # On these systems, CPU and GPU memory are the same, so this test, which
+    # is designed to measure GPU-specific memory leaks, is not applicable.
+    # ref: https://developer.nvidia.com/blog/unified-memory-cuda-beginners/
+    dev = cp.cuda.Device()
+    if dev.attributes.get("UnifiedAddressing", 0):
+        pytest.skip(
+            "Skipping memory leak test on unified memory systems (e.g., SoC)"
+        )
+
     img = open_image_cucim(testimg_tiff_stripe_4096x4096_256_jpeg)
 
     mem_usage_history = [
         get_used_gpu_memory_mib()
     ]  # Memory before loop (image loaded)
 
-    num_iterations = 10
+    num_iterations = 30
     warmup_iterations = (
-        3  # Number of iterations to run before establishing a baseline
+        20  # Number of iterations to run before establishing a baseline
     )
 
     for i in range(num_iterations):
@@ -86,7 +97,7 @@ def test_read_region_cuda_memleak(testimg_tiff_stripe_4096x4096_256_jpeg):
 
     # The increase in memory after the warm-up phase and explicit freeing
     # should be minimal, ideally close to zero for a perfectly clean operation.
-    # This threshold (leak_threshold_mib, e.g., 30.0 MiB) defines an acceptable
+    # This threshold (leak_threshold_mib, e.g., 100.0 MiB) defines an acceptable
     # upper bound for the *cumulative* memory increase observed over the
     # (num_iterations - warmup_iterations) test iterations.
     # It accounts for potential minor non-reclaimable memory that might
@@ -94,10 +105,11 @@ def test_read_region_cuda_memleak(testimg_tiff_stripe_4096x4096_256_jpeg):
     # overheads, or small, consistent allocation patterns within the tested
     # function, even with explicit attempts to free memory.
     #
-    # For instance, a 30.0 MiB threshold over 7 active test iterations
-    # (10 total iterations - 3 warmup iterations) allows for an average of
-    # roughly 4.3 MiB of such net memory growth per iteration during the
-    # measurement phase.
+    # For instance, a 100.0 MiB threshold over 10 active test iterations
+    # (30 total iterations - 20 warmup iterations) allows for an average of
+    # roughly 10.0 MiB of such net memory growth per iteration during the
+    # measurement phase. (Note that a 4096x4096 image consumes approximately 50
+    # MiB of GPU memory)
     # This approach is significantly different from a previous version of this
     # test, which used a 180MB threshold for a non-cumulative comparison
     # (i.e., `memory_at_iteration_5 - memory_at_iteration_9`), which could
@@ -105,7 +117,7 @@ def test_read_region_cuda_memleak(testimg_tiff_stripe_4096x4096_256_jpeg):
     # If the `read_region` operation has a consistent memory leak (i.e., memory
     # that is allocated and not freed properly on an ongoing basis), the
     # `memory_increase_after_warmup` is expected to exceed this threshold.
-    leak_threshold_mib = 30.0
+    leak_threshold_mib = 100.0
     assert memory_increase_after_warmup < leak_threshold_mib, (
         f"Memory increase ({memory_increase_after_warmup:.2f} MiB) "
         f"exceeded threshold ({leak_threshold_mib} MiB) "

@@ -26,7 +26,7 @@ def test_color_jitter_bad_params():
         arr1 = arr.flatten()
         ccl.color_jitter(arr1, 0.25, 0.75, 0.25, 0.04)
     with pytest.raises(TypeError):
-        img = Image.fromarray(arr.T, "RGB")
+        img = Image.fromarray(arr.T)
         ccl.color_jitter(img, 0.25, 0.75, 0.25, 0.04)
 
 
