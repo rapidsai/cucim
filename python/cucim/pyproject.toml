@@ -91,7 +91,7 @@ cucim = "cucim.clara.cli:main"
 [tool.rapids-build-backend]
 build-backend = "setuptools.build_meta"
 commit-files = [
-    "src/cucim/COMMIT_FILE"
+    "src/cucim/GIT_COMMIT"
 ]
 dependencies-file = "../../dependencies.yaml"
 requires = [
