@@ -112,7 +112,7 @@ version = {file = "src/cucim/VERSION"}
 where = ["src"]
 
 [tool.setuptools.package-data]
-mypkg = ["*.pyi", "*.h", "*.cu", "VERSION"]
+mypkg = ["*.pyi", "*.h", "*.cu"]
 
 [tool.pydistcheck]
 select = [
