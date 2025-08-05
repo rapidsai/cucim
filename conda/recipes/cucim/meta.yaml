@@ -54,7 +54,7 @@ requirements:
     - cupy >=12.0.0
     - libcucim ={{ version }}
     - python
-    - rapids-build-backend >=0.3.0,<0.4.0.dev0
+    - rapids-build-backend >=0.4.0,<0.5.0.dev0
     - scikit-image >=0.19.0,<0.25.0a0
     - scipy >=1.6
     - setuptools >=61.0.0
