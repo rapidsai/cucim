@@ -111,9 +111,6 @@ version = {file = "src/cucim/VERSION"}
 [tool.setuptools.packages.find]
 where = ["src"]
 
-[tool.setuptools.package-data]
-mypkg = ["*.pyi", "*.h", "*.cu"]
-
 [tool.pydistcheck]
 select = [
     "distro-too-large-compressed",
