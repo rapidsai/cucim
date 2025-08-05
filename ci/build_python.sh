@@ -3,7 +3,7 @@
 
 set -euo pipefail
 
-rapids-configure-conda-channels
+./ci/rapids-configure-conda-channels
 
 source rapids-configure-sccache
 
