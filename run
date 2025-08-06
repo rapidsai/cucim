@@ -16,13 +16,16 @@
 
 init_globals() {
     if [ "$0" != "/bin/bash" ]; then
-        SCRIPT_DIR=$(dirname "$(readlink -f "$0")")
-        export RUN_SCRIPT_FILE="$(readlink -f "$0")"
+        RUN_SCRIPT_FILE="$(readlink -f "$0")"
+        SCRIPT_DIR=$(dirname "${RUN_SCRIPT_FILE}")
+        export RUN_SCRIPT_FILE
     else
-        export RUN_SCRIPT_FILE="$(readlink -f "${BASH_SOURCE[0]}")"
+        RUN_SCRIPT_FILE="$(readlink -f "${BASH_SOURCE[0]}")"
+        export RUN_SCRIPT_FILE
     fi
 
-    export TOP=$(git rev-parse --show-toplevel || $(dirname "${RUN_SCRIPT_FILE}"))
+    TOP=$(git rev-parse --show-toplevel || dirname "${RUN_SCRIPT_FILE}")
+    export TOP
 }
 
 ################################################################################
@@ -49,22 +52,26 @@ init_globals() {
 #   Print list of available commands from $1
 #######################################
 get_list_of_available_commands() {
-    local file_name="$1"
     if [ ! -e "$1" ]; then
         echo "$1 doesn't exist!"
     fi
 
     local line_str='--------------------------------'
-    local IFS= cmd_lines="$(IFS= cat "$1" | grep -E -e "^(([[:alpha:]_[:digit:]]+)_desc\(\)|# Section: )" | sed "s/_desc() *{ *echo '/ : /")"
+    local IFS
+    local cmd_lines
+    cmd_lines="$(IFS= grep -E -e "^(([[:alpha:]_[:digit:]]+)_desc\(\)|# Section: )" "$1" | sed "s/_desc() *{ *echo '/ : /")"
     local line
     while IFS= read -r line; do
-        local cmd=$(echo "$line" | cut -d":" -f1)
-        local desc=$(echo "$line" | cut -d":" -f2-)
+        local cmd
+        local desc
+        cmd=$(echo "$line" | cut -d":" -f1)
+        desc=$(echo "$line" | cut -d":" -f2-)
         if [ "$cmd" = "# Section" ]; then
             c_echo B "${desc}"
         else
             # there is no substring operation in 'sh' so use 'cut'
-            local dash_line="$(echo "${line_str}" | cut -c ${#cmd}-)"  #  = "${line_str:${#cmd}}"
+            local dash_line
+            dash_line="$(echo "${line_str}" | cut -c ${#cmd}-)"  #  = "${line_str:${#cmd}}"
              c_echo Y "   ${cmd}" w " ${dash_line} ${desc}"
         fi
         # use <<EOF, not '<<<"$cmd_lines"' to be executable in sh
@@ -141,9 +148,11 @@ c_str() {
 }
 
 c_echo() {
+    # shellcheck disable=SC2155
     local old_opt="$(shopt -op xtrace)" # save old xtrace option
     set +x # unset xtrace
-    local text="$(c_str "$@")"
+    local text
+    text="$(c_str "$@")"
     /bin/echo -e "$text\033[0m"
     eval "${old_opt}" # restore old xtrace option
 }
@@ -158,14 +167,13 @@ c_echo_err() {
 }
 
 printf_err() {
-    >&2 printf "$@"
+    >&2 printf '%s' "$@"
 }
 
 get_item_ranges() {
     local indexes="$1"
     local list="$2"
     echo -n "$(echo "${list}" | xargs | cut -d " " -f "${indexes}")"
-    return $?
 }
 
 get_unused_ports() {
@@ -173,9 +181,9 @@ get_unused_ports() {
     local start=${2:-49152}
     local end=${3:-61000}
     comm -23 \
-    <(seq ${start} ${end} | sort) \
-    <(ss -tan | awk '{print $4}' | while read line; do echo ${line##*\:}; done | grep '[0-9]\{1,5\}' | sort -u) \
-    | shuf | tail -n ${num_of_ports} # use tail instead head to avoid broken pipe in VSCode terminal
+    <(seq "${start}" "${end}" | sort) \
+    <(ss -tan | awk '{print $4}' | while read -r line; do echo "${line##*\:}"; done | grep '[0-9]\{1,5\}' | sort -u) \
+    | shuf | tail -n "${num_of_ports}" # use tail instead head to avoid broken pipe in VSCode terminal
 }
 
 newline() {
@@ -223,7 +231,7 @@ retry() {
         exit=$?
         wait=$((2 ** count))
         count=$((count + 1))
-        if [ $count -lt $retries ]; then
+        if [ $count -lt "$retries" ]; then
             info "Retry $count/$retries. Exit code=$exit, Retrying in $wait seconds..."
             sleep $wait
         else
@@ -235,7 +243,8 @@ retry() {
 }
 
 get_arch() {
-    local platform="${1:-$(uname -p)}"
+    local platform
+    platform="$(uname -p)"
     local platform_str
 
     case "${platform}" in
@@ -270,20 +279,20 @@ build_local_libcucim_() {
     local build_folder=${source_folder}/build-${build_type}
     local CMAKE_CMD=${CMAKE_CMD:-cmake}
 
-    pushd ${source_folder} > /dev/null
+    pushd "${source_folder}" > /dev/null
 
     # Copy cufile SDK from host system to temp/cuda
-    copy_gds_files_ $source_folder
+    copy_gds_files_ "$source_folder"
     # Copy libjpeg SDK from host system to temp/cuda
-    copy_nvjpeg_files_ $source_folder
+    copy_nvjpeg_files_ "$source_folder"
 
-    ${CMAKE_CMD} -S ${source_folder} -B ${build_folder} -G "Unix Makefiles" \
+    ${CMAKE_CMD} -S "${source_folder}" -B "${build_folder}" -G "Unix Makefiles" \
         -DCMAKE_EXPORT_COMPILE_COMMANDS:BOOL=TRUE \
-        -DCMAKE_PREFIX_PATH=${prefix} \
-        -DCMAKE_BUILD_TYPE=${build_type_str} \
-        -DCMAKE_INSTALL_PREFIX=${source_folder}/install
-    ${CMAKE_CMD} --build ${build_folder} --config ${build_type_str} --target cucim -- -j $(nproc)
-    ${CMAKE_CMD} --build ${build_folder} --config ${build_type_str} --target install -- -j $(nproc)
+        -DCMAKE_PREFIX_PATH="${prefix}" \
+        -DCMAKE_BUILD_TYPE="${build_type_str}" \
+        -DCMAKE_INSTALL_PREFIX="${source_folder}/install"
+    ${CMAKE_CMD} --build "${build_folder}" --config "${build_type_str}" --target cucim -- -j "$(nproc)"
+    ${CMAKE_CMD} --build "${build_folder}" --config "${build_type_str}" --target install -- -j "$(nproc)"
 
     popd
 }
@@ -296,15 +305,15 @@ build_local_cuslide_() {
     local build_folder=${source_folder}/build-${build_type}
     local CMAKE_CMD=${CMAKE_CMD:-cmake}
 
-    pushd ${source_folder} > /dev/null
+    pushd "${source_folder}" > /dev/null
 
-    ${CMAKE_CMD} -S ${source_folder} -B ${build_folder} -G "Unix Makefiles" \
+    ${CMAKE_CMD} -S "${source_folder}" -B "${build_folder}" -G "Unix Makefiles" \
         -DCMAKE_EXPORT_COMPILE_COMMANDS:BOOL=TRUE \
-        -DCMAKE_BUILD_TYPE=${build_type_str} \
-        -DCMAKE_PREFIX_PATH=${prefix} \
-        -DCMAKE_INSTALL_PREFIX=${source_folder}/install
-    ${CMAKE_CMD} --build ${build_folder} --config ${build_type_str} --target cucim.kit.cuslide -- -j $(nproc)
-    ${CMAKE_CMD} --build ${build_folder} --config ${build_type_str} --target install -- -j $(nproc)
+        -DCMAKE_BUILD_TYPE="${build_type_str}" \
+        -DCMAKE_PREFIX_PATH="${prefix}" \
+        -DCMAKE_INSTALL_PREFIX="${source_folder}/install"
+    ${CMAKE_CMD} --build "${build_folder}" --config "${build_type_str}" --target cucim.kit.cuslide -- -j "$(nproc)"
+    ${CMAKE_CMD} --build "${build_folder}" --config "${build_type_str}" --target install -- -j "$(nproc)"
 
     popd
 }
@@ -317,15 +326,15 @@ build_local_cumed_() {
     local build_folder=${source_folder}/build-${build_type}
     local CMAKE_CMD=${CMAKE_CMD:-cmake}
 
-    pushd ${source_folder} > /dev/null
+    pushd "${source_folder}" > /dev/null
 
-    ${CMAKE_CMD} -S ${source_folder} -B ${build_folder} -G "Unix Makefiles" \
+    ${CMAKE_CMD} -S "${source_folder}" -B "${build_folder}" -G "Unix Makefiles" \
         -DCMAKE_EXPORT_COMPILE_COMMANDS:BOOL=TRUE \
-        -DCMAKE_BUILD_TYPE=${build_type_str} \
-        -DCMAKE_PREFIX_PATH=${prefix} \
-        -DCMAKE_INSTALL_PREFIX=${source_folder}/install
-    ${CMAKE_CMD} --build ${build_folder} --config ${build_type_str} --target cucim.kit.cumed -- -j $(nproc)
-    ${CMAKE_CMD} --build ${build_folder} --config ${build_type_str} --target install -- -j $(nproc)
+        -DCMAKE_BUILD_TYPE="${build_type_str}" \
+        -DCMAKE_PREFIX_PATH="${prefix}" \
+        -DCMAKE_INSTALL_PREFIX="${source_folder}/install"
+    ${CMAKE_CMD} --build "${build_folder}" --config "${build_type_str}" --target cucim.kit.cumed -- -j "$(nproc)"
+    ${CMAKE_CMD} --build "${build_folder}" --config "${build_type_str}" --target install -- -j "$(nproc)"
 
     popd
 }
@@ -338,25 +347,28 @@ build_local_cucim_() {
     local build_folder=${source_folder}/build-${build_type}
     local CMAKE_CMD=${CMAKE_CMD:-cmake}
 
-    pushd ${source_folder} > /dev/null
+    pushd "${source_folder}" > /dev/null
 
-    local python_library=$(python3 -c "import distutils.sysconfig as sysconfig, os; print(os.path.join(sysconfig.get_config_var('LIBDIR'), sysconfig.get_config_var('LDLIBRARY')))")
-    local python_include_dir=$(python3 -c "from distutils.sysconfig import get_python_inc; print(get_python_inc())")
+    local python_library
+    python_library=$(python3 -c "import sysconfig, os; print(os.path.join(sysconfig.get_config_var('LIBDIR'), sysconfig.get_config_var('LDLIBRARY')))")
+    local python_include_dir
+    python_include_dir=$(python3 -c "import sysconfig; print(sysconfig.get_path('include'))")
 
-    ${CMAKE_CMD} -S ${source_folder} -B ${build_folder} -G "Unix Makefiles" \
+    ${CMAKE_CMD} -S "${source_folder}" -B "${build_folder}" -G "Unix Makefiles" \
         -DCMAKE_EXPORT_COMPILE_COMMANDS:BOOL=TRUE \
-        -DCMAKE_BUILD_TYPE=${build_type_str} \
-        -DCMAKE_PREFIX_PATH=${prefix} \
-        -DCMAKE_INSTALL_PREFIX=${source_folder}/install \
-        -DPYTHON_EXECUTABLE=$(which python3) \
-        -DPYTHON_LIBRARY=${python_library} \
-        -DPYTHON_INCLUDE_DIR=${python_include_dir}
-    ${CMAKE_CMD} --build ${build_folder} --config ${build_type_str} --target cucim -- -j $(nproc)
-    ${CMAKE_CMD} --build ${build_folder} --config ${build_type_str} --target install -- -j $(nproc)
+        -DCMAKE_BUILD_TYPE="${build_type_str}" \
+        -DCMAKE_PREFIX_PATH="${prefix}" \
+        -DCMAKE_INSTALL_PREFIX="${source_folder}/install" \
+        -DPYTHON_EXECUTABLE="$(which python3)" \
+        -DPYTHON_LIBRARY="${python_library}" \
+        -DPYTHON_INCLUDE_DIR="${python_include_dir}"
+    ${CMAKE_CMD} --build "${build_folder}" --config "${build_type_str}" --target cucim -- -j "$(nproc)"
+    ${CMAKE_CMD} --build "${build_folder}" --config "${build_type_str}" --target install -- -j "$(nproc)"
 
     popd
 }
 
+# shellcheck disable=SC2016
 build_local_desc() { echo 'Build locally
 
 Compile binaries locally
@@ -372,51 +384,53 @@ build_local() {
     local build_type_str="Debug"
     local prefix=${3:-}
 
-    local major_version="$(cat ${TOP}/VERSION | cut -d. -f1)" # major version number
+    local major_version
+    major_version="$(cut -d. -f1 "${TOP}/VERSION")" # major version number
 
-    [ "$build_type" = "debug" ] && build_type_str="Debug"
-    [ "$build_type" = "release" ] && build_type_str="Release"
-    [ "$build_type" = "rel-debug" ] && build_type_str="RelWithDebInfo"
+    [ "${build_type}" = "debug" ] && build_type_str="Debug"
+    [ "${build_type}" = "release" ] && build_type_str="Release"
+    [ "${build_type}" = "rel-debug" ] && build_type_str="RelWithDebInfo"
 
-    local old_opt="$(shopt -op errexit);$(shopt -op nounset)" # save old shopts
+    local old_opt
+    old_opt="$(shopt -op errexit);$(shopt -op nounset)" # save old shopts
     set -eu
 
     if [ "$subcommand" = "clean_cache" ]; then
-        rm -f ${TOP}/build-*/CMakeCache.txt
-        rm -f ${TOP}/cpp/plugins/cucim.kit.cuslide/build-*/CMakeCache.txt
-        rm -f ${TOP}/cpp/plugins/cucim.kit.cumed/build-*/CMakeCache.txt
-        rm -f ${TOP}/python/build-*/CMakeCache.txt
+        rm -f "${TOP}"/build-*/CMakeCache.txt
+        rm -f "${TOP}"/cpp/plugins/cucim.kit.cuslide/build-*/CMakeCache.txt
+        rm -f "${TOP}"/cpp/plugins/cucim.kit.cumed/build-*/CMakeCache.txt
+        rm -f "${TOP}"/python/build-*/CMakeCache.txt
     fi
 
     if [ "$subcommand" = "clean" ]; then
-        rm -rf ${TOP}/build-*
-        rm -rf ${TOP}/install
-        rm -rf ${TOP}/cpp/plugins/cucim.kit.cuslide/build-*/
-        rm -rf ${TOP}/cpp/plugins/cucim.kit.cuslide/install
-        rm -rf ${TOP}/cpp/plugins/cucim.kit.cumed/build-*/
-        rm -rf ${TOP}/cpp/plugins/cucim.kit.cumed/install
-        rm -rf ${TOP}/python/build-*
-        rm -rf ${TOP}/python/install
+        rm -rf "${TOP}"/build-*
+        rm -rf "${TOP}"/install
+        rm -rf "${TOP}"/cpp/plugins/cucim.kit.cuslide/build-*/
+        rm -rf "${TOP}"/cpp/plugins/cucim.kit.cuslide/install
+        rm -rf "${TOP}"/cpp/plugins/cucim.kit.cumed/build-*/
+        rm -rf "${TOP}"/cpp/plugins/cucim.kit.cumed/install
+        rm -rf "${TOP}"/python/build-*
+        rm -rf "${TOP}"/python/install
     fi
 
     if [ "$subcommand" = "all" ] || [ "$subcommand" = "libcucim" ]; then
-        build_local_libcucim_ ${TOP} ${build_type} ${build_type_str} ${prefix}
+        build_local_libcucim_ "${TOP}" "${build_type}" ${build_type_str} "${prefix}"
     fi
 
     if [ "$subcommand" = "all" ] || [ "$subcommand" = "cuslide" ]; then
-        build_local_cuslide_ ${TOP}/cpp/plugins/cucim.kit.cuslide ${build_type} ${build_type_str} ${prefix}
+        build_local_cuslide_ "${TOP}"/cpp/plugins/cucim.kit.cuslide "${build_type}" ${build_type_str} "${prefix}"
     fi
 
     if [ "$subcommand" = "all" ] || [ "$subcommand" = "cumed" ]; then
-        build_local_cumed_ ${TOP}/cpp/plugins/cucim.kit.cumed ${build_type} ${build_type_str} ${prefix}
+        build_local_cumed_ "${TOP}"/cpp/plugins/cucim.kit.cumed "${build_type}" ${build_type_str} "${prefix}"
     fi
 
     if [ "$subcommand" = "all" ] || [ "$subcommand" = "cucim" ]; then
-        build_local_cucim_ ${TOP}/python ${build_type} ${build_type_str} ${prefix}
+        build_local_cucim_ "${TOP}"/python "${build_type}" ${build_type_str} "${prefix}"
     fi
 
     # Remove existing library files at python/cucim/src/cucim/clara
-    rm -f ${TOP}/python/cucim/src/cucim/clara/*.so*
+    rm -f "${TOP}"/python/cucim/src/cucim/clara/*.so*
 
     if [ "$subcommand" = "all" ] || [ "$subcommand" = "cucim" ]; then
         # We don't need to copy binary if executed by conda-build
@@ -424,12 +438,12 @@ build_local() {
             # Copy .so files from libcucim & cuslide/cumed's build folders to cuCIM's Python source folder
             # Since wheel file doesn't support symbolic link (https://github.com/pypa/wheel/issues/203),
             # we don't need to copy symbolic links. Instead copy only libcucim.so.${major_version} (without symbolic link)
-            cp ${TOP}/build-$build_type/lib*/libcucim.so.${major_version} ${TOP}/python/cucim/src/cucim/clara/
-            cp -P ${TOP}/cpp/plugins/cucim.kit.cuslide/build-$build_type/lib*/cucim* ${TOP}/python/cucim/src/cucim/clara/
-            cp -P ${TOP}/cpp/plugins/cucim.kit.cumed/build-$build_type/lib*/cucim* ${TOP}/python/cucim/src/cucim/clara/
+            cp "${TOP}"/build-"${build_type}"/lib*/libcucim.so."${major_version}" "${TOP}"/python/cucim/src/cucim/clara/
+            cp -P "${TOP}"/cpp/plugins/cucim.kit.cuslide/build-"${build_type}"/lib*/cucim* "${TOP}"/python/cucim/src/cucim/clara/
+            cp -P "${TOP}"/cpp/plugins/cucim.kit.cumed/build-"${build_type}"/lib*/cucim* "${TOP}"/python/cucim/src/cucim/clara/
 
             # Copy .so files from pybind's build folder to cuCIM's Python source folder
-            cp ${TOP}/python/build-$build_type/lib/cucim/_cucim.*.so ${TOP}/python/cucim/src/cucim/clara/
+            cp "${TOP}"/python/build-"${build_type}"/lib/cucim/_cucim.*.so "${TOP}"/python/cucim/src/cucim/clara/
         fi
     fi
 
@@ -448,10 +462,10 @@ copy_gds_files_() {
       echo "Unknown architecture"
       exit 1
     fi
-    if [ ! -z "${CONDA_PREFIX+x}" ]; then
+    if [ -n "${CONDA_PREFIX+x}" ]; then
       cufile_search="${CONDA_PREFIX:-}/include:${CONDA_PREFIX:-}/lib ${CONDA_PREFIX:-}/${targets_dir}/include:${CONDA_PREFIX:-}/${targets_dir}/lib ${cufile_search}"
     fi
-    if [ ! -z "${PREFIX+x}" ]; then
+    if [ -n "${PREFIX+x}" ]; then
       cufile_search="${PREFIX:-}/include:${PREFIX:-}/lib ${PREFIX:-}/${targets_dir}/include:${PREFIX:-}/${targets_dir}/lib ${cufile_search}"
     fi
     local gds_version=1.0.0
@@ -460,9 +474,9 @@ copy_gds_files_() {
     local cufile_lib
 
     for candidate in ${cufile_search}; do
-        cufile_include="$(echo $candidate | cut -d: -f1)"
-        cufile_lib="$(echo $candidate | cut -d: -f2)"
-        if [ -f ${cufile_include}/cufile.h ] && [ -f ${cufile_lib}/libcufile.so ]; then
+        cufile_include="$(echo "$candidate" | cut -d: -f1)"
+        cufile_lib="$(echo "$candidate" | cut -d: -f2)"
+        if [ -f "${cufile_include}/cufile.h" ] && [ -f "${cufile_lib}/libcufile.so" ]; then
             c_echo W "GDS client library is available at '${cufile_include}/cufile.h' and '${cufile_lib}/libcufile.so'"
             break
         fi
@@ -470,29 +484,30 @@ copy_gds_files_() {
         cufile_lib=""
     done
 
-    if [ ! -f ${cufile_include}/cufile.h ]; then
+    if [ ! -f "${cufile_include}/cufile.h" ]; then
         c_echo_err Y "GDS client library is not available! Downloading the redistributable package to get cufile.h and libraries."
 
-        run_command rm -rf ${root_folder}/temp/cuda
-        run_command mkdir -p ${root_folder}/temp/cuda/include ${root_folder}/temp/cuda/lib64
+        run_command rm -rf "${root_folder}/temp/cuda"
+        run_command mkdir -p "${root_folder}/temp/cuda/include" "${root_folder}/temp/cuda/lib64"
 
-        local temp_tgz_dir=$(mktemp -d)
-        pushd ${temp_tgz_dir}
+        local temp_tgz_dir
+        temp_tgz_dir=$(mktemp -d)
+        pushd "${temp_tgz_dir}"
         run_command wget https://developer.download.nvidia.com/gds/redist/rel-${gds_version}/gds-redistrib-${gds_version}.tgz
         run_command tar xzvf gds-redistrib-${gds_version}.tgz
         # There are no GDS binaries for aarch64 SBSA yet, but we need cufile.h for building cufile_stub
-        run_command cp -P gds-redistrib-${gds_version}/targets/x86_64-linux/include/cufile.h ${root_folder}/temp/cuda/include/
+        run_command cp -P gds-redistrib-${gds_version}/targets/x86_64-linux/include/cufile.h "${root_folder}/temp/cuda/include/"
         if is_x86_64; then
-            run_command cp -P gds-redistrib-${gds_version}/targets/x86_64-linux/lib/* ${root_folder}/temp/cuda/lib64/
+            run_command cp -P gds-redistrib-${gds_version}/targets/x86_64-linux/lib/* "${root_folder}/temp/cuda/lib64/"
         fi
         popd > /dev/null
-        run_command rm -r ${temp_tgz_dir}
+        run_command rm -r "${temp_tgz_dir}"
     else
-        run_command mkdir -p ${root_folder}/temp/cuda/include ${root_folder}/temp/cuda/lib64
+        run_command mkdir -p "${root_folder}/temp/cuda/include" "${root_folder}/temp/cuda/lib64"
 
         if [ "${cufile_include}" != "${root_folder}/temp/cuda/include" ]; then
-            run_command cp -Pf ${cufile_include}/cufile.h ${root_folder}/temp/cuda/include/ || true
-            run_command cp -Pf ${cufile_lib}/libcufile* ${root_folder}/temp/cuda/lib64/ || true
+            run_command cp -Pf "${cufile_include}"/cufile.h "${root_folder}"/temp/cuda/include/ || true
+            run_command cp -Pf "${cufile_lib}"/libcufile* "${root_folder}"/temp/cuda/lib64/ || true
         fi
     fi
 }
@@ -508,7 +523,8 @@ get_arch_name_() {
 
 copy_nvjpeg_files_() {
     local root_folder=${1:-${TOP}}
-    local arch_name="$(get_arch_name_)"
+    local arch_name
+    arch_name="$(get_arch_name_)"
     local nvjpeg_search="${root_folder}/temp/cuda/include:${root_folder}/temp/cuda/lib64"
     local targets_dir=""
     if is_x86_64; then
@@ -519,10 +535,10 @@ copy_nvjpeg_files_() {
       echo "Unknown architecture"
       exit 1
     fi
-    if [ ! -z "${CONDA_PREFIX+x}" ]; then
+    if [ -n "${CONDA_PREFIX+x}" ]; then
       nvjpeg_search="${CONDA_PREFIX:-}/include:${CONDA_PREFIX:-}/lib ${CONDA_PREFIX:-}/${targets_dir}/include:${CONDA_PREFIX:-}/${targets_dir}/lib ${nvjpeg_search}"
     fi
-    if [ ! -z "${PREFIX+x}" ]; then
+    if [ -n "${PREFIX+x}" ]; then
       nvjpeg_search="${PREFIX:-}/include:${PREFIX:-}/lib ${PREFIX:-}/${targets_dir}/include:${PREFIX:-}/${targets_dir}/lib ${nvjpeg_search}"
     fi
     local cuda_version="11.6"
@@ -532,9 +548,9 @@ copy_nvjpeg_files_() {
     local nvjpeg_lib
 
     for candidate in ${nvjpeg_search}; do
-        nvjpeg_include="$(echo $candidate | cut -d: -f1)"
-        nvjpeg_lib="$(echo $candidate | cut -d: -f2)"
-        if [ -f ${nvjpeg_include}/nvjpeg.h ] && [ -f ${nvjpeg_lib}/libnvjpeg_static.a ]; then
+        nvjpeg_include="$(echo "$candidate" | cut -d: -f1)"
+        nvjpeg_lib="$(echo "$candidate" | cut -d: -f2)"
+        if [ -f "${nvjpeg_include}/nvjpeg.h" ] && [ -f "${nvjpeg_lib}/libnvjpeg_static.a" ]; then
             c_echo W "nvJPEG client library is available at '${nvjpeg_include}/nvjpeg.h' and '${nvjpeg_lib}/libnvjpeg_static.a'"
             break
         fi
@@ -542,20 +558,21 @@ copy_nvjpeg_files_() {
         nvjpeg_lib=""
     done
 
-    if [ ! -f ${nvjpeg_include}/nvjpeg.h ]; then
+    if [ ! -f "${nvjpeg_include}/nvjpeg.h" ]; then
         c_echo_err Y "nvJPEG library is not available! Downloading the redistributable package to get nvjpeg.h and libraries."
 
-        run_command rm -rf ${root_folder}/temp/cuda/include/*nvjpeg*
-        run_command rm -rf ${root_folder}/temp/cuda/lib64/*nvjpeg*
-        run_command mkdir -p ${root_folder}/temp/cuda/include ${root_folder}/temp/cuda/lib64
+        run_command rm -rf "${root_folder}"/temp/cuda/include/*nvjpeg*
+        run_command rm -rf "${root_folder}"/temp/cuda/lib64/*nvjpeg*
+        run_command mkdir -p "${root_folder}"/temp/cuda/include "${root_folder}"/temp/cuda/lib64
 
-        local temp_tgz_dir=$(mktemp -d)
-        pushd ${temp_tgz_dir}
+        local temp_tgz_dir
+        temp_tgz_dir=$(mktemp -d)
+        pushd "${temp_tgz_dir}"
         c_echo W "Arch name: " G "${arch_name}"
         if [ "${arch_name}" = "sbsa" ]; then
-            run_command wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/${arch_name}/libnvjpeg-dev-${nvjpeg_version}_arm64.deb
+            run_command wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/"${arch_name}"/libnvjpeg-dev-${nvjpeg_version}_arm64.deb
         else
-            run_command wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/${arch_name}/libnvjpeg-dev-${nvjpeg_version}_amd64.deb
+            run_command wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/"${arch_name}"/libnvjpeg-dev-${nvjpeg_version}_amd64.deb
         fi
 
         mkdir -p libnvjpeg-dev
@@ -566,16 +583,16 @@ copy_nvjpeg_files_() {
         run_command tar xvf data.tar
         popd > /dev/null
 
-        run_command cp libnvjpeg-dev/usr/local/cuda-${cuda_version}/include/nvjpeg.h ${root_folder}/temp/cuda/include/
-        run_command cp libnvjpeg-dev/usr/local/cuda-${cuda_version}/lib64/libnvjpeg_static.a ${root_folder}/temp/cuda/lib64/
+        run_command cp libnvjpeg-dev/usr/local/cuda-${cuda_version}/include/nvjpeg.h "${root_folder}"/temp/cuda/include/
+        run_command cp libnvjpeg-dev/usr/local/cuda-${cuda_version}/lib64/libnvjpeg_static.a "${root_folder}"/temp/cuda/lib64/
         popd > /dev/null
-        run_command rm -r ${temp_tgz_dir}
+        run_command rm -r "${temp_tgz_dir}"
     else
-        run_command mkdir -p ${root_folder}/temp/cuda/include ${root_folder}/temp/cuda/lib64
+        run_command mkdir -p "${root_folder}"/temp/cuda/include "${root_folder}"/temp/cuda/lib64
 
         if [ "${nvjpeg_include}" != "${root_folder}/temp/cuda/include" ]; then
-            run_command cp -Pf ${nvjpeg_include}/*nvjpeg* ${root_folder}/temp/cuda/include/ || true
-            run_command cp -Pf ${nvjpeg_lib}/*nvjpeg* ${root_folder}/temp/cuda/lib64/ || true
+            run_command cp -Pf "${nvjpeg_include}"/*nvjpeg* "${root_folder}"/temp/cuda/include/ || true
+            run_command cp -Pf "${nvjpeg_lib}"/*nvjpeg* "${root_folder}"/temp/cuda/lib64/ || true
         fi
     fi
 }
@@ -584,6 +601,7 @@ copy_nvjpeg_files_() {
 # Section: Test
 #==================================================================================
 
+# shellcheck disable=SC2016
 test_desc() { echo 'Execute test cases
 
 Arguments:
@@ -606,19 +624,20 @@ install_python_test_deps_() {
     if [ -n "${CONDA_PREFIX}" ]; then
         # Install test dependencies from pip because conda does not have all the dependencies (e.g., opencv-python).
         # (https://github.com/rapidsai/cucim/pull/433)
-        run_command pip install -r ${TOP}/python/cucim/requirements-test.txt
+        run_command pip install -r "${TOP}"/python/cucim/requirements-test.txt
     else
         pushd "${TOP}/python/cucim"
         if [ -n "${VIRTUAL_ENV}" ]; then
-            run_command pip3 install -e .[test]
+            run_command pip3 install -e ".[test]"
         else
-            run_command pip3 install --user -e .[test]
+            run_command pip3 install --user -e ".[test]"
         fi
         popd
     fi
     hash -r
 }
 
+# shellcheck disable=SC2016
 test_python_desc() { echo 'Execute Python test cases
 
 Arguments:
@@ -631,7 +650,7 @@ test_python() {
     local test_component="${2:-all}"
     local result=0
 
-    local testsuite=""
+    local testsuite=()
     local testsuite_unit_skimage="src"
     local testsuite_unit_clara="tests/unit"
     local testsuite_performance="tests/performance"
@@ -639,23 +658,27 @@ test_python() {
     install_python_test_deps_
 
     if [ "$test_type" = "all" ] || [ "$test_type" = "unit" ]; then
-        local testsuite="${testsuite_unit_skimage} ${testsuite_unit_clara}"
-        [ "$test_component" = "skimage" ] && testsuite="${testsuite_unit_skimage}"
-        [ "$test_component" = "clara" ] && testsuite="${testsuite_unit_clara}"
-
+        if [ "$test_component" = "skimage" ]; then
+            testsuite+=("${testsuite_unit_skimage}")
+        elif [ "$test_component" = "clara" ]; then
+            testsuite+=("${testsuite_unit_clara}")
+        else
+            testsuite+=("${testsuite_unit_skimage}" "${testsuite_unit_clara}")
+        fi
     fi
+
     if [ "$test_type" = "all" ] || [ "$test_type" = "performance" ]; then
-        testsuite="${testsuite} ${testsuite_performance}"
+        testsuite+=("${testsuite_performance}")
     fi
 
-    pushd $TOP/python/cucim
+    pushd "$TOP"/python/cucim
     run_command py.test --cache-clear -vv \
         --cov=cucim \
         --junitxml="$TOP/junit-cucim.xml" \
-        --cov-config=$TOP/python/cucim/.coveragerc \
+        --cov-config="$TOP/python/cucim/.coveragerc" \
         --cov-report=xml:"$TOP/cucim-coverage.xml" \
         --cov-report term \
-        ${testsuite}
+        "${testsuite[@]}"
     result=$?
     popd
 
@@ -676,8 +699,8 @@ download_testdata() {
     if [ ! -e "${TOP}/notebooks/input/image.tif" ]; then
         run_command rm -rf "${TOP}/notebooks/input"
         id=$(docker create gigony/svs-testdata:little-big)
-        run_command docker cp $id:/input "${TOP}/notebooks"
-        run_command docker rm -v $id
+        run_command docker cp "$id":/input "${TOP}/notebooks"
+        run_command docker rm -v "$id"
         c_echo G "Test data is downloaded to '${TOP}/notebooks/input'!"
     else
         c_echo G "Test data already exists at '${TOP}/notebooks/input'!"
@@ -704,7 +727,7 @@ update_version() {
     local new_version=${1:-}
     local ret=0
     [ -z "${new_version}" ] && c_echo_err R "Please specify '[new version]' (e.g., '21.06.00')!" && return 1
-    $TOP/ci/release/update-version.sh "$@"
+    "$TOP"/ci/release/update-version.sh "$@"
     ret=$?
 
     return $ret
@@ -715,12 +738,6 @@ parse_args() {
     while getopts 'yh' option;
     do
         case "${option}" in
-            # a)
-            #     VALUE=${OPTARG}
-            #     ;;
-            y)
-                ALWAYS_YES=true;
-                ;;
             h)
                 print_usage
                 exit 1
@@ -753,8 +770,8 @@ print_usage() {
 print_cmd_help_messages() {
     local cmd="$1"
     if [ -n "${cmd}" ]; then
-        if type ${cmd}_desc > /dev/null 2>&1; then
-            ${cmd}_desc
+        if type "${cmd}"_desc > /dev/null 2>&1; then
+            "${cmd}"_desc
             exit 0
         else
             c_echo_err R "Command '${cmd}' doesn't exist!"
@@ -778,7 +795,7 @@ main() {
             print_usage
             ;;
         *)
-            if type ${CMD} > /dev/null 2>&1; then
+            if type "${CMD}" > /dev/null 2>&1; then
                 "$CMD" "${ARGS[@]}"
             else
                 print_usage

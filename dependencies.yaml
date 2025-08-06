@@ -3,7 +3,7 @@ files:
   all:
     output: conda
     matrix:
-      cuda: ["11.8", "12.8"]
+      cuda: ["12.9"]
       arch: [x86_64, aarch64]
     includes:
       - build
@@ -85,7 +85,6 @@ channels:
   - rapidsai
   - rapidsai-nightly
   - conda-forge
-  - nvidia
 dependencies:
   build:
     common:
@@ -121,18 +120,6 @@ dependencies:
         matrices:
           - matrix:
               arch: x86_64
-              cuda: "11.8"
-            packages:
-              - gcc_linux-64=11.*
-              - nvcc_linux-64=11.8
-          - matrix:
-              arch: aarch64
-              cuda: "11.8"
-            packages:
-              - gcc_linux-aarch64=11.*
-              - nvcc_linux-aarch64=11.8
-          - matrix:
-              arch: x86_64
               cuda: "12.*"
             packages:
               - gcc_linux-64=13.*
@@ -152,22 +139,6 @@ dependencies:
     specific:
       - output_types: conda
         matrices:
-          - matrix:
-              cuda: "11.2"
-            packages:
-              - cuda-version=11.2
-          - matrix:
-              cuda: "11.4"
-            packages:
-              - cuda-version=11.4
-          - matrix:
-              cuda: "11.5"
-            packages:
-              - cuda-version=11.5
-          - matrix:
-              cuda: "11.8"
-            packages:
-              - cuda-version=11.8
           - matrix:
               cuda: "12.0"
             packages:
@@ -193,20 +164,11 @@ dependencies:
       - output_types: conda
         matrices:
           - matrix:
-              cuda: "11.*"
-            packages:
-              - cudatoolkit
-          - matrix:
               cuda: "12.*"
             packages:
               - cuda-cudart-dev
       - output_types: conda
         matrices:
-          - matrix:
-              cuda: "11.8"
-            packages:
-              - libnvjpeg=11.6.0.55
-              - libnvjpeg-dev=11.6.0.55
           - matrix:
               cuda: "12.*"
             packages:
@@ -219,12 +181,6 @@ dependencies:
             packages:
           - matrix:
               arch: x86_64
-              cuda: "11.8"
-            packages:
-              - libcufile=1.4.0.31
-              - libcufile-dev=1.4.0.31
-          - matrix:
-              arch: x86_64
               cuda: "12.*"
             packages:
               - libcufile-dev
@@ -232,12 +188,12 @@ dependencies:
     common:
       - output_types: conda
         packages:
-          - cucim==25.6.*
+          - cucim==25.8.*,>=0.0.0a0
   depends_on_libcucim:
     common:
       - output_types: conda
         packages:
-          - libcucim==25.6.*
+          - libcucim==25.8.*,>=0.0.0a0
   develop:
     common:
       - output_types: [conda, requirements, pyproject]
@@ -304,15 +260,9 @@ dependencies:
     specific:
       - output_types: [requirements, pyproject]
         matrices:
-          - matrix: {cuda: "12.*"}
+          - matrix: # All CUDA 12 versions
             packages:
               - cupy-cuda12x>=12.0.0
-          - matrix: {cuda: "11.*"}
-            packages:
-              - &cupy_cu11 cupy-cuda11x>=12.0.0
-          - matrix:
-            packages:
-              - *cupy_cu11
   test_python:
     common:
       - output_types: [conda, requirements, pyproject]
@@ -323,7 +273,7 @@ dependencies:
           - pytest-lazy-fixtures>=1.0.0
           - pytest-xdist
           - tifffile>=2022.8.12
-          - pooch>=1.6.0  # needed to download scikit-image sample data
+          - pooch>=1.6.0 # needed to download scikit-image sample data
           - pywavelets>=1.6
       - output_types: [conda]
         packages:

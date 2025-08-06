@@ -1,14 +1,11 @@
 name: pr
-
 on:
   push:
     branches:
       - "pull-request/[0-9]+"
-
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
-
 jobs:
   pr-builder:
     needs:
@@ -21,7 +18,7 @@ jobs:
       - wheel-tests
       - telemetry-setup
     secrets: inherit
-    uses: rapidsai/shared-workflows/.github/workflows/pr-builder.yaml@branch-25.06
+    uses: rapidsai/shared-workflows/.github/workflows/pr-builder.yaml@branch-25.08
   telemetry-setup:
     runs-on: ubuntu-latest
     continue-on-error: true
@@ -36,44 +33,44 @@ jobs:
   checks:
     secrets: inherit
     needs: telemetry-setup
-    uses: rapidsai/shared-workflows/.github/workflows/checks.yaml@branch-25.06
+    uses: rapidsai/shared-workflows/.github/workflows/checks.yaml@branch-25.08
     with:
       ignored_pr_jobs: telemetry-summarize
   conda-cpp-build:
     needs: checks
     secrets: inherit
-    uses: rapidsai/shared-workflows/.github/workflows/conda-cpp-build.yaml@branch-25.06
+    uses: rapidsai/shared-workflows/.github/workflows/conda-cpp-build.yaml@branch-25.08
     with:
       build_type: pull-request
       script: ci/build_cpp.sh
   conda-python-build:
     needs: conda-cpp-build
     secrets: inherit
-    uses: rapidsai/shared-workflows/.github/workflows/conda-python-build.yaml@branch-25.06
+    uses: rapidsai/shared-workflows/.github/workflows/conda-python-build.yaml@branch-25.08
     with:
       build_type: pull-request
       script: ci/build_python.sh
   conda-python-tests:
     needs: conda-python-build
     secrets: inherit
-    uses: rapidsai/shared-workflows/.github/workflows/conda-python-tests.yaml@branch-25.06
+    uses: rapidsai/shared-workflows/.github/workflows/conda-python-tests.yaml@branch-25.08
     with:
       build_type: pull-request
       script: ci/test_python.sh
   docs-build:
     needs: conda-python-build
     secrets: inherit
-    uses: rapidsai/shared-workflows/.github/workflows/custom-job.yaml@branch-25.06
+    uses: rapidsai/shared-workflows/.github/workflows/custom-job.yaml@branch-25.08
     with:
       build_type: pull-request
       node_type: "gpu-l4-latest-1"
       arch: "amd64"
-      container_image: "rapidsai/ci-conda:latest"
+      container_image: "rapidsai/ci-conda:25.08-latest"
       script: "ci/build_docs.sh"
   wheel-build:
     needs: checks
     secrets: inherit
-    uses: rapidsai/shared-workflows/.github/workflows/wheels-build.yaml@branch-25.06
+    uses: rapidsai/shared-workflows/.github/workflows/wheels-build.yaml@branch-25.08
     with:
       build_type: pull-request
       script: ci/build_wheel.sh
@@ -82,11 +79,10 @@ jobs:
   wheel-tests:
     needs: wheel-build
     secrets: inherit
-    uses: rapidsai/shared-workflows/.github/workflows/wheels-test.yaml@branch-25.06
+    uses: rapidsai/shared-workflows/.github/workflows/wheels-test.yaml@branch-25.08
     with:
       build_type: pull-request
       script: ci/test_wheel.sh
-
   telemetry-summarize:
     # This job must use a self-hosted runner to record telemetry traces.
     runs-on: linux-amd64-cpu4
@@ -96,3 +92,5 @@ jobs:
     steps:
       - name: Telemetry summarize
         uses: rapidsai/shared-actions/telemetry-dispatch-summarize@main
+    env:
+      GH_TOKEN: ${{ github.token }}
