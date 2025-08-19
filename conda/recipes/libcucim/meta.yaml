@@ -56,6 +56,7 @@ requirements:
     - cuda-version ={{ cuda_version }}
     - cuda-cudart-dev
     {% if cuda_major != "12" %}
+    # cuda-culibos was split out from cudart in CUDA 13: https://docs.nvidia.com/cuda/cuda-toolkit-release-notes/index.html#cuda-runtime
     - cuda-culibos-static
     {% endif %}
     - libcufile-dev     # [linux64]
