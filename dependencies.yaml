@@ -10,6 +10,7 @@ files:
       - cuda
       - cuda_version
       - checks
+      - depends_on_cupy
       - docs
       - py_version
       - run
@@ -56,6 +57,7 @@ files:
     extras:
       table: project
     includes:
+      - depends_on_cupy
       - run
   py_optional_test:
     output: pyproject
@@ -100,6 +102,7 @@ dependencies:
       - output_types: conda
         packages:
           - c-compiler
+          - cuda-nvcc
           - cxx-compiler
       - output_types: [requirements, pyproject]
         packages:
@@ -110,26 +113,14 @@ dependencies:
           - matrix:
               arch: x86_64
             packages:
+              - gcc_linux-64=13.*
               - sysroot_linux-64==2.28
               - yasm
           - matrix:
               arch: aarch64
             packages:
-              - sysroot_linux-aarch64==2.28
-      - output_types: conda
-        matrices:
-          - matrix:
-              arch: x86_64
-              cuda: "12.*"
-            packages:
-              - gcc_linux-64=13.*
-              - cuda-nvcc
-          - matrix:
-              arch: aarch64
-              cuda: "12.*"
-            packages:
               - gcc_linux-aarch64=13.*
-              - cuda-nvcc
+              - sysroot_linux-aarch64==2.28
   checks:
     common:
       - output_types: [conda, requirements]
@@ -164,20 +155,13 @@ dependencies:
             packages:
               - cuda-version=13.0
   cuda:
+    common:
+      - output_types: conda
+        packages:
+          - cuda-cudart-dev
+          - libnvjpeg-dev
+          - libnvjpeg-static
     specific:
-      - output_types: conda
-        matrices:
-          - matrix:
-              cuda: "12.*"
-            packages:
-              - cuda-cudart-dev
-      - output_types: conda
-        matrices:
-          - matrix:
-              cuda: "12.*"
-            packages:
-              - libnvjpeg-dev
-              - libnvjpeg-static
       - output_types: conda
         matrices:
           - matrix:
@@ -185,7 +169,6 @@ dependencies:
             packages:
           - matrix:
               arch: x86_64
-              cuda: "12.*"
             packages:
               - libcufile-dev
   depends_on_cucim:
@@ -193,6 +176,25 @@ dependencies:
       - output_types: conda
         packages:
           - cucim==25.10.*,>=0.0.0a0
+  depends_on_cupy:
+    common:
+      - output_types: conda
+        packages:
+          - &cupy_unsuffixed cupy>=12.0.0
+    specific:
+      - output_types: [requirements, pyproject]
+        matrices:
+          - matrix:
+              cuda: "12.*"
+            packages:
+              - cupy-cuda12x>=12.0.0
+          - matrix:
+              cuda: "13.*"
+            packages:
+              - &cupy_cu13 cupy-cuda13x>=12.0.0
+          - matrix:
+            packages:
+              - *cupy_cu13
   depends_on_libcucim:
     common:
       - output_types: conda
@@ -255,18 +257,6 @@ dependencies:
           - numpy>=1.23.4,<3.0a0
           - scikit-image>=0.19.0,<0.26.0a0
           - scipy>=1.11.2
-      - output_types: conda
-        packages:
-          - cupy>=12.0.0
-          # Not sure where these go, if anywhere:
-          # - openslide
-          # - xorg-libxcb
-    specific:
-      - output_types: [requirements, pyproject]
-        matrices:
-          - matrix: # All CUDA 12 versions
-            packages:
-              - cupy-cuda12x>=12.0.0
   test_python:
     common:
       - output_types: [conda, requirements, pyproject]
