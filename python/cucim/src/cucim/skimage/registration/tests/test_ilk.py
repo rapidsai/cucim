@@ -1,4 +1,6 @@
-import threading
+import contextlib
+import platform
+import signal
 
 import cupy as cp
 import numpy as np
@@ -9,28 +11,32 @@ from cucim.skimage._shared.utils import _supported_float_type
 from cucim.skimage.registration import optical_flow_ilk
 
 
-def timeout_with_threading(seconds, func, *args, **kwargs):
-    result = [None]
-    exception = [None]
+@contextlib.contextmanager
+def timeout_context(seconds, test_name="test"):
+    """Context manager that skips test if execution takes too long on Unix."""
+    # Check if we're on a Unix-like system (Linux, macOS, etc.)
+    unix_systems = ("Linux", "Darwin", "FreeBSD", "OpenBSD", "NetBSD")
+    is_unix = platform.system() in unix_systems
 
-    def target():
-        try:
-            result[0] = func(*args, **kwargs)
-        except Exception as e:
-            exception[0] = e
+    if not is_unix:
+        # On non-Unix systems (e.g., Windows), just run without timeout
+        yield
+        return
 
-    thread = threading.Thread(target=target)
-    thread.daemon = True
-    thread.start()
-    thread.join(timeout=seconds)
+    # Unix systems: use signal-based timeout
+    def timeout_handler(signum, frame):
+        pytest.skip(f"Test '{test_name}' timed out after {seconds} seconds")
 
-    if thread.is_alive():
-        pytest.skip(f"Function timed out after {seconds} seconds")
+    # Set up the timeout
+    old_handler = signal.signal(signal.SIGALRM, timeout_handler)
+    signal.alarm(seconds)
 
-    if exception[0]:
-        raise exception[0]
-
-    return result[0]
+    try:
+        yield
+    finally:
+        # Clean up
+        signal.alarm(0)
+        signal.signal(signal.SIGALRM, old_handler)
 
 
 @pytest.mark.parametrize("dtype", [cp.float16, cp.float32, cp.float64])
@@ -77,16 +83,10 @@ def test_3d_motion(gaussian, prefilter):
     gt_flow, image1 = _sin_flow_gen(image0, npics=3)
 
     # Estimate the flow (with 60 second timeout)
-    flow = timeout_with_threading(
-        60,  # timeout in seconds
-        optical_flow_ilk,  # function to call
-        # All remaining arguments are passed to the function:
-        image0,
-        image1,
-        radius=5,
-        gaussian=gaussian,
-        prefilter=prefilter,
-    )
+    with timeout_context(60, "test_3d_motion optical_flow_ilk"):
+        flow = optical_flow_ilk(
+            image0, image1, radius=5, gaussian=gaussian, prefilter=prefilter
+        )
 
     # Assert that the average absolute error is less then half a pixel
     assert abs(flow - gt_flow).mean() < 0.5
