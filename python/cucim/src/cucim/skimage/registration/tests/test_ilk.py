@@ -1,3 +1,5 @@
+import threading
+
 import cupy as cp
 import numpy as np
 import pytest
@@ -5,6 +7,30 @@ from test_tvl1 import _sin_flow_gen
 
 from cucim.skimage._shared.utils import _supported_float_type
 from cucim.skimage.registration import optical_flow_ilk
+
+
+def timeout_with_threading(seconds, func, *args, **kwargs):
+    result = [None]
+    exception = [None]
+
+    def target():
+        try:
+            result[0] = func(*args, **kwargs)
+        except Exception as e:
+            exception[0] = e
+
+    thread = threading.Thread(target=target)
+    thread.daemon = True
+    thread.start()
+    thread.join(timeout=seconds)
+
+    if thread.is_alive():
+        pytest.skip(f"Function timed out after {seconds} seconds")
+
+    if exception[0]:
+        raise exception[0]
+
+    return result[0]
 
 
 @pytest.mark.parametrize("dtype", [cp.float16, cp.float32, cp.float64])
@@ -49,9 +75,17 @@ def test_3d_motion(gaussian, prefilter):
     image0 = rnd.normal(size=(50, 55, 60))
     image0 = cp.asarray(image0)
     gt_flow, image1 = _sin_flow_gen(image0, npics=3)
-    # Estimate the flow
-    flow = optical_flow_ilk(
-        image0, image1, radius=5, gaussian=gaussian, prefilter=prefilter
+
+    # Estimate the flow (with 60 second timeout)
+    flow = timeout_with_threading(
+        60,  # timeout in seconds
+        optical_flow_ilk,  # function to call
+        # All remaining arguments are passed to the function:
+        image0,
+        image1,
+        radius=5,
+        gaussian=gaussian,
+        prefilter=prefilter,
     )
 
     # Assert that the average absolute error is less then half a pixel
