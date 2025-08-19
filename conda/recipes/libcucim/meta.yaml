@@ -55,6 +55,9 @@ requirements:
   host:
     - cuda-version ={{ cuda_version }}
     - cuda-cudart-dev
+    {% if cuda_major != "12" %}
+    - cuda-culibos-static
+    {% endif %}
     - libcufile-dev     # [linux64]
     - libnvjpeg-dev
     - libnvjpeg-static
