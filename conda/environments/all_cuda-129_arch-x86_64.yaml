@@ -19,7 +19,6 @@ dependencies:
 - lazy-loader>=0.4
 - libcufile-dev
 - libnvjpeg-dev
-- libnvjpeg-static
 - matplotlib-base>=3.7
 - nbsphinx
 - ninja
