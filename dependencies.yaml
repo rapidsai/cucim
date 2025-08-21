@@ -113,13 +113,13 @@ dependencies:
           - matrix:
               arch: x86_64
             packages:
-              - gcc_linux-64=13.*
+              - gcc_linux-64=14.*
               - sysroot_linux-64==2.28
               - yasm
           - matrix:
               arch: aarch64
             packages:
-              - gcc_linux-aarch64=13.*
+              - gcc_linux-aarch64=14.*
               - sysroot_linux-aarch64==2.28
   checks:
     common:

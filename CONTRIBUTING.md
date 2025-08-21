@@ -97,7 +97,7 @@ If codespell is finding false positives in newly added code, the `ignore-words-l
 
 Compiler requirements:
 
-* `gcc`     version 13.0+
+* `gcc`     version 14.0+
 * `nvcc`    version 12.0+
 * `cmake`   version 3.30.4+
 
