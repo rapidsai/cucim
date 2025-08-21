@@ -16,7 +16,12 @@
 #ifndef CUCIM_CUFILE_STUB_H
 #define CUCIM_CUFILE_STUB_H
 
-#include <cufile.h>
+// Try to include the real cufile.h, fall back to minimal types if not available
+#if __has_include(<cufile.h>)
+    #include <cufile.h>
+#else
+    #include "cufile_stub_types.h"
+#endif
 
 #include "cucim/dynlib/helper.h"
 
