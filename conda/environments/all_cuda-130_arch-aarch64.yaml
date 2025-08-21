@@ -18,7 +18,6 @@ dependencies:
 - ipython
 - lazy-loader>=0.4
 - libnvjpeg-dev
-- libnvjpeg-static
 - matplotlib-base>=3.7
 - nbsphinx
 - ninja

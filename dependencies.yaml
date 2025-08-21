@@ -160,7 +160,6 @@ dependencies:
         packages:
           - cuda-cudart-dev
           - libnvjpeg-dev
-          - libnvjpeg-static
     specific:
       - output_types: conda
         matrices:
