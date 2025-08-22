@@ -95,18 +95,15 @@ requirements:
   host:
     - cuda-cudart-dev
     - cuda-version =${{ cuda_version }}
+    - libcufile-dev
     - libnvjpeg-dev
-    - libnvjpeg-static
     - nvtx-c >=3.1.0
     - openslide
-    - if: linux64
-      then: libcufile-dev
   run:
     - ${{ pin_compatible("cuda-version", upper_bound="x", lower_bound="x") }}
     - cuda-cudart
+    - libcufile
     - libnvjpeg
-    - if: linux64
-      then: libcufile
   run_constraints:
     - ${{ pin_compatible("openslide") }}
   ignore_run_exports:

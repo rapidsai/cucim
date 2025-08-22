@@ -1,3 +1,37 @@
+# cucim 25.08.00 (6 Aug 2025)
+
+## 🚨 Breaking Changes
+
+- Remove CUDA 11 from dependencies.yaml ([#887](https://github.com/rapidsai/cucim/pull/887)) [@KyleFromNVIDIA](https://github.com/KyleFromNVIDIA)
+- stop uploading packages to downloads.rapids.ai ([#883](https://github.com/rapidsai/cucim/pull/883)) [@jameslamb](https://github.com/jameslamb)
+
+## 🐛 Bug Fixes
+
+- Drop unused variable `CUDA_MAJOR_VERSION` ([#907](https://github.com/rapidsai/cucim/pull/907)) [@jakirkham](https://github.com/jakirkham)
+- Fix test failures due to deprecated Pillow Image.fromarray &#39;mode&#39; parameter ([#901](https://github.com/rapidsai/cucim/pull/901)) [@grlee77](https://github.com/grlee77)
+- Adding GH_TOKEN pass-through to summarize job ([#891](https://github.com/rapidsai/cucim/pull/891)) [@msarahan](https://github.com/msarahan)
+
+## 📖 Documentation
+
+- add docs on CI workflow inputs ([#897](https://github.com/rapidsai/cucim/pull/897)) [@jameslamb](https://github.com/jameslamb)
+
+## 🛠️ Improvements
+
+- Drop CUDA 11 references from docs ([#914](https://github.com/rapidsai/cucim/pull/914)) [@jakirkham](https://github.com/jakirkham)
+- fix(docker): use versioned `-latest` tag for all `rapidsai` images ([#908](https://github.com/rapidsai/cucim/pull/908)) [@gforsyth](https://github.com/gforsyth)
+- remove cuspatial references ([#906](https://github.com/rapidsai/cucim/pull/906)) [@jameslamb](https://github.com/jameslamb)
+- Drop CUDA 11 from CI Scripts ([#903](https://github.com/rapidsai/cucim/pull/903)) [@AyodeAwe](https://github.com/AyodeAwe)
+- run: fix compatibility with PEP-0632 for supporting Python &gt;=3.12 ([#902](https://github.com/rapidsai/cucim/pull/902)) [@ElieDeBrauwer](https://github.com/ElieDeBrauwer)
+- Enhance GPU memory leak test with unified memory check and increased thresholds ([#898](https://github.com/rapidsai/cucim/pull/898)) [@gigony](https://github.com/gigony)
+- Use CUDA 12.9 in Conda, Devcontainers, Spark, GHA, etc. ([#894](https://github.com/rapidsai/cucim/pull/894)) [@jakirkham](https://github.com/jakirkham)
+- Remove nvidia and dask channels ([#893](https://github.com/rapidsai/cucim/pull/893)) [@vyasr](https://github.com/vyasr)
+- refactor(shellcheck): fix all shellcheck warnings/errors ([#890](https://github.com/rapidsai/cucim/pull/890)) [@gforsyth](https://github.com/gforsyth)
+- refactor(conda): remove cuda11 conditionals from conda recipes ([#889](https://github.com/rapidsai/cucim/pull/889)) [@gforsyth](https://github.com/gforsyth)
+- Remove CUDA 11 from dependencies.yaml ([#887](https://github.com/rapidsai/cucim/pull/887)) [@KyleFromNVIDIA](https://github.com/KyleFromNVIDIA)
+- stop uploading packages to downloads.rapids.ai ([#883](https://github.com/rapidsai/cucim/pull/883)) [@jameslamb](https://github.com/jameslamb)
+- Forward-merge branch-25.06 into branch-25.08 ([#880](https://github.com/rapidsai/cucim/pull/880)) [@gforsyth](https://github.com/gforsyth)
+- Forward-merge branch-25.06 into branch-25.08 ([#876](https://github.com/rapidsai/cucim/pull/876)) [@gforsyth](https://github.com/gforsyth)
+
 # cucim 25.06.00 (5 Jun 2025)
 
 ## 🛠️ Improvements
