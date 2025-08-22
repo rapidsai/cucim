@@ -11,9 +11,9 @@ dependencies:
 - cuda-cudart-dev
 - cuda-nvcc
 - cuda-version=12.9
-- cupy>=12.0.0
+- cupy>=13.6.0
 - cxx-compiler
-- gcc_linux-aarch64=13.*
+- gcc_linux-aarch64=14.*
 - imagecodecs>=2021.6.8
 - ipython
 - lazy-loader>=0.4
