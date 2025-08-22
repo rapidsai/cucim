@@ -227,7 +227,7 @@ target_link_libraries(${CUCIM_PLUGIN_NAME}
 if (TARGET CUDA::nvjpeg_static)
         target_link_libraries(${CUCIM_PLUGIN_NAME}
             PRIVATE
-		# Add nvjpeg before cudart so that nvjpeg.h in static library takes precedence.
+                # Add nvjpeg before cudart so that nvjpeg.h in static library takes precedence.
                 CUDA::nvjpeg_static
                 # Add CUDA::culibos to link necessary methods for 'deps::nvjpeg_static'
                 CUDA::culibos
