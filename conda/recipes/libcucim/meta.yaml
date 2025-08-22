@@ -55,14 +55,26 @@ requirements:
   host:
     - cuda-version ={{ cuda_version }}
     - cuda-cudart-dev
+    {% if aarch64 and cuda_major == "12" %}
+    # Skip building with `libcufile-dev` if it cannot be used at runtime
+    - libcufile-dev  # [has_cufile]
+    {% else %}
     - libcufile-dev
+    {% endif %}
     - libnvjpeg-dev
     - nvtx-c >=3.1.0
     - openslide
   run:
+    {% if aarch64 and cuda_major == "12" %}
+    # Relax `libcufile` dependency for old CUDA 12 ARM installs
+    - {{ pin_compatible('cuda-version', lower_bound='12.0', upper_bound='12.2') }}  # [not has_cufile]
+    - {{ pin_compatible('cuda-version', lower_bound='12.2', upper_bound='13.0') }}  # [has_cufile]
+    - libcufile  # [has_cufile]
+    {% else %}
     - {{ pin_compatible('cuda-version', max_pin='x', min_pin='x') }}
-    - cuda-cudart
     - libcufile
+    {% endif %}
+    - cuda-cudart
     - libnvjpeg
   run_constrained:
     - {{ pin_compatible('openslide') }}
