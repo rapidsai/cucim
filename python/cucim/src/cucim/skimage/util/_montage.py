@@ -8,6 +8,66 @@ from .._shared import utils
 __all__ = ["montage"]
 
 
+@cp.memoize(for_each_device=True)
+def _montage_kernel():
+    code = """
+    // Get output array dimensions
+    int out_height = output.shape()[0];
+    int out_width = output.shape()[1];
+    int n_chan = output.shape()[2];
+
+    // Calculate 3D coordinates from linear index
+    int out_chan = i % n_chan;
+    int temp = i / n_chan;
+    int out_col = temp % out_width;
+    int out_row = temp / out_width;
+
+    // Check if we're in padding areas or beyond image boundaries
+    if (out_row < n_pad || out_col < n_pad) {
+      return; // Already filled with fill value
+    }
+
+    // Calculate which tile this pixel belongs to
+    int tile_row = (out_row - n_pad) / (n_rows + n_pad);
+    int tile_col = (out_col - n_pad) / (n_cols + n_pad);
+
+    // Check tile bounds
+    if (tile_row >= ntiles_row || tile_col >= ntiles_col) {
+      return; // Beyond tile grid
+    }
+
+    // Calculate position within the tile
+    int local_row = (out_row - n_pad) % (n_rows + n_pad);
+    int local_col = (out_col - n_pad) % (n_cols + n_pad);
+
+    // Check if we're in inter-tile padding
+    if (local_row >= n_rows || local_col >= n_cols) {
+      return; // In inter-tile padding, keep fill value
+    }
+
+    // Calculate which image this tile corresponds to
+    int image_idx = tile_row * ntiles_col + tile_col;
+
+    // Check if we have an image for this tile
+    if (image_idx >= n_images) {
+      return; // No image for this tile, keep fill value
+    }
+
+    // Copy pixel from input array
+    output[i] = arr_in[image_idx * n_rows * n_cols * n_chan +
+                       local_row * n_cols * n_chan +
+                       local_col * n_chan + out_chan];
+    """
+
+    return cp.ElementwiseKernel(
+        "raw X arr_in, int32 n_images, int32 n_rows, int32 n_cols, "
+        "int32 ntiles_row, int32 ntiles_col, int32 n_pad",
+        "raw X output",
+        code,
+        name="cucim_montage_kernel",
+    )
+
+
 @utils.channel_as_last_axis(multichannel_output=False)
 def montage(
     arr_in,
@@ -17,6 +77,8 @@ def montage(
     padding_width=0,
     *,
     channel_axis=None,
+    square_grid_default=True,
+    use_fused_kernel=True,
 ):
     """Create a montage of several single- or multichannel images.
 
@@ -61,6 +123,20 @@ def montage(
         If None, the image is assumed to be a grayscale (single channel) image.
         Otherwise, this parameter indicates which axis of the array corresponds
         to channels.
+
+    Other Parameters
+    ----------------
+    square_grid_default : bool, optional
+        If ``True``, use a square grid shape by default as suggested by
+        scikit-image. Otherwise, allow a rectangular grid to more tightly pack
+        the images.
+        Note: This argument is not present in scikit-image.
+    use_fused_kernel : bool, optional
+        Whether to use the single-kernel CuPy elementwise kernel implementation
+        (True) or the original slicing-based implementation (False).
+        Default is True. The kernel implementation is generally faster for
+        large arrays due to better GPU parallelization.
+        Note: This argument is not present in scikit-image.
 
     Returns
     -------
@@ -114,7 +190,11 @@ def montage(
     if grid_shape:
         ntiles_row, ntiles_col = (int(s) for s in grid_shape)
     else:
-        ntiles_row = ntiles_col = math.ceil(math.sqrt(n_images))
+        ntiles_col = math.ceil(math.sqrt(n_images))
+        if square_grid_default:
+            ntiles_row = ntiles_col
+        else:
+            ntiles_row = math.ceil(n_images / ntiles_col)
 
     # Rescale intensity if necessary
     if rescale_intensity:
@@ -139,24 +219,42 @@ def montage(
     for idx_chan in range(n_chan):
         arr_out[..., idx_chan] = fill[idx_chan]
 
-    slices_row = [
-        slice(
-            n_pad + (n_rows + n_pad) * n, n_pad + (n_rows + n_pad) * n + n_rows
+    if use_fused_kernel:
+        # Use elementwise kernel to copy the data to the output array
+        kern = _montage_kernel()
+        kern(
+            arr_in,
+            n_images,
+            n_rows,
+            n_cols,
+            ntiles_row,
+            ntiles_col,
+            n_pad,
+            arr_out,
+            size=arr_out.size,
         )
-        for n in range(ntiles_row)
-    ]
-    slices_col = [
-        slice(
-            n_pad + (n_cols + n_pad) * n, n_pad + (n_cols + n_pad) * n + n_cols
-        )
-        for n in range(ntiles_col)
-    ]
+    else:
+        # Use original slice-based implementation
+        slices_row = [
+            slice(
+                n_pad + (n_rows + n_pad) * n,
+                n_pad + (n_rows + n_pad) * n + n_rows,
+            )
+            for n in range(ntiles_row)
+        ]
+        slices_col = [
+            slice(
+                n_pad + (n_cols + n_pad) * n,
+                n_pad + (n_cols + n_pad) * n + n_cols,
+            )
+            for n in range(ntiles_col)
+        ]
 
-    # Copy the data to the output array
-    for idx_image, image in enumerate(arr_in):
-        idx_sr = idx_image // ntiles_col
-        idx_sc = idx_image % ntiles_col
-        arr_out[slices_row[idx_sr], slices_col[idx_sc], :] = image
+        # Copy the data to the output array
+        for idx_image, image in enumerate(arr_in):
+            idx_sr = idx_image // ntiles_col
+            idx_sc = idx_image % ntiles_col
+            arr_out[slices_row[idx_sr], slices_col[idx_sc], :] = image
 
     if channel_axis is not None:
         return arr_out
