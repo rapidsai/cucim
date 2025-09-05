@@ -276,6 +276,10 @@ def montage(
     )
 
     if use_fused_kernel:
+        # indexing logic assumes C-contiguous memory layout
+        if not arr_in.flags.c_contiguous:
+            arr_in = cp.ascontiguousarray(arr_in)
+
         # Use elementwise kernel to copy the data to the output array
         kern = _montage_kernel(n_chan, n_pad)
         kern(

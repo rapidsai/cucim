@@ -12,12 +12,13 @@ except ImportError:
     from cupy.exceptions import AxisError
 
 
-def test_montage_simple_gray():
+@pytest.mark.parametrize("use_fused_kernel", [False, True])
+def test_montage_simple_gray(use_fused_kernel):
     n_images, n_rows, n_cols = 3, 2, 3
     arr_in = cp.arange(n_images * n_rows * n_cols, dtype=float)
     arr_in = arr_in.reshape(n_images, n_rows, n_cols)
 
-    arr_out = montage(arr_in)
+    arr_out = montage(arr_in, use_fused_kernel=use_fused_kernel)
     arr_ref = cp.array(
         [
             [0.0, 1.0, 2.0, 6.0, 7.0, 8.0],
@@ -29,7 +30,8 @@ def test_montage_simple_gray():
     assert_array_equal(arr_out, arr_ref)
 
 
-def test_montage_simple_rgb():
+@pytest.mark.parametrize("use_fused_kernel", [False, True])
+def test_montage_simple_rgb(use_fused_kernel):
     n_images, n_rows, n_cols, n_channels = 2, 2, 2, 2
     arr_in = cp.arange(
         n_images * n_rows * n_cols * n_channels,
@@ -37,7 +39,9 @@ def test_montage_simple_rgb():
     )
     arr_in = arr_in.reshape(n_images, n_rows, n_cols, n_channels)
 
-    arr_out = montage(arr_in, channel_axis=-1)
+    arr_out = montage(
+        arr_in, channel_axis=-1, use_fused_kernel=use_fused_kernel
+    )
     arr_ref = cp.array(
         [
             [[0, 1], [2, 3], [8, 9], [10, 11]],
@@ -50,7 +54,8 @@ def test_montage_simple_rgb():
 
 
 @pytest.mark.parametrize("channel_axis", (0, 1, 2, 3, -1, -2, -3, -4))
-def test_montage_simple_rgb_channel_axes(channel_axis):
+@pytest.mark.parametrize("use_fused_kernel", [False, True])
+def test_montage_simple_rgb_channel_axes(channel_axis, use_fused_kernel):
     n_images, n_rows, n_cols, n_channels = 2, 2, 2, 2
     arr_in = cp.arange(n_images * n_rows * n_cols * n_channels, dtype=float)
     arr_in = arr_in.reshape(n_images, n_rows, n_cols, n_channels)
@@ -58,7 +63,9 @@ def test_montage_simple_rgb_channel_axes(channel_axis):
     # place channels at the desired location
     arr_in = cp.moveaxis(arr_in, -1, channel_axis)
 
-    arr_out = montage(arr_in, channel_axis=channel_axis)
+    arr_out = montage(
+        arr_in, channel_axis=channel_axis, use_fused_kernel=use_fused_kernel
+    )
     arr_ref = cp.array(
         [
             [[0, 1], [2, 3], [8, 9], [10, 11]],
@@ -71,18 +78,22 @@ def test_montage_simple_rgb_channel_axes(channel_axis):
 
 
 @pytest.mark.parametrize("channel_axis", (4, -5))
-def test_montage_invalid_channel_axes(channel_axis):
+@pytest.mark.parametrize("use_fused_kernel", [False, True])
+def test_montage_invalid_channel_axes(channel_axis, use_fused_kernel):
     arr_in = cp.arange(16, dtype=float).reshape(2, 2, 2, 2)
     with pytest.raises(AxisError):
-        montage(arr_in, channel_axis=channel_axis)
+        montage(
+            arr_in, channel_axis=channel_axis, use_fused_kernel=use_fused_kernel
+        )
 
 
-def test_montage_fill_gray():
+@pytest.mark.parametrize("use_fused_kernel", [False, True])
+def test_montage_fill_gray(use_fused_kernel):
     n_images, n_rows, n_cols = 3, 2, 3
     arr_in = cp.arange(n_images * n_rows * n_cols, dtype=float)
     arr_in = arr_in.reshape(n_images, n_rows, n_cols)
 
-    arr_out = montage(arr_in, fill=0)
+    arr_out = montage(arr_in, fill=0, use_fused_kernel=use_fused_kernel)
     arr_ref = cp.array(
         [
             [0.0, 1.0, 2.0, 6.0, 7.0, 8.0],
@@ -94,7 +105,8 @@ def test_montage_fill_gray():
     assert_array_equal(arr_out, arr_ref)
 
 
-def test_montage_grid_default_gray():
+@pytest.mark.parametrize("use_fused_kernel", [False, True])
+def test_montage_grid_default_gray(use_fused_kernel):
     n_images, n_rows, n_cols = 15, 11, 7
     arr_in = cp.arange(n_images * n_rows * n_cols, dtype=float)
     arr_in = arr_in.reshape(n_images, n_rows, n_cols)
@@ -104,12 +116,15 @@ def test_montage_grid_default_gray():
     assert arr_out.shape == (n_tiles * n_rows, n_tiles * n_cols)
 
 
-def test_montage_grid_custom_gray():
+@pytest.mark.parametrize("use_fused_kernel", [False, True])
+def test_montage_grid_custom_gray(use_fused_kernel):
     n_images, n_rows, n_cols = 6, 2, 2
     arr_in = cp.arange(n_images * n_rows * n_cols, dtype=cp.float32)
     arr_in = arr_in.reshape(n_images, n_rows, n_cols)
 
-    arr_out = montage(arr_in, grid_shape=(3, 2))
+    arr_out = montage(
+        arr_in, grid_shape=(3, 2), use_fused_kernel=use_fused_kernel
+    )
     arr_ref = cp.array(
         [
             [0.0, 1.0, 4.0, 5.0],
@@ -123,12 +138,15 @@ def test_montage_grid_custom_gray():
     assert_array_equal(arr_out, arr_ref)
 
 
-def test_montage_rescale_intensity_gray():
+@pytest.mark.parametrize("use_fused_kernel", [False, True])
+def test_montage_rescale_intensity_gray(use_fused_kernel):
     n_images, n_rows, n_cols = 4, 3, 3
     arr_in = cp.arange(n_images * n_rows * n_cols, dtype=cp.float32)
     arr_in = arr_in.reshape(n_images, n_rows, n_cols)
 
-    arr_out = montage(arr_in, rescale_intensity=True)
+    arr_out = montage(
+        arr_in, rescale_intensity=True, use_fused_kernel=use_fused_kernel
+    )
     arr_ref = cp.array(
         [
             [0.0, 0.125, 0.25, 0.0, 0.125, 0.25],
@@ -144,12 +162,15 @@ def test_montage_rescale_intensity_gray():
     assert_array_equal(arr_out, arr_ref)
 
 
-def test_montage_simple_padding_gray():
+@pytest.mark.parametrize("use_fused_kernel", [False, True])
+def test_montage_simple_padding_gray(use_fused_kernel):
     n_images, n_rows, n_cols = 2, 2, 2
     arr_in = cp.arange(n_images * n_rows * n_cols)
     arr_in = arr_in.reshape(n_images, n_rows, n_cols)
 
-    arr_out = montage(arr_in, padding_width=1)
+    arr_out = montage(
+        arr_in, padding_width=1, use_fused_kernel=use_fused_kernel
+    )
     arr_ref = cp.array(
         [
             [3, 3, 3, 3, 3, 3, 3],
@@ -164,19 +185,20 @@ def test_montage_simple_padding_gray():
     assert_array_equal(arr_out, arr_ref)
 
 
-def test_error_ndim():
+@pytest.mark.parametrize("use_fused_kernel", [False, True])
+def test_error_ndim(use_fused_kernel):
     arr_error = cp.random.randn(1, 2)
     with pytest.raises(ValueError):
-        montage(arr_error)
+        montage(arr_error, use_fused_kernel=use_fused_kernel)
 
     arr_error = cp.random.randn(1, 2, 3, 4)
     with pytest.raises(ValueError):
-        montage(arr_error)
+        montage(arr_error, use_fused_kernel=use_fused_kernel)
 
     arr_error = cp.random.randn(1, 2, 3)
     with pytest.raises(ValueError):
-        montage(arr_error, channel_axis=-1)
+        montage(arr_error, channel_axis=-1, use_fused_kernel=use_fused_kernel)
 
     arr_error = cp.random.randn(1, 2, 3, 4, 5)
     with pytest.raises(ValueError):
-        montage(arr_error, channel_axis=-1)
+        montage(arr_error, channel_axis=-1, use_fused_kernel=use_fused_kernel)

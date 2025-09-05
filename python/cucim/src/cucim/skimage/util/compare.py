@@ -141,6 +141,12 @@ def compare_images(image0, image1, *, method="diff", n_tiles=(8, 8)):
     elif method == "blend":
         comparison = compare_blend(img1, img2)
     elif method == "checkerboard":
+        # indexing logic assumes C-contiguous memory layout
+        if not img1.flags.c_contiguous:
+            img1 = cp.ascontiguousarray(img1)
+        if not img2.flags.c_contiguous:
+            img2 = cp.ascontiguousarray(img2)
+
         if img1.ndim != 2:
             raise ValueError(
                 "Images must be 2-dimensional to be compared with the "
