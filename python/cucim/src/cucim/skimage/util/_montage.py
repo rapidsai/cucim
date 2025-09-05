@@ -77,8 +77,8 @@ def _montage_kernel(num_channels, n_pad):
         code += """
         if (copy_from_image) {
             // Copy single channel pixel from input array
-            int input_idx = image_idx * n_rows * n_cols +
-                            local_row * n_cols + local_col;
+            int input_idx = (image_idx * n_rows + local_row) * n_cols +
+                            local_col;
             output[i] = arr_in[input_idx];
         } else {
             output[i] = fill_values[0];
@@ -90,9 +90,8 @@ def _montage_kernel(num_channels, n_pad):
         copy_statements = []
 
         code += f"""
-            int channel0_idx = image_idx * n_rows * n_cols * {num_channels} +
-                               local_row * n_cols * {num_channels} +
-                               local_col * {num_channels};\n"""
+            int channel0_idx = ((image_idx * n_rows + local_row) * n_cols
+                                 + local_col) * {num_channels};\n"""
         for chan in range(num_channels):
             output_idx = f"i * {num_channels} + {chan}"
             fill_statements.append(
