@@ -7,6 +7,7 @@ from ._invert import invert
 from ._map_array import map_array
 from ._montage import montage
 from .arraycrop import crop
+from .compare import compare_images
 from .dtype import (
     dtype_limits,
     img_as_bool,
@@ -21,7 +22,7 @@ from .noise import random_noise
 from .shape import view_as_blocks, view_as_windows
 
 __all__ = [
-    "img_as_float32",
+    "compare_images" "img_as_float32",
     "img_as_float64",
     "img_as_float",
     "img_as_int",
