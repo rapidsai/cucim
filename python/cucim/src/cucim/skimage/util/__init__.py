@@ -5,6 +5,7 @@ This module contains a number of utility functions to work with images in genera
 
 from ._invert import invert
 from ._map_array import map_array
+from ._montage import montage
 from .arraycrop import crop
 from .dtype import (
     dtype_limits,
@@ -28,6 +29,7 @@ __all__ = [
     "img_as_ubyte",
     "img_as_bool",
     "dtype_limits",
+    "montage",
     "view_as_blocks",
     "view_as_windows",
     "crop",
