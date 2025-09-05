@@ -9,22 +9,35 @@ __all__ = ["montage"]
 
 
 @cp.memoize(for_each_device=True)
-def _montage_kernel():
+def _montage_kernel(num_channels):
     code = """
     // Get output array dimensions
     int out_height = output.shape()[0];
     int out_width = output.shape()[1];
-    int n_chan = output.shape()[2];
-
+    """
+    if num_channels > 1:
+        code += f"""
     // Calculate 3D coordinates from linear index
-    int out_chan = i % n_chan;
-    int temp = i / n_chan;
+    int out_chan = i % {num_channels};
+    int temp = i / {num_channels};
     int out_col = temp % out_width;
     int out_row = temp / out_width;
 
+    // Start with fill value for this channel
+    output[i] = fill_values[out_chan];\n"""
+    else:
+        code += """
+    int out_col = i % out_width;
+    int out_row = i / out_width;
+
+    // Start with fill value for this channel
+    output[i] = fill_values[0];\n"""
+
+    code += """
+
     // Check if we're in padding areas or beyond image boundaries
     if (out_row < n_pad || out_col < n_pad) {
-      return; // Already filled with fill value
+       return;
     }
 
     // Calculate which tile this pixel belongs to
@@ -33,7 +46,7 @@ def _montage_kernel():
 
     // Check tile bounds
     if (tile_row >= ntiles_row || tile_col >= ntiles_col) {
-      return; // Beyond tile grid
+       return;
     }
 
     // Calculate position within the tile
@@ -42,7 +55,7 @@ def _montage_kernel():
 
     // Check if we're in inter-tile padding
     if (local_row >= n_rows || local_col >= n_cols) {
-      return; // In inter-tile padding, keep fill value
+       return;
     }
 
     // Calculate which image this tile corresponds to
@@ -50,18 +63,25 @@ def _montage_kernel():
 
     // Check if we have an image for this tile
     if (image_idx >= n_images) {
-      return; // No image for this tile, keep fill value
-    }
+       return;
+    }\n"""
 
-    // Copy pixel from input array
-    output[i] = arr_in[image_idx * n_rows * n_cols * n_chan +
-                       local_row * n_cols * n_chan +
-                       local_col * n_chan + out_chan];
-    """
+    if num_channels > 1:
+        code += f"""
+        // Copy pixel from input array
+        output[i] = arr_in[image_idx * n_rows * n_cols * {num_channels} +
+                            local_row * n_cols * {num_channels} +
+                            local_col * {num_channels} + out_chan];\n"""
+    else:
+        code += """
+        // Copy pixel from input array
+        output[i] = arr_in[image_idx * n_rows * n_cols +
+                           local_row * n_cols +
+                           local_col];\n"""
 
     return cp.ElementwiseKernel(
-        "raw X arr_in, int32 n_images, int32 n_rows, int32 n_cols, "
-        "int32 ntiles_row, int32 ntiles_col, int32 n_pad",
+        "raw X arr_in, raw X fill_values, int32 n_images, int32 n_rows, "
+        "int32 n_cols, int32 ntiles_row, int32 ntiles_col, int32 n_pad",
         "raw X output",
         code,
         name="cucim_montage_kernel",
@@ -204,7 +224,7 @@ def montage(
     # Calculate the fill value
     if fill == "mean":
         fill = arr_in.mean(axis=(0, 1, 2))
-    fill = cp.atleast_1d(fill).astype(arr_in.dtype)
+    fill = cp.atleast_1d(fill).astype(arr_in.dtype, copy=False)
 
     # Pre-allocate an array with padding for montage
     n_pad = padding_width
@@ -216,14 +236,13 @@ def montage(
         ),
         dtype=arr_in.dtype,
     )
-    for idx_chan in range(n_chan):
-        arr_out[..., idx_chan] = fill[idx_chan]
 
     if use_fused_kernel:
         # Use elementwise kernel to copy the data to the output array
-        kern = _montage_kernel()
+        kern = _montage_kernel(n_chan)
         kern(
             arr_in,
+            fill,
             n_images,
             n_rows,
             n_cols,
@@ -234,6 +253,10 @@ def montage(
             size=arr_out.size,
         )
     else:
+        # Fill array with fill values for slice-based implementation
+        for idx_chan in range(n_chan):
+            arr_out[..., idx_chan] = fill[idx_chan]
+
         # Use original slice-based implementation
         slices_row = [
             slice(
