@@ -9,89 +9,112 @@ __all__ = ["montage"]
 
 
 @cp.memoize(for_each_device=True)
-def _montage_kernel(num_channels):
-    code = """
+def _montage_kernel(num_channels, n_pad):
+    if n_pad == 0:
+        # No padding case
+        code = """
     // Get output array dimensions
     int out_height = output.shape()[0];
     int out_width = output.shape()[1];
 
-    // Calculate spatial coordinates from linear index (i = spatial pixels)
+    // Calculate spatial coordinates from linear index
     int out_col = i % out_width;
     int out_row = i / out_width;
 
-    // Check if we're in padding areas or beyond image boundaries
-    bool in_padding = (out_row < n_pad || out_col < n_pad);
+    // Calculate which tile this pixel belongs to
+    int tile_row = out_row / n_rows;
+    int tile_col = out_col / n_cols;
+
+    // Calculate position within the tile
+    int local_row = out_row % n_rows;
+    int local_col = out_col % n_cols;
+
+    // Calculate which image this tile corresponds to
+    int image_idx = tile_row * ntiles_col + tile_col;
+
+    // Check if we have an image for this tile
+    bool copy_from_image = (image_idx < n_images);\n"""
+    else:
+        # Padding case
+        code = f"""
+    // Get output array dimensions
+    int out_height = output.shape()[0];
+    int out_width = output.shape()[1];
+
+    // Calculate spatial coordinates from linear index
+    int out_col = i % out_width;
+    int out_row = i / out_width;
+
+    // Check if we're in padding areas
+    bool in_padding = (out_row < {n_pad} || out_col < {n_pad});
 
     // Calculate which tile this pixel belongs to
     int tile_row = -1, tile_col = -1, local_row = -1, local_col = -1;
     int image_idx = -1;
     bool copy_from_image = false;
 
-    if (!in_padding) {
-        tile_row = (out_row - n_pad) / (n_rows + n_pad);
-        tile_col = (out_col - n_pad) / (n_cols + n_pad);
+    if (!in_padding) {{
+        tile_row = (out_row - {n_pad}) / (n_rows + {n_pad});
+        tile_col = (out_col - {n_pad}) / (n_cols + {n_pad});
 
         // Calculate position within the tile
-        local_row = (out_row - n_pad) % (n_rows + n_pad);
-        local_col = (out_col - n_pad) % (n_cols + n_pad);
+        local_row = (out_row - {n_pad}) % (n_rows + {n_pad});
+        local_col = (out_col - {n_pad}) % (n_cols + {n_pad});
 
         // Check if we're in inter-tile padding
-        if (local_row < n_rows && local_col < n_cols) {
+        if (local_row < n_rows && local_col < n_cols) {{
             // Calculate which image this tile corresponds to
             image_idx = tile_row * ntiles_col + tile_col;
 
             // Check if we have an image for this tile
-            if (image_idx < n_images) {
+            if (image_idx < n_images) {{
                 copy_from_image = true;
-            }
-        }
-    }\n"""
+            }}
+        }}
+    }}\n"""
 
     if num_channels == 1:
         code += """
-    if (copy_from_image) {
-        // Copy single channel pixel from input array
-        int input_idx = image_idx * n_rows * n_cols +
-                        local_row * n_cols + local_col;
-        output[i] = arr_in[input_idx];
-    } else {
-        output[i] = fill_values[0];
-    }"""
+        if (copy_from_image) {
+            // Copy single channel pixel from input array
+            int input_idx = image_idx * n_rows * n_cols +
+                            local_row * n_cols + local_col;
+            output[i] = arr_in[input_idx];
+        } else {
+            output[i] = fill_values[0];
+        }\n"""
     else:
         # Generate explicitly unrolled loops over channels
         # Multi-channel: explicitly unroll the channel loop
         fill_statements = []
         copy_statements = []
 
+        code += f"""
+            int channel0_idx = image_idx * n_rows * n_cols * {num_channels} +
+                               local_row * n_cols * {num_channels} +
+                               local_col * {num_channels};\n"""
         for chan in range(num_channels):
             output_idx = f"i * {num_channels} + {chan}"
             fill_statements.append(
                 f"        output[{output_idx}] = fill_values[{chan}];"
             )
-
-            input_idx = (
-                f"image_idx * n_rows * n_cols * {num_channels} + "
-                f"local_row * n_cols * {num_channels} + "
-                f"local_col * {num_channels} + {chan}"
-            )
             copy_statements.append(
-                f"        output[{output_idx}] = arr_in[{input_idx}];"
+                f"        output[{output_idx}] = arr_in[channel0_idx + {chan}];"
             )
-
         copy_code = "\n".join(copy_statements)
         fill_code = "\n".join(fill_statements)
 
         code += f"""
-    if (copy_from_image) {{
         // Process all channels for this spatial location (unrolled)
-{copy_code}
-    }} else {{
-{fill_code}
-    }}"""
+        if (copy_from_image) {{
+            {copy_code}
+        }} else {{
+            {fill_code}
+        }}\n"""
 
     return cp.ElementwiseKernel(
         "raw X arr_in, raw X fill_values, int32 n_images, int32 n_rows, "
-        "int32 n_cols, int32 ntiles_row, int32 ntiles_col, int32 n_pad",
+        "int32 n_cols, int32 ntiles_row, int32 ntiles_col",
         "raw X output",
         code,
         name="cucim_montage_kernel",
@@ -254,7 +277,7 @@ def montage(
 
     if use_fused_kernel:
         # Use elementwise kernel to copy the data to the output array
-        kern = _montage_kernel(n_chan)
+        kern = _montage_kernel(n_chan, n_pad)
         kern(
             arr_in,
             fill,
@@ -263,7 +286,6 @@ def montage(
             n_cols,
             ntiles_row,
             ntiles_col,
-            n_pad,
             arr_out,
             size=arr_out.size // n_chan,
         )
