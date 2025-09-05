@@ -1,6 +1,5 @@
 import functools
 import warnings
-from itertools import product
 
 import cupy as cp
 
@@ -58,6 +57,39 @@ def _rename_image_params(func):
     return wrapper
 
 
+@cp.memoize(for_each_device=True)
+def _checkerboard_kernel():
+    code = """
+    int y_size = image0.shape()[1];
+    int coord_x = i / y_size;
+    int coord_y = i % y_size;
+    int tile_x = coord_x / step_x;
+    int tile_y = coord_y / step_y;
+    if ((tile_x + tile_y) % 2) {
+        out[i] = image1[i];
+    } else {
+        out[i] = image0[i];
+    }
+    """
+
+    return cp.ElementwiseKernel(
+        "raw X image0, raw X image1, int32 step_x, int32 step_y",
+        "raw X out",
+        code,
+        name="cucim_compare_images_checkerboard",
+    )
+
+
+@cp.fuse()
+def compare_absdiff(img1, img2):
+    return cp.abs(img2 - img1)
+
+
+@cp.fuse()
+def compare_blend(img1, img2):
+    return 0.5 * (img1 + img2)
+
+
 @_rename_image_params
 def compare_images(image0, image1, *, method="diff", n_tiles=(8, 8)):
     """
@@ -105,9 +137,9 @@ def compare_images(image0, image1, *, method="diff", n_tiles=(8, 8)):
     img2 = img_as_float(image1)
 
     if method == "diff":
-        comparison = cp.abs(img2 - img1)
+        comparison = compare_absdiff(img1, img2)
     elif method == "blend":
-        comparison = 0.5 * (img2 + img1)
+        comparison = compare_blend(img1, img2)
     elif method == "checkerboard":
         if img1.ndim != 2:
             raise ValueError(
@@ -115,17 +147,15 @@ def compare_images(image0, image1, *, method="diff", n_tiles=(8, 8)):
                 "checkerboard method."
             )
         shapex, shapey = img1.shape
-        mask = cp.full((shapex, shapey), False)
-        stepx = int(shapex / n_tiles[0])
-        stepy = int(shapey / n_tiles[1])
-        for i, j in product(range(n_tiles[0]), range(n_tiles[1])):
-            if (i + j) % 2 == 0:
-                mask[
-                    i * stepx : (i + 1) * stepx, j * stepy : (j + 1) * stepy
-                ] = True
-        comparison = cp.zeros_like(img1)
-        comparison[mask] = img1[mask]
-        comparison[~mask] = img2[~mask]
+        comparison = cp.empty_like(img1)
+        stepx = shapex // n_tiles[0]
+        stepy = shapey // n_tiles[1]
+        if max(img1.shape) >= (1 << 31):
+            raise ValueError(
+                "axis dimensions exceeding 32-bit integer range are unsuppored"
+            )
+        kern = _checkerboard_kernel()
+        kern(img1, img2, stepx, stepy, comparison, size=comparison.size)
     else:
         raise ValueError(
             "Wrong value for `method`. "
