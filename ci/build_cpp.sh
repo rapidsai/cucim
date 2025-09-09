@@ -27,14 +27,15 @@ sccache --zero-stats
 # However the CTK only added cuFile for ARM in 12.2.
 # So for users installing with CTK 12.0 & 12.1, relax the cuFile requirement.
 # On x86 or CTK 13, always require cuFile.
-cat > extra_variants.yaml <<EOF
+if [[ "$(arch)" == "aarch64" ]] && [[ "${RAPIDS_CUDA_VERSION%%.*}" == "12" ]]; then
+  cat > extra_variants.yaml <<EOF
+has_cufile:
+  - False
+EOF
+else
+  cat > extra_variants.yaml <<EOF
 has_cufile:
   - True
-EOF
-if [[ "$(arch)" == "aarch64" ]] && [[ "${RAPIDS_CUDA_VERSION%%.*}" == "12" ]]
-then
-  cat >> extra_variants.yaml <<EOF
-  - False
 EOF
 fi
 
