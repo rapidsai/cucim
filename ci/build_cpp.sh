@@ -26,7 +26,7 @@ sccache --zero-stats
 # In most cases, the CTK has cuFile.
 # However the CTK only added cuFile for ARM in 12.2.
 # So for ARM users on CTK 12.0 & 12.1, relax the cuFile requirement.
-# On x86_64 or CTK 13, always require cuFile.
+# On x86_64 or CTK 13 or ARM with CTK 12.2+, always require cuFile.
 cat > extra_variants.yaml <<EOF
 has_cufile:
   - True
