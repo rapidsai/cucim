@@ -38,6 +38,10 @@ then
 EOF
 fi
 
+echo 'Contents of `extra_variants.yaml`:'
+cat extra_variants.yaml
+echo ''
+
 RAPIDS_PACKAGE_VERSION=$(rapids-generate-version) rapids-conda-retry build \
     -m extra_variants.yaml \
     conda/recipes/libcucim
