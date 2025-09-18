@@ -21,7 +21,7 @@ build:
   ignore_run_exports_from:
     - {{ compiler('cuda') }}
     - cuda-cudart-dev
-    - libcufile-dev  # [linux64]
+    - libcufile-dev
     - libnvjpeg-dev
   script_env:
     - AWS_ACCESS_KEY_ID
