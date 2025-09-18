@@ -25,7 +25,7 @@ if (NOT APPLE)
 endif ()
 
 # Find CUDA Toolkit for cudart and cufile.
-find_package(CUDAToolkit REQUIRED)
+find_package(CUDAToolkit REQUIRED COMPONENTS cuFile)
 
 ################################################################################
 # Add library: cufile_stub
