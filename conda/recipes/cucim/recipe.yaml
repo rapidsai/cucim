@@ -20,7 +20,7 @@ source:
   path: ../../..
 
 build:
-  string: cuda${{ cuda_major }}_py${{ py_buildstring }}_${{ date_string }}_${{ head_rev }}
+  string: cuda${{ cuda_major }}_py${{ py_buildstring }}_${{ date_string }}_gh${{ head_rev }}_h${{ hash }}
   dynamic_linking:
     overlinking_behavior: error
   prefix_detection:

@@ -20,7 +20,7 @@ source:
   path: ../../..
 
 build:
-  string: cuda${{ cuda_major }}_py${{ py_buildstring }}_${{ date_string }}_${{ head_rev }}
+  string: cuda${{ cuda_major }}_${{ date_string }}_gh${{ head_rev }}_h${{ hash }}
   dynamic_linking:
     overlinking_behavior: error
   prefix_detection:
@@ -100,10 +100,19 @@ requirements:
     - nvtx-c >=3.1.0
     - openslide
   run:
-    - ${{ pin_compatible("cuda-version", upper_bound="x", lower_bound="x") }}
     - cuda-cudart
-    - libcufile
     - libnvjpeg
+    - if: x86_64 or (aarch64 and cuda_version >= "13.0")
+      then:
+        - ${{ pin_compatible("cuda-version", upper_bound="x", lower_bound="x") }}
+        - libcufile
+      else:
+      - if: aarch64 and cuda_version >= "12.2"
+        then:
+          - ${{ pin_compatible("cuda-version", upper_bound="x", lower_bound="12.2.0a0") }}
+          - libcufile
+        else:
+          - ${{ pin_compatible("cuda-version", upper_bound="12.2.0a0", lower_bound="12.0") }}
   run_constraints:
     - ${{ pin_compatible("openslide") }}
   ignore_run_exports:

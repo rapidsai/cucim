@@ -71,6 +71,12 @@ Install for CUDA 12:
 pip install cucim-cu12
 ```
 
+Install for CUDA 13:
+
+```bash
+pip install cucim-cu13
+```
+
 ### Notebooks
 
 Please check out our [Welcome](notebooks/Welcome.ipynb) notebook ([NBViewer](https://nbviewer.org/github/rapidsai/cucim/blob/main/notebooks/Welcome.ipynb))
@@ -113,4 +119,4 @@ is used in this project.
 
 Apache-2.0 License (see [LICENSE](LICENSE) file).
 
-Copyright (c) 2020-2022, NVIDIA CORPORATION.
+Copyright (c) 2020-2025, NVIDIA CORPORATION.

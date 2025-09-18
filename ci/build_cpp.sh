@@ -21,10 +21,31 @@ export RAPIDS_PACKAGE_VERSION
 # populates `RATTLER_CHANNELS` array and `RATTLER_ARGS` array
 source rapids-rattler-channel-string
 
+# TODO: Remove when CUDA 12.1 is dropped.
+# In most cases, the CTK has cuFile.
+# However the CTK only added cuFile for ARM in 12.2.
+# So for ARM users on CTK 12.0 & 12.1, relax the cuFile requirement.
+# On x86_64 or CTK 13 or ARM with CTK 12.2+, always require cuFile.
+cat > extra_variants.yaml <<EOF
+has_cufile:
+  - True
+EOF
+if [[ "$(arch)" == "aarch64" ]] && [[ "${RAPIDS_CUDA_VERSION%%.*}" == "12" ]]
+then
+  cat >> extra_variants.yaml <<EOF
+  - False
+EOF
+fi
+
+echo 'Contents of `extra_variants.yaml`:'
+cat extra_variants.yaml
+echo ''
+
 # --no-build-id allows for caching with `sccache`
 # more info is available at
 # https://rattler.build/latest/tips_and_tricks/#using-sccache-or-ccache-with-rattler-build
 rattler-build build --recipe conda/recipes/libcucim \
+                    --variant-config extra_variants.yaml \
                     "${RATTLER_ARGS[@]}" \
                     "${RATTLER_CHANNELS[@]}"
 
