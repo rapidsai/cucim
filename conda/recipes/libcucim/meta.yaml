@@ -55,12 +55,7 @@ requirements:
   host:
     - cuda-version ={{ cuda_version }}
     - cuda-cudart-dev
-    {% if aarch64 and cuda_major == "12" %}
-    # Skip building with `libcufile-dev` if it cannot be used at runtime
-    - libcufile-dev  # [has_cufile]
-    {% else %}
     - libcufile-dev
-    {% endif %}
     - libnvjpeg-dev
     - nvtx-c >=3.1.0
     - openslide
