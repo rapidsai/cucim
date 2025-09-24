@@ -90,11 +90,6 @@ NVIDIA CUDA TOOLKIT (including libcufile/libnvjpeg)
   - https://docs.nvidia.com/cuda/pdf/EULA.pdf
 - Copyright: NVIDIA Corporation
 
-RAPIDS RMM
-- License: Apache-2.0 License
-  - https://github.com/rapidsai/rmm/blob/branch-0.17/LICENSE
-- Copyright: NVIDIA Corporation
-
 OpenJPEG
 - License: BSD-2-Clause License
   - https://github.com/uclouvain/openjpeg/blob/master/LICENSE

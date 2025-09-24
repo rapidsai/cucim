@@ -116,7 +116,6 @@ find_package(Threads REQUIRED)
 superbuild_depend(fmt)
 #superbuild_depend(boost)
 superbuild_depend(abseil)
-# superbuild_depend(rmm) # this imports googletest internally
 superbuild_depend(googletest)
 superbuild_depend(googlebenchmark)
 superbuild_depend(openslide)
@@ -197,11 +196,6 @@ install(
 
 install(DIRECTORY
             ${CMAKE_CURRENT_SOURCE_DIR}/cpp/include/ # Suffix '/' is necessary to not copy to install/include/include folder.
-#            ${deps-rmm_SOURCE_DIR}/include/
-#            ${deps-rmm_SOURCE_DIR}/../thrust-src/thrust
-#            ${deps-rmm_SOURCE_DIR}/../spdlog-src/spdlog
-#            ${THRUST_INCLUDE_DIR}/thrust # thrust needs to be installed because rmm depends on thrust
-#            ${SPDLOG_INCLUDE_DIR}/spdlog # spdlog needs to be installed because rmm depends on spdlog
         DESTINATION
             ${CMAKE_INSTALL_INCLUDEDIR})
 
