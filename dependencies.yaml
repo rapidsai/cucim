@@ -158,6 +158,7 @@ dependencies:
         packages:
           - cuda-cudart-dev
           - libnvjpeg-dev
+          - libnvimgcodec-dev>=0.6.0  # nvImageCodec for GPU-accelerated JPEG/JPEG2000 decoding
     specific:
       - output_types: conda
         matrices:
@@ -238,6 +239,7 @@ dependencies:
       - output_types: conda
         packages:
           - &cupy_unsuffixed cupy>=13.6.0
+          - libnvimgcodec0>=0.6.0  # nvImageCodec runtime library for GPU acceleration
     specific:
       - output_types: [requirements, pyproject]
         matrices:
@@ -245,10 +247,12 @@ dependencies:
               cuda: "12.*"
             packages:
               - cupy-cuda12x>=13.6.0
+              - nvidia-nvimgcodec-cu12>=0.6.0  # nvImageCodec for CUDA 12.x
           # fallback to CUDA 13 versions if 'cuda' is '13.*' or not provided
           - matrix:
             packages:
               - cupy-cuda13x>=13.6.0
+              - nvidia-nvimgcodec-cu13>=0.6.0  # nvImageCodec for CUDA 13.x
   test_python:
     common:
       - output_types: [conda, requirements, pyproject]
