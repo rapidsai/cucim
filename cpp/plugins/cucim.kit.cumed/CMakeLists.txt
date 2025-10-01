@@ -68,7 +68,7 @@ if (NOT CMAKE_RUNTIME_OUTPUT_DIRECTORY)
     set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/bin")
 endif()
 
-# Find CUDAToolkit as rmm depends on it
+# Find CUDAToolkit
 find_package(CUDAToolkit REQUIRED)
 # For Threads::Threads
 find_package(Threads REQUIRED)
