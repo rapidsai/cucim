@@ -259,9 +259,12 @@ def montage(
             arr_in[i] = exposure.rescale_intensity(arr_in[i])
 
     # Calculate the fill value
-    if fill == "mean":
-        fill = arr_in.mean(axis=(0, 1, 2))
-    fill = cp.atleast_1d(fill).astype(arr_in.dtype, copy=False)
+    if padding_width > 0:
+        if fill == "mean":
+            fill = arr_in.mean(axis=(0, 1, 2))
+        fill = cp.atleast_1d(fill).astype(arr_in.dtype, copy=False)
+    else:
+        fill = cp.empty((n_chan,), dtype=arr_in.dtype)
 
     # Pre-allocate an array with padding for montage
     n_pad = padding_width
