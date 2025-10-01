@@ -130,7 +130,6 @@ def montage(
     *,
     channel_axis=None,
     square_grid_default=True,
-    use_fused_kernel=True,
 ):
     """Create a montage of several single- or multichannel images.
 
@@ -182,12 +181,6 @@ def montage(
         If ``True``, use a square grid shape by default as suggested by
         scikit-image. Otherwise, allow a rectangular grid to more tightly pack
         the images.
-        Note: This argument is not present in scikit-image.
-    use_fused_kernel : bool, optional
-        Whether to use the single-kernel CuPy elementwise kernel implementation
-        (True) or the original slicing-based implementation (False).
-        Default is True. The kernel implementation is generally faster for
-        large arrays due to better GPU parallelization.
         Note: This argument is not present in scikit-image.
 
     Returns
@@ -277,52 +270,24 @@ def montage(
         dtype=arr_in.dtype,
     )
 
-    if use_fused_kernel:
-        # indexing logic assumes C-contiguous memory layout
-        if not arr_in.flags.c_contiguous:
-            arr_in = cp.ascontiguousarray(arr_in)
+    # indexing logic assumes C-contiguous memory layout
+    if not arr_in.flags.c_contiguous:
+        arr_in = cp.ascontiguousarray(arr_in)
 
-        # Use elementwise kernel to copy the data to the output array
-        kern = _montage_kernel(n_chan, n_pad)
-        kern(
-            arr_in,
-            fill,
-            n_images,
-            n_rows,
-            n_cols,
-            ntiles_row,
-            ntiles_col,
-            arr_out,
-            size=arr_out.size // n_chan,
-        )
-    else:
-        # Fill array with fill values for slice-based implementation
-        for idx_chan in range(n_chan):
-            arr_out[..., idx_chan] = fill[idx_chan]
+    # Use elementwise kernel to copy the data to the output array
+    kern = _montage_kernel(n_chan, n_pad)
+    kern(
+        arr_in,
+        fill,
+        n_images,
+        n_rows,
+        n_cols,
+        ntiles_row,
+        ntiles_col,
+        arr_out,
+        size=arr_out.size // n_chan,
+    )
 
-        # Use original slice-based implementation
-        slices_row = [
-            slice(
-                n_pad + (n_rows + n_pad) * n,
-                n_pad + (n_rows + n_pad) * n + n_rows,
-            )
-            for n in range(ntiles_row)
-        ]
-        slices_col = [
-            slice(
-                n_pad + (n_cols + n_pad) * n,
-                n_pad + (n_cols + n_pad) * n + n_cols,
-            )
-            for n in range(ntiles_col)
-        ]
-
-        # Copy the data to the output array
-        for idx_image, image in enumerate(arr_in):
-            idx_sr = idx_image // ntiles_col
-            idx_sc = idx_image % ntiles_col
-            arr_out[slices_row[idx_sr], slices_col[idx_sc], :] = image
-
-    if channel_axis is not None:
-        return arr_out
-    else:
+    if channel_axis is None:
         return arr_out[..., 0]
+    return arr_out
