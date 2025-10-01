@@ -254,7 +254,11 @@ def montage(
     # Calculate the fill value
     if padding_width > 0:
         if fill == "mean":
-            fill = arr_in.mean(axis=(0, 1, 2))
+            # CuPy's mean() is >10x faster for float32 and float64 than
+            # integer types.
+            float_dtype = cp.promote_types(arr_in.dtype, cp.float32)
+            float_arr_in = arr_in.astype(float_dtype, copy=False)
+            fill = float_arr_in.mean(axis=(0, 1, 2))
         fill = cp.atleast_1d(fill).astype(arr_in.dtype, copy=False)
     else:
         fill = cp.empty((n_chan,), dtype=arr_in.dtype)
