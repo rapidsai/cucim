@@ -18,6 +18,7 @@ dependencies:
 - ipython
 - lazy-loader>=0.4
 - libcufile-dev
+- libnvimgcodec-dev=0.6.0
 - libnvjpeg-dev
 - matplotlib-base>=3.7
 - nbsphinx
