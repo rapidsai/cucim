@@ -58,13 +58,15 @@ private:
             throw std::runtime_error("Failed to create nvImageCodec instance");
         }
 
-        // Create decoder
-        nvimgcodecDecoderCreateInfo_t decoder_info{};
-        decoder_info.struct_type = NVIMGCODEC_STRUCTURE_TYPE_DECODER_CREATE_INFO;
-        decoder_info.struct_size = sizeof(nvimgcodecDecoderCreateInfo_t);
-        decoder_info.struct_next = nullptr;
+        // Create decoder with default execution parameters
+        nvimgcodecExecutionParams_t exec_params{};
+        exec_params.struct_type = NVIMGCODEC_STRUCTURE_TYPE_EXECUTION_PARAMS;
+        exec_params.struct_size = sizeof(nvimgcodecExecutionParams_t);
+        exec_params.struct_next = nullptr;
+        exec_params.device_id = NVIMGCODEC_DEVICE_CURRENT;
+        exec_params.max_num_cpu_threads = 0; // Use default
         
-        if (nvimgcodecDecoderCreate(instance_, &decoder_, &decoder_info) != NVIMGCODEC_STATUS_SUCCESS)
+        if (nvimgcodecDecoderCreate(instance_, &decoder_, &exec_params, nullptr) != NVIMGCODEC_STATUS_SUCCESS)
         {
             nvimgcodecInstanceDestroy(instance_);
             throw std::runtime_error("Failed to create nvImageCodec decoder");
