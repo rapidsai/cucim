@@ -246,13 +246,15 @@ def montage(
         else:
             ntiles_row = math.ceil(n_images / ntiles_col)
 
+    padding_needed = padding_width > 0 or (ntiles_col * ntiles_row != n_images)
+
     # Rescale intensity if necessary
     if rescale_intensity:
         for i in range(n_images):
             arr_in[i] = exposure.rescale_intensity(arr_in[i])
 
     # Calculate the fill value
-    if padding_width > 0:
+    if padding_needed:
         if fill == "mean":
             # CuPy's mean() is >10x faster for float32 and float64 than
             # integer types.
@@ -261,6 +263,7 @@ def montage(
             fill = float_arr_in.mean(axis=(0, 1, 2))
         fill = cp.atleast_1d(fill).astype(arr_in.dtype, copy=False)
     else:
+        # there will be no padding voxels in this case so just use empty here
         fill = cp.empty((n_chan,), dtype=arr_in.dtype)
 
     # Pre-allocate an array with padding for montage
