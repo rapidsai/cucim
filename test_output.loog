@@ -1,0 +1,20 @@
+============================= test session starts ==============================
+platform linux -- Python 3.13.9, pytest-9.0.1, pluggy-1.6.0 -- /home/cdinea/micromamba/envs/cucim-test/bin/python
+cachedir: .pytest_cache
+rootdir: /home/cdinea/Downloads/cucim_pr2/cucim/python/cucim
+configfile: pyproject.toml
+plugins: cov-7.0.0, xdist-3.8.0, lazy-fixtures-1.4.0
+collecting ... collected 41 items / 1 skipped
+
+python/cucim/tests/unit/clara/test_image_cache.py::test_get_nocache PASSED [  2%]
+python/cucim/tests/unit/clara/test_image_cache.py::test_get_per_process_cache PASSED [  4%]
+python/cucim/tests/unit/clara/test_image_cache.py::test_get_shared_memory_cache PASSED [  7%]
+python/cucim/tests/unit/clara/test_image_cache.py::test_preferred_memory_capacity PASSED [  9%]
+python/cucim/tests/unit/clara/test_image_cache.py::test_reserve_more_cache_memory 
+
+=========================== short test summary info ============================
+SKIPPED [1] python/cucim/tests/unit/clara/converter/test_converter.py:13: could not import 'openslide': No module named 'openslide'
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! KeyboardInterrupt !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+/home/cdinea/Downloads/cucim_pr2/cucim/python/cucim/tests/unit/clara/test_image_cache.py:146: KeyboardInterrupt
+(to show a full traceback on KeyboardInterrupt use --full-trace)
+========================= 4 passed, 1 skipped in 2.83s =========================
