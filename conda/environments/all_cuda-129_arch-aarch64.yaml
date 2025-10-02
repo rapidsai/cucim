@@ -17,8 +17,12 @@ dependencies:
 - imagecodecs>=2021.6.8
 - ipython
 - lazy-loader>=0.4
+<<<<<<< HEAD
 - libnvimgcodec-dev>=0.6.0,<0.7.0
 - libnvimgcodec>=0.6.0,<0.7.0
+=======
+- libnvimgcodec-dev=0.6.0
+>>>>>>> d3e322e (feat: Add comprehensive nvImageCodec installation verification script)
 - libnvjpeg-dev
 - matplotlib-base>=3.7
 - nbsphinx
