@@ -15,3 +15,6 @@ c_stdlib_version:
 
 cmake_version:
   - ">=3.30.4"
+
+nvimgcodec_version:
+  - ">=0.6.0"
