@@ -158,7 +158,7 @@ def compare_images(image0, image1, *, method="diff", n_tiles=(8, 8)):
         stepy = shapey // n_tiles[1]
         if max(img1.shape) >= (1 << 31):
             raise ValueError(
-                "axis dimensions exceeding 32-bit integer range are unsuppored"
+                "axis dimensions exceeding 32-bit integer range are unsupported"
             )
         kern = _checkerboard_kernel()
         kern(img1, img2, stepx, stepy, comparison, size=comparison.size)

@@ -22,7 +22,8 @@ from .noise import random_noise
 from .shape import view_as_blocks, view_as_windows
 
 __all__ = [
-    "compare_images" "img_as_float32",
+    "compare_images",
+    "img_as_float32",
     "img_as_float64",
     "img_as_float",
     "img_as_int",
