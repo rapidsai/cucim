@@ -18,7 +18,7 @@ jobs:
       - wheel-tests
       - telemetry-setup
     secrets: inherit
-    uses: rapidsai/shared-workflows/.github/workflows/pr-builder.yaml@branch-25.10
+    uses: rapidsai/shared-workflows/.github/workflows/pr-builder.yaml@branch-25.12
   telemetry-setup:
     runs-on: ubuntu-latest
     continue-on-error: true
@@ -33,44 +33,44 @@ jobs:
   checks:
     secrets: inherit
     needs: telemetry-setup
-    uses: rapidsai/shared-workflows/.github/workflows/checks.yaml@branch-25.10
+    uses: rapidsai/shared-workflows/.github/workflows/checks.yaml@branch-25.12
     with:
       ignored_pr_jobs: telemetry-summarize
   conda-cpp-build:
     needs: checks
     secrets: inherit
-    uses: rapidsai/shared-workflows/.github/workflows/conda-cpp-build.yaml@branch-25.10
+    uses: rapidsai/shared-workflows/.github/workflows/conda-cpp-build.yaml@branch-25.12
     with:
       build_type: pull-request
       script: ci/build_cpp.sh
   conda-python-build:
     needs: conda-cpp-build
     secrets: inherit
-    uses: rapidsai/shared-workflows/.github/workflows/conda-python-build.yaml@branch-25.10
+    uses: rapidsai/shared-workflows/.github/workflows/conda-python-build.yaml@branch-25.12
     with:
       build_type: pull-request
       script: ci/build_python.sh
   conda-python-tests:
     needs: conda-python-build
     secrets: inherit
-    uses: rapidsai/shared-workflows/.github/workflows/conda-python-tests.yaml@branch-25.10
+    uses: rapidsai/shared-workflows/.github/workflows/conda-python-tests.yaml@branch-25.12
     with:
       build_type: pull-request
       script: ci/test_python.sh
   docs-build:
     needs: conda-python-build
     secrets: inherit
-    uses: rapidsai/shared-workflows/.github/workflows/custom-job.yaml@branch-25.10
+    uses: rapidsai/shared-workflows/.github/workflows/custom-job.yaml@branch-25.12
     with:
       build_type: pull-request
       node_type: "gpu-l4-latest-1"
       arch: "amd64"
-      container_image: "rapidsai/ci-conda:25.08-latest"
+      container_image: "rapidsai/ci-conda:25.12-latest"
       script: "ci/build_docs.sh"
   wheel-build:
     needs: checks
     secrets: inherit
-    uses: rapidsai/shared-workflows/.github/workflows/wheels-build.yaml@branch-25.10
+    uses: rapidsai/shared-workflows/.github/workflows/wheels-build.yaml@branch-25.12
     with:
       build_type: pull-request
       script: ci/build_wheel.sh
@@ -79,7 +79,7 @@ jobs:
   wheel-tests:
     needs: wheel-build
     secrets: inherit
-    uses: rapidsai/shared-workflows/.github/workflows/wheels-test.yaml@branch-25.10
+    uses: rapidsai/shared-workflows/.github/workflows/wheels-test.yaml@branch-25.12
     with:
       build_type: pull-request
       script: ci/test_wheel.sh
