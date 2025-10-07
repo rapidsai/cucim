@@ -1,7 +1,6 @@
 # https://packaging.python.org/guides/using-manifest-in/
 include .editorconfig
 
-include src/cucim/VERSION
 include CHANGELOG.md
 include CONTRIBUTING.md
 include LICENSE
