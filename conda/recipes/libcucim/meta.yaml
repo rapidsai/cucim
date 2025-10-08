@@ -57,6 +57,7 @@ requirements:
     - cuda-cudart-dev
     - libcufile-dev
     - libnvjpeg-dev
+    - libnvimgcodec-dev {{ nvimgcodec_version }}  # nvImageCodec development headers and libraries
     - nvtx-c >=3.1.0
     - openslide
   run:
@@ -71,8 +72,10 @@ requirements:
     {% endif %}
     - cuda-cudart
     - libnvjpeg
+    - libnvimgcodec0 {{ nvimgcodec_version }}  # nvImageCodec runtime library
   run_constrained:
     - {{ pin_compatible('openslide') }}
+    - libnvimgcodec-dev {{ nvimgcodec_version }}  # Optional: for development/debugging
 
 about:
   home: https://developer.nvidia.com/multidimensional-image-processing
