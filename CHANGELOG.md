@@ -1,3 +1,33 @@
+# cucim 25.10.00 (8 Oct 2025)
+
+### 🐛 Bug Fixes
+* Update fmt library to version 11.2.0 in CMake configuration by [@gigony in https://github.com/rapidsai/cucim/pull/917](https://github.com/gigony in https://github.com/rapidsai/cucim/pull/917)
+* Fix indentation by [@jakirkham in https://github.com/rapidsai/cucim/pull/931](https://github.com/jakirkham in https://github.com/rapidsai/cucim/pull/931)
+* Relax `libcufile` dependency for old CTK 12 on ARM by [@jakirkham in https://github.com/rapidsai/cucim/pull/930](https://github.com/jakirkham in https://github.com/rapidsai/cucim/pull/930)
+* Add `pip` to `cucim`'s `requirements/host` by [@jakirkham in https://github.com/rapidsai/cucim/pull/941](https://github.com/jakirkham in https://github.com/rapidsai/cucim/pull/941)
+### 📖 Documentation
+* update package installation commands in notebooks by [@grlee77 in https://github.com/rapidsai/cucim/pull/927](https://github.com/grlee77 in https://github.com/rapidsai/cucim/pull/927)
+### 🛠️ Improvements
+* fix(docker): use versioned `-latest` tag for all `rapidsai` images by [@gforsyth in https://github.com/rapidsai/cucim/pull/908](https://github.com/gforsyth in https://github.com/rapidsai/cucim/pull/908)
+* remove cuspatial references by [@jameslamb in https://github.com/rapidsai/cucim/pull/906](https://github.com/jameslamb in https://github.com/rapidsai/cucim/pull/906)
+* run: fix compatibility with PEP-0632 for supporting Python >=3.12 by [@ElieDeBrauwer in https://github.com/rapidsai/cucim/pull/902](https://github.com/ElieDeBrauwer in https://github.com/rapidsai/cucim/pull/902)
+* Enhance GPU memory leak test with unified memory check and increased thresholds by [@gigony in https://github.com/rapidsai/cucim/pull/898](https://github.com/gigony in https://github.com/rapidsai/cucim/pull/898)
+* Drop CUDA 11 references from docs by [@jakirkham in https://github.com/rapidsai/cucim/pull/914](https://github.com/jakirkham in https://github.com/rapidsai/cucim/pull/914)
+* add a copy of rapids-configure-conda-channels to the repo by [@jameslamb in https://github.com/rapidsai/cucim/pull/923](https://github.com/jameslamb in https://github.com/rapidsai/cucim/pull/923)
+* Update rapids-build-backend to 0.4.1 by [@KyleFromNVIDIA in https://github.com/rapidsai/cucim/pull/922](https://github.com/KyleFromNVIDIA in https://github.com/rapidsai/cucim/pull/922)
+* Remove CUDA 11 references by [@jakirkham in https://github.com/rapidsai/cucim/pull/905](https://github.com/jakirkham in https://github.com/rapidsai/cucim/pull/905)
+* Build and test with CUDA 13.0.0, use GCC 14 for conda builds by [@jameslamb in https://github.com/rapidsai/cucim/pull/926](https://github.com/jameslamb in https://github.com/rapidsai/cucim/pull/926)
+* Update rapids-dependency-file-generator by [@KyleFromNVIDIA in https://github.com/rapidsai/cucim/pull/934](https://github.com/KyleFromNVIDIA in https://github.com/rapidsai/cucim/pull/934)
+* Use branch-25.10 again by [@jameslamb in https://github.com/rapidsai/cucim/pull/936](https://github.com/jameslamb in https://github.com/rapidsai/cucim/pull/936)
+* Configure repo for automatic release notes generation by [@AyodeAwe in https://github.com/rapidsai/cucim/pull/939](https://github.com/AyodeAwe in https://github.com/rapidsai/cucim/pull/939)
+* remove unused RMM config and docs, update pre-commit hooks by [@jameslamb in https://github.com/rapidsai/cucim/pull/946](https://github.com/jameslamb in https://github.com/rapidsai/cucim/pull/946)
+* add montage and compare_images utility functions by [@grlee77 in https://github.com/rapidsai/cucim/pull/935](https://github.com/grlee77 in https://github.com/rapidsai/cucim/pull/935)
+
+## New Contributors
+* [@ElieDeBrauwer made their first contribution in https://github.com/rapidsai/cucim/pull/902](https://github.com/ElieDeBrauwer made their first contribution in https://github.com/rapidsai/cucim/pull/902)
+
+**Full Changelog**: https://github.com/rapidsai/cucim/compare/v25.10.00a...branch-25.10
+
 # cucim 25.08.00 (6 Aug 2025)
 
 ## 🚨 Breaking Changes
