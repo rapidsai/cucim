@@ -1,3 +1,29 @@
+# cucim 25.10.00 (8 Oct 2025)
+
+## 🐛 Bug Fixes
+
+- Add `pip` to `cucim`&#39;s `requirements/host` ([#941](https://github.com/rapidsai/cucim/pull/941)) [@jakirkham](https://github.com/jakirkham)
+- Fix indentation ([#931](https://github.com/rapidsai/cucim/pull/931)) [@jakirkham](https://github.com/jakirkham)
+- Relax `libcufile` dependency for old CTK 12 on ARM ([#930](https://github.com/rapidsai/cucim/pull/930)) [@jakirkham](https://github.com/jakirkham)
+- Update fmt library to version 11.2.0 in CMake configuration ([#917](https://github.com/rapidsai/cucim/pull/917)) [@gigony](https://github.com/gigony)
+
+## 📖 Documentation
+
+- update package installation commands in notebooks ([#927](https://github.com/rapidsai/cucim/pull/927)) [@grlee77](https://github.com/grlee77)
+
+## 🛠️ Improvements
+
+- Revert incorrect changelog updates ([#954](https://github.com/rapidsai/cucim/pull/954)) [@AyodeAwe](https://github.com/AyodeAwe)
+- remove unused RMM config and docs, update pre-commit hooks ([#946](https://github.com/rapidsai/cucim/pull/946)) [@jameslamb](https://github.com/jameslamb)
+- Configure repo for automatic release notes generation ([#939](https://github.com/rapidsai/cucim/pull/939)) [@AyodeAwe](https://github.com/AyodeAwe)
+- Use branch-25.10 again ([#936](https://github.com/rapidsai/cucim/pull/936)) [@jameslamb](https://github.com/jameslamb)
+- add montage and compare_images utility functions ([#935](https://github.com/rapidsai/cucim/pull/935)) [@grlee77](https://github.com/grlee77)
+- Update rapids-dependency-file-generator ([#934](https://github.com/rapidsai/cucim/pull/934)) [@KyleFromNVIDIA](https://github.com/KyleFromNVIDIA)
+- Build and test with CUDA 13.0.0, use GCC 14 for conda builds ([#926](https://github.com/rapidsai/cucim/pull/926)) [@jameslamb](https://github.com/jameslamb)
+- add a copy of rapids-configure-conda-channels to the repo ([#923](https://github.com/rapidsai/cucim/pull/923)) [@jameslamb](https://github.com/jameslamb)
+- Update rapids-build-backend to 0.4.1 ([#922](https://github.com/rapidsai/cucim/pull/922)) [@KyleFromNVIDIA](https://github.com/KyleFromNVIDIA)
+- Remove CUDA 11 references ([#905](https://github.com/rapidsai/cucim/pull/905)) [@jakirkham](https://github.com/jakirkham)
+
 # cucim 25.08.00 (6 Aug 2025)
 
 ## 🚨 Breaking Changes
