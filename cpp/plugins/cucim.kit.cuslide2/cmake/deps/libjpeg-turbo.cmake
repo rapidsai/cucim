@@ -26,7 +26,7 @@ if (NOT TARGET deps::libjpeg-turbo)
             GIT_REPOSITORY https://github.com/libjpeg-turbo/libjpeg-turbo.git
             GIT_TAG 2.0.6
             GIT_SHALLOW TRUE
-            PATCH_COMMAND ${GIT_EXECUTABLE} apply "${CMAKE_CURRENT_LIST_DIR}/libjpeg-turbo.patch"
+            PATCH_COMMAND ${GIT_EXECUTABLE} apply "${CMAKE_CURRENT_LIST_DIR}/libjpeg-turbo.patch" || true
             EXCLUDE_FROM_ALL
     )
 
@@ -39,9 +39,9 @@ if (NOT TARGET deps::libjpeg-turbo)
     # Tell CMake where to find the compiler by setting either the environment
     # variable "ASM_NASM" or the CMake cache entry CMAKE_ASM_NASM_COMPILER to the
     # full path to the compiler, or to the compiler name if it is in the PATH.
-    # yasm is available through `sudo apt-get install yasm` on Debian Linux.
+    # nasm is available through `sudo apt-get install nasm` on Debian Linux.
     # See _deps/deps-libjpeg-turbo-src/simd/CMakeLists.txt:25.
-    set(CMAKE_ASM_NASM_COMPILER yasm)
+    set(CMAKE_ASM_NASM_COMPILER /usr/bin/nasm)
     set(REQUIRE_SIMD 1) # CMP0077
 
     message(STATUS "Fetching libjpeg-turbo sources")
