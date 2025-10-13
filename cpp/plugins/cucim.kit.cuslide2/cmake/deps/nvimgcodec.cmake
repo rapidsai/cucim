@@ -46,10 +46,16 @@ if (NOT TARGET deps::nvimgcodec)
                     set(CONDA_PYTHON_ROOT "$ENV{CONDA_PREFIX}/lib/python${PY_VER}/site-packages/nvidia/nvimgcodec")
                     if(EXISTS "${CONDA_PYTHON_ROOT}/include/nvimgcodec.h")
                         set(NVIMGCODEC_INCLUDE_PATH "${CONDA_PYTHON_ROOT}/include/")
+                        # Check for library in lib/ subdirectory first (conda package structure)
                         if(EXISTS "${CONDA_PYTHON_ROOT}/lib/libnvimgcodec.so.0")
                             set(NVIMGCODEC_LIB_PATH "${CONDA_PYTHON_ROOT}/lib/libnvimgcodec.so.0")
                         elseif(EXISTS "${CONDA_PYTHON_ROOT}/lib/libnvimgcodec.so")
                             set(NVIMGCODEC_LIB_PATH "${CONDA_PYTHON_ROOT}/lib/libnvimgcodec.so")
+                        # Check for library directly in nvimgcodec directory (pip package structure)
+                        elseif(EXISTS "${CONDA_PYTHON_ROOT}/libnvimgcodec.so.0")
+                            set(NVIMGCODEC_LIB_PATH "${CONDA_PYTHON_ROOT}/libnvimgcodec.so.0")
+                        elseif(EXISTS "${CONDA_PYTHON_ROOT}/libnvimgcodec.so")
+                            set(NVIMGCODEC_LIB_PATH "${CONDA_PYTHON_ROOT}/libnvimgcodec.so")
                         endif()
                         break()
                     endif()
@@ -160,6 +166,15 @@ if (NOT TARGET deps::nvimgcodec)
             set(NVIMGCODEC_INCLUDE_PATH "")
             
             if(Python3_FOUND)
+                # Try user site-packages first (pip install --user)
+                execute_process(
+                    COMMAND ${Python3_EXECUTABLE} -c "import site; print(site.getusersitepackages())"
+                    OUTPUT_VARIABLE PYTHON_USER_SITE_PACKAGES
+                    OUTPUT_STRIP_TRAILING_WHITESPACE
+                    ERROR_QUIET
+                )
+                
+                # Then try system site-packages
                 execute_process(
                     COMMAND ${Python3_EXECUTABLE} -c "import site; print(site.getsitepackages()[0])"
                     OUTPUT_VARIABLE PYTHON_SITE_PACKAGES
@@ -167,14 +182,40 @@ if (NOT TARGET deps::nvimgcodec)
                     ERROR_QUIET
                 )
                 
-                if(PYTHON_SITE_PACKAGES)
-                    set(NVIMGCODEC_PYTHON_ROOT "${PYTHON_SITE_PACKAGES}/nvidia/nvimgcodec")
+                # Check user site-packages first
+                if(PYTHON_USER_SITE_PACKAGES)
+                    set(NVIMGCODEC_PYTHON_ROOT "${PYTHON_USER_SITE_PACKAGES}/nvidia/nvimgcodec")
                     if(EXISTS "${NVIMGCODEC_PYTHON_ROOT}/include/nvimgcodec.h")
                         set(NVIMGCODEC_INCLUDE_PATH "${NVIMGCODEC_PYTHON_ROOT}/include/")
+                        # Check for library in lib/ subdirectory first (conda package structure)
                         if(EXISTS "${NVIMGCODEC_PYTHON_ROOT}/lib/libnvimgcodec.so.0")
                             set(NVIMGCODEC_LIB_PATH "${NVIMGCODEC_PYTHON_ROOT}/lib/libnvimgcodec.so.0")
                         elseif(EXISTS "${NVIMGCODEC_PYTHON_ROOT}/lib/libnvimgcodec.so")
                             set(NVIMGCODEC_LIB_PATH "${NVIMGCODEC_PYTHON_ROOT}/lib/libnvimgcodec.so")
+                        # Check for library directly in nvimgcodec directory (pip package structure)
+                        elseif(EXISTS "${NVIMGCODEC_PYTHON_ROOT}/libnvimgcodec.so.0")
+                            set(NVIMGCODEC_LIB_PATH "${NVIMGCODEC_PYTHON_ROOT}/libnvimgcodec.so.0")
+                        elseif(EXISTS "${NVIMGCODEC_PYTHON_ROOT}/libnvimgcodec.so")
+                            set(NVIMGCODEC_LIB_PATH "${NVIMGCODEC_PYTHON_ROOT}/libnvimgcodec.so")
+                        endif()
+                    endif()
+                endif()
+                
+                # If not found in user site-packages, check system site-packages
+                if(NOT NVIMGCODEC_LIB_PATH AND PYTHON_SITE_PACKAGES)
+                    set(NVIMGCODEC_PYTHON_ROOT "${PYTHON_SITE_PACKAGES}/nvidia/nvimgcodec")
+                    if(EXISTS "${NVIMGCODEC_PYTHON_ROOT}/include/nvimgcodec.h")
+                        set(NVIMGCODEC_INCLUDE_PATH "${NVIMGCODEC_PYTHON_ROOT}/include/")
+                        # Check for library in lib/ subdirectory first (conda package structure)
+                        if(EXISTS "${NVIMGCODEC_PYTHON_ROOT}/lib/libnvimgcodec.so.0")
+                            set(NVIMGCODEC_LIB_PATH "${NVIMGCODEC_PYTHON_ROOT}/lib/libnvimgcodec.so.0")
+                        elseif(EXISTS "${NVIMGCODEC_PYTHON_ROOT}/lib/libnvimgcodec.so")
+                            set(NVIMGCODEC_LIB_PATH "${NVIMGCODEC_PYTHON_ROOT}/lib/libnvimgcodec.so")
+                        # Check for library directly in nvimgcodec directory (pip package structure)
+                        elseif(EXISTS "${NVIMGCODEC_PYTHON_ROOT}/libnvimgcodec.so.0")
+                            set(NVIMGCODEC_LIB_PATH "${NVIMGCODEC_PYTHON_ROOT}/libnvimgcodec.so.0")
+                        elseif(EXISTS "${NVIMGCODEC_PYTHON_ROOT}/libnvimgcodec.so")
+                            set(NVIMGCODEC_LIB_PATH "${NVIMGCODEC_PYTHON_ROOT}/libnvimgcodec.so")
                         endif()
                     endif()
                 endif()

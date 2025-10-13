@@ -313,6 +313,27 @@ build_local_cuslide_() {
     popd
 }
 
+build_local_cuslide2_() {
+    local source_folder=${1:-${TOP}/cpp/plugins/cucim.kit.cuslide2}
+    local build_type=${2:-debug}
+    local build_type_str=${3:-Debug}
+    local prefix=${4:-}
+    local build_folder=${source_folder}/build-${build_type}
+    local CMAKE_CMD=${CMAKE_CMD:-cmake}
+
+    pushd "${source_folder}" > /dev/null
+
+    ${CMAKE_CMD} -S "${source_folder}" -B "${build_folder}" -G "Unix Makefiles" \
+        -DCMAKE_EXPORT_COMPILE_COMMANDS:BOOL=TRUE \
+        -DCMAKE_BUILD_TYPE="${build_type_str}" \
+        -DCMAKE_PREFIX_PATH="${prefix}" \
+        -DCMAKE_INSTALL_PREFIX="${source_folder}/install"
+    ${CMAKE_CMD} --build "${build_folder}" --config "${build_type_str}" --target cucim.kit.cuslide2 -- -j "$(nproc)"
+    ${CMAKE_CMD} --build "${build_folder}" --config "${build_type_str}" --target install -- -j "$(nproc)"
+
+    popd
+}
+
 build_local_cumed_() {
     local source_folder=${1:-${TOP}/cpp/plugins/cucim.kit.cumed}
     local build_type=${2:-debug}
@@ -394,6 +415,7 @@ build_local() {
         rm -f "${TOP}"/build-*/CMakeCache.txt
         rm -f "${TOP}"/cpp/plugins/cucim.kit.cuslide/build-*/CMakeCache.txt
         rm -f "${TOP}"/cpp/plugins/cucim.kit.cumed/build-*/CMakeCache.txt
+        rm -f "${TOP}"/cpp/plugins/cucim.kit.cuslide2/build-*/CMakeCache.txt
         rm -f "${TOP}"/python/build-*/CMakeCache.txt
     fi
 
@@ -404,6 +426,8 @@ build_local() {
         rm -rf "${TOP}"/cpp/plugins/cucim.kit.cuslide/install
         rm -rf "${TOP}"/cpp/plugins/cucim.kit.cumed/build-*/
         rm -rf "${TOP}"/cpp/plugins/cucim.kit.cumed/install
+        rm -rf "${TOP}"/cpp/plugins/cucim.kit.cuslide2/build-*/
+        rm -rf "${TOP}"/cpp/plugins/cucim.kit.cuslide2/install
         rm -rf "${TOP}"/python/build-*
         rm -rf "${TOP}"/python/install
     fi
@@ -414,6 +438,10 @@ build_local() {
 
     if [ "$subcommand" = "all" ] || [ "$subcommand" = "cuslide" ]; then
         build_local_cuslide_ "${TOP}"/cpp/plugins/cucim.kit.cuslide "${build_type}" ${build_type_str} "${prefix}"
+    fi
+
+     if [ "$subcommand" = "all" ] || [ "$subcommand" = "cuslide2" ]; then
+        build_local_cuslide2_ "${TOP}"/cpp/plugins/cucim.kit.cuslide2 "${build_type}" ${build_type_str} "${prefix}"
     fi
 
     if [ "$subcommand" = "all" ] || [ "$subcommand" = "cumed" ]; then
@@ -436,7 +464,7 @@ build_local() {
             cp "${TOP}"/build-"${build_type}"/lib*/libcucim.so."${major_version}" "${TOP}"/python/cucim/src/cucim/clara/
             cp -P "${TOP}"/cpp/plugins/cucim.kit.cuslide/build-"${build_type}"/lib*/cucim* "${TOP}"/python/cucim/src/cucim/clara/
             cp -P "${TOP}"/cpp/plugins/cucim.kit.cumed/build-"${build_type}"/lib*/cucim* "${TOP}"/python/cucim/src/cucim/clara/
-
+            cp -P "${TOP}"/cpp/plugins/cucim.kit.cuslide2/build-"${build_type}"/lib*/cucim* "${TOP}"/python/cucim/src/cucim/clara/
             # Copy .so files from pybind's build folder to cuCIM's Python source folder
             cp "${TOP}"/python/build-"${build_type}"/lib/cucim/_cucim.*.so "${TOP}"/python/cucim/src/cucim/clara/
         fi
