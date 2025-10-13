@@ -1,7 +1,17 @@
-# cmake-format: off
-# SPDX-FileCopyrightText: Copyright 2020-2025 NVIDIA Corporation
-# SPDX-License-Identifier: Apache-2.0
-# cmake-format: on
+# Apache License, Version 2.0
+# Copyright 2020-2025 NVIDIA Corporation
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 if (NOT TARGET deps::libjpeg-turbo)
 #    add_library(deps::libjpeg-turbo SHARED IMPORTED GLOBAL)
@@ -16,7 +26,7 @@ if (NOT TARGET deps::libjpeg-turbo)
             GIT_REPOSITORY https://github.com/libjpeg-turbo/libjpeg-turbo.git
             GIT_TAG 2.0.6
             GIT_SHALLOW TRUE
-            PATCH_COMMAND ${GIT_EXECUTABLE} apply "${CMAKE_CURRENT_LIST_DIR}/libjpeg-turbo.patch"
+            PATCH_COMMAND ${GIT_EXECUTABLE} apply "${CMAKE_CURRENT_LIST_DIR}/libjpeg-turbo.patch" || true
             EXCLUDE_FROM_ALL
     )
 
@@ -31,22 +41,7 @@ if (NOT TARGET deps::libjpeg-turbo)
     # full path to the compiler, or to the compiler name if it is in the PATH.
     # nasm is available through `sudo apt-get install nasm` on Debian Linux.
     # See _deps/deps-libjpeg-turbo-src/simd/CMakeLists.txt:25.
-
-    # Try to find yasm in conda environment first, then system paths
-    if(DEFINED ENV{CONDA_PREFIX})
-        find_program(YASM_EXECUTABLE NAMES yasm PATHS $ENV{CONDA_PREFIX}/bin NO_DEFAULT_PATH)
-    endif()
-    if(NOT YASM_EXECUTABLE)
-        find_program(YASM_EXECUTABLE NAMES yasm)
-    endif()
-
-    if(YASM_EXECUTABLE)
-        set(CMAKE_ASM_NASM_COMPILER ${YASM_EXECUTABLE})
-        message(STATUS "Found yasm: ${YASM_EXECUTABLE}")
-    else()
-        set(CMAKE_ASM_NASM_COMPILER yasm)
-        message(WARNING "yasm not found, using 'yasm' and hoping it's in PATH")
-    endif()
+    set(CMAKE_ASM_NASM_COMPILER /usr/bin/nasm)
     set(REQUIRE_SIMD 1) # CMP0077
 
     message(STATUS "Fetching libjpeg-turbo sources")
