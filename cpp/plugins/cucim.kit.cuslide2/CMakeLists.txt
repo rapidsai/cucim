@@ -185,7 +185,9 @@ add_library(${CUCIM_PLUGIN_NAME}
     src/cuslide/tiff/tiff.h
     src/cuslide/tiff/types.h
     src/cuslide/nvimgcodec/nvimgcodec_decoder.cpp
-    src/cuslide/nvimgcodec/nvimgcodec_decoder.h)
+    src/cuslide/nvimgcodec/nvimgcodec_decoder.h
+    src/cuslide/nvimgcodec/nvimgcodec_tiff_parser.cpp
+    src/cuslide/nvimgcodec/nvimgcodec_tiff_parser.h)
 
 # compile color.c for libopenjpeg with c++
 set_source_files_properties(${deps-libopenjpeg_SOURCE_DIR}/src/bin/common/color.c
@@ -283,6 +285,41 @@ set_target_properties(${CUCIM_PLUGIN_NAME} PROPERTIES OUTPUT_NAME "${CUCIM_PLUGI
 
 #set_target_properties(${CUCIM_PLUGIN_NAME} PROPERTIES LINK_FLAGS
 #                        "-Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/cuslide.map")
+
+################################################################################
+# Add optional example executable for nvImageCodec TIFF parser
+################################################################################
+option(BUILD_NVIMGCODEC_TIFF_PARSER_EXAMPLE "Build nvImageCodec TIFF parser example" OFF)
+
+if(BUILD_NVIMGCODEC_TIFF_PARSER_EXAMPLE)
+    if(TARGET deps::nvimgcodec)
+        add_executable(nvimgcodec_tiff_parser_example
+            src/cuslide/nvimgcodec/nvimgcodec_tiff_parser.cpp
+            src/cuslide/nvimgcodec/nvimgcodec_tiff_parser_example.cpp
+        )
+        
+        target_compile_features(nvimgcodec_tiff_parser_example PRIVATE cxx_std_17)
+        target_compile_options(nvimgcodec_tiff_parser_example PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-Werror -Wall -Wextra>)
+        target_compile_definitions(nvimgcodec_tiff_parser_example PRIVATE CUCIM_HAS_NVIMGCODEC)
+        
+        target_link_libraries(nvimgcodec_tiff_parser_example
+            PRIVATE
+                deps::fmt
+                cucim::cucim
+                deps::nvimgcodec
+                CUDA::cudart
+        )
+        
+        target_include_directories(nvimgcodec_tiff_parser_example
+            PRIVATE
+                ${CMAKE_CURRENT_LIST_DIR}/src
+        )
+        
+        message(STATUS "✓ nvImageCodec TIFF parser example will be built")
+    else()
+        message(WARNING "⚠ BUILD_NVIMGCODEC_TIFF_PARSER_EXAMPLE is ON but nvImageCodec not found")
+    endif()
+endif()
 
 ################################################################################
 # Add tests

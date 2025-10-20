@@ -134,18 +134,18 @@ private:
         if (nvimgcodecDecoderCreate(instance_, &decoder_, &exec_params, nullptr) != NVIMGCODEC_STATUS_SUCCESS)
         {
             nvimgcodecInstanceDestroy(instance_);
-                instance_ = nullptr;
-                status_message_ = "Failed to create nvImageCodec decoder";
-                fmt::print("❌ {}\n", status_message_);
-                return;
+            instance_ = nullptr;
+            status_message_ = "Failed to create nvImageCodec decoder";
+            fmt::print("❌ {}\n", status_message_);
+            return;
             }
             
-            initialized_ = true;
-            status_message_ = "nvImageCodec initialized successfully";
-            fmt::print("✅ {}\n", status_message_);
+        initialized_ = true;
+        status_message_ = "nvImageCodec initialized successfully";
+        fmt::print("✅ {}\n", status_message_);
             
-            // Run quick API test
-            test_nvimagecodec_api();
+        // Run quick API test
+        test_nvimagecodec_api();
         }
         catch (const std::exception& e)
         {
@@ -235,10 +235,11 @@ bool decode_jpeg_nvimgcodec(int fd,
         
         // Step 3: Prepare output image info (following official API pattern)
         nvimgcodecImageInfo_t output_image_info(input_image_info);
-        output_image_info.sample_format = NVIMGCODEC_SAMPLEFORMAT_P_RGB;
+        // FIX: Use interleaved RGB format instead of planar
+        output_image_info.sample_format = NVIMGCODEC_SAMPLEFORMAT_I_RGB;
         output_image_info.color_spec = NVIMGCODEC_COLORSPEC_SRGB;
         output_image_info.chroma_subsampling = NVIMGCODEC_SAMPLING_NONE;
-        output_image_info.num_planes = 3;
+        output_image_info.num_planes = 1;  // Interleaved RGB is a single plane
         
         // Set buffer kind based on output device
         std::string device_str = std::string(out_device);
@@ -248,20 +249,24 @@ bool decode_jpeg_nvimgcodec(int fd,
             output_image_info.buffer_kind = NVIMGCODEC_IMAGE_BUFFER_KIND_STRIDED_HOST;
         }
         
-        // Calculate buffer requirements
+        // Calculate buffer requirements for interleaved RGB
         auto sample_type = output_image_info.plane_info[0].sample_type;
         int bytes_per_element = static_cast<unsigned int>(sample_type) >> (8+3);
-        size_t device_pitch_in_bytes = input_image_info.plane_info[0].width * bytes_per_element;
+        uint32_t width = input_image_info.plane_info[0].width;
+        uint32_t height = input_image_info.plane_info[0].height;
+        uint32_t num_channels = 3;  // RGB
         
-        for (uint32_t c = 0; c < output_image_info.num_planes; ++c) {
-            output_image_info.plane_info[c].height = input_image_info.plane_info[0].height;
-            output_image_info.plane_info[c].width = input_image_info.plane_info[0].width;
-            output_image_info.plane_info[c].row_stride = device_pitch_in_bytes;
-        }
+        // For interleaved RGB: row_stride = width * channels * bytes_per_element
+        size_t row_stride = width * num_channels * bytes_per_element;
         
-        output_image_info.buffer_size = output_image_info.plane_info[0].row_stride * 
-                                       output_image_info.plane_info[0].height * 
-                                       output_image_info.num_planes;
+        // Set plane info for single interleaved plane
+        output_image_info.plane_info[0].height = height;
+        output_image_info.plane_info[0].width = width;
+        output_image_info.plane_info[0].num_channels = num_channels;
+        output_image_info.plane_info[0].row_stride = row_stride;
+        
+        // Total buffer size for interleaved RGB
+        output_image_info.buffer_size = row_stride * height;
         output_image_info.cuda_stream = 0; // Default stream
         
         // Use pre-allocated buffer if provided, otherwise allocate new buffer
@@ -439,10 +444,11 @@ bool decode_jpeg2k_nvimgcodec(int fd,
         
         // Step 3: Prepare output image info (following official API pattern)
         nvimgcodecImageInfo_t output_image_info(input_image_info);
-        output_image_info.sample_format = NVIMGCODEC_SAMPLEFORMAT_P_RGB;
+        // FIX: Use interleaved RGB format instead of planar
+        output_image_info.sample_format = NVIMGCODEC_SAMPLEFORMAT_I_RGB;
         output_image_info.color_spec = NVIMGCODEC_COLORSPEC_SRGB;
         output_image_info.chroma_subsampling = NVIMGCODEC_SAMPLING_NONE;
-        output_image_info.num_planes = 3;
+        output_image_info.num_planes = 1;  // Interleaved RGB is a single plane
         
         // Set buffer kind based on output device
         std::string device_str = std::string(out_device);
@@ -452,20 +458,24 @@ bool decode_jpeg2k_nvimgcodec(int fd,
             output_image_info.buffer_kind = NVIMGCODEC_IMAGE_BUFFER_KIND_STRIDED_HOST;
         }
         
-        // Calculate buffer requirements
+        // Calculate buffer requirements for interleaved RGB
         auto sample_type = output_image_info.plane_info[0].sample_type;
         int bytes_per_element = static_cast<unsigned int>(sample_type) >> (8+3);
-        size_t device_pitch_in_bytes = input_image_info.plane_info[0].width * bytes_per_element;
+        uint32_t width = input_image_info.plane_info[0].width;
+        uint32_t height = input_image_info.plane_info[0].height;
+        uint32_t num_channels = 3;  // RGB
         
-        for (uint32_t c = 0; c < output_image_info.num_planes; ++c) {
-            output_image_info.plane_info[c].height = input_image_info.plane_info[0].height;
-            output_image_info.plane_info[c].width = input_image_info.plane_info[0].width;
-            output_image_info.plane_info[c].row_stride = device_pitch_in_bytes;
-        }
+        // For interleaved RGB: row_stride = width * channels * bytes_per_element
+        size_t row_stride = width * num_channels * bytes_per_element;
         
-        output_image_info.buffer_size = output_image_info.plane_info[0].row_stride * 
-                                       output_image_info.plane_info[0].height * 
-                                       output_image_info.num_planes;
+        // Set plane info for single interleaved plane
+        output_image_info.plane_info[0].height = height;
+        output_image_info.plane_info[0].width = width;
+        output_image_info.plane_info[0].num_channels = num_channels;
+        output_image_info.plane_info[0].row_stride = row_stride;
+        
+        // Total buffer size for interleaved RGB
+        output_image_info.buffer_size = row_stride * height;
         output_image_info.cuda_stream = 0; // Default stream
         
         // Use pre-allocated buffer if provided, otherwise allocate new buffer
