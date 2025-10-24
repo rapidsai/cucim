@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 # Note: These test cases originated in skimage/morphology/tests/test_ccomp.py
 
 import cupy as cp

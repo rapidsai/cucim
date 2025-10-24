@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 """Testing axes support that is not currently present in CuPy/SciPy."""
 
 import cupy as cp

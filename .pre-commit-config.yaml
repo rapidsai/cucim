@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 # To install the git pre-commit hook run:
 #   pre-commit install
 # To update the pre-commit hooks run:
@@ -29,8 +32,68 @@ repos:
         additional_dependencies:
           - tomli
   - repo: https://github.com/rapidsai/pre-commit-hooks
-    rev: v0.7.0
+    rev: v1.2.0
     hooks:
+      - id: verify-copyright
+        name: verify-copyright-cucim
+        args: [--fix, --spdx]
+        files: |
+          (?x)
+            [.](cmake|cpp|cu|cuh|h|hpp|sh|pxd|py|pyx|pyi|rs|java|inl|cmake[.]in|bat)$|
+            CMakeLists[.]txt$|
+            CMakeLists_standalone[.]txt$|
+            meta[.]yaml$|
+            pyproject[.]toml$|
+            setup[.]cfg$|
+            ^[.]pre-commit-config[.]yaml$|
+            dependencies[.]yaml$|
+            Makefile$
+        exclude: |
+          (?x)
+            [.]idea/fileTemplates/|
+            ^cpp/include/cucim/3rdparty/dlpack/|
+            ^cpp/plugins/cucim[.]kit[.]cuslide/src/cuslide/lzw/lzw_libtiff[.]cpp$|
+            ^cpp/plugins/cucim[.]kit[.]cuslide/src/cuslide/lzw/lzw_libtiff[.]h$|
+            ^docs/source/ext/doi_role[.]py$|
+            ^python/cucim/src/cucim/core/operations/morphology/cuda/pba_kernels_2d[.]h$|
+            ^python/cucim/src/cucim/skimage/feature/_canny[.]py$|
+            ^python/cucim/src/cucim/skimage/filters/_rank_order[.]py$|
+            ^python/cucim/src/cucim/skimage/filters/edges[.]py$|
+            ^python/cucim/src/cucim/skimage/morphology/grayreconstruct[.]py$|
+            ^python/cucim/src/cucim/skimage/morphology/tests/test_reconstruction[.]py$
+      - id: verify-copyright
+        name: verify-copyright-lzw
+        args: [--fix, --spdx, "--spdx-license-identifier=Apache-2.0 AND LicenseRef-Berkeley-lzw AND libtiff"]
+        files: |
+          (?x)^(
+            cpp/plugins/cucim[.]kit[.]cuslide/src/cuslide/lzw/lzw_libtiff[.]cpp$|
+            cpp/plugins/cucim[.]kit[.]cuslide/src/cuslide/lzw/lzw_libtiff[.]h$
+          )
+      - id: verify-copyright
+        name: verify-copyright-sphinx
+        args: [--fix, --spdx, "--spdx-license-identifier=Apache-2.0 AND BSD-2-Clause"]
+        files: |
+          (?x)^(
+            docs/source/ext/doi_role[.]py$
+          )
+      - id: verify-copyright
+        name: verify-copyright-pba
+        args: [--fix, --spdx, "--spdx-license-identifier=Apache-2.0 AND MIT"]
+        files: |
+          (?x)^(
+            python/cucim/src/cucim/core/operations/morphology/cuda/pba_kernels_2d[.]h$
+          )
+      - id: verify-copyright
+        name: verify-copyright-cellprofiler
+        args: [--fix, --spdx, "--spdx-license-identifier=Apache-2.0 AND (GPL-2.0-only OR BSD-3-Clause)"]
+        files: |
+          (?x)^(
+            python/cucim/src/cucim/skimage/feature/_canny[.]py$|
+            python/cucim/src/cucim/skimage/filters/_rank_order[.]py$|
+            python/cucim/src/cucim/skimage/filters/edges[.]py$|
+            python/cucim/src/cucim/skimage/morphology/grayreconstruct[.]py$|
+            python/cucim/src/cucim/skimage/morphology/tests/test_reconstruction[.]py$
+          )
       - id: verify-alpha-spec
   - repo: https://github.com/rapidsai/dependency-file-generator
     rev: v1.20.0

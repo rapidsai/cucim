@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) 2023-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 """Implementation of cupyx.scipy.stats.pearsonr (currently missing in CuPy)
 
 Simple port of SciPy's pearsonr in scipy/stats/_stats_py.py.
