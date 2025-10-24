@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: Copyright 2015  Jon Lund Steffensen. Based on extlinks by the Sphinx team.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 AND BSD-2-Clause
+
 # From scikit-image:
 # https://github.com/scikit-image/scikit-image/blob/16e0b87b8cb1abc4c78ebf6cd013dadc90810f39/doc/ext/doi_role.py
 # -*- coding: utf-8 -*-

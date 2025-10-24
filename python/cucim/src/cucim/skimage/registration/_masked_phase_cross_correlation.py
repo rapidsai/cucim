@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 """
 Implementation of the masked normalized cross-correlation.
 

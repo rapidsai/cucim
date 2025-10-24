@@ -1,4 +1,5 @@
-# Copyright (c) 2023-2024, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2023-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
 # See file LICENSE for terms.
 
 [build-system]
@@ -171,6 +172,8 @@ fix = true
 # see: https://docs.astral.sh/ruff/rules/
 select = ["E", "F", "W", "I", "UP"]
 ignore = [
+    # line too long due to copyright header
+    "E501",
     # (pycodestyle) Use `is` and `is not` for type comparisons, or `isinstance()` for isinstance checks
     "E721",
     # (pyupgrade) Use `X | Y` in `isinstance` call instead of `(X, Y)`

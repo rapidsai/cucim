@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 """Metrics corresponding to images, e.g., distance metrics, similarity, etc."""
 
 import lazy_loader as _lazy

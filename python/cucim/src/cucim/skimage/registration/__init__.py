@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 """Image registration algorithms, e.g., optical flow or phase cross correlation."""
 
 import lazy_loader as _lazy

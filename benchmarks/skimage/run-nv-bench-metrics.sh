@@ -1,4 +1,7 @@
 #!/bin/bash
+# SPDX-FileCopyrightText: Copyright (c) 2022-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 param_shape=("512,512" "3840,2160" "3840,2160,3" "192,192,192")
 param_filt=(structural_similarity mean_squared_error normalized_root_mse peak_signal_noise_ratio normalized_mutual_information)
 param_dt=(float32 uint8)

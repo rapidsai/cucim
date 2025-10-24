@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) 2022-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 """
 TODO: Currently LZ4-compressed images are a tiny bit larger than uncompressed.
 Need to look into why this is!

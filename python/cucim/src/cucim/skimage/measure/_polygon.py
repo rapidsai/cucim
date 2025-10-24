@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 # TODO: use cupyx.scipy.signal once upstream fftconvolve and
 #       choose_conv_method for > 1d has been implemented.
 import cupy as cp

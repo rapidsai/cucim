@@ -1,3 +1,8 @@
+/*
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2025, NVIDIA CORPORATION. All rights reserved.
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /* Several functions and the primary kernel used for the histogram-based
  * median are in this file.
  *

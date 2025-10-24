@@ -1,4 +1,5 @@
-# Copyright (c) 2023, NVIDIA CORPORATION.
+# SPDX-FileCopyrightText: Copyright (c) 2023, NVIDIA CORPORATION.
+# SPDX-License-Identifier: Apache-2.0
 
 from setuptools import setup
 from setuptools.dist import Distribution as _Distribution

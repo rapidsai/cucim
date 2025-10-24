@@ -1,3 +1,8 @@
+/*
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2025, NVIDIA CORPORATION. All rights reserved.
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /***********************************************************************
 
 _hessian_det_appx.cu has the following scikit-image (v0.19.3) functions as cuda functions:

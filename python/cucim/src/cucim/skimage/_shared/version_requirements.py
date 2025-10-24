@@ -1,9 +1,15 @@
+# SPDX-FileCopyrightText: Copyright (c) 2022-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 import sys
 
 from packaging import version as _version
 
 
 def _check_version(actver, version, cmp_op):
+    # SPDX-SnippetBegin
+    # SPDX-SnippetCopyrightText: Copyright (C) 2013  The IPython Development Team
+    # SPDX-License-Identifier: BSD-3-Clause
     """
     Check version string of an active module against a required version.
 
@@ -29,6 +35,7 @@ def _check_version(actver, version, cmp_op):
             return False
     except TypeError:
         return True
+    # SPDX-SnippetEnd
 
 
 def get_module_version(module_name):
@@ -38,6 +45,9 @@ def get_module_version(module_name):
 
 
 def is_installed(name, version=None):
+    # SPDX-SnippetBegin
+    # SPDX-SnippetCopyrightText: Copyright (C) 2009-2011 Pierre Raybaut
+    # SPDX-License-Identifier: MIT
     """Test if *name* is installed.
 
     Parameters
@@ -87,6 +97,7 @@ def is_installed(name, version=None):
         ), f"Invalid version condition '{symb}'"
         version = version[match.start() :]
         return _check_version(actver, version, symb)
+    # SPDX-SnippetEnd
 
 
 def require(name, version=None):

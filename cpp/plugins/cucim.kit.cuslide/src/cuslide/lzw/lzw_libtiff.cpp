@@ -1,3 +1,11 @@
+/*
+ * SPDX-FileCopyrightText: Copyright (c) 1988-1997 Sam Leffler
+ * SPDX-FileCopyrightText: Copyright (c) 1991-1997 Silicon Graphics, Inc.
+ * SPDX-FileCopyrightText: Copyright (c) 1985, 1986 The Regents of the University of California. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION
+ * SPDX-License-Identifier: Apache-2.0 AND LicenseRef-Berkeley-lzw AND libtiff
+ */
+
 /**
  * Code below is based on libtiff library which is under BSD-like license,
  * for providing lzw_decoder implementation.

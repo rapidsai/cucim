@@ -1,3 +1,8 @@
+/*
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2025, NVIDIA CORPORATION. All rights reserved.
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 // Euclidean Distance Transform
 //
 // Kernels for the 3D version of the Parallel Banding Algorithm (PBA+).
