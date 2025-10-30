@@ -145,7 +145,6 @@ repos:
             ^python/cucim/src/cucim/skimage/filters/_fft_based[.]py$|
             ^python/cucim/src/cucim/skimage/filters/_gabor[.]py$|
             ^python/cucim/src/cucim/skimage/filters/_gaussian[.]py$|
-            ^python/cucim/src/cucim/skimage/filters/_median_hist[.]py$|
             ^python/cucim/src/cucim/skimage/filters/_median[.]py$|
             ^python/cucim/src/cucim/skimage/filters/_separable_filtering[.]py$|
             ^python/cucim/src/cucim/skimage/filters/_sparse[.]py$|
@@ -422,13 +421,11 @@ repos:
             python/cucim/src/cucim/skimage/filters/_fft_based[.]py$|
             python/cucim/src/cucim/skimage/filters/_gabor[.]py$|
             python/cucim/src/cucim/skimage/filters/_gaussian[.]py$|
-            python/cucim/src/cucim/skimage/filters/_median_hist[.]py$|
             python/cucim/src/cucim/skimage/filters/_median[.]py$|
             python/cucim/src/cucim/skimage/filters/_separable_filtering[.]py$|
             python/cucim/src/cucim/skimage/filters/_sparse[.]py$|
             python/cucim/src/cucim/skimage/filters/_unsharp_mask[.]py$|
             python/cucim/src/cucim/skimage/filters/_window[.]py$|
-            python/cucim/src/cucim/skimage/filters/cuda/histogram_median[.]cu$|
             python/cucim/src/cucim/skimage/filters/lpi_filter[.]py$|
             python/cucim/src/cucim/skimage/filters/ridges[.]py$|
             python/cucim/src/cucim/skimage/filters/tests/test_correlate[.]py$|
@@ -553,6 +550,13 @@ repos:
             python/cucim/src/cucim/skimage/util/tests/test_montage[.]py$|
             python/cucim/src/cucim/skimage/util/tests/test_random_noise[.]py$|
             python/cucim/src/cucim/skimage/util/tests/test_shape[.]py$
+          )
+      - id: verify-copyright
+        name: verify-copyright-opencv
+        args: [--fix, --spdx, "--spdx-license-identifier=Apache-2.0 AND BSD-3-Clause"]
+        files: |
+          (?x)^(
+            python/cucim/src/cucim/skimage/filters/cuda/histogram_median[.]cu$
           )
       - id: verify-alpha-spec
   - repo: https://github.com/rapidsai/dependency-file-generator
