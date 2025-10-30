@@ -32,7 +32,7 @@ repos:
         additional_dependencies:
           - tomli
   - repo: https://github.com/rapidsai/pre-commit-hooks
-    rev: v1.2.0
+    rev: v1.2.1
     hooks:
       - id: verify-copyright
         name: verify-copyright-cucim
