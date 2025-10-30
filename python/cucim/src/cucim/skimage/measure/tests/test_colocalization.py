@@ -1,5 +1,6 @@
+# SPDX-FileCopyrightText: 2009-2022 the scikit-image team
 # SPDX-FileCopyrightText: Copyright (c) 2023-2025, NVIDIA CORPORATION. All rights reserved.
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import cupy as cp
 import numpy as np

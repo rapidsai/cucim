@@ -1,5 +1,6 @@
+# SPDX-FileCopyrightText: 2009-2022 the scikit-image team
 # SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 # TODO: use cupyx.scipy.signal once upstream fftconvolve and
 #       choose_conv_method for > 1d has been implemented.

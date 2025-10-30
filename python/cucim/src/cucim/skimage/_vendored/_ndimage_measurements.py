@@ -1,5 +1,7 @@
+# SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Infrastructure, Inc.
+# SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Networks, Inc.
 # SPDX-FileCopyrightText: Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: Apache-2.0 AND MIT
 
 import math
 
