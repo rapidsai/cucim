@@ -183,9 +183,7 @@ add_library(${CUCIM_PLUGIN_NAME}
     src/cuslide/tiff/ifd.h
     src/cuslide/tiff/tiff.cpp
     src/cuslide/tiff/tiff.h
-    src/cuslide/tiff/types.h
-    src/cuslide/nvimgcodec/nvimgcodec_decoder.cpp
-    src/cuslide/nvimgcodec/nvimgcodec_decoder.h)
+    src/cuslide/tiff/types.h)
 
 # compile color.c for libopenjpeg with c++
 set_source_files_properties(${deps-libopenjpeg_SOURCE_DIR}/src/bin/common/color.c
