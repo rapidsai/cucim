@@ -23,12 +23,27 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <map>
 #include <cucim/io/device.h>
 
 namespace cuslide2::nvimgcodec
 {
 
 #ifdef CUCIM_HAS_NVIMGCODEC
+
+/**
+ * @brief Image type classification for TIFF IFDs
+ * 
+ * Used to categorize IFDs as resolution levels or associated images
+ * (particularly for formats like Aperio SVS that use SUBFILETYPE tags)
+ */
+enum class ImageType {
+    RESOLUTION_LEVEL,  // Full or reduced resolution image
+    THUMBNAIL,         // Thumbnail image
+    LABEL,             // Slide label image
+    MACRO,             // Macro/overview image
+    UNKNOWN            // Unclassified
+};
 
 /**
  * @brief Information about a single IFD (Image File Directory) in a TIFF file
@@ -42,8 +57,21 @@ struct IfdInfo
     uint32_t height;                         // Image height in pixels
     uint32_t num_channels;                   // Number of channels (typically 3 for RGB)
     uint32_t bits_per_sample;                // Bits per channel (8, 16, etc.)
-    std::string codec;                       // Compression codec (jpeg, jpeg2k, deflate, etc.)
+    std::string codec;                       // Compression codec (jpeg, jpeg2k, deflate, etc.) - replace with int  : 0,1,2, for each codec type
     nvimgcodecCodeStream_t sub_code_stream;  // nvImageCodec code stream for this IFD
+    
+    // Metadata fields (extracted from nvImageCodec metadata API)
+    std::string image_description;           // ImageDescription TIFF tag (270)
+    
+    // Format-specific metadata: kind -> (format, buffer_data)
+    // kind: nvimgcodecMetadataKind_t (e.g., MED_APERIO=1, MED_PHILIPS=2, etc.)
+    // format: nvimgcodecMetadataFormat_t (e.g., RAW, XML, JSON)
+    // buffer_data: raw bytes from metadata buffer
+    struct MetadataBlob {
+        int format;  // nvimgcodecMetadataFormat_t
+        std::vector<uint8_t> data;
+    };
+    std::map<int, MetadataBlob> metadata_blobs;
     
     IfdInfo() : index(0), width(0), height(0), num_channels(0), 
                 bits_per_sample(0), sub_code_stream(nullptr) {}
@@ -82,11 +110,8 @@ struct IfdInfo
  *       uint32_t num_levels = tiff->get_ifd_count();
  *       const auto& ifd = tiff->get_ifd(0);
  *       
- *       uint8_t* image_data = nullptr;
- *       if (tiff->decode_ifd(0, &image_data, cucim::io::Device("cpu"))) {
- *           // Use image_data...
- *           free(image_data);
- *       }
+ *       // Use IFD information for decoding via separate decoder
+ *       // (decoding is handled by IFD::read() or similar)
  *   }
  */
 class TiffFileParser
@@ -142,19 +167,92 @@ public:
     const IfdInfo& get_ifd(uint32_t index) const;
     
     /**
-     * @brief Decode an entire IFD (full resolution image)
+     * @brief Classify an IFD by type (resolution level vs. associated image)
      * 
-     * Note: This decodes the entire IFD, not individual tiles. For efficient
-     * region reading, use the libtiff + buffer-level nvImageCodec approach instead.
+     * Parses ImageDescription metadata to determine image purpose using
+     * vendor-specific keywords (e.g., "label", "macro" for Aperio SVS).
+     * Falls back to dimension-based heuristics for unknown formats.
      * 
-     * @param ifd_index IFD index to decode (0 = highest resolution)
-     * @param output_buffer Pointer to receive allocated buffer (caller must free)
-     * @param out_device Output device ("cpu" or "cuda")
-     * @return true if successful, false otherwise
+     * @param ifd_index IFD index to classify
+     * @return ImageType classification
      */
-    bool decode_ifd(uint32_t ifd_index, 
-                    uint8_t** output_buffer,
-                    const cucim::io::Device& out_device);
+    ImageType classify_ifd(uint32_t ifd_index) const;
+    
+    /**
+     * @brief Get indices of all resolution level IFDs
+     * 
+     * @return Vector of IFD indices that represent resolution levels
+     */
+    std::vector<uint32_t> get_resolution_levels() const;
+    
+    /**
+     * @brief Get associated images (thumbnail, label, macro)
+     * 
+     * Returns a map of associated image names to their IFD indices.
+     * Particularly useful for Aperio SVS files.
+     * 
+     * @return Map of image name to IFD index
+     */
+    std::map<std::string, uint32_t> get_associated_images() const;
+    
+    /**
+     * @brief Override IFD dimensions
+     * 
+     * Useful for formats like Philips TIFF where reported dimensions
+     * include tile padding and need to be corrected based on metadata.
+     * 
+     * @param ifd_index IFD index to modify
+     * @param width Corrected width in pixels
+     * @param height Corrected height in pixels
+     */
+    void override_ifd_dimensions(uint32_t ifd_index, uint32_t width, uint32_t height);
+    
+    /**
+     * @brief Get ImageDescription metadata for an IFD
+     * 
+     * Returns the ImageDescription from nvImageCodec metadata buffers.
+     * For Aperio SVS: Contains full image description with keywords.
+     * For Philips TIFF: Contains XML metadata or level info.
+     * 
+     * @param ifd_index IFD index
+     * @return ImageDescription string, or empty if not present
+     */
+    std::string get_image_description(uint32_t ifd_index) const;
+    
+    /**
+     * @brief Get all metadata blobs for an IFD
+     * 
+     * Returns all vendor-specific metadata extracted by nvImageCodec.
+     * The map key is nvimgcodecMetadataKind_t (e.g., MED_APERIO=1, MED_PHILIPS=2).
+     * 
+     * @param ifd_index IFD index
+     * @return Map of metadata kind to blob (format + data), or empty if no metadata
+     */
+    const std::map<int, IfdInfo::MetadataBlob>& get_metadata_blobs(uint32_t ifd_index) const
+    {
+        static const std::map<int, IfdInfo::MetadataBlob> empty_map;
+        if (ifd_index >= ifd_infos_.size())
+            return empty_map;
+        return ifd_infos_[ifd_index].metadata_blobs;
+    }
+    
+    /**
+     * @brief Get specific metadata blob by kind
+     * 
+     * @param ifd_index IFD index
+     * @param kind Metadata kind (e.g., 1=MED_APERIO, 2=MED_PHILIPS)
+     * @return Pointer to metadata blob, or nullptr if not found
+     */
+    const IfdInfo::MetadataBlob* get_metadata_blob(uint32_t ifd_index, int kind) const
+    {
+        if (ifd_index >= ifd_infos_.size())
+            return nullptr;
+        
+        auto it = ifd_infos_[ifd_index].metadata_blobs.find(kind);
+        if (it != ifd_infos_[ifd_index].metadata_blobs.end())
+            return &it->second;
+        return nullptr;
+    }
     
     /**
      * @brief Print TIFF structure information
@@ -169,10 +267,19 @@ private:
      */
     void parse_tiff_structure();
     
+    /**
+     * @brief Extract metadata for a specific IFD using nvimgcodecDecoderGetMetadata
+     * 
+     * Retrieves vendor-specific metadata (Aperio, Philips, etc.) for the given IFD.
+     * Populates ifd_info.metadata_blobs and ifd_info.image_description.
+     * 
+     * @param ifd_info IFD to extract metadata for (must have valid sub_code_stream)
+     */
+    void extract_ifd_metadata(IfdInfo& ifd_info);
+    
     std::string file_path_;
     bool initialized_;
     nvimgcodecCodeStream_t main_code_stream_;
-    nvimgcodecDecoder_t decoder_;
     std::vector<IfdInfo> ifd_infos_;
 };
 
@@ -204,6 +311,13 @@ public:
     nvimgcodecInstance_t get_instance() const { return instance_; }
     
     /**
+     * @brief Get the nvImageCodec decoder (for metadata extraction)
+     * 
+     * @return nvImageCodec decoder handle
+     */
+    nvimgcodecDecoder_t get_decoder() const { return decoder_; }
+    
+    /**
      * @brief Check if nvImageCodec is available and initialized
      * 
      * @return true if available
@@ -228,6 +342,7 @@ private:
     NvImageCodecTiffParserManager& operator=(NvImageCodecTiffParserManager&&) = delete;
     
     nvimgcodecInstance_t instance_;
+    nvimgcodecDecoder_t decoder_;
     bool initialized_;
     std::string status_message_;
 };
@@ -235,6 +350,14 @@ private:
 #else // !CUCIM_HAS_NVIMGCODEC
 
 // Stub implementations when nvImageCodec is not available
+enum class ImageType {
+    RESOLUTION_LEVEL,
+    THUMBNAIL,
+    LABEL,
+    MACRO,
+    UNKNOWN
+};
+
 struct IfdInfo {};
 
 class TiffFileParser
@@ -249,10 +372,17 @@ public:
         (void)index; 
         throw std::runtime_error("nvImageCodec not available"); 
     }
-    bool decode_ifd(uint32_t ifd_index, uint8_t** output_buffer, const cucim::io::Device& out_device)
+    ImageType classify_ifd(uint32_t index) const { (void)index; return ImageType::UNKNOWN; }
+    std::vector<uint32_t> get_resolution_levels() const { return {}; }
+    std::map<std::string, uint32_t> get_associated_images() const { return {}; }
+    void override_ifd_dimensions(uint32_t ifd_index, uint32_t width, uint32_t height)
     {
-        (void)ifd_index; (void)output_buffer; (void)out_device;
-        return false;
+        (void)ifd_index; (void)width; (void)height;
+    }
+    std::string get_image_description(uint32_t ifd_index) const
+    {
+        (void)ifd_index;
+        return "";
     }
     void print_info() const {}
 };

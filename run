@@ -390,7 +390,7 @@ build_local_desc() { echo 'Build locally
 Compile binaries locally
 
 Arguments:
-  $1 - subcommand [all|clean_cache|clean|libcucim|cuslide|cumed|cucim] (default: all)
+  $1 - subcommand [all|clean_cache|clean|libcucim|cuslide|cuslide2|cumed|cucim] (default: all)
   $2 - build type [debug|release|rel-debug] (default: debug)
 '
 }

@@ -24,6 +24,7 @@
 #include <fmt/format.h>
 #include <stdexcept>
 #include <cstring>
+#include <algorithm>
 
 namespace cuslide2::nvimgcodec
 {
@@ -45,11 +46,11 @@ void IfdInfo::print() const
 // ============================================================================
 
 NvImageCodecTiffParserManager::NvImageCodecTiffParserManager() 
-    : instance_(nullptr), initialized_(false)
+    : instance_(nullptr), decoder_(nullptr), initialized_(false)
 {
     try
     {
-        // Create nvImageCodec instance for TIFF parsing
+        // Create nvImageCodec instance for TIFF parsing (separate from decoder instance)
         nvimgcodecInstanceCreateInfo_t create_info{};
         create_info.struct_type = NVIMGCODEC_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
         create_info.struct_size = sizeof(nvimgcodecInstanceCreateInfo_t);
@@ -72,8 +73,36 @@ NvImageCodecTiffParserManager::NvImageCodecTiffParserManager()
             return;
         }
         
+        // Create decoder for metadata extraction (not for image decoding)
+        // This decoder is used exclusively for nvimgcodecDecoderGetMetadata() calls
+        nvimgcodecExecutionParams_t exec_params{};
+        exec_params.struct_type = NVIMGCODEC_STRUCTURE_TYPE_EXECUTION_PARAMS;
+        exec_params.struct_size = sizeof(nvimgcodecExecutionParams_t);
+        exec_params.struct_next = nullptr;
+        exec_params.device_allocator = nullptr;
+        exec_params.pinned_allocator = nullptr;
+        exec_params.max_num_cpu_threads = 0;
+        exec_params.executor = nullptr;
+        exec_params.device_id = NVIMGCODEC_DEVICE_CPU_ONLY;  // CPU-only for metadata extraction
+        exec_params.pre_init = 0;
+        exec_params.skip_pre_sync = 0;
+        exec_params.num_backends = 0;
+        exec_params.backends = nullptr;
+        
+        status = nvimgcodecDecoderCreate(instance_, &decoder_, &exec_params, nullptr);
+        
+        if (status != NVIMGCODEC_STATUS_SUCCESS)
+        {
+            nvimgcodecInstanceDestroy(instance_);
+            instance_ = nullptr;
+            status_message_ = fmt::format("Failed to create decoder for metadata extraction (status: {})", 
+                                         static_cast<int>(status));
+            fmt::print("⚠️  {}\n", status_message_);
+            return;
+        }
+        
         initialized_ = true;
-        status_message_ = "nvImageCodec TIFF parser initialized successfully";
+        status_message_ = "nvImageCodec TIFF parser initialized successfully (with metadata extraction support)";
         fmt::print("✅ {}\n", status_message_);
     }
     catch (const std::exception& e)
@@ -86,6 +115,12 @@ NvImageCodecTiffParserManager::NvImageCodecTiffParserManager()
 
 NvImageCodecTiffParserManager::~NvImageCodecTiffParserManager()
 {
+    if (decoder_)
+    {
+        nvimgcodecDecoderDestroy(decoder_);
+        decoder_ = nullptr;
+    }
+    
     if (instance_)
     {
         nvimgcodecInstanceDestroy(instance_);
@@ -99,7 +134,7 @@ NvImageCodecTiffParserManager::~NvImageCodecTiffParserManager()
 
 TiffFileParser::TiffFileParser(const std::string& file_path)
     : file_path_(file_path), initialized_(false), 
-      main_code_stream_(nullptr), decoder_(nullptr)
+      main_code_stream_(nullptr)
 {
     auto& manager = NvImageCodecTiffParserManager::instance();
     
@@ -126,32 +161,8 @@ TiffFileParser::TiffFileParser(const std::string& file_path)
         
         fmt::print("✅ Opened TIFF file: {}\n", file_path);
         
-        // Step 2: Parse TIFF structure
+        // Step 2: Parse TIFF structure (metadata only)
         parse_tiff_structure();
-        
-        // Step 3: Create decoder for decoding operations
-        nvimgcodecExecutionParams_t exec_params{};
-        exec_params.struct_type = NVIMGCODEC_STRUCTURE_TYPE_EXECUTION_PARAMS;
-        exec_params.struct_size = sizeof(nvimgcodecExecutionParams_t);
-        exec_params.struct_next = nullptr;
-        exec_params.device_allocator = nullptr;
-        exec_params.pinned_allocator = nullptr;
-        exec_params.max_num_cpu_threads = 0;  // Use default
-        exec_params.executor = nullptr;
-        exec_params.device_id = NVIMGCODEC_DEVICE_CURRENT;
-        exec_params.pre_init = 0;
-        exec_params.skip_pre_sync = 0;
-        exec_params.num_backends = 0;
-        exec_params.backends = nullptr;
-        
-        status = nvimgcodecDecoderCreate(manager.get_instance(), &decoder_, 
-                                         &exec_params, nullptr);
-        
-        if (status != NVIMGCODEC_STATUS_SUCCESS)
-        {
-            throw std::runtime_error(fmt::format("Failed to create decoder (status: {})",
-                                                static_cast<int>(status)));
-        }
         
         initialized_ = true;
         fmt::print("✅ TIFF parser initialized with {} IFDs\n", ifd_infos_.size());
@@ -159,12 +170,6 @@ TiffFileParser::TiffFileParser(const std::string& file_path)
     catch (const std::exception& e)
     {
         // Cleanup on error
-        if (decoder_)
-        {
-            nvimgcodecDecoderDestroy(decoder_);
-            decoder_ = nullptr;
-        }
-        
         if (main_code_stream_)
         {
             nvimgcodecCodeStreamDestroy(main_code_stream_);
@@ -177,13 +182,6 @@ TiffFileParser::TiffFileParser(const std::string& file_path)
 
 TiffFileParser::~TiffFileParser()
 {
-    // Destroy decoder
-    if (decoder_)
-    {
-        nvimgcodecDecoderDestroy(decoder_);
-        decoder_ = nullptr;
-    }
-    
     // IfdInfo destructors will destroy sub-code streams
     ifd_infos_.clear();
     
@@ -275,9 +273,97 @@ void TiffFileParser::parse_tiff_structure()
             ifd_info.codec = image_info.codec_name;
         }
         
+        // Extract metadata for this IFD using nvimgcodecDecoderGetMetadata
+        extract_ifd_metadata(ifd_info);
+        
         ifd_info.print();
         
         ifd_infos_.push_back(std::move(ifd_info));
+    }
+}
+
+void TiffFileParser::extract_ifd_metadata(IfdInfo& ifd_info)
+{
+    auto& manager = NvImageCodecTiffParserManager::instance();
+    
+    if (!manager.get_decoder() || !ifd_info.sub_code_stream)
+    {
+        return;  // No decoder or stream available
+    }
+    
+    // Step 1: Get metadata count (first call with nullptr)
+    int metadata_count = 0;
+    nvimgcodecStatus_t status = nvimgcodecDecoderGetMetadata(
+        manager.get_decoder(),
+        ifd_info.sub_code_stream,
+        nullptr,  // First call: get count only
+        &metadata_count
+    );
+    
+    if (status != NVIMGCODEC_STATUS_SUCCESS || metadata_count == 0)
+    {
+        return;  // No metadata or error
+    }
+    
+    fmt::print("  Found {} metadata entries for IFD[{}]\n", metadata_count, ifd_info.index);
+    
+    // Step 2: Allocate array for metadata pointers
+    std::vector<nvimgcodecMetadata_t*> metadata_ptrs(metadata_count, nullptr);
+    
+    // Step 3: Get actual metadata
+    status = nvimgcodecDecoderGetMetadata(
+        manager.get_decoder(),
+        ifd_info.sub_code_stream,
+        metadata_ptrs.data(),
+        &metadata_count
+    );
+    
+    if (status != NVIMGCODEC_STATUS_SUCCESS)
+    {
+        fmt::print("⚠️  Failed to retrieve metadata for IFD[{}] (status: {})\n",
+                  ifd_info.index, static_cast<int>(status));
+        return;
+    }
+    
+    // Step 4: Process each metadata entry
+    for (int j = 0; j < metadata_count; ++j)
+    {
+        if (!metadata_ptrs[j])
+            continue;
+        
+        nvimgcodecMetadata_t* metadata = metadata_ptrs[j];
+        
+        // Extract metadata fields
+        int kind = metadata->kind;
+        int format = metadata->format;
+        size_t buffer_size = metadata->buffer_size;
+        const uint8_t* buffer = static_cast<const uint8_t*>(metadata->buffer);
+        
+        fmt::print("    Metadata[{}]: kind={}, format={}, size={}\n",
+                  j, kind, format, buffer_size);
+        
+        // Store in metadata_blobs map
+        if (buffer && buffer_size > 0)
+        {
+            IfdInfo::MetadataBlob blob;
+            blob.format = format;
+            blob.data.assign(buffer, buffer + buffer_size);
+            ifd_info.metadata_blobs[kind] = std::move(blob);
+            
+            // Special handling: extract ImageDescription if it's a text format
+            // nvimgcodecMetadataFormat_t: RAW=0, XML=1, JSON=2, etc.
+            // For RAW format, treat as text if it looks like ASCII
+            if (kind == 1 && ifd_info.image_description.empty())  // MED_APERIO = 1
+            {
+                // Aperio metadata is typically in RAW format as text
+                ifd_info.image_description.assign(buffer, buffer + buffer_size);
+            }
+            else if (kind == 2)  // MED_PHILIPS = 2
+            {
+                // Philips metadata is typically XML
+                ifd_info.image_description.assign(buffer, buffer + buffer_size);
+            }
+        }
     }
 }
 
@@ -291,189 +377,152 @@ const IfdInfo& TiffFileParser::get_ifd(uint32_t index) const
     return ifd_infos_[index];
 }
 
-bool TiffFileParser::decode_ifd(uint32_t ifd_index,
-                                uint8_t** output_buffer,
-                                const cucim::io::Device& out_device)
+ImageType TiffFileParser::classify_ifd(uint32_t ifd_index) const
 {
-    if (!initialized_)
-    {
-        fmt::print("❌ TIFF parser not initialized\n");
-        return false;
-    }
-    
     if (ifd_index >= ifd_infos_.size())
     {
-        fmt::print("❌ IFD index {} out of range (have {} IFDs)\n", 
-                  ifd_index, ifd_infos_.size());
-        return false;
+        return ImageType::UNKNOWN;
     }
     
     const auto& ifd = ifd_infos_[ifd_index];
+    const std::string& desc = ifd.image_description;
     
-    fmt::print("🚀 Decoding IFD[{}]: {}x{}, codec: {}\n",
-              ifd_index, ifd.width, ifd.height, ifd.codec);
+    // Aperio SVS classification based on ImageDescription keywords
+    // Reference: https://docs.nvidia.com/cuda/nvimagecodec/samples/metadata.html
+    // 
+    // Examples from official nvImageCodec metadata sample:
+    //   Label:     "Aperio Image Library v10.0.50\nlabel 415x422"
+    //   Macro:     "Aperio Image Library v10.0.50\nmacro 1280x421"
+    //   Thumbnail: "Aperio Image Library v10.0.50\n15374x17497 -> 674x768 - |..."
+    //   Level:     "Aperio Image Library v10.0.50\n16000x17597 [0,100 15374x17497] (256x256) J2K/YUV16..."
     
-    try
+    if (!desc.empty())
     {
-        // Step 1: Prepare output image info
-        nvimgcodecImageInfo_t output_image_info{};
-        output_image_info.struct_type = NVIMGCODEC_STRUCTURE_TYPE_IMAGE_INFO;
-        output_image_info.struct_size = sizeof(nvimgcodecImageInfo_t);
-        output_image_info.struct_next = nullptr;
+        // Convert to lowercase for case-insensitive matching
+        std::string desc_lower = desc;
+        std::transform(desc_lower.begin(), desc_lower.end(), desc_lower.begin(),
+                      [](unsigned char c){ return std::tolower(c); });
         
-        // Use interleaved RGB format (learned from bug fix!)
-        output_image_info.sample_format = NVIMGCODEC_SAMPLEFORMAT_I_RGB;
-        output_image_info.color_spec = NVIMGCODEC_COLORSPEC_SRGB;
-        output_image_info.chroma_subsampling = NVIMGCODEC_SAMPLING_NONE;
-        output_image_info.num_planes = 1;  // Interleaved RGB is a single plane
-        
-        // Set buffer kind based on output device
-        std::string device_str = std::string(out_device);
-        if (device_str.find("cuda") != std::string::npos)
+        // Check for explicit keywords
+        if (desc_lower.find("label ") != std::string::npos || 
+            desc_lower.find("\nlabel ") != std::string::npos)
         {
-            output_image_info.buffer_kind = NVIMGCODEC_IMAGE_BUFFER_KIND_STRIDED_DEVICE;
-        }
-        else
-        {
-            output_image_info.buffer_kind = NVIMGCODEC_IMAGE_BUFFER_KIND_STRIDED_HOST;
+            return ImageType::LABEL;
         }
         
-        // Calculate buffer requirements for interleaved RGB
-        uint32_t num_channels = 3;  // RGB
-        size_t row_stride = ifd.width * num_channels;  // Correct stride!
-        size_t buffer_size = row_stride * ifd.height;
-        
-        output_image_info.plane_info[0].height = ifd.height;
-        output_image_info.plane_info[0].width = ifd.width;
-        output_image_info.plane_info[0].num_channels = num_channels;
-        output_image_info.plane_info[0].row_stride = row_stride;
-        output_image_info.plane_info[0].sample_type = NVIMGCODEC_SAMPLE_DATA_TYPE_UINT8;
-        output_image_info.buffer_size = buffer_size;
-        output_image_info.cuda_stream = 0;  // Default stream
-        
-        fmt::print("  Buffer: {}x{} RGB, stride={}, size={} bytes\n",
-                  ifd.width, ifd.height, row_stride, buffer_size);
-        
-        // Step 2: Allocate output buffer
-        void* buffer = nullptr;
-        if (output_image_info.buffer_kind == NVIMGCODEC_IMAGE_BUFFER_KIND_STRIDED_DEVICE)
+        if (desc_lower.find("macro ") != std::string::npos || 
+            desc_lower.find("\nmacro ") != std::string::npos)
         {
-            cudaError_t cuda_status = cudaMalloc(&buffer, buffer_size);
-            if (cuda_status != cudaSuccess)
-            {
-                fmt::print("❌ Failed to allocate GPU memory: {}\n", 
-                          cudaGetErrorString(cuda_status));
-                return false;
-            }
-            fmt::print("  Allocated GPU buffer\n");
-        }
-        else
-        {
-            buffer = malloc(buffer_size);
-            if (!buffer)
-            {
-                fmt::print("❌ Failed to allocate host memory\n");
-                return false;
-            }
-            fmt::print("  Allocated CPU buffer\n");
+            return ImageType::MACRO;
         }
         
-        output_image_info.buffer = buffer;
-        
-        // Step 3: Create image object
-        nvimgcodecImage_t image;
-        nvimgcodecStatus_t status = nvimgcodecImageCreate(
-            NvImageCodecTiffParserManager::instance().get_instance(),
-            &image,
-            &output_image_info
-        );
-        
-        if (status != NVIMGCODEC_STATUS_SUCCESS)
+        // Aperio thumbnail has dimension transformation: "WxH -> WxH"
+        if (desc.find(" -> ") != std::string::npos && desc.find(" - ") != std::string::npos)
         {
-            fmt::print("❌ Failed to create image object (status: {})\n",
-                      static_cast<int>(status));
-            if (output_image_info.buffer_kind == NVIMGCODEC_IMAGE_BUFFER_KIND_STRIDED_DEVICE)
-            {
-                cudaFree(buffer);
-            }
-            else
-            {
-                free(buffer);
-            }
-            return false;
+            return ImageType::THUMBNAIL;
         }
-        
-        // Step 4: Prepare decode parameters
-        nvimgcodecDecodeParams_t decode_params{};
-        decode_params.struct_type = NVIMGCODEC_STRUCTURE_TYPE_DECODE_PARAMS;
-        decode_params.struct_size = sizeof(nvimgcodecDecodeParams_t);
-        decode_params.struct_next = nullptr;
-        decode_params.apply_exif_orientation = 1;
-        
-        // Step 5: Schedule decoding
-        nvimgcodecFuture_t decode_future;
-        status = nvimgcodecDecoderDecode(decoder_,
-                                        &ifd.sub_code_stream,
-                                        &image,
-                                        1,
-                                        &decode_params,
-                                        &decode_future);
-        
-        if (status != NVIMGCODEC_STATUS_SUCCESS)
-        {
-            fmt::print("❌ Failed to schedule decoding (status: {})\n",
-                      static_cast<int>(status));
-            nvimgcodecImageDestroy(image);
-            if (output_image_info.buffer_kind == NVIMGCODEC_IMAGE_BUFFER_KIND_STRIDED_DEVICE)
-            {
-                cudaFree(buffer);
-            }
-            else
-            {
-                free(buffer);
-            }
-            return false;
-        }
-        
-        // Step 6: Wait for completion
-        nvimgcodecProcessingStatus_t decode_status;
-        size_t status_size;
-        nvimgcodecFutureGetProcessingStatus(decode_future, &decode_status, &status_size);
-        
-        if (output_image_info.buffer_kind == NVIMGCODEC_IMAGE_BUFFER_KIND_STRIDED_DEVICE)
-        {
-            cudaDeviceSynchronize();  // Wait for GPU operations
-        }
-        
-        // Cleanup
-        nvimgcodecFutureDestroy(decode_future);
-        nvimgcodecImageDestroy(image);
-        
-        if (decode_status != NVIMGCODEC_PROCESSING_STATUS_SUCCESS)
-        {
-            fmt::print("❌ Decoding failed (status: {})\n", static_cast<int>(decode_status));
-            if (output_image_info.buffer_kind == NVIMGCODEC_IMAGE_BUFFER_KIND_STRIDED_DEVICE)
-            {
-                cudaFree(buffer);
-            }
-            else
-            {
-                free(buffer);
-            }
-            return false;
-        }
-        
-        // Success! Return buffer to caller
-        *output_buffer = static_cast<uint8_t*>(buffer);
-        
-        fmt::print("✅ Successfully decoded IFD[{}]\n", ifd_index);
-        return true;
     }
-    catch (const std::exception& e)
+    
+    // Fallback heuristics for formats without clear keywords
+    // Small images are likely associated images
+    if (ifd.width < 2000 && ifd.height < 2000)
     {
-        fmt::print("❌ Exception during decode: {}\n", e.what());
-        return false;
+        // Convention: Second IFD (index 1) is often thumbnail
+        if (ifd_index == 1)
+        {
+            return ImageType::THUMBNAIL;
+        }
+        
+        // If description exists but no keywords matched, it's still likely associated
+        if (!desc.empty())
+        {
+            return ImageType::UNKNOWN;  // Has description but can't classify
+        }
     }
+    
+    // IFD 0 is always main resolution level
+    if (ifd_index == 0)
+    {
+        return ImageType::RESOLUTION_LEVEL;
+    }
+    
+    // Large images are resolution levels
+    if (ifd.width >= 2000 || ifd.height >= 2000)
+    {
+        return ImageType::RESOLUTION_LEVEL;
+    }
+    
+    return ImageType::UNKNOWN;
+}
+
+std::vector<uint32_t> TiffFileParser::get_resolution_levels() const
+{
+    std::vector<uint32_t> levels;
+    
+    for (const auto& ifd : ifd_infos_)
+    {
+        if (classify_ifd(ifd.index) == ImageType::RESOLUTION_LEVEL)
+        {
+            levels.push_back(ifd.index);
+        }
+    }
+    
+    return levels;
+}
+
+std::map<std::string, uint32_t> TiffFileParser::get_associated_images() const
+{
+    std::map<std::string, uint32_t> associated;
+    
+    for (const auto& ifd : ifd_infos_)
+    {
+        auto type = classify_ifd(ifd.index);
+        switch (type)
+        {
+            case ImageType::THUMBNAIL:
+                associated["thumbnail"] = ifd.index;
+                break;
+            case ImageType::LABEL:
+                associated["label"] = ifd.index;
+                break;
+            case ImageType::MACRO:
+                associated["macro"] = ifd.index;
+                break;
+            default:
+                break;
+        }
+    }
+    
+    return associated;
+}
+
+void TiffFileParser::override_ifd_dimensions(uint32_t ifd_index, 
+                                             uint32_t width, 
+                                             uint32_t height)
+{
+    if (ifd_index >= ifd_infos_.size())
+    {
+        throw std::out_of_range(fmt::format("IFD index {} out of range (have {} IFDs)",
+                                           ifd_index, ifd_infos_.size()));
+    }
+    
+    auto& ifd = ifd_infos_[ifd_index];
+    fmt::print("⚙️  Overriding IFD[{}] dimensions: {}x{} -> {}x{}\n",
+              ifd_index, ifd.width, ifd.height, width, height);
+    
+    ifd.width = width;
+    ifd.height = height;
+}
+
+std::string TiffFileParser::get_image_description(uint32_t ifd_index) const
+{
+    if (ifd_index >= ifd_infos_.size())
+    {
+        return "";
+    }
+    
+    const auto& ifd = ifd_infos_[ifd_index];
+    return ifd.image_description;
 }
 
 void TiffFileParser::print_info() const

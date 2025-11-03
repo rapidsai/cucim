@@ -26,6 +26,7 @@
  */
 
 #include "nvimgcodec_tiff_parser.h"
+#include "nvimgcodec_decoder.h"
 #include <fmt/format.h>
 #include <memory>
 
@@ -76,7 +77,8 @@ void example_parse_tiff_structure(const std::string& tiff_path)
 /**
  * @brief Example 2: Decode highest resolution IFD to CPU memory
  * 
- * This example shows how to decode an entire resolution level to CPU memory.
+ * This example shows how to decode an entire resolution level to CPU memory
+ * using the separated parser and decoder.
  */
 void example_decode_ifd_to_cpu(const std::string& tiff_path)
 {
@@ -84,6 +86,7 @@ void example_decode_ifd_to_cpu(const std::string& tiff_path)
     
     try
     {
+        // Step 1: Parse TIFF structure
         auto tiff = std::make_unique<TiffFileParser>(tiff_path);
         
         if (!tiff->is_valid())
@@ -92,14 +95,15 @@ void example_decode_ifd_to_cpu(const std::string& tiff_path)
             return;
         }
         
-        // Decode highest resolution (IFD 0) to CPU
+        // Step 2: Get IFD info from parser
+        const auto& ifd = tiff->get_ifd(0);
+        
+        // Step 3: Decode using separate decoder function
         uint8_t* image_data = nullptr;
         cucim::io::Device device("cpu");
         
-        if (tiff->decode_ifd(0, &image_data, device))
+        if (decode_ifd_nvimgcodec(ifd, &image_data, device))
         {
-            const auto& ifd = tiff->get_ifd(0);
-            
             fmt::print("✅ Successfully decoded IFD 0\n");
             fmt::print("  Image dimensions: {}x{}\n", ifd.width, ifd.height);
             fmt::print("  Buffer size: {} bytes\n", ifd.width * ifd.height * 3);
@@ -127,7 +131,8 @@ void example_decode_ifd_to_cpu(const std::string& tiff_path)
 /**
  * @brief Example 3: Decode thumbnail to GPU memory
  * 
- * This example shows how to decode a lower resolution IFD to GPU memory.
+ * This example shows how to decode a lower resolution IFD to GPU memory
+ * using the separated parser and decoder.
  */
 void example_decode_thumbnail_to_gpu(const std::string& tiff_path)
 {
@@ -152,13 +157,13 @@ void example_decode_thumbnail_to_gpu(const std::string& tiff_path)
         
         // Decode lowest resolution (last IFD) to GPU
         uint32_t thumbnail_idx = tiff->get_ifd_count() - 1;
+        const auto& ifd = tiff->get_ifd(thumbnail_idx);
+        
         uint8_t* gpu_image_data = nullptr;
         cucim::io::Device device("cuda");
         
-        if (tiff->decode_ifd(thumbnail_idx, &gpu_image_data, device))
+        if (decode_ifd_nvimgcodec(ifd, &gpu_image_data, device))
         {
-            const auto& ifd = tiff->get_ifd(thumbnail_idx);
-            
             fmt::print("✅ Successfully decoded IFD {} to GPU\n", thumbnail_idx);
             fmt::print("  Image dimensions: {}x{}\n", ifd.width, ifd.height);
             fmt::print("  GPU buffer size: {} bytes\n", ifd.width * ifd.height * 3);
@@ -185,7 +190,8 @@ void example_decode_thumbnail_to_gpu(const std::string& tiff_path)
 /**
  * @brief Example 4: Decode all resolution levels
  * 
- * This example shows how to decode all IFDs in a multi-resolution pyramid.
+ * This example shows how to decode all IFDs in a multi-resolution pyramid
+ * using the separated parser and decoder.
  */
 void example_decode_all_levels(const std::string& tiff_path)
 {
@@ -207,10 +213,11 @@ void example_decode_all_levels(const std::string& tiff_path)
         {
             fmt::print("\nDecoding IFD {}...\n", i);
             
+            const auto& ifd = tiff->get_ifd(i);
             uint8_t* image_data = nullptr;
-            if (tiff->decode_ifd(i, &image_data, device))
+            
+            if (decode_ifd_nvimgcodec(ifd, &image_data, device))
             {
-                const auto& ifd = tiff->get_ifd(i);
                 fmt::print("  ✅ Level {}: {}x{}\n", i, ifd.width, ifd.height);
                 
                 // Process this resolution level...
@@ -269,10 +276,11 @@ void example_error_handling(const std::string& tiff_path)
         }
         
         // Try to decode with pre-allocated buffer (not supported in this API)
+        const auto& ifd = tiff->get_ifd(0);
         uint8_t* buffer = nullptr;
         cucim::io::Device device("cpu");
         
-        if (tiff->decode_ifd(0, &buffer, device))
+        if (decode_ifd_nvimgcodec(ifd, &buffer, device))
         {
             fmt::print("✅ Decode succeeded\n");
             free(buffer);
@@ -292,6 +300,119 @@ void example_error_handling(const std::string& tiff_path)
     }
 }
 
+/**
+ * @brief Example 6: Test Aperio JPEG table handling
+ * 
+ * This example specifically tests whether nvTiff can handle Aperio SVS files
+ * with abbreviated JPEG encoding (TIFFTAG_JPEGTABLES).
+ * 
+ * Aperio SVS files store quantization/Huffman tables in the TIFF header,
+ * and each tile is "abbreviated" (missing DQT/DHT markers). This test
+ * verifies if nvTiff's file-level API can properly combine these tables
+ * with tile data during decoding.
+ */
+void example_test_aperio_jpeg_tables(const std::string& tiff_path)
+{
+    fmt::print("\n=== Example 6: Test Aperio JPEG Table Handling ===\n\n");
+    fmt::print("📂 File: {}\n", tiff_path);
+    fmt::print("🎯 Testing if nvTiff handles TIFFTAG_JPEGTABLES (abbreviated JPEG)\n\n");
+    
+    try
+    {
+        // Step 1: Parse TIFF structure
+        auto tiff = std::make_unique<TiffFileParser>(tiff_path);
+        
+        if (!tiff->is_valid())
+        {
+            fmt::print("❌ Failed to open TIFF file\n");
+            return;
+        }
+        
+        // Step 2: Find first JPEG-compressed IFD
+        uint32_t jpeg_ifd_index = UINT32_MAX;
+        bool found_jpeg = false;
+        
+        fmt::print("Searching for JPEG-compressed IFD:\n");
+        for (uint32_t i = 0; i < tiff->get_ifd_count(); ++i)
+        {
+            const auto& ifd = tiff->get_ifd(i);
+            fmt::print("  IFD {}: {}x{}, codec: {}\n", 
+                      i, ifd.width, ifd.height, ifd.codec);
+            
+            if (ifd.codec == "jpeg" && !found_jpeg)
+            {
+                jpeg_ifd_index = i;
+                found_jpeg = true;
+                fmt::print("  ⭐ Found JPEG-compressed IFD at index {}\n", i);
+            }
+        }
+        
+        if (!found_jpeg)
+        {
+            fmt::print("\n⚠️  No JPEG-compressed IFD found\n");
+            fmt::print("ℹ️  This test requires JPEG-compressed tiles (e.g., CMU-1-Small-Region.svs)\n");
+            fmt::print("ℹ️  File may use JPEG2000 or other codecs which don't have this issue\n");
+            return;
+        }
+        
+        fmt::print("\n{'='*60}\n", fmt::arg("", ""));
+        fmt::print("CRITICAL TEST: Decoding Abbreviated JPEG\n");
+        fmt::print("{'='*60}\n", fmt::arg("", ""));
+        fmt::print("🔬 This reveals if nvTiff handles TIFFTAG_JPEGTABLES correctly\n");
+        fmt::print("⏳ Attempting decode...\n\n");
+        
+        // Step 3: Try to decode the JPEG IFD
+        const auto& ifd = tiff->get_ifd(jpeg_ifd_index);
+        uint8_t* buffer = nullptr;
+        cucim::io::Device device("cpu");
+        
+        bool success = decode_ifd_nvimgcodec(ifd, &buffer, device);
+        
+        fmt::print("\n{'='*60}\n", fmt::arg("", ""));
+        fmt::print("TEST RESULTS\n");
+        fmt::print("{'='*60}\n", fmt::arg("", ""));
+        
+        if (success && buffer != nullptr)
+        {
+            fmt::print("✅ DECODE SUCCESS!\n\n");
+            fmt::print("🎉 Result: nvTiff DOES handle Aperio JPEG tables correctly!\n");
+            fmt::print("📊 Decoded {}x{} image ({} channels)\n", 
+                      ifd.width, ifd.height, ifd.num_channels);
+            fmt::print("\n💡 Implications:\n");
+            fmt::print("   ✅ You CAN use nvImageCodec file-level API for Aperio SVS\n");
+            fmt::print("   ✅ ROI-based decoding WILL work with JPEG-compressed tiles\n");
+            fmt::print("   ✅ No need for libjpeg-turbo fallback with file-level API\n");
+            fmt::print("   ✅ Simplified architecture possible\n");
+            
+            free(buffer);
+        }
+        else
+        {
+            fmt::print("❌ DECODE FAILED!\n\n");
+            fmt::print("🔍 Result: nvTiff does NOT handle Aperio JPEG tables in file-level API\n");
+            fmt::print("\n💡 Implications:\n");
+            fmt::print("   ⚠️  Continue using hybrid approach (libtiff + buffer-level nvImageCodec)\n");
+            fmt::print("   ⚠️  File-level API not suitable for Aperio JPEG tiles\n");
+            fmt::print("   ⚠️  Keep libjpeg-turbo fallback mechanism\n");
+            fmt::print("   ⚠️  Use buffer-level API with manual JPEG table handling\n");
+            
+            fmt::print("\n📝 Technical Details:\n");
+            fmt::print("   - Aperio stores tables in TIFFTAG_JPEGTABLES (TIFF header)\n");
+            fmt::print("   - Each tile is 'abbreviated' (missing DQT/DHT markers)\n");
+            fmt::print("   - nvTiff file-level API doesn't combine tables with tiles\n");
+            fmt::print("   - Buffer-level API with libjpeg-turbo handles this correctly\n");
+        }
+        
+        fmt::print("\n📚 See Also:\n");
+        fmt::print("   - APERIO_SVS_JPEG_TABLES_EXPLANATION.md\n");
+        fmt::print("   - NVIMAGECODEC_ROI_FEEDBACK_ANALYSIS.md\n");
+    }
+    catch (const std::exception& e)
+    {
+        fmt::print("❌ Exception during test: {}\n", e.what());
+    }
+}
+
 } // namespace cuslide2::nvimgcodec::examples
 
 /**
@@ -303,29 +424,60 @@ int main(int argc, char* argv[])
 {
     if (argc < 2)
     {
-        fmt::print("Usage: {} <tiff_file_path>\n", argv[0]);
+        fmt::print("Usage: {} <tiff_file_path> [--test-jpeg-tables]\n", argv[0]);
         fmt::print("\nExamples:\n");
-        fmt::print("  {} image.tif\n", argv[0]);
-        fmt::print("  {} /path/to/slide.svs\n", argv[0]);
+        fmt::print("  {} image.tif                    # Run all examples\n", argv[0]);
+        fmt::print("  {} /path/to/slide.svs           # Run all examples\n", argv[0]);
+        fmt::print("  {} aperio.svs --test-jpeg-tables  # Only test JPEG tables\n", argv[0]);
+        fmt::print("\nOptions:\n");
+        fmt::print("  --test-jpeg-tables    Only run Aperio JPEG table test (Example 6)\n");
         return 1;
     }
     
     std::string tiff_path = argv[1];
+    bool test_jpeg_tables_only = false;
     
-    fmt::print("nvImageCodec TIFF Parser Examples\n");
-    fmt::print("==================================\n");
-    fmt::print("File: {}\n", tiff_path);
+    // Check for --test-jpeg-tables flag
+    if (argc >= 3 && std::string(argv[2]) == "--test-jpeg-tables")
+    {
+        test_jpeg_tables_only = true;
+    }
     
     using namespace cuslide2::nvimgcodec::examples;
     
-    // Run examples
-    example_parse_tiff_structure(tiff_path);
-    example_decode_ifd_to_cpu(tiff_path);
-    example_decode_thumbnail_to_gpu(tiff_path);
-    example_decode_all_levels(tiff_path);
-    example_error_handling(tiff_path);
-    
-    fmt::print("\n=== All Examples Complete ===\n\n");
+    if (test_jpeg_tables_only)
+    {
+        // Run only the JPEG table test
+        fmt::print("\n");
+        fmt::print("╔{'═'*78}╗\n", fmt::arg("", ""));
+        fmt::print("║{:^78}║\n", " nvTiff JPEG Table Handling Test ");
+        fmt::print("║{:^78}║\n", " ");
+        fmt::print("║{:^78}║\n", " Testing if nvImageCodec/nvTiff can decode Aperio SVS files with ");
+        fmt::print("║{:^78}║\n", " abbreviated JPEG encoding (TIFFTAG_JPEGTABLES) ");
+        fmt::print("╚{'═'*78}╝\n", fmt::arg("", ""));
+        
+        example_test_aperio_jpeg_tables(tiff_path);
+        
+        fmt::print("\n{'═'*78}\n", fmt::arg("", ""));
+        fmt::print("Test Complete\n");
+        fmt::print("{'═'*78}\n\n", fmt::arg("", ""));
+    }
+    else
+    {
+        // Run all examples
+        fmt::print("nvImageCodec TIFF Parser Examples\n");
+        fmt::print("==================================\n");
+        fmt::print("File: {}\n", tiff_path);
+        
+        example_parse_tiff_structure(tiff_path);
+        example_decode_ifd_to_cpu(tiff_path);
+        example_decode_thumbnail_to_gpu(tiff_path);
+        example_decode_all_levels(tiff_path);
+        example_error_handling(tiff_path);
+        example_test_aperio_jpeg_tables(tiff_path);  // Test JPEG table handling
+        
+        fmt::print("\n=== All Examples Complete ===\n\n");
+    }
     
     return 0;
 }
