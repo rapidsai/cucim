@@ -1,6 +1,13 @@
 /*
+ * SPDX-FileCopyrightText: Copyright (c) 2002-2014, Universite catholique de Louvain (UCL), Belgium
+ * SPDX-FileCopyrightText: Copyright (c) 2002-2014, Professor Benoit Macq
+ * SPDX-FileCopyrightText: Copyright (c) 2001-2003, David Janssens
+ * SPDX-FileCopyrightText: Copyright (c) 2002-2003, Yannick Verschueren
+ * SPDX-FileCopyrightText: Copyright (c) 2003-2007, Francois-Olivier Devaux
+ * SPDX-FileCopyrightText: Copyright (c) 2003-2014, Antonin Descampe
+ * SPDX-FileCopyrightText: Copyright (c) 2005, Herve Drolon, FreeImage Team
  * SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION
- * SPDX-License-Identifier: Apache-2.0
+ * SPDX-License-Identifier: Apache-2.0 AND BSD-2-Clause
  */
 
 /**

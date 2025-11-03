@@ -274,7 +274,10 @@ repos:
             ^python/cucim/src/cucim/skimage/util/tests/test_map_array[.]py$|
             ^python/cucim/src/cucim/skimage/util/tests/test_montage[.]py$|
             ^python/cucim/src/cucim/skimage/util/tests/test_random_noise[.]py$|
-            ^python/cucim/src/cucim/skimage/util/tests/test_shape[.]py$
+            ^python/cucim/src/cucim/skimage/util/tests/test_shape[.]py$|
+            ^cpp/plugins/cucim[.]kit[.]cuslide/src/cuslide/jpeg2k/libopenjpeg[.]cpp$|
+            ^cpp/plugins/cucim[.]kit[.]cuslide/src/cuslide/jpeg2k/color_conversion[.]cpp$|
+            ^cpp/plugins/cucim[.]kit[.]cuslide/src/cuslide/jpeg/libjpeg_turbo[.]cpp$
       - id: verify-copyright
         name: verify-copyright-lzw
         args: [--fix, --spdx, "--spdx-license-identifier=Apache-2.0 AND LicenseRef-Berkeley-lzw AND libtiff"]
@@ -557,6 +560,21 @@ repos:
         files: |
           (?x)^(
             python/cucim/src/cucim/skimage/filters/cuda/histogram_median[.]cu$
+          )
+      - id: verify-copyright
+        name: verify-copyright-openjpeg
+        args: [--fix, --spdx, "--spdx-license-identifier=Apache-2.0 AND BSD-2-Clause"]
+        files: |
+          (?x)^(
+            cpp/plugins/cucim[.]kit[.]cuslide/src/cuslide/jpeg2k/libopenjpeg[.]cpp$|
+            cpp/plugins/cucim[.]kit[.]cuslide/src/cuslide/jpeg2k/color_conversion[.]cpp$
+          )
+      - id: verify-copyright
+        name: verify-copyright-libjpeg-turbo
+        args: [--fix, --spdx, "--spdx-license-identifier=Apache-2.0 AND BSD-3-Clause AND IJG-short AND Zlib"]
+        files: |
+          (?x)^(
+            cpp/plugins/cucim[.]kit[.]cuslide/src/cuslide/jpeg/libjpeg_turbo[.]cpp$
           )
       - id: verify-alpha-spec
   - repo: https://github.com/rapidsai/dependency-file-generator

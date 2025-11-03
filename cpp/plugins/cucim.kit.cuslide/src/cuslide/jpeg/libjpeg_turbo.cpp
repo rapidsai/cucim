@@ -1,6 +1,7 @@
 /*
+ * SPDX-FileCopyrightText: Copyright (C) 2009-2020 D. R. Commander.
  * SPDX-FileCopyrightText: Copyright (c) 2020-2025, NVIDIA CORPORATION
- * SPDX-License-Identifier: Apache-2.0
+ * SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause AND IJG-short AND Zlib
  */
 
 /**
