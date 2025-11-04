@@ -15,13 +15,6 @@
 
 # The following cmake policies are set by `CMAKE_PROJECT_INCLUDE_BEFORE` variables
 # when `FetchContent` command is used (see https://gitlab.kitware.com/cmake/cmake/-/issues/19854).
-
-# Workaround for libtiff v4.1.0's cmake_minimum_required(VERSION 2.8.11)
-# This allows the old version requirement to be accepted by newer CMake
-if(POLICY CMP0000)
-    cmake_policy(SET CMP0000 OLD)  # Allow old minimum version
-endif()
-
 cmake_policy(SET CMP0072 NEW)  # FindOpenGL prefers GLVND by default when available. for libtiff
 cmake_policy(SET CMP0048 NEW)  # project() command manages VERSION variables. for libtiff
 cmake_policy(SET CMP0063 NEW)  # Honor the visibility properties for all target types including static library.
