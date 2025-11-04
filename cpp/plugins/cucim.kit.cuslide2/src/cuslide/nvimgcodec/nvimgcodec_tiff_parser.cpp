@@ -274,7 +274,11 @@ void TiffFileParser::parse_tiff_structure()
         }
         
         // Extract metadata for this IFD using nvimgcodecDecoderGetMetadata
+        // Extract vendor-specific metadata (Aperio, Philips, etc.)
         extract_ifd_metadata(ifd_info);
+        
+        // Extract individual TIFF tags (nvImageCodec 0.7.0+)
+        extract_tiff_tags(ifd_info);
         
         ifd_info.print();
         
@@ -536,6 +540,180 @@ void TiffFileParser::print_info() const
     {
         ifd.print();
     }
+}
+
+// ============================================================================
+// nvImageCodec 0.7.0 Features Implementation
+// ============================================================================
+
+void TiffFileParser::extract_tiff_tags(IfdInfo& ifd_info)
+{
+    auto& manager = NvImageCodecTiffParserManager::instance();
+    
+    if (!manager.get_decoder() || !ifd_info.sub_code_stream)
+    {
+        return;  // No decoder or stream available
+    }
+    
+    // List of common TIFF tags to extract (add more as needed)
+    std::vector<std::string> tags_to_query = {
+        "SUBFILETYPE",      // Tag 254 - Image type classification
+        "ImageWidth",       // Tag 256
+        "ImageLength",      // Tag 257
+        "BitsPerSample",    // Tag 258
+        "Compression",      // Tag 259
+        "PhotometricInterpretation",  // Tag 262
+        "ImageDescription", // Tag 270 - Vendor metadata
+        "Make",            // Tag 271 - Scanner manufacturer
+        "Model",           // Tag 272 - Scanner model
+        "Software",        // Tag 305
+        "DateTime",        // Tag 306
+        "TileWidth",       // Tag 322
+        "TileLength",      // Tag 323
+        "SampleFormat",    // Tag 339
+        "JPEGTables"       // Tag 347 - Shared JPEG tables
+    };
+    
+    fmt::print("  Extracting TIFF tags for IFD[{}]...\n", ifd_info.index);
+    
+    for (const auto& tag_name : tags_to_query)
+    {
+        // Query individual TIFF tag using nvImageCodec 0.7.0 API
+        // Note: This uses NVIMGCODEC_METADATA_KIND_TIFF_TAG (kind = 0)
+        //       with tag name as query parameter
+        
+        int metadata_count = 0;
+        nvimgcodecStatus_t status = nvimgcodecDecoderGetMetadata(
+            manager.get_decoder(),
+            ifd_info.sub_code_stream,
+            nullptr,  // First call: get count
+            &metadata_count
+        );
+        
+        if (status != NVIMGCODEC_STATUS_SUCCESS || metadata_count == 0)
+        {
+            continue;
+        }
+        
+        // Allocate and retrieve metadata
+        std::vector<nvimgcodecMetadata_t*> metadata_ptrs(metadata_count, nullptr);
+        status = nvimgcodecDecoderGetMetadata(
+            manager.get_decoder(),
+            ifd_info.sub_code_stream,
+            metadata_ptrs.data(),
+            &metadata_count
+        );
+        
+        if (status != NVIMGCODEC_STATUS_SUCCESS)
+        {
+            continue;
+        }
+        
+        // Search for TIFF_TAG kind (kind=0) and match tag name
+        for (int j = 0; j < metadata_count; ++j)
+        {
+            if (!metadata_ptrs[j])
+                continue;
+            
+            nvimgcodecMetadata_t* metadata = metadata_ptrs[j];
+            
+            // Check if this is a TIFF tag (kind=0)
+            if (metadata->kind == 0)  // NVIMGCODEC_METADATA_KIND_TIFF_TAG
+            {
+                // Extract tag value
+                if (metadata->buffer && metadata->buffer_size > 0)
+                {
+                    std::string value(static_cast<const char*>(metadata->buffer), 
+                                    metadata->buffer_size);
+                    ifd_info.tiff_tags[tag_name] = value;
+                    fmt::print("    Found tag: {} = {}\n", tag_name, value);
+                }
+            }
+        }
+    }
+}
+
+std::string TiffFileParser::get_tiff_tag(uint32_t ifd_index, const std::string& tag_name) const
+{
+    if (ifd_index >= ifd_infos_.size())
+        return "";
+    
+    auto it = ifd_infos_[ifd_index].tiff_tags.find(tag_name);
+    if (it != ifd_infos_[ifd_index].tiff_tags.end())
+        return it->second;
+    
+    return "";
+}
+
+int TiffFileParser::get_subfile_type(uint32_t ifd_index) const
+{
+    std::string subfile_str = get_tiff_tag(ifd_index, "SUBFILETYPE");
+    if (subfile_str.empty())
+        return -1;
+    
+    try {
+        return std::stoi(subfile_str);
+    } catch (...) {
+        return -1;
+    }
+}
+
+std::vector<int> TiffFileParser::query_metadata_kinds(uint32_t ifd_index) const
+{
+    std::vector<int> kinds;
+    
+    if (ifd_index >= ifd_infos_.size())
+        return kinds;
+    
+    // Return all metadata kinds found in this IFD
+    for (const auto& [kind, blob] : ifd_infos_[ifd_index].metadata_blobs)
+    {
+        kinds.push_back(kind);
+    }
+    
+    // Also add TIFF_TAG kind (0) if any tags were extracted
+    if (!ifd_infos_[ifd_index].tiff_tags.empty())
+    {
+        kinds.insert(kinds.begin(), 0);  // NVIMGCODEC_METADATA_KIND_TIFF_TAG = 0
+    }
+    
+    return kinds;
+}
+
+std::string TiffFileParser::get_detected_format() const
+{
+    if (ifd_infos_.empty())
+        return "Unknown";
+    
+    // Check first IFD for vendor-specific metadata
+    const auto& kinds = query_metadata_kinds(0);
+    
+    for (int kind : kinds)
+    {
+        switch (kind)
+        {
+            case 1:  // NVIMGCODEC_METADATA_KIND_MED_APERIO
+                return "Aperio SVS";
+            case 2:  // NVIMGCODEC_METADATA_KIND_MED_PHILIPS
+                return "Philips TIFF";
+            case 3:  // NVIMGCODEC_METADATA_KIND_MED_LEICA (if available)
+                return "Leica SCN";
+            case 4:  // NVIMGCODEC_METADATA_KIND_MED_VENTANA
+                return "Ventana";
+            case 5:  // NVIMGCODEC_METADATA_KIND_MED_TRESTLE
+                return "Trestle";
+            default:
+                break;
+        }
+    }
+    
+    // Fallback: Generic TIFF with detected codec
+    if (!ifd_infos_.empty() && !ifd_infos_[0].codec.empty())
+    {
+        return fmt::format("Generic TIFF ({})", ifd_infos_[0].codec);
+    }
+    
+    return "Generic TIFF";
 }
 
 #endif // CUCIM_HAS_NVIMGCODEC

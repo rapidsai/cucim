@@ -73,6 +73,10 @@ struct IfdInfo
     };
     std::map<int, MetadataBlob> metadata_blobs;
     
+    // nvImageCodec 0.7.0: Individual TIFF tag storage
+    // tag_name -> tag_value (e.g., "SUBFILETYPE" -> "0")
+    std::map<std::string, std::string> tiff_tags;
+    
     IfdInfo() : index(0), width(0), height(0), num_channels(0), 
                 bits_per_sample(0), sub_code_stream(nullptr) {}
     
@@ -254,6 +258,57 @@ public:
         return nullptr;
     }
     
+    // ========================================================================
+    // nvImageCodec 0.7.0 Features: Individual TIFF Tag Retrieval
+    // ========================================================================
+    
+    /**
+     * @brief Get a specific TIFF tag value as string (nvImageCodec 0.7.0+)
+     * 
+     * Uses NVIMGCODEC_METADATA_KIND_TIFF_TAG to retrieve individual TIFF tags
+     * by name (e.g., "SUBFILETYPE", "ImageDescription", "DateTime", etc.)
+     * 
+     * @param ifd_index IFD index
+     * @param tag_name TIFF tag name (case-sensitive)
+     * @return Tag value as string, or empty if not found
+     */
+    std::string get_tiff_tag(uint32_t ifd_index, const std::string& tag_name) const;
+    
+    /**
+     * @brief Get SUBFILETYPE tag for format classification (nvImageCodec 0.7.0+)
+     * 
+     * Returns the SUBFILETYPE value used in formats like Aperio SVS:
+     * - 0 = full resolution image
+     * - 1 = reduced resolution image (thumbnail/label/macro)
+     * 
+     * @param ifd_index IFD index
+     * @return SUBFILETYPE value, or -1 if not present
+     */
+    int get_subfile_type(uint32_t ifd_index) const;
+    
+    /**
+     * @brief Query all available metadata kinds in file (nvImageCodec 0.7.0+)
+     * 
+     * Returns a list of metadata kinds present in the file for discovery.
+     * Useful for detecting file format (Aperio, Philips, Generic TIFF, etc.)
+     * 
+     * Example kinds: TIFF_TAG=0, MED_APERIO=1, MED_PHILIPS=2, etc.
+     * 
+     * @param ifd_index IFD index (default 0 for file-level metadata)
+     * @return Vector of metadata kind values present in the IFD
+     */
+    std::vector<int> query_metadata_kinds(uint32_t ifd_index = 0) const;
+    
+    /**
+     * @brief Get detected file format based on metadata (nvImageCodec 0.7.0+)
+     * 
+     * Automatically detects format by checking available metadata kinds.
+     * nvImageCodec 0.7.0 handles detection internally.
+     * 
+     * @return Format name: "Aperio SVS", "Philips TIFF", "Leica SCN", "Generic TIFF", etc.
+     */
+    std::string get_detected_format() const;
+    
     /**
      * @brief Print TIFF structure information
      */
@@ -276,6 +331,16 @@ private:
      * @param ifd_info IFD to extract metadata for (must have valid sub_code_stream)
      */
     void extract_ifd_metadata(IfdInfo& ifd_info);
+    
+    /**
+     * @brief Extract individual TIFF tags (nvImageCodec 0.7.0+)
+     * 
+     * Uses NVIMGCODEC_METADATA_KIND_TIFF_TAG to query specific TIFF tags by name.
+     * Populates ifd_info.tiff_tags map.
+     * 
+     * @param ifd_info IFD to extract TIFF tags for
+     */
+    void extract_tiff_tags(IfdInfo& ifd_info);
     
     std::string file_path_;
     bool initialized_;
