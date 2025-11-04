@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 # To install the git pre-commit hook run:
 #   pre-commit install
 # To update the pre-commit hooks run:
@@ -29,8 +32,550 @@ repos:
         additional_dependencies:
           - tomli
   - repo: https://github.com/rapidsai/pre-commit-hooks
-    rev: v0.7.0
+    rev: v1.2.1
     hooks:
+      - id: verify-copyright
+        name: verify-copyright-cucim
+        args: [--fix, --spdx]
+        files: |
+          (?x)
+            [.](cmake|cpp|cu|cuh|h|hpp|sh|pxd|py|pyx|pyi|rs|java|inl|cmake[.]in|bat)$|
+            CMakeLists[.]txt$|
+            CMakeLists_standalone[.]txt$|
+            meta[.]yaml$|
+            pyproject[.]toml$|
+            setup[.]cfg$|
+            ^[.]pre-commit-config[.]yaml$|
+            dependencies[.]yaml$|
+            Makefile$
+        exclude: |
+          (?x)
+            [.]idea/fileTemplates/|
+            ^cpp/include/cucim/3rdparty/dlpack/|
+            ^cpp/plugins/cucim[.]kit[.]cuslide/src/cuslide/lzw/lzw_libtiff[.]cpp$|
+            ^cpp/plugins/cucim[.]kit[.]cuslide/src/cuslide/lzw/lzw_libtiff[.]h$|
+            ^docs/source/ext/doi_role[.]py$|
+            ^python/cucim/src/cucim/core/operations/morphology/cuda/pba_kernels_2d[.]h$|
+            ^python/cucim/src/cucim/skimage/feature/_canny[.]py$|
+            ^python/cucim/src/cucim/skimage/filters/_rank_order[.]py$|
+            ^python/cucim/src/cucim/skimage/filters/edges[.]py$|
+            ^python/cucim/src/cucim/skimage/morphology/_skeletonize[.]py$|
+            ^python/cucim/src/cucim/skimage/morphology/grayreconstruct[.]py$|
+            ^python/cucim/src/cucim/skimage/morphology/tests/test_reconstruction[.]py$|
+            ^python/cucim/src/cucim/skimage/_vendored/_internal[.]py$|
+            ^python/cucim/src/cucim/skimage/_vendored/_ndimage_filters_core[.]py$|
+            ^python/cucim/src/cucim/skimage/_vendored/_ndimage_filters[.]py$|
+            ^python/cucim/src/cucim/skimage/_vendored/_ndimage_interp_kernels[.]py$|
+            ^python/cucim/src/cucim/skimage/_vendored/_ndimage_interpolation[.]py$|
+            ^python/cucim/src/cucim/skimage/_vendored/_ndimage_measurements[.]py$|
+            ^python/cucim/src/cucim/skimage/_vendored/_ndimage_morphology[.]py$|
+            ^python/cucim/src/cucim/skimage/_vendored/_ndimage_spline_kernel_weights[.]py$|
+            ^python/cucim/src/cucim/skimage/_vendored/_ndimage_spline_prefilter_core[.]py$|
+            ^python/cucim/src/cucim/skimage/_vendored/_ndimage_util[.]py$|
+            ^python/cucim/src/cucim/skimage/_vendored/_pearsonr[.]py$|
+            ^python/cucim/src/cucim/skimage/_vendored/_signaltools_core[.]py$|
+            ^python/cucim/src/cucim/skimage/_vendored/_texture[.]py$|
+            ^python/cucim/src/cucim/skimage/_vendored/ndimage[.]py$|
+            ^python/cucim/src/cucim/skimage/_vendored/pad[.]py$|
+            ^python/cucim/src/cucim/skimage/_vendored/signaltools[.]py$|
+            ^python/cucim/src/cucim/skimage/_vendored/time[.]py$|
+            ^python/cucim/src/cucim/skimage/filters/thresholding[.]py$|
+            ^python/cucim/src/cucim/skimage/segmentation/_expand_labels[.]py$|
+            ^python/cucim/src/cucim/skimage/exposure/_adapthist[.]py$|
+            ^python/cucim/src/cucim/skimage/__init__[.]py$|
+            ^python/cucim/src/cucim/skimage/__init__[.]pyi$|
+            ^python/cucim/src/cucim/skimage/_shared/__init__[.]py$|
+            ^python/cucim/src/cucim/skimage/_shared/_dependency_checks[.]py$|
+            ^python/cucim/src/cucim/skimage/_shared/_gradient[.]py$|
+            ^python/cucim/src/cucim/skimage/_shared/_warnings[.]py$|
+            ^python/cucim/src/cucim/skimage/_shared/compat[.]py$|
+            ^python/cucim/src/cucim/skimage/_shared/coord[.]py$|
+            ^python/cucim/src/cucim/skimage/_shared/distance[.]py$|
+            ^python/cucim/src/cucim/skimage/_shared/fft[.]py$|
+            ^python/cucim/src/cucim/skimage/_shared/filters[.]py$|
+            ^python/cucim/src/cucim/skimage/_shared/testing[.]py$|
+            ^python/cucim/src/cucim/skimage/_shared/tests/test_coord[.]py$|
+            ^python/cucim/src/cucim/skimage/_shared/tests/test_utils[.]py$|
+            ^python/cucim/src/cucim/skimage/_shared/tests/test_warnings[.]py$|
+            ^python/cucim/src/cucim/skimage/_shared/utils[.]py$|
+            ^python/cucim/src/cucim/skimage/color/__init__[.]py$|
+            ^python/cucim/src/cucim/skimage/color/__init__[.]pyi$|
+            ^python/cucim/src/cucim/skimage/color/adapt_rgb[.]py$|
+            ^python/cucim/src/cucim/skimage/color/colorconv[.]py$|
+            ^python/cucim/src/cucim/skimage/color/colorlabel[.]py$|
+            ^python/cucim/src/cucim/skimage/color/delta_e[.]py$|
+            ^python/cucim/src/cucim/skimage/color/rgb_colors[.]py$|
+            ^python/cucim/src/cucim/skimage/color/tests/test_adapt_rgb[.]py$|
+            ^python/cucim/src/cucim/skimage/color/tests/test_colorconv[.]py$|
+            ^python/cucim/src/cucim/skimage/color/tests/test_colorlabel[.]py$|
+            ^python/cucim/src/cucim/skimage/color/tests/test_delta_e[.]py$|
+            ^python/cucim/src/cucim/skimage/data/__init__[.]py$|
+            ^python/cucim/src/cucim/skimage/data/__init__[.]pyi$|
+            ^python/cucim/src/cucim/skimage/data/_binary_blobs[.]py$|
+            ^python/cucim/src/cucim/skimage/data/tests/test_data[.]py$|
+            ^python/cucim/src/cucim/skimage/exposure/__init__[.]py$|
+            ^python/cucim/src/cucim/skimage/exposure/__init__[.]pyi$|
+            ^python/cucim/src/cucim/skimage/exposure/exposure[.]py$|
+            ^python/cucim/src/cucim/skimage/exposure/histogram_matching[.]py$|
+            ^python/cucim/src/cucim/skimage/exposure/tests/test_exposure[.]py$|
+            ^python/cucim/src/cucim/skimage/exposure/tests/test_histogram_matching[.]py$|
+            ^python/cucim/src/cucim/skimage/feature/__init__[.]py$|
+            ^python/cucim/src/cucim/skimage/feature/__init__[.]pyi$|
+            ^python/cucim/src/cucim/skimage/feature/_basic_features[.]py$|
+            ^python/cucim/src/cucim/skimage/feature/_daisy[.]py$|
+            ^python/cucim/src/cucim/skimage/feature/_hessian_det_appx[.]py$|
+            ^python/cucim/src/cucim/skimage/feature/blob[.]py$|
+            ^python/cucim/src/cucim/skimage/feature/corner[.]py$|
+            ^python/cucim/src/cucim/skimage/feature/cuda/_hessian_det_appx[.]cu$|
+            ^python/cucim/src/cucim/skimage/feature/cuda/blob[.]cu$|
+            ^python/cucim/src/cucim/skimage/feature/match[.]py$|
+            ^python/cucim/src/cucim/skimage/feature/peak[.]py$|
+            ^python/cucim/src/cucim/skimage/feature/template[.]py$|
+            ^python/cucim/src/cucim/skimage/feature/tests/test_basic_features[.]py$|
+            ^python/cucim/src/cucim/skimage/feature/tests/test_blob[.]py$|
+            ^python/cucim/src/cucim/skimage/feature/tests/test_canny[.]py$|
+            ^python/cucim/src/cucim/skimage/feature/tests/test_corner[.]py$|
+            ^python/cucim/src/cucim/skimage/feature/tests/test_daisy[.]py$|
+            ^python/cucim/src/cucim/skimage/feature/tests/test_match[.]py$|
+            ^python/cucim/src/cucim/skimage/feature/tests/test_peak[.]py$|
+            ^python/cucim/src/cucim/skimage/feature/tests/test_template[.]py$|
+            ^python/cucim/src/cucim/skimage/feature/util[.]py$|
+            ^python/cucim/src/cucim/skimage/filters/__init__[.]py$|
+            ^python/cucim/src/cucim/skimage/filters/__init__[.]pyi$|
+            ^python/cucim/src/cucim/skimage/filters/_fft_based[.]py$|
+            ^python/cucim/src/cucim/skimage/filters/_gabor[.]py$|
+            ^python/cucim/src/cucim/skimage/filters/_gaussian[.]py$|
+            ^python/cucim/src/cucim/skimage/filters/_median[.]py$|
+            ^python/cucim/src/cucim/skimage/filters/_separable_filtering[.]py$|
+            ^python/cucim/src/cucim/skimage/filters/_sparse[.]py$|
+            ^python/cucim/src/cucim/skimage/filters/_unsharp_mask[.]py$|
+            ^python/cucim/src/cucim/skimage/filters/_window[.]py$|
+            ^python/cucim/src/cucim/skimage/filters/cuda/histogram_median[.]cu$|
+            ^python/cucim/src/cucim/skimage/filters/lpi_filter[.]py$|
+            ^python/cucim/src/cucim/skimage/filters/ridges[.]py$|
+            ^python/cucim/src/cucim/skimage/filters/tests/test_correlate[.]py$|
+            ^python/cucim/src/cucim/skimage/filters/tests/test_edges[.]py$|
+            ^python/cucim/src/cucim/skimage/filters/tests/test_fft_based[.]py$|
+            ^python/cucim/src/cucim/skimage/filters/tests/test_gabor[.]py$|
+            ^python/cucim/src/cucim/skimage/filters/tests/test_gaussian[.]py$|
+            ^python/cucim/src/cucim/skimage/filters/tests/test_lpi_filter[.]py$|
+            ^python/cucim/src/cucim/skimage/filters/tests/test_median[.]py$|
+            ^python/cucim/src/cucim/skimage/filters/tests/test_rank_order[.]py$|
+            ^python/cucim/src/cucim/skimage/filters/tests/test_ridges[.]py$|
+            ^python/cucim/src/cucim/skimage/filters/tests/test_separable_filtering[.]py$|
+            ^python/cucim/src/cucim/skimage/filters/tests/test_thresholding[.]py$|
+            ^python/cucim/src/cucim/skimage/filters/tests/test_unsharp_mask[.]py$|
+            ^python/cucim/src/cucim/skimage/filters/tests/test_window[.]py$|
+            ^python/cucim/src/cucim/skimage/measure/__init__[.]py$|
+            ^python/cucim/src/cucim/skimage/measure/__init__[.]pyi$|
+            ^python/cucim/src/cucim/skimage/measure/_blur_effect[.]py$|
+            ^python/cucim/src/cucim/skimage/measure/_colocalization[.]py$|
+            ^python/cucim/src/cucim/skimage/measure/_label_kernels[.]py$|
+            ^python/cucim/src/cucim/skimage/measure/_label[.]py$|
+            ^python/cucim/src/cucim/skimage/measure/_moments_analytical[.]py$|
+            ^python/cucim/src/cucim/skimage/measure/_moments[.]py$|
+            ^python/cucim/src/cucim/skimage/measure/_polygon[.]py$|
+            ^python/cucim/src/cucim/skimage/measure/_regionprops_utils[.]py$|
+            ^python/cucim/src/cucim/skimage/measure/_regionprops[.]py$|
+            ^python/cucim/src/cucim/skimage/measure/block[.]py$|
+            ^python/cucim/src/cucim/skimage/measure/entropy[.]py$|
+            ^python/cucim/src/cucim/skimage/measure/profile[.]py$|
+            ^python/cucim/src/cucim/skimage/measure/tests/test_block[.]py$|
+            ^python/cucim/src/cucim/skimage/measure/tests/test_blur_effect[.]py$|
+            ^python/cucim/src/cucim/skimage/measure/tests/test_ccomp[.]py$|
+            ^python/cucim/src/cucim/skimage/measure/tests/test_colocalization[.]py$|
+            ^python/cucim/src/cucim/skimage/measure/tests/test_entropy[.]py$|
+            ^python/cucim/src/cucim/skimage/measure/tests/test_moments[.]py$|
+            ^python/cucim/src/cucim/skimage/measure/tests/test_polygon[.]py$|
+            ^python/cucim/src/cucim/skimage/measure/tests/test_profile[.]py$|
+            ^python/cucim/src/cucim/skimage/measure/tests/test_regionprops_gpu_kernels[.]py$|
+            ^python/cucim/src/cucim/skimage/measure/tests/test_regionprops[.]py$|
+            ^python/cucim/src/cucim/skimage/metrics/__init__[.]py$|
+            ^python/cucim/src/cucim/skimage/metrics/__init__[.]pyi$|
+            ^python/cucim/src/cucim/skimage/metrics/_adapted_rand_error[.]py$|
+            ^python/cucim/src/cucim/skimage/metrics/_contingency_table[.]py$|
+            ^python/cucim/src/cucim/skimage/metrics/_structural_similarity[.]py$|
+            ^python/cucim/src/cucim/skimage/metrics/_variation_of_information[.]py$|
+            ^python/cucim/src/cucim/skimage/metrics/simple_metrics[.]py$|
+            ^python/cucim/src/cucim/skimage/metrics/tests/test_segmentation_metrics[.]py$|
+            ^python/cucim/src/cucim/skimage/metrics/tests/test_simple_metrics[.]py$|
+            ^python/cucim/src/cucim/skimage/metrics/tests/test_structural_similarity[.]py$|
+            ^python/cucim/src/cucim/skimage/morphology/__init__[.]py$|
+            ^python/cucim/src/cucim/skimage/morphology/_medial_axis_lookup[.]py$|
+            ^python/cucim/src/cucim/skimage/morphology/binary[.]py$|
+            ^python/cucim/src/cucim/skimage/morphology/convex_hull[.]py$|
+            ^python/cucim/src/cucim/skimage/morphology/footprints[.]py$|
+            ^python/cucim/src/cucim/skimage/morphology/gray[.]py$|
+            ^python/cucim/src/cucim/skimage/morphology/isotropic[.]py$|
+            ^python/cucim/src/cucim/skimage/morphology/misc[.]py$|
+            ^python/cucim/src/cucim/skimage/morphology/tests/test_binary[.]py$|
+            ^python/cucim/src/cucim/skimage/morphology/tests/test_convex_hull[.]py$|
+            ^python/cucim/src/cucim/skimage/morphology/tests/test_footprints[.]py$|
+            ^python/cucim/src/cucim/skimage/morphology/tests/test_gray[.]py$|
+            ^python/cucim/src/cucim/skimage/morphology/tests/test_isotropic[.]py$|
+            ^python/cucim/src/cucim/skimage/morphology/tests/test_misc[.]py$|
+            ^python/cucim/src/cucim/skimage/morphology/tests/test_skeletonize[.]py$|
+            ^python/cucim/src/cucim/skimage/registration/__init__[.]py$|
+            ^python/cucim/src/cucim/skimage/registration/__init__[.]pyi$|
+            ^python/cucim/src/cucim/skimage/registration/_masked_phase_cross_correlation[.]py$|
+            ^python/cucim/src/cucim/skimage/registration/_optical_flow_utils[.]py$|
+            ^python/cucim/src/cucim/skimage/registration/_optical_flow[.]py$|
+            ^python/cucim/src/cucim/skimage/registration/_phase_cross_correlation[.]py$|
+            ^python/cucim/src/cucim/skimage/registration/tests/test_ilk[.]py$|
+            ^python/cucim/src/cucim/skimage/registration/tests/test_masked_phase_cross_correlation[.]py$|
+            ^python/cucim/src/cucim/skimage/registration/tests/test_phase_cross_correlation[.]py$|
+            ^python/cucim/src/cucim/skimage/registration/tests/test_tvl1[.]py$|
+            ^python/cucim/src/cucim/skimage/restoration/__init__[.]py$|
+            ^python/cucim/src/cucim/skimage/restoration/__init__[.]pyi$|
+            ^python/cucim/src/cucim/skimage/restoration/_denoise[.]py$|
+            ^python/cucim/src/cucim/skimage/restoration/deconvolution[.]py$|
+            ^python/cucim/src/cucim/skimage/restoration/j_invariant[.]py$|
+            ^python/cucim/src/cucim/skimage/restoration/tests/test_denoise[.]py$|
+            ^python/cucim/src/cucim/skimage/restoration/tests/test_j_invariant[.]py$|
+            ^python/cucim/src/cucim/skimage/restoration/tests/test_restoration[.]py$|
+            ^python/cucim/src/cucim/skimage/restoration/uft[.]py$|
+            ^python/cucim/src/cucim/skimage/segmentation/__init__[.]py$|
+            ^python/cucim/src/cucim/skimage/segmentation/_chan_vese[.]py$|
+            ^python/cucim/src/cucim/skimage/segmentation/_clear_border[.]py$|
+            ^python/cucim/src/cucim/skimage/segmentation/_join[.]py$|
+            ^python/cucim/src/cucim/skimage/segmentation/boundaries[.]py$|
+            ^python/cucim/src/cucim/skimage/segmentation/morphsnakes[.]py$|
+            ^python/cucim/src/cucim/skimage/segmentation/random_walker_segmentation[.]py$|
+            ^python/cucim/src/cucim/skimage/segmentation/tests/test_boundaries[.]py$|
+            ^python/cucim/src/cucim/skimage/segmentation/tests/test_chan_vese[.]py$|
+            ^python/cucim/src/cucim/skimage/segmentation/tests/test_clear_border[.]py$|
+            ^python/cucim/src/cucim/skimage/segmentation/tests/test_expand_labels[.]py$|
+            ^python/cucim/src/cucim/skimage/segmentation/tests/test_join[.]py$|
+            ^python/cucim/src/cucim/skimage/segmentation/tests/test_morphsnakes[.]py$|
+            ^python/cucim/src/cucim/skimage/segmentation/tests/test_random_walker[.]py$|
+            ^python/cucim/src/cucim/skimage/transform/__init__[.]py$|
+            ^python/cucim/src/cucim/skimage/transform/__init__[.]pyi$|
+            ^python/cucim/src/cucim/skimage/transform/_geometric[.]py$|
+            ^python/cucim/src/cucim/skimage/transform/_warps[.]py$|
+            ^python/cucim/src/cucim/skimage/transform/integral[.]py$|
+            ^python/cucim/src/cucim/skimage/transform/pyramids[.]py$|
+            ^python/cucim/src/cucim/skimage/transform/tests/test_geometric[.]py$|
+            ^python/cucim/src/cucim/skimage/transform/tests/test_integral[.]py$|
+            ^python/cucim/src/cucim/skimage/transform/tests/test_pyramids[.]py$|
+            ^python/cucim/src/cucim/skimage/transform/tests/test_warps[.]py$|
+            ^python/cucim/src/cucim/skimage/util/__init__[.]py$|
+            ^python/cucim/src/cucim/skimage/util/_invert[.]py$|
+            ^python/cucim/src/cucim/skimage/util/_map_array[.]py$|
+            ^python/cucim/src/cucim/skimage/util/_montage[.]py$|
+            ^python/cucim/src/cucim/skimage/util/arraycrop[.]py$|
+            ^python/cucim/src/cucim/skimage/util/compare[.]py$|
+            ^python/cucim/src/cucim/skimage/util/dtype[.]py$|
+            ^python/cucim/src/cucim/skimage/util/noise[.]py$|
+            ^python/cucim/src/cucim/skimage/util/shape[.]py$|
+            ^python/cucim/src/cucim/skimage/util/tests/test_arraycrop[.]py$|
+            ^python/cucim/src/cucim/skimage/util/tests/test_compare[.]py$|
+            ^python/cucim/src/cucim/skimage/util/tests/test_dtype[.]py$|
+            ^python/cucim/src/cucim/skimage/util/tests/test_invert[.]py$|
+            ^python/cucim/src/cucim/skimage/util/tests/test_map_array[.]py$|
+            ^python/cucim/src/cucim/skimage/util/tests/test_montage[.]py$|
+            ^python/cucim/src/cucim/skimage/util/tests/test_random_noise[.]py$|
+            ^python/cucim/src/cucim/skimage/util/tests/test_shape[.]py$|
+            ^cpp/plugins/cucim[.]kit[.]cuslide/src/cuslide/jpeg2k/libopenjpeg[.]cpp$|
+            ^cpp/plugins/cucim[.]kit[.]cuslide/src/cuslide/jpeg2k/color_conversion[.]cpp$|
+            ^cpp/plugins/cucim[.]kit[.]cuslide/src/cuslide/jpeg/libjpeg_turbo[.]cpp$
+      - id: verify-copyright
+        name: verify-copyright-lzw
+        args: [--fix, --spdx, "--spdx-license-identifier=Apache-2.0 AND LicenseRef-Berkeley-lzw AND libtiff"]
+        files: |
+          (?x)^(
+            cpp/plugins/cucim[.]kit[.]cuslide/src/cuslide/lzw/lzw_libtiff[.]cpp$|
+            cpp/plugins/cucim[.]kit[.]cuslide/src/cuslide/lzw/lzw_libtiff[.]h$
+          )
+      - id: verify-copyright
+        name: verify-copyright-sphinx
+        args: [--fix, --spdx, "--spdx-license-identifier=Apache-2.0 AND BSD-2-Clause"]
+        files: |
+          (?x)^(
+            docs/source/ext/doi_role[.]py$
+          )
+      - id: verify-copyright
+        name: verify-copyright-pba
+        args: [--fix, --spdx, "--spdx-license-identifier=Apache-2.0 AND MIT"]
+        files: |
+          (?x)^(
+            python/cucim/src/cucim/core/operations/morphology/cuda/pba_kernels_2d[.]h$
+          )
+      - id: verify-copyright
+        name: verify-copyright-cellprofiler
+        args: [--fix, --spdx, "--spdx-license-identifier=Apache-2.0 AND (GPL-2.0-only OR BSD-3-Clause)"]
+        files: |
+          (?x)^(
+            python/cucim/src/cucim/skimage/feature/_canny[.]py$|
+            python/cucim/src/cucim/skimage/filters/_rank_order[.]py$|
+            python/cucim/src/cucim/skimage/filters/edges[.]py$|
+            python/cucim/src/cucim/skimage/morphology/grayreconstruct[.]py$|
+            python/cucim/src/cucim/skimage/morphology/_skeletonize[.]py$|
+            python/cucim/src/cucim/skimage/morphology/tests/test_reconstruction[.]py$
+          )
+      - id: verify-copyright
+        name: verify-copyright-cupy
+        args: [--fix, --spdx, "--spdx-license-identifier=Apache-2.0 AND MIT"]
+        files: |
+          (?x)^(
+            python/cucim/src/cucim/skimage/_vendored/_internal[.]py$|
+            python/cucim/src/cucim/skimage/_vendored/_ndimage_filters_core[.]py$|
+            python/cucim/src/cucim/skimage/_vendored/_ndimage_filters[.]py$|
+            python/cucim/src/cucim/skimage/_vendored/_ndimage_interp_kernels[.]py$|
+            python/cucim/src/cucim/skimage/_vendored/_ndimage_interpolation[.]py$|
+            python/cucim/src/cucim/skimage/_vendored/_ndimage_measurements[.]py$|
+            python/cucim/src/cucim/skimage/_vendored/_ndimage_morphology[.]py$|
+            python/cucim/src/cucim/skimage/_vendored/_ndimage_spline_kernel_weights[.]py$|
+            python/cucim/src/cucim/skimage/_vendored/_ndimage_spline_prefilter_core[.]py$|
+            python/cucim/src/cucim/skimage/_vendored/_ndimage_util[.]py$|
+            python/cucim/src/cucim/skimage/_vendored/_pearsonr[.]py$|
+            python/cucim/src/cucim/skimage/_vendored/_signaltools_core[.]py$|
+            python/cucim/src/cucim/skimage/_vendored/_texture[.]py$|
+            python/cucim/src/cucim/skimage/_vendored/ndimage[.]py$|
+            python/cucim/src/cucim/skimage/_vendored/pad[.]py$|
+            python/cucim/src/cucim/skimage/_vendored/signaltools[.]py$|
+            python/cucim/src/cucim/skimage/_vendored/time[.]py$
+          )
+      - id: verify-copyright
+        name: verify-copyright-uwm-harvard-planck
+        args: [--fix, --spdx, "--spdx-license-identifier=Apache-2.0 AND BSD-2-Clause AND BSD-3-Clause"]
+        files: |
+          (?x)^(
+            python/cucim/src/cucim/skimage/filters/thresholding[.]py$
+          )
+      - id: verify-copyright
+        name: verify-copyright-broad-institute-cellprofiler
+        args: [--fix, --spdx, "--spdx-license-identifier=Apache-2.0 AND BSD-3-Clause"]
+        files: |
+          (?x)^(
+            python/cucim/src/cucim/skimage/segmentation/_expand_labels[.]py$
+          )
+      - id: verify-copyright
+        name: verify-copyright-zuiderveld
+        args: [--fix, --spdx, "--spdx-license-identifier=Apach-2.0 AND BSD-3-Clause"]
+        files: |
+          (?x)^(
+            python/cucim/src/cucim/skimage/exposure/_adapthist[.]py$
+          )
+      - id: verify-copyright
+        name: verify-copyright-skimage
+        args: [--fix, --spdx, "--spdx-license-identifier=Apache-2.0 AND BSD-3-Clause"]
+        files: |
+          (?x)^(
+            python/cucim/src/cucim/skimage/__init__[.]py$|
+            python/cucim/src/cucim/skimage/__init__[.]pyi$|
+            python/cucim/src/cucim/skimage/_shared/__init__[.]py$|
+            python/cucim/src/cucim/skimage/_shared/_dependency_checks[.]py$|
+            python/cucim/src/cucim/skimage/_shared/_gradient[.]py$|
+            python/cucim/src/cucim/skimage/_shared/_warnings[.]py$|
+            python/cucim/src/cucim/skimage/_shared/compat[.]py$|
+            python/cucim/src/cucim/skimage/_shared/coord[.]py$|
+            python/cucim/src/cucim/skimage/_shared/distance[.]py$|
+            python/cucim/src/cucim/skimage/_shared/fft[.]py$|
+            python/cucim/src/cucim/skimage/_shared/filters[.]py$|
+            python/cucim/src/cucim/skimage/_shared/testing[.]py$|
+            python/cucim/src/cucim/skimage/_shared/tests/test_coord[.]py$|
+            python/cucim/src/cucim/skimage/_shared/tests/test_utils[.]py$|
+            python/cucim/src/cucim/skimage/_shared/tests/test_warnings[.]py$|
+            python/cucim/src/cucim/skimage/_shared/utils[.]py$|
+            python/cucim/src/cucim/skimage/color/__init__[.]py$|
+            python/cucim/src/cucim/skimage/color/__init__[.]pyi$|
+            python/cucim/src/cucim/skimage/color/adapt_rgb[.]py$|
+            python/cucim/src/cucim/skimage/color/colorconv[.]py$|
+            python/cucim/src/cucim/skimage/color/colorlabel[.]py$|
+            python/cucim/src/cucim/skimage/color/delta_e[.]py$|
+            python/cucim/src/cucim/skimage/color/rgb_colors[.]py$|
+            python/cucim/src/cucim/skimage/color/tests/test_adapt_rgb[.]py$|
+            python/cucim/src/cucim/skimage/color/tests/test_colorconv[.]py$|
+            python/cucim/src/cucim/skimage/color/tests/test_colorlabel[.]py$|
+            python/cucim/src/cucim/skimage/color/tests/test_delta_e[.]py$|
+            python/cucim/src/cucim/skimage/data/__init__[.]py$|
+            python/cucim/src/cucim/skimage/data/__init__[.]pyi$|
+            python/cucim/src/cucim/skimage/data/_binary_blobs[.]py$|
+            python/cucim/src/cucim/skimage/data/tests/test_data[.]py$|
+            python/cucim/src/cucim/skimage/exposure/__init__[.]py$|
+            python/cucim/src/cucim/skimage/exposure/__init__[.]pyi$|
+            python/cucim/src/cucim/skimage/exposure/exposure[.]py$|
+            python/cucim/src/cucim/skimage/exposure/histogram_matching[.]py$|
+            python/cucim/src/cucim/skimage/exposure/tests/test_exposure[.]py$|
+            python/cucim/src/cucim/skimage/exposure/tests/test_histogram_matching[.]py$|
+            python/cucim/src/cucim/skimage/feature/__init__[.]py$|
+            python/cucim/src/cucim/skimage/feature/__init__[.]pyi$|
+            python/cucim/src/cucim/skimage/feature/_basic_features[.]py$|
+            python/cucim/src/cucim/skimage/feature/_daisy[.]py$|
+            python/cucim/src/cucim/skimage/feature/_hessian_det_appx[.]py$|
+            python/cucim/src/cucim/skimage/feature/blob[.]py$|
+            python/cucim/src/cucim/skimage/feature/corner[.]py$|
+            python/cucim/src/cucim/skimage/feature/cuda/_hessian_det_appx[.]cu$|
+            python/cucim/src/cucim/skimage/feature/cuda/blob[.]cu$|
+            python/cucim/src/cucim/skimage/feature/match[.]py$|
+            python/cucim/src/cucim/skimage/feature/peak[.]py$|
+            python/cucim/src/cucim/skimage/feature/template[.]py$|
+            python/cucim/src/cucim/skimage/feature/tests/test_basic_features[.]py$|
+            python/cucim/src/cucim/skimage/feature/tests/test_blob[.]py$|
+            python/cucim/src/cucim/skimage/feature/tests/test_canny[.]py$|
+            python/cucim/src/cucim/skimage/feature/tests/test_corner[.]py$|
+            python/cucim/src/cucim/skimage/feature/tests/test_daisy[.]py$|
+            python/cucim/src/cucim/skimage/feature/tests/test_match[.]py$|
+            python/cucim/src/cucim/skimage/feature/tests/test_peak[.]py$|
+            python/cucim/src/cucim/skimage/feature/tests/test_template[.]py$|
+            python/cucim/src/cucim/skimage/feature/util[.]py$|
+            python/cucim/src/cucim/skimage/filters/__init__[.]py$|
+            python/cucim/src/cucim/skimage/filters/__init__[.]pyi$|
+            python/cucim/src/cucim/skimage/filters/_fft_based[.]py$|
+            python/cucim/src/cucim/skimage/filters/_gabor[.]py$|
+            python/cucim/src/cucim/skimage/filters/_gaussian[.]py$|
+            python/cucim/src/cucim/skimage/filters/_median[.]py$|
+            python/cucim/src/cucim/skimage/filters/_separable_filtering[.]py$|
+            python/cucim/src/cucim/skimage/filters/_sparse[.]py$|
+            python/cucim/src/cucim/skimage/filters/_unsharp_mask[.]py$|
+            python/cucim/src/cucim/skimage/filters/_window[.]py$|
+            python/cucim/src/cucim/skimage/filters/lpi_filter[.]py$|
+            python/cucim/src/cucim/skimage/filters/ridges[.]py$|
+            python/cucim/src/cucim/skimage/filters/tests/test_correlate[.]py$|
+            python/cucim/src/cucim/skimage/filters/tests/test_edges[.]py$|
+            python/cucim/src/cucim/skimage/filters/tests/test_fft_based[.]py$|
+            python/cucim/src/cucim/skimage/filters/tests/test_gabor[.]py$|
+            python/cucim/src/cucim/skimage/filters/tests/test_gaussian[.]py$|
+            python/cucim/src/cucim/skimage/filters/tests/test_lpi_filter[.]py$|
+            python/cucim/src/cucim/skimage/filters/tests/test_median[.]py$|
+            python/cucim/src/cucim/skimage/filters/tests/test_rank_order[.]py$|
+            python/cucim/src/cucim/skimage/filters/tests/test_ridges[.]py$|
+            python/cucim/src/cucim/skimage/filters/tests/test_separable_filtering[.]py$|
+            python/cucim/src/cucim/skimage/filters/tests/test_thresholding[.]py$|
+            python/cucim/src/cucim/skimage/filters/tests/test_unsharp_mask[.]py$|
+            python/cucim/src/cucim/skimage/filters/tests/test_window[.]py$|
+            python/cucim/src/cucim/skimage/measure/__init__[.]py$|
+            python/cucim/src/cucim/skimage/measure/__init__[.]pyi$|
+            python/cucim/src/cucim/skimage/measure/_blur_effect[.]py$|
+            python/cucim/src/cucim/skimage/measure/_colocalization[.]py$|
+            python/cucim/src/cucim/skimage/measure/_label_kernels[.]py$|
+            python/cucim/src/cucim/skimage/measure/_label[.]py$|
+            python/cucim/src/cucim/skimage/measure/_moments_analytical[.]py$|
+            python/cucim/src/cucim/skimage/measure/_moments[.]py$|
+            python/cucim/src/cucim/skimage/measure/_polygon[.]py$|
+            python/cucim/src/cucim/skimage/measure/_regionprops_utils[.]py$|
+            python/cucim/src/cucim/skimage/measure/_regionprops[.]py$|
+            python/cucim/src/cucim/skimage/measure/block[.]py$|
+            python/cucim/src/cucim/skimage/measure/entropy[.]py$|
+            python/cucim/src/cucim/skimage/measure/profile[.]py$|
+            python/cucim/src/cucim/skimage/measure/tests/test_block[.]py$|
+            python/cucim/src/cucim/skimage/measure/tests/test_blur_effect[.]py$|
+            python/cucim/src/cucim/skimage/measure/tests/test_ccomp[.]py$|
+            python/cucim/src/cucim/skimage/measure/tests/test_colocalization[.]py$|
+            python/cucim/src/cucim/skimage/measure/tests/test_entropy[.]py$|
+            python/cucim/src/cucim/skimage/measure/tests/test_moments[.]py$|
+            python/cucim/src/cucim/skimage/measure/tests/test_polygon[.]py$|
+            python/cucim/src/cucim/skimage/measure/tests/test_profile[.]py$|
+            python/cucim/src/cucim/skimage/measure/tests/test_regionprops_gpu_kernels[.]py$|
+            python/cucim/src/cucim/skimage/measure/tests/test_regionprops[.]py$|
+            python/cucim/src/cucim/skimage/metrics/__init__[.]py$|
+            python/cucim/src/cucim/skimage/metrics/__init__[.]pyi$|
+            python/cucim/src/cucim/skimage/metrics/_adapted_rand_error[.]py$|
+            python/cucim/src/cucim/skimage/metrics/_contingency_table[.]py$|
+            python/cucim/src/cucim/skimage/metrics/_structural_similarity[.]py$|
+            python/cucim/src/cucim/skimage/metrics/_variation_of_information[.]py$|
+            python/cucim/src/cucim/skimage/metrics/simple_metrics[.]py$|
+            python/cucim/src/cucim/skimage/metrics/tests/test_segmentation_metrics[.]py$|
+            python/cucim/src/cucim/skimage/metrics/tests/test_simple_metrics[.]py$|
+            python/cucim/src/cucim/skimage/metrics/tests/test_structural_similarity[.]py$|
+            python/cucim/src/cucim/skimage/morphology/__init__[.]py$|
+            python/cucim/src/cucim/skimage/morphology/_medial_axis_lookup[.]py$|
+            python/cucim/src/cucim/skimage/morphology/binary[.]py$|
+            python/cucim/src/cucim/skimage/morphology/convex_hull[.]py$|
+            python/cucim/src/cucim/skimage/morphology/footprints[.]py$|
+            python/cucim/src/cucim/skimage/morphology/gray[.]py$|
+            python/cucim/src/cucim/skimage/morphology/isotropic[.]py$|
+            python/cucim/src/cucim/skimage/morphology/misc[.]py$|
+            python/cucim/src/cucim/skimage/morphology/tests/test_binary[.]py$|
+            python/cucim/src/cucim/skimage/morphology/tests/test_convex_hull[.]py$|
+            python/cucim/src/cucim/skimage/morphology/tests/test_footprints[.]py$|
+            python/cucim/src/cucim/skimage/morphology/tests/test_gray[.]py$|
+            python/cucim/src/cucim/skimage/morphology/tests/test_isotropic[.]py$|
+            python/cucim/src/cucim/skimage/morphology/tests/test_misc[.]py$|
+            python/cucim/src/cucim/skimage/morphology/tests/test_skeletonize[.]py$|
+            python/cucim/src/cucim/skimage/registration/__init__[.]py$|
+            python/cucim/src/cucim/skimage/registration/__init__[.]pyi$|
+            python/cucim/src/cucim/skimage/registration/_masked_phase_cross_correlation[.]py$|
+            python/cucim/src/cucim/skimage/registration/_optical_flow_utils[.]py$|
+            python/cucim/src/cucim/skimage/registration/_optical_flow[.]py$|
+            python/cucim/src/cucim/skimage/registration/_phase_cross_correlation[.]py$|
+            python/cucim/src/cucim/skimage/registration/tests/test_ilk[.]py$|
+            python/cucim/src/cucim/skimage/registration/tests/test_masked_phase_cross_correlation[.]py$|
+            python/cucim/src/cucim/skimage/registration/tests/test_phase_cross_correlation[.]py$|
+            python/cucim/src/cucim/skimage/registration/tests/test_tvl1[.]py$|
+            python/cucim/src/cucim/skimage/restoration/__init__[.]py$|
+            python/cucim/src/cucim/skimage/restoration/__init__[.]pyi$|
+            python/cucim/src/cucim/skimage/restoration/_denoise[.]py$|
+            python/cucim/src/cucim/skimage/restoration/deconvolution[.]py$|
+            python/cucim/src/cucim/skimage/restoration/j_invariant[.]py$|
+            python/cucim/src/cucim/skimage/restoration/tests/test_denoise[.]py$|
+            python/cucim/src/cucim/skimage/restoration/tests/test_j_invariant[.]py$|
+            python/cucim/src/cucim/skimage/restoration/tests/test_restoration[.]py$|
+            python/cucim/src/cucim/skimage/restoration/uft[.]py$|
+            python/cucim/src/cucim/skimage/segmentation/__init__[.]py$|
+            python/cucim/src/cucim/skimage/segmentation/_chan_vese[.]py$|
+            python/cucim/src/cucim/skimage/segmentation/_clear_border[.]py$|
+            python/cucim/src/cucim/skimage/segmentation/_join[.]py$|
+            python/cucim/src/cucim/skimage/segmentation/boundaries[.]py$|
+            python/cucim/src/cucim/skimage/segmentation/morphsnakes[.]py$|
+            python/cucim/src/cucim/skimage/segmentation/random_walker_segmentation[.]py$|
+            python/cucim/src/cucim/skimage/segmentation/tests/test_boundaries[.]py$|
+            python/cucim/src/cucim/skimage/segmentation/tests/test_chan_vese[.]py$|
+            python/cucim/src/cucim/skimage/segmentation/tests/test_clear_border[.]py$|
+            python/cucim/src/cucim/skimage/segmentation/tests/test_expand_labels[.]py$|
+            python/cucim/src/cucim/skimage/segmentation/tests/test_join[.]py$|
+            python/cucim/src/cucim/skimage/segmentation/tests/test_morphsnakes[.]py$|
+            python/cucim/src/cucim/skimage/segmentation/tests/test_random_walker[.]py$|
+            python/cucim/src/cucim/skimage/transform/__init__[.]py$|
+            python/cucim/src/cucim/skimage/transform/__init__[.]pyi$|
+            python/cucim/src/cucim/skimage/transform/_geometric[.]py$|
+            python/cucim/src/cucim/skimage/transform/_warps[.]py$|
+            python/cucim/src/cucim/skimage/transform/integral[.]py$|
+            python/cucim/src/cucim/skimage/transform/pyramids[.]py$|
+            python/cucim/src/cucim/skimage/transform/tests/test_geometric[.]py$|
+            python/cucim/src/cucim/skimage/transform/tests/test_integral[.]py$|
+            python/cucim/src/cucim/skimage/transform/tests/test_pyramids[.]py$|
+            python/cucim/src/cucim/skimage/transform/tests/test_warps[.]py$|
+            python/cucim/src/cucim/skimage/util/__init__[.]py$|
+            python/cucim/src/cucim/skimage/util/_invert[.]py$|
+            python/cucim/src/cucim/skimage/util/_map_array[.]py$|
+            python/cucim/src/cucim/skimage/util/_montage[.]py$|
+            python/cucim/src/cucim/skimage/util/arraycrop[.]py$|
+            python/cucim/src/cucim/skimage/util/compare[.]py$|
+            python/cucim/src/cucim/skimage/util/dtype[.]py$|
+            python/cucim/src/cucim/skimage/util/noise[.]py$|
+            python/cucim/src/cucim/skimage/util/shape[.]py$|
+            python/cucim/src/cucim/skimage/util/tests/test_arraycrop[.]py$|
+            python/cucim/src/cucim/skimage/util/tests/test_compare[.]py$|
+            python/cucim/src/cucim/skimage/util/tests/test_dtype[.]py$|
+            python/cucim/src/cucim/skimage/util/tests/test_invert[.]py$|
+            python/cucim/src/cucim/skimage/util/tests/test_map_array[.]py$|
+            python/cucim/src/cucim/skimage/util/tests/test_montage[.]py$|
+            python/cucim/src/cucim/skimage/util/tests/test_random_noise[.]py$|
+            python/cucim/src/cucim/skimage/util/tests/test_shape[.]py$
+          )
+      - id: verify-copyright
+        name: verify-copyright-opencv
+        args: [--fix, --spdx, "--spdx-license-identifier=Apache-2.0 AND BSD-3-Clause"]
+        files: |
+          (?x)^(
+            python/cucim/src/cucim/skimage/filters/cuda/histogram_median[.]cu$
+          )
+      - id: verify-copyright
+        name: verify-copyright-openjpeg
+        args: [--fix, --spdx, "--spdx-license-identifier=Apache-2.0 AND BSD-2-Clause"]
+        files: |
+          (?x)^(
+            cpp/plugins/cucim[.]kit[.]cuslide/src/cuslide/jpeg2k/libopenjpeg[.]cpp$|
+            cpp/plugins/cucim[.]kit[.]cuslide/src/cuslide/jpeg2k/color_conversion[.]cpp$
+          )
+      - id: verify-copyright
+        name: verify-copyright-libjpeg-turbo
+        args: [--fix, --spdx, "--spdx-license-identifier=Apache-2.0 AND BSD-3-Clause AND IJG-short AND Zlib"]
+        files: |
+          (?x)^(
+            cpp/plugins/cucim[.]kit[.]cuslide/src/cuslide/jpeg/libjpeg_turbo[.]cpp$
+          )
       - id: verify-alpha-spec
   - repo: https://github.com/rapidsai/dependency-file-generator
     rev: v1.20.0

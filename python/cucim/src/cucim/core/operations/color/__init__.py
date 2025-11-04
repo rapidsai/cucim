@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 from .jitter import color_jitter, rand_color_jitter
 from .stain_normalizer import (
     absorbance_to_image,

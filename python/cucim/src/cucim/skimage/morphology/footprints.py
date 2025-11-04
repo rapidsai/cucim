@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2009-2022 the scikit-image team
+# SPDX-FileCopyrightText: Copyright (c) 2022-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
+
 import os
 import warnings
 from collections.abc import Sequence

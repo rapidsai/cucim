@@ -1,3 +1,9 @@
+# SPDX-FileCopyrightText: Copyright (c) 2003-2009 Massachusetts Institute of Technology
+# SPDX-FileCopyrightText: Copyright (c) 2009-2011 Broad Institute
+# SPDX-FileCopyrightText: 2003 Lee Kamentsky
+# SPDX-FileCopyrightText: Copyright (c) 2022-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 AND (GPL-2.0-only OR BSD-3-Clause)
+
 """
 This morphological reconstruction routine was adapted from CellProfiler, code
 licensed under both GPL and BSD licenses.
