@@ -26,11 +26,16 @@ if (NOT TARGET deps::libtiff)
             GIT_REPOSITORY https://gitlab.com/libtiff/libtiff.git
             GIT_TAG v4.1.0
             GIT_SHALLOW TRUE
-            PATCH_COMMAND ${GIT_EXECUTABLE} apply "${CMAKE_CURRENT_LIST_DIR}/libtiff.patch"
+            # Patch disabled - using CMAKE_POLICY_VERSION_MINIMUM instead
+            # PATCH_COMMAND ${GIT_EXECUTABLE} apply "${CMAKE_CURRENT_LIST_DIR}/libtiff.patch"
             EXCLUDE_FROM_ALL
     )
 
     message(STATUS "Fetching libtiff sources")
+    
+    # Workaround for libtiff v4.1.0's old CMake version requirement
+    # Tell CMake to accept the old minimum version by setting policy minimum
+    set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "Minimum CMake policy version" FORCE)
 
     # Set policies for libtiff
     set(CMAKE_PROJECT_INCLUDE_BEFORE "${CMAKE_CURRENT_LIST_DIR}/libtiff-policies-fix.cmake")
