@@ -285,16 +285,18 @@ set_target_properties(${CUCIM_PLUGIN_NAME} PROPERTIES OUTPUT_NAME "${CUCIM_PLUGI
 ################################################################################
 # Add tests
 #########################################################std#######################
-add_subdirectory(tests)
-add_subdirectory(benchmarks)
+# NOTE: Commented out for infrastructure-only PR. Will be enabled in follow-up PR
+#       with actual implementation.
+# add_subdirectory(tests)
+# add_subdirectory(benchmarks)
 
 ################################################################################
 # Install
 ################################################################################
 set(INSTALL_TARGETS
         ${CUCIM_PLUGIN_NAME}
-        cuslide_tests
-        cuslide_benchmarks
+        # cuslide_tests  # Disabled for infrastructure-only PR
+        # cuslide_benchmarks  # Disabled for infrastructure-only PR
         )
 
 install(TARGETS ${INSTALL_TARGETS}
@@ -339,29 +341,6 @@ install(
 
 
 set(CMAKE_EXPORT_PACKAGE_REGISTRY ON)
-export(PACKAGE ${CUCIM_PLUGIN_NAME})
-
-
-# Write package configs
-include(CMakePackageConfigHelpers)
-configure_package_config_file(
-    ${CMAKE_CURRENT_SOURCE_DIR}/cmake/${CUCIM_PLUGIN_NAME}-config.cmake.in
-    ${CMAKE_CURRENT_BINARY_DIR}/cmake/${CUCIM_PLUGIN_NAME}-config.cmake
-    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${CUCIM_PLUGIN_NAME}
-)
-write_basic_package_version_file(
-    ${CMAKE_CURRENT_BINARY_DIR}/cmake/${CUCIM_PLUGIN_NAME}-config-version.cmake
-    VERSION ${PROJECT_VERSION}
-    COMPATIBILITY AnyNewerVersion
-)
-install(
-    FILES
-        ${CMAKE_CURRENT_BINARY_DIR}/cmake/${CUCIM_PLUGIN_NAME}-config.cmake
-        ${CMAKE_CURRENT_BINARY_DIR}/cmake/${CUCIM_PLUGIN_NAME}-config-version.cmake
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${CUCIM_PLUGIN_NAME}
-)
-
-set(CMAKE_EXPORT_PACKAGE_REGISTRY ON) # TODO: duplicate?
 export(PACKAGE ${CUCIM_PLUGIN_NAME})
 
 unset(BUILD_SHARED_LIBS CACHE)
