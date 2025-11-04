@@ -97,7 +97,7 @@ dependencies:
         packages:
           - cmake>=3.30.4
           - ninja
-          - libnvimgcodec-dev=0.6.0
+          - libnvimgcodec-dev=0.7.0
       - output_types: conda
         packages:
           - c-compiler
