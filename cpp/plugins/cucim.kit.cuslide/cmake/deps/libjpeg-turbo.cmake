@@ -29,9 +29,9 @@ if (NOT TARGET deps::libjpeg-turbo)
     # Tell CMake where to find the compiler by setting either the environment
     # variable "ASM_NASM" or the CMake cache entry CMAKE_ASM_NASM_COMPILER to the
     # full path to the compiler, or to the compiler name if it is in the PATH.
-    # nasm is available through `sudo apt-get install nasm` on Debian Linux.
+    # yasm is available through `sudo apt-get install yasm` on Debian Linux.
     # See _deps/deps-libjpeg-turbo-src/simd/CMakeLists.txt:25.
-    set(CMAKE_ASM_NASM_COMPILER /usr/bin/nasm)
+    set(CMAKE_ASM_NASM_COMPILER yasm)
     set(REQUIRE_SIMD 1) # CMP0077
 
     message(STATUS "Fetching libjpeg-turbo sources")
