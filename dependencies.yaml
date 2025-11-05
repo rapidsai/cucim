@@ -100,7 +100,6 @@ dependencies:
         packages:
           - cmake>=3.30.4
           - ninja
-          - libnvimgcodec-dev=0.6.0
       - output_types: conda
         packages:
           - c-compiler
@@ -162,6 +161,7 @@ dependencies:
         packages:
           - cuda-cudart-dev
           - libnvjpeg-dev
+          - libnvimgcodec-dev=0.6.0
     specific:
       - output_types: conda
         matrices:
@@ -242,6 +242,7 @@ dependencies:
       - output_types: conda
         packages:
           - &cupy_unsuffixed cupy>=13.6.0
+          - libnvimgcodec == 0.6.0
     specific:
       - output_types: [requirements, pyproject]
         matrices:
@@ -249,10 +250,12 @@ dependencies:
               cuda: "12.*"
             packages:
               - cupy-cuda12x>=13.6.0
+              - nvidia-nvimgcodec-cu12 >= 0.6.0
           # fallback to CUDA 13 versions if 'cuda' is '13.*' or not provided
           - matrix:
             packages:
               - cupy-cuda13x>=13.6.0
+              - nvidia-nvimgcodec-cu13 >= 0.6.0
   test_python:
     common:
       - output_types: [conda, requirements, pyproject]
