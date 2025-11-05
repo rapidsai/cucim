@@ -79,9 +79,7 @@ for shape in [(512, 512), (3840, 2160), (192, 192, 192)]:
         ("gaussian_filter", dict(mode=["nearest"], sigma=[0.33, 1, 3, 4, 9])),
         (
             "gaussian_filter1d",
-            dict(
-                mode=["nearest"], sigma=[0.33, 3, 9], axis=[0, -1], order=[0, 1]
-            ),
+            dict(mode=["nearest"], sigma=[0.33, 3, 9], axis=[0, -1], order=[0, 1]),
         ),
         ("maximum_filter", dict(mode=["nearest"], size=[3, 5, 7])),
         ("maximum_filter1d", dict(mode=["nearest"], size=[3, 7], axis=[0, -1])),

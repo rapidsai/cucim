@@ -23,7 +23,6 @@ References
 
 """
 
-
 import math
 
 import cupy as cp

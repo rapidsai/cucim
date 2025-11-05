@@ -1,5 +1,5 @@
 #
-# SPDX-FileCopyrightText: Copyright (c) 2021, NVIDIA CORPORATION.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION.
 # SPDX-License-Identifier: Apache-2.0
 #
 
@@ -21,9 +21,7 @@ print(img.size("XYC"))  # Returns size as a tuple for the given dimension order.
 print(img.dtype)  # The data type of the image.
 print(img.channel_names)  # A channel name list.
 print(img.spacing())  # Returns physical size in tuple.
-print(
-    img.spacing_units()
-)  # Units for each spacing element (size is same with `ndim`).
+print(img.spacing_units())  # Units for each spacing element (size is same with `ndim`).
 print(img.origin)  # Physical location of (0, 0, 0) (size is always 3).
 print(img.direction)  # Direction cosines (size is always 3x3).
 print(img.coord_sys)  # Coordinate frame in which the direction cosines are

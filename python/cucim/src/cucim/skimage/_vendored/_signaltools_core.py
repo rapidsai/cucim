@@ -54,7 +54,7 @@ def _direct_correlate(
     # Due to several optimizations, the second array can only be 2 GiB
     if in2.nbytes >= (1 << 31):
         raise RuntimeError(
-            "smaller array must be 2 GiB or less, " 'use method="fft" instead'
+            'smaller array must be 2 GiB or less, use method="fft" instead'
         )
 
     # At this point, in1.size > in2.size
@@ -137,7 +137,7 @@ def _init_freq_conv_axes(in1, in2, mode, axes, sorted_axes=False):
     for ax, (dim1, dim2) in enumerate(zip(s1, s2)):
         if ax not in axes and dim1 != dim2 and dim1 != 1 and dim2 != 1:
             raise ValueError(
-                "incompatible shapes for in1 and in2:" f" {s1} and {s2}"
+                f"incompatible shapes for in1 and in2: {s1} and {s2}"
             )
 
     # Check that input sizes are compatible with 'valid' mode.

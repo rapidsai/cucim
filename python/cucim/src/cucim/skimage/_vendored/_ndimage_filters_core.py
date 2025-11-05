@@ -4,6 +4,7 @@
 # SPDX-License-Identifier: Apache-2.0 AND MIT
 
 """A vendored subset of cupyx.scipy.ndimage._filters_core"""
+
 import warnings
 
 import cupy
@@ -143,9 +144,7 @@ def _run_1d_filters(
         output[:] = input
         return output
     # We can't operate in-place efficiently, so use a 2-buffer system
-    temp = (
-        _util._get_output(output.dtype, input) if n_filters > 1 else None
-    )  # noqa
+    temp = _util._get_output(output.dtype, input) if n_filters > 1 else None  # noqa
     iterator = zip(axes, filters, args, modes, origins)
     for axis, fltr, arg, mode, origin in iterator:
         if fltr is not None:

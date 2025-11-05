@@ -56,9 +56,7 @@ class SegmentationMetricBench(ImageBench):
 
     def _generate_labels(self, dtype, rng=5):
         ndim = len(self.shape)
-        blobs_kwargs = dict(
-            blob_size_fraction=0.05, volume_fraction=0.35, rng=rng
-        )
+        blobs_kwargs = dict(blob_size_fraction=0.05, volume_fraction=0.35, rng=rng)
         # binary blobs only creates square outputs
         labels = measure.label(
             data.binary_blobs(max(self.shape), n_dim=ndim, **blobs_kwargs)
@@ -171,9 +169,7 @@ def main(args):
                 run_cpu=run_cpu,
             )
         else:
-            raise ValueError(
-                f"benchmark function not configured for {function_name}"
-            )
+            raise ValueError(f"benchmark function not configured for {function_name}")
         results = B.run_benchmark(duration=args.duration)
         all_results = pd.concat([all_results, results["full"]])
 
@@ -185,9 +181,7 @@ def main(args):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Benchmarking cuCIM metrics functions"
-    )
+    parser = argparse.ArgumentParser(description="Benchmarking cuCIM metrics functions")
     func_name_choices = [
         "structural_similarity",
         "mean_squared_error",

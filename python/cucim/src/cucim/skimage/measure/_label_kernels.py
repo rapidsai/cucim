@@ -8,6 +8,7 @@ These are copied from CuPy, with modification to add a greyscale_mode
 parameter as needed for scikit-image.
 
 """
+
 import cupy
 import numpy
 

@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 """Miscellaneous morphology functions."""
+
 import functools
 
 import cupy as cp
@@ -58,8 +59,7 @@ def _check_dtype_supported(ar):
     # Should use `issubdtype` for bool below, but there's a bug in numpy 1.7
     if not (ar.dtype == bool or cp.issubdtype(ar.dtype, cp.integer)):
         raise TypeError(
-            "Only bool or integer image types are supported. "
-            f"Got {ar.dtype}."
+            f"Only bool or integer image types are supported. Got {ar.dtype}."
         )
 
 

@@ -4,6 +4,7 @@
 """
 Benchmark locally modified ndimage functions vs. their CuPy counterparts
 """
+
 import cupy as cp
 import cupyx.scipy.ndimage as ndi
 from cupyx.profiler import benchmark

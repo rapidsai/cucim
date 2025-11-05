@@ -1,9 +1,8 @@
 # SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Misc utility functions that are not from SciPy, NumPy or scikit-image.
+"""Misc utility functions that are not from SciPy, NumPy or scikit-image."""
 
-"""
 import numpy as np
 
 

@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2021, NVIDIA CORPORATION.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION.
 # SPDX-License-Identifier: Apache-2.0
 
 import numbers
@@ -44,7 +44,13 @@ def _get_params(
     contrast: list[float] | None,
     saturation: list[float] | None,
     hue: list[float] | None,
-) -> tuple[np.ndarray, float | None, float | None, float | None, float | None,]:
+) -> tuple[
+    np.ndarray,
+    float | None,
+    float | None,
+    float | None,
+    float | None,
+]:
     fn_idx = np.random.permutation(4)
 
     b = None

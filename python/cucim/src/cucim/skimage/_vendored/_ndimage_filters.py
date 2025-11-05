@@ -4,6 +4,7 @@
 # SPDX-License-Identifier: Apache-2.0 AND MIT
 
 """A vendored subset of cupyx.scipy.ndimage._filters"""
+
 import math
 import platform
 import warnings
