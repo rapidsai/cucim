@@ -333,7 +333,7 @@ def _get_raw_moments_code(
     use_floating_point = moments_c_type in ["float", "double"]
 
     source_pre = f"""
-    {moments_c_type} local_moments[{array_size*num_channels*num_moments}] = {{0}};
+    {moments_c_type} local_moments[{array_size * num_channels * num_moments}] = {{0}};
     {coord_c_type} m_offset = 0;
     {coord_c_type} local_off = 0;\n"""  # noqa: E501
     if has_weights:
@@ -363,7 +363,7 @@ def _get_raw_moments_code(
     w = "w * " if has_weights else ""
     for c in range(num_channels):
         source_operation += f"""
-                local_off = {num_moments*num_channels}*offset + {c * num_moments};\n"""  # noqa: E501
+                local_off = {num_moments * num_channels}*offset + {c * num_moments};\n"""  # noqa: E501
 
         # zeroth moment
         if has_weights:
@@ -450,8 +450,8 @@ def _get_raw_moments_code(
     for c in range(0, num_channels):
         source_post += f"""
                 // moments outputs
-                m_offset = {num_moments*num_channels}*(lab - 1) + {c * num_moments};
-                local_off = {num_moments*num_channels}*ii + {c * num_moments};
+                m_offset = {num_moments * num_channels}*(lab - 1) + {c * num_moments};
+                local_off = {num_moments * num_channels}*ii + {c * num_moments};
                 atomicAdd(&moments[m_offset], local_moments[local_off]);\n"""  # noqa: E501
 
         if ndim == 2:

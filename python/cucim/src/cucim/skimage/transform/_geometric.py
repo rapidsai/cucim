@@ -25,7 +25,7 @@ def _affine_matrix_from_vector(v):
     dimensionality = round(d)  # round to prevent approx errors
     if d != dimensionality:
         raise ValueError(
-            "Invalid number of elements for " f"linearized matrix: {nparam}"
+            f"Invalid number of elements for linearized matrix: {nparam}"
         )
     matrix = np.eye(dimensionality + 1)
     matrix[:-1, :] = np.reshape(v, (dimensionality, dimensionality + 1))
@@ -1905,9 +1905,7 @@ def estimate_transform(ttype, src, dst, *args, **kwargs):
     """
     ttype = ttype.lower()
     if ttype not in TRANSFORMS:
-        raise ValueError(
-            f"the transformation type '{ttype}' is not" "implemented"
-        )
+        raise ValueError(f"the transformation type '{ttype}' is notimplemented")
 
     tform = TRANSFORMS[ttype](dimensionality=src.shape[1])
     tform.estimate(src, dst, *args, **kwargs)

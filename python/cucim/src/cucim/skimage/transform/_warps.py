@@ -338,7 +338,7 @@ def rescale(
             multichannel and len(scale) != image.ndim - 1
         ):
             raise ValueError(
-                "Supply a single scale, or one value per spatial " "axis"
+                "Supply a single scale, or one value per spatial axis"
             )
         if multichannel:
             scale = np.concatenate((scale, [1]))

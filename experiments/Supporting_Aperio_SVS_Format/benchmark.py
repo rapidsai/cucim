@@ -1,5 +1,5 @@
 #
-# SPDX-FileCopyrightText: Copyright (c) 2021, NVIDIA CORPORATION.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION.
 # SPDX-License-Identifier: Apache-2.0
 #
 
@@ -236,21 +236,13 @@ def experiment_process(
 
 
 for i in range(10):
-    experiment_thread(
-        "per_process", "notebooks/input/TUPAC-TR-488.svs", 12, 120, 240
-    )
-    experiment_thread(
-        "per_process", "notebooks/input/JP2K-33003-2.svs", 12, 128, 256
-    )
+    experiment_thread("per_process", "notebooks/input/TUPAC-TR-488.svs", 12, 120, 240)
+    experiment_thread("per_process", "notebooks/input/JP2K-33003-2.svs", 12, 128, 256)
     experiment_thread(
         "per_process", "notebooks/input/CMU-1-JP2K-33005.svs", 12, 120, 240
     )
-    experiment_process(
-        "per_process", "notebooks/input/TUPAC-TR-488.svs", 12, 120, 240
-    )
-    experiment_process(
-        "per_process", "notebooks/input/JP2K-33003-2.svs", 12, 128, 256
-    )
+    experiment_process("per_process", "notebooks/input/TUPAC-TR-488.svs", 12, 120, 240)
+    experiment_process("per_process", "notebooks/input/JP2K-33003-2.svs", 12, 128, 256)
     experiment_process(
         "per_process", "notebooks/input/CMU-1-JP2K-33005.svs", 12, 120, 240
     )

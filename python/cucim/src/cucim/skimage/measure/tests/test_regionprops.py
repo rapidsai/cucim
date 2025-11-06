@@ -200,9 +200,7 @@ def test_feret_diameter_max():
     # from (0, 0.5) to (16, 15.5).
     assert cp.abs(feret_diameter_max - np.sqrt(16**2 + (16 - 1) ** 2)) < 1e-6
     spacing = (2, 1)
-    feret_diameter_max = regionprops(img, spacing=spacing)[
-        0
-    ].feret_diameter_max  # noqa
+    feret_diameter_max = regionprops(img, spacing=spacing)[0].feret_diameter_max  # noqa
     # For anisotropic spacing the shift is applied to the smaller spacing.
     assert (
         cp.abs(
@@ -1344,13 +1342,13 @@ def test_column_dtypes_correct():
             t = type(r.ravel()[0].item())
 
         if cp.issubdtype(t, cp.floating):
-            assert (
-                COL_DTYPES[col] == float
-            ), f"{col} dtype {t} {msg} {COL_DTYPES[col]}"
+            assert COL_DTYPES[col] == float, (
+                f"{col} dtype {t} {msg} {COL_DTYPES[col]}"
+            )
         elif cp.issubdtype(t, cp.integer):
-            assert (
-                COL_DTYPES[col] == int
-            ), f"{col} dtype {t} {msg} {COL_DTYPES[col]}"
+            assert COL_DTYPES[col] == int, (
+                f"{col} dtype {t} {msg} {COL_DTYPES[col]}"
+            )
         else:
             assert False, f"{col} dtype {t} {msg} {COL_DTYPES[col]}"
 

@@ -72,7 +72,7 @@ def match_histograms(image, reference, *, channel_axis=None):
     """
     if image.ndim != reference.ndim:
         raise ValueError(
-            "Image and reference must have the same number " "of channels."
+            "Image and reference must have the same number of channels."
         )
 
     if channel_axis is not None:

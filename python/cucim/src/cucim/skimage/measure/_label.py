@@ -13,7 +13,7 @@ def _get_structure(ndim, connectivity):
         # use the full connectivity by default
         connectivity = ndim
     if not 1 <= connectivity <= ndim:
-        raise ValueError("Connectivity below 1 or above %d is illegal." % ndim)
+        raise ValueError(f"Connectivity below 1 or above {ndim} is illegal.")
     return cpu_ndi.generate_binary_structure(ndim, connectivity)
 
 

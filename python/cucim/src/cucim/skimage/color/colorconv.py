@@ -269,7 +269,7 @@ def rgba2rgb(rgba, background=(1, 1, 1), *, channel_axis=-1):
         )
     if any((b < 0 or b > 1) for b in background):
         raise ValueError(
-            "background RGB values must be floats between " "0 and 1."
+            "background RGB values must be floats between 0 and 1."
         )
 
     name = f"rgba2rgb_{rgba.dtype.char}"

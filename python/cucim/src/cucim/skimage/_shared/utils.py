@@ -654,7 +654,7 @@ def safe_as_int(val, atol=1e-3):
         np.testing.assert_allclose(mod, 0, atol=atol)
     except AssertionError:
         raise ValueError(
-            f"Integer argument required but received " f"{val}, check inputs."
+            f"Integer argument required but received {val}, check inputs."
         )
 
     return np.round(val).astype(np.int64)
@@ -844,7 +844,7 @@ def _validate_interpolation_order(image_dtype, order):
 
     if order < 0 or order > 5:
         raise ValueError(
-            "Spline interpolation order has to be in the " "range 0-5."
+            "Spline interpolation order has to be in the range 0-5."
         )
 
     if image_dtype == bool and order != 0:

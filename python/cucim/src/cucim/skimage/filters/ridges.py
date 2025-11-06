@@ -43,7 +43,7 @@ def _get_circulant_init_kernel(ndim, alpha):
         "",
         "raw F out",
         operation=operation,
-        name=f"cucim_circulant_init_{ndim}d_alpha{int(1000*alpha)}",
+        name=f"cucim_circulant_init_{ndim}d_alpha{int(1000 * alpha)}",
     )
 
 
