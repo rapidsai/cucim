@@ -17,6 +17,7 @@ All rights reserved.
 Original author: Lee Kamentsky
 
 """
+
 import math
 
 import cupy as cp

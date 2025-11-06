@@ -402,9 +402,9 @@ def regionprops_dict(
             ed = equivalent_diameter_area(out["area"], ndim)
             out["equivalent_diameter_area"] = ed
             if "equivalent_spherical_perimeter" in required_props:
-                out[
-                    "equivalent_spherical_perimeter"
-                ] = equivalent_spherical_perimeter(out["area"], ndim, ed)
+                out["equivalent_spherical_perimeter"] = (
+                    equivalent_spherical_perimeter(out["area"], ndim, ed)
+                )
 
     if has_intensity:
         if "intensity_std" in required_props:
@@ -511,9 +511,7 @@ def regionprops_dict(
                 props_dict=out,
             )
 
-        compute_centroid_local = (
-            "centroid_local" in required_moment_props
-        )  # noqa:E501
+        compute_centroid_local = "centroid_local" in required_moment_props  # noqa:E501
         compute_centroid = "centroid" in required_moment_props
         if compute_centroid or compute_centroid_local:
             regionprops_centroid_weighted(

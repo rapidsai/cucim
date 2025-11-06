@@ -148,8 +148,7 @@ def difference_of_gaussians(
 
     if any(s_hi < s_low for s_hi, s_low in zip(high_sigma, low_sigma)):
         raise ValueError(
-            "high_sigma must be equal to or larger than"
-            "low_sigma for all axes"
+            "high_sigma must be equal to or larger thanlow_sigma for all axes"
         )
 
     out = gaussian(

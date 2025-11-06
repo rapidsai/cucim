@@ -204,9 +204,7 @@ def _get_aligned_read_props(offsets, bytecounts, alignment=4096):
     rounded_offsets = (offsets // alignment) * alignment
     buffer_offsets = offsets - rounded_offsets
     rounded_bytecounts = buffer_offsets + bytecounts
-    rounded_bytecounts = (
-        np.ceil(rounded_bytecounts / alignment).astype(int) * alignment
-    )
+    rounded_bytecounts = np.ceil(rounded_bytecounts / alignment).astype(int) * alignment
 
     # truncate last bytecounts entry to avoid possibly exceeding file extent
     last = offsets[-1] + bytecounts[-1]
@@ -376,9 +374,7 @@ def read_tiled(
         elif isinstance(levels, (tuple, list)):
             pages = tuple(tif.pages[n] for n in levels)
         else:
-            raise ValueError(
-                "pages must be a tuple or list of int or the " "string 'all'"
-            )
+            raise ValueError("pages must be a tuple or list of int or the string 'all'")
 
         # sanity check: identical tile size for all TIFF pages
         #               todo: is this always true?
@@ -416,16 +412,12 @@ def read_tiled(
             # note: tile_buffer is C-contiguous so tile_buffer[i] is contiguous
             if tile_buffers is None:
                 tile_buffers = tuple(
-                    cp.empty(buffer_bytecount, dtype=cp.uint8)
-                    for n in range(n_buffer)
+                    cp.empty(buffer_bytecount, dtype=cp.uint8) for n in range(n_buffer)
                 )
             elif tile_buffers[0].size < buffer_bytecount:
-                warnings.warn(
-                    "reallocating tile buffers to accommodate data size"
-                )
+                warnings.warn("reallocating tile buffers to accommodate data size")
                 tile_buffers = tuple(
-                    cp.empty(buffer_bytecount, dtype=cp.uint8)
-                    for n in range(n_buffer)
+                    cp.empty(buffer_bytecount, dtype=cp.uint8) for n in range(n_buffer)
                 )
             else:
                 buffer_bytecount = tile_buffers[0].size
@@ -458,13 +450,9 @@ def read_tiled(
 
                 def read_tile_raw(fh, tile_buffer, bytecount, offset):
                     """returns the # of bytes read"""
-                    size = fh.raw_read(
-                        tile_buffer[:bytecount], file_offset=offset
-                    )
+                    size = fh.raw_read(tile_buffer[:bytecount], file_offset=offset)
                     if size != bytecount:
-                        raise ValueError(
-                            "failed to read the expected number of bytes"
-                        )
+                        raise ValueError("failed to read the expected number of bytes")
                     return size
 
                 kv_read = read_tile_raw
@@ -475,9 +463,7 @@ def read_tiled(
                     """returns the # of bytes read"""
                     size = fh.read(tile_buffer[:bytecount], file_offset=offset)
                     if size != bytecount:
-                        raise ValueError(
-                            "failed to read the expected number of bytes"
-                        )
+                        raise ValueError("failed to read the expected number of bytes")
                     return size
 
                 kv_read = read_tile
@@ -486,9 +472,7 @@ def read_tiled(
 
                 def read_tile_async(fh, tile_buffer, bytecount, offset):
                     """returns a future"""
-                    future = fh.pread(
-                        tile_buffer[:bytecount], file_offset=offset
-                    )
+                    future = fh.pread(tile_buffer[:bytecount], file_offset=offset)
                     # future.get()
                     return future
 
@@ -519,15 +503,12 @@ def read_tiled(
                     all_slices = []
                 elif index_mod == 0:
                     # process the prior group of n_buffer futures
-                    for tile, sl, future in zip(
-                        all_tiles, all_slices, all_futures
-                    ):
+                    for tile, sl, future in zip(all_tiles, all_slices, all_futures):
                         if isinstance(future, IOFuture):
                             size = future.get()
                             if size != rounded_bytecount:
                                 raise ValueError(
-                                    "failed to read the expected number of "
-                                    "bytes"
+                                    "failed to read the expected number of bytes"
                                 )
                         tile = tile[0]  # omit depth axis
                         if tile_func is None:
@@ -654,9 +635,7 @@ def _cupy_to_zarr_kvikio_write_sync(
                         (0, c1 - tile.shape[1]),
                         (0, c2 - tile.shape[2]),
                     )
-                    tile = cp.pad(
-                        tile, pad_width, mode="constant", constant_values=0
-                    )
+                    tile = cp.pad(tile, pad_width, mode="constant", constant_values=0)
 
                 chunk_key = ".".join(map(str, (i0, i1, i2)))
                 fname = os.path.join(output_path, chunk_key)
@@ -732,8 +711,7 @@ def cupy_to_zarr(
                             size = future.get()
                             if size != tile_cache[0].nbytes:
                                 raise ValueError(
-                                    "failed to write the expected number of "
-                                    "bytes"
+                                    "failed to write the expected number of bytes"
                                 )
                         fh.close()
                         # reset the lists to prepare for the next n_buffer tiles

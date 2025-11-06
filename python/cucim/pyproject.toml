@@ -176,8 +176,6 @@ ignore = [
     "E501",
     # (pycodestyle) Use `is` and `is not` for type comparisons, or `isinstance()` for isinstance checks
     "E721",
-    # (pyupgrade) Use `X | Y` in `isinstance` call instead of `(X, Y)`
-    "UP038",
 ]
 fixable = ["ALL"]
 
@@ -189,33 +187,6 @@ combine-as-imports = true
 force-single-line = false
 known-first-party = ["cucim"]
 order-by-type = true
-
-[tool.black]
-line-length = 80
-target-version = ["py310"]
-include = '\.py?$'
-exclude = '''
-/(
-    3rdparty |
-    thirdparty |
-    \.eggs |
-    \.git |
-    \.hg |
-    \.mypy_cache |
-    \.tox |
-    \.venv |
-    _build |
-    _deps |
-    cpp |
-    ci |
-    build |
-    build-debug |
-    build-release |
-    dist |
-    docker |
-    docs |
-)/
-'''
 
 [tool.codespell]
 # note: pre-commit passes explicit lists of files here, which this skip file list doesn't override -

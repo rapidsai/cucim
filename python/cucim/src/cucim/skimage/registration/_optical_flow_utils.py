@@ -4,7 +4,6 @@
 
 """Common tools to optical flow algorithms."""
 
-
 import cupy as cp
 import numpy as np
 from cupyx.scipy import ndimage as ndi
@@ -137,7 +136,7 @@ def _coarse_to_fine(
 
     if np.dtype(dtype).char not in "efdg":
         raise ValueError(
-            "Only floating point data type are valid" " for optical flow"
+            "Only floating point data type are valid for optical flow"
         )
 
     pyramid = list(

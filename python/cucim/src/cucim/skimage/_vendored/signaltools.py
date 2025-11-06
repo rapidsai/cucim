@@ -724,7 +724,7 @@ def medfilt(volume, kernel_size=None):
     kernel_size = _get_kernel_size(kernel_size, volume.ndim)
     if any(k > s for k, s in zip(kernel_size, volume.shape)):
         warnings.warn(
-            "kernel_size exceeds volume extent: " "volume will be zero-padded"
+            "kernel_size exceeds volume extent: volume will be zero-padded"
         )
 
     size = _prod(kernel_size)

@@ -44,9 +44,7 @@ class LabelBench(ImageBench):
 
     def _generate_labels(self, dtype):
         ndim = len(self.shape)
-        blobs_kwargs = dict(
-            blob_size_fraction=0.05, volume_fraction=0.35, rng=5
-        )
+        blobs_kwargs = dict(blob_size_fraction=0.05, volume_fraction=0.35, rng=5)
         # binary blobs only creates square outputs
         labels = measure.label(
             data.binary_blobs(max(self.shape), n_dim=ndim, **blobs_kwargs)
@@ -109,9 +107,7 @@ class RandomWalkerBench(ImageBench):
 
         n_dim = len(self.shape)
         data = cucim.skimage.img_as_float(
-            cucim.skimage.data.binary_blobs(
-                length=max(self.shape), n_dim=n_dim, rng=1
-            )
+            cucim.skimage.data.binary_blobs(length=max(self.shape), n_dim=n_dim, rng=1)
         )
         data = data[tuple(slice(s) for s in self.shape)]
         sigma = 0.35
@@ -176,9 +172,7 @@ def main(args):
         (
             "find_boundaries",
             dict(),
-            dict(
-                connectivity=[1], mode=["thick", "inner", "outer", "subpixel"]
-            ),
+            dict(connectivity=[1], mode=["thick", "inner", "outer", "subpixel"]),
             False,
             True,
         ),
@@ -350,8 +344,7 @@ if __name__ == "__main__":
         "--img_size",
         type=str,
         help=(
-            "Size of input image (omit color channel, it will be appended "
-            "as needed)"
+            "Size of input image (omit color channel, it will be appended as needed)"
         ),
         required=True,
     )

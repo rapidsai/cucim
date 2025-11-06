@@ -1,5 +1,5 @@
 #
-# SPDX-FileCopyrightText: Copyright (c) 2021, NVIDIA CORPORATION.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION.
 # SPDX-License-Identifier: Apache-2.0
 #
 
@@ -183,9 +183,7 @@ def main(output_file_name: str) -> int:
     b_cb = gen_list(list(gen_b_cb()), 10, 4)
 
     with open(output_file_name, "w") as f:
-        f.write(
-            TEMPLATE % {"r_cr": r_cr, "g_cb": g_cb, "g_cr": g_cr, "b_cb": b_cb}
-        )
+        f.write(TEMPLATE % {"r_cr": r_cr, "g_cb": g_cb, "g_cr": g_cr, "b_cb": b_cb})
 
     return 0
 

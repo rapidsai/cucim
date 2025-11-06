@@ -5,6 +5,7 @@
 """
 Grayscale morphological operations
 """
+
 import warnings
 
 import cupy as cp

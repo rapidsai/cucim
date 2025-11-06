@@ -198,9 +198,9 @@ def test_hessian_matrix_3d():
     Hs = hessian_matrix(
         cube, sigma=0.1, order="rc", use_gaussian_derivatives=False
     )
-    assert (
-        len(Hs) == 6
-    ), f"incorrect number of Hessian images ({len(Hs)}) for 3D"  # noqa
+    assert len(Hs) == 6, (
+        f"incorrect number of Hessian images ({len(Hs)}) for 3D"
+    )  # noqa
     # fmt: off
     assert_array_almost_equal(
         Hs[2][:, 2, :], cp.asarray([[0,  0,  0,  0,  0],    # noqa

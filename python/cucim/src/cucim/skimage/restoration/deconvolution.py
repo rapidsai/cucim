@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 """Implementations restoration functions"""
+
 import warnings
 
 import cupy as cp

@@ -13,6 +13,7 @@ return type changed to a PearsonRResult object that also has a
 `confidence_interval` method. Since we do not need that method in the cuCIM
 API, a simple tuple-based return is used
 """
+
 import warnings
 
 import cupy as cp

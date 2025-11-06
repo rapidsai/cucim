@@ -41,9 +41,7 @@ class ColorBench(ImageBench):
     def set_args(self, dtype):
         if self.shape[-1] != 3:
             raise ValueError("shape must be 3 on the last axis")
-        imaged = cupy.testing.shaped_random(
-            self.shape, xp=cp, dtype=dtype, scale=1.0
-        )
+        imaged = cupy.testing.shaped_random(self.shape, xp=cp, dtype=dtype, scale=1.0)
         image = cp.asnumpy(imaged)
         self.args_cpu = (image,)
         self.args_gpu = (imaged,)
@@ -79,9 +77,7 @@ class RGBABench(ImageBench):
     def set_args(self, dtype):
         if self.shape[-1] != 4:
             raise ValueError("shape must be 4 on the last axis")
-        imaged = cupy.testing.shaped_random(
-            self.shape, xp=cp, dtype=dtype, scale=1.0
-        )
+        imaged = cupy.testing.shaped_random(self.shape, xp=cp, dtype=dtype, scale=1.0)
         image = cp.asnumpy(imaged)
         self.args_cpu = (image,)
         self.args_gpu = (imaged,)
@@ -116,9 +112,7 @@ class LabelBench(ImageBench):
 
     def _generate_labels(self, dtype):
         ndim = len(self.shape)
-        blobs_kwargs = dict(
-            blob_size_fraction=0.05, volume_fraction=0.35, rng=5
-        )
+        blobs_kwargs = dict(blob_size_fraction=0.05, volume_fraction=0.35, rng=5)
         # binary blobs only creates square outputs
         labels = measure.label(
             data.binary_blobs(max(self.shape), n_dim=ndim, **blobs_kwargs)
@@ -314,8 +308,7 @@ if __name__ == "__main__":
         "--img_size",
         type=str,
         help=(
-            "Size of input image (omit color channel, it will be appended "
-            "as needed)"
+            "Size of input image (omit color channel, it will be appended as needed)"
         ),
         required=True,
     )

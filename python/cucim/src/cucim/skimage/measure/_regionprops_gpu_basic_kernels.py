@@ -115,8 +115,8 @@ def _get_bbox_code(uint_t, ndim, array_size):
           atomicMax(&bbox[(lab - 1)*{2 * ndim} + {ndim}], bbox_max[{ndim}*ii]);"""  # noqa: E501
     for d in range(1, ndim):
         source_post += f"""
-          atomicMin(&bbox[(lab - 1)*{2*ndim} + {d}], bbox_min[{ndim}*ii + {d}]);
-          atomicMax(&bbox[(lab - 1)*{2*ndim} + {d + ndim}], bbox_max[{ndim}*ii + {d}]);"""  # noqa: E501
+          atomicMin(&bbox[(lab - 1)*{2 * ndim} + {d}], bbox_min[{ndim}*ii + {d}]);
+          atomicMax(&bbox[(lab - 1)*{2 * ndim} + {d + ndim}], bbox_max[{ndim}*ii + {d}]);"""  # noqa: E501
     return source_pre, source_operation, source_post
 
 

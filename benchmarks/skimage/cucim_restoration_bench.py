@@ -219,8 +219,7 @@ if __name__ == "__main__":
         "--img_size",
         type=str,
         help=(
-            "Size of input image (omit color channel, it will be appended "
-            "as needed)"
+            "Size of input image (omit color channel, it will be appended as needed)"
         ),
         required=True,
     )

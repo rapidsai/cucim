@@ -135,9 +135,7 @@ def main(args):
                         for s in scales
                     ]
                 else:
-                    out_shapes = [
-                        tuple([int(s_ * s) for s_ in shape]) for s in scales
-                    ]
+                    out_shapes = [tuple([int(s_ * s) for s_ in shape]) for s in scales]
                 var_kwargs["output_shape"] = out_shapes
 
         elif function_name == "downscale_local_mean":
@@ -207,8 +205,7 @@ if __name__ == "__main__":
         "--img_size",
         type=str,
         help=(
-            "Size of input image (omit color channel, it will be appended "
-            "as needed)"
+            "Size of input image (omit color channel, it will be appended as needed)"
         ),
         required=True,
     )
