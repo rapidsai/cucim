@@ -41,7 +41,22 @@ if (NOT TARGET deps::libjpeg-turbo)
     # full path to the compiler, or to the compiler name if it is in the PATH.
     # yasm is available through `sudo apt-get install yasm` on Debian Linux.
     # See _deps/deps-libjpeg-turbo-src/simd/CMakeLists.txt:25.
-    set(CMAKE_ASM_NASM_COMPILER yasm)
+    
+    # Try to find yasm in conda environment first, then system paths
+    if(DEFINED ENV{CONDA_PREFIX})
+        find_program(YASM_EXECUTABLE NAMES yasm PATHS $ENV{CONDA_PREFIX}/bin NO_DEFAULT_PATH)
+    endif()
+    if(NOT YASM_EXECUTABLE)
+        find_program(YASM_EXECUTABLE NAMES yasm)
+    endif()
+    
+    if(YASM_EXECUTABLE)
+        set(CMAKE_ASM_NASM_COMPILER ${YASM_EXECUTABLE})
+        message(STATUS "Found yasm: ${YASM_EXECUTABLE}")
+    else()
+        set(CMAKE_ASM_NASM_COMPILER yasm)
+        message(WARNING "yasm not found, using 'yasm' and hoping it's in PATH")
+    endif()
     set(REQUIRE_SIMD 1) # CMP0077
 
     message(STATUS "Fetching libjpeg-turbo sources")
