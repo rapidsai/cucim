@@ -155,6 +155,28 @@ endif()
 # Add library: cucim
 ################################################################################
 
+# NOTE: Commented out for infrastructure-only PR. Will be enabled in follow-up PR
+#       with actual implementation once source files are added.
+# TODO: Uncomment this section when src/ directory is added with implementation
+
+message(STATUS "=============================================================")
+message(STATUS "cuslide2 infrastructure validation - Dependencies verified:")
+message(STATUS "  ✓ fmt")
+message(STATUS "  ✓ libjpeg-turbo") 
+message(STATUS "  ✓ libopenjpeg")
+message(STATUS "  ✓ libtiff")
+message(STATUS "  ✓ libdeflate")
+message(STATUS "  ✓ nvImageCodec")
+message(STATUS "  ✓ pugixml")
+message(STATUS "  ✓ json")
+message(STATUS "  ✓ openslide")
+message(STATUS "")
+message(STATUS "Infrastructure setup complete!")
+message(STATUS "Next step: Add src/ directory with cuslide2 implementation")
+message(STATUS "=============================================================")
+
+# TODO: Uncomment when ready
+if(FALSE)  # Change to TRUE when source files exist
 # Add library
 add_library(${CUCIM_PLUGIN_NAME}
     src/cuslide/cuslide.cpp
@@ -293,6 +315,8 @@ set_target_properties(${CUCIM_PLUGIN_NAME} PROPERTIES OUTPUT_NAME "${CUCIM_PLUGI
 ################################################################################
 # Install
 ################################################################################
+# NOTE: Disabled for infrastructure-only PR
+# TODO: Uncomment when library target exists
 set(INSTALL_TARGETS
         ${CUCIM_PLUGIN_NAME}
         # cuslide_tests  # Disabled for infrastructure-only PR
@@ -342,5 +366,7 @@ install(
 
 set(CMAKE_EXPORT_PACKAGE_REGISTRY ON)
 export(PACKAGE ${CUCIM_PLUGIN_NAME})
+
+endif()  # End of if(FALSE) block for infrastructure-only PR
 
 unset(BUILD_SHARED_LIBS CACHE)

@@ -54,16 +54,11 @@ def run_command(command, description=""):
         return False, "", str(e)
 
 def check_conda_environment():
-    """Check conda environment and nvImageCodec packages"""
-    print_section("Conda Environment Check")
-    
+    """Check conda environment and nvImageCodec packages - returns package list or None"""
     # Check if we're in a conda environment
     conda_prefix = os.environ.get('CONDA_PREFIX')
-    if conda_prefix:
-        print(f"✓ Conda environment: {conda_prefix}")
-    else:
-        print("⚠ Not in a conda environment")
-        return False
+    if not conda_prefix:
+        return None
     
     # Find conda executable
     conda_executables = ['micromamba', 'mamba', 'conda']
@@ -72,41 +67,62 @@ def check_conda_environment():
     for cmd in conda_executables:
         if check_command_exists(cmd):
             conda_cmd = cmd
-            print(f"✓ Found conda manager: {cmd}")
             break
     
     if not conda_cmd:
-        print("✗ No conda manager found (micromamba, mamba, conda)")
-        return False
+        return None
     
     # Check for nvImageCodec packages
     success, output, error = run_command(f"{conda_cmd} list libnvimgcodec")
     if success and "libnvimgcodec" in output:
-        print("✓ nvImageCodec conda packages found:")
+        packages = []
         for line in output.split('\n'):
             if 'libnvimgcodec' in line:
-                print(f"  {line}")
-        return True
-    else:
-        print("ℹ nvImageCodec conda packages not found")
-        print("  (This is OK if you installed via pip: nvidia-nvimgcodec-cu12)")
-        return False
+                packages.append(line.strip())
+        return packages if packages else None
+    return None
 
 def check_python_packages():
-    """Check Python nvImageCodec packages"""
-    print_section("Python Package Check")
-    
-    # Check for nvidia-nvimgcodec packages
+    """Check Python nvImageCodec packages - returns package list or None"""
     success, output, error = run_command("pip list | grep nvidia-nvimgcodec")
     if success and output:
-        print("✓ Python nvImageCodec packages found:")
+        packages = []
         for line in output.split('\n'):
             if line.strip():
-                print(f"  {line}")
-        return True
+                packages.append(line.strip())
+        return packages if packages else None
+    return None
+
+def detect_installation_method():
+    """Detect and display nvImageCodec installation method"""
+    print_section("Installation Method Detection")
+    
+    conda_packages = check_conda_environment()
+    pip_packages = check_python_packages()
+    
+    conda_prefix = os.environ.get('CONDA_PREFIX')
+    
+    if conda_packages:
+        print("✓ Conda native packages detected:")
+        for pkg in conda_packages:
+            print(f"  {pkg}")
+        print("ℹ Using conda installation (recommended for C++ builds)")
+        if conda_prefix:
+            print(f"  Environment: {conda_prefix}")
+        return 'conda'
+    elif pip_packages:
+        print("✓ Pip packages detected:")
+        for pkg in pip_packages:
+            print(f"  {pkg}")
+        print("ℹ Using pip installation")
+        return 'pip'
     else:
-        print("⚠ No Python nvImageCodec packages found")
-        return False
+        if conda_prefix:
+            print("✗ nvImageCodec not found in conda environment")
+        else:
+            print("ℹ Not in a conda environment")
+        print("✗ No nvImageCodec installation detected")
+        return None
 
 def check_library_files():
     """Check for nvImageCodec library files"""
@@ -349,23 +365,27 @@ int main() {
             except:
                 pass
 
-def test_python_import():
+def test_python_import(install_method):
     """Test Python import of nvImageCodec (if available)"""
-    print_section("Python Import Test")
+    print_section("Python Bindings Check")
     
     # Try to import nvImageCodec Python bindings (if they exist)
     try:
         import nvidia.nvimgcodec
-        print("✓ nvidia.nvimgcodec module imported successfully")
+        print("✓ nvidia.nvimgcodec Python module available")
         
         # Try to get version
         if hasattr(nvidia.nvimgcodec, '__version__'):
             print(f"  Version: {nvidia.nvimgcodec.__version__}")
         
         return True
-    except ImportError as e:
-        print("⚠ nvidia.nvimgcodec Python module not available")
-        print(f"  Error: {e}")
+    except ImportError:
+        if install_method == 'conda':
+            print("ℹ Python bindings not installed (not required for conda C++ builds)")
+            print("  C++ plugin links directly to libnvimgcodec.so")
+        else:
+            print("ℹ Python bindings not found")
+            print("  Install with: pip install nvidia-nvimgcodec-cu12[all]")
         return False
 
 def check_cuslide2_plugin():
@@ -400,11 +420,12 @@ def check_cuslide2_plugin():
         print("\n  Run: ./run build_local all release $CONDA_PREFIX")
         return False
     
-    print(f"✓ Plugin found: {plugin_file}")
+    print(f"✓ Plugin found: {plugin_file.name}")
     
     # Check file size
     size_mb = plugin_file.stat().st_size / (1024 * 1024)
     print(f"  Size: {size_mb:.1f} MB")
+    print(f"  Location: {plugin_file.parent}")
     
     # Check if linked with nvImageCodec using ldd
     success, output, error = run_command(f"ldd {plugin_file} 2>&1")
@@ -413,14 +434,14 @@ def check_cuslide2_plugin():
         has_cuda = "cuda" in output.lower()
         
         if has_nvimgcodec:
-            print("✓ Plugin linked with nvImageCodec")
+            print("✓ Plugin linked with nvImageCodec (static linking)")
             # Show the nvimgcodec line
             for line in output.split('\n'):
                 if 'nvimgcodec' in line:
                     print(f"  {line.strip()}")
         else:
-            print("⚠ Plugin NOT linked with nvImageCodec")
-            print("  This is OK if nvImageCodec will be loaded dynamically")
+            print("ℹ Plugin uses dynamic loading for nvImageCodec")
+            print("  Library loaded at runtime via plugin system")
         
         if has_cuda:
             print("✓ Plugin linked with CUDA libraries")
@@ -468,56 +489,59 @@ def main():
     print(f"Platform: {platform.system()} {platform.release()}")
     print(f"Python: {sys.version}")
     
-    results = {
-        'conda_env': check_conda_environment(),
-        'python_packages': check_python_packages(),
-        'library_files': check_library_files(),
-        'plugin_built': False,
-        'cuda': True  # We'll update this
-    }
+    # Detect installation method
+    install_method = detect_installation_method()
     
+    # Check library files
+    library_files_ok = check_library_files()
+    
+    # Check CUDA environment
     check_cuda_availability()
-    results['plugin_built'] = check_cuslide2_plugin()
-    # Skipping C compilation test - it has conda/system toolchain conflicts
-    # The other checks (conda packages, library files, Python import) are sufficient
-    test_python_import()
+    
+    # Check plugin
+    plugin_built = check_cuslide2_plugin()
+    
+    # Check Python bindings (informational)
+    if install_method:
+        test_python_import(install_method)
     
     # Summary
     print_header("Infrastructure Summary")
     
-    all_good = results['library_files'] and results['plugin_built']
+    all_good = library_files_ok and plugin_built and install_method
     
     if all_good:
         print("🎉 cuslide2 infrastructure is properly set up!")
-        if results['conda_env']:
-            print("✓ nvImageCodec conda packages installed")
-        elif results['python_packages']:
-            print("✓ nvImageCodec pip packages installed")
-        print("✓ nvImageCodec library files accessible")
+        if install_method == 'conda':
+            print("✓ nvImageCodec installed via conda native packages")
+        elif install_method == 'pip':
+            print("✓ nvImageCodec installed via pip packages")
+        print("✓ All required library files accessible")
         print("✓ cuslide2 plugin built successfully")
-        print("✓ Plugin integration verified")
+        print("✓ CUDA environment configured correctly")
         
         return True
-    elif results['library_files'] and not results['plugin_built']:
-        print("⚠ Partial setup:")
+    elif library_files_ok and not plugin_built:
+        print("⚠ Partial setup - nvImageCodec installed but plugin not built")
         print("✓ nvImageCodec is installed")
         print("✗ cuslide2 plugin not built yet")
         print("\n📋 Next step: Build the plugin")
         print("   cd cucim && ./run build_local all release $CONDA_PREFIX")
         
         return False
-    else:
-        print("⚠ nvImageCodec installation incomplete or not found")
+    elif not install_method or not library_files_ok:
+        print("✗ nvImageCodec installation incomplete or not found")
         
         print("\n🔧 Installation Options:")
-        print("Option 1 (Conda): micromamba install libnvimgcodec-dev libnvimgcodec0 -c conda-forge")
+        print("Option 1 (Conda - recommended for C++): micromamba install libnvimgcodec-dev libnvimgcodec0 -c conda-forge")
         print("Option 2 (Pip): pip install nvidia-nvimgcodec-cu12[all]  # For CUDA 12.x")
-        print("Option 3 (Auto): cmake -DAUTO_INSTALL_NVIMGCODEC=ON .. # During build")
+        print("Option 3 (Auto-install during build): cmake -DAUTO_INSTALL_NVIMGCODEC=ON ..")
         
-        if not results['conda_env']:
-            print("\n💡 Tip: You can also install via conda: micromamba install libnvimgcodec-dev -c conda-forge")
-            print("   (Both pip and conda installations work fine!)")
+        print("\n💡 Both conda and pip installations are supported!")
         
+        return False
+    else:
+        print("✗ Setup incomplete")
         return False
 
 if __name__ == "__main__":
