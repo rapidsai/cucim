@@ -544,7 +544,7 @@ def main():
     # Check library files based on installation method
     library_files_ok = check_library_files(install_method) if install_method else False
 
-    # Check CMake configuration (optional, informational)
+    # Check CMake configuration (optional, informational) , no asssignment
     check_cmake_configuration()
 
     # Check CUDA environment
