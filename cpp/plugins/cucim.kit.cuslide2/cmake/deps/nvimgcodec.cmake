@@ -1,16 +1,8 @@
 #
-# Copyright (c) 2020-2024, NVIDIA CORPORATION.
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# cmake-format: off
+# SPDX-FileCopyrightText: Copyright (c) 2020-2025, NVIDIA CORPORATION.
+# SPDX-License-Identifier: Apache-2.0
+# cmake-format: on
 #
 
 if (NOT TARGET deps::nvimgcodec)
@@ -21,7 +13,7 @@ if (NOT TARGET deps::nvimgcodec)
     if (DEFINED ENV{CONDA_PREFIX})
         # Try to find nvImageCodec in conda environment first
         find_package(nvimgcodec QUIET)
-        
+
         if (nvimgcodec_FOUND)
             add_library(deps::nvimgcodec INTERFACE IMPORTED GLOBAL)
             target_link_libraries(deps::nvimgcodec INTERFACE nvimgcodec::nvimgcodec)
@@ -30,7 +22,7 @@ if (NOT TARGET deps::nvimgcodec)
             # Manual detection in conda environment
             set(NVIMGCODEC_LIB_PATH "")
             set(NVIMGCODEC_INCLUDE_PATH "")
-            
+
             # Try native conda package first (libnvimgcodec-dev)
             set(CONDA_NATIVE_ROOT "$ENV{CONDA_PREFIX}")
             if(EXISTS "${CONDA_NATIVE_ROOT}/include/nvimgcodec.h")
@@ -71,7 +63,7 @@ if (NOT TARGET deps::nvimgcodec)
                 message(STATUS "✓ nvImageCodec found in conda environment:")
                 message(STATUS "  Library: ${NVIMGCODEC_LIB_PATH}")
                 message(STATUS "  Headers: ${NVIMGCODEC_INCLUDE_PATH}")
-                
+
                 set(NVIMGCODEC_INCLUDE_PATH ${NVIMGCODEC_INCLUDE_PATH} CACHE INTERNAL "" FORCE)
                 set(NVIMGCODEC_LIB_PATH ${NVIMGCODEC_LIB_PATH} CACHE INTERNAL "" FORCE)
                 mark_as_advanced(NVIMGCODEC_INCLUDE_PATH NVIMGCODEC_LIB_PATH)
@@ -79,9 +71,9 @@ if (NOT TARGET deps::nvimgcodec)
                 # Auto-install if enabled and not found
                 if(AUTO_INSTALL_NVIMGCODEC)
                     message(STATUS "nvImageCodec not found in conda environment - attempting automatic installation...")
-                    
+
                     # Find conda executable
-                    find_program(MICROMAMBA_EXECUTABLE 
+                    find_program(MICROMAMBA_EXECUTABLE
                         NAMES micromamba
                         PATHS ${CMAKE_CURRENT_SOURCE_DIR}/../../../bin
                               ${CMAKE_CURRENT_SOURCE_DIR}/../../bin
@@ -90,8 +82,8 @@ if (NOT TARGET deps::nvimgcodec)
                               /opt/conda/bin
                         DOC "Path to micromamba executable"
                     )
-                    
-                    find_program(CONDA_EXECUTABLE 
+
+                    find_program(CONDA_EXECUTABLE
                         NAMES conda mamba
                         PATHS $ENV{HOME}/miniconda3/bin
                               $ENV{HOME}/anaconda3/bin
@@ -99,7 +91,7 @@ if (NOT TARGET deps::nvimgcodec)
                               /usr/local/bin
                         DOC "Path to conda/mamba executable"
                     )
-                    
+
                     set(CONDA_CMD "")
                     if(MICROMAMBA_EXECUTABLE)
                         set(CONDA_CMD ${MICROMAMBA_EXECUTABLE})
@@ -108,24 +100,24 @@ if (NOT TARGET deps::nvimgcodec)
                         set(CONDA_CMD ${CONDA_EXECUTABLE})
                         message(STATUS "Using conda/mamba: ${CONDA_EXECUTABLE}")
                     endif()
-                    
+
                     if(CONDA_CMD)
                         message(STATUS "Installing nvImageCodec ${NVIMGCODEC_VERSION}...")
                         execute_process(
-                            COMMAND ${CONDA_CMD} install 
-                                libnvimgcodec-dev=${NVIMGCODEC_VERSION} 
-                                libnvimgcodec0=${NVIMGCODEC_VERSION} 
+                            COMMAND ${CONDA_CMD} install
+                                libnvimgcodec-dev=${NVIMGCODEC_VERSION}
+                                libnvimgcodec0=${NVIMGCODEC_VERSION}
                                 -c conda-forge -y
                             RESULT_VARIABLE CONDA_INSTALL_RESULT
                             OUTPUT_QUIET
                             ERROR_QUIET
                             TIMEOUT 300
                         )
-                        
+
                         if(CONDA_INSTALL_RESULT EQUAL 0)
                             message(STATUS "✓ Successfully installed nvImageCodec ${NVIMGCODEC_VERSION}")
                             # Retry detection after installation
-                            if(EXISTS "$ENV{CONDA_PREFIX}/include/nvimgcodec.h" AND 
+                            if(EXISTS "$ENV{CONDA_PREFIX}/include/nvimgcodec.h" AND
                                EXISTS "$ENV{CONDA_PREFIX}/lib/libnvimgcodec.so.0")
                                 add_library(deps::nvimgcodec SHARED IMPORTED GLOBAL)
                                 set_target_properties(deps::nvimgcodec PROPERTIES
@@ -151,10 +143,10 @@ if (NOT TARGET deps::nvimgcodec)
     else ()
         # Fallback to manual detection outside conda environment
         message(STATUS "Not in conda environment - attempting manual nvImageCodec detection...")
-        
+
         # Try find_package first
         find_package(nvimgcodec QUIET)
-        
+
         if(nvimgcodec_FOUND)
             add_library(deps::nvimgcodec INTERFACE IMPORTED GLOBAL)
             target_link_libraries(deps::nvimgcodec INTERFACE nvimgcodec::nvimgcodec)
@@ -164,7 +156,7 @@ if (NOT TARGET deps::nvimgcodec)
             find_package(Python3 COMPONENTS Interpreter)
             set(NVIMGCODEC_LIB_PATH "")
             set(NVIMGCODEC_INCLUDE_PATH "")
-            
+
             if(Python3_FOUND)
                 # Try user site-packages first (pip install --user)
                 execute_process(
@@ -173,7 +165,7 @@ if (NOT TARGET deps::nvimgcodec)
                     OUTPUT_STRIP_TRAILING_WHITESPACE
                     ERROR_QUIET
                 )
-                
+
                 # Then try system site-packages
                 execute_process(
                     COMMAND ${Python3_EXECUTABLE} -c "import site; print(site.getsitepackages()[0])"
@@ -181,7 +173,7 @@ if (NOT TARGET deps::nvimgcodec)
                     OUTPUT_STRIP_TRAILING_WHITESPACE
                     ERROR_QUIET
                 )
-                
+
                 # Check user site-packages first
                 if(PYTHON_USER_SITE_PACKAGES)
                     set(NVIMGCODEC_PYTHON_ROOT "${PYTHON_USER_SITE_PACKAGES}/nvidia/nvimgcodec")
@@ -200,7 +192,7 @@ if (NOT TARGET deps::nvimgcodec)
                         endif()
                     endif()
                 endif()
-                
+
                 # If not found in user site-packages, check system site-packages
                 if(NOT NVIMGCODEC_LIB_PATH AND PYTHON_SITE_PACKAGES)
                     set(NVIMGCODEC_PYTHON_ROOT "${PYTHON_SITE_PACKAGES}/nvidia/nvimgcodec")
@@ -220,7 +212,7 @@ if (NOT TARGET deps::nvimgcodec)
                     endif()
                 endif()
             endif()
-            
+
             # System-wide installation fallback
             if(NOT NVIMGCODEC_LIB_PATH)
                 if(EXISTS /usr/lib/x86_64-linux-gnu/libnvimgcodec.so.0)
@@ -244,7 +236,7 @@ if (NOT TARGET deps::nvimgcodec)
                 message(STATUS "✓ nvImageCodec found:")
                 message(STATUS "  Library: ${NVIMGCODEC_LIB_PATH}")
                 message(STATUS "  Headers: ${NVIMGCODEC_INCLUDE_PATH}")
-                
+
                 set(NVIMGCODEC_INCLUDE_PATH ${NVIMGCODEC_INCLUDE_PATH} CACHE INTERNAL "" FORCE)
                 set(NVIMGCODEC_LIB_PATH ${NVIMGCODEC_LIB_PATH} CACHE INTERNAL "" FORCE)
                 mark_as_advanced(NVIMGCODEC_INCLUDE_PATH NVIMGCODEC_LIB_PATH)
