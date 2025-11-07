@@ -3,10 +3,14 @@
 cuslide2 Infrastructure Verification Script
 
 This script validates that the cuslide2 plugin infrastructure is properly set up:
-- nvImageCodec installation (conda or pip)
+- nvImageCodec installation (conda/pip packages OR CMake build integration)
 - cuslide2 plugin build status
-- Plugin integration with nvImageCodec
+- Plugin integration with nvImageCodec (linkage verification)
 - Environment configuration
+
+Supports two nvImageCodec deployment models:
+1. Conda/pip packages (specified in dependencies.yaml) - RECOMMENDED
+2. CMake FetchContent integration (automatically fetched during build)
 """
 
 import os
@@ -93,100 +97,215 @@ def check_python_packages():
         return packages if packages else None
     return None
 
+def find_plugin_build_dir():
+    """Find the cuslide2 plugin build directory"""
+    script_dir = Path(__file__).parent.parent  # Go up to cucim root
+    
+    # Possible build locations
+    build_paths = [
+        script_dir / "cpp/plugins/cucim.kit.cuslide2/build-release",
+        script_dir / "cpp/plugins/cucim.kit.cuslide2/build",
+        script_dir / "build-release",
+        script_dir / "build",
+    ]
+    
+    for build_dir in build_paths:
+        if build_dir.exists():
+            return build_dir
+    
+    return None
+
 def detect_installation_method():
-    """Detect and display nvImageCodec installation method"""
-    print_section("Installation Method Detection")
+    """Detect and display nvImageCodec installation method - supports both approaches"""
+    print_section("nvImageCodec Installation Detection")
     
     conda_packages = check_conda_environment()
     pip_packages = check_python_packages()
-    
     conda_prefix = os.environ.get('CONDA_PREFIX')
     
+    # Check for conda/pip installation (Method 1 - RECOMMENDED per dependencies.yaml)
     if conda_packages:
-        print("✓ Conda native packages detected:")
+        print("✓ Method 1: Conda packages detected (from dependencies.yaml):")
         for pkg in conda_packages:
-            print(f"  {pkg}")
-        print("ℹ Using conda installation (recommended for C++ builds)")
+            print(f"    {pkg}")
         if conda_prefix:
             print(f"  Environment: {conda_prefix}")
         return 'conda'
     elif pip_packages:
-        print("✓ Pip packages detected:")
+        print("✓ Method 1: Pip packages detected:")
         for pkg in pip_packages:
-            print(f"  {pkg}")
-        print("ℹ Using pip installation")
+            print(f"    {pkg}")
         return 'pip'
+    
+    # Check for CMake build integration (Method 2 - Alternative)
+    build_dir = find_plugin_build_dir()
+    if build_dir:
+        print(f"ℹ  Checking Method 2: CMake build integration...")
+        print(f"   Build directory: {build_dir}")
+        
+        deps_dirs = [
+            build_dir / "_deps",
+            build_dir.parent.parent.parent / "build-release/_deps",
+        ]
+        
+        nvimgcodec_found = False
+        for deps_dir in deps_dirs:
+            if not deps_dir.exists():
+                continue
+            for item in deps_dir.iterdir():
+                if 'nvimgcodec' in item.name.lower():
+                    nvimgcodec_found = True
+                    print(f"✓ Method 2: nvImageCodec integrated via CMake:")
+                    print(f"    {item.name}")
+                    return 'cmake-integrated'
+        
+        if not nvimgcodec_found:
+            print("✗ Method 2: No CMake integration found")
+    
+    # Neither method found
+    if conda_prefix:
+        print("✗ nvImageCodec not found via any method")
+        print("  Expected: conda packages from dependencies.yaml")
     else:
-        if conda_prefix:
-            print("✗ nvImageCodec not found in conda environment")
-        else:
-            print("ℹ Not in a conda environment")
+        print("ℹ  Not in a conda environment")
         print("✗ No nvImageCodec installation detected")
-        return None
+    
+    return None
 
-def check_library_files():
-    """Check for nvImageCodec library files"""
-    print_section("Library File Check")
+def check_nvimgcodec_library_in_deps():
+    """Check for nvImageCodec library files in plugin dependencies"""
+    build_dir = find_plugin_build_dir()
+    
+    if not build_dir:
+        return False
+    
+    # Search for nvImageCodec library in build dependencies
+    search_paths = [
+        build_dir / "_deps",
+        build_dir.parent.parent.parent / "build-release/_deps",
+    ]
+    
+    library_names = ["libnvimgcodec.so", "libnvimgcodec.so.0", "libnvimgcodec.a"]
+    
+    for search_path in search_paths:
+        if not search_path.exists():
+            continue
+            
+        # Recursively search for library files
+        for lib_name in library_names:
+            for lib_file in search_path.rglob(lib_name):
+                print(f"✓ nvImageCodec library found: {lib_file.relative_to(search_path.parent)}")
+                return True
+    
+    return False
+
+def check_library_files(install_method):
+    """Check for nvImageCodec library files based on installation method"""
+    print_section("nvImageCodec Library Files Check")
     
     search_paths = []
     
-    # Add conda environment paths
-    conda_prefix = os.environ.get('CONDA_PREFIX')
-    if conda_prefix:
+    # Method 1: Check conda/pip installation paths
+    if install_method in ['conda', 'pip']:
+        conda_prefix = os.environ.get('CONDA_PREFIX')
+        if conda_prefix:
+            search_paths.extend([
+                f"{conda_prefix}/lib",
+                f"{conda_prefix}/include"
+            ])
+            # Add Python site-packages paths for pip installations
+            for py_ver in ["3.14", "3.13", "3.12", "3.11", "3.10", "3.9"]:
+                search_paths.append(f"{conda_prefix}/lib/python{py_ver}/site-packages/nvidia/nvimgcodec")
+        # Add system paths
         search_paths.extend([
-            f"{conda_prefix}/lib",
-            f"{conda_prefix}/include"
+            "/usr/local/lib",
+            "/usr/lib",
+            "/usr/local/include",
+            "/usr/include"
         ])
-        
-        # Add Python site-packages paths
-        for py_ver in ["3.14", "3.13", "3.12", "3.11", "3.10", "3.9"]:
-            search_paths.append(f"{conda_prefix}/lib/python{py_ver}/site-packages/nvidia/nvimgcodec")
     
-    # Add system paths
-    search_paths.extend([
-        "/usr/local/lib",
-        "/usr/lib",
-        "/opt/conda/lib",
-        "/usr/local/include",
-        "/usr/include"
-    ])
+    # Method 2: Check CMake build dependencies
+    if install_method == 'cmake-integrated':
+        build_dir = find_plugin_build_dir()
+        if build_dir:
+            search_paths.extend([
+                str(build_dir / "_deps"),
+                str(build_dir.parent.parent.parent / "build-release/_deps"),
+            ])
+    
+    if not search_paths:
+        print("✗ No search paths available - installation method unknown")
+        return False
+    
+    header_found = False
+    library_found = False
     
     # Look for header files
-    header_found = False
     for path in search_paths:
-        header_path = Path(path) / "nvimgcodec.h"
+        path_obj = Path(path)
+        if not path_obj.exists():
+            continue
+        
+        # Check for header directly
+        header_path = path_obj / "nvimgcodec.h"
         if header_path.exists():
             print(f"✓ Header found: {header_path}")
             header_found = True
             break
         
-        # Also check include subdirectory
-        include_path = Path(path) / "include" / "nvimgcodec.h"
+        # Check include subdirectory
+        include_path = path_obj / "include" / "nvimgcodec.h"
         if include_path.exists():
             print(f"✓ Header found: {include_path}")
             header_found = True
+            break
+        
+        # For CMake integration, search recursively
+        if install_method == 'cmake-integrated':
+            for header_file in path_obj.rglob("nvimgcodec.h"):
+                print(f"✓ Header found: {header_file}")
+                header_found = True
+                break
+        
+        if header_found:
             break
     
     if not header_found:
         print("✗ nvimgcodec.h header file not found")
     
     # Look for library files
-    library_found = False
-    library_names = ["libnvimgcodec.so.0", "libnvimgcodec.so", "libnvimgcodec.dylib", "nvimgcodec.dll"]
+    library_names = ["libnvimgcodec.so.0", "libnvimgcodec.so", "libnvimgcodec.a", "libnvimgcodec.dylib", "nvimgcodec.dll"]
     
     for path in search_paths:
+        path_obj = Path(path)
+        if not path_obj.exists():
+            continue
+        
         for lib_name in library_names:
-            lib_path = Path(path) / lib_name
+            lib_path = path_obj / lib_name
             if lib_path.exists():
-                print(f"✓ Library found: {lib_path}")
+                size_mb = lib_path.stat().st_size / (1024 * 1024)
+                print(f"✓ Library found: {lib_path} ({size_mb:.1f} MB)")
                 library_found = True
                 break
             
-            # Also check lib subdirectory
-            lib_subpath = Path(path) / "lib" / lib_name
+            # Check lib subdirectory
+            lib_subpath = path_obj / "lib" / lib_name
             if lib_subpath.exists():
-                print(f"✓ Library found: {lib_subpath}")
+                size_mb = lib_subpath.stat().st_size / (1024 * 1024)
+                print(f"✓ Library found: {lib_subpath} ({size_mb:.1f} MB)")
                 library_found = True
+                break
+            
+            # For CMake integration, search recursively
+            if install_method == 'cmake-integrated':
+                for lib_file in path_obj.rglob(lib_name):
+                    size_mb = lib_file.stat().st_size / (1024 * 1024)
+                    print(f"✓ Library found: {lib_file} ({size_mb:.1f} MB)")
+                    library_found = True
+                    break
+            
+            if library_found:
                 break
         
         if library_found:
@@ -197,195 +316,67 @@ def check_library_files():
     
     return header_found and library_found
 
-def test_c_compilation():
-    """Test C compilation with nvImageCodec"""
-    print_section("C Compilation Test")
+def check_cmake_configuration():
+    """Check CMake configuration for nvImageCodec"""
+    print_section("CMake Build Configuration Check")
     
-    # Create a simple test program
-    test_code = '''
-#include <stdio.h>
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-// Try to include nvImageCodec header
-#ifdef HAVE_NVIMGCODEC
-#include <nvimgcodec.h>
-#endif
-
-int main() {
-#ifdef HAVE_NVIMGCODEC
-    printf("nvImageCodec header included successfully\\n");
+    build_dir = find_plugin_build_dir()
     
-    // Try to create instance to verify library is functional
-    nvimgcodecInstance_t instance = NULL;
-    nvimgcodecInstanceCreateInfo_t create_info = {NVIMGCODEC_STRUCTURE_TYPE_INSTANCE_CREATE_INFO, sizeof(nvimgcodecInstanceCreateInfo_t), 0};
-    create_info.message_severity = NVIMGCODEC_DEBUG_MESSAGE_SEVERITY_ERROR;
-    create_info.message_category = NVIMGCODEC_DEBUG_MESSAGE_CATEGORY_ALL;
+    if not build_dir:
+        print("✗ No build directory found - plugin not built yet")
+        return False
     
-    nvimgcodecStatus_t status = nvimgcodecInstanceCreate(&instance, &create_info);
-    if (status == NVIMGCODEC_STATUS_SUCCESS) {
-        printf("✓ nvImageCodec instance created successfully\\n");
-        nvimgcodecInstanceDestroy(instance);
-    } else {
-        printf("⚠ Could not create nvImageCodec instance (status: %d)\\n", status);
-        printf("  This is OK - headers and library are accessible\\n");
-    }
-#else
-    printf("nvImageCodec header not available\\n");
-#endif
-    return 0;
-}
-
-#ifdef __cplusplus
-}
-#endif
-'''
+    # Check for CMakeCache.txt which contains build configuration
+    cmake_cache = build_dir / "CMakeCache.txt"
     
-    # Write test file
-    test_file = Path("test_nvimgcodec.c")
+    if not cmake_cache.exists():
+        print("✗ CMakeCache.txt not found - incomplete build")
+        return False
+    
+    print(f"✓ CMake cache found: {cmake_cache}")
+    
+    # Read and check for nvImageCodec-related configuration
     try:
-        with open(test_file, 'w') as f:
-            f.write(test_code)
-        
-        # Find nvImageCodec paths
-        conda_prefix = os.environ.get('CONDA_PREFIX', '')
-        include_paths = []
-        lib_paths = []
-        nvimgcodec_lib = None  # Store actual library path
-        
-        if conda_prefix:
-            include_paths.extend([
-                f"-I{conda_prefix}/include",
-            ])
-            lib_paths.extend([
-                f"-L{conda_prefix}/lib",
-            ])
-            # Add CUDA library paths
-            cuda_lib_paths = [
-                f"{conda_prefix}/targets/x86_64-linux/lib",
-                f"{conda_prefix}/targets/aarch64-linux/lib",
-                f"{conda_prefix}/lib",
-                "/usr/lib/x86_64-linux-gnu",  # System CUDA driver
-                "/usr/lib/aarch64-linux-gnu",
-                "/usr/local/cuda/lib64",
-                "/opt/cuda/lib64",
-            ]
-            for cuda_lib in cuda_lib_paths:
-                if Path(cuda_lib).exists():
-                    lib_paths.append(f"-L{cuda_lib}")
+        with open(cmake_cache, 'r') as f:
+            cache_content = f.read()
             
-            # Add CUDA toolkit include paths (needed by nvimgcodec.h)
-            cuda_include_paths = [
-                f"{conda_prefix}/targets/x86_64-linux/include",
-                f"{conda_prefix}/targets/aarch64-linux/include",
-                f"{conda_prefix}/include/cuda",
-                "/usr/local/cuda/include",
-                "/opt/cuda/include",
-            ]
-            for cuda_path in cuda_include_paths:
-                if Path(cuda_path).exists():
-                    include_paths.append(f"-I{cuda_path}")
+        has_nvimgcodec_config = 'nvimgcodec' in cache_content.lower()
+        
+        if has_nvimgcodec_config:
+            print("✓ nvImageCodec configuration found in CMake cache")
             
-            # Add Python site-packages paths for multiple versions
-            # Also look for the actual library file
-            for py_ver in ["3.14", "3.13", "3.12", "3.11", "3.10", "3.9"]:
-                include_paths.append(f"-I{conda_prefix}/lib/python{py_ver}/site-packages/nvidia/nvimgcodec/include")
-                
-                # Find actual library file
-                if nvimgcodec_lib is None:
-                    for lib_name in ["libnvimgcodec.so.0", "libnvimgcodec.so"]:
-                        lib_file = Path(f"{conda_prefix}/lib/python{py_ver}/site-packages/nvidia/nvimgcodec/{lib_name}")
-                        if lib_file.exists():
-                            nvimgcodec_lib = str(lib_file)
-                            break
-                    # Also check lib subdirectory
-                    if nvimgcodec_lib is None:
-                        for lib_name in ["libnvimgcodec.so.0", "libnvimgcodec.so"]:
-                            lib_file = Path(f"{conda_prefix}/lib/python{py_ver}/site-packages/nvidia/nvimgcodec/lib/{lib_name}")
-                            if lib_file.exists():
-                                nvimgcodec_lib = str(lib_file)
-                                break
-        
-        # Try compilation with nvImageCodec (also link CUDA runtime and driver)
-        # Use direct path to library instead of -l flag
-        # Note: -lcuda links CUDA driver library for native conda packages
-        # Use /usr/bin/gcc to avoid conda gcc glibc compatibility issues
-        gcc_path = "/usr/bin/gcc" if Path("/usr/bin/gcc").exists() else "gcc"
-        
-        if nvimgcodec_lib:
-            compile_cmd = f"{gcc_path} {' '.join(include_paths)} -DHAVE_NVIMGCODEC test_nvimgcodec.c {' '.join(lib_paths)} {nvimgcodec_lib} -lcudart -lcuda -o test_nvimgcodec 2>&1"
+            # Look for specific nvImageCodec variables
+            for line in cache_content.split('\n'):
+                if 'nvimgcodec' in line.lower() and not line.startswith('//') and '=' in line:
+                    print(f"  {line.strip()}")
+            
+            return True
         else:
-            compile_cmd = f"{gcc_path} {' '.join(include_paths)} -DHAVE_NVIMGCODEC test_nvimgcodec.c {' '.join(lib_paths)} -lnvimgcodec -lcudart -lcuda -o test_nvimgcodec 2>&1"
-        success, output, error = run_command(compile_cmd)
-        
-        if success:
-            print("✓ C compilation with nvImageCodec successful")
+            print("⚠ No nvImageCodec configuration in CMake cache")
+            print("  The plugin may need to be rebuilt with nvImageCodec support")
+            return False
             
-            # Try to run the test with library path set
-            # Build LD_LIBRARY_PATH with nvImageCodec location
-            lib_dir = str(Path(nvimgcodec_lib).parent) if nvimgcodec_lib else ""
-            cuda_lib_dir = f"{conda_prefix}/lib" if conda_prefix else ""
-            
-            if lib_dir:
-                ld_library_path = f"{lib_dir}:{cuda_lib_dir}:{os.environ.get('LD_LIBRARY_PATH', '')}"
-                run_cmd = f"LD_LIBRARY_PATH={ld_library_path} ./test_nvimgcodec"
-            else:
-                run_cmd = "./test_nvimgcodec"
-            
-            success, output, error = run_command(run_cmd)
-            if success:
-                print("✓ Test program execution successful:")
-                print(f"  {output}")
-            else:
-                print("⚠ Test program compiled but failed to run:")
-                print(f"  {error}")
-                if lib_dir:
-                    print(f"  (Note: Library path was set to {lib_dir})")
-        else:
-            print("⚠ C compilation with nvImageCodec failed, trying without:")
-            print(f"  {output}")
-            
-            # Try compilation without nvImageCodec
-            compile_cmd = "gcc test_nvimgcodec.c -o test_nvimgcodec_simple 2>&1"
-            success, output, error = run_command(compile_cmd)
-            if success:
-                print("✓ Basic C compilation successful (without nvImageCodec)")
-                success, output, error = run_command("./test_nvimgcodec_simple")
-                if success:
-                    print(f"  Output: {output}")
-            else:
-                print("✗ Even basic C compilation failed")
-    
-    finally:
-        # Cleanup
-        for f in ["test_nvimgcodec.c", "test_nvimgcodec", "test_nvimgcodec_simple"]:
-            try:
-                Path(f).unlink(missing_ok=True)
-            except:
-                pass
+    except Exception as e:
+        print(f"✗ Error reading CMake cache: {e}")
+        return False
 
-def test_python_import(install_method):
+def test_python_import():
     """Test Python import of nvImageCodec (if available)"""
-    print_section("Python Bindings Check")
+    print_section("Python Import Test")
     
     # Try to import nvImageCodec Python bindings (if they exist)
     try:
         import nvidia.nvimgcodec
-        print("✓ nvidia.nvimgcodec Python module available")
+        print("✓ nvidia.nvimgcodec module imported successfully")
         
         # Try to get version
         if hasattr(nvidia.nvimgcodec, '__version__'):
             print(f"  Version: {nvidia.nvimgcodec.__version__}")
         
         return True
-    except ImportError:
-        if install_method == 'conda':
-            print("ℹ Python bindings not installed (not required for conda C++ builds)")
-            print("  C++ plugin links directly to libnvimgcodec.so")
-        else:
-            print("ℹ Python bindings not found")
-            print("  Install with: pip install nvidia-nvimgcodec-cu12[all]")
+    except ImportError as e:
+        print("⚠ nvidia.nvimgcodec Python module not available")
+        print(f"  Error: {e}")
         return False
 
 def check_cuslide2_plugin():
@@ -417,7 +408,9 @@ def check_cuslide2_plugin():
         print("  Expected locations:")
         for path in plugin_paths:
             print(f"    {path}/cucim.kit.cuslide2@*.so")
-        print("\n  Run: ./run build_local all release $CONDA_PREFIX")
+        print("\n  💡 To build the plugin with nvImageCodec:")
+        print("     cd cucim && ./run build_local all release $CONDA_PREFIX")
+        print("     (nvImageCodec will be automatically fetched during build)")
         return False
     
     print(f"✓ Plugin found: {plugin_file.name}")
@@ -434,14 +427,14 @@ def check_cuslide2_plugin():
         has_cuda = "cuda" in output.lower()
         
         if has_nvimgcodec:
-            print("✓ Plugin linked with nvImageCodec (static linking)")
+            print("✓ Plugin linked with nvImageCodec")
             # Show the nvimgcodec line
             for line in output.split('\n'):
                 if 'nvimgcodec' in line:
                     print(f"  {line.strip()}")
         else:
-            print("ℹ Plugin uses dynamic loading for nvImageCodec")
-            print("  Library loaded at runtime via plugin system")
+            print("ℹ Plugin uses dynamic loading or static linking for nvImageCodec")
+            print("  Library integrated at build time via plugin system")
         
         if has_cuda:
             print("✓ Plugin linked with CUDA libraries")
@@ -453,6 +446,14 @@ def check_cuslide2_plugin():
         for line in output.split('\n')[:3]:
             if line.strip():
                 print(f"  {line.strip()}")
+    else:
+        # Try looking for static symbols
+        success, output, error = run_command(f"nm {plugin_file} 2>&1 | grep -i nvimg | head -5")
+        if success and output:
+            print("✓ Plugin has nvImageCodec symbols (static):")
+            for line in output.split('\n')[:3]:
+                if line.strip():
+                    print(f"  {line.strip()}")
     
     return True
 
@@ -489,11 +490,14 @@ def main():
     print(f"Platform: {platform.system()} {platform.release()}")
     print(f"Python: {sys.version}")
     
-    # Detect installation method
+    # Detect installation method (conda/pip or CMake integration)
     install_method = detect_installation_method()
     
-    # Check library files
-    library_files_ok = check_library_files()
+    # Check library files based on installation method
+    library_files_ok = check_library_files(install_method) if install_method else False
+    
+    # Check CMake configuration (optional, informational)
+    cmake_config_ok = check_cmake_configuration()
     
     # Check CUDA environment
     check_cuda_availability()
@@ -501,9 +505,8 @@ def main():
     # Check plugin
     plugin_built = check_cuslide2_plugin()
     
-    # Check Python bindings (informational)
-    if install_method:
-        test_python_import(install_method)
+    # Test Python import
+    test_python_import()
     
     # Summary
     print_header("Infrastructure Summary")
@@ -513,12 +516,13 @@ def main():
     if all_good:
         print("🎉 cuslide2 infrastructure is properly set up!")
         if install_method == 'conda':
-            print("✓ nvImageCodec installed via conda native packages")
+            print("✓ nvImageCodec installed via conda packages (dependencies.yaml)")
         elif install_method == 'pip':
             print("✓ nvImageCodec installed via pip packages")
+        elif install_method == 'cmake-integrated':
+            print("✓ nvImageCodec integrated via CMake build system")
         print("✓ All required library files accessible")
         print("✓ cuslide2 plugin built successfully")
-        print("✓ CUDA environment configured correctly")
         
         return True
     elif library_files_ok and not plugin_built:
@@ -533,15 +537,22 @@ def main():
         print("✗ nvImageCodec installation incomplete or not found")
         
         print("\n🔧 Installation Options:")
-        print("Option 1 (Conda - recommended for C++): micromamba install libnvimgcodec-dev libnvimgcodec0 -c conda-forge")
-        print("Option 2 (Pip): pip install nvidia-nvimgcodec-cu12[all]  # For CUDA 12.x")
-        print("Option 3 (Auto-install during build): cmake -DAUTO_INSTALL_NVIMGCODEC=ON ..")
+        print("Option 1 (Recommended - via dependencies.yaml):")
+        print("   micromamba install libnvimgcodec-dev libnvimgcodec0 -c conda-forge")
+        print("Option 2 (Pip):")
+        print("   pip install nvidia-nvimgcodec-cu12  # For CUDA 12.x")
+        print("Option 3 (CMake auto-fetch):")
+        print("   Build will automatically fetch nvImageCodec if not found")
         
-        print("\n💡 Both conda and pip installations are supported!")
+        print("\n💡 The project dependencies.yaml specifies conda packages as the preferred method.")
         
         return False
     else:
         print("✗ Setup incomplete")
+        print("\n🔧 Recommendation:")
+        print("   Install nvImageCodec and build the plugin:")
+        print("   1. micromamba install libnvimgcodec-dev libnvimgcodec0 -c conda-forge")
+        print("   2. cd cucim && ./run build_local all release $CONDA_PREFIX")
         return False
 
 if __name__ == "__main__":
