@@ -176,36 +176,39 @@ message(STATUS "Next step: Add src/ directory with cuslide2 implementation")
 message(STATUS "=============================================================")
 
 # TODO: Uncomment when ready
-if(FALSE)  # Change to TRUE when source files exist
+if(TRUE)  # Change to TRUE when source files exist
 # Add library
+# TEMPORARY: Reference source files from cucim.kit.cuslide until cuslide2 has its own src/ implementation
+# When cuslide2-specific source files are added, replace CUSLIDE_SRC_DIR with ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide
+set(CUSLIDE_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../cucim.kit.cuslide/src/cuslide)
 add_library(${CUCIM_PLUGIN_NAME}
-    src/cuslide/cuslide.cpp
-    src/cuslide/cuslide.h
-    src/cuslide/deflate/deflate.cpp
-    src/cuslide/deflate/deflate.h
-    src/cuslide/jpeg/libjpeg_turbo.cpp
-    src/cuslide/jpeg/libjpeg_turbo.h
-    src/cuslide/jpeg/libnvjpeg.cpp
-    src/cuslide/jpeg/libnvjpeg.h
-    src/cuslide/jpeg2k/color_conversion.cpp
-    src/cuslide/jpeg2k/color_conversion.h
-    src/cuslide/jpeg2k/color_table.h
-    src/cuslide/jpeg2k/libopenjpeg.cpp
-    src/cuslide/jpeg2k/libopenjpeg.h
-    src/cuslide/loader/nvjpeg_processor.cpp
-    src/cuslide/loader/nvjpeg_processor.h
+    ${CUSLIDE_SRC_DIR}/cuslide.cpp
+    ${CUSLIDE_SRC_DIR}/cuslide.h
+    ${CUSLIDE_SRC_DIR}/deflate/deflate.cpp
+    ${CUSLIDE_SRC_DIR}/deflate/deflate.h
+    ${CUSLIDE_SRC_DIR}/jpeg/libjpeg_turbo.cpp
+    ${CUSLIDE_SRC_DIR}/jpeg/libjpeg_turbo.h
+    ${CUSLIDE_SRC_DIR}/jpeg/libnvjpeg.cpp
+    ${CUSLIDE_SRC_DIR}/jpeg/libnvjpeg.h
+    ${CUSLIDE_SRC_DIR}/jpeg2k/color_conversion.cpp
+    ${CUSLIDE_SRC_DIR}/jpeg2k/color_conversion.h
+    ${CUSLIDE_SRC_DIR}/jpeg2k/color_table.h
+    ${CUSLIDE_SRC_DIR}/jpeg2k/libopenjpeg.cpp
+    ${CUSLIDE_SRC_DIR}/jpeg2k/libopenjpeg.h
+    ${CUSLIDE_SRC_DIR}/loader/nvjpeg_processor.cpp
+    ${CUSLIDE_SRC_DIR}/loader/nvjpeg_processor.h
     ${deps-libopenjpeg_SOURCE_DIR}/src/bin/common/color.c  # for color_sycc_to_rgb() and color_apply_icc_profile()
-    src/cuslide/lzw/lzw.cpp
-    src/cuslide/lzw/lzw.h
-    src/cuslide/lzw/lzw_libtiff.cpp
-    src/cuslide/lzw/lzw_libtiff.h
-    src/cuslide/raw/raw.cpp
-    src/cuslide/raw/raw.h
-    src/cuslide/tiff/ifd.cpp
-    src/cuslide/tiff/ifd.h
-    src/cuslide/tiff/tiff.cpp
-    src/cuslide/tiff/tiff.h
-    src/cuslide/tiff/types.h)
+    ${CUSLIDE_SRC_DIR}/lzw/lzw.cpp
+    ${CUSLIDE_SRC_DIR}/lzw/lzw.h
+    ${CUSLIDE_SRC_DIR}/lzw/lzw_libtiff.cpp
+    ${CUSLIDE_SRC_DIR}/lzw/lzw_libtiff.h
+    ${CUSLIDE_SRC_DIR}/raw/raw.cpp
+    ${CUSLIDE_SRC_DIR}/raw/raw.h
+    ${CUSLIDE_SRC_DIR}/tiff/ifd.cpp
+    ${CUSLIDE_SRC_DIR}/tiff/ifd.h
+    ${CUSLIDE_SRC_DIR}/tiff/tiff.cpp
+    ${CUSLIDE_SRC_DIR}/tiff/tiff.h
+    ${CUSLIDE_SRC_DIR}/tiff/types.h)
 
 # compile color.c for libopenjpeg with c++
 set_source_files_properties(${deps-libopenjpeg_SOURCE_DIR}/src/bin/common/color.c
@@ -216,7 +219,7 @@ set_source_files_properties(${deps-libopenjpeg_SOURCE_DIR}/src/bin/common/color.
         CMAKE_VISIBILITY_INLINES_HIDDEN OFF)
 
 # Ignore warnings in existing source code from libjpeg-turbo
-set_source_files_properties(src/cuslide/jpeg/libjpeg_turbo.cpp
+set_source_files_properties(${CUSLIDE_SRC_DIR}/jpeg/libjpeg_turbo.cpp
     PROPERTIES
         COMPILE_OPTIONS "-Wno-error" # or, "-Wno-write-strings;-Wno-clobbered"
     )
@@ -286,7 +289,7 @@ target_include_directories(${CUCIM_PLUGIN_NAME}
             $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
             $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
         PRIVATE
-            ${CMAKE_CURRENT_LIST_DIR}/src
+            ${CMAKE_CURRENT_SOURCE_DIR}/../cucim.kit.cuslide/src
         )
 
 # Do not generate SONAME as this would be used as plugin
