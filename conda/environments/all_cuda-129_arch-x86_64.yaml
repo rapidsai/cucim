@@ -51,5 +51,6 @@ dependencies:
 - tifffile>=2022.8.12
 - yasm
 - pip:
+  - nvidia-nvimgcodec-cu12 >= 0.6.0
   - opencv-python-headless>=4.6
 name: all_cuda-129_arch-x86_64
