@@ -256,7 +256,7 @@ dependencies:
           - matrix:
             packages:
               - cupy-cuda13x>=13.6.0
-              - nvidia-nvimgcodec-cu13 >= 0.6.0
+              - nvidia-nvimgcodec-cu13>=0.6.0
   test_python:
     common:
       - output_types: [conda, requirements, pyproject]
