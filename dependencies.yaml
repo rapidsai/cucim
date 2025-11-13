@@ -243,9 +243,7 @@ dependencies:
         packages:
           - &cupy_unsuffixed cupy>=13.6.0
           - libnvimgcodec==0.6.0
-          - pip
-          - pip:
-              - nvidia-nvimgcodec-cu12 >= 0.6.0
+          - nvimgcodec>=0.6.0
     specific:
       - output_types: [requirements, pyproject]
         matrices:
