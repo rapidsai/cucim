@@ -242,7 +242,7 @@ dependencies:
       - output_types: conda
         packages:
           - &cupy_unsuffixed cupy>=13.6.0
-          - libnvimgcodec == 0.6.0
+          - libnvimgcodec==0.6.0
           - pip
           - pip:
               - nvidia-nvimgcodec-cu12 >= 0.6.0
