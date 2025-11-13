@@ -227,7 +227,7 @@ void TiffFileParser::parse_tiff_structure()
     uint32_t num_ifds = stream_info.num_images;
     fmt::print("  TIFF has {} IFDs (resolution levels)\n", num_ifds);
     
-    if (stream_info.codec_name)
+    if (stream_info.codec_name[0] != '\0')
     {
         fmt::print("  Codec: {}\n", stream_info.codec_name);
     }
@@ -294,7 +294,7 @@ void TiffFileParser::parse_tiff_structure()
         int bytes_per_element = (static_cast<unsigned int>(sample_type) >> 11) & 0xFF;
         ifd_info.bits_per_sample = bytes_per_element * 8;  // Convert bytes to bits
         
-        if (image_info.codec_name)
+        if (image_info.codec_name[0] != '\0')
         {
             ifd_info.codec = image_info.codec_name;
         }
