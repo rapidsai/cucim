@@ -166,18 +166,12 @@ message(STATUS "Infrastructure setup complete!")
 message(STATUS "Next step: Add src/ directory with cuslide2 implementation")
 message(STATUS "=============================================================")
 
-# For infrastructure-only PR: Create a dummy target so build succeeds
-# This will be replaced with actual library in follow-up PR
-add_custom_target(${CUCIM_PLUGIN_NAME}
-    COMMAND ${CMAKE_COMMAND} -E echo "cuslide2 infrastructure-only: No library to build - dependencies verified"
-    COMMENT "Infrastructure-only build - no plugin binary generated"
-)
-
-# TODO: Replace dummy target with real library when source files exist
-if(FALSE)  # Change to TRUE when source files exist
+# TODO: Uncomment when ready
+if(TRUE)  # Change to TRUE when source files exist
 # Add library
-# Use local src/ implementation with nvImageCodec support
-set(CUSLIDE_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide)
+# TEMPORARY: Reference source files from cucim.kit.cuslide until cuslide2 has its own src/ implementation
+# When cuslide2-specific source files are added, replace CUSLIDE_SRC_DIR with ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide
+set(CUSLIDE_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../cucim.kit.cuslide/src/cuslide)
 add_library(${CUCIM_PLUGIN_NAME}
     ${CUSLIDE_SRC_DIR}/cuslide.cpp
     ${CUSLIDE_SRC_DIR}/cuslide.h
@@ -206,9 +200,9 @@ add_library(${CUCIM_PLUGIN_NAME}
     ${CUSLIDE_SRC_DIR}/tiff/tiff.cpp
     ${CUSLIDE_SRC_DIR}/tiff/tiff.h
     ${CUSLIDE_SRC_DIR}/tiff/types.h
-    # nvImageCodec decoder implementation
     ${CUSLIDE_SRC_DIR}/nvimgcodec/nvimgcodec_decoder.cpp
     ${CUSLIDE_SRC_DIR}/nvimgcodec/nvimgcodec_decoder.h
+    ${CUSLIDE_SRC_DIR}/nvimgcodec/nvimgcodec_manager.h
     ${CUSLIDE_SRC_DIR}/nvimgcodec/nvimgcodec_tiff_parser.cpp
     ${CUSLIDE_SRC_DIR}/nvimgcodec/nvimgcodec_tiff_parser.h)
 
@@ -291,7 +285,7 @@ target_include_directories(${CUCIM_PLUGIN_NAME}
             $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
             $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
         PRIVATE
-            ${CMAKE_CURRENT_SOURCE_DIR}/src
+            ${CMAKE_CURRENT_SOURCE_DIR}/../cucim.kit.cuslide/src
         )
 
 # Do not generate SONAME as this would be used as plugin
@@ -311,66 +305,64 @@ set_target_properties(${CUCIM_PLUGIN_NAME} PROPERTIES OUTPUT_NAME "${CUCIM_PLUGI
 
 ################################################################################
 # Add tests
-#########################################################std#######################
-# NOTE: Commented out for infrastructure-only PR. Will be enabled in follow-up PR
-#       with actual implementation.
-# add_subdirectory(tests)
-# add_subdirectory(benchmarks)
+################################################################################
+add_subdirectory(tests)
+add_subdirectory(benchmarks)
 
 ################################################################################
 # Install
 ################################################################################
 # NOTE: Disabled for infrastructure-only PR
 # TODO: Uncomment when library target exists
-# set(INSTALL_TARGETS
-#         ${CUCIM_PLUGIN_NAME}
-#         # cuslide_tests  # Disabled for infrastructure-only PR
-#         # cuslide_benchmarks  # Disabled for infrastructure-only PR
-#         )
-#
-# install(TARGETS ${INSTALL_TARGETS}
-#         EXPORT ${CUCIM_PLUGIN_NAME}-targets
-#         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-#         COMPONENT ${CUCIM_PLUGIN_NAME}_Runtime
-#         LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-#         COMPONENT ${CUCIM_PLUGIN_NAME}_Runtime
-#         NAMELINK_COMPONENT ${CUCIM_PLUGIN_NAME}_Development
-#         ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-#         COMPONENT ${CUCIM_PLUGIN_NAME}_Development
-#         )
-#
-# # Currently cuslide plugin doesn't have include path so comment out
-# # install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
-# install(EXPORT ${CUCIM_PLUGIN_NAME}-targets
-#         FILE
-#         ${CUCIM_PLUGIN_NAME}-targets.cmake
-#         NAMESPACE
-#         ${PROJECT_NAME}::
-#         DESTINATION
-#         ${CMAKE_INSTALL_LIBDIR}/cmake/${CUCIM_PLUGIN_NAME})
-#
-# # Write package configs
-# include(CMakePackageConfigHelpers)
-# configure_package_config_file(
-#     ${CMAKE_CURRENT_SOURCE_DIR}/cmake/${CUCIM_PLUGIN_NAME}-config.cmake.in
-#     ${CMAKE_CURRENT_BINARY_DIR}/cmake/${CUCIM_PLUGIN_NAME}-config.cmake
-#     INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${CUCIM_PLUGIN_NAME}
-# )
-# write_basic_package_version_file(
-#     ${CMAKE_CURRENT_BINARY_DIR}/cmake/${CUCIM_PLUGIN_NAME}-config-version.cmake
-#     VERSION ${PROJECT_VERSION}
-#     COMPATIBILITY AnyNewerVersion
-# )
-# install(
-#     FILES
-#         ${CMAKE_CURRENT_BINARY_DIR}/cmake/${CUCIM_PLUGIN_NAME}-config.cmake
-#         ${CMAKE_CURRENT_BINARY_DIR}/cmake/${CUCIM_PLUGIN_NAME}-config-version.cmake
-#     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${CUCIM_PLUGIN_NAME}
-# )
-#
-#
-# set(CMAKE_EXPORT_PACKAGE_REGISTRY ON)
-# export(PACKAGE ${CUCIM_PLUGIN_NAME})
+set(INSTALL_TARGETS
+        ${CUCIM_PLUGIN_NAME}
+        # cuslide_tests  # Disabled for infrastructure-only PR
+        # cuslide_benchmarks  # Disabled for infrastructure-only PR
+        )
+
+install(TARGETS ${INSTALL_TARGETS}
+        EXPORT ${CUCIM_PLUGIN_NAME}-targets
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+        COMPONENT ${CUCIM_PLUGIN_NAME}_Runtime
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        COMPONENT ${CUCIM_PLUGIN_NAME}_Runtime
+        NAMELINK_COMPONENT ${CUCIM_PLUGIN_NAME}_Development
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        COMPONENT ${CUCIM_PLUGIN_NAME}_Development
+        )
+
+# Currently cuslide plugin doesn't have include path so comment out
+# install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(EXPORT ${CUCIM_PLUGIN_NAME}-targets
+        FILE
+        ${CUCIM_PLUGIN_NAME}-targets.cmake
+        NAMESPACE
+        ${PROJECT_NAME}::
+        DESTINATION
+        ${CMAKE_INSTALL_LIBDIR}/cmake/${CUCIM_PLUGIN_NAME})
+
+# Write package configs
+include(CMakePackageConfigHelpers)
+configure_package_config_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/cmake/${CUCIM_PLUGIN_NAME}-config.cmake.in
+    ${CMAKE_CURRENT_BINARY_DIR}/cmake/${CUCIM_PLUGIN_NAME}-config.cmake
+    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${CUCIM_PLUGIN_NAME}
+)
+write_basic_package_version_file(
+    ${CMAKE_CURRENT_BINARY_DIR}/cmake/${CUCIM_PLUGIN_NAME}-config-version.cmake
+    VERSION ${PROJECT_VERSION}
+    COMPATIBILITY AnyNewerVersion
+)
+install(
+    FILES
+        ${CMAKE_CURRENT_BINARY_DIR}/cmake/${CUCIM_PLUGIN_NAME}-config.cmake
+        ${CMAKE_CURRENT_BINARY_DIR}/cmake/${CUCIM_PLUGIN_NAME}-config-version.cmake
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${CUCIM_PLUGIN_NAME}
+)
+
+
+set(CMAKE_EXPORT_PACKAGE_REGISTRY ON)
+export(PACKAGE ${CUCIM_PLUGIN_NAME})
 
 endif()  # End of if(FALSE) block for infrastructure-only PR
 
