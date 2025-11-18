@@ -7,10 +7,20 @@
 
 include(FetchContent)
 
-set(CMAKE_SUPERBUILD_DEPS_ROOT_DIR "${CMAKE_CURRENT_LIST_DIR}/..")
+# Local deps directory (for cuslide2-specific dependencies like nvimgcodec)
+set(CMAKE_LOCAL_DEPS_DIR "${CMAKE_CURRENT_LIST_DIR}/../deps")
+# Shared deps directory from cpp/cmake (for common dependencies)
+set(CMAKE_SHARED_DEPS_DIR "${CMAKE_CURRENT_LIST_DIR}/../../../../cmake/deps")
 
 if(NOT COMMAND superbuild_depend)
     function(superbuild_depend module_name)
-        include("${CMAKE_SUPERBUILD_DEPS_ROOT_DIR}/deps/${module_name}.cmake")
+        # Check local deps first (cuslide2-specific), then shared deps
+        if(EXISTS "${CMAKE_LOCAL_DEPS_DIR}/${module_name}.cmake")
+            include("${CMAKE_LOCAL_DEPS_DIR}/${module_name}.cmake")
+        elseif(EXISTS "${CMAKE_SHARED_DEPS_DIR}/${module_name}.cmake")
+            include("${CMAKE_SHARED_DEPS_DIR}/${module_name}.cmake")
+        else()
+            message(FATAL_ERROR "Dependency ${module_name}.cmake not found in local or shared deps")
+        endif()
     endfunction()
 endif()
