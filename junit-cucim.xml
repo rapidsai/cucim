@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="1" failures="0" skipped="1" tests="2" time="2.952" timestamp="2025-11-18T09:29:57.547943-08:00" hostname="d5d736d-lcedt"><testcase classname="" name="tests.unit.clara.converter.test_converter" time="0.000"><skipped message="collection skipped">('/home/cdinea/Downloads/cucim_pr2/cucim/python/cucim/tests/unit/clara/converter/test_converter.py', 13, "Skipped: could not import 'openslide': No module named 'openslide'")</skipped></testcase><testcase classname="" name="tests.unit.core.test_stain_normalizer" time="0.000"><error message="collection failure">tests/unit/core/test_stain_normalizer.py:8: in &lt;module&gt;
+    from cucim.core.operations.color import (
+src/cucim/core/operations/color/__init__.py:4: in &lt;module&gt;
+    from .jitter import color_jitter, rand_color_jitter
+src/cucim/core/operations/color/jitter.py:12: in &lt;module&gt;
+    CUDA_KERNELS = cupy.RawModule(code=cuda_kernel_code)
+                   ^^^^^^^^^^^^^^
+E   AttributeError: module 'cupy' has no attribute 'RawModule'</error></testcase></testsuite></testsuites>

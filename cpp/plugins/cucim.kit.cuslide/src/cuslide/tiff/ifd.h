@@ -15,6 +15,7 @@
 #include <cucim/io/format/image_format.h>
 #include <cucim/io/device.h>
 #include <cucim/loader/thread_batch_data_loader.h>
+
 //#include <tiffio.h>
 
 namespace cuslide::tiff
@@ -27,7 +28,7 @@ class EXPORT_VISIBLE IFD : public std::enable_shared_from_this<IFD>
 {
 public:
     IFD(TIFF* tiff, uint16_t index, ifd_offset_t offset);
-    ~IFD() = default;
+    ~IFD();
 
     static bool read_region_tiles(const TIFF* tiff,
                                   const IFD* ifd,
