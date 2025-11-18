@@ -102,20 +102,22 @@ include(ExternalProject)
 add_definitions(-D_GLIBCXX_USE_CXX11_ABI=0) # TODO: create two library, one with CXX11 ABI and one without it.
 
 ################################################################################
-# Define dependencies
+# Define dependencies - PURE nvImageCodec (minimal dependencies)
 ################################################################################
 superbuild_depend(fmt)
-superbuild_depend(libjpeg-turbo) # libjpeg-turbo should be located before libtiff as libtiff depends on libjpeg-turbo
-superbuild_depend(libopenjpeg)
-superbuild_depend(libtiff)
-superbuild_depend(catch2)
+# REMOVED: CPU decoder dependencies (nvImageCodec handles all compression)
+# superbuild_depend(libjpeg-turbo)
+# superbuild_depend(libopenjpeg)
+# superbuild_depend(libtiff)
+# superbuild_depend(libdeflate)
 superbuild_depend(openslide)
+# Testing dependencies
+superbuild_depend(catch2)
 superbuild_depend(googletest)
 superbuild_depend(googlebenchmark)
 superbuild_depend(cli11)
 superbuild_depend(pugixml)
 superbuild_depend(json)
-superbuild_depend(libdeflate)
 superbuild_depend(nvimgcodec)
 
 ################################################################################
@@ -151,74 +153,36 @@ endif()
 # TODO: Uncomment this section when src/ directory is added with implementation
 
 message(STATUS "=============================================================")
-message(STATUS "cuslide2 infrastructure validation - Dependencies verified:")
-message(STATUS "  ✓ fmt")
-message(STATUS "  ✓ libjpeg-turbo")
-message(STATUS "  ✓ libopenjpeg")
-message(STATUS "  ✓ libtiff")
-message(STATUS "  ✓ libdeflate")
-message(STATUS "  ✓ nvImageCodec")
-message(STATUS "  ✓ pugixml")
-message(STATUS "  ✓ json")
-message(STATUS "  ✓ openslide")
+message(STATUS "cuslide2 PURE nvImageCodec - Dependencies:")
+message(STATUS "  ✓ fmt (logging)")
+message(STATUS "  ✓ nvImageCodec (GPU-accelerated JPEG/JPEG2000/deflate/LZW)")
+message(STATUS "  ✓ pugixml (XML metadata parsing)")
+message(STATUS "  ✓ json (JSON metadata)")
+message(STATUS "  ✓ openslide (for testing)")
+message(STATUS "  ✓ googletest, catch2, googlebenchmark, cli11 (testing)")
 message(STATUS "")
-message(STATUS "Infrastructure setup complete!")
-message(STATUS "Next step: Add src/ directory with cuslide2 implementation")
+message(STATUS "Build configured: Pure GPU-accelerated decoding with tests!")
 message(STATUS "=============================================================")
 
-# TODO: Uncomment when ready
-if(TRUE)  # Change to TRUE when source files exist
-# Add library
-# TEMPORARY: Reference source files from cucim.kit.cuslide until cuslide2 has its own src/ implementation
-# When cuslide2-specific source files are added, replace CUSLIDE_SRC_DIR with ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide
-set(CUSLIDE_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../cucim.kit.cuslide/src/cuslide)
+# Add library - PURE nvImageCodec implementation (no CPU fallbacks)
 add_library(${CUCIM_PLUGIN_NAME}
-    ${CUSLIDE_SRC_DIR}/cuslide.cpp
-    ${CUSLIDE_SRC_DIR}/cuslide.h
-    ${CUSLIDE_SRC_DIR}/deflate/deflate.cpp
-    ${CUSLIDE_SRC_DIR}/deflate/deflate.h
-    ${CUSLIDE_SRC_DIR}/jpeg/libjpeg_turbo.cpp
-    ${CUSLIDE_SRC_DIR}/jpeg/libjpeg_turbo.h
-    ${CUSLIDE_SRC_DIR}/jpeg/libnvjpeg.cpp
-    ${CUSLIDE_SRC_DIR}/jpeg/libnvjpeg.h
-    ${CUSLIDE_SRC_DIR}/jpeg2k/color_conversion.cpp
-    ${CUSLIDE_SRC_DIR}/jpeg2k/color_conversion.h
-    ${CUSLIDE_SRC_DIR}/jpeg2k/color_table.h
-    ${CUSLIDE_SRC_DIR}/jpeg2k/libopenjpeg.cpp
-    ${CUSLIDE_SRC_DIR}/jpeg2k/libopenjpeg.h
-    ${CUSLIDE_SRC_DIR}/loader/nvjpeg_processor.cpp
-    ${CUSLIDE_SRC_DIR}/loader/nvjpeg_processor.h
-    ${deps-libopenjpeg_SOURCE_DIR}/src/bin/common/color.c  # for color_sycc_to_rgb() and color_apply_icc_profile()
-    ${CUSLIDE_SRC_DIR}/lzw/lzw.cpp
-    ${CUSLIDE_SRC_DIR}/lzw/lzw.h
-    ${CUSLIDE_SRC_DIR}/lzw/lzw_libtiff.cpp
-    ${CUSLIDE_SRC_DIR}/lzw/lzw_libtiff.h
-    ${CUSLIDE_SRC_DIR}/raw/raw.cpp
-    ${CUSLIDE_SRC_DIR}/raw/raw.h
-    ${CUSLIDE_SRC_DIR}/tiff/ifd.cpp
-    ${CUSLIDE_SRC_DIR}/tiff/ifd.h
-    ${CUSLIDE_SRC_DIR}/tiff/tiff.cpp
-    ${CUSLIDE_SRC_DIR}/tiff/tiff.h
-    ${CUSLIDE_SRC_DIR}/tiff/types.h
-    ${CUSLIDE_SRC_DIR}/nvimgcodec/nvimgcodec_decoder.cpp
-    ${CUSLIDE_SRC_DIR}/nvimgcodec/nvimgcodec_decoder.h
-    ${CUSLIDE_SRC_DIR}/nvimgcodec/nvimgcodec_manager.h
-    ${CUSLIDE_SRC_DIR}/nvimgcodec/nvimgcodec_tiff_parser.cpp
-    ${CUSLIDE_SRC_DIR}/nvimgcodec/nvimgcodec_tiff_parser.h)
+    # Main plugin interface
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/cuslide.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/cuslide.h
+    # TIFF structure management (uses nvImageCodec for parsing)
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/tiff/ifd.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/tiff/ifd.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/tiff/tiff.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/tiff/tiff.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/tiff/types.h
+    # nvImageCodec decoding and TIFF parsing (GPU-accelerated)
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/nvimgcodec/nvimgcodec_decoder.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/nvimgcodec/nvimgcodec_decoder.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/nvimgcodec/nvimgcodec_manager.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/nvimgcodec/nvimgcodec_tiff_parser.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/nvimgcodec/nvimgcodec_tiff_parser.h)
 
-# compile color.c for libopenjpeg with c++
-set_source_files_properties(${deps-libopenjpeg_SOURCE_DIR}/src/bin/common/color.c
-    PROPERTIES
-        LANGUAGE C
-        CMAKE_CXX_VISIBILITY_PRESET default
-        CMAKE_C_VISIBILITY_PRESET default
-        CMAKE_VISIBILITY_INLINES_HIDDEN OFF)
-
-# Ignore warnings in existing source code from libjpeg-turbo
-set_source_files_properties(${CUSLIDE_SRC_DIR}/jpeg/libjpeg_turbo.cpp
-    PROPERTIES
-        COMPILE_OPTIONS "-Wno-error" # or, "-Wno-write-strings;-Wno-clobbered"
-    )
+# No special source file properties needed for pure nvImageCodec implementation
 
 # Compile options
 set_target_properties(${CUCIM_PLUGIN_NAME}
@@ -233,18 +197,13 @@ target_compile_features(${CUCIM_PLUGIN_NAME} PRIVATE cxx_std_17)
 # Use generator expression to avoid `nvcc fatal   : Value '-std=c++17' is not defined for option 'Werror'`
 target_compile_options(${CUCIM_PLUGIN_NAME} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-Werror -Wall -Wextra>)
 
-# Link libraries
+# Link libraries - PURE nvImageCodec (no CPU decoder dependencies)
 target_link_libraries(${CUCIM_PLUGIN_NAME}
         PRIVATE
             deps::fmt
             cucim::cucim
-            deps::libtiff
-            deps::libjpeg-turbo
-            deps::libopenjpeg
-            deps::libopenjpeg-lcms2
             deps::pugixml
             deps::json
-            deps::libdeflate
             deps::nvimgcodec
         )
 
@@ -286,6 +245,7 @@ target_include_directories(${CUCIM_PLUGIN_NAME}
             $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
         PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/../cucim.kit.cuslide/src
+            ${CMAKE_CURRENT_SOURCE_DIR}/src  # Include cuslide2 src for nvimgcodec headers
         )
 
 # Do not generate SONAME as this would be used as plugin
@@ -364,6 +324,6 @@ install(
 set(CMAKE_EXPORT_PACKAGE_REGISTRY ON)
 export(PACKAGE ${CUCIM_PLUGIN_NAME})
 
-endif()  # End of if(FALSE) block for infrastructure-only PR
+# REMOVED: endif() - no longer needed since we removed the if(TRUE) wrapper
 
 unset(BUILD_SHARED_LIBS CACHE)

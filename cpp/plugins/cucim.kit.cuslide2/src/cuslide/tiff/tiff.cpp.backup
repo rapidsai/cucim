@@ -14,17 +14,15 @@
 #include <fmt/format.h>
 #include <nlohmann/json.hpp>
 #include <pugixml.hpp>
-#include "tiff_constants.h"
-#include "cpu_decoder_stubs.h"  // Stubs for legacy CPU decoder references
+#include <tiffiop.h>
 
 #include <cucim/codec/base64.h>
 #include <cucim/logger/timer.h>
 #include <cucim/memory/memory_manager.h>
 #include <cucim/profiler/nvtx3.h>
 
-// REMOVED: CPU decoder includes (using pure nvImageCodec)
-// #include "cuslide/jpeg/libjpeg_turbo.h"
-// #include "cuslide/lzw/lzw.h"
+#include "cuslide/jpeg/libjpeg_turbo.h"
+#include "cuslide/lzw/lzw.h"
 #include "ifd.h"
 
 static constexpr int DEFAULT_IFD_SIZE = 32;
@@ -252,119 +250,45 @@ TIFF::~TIFF()
     close();
 }
 
-// NEW CONSTRUCTOR: nvImageCodec-only (no libtiff)
-TIFF::TIFF(const cucim::filesystem::Path& file_path) : file_path_(file_path)
+TIFF::TIFF(const cucim::filesystem::Path& file_path, int mode) : file_path_(file_path)
 {
     PROF_SCOPED_RANGE(PROF_EVENT_P(tiff_tiff, 1));
-    
-    fmt::print("📂 Opening TIFF file with nvImageCodec: {}\n", file_path);
-    
-    // Step 1: Open file descriptor (needed for CuCIMFileHandle)
-    // Copy file path (will be freed by CuCIMFileHandle destructor)
+    // Copy file path (Allocated memory would be freed at close() method.)
     char* file_path_cstr = static_cast<char*>(cucim_malloc(file_path.size() + 1));
     memcpy(file_path_cstr, file_path.c_str(), file_path.size());
     file_path_cstr[file_path.size()] = '\0';
 
-    int fd = ::open(file_path_cstr, O_RDONLY, 0666);
+    int fd = ::open(file_path_cstr, mode, 0666);
     if (fd == -1)
     {
         cucim_free(file_path_cstr);
         throw std::invalid_argument(fmt::format("Cannot open {}!", file_path));
     }
-    
-    // Step 2: Create CuCIMFileHandle with 'this' as client_data
-    // CRITICAL: The 5th parameter (client_data) must be 'this' so parser_parse() 
-    // can retrieve the TIFF object later via handle->client_data
-    file_handle_shared_ = std::make_shared<CuCIMFileHandle>(
-        fd, nullptr, FileHandleType::kPosix, file_path_cstr, this);
-    
-    // Step 3: Set up deleter to clean up TIFF object when handle is destroyed
-    // This is CRITICAL to prevent memory leaks and double-frees
-    file_handle_shared_->set_deleter([](CuCIMFileHandle_ptr handle_ptr) -> bool {
-        auto* handle = reinterpret_cast<CuCIMFileHandle*>(handle_ptr);
-        if (handle && handle->client_data)
-        {
-            auto* tiff_obj = static_cast<cuslide::tiff::TIFF*>(handle->client_data);
-            delete tiff_obj;
-            handle->client_data = nullptr;
-        }
-        return true;
-    });
-    
-    // Step 4: Initialize nvImageCodec TiffFileParser (MANDATORY)
-    try {
-        nvimgcodec_parser_ = std::make_unique<cuslide2::nvimgcodec::TiffFileParser>(
-            file_path.c_str());
-        
-        if (!nvimgcodec_parser_->is_valid()) {
-            throw std::runtime_error("TiffFileParser initialization failed");
-        }
-        
-        fmt::print("✅ nvImageCodec TiffFileParser initialized successfully\n");
-        
-        // Extract basic file properties from TiffFileParser
-        std::string detected_format = nvimgcodec_parser_->get_detected_format();
-        fmt::print("   Detected format: {}\n", detected_format);
-        
-        uint32_t ifd_count = nvimgcodec_parser_->get_ifd_count();
-        fmt::print("   IFD count: {}\n", ifd_count);
-        
-        // Set default values (nvImageCodec handles endianness internally)
-        is_big_endian_ = false;
-        
-    } catch (const std::exception& e) {
-        fmt::print("❌ FATAL: Failed to initialize nvImageCodec TiffFileParser: {}\n", e.what());
-        fmt::print("   This library requires nvImageCodec for TIFF support.\n");
-        fmt::print("   Please ensure nvImageCodec is properly installed.\n");
-        // Cleanup file handle before re-throwing
-        file_handle_shared_.reset();
-        throw std::runtime_error(fmt::format(
-            "Cannot open TIFF file '{}' without nvImageCodec: {}", 
-            file_path, e.what()));
+    tiff_client_ = ::TIFFFdOpen(fd, file_path_cstr, "rm"); // Add 'm' to disable memory-mapped file
+    if (tiff_client_ == nullptr)
+    {
+        cucim_free(file_path_cstr);
+        throw std::invalid_argument(fmt::format("Cannot load {}!", file_path));
     }
-    
-    // Initialize metadata container
+    file_handle_shared_ = std::make_shared<CuCIMFileHandle>(fd, nullptr, FileHandleType::kPosix, file_path_cstr, this);
+    file_handle_ = file_handle_shared_.get();
+
+    // TODO: warning if the file is big endian
+    is_big_endian_ = ::TIFFIsBigEndian(tiff_client_);
+
     metadata_ = new json{};
 }
-
-TIFF::TIFF(const cucim::filesystem::Path& file_path, uint64_t read_config) : TIFF(file_path)
+TIFF::TIFF(const cucim::filesystem::Path& file_path, int mode, uint64_t read_config) : TIFF(file_path, mode)
 {
     PROF_SCOPED_RANGE(PROF_EVENT_P(tiff_tiff, 2));
     read_config_ = read_config;
 }
 
-// Legacy libtiff-style constructors (for backward compatibility with tests)
-TIFF::TIFF(const cucim::filesystem::Path& file_path, int mode) : TIFF(file_path)
-{
-    // mode parameter is ignored in pure nvImageCodec build
-    (void)mode;
-}
-
-TIFF::TIFF(const cucim::filesystem::Path& file_path, int mode, uint64_t config) : TIFF(file_path, config)
-{
-    // mode parameter is ignored in pure nvImageCodec build
-    (void)mode;
-}
-
-std::shared_ptr<TIFF> TIFF::open(const cucim::filesystem::Path& file_path)
-{
-    auto tif = std::make_shared<TIFF>(file_path);
-    tif->construct_ifds();
-    return tif;
-}
-
-std::shared_ptr<TIFF> TIFF::open(const cucim::filesystem::Path& file_path, uint64_t config)
-{
-    auto tif = std::make_shared<TIFF>(file_path, config);
-    tif->construct_ifds();
-    return tif;
-}
-
-// Legacy libtiff-style open methods (for backward compatibility with tests)
 std::shared_ptr<TIFF> TIFF::open(const cucim::filesystem::Path& file_path, int mode)
 {
     auto tif = std::make_shared<TIFF>(file_path, mode);
     tif->construct_ifds();
+
     return tif;
 }
 
@@ -372,91 +296,72 @@ std::shared_ptr<TIFF> TIFF::open(const cucim::filesystem::Path& file_path, int m
 {
     auto tif = std::make_shared<TIFF>(file_path, mode, config);
     tif->construct_ifds();
+
     return tif;
 }
 
 void TIFF::close()
 {
-    // REMOVED: libtiff cleanup - no longer using tiff_client_
-    
-    // Clean up metadata
+    if (tiff_client_)
+    {
+        TIFFClose(tiff_client_);
+        tiff_client_ = nullptr;
+    }
     if (metadata_)
     {
         delete reinterpret_cast<json*>(metadata_);
         metadata_ = nullptr;
     }
-    
-    // nvimgcodec_parser_ is automatically cleaned up by unique_ptr destructor
 }
 
 void TIFF::construct_ifds()
 {
     PROF_SCOPED_RANGE(PROF_EVENT(tiff_construct_ifds));
-    
-    if (!nvimgcodec_parser_ || !nvimgcodec_parser_->is_valid()) {
-        throw std::runtime_error("Cannot construct IFDs: nvImageCodec parser not available");
-    }
-    
     ifd_offsets_.clear();
+    ifd_offsets_.reserve(DEFAULT_IFD_SIZE);
     ifds_.clear();
-    
-    uint32_t ifd_count = nvimgcodec_parser_->get_ifd_count();
-    fmt::print("📋 Constructing {} IFDs from nvImageCodec metadata\n", ifd_count);
-    
-    ifd_offsets_.reserve(ifd_count);
-    ifds_.reserve(ifd_count);
-    
-    for (uint32_t ifd_index = 0; ifd_index < ifd_count; ++ifd_index) {
-        try {
-            // Get IFD metadata from TiffFileParser
-            const auto& ifd_info = nvimgcodec_parser_->get_ifd(ifd_index);
-            
-            // Use IFD index as pseudo-offset (actual file offset not needed)
-            ifd_offsets_.push_back(ifd_index);
-            
-            // Create IFD from nvImageCodec metadata using NEW constructor
-            auto ifd = std::make_shared<cuslide::tiff::IFD>(this, ifd_index, ifd_info);
-            ifds_.emplace_back(std::move(ifd));
-            
-            fmt::print("  ✅ IFD[{}]: {}x{}, {} channels, codec: {}\n", 
-                      ifd_index, ifd_info.width, ifd_info.height, 
-                      ifd_info.num_channels, ifd_info.codec);
-            
-        } catch (const std::exception& e) {
-            fmt::print("  ⚠️  Failed to create IFD[{}]: {}\n", ifd_index, e.what());
-            // Continue with other IFDs - some may be corrupted
-        }
-    }
-    
-    if (ifds_.empty()) {
-        throw std::runtime_error("No valid IFDs found in TIFF file");
-    }
-    
-    fmt::print("✅ Successfully created {} out of {} IFDs\n", ifds_.size(), ifd_count);
-    
-    // Initialize level-to-IFD mapping (will be updated by resolve_vendor_format)
-    level_to_ifd_idx_.clear();
-    level_to_ifd_idx_.reserve(ifds_.size());
-    for (size_t index = 0; index < ifds_.size(); ++index) {
+    ifds_.reserve(DEFAULT_IFD_SIZE);
+
+    uint16_t ifd_index = 0;
+    do
+    {
+        uint64_t offset = TIFFCurrentDirOffset(tiff_client_);
+        ifd_offsets_.push_back(offset);
+
+        auto ifd = std::make_shared<cuslide::tiff::IFD>(this, ifd_index, offset);
+        ifds_.emplace_back(std::move(ifd));
+        ++ifd_index;
+    } while (TIFFReadDirectory(tiff_client_));
+
+    // Set index for each level
+    level_to_ifd_idx_.reserve(ifd_index);
+    for (size_t index = 0; index < ifd_index; ++index)
+    {
         level_to_ifd_idx_.emplace_back(index);
     }
-    
-    // Detect vendor format and classify IFDs
+
+    // Resolve format and fix `level_to_ifds_idx_`
     resolve_vendor_format();
-    
-    // Sort resolution levels by size (largest first)
-    std::sort(level_to_ifd_idx_.begin(), level_to_ifd_idx_.end(), 
-             [this](const size_t& a, const size_t& b) {
+
+    // Sort index by resolution (the largest resolution is index 0)
+    std::sort(level_to_ifd_idx_.begin(), level_to_ifd_idx_.end(), [this](const size_t& a, const size_t& b) {
         uint32_t width_a = this->ifds_[a]->width();
         uint32_t width_b = this->ifds_[b]->width();
-        if (width_a != width_b) {
-            return width_a > width_b;
+        if (width_a > width_b)
+        {
+            return true;
         }
-        return this->ifds_[a]->height() > this->ifds_[b]->height();
+        else if (width_a < width_b)
+        {
+            return false;
+        }
+        else
+        {
+            uint32_t height_a = this->ifds_[a]->height();
+            uint32_t height_b = this->ifds_[b]->height();
+            return height_a > height_b;
+        }
     });
-    
-    fmt::print("✅ TIFF initialization complete: {} levels, {} associated images\n",
-              level_to_ifd_idx_.size(), associated_images_.size());
 }
 void TIFF::resolve_vendor_format()
 {
@@ -921,9 +826,8 @@ bool TIFF::read_associated_image(const cucim::io::format::ImageMetadataDesc* met
                 switch (compression_method)
                 {
                 case COMPRESSION_JPEG:
-                    if (!cuslide::jpeg::decode_libjpeg(file_handle_shared_.get()->fd, nullptr /*jpeg_buf*/, offset, size,
-                                                       const_cast<uint8_t*>(static_cast<const uint8_t*>(jpegtable_data)), 
-                                                       jpegtable_count, &target_ptr, out_device,
+                    if (!cuslide::jpeg::decode_libjpeg(file_handle_->fd, nullptr /*jpeg_buf*/, offset, size,
+                                                       jpegtable_data, jpegtable_count, &target_ptr, out_device,
                                                        jpeg_color_space))
                     {
                         cucim_free(raster);
@@ -932,7 +836,7 @@ bool TIFF::read_associated_image(const cucim::io::format::ImageMetadataDesc* met
                     }
                     break;
                 case COMPRESSION_LZW:
-                    if (!cuslide::lzw::decode_lzw(file_handle_shared_.get()->fd, nullptr /*jpeg_buf*/, offset, size, &target_ptr,
+                    if (!cuslide::lzw::decode_lzw(file_handle_->fd, nullptr /*jpeg_buf*/, offset, size, &target_ptr,
                                                   strip_nbytes, out_device))
                     {
                         cucim_free(raster);
@@ -967,8 +871,8 @@ bool TIFF::read_associated_image(const cucim::io::format::ImageMetadataDesc* met
                 return false;
             }
 
-            uint32_t image_width = 0;
-            uint32_t image_height = 0;
+            int image_width = 0;
+            int image_height = 0;
 
             if (!cuslide::jpeg::get_dimension(decoded_buf, 0, decoded_size, &image_width, &image_height))
             {
@@ -985,7 +889,7 @@ bool TIFF::read_associated_image(const cucim::io::format::ImageMetadataDesc* met
 
             if (!cuslide::jpeg::decode_libjpeg(-1, reinterpret_cast<unsigned char*>(decoded_buf), 0 /*offset*/,
                                                decoded_size, nullptr /*jpegtable_data*/, 0 /*jpegtable_count*/, &raster,
-                                               out_device, 2 /*JCS_RGB color_space*/))
+                                               out_device))
             {
                 cucim_free(raster);
                 fmt::print(stderr, "[Error] Failed to read image from metadata with libjpeg!\n");
@@ -1137,7 +1041,10 @@ std::shared_ptr<CuCIMFileHandle>& TIFF::file_handle()
 {
     return file_handle_shared_;
 }
-
+::TIFF* TIFF::client() const
+{
+    return tiff_client_;
+}
 const std::vector<ifd_offset_t>& TIFF::ifd_offsets() const
 {
     return ifd_offsets_;

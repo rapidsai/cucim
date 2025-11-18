@@ -1,17 +1,6 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 #ifndef CUSLIDE_TIFF_H
@@ -32,8 +21,10 @@
 
 #include "ifd.h"
 #include "types.h"
+#include "cuslide/nvimgcodec/nvimgcodec_tiff_parser.h"
 
-typedef struct tiff TIFF;
+// Forward declaration removed - no longer using libtiff
+// typedef struct tiff TIFF;  // REMOVED: libtiff forward declaration
 
 namespace cuslide::tiff
 {
@@ -47,10 +38,18 @@ namespace cuslide::tiff
 class EXPORT_VISIBLE TIFF : public std::enable_shared_from_this<TIFF>
 {
 public:
+    // nvImageCodec constructors (primary - no libtiff mode parameter)
+    TIFF(const cucim::filesystem::Path& file_path);
+    TIFF(const cucim::filesystem::Path& file_path, uint64_t read_config);
+    static std::shared_ptr<TIFF> open(const cucim::filesystem::Path& file_path);
+    static std::shared_ptr<TIFF> open(const cucim::filesystem::Path& file_path, uint64_t config);
+    
+    // Legacy libtiff-style constructors (for compatibility if needed)
     TIFF(const cucim::filesystem::Path& file_path, int mode);
     TIFF(const cucim::filesystem::Path& file_path, int mode, uint64_t config);
     static std::shared_ptr<TIFF> open(const cucim::filesystem::Path& file_path, int mode);
     static std::shared_ptr<TIFF> open(const cucim::filesystem::Path& file_path, int mode, uint64_t config);
+    
     void close();
     void construct_ifds();
 
@@ -69,9 +68,7 @@ public:
                                cucim::io::format::ImageMetadataDesc* out_metadata);
 
     cucim::filesystem::Path file_path() const;
-    std::shared_ptr<CuCIMFileHandle>& file_handle(); /// used for moving the ownership of the file handle to the caller.
-                                                     /// Do not use for the application -- it will return nullptr.
-    ::TIFF* client() const;
+    std::shared_ptr<CuCIMFileHandle>& file_handle();
     const std::vector<ifd_offset_t>& ifd_offsets() const;
     std::shared_ptr<IFD> ifd(size_t index) const;
     std::shared_ptr<IFD> level_ifd(size_t level_index) const;
@@ -102,16 +99,21 @@ public:
     friend class IFD;
 
 private:
+    // UPDATED: These now use nvImageCodec TiffFileParser instead of libtiff
     void _populate_philips_tiff_metadata(uint16_t ifd_count, void* metadata, std::shared_ptr<IFD>& first_ifd);
     void _populate_aperio_svs_metadata(uint16_t ifd_count, void* metadata, std::shared_ptr<IFD>& first_ifd);
+    void _parse_aperio_metadata_nvimgcodec(void* metadata);
+    void _parse_philips_metadata_nvimgcodec(void* metadata);
 
     cucim::filesystem::Path file_path_;
-    /// Temporary shared file handle whose ownership would be transferred to CuImage through parser_open()
     std::shared_ptr<CuCIMFileHandle> file_handle_shared_;
-    CuCIMFileHandle* file_handle_ = nullptr;
-    ::TIFF* tiff_client_ = nullptr;
+    // REMOVED: file_handle_ raw pointer - use file_handle_shared_.get() instead
+    // REMOVED: tiff_client_ - no longer using libtiff
     std::vector<ifd_offset_t> ifd_offsets_; /// IFD offset for an index (IFD index)
     std::vector<std::shared_ptr<IFD>> ifds_; /// IFD object for an index (IFD index)
+    /// nvImageCodec TIFF parser - MUST be destroyed BEFORE ifds_ to avoid double-free of sub-code streams
+    /// Placed AFTER ifds_ so it's destroyed FIRST (reverse declaration order)
+    std::unique_ptr<cuslide2::nvimgcodec::TiffFileParser> nvimgcodec_parser_;
     std::vector<size_t> level_to_ifd_idx_;
     // note: we use std::map instead of std::unordered_map as # of associated_image would be usually less than 10.
     std::map<std::string, AssociatedImageBufferDesc> associated_images_;

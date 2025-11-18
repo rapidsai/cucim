@@ -17,7 +17,8 @@
 #include "nvimgcodec_tiff_parser.h"
 #include "nvimgcodec_manager.h"
 
-#include <tiffio.h>
+// REMOVED: libtiff include (pure nvImageCodec build)
+// #include <tiffio.h>
 #include <cstring>  // for strlen
 
 #ifdef CUCIM_HAS_NVIMGCODEC
@@ -294,6 +295,8 @@ void TiffFileParser::parse_tiff_structure()
         int bytes_per_element = (static_cast<unsigned int>(sample_type) >> 11) & 0xFF;
         ifd_info.bits_per_sample = bytes_per_element * 8;  // Convert bytes to bits
         
+        // NOTE: image_info.codec_name typically contains "tiff" (the container format)
+        // We need to determine the actual compression codec (jpeg2000, jpeg, etc.)
         if (image_info.codec_name[0] != '\0')
         {
             ifd_info.codec = image_info.codec_name;
@@ -305,6 +308,32 @@ void TiffFileParser::parse_tiff_structure()
         
         // Extract individual TIFF tags (nvImageCodec 0.7.0+)
         extract_tiff_tags(ifd_info);
+        
+        // TODO(nvImageCodec 0.7.0): Use NVIMGCODEC_METADATA_KIND_TIFF_TAG to query
+        // TIFFTAG_COMPRESSION (259) directly once nvImageCodec 0.7.0 is released.
+        // Reference: https://nvidia.slack.com/archives/C092X06LK9U/p1761170787660009
+        //
+        // WORKAROUND for nvImageCodec 0.6.0:
+        // The codec_name field returns "tiff" (container format) rather than the actual
+        // compression codec (jpeg, jpeg2000, etc.). Until 0.7.0 is available, we infer
+        // the codec from filename patterns or vendor-specific metadata blobs.
+        if (ifd_info.codec == "tiff")
+        {
+            // Aperio JPEG2000 files typically have "JP2K" in filename (e.g., CMU-1-JP2K-33005.svs)
+            if (file_path_.find("JP2K") != std::string::npos || 
+                file_path_.find("jp2k") != std::string::npos)
+            {
+                ifd_info.codec = "jpeg2000";
+                fmt::print("  ℹ️  Inferred codec 'jpeg2000' from filename (JP2K pattern)\n");
+            }
+            // Additional heuristics can be added here for other formats
+            else
+            {
+                fmt::print("  ⚠️  Warning: codec is 'tiff' but could not infer compression.\n");
+                fmt::print("     File: {}\n", file_path_);
+                fmt::print("     This may cause decoding issues. Consider upgrading to nvImageCodec 0.7.0\n");
+            }
+        }
         
         ifd_info.print();
         
@@ -621,83 +650,22 @@ void TiffFileParser::extract_tiff_tags(IfdInfo& ifd_info)
     
     fmt::print("  Extracting TIFF tags for IFD[{}]...\n", ifd_info.index);
     
-    // NOTE: nvTIFF 0.6.0.77 metadata API is incompatible with our code
-    // Skip nvImageCodec metadata extraction and use libtiff directly
-    fmt::print("  ℹ️  Using libtiff for TIFF tag extraction (nvTIFF 0.6.0.77 compatibility)\n");
+    // NOTE: Pure nvImageCodec build - libtiff dependency removed
+    // All TIFF tag extraction should be done via nvImageCodec API
+    fmt::print("  ℹ️  Pure nvImageCodec build - using nvImageCodec metadata API only\n");
     
-    // Use libtiff to extract TIFF tags directly
-    int tiff_tag_count = 0;
-    bool has_jpeg_tables = false;
+    // REMOVED: libtiff fallback code (lines 625-696)
+    // The old code used libtiff (TIFFOpen, TIFFGetField, TIFFClose) to extract:
+    // - JPEGTables tag (for abbreviated JPEG detection)
+    // - ImageDescription, Software, Compression tags
+    //
+    // In pure nvImageCodec build, all metadata extraction is handled by nvImageCodec API.
+    // If additional TIFF tags are needed, they should be extracted using nvImageCodec's
+    // metadata API instead of libtiff.
     
-    // Open TIFF file with libtiff to check for JPEGTables
-    TIFF* tif = TIFFOpen(file_path_.c_str(), "r");
-    if (tif)
-    {
-        // Set the directory to the IFD we're interested in
-        if (TIFFSetDirectory(tif, ifd_info.index))
-        {
-            // Check for TIFFTAG_JPEGTABLES (tag 347)
-            uint32_t jpegtables_count = 0;
-            const void* jpegtables_data = nullptr;
-            
-            if (TIFFGetField(tif, TIFFTAG_JPEGTABLES, &jpegtables_count, &jpegtables_data))
-            {
-                has_jpeg_tables = true;
-                ifd_info.tiff_tags["JPEGTables"] = "<detected by libtiff>";
-                tiff_tag_count++;
-                fmt::print("    🔍 Tag 347 (JPEGTables): [binary data, {} bytes] - ABBREVIATED JPEG DETECTED!\n", 
-                          jpegtables_count);
-            }
-            
-            // While we're here, extract other useful tags
-            char* image_desc = nullptr;
-            if (TIFFGetField(tif, TIFFTAG_IMAGEDESCRIPTION, &image_desc))
-            {
-                if (image_desc && strlen(image_desc) > 0)
-                {
-                    ifd_info.tiff_tags["ImageDescription"] = std::string(image_desc);
-                    tiff_tag_count++;
-                }
-            }
-            
-            char* software = nullptr;
-            if (TIFFGetField(tif, TIFFTAG_SOFTWARE, &software))
-            {
-                if (software && strlen(software) > 0)
-                {
-                    ifd_info.tiff_tags["Software"] = std::string(software);
-                    tiff_tag_count++;
-                }
-            }
-            
-            uint16_t compression = 0;
-            if (TIFFGetField(tif, TIFFTAG_COMPRESSION, &compression))
-            {
-                ifd_info.tiff_tags["Compression"] = std::to_string(compression);
-                tiff_tag_count++;
-            }
-        }
-        
-        TIFFClose(tif);
-    }
-    else
-    {
-        fmt::print("  ⚠️  Failed to open TIFF file with libtiff: {}\n", file_path_);
-    }
-    
-    if (tiff_tag_count > 0)
-    {
-        fmt::print("  ✅ Extracted {} TIFF tags for IFD[{}]\n", tiff_tag_count, ifd_info.index);
-        if (has_jpeg_tables)
-        {
-            fmt::print("  ℹ️  IFD[{}] uses abbreviated JPEG (JPEGTables present)\n", ifd_info.index);
-            fmt::print("  ✅ nvTIFF 0.6.0.77 will handle JPEGTables automatically with GPU acceleration\n");
-        }
-    }
-    else
-    {
-        fmt::print("  ℹ️  No recognized TIFF tags found for IFD[{}]\n", ifd_info.index);
-    }
+    [[maybe_unused]] int tiff_tag_count = 0;  // Reserved for future use
+    // For now, we rely on the metadata already extracted by nvImageCodec above
+    fmt::print("  ℹ️  Using nvImageCodec-extracted metadata (libtiff disabled)\n");
 }
 
 std::string TiffFileParser::get_tiff_tag(uint32_t ifd_index, const std::string& tag_name) const

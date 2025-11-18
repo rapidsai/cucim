@@ -25,6 +25,7 @@
 #include <memory>
 #include <map>
 #include <mutex>
+#include <stdexcept>
 #include <cucim/io/device.h>
 
 namespace cuslide2::nvimgcodec
@@ -363,6 +364,13 @@ public:
      * @return true if nvImageCodec decoder is available with ROI support
      */
     bool has_roi_decode_support() const;
+    
+    /**
+     * @brief Get the main code stream for the TIFF file
+     * 
+     * @return nvImageCodec code stream handle
+     */
+    nvimgcodecCodeStream_t get_main_code_stream() const { return main_code_stream_; }
 
 private:
     /**

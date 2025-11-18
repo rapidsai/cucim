@@ -1,32 +1,27 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * SPDX-FileCopyrightText: Copyright (c) 2020, NVIDIA CORPORATION.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 #ifndef CUSLIDE_IFD_H
 #define CUSLIDE_IFD_H
 
 #include "types.h"
+#include "tiff_constants.h"
 
 #include <memory>
 #include <vector>
+#include <string>
 
 #include <cucim/concurrent/threadpool.h>
 #include <cucim/io/format/image_format.h>
 #include <cucim/io/device.h>
 #include <cucim/loader/thread_batch_data_loader.h>
-//#include <tiffio.h>
+
+#ifdef CUCIM_HAS_NVIMGCODEC
+#include <nvimgcodec.h>
+#include "cuslide/nvimgcodec/nvimgcodec_tiff_parser.h"
+#endif
 
 namespace cuslide::tiff
 {
@@ -38,7 +33,10 @@ class EXPORT_VISIBLE IFD : public std::enable_shared_from_this<IFD>
 {
 public:
     IFD(TIFF* tiff, uint16_t index, ifd_offset_t offset);
-    ~IFD() = default;
+#ifdef CUCIM_HAS_NVIMGCODEC
+    IFD(TIFF* tiff, uint16_t index, const cuslide2::nvimgcodec::IfdInfo& ifd_info);
+#endif
+    ~IFD();
 
     static bool read_region_tiles(const TIFF* tiff,
                                   const IFD* ifd,
@@ -142,6 +140,12 @@ private:
 
     uint64_t hash_value_ = 0; /// file hash including ifd index.
 
+#ifdef CUCIM_HAS_NVIMGCODEC
+    // nvImageCodec-specific members
+    nvimgcodecCodeStream_t nvimgcodec_sub_stream_ = nullptr;
+    std::string codec_name_;  // codec name from nvImageCodec (jpeg, jpeg2k, deflate, etc.)
+#endif
+
     /**
      * @brief Check if the current compression method is supported or not.
      */
@@ -160,6 +164,13 @@ private:
      * @brief Check if the specified image format is supported or not.
      */
     bool is_format_supported() const;
+    
+#ifdef CUCIM_HAS_NVIMGCODEC
+    /**
+     * @brief Parse codec string to TIFF compression code
+     */
+    static uint16_t parse_codec_to_compression(const std::string& codec);
+#endif
 };
 } // namespace cuslide::tiff
 

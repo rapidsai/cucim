@@ -87,9 +87,10 @@ static CuCIMFileHandle_share CUCIM_ABI parser_open(const char* file_path)
     auto tif = new cuslide::tiff::TIFF(file_path, O_RDONLY);
     tif->construct_ifds();
     // Move the ownership of the file handle object to the caller (CuImage).
-    auto handle_t = tif->file_handle();
-    tif->file_handle() = nullptr;
-    CuCIMFileHandle_share handle = new std::shared_ptr<CuCIMFileHandle>(handle_t);
+    // CRITICAL: Use std::move to transfer ownership and avoid double-free
+    auto handle_t = std::move(tif->file_handle());
+    tif->file_handle() = nullptr;  // Now safe - original is already moved
+    CuCIMFileHandle_share handle = new std::shared_ptr<CuCIMFileHandle>(std::move(handle_t));
     return handle;
 }
 
@@ -108,8 +109,37 @@ static bool CUCIM_ABI parser_parse(CuCIMFileHandle_ptr handle_ptr, cucim::io::fo
     size_t ifd_count = tif->ifd_count();
     size_t level_count = tif->level_count();
 
-    // If not Aperio SVS format (== Ordinary Pyramid TIFF image)
-    if (tif->ifd(0)->image_description().rfind("Aperio", 0) != 0)
+    // Detect if this is an Aperio SVS file
+    // Try ImageDescription first (works with nvImageCodec 0.7.0+)
+    bool is_aperio_svs = (tif->ifd(0)->image_description().rfind("Aperio", 0) == 0);
+    
+    // Fallback detection for nvImageCodec 0.6.0: check for multiple resolution levels
+    // Aperio SVS files typically have 3-6 IFDs with multiple resolution levels
+    // If we have multiple IFDs and they look like a pyramid, treat as Aperio/SVS
+    if (!is_aperio_svs && ifd_count >= 3 && level_count >= 3)
+    {
+        // Check if IFDs form a pyramid structure (decreasing sizes)
+        bool is_pyramid = true;
+        for (size_t i = 1; i < std::min(size_t(3), level_count); ++i)
+        {
+            auto ifd_curr = tif->level_ifd(i);
+            auto ifd_prev = tif->level_ifd(i-1);
+            if (ifd_curr->width() >= ifd_prev->width())
+            {
+                is_pyramid = false;
+                break;
+            }
+        }
+        
+        if (is_pyramid)
+        {
+            fmt::print("ℹ️  Detected pyramid structure → treating as Aperio SVS/multi-resolution TIFF\n");
+            is_aperio_svs = true;
+        }
+    }
+    
+    // If not Aperio SVS or multi-resolution pyramid, apply strict validation
+    if (!is_aperio_svs)
     {
         std::vector<size_t> main_ifd_list;
         for (size_t i = 0; i < ifd_count; i++)

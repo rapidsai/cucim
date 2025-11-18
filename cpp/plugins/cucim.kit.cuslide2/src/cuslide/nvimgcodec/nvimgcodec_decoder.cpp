@@ -441,8 +441,12 @@ bool decode_jpeg2k_nvimgcodec(int fd,
                               const cucim::io::Device& out_device,
                               int color_space)
 {
+    fmt::print("🔍 decode_jpeg2k_nvimgcodec: ENTRY - fd={}, offset={}, size={}\n", fd, offset, size);
+    
     // Get nvImageCodec manager instance
+    fmt::print("🔍 decode_jpeg2k_nvimgcodec: Getting manager instance...\n");
     auto& manager = NvImageCodecManager::instance();
+    fmt::print("🔍 decode_jpeg2k_nvimgcodec: Got manager instance\n");
     
     if (!manager.is_initialized())
     {
@@ -600,6 +604,7 @@ bool decode_jpeg2k_nvimgcodec(int fd,
         nvimgcodecFuture_t decode_future;
         {
             std::lock_guard<std::mutex> lock(manager.get_mutex());
+            fmt::print("📍 About to call nvimgcodecDecoderDecode...\n");
             if (nvimgcodecDecoderDecode(manager.get_decoder(), &code_stream, &image, 1, &decode_params, &decode_future) != NVIMGCODEC_STATUS_SUCCESS) {
                 fmt::print("❌ nvImageCodec JPEG2000 decode: Failed to schedule decoding\n");
                 nvimgcodecImageDestroy(image);
@@ -613,13 +618,24 @@ bool decode_jpeg2k_nvimgcodec(int fd,
                 nvimgcodecCodeStreamDestroy(code_stream);
                 return false;
             }
+            fmt::print("📍 nvimgcodecDecoderDecode returned successfully\n");
         }
         
         // Step 7: Wait for decoding to finish (following official API pattern)
-        size_t status_size;
-        nvimgcodecProcessingStatus_t decode_status;
+        fmt::print("📍 Getting processing status...\n");
+        size_t status_size = 1;
+        nvimgcodecProcessingStatus_t decode_status = NVIMGCODEC_PROCESSING_STATUS_UNKNOWN;
         nvimgcodecFutureGetProcessingStatus(decode_future, &decode_status, &status_size);
-        cudaDeviceSynchronize(); // Wait for GPU operations to complete
+        fmt::print("📍 Got processing status: {}\n", static_cast<int>(decode_status));
+        
+        // Only synchronize if decoding to GPU memory
+        if (output_image_info.buffer_kind == NVIMGCODEC_IMAGE_BUFFER_KIND_STRIDED_DEVICE) {
+            fmt::print("📍 Calling cudaDeviceSynchronize for GPU buffer...\n");
+            cudaDeviceSynchronize(); // Wait for GPU operations to complete
+            fmt::print("📍 cudaDeviceSynchronize completed\n");
+        } else {
+            fmt::print("📍 Skipping cudaDeviceSynchronize for CPU buffer\n");
+        }
         
         if (decode_status != NVIMGCODEC_PROCESSING_STATUS_SUCCESS) {
             fmt::print("❌ nvImageCodec JPEG2000 decode: Processing failed with status: {}\n", decode_status);
@@ -677,11 +693,12 @@ bool decode_ifd_nvimgcodec(const IfdInfo& ifd_info,
     
     try
     {
-        // Get decoder from manager
-        auto& manager = NvImageCodecManager::instance();
-        if (!manager.is_initialized())
+        // CRITICAL: Must use the same manager that created the sub_code_stream
+        // Using a decoder from a different nvImageCodec instance causes segfaults.
+        auto& manager = NvImageCodecTiffParserManager::instance();
+        if (!manager.is_available())
         {
-            fmt::print("❌ nvImageCodec decoder not initialized\n");
+            fmt::print("❌ nvImageCodec TIFF parser manager not initialized\n");
             return false;
         }
         
@@ -809,8 +826,8 @@ bool decode_ifd_nvimgcodec(const IfdInfo& ifd_info,
         }
         
         // Step 6: Wait for completion
-        nvimgcodecProcessingStatus_t decode_status;
-        size_t status_size;
+        nvimgcodecProcessingStatus_t decode_status = NVIMGCODEC_PROCESSING_STATUS_UNKNOWN;
+        size_t status_size = 1;
         nvimgcodecFutureGetProcessingStatus(decode_future, &decode_status, &status_size);
         
         if (output_image_info.buffer_kind == NVIMGCODEC_IMAGE_BUFFER_KIND_STRIDED_DEVICE)
@@ -867,11 +884,12 @@ bool decode_ifd_region_nvimgcodec(const IfdInfo& ifd_info,
     
     try
     {
-        // Get decoder from manager
-        auto& manager = NvImageCodecManager::instance();
-        if (!manager.is_initialized())
+        // CRITICAL: Must use the same manager that created main_code_stream!
+        // Using a decoder from a different nvImageCodec instance causes segfaults.
+        auto& manager = NvImageCodecTiffParserManager::instance();
+        if (!manager.is_available())
         {
-            fmt::print("❌ nvImageCodec decoder not initialized\n");
+            fmt::print("❌ nvImageCodec TIFF parser manager not initialized\n");
             return false;
         }
         
@@ -1035,8 +1053,8 @@ bool decode_ifd_region_nvimgcodec(const IfdInfo& ifd_info,
         }
         
         // Step 7: Wait for completion
-        nvimgcodecProcessingStatus_t decode_status;
-        size_t status_size;
+        nvimgcodecProcessingStatus_t decode_status = NVIMGCODEC_PROCESSING_STATUS_UNKNOWN;
+        size_t status_size = 1;
         nvimgcodecFutureGetProcessingStatus(decode_future, &decode_status, &status_size);
         
         if (output_image_info.buffer_kind == NVIMGCODEC_IMAGE_BUFFER_KIND_STRIDED_DEVICE)
