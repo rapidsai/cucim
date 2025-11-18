@@ -464,7 +464,10 @@ build_local() {
             cp "${TOP}"/build-"${build_type}"/lib*/libcucim.so."${major_version}" "${TOP}"/python/cucim/src/cucim/clara/
             cp -P "${TOP}"/cpp/plugins/cucim.kit.cuslide/build-"${build_type}"/lib*/cucim* "${TOP}"/python/cucim/src/cucim/clara/
             cp -P "${TOP}"/cpp/plugins/cucim.kit.cumed/build-"${build_type}"/lib*/cucim* "${TOP}"/python/cucim/src/cucim/clara/
-            cp -P "${TOP}"/cpp/plugins/cucim.kit.cuslide2/build-"${build_type}"/lib*/cucim* "${TOP}"/python/cucim/src/cucim/clara/
+            # Only copy cuslide2 if it exists (infrastructure-only mode has no .so file)
+            if ls "${TOP}"/cpp/plugins/cucim.kit.cuslide2/build-"${build_type}"/lib*/cucim* 1> /dev/null 2>&1; then
+                cp -P "${TOP}"/cpp/plugins/cucim.kit.cuslide2/build-"${build_type}"/lib*/cucim* "${TOP}"/python/cucim/src/cucim/clara/
+            fi
             # Copy .so files from pybind's build folder to cuCIM's Python source folder
             cp "${TOP}"/python/build-"${build_type}"/lib/cucim/_cucim.*.so "${TOP}"/python/cucim/src/cucim/clara/
         fi
