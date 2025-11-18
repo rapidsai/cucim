@@ -16,6 +16,7 @@
 
 #include "nvimgcodec_decoder.h"
 #include "nvimgcodec_tiff_parser.h"
+#include "nvimgcodec_manager.h"
 
 #ifdef CUCIM_HAS_NVIMGCODEC
 #include <nvimgcodec.h>
@@ -40,136 +41,79 @@ namespace cuslide2::nvimgcodec
 
 #ifdef CUCIM_HAS_NVIMGCODEC
 
-// Global nvImageCodec instance (singleton pattern for efficiency)
-class NvImageCodecManager
+// NvImageCodecManager is now defined in nvimgcodec_manager.h (shared across decoder and tiff_parser)
+
+// Global TiffFileParser cache for nvTiff file-level API
+// This avoids re-parsing the same TIFF file for every tile decode operation.
+// 
+// Design rationale for using std::shared_ptr<TiffFileParser>:
+// - Multiple tiles from the same file may be decoded concurrently (shared ownership needed)
+// - Parser must outlive individual tile decode operations (can't use stack allocation)
+// - Cache keeps parser alive across multiple decode calls (avoids expensive re-parsing)
+// - std::shared_ptr provides automatic memory management and thread-safe reference counting
+// 
+// Performance impact: Parsing a large TIFF file can take 50-100ms. Caching reduces
+// this to a one-time cost per file, dramatically improving multi-tile decode performance.
+static std::mutex parser_cache_mutex;
+static std::map<std::string, std::shared_ptr<TiffFileParser>> parser_cache;
+
+bool decode_tile_nvtiff_roi(const char* file_path,
+                            uint32_t ifd_index,
+                            uint32_t tile_x, uint32_t tile_y,
+                            uint32_t tile_width, uint32_t tile_height,
+                            uint8_t** dest,
+                            const cucim::io::Device& out_device)
 {
-public:
-    static NvImageCodecManager& instance()
+    if (!file_path || !dest)
     {
-        static NvImageCodecManager instance;
-        return instance;
-    }
-
-    nvimgcodecInstance_t get_instance() const { return instance_; }
-    nvimgcodecDecoder_t get_decoder() const { return decoder_; }
-    bool is_initialized() const { return initialized_; }
-    const std::string& get_status() const { return status_message_; }
-    std::mutex& get_mutex() { return decoder_mutex_; }
-
-    // Quick API validation test
-    bool test_nvimagecodec_api()
-    {
-        if (!initialized_) return false;
-        
-        try {
-            // Test 1: Get nvImageCodec properties
-            nvimgcodecProperties_t props{};
-            props.struct_type = NVIMGCODEC_STRUCTURE_TYPE_PROPERTIES;
-            props.struct_size = sizeof(nvimgcodecProperties_t);
-            props.struct_next = nullptr;
-            
-            if (nvimgcodecGetProperties(&props) == NVIMGCODEC_STATUS_SUCCESS)
-            {
-                uint32_t version = props.version;
-                uint32_t major = (version >> 16) & 0xFF;
-                uint32_t minor = (version >> 8) & 0xFF;
-                uint32_t patch = version & 0xFF;
-                
-                fmt::print("✅ nvImageCodec API Test: Version {}.{}.{}\n", major, minor, patch);
-                
-                // Test 2: Check decoder capabilities
-                if (decoder_)
-                {
-                    fmt::print("✅ nvImageCodec Decoder: Ready\n");
-                    return true;
-                }
-            }
-        }
-        catch (const std::exception& e)
-        {
-            fmt::print("⚠️  nvImageCodec API Test failed: {}\n", e.what());
-        }
-        
         return false;
     }
-
-private:
-    NvImageCodecManager() : initialized_(false)
+    
+    try
     {
-        try {
-            // Create nvImageCodec instance following official API pattern
-            nvimgcodecInstanceCreateInfo_t create_info{};
-            create_info.struct_type = NVIMGCODEC_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
-            create_info.struct_size = sizeof(nvimgcodecInstanceCreateInfo_t);
-            create_info.struct_next = nullptr;
-            create_info.load_builtin_modules = 1;
-            create_info.load_extension_modules = 1;
-            create_info.extension_modules_path = nullptr;
-            create_info.create_debug_messenger = 1;
-            create_info.debug_messenger_desc = nullptr;
-            create_info.message_severity = 0;
-            create_info.message_category = 0;
-        
-        if (nvimgcodecInstanceCreate(&instance_, &create_info) != NVIMGCODEC_STATUS_SUCCESS)
+        // Get or create TiffFileParser for this file
+        std::shared_ptr<TiffFileParser> parser;
         {
-                status_message_ = "Failed to create nvImageCodec instance";
-                fmt::print("❌ {}\n", status_message_);
-                return;
+            std::lock_guard<std::mutex> lock(parser_cache_mutex);
+            auto it = parser_cache.find(file_path);
+            if (it != parser_cache.end())
+            {
+                parser = it->second;
             }
-
-            // Create decoder with execution parameters following official API pattern
-            nvimgcodecExecutionParams_t exec_params{};
-            exec_params.struct_type = NVIMGCODEC_STRUCTURE_TYPE_EXECUTION_PARAMS;
-            exec_params.struct_size = sizeof(nvimgcodecExecutionParams_t);
-            exec_params.struct_next = nullptr;
-            exec_params.device_allocator = nullptr;
-            exec_params.pinned_allocator = nullptr;
-            exec_params.max_num_cpu_threads = 0; // Use default
-            exec_params.executor = nullptr;
-            exec_params.device_id = NVIMGCODEC_DEVICE_CURRENT;
-            exec_params.pre_init = 0;
-            exec_params.skip_pre_sync = 0;
-            exec_params.num_backends = 0;
-            exec_params.backends = nullptr;
-        
-        if (nvimgcodecDecoderCreate(instance_, &decoder_, &exec_params, nullptr) != NVIMGCODEC_STATUS_SUCCESS)
-        {
-            nvimgcodecInstanceDestroy(instance_);
-            instance_ = nullptr;
-            status_message_ = "Failed to create nvImageCodec decoder";
-            fmt::print("❌ {}\n", status_message_);
-            return;
+            else
+            {
+                parser = std::make_shared<TiffFileParser>(file_path);
+                if (!parser->is_valid())
+                {
+                    fmt::print("⚠️  nvTiff ROI: Failed to parse TIFF file: {}\n", file_path);
+                    return false;
+                }
+                parser_cache[file_path] = parser;
+                fmt::print("✅ nvTiff ROI: Cached TIFF parser for {}\n", file_path);
             }
-            
-        initialized_ = true;
-        status_message_ = "nvImageCodec initialized successfully";
-        fmt::print("✅ {}\n", status_message_);
-            
-        // Run quick API test
-        test_nvimagecodec_api();
         }
-        catch (const std::exception& e)
+        
+        // Check if IFD index is valid
+        if (ifd_index >= parser->get_ifd_count())
         {
-            status_message_ = fmt::format("nvImageCodec initialization exception: {}", e.what());
-            fmt::print("❌ {}\n", status_message_);
-            initialized_ = false;
+            fmt::print("⚠️  nvTiff ROI: Invalid IFD index {} (max: {})\n", 
+                      ifd_index, parser->get_ifd_count() - 1);
+            return false;
         }
+        
+        // Decode the tile region using nvTiff file-level API
+        *dest = parser->decode_region(ifd_index, tile_x, tile_y, 
+                                      tile_width, tile_height, 
+                                      nullptr, out_device);
+        
+        return (*dest != nullptr);
     }
-
-    ~NvImageCodecManager()
+    catch (const std::exception& e)
     {
-        // Intentionally NOT destroying resources to avoid crashes during Python interpreter shutdown
-        // The OS will reclaim these resources when the process exits.
-        // This is a workaround for nvJPEG2000 cleanup issues during static destruction.
-        // Resources are only held in a singleton that lives for the entire program lifetime anyway.
+        fmt::print("❌ nvTiff ROI decode failed: {}\n", e.what());
+        return false;
     }
-
-    nvimgcodecInstance_t instance_{nullptr};
-    nvimgcodecDecoder_t decoder_{nullptr};
-    bool initialized_{false};
-    std::string status_message_;
-    std::mutex decoder_mutex_;  // Protect decoder operations from concurrent access
-};
+}
 
 bool decode_jpeg_nvimgcodec(int fd,
                             unsigned char* jpeg_buf,
@@ -188,6 +132,15 @@ bool decode_jpeg_nvimgcodec(int fd,
     {
         fmt::print("⚠️  nvImageCodec JPEG decode: API not available - {}\n", manager.get_status());
         return false; // Fallback to original decoder
+    }
+    
+    // IMPORTANT: nvImageCodec 0.7.0 doesn't reliably handle abbreviated JPEG streams
+    // (JPEG with separate tables stored in TIFFTAG_JPEGTABLES).
+    // Disable nvImageCodec for JPEG decoding when tables are present.
+    if (jpegtable_data && jpegtable_count > 0) {
+        fmt::print("⚠️  nvImageCodec: Abbreviated JPEG with separate tables detected\n");
+        fmt::print("💡 Using libjpeg-turbo decoder (nvImageCodec doesn't support TIFFTAG_JPEGTABLES)\n");
+        return false; // Fallback to libjpeg-turbo
     }
     
     fmt::print("🚀 nvImageCodec JPEG decode: Starting, size={} bytes, device={}\n", 
@@ -215,45 +168,71 @@ bool decode_jpeg_nvimgcodec(int fd,
         }
         
         // Handle JPEG tables (common in Aperio SVS files)
-        // JPEG tables contain quantization and Huffman tables that need to be prepended to each tile
+        // nvImageCodec 0.7.0: Use safer JPEG table merging with proper validation
         if (jpegtable_data && jpegtable_count > 0) {
-            fmt::print("📋 nvImageCodec JPEG decode: Merging JPEG tables ({} bytes) with tile data\n", jpegtable_count);
+            fmt::print("📋 nvImageCodec JPEG decode: Processing JPEG tables ({} bytes) with tile data ({} bytes)\n", 
+                      jpegtable_count, jpeg_data.size());
             
-            // Create a new buffer with tables prepended
-            std::vector<uint8_t> jpeg_with_tables;
-            jpeg_with_tables.reserve(jpegtable_count + size);
-            
-            // Copy JPEG tables, but remove trailing EOI marker (0xFFD9) if present
-            const uint8_t* table_ptr = static_cast<const uint8_t*>(jpegtable_data);
-            size_t table_size = jpegtable_count;
-            
-            // Check if tables end with EOI marker and remove it
-            if (table_size >= 2 && table_ptr[table_size - 2] == 0xFF && table_ptr[table_size - 1] == 0xD9) {
-                table_size -= 2;  // Remove EOI marker
-                fmt::print("📋 nvImageCodec JPEG decode: Removed EOI marker from tables\n");
-            }
-            
-            jpeg_with_tables.insert(jpeg_with_tables.end(), table_ptr, table_ptr + table_size);
-            
-            // Append JPEG tile data (skip SOI marker 0xFFD8 if present)
-            if (jpeg_data.size() >= 2 && jpeg_data[0] == 0xFF && jpeg_data[1] == 0xD8) {
-                // Skip SOI marker in tile data since tables already have it
-                jpeg_with_tables.insert(jpeg_with_tables.end(), jpeg_data.begin() + 2, jpeg_data.end());
-                fmt::print("📋 nvImageCodec JPEG decode: Skipped SOI marker in tile data\n");
+            // Validate inputs
+            if (jpegtable_count < 2 || jpeg_data.size() < 2) {
+                fmt::print("⚠️  nvImageCodec: Invalid JPEG data sizes, skipping table merge\n");
             } else {
-                // No SOI in tile data, append as-is
-                jpeg_with_tables.insert(jpeg_with_tables.end(), jpeg_data.begin(), jpeg_data.end());
+                // Create properly sized buffer
+                std::vector<uint8_t> jpeg_with_tables;
+                jpeg_with_tables.reserve(jpegtable_count + jpeg_data.size() + 4); // Extra space for safety
+                
+                const uint8_t* table_ptr = static_cast<const uint8_t*>(jpegtable_data);
+                size_t table_copy_size = jpegtable_count;
+                
+                // Remove trailing EOI (0xFFD9) from tables if present
+                if (table_copy_size >= 2 && table_ptr[table_copy_size - 2] == 0xFF && 
+                    table_ptr[table_copy_size - 1] == 0xD9) {
+                    table_copy_size -= 2;
+                    fmt::print("📋 Removed EOI from tables\n");
+                }
+                
+                // Copy tables
+                jpeg_with_tables.insert(jpeg_with_tables.end(), table_ptr, table_ptr + table_copy_size);
+                
+                // Skip SOI (0xFFD8) from tile data if present
+                size_t tile_offset = 0;
+                if (jpeg_data.size() >= 2 && jpeg_data[0] == 0xFF && jpeg_data[1] == 0xD8) {
+                    tile_offset = 2;
+                    fmt::print("📋 Skipped SOI from tile data\n");
+                }
+                
+                // Append tile data
+                if (tile_offset < jpeg_data.size()) {
+                    jpeg_with_tables.insert(jpeg_with_tables.end(), 
+                                          jpeg_data.begin() + tile_offset, 
+                                          jpeg_data.end());
+                }
+                
+                // Validate final size
+                if (jpeg_with_tables.size() > 0 && jpeg_with_tables.size() < 1024 * 1024 * 10) { // Max 10MB
+                    jpeg_data = std::move(jpeg_with_tables);
+                    fmt::print("✅ Merged JPEG stream: {} bytes\n", jpeg_data.size());
+                } else {
+                    fmt::print("⚠️  Invalid merged size: {} bytes, using original\n", jpeg_with_tables.size());
+                }
             }
-            
-            jpeg_data = std::move(jpeg_with_tables);
-            fmt::print("📋 nvImageCodec JPEG decode: Final JPEG stream size: {} bytes\n", jpeg_data.size());
+        }
+        
+        // Validate JPEG data before creating code stream
+        if (jpeg_data.size() < 4 || jpeg_data.empty()) {
+            fmt::print("❌ nvImageCodec JPEG decode: Invalid JPEG data size: {} bytes\n", jpeg_data.size());
+            return false;
         }
         
         // Create code stream from memory
-        if (nvimgcodecCodeStreamCreateFromHostMem(manager.get_instance(), &code_stream, 
-                                                 jpeg_data.data(), jpeg_data.size()) != NVIMGCODEC_STATUS_SUCCESS) {
-            fmt::print("❌ nvImageCodec JPEG decode: Failed to create code stream\n");
-            return false;
+        nvimgcodecStatus_t status = nvimgcodecCodeStreamCreateFromHostMem(
+            manager.get_instance(), &code_stream, jpeg_data.data(), jpeg_data.size());
+            
+        if (status != NVIMGCODEC_STATUS_SUCCESS) {
+            fmt::print("❌ nvImageCodec JPEG decode: Failed to create code stream (status: {})\n", 
+                      static_cast<int>(status));
+            fmt::print("💡 Falling back to libjpeg-turbo decoder\n");
+            return false; // Fallback to libjpeg-turbo
         }
         
         // Step 2: Get image information (following official API pattern)
@@ -394,13 +373,16 @@ bool decode_jpeg_nvimgcodec(int fd,
         }
         
         // Step 7: Wait for decoding to finish (following official API pattern)
-        size_t status_size;
-        nvimgcodecProcessingStatus_t decode_status;
-        nvimgcodecFutureGetProcessingStatus(decode_future, &decode_status, &status_size);
-        cudaDeviceSynchronize(); // Wait for GPU operations to complete
+        size_t status_size = 1;
+        nvimgcodecProcessingStatus_t decode_status = NVIMGCODEC_PROCESSING_STATUS_UNKNOWN;
         
-        if (decode_status != NVIMGCODEC_PROCESSING_STATUS_SUCCESS) {
-            fmt::print("❌ nvImageCodec JPEG decode: Processing failed with status: {}\n", decode_status);
+        // Safely get processing status with validation
+        nvimgcodecStatus_t future_status = nvimgcodecFutureGetProcessingStatus(
+            decode_future, &decode_status, &status_size);
+            
+        if (future_status != NVIMGCODEC_STATUS_SUCCESS) {
+            fmt::print("❌ nvImageCodec JPEG decode: Failed to get future status (code: {})\n", 
+                      static_cast<int>(future_status));
             nvimgcodecFutureDestroy(decode_future);
             nvimgcodecImageDestroy(image);
             if (!buffer_was_preallocated) {
@@ -411,6 +393,32 @@ bool decode_jpeg_nvimgcodec(int fd,
                 }
             }
             nvimgcodecCodeStreamDestroy(code_stream);
+            fmt::print("💡 Falling back to libjpeg-turbo decoder\n");
+            return false;
+        }
+        
+        // Synchronize only if we're on GPU
+        if (output_image_info.buffer_kind == NVIMGCODEC_IMAGE_BUFFER_KIND_STRIDED_DEVICE) {
+            cudaError_t cuda_err = cudaDeviceSynchronize();
+            if (cuda_err != cudaSuccess) {
+                fmt::print("⚠️  CUDA synchronization warning: {}\n", cudaGetErrorString(cuda_err));
+            }
+        }
+        
+        if (decode_status != NVIMGCODEC_PROCESSING_STATUS_SUCCESS) {
+            fmt::print("❌ nvImageCodec JPEG decode: Processing failed with status: {}\n", 
+                      static_cast<int>(decode_status));
+            nvimgcodecFutureDestroy(decode_future);
+            nvimgcodecImageDestroy(image);
+            if (!buffer_was_preallocated) {
+                if (output_image_info.buffer_kind == NVIMGCODEC_IMAGE_BUFFER_KIND_STRIDED_DEVICE) {
+                    cudaFree(output_buffer);
+                } else {
+                    free(output_buffer);
+                }
+            }
+            nvimgcodecCodeStreamDestroy(code_stream);
+            fmt::print("💡 Falling back to libjpeg-turbo decoder\n");
             return false;
         }
         

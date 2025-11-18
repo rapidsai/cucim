@@ -299,12 +299,20 @@ void TiffFileParser::parse_tiff_structure()
             ifd_info.codec = image_info.codec_name;
         }
         
-        // Extract metadata for this IFD using nvimgcodecDecoderGetMetadata
-        // Extract vendor-specific metadata (Aperio, Philips, etc.)
-        extract_ifd_metadata(ifd_info);
-        
-        // Extract individual TIFF tags (nvImageCodec 0.7.0+)
-        extract_tiff_tags(ifd_info);
+        // Extract metadata for this IFD using two complementary approaches:
+        // 
+        // 1. extract_ifd_metadata() - Uses nvImageCodec for vendor-specific metadata
+        //    - Extracts Aperio, Philips, Leica metadata that libtiff doesn't support
+        //    - Uses nvimgcodecDecoderGetMetadata() API
+        // 
+        // 2. extract_tiff_tags() - Uses libtiff for standard TIFF tags
+        //    - Extracts standard TIFF tags (JPEGTables, Compression, ImageDescription)
+        //    - Uses libtiff directly due to nvTIFF 0.6.0.77 metadata API limitations
+        //    - Once nvTIFF metadata API is fixed, we can consolidate to nvImageCodec only
+        // 
+        // Both are needed because neither library alone provides complete metadata coverage.
+        extract_ifd_metadata(ifd_info);  // Vendor metadata via nvImageCodec
+        extract_tiff_tags(ifd_info);      // TIFF tags via libtiff
         
         ifd_info.print();
         
@@ -815,12 +823,13 @@ uint8_t* TiffFileParser::decode_region(
             "This IFD cannot be decoded.", ifd_index));
     }
     
-    // Validate ROI bounds
+    // nvImageCodec supports out-of-bounds ROI decoding (will pad with boundary pixels)
+    // Just warn if ROI extends beyond IFD bounds
     if (x + width > ifd.width || y + height > ifd.height)
     {
-        throw std::invalid_argument(fmt::format(
-            "ROI ({},{} {}x{}) exceeds IFD dimensions ({}x{})",
-            x, y, width, height, ifd.width, ifd.height));
+        fmt::print("⚠️  ROI ({},{} {}x{}) extends beyond IFD dimensions ({}x{}) - "
+                   "nvImageCodec will pad with boundary pixels\n",
+                   x, y, width, height, ifd.width, ifd.height);
     }
     
     // NOTE: nvTIFF 0.6.0.77 CAN handle JPEGTables (TIFFTAG_JPEGTABLES)!

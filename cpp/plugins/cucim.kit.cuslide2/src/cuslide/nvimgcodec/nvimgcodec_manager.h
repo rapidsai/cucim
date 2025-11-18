@@ -1,0 +1,190 @@
+/*
+ * Copyright (c) 2025, NVIDIA CORPORATION.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+#pragma once
+
+#ifdef CUCIM_HAS_NVIMGCODEC
+#include <nvimgcodec.h>
+#include <nvimagecodec_version.h>
+#endif
+
+#include <string>
+#include <mutex>
+#include <fmt/format.h>
+
+namespace cuslide2::nvimgcodec
+{
+
+#ifdef CUCIM_HAS_NVIMGCODEC
+
+/**
+ * @brief Singleton manager for nvImageCodec instance and decoder
+ * 
+ * Provides centralized access to nvImageCodec resources with thread-safe initialization.
+ */
+class NvImageCodecManager
+{
+public:
+    static NvImageCodecManager& instance()
+    {
+        static NvImageCodecManager instance;
+        return instance;
+    }
+
+    nvimgcodecInstance_t get_instance() const { return instance_; }
+    nvimgcodecDecoder_t get_decoder() const { return decoder_; }
+    std::mutex& get_mutex() { return decoder_mutex_; }
+    bool is_initialized() const { return initialized_; }
+    const std::string& get_status() const { return status_message_; }
+
+    // Quick API validation test
+    bool test_nvimagecodec_api()
+    {
+        if (!initialized_) return false;
+        
+        try {
+            // Test 1: Get nvImageCodec properties
+            nvimgcodecProperties_t props{};
+            props.struct_type = NVIMGCODEC_STRUCTURE_TYPE_PROPERTIES;
+            props.struct_size = sizeof(nvimgcodecProperties_t);
+            props.struct_next = nullptr;
+            
+            if (nvimgcodecGetProperties(&props) == NVIMGCODEC_STATUS_SUCCESS)
+            {
+                uint32_t version = props.version;
+                // Use official nvImageCodec version macros
+                // nvImageCodec uses: version = (major * 1000) + (minor * 100) + patch
+                uint32_t major = NVIMGCODEC_MAJOR_FROM_SEMVER(version);
+                uint32_t minor = NVIMGCODEC_MINOR_FROM_SEMVER(version);
+                uint32_t patch = NVIMGCODEC_PATCH_FROM_SEMVER(version);
+                
+                fmt::print("✅ nvImageCodec API Test: Version {}.{}.{}\n", major, minor, patch);
+                
+                // Test 2: Check decoder capabilities
+                if (decoder_)
+                {
+                    fmt::print("✅ nvImageCodec Decoder: Ready\n");
+                    return true;
+                }
+            }
+        }
+        catch (const std::exception& e)
+        {
+            fmt::print("⚠️  nvImageCodec API Test failed: {}\n", e.what());
+        }
+        
+        return false;
+    }
+
+    // Disable copy/move
+    NvImageCodecManager(const NvImageCodecManager&) = delete;
+    NvImageCodecManager& operator=(const NvImageCodecManager&) = delete;
+    NvImageCodecManager(NvImageCodecManager&&) = delete;
+    NvImageCodecManager& operator=(NvImageCodecManager&&) = delete;
+
+private:
+    NvImageCodecManager() : initialized_(false)
+    {
+        try {
+            // Create nvImageCodec instance following official API pattern
+            nvimgcodecInstanceCreateInfo_t create_info{};
+            create_info.struct_type = NVIMGCODEC_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+            create_info.struct_size = sizeof(nvimgcodecInstanceCreateInfo_t);
+            create_info.struct_next = nullptr;
+            create_info.load_builtin_modules = 1;
+            create_info.load_extension_modules = 1;
+            create_info.extension_modules_path = nullptr;
+            create_info.create_debug_messenger = 1;
+            create_info.debug_messenger_desc = nullptr;
+            create_info.message_severity = 0;
+            create_info.message_category = 0;
+        
+            if (nvimgcodecInstanceCreate(&instance_, &create_info) != NVIMGCODEC_STATUS_SUCCESS)
+            {
+                status_message_ = "Failed to create nvImageCodec instance";
+                fmt::print("❌ {}\n", status_message_);
+                return;
+            }
+
+            // Create decoder with execution parameters following official API pattern
+            nvimgcodecExecutionParams_t exec_params{};
+            exec_params.struct_type = NVIMGCODEC_STRUCTURE_TYPE_EXECUTION_PARAMS;
+            exec_params.struct_size = sizeof(nvimgcodecExecutionParams_t);
+            exec_params.struct_next = nullptr;
+            exec_params.device_allocator = nullptr;
+            exec_params.pinned_allocator = nullptr;
+            exec_params.max_num_cpu_threads = 0; // Use default
+            exec_params.executor = nullptr;
+            exec_params.device_id = NVIMGCODEC_DEVICE_CURRENT;
+            exec_params.pre_init = 0;
+            exec_params.skip_pre_sync = 0;
+            exec_params.num_backends = 0;
+            exec_params.backends = nullptr;
+        
+            if (nvimgcodecDecoderCreate(instance_, &decoder_, &exec_params, nullptr) != NVIMGCODEC_STATUS_SUCCESS)
+            {
+                nvimgcodecInstanceDestroy(instance_);
+                instance_ = nullptr;
+                status_message_ = "Failed to create nvImageCodec decoder";
+                fmt::print("❌ {}\n", status_message_);
+                return;
+            }
+            
+            initialized_ = true;
+            status_message_ = "nvImageCodec initialized successfully";
+            fmt::print("✅ {}\n", status_message_);
+            
+            // Run quick API test
+            test_nvimagecodec_api();
+        }
+        catch (const std::exception& e)
+        {
+            status_message_ = fmt::format("nvImageCodec initialization exception: {}", e.what());
+            fmt::print("❌ {}\n", status_message_);
+            initialized_ = false;
+        }
+    }
+
+    ~NvImageCodecManager()
+    {
+        // WORKAROUND: Intentionally NOT calling nvimgcodecDecoderDestroy() or nvimgcodecInstanceDestroy()
+        // 
+        // Problem: nvJPEG2000 backend has static destruction ordering issues with CUDA runtime
+        // - nvJPEG2000 internally allocates CUDA resources (contexts, streams, memory)
+        // - During Python shutdown, C++ static destructors run in undefined order
+        // - If CUDA runtime destructor runs before nvImageCodec destructor, cleanup crashes
+        // - Symptoms: Segfault in cudaDeviceReset(), cudaFree(), or hang during shutdown
+        // 
+        // Solution: Let OS reclaim resources at process exit instead of explicit cleanup
+        // - This singleton lives for the entire program lifetime anyway
+        // - OS will properly cleanup all memory, file descriptors, and GPU resources
+        // - Avoids race conditions between static destructors
+        // 
+        // This is a common pattern for CUDA-using singletons (see cuDNN, cuBLAS patterns)
+        // Resources: decoder_, instance_ will be freed by OS at process termination
+    }
+
+    nvimgcodecInstance_t instance_{nullptr};
+    nvimgcodecDecoder_t decoder_{nullptr};
+    bool initialized_{false};
+    std::string status_message_;
+    std::mutex decoder_mutex_;  // Protect decoder operations from concurrent access
+};
+
+#endif // CUCIM_HAS_NVIMGCODEC
+
+} // namespace cuslide2::nvimgcodec
+
