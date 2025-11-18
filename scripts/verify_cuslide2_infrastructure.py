@@ -420,13 +420,16 @@ def check_infrastructure_only_mode():
     """Check if this is an infrastructure-only build (no actual plugin binary)."""
     script_dir = Path(__file__).parent.parent
     cmake_file = script_dir / "cpp/plugins/cucim.kit.cuslide2/CMakeLists.txt"
-    
+
     if not cmake_file.exists():
         return False
-    
+
     content = cmake_file.read_text()
     # Look for infrastructure-only indicators
-    if "infrastructure-only" in content.lower() and "add_custom_target(${CUCIM_PLUGIN_NAME}" in content:
+    if (
+        "infrastructure-only" in content.lower()
+        and "add_custom_target(${CUCIM_PLUGIN_NAME}" in content
+    ):
         return True
     return False
 
@@ -596,7 +599,9 @@ def main():
                 print("✓ nvImageCodec packages detected via pip")
             elif install_method == "cmake-integrated":
                 print("✓ nvImageCodec CMake integration configured")
-        print("\nℹ️  Note: Plugin binary intentionally not built in infrastructure-only mode")
+        print(
+            "\nℹ️  Note: Plugin binary intentionally not built in infrastructure-only mode"
+        )
         print("   Actual plugin implementation will be added in follow-up PR")
         return True
 

@@ -327,7 +327,7 @@ set_target_properties(${CUCIM_PLUGIN_NAME} PROPERTIES OUTPUT_NAME "${CUCIM_PLUGI
 #         # cuslide_tests  # Disabled for infrastructure-only PR
 #         # cuslide_benchmarks  # Disabled for infrastructure-only PR
 #         )
-# 
+#
 # install(TARGETS ${INSTALL_TARGETS}
 #         EXPORT ${CUCIM_PLUGIN_NAME}-targets
 #         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
@@ -338,7 +338,7 @@ set_target_properties(${CUCIM_PLUGIN_NAME} PROPERTIES OUTPUT_NAME "${CUCIM_PLUGI
 #         ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
 #         COMPONENT ${CUCIM_PLUGIN_NAME}_Development
 #         )
-# 
+#
 # # Currently cuslide plugin doesn't have include path so comment out
 # # install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 # install(EXPORT ${CUCIM_PLUGIN_NAME}-targets
@@ -348,7 +348,7 @@ set_target_properties(${CUCIM_PLUGIN_NAME} PROPERTIES OUTPUT_NAME "${CUCIM_PLUGI
 #         ${PROJECT_NAME}::
 #         DESTINATION
 #         ${CMAKE_INSTALL_LIBDIR}/cmake/${CUCIM_PLUGIN_NAME})
-# 
+#
 # # Write package configs
 # include(CMakePackageConfigHelpers)
 # configure_package_config_file(
@@ -367,8 +367,8 @@ set_target_properties(${CUCIM_PLUGIN_NAME} PROPERTIES OUTPUT_NAME "${CUCIM_PLUGI
 #         ${CMAKE_CURRENT_BINARY_DIR}/cmake/${CUCIM_PLUGIN_NAME}-config-version.cmake
 #     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${CUCIM_PLUGIN_NAME}
 # )
-# 
-# 
+#
+#
 # set(CMAKE_EXPORT_PACKAGE_REGISTRY ON)
 # export(PACKAGE ${CUCIM_PLUGIN_NAME})
 
