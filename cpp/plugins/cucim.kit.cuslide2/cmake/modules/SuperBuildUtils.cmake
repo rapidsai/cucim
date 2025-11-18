@@ -9,8 +9,8 @@ include(FetchContent)
 
 # Local deps directory (for cuslide2-specific dependencies like nvimgcodec)
 set(CMAKE_LOCAL_DEPS_DIR "${CMAKE_CURRENT_LIST_DIR}/../deps")
-# Shared deps directory from cpp/cmake (for common dependencies)
-set(CMAKE_SHARED_DEPS_DIR "${CMAKE_CURRENT_LIST_DIR}/../../../../cmake/deps")
+# Shared deps directory from cuslide plugin (for common dependencies)
+set(CMAKE_SHARED_DEPS_DIR "${CMAKE_CURRENT_LIST_DIR}/../../../cucim.kit.cuslide/cmake/deps")
 
 if(NOT COMMAND superbuild_depend)
     function(superbuild_depend module_name)
