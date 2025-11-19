@@ -316,6 +316,20 @@ public:
     bool has_cpu_decoder() const { return cpu_decoder_ != nullptr; }
 
     /**
+     * @brief Get the CPU-only decoder (for native CPU decoding)
+     * 
+     * @return nvImageCodec CPU decoder handle
+     */
+    nvimgcodecDecoder_t get_cpu_decoder() const { return cpu_decoder_; }
+    
+    /**
+     * @brief Check if CPU-only decoder is available
+     * 
+     * @return true if CPU decoder is available
+     */
+    bool has_cpu_decoder() const { return cpu_decoder_ != nullptr; }
+    
+    /**
      * @brief Get the mutex for thread-safe decoder operations
      *
      * @return Reference to the decoder mutex
