@@ -1,9 +1,0 @@
-============================================================
- Clean Rebuild of cuslide2 Plugin
-============================================================
-
-❌ ERROR: No conda/micromamba environment activated!
-
-Please activate the environment first:
-  micromamba activate cucim-test
-
