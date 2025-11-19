@@ -131,12 +131,16 @@ uint8_t* ThreadBatchDataLoader::raster_pointer(const uint64_t location_index) co
 
 uint32_t ThreadBatchDataLoader::request(uint32_t load_size)
 {
+#ifdef DEBUG
     fmt::print("🔍 request(): ENTRY - num_workers_={}, load_size={}, queued_item_count_={}\n",
               num_workers_, load_size, queued_item_count_);
+#endif // DEBUG
     
     if (num_workers_ == 0)
     {
+#ifdef DEBUG
         fmt::print("🔍 request(): num_workers==0, returning 0\n");
+#endif // DEBUG
         return 0;
     }
 
@@ -146,7 +150,9 @@ uint32_t ThreadBatchDataLoader::request(uint32_t load_size)
     }
 
     uint32_t num_items_to_request = std::min(load_size, static_cast<uint32_t>(location_len_ - queued_item_count_));
+#ifdef DEBUG
     fmt::print("🔍 request(): Will request {} items\n", num_items_to_request);
+#endif // DEBUG
     
     for (uint32_t i = 0; i < num_items_to_request; ++i)
     {
@@ -155,9 +161,13 @@ uint32_t ThreadBatchDataLoader::request(uint32_t load_size)
         {
             last_item_count = tasks_.size();
         }
+#ifdef DEBUG
         fmt::print("🔍 request(): Calling load_func for item {} (location_index={})\n", i, queued_item_count_);
+#endif // DEBUG
         load_func_(this, queued_item_count_);
+#ifdef DEBUG
         fmt::print("🔍 request(): load_func returned, tasks added: {}\n", tasks_.size() - last_item_count);
+#endif // DEBUG
         ++queued_item_count_;
         buffer_item_tail_index_ = queued_item_count_ % buffer_item_len_;
         // Append the number of added tasks to the batch count list.
@@ -174,8 +184,10 @@ uint32_t ThreadBatchDataLoader::request(uint32_t load_size)
 
 uint32_t ThreadBatchDataLoader::wait_batch()
 {
+#ifdef DEBUG
     fmt::print("🔍 wait_batch(): ENTRY - num_workers_={}, batch_item_counts_.size()={}, tasks_.size()={}\n",
               num_workers_, batch_item_counts_.size(), tasks_.size());
+#endif // DEBUG
     
     if (num_workers_ == 0)
     {
@@ -186,20 +198,30 @@ uint32_t ThreadBatchDataLoader::wait_batch()
     for (uint32_t batch_item_index = 0; batch_item_index < batch_size_ && !batch_item_counts_.empty(); ++batch_item_index)
     {
         uint32_t batch_item_count = batch_item_counts_.front();
+#ifdef DEBUG
         fmt::print("🔍 wait_batch(): Processing batch_item_index={}, batch_item_count={}\n",
                   batch_item_index, batch_item_count);
+#endif // DEBUG
         for (uint32_t i = 0; i < batch_item_count; ++i)
         {
+#ifdef DEBUG
             fmt::print("🔍 wait_batch(): Waiting for task {} of {}\n", i, batch_item_count);
+#endif // DEBUG
             auto& future = tasks_.front();
             try {
                 future.wait();
+#ifdef DEBUG
                 fmt::print("🔍 wait_batch(): Task {} completed\n", i);
+#endif // DEBUG
             } catch (const std::exception& e) {
+#ifdef DEBUG
                 fmt::print("❌ wait_batch(): Task {} threw exception: {}\n", i, e.what());
+#endif // DEBUG
                 throw;
             } catch (...) {
+#ifdef DEBUG
                 fmt::print("❌ wait_batch(): Task {} threw unknown exception\n", i);
+#endif // DEBUG
                 throw;
             }
             tasks_.pop_front();
@@ -219,12 +241,16 @@ uint32_t ThreadBatchDataLoader::wait_batch()
 
 uint8_t* ThreadBatchDataLoader::next_data()
 {
+#ifdef DEBUG
     fmt::print("🔍 next_data(): ENTRY - num_workers_={}, processed_batch_count_={}, location_len_={}\n",
               num_workers_, processed_batch_count_, location_len_);
+#endif // DEBUG
     
     if (num_workers_ == 0) // (location_len == 1 && batch_size == 1)
     {
+#ifdef DEBUG
         fmt::print("🔍 next_data(): num_workers==0 path\n");
+#endif // DEBUG
         // If it reads entire image with multi threads (using loader), release raster memory from batch data loader
         // by setting it to nullptr so that it will not be freed by ~ThreadBatchDataLoader (destructor).
         uint8_t* batch_raster_ptr = raster_data_[0];
@@ -234,15 +260,21 @@ uint8_t* ThreadBatchDataLoader::next_data()
 
     if (processed_batch_count_ * batch_size_ >= location_len_)
     {
+#ifdef DEBUG
         fmt::print("🔍 next_data(): All batches processed, returning nullptr\n");
+#endif // DEBUG
         // If all batches are processed, return nullptr.
         return nullptr;
     }
 
     // Wait until the batch is ready.
+#ifdef DEBUG
     fmt::print("🔍 next_data(): About to call wait_batch()\n");
+#endif // DEBUG
     wait_batch();
+#ifdef DEBUG
     fmt::print("🔍 next_data(): wait_batch() completed\n");
+#endif // DEBUG
 
     uint8_t* batch_raster_ptr = raster_data_[buffer_item_head_index_];
 
@@ -325,26 +357,36 @@ uint32_t ThreadBatchDataLoader::data_batch_size() const
 
 bool ThreadBatchDataLoader::enqueue(std::function<void()> task, const TileInfo& tile)
 {
+#ifdef DEBUG
     fmt::print("🔍 enqueue(): ENTRY - num_workers_={}, tile.location_index={}, tile.index={}\n",
               num_workers_, tile.location_index, tile.index);
     fflush(stdout);
+#endif // DEBUG
     
     if (num_workers_ > 0)
     {
+#ifdef DEBUG
         fmt::print("🔍 enqueue(): About to enqueue task to thread pool\n");
         fflush(stdout);
+#endif // DEBUG
         auto future = thread_pool_.enqueue(task);
+#ifdef DEBUG
         fmt::print("🔍 enqueue(): Task enqueued, adding future to tasks_\n");
         fflush(stdout);
+#endif // DEBUG
         tasks_.emplace_back(std::move(future));
+#ifdef DEBUG
         fmt::print("🔍 enqueue(): tasks_.size()={}\n", tasks_.size());
         fflush(stdout);
+#endif // DEBUG
         if (batch_data_processor_)
         {
             batch_data_processor_->add_tile(tile);
         }
+#ifdef DEBUG
         fmt::print("🔍 enqueue(): Returning true\n");
         fflush(stdout);
+#endif // DEBUG
         return true;
     }
     return false;
