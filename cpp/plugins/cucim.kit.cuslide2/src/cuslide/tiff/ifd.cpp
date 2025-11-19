@@ -39,7 +39,6 @@
 #include "cuslide/nvimgcodec/nvimgcodec_tiff_parser.h"
 #include "tiff.h"
 #include "tiff_constants.h"
-#include "cpu_decoder_stubs.h"  // Stubs for legacy CPU decoder references
 
 
 namespace cuslide::tiff
@@ -78,10 +77,8 @@ IFD::IFD(TIFF* tiff, uint16_t index, ifd_offset_t offset) : tiff_(tiff), ifd_ind
             // Calculate hash value
             hash_value_ = tiff->file_handle_shared_.get()->hash_value ^ cucim::codec::splitmix64(index);
             
-            #ifdef DEBUG
             fmt::print("  IFD[{}]: Initialized from nvImageCodec ({}x{}, codec: {})\n", 
                       index, width_, height_, codec_name_);
-            #endif // DEBUG
             return;
         }
     }
@@ -105,9 +102,7 @@ IFD::IFD(TIFF* tiff, uint16_t index, const cuslide2::nvimgcodec::IfdInfo& ifd_in
 {
     PROF_SCOPED_RANGE(PROF_EVENT(ifd_ifd));  // Use standard ifd_ifd profiler event
     
-    #ifdef DEBUG
     fmt::print("🔧 Creating IFD[{}] from nvImageCodec metadata\n", index);
-    #endif // DEBUG
     
     // Extract basic image properties from IfdInfo
     width_ = ifd_info.width;
@@ -115,17 +110,13 @@ IFD::IFD(TIFF* tiff, uint16_t index, const cuslide2::nvimgcodec::IfdInfo& ifd_in
     samples_per_pixel_ = ifd_info.num_channels;
     bits_per_sample_ = ifd_info.bits_per_sample;
     
-    #ifdef DEBUG
     fmt::print("   Dimensions: {}x{}, {} channels, {} bits/sample\n",
               width_, height_, samples_per_pixel_, bits_per_sample_);
-    #endif // DEBUG
     
     // Parse codec string to compression enum
     codec_name_ = ifd_info.codec;
     compression_ = parse_codec_to_compression(codec_name_);
-    #ifdef DEBUG
     fmt::print("   Codec: {} (compression={})\n", codec_name_, compression_);
-    #endif // DEBUG
     
     // Get ImageDescription from nvImageCodec
     image_description_ = ifd_info.image_description;
@@ -140,17 +131,13 @@ IFD::IFD(TIFF* tiff, uint16_t index, const cuslide2::nvimgcodec::IfdInfo& ifd_in
         int subfile_type = tiff->nvimgcodec_parser_->get_subfile_type(index);
         if (subfile_type >= 0) {
             subfile_type_ = static_cast<uint64_t>(subfile_type);
-            #ifdef DEBUG
             fmt::print("   SUBFILETYPE: {}\n", subfile_type_);
-            #endif // DEBUG
         }
         
         // Check for JPEGTables (abbreviated JPEG indicator)
         std::string jpeg_tables = tiff->nvimgcodec_parser_->get_tiff_tag(index, "JPEGTables");
         if (!jpeg_tables.empty()) {
-            #ifdef DEBUG
             fmt::print("   ✅ JPEGTables detected (abbreviated JPEG)\n");
-            #endif // DEBUG
         }
         
         // Tile dimensions (if available from TIFF tags)
@@ -161,13 +148,9 @@ IFD::IFD(TIFF* tiff, uint16_t index, const cuslide2::nvimgcodec::IfdInfo& ifd_in
             try {
                 tile_width_ = std::stoul(tile_w_str);
                 tile_height_ = std::stoul(tile_h_str);
-                #ifdef DEBUG
                 fmt::print("   Tiles: {}x{}\n", tile_width_, tile_height_);
-                #endif // DEBUG
             } catch (...) {
-                #ifdef DEBUG
                 fmt::print("   ⚠️  Failed to parse tile dimensions\n");
-                #endif // DEBUG
                 tile_width_ = 0;
                 tile_height_ = 0;
             }
@@ -175,9 +158,7 @@ IFD::IFD(TIFF* tiff, uint16_t index, const cuslide2::nvimgcodec::IfdInfo& ifd_in
             // Not tiled - treat as single strip
             tile_width_ = 0;
             tile_height_ = 0;
-            #ifdef DEBUG
             fmt::print("   Not tiled (strip-based or whole image)\n");
-            #endif // DEBUG
         }
     }
     
@@ -197,15 +178,11 @@ IFD::IFD(TIFF* tiff, uint16_t index, const cuslide2::nvimgcodec::IfdInfo& ifd_in
 #ifdef CUCIM_HAS_NVIMGCODEC
     // Store reference to nvImageCodec sub-stream
     nvimgcodec_sub_stream_ = ifd_info.sub_code_stream;
-    #ifdef DEBUG
     fmt::print("   ✅ nvImageCodec sub-stream: {}\n", 
               static_cast<void*>(nvimgcodec_sub_stream_));
-    #endif // DEBUG
 #endif
     
-    #ifdef DEBUG
     fmt::print("✅ IFD[{}] initialization complete\n", index);
-    #endif // DEBUG
 }
 
 IFD::~IFD()
@@ -231,13 +208,11 @@ bool IFD::read(const TIFF* tiff,
 {
     PROF_SCOPED_RANGE(PROF_EVENT(ifd_read));
     
-    #ifdef DEBUG
     fmt::print("🎯 IFD::read() ENTRY: IFD[{}], location=({}, {}), size={}x{}, device={}\n",
               ifd_index_,
               request->location[0], request->location[1],
               request->size[0], request->size[1],
               request->device);
-    #endif // DEBUG
     
 #ifdef CUCIM_HAS_NVIMGCODEC
     // Fast path: Use nvImageCodec ROI decoding when available
@@ -287,9 +262,7 @@ bool IFD::read(const TIFF* tiff,
         
         if (success)
         {
-            #ifdef DEBUG
             fmt::print("✅ nvImageCodec ROI decode successful: {}x{} at ({}, {})\n", w, h, sx, sy);
-            #endif // DEBUG
             
             // Set up output metadata
             out_image_data->container.data = output_buffer;
@@ -307,9 +280,7 @@ bool IFD::read(const TIFF* tiff,
         }
         else
         {
-            #ifdef DEBUG
             fmt::print("❌ nvImageCodec ROI decode failed for IFD[{}]\n", ifd_index_);
-            #endif // DEBUG
             throw std::runtime_error(fmt::format(
                 "Failed to decode IFD[{}] with nvImageCodec. ROI: ({},{}) {}x{}", 
                 ifd_index_, sx, sy, w, h));
@@ -318,13 +289,9 @@ bool IFD::read(const TIFF* tiff,
 #endif
     
     // If we reach here, nvImageCodec is not available or request doesn't match fast path
-    #ifdef DEBUG
     fmt::print("❌ Cannot decode: nvImageCodec not available or unsupported request type\n");
-    #endif // DEBUG
-    #ifdef DEBUG
     fmt::print("   nvimgcodec_sub_stream_={}, location_len={}, batch_size={}\n",
               static_cast<void*>(nvimgcodec_sub_stream_), request->location_len, request->batch_size);
-    #endif // DEBUG
     throw std::runtime_error(fmt::format(
         "IFD[{}]: This library requires nvImageCodec for image decoding. "
         "Multi-location/batch requests not yet supported.", ifd_index_));
@@ -367,15 +334,11 @@ bool IFD::read(const TIFF* tiff,
         raster = out_buf->data;
     }
 
-    #ifdef DEBUG
     fmt::print("🔎 Checking is_read_optimizable(): {}\n", is_read_optimizable());
-    #endif // DEBUG
     
     if (is_read_optimizable())
     {
-        #ifdef DEBUG
         fmt::print("✅ Using optimized read path\n");
-        #endif // DEBUG
         if (batch_size > 1)
         {
             ndim = 4;
@@ -385,9 +348,7 @@ bool IFD::read(const TIFF* tiff,
         
         // TEMPORARY: Force synchronous execution to avoid thread pool issues
         const uint32_t num_workers = 0;  // Was: request->num_workers;
-        #ifdef DEBUG
         fmt::print("⚠️  FORCED num_workers=0 for synchronous execution (debugging)\n");
-        #endif // DEBUG
         fflush(stdout);
         
         const bool drop_last = request->drop_last;
@@ -431,24 +392,14 @@ bool IFD::read(const TIFF* tiff,
 
         const IFD* ifd = this;
 
-        #ifdef DEBUG
         fmt::print("📍 location_len={}, batch_size={}, num_workers={}\n", location_len, batch_size, num_workers);
-        #endif // DEBUG
-        #ifdef DEBUG
         fmt::print("📍 BUFFER_SIZE: w={}, h={}, samples_per_pixel={}\n", w, h, samples_per_pixel_);
-        #endif // DEBUG
-        #ifdef DEBUG
         fmt::print("📍 BUFFER_SIZE: one_raster_size={} bytes ({} KB)\n", one_raster_size, one_raster_size / 1024);
-        #endif // DEBUG
-        #ifdef DEBUG
         fmt::print("📍 BUFFER_SIZE: total raster_size={} bytes ({} KB)\n", raster_size, raster_size / 1024);
-        #endif // DEBUG
         
         if (location_len > 1 || batch_size > 1 || num_workers > 0)
         {
-            #ifdef DEBUG
             fmt::print("📍 Entering multi-location/batch/worker path\n");
-            #endif // DEBUG
             // Reconstruct location
             std::unique_ptr<std::vector<int64_t>>* location_unique =
                 reinterpret_cast<std::unique_ptr<std::vector<int64_t>>*>(request->location_unique);
@@ -463,31 +414,21 @@ bool IFD::read(const TIFF* tiff,
 
             auto load_func = [tiff, ifd, location, w, h, out_device](
                                  cucim::loader::ThreadBatchDataLoader* loader_ptr, uint64_t location_index) {
-                #ifdef DEBUG
                 fmt::print("🔍 load_func: ENTRY - location_index={}\n", location_index);
-                #endif // DEBUG
                 fflush(stdout);
                 uint8_t* raster_ptr = loader_ptr->raster_pointer(location_index);
-                #ifdef DEBUG
                 fmt::print("🔍 load_func: Got raster_ptr={}\n", static_cast<void*>(raster_ptr));
-                #endif // DEBUG
                 fflush(stdout);
 
-                #ifdef DEBUG
                 fmt::print("🔍 load_func: Calling read_region_tiles\n");
-                #endif // DEBUG
                 fflush(stdout);
                 if (!read_region_tiles(tiff, ifd, location, location_index, w, h,
                                        raster_ptr, out_device, loader_ptr))
                 {
-                    #ifdef DEBUG
                     fmt::print(stderr, "[Error] Failed to read region!\n");
-                    #endif // DEBUG
                     fflush(stderr);
                 }
-                #ifdef DEBUG
                 fmt::print("🔍 load_func: read_region_tiles completed\n");
-                #endif // DEBUG
                 fflush(stdout);
             };
 
@@ -497,19 +438,15 @@ bool IFD::read(const TIFF* tiff,
 
             // Set raster_type to CUDA because loader will handle this with nvjpeg
             // BUT: NvJpegProcessor only handles JPEG (not JPEG2000), so check compression
-            #ifdef DEBUG
             fmt::print("📍 Checking device type: {} compression: {}\n", 
                       static_cast<int>(out_device.type()), compression_);
-            #endif // DEBUG
             
             bool is_jpeg2000 = (compression_ == COMPRESSION_APERIO_JP2K_YCBCR || 
                                compression_ == COMPRESSION_APERIO_JP2K_RGB);
             
             if (out_device.type() == cucim::io::DeviceType::kCUDA && !is_jpeg2000)
             {
-                #ifdef DEBUG
                 fmt::print("📍 Using CUDA device path with nvjpeg loader\n");
-                #endif // DEBUG
                 raster_type = cucim::io::DeviceType::kCUDA;
 
                 // The maximal number of tiles (x-axis) overapped with the given patch
@@ -538,48 +475,32 @@ bool IFD::read(const TIFF* tiff,
                 prefetch_factor = nvjpeg_processor->preferred_loader_prefetch_factor();
 
                 batch_processor = std::move(nvjpeg_processor);
-                #ifdef DEBUG
                 fmt::print("📍 NvJpegProcessor created\n");
-                #endif // DEBUG
             }
             else if (is_jpeg2000)
             {
-                #ifdef DEBUG
                 fmt::print("⚠️  JPEG2000 detected - skipping NvJpegProcessor (will use nvImageCodec/OpenJPEG)\n");
-                #endif // DEBUG
             }
 
-            #ifdef DEBUG
             fmt::print("📍 Creating ThreadBatchDataLoader (location_len={}, batch_size={}, num_workers={})\n", 
                       location_len, batch_size, num_workers);
-            #endif // DEBUG
             auto loader = std::make_unique<cucim::loader::ThreadBatchDataLoader>(
                 load_func, std::move(batch_processor), out_device, std::move(request_location), std::move(request_size),
                 location_len, one_raster_size, batch_size, prefetch_factor, num_workers);
-            #ifdef DEBUG
             fmt::print("📍 ThreadBatchDataLoader created\n");
-            #endif // DEBUG
 
             const uint32_t load_size = std::min(static_cast<uint64_t>(batch_size) * (1 + prefetch_factor), location_len);
 
-            #ifdef DEBUG
             fmt::print("📍 Calling loader->request({})\n", load_size);
-            #endif // DEBUG
             loader->request(load_size);
-            #ifdef DEBUG
             fmt::print("📍 loader->request() completed\n");
-            #endif // DEBUG
 
             // If it reads entire image with multi threads (using loader), fetch the next item.
             if (location_len == 1 && batch_size == 1)
             {
-                #ifdef DEBUG
                 fmt::print("📍 Calling loader->next_data()\n");
-                #endif // DEBUG
                 raster = loader->next_data();
-                #ifdef DEBUG
                 fmt::print("📍 loader->next_data() returned\n");
-                #endif // DEBUG
             }
 
             out_image_data->loader = loader.release(); // set loader to out_image_data
@@ -593,9 +514,7 @@ bool IFD::read(const TIFF* tiff,
 
             if (!read_region_tiles(tiff, ifd, location, 0, w, h, raster, out_device, nullptr))
             {
-                #ifdef DEBUG
                 fmt::print(stderr, "[Error] Failed to read region!\n");
-                #endif // DEBUG
             }
         }
     }
@@ -606,12 +525,10 @@ bool IFD::read(const TIFF* tiff,
         std::call_once(
             tiff->slow_path_warning_flag_,
             [](const std::string& file_path) {
-                #ifdef DEBUG
                 fmt::print(
                     stderr,
                     "[Warning] Loading image('{}') with a slow-path. The pixel format of the loaded image would be RGBA (4 channels) instead of RGB!\n",
                     file_path);
-                #endif // DEBUG
             },
             tiff->file_path());
         // Handle out-of-boundary case
@@ -869,9 +786,7 @@ uint16_t IFD::parse_codec_to_compression(const std::string& codec)
     }
     
     // Unknown codec - log warning and default to uncompressed
-    #ifdef DEBUG
     fmt::print("⚠️  Unknown codec '{}', defaulting to COMPRESSION_NONE\n", codec);
-    #endif // DEBUG
     return COMPRESSION_NONE;
 }
 
@@ -915,10 +830,8 @@ bool IFD::read_region_tiles(const TIFF* tiff,
                             const cucim::io::Device& out_device,
                             cucim::loader::ThreadBatchDataLoader* loader)
 {
-    #ifdef DEBUG
     fmt::print("🔍 read_region_tiles: ENTRY - location_index={}, w={}, h={}, loader={}\n",
               location_index, w, h, static_cast<void*>(loader));
-    #endif // DEBUG
     PROF_SCOPED_RANGE(PROF_EVENT(ifd_read_region_tiles));
     // Reference code: https://github.com/libjpeg-turbo/libjpeg-turbo/blob/master/tjexample.c
 
@@ -926,9 +839,7 @@ bool IFD::read_region_tiles(const TIFF* tiff,
     int64_t sy = location[location_index * 2 + 1];
     int64_t ex = sx + w - 1;
     int64_t ey = sy + h - 1;
-    #ifdef DEBUG
     fmt::print("🔍 read_region_tiles: Region bounds - sx={}, sy={}, ex={}, ey={}\n", sx, sy, ex, ey);
-    #endif // DEBUG
 
     uint32_t width = ifd->width_;
     uint32_t height = ifd->height_;
@@ -996,15 +907,11 @@ bool IFD::read_region_tiles(const TIFF* tiff,
         uint32_t index = index_y + offset_sx;
         for (uint32_t offset_x = offset_sx; offset_x <= offset_ex; ++offset_x, ++index)
         {
-            #ifdef DEBUG
             fmt::print("🔍 read_region_tiles: Processing tile index={}, offset_x={}\n", index, offset_x);
-            #endif // DEBUG
             PROF_SCOPED_RANGE(PROF_EVENT_P(ifd_read_region_tiles_iter, index));
             auto tiledata_offset = static_cast<uint64_t>(ifd->image_piece_offsets_[index]);
             auto tiledata_size = static_cast<uint64_t>(ifd->image_piece_bytecounts_[index]);
-            #ifdef DEBUG
             fmt::print("🔍 read_region_tiles: tile_offset={}, tile_size={}\n", tiledata_offset, tiledata_size);
-            #endif // DEBUG
 
             // Calculate a simple hash value for the tile index
             uint64_t index_hash = ifd_hash_value ^ (static_cast<uint64_t>(index) | (static_cast<uint64_t>(index) << 32));
@@ -1013,9 +920,7 @@ bool IFD::read_region_tiles(const TIFF* tiff,
             uint32_t nbytes_tile_pixel_size_x = (offset_x == offset_ex) ?
                                                     (pixel_offset_ex - tile_pixel_offset_x + 1) * samples_per_pixel :
                                                     (tw - tile_pixel_offset_x) * samples_per_pixel;
-            #ifdef DEBUG
             fmt::print("🔍 read_region_tiles: About to create decode_func lambda\n");
-            #endif // DEBUG
             fflush(stdout);
             
             // Capture device type as integer to avoid copying Device object
@@ -1081,9 +986,7 @@ bool IFD::read_region_tiles(const TIFF* tiff,
             // Small lambda that only captures shared_ptr - cheap to copy!
             auto decode_func = [data]() {
                 // FIRST THING - print before ANY other code
-                #ifdef DEBUG
                 fmt::print("🔍🔍🔍 decode_func: LAMBDA INVOKED! index={}\n", data->index);
-                #endif // DEBUG
                 fflush(stdout);
                 
                 // Extract all data to local variables to avoid repeated data-> access
@@ -1117,22 +1020,16 @@ bool IFD::read_region_tiles(const TIFF* tiff,
                 // Reconstruct Device object inside lambda to avoid copying issues
                 cucim::io::Device out_device(static_cast<cucim::io::DeviceType>(data->device_type_int), data->device_index);
                 try {
-                    #ifdef DEBUG
                     fmt::print("🔍 decode_func: START - index={}, compression={}, tiledata_offset={}, tiledata_size={}\n", 
                               index, compression_method, tiledata_offset, tiledata_size);
-                    #endif // DEBUG
                     fflush(stdout);
                     PROF_SCOPED_RANGE(PROF_EVENT_P(ifd_read_region_tiles_task, index_hash));
                     
                     // Get image cache directly instead of capturing by reference
-                    #ifdef DEBUG
                     fmt::print("🔍 decode_func: Getting image cache...\n");
-                    #endif // DEBUG
                     fflush(stdout);
                     cucim::cache::ImageCache& image_cache = cucim::CuImage::cache_manager().cache();
-                    #ifdef DEBUG
                     fmt::print("🔍 decode_func: Got image cache\n");
-                    #endif // DEBUG
                     fflush(stdout);
                     
                     uint32_t nbytes_tile_index = (tile_pixel_offset_sy * tw + tile_pixel_offset_x) * samples_per_pixel;
@@ -1140,9 +1037,7 @@ bool IFD::read_region_tiles(const TIFF* tiff,
                     uint8_t* tile_data = nullptr;
                     if (tiledata_size > 0)
                     {
-                        #ifdef DEBUG
                         fmt::print("🔍 decode_func: tiledata_size > 0, entering decode path\n");
-                        #endif // DEBUG
                         std::unique_ptr<uint8_t, decltype(cucim_free)*> tile_raster =
                             std::unique_ptr<uint8_t, decltype(cucim_free)*>(nullptr, cucim_free);
 
@@ -1216,9 +1111,7 @@ bool IFD::read_region_tiles(const TIFF* tiff,
                                     break;
                                 case COMPRESSION_APERIO_JP2K_YCBCR: // 33003
                                 {
-                                    #ifdef DEBUG
                                     fmt::print("🔍 Decoding JPEG2000 tile (YCbCr) at offset {}, size {}\n", tiledata_offset, tiledata_size);
-                                    #endif // DEBUG
                                     // For JPEG2000 without NvJpegProcessor, decode to CPU (loader expects CPU memory)
                                     cucim::io::Device cpu_device("cpu");
                                     // Try nvImageCodec first, fallback to OpenJPEG if it fails
@@ -1226,24 +1119,18 @@ bool IFD::read_region_tiles(const TIFF* tiff,
                                             tiff_file, nullptr, tiledata_offset, tiledata_size,
                                             &tile_data, tile_raster_nbytes, cpu_device, 0))
                                     {
-                                        #ifdef DEBUG
                                         fmt::print("⚠️  nvImageCodec failed, falling back to OpenJPEG\n");
-                                        #endif // DEBUG
                                         // Fallback to CPU OpenJPEG decoder
                                         cuslide::jpeg2k::decode_libopenjpeg(tiff_file, nullptr, tiledata_offset,
                                                                             tiledata_size, &tile_data, tile_raster_nbytes,
                                                                             out_device, cuslide::jpeg2k::ColorSpace::kSYCC);
                                     }
-                                    #ifdef DEBUG
                                     fmt::print("✅ JPEG2000 tile decoded successfully\n");
-                                    #endif // DEBUG
                                     break;
                                 }
                                 case COMPRESSION_APERIO_JP2K_RGB: // 33005
                                 {
-                                    #ifdef DEBUG
                                     fmt::print("🔍 Decoding JPEG2000 tile (RGB) at offset {}, size {}\n", tiledata_offset, tiledata_size);
-                                    #endif // DEBUG
                                     // For JPEG2000 without NvJpegProcessor, decode to CPU (loader expects CPU memory)
                                     cucim::io::Device cpu_device("cpu");
                                     // Try nvImageCodec first, fallback to OpenJPEG if it fails
@@ -1251,17 +1138,13 @@ bool IFD::read_region_tiles(const TIFF* tiff,
                                             tiff_file, nullptr, tiledata_offset, tiledata_size,
                                             &tile_data, tile_raster_nbytes, cpu_device, 0))
                                     {
-                                        #ifdef DEBUG
                                         fmt::print("⚠️  nvImageCodec failed, falling back to OpenJPEG\n");
-                                        #endif // DEBUG
                                         // Fallback to CPU OpenJPEG decoder
                                         cuslide::jpeg2k::decode_libopenjpeg(tiff_file, nullptr, tiledata_offset,
                                                                             tiledata_size, &tile_data, tile_raster_nbytes,
                                                                             out_device, cuslide::jpeg2k::ColorSpace::kRGB);
                                     }
-                                    #ifdef DEBUG
                                     fmt::print("✅ JPEG2000 tile decoded successfully\n");
-                                    #endif // DEBUG
                                     break;
                                 }
                                 case COMPRESSION_LZW:
@@ -1313,47 +1196,33 @@ bool IFD::read_region_tiles(const TIFF* tiff,
                     }
                 }
                 } catch (const std::exception& e) {
-                    #ifdef DEBUG
                     fmt::print("❌ decode_func: Exception caught: {}\n", e.what());
-                    #endif // DEBUG
                     throw;
                 } catch (...) {
-                    #ifdef DEBUG
                     fmt::print("❌ decode_func: Unknown exception caught\n");
-                    #endif // DEBUG
                     throw;
                 }
             };
 
-            #ifdef DEBUG
             fmt::print("🔍 read_region_tiles: decode_func lambda created\n");
-            #endif // DEBUG
             
             // TEMPORARY: Force single-threaded execution to test if decode works
             bool force_single_threaded = true;
             
             if (force_single_threaded || !loader || !(*loader))
             {
-                #ifdef DEBUG
                 fmt::print("🔍 read_region_tiles: Executing decode_func directly (FORCED SINGLE-THREADED TEST)\n");
-                #endif // DEBUG
                 fflush(stdout);
                 decode_func();
-                #ifdef DEBUG
                 fmt::print("🔍 read_region_tiles: decode_func completed successfully!\n");
-                #endif // DEBUG
                 fflush(stdout);
             }
             else
             {
-                #ifdef DEBUG
                 fmt::print("🔍 read_region_tiles: Enqueueing task for tile index={}\n", index);
-                #endif // DEBUG
                 loader->enqueue(std::move(decode_func),
                                 cucim::loader::TileInfo{ location_index, index, tiledata_offset, tiledata_size });
-                #ifdef DEBUG
                 fmt::print("🔍 read_region_tiles: Task enqueued\n");
-                #endif // DEBUG
             }
 
             dest_pixel_index_x += nbytes_tile_pixel_size_x;
@@ -1550,9 +1419,7 @@ bool IFD::read_region_tiles_boundary(const TIFF* tiff,
                 // Loader pointer
                 loader
             ]() {
-                #ifdef DEBUG
                 fmt::print("🔍🔍🔍 decode_func_boundary: LAMBDA INVOKED! index={}\n", index);
-                #endif // DEBUG
                 fflush(stdout);
                 
                 // Reconstruct Device object inside lambda
@@ -1708,9 +1575,7 @@ bool IFD::read_region_tiles_boundary(const TIFF* tiff,
                                     break;
                                 case COMPRESSION_APERIO_JP2K_YCBCR: // 33003
                                 {
-                                    #ifdef DEBUG
                                     fmt::print("🔍 Decoding JPEG2000 tile (YCbCr) at offset {}, size {}\n", tiledata_offset, tiledata_size);
-                                    #endif // DEBUG
                                     // For JPEG2000 without NvJpegProcessor, decode to CPU (loader expects CPU memory)
                                     cucim::io::Device cpu_device("cpu");
                                     // Try nvImageCodec first, fallback to OpenJPEG if it fails
@@ -1718,24 +1583,18 @@ bool IFD::read_region_tiles_boundary(const TIFF* tiff,
                                             tiff_file, nullptr, tiledata_offset, tiledata_size,
                                             &tile_data, tile_raster_nbytes, cpu_device, 0))
                                     {
-                                        #ifdef DEBUG
                                         fmt::print("⚠️  nvImageCodec failed, falling back to OpenJPEG\n");
-                                        #endif // DEBUG
                                         // Fallback to CPU OpenJPEG decoder
                                         cuslide::jpeg2k::decode_libopenjpeg(tiff_file, nullptr, tiledata_offset,
                                                                             tiledata_size, &tile_data, tile_raster_nbytes,
                                                                             out_device, cuslide::jpeg2k::ColorSpace::kSYCC);
                                     }
-                                    #ifdef DEBUG
                                     fmt::print("✅ JPEG2000 tile decoded successfully\n");
-                                    #endif // DEBUG
                                     break;
                                 }
                                 case COMPRESSION_APERIO_JP2K_RGB: // 33005
                                 {
-                                    #ifdef DEBUG
                                     fmt::print("🔍 Decoding JPEG2000 tile (RGB) at offset {}, size {}\n", tiledata_offset, tiledata_size);
-                                    #endif // DEBUG
                                     // For JPEG2000 without NvJpegProcessor, decode to CPU (loader expects CPU memory)
                                     cucim::io::Device cpu_device("cpu");
                                     // Try nvImageCodec first, fallback to OpenJPEG if it fails
@@ -1743,17 +1602,13 @@ bool IFD::read_region_tiles_boundary(const TIFF* tiff,
                                             tiff_file, nullptr, tiledata_offset, tiledata_size,
                                             &tile_data, tile_raster_nbytes, cpu_device, 0))
                                     {
-                                        #ifdef DEBUG
                                         fmt::print("⚠️  nvImageCodec failed, falling back to OpenJPEG\n");
-                                        #endif // DEBUG
                                         // Fallback to CPU OpenJPEG decoder
                                         cuslide::jpeg2k::decode_libopenjpeg(tiff_file, nullptr, tiledata_offset,
                                                                             tiledata_size, &tile_data, tile_raster_nbytes,
                                                                             out_device, cuslide::jpeg2k::ColorSpace::kRGB);
                                     }
-                                    #ifdef DEBUG
                                     fmt::print("✅ JPEG2000 tile decoded successfully\n");
-                                    #endif // DEBUG
                                     break;
                                 }
                                 case COMPRESSION_LZW:
@@ -1808,54 +1663,36 @@ bool IFD::read_region_tiles_boundary(const TIFF* tiff,
                         }
                         else
                         {
-                            #ifdef DEBUG
                             fmt::print("🔍 MEMCPY_DETAILED: tile_pixel_offset_sy={}, tile_pixel_offset_ey={}\n",
                                       tile_pixel_offset_sy, tile_pixel_offset_ey);
-                            #endif // DEBUG
-                            #ifdef DEBUG
                             fmt::print("🔍 MEMCPY_DETAILED: dest_start_ptr={}, dest_pixel_step_y={}\n",
                                       static_cast<void*>(dest_start_ptr), dest_pixel_step_y);
-                            #endif // DEBUG
-                            #ifdef DEBUG
                             fmt::print("🔍 MEMCPY_DETAILED: initial dest_pixel_index={}, initial nbytes_tile_index={}\n",
                                       dest_pixel_index, nbytes_tile_index);
-                            #endif // DEBUG
-                            #ifdef DEBUG
                             fmt::print("🔍 MEMCPY_DETAILED: nbytes_tile_pixel_size_x={}, nbytes_tw={}\n",
                                       nbytes_tile_pixel_size_x, nbytes_tw);
-                            #endif // DEBUG
-                            #ifdef DEBUG
                             fmt::print("🔍 MEMCPY_DETAILED: tile_data={}\n", static_cast<void*>(tile_data));
-                            #endif // DEBUG
                             
                             // Calculate total buffer size needed
                             uint32_t num_rows = tile_pixel_offset_ey - tile_pixel_offset_sy + 1;
                             size_t total_dest_size_needed = dest_pixel_index + (num_rows - 1) * dest_pixel_step_y + nbytes_tile_pixel_size_x;
-                            #ifdef DEBUG
                             fmt::print("🔍 MEMCPY_DETAILED: num_rows={}, total_dest_size_needed={}\n",
                                       num_rows, total_dest_size_needed);
-                            #endif // DEBUG
                             
                             for (uint32_t ty = tile_pixel_offset_sy; ty <= tile_pixel_offset_ey;
                                  ++ty, dest_pixel_index += dest_pixel_step_y, nbytes_tile_index += nbytes_tw)
                             {
-                                #ifdef DEBUG
                                 fmt::print("🔍 MEMCPY_ROW ty={}: dest_pixel_index={}, nbytes_tile_index={}, copy_size={}\n",
                                           ty, dest_pixel_index, nbytes_tile_index, nbytes_tile_pixel_size_x);
-                                #endif // DEBUG
-                                #ifdef DEBUG
                                 fmt::print("🔍 MEMCPY_ROW: dest_ptr={}, src_ptr={}\n",
                                           static_cast<void*>(dest_start_ptr + dest_pixel_index),
                                           static_cast<void*>(tile_data + nbytes_tile_index));
-                                #endif // DEBUG
                                 fflush(stdout);
                                 
                                 memcpy(dest_start_ptr + dest_pixel_index, tile_data + nbytes_tile_index,
                                        nbytes_tile_pixel_size_x);
                                        
-                                #ifdef DEBUG
                                 fmt::print("🔍 MEMCPY_ROW ty={}: SUCCESS\n", ty);
-                                #endif // DEBUG
                                 fflush(stdout);
                             }
                         }
