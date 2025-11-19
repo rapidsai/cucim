@@ -205,7 +205,7 @@ def reconstruction(seed, mask, method="dilation", footprint=None, offset=None):
     # that can represent negative values without wraparound
     if method == "erosion" and cp.issubdtype(images_dtype, cp.unsignedinteger):
         # Promote unsigned types to signed types with sufficient range
-        images_dtype = cp.promote_types(images_dtype, cp.int8)
+        images_dtype = np.promote_types(images_dtype, cp.int8)
 
     images = cp.full(dims, pad_value, dtype=images_dtype)
     images[(0, *inside_slices)] = seed
