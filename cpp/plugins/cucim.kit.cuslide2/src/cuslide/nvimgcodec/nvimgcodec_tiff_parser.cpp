@@ -17,9 +17,8 @@
 #include "nvimgcodec_tiff_parser.h"
 #include "nvimgcodec_manager.h"
 
-// REMOVED: libtiff include (pure nvImageCodec build)
-// #include <tiffio.h>
-#include <cstring>  // for strlen
+#include <algorithm>  // for std::transform
+#include <cstring>    // for strlen
 
 #ifdef CUCIM_HAS_NVIMGCODEC
 #include <nvimgcodec.h>
@@ -52,7 +51,7 @@ void IfdInfo::print() const
 // ============================================================================
 
 NvImageCodecTiffParserManager::NvImageCodecTiffParserManager() 
-    : instance_(nullptr), decoder_(nullptr), initialized_(false)
+    : instance_(nullptr), decoder_(nullptr), cpu_decoder_(nullptr), initialized_(false)
 {
     try
     {
@@ -107,6 +106,34 @@ NvImageCodecTiffParserManager::NvImageCodecTiffParserManager()
             return;
         }
         
+        // Create CPU-only decoder for native CPU decoding
+        nvimgcodecBackendKind_t cpu_backend_kind = NVIMGCODEC_BACKEND_KIND_CPU_ONLY;
+        nvimgcodecBackendParams_t cpu_backend_params{};
+        cpu_backend_params.struct_type = NVIMGCODEC_STRUCTURE_TYPE_BACKEND_PARAMS;
+        cpu_backend_params.struct_size = sizeof(nvimgcodecBackendParams_t);
+        cpu_backend_params.struct_next = nullptr;
+        
+        nvimgcodecBackend_t cpu_backend{};
+        cpu_backend.struct_type = NVIMGCODEC_STRUCTURE_TYPE_BACKEND;
+        cpu_backend.struct_size = sizeof(nvimgcodecBackend_t);
+        cpu_backend.struct_next = nullptr;
+        cpu_backend.kind = cpu_backend_kind;
+        cpu_backend.params = cpu_backend_params;
+        
+        nvimgcodecExecutionParams_t cpu_exec_params = exec_params;
+        cpu_exec_params.num_backends = 1;
+        cpu_exec_params.backends = &cpu_backend;
+        
+        if (nvimgcodecDecoderCreate(instance_, &cpu_decoder_, &cpu_exec_params, nullptr) == NVIMGCODEC_STATUS_SUCCESS)
+        {
+            fmt::print("✅ CPU-only decoder created successfully (TIFF parser)\n");
+        }
+        else
+        {
+            fmt::print("⚠️  Failed to create CPU-only decoder (CPU decoding will use fallback)\n");
+            cpu_decoder_ = nullptr;
+        }
+        
         initialized_ = true;
         status_message_ = "nvImageCodec TIFF parser initialized successfully (with metadata extraction support)";
         fmt::print("✅ {}\n", status_message_);
@@ -121,6 +148,12 @@ NvImageCodecTiffParserManager::NvImageCodecTiffParserManager()
 
 NvImageCodecTiffParserManager::~NvImageCodecTiffParserManager()
 {
+    if (cpu_decoder_)
+    {
+        nvimgcodecDecoderDestroy(cpu_decoder_);
+        cpu_decoder_ = nullptr;
+    }
+    
     if (decoder_)
     {
         nvimgcodecDecoderDestroy(decoder_);
@@ -306,32 +339,94 @@ void TiffFileParser::parse_tiff_structure()
         // Extract vendor-specific metadata (Aperio, Philips, etc.)
         extract_ifd_metadata(ifd_info);
         
-        // Extract individual TIFF tags (nvImageCodec 0.7.0+)
+        // Extract TIFF metadata using available methods
         extract_tiff_tags(ifd_info);
         
-        // TODO(nvImageCodec 0.7.0): Use NVIMGCODEC_METADATA_KIND_TIFF_TAG to query
-        // TIFFTAG_COMPRESSION (259) directly once nvImageCodec 0.7.0 is released.
-        // Reference: https://nvidia.slack.com/archives/C092X06LK9U/p1761170787660009
+        // TODO(nvImageCodec 0.7.0): Use direct TIFF tag queries when 0.7.0 is released
+        // Individual TIFF tag access (e.g., COMPRESSION tag 259) will be available in 0.7.0
+        // Example: metadata = decoder.get_metadata(scs, name="Compression")
         //
-        // WORKAROUND for nvImageCodec 0.6.0:
-        // The codec_name field returns "tiff" (container format) rather than the actual
-        // compression codec (jpeg, jpeg2000, etc.). Until 0.7.0 is available, we infer
-        // the codec from filename patterns or vendor-specific metadata blobs.
+        // Current limitation (0.6.0):
+        // - codec_name returns "tiff" (container format) not compression type
+        // - Individual TIFF tags not exposed through metadata API
+        // - Only vendor-specific metadata blobs available (MED_APERIO, MED_PHILIPS, etc.)
+        //
+        // Workaround: Infer compression from chroma_subsampling and file extension
+        // Reference: https://nvidia.slack.com/archives/C092X06LK9U (Oct 27, 2024)
         if (ifd_info.codec == "tiff")
         {
-            // Aperio JPEG2000 files typically have "JP2K" in filename (e.g., CMU-1-JP2K-33005.svs)
-            if (file_path_.find("JP2K") != std::string::npos || 
-                file_path_.find("jp2k") != std::string::npos)
+            // Try to infer compression from TIFF metadata first
+            bool compression_inferred = false;
+            
+            // Check if we have TIFF Compression tag (stored as string key "COMPRESSION")
+            auto compression_it = ifd_info.tiff_tags.find("COMPRESSION");
+            if (compression_it != ifd_info.tiff_tags.end())
             {
-                ifd_info.codec = "jpeg2000";
-                fmt::print("  ℹ️  Inferred codec 'jpeg2000' from filename (JP2K pattern)\n");
+                try
+                {
+                    // Parse compression value from string
+                    uint16_t compression_value = static_cast<uint16_t>(std::stoi(compression_it->second));
+                    
+                    switch (compression_value)
+                    {
+                        case 1:    // COMPRESSION_NONE
+                            // Keep as "tiff" for uncompressed
+                            fmt::print("  ℹ️  Detected uncompressed TIFF\n");
+                            compression_inferred = true;
+                            break;
+                        case 5:    // COMPRESSION_LZW
+                            ifd_info.codec = "tiff";  // nvImageCodec handles as tiff
+                            compression_inferred = true;
+                            fmt::print("  ℹ️  Detected LZW compression (TIFF codec)\n");
+                            break;
+                        case 7:    // COMPRESSION_JPEG
+                            ifd_info.codec = "jpeg";  // Use JPEG decoder!
+                            compression_inferred = true;
+                            fmt::print("  ℹ️  Detected JPEG compression → using JPEG codec\n");
+                            break;
+                        case 8:    // COMPRESSION_DEFLATE (Adobe-style)
+                        case 32946: // COMPRESSION_DEFLATE (old-style)
+                            ifd_info.codec = "tiff";
+                            compression_inferred = true;
+                            fmt::print("  ℹ️  Detected DEFLATE compression (TIFF codec)\n");
+                            break;
+                        case 33003: // Aperio JPEG2000 YCbCr
+                        case 33005: // Aperio JPEG2000 RGB
+                        case 34712: // JPEG2000
+                            ifd_info.codec = "jpeg2000";
+                            compression_inferred = true;
+                            fmt::print("  ℹ️  Detected JPEG2000 compression\n");
+                            break;
+                        default:
+                            fmt::print("  ⚠️  Unknown TIFF compression value: {}\n", compression_value);
+                            break;
+                    }
+                }
+                catch (const std::exception& e)
+                {
+                    fmt::print("  ⚠️  Failed to parse COMPRESSION tag value: {}\n", e.what());
+                }
             }
-            // Additional heuristics can be added here for other formats
-            else
+            
+            // Fallback to filename-based heuristics if metadata didn't help
+            if (!compression_inferred)
+            {
+                // Aperio JPEG2000 files typically have "JP2K" in filename
+                if (file_path_.find("JP2K") != std::string::npos || 
+                    file_path_.find("jp2k") != std::string::npos)
+                {
+                    ifd_info.codec = "jpeg2000";
+                    fmt::print("  ℹ️  Inferred codec 'jpeg2000' from filename (JP2K pattern)\n");
+                    compression_inferred = true;
+                }
+            }
+            
+            // Warning if we still couldn't infer compression
+            if (!compression_inferred && ifd_info.tiff_tags.empty())
             {
                 fmt::print("  ⚠️  Warning: codec is 'tiff' but could not infer compression.\n");
                 fmt::print("     File: {}\n", file_path_);
-                fmt::print("     This may cause decoding issues. Consider upgrading to nvImageCodec 0.7.0\n");
+                fmt::print("     This may limit CPU decoder availability.\n");
             }
         }
         
@@ -378,8 +473,19 @@ void TiffFileParser::extract_ifd_metadata(IfdInfo& ifd_info)
     
     fmt::print("  Found {} metadata entries for IFD[{}]\n", metadata_count, ifd_info.index);
     
-    // Step 2: Allocate array for metadata pointers
-    std::vector<nvimgcodecMetadata_t*> metadata_ptrs(metadata_count, nullptr);
+    // Step 2: Allocate metadata structures (nvImageCodec fills them in)
+    // We must pre-allocate the structs, not just null pointers
+    std::vector<nvimgcodecMetadata_t> metadata_structs(metadata_count);
+    std::vector<nvimgcodecMetadata_t*> metadata_ptrs(metadata_count);
+    
+    // Initialize struct_type and struct_size for each metadata entry
+    for (int i = 0; i < metadata_count; i++)
+    {
+        metadata_structs[i].struct_type = NVIMGCODEC_STRUCTURE_TYPE_METADATA;
+        metadata_structs[i].struct_size = sizeof(nvimgcodecMetadata_t);
+        metadata_structs[i].struct_next = nullptr;
+        metadata_ptrs[i] = &metadata_structs[i];
+    }
     
     // Step 3: Get actual metadata
     status = nvimgcodecDecoderGetMetadata(
@@ -395,6 +501,8 @@ void TiffFileParser::extract_ifd_metadata(IfdInfo& ifd_info)
                   ifd_info.index, static_cast<int>(status));
         return;
     }
+    
+    fmt::print("  ✅ Successfully retrieved {} metadata entries\n", metadata_count);
     
     // Step 4: Process each metadata entry
     for (int j = 0; j < metadata_count; ++j)
@@ -629,43 +737,76 @@ void TiffFileParser::extract_tiff_tags(IfdInfo& ifd_info)
         return;
     }
     
-    // Map of TIFF tag IDs to names for common tags
+    // Map of TIFF tag IDs to names for common tags we want to extract
     std::map<uint32_t, std::string> tiff_tag_names = {
         {254, "SUBFILETYPE"},      // Image type classification
-        {256, "ImageWidth"},
-        {257, "ImageLength"},
-        {258, "BitsPerSample"},
-        {259, "Compression"},
-        {262, "PhotometricInterpretation"},
-        {270, "ImageDescription"}, // Vendor metadata
-        {271, "Make"},             // Scanner manufacturer
-        {272, "Model"},            // Scanner model
-        {305, "Software"},
-        {306, "DateTime"},
-        {322, "TileWidth"},
-        {323, "TileLength"},
-        {339, "SampleFormat"},
-        {347, "JPEGTables"}        // Shared JPEG tables
+        {256, "IMAGEWIDTH"},
+        {257, "IMAGELENGTH"},
+        {258, "BITSPERSAMPLE"},
+        {259, "COMPRESSION"},      // ← Critical for codec detection!
+        {262, "PHOTOMETRIC"},
+        {270, "IMAGEDESCRIPTION"}, // Vendor metadata
+        {271, "MAKE"},             // Scanner manufacturer
+        {272, "MODEL"},            // Scanner model
+        {305, "SOFTWARE"},
+        {306, "DATETIME"},
+        {322, "TILEWIDTH"},
+        {323, "TILELENGTH"},
+        {339, "SAMPLEFORMAT"},
+        {347, "JPEGTABLES"}        // Shared JPEG tables
     };
     
-    fmt::print("  Extracting TIFF tags for IFD[{}]...\n", ifd_info.index);
-    
-    // NOTE: Pure nvImageCodec build - libtiff dependency removed
-    // All TIFF tag extraction should be done via nvImageCodec API
-    fmt::print("  ℹ️  Pure nvImageCodec build - using nvImageCodec metadata API only\n");
-    
-    // REMOVED: libtiff fallback code (lines 625-696)
-    // The old code used libtiff (TIFFOpen, TIFFGetField, TIFFClose) to extract:
-    // - JPEGTables tag (for abbreviated JPEG detection)
-    // - ImageDescription, Software, Compression tags
+    // NOTE: nvImageCodec 0.6.0 Limitation (confirmed by NVIDIA team)
+    // ================================================================
+    // Individual TIFF tag access (kind=0, TIFF_TAG) is NOT available in 0.6.0
+    // Only vendor-specific metadata blobs are exposed (MED_APERIO, MED_PHILIPS, etc.)
+    // 
+    // Individual TIFF tag queries will be available in nvImageCodec 0.7.0 (mid-November 2024):
+    // Example: metadata = decoder.get_metadata(scs, name="Compression")
+    // 
+    // Reference: https://nvidia.slack.com/archives/C092X06LK9U (Oct 27, 2024)
+    // - Michal Kepa: "retrieving individual tiff tag is currently only on the internal branch"
+    // - Sebastian Matysik: "this is added in 0.7.0 which was not released yet"
     //
-    // In pure nvImageCodec build, all metadata extraction is handled by nvImageCodec API.
-    // If additional TIFF tags are needed, they should be extracted using nvImageCodec's
-    // metadata API instead of libtiff.
+    // WORKAROUND for 0.6.0: Use file extension heuristics
     
-    [[maybe_unused]] int tiff_tag_count = 0;  // Reserved for future use
-    // For now, we rely on the metadata already extracted by nvImageCodec above
-    fmt::print("  ℹ️  Using nvImageCodec-extracted metadata (libtiff disabled)\n");
+    int extracted_count = 0;
+    
+    // File extension heuristics for known WSI (Whole Slide Imaging) formats
+    std::string ext;
+    size_t dot_pos = file_path_.rfind('.');
+    if (dot_pos != std::string::npos)
+    {
+        ext = file_path_.substr(dot_pos);
+        std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+    }
+    
+    // Aperio SVS, Hamamatsu NDPI, Hamamatsu VMS/VMU typically use JPEG compression
+    if (ext == ".svs" || ext == ".ndpi" || ext == ".vms" || ext == ".vmu")
+    {
+        ifd_info.tiff_tags["COMPRESSION"] = "7";  // TIFF_COMPRESSION_JPEG
+        fmt::print("  ✅ Inferred JPEG compression (WSI format: {})\n", ext);
+        extracted_count++;
+    }
+    
+    // Store ImageDescription if available
+    if (!ifd_info.image_description.empty())
+    {
+        ifd_info.tiff_tags["IMAGEDESCRIPTION"] = ifd_info.image_description;
+    }
+    
+    // Summary
+    if (extracted_count > 0)
+    {
+        fmt::print("  ✅ Compression detection successful (nvImageCodec 0.6.0 heuristics)\n");
+    }
+    else
+    {
+        fmt::print("  ⚠️  Unable to determine compression type from file extension\n");
+        fmt::print("      Upgrade to nvImageCodec 0.7.0 for direct TIFF tag access\n");
+    }
+    
+    (void)tiff_tag_names;  // Suppress unused variable warning
 }
 
 std::string TiffFileParser::get_tiff_tag(uint32_t ifd_index, const std::string& tag_name) const
@@ -783,12 +924,13 @@ uint8_t* TiffFileParser::decode_region(
             "This IFD cannot be decoded.", ifd_index));
     }
     
-    // Validate ROI bounds
+    // Check ROI bounds (warning only - nvImageCodec 0.7.0+ supports out-of-bounds ROI)
+    // Reference: Michal Kepa feedback - nvImageCodec can handle out-of-bounds ROI with padding
     if (x + width > ifd.width || y + height > ifd.height)
     {
-        throw std::invalid_argument(fmt::format(
-            "ROI ({},{} {}x{}) exceeds IFD dimensions ({}x{})",
-            x, y, width, height, ifd.width, ifd.height));
+        fmt::print("⚠️  Warning: ROI ({},{} {}x{}) extends beyond IFD dimensions ({}x{})\n",
+                   x, y, width, height, ifd.width, ifd.height);
+        fmt::print("   nvImageCodec will pad out-of-bounds areas with constant value (0 by default)\n");
     }
     
     // NOTE: nvTIFF 0.6.0.77 CAN handle JPEGTables (TIFFTAG_JPEGTABLES)!

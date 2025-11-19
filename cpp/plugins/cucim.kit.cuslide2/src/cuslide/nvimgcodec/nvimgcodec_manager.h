@@ -45,6 +45,8 @@ public:
 
     nvimgcodecInstance_t get_instance() const { return instance_; }
     nvimgcodecDecoder_t get_decoder() const { return decoder_; }
+    nvimgcodecDecoder_t get_cpu_decoder() const { return cpu_decoder_; }  // CPU-only decoder
+    bool has_cpu_decoder() const { return cpu_decoder_ != nullptr; }
     std::mutex& get_mutex() { return decoder_mutex_; }
     bool is_initialized() const { return initialized_; }
     const std::string& get_status() const { return status_message_; }
@@ -64,9 +66,11 @@ public:
             if (nvimgcodecGetProperties(&props) == NVIMGCODEC_STATUS_SUCCESS)
             {
                 uint32_t version = props.version;
-                uint32_t major = (version >> 16) & 0xFF;
-                uint32_t minor = (version >> 8) & 0xFF;
-                uint32_t patch = version & 0xFF;
+                // Use official nvImageCodec version macros (version format: major*1000 + minor*100 + patch)
+                // Reference: Michal Kepa feedback - previous bit-shift calculation was incorrect
+                uint32_t major = version / 1000;
+                uint32_t minor = (version % 1000) / 100;
+                uint32_t patch = version % 100;
                 
                 fmt::print("✅ nvImageCodec API Test: Version {}.{}.{}\n", major, minor, patch);
                 
@@ -140,6 +144,34 @@ private:
                 return;
             }
             
+            // Create CPU-only decoder for native CPU decoding
+            nvimgcodecBackendKind_t cpu_backend_kind = NVIMGCODEC_BACKEND_KIND_CPU_ONLY;
+            nvimgcodecBackendParams_t cpu_backend_params{};
+            cpu_backend_params.struct_type = NVIMGCODEC_STRUCTURE_TYPE_BACKEND_PARAMS;
+            cpu_backend_params.struct_size = sizeof(nvimgcodecBackendParams_t);
+            cpu_backend_params.struct_next = nullptr;
+            
+            nvimgcodecBackend_t cpu_backend{};
+            cpu_backend.struct_type = NVIMGCODEC_STRUCTURE_TYPE_BACKEND;
+            cpu_backend.struct_size = sizeof(nvimgcodecBackend_t);
+            cpu_backend.struct_next = nullptr;
+            cpu_backend.kind = cpu_backend_kind;
+            cpu_backend.params = cpu_backend_params;
+            
+            nvimgcodecExecutionParams_t cpu_exec_params = exec_params;
+            cpu_exec_params.num_backends = 1;
+            cpu_exec_params.backends = &cpu_backend;
+            
+            if (nvimgcodecDecoderCreate(instance_, &cpu_decoder_, &cpu_exec_params, nullptr) == NVIMGCODEC_STATUS_SUCCESS)
+            {
+                fmt::print("✅ CPU-only decoder created successfully\n");
+            }
+            else
+            {
+                fmt::print("⚠️  Failed to create CPU-only decoder (CPU decoding will use fallback)\n");
+                cpu_decoder_ = nullptr;
+            }
+            
             initialized_ = true;
             status_message_ = "nvImageCodec initialized successfully";
             fmt::print("✅ {}\n", status_message_);
@@ -165,6 +197,7 @@ private:
 
     nvimgcodecInstance_t instance_{nullptr};
     nvimgcodecDecoder_t decoder_{nullptr};
+    nvimgcodecDecoder_t cpu_decoder_{nullptr};  // CPU-only decoder (uses libjpeg-turbo, etc.)
     bool initialized_{false};
     std::string status_message_;
     std::mutex decoder_mutex_;  // Protect decoder operations from concurrent access
