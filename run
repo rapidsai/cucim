@@ -560,6 +560,14 @@ test_python() {
     fi
 
     pushd "$TOP"/python/cucim
+    # Set CUDA environment for CuPy JIT compilation
+    if [ -n "${CONDA_PREFIX}" ]; then
+        export CUDA_PATH="${CONDA_PREFIX}"
+        export CUDA_HOME="${CONDA_PREFIX}"
+        # CuPy NVRTC needs to find CUDA headers in targets subdirectory
+        export CUDA_INCLUDE_PATH="${CONDA_PREFIX}/targets/x86_64-linux/include"
+        echo "🔧 Set CUDA_HOME=${CUDA_HOME} CUDA_INCLUDE_PATH=${CUDA_INCLUDE_PATH}"
+    fi
     run_command py.test --cache-clear -vv \
         --cov=cucim \
         --junitxml="$TOP/junit-cucim.xml" \
