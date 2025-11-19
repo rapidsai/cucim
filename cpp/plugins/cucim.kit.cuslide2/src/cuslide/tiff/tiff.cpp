@@ -257,7 +257,9 @@ TIFF::TIFF(const cucim::filesystem::Path& file_path) : file_path_(file_path)
 {
     PROF_SCOPED_RANGE(PROF_EVENT_P(tiff_tiff, 1));
     
+    #ifdef DEBUG
     fmt::print("📂 Opening TIFF file with nvImageCodec: {}\n", file_path);
+    #endif // DEBUG
     
     // Step 1: Open file descriptor (needed for CuCIMFileHandle)
     // Copy file path (will be freed by CuCIMFileHandle destructor)
@@ -300,22 +302,34 @@ TIFF::TIFF(const cucim::filesystem::Path& file_path) : file_path_(file_path)
             throw std::runtime_error("TiffFileParser initialization failed");
         }
         
+        #ifdef DEBUG
         fmt::print("✅ nvImageCodec TiffFileParser initialized successfully\n");
+        #endif // DEBUG
         
         // Extract basic file properties from TiffFileParser
         std::string detected_format = nvimgcodec_parser_->get_detected_format();
+        #ifdef DEBUG
         fmt::print("   Detected format: {}\n", detected_format);
+        #endif // DEBUG
         
         uint32_t ifd_count = nvimgcodec_parser_->get_ifd_count();
+        #ifdef DEBUG
         fmt::print("   IFD count: {}\n", ifd_count);
+        #endif // DEBUG
         
         // Set default values (nvImageCodec handles endianness internally)
         is_big_endian_ = false;
         
     } catch (const std::exception& e) {
+        #ifdef DEBUG
         fmt::print("❌ FATAL: Failed to initialize nvImageCodec TiffFileParser: {}\n", e.what());
+        #endif // DEBUG
+        #ifdef DEBUG
         fmt::print("   This library requires nvImageCodec for TIFF support.\n");
+        #endif // DEBUG
+        #ifdef DEBUG
         fmt::print("   Please ensure nvImageCodec is properly installed.\n");
+        #endif // DEBUG
         // Cleanup file handle before re-throwing
         file_handle_shared_.reset();
         throw std::runtime_error(fmt::format(
@@ -401,7 +415,9 @@ void TIFF::construct_ifds()
     ifds_.clear();
     
     uint32_t ifd_count = nvimgcodec_parser_->get_ifd_count();
+    #ifdef DEBUG
     fmt::print("📋 Constructing {} IFDs from nvImageCodec metadata\n", ifd_count);
+    #endif // DEBUG
     
     ifd_offsets_.reserve(ifd_count);
     ifds_.reserve(ifd_count);
@@ -418,12 +434,16 @@ void TIFF::construct_ifds()
             auto ifd = std::make_shared<cuslide::tiff::IFD>(this, ifd_index, ifd_info);
             ifds_.emplace_back(std::move(ifd));
             
+            #ifdef DEBUG
             fmt::print("  ✅ IFD[{}]: {}x{}, {} channels, codec: {}\n", 
                       ifd_index, ifd_info.width, ifd_info.height, 
                       ifd_info.num_channels, ifd_info.codec);
+            #endif // DEBUG
             
         } catch (const std::exception& e) {
+            #ifdef DEBUG
             fmt::print("  ⚠️  Failed to create IFD[{}]: {}\n", ifd_index, e.what());
+            #endif // DEBUG
             // Continue with other IFDs - some may be corrupted
         }
     }
@@ -432,7 +452,9 @@ void TIFF::construct_ifds()
         throw std::runtime_error("No valid IFDs found in TIFF file");
     }
     
+    #ifdef DEBUG
     fmt::print("✅ Successfully created {} out of {} IFDs\n", ifds_.size(), ifd_count);
+    #endif // DEBUG
     
     // Initialize level-to-IFD mapping (will be updated by resolve_vendor_format)
     level_to_ifd_idx_.clear();
@@ -455,8 +477,10 @@ void TIFF::construct_ifds()
         return this->ifds_[a]->height() > this->ifds_[b]->height();
     });
     
+    #ifdef DEBUG
     fmt::print("✅ TIFF initialization complete: {} levels, {} associated images\n",
               level_to_ifd_idx_.size(), associated_images_.size());
+    #endif // DEBUG
 }
 void TIFF::resolve_vendor_format()
 {
@@ -536,9 +560,11 @@ void TIFF::_populate_philips_tiff_metadata(uint16_t ifd_count, void* metadata, s
         const auto& data_object = doc.child("DataObject");
         if (std::string_view(data_object.attribute("ObjectType").as_string("")) != "DPUfsImport")
         {
+            #ifdef DEBUG
             fmt::print(
                 stderr,
                 "[Warning] Failed to read as Philips TIFF. It looks like Philips TIFF but the image description of the first IFD doesn't have '<DataObject ObjectType=\"DPUfsImport\">' node!\n");
+            #endif // DEBUG
             return;
         }
 
@@ -547,9 +573,11 @@ void TIFF::_populate_philips_tiff_metadata(uint16_t ifd_count, void* metadata, s
         pugi::xpath_node_set wsi_nodes = PIM_DP_IMAGE_TYPE.evaluate_node_set(data_object);
         if (wsi_nodes.size() != 1)
         {
+            #ifdef DEBUG
             fmt::print(
                 stderr,
                 "[Warning] Failed to read as Philips TIFF. Expected only one 'DPScannedImage' node with PIM_DP_IMAGE_TYPE='WSI'.\n");
+            #endif // DEBUG
             return;
         }
 
@@ -580,7 +608,9 @@ void TIFF::_populate_philips_tiff_metadata(uint16_t ifd_count, void* metadata, s
             }
             if (spacing_x == 0.0 || spacing_y == 0.0)
             {
+                #ifdef DEBUG
                 fmt::print(stderr, "[Warning] Failed to read DICOM_PIXEL_SPACING: {}\n", values);
+                #endif // DEBUG
                 return;
             }
             pixel_spacings.emplace_back(std::pair{ spacing_x, spacing_y });
@@ -884,9 +914,11 @@ bool TIFF::read_associated_image(const cucim::io::format::ImageMetadataDesc* met
 
             if (compression_method != COMPRESSION_JPEG && compression_method != COMPRESSION_LZW)
             {
+                #ifdef DEBUG
                 fmt::print(stderr,
                            "[Error] Unsupported compression method in read_associated_image()! (compression: {})\n",
                            compression_method);
+                #endif // DEBUG
                 return false;
             }
 
@@ -927,7 +959,9 @@ bool TIFF::read_associated_image(const cucim::io::format::ImageMetadataDesc* met
                                                        jpeg_color_space))
                     {
                         cucim_free(raster);
+                        #ifdef DEBUG
                         fmt::print(stderr, "[Error] Failed to read region with libjpeg!\n");
+                        #endif // DEBUG
                         return false;
                     }
                     break;
@@ -936,7 +970,9 @@ bool TIFF::read_associated_image(const cucim::io::format::ImageMetadataDesc* met
                                                   strip_nbytes, out_device))
                     {
                         cucim_free(raster);
+                        #ifdef DEBUG
                         fmt::print(stderr, "[Error] Failed to read region with lzw decoder!\n");
+                        #endif // DEBUG
                         return false;
                     }
                     break;
@@ -963,7 +999,9 @@ bool TIFF::read_associated_image(const cucim::io::format::ImageMetadataDesc* met
             if (!cucim::codec::base64::decode(
                     image_desc_buf, image_ifd->image_description().size(), &decoded_buf, &decoded_size))
             {
+                #ifdef DEBUG
                 fmt::print(stderr, "[Error] Failed to decode base64-encoded string from the metadata!\n");
+                #endif // DEBUG
                 return false;
             }
 
@@ -972,7 +1010,9 @@ bool TIFF::read_associated_image(const cucim::io::format::ImageMetadataDesc* met
 
             if (!cuslide::jpeg::get_dimension(decoded_buf, 0, decoded_size, &image_width, &image_height))
             {
+                #ifdef DEBUG
                 fmt::print(stderr, "[Error] Failed to read jpeg header for image dimension!\n");
+                #endif // DEBUG
                 return false;
             }
 
@@ -988,7 +1028,9 @@ bool TIFF::read_associated_image(const cucim::io::format::ImageMetadataDesc* met
                                                out_device, 2 /*JCS_RGB color_space*/))
             {
                 cucim_free(raster);
+                #ifdef DEBUG
                 fmt::print(stderr, "[Error] Failed to read image from metadata with libjpeg!\n");
+                #endif // DEBUG
                 return false;
             }
             break;

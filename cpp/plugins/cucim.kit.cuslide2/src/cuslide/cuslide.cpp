@@ -133,7 +133,9 @@ static bool CUCIM_ABI parser_parse(CuCIMFileHandle_ptr handle_ptr, cucim::io::fo
         
         if (is_pyramid)
         {
+            #ifdef DEBUG
             fmt::print("ℹ️  Detected pyramid structure → treating as Aperio SVS/multi-resolution TIFF\n");
+            #endif // DEBUG
             is_aperio_svs = true;
         }
     }

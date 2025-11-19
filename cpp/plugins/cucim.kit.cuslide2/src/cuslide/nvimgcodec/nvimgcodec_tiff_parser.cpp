@@ -42,8 +42,10 @@ namespace cuslide2::nvimgcodec
 
 void IfdInfo::print() const
 {
+    #ifdef DEBUG
     fmt::print("  IFD[{}]: {}x{}, {} channels, {} bits/sample, codec: {}\n",
                index, width, height, num_channels, bits_per_sample, codec);
+    #endif // DEBUG
 }
 
 // ============================================================================
@@ -74,7 +76,9 @@ NvImageCodecTiffParserManager::NvImageCodecTiffParserManager()
         {
             status_message_ = fmt::format("Failed to create nvImageCodec instance for TIFF parsing (status: {})", 
                                          static_cast<int>(status));
+            #ifdef DEBUG
             fmt::print("⚠️  {}\n", status_message_);
+            #endif // DEBUG
             return;
         }
         
@@ -102,7 +106,9 @@ NvImageCodecTiffParserManager::NvImageCodecTiffParserManager()
             instance_ = nullptr;
             status_message_ = fmt::format("Failed to create decoder for metadata extraction (status: {})", 
                                          static_cast<int>(status));
+            #ifdef DEBUG
             fmt::print("⚠️  {}\n", status_message_);
+            #endif // DEBUG
             return;
         }
         
@@ -126,22 +132,30 @@ NvImageCodecTiffParserManager::NvImageCodecTiffParserManager()
         
         if (nvimgcodecDecoderCreate(instance_, &cpu_decoder_, &cpu_exec_params, nullptr) == NVIMGCODEC_STATUS_SUCCESS)
         {
+            #ifdef DEBUG
             fmt::print("✅ CPU-only decoder created successfully (TIFF parser)\n");
+            #endif // DEBUG
         }
         else
         {
+            #ifdef DEBUG
             fmt::print("⚠️  Failed to create CPU-only decoder (CPU decoding will use fallback)\n");
+            #endif // DEBUG
             cpu_decoder_ = nullptr;
         }
         
         initialized_ = true;
         status_message_ = "nvImageCodec TIFF parser initialized successfully (with metadata extraction support)";
+        #ifdef DEBUG
         fmt::print("✅ {}\n", status_message_);
+        #endif // DEBUG
     }
     catch (const std::exception& e)
     {
         status_message_ = fmt::format("nvImageCodec TIFF parser initialization exception: {}", e.what());
+        #ifdef DEBUG
         fmt::print("❌ {}\n", status_message_);
+        #endif // DEBUG
         initialized_ = false;
     }
 }
@@ -198,13 +212,17 @@ TiffFileParser::TiffFileParser(const std::string& file_path)
                                                 file_path, static_cast<int>(status)));
         }
         
+        #ifdef DEBUG
         fmt::print("✅ Opened TIFF file: {}\n", file_path);
+        #endif // DEBUG
         
         // Step 2: Parse TIFF structure (metadata only)
         parse_tiff_structure();
         
         initialized_ = true;
+        #ifdef DEBUG
         fmt::print("✅ TIFF parser initialized with {} IFDs\n", ifd_infos_.size());
+        #endif // DEBUG
     }
     catch (const std::exception& e)
     {
@@ -259,11 +277,15 @@ void TiffFileParser::parse_tiff_structure()
     }
     
     uint32_t num_ifds = stream_info.num_images;
+    #ifdef DEBUG
     fmt::print("  TIFF has {} IFDs (resolution levels)\n", num_ifds);
+    #endif // DEBUG
     
     if (stream_info.codec_name[0] != '\0')
     {
+        #ifdef DEBUG
         fmt::print("  Codec: {}\n", stream_info.codec_name);
+        #endif // DEBUG
     }
     
     // Get information for each IFD
@@ -286,9 +308,13 @@ void TiffFileParser::parse_tiff_structure()
         
         if (status != NVIMGCODEC_STATUS_SUCCESS)
         {
+            #ifdef DEBUG
             fmt::print("❌ Failed to get sub-code stream for IFD {} (status: {})\n", 
                       i, static_cast<int>(status));
+            #endif // DEBUG
+            #ifdef DEBUG
             fmt::print("   This IFD will be SKIPPED and cannot be decoded.\n");
+            #endif // DEBUG
             // Set sub_code_stream to nullptr explicitly to mark as invalid
             ifd_info.sub_code_stream = nullptr;
             continue;
@@ -304,9 +330,13 @@ void TiffFileParser::parse_tiff_structure()
         
         if (status != NVIMGCODEC_STATUS_SUCCESS)
         {
+            #ifdef DEBUG
             fmt::print("❌ Failed to get image info for IFD {} (status: {})\n",
                       i, static_cast<int>(status));
+            #endif // DEBUG
+            #ifdef DEBUG
             fmt::print("   This IFD will be SKIPPED and cannot be decoded.\n");
+            #endif // DEBUG
             // Clean up the sub_code_stream before continuing
             if (ifd_info.sub_code_stream)
             {
@@ -371,40 +401,54 @@ void TiffFileParser::parse_tiff_structure()
                     {
                         case 1:    // COMPRESSION_NONE
                             // Keep as "tiff" for uncompressed
+                            #ifdef DEBUG
                             fmt::print("  ℹ️  Detected uncompressed TIFF\n");
+                            #endif // DEBUG
                             compression_inferred = true;
                             break;
                         case 5:    // COMPRESSION_LZW
                             ifd_info.codec = "tiff";  // nvImageCodec handles as tiff
                             compression_inferred = true;
+                            #ifdef DEBUG
                             fmt::print("  ℹ️  Detected LZW compression (TIFF codec)\n");
+                            #endif // DEBUG
                             break;
                         case 7:    // COMPRESSION_JPEG
                             ifd_info.codec = "jpeg";  // Use JPEG decoder!
                             compression_inferred = true;
+                            #ifdef DEBUG
                             fmt::print("  ℹ️  Detected JPEG compression → using JPEG codec\n");
+                            #endif // DEBUG
                             break;
                         case 8:    // COMPRESSION_DEFLATE (Adobe-style)
                         case 32946: // COMPRESSION_DEFLATE (old-style)
                             ifd_info.codec = "tiff";
                             compression_inferred = true;
+                            #ifdef DEBUG
                             fmt::print("  ℹ️  Detected DEFLATE compression (TIFF codec)\n");
+                            #endif // DEBUG
                             break;
                         case 33003: // Aperio JPEG2000 YCbCr
                         case 33005: // Aperio JPEG2000 RGB
                         case 34712: // JPEG2000
                             ifd_info.codec = "jpeg2000";
                             compression_inferred = true;
+                            #ifdef DEBUG
                             fmt::print("  ℹ️  Detected JPEG2000 compression\n");
+                            #endif // DEBUG
                             break;
                         default:
+                            #ifdef DEBUG
                             fmt::print("  ⚠️  Unknown TIFF compression value: {}\n", compression_value);
+                            #endif // DEBUG
                             break;
                     }
                 }
                 catch (const std::exception& e)
                 {
+                    #ifdef DEBUG
                     fmt::print("  ⚠️  Failed to parse COMPRESSION tag value: {}\n", e.what());
+                    #endif // DEBUG
                 }
             }
             
@@ -416,7 +460,9 @@ void TiffFileParser::parse_tiff_structure()
                     file_path_.find("jp2k") != std::string::npos)
                 {
                     ifd_info.codec = "jpeg2000";
+                    #ifdef DEBUG
                     fmt::print("  ℹ️  Inferred codec 'jpeg2000' from filename (JP2K pattern)\n");
+                    #endif // DEBUG
                     compression_inferred = true;
                 }
             }
@@ -424,9 +470,15 @@ void TiffFileParser::parse_tiff_structure()
             // Warning if we still couldn't infer compression
             if (!compression_inferred && ifd_info.tiff_tags.empty())
             {
+                #ifdef DEBUG
                 fmt::print("  ⚠️  Warning: codec is 'tiff' but could not infer compression.\n");
+                #endif // DEBUG
+                #ifdef DEBUG
                 fmt::print("     File: {}\n", file_path_);
+                #endif // DEBUG
+                #ifdef DEBUG
                 fmt::print("     This may limit CPU decoder availability.\n");
+                #endif // DEBUG
             }
         }
         
@@ -438,13 +490,19 @@ void TiffFileParser::parse_tiff_structure()
     // Report parsing results
     if (ifd_infos_.size() == num_ifds)
     {
+        #ifdef DEBUG
         fmt::print("✅ TIFF parser initialized with {} IFDs (all successful)\n", ifd_infos_.size());
+        #endif // DEBUG
     }
     else
     {
+        #ifdef DEBUG
         fmt::print("⚠️  TIFF parser initialized with {} IFDs ({} out of {} total)\n", 
                   ifd_infos_.size(), ifd_infos_.size(), num_ifds);
+        #endif // DEBUG
+        #ifdef DEBUG
         fmt::print("   {} IFDs were skipped due to parsing errors\n", num_ifds - ifd_infos_.size());
+        #endif // DEBUG
     }
 }
 
@@ -471,7 +529,9 @@ void TiffFileParser::extract_ifd_metadata(IfdInfo& ifd_info)
         return;  // No metadata or error
     }
     
+    #ifdef DEBUG
     fmt::print("  Found {} metadata entries for IFD[{}]\n", metadata_count, ifd_info.index);
+    #endif // DEBUG
     
     // Step 2: Allocate metadata structures (nvImageCodec fills them in)
     // We must pre-allocate the structs, not just null pointers
@@ -497,12 +557,16 @@ void TiffFileParser::extract_ifd_metadata(IfdInfo& ifd_info)
     
     if (status != NVIMGCODEC_STATUS_SUCCESS)
     {
+        #ifdef DEBUG
         fmt::print("⚠️  Failed to retrieve metadata for IFD[{}] (status: {})\n",
                   ifd_info.index, static_cast<int>(status));
+        #endif // DEBUG
         return;
     }
     
+    #ifdef DEBUG
     fmt::print("  ✅ Successfully retrieved {} metadata entries\n", metadata_count);
+    #endif // DEBUG
     
     // Step 4: Process each metadata entry
     for (int j = 0; j < metadata_count; ++j)
@@ -518,8 +582,10 @@ void TiffFileParser::extract_ifd_metadata(IfdInfo& ifd_info)
         size_t buffer_size = metadata->buffer_size;
         const uint8_t* buffer = static_cast<const uint8_t*>(metadata->buffer);
         
+        #ifdef DEBUG
         fmt::print("    Metadata[{}]: kind={}, format={}, size={}\n",
                   j, kind, format, buffer_size);
+        #endif // DEBUG
         
         // Store in metadata_blobs map
         if (buffer && buffer_size > 0)
@@ -686,8 +752,10 @@ void TiffFileParser::override_ifd_dimensions(uint32_t ifd_index,
     }
     
     auto& ifd = ifd_infos_[ifd_index];
+    #ifdef DEBUG
     fmt::print("⚙️  Overriding IFD[{}] dimensions: {}x{} -> {}x{}\n",
               ifd_index, ifd.width, ifd.height, width, height);
+    #endif // DEBUG
     
     ifd.width = width;
     ifd.height = height;
@@ -706,10 +774,18 @@ std::string TiffFileParser::get_image_description(uint32_t ifd_index) const
 
 void TiffFileParser::print_info() const
 {
+    #ifdef DEBUG
     fmt::print("\nTIFF File Information:\n");
+    #endif // DEBUG
+    #ifdef DEBUG
     fmt::print("  File: {}\n", file_path_);
+    #endif // DEBUG
+    #ifdef DEBUG
     fmt::print("  Number of IFDs: {}\n", ifd_infos_.size());
+    #endif // DEBUG
+    #ifdef DEBUG
     fmt::print("\nIFD Details:\n");
+    #endif // DEBUG
     
     for (const auto& ifd : ifd_infos_)
     {
@@ -727,13 +803,17 @@ void TiffFileParser::extract_tiff_tags(IfdInfo& ifd_info)
     
     if (!manager.get_decoder())
     {
+        #ifdef DEBUG
         fmt::print("  ⚠️  Cannot extract TIFF tags: decoder not available\n");
+        #endif // DEBUG
         return;
     }
     
     if (!ifd_info.sub_code_stream)
     {
+        #ifdef DEBUG
         fmt::print("  ⚠️  Cannot extract TIFF tags: sub_code_stream is null\n");
+        #endif // DEBUG
         return;
     }
     
@@ -785,7 +865,9 @@ void TiffFileParser::extract_tiff_tags(IfdInfo& ifd_info)
     if (ext == ".svs" || ext == ".ndpi" || ext == ".vms" || ext == ".vmu")
     {
         ifd_info.tiff_tags["COMPRESSION"] = "7";  // TIFF_COMPRESSION_JPEG
+        #ifdef DEBUG
         fmt::print("  ✅ Inferred JPEG compression (WSI format: {})\n", ext);
+        #endif // DEBUG
         extracted_count++;
     }
     
@@ -798,12 +880,18 @@ void TiffFileParser::extract_tiff_tags(IfdInfo& ifd_info)
     // Summary
     if (extracted_count > 0)
     {
+        #ifdef DEBUG
         fmt::print("  ✅ Compression detection successful (nvImageCodec 0.6.0 heuristics)\n");
+        #endif // DEBUG
     }
     else
     {
+        #ifdef DEBUG
         fmt::print("  ⚠️  Unable to determine compression type from file extension\n");
+        #endif // DEBUG
+        #ifdef DEBUG
         fmt::print("      Upgrade to nvImageCodec 0.7.0 for direct TIFF tag access\n");
+        #endif // DEBUG
     }
     
     (void)tiff_tag_names;  // Suppress unused variable warning
@@ -928,9 +1016,13 @@ uint8_t* TiffFileParser::decode_region(
     // Reference: Michal Kepa feedback - nvImageCodec can handle out-of-bounds ROI with padding
     if (x + width > ifd.width || y + height > ifd.height)
     {
+        #ifdef DEBUG
         fmt::print("⚠️  Warning: ROI ({},{} {}x{}) extends beyond IFD dimensions ({}x{})\n",
                    x, y, width, height, ifd.width, ifd.height);
+        #endif // DEBUG
+        #ifdef DEBUG
         fmt::print("   nvImageCodec will pad out-of-bounds areas with constant value (0 by default)\n");
+        #endif // DEBUG
     }
     
     // NOTE: nvTIFF 0.6.0.77 CAN handle JPEGTables (TIFFTAG_JPEGTABLES)!
@@ -942,13 +1034,19 @@ uint8_t* TiffFileParser::decode_region(
     
     if (ifd.tiff_tags.find("JPEGTables") != ifd.tiff_tags.end())
     {
+        #ifdef DEBUG
         fmt::print("ℹ️  JPEG with JPEGTables detected - nvTIFF 0.6.0.77 will handle automatically\n");
+        #endif // DEBUG
     }
     
+    #ifdef DEBUG
     fmt::print("✓ Proceeding with nvTIFF/nvImageCodec decode (codec='{}')\n", ifd.codec);
+    #endif // DEBUG
     
+    #ifdef DEBUG
     fmt::print("🎯 nvTiff ROI Decode: IFD[{}] region ({},{}) {}x{}, device={}\n",
               ifd_index, x, y, width, height, std::string(device));
+    #endif // DEBUG
     
     // CRITICAL: Must use the same manager that created main_code_stream_!
     // Using a decoder from a different nvImageCodec instance causes segfaults.
@@ -994,8 +1092,10 @@ uint8_t* TiffFileParser::decode_region(
         
         // Get ROI-specific code stream directly from main stream (not from IFD sub-stream!)
         nvimgcodecCodeStream_t roi_stream = nullptr;
+        #ifdef DEBUG
         fmt::print("📍 Creating ROI sub-stream: IFD[{}] ROI=[{},{}:{}x{}] from main stream\n",
                   ifd_index, x, y, width, height);
+        #endif // DEBUG
         
         nvimgcodecStatus_t status = nvimgcodecCodeStreamGetSubCodeStream(
             main_code_stream_, &roi_stream, &view);
@@ -1010,10 +1110,14 @@ uint8_t* TiffFileParser::decode_region(
                 ifd.width, ifd.height, ifd.codec));
         }
         
+        #ifdef DEBUG
         fmt::print("✅ ROI sub-stream created successfully\n");
+        #endif // DEBUG
         
         // Get input image info from ROI code stream
+        #ifdef DEBUG
         fmt::print("🔍 Getting image info from ROI stream...\n");
+        #endif // DEBUG
         nvimgcodecImageInfo_t input_image_info{};
         input_image_info.struct_type = NVIMGCODEC_STRUCTURE_TYPE_IMAGE_INFO;
         input_image_info.struct_size = sizeof(nvimgcodecImageInfo_t);
@@ -1036,18 +1140,24 @@ uint8_t* TiffFileParser::decode_region(
                 "IFD[{}] ROI image info has 0 planes", ifd_index));
         }
         
+        #ifdef DEBUG
         fmt::print("✅ Got image info: {}x{}, {} channels, sample_format={}, color_spec={}\n", 
                   input_image_info.plane_info[0].width,
                   input_image_info.plane_info[0].height,
                   input_image_info.num_planes,
                   static_cast<int>(input_image_info.sample_format),
                   static_cast<int>(input_image_info.color_spec));
+        #endif // DEBUG
         
+        #ifdef DEBUG
         fmt::print("⚠️  Note: ROI stream returns full image dimensions, will use requested ROI: {}x{}\n",
                   width, height);
+        #endif // DEBUG
         
         // Prepare output image info (use requested ROI dimensions, not input_image_info)
+        #ifdef DEBUG
         fmt::print("📝 Preparing output image info...\n");
+        #endif // DEBUG
         
         // CRITICAL: Use zero-initialization to avoid copying codec-specific internal fields
         // Copying from input_image_info can cause segfault because it includes fields
@@ -1091,9 +1201,11 @@ uint8_t* TiffFileParser::decode_region(
         size_t row_stride = width * ifd.num_channels * bytes_per_element;
         size_t output_size = row_stride * height;
         
+        #ifdef DEBUG
         fmt::print("💾 Allocating output buffer: {} bytes on {} ({}x{}x{}x{} bytes/element)\n", 
                   output_size, use_gpu ? "GPU" : "CPU",
                   width, height, ifd.num_channels, bytes_per_element);
+        #endif // DEBUG
         
         // Allocate output buffer if not provided
         bool buffer_was_preallocated = (output_buffer != nullptr);
@@ -1119,11 +1231,15 @@ uint8_t* TiffFileParser::decode_region(
                         "Failed to allocate {} bytes on host", output_size));
                 }
             }
+            #ifdef DEBUG
             fmt::print("✅ Buffer allocated successfully\n");
+            #endif // DEBUG
         }
         else
         {
+            #ifdef DEBUG
             fmt::print("ℹ️  Using pre-allocated buffer\n");
+            #endif // DEBUG
         }
         
         // Set buffer info with correct row stride
@@ -1133,7 +1249,10 @@ uint8_t* TiffFileParser::decode_region(
         output_image_info.cuda_stream = 0;  // CRITICAL: Default CUDA stream (must be set!)
         
         // Create nvImageCodec image object
+        #ifdef DEBUG
         fmt::print("🖼️  Creating nvImageCodec image object...\n");
+        #endif // DEBUG
+        #ifdef DEBUG
         fmt::print("   Image config: {}x{}, {} planes, {} channels/plane, buffer_size={}, row_stride={}\n",
                   output_image_info.plane_info[0].width,
                   output_image_info.plane_info[0].height,
@@ -1141,10 +1260,13 @@ uint8_t* TiffFileParser::decode_region(
                   output_image_info.plane_info[0].num_channels,
                   output_image_info.buffer_size,
                   output_image_info.plane_info[0].row_stride);
+        #endif // DEBUG
+        #ifdef DEBUG
         fmt::print("   Buffer kind: {}, sample_format: {}, color_spec: {}\n",
                   static_cast<int>(output_image_info.buffer_kind),
                   static_cast<int>(output_image_info.sample_format),
                   static_cast<int>(output_image_info.color_spec));
+        #endif // DEBUG
         
         nvimgcodecImage_t image;
         status = nvimgcodecImageCreate(manager.get_instance(), &image, &output_image_info);
@@ -1163,19 +1285,27 @@ uint8_t* TiffFileParser::decode_region(
                 "Failed to create nvImageCodec image: status={}", static_cast<int>(status)));
         }
         
+        #ifdef DEBUG
         fmt::print("✅ Image object created successfully\n");
+        #endif // DEBUG
         
         // Perform decode - nvTiff handles JPEG tables automatically!
+        #ifdef DEBUG
         fmt::print("📋 nvTiff: Decoding with automatic JPEG table handling...\n");
+        #endif // DEBUG
+        #ifdef DEBUG
         fmt::print("   Decoder: {}, ROI stream: {}, Image: {}\n",
                   static_cast<void*>(decoder),
                   static_cast<void*>(roi_stream),
                   static_cast<void*>(image));
+        #endif // DEBUG
         
         nvimgcodecFuture_t decode_future;
         {
             std::lock_guard<std::mutex> lock(manager.get_mutex());
+            #ifdef DEBUG
             fmt::print("   Calling nvimgcodecDecoderDecode()...\n");
+            #endif // DEBUG
             status = nvimgcodecDecoderDecode(
                 decoder,
                 &roi_stream,  // Use ROI stream instead of full IFD stream
@@ -1183,7 +1313,9 @@ uint8_t* TiffFileParser::decode_region(
                 1,
                 &decode_params,
                 &decode_future);
+            #ifdef DEBUG
             fmt::print("   Decode scheduled, status={}\n", static_cast<int>(status));
+            #endif // DEBUG
         }
         
         if (status != NVIMGCODEC_STATUS_SUCCESS)
@@ -1202,17 +1334,23 @@ uint8_t* TiffFileParser::decode_region(
         }
         
         // Wait for decode completion
+        #ifdef DEBUG
         fmt::print("⏳ Waiting for decode to complete...\n");
+        #endif // DEBUG
         size_t status_size = 1;
         nvimgcodecProcessingStatus_t decode_status = NVIMGCODEC_PROCESSING_STATUS_UNKNOWN;
         status = nvimgcodecFutureGetProcessingStatus(decode_future, &decode_status, &status_size);
+        #ifdef DEBUG
         fmt::print("   Future status: {}, Processing status: {}\n",
                   static_cast<int>(status), static_cast<int>(decode_status));
+        #endif // DEBUG
         
         if (use_gpu)
         {
             cudaDeviceSynchronize();
+            #ifdef DEBUG
             fmt::print("   GPU synchronized\n");
+            #endif // DEBUG
         }
         
         // Check for decode failure BEFORE cleanup
@@ -1221,14 +1359,18 @@ uint8_t* TiffFileParser::decode_region(
         
         if (decode_failed)
         {
+            #ifdef DEBUG
             fmt::print("⚠️  nvImageCodec decode failed (status={}, decode_status={})\n",
                       static_cast<int>(status), static_cast<int>(decode_status));
+            #endif // DEBUG
             
             // CRITICAL: Detach buffer ownership before destroying image object
             // This prevents nvImageCodec from trying to access/free the buffer
             output_image_info.buffer = nullptr;
             
+            #ifdef DEBUG
             fmt::print("🧹 Cleaning up after failed decode...\n");
+            #endif // DEBUG
             nvimgcodecFutureDestroy(decode_future);
             nvimgcodecImageDestroy(image);
             nvimgcodecCodeStreamDestroy(roi_stream);
@@ -1236,7 +1378,9 @@ uint8_t* TiffFileParser::decode_region(
             // Safely free buffer if we allocated it
             if (!buffer_was_preallocated && output_buffer != nullptr)
             {
+                #ifdef DEBUG
                 fmt::print("   Freeing allocated buffer...\n");
+                #endif // DEBUG
                 if (use_gpu)
                     cudaFree(output_buffer);
                 else
@@ -1246,26 +1390,42 @@ uint8_t* TiffFileParser::decode_region(
             
             // Decode failure likely means abbreviated JPEG not supported by nvImageCodec
             // Return nullptr to trigger fallback to libjpeg-turbo
+            #ifdef DEBUG
             fmt::print("💡 Returning nullptr to trigger libjpeg-turbo fallback\n");
+            #endif // DEBUG
             return nullptr;
         }
         
         // Success path: Normal cleanup
+        #ifdef DEBUG
         fmt::print("🧹 Cleaning up nvImageCodec objects...\n");
+        #endif // DEBUG
+        #ifdef DEBUG
         fmt::print("   Destroying future...\n");
+        #endif // DEBUG
         nvimgcodecFutureDestroy(decode_future);
+        #ifdef DEBUG
         fmt::print("   Destroying image...\n");
+        #endif // DEBUG
         nvimgcodecImageDestroy(image);
+        #ifdef DEBUG
         fmt::print("   Destroying ROI stream...\n");
+        #endif // DEBUG
         nvimgcodecCodeStreamDestroy(roi_stream);
+        #ifdef DEBUG
         fmt::print("✅ Cleanup complete\n");
+        #endif // DEBUG
         
+        #ifdef DEBUG
         fmt::print("✅ nvTiff ROI Decode: Success! {}x{} decoded\n", width, height);
+        #endif // DEBUG
         return output_buffer;
     }
     catch (const std::exception& e)
     {
+        #ifdef DEBUG
         fmt::print("❌ nvTiff ROI Decode failed: {}\n", e.what());
+        #endif // DEBUG
         throw;
     }
 }

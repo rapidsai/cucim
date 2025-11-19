@@ -72,19 +72,25 @@ public:
                 uint32_t minor = (version % 1000) / 100;
                 uint32_t patch = version % 100;
                 
+                #ifdef DEBUG
                 fmt::print("✅ nvImageCodec API Test: Version {}.{}.{}\n", major, minor, patch);
+                #endif // DEBUG
                 
                 // Test 2: Check decoder capabilities
                 if (decoder_)
                 {
+                    #ifdef DEBUG
                     fmt::print("✅ nvImageCodec Decoder: Ready\n");
+                    #endif // DEBUG
                     return true;
                 }
             }
         }
         catch (const std::exception& e)
         {
+            #ifdef DEBUG
             fmt::print("⚠️  nvImageCodec API Test failed: {}\n", e.what());
+            #endif // DEBUG
         }
         
         return false;
@@ -116,7 +122,9 @@ private:
             if (nvimgcodecInstanceCreate(&instance_, &create_info) != NVIMGCODEC_STATUS_SUCCESS)
             {
                 status_message_ = "Failed to create nvImageCodec instance";
+                #ifdef DEBUG
                 fmt::print("❌ {}\n", status_message_);
+                #endif // DEBUG
                 return;
             }
 
@@ -140,7 +148,9 @@ private:
                 nvimgcodecInstanceDestroy(instance_);
                 instance_ = nullptr;
                 status_message_ = "Failed to create nvImageCodec decoder";
+                #ifdef DEBUG
                 fmt::print("❌ {}\n", status_message_);
+                #endif // DEBUG
                 return;
             }
             
@@ -164,17 +174,23 @@ private:
             
             if (nvimgcodecDecoderCreate(instance_, &cpu_decoder_, &cpu_exec_params, nullptr) == NVIMGCODEC_STATUS_SUCCESS)
             {
+                #ifdef DEBUG
                 fmt::print("✅ CPU-only decoder created successfully\n");
+                #endif // DEBUG
             }
             else
             {
+                #ifdef DEBUG
                 fmt::print("⚠️  Failed to create CPU-only decoder (CPU decoding will use fallback)\n");
+                #endif // DEBUG
                 cpu_decoder_ = nullptr;
             }
             
             initialized_ = true;
             status_message_ = "nvImageCodec initialized successfully";
+            #ifdef DEBUG
             fmt::print("✅ {}\n", status_message_);
+            #endif // DEBUG
             
             // Run quick API test
             test_nvimagecodec_api();
@@ -182,7 +198,9 @@ private:
         catch (const std::exception& e)
         {
             status_message_ = fmt::format("nvImageCodec initialization exception: {}", e.what());
+            #ifdef DEBUG
             fmt::print("❌ {}\n", status_message_);
+            #endif // DEBUG
             initialized_ = false;
         }
     }
