@@ -112,25 +112,29 @@ def test_erosion_uint8_input(unsigned_dtype):
     # Rescale image intensity so that we can see dim features.
     image = rescale_intensity(image, in_range=(50, 200))
 
-    seed = cp.copy(image)
-    seed[1:-1, 1:-1] = image.max()
+    image2 = cp.copy(image)
+    image2[1:-1, 1:-1] = image.max()
     mask = image
 
-    seed = seed.astype(unsigned_dtype)
-    filled = reconstruction(seed, mask, method="erosion")
+    image2 = image2.astype(unsigned_dtype)
+    image2_erosion = reconstruction(image2, mask, method="erosion")
 
-    expected_out_type = cp.promote_types(seed.dtype, cp.int8)
-    assert filled.dtype == expected_out_type
+    expected_out_type = cp.promote_types(image2.dtype, cp.int8)
+    assert image2_erosion.dtype == expected_out_type
     # promoted to signed dtype (or float in the case of cp.uint64)
-    assert filled.dtype.kind == "i" if unsigned_dtype != cp.uint64 else "f"
-    assert filled.dtype.itemsize >= seed.dtype.itemsize
+    assert (
+        image2_erosion.dtype.kind == "i" if unsigned_dtype != cp.uint64 else "f"
+    )
+    assert image2_erosion.dtype.itemsize >= image2.dtype.itemsize
 
     # compare to scikit-image CPU result
-    filled_cpu = reconstruction_cpu(
-        cp.asnumpy(seed), cp.asnumpy(mask), method="erosion"
+    image2_erosion_cpu = reconstruction_cpu(
+        cp.asnumpy(image2), cp.asnumpy(mask), method="erosion"
     )
     # filled_cpu will be np.float64, so convert to the type returned by cuCIM
-    cp.testing.assert_allclose(filled, filled_cpu.astype(filled.dtype))
+    cp.testing.assert_allclose(
+        image2_erosion, image2_erosion_cpu.astype(image2_erosion.dtype)
+    )
 
 
 def test_invalid_footprint():
