@@ -16,7 +16,7 @@ source:
 
 build:
   number: {{ GIT_DESCRIBE_NUMBER }}
-  string: cuda{{ cuda_major }}_{{ date_string }}_gh{{ GIT_DESCRIBE_HASH }}_gn{{ GIT_DESCRIBE_NUMBER }}}_ph{{ PKG_HASH }}
+  string: cuda{{ cuda_major }}_{{ date_string }}_gh{{ GIT_DESCRIBE_HASH }}_gn{{ GIT_DESCRIBE_NUMBER }}_ph{{ PKG_HASH }}
   ignore_run_exports:
     - openslide
   ignore_run_exports_from:
