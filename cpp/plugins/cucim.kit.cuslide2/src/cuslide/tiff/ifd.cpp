@@ -247,9 +247,32 @@ bool IFD::read(const TIFF* tiff,
         }
         else
         {
-            // Allocate memory
+            // Allocate memory based on device type
             size_t buffer_size = w * h * samples_per_pixel_;
-            output_buffer = static_cast<uint8_t*>(cucim_malloc(buffer_size));
+            
+            if (out_device.type() == cucim::io::DeviceType::kCUDA)
+            {
+                // Allocate CUDA device memory
+                void* cuda_buffer = nullptr;
+                cudaError_t cuda_status = cudaMalloc(&cuda_buffer, buffer_size);
+                if (cuda_status != cudaSuccess)
+                {
+                    fmt::print(stderr, "[Error] Failed to allocate CUDA memory: {}\n", 
+                              cudaGetErrorString(cuda_status));
+                    return false;
+                }
+                output_buffer = static_cast<uint8_t*>(cuda_buffer);
+            }
+            else
+            {
+                // Allocate CPU memory
+                output_buffer = static_cast<uint8_t*>(cucim_malloc(buffer_size));
+                if (!output_buffer)
+                {
+                    fmt::print(stderr, "[Error] Failed to allocate CPU memory\n");
+                    return false;
+                }
+            }
         }
         
         // Get IFD info from TiffFileParser
@@ -284,6 +307,20 @@ bool IFD::read(const TIFF* tiff,
         else
         {
             fmt::print("❌ nvImageCodec ROI decode failed for IFD[{}]\n", ifd_index_);
+            
+            // Free allocated buffer on failure
+            if (!is_buf_available && output_buffer)
+            {
+                if (out_device.type() == cucim::io::DeviceType::kCUDA)
+                {
+                    cudaFree(output_buffer);
+                }
+                else
+                {
+                    cucim_free(output_buffer);
+                }
+            }
+            
             throw std::runtime_error(fmt::format(
                 "Failed to decode IFD[{}] with nvImageCodec. ROI: ({},{}) {}x{}", 
                 ifd_index_, sx, sy, w, h));
