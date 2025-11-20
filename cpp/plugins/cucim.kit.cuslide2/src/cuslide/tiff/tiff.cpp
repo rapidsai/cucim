@@ -312,8 +312,8 @@ TIFF::TIFF(const cucim::filesystem::Path& file_path) : file_path_(file_path)
         fmt::print("   Detected format: {}\n", detected_format);
         #endif // DEBUG
         
-        uint32_t ifd_count = nvimgcodec_parser_->get_ifd_count();
         #ifdef DEBUG
+        uint32_t ifd_count = nvimgcodec_parser_->get_ifd_count();
         fmt::print("   IFD count: {}\n", ifd_count);
         #endif // DEBUG
         

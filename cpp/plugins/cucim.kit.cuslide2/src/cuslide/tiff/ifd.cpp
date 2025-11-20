@@ -34,6 +34,9 @@
 // #include "cuslide/lzw/lzw.h"
 // #include "cuslide/raw/raw.h"
 
+// CPU decoder stubs (for legacy fallback code paths that should never execute)
+#include "cpu_decoder_stubs.h"
+
 // nvImageCodec handles ALL decoding (JPEG, JPEG2000, deflate, LZW, raw)
 #include "cuslide/nvimgcodec/nvimgcodec_decoder.h"
 #include "cuslide/nvimgcodec/nvimgcodec_tiff_parser.h"
