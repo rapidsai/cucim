@@ -6,10 +6,6 @@
 #
 
 if (NOT TARGET deps::nvimgcodec)
-    # Option to automatically install nvImageCodec via conda
-    option(AUTO_INSTALL_NVIMGCODEC "Automatically install nvImageCodec via conda" ON)
-    set(NVIMGCODEC_VERSION "0.6.0" CACHE STRING "nvImageCodec version to install")
-
     if (DEFINED ENV{CONDA_PREFIX})
         # Try to find nvImageCodec in conda environment first
         find_package(nvimgcodec QUIET)
@@ -68,76 +64,12 @@ if (NOT TARGET deps::nvimgcodec)
                 set(NVIMGCODEC_LIB_PATH ${NVIMGCODEC_LIB_PATH} CACHE INTERNAL "" FORCE)
                 mark_as_advanced(NVIMGCODEC_INCLUDE_PATH NVIMGCODEC_LIB_PATH)
             else()
-                # Auto-install if enabled and not found
-                if(AUTO_INSTALL_NVIMGCODEC)
-                    message(STATUS "nvImageCodec not found in conda environment - attempting automatic installation...")
-
-                    # Find conda executable
-                    find_program(MICROMAMBA_EXECUTABLE
-                        NAMES micromamba
-                        PATHS ${CMAKE_CURRENT_SOURCE_DIR}/../../../bin
-                              ${CMAKE_CURRENT_SOURCE_DIR}/../../bin
-                              $ENV{HOME}/micromamba/bin
-                              /usr/local/bin
-                              /opt/conda/bin
-                        DOC "Path to micromamba executable"
-                    )
-
-                    find_program(CONDA_EXECUTABLE
-                        NAMES conda mamba
-                        PATHS $ENV{HOME}/miniconda3/bin
-                              $ENV{HOME}/anaconda3/bin
-                              /opt/conda/bin
-                              /usr/local/bin
-                        DOC "Path to conda/mamba executable"
-                    )
-
-                    set(CONDA_CMD "")
-                    if(MICROMAMBA_EXECUTABLE)
-                        set(CONDA_CMD ${MICROMAMBA_EXECUTABLE})
-                        message(STATUS "Using micromamba: ${MICROMAMBA_EXECUTABLE}")
-                    elseif(CONDA_EXECUTABLE)
-                        set(CONDA_CMD ${CONDA_EXECUTABLE})
-                        message(STATUS "Using conda/mamba: ${CONDA_EXECUTABLE}")
-                    endif()
-
-                    if(CONDA_CMD)
-                        message(STATUS "Installing nvImageCodec ${NVIMGCODEC_VERSION}...")
-                        execute_process(
-                            COMMAND ${CONDA_CMD} install
-                                libnvimgcodec-dev=${NVIMGCODEC_VERSION}
-                                libnvimgcodec0=${NVIMGCODEC_VERSION}
-                                -c conda-forge -y
-                            RESULT_VARIABLE CONDA_INSTALL_RESULT
-                            OUTPUT_QUIET
-                            ERROR_QUIET
-                            TIMEOUT 300
-                        )
-
-                        if(CONDA_INSTALL_RESULT EQUAL 0)
-                            message(STATUS "✓ Successfully installed nvImageCodec ${NVIMGCODEC_VERSION}")
-                            # Retry detection after installation
-                            if(EXISTS "$ENV{CONDA_PREFIX}/include/nvimgcodec.h" AND
-                               EXISTS "$ENV{CONDA_PREFIX}/lib/libnvimgcodec.so.0")
-                                add_library(deps::nvimgcodec SHARED IMPORTED GLOBAL)
-                                set_target_properties(deps::nvimgcodec PROPERTIES
-                                    IMPORTED_LOCATION "$ENV{CONDA_PREFIX}/lib/libnvimgcodec.so.0"
-                                    INTERFACE_INCLUDE_DIRECTORIES "$ENV{CONDA_PREFIX}/include/"
-                                )
-                                message(STATUS "✓ nvImageCodec configured after installation")
-                            endif()
-                        else()
-                            message(WARNING "✗ Failed to install nvImageCodec - creating dummy target")
-                            add_library(deps::nvimgcodec INTERFACE IMPORTED GLOBAL)
-                        endif()
-                    else()
-                        message(WARNING "No conda manager found - creating dummy target")
-                        add_library(deps::nvimgcodec INTERFACE IMPORTED GLOBAL)
-                    endif()
-                else()
-                    message(STATUS "nvImageCodec not found and auto-install disabled - creating dummy target")
-                    add_library(deps::nvimgcodec INTERFACE IMPORTED GLOBAL)
-                endif()
+                # Create dummy target
+                add_library(deps::nvimgcodec INTERFACE IMPORTED GLOBAL)
+                message(STATUS "✗ nvImageCodec not found in conda environment - GPU acceleration disabled")
+                message(STATUS "To enable nvImageCodec support:")
+                message(STATUS "  Option 1 (conda): conda install libnvimgcodec-dev -c conda-forge")
+                message(STATUS "  Option 2 (pip):   pip install nvidia-nvimgcodec-cu12[all]")
             endif()
         endif()
     else ()
@@ -245,9 +177,8 @@ if (NOT TARGET deps::nvimgcodec)
                 add_library(deps::nvimgcodec INTERFACE IMPORTED GLOBAL)
                 message(STATUS "✗ nvImageCodec not found - GPU acceleration disabled")
                 message(STATUS "To enable nvImageCodec support:")
-                message(STATUS "  Option 1 (conda): micromamba install libnvimgcodec-dev -c conda-forge")
+                message(STATUS "  Option 1 (conda): conda install libnvimgcodec-dev -c conda-forge")
                 message(STATUS "  Option 2 (pip):   pip install nvidia-nvimgcodec-cu12[all]")
-                message(STATUS "  Option 3 (cmake): cmake -DAUTO_INSTALL_NVIMGCODEC=ON ..")
             endif()
         endif()
     endif ()
