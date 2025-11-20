@@ -511,10 +511,42 @@ void TIFF::resolve_vendor_format()
     }
 
     // Detect Philips TIFF
+    // NOTE: nvImageCodec 0.6.0 doesn't expose individual TIFF tags (like SOFTWARE)
+    // Workaround: Check for Philips XML in ImageDescription or use nvImageCodec metadata kind
     {
+        bool is_philips = false;
+        
+        // Method 1: Check SOFTWARE tag (available in nvImageCodec 0.7.0+)
         std::string_view prefix("Philips");
         auto res = std::mismatch(prefix.begin(), prefix.end(), software.begin());
         if (res.first == prefix.end())
+        {
+            is_philips = true;
+        }
+        
+        // Method 2: Check for Philips XML structure in ImageDescription
+        // (Workaround for nvImageCodec 0.6.0 where SOFTWARE tag is not available)
+        if (!is_philips)
+        {
+            auto& image_desc = first_ifd->image_description();
+            if (image_desc.find("<DataObject") != std::string::npos &&
+                image_desc.find("ObjectType=\"DPUfsImport\"") != std::string::npos)
+            {
+                is_philips = true;
+            }
+        }
+        
+        // Method 3: Check if nvImageCodec detected it as Philips (metadata kind 2)
+        if (!is_philips && nvimgcodec_parser_)
+        {
+            std::string detected_format = nvimgcodec_parser_->get_detected_format();
+            if (detected_format.find("Philips") != std::string::npos)
+            {
+                is_philips = true;
+            }
+        }
+        
+        if (is_philips)
         {
             _populate_philips_tiff_metadata(ifd_count, json_metadata, first_ifd);
         }
