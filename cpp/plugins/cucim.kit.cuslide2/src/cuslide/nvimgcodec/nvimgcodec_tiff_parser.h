@@ -147,13 +147,6 @@ public:
     bool is_valid() const { return initialized_; }
     
     /**
-     * @brief Get the file path
-     * 
-     * @return File path
-     */
-    const std::string& get_file_path() const { return file_path_; }
-    
-    /**
      * @brief Get the number of IFDs (resolution levels) in the TIFF file
      * 
      * @return Number of IFDs
@@ -170,59 +163,6 @@ public:
     const IfdInfo& get_ifd(uint32_t index) const;
     
     /**
-     * @brief Classify an IFD by type (resolution level vs. associated image)
-     * 
-     * Parses ImageDescription metadata to determine image purpose using
-     * vendor-specific keywords (e.g., "label", "macro" for Aperio SVS).
-     * Falls back to dimension-based heuristics for unknown formats.
-     * 
-     * @param ifd_index IFD index to classify
-     * @return ImageType classification
-     */
-    ImageType classify_ifd(uint32_t ifd_index) const;
-    
-    /**
-     * @brief Get indices of all resolution level IFDs
-     * 
-     * @return Vector of IFD indices that represent resolution levels
-     */
-    std::vector<uint32_t> get_resolution_levels() const;
-    
-    /**
-     * @brief Get associated images (thumbnail, label, macro)
-     * 
-     * Returns a map of associated image names to their IFD indices.
-     * Particularly useful for Aperio SVS files.
-     * 
-     * @return Map of image name to IFD index
-     */
-    std::map<std::string, uint32_t> get_associated_images() const;
-    
-    /**
-     * @brief Override IFD dimensions
-     * 
-     * Useful for formats like Philips TIFF where reported dimensions
-     * include tile padding and need to be corrected based on metadata.
-     * 
-     * @param ifd_index IFD index to modify
-     * @param width Corrected width in pixels
-     * @param height Corrected height in pixels
-     */
-    void override_ifd_dimensions(uint32_t ifd_index, uint32_t width, uint32_t height);
-    
-    /**
-     * @brief Get ImageDescription metadata for an IFD
-     * 
-     * Returns the ImageDescription from nvImageCodec metadata buffers.
-     * For Aperio SVS: Contains full image description with keywords.
-     * For Philips TIFF: Contains XML metadata or level info.
-     * 
-     * @param ifd_index IFD index
-     * @return ImageDescription string, or empty if not present
-     */
-    std::string get_image_description(uint32_t ifd_index) const;
-    
-    /**
      * @brief Get all metadata blobs for an IFD
      * 
      * Returns all vendor-specific metadata extracted by nvImageCodec.
@@ -237,24 +177,6 @@ public:
         if (ifd_index >= ifd_infos_.size())
             return empty_map;
         return ifd_infos_[ifd_index].metadata_blobs;
-    }
-    
-    /**
-     * @brief Get specific metadata blob by kind
-     * 
-     * @param ifd_index IFD index
-     * @param kind Metadata kind (e.g., 1=MED_APERIO, 2=MED_PHILIPS)
-     * @return Pointer to metadata blob, or nullptr if not found
-     */
-    const IfdInfo::MetadataBlob* get_metadata_blob(uint32_t ifd_index, int kind) const
-    {
-        if (ifd_index >= ifd_infos_.size())
-            return nullptr;
-        
-        auto it = ifd_infos_[ifd_index].metadata_blobs.find(kind);
-        if (it != ifd_infos_[ifd_index].metadata_blobs.end())
-            return &it->second;
-        return nullptr;
     }
     
     // ========================================================================
@@ -309,64 +231,11 @@ public:
     std::string get_detected_format() const;
     
     /**
-     * @brief Print TIFF structure information
-     */
-    void print_info() const;
-    
-    // ========================================================================
-    // ROI-Based Decoding (nvTiff File-Level API)
-    // ========================================================================
-    
-    /**
-     * @brief Decode a region of interest (ROI) from a specific IFD
-     * 
-     * Uses nvTiff's file-level API with ROI parameters to decode a specific
-     * region without loading the entire image. nvTiff automatically handles
-     * JPEG tables (TIFFTAG_JPEGTABLES) internally.
-     * 
-     * @param ifd_index IFD index to decode from
-     * @param x X offset in pixels (left edge of region)
-     * @param y Y offset in pixels (top edge of region)
-     * @param width Width of region in pixels
-     * @param height Height of region in pixels
-     * @param output_buffer Pre-allocated buffer for decoded pixels (can be nullptr for auto-allocation)
-     * @param device Device to decode to ("cpu" or "cuda")
-     * @return Decoded pixel data (caller owns the buffer if auto-allocated)
-     * @throws std::runtime_error on decode failure
-     */
-    uint8_t* decode_region(
-        uint32_t ifd_index,
-        uint32_t x, uint32_t y,
-        uint32_t width, uint32_t height,
-        uint8_t* output_buffer = nullptr,
-        const cucim::io::Device& device = cucim::io::Device("cpu")
-    );
-    
-    /**
-     * @brief Decode an entire IFD
-     * 
-     * Convenience method that decodes the full IFD image.
-     * 
-     * @param ifd_index IFD index to decode
-     * @param output_buffer Pre-allocated buffer (can be nullptr)
-     * @param device Device to decode to
-     * @return Decoded pixel data
-     */
-    uint8_t* decode_ifd(
-        uint32_t ifd_index,
-        uint8_t* output_buffer = nullptr,
-        const cucim::io::Device& device = cucim::io::Device("cpu")
-    );
-    
-    /**
-     * @brief Check if ROI-based decoding is available
-     * 
-     * @return true if nvImageCodec decoder is available with ROI support
-     */
-    bool has_roi_decode_support() const;
-    
-    /**
      * @brief Get the main code stream for the TIFF file
+     * 
+     * This is used by decoder functions (in nvimgcodec_decoder.cpp) to create
+     * ROI sub-streams for decoding. The parser provides the stream, but does
+     * NOT perform decoding itself (separation of concerns).
      * 
      * @return nvImageCodec code stream handle
      */
@@ -399,6 +268,18 @@ private:
      * @param ifd_info IFD to extract TIFF tags for
      */
     void extract_tiff_tags(IfdInfo& ifd_info);
+    
+    /**
+     * @brief Classify an IFD by type (resolution level vs. associated image)
+     * 
+     * Internal helper method used by get_detected_format() for image classification.
+     * Parses ImageDescription metadata to determine image purpose using
+     * vendor-specific keywords (e.g., "label", "macro" for Aperio SVS).
+     * 
+     * @param ifd_index IFD index to classify
+     * @return ImageType classification
+     */
+    ImageType classify_ifd(uint32_t ifd_index) const;
     
     std::string file_path_;
     bool initialized_;
@@ -511,26 +392,12 @@ class TiffFileParser
 public:
     explicit TiffFileParser(const std::string& file_path) { (void)file_path; }
     bool is_valid() const { return false; }
-    const std::string& get_file_path() const { static std::string empty; return empty; }
     uint32_t get_ifd_count() const { return 0; }
     const IfdInfo& get_ifd(uint32_t index) const 
     { 
         (void)index; 
         throw std::runtime_error("nvImageCodec not available"); 
     }
-    ImageType classify_ifd(uint32_t index) const { (void)index; return ImageType::UNKNOWN; }
-    std::vector<uint32_t> get_resolution_levels() const { return {}; }
-    std::map<std::string, uint32_t> get_associated_images() const { return {}; }
-    void override_ifd_dimensions(uint32_t ifd_index, uint32_t width, uint32_t height)
-    {
-        (void)ifd_index; (void)width; (void)height;
-    }
-    std::string get_image_description(uint32_t ifd_index) const
-    {
-        (void)ifd_index;
-        return "";
-    }
-    void print_info() const {}
 };
 
 class NvImageCodecTiffParserManager
