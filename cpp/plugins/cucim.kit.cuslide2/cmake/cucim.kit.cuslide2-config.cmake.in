@@ -10,6 +10,4 @@
 include(CMakeFindDependencyMacro)
 #find_dependency(Boost x.x.x REQUIRED)
 
-if(NOT TARGET cuslide2::cuslide2)
-    include(${CMAKE_CURRENT_LIST_DIR}/cucim.kit.cuslide2-targets.cmake)
-endif()
+include(${CMAKE_CURRENT_LIST_DIR}/cucim.kit.cuslide2-targets.cmake)
