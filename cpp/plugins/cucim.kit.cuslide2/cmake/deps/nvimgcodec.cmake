@@ -125,7 +125,7 @@ if (NOT TARGET deps::nvimgcodec)
             endif()
         endif()
 
-        # Create target based on detection results (single location for target creation)
+        # Create target only if nvImageCodec was found
         if(NVIMGCODEC_LIB_PATH AND EXISTS "${NVIMGCODEC_LIB_PATH}")
             add_library(deps::nvimgcodec SHARED IMPORTED GLOBAL)
             set_target_properties(deps::nvimgcodec PROPERTIES
@@ -140,8 +140,6 @@ if (NOT TARGET deps::nvimgcodec)
             set(NVIMGCODEC_LIB_PATH ${NVIMGCODEC_LIB_PATH} CACHE INTERNAL "" FORCE)
             mark_as_advanced(NVIMGCODEC_INCLUDE_PATH NVIMGCODEC_LIB_PATH)
         else()
-            # Create dummy target when not found
-            add_library(deps::nvimgcodec INTERFACE IMPORTED GLOBAL)
             message(STATUS "✗ nvImageCodec not found - GPU acceleration disabled")
             message(STATUS "To enable nvImageCodec support:")
             message(STATUS "  Option 1 (conda): conda install libnvimgcodec-dev -c conda-forge")

@@ -240,23 +240,13 @@ target_link_libraries(${CUCIM_PLUGIN_NAME}
             deps::pugixml
             deps::json
             deps::libdeflate
-            deps::nvimgcodec
+            $<TARGET_NAME_IF_EXISTS:deps::nvimgcodec>
         )
 
-# Add nvImageCodec compile definition if the target exists and has content
+# Add nvImageCodec compile definition if the target exists
 if(TARGET deps::nvimgcodec)
-    get_target_property(NVIMGCODEC_LOCATION deps::nvimgcodec IMPORTED_LOCATION)
-    get_target_property(NVIMGCODEC_INTERFACE_LINK deps::nvimgcodec INTERFACE_LINK_LIBRARIES)
-
-    # Check if it's a real target (has location or interface links) vs dummy target
-    if(NVIMGCODEC_LOCATION OR NVIMGCODEC_INTERFACE_LINK OR TARGET nvimgcodec::nvimgcodec)
-        target_compile_definitions(${CUCIM_PLUGIN_NAME} PRIVATE CUCIM_HAS_NVIMGCODEC)
-        message(STATUS "✓ nvImageCodec enabled - GPU-accelerated JPEG/JPEG2000 decoding available")
-    else()
-        message(STATUS "⚠ nvImageCodec target exists but is dummy - GPU acceleration disabled")
-    endif()
-else()
-    message(STATUS "⚠ nvImageCodec target not found - GPU acceleration disabled")
+    target_compile_definitions(${CUCIM_PLUGIN_NAME} PRIVATE CUCIM_HAS_NVIMGCODEC)
+    message(STATUS "✓ nvImageCodec enabled - GPU-accelerated JPEG/JPEG2000 decoding available")
 endif()
 if (TARGET CUDA::nvjpeg_static)
         target_link_libraries(${CUCIM_PLUGIN_NAME}
