@@ -29,13 +29,6 @@ include(SuperBuildUtils)
 include(CuCIMUtils)
 
 ################################################################################
-# Set cmake policy
-################################################################################
-if(${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.19")
-    cmake_policy(SET CMP0110 NEW) # For add_test() to support arbitrary characters in test name
-endif()
-
-################################################################################
 # Basic setup
 ################################################################################
 
