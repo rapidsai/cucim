@@ -29,24 +29,3 @@ if(NOT COMMAND cucim_restore_build_shared_libs)
         endif()
     endmacro()
 endif()
-
-# Define CMAKE_CUDA_ARCHITECTURES for the given architecture values
-#
-# Params:
-#   arch_list - architecture value list (e.g., '60;70;75;80;86')
-if(NOT COMMAND cucim_define_cuda_architectures)
-    function(cucim_define_cuda_architectures arch_list)
-        set(arch_string "")
-        # Create SASS for all architectures in the list
-        foreach(arch IN LISTS arch_list)
-            set(arch_string "${arch_string}" "${arch}-real")
-        endforeach(arch)
-
-        # Create PTX for the latest architecture for forward-compatibility.
-        list(GET arch_list -1 latest_arch)
-        foreach(arch IN LISTS arch_list)
-            set(arch_string "${arch_string}" "${latest_arch}-virtual")
-        endforeach(arch)
-        set(CMAKE_CUDA_ARCHITECTURES ${arch_string} PARENT_SCOPE)
-    endfunction()
-endif()
