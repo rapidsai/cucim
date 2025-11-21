@@ -935,10 +935,32 @@ bool IFD::read_region_tiles(const TIFF* tiff,
                                 throw std::runtime_error("tile_data is NULL");
                             }
                             
-                            fmt::print("🔍 Calling memcpy...\n");
+                            fmt::print("🔍 Calling memcpy (device type={})...\n", static_cast<int>(out_device.type()));
                             fflush(stdout);
-                            memcpy(dest_start_ptr + dest_pixel_index, tile_data + nbytes_tile_index,
-                                   nbytes_tile_pixel_size_x);
+                            
+                            // Use appropriate copy method based on destination device
+                            if (out_device.type() == cucim::io::DeviceType::kCUDA)
+                            {
+                                // Copy from CPU (tile_data) to GPU (dest_start_ptr)
+                                cudaError_t cuda_status = cudaMemcpy(
+                                    dest_start_ptr + dest_pixel_index,
+                                    tile_data + nbytes_tile_index,
+                                    nbytes_tile_pixel_size_x,
+                                    cudaMemcpyHostToDevice
+                                );
+                                if (cuda_status != cudaSuccess)
+                                {
+                                    fmt::print(stderr, "❌ cudaMemcpy failed: {}\n", cudaGetErrorString(cuda_status));
+                                    fflush(stderr);
+                                    throw std::runtime_error(fmt::format("cudaMemcpy failed: {}", cudaGetErrorString(cuda_status)));
+                                }
+                            }
+                            else
+                            {
+                                // CPU to CPU copy
+                                memcpy(dest_start_ptr + dest_pixel_index, tile_data + nbytes_tile_index,
+                                       nbytes_tile_pixel_size_x);
+                            }
                             fmt::print("🔍 memcpy succeeded\n");
                             fflush(stdout);
                         }
