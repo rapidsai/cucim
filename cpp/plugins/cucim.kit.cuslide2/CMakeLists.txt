@@ -171,7 +171,7 @@ if(FALSE)  # Change to TRUE when source files exist
 # Add library
 # Use local src/ implementation with nvImageCodec support
 set(CUSLIDE_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide)
-add_library(${CUCIM_PLUGIN_NAME}
+add_library(${CUCIM_PLUGIN_NAME} MODULE
     ${CUSLIDE_SRC_DIR}/cuslide.cpp
     ${CUSLIDE_SRC_DIR}/cuslide.h
     ${CUSLIDE_SRC_DIR}/deflate/deflate.cpp
