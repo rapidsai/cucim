@@ -22,9 +22,6 @@
 #include <cucim/memory/memory_manager.h>
 #include <cucim/profiler/nvtx3.h>
 
-// REMOVED: CPU decoder includes (using pure nvImageCodec)
-// #include "cuslide/jpeg/libjpeg_turbo.h"
-// #include "cuslide/lzw/lzw.h"
 #include "ifd.h"
 
 static constexpr int DEFAULT_IFD_SIZE = 32;
@@ -501,10 +498,32 @@ void TIFF::resolve_vendor_format()
 
     // Detect Aperio SVS format
     {
+        bool is_aperio = false;
+        
+        // Method 1: Check ImageDescription starts with "Aperio "
         auto& image_desc = first_ifd->image_description();
         std::string_view prefix("Aperio ");
         auto res = std::mismatch(prefix.begin(), prefix.end(), image_desc.begin());
         if (res.first == prefix.end())
+        {
+            is_aperio = true;
+        }
+        
+        // Method 2: Check metadata_blobs for Aperio (kind=1)
+        // This includes the workaround for nvImageCodec 0.6.0 misclassifying Aperio as Leica
+        if (!is_aperio && nvimgcodec_parser_)
+        {
+            const auto& metadata_blobs = nvimgcodec_parser_->get_metadata_blobs(0);
+            if (metadata_blobs.find(1) != metadata_blobs.end())  // MED_APERIO = 1
+            {
+                is_aperio = true;
+                #ifdef DEBUG
+                fmt::print("✅ Aperio detected via metadata_blobs workaround\n");
+                #endif
+            }
+        }
+        
+        if (is_aperio)
         {
             _populate_aperio_svs_metadata(ifd_count, json_metadata, first_ifd);
         }
@@ -536,7 +555,21 @@ void TIFF::resolve_vendor_format()
             }
         }
         
-        // Method 3: Check if nvImageCodec detected it as Philips (metadata kind 2)
+        // Method 3: Check metadata_blobs for Philips (kind=2)
+        // This includes the workaround for nvImageCodec 0.6.0 misclassifying Philips as Ventana
+        if (!is_philips && nvimgcodec_parser_)
+        {
+            const auto& metadata_blobs = nvimgcodec_parser_->get_metadata_blobs(0);
+            if (metadata_blobs.find(2) != metadata_blobs.end())  // MED_PHILIPS = 2
+            {
+                is_philips = true;
+                #ifdef DEBUG
+                fmt::print("✅ Philips detected via metadata_blobs workaround\n");
+                #endif
+            }
+        }
+        
+        // Method 4: Check if nvImageCodec detected it as Philips (format string)
         if (!is_philips && nvimgcodec_parser_)
         {
             std::string detected_format = nvimgcodec_parser_->get_detected_format();
@@ -658,22 +691,27 @@ void TIFF::_populate_philips_tiff_metadata(uint16_t ifd_count, void* metadata, s
         for (int index = 1, level_index = 1; index < ifd_count; ++index, ++level_index)
         {
             auto& ifd = ifds_[index];
-            if (ifd->tile_width() == 0)
+            
+            // Check if this IFD is an associated image (macro/label) based on ImageDescription
+            // NOTE: In Philips TIFF, pyramid levels can be strip-based (tile_width==0)
+            // So we can't use tile_width to identify associated images
+            auto& image_desc = ifd->image_description();
+            bool is_macro = (std::mismatch(macro_prefix.begin(), macro_prefix.end(), image_desc.begin()).first == macro_prefix.end());
+            bool is_label = (std::mismatch(label_prefix.begin(), label_prefix.end(), image_desc.begin()).first == label_prefix.end());
+            
+            if (is_macro || is_label)
             {
-                // TODO: check macro and label
+                // This is an associated image - add to associated_images_ map
                 AssociatedImageBufferDesc buf_desc{};
                 buf_desc.type = AssociatedImageBufferType::IFD;
                 buf_desc.compression = static_cast<cucim::codec::CompressionMethod>(ifd->compression());
                 buf_desc.ifd_index = index;
 
-                auto& image_desc = ifd->image_description();
-                if (std::mismatch(macro_prefix.begin(), macro_prefix.end(), image_desc.begin()).first ==
-                    macro_prefix.end())
+                if (is_macro)
                 {
                     associated_images_.emplace("macro", buf_desc);
                 }
-                else if (std::mismatch(label_prefix.begin(), label_prefix.end(), image_desc.begin()).first ==
-                         label_prefix.end())
+                else if (is_label)
                 {
                     associated_images_.emplace("label", buf_desc);
                 }
@@ -683,13 +721,26 @@ void TIFF::_populate_philips_tiff_metadata(uint16_t ifd_count, void* metadata, s
                 --level_index;
                 continue;
             }
-            double downsample = std::round((pixel_spacings[spacing_index].first / spacing_x_l0 +
-                                            pixel_spacings[spacing_index].second / spacing_y_l0) /
-                                           2);
-            // Fix width and height of IFD
-            ifd->width_ = width_l0 / downsample;
-            ifd->height_ = height_l0 / downsample;
-            ++spacing_index;
+            
+            // This is a pyramid level - calculate downsample and fix dimensions
+            if (spacing_index < pixel_spacings.size())
+            {
+                double downsample = std::round((pixel_spacings[spacing_index].first / spacing_x_l0 +
+                                                pixel_spacings[spacing_index].second / spacing_y_l0) /
+                                               2);
+                // Fix width and height of IFD
+                ifd->width_ = width_l0 / downsample;
+                ifd->height_ = height_l0 / downsample;
+                ++spacing_index;
+            }
+            else
+            {
+                // No pixel spacing metadata for this level - calculate from actual dimensions
+                #ifdef DEBUG
+                fmt::print("  ℹ️  No DICOM_PIXEL_SPACING for IFD[{}], using actual dimensions\n", index);
+                #endif
+                // Keep the actual dimensions from nvImageCodec
+            }
         }
 
         constexpr int associated_image_type_count = 2;
@@ -790,37 +841,54 @@ void TIFF::_populate_aperio_svs_metadata(uint16_t ifd_count, void* metadata, std
     int32_t non_tile_image_count = 0;
 
     // Append associated images
+    // NOTE: For Aperio SVS, associated images are identified by SubfileType:
+    //   - SubfileType=0 at index 1: thumbnail (reduced resolution copy)
+    //   - SubfileType=1: label image
+    //   - SubfileType=9: macro image
+    // Pyramid levels typically have SubfileType=0 and are tiled, but may be strip-based
     for (int index = 1, level_index = 1; index < ifd_count; ++index, ++level_index)
     {
         auto& ifd = ifds_[index];
-        if (ifd->tile_width() == 0)
+        uint64_t subfile_type = ifd->subfile_type();
+        
+        // Check if this is an associated image based on SubfileType
+        bool is_associated = false;
+        std::string associated_name;
+        
+        if (index == 1 && subfile_type == 0 && ifd->tile_width() == 0)
+        {
+            // First non-main IFD with SubfileType=0 and strip-based: likely thumbnail
+            is_associated = true;
+            associated_name = "thumbnail";
+        }
+        else if (subfile_type == 1)
+        {
+            // SubfileType=1: label image
+            is_associated = true;
+            associated_name = "label";
+        }
+        else if (subfile_type == 9)
+        {
+            // SubfileType=9: macro image
+            is_associated = true;
+            associated_name = "macro";
+        }
+        
+        if (is_associated)
         {
             ++non_tile_image_count;
             AssociatedImageBufferDesc buf_desc{};
             buf_desc.type = AssociatedImageBufferType::IFD;
             buf_desc.compression = static_cast<cucim::codec::CompressionMethod>(ifd->compression());
             buf_desc.ifd_index = index;
-
-            uint64_t subfile_type = ifd->subfile_type();
-
-            // Assumes that associated image can be identified by checking subfile_type
-            if (index == 1 && subfile_type == 0)
-            {
-                associated_images_.emplace("thumbnail", buf_desc);
-            }
-            else if (subfile_type == 1)
-            {
-                associated_images_.emplace("label", buf_desc);
-            }
-            else if (subfile_type == 9)
-            {
-                associated_images_.emplace("macro", buf_desc);
-            }
-            // Remove item at index `ifd_index` from `level_to_ifd_idx_`
+            associated_images_.emplace(associated_name, buf_desc);
+            
+            // Remove from pyramid levels
             level_to_ifd_idx_.erase(level_to_ifd_idx_.begin() + level_index);
             --level_index;
             continue;
         }
+        // If not associated, keep as pyramid level (even if strip-based)
     }
 
     // Set TIFF type
@@ -954,118 +1022,25 @@ bool TIFF::read_associated_image(const cucim::io::format::ImageMetadataDesc* met
                 return false;
             }
 
-            raster = static_cast<uint8_t*>(cucim_malloc(raster_size)); // RGB image
-
-            // Process multi strips
-            const void* jpegtable_data = image_ifd->jpegtable_.data();
-            uint32_t jpegtable_count = image_ifd->jpegtable_.size();
-            int jpeg_color_space = image_ifd->jpeg_color_space_;
-            uint16_t predictor = image_ifd->predictor_;
-
-            uint8_t* target_ptr = raster;
-            uint32_t piece_count = image_ifd->image_piece_count_;
-            uint16_t rows_per_strip = image_ifd->rows_per_strip_;
-            uint32_t row_nbytes = width * samples_per_pixel;
-            uint32_t strip_nbytes = row_nbytes * rows_per_strip;
-            uint32_t start_row = 0;
-
-            std::vector<uint64_t>& image_piece_offsets = image_ifd->image_piece_offsets_;
-            std::vector<uint64_t>& image_piece_bytecounts = image_ifd->image_piece_bytecounts_;
-            for (int64_t piece_index = 0; piece_index < piece_count; ++piece_index)
-            {
-                uint64_t offset = image_piece_offsets[piece_index];
-                uint64_t size = image_piece_bytecounts[piece_index];
-
-                // If the piece is the last piece, adjust strip_nbytes
-                if (start_row + rows_per_strip >= height)
-                {
-                    strip_nbytes = row_nbytes * (height - start_row);
-                }
-
-                switch (compression_method)
-                {
-                case COMPRESSION_JPEG:
-                    if (!cuslide::jpeg::decode_libjpeg(file_handle_shared_.get()->fd, nullptr /*jpeg_buf*/, offset, size,
-                                                       const_cast<uint8_t*>(static_cast<const uint8_t*>(jpegtable_data)), 
-                                                       jpegtable_count, &target_ptr, out_device,
-                                                       jpeg_color_space))
-                    {
-                        cucim_free(raster);
-                        #ifdef DEBUG
-                        fmt::print(stderr, "[Error] Failed to read region with libjpeg!\n");
-                        #endif // DEBUG
-                        return false;
-                    }
-                    break;
-                case COMPRESSION_LZW:
-                    if (!cuslide::lzw::decode_lzw(file_handle_shared_.get()->fd, nullptr /*jpeg_buf*/, offset, size, &target_ptr,
-                                                  strip_nbytes, out_device))
-                    {
-                        cucim_free(raster);
-                        #ifdef DEBUG
-                        fmt::print(stderr, "[Error] Failed to read region with lzw decoder!\n");
-                        #endif // DEBUG
-                        return false;
-                    }
-                    break;
-                }
-                target_ptr += strip_nbytes;
-                start_row += rows_per_strip;
-            }
-
-            // Apply unpredictor
-            //   1: none, 2: horizontal differencing, 3: floating point predictor
-            //   https://www.adobe.io/content/dam/udp/en/open/standards/tiff/TIFF6.pdf
-            if (predictor == 2)
-            {
-                cuslide::lzw::horAcc8(raster, raster_size, row_nbytes);
-            }
+            // REMOVED: Legacy CPU decoder code for strips
+            // In a pure nvImageCodec build, associated images should use nvImageCodec decoding
+            // This legacy strip-based decoding path should not be used
+            throw std::runtime_error(fmt::format(
+                "INTERNAL ERROR: Legacy strip-based CPU decoder path reached. "
+                "This should not happen in nvImageCodec build. "
+                "Compression method: {}, IFD index: {}. "
+                "Associated images should be decoded via nvImageCodec.",
+                compression_method, buf_desc.desc_ifd_index));
             break;
         }
         case AssociatedImageBufferType::IFD_IMAGE_DESC: {
-            const auto& image_ifd = ifd(buf_desc.desc_ifd_index);
-            const char* image_desc_buf = image_ifd->image_description().data();
-            char* decoded_buf = nullptr;
-            int decoded_size = 0;
-
-            if (!cucim::codec::base64::decode(
-                    image_desc_buf, image_ifd->image_description().size(), &decoded_buf, &decoded_size))
-            {
-                #ifdef DEBUG
-                fmt::print(stderr, "[Error] Failed to decode base64-encoded string from the metadata!\n");
-                #endif // DEBUG
-                return false;
-            }
-
-            uint32_t image_width = 0;
-            uint32_t image_height = 0;
-
-            if (!cuslide::jpeg::get_dimension(decoded_buf, 0, decoded_size, &image_width, &image_height))
-            {
-                #ifdef DEBUG
-                fmt::print(stderr, "[Error] Failed to read jpeg header for image dimension!\n");
-                #endif // DEBUG
-                return false;
-            }
-
-            width = image_width;
-            height = image_height;
-            samples_per_pixel = 3; // NOTE: assumes RGB image
-            raster_size = image_width * image_height * samples_per_pixel;
-
-            raster = static_cast<uint8_t*>(cucim_malloc(raster_size)); // RGB image
-
-            if (!cuslide::jpeg::decode_libjpeg(-1, reinterpret_cast<unsigned char*>(decoded_buf), 0 /*offset*/,
-                                               decoded_size, nullptr /*jpegtable_data*/, 0 /*jpegtable_count*/, &raster,
-                                               out_device, 2 /*JCS_RGB color_space*/))
-            {
-                cucim_free(raster);
-                #ifdef DEBUG
-                fmt::print(stderr, "[Error] Failed to read image from metadata with libjpeg!\n");
-                #endif // DEBUG
-                return false;
-            }
-            break;
+            // REMOVED: Legacy CPU decoder code for base64-encoded JPEG in ImageDescription
+            // In a pure nvImageCodec build, this path should not be used
+            // Base64-encoded images in metadata should be decoded via nvImageCodec
+            throw std::runtime_error(
+                "INTERNAL ERROR: Legacy IFD_IMAGE_DESC CPU decoder path reached. "
+                "This should not happen in nvImageCodec build. "
+                "Base64-encoded associated images should be decoded via nvImageCodec.");
         }
         case AssociatedImageBufferType::FILE_OFFSET:
             // TODO: implement

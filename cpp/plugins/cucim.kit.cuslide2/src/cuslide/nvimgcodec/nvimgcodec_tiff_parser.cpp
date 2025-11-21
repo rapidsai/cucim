@@ -510,8 +510,16 @@ void TiffFileParser::extract_ifd_metadata(IfdInfo& ifd_info)
 {
     auto& manager = NvImageCodecTiffParserManager::instance();
     
+    #ifdef DEBUG
+    fmt::print("🔍 Extracting metadata for IFD[{}]...\n", ifd_info.index);
+    #endif
+    
     if (!manager.get_decoder() || !ifd_info.sub_code_stream)
     {
+        if (!manager.get_decoder())
+            fmt::print("  ⚠️  Decoder not available\n");
+        if (!ifd_info.sub_code_stream)
+            fmt::print("  ⚠️  No sub-code stream for this IFD\n");
         return;  // No decoder or stream available
     }
     
@@ -524,30 +532,44 @@ void TiffFileParser::extract_ifd_metadata(IfdInfo& ifd_info)
         &metadata_count
     );
     
-    if (status != NVIMGCODEC_STATUS_SUCCESS || metadata_count == 0)
+    if (status != NVIMGCODEC_STATUS_SUCCESS)
     {
-        return;  // No metadata or error
+        #ifdef DEBUG
+        fmt::print("  ⚠️  Metadata query failed with status: {}\n", static_cast<int>(status));
+        #endif
+        return;
+    }
+    
+    if (metadata_count == 0)
+    {
+        #ifdef DEBUG
+        fmt::print("  ℹ️  No metadata entries found for this IFD\n");
+        #endif
+        return;  // No metadata
     }
     
     #ifdef DEBUG
-    fmt::print("  Found {} metadata entries for IFD[{}]\n", metadata_count, ifd_info.index);
-    #endif // DEBUG
+    fmt::print("  ✅ Found {} metadata entries for IFD[{}]\n", metadata_count, ifd_info.index);
+    #endif
     
-    // Step 2: Allocate metadata structures (nvImageCodec fills them in)
-    // We must pre-allocate the structs, not just null pointers
+    // Step 2: Allocate metadata structures AND buffers
+    // nvImageCodec requires us to allocate buffers based on buffer_size from first call
     std::vector<nvimgcodecMetadata_t> metadata_structs(metadata_count);
     std::vector<nvimgcodecMetadata_t*> metadata_ptrs(metadata_count);
+    std::vector<std::vector<uint8_t>> metadata_buffers(metadata_count);  // Storage for actual data
     
-    // Initialize struct_type and struct_size for each metadata entry
+    // First, query to get buffer sizes (metadata structs must be initialized)
     for (int i = 0; i < metadata_count; i++)
     {
         metadata_structs[i].struct_type = NVIMGCODEC_STRUCTURE_TYPE_METADATA;
         metadata_structs[i].struct_size = sizeof(nvimgcodecMetadata_t);
         metadata_structs[i].struct_next = nullptr;
+        metadata_structs[i].buffer = nullptr;  // Query mode: get sizes
+        metadata_structs[i].buffer_size = 0;
         metadata_ptrs[i] = &metadata_structs[i];
     }
     
-    // Step 3: Get actual metadata
+    // Query call to get buffer sizes
     status = nvimgcodecDecoderGetMetadata(
         manager.get_decoder(),
         ifd_info.sub_code_stream,
@@ -558,15 +580,44 @@ void TiffFileParser::extract_ifd_metadata(IfdInfo& ifd_info)
     if (status != NVIMGCODEC_STATUS_SUCCESS)
     {
         #ifdef DEBUG
-        fmt::print("⚠️  Failed to retrieve metadata for IFD[{}] (status: {})\n",
-                  ifd_info.index, static_cast<int>(status));
-        #endif // DEBUG
+        fmt::print("  ⚠️  Failed to query metadata sizes (status: {})\n", static_cast<int>(status));
+        #endif
+        return;
+    }
+    
+    // Now allocate buffers based on reported sizes
+    for (int i = 0; i < metadata_count; i++)
+    {
+        size_t required_size = metadata_structs[i].buffer_size;
+        if (required_size > 0)
+        {
+            metadata_buffers[i].resize(required_size);
+            metadata_structs[i].buffer = metadata_buffers[i].data();
+            #ifdef DEBUG
+            fmt::print("    📦 Allocated {} bytes for metadata[{}]\n", required_size, i);
+            #endif
+        }
+    }
+    
+    // Step 3: Get actual metadata content (buffers now allocated)
+    status = nvimgcodecDecoderGetMetadata(
+        manager.get_decoder(),
+        ifd_info.sub_code_stream,
+        metadata_ptrs.data(),
+        &metadata_count
+    );
+    
+    if (status != NVIMGCODEC_STATUS_SUCCESS)
+    {
+        #ifdef DEBUG
+        fmt::print("  ⚠️  Failed to retrieve metadata content (status: {})\n", static_cast<int>(status));
+        #endif
         return;
     }
     
     #ifdef DEBUG
-    fmt::print("  ✅ Successfully retrieved {} metadata entries\n", metadata_count);
-    #endif // DEBUG
+    fmt::print("  ✅ Successfully retrieved {} metadata entries with content\n", metadata_count);
+    #endif
     
     // Step 4: Process each metadata entry
     for (int j = 0; j < metadata_count; ++j)
@@ -583,9 +634,19 @@ void TiffFileParser::extract_ifd_metadata(IfdInfo& ifd_info)
         const uint8_t* buffer = static_cast<const uint8_t*>(metadata->buffer);
         
         #ifdef DEBUG
-        fmt::print("    Metadata[{}]: kind={}, format={}, size={}\n",
-                  j, kind, format, buffer_size);
-        #endif // DEBUG
+        // Map kind to human-readable name for debugging
+        const char* kind_name = "UNKNOWN";
+        switch (kind) {
+            case 0: kind_name = "TIFF_TAG"; break;
+            case 1: kind_name = "MED_APERIO"; break;
+            case 2: kind_name = "MED_PHILIPS"; break;
+            case 3: kind_name = "MED_LEICA"; break;
+            case 4: kind_name = "MED_VENTANA"; break;
+            case 5: kind_name = "MED_TRESTLE"; break;
+        }
+        fmt::print("    Metadata[{}]: kind={} ({}), format={}, size={}\n",
+                  j, kind, kind_name, format, buffer_size);
+        #endif
         
         // Store in metadata_blobs map
         if (buffer && buffer_size > 0)
@@ -602,14 +663,100 @@ void TiffFileParser::extract_ifd_metadata(IfdInfo& ifd_info)
             {
                 // Aperio metadata is typically in RAW format as text
                 ifd_info.image_description.assign(buffer, buffer + buffer_size);
+                #ifdef DEBUG
+                fmt::print("  ✅ Extracted Aperio ImageDescription ({} bytes)\n", buffer_size);
+                #endif
             }
             else if (kind == 2)  // MED_PHILIPS = 2
             {
                 // Philips metadata is typically XML
                 ifd_info.image_description.assign(buffer, buffer + buffer_size);
+                #ifdef DEBUG
+                fmt::print("  ✅ Extracted Philips ImageDescription XML ({} bytes)\n", buffer_size);
+                
+                // Show preview of XML
+                if (buffer_size > 0) {
+                    std::string preview(buffer, buffer + std::min(buffer_size, size_t(100)));
+                    fmt::print("     XML preview: {}...\n", preview);
+                }
+                #endif
+            }
+            else if (kind == 3)  // MED_LEICA = 3 (but might be misclassified Aperio!)
+            {
+                // WORKAROUND: nvImageCodec 0.6.0 sometimes misclassifies Aperio as Leica
+                // Check if this is actually Aperio by looking for "Aperio Image Library" text
+                if (buffer_size > 20)
+                {
+                    std::string content(buffer, buffer + std::min(buffer_size, size_t(200)));
+                    
+                    if (content.find("Aperio Image Library") != std::string::npos ||
+                        content.find("Aperio") == 0)  // Starts with "Aperio"
+                    {
+                        // This is actually Aperio misclassified as Leica!
+                        #ifdef DEBUG
+                        fmt::print("  ⚠️  nvImageCodec 0.6.0: Aperio misclassified as Leica (corrected)\n");
+                        #endif
+                        ifd_info.image_description.assign(buffer, buffer + buffer_size);
+                        
+                        // Also store it as kind=1 (Aperio) for proper detection
+                        IfdInfo::MetadataBlob aperio_blob;
+                        aperio_blob.format = format;
+                        aperio_blob.data.assign(buffer, buffer + buffer_size);
+                        ifd_info.metadata_blobs[1] = std::move(aperio_blob);  // Store as MED_APERIO
+                    }
+                }
+            }
+            else if (kind == 4)  // MED_VENTANA = 4 (but might be misclassified Philips!)
+            {
+                // WORKAROUND: nvImageCodec 0.6.0 sometimes misclassifies Philips as Ventana
+                // Check if this is actually Philips XML by looking for DataObject/DPUfsImport
+                if (buffer_size > 100)
+                {
+                    std::string content(buffer, buffer + std::min(buffer_size, size_t(500)));
+                    
+                    if (content.find("<?xml") != std::string::npos && 
+                        content.find("DataObject") != std::string::npos &&
+                        content.find("DPUfsImport") != std::string::npos)
+                    {
+                        // This is actually Philips XML misclassified as Ventana!
+                        #ifdef DEBUG
+                        fmt::print("  ⚠️  nvImageCodec 0.6.0: Philips misclassified as Ventana (corrected)\n");
+                        #endif
+                        ifd_info.image_description.assign(buffer, buffer + buffer_size);
+                        
+                        // Also store it as kind=2 (Philips) for proper detection
+                        IfdInfo::MetadataBlob philips_blob;
+                        philips_blob.format = format;
+                        philips_blob.data.assign(buffer, buffer + buffer_size);
+                        ifd_info.metadata_blobs[2] = std::move(philips_blob);  // Store as MED_PHILIPS
+                    }
+                }
             }
         }
     }
+    
+    // WORKAROUND for nvImageCodec 0.6.0: Philips TIFF metadata limitation
+    // ========================================================================
+    // nvImageCodec 0.6.0 does NOT expose:
+    // 1. Individual TIFF tags (SOFTWARE, ImageDescription, etc.)
+    // 2. Philips format detection for some files
+    //
+    // This means:
+    // - If nvImageCodec doesn't detect the file as Philips (kind=2), we can't get the XML
+    // - The SOFTWARE tag is not available to trigger Philips detection
+    // - ImageDescription tag (270) with Philips XML is not accessible
+    //
+    // SOLUTION: Upgrade to nvImageCodec 0.7.0+ which supports:
+    // - Individual TIFF tag queries (e.g., decoder.get_metadata(scs, name="ImageDescription"))
+    // - Better vendor format detection
+    // - Full TIFF tag access via kind=0 (TIFF_TAG)
+    //
+    // Reference: Slack thread Oct 21-Nov 12, 2024 (swdl-image-codecs)
+    // - Michal Kepa: "retrieving individual tiff tag is currently only on the internal branch"
+    // - Sebastian Matysik: "this is added in 0.7.0 which was not released yet"
+    //
+    // Until 0.7.0 is available, Philips metadata parsing will only work for files that
+    // nvImageCodec successfully detects as Philips format (exposes MED_PHILIPS metadata).
 }
 
 const IfdInfo& TiffFileParser::get_ifd(uint32_t index) const

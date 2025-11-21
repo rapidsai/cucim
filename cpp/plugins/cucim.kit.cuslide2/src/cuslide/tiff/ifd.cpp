@@ -14,10 +14,6 @@
 #include <thread>
 
 #include <fmt/format.h>
-// REMOVED: libtiff and turbojpeg includes (using pure nvImageCodec)
-// #include <tiffio.h>
-// #include <tiffiop.h>
-// #include <turbojpeg.h>
 
 #include <cucim/codec/hash_function.h>
 #include <cucim/cuimage.h>
@@ -26,15 +22,7 @@
 #include <cucim/profiler/nvtx3.h>
 #include <cucim/util/cuda.h>
 
-// REMOVED: CPU decoder includes (using pure nvImageCodec)
-// #include "cuslide/deflate/deflate.h"
-// #include "cuslide/jpeg/libjpeg_turbo.h"
-// #include "cuslide/jpeg2k/libopenjpeg.h"
-// #include "cuslide/loader/nvjpeg_processor.h"
-// #include "cuslide/lzw/lzw.h"
-// #include "cuslide/raw/raw.h"
-
-// CPU decoder stubs (for legacy fallback code paths that should never execute)
+// CPU decoder stubs (safety net for compilation - these throw errors if called)
 #include "cpu_decoder_stubs.h"
 
 // nvImageCodec handles ALL decoding (JPEG, JPEG2000, deflate, LZW, raw)
@@ -825,9 +813,21 @@ uint16_t IFD::parse_codec_to_compression(const std::string& codec)
         return COMPRESSION_NONE;  // 1
     }
     
-    // Unknown codec - log warning and default to uncompressed
-    fmt::print("⚠️  Unknown codec '{}', defaulting to COMPRESSION_NONE\n", codec);
-    return COMPRESSION_NONE;
+    // Handle generic 'tiff' codec from nvImageCodec 0.6.0
+    // This is a known limitation where nvImageCodec doesn't expose the actual compression
+    // For now, default to JPEG which is most common in whole-slide imaging
+    if (codec == "tiff") {
+        #ifdef DEBUG
+        fmt::print("ℹ️  nvImageCodec returned generic 'tiff' codec, assuming JPEG compression\n");
+        #endif
+        return COMPRESSION_JPEG;  // 7 - Most common for WSI (Aperio, Philips, etc.)
+    }
+    
+    // Unknown codec - log warning and default to JPEG (safer than NONE for WSI)
+    #ifdef DEBUG
+    fmt::print("⚠️  Unknown codec '{}', defaulting to COMPRESSION_JPEG\n", codec);
+    #endif
+    return COMPRESSION_JPEG;  // 7 - WSI files rarely use uncompressed
 }
 
 bool IFD::is_compression_supported() const
@@ -1046,15 +1046,17 @@ bool IFD::read_region_tiles(const TIFF* tiff,
                 auto dest_pixel_index_x = data->dest_pixel_index_x;
                 auto dest_start_ptr = data->dest_start_ptr;
                 auto dest_pixel_step_y = data->dest_pixel_step_y;
-                auto tiff_file = data->tiff_file;
+                // REMOVED: Legacy CPU decoder variables (unused after removing CPU decoder code)
+                // auto tiff_file = data->tiff_file;
                 auto ifd_hash_value = data->ifd_hash_value;
                 auto tile_raster_nbytes = data->tile_raster_nbytes;
                 auto cache_type = data->cache_type;
-                auto jpegtable_data = data->jpegtable_data;
-                auto jpegtable_count = data->jpegtable_count;
-                auto jpeg_color_space = data->jpeg_color_space;
+                // REMOVED: Legacy CPU decoder variables (unused after removing CPU decoder code)
+                // auto jpegtable_data = data->jpegtable_data;
+                // auto jpegtable_count = data->jpegtable_count;
+                // auto jpeg_color_space = data->jpeg_color_space;
+                // auto predictor = data->predictor;
                 auto background_value = data->background_value;
-                auto predictor = data->predictor;
                 auto loader = data->loader;
                 
                 // Reconstruct Device object inside lambda to avoid copying issues
@@ -1131,76 +1133,15 @@ bool IFD::read_region_tiles(const TIFF* tiff,
                                 tile_data = tile_raster.get();
                             }
                             {
-                                PROF_SCOPED_RANGE(PROF_EVENT(ifd_decompression));
-                                switch (compression_method)
-                                {
-                                case COMPRESSION_NONE:
-                                    cuslide::raw::decode_raw(tiff_file, nullptr, tiledata_offset, tiledata_size,
-                                                             &tile_data, tile_raster_nbytes, out_device);
-                                    break;
-                                case COMPRESSION_JPEG:
-                                    cuslide::jpeg::decode_libjpeg(tiff_file, nullptr, tiledata_offset, tiledata_size,
-                                                                  const_cast<uint8_t*>(static_cast<const uint8_t*>(jpegtable_data)), 
-                                                                  jpegtable_count, &tile_data,
-                                                                  out_device, jpeg_color_space);
-                                    break;
-                                case COMPRESSION_ADOBE_DEFLATE:
-                                case COMPRESSION_DEFLATE:
-                                    cuslide::deflate::decode_deflate(tiff_file, nullptr, tiledata_offset, tiledata_size,
-                                                                     &tile_data, tile_raster_nbytes, out_device);
-                                    break;
-                                case COMPRESSION_APERIO_JP2K_YCBCR: // 33003
-                                {
-                                    fmt::print("🔍 Decoding JPEG2000 tile (YCbCr) at offset {}, size {}\n", tiledata_offset, tiledata_size);
-                                    // For JPEG2000 without NvJpegProcessor, decode to CPU (loader expects CPU memory)
-                                    cucim::io::Device cpu_device("cpu");
-                                    // Try nvImageCodec first, fallback to OpenJPEG if it fails
-                                    if (!cuslide2::nvimgcodec::decode_jpeg2k_nvimgcodec(
-                                            tiff_file, nullptr, tiledata_offset, tiledata_size,
-                                            &tile_data, tile_raster_nbytes, cpu_device, 0))
-                                    {
-                                        fmt::print("⚠️  nvImageCodec failed, falling back to OpenJPEG\n");
-                                        // Fallback to CPU OpenJPEG decoder
-                                        cuslide::jpeg2k::decode_libopenjpeg(tiff_file, nullptr, tiledata_offset,
-                                                                            tiledata_size, &tile_data, tile_raster_nbytes,
-                                                                            out_device, cuslide::jpeg2k::ColorSpace::kSYCC);
-                                    }
-                                    fmt::print("✅ JPEG2000 tile decoded successfully\n");
-                                    break;
-                                }
-                                case COMPRESSION_APERIO_JP2K_RGB: // 33005
-                                {
-                                    fmt::print("🔍 Decoding JPEG2000 tile (RGB) at offset {}, size {}\n", tiledata_offset, tiledata_size);
-                                    // For JPEG2000 without NvJpegProcessor, decode to CPU (loader expects CPU memory)
-                                    cucim::io::Device cpu_device("cpu");
-                                    // Try nvImageCodec first, fallback to OpenJPEG if it fails
-                                    if (!cuslide2::nvimgcodec::decode_jpeg2k_nvimgcodec(
-                                            tiff_file, nullptr, tiledata_offset, tiledata_size,
-                                            &tile_data, tile_raster_nbytes, cpu_device, 0))
-                                    {
-                                        fmt::print("⚠️  nvImageCodec failed, falling back to OpenJPEG\n");
-                                        // Fallback to CPU OpenJPEG decoder
-                                        cuslide::jpeg2k::decode_libopenjpeg(tiff_file, nullptr, tiledata_offset,
-                                                                            tiledata_size, &tile_data, tile_raster_nbytes,
-                                                                            out_device, cuslide::jpeg2k::ColorSpace::kRGB);
-                                    }
-                                    fmt::print("✅ JPEG2000 tile decoded successfully\n");
-                                    break;
-                                }
-                                case COMPRESSION_LZW:
-                                    cuslide::lzw::decode_lzw(tiff_file, nullptr, tiledata_offset, tiledata_size,
-                                                             &tile_data, tile_raster_nbytes, out_device);
-                                    // Apply unpredictor
-                                    //   1: none, 2: horizontal differencing, 3: floating point predictor
-                                    //   https://www.adobe.io/content/dam/udp/en/open/standards/tiff/TIFF6.pdf
-                                    if (predictor == 2)
-                                    {
-                                        cuslide::lzw::horAcc8(tile_data, tile_raster_nbytes, nbytes_tw);
-                                    }
-                                    break;
-                                default:
-                                    throw std::runtime_error("Unsupported compression method");
-                                }
+                                // REMOVED: Legacy CPU decoder fallback code
+                                // This code path should NOT be reached in a pure nvImageCodec build.
+                                // All decoding should go through the nvImageCodec ROI path (lines 219-276).
+                                // If you see this error, investigate why ROI decode failed.
+                                throw std::runtime_error(fmt::format(
+                                    "INTERNAL ERROR: Tile-based CPU decoder fallback reached. "
+                                    "This should not happen in nvImageCodec build. "
+                                    "Compression method: {}, tile offset: {}, size: {}",
+                                    compression_method, tiledata_offset, tiledata_size));
                             }
 
                             value = image_cache.create_value(tile_data, tile_raster_nbytes);
@@ -1595,76 +1536,15 @@ bool IFD::read_region_tiles_boundary(const TIFF* tiff,
                                 tile_data = tile_raster.get();
                             }
                             {
-                                PROF_SCOPED_RANGE(PROF_EVENT(ifd_decompression));
-                                switch (compression_method)
-                                {
-                                case COMPRESSION_NONE:
-                                    cuslide::raw::decode_raw(tiff_file, nullptr, tiledata_offset, tiledata_size,
-                                                             &tile_data, tile_raster_nbytes, out_device);
-                                    break;
-                                case COMPRESSION_JPEG:
-                                    cuslide::jpeg::decode_libjpeg(tiff_file, nullptr, tiledata_offset, tiledata_size,
-                                                                  const_cast<uint8_t*>(static_cast<const uint8_t*>(jpegtable_data)), 
-                                                                  jpegtable_count, &tile_data,
-                                                                  out_device, jpeg_color_space);
-                                    break;
-                                case COMPRESSION_ADOBE_DEFLATE:
-                                case COMPRESSION_DEFLATE:
-                                    cuslide::deflate::decode_deflate(tiff_file, nullptr, tiledata_offset, tiledata_size,
-                                                                     &tile_data, tile_raster_nbytes, out_device);
-                                    break;
-                                case COMPRESSION_APERIO_JP2K_YCBCR: // 33003
-                                {
-                                    fmt::print("🔍 Decoding JPEG2000 tile (YCbCr) at offset {}, size {}\n", tiledata_offset, tiledata_size);
-                                    // For JPEG2000 without NvJpegProcessor, decode to CPU (loader expects CPU memory)
-                                    cucim::io::Device cpu_device("cpu");
-                                    // Try nvImageCodec first, fallback to OpenJPEG if it fails
-                                    if (!cuslide2::nvimgcodec::decode_jpeg2k_nvimgcodec(
-                                            tiff_file, nullptr, tiledata_offset, tiledata_size,
-                                            &tile_data, tile_raster_nbytes, cpu_device, 0))
-                                    {
-                                        fmt::print("⚠️  nvImageCodec failed, falling back to OpenJPEG\n");
-                                        // Fallback to CPU OpenJPEG decoder
-                                        cuslide::jpeg2k::decode_libopenjpeg(tiff_file, nullptr, tiledata_offset,
-                                                                            tiledata_size, &tile_data, tile_raster_nbytes,
-                                                                            out_device, cuslide::jpeg2k::ColorSpace::kSYCC);
-                                    }
-                                    fmt::print("✅ JPEG2000 tile decoded successfully\n");
-                                    break;
-                                }
-                                case COMPRESSION_APERIO_JP2K_RGB: // 33005
-                                {
-                                    fmt::print("🔍 Decoding JPEG2000 tile (RGB) at offset {}, size {}\n", tiledata_offset, tiledata_size);
-                                    // For JPEG2000 without NvJpegProcessor, decode to CPU (loader expects CPU memory)
-                                    cucim::io::Device cpu_device("cpu");
-                                    // Try nvImageCodec first, fallback to OpenJPEG if it fails
-                                    if (!cuslide2::nvimgcodec::decode_jpeg2k_nvimgcodec(
-                                            tiff_file, nullptr, tiledata_offset, tiledata_size,
-                                            &tile_data, tile_raster_nbytes, cpu_device, 0))
-                                    {
-                                        fmt::print("⚠️  nvImageCodec failed, falling back to OpenJPEG\n");
-                                        // Fallback to CPU OpenJPEG decoder
-                                        cuslide::jpeg2k::decode_libopenjpeg(tiff_file, nullptr, tiledata_offset,
-                                                                            tiledata_size, &tile_data, tile_raster_nbytes,
-                                                                            out_device, cuslide::jpeg2k::ColorSpace::kRGB);
-                                    }
-                                    fmt::print("✅ JPEG2000 tile decoded successfully\n");
-                                    break;
-                                }
-                                case COMPRESSION_LZW:
-                                    cuslide::lzw::decode_lzw(tiff_file, nullptr, tiledata_offset, tiledata_size,
-                                                             &tile_data, tile_raster_nbytes, out_device);
-                                    // Apply unpredictor
-                                    //   1: none, 2: horizontal differencing, 3: floating point predictor
-                                    //   https://www.adobe.io/content/dam/udp/en/open/standards/tiff/TIFF6.pdf
-                                    if (predictor == 2)
-                                    {
-                                        cuslide::lzw::horAcc8(tile_data, tile_raster_nbytes, nbytes_tw);
-                                    }
-                                    break;
-                                default:
-                                    throw std::runtime_error("Unsupported compression method");
-                                }
+                                // REMOVED: Legacy CPU decoder fallback code (duplicate)
+                                // This code path should NOT be reached in a pure nvImageCodec build.
+                                // All decoding should go through the nvImageCodec ROI path (lines 219-276).
+                                // If you see this error, investigate why ROI decode failed.
+                                throw std::runtime_error(fmt::format(
+                                    "INTERNAL ERROR: Tile-based CPU decoder fallback reached. "
+                                    "This should not happen in nvImageCodec build. "
+                                    "Compression method: {}, tile offset: {}, size: {}",
+                                    compression_method, tiledata_offset, tiledata_size));
                             }
                             value = image_cache.create_value(tile_data, tile_raster_nbytes);
                             image_cache.insert(key, value);
