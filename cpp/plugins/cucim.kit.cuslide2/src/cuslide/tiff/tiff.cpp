@@ -252,11 +252,11 @@ TIFF::~TIFF()
 TIFF::TIFF(const cucim::filesystem::Path& file_path) : file_path_(file_path)
 {
     PROF_SCOPED_RANGE(PROF_EVENT_P(tiff_tiff, 1));
-    
+
     #ifdef DEBUG
     fmt::print("📂 Opening TIFF file with nvImageCodec: {}\n", file_path);
     #endif // DEBUG
-    
+
     // Step 1: Open file descriptor (needed for CuCIMFileHandle)
     // Copy file path (will be freed by CuCIMFileHandle destructor)
     char* file_path_cstr = static_cast<char*>(cucim_malloc(file_path.size() + 1));
@@ -269,13 +269,13 @@ TIFF::TIFF(const cucim::filesystem::Path& file_path) : file_path_(file_path)
         cucim_free(file_path_cstr);
         throw std::invalid_argument(fmt::format("Cannot open {}!", file_path));
     }
-    
+
     // Step 2: Create CuCIMFileHandle with 'this' as client_data
-    // CRITICAL: The 5th parameter (client_data) must be 'this' so parser_parse() 
+    // CRITICAL: The 5th parameter (client_data) must be 'this' so parser_parse()
     // can retrieve the TIFF object later via handle->client_data
     file_handle_shared_ = std::make_shared<CuCIMFileHandle>(
         fd, nullptr, FileHandleType::kPosix, file_path_cstr, this);
-    
+
     // Step 3: Set up deleter to clean up TIFF object when handle is destroyed
     // This is CRITICAL to prevent memory leaks and double-frees
     file_handle_shared_->set_deleter([](CuCIMFileHandle_ptr handle_ptr) -> bool {
@@ -288,34 +288,34 @@ TIFF::TIFF(const cucim::filesystem::Path& file_path) : file_path_(file_path)
         }
         return true;
     });
-    
+
     // Step 4: Initialize nvImageCodec TiffFileParser (MANDATORY)
     try {
         nvimgcodec_parser_ = std::make_unique<cuslide2::nvimgcodec::TiffFileParser>(
             file_path.c_str());
-        
+
         if (!nvimgcodec_parser_->is_valid()) {
             throw std::runtime_error("TiffFileParser initialization failed");
         }
-        
+
         #ifdef DEBUG
         fmt::print("✅ nvImageCodec TiffFileParser initialized successfully\n");
         #endif // DEBUG
-        
+
         // Extract basic file properties from TiffFileParser
         std::string detected_format = nvimgcodec_parser_->get_detected_format();
         #ifdef DEBUG
         fmt::print("   Detected format: {}\n", detected_format);
         #endif // DEBUG
-        
+
         #ifdef DEBUG
         uint32_t ifd_count = nvimgcodec_parser_->get_ifd_count();
         fmt::print("   IFD count: {}\n", ifd_count);
         #endif // DEBUG
-        
+
         // Set default values (nvImageCodec handles endianness internally)
         is_big_endian_ = false;
-        
+
     } catch (const std::exception& e) {
         #ifdef DEBUG
         fmt::print("❌ FATAL: Failed to initialize nvImageCodec TiffFileParser: {}\n", e.what());
@@ -329,10 +329,10 @@ TIFF::TIFF(const cucim::filesystem::Path& file_path) : file_path_(file_path)
         // Cleanup file handle before re-throwing
         file_handle_shared_.reset();
         throw std::runtime_error(fmt::format(
-            "Cannot open TIFF file '{}' without nvImageCodec: {}", 
+            "Cannot open TIFF file '{}' without nvImageCodec: {}",
             file_path, e.what()));
     }
-    
+
     // Initialize metadata container
     metadata_ = new json{};
 }
@@ -388,36 +388,36 @@ std::shared_ptr<TIFF> TIFF::open(const cucim::filesystem::Path& file_path, int m
 void TIFF::close()
 {
     // REMOVED: libtiff cleanup - no longer using tiff_client_
-    
+
     // Clean up metadata
     if (metadata_)
     {
         delete reinterpret_cast<json*>(metadata_);
         metadata_ = nullptr;
     }
-    
+
     // nvimgcodec_parser_ is automatically cleaned up by unique_ptr destructor
 }
 
 void TIFF::construct_ifds()
 {
     PROF_SCOPED_RANGE(PROF_EVENT(tiff_construct_ifds));
-    
+
     if (!nvimgcodec_parser_ || !nvimgcodec_parser_->is_valid()) {
         throw std::runtime_error("Cannot construct IFDs: nvImageCodec parser not available");
     }
-    
+
     ifd_offsets_.clear();
     ifds_.clear();
-    
+
     uint32_t ifd_count = nvimgcodec_parser_->get_ifd_count();
     #ifdef DEBUG
     fmt::print("📋 Constructing {} IFDs from nvImageCodec metadata\n", ifd_count);
     #endif // DEBUG
-    
+
     ifd_offsets_.reserve(ifd_count);
     ifds_.reserve(ifd_count);
-    
+
     for (uint32_t ifd_index = 0; ifd_index < ifd_count; ++ifd_index) {
         try {
 #ifdef CUCIM_HAS_NVIMGCODEC
@@ -448,27 +448,27 @@ void TIFF::construct_ifds()
             // Continue with other IFDs - some may be corrupted
         }
     }
-    
+
     if (ifds_.empty()) {
         throw std::runtime_error("No valid IFDs found in TIFF file");
     }
-    
+
     #ifdef DEBUG
     fmt::print("✅ Successfully created {} out of {} IFDs\n", ifds_.size(), ifd_count);
     #endif // DEBUG
-    
+
     // Initialize level-to-IFD mapping (will be updated by resolve_vendor_format)
     level_to_ifd_idx_.clear();
     level_to_ifd_idx_.reserve(ifds_.size());
     for (size_t index = 0; index < ifds_.size(); ++index) {
         level_to_ifd_idx_.emplace_back(index);
     }
-    
+
     // Detect vendor format and classify IFDs
     resolve_vendor_format();
-    
+
     // Sort resolution levels by size (largest first)
-    std::sort(level_to_ifd_idx_.begin(), level_to_ifd_idx_.end(), 
+    std::sort(level_to_ifd_idx_.begin(), level_to_ifd_idx_.end(),
              [this](const size_t& a, const size_t& b) {
         uint32_t width_a = this->ifds_[a]->width();
         uint32_t width_b = this->ifds_[b]->width();
@@ -477,7 +477,7 @@ void TIFF::construct_ifds()
         }
         return this->ifds_[a]->height() > this->ifds_[b]->height();
     });
-    
+
     #ifdef DEBUG
     fmt::print("✅ TIFF initialization complete: {} levels, {} associated images\n",
               level_to_ifd_idx_.size(), associated_images_.size());
@@ -503,7 +503,7 @@ void TIFF::resolve_vendor_format()
     // Detect Aperio SVS format
     {
         bool is_aperio = false;
-        
+
         // Method 1: Check ImageDescription starts with "Aperio "
         auto& image_desc = first_ifd->image_description();
         std::string_view prefix("Aperio ");
@@ -512,7 +512,7 @@ void TIFF::resolve_vendor_format()
         {
             is_aperio = true;
         }
-        
+
         // Method 2: Check metadata_blobs for Aperio (kind=1)
         // This includes the workaround for nvImageCodec 0.6.0 misclassifying Aperio as Leica
         if (!is_aperio && nvimgcodec_parser_)
@@ -526,7 +526,7 @@ void TIFF::resolve_vendor_format()
                 #endif
             }
         }
-        
+
         if (is_aperio)
         {
             _populate_aperio_svs_metadata(ifd_count, json_metadata, first_ifd);
@@ -538,7 +538,7 @@ void TIFF::resolve_vendor_format()
     // Workaround: Check for Philips XML in ImageDescription or use nvImageCodec metadata kind
     {
         bool is_philips = false;
-        
+
         // Method 1: Check SOFTWARE tag (available in nvImageCodec 0.7.0+)
         std::string_view prefix("Philips");
         auto res = std::mismatch(prefix.begin(), prefix.end(), software.begin());
@@ -546,7 +546,7 @@ void TIFF::resolve_vendor_format()
         {
             is_philips = true;
         }
-        
+
         // Method 2: Check for Philips XML structure in ImageDescription
         // (Workaround for nvImageCodec 0.6.0 where SOFTWARE tag is not available)
         if (!is_philips)
@@ -558,7 +558,7 @@ void TIFF::resolve_vendor_format()
                 is_philips = true;
             }
         }
-        
+
         // Method 3: Check metadata_blobs for Philips (kind=2)
         // This includes the workaround for nvImageCodec 0.6.0 misclassifying Philips as Ventana
         if (!is_philips && nvimgcodec_parser_)
@@ -572,7 +572,7 @@ void TIFF::resolve_vendor_format()
                 #endif
             }
         }
-        
+
         // Method 4: Check if nvImageCodec detected it as Philips (format string)
         if (!is_philips && nvimgcodec_parser_)
         {
@@ -582,7 +582,7 @@ void TIFF::resolve_vendor_format()
                 is_philips = true;
             }
         }
-        
+
         if (is_philips)
         {
             _populate_philips_tiff_metadata(ifd_count, json_metadata, first_ifd);
@@ -695,14 +695,14 @@ void TIFF::_populate_philips_tiff_metadata(uint16_t ifd_count, void* metadata, s
         for (int index = 1, level_index = 1; index < ifd_count; ++index, ++level_index)
         {
             auto& ifd = ifds_[index];
-            
+
             // Check if this IFD is an associated image (macro/label) based on ImageDescription
             // NOTE: In Philips TIFF, pyramid levels can be strip-based (tile_width==0)
             // So we can't use tile_width to identify associated images
             auto& image_desc = ifd->image_description();
             bool is_macro = (std::mismatch(macro_prefix.begin(), macro_prefix.end(), image_desc.begin()).first == macro_prefix.end());
             bool is_label = (std::mismatch(label_prefix.begin(), label_prefix.end(), image_desc.begin()).first == label_prefix.end());
-            
+
             if (is_macro || is_label)
             {
                 // This is an associated image - add to associated_images_ map
@@ -725,7 +725,7 @@ void TIFF::_populate_philips_tiff_metadata(uint16_t ifd_count, void* metadata, s
                 --level_index;
                 continue;
             }
-            
+
             // This is a pyramid level - calculate downsample and fix dimensions
             if (spacing_index < pixel_spacings.size())
             {
@@ -854,11 +854,11 @@ void TIFF::_populate_aperio_svs_metadata(uint16_t ifd_count, void* metadata, std
     {
         auto& ifd = ifds_[index];
         uint64_t subfile_type = ifd->subfile_type();
-        
+
         // Check if this is an associated image based on SubfileType
         bool is_associated = false;
         std::string associated_name;
-        
+
         if (index == 1 && subfile_type == 0 && ifd->tile_width() == 0)
         {
             // First non-main IFD with SubfileType=0 and strip-based: likely thumbnail
@@ -877,7 +877,7 @@ void TIFF::_populate_aperio_svs_metadata(uint16_t ifd_count, void* metadata, std
             is_associated = true;
             associated_name = "macro";
         }
-        
+
         if (is_associated)
         {
             ++non_tile_image_count;
@@ -886,7 +886,7 @@ void TIFF::_populate_aperio_svs_metadata(uint16_t ifd_count, void* metadata, std
             buf_desc.compression = static_cast<cucim::codec::CompressionMethod>(ifd->compression());
             buf_desc.ifd_index = index;
             associated_images_.emplace(associated_name, buf_desc);
-            
+
             // Remove from pyramid levels
             level_to_ifd_idx_.erase(level_to_ifd_idx_.begin() + level_index);
             --level_index;
