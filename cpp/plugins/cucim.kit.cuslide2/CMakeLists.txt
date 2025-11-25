@@ -16,8 +16,10 @@ file(STRINGS ${CMAKE_CURRENT_LIST_DIR}/../../../VERSION VERSION)
 # strip alpha version info
 string(REGEX REPLACE "a.*$" "" VERSION ${VERSION})
 
-# Append local cmake module path
-list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake/modules")
+# Reuse cmake modules from cuslide plugin (for SuperBuildUtils.cmake and shared deps)
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/../cucim.kit.cuslide/cmake/modules")
+# Include central CuCIM cmake modules (for CuCIMUtils.cmake)
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/../../../cpp/cmake/modules")
 
 project(cuslide2 VERSION ${VERSION} DESCRIPTION "cuslide2" LANGUAGES C CXX)
 set(CUCIM_PLUGIN_NAME "cucim.kit.cuslide2")
@@ -251,9 +253,8 @@ endif()
 if (TARGET CUDA::nvjpeg_static)
         target_link_libraries(${CUCIM_PLUGIN_NAME}
             PRIVATE
-                # Add nvjpeg before cudart so that nvjpeg.h in static library takes precedence.
                 CUDA::nvjpeg_static
-                # Add CUDA::culibos to link necessary methods for 'deps::nvjpeg_static'
+                # culibos provides OS abstraction functions needed by nvjpeg_static
                 CUDA::culibos
                 CUDA::cudart
         )
