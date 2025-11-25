@@ -84,7 +84,7 @@ public:
     NvImageCodecManager& operator=(NvImageCodecManager&&) = delete;
 
 private:
-    NvImageCodecManager() : initialized_(false)
+    NvImageCodecManager()
     {
         // Create nvImageCodec instance following official API pattern
         nvimgcodecInstanceCreateInfo_t create_info{};
