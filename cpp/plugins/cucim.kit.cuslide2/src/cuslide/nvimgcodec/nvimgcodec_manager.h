@@ -94,10 +94,10 @@ private:
         create_info.load_builtin_modules = 1;
         create_info.load_extension_modules = 1;
         create_info.extension_modules_path = nullptr;
-        create_info.create_debug_messenger = 1;
+        create_info.create_debug_messenger = 0;  // Disable default debug messenger (prints to stderr)
         create_info.debug_messenger_desc = nullptr;
-        create_info.message_severity = 0;
-        create_info.message_category = 0;
+        create_info.message_severity = NVIMGCODEC_DEBUG_MESSAGE_SEVERITY_DEFAULT;
+        create_info.message_category = NVIMGCODEC_DEBUG_MESSAGE_CATEGORY_ALL;
 
         if (nvimgcodecInstanceCreate(&instance_, &create_info) != NVIMGCODEC_STATUS_SUCCESS)
         {
