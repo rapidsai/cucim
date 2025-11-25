@@ -20,7 +20,7 @@ namespace cuslide2::nvimgcodec
 
 /**
  * @brief Singleton manager for nvImageCodec instance and decoder
- * 
+ *
  * Provides centralized access to nvImageCodec resources with thread-safe initialization.
  */
 class NvImageCodecManager
@@ -44,27 +44,27 @@ public:
     bool test_nvimagecodec_api()
     {
         if (!initialized_) return false;
-        
+
         try {
             // Test 1: Get nvImageCodec properties
             nvimgcodecProperties_t props{};
             props.struct_type = NVIMGCODEC_STRUCTURE_TYPE_PROPERTIES;
             props.struct_size = sizeof(nvimgcodecProperties_t);
             props.struct_next = nullptr;
-            
+
             if (nvimgcodecGetProperties(&props) == NVIMGCODEC_STATUS_SUCCESS)
             {
                 uint32_t version = props.version;
                 // Use official nvImageCodec version macros (version format: major*1000 + minor*100 + patch)
-                
+
                 [[maybe_unused]] uint32_t major = version / 1000;
                 [[maybe_unused]] uint32_t minor = (version % 1000) / 100;
                 [[maybe_unused]] uint32_t patch = version % 100;
-                
+
                 #ifdef DEBUG
                 fmt::print("✅ nvImageCodec API Test: Version {}.{}.{}\n", major, minor, patch);
                 #endif
-                
+
                 // Test 2: Check decoder capabilities
                 if (decoder_)
                 {
@@ -82,7 +82,7 @@ public:
             #endif
             (void)e;  // Suppress unused warning in release builds
         }
-        
+
         return false;
     }
 
@@ -108,7 +108,7 @@ private:
             create_info.debug_messenger_desc = nullptr;
             create_info.message_severity = 0;
             create_info.message_category = 0;
-        
+
             if (nvimgcodecInstanceCreate(&instance_, &create_info) != NVIMGCODEC_STATUS_SUCCESS)
             {
                 status_message_ = "Failed to create nvImageCodec instance";
@@ -132,7 +132,7 @@ private:
             exec_params.skip_pre_sync = 0;
             exec_params.num_backends = 0;
             exec_params.backends = nullptr;
-        
+
             if (nvimgcodecDecoderCreate(instance_, &decoder_, &exec_params, nullptr) != NVIMGCODEC_STATUS_SUCCESS)
             {
                 nvimgcodecInstanceDestroy(instance_);
@@ -143,25 +143,25 @@ private:
                 #endif
                 return;
             }
-            
+
             // Create CPU-only decoder for native CPU decoding
             nvimgcodecBackendKind_t cpu_backend_kind = NVIMGCODEC_BACKEND_KIND_CPU_ONLY;
             nvimgcodecBackendParams_t cpu_backend_params{};
             cpu_backend_params.struct_type = NVIMGCODEC_STRUCTURE_TYPE_BACKEND_PARAMS;
             cpu_backend_params.struct_size = sizeof(nvimgcodecBackendParams_t);
             cpu_backend_params.struct_next = nullptr;
-            
+
             nvimgcodecBackend_t cpu_backend{};
             cpu_backend.struct_type = NVIMGCODEC_STRUCTURE_TYPE_BACKEND;
             cpu_backend.struct_size = sizeof(nvimgcodecBackend_t);
             cpu_backend.struct_next = nullptr;
             cpu_backend.kind = cpu_backend_kind;
             cpu_backend.params = cpu_backend_params;
-            
+
             nvimgcodecExecutionParams_t cpu_exec_params = exec_params;
             cpu_exec_params.num_backends = 1;
             cpu_exec_params.backends = &cpu_backend;
-            
+
             if (nvimgcodecDecoderCreate(instance_, &cpu_decoder_, &cpu_exec_params, nullptr) == NVIMGCODEC_STATUS_SUCCESS)
             {
                 #ifdef DEBUG
@@ -175,13 +175,13 @@ private:
                 #endif
                 cpu_decoder_ = nullptr;
             }
-            
+
             initialized_ = true;
             status_message_ = "nvImageCodec initialized successfully";
             #ifdef DEBUG
             fmt::print("✅ {}\n", status_message_);
             #endif
-            
+
             // Run quick API test
             test_nvimagecodec_api();
         }
@@ -202,13 +202,13 @@ private:
             nvimgcodecDecoderDestroy(cpu_decoder_);
             cpu_decoder_ = nullptr;
         }
-        
+
         if (decoder_)
         {
             nvimgcodecDecoderDestroy(decoder_);
             decoder_ = nullptr;
         }
-        
+
         if (instance_)
         {
             nvimgcodecInstanceDestroy(instance_);
@@ -227,4 +227,3 @@ private:
 #endif // CUCIM_HAS_NVIMGCODEC
 
 } // namespace cuslide2::nvimgcodec
-
