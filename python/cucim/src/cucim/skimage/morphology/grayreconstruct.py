@@ -70,7 +70,11 @@ def reconstruction(seed, mask, method="dilation", footprint=None, offset=None):
     Returns
     -------
     reconstructed : ndarray
-       The result of morphological reconstruction.
+       The result of morphological reconstruction. Note that scikit-image always
+       returns a floating-point image. cuCIM returns the same dtype as the input
+       except in the case of erosion, where it will have promoted any unsigned
+       integer dtype to a signed type (using the dtype returned by
+       ``cp.promote_types(seed.dtype, cp.int8)``).
 
     Examples
     --------
@@ -197,6 +201,12 @@ def reconstruction(seed, mask, method="dilation", footprint=None, offset=None):
     # CuPy Backend: modified to allow images_dtype based on input dtype
     #               instead of float64
     images_dtype = np.promote_types(seed.dtype, mask.dtype)
+    # For erosion, we need to negate the array, so ensure we use a signed type
+    # that can represent negative values without wraparound
+    if method == "erosion" and cp.issubdtype(images_dtype, cp.unsignedinteger):
+        # Promote unsigned types to signed types with sufficient range
+        images_dtype = np.promote_types(images_dtype, cp.int8)
+
     images = cp.full(dims, pad_value, dtype=images_dtype)
     images[(0, *inside_slices)] = seed
     images[(1, *inside_slices)] = mask
@@ -259,5 +269,5 @@ def reconstruction(seed, mask, method="dilation", footprint=None, offset=None):
     value_rank = cp.asarray(value_rank[:image_stride])
 
     rec_img = value_map[value_rank]
-    rec_img.shape = dims[1:]
+    rec_img = rec_img.reshape(dims[1:])
     return rec_img[inside_slices]

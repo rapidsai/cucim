@@ -18,8 +18,10 @@ import cupy as cp
 import numpy as np
 import pytest
 from cupy.testing import assert_array_almost_equal
+from skimage import data
 from skimage.morphology import reconstruction as reconstruction_cpu
 
+from cucim.skimage.exposure import rescale_intensity
 from cucim.skimage.morphology import reconstruction
 
 
@@ -100,6 +102,39 @@ def test_invalid_seed():
         reconstruction(seed * 2, mask, method="dilation")
     with pytest.raises(ValueError):
         reconstruction(seed * 0.5, mask, method="erosion")
+
+
+@pytest.mark.parametrize(
+    "unsigned_dtype", [cp.uint8, cp.uint16, cp.uint32, cp.uint64]
+)
+def test_erosion_uint8_input(unsigned_dtype):
+    image = cp.asarray(data.moon())
+    # Rescale image intensity so that we can see dim features.
+    image = rescale_intensity(image, in_range=(50, 200))
+
+    image2 = cp.copy(image)
+    image2[1:-1, 1:-1] = image.max()
+    mask = image
+
+    image2 = image2.astype(unsigned_dtype)
+    image2_erosion = reconstruction(image2, mask, method="erosion")
+
+    expected_out_type = cp.promote_types(image2.dtype, cp.int8)
+    assert image2_erosion.dtype == expected_out_type
+    # promoted to signed dtype (or float in the case of cp.uint64)
+    assert (
+        image2_erosion.dtype.kind == "i" if unsigned_dtype != cp.uint64 else "f"
+    )
+    assert image2_erosion.dtype.itemsize >= image2.dtype.itemsize
+
+    # compare to scikit-image CPU result
+    image2_erosion_cpu = reconstruction_cpu(
+        cp.asnumpy(image2), cp.asnumpy(mask), method="erosion"
+    )
+    # filled_cpu will be np.float64, so convert to the type returned by cuCIM
+    cp.testing.assert_allclose(
+        image2_erosion, image2_erosion_cpu.astype(image2_erosion.dtype)
+    )
 
 
 def test_invalid_footprint():
