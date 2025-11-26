@@ -178,23 +178,37 @@ private:
 
     ~NvImageCodecManager()
     {
-        if (cpu_decoder_)
+        // Use try-catch to prevent segfaults during static destruction
+        // when nvTIFF or other libraries weren't loaded properly
+        try
         {
-            nvimgcodecDecoderDestroy(cpu_decoder_);
-            cpu_decoder_ = nullptr;
+            if (cpu_decoder_)
+            {
+                nvimgcodecDecoderDestroy(cpu_decoder_);
+                cpu_decoder_ = nullptr;
+            }
         }
+        catch (...) { cpu_decoder_ = nullptr; }
         
-        if (decoder_)
+        try
         {
-            nvimgcodecDecoderDestroy(decoder_);
-            decoder_ = nullptr;
+            if (decoder_)
+            {
+                nvimgcodecDecoderDestroy(decoder_);
+                decoder_ = nullptr;
+            }
         }
+        catch (...) { decoder_ = nullptr; }
         
-        if (instance_)
+        try
         {
-            nvimgcodecInstanceDestroy(instance_);
-            instance_ = nullptr;
+            if (instance_)
+            {
+                nvimgcodecInstanceDestroy(instance_);
+                instance_ = nullptr;
+            }
         }
+        catch (...) { instance_ = nullptr; }
     }
 
     nvimgcodecInstance_t instance_{nullptr};
