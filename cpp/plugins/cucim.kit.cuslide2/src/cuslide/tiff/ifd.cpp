@@ -200,15 +200,10 @@ IFD::IFD(TIFF* tiff, uint16_t index, const cuslide2::nvimgcodec::IfdInfo& ifd_in
 IFD::~IFD()
 {
 #ifdef CUCIM_HAS_NVIMGCODEC
-    // NOTE: nvimgcodec_sub_stream_ is NOT owned by IFD - it's owned by TiffFileParser
-    // TiffFileParser::~TiffFileParser() will destroy all sub-code streams
-    // DO NOT call nvimgcodecCodeStreamDestroy here to avoid double-free or use-after-free
-    //
-    // The destruction order in TIFF is:
-    // 1. nvimgcodec_parser_ destroyed → TiffFileParser destroys sub-code streams
-    // 2. ifds_ destroyed → IFD destructors run (we're here)
-    //
-    // By this point, sub-code streams are already destroyed, so we just clear the pointer
+    // NOTE: nvimgcodec_sub_stream_ is NOT owned by IFD - it's a borrowed pointer
+    // from TiffFileParser's ifd_infos_ vector. TiffFileParser::~TiffFileParser()
+    // destroys all sub-code streams before IFD destructors run.
+    // DO NOT call nvimgcodecCodeStreamDestroy here - just clear the pointer.
     nvimgcodec_sub_stream_ = nullptr;
 #endif
 }
