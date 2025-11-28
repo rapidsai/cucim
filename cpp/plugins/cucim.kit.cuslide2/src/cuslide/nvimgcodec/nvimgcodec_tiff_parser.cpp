@@ -630,15 +630,15 @@ void TiffFileParser::extract_ifd_metadata(IfdInfo& ifd_info)
         size_t buffer_size = metadata->buffer_size;
         
         #ifdef DEBUG
-        // Map kind to human-readable name for debugging
+        // Map kind to human-readable name for debugging (using nvImageCodec v0.6.0 enum values)
         const char* kind_name = "UNKNOWN";
         switch (kind) {
-            case 0: kind_name = "TIFF_TAG"; break;
-            case 1: kind_name = "MED_APERIO"; break;
-            case 2: kind_name = "MED_PHILIPS"; break;
-            case 3: kind_name = "MED_LEICA"; break;
-            case 4: kind_name = "MED_VENTANA"; break;
-            case 5: kind_name = "MED_TRESTLE"; break;
+            case NVIMGCODEC_METADATA_KIND_TIFF_TAG: kind_name = "TIFF_TAG"; break;
+            case NVIMGCODEC_METADATA_KIND_MED_APERIO: kind_name = "MED_APERIO"; break;
+            case NVIMGCODEC_METADATA_KIND_MED_PHILIPS: kind_name = "MED_PHILIPS"; break;
+            case NVIMGCODEC_METADATA_KIND_MED_LEICA: kind_name = "MED_LEICA"; break;
+            case NVIMGCODEC_METADATA_KIND_MED_VENTANA: kind_name = "MED_VENTANA"; break;
+            case NVIMGCODEC_METADATA_KIND_MED_TRESTLE: kind_name = "MED_TRESTLE"; break;
         }
         fmt::print("    Metadata[{}]: kind={} ({}), format={}, size={}\n",
                   j, kind, kind_name, format, buffer_size);
@@ -655,7 +655,7 @@ void TiffFileParser::extract_ifd_metadata(IfdInfo& ifd_info)
             // For RAW format, treat as text if it looks like ASCII
             const uint8_t* data_ptr = metadata_blobs[j].data.data();
             
-            if (kind == 1 && ifd_info.image_description.empty())  // MED_APERIO = 1
+            if (kind == NVIMGCODEC_METADATA_KIND_MED_APERIO && ifd_info.image_description.empty())
             {
                 // Aperio metadata is typically in RAW format as text
                 ifd_info.image_description.assign(data_ptr, data_ptr + buffer_size);
@@ -663,7 +663,7 @@ void TiffFileParser::extract_ifd_metadata(IfdInfo& ifd_info)
                 fmt::print("  ✅ Extracted Aperio ImageDescription ({} bytes)\n", buffer_size);
                 #endif
             }
-            else if (kind == 2 && ifd_info.image_description.empty())  // MED_PHILIPS = 2
+            else if (kind == NVIMGCODEC_METADATA_KIND_MED_PHILIPS && ifd_info.image_description.empty())
             {
                 // Philips metadata is typically XML
                 ifd_info.image_description.assign(data_ptr, data_ptr + buffer_size);
@@ -677,7 +677,7 @@ void TiffFileParser::extract_ifd_metadata(IfdInfo& ifd_info)
                 }
                 #endif
             }
-            else if (kind == 3 && ifd_info.image_description.empty())  // MED_LEICA = 3 (but might be misclassified Aperio!)
+            else if (kind == NVIMGCODEC_METADATA_KIND_MED_LEICA && ifd_info.image_description.empty())  // Might be misclassified Aperio!
             {
                 // WORKAROUND: nvImageCodec 0.6.0 sometimes misclassifies Aperio as Leica
                 // Check if this is actually Aperio by looking for "Aperio Image Library" text
@@ -694,16 +694,16 @@ void TiffFileParser::extract_ifd_metadata(IfdInfo& ifd_info)
                         #endif
                         ifd_info.image_description.assign(data_ptr, data_ptr + buffer_size);
                         
-                        // Also store it as kind=1 (Aperio) for proper detection
+                        // Also store it as MED_APERIO for proper detection
                         // Copy the existing blob data to Aperio slot (already decoded, lightweight copy)
                         IfdInfo::MetadataBlob aperio_blob;
                         aperio_blob.format = format;
                         aperio_blob.data = metadata_blobs[j].data;  // Share the data
-                        ifd_info.metadata_blobs[1] = std::move(aperio_blob);  // Store as MED_APERIO
+                        ifd_info.metadata_blobs[NVIMGCODEC_METADATA_KIND_MED_APERIO] = std::move(aperio_blob);
                     }
                 }
             }
-            else if (kind == 4 && ifd_info.image_description.empty())  // MED_VENTANA = 4 (but might be misclassified Philips!)
+            else if (kind == NVIMGCODEC_METADATA_KIND_MED_VENTANA && ifd_info.image_description.empty())  // Might be misclassified Philips!
             {
                 // WORKAROUND: nvImageCodec 0.6.0 sometimes misclassifies Philips as Ventana
                 // Check if this is actually Philips XML by looking for DataObject/DPUfsImport
@@ -721,12 +721,12 @@ void TiffFileParser::extract_ifd_metadata(IfdInfo& ifd_info)
                         #endif
                         ifd_info.image_description.assign(data_ptr, data_ptr + buffer_size);
                         
-                        // Also store it as kind=2 (Philips) for proper detection
+                        // Also store it as MED_PHILIPS for proper detection
                         // Copy the existing blob data to Philips slot (already decoded, lightweight copy)
                         IfdInfo::MetadataBlob philips_blob;
                         philips_blob.format = format;
                         philips_blob.data = metadata_blobs[j].data;  // Share the data
-                        ifd_info.metadata_blobs[2] = std::move(philips_blob);  // Store as MED_PHILIPS
+                        ifd_info.metadata_blobs[NVIMGCODEC_METADATA_KIND_MED_PHILIPS] = std::move(philips_blob);
                     }
                 }
             }
@@ -850,7 +850,7 @@ void TiffFileParser::extract_tiff_tags(IfdInfo& ifd_info)
         // {
         //     nvimgcodecMetadata_t metadata{};
         //     metadata.struct_type = NVIMGCODEC_STRUCTURE_TYPE_METADATA;
-        //     metadata.kind = NVIMGCODEC_METADATA_KIND_TIFF_TAG;  // kind=0
+        //     metadata.kind = NVIMGCODEC_METADATA_KIND_TIFF_TAG;
         //     // Set tag_name or tag_id to query specific tag
         //     
         //     if (nvimgcodecDecoderGetMetadata(decoder, sub_code_stream, &metadata) == SUCCESS)
@@ -957,10 +957,10 @@ std::vector<int> TiffFileParser::query_metadata_kinds(uint32_t ifd_index) const
         kinds.push_back(kind);
     }
     
-    // Also add TIFF_TAG kind (0) if any tags were extracted
+    // Also add TIFF_TAG kind if any tags were extracted
     if (!ifd_infos_[ifd_index].tiff_tags.empty())
     {
-        kinds.insert(kinds.begin(), 0);  // NVIMGCODEC_METADATA_KIND_TIFF_TAG = 0
+        kinds.insert(kinds.begin(), NVIMGCODEC_METADATA_KIND_TIFF_TAG);
     }
     
     return kinds;
@@ -978,15 +978,15 @@ std::string TiffFileParser::get_detected_format() const
     {
         switch (kind)
         {
-            case 1:  // NVIMGCODEC_METADATA_KIND_MED_APERIO
+            case NVIMGCODEC_METADATA_KIND_MED_APERIO:
                 return "Aperio SVS";
-            case 2:  // NVIMGCODEC_METADATA_KIND_MED_PHILIPS
+            case NVIMGCODEC_METADATA_KIND_MED_PHILIPS:
                 return "Philips TIFF";
-            case 3:  // NVIMGCODEC_METADATA_KIND_MED_LEICA (if available)
+            case NVIMGCODEC_METADATA_KIND_MED_LEICA:
                 return "Leica SCN";
-            case 4:  // NVIMGCODEC_METADATA_KIND_MED_VENTANA
+            case NVIMGCODEC_METADATA_KIND_MED_VENTANA:
                 return "Ventana";
-            case 5:  // NVIMGCODEC_METADATA_KIND_MED_TRESTLE
+            case NVIMGCODEC_METADATA_KIND_MED_TRESTLE:
                 return "Trestle";
             default:
                 break;
