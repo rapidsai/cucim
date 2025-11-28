@@ -1,0 +1,13 @@
+#
+# SPDX-FileCopyrightText: Copyright (c) 2020-2025, NVIDIA CORPORATION.
+# SPDX-License-Identifier: Apache-2.0
+#
+
+@PACKAGE_INIT@
+
+# Find dependent libraries
+# ...
+include(CMakeFindDependencyMacro)
+#find_dependency(Boost x.x.x REQUIRED)
+
+include(${CMAKE_CURRENT_LIST_DIR}/cucim.kit.cuslide2-targets.cmake)

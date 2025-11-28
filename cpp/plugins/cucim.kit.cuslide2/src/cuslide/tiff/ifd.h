@@ -7,16 +7,21 @@
 #define CUSLIDE_IFD_H
 
 #include "types.h"
+#include "tiff_constants.h"
 
 #include <memory>
 #include <vector>
+#include <string>
 
 #include <cucim/concurrent/threadpool.h>
 #include <cucim/io/format/image_format.h>
 #include <cucim/io/device.h>
 #include <cucim/loader/thread_batch_data_loader.h>
 
-//#include <tiffio.h>
+#ifdef CUCIM_HAS_NVIMGCODEC
+#include <nvimgcodec.h>
+#include "cuslide/nvimgcodec/nvimgcodec_tiff_parser.h"
+#endif
 
 namespace cuslide::tiff
 {
@@ -28,6 +33,9 @@ class EXPORT_VISIBLE IFD : public std::enable_shared_from_this<IFD>
 {
 public:
     IFD(TIFF* tiff, uint16_t index, ifd_offset_t offset);
+#ifdef CUCIM_HAS_NVIMGCODEC
+    IFD(TIFF* tiff, uint16_t index, const cuslide2::nvimgcodec::IfdInfo& ifd_info);
+#endif
     ~IFD();
 
     static bool read_region_tiles(const TIFF* tiff,
@@ -88,9 +96,6 @@ public:
     size_t pixel_size_nbytes() const;
     size_t tile_raster_size_nbytes() const;
 
-    // Hidden methods for benchmarking
-    void write_offsets_(const char* file_path);
-
     // Make TIFF available to access private members of IFD
     friend class TIFF;
 
@@ -132,6 +137,12 @@ private:
 
     uint64_t hash_value_ = 0; /// file hash including ifd index.
 
+#ifdef CUCIM_HAS_NVIMGCODEC
+    // nvImageCodec-specific members
+    nvimgcodecCodeStream_t nvimgcodec_sub_stream_ = nullptr;
+    std::string codec_name_;  // codec name from nvImageCodec (jpeg, jpeg2k, deflate, etc.)
+#endif
+
     /**
      * @brief Check if the current compression method is supported or not.
      */
@@ -150,6 +161,13 @@ private:
      * @brief Check if the specified image format is supported or not.
      */
     bool is_format_supported() const;
+
+#ifdef CUCIM_HAS_NVIMGCODEC
+    /**
+     * @brief Parse codec string to TIFF compression code
+     */
+    static uint16_t parse_codec_to_compression(const std::string& codec);
+#endif
 };
 } // namespace cuslide::tiff
 

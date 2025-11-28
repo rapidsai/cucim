@@ -161,6 +161,11 @@ dependencies:
         packages:
           - cuda-cudart-dev
           - libnvjpeg-dev
+          # nvImageCodec 0.7.0 (internal release) - install from local C packages:
+          #   CUDA 12: /home/cdinea/Downloads/cucim_pr3/nvimgcodec/12/
+          #   CUDA 13: /home/cdinea/Downloads/cucim_pr3/nvimgcodec/13/
+          # Set: export LD_LIBRARY_PATH=/path/to/nvimgcodec/{12|13}/lib64:$LD_LIBRARY_PATH
+          # - libnvimgcodec-dev=0.7.0  # Not yet on conda-forge
     specific:
       - output_types: conda
         matrices:
@@ -175,12 +180,12 @@ dependencies:
     common:
       - output_types: conda
         packages:
-          - cucim==25.12.*,>=0.0.0a0
+          - cucim==26.2.*,>=0.0.0a0
   depends_on_libcucim:
     common:
       - output_types: conda
         packages:
-          - libcucim==25.12.*,>=0.0.0a0
+          - libcucim==26.2.*,>=0.0.0a0
   develop:
     common:
       - output_types: [conda, requirements, pyproject]
@@ -241,6 +246,9 @@ dependencies:
       - output_types: conda
         packages:
           - &cupy_unsuffixed cupy>=13.6.0
+          # nvImageCodec 0.7.0 (internal release) - see cuda section for installation
+          # - libnvimgcodec==0.7.0  # Not yet on conda-forge
+          # - nvimgcodec>=0.7.0     # Not yet on conda-forge
     specific:
       - output_types: [requirements, pyproject]
         matrices:
@@ -248,10 +256,16 @@ dependencies:
               cuda: "12.*"
             packages:
               - cupy-cuda12x>=13.6.0
+              # nvImageCodec 0.7.0 (internal release) - install from local wheel:
+              #   pip install /home/cdinea/Downloads/nvidia_nvimgcodec_cu12-0.7.0.11-py3-none-manylinux_2_28_x86_64.whl
+              - nvidia-nvimgcodec-cu12>=0.7.0
           # fallback to CUDA 13 versions if 'cuda' is '13.*' or not provided
           - matrix:
             packages:
               - cupy-cuda13x>=13.6.0
+              # nvImageCodec 0.7.0 (internal release) - install from local wheel:
+              #   pip install /home/cdinea/Downloads/nvidia_nvimgcodec_cu13-0.7.0.11-py3-none-manylinux_2_28_x86_64.whl
+              - nvidia-nvimgcodec-cu13>=0.7.0
   test_python:
     common:
       - output_types: [conda, requirements, pyproject]
