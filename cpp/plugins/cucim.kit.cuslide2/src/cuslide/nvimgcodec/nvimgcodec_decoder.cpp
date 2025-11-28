@@ -234,10 +234,6 @@ bool decode_ifd_region_nvimgcodec(const IfdInfo& ifd_info,
         UniqueCodeStream roi_stream(roi_stream_raw);
         
         // Step 2: Determine buffer kind based on target device and decoder
-        int device_count = 0;
-        cudaError_t cuda_err = cudaGetDeviceCount(&device_count);
-        bool gpu_available = (cuda_err == cudaSuccess && device_count > 0);
-        
         nvimgcodecImageBufferKind_t buffer_kind;
         if (target_is_cpu)
         {
@@ -247,17 +243,28 @@ bool decode_ifd_region_nvimgcodec(const IfdInfo& ifd_info,
             fmt::print("  ℹ️  Using CPU buffer for ROI decoding\n");
             #endif
         }
-        else if (gpu_available)
-        {
-            // GPU target with GPU available: use device buffer
-            buffer_kind = NVIMGCODEC_IMAGE_BUFFER_KIND_STRIDED_DEVICE;
-        }
         else
         {
-            // GPU target but no GPU available: fall back to host buffer
-            buffer_kind = NVIMGCODEC_IMAGE_BUFFER_KIND_STRIDED_HOST;
+            // GPU target: verify GPU is available before proceeding
+            int device_count = 0;
+            cudaError_t cuda_err = cudaGetDeviceCount(&device_count);
+            bool gpu_available = (cuda_err == cudaSuccess && device_count > 0);
+            
+            if (!gpu_available)
+            {
+                // ERROR: User expects GPU buffer but no GPU is available
+                #ifdef DEBUG
+                fmt::print("  ❌ GPU target requested but no GPU available (cudaGetDeviceCount failed)\n");
+                #endif
+                throw std::runtime_error(
+                    "GPU buffer requested for ROI decode but no CUDA device available. "
+                    "Use 'cpu' device string for CPU decoding.");
+            }
+            
+            // GPU is available: use device buffer
+            buffer_kind = NVIMGCODEC_IMAGE_BUFFER_KIND_STRIDED_DEVICE;
             #ifdef DEBUG
-            fmt::print("  ⚠️  No GPU available, using CPU buffer\n");
+            fmt::print("  ℹ️  Using GPU buffer for ROI decoding\n");
             #endif
         }
         
