@@ -630,15 +630,15 @@ void TiffFileParser::extract_ifd_metadata(IfdInfo& ifd_info)
         size_t buffer_size = metadata->buffer_size;
         
         #ifdef DEBUG
-        // Map kind to human-readable name for debugging (using nvImageCodec v0.6.0 enum values)
+        // Map kind to human-readable name for debugging (nvImageCodec v0.6.0 enum values)
         const char* kind_name = "UNKNOWN";
         switch (kind) {
-            case NVIMGCODEC_METADATA_KIND_TIFF_TAG: kind_name = "TIFF_TAG"; break;
+            case NVIMGCODEC_METADATA_KIND_UNKNOWN: kind_name = "UNKNOWN"; break;
+            case NVIMGCODEC_METADATA_KIND_EXIF: kind_name = "EXIF"; break;
+            case NVIMGCODEC_METADATA_KIND_GEO: kind_name = "GEO"; break;
             case NVIMGCODEC_METADATA_KIND_MED_APERIO: kind_name = "MED_APERIO"; break;
             case NVIMGCODEC_METADATA_KIND_MED_PHILIPS: kind_name = "MED_PHILIPS"; break;
-            case NVIMGCODEC_METADATA_KIND_MED_LEICA: kind_name = "MED_LEICA"; break;
-            case NVIMGCODEC_METADATA_KIND_MED_VENTANA: kind_name = "MED_VENTANA"; break;
-            case NVIMGCODEC_METADATA_KIND_MED_TRESTLE: kind_name = "MED_TRESTLE"; break;
+            // Note: v0.7.0 will add: TIFF_TAG, MED_LEICA, MED_VENTANA, MED_TRESTLE
         }
         fmt::print("    Metadata[{}]: kind={} ({}), format={}, size={}\n",
                   j, kind, kind_name, format, buffer_size);
@@ -677,59 +677,10 @@ void TiffFileParser::extract_ifd_metadata(IfdInfo& ifd_info)
                 }
                 #endif
             }
-            else if (kind == NVIMGCODEC_METADATA_KIND_MED_LEICA && ifd_info.image_description.empty())  // Might be misclassified Aperio!
-            {
-                // WORKAROUND: nvImageCodec 0.6.0 sometimes misclassifies Aperio as Leica
-                // Check if this is actually Aperio by looking for "Aperio Image Library" text
-                if (buffer_size > 20)
-                {
-                    std::string content(data_ptr, data_ptr + std::min(buffer_size, size_t(200)));
-                    
-                    if (content.find("Aperio Image Library") != std::string::npos ||
-                        content.find("Aperio") == 0)  // Starts with "Aperio"
-                    {
-                        // This is actually Aperio misclassified as Leica!
-                        #ifdef DEBUG
-                        fmt::print("  ⚠️  nvImageCodec 0.6.0: Aperio misclassified as Leica (corrected)\n");
-                        #endif
-                        ifd_info.image_description.assign(data_ptr, data_ptr + buffer_size);
-                        
-                        // Also store it as MED_APERIO for proper detection
-                        // Copy the existing blob data to Aperio slot (already decoded, lightweight copy)
-                        IfdInfo::MetadataBlob aperio_blob;
-                        aperio_blob.format = format;
-                        aperio_blob.data = metadata_blobs[j].data;  // Share the data
-                        ifd_info.metadata_blobs[NVIMGCODEC_METADATA_KIND_MED_APERIO] = std::move(aperio_blob);
-                    }
-                }
-            }
-            else if (kind == NVIMGCODEC_METADATA_KIND_MED_VENTANA && ifd_info.image_description.empty())  // Might be misclassified Philips!
-            {
-                // WORKAROUND: nvImageCodec 0.6.0 sometimes misclassifies Philips as Ventana
-                // Check if this is actually Philips XML by looking for DataObject/DPUfsImport
-                if (buffer_size > 100)
-                {
-                    std::string content(data_ptr, data_ptr + std::min(buffer_size, size_t(500)));
-                    
-                    if (content.find("<?xml") != std::string::npos && 
-                        content.find("DataObject") != std::string::npos &&
-                        content.find("DPUfsImport") != std::string::npos)
-                    {
-                        // This is actually Philips XML misclassified as Ventana!
-                        #ifdef DEBUG
-                        fmt::print("  ⚠️  nvImageCodec 0.6.0: Philips misclassified as Ventana (corrected)\n");
-                        #endif
-                        ifd_info.image_description.assign(data_ptr, data_ptr + buffer_size);
-                        
-                        // Also store it as MED_PHILIPS for proper detection
-                        // Copy the existing blob data to Philips slot (already decoded, lightweight copy)
-                        IfdInfo::MetadataBlob philips_blob;
-                        philips_blob.format = format;
-                        philips_blob.data = metadata_blobs[j].data;  // Share the data
-                        ifd_info.metadata_blobs[NVIMGCODEC_METADATA_KIND_MED_PHILIPS] = std::move(philips_blob);
-                    }
-                }
-            }
+            
+            // NOTE: nvImageCodec v0.6.0 workarounds for misclassification removed
+            // v0.6.0 only has APERIO and PHILIPS medical formats
+            // v0.7.0+ will add LEICA, VENTANA, TRESTLE formats with proper detection
         }
     }
     
@@ -850,7 +801,7 @@ void TiffFileParser::extract_tiff_tags(IfdInfo& ifd_info)
         // {
         //     nvimgcodecMetadata_t metadata{};
         //     metadata.struct_type = NVIMGCODEC_STRUCTURE_TYPE_METADATA;
-        //     metadata.kind = NVIMGCODEC_METADATA_KIND_TIFF_TAG;
+        //     metadata.kind = 0;  // TIFF_TAG kind (to be added in v0.7.0)
         //     // Set tag_name or tag_id to query specific tag
         //     
         //     if (nvimgcodecDecoderGetMetadata(decoder, sub_code_stream, &metadata) == SUCCESS)
@@ -957,11 +908,8 @@ std::vector<int> TiffFileParser::query_metadata_kinds(uint32_t ifd_index) const
         kinds.push_back(kind);
     }
     
-    // Also add TIFF_TAG kind if any tags were extracted
-    if (!ifd_infos_[ifd_index].tiff_tags.empty())
-    {
-        kinds.insert(kinds.begin(), NVIMGCODEC_METADATA_KIND_TIFF_TAG);
-    }
+    // NOTE: TIFF_TAG kind will be available in nvImageCodec v0.7.0+
+    // For v0.6.0, we use heuristics stored in tiff_tags map but don't report TIFF_TAG kind
     
     return kinds;
 }
@@ -982,12 +930,8 @@ std::string TiffFileParser::get_detected_format() const
                 return "Aperio SVS";
             case NVIMGCODEC_METADATA_KIND_MED_PHILIPS:
                 return "Philips TIFF";
-            case NVIMGCODEC_METADATA_KIND_MED_LEICA:
-                return "Leica SCN";
-            case NVIMGCODEC_METADATA_KIND_MED_VENTANA:
-                return "Ventana";
-            case NVIMGCODEC_METADATA_KIND_MED_TRESTLE:
-                return "Trestle";
+            // NOTE: nvImageCodec v0.6.0 only supports APERIO and PHILIPS
+            // v0.7.0+ will add: LEICA, VENTANA, TRESTLE
             default:
                 break;
         }
