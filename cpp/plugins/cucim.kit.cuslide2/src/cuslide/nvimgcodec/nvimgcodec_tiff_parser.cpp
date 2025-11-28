@@ -26,8 +26,6 @@
 // - extract_tiff_tags(): Uses direct TIFF tag API if version >= 700, else heuristics
 // - All v0.7.0 functions check version at runtime before using new APIs
 //
-// This approach was chosen over compile-time checks based on reviewer feedback
-// to provide better user experience when upgrading dependencies.
 // ============================================================================
 
 #include "nvimgcodec_tiff_parser.h"
@@ -550,11 +548,11 @@ void TiffFileParser::extract_ifd_metadata(IfdInfo& ifd_info)
     fmt::print("  ✅ Found {} metadata entries for IFD[{}]\n", metadata_count, ifd_info.index);
     #endif
     
-    // Step 2: Allocate metadata structures AND buffers
+    // Step 2: Allocate metadata structures AND blobs
     // nvImageCodec requires us to allocate buffers based on buffer_size from first call
     std::vector<nvimgcodecMetadata_t> metadata_structs(metadata_count);
     std::vector<nvimgcodecMetadata_t*> metadata_ptrs(metadata_count);
-    std::vector<std::vector<uint8_t>> metadata_buffers(metadata_count);  // Storage for actual data
+    std::vector<IfdInfo::MetadataBlob> metadata_blobs(metadata_count);  // Final storage (no copy needed!)
     
     // First, query to get buffer sizes (metadata structs must be initialized)
     for (int i = 0; i < metadata_count; i++)
@@ -583,21 +581,22 @@ void TiffFileParser::extract_ifd_metadata(IfdInfo& ifd_info)
         return;
     }
     
-    // Now allocate buffers based on reported sizes
+    // Now allocate final blob storage and point nvImageCodec directly to it (no copy!)
     for (int i = 0; i < metadata_count; i++)
     {
         size_t required_size = metadata_structs[i].buffer_size;
         if (required_size > 0)
         {
-            metadata_buffers[i].resize(required_size);
-            metadata_structs[i].buffer = metadata_buffers[i].data();
+            // Pre-allocate blob data and point nvImageCodec buffer directly to it
+            metadata_blobs[i].data.resize(required_size);
+            metadata_structs[i].buffer = metadata_blobs[i].data.data();  // Decode directly into final destination!
             #ifdef DEBUG
             fmt::print("    📦 Allocated {} bytes for metadata[{}]\n", required_size, i);
             #endif
         }
     }
     
-    // Step 3: Get actual metadata content (buffers now allocated)
+    // Step 3: Get actual metadata content (decoding directly into final blobs - no copy!)
     status = nvimgcodecDecoderGetMetadata(
         manager.get_decoder(),
         ifd_info.sub_code_stream,
@@ -617,7 +616,7 @@ void TiffFileParser::extract_ifd_metadata(IfdInfo& ifd_info)
     fmt::print("  ✅ Successfully retrieved {} metadata entries with content\n", metadata_count);
     #endif
     
-    // Step 4: Process each metadata entry
+    // Step 4: Move blobs into metadata_blobs map (no copy - just move!)
     for (int j = 0; j < metadata_count; ++j)
     {
         if (!metadata_ptrs[j])
@@ -629,7 +628,6 @@ void TiffFileParser::extract_ifd_metadata(IfdInfo& ifd_info)
         int kind = metadata->kind;
         int format = metadata->format;
         size_t buffer_size = metadata->buffer_size;
-        const uint8_t* buffer = static_cast<const uint8_t*>(metadata->buffer);
         
         #ifdef DEBUG
         // Map kind to human-readable name for debugging
@@ -646,21 +644,21 @@ void TiffFileParser::extract_ifd_metadata(IfdInfo& ifd_info)
                   j, kind, kind_name, format, buffer_size);
         #endif
         
-        // Store in metadata_blobs map
-        if (buffer && buffer_size > 0)
+        // Move blob into metadata_blobs map (no copy!)
+        if (buffer_size > 0)
         {
-            IfdInfo::MetadataBlob blob;
-            blob.format = format;
-            blob.data.assign(buffer, buffer + buffer_size);
-            ifd_info.metadata_blobs[kind] = std::move(blob);
+            metadata_blobs[j].format = format;
+            ifd_info.metadata_blobs[kind] = std::move(metadata_blobs[j]);
             
             // Special handling: extract ImageDescription if it's a text format
             // nvimgcodecMetadataFormat_t: RAW=0, XML=1, JSON=2, etc.
             // For RAW format, treat as text if it looks like ASCII
+            const uint8_t* data_ptr = metadata_blobs[j].data.data();
+            
             if (kind == 1 && ifd_info.image_description.empty())  // MED_APERIO = 1
             {
                 // Aperio metadata is typically in RAW format as text
-                ifd_info.image_description.assign(buffer, buffer + buffer_size);
+                ifd_info.image_description.assign(data_ptr, data_ptr + buffer_size);
                 #ifdef DEBUG
                 fmt::print("  ✅ Extracted Aperio ImageDescription ({} bytes)\n", buffer_size);
                 #endif
@@ -668,13 +666,13 @@ void TiffFileParser::extract_ifd_metadata(IfdInfo& ifd_info)
             else if (kind == 2 && ifd_info.image_description.empty())  // MED_PHILIPS = 2
             {
                 // Philips metadata is typically XML
-                ifd_info.image_description.assign(buffer, buffer + buffer_size);
+                ifd_info.image_description.assign(data_ptr, data_ptr + buffer_size);
                 #ifdef DEBUG
                 fmt::print("  ✅ Extracted Philips ImageDescription XML ({} bytes)\n", buffer_size);
                 
                 // Show preview of XML
                 if (buffer_size > 0) {
-                    std::string preview(buffer, buffer + std::min(buffer_size, size_t(100)));
+                    std::string preview(data_ptr, data_ptr + std::min(buffer_size, size_t(100)));
                     fmt::print("     XML preview: {}...\n", preview);
                 }
                 #endif
@@ -685,7 +683,7 @@ void TiffFileParser::extract_ifd_metadata(IfdInfo& ifd_info)
                 // Check if this is actually Aperio by looking for "Aperio Image Library" text
                 if (buffer_size > 20)
                 {
-                    std::string content(buffer, buffer + std::min(buffer_size, size_t(200)));
+                    std::string content(data_ptr, data_ptr + std::min(buffer_size, size_t(200)));
                     
                     if (content.find("Aperio Image Library") != std::string::npos ||
                         content.find("Aperio") == 0)  // Starts with "Aperio"
@@ -694,12 +692,13 @@ void TiffFileParser::extract_ifd_metadata(IfdInfo& ifd_info)
                         #ifdef DEBUG
                         fmt::print("  ⚠️  nvImageCodec 0.6.0: Aperio misclassified as Leica (corrected)\n");
                         #endif
-                        ifd_info.image_description.assign(buffer, buffer + buffer_size);
+                        ifd_info.image_description.assign(data_ptr, data_ptr + buffer_size);
                         
                         // Also store it as kind=1 (Aperio) for proper detection
+                        // Copy the existing blob data to Aperio slot (already decoded, lightweight copy)
                         IfdInfo::MetadataBlob aperio_blob;
                         aperio_blob.format = format;
-                        aperio_blob.data.assign(buffer, buffer + buffer_size);
+                        aperio_blob.data = metadata_blobs[j].data;  // Share the data
                         ifd_info.metadata_blobs[1] = std::move(aperio_blob);  // Store as MED_APERIO
                     }
                 }
@@ -710,7 +709,7 @@ void TiffFileParser::extract_ifd_metadata(IfdInfo& ifd_info)
                 // Check if this is actually Philips XML by looking for DataObject/DPUfsImport
                 if (buffer_size > 100)
                 {
-                    std::string content(buffer, buffer + std::min(buffer_size, size_t(500)));
+                    std::string content(data_ptr, data_ptr + std::min(buffer_size, size_t(500)));
                     
                     if (content.find("<?xml") != std::string::npos && 
                         content.find("DataObject") != std::string::npos &&
@@ -720,12 +719,13 @@ void TiffFileParser::extract_ifd_metadata(IfdInfo& ifd_info)
                         #ifdef DEBUG
                         fmt::print("  ⚠️  nvImageCodec 0.6.0: Philips misclassified as Ventana (corrected)\n");
                         #endif
-                        ifd_info.image_description.assign(buffer, buffer + buffer_size);
+                        ifd_info.image_description.assign(data_ptr, data_ptr + buffer_size);
                         
                         // Also store it as kind=2 (Philips) for proper detection
+                        // Copy the existing blob data to Philips slot (already decoded, lightweight copy)
                         IfdInfo::MetadataBlob philips_blob;
                         philips_blob.format = format;
-                        philips_blob.data.assign(buffer, buffer + buffer_size);
+                        philips_blob.data = metadata_blobs[j].data;  // Share the data
                         ifd_info.metadata_blobs[2] = std::move(philips_blob);  // Store as MED_PHILIPS
                     }
                 }
