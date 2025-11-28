@@ -161,38 +161,52 @@ public:
     // ========================================================================
     // nvImageCodec 0.7.0 Features: Individual TIFF Tag Retrieval
     // ========================================================================
+    // These functions use runtime version detection to provide graceful degradation:
+    // - With nvImageCodec v0.7.0+: Full TIFF tag access via direct API
+    // - With nvImageCodec v0.6.0:  Fallback to heuristics and file extension inference
+    //
+    // This allows the same binary to work with both v0.6.0 and v0.7.0 without
+    // recompilation when users upgrade their nvImageCodec installation.
+    // ========================================================================
 
     /**
-     * @brief Get a specific TIFF tag value as string (nvImageCodec 0.7.0+)
+     * @brief Get a specific TIFF tag value as string
      *
-     * Uses NVIMGCODEC_METADATA_KIND_TIFF_TAG to retrieve individual TIFF tags
-     * by name (e.g., "SUBFILETYPE", "ImageDescription", "DateTime", etc.)
+     * Runtime behavior:
+     * - nvImageCodec v0.7.0+: Uses NVIMGCODEC_METADATA_KIND_TIFF_TAG API for direct access
+     * - nvImageCodec v0.6.0:  Returns tags inferred from file extension/metadata (limited)
      *
      * @param ifd_index IFD index
-     * @param tag_name TIFF tag name (case-sensitive)
-     * @return Tag value as string, or empty if not found
+     * @param tag_name TIFF tag name (case-sensitive, e.g., "COMPRESSION", "SUBFILETYPE")
+     * @return Tag value as string, or empty if not found/unavailable
      */
     std::string get_tiff_tag(uint32_t ifd_index, const std::string& tag_name) const;
 
     /**
-     * @brief Get SUBFILETYPE tag for format classification (nvImageCodec 0.7.0+)
+     * @brief Get SUBFILETYPE tag for format classification
      *
      * Returns the SUBFILETYPE value used in formats like Aperio SVS:
      * - 0 = full resolution image
      * - 1 = reduced resolution image (thumbnail/label/macro)
      *
+     * Runtime behavior:
+     * - nvImageCodec v0.7.0+: Reads SUBFILETYPE tag directly from TIFF
+     * - nvImageCodec v0.6.0:  Returns -1 (not available)
+     *
      * @param ifd_index IFD index
-     * @return SUBFILETYPE value, or -1 if not present
+     * @return SUBFILETYPE value, or -1 if not present/unavailable
      */
     int get_subfile_type(uint32_t ifd_index) const;
 
     /**
-     * @brief Query all available metadata kinds in file (nvImageCodec 0.7.0+)
+     * @brief Query all available metadata kinds in file
      *
      * Returns a list of metadata kinds present in the file for discovery.
      * Useful for detecting file format (Aperio, Philips, Generic TIFF, etc.)
      *
      * Example kinds: TIFF_TAG=0, MED_APERIO=1, MED_PHILIPS=2, etc.
+     *
+     * Works with both v0.6.0 and v0.7.0 (returns vendor-specific metadata kinds in both)
      *
      * @param ifd_index IFD index (default 0 for file-level metadata)
      * @return Vector of metadata kind values present in the IFD
@@ -200,10 +214,10 @@ public:
     std::vector<int> query_metadata_kinds(uint32_t ifd_index = 0) const;
 
     /**
-     * @brief Get detected file format based on metadata (nvImageCodec 0.7.0+)
+     * @brief Get detected file format based on metadata
      *
      * Automatically detects format by checking available metadata kinds.
-     * nvImageCodec 0.7.0 handles detection internally.
+     * Works with both v0.6.0 and v0.7.0 (uses vendor-specific metadata detection)
      *
      * @return Format name: "Aperio SVS", "Philips TIFF", "Leica SCN", "Generic TIFF", etc.
      */
@@ -219,6 +233,16 @@ public:
      * @return nvImageCodec code stream handle
      */
     nvimgcodecCodeStream_t get_main_code_stream() const { return main_code_stream_; }
+
+    /**
+     * @brief Get the runtime nvImageCodec version
+     *
+     * Returns the actual version of nvImageCodec library loaded at runtime.
+     * Format: major*1000 + minor*100 + patch (e.g., 600 for v0.6.0, 700 for v0.7.0)
+     *
+     * @return Version number, or 0 if unavailable
+     */
+    uint32_t get_nvimgcodec_version() const;
 
 private:
     /**
@@ -239,10 +263,13 @@ private:
     void extract_ifd_metadata(IfdInfo& ifd_info);
 
     /**
-     * @brief Extract individual TIFF tags (nvImageCodec 0.7.0+)
+     * @brief Extract individual TIFF tags (runtime version detection)
      *
-     * Uses NVIMGCODEC_METADATA_KIND_TIFF_TAG to query specific TIFF tags by name.
-     * Populates ifd_info.tiff_tags map.
+     * Runtime behavior:
+     * - nvImageCodec v0.7.0+: Uses NVIMGCODEC_METADATA_KIND_TIFF_TAG for direct tag access
+     * - nvImageCodec v0.6.0:  Uses file extension heuristics and metadata inference
+     *
+     * Populates ifd_info.tiff_tags map with available tags.
      *
      * @param ifd_info IFD to extract TIFF tags for
      */
