@@ -973,30 +973,43 @@ bool IFD::read_region_tiles(const TIFF* tiff,
                                     fflush(stdout);
                                     throw std::runtime_error("Unsupported compression method");
                                 }
+                                #ifdef DEBUG
                                 fmt::print("🔍 Switch statement completed, decompression done\n");
                                 fflush(stdout);
+                                #endif
                             }
 
+                            #ifdef DEBUG
                             fmt::print("🔍 Creating cache value\n");
                             fflush(stdout);
+                            #endif
                             value = image_cache.create_value(tile_data, tile_raster_nbytes);
+                            #ifdef DEBUG
                             fmt::print("🔍 Inserting into cache\n");
                             fflush(stdout);
+                            #endif
                             image_cache.insert(key, value);
+                            #ifdef DEBUG
                             fmt::print("🔍 Unlocking cache\n");
                             fflush(stdout);
+                            #endif
                             image_cache.unlock(index_hash);
+                            #ifdef DEBUG
                             fmt::print("🔍 Cache operations complete\n");
                             fflush(stdout);
+                            #endif
                         }
 
+                        #ifdef DEBUG
                         fmt::print("🔍 Starting memcpy loop: tile_pixel_offset_sy={}, tile_pixel_offset_ey={}\n",
                                   tile_pixel_offset_sy, tile_pixel_offset_ey);
                         fflush(stdout);
+                        #endif
 
                         for (uint32_t ty = tile_pixel_offset_sy; ty <= tile_pixel_offset_ey;
                              ++ty, dest_pixel_index += dest_pixel_step_y, nbytes_tile_index += nbytes_tw)
                         {
+                            #ifdef DEBUG
                             fmt::print("🔍 memcpy iteration ty={}\n", ty);
                             fmt::print("🔍   dest_start_ptr={}, dest_pixel_index={}, dest_ptr={}\n",
                                       static_cast<void*>(dest_start_ptr), dest_pixel_index,
@@ -1006,6 +1019,7 @@ bool IFD::read_region_tiles(const TIFF* tiff,
                                       static_cast<void*>(tile_data + nbytes_tile_index));
                             fmt::print("🔍   nbytes_tile_pixel_size_x={} (copy size)\n", nbytes_tile_pixel_size_x);
                             fflush(stdout);
+                            #endif
 
                             // Validate pointers before memcpy
                             if (!dest_start_ptr) {
@@ -1019,8 +1033,10 @@ bool IFD::read_region_tiles(const TIFF* tiff,
                                 throw std::runtime_error("tile_data is NULL");
                             }
 
+                            #ifdef DEBUG
                             fmt::print("🔍 Calling memcpy (device type={})...\n", static_cast<int>(out_device.type()));
                             fflush(stdout);
+                            #endif
 
                             // Use appropriate copy method based on destination device
                             if (out_device.type() == cucim::io::DeviceType::kCUDA)
@@ -1045,17 +1061,23 @@ bool IFD::read_region_tiles(const TIFF* tiff,
                                 memcpy(dest_start_ptr + dest_pixel_index, tile_data + nbytes_tile_index,
                                        nbytes_tile_pixel_size_x);
                             }
+                            #ifdef DEBUG
                             fmt::print("🔍 memcpy succeeded\n");
                             fflush(stdout);
+                            #endif
                         }
+                        #ifdef DEBUG
                         fmt::print("🔍 memcpy loop completed\n");
                         fflush(stdout);
+                        #endif
                     }
                 }
                 else
                 {
+                    #ifdef DEBUG
                     fmt::print("🔍 tiledata_size <= 0, filling with background\n");
                     fflush(stdout);
+                    #endif
                     if (out_device.type() == cucim::io::DeviceType::kCPU)
                     {
                         for (uint32_t ty = tile_pixel_offset_sy; ty <= tile_pixel_offset_ey;
@@ -1073,8 +1095,10 @@ bool IFD::read_region_tiles(const TIFF* tiff,
                                                 tile_pixel_offset_ey - tile_pixel_offset_sy + 1));
                     }
                 }
+                #ifdef DEBUG
                 fmt::print("🔍🔍🔍 decode_func lambda COMPLETE! Exiting...\n");
                 fflush(stdout);
+                #endif
             };
 
             // TEMPORARY: Force single-threaded execution to isolate segfault
@@ -1082,13 +1106,17 @@ bool IFD::read_region_tiles(const TIFF* tiff,
 
             if (force_single_threaded || !loader || !(*loader))
             {
+                #ifdef DEBUG
                 fmt::print("🔍 Executing decode_func directly (FORCED SINGLE-THREADED)\n");
                 fmt::print("🔍 index={}, tiledata_offset={}, tiledata_size={}\n", index, tiledata_offset, tiledata_size);
                 fmt::print("🔍 About to call decode_func()...\n");
                 fflush(stdout);
+                #endif
                 decode_func();
+                #ifdef DEBUG
                 fmt::print("🔍 decode_func completed successfully\n");
                 fflush(stdout);
+                #endif
             }
             else
             {
@@ -1398,13 +1426,17 @@ bool IFD::read_region_tiles_boundary(const TIFF* tiff,
                                                              &tile_data, tile_raster_nbytes, out_device);
                                     break;
                                 case COMPRESSION_JPEG:
+                                    #ifdef DEBUG
                                     fmt::print("🔍 Calling decode_libjpeg\n");
                                     fflush(stdout);
+                                    #endif
                                     cuslide::jpeg::decode_libjpeg(tiff_file, nullptr, tiledata_offset, tiledata_size,
                                                                   jpegtable_data, jpegtable_count, &tile_data,
                                                                   out_device, jpeg_color_space);
+                                    #ifdef DEBUG
                                     fmt::print("🔍 decode_libjpeg completed\n");
                                     fflush(stdout);
+                                    #endif
                                     break;
                                 case COMPRESSION_ADOBE_DEFLATE:
                                 case COMPRESSION_DEFLATE:
@@ -1412,23 +1444,31 @@ bool IFD::read_region_tiles_boundary(const TIFF* tiff,
                                                                      &tile_data, tile_raster_nbytes, out_device);
                                     break;
                                 case cuslide::jpeg2k::kAperioJpeg2kYCbCr: // 33003
+                                    #ifdef DEBUG
                                     fmt::print("🔍 Calling decode_libopenjpeg (YCbCr)\n");
                                     fflush(stdout);
+                                    #endif
                                     cuslide::jpeg2k::decode_libopenjpeg(tiff_file, nullptr, tiledata_offset,
                                                                         tiledata_size, &tile_data, tile_raster_nbytes,
                                                                         out_device, cuslide::jpeg2k::ColorSpace::kSYCC);
+                                    #ifdef DEBUG
                                     fmt::print("🔍 decode_libopenjpeg (YCbCr) completed\n");
                                     fflush(stdout);
+                                    #endif
                                     break;
                                 case cuslide::jpeg2k::kAperioJpeg2kRGB: // 33005
+                                    #ifdef DEBUG
                                     fmt::print("🔍 Calling decode_libopenjpeg (RGB), fd={}, offset={}, size={}\n",
                                               tiff_file, tiledata_offset, tiledata_size);
                                     fflush(stdout);
+                                    #endif
                                     cuslide::jpeg2k::decode_libopenjpeg(tiff_file, nullptr, tiledata_offset,
                                                                         tiledata_size, &tile_data, tile_raster_nbytes,
                                                                         out_device, cuslide::jpeg2k::ColorSpace::kRGB);
+                                    #ifdef DEBUG
                                     fmt::print("🔍 decode_libopenjpeg completed!\n");
                                     fflush(stdout);
+                                    #endif
                                     break;
                                 case COMPRESSION_LZW:
                                     cuslide::lzw::decode_lzw(tiff_file, nullptr, tiledata_offset, tiledata_size,
@@ -1517,13 +1557,17 @@ bool IFD::read_region_tiles_boundary(const TIFF* tiff,
 
             if (force_single_threaded || !loader || !(*loader))
             {
+                #ifdef DEBUG
                 fmt::print("🔍 Executing decode_func directly (FORCED SINGLE-THREADED)\n");
                 fmt::print("🔍 index={}, tiledata_offset={}, tiledata_size={}\n", index, tiledata_offset, tiledata_size);
                 fmt::print("🔍 About to call decode_func()...\n");
                 fflush(stdout);
+                #endif
                 decode_func();
+                #ifdef DEBUG
                 fmt::print("🔍 decode_func completed successfully\n");
                 fflush(stdout);
+                #endif
             }
             else
             {
