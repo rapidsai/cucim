@@ -413,10 +413,6 @@ bool decode_ifd_region_nvimgcodec(const IfdInfo& ifd_info,
 
 // Fallback stub when nvImageCodec is not available
 // cuslide2 plugin requires nvImageCodec, so this should never be called
-// Forward declaration for types
-struct IfdInfo;
-typedef void* nvimgcodecCodeStream_t;
-
 bool decode_ifd_region_nvimgcodec(const IfdInfo&,
                                   nvimgcodecCodeStream_t,
                                   uint32_t, uint32_t,
