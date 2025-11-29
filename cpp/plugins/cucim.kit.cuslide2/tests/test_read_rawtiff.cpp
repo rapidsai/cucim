@@ -67,6 +67,22 @@ static void shuffle_offsets(uint32_t count, uint64_t* offsets, uint64_t* bytecou
     }
 }
 
+/**
+ * I/O Performance Benchmark Test for TIFF Tile Reading
+ *
+ * This test benchmarks different low-level I/O methods for reading TIFF tiles:
+ * - Regular POSIX I/O (standard pread)
+ * - O_DIRECT I/O (bypassing OS page cache)
+ * - Memory-mapped I/O (mmap)
+ * - GPUDirect Storage / cuFile (direct GPU reads, if available)
+ *
+ * For each I/O method, the test measures:
+ * 1. Reading the entire TIFF file as a single operation
+ * 2. Reading individual tiles using their offsets and byte counts
+ *
+ * The tile read order can be shuffled to test random vs. sequential access patterns.
+ * Results help optimize the I/O strategy for large whole-slide images.
+ */
 TEST_CASE("Verify raw tiff read", "[test_read_rawtiff.cpp]")
 {
 //    cudaError_t cuda_status;
