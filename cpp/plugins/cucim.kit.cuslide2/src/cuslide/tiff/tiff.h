@@ -23,9 +23,6 @@
 #include "types.h"
 #include "cuslide/nvimgcodec/nvimgcodec_tiff_parser.h"
 
-// Forward declaration removed - no longer using libtiff
-// typedef struct tiff TIFF;  // REMOVED: libtiff forward declaration
-
 namespace cuslide::tiff
 {
 
@@ -104,8 +101,6 @@ private:
 
     cucim::filesystem::Path file_path_;
     std::shared_ptr<CuCIMFileHandle> file_handle_shared_;
-    // REMOVED: file_handle_ raw pointer - use file_handle_shared_.get() instead
-    // REMOVED: tiff_client_ - no longer using libtiff
     std::vector<ifd_offset_t> ifd_offsets_; /// IFD offset for an index (IFD index)
     std::vector<std::shared_ptr<IFD>> ifds_; /// IFD object for an index (IFD index)
     /// nvImageCodec TIFF parser - MUST be destroyed BEFORE ifds_ to avoid double-free of sub-code streams
