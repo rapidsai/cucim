@@ -16,9 +16,7 @@ file(STRINGS ${CMAKE_CURRENT_LIST_DIR}/../../../VERSION VERSION)
 # strip alpha version info
 string(REGEX REPLACE "a.*$" "" VERSION ${VERSION})
 
-# Include cuslide2's local cmake modules first (for custom SuperBuildUtils.cmake)
-list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake/modules")
-# Reuse cmake modules from cuslide plugin (for shared deps)
+# Reuse cmake modules from cuslide plugin (for SuperBuildUtils.cmake and shared deps)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/../cucim.kit.cuslide/cmake/modules")
 # Include central CuCIM cmake modules (for CuCIMUtils.cmake)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/../../../cpp/cmake/modules")
@@ -29,6 +27,8 @@ set(CUCIM_PLUGIN_NAME "cucim.kit.cuslide2")
 ################################################################################
 # Include utilities
 ################################################################################
+# Set additional deps directory for cuslide2-specific dependencies (e.g., nvimgcodec)
+set(SUPERBUILD_ADDITIONAL_DEPS_DIRS "${CMAKE_CURRENT_LIST_DIR}/cmake/deps")
 include(SuperBuildUtils)
 include(CuCIMUtils)
 
