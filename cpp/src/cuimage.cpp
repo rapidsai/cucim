@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2025, NVIDIA CORPORATION.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -276,14 +276,16 @@ CuImage::~CuImage()
                 image_data_->container.data = nullptr;
                 break;
             case io::DeviceType::kCUDA:
-
-                if (image_data_->loader)
-                {
-                    cudaError_t cuda_status;
-                    CUDA_TRY(cudaFree(image_data_->container.data));
-                }
+            {
+                // Always free CUDA memory allocated for this CuImage.
+                // If a loader exists and transferred ownership (num_workers==0), CuImage owns the memory.
+                // If no loader exists, CuImage allocated the memory directly.
+                // Either way, CuImage is responsible for freeing it.
+                cudaError_t cuda_status;
+                CUDA_TRY(cudaFree(image_data_->container.data));
                 image_data_->container.data = nullptr;
                 break;
+            }
             case io::DeviceType::kCUDAHost:
             case io::DeviceType::kCUDAManaged:
             case io::DeviceType::kCPUShared:
