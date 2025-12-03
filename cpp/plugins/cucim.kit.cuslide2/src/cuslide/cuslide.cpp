@@ -197,6 +197,10 @@ static bool CUCIM_ABI parser_parse(CuCIMFileHandle_ptr handle_ptr, cucim::io::fo
     }
 
     // Spacing units
+    static constexpr std::string_view empty_unit{};
+    static constexpr std::string_view micrometer_unit{"micrometer"};
+    static constexpr std::string_view color_unit{"color"};
+
     std::pmr::vector<std::string_view> spacing_units(&resource);
     spacing_units.reserve(ndim);
 
@@ -213,30 +217,30 @@ static bool CUCIM_ABI parser_parse(CuCIMFileHandle_ptr handle_ptr, cucim::io::fo
         spacing.emplace_back(x_resolution);
         spacing.emplace_back(1.0f);
 
-        spacing_units.emplace_back(std::string_view{ "" });
-        spacing_units.emplace_back(std::string_view{ "" });
+        spacing_units.emplace_back(empty_unit);
+        spacing_units.emplace_back(empty_unit);
         break;
     case 2: // inch
         spacing.emplace_back(y_resolution != 0 ? 25400 / y_resolution : 1.0f);
         spacing.emplace_back(x_resolution != 0 ? 25400 / x_resolution : 1.0f);
         spacing.emplace_back(1.0f);
 
-        spacing_units.emplace_back(std::string_view{ "micrometer" });
-        spacing_units.emplace_back(std::string_view{ "micrometer" });
+        spacing_units.emplace_back(micrometer_unit);
+        spacing_units.emplace_back(micrometer_unit);
         break;
     case 3: // centimeter
         spacing.emplace_back(y_resolution != 0 ? 10000 / y_resolution : 1.0f);
         spacing.emplace_back(x_resolution != 0 ? 10000 / x_resolution : 1.0f);
         spacing.emplace_back(1.0f);
 
-        spacing_units.emplace_back(std::string_view{ "micrometer" });
-        spacing_units.emplace_back(std::string_view{ "micrometer" });
+        spacing_units.emplace_back(micrometer_unit);
+        spacing_units.emplace_back(micrometer_unit);
         break;
     default:
         spacing.insert(spacing.end(), ndim, 1.0f);
     }
 
-    spacing_units.emplace_back(std::string_view{ "color" });
+    spacing_units.emplace_back(color_unit);
 
     std::pmr::vector<float> origin({ 0.0, 0.0, 0.0 }, &resource);
     // Direction cosines (size is always 3x3)
