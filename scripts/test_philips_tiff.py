@@ -13,6 +13,7 @@ from pathlib import Path
 
 def setup_environment():
     """Setup cuCIM environment for cuslide2 plugin"""
+    import cucim
 
     # Get current build directory
     repo_root = Path(__file__).parent.parent
@@ -21,12 +22,8 @@ def setup_environment():
     if not plugin_lib.exists():
         plugin_lib = repo_root / "install/lib"
 
-    # Read version from VERSION file
-    version_file = repo_root / "VERSION"
-    if version_file.exists():
-        version = version_file.read_text().strip()
-    else:
-        version = "25.12.00"  # Fallback version
+    # Use installed cucim version
+    version = cucim.__version__
 
     # Create plugin configuration
     config = {
