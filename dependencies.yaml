@@ -241,7 +241,7 @@ dependencies:
           - scipy>=1.11.2
       - output_types: conda
         packages:
-          - &cupy_unsuffixed cupy>=13.6.0
+          - &cupy_unsuffixed cupy>=14.0.0
           - libnvimgcodec>=0.6.0,<0.7.0
           - nvimgcodec>=0.6.0,<0.7.0
     specific:
@@ -250,12 +250,12 @@ dependencies:
           - matrix:
               cuda: "12.*"
             packages:
-              - cupy-cuda12x>=13.6.0
+              - cupy-cuda12x>=14.0.0
               - nvidia-nvimgcodec-cu12>=0.6.0,<0.7.0
           # fallback to CUDA 13 versions if 'cuda' is '13.*' or not provided
           - matrix:
             packages:
-              - cupy-cuda13x>=13.6.0
+              - cupy-cuda13x>=14.0.0
               - nvidia-nvimgcodec-cu13>=0.6.0,<0.7.0
   test_python:
     common:
