@@ -72,6 +72,7 @@ requirements:
     - cuda-cudart
     - libnvjpeg
     - libnvimgcodec0 {{ nvimgcodec_version }}  # nvImageCodec runtime library
+    - libnvimgcodec {{ nvimgcodec_version }}   # nvImageCodec runtime library metapackage
   run_constrained:
     - {{ pin_compatible('openslide') }}
     - libnvimgcodec-dev {{ nvimgcodec_version }}  # Optional: for development/debugging
