@@ -24,6 +24,7 @@ build:
     - cuda-cudart-dev
     - libcufile-dev
     - libnvjpeg-dev
+    - libnvimgcodec-dev
   script_env:
     - AWS_ACCESS_KEY_ID
     - AWS_SECRET_ACCESS_KEY

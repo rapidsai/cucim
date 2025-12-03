@@ -144,80 +144,36 @@ find_package(cucim CONFIG REQUIRED
 # TODO: Uncomment this section when src/ directory is added with implementation
 
 message(STATUS "=============================================================")
-message(STATUS "cuslide2 infrastructure validation - Dependencies verified:")
-message(STATUS "  ✓ fmt")
-message(STATUS "  ✓ libjpeg-turbo")
-message(STATUS "  ✓ libopenjpeg")
-message(STATUS "  ✓ libtiff")
-message(STATUS "  ✓ libdeflate")
-message(STATUS "  ✓ nvImageCodec")
-message(STATUS "  ✓ pugixml")
-message(STATUS "  ✓ json")
-message(STATUS "  ✓ openslide")
+message(STATUS "cuslide2 PURE nvImageCodec - Dependencies:")
+message(STATUS "  ✓ fmt (logging)")
+message(STATUS "  ✓ nvImageCodec (GPU-accelerated JPEG/JPEG2000/deflate/LZW)")
+message(STATUS "  ✓ pugixml (XML metadata parsing)")
+message(STATUS "  ✓ json (JSON metadata)")
+message(STATUS "  ✓ openslide (for testing)")
+message(STATUS "  ✓ googletest, catch2, googlebenchmark, cli11 (testing)")
 message(STATUS "")
-message(STATUS "Infrastructure setup complete!")
-message(STATUS "Next step: Add src/ directory with cuslide2 implementation")
+message(STATUS "Build configured: Pure GPU-accelerated decoding with tests!")
 message(STATUS "=============================================================")
 
-# For infrastructure-only PR: Create a dummy target so build succeeds
-# This will be replaced with actual library in follow-up PR
-add_custom_target(${CUCIM_PLUGIN_NAME}
-    COMMAND ${CMAKE_COMMAND} -E echo "cuslide2 infrastructure-only: No library to build - dependencies verified"
-    COMMENT "Infrastructure-only build - no plugin binary generated"
-)
 
-# TODO: Replace dummy target with real library when source files exist
-if(FALSE)  # Change to TRUE when source files exist
-# Add library
-# Use local src/ implementation with nvImageCodec support
-set(CUSLIDE_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide)
-add_library(${CUCIM_PLUGIN_NAME} MODULE
-    ${CUSLIDE_SRC_DIR}/cuslide.cpp
-    ${CUSLIDE_SRC_DIR}/cuslide.h
-    ${CUSLIDE_SRC_DIR}/deflate/deflate.cpp
-    ${CUSLIDE_SRC_DIR}/deflate/deflate.h
-    ${CUSLIDE_SRC_DIR}/jpeg/libjpeg_turbo.cpp
-    ${CUSLIDE_SRC_DIR}/jpeg/libjpeg_turbo.h
-    ${CUSLIDE_SRC_DIR}/jpeg/libnvjpeg.cpp
-    ${CUSLIDE_SRC_DIR}/jpeg/libnvjpeg.h
-    ${CUSLIDE_SRC_DIR}/jpeg2k/color_conversion.cpp
-    ${CUSLIDE_SRC_DIR}/jpeg2k/color_conversion.h
-    ${CUSLIDE_SRC_DIR}/jpeg2k/color_table.h
-    ${CUSLIDE_SRC_DIR}/jpeg2k/libopenjpeg.cpp
-    ${CUSLIDE_SRC_DIR}/jpeg2k/libopenjpeg.h
-    ${CUSLIDE_SRC_DIR}/loader/nvjpeg_processor.cpp
-    ${CUSLIDE_SRC_DIR}/loader/nvjpeg_processor.h
-    ${deps-libopenjpeg_SOURCE_DIR}/src/bin/common/color.c  # for color_sycc_to_rgb() and color_apply_icc_profile()
-    ${CUSLIDE_SRC_DIR}/lzw/lzw.cpp
-    ${CUSLIDE_SRC_DIR}/lzw/lzw.h
-    ${CUSLIDE_SRC_DIR}/lzw/lzw_libtiff.cpp
-    ${CUSLIDE_SRC_DIR}/lzw/lzw_libtiff.h
-    ${CUSLIDE_SRC_DIR}/raw/raw.cpp
-    ${CUSLIDE_SRC_DIR}/raw/raw.h
-    ${CUSLIDE_SRC_DIR}/tiff/ifd.cpp
-    ${CUSLIDE_SRC_DIR}/tiff/ifd.h
-    ${CUSLIDE_SRC_DIR}/tiff/tiff.cpp
-    ${CUSLIDE_SRC_DIR}/tiff/tiff.h
-    ${CUSLIDE_SRC_DIR}/tiff/types.h
-    # nvImageCodec decoder implementation
-    ${CUSLIDE_SRC_DIR}/nvimgcodec/nvimgcodec_decoder.cpp
-    ${CUSLIDE_SRC_DIR}/nvimgcodec/nvimgcodec_decoder.h
-    ${CUSLIDE_SRC_DIR}/nvimgcodec/nvimgcodec_tiff_parser.cpp
-    ${CUSLIDE_SRC_DIR}/nvimgcodec/nvimgcodec_tiff_parser.h)
+# Use SHARED library (needed for tests to link against it, but still loaded via dlopen at runtime)
+add_library(${CUCIM_PLUGIN_NAME} SHARED
+    # Main plugin interface
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/cuslide.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/cuslide.h
+    # TIFF structure management (uses nvImageCodec for parsing)
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/tiff/ifd.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/tiff/ifd.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/tiff/tiff.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/tiff/tiff.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/tiff/types.h
+    # nvImageCodec decoding and TIFF parsing (GPU-accelerated)
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/nvimgcodec/nvimgcodec_decoder.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/nvimgcodec/nvimgcodec_decoder.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/nvimgcodec/nvimgcodec_tiff_parser.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/nvimgcodec/nvimgcodec_tiff_parser.h)
 
-# compile color.c for libopenjpeg with c++
-set_source_files_properties(${deps-libopenjpeg_SOURCE_DIR}/src/bin/common/color.c
-    PROPERTIES
-        LANGUAGE C
-        CMAKE_CXX_VISIBILITY_PRESET default
-        CMAKE_C_VISIBILITY_PRESET default
-        CMAKE_VISIBILITY_INLINES_HIDDEN OFF)
-
-# Ignore warnings in existing source code from libjpeg-turbo
-set_source_files_properties(${CUSLIDE_SRC_DIR}/jpeg/libjpeg_turbo.cpp
-    PROPERTIES
-        COMPILE_OPTIONS "-Wno-error" # or, "-Wno-write-strings;-Wno-clobbered"
-    )
+# No special source file properties needed for pure nvImageCodec implementation
 
 # Compile options
 set_target_properties(${CUCIM_PLUGIN_NAME}
@@ -244,13 +200,61 @@ target_link_libraries(${CUCIM_PLUGIN_NAME}
             deps::pugixml
             deps::json
             deps::libdeflate
-            $<TARGET_NAME_IF_EXISTS:deps::nvimgcodec>
         )
 
-# Add nvImageCodec compile definition if the target exists
-if(TARGET deps::nvimgcodec)
-    target_compile_definitions(${CUCIM_PLUGIN_NAME} PRIVATE CUCIM_HAS_NVIMGCODEC)
-    message(STATUS "✓ nvImageCodec enabled - GPU-accelerated JPEG/JPEG2000 decoding available")
+# nvImageCodec linking: dynamic (runtime) vs static (compile-time)
+option(WITH_DYNAMIC_NVIMGCODEC "Use dynamic loading for nvImageCodec (dlopen at runtime)" ON)
+
+if(WITH_DYNAMIC_NVIMGCODEC)
+
+    message(STATUS "============== Dynamic nvImageCodec Loading ==============")
+
+
+    # Use pre-generated stubs (faster builds, no Python clang dependency)
+    # To regenerate: cd build-release && make dynlink_nvimgcodec_gen.cc
+    #                then copy to src/nvimgcodec_dynlink/nvimgcodec_stubs_generated.cc
+
+    # Create dynamic loading wrapper library
+    add_library(nvimgcodec_dynlink STATIC
+        src/nvimgcodec_dynlink/nvimgcodec_wrap.cc
+        src/nvimgcodec_dynlink/nvimgcodec_stubs_generated.cc  # Pre-generated stubs
+    )
+    set_target_properties(nvimgcodec_dynlink PROPERTIES POSITION_INDEPENDENT_CODE ON)
+    target_include_directories(nvimgcodec_dynlink SYSTEM PRIVATE
+        ${CMAKE_CURRENT_LIST_DIR}/src/nvimgcodec_dynlink
+        ${CUDAToolkit_INCLUDE_DIRS}
+    )
+    target_link_libraries(nvimgcodec_dynlink PRIVATE ${CMAKE_DL_LIBS})
+
+    # Link cuslide2 against dynlink wrapper (instead of libnvimgcodec.so)
+    target_link_libraries(${CUCIM_PLUGIN_NAME} PRIVATE nvimgcodec_dynlink)
+    target_include_directories(${CUCIM_PLUGIN_NAME} SYSTEM PRIVATE ${CMAKE_CURRENT_LIST_DIR}/src/nvimgcodec_dynlink)
+    target_compile_definitions(${CUCIM_PLUGIN_NAME} PRIVATE CUCIM_HAS_NVIMGCODEC WITH_DYNAMIC_NVIMGCODEC)
+
+    # Set rpath for runtime library search
+    foreach(rpath IN ITEMS
+        "$ORIGIN"
+        "$ORIGIN/../nvimgcodec"
+        "$ORIGIN/../lib"
+        "$ORIGIN/../../lib")
+        message(STATUS "  Adding to rpath: ${rpath}")
+        list(APPEND CMAKE_BUILD_RPATH ${rpath})
+        list(APPEND CMAKE_INSTALL_RPATH ${rpath})
+    endforeach()
+
+    message(STATUS "✓ Dynamic nvImageCodec loading enabled")
+    message(STATUS "  Runtime: libnvimgcodec.so loaded via dlopen")
+    message(STATUS "  Python wheels: Place libnvimgcodec.so in lib/ directory")
+    message(STATUS "==========================================================")
+else()
+    # Static linking: link directly against nvImageCodec (build-time dependency)
+    if(TARGET deps::nvimgcodec)
+        target_link_libraries(${CUCIM_PLUGIN_NAME} PRIVATE deps::nvimgcodec)
+        target_compile_definitions(${CUCIM_PLUGIN_NAME} PRIVATE CUCIM_HAS_NVIMGCODEC)
+        message(STATUS "✓ nvImageCodec enabled (static linking) - GPU-accelerated decoding available")
+    else()
+        message(STATUS "⚠ nvImageCodec target not found - GPU acceleration disabled")
+    endif()
 endif()
 if (TARGET CUDA::nvjpeg_static)
         target_link_libraries(${CUCIM_PLUGIN_NAME}
@@ -273,7 +277,8 @@ target_include_directories(${CUCIM_PLUGIN_NAME}
             $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
             $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
         PRIVATE
-            ${CMAKE_CURRENT_SOURCE_DIR}/src
+            ${CMAKE_CURRENT_SOURCE_DIR}/../cucim.kit.cuslide/src
+            ${CMAKE_CURRENT_SOURCE_DIR}/src  # Include cuslide2 src for nvimgcodec headers
         )
 
 # Do not generate SONAME as this would be used as plugin
@@ -293,67 +298,68 @@ set_target_properties(${CUCIM_PLUGIN_NAME} PROPERTIES OUTPUT_NAME "${CUCIM_PLUGI
 
 ################################################################################
 # Add tests
-#########################################################std#######################
-# NOTE: Commented out for infrastructure-only PR. Will be enabled in follow-up PR
-#       with actual implementation.
-# add_subdirectory(tests)
-# add_subdirectory(benchmarks)
+################################################################################
+add_subdirectory(tests)
+add_subdirectory(benchmarks)
 
 ################################################################################
 # Install
 ################################################################################
 # NOTE: Disabled for infrastructure-only PR
 # TODO: Uncomment when library target exists
-# set(INSTALL_TARGETS
-#         ${CUCIM_PLUGIN_NAME}
-#         # cuslide_tests  # Disabled for infrastructure-only PR
-#         # cuslide_benchmarks  # Disabled for infrastructure-only PR
-#         )
-#
-# install(TARGETS ${INSTALL_TARGETS}
-#         EXPORT ${CUCIM_PLUGIN_NAME}-targets
-#         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-#         COMPONENT ${CUCIM_PLUGIN_NAME}_Runtime
-#         LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-#         COMPONENT ${CUCIM_PLUGIN_NAME}_Runtime
-#         NAMELINK_COMPONENT ${CUCIM_PLUGIN_NAME}_Development
-#         ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-#         COMPONENT ${CUCIM_PLUGIN_NAME}_Development
-#         )
-#
-# # Currently cuslide plugin doesn't have include path so comment out
-# # install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
-# install(EXPORT ${CUCIM_PLUGIN_NAME}-targets
-#         FILE
-#         ${CUCIM_PLUGIN_NAME}-targets.cmake
-#         NAMESPACE
-#         ${PROJECT_NAME}::
-#         DESTINATION
-#         ${CMAKE_INSTALL_LIBDIR}/cmake/${CUCIM_PLUGIN_NAME})
-#
-# # Write package configs
-# include(CMakePackageConfigHelpers)
-# configure_package_config_file(
-#     ${CMAKE_CURRENT_SOURCE_DIR}/cmake/${CUCIM_PLUGIN_NAME}-config.cmake.in
-#     ${CMAKE_CURRENT_BINARY_DIR}/cmake/${CUCIM_PLUGIN_NAME}-config.cmake
-#     INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${CUCIM_PLUGIN_NAME}
-# )
-# write_basic_package_version_file(
-#     ${CMAKE_CURRENT_BINARY_DIR}/cmake/${CUCIM_PLUGIN_NAME}-config-version.cmake
-#     VERSION ${PROJECT_VERSION}
-#     COMPATIBILITY AnyNewerVersion
-# )
-# install(
-#     FILES
-#         ${CMAKE_CURRENT_BINARY_DIR}/cmake/${CUCIM_PLUGIN_NAME}-config.cmake
-#         ${CMAKE_CURRENT_BINARY_DIR}/cmake/${CUCIM_PLUGIN_NAME}-config-version.cmake
-#     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${CUCIM_PLUGIN_NAME}
-# )
-#
-#
-# set(CMAKE_EXPORT_PACKAGE_REGISTRY ON)
-# export(PACKAGE ${CUCIM_PLUGIN_NAME})
+set(INSTALL_TARGETS
+        ${CUCIM_PLUGIN_NAME}
+        # cuslide_tests  # Disabled for infrastructure-only PR
+        # cuslide_benchmarks  # Disabled for infrastructure-only PR
+        )
 
-endif()  # End of if(FALSE) block for infrastructure-only PR
+# Add nvimgcodec_dynlink to install targets if dynamic loading is enabled
+if(WITH_DYNAMIC_NVIMGCODEC)
+    list(APPEND INSTALL_TARGETS nvimgcodec_dynlink)
+endif()
+
+install(TARGETS ${INSTALL_TARGETS}
+        EXPORT ${CUCIM_PLUGIN_NAME}-targets
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+        COMPONENT ${CUCIM_PLUGIN_NAME}_Runtime
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        COMPONENT ${CUCIM_PLUGIN_NAME}_Runtime
+        NAMELINK_COMPONENT ${CUCIM_PLUGIN_NAME}_Development
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        COMPONENT ${CUCIM_PLUGIN_NAME}_Development
+        )
+
+# Currently cuslide plugin doesn't have include path so comment out
+# install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(EXPORT ${CUCIM_PLUGIN_NAME}-targets
+        FILE
+        ${CUCIM_PLUGIN_NAME}-targets.cmake
+        NAMESPACE
+        ${PROJECT_NAME}::
+        DESTINATION
+        ${CMAKE_INSTALL_LIBDIR}/cmake/${CUCIM_PLUGIN_NAME})
+
+# Write package configs
+include(CMakePackageConfigHelpers)
+configure_package_config_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/cmake/${CUCIM_PLUGIN_NAME}-config.cmake.in
+    ${CMAKE_CURRENT_BINARY_DIR}/cmake/${CUCIM_PLUGIN_NAME}-config.cmake
+    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${CUCIM_PLUGIN_NAME}
+)
+write_basic_package_version_file(
+    ${CMAKE_CURRENT_BINARY_DIR}/cmake/${CUCIM_PLUGIN_NAME}-config-version.cmake
+    VERSION ${PROJECT_VERSION}
+    COMPATIBILITY AnyNewerVersion
+)
+install(
+    FILES
+        ${CMAKE_CURRENT_BINARY_DIR}/cmake/${CUCIM_PLUGIN_NAME}-config.cmake
+        ${CMAKE_CURRENT_BINARY_DIR}/cmake/${CUCIM_PLUGIN_NAME}-config-version.cmake
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${CUCIM_PLUGIN_NAME}
+)
+
+
+set(CMAKE_EXPORT_PACKAGE_REGISTRY ON)
+export(PACKAGE ${CUCIM_PLUGIN_NAME})
 
 unset(BUILD_SHARED_LIBS CACHE)
