@@ -39,7 +39,7 @@ struct CodeStreamDeleter
 {
     void operator()(nvimgcodecCodeStream_t stream) const
     {
-        if (stream) nvimgcodecCodeStreamDestroy(stream);
+        if (stream) { nvimgcodecCodeStreamDestroy(stream); }
     }
 };
 using UniqueCodeStream = std::unique_ptr<std::remove_pointer_t<nvimgcodecCodeStream_t>, CodeStreamDeleter>;
