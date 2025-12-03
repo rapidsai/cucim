@@ -6,124 +6,6 @@
 #
 
 if (NOT TARGET deps::nvimgcodec)
-    # Option to automatically install nvImageCodec via conda
-    option(AUTO_INSTALL_NVIMGCODEC "Automatically install nvImageCodec via conda" ON)
-    set(NVIMGCODEC_VERSION "0.6.0" CACHE STRING "nvImageCodec version to install")
-
-    # Automatic installation logic
-    if(AUTO_INSTALL_NVIMGCODEC)
-        message(STATUS "Configuring automatic nvImageCodec installation...")
-
-        # Try to find micromamba or conda in various locations
-        find_program(MICROMAMBA_EXECUTABLE
-            NAMES micromamba
-            PATHS ${CMAKE_CURRENT_SOURCE_DIR}/../../../bin
-                  ${CMAKE_CURRENT_SOURCE_DIR}/../../bin
-                  ${CMAKE_CURRENT_SOURCE_DIR}/bin
-                  $ENV{HOME}/micromamba/bin
-                  $ENV{HOME}/.local/bin
-                  /usr/local/bin
-                  /opt/conda/bin
-                  /opt/miniconda/bin
-            DOC "Path to micromamba executable"
-        )
-
-        find_program(CONDA_EXECUTABLE
-            NAMES conda mamba
-            PATHS $ENV{HOME}/miniconda3/bin
-                  $ENV{HOME}/anaconda3/bin
-                  /opt/conda/bin
-                  /opt/miniconda/bin
-                  /usr/local/bin
-            DOC "Path to conda/mamba executable"
-        )
-
-        # Determine which conda tool to use
-        set(CONDA_CMD "")
-        set(CONDA_TYPE "")
-        if(MICROMAMBA_EXECUTABLE)
-            set(CONDA_CMD ${MICROMAMBA_EXECUTABLE})
-            set(CONDA_TYPE "micromamba")
-            message(STATUS "Found micromamba: ${MICROMAMBA_EXECUTABLE}")
-        elseif(CONDA_EXECUTABLE)
-            set(CONDA_CMD ${CONDA_EXECUTABLE})
-            set(CONDA_TYPE "conda")
-            message(STATUS "Found conda/mamba: ${CONDA_EXECUTABLE}")
-        endif()
-
-        if(CONDA_CMD)
-            # Check if nvImageCodec is already installed
-            message(STATUS "Checking for existing nvImageCodec installation...")
-            execute_process(
-                COMMAND ${CONDA_CMD} list libnvimgcodec-dev
-                RESULT_VARIABLE NVIMGCODEC_CHECK_RESULT
-                OUTPUT_VARIABLE NVIMGCODEC_CHECK_OUTPUT
-                ERROR_QUIET
-            )
-
-            # Parse version from output if installed
-            set(NVIMGCODEC_INSTALLED_VERSION "")
-            if(NVIMGCODEC_CHECK_RESULT EQUAL 0)
-                string(REGEX MATCH "libnvimgcodec-dev[ ]+([0-9]+\\.[0-9]+\\.[0-9]+)"
-                       VERSION_MATCH "${NVIMGCODEC_CHECK_OUTPUT}")
-                if(CMAKE_MATCH_1)
-                    set(NVIMGCODEC_INSTALLED_VERSION ${CMAKE_MATCH_1})
-                endif()
-            endif()
-
-            # Install or upgrade if needed
-            set(NEED_INSTALL FALSE)
-            if(NOT NVIMGCODEC_CHECK_RESULT EQUAL 0)
-                message(STATUS "nvImageCodec not found - installing version ${NVIMGCODEC_VERSION}")
-                set(NEED_INSTALL TRUE)
-            elseif(NVIMGCODEC_INSTALLED_VERSION AND NVIMGCODEC_INSTALLED_VERSION VERSION_LESS NVIMGCODEC_VERSION)
-                message(STATUS "nvImageCodec ${NVIMGCODEC_INSTALLED_VERSION} found - upgrading to ${NVIMGCODEC_VERSION}")
-                set(NEED_INSTALL TRUE)
-            else()
-                message(STATUS "nvImageCodec ${NVIMGCODEC_INSTALLED_VERSION} already installed (>= ${NVIMGCODEC_VERSION})")
-            endif()
-
-            if(NEED_INSTALL)
-                # Install nvImageCodec with specific version
-                message(STATUS "Installing nvImageCodec ${NVIMGCODEC_VERSION} via ${CONDA_TYPE}...")
-                execute_process(
-                    COMMAND ${CONDA_CMD} install
-                        libnvimgcodec-dev=${NVIMGCODEC_VERSION}
-                        libnvimgcodec0=${NVIMGCODEC_VERSION}
-                        -c conda-forge -y
-                    RESULT_VARIABLE CONDA_INSTALL_RESULT
-                    OUTPUT_VARIABLE CONDA_INSTALL_OUTPUT
-                    ERROR_VARIABLE CONDA_INSTALL_ERROR
-                    TIMEOUT 300  # 5 minute timeout
-                )
-
-                if(CONDA_INSTALL_RESULT EQUAL 0)
-                    message(STATUS "✓ Successfully installed nvImageCodec ${NVIMGCODEC_VERSION}")
-                else()
-                    message(WARNING "✗ Failed to install nvImageCodec via ${CONDA_TYPE}")
-                    message(WARNING "Error: ${CONDA_INSTALL_ERROR}")
-
-                    # Try alternative installation without version constraint
-                    message(STATUS "Attempting installation without version constraint...")
-                    execute_process(
-                        COMMAND ${CONDA_CMD} install libnvimgcodec-dev libnvimgcodec0 -c conda-forge -y
-                        RESULT_VARIABLE CONDA_FALLBACK_RESULT
-                        OUTPUT_QUIET
-                        ERROR_QUIET
-                    )
-
-                    if(CONDA_FALLBACK_RESULT EQUAL 0)
-                        message(STATUS "✓ Fallback installation successful")
-                    else()
-                        message(WARNING "✗ Fallback installation also failed")
-                    endif()
-                endif()
-            endif()
-        else()
-            message(STATUS "No conda/micromamba found - skipping automatic installation")
-        endif()
-    endif()
-
     # First try to find it as a package
     find_package(nvimgcodec QUIET)
 
@@ -224,9 +106,8 @@ if (NOT TARGET deps::nvimgcodec)
             add_library(deps::nvimgcodec INTERFACE IMPORTED GLOBAL)
             message(STATUS "✗ nvImageCodec not found - GPU acceleration disabled")
             message(STATUS "To enable nvImageCodec support:")
-            message(STATUS "  Option 1 (conda): micromamba install libnvimgcodec-dev -c conda-forge")
+            message(STATUS "  Option 1 (conda): conda install libnvimgcodec-dev -c conda-forge")
             message(STATUS "  Option 2 (pip):   pip install nvidia-nvimgcodec-cu12[all]")
-            message(STATUS "  Option 3 (cmake): cmake -DAUTO_INSTALL_NVIMGCODEC=ON ..")
         endif()
     endif()
 endif()
