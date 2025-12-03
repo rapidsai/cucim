@@ -49,7 +49,7 @@ struct ImageDeleter
 {
     void operator()(nvimgcodecImage_t image) const
     {
-        if (image) nvimgcodecImageDestroy(image);
+        if (image) { nvimgcodecImageDestroy(image); }
     }
 };
 using UniqueImage = std::unique_ptr<std::remove_pointer_t<nvimgcodecImage_t>, ImageDeleter>;
@@ -59,7 +59,7 @@ struct FutureDeleter
 {
     void operator()(nvimgcodecFuture_t future) const
     {
-        if (future) nvimgcodecFutureDestroy(future);
+        if (future) { nvimgcodecFutureDestroy(future); }
     }
 };
 using UniqueFuture = std::unique_ptr<std::remove_pointer_t<nvimgcodecFuture_t>, FutureDeleter>;
@@ -147,7 +147,7 @@ bool decode_ifd_region_nvimgcodec(const IfdInfo& ifd_info,
                                   nvimgcodecCodeStream_t main_code_stream,
                                   uint32_t x, uint32_t y,
                                   uint32_t width, uint32_t height,
-                                  uint8_t** output_buffer,
+                                  uint8_t*& output_buffer,
                                   const cucim::io::Device& out_device)
 {
     if (!main_code_stream)
@@ -414,12 +414,12 @@ bool decode_ifd_region_nvimgcodec(const IfdInfo& ifd_info,
             #endif
 
             // Return CPU buffer (decode_buffer GPU memory will be freed by RAII)
-            *output_buffer = cpu_buffer;
+            output_buffer = cpu_buffer;
         }
         else
         {
             // GPU output: release buffer ownership to caller (skip RAII cleanup)
-            *output_buffer = reinterpret_cast<uint8_t*>(decode_buffer.release());
+            output_buffer = reinterpret_cast<uint8_t*>(decode_buffer.release());
         }
 
         #ifdef DEBUG
@@ -443,7 +443,7 @@ bool decode_ifd_region_nvimgcodec(const IfdInfo&,
                                   nvimgcodecCodeStream_t,
                                   uint32_t, uint32_t,
                                   uint32_t, uint32_t,
-                                  uint8_t**,
+                                  uint8_t*&,
                                   const cucim::io::Device&)
 {
     throw std::runtime_error("cuslide2 plugin requires nvImageCodec to be enabled at compile time");

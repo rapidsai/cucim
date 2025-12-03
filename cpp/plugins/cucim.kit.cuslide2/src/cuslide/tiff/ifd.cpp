@@ -267,7 +267,7 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
             ifd_info,
             tiff->nvimgcodec_parser_->get_main_code_stream(),
             sx, sy, w, h,
-            &output_buffer,
+            output_buffer,
             out_device);
 
         if (success)
