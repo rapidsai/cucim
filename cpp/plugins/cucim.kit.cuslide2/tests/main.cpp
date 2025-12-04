@@ -4,7 +4,7 @@
  */
 
 // #define CATCH_CONFIG_MAIN
-// #include <catch2/catch_test_macros.hpp>
+
 
 // Implement main explicitly to handle additional parameters.
 #define CATCH_CONFIG_RUNNER
