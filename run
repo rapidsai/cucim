@@ -561,11 +561,18 @@ test_python() {
 
     pushd "$TOP"/python/cucim
     # Set CUDA environment for CuPy JIT compilation
-    # CuPy automatically finds headers in ${CUDA_PATH}/targets/*/include
     if [ -n "${CONDA_PREFIX}" ]; then
         export CUDA_PATH="${CONDA_PREFIX}"
         export CUDA_HOME="${CONDA_PREFIX}"
-        echo "🔧 Set CUDA_HOME=${CUDA_HOME}"
+        # CuPy NVRTC needs to find CUDA headers in targets subdirectory
+        # Detect platform architecture for correct CUDA include path
+        CUDA_ARCH=$(uname -m)
+        if [ "${CUDA_ARCH}" = "aarch64" ]; then
+            export CUDA_INCLUDE_PATH="${CONDA_PREFIX}/targets/sbsa-linux/include"
+        else
+            export CUDA_INCLUDE_PATH="${CONDA_PREFIX}/targets/x86_64-linux/include"
+        fi
+        echo "🔧 Set CUDA_HOME=${CUDA_HOME} CUDA_INCLUDE_PATH=${CUDA_INCLUDE_PATH}"
     fi
     run_command py.test --cache-clear -vv \
         --cov=cucim \
