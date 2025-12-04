@@ -135,6 +135,10 @@ find_package(cucim CONFIG REQUIRED
 # Define compile options
 ################################################################################
 
+if(NOT BUILD_SHARED_LIBS)
+    set(BUILD_SHARED_LIBS ON)
+endif()
+
 ################################################################################
 # Add library: cucim
 ################################################################################
@@ -155,9 +159,8 @@ message(STATUS "")
 message(STATUS "Build configured: Pure GPU-accelerated decoding with tests!")
 message(STATUS "=============================================================")
 
-
-# Use SHARED library (needed for tests to link against it, but still loaded via dlopen at runtime)
-add_library(${CUCIM_PLUGIN_NAME} SHARED
+# Add library - PURE nvImageCodec implementation (no CPU fallbacks)
+add_library(${CUCIM_PLUGIN_NAME}
     # Main plugin interface
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/cuslide.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/cuslide.h
@@ -170,6 +173,7 @@ add_library(${CUCIM_PLUGIN_NAME} SHARED
     # nvImageCodec decoding and TIFF parsing (GPU-accelerated)
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/nvimgcodec/nvimgcodec_decoder.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/nvimgcodec/nvimgcodec_decoder.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/nvimgcodec/nvimgcodec_manager.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/nvimgcodec/nvimgcodec_tiff_parser.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/nvimgcodec/nvimgcodec_tiff_parser.h)
 
@@ -206,14 +210,17 @@ target_link_libraries(${CUCIM_PLUGIN_NAME}
 option(WITH_DYNAMIC_NVIMGCODEC "Use dynamic loading for nvImageCodec (dlopen at runtime)" ON)
 
 if(WITH_DYNAMIC_NVIMGCODEC)
-
+    
     message(STATUS "============== Dynamic nvImageCodec Loading ==============")
 
+    set(nvimgcodec_INCLUDE_DIR ${CMAKE_CURRENT_LIST_DIR}/src/nvimgcodec_dynlink)
+    include_directories(AFTER SYSTEM "${nvimgcodec_INCLUDE_DIR}")
 
+    
     # Use pre-generated stubs (faster builds, no Python clang dependency)
     # To regenerate: cd build-release && make dynlink_nvimgcodec_gen.cc
     #                then copy to src/nvimgcodec_dynlink/nvimgcodec_stubs_generated.cc
-
+    
     # Create dynamic loading wrapper library
     add_library(nvimgcodec_dynlink STATIC
         src/nvimgcodec_dynlink/nvimgcodec_wrap.cc
@@ -221,14 +228,13 @@ if(WITH_DYNAMIC_NVIMGCODEC)
     )
     set_target_properties(nvimgcodec_dynlink PROPERTIES POSITION_INDEPENDENT_CODE ON)
     target_include_directories(nvimgcodec_dynlink SYSTEM PRIVATE
-        ${CMAKE_CURRENT_LIST_DIR}/src/nvimgcodec_dynlink
+        ${nvimgcodec_INCLUDE_DIR}
         ${CUDAToolkit_INCLUDE_DIRS}
     )
     target_link_libraries(nvimgcodec_dynlink PRIVATE ${CMAKE_DL_LIBS})
 
     # Link cuslide2 against dynlink wrapper (instead of libnvimgcodec.so)
     target_link_libraries(${CUCIM_PLUGIN_NAME} PRIVATE nvimgcodec_dynlink)
-    target_include_directories(${CUCIM_PLUGIN_NAME} SYSTEM PRIVATE ${CMAKE_CURRENT_LIST_DIR}/src/nvimgcodec_dynlink)
     target_compile_definitions(${CUCIM_PLUGIN_NAME} PRIVATE CUCIM_HAS_NVIMGCODEC WITH_DYNAMIC_NVIMGCODEC)
 
     # Set rpath for runtime library search
@@ -279,6 +285,7 @@ target_include_directories(${CUCIM_PLUGIN_NAME}
         PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/../cucim.kit.cuslide/src
             ${CMAKE_CURRENT_SOURCE_DIR}/src  # Include cuslide2 src for nvimgcodec headers
+            ${CMAKE_CURRENT_SOURCE_DIR}/src
         )
 
 # Do not generate SONAME as this would be used as plugin
@@ -305,12 +312,11 @@ add_subdirectory(benchmarks)
 ################################################################################
 # Install
 ################################################################################
-# NOTE: Disabled for infrastructure-only PR
-# TODO: Uncomment when library target exists
+
 set(INSTALL_TARGETS
         ${CUCIM_PLUGIN_NAME}
-        cuslide2_tests
-        # cuslide_benchmarks  # Disabled - not yet implemented
+        cuslide2_tests  
+        cuslide2_benchmarks 
         )
 
 # Add nvimgcodec_dynlink to install targets if dynamic loading is enabled
@@ -361,5 +367,7 @@ install(
 
 set(CMAKE_EXPORT_PACKAGE_REGISTRY ON)
 export(PACKAGE ${CUCIM_PLUGIN_NAME})
+
+# REMOVED: endif() - no longer needed since we removed the if(TRUE) wrapper
 
 unset(BUILD_SHARED_LIBS CACHE)
