@@ -38,26 +38,6 @@ public:
 #endif
     ~IFD();
 
-    static bool read_region_tiles(const TIFF* tiff,
-                                  const IFD* ifd,
-                                  const int64_t* location,
-                                  const int64_t location_index,
-                                  const int64_t w,
-                                  const int64_t h,
-                                  void* raster,
-                                  const cucim::io::Device& out_device,
-                                  cucim::loader::ThreadBatchDataLoader* loader);
-
-    static bool read_region_tiles_boundary(const TIFF* tiff,
-                                           const IFD* ifd,
-                                           const int64_t* location,
-                                           const int64_t location_index,
-                                           const int64_t w,
-                                           const int64_t h,
-                                           void* raster,
-                                           const cucim::io::Device& out_device,
-                                           cucim::loader::ThreadBatchDataLoader* loader);
-
     bool read(const TIFF* tiff,
               const cucim::io::format::ImageMetadataDesc* metadata,
               const cucim::io::format::ImageReaderRegionRequestDesc* request,
