@@ -210,17 +210,17 @@ target_link_libraries(${CUCIM_PLUGIN_NAME}
 option(WITH_DYNAMIC_NVIMGCODEC "Use dynamic loading for nvImageCodec (dlopen at runtime)" ON)
 
 if(WITH_DYNAMIC_NVIMGCODEC)
-    
+
     message(STATUS "============== Dynamic nvImageCodec Loading ==============")
 
     set(nvimgcodec_INCLUDE_DIR ${CMAKE_CURRENT_LIST_DIR}/src/nvimgcodec_dynlink)
     include_directories(AFTER SYSTEM "${nvimgcodec_INCLUDE_DIR}")
 
-    
+
     # Use pre-generated stubs (faster builds, no Python clang dependency)
     # To regenerate: cd build-release && make dynlink_nvimgcodec_gen.cc
     #                then copy to src/nvimgcodec_dynlink/nvimgcodec_stubs_generated.cc
-    
+
     # Create dynamic loading wrapper library
     add_library(nvimgcodec_dynlink STATIC
         src/nvimgcodec_dynlink/nvimgcodec_wrap.cc
@@ -315,8 +315,8 @@ add_subdirectory(benchmarks)
 
 set(INSTALL_TARGETS
         ${CUCIM_PLUGIN_NAME}
-        cuslide2_tests  
-        cuslide2_benchmarks 
+        cuslide2_tests
+        cuslide2_benchmarks
         )
 
 # Add nvimgcodec_dynlink to install targets if dynamic loading is enabled
