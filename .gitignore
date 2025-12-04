@@ -156,6 +156,4 @@ conda-bld
 # Custom debug environment setup script for VS Code (used by scripts/debug_python)
 /scripts/debug_env.sh
 *.tiff
-buildbackuup/
-*_cpp_documentation.md
 junit-cucim.xml
