@@ -309,8 +309,8 @@ add_subdirectory(benchmarks)
 # TODO: Uncomment when library target exists
 set(INSTALL_TARGETS
         ${CUCIM_PLUGIN_NAME}
-        # cuslide_tests  # Disabled for infrastructure-only PR
-        # cuslide_benchmarks  # Disabled for infrastructure-only PR
+        cuslide2_tests
+        # cuslide_benchmarks  # Disabled - not yet implemented
         )
 
 # Add nvimgcodec_dynlink to install targets if dynamic loading is enabled
