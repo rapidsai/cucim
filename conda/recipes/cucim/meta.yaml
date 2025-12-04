@@ -52,7 +52,7 @@ requirements:
     - click
     - cuda-version ={{ cuda_version }}
     - cuda-cudart-dev
-    - cupy >=14.0.0
+    - cupy >=13.6.0
     - libcucim ={{ version }}
     - python
     - pip
@@ -65,7 +65,7 @@ requirements:
     - cuda-cudart
     - numpy >=1.23,<3.0a0
     - click
-    - cupy >=14.0.0
+    - cupy >=13.6.0
     - lazy_loader >=0.1
     - libcucim ={{ version }}
     - python
