@@ -1,0 +1,23 @@
+/*
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: Apache-2.0
+ */
+// clang-format off
+#ifndef NVIMGCODEC_VERSION_H__
+#define NVIMGCODEC_VERSION_H__
+
+#define NVIMGCODEC_VER_MAJOR 0
+#define NVIMGCODEC_VER_MINOR 6
+#define NVIMGCODEC_VER_PATCH 0
+#define NVIMGCODEC_VER_BUILD
+
+#define MAKE_SEMANTIC_VERSION(major, minor, patch) ((major * 1000) + (minor * 100) + patch)
+#define NVIMGCODEC_MAJOR_FROM_SEMVER(ver) (ver / 1000)
+#define NVIMGCODEC_MINOR_FROM_SEMVER(ver) ((ver % 1000) / 100)
+#define NVIMGCODEC_PATCH_FROM_SEMVER(ver) ((ver % 1000) % 100)
+#define NVIMGCODEC_STREAM_VER(ver) \
+    NVIMGCODEC_MAJOR_FROM_SEMVER(ver) << "." << NVIMGCODEC_MINOR_FROM_SEMVER(ver) << "." << NVIMGCODEC_PATCH_FROM_SEMVER(ver)
+
+#define NVIMGCODEC_VER MAKE_SEMANTIC_VERSION(NVIMGCODEC_VER_MAJOR, NVIMGCODEC_VER_MINOR, NVIMGCODEC_VER_PATCH)
+
+#endif // NVIMGCODEC_VERSION
