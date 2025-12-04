@@ -54,6 +54,4 @@ TEST_CASE("Verify philips tiff file", "[test_philips_tiff.cpp]")
     tif->read(&metadata.desc(), &request, &image_data, nullptr /*out_metadata*/);
 
     tif->close();
-
-    REQUIRE(1 == 1);
 }
