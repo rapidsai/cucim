@@ -517,10 +517,12 @@ void TiffFileParser::extract_ifd_metadata(IfdInfo& ifd_info)
 
     if (!manager.get_decoder() || !ifd_info.sub_code_stream)
     {
-        if (!manager.get_decoder())
+        if (!manager.get_decoder()) {
             fmt::print("  ⚠️  Decoder not available\n");
-        if (!ifd_info.sub_code_stream)
+        }
+        if (!ifd_info.sub_code_stream) {
             fmt::print("  ⚠️  No sub-code stream for this IFD\n");
+        }
         return;  // No decoder or stream available
     }
 
@@ -624,8 +626,9 @@ void TiffFileParser::extract_ifd_metadata(IfdInfo& ifd_info)
     // Step 4: Move blobs into metadata_blobs map (no copy - just move!)
     for (int j = 0; j < metadata_count; ++j)
     {
-        if (!metadata_ptrs[j])
+        if (!metadata_ptrs[j]) {
             continue;
+        }
 
         nvimgcodecMetadata_t* metadata = metadata_ptrs[j];
 
@@ -723,12 +726,14 @@ uint32_t TiffFileParser::get_nvimgcodec_version() const
 
 std::string TiffFileParser::get_tiff_tag(uint32_t ifd_index, const std::string& tag_name) const
 {
-    if (ifd_index >= ifd_infos_.size())
+    if (ifd_index >= ifd_infos_.size()) {
         return "";
+    }
 
     auto it = ifd_infos_[ifd_index].tiff_tags.find(tag_name);
-    if (it != ifd_infos_[ifd_index].tiff_tags.end())
+    if (it != ifd_infos_[ifd_index].tiff_tags.end()) {
         return it->second;
+    }
 
     return "";
 }
@@ -787,8 +792,7 @@ void TiffFileParser::extract_tiff_tags(IfdInfo& ifd_info)
     // Store ImageDescription if available
     if (!ifd_info.image_description.empty())
     {
-        if (ifd_info.tiff_tags.find("IMAGEDESCRIPTION") == ifd_info.tiff_tags.end())
-        {
+        if (ifd_info.tiff_tags.find("IMAGEDESCRIPTION") == ifd_info.tiff_tags.end()) {
             ifd_info.tiff_tags["IMAGEDESCRIPTION"] = ifd_info.image_description;
         }
     }
@@ -809,8 +813,9 @@ void TiffFileParser::extract_tiff_tags(IfdInfo& ifd_info)
 int TiffFileParser::get_subfile_type(uint32_t ifd_index) const
 {
     std::string subfile_str = get_tiff_tag(ifd_index, "SUBFILETYPE");
-    if (subfile_str.empty())
+    if (subfile_str.empty()) {
         return -1;
+    }
 
     try {
         return std::stoi(subfile_str);
@@ -823,8 +828,9 @@ std::vector<int> TiffFileParser::query_metadata_kinds(uint32_t ifd_index) const
 {
     std::vector<int> kinds;
 
-    if (ifd_index >= ifd_infos_.size())
+    if (ifd_index >= ifd_infos_.size()) {
         return kinds;
+    }
 
     // Return all metadata kinds found in this IFD
     for (const auto& [kind, blob] : ifd_infos_[ifd_index].metadata_blobs)
@@ -837,8 +843,9 @@ std::vector<int> TiffFileParser::query_metadata_kinds(uint32_t ifd_index) const
 
 std::string TiffFileParser::get_detected_format() const
 {
-    if (ifd_infos_.empty())
+    if (ifd_infos_.empty()) {
         return "Unknown";
+    }
 
     // Check first IFD for vendor-specific metadata
     const auto& kinds = query_metadata_kinds(0);
