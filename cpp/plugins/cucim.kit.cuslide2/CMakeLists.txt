@@ -102,9 +102,6 @@ add_compile_definitions(_GLIBCXX_USE_CXX11_ABI=0) # TODO: create two library, on
 # Define dependencies
 ################################################################################
 superbuild_depend(fmt)
-superbuild_depend(libjpeg-turbo) # libjpeg-turbo should be located before libtiff as libtiff depends on libjpeg-turbo
-superbuild_depend(libopenjpeg)
-superbuild_depend(libtiff)
 superbuild_depend(catch2)
 superbuild_depend(openslide)
 superbuild_depend(googletest)
@@ -112,7 +109,6 @@ superbuild_depend(googlebenchmark)
 superbuild_depend(cli11)
 superbuild_depend(pugixml)
 superbuild_depend(json)
-superbuild_depend(libdeflate)
 superbuild_depend(nvimgcodec)
 
 ################################################################################
@@ -143,20 +139,17 @@ endif()
 # Add library: cucim
 ################################################################################
 
-# NOTE: Commented out for infrastructure-only PR. Will be enabled in follow-up PR
-#       with actual implementation once source files are added.
-# TODO: Uncomment this section when src/ directory is added with implementation
-
 message(STATUS "=============================================================")
 message(STATUS "cuslide2 PURE nvImageCodec - Dependencies:")
 message(STATUS "  ✓ fmt (logging)")
-message(STATUS "  ✓ nvImageCodec (GPU-accelerated JPEG/JPEG2000/deflate/LZW)")
-message(STATUS "  ✓ pugixml (XML metadata parsing)")
+message(STATUS "  ✓ nvImageCodec (GPU JPEG/JPEG2000/deflate/LZW decoding)")
+message(STATUS "  ✓ pugixml (XML metadata)")
 message(STATUS "  ✓ json (JSON metadata)")
-message(STATUS "  ✓ openslide (for testing)")
+message(STATUS "  ✓ openslide (testing)")
 message(STATUS "  ✓ googletest, catch2, googlebenchmark, cli11 (testing)")
 message(STATUS "")
-message(STATUS "Build configured: Pure GPU-accelerated decoding with tests!")
+message(STATUS "NOTE: No codec libraries needed (libjpeg/libtiff/libdeflate)")
+message(STATUS "      All decoding handled by nvImageCodec GPU acceleration!")
 message(STATUS "=============================================================")
 
 # Add library - PURE nvImageCodec implementation (no CPU fallbacks)
@@ -196,13 +189,8 @@ target_link_libraries(${CUCIM_PLUGIN_NAME}
         PRIVATE
             deps::fmt
             cucim::cucim
-            deps::libtiff
-            deps::libjpeg-turbo
-            deps::libopenjpeg
-            deps::libopenjpeg-lcms2
             deps::pugixml
             deps::json
-            deps::libdeflate
         )
 
 # nvImageCodec linking: dynamic (runtime) vs static (compile-time)
