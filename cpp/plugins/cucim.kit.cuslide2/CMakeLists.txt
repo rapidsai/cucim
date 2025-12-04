@@ -173,7 +173,6 @@ add_library(${CUCIM_PLUGIN_NAME}
     # nvImageCodec decoding and TIFF parsing (GPU-accelerated)
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/nvimgcodec/nvimgcodec_decoder.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/nvimgcodec/nvimgcodec_decoder.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/nvimgcodec/nvimgcodec_manager.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/nvimgcodec/nvimgcodec_tiff_parser.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/nvimgcodec/nvimgcodec_tiff_parser.h)
 
