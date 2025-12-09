@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) 2022-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 import cupy as cp
 import numpy as np
 from kvikio.nvcomp import LZ4Manager
@@ -130,17 +133,13 @@ class LZ4NVCOMP(Codec):
 
     def encode(self, buf):
         buf = ensure_contiguous_ndarray(buf, self.max_buffer_size)
-        if (
-            self._compressor is None
-        ):  # or self._compressor.data_type != buf.dtype:
+        if self._compressor is None:  # or self._compressor.data_type != buf.dtype:
             self._compressor = LZ4Manager(data_type=buf.dtype)
         return self._compressor.compress(buf)  # , self.acceleration)
 
     def decode(self, buf, out=None):
         buf = ensure_contiguous_ndarray(buf, self.max_buffer_size)
-        if (
-            self._compressor is None
-        ):  # or self._compressor.data_type != buf.dtype:
+        if self._compressor is None:  # or self._compressor.data_type != buf.dtype:
             self._compressor = LZ4Manager(data_type=buf.dtype)
         decompressed = self._compressor.decompress(buf)
         return ndarray_copy(decompressed, out)

@@ -1,6 +1,8 @@
-"""TV-L1 optical flow algorithm implementation.
+# SPDX-FileCopyrightText: 2009-2022 the scikit-image team
+# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
-"""
+"""TV-L1 optical flow algorithm implementation."""
 
 from functools import partial
 from itertools import combinations_with_replacement
@@ -311,7 +313,7 @@ def _ilk(
     # is the solution of the ndim x ndim linear system
     # A[i, j] * X = b[i, j]
     A = cp.zeros(reference_image.shape + (ndim, ndim), dtype=dtype)
-    b = cp.zeros(reference_image.shape + (ndim,), dtype=dtype)
+    b = cp.zeros(reference_image.shape + (ndim, 1), dtype=dtype)
 
     grid = cp.meshgrid(
         *[cp.arange(n, dtype=dtype) for n in reference_image.shape],
@@ -337,7 +339,7 @@ def _ilk(
             A[..., i, j] = A[..., j, i] = filter_func(grad[i] * grad[j])
 
         for i in range(ndim):
-            b[..., i] = filter_func(grad[i] * error_image)
+            b[..., i, 0] = filter_func(grad[i] * error_image)
 
         # Don't consider badly conditioned linear systems
         idx = abs(cp.linalg.det(A)) < 1e-14
@@ -345,7 +347,7 @@ def _ilk(
         b[idx] = 0
 
         # Solve the local linear systems
-        flow = cp.moveaxis(cp.linalg.solve(A, b), ndim, 0)
+        flow = cp.moveaxis(cp.linalg.solve(A, b)[..., 0], ndim, 0)
 
     return flow
 

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2009-2022 the scikit-image team
+# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
+
 import cupy as cp
 import numpy as np
 import pytest
@@ -139,15 +143,11 @@ def test_masked_registration_padfield_data():
     shifts = [(75, 75), (-130, 130), (130, 130)]
     for xi, yi in shifts:
         fixed_image = cp.array(
-            imread(
-                fetch(f"registration/tests/data/OriginalX{xi:d}Y{yi:d}.png" "")
-            )
+            imread(fetch(f"registration/tests/data/OriginalX{xi:d}Y{yi:d}.png"))
         )
         moving_image = cp.array(
             imread(
-                fetch(
-                    f"registration/tests/data/TransformedX{xi:d}Y{yi:d}.png" ""
-                )
+                fetch(f"registration/tests/data/TransformedX{xi:d}Y{yi:d}.png")
             )
         )
 

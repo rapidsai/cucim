@@ -1,3 +1,11 @@
+# SPDX-FileCopyrightText: Copyright (c) 2003-2009 Massachusetts Institute of Technology
+# SPDX-FileCopyrightText: Copyright (c) 2009-2011 Broad Institute
+# SPDX-FileCopyrightText: 2003 Lee Kamentsky
+# SPDX-FileCopyrightText: 2003-2005 Peter J. Verveer
+# SPDX-FileCopyrightText: 2009-2022 the scikit-image team
+# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 AND (GPL-2.0-only OR BSD-3-Clause)
+
 import warnings
 
 import cupy as cp
@@ -120,11 +128,12 @@ def thin(image, max_num_iter=None):
     check_nD(image, 2)
 
     # convert image to uint8 with values in {0, 1}
-    skel = cp.asarray(image, dtype=bool).view(cp.uint8)
+    skel = cp.asarray(image, dtype=bool).copy().view(cp.uint8)
 
     # neighborhood mask
     mask = cp.asarray(
-        [[8, 4, 2], [16, 0, 1], [32, 64, 128]], dtype=cp.uint8  # noqa
+        [[8, 4, 2], [16, 0, 1], [32, 64, 128]],
+        dtype=cp.uint8,  # noqa
     )
 
     G123_LUT = cp.asarray(_G123_LUT)
@@ -252,13 +261,16 @@ def medial_axis(image, mask=None, return_distance=False, *, rng=None):
 
     """
     try:
-        from skimage.morphology._skeletonize_cy import _skeletonize_loop
-    except ImportError as e:
-        warnings.warn(
-            "Could not find required private skimage Cython function:\n"
-            "\tskimage.morphology._skeletonize_cy._skeletonize_loop\n"
-        )
-        raise e
+        from skimage.morphology._skeletonize import _skeletonize_loop
+    except ImportError:
+        try:
+            from skimage.morphology._skeletonize_cy import _skeletonize_loop
+        except ImportError as e:
+            warnings.warn(
+                "Could not find required private skimage Cython function:\n"
+                "\tskimage.morphology._skeletonize_cy._skeletonize_loop\n"
+            )
+            raise e
 
     if mask is None:
         # masked_image is modified in-place later so make a copy of the input
@@ -310,7 +322,7 @@ def medial_axis(image, mask=None, return_distance=False, *, rng=None):
         tiebreaker = cp.asarray(generator.permutation(np.arange(distance.size)))
     else:
         raise ValueError(
-            f"{type(rng)} class not yet supported for use in " "`medial_axis`."
+            f"{type(rng)} class not yet supported for use in `medial_axis`."
         )
     order = cp.lexsort(
         cp.stack((tiebreaker, corner_score[masked_image], distance), axis=0)

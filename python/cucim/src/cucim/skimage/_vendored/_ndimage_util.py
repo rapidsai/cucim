@@ -1,8 +1,20 @@
+# SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Infrastructure, Inc.
+# SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Networks, Inc.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 AND MIT
+
 """A vendored subset of cupyx.scipy.ndimage._util"""
+
+import operator
 import warnings
+from collections.abc import Iterable
+
+try:
+    from numpy.exceptions import AxisError
+except ImportError:
+    from numpy import AxisError
 
 import cupy
-import numpy
 
 
 def _is_integer_output(output, input):
@@ -16,8 +28,7 @@ def _is_integer_output(output, input):
 def _check_cval(mode, cval, integer_output):
     if mode == "constant" and integer_output and not cupy.isfinite(cval):
         raise NotImplementedError(
-            "Non-finite cval is not supported for "
-            "outputs with integer dtype."
+            "Non-finite cval is not supported for outputs with integer dtype."
         )
 
 
@@ -49,8 +60,8 @@ def _get_output(output, input, shape=None, complex_output=False):
             output = cupy.promote_types(output, cupy.complex64)
         output = cupy.empty(shape, dtype=output)
     elif isinstance(output, str):
-        output = numpy.sctypeDict[output]
-        if complex_output and cupy.dtype(output).kind != "c":
+        output = cupy.dtype(output)
+        if complex_output and output.kind != "c":
             raise RuntimeError("output must have complex dtype")
         output = cupy.empty(shape, dtype=output)
     elif output.shape != shape:
@@ -97,6 +108,25 @@ def _check_mode(mode):
     return mode
 
 
+def _check_axes(axes, ndim):
+    if axes is None:
+        return tuple(range(ndim))
+    elif cupy.isscalar(axes):
+        axes = (operator.index(axes),)
+    elif isinstance(axes, Iterable):
+        axes = tuple(operator.index(ax) for ax in axes)
+        for ax in axes:
+            if ax < -ndim or ax > ndim - 1:
+                raise AxisError(f"specified axis: {ax} is out of range")
+        axes = tuple(ax % ndim if ax < 0 else ax for ax in axes)
+    else:
+        message = "axes must be an integer, iterable of integers, or None"
+        raise ValueError(message)
+    if len(tuple(set(axes))) != len(axes):
+        raise ValueError("axes must be unique")
+    return axes
+
+
 def _get_inttype(input):
     # The integer type to use for indices in the input array
     # The indices actually use byte positions and we can't just use
@@ -110,6 +140,47 @@ def _get_inttype(input):
         + input.dtype.itemsize
     )
     return "int" if nbytes < (1 << 31) else "ptrdiff_t"
+
+
+def _expand_origin(ndim_image, axes, origin):
+    num_axes = len(axes)
+    origins = _fix_sequence_arg(origin, num_axes, "origin", int)
+    if num_axes < ndim_image:
+        # set origin = 0 for any axes not being filtered
+        origins_temp = [
+            0,
+        ] * ndim_image
+        for o, ax in zip(origins, axes):
+            origins_temp[ax] = o
+        origins = origins_temp
+    return origins
+
+
+def _expand_footprint(ndim_image, axes, footprint, footprint_name="footprint"):
+    num_axes = len(axes)
+    if num_axes < ndim_image:
+        if footprint.ndim != num_axes:
+            raise RuntimeError(
+                f"{footprint_name}.ndim ({footprint.ndim}) "
+                f"must match len(axes) ({num_axes})"
+            )
+
+        footprint = cupy.expand_dims(
+            footprint, tuple(ax for ax in range(ndim_image) if ax not in axes)
+        )
+    return footprint
+
+
+def _expand_mode(ndim_image, axes, mode):
+    num_axes = len(axes)
+    if not isinstance(mode, str) and isinstance(mode, Iterable):
+        # set mode = 'constant' for any axes not being filtered
+        modes = _fix_sequence_arg(mode, num_axes, "mode", str)
+        modes_temp = ["constant"] * ndim_image
+        for m, ax in zip(modes, axes):
+            modes_temp[ax] = m
+        mode = modes_temp
+    return mode
 
 
 def _generate_boundary_condition_ops(
@@ -178,9 +249,7 @@ def _generate_boundary_condition_ops(
         T = "int" if int_t == "int" else "long long"
         if separate:
             ops_lower = f"""{ix} = {max_func}(({T}){ix}, ({T})0);"""
-            ops_upper = (
-                f"""{ix} = {min_func}(({T}){ix}, ({T})({xsize} - 1));"""  # noqa
-            )
+            ops_upper = f"""{ix} = {min_func}(({T}){ix}, ({T})({xsize} - 1));"""  # noqa
             ops = (ops_lower, ops_upper)
         else:
             ops = f"""{ix} = {min_func}({max_func}(({T}){ix}, ({T})0), ({T})({xsize} - 1));"""  # noqa
@@ -207,7 +276,9 @@ def _generate_boundary_condition_ops(
     elif mode == "wrap":
         if separate:
             ops_lower = f"""{ix} += ({xsize} - 1) * (({int_t})(-{ix} / ({xsize} - 1)) + 1);"""  # noqa
-            ops_upper = f"""{ix} -= ({xsize} - 1) * ({int_t})({ix} / ({xsize} - 1));"""  # noqa
+            ops_upper = (
+                f"""{ix} -= ({xsize} - 1) * ({int_t})({ix} / ({xsize} - 1));"""  # noqa
+            )
             ops = (ops_lower, ops_upper)
         else:
             ops = f"""

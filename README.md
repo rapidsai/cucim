@@ -1,6 +1,6 @@
 # <div align="left"><img src="https://rapids.ai/assets/images/rapids_logo.png" width="90px"/>&nbsp;cuCIM</div>
 
-[RAPIDS](https://rapids.ai) cuCIM is an open-source, accelerated computer vision and image processing software library for multidimensional images used in biomedical, geospatial, material and life science, and remote sensing use cases.
+[RAPIDS](https://rapids.ai) cuCIM (pronounced "koo-sim", see [here]( https://ipa-reader.com/?text=ku%CB%90%CB%88s%C9%AAm&voice=Joey )) is an open-source, accelerated computer vision and image processing software library for multidimensional images used in biomedical, geospatial, material and life science, and remote sensing use cases.
 
 cuCIM offers:
 
@@ -53,7 +53,7 @@ cuCIM supports the following formats:
 conda create -n cucim -c rapidsai -c conda-forge cucim cuda-version=`<CUDA version>`
 ```
 
-`<CUDA version>` should be 11.2+ (e.g., `11.2`, `12.0`, etc.)
+`<CUDA version>` should be 12.0+ (e.g., `12.0`, etc.)
 
 #### [Conda (nightlies)](https://anaconda.org/rapidsai-nightly/cucim)
 
@@ -61,7 +61,7 @@ conda create -n cucim -c rapidsai -c conda-forge cucim cuda-version=`<CUDA versi
 conda create -n cucim -c rapidsai-nightly -c conda-forge cucim cuda-version=`<CUDA version>`
 ```
 
-`<CUDA version>` should be 11.2+ (e.g., `11.2`, `12.0`, etc.)
+`<CUDA version>` should be 12.0+ (e.g., `12.0`, etc.)
 
 ### [PyPI](https://pypi.org/project/cucim/)
 
@@ -71,10 +71,10 @@ Install for CUDA 12:
 pip install cucim-cu12
 ```
 
-Alternatively install for CUDA 11:
+Install for CUDA 13:
 
 ```bash
-pip install cucim-cu11
+pip install cucim-cu13
 ```
 
 ### Notebooks
@@ -119,4 +119,4 @@ is used in this project.
 
 Apache-2.0 License (see [LICENSE](LICENSE) file).
 
-Copyright (c) 2020-2022, NVIDIA CORPORATION.
+Copyright (c) 2020-2025, NVIDIA CORPORATION.

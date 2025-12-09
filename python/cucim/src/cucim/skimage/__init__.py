@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2009-2022 the scikit-image team
+# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
+
 """GPU Image Processing for Python
 
 This module is a CuPy based implementation of a subset of scikit-image.
@@ -17,21 +21,24 @@ data
 exposure
     Image intensity adjustment, e.g., histogram equalization, etc.
 feature
-    Feature detection and extraction, e.g., texture analysis corners, etc.
+    Feature detection and extraction, e.g., texture analysis, corners, etc.
 filters
     Sharpening, edge finding, rank filters, thresholding, etc.
 measure
-    Measurement of image properties, e.g., region properties and contours.
+    Measurement of image properties, e.g., region properties, moments.
 metrics
-    Metrics corresponding to images, e.g. distance metrics, similarity, etc.
+    Metrics corresponding to images, e.g., distance metrics, similarity, etc.
 morphology
-    Morphological operations, e.g., opening or skeletonization.
+    Morphological algorithms, e.g., closing, opening, skeletonization.
+registration
+    Image registration algorithms, e.g., optical flow or phase cross
+    correlation.
 restoration
     Restoration algorithms, e.g., deconvolution algorithms, denoising, etc.
 segmentation
-    Partitioning an image into multiple regions.
+    Algorithms to partition images into meaningful regions or boundaries.
 transform
-    Geometric and other transforms, e.g., rotation or the Radon transform.
+    Geometric and other transformations, e.g., rotations, warp.
 util
     Generic utilities.
 
@@ -60,13 +67,32 @@ dtype_limits
 
 """
 
-import lazy_loader as lazy
+import lazy_loader as _lazy
 
-__getattr__, __lazy_dir__, _ = lazy.attach_stub(__name__, __file__)
+__getattr__, __lazy_dir__, _ = _lazy.attach_stub(__name__, __file__)
+
+# Don't use the `__all__` and `__dir__` returned by `attach_stub` since that
+# one would expose utility functions we don't want to advertise in our
+# top-level module anymore.
+__all__ = [
+    "color",
+    "data",
+    "exposure",
+    "feature",
+    "filters",
+    "measure",
+    "metrics",
+    "morphology",
+    "registration",
+    "restoration",
+    "segmentation",
+    "transform",
+    "util",
+]
 
 
 def __dir__():
-    return __lazy_dir__()
+    return __all__.copy()
 
 
 # Legacy imports into the root namespace; not advertised in __all__

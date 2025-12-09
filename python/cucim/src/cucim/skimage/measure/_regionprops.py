@@ -1,5 +1,10 @@
+# SPDX-FileCopyrightText: 2009-2022 the scikit-image team
+# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
+
 import inspect
 import math
+import sys
 from functools import wraps
 from math import pi as PI
 from warnings import warn
@@ -7,9 +12,11 @@ from warnings import warn
 import cupy as cp
 import numpy as np
 from cupyx.scipy import ndimage as ndi
-from scipy.ndimage import find_objects as cpu_find_objects
 
+from cucim.skimage._shared.distance import pdist_max_blockwise
 from cucim.skimage._vendored import pad
+from cucim.skimage._vendored.ndimage import find_objects
+from cucim.skimage.morphology.convex_hull import convex_hull_image
 
 from . import _moments
 from ._regionprops_utils import euler_number, perimeter, perimeter_crofton
@@ -255,51 +262,6 @@ def only2d(method):
     return func2d
 
 
-def _inertia_eigvals_to_axes_lengths_3D(inertia_tensor_eigvals):
-    """Compute ellipsoid axis lengths from inertia tensor eigenvalues.
-
-    Parameters
-    ---------
-    inertia_tensor_eigvals : sequence of float
-        A sequence of 3 floating point eigenvalues, sorted in descending order.
-
-    Returns
-    -------
-    axis_lengths : list of float
-        The ellipsoid axis lengths sorted in descending order.
-
-    Notes
-    -----
-    Let a >= b >= c be the ellipsoid semi-axes and s1 >= s2 >= s3 be the
-    inertia tensor eigenvalues.
-
-    The inertia tensor eigenvalues are given for a solid ellipsoid in [1]_.
-    s1 = 1 / 5 * (a**2 + b**2)
-    s2 = 1 / 5 * (a**2 + c**2)
-    s3 = 1 / 5 * (b**2 + c**2)
-
-    Rearranging to solve for a, b, c in terms of s1, s2, s3 gives
-    a = math.sqrt(5 / 2 * ( s1 + s2 - s3))
-    b = math.sqrt(5 / 2 * ( s1 - s2 + s3))
-    c = math.sqrt(5 / 2 * (-s1 + s2 + s3))
-
-    We can then simply replace sqrt(5/2) by sqrt(10) to get the full axes
-    lengths rather than the semi-axes lengths.
-
-    References
-    ----------
-    ..[1] https://en.wikipedia.org/wiki/List_of_moments_of_inertia#List_of_3D_inertia_tensors
-    """  # noqa: E501
-    axis_lengths = []
-    for ax in range(2, -1, -1):
-        w = sum(
-            v * -1 if i == ax else v
-            for i, v in enumerate(inertia_tensor_eigvals)
-        )
-        axis_lengths.append(math.sqrt(10 * w))
-    return axis_lengths
-
-
 class RegionProperties:
     """Please refer to `skimage.measure.regionprops` for more information
     on the available region properties.
@@ -316,7 +278,12 @@ class RegionProperties:
         extra_properties=None,
         spacing=None,
     ):
+        if not isinstance(label_image, cp.ndarray):
+            raise ValueError("label_image image must be a cupy.ndarray")
+
         if intensity_image is not None:
+            if not isinstance(intensity_image, cp.ndarray):
+                raise ValueError("intensity_image image must be a cupy.ndarray")
             ndim = label_image.ndim
             if not (
                 intensity_image.shape[:ndim] == label_image.shape
@@ -364,6 +331,15 @@ class RegionProperties:
             }
 
     def __getattr__(self, attr):
+        if attr == "__setstate__":
+            # When deserializing this object with pickle, `__setstate__`
+            # is accessed before any other attributes like
+            # `self._intensity_image` are available which leads to a
+            # RecursionError when trying to access them later on in this
+            # function. So guard against this by provoking the default
+            # AttributeError (gh-6465).
+            return self.__getattribute__(attr)
+
         if self._intensity_image is None and attr in _require_intensity_image:
             raise AttributeError(
                 f"Attribute '{attr}' unavailable when `intensity_image` "
@@ -455,15 +431,9 @@ class RegionProperties:
     @property
     @_cached
     def image_convex(self):
-        # TODO: grlee77: avoid host/device transfers
-        # from ..morphology.convex_hull import convex_hull_image
-        from skimage.morphology.convex_hull import convex_hull_image
-
         # CuPy Backend: explicitly cast to uint8 to avoid the issue see in
         #               reported in https://github.com/cupy/cupy/issues/4354
-        return cp.asarray(convex_hull_image(cp.asnumpy(self.image))).astype(
-            cp.uint8
-        )
+        return convex_hull_image(self.image).view(dtype=cp.uint8)
 
     @property
     def coords_scaled(self):
@@ -500,7 +470,7 @@ class RegionProperties:
     def euler_number(self):
         if self._ndim not in [2, 3]:
             raise NotImplementedError(
-                "Euler number is implemented for " "2D or 3D images only"
+                "Euler number is implemented for 2D or 3D images only"
             )
         return euler_number(self.image, self._ndim)
 
@@ -510,7 +480,6 @@ class RegionProperties:
 
     @property
     def feret_diameter_max(self):
-        from scipy.spatial.distance import pdist
         from skimage.measure import find_contours, marching_cubes
 
         # TODO: implement marching cubes, etc.
@@ -527,8 +496,9 @@ class RegionProperties:
             coordinates, _, _, _ = marching_cubes(
                 identity_convex_hull, level=0.5
             )
-        distances = pdist(coordinates * self._spacing, "sqeuclidean")
-        return math.sqrt(np.max(distances))
+        scaled_coords = cp.asarray(coordinates * self._spacing)
+        max_distance, _ = pdist_max_blockwise(scaled_coords, "sqeuclidean")
+        return math.sqrt(max_distance)
 
     @property
     def area_filled(self):
@@ -605,7 +575,6 @@ class RegionProperties:
             l1 = self.inertia_tensor_eigvals[0]
             return 4 * math.sqrt(l1)
         elif self._ndim == 3:
-            # equivalent to _inertia_eigvals_to_axes_lengths_3D(ev)[0]
             ev = self.inertia_tensor_eigvals
             return math.sqrt(10 * (ev[0] + ev[1] - ev[2]))
         else:
@@ -617,9 +586,10 @@ class RegionProperties:
             l2 = self.inertia_tensor_eigvals[-1]
             return 4 * math.sqrt(l2)
         elif self._ndim == 3:
-            # equivalent to _inertia_eigvals_to_axes_lengths_3D(ev)[-1]
             ev = self.inertia_tensor_eigvals
-            return math.sqrt(10 * (-ev[0] + ev[1] + ev[2]))
+            # use max to avoid possibly very small negative value due to
+            # numeric error
+            return math.sqrt(10 * max(-ev[0] + ev[1] + ev[2], 0.0))
         else:
             raise ValueError("axis_minor_length only available in 2D and 3D")
 
@@ -987,6 +957,7 @@ def regionprops_table(
     separator="-",
     extra_properties=None,
     spacing=None,
+    batch_processing=True,
 ):
     """Compute image properties and return them as a pandas-compatible table.
 
@@ -1037,6 +1008,14 @@ def regionprops_table(
         accept the intensity image as the second argument.
     spacing: tuple of float, shape (ndim,)
         The pixel spacing along each axis of the image.
+
+    Extra Parameters
+    ----------------
+    batch_processing : bool, optional
+        If true, use much faster batch processing of region properties. Most
+        properties will be computed for all regions much more efficiently via a
+        single pass over the full image instead of on an individual label
+        basis. In this mode, the `RegionProperties` class is not used at all.
 
     Returns
     -------
@@ -1121,27 +1100,30 @@ def regionprops_table(
     4      5       112.50        113.0        114.0
 
     """
-    regions = regionprops(
-        label_image,
-        intensity_image=intensity_image,
-        cache=cache,
-        extra_properties=extra_properties,
-        spacing=spacing,
-    )
-    if extra_properties is not None:
-        properties = list(properties) + [
-            prop.__name__ for prop in extra_properties
-        ]
-    if len(regions) == 0:
-        ndim = label_image.ndim
-        label_image = np.zeros((3,) * ndim, dtype=int)
-        label_image[(1,) * ndim] = 1
-        label_image = cp.asarray(label_image)
-        if intensity_image is not None:
-            intensity_image = cp.zeros(
-                label_image.shape + intensity_image.shape[ndim:],
-                dtype=intensity_image.dtype,
-            )
+    if not isinstance(label_image, cp.ndarray):
+        raise ValueError("label_image must be a cupy.ndarray")
+
+    if intensity_image is not None and not isinstance(
+        intensity_image, cp.ndarray
+    ):
+        raise ValueError("intensity_image must be a cupy.ndarray")
+
+    if batch_processing:
+        from ._regionprops_gpu import regionprops_dict
+
+        table = regionprops_dict(
+            label_image,
+            intensity_image=intensity_image,
+            spacing=spacing,
+            moment_order=None,
+            properties=properties,
+            extra_properties=extra_properties,
+            to_table=True,
+            table_separator=separator,
+            table_on_host=False,
+        )
+        return table
+    else:
         regions = regionprops(
             label_image,
             intensity_image=intensity_image,
@@ -1149,13 +1131,36 @@ def regionprops_table(
             extra_properties=extra_properties,
             spacing=spacing,
         )
+        if extra_properties is not None:
+            properties = list(properties) + [
+                prop.__name__ for prop in extra_properties
+            ]
+        if len(regions) == 0:
+            ndim = label_image.ndim
+            label_image = np.zeros((3,) * ndim, dtype=int)
+            label_image[(1,) * ndim] = 1
+            label_image = cp.asarray(label_image)
+            if intensity_image is not None:
+                intensity_image = cp.zeros(
+                    label_image.shape + intensity_image.shape[ndim:],
+                    dtype=intensity_image.dtype,
+                )
+            regions = regionprops(
+                label_image,
+                intensity_image=intensity_image,
+                cache=cache,
+                extra_properties=extra_properties,
+                spacing=spacing,
+            )
 
-        out_d = _props_to_dict(
+            out_d = _props_to_dict(
+                regions, properties=properties, separator=separator
+            )
+            return {k: v[:0] for k, v in out_d.items()}
+
+        return _props_to_dict(
             regions, properties=properties, separator=separator
         )
-        return {k: v[:0] for k, v in out_d.items()}
-
-    return _props_to_dict(regions, properties=properties, separator=separator)
 
 
 def regionprops(
@@ -1406,6 +1411,12 @@ def regionprops(
     array(42)
 
     """  # noqa
+    if not isinstance(label_image, cp.ndarray):
+        raise ValueError("label_image must be a cupy.ndarray")
+    if intensity_image is not None and not isinstance(
+        intensity_image, cp.ndarray
+    ):
+        raise ValueError("intensity_image must be a cupy.ndarray")
 
     if label_image.ndim not in (2, 3):
         raise TypeError("Only 2-D and 3-D images supported.")
@@ -1424,8 +1435,7 @@ def regionprops(
 
     regions = []
 
-    # CuPy Backend: ndimage.find_objects not implemented
-    objects = cpu_find_objects(cp.asnumpy(label_image))  # synchronize!
+    objects = find_objects(label_image)  # synchronize!
     for i, sl in enumerate(objects):
         if sl is None:
             continue
@@ -1451,9 +1461,11 @@ def _parse_docs():
     import textwrap
 
     doc = regionprops.__doc__ or ""
-    matches = re.finditer(
-        r"\*\*(\w+)\*\* \:.*?\n(.*?)(?=\n    [\*\S]+)", doc, flags=re.DOTALL
-    )
+    arg_regex = r"\*\*(\w+)\*\* \:.*?\n(.*?)(?=\n    [\*\S]+)"
+    if sys.version_info >= (3, 13):
+        arg_regex = r"\*\*(\w+)\*\* \:.*?\n(.*?)(?=\n[\*\S]+)"
+
+    matches = re.finditer(arg_regex, doc, flags=re.DOTALL)
     prop_doc = {m.group(1): textwrap.dedent(m.group(2)) for m in matches}
 
     return prop_doc

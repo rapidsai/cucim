@@ -1,0 +1,34 @@
+#!/bin/bash
+# Selectively removes conda channels from the system-wide conda configuration,
+# based on runtime context.
+#
+# Copied from 'rapidsai/gha-tools' as part of https://github.com/rapidsai/gha-tools/issues/145
+
+set -euo pipefail
+
+conda_channel_in_config() {
+  channel_id=${1:?err}
+  conda config --json --get channels \
+  | channel_id="${channel_id}" jq -r --exit-status '.get.channels | any(. == env.channel_id )'
+}
+
+# Only try to run 'conda config --remove' if the channel exists in the config.
+# This is here to avoid errors if this script is invoked multiple times in the same environment.
+remove_conda_channel() {
+  channel_id=${1:?err}
+  if conda_channel_in_config "${channel_id}" > /dev/null; then
+    conda config --system --remove channels "${channel_id}"
+  else
+    echo "[rapids-configure-conda-channels] channel '${channel_id}' not found via 'conda config --get channels'"
+  fi
+}
+
+# Remove release channel if build is not a release build
+if ! rapids-is-release-build; then
+  remove_conda_channel 'rapidsai'
+fi
+
+# Remove nightly channels if build is a release build
+if rapids-is-release-build; then
+  remove_conda_channel 'rapidsai-nightly'
+fi

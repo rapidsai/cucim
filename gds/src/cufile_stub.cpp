@@ -1,17 +1,6 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * SPDX-FileCopyrightText: Copyright (c) 2020, NVIDIA CORPORATION.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 #include "cufile_stub.h"
@@ -61,19 +50,9 @@ void CuFileStub::load()
         {
             // Note: Load the dynamic library with RTLD_NODELETE flag because libcufile.so uses thread_local which can
             // cause a segmentation fault if the library is dynamically loaded/unloaded. (See #158)
-            // CUDA versions before CUDA 11.7.1 did not ship libcufile.so.0, so this is
-            // a workaround that adds support for all prior versions of libcufile.
             handle_ = cucim::dynlib::load_library(
                 {
                     "libcufile.so.0",
-                    "libcufile.so.1.3.0" /* 11.7.0 */,
-                    "libcufile.so.1.2.1" /* 11.6.2, 11.6.1 */,
-                    "libcufile.so.1.2.0" /* 11.6.0 */,
-                    "libcufile.so.1.1.1" /* 11.5.1 */,
-                    "libcufile.so.1.1.0" /* 11.5.0 */,
-                    "libcufile.so.1.0.2" /* 11.4.4, 11.4.3, 11.4.2 */,
-                    "libcufile.so.1.0.1" /* 11.4.1 */,
-                    "libcufile.so.1.0.0" /* 11.4.0 */
                 },
                 RTLD_LAZY | RTLD_LOCAL | RTLD_NODELETE);
             if (handle_ == nullptr)

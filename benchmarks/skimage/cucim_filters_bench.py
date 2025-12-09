@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 import argparse
 import os
 import pickle
@@ -159,9 +162,7 @@ def main(args):
 
         if function_name == "gabor" and np.prod(shape) > 1000000:
             # avoid cases that are too slow on the CPU
-            var_kwargs["frequency"] = [
-                f for f in var_kwargs["frequency"] if f >= 0.1
-            ]
+            var_kwargs["frequency"] = [f for f in var_kwargs["frequency"] if f >= 0.1]
 
         if function_name == "median":
             footprints = []

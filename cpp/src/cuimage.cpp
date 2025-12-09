@@ -1,17 +1,6 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2025, NVIDIA CORPORATION.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 #include "cucim/cuimage.h"
@@ -287,19 +276,21 @@ CuImage::~CuImage()
                 image_data_->container.data = nullptr;
                 break;
             case io::DeviceType::kCUDA:
-
-                if (image_data_->loader)
-                {
-                    cudaError_t cuda_status;
-                    CUDA_TRY(cudaFree(image_data_->container.data));
-                }
+            {
+                // Always free CUDA memory allocated for this CuImage.
+                // If a loader exists and transferred ownership (num_workers==0), CuImage owns the memory.
+                // If no loader exists, CuImage allocated the memory directly.
+                // Either way, CuImage is responsible for freeing it.
+                cudaError_t cuda_status;
+                CUDA_TRY(cudaFree(image_data_->container.data));
                 image_data_->container.data = nullptr;
                 break;
+            }
             case io::DeviceType::kCUDAHost:
             case io::DeviceType::kCUDAManaged:
             case io::DeviceType::kCPUShared:
             case io::DeviceType::kCUDAShared:
-                fmt::print(stderr, "Device type {} is not supported!\n", device_type);
+                fmt::print(stderr, "Device type {} is not supported!\n", static_cast<int>(device_type));
                 break;
             }
         }
@@ -1231,7 +1222,7 @@ bool CuImage::crop_image(const io::format::ImageReaderRegionRequestDesc& request
     case cucim::io::DeviceType::kCUDAManaged:
     case cucim::io::DeviceType::kCPUShared:
     case cucim::io::DeviceType::kCUDAShared:
-        throw std::runtime_error(fmt::format("Device type {} not supported!", in_device.type()));
+        throw std::runtime_error(fmt::format("Device type {} not supported!", static_cast<int>(in_device.type())));
         break;
     }
 
@@ -1443,7 +1434,7 @@ void CuImageIterator<DataType>::increase_index_()
             case io::DeviceType::kCUDAManaged:
             case io::DeviceType::kCPUShared:
             case io::DeviceType::kCUDAShared:
-                fmt::print(stderr, "Device type {} is not supported!\n", device_type);
+                fmt::print(stderr, "Device type {} is not supported!\n", static_cast<int>(device_type));
                 break;
             }
 

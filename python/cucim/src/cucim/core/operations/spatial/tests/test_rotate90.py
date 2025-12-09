@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 import os
 
 import cupy
@@ -27,7 +30,7 @@ def get_rotated_data():
 def test_rotate90_param():
     arr = get_input_arr()
     with pytest.raises(TypeError):
-        img = Image.fromarray(arr.T, "RGB")
+        img = Image.fromarray(arr.T)
         spt.image_rotate_90(img, 1, [1, 2])
 
 

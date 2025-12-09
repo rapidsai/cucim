@@ -1,9 +1,10 @@
 #!/bin/bash
-# Copyright (c) 2022, NVIDIA CORPORATION.
+# SPDX-FileCopyrightText: Copyright (c) 2022, NVIDIA CORPORATION.
+# SPDX-License-Identifier: Apache-2.0
 
 set -euo pipefail
 
-rapids-configure-conda-channels
+./ci/rapids-configure-conda-channels
 
 source rapids-configure-sccache
 
@@ -21,8 +22,7 @@ conda config --set path_conflict warn
 
 sccache --zero-stats
 
-RAPIDS_PACKAGE_VERSION=$(rapids-generate-version) rapids-conda-retry mambabuild conda/recipes/libcucim
+RAPIDS_PACKAGE_VERSION=$(rapids-generate-version) rapids-conda-retry build \
+    conda/recipes/libcucim
 
 sccache --show-adv-stats
-
-rapids-upload-conda-to-s3 cpp

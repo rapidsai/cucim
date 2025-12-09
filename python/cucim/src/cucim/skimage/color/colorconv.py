@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2009-2022 the scikit-image team
+# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
+
 """Functions for converting between color spaces.
 
 The "central" color space in this module is RGB, more specifically the linear
@@ -265,7 +269,7 @@ def rgba2rgb(rgba, background=(1, 1, 1), *, channel_axis=-1):
         )
     if any((b < 0 or b > 1) for b in background):
         raise ValueError(
-            "background RGB values must be floats between " "0 and 1."
+            "background RGB values must be floats between 0 and 1."
         )
 
     name = f"rgba2rgb_{rgba.dtype.char}"

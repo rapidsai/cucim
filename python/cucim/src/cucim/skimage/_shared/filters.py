@@ -1,30 +1,26 @@
+# SPDX-FileCopyrightText: 2009-2022 the scikit-image team
+# SPDX-FileCopyrightText: Copyright (c) 2022-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
+
 """Filters used across multiple skimage submodules.
 
 These are defined here to avoid circular imports.
 
 The unit tests remain under skimage/filters/tests/
 """
+
 from collections.abc import Iterable
 
 import cupy as cp
 
 import cucim.skimage._vendored.ndimage as ndi
 
-from .._shared.utils import (
-    DEPRECATED,
-    _supported_float_type,
-    convert_to_float,
-    deprecate_parameter,
-)
+from .._shared.utils import _supported_float_type, convert_to_float
 
 
-@deprecate_parameter(
-    "output", new_name="out", start_version="24.06", stop_version="25.02"
-)
 def gaussian(
     image,
     sigma=1,
-    output=DEPRECATED,
     mode="nearest",
     cval=0,
     preserve_range=False,
@@ -133,12 +129,12 @@ def gaussian(
         raise ValueError(sigma_msg)
 
     if channel_axis is not None:
-        # do not filter across channels
-        if not isinstance(sigma, Iterable):
-            sigma = [sigma] * (image.ndim - 1)
-        if len(sigma) == image.ndim - 1:
-            sigma = list(sigma)
-            sigma.insert(channel_axis % image.ndim, 0)
+        axes = tuple(
+            ax for ax in range(image.ndim) if ax != channel_axis % image.ndim
+        )
+    else:
+        axes = tuple(range(image.ndim))
+
     image = convert_to_float(image, preserve_range)
     float_dtype = _supported_float_type(image.dtype)
     image = image.astype(float_dtype, copy=False)
@@ -156,7 +152,13 @@ def gaussian(
     else:
         out_img = out
     ndi.gaussian_filter(
-        image, sigma, output=out_img, mode=mode, cval=cval, truncate=truncate
+        image,
+        sigma,
+        output=out_img,
+        mode=mode,
+        cval=cval,
+        truncate=truncate,
+        axes=axes,
     )
     if out_img is not None and out_copied:
         image[...] = out_img

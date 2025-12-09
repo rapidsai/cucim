@@ -1,10 +1,8 @@
-"""Utilities that operate on shapes in images.
+# SPDX-FileCopyrightText: 2009-2022 the scikit-image team
+# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
-These operations are particularly suited for binary images,
-although some may be useful for images of other types as well.
-
-Basic morphological operations include dilation and erosion.
-"""
+"""Morphological algorithms, e.g., closing, opening, skeletonization."""
 
 from ._skeletonize import medial_axis, thin
 from .binary import (
@@ -13,15 +11,19 @@ from .binary import (
     binary_erosion,
     binary_opening,
 )
+from .convex_hull import (
+    convex_hull_image,
+    convex_hull_object,
+)
 from .footprints import (
     ball,
-    cube,
     diamond,
     disk,
+    ellipse,
+    footprint_from_sequence,
+    footprint_rectangle,
     octagon,
     octahedron,
-    rectangle,
-    square,
     star,
 )
 from .gray import (
@@ -42,6 +44,8 @@ from .isotropic import (
 from .misc import remove_small_holes, remove_small_objects
 
 __all__ = [
+    "convex_hull_image",
+    "convex_hull_object",
     "binary_erosion",
     "binary_dilation",
     "binary_opening",
@@ -56,11 +60,11 @@ __all__ = [
     "closing",
     "white_tophat",
     "black_tophat",
-    "square",
-    "rectangle",
+    "footprint_from_sequence",
+    "footprint_rectangle",
     "diamond",
     "disk",
-    "cube",
+    "ellipse",
     "octahedron",
     "ball",
     "octagon",

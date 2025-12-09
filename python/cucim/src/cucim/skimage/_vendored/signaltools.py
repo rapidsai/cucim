@@ -1,3 +1,8 @@
+# SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Infrastructure, Inc.
+# SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Networks, Inc.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 AND MIT
+
 """A vendored subset of cupyx.scipy.signal.signaltools
 
 Note:
@@ -719,7 +724,7 @@ def medfilt(volume, kernel_size=None):
     kernel_size = _get_kernel_size(kernel_size, volume.ndim)
     if any(k > s for k, s in zip(kernel_size, volume.shape)):
         warnings.warn(
-            "kernel_size exceeds volume extent: " "volume will be zero-padded"
+            "kernel_size exceeds volume extent: volume will be zero-padded"
         )
 
     size = _prod(kernel_size)

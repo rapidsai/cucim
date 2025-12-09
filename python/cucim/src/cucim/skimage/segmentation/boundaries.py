@@ -1,10 +1,14 @@
+# SPDX-FileCopyrightText: 2009-2022 the scikit-image team
+# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
+
 import cupy as cp
 
 import cucim.skimage._vendored.ndimage as ndi
 
 from .._shared.utils import _supported_float_type
 from ..color import gray2rgb
-from ..morphology import dilation, erosion, square
+from ..morphology import dilation, erosion, footprint_rectangle
 from ..util import img_as_float
 
 
@@ -256,7 +260,7 @@ def mark_boundaries(
         label_img, mode=mode, background=background_label
     )
     if outline_color is not None:
-        outlines = dilation(boundaries, square(3))
+        outlines = dilation(boundaries, footprint_rectangle((3, 3)))
         marked[outlines] = outline_color
     marked[boundaries] = color
     return marked

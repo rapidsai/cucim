@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 import argparse
 import math
 import os
@@ -233,9 +236,7 @@ def main(args):
             continue
 
         if function_name in ["label", "regionprops"]:
-            Tester = (
-                LabelBench if function_name == "label" else RegionpropsBench
-            )
+            Tester = LabelBench if function_name == "label" else RegionpropsBench
 
             for contiguous_labels in [True, False]:
                 if contiguous_labels:
@@ -290,9 +291,7 @@ def main(args):
             if function_name == "block_reduce":
                 ndim = len(shape)
                 if shape[-1] == 3:
-                    block_sizes = [
-                        (b,) * (ndim - 1) + (3,) for b in (16, 32, 64)
-                    ]
+                    block_sizes = [(b,) * (ndim - 1) + (3,) for b in (16, 32, 64)]
                 else:
                     block_sizes = [(b,) * ndim for b in (16, 32, 64)]
                 var_kwargs["block_size"] = block_sizes
@@ -305,9 +304,7 @@ def main(args):
                 ndim = len(shape)
                 footprint_sizes = [3, 5, 7, 9] if ndim == 2 else [3, 5, 7]
                 for footprint_size in [3, 5, 7, 9]:
-                    footprints.append(
-                        np.ones((footprint_sizes,) * ndim, dtype=bool)
-                    )
+                    footprints.append(np.ones((footprint_sizes,) * ndim, dtype=bool))
                 var_kwargs["footprint"] = footprints
 
             if function_name in ["gaussian", "unsharp_mask"]:
@@ -334,9 +331,7 @@ def main(args):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Benchmarking cuCIM measure functions"
-    )
+    parser = argparse.ArgumentParser(description="Benchmarking cuCIM measure functions")
     func_name_choices = [
         "label",
         "regionprops",

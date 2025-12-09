@@ -1,19 +1,9 @@
-# Apache License, Version 2.0
-# Copyright 2020-2021 NVIDIA Corporation
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# cmake-format: off
+# SPDX-FileCopyrightText: Copyright (c) 2020-2025, NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+# cmake-format: on
 
-cmake_minimum_required(VERSION 3.26.4)
+cmake_minimum_required(VERSION 3.30.4 FATAL_ERROR)
 
 ################################################################################
 # Prerequisite statements
@@ -68,7 +58,7 @@ if (NOT CMAKE_RUNTIME_OUTPUT_DIRECTORY)
     set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/bin")
 endif()
 
-# Find CUDAToolkit as rmm depends on it
+# Find CUDAToolkit
 find_package(CUDAToolkit REQUIRED)
 # For Threads::Threads
 find_package(Threads REQUIRED)
@@ -125,8 +115,6 @@ superbuild_depend(cli11)
 superbuild_depend(pugixml)
 superbuild_depend(json)
 superbuild_depend(libdeflate)
-superbuild_depend(nvjpeg)
-superbuild_depend(libculibos)
 
 ################################################################################
 # Find cucim package
@@ -216,11 +204,6 @@ target_compile_options(${CUCIM_PLUGIN_NAME} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-W
 # Link libraries
 target_link_libraries(${CUCIM_PLUGIN_NAME}
         PRIVATE
-            # Use custom nvjpeg_static that supports GPU input (>= CUDA 11.6)
-            deps::nvjpeg_static # add this before cudart so that nvjpeg.h in static library takes precedence.
-            # Add CUDA::culibos to link necessary methods for 'deps::nvjpeg_static'
-            CUDA::culibos       # for nvjpeg
-            CUDA::cudart
             deps::fmt
             cucim::cucim
             deps::libtiff
@@ -231,6 +214,22 @@ target_link_libraries(${CUCIM_PLUGIN_NAME}
             deps::json
             deps::libdeflate
         )
+if (TARGET CUDA::nvjpeg_static)
+        target_link_libraries(${CUCIM_PLUGIN_NAME}
+            PRIVATE
+                # Add nvjpeg before cudart so that nvjpeg.h in static library takes precedence.
+                CUDA::nvjpeg_static
+                # Add CUDA::culibos to link necessary methods for 'deps::nvjpeg_static'
+                CUDA::culibos
+                CUDA::cudart
+        )
+else()
+        target_link_libraries(${CUCIM_PLUGIN_NAME}
+            PRIVATE
+                CUDA::nvjpeg
+                CUDA::cudart
+        )
+endif()
 
 target_include_directories(${CUCIM_PLUGIN_NAME}
         PUBLIC

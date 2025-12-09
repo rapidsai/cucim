@@ -1,16 +1,6 @@
 #
-# Copyright (c) 2021, NVIDIA CORPORATION.
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION.
+# SPDX-License-Identifier: Apache-2.0
 #
 
 # https://github.com/uclouvain/openjpeg/blob/v2.4.0/src/bin/common/color.c#L60
@@ -193,9 +183,7 @@ def main(output_file_name: str) -> int:
     b_cb = gen_list(list(gen_b_cb()), 10, 4)
 
     with open(output_file_name, "w") as f:
-        f.write(
-            TEMPLATE % {"r_cr": r_cr, "g_cb": g_cb, "g_cr": g_cr, "b_cb": b_cb}
-        )
+        f.write(TEMPLATE % {"r_cr": r_cr, "g_cb": g_cb, "g_cr": g_cr, "b_cb": b_cb})
 
     return 0
 

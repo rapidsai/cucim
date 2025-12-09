@@ -1,3 +1,137 @@
+# cucim 25.10.00 (8 Oct 2025)
+
+## 🐛 Bug Fixes
+
+- Add `pip` to `cucim`&#39;s `requirements/host` ([#941](https://github.com/rapidsai/cucim/pull/941)) [@jakirkham](https://github.com/jakirkham)
+- Fix indentation ([#931](https://github.com/rapidsai/cucim/pull/931)) [@jakirkham](https://github.com/jakirkham)
+- Relax `libcufile` dependency for old CTK 12 on ARM ([#930](https://github.com/rapidsai/cucim/pull/930)) [@jakirkham](https://github.com/jakirkham)
+- Update fmt library to version 11.2.0 in CMake configuration ([#917](https://github.com/rapidsai/cucim/pull/917)) [@gigony](https://github.com/gigony)
+
+## 📖 Documentation
+
+- update package installation commands in notebooks ([#927](https://github.com/rapidsai/cucim/pull/927)) [@grlee77](https://github.com/grlee77)
+
+## 🛠️ Improvements
+
+- Revert incorrect changelog updates ([#954](https://github.com/rapidsai/cucim/pull/954)) [@AyodeAwe](https://github.com/AyodeAwe)
+- remove unused RMM config and docs, update pre-commit hooks ([#946](https://github.com/rapidsai/cucim/pull/946)) [@jameslamb](https://github.com/jameslamb)
+- Configure repo for automatic release notes generation ([#939](https://github.com/rapidsai/cucim/pull/939)) [@AyodeAwe](https://github.com/AyodeAwe)
+- Use branch-25.10 again ([#936](https://github.com/rapidsai/cucim/pull/936)) [@jameslamb](https://github.com/jameslamb)
+- add montage and compare_images utility functions ([#935](https://github.com/rapidsai/cucim/pull/935)) [@grlee77](https://github.com/grlee77)
+- Update rapids-dependency-file-generator ([#934](https://github.com/rapidsai/cucim/pull/934)) [@KyleFromNVIDIA](https://github.com/KyleFromNVIDIA)
+- Build and test with CUDA 13.0.0, use GCC 14 for conda builds ([#926](https://github.com/rapidsai/cucim/pull/926)) [@jameslamb](https://github.com/jameslamb)
+- add a copy of rapids-configure-conda-channels to the repo ([#923](https://github.com/rapidsai/cucim/pull/923)) [@jameslamb](https://github.com/jameslamb)
+- Update rapids-build-backend to 0.4.1 ([#922](https://github.com/rapidsai/cucim/pull/922)) [@KyleFromNVIDIA](https://github.com/KyleFromNVIDIA)
+- Remove CUDA 11 references ([#905](https://github.com/rapidsai/cucim/pull/905)) [@jakirkham](https://github.com/jakirkham)
+
+# cucim 25.08.00 (6 Aug 2025)
+
+## 🚨 Breaking Changes
+
+- Remove CUDA 11 from dependencies.yaml ([#887](https://github.com/rapidsai/cucim/pull/887)) [@KyleFromNVIDIA](https://github.com/KyleFromNVIDIA)
+- stop uploading packages to downloads.rapids.ai ([#883](https://github.com/rapidsai/cucim/pull/883)) [@jameslamb](https://github.com/jameslamb)
+
+## 🐛 Bug Fixes
+
+- Drop unused variable `CUDA_MAJOR_VERSION` ([#907](https://github.com/rapidsai/cucim/pull/907)) [@jakirkham](https://github.com/jakirkham)
+- Fix test failures due to deprecated Pillow Image.fromarray &#39;mode&#39; parameter ([#901](https://github.com/rapidsai/cucim/pull/901)) [@grlee77](https://github.com/grlee77)
+- Adding GH_TOKEN pass-through to summarize job ([#891](https://github.com/rapidsai/cucim/pull/891)) [@msarahan](https://github.com/msarahan)
+
+## 📖 Documentation
+
+- add docs on CI workflow inputs ([#897](https://github.com/rapidsai/cucim/pull/897)) [@jameslamb](https://github.com/jameslamb)
+
+## 🛠️ Improvements
+
+- Drop CUDA 11 references from docs ([#914](https://github.com/rapidsai/cucim/pull/914)) [@jakirkham](https://github.com/jakirkham)
+- fix(docker): use versioned `-latest` tag for all `rapidsai` images ([#908](https://github.com/rapidsai/cucim/pull/908)) [@gforsyth](https://github.com/gforsyth)
+- remove cuspatial references ([#906](https://github.com/rapidsai/cucim/pull/906)) [@jameslamb](https://github.com/jameslamb)
+- Drop CUDA 11 from CI Scripts ([#903](https://github.com/rapidsai/cucim/pull/903)) [@AyodeAwe](https://github.com/AyodeAwe)
+- run: fix compatibility with PEP-0632 for supporting Python &gt;=3.12 ([#902](https://github.com/rapidsai/cucim/pull/902)) [@ElieDeBrauwer](https://github.com/ElieDeBrauwer)
+- Enhance GPU memory leak test with unified memory check and increased thresholds ([#898](https://github.com/rapidsai/cucim/pull/898)) [@gigony](https://github.com/gigony)
+- Use CUDA 12.9 in Conda, Devcontainers, Spark, GHA, etc. ([#894](https://github.com/rapidsai/cucim/pull/894)) [@jakirkham](https://github.com/jakirkham)
+- Remove nvidia and dask channels ([#893](https://github.com/rapidsai/cucim/pull/893)) [@vyasr](https://github.com/vyasr)
+- refactor(shellcheck): fix all shellcheck warnings/errors ([#890](https://github.com/rapidsai/cucim/pull/890)) [@gforsyth](https://github.com/gforsyth)
+- refactor(conda): remove cuda11 conditionals from conda recipes ([#889](https://github.com/rapidsai/cucim/pull/889)) [@gforsyth](https://github.com/gforsyth)
+- Remove CUDA 11 from dependencies.yaml ([#887](https://github.com/rapidsai/cucim/pull/887)) [@KyleFromNVIDIA](https://github.com/KyleFromNVIDIA)
+- stop uploading packages to downloads.rapids.ai ([#883](https://github.com/rapidsai/cucim/pull/883)) [@jameslamb](https://github.com/jameslamb)
+- Forward-merge branch-25.06 into branch-25.08 ([#880](https://github.com/rapidsai/cucim/pull/880)) [@gforsyth](https://github.com/gforsyth)
+- Forward-merge branch-25.06 into branch-25.08 ([#876](https://github.com/rapidsai/cucim/pull/876)) [@gforsyth](https://github.com/gforsyth)
+
+# cucim 25.06.00 (5 Jun 2025)
+
+## 🛠️ Improvements
+
+- use &#39;rapids-init-pip&#39; in wheel CI, other CI changes ([#881](https://github.com/rapidsai/cucim/pull/881)) [@jameslamb](https://github.com/jameslamb)
+- Finish CUDA 12.9 migration and use branch-25.06 workflows ([#879](https://github.com/rapidsai/cucim/pull/879)) [@bdice](https://github.com/bdice)
+- Build and test with CUDA 12.9.0 ([#877](https://github.com/rapidsai/cucim/pull/877)) [@bdice](https://github.com/bdice)
+- Refactor: Enhance GPU Memory Leak Test for `read_region` ([#874](https://github.com/rapidsai/cucim/pull/874)) [@gigony](https://github.com/gigony)
+- Add support for Python 3.13 ([#873](https://github.com/rapidsai/cucim/pull/873)) [@gforsyth](https://github.com/gforsyth)
+- Download build artifacts from GitHub for CI ([#870](https://github.com/rapidsai/cucim/pull/870)) [@VenkateshJaya](https://github.com/VenkateshJaya)
+- Add ARM conda environments ([#867](https://github.com/rapidsai/cucim/pull/867)) [@bdice](https://github.com/bdice)
+- Moving wheel builds to specified location and uploading build artifacts to Github ([#854](https://github.com/rapidsai/cucim/pull/854)) [@VenkateshJaya](https://github.com/VenkateshJaya)
+- Region Properties Performance Overhaul - Part 6: Public API (regionprops_table) ([#848](https://github.com/rapidsai/cucim/pull/848)) [@grlee77](https://github.com/grlee77)
+- Region Properties Performance Overhaul - Part 5: Perimeter and Euler Characteristic ([#847](https://github.com/rapidsai/cucim/pull/847)) [@grlee77](https://github.com/grlee77)
+- Region Properties Performance Overhaul - Part 4: Moment-Based Properties ([#846](https://github.com/rapidsai/cucim/pull/846)) [@grlee77](https://github.com/grlee77)
+- Region Properties Performance Overhaul - Part 3: Convex Image Properties ([#845](https://github.com/rapidsai/cucim/pull/845)) [@grlee77](https://github.com/grlee77)
+- Region Properties Performance Overhaul - Part 2: Intensity Image Properties ([#844](https://github.com/rapidsai/cucim/pull/844)) [@grlee77](https://github.com/grlee77)
+- Region Properties Performance Overhaul - Part 1: Basic Properties ([#843](https://github.com/rapidsai/cucim/pull/843)) [@grlee77](https://github.com/grlee77)
+
+# cucim 25.04.00 (9 Apr 2025)
+
+## 🐛 Bug Fixes
+
+- CuPy 13.4.1 compatibility: Fix dtype handling in fused chan-vese kernels ([#856](https://github.com/rapidsai/cucim/pull/856)) [@grlee77](https://github.com/grlee77)
+- Fix path in update-version ([#852](https://github.com/rapidsai/cucim/pull/852)) [@raydouglass](https://github.com/raydouglass)
+- avoid potential CUDA out of bounds memory access in test case ([#851](https://github.com/rapidsai/cucim/pull/851)) [@grlee77](https://github.com/grlee77)
+- Consistently raise error on non-CuPy input to regionprops functions ([#849](https://github.com/rapidsai/cucim/pull/849)) [@grlee77](https://github.com/grlee77)
+- update vendored binary_fill_holes ([#842](https://github.com/rapidsai/cucim/pull/842)) [@grlee77](https://github.com/grlee77)
+
+## 📖 Documentation
+
+- Add cuCIM pronunciation to README ([#823](https://github.com/rapidsai/cucim/pull/823)) [@jakirkham](https://github.com/jakirkham)
+
+## 🛠️ Improvements
+
+- Update various library versions to meet the minimum required CMake version (&gt;= 3.5) for compatibility with CMake 3.30.4. ([#858](https://github.com/rapidsai/cucim/pull/858)) [@gigony](https://github.com/gigony)
+- Use conda-build instead of conda-mambabuild ([#841](https://github.com/rapidsai/cucim/pull/841)) [@bdice](https://github.com/bdice)
+- require sphinx&lt;8.2.0 ([#840](https://github.com/rapidsai/cucim/pull/840)) [@jameslamb](https://github.com/jameslamb)
+- Improve performance of `label2rgb` ([#839](https://github.com/rapidsai/cucim/pull/839)) [@grlee77](https://github.com/grlee77)
+- add utility for memory efficient maximum pairwise distance computation with GPU support ([#838](https://github.com/rapidsai/cucim/pull/838)) [@grlee77](https://github.com/grlee77)
+- vendor CUDA-accelerated `find objects` ([#837](https://github.com/rapidsai/cucim/pull/837)) [@grlee77](https://github.com/grlee77)
+- update vendored binary morphology code ([#836](https://github.com/rapidsai/cucim/pull/836)) [@grlee77](https://github.com/grlee77)
+- Consolidate more Conda solves in CI ([#835](https://github.com/rapidsai/cucim/pull/835)) [@KyleFromNVIDIA](https://github.com/KyleFromNVIDIA)
+- Require CMake 3.30.4 ([#834](https://github.com/rapidsai/cucim/pull/834)) [@robertmaynard](https://github.com/robertmaynard)
+- Create Conda CI test env in one step ([#833](https://github.com/rapidsai/cucim/pull/833)) [@KyleFromNVIDIA](https://github.com/KyleFromNVIDIA)
+- Add build_type input to `test.yaml` ([#831](https://github.com/rapidsai/cucim/pull/831)) [@gforsyth](https://github.com/gforsyth)
+- Implement `convex_hull_image` and `convex_hull_object` ([#828](https://github.com/rapidsai/cucim/pull/828)) [@grlee77](https://github.com/grlee77)
+- Use shared-workflows branch-25.04 ([#826](https://github.com/rapidsai/cucim/pull/826)) [@bdice](https://github.com/bdice)
+- add telemetry ([#822](https://github.com/rapidsai/cucim/pull/822)) [@msarahan](https://github.com/msarahan)
+- raise setuptools floor to 61.0.0, sphinx floor to 8.0.0, other small dependencies cleanup ([#820](https://github.com/rapidsai/cucim/pull/820)) [@jameslamb](https://github.com/jameslamb)
+- Forward-merge branch-25.02 to branch-25.04 ([#819](https://github.com/rapidsai/cucim/pull/819)) [@bdice](https://github.com/bdice)
+- Migrate to NVKS for amd64 CI runners ([#817](https://github.com/rapidsai/cucim/pull/817)) [@bdice](https://github.com/bdice)
+
+# cucim 25.02.00 (13 Feb 2025)
+
+## 🐛 Bug Fixes
+
+- Fix primitives benchmark code ([#812](https://github.com/rapidsai/cucim/pull/812)) [@gigony](https://github.com/gigony)
+- CuPy 14.0 compatibility ([#808](https://github.com/rapidsai/cucim/pull/808)) [@grlee77](https://github.com/grlee77)
+
+## 🛠️ Improvements
+
+- Use `rapids-pip-retry` in CI jobs that might need retries ([#824](https://github.com/rapidsai/cucim/pull/824)) [@gforsyth](https://github.com/gforsyth)
+- Revert CUDA 12.8 shared workflow branch changes ([#818](https://github.com/rapidsai/cucim/pull/818)) [@vyasr](https://github.com/vyasr)
+- Build and test with CUDA 12.8.0 ([#815](https://github.com/rapidsai/cucim/pull/815)) [@bdice](https://github.com/bdice)
+- Add shellcheck to pre-commit and fix warnings ([#814](https://github.com/rapidsai/cucim/pull/814)) [@gforsyth](https://github.com/gforsyth)
+- Update vendored ndimage code with axes support ([#813](https://github.com/rapidsai/cucim/pull/813)) [@grlee77](https://github.com/grlee77)
+- Use GCC 13 in CUDA 12 conda builds. ([#811](https://github.com/rapidsai/cucim/pull/811)) [@bdice](https://github.com/bdice)
+- Improve performance of color distance calculations by kernel fusion ([#809](https://github.com/rapidsai/cucim/pull/809)) [@grlee77](https://github.com/grlee77)
+- Incorporate upstream changes from scikit-image 0.25 ([#806](https://github.com/rapidsai/cucim/pull/806)) [@grlee77](https://github.com/grlee77)
+- Update version references in workflow ([#803](https://github.com/rapidsai/cucim/pull/803)) [@AyodeAwe](https://github.com/AyodeAwe)
+- Require approval to run CI on draft PRs ([#798](https://github.com/rapidsai/cucim/pull/798)) [@bdice](https://github.com/bdice)
+- Add breaking change workflow trigger ([#795](https://github.com/rapidsai/cucim/pull/795)) [@AyodeAwe](https://github.com/AyodeAwe)
+
 # cucim 24.12.00 (11 Dec 2024)
 
 ## 🚨 Breaking Changes

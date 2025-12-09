@@ -1,6 +1,8 @@
-"""Common tools to optical flow algorithms.
+# SPDX-FileCopyrightText: 2009-2022 the scikit-image team
+# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
-"""
+"""Common tools to optical flow algorithms."""
 
 import cupy as cp
 import numpy as np
@@ -134,7 +136,7 @@ def _coarse_to_fine(
 
     if np.dtype(dtype).char not in "efdg":
         raise ValueError(
-            "Only floating point data type are valid" " for optical flow"
+            "Only floating point data type are valid for optical flow"
         )
 
     pyramid = list(

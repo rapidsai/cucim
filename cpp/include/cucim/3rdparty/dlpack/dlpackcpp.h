@@ -1,3 +1,8 @@
+/*
+ * SPDX-FileCopyrightText: Copyright (c) 2017 by Contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 // From https://github.com/dmlc/dlpack/blob/v0.6/contrib/dlpack/dlpackcpp.h
 // clang-format off
 /*!

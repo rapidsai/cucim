@@ -1,10 +1,21 @@
+# SPDX-FileCopyrightText: 2009-2022 the scikit-image team
+# SPDX-FileCopyrightText: Copyright (c) 2022-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
+
 import cupy as cp
 import cupyx.scipy.sparse as sparse
 
 __all__ = ["contingency_table"]
 
 
-def contingency_table(im_true, im_test, *, ignore_labels=None, normalize=False):
+def contingency_table(
+    im_true,
+    im_test,
+    *,
+    ignore_labels=None,
+    normalize=False,
+    sparse_type="matrix",
+):
     """
     Return the contingency table for all regions in matched segmentations.
 
@@ -19,6 +30,10 @@ def contingency_table(im_true, im_test, *, ignore_labels=None, normalize=False):
         values will not be counted in the score.
     normalize : bool
         Determines if the contingency table is normalized by pixel count.
+    sparse_type : {"matrix"}, optional
+        scikit-image supports both "matrix" and "array" for this argument.
+        CuPy does not yet have csr_array support, so only "matrix"
+        (`cupy.scipy.sparse.csr_matrix`) is supported by cuCIM.
 
     Returns
     -------
@@ -26,6 +41,8 @@ def contingency_table(im_true, im_test, *, ignore_labels=None, normalize=False):
         A contingency table. `cont[i, j]` will equal the number of voxels
         labeled `i` in `im_true` and `j` in `im_test`.
     """
+    if sparse_type != "matrix":
+        raise ValueError("only `sparse_type=matrix` is currently supported.")
 
     im_test_r = im_test.reshape(-1)
     im_true_r = im_true.reshape(-1)

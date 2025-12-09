@@ -97,15 +97,15 @@ If codespell is finding false positives in newly added code, the `ignore-words-l
 
 Compiler requirements:
 
-* `gcc`     version 9.0+
-* `nvcc`    version 11.0+
-* `cmake`   version 3.18.0+
+* `gcc`     version 14.0+
+* `nvcc`    version 12.0+
+* `cmake`   version 3.30.4+
 
 CUDA/GPU requirements:
 
-* CUDA 11.0+
-* NVIDIA driver 450.36+
-* Pascal architecture or better
+* CUDA 12.0+
+* NVIDIA driver 525.60+
+* Volta architecture or better
 
 You can obtain CUDA from [https://developer.nvidia.com/cuda-downloads](https://developer.nvidia.com/cuda-downloads).
 
@@ -119,21 +119,21 @@ CUCIM_HOME=$(pwd)/cucim
 git clone https://github.com/rapidsai/cucim.git $CUCIM_HOME
 cd $CUCIM_HOME
 ```
-## Local Development using Conda Environment (for gcc 9.x and nvcc 11.0.x)
+## Local Development using Conda Environment (for gcc 13 and nvcc 12)
 
-Conda can be used to setup an environment which includes all of the necessary dependencies (as shown in `./conda/environments/all_cuda-118_arch-x86_64.yaml`) for building cuCIM.
+Conda can be used to setup an environment which includes all of the necessary dependencies (as shown in `./conda/environments/all_cuda-130_arch-x86_64.yaml`) for building cuCIM.
 
 Otherwise, you may need to install dependencies (such as yasm) through your OS's package manager (`apt`, `yum`, and so on).
 
 
 ### Creating the Conda Development Environment `cucim`
 
-Note that `./conda/environments/all_cuda-118_arch-x86_64.yaml` is currently set to use specific versions of gcc (gxx_linux-64) and CUDA (cudatoolkit & cudatoolkit-dev).
+Note that `./conda/environments/all_cuda-130_arch-x86_64.yaml` is currently set to pull in GCC and NVCC with the expected versions.
 
-If you want to change the version of gcc or CUDA toolkit package, please update `./conda/environments/all_cuda-118_arch-x86_64.yaml` before executing the following commands.
+If you want to change the version of GCC or CUDA, please update `./conda/environments/all_cuda-130_arch-x86_64.yaml` before executing the following commands.
 
 ```bash
-conda env create -n cucim -f ./conda/environments/all_cuda-118_arch-x86_64.yaml
+conda env create -n cucim -f ./conda/environments/all_cuda-130_arch-x86_64.yaml
 # activate the environment
 conda activate cucim
 ```
@@ -264,12 +264,6 @@ conda install -y -c ${CONDA_BLD_DIR} -c conda-forge \
 ## Building a package (for distribution. Including a wheel package for pip)
 
 **Wheel Build**
-
-If you are using CUDA 12.x, please update pyproject.toml as follows before building the wheel
-```bash
-sed -i "s/cupy-cuda11x/cupy-cuda12x/g" python/cucim/pyproject.toml
-```
-This will switch the CuPy dependency to one based on CUDA 12.x instead of 11.x.
 
 The wheel can then be built using:
 

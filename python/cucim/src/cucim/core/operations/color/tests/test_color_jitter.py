@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 import cupy
 import numpy as np
 import pytest
@@ -26,7 +29,7 @@ def test_color_jitter_bad_params():
         arr1 = arr.flatten()
         ccl.color_jitter(arr1, 0.25, 0.75, 0.25, 0.04)
     with pytest.raises(TypeError):
-        img = Image.fromarray(arr.T, "RGB")
+        img = Image.fromarray(arr.T)
         ccl.color_jitter(img, 0.25, 0.75, 0.25, 0.04)
 
 

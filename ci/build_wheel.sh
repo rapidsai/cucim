@@ -1,5 +1,6 @@
 #!/bin/bash
-# Copyright (c) 2023, NVIDIA CORPORATION.
+# SPDX-FileCopyrightText: Copyright (c) 2023, NVIDIA CORPORATION.
+# SPDX-License-Identifier: Apache-2.0
 
 set -euo pipefail
 
@@ -10,10 +11,9 @@ CMAKE_BUILD_TYPE="release"
 
 source rapids-configure-sccache
 source rapids-date-string
+source rapids-init-pip
 
 rapids-generate-version > ./VERSION
-
-RAPIDS_PY_CUDA_SUFFIX="$(rapids-wheel-ctk-name-gen ${RAPIDS_CUDA_VERSION})"
 
 rapids-logger "Generating build requirements"
 
@@ -25,12 +25,15 @@ rapids-dependency-file-generator \
 | tee /tmp/requirements-build.txt
 
 rapids-logger "Installing build requirements"
-python -m pip install \
+rapids-pip-retry install \
     -v \
     --prefer-binary \
     -r /tmp/requirements-build.txt
 
 sccache --zero-stats
+
+rapids-logger "pyenv rehash"
+pyenv rehash
 
 # First build the C++ lib using CMake via the run script
 ./run build_local all ${CMAKE_BUILD_TYPE}
@@ -42,7 +45,7 @@ cd "${package_dir}"
 sccache --zero-stats
 
 rapids-logger "Building '${package_name}' wheel"
-python -m pip wheel \
+rapids-pip-retry wheel \
     -w dist \
     -v \
     --no-build-isolation \
@@ -52,10 +55,9 @@ python -m pip wheel \
 
 sccache --show-adv-stats
 
-mkdir -p final_dist
-python -m auditwheel repair -w final_dist dist/*
-ls -1 final_dist | grep -vqz 'none'
+# repair wheels and write to the location that artifact-uploading code expects to find them
+python -m auditwheel repair -w "${RAPIDS_WHEEL_BLD_OUTPUT_DIR}" dist/*
+# shellcheck disable=SC2010
+ls -1 "${RAPIDS_WHEEL_BLD_OUTPUT_DIR}" | grep -vqz 'none'
 
-../../ci/validate_wheel.sh final_dist
-
-RAPIDS_PY_WHEEL_NAME="${package_name}_${RAPIDS_PY_CUDA_SUFFIX}" rapids-upload-wheels-to-s3 final_dist
+../../ci/validate_wheel.sh "${RAPIDS_WHEEL_BLD_OUTPUT_DIR}"

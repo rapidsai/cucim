@@ -1,6 +1,11 @@
+# SPDX-FileCopyrightText: 2009-2022 the scikit-image team
+# SPDX-FileCopyrightText: Copyright (c) 2022-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
+
 """
 Grayscale morphological operations
 """
+
 import warnings
 
 import cupy as cp
@@ -236,13 +241,13 @@ def erosion(
     --------
     >>> # Erosion shrinks bright regions
     >>> import cupy as cp
-    >>> from cucim.skimage.morphology import square
+    >>> from cucim.skimage.morphology import footprint_rectangle
     >>> bright_square = cp.asarray([[0, 0, 0, 0, 0],
     ...                             [0, 1, 1, 1, 0],
     ...                             [0, 1, 1, 1, 0],
     ...                             [0, 1, 1, 1, 0],
     ...                             [0, 0, 0, 0, 0]], dtype=cp.uint8)
-    >>> erosion(bright_square, square(3))
+    >>> erosion(bright_square, footprint_rectangle((3, 3)))
     array([[0, 0, 0, 0, 0],
            [0, 0, 0, 0, 0],
            [0, 0, 1, 0, 0],
@@ -369,13 +374,13 @@ def dilation(
     --------
     >>> # Dilation enlarges bright regions
     >>> import cupy as cp
-    >>> from cucim.skimage.morphology import square
+    >>> from cucim.skimage.morphology import footprint_rectangle
     >>> bright_pixel = cp.asarray([[0, 0, 0, 0, 0],
     ...                            [0, 0, 0, 0, 0],
     ...                            [0, 0, 1, 0, 0],
     ...                            [0, 0, 0, 0, 0],
     ...                            [0, 0, 0, 0, 0]], dtype=cp.uint8)
-    >>> dilation(bright_pixel, square(3))
+    >>> dilation(bright_pixel, footprint_rectangle((3, 3)))
     array([[0, 0, 0, 0, 0],
            [0, 1, 1, 1, 0],
            [0, 1, 1, 1, 0],
@@ -481,13 +486,13 @@ def opening(image, footprint=None, out=None, *, mode="reflect", cval=0.0):
     --------
     >>> # Open up gap between two bright regions (but also shrink regions)
     >>> import cupy as cp
-    >>> from cucim.skimage.morphology import square
+    >>> from cucim.skimage.morphology import footprint_rectangle
     >>> bad_connection = cp.asarray([[1, 0, 0, 0, 1],
     ...                              [1, 1, 0, 1, 1],
     ...                              [1, 1, 1, 1, 1],
     ...                              [1, 1, 0, 1, 1],
     ...                              [1, 0, 0, 0, 1]], dtype=cp.uint8)
-    >>> opening(bad_connection, square(3))
+    >>> opening(bad_connection, footprint_rectangle((3, 3)))
     array([[0, 0, 0, 0, 0],
            [1, 1, 0, 1, 1],
            [1, 1, 0, 1, 1],
@@ -563,13 +568,13 @@ def closing(image, footprint=None, out=None, *, mode="reflect", cval=0.0):
     --------
     >>> # Close a gap between two bright lines
     >>> import cupy as cp
-    >>> from cucim.skimage.morphology import square
+    >>> from cucim.skimage.morphology import footprint_rectangle
     >>> broken_line = cp.asarray([[0, 0, 0, 0, 0],
     ...                           [0, 0, 0, 0, 0],
     ...                           [1, 1, 0, 1, 1],
     ...                           [0, 0, 0, 0, 0],
     ...                           [0, 0, 0, 0, 0]], dtype=cp.uint8)
-    >>> closing(broken_line, square(3))
+    >>> closing(broken_line, footprint_rectangle((3, 3)))
     array([[0, 0, 0, 0, 0],
            [0, 0, 0, 0, 0],
            [1, 1, 1, 1, 1],
@@ -669,13 +674,13 @@ def white_tophat(image, footprint=None, out=None, *, mode="reflect", cval=0.0):
     --------
     >>> # Subtract grey background from bright peak
     >>> import cupy as cp
-    >>> from cucim.skimage.morphology import square
+    >>> from cucim.skimage.morphology import footprint_rectangle
     >>> bright_on_grey = cp.asarray([[2, 3, 3, 3, 2],
     ...                              [3, 4, 5, 4, 3],
     ...                              [3, 5, 9, 5, 3],
     ...                              [3, 4, 5, 4, 3],
     ...                              [2, 3, 3, 3, 2]], dtype=cp.uint8)
-    >>> white_tophat(bright_on_grey, square(3))
+    >>> white_tophat(bright_on_grey, footprint_rectangle((3, 3)))
     array([[0, 0, 0, 0, 0],
            [0, 0, 1, 0, 0],
            [0, 1, 5, 1, 0],
@@ -764,13 +769,13 @@ def black_tophat(image, footprint=None, out=None, *, mode="reflect", cval=0.0):
     --------
     >>> # Change dark peak to bright peak and subtract background
     >>> import cupy as cp
-    >>> from cucim.skimage.morphology import square
+    >>> from cucim.skimage.morphology import footprint_rectangle
     >>> dark_on_grey = cp.asarray([[7, 6, 6, 6, 7],
     ...                            [6, 5, 4, 5, 6],
     ...                            [6, 4, 0, 4, 6],
     ...                            [6, 5, 4, 5, 6],
     ...                            [7, 6, 6, 6, 7]], dtype=cp.uint8)
-    >>> black_tophat(dark_on_grey, square(3))
+    >>> black_tophat(dark_on_grey, footprint_rectangle((3, 3)))
     array([[0, 0, 0, 0, 0],
            [0, 0, 1, 0, 0],
            [0, 1, 5, 1, 0],

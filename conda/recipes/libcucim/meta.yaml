@@ -1,4 +1,5 @@
-# Copyright (c) 2021-2023, NVIDIA CORPORATION.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION.
+# SPDX-License-Identifier: Apache-2.0
 
 {% set version = environ['RAPIDS_PACKAGE_VERSION'].lstrip('v') %}
 {% set cuda_version = '.'.join(environ['RAPIDS_CUDA_VERSION'].split('.')[:2]) %}
@@ -15,18 +16,15 @@ source:
 
 build:
   number: {{ GIT_DESCRIBE_NUMBER }}
-  string: cuda{{ cuda_major }}_{{ date_string }}_{{ GIT_DESCRIBE_HASH }}_{{ GIT_DESCRIBE_NUMBER }}
+  string: cuda{{ cuda_major }}_{{ date_string }}_gh{{ GIT_DESCRIBE_HASH }}_gn{{ GIT_DESCRIBE_NUMBER }}_ph{{ PKG_HASH }}
   ignore_run_exports:
     - openslide
   ignore_run_exports_from:
-    {% if cuda_major == "11" %}
-    - {{ compiler('cuda11') }}
-    {% else %}
     - {{ compiler('cuda') }}
     - cuda-cudart-dev
-    - libcufile-dev  # [linux64]
+    - libcufile-dev
     - libnvjpeg-dev
-    {% endif %}
+    - libnvimgcodec-dev
   script_env:
     - AWS_ACCESS_KEY_ID
     - AWS_SECRET_ACCESS_KEY
@@ -48,11 +46,7 @@ requirements:
   build:
     - {{ compiler("c") }}
     - {{ compiler("cxx") }}
-    {% if cuda_major == "11" %}
-    - {{ compiler('cuda11') }} ={{ cuda_version }}
-    {% else %}
     - {{ compiler('cuda') }}
-    {% endif %}
     - cuda-version ={{ cuda_version }}
     - binutils
     - cmake {{ cmake_version }}
@@ -62,31 +56,25 @@ requirements:
     - yasm # [x86_64]
   host:
     - cuda-version ={{ cuda_version }}
-    {% if cuda_major == "11" %}
-    - libcufile {{ cuda11_libcufile_host_version }}         # [linux64]
-    - libcufile-dev {{ cuda11_libcufile_host_version }}     # [linux64]
-    - libnvjpeg {{ cuda11_libnvjpeg_host_version }}
-    - libnvjpeg-dev {{ cuda11_libnvjpeg_host_version }}
-    {% else %}
     - cuda-cudart-dev
-    - libcufile-dev     # [linux64]
+    - libcufile-dev
     - libnvjpeg-dev
-    - libnvjpeg-static
-    {% endif %}
+    - libnvimgcodec-dev {{ nvimgcodec_version }}  # nvImageCodec development headers and libraries
     - nvtx-c >=3.1.0
     - openslide
   run:
-    - {{ pin_compatible('cuda-version', max_pin='x', min_pin='x') }}
-    {% if cuda_major == "11" %}
-    - cudatoolkit
-    - libcufile {{ cuda11_libcufile_run_version }}  # [linux64]
+    {% if cuda_major == "12" %}
+    - {{ pin_compatible('cuda-version', lower_bound='12.2', upper_bound='13.0a0') }}
     {% else %}
-    - cuda-cudart
-    - libcufile  # [linux64]
-    - libnvjpeg
+    - {{ pin_compatible('cuda-version', max_pin='x', min_pin='x') }}
     {% endif %}
+    - libcufile
+    - cuda-cudart
+    - libnvjpeg
+    - libnvimgcodec {{ nvimgcodec_version }}   # nvImageCodec metapackage (includes libnvimgcodec0 + run_exports)
   run_constrained:
     - {{ pin_compatible('openslide') }}
+    - libnvimgcodec-dev {{ nvimgcodec_version }}  # Optional: for development/debugging
 
 about:
   home: https://developer.nvidia.com/multidimensional-image-processing

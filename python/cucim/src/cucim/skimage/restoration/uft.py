@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2009-2022 the scikit-image team
+# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
+
 r"""Function of unitary fourier transform (uft) and utilities
 
 This module implements the unitary fourier transform, also known as
@@ -18,7 +22,6 @@ References
        vol. au-19, no. 4, pp. 285-288, dec. 1971
 
 """
-
 
 import math
 

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2009-2022 the scikit-image team
+# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
+
 import functools
 import inspect
 import numbers
@@ -25,6 +29,28 @@ __all__ = [
     "slice_at_axis",
     "warn",
 ]
+
+
+# For n nonzero elements cupy.nonzero returns a tuple of length ndim where
+# each element is an array of size (n, ) corresponding to the coordinates on
+# a specific axis.
+#
+# Often for regionprops purposes we would rather have a single array of
+# size (n, ndim) instead of a the tuple of arrays.
+#
+# CuPy's `_ndarray_argwhere` (used internally by cupy.nonzero) already provides
+# this but is not part of the public API. To guard against potential future
+# change we provide a less efficient fallback implementation.
+try:
+    from cupy._core._routines_indexing import _ndarray_argwhere
+except ImportError:
+
+    def _ndarray_argwhere(a):
+        """Stack the result of cupy.nonzero into a single array
+
+        output shape will be (num_nonzero, ndim)
+        """
+        return cp.stack(cp.nonzero(a), axis=-1)
 
 
 def _count_wrappers(func):
@@ -294,14 +320,19 @@ class deprecate_parameter:
             # Extract value of deprecated parameter
             if len(args) > deprecated_idx:
                 deprecated_value = args[deprecated_idx]
-                args = (
-                    args[:deprecated_idx]
-                    + (DEPRECATED,)
-                    + args[deprecated_idx + 1 :]
-                )
+                # Overwrite old with DEPRECATED if replacement exists
+                if self.new_name is not None:
+                    args = (
+                        args[:deprecated_idx]
+                        + (DEPRECATED,)
+                        + args[deprecated_idx + 1 :]
+                    )
             if self.deprecated_name in kwargs.keys():
                 deprecated_value = kwargs[self.deprecated_name]
-                kwargs[self.deprecated_name] = DEPRECATED
+                # Overwrite old with DEPRECATED if replacement exists
+                if self.new_name is not None:
+                    kwargs[self.deprecated_name] = DEPRECATED
+
             # Extract value of new parameter (if present)
             if new_idx is not False and len(args) > new_idx:
                 new_value = args[new_idx]
@@ -623,7 +654,7 @@ def safe_as_int(val, atol=1e-3):
         np.testing.assert_allclose(mod, 0, atol=atol)
     except AssertionError:
         raise ValueError(
-            f"Integer argument required but received " f"{val}, check inputs."
+            f"Integer argument required but received {val}, check inputs."
         )
 
     return np.round(val).astype(np.int64)
@@ -813,7 +844,7 @@ def _validate_interpolation_order(image_dtype, order):
 
     if order < 0 or order > 5:
         raise ValueError(
-            "Spline interpolation order has to be in the " "range 0-5."
+            "Spline interpolation order has to be in the range 0-5."
         )
 
     if image_dtype == bool and order != 0:

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2009-2022 the scikit-image team
+# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
+
 import cupy as cp
 
 # TODO: scikit-image Cython code uses unordered_map, but here we use a simple
@@ -170,7 +174,7 @@ class ArrayMap:
         return output
 
     # This array method is mainly just here for use in the tests
-    def __array__(self, dtype=None):
+    def __array__(self, dtype=None, copy=None):
         """Return a NumPy array that behaves like the arraymap when indexed.
 
         This array can be very large: it is the size of the largest value

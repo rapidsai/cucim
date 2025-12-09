@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2009-2022 the scikit-image team
+# SPDX-FileCopyrightText: Copyright (c) 2022-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
+
 import math
 
 import cupy as cp
@@ -986,8 +990,8 @@ def _shmem_convolve1d(
     convolution=False,
 ):
     ndim = image.ndim
-    if weights.ndim != 1:
-        raise ValueError("expected 1d weight array")
+    if weights.ndim != 1 or weights.shape[0] < 1:
+        raise RuntimeError("expected a 1d weights array with non-zero size")
     axis = _normalize_axis_index(axis, ndim)
     origin = util._check_origin(origin, weights.size)
     if weights.size == 0:

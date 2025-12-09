@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) 2022-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 """
 TODO: Currently LZ4-compressed images are a tiny bit larger than uncompressed.
 Need to look into why this is!
@@ -30,7 +33,7 @@ kvikio.defaults.num_threads_reset(16)
 
 print(f"\t{kvikio.defaults.compat_mode() = }")
 print(f"\t{kvikio.defaults.get_num_threads() = }")
-print(f"\tkvikio task size = {kvikio.defaults.task_size()/1024**2} MB")
+print(f"\tkvikio task size = {kvikio.defaults.task_size() / 1024**2} MB")
 
 
 n_buffer = 128
@@ -116,9 +119,7 @@ while os.path.exists(out_name):
     out_name = f"write_times_lz4{cnt}.npz"
     cnt += 1
 
-np.savez(
-    out_name, write_time_means=write_time_means, write_time_stds=write_time_stds
-)
+np.savez(out_name, write_time_means=write_time_means, write_time_stds=write_time_stds)
 
 
 """

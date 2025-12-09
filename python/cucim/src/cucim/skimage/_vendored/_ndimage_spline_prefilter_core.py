@@ -1,8 +1,14 @@
+# SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Infrastructure, Inc.
+# SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Networks, Inc.
+# SPDX-FileCopyrightText: Copyright (c) 2022-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 AND MIT
+
 """
 Spline poles and boundary handling implemented as in SciPy
 
 https://github.com/scipy/scipy/blob/ee6ae72f83a0995aeb34929aed881d3f36fccfda/scipy/ndimage/src/ni_splines.c
 """  # noqa: E501
+
 import functools
 import math
 import operator

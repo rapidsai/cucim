@@ -1,17 +1,7 @@
-# Apache License, Version 2.0
-# Copyright 2020 NVIDIA Corporation
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# cmake-format: off
+# SPDX-FileCopyrightText: Copyright 2020-2025 NVIDIA Corporation
+# SPDX-License-Identifier: Apache-2.0
+# cmake-format: on
 
 if (NOT TARGET deps::libtiff)
 #    add_library(deps::libtiff SHARED IMPORTED GLOBAL)
@@ -26,13 +16,11 @@ if (NOT TARGET deps::libtiff)
             GIT_REPOSITORY https://gitlab.com/libtiff/libtiff.git
             GIT_TAG v4.1.0
             GIT_SHALLOW TRUE
+            PATCH_COMMAND ${GIT_EXECUTABLE} apply "${CMAKE_CURRENT_LIST_DIR}/libtiff.patch"
+            EXCLUDE_FROM_ALL
     )
-    FetchContent_GetProperties(deps-libtiff)
-    if (NOT deps-libtiff_POPULATED)
-        message(STATUS "Fetching libtiff sources")
-        FetchContent_Populate(deps-libtiff)
-        message(STATUS "Fetching libtiff sources - done")
-    endif ()
+
+    message(STATUS "Fetching libtiff sources")
 
     # Set policies for libtiff
     set(CMAKE_PROJECT_INCLUDE_BEFORE "${CMAKE_CURRENT_LIST_DIR}/libtiff-policies-fix.cmake")
@@ -64,7 +52,8 @@ if (NOT TARGET deps::libtiff)
     set(jbig OFF)
     set(webp OFF)
 
-    add_subdirectory(${deps-libtiff_SOURCE_DIR} ${deps-libtiff_BINARY_DIR} EXCLUDE_FROM_ALL)
+    FetchContent_MakeAvailable(deps-libtiff)
+    message(STATUS "Fetching libtiff sources - done")
 
     # Disable visibility to not expose unnecessary symbols
     set_target_properties(tiff tiffxx

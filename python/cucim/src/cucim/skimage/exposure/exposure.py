@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2009-2022 the scikit-image team
+# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
+
 import cupy as cp
 import numpy as np
 
@@ -138,8 +142,9 @@ def _get_outer_edges(image, hist_range):
         # handle empty arrays. Can't determine hist_range, so use 0-1.
         first_edge, last_edge = 0, 1
     else:
-        first_edge, last_edge = float(image.min()), float(
-            image.max()
+        first_edge, last_edge = (
+            float(image.min()),
+            float(image.max()),
         )  # synchronize  # noqa
         if not (np.isfinite(first_edge) and np.isfinite(last_edge)):
             raise ValueError(

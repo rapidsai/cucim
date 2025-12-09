@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2009-2022 the scikit-image team
+# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
+
 import cupy as cp
 import numpy as np
 
@@ -93,9 +97,7 @@ def integrate(ii, start, end):
     # convert negative indices into equivalent positive indices
     start_negatives = start < 0
     end_negatives = end < 0
-    start = (start + total_shape) * start_negatives + start * ~(
-        start_negatives
-    )  # noqa
+    start = (start + total_shape) * start_negatives + start * ~(start_negatives)  # noqa
     end = (end + total_shape) * end_negatives + end * ~(end_negatives)  # noqa
 
     if np.any((end - start) < 0):
@@ -148,10 +150,10 @@ def integrate(ii, start, end):
 
         # CuPy Backend: TODO: check efficiency here
         if scalar_output:
-            S += sign * ii[tuple(corner_points[0])] if (not bad[0]) else 0
+            S += sign * int(ii[tuple(corner_points[0])]) if (not bad[0]) else 0
         else:
             for r in range(rows):
                 # add only good rows
                 if not bad[r]:
-                    S[r] += sign * ii[tuple(corner_points[r])]
+                    S[r] += sign * int(ii[tuple(corner_points[r])])
     return S

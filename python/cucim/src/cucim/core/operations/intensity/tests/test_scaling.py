@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 import os
 
 import cupy
@@ -29,7 +32,7 @@ def test_scale_param():
     with pytest.raises(ValueError):
         its.scale_intensity_range(arr, 0.0, 255.0, 1.0, 1.0, False)
     with pytest.raises(TypeError):
-        img = Image.fromarray(arr.T, "RGB")
+        img = Image.fromarray(arr.T)
         its.scale_intensity_range(img, 0.0, 255.0, -1.0, 1.0, False)
 
 

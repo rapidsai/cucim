@@ -1,4 +1,9 @@
+# SPDX-FileCopyrightText: 2009-2022 the scikit-image team
+# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
+
 """Implementations restoration functions"""
+
 import warnings
 
 import cupy as cp
@@ -398,8 +403,11 @@ def richardson_lucy(image, psf, num_iter=50, clip=True, filter_epsilon=None):
 
     Parameters
     ----------
-    image : ndarray
-       Input degraded image (can be n-dimensional).
+    image : ([P, ]M, N) ndarray
+       Input degraded image (can be n-dimensional). If you keep the
+       default `clip=True` parameter, you may want to normalize
+       the image so that its values fall in the [-1, 1] interval to avoid
+       information loss.
     psf : ndarray
        The point spread function.
     num_iter : int, optional

@@ -1,3 +1,10 @@
+# SPDX-FileCopyrightText: 2009-2015 Board of Regents of the University of Wisconsin-Madison, Broad Institute of MIT and Harvard, and Max Planck Institute of Molecular Cell Biology and Genetics
+# SPDX-FileCopyrightText: 2009 Zachary Pincus
+# SPDX-FileCopyrightText: 2009 Almar Klein
+# SPDX-FileCopyrightText: 2009-2022 the scikit-image team
+# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 AND BSD-2-Clause AND BSD-3-Clause
+
 import inspect
 import itertools
 import math
@@ -694,6 +701,7 @@ def threshold_li(
     elif callable(initial_guess):
         t_next = initial_guess(image)
     elif cp.isscalar(initial_guess):  # convert to new, positive image range
+        image_min = float(image_min)
         t_next = initial_guess - image_min
         image_max = cp.max(image) + image_min
         if not 0 < t_next < cp.max(image):

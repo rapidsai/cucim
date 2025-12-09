@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2009-2022 the scikit-image team
+# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
+
 """Test for correctness of color distance functions"""
 
 import cupy as cp
@@ -6,7 +10,6 @@ import pytest
 from cupy.testing import (
     assert_allclose,
     assert_array_almost_equal,
-    assert_array_equal,
 )
 
 from cucim.skimage._shared.testing import expected_warnings, fetch
@@ -36,7 +39,9 @@ def test_ciede2000_dE(dtype, channel_axis):
 
     lab1 = cp.moveaxis(cp.asarray(lab1), source=-1, destination=channel_axis)
     lab2 = cp.moveaxis(cp.asarray(lab2), source=-1, destination=channel_axis)
-    dE2 = deltaE_ciede2000(lab1, lab2, channel_axis=channel_axis)
+    msg = "numerical accuracy of this function on the GPU is reduced"
+    with pytest.warns(UserWarning, match=msg):
+        dE2 = deltaE_ciede2000(lab1, lab2, channel_axis=channel_axis)
     assert dE2.dtype == _supported_float_type(dtype)
 
     # Note: lower float64 accuracy than scikit-image
@@ -199,10 +204,10 @@ def test_cmc(dtype, channel_axis):
 def test_cmc_single_item():
     # Single item case:
     lab1 = lab2 = cp.array([0.0, 1.59607713, 0.87755709])
-    assert_array_equal(deltaE_cmc(lab1, lab2), 0)
+    assert_array_almost_equal(deltaE_cmc(lab1, lab2), 0)
 
     lab2[0] += cp.finfo(float).eps
-    assert_array_equal(deltaE_cmc(lab1, lab2), 0)
+    assert_array_almost_equal(deltaE_cmc(lab1, lab2), 0)
 
 
 def test_single_color_cie76():

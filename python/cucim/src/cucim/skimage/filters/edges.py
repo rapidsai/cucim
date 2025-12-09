@@ -1,3 +1,11 @@
+# SPDX-FileCopyrightText: Copyright (c) 2003-2009 Massachusetts Institute of Technology
+# SPDX-FileCopyrightText: Copyright (c) 2009-2011 Broad Institute
+# SPDX-FileCopyrightText: 2003 Lee Kamentsky
+# SPDX-FileCopyrightText: 2003-2005 Peter J. Verveer
+# SPDX-FileCopyrightText: 2009-2022 the scikit-image team
+# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 AND (GPL-2.0-only OR BSD-3-Clause)
+
 """
 
 Sobel and Prewitt filters originally part of CellProfiler, code licensed under
@@ -9,6 +17,7 @@ All rights reserved.
 Original author: Lee Kamentsky
 
 """
+
 import math
 
 import cupy as cp

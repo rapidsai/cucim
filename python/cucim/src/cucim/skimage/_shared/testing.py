@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2009-2022 the scikit-image team
+# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
+
 import inspect
 
 import pytest
@@ -50,7 +54,7 @@ def assert_stacklevel(warnings, *, offset=-1):
     When cucim.skimage raises warnings, the stacklevel should ideally be set
     so that the origin of the warnings will point to the public function
     that was called by the user and not necessarily the very place where the
-    warnings were emitted (which may be inside of some internal function).
+    warnings were emitted (which may be inside some internal function).
     This utility function helps with checking that
     the stacklevel was set correctly on warnings captured by `pytest.warns`.
 
@@ -84,6 +88,8 @@ def assert_stacklevel(warnings, *, offset=-1):
     ...         )
     ...     assert_stacklevel(record, offset=-3)
     """
+    __tracebackhide__ = True  # Hide traceback for py.test
+
     frame = inspect.stack()[1].frame  # 0 is current frame, 1 is outer frame
     line_number = frame.f_lineno + offset
     filename = frame.f_code.co_filename
@@ -91,3 +97,10 @@ def assert_stacklevel(warnings, *, offset=-1):
     for warning in warnings:
         actual = f"{warning.filename}:{warning.lineno}"
         assert actual == expected, f"{actual} != {expected}"
+        msg = (
+            "Warning with wrong stacklevel:\n"
+            f"  Expected: {expected}\n"
+            f"  Actual: {actual}\n"
+            f"  {warning.category.__name__}: {warning.message}"
+        )
+        assert actual == expected, msg

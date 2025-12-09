@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 import os
 
 import cupy
@@ -35,7 +38,7 @@ def test_zoom_param():
         arr1 = arr.flatten()
         its.zoom(arr1, [1.1, 1.1])
     with pytest.raises(TypeError):
-        img = Image.fromarray(arr.T, "RGB")
+        img = Image.fromarray(arr.T)
         its.zoom(img, [1.1, 1.1])
 
 

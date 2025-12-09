@@ -1,10 +1,17 @@
+# SPDX-FileCopyrightText: 2009-2022 the scikit-image team
+# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
+
 import functools
 import math
 from itertools import combinations_with_replacement
 
 import cupy as cp
 import numpy as np
-from scipy import spatial  # TODO: use cuSpatial if KDTree becomes available
+
+# TODO: use CuPy's KDTree once it becomes available
+# xref: https://github.com/rapidsai/cucim/issues/732
+from scipy import spatial
 
 import cucim.skimage._vendored.ndimage as ndi
 from cucim.skimage.util import img_as_float
@@ -122,7 +129,7 @@ def structure_tensor(image, sigma=1, mode="constant", cval=0, order="rc"):
         sigma = tuple(sigma)
         if len(sigma) != image.ndim:
             raise ValueError(
-                "sigma must have as many elements as image " "has axes"
+                "sigma must have as many elements as image has axes"
             )
 
     image = _prepare_grayscale_input_nD(image)
@@ -1370,7 +1377,8 @@ def corner_peaks(
     )
 
     if len(coords):
-        # TODO: modify to do KDTree on the GPU (cuSpatial?)
+        # TODO: modify to do KDTree on the GPU using CuPy
+        # xref: https://github.com/rapidsai/cucim/issues/732
         coords = cp.asnumpy(coords)
 
         # Use KDtree to find the peaks that are too close to each other

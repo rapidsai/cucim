@@ -1,17 +1,6 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 #include "cucim/memory/memory_manager.h"
@@ -89,10 +78,10 @@ static void string_memcpy(benchmark::State& state)
         char * c_str = (char*) malloc(size + 1);
         memcpy(c_str, data.data(), size);
         c_str[size] = '\0';
-        free(c_str);
         // Make sure the variable is not optimized away by compiler
         benchmark::DoNotOptimize(c_str);
         benchmark::DoNotOptimize(size);
+        free(c_str);
     }
 }
 BENCHMARK(string_memcpy);
@@ -105,9 +94,9 @@ static void string_strcpy(benchmark::State& state)
         std::string data = "#########################################################################################################################################################################################";
         char * c_str = (char*) malloc(data.size() + 1);
         strcpy(c_str, data.data());
-        free(c_str);
         // Make sure the variable is not optimized away by compiler
         benchmark::DoNotOptimize(c_str);
+        free(c_str);
     }
 }
 BENCHMARK(string_strcpy);
@@ -120,9 +109,9 @@ static void string_strdup(benchmark::State& state)
     {
         std::string data = "#########################################################################################################################################################################################";
         char * c_str = strdup(data.data());
-        free(c_str);
         // Make sure the variable is not optimized away by compiler
         benchmark::DoNotOptimize(c_str);
+        free(c_str);
     }
 }
 BENCHMARK(string_strdup);
@@ -140,12 +129,12 @@ static void alloc_malloc(benchmark::State& state)
             arr[i] = (char*)malloc(10);
             arr[i][0] = i;
         }
+        // Make sure the variable is not optimized away by compiler
+        benchmark::DoNotOptimize(arr);
         for (int i = 0; i < 30000; i++)
         {
             free(arr[i]);
         }
-        // Make sure the variable is not optimized away by compiler
-        benchmark::DoNotOptimize(arr);
     }
 }
 BENCHMARK(alloc_malloc);//->Iterations(100);
@@ -163,12 +152,12 @@ static void alloc_pmr(benchmark::State& state)
             arr[i] = static_cast<char*>(cucim_malloc(10));
             arr[i][0] = i;
         }
+        // Make sure the variable is not optimized away by compiler
+        benchmark::DoNotOptimize(arr);
         for (int i = 0; i < 30000; i++)
         {
             cucim_free(arr[i]);
         }
-        // Make sure the variable is not optimized away by compiler
-        benchmark::DoNotOptimize(arr);
     }
 }
 BENCHMARK(alloc_pmr);//->Iterations(100);

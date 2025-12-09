@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2009-2022 the scikit-image team
+# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
+
 import cupy as cp
 import numpy as np
 import pytest
@@ -194,9 +198,9 @@ def test_hessian_matrix_3d():
     Hs = hessian_matrix(
         cube, sigma=0.1, order="rc", use_gaussian_derivatives=False
     )
-    assert (
-        len(Hs) == 6
-    ), f"incorrect number of Hessian images ({len(Hs)}) for 3D"  # noqa
+    assert len(Hs) == 6, (
+        f"incorrect number of Hessian images ({len(Hs)}) for 3D"
+    )  # noqa
     # fmt: off
     assert_array_almost_equal(
         Hs[2][:, 2, :], cp.asarray([[0,  0,  0,  0,  0],    # noqa
@@ -264,8 +268,8 @@ def test_structure_tensor_eigenvalues(dtype):
 
 
 def test_structure_tensor_eigenvalues_3d():
-    cube9 = cp.ones((9,) * 3, dtype=cp.uint8)
-    cube7 = cp.ones((7,) * 3, dtype=cp.uint8)
+    cube9 = cp.ones((9,) * 3, dtype=cp.int16)
+    cube7 = cp.ones((7,) * 3, dtype=cp.int16)
     image = pad(cube9, 5, mode="constant") * 1000
     boundary = (
         pad(cube9, 5, mode="constant") - pad(cube7, 6, mode="constant")

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 import argparse
 import math
 import os
@@ -37,9 +40,7 @@ class BlobDetectionBench(ImageBench):
             offsets = rng.integers(0, np.prod(img.shape), num_ellipse)
             locs = np.unravel_index(offsets, img.shape)
             for loc in zip(*locs):
-                loc = tuple(
-                    min(p, s - es) for p, s, es in zip(loc, img.shape, e.shape)
-                )
+                loc = tuple(min(p, s - es) for p, s, es in zip(loc, img.shape, e.shape))
                 sl = tuple(slice(p, p + es) for p, es in zip(loc, e.shape))
                 img[sl] = e
         else:

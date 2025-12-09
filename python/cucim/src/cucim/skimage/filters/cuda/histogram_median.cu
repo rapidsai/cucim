@@ -1,3 +1,10 @@
+/*
+ * SPDX-FileCopyrightText: Copyright (C) 2000-2008, Intel Corporation, all rights reserved.
+ * SPDX-FileCopyrightText: Copyright (C) 2009, Willow Garage Inc., all rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2025, NVIDIA CORPORATION. All rights reserved.
+ * SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
+ */
+
 /* Several functions and the primary kernel used for the histogram-based
  * median are in this file.
  *

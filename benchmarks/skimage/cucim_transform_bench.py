@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 import argparse
 import os
 import pickle
@@ -132,9 +135,7 @@ def main(args):
                         for s in scales
                     ]
                 else:
-                    out_shapes = [
-                        tuple([int(s_ * s) for s_ in shape]) for s in scales
-                    ]
+                    out_shapes = [tuple([int(s_ * s) for s_ in shape]) for s in scales]
                 var_kwargs["output_shape"] = out_shapes
 
         elif function_name == "downscale_local_mean":
@@ -204,8 +205,7 @@ if __name__ == "__main__":
         "--img_size",
         type=str,
         help=(
-            "Size of input image (omit color channel, it will be appended "
-            "as needed)"
+            "Size of input image (omit color channel, it will be appended as needed)"
         ),
         required=True,
     )

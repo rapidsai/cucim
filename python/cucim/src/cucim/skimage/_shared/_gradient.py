@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2009-2022 the scikit-image team
+# SPDX-FileCopyrightText: Copyright (c) 2022-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
+
 """
 Simplified version of cupy.gradient
 
@@ -6,6 +10,7 @@ This version doesn't support non-unit spacing or 2nd order edges.
 Importantly, this version does not promote all integer dtypes to float64, but
 instead will promote 8 and 16-bit integer types to float32.
 """
+
 import cupy
 
 from cucim.skimage._shared.utils import _supported_float_type
