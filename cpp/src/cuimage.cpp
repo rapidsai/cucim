@@ -855,7 +855,11 @@ CuImage CuImage::read_region(std::vector<int64_t>&& location,
         }
 
         const char* str_ptr = image_metadata_->spacing_units[dim_index];
-        size_t str_len = strlen(image_metadata_->spacing_units[dim_index]);
+        if (!str_ptr)
+        {
+            str_ptr = "";  // fallback to empty string if null
+        }
+        size_t str_len = strlen(str_ptr);
 
         char* spacing_unit = static_cast<char*>(resource.allocate(str_len + 1));
         memcpy(spacing_unit, str_ptr, str_len);

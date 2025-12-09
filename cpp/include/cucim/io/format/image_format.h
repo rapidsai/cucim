@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2025, NVIDIA CORPORATION.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -80,13 +80,16 @@ public:
     ImageMetadata& dims(std::string_view&& dims);
     ImageMetadata& shape(std::pmr::vector<int64_t>&& shape);
     ImageMetadata& dtype(const DLDataType& dtype);
+    /// @note The string_view elements are copied with null-termination if needed for safe use with C string functions.
     ImageMetadata& channel_names(std::pmr::vector<std::string_view>&& channel_names);
 
     ImageMetadata& spacing(std::pmr::vector<float>&& spacing);
+    /// @note The string_view elements are copied with null-termination if needed for safe use with C string functions.
     ImageMetadata& spacing_units(std::pmr::vector<std::string_view>&& spacing_units);
 
     ImageMetadata& origin(std::pmr::vector<float>&& origin);
     ImageMetadata& direction(std::pmr::vector<float>&& direction);
+    /// @note The string_view is copied with null-termination if needed for safe use with C string functions.
     ImageMetadata& coord_sys(std::string_view&& coord_sys);
 
     // ResolutionInfoDesc

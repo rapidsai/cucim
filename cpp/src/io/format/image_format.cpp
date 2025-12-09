@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2025, NVIDIA CORPORATION.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -7,6 +7,7 @@
 #include "cucim/io/format/image_format.h"
 #include "cucim/memory/memory_manager.h"
 
+#include <cstring>
 #include <fmt/format.h>
 
 
@@ -67,7 +68,21 @@ ImageMetadata& ImageMetadata::channel_names(std::pmr::vector<std::string_view>&&
     desc_.channel_names = static_cast<char**>(allocate(channel_len * sizeof(char*)));
     for (int i = 0; i < channel_len; ++i)
     {
-        desc_.channel_names[i] = const_cast<char*>(channel_names_[i].data());
+        const auto& sv = channel_names[i];
+        const size_t len = sv.size();
+        // Avoid copy if already null-terminated (common case for string literals)
+        if (sv.data()[len] == '\0')
+        {
+            desc_.channel_names[i] = const_cast<char*>(sv.data());
+        }
+        else
+        {
+            // Copy and null-terminate for safe use with C string functions
+            char* str_copy = static_cast<char*>(allocate(len + 1));
+            std::memcpy(str_copy, sv.data(), len);
+            str_copy[len] = '\0';
+            desc_.channel_names[i] = str_copy;
+        }
     }
     return *this;
 }
@@ -87,7 +102,21 @@ ImageMetadata& ImageMetadata::spacing_units(std::pmr::vector<std::string_view>&&
     desc_.spacing_units = static_cast<char**>(allocate(ndim * sizeof(char*)));
     for (int i = 0; i < ndim; ++i)
     {
-        desc_.spacing_units[i] = const_cast<char*>(spacing_units_[i].data());
+        const auto& sv = spacing_units[i];
+        const size_t len = sv.size();
+        // Avoid copy if already null-terminated (common case for string literals)
+        if (sv.data()[len] == '\0')
+        {
+            desc_.spacing_units[i] = const_cast<char*>(sv.data());
+        }
+        else
+        {
+            // Copy and null-terminate for safe use with C string functions
+            char* str_copy = static_cast<char*>(allocate(len + 1));
+            std::memcpy(str_copy, sv.data(), len);
+            str_copy[len] = '\0';
+            desc_.spacing_units[i] = str_copy;
+        }
     }
     return *this;
 }
@@ -109,7 +138,20 @@ ImageMetadata& ImageMetadata::direction(std::pmr::vector<float>&& direction)
 ImageMetadata& ImageMetadata::coord_sys(std::string_view&& coord_sys)
 {
     coord_sys_ = coord_sys;
-    desc_.coord_sys = coord_sys_.data();
+    const size_t len = coord_sys.size();
+    // Avoid copy if already null-terminated (common case for string literals)
+    if (coord_sys.data()[len] == '\0')
+    {
+        desc_.coord_sys = coord_sys.data();
+    }
+    else
+    {
+        // Copy and null-terminate for safe use with C string functions
+        char* str_copy = static_cast<char*>(allocate(len + 1));
+        std::memcpy(str_copy, coord_sys.data(), len);
+        str_copy[len] = '\0';
+        desc_.coord_sys = str_copy;
+    }
     return *this;
 }
 

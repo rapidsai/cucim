@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2025, NVIDIA CORPORATION.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -76,6 +76,10 @@ static void string_memcpy(benchmark::State& state)
         const int size = data.size();
 
         char * c_str = (char*) malloc(size + 1);
+        if (!c_str) {
+            state.SkipWithError("malloc failed");
+            return;
+        }
         memcpy(c_str, data.data(), size);
         c_str[size] = '\0';
         // Make sure the variable is not optimized away by compiler
@@ -93,6 +97,10 @@ static void string_strcpy(benchmark::State& state)
     {
         std::string data = "#########################################################################################################################################################################################";
         char * c_str = (char*) malloc(data.size() + 1);
+        if (!c_str) {
+            state.SkipWithError("malloc failed");
+            return;
+        }
         strcpy(c_str, data.data());
         // Make sure the variable is not optimized away by compiler
         benchmark::DoNotOptimize(c_str);
