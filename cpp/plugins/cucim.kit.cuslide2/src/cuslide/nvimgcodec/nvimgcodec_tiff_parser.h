@@ -316,6 +316,20 @@ public:
     bool has_cpu_decoder() const { return cpu_decoder_ != nullptr; }
 
     /**
+     * @brief Get the CPU-only decoder (for native CPU decoding)
+     * 
+     * @return nvImageCodec CPU decoder handle
+     */
+    nvimgcodecDecoder_t get_cpu_decoder() const { return cpu_decoder_; }
+    
+    /**
+     * @brief Check if CPU-only decoder is available
+     * 
+     * @return true if CPU decoder is available
+     */
+    bool has_cpu_decoder() const { return cpu_decoder_ != nullptr; }
+    
+    /**
      * @brief Get the mutex for thread-safe decoder operations
      *
      * @return Reference to the decoder mutex
@@ -404,6 +418,32 @@ public:
         return "";
     }
 
+    int get_subfile_type(uint32_t ifd_index) const
+    {
+        (void)ifd_index;
+        return -1;
+    }
+    
+    // Stub methods for API compatibility
+    const std::map<int, IfdInfo::MetadataBlob>& get_metadata_blobs(uint32_t ifd_index) const
+    {
+        (void)ifd_index;
+        static const std::map<int, IfdInfo::MetadataBlob> empty_map;
+        return empty_map;
+    }
+    
+    std::string get_detected_format() const
+    {
+        return "Unknown";
+    }
+    
+    std::string get_tiff_tag(uint32_t ifd_index, const std::string& tag_name) const
+    {
+        (void)ifd_index;
+        (void)tag_name;
+        return "";
+    }
+    
     int get_subfile_type(uint32_t ifd_index) const
     {
         (void)ifd_index;

@@ -105,9 +105,12 @@ public:
         }
         else
         {
-            // Use pinned memory for faster GPU-to-host transfers when GPU backend is used
-            cudaError_t status = cudaMallocHost(&buffer_, size);
-            return status == cudaSuccess;
+            // Use standard malloc for CPU memory
+            // NOTE: Must use malloc() (not cudaMallocHost()) because cuCIM's cleanup
+            // code uses free(). Using cudaMallocHost() would require cudaFreeHost(),
+            // causing "free(): invalid pointer" crash when cuCIM calls free().
+            buffer_ = malloc(size);
+            return buffer_ != nullptr;
         }
     }
 
@@ -118,7 +121,7 @@ public:
             if (is_device_)
                 cudaFree(buffer_);
             else
-                cudaFreeHost(buffer_);  // Pinned memory must use cudaFreeHost
+                free(buffer_);  // Standard free (matches malloc)
             buffer_ = nullptr;
         }
     }
@@ -283,7 +286,7 @@ bool decode_ifd_region_nvimgcodec(const IfdInfo& ifd_info,
         output_image_info.plane_info[0].num_channels = num_channels;
         output_image_info.plane_info[0].row_stride = row_stride;
         output_image_info.plane_info[0].sample_type = NVIMGCODEC_SAMPLE_DATA_TYPE_UINT8;
-        output_image_info.buffer_size = buffer_size;
+        // Note: buffer_size removed in nvImageCodec v0.7.0 - size is inferred from plane_info
         output_image_info.cuda_stream = 0;
 
         #ifdef DEBUG

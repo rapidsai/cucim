@@ -29,7 +29,7 @@ if (NOT TARGET deps::libjpeg-turbo)
     # Tell CMake where to find the compiler by setting either the environment
     # variable "ASM_NASM" or the CMake cache entry CMAKE_ASM_NASM_COMPILER to the
     # full path to the compiler, or to the compiler name if it is in the PATH.
-    # yasm is available through `sudo apt-get install yasm` on Debian Linux.
+    # nasm is available through `sudo apt-get install nasm` on Debian Linux.
     # See _deps/deps-libjpeg-turbo-src/simd/CMakeLists.txt:25.
 
     # Try to find yasm in conda environment first, then system paths
