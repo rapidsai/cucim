@@ -8,3 +8,4 @@ release_drafter: true
 external_contributors: false
 recently_updated: true
 forward_merger: true
+merge_barriers: true
