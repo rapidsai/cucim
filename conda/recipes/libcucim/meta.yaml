@@ -69,7 +69,6 @@ requirements:
     - {{ pin_compatible('cuda-version', max_pin='x', min_pin='x') }}
     {% endif %}
     - libcufile
-    - cuda-cudart
     - libnvjpeg
     - libnvimgcodec {{ nvimgcodec_version }}   # nvImageCodec metapackage (includes libnvimgcodec0 + run_exports)
   run_constrained:

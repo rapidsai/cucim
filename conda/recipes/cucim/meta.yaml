@@ -62,7 +62,6 @@ requirements:
     - setuptools >=80.9.0
   run:
     - {{ pin_compatible('cuda-version', max_pin='x', min_pin='x') }}
-    - cuda-cudart
     - numpy >=1.23,<3.0
     - click
     - cupy >=13.6.0
