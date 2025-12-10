@@ -1,3 +1,30 @@
+# cucim 25.12.00 (10 Dec 2025)
+
+### 🚨 Breaking Changes
+* Require CUDA 12.2+ by @jakirkham in https://github.com/rapidsai/cucim/pull/961
+* remove deprecated `square`, `rectangle` and `cube` (replaced by `footprint_rectangle`) by @grlee77 in https://github.com/rapidsai/cucim/pull/969
+### 🐛 Bug Fixes
+* refactored update-version.sh to handle new branching strategy by @rockhowse in https://github.com/rapidsai/cucim/pull/970
+* add missing import of ellipse in morphology module by @grlee77 in https://github.com/rapidsai/cucim/pull/968
+* Fix crash on unsigned integer input to `cucim.skimage.morphology.reconstruction` by @grlee77 in https://github.com/rapidsai/cucim/pull/967
+* resolve static analysis complaints about potentially unsafe C-style string-handling by @grlee77 in https://github.com/rapidsai/cucim/pull/990
+### 📖 Documentation
+### 🛠️ Improvements
+* Empty commit to trigger a build by @msarahan in https://github.com/rapidsai/cucim/pull/944
+* Use main branch by @bdice in https://github.com/rapidsai/cucim/pull/958
+* Use main shared-workflows branch by @bdice in https://github.com/rapidsai/cucim/pull/959
+* Use SPDX for all copyright headers by @KyleFromNVIDIA in https://github.com/rapidsai/cucim/pull/960
+* Use ruff-format instead of black, bump ruff version by @KyleFromNVIDIA in https://github.com/rapidsai/cucim/pull/963
+* chore: remove extra trailing curly brace from conda build string by @gforsyth in https://github.com/rapidsai/cucim/pull/977
+* [REVIEW] Feat: PR #1 nvImageCodec infrastructure only by @cdinea in https://github.com/rapidsai/cucim/pull/966
+* [REVIEW] Feat: PR #2 Add GPU-accelerated TIFF decoding via nvImageCodec v0.6.0 for digital pathology by @cdinea in https://github.com/rapidsai/cucim/pull/978
+
+## New Contributors
+* @rockhowse made their first contribution in https://github.com/rapidsai/cucim/pull/970
+* @cdinea made their first contribution in https://github.com/rapidsai/cucim/pull/966
+
+**Full Changelog**: https://github.com/rapidsai/cucim/compare/v25.12.00a...release/25.12
+
 # cucim 25.10.00 (8 Oct 2025)
 
 ## 🐛 Bug Fixes
