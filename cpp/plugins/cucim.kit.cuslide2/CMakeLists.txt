@@ -153,6 +153,13 @@ if(CUSLIDE2_INFRA_ONLY)
         message(STATUS "  ⚠ nvImageCodec not found (deps::nvimgcodec missing) - OK for infra-only mode")
     endif()
     message(STATUS "=============================================================")
+
+    # Provide a stub target so that `cmake --build ... --target cucim.kit.cuslide2`
+    # doesn't fail with "No rule to make target" in infra-only configurations.
+    add_custom_target(${CUCIM_PLUGIN_NAME}
+        COMMAND ${CMAKE_COMMAND} -E echo
+            "cuslide2 infra-only: no plugin is built in this configuration. Reconfigure with -DCUSLIDE2_INFRA_ONLY=OFF to build the real plugin target."
+    )
 else()
     message(STATUS "=============================================================")
     message(STATUS "cuslide2 PURE nvImageCodec - Dependencies:")
