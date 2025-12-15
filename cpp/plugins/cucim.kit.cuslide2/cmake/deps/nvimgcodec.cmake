@@ -69,15 +69,6 @@ if (NOT TARGET deps::nvimgcodec)
                 )
 
                 # Then try system site-packages
-                # Try user site-packages first (pip install --user)
-                execute_process(
-                    COMMAND ${Python3_EXECUTABLE} -c "import site; print(site.getusersitepackages())"
-                    OUTPUT_VARIABLE PYTHON_USER_SITE_PACKAGES
-                    OUTPUT_STRIP_TRAILING_WHITESPACE
-                    ERROR_QUIET
-                )
-                
-                # Then try system site-packages
                 execute_process(
                     COMMAND ${Python3_EXECUTABLE} -c "import site; print(site.getsitepackages()[0])"
                     OUTPUT_VARIABLE PYTHON_SITE_PACKAGES
@@ -137,6 +128,7 @@ if (NOT TARGET deps::nvimgcodec)
                     set(NVIMGCODEC_INCLUDE_PATH "/usr/include/")
                 endif()
             endif()
+        endif()
 
         # Create target only if nvImageCodec was found
         if(NVIMGCODEC_LIB_PATH AND EXISTS "${NVIMGCODEC_LIB_PATH}")
