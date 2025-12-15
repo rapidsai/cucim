@@ -121,19 +121,19 @@ cd $CUCIM_HOME
 ```
 ## Local Development using Conda Environment (for gcc 13 and nvcc 12)
 
-Conda can be used to setup an environment which includes all of the necessary dependencies (as shown in `./conda/environments/all_cuda-130_arch-x86_64.yaml`) for building cuCIM.
+Conda can be used to setup an environment which includes all of the necessary dependencies (as shown in `./conda/environments/all_cuda-131_arch-x86_64.yaml`) for building cuCIM.
 
 Otherwise, you may need to install dependencies (such as yasm) through your OS's package manager (`apt`, `yum`, and so on).
 
 
 ### Creating the Conda Development Environment `cucim`
 
-Note that `./conda/environments/all_cuda-130_arch-x86_64.yaml` is currently set to pull in GCC and NVCC with the expected versions.
+Note that `./conda/environments/all_cuda-131_arch-x86_64.yaml` is currently set to pull in GCC and NVCC with the expected versions.
 
-If you want to change the version of GCC or CUDA, please update `./conda/environments/all_cuda-130_arch-x86_64.yaml` before executing the following commands.
+If you want to change the version of GCC or CUDA, please update `./conda/environments/all_cuda-131_arch-x86_64.yaml` before executing the following commands.
 
 ```bash
-conda env create -n cucim -f ./conda/environments/all_cuda-130_arch-x86_64.yaml
+conda env create -n cucim -f ./conda/environments/all_cuda-131_arch-x86_64.yaml
 # activate the environment
 conda activate cucim
 ```
