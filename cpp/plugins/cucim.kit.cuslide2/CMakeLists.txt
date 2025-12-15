@@ -135,35 +135,54 @@ find_package(cucim CONFIG REQUIRED
 # Add library: cucim
 ################################################################################
 
-message(STATUS "=============================================================")
-message(STATUS "cuslide2 PURE nvImageCodec - Dependencies:")
-message(STATUS "  ✓ fmt (logging)")
-message(STATUS "  ✓ nvImageCodec (GPU JPEG/JPEG2000/deflate/LZW decoding)")
-message(STATUS "  ✓ pugixml (XML metadata)")
-message(STATUS "  ✓ json (JSON metadata)")
-message(STATUS "  ✓ openslide (testing)")
-message(STATUS "  ✓ googletest, catch2, googlebenchmark, cli11 (testing)")
-message(STATUS "")
-message(STATUS "NOTE: No codec libraries needed (libjpeg/libtiff/libdeflate)")
-message(STATUS "      All decoding handled by nvImageCodec GPU acceleration!")
-message(STATUS "=============================================================")
+option(CUSLIDE2_INFRA_ONLY "Infrastructure-only mode: validate dependencies/configure only; do not build cuslide2 sources" ON)
 
-# Add library - PURE nvImageCodec implementation (no CPU fallbacks)
-add_library(${CUCIM_PLUGIN_NAME}
-    # Main plugin interface
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/cuslide.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/cuslide.h
-    # TIFF structure management (uses nvImageCodec for parsing)
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/tiff/ifd.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/tiff/ifd.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/tiff/tiff.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/tiff/tiff.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/tiff/types.h
-    # nvImageCodec decoding and TIFF parsing (GPU-accelerated)
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/nvimgcodec/nvimgcodec_decoder.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/nvimgcodec/nvimgcodec_decoder.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/nvimgcodec/nvimgcodec_tiff_parser.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/nvimgcodec/nvimgcodec_tiff_parser.h)
+if(CUSLIDE2_INFRA_ONLY)
+    message(STATUS "=============================================================")
+    message(STATUS "cuslide2 infrastructure-only configuration")
+    message(STATUS "")
+    message(STATUS "This mode is intended for infra-only PRs (deps/conda/CMake).")
+    message(STATUS "No cuslide2 sources will be compiled, including:")
+    message(STATUS "  - src/cuslide/nvimgcodec/*")
+    message(STATUS "")
+    message(STATUS "Dependencies configured:")
+    message(STATUS "  ✓ fmt, json, pugixml, openslide, test frameworks")
+    if(TARGET deps::nvimgcodec)
+        message(STATUS "  ✓ nvImageCodec (deps::nvimgcodec)")
+    else()
+        message(STATUS "  ⚠ nvImageCodec not found (deps::nvimgcodec missing) - OK for infra-only mode")
+    endif()
+    message(STATUS "=============================================================")
+else()
+    message(STATUS "=============================================================")
+    message(STATUS "cuslide2 PURE nvImageCodec - Dependencies:")
+    message(STATUS "  ✓ fmt (logging)")
+    message(STATUS "  ✓ nvImageCodec (GPU JPEG/JPEG2000/deflate/LZW decoding)")
+    message(STATUS "  ✓ pugixml (XML metadata)")
+    message(STATUS "  ✓ json (JSON metadata)")
+    message(STATUS "  ✓ openslide (testing)")
+    message(STATUS "  ✓ googletest, catch2, googlebenchmark, cli11 (testing)")
+    message(STATUS "")
+    message(STATUS "NOTE: No codec libraries needed (libjpeg/libtiff/libdeflate)")
+    message(STATUS "      All decoding handled by nvImageCodec GPU acceleration!")
+    message(STATUS "=============================================================")
+
+    # Add library - PURE nvImageCodec implementation (no CPU fallbacks)
+    add_library(${CUCIM_PLUGIN_NAME}
+        # Main plugin interface
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/cuslide.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/cuslide.h
+        # TIFF structure management (uses nvImageCodec for parsing)
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/tiff/ifd.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/tiff/ifd.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/tiff/tiff.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/tiff/tiff.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/tiff/types.h
+        # nvImageCodec decoding and TIFF parsing (GPU-accelerated)
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/nvimgcodec/nvimgcodec_decoder.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/nvimgcodec/nvimgcodec_decoder.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/nvimgcodec/nvimgcodec_tiff_parser.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/nvimgcodec/nvimgcodec_tiff_parser.h)
 
 # No special source file properties needed for pure nvImageCodec implementation
 
@@ -351,6 +370,6 @@ install(
 set(CMAKE_EXPORT_PACKAGE_REGISTRY ON)
 export(PACKAGE ${CUCIM_PLUGIN_NAME})
 
-# REMOVED: endif() - no longer needed since we removed the if(TRUE) wrapper
+endif() # CUSLIDE2_INFRA_ONLY
 
 unset(BUILD_SHARED_LIBS CACHE)
