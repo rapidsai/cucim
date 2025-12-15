@@ -632,9 +632,11 @@ def main():
 
         print("\n🔧 Installation Options:")
         print("Option 1 (Recommended - via dependencies.yaml):")
-        print("   micromamba install libnvimgcodec-dev libnvimgcodec0 -c conda-forge")
+        print(
+            "   micromamba install libnvimgcodec=0.7.0 libnvimgcodec-dev=0.7.0 nvimgcodec=0.7.0 -c conda-forge"
+        )
         print("Option 2 (Pip):")
-        print("   pip install nvidia-nvimgcodec-cu12  # For CUDA 12.x")
+        print("   pip install nvidia-nvimgcodec-cu12==0.7.0  # For CUDA 12.x")
         print("Option 3 (CMake auto-fetch):")
         print("   Build will automatically fetch nvImageCodec if not found")
 
@@ -648,7 +650,7 @@ def main():
         print("\n🔧 Recommendation:")
         print("   Install nvImageCodec and build the plugin:")
         print(
-            "   1. micromamba install libnvimgcodec-dev libnvimgcodec0 -c conda-forge"
+            "   1. micromamba install libnvimgcodec=0.7.0 libnvimgcodec-dev=0.7.0 nvimgcodec=0.7.0 -c conda-forge"
         )
         print("   2. cd cucim && ./run build_local all release $CONDA_PREFIX")
         return False
