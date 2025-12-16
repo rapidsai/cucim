@@ -160,7 +160,7 @@ if(CUSLIDE2_INFRA_ONLY)
             "cuslide2 infra-only: no plugin is built in this configuration. Reconfigure with -DCUSLIDE2_INFRA_ONLY=OFF to build the real plugin target."
     )
 else()
-    message(FATAL_ERROR "CUSLIDE2_INFRA_ONLY=OFF requested, but this PR intentionally removes cuslide2 implementation sources. Use an implementation PR/branch to build the real plugin.")
+    message(FATAL_ERROR "CUSLIDE2_INFRA_ONLY=OFF requested, but this PR/branch is infrastructure-only. Reconfigure with -DCUSLIDE2_INFRA_ONLY=ON.")
 
 endif() # CUSLIDE2_INFRA_ONLY
 
