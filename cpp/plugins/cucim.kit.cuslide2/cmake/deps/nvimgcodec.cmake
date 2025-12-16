@@ -75,7 +75,7 @@ if (NOT TARGET deps::nvimgcodec)
                     OUTPUT_STRIP_TRAILING_WHITESPACE
                     ERROR_QUIET
                 )
-                
+
                 # Check user site-packages first
                 if(PYTHON_USER_SITE_PACKAGES)
                     set(NVIMGCODEC_PYTHON_ROOT "${PYTHON_USER_SITE_PACKAGES}/nvidia/nvimgcodec")
@@ -94,7 +94,7 @@ if (NOT TARGET deps::nvimgcodec)
                         endif()
                     endif()
                 endif()
-                
+
                 # If not found in user site-packages, check system site-packages
                 if(NOT NVIMGCODEC_LIB_PATH AND PYTHON_SITE_PACKAGES)
                     set(NVIMGCODEC_PYTHON_ROOT "${PYTHON_SITE_PACKAGES}/nvidia/nvimgcodec")
@@ -114,7 +114,7 @@ if (NOT TARGET deps::nvimgcodec)
                     endif()
                 endif()
             endif()
-            
+
             # System-wide installation fallback
             if(NOT NVIMGCODEC_LIB_PATH)
                 if(EXISTS /usr/lib/x86_64-linux-gnu/libnvimgcodec.so.0)
