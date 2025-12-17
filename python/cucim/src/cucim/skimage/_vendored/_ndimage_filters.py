@@ -1808,6 +1808,162 @@ def _rank_filter(
     )
 
 
+def _percentile_range_filter(
+    input,
+    p0,
+    p1,
+    operation="mean",
+    size=None,
+    footprint=None,
+    output=None,
+    mode="reflect",
+    cval=0.0,
+    origin=0,
+    axes=None,
+):
+    """Internal helper for percentile range filters.
+
+    This function computes statistics (mean, sum, etc.) on values within
+    a specified percentile range [p0, p1] of the neighborhood.
+
+    Parameters
+    ----------
+    input : cupy.ndarray
+        The input array.
+    p0 : float
+        Lower percentile (0-100).
+    p1 : float
+        Upper percentile (0-100).
+    operation : str, optional
+        The operation to perform. Supported: 'mean', 'sum', 'bilateral_mean',
+        'pop_mean'. Default is 'mean'.
+    size : int or sequence of int, optional
+        Size of the neighborhood. One of `size` or `footprint` must be provided.
+    footprint : cupy.ndarray, optional
+        Boolean array specifying the neighborhood shape.
+    output : cupy.ndarray, dtype or None, optional
+        The array in which to place the output.
+    mode : str, optional
+        Boundary handling mode. Default is 'reflect'.
+    cval : scalar, optional
+        Value to fill past edges if mode is 'constant'. Default is 0.0.
+    origin : int or sequence of int, optional
+        Origin of the footprint. Default is 0.
+    axes : tuple of int or None, optional
+        Axes along which to apply the filter. Default is None (all axes).
+
+    Returns
+    -------
+    output : cupy.ndarray
+        The filtered array.
+
+    Examples
+    --------
+    Compute the mean of values between 10th and 90th percentiles:
+
+    >>> import cupy as cp
+    >>> image = cp.random.rand(100, 100).astype(cp.float32)
+    >>> result = _percentile_range_filter(image, 10, 90, size=5)
+
+    Compute the sum of values in the middle 50% of the neighborhood:
+
+    >>> result = _percentile_range_filter(
+    ...     image, 25, 75, operation='sum', size=5
+    ... )
+    """
+    ndim = input.ndim
+    axes = _util._check_axes(axes, ndim)
+    num_axes = len(axes)
+    default_footprint = footprint is None
+    sizes, footprint, _ = _filters_core._check_size_footprint_structure(
+        num_axes, size, footprint, None, force_footprint=False
+    )
+    if cval is cupy.nan:
+        raise NotImplementedError("NaN cval is unsupported")
+
+    # Validate percentiles
+    p0 = float(p0)
+    p1 = float(p1)
+    if p0 < 0 or p0 > 100 or p1 < 0 or p1 > 100:
+        raise ValueError("Percentiles must be in range [0, 100]")
+    if p0 >= p1:
+        raise ValueError("p0 must be less than p1")
+
+    has_weights = True
+    if sizes is not None:
+        has_weights = False
+        filter_size = math.prod(sizes)
+        if filter_size == 0:
+            return cupy.zeros_like(input)
+        footprint_shape = tuple(sizes)
+        (
+            axes,
+            footprint,
+            origins,
+            modes,
+            int_type,
+        ) = _filters_core._check_nd_args(
+            input,
+            None,
+            mode,
+            origin,
+            "footprint",
+            axes=axes,
+            sizes=footprint_shape,
+        )
+    else:
+        if footprint.size == 0:
+            return cupy.zeros_like(input)
+
+        (
+            axes,
+            footprint,
+            origins,
+            modes,
+            int_type,
+        ) = _filters_core._check_nd_args(
+            input, footprint, mode, origin, "footprint", axes=axes
+        )
+
+        if default_footprint:
+            filter_size = footprint.size
+        else:
+            footprint_shape = footprint.shape
+            filter_size = int(footprint.sum())
+            if filter_size == footprint.size:
+                # can omit passing the footprint if it is all ones
+                sizes = footprint.shape
+                has_weights = False
+
+    if not has_weights:
+        footprint = None
+
+    offsets = _filters_core._origins_to_offsets(origins, footprint_shape)
+    if num_axes < ndim and not has_weights:
+        offsets = tuple(_util._expand_origin(ndim, axes, offsets))
+        modes = tuple(_util._expand_mode(ndim, axes, modes))
+        footprint_shape_temp = [1] * ndim
+        for s, ax in zip(footprint_shape, axes):
+            footprint_shape_temp[ax] = s
+        footprint_shape = tuple(footprint_shape_temp)
+
+    kernel = _get_percentile_range_kernel(
+        filter_size,
+        p0,
+        p1,
+        operation,
+        modes,
+        footprint_shape,
+        offsets,
+        float(cval),
+        int_type,
+        has_weights=has_weights,
+    )
+    return _filters_core._call_kernel(
+        kernel, input, footprint, output, weights_dtype=bool
+    )
+
+
 __SHELL_SORT = """
 __device__ void sort(X *array, int size) {{
     int gap = {gap};
@@ -1886,6 +2042,163 @@ def _get_rank_kernel(
         f"rank_{filter_size}_{rank}",
         f"int iv = 0;\nX values[{array_size}];",
         "values[iv++] = {value};" + found_post,
+        post,
+        modes,
+        w_shape,
+        int_type,
+        offsets,
+        cval,
+        has_weights=has_weights,
+        preamble=sorter,
+    )
+
+
+@cupy._util.memoize(for_each_device=True)
+def _get_percentile_range_kernel(
+    filter_size,
+    p0,
+    p1,
+    operation,
+    modes,
+    w_shape,
+    offsets,
+    cval,
+    int_type,
+    has_weights,
+):
+    """Generate a kernel for computing statistics on a percentile range.
+
+    Parameters
+    ----------
+    filter_size : int
+        Total number of values in the neighborhood.
+    p0 : float
+        Lower percentile (0-100).
+    p1 : float
+        Upper percentile (0-100).
+    operation : str
+        The operation to perform on values in the percentile range.
+        Supported operations:
+        - 'mean': arithmetic mean
+        - 'sum': sum of values
+        - 'bilateral_mean': mean excluding center value
+        - 'pop_mean': mean using center as reference
+                      (percentile mean of |values - center|)
+    modes : tuple of str
+        Boundary handling modes.
+    w_shape : tuple of int
+        Shape of the footprint/kernel.
+    offsets : tuple of int
+        Offsets for the footprint origin.
+    cval : float
+        Constant value for 'constant' mode.
+    int_type : str
+        Integer type to use for indexing.
+    has_weights : bool
+        Whether a footprint mask is used.
+
+    Returns
+    -------
+    kernel : cupy.ElementwiseKernel
+        The compiled CUDA kernel.
+    """
+    # Convert percentiles to array indices
+    # Note: Matches scikit-image's histogram-based percentile approach
+    # where values are included if cumsum is in [p0*pop, p1*pop]
+    if p0 < 0 or p0 > 100 or p1 < 0 or p1 > 100:
+        raise ValueError("Percentiles must be in range [0, 100]")
+    if p0 >= p1:
+        raise ValueError("p0 must be less than p1")
+
+    # Calculate indices for the percentile range
+    # Matches scikit-image's histogram-based approach where value at index i
+    # is included if: (i + 1) >= p0 * N  AND  (i + 1) <= p1 * N
+    # Rearranging: p0 * N - 1 <= i <= p1 * N - 1
+    #
+    # For integer indices in a sorted array (using Python's range with
+    # exclusive upper bound):
+    #   idx_start = ceil(p0 * N - 1) = ceil(p0 * N) - 1
+    #   idx_end = floor(p1 * N - 1) + 1 = floor(p1 * N)
+    import math
+
+    idx_start = max(0, int(math.ceil(p0 * filter_size / 100.0)) - 1)
+    idx_end = int(p1 * filter_size / 100.0)  # int() gives floor for positive
+
+    # Ensure at least one value is included
+    if idx_end <= idx_start:
+        idx_end = idx_start + 1
+    idx_end = min(idx_end, filter_size)
+    n_values = idx_end - idx_start
+
+    # Always use full sorting for percentile ranges
+    array_size = filter_size
+    sorter = __SHELL_SORT.format(gap=_get_shell_gap(filter_size))
+
+    # Generate the post-processing code based on the operation
+    if operation == "mean":
+        # Standard mean of values in percentile range
+        post = f"""
+            sort(values, {filter_size});
+            double sum = 0.0;
+            for (int j = {idx_start}; j < {idx_end}; j++) {{
+                sum += static_cast<double>(values[j]);
+            }}
+            y = cast<Y>(sum / {n_values});
+        """
+    elif operation == "sum":
+        # Sum of values in percentile range
+        post = f"""
+            sort(values, {filter_size});
+            double sum = 0.0;
+            for (int j = {idx_start}; j < {idx_end}; j++) {{
+                sum += static_cast<double>(values[j]);
+            }}
+            y = cast<Y>(sum);
+        """
+    elif operation == "bilateral_mean":
+        # Mean excluding the center pixel (for bilateral-like filtering)
+        # The center pixel is at the middle of the sorted array after sorting
+        post = f"""
+            sort(values, {filter_size});
+            double sum = 0.0;
+            int count = 0;
+            X center = values[{filter_size // 2}];
+            for (int j = {idx_start}; j < {idx_end}; j++) {{
+                if (j != {filter_size // 2}) {{
+                    sum += static_cast<double>(values[j]);
+                    count++;
+                }}
+            }}
+            y = (count > 0) ? cast<Y>(sum / count) : cast<Y>(center);
+        """
+    elif operation == "pop_mean":
+        # Population mean: mean of |values - pop| in percentile range
+        # where pop is the center pixel value
+        # This is useful for bilateral filtering variations
+        post = f"""
+            sort(values, {filter_size});
+            double sum = 0.0;
+            X center = values[{filter_size // 2}];
+            for (int j = {idx_start}; j < {idx_end}; j++) {{
+                double diff = static_cast<double>(values[j]) - \
+static_cast<double>(center);
+                sum += (diff >= 0) ? diff : -diff;  // abs(diff)
+            }}
+            y = cast<Y>(sum / {n_values});
+        """
+    else:
+        raise ValueError(
+            f"Unsupported operation: {operation}. "
+            "Supported: 'mean', 'sum', 'bilateral_mean', 'pop_mean'"
+        )
+
+    # Sanitize operation name for kernel name (replace special chars)
+    op_name = operation.replace("_", "")
+
+    return _filters_core._generate_nd_kernel(
+        f"percentile_range_{filter_size}_{int(p0)}_{int(p1)}_{op_name}",
+        f"int iv = 0;\nX values[{array_size}];",
+        "values[iv++] = {value};",
         post,
         modes,
         w_shape,
