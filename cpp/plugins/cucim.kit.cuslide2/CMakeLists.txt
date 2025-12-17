@@ -217,7 +217,10 @@ if(WITH_DYNAMIC_NVIMGCODEC)
     set(nvimgcodec_INCLUDE_DIR ${CMAKE_CURRENT_LIST_DIR}/src/nvimgcodec_dynlink)
     # Do NOT use include_directories(): it is directory-scoped and would propagate to all following targets.
     # Instead, attach this include path only to the targets that need it.
-    target_include_directories(cuslide2_core SYSTEM PRIVATE "${nvimgcodec_INCLUDE_DIR}")
+    #
+    # NOTE: cuslide2 public headers (e.g. tiff/ifd.h) include <nvimgcodec.h>, so this must be PUBLIC so
+    # both the plugin entrypoint target and any other consumers can compile.
+    target_include_directories(cuslide2_core SYSTEM PUBLIC "${nvimgcodec_INCLUDE_DIR}")
 
 
     # Use pre-generated stubs (faster builds, no Python clang dependency)
