@@ -39,7 +39,7 @@ target_link_libraries(cuslide2_tests
         PRIVATE
             CUDA::cudart
             cucim::cucim
-            ${CUCIM_PLUGIN_NAME}
+            cuslide2_core
             deps::catch2
             deps::openslide
             deps::cli11
