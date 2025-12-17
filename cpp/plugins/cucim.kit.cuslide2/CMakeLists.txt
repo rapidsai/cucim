@@ -378,4 +378,3 @@ set(CMAKE_EXPORT_PACKAGE_REGISTRY ON)
 export(PACKAGE ${CUCIM_PLUGIN_NAME})
 
 # REMOVED: endif() - no longer needed since we removed the if(TRUE) wrapper
-
