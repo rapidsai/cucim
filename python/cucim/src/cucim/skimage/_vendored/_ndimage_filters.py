@@ -1854,10 +1854,11 @@ def _percentile_range_filter(
     axes : tuple of int or None, optional
         Axes along which to apply the filter. Default is None (all axes).
     mask : cupy.ndarray or None, optional
-        If provided, only pixels where mask is True are included in the
-        neighborhood when computing statistics. This matches scikit-image's
-        filters.rank behavior where the mask filters which pixels in the
-        local neighborhood contribute to the histogram.
+        If provided, only neighbor pixels where mask is True are included
+        when computing statistics. This matches scikit-image's filters.rank
+        behavior where the mask filters which pixels in the local neighborhood
+        contribute to the computation. Output is computed for all pixels, but
+        each uses a different set of neighbors based on the mask.
 
     Returns
     -------
@@ -2156,11 +2157,16 @@ def _get_percentile_range_kernel(
     array_size = filter_size
     sorter = __SHELL_SORT.format(gap=_get_shell_gap(filter_size))
 
-    # Generate the post-processing code based on the operation
-    if operation == "mean":
-        # Standard mean of values in percentile range
-        if has_mask:
-            # Runtime calculation of indices based on actual count
+    if has_mask:
+        # Runtime calculation of indices based on actual count
+        if operation == "percentile" or operation == "threshold":
+            post = """
+                if (iv == 0) {{
+                    y = cast<Y>(x[i]);  // No valid values, keep original
+                    return;
+                }}
+                sort(values, iv);"""
+        else:
             post = f"""
                 if (iv == 0) {{
                     y = cast<Y>(x[i]);  // No valid values, keep original
@@ -2170,7 +2176,17 @@ def _get_percentile_range_kernel(
                 int actual_start = max(0, (int)ceil({p0 / 100.0} * iv) - 1);
                 int actual_end = (int)({p1 / 100.0} * iv);
                 if (actual_end <= actual_start) actual_end = actual_start + 1;
-                if (actual_end > iv) actual_end = iv;
+                if (actual_end > iv) actual_end = iv;"""
+    else:
+        post = f"""
+            sort(values, {filter_size});"""
+
+    # Generate the post-processing code based on the operation
+    if operation == "mean":
+        # Standard mean of values in percentile range
+        if has_mask:
+            # Runtime calculation of indices based on actual count
+            post += """
                 int n_vals = actual_end - actual_start;
                 double sum = 0.0;
                 for (int j = actual_start; j < actual_end; j++) {{
@@ -2179,8 +2195,7 @@ def _get_percentile_range_kernel(
                 y = cast<Y>(sum / n_vals);
             """
         else:
-            post = f"""
-                sort(values, {filter_size});
+            post += f"""
                 double sum = 0.0;
                 for (int j = {idx_start}; j < {idx_end}; j++) {{
                     sum += static_cast<double>(values[j]);
@@ -2190,16 +2205,7 @@ def _get_percentile_range_kernel(
     elif operation == "sum":
         # Sum of values in percentile range
         if has_mask:
-            post = f"""
-                if (iv == 0) {{
-                    y = cast<Y>(x[i]);
-                    return;
-                }}
-                sort(values, iv);
-                int actual_start = max(0, (int)ceil({p0 / 100.0} * iv) - 1);
-                int actual_end = (int)({p1 / 100.0} * iv);
-                if (actual_end <= actual_start) actual_end = actual_start + 1;
-                if (actual_end > iv) actual_end = iv;
+            post += """
                 double sum = 0.0;
                 for (int j = actual_start; j < actual_end; j++) {{
                     sum += static_cast<double>(values[j]);
@@ -2207,8 +2213,7 @@ def _get_percentile_range_kernel(
                 y = cast<Y>(sum);
             """
         else:
-            post = f"""
-                sort(values, {filter_size});
+            post += f"""
                 double sum = 0.0;
                 for (int j = {idx_start}; j < {idx_end}; j++) {{
                     sum += static_cast<double>(values[j]);
@@ -2219,16 +2224,7 @@ def _get_percentile_range_kernel(
         # Mean excluding the center pixel (for bilateral-like filtering)
         # The center pixel is at the middle of the sorted array after sorting
         if has_mask:
-            post = f"""
-                if (iv == 0) {{
-                    y = cast<Y>(x[i]);
-                    return;
-                }}
-                sort(values, iv);
-                int actual_start = max(0, (int)ceil({p0 / 100.0} * iv) - 1);
-                int actual_end = (int)({p1 / 100.0} * iv);
-                if (actual_end <= actual_start) actual_end = actual_start + 1;
-                if (actual_end > iv) actual_end = iv;
+            post += """
                 double sum = 0.0;
                 int count = 0;
                 int mid_idx = iv / 2;
@@ -2242,8 +2238,7 @@ def _get_percentile_range_kernel(
                 y = (count > 0) ? cast<Y>(sum / count) : cast<Y>(center);
             """
         else:
-            post = f"""
-                sort(values, {filter_size});
+            post += f"""
                 double sum = 0.0;
                 int count = 0;
                 X center = values[{filter_size // 2}];
@@ -2260,16 +2255,7 @@ def _get_percentile_range_kernel(
         # where pop is the center pixel value
         # This is useful for bilateral filtering variations
         if has_mask:
-            post = f"""
-                if (iv == 0) {{
-                    y = cast<Y>(x[i]);
-                    return;
-                }}
-                sort(values, iv);
-                int actual_start = max(0, (int)ceil({p0 / 100.0} * iv) - 1);
-                int actual_end = (int)({p1 / 100.0} * iv);
-                if (actual_end <= actual_start) actual_end = actual_start + 1;
-                if (actual_end > iv) actual_end = iv;
+            post += """
                 int n_vals = actual_end - actual_start;
                 double sum = 0.0;
                 X center = values[iv / 2];
@@ -2281,8 +2267,7 @@ static_cast<double>(center);
                 y = cast<Y>(sum / n_vals);
             """
         else:
-            post = f"""
-                sort(values, {filter_size});
+            post += f"""
                 double sum = 0.0;
                 X center = values[{filter_size // 2}];
                 for (int j = {idx_start}; j < {idx_end}; j++) {{
@@ -2295,23 +2280,13 @@ static_cast<double>(center);
     elif operation == "gradient":
         # Gradient: max - min in percentile range
         if has_mask:
-            post = f"""
-                if (iv == 0) {{
-                    y = cast<Y>(0);
-                    return;
-                }}
-                sort(values, iv);
-                int actual_start = max(0, (int)ceil({p0 / 100.0} * iv) - 1);
-                int actual_end = (int)({p1 / 100.0} * iv);
-                if (actual_end <= actual_start) actual_end = actual_start + 1;
-                if (actual_end > iv) actual_end = iv;
+            post += """
                 X min_val = values[actual_start];
                 X max_val = values[actual_end - 1];
                 y = cast<Y>(max_val - min_val);
             """
         else:
-            post = f"""
-                sort(values, {filter_size});
+            post += f"""
                 X min_val = values[{idx_start}];
                 X max_val = values[{idx_end - 1}];
                 y = cast<Y>(max_val - min_val);
@@ -2320,16 +2295,7 @@ static_cast<double>(center);
         # Subtract mean: (g - mean) * 0.5 + mid_bin
         # Note: mid_bin depends on dtype range; for continuous dtypes use 0
         if has_mask:
-            post = f"""
-                if (iv == 0) {{
-                    y = cast<Y>(0);
-                    return;
-                }}
-                sort(values, iv);
-                int actual_start = max(0, (int)ceil({p0 / 100.0} * iv) - 1);
-                int actual_end = (int)({p1 / 100.0} * iv);
-                if (actual_end <= actual_start) actual_end = actual_start + 1;
-                if (actual_end > iv) actual_end = iv;
+            post += """
                 int n_vals = actual_end - actual_start;
                 double sum = 0.0;
                 for (int j = actual_start; j < actual_end; j++) {{
@@ -2340,8 +2306,7 @@ static_cast<double>(center);
                 y = cast<Y>((static_cast<double>(g) - mean) * 0.5);
             """
         else:
-            post = f"""
-                sort(values, {filter_size});
+            post += f"""
                 double sum = 0.0;
                 for (int j = {idx_start}; j < {idx_end}; j++) {{
                     sum += static_cast<double>(values[j]);
@@ -2353,16 +2318,7 @@ static_cast<double>(center);
     elif operation == "enhance_contrast":
         # Enhance contrast: replace with closer extreme (min or max)
         if has_mask:
-            post = f"""
-                if (iv == 0) {{
-                    y = cast<Y>(0);
-                    return;
-                }}
-                sort(values, iv);
-                int actual_start = max(0, (int)ceil({p0 / 100.0} * iv) - 1);
-                int actual_end = (int)({p1 / 100.0} * iv);
-                if (actual_end <= actual_start) actual_end = actual_start + 1;
-                if (actual_end > iv) actual_end = iv;
+            post += """
                 X min_val = values[actual_start];
                 X max_val = values[actual_end - 1];
                 X g = x[i];
@@ -2374,8 +2330,7 @@ static_cast<double>(center);
                 }}
             """
         else:
-            post = f"""
-                sort(values, {filter_size});
+            post += f"""
                 X min_val = values[{idx_start}];
                 X max_val = values[{idx_end - 1}];
                 X g = x[i];
@@ -2389,12 +2344,7 @@ static_cast<double>(center);
         # Single percentile value (p0 determines which percentile)
         # Note: This returns the value AT the p0 percentile
         if has_mask:
-            post = f"""
-                if (iv == 0) {{
-                    y = cast<Y>(0);
-                    return;
-                }}
-                sort(values, iv);
+            post += f"""
                 int percentile_idx;
                 if ({p0 / 100.0} == 1.0) {{
                     // p0 = 100%: return maximum
@@ -2408,8 +2358,7 @@ static_cast<double>(center);
             """
         else:
             # For no mask, we can use precomputed idx_start
-            post = f"""
-                sort(values, {filter_size});
+            post += f"""
                 int percentile_idx;
                 if ({p0 / 100.0} == 1.0) {{
                     percentile_idx = {filter_size - 1};
@@ -2424,32 +2373,18 @@ static_cast<double>(center);
     elif operation == "pop":
         # Population: count of pixels in percentile range
         if has_mask:
-            post = f"""
-                if (iv == 0) {{
-                    y = cast<Y>(0);
-                    return;
-                }}
-                sort(values, iv);
-                int actual_start = max(0, (int)ceil({p0 / 100.0} * iv) - 1);
-                int actual_end = (int)({p1 / 100.0} * iv);
-                if (actual_end <= actual_start) actual_end = actual_start + 1;
-                if (actual_end > iv) actual_end = iv;
+            post += """
                 int n_vals = actual_end - actual_start;
                 y = cast<Y>(n_vals);
             """
         else:
-            post = f"""
+            post += f"""
                 y = cast<Y>({n_values});
             """
     elif operation == "threshold":
         # Threshold: binary comparison of center pixel to p0 percentile
         if has_mask:
-            post = f"""
-                if (iv == 0) {{
-                    y = cast<Y>(0);
-                    return;
-                }}
-                sort(values, iv);
+            post += f"""
                 int threshold_idx = (int)({p0 / 100.0} * iv);
                 if (threshold_idx >= iv) threshold_idx = iv - 1;
                 X threshold_val = values[threshold_idx];
@@ -2459,8 +2394,7 @@ static_cast<double>(center);
                 y = (g >= threshold_val) ? cast<Y>(values[iv - 1]) : cast<Y>(0);
             """
         else:
-            post = f"""
-                sort(values, {filter_size});
+            post += f"""
                 int threshold_idx = (int)({p0 / 100.0} * {filter_size});
                 if (threshold_idx >= {filter_size}) {{
                     threshold_idx = {filter_size - 1};
@@ -2473,16 +2407,7 @@ cast<Y>(values[{filter_size - 1}]) : cast<Y>(0);
     elif operation == "autolevel":
         # Autolevel: stretch values to [0, max] based on percentile range
         if has_mask:
-            post = f"""
-                if (iv == 0) {{
-                    y = cast<Y>(0);
-                    return;
-                }}
-                sort(values, iv);
-                int actual_start = max(0, (int)ceil({p0 / 100.0} * iv) - 1);
-                int actual_end = (int)({p1 / 100.0} * iv);
-                if (actual_end <= actual_start) actual_end = actual_start + 1;
-                if (actual_end > iv) actual_end = iv;
+            post += """
                 X min_val = values[actual_start];
                 X max_val = values[actual_end - 1];
                 X g = x[i];
@@ -2500,8 +2425,7 @@ cast<Y>(values[{filter_size - 1}]) : cast<Y>(0);
                 }}
             """
         else:
-            post = f"""
-                sort(values, {filter_size});
+            post += f"""
                 X min_val = values[{idx_start}];
                 X max_val = values[{idx_end - 1}];
                 X g = x[i];
@@ -2527,23 +2451,29 @@ cast<Y>(values[{filter_size - 1}]) : cast<Y>(0);
     # Sanitize operation name for kernel name (replace special chars)
     op_name = operation.replace("_", "")
 
-    # Build the pre string
-    pre = ""
-    if has_mask:
-        # NOTE: Current implementation checks mask at output pixel level.
-        # To fully match scikit-image's rank filters behavior (filtering
-        # neighborhood pixels by mask), would require framework enhancements
-        # to _generate_nd_kernel to support mask indexing at neighbor locations.
-        pre += """
-            // keep existing value if not within the mask
-            bool mv = (bool)mask[i];
-            if (!mv) {
-                y = cast<Y>(x[i]);
-                return;
-            }\n"""
-    pre += f"int iv = 0;\nX values[{array_size}];"
+    # Build the pre string and found string with neighborhood-level masking
+    pre = f"int iv = 0;\nX values[{array_size}];"
 
-    found = "values[iv++] = {value};"
+    if has_mask:
+        # Neighborhood-level masking: check mask at each neighbor's position
+        # Calculate the neighbor's element index from the byte offset.
+        # Note: ix_{j} are calculated in _generate_nd_kernel (in
+        # _ndimage_filters_core.py) within the neighborhood iteration loops.
+        # Each ix_{j} = coordinate_{j} * xstride_{j}, where xstride_{j} comes
+        # from x.strides()[{j}] (byte stride). The sum (ix_0 + ix_1 + ...)
+        # gives the total byte offset to the neighbor pixel from the start
+        # of the array.
+        ndim = len(w_shape)
+        index_expr = " + ".join([f"ix_{j}" for j in range(ndim)])
+        # Note: double braces for f-string escaping, result still has {value}
+        found = (
+            f"{{ ptrdiff_t _neighbor_idx = ({index_expr}) / sizeof(X); "
+            f"if ((bool)mask[_neighbor_idx]) {{ "
+            f"values[iv++] = {{value}}; "
+            f"}} }}"
+        )
+    else:
+        found = "values[iv++] = {value};"
 
     mask_str = "_masked" if has_mask else ""
     return _filters_core._generate_nd_kernel(
