@@ -32,13 +32,13 @@ from cucim.skimage._vendored._ndimage_filters import _percentile_range_filter
 
 __all__ = [
     "autolevel_percentile",
+    "enhance_contrast_percentile",
     "gradient_percentile",
     "mean_percentile",
-    # "sum_percentile",
-    "subtract_mean_percentile",
-    "enhance_contrast_percentile",
     "percentile",
     "pop_percentile",
+    "subtract_mean_percentile",
+    "sum_percentile",
     "threshold_percentile",
 ]
 
