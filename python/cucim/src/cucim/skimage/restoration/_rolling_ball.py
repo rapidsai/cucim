@@ -518,10 +518,12 @@ def rolling_ball(
         (boolean array that is True where the kernel is valid and False
         elsewhere). Only used when ``algorithm="exact"``.
     nansafe : bool, optional
-        If True, NaN values in the image are handled safely. NaN pixels
-        will retain their NaN value in the output, and neighbors of NaN
-        pixels will only use valid (non-NaN) values for their computation.
-        Currently only supported for ``algorithm="exact"``. Default is False.
+        If True, NaN values in the image are handled safely.
+        **Note**: The behavior of this mode is improved over the implementation
+        in scikit-image. For example, in scikit-image, any NaN pixels
+        contaminate a radius around them. In cuCIM, NaN pixels will retain
+        their NaN value in the output, and neighbors of NaN pixels will only
+        use valid (non-NaN) values for their computation.
 
     Other Parameters
     ----------------

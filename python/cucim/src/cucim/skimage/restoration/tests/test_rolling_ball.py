@@ -45,21 +45,26 @@ def test_ellipsoid_const(dtype, structure_and_footprint):
 
 
 def test_nan_const():
-    img = np.full((100, 100), 123, dtype=float)
-    img[20, 20] = np.nan
-    img[50, 53] = np.nan
-    img = cp.asarray(img)
+    img_cpu = np.full((100, 100), 123, dtype=float)
+    img_cpu[20, 20] = np.nan
+    img_cpu[50, 53] = np.nan
+    img = cp.asarray(img_cpu)
 
     kernel_shape = (10, 10)
-    x = np.arange(-kernel_shape[1] // 2, kernel_shape[1] // 2 + 1)[
-        np.newaxis, :
-    ]
-    y = np.arange(-kernel_shape[0] // 2, kernel_shape[0] // 2 + 1)[
-        :, np.newaxis
-    ]
-    expected_img = np.zeros_like(img)
-    expected_img[y + 20, x + 20] = np.nan
-    expected_img[y + 50, x + 53] = np.nan
+    nan_spread_like_in_skimage = False
+    if nan_spread_like_in_skimage:
+        # For scikit-image, any NaN pixels contaminate a radius around them.
+        x = np.arange(-kernel_shape[1] // 2, kernel_shape[1] // 2 + 1)
+        x = x[np.newaxis, :]
+        y = np.arange(-kernel_shape[0] // 2, kernel_shape[0] // 2 + 1)
+        y = y[:, np.newaxis]
+        expected_img = np.zeros_like(img_cpu)
+        expected_img[y + 20, x + 20] = np.nan
+        expected_img[y + 50, x + 53] = np.nan
+    else:
+        # No spreading of NaN values.
+        expected_img = np.zeros_like(img)
+        expected_img[np.isnan(img_cpu)] = np.nan
     expected_img = cp.asarray(expected_img)
 
     kernel = ellipsoid_kernel(kernel_shape, 100)
