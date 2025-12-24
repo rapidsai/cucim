@@ -7,14 +7,18 @@
 # https://peps.python.org/pep-0484/#stub-files
 
 __all__ = [
-    "wiener",
-    "unsupervised_wiener",
-    "richardson_lucy",
-    "denoise_tv_chambolle",
-    "denoise_invariant",
+    "ball_kernel",
     "calibrate_denoiser",
+    "denoise_invariant",
+    "denoise_tv_chambolle",
+    "ellipsoid_kernel",
+    "richardson_lucy",
+    "rolling_ball",
+    "unsupervised_wiener",
+    "wiener",
 ]
 
 from ._denoise import denoise_tv_chambolle
+from ._rolling_ball import ball_kernel, ellipsoid_kernel, rolling_ball
 from .deconvolution import richardson_lucy, unsupervised_wiener, wiener
 from .j_invariant import calibrate_denoiser, denoise_invariant
