@@ -171,6 +171,8 @@ def _call_kernel(
     structure=None,
     weights_dtype=numpy.float64,
     structure_dtype=numpy.float64,
+    *,
+    mask=None,
 ):
     """
     Calls a constructed ElementwiseKernel. The kernel must take an input image,
@@ -200,6 +202,9 @@ def _call_kernel(
     if structure is not None:
         structure = cupy.ascontiguousarray(structure, structure_dtype)
         args.append(structure)
+    if mask is not None:
+        mask = cupy.ascontiguousarray(mask, bool)
+        args.append(mask)
     output = _util._get_output(output, input, None, complex_output)  # noqa
     needs_temp = cupy.shares_memory(output, input, "MAY_SHARE_BOUNDS")
     if needs_temp:
