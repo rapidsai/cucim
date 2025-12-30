@@ -1185,6 +1185,8 @@ def minimum_filter(
     cval=0.0,
     origin=0,
     axes=None,
+    *,
+    mask=None,
 ):
     """Multi-dimensional minimum filter.
 
@@ -1234,6 +1236,7 @@ def minimum_filter(
         origin,
         "min",
         axes,
+        mask=mask,
     )
 
 
@@ -1246,6 +1249,8 @@ def maximum_filter(
     cval=0.0,
     origin=0,
     axes=None,
+    *,
+    mask=None,
 ):
     """Multi-dimensional maximum filter.
 
@@ -1278,6 +1283,10 @@ def maximum_filter(
             ``mode`` and/or ``origin`` must match the length of ``axes``. The
             ith entry in any of these tuples corresponds to the ith entry in
             ``axes``. Default is ``None``.
+        mask (cupy.ndarray or None, optional): If provided, only pixels where
+            mask is True will be filtered. Pixels where mask is False will
+            retain their original values. This is useful for NaN-safe
+            filtering where mask can be set to ``~cupy.isnan(input)``.
 
     Returns:
         cupy.ndarray: The result of the filtering.
@@ -1295,6 +1304,7 @@ def maximum_filter(
         origin,
         "max",
         axes,
+        mask=mask,
     )
 
 
@@ -1412,7 +1422,15 @@ def _min_or_max_filter(
 
 
 def minimum_filter1d(
-    input, size, axis=-1, output=None, mode="reflect", cval=0.0, origin=0
+    input,
+    size,
+    axis=-1,
+    output=None,
+    mode="reflect",
+    cval=0.0,
+    origin=0,
+    *,
+    mask=None,
 ):
     """Compute the minimum filter along a single axis.
 
@@ -1430,17 +1448,31 @@ def minimum_filter1d(
         origin (int): The origin parameter controls the placement of the
             filter, relative to the center of the current element of the
             input. Default is ``0``.
+        mask (cupy.ndarray or None, optional): If provided, only pixels where
+            mask is True will be filtered. Pixels where mask is False will
+            retain their original values. This is useful for NaN-safe
+            filtering where mask can be set to ``~cupy.isnan(input)``.
 
     Returns:
         cupy.ndarray: The result of the filtering.
 
     .. seealso:: :func:`scipy.ndimage.minimum_filter1d`
     """
-    return _min_or_max_1d(input, size, axis, output, mode, cval, origin, "min")
+    return _min_or_max_1d(
+        input, size, axis, output, mode, cval, origin, "min", mask=mask
+    )
 
 
 def maximum_filter1d(
-    input, size, axis=-1, output=None, mode="reflect", cval=0.0, origin=0
+    input,
+    size,
+    axis=-1,
+    output=None,
+    mode="reflect",
+    cval=0.0,
+    origin=0,
+    *,
+    mask=None,
 ):
     """Compute the maximum filter along a single axis.
 
@@ -1458,13 +1490,19 @@ def maximum_filter1d(
         origin (int): The origin parameter controls the placement of the
             filter, relative to the center of the current element of the
             input. Default is ``0``.
+        mask (cupy.ndarray or None, optional): If provided, only pixels where
+            mask is True will be filtered. Pixels where mask is False will
+            retain their original values. This is useful for NaN-safe
+            filtering where mask can be set to ``~cupy.isnan(input)``.
 
     Returns:
         cupy.ndarray: The result of the filtering.
 
     .. seealso:: :func:`scipy.ndimage.maximum_filter1d`
     """
-    return _min_or_max_1d(input, size, axis, output, mode, cval, origin, "max")
+    return _min_or_max_1d(
+        input, size, axis, output, mode, cval, origin, "max", mask=mask
+    )
 
 
 def _min_or_max_1d(
