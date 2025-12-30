@@ -9,12 +9,14 @@ This module provides GPU-accelerated implementations of the rolling ball
 algorithm for background estimation and subtraction.
 """
 
+import warnings
+
 import cupy as cp
 import numpy as np
 
 from cucim.skimage._shared.utils import DEPRECATED, deprecate_parameter
 from cucim.skimage._vendored import ndimage as ndi
-from cucim.skimage.morphology import disk, erosion, opening
+from cucim.skimage.morphology import ball, disk, erosion, opening
 
 __all__ = ["rolling_ball", "ball_kernel", "ellipsoid_kernel"]
 
@@ -408,14 +410,92 @@ def _rolling_ball_exact(image, radius, kernel, mode="constant", nansafe=False):
     return background.astype(image.dtype, copy=False)
 
 
+# Maximum radii that support sequence decomposition
+_MAX_DISK_DECOMPOSITION_RADIUS = 251
+_MAX_BALL_DECOMPOSITION_RADIUS = 101
+
+
+def _get_flat_footprint(radius, ndim, warn=True, stacklevel=4):
+    """Get a flat disk (2D) or ball (3D) footprint with sequence decomposition.
+
+    Uses sequence decomposition for efficiency when available. Falls back to
+    non-decomposed footprints for large radii and optionally emits a warning.
+
+    Parameters
+    ----------
+    radius : int
+        Radius of the footprint.
+    ndim : int
+        Number of dimensions (2 or 3).
+    warn : bool, optional
+        Whether to emit a warning if decomposition is not available.
+        Default is True.
+    stacklevel : int, optional
+        Stack level for warnings. Default is 4, which points to the caller
+        of the function that called _get_flat_footprint (typically the public
+        API function like rolling_ball).
+
+    Returns
+    -------
+    footprint : cupy.ndarray
+        The flat structuring element.
+
+    Raises
+    ------
+    ValueError
+        If ndim is not 2 or 3.
+    """
+    if ndim == 2:
+        if radius > _MAX_DISK_DECOMPOSITION_RADIUS:
+            if warn:
+                warnings.warn(
+                    f"Sequence decomposition for 2D disk with radius > "
+                    f"{_MAX_DISK_DECOMPOSITION_RADIUS} is not supported. "
+                    "Performance may be slower than expected.",
+                    stacklevel=stacklevel,
+                )
+            return disk(radius, decomposition=None)
+        else:
+            return disk(radius, decomposition="sequence")
+    elif ndim == 3:
+        if radius > _MAX_BALL_DECOMPOSITION_RADIUS:
+            if warn:
+                warnings.warn(
+                    f"Sequence decomposition for 3D ball with radius > "
+                    f"{_MAX_BALL_DECOMPOSITION_RADIUS} is not supported. "
+                    "Performance may be slower than expected.",
+                    stacklevel=stacklevel,
+                )
+            return ball(radius, decomposition=None)
+        else:
+            return ball(radius, decomposition="sequence")
+    else:
+        raise ValueError(f"Flat footprint only supports 2D and 3D, got {ndim}D")
+
+
+def _rolling_ball_tophat(image, radius):
+    """Fast approximation using morphological opening with a flat disk/ball.
+
+    This is the fastest but least accurate method. It uses a flat disk (2D)
+    or ball (3D) structuring element instead of a spherical ball kernel.
+    """
+    image = cp.asarray(image)
+    fp = _get_flat_footprint(radius, image.ndim, stacklevel=4)
+
+    # Opening approximates the background
+    background = opening(image, footprint=fp)
+
+    return background
+
+
 def _rolling_ball_layered(image, radius, num_layers):
     """Approximate rolling ball using layered flat disks.
 
     A sphere is approximated by stacking flat disks at different heights.
     At distance h from apex: disk radius r = sqrt(h * (2R - h)), offset = h.
     """
-
     image = cp.asarray(image)
+    ndim = image.ndim
     float_type = np.float32 if image.dtype.itemsize <= 4 else np.float64
     img = image.astype(float_type, copy=False)
 
@@ -426,6 +506,15 @@ def _rolling_ball_layered(image, radius, num_layers):
 
     # Sample distances from apex (h=0) to equator (h=R)
     heights = np.linspace(0, radius, num_layers + 1)[1:]
+
+    # Check upfront if any disk radius will exceed decomposition limits
+    # Max disk radius occurs at h=radius (the equator), where disk_radius = radius
+    max_decomp_radius = (
+        _MAX_DISK_DECOMPOSITION_RADIUS
+        if ndim == 2
+        else _MAX_BALL_DECOMPOSITION_RADIUS
+    )
+    warn_once = radius > max_decomp_radius
 
     background = cp.full_like(img, cp.inf)
 
@@ -446,12 +535,12 @@ def _rolling_ball_layered(image, radius, num_layers):
         # Intensity offset = distance from apex
         offset = float(h)
 
-        # Flat erosion with disk footprint
-        # Use decomposition for efficiency with larger disks
-        if disk_radius <= 2:
-            fp = disk(disk_radius, decomposition=None)
-        else:
-            fp = disk(disk_radius, decomposition="sequence")
+        # Flat erosion with disk/ball footprint
+        # Only warn on first call that exceeds limit (stacklevel=4 -> rolling_ball caller)
+        fp = _get_flat_footprint(
+            disk_radius, ndim, warn=warn_once, stacklevel=4
+        )
+        warn_once = False  # Only warn once per function call
 
         eroded = erosion(img, footprint=fp, mode="constant", cval=float(cp.inf))
 
@@ -459,24 +548,6 @@ def _rolling_ball_layered(image, radius, num_layers):
         background = cp.minimum(background, eroded + offset)
 
     return background.astype(image.dtype, copy=False)
-
-
-def _rolling_ball_tophat(image, radius):
-    """Fast approximation using morphological opening with a flat disk.
-
-    This is the fastest but least accurate method. It uses a flat disk
-    structuring element instead of a spherical ball.
-    """
-
-    image = cp.asarray(image)
-
-    # Use disk with decomposition for efficiency
-    fp = disk(radius, decomposition="sequence")
-
-    # Opening approximates the background
-    background = opening(image, footprint=fp)
-
-    return background
 
 
 @deprecate_parameter(
@@ -535,7 +606,6 @@ def rolling_ball(
         The algorithm to use for background estimation. Only used when
         ``kernel=None``; if a kernel is provided, the "exact" algorithm
         is always used.
-
         - ``"exact"``: Uses grey_erosion with a non-flat (spherical)
           structuring element. This matches scikit-image's implementation
           exactly but may be slow for large radii.
@@ -597,7 +667,7 @@ def rolling_ball(
     >>> background = rolling_ball(image, radius=100)
     >>> filtered_image = image - background
 
-    Use the layered approximation for faster processing:
+    Use the layered approximation for faster (but less accurate) processing:
 
     >>> background = rolling_ball(image, radius=100, algorithm="layered")
 
