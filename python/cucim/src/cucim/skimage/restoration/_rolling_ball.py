@@ -17,6 +17,7 @@ import numpy as np
 from cucim.skimage._shared.utils import DEPRECATED, deprecate_parameter
 from cucim.skimage._vendored import ndimage as ndi
 from cucim.skimage.morphology import ball, disk, erosion, opening
+from cucim.skimage.transform import resize
 
 __all__ = ["rolling_ball", "ball_kernel", "ellipsoid_kernel"]
 
@@ -566,6 +567,7 @@ def rolling_ball(
     workers=None,
     algorithm="exact",
     num_layers=None,
+    downscale=None,
 ):
     """Estimate background intensity using the rolling ball algorithm.
 
@@ -622,6 +624,15 @@ def rolling_ball(
         Number of layers for the ``"layered"`` algorithm. More layers
         give better accuracy but slower computation. If None, uses
         ``max(5, min(radius // 4, 32))``. Ignored for other algorithms.
+    downscale : float, optional
+        **cuCIM-specific parameter (not available in scikit-image).**
+        If provided and greater than 1, the image is downscaled by this
+        factor before processing, then the result is upscaled back to the
+        original size. This can significantly speed up processing for large
+        images, especially with large radii. The radius is automatically
+        scaled proportionally. For example, ``downscale=2`` will halve the
+        image dimensions and the radius before processing. Default is None
+        (no downscaling).
 
     Returns
     -------
@@ -675,6 +686,10 @@ def rolling_ball(
 
     >>> background = rolling_ball(image, radius=100, algorithm="tophat")
 
+    Speed up processing by downscaling the image first:
+
+    >>> background = rolling_ball(image, radius=100, downscale=2)
+
     See Also
     --------
     ball_kernel : Create a spherical kernel
@@ -686,8 +701,39 @@ def rolling_ball(
             f"algorithm must be one of {valid_algorithms}, got {algorithm!r}"
         )
 
+    image = cp.asarray(image)
+    original_shape = image.shape
+    original_dtype = image.dtype
+
+    # Handle downscaling
+    if downscale is None:
+        downscale = 1
+    if downscale < 1:
+        raise ValueError(f"downscale must be >= 1, got {downscale}")
+    elif downscale > 1:
+        if kernel is not None:
+            raise ValueError(
+                "downscale parameter cannot be used with a custom kernel. "
+                "Use radius parameter instead."
+            )
+        # Compute downscaled shape
+        downscaled_shape = tuple(
+            max(1, int(round(s / downscale))) for s in original_shape
+        )
+        # Downscale the image (anti_aliasing smooths before downsampling)
+        image = resize(
+            image,
+            downscaled_shape,
+            order=1,
+            mode="reflect",
+            anti_aliasing=True,
+            preserve_range=True,
+        )
+        # Scale the radius proportionally (minimum 1)
+        radius = max(1, int(round(radius / downscale)))
+
     if algorithm == "exact":
-        return _rolling_ball_exact(image, radius, kernel, nansafe=nansafe)
+        background = _rolling_ball_exact(image, radius, kernel, nansafe=nansafe)
     elif algorithm == "layered":
         if kernel is not None:
             raise ValueError(
@@ -698,7 +744,7 @@ def rolling_ball(
                 "nansafe=True is not yet implemented for algorithm='layered'. "
                 "Use algorithm='exact' for NaN-safe filtering."
             )
-        return _rolling_ball_layered(image, radius, num_layers)
+        background = _rolling_ball_layered(image, radius, num_layers)
     else:  # algorithm == "tophat"
         if kernel is not None:
             raise ValueError(
@@ -709,4 +755,18 @@ def rolling_ball(
                 "nansafe=True is not yet implemented for algorithm='tophat'. "
                 "Use algorithm='exact' for NaN-safe filtering."
             )
-        return _rolling_ball_tophat(image, radius)
+        background = _rolling_ball_tophat(image, radius)
+
+    # Handle upscaling back to original size
+    if downscale > 1:
+        background = resize(
+            background,
+            original_shape,
+            order=1,
+            mode="reflect",
+            anti_aliasing=False,
+            preserve_range=True,
+        )
+        background = background.astype(original_dtype, copy=False)
+
+    return background
