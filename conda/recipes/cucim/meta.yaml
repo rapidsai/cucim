@@ -20,7 +20,6 @@ build:
   string: cuda{{ cuda_major }}_py{{ py_version }}_{{ date_string }}_gh{{ GIT_DESCRIBE_HASH }}_gn{{ GIT_DESCRIBE_NUMBER }}_ph{{ PKG_HASH }}
   ignore_run_exports_from:
     - {{ compiler('cuda') }}
-    - cuda-cudart-dev
   script_env:
     - AWS_ACCESS_KEY_ID
     - AWS_SECRET_ACCESS_KEY
@@ -51,7 +50,6 @@ requirements:
   host:
     - click
     - cuda-version ={{ cuda_version }}
-    - cuda-cudart-dev
     - cupy >=13.6.0
     - libcucim ={{ version }}
     - python
@@ -62,7 +60,6 @@ requirements:
     - setuptools >=80.9.0
   run:
     - {{ pin_compatible('cuda-version', max_pin='x', min_pin='x') }}
-    - cuda-cudart
     - numpy >=1.23,<3.0
     - click
     - cupy >=13.6.0

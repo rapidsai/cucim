@@ -21,7 +21,6 @@ build:
     - openslide
   ignore_run_exports_from:
     - {{ compiler('cuda') }}
-    - cuda-cudart-dev
     - libcufile-dev
     - libnvjpeg-dev
     - libnvimgcodec-dev
@@ -56,7 +55,6 @@ requirements:
     - yasm # [x86_64]
   host:
     - cuda-version ={{ cuda_version }}
-    - cuda-cudart-dev
     - libcufile-dev
     - libnvjpeg-dev
     - libnvimgcodec-dev {{ nvimgcodec_version }}  # nvImageCodec development headers and libraries
@@ -69,7 +67,6 @@ requirements:
     - {{ pin_compatible('cuda-version', max_pin='x', min_pin='x') }}
     {% endif %}
     - libcufile
-    - cuda-cudart
     - libnvjpeg
     - libnvimgcodec {{ nvimgcodec_version }}   # nvImageCodec metapackage (includes libnvimgcodec0 + run_exports)
   run_constrained:
