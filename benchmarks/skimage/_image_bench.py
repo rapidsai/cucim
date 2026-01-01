@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 import itertools
@@ -165,15 +165,17 @@ class ImageBench:
                 if "brute_force" in var_kwargs_gpu:
                     var_kwargs_gpu["brute_force"] = True
 
-                kw_cpu = {**self.fixed_kwargs_cpu, **var_kwargs_cpu}
                 kw_gpu = {**self.fixed_kwargs_gpu, **var_kwargs_gpu}
-                rep_kwargs_cpu = self.get_reps(
-                    self.func_cpu, self.args_cpu, kw_cpu, duration, cpu=True
-                )
                 rep_kwargs_gpu = self.get_reps(
                     self.func_gpu, self.args_gpu, kw_gpu, duration, cpu=False
                 )
-                print("Number of Repetitions : ", rep_kwargs_gpu)
+                print("Number of Repetitions (GPU): ", rep_kwargs_gpu)
+
+                if self.run_cpu is True:
+                    kw_cpu = {**self.fixed_kwargs_cpu, **var_kwargs_cpu}
+                    rep_kwargs_cpu = self.get_reps(
+                        self.func_cpu, self.args_cpu, kw_cpu, duration, cpu=True
+                    )
                 perf_gpu = repeat(
                     self.func_gpu, self.args_gpu, kw_gpu, **rep_kwargs_gpu
                 )
