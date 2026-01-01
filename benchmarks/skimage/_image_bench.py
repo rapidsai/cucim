@@ -127,6 +127,17 @@ class ImageBench:
             index += ", " + self.index_str
         return index
 
+    def _prep_kwargs_string(self, kwargs):
+        params = []
+        for k, v in kwargs.items():
+            if isinstance(v, types.FunctionType):
+                params.append(f"{k}={v.__name__}")
+            elif isinstance(v, (np.ndarray, cp.ndarray)):
+                params.append(f"{k}=array,shape={v.shape},dtype={v.dtype.name}")
+            else:
+                params.append(f"{k}={v}")
+        return ", ".join(params)
+
     def get_reps(self, func, args, kwargs, target_duration=5, cpu=True):
         if not cpu:
             # dry run
@@ -180,6 +191,7 @@ class ImageBench:
                     self.func_gpu, self.args_gpu, kw_gpu, **rep_kwargs_gpu
                 )
 
+                df.at[index, "GPU: kwargs"] = self._prep_kwargs_string(kw_gpu)
                 df.at[index, "shape"] = f"{self.shape}"
                 # df.at[index,  "description"] = index
                 df.at[index, "function_name"] = self.function_name
@@ -196,6 +208,7 @@ class ImageBench:
                     df.at[index, "CPU: host (mean)"] = perf.cpu_times.mean()
                     df.at[index, "CPU: host (std)"] = perf.cpu_times.std()
 
+                    df.at[index, "CPU: kwargs"] = self._prep_kwargs_string(kw_cpu)
                 df.at[index, "GPU: host (mean)"] = perf_gpu.cpu_times.mean()
                 df.at[index, "GPU: host (std)"] = perf_gpu.cpu_times.std()
                 df.at[index, "GPU: device (mean)"] = perf_gpu.gpu_times.mean()
