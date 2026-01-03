@@ -379,7 +379,7 @@ def map_coordinates(
     float_dtype = cupy.promote_types(input.real.dtype, cupy.float32)
     large_int = max(math.prod(input.shape), coordinates.shape[0]) > 1 << 31
 
-    kern = _interp_kernels._get_map_kernel(
+    kern_info = _interp_kernels._get_map_kernel(
         input.ndim,
         large_int,
         yshape=coordinates.shape[1:],
@@ -391,7 +391,10 @@ def map_coordinates(
         float_dtype=float_dtype,
         batch_axes=batch_axes,
     )
-    kern(filtered, coordinates, ret)
+    if kern_info.size is not None:
+        kern_info.kernel(filtered, coordinates, ret, size=kern_info.size)
+    else:
+        kern_info.kernel(filtered, coordinates, ret)
     return ret
 
 
@@ -465,8 +468,9 @@ def affine_transform(
             - ``order=0`` (nearest neighbor) and ``order=1`` (linear
                 interpolation)
             - NVIDIA CUDA GPUs
-        float64_coords (bool): Force use of double-precision computations
-            regardless of input dtype.
+        float64_coords (bool): If True, always use double precision
+            internally like SciPy. When false, single precision floats and
+            8 or 16-bit integer types will use single precision internally.
 
     Returns:
         cupy.ndarray or None:
@@ -564,7 +568,7 @@ def affine_transform(
 
         offset = cupy.asarray(offset, dtype=float_dtype)
         offset = -offset / matrix
-        kern = _interp_kernels._get_zoom_shift_kernel(
+        kern_info = _interp_kernels._get_zoom_shift_kernel(
             ndim,
             large_int,
             output_shape,
@@ -576,7 +580,12 @@ def affine_transform(
             float_dtype=float_dtype,
             batch_axes=batch_axes,
         )
-        kern(filtered, offset, matrix, output)
+        if kern_info.size is not None:
+            kern_info.kernel(
+                filtered, offset, matrix, output, size=kern_info.size
+            )
+        else:
+            kern_info.kernel(filtered, offset, matrix, output)
     else:
         # identify batch axes where the row is an identity row with zero offset
         # i.e., matrix[j, j] == 1, matrix[j, k] == 0 for k != j, and offset[j] == 0
@@ -595,7 +604,7 @@ def affine_transform(
             input, prefilter, mode, cval, order, batch_axes=batch_axes
         )
 
-        kern = _interp_kernels._get_affine_kernel(
+        kern_info = _interp_kernels._get_affine_kernel(
             ndim,
             large_int,
             output_shape,
@@ -610,7 +619,10 @@ def affine_transform(
         m = cupy.zeros((ndim, ndim + 1), dtype=float_dtype)
         m[:, :-1] = matrix
         m[:, -1] = cupy.asarray(offset, dtype=float_dtype)
-        kern(filtered, m, output)
+        if kern_info.size is not None:
+            kern_info.kernel(filtered, m, output, size=kern_info.size)
+        else:
+            kern_info.kernel(filtered, m, output)
     return output
 
 
@@ -636,6 +648,7 @@ def rotate(
     mode="constant",
     cval=0.0,
     prefilter=True,
+    float64_coords=False,
 ):
     """Rotate an array.
 
@@ -668,6 +681,9 @@ def rotate(
             slightly blurred if ``order > 1``, unless the input is prefiltered,
             i.e. it is the result of calling ``spline_filter`` on the original
             input.
+        float64_coords (bool): If True, always use double precision
+            internally like SciPy. When false, single precision floats and
+            8 or 16-bit integer types will use single precision internally.
 
     Returns:
         cupy.ndarray or None:
@@ -699,7 +715,7 @@ def rotate(
     float_dtype = cupy.promote_types(input_arr.real.dtype, cupy.float32)
 
     # determine offsets and output shape as in scipy.ndimage.rotate
-    rot_matrix = numpy.array([[cos, sin], [-sin, cos]])
+    rot_matrix = numpy.array([[cos, sin], [-sin, cos]], dtype=float_dtype)
 
     img_shape = numpy.asarray(input_arr.shape)
     in_plane_shape = img_shape[axes]
@@ -721,7 +737,7 @@ def rotate(
     output_shape[axes] = out_plane_shape
     output_shape = tuple(output_shape)
 
-    matrix = numpy.identity(ndim)
+    matrix = numpy.identity(ndim, dtype=float_dtype)
     matrix[axes[0], axes[0]] = cos
     matrix[axes[0], axes[1]] = sin
     matrix[axes[1], axes[0]] = -sin
@@ -743,7 +759,7 @@ def rotate(
         mode,
         cval,
         prefilter,
-        float64_coords=False,
+        float64_coords=float64_coords,
     )
 
 
@@ -827,7 +843,7 @@ def shift(
             input, prefilter, mode, cval, order, batch_axes=batch_axes
         )
 
-        kern = _interp_kernels._get_shift_kernel(
+        kern_info = _interp_kernels._get_shift_kernel(
             input.ndim,
             large_int,
             input.shape,
@@ -844,7 +860,10 @@ def shift(
             raise ValueError("shift must be 1d")
         if shift.size != filtered.ndim:
             raise ValueError("len(shift) must equal input.ndim")
-        kern(filtered, shift, output)
+        if kern_info.size is not None:
+            kern_info.kernel(filtered, shift, output, size=kern_info.size)
+        else:
+            kern_info.kernel(filtered, shift, output)
     return output
 
 
@@ -986,7 +1005,7 @@ def zoom(
             input, prefilter, mode, cval, order, batch_axes=batch_axes
         )
 
-        kern = _interp_kernels._get_zoom_kernel(
+        kern_info = _interp_kernels._get_zoom_kernel(
             input.ndim,
             large_int,
             output_shape,
@@ -999,5 +1018,8 @@ def zoom(
             batch_axes=batch_axes,
         )
         zoom = cupy.asarray(zoom, dtype=cupy.float64)
-        kern(filtered, zoom, output)
+        if kern_info.size is not None:
+            kern_info.kernel(filtered, zoom, output, size=kern_info.size)
+        else:
+            kern_info.kernel(filtered, zoom, output)
     return output
