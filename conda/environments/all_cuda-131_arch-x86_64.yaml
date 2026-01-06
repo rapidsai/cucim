@@ -10,7 +10,7 @@ dependencies:
 - cmake>=3.30.4
 - cuda-cudart-dev
 - cuda-nvcc
-- cuda-version=13.0
+- cuda-version=13.1
 - cupy>=13.6.0
 - cxx-compiler
 - gcc_linux-64=14.*
@@ -48,4 +48,4 @@ dependencies:
 - yasm
 - pip:
   - opencv-python-headless>=4.6
-name: all_cuda-130_arch-x86_64
+name: all_cuda-131_arch-x86_64
