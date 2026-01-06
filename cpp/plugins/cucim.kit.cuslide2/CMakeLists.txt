@@ -288,7 +288,6 @@ target_include_directories(cuslide2_core
         PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/../cucim.kit.cuslide/src
             ${CMAKE_CURRENT_SOURCE_DIR}/src  # Include cuslide2 src for nvimgcodec headers
-            ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
 target_include_directories(${CUCIM_PLUGIN_NAME}
@@ -298,7 +297,6 @@ target_include_directories(${CUCIM_PLUGIN_NAME}
         PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/../cucim.kit.cuslide/src
             ${CMAKE_CURRENT_SOURCE_DIR}/src  # Include cuslide2 src for nvimgcodec headers
-            ${CMAKE_CURRENT_SOURCE_DIR}/src
         )
 
 # Do not generate SONAME as this would be used as plugin
