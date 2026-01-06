@@ -17,4 +17,4 @@ cmake_version:
   - ">=3.30.4"
 
 nvimgcodec_version:
-  - "0.6.0"
+  - "0.7.0"
