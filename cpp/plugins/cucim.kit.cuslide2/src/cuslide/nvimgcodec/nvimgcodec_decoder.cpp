@@ -10,13 +10,12 @@
 #include <nvimgcodec.h>
 #endif
 
-#include <cucim/memory/memory_manager.h>
 #include <memory>
 #include <vector>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 #include <stdexcept>
-#include <vector>
 #include <unistd.h>
 #include <mutex>
 #include <fmt/format.h>
@@ -34,12 +33,18 @@ namespace cuslide2::nvimgcodec
 // RAII Helpers for nvImageCodec Resources
 // ============================================================================
 
-// RAII wrapper for nvimgcodecCodeStream_t
+// RAII wrapper for nvimgcodecCodeStream_t (including sub-code streams)
+// Per nvImageCodec team: each code stream (parent or sub) has its own state
+// and MUST be explicitly destroyed. Sub-streams are NOT automatically cleaned
+// up when the parent is destroyed.
 struct CodeStreamDeleter
 {
     void operator()(nvimgcodecCodeStream_t stream) const
     {
-        if (stream) { nvimgcodecCodeStreamDestroy(stream); }
+        if (stream)
+        {
+            nvimgcodecCodeStreamDestroy(stream);
+        }
     }
 };
 using UniqueCodeStream = std::unique_ptr<std::remove_pointer_t<nvimgcodecCodeStream_t>, CodeStreamDeleter>;
@@ -105,9 +110,12 @@ public:
         }
         else
         {
-            // Use pinned memory for faster GPU-to-host transfers when GPU backend is used
-            cudaError_t status = cudaMallocHost(&buffer_, size);
-            return status == cudaSuccess;
+            // Use standard malloc for CPU memory
+            // NOTE: Must use malloc() (not cudaMallocHost()) because cuCIM's cleanup
+            // code uses free(). Using cudaMallocHost() would require cudaFreeHost(),
+            // causing "free(): invalid pointer" crash when cuCIM calls free().
+            buffer_ = malloc(size);
+            return buffer_ != nullptr;
         }
     }
 
@@ -118,7 +126,7 @@ public:
             if (is_device_)
                 cudaFree(buffer_);
             else
-                cudaFreeHost(buffer_);  // Pinned memory must use cudaFreeHost
+                free(buffer_);  // Standard free (matches malloc)
             buffer_ = nullptr;
         }
     }
@@ -147,9 +155,14 @@ bool decode_ifd_region_nvimgcodec(const IfdInfo& ifd_info,
                                   nvimgcodecCodeStream_t main_code_stream,
                                   uint32_t x, uint32_t y,
                                   uint32_t width, uint32_t height,
-                                  uint8_t*& output_buffer,
+                                  uint8_t** output_buffer,
                                   const cucim::io::Device& out_device)
 {
+    if (!output_buffer)
+    {
+        return false;
+    }
+
     if (!main_code_stream)
     {
         #ifdef DEBUG
@@ -176,24 +189,40 @@ bool decode_ifd_region_nvimgcodec(const IfdInfo& ifd_info,
             return false;
         }
 
-        // Select decoder based on target device
+        // Caller-provided output buffer (optional). If non-null, we decode into it.
+        const bool caller_provided_buffer = (*output_buffer != nullptr);
+
+        // Select decoder based on target device.
+        // CPU-only backend can handle in-bounds ROI decoding for TIFF files.
         std::string device_str = std::string(out_device);
         bool target_is_cpu = (device_str.find("cpu") != std::string::npos);
 
-        // Always use hybrid decoder - it supports more codecs and can output to both CPU/GPU
-        // The CPU-only decoder has limited codec support (e.g., no JPEG in some builds)
-        nvimgcodecDecoder_t decoder = manager.get_decoder();
-
-        #ifdef DEBUG
-        if (target_is_cpu)
+        // CPU decoder doesn't support out-of-bounds ROI decoding, must use hybrid decoder.
+        bool roi_out_of_bounds = (x + width > ifd_info.width) || (y + height > ifd_info.height);
+        if (target_is_cpu && roi_out_of_bounds)
         {
-            fmt::print("  💡 Using hybrid decoder for CPU output (better codec support)\n");
+            target_is_cpu = false;
+            #ifdef DEBUG
+            fmt::print("  ⚠️  ROI out of bounds (region ends at [{},{}] but image is {}x{}), using hybrid decoder\n",
+                      x + width, y + height, ifd_info.width, ifd_info.height);
+            #endif
+        }
+
+        nvimgcodecDecoder_t decoder;
+        if (target_is_cpu && manager.has_cpu_decoder())
+        {
+            decoder = manager.get_cpu_decoder();
+            #ifdef DEBUG
+            fmt::print("  💡 Using CPU-only decoder for ROI\n");
+            #endif
         }
         else
         {
-            fmt::print("  💡 Using hybrid decoder for GPU output\n");
+            decoder = manager.get_decoder();
+            #ifdef DEBUG
+            fmt::print("  💡 Using hybrid decoder for ROI\n");
+            #endif
         }
-        #endif
 
         // Step 1: Create view with ROI for this IFD
         nvimgcodecRegion_t region{};
@@ -213,52 +242,40 @@ bool decode_ifd_region_nvimgcodec(const IfdInfo& ifd_info,
         view.image_idx = ifd_info.index;
         view.region = region;
 
-        // Get sub-code stream for this ROI (RAII managed)
         nvimgcodecCodeStream_t roi_stream_raw = nullptr;
-        nvimgcodecStatus_t status = nvimgcodecCodeStreamGetSubCodeStream(
-            main_code_stream,
-            &roi_stream_raw,
-            &view
-        );
-
+        nvimgcodecStatus_t status = nvimgcodecCodeStreamGetSubCodeStream(main_code_stream,
+                                                                         &roi_stream_raw,
+                                                                         &view);
         if (status != NVIMGCODEC_STATUS_SUCCESS)
         {
-            fmt::print("❌ Failed to create ROI sub-stream (status: {})\n",
-                      static_cast<int>(status));
+            #ifdef DEBUG
+            fmt::print("❌ Failed to create ROI sub-stream (status: {})\n", static_cast<int>(status));
+            #endif
             return false;
         }
         UniqueCodeStream roi_stream(roi_stream_raw);
 
-        // Step 2: Determine buffer kind
-        // IMPORTANT: nvImageCodec v0.6.0 GPU JPEG decoder can ONLY output to device memory
-        // For CPU requests, we must decode to GPU then copy D2H (device-to-host)
-
-        // Verify GPU is available
+        // Step 2: Determine buffer kind based on target device and availability
         int device_count = 0;
         cudaError_t cuda_err = cudaGetDeviceCount(&device_count);
         bool gpu_available = (cuda_err == cudaSuccess && device_count > 0);
 
-        if (!gpu_available)
-        {
-            fmt::print("❌ GPU not available but required for nvImageCodec JPEG decoding\n");
-            throw std::runtime_error(
-                "nvImageCodec GPU JPEG decoder requires CUDA device. "
-                "No CUDA device found.");
-        }
-
-        // Always decode to GPU device memory (GPU codec requirement)
-        nvimgcodecImageBufferKind_t buffer_kind = NVIMGCODEC_IMAGE_BUFFER_KIND_STRIDED_DEVICE;
-
-        #ifdef DEBUG
+        nvimgcodecImageBufferKind_t buffer_kind;
         if (target_is_cpu)
         {
-            fmt::print("  ℹ️  Decoding to GPU (will copy to CPU after decode)\n");
+            buffer_kind = NVIMGCODEC_IMAGE_BUFFER_KIND_STRIDED_HOST;
+        }
+        else if (gpu_available)
+        {
+            buffer_kind = NVIMGCODEC_IMAGE_BUFFER_KIND_STRIDED_DEVICE;
         }
         else
         {
-            fmt::print("  ℹ️  Decoding to GPU\n");
+            buffer_kind = NVIMGCODEC_IMAGE_BUFFER_KIND_STRIDED_HOST;
+            #ifdef DEBUG
+            fmt::print("  ⚠️  No GPU available, using CPU buffer\n");
+            #endif
         }
-        #endif
 
         // Step 3: Prepare output image info for the region
         nvimgcodecImageInfo_t output_image_info{};
@@ -266,15 +283,13 @@ bool decode_ifd_region_nvimgcodec(const IfdInfo& ifd_info,
         output_image_info.struct_size = sizeof(nvimgcodecImageInfo_t);
         output_image_info.struct_next = nullptr;
 
-        // Use interleaved RGB format
         output_image_info.sample_format = NVIMGCODEC_SAMPLEFORMAT_I_RGB;
         output_image_info.color_spec = NVIMGCODEC_COLORSPEC_SRGB;
         output_image_info.chroma_subsampling = NVIMGCODEC_SAMPLING_NONE;
         output_image_info.num_planes = 1;
         output_image_info.buffer_kind = buffer_kind;
 
-        // Calculate buffer requirements for the region
-        uint32_t num_channels = 3;  // RGB
+        uint32_t num_channels = 3;
         size_t row_stride = width * num_channels;
         size_t buffer_size = row_stride * height;
 
@@ -283,156 +298,118 @@ bool decode_ifd_region_nvimgcodec(const IfdInfo& ifd_info,
         output_image_info.plane_info[0].num_channels = num_channels;
         output_image_info.plane_info[0].row_stride = row_stride;
         output_image_info.plane_info[0].sample_type = NVIMGCODEC_SAMPLE_DATA_TYPE_UINT8;
-        output_image_info.buffer_size = buffer_size;
+        // Note: buffer_size removed in nvImageCodec v0.7.0 - size is inferred from plane_info
         output_image_info.cuda_stream = 0;
 
-        #ifdef DEBUG
-        fmt::print("  Buffer: {}x{} RGB, stride={}, size={} bytes\n",
-                  width, height, row_stride, buffer_size);
-        #endif
-
-        // Step 4: Allocate output buffer (RAII managed)
+        // Step 4: Provide output buffer
         bool use_device_memory = (buffer_kind == NVIMGCODEC_IMAGE_BUFFER_KIND_STRIDED_DEVICE);
         DecodeBuffer decode_buffer;
-        if (!decode_buffer.allocate(buffer_size, use_device_memory))
+        if (caller_provided_buffer)
         {
-            fmt::print("❌ Failed to allocate {} memory ({} bytes)\n",
-                      use_device_memory ? "GPU" : "host", buffer_size);
-            return false;
+            output_image_info.buffer = *output_buffer;
         }
-        #ifdef DEBUG
-        fmt::print("  Allocated {} buffer\n", use_device_memory ? "GPU" : "CPU");
-        #endif
+        else
+        {
+            if (!decode_buffer.allocate(buffer_size, use_device_memory))
+            {
+                #ifdef DEBUG
+                fmt::print("❌ Failed to allocate {} memory\n", use_device_memory ? "GPU" : "host");
+                #endif
+                return false;
+            }
+            output_image_info.buffer = decode_buffer.get();
+        }
 
-        output_image_info.buffer = decode_buffer.get();
-
-        // Step 5: Create image object (RAII managed)
+        // Step 5: Create image
         nvimgcodecImage_t image_raw = nullptr;
-        status = nvimgcodecImageCreate(
-            manager.get_instance(),
-            &image_raw,
-            &output_image_info
-        );
-
+        status = nvimgcodecImageCreate(manager.get_instance(), &image_raw, &output_image_info);
         if (status != NVIMGCODEC_STATUS_SUCCESS)
         {
-            fmt::print("❌ Failed to create image object (status: {})\n",
-                      static_cast<int>(status));
-            return false;  // RAII handles cleanup
+            #ifdef DEBUG
+            fmt::print("❌ Failed to create image object (status: {})\n", static_cast<int>(status));
+            #endif
+            return false;
         }
         UniqueImage image(image_raw);
 
-        // Step 6: Prepare decode parameters
+        // Step 6: Decode
         nvimgcodecDecodeParams_t decode_params{};
         decode_params.struct_type = NVIMGCODEC_STRUCTURE_TYPE_DECODE_PARAMS;
         decode_params.struct_size = sizeof(nvimgcodecDecodeParams_t);
         decode_params.struct_next = nullptr;
         decode_params.apply_exif_orientation = 1;
 
-        // Step 7: Schedule decoding (RAII managed)
         nvimgcodecCodeStream_t roi_stream_ptr = roi_stream.get();
         nvimgcodecImage_t image_ptr = image.get();
         nvimgcodecFuture_t decode_future_raw = nullptr;
         status = nvimgcodecDecoderDecode(decoder,
-                                        &roi_stream_ptr,
-                                        &image_ptr,
-                                        1,
-                                        &decode_params,
-                                        &decode_future_raw);
-
+                                         &roi_stream_ptr,
+                                         &image_ptr,
+                                         1,
+                                         &decode_params,
+                                         &decode_future_raw);
         if (status != NVIMGCODEC_STATUS_SUCCESS)
         {
-            fmt::print("❌ Failed to schedule decoding (status: {}, buffer_kind: {}, size: {}x{})\n",
-                      static_cast<int>(status),
-                      use_device_memory ? "GPU" : "CPU",
-                      width, height);
-            return false;  // RAII handles cleanup
+            #ifdef DEBUG
+            fmt::print("❌ Failed to schedule decoding (status: {})\n", static_cast<int>(status));
+            #endif
+            return false;
         }
         UniqueFuture decode_future(decode_future_raw);
 
-        // Step 8: Wait for completion
         nvimgcodecProcessingStatus_t decode_status = NVIMGCODEC_PROCESSING_STATUS_UNKNOWN;
         size_t status_size = 1;
         status = nvimgcodecFutureGetProcessingStatus(decode_future.get(), &decode_status, &status_size);
-
         if (status != NVIMGCODEC_STATUS_SUCCESS)
         {
+            #ifdef DEBUG
             fmt::print("❌ Failed to get processing status (status: {})\n", static_cast<int>(status));
-            return false;  // RAII handles cleanup
+            #endif
+            return false;
         }
 
         if (use_device_memory)
         {
-            cudaStreamSynchronize(output_image_info.cuda_stream);
+            cudaDeviceSynchronize();
         }
 
-        // Step 9: Check decode status
         if (decode_status != NVIMGCODEC_PROCESSING_STATUS_SUCCESS)
         {
-            fmt::print("❌ Decoding failed (processing_status: {}, buffer_kind: {}, size: {}x{})\n",
-                      static_cast<int>(decode_status),
-                      use_device_memory ? "GPU" : "CPU",
-                      width, height);
-            return false;  // RAII handles cleanup
-        }
-
-        #ifdef DEBUG
-        fmt::print("✅ Successfully decoded IFD[{}] region\n", ifd_info.index);
-        #endif
-
-        // Step 10: Handle D2H copy if user requested CPU output
-        if (target_is_cpu)
-        {
-            // User requested CPU but we decoded to GPU - copy D2H
-            size_t buffer_size_bytes = width * height * 3;  // RGB
-
             #ifdef DEBUG
-            fmt::print("  ℹ️  Copying decoded data from GPU to CPU ({} bytes)...\n", buffer_size_bytes);
+            fmt::print("❌ Decoding failed (status: {})\n", static_cast<int>(decode_status));
             #endif
-
-            // Allocate CPU memory using cucim_malloc (standard malloc)
-            // IMPORTANT: Do NOT use cudaMallocHost here!
-            // cuCIM will free this buffer with cucim_free/free(), not cudaFreeHost()
-            uint8_t* cpu_buffer = static_cast<uint8_t*>(cucim_malloc(buffer_size_bytes));
-            if (!cpu_buffer)
-            {
-                fmt::print("❌ Failed to allocate CPU memory\n");
-                return false;
-            }
-
-            // Copy from GPU to CPU
-            cuda_err = cudaMemcpy(cpu_buffer, decode_buffer.get(), buffer_size_bytes, cudaMemcpyDeviceToHost);
-            if (cuda_err != cudaSuccess)
-            {
-                fmt::print("❌ D2H copy failed: {}\n", cudaGetErrorString(cuda_err));
-                cucim_free(cpu_buffer);
-                return false;
-            }
-
-            #ifdef DEBUG
-            fmt::print("  ✅ D2H copy completed\n");
-            #endif
-
-            // Return CPU buffer (decode_buffer GPU memory will be freed by RAII)
-            output_buffer = cpu_buffer;
+            return false;
         }
-        else
+
+        // Success: return buffer (only if we allocated it)
+        if (!caller_provided_buffer)
         {
-            // GPU output: release buffer ownership to caller (skip RAII cleanup)
-            output_buffer = reinterpret_cast<uint8_t*>(decode_buffer.release());
+            *output_buffer = reinterpret_cast<uint8_t*>(decode_buffer.release());
         }
-
-        #ifdef DEBUG
-        fmt::print("✅ nvImageCodec ROI decode successful: {}x{} at ({}, {})\n",
-                  width, height, x, y);
-        #endif
-        return true;  // roi_stream, image, decode_future cleaned up by RAII
+        return true;
     }
     catch (const std::exception& e)
     {
+        #ifdef DEBUG
         fmt::print("❌ Exception in ROI decoding: {}\n", e.what());
+        #endif
         return false;
     }
+}
+
+bool decode_ifd_region_nvimgcodec(const IfdInfo& ifd_info,
+                                  nvimgcodecCodeStream_t main_code_stream,
+                                  uint32_t x, uint32_t y,
+                                  uint32_t width, uint32_t height,
+                                  uint8_t*& output_buffer,
+                                  const cucim::io::Device& out_device)
+{
+    return decode_ifd_region_nvimgcodec(ifd_info,
+                                        main_code_stream,
+                                        x, y,
+                                        width, height,
+                                        &output_buffer,
+                                        out_device);
 }
 
 #else // !CUCIM_HAS_NVIMGCODEC
@@ -444,6 +421,16 @@ bool decode_ifd_region_nvimgcodec(const IfdInfo&,
                                   uint32_t, uint32_t,
                                   uint32_t, uint32_t,
                                   uint8_t*&,
+                                  const cucim::io::Device&)
+{
+    throw std::runtime_error("cuslide2 plugin requires nvImageCodec to be enabled at compile time");
+}
+
+bool decode_ifd_region_nvimgcodec(const IfdInfo&,
+                                  nvimgcodecCodeStream_t,
+                                  uint32_t, uint32_t,
+                                  uint32_t, uint32_t,
+                                  uint8_t**,
                                   const cucim::io::Device&)
 {
     throw std::runtime_error("cuslide2 plugin requires nvImageCodec to be enabled at compile time");
