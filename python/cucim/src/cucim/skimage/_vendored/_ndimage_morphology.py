@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Infrastructure, Inc.
 # SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Networks, Inc.
-# SPDX-FileCopyrightText: Copyright (c) 2022-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND MIT
 
 import math
@@ -16,6 +16,7 @@ from cucim.skimage._vendored import (
     _ndimage_filters_core as _filters_core,
     _ndimage_util as _util,
 )
+from cucim.skimage._vendored.ndimage import label
 
 
 @cupy.memoize(for_each_device=True)
@@ -837,9 +838,7 @@ def _binary_fill_holes_non_iterative(input, structure=None, output=None):
 
     # assign unique labels the background and holes
     inverse_binary_mask = ~binary_mask
-    inverse_labels, _ = _measurements.label(
-        inverse_binary_mask, structure=structure
-    )
+    inverse_labels, _ = label(inverse_binary_mask, structure=structure)
 
     # After inversion, what was originally the background will now be the
     # first foreground label encountered. This is ensured due to the
