@@ -200,12 +200,14 @@ repos:
             ^python/cucim/src/cucim/skimage/morphology/_medial_axis_lookup[.]py$|
             ^python/cucim/src/cucim/skimage/morphology/binary[.]py$|
             ^python/cucim/src/cucim/skimage/morphology/convex_hull[.]py$|
+            ^python/cucim/src/cucim/skimage/morphology/extrema[.]py$|
             ^python/cucim/src/cucim/skimage/morphology/footprints[.]py$|
             ^python/cucim/src/cucim/skimage/morphology/gray[.]py$|
             ^python/cucim/src/cucim/skimage/morphology/isotropic[.]py$|
             ^python/cucim/src/cucim/skimage/morphology/misc[.]py$|
             ^python/cucim/src/cucim/skimage/morphology/tests/test_binary[.]py$|
             ^python/cucim/src/cucim/skimage/morphology/tests/test_convex_hull[.]py$|
+            ^python/cucim/src/cucim/skimage/morphology/tests/test_extrema[.]py$|
             ^python/cucim/src/cucim/skimage/morphology/tests/test_footprints[.]py$|
             ^python/cucim/src/cucim/skimage/morphology/tests/test_gray[.]py$|
             ^python/cucim/src/cucim/skimage/morphology/tests/test_isotropic[.]py$|
@@ -481,12 +483,14 @@ repos:
             python/cucim/src/cucim/skimage/morphology/_medial_axis_lookup[.]py$|
             python/cucim/src/cucim/skimage/morphology/binary[.]py$|
             python/cucim/src/cucim/skimage/morphology/convex_hull[.]py$|
+            python/cucim/src/cucim/skimage/morphology/extrema[.]py$|
             python/cucim/src/cucim/skimage/morphology/footprints[.]py$|
             python/cucim/src/cucim/skimage/morphology/gray[.]py$|
             python/cucim/src/cucim/skimage/morphology/isotropic[.]py$|
             python/cucim/src/cucim/skimage/morphology/misc[.]py$|
             python/cucim/src/cucim/skimage/morphology/tests/test_binary[.]py$|
             python/cucim/src/cucim/skimage/morphology/tests/test_convex_hull[.]py$|
+            python/cucim/src/cucim/skimage/morphology/tests/test_extrema[.]py$|
             python/cucim/src/cucim/skimage/morphology/tests/test_footprints[.]py$|
             python/cucim/src/cucim/skimage/morphology/tests/test_gray[.]py$|
             python/cucim/src/cucim/skimage/morphology/tests/test_isotropic[.]py$|
