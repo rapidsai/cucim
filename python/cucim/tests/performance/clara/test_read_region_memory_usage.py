@@ -5,6 +5,7 @@
 
 import cupy as cp
 import pytest
+import os
 
 from ...util.io import open_image_cucim
 
@@ -182,8 +183,12 @@ def test_read_random_region_cpu_memleak(testimg_tiff_stripe_4096x4096_256):
     assert memory_increment_count < iteration * 0.01
 
 
-@pytest.mark.skip(
-    reason="Memory usage regression with nvImageCodec v0.7.0 decoder - investigating (gh-998)"
+@pytest.mark.skipif(
+    os.environ.get("CUCIM_RUN_TIFF_ITERATOR_MEM_TEST", "0") != "1",
+    reason=(
+        "Memory usage regression with nvImageCodec v0.7.0 decoder - investigating (gh-998). "
+        "Set CUCIM_RUN_TIFF_ITERATOR_MEM_TEST=1 to run locally."
+    ),
 )
 def test_tiff_iterator(testimg_tiff_stripe_4096x4096_256):
     """Verify that the iterator of read_region does not cause a memory leak.
@@ -212,7 +217,7 @@ def test_tiff_iterator(testimg_tiff_stripe_4096x4096_256):
     ]
     print(
         f"Number of locations: {len(locations)}, batch size: {batch_size}, "
-        "number of workers: {num_workers}"
+        f"number of workers: {num_workers}"
     )
 
     def get_total_mem_usage():
@@ -250,7 +255,11 @@ def test_tiff_iterator(testimg_tiff_stripe_4096x4096_256):
                     mem_usage_history.append(memory_increase)
                     print(
                         f"mem increase (iteration: {i:3d}): "
-                        "{memory_increase:4d} MB"
+                        f"{memory_increase:4d} MB"
                     )
-        # Memory usage difference should be less than 20MB
+        # Memory usage difference should be less than 20MB.
+        # (Include history in the failure message to aid debugging.)
+                # Memory usage difference should be less than 20MB
+        if mem_usage_history[-1] - mem_usage_history[1] < 20:
+            assert False, f"mem_usage_history: {mem_usage_history}"
         assert mem_usage_history[-1] - mem_usage_history[1] < 20
