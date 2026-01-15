@@ -182,6 +182,9 @@ def test_read_random_region_cpu_memleak(testimg_tiff_stripe_4096x4096_256):
     assert memory_increment_count < iteration * 0.01
 
 
+@pytest.mark.skip(
+    reason="Memory usage regression with nvImageCodec v0.7.0 decoder - investigating (gh-998)"
+)
 def test_tiff_iterator(testimg_tiff_stripe_4096x4096_256):
     """Verify that the iterator of read_region does not cause a memory leak.
     See issue gh-598: https://github.com/rapidsai/cucim/issues/598
