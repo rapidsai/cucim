@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 import argparse
@@ -157,8 +157,6 @@ def main(args):
                 module_gpu=cucim.skimage.restoration,
                 run_cpu=run_cpu,
             )
-            results = B.run_benchmark(duration=args.duration)
-            all_results = pd.concat([all_results, results["full"]])
 
         elif function_name in [
             "wiener",
@@ -175,8 +173,8 @@ def main(args):
                 module_gpu=cucim.skimage.restoration,
                 run_cpu=run_cpu,
             )
-            results = B.run_benchmark(duration=args.duration)
-            all_results = pd.concat([all_results, results["full"]])
+        results = B.run_benchmark(duration=args.duration)
+        all_results = pd.concat([all_results, results["full"]])
 
     fbase = os.path.splitext(pfile)[0]
     all_results.to_csv(fbase + ".csv")
