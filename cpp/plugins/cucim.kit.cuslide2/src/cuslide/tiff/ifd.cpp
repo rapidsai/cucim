@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020-2025, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -9,6 +9,7 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <cstdlib>
 #include <iostream>
 #include <random>
 #include <thread>
@@ -247,7 +248,7 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
         int64_t w = request->size[0];
         int64_t h = request->size[1];
 
-        // Output buffer - decode function will allocate (uses pinned memory for CPU)
+        // Output buffer - decoder may allocate if not provided.
         uint8_t* output_buffer = nullptr;
         DLTensor* out_buf = request->buf;
         bool is_buf_available = out_buf && out_buf->data;
@@ -297,8 +298,7 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
             fmt::print("❌ nvImageCodec ROI decode failed for IFD[{}]\n", ifd_index_);
             #endif
 
-            // Free allocated buffer on failure
-            // Note: decode function uses cudaMallocHost for CPU (pinned memory)
+            // Free allocated buffer on failure (only if we allocated it).
             if (!is_buf_available && output_buffer)
             {
                 if (out_device.type() == cucim::io::DeviceType::kCUDA)
@@ -307,7 +307,7 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
                 }
                 else
                 {
-                    cudaFreeHost(output_buffer);  // Pinned memory
+                    free(output_buffer);
                 }
             }
 
