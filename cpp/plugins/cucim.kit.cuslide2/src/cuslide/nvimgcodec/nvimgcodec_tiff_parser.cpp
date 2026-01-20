@@ -299,11 +299,10 @@ TiffFileParser::TiffFileParser(const std::string& file_path)
         fmt::print("✅ TIFF parser initialized with {} IFDs\n", ifd_infos_.size());
         #endif // DEBUG
     }
-    catch (const std::exception& e)
+    catch (...)
     {
         // Don't explicitly destroy main_code_stream_ here; let the destructor handle it
         // (static destruction order / nvimgcodec teardown can be tricky).
-        (void)e;
         main_code_stream_ = nullptr;
         throw;  // Re-throw
     }
