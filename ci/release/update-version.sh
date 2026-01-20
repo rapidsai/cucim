@@ -109,16 +109,6 @@ for FILE in .github/workflows/*.yaml; do
   sed_runner "s/:[0-9]*\\.[0-9]*-/:${NEXT_SHORT_TAG}-/g" "${FILE}"
 done
 
-# Notebook references - context-aware
-if [[ "${RUN_CONTEXT}" == "main" ]]; then
-  # In main context, keep notebooks on main (no changes needed)
-  :
-elif [[ "${RUN_CONTEXT}" == "release" ]]; then
-  # In release context, use release branch for notebook links (word boundaries to avoid partial matches)
-  sed_runner "s|\\bmain\\b|release/${NEXT_SHORT_TAG}|g" notebooks/Using_Cache.ipynb
-  sed_runner "s|\\bmain\\b|release/${NEXT_SHORT_TAG}|g" notebooks/Supporting_Aperio_SVS_Format.ipynb
-fi
-
 DEPENDENCIES=(
   cucim
   libcucim
