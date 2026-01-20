@@ -957,7 +957,7 @@ void TiffFileParser::extract_tiff_tags(IfdInfo& ifd_info)
     }
 #else
 #ifdef DEBUG
-    fmt::print("  ℹ️  Skipping TIFF tag extraction: nvimgcodec TIFF_TAG metadata not supported by this nvimgcodec version\n");
+    fmt::print("  ℹ️  Skipping TIFF tag extraction: TIFF_TAG metadata requires nvImageCodec 0.7.0+\n");
 #endif // DEBUG
 #endif // CUSLIDE2_NVIMGCODEC_HAS_TIFF_TAG_METADATA
 
