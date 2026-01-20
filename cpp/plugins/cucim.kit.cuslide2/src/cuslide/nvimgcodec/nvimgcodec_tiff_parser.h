@@ -22,12 +22,11 @@
 namespace cuslide2::nvimgcodec
 {
 
-#ifdef CUCIM_HAS_NVIMGCODEC
-
 /**
  * @brief Variant type for storing typed TIFF tag values
  *
  * Supports common TIFF tag value types as defined in nvimgcodecMetadataValueType_t.
+ * Defined outside #ifdef to be available regardless of nvImageCodec availability.
  */
 using TiffTagValue = std::variant<
     std::monostate,  // Empty/unset state
@@ -49,6 +48,8 @@ using TiffTagValue = std::variant<
     std::vector<float>,
     std::vector<double>
 >;
+
+#ifdef CUCIM_HAS_NVIMGCODEC
 
 /**
  * @brief Image type classification for TIFF IFDs
@@ -395,27 +396,6 @@ private:
 #else // !CUCIM_HAS_NVIMGCODEC
 
 // Stub implementations when nvImageCodec is not available
-// Keep a compatible TiffTagValue type even when nvImageCodec is disabled.
-using TiffTagValue = std::variant<
-    std::monostate,
-    std::string,
-    int8_t,
-    uint8_t,
-    int16_t,
-    uint16_t,
-    int32_t,
-    uint32_t,
-    int64_t,
-    uint64_t,
-    float,
-    double,
-    std::vector<uint8_t>,
-    std::vector<uint16_t>,
-    std::vector<uint32_t>,
-    std::vector<uint64_t>,
-    std::vector<float>,
-    std::vector<double>
->;
 
 struct IfdInfo {
     struct MetadataBlob {
