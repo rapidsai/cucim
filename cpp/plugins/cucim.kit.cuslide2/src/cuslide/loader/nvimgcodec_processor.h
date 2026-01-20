@@ -161,4 +161,3 @@ private:
 #endif // CUCIM_HAS_NVIMGCODEC
 
 #endif // CUSLIDE2_NVIMGCODEC_PROCESSOR_H
-

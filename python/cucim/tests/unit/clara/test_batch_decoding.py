@@ -21,7 +21,9 @@ pytest.importorskip("imagecodecs")
 class TestBatchDecoding:
     """Test batch decoding functionality."""
 
-    def test_batch_read_multiple_locations(self, testimg_tiff_stripe_4096x4096_256):
+    def test_batch_read_multiple_locations(
+        self, testimg_tiff_stripe_4096x4096_256
+    ):
         """Test reading multiple locations in a single call."""
         with open_image_cucim(testimg_tiff_stripe_4096x4096_256) as img:
             # Define multiple locations
@@ -46,7 +48,9 @@ class TestBatchDecoding:
                 # Verify not all zeros (valid image data)
                 assert np.any(arr > 0), f"Region {i} is all zeros"
 
-    def test_batch_read_with_batch_size(self, testimg_tiff_stripe_4096x4096_256):
+    def test_batch_read_with_batch_size(
+        self, testimg_tiff_stripe_4096x4096_256
+    ):
         """Test batch reading with explicit batch_size parameter."""
         with open_image_cucim(testimg_tiff_stripe_4096x4096_256) as img:
             locations = [
@@ -62,9 +66,7 @@ class TestBatchDecoding:
             batch_size = 2
 
             gen = img.read_region(
-                locations, size, level,
-                batch_size=batch_size,
-                num_workers=2
+                locations, size, level, batch_size=batch_size, num_workers=2
             )
 
             batch_count = 0
@@ -86,9 +88,7 @@ class TestBatchDecoding:
             level = 0
 
             gen = img.read_region(
-                locations, size, level,
-                num_workers=4,
-                prefetch_factor=4
+                locations, size, level, num_workers=4, prefetch_factor=4
             )
 
             results = list(gen)
@@ -103,18 +103,18 @@ class TestBatchDecoding:
 
             # Read without shuffle
             gen1 = img.read_region(
-                locations.copy(), size, level,
-                num_workers=2,
-                shuffle=False
+                locations.copy(), size, level, num_workers=2, shuffle=False
             )
             results1 = [np.asarray(r).copy() for r in gen1]
 
             # Read with shuffle (same seed for reproducibility)
             gen2 = img.read_region(
-                locations.copy(), size, level,
+                locations.copy(),
+                size,
+                level,
                 num_workers=2,
                 shuffle=True,
-                seed=42
+                seed=42,
             )
             results2 = [np.asarray(r).copy() for r in gen2]
 
@@ -130,27 +130,31 @@ class TestBatchDecoding:
             batch_size = 2
 
             gen = img.read_region(
-                locations, size, level,
+                locations,
+                size,
+                level,
                 batch_size=batch_size,
                 num_workers=2,
-                drop_last=True
+                drop_last=True,
             )
 
             results = list(gen)
             # With drop_last, we should have floor(5/2) = 2 batches
             assert len(results) == 2
 
-    def test_batch_read_boundary_regions(self, testimg_tiff_stripe_4096x4096_256):
+    def test_batch_read_boundary_regions(
+        self, testimg_tiff_stripe_4096x4096_256
+    ):
         """Test batch reading regions at image boundaries."""
         with open_image_cucim(testimg_tiff_stripe_4096x4096_256) as img:
             width, height = img.size("XY")
 
             # Regions at corners and edges
             locations = [
-                (0, 0),                           # top-left
-                (width - 256, 0),                 # top-right
-                (0, height - 256),                # bottom-left
-                (width - 256, height - 256),      # bottom-right
+                (0, 0),  # top-left
+                (width - 256, 0),  # top-right
+                (0, height - 256),  # bottom-left
+                (width - 256, height - 256),  # bottom-right
             ]
             size = (256, 256)
             level = 0
@@ -163,7 +167,9 @@ class TestBatchDecoding:
                 arr = np.asarray(r)
                 assert arr.shape == (256, 256, 3)
 
-    def test_batch_read_multiresolution(self, testimg_tiff_stripe_4096x4096_256):
+    def test_batch_read_multiresolution(
+        self, testimg_tiff_stripe_4096x4096_256
+    ):
         """Test batch reading at different resolution levels."""
         with open_image_cucim(testimg_tiff_stripe_4096x4096_256) as img:
             level_count = img.resolutions["level_count"]
@@ -175,7 +181,9 @@ class TestBatchDecoding:
                 gen = img.read_region(locations, size, level, num_workers=2)
                 results = list(gen)
 
-                assert len(results) == len(locations), f"Failed at level {level}"
+                assert len(results) == len(locations), (
+                    f"Failed at level {level}"
+                )
 
 
 class TestBatchDecodingCUDA:
@@ -190,12 +198,15 @@ class TestBatchDecodingCUDA:
         """Skip if CUDA not available."""
         try:
             import cupy as cp
+
             if cp.cuda.runtime.getDeviceCount() == 0:
                 pytest.skip("No CUDA device available")
         except ImportError:
             pytest.skip("CuPy not installed")
 
-    def test_batch_read_cuda_output(self, testimg_tiff_stripe_4096x4096_256_jpeg):
+    def test_batch_read_cuda_output(
+        self, testimg_tiff_stripe_4096x4096_256_jpeg
+    ):
         """Test batch reading with CUDA output device.
 
         Note: Only JPEG-compressed images support CUDA output in nvImageCodec.
@@ -212,9 +223,7 @@ class TestBatchDecodingCUDA:
             level = 0
 
             gen = img.read_region(
-                locations, size, level,
-                num_workers=2,
-                device="cuda"
+                locations, size, level, num_workers=2, device="cuda"
             )
 
             for result in gen:
@@ -225,7 +234,9 @@ class TestBatchDecodingCUDA:
                 # Verify data on GPU
                 assert arr.device.id >= 0
 
-    def test_batch_read_cuda_memory_cleanup(self, testimg_tiff_stripe_4096x4096_256_jpeg):
+    def test_batch_read_cuda_memory_cleanup(
+        self, testimg_tiff_stripe_4096x4096_256_jpeg
+    ):
         """Test that CUDA memory is properly cleaned up after batch read.
 
         Note: Only JPEG-compressed images support CUDA output in nvImageCodec.
@@ -243,9 +254,7 @@ class TestBatchDecodingCUDA:
 
             for _ in range(5):
                 gen = img.read_region(
-                    locations, size, 0,
-                    num_workers=2,
-                    device="cuda"
+                    locations, size, 0, num_workers=2, device="cuda"
                 )
                 for result in gen:
                     _ = cp.asarray(result)
@@ -276,15 +285,14 @@ class TestBatchDecodingPerformance:
             locations = [
                 (
                     np.random.randint(0, max(1, width - 128)),
-                    np.random.randint(0, max(1, height - 128))
+                    np.random.randint(0, max(1, height - 128)),
                 )
                 for _ in range(num_locations)
             ]
             size = (128, 128)
 
             gen = img.read_region(
-                locations, size, 0,
-                num_workers=min(4, num_locations)
+                locations, size, 0, num_workers=min(4, num_locations)
             )
             results = list(gen)
 
@@ -299,11 +307,7 @@ class TestBatchDecodingPerformance:
             locations = [(i * 64, i * 64) for i in range(32)]
             size = (64, 64)
 
-            gen = img.read_region(
-                locations, size, 0,
-                num_workers=num_workers
-            )
+            gen = img.read_region(locations, size, 0, num_workers=num_workers)
             results = list(gen)
 
             assert len(results) == len(locations)
-

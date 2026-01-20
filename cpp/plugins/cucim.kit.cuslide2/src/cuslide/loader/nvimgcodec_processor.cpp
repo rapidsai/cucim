@@ -333,4 +333,3 @@ bool NvImageCodecProcessor::decode_roi_batch(const std::vector<RoiDecodeRequest>
 } // namespace cuslide2::loader
 
 #endif // CUCIM_HAS_NVIMGCODEC
-

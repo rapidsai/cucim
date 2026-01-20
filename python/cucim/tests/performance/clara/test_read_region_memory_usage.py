@@ -1,11 +1,12 @@
 #
-# SPDX-FileCopyrightText: Copyright (c) 2023, NVIDIA CORPORATION.
+# SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION.
 # SPDX-License-Identifier: Apache-2.0
 #
 
+import os
+
 import cupy as cp
 import pytest
-import os
 
 from ...util.io import open_image_cucim
 
@@ -259,7 +260,7 @@ def test_tiff_iterator(testimg_tiff_stripe_4096x4096_256):
                     )
         # Memory usage difference should be less than 20MB.
         # (Include history in the failure message to aid debugging.)
-                # Memory usage difference should be less than 20MB
+        # Memory usage difference should be less than 20MB
         if mem_usage_history[-1] - mem_usage_history[1] < 20:
             assert False, f"mem_usage_history: {mem_usage_history}"
         assert mem_usage_history[-1] - mem_usage_history[1] < 20
