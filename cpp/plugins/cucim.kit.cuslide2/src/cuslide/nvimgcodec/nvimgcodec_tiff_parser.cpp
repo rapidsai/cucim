@@ -272,40 +272,39 @@ TiffFileParser::TiffFileParser(const std::string& file_path)
                                             manager.get_status()));
     }
 
-    try
-    {
-        // Step 1: Create code stream from TIFF file
-        nvimgcodecStatus_t status = nvimgcodecCodeStreamCreateFromFile(
-            manager.get_instance(),
-            &main_code_stream_,
-            file_path.c_str()
-        );
+    // Step 1: Create code stream from TIFF file
+    nvimgcodecStatus_t status = nvimgcodecCodeStreamCreateFromFile(
+        manager.get_instance(),
+        &main_code_stream_,
+        file_path.c_str()
+    );
 
-        if (status != NVIMGCODEC_STATUS_SUCCESS)
+    if (status != NVIMGCODEC_STATUS_SUCCESS)
+    {
+        throw std::runtime_error(fmt::format("Failed to create code stream from file: {} (status: {})",
+                                            file_path, static_cast<int>(status)));
+    }
+
+    #ifdef DEBUG
+    fmt::print("✅ Opened TIFF file: {}\n", file_path);
+    #endif // DEBUG
+
+    // Step 2: Parse TIFF structure (metadata only)
+    if (!parse_tiff_structure())
+    {
+        // Cleanup before throwing
+        if (main_code_stream_)
         {
-            throw std::runtime_error(fmt::format("Failed to create code stream from file: {} (status: {})",
-                                                file_path, static_cast<int>(status)));
+            nvimgcodecCodeStreamDestroy(main_code_stream_);
+            main_code_stream_ = nullptr;
         }
-
-        #ifdef DEBUG
-        fmt::print("✅ Opened TIFF file: {}\n", file_path);
-        #endif // DEBUG
-
-        // Step 2: Parse TIFF structure (metadata only)
-        parse_tiff_structure();
-
-        initialized_ = true;
-        #ifdef DEBUG
-        fmt::print("✅ TIFF parser initialized with {} IFDs\n", ifd_infos_.size());
-        #endif // DEBUG
+        throw std::runtime_error(parse_error_);
     }
-    catch (...)
-    {
-        // Don't explicitly destroy main_code_stream_ here; let the destructor handle it
-        // (static destruction order / nvimgcodec teardown can be tricky).
-        main_code_stream_ = nullptr;
-        throw;  // Re-throw
-    }
+
+    initialized_ = true;
+    #ifdef DEBUG
+    fmt::print("✅ TIFF parser initialized with {} IFDs\n", ifd_infos_.size());
+    #endif // DEBUG
 }
 
 TiffFileParser::~TiffFileParser()
@@ -330,7 +329,7 @@ TiffFileParser::~TiffFileParser()
     ifd_infos_.clear();
 }
 
-void TiffFileParser::parse_tiff_structure()
+bool TiffFileParser::parse_tiff_structure()
 {
     // Get TIFF structure information
     nvimgcodecCodeStreamInfo_t stream_info{};
@@ -343,8 +342,9 @@ void TiffFileParser::parse_tiff_structure()
 
     if (status != NVIMGCODEC_STATUS_SUCCESS)
     {
-        throw std::runtime_error(fmt::format("Failed to get code stream info (status: {})",
-                                            static_cast<int>(status)));
+        parse_error_ = fmt::format("Failed to get code stream info (status: {})",
+                                   static_cast<int>(status));
+        return false;
     }
 
     uint32_t num_ifds = stream_info.num_images;
@@ -564,6 +564,8 @@ void TiffFileParser::parse_tiff_structure()
         fmt::print("   {} IFDs were skipped due to parsing errors\n", num_ifds - ifd_infos_.size());
         #endif // DEBUG
     }
+
+    return true;
 }
 
 void TiffFileParser::extract_ifd_metadata(IfdInfo& ifd_info)

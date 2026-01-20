@@ -272,8 +272,12 @@ private:
      * @brief Parse TIFF file structure using nvImageCodec
      *
      * Queries the number of IFDs and gets metadata for each one.
+     *
+     * @return true on success, false on failure (check parse_error_ for details)
      */
-    void parse_tiff_structure();
+    bool parse_tiff_structure();
+
+    std::string parse_error_;  // Error message from parse_tiff_structure()
 
     /**
      * @brief Extract metadata for a specific IFD using nvimgcodecDecoderGetMetadata
