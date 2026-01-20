@@ -1,6 +1,6 @@
 #
 # cmake-format: off
-# SPDX-FileCopyrightText: Copyright (c) 2020-2025, NVIDIA CORPORATION.
+# SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION.
 # SPDX-License-Identifier: Apache-2.0
 # cmake-format: on
 #
@@ -39,7 +39,7 @@ target_link_libraries(cuslide2_tests
         PRIVATE
             CUDA::cudart
             cucim::cucim
-            ${CUCIM_PLUGIN_NAME}
+            cuslide2_core
             deps::catch2
             deps::openslide
             deps::cli11
