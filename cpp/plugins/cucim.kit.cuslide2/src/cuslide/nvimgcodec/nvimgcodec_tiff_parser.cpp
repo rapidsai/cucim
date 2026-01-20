@@ -65,12 +65,16 @@ static std::string tiff_tag_value_to_string(const TiffTagValue& value)
         {
             return v;
         }
-        else if constexpr (std::is_same_v<T, std::vector<uint8_t>>)
+        else if constexpr (std::is_same_v<T, std::vector<int8_t>> ||
+                           std::is_same_v<T, std::vector<uint8_t>>)
         {
             return fmt::format("[{} bytes]", v.size());
         }
-        else if constexpr (std::is_same_v<T, std::vector<uint16_t>> ||
+        else if constexpr (std::is_same_v<T, std::vector<int16_t>> ||
+                           std::is_same_v<T, std::vector<uint16_t>> ||
+                           std::is_same_v<T, std::vector<int32_t>> ||
                            std::is_same_v<T, std::vector<uint32_t>> ||
+                           std::is_same_v<T, std::vector<int64_t>> ||
                            std::is_same_v<T, std::vector<uint64_t>> ||
                            std::is_same_v<T, std::vector<float>> ||
                            std::is_same_v<T, std::vector<double>>)
@@ -98,8 +102,9 @@ static std::string tiff_tag_value_to_string(const TiffTagValue& value)
 }
 
 // Per nvImageCodec team: value_count check is sufficient for scalar/array extraction.
+// Unified extraction function: handles both single values and arrays.
 template <typename T>
-static bool extract_single_value(const std::vector<uint8_t>& buffer, int value_count, TiffTagValue& out_value)
+static bool extract_tag_value(const std::vector<uint8_t>& buffer, int value_count, TiffTagValue& out_value)
 {
     if (value_count == 1)
     {
@@ -107,13 +112,7 @@ static bool extract_single_value(const std::vector<uint8_t>& buffer, int value_c
         out_value = val;
         return true;
     }
-    return false;
-}
-
-template <typename T>
-static bool extract_value_array(const std::vector<uint8_t>& buffer, int value_count, TiffTagValue& out_value)
-{
-    if (value_count > 1)
+    else if (value_count > 1)
     {
         const T* vals = reinterpret_cast<const T*>(buffer.data());
         out_value = std::vector<T>(vals, vals + value_count);
@@ -881,12 +880,10 @@ void TiffFileParser::extract_tiff_tags(IfdInfo& ifd_info)
                 break;
             }
             case NVIMGCODEC_METADATA_VALUE_TYPE_SHORT:
-                extract_single_value<uint16_t>(buffer, metadata.value_count, tag_value) ||
-                extract_value_array<uint16_t>(buffer, metadata.value_count, tag_value);
+                extract_tag_value<uint16_t>(buffer, metadata.value_count, tag_value);
                 break;
             case NVIMGCODEC_METADATA_VALUE_TYPE_LONG:
-                extract_single_value<uint32_t>(buffer, metadata.value_count, tag_value) ||
-                extract_value_array<uint32_t>(buffer, metadata.value_count, tag_value);
+                extract_tag_value<uint32_t>(buffer, metadata.value_count, tag_value);
                 break;
             case NVIMGCODEC_METADATA_VALUE_TYPE_BYTE:
                 if (metadata.value_count == 1) tag_value = buffer[0];
@@ -900,29 +897,23 @@ void TiffFileParser::extract_tiff_tags(IfdInfo& ifd_info)
                 tag_value = std::vector<uint8_t>(buffer.begin(), buffer.begin() + metadata.buffer_size);
                 break;
             case NVIMGCODEC_METADATA_VALUE_TYPE_SSHORT:
-                extract_single_value<int16_t>(buffer, metadata.value_count, tag_value) ||
-                extract_value_array<uint16_t>(buffer, metadata.value_count, tag_value);
+                extract_tag_value<int16_t>(buffer, metadata.value_count, tag_value);
                 break;
             case NVIMGCODEC_METADATA_VALUE_TYPE_SLONG:
-                extract_single_value<int32_t>(buffer, metadata.value_count, tag_value) ||
-                extract_value_array<uint32_t>(buffer, metadata.value_count, tag_value);
+                extract_tag_value<int32_t>(buffer, metadata.value_count, tag_value);
                 break;
             case NVIMGCODEC_METADATA_VALUE_TYPE_LONG8:
             case NVIMGCODEC_METADATA_VALUE_TYPE_IFD8:
-                extract_single_value<uint64_t>(buffer, metadata.value_count, tag_value) ||
-                extract_value_array<uint64_t>(buffer, metadata.value_count, tag_value);
+                extract_tag_value<uint64_t>(buffer, metadata.value_count, tag_value);
                 break;
             case NVIMGCODEC_METADATA_VALUE_TYPE_SLONG8:
-                extract_single_value<int64_t>(buffer, metadata.value_count, tag_value) ||
-                extract_value_array<uint64_t>(buffer, metadata.value_count, tag_value);
+                extract_tag_value<int64_t>(buffer, metadata.value_count, tag_value);
                 break;
             case NVIMGCODEC_METADATA_VALUE_TYPE_FLOAT:
-                extract_single_value<float>(buffer, metadata.value_count, tag_value) ||
-                extract_value_array<float>(buffer, metadata.value_count, tag_value);
+                extract_tag_value<float>(buffer, metadata.value_count, tag_value);
                 break;
             case NVIMGCODEC_METADATA_VALUE_TYPE_DOUBLE:
-                extract_single_value<double>(buffer, metadata.value_count, tag_value) ||
-                extract_value_array<double>(buffer, metadata.value_count, tag_value);
+                extract_tag_value<double>(buffer, metadata.value_count, tag_value);
                 break;
             default:
                 if (metadata.buffer_size > 0)
