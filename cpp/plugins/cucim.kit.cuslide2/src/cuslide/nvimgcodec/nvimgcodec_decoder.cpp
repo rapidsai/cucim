@@ -412,6 +412,339 @@ bool decode_ifd_region_nvimgcodec(const IfdInfo& ifd_info,
                                         out_device);
 }
 
+// ============================================================================
+// Batch ROI Decoding (nvImageCodec v0.7.0+)
+// ============================================================================
+
+std::vector<BatchDecodeResult> decode_batch_regions_nvimgcodec(
+    const std::vector<const IfdInfo*>& ifd_infos,
+    nvimgcodecCodeStream_t main_code_stream,
+    const std::vector<RoiRegion>& regions,
+    const cucim::io::Device& out_device)
+{
+    const size_t batch_size = regions.size();
+    std::vector<BatchDecodeResult> results(batch_size);
+
+    // Initialize all results to failure
+    for (auto& result : results)
+    {
+        result.buffer = nullptr;
+        result.buffer_size = 0;
+        result.success = false;
+    }
+
+    if (batch_size == 0)
+    {
+        return results;
+    }
+
+    if (!main_code_stream)
+    {
+        #ifdef DEBUG
+        fmt::print("❌ Batch decode: Invalid main_code_stream\n");
+        #endif
+        return results;
+    }
+
+    #ifdef DEBUG
+    fmt::print("🚀 Batch decoding {} regions\n", batch_size);
+    #endif
+
+    try
+    {
+        auto& manager = NvImageCodecTiffParserManager::instance();
+        if (!manager.is_available())
+        {
+            #ifdef DEBUG
+            fmt::print("❌ Batch decode: nvImageCodec manager not initialized\n");
+            #endif
+            return results;
+        }
+
+        // Determine target device
+        std::string device_str = std::string(out_device);
+        bool target_is_cpu = (device_str.find("cpu") != std::string::npos);
+
+        // Check GPU availability
+        int device_count = 0;
+        cudaError_t cuda_err = cudaGetDeviceCount(&device_count);
+        bool gpu_available = (cuda_err == cudaSuccess && device_count > 0);
+
+        nvimgcodecImageBufferKind_t buffer_kind;
+        bool use_device_memory;
+        if (target_is_cpu)
+        {
+            buffer_kind = NVIMGCODEC_IMAGE_BUFFER_KIND_STRIDED_HOST;
+            use_device_memory = false;
+        }
+        else if (gpu_available)
+        {
+            buffer_kind = NVIMGCODEC_IMAGE_BUFFER_KIND_STRIDED_DEVICE;
+            use_device_memory = true;
+        }
+        else
+        {
+            buffer_kind = NVIMGCODEC_IMAGE_BUFFER_KIND_STRIDED_HOST;
+            use_device_memory = false;
+            #ifdef DEBUG
+            fmt::print("  ⚠️  No GPU available, using CPU buffers for batch\n");
+            #endif
+        }
+
+        // Select decoder
+        nvimgcodecDecoder_t decoder;
+        if (target_is_cpu && manager.has_cpu_decoder())
+        {
+            decoder = manager.get_cpu_decoder();
+        }
+        else
+        {
+            decoder = manager.get_decoder();
+        }
+
+        // Step 1: Create ROI sub-streams for each region
+        // Per nvImageCodec team guidance: call get_sub_code_stream() for each ROI
+        std::vector<UniqueCodeStream> roi_streams;
+        std::vector<nvimgcodecCodeStream_t> roi_stream_ptrs;
+        roi_streams.reserve(batch_size);
+        roi_stream_ptrs.reserve(batch_size);
+
+        for (size_t i = 0; i < batch_size; ++i)
+        {
+            const auto& region = regions[i];
+            const IfdInfo* ifd_info = (region.ifd_index < ifd_infos.size()) ? ifd_infos[region.ifd_index] : nullptr;
+
+            if (!ifd_info)
+            {
+                #ifdef DEBUG
+                fmt::print("  ⚠️  Region {} has invalid IFD index {}\n", i, region.ifd_index);
+                #endif
+                roi_streams.emplace_back(nullptr);
+                roi_stream_ptrs.push_back(nullptr);
+                continue;
+            }
+
+            nvimgcodecRegion_t nvregion{};
+            nvregion.struct_type = NVIMGCODEC_STRUCTURE_TYPE_REGION;
+            nvregion.struct_size = sizeof(nvimgcodecRegion_t);
+            nvregion.struct_next = nullptr;
+            nvregion.ndim = 2;
+            nvregion.start[0] = region.y;  // row
+            nvregion.start[1] = region.x;  // col
+            nvregion.end[0] = region.y + region.height;
+            nvregion.end[1] = region.x + region.width;
+
+            nvimgcodecCodeStreamView_t view{};
+            view.struct_type = NVIMGCODEC_STRUCTURE_TYPE_CODE_STREAM_VIEW;
+            view.struct_size = sizeof(nvimgcodecCodeStreamView_t);
+            view.struct_next = nullptr;
+            view.image_idx = region.ifd_index;
+            view.region = nvregion;
+
+            nvimgcodecCodeStream_t roi_stream_raw = nullptr;
+            nvimgcodecStatus_t status = nvimgcodecCodeStreamGetSubCodeStream(
+                main_code_stream, &roi_stream_raw, &view);
+
+            if (status != NVIMGCODEC_STATUS_SUCCESS)
+            {
+                #ifdef DEBUG
+                fmt::print("  ⚠️  Failed to create ROI sub-stream for region {} (status: {})\n",
+                          i, static_cast<int>(status));
+                #endif
+                roi_streams.emplace_back(nullptr);
+                roi_stream_ptrs.push_back(nullptr);
+                continue;
+            }
+
+            roi_streams.emplace_back(roi_stream_raw);
+            roi_stream_ptrs.push_back(roi_stream_raw);
+
+            #ifdef DEBUG
+            fmt::print("  ✅ Created ROI sub-stream for region {} (IFD[{}] [{},{}] {}x{})\n",
+                      i, region.ifd_index, region.x, region.y, region.width, region.height);
+            #endif
+        }
+
+        // Step 2: Allocate output buffers and create image objects
+        std::vector<DecodeBuffer> decode_buffers(batch_size);
+        std::vector<UniqueImage> images;
+        std::vector<nvimgcodecImage_t> image_ptrs;
+        images.reserve(batch_size);
+        image_ptrs.reserve(batch_size);
+
+        for (size_t i = 0; i < batch_size; ++i)
+        {
+            if (!roi_stream_ptrs[i])
+            {
+                images.emplace_back(nullptr);
+                image_ptrs.push_back(nullptr);
+                continue;
+            }
+
+            const auto& region = regions[i];
+            uint32_t num_channels = 3;  // RGB
+            size_t row_stride = region.width * num_channels;
+            size_t buffer_size = row_stride * region.height;
+
+            if (!decode_buffers[i].allocate(buffer_size, use_device_memory))
+            {
+                #ifdef DEBUG
+                fmt::print("  ⚠️  Failed to allocate buffer for region {}\n", i);
+                #endif
+                images.emplace_back(nullptr);
+                image_ptrs.push_back(nullptr);
+                continue;
+            }
+
+            nvimgcodecImageInfo_t output_image_info{};
+            output_image_info.struct_type = NVIMGCODEC_STRUCTURE_TYPE_IMAGE_INFO;
+            output_image_info.struct_size = sizeof(nvimgcodecImageInfo_t);
+            output_image_info.struct_next = nullptr;
+            output_image_info.sample_format = NVIMGCODEC_SAMPLEFORMAT_I_RGB;
+            output_image_info.color_spec = NVIMGCODEC_COLORSPEC_SRGB;
+            output_image_info.chroma_subsampling = NVIMGCODEC_SAMPLING_NONE;
+            output_image_info.num_planes = 1;
+            output_image_info.buffer_kind = buffer_kind;
+            output_image_info.buffer = decode_buffers[i].get();
+            output_image_info.plane_info[0].height = region.height;
+            output_image_info.plane_info[0].width = region.width;
+            output_image_info.plane_info[0].num_channels = num_channels;
+            output_image_info.plane_info[0].row_stride = row_stride;
+            output_image_info.plane_info[0].sample_type = NVIMGCODEC_SAMPLE_DATA_TYPE_UINT8;
+            output_image_info.cuda_stream = 0;
+
+            nvimgcodecImage_t image_raw = nullptr;
+            nvimgcodecStatus_t status = nvimgcodecImageCreate(manager.get_instance(), &image_raw, &output_image_info);
+            if (status != NVIMGCODEC_STATUS_SUCCESS)
+            {
+                #ifdef DEBUG
+                fmt::print("  ⚠️  Failed to create image object for region {}\n", i);
+                #endif
+                images.emplace_back(nullptr);
+                image_ptrs.push_back(nullptr);
+                continue;
+            }
+
+            images.emplace_back(image_raw);
+            image_ptrs.push_back(image_raw);
+            results[i].buffer_size = buffer_size;
+
+            #ifdef DEBUG
+            fmt::print("  ✅ Created image object for region {} ({}x{}, {} bytes)\n",
+                      i, region.width, region.height, buffer_size);
+            #endif
+        }
+
+        // Step 3: Filter out invalid entries for batch decode
+        std::vector<nvimgcodecCodeStream_t> valid_streams;
+        std::vector<nvimgcodecImage_t> valid_images;
+        std::vector<size_t> valid_indices;
+
+        for (size_t i = 0; i < batch_size; ++i)
+        {
+            if (roi_stream_ptrs[i] && image_ptrs[i])
+            {
+                valid_streams.push_back(roi_stream_ptrs[i]);
+                valid_images.push_back(image_ptrs[i]);
+                valid_indices.push_back(i);
+            }
+        }
+
+        if (valid_streams.empty())
+        {
+            #ifdef DEBUG
+            fmt::print("❌ No valid regions to decode\n");
+            #endif
+            return results;
+        }
+
+        #ifdef DEBUG
+        fmt::print("  📦 Batch decoding {} valid regions (out of {})\n",
+                  valid_streams.size(), batch_size);
+        #endif
+
+        // Step 4: Single batch decode call (the key optimization!)
+        nvimgcodecDecodeParams_t decode_params{};
+        decode_params.struct_type = NVIMGCODEC_STRUCTURE_TYPE_DECODE_PARAMS;
+        decode_params.struct_size = sizeof(nvimgcodecDecodeParams_t);
+        decode_params.struct_next = nullptr;
+        decode_params.apply_exif_orientation = 1;
+
+        nvimgcodecFuture_t decode_future_raw = nullptr;
+        nvimgcodecStatus_t status = nvimgcodecDecoderDecode(
+            decoder,
+            valid_streams.data(),
+            valid_images.data(),
+            static_cast<int>(valid_streams.size()),
+            &decode_params,
+            &decode_future_raw);
+
+        if (status != NVIMGCODEC_STATUS_SUCCESS)
+        {
+            #ifdef DEBUG
+            fmt::print("❌ Failed to schedule batch decoding (status: {})\n", static_cast<int>(status));
+            #endif
+            return results;
+        }
+        UniqueFuture decode_future(decode_future_raw);
+
+        // Step 5: Get processing status for each image
+        std::vector<nvimgcodecProcessingStatus_t> decode_statuses(valid_streams.size(), NVIMGCODEC_PROCESSING_STATUS_UNKNOWN);
+        size_t status_size = valid_streams.size();
+        status = nvimgcodecFutureGetProcessingStatus(decode_future.get(), decode_statuses.data(), &status_size);
+
+        if (status != NVIMGCODEC_STATUS_SUCCESS)
+        {
+            #ifdef DEBUG
+            fmt::print("❌ Failed to get batch processing status (status: {})\n", static_cast<int>(status));
+            #endif
+            return results;
+        }
+
+        // Synchronize if using GPU
+        if (use_device_memory)
+        {
+            cudaDeviceSynchronize();
+        }
+
+        // Step 6: Transfer successful results to output
+        for (size_t vi = 0; vi < valid_indices.size(); ++vi)
+        {
+            size_t i = valid_indices[vi];
+            if (decode_statuses[vi] == NVIMGCODEC_PROCESSING_STATUS_SUCCESS)
+            {
+                results[i].buffer = reinterpret_cast<uint8_t*>(decode_buffers[i].release());
+                results[i].success = true;
+                #ifdef DEBUG
+                fmt::print("  ✅ Region {} decoded successfully\n", i);
+                #endif
+            }
+            else
+            {
+                #ifdef DEBUG
+                fmt::print("  ❌ Region {} decode failed (status: {})\n",
+                          i, static_cast<int>(decode_statuses[vi]));
+                #endif
+            }
+        }
+
+        #ifdef DEBUG
+        size_t success_count = 0;
+        for (const auto& r : results) if (r.success) ++success_count;
+        fmt::print("✅ Batch decode complete: {}/{} regions successful\n", success_count, batch_size);
+        #endif
+
+        return results;
+    }
+    catch (const std::exception& e)
+    {
+        #ifdef DEBUG
+        fmt::print("❌ Exception in batch decoding: {}\n", e.what());
+        #endif
+        return results;
+    }
+}
+
 #else // !CUCIM_HAS_NVIMGCODEC
 
 // Fallback stub when nvImageCodec is not available
@@ -432,6 +765,15 @@ bool decode_ifd_region_nvimgcodec(const IfdInfo&,
                                   uint32_t, uint32_t,
                                   uint8_t**,
                                   const cucim::io::Device&)
+{
+    throw std::runtime_error("cuslide2 plugin requires nvImageCodec to be enabled at compile time");
+}
+
+std::vector<BatchDecodeResult> decode_batch_regions_nvimgcodec(
+    const std::vector<const IfdInfo*>&,
+    nvimgcodecCodeStream_t,
+    const std::vector<RoiRegion>&,
+    const cucim::io::Device&)
 {
     throw std::runtime_error("cuslide2 plugin requires nvImageCodec to be enabled at compile time");
 }
