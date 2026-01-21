@@ -54,21 +54,6 @@ bool decode_ifd_region_nvimgcodec(const IfdInfo& ifd_info,
 
 #ifdef CUCIM_HAS_NVIMGCODEC
 /**
- * Decode an entire IFD using nvImageCodec
- *
- * This function uses the parsed IfdInfo (from TiffFileParser) to decode
- * a full resolution level. It separates parsing from decoding.
- *
- * @param ifd_info Parsed IFD information with sub_code_stream
- * @param output_buffer Pointer to receive allocated buffer (caller must free)
- * @param out_device Output device ("cpu" or "cuda")
- * @return true if successful, false otherwise
- */
-bool decode_ifd_nvimgcodec(const IfdInfo& ifd_info,
-                           uint8_t** output_buffer,
-                           const cucim::io::Device& out_device);
-
-/**
  * Decode a region of interest (ROI) from an IFD using nvImageCodec (pointer output)
  *
  * @param ifd_info Parsed IFD information with sub_code_stream
