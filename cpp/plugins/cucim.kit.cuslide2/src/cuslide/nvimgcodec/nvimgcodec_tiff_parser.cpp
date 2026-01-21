@@ -280,6 +280,13 @@ TiffFileParser::TiffFileParser(const std::string& file_path)
 
     if (status != NVIMGCODEC_STATUS_SUCCESS)
     {
+        // nvImageCodec may create a code stream even on error (e.g., for user-provided file issues).
+        // Clean up to avoid memory leak.
+        if (main_code_stream_)
+        {
+            nvimgcodecCodeStreamDestroy(main_code_stream_);
+            main_code_stream_ = nullptr;
+        }
         throw std::runtime_error(fmt::format("Failed to create code stream from file: {} (status: {})",
                                             file_path, static_cast<int>(status)));
     }
