@@ -259,7 +259,5 @@ def test_tiff_iterator(testimg_tiff_stripe_4096x4096_256):
                     )
         # Memory usage difference should be less than 20MB.
         # (Include history in the failure message to aid debugging.)
-                # Memory usage difference should be less than 20MB
-        if mem_usage_history[-1] - mem_usage_history[1] < 20:
-            assert False, f"mem_usage_history: {mem_usage_history}"
-        assert mem_usage_history[-1] - mem_usage_history[1] < 20
+        mem_diff = mem_usage_history[-1] - mem_usage_history[1]
+        assert mem_diff < 20, f"Memory grew by {mem_diff}MB (expected < 20MB). History: {mem_usage_history}"
