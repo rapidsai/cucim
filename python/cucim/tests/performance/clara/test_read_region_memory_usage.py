@@ -3,9 +3,10 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
+import os
+
 import cupy as cp
 import pytest
-import os
 
 from ...util.io import open_image_cucim
 
