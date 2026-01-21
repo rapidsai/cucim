@@ -312,12 +312,9 @@ bool decode_ifd_region_nvimgcodec(const IfdInfo& ifd_info,
             if (ptr_err == cudaSuccess)
             {
                 // Determine buffer kind based on actual memory type
-                #if CUDART_VERSION >= 10000
+                // Note: cuCIM requires CUDA 12+, so we use the modern attrs.type API
                 bool is_device_buffer = (attrs.type == cudaMemoryTypeDevice ||
                                          attrs.type == cudaMemoryTypeManaged);
-                #else
-                bool is_device_buffer = (attrs.memoryType == cudaMemoryTypeDevice);
-                #endif
 
                 if (is_device_buffer)
                 {
