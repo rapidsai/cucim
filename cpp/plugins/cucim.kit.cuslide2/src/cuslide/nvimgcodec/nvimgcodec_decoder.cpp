@@ -306,6 +306,37 @@ bool decode_ifd_region_nvimgcodec(const IfdInfo& ifd_info,
         DecodeBuffer decode_buffer;
         if (caller_provided_buffer)
         {
+            // Query actual memory type of caller-provided buffer
+            cudaPointerAttributes attrs{};
+            cudaError_t ptr_err = cudaPointerGetAttributes(&attrs, *output_buffer);
+            if (ptr_err == cudaSuccess)
+            {
+                // Determine buffer kind based on actual memory type
+                #if CUDART_VERSION >= 10000
+                bool is_device_buffer = (attrs.type == cudaMemoryTypeDevice ||
+                                         attrs.type == cudaMemoryTypeManaged);
+                #else
+                bool is_device_buffer = (attrs.memoryType == cudaMemoryTypeDevice);
+                #endif
+
+                if (is_device_buffer)
+                {
+                    buffer_kind = NVIMGCODEC_IMAGE_BUFFER_KIND_STRIDED_DEVICE;
+                    use_device_memory = true;
+                }
+                else
+                {
+                    buffer_kind = NVIMGCODEC_IMAGE_BUFFER_KIND_STRIDED_HOST;
+                    use_device_memory = false;
+                }
+                output_image_info.buffer_kind = buffer_kind;
+
+                #ifdef DEBUG
+                fmt::print("  ℹ️  Caller buffer detected as {} memory\n",
+                          use_device_memory ? "device" : "host");
+                #endif
+            }
+            // If cudaPointerGetAttributes fails, assume host memory (safe default)
             output_image_info.buffer = *output_buffer;
         }
         else
