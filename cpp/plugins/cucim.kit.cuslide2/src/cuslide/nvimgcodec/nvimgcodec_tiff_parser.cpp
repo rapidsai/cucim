@@ -945,17 +945,19 @@ void TiffFileParser::extract_tiff_tags(IfdInfo& ifd_info)
         ifd_info.image_description = tiff_tag_value_to_string(desc_it->second);
     }
 
-    if (extracted_count > 0)
+    // Check if COMPRESSION tag was successfully extracted
+    if (ifd_info.tiff_tags.find("COMPRESSION") != ifd_info.tiff_tags.end())
     {
-        return;
+        return;  // Have compression info, no need for heuristics
     }
-#else
-#ifdef DEBUG
-    fmt::print("  ℹ️  Skipping TIFF tag extraction: TIFF_TAG metadata requires nvImageCodec 0.7.0+\n");
-#endif // DEBUG
 #endif // CUSLIDE2_NVIMGCODEC_HAS_TIFF_TAG_METADATA
 
-    // Fallback: file extension heuristics (for environments without TIFF_TAG support).
+    // Fallback: file extension heuristics when COMPRESSION tag is not available
+    // (either nvImageCodec < 0.7.0 or tag not present in file)
+#ifdef DEBUG
+    fmt::print("  ℹ️  COMPRESSION tag not available, using file extension heuristics\n");
+#endif // DEBUG
+
     std::string ext;
     size_t dot_pos = file_path_.rfind('.');
     if (dot_pos != std::string::npos)
