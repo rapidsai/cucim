@@ -52,7 +52,6 @@ bool decode_ifd_region_nvimgcodec(const IfdInfo& ifd_info,
                                   uint8_t*& output_buffer,
                                   const cucim::io::Device& out_device);
 
-#ifdef CUCIM_HAS_NVIMGCODEC
 /**
  * Decode a region of interest (ROI) from an IFD using nvImageCodec (pointer output)
  *
@@ -65,6 +64,8 @@ bool decode_ifd_region_nvimgcodec(const IfdInfo& ifd_info,
  * @param output_buffer Pointer to receive allocated buffer (caller must free)
  * @param out_device Output device ("cpu" or "cuda")
  * @return true if successful, false otherwise
+ *
+ * @note When CUCIM_HAS_NVIMGCODEC is false, this function throws a runtime error.
  */
 bool decode_ifd_region_nvimgcodec(const IfdInfo& ifd_info,
                                   nvimgcodecCodeStream_t main_code_stream,
@@ -72,7 +73,6 @@ bool decode_ifd_region_nvimgcodec(const IfdInfo& ifd_info,
                                   uint32_t width, uint32_t height,
                                   uint8_t** output_buffer,
                                   const cucim::io::Device& out_device);
-#endif // CUCIM_HAS_NVIMGCODEC
 
 } // namespace cuslide2::nvimgcodec
 
