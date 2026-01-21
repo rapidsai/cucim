@@ -890,9 +890,12 @@ void TiffFileParser::extract_tiff_tags(IfdInfo& ifd_info)
                 else tag_value = std::vector<uint8_t>(buffer.begin(), buffer.begin() + metadata.buffer_size);
                 break;
             case NVIMGCODEC_METADATA_VALUE_TYPE_SBYTE:
-                if (metadata.value_count == 1) tag_value = static_cast<int8_t>(buffer[0]);
-                else tag_value = std::vector<uint8_t>(buffer.begin(), buffer.begin() + metadata.buffer_size);
+            {
+                const int8_t* signed_data = reinterpret_cast<const int8_t*>(buffer.data());
+                if (metadata.value_count == 1) tag_value = signed_data[0];
+                else tag_value = std::vector<int8_t>(signed_data, signed_data + metadata.value_count);
                 break;
+            }
             case NVIMGCODEC_METADATA_VALUE_TYPE_UNDEFINED:
                 tag_value = std::vector<uint8_t>(buffer.begin(), buffer.begin() + metadata.buffer_size);
                 break;
