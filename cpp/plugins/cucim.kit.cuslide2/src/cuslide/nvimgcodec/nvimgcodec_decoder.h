@@ -52,29 +52,6 @@ bool decode_ifd_region_nvimgcodec(const IfdInfo& ifd_info,
                                   uint8_t*& output_buffer,
                                   const cucim::io::Device& out_device);
 
-/**
- * Decode tile using nvTiff file-level API with ROI
- *
- * This function uses nvTiff's file-level API which automatically handles
- * JPEG tables (TIFFTAG_JPEGTABLES) without manual merging.
- *
- * @param file_path Path to TIFF file
- * @param ifd_index IFD index (resolution level)
- * @param tile_x Tile X coordinate in pixels
- * @param tile_y Tile Y coordinate in pixels
- * @param tile_width Tile width in pixels
- * @param tile_height Tile height in pixels
- * @param dest Output buffer pointer (will be allocated)
- * @param out_device Output device ("cpu" or "cuda")
- * @return true if successful, false to fallback to other decoders
- */
-bool decode_tile_nvtiff_roi(const char* file_path,
-                            uint32_t ifd_index,
-                            uint32_t tile_x, uint32_t tile_y,
-                            uint32_t tile_width, uint32_t tile_height,
-                            uint8_t** dest,
-                            const cucim::io::Device& out_device);
-
 #ifdef CUCIM_HAS_NVIMGCODEC
 /**
  * Decode an entire IFD using nvImageCodec
