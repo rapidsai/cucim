@@ -278,8 +278,12 @@ class TestBatchDecodingCUDA:
         assert final_used - initial_used < 1024 * 1024
 
 
-class TestBatchDecodingPerformance:
-    """Performance-related tests for batch decoding."""
+class TestBatchDecodingScaling:
+    """Scalability tests for batch decoding with varying parameters.
+    
+    Note: These are correctness tests that verify batch decoding works
+    with different configurations, not performance benchmarks.
+    """
 
     @pytest.mark.parametrize("num_locations", [1, 4, 16, 64])
     def test_scaling_with_locations(
