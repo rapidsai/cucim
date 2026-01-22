@@ -70,7 +70,9 @@ NvImageCodecProcessor::NvImageCodecProcessor(
     }
 
     // Calculate batch size for nvImageCodec
-    // We want to batch multiple ROI decodes together
+    // We use batch_size * 2 to decode ahead of the user's consumption rate,
+    // improving GPU utilization by keeping the decoder busy while results are processed.
+    // This is capped by location_len and MAX_NVIMGCODEC_BATCH_SIZE.
     cuda_batch_size_ = std::min(
         static_cast<uint32_t>(location_len),
         std::min(batch_size * 2, MAX_NVIMGCODEC_BATCH_SIZE));
