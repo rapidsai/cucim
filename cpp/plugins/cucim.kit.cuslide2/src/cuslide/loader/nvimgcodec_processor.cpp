@@ -266,7 +266,8 @@ bool NvImageCodecProcessor::decode_roi_batch(const std::vector<RoiDecodeRequest>
     for (const auto& req : requests)
     {
         cuslide2::nvimgcodec::RoiRegion region;
-        region.ifd_index = req.ifd_index;
+        // Use index 0 since ifd_infos vector has single element for this processor's IFD
+        region.ifd_index = 0;
         region.x = req.x;
         region.y = req.y;
         region.width = req.width;

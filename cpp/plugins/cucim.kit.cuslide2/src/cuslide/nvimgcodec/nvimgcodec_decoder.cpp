@@ -535,7 +535,7 @@ std::vector<BatchDecodeResult> decode_batch_regions_nvimgcodec(
             view.struct_type = NVIMGCODEC_STRUCTURE_TYPE_CODE_STREAM_VIEW;
             view.struct_size = sizeof(nvimgcodecCodeStreamView_t);
             view.struct_next = nullptr;
-            view.image_idx = region.ifd_index;
+            view.image_idx = ifd_info->index;  // Use actual IFD index from IfdInfo struct
             view.region = nvregion;
 
             nvimgcodecCodeStream_t roi_stream_raw = nullptr;
