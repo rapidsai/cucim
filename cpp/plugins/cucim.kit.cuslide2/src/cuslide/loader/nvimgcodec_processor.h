@@ -146,7 +146,7 @@ private:
     // Decoded data cache
     std::mutex cache_mutex_;
     std::condition_variable cache_cond_;
-    std::unordered_map<uint64_t, std::vector<uint8_t>> decoded_data_cpu_;
+    std::unordered_map<uint64_t, uint8_t*> decoded_data_cpu_;
     std::unordered_map<uint64_t, uint8_t*> decoded_data_gpu_;
     std::unordered_map<uint64_t, bool> decode_complete_;
 

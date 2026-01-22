@@ -98,6 +98,16 @@ NvImageCodecProcessor::~NvImageCodecProcessor()
 {
     shutdown();
 
+    // Free CPU memory
+    for (auto& [idx, ptr] : decoded_data_cpu_)
+    {
+        if (ptr)
+        {
+            free(ptr);
+        }
+    }
+    decoded_data_cpu_.clear();
+
     // Free GPU memory
     for (auto& [idx, ptr] : decoded_data_gpu_)
     {
@@ -224,7 +234,7 @@ std::shared_ptr<cucim::cache::ImageCacheValue> NvImageCodecProcessor::wait_for_p
         auto it = decoded_data_cpu_.find(index);
         if (it != decoded_data_cpu_.end())
         {
-            data_ptr = it->second.data();
+            data_ptr = it->second;
             device_type = cucim::io::DeviceType::kCPU;
         }
     }
@@ -245,7 +255,7 @@ uint8_t* NvImageCodecProcessor::get_decoded_data(uint64_t location_index) const
     else
     {
         auto it = decoded_data_cpu_.find(location_index);
-        return (it != decoded_data_cpu_.end()) ? const_cast<uint8_t*>(it->second.data()) : nullptr;
+        return (it != decoded_data_cpu_.end()) ? it->second : nullptr;
     }
 }
 
@@ -309,10 +319,8 @@ bool NvImageCodecProcessor::decode_roi_batch(const std::vector<RoiDecodeRequest>
                 }
                 else
                 {
-                    // Copy to CPU storage and free original
-                    decoded_data_cpu_[loc_idx].resize(roi_size_bytes_);
-                    std::memcpy(decoded_data_cpu_[loc_idx].data(), results[i].buffer, roi_size_bytes_);
-                    free(results[i].buffer);
+                    // Store CPU pointer directly (reuse allocated buffer)
+                    decoded_data_cpu_[loc_idx] = results[i].buffer;
                 }
                 decode_complete_[loc_idx] = true;
                 ++completed_decode_count_;
