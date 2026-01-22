@@ -23,7 +23,7 @@ namespace cuslide2::loader
 constexpr uint32_t MAX_NVIMGCODEC_BATCH_SIZE = 64;
 
 NvImageCodecProcessor::NvImageCodecProcessor(
-    cuslide2::nvimgcodec::TiffFileParser* tiff_parser,
+    cuslide2::nvimgcodec::TiffFileParser& tiff_parser,
     const int64_t* request_location,
     const int64_t* request_size,
     uint64_t location_len,
@@ -37,7 +37,7 @@ NvImageCodecProcessor::NvImageCodecProcessor(
       request_location_(request_location),
       location_len_(location_len)
 {
-    if (!tiff_parser_ || !tiff_parser_->is_valid())
+    if (!tiff_parser_.is_valid())
     {
         throw std::runtime_error("Invalid TIFF parser");
     }
@@ -47,7 +47,7 @@ NvImageCodecProcessor::NvImageCodecProcessor(
     roi_height_ = static_cast<uint32_t>(request_size[1]);
 
     // Get IFD info for channel count
-    const auto& ifd_info = tiff_parser_->get_ifd(ifd_index_);
+    const auto& ifd_info = tiff_parser_.get_ifd(ifd_index_);
     uint32_t num_channels = ifd_info.num_channels > 0 ? ifd_info.num_channels : 3;
     roi_size_bytes_ = static_cast<size_t>(roi_width_) * roi_height_ * num_channels;
 
@@ -250,7 +250,7 @@ uint8_t* NvImageCodecProcessor::get_decoded_data(uint64_t location_index) const
 
 bool NvImageCodecProcessor::decode_roi_batch(const std::vector<RoiDecodeRequest>& requests)
 {
-    if (requests.empty() || !tiff_parser_)
+    if (requests.empty())
     {
         return false;
     }
@@ -275,13 +275,13 @@ bool NvImageCodecProcessor::decode_roi_batch(const std::vector<RoiDecodeRequest>
     }
 
     // Get IFD info for the batch
-    const auto& ifd_info = tiff_parser_->get_ifd(ifd_index_);
+    const auto& ifd_info = tiff_parser_.get_ifd(ifd_index_);
     std::vector<const cuslide2::nvimgcodec::IfdInfo*> ifd_infos = { &ifd_info };
 
     // Perform batch decode using nvImageCodec API
     auto results = cuslide2::nvimgcodec::decode_batch_regions_nvimgcodec(
         ifd_infos,
-        tiff_parser_->get_main_code_stream(),
+        tiff_parser_.get_main_code_stream(),
         regions,
         out_device_);
 

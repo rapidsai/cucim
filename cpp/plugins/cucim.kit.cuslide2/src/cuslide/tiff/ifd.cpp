@@ -369,7 +369,7 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
 
             // Create NvImageCodecProcessor for GPU-accelerated batch decoding
             auto nvimgcodec_processor = std::make_unique<cuslide2::loader::NvImageCodecProcessor>(
-                tiff->nvimgcodec_parser_.get(),
+                *tiff->nvimgcodec_parser_,
                 request_location->data(),
                 request_size->data(),
                 adjusted_location_len,

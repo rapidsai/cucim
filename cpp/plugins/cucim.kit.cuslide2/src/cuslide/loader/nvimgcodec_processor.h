@@ -61,7 +61,7 @@ public:
     /**
      * @brief Construct a new NvImageCodecProcessor
      *
-     * @param tiff_parser The TIFF parser (provides main_code_stream and IFD info)
+     * @param tiff_parser Reference to the TIFF parser (provides main_code_stream and IFD info)
      * @param request_location Pointer to location array [x0,y0,x1,y1,...]
      * @param request_size Pointer to size array [w, h]
      * @param location_len Number of locations to decode
@@ -69,7 +69,7 @@ public:
      * @param ifd_index IFD index (resolution level) to decode from
      * @param out_device Output device (CPU or CUDA)
      */
-    NvImageCodecProcessor(cuslide2::nvimgcodec::TiffFileParser* tiff_parser,
+    NvImageCodecProcessor(cuslide2::nvimgcodec::TiffFileParser& tiff_parser,
                           const int64_t* request_location,
                           const int64_t* request_size,
                           uint64_t location_len,
@@ -121,7 +121,7 @@ private:
     uint32_t preferred_loader_prefetch_factor_ = 2;
 
     // TIFF parser and IFD info
-    cuslide2::nvimgcodec::TiffFileParser* tiff_parser_ = nullptr;
+    cuslide2::nvimgcodec::TiffFileParser& tiff_parser_;
     uint32_t ifd_index_ = 0;
     uint32_t roi_width_ = 0;
     uint32_t roi_height_ = 0;
