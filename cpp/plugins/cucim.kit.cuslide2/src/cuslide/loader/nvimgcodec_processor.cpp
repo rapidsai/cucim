@@ -186,8 +186,9 @@ uint32_t NvImageCodecProcessor::wait_batch(uint32_t index_in_task,
     (void)batch_item_counts;
     (void)num_remaining_patches;
 
-    // nvImageCodec decode is synchronous, so nothing to wait for here
-    // The decode_roi_batch() call blocks until complete
+    // Acquire mutex to ensure any in-progress decode in request() has completed
+    // (nvImageCodec decode is synchronous, so once we get the lock, decode is done)
+    std::lock_guard<std::mutex> lock(nvimgcodec_mutex_);
     return batch_size_;
 }
 
