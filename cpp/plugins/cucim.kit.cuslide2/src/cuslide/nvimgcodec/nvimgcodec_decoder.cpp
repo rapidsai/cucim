@@ -503,11 +503,9 @@ std::vector<BatchDecodeResult> decode_batch_regions_nvimgcodec(
         }
 
         // Step 1: Create ROI sub-streams for each region
-        // Per nvImageCodec team guidance: call get_sub_code_stream() for each ROI
+        
         std::vector<UniqueCodeStream> roi_streams;
-        std::vector<nvimgcodecCodeStream_t> roi_stream_ptrs;
         roi_streams.reserve(batch_size);
-        roi_stream_ptrs.reserve(batch_size);
 
         for (size_t i = 0; i < batch_size; ++i)
         {
@@ -520,7 +518,6 @@ std::vector<BatchDecodeResult> decode_batch_regions_nvimgcodec(
                 fmt::print("  ⚠️  Region {} has invalid IFD index {}\n", i, region.ifd_index);
                 #endif
                 roi_streams.emplace_back(nullptr);
-                roi_stream_ptrs.push_back(nullptr);
                 continue;
             }
 
@@ -552,12 +549,10 @@ std::vector<BatchDecodeResult> decode_batch_regions_nvimgcodec(
                           i, static_cast<int>(status));
                 #endif
                 roi_streams.emplace_back(nullptr);
-                roi_stream_ptrs.push_back(nullptr);
                 continue;
             }
 
             roi_streams.emplace_back(roi_stream_raw);
-            roi_stream_ptrs.push_back(roi_stream_raw);
 
             #ifdef DEBUG
             fmt::print("  ✅ Created ROI sub-stream for region {} (IFD[{}] [{},{}] {}x{})\n",
@@ -568,16 +563,13 @@ std::vector<BatchDecodeResult> decode_batch_regions_nvimgcodec(
         // Step 2: Allocate output buffers and create image objects
         std::vector<DecodeBuffer> decode_buffers(batch_size);
         std::vector<UniqueImage> images;
-        std::vector<nvimgcodecImage_t> image_ptrs;
         images.reserve(batch_size);
-        image_ptrs.reserve(batch_size);
 
         for (size_t i = 0; i < batch_size; ++i)
         {
-            if (!roi_stream_ptrs[i])
+            if (!roi_streams[i])
             {
                 images.emplace_back(nullptr);
-                image_ptrs.push_back(nullptr);
                 continue;
             }
 
@@ -592,7 +584,6 @@ std::vector<BatchDecodeResult> decode_batch_regions_nvimgcodec(
                 fmt::print("  ⚠️  Failed to allocate buffer for region {}\n", i);
                 #endif
                 images.emplace_back(nullptr);
-                image_ptrs.push_back(nullptr);
                 continue;
             }
 
@@ -621,12 +612,10 @@ std::vector<BatchDecodeResult> decode_batch_regions_nvimgcodec(
                 fmt::print("  ⚠️  Failed to create image object for region {}\n", i);
                 #endif
                 images.emplace_back(nullptr);
-                image_ptrs.push_back(nullptr);
                 continue;
             }
 
             images.emplace_back(image_raw);
-            image_ptrs.push_back(image_raw);
             results[i].buffer_size = buffer_size;
 
             #ifdef DEBUG
@@ -642,10 +631,10 @@ std::vector<BatchDecodeResult> decode_batch_regions_nvimgcodec(
 
         for (size_t i = 0; i < batch_size; ++i)
         {
-            if (roi_stream_ptrs[i] && image_ptrs[i])
+            if (roi_streams[i] && images[i])
             {
-                valid_streams.push_back(roi_stream_ptrs[i]);
-                valid_images.push_back(image_ptrs[i]);
+                valid_streams.push_back(roi_streams[i].get());
+                valid_images.push_back(images[i].get());
                 valid_indices.push_back(i);
             }
         }
