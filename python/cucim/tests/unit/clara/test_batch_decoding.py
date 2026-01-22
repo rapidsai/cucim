@@ -36,6 +36,12 @@ class TestBatchDecoding:
             size = (256, 256)
             level = 0
 
+            # First, get reference results using single-image decoding (no batching)
+            reference_results = []
+            for loc in locations:
+                ref = img.read_region(loc, size, level)
+                reference_results.append(np.asarray(ref).copy())
+
             # Read with multiple workers (triggers batch decoding path)
             gen = img.read_region(locations, size, level, num_workers=2)
 
@@ -45,8 +51,11 @@ class TestBatchDecoding:
             for i, result in enumerate(results):
                 arr = np.asarray(result)
                 assert arr.shape == (256, 256, 3), f"Region {i} has wrong shape"
-                # Verify not all zeros (valid image data)
-                assert np.any(arr > 0), f"Region {i} is all zeros"
+                # Verify batch result matches single-image decoding
+                np.testing.assert_array_equal(
+                    arr, reference_results[i],
+                    err_msg=f"Region {i} batch result differs from single decode"
+                )
 
     def test_batch_read_with_batch_size(
         self, testimg_tiff_stripe_4096x4096_256

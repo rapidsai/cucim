@@ -298,7 +298,7 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
         // Shuffle data if requested
         if (shuffle)
         {
-            auto rng = std::default_random_engine{ seed };
+            auto rng = std::mt19937{ seed };
             struct position { int64_t x; int64_t y; };
             std::shuffle(reinterpret_cast<position*>(&location[0]),
                          reinterpret_cast<position*>(&location[location_len * 2]), rng);
