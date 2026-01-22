@@ -370,7 +370,8 @@ bool decode_ifd_region_nvimgcodec(const IfdInfo& ifd_info,
 
         if (use_device_memory)
         {
-            cudaDeviceSynchronize();
+            // Synchronize the stream used for decoding (default stream = 0)
+            cudaStreamSynchronize(output_image_info.cuda_stream);
         }
 
         if (decode_status != NVIMGCODEC_PROCESSING_STATUS_SUCCESS)
@@ -690,10 +691,10 @@ std::vector<BatchDecodeResult> decode_batch_regions_nvimgcodec(
             return results;
         }
 
-        // Synchronize if using GPU
+        // Synchronize if using GPU (use stream sync instead of device sync for better performance)
         if (use_device_memory)
         {
-            cudaDeviceSynchronize();
+            cudaStreamSynchronize(0);  // Default stream
         }
 
         // Step 6: Transfer successful results to output
