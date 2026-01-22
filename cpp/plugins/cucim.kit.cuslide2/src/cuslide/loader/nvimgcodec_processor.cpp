@@ -280,11 +280,16 @@ bool NvImageCodecProcessor::decode_roi_batch(const std::vector<RoiDecodeRequest>
     std::vector<const cuslide2::nvimgcodec::IfdInfo*> ifd_infos = { &ifd_info };
 
     // Perform batch decode using nvImageCodec API
-    auto results = cuslide2::nvimgcodec::decode_batch_regions_nvimgcodec(
-        ifd_infos,
-        tiff_parser_.get_main_code_stream(),
-        regions,
-        out_device_);
+    // Lock mutex since nvImageCodec is not thread-safe
+    std::vector<cuslide2::nvimgcodec::BatchDecodeResult> results;
+    {
+        std::lock_guard<std::mutex> lock(nvimgcodec_mutex_);
+        results = cuslide2::nvimgcodec::decode_batch_regions_nvimgcodec(
+            ifd_infos,
+            tiff_parser_.get_main_code_stream(),
+            regions,
+            out_device_);
+    }
 
     // Store results in cache
     {

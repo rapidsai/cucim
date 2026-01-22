@@ -135,6 +135,9 @@ private:
     uint32_t cuda_batch_size_ = 1;
     cudaStream_t stream_ = nullptr;
 
+    // nvImageCodec thread safety (nvImageCodec is not thread-safe)
+    std::mutex nvimgcodec_mutex_;
+
     // Request queue
     std::mutex request_mutex_;
     std::condition_variable request_cond_;
