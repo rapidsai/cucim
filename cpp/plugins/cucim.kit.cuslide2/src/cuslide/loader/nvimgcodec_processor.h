@@ -144,7 +144,7 @@ private:
     std::deque<RoiDecodeRequest> pending_requests_;
 
     // Decoded data cache
-    std::mutex cache_mutex_;
+    mutable std::mutex cache_mutex_;
     std::condition_variable cache_cond_;
     std::unordered_map<uint64_t, uint8_t*> decoded_data_cpu_;
     std::unordered_map<uint64_t, uint8_t*> decoded_data_gpu_;

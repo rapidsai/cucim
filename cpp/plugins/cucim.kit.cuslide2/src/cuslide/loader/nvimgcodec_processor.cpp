@@ -247,6 +247,8 @@ std::shared_ptr<cucim::cache::ImageCacheValue> NvImageCodecProcessor::wait_for_p
 
 uint8_t* NvImageCodecProcessor::get_decoded_data(uint64_t location_index) const
 {
+    std::lock_guard<std::mutex> lock(cache_mutex_);
+
     if (use_device_memory_)
     {
         auto it = decoded_data_gpu_.find(location_index);
