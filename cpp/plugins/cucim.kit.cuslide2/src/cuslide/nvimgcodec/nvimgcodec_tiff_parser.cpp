@@ -68,6 +68,8 @@ static std::string tiff_tag_value_to_string(const TiffTagValue& value)
         else if constexpr (std::is_same_v<T, std::vector<int8_t>> ||
                            std::is_same_v<T, std::vector<uint8_t>>)
         {
+            // Byte arrays often contain binary data (JPEG tables, raw tag data, etc.)
+            // where individual byte values aren't meaningful. Just show the size.
             return fmt::format("[{} bytes]", v.size());
         }
         else if constexpr (std::is_same_v<T, std::vector<int16_t>> ||
