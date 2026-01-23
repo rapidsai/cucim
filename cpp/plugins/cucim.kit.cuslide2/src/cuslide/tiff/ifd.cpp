@@ -271,7 +271,7 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
     // BATCH DECODING PATH: Multiple locations or batch_size > 1
     // Uses ThreadBatchDataLoader with NvImageCodecProcessor for parallel ROI decoding
     // ========================================================================
-    if (location_len > 1 || batch_size > 1 || request->num_workers > 0)
+    if (location_len > 1 || batch_size > 1)
     {
         if (batch_size > 1)
         {
@@ -412,7 +412,10 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
         fmt::print("✅ ThreadBatchDataLoader created for {} locations\n", adjusted_location_len);
         #endif
 
-        // Set up output metadata
+        // Set up output metadata (only if raster buffer is available)
+        // For multi-location batch iteration, raster is nullptr because data is
+        // returned per-batch via loader->next_data() during Python iteration.
+        // The container.data field isn't needed upfront in that case.
         if (raster)
         {
             out_image_data->container.data = raster;
