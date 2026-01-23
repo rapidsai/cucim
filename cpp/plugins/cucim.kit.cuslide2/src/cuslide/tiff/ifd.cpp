@@ -360,7 +360,8 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
             }
         };
 
-        // Create batch processor using nvImageCodec
+        // Create batch processor using nvImageCodec (GPU only)
+        // For CPU output, batch_processor remains nullptr and load_func is used for per-tile decoding
         std::unique_ptr<cucim::loader::BatchDataProcessor> batch_processor;
 
         if (out_device.type() == cucim::io::DeviceType::kCUDA)
@@ -389,9 +390,12 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
             std::move(request_location), std::move(request_size),
             adjusted_location_len, one_raster_size, batch_size, prefetch_factor, num_workers);
 
-        const uint32_t load_size = std::min(
-            static_cast<uint64_t>(batch_size) * (1 + prefetch_factor),
-            adjusted_location_len);
+        // When using batch processor (GPU), minimize individual load_func calls
+        // to let batch decoding handle most work. For CPU, use the prefetch logic.
+        const bool use_batch_processor = (out_device.type() == cucim::io::DeviceType::kCUDA);
+        const uint32_t load_size = use_batch_processor ? 
+            std::min(static_cast<uint64_t>(1), adjusted_location_len) :
+            std::min(static_cast<uint64_t>(batch_size) * (1 + prefetch_factor), adjusted_location_len);
 
         loader->request(load_size);
 

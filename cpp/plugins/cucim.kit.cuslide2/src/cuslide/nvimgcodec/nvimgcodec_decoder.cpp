@@ -283,13 +283,14 @@ bool decode_ifd_region_nvimgcodec(const IfdInfo& ifd_info,
         output_image_info.struct_size = sizeof(nvimgcodecImageInfo_t);
         output_image_info.struct_next = nullptr;
 
-        output_image_info.sample_format = NVIMGCODEC_SAMPLEFORMAT_I_RGB;
+        // Use UNCHANGED to preserve original format (RGB or grayscale)
+        output_image_info.sample_format = NVIMGCODEC_SAMPLEFORMAT_I_UNCHANGED;
         output_image_info.color_spec = NVIMGCODEC_COLORSPEC_SRGB;
         output_image_info.chroma_subsampling = NVIMGCODEC_SAMPLING_NONE;
         output_image_info.num_planes = 1;
         output_image_info.buffer_kind = buffer_kind;
 
-        uint32_t num_channels = 3;
+        uint32_t num_channels = ifd_info.num_channels > 0 ? ifd_info.num_channels : 3;
         size_t row_stride = width * num_channels;
         size_t buffer_size = row_stride * height;
 
@@ -575,7 +576,9 @@ std::vector<BatchDecodeResult> decode_batch_regions_nvimgcodec(
             }
 
             const auto& region = regions[i];
-            uint32_t num_channels = 3;  // RGB
+            const IfdInfo* ifd_info = (region.ifd_index < ifd_infos.size()) ? ifd_infos[region.ifd_index] : nullptr;
+            // Use actual num_channels from IFD info, fallback to 3 (RGB)
+            uint32_t num_channels = (ifd_info && ifd_info->num_channels > 0) ? ifd_info->num_channels : 3;
             size_t row_stride = region.width * num_channels;
             size_t buffer_size = row_stride * region.height;
 
@@ -592,7 +595,8 @@ std::vector<BatchDecodeResult> decode_batch_regions_nvimgcodec(
             output_image_info.struct_type = NVIMGCODEC_STRUCTURE_TYPE_IMAGE_INFO;
             output_image_info.struct_size = sizeof(nvimgcodecImageInfo_t);
             output_image_info.struct_next = nullptr;
-            output_image_info.sample_format = NVIMGCODEC_SAMPLEFORMAT_I_RGB;
+            // Use UNCHANGED to preserve original format (RGB or grayscale)
+            output_image_info.sample_format = NVIMGCODEC_SAMPLEFORMAT_I_UNCHANGED;
             output_image_info.color_spec = NVIMGCODEC_COLORSPEC_SRGB;
             output_image_info.chroma_subsampling = NVIMGCODEC_SAMPLING_NONE;
             output_image_info.num_planes = 1;
