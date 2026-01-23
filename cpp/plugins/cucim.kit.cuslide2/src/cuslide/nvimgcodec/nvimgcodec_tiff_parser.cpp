@@ -29,6 +29,7 @@
 #endif
 
 #include <fmt/format.h>
+#include <fmt/ranges.h>  // For fmt::join
 #include <stdexcept>
 #include <cstring>
 #include <algorithm>
