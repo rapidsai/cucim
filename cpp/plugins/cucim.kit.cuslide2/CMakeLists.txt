@@ -286,7 +286,7 @@ endif()
 
 target_include_directories(cuslide2_core
         PRIVATE
-            ${CMAKE_CURRENT_SOURCE_DIR}/src
+            ${CMAKE_CURRENT_SOURCE_DIR}/src  # Include cuslide2 src for nvimgcodec headers
 )
 
 target_include_directories(${CUCIM_PLUGIN_NAME}
