@@ -81,15 +81,12 @@ static std::string tiff_tag_value_to_string(const TiffTagValue& value)
                            std::is_same_v<T, std::vector<float>> ||
                            std::is_same_v<T, std::vector<double>>)
         {
-            // Print a small prefix of arrays.
-            std::string result;
+            // Print a small prefix of arrays using fmt::join for efficiency.
             const size_t limit = 10;
-            for (size_t i = 0; i < v.size() && i < limit; ++i)
-            {
-                if (i > 0) result += ",";
-                result += std::to_string(v[i]);
-            }
-            if (v.size() > limit) result += ",...";
+            const auto n = std::min(v.size(), limit);
+            auto result = fmt::format("{}", fmt::join(v.begin(), v.begin() + n, ","));
+            if (v.size() > limit)
+                result += ",...";
             return result;
         }
         else if constexpr (std::is_same_v<T, float> || std::is_same_v<T, double>)
