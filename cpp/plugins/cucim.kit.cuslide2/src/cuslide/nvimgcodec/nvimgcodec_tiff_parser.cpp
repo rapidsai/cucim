@@ -970,7 +970,7 @@ void TiffFileParser::extract_tiff_tags(IfdInfo& ifd_info)
         std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
     }
 
-    if (ext == ".svs" || ext == ".ndpi" || ext == ".vms" || ext == ".vmu")
+    if (ext == ".svs" || ext == ".scn" || ext == ".ndpi" || ext == ".bif")
     {
         ifd_info.tiff_tags["COMPRESSION"] = static_cast<uint16_t>(7);  // TIFF_COMPRESSION_JPEG
     }
