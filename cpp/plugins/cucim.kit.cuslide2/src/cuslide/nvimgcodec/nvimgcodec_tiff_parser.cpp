@@ -89,13 +89,10 @@ static std::string tiff_tag_value_to_string(const TiffTagValue& value)
                 result += ",...";
             return result;
         }
-        else if constexpr (std::is_same_v<T, float> || std::is_same_v<T, double>)
-        {
-            return fmt::format("{}", v);
-        }
         else
         {
-            return std::to_string(v);
+            // All remaining scalar types (int8_t, uint8_t, int16_t, ..., float, double)
+            return fmt::format("{}", v);
         }
     }, value);
 }
