@@ -1,23 +1,19 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2025, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION.
  * SPDX-License-Identifier: Apache-2.0
  */
 
 // ============================================================================
-// nvImageCodec v0.6.0 TIFF Parser Implementation
+// nvImageCodec TIFF Parser Implementation
 // ============================================================================
 //
 // This implementation provides TIFF structure parsing and metadata extraction
-// using nvImageCodec v0.6.0 APIs:
+// using nvImageCodec:
 //
-// 1. **File-level metadata**: Vendor-specific formats (Aperio SVS, Philips TIFF)
-// 2. **IFD (Image File Directory) enumeration**: Multi-resolution image structure
-// 3. **Compression detection**: Inferred from file extension and vendor metadata
-//
-// Key Implementation Details:
-// - get_nvimgcodec_version(): Returns runtime version (e.g., 600 for v0.6.0)
-// - extract_tiff_tags(): Uses file extension heuristics for compression detection
-// - Supports JPEG-compressed SVS and TIFF files commonly used in digital pathology
+// - Vendor-specific metadata blobs (MED_APERIO, MED_PHILIPS, ...)
+// - IFD (Image File Directory) enumeration for pyramidal TIFFs
+// - nvImageCodec 0.7.0+: direct TIFF tag queries via NVIMGCODEC_METADATA_KIND_TIFF_TAG
+//   (COMPRESSION, SUBFILETYPE, IMAGEDESCRIPTION, JPEGTABLES, ...)
 //
 // ============================================================================
 
@@ -25,6 +21,7 @@
 
 #include <algorithm>  // for std::transform
 #include <cstring>    // for strlen
+#include <type_traits>
 
 #ifdef CUCIM_HAS_NVIMGCODEC
 #include <nvimgcodec.h>
@@ -32,6 +29,7 @@
 #endif
 
 #include <fmt/format.h>
+#include <fmt/ranges.h>  // For fmt::join
 #include <stdexcept>
 #include <cstring>
 #include <algorithm>
@@ -41,6 +39,84 @@ namespace cuslide2::nvimgcodec
 {
 
 #ifdef CUCIM_HAS_NVIMGCODEC
+
+// nvimgcodec API compatibility
+//
+// Older nvimgcodec headers expose `nvimgcodecMetadata_t` with just:
+//   { kind, format, buffer_size, buffer }
+// and do not support per-TIFF-tag querying (no TIFF_TAG kind, no value_type/value_count/id fields).
+//
+// Newer nvimgcodec versions add `NVIMGCODEC_METADATA_KIND_TIFF_TAG` and per-tag query fields.
+#if defined(NVIMGCODEC_METADATA_KIND_TIFF_TAG) && defined(NVIMGCODEC_METADATA_VALUE_TYPE_ASCII)
+#define CUSLIDE2_NVIMGCODEC_HAS_TIFF_TAG_METADATA 1
+#else
+#define CUSLIDE2_NVIMGCODEC_HAS_TIFF_TAG_METADATA 0
+#endif
+
+// Helper: convert typed TIFF tag value to a string representation.
+static std::string tiff_tag_value_to_string(const TiffTagValue& value)
+{
+    return std::visit([](const auto& v) -> std::string {
+        using T = std::decay_t<decltype(v)>;
+        if constexpr (std::is_same_v<T, std::monostate>)
+        {
+            return "";
+        }
+        else if constexpr (std::is_same_v<T, std::string>)
+        {
+            return v;
+        }
+        else if constexpr (std::is_same_v<T, std::vector<int8_t>> ||
+                           std::is_same_v<T, std::vector<uint8_t>>)
+        {
+            // Byte arrays often contain binary data (JPEG tables, raw tag data, etc.)
+            // where individual byte values aren't meaningful. Just show the size.
+            return fmt::format("[{} bytes]", v.size());
+        }
+        else if constexpr (std::is_same_v<T, std::vector<int16_t>> ||
+                           std::is_same_v<T, std::vector<uint16_t>> ||
+                           std::is_same_v<T, std::vector<int32_t>> ||
+                           std::is_same_v<T, std::vector<uint32_t>> ||
+                           std::is_same_v<T, std::vector<int64_t>> ||
+                           std::is_same_v<T, std::vector<uint64_t>> ||
+                           std::is_same_v<T, std::vector<float>> ||
+                           std::is_same_v<T, std::vector<double>>)
+        {
+            // Print a small prefix of arrays using fmt::join for efficiency.
+            const size_t limit = 10;
+            const auto n = std::min(v.size(), limit);
+            auto result = fmt::format("{}", fmt::join(v.begin(), v.begin() + n, ","));
+            if (v.size() > limit)
+                result += ",...";
+            return result;
+        }
+        else
+        {
+            // All remaining scalar types (int8_t, uint8_t, int16_t, ..., float, double)
+            return fmt::format("{}", v);
+        }
+    }, value);
+}
+
+// Per nvImageCodec team: value_count check is sufficient for scalar/array extraction.
+// Unified extraction function: handles both single values and arrays.
+template <typename T>
+static bool extract_tag_value(const std::vector<uint8_t>& buffer, int value_count, TiffTagValue& out_value)
+{
+    if (value_count == 1)
+    {
+        T val = *reinterpret_cast<const T*>(buffer.data());
+        out_value = val;
+        return true;
+    }
+    else if (value_count > 1)
+    {
+        const T* vals = reinterpret_cast<const T*>(buffer.data());
+        out_value = std::vector<T>(vals, vals + value_count);
+        return true;
+    }
+    return false;
+}
 
 // ============================================================================
 // NvImageCodecTiffParserManager Implementation
@@ -64,9 +140,7 @@ NvImageCodecTiffParserManager::NvImageCodecTiffParserManager()
         create_info.message_severity = 0;
         create_info.message_category = 0;
 
-        fprintf(stderr, "[DEBUG] About to call nvimgcodecInstanceCreate...\n");
         nvimgcodecStatus_t status = nvimgcodecInstanceCreate(&instance_, &create_info);
-        fprintf(stderr, "[DEBUG] nvimgcodecInstanceCreate returned: %d\n", static_cast<int>(status));
 
         if (status != NVIMGCODEC_STATUS_SUCCESS)
         {
@@ -94,9 +168,7 @@ NvImageCodecTiffParserManager::NvImageCodecTiffParserManager()
         exec_params.num_backends = 0;
         exec_params.backends = nullptr;
 
-        fprintf(stderr, "[DEBUG] About to call nvimgcodecDecoderCreate...\n");
         status = nvimgcodecDecoderCreate(instance_, &decoder_, &exec_params, nullptr);
-        fprintf(stderr, "[DEBUG] nvimgcodecDecoderCreate returned: %d\n", static_cast<int>(status));
 
         if (status != NVIMGCODEC_STATUS_SUCCESS)
         {
@@ -128,9 +200,7 @@ NvImageCodecTiffParserManager::NvImageCodecTiffParserManager()
         cpu_exec_params.num_backends = 1;
         cpu_exec_params.backends = &cpu_backend;
 
-        fprintf(stderr, "[DEBUG] About to call nvimgcodecDecoderCreate (CPU-only)...\n");
         nvimgcodecStatus_t cpu_status = nvimgcodecDecoderCreate(instance_, &cpu_decoder_, &cpu_exec_params, nullptr);
-        fprintf(stderr, "[DEBUG] nvimgcodecDecoderCreate (CPU-only) returned: %d\n", static_cast<int>(cpu_status));
         if (cpu_status == NVIMGCODEC_STATUS_SUCCESS)
         {
             #ifdef DEBUG
@@ -198,52 +268,46 @@ TiffFileParser::TiffFileParser(const std::string& file_path)
                                             manager.get_status()));
     }
 
-    try
+    // Step 1: Create code stream from TIFF file
+    nvimgcodecStatus_t status = nvimgcodecCodeStreamCreateFromFile(
+        manager.get_instance(),
+        &main_code_stream_,
+        file_path.c_str()
+    );
+
+    if (status != NVIMGCODEC_STATUS_SUCCESS)
     {
-        // Step 1: Create code stream from TIFF file
-        fprintf(stderr, "[DEBUG] About to call nvimgcodecCodeStreamCreateFromFile...\n");
-        nvimgcodecStatus_t status = nvimgcodecCodeStreamCreateFromFile(
-            manager.get_instance(),
-            &main_code_stream_,
-            file_path.c_str()
-        );
-        fprintf(stderr, "[DEBUG] nvimgcodecCodeStreamCreateFromFile returned: %d\n", static_cast<int>(status));
-
-        if (status != NVIMGCODEC_STATUS_SUCCESS)
-        {
-            throw std::runtime_error(fmt::format("Failed to create code stream from file: {} (status: {})",
-                                                file_path, static_cast<int>(status)));
-        }
-
-        #ifdef DEBUG
-        fmt::print("✅ Opened TIFF file: {}\n", file_path);
-        #endif // DEBUG
-
-        // Step 2: Parse TIFF structure (metadata only)
-        parse_tiff_structure();
-
-        initialized_ = true;
-        #ifdef DEBUG
-        fmt::print("✅ TIFF parser initialized with {} IFDs\n", ifd_infos_.size());
-        #endif // DEBUG
-    }
-    catch (const std::exception& e)
-    {
-        // Cleanup on error
-        fprintf(stderr, "[DEBUG] Exception caught: %s\n", e.what());
+        // nvImageCodec may create a code stream even on error (e.g., for user-provided file issues).
+        // Clean up to avoid memory leak.
         if (main_code_stream_)
         {
-            fprintf(stderr, "[DEBUG] About to call nvimgcodecCodeStreamDestroy (cleanup) with handle=%p...\n", (void*)main_code_stream_);
-            fflush(stderr);
-            // Don't call destroy in error path - might cause crash
-            // nvimgcodecCodeStreamDestroy(main_code_stream_);
-            fprintf(stderr, "[DEBUG] Skipping nvimgcodecCodeStreamDestroy to avoid crash\n");
+            nvimgcodecCodeStreamDestroy(main_code_stream_);
             main_code_stream_ = nullptr;
         }
-
-        fprintf(stderr, "[DEBUG] Re-throwing exception...\n");
-        throw;  // Re-throw
+        throw std::runtime_error(fmt::format("Failed to create code stream from file: {} (status: {})",
+                                            file_path, static_cast<int>(status)));
     }
+
+    #ifdef DEBUG
+    fmt::print("✅ Opened TIFF file: {}\n", file_path);
+    #endif // DEBUG
+
+    // Step 2: Parse TIFF structure (metadata only)
+    if (!parse_tiff_structure())
+    {
+        // Cleanup before throwing
+        if (main_code_stream_)
+        {
+            nvimgcodecCodeStreamDestroy(main_code_stream_);
+            main_code_stream_ = nullptr;
+        }
+        throw std::runtime_error(parse_error_);
+    }
+
+    initialized_ = true;
+    #ifdef DEBUG
+    fmt::print("✅ TIFF parser initialized with {} IFDs\n", ifd_infos_.size());
+    #endif // DEBUG
 }
 
 TiffFileParser::~TiffFileParser()
@@ -268,7 +332,7 @@ TiffFileParser::~TiffFileParser()
     ifd_infos_.clear();
 }
 
-void TiffFileParser::parse_tiff_structure()
+bool TiffFileParser::parse_tiff_structure()
 {
     // Get TIFF structure information
     nvimgcodecCodeStreamInfo_t stream_info{};
@@ -276,16 +340,14 @@ void TiffFileParser::parse_tiff_structure()
     stream_info.struct_size = sizeof(nvimgcodecCodeStreamInfo_t);
     stream_info.struct_next = nullptr;
 
-    fprintf(stderr, "[DEBUG] About to call nvimgcodecCodeStreamGetCodeStreamInfo...\n");
     nvimgcodecStatus_t status = nvimgcodecCodeStreamGetCodeStreamInfo(
         main_code_stream_, &stream_info);
-    fprintf(stderr, "[DEBUG] nvimgcodecCodeStreamGetCodeStreamInfo returned: %d\n", static_cast<int>(status));
 
     if (status != NVIMGCODEC_STATUS_SUCCESS)
     {
-        fprintf(stderr, "[DEBUG] nvimgcodecCodeStreamGetCodeStreamInfo failed with status %d, throwing exception...\n", static_cast<int>(status));
-        throw std::runtime_error(fmt::format("Failed to get code stream info (status: {})",
-                                            static_cast<int>(status)));
+        parse_error_ = fmt::format("Failed to get code stream info (status: {})",
+                                   static_cast<int>(status));
+        return false;
     }
 
     uint32_t num_ifds = stream_info.num_images;
@@ -395,14 +457,14 @@ void TiffFileParser::parse_tiff_structure()
             // Try to infer compression from TIFF metadata first
             bool compression_inferred = false;
 
-            // Check if we have TIFF Compression tag (stored as string key "COMPRESSION")
+            // Check if we have TIFF Compression tag (stored as typed value)
             auto compression_it = ifd_info.tiff_tags.find("COMPRESSION");
             if (compression_it != ifd_info.tiff_tags.end())
             {
-                try
+                // COMPRESSION tag is always SHORT (uint16_t) per TIFF spec
+                if (std::holds_alternative<uint16_t>(compression_it->second))
                 {
-                    // Parse compression value from string
-                    uint16_t compression_value = static_cast<uint16_t>(std::stoi(compression_it->second));
+                    uint16_t compression_value = std::get<uint16_t>(compression_it->second);
 
                     switch (compression_value)
                     {
@@ -451,10 +513,10 @@ void TiffFileParser::parse_tiff_structure()
                             break;
                     }
                 }
-                catch (const std::exception& e)
+                else
                 {
                     #ifdef DEBUG
-                    fmt::print("  ⚠️  Failed to parse COMPRESSION tag value: {}\n", e.what());
+                    fmt::print("  ⚠️  COMPRESSION tag is not uint16_t (unexpected type)\n");
                     #endif // DEBUG
                 }
             }
@@ -505,6 +567,8 @@ void TiffFileParser::parse_tiff_structure()
         fmt::print("   {} IFDs were skipped due to parsing errors\n", num_ifds - ifd_infos_.size());
         #endif // DEBUG
     }
+
+    return true;
 }
 
 void TiffFileParser::extract_ifd_metadata(IfdInfo& ifd_info)
@@ -709,21 +773,6 @@ const IfdInfo& TiffFileParser::get_ifd(uint32_t index) const
     return ifd_infos_[index];
 }
 
-uint32_t TiffFileParser::get_nvimgcodec_version() const
-{
-    nvimgcodecProperties_t props{};
-    props.struct_type = NVIMGCODEC_STRUCTURE_TYPE_PROPERTIES;
-    props.struct_size = sizeof(nvimgcodecProperties_t);
-    props.struct_next = nullptr;
-
-    if (nvimgcodecGetProperties(&props) == NVIMGCODEC_STATUS_SUCCESS)
-    {
-        return props.version;  // Format: major*1000 + minor*100 + patch
-    }
-
-    return 0;  // Unknown/unavailable
-}
-
 std::string TiffFileParser::get_tiff_tag(uint32_t ifd_index, const std::string& tag_name) const
 {
     if (ifd_index >= ifd_infos_.size()) {
@@ -732,7 +781,7 @@ std::string TiffFileParser::get_tiff_tag(uint32_t ifd_index, const std::string& 
 
     auto it = ifd_infos_[ifd_index].tiff_tags.find(tag_name);
     if (it != ifd_infos_[ifd_index].tiff_tags.end()) {
-        return it->second;
+        return tiff_tag_value_to_string(it->second);
     }
 
     return "";
@@ -759,14 +808,160 @@ void TiffFileParser::extract_tiff_tags(IfdInfo& ifd_info)
     }
 
     // ========================================================================
-    // nvImageCodec 0.6.0: File extension heuristics for compression detection
+    // nvImageCodec 0.7.0+: Direct TIFF Tag Retrieval by ID
     // ========================================================================
-    // nvImageCodec v0.6.0 does not expose individual TIFF tags, so we infer
-    // compression type from file extension for common WSI formats.
+    // Query a fixed set of common TIFF tags individually. Not all tags exist on all IFDs.
+
+#if CUSLIDE2_NVIMGCODEC_HAS_TIFF_TAG_METADATA
+    std::vector<std::pair<uint16_t, std::string>> tiff_tags_to_query = {
+        {254, "SUBFILETYPE"},
+        {256, "IMAGEWIDTH"},
+        {257, "IMAGELENGTH"},
+        {258, "BITSPERSAMPLE"},
+        {259, "COMPRESSION"},
+        {262, "PHOTOMETRIC"},
+        {270, "IMAGEDESCRIPTION"},
+        {271, "MAKE"},
+        {272, "MODEL"},
+        {277, "SAMPLESPERPIXEL"},
+        {305, "SOFTWARE"},
+        {306, "DATETIME"},
+        {322, "TILEWIDTH"},
+        {323, "TILELENGTH"},
+        {330, "SUBIFD"},
+        {339, "SAMPLEFORMAT"},
+        {347, "JPEGTABLES"},
+    };
 
     int extracted_count = 0;
 
-    // File extension heuristics for known WSI (Whole Slide Imaging) formats
+    for (const auto& [tag_id, tag_name] : tiff_tags_to_query)
+    {
+        nvimgcodecMetadata_t metadata{};
+        metadata.struct_type = NVIMGCODEC_STRUCTURE_TYPE_METADATA;
+        metadata.struct_size = sizeof(nvimgcodecMetadata_t);
+        metadata.struct_next = nullptr;
+        metadata.kind = NVIMGCODEC_METADATA_KIND_TIFF_TAG;
+        metadata.id = tag_id;
+        metadata.buffer = nullptr;
+        metadata.buffer_size = 0;
+
+        nvimgcodecMetadata_t* metadata_ptr = &metadata;
+        int metadata_count = 1;
+
+        // First call: query buffer size
+        nvimgcodecStatus_t status = nvimgcodecDecoderGetMetadata(
+            manager.get_decoder(), ifd_info.sub_code_stream, &metadata_ptr, &metadata_count);
+
+        if (status != NVIMGCODEC_STATUS_SUCCESS || metadata.buffer_size == 0)
+        {
+            // Tag not present or not queryable for this IFD.
+            continue;
+        }
+
+        std::vector<uint8_t> buffer(metadata.buffer_size);
+        metadata.buffer = buffer.data();
+
+        // Second call: retrieve actual value
+        status = nvimgcodecDecoderGetMetadata(
+            manager.get_decoder(), ifd_info.sub_code_stream, &metadata_ptr, &metadata_count);
+
+        if (status != NVIMGCODEC_STATUS_SUCCESS || metadata.buffer_size == 0)
+        {
+            continue;
+        }
+
+        TiffTagValue tag_value;
+
+        switch (metadata.value_type)
+        {
+            case NVIMGCODEC_METADATA_VALUE_TYPE_ASCII:
+            {
+                std::string str_val;
+                str_val.assign(reinterpret_cast<const char*>(buffer.data()), metadata.buffer_size);
+                while (!str_val.empty() && str_val.back() == '\0') str_val.pop_back();
+                if (!str_val.empty()) tag_value = std::move(str_val);
+                break;
+            }
+            case NVIMGCODEC_METADATA_VALUE_TYPE_SHORT:
+                extract_tag_value<uint16_t>(buffer, metadata.value_count, tag_value);
+                break;
+            case NVIMGCODEC_METADATA_VALUE_TYPE_LONG:
+                extract_tag_value<uint32_t>(buffer, metadata.value_count, tag_value);
+                break;
+            case NVIMGCODEC_METADATA_VALUE_TYPE_BYTE:
+                if (metadata.value_count == 1) tag_value = buffer[0];
+                else tag_value = std::vector<uint8_t>(buffer.begin(), buffer.begin() + metadata.buffer_size);
+                break;
+            case NVIMGCODEC_METADATA_VALUE_TYPE_SBYTE:
+            {
+                const int8_t* signed_data = reinterpret_cast<const int8_t*>(buffer.data());
+                if (metadata.value_count == 1) tag_value = signed_data[0];
+                else tag_value = std::vector<int8_t>(signed_data, signed_data + metadata.value_count);
+                break;
+            }
+            case NVIMGCODEC_METADATA_VALUE_TYPE_UNDEFINED:
+                tag_value = std::vector<uint8_t>(buffer.begin(), buffer.begin() + metadata.buffer_size);
+                break;
+            case NVIMGCODEC_METADATA_VALUE_TYPE_SSHORT:
+                extract_tag_value<int16_t>(buffer, metadata.value_count, tag_value);
+                break;
+            case NVIMGCODEC_METADATA_VALUE_TYPE_SLONG:
+                extract_tag_value<int32_t>(buffer, metadata.value_count, tag_value);
+                break;
+            case NVIMGCODEC_METADATA_VALUE_TYPE_LONG8:
+            case NVIMGCODEC_METADATA_VALUE_TYPE_IFD8:
+                extract_tag_value<uint64_t>(buffer, metadata.value_count, tag_value);
+                break;
+            case NVIMGCODEC_METADATA_VALUE_TYPE_SLONG8:
+                extract_tag_value<int64_t>(buffer, metadata.value_count, tag_value);
+                break;
+            case NVIMGCODEC_METADATA_VALUE_TYPE_FLOAT:
+                extract_tag_value<float>(buffer, metadata.value_count, tag_value);
+                break;
+            case NVIMGCODEC_METADATA_VALUE_TYPE_DOUBLE:
+                extract_tag_value<double>(buffer, metadata.value_count, tag_value);
+                break;
+            default:
+                if (metadata.buffer_size > 0)
+                {
+                    size_t store_size = metadata.buffer_size;
+                    if (max_binary_tag_size_ > 0 && metadata.buffer_size > max_binary_tag_size_)
+                    {
+                        store_size = max_binary_tag_size_;
+                    }
+                    tag_value = std::vector<uint8_t>(buffer.begin(), buffer.begin() + store_size);
+                }
+                break;
+        }
+
+        if (!std::holds_alternative<std::monostate>(tag_value))
+        {
+            ifd_info.tiff_tags[tag_name] = std::move(tag_value);
+            extracted_count++;
+        }
+    }
+
+    // Populate image_description if it wasn't already filled via vendor metadata.
+    auto desc_it = ifd_info.tiff_tags.find("IMAGEDESCRIPTION");
+    if (desc_it != ifd_info.tiff_tags.end() && ifd_info.image_description.empty())
+    {
+        ifd_info.image_description = tiff_tag_value_to_string(desc_it->second);
+    }
+
+    // Check if COMPRESSION tag was successfully extracted
+    if (ifd_info.tiff_tags.find("COMPRESSION") != ifd_info.tiff_tags.end())
+    {
+        return;  // Have compression info, no need for heuristics
+    }
+#endif // CUSLIDE2_NVIMGCODEC_HAS_TIFF_TAG_METADATA
+
+    // Fallback: file extension heuristics when COMPRESSION tag is not available
+    // (either nvImageCodec < 0.7.0 or tag not present in file)
+#ifdef DEBUG
+    fmt::print("  ℹ️  COMPRESSION tag not available, using file extension heuristics\n");
+#endif // DEBUG
+
     std::string ext;
     size_t dot_pos = file_path_.rfind('.');
     if (dot_pos != std::string::npos)
@@ -775,39 +970,10 @@ void TiffFileParser::extract_tiff_tags(IfdInfo& ifd_info)
         std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
     }
 
-    // Aperio SVS, Hamamatsu NDPI, Hamamatsu VMS/VMU typically use JPEG compression
-    if (ext == ".svs" || ext == ".ndpi" || ext == ".vms" || ext == ".vmu")
+    if (ext == ".svs" || ext == ".scn" || ext == ".ndpi" || ext == ".bif")
     {
-        // Only use heuristics if we don't have direct tag access
-        if (ifd_info.tiff_tags.find("COMPRESSION") == ifd_info.tiff_tags.end())
-        {
-            ifd_info.tiff_tags["COMPRESSION"] = "7";  // TIFF_COMPRESSION_JPEG
-            #ifdef DEBUG
-            fmt::print("  ✅ Inferred JPEG compression (WSI format: {})\n", ext);
-            #endif // DEBUG
-            extracted_count++;
-        }
+        ifd_info.tiff_tags["COMPRESSION"] = static_cast<uint16_t>(7);  // TIFF_COMPRESSION_JPEG
     }
-
-    // Store ImageDescription if available
-    if (!ifd_info.image_description.empty())
-    {
-        if (ifd_info.tiff_tags.find("IMAGEDESCRIPTION") == ifd_info.tiff_tags.end()) {
-            ifd_info.tiff_tags["IMAGEDESCRIPTION"] = ifd_info.image_description;
-        }
-    }
-
-    // Summary
-    #ifdef DEBUG
-    if (extracted_count > 0 || !ifd_info.tiff_tags.empty())
-    {
-        fmt::print("  ✅ Compression detection successful (file extension heuristics)\n");
-    }
-    else
-    {
-        fmt::print("  ⚠️  Unable to determine compression type from file extension\n");
-    }
-    #endif // DEBUG
 }
 
 int TiffFileParser::get_subfile_type(uint32_t ifd_index) const
@@ -837,6 +1003,14 @@ std::vector<int> TiffFileParser::query_metadata_kinds(uint32_t ifd_index) const
     {
         kinds.push_back(kind);
     }
+
+    // Also include TIFF_TAG kind if any tags were extracted (only supported on newer nvimgcodec).
+#if CUSLIDE2_NVIMGCODEC_HAS_TIFF_TAG_METADATA
+    if (!ifd_infos_[ifd_index].tiff_tags.empty())
+    {
+        kinds.insert(kinds.begin(), NVIMGCODEC_METADATA_KIND_TIFF_TAG);
+    }
+#endif
 
     return kinds;
 }

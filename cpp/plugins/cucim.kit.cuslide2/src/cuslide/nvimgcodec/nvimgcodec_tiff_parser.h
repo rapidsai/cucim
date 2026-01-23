@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2025, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -13,12 +13,45 @@
 #include <vector>
 #include <memory>
 #include <map>
+#include <unordered_map>
+#include <variant>
 #include <mutex>
 #include <stdexcept>
 #include <cucim/io/device.h>
 
 namespace cuslide2::nvimgcodec
 {
+
+/**
+ * @brief Variant type for storing typed TIFF tag values
+ *
+ * Supports common TIFF tag value types as defined in nvimgcodecMetadataValueType_t.
+ * Defined outside #ifdef to be available regardless of nvImageCodec availability.
+ */
+using TiffTagValue = std::variant<
+    std::monostate,  // Empty/unset state
+    std::string,
+    int8_t,
+    uint8_t,
+    int16_t,
+    uint16_t,
+    int32_t,
+    uint32_t,
+    int64_t,
+    uint64_t,
+    float,
+    double,
+    std::vector<int8_t>,
+    std::vector<uint8_t>,
+    std::vector<int16_t>,
+    std::vector<uint16_t>,
+    std::vector<int32_t>,
+    std::vector<uint32_t>,
+    std::vector<int64_t>,
+    std::vector<uint64_t>,
+    std::vector<float>,
+    std::vector<double>
+>;
 
 #ifdef CUCIM_HAS_NVIMGCODEC
 
@@ -56,9 +89,9 @@ struct IfdInfo
     };
     std::map<int, MetadataBlob> metadata_blobs;
 
-    // TIFF tag storage inferred from file extension and metadata
-    // tag_name -> tag_value (e.g., "COMPRESSION" -> "7" for JPEG)
-    std::map<std::string, std::string> tiff_tags;
+    // nvImageCodec 0.7.0+: Individual TIFF tag storage with typed values
+    // tag_name -> TiffTagValue (variant with typed storage)
+    std::unordered_map<std::string, TiffTagValue> tiff_tags;
 
     IfdInfo() : index(0), width(0), height(0), num_channels(0),
                 bits_per_sample(0), sub_code_stream(nullptr) {}
@@ -222,22 +255,33 @@ public:
     nvimgcodecCodeStream_t get_main_code_stream() const { return main_code_stream_; }
 
     /**
-     * @brief Get the runtime nvImageCodec version
+     * @brief Set maximum size for binary TIFF tag data storage
      *
-     * Returns the actual version of nvImageCodec library loaded at runtime.
-     * Format: major*1000 + minor*100 + patch (e.g., 600 for v0.6.0)
+     * Controls the maximum size of binary data (UNDEFINED type, JPEGTables, etc.)
+     * that will be stored in memory when parsing TIFF tags.
      *
-     * @return Version number, or 0 if unavailable
+     * @param max_size Maximum size in bytes (0 = unlimited)
      */
-    uint32_t get_nvimgcodec_version() const;
+    void set_max_binary_tag_size(size_t max_size) { max_binary_tag_size_ = max_size; }
+
+    /**
+     * @brief Get the current maximum binary tag size limit
+     *
+     * @return Maximum binary tag size in bytes (0 = unlimited)
+     */
+    size_t get_max_binary_tag_size() const { return max_binary_tag_size_; }
 
 private:
     /**
      * @brief Parse TIFF file structure using nvImageCodec
      *
      * Queries the number of IFDs and gets metadata for each one.
+     *
+     * @return true on success, false on failure (check parse_error_ for details)
      */
-    void parse_tiff_structure();
+    bool parse_tiff_structure();
+
+    std::string parse_error_;  // Error message from parse_tiff_structure()
 
     /**
      * @brief Extract metadata for a specific IFD using nvimgcodecDecoderGetMetadata
@@ -265,6 +309,9 @@ private:
     bool initialized_;
     nvimgcodecCodeStream_t main_code_stream_;
     std::vector<IfdInfo> ifd_infos_;
+
+    // Configuration: Maximum size for binary TIFF tag data (0 = unlimited)
+    size_t max_binary_tag_size_ = 0;
 };
 
 /**
@@ -357,13 +404,6 @@ private:
 #else // !CUCIM_HAS_NVIMGCODEC
 
 // Stub implementations when nvImageCodec is not available
-enum class ImageType {
-    RESOLUTION_LEVEL,
-    THUMBNAIL,
-    LABEL,
-    MACRO,
-    UNKNOWN
-};
 
 struct IfdInfo {
     struct MetadataBlob {
