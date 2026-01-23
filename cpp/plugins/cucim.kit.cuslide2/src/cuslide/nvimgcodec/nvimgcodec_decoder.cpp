@@ -20,6 +20,8 @@
 #include <mutex>
 #include <fmt/format.h>
 
+#include <cucim/memory/memory_manager.h>
+
 #ifdef CUCIM_HAS_NVIMGCODEC
 #include <cuda_runtime.h>
 #endif
@@ -110,11 +112,10 @@ public:
         }
         else
         {
-            // Use standard malloc for CPU memory
-            // NOTE: Must use malloc() (not cudaMallocHost()) because cuCIM's cleanup
-            // code uses free(). Using cudaMallocHost() would require cudaFreeHost(),
-            // causing "free(): invalid pointer" crash when cuCIM calls free().
-            buffer_ = malloc(size);
+            // Use cucim_malloc for CPU memory (consistent with cuCIM memory management)
+            // NOTE: Must NOT use cudaMallocHost() because cuCIM's cleanup expects
+            // standard heap memory, which would cause "free(): invalid pointer" crash.
+            buffer_ = cucim_malloc(size);
             return buffer_ != nullptr;
         }
     }
@@ -126,7 +127,7 @@ public:
             if (is_device_)
                 cudaFree(buffer_);
             else
-                free(buffer_);  // Standard free (matches malloc)
+                cucim_free(buffer_);  // Matches cucim_malloc
             buffer_ = nullptr;
         }
     }
