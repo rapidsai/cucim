@@ -933,12 +933,7 @@ void TiffFileParser::extract_tiff_tags(IfdInfo& ifd_info)
             default:
                 if (metadata.buffer_size > 0)
                 {
-                    size_t store_size = metadata.buffer_size;
-                    if (max_binary_tag_size_ > 0 && metadata.buffer_size > max_binary_tag_size_)
-                    {
-                        store_size = max_binary_tag_size_;
-                    }
-                    tag_value = std::vector<uint8_t>(buffer.begin(), buffer.begin() + store_size);
+                    tag_value = std::vector<uint8_t>(buffer.begin(), buffer.begin() + metadata.buffer_size);
                 }
                 break;
         }

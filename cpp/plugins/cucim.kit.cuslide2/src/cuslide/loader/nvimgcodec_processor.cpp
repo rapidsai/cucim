@@ -80,13 +80,6 @@ NvImageCodecProcessor::NvImageCodecProcessor(
     // Update prefetch factor based on batch size
     preferred_loader_prefetch_factor_ = std::max(2u, (cuda_batch_size_ / batch_size_) * 2);
 
-    // Create CUDA stream for async operations
-    if (use_device_memory_)
-    {
-        cudaError_t cuda_status;
-        CUDA_ERROR(cudaStreamCreateWithFlags(&stream_, cudaStreamNonBlocking));
-    }
-
     #ifdef DEBUG
     fmt::print("🔧 NvImageCodecProcessor initialized:\n");
     fmt::print("   ROI size: {}x{}, {} bytes\n", roi_width_, roi_height_, roi_size_bytes_);
@@ -119,13 +112,6 @@ NvImageCodecProcessor::~NvImageCodecProcessor()
         }
     }
     decoded_data_gpu_.clear();
-
-    // Destroy CUDA stream
-    if (stream_)
-    {
-        cudaStreamDestroy(stream_);
-        stream_ = nullptr;
-    }
 }
 
 void NvImageCodecProcessor::shutdown()
@@ -134,7 +120,6 @@ void NvImageCodecProcessor::shutdown()
         std::lock_guard<std::mutex> lock(request_mutex_);
         stopped_ = true;
     }
-    request_cond_.notify_all();
     cache_cond_.notify_all();
 }
 
@@ -247,22 +232,6 @@ std::shared_ptr<cucim::cache::ImageCacheValue> NvImageCodecProcessor::wait_for_p
     return value;
 }
 
-uint8_t* NvImageCodecProcessor::get_decoded_data(uint64_t location_index) const
-{
-    std::lock_guard<std::mutex> lock(cache_mutex_);
-
-    if (use_device_memory_)
-    {
-        auto it = decoded_data_gpu_.find(location_index);
-        return (it != decoded_data_gpu_.end()) ? it->second : nullptr;
-    }
-    else
-    {
-        auto it = decoded_data_cpu_.find(location_index);
-        return (it != decoded_data_cpu_.end()) ? it->second : nullptr;
-    }
-}
-
 bool NvImageCodecProcessor::decode_roi_batch(const std::vector<RoiDecodeRequest>& requests)
 {
     if (requests.empty())
@@ -327,7 +296,6 @@ bool NvImageCodecProcessor::decode_roi_batch(const std::vector<RoiDecodeRequest>
                     decoded_data_cpu_[loc_idx] = results[i].buffer;
                 }
                 decode_complete_[loc_idx] = true;
-                ++completed_decode_count_;
 
                 #ifdef DEBUG
                 fmt::print("  ✅ ROI {} decoded successfully\n", loc_idx);

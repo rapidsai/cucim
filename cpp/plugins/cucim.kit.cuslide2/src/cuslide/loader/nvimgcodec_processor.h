@@ -50,10 +50,10 @@ struct RoiDecodeRequest
  * - Batches multiple ROI decodes into a single decode call
  * - Integrates with ThreadBatchDataLoader for multi-threaded loading
  *
- * Per nvImageCodec team guidance (v0.7.0+):
- * "Read image into CodeStream, then call multiple get_sub_code_stream()
+ * 
+ *  Read image into CodeStream, then call multiple get_sub_code_stream()
  *  on this main CodeStream with different ROI and decode them all in a
- *  single decoder.decode() call"
+ *  single decoder.decode() call
  */
 class NvImageCodecProcessor : public cucim::loader::BatchDataProcessor
 {
@@ -106,11 +106,6 @@ public:
      */
     uint32_t preferred_loader_prefetch_factor() const;
 
-    /**
-     * @brief Get pointer to decoded data for a location
-     */
-    uint8_t* get_decoded_data(uint64_t location_index) const;
-
 private:
     /**
      * @brief Decode a batch of ROIs using nvImageCodec batch API
@@ -133,15 +128,12 @@ private:
 
     // Batch configuration
     uint32_t cuda_batch_size_ = 1;
-    cudaStream_t stream_ = nullptr;
 
     // nvImageCodec thread safety (nvImageCodec is not thread-safe)
     std::mutex nvimgcodec_mutex_;
 
     // Request queue
     std::mutex request_mutex_;
-    std::condition_variable request_cond_;
-    std::deque<RoiDecodeRequest> pending_requests_;
 
     // Decoded data cache
     mutable std::mutex cache_mutex_;
@@ -156,7 +148,6 @@ private:
 
     // Decode batch tracking
     uint64_t next_decode_index_ = 0;
-    uint64_t completed_decode_count_ = 0;
 };
 
 } // namespace cuslide2::loader

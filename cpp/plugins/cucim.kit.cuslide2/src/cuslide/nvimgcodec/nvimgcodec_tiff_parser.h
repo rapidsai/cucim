@@ -249,23 +249,6 @@ public:
      */
     nvimgcodecCodeStream_t get_main_code_stream() const { return main_code_stream_; }
 
-    /**
-     * @brief Set maximum size for binary TIFF tag data storage
-     *
-     * Controls the maximum size of binary data (UNDEFINED type, JPEGTables, etc.)
-     * that will be stored in memory when parsing TIFF tags.
-     *
-     * @param max_size Maximum size in bytes (0 = unlimited)
-     */
-    void set_max_binary_tag_size(size_t max_size) { max_binary_tag_size_ = max_size; }
-
-    /**
-     * @brief Get the current maximum binary tag size limit
-     *
-     * @return Maximum binary tag size in bytes (0 = unlimited)
-     */
-    size_t get_max_binary_tag_size() const { return max_binary_tag_size_; }
-
 private:
     /**
      * @brief Parse TIFF file structure using nvImageCodec
@@ -300,9 +283,6 @@ private:
     bool initialized_;
     nvimgcodecCodeStream_t main_code_stream_;
     std::vector<IfdInfo> ifd_infos_;
-
-    // Configuration: Maximum size for binary TIFF tag data (0 = unlimited)
-    size_t max_binary_tag_size_ = 0;
 };
 
 /**
@@ -352,13 +332,6 @@ public:
      * @return true if CPU decoder is available
      */
     bool has_cpu_decoder() const { return cpu_decoder_ != nullptr; }
-
-    /**
-     * @brief Get the mutex for thread-safe decoder operations
-     *
-     * @return Reference to the decoder mutex
-     */
-    std::mutex& get_mutex() { return decoder_mutex_; }
 
     /**
      * @brief Check if nvImageCodec is available and initialized
