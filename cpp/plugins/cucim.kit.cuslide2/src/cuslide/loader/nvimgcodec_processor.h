@@ -50,7 +50,6 @@ struct RoiDecodeRequest
  * - Batches multiple ROI decodes into a single decode call
  * - Integrates with ThreadBatchDataLoader for multi-threaded loading
  *
- * 
  *  Read image into CodeStream, then call multiple get_sub_code_stream()
  *  on this main CodeStream with different ROI and decode them all in a
  *  single decoder.decode() call

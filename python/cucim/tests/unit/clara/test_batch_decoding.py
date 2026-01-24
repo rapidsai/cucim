@@ -54,8 +54,9 @@ class TestBatchDecoding:
                 assert arr.shape == (256, 256, 3), f"Region {i} has wrong shape"
                 # Verify batch result matches single-image decoding
                 np.testing.assert_array_equal(
-                    arr, reference_results[i],
-                    err_msg=f"Region {i} batch result differs from single decode"
+                    arr,
+                    reference_results[i],
+                    err_msg=f"Region {i} batch result differs from single decode",
                 )
 
     def test_batch_read_with_batch_size(
@@ -180,8 +181,9 @@ class TestBatchDecoding:
             assert len(results1) == len(results2)
             for i in range(len(results1)):
                 np.testing.assert_array_equal(
-                    results1[i], results2[i],
-                    err_msg=f"Same seed should produce same order at index {i}"
+                    results1[i],
+                    results2[i],
+                    err_msg=f"Same seed should produce same order at index {i}",
                 )
 
     def test_batch_read_drop_last(self, testimg_tiff_stripe_4096x4096_256):
@@ -335,7 +337,7 @@ class TestBatchDecodingCUDA:
 
 class TestBatchDecodingScaling:
     """Scalability tests for batch decoding with varying parameters.
-    
+
     Note: These are correctness tests that verify batch decoding works
     with different configurations, not performance benchmarks.
     """

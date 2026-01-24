@@ -393,7 +393,7 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
         // When using batch processor (GPU), minimize individual load_func calls
         // to let batch decoding handle most work. For CPU, use the prefetch logic.
         const bool use_batch_processor = (out_device.type() == cucim::io::DeviceType::kCUDA);
-        const uint32_t load_size = use_batch_processor ? 
+        const uint32_t load_size = use_batch_processor ?
             std::min(static_cast<uint64_t>(1), adjusted_location_len) :
             std::min(static_cast<uint64_t>(batch_size) * (1 + prefetch_factor), adjusted_location_len);
 

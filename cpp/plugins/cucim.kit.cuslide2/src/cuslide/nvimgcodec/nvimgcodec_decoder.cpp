@@ -506,7 +506,7 @@ std::vector<BatchDecodeResult> decode_batch_regions_nvimgcodec(
         }
 
         // Step 1: Create ROI sub-streams for each region
-        
+
         std::vector<UniqueCodeStream> roi_streams;
         roi_streams.reserve(batch_size);
 
