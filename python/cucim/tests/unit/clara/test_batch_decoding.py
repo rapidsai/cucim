@@ -45,11 +45,12 @@ class TestBatchDecoding:
             # Read with multiple workers (triggers batch decoding path)
             gen = img.read_region(locations, size, level, num_workers=2)
 
-            results = list(gen)
+            # Note: Must copy each result before collecting because the iterator
+            # reuses the same underlying buffer for each batch
+            results = [np.asarray(r).copy() for r in gen]
             assert len(results) == len(locations)
 
-            for i, result in enumerate(results):
-                arr = np.asarray(result)
+            for i, arr in enumerate(results):
                 assert arr.shape == (256, 256, 3), f"Region {i} has wrong shape"
                 # Verify batch result matches single-image decoding
                 np.testing.assert_array_equal(
@@ -116,7 +117,7 @@ class TestBatchDecoding:
             )
             results1 = [np.asarray(r).copy() for r in gen1]
 
-            # Read with shuffle (same seed for reproducibility)
+            # Read with shuffle
             gen2 = img.read_region(
                 locations.copy(),
                 size,
@@ -128,6 +129,60 @@ class TestBatchDecoding:
             results2 = [np.asarray(r).copy() for r in gen2]
 
             assert len(results1) == len(results2)
+
+            # Verify shuffle changed the order (at least one element differs)
+            has_different_order = False
+            for i in range(len(results1)):
+                if not np.array_equal(results1[i], results2[i]):
+                    has_different_order = True
+                    break
+            assert has_different_order, "Shuffle should change element order"
+
+            # Verify all elements are preserved (valid permutation)
+            # Each element from results1 should exist in results2
+            for r1 in results1:
+                found = any(np.array_equal(r1, r2) for r2 in results2)
+                assert found, "Shuffle should preserve all elements"
+
+    def test_batch_read_shuffle_seed_reproducibility(
+        self, testimg_tiff_stripe_4096x4096_256
+    ):
+        """Test that same seed produces same shuffle order."""
+        with open_image_cucim(testimg_tiff_stripe_4096x4096_256) as img:
+            locations = [(i * 100, i * 100) for i in range(10)]
+            size = (100, 100)
+            level = 0
+            seed = 12345
+
+            # First shuffle with seed
+            gen1 = img.read_region(
+                locations.copy(),
+                size,
+                level,
+                num_workers=2,
+                shuffle=True,
+                seed=seed,
+            )
+            results1 = [np.asarray(r).copy() for r in gen1]
+
+            # Second shuffle with same seed
+            gen2 = img.read_region(
+                locations.copy(),
+                size,
+                level,
+                num_workers=2,
+                shuffle=True,
+                seed=seed,
+            )
+            results2 = [np.asarray(r).copy() for r in gen2]
+
+            # Same seed should produce identical order
+            assert len(results1) == len(results2)
+            for i in range(len(results1)):
+                np.testing.assert_array_equal(
+                    results1[i], results2[i],
+                    err_msg=f"Same seed should produce same order at index {i}"
+                )
 
     def test_batch_read_drop_last(self, testimg_tiff_stripe_4096x4096_256):
         """Test batch reading with drop_last=True."""
