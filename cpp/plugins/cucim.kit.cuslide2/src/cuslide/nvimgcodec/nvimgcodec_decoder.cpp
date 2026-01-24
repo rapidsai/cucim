@@ -755,16 +755,6 @@ bool decode_ifd_region_nvimgcodec(const IfdInfo&,
     throw std::runtime_error("cuslide2 plugin requires nvImageCodec to be enabled at compile time");
 }
 
-bool decode_ifd_region_nvimgcodec(const IfdInfo&,
-                                  nvimgcodecCodeStream_t,
-                                  uint32_t, uint32_t,
-                                  uint32_t, uint32_t,
-                                  uint8_t**,
-                                  const cucim::io::Device&)
-{
-    throw std::runtime_error("cuslide2 plugin requires nvImageCodec to be enabled at compile time");
-}
-
 std::vector<BatchDecodeResult> decode_batch_regions_nvimgcodec(
     const std::vector<const IfdInfo*>&,
     nvimgcodecCodeStream_t,
