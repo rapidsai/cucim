@@ -56,32 +56,6 @@ using TiffTagValue = std::variant<
 #ifdef CUCIM_HAS_NVIMGCODEC
 
 /**
- * @brief Variant type for storing typed TIFF tag values
- *
- * Supports common TIFF tag value types as defined in nvimgcodecMetadataValueType_t.
- */
-using TiffTagValue = std::variant<
-    std::monostate,  // Empty/unset state
-    std::string,
-    int8_t,
-    uint8_t,
-    int16_t,
-    uint16_t,
-    int32_t,
-    uint32_t,
-    int64_t,
-    uint64_t,
-    float,
-    double,
-    std::vector<uint8_t>,
-    std::vector<uint16_t>,
-    std::vector<uint32_t>,
-    std::vector<uint64_t>,
-    std::vector<float>,
-    std::vector<double>
->;
-
-/**
  * @brief Image type classification for TIFF IFDs
  *
  * Used to categorize IFDs as resolution levels or associated images
