@@ -116,7 +116,7 @@ class TestBatchDecoding:
             gen1 = img.read_region(
                 locations.copy(), size, level, num_workers=2, shuffle=False
             )
-            results1 = [np.asarray(r).copy() for r in gen1]
+            results1 = [np.asarray(r, copy=True) for r in gen1]
 
             # Read with shuffle
             gen2 = img.read_region(
