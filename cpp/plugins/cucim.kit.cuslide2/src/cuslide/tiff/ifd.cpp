@@ -351,7 +351,7 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
                 tiff->nvimgcodec_parser_->get_main_code_stream(),
                 static_cast<uint32_t>(sx), static_cast<uint32_t>(sy),
                 static_cast<uint32_t>(w), static_cast<uint32_t>(h),
-                &raster_ptr,
+                raster_ptr,
                 out_device);
 
             if (!success)
@@ -505,7 +505,7 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
             }
             else
             {
-                free(output_buffer);
+                cucim_free(output_buffer);
             }
         }
 
