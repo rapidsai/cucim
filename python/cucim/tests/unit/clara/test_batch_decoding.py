@@ -164,7 +164,7 @@ class TestBatchDecoding:
                 shuffle=True,
                 seed=seed,
             )
-            results1 = [np.asarray(r).copy() for r in gen1]
+            results1 = [np.asarray(r, copy=True) for r in gen1]
 
             # Second shuffle with same seed
             gen2 = img.read_region(
