@@ -127,7 +127,7 @@ class TestBatchDecoding:
                 shuffle=True,
                 seed=42,
             )
-            results2 = [np.asarray(r).copy() for r in gen2]
+            results2 = [np.asarray(r, copy=True) for r in gen2]
 
             assert len(results1) == len(results2)
 
