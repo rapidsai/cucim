@@ -250,8 +250,6 @@ bool NvImageCodecProcessor::decode_roi_batch(const std::vector<RoiDecodeRequest>
     for (const auto& req : requests)
     {
         cuslide2::nvimgcodec::RoiRegion region;
-        // Use index 0 since ifd_infos vector has single element for this processor's IFD
-        region.ifd_index = 0;
         region.x = req.x;
         region.y = req.y;
         region.width = req.width;
@@ -259,9 +257,8 @@ bool NvImageCodecProcessor::decode_roi_batch(const std::vector<RoiDecodeRequest>
         regions.push_back(region);
     }
 
-    // Get IFD info for the batch
+    // Get IFD info for the batch (all regions decode from the same IFD)
     const auto& ifd_info = tiff_parser_.get_ifd(ifd_index_);
-    std::vector<const cuslide2::nvimgcodec::IfdInfo*> ifd_infos = { &ifd_info };
 
     // Perform batch decode using nvImageCodec API
     // Lock mutex since nvImageCodec is not thread-safe
@@ -269,7 +266,7 @@ bool NvImageCodecProcessor::decode_roi_batch(const std::vector<RoiDecodeRequest>
     {
         std::lock_guard<std::mutex> lock(nvimgcodec_mutex_);
         results = cuslide2::nvimgcodec::decode_batch_regions_nvimgcodec(
-            ifd_infos,
+            ifd_info,
             tiff_parser_.get_main_code_stream(),
             regions,
             out_device_);

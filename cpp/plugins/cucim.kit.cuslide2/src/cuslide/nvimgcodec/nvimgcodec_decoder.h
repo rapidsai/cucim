@@ -66,7 +66,6 @@ bool decode_ifd_region_nvimgcodec(const IfdInfo& ifd_info,
  */
 struct RoiRegion
 {
-    uint32_t ifd_index;  // IFD index (resolution level)
     uint32_t x;          // Starting x coordinate (column)
     uint32_t y;          // Starting y coordinate (row)
     uint32_t width;      // Width of region in pixels
@@ -84,7 +83,7 @@ struct BatchDecodeResult
 };
 
 /**
- * Decode multiple regions of interest (ROIs) from a TIFF file in a single batch
+ * Decode multiple regions of interest (ROIs) from a single IFD in a TIFF file
  *
  * Uses nvImageCodec v0.7.0+ batch decoding API:
  * 1. Read image into CodeStream (main_code_stream)
@@ -94,17 +93,17 @@ struct BatchDecodeResult
  * This provides significant performance improvement over sequential decoding
  * by amortizing GPU kernel launch overhead and enabling parallel decoding.
  *
- * @param ifd_infos Vector of IFD information (one per unique IFD used)
+ * @param ifd_info IFD information (resolution level to decode from)
  * @param main_code_stream Main TIFF code stream (from TiffFileParser)
- * @param regions Vector of ROI specifications
+ * @param regions Vector of ROI specifications (all from the same IFD)
  * @param out_device Output device ("cpu" or "cuda")
  * @return Vector of decode results (same order as input regions)
  *
  * @note Caller is responsible for freeing buffers in successful results
- * @note All regions should be from the same TIFF file (same main_code_stream)
+ * @note All regions must be from the same IFD (resolution level)
  */
 std::vector<BatchDecodeResult> decode_batch_regions_nvimgcodec(
-    const std::vector<const IfdInfo*>& ifd_infos,
+    const IfdInfo& ifd_info,
     nvimgcodecCodeStream_t main_code_stream,
     const std::vector<RoiRegion>& regions,
     const cucim::io::Device& out_device);

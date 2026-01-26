@@ -400,7 +400,7 @@ bool decode_ifd_region_nvimgcodec(const IfdInfo& ifd_info,
 // ============================================================================
 
 std::vector<BatchDecodeResult> decode_batch_regions_nvimgcodec(
-    const std::vector<const IfdInfo*>& ifd_infos,
+    const IfdInfo& ifd_info,
     nvimgcodecCodeStream_t main_code_stream,
     const std::vector<RoiRegion>& regions,
     const cucim::io::Device& out_device)
@@ -493,16 +493,6 @@ std::vector<BatchDecodeResult> decode_batch_regions_nvimgcodec(
         for (size_t i = 0; i < batch_size; ++i)
         {
             const auto& region = regions[i];
-            const IfdInfo* ifd_info = (region.ifd_index < ifd_infos.size()) ? ifd_infos[region.ifd_index] : nullptr;
-
-            if (!ifd_info)
-            {
-                #ifdef DEBUG
-                fmt::print("  ⚠️  Region {} has invalid IFD index {}\n", i, region.ifd_index);
-                #endif
-                roi_streams.emplace_back(nullptr);
-                continue;
-            }
 
             nvimgcodecRegion_t nvregion{};
             nvregion.struct_type = NVIMGCODEC_STRUCTURE_TYPE_REGION;
@@ -518,7 +508,7 @@ std::vector<BatchDecodeResult> decode_batch_regions_nvimgcodec(
             view.struct_type = NVIMGCODEC_STRUCTURE_TYPE_CODE_STREAM_VIEW;
             view.struct_size = sizeof(nvimgcodecCodeStreamView_t);
             view.struct_next = nullptr;
-            view.image_idx = ifd_info->index;  // Use actual IFD index from IfdInfo struct
+            view.image_idx = ifd_info.index;  // Use IFD index for nvImageCodec page selection
             view.region = nvregion;
 
             nvimgcodecCodeStream_t roi_stream_raw = nullptr;
@@ -539,7 +529,7 @@ std::vector<BatchDecodeResult> decode_batch_regions_nvimgcodec(
 
             #ifdef DEBUG
             fmt::print("  ✅ Created ROI sub-stream for region {} (IFD[{}] [{},{}] {}x{})\n",
-                      i, region.ifd_index, region.x, region.y, region.width, region.height);
+                      i, ifd_info.index, region.x, region.y, region.width, region.height);
             #endif
         }
 
@@ -557,9 +547,8 @@ std::vector<BatchDecodeResult> decode_batch_regions_nvimgcodec(
             }
 
             const auto& region = regions[i];
-            const IfdInfo* ifd_info = (region.ifd_index < ifd_infos.size()) ? ifd_infos[region.ifd_index] : nullptr;
-            // Use actual num_channels from IFD info, fallback to 3 (RGB)
-            uint32_t num_channels = (ifd_info && ifd_info->num_channels > 0) ? ifd_info->num_channels : 3;
+            // Use num_channels from IFD info, fallback to 3 (RGB)
+            uint32_t num_channels = (ifd_info.num_channels > 0) ? ifd_info.num_channels : 3;
             size_t row_stride = region.width * num_channels;
             size_t buffer_size = row_stride * region.height;
 
@@ -735,7 +724,7 @@ bool decode_ifd_region_nvimgcodec(const IfdInfo&,
 }
 
 std::vector<BatchDecodeResult> decode_batch_regions_nvimgcodec(
-    const std::vector<const IfdInfo*>&,
+    const IfdInfo&,
     nvimgcodecCodeStream_t,
     const std::vector<RoiRegion>&,
     const cucim::io::Device&)
