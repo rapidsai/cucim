@@ -40,14 +40,14 @@ class TestBatchDecoding:
             reference_results = []
             for loc in locations:
                 ref = img.read_region(loc, size, level)
-                reference_results.append(np.asarray(ref).copy())
+                reference_results.append(np.asarray(ref, copy=True))
 
             # Read with multiple workers (triggers batch decoding path)
             gen = img.read_region(locations, size, level, num_workers=2)
 
             # Note: Must copy each result before collecting because the iterator
             # reuses the same underlying buffer for each batch
-            results = [np.asarray(r).copy() for r in gen]
+            results = [np.asarray(r, copy=True) for r in gen]
             assert len(results) == len(locations)
 
             for i, arr in enumerate(results):
