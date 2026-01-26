@@ -70,15 +70,15 @@ NvImageCodecProcessor::NvImageCodecProcessor(
     }
 
     // Calculate batch size for nvImageCodec
-    // We use batch_size * 2 to decode ahead of the user's consumption rate,
-    // improving GPU utilization by keeping the decoder busy while results are processed.
-    // This is capped by location_len and MAX_NVIMGCODEC_BATCH_SIZE.
+    // Capped by location_len and MAX_NVIMGCODEC_BATCH_SIZE.
     cuda_batch_size_ = std::min(
         static_cast<uint32_t>(location_len),
-        std::min(batch_size * 2, MAX_NVIMGCODEC_BATCH_SIZE));
+        std::min(batch_size, MAX_NVIMGCODEC_BATCH_SIZE));
 
-    // Update prefetch factor based on batch size
-    preferred_loader_prefetch_factor_ = std::max(2u, (cuda_batch_size_ / batch_size_) * 2);
+    // Single batch prefetch: I/O is typically faster than decode work,
+    // so one prefetch batch is sufficient to keep the decoder busy.
+    // This uses 2 batch buffers (1 current + 1 prefetched) for reasonable memory usage.
+    preferred_loader_prefetch_factor_ = 1;
 
     #ifdef DEBUG
     fmt::print("🔧 NvImageCodecProcessor initialized:\n");
