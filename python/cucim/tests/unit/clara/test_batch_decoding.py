@@ -361,12 +361,26 @@ class TestBatchDecodingScaling:
             ]
             size = (128, 128)
 
+            # Get reference results using single-image decoding
+            reference_results = []
+            for loc in locations:
+                ref = img.read_region(loc, size, 0)
+                reference_results.append(np.asarray(ref).copy())
+
             gen = img.read_region(
                 locations, size, 0, num_workers=min(4, num_locations)
             )
-            results = list(gen)
+            results = [np.asarray(r).copy() for r in gen]
 
             assert len(results) == num_locations
+
+            # Verify batch results match single-image decoding
+            for i, arr in enumerate(results):
+                np.testing.assert_array_equal(
+                    arr,
+                    reference_results[i],
+                    err_msg=f"Location {i} batch result differs from single decode",
+                )
 
     @pytest.mark.parametrize("num_workers", [1, 2, 4, 8])
     def test_scaling_with_workers(
@@ -377,7 +391,21 @@ class TestBatchDecodingScaling:
             locations = [(i * 64, i * 64) for i in range(32)]
             size = (64, 64)
 
+            # Get reference results using single-image decoding
+            reference_results = []
+            for loc in locations:
+                ref = img.read_region(loc, size, 0)
+                reference_results.append(np.asarray(ref).copy())
+
             gen = img.read_region(locations, size, 0, num_workers=num_workers)
-            results = list(gen)
+            results = [np.asarray(r).copy() for r in gen]
 
             assert len(results) == len(locations)
+
+            # Verify batch results match single-image decoding
+            for i, arr in enumerate(results):
+                np.testing.assert_array_equal(
+                    arr,
+                    reference_results[i],
+                    err_msg=f"Location {i} batch result differs from single decode",
+                )
