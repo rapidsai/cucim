@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # Use env var if set/non-empty, otherwise default to 10
-MAX_DURATION="${CUCIM_BENCHMARK_MAX_DURATION:-10}"  # [web:1][web:10]
+MAX_DURATION="${CUCIM_BENCHMARK_MAX_DURATION:-10}"
 
 param_shape=("512,512" "3840,2160" "3840,2160,3" "192,192,192")
 param_filt=(label regionprops moments moments_central centroid inertia_tensor inertia_tensor_eigvals block_reduce shannon_entropy profile_line)

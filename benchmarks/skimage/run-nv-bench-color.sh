@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # Use env var if set/non-empty, otherwise default to 10
-MAX_DURATION="${CUCIM_BENCHMARK_MAX_DURATION:-10}"  # [web:1][web:10]
+MAX_DURATION="${CUCIM_BENCHMARK_MAX_DURATION:-10}"
 
 param_shape=("512,512" "3840,2160" "192,192,192")
 param_filt=(convert_colorspace rgb2hed hed2rgb lab2lch lch2lab xyz2lab lab2xyz rgba2rgb label2rgb)
