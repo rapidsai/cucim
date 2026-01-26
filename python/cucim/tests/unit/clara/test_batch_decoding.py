@@ -175,7 +175,7 @@ class TestBatchDecoding:
                 shuffle=True,
                 seed=seed,
             )
-            results2 = [np.asarray(r).copy() for r in gen2]
+            results2 = [np.asarray(r, copy=True) for r in gen2]
 
             # Same seed should produce identical order
             assert len(results1) == len(results2)
