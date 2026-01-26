@@ -668,7 +668,7 @@ std::vector<BatchDecodeResult> decode_batch_regions_nvimgcodec(
         // Synchronize if using GPU (use stream sync instead of device sync for better performance)
         if (use_device_memory)
         {
-            cudaStreamSynchronize(0);  // Default stream
+            cudaStreamSynchronize(output_image_info.cuda_stream);
         }
 
         // Step 6: Transfer successful results to output
