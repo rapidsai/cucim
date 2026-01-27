@@ -11,6 +11,7 @@
 #include <fmt/format.h>
 #include <nlohmann/json.hpp>
 
+#include <cstring>
 #include <iostream>
 #include <fstream>
 #include <filesystem>
@@ -157,7 +158,7 @@ void Config::override_from_envs()
     {
         if (env_p)
         {
-            if (env_p[0] == '1')
+            if (std::strcmp(env_p, "1") == 0)
             {
                 profiler_.trace = true;
             }
@@ -172,7 +173,7 @@ void Config::override_from_envs()
     // Set ENABLE_CUSLIDE2=1 to use the nvImageCodec-based cuslide2 plugin
     if (const char* env_p = std::getenv("ENABLE_CUSLIDE2"))
     {
-        if (env_p && env_p[0] == '1')
+        if (env_p && std::strcmp(env_p, "1") == 0)
         {
             // Replace cuslide with cuslide2 in plugin list
             for (auto& name : plugin_.plugin_names)
