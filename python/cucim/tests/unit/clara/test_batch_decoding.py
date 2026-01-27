@@ -356,8 +356,9 @@ class TestBatchDecoding:
 class TestBatchDecodingCUDA:
     """Test batch decoding with CUDA output.
 
-    Note: CUDA output is only supported for certain compression types (JPEG).
-    Deflate and other compression types may not support direct CUDA decoding.
+    Note: nvImageCodec (via nvTIFF/nvJPEG) supports GPU-accelerated decoding
+    for multiple compression types including JPEG, Deflate, LZW, and JPEG2000.
+    These tests use JPEG-compressed TIFFs as a representative example.
     """
 
     @pytest.fixture(autouse=True)
@@ -376,7 +377,7 @@ class TestBatchDecodingCUDA:
     ):
         """Test batch reading with CUDA output device.
 
-        Note: Only JPEG-compressed images support CUDA output in nvImageCodec.
+        Uses JPEG-compressed TIFF for testing GPU-accelerated decoding.
         """
         import cupy as cp
 
@@ -406,7 +407,7 @@ class TestBatchDecodingCUDA:
     ):
         """Test that CUDA memory is properly cleaned up after batch read.
 
-        Note: Only JPEG-compressed images support CUDA output in nvImageCodec.
+        Uses JPEG-compressed TIFF for testing GPU memory management.
         """
         import cupy as cp
 
