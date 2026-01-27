@@ -7,6 +7,7 @@
 import json
 import os
 import sys
+import tempfile
 import time
 from pathlib import Path
 from importlib import metadata as importlib_metadata
@@ -58,7 +59,7 @@ def setup_environment():
             }
         }
 
-        config_path = "/tmp/.cucim_philips_test.json"
+        config_path = os.path.join(tempfile.gettempdir(), ".cucim_philips_test.json")
         with open(config_path, "w") as f:
             json.dump(config, f, indent=2)
 

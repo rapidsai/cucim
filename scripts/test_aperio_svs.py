@@ -9,6 +9,7 @@ Quick test script for cuslide2 plugin with Aperio SVS files
 import json
 import os
 import sys
+import tempfile
 import time
 from pathlib import Path
 from importlib import metadata as importlib_metadata
@@ -65,7 +66,7 @@ def setup_environment():
             }
         }
 
-        config_path = "/tmp/.cucim_aperio_test.json"
+        config_path = os.path.join(tempfile.gettempdir(), ".cucim_aperio_test.json")
         with open(config_path, "w") as f:
             json.dump(config, f, indent=2)
 
