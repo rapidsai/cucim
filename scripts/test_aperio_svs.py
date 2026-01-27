@@ -56,7 +56,9 @@ def setup_environment():
     if os.getenv("ENABLE_CUSLIDE2") == "1":
         os.environ["CUCIM_PLUGINS"] = f"cucim.kit.cuslide@{version}.so"
         os.environ.pop("CUCIM_CONFIG_PATH", None)
-        print(f"✅ Plugin selection via env: ENABLE_CUSLIDE2=1 + CUCIM_PLUGINS={os.environ['CUCIM_PLUGINS']}")
+        print(
+            f"✅ Plugin selection via env: ENABLE_CUSLIDE2=1 + CUCIM_PLUGINS={os.environ['CUCIM_PLUGINS']}"
+        )
     else:
         config = {
             "plugin": {
