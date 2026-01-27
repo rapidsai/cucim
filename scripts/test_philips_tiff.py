@@ -87,7 +87,9 @@ def test_philips_tiff(file_path, plugin_lib):
 
     print("📂 Loading Philips TIFF file...")
     start = time.time()
+
     from cucim import CuImage
+
     img = CuImage(file_path)
     load_time = time.time() - start
     print(f"✅ Loaded in {load_time:.3f}s")
