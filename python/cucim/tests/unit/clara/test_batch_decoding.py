@@ -411,7 +411,7 @@ class TestBatchDecodingScaling:
             gen = img.read_region(
                 locations, size, 0, num_workers=min(4, num_locations)
             )
-            results = [np.asarray(r).copy() for r in gen]
+            results = [np.asarray(r, copy=True) for r in gen]
 
             assert len(results) == num_locations
 
