@@ -36,9 +36,8 @@ namespace cuslide2::nvimgcodec
 // ============================================================================
 
 // RAII wrapper for nvimgcodecCodeStream_t (including sub-code streams)
-// Per nvImageCodec team: each code stream (parent or sub) has its own state
-// and MUST be explicitly destroyed. Sub-streams are NOT automatically cleaned
-// up when the parent is destroyed.
+// Each code stream (parent or sub) must be explicitly destroyed. Sub-streams are
+// not automatically cleaned up when the parent is destroyed.
 struct CodeStreamDeleter
 {
     void operator()(nvimgcodecCodeStream_t stream) const
