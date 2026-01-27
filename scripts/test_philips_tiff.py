@@ -9,12 +9,23 @@ import os
 import sys
 import time
 from pathlib import Path
+from importlib import metadata as importlib_metadata
+import re
+
+
+def _plugin_version_from_dist_version(dist_version: str) -> str:
+    """
+    Convert a dist version like '26.2.0' to cuCIM plugin version format '26.02.00'.
+    """
+    m = re.match(r"^\s*(\d+)\.(\d+)\.(\d+)", dist_version)
+    if not m:
+        return dist_version
+    major, minor, patch = (int(m.group(1)), int(m.group(2)), int(m.group(3)))
+    return f"{major}.{minor:02d}.{patch:02d}"
 
 
 def setup_environment():
     """Setup cuCIM environment for cuslide2 plugin"""
-    import cucim
-
     # Get current build directory
     repo_root = Path(__file__).parent.parent
     plugin_lib = repo_root / "cpp/plugins/cucim.kit.cuslide2/build-release/lib"
@@ -22,25 +33,32 @@ def setup_environment():
     if not plugin_lib.exists():
         plugin_lib = repo_root / "install/lib"
 
-    # Use installed cucim version
-    version = cucim.__version__
+    try:
+        dist_version = importlib_metadata.version("cucim-cu12")
+    except importlib_metadata.PackageNotFoundError:
+        dist_version = importlib_metadata.version("cucim")
+    version = _plugin_version_from_dist_version(dist_version)
 
-    # Create plugin configuration
-    config = {
-        "plugin": {
-            "names": [
-                f"cucim.kit.cuslide2@{version}.so",  # Dynamically use current version
-            ]
+    if os.getenv("ENABLE_CUSLIDE2") == "1":
+        os.environ["CUCIM_PLUGINS"] = f"cucim.kit.cuslide@{version}.so"
+        os.environ.pop("CUCIM_CONFIG_PATH", None)
+        print(f"✅ Plugin selection via env: ENABLE_CUSLIDE2=1 + CUCIM_PLUGINS={os.environ['CUCIM_PLUGINS']}")
+    else:
+        config = {
+            "plugin": {
+                "names": [
+                    f"cucim.kit.cuslide2@{version}.so",
+                ]
+            }
         }
-    }
 
-    config_path = "/tmp/.cucim_philips_test.json"
-    with open(config_path, "w") as f:
-        json.dump(config, f, indent=2)
+        config_path = "/tmp/.cucim_philips_test.json"
+        with open(config_path, "w") as f:
+            json.dump(config, f, indent=2)
 
-    os.environ["CUCIM_CONFIG_PATH"] = config_path
-
-    print(f"✅ Plugin configuration: {config_path}")
+        os.environ["CUCIM_CONFIG_PATH"] = config_path
+        os.environ.pop("CUCIM_PLUGINS", None)
+        print(f"✅ Plugin configuration: {config_path}")
     print(f"✅ Plugin library path: {plugin_lib}")
 
     return str(plugin_lib)
@@ -54,18 +72,16 @@ def test_philips_tiff(file_path, plugin_lib):
     print("=" * 60)
     print(f"📁 File: {file_path}")
 
-    # Set plugin root to use cuslide2
-    import cucim
     from cucim.clara import _set_plugin_root
 
     _set_plugin_root(str(plugin_lib))
     print(f"✅ Plugin root set: {plugin_lib}")
     print()
 
-    # Load image
     print("📂 Loading Philips TIFF file...")
     start = time.time()
-    img = cucim.CuImage(file_path)
+    from cucim import CuImage
+    img = CuImage(file_path)
     load_time = time.time() - start
     print(f"✅ Loaded in {load_time:.3f}s")
     print()

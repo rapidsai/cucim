@@ -11,12 +11,26 @@ import os
 import sys
 import time
 from pathlib import Path
+from importlib import metadata as importlib_metadata
+import re
+
+
+def _plugin_version_from_dist_version(dist_version: str) -> str:
+    """
+    Convert a dist version like '26.2.0' to cuCIM plugin version format '26.02.00'.
+
+    cuCIM plugin filenames use zero-padded minor/patch components.
+    """
+    m = re.match(r"^\s*(\d+)\.(\d+)\.(\d+)", dist_version)
+    if not m:
+        # Fall back to the raw version string (best-effort)
+        return dist_version
+    major, minor, patch = (int(m.group(1)), int(m.group(2)), int(m.group(3)))
+    return f"{major}.{minor:02d}.{patch:02d}"
 
 
 def setup_environment():
     """Setup cuCIM environment for cuslide2 plugin"""
-    import cucim
-
     # Get current build directory
     repo_root = Path(__file__).parent.parent
     plugin_lib = (
@@ -26,25 +40,32 @@ def setup_environment():
     if not plugin_lib.exists():
         plugin_lib = repo_root / "install" / "lib"
 
-    # Use installed cucim version
-    version = cucim.__version__
+    try:
+        dist_version = importlib_metadata.version("cucim-cu12")
+    except importlib_metadata.PackageNotFoundError:
+        dist_version = importlib_metadata.version("cucim")
+    version = _plugin_version_from_dist_version(dist_version)
 
-    # Create plugin configuration
-    config = {
-        "plugin": {
-            "names": [
-                f"cucim.kit.cuslide2@{version}.so",  # Dynamically use current version
-            ]
+    if os.getenv("ENABLE_CUSLIDE2") == "1":
+        os.environ["CUCIM_PLUGINS"] = f"cucim.kit.cuslide@{version}.so"
+        os.environ.pop("CUCIM_CONFIG_PATH", None)
+        print(f"✅ Plugin selection via env: ENABLE_CUSLIDE2=1 + CUCIM_PLUGINS={os.environ['CUCIM_PLUGINS']}")
+    else:
+        config = {
+            "plugin": {
+                "names": [
+                    f"cucim.kit.cuslide2@{version}.so",
+                ]
+            }
         }
-    }
 
-    config_path = "/tmp/.cucim_aperio_test.json"
-    with open(config_path, "w") as f:
-        json.dump(config, f, indent=2)
+        config_path = "/tmp/.cucim_aperio_test.json"
+        with open(config_path, "w") as f:
+            json.dump(config, f, indent=2)
 
-    os.environ["CUCIM_CONFIG_PATH"] = config_path
-
-    print(f"✅ Plugin configuration: {config_path}")
+        os.environ["CUCIM_CONFIG_PATH"] = config_path
+        os.environ.pop("CUCIM_PLUGINS", None)
+        print(f"✅ Plugin configuration: {config_path}")
     print(f"✅ Plugin library path: {plugin_lib}")
 
     return str(plugin_lib)
@@ -62,7 +83,6 @@ def test_aperio_svs(svs_path, plugin_lib):
         return False
 
     try:
-        # Set plugin root AFTER importing cucim but BEFORE creating CuImage
         from cucim.clara import _set_plugin_root
 
         _set_plugin_root(str(plugin_lib))
@@ -70,7 +90,6 @@ def test_aperio_svs(svs_path, plugin_lib):
 
         from cucim import CuImage
 
-        # Load the SVS file
         print("\n📂 Loading SVS file...")
         start = time.time()
         img = CuImage(svs_path)
