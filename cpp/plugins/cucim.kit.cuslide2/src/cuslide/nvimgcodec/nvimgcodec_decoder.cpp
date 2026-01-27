@@ -630,6 +630,9 @@ std::vector<BatchDecodeResult> decode_batch_regions_nvimgcodec(
         std::vector<nvimgcodecCodeStream_t> valid_streams;
         std::vector<nvimgcodecImage_t> valid_images;
         std::vector<size_t> valid_indices;
+        valid_streams.reserve(batch_size);
+        valid_images.reserve(batch_size);
+        valid_indices.reserve(batch_size);
 
         for (size_t i = 0; i < batch_size; ++i)
         {
