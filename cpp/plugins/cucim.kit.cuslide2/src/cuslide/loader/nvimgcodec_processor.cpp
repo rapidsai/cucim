@@ -75,10 +75,9 @@ NvImageCodecProcessor::NvImageCodecProcessor(
         static_cast<uint32_t>(location_len),
         std::min(batch_size, MAX_NVIMGCODEC_BATCH_SIZE));
 
-    // Single batch prefetch: I/O is typically faster than decode work,
-    // so one prefetch batch is sufficient to keep the decoder busy.
-    // This uses 2 batch buffers (1 current + 1 prefetched) for reasonable memory usage.
-    preferred_loader_prefetch_factor_ = 1;
+    // Update prefetch_factor based on CUDA batch size (same logic as cuslide's NvJpegProcessor)
+    // This ensures enough tiles are prefetched to keep the decoder busy.
+    preferred_loader_prefetch_factor_ = ((cuda_batch_size_ - 1) / batch_size_ + 1) * 2;
 
     #ifdef DEBUG
     fmt::print("🔧 NvImageCodecProcessor initialized:\n");

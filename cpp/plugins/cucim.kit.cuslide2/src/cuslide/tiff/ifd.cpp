@@ -390,11 +390,8 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
             std::move(request_location), std::move(request_size),
             adjusted_location_len, one_raster_size, batch_size, prefetch_factor, num_workers);
 
-        // When using batch processor (GPU), minimize individual load_func calls
-        // to let batch decoding handle most work. For CPU, use the prefetch logic.
-        const bool use_batch_processor = (out_device.type() == cucim::io::DeviceType::kCUDA);
-        const uint32_t load_size = use_batch_processor ?
-            std::min(static_cast<uint64_t>(1), adjusted_location_len) :
+        // Calculate load_size using prefetch_factor (already updated from processor if GPU path)
+        const uint32_t load_size =
             std::min(static_cast<uint64_t>(batch_size) * (1 + prefetch_factor), adjusted_location_len);
 
         loader->request(load_size);

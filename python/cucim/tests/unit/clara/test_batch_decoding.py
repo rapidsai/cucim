@@ -24,7 +24,17 @@ class TestBatchDecoding:
     def test_batch_read_multiple_locations(
         self, testimg_tiff_stripe_4096x4096_256
     ):
-        """Test reading multiple locations in a single call."""
+        """Test reading multiple locations in a single call.
+
+        This test verifies that batch decoding produces correct pixel values
+        by comparing against single-image decoding results.
+
+        Note on batch decoding path:
+        - num_workers >= 1 triggers ThreadBatchDataLoader
+        - Internally, NvImageCodecProcessor batches up to 64 ROIs per
+          nvimgcodecDecoderDecode() call, regardless of batch_size
+        - batch_size controls how many images are yielded per Python iteration
+        """
         with open_image_cucim(testimg_tiff_stripe_4096x4096_256) as img:
             # Define multiple locations
             locations = [
@@ -42,7 +52,9 @@ class TestBatchDecoding:
                 ref = img.read_region(loc, size, level)
                 reference_results.append(np.asarray(ref, copy=True))
 
-            # Read with multiple workers (triggers batch decoding path)
+            # Read with multiple workers (triggers batch decoding path internally)
+            # batch_size defaults to 1, so each yielded item is a single 3D image
+            # with shape (H, W, C), but internally ROIs are still batch-decoded.
             gen = img.read_region(locations, size, level, num_workers=2)
 
             # Note: Must copy each result before collecting because the iterator
@@ -62,7 +74,13 @@ class TestBatchDecoding:
     def test_batch_read_with_batch_size(
         self, testimg_tiff_stripe_4096x4096_256
     ):
-        """Test batch reading with explicit batch_size parameter."""
+        """Test batch reading with explicit batch_size parameter.
+
+        This test verifies:
+        1. batch_size controls how many images are yielded per iteration
+        2. Pixel values from batch decoding match single-image decoding
+        3. batch_size works independently from num_workers
+        """
         with open_image_cucim(testimg_tiff_stripe_4096x4096_256) as img:
             locations = [
                 (0, 0),
@@ -74,22 +92,45 @@ class TestBatchDecoding:
             ]
             size = (128, 128)
             level = 0
-            batch_size = 2
+            # Use batch_size=3 (different from num_workers=2) to verify
+            # that batch_size parameter works independently
+            batch_size = 3
 
+            # Get reference results using single-image decoding (no batching)
+            reference_results = []
+            for loc in locations:
+                ref = img.read_region(loc, size, level)
+                reference_results.append(np.asarray(ref, copy=True))
+
+            # When batch_size > 1, each yielded item is a 4D array containing
+            # multiple images: shape (batch_size, H, W, C).
             gen = img.read_region(
                 locations, size, level, batch_size=batch_size, num_workers=2
             )
 
             batch_count = 0
+            all_results = []
             for batch in gen:
-                arr = np.asarray(batch)
-                # Batch should have shape [batch_size, H, W, C]
+                arr = np.asarray(batch, copy=True)
+                # Batch should have shape [batch_size, H, W, C] (4D)
                 if batch_count < len(locations) // batch_size:
                     assert arr.shape[0] == batch_size
+                # Collect individual images from this batch
+                for i in range(arr.shape[0]):
+                    all_results.append(arr[i])
                 batch_count += 1
 
             expected_batches = (len(locations) + batch_size - 1) // batch_size
             assert batch_count == expected_batches
+
+            # Verify pixel values match single-image decoding
+            assert len(all_results) == len(reference_results)
+            for i, arr in enumerate(all_results):
+                np.testing.assert_array_equal(
+                    arr,
+                    reference_results[i],
+                    err_msg=f"Region {i} batch result differs from single decode",
+                )
 
     def test_batch_read_with_prefetch(self, testimg_tiff_stripe_4096x4096_256):
         """Test batch reading with prefetch_factor."""
