@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
-# SPDX-FileCopyrightText: Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 """Test Philips TIFF support in cuslide2"""
 
 import json
 import os
+import re
 import sys
 import tempfile
 import time
-from pathlib import Path
 from importlib import metadata as importlib_metadata
-import re
+from pathlib import Path
 
 
 def _plugin_version_from_dist_version(dist_version: str) -> str:
@@ -49,7 +49,9 @@ def setup_environment():
     if os.getenv("ENABLE_CUSLIDE2") == "1":
         os.environ["CUCIM_PLUGINS"] = f"cucim.kit.cuslide@{version}.so"
         os.environ.pop("CUCIM_CONFIG_PATH", None)
-        print(f"✅ Plugin selection via env: ENABLE_CUSLIDE2=1 + CUCIM_PLUGINS={os.environ['CUCIM_PLUGINS']}")
+        print(
+            f"✅ Plugin selection via env: ENABLE_CUSLIDE2=1 + CUCIM_PLUGINS={os.environ['CUCIM_PLUGINS']}"
+        )
     else:
         config = {
             "plugin": {
