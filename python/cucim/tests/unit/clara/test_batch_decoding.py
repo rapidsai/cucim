@@ -133,18 +133,36 @@ class TestBatchDecoding:
                 )
 
     def test_batch_read_with_prefetch(self, testimg_tiff_stripe_4096x4096_256):
-        """Test batch reading with prefetch_factor."""
+        """Test batch reading with prefetch_factor.
+
+        Verifies that prefetch_factor parameter works correctly and
+        produces pixel-accurate results matching single-image decoding.
+        """
         with open_image_cucim(testimg_tiff_stripe_4096x4096_256) as img:
             locations = [(i * 64, i * 64) for i in range(16)]
             size = (64, 64)
             level = 0
 
+            # Get reference results using single-image decoding
+            reference_results = []
+            for loc in locations:
+                ref = img.read_region(loc, size, level)
+                reference_results.append(np.asarray(ref, copy=True))
+
             gen = img.read_region(
                 locations, size, level, num_workers=4, prefetch_factor=4
             )
 
-            results = list(gen)
+            results = [np.asarray(r, copy=True) for r in gen]
             assert len(results) == len(locations)
+
+            # Verify pixel values match single-image decoding
+            for i, arr in enumerate(results):
+                np.testing.assert_array_equal(
+                    arr,
+                    reference_results[i],
+                    err_msg=f"Region {i} with prefetch differs from single decode",
+                )
 
     def test_batch_read_shuffle(self, testimg_tiff_stripe_4096x4096_256):
         """Test batch reading with shuffle enabled."""
@@ -228,7 +246,11 @@ class TestBatchDecoding:
                 )
 
     def test_batch_read_drop_last(self, testimg_tiff_stripe_4096x4096_256):
-        """Test batch reading with drop_last=True."""
+        """Test batch reading with drop_last=True.
+
+        Verifies that drop_last correctly excludes incomplete batches
+        and that the included batches have correct pixel values.
+        """
         with open_image_cucim(testimg_tiff_stripe_4096x4096_256) as img:
             # 5 locations with batch_size=2 should give 2 batches (drop last 1)
             locations = [(i * 100, i * 100) for i in range(5)]
@@ -236,6 +258,13 @@ class TestBatchDecoding:
             level = 0
             batch_size = 2
 
+            # Get reference results using single-image decoding
+            reference_results = []
+            for loc in locations:
+                ref = img.read_region(loc, size, level)
+                reference_results.append(np.asarray(ref, copy=True))
+
+            # With drop_last=True
             gen = img.read_region(
                 locations,
                 size,
@@ -245,9 +274,22 @@ class TestBatchDecoding:
                 drop_last=True,
             )
 
-            results = list(gen)
-            # With drop_last, we should have floor(5/2) = 2 batches
-            assert len(results) == 2
+            all_results = []
+            for batch in gen:
+                arr = np.asarray(batch, copy=True)
+                for i in range(arr.shape[0]):
+                    all_results.append(arr[i])
+
+            # With drop_last, we should have floor(5/2) * 2 = 4 images
+            assert len(all_results) == 4
+
+            # Verify pixel values match single-image decoding for included images
+            for i, arr in enumerate(all_results):
+                np.testing.assert_array_equal(
+                    arr,
+                    reference_results[i],
+                    err_msg=f"Region {i} with drop_last differs from single decode",
+                )
 
     def test_batch_read_boundary_regions(
         self, testimg_tiff_stripe_4096x4096_256
@@ -277,7 +319,11 @@ class TestBatchDecoding:
     def test_batch_read_multiresolution(
         self, testimg_tiff_stripe_4096x4096_256
     ):
-        """Test batch reading at different resolution levels."""
+        """Test batch reading at different resolution levels.
+
+        Verifies that batch decoding produces correct pixel values
+        at each resolution level by comparing with single-image decoding.
+        """
         with open_image_cucim(testimg_tiff_stripe_4096x4096_256) as img:
             level_count = img.resolutions["level_count"]
 
@@ -285,12 +331,26 @@ class TestBatchDecoding:
                 locations = [(i * 50, i * 50) for i in range(4)]
                 size = (128, 128)
 
+                # Get reference results using single-image decoding
+                reference_results = []
+                for loc in locations:
+                    ref = img.read_region(loc, size, level)
+                    reference_results.append(np.asarray(ref, copy=True))
+
                 gen = img.read_region(locations, size, level, num_workers=2)
-                results = list(gen)
+                results = [np.asarray(r, copy=True) for r in gen]
 
                 assert len(results) == len(locations), (
                     f"Failed at level {level}"
                 )
+
+                # Verify pixel values match single-image decoding
+                for i, arr in enumerate(results):
+                    np.testing.assert_array_equal(
+                        arr,
+                        reference_results[i],
+                        err_msg=f"Level {level} region {i} differs from single decode",
+                    )
 
 
 class TestBatchDecodingCUDA:
