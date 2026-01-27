@@ -167,6 +167,58 @@ void Config::override_from_envs()
             }
         }
     }
+
+    // Enable cuslide2 plugin (replaces cuslide with cuslide2)
+    // Set ENABLE_CUSLIDE2=1 to use the nvImageCodec-based cuslide2 plugin
+    if (const char* env_p = std::getenv("ENABLE_CUSLIDE2"))
+    {
+        if (env_p && env_p[0] == '1')
+        {
+            // Replace cuslide with cuslide2 in plugin list
+            for (auto& name : plugin_.plugin_names)
+            {
+                // Find "cucim.kit.cuslide@" and replace with "cucim.kit.cuslide2@"
+                const std::string cuslide_prefix = "cucim.kit.cuslide@";
+                const std::string cuslide2_prefix = "cucim.kit.cuslide2@";
+                if (name.find(cuslide_prefix) == 0)
+                {
+                    name = cuslide2_prefix + name.substr(cuslide_prefix.length());
+                }
+            }
+        }
+    }
+
+    // Override plugin names with CUCIM_PLUGINS environment variable
+    // Format: comma-separated plugin names, e.g., "cucim.kit.cuslide2@26.02.00.so,cucim.kit.cumed@26.02.00.so"
+    if (const char* env_p = std::getenv("CUCIM_PLUGINS"))
+    {
+        if (env_p && env_p[0] != '\0')
+        {
+            std::vector<std::string> names;
+            std::string plugins_str(env_p);
+            size_t pos = 0;
+            size_t prev = 0;
+            while ((pos = plugins_str.find(',', prev)) != std::string::npos)
+            {
+                std::string name = plugins_str.substr(prev, pos - prev);
+                if (!name.empty())
+                {
+                    names.push_back(name);
+                }
+                prev = pos + 1;
+            }
+            // Add the last token
+            std::string name = plugins_str.substr(prev);
+            if (!name.empty())
+            {
+                names.push_back(name);
+            }
+            if (!names.empty())
+            {
+                plugin_.plugin_names = std::move(names);
+            }
+        }
+    }
 }
 void Config::init_configs()
 {
