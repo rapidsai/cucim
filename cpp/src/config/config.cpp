@@ -173,7 +173,7 @@ void Config::override_from_envs()
     // Set ENABLE_CUSLIDE2=1 to use the nvImageCodec-based cuslide2 plugin
     if (const char* env_p = std::getenv("ENABLE_CUSLIDE2"))
     {
-        if (env_p && std::strcmp(env_p, "1") == 0)
+        if (env_p && std::strncmp(env_p, "1", 1) == 0)
         {
             // Replace cuslide with cuslide2 in plugin list
             for (auto& name : plugin_.plugin_names)
