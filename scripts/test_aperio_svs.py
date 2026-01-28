@@ -192,6 +192,78 @@ def test_aperio_svs(svs_path, plugin_lib):
         except Exception as e:
             print(f"  ⚠️  Large tile test failed: {e}")
 
+        # Test batch decoding API
+        print("\n📦 Testing Batch Decoding API...")
+        try:
+            import numpy as np
+
+            # Define multiple locations for batch decoding
+            locations = [
+                (0, 0),
+                (256, 256),
+                (512, 512),
+                (768, 768),
+                (1024, 1024),
+                (1280, 1280),
+                (1536, 1536),
+                (1792, 1792),
+            ]
+            size = (256, 256)
+
+            # Sequential baseline: decode one by one
+            print("  📊 Sequential decode (baseline)...")
+            start = time.time()
+            sequential_results = []
+            for loc in locations:
+                region = img.read_region(loc, size, 0, device="cuda")
+                sequential_results.append(np.asarray(region, copy=True))
+            sequential_time = time.time() - start
+            print(f"     Time: {sequential_time:.4f}s for {len(locations)} tiles")
+
+            # Batch decode: use num_workers to trigger batch decoding path
+            print("  🚀 Batch decode (num_workers=2)...")
+            start = time.time()
+            gen = img.read_region(locations, size, 0, num_workers=2, device="cuda")
+            batch_results = [np.asarray(r, copy=True) for r in gen]
+            batch_time = time.time() - start
+            print(f"     Time: {batch_time:.4f}s for {len(locations)} tiles")
+
+            # Verify results match
+            print("  ✅ Verifying batch results match sequential...")
+            for i, (batch_arr, seq_arr) in enumerate(
+                zip(batch_results, sequential_results)
+            ):
+                if not np.array_equal(batch_arr, seq_arr):
+                    print(f"     ⚠️  Tile {i} mismatch!")
+                    break
+            else:
+                print(f"     ✅ All {len(locations)} tiles match!")
+
+            # Calculate speedup
+            if batch_time > 0:
+                speedup = sequential_time / batch_time
+                print(f"  🎯 Batch Speedup: {speedup:.2f}x")
+
+            # Test with different batch sizes
+            print("\n  📦 Testing batch_size parameter...")
+            for batch_size in [2, 4]:
+                start = time.time()
+                gen = img.read_region(
+                    locations, size, 0, num_workers=2, batch_size=batch_size
+                )
+                results = list(gen)
+                elapsed = time.time() - start
+                print(
+                    f"     batch_size={batch_size}: {elapsed:.4f}s, "
+                    f"yielded {len(results)} batches"
+                )
+
+        except Exception as e:
+            print(f"  ⚠️  Batch decoding test failed: {e}")
+            import traceback
+
+            traceback.print_exc()
+
         print("\n✅ Test completed successfully!")
         return True
 
