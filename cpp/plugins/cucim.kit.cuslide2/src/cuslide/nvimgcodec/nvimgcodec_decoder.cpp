@@ -31,6 +31,11 @@ namespace cuslide2::nvimgcodec
 
 #ifdef CUCIM_HAS_NVIMGCODEC
 
+// Default CUDA stream used for nvImageCodec decoding operations.
+// Using the default stream (0) for simplicity; a custom stream could be used
+// for better async performance in the future.
+constexpr cudaStream_t kDecodeStream = 0;
+
 // ============================================================================
 // RAII Helpers for nvImageCodec Resources
 // ============================================================================
@@ -295,7 +300,7 @@ bool decode_ifd_region_nvimgcodec(const IfdInfo& ifd_info,
         output_image_info.plane_info[0].row_stride = row_stride;
         output_image_info.plane_info[0].sample_type = NVIMGCODEC_SAMPLE_DATA_TYPE_UINT8;
         // Note: buffer_size removed in nvImageCodec v0.7.0 - size is inferred from plane_info
-        output_image_info.cuda_stream = 0;
+        output_image_info.cuda_stream = kDecodeStream;
 
         // Step 4: Provide output buffer
         bool use_device_memory = (buffer_kind == NVIMGCODEC_IMAGE_BUFFER_KIND_STRIDED_DEVICE);
@@ -393,8 +398,7 @@ bool decode_ifd_region_nvimgcodec(const IfdInfo& ifd_info,
 
         if (use_device_memory)
         {
-            // Synchronize the stream used for decoding (default stream = 0)
-            cudaStreamSynchronize(output_image_info.cuda_stream);
+            cudaStreamSynchronize(kDecodeStream);
         }
 
         if (decode_status != NVIMGCODEC_PROCESSING_STATUS_SUCCESS)
@@ -603,7 +607,7 @@ std::vector<BatchDecodeResult> decode_batch_regions_nvimgcodec(
             output_image_info.plane_info[0].num_channels = num_channels;
             output_image_info.plane_info[0].row_stride = row_stride;
             output_image_info.plane_info[0].sample_type = NVIMGCODEC_SAMPLE_DATA_TYPE_UINT8;
-            output_image_info.cuda_stream = 0;
+            output_image_info.cuda_stream = kDecodeStream;
 
             nvimgcodecImage_t image_raw = nullptr;
             nvimgcodecStatus_t status = nvimgcodecImageCreate(manager.get_instance(), &image_raw, &output_image_info);
@@ -695,10 +699,9 @@ std::vector<BatchDecodeResult> decode_batch_regions_nvimgcodec(
         }
 
         // Synchronize if using GPU (use stream sync instead of device sync for better performance)
-        // Note: All batch images use cuda_stream = 0 (default stream)
         if (use_device_memory)
         {
-            cudaStreamSynchronize(0);
+            cudaStreamSynchronize(kDecodeStream);
         }
 
         // Step 6: Transfer successful results to output
