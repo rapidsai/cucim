@@ -193,7 +193,7 @@ void Config::override_from_envs()
     // Format: comma-separated plugin names, e.g., "cucim.kit.cuslide2@26.02.00.so,cucim.kit.cumed@26.02.00.so"
     if (const char* env_p = std::getenv("CUCIM_PLUGINS"))
     {
-        if (env_p && env_p[0] != '\0')
+        if (env_p && std::strcmp(env_p, "") != 0)
         {
             std::vector<std::string> names;
             std::string plugins_str(env_p);
