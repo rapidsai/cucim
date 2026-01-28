@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020-2025, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -857,9 +857,13 @@ CuImage CuImage::read_region(std::vector<int64_t>&& location,
         const char* str_ptr = image_metadata_->spacing_units[dim_index];
         if (!str_ptr)
         {
-            str_ptr = "";  // fallback to empty string if null
+            str_ptr = ""; // fallback to empty string if null
         }
-        size_t str_len = strlen(str_ptr);
+        // Use strnlen to safely limit string length and prevent reading past buffer
+        // if string is unexpectedly not null-terminated (spacing units are typically short like
+        // "mm", "um")
+        constexpr size_t kMaxSpacingUnitLen = 256;
+        size_t str_len = strnlen(str_ptr, kMaxSpacingUnitLen);
 
         char* spacing_unit = static_cast<char*>(resource.allocate(str_len + 1));
         memcpy(spacing_unit, str_ptr, str_len);
@@ -899,7 +903,11 @@ CuImage CuImage::read_region(std::vector<int64_t>&& location,
     const char* coord_sys_ptr = image_metadata_->coord_sys;
     if (coord_sys_ptr)
     {
-        size_t coord_sys_len = strlen(coord_sys_ptr);
+        // Use strnlen to safely limit string length and prevent reading past buffer
+        // if string is unexpectedly not null-terminated (coord_sys is typically 3 chars like
+        // "LPS" or "RAS")
+        constexpr size_t kMaxCoordSysLen = 16;
+        size_t coord_sys_len = strnlen(coord_sys_ptr, kMaxCoordSysLen);
         char* coord_sys_str = static_cast<char*>(resource.allocate(coord_sys_len + 1));
         memcpy(coord_sys_str, coord_sys_ptr, coord_sys_len);
         coord_sys_str[coord_sys_len] = '\0';
