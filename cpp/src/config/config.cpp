@@ -158,7 +158,7 @@ void Config::override_from_envs()
     {
         if (env_p)
         {
-            if (std::strcmp(env_p, "1") == 0)
+            if (std::strncmp(env_p, "1", 1) == 0)
             {
                 profiler_.trace = true;
             }
