@@ -27,7 +27,7 @@ license-files = [
     "LICENSE",
     "LICENSE-3rdparty.md",
 ]
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "click",
     "cupy-cuda13x>=13.6.0",
