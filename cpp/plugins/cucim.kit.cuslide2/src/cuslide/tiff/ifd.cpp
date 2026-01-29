@@ -26,6 +26,7 @@
 // nvImageCodec handles ALL decoding (JPEG, JPEG2000, deflate, LZW, raw)
 #include "cuslide/nvimgcodec/nvimgcodec_decoder.h"
 #include "cuslide/nvimgcodec/nvimgcodec_tiff_parser.h"
+#include "cuslide/loader/nvimgcodec_processor.h"
 #include "tiff.h"
 #include "tiff_constants.h"
 
@@ -222,116 +223,298 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
     PROF_SCOPED_RANGE(PROF_EVENT(ifd_read));
 
     #ifdef DEBUG
-    fmt::print("🎯 IFD::read() ENTRY: IFD[{}], location=({}, {}), size={}x{}, device={}\n",
+    fmt::print("🎯 IFD::read() ENTRY: IFD[{}], location=({}, {}), size={}x{}, device={}, location_len={}\n",
               ifd_index_,
               request->location[0], request->location[1],
               request->size[0], request->size[1],
-              request->device);
+              request->device,
+              request->location_len);
     #endif
 
 #ifdef CUCIM_HAS_NVIMGCODEC
-    // Fast path: Use nvImageCodec ROI decoding when available
-    // ROI decoding is supported in nvImageCodec v0.6.0+ for JPEG2000
-    // Falls back to tile-based decoding if ROI decode fails
-    if (nvimgcodec_sub_stream_ && tiff->nvimgcodec_parser_ &&
-        request->location_len == 1 && request->batch_size == 1)
+    if (!nvimgcodec_sub_stream_ || !tiff->nvimgcodec_parser_)
     {
-        std::string device_name(request->device);
-        if (request->shm_name)
+        throw std::runtime_error(fmt::format(
+            "IFD[{}]: nvImageCodec parser not available", ifd_index_));
+    }
+
+    std::string device_name(request->device);
+    if (request->shm_name)
+    {
+        device_name = device_name + fmt::format("[{}]", request->shm_name);
+    }
+    cucim::io::Device out_device(device_name);
+
+    int64_t w = request->size[0];
+    int64_t h = request->size[1];
+    const uint64_t location_len = request->location_len;
+
+    uint32_t batch_size = request->batch_size;
+    int32_t n_ch = samples_per_pixel_;
+    int ndim = 3;
+
+    size_t one_raster_size = static_cast<size_t>(w) * static_cast<size_t>(h) * samples_per_pixel_;
+    size_t raster_size = one_raster_size;
+
+    void* raster = nullptr;
+    auto raster_type = cucim::io::DeviceType::kCPU;
+
+    DLTensor* out_buf = request->buf;
+    bool is_buf_available = out_buf && out_buf->data;
+
+    if (is_buf_available)
+    {
+        raster = out_buf->data;
+    }
+
+    // ========================================================================
+    // BATCH DECODING PATH: Multiple locations or batch_size > 1
+    // Uses ThreadBatchDataLoader with NvImageCodecProcessor for parallel ROI decoding
+    // ========================================================================
+    if (location_len > 1 || batch_size > 1)
+    {
+        if (batch_size > 1)
         {
-            device_name = device_name + fmt::format("[{}]", request->shm_name);
+            ndim = 4;
         }
-        cucim::io::Device out_device(device_name);
 
-        int64_t sx = request->location[0];
-        int64_t sy = request->location[1];
-        int64_t w = request->size[0];
-        int64_t h = request->size[1];
+        int64_t* location = request->location;
+        const uint32_t num_workers = request->num_workers;
+        const bool drop_last = request->drop_last;
+        uint32_t prefetch_factor = request->prefetch_factor;
+        const bool shuffle = request->shuffle;
+        const uint64_t seed = request->seed;
 
-        // Output buffer - decoder may allocate if not provided.
-        uint8_t* output_buffer = nullptr;
-        DLTensor* out_buf = request->buf;
-        bool is_buf_available = out_buf && out_buf->data;
+        #ifdef DEBUG
+        fmt::print("🚀 Using ThreadBatchDataLoader for {} locations, batch_size={}, workers={}\n",
+                  location_len, batch_size, num_workers);
+        #endif
 
-        if (is_buf_available)
+        if (num_workers == 0 && location_len > 1)
         {
-            // User provided pre-allocated buffer
-            output_buffer = static_cast<uint8_t*>(out_buf->data);
+            throw std::runtime_error("Cannot read multiple locations with zero workers!");
         }
-        // Note: decode_ifd_region_nvimgcodec will allocate buffer if output_buffer is nullptr
 
-        // Get IFD info from TiffFileParser
-        const auto& ifd_info = tiff->nvimgcodec_parser_->get_ifd(static_cast<uint32_t>(ifd_index_));
-
-        // Call nvImageCodec ROI decoder
-        bool success = cuslide2::nvimgcodec::decode_ifd_region_nvimgcodec(
-            ifd_info,
-            tiff->nvimgcodec_parser_->get_main_code_stream(),
-            sx, sy, w, h,
-            output_buffer,
-            out_device);
-
-        if (success)
+        // Shuffle data if requested
+        if (shuffle)
         {
-            #ifdef DEBUG
-            fmt::print("✅ nvImageCodec ROI decode successful: {}x{} at ({}, {})\n", w, h, sx, sy);
-            #endif
+            auto rng = std::mt19937{ seed };
+            struct position { int64_t x; int64_t y; };
+            std::shuffle(reinterpret_cast<position*>(&location[0]),
+                         reinterpret_cast<position*>(&location[location_len * 2]), rng);
+        }
 
-            // Set up output metadata
-            out_image_data->container.data = output_buffer;
-            out_image_data->container.device = DLDevice{ static_cast<DLDeviceType>(out_device.type()), out_device.index() };
+        // Adjust location length based on 'drop_last'
+        uint64_t adjusted_location_len = location_len;
+        const uint32_t remaining_len = adjusted_location_len % batch_size;
+        if (drop_last)
+        {
+            adjusted_location_len -= remaining_len;
+        }
+
+        // Do not use prefetch if the image count is too small
+        if (1 + prefetch_factor > adjusted_location_len)
+        {
+            prefetch_factor = adjusted_location_len > 0 ? adjusted_location_len - 1 : 0;
+        }
+
+        raster_size *= batch_size;
+
+        const IFD* ifd = this;
+
+        // Reconstruct location unique_ptr
+        std::unique_ptr<std::vector<int64_t>>* location_unique =
+            reinterpret_cast<std::unique_ptr<std::vector<int64_t>>*>(request->location_unique);
+        std::unique_ptr<std::vector<int64_t>> request_location = std::move(*location_unique);
+        delete location_unique;
+
+        // Reconstruct size unique_ptr
+        std::unique_ptr<std::vector<int64_t>>* size_unique =
+            reinterpret_cast<std::unique_ptr<std::vector<int64_t>>*>(request->size_unique);
+        std::unique_ptr<std::vector<int64_t>> request_size = std::move(*size_unique);
+        delete size_unique;
+
+        // Create load function that decodes ROI using nvImageCodec
+        auto load_func = [tiff, ifd, location, w, h, out_device](
+                             cucim::loader::ThreadBatchDataLoader* loader_ptr, uint64_t location_index) {
+            uint8_t* raster_ptr = loader_ptr->raster_pointer(location_index);
+
+            int64_t sx = location[location_index * 2];
+            int64_t sy = location[location_index * 2 + 1];
+
+            // Get IFD info from TiffFileParser
+            const auto& ifd_info = tiff->nvimgcodec_parser_->get_ifd(static_cast<uint32_t>(ifd->ifd_index_));
+
+            // Decode ROI directly into the loader's raster buffer
+            bool success = cuslide2::nvimgcodec::decode_ifd_region_nvimgcodec(
+                ifd_info,
+                tiff->nvimgcodec_parser_->get_main_code_stream(),
+                static_cast<uint32_t>(sx), static_cast<uint32_t>(sy),
+                static_cast<uint32_t>(w), static_cast<uint32_t>(h),
+                raster_ptr,
+                out_device);
+
+            if (!success)
+            {
+                fmt::print(stderr, "[Error] Failed to decode ROI at ({}, {}) {}x{}\n", sx, sy, w, h);
+            }
+        };
+
+        // Create batch processor using nvImageCodec (GPU only)
+        // For CPU output, batch_processor remains nullptr and load_func is used for per-tile decoding
+        std::unique_ptr<cucim::loader::BatchDataProcessor> batch_processor;
+
+        if (out_device.type() == cucim::io::DeviceType::kCUDA)
+        {
+            raster_type = cucim::io::DeviceType::kCUDA;
+
+            // Create NvImageCodecProcessor for GPU-accelerated batch decoding
+            auto nvimgcodec_processor = std::make_unique<cuslide2::loader::NvImageCodecProcessor>(
+                *tiff->nvimgcodec_parser_,
+                request_location->data(),
+                request_size->data(),
+                adjusted_location_len,
+                batch_size,
+                static_cast<uint32_t>(ifd_index_),
+                out_device);
+
+            // Update prefetch_factor from processor
+            prefetch_factor = nvimgcodec_processor->preferred_loader_prefetch_factor();
+
+            batch_processor = std::move(nvimgcodec_processor);
+        }
+
+        // Create ThreadBatchDataLoader
+        auto loader = std::make_unique<cucim::loader::ThreadBatchDataLoader>(
+            load_func, std::move(batch_processor), out_device,
+            std::move(request_location), std::move(request_size),
+            adjusted_location_len, one_raster_size, batch_size, prefetch_factor, num_workers);
+
+        // Calculate load_size using prefetch_factor (already updated from processor if GPU path)
+        const uint32_t load_size =
+            std::min(static_cast<uint64_t>(batch_size) * (1 + prefetch_factor), adjusted_location_len);
+
+        loader->request(load_size);
+
+        // If reading single location synchronously, fetch immediately
+        if (adjusted_location_len == 1 && batch_size == 1)
+        {
+            raster = loader->next_data();
+        }
+
+        // Set loader in output for iterator access
+        out_image_data->loader = loader.release();
+
+        #ifdef DEBUG
+        fmt::print("✅ ThreadBatchDataLoader created for {} locations\n", adjusted_location_len);
+        #endif
+
+        // Set up output metadata (only if raster buffer is available)
+        // For multi-location batch iteration, raster is nullptr because data is
+        // returned per-batch via loader->next_data() during Python iteration.
+        // The container.data field isn't needed upfront in that case.
+        if (raster)
+        {
+            out_image_data->container.data = raster;
+            out_image_data->container.device = DLDevice{ static_cast<DLDeviceType>(raster_type), out_device.index() };
             out_image_data->container.dtype = DLDataType{ kDLUInt, 8, 1 };
-            out_image_data->container.ndim = 3;
-            out_image_data->container.shape = static_cast<int64_t*>(cucim_malloc(3 * sizeof(int64_t)));
-            out_image_data->container.shape[0] = h;
-            out_image_data->container.shape[1] = w;
-            out_image_data->container.shape[2] = samples_per_pixel_;
+            out_image_data->container.ndim = ndim;
+            out_image_data->container.shape = static_cast<int64_t*>(cucim_malloc(ndim * sizeof(int64_t)));
+            if (ndim == 4)
+            {
+                out_image_data->container.shape[0] = batch_size;
+                out_image_data->container.shape[1] = h;
+                out_image_data->container.shape[2] = w;
+                out_image_data->container.shape[3] = n_ch;
+            }
+            else
+            {
+                out_image_data->container.shape[0] = h;
+                out_image_data->container.shape[1] = w;
+                out_image_data->container.shape[2] = n_ch;
+            }
             out_image_data->container.strides = nullptr;
             out_image_data->container.byte_offset = 0;
-
-            return true;
         }
-        else
-        {
 
-            #ifdef DEBUG
-            fmt::print("❌ nvImageCodec ROI decode failed for IFD[{}]\n", ifd_index_);
-            #endif
-
-            // Free allocated buffer on failure (only if we allocated it).
-            if (!is_buf_available && output_buffer)
-            {
-                if (out_device.type() == cucim::io::DeviceType::kCUDA)
-                {
-                    cudaFree(output_buffer);
-                }
-                else
-                {
-                    free(output_buffer);
-                }
-            }
-
-            throw std::runtime_error(fmt::format(
-                "Failed to decode IFD[{}] with nvImageCodec. ROI: ({},{}) {}x{}",
-                ifd_index_, sx, sy, w, h));
-        }
+        return true;
     }
-#endif
 
-    // If we reach here, nvImageCodec is not available or request doesn't match fast path
-    #ifdef DEBUG
-    fmt::print("❌ Cannot decode: nvImageCodec not available or unsupported request type\n");
-#ifdef CUCIM_HAS_NVIMGCODEC
-    fmt::print("   nvimgcodec_sub_stream_={}, location_len={}, batch_size={}\n",
-              static_cast<void*>(nvimgcodec_sub_stream_), request->location_len, request->batch_size);
+    // ========================================================================
+    // SINGLE REGION PATH: Standard single-location decoding
+    // ========================================================================
+    int64_t sx = request->location[0];
+    int64_t sy = request->location[1];
+
+    // Output buffer - decoder may allocate if not provided.
+    uint8_t* output_buffer = nullptr;
+
+    if (is_buf_available)
+    {
+        // User provided pre-allocated buffer
+        output_buffer = static_cast<uint8_t*>(out_buf->data);
+    }
+    // Note: decode_ifd_region_nvimgcodec will allocate buffer if output_buffer is nullptr
+
+    // Get IFD info from TiffFileParser
+    const auto& ifd_info = tiff->nvimgcodec_parser_->get_ifd(static_cast<uint32_t>(ifd_index_));
+
+    // Call nvImageCodec ROI decoder
+    bool success = cuslide2::nvimgcodec::decode_ifd_region_nvimgcodec(
+        ifd_info,
+        tiff->nvimgcodec_parser_->get_main_code_stream(),
+        sx, sy, w, h,
+        output_buffer,
+        out_device);
+
+    if (success)
+    {
+        #ifdef DEBUG
+        fmt::print("✅ nvImageCodec ROI decode successful: {}x{} at ({}, {})\n", w, h, sx, sy);
+        #endif
+
+        // Set up output metadata
+        out_image_data->container.data = output_buffer;
+        out_image_data->container.device = DLDevice{ static_cast<DLDeviceType>(out_device.type()), out_device.index() };
+        out_image_data->container.dtype = DLDataType{ kDLUInt, 8, 1 };
+        out_image_data->container.ndim = 3;
+        out_image_data->container.shape = static_cast<int64_t*>(cucim_malloc(3 * sizeof(int64_t)));
+        out_image_data->container.shape[0] = h;
+        out_image_data->container.shape[1] = w;
+        out_image_data->container.shape[2] = samples_per_pixel_;
+        out_image_data->container.strides = nullptr;
+        out_image_data->container.byte_offset = 0;
+
+        return true;
+    }
+    else
+    {
+        #ifdef DEBUG
+        fmt::print("❌ nvImageCodec ROI decode failed for IFD[{}]\n", ifd_index_);
+        #endif
+
+        // Free allocated buffer on failure (only if we allocated it).
+        if (!is_buf_available && output_buffer)
+        {
+            if (out_device.type() == cucim::io::DeviceType::kCUDA)
+            {
+                cudaFree(output_buffer);
+            }
+            else
+            {
+                cucim_free(output_buffer);
+            }
+        }
+
+        throw std::runtime_error(fmt::format(
+            "Failed to decode IFD[{}] with nvImageCodec. ROI: ({},{}) {}x{}",
+            ifd_index_, sx, sy, w, h));
+    }
 #else
-    fmt::print("   location_len={}, batch_size={}\n",
-              request->location_len, request->batch_size);
-#endif
-    #endif
+    // If nvImageCodec not available, throw error
     throw std::runtime_error(fmt::format(
-        "IFD[{}]: This library requires nvImageCodec for image decoding. "
-        "Multi-location/batch requests not yet supported.", ifd_index_));
+        "IFD[{}]: This library requires nvImageCodec for image decoding.", ifd_index_));
+#endif
 }
 
 uint32_t IFD::index() const

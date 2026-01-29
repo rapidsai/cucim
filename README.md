@@ -99,6 +99,42 @@ docker cp $tmp_id:/input notebooks
 docker rm -v ${tmp_id}
 ```
 
+## cuslide2 Plugin (Experimental)
+
+cuCIM includes an experimental `cuslide2` plugin that uses [nvImageCodec](https://developer.nvidia.com/nvimagecodec) for GPU-accelerated TIFF decoding. This plugin provides enhanced performance for batch ROI decoding operations.
+
+### Enabling cuslide2
+
+To enable the cuslide2 plugin, set the `ENABLE_CUSLIDE2` environment variable:
+
+```bash
+ENABLE_CUSLIDE2=1 python your_script.py
+```
+
+### Test Scripts
+
+cuCIM provides test scripts to verify cuslide2 functionality with different TIFF formats:
+
+**Aperio SVS files:**
+
+```bash
+# Download a sample SVS file and run the test
+python scripts/test_aperio_svs.py --download
+
+# Or test with your own SVS file
+ENABLE_CUSLIDE2=1 python scripts/test_aperio_svs.py /path/to/your/file.svs
+```
+
+**Philips TIFF files:**
+
+```bash
+# Test with a Philips TIFF file
+ENABLE_CUSLIDE2=1 python scripts/test_philips_tiff.py /path/to/your/philips.tiff
+
+# List available test options
+python scripts/test_philips_tiff.py --help
+```
+
 ## Build/Install from Source
 
 See build [instructions](CONTRIBUTING.md#setting-up-your-build-environment).
@@ -119,4 +155,4 @@ is used in this project.
 
 Apache-2.0 License (see [LICENSE](LICENSE) file).
 
-Copyright (c) 2020-2025, NVIDIA CORPORATION.
+Copyright (c) 2020-2026, NVIDIA CORPORATION.

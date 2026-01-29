@@ -98,7 +98,6 @@ static std::string tiff_tag_value_to_string(const TiffTagValue& value)
     }, value);
 }
 
-// Per nvImageCodec team: value_count check is sufficient for scalar/array extraction.
 // Unified extraction function: handles both single values and arrays.
 template <typename T>
 static bool extract_tag_value(const std::vector<uint8_t>& buffer, int value_count, TiffTagValue& out_value)
@@ -277,8 +276,8 @@ TiffFileParser::TiffFileParser(const std::string& file_path)
 
     if (status != NVIMGCODEC_STATUS_SUCCESS)
     {
-        // nvImageCodec may create a code stream even on error (e.g., for user-provided file issues).
-        // Clean up to avoid memory leak.
+        // Clean up if code stream was created despite error
+        // (nvimgcodecCodeStreamCreateFromFile may allocate even on failure)
         if (main_code_stream_)
         {
             nvimgcodecCodeStreamDestroy(main_code_stream_);

@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 import itertools
@@ -127,6 +127,17 @@ class ImageBench:
             index += ", " + self.index_str
         return index
 
+    def _prep_kwargs_string(self, kwargs):
+        params = []
+        for k, v in kwargs.items():
+            if isinstance(v, types.FunctionType):
+                params.append(f"{k}={v.__name__}")
+            elif isinstance(v, (np.ndarray, cp.ndarray)):
+                params.append(f"{k}=array,shape={v.shape},dtype={v.dtype.name}")
+            else:
+                params.append(f"{k}={v}")
+        return ", ".join(params)
+
     def get_reps(self, func, args, kwargs, target_duration=5, cpu=True):
         if not cpu:
             # dry run
@@ -165,19 +176,22 @@ class ImageBench:
                 if "brute_force" in var_kwargs_gpu:
                     var_kwargs_gpu["brute_force"] = True
 
-                kw_cpu = {**self.fixed_kwargs_cpu, **var_kwargs_cpu}
                 kw_gpu = {**self.fixed_kwargs_gpu, **var_kwargs_gpu}
-                rep_kwargs_cpu = self.get_reps(
-                    self.func_cpu, self.args_cpu, kw_cpu, duration, cpu=True
-                )
                 rep_kwargs_gpu = self.get_reps(
                     self.func_gpu, self.args_gpu, kw_gpu, duration, cpu=False
                 )
-                print("Number of Repetitions : ", rep_kwargs_gpu)
+                print("Number of Repetitions (GPU): ", rep_kwargs_gpu)
+
+                if self.run_cpu is True:
+                    kw_cpu = {**self.fixed_kwargs_cpu, **var_kwargs_cpu}
+                    rep_kwargs_cpu = self.get_reps(
+                        self.func_cpu, self.args_cpu, kw_cpu, duration, cpu=True
+                    )
                 perf_gpu = repeat(
                     self.func_gpu, self.args_gpu, kw_gpu, **rep_kwargs_gpu
                 )
 
+                df.at[index, "GPU: kwargs"] = self._prep_kwargs_string(kw_gpu)
                 df.at[index, "shape"] = f"{self.shape}"
                 # df.at[index,  "description"] = index
                 df.at[index, "function_name"] = self.function_name
@@ -194,6 +208,7 @@ class ImageBench:
                     df.at[index, "CPU: host (mean)"] = perf.cpu_times.mean()
                     df.at[index, "CPU: host (std)"] = perf.cpu_times.std()
 
+                    df.at[index, "CPU: kwargs"] = self._prep_kwargs_string(kw_cpu)
                 df.at[index, "GPU: host (mean)"] = perf_gpu.cpu_times.mean()
                 df.at[index, "GPU: host (std)"] = perf_gpu.cpu_times.std()
                 df.at[index, "GPU: device (mean)"] = perf_gpu.gpu_times.mean()
@@ -202,14 +217,14 @@ class ImageBench:
                     props = cp.cuda.runtime.getDeviceProperties(device.id)
                     gpu_name = props["name"].decode()
 
-                df.at[index, "GPU: DEV Name"] = [gpu_name for i in range(len(df))]
+                df.at[index, "GPU: DEV Name"] = gpu_name
                 cmd = "cat /proc/cpuinfo"
                 cpuinfo = subprocess.check_output(cmd, shell=True).strip()
                 cpu_name = (
                     re.search("\nmodel name.*\n", cpuinfo.decode()).group(0).strip("\n")
                 )
                 cpu_name = cpu_name.replace("model name\t: ", "")
-                df.at[index, "CPU: DEV Name"] = [cpu_name for i in range(len(df))]
+                df.at[index, "CPU: DEV Name"] = cpu_name
 
                 # accelerations[arr_index] = df.at[index,  "GPU accel"]
                 if verbose:
