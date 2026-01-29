@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020-2025, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -326,6 +326,12 @@ TIFF::TIFF(const cucim::filesystem::Path& file_path) : file_path_(file_path)
         #ifdef DEBUG
         fmt::print("   Please ensure nvImageCodec is properly installed.\n");
         #endif // DEBUG
+        // CRITICAL: Clear client_data BEFORE reset to prevent the deleter from
+        // trying to delete 'this' while we're still in the constructor
+        if (file_handle_shared_)
+        {
+            file_handle_shared_->client_data = nullptr;
+        }
         // Cleanup file handle before re-throwing
         file_handle_shared_.reset();
         throw std::runtime_error(fmt::format(
