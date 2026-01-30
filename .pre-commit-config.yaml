@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 # To install the git pre-commit hook run:
@@ -28,7 +28,7 @@ repos:
         additional_dependencies:
           - tomli
   - repo: https://github.com/rapidsai/pre-commit-hooks
-    rev: v1.2.1
+    rev: v1.3.3
     hooks:
       - id: verify-copyright
         name: verify-copyright-cucim
@@ -573,6 +573,7 @@ repos:
             cpp/plugins/cucim[.]kit[.]cuslide/src/cuslide/jpeg/libjpeg_turbo[.]cpp$
           )
       - id: verify-alpha-spec
+      - id: verify-pyproject-license
   - repo: https://github.com/rapidsai/dependency-file-generator
     rev: v1.20.0
     hooks:
