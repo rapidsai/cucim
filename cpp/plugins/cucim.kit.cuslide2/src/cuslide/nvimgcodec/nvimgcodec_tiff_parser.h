@@ -363,13 +363,6 @@ public:
     bool has_cpu_decoder() const { return cpu_decoder_ != nullptr; }
 
     /**
-     * @brief Get the mutex for thread-safe decoder operations
-     *
-     * @return Reference to the decoder mutex
-     */
-    std::mutex& get_mutex() { return decoder_mutex_; }
-
-    /**
      * @brief Check if nvImageCodec is available and initialized
      *
      * @return true if available

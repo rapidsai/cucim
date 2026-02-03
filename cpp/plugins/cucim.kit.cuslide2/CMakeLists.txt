@@ -161,6 +161,9 @@ set(CUSLIDE2_CORE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/nvimgcodec/nvimgcodec_decoder.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/nvimgcodec/nvimgcodec_tiff_parser.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/nvimgcodec/nvimgcodec_tiff_parser.h
+    # ThreadBatchDataLoader integration with nvImageCodec
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/loader/nvimgcodec_processor.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/loader/nvimgcodec_processor.h
 )
 
 add_library(cuslide2_core STATIC ${CUSLIDE2_CORE_SOURCES})

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-FileCopyrightText: Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 """
@@ -8,15 +8,30 @@ Quick test script for cuslide2 plugin with Aperio SVS files
 
 import json
 import os
+import re
 import sys
+import tempfile
 import time
+from importlib import metadata as importlib_metadata
 from pathlib import Path
+
+
+def _plugin_version_from_dist_version(dist_version: str) -> str:
+    """
+    Convert a dist version like '26.2.0' to cuCIM plugin version format '26.02.00'.
+
+    cuCIM plugin filenames use zero-padded minor/patch components.
+    """
+    m = re.match(r"^\s*(\d+)\.(\d+)\.(\d+)", dist_version)
+    if not m:
+        # Fall back to the raw version string (best-effort)
+        return dist_version
+    major, minor, patch = (int(m.group(1)), int(m.group(2)), int(m.group(3)))
+    return f"{major}.{minor:02d}.{patch:02d}"
 
 
 def setup_environment():
     """Setup cuCIM environment for cuslide2 plugin"""
-    import cucim
-
     # Get current build directory
     repo_root = Path(__file__).parent.parent
     plugin_lib = (
@@ -26,25 +41,40 @@ def setup_environment():
     if not plugin_lib.exists():
         plugin_lib = repo_root / "install" / "lib"
 
-    # Use installed cucim version
-    version = cucim.__version__
+    # Try CUDA-specific packages first, then fall back to generic cucim
+    dist_version = None
+    for pkg_name in ["cucim-cu13", "cucim-cu12", "cucim"]:
+        try:
+            dist_version = importlib_metadata.version(pkg_name)
+            break
+        except importlib_metadata.PackageNotFoundError:
+            continue
+    if dist_version is None:
+        raise importlib_metadata.PackageNotFoundError("cucim")
+    version = _plugin_version_from_dist_version(dist_version)
 
-    # Create plugin configuration
-    config = {
-        "plugin": {
-            "names": [
-                f"cucim.kit.cuslide2@{version}.so",  # Dynamically use current version
-            ]
+    if os.getenv("ENABLE_CUSLIDE2") == "1":
+        os.environ["CUCIM_PLUGINS"] = f"cucim.kit.cuslide@{version}.so"
+        os.environ.pop("CUCIM_CONFIG_PATH", None)
+        print(
+            f"✅ Plugin selection via env: ENABLE_CUSLIDE2=1 + CUCIM_PLUGINS={os.environ['CUCIM_PLUGINS']}"
+        )
+    else:
+        config = {
+            "plugin": {
+                "names": [
+                    f"cucim.kit.cuslide2@{version}.so",
+                ]
+            }
         }
-    }
 
-    config_path = "/tmp/.cucim_aperio_test.json"
-    with open(config_path, "w") as f:
-        json.dump(config, f, indent=2)
+        config_path = os.path.join(tempfile.gettempdir(), ".cucim_aperio_test.json")
+        with open(config_path, "w") as f:
+            json.dump(config, f, indent=2)
 
-    os.environ["CUCIM_CONFIG_PATH"] = config_path
-
-    print(f"✅ Plugin configuration: {config_path}")
+        os.environ["CUCIM_CONFIG_PATH"] = config_path
+        os.environ.pop("CUCIM_PLUGINS", None)
+        print(f"✅ Plugin configuration: {config_path}")
     print(f"✅ Plugin library path: {plugin_lib}")
 
     return str(plugin_lib)
@@ -62,7 +92,6 @@ def test_aperio_svs(svs_path, plugin_lib):
         return False
 
     try:
-        # Set plugin root AFTER importing cucim but BEFORE creating CuImage
         from cucim.clara import _set_plugin_root
 
         _set_plugin_root(str(plugin_lib))
@@ -70,7 +99,6 @@ def test_aperio_svs(svs_path, plugin_lib):
 
         from cucim import CuImage
 
-        # Load the SVS file
         print("\n📂 Loading SVS file...")
         start = time.time()
         img = CuImage(svs_path)
@@ -163,6 +191,78 @@ def test_aperio_svs(svs_path, plugin_lib):
 
         except Exception as e:
             print(f"  ⚠️  Large tile test failed: {e}")
+
+        # Test batch decoding API
+        print("\n📦 Testing Batch Decoding API...")
+        try:
+            import numpy as np
+
+            # Define multiple locations for batch decoding
+            locations = [
+                (0, 0),
+                (256, 256),
+                (512, 512),
+                (768, 768),
+                (1024, 1024),
+                (1280, 1280),
+                (1536, 1536),
+                (1792, 1792),
+            ]
+            size = (256, 256)
+
+            # Sequential baseline: decode one by one
+            print("  📊 Sequential decode (baseline)...")
+            start = time.time()
+            sequential_results = []
+            for loc in locations:
+                region = img.read_region(loc, size, 0, device="cuda")
+                sequential_results.append(np.asarray(region, copy=True))
+            sequential_time = time.time() - start
+            print(f"     Time: {sequential_time:.4f}s for {len(locations)} tiles")
+
+            # Batch decode: use num_workers to trigger batch decoding path
+            print("  🚀 Batch decode (num_workers=2)...")
+            start = time.time()
+            gen = img.read_region(locations, size, 0, num_workers=2, device="cuda")
+            batch_results = [np.asarray(r, copy=True) for r in gen]
+            batch_time = time.time() - start
+            print(f"     Time: {batch_time:.4f}s for {len(locations)} tiles")
+
+            # Verify results match
+            print("  ✅ Verifying batch results match sequential...")
+            for i, (batch_arr, seq_arr) in enumerate(
+                zip(batch_results, sequential_results)
+            ):
+                if not np.array_equal(batch_arr, seq_arr):
+                    print(f"     ⚠️  Tile {i} mismatch!")
+                    break
+            else:
+                print(f"     ✅ All {len(locations)} tiles match!")
+
+            # Calculate speedup
+            if batch_time > 0:
+                speedup = sequential_time / batch_time
+                print(f"  🎯 Batch Speedup: {speedup:.2f}x")
+
+            # Test with different batch sizes
+            print("\n  📦 Testing batch_size parameter...")
+            for batch_size in [2, 4]:
+                start = time.time()
+                gen = img.read_region(
+                    locations, size, 0, num_workers=2, batch_size=batch_size
+                )
+                results = list(gen)
+                elapsed = time.time() - start
+                print(
+                    f"     batch_size={batch_size}: {elapsed:.4f}s, "
+                    f"yielded {len(results)} batches"
+                )
+
+        except Exception as e:
+            print(f"  ⚠️  Batch decoding test failed: {e}")
+            import traceback
+
+            traceback.print_exc()
 
         print("\n✅ Test completed successfully!")
         return True
