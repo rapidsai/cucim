@@ -1,3 +1,30 @@
+# cucim 26.02.00 (4 Feb 2026)
+
+### 🚨 Breaking Changes
+### 🐛 Bug Fixes
+* Fix broken binary_fill_holes in vendored code by @grlee77 in https://github.com/rapidsai/cucim/pull/1001
+* Misc fixes and improvements to existing benchmark scripts by @grlee77 in https://github.com/rapidsai/cucim/pull/1002
+* fix(core): Replace strlen with strnlen for safer string handling by @gigony in https://github.com/rapidsai/cucim/pull/1015
+### 🛠️ Improvements
+* Use strict priority in CI conda tests by @bdice in https://github.com/rapidsai/cucim/pull/979
+* Use strict priority in CI conda tests by @bdice in https://github.com/rapidsai/cucim/pull/986
+* Remove alpha specs from non-RAPIDS dependencies by @bdice in https://github.com/rapidsai/cucim/pull/989
+* Enable merge barriers by @KyleFromNVIDIA in https://github.com/rapidsai/cucim/pull/991
+* Use SPDX license identifiers in pyproject.toml, bump build dependency floors by @jameslamb in https://github.com/rapidsai/cucim/pull/999
+* Add CUDA 13.1 support by @bdice in https://github.com/rapidsai/cucim/pull/995
+* build and test against CUDA 13.1.0 by @jameslamb in https://github.com/rapidsai/cucim/pull/1000
+* [REVIEW] nvImageCodec v0.7.0 infra only by @cdinea in https://github.com/rapidsai/cucim/pull/997
+* Use main shared-workflows branch by @jameslamb in https://github.com/rapidsai/cucim/pull/1003
+* Cherry-pick 25.12 changelog to main by @AyodeAwe in https://github.com/rapidsai/cucim/pull/1004
+* Fix update-version.sh notebook sed commands by @AyodeAwe in https://github.com/rapidsai/cucim/pull/1005
+* [REVIEW] nvImageCodec v0.7.0 decoding by @cdinea in https://github.com/rapidsai/cucim/pull/998
+* fix(build): build package on merge to `release/*` branch by @gforsyth in https://github.com/rapidsai/cucim/pull/1009
+* Add batch ROI decoding using nvImageCodec v0.7.0+ API by @cdinea in https://github.com/rapidsai/cucim/pull/1007
+
+## New Contributors
+
+**Full Changelog**: https://github.com/rapidsai/cucim/compare/v26.02.00a...release/26.02
+
 # cucim 25.12.00 (10 Dec 2025)
 
 ### 🚨 Breaking Changes
