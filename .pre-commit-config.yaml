@@ -573,11 +573,15 @@ repos:
             cpp/plugins/cucim[.]kit[.]cuslide/src/cuslide/jpeg/libjpeg_turbo[.]cpp$
           )
       - id: verify-alpha-spec
+        args:
+          - --fix
+          - --mode
+          - release
   - repo: https://github.com/rapidsai/dependency-file-generator
     rev: v1.20.0
     hooks:
-        - id: rapids-dependency-file-generator
-          args: ["--clean", "--warn-all", "--strict"]
+      - id: rapids-dependency-file-generator
+        args: ["--clean", "--warn-all", "--strict"]
   - repo: https://github.com/shellcheck-py/shellcheck-py
     rev: v0.10.0.1
     hooks:

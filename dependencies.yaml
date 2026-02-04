@@ -180,12 +180,12 @@ dependencies:
     common:
       - output_types: conda
         packages:
-          - cucim==26.2.*,>=0.0.0a0
+          - cucim==26.2.*
   depends_on_libcucim:
     common:
       - output_types: conda
         packages:
-          - libcucim==26.2.*,>=0.0.0a0
+          - libcucim==26.2.*
   develop:
     common:
       - output_types: [conda, requirements, pyproject]
