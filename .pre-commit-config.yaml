@@ -28,7 +28,7 @@ repos:
         additional_dependencies:
           - tomli
   - repo: https://github.com/rapidsai/pre-commit-hooks
-    rev: v1.3.3
+    rev: v1.4.3
     hooks:
       - id: verify-copyright
         name: verify-copyright-cucim
@@ -574,6 +574,19 @@ repos:
           )
       - id: verify-alpha-spec
       - id: verify-pyproject-license
+      - id: verify-hardcoded-version
+        exclude: |
+          (?x)
+            (^|/)devcontainer[.]json$|
+            (^|/)dependencies[.]yaml$|
+            ^[.]github/(workflows|ISSUE_TEMPLATE)/|
+            (^|/)pom[.]xml$|
+            ^[.]pre-commit-config[.]yaml$|
+            ^conda/environments/|
+            (^|/)VERSION$|
+            (^|/)RAPIDS_BRANCH$|
+            [.](md|rst|avro|parquet|png|orc|gz|pkl|sas7bdat)$|
+            [.]code-workspace$
   - repo: https://github.com/rapidsai/dependency-file-generator
     rev: v1.20.0
     hooks:
