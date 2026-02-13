@@ -52,9 +52,10 @@ RAPIDS_PIP_WHEEL_ARGS=(
   --disable-pip-version-check
 )
 
-# Add py-api setting for stable ABI builds
-if [[ -n "${RAPIDS_PY_API:-}" ]]; then
-  RAPIDS_PIP_WHEEL_ARGS+=(--config-settings="skbuild.wheel.py-api=${RAPIDS_PY_API}")
+# If `RAPIDS_PY_VERSION` is set, use that as the lower-bound for the stable ABI CPython version
+if [ -n "${RAPIDS_PY_VERSION:-}" ]; then
+    RAPIDS_PY_API="cp${RAPIDS_PY_VERSION//./}"
+    PYTHON_ARGS_FOR_INSTALL+=("--config-settings" "skbuild.wheel.py-api=${RAPIDS_PY_API}")
 fi
 
 rapids-logger "Building '${package_name}' wheel"
