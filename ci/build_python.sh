@@ -1,5 +1,5 @@
 #!/bin/bash
-# SPDX-FileCopyrightText: Copyright (c) 2022, NVIDIA CORPORATION.
+# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
 # SPDX-License-Identifier: Apache-2.0
 
 set -euo pipefail
@@ -34,3 +34,6 @@ RAPIDS_PACKAGE_VERSION=$(head -1 ./VERSION) rapids-conda-retry build \
   conda/recipes/cucim
 
 sccache --show-adv-stats
+
+RAPIDS_PACKAGE_NAME="$(rapids-package-name conda_python cucim --stable --cuda "$RAPIDS_CUDA_VERSION")"
+export RAPIDS_PACKAGE_NAME

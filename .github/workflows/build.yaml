@@ -66,6 +66,8 @@ jobs:
       date: ${{ inputs.date }}
       script: ci/build_python.sh
       sha: ${{ inputs.sha }}
+      # Build a conda package for each CUDA x ARCH x minimum supported Python version
+      matrix_filter: group_by({CUDA_VER, ARCH}) | map(min_by(.PY_VER | split(".") | map(tonumber)))
   upload-conda:
     needs: [cpp-build, python-build]
     secrets: inherit
@@ -86,6 +88,8 @@ jobs:
       script: ci/build_wheel.sh
       package-name: cucim
       package-type: python
+      # Build a wheel for each CUDA x ARCH x minimum supported Python version
+      matrix_filter: group_by({CUDA_VER, ARCH}) | map(min_by(.PY_VER | split(".") | map(tonumber)))
   wheel-publish:
     needs: wheel-build
     secrets: inherit
@@ -96,3 +100,4 @@ jobs:
       sha: ${{ inputs.sha }}
       date: ${{ inputs.date }}
       package-name: cucim
+      publish-wheel-search-key: cucim_wheel_python_abi3
