@@ -76,6 +76,8 @@ jobs:
       script: ci/build_wheel.sh
       package-name: cucim
       package-type: python
+      # Build a wheel for each CUDA x ARCH x minimum supported Python version
+      matrix_filter: group_by({CUDA_VER, ARCH}) | map(min_by(.PY_VER | split(".") | map(tonumber)))
   wheel-tests:
     needs: wheel-build
     secrets: inherit

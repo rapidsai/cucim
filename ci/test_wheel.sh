@@ -6,11 +6,10 @@ set -eou pipefail
 
 source rapids-init-pip
 
-RAPIDS_PY_CUDA_SUFFIX="$(rapids-wheel-ctk-name-gen "${RAPIDS_CUDA_VERSION}")"
-PYTHON_WHEELHOUSE=$(RAPIDS_PY_WHEEL_NAME="cucim_${RAPIDS_PY_CUDA_SUFFIX}" rapids-download-wheels-from-github python)
+PYTHON_WHEELHOUSE=$(rapids-download-from-github "$(rapids-package-name wheel_python cucim --stable --cuda "$RAPIDS_CUDA_VERSION")")
 
 # echo to expand wildcard before adding `[extra]` requires for pip
-rapids-pip-retry install "$(echo ${PYTHON_WHEELHOUSE}/cucim*.whl)[test]"
+rapids-pip-retry install "$(echo "${PYTHON_WHEELHOUSE}"/cucim*.whl)[test]"
 
 if type -f yum > /dev/null 2>&1; then
     yum update -y
