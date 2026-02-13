@@ -20,9 +20,21 @@ export LD_LIBRARY_PATH="$BUILD_PREFIX/lib:$PREFIX/lib:$LD_LIBRARY_PATH"
 
 cp -P python/install/lib/* python/cucim/src/cucim/clara/
 
+
+PYTHON_ARGS_FOR_INSTALL=(
+    --config-settings="rapidsai.disable-cuda=true"
+    -vv
+)
+
+# If `RAPIDS_PY_VERSION` is set, use that as the lower-bound for the stable ABI CPython version
+if [ -n "${RAPIDS_PY_VERSION:-}" ]; then
+    RAPIDS_PY_API="cp${RAPIDS_PY_VERSION//./}"
+    PYTHON_ARGS_FOR_INSTALL+=("--config-settings" "skbuild.wheel.py-api=${RAPIDS_PY_API}")
+fi
+
 pushd python/cucim
 
 echo "PYTHON: ${PYTHON}"
-$PYTHON -m pip install --config-settings rapidsai.disable-cuda=true . -vv
+$PYTHON -m pip install "${PYTHON_ARGS_FOR_INSTALL[@]}" .
 
 popd
