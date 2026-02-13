@@ -2,10 +2,11 @@
 # SPDX-License-Identifier: Apache-2.0
 
 {% set version = environ['RAPIDS_PACKAGE_VERSION'].lstrip('v') %}
-{% set py_version = environ['CONDA_PY'] %}
 {% set cuda_version = '.'.join(environ['RAPIDS_CUDA_VERSION'].split('.')[:2]) %}
 {% set cuda_major = cuda_version.split('.')[0] %}
 {% set date_string = environ['RAPIDS_DATE_STRING'] %}
+{% set py_abi_min = environ["RAPIDS_PY_VERSION"] %}
+{% set py_buildstring = py_abi_min.replace(".", "") %}
 
 
 package:
@@ -17,7 +18,7 @@ source:
 
 build:
   number: {{ GIT_DESCRIBE_NUMBER }}
-  string: cuda{{ cuda_major }}_py{{ py_version }}_{{ date_string }}_gh{{ GIT_DESCRIBE_HASH }}_gn{{ GIT_DESCRIBE_NUMBER }}_ph{{ PKG_HASH }}
+  string: cuda{{ cuda_major }}_cp{{ py_buildstring }}_abi3_{{ date_string }}_gh{{ GIT_DESCRIBE_HASH }}_gn{{ GIT_DESCRIBE_NUMBER }}_ph{{ PKG_HASH }}
   ignore_run_exports_from:
     - {{ compiler('cuda') }}
     - cuda-cudart-dev
@@ -30,6 +31,7 @@ build:
     - CMAKE_CXX_COMPILER_LAUNCHER
     - CMAKE_GENERATOR
     - PARALLEL_LEVEL
+    - RAPIDS_PY_VERSION
     - SCCACHE_BUCKET
     - SCCACHE_IDLE_TIMEOUT
     - SCCACHE_REGION
@@ -54,7 +56,8 @@ requirements:
     - cuda-cudart-dev
     - cupy >=13.6.0
     - libcucim ={{ version }}
-    - python
+    - python ={{ py_abi_min }}
+    - python-abi3 {{ py_abi_min }}.*
     - pip
     - rapids-build-backend >=0.4.0,<0.5.0
     - scikit-image >=0.19.0,<0.25.0
