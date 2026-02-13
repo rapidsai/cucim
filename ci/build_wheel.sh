@@ -44,13 +44,22 @@ cd "${package_dir}"
 
 sccache --zero-stats
 
+RAPIDS_PIP_WHEEL_ARGS=(
+  -w dist
+  -v
+  --no-build-isolation
+  --no-deps
+  --disable-pip-version-check
+)
+
+# Add py-api setting for stable ABI builds
+if [[ -n "${RAPIDS_PY_API:-}" ]]; then
+  RAPIDS_PIP_WHEEL_ARGS+=(--config-settings="skbuild.wheel.py-api=${RAPIDS_PY_API}")
+fi
+
 rapids-logger "Building '${package_name}' wheel"
 rapids-pip-retry wheel \
-    -w dist \
-    -v \
-    --no-build-isolation \
-    --no-deps \
-    --disable-pip-version-check \
+    "${RAPIDS_PIP_WHEEL_ARGS[@]}" \
     .
 
 sccache --show-adv-stats
@@ -61,3 +70,6 @@ python -m auditwheel repair -w "${RAPIDS_WHEEL_BLD_OUTPUT_DIR}" dist/*
 ls -1 "${RAPIDS_WHEEL_BLD_OUTPUT_DIR}" | grep -vqz 'none'
 
 ../../ci/validate_wheel.sh "${RAPIDS_WHEEL_BLD_OUTPUT_DIR}"
+
+RAPIDS_PACKAGE_NAME="$(rapids-package-name wheel_python cucim --stable --cuda "$RAPIDS_CUDA_VERSION")"
+export RAPIDS_PACKAGE_NAME
