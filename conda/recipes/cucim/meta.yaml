@@ -7,6 +7,7 @@
 {% set date_string = environ['RAPIDS_DATE_STRING'] %}
 {% set py_abi_min = environ["RAPIDS_PY_VERSION"] %}
 {% set py_buildstring = py_abi_min.replace(".", "") %}
+{% set py_runtime_latest = "3.13" %}
 
 
 package:
@@ -80,7 +81,10 @@ requirements:
 
 tests:
   requirements:
+tests:
+  requirements:
     - cuda-version ={{ cuda_version }}
+    - python ={{ py_runtime_latest }}
   imports:
     - cucim
 
