@@ -22,6 +22,7 @@
 #include <cucim/loader/tile_info.h>
 
 #include "cuslide/nvimgcodec/nvimgcodec_tiff_parser.h"
+#include "cuslide/nvimgcodec/nvimgcodec_decoder.h"
 
 namespace cuslide2::loader
 {
@@ -107,9 +108,10 @@ public:
 
 private:
     /**
-     * @brief Decode a batch of ROIs using nvImageCodec batch API
+     * @brief Schedule a batch of ROIs for decoding using nvImageCodec batch API
+     * @return BatchDecodeState that must be passed to wait_batch_decode()
      */
-    bool decode_roi_batch(const std::vector<RoiDecodeRequest>& requests);
+    cuslide2::nvimgcodec::BatchDecodeState schedule_roi_batch(const std::vector<RoiDecodeRequest>& requests);
 
     bool stopped_ = false;
     uint32_t preferred_loader_prefetch_factor_ = 2;
@@ -147,6 +149,10 @@ private:
 
     // Decode batch tracking
     uint64_t next_decode_index_ = 0;
+
+    // Asynchronous batch decode state
+    std::vector<cuslide2::nvimgcodec::BatchDecodeState> pending_batches_;
+    std::vector<std::vector<RoiDecodeRequest>> pending_requests_;
 };
 
 } // namespace cuslide2::loader
