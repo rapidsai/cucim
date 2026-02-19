@@ -1,25 +1,17 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 import math
 
 import cupy as cp
-from packaging.version import parse
 
 from cucim.skimage._vendored import ndimage as ndi
 from cucim.skimage.util import map_array
 
-CUPY_GTE_13_3_0 = parse(cp.__version__) >= parse("13.3.0")
-
 # Need some default includes so uint32_t, uint64_t, etc. are defined
 
-if CUPY_GTE_13_3_0:
-    _includes = r"""
+_includes = r"""
 #include <cupy/cuda_workaround.h>  // provide std:: coverage
-"""
-else:
-    _includes = r"""
-#include <type_traits>  // let Jitify handle this
 """
 
 
