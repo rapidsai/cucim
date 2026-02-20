@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2022-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import math
@@ -9,7 +9,6 @@ import cupy as cp
 from cucim.skimage._vendored import _ndimage_util as util
 from cucim.skimage._vendored._internal import _normalize_axis_index
 from cucim.skimage._vendored._ndimage_filters_core import (
-    CUPY_GTE_13_3_0,
     _ndimage_CAST_FUNCTION,
     _ndimage_includes,
 )
@@ -922,11 +921,7 @@ def _get_separable_conv_kernel(
         patch_per_block=patch_per_block,
         flip_kernel=flip_kernel,
     )
-    if CUPY_GTE_13_3_0:
-        options = ("--std=c++11",)
-    else:
-        options = ("--std=c++11", "-DCUPY_USE_JITIFY")
-    m = cp.RawModule(code=code, options=options)
+    m = cp.RawModule(code=code)
     return m.get_function(func_name), block, patch_per_block
 
 

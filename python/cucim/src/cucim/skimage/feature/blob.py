@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2022-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import math
@@ -77,7 +77,6 @@ def _get_prune_blob_rawmodule(dtype, large_int) -> cp.RawModule:
 
     return cp.RawModule(
         code=_preamble + _code,
-        options=("--std=c++11",),
         name_expressions=["_prune_blobs"],
     )
 
