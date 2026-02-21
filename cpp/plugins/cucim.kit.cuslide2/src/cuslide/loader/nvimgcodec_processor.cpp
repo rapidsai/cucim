@@ -81,6 +81,21 @@ NvImageCodecProcessor::NvImageCodecProcessor(
         }
     }
 
+    // Create a dedicated CUDA stream for decode operations when using GPU.
+    // This avoids blocking the default stream and allows overlapping decode
+    // with other GPU work (e.g., inference, preprocessing).
+    if (use_device_memory_)
+    {
+        cudaError_t stream_err = cudaStreamCreate(&decode_stream_);
+        if (stream_err != cudaSuccess)
+        {
+            #ifdef DEBUG
+            ::fmt::print("⚠️  Failed to create CUDA stream, falling back to default stream\n");
+            #endif
+            decode_stream_ = nullptr;
+        }
+    }
+
     // Calculate batch size for nvImageCodec
     // Capped by location_len and MAX_NVIMGCODEC_BATCH_SIZE.
     // MAX_NVIMGCODEC_BATCH_SIZE is defined in this namespace, so use it directly
@@ -98,7 +113,9 @@ NvImageCodecProcessor::NvImageCodecProcessor(
     ::fmt::print("   ROI size: {}x{}, {} bytes\n", roi_width_, roi_height_, roi_size_bytes_);
     ::fmt::print("   Locations: {}, Batch size: {}\n", location_len_, batch_size_);
     ::fmt::print("   nvImageCodec batch size: {}\n", cuda_batch_size_);
-    ::fmt::print("   Output: {}\n", use_device_memory_ ? "GPU" : "CPU");
+    ::fmt::print("   Output: {} (stream: {})\n",
+                 use_device_memory_ ? "GPU" : "CPU",
+                 decode_stream_ ? "custom" : "default");
     #endif
 }
 
@@ -125,6 +142,13 @@ NvImageCodecProcessor::~NvImageCodecProcessor()
         }
     }
     decoded_data_gpu_.clear();
+
+    // Destroy custom CUDA stream
+    if (decode_stream_)
+    {
+        cudaStreamDestroy(decode_stream_);
+        decode_stream_ = nullptr;
+    }
 }
 
 void NvImageCodecProcessor::shutdown()
@@ -337,14 +361,17 @@ uint32_t NvImageCodecProcessor::wait_batch(uint32_t index_in_task,
     // Get IFD info for the batch (all regions decode from the same IFD)
     const auto& ifd_info = tiff_parser_.get_ifd(ifd_index_);
 
-    // Schedule batch decode asynchronously (don't wait)
+    // Schedule batch decode asynchronously on the dedicated CUDA stream.
+    // Using a custom stream avoids blocking the default stream and allows
+    // overlapping decode with other GPU work (e.g., inference pipelines).
     // Note: nvImageCodec is not thread-safe, but we're calling this from request()
-    // which is already protected by the caller's context
+    // which is already protected by the caller's context.
     state = ::cuslide2::nvimgcodec::schedule_batch_decode(
         ifd_info,
         tiff_parser_.get_main_code_stream(),
         regions,
-        out_device_);
+        out_device_,
+        decode_stream_);
 
     return state;
 }
