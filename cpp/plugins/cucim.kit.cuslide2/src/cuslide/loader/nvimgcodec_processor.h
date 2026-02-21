@@ -16,6 +16,7 @@
 #include <vector>
 
 #include <nvimgcodec.h>
+#include <cuda_runtime.h>
 
 #include <cucim/io/device.h>
 #include <cucim/loader/batch_data_processor.h>
@@ -126,6 +127,9 @@ private:
     // Device configuration
     cucim::io::Device out_device_;
     bool use_device_memory_ = false;
+
+    // Custom CUDA stream for async decode (avoids blocking the default stream)
+    cudaStream_t decode_stream_ = nullptr;
 
     // Batch configuration
     uint32_t cuda_batch_size_ = 1;
