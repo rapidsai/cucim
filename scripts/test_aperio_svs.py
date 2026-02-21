@@ -47,7 +47,7 @@ def setup_environment():
     version = _plugin_version_from_dist_version(dist_version)
 
     if os.getenv("ENABLE_CUSLIDE2") == "1":
-        os.environ["CUCIM_PLUGINS"] = f"cucim.kit.cuslide@{version}.so"
+        os.environ["CUCIM_PLUGINS"] = f"cucim.kit.cuslide2@{version}.so"
         os.environ.pop("CUCIM_CONFIG_PATH", None)
         print(
             f"✅ Plugin selection via env: ENABLE_CUSLIDE2=1 + CUCIM_PLUGINS={os.environ['CUCIM_PLUGINS']}"
@@ -184,6 +184,92 @@ def test_aperio_svs(svs_path, plugin_lib):
 
         except Exception as e:
             print(f"  ⚠️  Large tile test failed: {e}")
+
+        # ==============================================================
+        # Test async batch decode path (multiple locations + GPU)
+        # This exercises NvImageCodecProcessor, schedule_batch_decode(),
+        # and wait_batch_decode() — the async scheduling API.
+        # ==============================================================
+        print("\n🔄 Testing async batch decode (multiple locations, GPU)...")
+        try:
+            level_dims = level_dimensions[0]
+            tile_w, tile_h = 256, 256
+            max_x = max(0, level_dims[0] - tile_w)
+            max_y = max(0, level_dims[1] - tile_h)
+
+            # Generate a grid of tile locations
+            locations = []
+            for y_off in range(0, min(max_y + 1, tile_h * 4), tile_h):
+                for x_off in range(0, min(max_x + 1, tile_w * 4), tile_w):
+                    locations.append([x_off, y_off])
+            num_locations = len(locations)
+
+            if num_locations < 2:
+                print(
+                    "  ⚠️  Image too small for batch test "
+                    f"({level_dims[0]}x{level_dims[1]})"
+                )
+            else:
+                batch_size = min(num_locations, 8)
+                print(
+                    f"  Locations: {num_locations}, "
+                    f"tile: {tile_w}x{tile_h}, "
+                    f"batch_size: {batch_size}"
+                )
+
+                # GPU batch decode (async path)
+                start = time.time()
+                gpu_batch = img.read_region(
+                    location=locations,
+                    size=[tile_w, tile_h],
+                    level=0,
+                    device="cuda",
+                    batch_size=batch_size,
+                    num_workers=1,
+                )
+                # Consume iterator to force all batches
+                gpu_tiles = []
+                for tile in gpu_batch:
+                    gpu_tiles.append(tile)
+                gpu_batch_time = time.time() - start
+                print(
+                    f"  ✅ GPU batch: {gpu_batch_time:.4f}s "
+                    f"({len(gpu_tiles)} tiles)"
+                )
+
+                # CPU batch decode (per-tile path, for comparison)
+                start = time.time()
+                cpu_batch = img.read_region(
+                    location=locations,
+                    size=[tile_w, tile_h],
+                    level=0,
+                    device="cpu",
+                    batch_size=batch_size,
+                    num_workers=1,
+                )
+                cpu_tiles = []
+                for tile in cpu_batch:
+                    cpu_tiles.append(tile)
+                cpu_batch_time = time.time() - start
+                print(
+                    f"  ✅ CPU batch: {cpu_batch_time:.4f}s "
+                    f"({len(cpu_tiles)} tiles)"
+                )
+
+                if gpu_batch_time > 0:
+                    speedup = cpu_batch_time / gpu_batch_time
+                    print(f"  🎯 Batch speedup: {speedup:.2f}x")
+
+                # Verify tile shapes
+                if gpu_tiles:
+                    print(f"  Tile shape: {gpu_tiles[0].shape}")
+                    print(f"  Tile device: {gpu_tiles[0].device}")
+
+        except Exception as e:
+            print(f"  ⚠️  Batch decode test failed: {e}")
+            import traceback
+
+            traceback.print_exc()
 
         print("\n✅ Test completed successfully!")
         return True
