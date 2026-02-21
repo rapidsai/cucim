@@ -54,10 +54,14 @@ namespace cuslide2::nvimgcodec
 //
 // This helper:
 //   1. Checks NVIMGCODEC_EXTENSIONS_PATH env var (user override)
-//   2. Uses dladdr() to find the loaded libnvimgcodec.so directory
+//   2. Resolves the real libnvimgcodec.so path via the dynlink wrapper's
+//      NvimgcodecLoadSymbol() + dladdr() (not the stub address)
 //   3. Probes <lib_dir>/extensions/ and <lib_dir>/../extensions/
-//   4. Probes the pip-installed path under site-packages/nvidia/nvimgcodec/extensions/
 //
+
+// Declared in nvimgcodec_wrap.cc — returns the real symbol from libnvimgcodec.so
+extern void* NvimgcodecLoadSymbol(const char* name);
+
 static std::string detect_nvimgcodec_extensions_path()
 {
     // 1. Environment variable override
@@ -67,30 +71,34 @@ static std::string detect_nvimgcodec_extensions_path()
         return std::string(env_path);
     }
 
-    // 2. Find where libnvimgcodec.so was loaded from using dladdr
-    Dl_info dl_info{};
-    // Use nvimgcodecInstanceCreate as an anchor symbol
-    if (dladdr(reinterpret_cast<void*>(&nvimgcodecInstanceCreate), &dl_info) && dl_info.dli_fname)
+    // 2. Find where libnvimgcodec.so was loaded from using dladdr on the
+    //    REAL function pointer (resolved via dynlink), not the stub address.
+    void* real_func = NvimgcodecLoadSymbol("nvimgcodecGetProperties");
+    if (real_func)
     {
-        std::string lib_path(dl_info.dli_fname);
-        auto last_slash = lib_path.rfind('/');
-        if (last_slash != std::string::npos)
+        Dl_info dl_info{};
+        if (dladdr(real_func, &dl_info) && dl_info.dli_fname)
         {
-            std::string lib_dir = lib_path.substr(0, last_slash);
-
-            // 3a. Probe <lib_dir>/extensions/
-            std::string candidate = lib_dir + "/extensions";
-            struct stat st{};
-            if (stat(candidate.c_str(), &st) == 0 && S_ISDIR(st.st_mode))
+            std::string lib_path(dl_info.dli_fname);
+            auto last_slash = lib_path.rfind('/');
+            if (last_slash != std::string::npos)
             {
-                return candidate;
-            }
+                std::string lib_dir = lib_path.substr(0, last_slash);
 
-            // 3b. Probe <lib_dir>/../extensions/ (pip package layout)
-            candidate = lib_dir + "/../extensions";
-            if (stat(candidate.c_str(), &st) == 0 && S_ISDIR(st.st_mode))
-            {
-                return candidate;
+                // 3a. Probe <lib_dir>/extensions/
+                std::string candidate = lib_dir + "/extensions";
+                struct stat st{};
+                if (stat(candidate.c_str(), &st) == 0 && S_ISDIR(st.st_mode))
+                {
+                    return candidate;
+                }
+
+                // 3b. Probe <lib_dir>/../extensions/ (pip package layout)
+                candidate = lib_dir + "/../extensions";
+                if (stat(candidate.c_str(), &st) == 0 && S_ISDIR(st.st_mode))
+                {
+                    return candidate;
+                }
             }
         }
     }
