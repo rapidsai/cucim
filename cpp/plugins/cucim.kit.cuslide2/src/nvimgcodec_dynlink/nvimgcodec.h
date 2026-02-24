@@ -233,7 +233,7 @@ extern "C"
 
     } nvimgcodecProperties_t;
 
-    /** 
+    /**
      * @brief Function type for device memory resource allocation.
      *
      * @param [in] ctx Pointer to user context.
