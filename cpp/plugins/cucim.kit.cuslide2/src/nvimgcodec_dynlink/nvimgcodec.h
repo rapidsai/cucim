@@ -239,7 +239,7 @@ extern "C"
      * @param [in] ctx Pointer to user context.
      * @param [in] ptr Pointer where to write pointer to allocated memory.
      * @param [in] size How many bytes to allocate.
-     * @param [in] stream CUDA stream    
+     * @param [in] stream CUDA stream
      * @returns They will return 0 in case of success, and non-zero otherwise
      */
     typedef int (*nvimgcodecDeviceMalloc_t)(void* ctx, void** ptr, size_t size, cudaStream_t stream);
