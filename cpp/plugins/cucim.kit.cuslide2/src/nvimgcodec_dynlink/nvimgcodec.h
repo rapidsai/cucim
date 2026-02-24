@@ -244,7 +244,7 @@ extern "C"
      */
     typedef int (*nvimgcodecDeviceMalloc_t)(void* ctx, void** ptr, size_t size, cudaStream_t stream);
 
-    /** 
+    /**
      * @brief Function type for device memory deallocation.
      *
      * @param [in] ctx Pointer to user context.
