@@ -57,7 +57,7 @@ extern "C"
 #define NVIMGCODEC_DEVICE_CURRENT -1
 
 /**
- * @brief Defines device id as a CPU only 
+ * @brief Defines device id as a CPU only
  */
 #define NVIMGCODEC_DEVICE_CPU_ONLY -99999
 
