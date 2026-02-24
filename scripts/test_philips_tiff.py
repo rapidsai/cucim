@@ -8,6 +8,7 @@ import json
 import os
 import re
 import sys
+import tempfile
 import time
 from importlib import metadata as importlib_metadata
 from pathlib import Path
@@ -33,10 +34,16 @@ def setup_environment():
     if not plugin_lib.exists():
         plugin_lib = repo_root / "install/lib"
 
-    try:
-        dist_version = importlib_metadata.version("cucim-cu12")
-    except importlib_metadata.PackageNotFoundError:
-        dist_version = importlib_metadata.version("cucim")
+    # Try CUDA-specific packages first, then fall back to generic cucim
+    dist_version = None
+    for pkg_name in ["cucim-cu13", "cucim-cu12", "cucim"]:
+        try:
+            dist_version = importlib_metadata.version(pkg_name)
+            break
+        except importlib_metadata.PackageNotFoundError:
+            continue
+    if dist_version is None:
+        raise importlib_metadata.PackageNotFoundError("cucim")
     version = _plugin_version_from_dist_version(dist_version)
 
     if os.getenv("ENABLE_CUSLIDE2") == "1":
@@ -54,7 +61,7 @@ def setup_environment():
             }
         }
 
-        config_path = "/tmp/.cucim_philips_test.json"
+        config_path = os.path.join(tempfile.gettempdir(), ".cucim_philips_test.json")
         with open(config_path, "w") as f:
             json.dump(config, f, indent=2)
 
@@ -82,6 +89,7 @@ def test_philips_tiff(file_path, plugin_lib):
 
     print("📂 Loading Philips TIFF file...")
     start = time.time()
+
     from cucim import CuImage
 
     img = CuImage(file_path)
