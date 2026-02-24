@@ -16,7 +16,7 @@
  * 
  */
 
-/** 
+/**
  * @brief The nvImageCodec library and extension API
  *
  * @file nvimgcodec.h
