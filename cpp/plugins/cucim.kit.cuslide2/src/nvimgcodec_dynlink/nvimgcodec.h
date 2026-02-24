@@ -219,7 +219,7 @@ extern "C"
 
     /**
      * @brief The nvImageCodec properties.
-     * 
+     *
      * @see nvimgcodecGetProperties
      */
     typedef struct
