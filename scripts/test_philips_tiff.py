@@ -275,8 +275,7 @@ def test_philips_tiff(file_path, plugin_lib):
 
         if num_locations < 2:
             print(
-                f"  ⚠️  Image too small for batch test "
-                f"({level_dims[0]}x{level_dims[1]})"
+                f"  ⚠️  Image too small for batch test ({level_dims[0]}x{level_dims[1]})"
             )
         else:
             batch_size = min(num_locations, 8)
@@ -301,10 +300,7 @@ def test_philips_tiff(file_path, plugin_lib):
             for tile in gpu_batch:
                 gpu_tiles.append(tile)
             gpu_batch_time = time.time() - start
-            print(
-                f"  ✅ GPU batch: {gpu_batch_time:.4f}s "
-                f"({len(gpu_tiles)} tiles)"
-            )
+            print(f"  ✅ GPU batch: {gpu_batch_time:.4f}s ({len(gpu_tiles)} tiles)")
 
             # CPU batch decode (per-tile path, for comparison)
             start = time.time()
@@ -320,10 +316,7 @@ def test_philips_tiff(file_path, plugin_lib):
             for tile in cpu_batch:
                 cpu_tiles.append(tile)
             cpu_batch_time = time.time() - start
-            print(
-                f"  ✅ CPU batch: {cpu_batch_time:.4f}s "
-                f"({len(cpu_tiles)} tiles)"
-            )
+            print(f"  ✅ CPU batch: {cpu_batch_time:.4f}s ({len(cpu_tiles)} tiles)")
 
             if gpu_batch_time > 0:
                 speedup = cpu_batch_time / gpu_batch_time
