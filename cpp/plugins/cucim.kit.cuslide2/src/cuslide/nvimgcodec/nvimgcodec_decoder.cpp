@@ -253,37 +253,19 @@ bool decode_ifd_region_nvimgcodec(const IfdInfo& ifd_info,
         // Caller-provided output buffer (optional). If non-null, we decode into it.
         const bool caller_provided_buffer = (output_buffer != nullptr);
 
-        // Select decoder based on target device.
-        // CPU-only backend can handle in-bounds ROI decoding for TIFF files.
+        // Determine target device for buffer placement
         std::string device_str = std::string(out_device);
         bool target_is_cpu = (device_str.find("cpu") != std::string::npos);
 
-        // CPU decoder doesn't support out-of-bounds ROI decoding, must use hybrid decoder.
-        bool roi_out_of_bounds = (x + width > ifd_info.width) || (y + height > ifd_info.height);
-        if (target_is_cpu && roi_out_of_bounds)
-        {
-            target_is_cpu = false;
-            #ifdef DEBUG
-            fmt::print("  ⚠️  ROI out of bounds (region ends at [{},{}] but image is {}x{}), using hybrid decoder\n",
-                      x + width, y + height, ifd_info.width, ifd_info.height);
-            #endif
-        }
+        // Always use the primary (GPU-enabled) decoder.  For CPU output requests
+        // the buffer_kind is set to STRIDED_HOST below, and nvImageCodec handles
+        // the GPU decode → host copy internally.  The CPU-only decoder lacks the
+        // GPU backends needed for JPEG-compressed TIFF, so we don't use it here.
+        nvimgcodecDecoder_t decoder = manager.get_decoder();
 
-        nvimgcodecDecoder_t decoder;
-        if (target_is_cpu && manager.has_cpu_decoder())
-        {
-            decoder = manager.get_cpu_decoder();
-            #ifdef DEBUG
-            fmt::print("  💡 Using CPU-only decoder for ROI\n");
-            #endif
-        }
-        else
-        {
-            decoder = manager.get_decoder();
-            #ifdef DEBUG
-            fmt::print("  💡 Using hybrid decoder for ROI\n");
-            #endif
-        }
+        #ifdef DEBUG
+        fmt::print("  💡 Using primary decoder (target: {})\n", target_is_cpu ? "CPU" : "GPU");
+        #endif
 
         // Step 1: Create view with ROI for this IFD
         nvimgcodecRegion_t region{};
@@ -569,16 +551,9 @@ std::vector<BatchDecodeResult> decode_batch_regions_nvimgcodec(
             #endif
         }
 
-        // Select decoder
-        nvimgcodecDecoder_t decoder;
-        if (target_is_cpu && manager.has_cpu_decoder())
-        {
-            decoder = manager.get_cpu_decoder();
-        }
-        else
-        {
-            decoder = manager.get_decoder();
-        }
+        // Always use the primary GPU-enabled decoder (handles both GPU and
+        // CPU output via buffer_kind).
+        nvimgcodecDecoder_t decoder = manager.get_decoder();
 
         // Step 1: Create ROI sub-streams for each region
 
@@ -868,16 +843,8 @@ BatchDecodeState schedule_batch_decode(
             impl->use_device_memory = false;
         }
 
-        // Select decoder
-        nvimgcodecDecoder_t decoder;
-        if (target_is_cpu && manager.has_cpu_decoder())
-        {
-            decoder = manager.get_cpu_decoder();
-        }
-        else
-        {
-            decoder = manager.get_decoder();
-        }
+        // Always use the primary GPU-enabled decoder
+        nvimgcodecDecoder_t decoder = manager.get_decoder();
 
         // Step 1: Create ROI sub-streams for each region
         impl->roi_streams_raii.reserve(impl->batch_size);

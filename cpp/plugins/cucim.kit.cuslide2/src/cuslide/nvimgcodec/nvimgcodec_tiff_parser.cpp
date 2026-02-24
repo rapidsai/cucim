@@ -37,6 +37,10 @@
 #include <algorithm>
 #include <mutex>
 
+// Declared in nvimgcodec_wrap.cc (global namespace) — returns the real
+// symbol pointer from the dynamically loaded libnvimgcodec.so.
+extern "C++" void* NvimgcodecLoadSymbol(const char* name);
+
 namespace cuslide2::nvimgcodec
 {
 
@@ -59,27 +63,27 @@ namespace cuslide2::nvimgcodec
 //   3. Probes <lib_dir>/extensions/ and <lib_dir>/../extensions/
 //
 
-// Declared in nvimgcodec_wrap.cc — returns the real symbol from libnvimgcodec.so
-extern void* NvimgcodecLoadSymbol(const char* name);
-
 static std::string detect_nvimgcodec_extensions_path()
 {
     // 1. Environment variable override
     const char* env_path = std::getenv("NVIMGCODEC_EXTENSIONS_PATH");
     if (env_path && env_path[0] != '\0')
     {
+        fmt::print("[nvimgcodec_ext] Using NVIMGCODEC_EXTENSIONS_PATH: {}\n", env_path);
         return std::string(env_path);
     }
 
     // 2. Find where libnvimgcodec.so was loaded from using dladdr on the
     //    REAL function pointer (resolved via dynlink), not the stub address.
-    void* real_func = NvimgcodecLoadSymbol("nvimgcodecGetProperties");
+    void* real_func = ::NvimgcodecLoadSymbol("nvimgcodecGetProperties");
+    fmt::print("[nvimgcodec_ext] NvimgcodecLoadSymbol returned: {}\n", real_func);
     if (real_func)
     {
         Dl_info dl_info{};
         if (dladdr(real_func, &dl_info) && dl_info.dli_fname)
         {
             std::string lib_path(dl_info.dli_fname);
+            fmt::print("[nvimgcodec_ext] dladdr -> lib_path: {}\n", lib_path);
             auto last_slash = lib_path.rfind('/');
             if (last_slash != std::string::npos)
             {
@@ -90,20 +94,29 @@ static std::string detect_nvimgcodec_extensions_path()
                 struct stat st{};
                 if (stat(candidate.c_str(), &st) == 0 && S_ISDIR(st.st_mode))
                 {
+                    fmt::print("[nvimgcodec_ext] Found extensions at: {}\n", candidate);
                     return candidate;
                 }
+                fmt::print("[nvimgcodec_ext] Not found: {}\n", candidate);
 
                 // 3b. Probe <lib_dir>/../extensions/ (pip package layout)
                 candidate = lib_dir + "/../extensions";
                 if (stat(candidate.c_str(), &st) == 0 && S_ISDIR(st.st_mode))
                 {
+                    fmt::print("[nvimgcodec_ext] Found extensions at: {}\n", candidate);
                     return candidate;
                 }
+                fmt::print("[nvimgcodec_ext] Not found: {}\n", candidate);
             }
+        }
+        else
+        {
+            fmt::print("[nvimgcodec_ext] dladdr failed\n");
         }
     }
 
     // 4. Not found — return empty, nvImageCodec will use its default search
+    fmt::print("[nvimgcodec_ext] WARNING: Could not detect extensions path\n");
     return {};
 }
 
@@ -232,8 +245,12 @@ NvImageCodecTiffParserManager::NvImageCodecTiffParserManager()
             return;
         }
 
-        // Create decoder for metadata extraction (not for image decoding)
-        // This decoder is used exclusively for nvimgcodecDecoderGetMetadata() calls
+        // Create the primary decoder used for both metadata extraction and
+        // image decoding (GPU + CPU output).  Using NVIMGCODEC_DEVICE_CURRENT
+        // enables GPU backends (libnvtiff_ext, etc.) so the decoder can handle
+        // JPEG-compressed TIFF.  For CPU output requests the caller sets
+        // buffer_kind = STRIDED_HOST, and nvImageCodec decodes on the GPU then
+        // copies the result back to host memory automatically.
         nvimgcodecExecutionParams_t exec_params{};
         exec_params.struct_type = NVIMGCODEC_STRUCTURE_TYPE_EXECUTION_PARAMS;
         exec_params.struct_size = sizeof(nvimgcodecExecutionParams_t);
@@ -242,10 +259,10 @@ NvImageCodecTiffParserManager::NvImageCodecTiffParserManager()
         exec_params.pinned_allocator = nullptr;
         exec_params.max_num_cpu_threads = 0;
         exec_params.executor = nullptr;
-        exec_params.device_id = NVIMGCODEC_DEVICE_CPU_ONLY;  // CPU-only for metadata extraction
+        exec_params.device_id = NVIMGCODEC_DEVICE_CURRENT;  // GPU-enabled for decode + metadata
         exec_params.pre_init = 0;
         exec_params.skip_pre_sync = 0;
-        exec_params.num_backends = 0;
+        exec_params.num_backends = 0;   // 0 = allow all backends (GPU + CPU)
         exec_params.backends = nullptr;
 
         status = nvimgcodecDecoderCreate(instance_, &decoder_, &exec_params, nullptr);
@@ -313,23 +330,21 @@ NvImageCodecTiffParserManager::NvImageCodecTiffParserManager()
 
 NvImageCodecTiffParserManager::~NvImageCodecTiffParserManager()
 {
-    if (cpu_decoder_)
-    {
-        nvimgcodecDecoderDestroy(cpu_decoder_);
-        cpu_decoder_ = nullptr;
-    }
-
-    if (decoder_)
-    {
-        nvimgcodecDecoderDestroy(decoder_);
-        decoder_ = nullptr;
-    }
-
-    if (instance_)
-    {
-        nvimgcodecInstanceDestroy(instance_);
-        instance_ = nullptr;
-    }
+    // Intentionally leak nvImageCodec resources during static destruction.
+    //
+    // This singleton (static local in instance()) is destroyed during
+    // __run_exit_handlers.  At that point the CUDA driver/runtime context may
+    // already be partially or fully torn down.  Calling nvimgcodecDecoderDestroy
+    // triggers cudaStreamSynchronize inside libnvtiff_ext.so, which segfaults
+    // on a dead CUDA context.
+    //
+    // Since the process is about to exit, the OS will reclaim all memory and
+    // GPU resources.  Skipping cleanup here is the standard practice for
+    // singletons that hold CUDA handles (same pattern used by cuBLAS, cuDNN,
+    // etc.).
+    //
+    // If explicit pre-exit cleanup is ever needed, add a public shutdown()
+    // method and call it before Python's Py_Finalize().
 }
 
 // ============================================================================

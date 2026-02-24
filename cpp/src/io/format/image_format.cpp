@@ -71,7 +71,7 @@ ImageMetadata& ImageMetadata::channel_names(std::pmr::vector<std::string_view>&&
         const auto& sv = channel_names[i];
         const size_t len = sv.size();
         // Avoid copy if already null-terminated (common case for string literals)
-        if (sv.data()[len] == '\0')
+        if (sv.data() != nullptr && sv.data()[len] == '\0')
         {
             desc_.channel_names[i] = const_cast<char*>(sv.data());
         }
@@ -79,7 +79,10 @@ ImageMetadata& ImageMetadata::channel_names(std::pmr::vector<std::string_view>&&
         {
             // Copy and null-terminate for safe use with C string functions
             char* str_copy = static_cast<char*>(allocate(len + 1));
-            std::memcpy(str_copy, sv.data(), len);
+            if (len > 0 && sv.data() != nullptr)
+            {
+                std::memcpy(str_copy, sv.data(), len);
+            }
             str_copy[len] = '\0';
             desc_.channel_names[i] = str_copy;
         }
@@ -105,7 +108,7 @@ ImageMetadata& ImageMetadata::spacing_units(std::pmr::vector<std::string_view>&&
         const auto& sv = spacing_units[i];
         const size_t len = sv.size();
         // Avoid copy if already null-terminated (common case for string literals)
-        if (sv.data()[len] == '\0')
+        if (sv.data() != nullptr && sv.data()[len] == '\0')
         {
             desc_.spacing_units[i] = const_cast<char*>(sv.data());
         }
@@ -113,7 +116,10 @@ ImageMetadata& ImageMetadata::spacing_units(std::pmr::vector<std::string_view>&&
         {
             // Copy and null-terminate for safe use with C string functions
             char* str_copy = static_cast<char*>(allocate(len + 1));
-            std::memcpy(str_copy, sv.data(), len);
+            if (len > 0 && sv.data() != nullptr)
+            {
+                std::memcpy(str_copy, sv.data(), len);
+            }
             str_copy[len] = '\0';
             desc_.spacing_units[i] = str_copy;
         }
@@ -140,7 +146,7 @@ ImageMetadata& ImageMetadata::coord_sys(std::string_view&& coord_sys)
     coord_sys_ = coord_sys;
     const size_t len = coord_sys.size();
     // Avoid copy if already null-terminated (common case for string literals)
-    if (coord_sys.data()[len] == '\0')
+    if (coord_sys.data() != nullptr && coord_sys.data()[len] == '\0')
     {
         desc_.coord_sys = coord_sys.data();
     }
@@ -148,7 +154,10 @@ ImageMetadata& ImageMetadata::coord_sys(std::string_view&& coord_sys)
     {
         // Copy and null-terminate for safe use with C string functions
         char* str_copy = static_cast<char*>(allocate(len + 1));
-        std::memcpy(str_copy, coord_sys.data(), len);
+        if (len > 0 && coord_sys.data() != nullptr)
+        {
+            std::memcpy(str_copy, coord_sys.data(), len);
+        }
         str_copy[len] = '\0';
         desc_.coord_sys = str_copy;
     }
