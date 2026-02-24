@@ -175,7 +175,7 @@ extern "C"
 
     /**
      * @brief Structure types supported by the nvImageCodec API.
-     * 
+     *
      * Each value corresponds to a particular structure with a type member and matching  structure name.
      */
     typedef enum
