@@ -197,7 +197,7 @@ static bool CUCIM_ABI parser_parse(CuCIMFileHandle_ptr handle_ptr, cucim::io::fo
     }
 
     // Spacing units
-    static constexpr std::string_view empty_unit{};
+    static constexpr std::string_view empty_unit{""};
     static constexpr std::string_view micrometer_unit{"micrometer"};
     static constexpr std::string_view color_unit{"color"};
 

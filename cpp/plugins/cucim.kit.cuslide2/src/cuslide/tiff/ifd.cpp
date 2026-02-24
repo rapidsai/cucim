@@ -424,33 +424,32 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
         ::fmt::print("✅ ThreadBatchDataLoader created for {} locations\n", adjusted_location_len);
         #endif
 
-        // Set up output metadata (only if raster buffer is available)
-        // For multi-location batch iteration, raster is nullptr because data is
-        // returned per-batch via loader->next_data() during Python iteration.
-        // The container.data field isn't needed upfront in that case.
-        if (raster)
+        // Always set container metadata (ndim, shape, dtype, device) even when
+        // raster is nullptr.  libcucim's CuImage::read_region() accesses
+        // container.shape immediately after the reader returns, so leaving
+        // shape==nullptr causes a segfault.  For the multi-location batch path,
+        // container.data is nullptr here and will be populated later by
+        // loader->next_data() during Python iteration.
+        out_image_data->container.data = raster;  // may be nullptr for batch iteration
+        out_image_data->container.device = DLDevice{ static_cast<DLDeviceType>(raster_type), out_device.index() };
+        out_image_data->container.dtype = DLDataType{ kDLUInt, 8, 1 };
+        out_image_data->container.ndim = ndim;
+        out_image_data->container.shape = static_cast<int64_t*>(cucim_malloc(ndim * sizeof(int64_t)));
+        if (ndim == 4)
         {
-            out_image_data->container.data = raster;
-            out_image_data->container.device = DLDevice{ static_cast<DLDeviceType>(raster_type), out_device.index() };
-            out_image_data->container.dtype = DLDataType{ kDLUInt, 8, 1 };
-            out_image_data->container.ndim = ndim;
-            out_image_data->container.shape = static_cast<int64_t*>(cucim_malloc(ndim * sizeof(int64_t)));
-            if (ndim == 4)
-            {
-                out_image_data->container.shape[0] = batch_size;
-                out_image_data->container.shape[1] = h;
-                out_image_data->container.shape[2] = w;
-                out_image_data->container.shape[3] = n_ch;
-            }
-            else
-            {
-                out_image_data->container.shape[0] = h;
-                out_image_data->container.shape[1] = w;
-                out_image_data->container.shape[2] = n_ch;
-            }
-            out_image_data->container.strides = nullptr;
-            out_image_data->container.byte_offset = 0;
+            out_image_data->container.shape[0] = batch_size;
+            out_image_data->container.shape[1] = h;
+            out_image_data->container.shape[2] = w;
+            out_image_data->container.shape[3] = n_ch;
         }
+        else
+        {
+            out_image_data->container.shape[0] = h;
+            out_image_data->container.shape[1] = w;
+            out_image_data->container.shape[2] = n_ch;
+        }
+        out_image_data->container.strides = nullptr;
+        out_image_data->container.byte_offset = 0;
 
         return true;
     }
