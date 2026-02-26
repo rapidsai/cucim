@@ -51,7 +51,7 @@ NvImageCodecProcessor::NvImageCodecProcessor(
 {
     if (!tiff_parser_.is_valid())
     {
-        throw ::std::runtime_error("Invalid TIFF parser");
+        throw std::runtime_error("Invalid TIFF parser");
     }
 
     // Get ROI dimensions
@@ -64,8 +64,8 @@ NvImageCodecProcessor::NvImageCodecProcessor(
     roi_size_bytes_ = static_cast<size_t>(roi_width_) * roi_height_ * num_channels;
 
     // Determine output memory type
-    ::std::string device_str = ::std::string(out_device_);
-    use_device_memory_ = (device_str.find("cuda") != ::std::string::npos);
+    std::string device_str = std::string(out_device_);
+    use_device_memory_ = (device_str.find("cuda") != std::string::npos);
 
     // Check GPU availability
     if (use_device_memory_)
@@ -99,9 +99,9 @@ NvImageCodecProcessor::NvImageCodecProcessor(
     // Calculate batch size for nvImageCodec
     // Capped by location_len and MAX_NVIMGCODEC_BATCH_SIZE.
     // MAX_NVIMGCODEC_BATCH_SIZE is defined in this namespace, so use it directly
-    cuda_batch_size_ = ::std::min(
+    cuda_batch_size_ = std::min(
         static_cast<uint32_t>(location_len),
-        ::std::min(batch_size, MAX_NVIMGCODEC_BATCH_SIZE));
+        std::min(batch_size, MAX_NVIMGCODEC_BATCH_SIZE));
 
     // Single batch prefetch: I/O is typically faster than decode work,
     // so one prefetch batch is sufficient to keep the decoder busy.
@@ -154,7 +154,7 @@ NvImageCodecProcessor::~NvImageCodecProcessor()
 void NvImageCodecProcessor::shutdown()
 {
     {
-        ::std::lock_guard<::std::mutex> lock(request_mutex_);
+        std::lock_guard<std::mutex> lock(request_mutex_);
         stopped_ = true;
     }
     cache_cond_.notify_all();
@@ -165,16 +165,16 @@ uint32_t NvImageCodecProcessor::preferred_loader_prefetch_factor() const
     return preferred_loader_prefetch_factor_;
 }
 
-uint32_t NvImageCodecProcessor::request(::std::deque<uint32_t>& batch_item_counts, uint32_t num_remaining_patches)
+uint32_t NvImageCodecProcessor::request(std::deque<uint32_t>& batch_item_counts, uint32_t num_remaining_patches)
 {
     (void)batch_item_counts;
     (void)num_remaining_patches;
 
     // Build batch of ROI decode requests
-    ::std::vector<RoiDecodeRequest> batch_requests;
+    std::vector<RoiDecodeRequest> batch_requests;
 
     {
-        ::std::lock_guard<::std::mutex> lock(request_mutex_);
+        std::lock_guard<std::mutex> lock(request_mutex_);
 
         while (next_decode_index_ < location_len_ && batch_requests.size() < cuda_batch_size_)
         {
@@ -214,8 +214,8 @@ uint32_t NvImageCodecProcessor::request(::std::deque<uint32_t>& batch_item_count
 
     // Store state and requests for later waiting
     {
-        ::std::lock_guard<::std::mutex> lock(nvimgcodec_mutex_);
-        pending_batches_.push_back(::std::move(decode_state));
+        std::lock_guard<std::mutex> lock(nvimgcodec_mutex_);
+        pending_batches_.push_back(std::move(decode_state));
         pending_requests_.push_back(batch_requests);
     }
 
@@ -223,14 +223,14 @@ uint32_t NvImageCodecProcessor::request(::std::deque<uint32_t>& batch_item_count
 }
 
 uint32_t NvImageCodecProcessor::wait_batch(uint32_t index_in_task,
-                                            ::std::deque<uint32_t>& batch_item_counts,
+                                            std::deque<uint32_t>& batch_item_counts,
                                             uint32_t num_remaining_patches)
 {
     (void)index_in_task;
     (void)batch_item_counts;
     (void)num_remaining_patches;
 
-    ::std::lock_guard<::std::mutex> lock(nvimgcodec_mutex_);
+    std::lock_guard<std::mutex> lock(nvimgcodec_mutex_);
 
     // Wait for the oldest pending batch to complete
     if (pending_batches_.empty() || pending_requests_.empty())
@@ -239,18 +239,18 @@ uint32_t NvImageCodecProcessor::wait_batch(uint32_t index_in_task,
     }
 
     // Get the oldest batch
-    ::cuslide2::nvimgcodec::BatchDecodeState decode_state = ::std::move(pending_batches_.front());
-    ::std::vector<RoiDecodeRequest> requests = ::std::move(pending_requests_.front());
+    ::cuslide2::nvimgcodec::BatchDecodeState decode_state = std::move(pending_batches_.front());
+    std::vector<RoiDecodeRequest> requests = std::move(pending_requests_.front());
     pending_batches_.erase(pending_batches_.begin());
     pending_requests_.erase(pending_requests_.begin());
 
     // Wait for batch decode completion and process results
-    ::std::vector<::cuslide2::nvimgcodec::BatchDecodeResult> results =
+    std::vector<::cuslide2::nvimgcodec::BatchDecodeResult> results =
         ::cuslide2::nvimgcodec::wait_batch_decode(decode_state);
 
     // Store results in cache
     {
-        ::std::lock_guard<::std::mutex> cache_lock(cache_mutex_);
+        std::lock_guard<std::mutex> cache_lock(cache_mutex_);
 
         for (size_t i = 0; i < requests.size(); ++i)
         {
@@ -288,9 +288,9 @@ uint32_t NvImageCodecProcessor::wait_batch(uint32_t index_in_task,
     return batch_size_;
 }
 
-::std::shared_ptr<cucim::cache::ImageCacheValue> NvImageCodecProcessor::wait_for_processing(uint32_t index)
+std::shared_ptr<cucim::cache::ImageCacheValue> NvImageCodecProcessor::wait_for_processing(uint32_t index)
 {
-    ::std::unique_lock<::std::mutex> lock(cache_mutex_);
+    std::unique_lock<std::mutex> lock(cache_mutex_);
 
     // Wait until this index is decoded
     cache_cond_.wait(lock, [this, index]() {
@@ -325,13 +325,13 @@ uint32_t NvImageCodecProcessor::wait_batch(uint32_t index_in_task,
         }
     }
 
-    auto value = ::std::make_shared<cucim::cache::ImageCacheValue>(
+    auto value = std::make_shared<cucim::cache::ImageCacheValue>(
         data_ptr, roi_size_bytes_, nullptr, device_type);
 
     return value;
 }
 
-::cuslide2::nvimgcodec::BatchDecodeState NvImageCodecProcessor::schedule_roi_batch(const ::std::vector<RoiDecodeRequest>& requests)
+::cuslide2::nvimgcodec::BatchDecodeState NvImageCodecProcessor::schedule_roi_batch(const std::vector<RoiDecodeRequest>& requests)
 {
     ::cuslide2::nvimgcodec::BatchDecodeState state;
 
@@ -345,7 +345,7 @@ uint32_t NvImageCodecProcessor::wait_batch(uint32_t index_in_task,
     #endif
 
     // Build regions for batch decode
-    ::std::vector<::cuslide2::nvimgcodec::RoiRegion> regions;
+    std::vector<::cuslide2::nvimgcodec::RoiRegion> regions;
     regions.reserve(requests.size());
 
     for (const auto& req : requests)
