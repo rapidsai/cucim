@@ -242,8 +242,8 @@ uint32_t NvImageCodecProcessor::wait_batch(uint32_t index_in_task,
     // Get the oldest batch
     ::cuslide2::nvimgcodec::BatchDecodeState decode_state = std::move(pending_batches_.front());
     std::vector<RoiDecodeRequest> requests = std::move(pending_requests_.front());
-    pending_batches_.erase(pending_batches_.begin());
-    pending_requests_.erase(pending_requests_.begin());
+    pending_batches_.pop_front();
+    pending_requests_.pop_front();
 
     // Wait for batch decode completion and process results
     std::vector<::cuslide2::nvimgcodec::BatchDecodeResult> results =

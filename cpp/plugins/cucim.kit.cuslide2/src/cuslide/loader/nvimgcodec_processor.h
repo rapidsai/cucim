@@ -154,9 +154,9 @@ private:
     // Decode batch tracking
     uint64_t next_decode_index_ = 0;
 
-    // Asynchronous batch decode state
-    std::vector<cuslide2::nvimgcodec::BatchDecodeState> pending_batches_;
-    std::vector<std::vector<RoiDecodeRequest>> pending_requests_;
+    // Asynchronous batch decode state (FIFO queues — push_back / pop_front)
+    std::deque<cuslide2::nvimgcodec::BatchDecodeState> pending_batches_;
+    std::deque<std::vector<RoiDecodeRequest>> pending_requests_;
 };
 
 } // namespace cuslide2::loader
