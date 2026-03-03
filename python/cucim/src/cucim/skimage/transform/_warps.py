@@ -606,8 +606,10 @@ def rotate(
         # keep original shape on the excess dimensions
         output_shape = output_shape + image.shape[2:]
 
+    float_dtype = cp.promote_types(image.real.dtype, cp.float32)
+
     # transfer the coordinate transform to the GPU
-    affine_params = cp.asarray(affine_params)
+    affine_params = cp.asarray(affine_params, dtype=float_dtype)
 
     return _ndimage_affine(
         image,
