@@ -31,67 +31,67 @@ def main(args):
     for function_name, fixed_kwargs, var_kwargs, allow_color, allow_nd in [
         # _warps.py
         (
+            "resize",
+            dict(preserve_range=True),
+            dict(order=[0, 1, 3, 5], mode=["reflect"], anti_aliasing=[True]),
+            True,
+            True,
+        ),  # scale handled in loop below
+        (
+            "resize_local_mean",
+            dict(preserve_range=True),
+            {},
+            True,
+            True,
+        ),  # scale handled in loop below
+        (
+            "rescale",
+            dict(preserve_range=True),
+            dict(order=[0, 1, 3, 5], mode=["reflect"], anti_aliasing=[True]),
+            True,
+            True,
+        ),  # output_shape handled in loop below
+        (
             "rotate",
             dict(angle=15, preserve_range=True),
-            dict(order=[0, 1, 2, 3, 4, 5], mode=["reflect"], resize=[True]),
+            dict(order=[0, 1, 3, 5], mode=["reflect"], resize=[False, True]),
             True,
             False,
         ),
-        # (
-        #     "resize",
-        #     dict(preserve_range=True),
-        #     dict(order=[0, 1, 3, 5], mode=["reflect"], anti_aliasing=[True]),
-        #     True,
-        #     True,
-        # ),  # scale handled in loop below
-        # (
-        #     "resize_local_mean",
-        #     dict(preserve_range=True),
-        #     {},
-        #     True,
-        #     True,
-        # ),  # scale handled in loop below
-        # (
-        #     "rescale",
-        #     dict(preserve_range=True),
-        #     dict(order=[0, 1, 3, 5], mode=["reflect"], anti_aliasing=[True]),
-        #     True,
-        #     True,
-        # ),  # output_shape handled in loop below
-        # (
-        #     "downscale_local_mean",
-        #     dict(),
-        #     dict(),
-        #     True,
-        #     True,
-        # ),  # factors handled in loop below
-        # (
-        #     "swirl",
-        #     dict(strength=1, preserve_range=True),
-        #     dict(order=[0, 1, 3, 5], mode=["reflect"]),
-        #     False,
-        #     False,
-        # ),
-        # # TODO : warp? already indirectly benchmarked via swirl, etc
-        # ("warp_polar", dict(), dict(scaling=["linear", "log"]), True, False),
-        # # integral.py
-        # ("integral_image", dict(), dict(), False, True),
-        # # TODO: integrate
-        # # pyramids.py
-        # (
-        #     "pyramid_gaussian",
-        #     dict(max_layer=6, downscale=2, preserve_range=True),
-        #     dict(order=[0, 1, 3, 5]),
-        #     True,
-        #     True,
-        # ),
-        # (
-        #     "pyramid_laplacian",
-        #     dict(max_layer=6, downscale=2, preserve_range=True),
-        #     dict(order=[0, 1, 3, 5]),
-        #     True,
-        #     True,
-        # ),
+        (
+            "downscale_local_mean",
+            dict(),
+            dict(),
+            True,
+            True,
+        ),  # factors handled in loop below
+        (
+            "swirl",
+            dict(strength=1, preserve_range=True),
+            dict(order=[0, 1, 3, 5], mode=["reflect"]),
+            False,
+            False,
+        ),
+        # TODO : warp? already indirectly benchmarked via swirl, etc
+        ("warp_polar", dict(), dict(scaling=["linear", "log"]), True, False),
+        # integral.py
+        ("integral_image", dict(), dict(), False, True),
+        # TODO: integrate
+        # pyramids.py
+        (
+            "pyramid_gaussian",
+            dict(max_layer=6, downscale=2, preserve_range=True),
+            dict(order=[0, 1, 3, 5]),
+            True,
+            True,
+        ),
+        (
+            "pyramid_laplacian",
+            dict(max_layer=6, downscale=2, preserve_range=True),
+            dict(order=[0, 1, 3, 5]),
+            True,
+            True,
+        ),
     ]:
         if function_name != args.func_name:
             continue
@@ -107,7 +107,7 @@ def main(args):
         if shape[-1] == 3 and not allow_color:
             continue
 
-        ndim_spatial = ndim - 1 if shape[-1] == 3 else ndim
+        ndim_spatial = ndim - 1 if shape[-1] in [3, 4] else ndim
 
         if function_name in [
             "rescale",
