@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import math
@@ -37,18 +37,18 @@ def _preprocess_resize_output_shape(image, output_shape):
 
     Parameters
     ----------
-    image: ndarray
+    image : ndarray
         Image to be resized.
-    output_shape: tuple or ndarray
+    output_shape : tuple or ndarray
         Size of the generated output image `(rows, cols[, ...][, dim])`. If
         `dim` is not provided, the number of channels is preserved.
 
     Returns
     -------
-    image: ndarray
+    image : ndarray
         The input image, but with additional singleton dimensions appended in
         the case where ``len(output_shape) > input.ndim``.
-    output_shape: tuple
+    output_shape : tuple
         The output image converted to tuple.
 
     Raises
@@ -112,7 +112,7 @@ def resize(
     Returns
     -------
     resized : ndarray
-        Resized version of the input.
+        Resized version of the input. See Notes regarding dtype.
 
     Other parameters
     ----------------
@@ -147,6 +147,10 @@ def resize(
         downsampling factor, where s > 1. For the up-size case, s < 1, no
         anti-aliasing is performed prior to rescaling.
 
+    See Also
+    --------
+    cupyx.scipy.ndimage.zoom
+
     Notes
     -----
     Modes 'reflect' and 'symmetric' are similar, but differ in whether the edge
@@ -154,6 +158,18 @@ def resize(
     has values [0, 1, 2] and was padded to the right by four values using
     symmetric, the result would be [0, 1, 2, 2, 1, 0, 0], while for reflect it
     would be [0, 1, 2, 1, 0, 1, 2].
+
+    `resize` uses interpolation. Unless the interpolation method is nearest-neighbor
+    (``order==0``), the algorithm will generate output values as weighted averages
+    of input values. Accordingly, the output dtype is ``float64`` with the following
+    exceptions:
+
+    - When ``order==0``, the output dtype is ``image.dtype``.
+    - When ``image.dtype`` is ``float16`` or ``float32`` or an 8-bit or 16-bit
+    integer or unsigned integer type, the output dtype is ``float32``.
+
+    For a similar function that preserves the dtype of the input, consider
+    `cucim.scipy.ndimage.zoom`.
 
     Examples
     --------
@@ -1338,14 +1354,14 @@ def _local_mean_weights(old_size, new_size, grid_mode, dtype):
 
     Parameters
     ----------
-    old_size: int
+    old_size : int
         Old size.
-    new_size: int
+    new_size : int
         New size.
     grid_mode : bool
         Whether to use grid data model of pixel/voxel model for
         average weights computation.
-    dtype: dtype
+    dtype : dtype
         Output array data type.
 
     Returns

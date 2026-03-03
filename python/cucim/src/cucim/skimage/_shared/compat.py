@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2024-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 """Compatibility helpers for dependencies."""
@@ -27,6 +27,7 @@ NP_COPY_IF_NEEDED = False if NUMPY_LT_2_0_0 else None
 
 # check CuPy instead of SciPy
 CUPY_LT_14 = parse(cp.__version__) < parse("14.0.0a1")
+
 
 # Starting in SciPy v1.12, 'scipy.sparse.linalg.cg' keyword argument `tol` is
 # deprecated in favor of `rtol`. The corresponding change in cupyx.scipy.sparse
