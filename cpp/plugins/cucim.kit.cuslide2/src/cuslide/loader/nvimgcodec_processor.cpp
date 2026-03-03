@@ -203,8 +203,9 @@ uint32_t NvImageCodecProcessor::request(std::deque<uint32_t>& batch_item_counts,
     // Schedule batch decode asynchronously (don't wait yet)
     ::cuslide2::nvimgcodec::BatchDecodeState decode_state = schedule_roi_batch(batch_requests);
 
-    // Check if state is valid (impl is managed by BatchDecodeState, so just check if it exists)
-    if (!decode_state.impl)
+    // Check if the decode was actually scheduled (impl is always allocated,
+    // but impl->future is null when scheduling fails).
+    if (!decode_state.is_valid())
     {
         #ifdef DEBUG
         ::fmt::print("❌ Failed to schedule batch decode\n");

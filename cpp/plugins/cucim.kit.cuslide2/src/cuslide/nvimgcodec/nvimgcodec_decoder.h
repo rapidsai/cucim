@@ -108,6 +108,15 @@ struct BatchDecodeState
     BatchDecodeState(const BatchDecodeState&) = delete;
     BatchDecodeState& operator=(const BatchDecodeState&) = delete;
 
+    /**
+     * @brief Check whether the decode was successfully scheduled.
+     *
+     * BatchDecodeState always allocates impl, so testing impl alone is
+     * not sufficient.  A state is valid only when impl exists AND the
+     * nvImageCodec future was created (i.e. the decode call succeeded).
+     */
+    bool is_valid() const;
+
     BatchDecodeStateImpl* impl;  // Implementation details
 };
 

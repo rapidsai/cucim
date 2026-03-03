@@ -99,6 +99,11 @@ BatchDecodeState& BatchDecodeState::operator=(BatchDecodeState&& other) noexcept
     return *this;
 }
 
+bool BatchDecodeState::is_valid() const
+{
+    return impl && impl->future;
+}
+
 // RAII wrapper for nvimgcodecFuture_t
 struct FutureDeleter
 {
