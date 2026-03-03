@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 import warnings
@@ -116,11 +116,19 @@ PROPS_GPU_EXTRA = {
     "equivalent_spherical_perimeter": "equivalent_spherical_perimeter",
 }
 PROPS_GPU.update(PROPS_GPU_EXTRA)
+# properties recently removed from PROPS dict (but still supported)
+PROPS_REMOVED = {
+    "coords_scaled": "coords_scaled",
+    "num_pixels": "num_pixels",
+}
+PROPS_GPU.update(PROPS_REMOVED)
+
 
 CURRENT_PROPS_GPU = set(PROPS_GPU.values())
 
 COL_DTYPES_EXTRA = {
     "axis_lengths": float,
+    "coords_scaled": object,
     "inertia_tensor_eigenvectors": float,
     "num_pixels_filled": int,
     "num_perimeter_pixels": int,
@@ -307,6 +315,13 @@ def regionprops_dict(
     valid_names = properties & supported_properties
     invalid_names = set(properties) - valid_names
     valid_names = list(valid_names)
+
+    # TODO(grelee): implement batch kernel for efficient intensity median
+    # computation.
+    if "intensity_median" in properties:
+        raise NotImplementedError(
+            "Batch computation of 'intensity_median' is not yet supported"
+        )
 
     # Use only the modern names internally, but keep list of mappings back to
     # any deprecated names in restore_legacy_names and use that at the end to

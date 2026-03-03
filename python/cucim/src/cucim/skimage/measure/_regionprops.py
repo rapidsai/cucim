@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import inspect
@@ -25,9 +25,8 @@ __all__ = ["regionprops", "euler_number", "perimeter", "perimeter_crofton"]
 
 
 # All values in this PROPS dict correspond to current scikit-image property
-# names. The keys in this PROPS dict correspond to older names used in prior
-# releases. For backwards compatibility, these older names will continue to
-# work, but will not be documented.
+# names. The keys in this PROPS dict correspond to deprecated names used in
+# prior releases
 PROPS = {
     "Area": "area",
     "BoundingBox": "bbox",
@@ -41,7 +40,6 @@ PROPS = {
     "ConvexImage": "image_convex",
     "convex_image": "image_convex",
     "Coordinates": "coords",
-    "coords_scaled": "coords_scaled",
     "Eccentricity": "eccentricity",
     "EquivDiameter": "equivalent_diameter_area",
     "equivalent_diameter": "equivalent_diameter_area",
@@ -76,7 +74,6 @@ PROPS = {
     "minor_axis_length": "axis_minor_length",
     "Moments": "moments",
     "NormalizedMoments": "moments_normalized",
-    "num_pixels": "num_pixels",
     "Orientation": "orientation",
     "Perimeter": "perimeter",
     "CroftonPerimeter": "perimeter_crofton",
@@ -126,6 +123,7 @@ COL_DTYPES = {
     "inertia_tensor_eigvals": float,
     "intensity_max": float,
     "intensity_mean": float,
+    # 'intensity_median': float,  # TODO: uncomment once supported
     "intensity_min": float,
     "intensity_std": float,
     "label": int,
@@ -153,6 +151,7 @@ _require_intensity_image = (
     "image_intensity",
     "intensity_max",
     "intensity_mean",
+    "intensity_median",
     "intensity_min",
     "intensity_std",
     "moments_weighted",
@@ -165,7 +164,7 @@ _require_intensity_image = (
 
 
 def _infer_number_of_required_args(func):
-    """Infer the number of required arguments for a function
+    """Infer the number of required arguments for a given function
 
     Parameters
     ----------
@@ -175,7 +174,7 @@ def _infer_number_of_required_args(func):
     Returns
     -------
     n_args : int
-        The number of required arguments of func.
+        The number of required arguments for `func`.
     """
     argspec = inspect.getfullargspec(func)
     n_args = len(argspec.args)
@@ -185,7 +184,7 @@ def _infer_number_of_required_args(func):
 
 
 def _infer_regionprop_dtype(func, *, intensity, ndim):
-    """Infer the dtype of a region property calculated by func.
+    """Infer the dtype of a region property calculated by `func`.
 
     If a region property function always returns the same shape and type of
     output regardless of input size, then the dtype is the dtype of the
@@ -195,11 +194,11 @@ def _infer_regionprop_dtype(func, *, intensity, ndim):
     ----------
     func : callable
         Function to be tested. The signature should be array[bool] -> Any if
-        intensity is False, or *(array[bool], array[float]) -> Any otherwise.
+        `intensity` is False, or *(array[bool], array[float]) -> Any otherwise.
     intensity : bool
-        Whether the regionprop is calculated on an intensity image.
+        Whether the regionprop is calculated using an intensity image.
     ndim : int
-        The number of dimensions for which to check func.
+        The number of dimensions for which to check `func`.
 
     Returns
     -------
@@ -263,8 +262,26 @@ def only2d(method):
 
 
 class RegionProperties:
-    """Please refer to `skimage.measure.regionprops` for more information
+    """Provides properties of a labeled image region.
+
+    Please refer to `cucim.skimage.measure.regionprops` for more information
     on the available region properties.
+
+    Notes
+    -----
+    For GPU computation of regionprops it is highly recommended to instead
+    use regionprops_table for efficient batch computation over all labels.
+
+    Examples
+    --------
+    >>> RegionProperties(
+    ...     slice=(slice(0, 2), slice(0, 4)),
+    ...     label=2,
+    ...     label_image=np.array([[0, 1, 1, 2, 0], [2, 2, 2, 2, 0]]),
+    ...     intensity_image=None,
+    ...     cache_active=False,
+    ... )
+    <RegionProperties: label=2, bbox=(0, 0, 2, 4)>
     """
 
     def __init__(
@@ -379,12 +396,19 @@ class RegionProperties:
                     f"Attribute '{attr}' unavailable when `intensity_image` "
                     f"has not been specified."
                 )
+            warn(
+                f"`RegionProperties[{attr}]` is deprecated and will be "
+                "removed in a future version after the scikit-image 2.0 "
+                f"release. Use `RegionProperties[{PROPS[{attr}]}]` instead. ",
+                category=FutureWarning,
+                stacklevel=2,
+            )
+
             # retrieve deprecated property (excluding old CamelCase ones)
             return getattr(self, PROPS[attr])
-        else:
-            raise AttributeError(
-                f"'{type(self)}' object has no attribute '{attr}'"
-            )
+
+        # Fallback to default behavior, potentially raising an attribute error
+        return self.__getattribute__(attr)
 
     def __setattr__(self, name, value):
         if name in PROPS:
@@ -408,7 +432,7 @@ class RegionProperties:
         Returns
         -------
         A tuple of the bounding box's start coordinates for each dimension,
-        followed by the end coordinates for each dimension
+        followed by the end coordinates for each dimension.
         """
         return tuple(
             [self.slice[i].start for i in range(self._ndim)]
@@ -470,7 +494,7 @@ class RegionProperties:
     def euler_number(self):
         if self._ndim not in [2, 3]:
             raise NotImplementedError(
-                "Euler number is implemented for 2D or 3D images only"
+                "Euler number is implemented for 2D and 3D images only"
             )
         return euler_number(self.image, self._ndim)
 
@@ -483,7 +507,9 @@ class RegionProperties:
         from skimage.measure import find_contours, marching_cubes
 
         # TODO: implement marching cubes, etc.
-        warn("feret diameter_max currently not implemented on GPU.")
+        warn(
+            "feret diameter_max not currently implemented on GPU.", stacklevel=3
+        )
         identity_convex_hull = pad(
             self.image_convex, 2, mode="constant", constant_values=0
         )
@@ -560,6 +586,10 @@ class RegionProperties:
         return cp.mean(self.image_intensity[self.image], axis=0)
 
     @property
+    def intensity_median(self):
+        return cp.median(self.image_intensity[self.image], axis=0)
+
+    @property
     def intensity_min(self):
         vals = self.image_intensity[self.image]
         return cp.min(vals, axis=0).astype(cp.float64, copy=False)
@@ -576,7 +606,8 @@ class RegionProperties:
             return 4 * math.sqrt(l1)
         elif self._ndim == 3:
             ev = self.inertia_tensor_eigvals
-            return math.sqrt(10 * (ev[0] + ev[1] - ev[2]))
+            l2 = 10 * (ev[0] + ev[1] - ev[2])
+            return math.sqrt(max(0, l2))
         else:
             raise ValueError("axis_major_length only available in 2D and 3D")
 
@@ -589,7 +620,8 @@ class RegionProperties:
             ev = self.inertia_tensor_eigvals
             # use max to avoid possibly very small negative value due to
             # numeric error
-            return math.sqrt(10 * max(-ev[0] + ev[1] + ev[2], 0.0))
+            l2 = 10 * max(-ev[0] + ev[1] + ev[2], 0.0)
+            return math.sqrt(max(0, l2))
         else:
             raise ValueError("axis_minor_length only available in 2D and 3D")
 
@@ -762,11 +794,16 @@ class RegionProperties:
         return iter(sorted(props))
 
     def __getitem__(self, key):
-        value = getattr(self, key, None)
-        if value is not None:
-            return value
-        else:  # backwards compatibility
-            return getattr(self, PROPS[key])
+        if key in PROPS:
+            warn(
+                f"`RegionProperties[{key!r}]` is deprecated and will be "
+                "removed in a future version after the scikit-image 2.0 "
+                f"release. Use `RegionProperties[{PROPS[key]!r}]` instead. ",
+                category=FutureWarning,
+                stacklevel=2,
+            )
+            key = PROPS[key]
+        return getattr(self, key)
 
     def __eq__(self, other):
         if not isinstance(other, RegionProperties):
@@ -787,6 +824,11 @@ class RegionProperties:
                 return False
 
         return True
+
+    def __repr__(self):
+        cls_name = type(self).__qualname__
+        out = f"<{cls_name}: label={self.label!r}, bbox={self.bbox}>"
+        return out
 
 
 # For compatibility with code written prior to 0.16
@@ -959,19 +1001,30 @@ def regionprops_table(
     spacing=None,
     batch_processing=True,
 ):
-    """Compute image properties and return them as a pandas-compatible table.
+    """Compute region properties and return them as a pandas-compatible table.
 
-    The table is a dictionary mapping column names to value arrays. See Notes
-    section below for details.
+    The return value is a dictionary mapping property names to value arrays.
+    This dictionary can be used as input to ``pandas.DataFrame`` to result in
+    a "tidy" [1]_ table with one region per row and one property per column.
+
+    Use this function typically when you want to do downstream data analysis,
+    or save region data to disk in a structured way. One downside of this
+    function is that it breaks multi-dimensional properties into independent
+    columns; for example, the region centroids of a 3D image end up in three
+    different columns, one per dimension. If you need to do complex
+    computations with the region properties, using
+    :func:`cucim.skimage.measure.regionprops_gpu.regionprops_dict` returns
+    a dict where multi-dimensional properties have not been split into
+    regions.
 
     .. versionadded:: 0.16
 
     Parameters
     ----------
     label_image : (M, N[, P]) ndarray
-        Labeled input image. Labels with value 0 are ignored.
+        Label image. Labels with value 0 are ignored.
     intensity_image : (M, N[, P][, C]) ndarray, optional
-        Intensity (i.e., input) image with same size as labeled image, plus
+        Intensity (input) image of same shape as labeled image, plus
         optionally an extra dimension for multichannel data. The channel
         dimension, if present, must be the last axis. Default is None.
 
@@ -997,7 +1050,7 @@ def regionprops_table(
         Object columns are those that cannot be split in this way because the
         number of columns would change depending on the object. For example,
         ``image`` and ``coords``.
-    extra_properties : Iterable of callables
+    extra_properties : iterable of callables
         Add extra property computation functions that are not included with
         skimage. The name of the property is derived from the function name,
         the dtype is inferred by calling the function on a small sample.
@@ -1006,7 +1059,7 @@ def regionprops_table(
         issued. A property computation function must take a region mask as its
         first argument. If the property requires an intensity image, it must
         accept the intensity image as the second argument.
-    spacing: tuple of float, shape (ndim,)
+    spacing : tuple of float, shape (ndim,)
         The pixel spacing along each axis of the image.
 
     Extra Parameters
@@ -1045,6 +1098,12 @@ def regionprops_table(
     "image" (the image of a region varies in size depending on the region
     size), an object array will be used, with the corresponding property name
     as the key.
+
+    References
+    ----------
+    .. [1] Wickham, H (2014) "Tidy Data" Journal of Statistical Software,
+           59(10), 1–23. https://doi.org/10.18637/jss.v059.i10
+           https://vita.had.co.nz/papers/tidy-data.pdf
 
     Examples
     --------
@@ -1173,10 +1232,18 @@ def regionprops(
 ):
     r"""Measure properties of labeled image regions.
 
+    Region properties are evaluated on demand and come in diverse types. If
+    you want to do tabular data analysis of specific properties, consider
+    using :func:`skimage.measure.regionprops_table` instead.
+
+    For computation on the GPU, it is highly recommended to use
+    `regionprops_table` for batch processing of all region properties in an
+    efficient manner.
+
     Parameters
     ----------
     label_image : (M, N[, P]) ndarray
-        Labeled input image. Labels with value 0 are ignored.
+        Label image. Labels with value 0 are ignored.
 
         .. versionchanged:: 0.14.1
             Previously, ``label_image`` was processed by ``numpy.squeeze`` and
@@ -1185,7 +1252,7 @@ def regionprops(
             recover the old behaviour, use
             ``regionprops(np.squeeze(label_image), ...)``.
     intensity_image : (M, N[, P][, C]) ndarray, optional
-        Intensity (i.e., input) image with same size as labeled image, plus
+        Intensity (input) image of same shape as labeled image, plus
         optionally an extra dimension for multichannel data. Currently,
         this extra channel dimension, if present, must be the last axis.
         Default is None.
@@ -1196,23 +1263,23 @@ def regionprops(
         Determine whether to cache calculated properties. The computation is
         much faster for cached properties, whereas the memory consumption
         increases.
-    extra_properties : Iterable of callables
+    extra_properties : iterable of callables
         Add extra property computation functions that are not included with
         skimage. The name of the property is derived from the function name,
-        the dtype is inferred by calling the function on a small sample.
+        and its dtype is inferred by calling the function on a small sample.
         If the name of an extra property clashes with the name of an existing
-        property the extra property will not be visible and a UserWarning is
-        issued. A property computation function must take a region mask as its
-        first argument. If the property requires an intensity image, it must
-        accept the intensity image as the second argument.
-    spacing: tuple of float, shape (ndim,)
+        property the extra property will not be visible and a UserWarning will
+        be issued. A property computation function must take `label_image` as
+        its first argument. If the property requires an intensity image, it
+        must accept `intensity_image` as the second argument.
+    spacing : tuple of float, shape (ndim,)
         The pixel spacing along each axis of the image.
 
     Returns
     -------
     properties : list of RegionProperties
-        Each item describes one labeled region, and can be accessed using the
-        attributes listed below.
+        Each item of the list corresponds to one labeled image region,
+        and can be accessed using the attributes listed below.
 
     Notes
     -----
@@ -1221,9 +1288,11 @@ def regionprops(
     **num_pixels** : int
         Number of foreground pixels.
     **area** : float
-        Area of the region i.e. number of pixels of the region scaled by pixel-area.
+        Area of the region, i.e., number of pixels of the region scaled by
+        pixel area (as determined by `spacing`).
     **area_bbox** : float
-        Area of the bounding box i.e. number of pixels of bounding box scaled by pixel-area.
+        Area of the bounding box, i.e., number of pixels of the region's
+        bounding box scaled by pixel area (as determined by `spacing`).
     **area_convex** : float
         Are of the convex hull image, which is the smallest convex
         polygon that encloses the region.
@@ -1251,11 +1320,11 @@ def regionprops(
         Centroid coordinate tuple ``(row, col)``, relative to region bounding
         box, weighted with intensity image.
     **coords_scaled** : (K, 2) ndarray
-        Coordinate list ``(row, col)`` of the region scaled by ``spacing``.
+        Coordinate list ``(row, col)`` of the region scaled by `spacing`.
     **coords** : (K, 2) ndarray
         Coordinate list ``(row, col)`` of the region.
     **eccentricity** : float
-        Eccentricity of the ellipse that has the same second-moments as the
+        Eccentricity of the ellipse that has the same second moments as the
         region. The eccentricity is the ratio of the focal distance
         (distance between focal points) over the major axis length.
         The value is in the interval [0, 1).
@@ -1269,47 +1338,49 @@ def regionprops(
         components plus number of holes subtracted by number of tunnels.
     **extent** : float
         Ratio of pixels in the region to pixels in the total bounding box.
-        Computed as ``area / (rows * cols)``
+        Computed as ``area / (rows * cols)``.
     **feret_diameter_max** : float
         Maximum Feret's diameter computed as the longest distance between
         points around a region's convex hull contour as determined by
         ``find_contours``. [5]_
     **image** : (H, J) ndarray
-        Sliced binary region image which has the same size as bounding box.
+        Binary region image sliced by the bounding box.
     **image_convex** : (H, J) ndarray
-        Binary convex hull image which has the same size as bounding box.
+        Binary convex hull image slicd by bounding box.
     **image_filled** : (H, J) ndarray
-        Binary region image with filled holes which has the same size as
-        bounding box.
-    **image_intensity** : ndarray
-        Image inside region bounding box.
+        Binary region image with filled holes sliced by bounding box.
+    **image_intensity** : (H, J) ndarray
+        Intensity image isliced by bounding box.
     **inertia_tensor** : ndarray
         Inertia tensor of the region for the rotation around its mass.
     **inertia_tensor_eigvals** : tuple
         The eigenvalues of the inertia tensor in decreasing order.
     **intensity_max** : float
-        Value with the greatest intensity in the region.
+        Value of greatest intensity in the region.
     **intensity_mean** : float
-        Value with the mean intensity in the region.
+        Average of intensity values in the region.
+    **intensity_median** : float
+        Value of median intensity in the region.
     **intensity_min** : float
-        Value with the least intensity in the region.
+        Value of lowest intensity in the region.
     **intensity_std** : float
-        Standard deviation of the intensity in the region.
+        Standard deviation of intensity values in the region.
     **label** : int
-        The label in the labeled input image.
+        The region's label in the input label image.
     **moments** : (3, 3) ndarray
         Spatial moments up to 3rd order::
 
             m_ij = sum{ array(row, col) * row^i * col^j }
 
-        where the sum is over the `row`, `col` coordinates of the region.
+        where the sum is over the ``row, col`` coordinates of the region.
     **moments_central** : (3, 3) ndarray
         Central moments (translation invariant) up to 3rd order::
 
             mu_ij = sum{ array(row, col) * (row - row_c)^i * (col - col_c)^j }
 
-        where the sum is over the `row`, `col` coordinates of the region,
-        and `row_c` and `col_c` are the coordinates of the region's centroid.
+        where the sum is over the ``row, col`` coordinates of the region,
+        and ``row_c`` and ``col_c`` are the coordinates of the region's
+        centroid.
     **moments_hu** : tuple
         Hu moments (translation, scale and rotation invariant).
     **moments_normalized** : (3, 3) ndarray
@@ -1317,20 +1388,20 @@ def regionprops(
 
             nu_ij = mu_ij / m_00^[(i+j)/2 + 1]
 
-        where `m_00` is the zeroth spatial moment.
+        where ``m_00`` is the zeroth spatial moment.
     **moments_weighted** : (3, 3) ndarray
         Spatial moments of intensity image up to 3rd order::
 
             wm_ij = sum{ array(row, col) * row^i * col^j }
 
-        where the sum is over the `row`, `col` coordinates of the region.
+        where the sum is over the ``row, col`` coordinates of the region.
     **moments_weighted_central** : (3, 3) ndarray
         Central moments (translation invariant) of intensity image up to
         3rd order::
 
             wmu_ij = sum{ array(row, col) * (row - row_c)^i * (col - col_c)^j }
 
-        where the sum is over the `row`, `col` coordinates of the region,
+        where the sum is over the ``row, col`` coordinates of the region,
         and `row_c` and `col_c` are the coordinates of the region's weighted
         centroid.
     **moments_weighted_hu** : tuple
@@ -1342,26 +1413,26 @@ def regionprops(
 
             wnu_ij = wmu_ij / wm_00^[(i+j)/2 + 1]
 
-        where ``wm_00`` is the zeroth spatial moment (intensity-weighted area).
+        where ``wm_00`` is the zero-th spatial moment (intensity-weighted area).
     **orientation** : float
         Angle between the 0th axis (rows) and the major
         axis of the ellipse that has the same second moments as the region,
-        ranging from `-pi/2` to `pi/2` counter-clockwise.
+        ranging from :math:`-\pi/2` to :math:`\pi/2` counter-clockwise.
     **perimeter** : float
-        Perimeter of object which approximates the contour as a line
+        Perimeter of the region which approximates the contour as a line
         through the centers of border pixels using a 4-connectivity.
     **perimeter_crofton** : float
-        Perimeter of object approximated by the Crofton formula in 4
+        Perimeter of the region approximated by the Crofton formula in 4
         directions.
     **slice** : tuple of slices
-        A slice to extract the object from the source image.
+        A slice to extract the region from the input image.
     **solidity** : float
         Ratio of pixels in the region to pixels of the convex hull image.
 
-    Each region also supports iteration, so that you can do::
+    `properties` also supports iteration, so that you can do::
 
-      for prop in region:
-          print(prop, region[prop])
+      for region in properties:
+          print(region, properties[region])
 
     See Also
     --------
@@ -1395,7 +1466,7 @@ def regionprops(
     >>> props[0]['centroid']
     (22.72987986048314, 81.91228523446583)
 
-    Add custom measurements by passing functions as ``extra_properties``
+    Add custom measurements by passing functions as ``extra_properties``:
 
     >>> from skimage import data, util
     >>> from cucim.skimage.measure import label, regionprops
@@ -1405,8 +1476,10 @@ def regionprops(
     >>> def pixelcount(regionmask):
     ...     return np.sum(regionmask)
     >>> props = regionprops(label_img, extra_properties=(pixelcount,))
+    >>> # pixelcount of first labeled region
     >>> props[0].pixelcount
     array(7741)
+    >>> # pixelcount of second labeled region
     >>> props[1]['pixelcount']
     array(42)
 
