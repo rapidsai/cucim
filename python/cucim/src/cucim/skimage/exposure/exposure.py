@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import cupy as cp
@@ -74,7 +74,7 @@ def _bincount_histogram(image, source_range, bin_centers=None):
     ----------
     image : array
         Input image.
-    source_range : string
+    source_range : {'image', 'dtype'}
         'image' determines the range from the input image.
         'dtype' determines the range from the expected range of the images
         of that data type.
@@ -114,7 +114,7 @@ def _get_outer_edges(image, hist_range):
     ----------
     image : ndarray
         Image for which the histogram is to be computed.
-    hist_range: 2-tuple of int or None
+    hist_range : 2-tuple of int or None
         Range of values covered by the histogram bins. If None, the minimum
         and maximum values of `image` are used.
 
@@ -169,7 +169,7 @@ def _get_bin_edges(image, nbins, hist_range):
         Image for which the histogram is to be computed.
     nbins : int
         The number of bins.
-    hist_range: 2-tuple of int
+    hist_range : 2-tuple of int
         Range of values covered by the histogram bins.
 
     Returns
@@ -237,7 +237,7 @@ def histogram(
     nbins : int, optional
         Number of bins used to calculate histogram. This value is ignored for
         integer arrays.
-    source_range : string, optional
+    source_range : {'image', 'dtype'}, optional
         'image' (default) determines the range from the input image.
         'dtype' determines the range from the expected range of the images
         of that data type.
@@ -317,7 +317,7 @@ def _histogram(image, bins, source_range, normalize):
         containing the bin centers can also be provided. For images with
         floating point dtype, this can be an array of bin_edges for use by
         ``np.histogram``.
-    source_range : string, optional
+    source_range : {'image', 'dtype'}, optional
         'image' (default) determines the range from the input image.
         'dtype' determines the range from the expected range of the images
         of that data type.
@@ -659,11 +659,12 @@ def _adjust_gamma_u8(image, gamma, gain):
 
 
 def adjust_gamma(image, gamma=1, gain=1):
-    """Performs Gamma Correction on the input image.
+    """Perform gamma correction on the input image.
 
-    Also known as Power Law Transform.
-    This function transforms the input image pixelwise according to the
-    equation ``O = I**gamma`` after scaling each pixel to the range 0 to 1.
+    Gamma correction is a power-law transform [1]_. This function
+    transforms the input `image` pixel-wise according to the power law
+    ``image**gamma`` after scaling each pixel to the range 0 to 1. Then
+    it is rescaled to its original range and multiplied by `gain`.
 
     Parameters
     ----------
@@ -697,9 +698,9 @@ def adjust_gamma(image, gamma=1, gain=1):
 
     Examples
     --------
-    >>> from skimage import data
+    >>> from skimage as ski
     >>> from cucim.skimage import exposure, img_as_float
-    >>> image = img_as_float(cp.array(data.moon()))
+    >>> image = img_as_float(cp.array(ski.data.moon()))
     >>> gamma_corrected = exposure.adjust_gamma(image, 2)
     >>> # Output is darker for gamma > 1
     >>> image.mean() > gamma_corrected.mean()
@@ -715,9 +716,8 @@ def adjust_gamma(image, gamma=1, gain=1):
     else:
         _assert_non_negative(image)
 
-        scale = float(
-            dtype_limits(image, True)[1] - dtype_limits(image, True)[0]
-        )
+        limits = dtype_limits(image, clip_negative=True)
+        scale = float(limits[1] - limits[0])
 
         out = (((image / scale) ** gamma) * scale * gain).astype(dtype)
 
