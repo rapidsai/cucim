@@ -69,21 +69,27 @@ static std::string detect_nvimgcodec_extensions_path()
     const char* env_path = std::getenv("NVIMGCODEC_EXTENSIONS_PATH");
     if (env_path && env_path[0] != '\0')
     {
+        #ifdef DEBUG
         fmt::print("[nvimgcodec_ext] Using NVIMGCODEC_EXTENSIONS_PATH: {}\n", env_path);
+        #endif
         return std::string(env_path);
     }
 
     // 2. Find where libnvimgcodec.so was loaded from using dladdr on the
     //    REAL function pointer (resolved via dynlink), not the stub address.
     void* real_func = ::NvimgcodecLoadSymbol("nvimgcodecGetProperties");
+    #ifdef DEBUG
     fmt::print("[nvimgcodec_ext] NvimgcodecLoadSymbol returned: {}\n", real_func);
+    #endif
     if (real_func)
     {
         Dl_info dl_info{};
         if (dladdr(real_func, &dl_info) && dl_info.dli_fname)
         {
             std::string lib_path(dl_info.dli_fname);
+            #ifdef DEBUG
             fmt::print("[nvimgcodec_ext] dladdr -> lib_path: {}\n", lib_path);
+            #endif
             auto last_slash = lib_path.rfind('/');
             if (last_slash != std::string::npos)
             {
@@ -94,29 +100,41 @@ static std::string detect_nvimgcodec_extensions_path()
                 struct stat st{};
                 if (stat(candidate.c_str(), &st) == 0 && S_ISDIR(st.st_mode))
                 {
+                    #ifdef DEBUG
                     fmt::print("[nvimgcodec_ext] Found extensions at: {}\n", candidate);
+                    #endif
                     return candidate;
                 }
+                #ifdef DEBUG
                 fmt::print("[nvimgcodec_ext] Not found: {}\n", candidate);
+                #endif
 
                 // 3b. Probe <lib_dir>/../extensions/ (pip package layout)
                 candidate = lib_dir + "/../extensions";
                 if (stat(candidate.c_str(), &st) == 0 && S_ISDIR(st.st_mode))
                 {
+                    #ifdef DEBUG
                     fmt::print("[nvimgcodec_ext] Found extensions at: {}\n", candidate);
+                    #endif
                     return candidate;
                 }
+                #ifdef DEBUG
                 fmt::print("[nvimgcodec_ext] Not found: {}\n", candidate);
+                #endif
             }
         }
         else
         {
+            #ifdef DEBUG
             fmt::print("[nvimgcodec_ext] dladdr failed\n");
+            #endif
         }
     }
 
     // 4. Not found — return empty, nvImageCodec will use its default search
+    #ifdef DEBUG
     fmt::print("[nvimgcodec_ext] WARNING: Could not detect extensions path\n");
+    #endif
     return {};
 }
 
@@ -676,12 +694,14 @@ void TiffFileParser::extract_ifd_metadata(IfdInfo& ifd_info)
 
     if (!manager.get_decoder() || !ifd_info.sub_code_stream)
     {
+        #ifdef DEBUG
         if (!manager.get_decoder()) {
             fmt::print("  ⚠️  Decoder not available\n");
         }
         if (!ifd_info.sub_code_stream) {
             fmt::print("  ⚠️  No sub-code stream for this IFD\n");
         }
+        #endif
         return;  // No decoder or stream available
     }
 
