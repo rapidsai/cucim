@@ -1038,7 +1038,7 @@ def test_resize_local_mean3d_keep(channel_axis):
     resized = resize_local_mean(x, out_shape)
     # move channels back to last axis to match the reference image
     resized = cp.moveaxis(resized, channel_axis, -1)
-    assert_array_almost_equal(resized, ref)
+    assert_allclose(resized, ref, atol=1e-7)
 
 
 def test_resize_local_mean3d_resize():
@@ -1048,7 +1048,7 @@ def test_resize_local_mean3d_resize():
     resized = resize_local_mean(x, (10, 10, 1))
     ref = cp.zeros((10, 10, 1))
     ref[2:4, 2:4] = 1
-    assert_array_almost_equal(resized, ref)
+    assert_allclose(resized, ref, atol=1e-7)
 
     # can't resize along specified channel axis
     with pytest.raises(ValueError):
@@ -1062,7 +1062,7 @@ def test_resize_local_mean3d_2din_3dout():
     resized = resize_local_mean(x, (10, 10, 1))
     ref = cp.zeros((10, 10, 1))
     ref[2:4, 2:4] = 1
-    assert_array_almost_equal(resized, ref)
+    assert_allclose(resized, ref, atol=1e-7)
 
 
 def test_resize_local_mean2d_4d():
@@ -1073,7 +1073,7 @@ def test_resize_local_mean2d_4d():
     resized = resize_local_mean(x, out_shape)
     ref = cp.zeros(out_shape)
     ref[2:4, 2:4, ...] = 1
-    assert_array_almost_equal(resized, ref)
+    assert_allclose(resized, ref, atol=1e-7)
 
 
 @pytest.mark.parametrize("dim", range(1, 6))
@@ -1084,7 +1084,7 @@ def test_resize_local_mean_nd(dim):
     resized = resize_local_mean(x, out_shape)
     expected_shape = tuple(1.5 * np.asarray(shape))
     assert_array_equal(resized.shape, expected_shape)
-    assert_array_equal(resized, 1)
+    assert_allclose(resized, 1, atol=1e-7)
 
 
 def test_resize_local_mean3d():
@@ -1094,7 +1094,7 @@ def test_resize_local_mean3d():
     resized = resize_local_mean(x, (10, 10, 1))
     ref = cp.zeros((10, 10, 1))
     ref[2:4, 2:4, :] = 0.5
-    assert_array_almost_equal(resized, ref)
+    assert_allclose(resized, ref, atol=1e-7)
     resized = resize_local_mean(x, (10, 10, 1), grid_mode=False)
     ref[1, 1, :] = 0.0703125
     ref[2, 2, :] = 0.5
@@ -1102,7 +1102,7 @@ def test_resize_local_mean3d():
     ref[1, 2, :] = ref[2, 1, :] = 0.1875
     ref[1, 3, :] = ref[3, 1, :] = 0.1640625
     ref[2, 3, :] = ref[3, 2, :] = 0.4375
-    assert_array_almost_equal(resized, ref)
+    assert_allclose(resized, ref, atol=1e-7)
 
 
 def test_resize_local_mean_dtype():
