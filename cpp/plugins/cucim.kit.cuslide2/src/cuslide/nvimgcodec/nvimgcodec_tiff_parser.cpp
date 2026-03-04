@@ -20,6 +20,7 @@
 #include "nvimgcodec_tiff_parser.h"
 
 #include <algorithm>  // for std::transform
+#include <cstdlib>    // for std::atexit
 #include <cstring>    // for strlen
 #include <type_traits>
 
@@ -302,6 +303,15 @@ NvImageCodecTiffParserManager::NvImageCodecTiffParserManager()
         #ifdef DEBUG
         fmt::print("✅ {}\n", status_message_);
         #endif // DEBUG
+
+        // Register atexit() AFTER nvimgcodecDecoderCreate (which initializes
+        // CUDA internally).  atexit handlers run in LIFO order, so this
+        // handler fires BEFORE the CUDA runtime's own atexit cleanup,
+        // guaranteeing that the CUDA context is still alive when we call
+        // nvimgcodecDecoderDestroy / nvimgcodecInstanceDestroy.
+        std::atexit([]() {
+            NvImageCodecTiffParserManager::instance().shutdown();
+        });
     }
     catch (const std::exception& e)
     {
@@ -313,23 +323,42 @@ NvImageCodecTiffParserManager::NvImageCodecTiffParserManager()
     }
 }
 
+void NvImageCodecTiffParserManager::shutdown()
+{
+    if (!initialized_)
+    {
+        return;  // Nothing to clean up, or already shut down
+    }
+
+    #ifdef DEBUG
+    fmt::print("[nvimgcodec] Shutting down NvImageCodecTiffParserManager...\n");
+    #endif
+
+    if (decoder_)
+    {
+        nvimgcodecDecoderDestroy(decoder_);
+        decoder_ = nullptr;
+    }
+
+    if (instance_)
+    {
+        nvimgcodecInstanceDestroy(instance_);
+        instance_ = nullptr;
+    }
+
+    initialized_ = false;
+
+    #ifdef DEBUG
+    fmt::print("[nvimgcodec] Shutdown complete.\n");
+    #endif
+}
+
 NvImageCodecTiffParserManager::~NvImageCodecTiffParserManager()
 {
-    // Intentionally leak nvImageCodec resources during static destruction.
-    //
-    // This singleton (static local in instance()) is destroyed during
-    // __run_exit_handlers.  At that point the CUDA driver/runtime context may
-    // already be partially or fully torn down.  Calling nvimgcodecDecoderDestroy
-    // triggers cudaStreamSynchronize inside libnvtiff_ext.so, which segfaults
-    // on a dead CUDA context.
-    //
-    // Since the process is about to exit, the OS will reclaim all memory and
-    // GPU resources.  Skipping cleanup here is the standard practice for
-    // singletons that hold CUDA handles (same pattern used by cuBLAS, cuDNN,
-    // etc.).
-    //
-    // If explicit pre-exit cleanup is ever needed, add a public shutdown()
-    // method and call it before Python's Py_Finalize().
+    // shutdown() is normally called via atexit() while the CUDA context is
+    // still alive.  The destructor calls it again as a safety net — it is
+    // idempotent, so the second call is a harmless no-op.
+    shutdown();
 }
 
 // ============================================================================

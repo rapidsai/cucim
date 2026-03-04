@@ -361,6 +361,15 @@ public:
      */
     const std::string& get_status() const { return status_message_; }
 
+    /**
+     * @brief Explicitly release nvImageCodec resources.
+     *
+     * Must be called while the CUDA context is still alive — typically
+     * from an atexit() handler registered after CUDA initialization.
+     * Idempotent: safe to call more than once.
+     */
+    void shutdown();
+
 private:
     NvImageCodecTiffParserManager();
     ~NvImageCodecTiffParserManager();
