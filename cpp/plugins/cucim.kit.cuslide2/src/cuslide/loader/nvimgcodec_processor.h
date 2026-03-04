@@ -114,6 +114,14 @@ private:
      */
     cuslide2::nvimgcodec::BatchDecodeState schedule_roi_batch(const std::vector<RoiDecodeRequest>& requests);
 
+    /**
+     * @brief Store decoded batch results into the per-ROI cache and notify waiters.
+     *
+     * Acquires cache_mutex_ internally and calls cache_cond_.notify_all().
+     */
+    void store_batch_results(const std::vector<RoiDecodeRequest>& requests,
+                             const std::vector<cuslide2::nvimgcodec::BatchDecodeResult>& results);
+
     bool stopped_ = false;
     uint32_t preferred_loader_prefetch_factor_ = 2;
 

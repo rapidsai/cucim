@@ -255,7 +255,15 @@ uint32_t NvImageCodecProcessor::wait_batch(uint32_t index_in_task,
     std::vector<::cuslide2::nvimgcodec::BatchDecodeResult> results =
         ::cuslide2::nvimgcodec::wait_batch_decode(decode_state);
 
-    // Store results in cache
+    store_batch_results(requests, results);
+
+    return batch_size_;
+}
+
+void NvImageCodecProcessor::store_batch_results(
+    const std::vector<RoiDecodeRequest>& requests,
+    const std::vector<::cuslide2::nvimgcodec::BatchDecodeResult>& results)
+{
     {
         std::lock_guard<std::mutex> cache_lock(cache_mutex_);
 
@@ -289,10 +297,7 @@ uint32_t NvImageCodecProcessor::wait_batch(uint32_t index_in_task,
         }
     }
 
-    // Notify waiters
     cache_cond_.notify_all();
-
-    return batch_size_;
 }
 
 std::shared_ptr<cucim::cache::ImageCacheValue> NvImageCodecProcessor::wait_for_processing(uint32_t index)
