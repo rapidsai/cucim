@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 import argparse
@@ -146,7 +146,7 @@ def main(args):
         ("remove_small_objects", dict(), dict(), False, True),
         ("remove_small_holes", dict(), dict(), False, True),
         # gray.py
-        ("erosion", dict(), dict(), False, True),
+        ("erosion", dict(mode="ignore"), dict(), False, True),
         ("dilation", dict(), dict(), False, True),
         ("opening", dict(), dict(), False, True),
         ("closing", dict(), dict(), False, True),
@@ -199,6 +199,7 @@ def main(args):
             for connectivity in range(1, ndim + 1):
                 index_str = f"conn={connectivity}"
                 footprint = ndi.generate_binary_structure(ndim, connectivity)
+                print(f"{footprint=}")
 
                 B = BinaryMorphologyBench(
                     function_name=function_name,
