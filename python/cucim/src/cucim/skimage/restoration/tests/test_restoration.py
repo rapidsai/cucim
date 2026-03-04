@@ -1,6 +1,8 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
+
+from pathlib import Path
 
 import cupy as cp
 import numpy as np
@@ -30,6 +32,7 @@ def astronaut():
 
 
 test_img = camera()
+test_data_dir = Path(__file__).absolute().parent
 
 
 def _get_rtol_atol(dtype):
@@ -57,8 +60,8 @@ def test_wiener(dtype):
     assert deconvolved.dtype == _supported_float_type(dtype)
 
     rtol, atol = _get_rtol_atol(dtype)
-    path = fetch("restoration/tests/camera_wiener.npy")
-    cp.testing.assert_allclose(deconvolved, np.load(path), rtol=rtol, atol=atol)
+    reference = np.load(test_data_dir / "camera_wiener.npy")
+    cp.testing.assert_allclose(deconvolved, reference, rtol=rtol, atol=atol)
 
     _, laplacian = uft.laplacian(2, data.shape)
     otf = uft.ir2tf(psf, data.shape, is_real=False)
@@ -68,7 +71,7 @@ def test_wiener(dtype):
     )
     assert deconvolved.real.dtype == _supported_float_type(dtype)
     cp.testing.assert_allclose(
-        cp.real(deconvolved), np.load(path), rtol=rtol, atol=atol
+        cp.real(deconvolved), reference, rtol=rtol, atol=atol
     )
 
 
@@ -158,8 +161,8 @@ def test_richardson_lucy():
     psf = cp.asarray(psf)
     deconvolved = restoration.richardson_lucy(data, psf, 5)
 
-    path = fetch("restoration/tests/camera_rl.npy")
-    cp.testing.assert_allclose(deconvolved, np.load(path), rtol=1e-4)
+    reference = np.load(test_data_dir / "camera_rl.npy")
+    cp.testing.assert_allclose(deconvolved, reference, rtol=1e-4)
 
 
 @pytest.mark.parametrize("dtype_image", [cp.float16, cp.float32, cp.float64])
@@ -179,6 +182,8 @@ def test_richardson_lucy_filtered(dtype_image, dtype_psf):
     )
     deconvolved = restoration.richardson_lucy(data, psf, 5, filter_epsilon=1e-6)
     assert deconvolved.dtype == _supported_float_type(data.dtype)
-
-    path = fetch("restoration/tests/astronaut_rl.npy")
+    try:
+        path = fetch("restoration/astronaut_rl.npy")
+    except KeyError:
+        path = fetch("restoration/tests/astronaut_rl.npy")
     cp.testing.assert_allclose(deconvolved, np.load(path), rtol=1e-3, atol=atol)

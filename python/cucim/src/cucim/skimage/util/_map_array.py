@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import cupy as cp
@@ -39,7 +39,7 @@ def map_array(input_arr, input_vals, output_vals, out=None):
         The values to map from.
     output_vals : array, shape (K,)
         The values to map to.
-    out: array, same shape as `input_arr`
+    out : array, same shape as `input_arr`
         The output array. Will be created if not provided. It should
         have the same dtype as `output_vals`.
 

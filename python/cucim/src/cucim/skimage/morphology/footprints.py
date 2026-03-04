@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2022-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import os
@@ -979,7 +979,7 @@ def pad_footprint(footprint, *, pad_end=True):
         if all(s % 2 for s in footprint):
             # can use tuple directly if all dimensions have odd length
             return footprint
-        # Use a padded array instead of the tuple of any sizes were even
+        # Use a padded array instead of the tuple if any sizes were even
         padded_shape = tuple(s if s % 2 else s + 1 for s in footprint)
         padded = np.zeros(padded_shape, dtype=cp.uint8)
         if pad_end:

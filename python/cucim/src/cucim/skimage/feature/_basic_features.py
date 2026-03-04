@@ -1,10 +1,11 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import functools
 import itertools
 import math
+import warnings
 from itertools import combinations_with_replacement
 
 import cupy as cp
@@ -48,7 +49,7 @@ def _mutiscale_basic_features_singlechannel(
     sigma_min=0.5,
     sigma_max=16,
     num_sigma=None,
-    num_workers=None,
+    workers=None,
 ):
     """Features for a single channel nd image.
 
@@ -74,9 +75,10 @@ def _mutiscale_basic_features_singlechannel(
     num_sigma : int, optional
         Number of values of the Gaussian kernel between sigma_min and sigma_max.
         If None, sigma_min multiplied by powers of 2 are used.
-    num_workers : int or None, optional
+    workers : int or None, optional
         The number of parallel threads to use. If set to ``None``, the full
-        set of available cores are used.
+        set of available cores are used. This argument is not used by the
+        cuCIM implementation as work is done by the GPU.
 
     Returns
     -------
@@ -113,7 +115,7 @@ def multiscale_basic_features(
     sigma_min=0.5,
     sigma_max=16,
     num_sigma=None,
-    num_workers=None,
+    workers=None,
     *,
     channel_axis=None,
 ):
@@ -144,9 +146,10 @@ def multiscale_basic_features(
     num_sigma : int, optional
         Number of values of the Gaussian kernel between sigma_min and sigma_max.
         If None, sigma_min multiplied by powers of 2 are used.
-    num_workers : int or None, optional
+    workers : int or None, optional
         The number of parallel threads to use. If set to ``None``, the full
-        set of available cores are used.
+        set of available cores are used. This argument is not used by the
+        cuCIM implementation as work is done by the GPU.
     channel_axis : int or None, optional
         If None, the image is assumed to be a grayscale (single channel) image.
         Otherwise, this parameter indicates which axis of the array corresponds
@@ -165,6 +168,11 @@ def multiscale_basic_features(
             "At least one of `intensity`, `edges` or `textures`"
             "must be True for features to be computed."
         )
+    if workers is not None:
+        warnings.warn(
+            f"Workers was set to {workers}, but will be ignored by the cuCIM "
+            "implementation (work is launched on the GPU, not CPU threads)."
+        )
     if channel_axis is None:
         image = image[..., np.newaxis]
         channel_axis = -1
@@ -180,7 +188,7 @@ def multiscale_basic_features(
             sigma_min=sigma_min,
             sigma_max=sigma_max,
             num_sigma=num_sigma,
-            num_workers=num_workers,
+            workers=workers,
         )
         for dim in range(image.shape[-1])
     )
