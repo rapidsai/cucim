@@ -22,7 +22,7 @@ def test_one_connectivity():
     # With connectivity=1, the biggest object has a size of 6 pixels, so
     # `max_size=6` should remove everything
     observed = remove_small_objects(test_object_image, max_size=6)
-    assert cp.all(not observed)
+    cp.testing.assert_array_equal(observed, cp.zeros_like(observed))
 
     # fmt: off
     expected = cp.array([[0, 0, 0, 0, 0],
@@ -39,7 +39,7 @@ def test_two_connectivity():
     observed = remove_small_objects(
         test_object_image, max_size=7, connectivity=2
     )
-    assert cp.all(not observed)
+    cp.testing.assert_array_equal(observed, cp.zeros_like(observed))
 
     # fmt: off
     expected = cp.array([[0, 0, 0, 1, 0],

@@ -397,9 +397,9 @@ class RegionProperties:
                     f"has not been specified."
                 )
             warn(
-                f"`RegionProperties[{attr}]` is deprecated and will be "
+                f"`RegionProperties.{attr}` is deprecated and will be "
                 "removed in a future version after the scikit-image 2.0 "
-                f"release. Use `RegionProperties[{PROPS[{attr}]}]` instead. ",
+                f"release. Use `RegionProperties.{PROPS[attr]}` instead. ",
                 category=FutureWarning,
                 stacklevel=2,
             )
