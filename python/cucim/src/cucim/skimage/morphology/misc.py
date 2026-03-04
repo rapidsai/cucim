@@ -80,7 +80,7 @@ def remove_small_objects(
 ):
     """Remove objects smaller than the specified size.
 
-    fExpects `ar` to be an array with labeled objects, and removes objects
+    Expects `ar` to be an array with labeled objects, and removes objects
     smaller than or equal to `max_size`. If `ar` is bool, the image is first
     labeled. This leads to potentially different behavior for bool vs. 0-and-1
     arrays.
