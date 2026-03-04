@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Infrastructure, Inc.
 # SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Networks, Inc.
-# SPDX-FileCopyrightText: Copyright (c) 2022-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND MIT
 
 """A vendored subset of cupyx.scipy.ndimage._filters_core"""
@@ -15,8 +15,6 @@ from cucim.skimage._vendored import (
     _internal as internal,
     _ndimage_util as _util,
 )
-
-CUPY_GTE_13_3_0 = parse(cupy.__version__) >= parse("13.3.0")
 
 
 def _origins_to_offsets(origins, w_shape):
@@ -217,24 +215,13 @@ def _call_kernel(
     return output
 
 
-if CUPY_GTE_13_3_0:
-    _includes = r"""
+_ndimage_includes = r"""
 #include <cupy/cuda_workaround.h>  // provide std:: coverage
-"""
-else:
-    _includes = r"""
-#include <type_traits>  // let Jitify handle this
-"""
-
-_ndimage_includes = (
-    _includes
-    + r"""
 #include <cupy/math_constants.h>
 
 template<> struct std::is_floating_point<float16> : std::true_type {};
 template<> struct std::is_signed<float16> : std::true_type {};
 """
-)
 
 
 _ndimage_CAST_FUNCTION = """
@@ -410,10 +397,6 @@ def _generate_nd_kernel(
         name += "_with_mask"
     preamble = _ndimage_includes + _ndimage_CAST_FUNCTION + preamble
 
-    if CUPY_GTE_13_3_0:
-        options += ("--std=c++11",)
-    else:
-        options += ("--std=c++11", "-DCUPY_USE_JITIFY")
     return cupy.ElementwiseKernel(
         in_params,
         out_params,

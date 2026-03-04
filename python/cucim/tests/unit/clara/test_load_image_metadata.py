@@ -1,8 +1,9 @@
 #
-# SPDX-FileCopyrightText: Copyright (c) 2021-2022, NVIDIA CORPORATION.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION.
 # SPDX-License-Identifier: Apache-2.0
 #
 
+import json
 import math
 
 import pytest
@@ -65,7 +66,9 @@ def test_load_image_metadata(testimg_tiff_stripe_32x24_16):
     assert isinstance(metadata, dict)
     assert len(metadata) == 2  # 'cucim' and 'tiff'
     # A raw metadata string.
-    assert img.raw_metadata == '{"axes": "YXC", "shape": [24, 32, 3]}'
+    assert json.loads(img.raw_metadata) == json.loads(
+        '{"axes": "YXC", "shape": [24, 32, 3]}'
+    )
 
 
 def test_load_image_resolution_metadata(
