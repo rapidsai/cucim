@@ -7,6 +7,7 @@ import inspect
 import numbers
 import warnings
 from collections.abc import Iterable
+from contextlib import contextmanager
 
 import cupy as cp
 import numpy as np
@@ -502,6 +503,90 @@ def _docstring_add_deprecated(func, kwarg_mapping, deprecated_version):
     return final_docstring
 
 
+class FailedEstimationAccessError(AttributeError):
+    """Error from use of failed estimation instance
+
+    This error arises from attempts to use an instance of
+    :class:`FailedEstimation`.
+    """
+
+
+class FailedEstimation:
+    """Class to indicate a failed transform estimation.
+
+    The ``from_estimate`` class method of each transform type may return an
+    instance of this class to indicate some failure in the estimation process.
+
+    Parameters
+    ----------
+    message : str
+        Message indicating reason for failed estimation.
+
+    Attributes
+    ----------
+    message : str
+        Message above.
+
+    Raises
+    ------
+    FailedEstimationAccessError
+        Exception raised for missing attributes or if the instance is used as a
+        callable.
+    """
+
+    error_cls = FailedEstimationAccessError
+
+    hint = (
+        "You can check for a failed estimation by truth testing the returned "
+        "object. For failed estimations, `bool(estimation_result)` will be `False`. "
+        "E.g.\n\n"
+        "    if not estimation_result:\n"
+        "        raise RuntimeError(f'Failed estimation: {estimation_result}')"
+    )
+
+    def __init__(self, message):
+        self.message = message
+
+    def __bool__(self):
+        return False
+
+    def __repr__(self):
+        return f"{type(self).__name__}({self.message!r})"
+
+    def __str__(self):
+        return self.message
+
+    def __call__(self, *args, **kwargs):
+        msg = (
+            f"{type(self).__name__} is not callable. {self.message}\n\n"
+            f"Hint: {self.hint}"
+        )
+        raise self.error_cls(msg)
+
+    def __getattr__(self, name):
+        msg = (
+            f"{type(self).__name__} has no attribute {name!r}. {self.message}\n\n"
+            f"Hint: {self.hint}"
+        )
+        raise self.error_cls(msg)
+
+
+@contextmanager
+def _ignore_deprecated_estimate_warning():
+    """Filter warnings about the deprecated `estimate` method.
+
+    Use either as decorator or context manager.
+    """
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            action="ignore",
+            category=FutureWarning,
+            message="`estimate` is deprecated",
+            module="skimage",
+        )
+        yield
+
+
 class channel_as_last_axis:
     """Decorator for automatically making channels axis last for all arrays.
 
@@ -664,6 +749,67 @@ class deprecate_func:
             wrapped.__doc__ = doc + "\n\n    " + wrapped.__doc__
 
         return wrapped
+
+
+def _deprecate_estimate(func, class_name=None):
+    """Deprecate ``estimate`` method."""
+    class_name = (
+        func.__qualname__.split(".")[0] if class_name is None else class_name
+    )
+    return deprecate_func(
+        deprecated_version="0.26",
+        removed_version="2.2",
+        hint=f"Please use `{class_name}.from_estimate` class constructor instead.",
+        stacklevel=2,
+    )(func)
+
+
+def _deprecate_inherited_estimate(cls):
+    """Deprecate inherited ``estimate`` instance method.
+
+    This needs a class decorator so we can correctly specify the class of the
+    `from_estimate` class method in the deprecation message.
+    """
+
+    def estimate(self, *args, **kwargs):
+        return self._estimate(*args, **kwargs) is None
+
+    # The inherited method will always be wrapped by deprecator.
+    inherited_meth = getattr(cls, "estimate").__wrapped__
+    estimate.__doc__ = inherited_meth.__doc__
+    estimate.__signature__ = inspect.signature(inherited_meth)
+
+    cls.estimate = _deprecate_estimate(estimate, cls.__name__)
+    return cls
+
+
+def _update_from_estimate_docstring(cls):
+    """Fix docstring for inherited ``from_estimate`` class method.
+
+    Even for classes that inherit the `from_estimate` method, and do not
+    override it, we nevertheless need to change the *docstring* of the
+    `from_estimate` method to point the user to the current (inheriting) class,
+    rather than the class in which the method is defined (the inherited class).
+
+    This needs a class decorator so we can modify the docstring of the new
+    class method.  CPython currently does not allow us to modify class method
+    docstrings by updating ``__doc__``.
+    """
+
+    inherited_cmeth = getattr(cls, "from_estimate")
+
+    def from_estimate(cls, *args, **kwargs):
+        return inherited_cmeth(*args, **kwargs)
+
+    inherited_class_name = inherited_cmeth.__qualname__.split(".")[-2]
+
+    from_estimate.__doc__ = inherited_cmeth.__doc__.replace(
+        inherited_class_name, cls.__name__
+    )
+    from_estimate.__signature__ = inspect.signature(inherited_cmeth)
+
+    cls.from_estimate = classmethod(from_estimate)
+    return cls
 
 
 def get_bound_method_class(m):
