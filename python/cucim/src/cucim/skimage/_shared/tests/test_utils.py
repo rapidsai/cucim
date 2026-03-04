@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
-
+import re
 import sys
 import warnings
 
@@ -12,11 +12,14 @@ import pytest
 from cucim.skimage._shared import testing
 from cucim.skimage._shared.utils import (
     DEPRECATED,
+    FailedEstimation,
+    FailedEstimationAccessError,
     _supported_float_type,
     _validate_interpolation_order,
     change_default_value,
     channel_as_last_axis,
     check_nD,
+    deprecate_func,
     deprecate_parameter,
 )
 
@@ -34,7 +37,9 @@ except ImportError:
 
 
 def test_change_default_value():
-    @change_default_value("arg1", new_value=-1, changed_version="0.12")
+    @change_default_value(
+        "arg1", new_value=-1, changed_version="0.12", stacklevel=2
+    )
     def foo(arg0, arg1=0, arg2=1):
         """Expected docstring"""
         return arg0, arg1, arg2
@@ -44,6 +49,7 @@ def test_change_default_value():
         new_value=-1,
         changed_version="0.12",
         warning_msg="Custom warning message",
+        stacklevel=2,
     )
     def bar(arg0, arg1=0, arg2=1):
         """Expected docstring"""
@@ -200,6 +206,29 @@ def test_decorated_channel_axis_shape(channel_axis):
         assert size is None
     else:
         assert size == x.shape[channel_axis]
+
+
+@deprecate_func(
+    deprecated_version="x", removed_version="y", hint="You are on your own."
+)
+def _deprecated_func():
+    """Dummy function used in `test_deprecate_func`.
+
+    The decorated function must be outside the test function, otherwise it
+    seems that the warning does not point at the calling location.
+    """
+
+
+def test_deprecate_func():
+    with pytest.warns(FutureWarning) as record:
+        _deprecated_func()
+        testing.assert_stacklevel(record)
+
+    assert len(record) == 1
+    assert record[0].message.args[0] == (
+        "`_deprecated_func` is deprecated since version x and will be removed in "
+        "version y. You are on your own."
+    )
 
 
 @deprecate_parameter("old1", start_version="0.10", stop_version="0.12")
@@ -478,7 +507,7 @@ class Test_deprecate_parameter:
                 _func_deprecated_params(1, 2, old0=2)
 
     def test_wrong_param_name(self):
-        with pytest.raises(ValueError, match="'old' is not in list"):
+        with pytest.raises(ValueError, match="'old' not in parameters"):
 
             @deprecate_parameter(
                 "old", start_version="0.10", stop_version="0.12"
@@ -486,7 +515,7 @@ class Test_deprecate_parameter:
             def foo(arg0):
                 pass
 
-        with pytest.raises(ValueError, match="'new' is not in list"):
+        with pytest.raises(ValueError, match="'new' not in parameters"):
 
             @deprecate_parameter(
                 "old", new_name="new", start_version="0.10", stop_version="0.12"
@@ -509,7 +538,8 @@ class Test_deprecate_parameter:
         def foo(arg0, old=DEPRECATED):
             pass
 
-        with pytest.raises(RuntimeError, match="Set stacklevel manually"):
+        regex = "Cannot determine stacklevel.*Set the stacklevel manually"
+        with pytest.raises(ValueError, match=regex):
             foo(0, 1)
 
         @deprecate_parameter(
@@ -526,3 +556,24 @@ class Test_deprecate_parameter:
         ) as records:
             bar(0, 1)
             testing.assert_stacklevel(records)
+
+
+def test_failed_estimation():
+    msg = "Something went wrong with estimation"
+    fe = FailedEstimation(msg)
+    assert fe.message == msg
+    assert str(fe) == msg
+    assert repr(fe).startswith("FailedEstimation(")
+    assert bool(fe) is False
+
+    regex = re.compile(
+        "FailedEstimation is not callable.*Hint", flags=re.DOTALL
+    )
+    with pytest.raises(FailedEstimationAccessError, match=regex):
+        fe(np.ones((10, 2)))
+
+    regex = re.compile(
+        "FailedEstimation has no attribute 'params'.*Hint", flags=re.DOTALL
+    )
+    with pytest.raises(FailedEstimationAccessError, match=regex):
+        fe.params

@@ -443,7 +443,7 @@ def _docstring_add_deprecated(func, kwarg_mapping, deprecated_version):
     func : function
         The function whose docstring we wish to update.
     kwarg_mapping : dict
-        A dict containing {old_arg: new_arg} key/value pairs as used by
+        A dict containing {old_arg: new_arg} key/value pairs, see
         `deprecate_parameter`.
     deprecated_version : str
         A major.minor version string specifying when old_arg was
@@ -1050,9 +1050,10 @@ def _validate_interpolation_order(image_dtype, order):
     ----------
     image_dtype : dtype
         Image dtype.
-    order : int, optional
-        The order of the spline interpolation. The order has to be in
-        the range 0-5. See `skimage.transform.warp` for detail.
+    order : {None, int}, optional
+        The order of the spline interpolation. The order has to be in the range
+        0-5. If ``None`` assume order 0 for Boolean images, otherwise 1. See
+        `skimage.transform.warp` for detail.
 
     Returns
     -------
