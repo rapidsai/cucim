@@ -182,6 +182,8 @@ def test_richardson_lucy_filtered(dtype_image, dtype_psf):
     )
     deconvolved = restoration.richardson_lucy(data, psf, 5, filter_epsilon=1e-6)
     assert deconvolved.dtype == _supported_float_type(data.dtype)
-
-    path = fetch("restoration/astronaut_rl.npy")
+    try:
+        path = fetch("restoration/astronaut_rl.npy")
+    except KeyError:
+        path = fetch("restoration/tests/astronaut_rl.npy")
     cp.testing.assert_allclose(deconvolved, np.load(path), rtol=1e-3, atol=atol)
