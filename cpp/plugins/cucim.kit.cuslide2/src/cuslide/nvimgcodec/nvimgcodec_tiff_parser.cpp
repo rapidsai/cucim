@@ -221,7 +221,7 @@ static bool extract_tag_value(const std::vector<uint8_t>& buffer, int value_coun
 // ============================================================================
 
 NvImageCodecTiffParserManager::NvImageCodecTiffParserManager()
-    : instance_(nullptr), decoder_(nullptr), cpu_decoder_(nullptr), initialized_(false)
+    : instance_(nullptr), decoder_(nullptr), initialized_(false)
 {
     try
     {
@@ -295,39 +295,6 @@ NvImageCodecTiffParserManager::NvImageCodecTiffParserManager()
             fmt::print("⚠️  {}\n", status_message_);
             #endif // DEBUG
             return;
-        }
-
-        // Create CPU-only decoder for native CPU decoding
-        nvimgcodecBackendKind_t cpu_backend_kind = NVIMGCODEC_BACKEND_KIND_CPU_ONLY;
-        nvimgcodecBackendParams_t cpu_backend_params{};
-        cpu_backend_params.struct_type = NVIMGCODEC_STRUCTURE_TYPE_BACKEND_PARAMS;
-        cpu_backend_params.struct_size = sizeof(nvimgcodecBackendParams_t);
-        cpu_backend_params.struct_next = nullptr;
-
-        nvimgcodecBackend_t cpu_backend{};
-        cpu_backend.struct_type = NVIMGCODEC_STRUCTURE_TYPE_BACKEND;
-        cpu_backend.struct_size = sizeof(nvimgcodecBackend_t);
-        cpu_backend.struct_next = nullptr;
-        cpu_backend.kind = cpu_backend_kind;
-        cpu_backend.params = cpu_backend_params;
-
-        nvimgcodecExecutionParams_t cpu_exec_params = exec_params;
-        cpu_exec_params.num_backends = 1;
-        cpu_exec_params.backends = &cpu_backend;
-
-        nvimgcodecStatus_t cpu_status = nvimgcodecDecoderCreate(instance_, &cpu_decoder_, &cpu_exec_params, nullptr);
-        if (cpu_status == NVIMGCODEC_STATUS_SUCCESS)
-        {
-            #ifdef DEBUG
-            fmt::print("✅ CPU-only decoder created successfully (TIFF parser)\n");
-            #endif // DEBUG
-        }
-        else
-        {
-            #ifdef DEBUG
-            fmt::print("⚠️  Failed to create CPU-only decoder (CPU decoding will use fallback)\n");
-            #endif // DEBUG
-            cpu_decoder_ = nullptr;
         }
 
         initialized_ = true;
