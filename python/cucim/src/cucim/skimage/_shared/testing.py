@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import inspect
@@ -20,6 +20,7 @@ from numpy.testing import (  # noqa
 )
 
 from ._warnings import expected_warnings  # noqa
+from .compat import SKIMAGE_GT_026
 
 skipif = pytest.mark.skipif
 xfail = pytest.mark.xfail
@@ -36,16 +37,46 @@ except ImportError:
     have_fetch = False
 
 
-def fetch(data_filename):
-    """Attempt to fetch data, but if unavailable, skip the tests."""
-    if have_fetch:
+if SKIMAGE_GT_026:
+
+    def fetch(data_filename, prefix=None):
+        """Attempt to fetch data, but if unavailable, skip the tests.
+
+        Parameters
+        ----------
+        data_filename : str
+            File path in the scikit-image repo tree, e.g.,
+            'restoration/camera_rl.npy', possibly pointing to a remote location.
+
+        prefix : str, optional
+            If None, `data_filename` is prefixed by 'src/skimage'
+            If 'tests', `data_filename` is prefixed by 'tests/skimage'.
+
+        Returns
+        -------
+        file_path : str
+            Path of the local file, possibly pointing to a remote location.
+
+        """
         try:
-            # CuPy Backend: TODO: avoid call to non-public _fetch method
-            return _fetch(data_filename)
+            return _fetch(data_filename, prefix=prefix)
         except (ConnectionError, ModuleNotFoundError):
-            pytest.skip(f"Unable to download {data_filename}")
-    else:
-        pytest.skip("skimage _fetch utility not found")
+            pytest.skip(
+                f"Unable to download {data_filename}", allow_module_level=True
+            )
+
+else:
+
+    def fetch(data_filename):
+        """Attempt to fetch data, but if unavailable, skip the tests."""
+        if have_fetch:
+            try:
+                # CuPy Backend: TODO: avoid call to non-public _fetch method
+                return _fetch(data_filename)
+            except (ConnectionError, ModuleNotFoundError):
+                pytest.skip(f"Unable to download {data_filename}")
+        else:
+            pytest.skip("skimage _fetch utility not found")
 
 
 def assert_stacklevel(warnings, *, offset=-1):
