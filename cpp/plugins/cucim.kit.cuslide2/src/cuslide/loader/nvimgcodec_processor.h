@@ -8,6 +8,7 @@
 
 #ifdef CUCIM_HAS_NVIMGCODEC
 
+#include <atomic>
 #include <condition_variable>
 #include <deque>
 #include <memory>
@@ -122,7 +123,7 @@ private:
     void store_batch_results(const std::vector<RoiDecodeRequest>& requests,
                              const std::vector<cuslide2::nvimgcodec::BatchDecodeResult>& results);
 
-    bool stopped_ = false;
+    std::atomic<bool> stopped_{false};
     uint32_t preferred_loader_prefetch_factor_ = 2;
 
     // TIFF parser and IFD info
