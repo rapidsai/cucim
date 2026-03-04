@@ -1,8 +1,8 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
-"""Implementations restoration functions"""
+"""Implementation of various restoration functions"""
 
 import warnings
 
@@ -18,68 +18,72 @@ __keywords__ = "restoration, image, deconvolution"
 
 
 def wiener(image, psf, balance, reg=None, is_real=True, clip=True):
-    r"""Wiener-Hunt deconvolution
+    r"""Restore image using Wiener–Hunt deconvolution.
 
-    Return the deconvolution with a Wiener-Hunt approach (i.e. with
-    Fourier diagonalisation).
+    Wiener–Hunt deconvolution is a restoration method which follows a Bayesian
+    approach [1]_.
 
     Parameters
     ----------
-    image : cp.ndarray
-       Input degraded image (can be n-dimensional).
+    image : (N1, N2, ..., ND) ndarray
+       Degraded image.
     psf : ndarray
-       Point Spread Function. This is assumed to be the impulse
-       response (input image space) if the data-type is real, or the
-       transfer function (Fourier space) if the data-type is
-       complex. There is no constraints on the shape of the impulse
-       response. The transfer function must be of shape
+       Point spread function (PSF). Assumed to be the impulse
+       response (input image space) if the data type is real, or the
+       transfer function (Fourier or frequency space) if the data type is
+       complex. There is no constraint on the shape of the impulse
+       response. The transfer function though must be of shape
        `(N1, N2, ..., ND)` if `is_real is True`,
-       `(N1, N2, ..., ND // 2 + 1)` otherwise (see `cp.fft.rfftn`).
+       `(N1, N2, ..., ND // 2 + 1)` otherwise (see :func:`numpy.fft.rfftn`).
     balance : float
-       The regularisation parameter value that tunes the balance
-       between the data adequacy that improve frequency restoration
-       and the prior adequacy that reduce frequency restoration (to
-       avoid noise artifacts).
+       Regularization parameter. Denoted by :math:`\lambda`: in the Notes
+       section below, its value lets you balance data adequacy (improving
+       frequency restoration) with respect to prior adequacy (reducing
+       frequency restoration and avoiding noise artifacts). A larger value for
+       this parameter favors the regularization/prior.
     reg : ndarray, optional
-       The regularisation operator. The Laplacian by default. It can
-       be an impulse response or a transfer function, as for the
-       psf. Shape constraint is the same as for the `psf` parameter.
-    is_real : boolean, optional
-       True by default. Specify if ``psf`` and ``reg`` are provided
-       with hermitian hypothesis, that is only half of the frequency
-       plane is provided (due to the redundancy of Fourier transform
-       of real signal). It's apply only if ``psf`` and/or ``reg`` are
-       provided as transfer function.  For the hermitian property see
-       ``uft`` module or ``cupy.fft.rfftn``.
-    clip : boolean, optional
-       True by default. If True, pixel values of the result above 1 or
-       under -1 are thresholded for skimage pipeline compatibility.
+       Regularization operator. Laplacian by default. It can
+       be an impulse response or a transfer function, as for the PSF.
+       Shape constraints are the same as for `psf`.
+    is_real : bool, optional
+       True by default. Specify if `psf` and `reg` are provided over just half
+       the frequency space (thanks to the redundancy of the Fourier transform
+       for real signals). Applies only if `psf` and/or `reg` are
+       provided as transfer functions.
+       See ``uft`` module and :func:`np.fft.rfftn`.
+    clip : bool, optional
+       True by default. If True, pixel values of the deconvolved image (which
+       is the return value) above 1 (resp. below -1) are clipped to 1 (resp.
+       to -1). Be careful to set `clip=False` if you do not want this clipping
+       and/or if your data range is not [0, 1] or [-1,1].
 
     Returns
     -------
-    im_deconv : (M, N) ndarray
+    im_deconv : (N1, N2, ..., ND) ndarray
        The deconvolved image.
 
     Examples
     --------
     >>> import cupy as cp
-    >>> import cupyx.scipy.ndimage as ndi
-    >>> from cucim.skimage import color, restoration
+    >>> import cupyx.scipy as sp
     >>> from skimage import data
-    >>> img = color.rgb2gray(cp.array(data.astronaut()))
+    >>>
+    >>> import cucim.skimage as ski
+    >>> img = ski.color.rgb2gray(cp.asarray(data.astronaut()))
     >>> psf = cp.ones((5, 5)) / 25
-    >>> img = ndi.uniform_filter(img, size=psf.shape)
-    >>> img += 0.1 * img.std() * cp.random.standard_normal(img.shape)
-    >>> deconvolved_img = restoration.wiener(img, psf, 0.1)
+    >>> img = sp.signal.convolve2d(img, psf, 'same')
+    >>> rng = cp.random.default_rng()
+    >>> img += 0.1 * img.std() * rng.standard_normal(img.shape)
+    >>> deconvolved_img = ski.restoration.wiener(img, psf, 0.1)
 
     Notes
     -----
-    This function applies the Wiener filter to a noisy and degraded
+    This function applies the Wiener filter to a noisy (degraded)
     image by an impulse response (or PSF). If the data model is
 
     .. math:: y = Hx + n
 
-    where :math:`n` is noise, :math:`H` the PSF and :math:`x` the
+    where :math:`n` is noise, :math:`H` the PSF, and :math:`x` the
     unknown original image, the Wiener filter is
 
     .. math::
@@ -88,18 +92,19 @@ def wiener(image, psf, balance, reg=None, is_real=True, clip=True):
 
     where :math:`F` and :math:`F^\dagger` are the Fourier and inverse
     Fourier transforms respectively, :math:`\Lambda_H` the transfer
-    function (or the Fourier transform of the PSF, see [Hunt] below)
-    and :math:`\Lambda_D` the filter to penalize the restored image
-    frequencies (Laplacian by default, that is penalization of high
-    frequency). The parameter :math:`\lambda` tunes the balance
-    between the data (that tends to increase high frequency, even
-    those coming from noise), and the regularization.
+    function (or the Fourier transform of the PSF, see [2]_),
+    and :math:`\Lambda_D` the regularization operator, which is a filter
+    penalizing the restored image frequencies (Laplacian by default, that is,
+    penalization of high frequencies). The parameter :math:`\lambda` tunes the
+    balance between data (which tends to increase high frequencies, even those
+    coming from noise) and regularization/prior (which tends to avoid noise
+    artifacts).
 
     These methods are then specific to a prior model. Consequently,
     the application or the true image nature must correspond to the
-    prior model. By default, the prior model (Laplacian) introduce
+    prior model. By default, the prior model (Laplacian) introduces
     image smoothness or pixel correlation. It can also be interpreted
-    as high-frequency penalization to compensate the instability of
+    as high-frequency penalization to compensate for the instability of
     the solution with respect to the data (sometimes called noise
     amplification or "explosive" solution).
 
@@ -110,16 +115,14 @@ def wiener(image, psf, balance, reg=None, is_real=True, clip=True):
     ----------
     .. [1] François Orieux, Jean-François Giovannelli, and Thomas
            Rodet, "Bayesian estimation of regularization and point
-           spread function parameters for Wiener-Hunt deconvolution",
-           J. Opt. Soc. Am. A 27, 1593-1607 (2010)
-
+           spread function parameters for Wiener–Hunt deconvolution",
+           J. Opt. Soc. Am. A 27, 1593–1607 (2010)
            https://www.osapublishing.org/josaa/abstract.cfm?URI=josaa-27-7-1593
-
            https://hal.archives-ouvertes.fr/hal-00674508
 
     .. [2] B. R. Hunt "A matrix theory proof of the discrete
            convolution theorem", IEEE Trans. on Audio and
-           Electroacoustics, vol. au-19, no. 4, pp. 285-288, dec. 1971
+           Electroacoustics, vol. au-19, no. 4, pp. 285–288, dec. 1971
     """  # noqa: E501
     if reg is None:
         reg, _ = uft.laplacian(image.ndim, image.shape, is_real=is_real)
@@ -174,56 +177,52 @@ def unsupervised_wiener(
     Parameters
     ----------
     image : (M, N) ndarray
-       The input degraded image.
+        The input degraded image.
     psf : ndarray
-       The impulse response (input image's space) or the transfer
-       function (Fourier space). Both are accepted. The transfer
-       function is automatically recognized as being complex
-       (``cupy.iscomplexobj(psf)``).
+        The impulse response (input image's space) or the transfer
+        function (Fourier space). Both are accepted. The transfer
+        function is automatically recognized as being complex
+        (``np.iscomplexobj(psf)``).
     reg : ndarray, optional
-       The regularisation operator. The Laplacian by default. It can
-       be an impulse response or a transfer function, as for the psf.
+        The regularisation operator. The Laplacian by default. It can
+        be an impulse response or a transfer function, as for the psf.
     user_params : dict, optional
-       Dictionary of parameters for the Gibbs sampler. See below.
-    clip : boolean, optional
-       True by default. If true, pixel values of the result above 1 or
-       under -1 are thresholded for skimage pipeline compatibility.
-    rng : {`cupy.random.Generator`, int}, optional
+        Dictionary of parameters for the Gibbs sampler. Accepted keys are:
+
+        threshold : float
+           The stopping criterion: the norm of the difference between to
+           successive approximated solution (empirical mean of object
+           samples, see Notes section). 1e-4 by default.
+        burnin : int
+           The number of sample to ignore to start computation of the
+           mean. 15 by default.
+        min_num_iter : int
+           The minimum number of iterations. 30 by default.
+        max_num_iter : int
+           The maximum number of iterations if ``threshold`` is not
+           satisfied. 200 by default.
+        callback : callable
+           A user provided callable to which is passed, if the function
+           exists, the current image sample for whatever purpose. The user
+           can store the sample, or compute other moments than the
+           mean. It has no influence on the algorithm execution and is
+           only for inspection.
+
+    clip : bool, optional
+        True by default. If true, pixel values of the result above 1 or
+        under -1 are thresholded for skimage pipeline compatibility.
+    rng : {`numpy.random.Generator`, int}, optional
         Pseudo-random number generator.
-        By default, a PCG64 generator is used
-        (see :func:`cupy.random.default_rng`).
+        By default, a PCG64 generator is used (see :func:`numpy.random.default_rng`).
         If `rng` is an int, it is used to seed the generator.
 
     Returns
     -------
     x_postmean : (M, N) ndarray
-       The deconvolved image (the posterior mean).
+        The deconvolved image (the posterior mean).
     chains : dict
-       The keys ``noise`` and ``prior`` contain the chain list of
-       noise and prior precision respectively.
-
-    Other parameters
-    ----------------
-    The keys of ``user_params`` are:
-
-    threshold : float
-       The stopping criterion: the norm of the difference between to
-       successive approximated solution (empirical mean of object
-       samples, see Notes section). 1e-4 by default.
-    burnin : int
-       The number of sample to ignore to start computation of the
-       mean. 15 by default.
-    min_num_iter : int
-       The minimum number of iterations. 30 by default.
-    max_num_iter : int
-       The maximum number of iterations if ``threshold`` is not
-       satisfied. 200 by default.
-    callback : callable (None by default)
-       A user provided callable to which is passed, if the function
-       exists, the current image sample for whatever purpose. The user
-       can store the sample, or compute other moments than the
-       mean. It has no influence on the algorithm execution and is
-       only for inspection.
+        The keys ``noise`` and ``prior`` contain the chain list of
+        noise and prior precision respectively.
 
     Examples
     --------
@@ -413,10 +412,10 @@ def richardson_lucy(image, psf, num_iter=50, clip=True, filter_epsilon=None):
     num_iter : int, optional
        Number of iterations. This parameter plays the role of
        regularisation.
-    clip : boolean, optional
+    clip : bool, optional
        True by default. If true, pixel value of the result above 1 or
        under -1 are thresholded for skimage pipeline compatibility.
-    filter_epsilon: float, optional
+    filter_epsilon : float, optional
        Value below which intermediate results become 0 to avoid division
        by small numbers.
 

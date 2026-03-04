@@ -1,6 +1,8 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
+
+from pathlib import Path
 
 import cupy as cp
 import numpy as np
@@ -11,7 +13,6 @@ from skimage.data import camera
 from skimage.io import imread
 
 from cucim.skimage._shared.fft import fftmodule as fft
-from cucim.skimage._shared.testing import fetch
 from cucim.skimage._shared.utils import _supported_float_type
 from cucim.skimage.registration._masked_phase_cross_correlation import (
     _masked_phase_cross_correlation as masked_register_translation,
@@ -139,17 +140,14 @@ def test_masked_registration_padfield_data():
     # Test translated from MATLABimplementation `MaskedFFTRegistrationTest`
     # file. You can find the source code here:
     # http://www.dirkpadfield.com/Home/MaskedFFTRegistrationCode.zip
+    test_data_dir = Path(__file__).absolute().parent / "data"
 
     shifts = [(75, 75), (-130, 130), (130, 130)]
     for xi, yi in shifts:
-        fixed_image = cp.array(
-            imread(fetch(f"registration/tests/data/OriginalX{xi:d}Y{yi:d}.png"))
-        )
-        moving_image = cp.array(
-            imread(
-                fetch(f"registration/tests/data/TransformedX{xi:d}Y{yi:d}.png")
-            )
-        )
+        fname = f"OriginalX{xi}Y{yi}.png"
+        fixed_image = cp.asarray(imread(test_data_dir / fname))
+        fname = f"TransformedX{xi}Y{yi}.png"
+        moving_image = cp.asarray(imread(test_data_dir / fname))
 
         # Valid pixels are 1
         fixed_mask = fixed_image != 0
