@@ -1,3 +1,12 @@
+# cucim 26.02.01 (3 Mar 2026)
+
+### 🛠️ Improvements
+* Backport "Drop CuPy pre-13.6.0 logic & fix CuPy 14 compatibility" to 26.02 by @jakirkham in https://github.com/rapidsai/cucim/pull/1036
+* Backport "Drop CuPy pre-13.6.0 logic & fix CuPy 14 compatibility" to 26.02 by @jameslamb in https://github.com/rapidsai/cucim/pull/1037
+
+
+**Full Changelog**: https://github.com/rapidsai/cucim/compare/v26.02.00...release/26.02
+
 # cucim 26.02.00 (4 Feb 2026)
 
 ### 🚨 Breaking Changes
