@@ -231,19 +231,25 @@ uint32_t NvImageCodecProcessor::wait_batch(uint32_t index_in_task,
     (void)batch_item_counts;
     (void)num_remaining_patches;
 
-    std::lock_guard<std::mutex> lock(nvimgcodec_mutex_);
+    // Pop the oldest pending batch under the lock, then release it before
+    // the (potentially blocking) wait_batch_decode() call so that other
+    // threads can continue to enqueue new batches concurrently.
+    ::cuslide2::nvimgcodec::BatchDecodeState decode_state;
+    std::vector<RoiDecodeRequest> requests;
 
-    // Wait for the oldest pending batch to complete
-    if (pending_batches_.empty() || pending_requests_.empty())
     {
-        return batch_size_;
-    }
+        std::lock_guard<std::mutex> lock(nvimgcodec_mutex_);
 
-    // Get the oldest batch
-    ::cuslide2::nvimgcodec::BatchDecodeState decode_state = std::move(pending_batches_.front());
-    std::vector<RoiDecodeRequest> requests = std::move(pending_requests_.front());
-    pending_batches_.pop_front();
-    pending_requests_.pop_front();
+        if (pending_batches_.empty() || pending_requests_.empty())
+        {
+            return batch_size_;
+        }
+
+        decode_state = std::move(pending_batches_.front());
+        requests = std::move(pending_requests_.front());
+        pending_batches_.pop_front();
+        pending_requests_.pop_front();
+    }  // lock released — safe to block on GPU now
 
     // Wait for batch decode completion and process results
     std::vector<::cuslide2::nvimgcodec::BatchDecodeResult> results =
