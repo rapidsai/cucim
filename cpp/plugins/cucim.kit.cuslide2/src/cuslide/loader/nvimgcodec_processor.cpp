@@ -153,10 +153,7 @@ NvImageCodecProcessor::~NvImageCodecProcessor()
 
 void NvImageCodecProcessor::shutdown()
 {
-    {
-        std::lock_guard<std::mutex> lock(request_mutex_);
-        stopped_ = true;
-    }
+    stopped_.store(true, std::memory_order_release);
     cache_cond_.notify_all();
 }
 
