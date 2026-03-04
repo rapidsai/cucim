@@ -15,7 +15,6 @@
 #include <map>
 #include <unordered_map>
 #include <variant>
-#include <mutex>
 #include <stdexcept>
 #include <cucim/io/device.h>
 
@@ -349,20 +348,6 @@ public:
     nvimgcodecDecoder_t get_decoder() const { return decoder_; }
 
     /**
-     * @brief Get the CPU-only decoder (for native CPU decoding)
-     *
-     * @return nvImageCodec CPU decoder handle
-     */
-    nvimgcodecDecoder_t get_cpu_decoder() const { return cpu_decoder_; }
-
-    /**
-     * @brief Check if CPU-only decoder is available
-     *
-     * @return true if CPU decoder is available
-     */
-    bool has_cpu_decoder() const { return cpu_decoder_ != nullptr; }
-
-    /**
      * @brief Check if nvImageCodec is available and initialized
      *
      * @return true if available
@@ -388,10 +373,8 @@ private:
 
     nvimgcodecInstance_t instance_;
     nvimgcodecDecoder_t decoder_;
-    nvimgcodecDecoder_t cpu_decoder_;  // CPU-only decoder (uses libjpeg-turbo, etc.)
     bool initialized_;
     std::string status_message_;
-    std::mutex decoder_mutex_;  // Protect decoder operations from concurrent access
 };
 
 #else // !CUCIM_HAS_NVIMGCODEC
