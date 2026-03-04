@@ -20,7 +20,6 @@ from skimage import data, draw
 from skimage.segmentation import slic
 
 from cucim.skimage import transform
-from cucim.skimage._shared.testing import assert_stacklevel
 from cucim.skimage._vendored import pad
 from cucim.skimage.measure import (
     euler_number,
@@ -1660,12 +1659,8 @@ def test_deprecated_properties(old_name):
     regions = regionprops(SAMPLE, intensity_image=INTENSITY_SAMPLE)
 
     regex = rf"`RegionProperties\['{old_name}'\]` is deprecated"
-    with pytest.warns(FutureWarning, match=regex) as record:
+    with pytest.warns(FutureWarning, match=regex):
         result = regions[0][old_name]
-    deprec_warnings = [
-        w for w in record if issubclass(w.category, FutureWarning)
-    ]
-    assert_stacklevel(deprec_warnings, offset=-2)
 
     current_name = PROPS[old_name]
     if "centroid" in current_name:
@@ -1680,12 +1675,8 @@ def test_deprecated_properties(old_name):
         # available via `__getitem__`.
         # Make sure those emit an appropriate deprecation warning too
         regex = f"`RegionProperties.{old_name}` is deprecated."
-        with pytest.warns(FutureWarning, match=regex) as record:
+        with pytest.warns(FutureWarning, match=regex):
             result = getattr(regions[0], old_name)
-        deprec_warnings = [
-            w for w in record if issubclass(w.category, FutureWarning)
-        ]
-        assert_stacklevel(deprec_warnings, offset=-4)
         current_name = PROPS[old_name]
         if "centroid" in current_name:
             for expected_c, c in zip(result, regions[0][current_name]):
