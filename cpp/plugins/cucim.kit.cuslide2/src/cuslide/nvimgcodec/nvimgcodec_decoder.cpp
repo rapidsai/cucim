@@ -1010,6 +1010,7 @@ BatchDecodeState schedule_batch_decode(
 
 std::vector<BatchDecodeResult> wait_batch_decode(BatchDecodeState& state)
 {
+    if (!state.impl) return {};
     auto* impl = state.impl;
     std::vector<BatchDecodeResult> results(impl->batch_size);
 
