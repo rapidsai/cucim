@@ -77,6 +77,26 @@ struct BatchDecodeStateImpl
     size_t batch_size = 0;
     bool use_device_memory = false;
     cudaStream_t cuda_stream = nullptr;
+
+    ~BatchDecodeStateImpl()
+    {
+        if (future)
+        {
+            nvimgcodecFutureDestroy(future);
+            future = nullptr;
+        }
+        for (void* buf : buffers)
+        {
+            if (buf)
+            {
+                if (use_device_memory)
+                    cudaFree(buf);
+                else
+                    cucim_free(buf);
+            }
+        }
+        buffers.clear();
+    }
 };
 
 BatchDecodeState::BatchDecodeState() : impl(new BatchDecodeStateImpl()) {}
