@@ -124,7 +124,7 @@ private:
                              const std::vector<cuslide2::nvimgcodec::BatchDecodeResult>& results);
 
     std::atomic<bool> stopped_{false};
-    uint32_t preferred_loader_prefetch_factor_ = 2;
+    uint32_t preferred_loader_prefetch_factor_ = 1;
 
     // TIFF parser and IFD info
     cuslide2::nvimgcodec::TiffFileParser& tiff_parser_;
