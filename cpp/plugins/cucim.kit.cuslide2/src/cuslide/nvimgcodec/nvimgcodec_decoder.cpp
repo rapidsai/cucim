@@ -114,32 +114,6 @@ struct FutureDeleter
 };
 using UniqueFuture = std::unique_ptr<std::remove_pointer_t<nvimgcodecFuture_t>, FutureDeleter>;
 
-// RAII wrapper for nvimgcodecCodeStream_t (for batch decode state)
-struct CodeStreamPtrDeleter
-{
-    void operator()(nvimgcodecCodeStream_t* streams) const
-    {
-        if (streams)
-        {
-            // Note: Individual streams are managed by UniqueCodeStream in the state
-            delete[] streams;
-        }
-    }
-};
-
-// RAII wrapper for nvimgcodecImage_t (for batch decode state)
-struct ImagePtrDeleter
-{
-    void operator()(nvimgcodecImage_t* images) const
-    {
-        if (images)
-        {
-            // Note: Individual images are managed by UniqueImage in the state
-            delete[] images;
-        }
-    }
-};
-
 // RAII wrapper for decode buffer (handles both CPU and GPU memory)
 class DecodeBuffer
 {
