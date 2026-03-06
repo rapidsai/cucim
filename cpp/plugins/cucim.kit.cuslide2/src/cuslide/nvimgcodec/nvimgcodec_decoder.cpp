@@ -1038,6 +1038,7 @@ std::vector<BatchDecodeResult> wait_batch_decode(BatchDecodeState& state)
             #endif
             // Clean up resources
             nvimgcodecFutureDestroy(impl->future);
+            impl->future = nullptr;
             for (void* buf : impl->buffers)
             {
                 if (buf)
