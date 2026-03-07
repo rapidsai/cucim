@@ -8,6 +8,7 @@
 
 #ifdef CUCIM_HAS_NVIMGCODEC
 
+#include <atomic>
 #include <condition_variable>
 #include <deque>
 #include <memory>
@@ -16,12 +17,14 @@
 #include <vector>
 
 #include <nvimgcodec.h>
+#include <cuda_runtime.h>
 
 #include <cucim/io/device.h>
 #include <cucim/loader/batch_data_processor.h>
 #include <cucim/loader/tile_info.h>
 
 #include "cuslide/nvimgcodec/nvimgcodec_tiff_parser.h"
+#include "cuslide/nvimgcodec/nvimgcodec_decoder.h"
 
 namespace cuslide2::loader
 {
@@ -107,12 +110,21 @@ public:
 
 private:
     /**
-     * @brief Decode a batch of ROIs using nvImageCodec batch API
+     * @brief Schedule a batch of ROIs for decoding using nvImageCodec batch API
+     * @return BatchDecodeState that must be passed to wait_batch_decode()
      */
-    bool decode_roi_batch(const std::vector<RoiDecodeRequest>& requests);
+    cuslide2::nvimgcodec::BatchDecodeState schedule_roi_batch(const std::vector<RoiDecodeRequest>& requests);
 
-    bool stopped_ = false;
-    uint32_t preferred_loader_prefetch_factor_ = 2;
+    /**
+     * @brief Store decoded batch results into the per-ROI cache and notify waiters.
+     *
+     * Acquires cache_mutex_ internally and calls cache_cond_.notify_all().
+     */
+    void store_batch_results(const std::vector<RoiDecodeRequest>& requests,
+                             const std::vector<cuslide2::nvimgcodec::BatchDecodeResult>& results);
+
+    std::atomic<bool> stopped_{false};
+    uint32_t preferred_loader_prefetch_factor_ = 1;
 
     // TIFF parser and IFD info
     cuslide2::nvimgcodec::TiffFileParser& tiff_parser_;
@@ -124,6 +136,9 @@ private:
     // Device configuration
     cucim::io::Device out_device_;
     bool use_device_memory_ = false;
+
+    // Custom CUDA stream for async decode (avoids blocking the default stream)
+    cudaStream_t decode_stream_ = nullptr;
 
     // Batch configuration
     uint32_t cuda_batch_size_ = 1;
@@ -147,6 +162,10 @@ private:
 
     // Decode batch tracking
     uint64_t next_decode_index_ = 0;
+
+    // Asynchronous batch decode state (FIFO queues — push_back / pop_front)
+    std::deque<cuslide2::nvimgcodec::BatchDecodeState> pending_batches_;
+    std::deque<std::vector<RoiDecodeRequest>> pending_requests_;
 };
 
 } // namespace cuslide2::loader

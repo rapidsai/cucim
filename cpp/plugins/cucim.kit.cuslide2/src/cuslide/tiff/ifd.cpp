@@ -5,17 +5,21 @@
 
 #include "ifd.h"
 
+// Standard library includes - MUST be before any headers that open namespaces
 #include <sys/types.h>
 #include <unistd.h>
-
 #include <algorithm>
 #include <cstdlib>
 #include <iostream>
 #include <random>
 #include <thread>
+#include <fstream>
+#include <langinfo.h>
 
+// Third-party includes - MUST be before any headers that open namespaces
 #include <fmt/format.h>
 
+// cuCIM includes
 #include <cucim/codec/hash_function.h>
 #include <cucim/cuimage.h>
 #include <cucim/logger/timer.h>
@@ -24,12 +28,20 @@
 #include <cucim/util/cuda.h>
 
 // nvImageCodec handles ALL decoding (JPEG, JPEG2000, deflate, LZW, raw)
+// Include these BEFORE opening namespace to avoid namespace pollution
 #include "cuslide/nvimgcodec/nvimgcodec_decoder.h"
 #include "cuslide/nvimgcodec/nvimgcodec_tiff_parser.h"
-#include "cuslide/loader/nvimgcodec_processor.h"
 #include "tiff.h"
 #include "tiff_constants.h"
 
+#ifdef CUCIM_HAS_NVIMGCODEC
+// Include nvimgcodec_processor.h BEFORE opening cuslide::tiff namespace
+// This header opens cuslide2::loader namespace but closes it properly
+// We need to ensure we're in global namespace when including it
+#include "cuslide/loader/nvimgcodec_processor.h"
+// Explicitly ensure we're back in global namespace
+// (The header should have closed cuslide2::loader, but be explicit)
+#endif
 
 namespace cuslide::tiff
 {
@@ -56,10 +68,22 @@ IFD::IFD(TIFF* tiff, uint16_t index, ifd_offset_t offset) : tiff_(tiff), ifd_ind
             compression_ = parse_codec_to_compression(ifd_info.codec);
             codec_name_ = ifd_info.codec;
 
-            // Assume tiled if tile dimensions are provided in IfdInfo (check nvImageCodec metadata)
-            // For now, use a heuristic: most whole-slide images are tiled
-            tile_width_ = 256;  // Default tile size (can be overridden from IfdInfo metadata)
-            tile_height_ = 256;
+            // Try to read tile dimensions from extracted TIFF tags
+            tile_width_ = 0;
+            tile_height_ = 0;
+            if (tiff->nvimgcodec_parser_) {
+                std::string tw = tiff->nvimgcodec_parser_->get_tiff_tag(index, "TILEWIDTH");
+                std::string th = tiff->nvimgcodec_parser_->get_tiff_tag(index, "TILELENGTH");
+                if (!tw.empty() && !th.empty()) {
+                    try {
+                        tile_width_ = std::stoul(tw);
+                        tile_height_ = std::stoul(th);
+                    } catch (...) {
+                        tile_width_ = 0;
+                        tile_height_ = 0;
+                    }
+                }
+            }
 
             // nvImageCodec members
             nvimgcodec_sub_stream_ = ifd_info.sub_code_stream;
@@ -90,7 +114,7 @@ IFD::IFD(TIFF* tiff, uint16_t index, ifd_offset_t offset) : tiff_(tiff), ifd_ind
 // ============================================================================
 
 #ifdef CUCIM_HAS_NVIMGCODEC
-IFD::IFD(TIFF* tiff, uint16_t index, const cuslide2::nvimgcodec::IfdInfo& ifd_info)
+IFD::IFD(TIFF* tiff, uint16_t index, const ::cuslide2::nvimgcodec::IfdInfo& ifd_info)
     : tiff_(tiff), ifd_index_(index), ifd_offset_(index)
 {
     PROF_SCOPED_RANGE(PROF_EVENT(ifd_ifd));  // Use standard ifd_ifd profiler event
@@ -123,8 +147,8 @@ IFD::IFD(TIFF* tiff, uint16_t index, const cuslide2::nvimgcodec::IfdInfo& ifd_in
     // Extract TIFF tags from TiffFileParser
     if (tiff->nvimgcodec_parser_) {
         // Software and Model tags
-        software_ = tiff->nvimgcodec_parser_->get_tiff_tag(index, "Software");
-        model_ = tiff->nvimgcodec_parser_->get_tiff_tag(index, "Model");
+        software_ = tiff->nvimgcodec_parser_->get_tiff_tag(index, "SOFTWARE");
+        model_ = tiff->nvimgcodec_parser_->get_tiff_tag(index, "MODEL");
 
         // SUBFILETYPE for IFD classification
         int subfile_type = tiff->nvimgcodec_parser_->get_subfile_type(index);
@@ -136,7 +160,7 @@ IFD::IFD(TIFF* tiff, uint16_t index, const cuslide2::nvimgcodec::IfdInfo& ifd_in
         }
 
         // Check for JPEGTables (abbreviated JPEG indicator)
-        std::string jpeg_tables = tiff->nvimgcodec_parser_->get_tiff_tag(index, "JPEGTables");
+        std::string jpeg_tables = tiff->nvimgcodec_parser_->get_tiff_tag(index, "JPEGTABLES");
         if (!jpeg_tables.empty()) {
             #ifdef DEBUG
             fmt::print("   ✅ JPEGTables detected (abbreviated JPEG)\n");
@@ -144,8 +168,8 @@ IFD::IFD(TIFF* tiff, uint16_t index, const cuslide2::nvimgcodec::IfdInfo& ifd_in
         }
 
         // Tile dimensions (if available from TIFF tags)
-        std::string tile_w_str = tiff->nvimgcodec_parser_->get_tiff_tag(index, "TileWidth");
-        std::string tile_h_str = tiff->nvimgcodec_parser_->get_tiff_tag(index, "TileLength");
+        std::string tile_w_str = tiff->nvimgcodec_parser_->get_tiff_tag(index, "TILEWIDTH");
+        std::string tile_h_str = tiff->nvimgcodec_parser_->get_tiff_tag(index, "TILELENGTH");
 
         if (!tile_w_str.empty() && !tile_h_str.empty()) {
             try {
@@ -172,8 +196,8 @@ IFD::IFD(TIFF* tiff, uint16_t index, const cuslide2::nvimgcodec::IfdInfo& ifd_in
     }
 
     // Set format defaults
-    planar_config_ = PLANARCONFIG_CONTIG;  // nvImageCodec outputs interleaved
-    photometric_ = PHOTOMETRIC_RGB;
+    planar_config_ = cuslide::tiff::PLANARCONFIG_CONTIG;  // nvImageCodec outputs interleaved
+    photometric_ = cuslide::tiff::PHOTOMETRIC_RGB;
     predictor_ = 1;  // No predictor
 
     // Resolution info (defaults - may not be available from nvImageCodec)
@@ -334,35 +358,10 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
         std::unique_ptr<std::vector<int64_t>> request_size = std::move(*size_unique);
         delete size_unique;
 
-        // Create load function that decodes ROI using nvImageCodec
-        auto load_func = [tiff, ifd, location, w, h, out_device](
-                             cucim::loader::ThreadBatchDataLoader* loader_ptr, uint64_t location_index) {
-            uint8_t* raster_ptr = loader_ptr->raster_pointer(location_index);
-
-            int64_t sx = location[location_index * 2];
-            int64_t sy = location[location_index * 2 + 1];
-
-            // Get IFD info from TiffFileParser
-            const auto& ifd_info = tiff->nvimgcodec_parser_->get_ifd(static_cast<uint32_t>(ifd->ifd_index_));
-
-            // Decode ROI directly into the loader's raster buffer
-            bool success = cuslide2::nvimgcodec::decode_ifd_region_nvimgcodec(
-                ifd_info,
-                tiff->nvimgcodec_parser_->get_main_code_stream(),
-                static_cast<uint32_t>(sx), static_cast<uint32_t>(sy),
-                static_cast<uint32_t>(w), static_cast<uint32_t>(h),
-                raster_ptr,
-                out_device);
-
-            if (!success)
-            {
-                fmt::print(stderr, "[Error] Failed to decode ROI at ({}, {}) {}x{}\n", sx, sy, w, h);
-            }
-        };
-
         // Create batch processor using nvImageCodec (GPU only)
         // For CPU output, batch_processor remains nullptr and load_func is used for per-tile decoding
         std::unique_ptr<cucim::loader::BatchDataProcessor> batch_processor;
+        bool use_batch_processor = false;
 
         if (out_device.type() == cucim::io::DeviceType::kCUDA)
         {
@@ -382,7 +381,42 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
             prefetch_factor = nvimgcodec_processor->preferred_loader_prefetch_factor();
 
             batch_processor = std::move(nvimgcodec_processor);
+            use_batch_processor = true;
         }
+
+        // Create load function for per-tile decoding.
+        // When the batch processor is active (GPU path), load_func is a no-op
+        // because NvImageCodecProcessor handles all decoding — calling both
+        // would decode each tile twice into different buffers.
+        auto load_func = [tiff, ifd, location, w, h, out_device, use_batch_processor](
+                             cucim::loader::ThreadBatchDataLoader* loader_ptr, uint64_t location_index) {
+            if (use_batch_processor)
+            {
+                return;  // Batch processor handles GPU decoding
+            }
+
+            uint8_t* raster_ptr = loader_ptr->raster_pointer(location_index);
+
+            int64_t sx = location[location_index * 2];
+            int64_t sy = location[location_index * 2 + 1];
+
+            // Get IFD info from TiffFileParser
+            const auto& ifd_info = tiff->nvimgcodec_parser_->get_ifd(static_cast<uint32_t>(ifd->ifd_index_));
+
+            // Synchronous single-region decode for CPU output path
+            bool success = ::cuslide2::nvimgcodec::decode_ifd_region_nvimgcodec(
+                ifd_info,
+                tiff->nvimgcodec_parser_->get_main_code_stream(),
+                static_cast<uint32_t>(sx), static_cast<uint32_t>(sy),
+                static_cast<uint32_t>(w), static_cast<uint32_t>(h),
+                raster_ptr,
+                out_device);
+
+            if (!success)
+            {
+                fmt::print(stderr, "[Error] Failed to decode ROI at ({}, {}) {}x{}\n", sx, sy, w, h);
+            }
+        };
 
         // Create ThreadBatchDataLoader
         auto loader = std::make_unique<cucim::loader::ThreadBatchDataLoader>(
@@ -390,8 +424,11 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
             std::move(request_location), std::move(request_size),
             adjusted_location_len, one_raster_size, batch_size, prefetch_factor, num_workers);
 
-        // Calculate load_size using prefetch_factor (already updated from processor if GPU path)
-        const uint32_t load_size =
+        // When using batch processor (GPU), load_func is a no-op so load_size
+        // doesn't matter for decode work, but the loader still needs it for
+        // bookkeeping.  For CPU, use the prefetch logic.
+        const uint32_t load_size = use_batch_processor ?
+            std::min(static_cast<uint64_t>(1), adjusted_location_len) :
             std::min(static_cast<uint64_t>(batch_size) * (1 + prefetch_factor), adjusted_location_len);
 
         loader->request(load_size);
@@ -409,33 +446,32 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
         fmt::print("✅ ThreadBatchDataLoader created for {} locations\n", adjusted_location_len);
         #endif
 
-        // Set up output metadata (only if raster buffer is available)
-        // For multi-location batch iteration, raster is nullptr because data is
-        // returned per-batch via loader->next_data() during Python iteration.
-        // The container.data field isn't needed upfront in that case.
-        if (raster)
+        // Always set container metadata (ndim, shape, dtype, device) even when
+        // raster is nullptr.  libcucim's CuImage::read_region() accesses
+        // container.shape immediately after the reader returns, so leaving
+        // shape==nullptr causes a segfault.  For the multi-location batch path,
+        // container.data is nullptr here and will be populated later by
+        // loader->next_data() during Python iteration.
+        out_image_data->container.data = raster;  // may be nullptr for batch iteration
+        out_image_data->container.device = DLDevice{ static_cast<DLDeviceType>(raster_type), out_device.index() };
+        out_image_data->container.dtype = DLDataType{ kDLUInt, 8, 1 };
+        out_image_data->container.ndim = ndim;
+        out_image_data->container.shape = static_cast<int64_t*>(cucim_malloc(ndim * sizeof(int64_t)));
+        if (ndim == 4)
         {
-            out_image_data->container.data = raster;
-            out_image_data->container.device = DLDevice{ static_cast<DLDeviceType>(raster_type), out_device.index() };
-            out_image_data->container.dtype = DLDataType{ kDLUInt, 8, 1 };
-            out_image_data->container.ndim = ndim;
-            out_image_data->container.shape = static_cast<int64_t*>(cucim_malloc(ndim * sizeof(int64_t)));
-            if (ndim == 4)
-            {
-                out_image_data->container.shape[0] = batch_size;
-                out_image_data->container.shape[1] = h;
-                out_image_data->container.shape[2] = w;
-                out_image_data->container.shape[3] = n_ch;
-            }
-            else
-            {
-                out_image_data->container.shape[0] = h;
-                out_image_data->container.shape[1] = w;
-                out_image_data->container.shape[2] = n_ch;
-            }
-            out_image_data->container.strides = nullptr;
-            out_image_data->container.byte_offset = 0;
+            out_image_data->container.shape[0] = batch_size;
+            out_image_data->container.shape[1] = h;
+            out_image_data->container.shape[2] = w;
+            out_image_data->container.shape[3] = n_ch;
         }
+        else
+        {
+            out_image_data->container.shape[0] = h;
+            out_image_data->container.shape[1] = w;
+            out_image_data->container.shape[2] = n_ch;
+        }
+        out_image_data->container.strides = nullptr;
+        out_image_data->container.byte_offset = 0;
 
         return true;
     }
@@ -459,8 +495,11 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
     // Get IFD info from TiffFileParser
     const auto& ifd_info = tiff->nvimgcodec_parser_->get_ifd(static_cast<uint32_t>(ifd_index_));
 
-    // Call nvImageCodec ROI decoder
-    bool success = cuslide2::nvimgcodec::decode_ifd_region_nvimgcodec(
+    // Synchronous single-region decode via nvImageCodec.
+    // This is intentional: IFD::read() for a single location is the read_region()
+    // API, which returns decoded data immediately.  The asynchronous batch path
+    // is handled separately by NvImageCodecProcessor.
+    bool success = ::cuslide2::nvimgcodec::decode_ifd_region_nvimgcodec(
         ifd_info,
         tiff->nvimgcodec_parser_->get_main_code_stream(),
         sx, sy, w, h,
@@ -644,23 +683,23 @@ uint16_t IFD::parse_codec_to_compression(const std::string& codec)
 {
     // Map nvImageCodec codec strings to TIFF compression constants
     if (codec == "jpeg") {
-        return COMPRESSION_JPEG;  // 7
+        return cuslide::tiff::COMPRESSION_JPEG;  // 7
     }
     if (codec == "jpeg2000" || codec == "jpeg2k" || codec == "j2k") {
         // Default to YCbCr JPEG2000 (most common in whole-slide imaging)
-        return COMPRESSION_APERIO_JP2K_YCBCR;  // 33003
+        return cuslide::tiff::COMPRESSION_APERIO_JP2K_YCBCR;  // 33003
     }
     if (codec == "lzw") {
-        return COMPRESSION_LZW;  // 5
+        return cuslide::tiff::COMPRESSION_LZW;  // 5
     }
     if (codec == "deflate" || codec == "zip") {
-        return COMPRESSION_DEFLATE;  // 8
+        return cuslide::tiff::COMPRESSION_DEFLATE;  // 8
     }
     if (codec == "adobe-deflate") {
-        return COMPRESSION_ADOBE_DEFLATE;  // 32946
+        return cuslide::tiff::COMPRESSION_ADOBE_DEFLATE;  // 32946
     }
     if (codec == "none" || codec == "uncompressed" || codec.empty()) {
-        return COMPRESSION_NONE;  // 1
+        return cuslide::tiff::COMPRESSION_NONE;  // 1
     }
 
     // Handle generic 'tiff' codec from nvImageCodec 0.6.0
@@ -670,14 +709,14 @@ uint16_t IFD::parse_codec_to_compression(const std::string& codec)
         #ifdef DEBUG
         fmt::print("ℹ️  nvImageCodec returned generic 'tiff' codec, assuming JPEG compression\n");
         #endif
-        return COMPRESSION_JPEG;  // 7 - Most common for WSI (Aperio, Philips, etc.)
+        return cuslide::tiff::COMPRESSION_JPEG;  // 7 - Most common for WSI (Aperio, Philips, etc.)
     }
 
     // Unknown codec - log warning and default to JPEG (safer than NONE for WSI)
     #ifdef DEBUG
     fmt::print("⚠️  Unknown codec '{}', defaulting to COMPRESSION_JPEG\n", codec);
     #endif
-    return COMPRESSION_JPEG;  // 7 - WSI files rarely use uncompressed
+    return cuslide::tiff::COMPRESSION_JPEG;  // 7 - WSI files rarely use uncompressed
 }
 #endif // CUCIM_HAS_NVIMGCODEC
 
@@ -685,13 +724,13 @@ bool IFD::is_compression_supported() const
 {
     switch (compression_)
     {
-    case COMPRESSION_NONE:
-    case COMPRESSION_JPEG:
-    case COMPRESSION_ADOBE_DEFLATE:
-    case COMPRESSION_DEFLATE:
-    case COMPRESSION_APERIO_JP2K_YCBCR: // 33003: Jpeg 2000 with YCbCr format
-    case COMPRESSION_APERIO_JP2K_RGB:   // 33005: Jpeg 2000 with RGB
-    case COMPRESSION_LZW:
+    case cuslide::tiff::COMPRESSION_NONE:
+    case cuslide::tiff::COMPRESSION_JPEG:
+    case cuslide::tiff::COMPRESSION_ADOBE_DEFLATE:
+    case cuslide::tiff::COMPRESSION_DEFLATE:
+    case cuslide::tiff::COMPRESSION_APERIO_JP2K_YCBCR: // 33003: Jpeg 2000 with YCbCr format
+    case cuslide::tiff::COMPRESSION_APERIO_JP2K_RGB:   // 33005: Jpeg 2000 with RGB
+    case cuslide::tiff::COMPRESSION_LZW:
         return true;
     default:
         return false;
@@ -701,8 +740,8 @@ bool IFD::is_compression_supported() const
 bool IFD::is_read_optimizable() const
 {
     return is_compression_supported() && bits_per_sample_ == 8 && samples_per_pixel_ == 3 &&
-           (tile_width_ != 0 && tile_height_ != 0) && planar_config_ == PLANARCONFIG_CONTIG &&
-           (photometric_ == PHOTOMETRIC_RGB || photometric_ == PHOTOMETRIC_YCBCR) &&
+           (tile_width_ != 0 && tile_height_ != 0) && planar_config_ == cuslide::tiff::PLANARCONFIG_CONTIG &&
+           (photometric_ == cuslide::tiff::PHOTOMETRIC_RGB || photometric_ == cuslide::tiff::PHOTOMETRIC_YCBCR) &&
            !tiff_->is_in_read_config(TIFF::kUseLibTiff);
 }
 
@@ -711,16 +750,4 @@ bool IFD::is_format_supported() const
     return is_compression_supported();
 }
 
-} // namespace cuslide::tiff
-
-
-// Hidden methods for benchmarking.
-
-#include <fmt/format.h>
-#include <langinfo.h>
-#include <iostream>
-#include <fstream>
-
-namespace cuslide::tiff
-{
 } // namespace cuslide::tiff
