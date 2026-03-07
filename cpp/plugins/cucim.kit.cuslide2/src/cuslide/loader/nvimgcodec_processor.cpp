@@ -85,7 +85,7 @@ NvImageCodecProcessor::NvImageCodecProcessor(
     // with other GPU work (e.g., inference, preprocessing).
     if (use_device_memory_)
     {
-        cudaError_t stream_err = cudaStreamCreate(&decode_stream_);
+        cudaError_t stream_err = cudaStreamCreateWithFlags(&decode_stream_, cudaStreamNonBlocking);
         if (stream_err != cudaSuccess)
         {
             #ifdef DEBUG
