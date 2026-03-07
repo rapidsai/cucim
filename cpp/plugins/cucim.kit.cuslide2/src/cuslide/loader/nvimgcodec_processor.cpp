@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-// Standard library includes - MUST be before any headers that open namespaces
+// Standard library
 #include <algorithm>
 #include <cstring>
 #include <deque>
@@ -13,19 +13,18 @@
 #include <string>
 #include <vector>
 
-// Third-party includes - MUST be before any headers that open namespaces
-// Note: fmt must be included in global namespace, before any namespace declarations
+// Third-party
 #include <fmt/format.h>
 
-// CUDA includes
+// CUDA
 #include <cuda_runtime.h>
 
-// cuCIM includes
+// cuCIM
 #include <cucim/util/cuda.h>
 
 #ifdef CUCIM_HAS_NVIMGCODEC
 
-// Local includes - these may open namespaces, so include after std/fmt
+// Local
 #include "nvimgcodec_processor.h"
 
 namespace cuslide2::loader
