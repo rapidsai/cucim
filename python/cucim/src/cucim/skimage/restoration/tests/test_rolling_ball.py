@@ -8,7 +8,7 @@ Tests for Rolling Ball Filter
 (skimage.restoration.rolling_ball)
 """
 
-import inspect
+import time
 
 import cupy as cp
 import numpy as np
@@ -19,7 +19,10 @@ from skimage.restoration import (
     rolling_ball as skimage_rolling_ball,
 )
 
+from cucim.skimage import util
+from cucim.skimage.metrics import normalized_root_mse
 from cucim.skimage.restoration import (
+    ball_kernel,
     ellipsoid_kernel,
     rolling_ball,
 )
@@ -65,6 +68,42 @@ def _ellipsoid_kernel_reference(shape, intensity, dtype=np.float64):
     kernel[intensity_scaling < 0] = np.inf
 
     return cp.asarray(kernel)
+
+
+# ---------------------------------------------------------------------------
+# Tests comparing ball_kernel / ellipsoid_kernel to reference implementations
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("radius", [1, 2, 5, 10])
+@pytest.mark.parametrize("ndim", [2, 3])
+@pytest.mark.parametrize("dtype", [np.float32, np.float64])
+def test_ball_kernel_vs_reference(radius, ndim, dtype):
+    """ball_kernel output matches the numpy-based reference implementation."""
+    ref = _ball_kernel_reference(radius, ndim, dtype=dtype)
+    got = ball_kernel(radius, ndim=ndim, dtype=cp.dtype(dtype))
+    assert got.shape == ref.shape
+    mask = cp.isfinite(ref)
+    cp.testing.assert_allclose(got[mask], ref[mask], rtol=1e-5, atol=1e-5)
+    cp.testing.assert_array_equal(cp.isposinf(got), cp.isposinf(ref))
+
+
+@pytest.mark.parametrize("shape", [(5, 5), (3, 7), (4, 4, 4)])
+@pytest.mark.parametrize("intensity", [1.0, 50.0, 100.0])
+@pytest.mark.parametrize("dtype", [np.float32, np.float64])
+def test_ellipsoid_kernel_vs_reference(shape, intensity, dtype):
+    """ellipsoid_kernel output matches the numpy-based reference implementation."""
+    ref = _ellipsoid_kernel_reference(shape, intensity, dtype=dtype)
+    got = ellipsoid_kernel(shape, intensity, dtype=cp.dtype(dtype))
+    assert got.shape == ref.shape
+    mask = cp.isfinite(ref)
+    cp.testing.assert_allclose(got[mask], ref[mask], rtol=1e-5, atol=1e-5)
+    cp.testing.assert_array_equal(cp.isposinf(got), cp.isposinf(ref))
+
+
+# -------------------------------
+# Tests adapted from scikit-image
+# -------------------------------
 
 
 @pytest.mark.parametrize(
@@ -185,14 +224,61 @@ def test_ndim():
     cp.testing.assert_allclose(out, out_cpu)
 
 
-@pytest.mark.parametrize("num_threads", [None, 2])
-def test_deprecated_num_threads(num_threads):
-    img = cp.full((100, 100), 23, dtype=np.uint8)
-    with pytest.warns(
-        FutureWarning, match=".*`num_threads` is deprecated"
-    ) as record:
-        rolling_ball(img, radius=10, num_threads=num_threads)
-        lineno = inspect.currentframe().f_lineno - 1
-    assert len(record) == 1
-    assert record[0].filename == __file__
-    assert record[0].lineno == lineno
+# --------------------------------
+# Extra tests covering downscaling
+# --------------------------------
+
+
+@pytest.mark.parametrize("downscale_factor", [2, 3, 4])
+def test_downscale_faster_and_same_shape_dtype(downscale_factor):
+    """With downscaling, computation is faster and output shape/dtype match no-downscale case."""
+
+    tmp = util.invert(cp.asarray(data.page()))
+    tmp = cp.concatenate([tmp, tmp[::-1, :], tmp, tmp[::-1, :]], axis=0)
+    img = cp.concatenate([tmp, tmp[:, ::-1]], axis=1)
+    shape = img.shape
+
+    # dry runs without downscaling to make sure kernels have been compiled
+    radius = 60
+    for downscale in [None, downscale_factor]:
+        rolling_ball(img, radius=radius, downscale=downscale)
+
+    # Baseline: no downscaling
+    cp.cuda.Stream.null.synchronize()
+    t0 = time.perf_counter()
+    background_full = rolling_ball(img, radius=radius, downscale=None)
+    cp.cuda.Stream.null.synchronize()
+    time_full_ms = 1000 * (time.perf_counter() - t0)
+
+    # With downscaling (e.g. 4x smaller each dimension)
+    cp.cuda.Stream.null.synchronize()
+    t0 = time.perf_counter()
+    background_down = rolling_ball(
+        img, radius=radius, downscale=downscale_factor
+    )
+    cp.cuda.Stream.null.synchronize()
+    time_down_ms = 1000 * (time.perf_counter() - t0)
+
+    nrmse = normalized_root_mse(background_full, background_down)
+
+    # result with and without downscaling should be similar
+    assert nrmse < 0.5
+
+    assert time_down_ms < time_full_ms, (
+        f"downscaled run ({time_down_ms:.2f}ms) should be faster than full ({time_full_ms:.2f}ms)"
+    )
+    assert background_down.shape == shape, (
+        f"output shape with downscale must match input shape, got {background_down.shape}"
+    )
+    assert background_down.dtype == background_full.dtype == img.dtype, (
+        f"output dtype must match input and no-downscale result, got {background_down.dtype}"
+    )
+
+
+def test_downscale_invalid():
+    """downscale < 1 must raise ValueError."""
+    img = cp.full((64, 64), 23, dtype=np.uint8)
+    with pytest.raises(ValueError, match="downscale must be >= 1"):
+        rolling_ball(img, radius=10, downscale=0)
+    with pytest.raises(ValueError, match="downscale must be >= 1"):
+        rolling_ball(img, radius=10, downscale=0.5)
