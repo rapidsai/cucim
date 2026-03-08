@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 
@@ -23,6 +23,48 @@ from cucim.skimage.restoration import (
     ellipsoid_kernel,
     rolling_ball,
 )
+
+
+def _ball_kernel_reference(radius, ndim, dtype=np.float64):
+    """Simple numpy-based reference implementation of the ball kernel.
+
+    used to validate ball_kernel elementwise kernel implementation
+    """
+    dtype = np.dtype(dtype)
+    if dtype.kind != "f":
+        raise ValueError("dtype must be a floating-point type")
+
+    coords = np.meshgrid(
+        *[np.arange(-radius, radius + 1, dtype=dtype) for _ in range(ndim)],
+        indexing="ij",
+    )
+    sum_of_squares = sum(c**2 for c in coords)
+    distance_from_center = np.sqrt(sum_of_squares)
+    kernel = np.sqrt(np.clip(radius**2 - sum_of_squares, 0, None))
+    kernel[distance_from_center > radius] = np.inf
+
+    return cp.asarray(kernel)
+
+
+def _ellipsoid_kernel_reference(shape, intensity, dtype=np.float64):
+    """Simple numpy-based reference implementation of the ellipsoid kernel.
+
+    Used to validate ellipsoid_kernel elementwise kernel implementation.
+    """
+    shape = np.asarray(shape)
+    semi_axis = np.clip(shape // 2, 1, None)
+    dtype = np.dtype(dtype)
+    if dtype.kind != "f":
+        raise ValueError("dtype must be a floating-point type")
+
+    grids = [np.arange(-x, x + 1, dtype=dtype) for x in semi_axis]
+    kernel_coords = np.stack(np.meshgrid(*grids, indexing="ij"), axis=-1)
+
+    intensity_scaling = 1 - np.sum((kernel_coords / semi_axis) ** 2, axis=-1)
+    kernel = intensity * np.sqrt(np.clip(intensity_scaling, 0, None))
+    kernel[intensity_scaling < 0] = np.inf
+
+    return cp.asarray(kernel)
 
 
 @pytest.mark.parametrize(
