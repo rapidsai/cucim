@@ -43,16 +43,7 @@ def _get_ball_kernel_elementwise(ndim, structure_and_footprint):
     index_code = "\n    ".join(index_lines)
     coord_code = "\n    ".join(coord_lines)
 
-    if structure_and_footprint:
-        # Compute center_val - height, where center_val = radius
-        # This gives how much lower each position is than the apex
-        # Also output footprint (True where valid, False where inf)
-        # radius is T (float) to support non-integer radii
-        input_params = "T radius, int32 size, int32 half_size, T center_val"
-        output_params = "T out, bool footprint_out"
-        kernel_name = f"ball_kernel_diff_{ndim}d"
-
-        code = f"""
+    code = f"""
         // Convert flat index (i) to {ndim}D coordinates
         {index_code}
 
@@ -62,7 +53,18 @@ def _get_ball_kernel_elementwise(ndim, structure_and_footprint):
         // Compute distance squared
         T sum_sq = {sum_sq_terms};
         T r_sq = radius * radius;
+    """
 
+    if structure_and_footprint:
+        # Compute center_val - height, where center_val = radius
+        # This gives how much lower each position is than the apex
+        # Also output footprint (True where valid, False where inf)
+        # radius is T (float) to support non-integer radii
+        input_params = "T radius, int32 size, int32 half_size, T center_val"
+        output_params = "T out, bool footprint_out"
+        kernel_name = f"ball_kernel_diff_{ndim}d"
+
+        code += """
         // Compute ball surface height and footprint
         if (sum_sq <= r_sq) {{
             out = sqrt(r_sq - sum_sq) - center_val;
@@ -79,17 +81,7 @@ def _get_ball_kernel_elementwise(ndim, structure_and_footprint):
         output_params = "T out"
         kernel_name = f"ball_kernel_{ndim}d"
 
-        code = f"""
-        // Convert flat index (i) to {ndim}D coordinates
-        {index_code}
-
-        // Convert to coordinates relative to center
-        {coord_code}
-
-        // Compute distance squared
-        T sum_sq = {sum_sq_terms};
-        T r_sq = radius * radius;
-
+        code += """
         // Compute ball surface height
         if (sum_sq <= r_sq) {{
             out = sqrt(r_sq - sum_sq);
@@ -102,7 +94,7 @@ def _get_ball_kernel_elementwise(ndim, structure_and_footprint):
 
 
 def ball_kernel(
-    radius, ndim=2, dtype=cp.float64, structure_and_footprint=False
+    radius, ndim=2, *, dtype=cp.float64, structure_and_footprint=False
 ):
     """Create a ball-shaped kernel using ElementwiseKernel (GPU).
 
@@ -115,14 +107,18 @@ def ball_kernel(
         Radius of the ball.
     ndim : int, optional
         Number of dimensions. Default is 2.
+
+    Other Parameters
+    ----------------
     dtype : dtype, optional
         The data type of the kernel. Default is ``cp.float64``.
+        This parameter does not exist in scikit-image.
     structure_and_footprint : bool, optional
         If True, directly return the non-flat structuring element and
         boolean footprint for the rolling ball algorithm. The structure
         is the intensity difference from the center (apex), giving how
         much lower each position is than the apex (center = 0).
-        Default is False.
+        Default is False. This parameter does not exist in scikit-image.
 
     Returns
     -------
@@ -197,12 +193,9 @@ def _get_ellipsoid_kernel_elementwise(ndim, structure_and_footprint):
     size_params = ", ".join(f"int32 size_{j}" for j in range(ndim))
     semi_params = ", ".join(f"int32 semi_{j}" for j in range(ndim))
 
-    if structure_and_footprint:
-        input_params = f"{size_params}, {semi_params}, T intensity"
-        output_params = "T out, bool footprint_out"
-        kernel_name = f"ellipsoid_kernel_diff_{ndim}d"
+    input_params = f"{size_params}, {semi_params}, T intensity"
 
-        code = f"""
+    code = f"""
         // Convert flat index (i) to {ndim}D coordinates
         {index_code}
 
@@ -211,7 +204,13 @@ def _get_ellipsoid_kernel_elementwise(ndim, structure_and_footprint):
 
         // Compute normalized sum of squares
         T norm_sq = {norm_sq_terms};
+    """
 
+    if structure_and_footprint:
+        output_params = "T out, bool footprint_out"
+        kernel_name = f"ellipsoid_kernel_diff_{ndim}d"
+
+        code += """
         // Compute ellipsoid surface height and footprint
         if (norm_sq <= (T)1.0) {{
             out = intensity * sqrt((T)1.0 - norm_sq) - intensity;
@@ -219,36 +218,24 @@ def _get_ellipsoid_kernel_elementwise(ndim, structure_and_footprint):
         }} else {{
             out = CUDART_INF;
             footprint_out = false;
-        }}
-        """
+        }} """
     else:
-        input_params = f"{size_params}, {semi_params}, T intensity"
         output_params = "T out"
         kernel_name = f"ellipsoid_kernel_{ndim}d"
 
-        code = f"""
-        // Convert flat index (i) to {ndim}D coordinates
-        {index_code}
-
-        // Convert to coordinates relative to center
-        {coord_code}
-
-        // Compute normalized sum of squares
-        T norm_sq = {norm_sq_terms};
-
+        code += """
         // Compute ellipsoid surface height
         if (norm_sq <= (T)1.0) {{
             out = intensity * sqrt((T)1.0 - norm_sq);
         }} else {{
             out = CUDART_INF;
-        }}
-        """
+        }}"""
 
     return cp.ElementwiseKernel(input_params, output_params, code, kernel_name)
 
 
 def ellipsoid_kernel(
-    shape, intensity, dtype=cp.float64, structure_and_footprint=False
+    shape, intensity, *, dtype=cp.float64, structure_and_footprint=False
 ):
     """Create an ellipsoid kernel for rolling_ball.
 
@@ -263,14 +250,18 @@ def ellipsoid_kernel(
         dimensionality as the image it will be applied to.
     intensity : int or float
         Length of the intensity axis of the ellipsoid.
+
+    Other Parameters
+    ----------------
     dtype : dtype, optional
         The data type of the kernel. Default is ``cp.float64``.
+        This parameter does not exist in scikit-image.
     structure_and_footprint : bool, optional
         If True, directly return the non-flat structuring element and
         boolean footprint for the rolling ball algorithm. The structure
         is the intensity difference from the center (apex), giving how
         much lower each position is than the apex (center = 0).
-        Default is False.
+        Default is False. This parameter does not exist in scikit-image.
 
     Returns
     -------
@@ -341,7 +332,7 @@ def _rolling_ball_exact(
     if kernel is None:
         # kernel = ball_kernel(radius, image.ndim, float_type, False)
         structure, footprint = ball_kernel(
-            new_radius, image.ndim, float_type, True
+            new_radius, image.ndim, float_type, structure_and_footprint=True
         )
     elif isinstance(kernel, tuple) and len(kernel) == 2:
         structure, footprint = kernel
@@ -406,10 +397,15 @@ def rolling_ball(
         An alternative way to specify the rolling ball, as an arbitrary
         kernel. It must have the same number of axes as ``image``.
         Use ``ball_kernel`` or ``ellipsoid_kernel`` to create custom
-        kernels. If a tuple, the first element is the structure (non-flat
-        structuring element) and the second element is the footprint
-        (boolean array that is True where the kernel is valid and False
-        elsewhere). Only used when ``algorithm="exact"``.
+        kernels.
+        For cuCIM, this also accepts a tuple of cupy.ndarray where the
+        first element is the structure (non-flat structuring element)
+        and the second element is the footprint (boolean array that is
+        True where the kernel is valid and False elsewhere). The
+        `ball_kernel` and `ellipsoid_kernel` functions return a tuple of
+        (structure, footprint) when `structure_and_footprint` is ``True``.
+        This avoids the overhead of a separate CUDA kernel just to rescale
+        the structure.
     nansafe : bool, optional
         If True, NaN values in the image are handled safely.
         **Note**: The behavior of this mode is improved over the implementation

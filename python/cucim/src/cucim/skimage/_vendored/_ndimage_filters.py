@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Infrastructure, Inc.
 # SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Networks, Inc.
-# SPDX-FileCopyrightText: Copyright (c) 2022-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND MIT
 
 """A vendored subset of cupyx.scipy.ndimage._filters"""
@@ -1348,7 +1348,6 @@ def _min_or_max_filter(
         raise NotImplementedError("NaN cval is unsupported")
 
     # Dilate mask if provided to ensure correct computation
-    # (unless caller has already done this via skip_mask_dilation_and_restoration)
     dilated_mask = None
     original_mask = None
     if mask is not None:
