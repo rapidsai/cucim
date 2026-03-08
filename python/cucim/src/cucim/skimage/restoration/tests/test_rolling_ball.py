@@ -28,7 +28,9 @@ from cucim.skimage.restoration import (
 )
 
 
-def _ball_kernel_reference(radius, ndim, dtype=np.float64):
+def _ball_kernel_reference(
+    radius, ndim, dtype=np.float64, structure_and_footprint=False
+):
     """Simple numpy-based reference implementation of the ball kernel.
 
     used to validate ball_kernel elementwise kernel implementation
@@ -44,12 +46,21 @@ def _ball_kernel_reference(radius, ndim, dtype=np.float64):
     sum_of_squares = sum(c**2 for c in coords)
     distance_from_center = np.sqrt(sum_of_squares)
     kernel = np.sqrt(np.clip(radius**2 - sum_of_squares, 0, None))
-    kernel[distance_from_center > radius] = np.inf
+    if structure_and_footprint:
+        center_height = radius
+        kernel -= center_height
+        footprint = np.zeros(kernel.shape, dtype=bool)
+        footprint[distance_from_center <= radius] = True
+        kernel[~footprint] = np.inf
+        return cp.asarray(kernel), cp.asarray(footprint)
+    else:
+        kernel[distance_from_center > radius] = np.inf
+        return cp.asarray(kernel), None
 
-    return cp.asarray(kernel)
 
-
-def _ellipsoid_kernel_reference(shape, intensity, dtype=np.float64):
+def _ellipsoid_kernel_reference(
+    shape, intensity, dtype=np.float64, structure_and_footprint=False
+):
     """Simple numpy-based reference implementation of the ellipsoid kernel.
 
     Used to validate ellipsoid_kernel elementwise kernel implementation.
@@ -63,11 +74,18 @@ def _ellipsoid_kernel_reference(shape, intensity, dtype=np.float64):
     grids = [np.arange(-x, x + 1, dtype=dtype) for x in semi_axis]
     kernel_coords = np.stack(np.meshgrid(*grids, indexing="ij"), axis=-1)
 
-    intensity_scaling = 1 - np.sum((kernel_coords / semi_axis) ** 2, axis=-1)
+    norm_sq = np.sum((kernel_coords / semi_axis) ** 2, axis=-1)
+    intensity_scaling = 1 - norm_sq
     kernel = intensity * np.sqrt(np.clip(intensity_scaling, 0, None))
-    kernel[intensity_scaling < 0] = np.inf
-
-    return cp.asarray(kernel)
+    if structure_and_footprint:
+        kernel -= intensity
+        footprint = np.zeros(kernel.shape, dtype=bool)
+        footprint[intensity_scaling >= 0] = True
+        kernel[~footprint] = np.inf
+        return cp.asarray(kernel), cp.asarray(footprint)
+    else:
+        kernel[intensity_scaling < 0] = np.inf
+        return cp.asarray(kernel), None
 
 
 # ---------------------------------------------------------------------------
@@ -80,12 +98,17 @@ def _ellipsoid_kernel_reference(shape, intensity, dtype=np.float64):
 @pytest.mark.parametrize("dtype", [np.float32, np.float64])
 def test_ball_kernel_vs_reference(radius, ndim, dtype):
     """ball_kernel output matches the numpy-based reference implementation."""
-    ref = _ball_kernel_reference(radius, ndim, dtype=dtype)
-    got = ball_kernel(radius, ndim=ndim, dtype=cp.dtype(dtype))
-    assert got.shape == ref.shape
-    mask = cp.isfinite(ref)
-    cp.testing.assert_allclose(got[mask], ref[mask], rtol=1e-5, atol=1e-5)
-    cp.testing.assert_array_equal(cp.isposinf(got), cp.isposinf(ref))
+    ref, fp_ref = _ball_kernel_reference(
+        radius, ndim, dtype=dtype, structure_and_footprint=True
+    )
+    structure, fp = ball_kernel(
+        radius, ndim=ndim, dtype=cp.dtype(dtype), structure_and_footprint=True
+    )
+    assert fp.shape == ref.shape
+    mask = cp.isfinite(structure)
+    cp.testing.assert_allclose(structure[mask], ref[mask], rtol=1e-5, atol=1e-5)
+    cp.testing.assert_array_equal(cp.isposinf(structure), cp.isposinf(ref))
+    cp.testing.assert_array_equal(fp, fp_ref)
 
 
 @pytest.mark.parametrize("shape", [(5, 5), (3, 7), (4, 4, 4)])
@@ -93,12 +116,17 @@ def test_ball_kernel_vs_reference(radius, ndim, dtype):
 @pytest.mark.parametrize("dtype", [np.float32, np.float64])
 def test_ellipsoid_kernel_vs_reference(shape, intensity, dtype):
     """ellipsoid_kernel output matches the numpy-based reference implementation."""
-    ref = _ellipsoid_kernel_reference(shape, intensity, dtype=dtype)
-    got = ellipsoid_kernel(shape, intensity, dtype=cp.dtype(dtype))
-    assert got.shape == ref.shape
-    mask = cp.isfinite(ref)
-    cp.testing.assert_allclose(got[mask], ref[mask], rtol=1e-5, atol=1e-5)
-    cp.testing.assert_array_equal(cp.isposinf(got), cp.isposinf(ref))
+    ref, fp_ref = _ellipsoid_kernel_reference(
+        shape, intensity, dtype=dtype, structure_and_footprint=True
+    )
+    structure, fp = ellipsoid_kernel(
+        shape, intensity, dtype=cp.dtype(dtype), structure_and_footprint=True
+    )
+    assert fp.shape == ref.shape
+    mask = cp.isfinite(structure)
+    cp.testing.assert_allclose(structure[mask], ref[mask], rtol=1e-5, atol=1e-5)
+    cp.testing.assert_array_equal(cp.isposinf(structure), cp.isposinf(ref))
+    cp.testing.assert_array_equal(fp, fp_ref)
 
 
 # -------------------------------
