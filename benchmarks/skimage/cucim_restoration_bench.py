@@ -4,7 +4,6 @@
 import argparse
 import math
 import os
-import pickle
 
 import cupy as cp
 import cupyx.scipy.ndimage as ndi
@@ -102,10 +101,9 @@ class DeconvolutionBench(ImageBench):
 
 
 def main(args):
-    pfile = "cucim_restoration_results.pickle"
-    if os.path.exists(pfile):
-        with open(pfile, "rb") as f:
-            all_results = pickle.load(f)
+    cfile = "cucim_restoration_results.csv"
+    if os.path.exists(cfile):
+        all_results = pd.read_csv(cfile, index_col=0)
     else:
         all_results = pd.DataFrame()
 
@@ -176,9 +174,8 @@ def main(args):
         results = B.run_benchmark(duration=args.duration)
         all_results = pd.concat([all_results, results["full"]])
 
-    fbase = os.path.splitext(pfile)[0]
-    all_results.to_csv(fbase + ".csv")
-    all_results.to_pickle(pfile)
+    fbase = os.path.splitext(cfile)[0]
+    all_results.to_csv(cfile, index=True)
     try:
         import tabular  # noqa: F401
 
