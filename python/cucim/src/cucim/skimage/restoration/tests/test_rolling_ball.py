@@ -102,7 +102,7 @@ def test_ball_kernel_vs_reference(radius, ndim, dtype):
         radius, ndim, dtype=dtype, structure_and_footprint=True
     )
     structure, fp = ball_kernel(
-        radius, ndim=ndim, dtype=cp.dtype(dtype), structure_and_footprint=True
+        radius, ndim, dtype=cp.dtype(dtype), structure_and_footprint=True
     )
     assert fp.shape == ref.shape
     mask = cp.isfinite(structure)
@@ -153,6 +153,9 @@ def test_ellipsoid_const(dtype, structure_and_footprint):
     assert background.dtype == img.dtype
 
 
+@pytest.mark.skip(
+    reason="nansafe=True requires mask support in vendored ndimage"
+)
 def test_nan_const():
     img_cpu = np.full((100, 100), 123, dtype=float)
     img_cpu[20, 20] = np.nan

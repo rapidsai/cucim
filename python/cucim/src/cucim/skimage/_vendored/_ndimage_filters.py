@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Infrastructure, Inc.
 # SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Networks, Inc.
-# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2022-2025, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND MIT
 
 """A vendored subset of cupyx.scipy.ndimage._filters"""
@@ -803,25 +803,6 @@ def _prewitt_or_sobel(input, axis, output, mode, cval, weights, algorithm):
     )
 
 
-def _dilate_mask(mask, structure, axes=None):
-    """Dilate a binary mask using the given structure.
-
-    Args:
-        mask (cupy.ndarray): Binary mask to dilate.
-        structure (cp.ndarray or int or tuple of int): Structure for dilation.
-            If an integer, the same size is used for all axes.
-            If a tuple, it should match the length of axes.
-        axes (tuple of int or None): Axes along which to dilate.
-            If None, dilates along all axes.
-
-    Returns:
-        cupy.ndarray: Dilated mask.
-    """
-    from cucim.skimage._vendored._ndimage_morphology import binary_dilation
-
-    return binary_dilation(mask, structure=structure, axes=axes)
-
-
 def generic_laplace(
     input,
     derivative2,
@@ -1185,8 +1166,6 @@ def minimum_filter(
     cval=0.0,
     origin=0,
     axes=None,
-    *,
-    mask=None,
 ):
     """Multi-dimensional minimum filter.
 
@@ -1236,7 +1215,6 @@ def minimum_filter(
         origin,
         "min",
         axes,
-        mask=mask,
     )
 
 
@@ -1249,8 +1227,6 @@ def maximum_filter(
     cval=0.0,
     origin=0,
     axes=None,
-    *,
-    mask=None,
 ):
     """Multi-dimensional maximum filter.
 
@@ -1283,10 +1259,6 @@ def maximum_filter(
             ``mode`` and/or ``origin`` must match the length of ``axes``. The
             ith entry in any of these tuples corresponds to the ith entry in
             ``axes``. Default is ``None``.
-        mask (cupy.ndarray or None, optional): If provided, only pixels where
-            mask is True will be filtered. Pixels where mask is False will
-            retain their original values. This is useful for NaN-safe
-            filtering where mask can be set to ``~cupy.isnan(input)``.
 
     Returns:
         cupy.ndarray: The result of the filtering.
@@ -1304,7 +1276,6 @@ def maximum_filter(
         origin,
         "max",
         axes,
-        mask=mask,
     )
 
 
@@ -1319,8 +1290,6 @@ def _min_or_max_filter(
     origin,
     func,
     axes,
-    *,
-    mask=None,
 ):
     # structure is used by morphology.grey_erosion() and grey_dilation()
     # and not by the regular min/max filters
@@ -1340,32 +1309,16 @@ def _min_or_max_filter(
         raise_on_zero_size_weight=True,
     )
     num_axes = len(axes)
-
     sizes, ftprnt, structure = _filters_core._check_size_footprint_structure(
         num_axes, size, ftprnt, structure
     )
     if cval is cupy.nan:
         raise NotImplementedError("NaN cval is unsupported")
 
-    # Dilate mask if provided to ensure correct computation
-    dilated_mask = None
-    original_mask = None
-    if mask is not None:
-        original_mask = cupy.asarray(mask, dtype=bool)
-        # Determine structure for dilation based on filter size
-        if sizes is not None:
-            # Separable filter: use sizes directly
-            dilation_structure = sizes
-        else:
-            # Non-separable filter: use footprint shape
-            dilation_structure = ftprnt.shape
-        dilated_mask = _dilate_mask(
-            original_mask, dilation_structure, axes=axes
-        )
     if sizes is not None:
         # Separable filter, run as a series of 1D filters
         fltr = minimum_filter1d if func == "min" else maximum_filter1d
-        output = _filters_core._run_1d_filters(
+        return _filters_core._run_1d_filters(
             [fltr if size > 1 else None for size in sizes],
             input,
             axes,
@@ -1374,12 +1327,7 @@ def _min_or_max_filter(
             modes,
             cval,
             origins,
-            mask=dilated_mask,
         )
-        # Restore original values in unmasked regions
-        if original_mask is not None:
-            output[~original_mask] = input[~original_mask]
-        return output
 
     if ftprnt.size == 0:
         return cupy.zeros_like(input)
@@ -1396,7 +1344,6 @@ def _min_or_max_filter(
         )
 
     offsets = _filters_core._origins_to_offsets(origins, ftprnt.shape)
-    has_mask = dilated_mask is not None
     kernel = _get_min_or_max_kernel(
         modes,
         ftprnt.shape,
@@ -1406,30 +1353,14 @@ def _min_or_max_filter(
         int_type,
         has_structure=structure is not None,
         has_central_value=bool(ftprnt[offsets]),
-        has_mask=has_mask,
     )
-    kwargs = dict(weights_dtype=bool)
-    if has_mask:
-        kwargs["mask"] = dilated_mask
-    output = _filters_core._call_kernel(
-        kernel, input, ftprnt, output, structure, **kwargs
+    return _filters_core._call_kernel(
+        kernel, input, ftprnt, output, structure, weights_dtype=bool
     )
-    # Restore original values in unmasked regions
-    if original_mask is not None:
-        output[~original_mask] = input[~original_mask]
-    return output
 
 
 def minimum_filter1d(
-    input,
-    size,
-    axis=-1,
-    output=None,
-    mode="reflect",
-    cval=0.0,
-    origin=0,
-    *,
-    mask=None,
+    input, size, axis=-1, output=None, mode="reflect", cval=0.0, origin=0
 ):
     """Compute the minimum filter along a single axis.
 
@@ -1447,31 +1378,17 @@ def minimum_filter1d(
         origin (int): The origin parameter controls the placement of the
             filter, relative to the center of the current element of the
             input. Default is ``0``.
-        mask (cupy.ndarray or None, optional): If provided, only pixels where
-            mask is True will be filtered. Pixels where mask is False will
-            retain their original values. This is useful for NaN-safe
-            filtering where mask can be set to ``~cupy.isnan(input)``.
 
     Returns:
         cupy.ndarray: The result of the filtering.
 
     .. seealso:: :func:`scipy.ndimage.minimum_filter1d`
     """
-    return _min_or_max_1d(
-        input, size, axis, output, mode, cval, origin, "min", mask=mask
-    )
+    return _min_or_max_1d(input, size, axis, output, mode, cval, origin, "min")
 
 
 def maximum_filter1d(
-    input,
-    size,
-    axis=-1,
-    output=None,
-    mode="reflect",
-    cval=0.0,
-    origin=0,
-    *,
-    mask=None,
+    input, size, axis=-1, output=None, mode="reflect", cval=0.0, origin=0
 ):
     """Compute the maximum filter along a single axis.
 
@@ -1489,19 +1406,13 @@ def maximum_filter1d(
         origin (int): The origin parameter controls the placement of the
             filter, relative to the center of the current element of the
             input. Default is ``0``.
-        mask (cupy.ndarray or None, optional): If provided, only pixels where
-            mask is True will be filtered. Pixels where mask is False will
-            retain their original values. This is useful for NaN-safe
-            filtering where mask can be set to ``~cupy.isnan(input)``.
 
     Returns:
         cupy.ndarray: The result of the filtering.
 
     .. seealso:: :func:`scipy.ndimage.maximum_filter1d`
     """
-    return _min_or_max_1d(
-        input, size, axis, output, mode, cval, origin, "max", mask=mask
-    )
+    return _min_or_max_1d(input, size, axis, output, mode, cval, origin, "max")
 
 
 def _min_or_max_1d(
@@ -1513,8 +1424,6 @@ def _min_or_max_1d(
     cval=0.0,
     origin=0,
     func="min",
-    *,
-    mask=None,
 ):
     ftprnt = cupy.ones(size, dtype=bool)
     ftprnt, origin = _filters_core._convert_1d_args(
@@ -1524,7 +1433,6 @@ def _min_or_max_1d(
         input, ftprnt, mode, origin, "footprint", axes=None
     )
     offsets = _filters_core._origins_to_offsets(origins, ftprnt.shape)
-    has_mask = mask is not None
     kernel = _get_min_or_max_kernel(
         modes,
         ftprnt.shape,
@@ -1533,12 +1441,10 @@ def _min_or_max_1d(
         float(cval),
         int_type,
         has_weights=False,
-        has_mask=has_mask,
     )
-    kwargs = dict(weights_dtype=bool)
-    if has_mask:
-        kwargs["mask"] = mask
-    return _filters_core._call_kernel(kernel, input, None, output, **kwargs)
+    return _filters_core._call_kernel(
+        kernel, input, None, output, weights_dtype=bool
+    )
 
 
 @cupy._util.memoize(for_each_device=True)
@@ -1552,7 +1458,6 @@ def _get_min_or_max_kernel(
     has_weights=True,
     has_structure=False,
     has_central_value=True,
-    has_mask=False,
 ):
     # When there are no 'weights' (the footprint, for the 1D variants) then
     # we need to make sure intermediate results are stored as doubles for
@@ -1566,32 +1471,20 @@ def _get_min_or_max_kernel(
     if has_structure:
         value += ("-" if func == "min" else "+") + "cast<X>(sval)"
 
-    pre = ""
-    if has_mask:
-        pre += """
-            // keep existing value if not within the mask
-            bool mv = (bool)mask[i];
-            if (!mv) {
-                y = cast<Y>(x[i]);
-                return;
-            }\n"""
-
     if has_central_value:
-        pre += f"{ctype} value = x[i];"
-        found = f"value = {func}({value}, value);"
+        pre = "{} value = x[i];"
+        found = "value = {func}({value}, value);"
     else:
         # If the central pixel is not included in the footprint we cannot
         # assume `x[i]` is not below the min or above the max and thus cannot
         # seed with that value. Instead we keep track of having set `value`.
-        pre += f"{ctype} value; bool set = false;"
-        found = f"value = set ? {func}({value}, value) : {value}; set=true;"
+        pre = "{} value; bool set = false;"
+        found = "value = set ? {func}({value}, value) : {value}; set=true;"
 
-    mask_str = "_masked" if has_mask else ""
-    name = f"{func}{mask_str}"
     return _filters_core._generate_nd_kernel(
-        name,
-        pre,
-        found,
+        func,
+        pre.format(ctype),
+        found.format(func=func, value=value),
         "y = cast<Y>(value);",
         modes,
         w_shape,
@@ -1599,7 +1492,6 @@ def _get_min_or_max_kernel(
         offsets,
         cval,
         ctype=ctype,
-        has_mask=has_mask,
         has_weights=has_weights,
         has_structure=has_structure,
     )
