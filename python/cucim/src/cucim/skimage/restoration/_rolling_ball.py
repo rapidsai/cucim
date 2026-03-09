@@ -332,7 +332,10 @@ def _rolling_ball_exact(
     if kernel is None:
         # kernel = ball_kernel(radius, image.ndim, float_type, False)
         structure, footprint = ball_kernel(
-            new_radius, image.ndim, float_type, structure_and_footprint=True
+            new_radius,
+            image.ndim,
+            dtype=float_type,
+            structure_and_footprint=True,
         )
     elif isinstance(kernel, tuple) and len(kernel) == 2:
         structure, footprint = kernel
@@ -355,17 +358,12 @@ def _rolling_ball_exact(
     if structure_scale_factor != 1:
         structure *= structure_scale_factor
 
-    # For nansafe mode, create mask of valid (non-NaN) pixels
-    # NaN pixels will retain their value in the output
-    valid_mask = ~cp.isnan(img) if nansafe else None
-
     background = ndi.grey_erosion(
         img,
         footprint=footprint,
         structure=structure,
         mode=mode,
         cval=cp.inf,
-        mask=valid_mask,
     )
 
     return background.astype(image.dtype, copy=False)
@@ -490,6 +488,9 @@ def rolling_ball(
     image = cp.asarray(image)
     original_shape = image.shape
     original_dtype = image.dtype
+
+    if nansafe:
+        raise NotImplementedError("nansafe mode is not yet supported by cuCIM")
 
     # Handle downscaling
     if downscale is None:
