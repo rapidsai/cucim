@@ -102,10 +102,10 @@ class DeconvolutionBench(ImageBench):
 
 def main(args):
     cfile = "cucim_restoration_results.csv"
-    if os.path.exists(cfile):
-        all_results = pd.read_csv(cfile, index_col=0)
-    else:
+    if getattr(args, "no_resume", False) or not os.path.exists(cfile):
         all_results = pd.DataFrame()
+    else:
+        all_results = pd.read_csv(cfile, index_col=0)
 
     dtypes = [np.dtype(args.dtype)]
     # image sizes/shapes
@@ -245,6 +245,12 @@ if __name__ == "__main__":
         "--no_cpu",
         action="store_true",
         help="disable cpu measurements",
+        default=False,
+    )
+    parser.add_argument(
+        "--no_resume",
+        action="store_true",
+        help="do not load existing results CSV; save only this run's results (overwrite)",
         default=False,
     )
 
