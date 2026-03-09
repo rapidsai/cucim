@@ -74,6 +74,7 @@ repos:
             ^python/cucim/src/cucim/skimage/_vendored/ndimage[.]py$|
             ^python/cucim/src/cucim/skimage/_vendored/pad[.]py$|
             ^python/cucim/src/cucim/skimage/_vendored/signaltools[.]py$|
+            ^python/cucim/src/cucim/skimage/_vendored/tests/test_interpolation[.]py$|
             ^python/cucim/src/cucim/skimage/_vendored/time[.]py$|
             ^python/cucim/src/cucim/skimage/filters/thresholding[.]py$|
             ^python/cucim/src/cucim/skimage/segmentation/_expand_labels[.]py$|
@@ -330,6 +331,7 @@ repos:
             python/cucim/src/cucim/skimage/_vendored/ndimage[.]py$|
             python/cucim/src/cucim/skimage/_vendored/pad[.]py$|
             python/cucim/src/cucim/skimage/_vendored/signaltools[.]py$|
+            python/cucim/src/cucim/skimage/_vendored/tests/test_interpolation[.]py$|
             python/cucim/src/cucim/skimage/_vendored/time[.]py$
           )
       - id: verify-copyright
