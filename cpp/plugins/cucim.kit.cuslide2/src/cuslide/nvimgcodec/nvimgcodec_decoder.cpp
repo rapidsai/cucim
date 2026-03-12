@@ -227,6 +227,9 @@ bool decode_ifd_region_nvimgcodec(const IfdInfo& ifd_info,
                                   const cucim::io::Device& out_device,
                                   cudaStream_t cuda_stream)
 {
+    // Normalize: treat nullptr as the default CUDA stream
+    if (!cuda_stream) cuda_stream = cudaStream_t(0);
+
     if (!main_code_stream)
     {
         #ifdef DEBUG
@@ -345,8 +348,7 @@ bool decode_ifd_region_nvimgcodec(const IfdInfo& ifd_info,
         output_image_info.plane_info[0].row_stride = row_stride;
         output_image_info.plane_info[0].sample_type = NVIMGCODEC_SAMPLE_DATA_TYPE_UINT8;
         // Note: buffer_size removed in nvImageCodec v0.7.0 - size is inferred from plane_info
-        // Use provided CUDA stream, or default to 0 (default stream) if nullptr
-        output_image_info.cuda_stream = (cuda_stream != nullptr) ? cuda_stream : cudaStream_t(0);
+        output_image_info.cuda_stream = cuda_stream;
 
         // Step 4: Provide output buffer
         bool use_device_memory = (buffer_kind == NVIMGCODEC_IMAGE_BUFFER_KIND_STRIDED_DEVICE);
@@ -444,9 +446,7 @@ bool decode_ifd_region_nvimgcodec(const IfdInfo& ifd_info,
 
         if (use_device_memory)
         {
-            // Synchronize the stream used for decoding
-            cudaStream_t stream_to_sync = (cuda_stream != nullptr) ? cuda_stream : cudaStream_t(0);
-            cudaStreamSynchronize(stream_to_sync);
+            cudaStreamSynchronize(cuda_stream);
         }
 
         if (decode_status != NVIMGCODEC_PROCESSING_STATUS_SUCCESS)
@@ -484,6 +484,9 @@ std::vector<BatchDecodeResult> decode_batch_regions_nvimgcodec(
     const cucim::io::Device& out_device,
     cudaStream_t cuda_stream)
 {
+    // Normalize: treat nullptr as the default CUDA stream
+    if (!cuda_stream) cuda_stream = cudaStream_t(0);
+
     const size_t batch_size = regions.size();
     std::vector<BatchDecodeResult> results(batch_size);
 
@@ -649,8 +652,7 @@ std::vector<BatchDecodeResult> decode_batch_regions_nvimgcodec(
             output_image_info.plane_info[0].num_channels = num_channels;
             output_image_info.plane_info[0].row_stride = row_stride;
             output_image_info.plane_info[0].sample_type = NVIMGCODEC_SAMPLE_DATA_TYPE_UINT8;
-            // Use provided CUDA stream, or default to 0 (default stream) if nullptr
-            output_image_info.cuda_stream = (cuda_stream != nullptr) ? cuda_stream : cudaStream_t(0);
+            output_image_info.cuda_stream = cuda_stream;
 
             nvimgcodecImage_t image_raw = nullptr;
             nvimgcodecStatus_t status = nvimgcodecImageCreate(manager.get_instance(), &image_raw, &output_image_info);
@@ -744,8 +746,7 @@ std::vector<BatchDecodeResult> decode_batch_regions_nvimgcodec(
         // Synchronize if using GPU (use stream sync instead of device sync for better performance)
         if (use_device_memory)
         {
-            cudaStream_t stream_to_sync = (cuda_stream != nullptr) ? cuda_stream : cudaStream_t(0);
-            cudaStreamSynchronize(stream_to_sync);
+            cudaStreamSynchronize(cuda_stream);
         }
 
         // Step 6: Transfer successful results to output
@@ -798,11 +799,14 @@ BatchDecodeState schedule_batch_decode(
     cudaStream_t cuda_stream,
     const std::vector<uint8_t*>& output_buffers)
 {
+    // Normalize: treat nullptr as the default CUDA stream
+    if (!cuda_stream) cuda_stream = cudaStream_t(0);
+
     BatchDecodeState state;
     auto* impl = state.impl;
     impl->batch_size = regions.size();
     impl->use_device_memory = false;
-    impl->cuda_stream = (cuda_stream != nullptr) ? cuda_stream : cudaStream_t(0);
+    impl->cuda_stream = cuda_stream;
 
     // When caller-provided output buffers are supplied, the decoder writes
     // directly into them and the state does NOT own (or free) those buffers.
