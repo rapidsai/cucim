@@ -190,8 +190,8 @@ uint32_t NvImageCodecProcessor::request(std::deque<uint32_t>& batch_item_counts,
     // Store state and requests for later waiting
     {
         std::lock_guard<std::mutex> lock(nvimgcodec_mutex_);
-        pending_batches_.push_back(std::move(decode_state));
-        pending_requests_.push_back(batch_requests);
+        pending_batches_.push(std::move(decode_state));
+        pending_requests_.push(batch_requests);
     }
 
     return static_cast<uint32_t>(batch_requests.size());
@@ -219,12 +219,12 @@ uint32_t NvImageCodecProcessor::wait_batch(uint32_t index_in_task,
         }
 
         decode_state = std::move(pending_batches_.front());
-        pending_batches_.pop_front();
+        pending_batches_.pop();
 
         // Also pop the corresponding request list (no longer needed for zero-copy)
         if (!pending_requests_.empty())
         {
-            pending_requests_.pop_front();
+            pending_requests_.pop();
         }
     }  // lock released — safe to block on GPU now
 
