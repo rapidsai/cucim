@@ -266,7 +266,7 @@ bool decode_ifd_region_nvimgcodec(const IfdInfo& ifd_info,
         nvimgcodecDecoder_t decoder = manager.get_decoder();
 
         #ifdef DEBUG
-        fmt::print("  💡 Using primary decoder (target: {})\n", target_is_cpu ? "CPU" : "GPU");
+        fmt::print("  💡 Decoding with default decoder (output buffer: {})\n", target_is_cpu ? "host" : "device");
         #endif
 
         // Step 1: Create view with ROI for this IFD
