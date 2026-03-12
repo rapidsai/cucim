@@ -203,6 +203,7 @@ uint32_t NvImageCodecProcessor::wait_batch(uint32_t index_in_task,
 {
     (void)batch_item_counts;
     (void)num_remaining_patches;
+    (void)index_in_task;
 
     #ifdef DEBUG
     fmt::print("🔍 wait_batch: index_in_task={}\n", index_in_task);
