@@ -175,22 +175,23 @@ uint32_t NvImageCodecProcessor::request(std::deque<uint32_t>& batch_item_counts,
     fmt::print("📦 Requesting batch decode of {} ROIs\n", batch_requests.size());
     #endif
 
-    // Schedule batch decode asynchronously (don't wait yet)
-    cuslide2::nvimgcodec::BatchDecodeState decode_state = schedule_roi_batch(batch_requests);
-
-    // Check if the decode was actually scheduled (impl is always allocated,
-    // but impl->future is null when scheduling fails).
-    if (!decode_state.is_valid())
-    {
-        #ifdef DEBUG
-        fmt::print("❌ Failed to schedule batch decode\n");
-        #endif
-        return 0;
-    }
-
-    // Store state and requests for later waiting
+    // nvImageCodec is not thread-safe, so schedule + enqueue must be
+    // serialized under the same mutex.
     {
         std::lock_guard<std::mutex> lock(nvimgcodec_mutex_);
+
+        cuslide2::nvimgcodec::BatchDecodeState decode_state = schedule_roi_batch(batch_requests);
+
+        // Check if the decode was actually scheduled (impl is always allocated,
+        // but impl->future is null when scheduling fails).
+        if (!decode_state.is_valid())
+        {
+            #ifdef DEBUG
+            fmt::print("❌ Failed to schedule batch decode\n");
+            #endif
+            return 0;
+        }
+
         pending_batches_.push(std::move(decode_state));
         pending_requests_.push(batch_requests);
     }
