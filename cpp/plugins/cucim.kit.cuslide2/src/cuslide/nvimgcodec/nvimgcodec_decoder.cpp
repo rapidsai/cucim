@@ -76,6 +76,7 @@ struct BatchDecodeStateImpl
     std::vector<size_t> valid_indices;                // Indices of valid regions
     size_t batch_size = 0;
     bool use_device_memory = false;
+    bool owns_buffers = true;                         // false when caller provides output buffers
     cudaStream_t cuda_stream = nullptr;
 
     ~BatchDecodeStateImpl()
@@ -85,14 +86,17 @@ struct BatchDecodeStateImpl
             nvimgcodecFutureDestroy(future);
             future = nullptr;
         }
-        for (void* buf : buffers)
+        if (owns_buffers)
         {
-            if (buf)
+            for (void* buf : buffers)
             {
-                if (use_device_memory)
-                    cudaFree(buf);
-                else
-                    cucim_free(buf);
+                if (buf)
+                {
+                    if (use_device_memory)
+                        cudaFree(buf);
+                    else
+                        cucim_free(buf);
+                }
             }
         }
         buffers.clear();
@@ -256,10 +260,9 @@ bool decode_ifd_region_nvimgcodec(const IfdInfo& ifd_info,
         std::string device_str = std::string(out_device);
         bool target_is_cpu = (device_str.find("cpu") != std::string::npos);
 
-        // Always use the primary (GPU-enabled) decoder.  For CPU output requests
-        // the buffer_kind is set to STRIDED_HOST below, and nvImageCodec handles
-        // the GPU decode → host copy internally.  The CPU-only decoder lacks the
-        // GPU backends needed for JPEG-compressed TIFF, so we don't use it here.
+        // Use the default decoder with all backends enabled.  For CPU output
+        // requests, the buffer_kind is set to STRIDED_HOST below and nvImageCodec
+        // handles the GPU decode → host copy internally.
         nvimgcodecDecoder_t decoder = manager.get_decoder();
 
         #ifdef DEBUG
@@ -792,13 +795,19 @@ BatchDecodeState schedule_batch_decode(
     nvimgcodecCodeStream_t main_code_stream,
     const std::vector<RoiRegion>& regions,
     const cucim::io::Device& out_device,
-    cudaStream_t cuda_stream)
+    cudaStream_t cuda_stream,
+    const std::vector<uint8_t*>& output_buffers)
 {
     BatchDecodeState state;
     auto* impl = state.impl;
     impl->batch_size = regions.size();
     impl->use_device_memory = false;
     impl->cuda_stream = (cuda_stream != nullptr) ? cuda_stream : cudaStream_t(0);
+
+    // When caller-provided output buffers are supplied, the decoder writes
+    // directly into them and the state does NOT own (or free) those buffers.
+    bool use_caller_buffers = !output_buffers.empty();
+    impl->owns_buffers = !use_caller_buffers;
 
     if (impl->batch_size == 0 || !main_code_stream)
     {
@@ -882,8 +891,17 @@ BatchDecodeState schedule_batch_decode(
             impl->roi_streams_raii.emplace_back(roi_stream_raw);
         }
 
-        // Step 2: Allocate output buffers and create image objects
-        std::vector<DecodeBuffer> decode_buffers(impl->batch_size);
+        // Step 2: Set up output buffers and create image objects.
+        // Two modes:
+        //   (a) use_caller_buffers == true  → decode directly into caller-provided
+        //       raster pointers (zero-copy).  The state does NOT own these buffers.
+        //   (b) use_caller_buffers == false → allocate DecodeBuffers internally
+        //       (ownership tracked in impl->buffers, freed by ~BatchDecodeStateImpl).
+        std::vector<DecodeBuffer> decode_buffers;
+        if (!use_caller_buffers)
+        {
+            decode_buffers.resize(impl->batch_size);
+        }
         impl->images_raii.reserve(impl->batch_size);
 
         for (size_t i = 0; i < impl->batch_size; ++i)
@@ -899,10 +917,29 @@ BatchDecodeState schedule_batch_decode(
             size_t row_stride = region.width * num_channels;
             size_t buffer_size = row_stride * region.height;
 
-            if (!decode_buffers[i].allocate(buffer_size, impl->use_device_memory))
+            void* buffer_ptr = nullptr;
+            if (use_caller_buffers)
             {
-                impl->images_raii.emplace_back(nullptr);
-                continue;
+                // Use the caller's pre-allocated raster buffer
+                if (i < output_buffers.size() && output_buffers[i])
+                {
+                    buffer_ptr = output_buffers[i];
+                }
+                else
+                {
+                    impl->images_raii.emplace_back(nullptr);
+                    continue;
+                }
+            }
+            else
+            {
+                // Allocate a fresh decode buffer
+                if (!decode_buffers[i].allocate(buffer_size, impl->use_device_memory))
+                {
+                    impl->images_raii.emplace_back(nullptr);
+                    continue;
+                }
+                buffer_ptr = decode_buffers[i].get();
             }
 
             nvimgcodecImageInfo_t output_image_info{};
@@ -914,7 +951,7 @@ BatchDecodeState schedule_batch_decode(
             output_image_info.chroma_subsampling = NVIMGCODEC_SAMPLING_NONE;
             output_image_info.num_planes = 1;
             output_image_info.buffer_kind = buffer_kind;
-            output_image_info.buffer = decode_buffers[i].get();
+            output_image_info.buffer = buffer_ptr;
             output_image_info.plane_info[0].height = region.height;
             output_image_info.plane_info[0].width = region.width;
             output_image_info.plane_info[0].num_channels = num_channels;
@@ -942,7 +979,10 @@ BatchDecodeState schedule_batch_decode(
                 impl->roi_streams.push_back(impl->roi_streams_raii[i].get());
                 impl->images.push_back(impl->images_raii[i].get());
                 impl->valid_indices.push_back(i);
-                impl->buffers.push_back(decode_buffers[i].release()); // Transfer ownership
+                if (impl->owns_buffers)
+                {
+                    impl->buffers.push_back(decode_buffers[i].release()); // Transfer ownership
+                }
             }
         }
 
@@ -971,18 +1011,21 @@ BatchDecodeState schedule_batch_decode(
             #ifdef DEBUG
             fmt::print("❌ Failed to schedule batch decoding (status: {})\n", static_cast<int>(status));
             #endif
-            // Clean up on failure
-            for (void* buf : impl->buffers)
+            // Clean up owned buffers on failure (caller-provided buffers are not freed)
+            if (impl->owns_buffers)
             {
-                if (buf)
+                for (void* buf : impl->buffers)
                 {
-                    if (impl->use_device_memory)
-                        cudaFree(buf);
-                    else
-                        cucim_free(buf);
+                    if (buf)
+                    {
+                        if (impl->use_device_memory)
+                            cudaFree(buf);
+                        else
+                            cucim_free(buf);
+                    }
                 }
+                impl->buffers.clear();
             }
-            impl->buffers.clear();
             impl->roi_streams.clear();
             impl->images.clear();
             return state;
@@ -1033,14 +1076,17 @@ std::vector<BatchDecodeResult> wait_batch_decode(BatchDecodeState& state)
             // Clean up resources
             nvimgcodecFutureDestroy(impl->future);
             impl->future = nullptr;
-            for (void* buf : impl->buffers)
+            if (impl->owns_buffers)
             {
-                if (buf)
+                for (void* buf : impl->buffers)
                 {
-                    if (impl->use_device_memory)
-                        cudaFree(buf);
-                    else
-                        cucim_free(buf);
+                    if (buf)
+                    {
+                        if (impl->use_device_memory)
+                            cudaFree(buf);
+                        else
+                            cucim_free(buf);
+                    }
                 }
             }
             return results;
@@ -1070,13 +1116,23 @@ std::vector<BatchDecodeResult> wait_batch_decode(BatchDecodeState& state)
             size_t i = impl->valid_indices[vi];
             if (vi < decode_statuses.size() && decode_statuses[vi] == NVIMGCODEC_PROCESSING_STATUS_SUCCESS)
             {
-                if (vi < impl->buffers.size() && impl->buffers[vi])
+                if (impl->owns_buffers)
                 {
-                    results[i].buffer = reinterpret_cast<uint8_t*>(impl->buffers[vi]);
+                    // Internally-allocated buffers: transfer ownership to result
+                    if (vi < impl->buffers.size() && impl->buffers[vi])
+                    {
+                        results[i].buffer = reinterpret_cast<uint8_t*>(impl->buffers[vi]);
+                        results[i].buffer_size = (vi < impl->buffer_sizes.size()) ? impl->buffer_sizes[vi] : 0;
+                        results[i].success = true;
+                        impl->buffers[vi] = nullptr;
+                    }
+                }
+                else
+                {
+                    // Caller-provided buffers: data is already in place
+                    results[i].buffer = nullptr;  // Caller owns the buffer
                     results[i].buffer_size = (vi < impl->buffer_sizes.size()) ? impl->buffer_sizes[vi] : 0;
                     results[i].success = true;
-                    // Transfer ownership - clear from state so it won't be freed
-                    impl->buffers[vi] = nullptr;
                 }
             }
         }
@@ -1085,15 +1141,18 @@ std::vector<BatchDecodeResult> wait_batch_decode(BatchDecodeState& state)
         nvimgcodecFutureDestroy(impl->future);
         impl->future = nullptr;
 
-        // Clean up any remaining buffers (failed decodes)
-        for (void* buf : impl->buffers)
+        // Clean up any remaining owned buffers (failed decodes)
+        if (impl->owns_buffers)
         {
-            if (buf)
+            for (void* buf : impl->buffers)
             {
-                if (impl->use_device_memory)
-                    cudaFree(buf);
-                else
-                    cucim_free(buf);
+                if (buf)
+                {
+                    if (impl->use_device_memory)
+                        cudaFree(buf);
+                    else
+                        cucim_free(buf);
+                }
             }
         }
         impl->buffers.clear();

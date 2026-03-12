@@ -651,7 +651,6 @@ bool TiffFileParser::parse_tiff_structure()
                 #ifdef DEBUG
                 fmt::print("  ⚠️  Warning: codec is 'tiff' but could not infer compression.\n");
                 fmt::print("     File: {}\n", file_path_);
-                fmt::print("     This may limit CPU decoder availability.\n");
                 #endif
             }
         }
