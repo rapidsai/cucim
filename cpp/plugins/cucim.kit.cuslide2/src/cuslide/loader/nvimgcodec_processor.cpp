@@ -97,10 +97,6 @@ NvImageCodecProcessor::NvImageCodecProcessor(
         static_cast<uint32_t>(location_len),
         std::min(batch_size, MAX_NVIMGCODEC_BATCH_SIZE));
 
-    // Single batch prefetch: I/O is typically faster than decode work,
-    // so one prefetch batch is sufficient to keep the decoder busy.
-    preferred_loader_prefetch_factor_ = 1;
-
     #ifdef DEBUG
     fmt::print("🔧 NvImageCodecProcessor initialized:\n");
     fmt::print("   ROI size: {}x{}, {} bytes\n", roi_width_, roi_height_, roi_size_bytes_);
