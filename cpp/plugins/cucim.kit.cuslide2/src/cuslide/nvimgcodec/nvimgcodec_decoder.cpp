@@ -1023,23 +1023,8 @@ BatchDecodeState schedule_batch_decode(
             #ifdef DEBUG
             fmt::print("❌ Failed to schedule batch decoding (status: {})\n", static_cast<int>(status));
             #endif
-            // Clean up owned buffers on failure (caller-provided buffers are not freed)
-            if (impl->owns_buffers)
-            {
-                for (void* buf : impl->buffers)
-                {
-                    if (buf)
-                    {
-                        if (impl->use_device_memory)
-                            cudaFree(buf);
-                        else
-                            cucim_free(buf);
-                    }
-                }
-                impl->buffers.clear();
-            }
-            impl->roi_streams.clear();
-            impl->images.clear();
+            // No manual cleanup needed — ~BatchDecodeStateImpl handles buffer
+            // and future cleanup when `state` is destroyed by the caller.
             return state;
         }
 
