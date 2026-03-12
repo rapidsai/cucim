@@ -140,6 +140,11 @@ uint32_t NvImageCodecProcessor::request(std::deque<uint32_t>& batch_item_counts,
     (void)batch_item_counts;
     (void)num_remaining_patches;
 
+    if (stopped_)
+    {
+        return 0;
+    }
+
     // Build batch of ROI decode requests
     std::vector<RoiDecodeRequest> batch_requests;
 
