@@ -205,6 +205,11 @@ uint32_t NvImageCodecProcessor::wait_batch(uint32_t index_in_task,
     fmt::print("🔍 wait_batch: index_in_task={}\n", index_in_task);
     #endif
 
+    if (stopped_)
+    {
+        return 0;
+    }
+
     // Pop the oldest pending batch under the lock, then release it before
     // the (potentially blocking) wait_batch_decode() call so that other
     // threads can continue to enqueue new batches concurrently.
