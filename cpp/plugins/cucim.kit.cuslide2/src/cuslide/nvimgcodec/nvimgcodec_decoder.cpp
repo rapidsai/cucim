@@ -818,7 +818,10 @@ BatchDecodeState schedule_batch_decode(
         return state;
     }
 
-    try
+    // No try-catch: nvImageCodec is a C API and does not throw.
+    // The only possible exception is std::bad_alloc from vector allocations,
+    // which should propagate to the caller.  ~BatchDecodeStateImpl provides
+    // RAII cleanup regardless.
     {
         auto& manager = NvImageCodecTiffParserManager::instance();
         if (!manager.is_available())
@@ -1030,12 +1033,6 @@ BatchDecodeState schedule_batch_decode(
 
         #ifdef DEBUG
         fmt::print("✅ Scheduled batch decode of {} regions\n", impl->roi_streams.size());
-        #endif
-    }
-    catch (const std::exception& e)
-    {
-        #ifdef DEBUG
-        fmt::print("❌ Exception in schedule_batch_decode: {}\n", e.what());
         #endif
     }
 
