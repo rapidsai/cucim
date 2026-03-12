@@ -1102,6 +1102,7 @@ std::vector<BatchDecodeResult> wait_batch_decode(BatchDecodeState& state)
             #ifdef DEBUG
             fmt::print("❌ Failed to get batch processing status (status: {})\n", static_cast<int>(status));
             #endif
+            return results;  // All results already initialized to failure
         }
 
         // Process results
