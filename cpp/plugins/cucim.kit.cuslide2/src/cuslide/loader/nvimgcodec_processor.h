@@ -126,6 +126,8 @@ private:
     cuslide2::nvimgcodec::BatchDecodeState schedule_roi_batch(const std::vector<RoiDecodeRequest>& requests);
 
     std::atomic<bool> stopped_{false};
+    // Single batch prefetch: I/O is typically faster than decode work,
+    // so one prefetch batch is sufficient to keep the decoder busy.
     uint32_t preferred_loader_prefetch_factor_ = 1;
 
     // TIFF parser and IFD info
