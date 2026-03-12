@@ -201,9 +201,12 @@ uint32_t NvImageCodecProcessor::wait_batch(uint32_t index_in_task,
                                             std::deque<uint32_t>& batch_item_counts,
                                             uint32_t num_remaining_patches)
 {
-    (void)index_in_task;
     (void)batch_item_counts;
     (void)num_remaining_patches;
+
+    #ifdef DEBUG
+    fmt::print("🔍 wait_batch: index_in_task={}\n", index_in_task);
+    #endif
 
     // Pop the oldest pending batch under the lock, then release it before
     // the (potentially blocking) wait_batch_decode() call so that other
@@ -237,8 +240,8 @@ uint32_t NvImageCodecProcessor::wait_batch(uint32_t index_in_task,
     #ifdef DEBUG
     size_t success_count = 0;
     for (const auto& r : results) if (r.success) ++success_count;
-    fmt::print("  ✅ wait_batch: {}/{} regions decoded successfully (zero-copy)\n",
-               success_count, results.size());
+    fmt::print("  ✅ wait_batch[{}]: {}/{} regions decoded successfully (zero-copy)\n",
+               index_in_task, success_count, results.size());
     #endif
 
     return batch_size_;
