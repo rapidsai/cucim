@@ -218,7 +218,7 @@ uint32_t NvImageCodecProcessor::wait_batch(uint32_t index_in_task,
 
         if (pending_batches_.empty())
         {
-            return batch_size_;
+            return 0;  // No pending batches to process
         }
 
         decode_state = std::move(pending_batches_.front());
