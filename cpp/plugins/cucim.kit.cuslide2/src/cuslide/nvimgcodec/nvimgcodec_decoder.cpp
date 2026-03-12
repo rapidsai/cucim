@@ -908,6 +908,11 @@ BatchDecodeState schedule_batch_decode(
         }
         impl->images_raii.reserve(impl->batch_size);
 
+        // Per-region buffer sizes, indexed by original batch index.
+        // Populated in step 2, consumed in step 3 to keep impl->buffer_sizes
+        // aligned with impl->valid_indices / impl->buffers.
+        std::vector<size_t> per_region_buffer_sizes(impl->batch_size, 0);
+
         for (size_t i = 0; i < impl->batch_size; ++i)
         {
             if (!impl->roi_streams_raii[i])
@@ -972,10 +977,12 @@ BatchDecodeState schedule_batch_decode(
             }
 
             impl->images_raii.emplace_back(image_raw);
-            impl->buffer_sizes.push_back(buffer_size);
+            per_region_buffer_sizes[i] = buffer_size;
         }
 
-        // Step 3: Filter out invalid entries and prepare for batch decode
+        // Step 3: Filter out invalid entries and prepare for batch decode.
+        // All impl-> vectors (roi_streams, images, buffers, buffer_sizes,
+        // valid_indices) are populated here so their indices stay aligned.
         for (size_t i = 0; i < impl->batch_size; ++i)
         {
             if (impl->roi_streams_raii[i] && impl->images_raii[i])
@@ -983,6 +990,7 @@ BatchDecodeState schedule_batch_decode(
                 impl->roi_streams.push_back(impl->roi_streams_raii[i].get());
                 impl->images.push_back(impl->images_raii[i].get());
                 impl->valid_indices.push_back(i);
+                impl->buffer_sizes.push_back(per_region_buffer_sizes[i]);
                 if (impl->owns_buffers)
                 {
                     impl->buffers.push_back(decode_buffers[i].release()); // Transfer ownership
@@ -1126,7 +1134,7 @@ std::vector<BatchDecodeResult> wait_batch_decode(BatchDecodeState& state)
                     if (vi < impl->buffers.size() && impl->buffers[vi])
                     {
                         results[i].buffer = reinterpret_cast<uint8_t*>(impl->buffers[vi]);
-                        results[i].buffer_size = (vi < impl->buffer_sizes.size()) ? impl->buffer_sizes[vi] : 0;
+                        results[i].buffer_size = impl->buffer_sizes[vi];
                         results[i].success = true;
                         impl->buffers[vi] = nullptr;
                     }
@@ -1135,7 +1143,7 @@ std::vector<BatchDecodeResult> wait_batch_decode(BatchDecodeState& state)
                 {
                     // Caller-provided buffers: data is already in place
                     results[i].buffer = nullptr;  // Caller owns the buffer
-                    results[i].buffer_size = (vi < impl->buffer_sizes.size()) ? impl->buffer_sizes[vi] : 0;
+                    results[i].buffer_size = impl->buffer_sizes[vi];
                     results[i].success = true;
                 }
             }
