@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import cupy as cp
@@ -10,11 +10,24 @@ from cupyx.scipy import ndimage as ndi
 from skimage import data
 
 from cucim.skimage import color, morphology
+
+# from cucim.skimage._shared.testing import assert_stacklevel
 from cucim.skimage.morphology import footprint_rectangle
 from cucim.skimage.util import img_as_bool
 
 img = color.rgb2gray(cp.array(data.astronaut()))
 bw_img = img > 100 / 255.0
+
+
+# So far we have not yet deprecated binary_* morphology functions, so no need
+# yet for this warning skip.
+#
+# pytestmark = pytest.mark.filterwarnings(
+#     "ignore:"
+#     "`binary_(dilation|erosion|opening|closing)` is deprecated.*"
+#     "Use `skimage.morphology.(dilation|erosion|opening|closing)` instead"
+#     ":FutureWarning"
+# )
 
 
 def test_non_square_image():
@@ -117,7 +130,7 @@ def test_rectangle_decomposition(function, nrows, ncols, decomposition):
 @pytest.mark.parametrize("n", (0, 1, 2, 3, 4, 5))
 @pytest.mark.parametrize("decomposition", ["sequence"])
 @pytest.mark.filterwarnings(
-    "ignore:.*falling back to decomposition='separable':UserWarning:skimage"
+    "ignore:.*falling back to decomposition='separable':UserWarning"
 )
 def test_octagon_decomposition(function, m, n, decomposition):
     """Validate footprint decomposition for various shapes.
@@ -188,7 +201,7 @@ def test_cube_decomposition(function, shape, decomposition):
 @pytest.mark.parametrize("radius", (1, 2, 3))
 @pytest.mark.parametrize("decomposition", ["sequence"])
 @pytest.mark.filterwarnings(
-    "ignore:.*falling back to decomposition='separable':UserWarning:skimage"
+    "ignore:.*falling back to decomposition='separable':UserWarning"
 )
 def test_octahedron_decomposition(function, radius, decomposition):
     """Validate footprint decomposition for various shapes.
@@ -378,3 +391,20 @@ def test_tuple_as_footprint(function, ndim):
     expected = func(img, footprint=footprint_ndarray)
     out = func(img, footprint=footprint_shape)
     testing.assert_array_equal(expected, out)
+
+
+# So far we have not yet deprecated binary_* morphology functions
+
+# @pytest.mark.parametrize(
+#     "func_name",
+#     ["binary_erosion", "binary_dilation", "binary_opening", "binary_closing"],
+# )
+# def test_deprecation_warning(func_name):
+#     func = getattr(binary, func_name)
+#     footprint = footprint_rectangle((3, 3))
+
+#     regex = f"`{func_name}` is deprecated"
+#     with pytest.warns(FutureWarning, match=regex) as record:
+#         func(bw_img, footprint)
+#     assert_stacklevel(record)
+#     assert len(record) == 1

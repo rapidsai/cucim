@@ -1,8 +1,10 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 """Test for correctness of color distance functions"""
+
+from pathlib import Path
 
 import cupy as cp
 import numpy as np
@@ -12,7 +14,7 @@ from cupy.testing import (
     assert_array_almost_equal,
 )
 
-from cucim.skimage._shared.testing import expected_warnings, fetch
+from cucim.skimage._shared.testing import expected_warnings
 from cucim.skimage._shared.utils import _supported_float_type
 from cucim.skimage.color.delta_e import (
     deltaE_cie76,
@@ -20,6 +22,8 @@ from cucim.skimage.color.delta_e import (
     deltaE_ciede2000,
     deltaE_cmc,
 )
+
+test_data_dir = Path(__file__).absolute().parent
 
 
 @pytest.mark.parametrize("channel_axis", [0, 1, -1])
@@ -78,8 +82,7 @@ def load_ciede2000_data():
     ]
 
     # note: ciede_test_data.txt contains several intermediate quantities
-    path = fetch("color/tests/ciede2000_test_data.txt")
-    return np.loadtxt(path, dtype=dtype)
+    return np.loadtxt(test_data_dir / "ciede2000_test_data.txt", dtype=dtype)
 
 
 @pytest.mark.parametrize("channel_axis", [0, 1, -1])

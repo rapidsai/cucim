@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import functools
@@ -112,7 +112,7 @@ def denoise_invariant(
     masks : list of ndarray, optional
         Set of masks to use for computing J-invariant output. If `None`,
         a full set of masks covering the image will be used.
-    denoiser_kwargs:
+    denoiser_kwargs :
         Keyword arguments passed to `denoise_function`.
 
     Returns

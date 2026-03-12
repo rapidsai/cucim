@@ -231,6 +231,7 @@ repos:
             ^python/cucim/src/cucim/skimage/restoration/tests/test_restoration[.]py$|
             ^python/cucim/src/cucim/skimage/restoration/uft[.]py$|
             ^python/cucim/src/cucim/skimage/segmentation/__init__[.]py$|
+            ^python/cucim/src/cucim/skimage/segmentation/__init__[.]pyi$|
             ^python/cucim/src/cucim/skimage/segmentation/_chan_vese[.]py$|
             ^python/cucim/src/cucim/skimage/segmentation/_clear_border[.]py$|
             ^python/cucim/src/cucim/skimage/segmentation/_join[.]py$|
@@ -509,6 +510,7 @@ repos:
             python/cucim/src/cucim/skimage/restoration/tests/test_restoration[.]py$|
             python/cucim/src/cucim/skimage/restoration/uft[.]py$|
             python/cucim/src/cucim/skimage/segmentation/__init__[.]py$|
+            python/cucim/src/cucim/skimage/segmentation/__init__[.]pyi$|
             python/cucim/src/cucim/skimage/segmentation/_chan_vese[.]py$|
             python/cucim/src/cucim/skimage/segmentation/_clear_border[.]py$|
             python/cucim/src/cucim/skimage/segmentation/_join[.]py$|
