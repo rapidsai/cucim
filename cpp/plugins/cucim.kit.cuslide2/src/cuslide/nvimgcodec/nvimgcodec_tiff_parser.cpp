@@ -51,17 +51,20 @@ namespace cuslide2::nvimgcodec
 // nvImageCodec extension path auto-detection
 // ============================================================================
 //
-// nvImageCodec needs to know where its codec extension plugins (libtiff_ext.so,
-// libnvjpeg_ext.so, etc.) are located. When extension_modules_path is nullptr,
-// it searches relative to the loaded libnvimgcodec.so. This fails when the
-// library is installed via conda (extensions in lib/extensions/) but the
-// library's internal search doesn't find them.
+// Workaround for a known nvImageCodec 0.7.0 bug: when the library is installed
+// via conda, its internal extension search path doesn't find the codec plugins
+// (libtiff_ext.so, libnvjpeg_ext.so, etc.) in $PREFIX/lib/extensions/.
 //
-// This helper:
+// This helper auto-detects the extensions directory so we can pass it
+// explicitly via nvimgcodecInstanceCreateInfo_t::extension_modules_path.
+//
 //   1. Checks NVIMGCODEC_EXTENSIONS_PATH env var (user override)
 //   2. Resolves the real libnvimgcodec.so path via the dynlink wrapper's
 //      NvimgcodecLoadSymbol() + dladdr() (not the stub address)
 //   3. Probes <lib_dir>/extensions/ and <lib_dir>/../extensions/
+//
+// TODO: Remove this workaround once cuCIM upgrades to nvImageCodec >= 0.8.0,
+//       which fixes the extension search path for conda installs.
 //
 
 static std::string detect_nvimgcodec_extensions_path()
