@@ -1058,95 +1058,68 @@ std::vector<BatchDecodeResult> wait_batch_decode(BatchDecodeState& state)
         return results;
     }
 
-    try
+    // Wait for all decode operations to complete
+    nvimgcodecStatus_t status = nvimgcodecFutureWaitForAll(impl->future);
+    if (status != NVIMGCODEC_STATUS_SUCCESS)
     {
-        // Wait for all decode operations to complete
-        nvimgcodecStatus_t status = nvimgcodecFutureWaitForAll(impl->future);
-        if (status != NVIMGCODEC_STATUS_SUCCESS)
+        #ifdef DEBUG
+        fmt::print("❌ Failed to wait for batch decode (status: {})\n", static_cast<int>(status));
+        #endif
+        // No manual cleanup — ~BatchDecodeStateImpl handles it.
+        return results;
+    }
+
+    // Synchronize stream if using GPU
+    if (impl->use_device_memory)
+    {
+        cudaStreamSynchronize(impl->cuda_stream);
+    }
+
+    // Get processing status for each image
+    std::vector<nvimgcodecProcessingStatus_t> decode_statuses(impl->roi_streams.size(), NVIMGCODEC_PROCESSING_STATUS_UNKNOWN);
+    size_t status_size = impl->roi_streams.size();
+    status = nvimgcodecFutureGetProcessingStatus(impl->future, decode_statuses.data(), &status_size);
+
+    if (status != NVIMGCODEC_STATUS_SUCCESS)
+    {
+        #ifdef DEBUG
+        fmt::print("❌ Failed to get batch processing status (status: {})\n", static_cast<int>(status));
+        #endif
+        return results;  // All results already initialized to failure
+    }
+
+    // Process results
+    for (size_t vi = 0; vi < impl->valid_indices.size(); ++vi)
+    {
+        size_t i = impl->valid_indices[vi];
+        if (vi < decode_statuses.size() && decode_statuses[vi] == NVIMGCODEC_PROCESSING_STATUS_SUCCESS)
         {
-            #ifdef DEBUG
-            fmt::print("❌ Failed to wait for batch decode (status: {})\n", static_cast<int>(status));
-            #endif
-            // Clean up resources
-            nvimgcodecFutureDestroy(impl->future);
-            impl->future = nullptr;
             if (impl->owns_buffers)
             {
-                for (void* buf : impl->buffers)
+                // Internally-allocated buffers: transfer ownership to result
+                if (vi < impl->buffers.size() && impl->buffers[vi])
                 {
-                    if (buf)
-                    {
-                        if (impl->use_device_memory)
-                            cudaFree(buf);
-                        else
-                            cucim_free(buf);
-                    }
-                }
-            }
-            return results;
-        }
-
-        // Synchronize stream if using GPU
-        if (impl->use_device_memory)
-        {
-            cudaStreamSynchronize(impl->cuda_stream);
-        }
-
-        // Get processing status for each image
-        std::vector<nvimgcodecProcessingStatus_t> decode_statuses(impl->roi_streams.size(), NVIMGCODEC_PROCESSING_STATUS_UNKNOWN);
-        size_t status_size = impl->roi_streams.size();
-        status = nvimgcodecFutureGetProcessingStatus(impl->future, decode_statuses.data(), &status_size);
-
-        if (status != NVIMGCODEC_STATUS_SUCCESS)
-        {
-            #ifdef DEBUG
-            fmt::print("❌ Failed to get batch processing status (status: {})\n", static_cast<int>(status));
-            #endif
-            return results;  // All results already initialized to failure
-        }
-
-        // Process results
-        for (size_t vi = 0; vi < impl->valid_indices.size(); ++vi)
-        {
-            size_t i = impl->valid_indices[vi];
-            if (vi < decode_statuses.size() && decode_statuses[vi] == NVIMGCODEC_PROCESSING_STATUS_SUCCESS)
-            {
-                if (impl->owns_buffers)
-                {
-                    // Internally-allocated buffers: transfer ownership to result
-                    if (vi < impl->buffers.size() && impl->buffers[vi])
-                    {
-                        results[i].buffer = reinterpret_cast<uint8_t*>(impl->buffers[vi]);
-                        results[i].buffer_size = impl->buffer_sizes[vi];
-                        results[i].success = true;
-                        impl->buffers[vi] = nullptr;
-                    }
-                }
-                else
-                {
-                    // Caller-provided buffers: data is already in place
-                    results[i].buffer = nullptr;  // Caller owns the buffer
+                    results[i].buffer = reinterpret_cast<uint8_t*>(impl->buffers[vi]);
                     results[i].buffer_size = impl->buffer_sizes[vi];
                     results[i].success = true;
+                    impl->buffers[vi] = nullptr;
                 }
             }
+            else
+            {
+                // Caller-provided buffers: data is already in place
+                results[i].buffer = nullptr;  // Caller owns the buffer
+                results[i].buffer_size = impl->buffer_sizes[vi];
+                results[i].success = true;
+            }
         }
-
-        // No manual cleanup needed — ~BatchDecodeStateImpl handles
-        // future destruction and owned buffer cleanup.
-
-        #ifdef DEBUG
-        size_t success_count = 0;
-        for (const auto& r : results) if (r.success) ++success_count;
-        fmt::print("✅ Batch decode complete: {}/{} regions successful\n", success_count, impl->batch_size);
-        #endif
     }
-    catch (const std::exception& e)
-    {
-        #ifdef DEBUG
-        fmt::print("❌ Exception in wait_batch_decode: {}\n", e.what());
-        #endif
-    }
+
+    #ifdef DEBUG
+    size_t success_count = 0;
+    for (const auto& r : results) if (r.success) ++success_count;
+    fmt::print("✅ Batch decode complete: {}/{} regions successful\n", success_count, impl->batch_size);
+    #endif
 
     return results;
 }
