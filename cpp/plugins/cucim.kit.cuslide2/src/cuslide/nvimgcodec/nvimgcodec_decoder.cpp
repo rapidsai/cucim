@@ -1132,29 +1132,8 @@ std::vector<BatchDecodeResult> wait_batch_decode(BatchDecodeState& state)
             }
         }
 
-        // Clean up future
-        nvimgcodecFutureDestroy(impl->future);
-        impl->future = nullptr;
-
-        // Clean up any remaining owned buffers (failed decodes)
-        if (impl->owns_buffers)
-        {
-            for (void* buf : impl->buffers)
-            {
-                if (buf)
-                {
-                    if (impl->use_device_memory)
-                        cudaFree(buf);
-                    else
-                        cucim_free(buf);
-                }
-            }
-        }
-        impl->buffers.clear();
-        impl->roi_streams.clear();
-        impl->images.clear();
-        impl->roi_streams_raii.clear();
-        impl->images_raii.clear();
+        // No manual cleanup needed — ~BatchDecodeStateImpl handles
+        // future destruction and owned buffer cleanup.
 
         #ifdef DEBUG
         size_t success_count = 0;
