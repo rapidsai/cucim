@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import functools
@@ -292,7 +292,7 @@ def hessian_matrix(
         forward order of the image axes in gradient computation. 'rc' indicates
         the use of the first axis initially (Hrr, Hrc, Hcc), whilst 'xy'
         indicates the usage of the last axis initially (Hxx, Hxy, Hyy).
-    use_gaussian_derivatives : boolean, optional
+    use_gaussian_derivatives : bool, optional
         Indicates whether the Hessian is computed by convolving with Gaussian
         derivatives, or by a simple finite-difference operation.
 
@@ -543,7 +543,7 @@ def _image_orthogonal_matrix22_eigvals(
         example, ``M01 = M[0, 1]``.
     sort : {"ascending", "descending"}, optional
         Eigenvalues should be sorted in the specified order.
-    abs_sort : boolean, optional
+    abs_sort : bool, optional
         If ``True``, sort based on the absolute values.
 
     References
@@ -676,7 +676,7 @@ def _image_orthogonal_matrix33_eigvals(
         shown above. For example, ``d = M[0, 1]``.
     sort : {"ascending", "descending"}, optional
         Eigenvalues should be sorted in the specified order.
-    abs_sort : boolean, optional
+    abs_sort : bool, optional
         If ``True``, sort based on the absolute values.
 
     References
@@ -707,7 +707,7 @@ def _symmetric_compute_eigenvalues(S_elems, sort="descending", abs_sort=False):
         `hessian_matrix` or `structure_tensor`.
     sort : {"ascending", "descending"}, optional
         Eigenvalues should be sorted in the specified order.
-    abs_sort : boolean, optional
+    abs_sort : bool, optional
         If ``True``, sort based on the absolute values.
 
     Returns

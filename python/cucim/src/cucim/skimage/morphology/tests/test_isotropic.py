@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2022-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import cupy as cp
@@ -18,16 +18,14 @@ bw_img = img > 100 / 255.0
 def test_non_square_image():
     isotropic_res = morphology.isotropic_erosion(bw_img[:100, :200], 3)
     binary_res = img_as_bool(
-        morphology.binary_erosion(bw_img[:100, :200], morphology.disk(3))
+        morphology.erosion(bw_img[:100, :200], morphology.disk(3))
     )
     assert_array_equal(isotropic_res, binary_res)
 
 
 def test_isotropic_erosion():
     isotropic_res = morphology.isotropic_erosion(bw_img, 3)
-    binary_res = img_as_bool(
-        morphology.binary_erosion(bw_img, morphology.disk(3))
-    )
+    binary_res = img_as_bool(morphology.erosion(bw_img, morphology.disk(3)))
     assert_array_equal(isotropic_res, binary_res)
 
 
@@ -52,34 +50,26 @@ def _disk_with_spacing(
 def test_isotropic_erosion_spacing():
     isotropic_res = morphology.isotropic_dilation(bw_img, 6, spacing=(1, 2))
     binary_res = img_as_bool(
-        morphology.binary_dilation(
-            bw_img, _disk_with_spacing(6, spacing=(1, 2))
-        )
+        morphology.dilation(bw_img, _disk_with_spacing(6, spacing=(1, 2)))
     )
     assert_array_equal(isotropic_res, binary_res)
 
 
 def test_isotropic_dilation():
     isotropic_res = morphology.isotropic_dilation(bw_img, 3)
-    binary_res = img_as_bool(
-        morphology.binary_dilation(bw_img, morphology.disk(3))
-    )
+    binary_res = img_as_bool(morphology.dilation(bw_img, morphology.disk(3)))
     assert_array_equal(isotropic_res, binary_res)
 
 
 def test_isotropic_closing():
     isotropic_res = morphology.isotropic_closing(bw_img, 3)
-    binary_res = img_as_bool(
-        morphology.binary_closing(bw_img, morphology.disk(3))
-    )
+    binary_res = img_as_bool(morphology.closing(bw_img, morphology.disk(3)))
     assert_array_equal(isotropic_res, binary_res)
 
 
 def test_isotropic_opening():
     isotropic_res = morphology.isotropic_opening(bw_img, 3)
-    binary_res = img_as_bool(
-        morphology.binary_opening(bw_img, morphology.disk(3))
-    )
+    binary_res = img_as_bool(morphology.opening(bw_img, morphology.disk(3)))
     assert_array_equal(isotropic_res, binary_res)
 
 
@@ -87,7 +77,7 @@ def test_footprint_overflow():
     img = cp.zeros((20, 20), dtype=bool)
     img[2:19, 2:19] = True
     isotropic_res = morphology.isotropic_erosion(img, 9)
-    binary_res = img_as_bool(morphology.binary_erosion(img, morphology.disk(9)))
+    binary_res = img_as_bool(morphology.erosion(img, morphology.disk(9)))
     assert_array_equal(isotropic_res, binary_res)
 
 

@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2022-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import cupy as cp
@@ -13,7 +13,6 @@ from skimage import data, morphology as morphology_cpu
 
 from cucim.skimage import color, morphology, transform
 from cucim.skimage._shared._warnings import expected_warnings
-from cucim.skimage._shared.testing import assert_stacklevel
 from cucim.skimage.morphology import footprint_rectangle, gray
 from cucim.skimage.util import img_as_ubyte, img_as_uint
 
@@ -448,7 +447,7 @@ def test_diamond_decomposition(cam_image, function, radius, decomposition):
 @pytest.mark.parametrize("n", (0, 1, 2, 3))
 @pytest.mark.parametrize("decomposition", ["sequence"])
 @pytest.mark.filterwarnings(
-    "ignore:.*falling back to decomposition='separable':UserWarning:skimage"
+    "ignore:.*falling back to decomposition='separable':UserWarning"
 )
 def test_octagon_decomposition(cam_image, function, m, n, decomposition):
     """Validate footprint decomposition for various shapes.
@@ -544,16 +543,3 @@ def test_tuple_as_footprint(function, ndim, odd_only):
     expected = func(img, footprint=footprint_ndarray)
     out = func(img, footprint=footprint_shape)
     testing.assert_array_equal(expected, out)
-
-
-@pytest.mark.parametrize("func", [morphology.erosion, morphology.dilation])
-@pytest.mark.parametrize("name", ["shift_x", "shift_y"])
-@pytest.mark.parametrize("value", [True, False, None])
-def test_deprecated_shift(func, name, value):
-    img = cp.ones(10)
-    func(img)  # Shouldn't warn
-
-    regex = "`shift_x` and `shift_y` are deprecated"
-    with pytest.warns(FutureWarning, match=regex) as record:
-        func(img, **{name: value})
-    assert_stacklevel(record)

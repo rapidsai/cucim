@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import cupy as cp
@@ -95,10 +95,10 @@ def random_noise(image, mode="gaussian", rng=None, clip=True, **kwargs):
         Note: `cupy.random.Generator` is not yet fully supported. Please use an
         integer seed instead.
     clip : bool, optional
-        If True (default), the output will be clipped after noise applied
-        for modes `'speckle'`, `'poisson'`, and `'gaussian'`. This is
-        needed to maintain the proper image data range. If False, clipping
-        is not applied, and the output may extend beyond the range [-1, 1].
+        If True (default), the output will be clipped after noise is applied.
+        This may be needed to maintain the proper image data range.
+        If False, clipping is not applied, and the output may extend beyond
+        the range [-1, 1].
     mean : float, optional
         Mean of random distribution. Used in 'gaussian' and 'speckle'.
         Default : 0.
@@ -237,6 +237,7 @@ def random_noise(image, mode="gaussian", rng=None, clip=True, **kwargs):
             rng=rng,
             amount=kwargs["amount"],
             salt_vs_pepper=1.0,
+            clip=False,
         )
 
     elif mode == "pepper":
@@ -247,6 +248,7 @@ def random_noise(image, mode="gaussian", rng=None, clip=True, **kwargs):
             rng=rng,
             amount=kwargs["amount"],
             salt_vs_pepper=0.0,
+            clip=False,
         )
 
     elif mode == "s&p":
