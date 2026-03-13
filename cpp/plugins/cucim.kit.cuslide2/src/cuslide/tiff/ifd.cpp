@@ -35,12 +35,7 @@
 #include "tiff_constants.h"
 
 #ifdef CUCIM_HAS_NVIMGCODEC
-// Include nvimgcodec_processor.h BEFORE opening cuslide::tiff namespace
-// This header opens cuslide2::loader namespace but closes it properly
-// We need to ensure we're in global namespace when including it
 #include "cuslide/loader/nvimgcodec_processor.h"
-// Explicitly ensure we're back in global namespace
-// (The header should have closed cuslide2::loader, but be explicit)
 #endif
 
 namespace cuslide::tiff
