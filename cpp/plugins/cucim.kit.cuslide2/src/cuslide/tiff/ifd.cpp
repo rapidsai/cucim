@@ -339,8 +339,6 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
 
         raster_size *= batch_size;
 
-        const IFD* ifd = this;
-
         // Reconstruct location unique_ptr
         std::unique_ptr<std::vector<int64_t>>* location_unique =
             reinterpret_cast<std::unique_ptr<std::vector<int64_t>>*>(request->location_unique);
@@ -353,64 +351,35 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
         std::unique_ptr<std::vector<int64_t>> request_size = std::move(*size_unique);
         delete size_unique;
 
-        // Create batch processor using nvImageCodec (GPU only)
-        // For CPU output, batch_processor remains nullptr and load_func is used for per-tile decoding
+        // Create batch processor using nvImageCodec for both CPU and GPU output.
+        // NvImageCodecProcessor handles buffer placement via out_device:
+        //   - GPU: STRIDED_DEVICE buffers, custom CUDA stream
+        //   - CPU: STRIDED_HOST buffers, nvImageCodec handles GPU decode → host copy
         std::unique_ptr<cucim::loader::BatchDataProcessor> batch_processor;
-        bool use_batch_processor = false;
 
         if (out_device.type() == cucim::io::DeviceType::kCUDA)
         {
             raster_type = cucim::io::DeviceType::kCUDA;
-
-            // Create NvImageCodecProcessor for GPU-accelerated batch decoding
-            auto nvimgcodec_processor = std::make_unique<cuslide2::loader::NvImageCodecProcessor>(
-                *tiff->nvimgcodec_parser_,
-                request_location->data(),
-                request_size->data(),
-                adjusted_location_len,
-                batch_size,
-                static_cast<uint32_t>(ifd_index_),
-                out_device);
-
-            // Update prefetch_factor from processor
-            prefetch_factor = nvimgcodec_processor->preferred_loader_prefetch_factor();
-
-            batch_processor = std::move(nvimgcodec_processor);
-            use_batch_processor = true;
         }
 
-        // Create load function for per-tile decoding.
-        // When the batch processor is active (GPU path), load_func is a no-op
-        // because NvImageCodecProcessor handles all decoding — calling both
-        // would decode each tile twice into different buffers.
-        auto load_func = [tiff, ifd, location, w, h, out_device, use_batch_processor](
-                             cucim::loader::ThreadBatchDataLoader* loader_ptr, uint64_t location_index) {
-            if (use_batch_processor)
-            {
-                return;  // Batch processor handles GPU decoding
-            }
+        auto nvimgcodec_processor = std::make_unique<cuslide2::loader::NvImageCodecProcessor>(
+            *tiff->nvimgcodec_parser_,
+            request_location->data(),
+            request_size->data(),
+            adjusted_location_len,
+            batch_size,
+            static_cast<uint32_t>(ifd_index_),
+            out_device);
 
-            uint8_t* raster_ptr = loader_ptr->raster_pointer(location_index);
+        prefetch_factor = nvimgcodec_processor->preferred_loader_prefetch_factor();
+        batch_processor = std::move(nvimgcodec_processor);
 
-            int64_t sx = location[location_index * 2];
-            int64_t sy = location[location_index * 2 + 1];
-
-            // Get IFD info from TiffFileParser
-            const auto& ifd_info = tiff->nvimgcodec_parser_->get_ifd(static_cast<uint32_t>(ifd->ifd_index_));
-
-            // Synchronous single-region decode for CPU output path
-            bool success = ::cuslide2::nvimgcodec::decode_ifd_region_nvimgcodec(
-                ifd_info,
-                tiff->nvimgcodec_parser_->get_main_code_stream(),
-                static_cast<uint32_t>(sx), static_cast<uint32_t>(sy),
-                static_cast<uint32_t>(w), static_cast<uint32_t>(h),
-                raster_ptr,
-                out_device);
-
-            if (!success)
-            {
-                fmt::print(stderr, "[Error] Failed to decode ROI at ({}, {}) {}x{}\n", sx, sy, w, h);
-            }
+        // load_func is a no-op because NvImageCodecProcessor handles all decoding
+        // (both CPU and GPU). The ThreadBatchDataLoader still requires a load_func
+        // but it is never called when a batch_processor is active.
+        auto load_func = [](cucim::loader::ThreadBatchDataLoader* /*loader_ptr*/,
+                            uint64_t /*location_index*/) {
+            // No-op: NvImageCodecProcessor handles decoding for all device types.
         };
 
         // Create ThreadBatchDataLoader
@@ -419,12 +388,10 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
             std::move(request_location), std::move(request_size),
             adjusted_location_len, one_raster_size, batch_size, prefetch_factor, num_workers);
 
-        // When using batch processor (GPU), load_func is a no-op so load_size
-        // doesn't matter for decode work, but the loader still needs it for
-        // bookkeeping.  For CPU, use the prefetch logic.
-        const uint32_t load_size = use_batch_processor ?
-            std::min(static_cast<uint64_t>(1), adjusted_location_len) :
-            std::min(static_cast<uint64_t>(batch_size) * (1 + prefetch_factor), adjusted_location_len);
+        // load_func is a no-op (batch processor handles decoding), so load_size
+        // only affects bookkeeping in the loader.
+        const uint32_t load_size =
+            std::min(static_cast<uint64_t>(1), adjusted_location_len);
 
         loader->request(load_size);
 
