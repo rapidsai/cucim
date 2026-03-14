@@ -69,10 +69,22 @@ IFD::IFD(TIFF* tiff, uint16_t index, ifd_offset_t offset) : tiff_(tiff), ifd_ind
             compression_ = parse_codec_to_compression(ifd_info.codec);
             codec_name_ = ifd_info.codec;
 
-            // Assume tiled if tile dimensions are provided in IfdInfo (check nvImageCodec metadata)
-            // For now, use a heuristic: most whole-slide images are tiled
-            tile_width_ = 256;  // Default tile size (can be overridden from IfdInfo metadata)
-            tile_height_ = 256;
+            // Try to read tile dimensions from extracted TIFF tags
+            tile_width_ = 0;
+            tile_height_ = 0;
+            if (tiff->nvimgcodec_parser_) {
+                ::std::string tw = tiff->nvimgcodec_parser_->get_tiff_tag(index, "TILEWIDTH");
+                ::std::string th = tiff->nvimgcodec_parser_->get_tiff_tag(index, "TILELENGTH");
+                if (!tw.empty() && !th.empty()) {
+                    try {
+                        tile_width_ = ::std::stoul(tw);
+                        tile_height_ = ::std::stoul(th);
+                    } catch (...) {
+                        tile_width_ = 0;
+                        tile_height_ = 0;
+                    }
+                }
+            }
 
             // nvImageCodec members
             nvimgcodec_sub_stream_ = ifd_info.sub_code_stream;
@@ -136,8 +148,8 @@ IFD::IFD(TIFF* tiff, uint16_t index, const ::cuslide2::nvimgcodec::IfdInfo& ifd_
     // Extract TIFF tags from TiffFileParser
     if (tiff->nvimgcodec_parser_) {
         // Software and Model tags
-        software_ = tiff->nvimgcodec_parser_->get_tiff_tag(index, "Software");
-        model_ = tiff->nvimgcodec_parser_->get_tiff_tag(index, "Model");
+        software_ = tiff->nvimgcodec_parser_->get_tiff_tag(index, "SOFTWARE");
+        model_ = tiff->nvimgcodec_parser_->get_tiff_tag(index, "MODEL");
 
         // SUBFILETYPE for IFD classification
         int subfile_type = tiff->nvimgcodec_parser_->get_subfile_type(index);
@@ -149,7 +161,7 @@ IFD::IFD(TIFF* tiff, uint16_t index, const ::cuslide2::nvimgcodec::IfdInfo& ifd_
         }
 
         // Check for JPEGTables (abbreviated JPEG indicator)
-        ::std::string jpeg_tables = tiff->nvimgcodec_parser_->get_tiff_tag(index, "JPEGTables");
+        ::std::string jpeg_tables = tiff->nvimgcodec_parser_->get_tiff_tag(index, "JPEGTABLES");
         if (!jpeg_tables.empty()) {
             #ifdef DEBUG
             ::fmt::print("   ✅ JPEGTables detected (abbreviated JPEG)\n");
@@ -157,8 +169,8 @@ IFD::IFD(TIFF* tiff, uint16_t index, const ::cuslide2::nvimgcodec::IfdInfo& ifd_
         }
 
         // Tile dimensions (if available from TIFF tags)
-        ::std::string tile_w_str = tiff->nvimgcodec_parser_->get_tiff_tag(index, "TileWidth");
-        ::std::string tile_h_str = tiff->nvimgcodec_parser_->get_tiff_tag(index, "TileLength");
+        ::std::string tile_w_str = tiff->nvimgcodec_parser_->get_tiff_tag(index, "TILEWIDTH");
+        ::std::string tile_h_str = tiff->nvimgcodec_parser_->get_tiff_tag(index, "TILELENGTH");
 
         if (!tile_w_str.empty() && !tile_h_str.empty()) {
             try {
