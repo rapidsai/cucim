@@ -261,10 +261,29 @@ def test_aperio_svs(svs_path, plugin_lib):
                     speedup = cpu_batch_time / gpu_batch_time
                     print(f"  🎯 Batch speedup: {speedup:.2f}x")
 
-                # Verify tile shapes
-                if gpu_tiles:
-                    print(f"  Tile shape: {gpu_tiles[0].shape}")
-                    print(f"  Tile device: {gpu_tiles[0].device}")
+                # Verify pixel correctness: compare GPU tiles against CPU tiles
+                import cupy as cp
+                import numpy as np
+
+                if gpu_tiles and cpu_tiles and len(gpu_tiles) == len(cpu_tiles):
+                    print(f"  Verifying pixel correctness ({len(gpu_tiles)} tiles)...")
+                    mismatch_count = 0
+                    for idx, (gpu_t, cpu_t) in enumerate(zip(gpu_tiles, cpu_tiles)):
+                        gpu_np = cp.asnumpy(cp.asarray(gpu_t))
+                        cpu_np = np.asarray(cpu_t)
+                        if gpu_np.shape != cpu_np.shape:
+                            print(f"    ❌ Tile {idx}: shape mismatch GPU={gpu_np.shape} vs CPU={cpu_np.shape}")
+                            mismatch_count += 1
+                        elif not np.array_equal(gpu_np, cpu_np):
+                            max_diff = np.max(np.abs(gpu_np.astype(int) - cpu_np.astype(int)))
+                            print(f"    ❌ Tile {idx} at location {locations[idx]}: pixel mismatch (max diff={max_diff})")
+                            mismatch_count += 1
+                    if mismatch_count == 0:
+                        print(f"    ✅ All {len(gpu_tiles)} tiles match (GPU == CPU)")
+                    else:
+                        print(f"    ⚠️  {mismatch_count}/{len(gpu_tiles)} tiles have mismatches")
+                elif gpu_tiles:
+                    print(f"  ⚠️  Cannot verify: GPU={len(gpu_tiles)} tiles, CPU={len(cpu_tiles) if cpu_tiles else 0} tiles")
 
         except Exception as e:
             print(f"  ⚠️  Batch decode test failed: {e}")
