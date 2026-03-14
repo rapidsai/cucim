@@ -58,6 +58,11 @@ std::shared_ptr<cucim::cache::ImageCacheValue> BatchDataProcessor::wait_for_proc
     return std::shared_ptr<cucim::cache::ImageCacheValue>();
 }
 
+void BatchDataProcessor::set_output_buffer_provider(OutputBufferProvider /*provider*/)
+{
+    // Default: unused. Override in subclasses that support direct-to-raster output.
+}
+
 void BatchDataProcessor::shutdown()
 {
 }
