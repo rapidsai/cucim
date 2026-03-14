@@ -350,6 +350,108 @@ def test_philips_tiff(file_path, plugin_lib):
         traceback.print_exc()
     print()
 
+    # ==================================================================
+    # Test tile-level caching (per-process image cache)
+    # Exercises the tile-level cache in ifd.cpp: ROI -> tile grid
+    # decomposition, per-tile cache lookup, miss-decode-insert,
+    # and warm-read cache hits.
+    #
+    # NOTE: Tile-level caching requires that the cuslide2 plugin
+    # successfully extracts TileWidth/TileLength TIFF tags via
+    # nvImageCodec (>= 0.7.0). If tile sizes are (0,0), the
+    # caching code path is not entered and the test is skipped.
+    # ==================================================================
+    print("💾 Testing tile-level caching...")
+    try:
+        # Check tile sizes — caching requires non-zero tile dimensions
+        level_tile_sizes = img.resolutions.get("level_tile_sizes", ())
+        has_tile_dims = (
+            len(level_tile_sizes) > 0
+            and level_tile_sizes[0][0] > 0
+            and level_tile_sizes[0][1] > 0
+        )
+        print(f"  Tile sizes (level 0): {level_tile_sizes[0] if level_tile_sizes else 'N/A'}")
+
+        if not has_tile_dims:
+            print(
+                "  ⚠️  Tile dimensions are (0,0) — tile-level caching path is "
+                "inactive.\n"
+                "     This occurs when nvImageCodec does not expose "
+                "TileWidth/TileLength TIFF tags.\n"
+                "     Skipping caching assertions (decode still works, "
+                "just without cache)."
+            )
+        else:
+            # Enable per-process cache (256 MB) and stat recording.
+            # Re-open the image after configuring the cache so the
+            # IFD picks up the active cache manager.
+            CuImage.cache("per_process", memory_capacity=256)
+            CuImage.cache().record(True)
+            img_cached = CuImage(file_path)
+            print(f"  Cache type: {CuImage.cache().type}")
+            print(f"  Stat recording: {CuImage.cache().record()}")
+
+            import numpy as np
+
+            # --- Cold read (all cache misses) ---
+            region_cold = img_cached.read_region((0, 0), (512, 512), level=0)
+            cold_hits = CuImage.cache().hit_count
+            cold_misses = CuImage.cache().miss_count
+            print(f"\n  🧊 Cold read (512x512):")
+            print(f"     Hits: {cold_hits}, Misses: {cold_misses}")
+            assert cold_misses > 0, "Expected cache misses on cold read"
+
+            # --- Warm read (same region -> all cache hits) ---
+            start = time.time()
+            region_warm = img_cached.read_region((0, 0), (512, 512), level=0)
+            warm_time = time.time() - start
+            warm_hits = CuImage.cache().hit_count
+            warm_misses = CuImage.cache().miss_count
+            new_hits = warm_hits - cold_hits
+            new_misses = warm_misses - cold_misses
+            print(f"\n  🔥 Warm read (same region):")
+            print(
+                f"     Hits: {warm_hits} (+{new_hits}), "
+                f"Misses: {warm_misses} (+{new_misses})"
+            )
+            print(f"     Time: {warm_time * 1000:.1f} ms")
+            assert new_hits > 0, "Expected cache hits on warm read"
+            assert new_misses == 0, "Expected zero new misses on warm read"
+
+            # --- Data correctness: cold vs warm must match ---
+            arr_cold = np.asarray(region_cold)
+            arr_warm = np.asarray(region_warm)
+            assert np.array_equal(arr_cold, arr_warm), "Cold and warm reads differ!"
+            print(f"     ✅ Data matches (shape={arr_cold.shape})")
+
+            # --- Overlapping read (partial hit: some tiles shared) ---
+            prev_hits = CuImage.cache().hit_count
+            prev_misses = CuImage.cache().miss_count
+            region_overlap = img_cached.read_region(
+                (128, 128), (512, 512), level=0
+            )
+            overlap_hits = CuImage.cache().hit_count
+            overlap_misses = CuImage.cache().miss_count
+            print(f"\n  🔀 Overlapping read (offset 128,128):")
+            print(
+                f"     Hits: {overlap_hits} (+{overlap_hits - prev_hits}), "
+                f"Misses: {overlap_misses} (+{overlap_misses - prev_misses})"
+            )
+
+            # --- Summary ---
+            print(f"\n  📊 Cache summary:")
+            print(f"     Total hits:   {CuImage.cache().hit_count}")
+            print(f"     Total misses: {CuImage.cache().miss_count}")
+            print(f"     Cache size:   {CuImage.cache().size} tiles")
+            print("  ✅ Tile-level caching test passed!")
+
+    except Exception as e:
+        print(f"  ❌ Caching test failed: {e}")
+        import traceback
+
+        traceback.print_exc()
+    print()
+
     print("✅ Philips TIFF test completed!")
 
 
