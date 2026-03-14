@@ -173,6 +173,16 @@ std::vector<BatchDecodeResult> decode_batch_regions_nvimgcodec(
  * @note The returned state must be passed to wait_batch_decode() to complete the operation.
  * @note Caller is responsible for cleaning up resources via wait_batch_decode().
  */
+/**
+ * Schedule batch decoding with optional caller-provided output buffers.
+ *
+ * When @p output_buffers is non-empty the decoder writes directly into those
+ * buffers (one per region, same order).  The caller retains ownership; the
+ * returned BatchDecodeState will NOT free them on destruction.
+ *
+ * When @p output_buffers is empty (default), the function allocates its own
+ * buffers, which are freed by wait_batch_decode() or ~BatchDecodeState.
+ */
 BatchDecodeState schedule_batch_decode(
     const IfdInfo& ifd_info,
     nvimgcodecCodeStream_t main_code_stream,
