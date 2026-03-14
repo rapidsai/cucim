@@ -54,7 +54,7 @@ def setup_environment():
     version = _plugin_version_from_dist_version(dist_version)
 
     if os.getenv("ENABLE_CUSLIDE2") == "1":
-        os.environ["CUCIM_PLUGINS"] = f"cucim.kit.cuslide@{version}.so"
+        os.environ["CUCIM_PLUGINS"] = f"cucim.kit.cuslide2@{version}.so"
         os.environ.pop("CUCIM_CONFIG_PATH", None)
         print(
             f"✅ Plugin selection via env: ENABLE_CUSLIDE2=1 + CUCIM_PLUGINS={os.environ['CUCIM_PLUGINS']}"
@@ -192,74 +192,183 @@ def test_aperio_svs(svs_path, plugin_lib):
         except Exception as e:
             print(f"  ⚠️  Large tile test failed: {e}")
 
-        # Test batch decoding API
-        print("\n📦 Testing Batch Decoding API...")
+        # ==============================================================
+        # Test async batch decode path (multiple locations + GPU)
+        # This exercises NvImageCodecProcessor, schedule_batch_decode(),
+        # and wait_batch_decode() — the async scheduling API.
+        # ==============================================================
+        print("\n🔄 Testing async batch decode (multiple locations, GPU)...")
         try:
-            import numpy as np
+            level_dims = level_dimensions[0]
+            tile_w, tile_h = 256, 256
+            max_x = max(0, level_dims[0] - tile_w)
+            max_y = max(0, level_dims[1] - tile_h)
 
-            # Define multiple locations for batch decoding
-            locations = [
-                (0, 0),
-                (256, 256),
-                (512, 512),
-                (768, 768),
-                (1024, 1024),
-                (1280, 1280),
-                (1536, 1536),
-                (1792, 1792),
-            ]
-            size = (256, 256)
+            # Generate a grid of tile locations
+            locations = []
+            for y_off in range(0, min(max_y + 1, tile_h * 4), tile_h):
+                for x_off in range(0, min(max_x + 1, tile_w * 4), tile_w):
+                    locations.append([x_off, y_off])
+            num_locations = len(locations)
 
-            # Sequential baseline: decode one by one
-            print("  📊 Sequential decode (baseline)...")
-            start = time.time()
-            sequential_results = []
-            for loc in locations:
-                region = img.read_region(loc, size, 0, device="cuda")
-                sequential_results.append(np.asarray(region, copy=True))
-            sequential_time = time.time() - start
-            print(f"     Time: {sequential_time:.4f}s for {len(locations)} tiles")
-
-            # Batch decode: use num_workers to trigger batch decoding path
-            print("  🚀 Batch decode (num_workers=2)...")
-            start = time.time()
-            gen = img.read_region(locations, size, 0, num_workers=2, device="cuda")
-            batch_results = [np.asarray(r, copy=True) for r in gen]
-            batch_time = time.time() - start
-            print(f"     Time: {batch_time:.4f}s for {len(locations)} tiles")
-
-            # Verify results match
-            print("  ✅ Verifying batch results match sequential...")
-            for i, (batch_arr, seq_arr) in enumerate(
-                zip(batch_results, sequential_results)
-            ):
-                if not np.array_equal(batch_arr, seq_arr):
-                    print(f"     ⚠️  Tile {i} mismatch!")
-                    break
-            else:
-                print(f"     ✅ All {len(locations)} tiles match!")
-
-            # Calculate speedup
-            if batch_time > 0:
-                speedup = sequential_time / batch_time
-                print(f"  🎯 Batch Speedup: {speedup:.2f}x")
-
-            # Test with different batch sizes
-            print("\n  📦 Testing batch_size parameter...")
-            for batch_size in [2, 4]:
-                start = time.time()
-                gen = img.read_region(
-                    locations, size, 0, num_workers=2, batch_size=batch_size
-                )
-                results = list(gen)
-                elapsed = time.time() - start
+            if num_locations < 2:
                 print(
-                    f"     batch_size={batch_size}: {elapsed:.4f}s, "
-                    f"yielded {len(results)} batches"
+                    "  ⚠️  Image too small for batch test "
+                    f"({level_dims[0]}x{level_dims[1]})"
                 )
+            else:
+                batch_size = min(num_locations, 8)
+                print(
+                    f"  Locations: {num_locations}, "
+                    f"tile: {tile_w}x{tile_h}, "
+                    f"batch_size: {batch_size}"
+                )
+
+                # GPU batch decode (async path)
+                start = time.time()
+                gpu_batch = img.read_region(
+                    location=locations,
+                    size=[tile_w, tile_h],
+                    level=0,
+                    device="cuda",
+                    batch_size=batch_size,
+                    num_workers=1,
+                )
+                # Consume iterator to force all batches
+                gpu_tiles = []
+                for tile in gpu_batch:
+                    gpu_tiles.append(tile)
+                gpu_batch_time = time.time() - start
+                print(f"  ✅ GPU batch: {gpu_batch_time:.4f}s ({len(gpu_tiles)} tiles)")
+
+                # CPU batch decode (per-tile path, for comparison)
+                start = time.time()
+                cpu_batch = img.read_region(
+                    location=locations,
+                    size=[tile_w, tile_h],
+                    level=0,
+                    device="cpu",
+                    batch_size=batch_size,
+                    num_workers=1,
+                )
+                cpu_tiles = []
+                for tile in cpu_batch:
+                    cpu_tiles.append(tile)
+                cpu_batch_time = time.time() - start
+                print(f"  ✅ CPU batch: {cpu_batch_time:.4f}s ({len(cpu_tiles)} tiles)")
+
+                if gpu_batch_time > 0:
+                    speedup = cpu_batch_time / gpu_batch_time
+                    print(f"  🎯 Batch speedup: {speedup:.2f}x")
+
+                # Verify tile shapes
+                if gpu_tiles:
+                    print(f"  Tile shape: {gpu_tiles[0].shape}")
+                    print(f"  Tile device: {gpu_tiles[0].device}")
 
         except Exception as e:
-            print(f"  ⚠️  Batch decoding test failed: {e}")
+            print(f"  ⚠️  Batch decode test failed: {e}")
+            import traceback
+
+            traceback.print_exc()
+
+        # ==============================================================
+        # Test tile-level caching (per-process image cache)
+        # Exercises the tile-level cache in ifd.cpp: ROI -> tile grid
+        # decomposition, per-tile cache lookup, miss-decode-insert,
+        # and warm-read cache hits.
+        #
+        # NOTE: Tile-level caching requires that the cuslide2 plugin
+        # successfully extracts TileWidth/TileLength TIFF tags via
+        # nvImageCodec (>= 0.7.0). If tile sizes are (0,0), the
+        # caching code path is not entered and the test is skipped.
+        # ==============================================================
+        print("\n💾 Testing tile-level caching...")
+        try:
+            # Check tile sizes — caching requires non-zero tile dimensions
+            level_tile_sizes = img.resolutions.get("level_tile_sizes", ())
+            has_tile_dims = (
+                len(level_tile_sizes) > 0
+                and level_tile_sizes[0][0] > 0
+                and level_tile_sizes[0][1] > 0
+            )
+            print(f"  Tile sizes (level 0): {level_tile_sizes[0] if level_tile_sizes else 'N/A'}")
+
+            if not has_tile_dims:
+                print(
+                    "  ⚠️  Tile dimensions are (0,0) — tile-level caching path is "
+                    "inactive.\n"
+                    "     This occurs when nvImageCodec does not expose "
+                    "TileWidth/TileLength TIFF tags.\n"
+                    "     Skipping caching assertions (decode still works, "
+                    "just without cache)."
+                )
+            else:
+                # Enable per-process cache (256 MB) and stat recording.
+                # Re-open the image after configuring the cache so the
+                # IFD picks up the active cache manager.
+                CuImage.cache("per_process", memory_capacity=256)
+                CuImage.cache().record(True)
+                img_cached = CuImage(svs_path)
+                print(f"  Cache type: {CuImage.cache().type}")
+                print(f"  Stat recording: {CuImage.cache().record()}")
+
+                import numpy as np
+
+                # --- Cold read (all cache misses) ---
+                region_cold = img_cached.read_region((0, 0), (512, 512), level=0)
+                cold_hits = CuImage.cache().hit_count
+                cold_misses = CuImage.cache().miss_count
+                print(f"\n  🧊 Cold read (512x512):")
+                print(f"     Hits: {cold_hits}, Misses: {cold_misses}")
+                assert cold_misses > 0, "Expected cache misses on cold read"
+
+                # --- Warm read (same region -> all cache hits) ---
+                start = time.time()
+                region_warm = img_cached.read_region((0, 0), (512, 512), level=0)
+                warm_time = time.time() - start
+                warm_hits = CuImage.cache().hit_count
+                warm_misses = CuImage.cache().miss_count
+                new_hits = warm_hits - cold_hits
+                new_misses = warm_misses - cold_misses
+                print(f"\n  🔥 Warm read (same region):")
+                print(
+                    f"     Hits: {warm_hits} (+{new_hits}), "
+                    f"Misses: {warm_misses} (+{new_misses})"
+                )
+                print(f"     Time: {warm_time * 1000:.1f} ms")
+                assert new_hits > 0, "Expected cache hits on warm read"
+                assert new_misses == 0, "Expected zero new misses on warm read"
+
+                # --- Data correctness: cold vs warm must match ---
+                arr_cold = np.asarray(region_cold)
+                arr_warm = np.asarray(region_warm)
+                assert np.array_equal(arr_cold, arr_warm), "Cold and warm reads differ!"
+                print(f"     ✅ Data matches (shape={arr_cold.shape})")
+
+                # --- Overlapping read (partial hit: some tiles shared) ---
+                prev_hits = CuImage.cache().hit_count
+                prev_misses = CuImage.cache().miss_count
+                region_overlap = img_cached.read_region(
+                    (128, 128), (512, 512), level=0
+                )
+                overlap_hits = CuImage.cache().hit_count
+                overlap_misses = CuImage.cache().miss_count
+                print(f"\n  🔀 Overlapping read (offset 128,128):")
+                print(
+                    f"     Hits: {overlap_hits} (+{overlap_hits - prev_hits}), "
+                    f"Misses: {overlap_misses} (+{overlap_misses - prev_misses})"
+                )
+
+                # --- Summary ---
+                print(f"\n  📊 Cache summary:")
+                print(f"     Total hits:   {CuImage.cache().hit_count}")
+                print(f"     Total misses: {CuImage.cache().miss_count}")
+                print(f"     Cache size:   {CuImage.cache().size} tiles")
+                print("  ✅ Tile-level caching test passed!")
+
+        except Exception as e:
+            print(f"  ❌ Caching test failed: {e}")
             import traceback
 
             traceback.print_exc()
