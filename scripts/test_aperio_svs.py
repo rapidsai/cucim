@@ -80,6 +80,155 @@ def setup_environment():
     return str(plugin_lib)
 
 
+def _generate_tile_locations(level_dimensions, tile_w=256, tile_h=256):
+    """Generate a grid of tile locations for batch testing."""
+    level_dims = level_dimensions[0]
+    max_x = max(0, level_dims[0] - tile_w)
+    max_y = max(0, level_dims[1] - tile_h)
+
+    locations = []
+    for y_off in range(0, min(max_y + 1, tile_h * 4), tile_h):
+        for x_off in range(0, min(max_x + 1, tile_w * 4), tile_w):
+            locations.append([x_off, y_off])
+    return locations
+
+
+def test_batch_decode_correctness(img, level_dimensions):
+    """Verify that GPU batch-decoded tiles are pixel-identical to CPU-decoded tiles.
+
+    This is the critical correctness test for the NvImageCodecProcessor →
+    ThreadBatchDataLoader handoff.  Each GPU tile is compared against the
+    corresponding CPU tile at the same location.
+    """
+    import cupy as cp
+    import numpy as np
+
+    print("\n🔍 Batch decode correctness test")
+    print("-" * 50)
+
+    tile_w, tile_h = 256, 256
+    locations = _generate_tile_locations(level_dimensions, tile_w, tile_h)
+
+    if len(locations) < 2:
+        print(f"  ⚠️  Image too small for batch correctness test")
+        return True  # Not a failure
+
+    batch_size = min(len(locations), 8)
+    print(f"  Locations: {len(locations)}, tile: {tile_w}x{tile_h}, batch_size: {batch_size}")
+
+    # Decode all tiles via GPU batch path
+    gpu_tiles = list(img.read_region(
+        location=locations, size=[tile_w, tile_h],
+        level=0, device="cuda", batch_size=batch_size, num_workers=1,
+    ))
+
+    # Decode all tiles via CPU batch path (ground truth)
+    cpu_tiles = list(img.read_region(
+        location=locations, size=[tile_w, tile_h],
+        level=0, device="cpu", batch_size=batch_size, num_workers=1,
+    ))
+
+    if len(gpu_tiles) != len(cpu_tiles):
+        print(f"  ❌ Tile count mismatch: GPU={len(gpu_tiles)}, CPU={len(cpu_tiles)}")
+        return False
+
+    mismatch_count = 0
+    for idx, (gpu_t, cpu_t) in enumerate(zip(gpu_tiles, cpu_tiles)):
+        gpu_np = cp.asnumpy(cp.asarray(gpu_t))
+        cpu_np = np.asarray(cpu_t)
+        if gpu_np.shape != cpu_np.shape:
+            print(f"    ❌ Tile {idx} at {locations[idx]}: shape mismatch GPU={gpu_np.shape} vs CPU={cpu_np.shape}")
+            mismatch_count += 1
+        elif not np.array_equal(gpu_np, cpu_np):
+            max_diff = int(np.max(np.abs(gpu_np.astype(int) - cpu_np.astype(int))))
+            print(f"    ❌ Tile {idx} at {locations[idx]}: pixel mismatch (max diff={max_diff})")
+            mismatch_count += 1
+
+    if mismatch_count == 0:
+        print(f"  ✅ All {len(gpu_tiles)} tiles match (GPU == CPU)")
+        return True
+    else:
+        print(f"  ❌ {mismatch_count}/{len(gpu_tiles)} tiles have pixel mismatches")
+        return False
+
+
+def test_batch_decode_performance(img, level_dimensions):
+    """Benchmark GPU vs CPU batch decode throughput.
+
+    This is a timing smoke test — it measures wall-clock time for batch
+    iteration and reports the GPU/CPU speedup ratio.
+    """
+    print("\n⏱️  Batch decode performance test")
+    print("-" * 50)
+
+    tile_w, tile_h = 256, 256
+    locations = _generate_tile_locations(level_dimensions, tile_w, tile_h)
+
+    if len(locations) < 2:
+        print(f"  ⚠️  Image too small for batch performance test")
+        return
+
+    batch_size = min(len(locations), 8)
+    print(f"  Locations: {len(locations)}, tile: {tile_w}x{tile_h}, batch_size: {batch_size}")
+
+    # GPU batch decode
+    start = time.time()
+    gpu_tiles = list(img.read_region(
+        location=locations, size=[tile_w, tile_h],
+        level=0, device="cuda", batch_size=batch_size, num_workers=1,
+    ))
+    gpu_batch_time = time.time() - start
+    print(f"  GPU batch: {gpu_batch_time:.4f}s ({len(gpu_tiles)} tiles)")
+
+    # CPU batch decode
+    start = time.time()
+    cpu_tiles = list(img.read_region(
+        location=locations, size=[tile_w, tile_h],
+        level=0, device="cpu", batch_size=batch_size, num_workers=1,
+    ))
+    cpu_batch_time = time.time() - start
+    print(f"  CPU batch: {cpu_batch_time:.4f}s ({len(cpu_tiles)} tiles)")
+
+    if gpu_batch_time > 0:
+        speedup = cpu_batch_time / gpu_batch_time
+        print(f"  🎯 Batch speedup: {speedup:.2f}x")
+
+    # Single-region comparison (512x512)
+    print("\n  Single-region decode (512x512):")
+    start = time.time()
+    _ = img.read_region([0, 0], [512, 512], 0, device="cuda")
+    gpu_single = time.time() - start
+
+    start = time.time()
+    _ = img.read_region([0, 0], [512, 512], 0, device="cpu")
+    cpu_single = time.time() - start
+
+    print(f"    GPU: {gpu_single:.4f}s, CPU: {cpu_single:.4f}s", end="")
+    if gpu_single > 0:
+        print(f" ({cpu_single / gpu_single:.2f}x)")
+    else:
+        print()
+
+    # Larger region (2048x2048)
+    print("  Single-region decode (2048x2048):")
+    try:
+        start = time.time()
+        _ = img.read_region([0, 0], [2048, 2048], 0, device="cuda")
+        gpu_large = time.time() - start
+
+        start = time.time()
+        _ = img.read_region([0, 0], [2048, 2048], 0, device="cpu")
+        cpu_large = time.time() - start
+
+        print(f"    GPU: {gpu_large:.4f}s, CPU: {cpu_large:.4f}s", end="")
+        if gpu_large > 0:
+            print(f" ({cpu_large / gpu_large:.2f}x)")
+        else:
+            print()
+    except Exception as e:
+        print(f"    ⚠️  Failed: {e}")
+
+
 def test_aperio_svs(svs_path, plugin_lib):
     """Test cuslide2 plugin with an Aperio SVS file"""
 
@@ -125,174 +274,33 @@ def test_aperio_svs(svs_path, plugin_lib):
                 f"  Level {level}: {level_dims[0]}x{level_dims[1]} (downsample: {level_downsample:.1f}x)"
             )
 
-        # Try to read a tile from level 0 (GPU)
-        print("\n🚀 Testing GPU decode (nvImageCodec)...")
-        try:
-            start = time.time()
-            gpu_tile = img.read_region(
-                location=[0, 0], size=[512, 512], level=0, device="cuda"
-            )
-            gpu_time = time.time() - start
-
-            print("✅ GPU decode successful!")
-            print(f"  Time: {gpu_time:.4f}s")
-            print(f"  Shape: {gpu_tile.shape}")
-            print(f"  Device: {gpu_tile.device}")
-        except Exception as e:
-            print(f"⚠️  GPU decode failed: {e}")
-            print("   (This is expected if CUDA is not available)")
-            gpu_time = None
-
-        # Try to read same tile from CPU
-        print("\n🖥️  Testing CPU decode (baseline)...")
-        try:
-            start = time.time()
-            cpu_tile = img.read_region(
-                location=[0, 0], size=[512, 512], level=0, device="cpu"
-            )
-            cpu_time = time.time() - start
-
-            print("✅ CPU decode successful!")
-            print(f"  Time: {cpu_time:.4f}s")
-            print(f"  Shape: {cpu_tile.shape}")
-            print(f"  Device: {cpu_tile.device}")
-
-            # Calculate speedup
-            if gpu_time:
-                speedup = cpu_time / gpu_time
-                print(f"\n🎯 GPU Speedup: {speedup:.2f}x faster than CPU")
-
-                if speedup > 1.5:
-                    print("   🚀 nvImageCodec GPU acceleration is working!")
-                elif speedup > 0.9:
-                    print("   ✅ GPU decode working (speedup may vary by tile size)")
-                else:
-                    print("   ℹ️  CPU was faster for this small tile")
-        except Exception as e:
-            print(f"❌ CPU decode failed: {e}")
-
-        # Test larger tile for better speedup
-        print("\n📏 Testing larger tile (2048x2048)...")
-        try:
-            # GPU
-            start = time.time()
-            _ = img.read_region([0, 0], [2048, 2048], 0, device="cuda")
-            gpu_large_time = time.time() - start
-            print(f"  GPU: {gpu_large_time:.4f}s")
-
-            # CPU
-            start = time.time()
-            _ = img.read_region([0, 0], [2048, 2048], 0, device="cpu")
-            cpu_large_time = time.time() - start
-            print(f"  CPU: {cpu_large_time:.4f}s")
-
-            speedup = cpu_large_time / gpu_large_time
-            print(f"  🎯 Speedup: {speedup:.2f}x")
-
-        except Exception as e:
-            print(f"  ⚠️  Large tile test failed: {e}")
-
         # ==============================================================
-        # Test async batch decode path (multiple locations + GPU)
-        # This exercises NvImageCodecProcessor, schedule_batch_decode(),
-        # and wait_batch_decode() — the async scheduling API.
+        # Correctness test: GPU tiles must match CPU tiles pixel-for-pixel
         # ==============================================================
-        print("\n🔄 Testing async batch decode (multiple locations, GPU)...")
+        correctness_ok = True
         try:
-            level_dims = level_dimensions[0]
-            tile_w, tile_h = 256, 256
-            max_x = max(0, level_dims[0] - tile_w)
-            max_y = max(0, level_dims[1] - tile_h)
-
-            # Generate a grid of tile locations
-            locations = []
-            for y_off in range(0, min(max_y + 1, tile_h * 4), tile_h):
-                for x_off in range(0, min(max_x + 1, tile_w * 4), tile_w):
-                    locations.append([x_off, y_off])
-            num_locations = len(locations)
-
-            if num_locations < 2:
-                print(
-                    "  ⚠️  Image too small for batch test "
-                    f"({level_dims[0]}x{level_dims[1]})"
-                )
-            else:
-                batch_size = min(num_locations, 8)
-                print(
-                    f"  Locations: {num_locations}, "
-                    f"tile: {tile_w}x{tile_h}, "
-                    f"batch_size: {batch_size}"
-                )
-
-                # GPU batch decode (async path)
-                start = time.time()
-                gpu_batch = img.read_region(
-                    location=locations,
-                    size=[tile_w, tile_h],
-                    level=0,
-                    device="cuda",
-                    batch_size=batch_size,
-                    num_workers=1,
-                )
-                # Consume iterator to force all batches
-                gpu_tiles = []
-                for tile in gpu_batch:
-                    gpu_tiles.append(tile)
-                gpu_batch_time = time.time() - start
-                print(f"  ✅ GPU batch: {gpu_batch_time:.4f}s ({len(gpu_tiles)} tiles)")
-
-                # CPU batch decode (per-tile path, for comparison)
-                start = time.time()
-                cpu_batch = img.read_region(
-                    location=locations,
-                    size=[tile_w, tile_h],
-                    level=0,
-                    device="cpu",
-                    batch_size=batch_size,
-                    num_workers=1,
-                )
-                cpu_tiles = []
-                for tile in cpu_batch:
-                    cpu_tiles.append(tile)
-                cpu_batch_time = time.time() - start
-                print(f"  ✅ CPU batch: {cpu_batch_time:.4f}s ({len(cpu_tiles)} tiles)")
-
-                if gpu_batch_time > 0:
-                    speedup = cpu_batch_time / gpu_batch_time
-                    print(f"  🎯 Batch speedup: {speedup:.2f}x")
-
-                # Verify pixel correctness: compare GPU tiles against CPU tiles
-                import cupy as cp
-                import numpy as np
-
-                if gpu_tiles and cpu_tiles and len(gpu_tiles) == len(cpu_tiles):
-                    print(f"  Verifying pixel correctness ({len(gpu_tiles)} tiles)...")
-                    mismatch_count = 0
-                    for idx, (gpu_t, cpu_t) in enumerate(zip(gpu_tiles, cpu_tiles)):
-                        gpu_np = cp.asnumpy(cp.asarray(gpu_t))
-                        cpu_np = np.asarray(cpu_t)
-                        if gpu_np.shape != cpu_np.shape:
-                            print(f"    ❌ Tile {idx}: shape mismatch GPU={gpu_np.shape} vs CPU={cpu_np.shape}")
-                            mismatch_count += 1
-                        elif not np.array_equal(gpu_np, cpu_np):
-                            max_diff = np.max(np.abs(gpu_np.astype(int) - cpu_np.astype(int)))
-                            print(f"    ❌ Tile {idx} at location {locations[idx]}: pixel mismatch (max diff={max_diff})")
-                            mismatch_count += 1
-                    if mismatch_count == 0:
-                        print(f"    ✅ All {len(gpu_tiles)} tiles match (GPU == CPU)")
-                    else:
-                        print(f"    ⚠️  {mismatch_count}/{len(gpu_tiles)} tiles have mismatches")
-                elif gpu_tiles:
-                    print(f"  ⚠️  Cannot verify: GPU={len(gpu_tiles)} tiles, CPU={len(cpu_tiles) if cpu_tiles else 0} tiles")
-
+            correctness_ok = test_batch_decode_correctness(img, level_dimensions)
         except Exception as e:
-            print(f"  ⚠️  Batch decode test failed: {e}")
+            print(f"  ⚠️  Batch correctness test failed: {e}")
             import traceback
+            traceback.print_exc()
+            correctness_ok = False
 
+        # ==============================================================
+        # Performance test: GPU vs CPU timing comparison
+        # ==============================================================
+        try:
+            test_batch_decode_performance(img, level_dimensions)
+        except Exception as e:
+            print(f"  ⚠️  Batch performance test failed: {e}")
+            import traceback
             traceback.print_exc()
 
-        print("\n✅ Test completed successfully!")
-        return True
+        if correctness_ok:
+            print("\n✅ Test completed successfully!")
+        else:
+            print("\n❌ Correctness test FAILED — GPU/CPU pixel mismatch detected")
+        return correctness_ok
 
     except Exception as e:
         print(f"❌ Test failed: {e}")
