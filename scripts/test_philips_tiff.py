@@ -74,12 +74,20 @@ def setup_environment():
 
 
 def test_philips_tiff(file_path, plugin_lib):
-    """Test Philips TIFF loading and decoding"""
+    """Test Philips TIFF loading and decoding.
+
+    Raises:
+        FileNotFoundError: If *file_path* does not exist.
+        RuntimeError: On decode or metadata verification failures.
+    """
 
     print("=" * 60)
     print("🔬 Testing Philips TIFF with cuslide2")
     print("=" * 60)
     print(f"📁 File: {file_path}")
+
+    if not Path(file_path).exists():
+        raise FileNotFoundError(f"TIFF file not found: {file_path}")
 
     from cucim.clara import _set_plugin_root
 
@@ -343,7 +351,6 @@ def test_philips_tiff(file_path, plugin_lib):
     print()
 
     print("✅ Philips TIFF test completed!")
-    return True
 
 
 def download_test_data():
@@ -417,24 +424,16 @@ def main():
         download_test_data()
         return 0
 
-    # Check file exists
-    if not Path(file_path).exists():
-        print(f"❌ File not found: {file_path}")
-        print()
-        download_test_data()
-        return 1
-
     # Setup environment
     plugin_lib = setup_environment()
 
-    # Test the Philips TIFF file
+    # Test the Philips TIFF file — exceptions indicate failure
     try:
-        success = test_philips_tiff(file_path, plugin_lib)
-        return 0 if success else 1
+        test_philips_tiff(file_path, plugin_lib)
+        return 0
     except Exception as e:
-        print(f"❌ Test failed: {e}")
+        print(f"\n❌ Test failed: {e}")
         import traceback
-
         traceback.print_exc()
         return 1
 

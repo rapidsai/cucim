@@ -99,6 +99,9 @@ def test_batch_decode_correctness(img, level_dimensions):
     This is the critical correctness test for the NvImageCodecProcessor →
     ThreadBatchDataLoader handoff.  Each GPU tile is compared against the
     corresponding CPU tile at the same location.
+
+    Raises:
+        RuntimeError: If any GPU tile does not match the corresponding CPU tile.
     """
     import cupy as cp
     import numpy as np
@@ -111,7 +114,7 @@ def test_batch_decode_correctness(img, level_dimensions):
 
     if len(locations) < 2:
         print(f"  ⚠️  Image too small for batch correctness test")
-        return True  # Not a failure
+        return  # Not a failure
 
     batch_size = min(len(locations), 8)
     print(f"  Locations: {len(locations)}, tile: {tile_w}x{tile_h}, batch_size: {batch_size}")
@@ -129,8 +132,9 @@ def test_batch_decode_correctness(img, level_dimensions):
     ))
 
     if len(gpu_tiles) != len(cpu_tiles):
-        print(f"  ❌ Tile count mismatch: GPU={len(gpu_tiles)}, CPU={len(cpu_tiles)}")
-        return False
+        raise RuntimeError(
+            f"Tile count mismatch: GPU={len(gpu_tiles)}, CPU={len(cpu_tiles)}"
+        )
 
     mismatch_count = 0
     for idx, (gpu_t, cpu_t) in enumerate(zip(gpu_tiles, cpu_tiles)):
@@ -146,10 +150,10 @@ def test_batch_decode_correctness(img, level_dimensions):
 
     if mismatch_count == 0:
         print(f"  ✅ All {len(gpu_tiles)} tiles match (GPU == CPU)")
-        return True
     else:
-        print(f"  ❌ {mismatch_count}/{len(gpu_tiles)} tiles have pixel mismatches")
-        return False
+        raise RuntimeError(
+            f"{mismatch_count}/{len(gpu_tiles)} tiles have GPU/CPU pixel mismatches"
+        )
 
 
 def test_batch_decode_performance(img, level_dimensions):
@@ -230,84 +234,64 @@ def test_batch_decode_performance(img, level_dimensions):
 
 
 def test_aperio_svs(svs_path, plugin_lib):
-    """Test cuslide2 plugin with an Aperio SVS file"""
+    """Test cuslide2 plugin with an Aperio SVS file.
+
+    Raises:
+        FileNotFoundError: If *svs_path* does not exist.
+        RuntimeError: If the correctness test detects GPU/CPU pixel mismatches.
+    """
 
     print("\n🔬 Testing cuslide2 plugin with Aperio SVS")
     print("=" * 60)
     print(f"📁 File: {svs_path}")
 
     if not Path(svs_path).exists():
-        print(f"❌ File not found: {svs_path}")
-        return False
+        raise FileNotFoundError(f"SVS file not found: {svs_path}")
 
-    try:
-        from cucim.clara import _set_plugin_root
+    from cucim.clara import _set_plugin_root
 
-        _set_plugin_root(str(plugin_lib))
-        print(f"✅ Plugin root set: {plugin_lib}")
+    _set_plugin_root(str(plugin_lib))
+    print(f"✅ Plugin root set: {plugin_lib}")
 
-        from cucim import CuImage
+    from cucim import CuImage
 
-        print("\n📂 Loading SVS file...")
-        start = time.time()
-        img = CuImage(svs_path)
-        load_time = time.time() - start
+    print("\n📂 Loading SVS file...")
+    start = time.time()
+    img = CuImage(svs_path)
+    load_time = time.time() - start
 
-        print(f"✅ Loaded in {load_time:.3f}s")
+    print(f"✅ Loaded in {load_time:.3f}s")
 
-        # Show basic info
-        print("\n📊 Image Information:")
-        print(f"  Dimensions: {img.shape}")
-        level_count = img.resolutions["level_count"]
-        print(f"  Levels: {level_count}")
-        print(f"  Dtype: {img.dtype}")
-        print(f"  Device: {img.device}")
+    # Show basic info
+    print("\n📊 Image Information:")
+    print(f"  Dimensions: {img.shape}")
+    level_count = img.resolutions["level_count"]
+    print(f"  Levels: {level_count}")
+    print(f"  Dtype: {img.dtype}")
+    print(f"  Device: {img.device}")
 
-        # Show all levels
-        print("\n🔍 Resolution Levels:")
-        level_dimensions = img.resolutions["level_dimensions"]
-        level_downsamples = img.resolutions["level_downsamples"]
-        for level in range(level_count):
-            level_dims = level_dimensions[level]
-            level_downsample = level_downsamples[level]
-            print(
-                f"  Level {level}: {level_dims[0]}x{level_dims[1]} (downsample: {level_downsample:.1f}x)"
-            )
+    # Show all levels
+    print("\n🔍 Resolution Levels:")
+    level_dimensions = img.resolutions["level_dimensions"]
+    level_downsamples = img.resolutions["level_downsamples"]
+    for level in range(level_count):
+        level_dims = level_dimensions[level]
+        level_downsample = level_downsamples[level]
+        print(
+            f"  Level {level}: {level_dims[0]}x{level_dims[1]} (downsample: {level_downsample:.1f}x)"
+        )
 
-        # ==============================================================
-        # Correctness test: GPU tiles must match CPU tiles pixel-for-pixel
-        # ==============================================================
-        correctness_ok = True
-        try:
-            correctness_ok = test_batch_decode_correctness(img, level_dimensions)
-        except Exception as e:
-            print(f"  ⚠️  Batch correctness test failed: {e}")
-            import traceback
-            traceback.print_exc()
-            correctness_ok = False
+    # ==============================================================
+    # Correctness test: GPU tiles must match CPU tiles pixel-for-pixel
+    # ==============================================================
+    test_batch_decode_correctness(img, level_dimensions)
 
-        # ==============================================================
-        # Performance test: GPU vs CPU timing comparison
-        # ==============================================================
-        try:
-            test_batch_decode_performance(img, level_dimensions)
-        except Exception as e:
-            print(f"  ⚠️  Batch performance test failed: {e}")
-            import traceback
-            traceback.print_exc()
+    # ==============================================================
+    # Performance test: GPU vs CPU timing comparison
+    # ==============================================================
+    test_batch_decode_performance(img, level_dimensions)
 
-        if correctness_ok:
-            print("\n✅ Test completed successfully!")
-        else:
-            print("\n❌ Correctness test FAILED — GPU/CPU pixel mismatch detected")
-        return correctness_ok
-
-    except Exception as e:
-        print(f"❌ Test failed: {e}")
-        import traceback
-
-        traceback.print_exc()
-        return False
+    print("\n✅ Test completed successfully!")
 
 
 def download_test_svs():
@@ -406,10 +390,15 @@ def main():
     # Setup environment
     plugin_lib = setup_environment()
 
-    # Test the SVS file
-    success = test_aperio_svs(svs_path, plugin_lib)
-
-    return 0 if success else 1
+    # Test the SVS file — exceptions indicate failure
+    try:
+        test_aperio_svs(svs_path, plugin_lib)
+        return 0
+    except Exception as e:
+        print(f"\n❌ Test failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return 1
 
 
 if __name__ == "__main__":
