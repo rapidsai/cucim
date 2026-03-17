@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2022-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 """
@@ -44,11 +44,12 @@ def _check_output(out, shape):
 def isotropic_erosion(image, radius, out=None, spacing=None):
     """Return binary morphological erosion of an image.
 
-    This function returns the same result as
-    :func:`skimage.morphology.binary_erosion` but performs faster for large
-    circular structuring elements. This works by applying a threshold to the
-    exact Euclidean distance map of the image [1]_, [2]_. The implementation is
-    based on:
+    Compared to the more general :func:`skimage.morphology.erosion`, this
+    function only supports binary inputs and circular footprints.
+    However, it performs typically faster for large (circular) footprints.
+    This works by applying a threshold to the exact Euclidean distance map of
+    the image [1]_, [2]_.
+    The implementation is based on:
     func:`cucim.core.operations.morphology.distance_transform_edt`.
 
     Parameters
@@ -56,7 +57,7 @@ def isotropic_erosion(image, radius, out=None, spacing=None):
     image : ndarray
         Binary input image.
     radius : float
-        The radius by which regions should be eroded.
+        The radius of the footprint used for the operation.
     out : ndarray of bool, optional
         The array to store the result of the morphology. If None,
         a new array will be allocated.
@@ -94,6 +95,26 @@ def isotropic_erosion(image, radius, out=None, spacing=None):
         and thresholding of distance maps, Pattern Recognition Letters,
         Volume 13, Issue 3, 1992, Pages 161-166.
         :DOI:`10.1016/0167-8655(92)90055-5`
+
+    Examples
+    --------
+    Erosion shrinks bright regions
+
+    >>> import cupy as cp
+    >>> import cucim.skimage as ski
+    >>> image = cp.array([[0, 0, 1, 0, 0],
+    ...                   [0, 1, 1, 1, 0],
+    ...                   [0, 1, 1, 1, 0],
+    ...                   [0, 1, 1, 1, 0],
+    ...                   [0, 0, 0, 0, 0]], dtype=bool)
+    >>> result = ski.morphology.isotropic_erosion(image, radius=1)
+    >>> result.view(cp.uint8)
+    array([[0, 0, 0, 0, 0],
+           [0, 0, 1, 0, 0],
+           [0, 0, 1, 0, 0],
+           [0, 0, 0, 0, 0],
+           [0, 0, 0, 0, 0]], dtype=uint8)
+
     """
     out = _check_output(out, image.shape)
     dist = distance_transform_edt(image, sampling=spacing)
@@ -107,11 +128,12 @@ def isotropic_erosion(image, radius, out=None, spacing=None):
 def isotropic_dilation(image, radius, out=None, spacing=None):
     """Return binary morphological dilation of an image.
 
-    This function returns the same result as
-    :func:`skimage.morphology.binary_dilation` but performs faster for large
-    circular structuring elements. This works by applying a threshold to the
-    exact Euclidean distance map of the inverted image [1]_, [2]_. The
-    implementation is based on:
+    Compared to the more general :func:`cucim.skimage.morphology.dilation`,
+    this function only supports binary inputs and circular footprints.
+    However, it performs typically faster for large (circular) footprints.
+    This works by applying a threshold to the exact Euclidean distance map of
+    the inverted image [1]_, [2]_.
+    The implementation is based on:
     func:`cucim.core.operations.morphology.distance_transform_edt`.
 
     Parameters
@@ -119,7 +141,7 @@ def isotropic_dilation(image, radius, out=None, spacing=None):
     image : ndarray
         Binary input image.
     radius : float
-        The radius by which regions should be dilated.
+        The radius of the footprint used for the operation.
     out : ndarray of bool, optional
         The array to store the result of the morphology. If None is
         passed, a new array will be allocated.
@@ -158,6 +180,26 @@ def isotropic_dilation(image, radius, out=None, spacing=None):
         and thresholding of distance maps, Pattern Recognition Letters,
         Volume 13, Issue 3, 1992, Pages 161-166.
         :DOI:`10.1016/0167-8655(92)90055-5`
+
+    Examples
+    --------
+    Dilation enlarges bright regions
+
+    >>> import cupy as cp
+    >>> import cucim.skimage as ski
+    >>> image = cp.array([[0, 0, 0, 0, 0],
+    ...                   [0, 0, 0, 0, 0],
+    ...                   [0, 0, 1, 0, 0],
+    ...                   [0, 0, 1, 1, 0],
+    ...                   [0, 0, 0, 0, 0]], dtype=bool)
+    >>> result = ski.morphology.isotropic_dilation(image, radius=1)
+    >>> result.view(cp.uint8)
+    array([[0, 0, 0, 0, 0],
+           [0, 0, 1, 0, 0],
+           [0, 1, 1, 1, 0],
+           [0, 1, 1, 1, 1],
+           [0, 0, 1, 1, 0]], dtype=uint8)
+
     """
     out = _check_output(out, image.shape)
     dist = distance_transform_edt(cp.logical_not(image), sampling=spacing)
@@ -170,11 +212,11 @@ def isotropic_dilation(image, radius, out=None, spacing=None):
 
 def isotropic_opening(image, radius, out=None, spacing=None):
     """Return binary morphological opening of an image.
-
-    This function returns the same result as
-    :func:`skimage.morphology.binary_opening` but performs faster for large
-    circular structuring elements. This works by thresholding the exact
-    Euclidean distance map [1]_, [2]_. The implementation is based on:
+    Compared to the more general :func:`cucim.skimage.morphology.opening`, this
+    function only supports binary inputs and circular footprints.
+    However, it performs typically faster for large (circular) footprints.
+    This works by thresholding the exact Euclidean distance map [1]_, [2]_.
+    The implementation is based on:
     func:`cucim.core.operations.morphology.distance_transform_edt`.
 
     Parameters
@@ -182,7 +224,7 @@ def isotropic_opening(image, radius, out=None, spacing=None):
     image : ndarray
         Binary input image.
     radius : float
-        The radius with which the regions should be opened.
+        The radius of the footprint used for the operation.
     out : ndarray of bool, optional
         The array to store the result of the morphology. If None
         is passed, a new array will be allocated.
@@ -220,6 +262,26 @@ def isotropic_opening(image, radius, out=None, spacing=None):
         and thresholding of distance maps, Pattern Recognition Letters,
         Volume 13, Issue 3, 1992, Pages 161-166.
         :DOI:`10.1016/0167-8655(92)90055-5`
+
+    Examples
+    --------
+    Remove connection between two bright regions
+
+    >>> import cupy as cp
+    >>> import cucim.skimage as ski
+    >>> image = cp.array([[1, 0, 0, 0, 1],
+    ...                   [1, 1, 0, 1, 1],
+    ...                   [1, 1, 1, 1, 1],
+    ...                   [1, 1, 0, 1, 1],
+    ...                   [1, 0, 0, 0, 1]], dtype=bool)
+    >>> result = ski.morphology.isotropic_opening(image, radius=1)
+    >>> result.view(cp.uint8)
+    array([[1, 0, 0, 0, 1],
+           [1, 1, 0, 1, 1],
+           [1, 1, 1, 1, 1],
+           [1, 1, 0, 1, 1],
+           [1, 0, 0, 0, 1]], dtype=uint8)
+
     """
     out = _check_output(out, image.shape)
     eroded = isotropic_erosion(image, radius, spacing=spacing)
@@ -229,10 +291,11 @@ def isotropic_opening(image, radius, out=None, spacing=None):
 def isotropic_closing(image, radius, out=None, spacing=None):
     """Return binary morphological closing of an image.
 
-    This function returns the same result as binary
-    :func:`skimage.morphology.binary_closing` but performs faster for large
-    circular structuring elements. This works by thresholding the exact
-    Euclidean distance map [1]_, [2]_. The implementation is based on:
+    Compared to the more general :func:`cucim.skimage.morphology.closing`, this
+    function only supports binary inputs and circular footprints.
+    However, it performs typically faster for large (circular) footprints.
+    This works by thresholding the exact Euclidean distance map [1]_, [2]_.
+    The implementation is based on:
     func:`cucim.core.operations.morphology.distance_transform_edt`.
 
     Parameters
@@ -240,7 +303,7 @@ def isotropic_closing(image, radius, out=None, spacing=None):
     image : ndarray
         Binary input image.
     radius : float
-        The radius with which the regions should be closed.
+        The radius of the footprint used for the operation.
     out : ndarray of bool, optional
         The array to store the result of the morphology. If None,
         is passed, a new array will be allocated.
@@ -278,6 +341,25 @@ def isotropic_closing(image, radius, out=None, spacing=None):
         and thresholding of distance maps, Pattern Recognition Letters,
         Volume 13, Issue 3, 1992, Pages 161-166.
         :DOI:`10.1016/0167-8655(92)90055-5`
+
+    Examples
+    --------
+    Close gap between two bright regions
+
+    >>> import cupy as cp
+    >>> import cucim.skimage as ski
+    >>> image = cp.array([[0, 0, 0, 0, 0],
+    ...                   [0, 0, 0, 0, 0],
+    ...                   [1, 1, 0, 1, 1],
+    ...                   [0, 0, 0, 0, 0],
+    ...                   [0, 0, 0, 0, 0]], dtype=bool)
+    >>> result = ski.morphology.isotropic_closing(image, radius=1)
+    >>> result.view(cp.uint8)
+    array([[0, 0, 0, 0, 0],
+           [0, 0, 0, 0, 0],
+           [1, 1, 0, 1, 1],
+           [0, 0, 0, 0, 0],
+           [0, 0, 0, 0, 0]], dtype=uint8)
     """
     out = _check_output(out, image.shape)
     dilated = isotropic_dilation(image, radius, spacing=spacing)

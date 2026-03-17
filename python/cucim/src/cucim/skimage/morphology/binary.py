@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 """
@@ -48,11 +48,30 @@ def _iterate_binary_func(binary_func, image, footprint, out, border_value):
     return out
 
 
+# Note: scikit-image 0.26 deprecated the binary_* functions.
+#
+# For cuCIM, we need to consider whether or not to do the same. For
+# scikit-image it seems grayscale morphology is equal or faster to binary, but
+# for cuCIM performance is better with these binary variants.
+
+
 # The default_footprint decorator provides a diamond footprint as
 # default with the same dimension as the input image and size 3 along each
 # axis.
+# @deprecate_func(
+#     # rapids-pre-commit-hooks: disable-next-line[verify-hardcoded-version]
+#     deprecated_version="26.04",
+#     # rapids-pre-commit-hooks: disable-next-line[verify-hardcoded-version]
+#     removed_version="26.12",
+#     hint="Use `skimage.morphology.erosion` instead. "
+#     "Note the pixel shift by 1 for even-sized footprints (see docstring notes).",
+# )
 @default_footprint
 def binary_erosion(image, footprint=None, out=None, *, mode="ignore"):
+    return _binary_erosion(image, footprint=footprint, out=out, mode=mode)
+
+
+def _binary_erosion(image, footprint=None, out=None, *, mode="ignore"):
     """Return fast binary morphological erosion of an image.
 
     This function returns the same result as grayscale erosion but performs
@@ -104,7 +123,12 @@ def binary_erosion(image, footprint=None, out=None, *, mode="ignore"):
 
     For even-sized footprints, :func:`skimage.morphology.erosion` and
     this function produce an output that differs: one is shifted by one pixel
-    compared to the other.
+    compared to the other. :func:`cucim.skimage.morphology.pad_footprint´ is
+    available to account for this.
+
+    See Also
+    --------
+    cucim.skimage.morphology.isotropic_erosion
     """
     if out is None:
         out = cp.empty(image.shape, dtype=bool)
@@ -128,8 +152,21 @@ def binary_erosion(image, footprint=None, out=None, *, mode="ignore"):
     return out
 
 
+# @deprecate_func(
+#     # rapids-pre-commit-hooks: disable-next-line[verify-hardcoded-version]
+#     deprecated_version="26.04",
+#     # rapids-pre-commit-hooks: disable-next-line[verify-hardcoded-version]
+#     removed_version="26.12",
+#     hint="Use `skimage.morphology.dilation` instead. "
+#     "Note the lack of mirroring for non-symmetric footprints (see docstring "
+#     "notes).",
+# )
 @default_footprint
 def binary_dilation(image, footprint=None, out=None, *, mode="ignore"):
+    return _binary_dilation(image, footprint=footprint, out=out, mode=mode)
+
+
+def _binary_dilation(image, footprint=None, out=None, *, mode="ignore"):
     """Return fast binary morphological dilation of an image.
 
     This function returns the same result as grayscale dilation but performs
@@ -182,6 +219,12 @@ def binary_dilation(image, footprint=None, out=None, *, mode="ignore"):
     For non-symmetric footprints, :func:`skimage.morphology.binary_dilation`
     and :func:`skimage.morphology.dilation` produce an output that differs:
     `binary_dilation` mirrors the footprint, whereas `dilation` does not.
+    :func:`cucim.skimage.morphology.mirror_footprint` is available to correct
+    for this.
+
+    See Also
+    --------
+    cucim.skimage.morphology.isotropic_dilation
     """
     if out is None:
         out = cp.empty(image.shape, dtype=bool)
@@ -205,8 +248,19 @@ def binary_dilation(image, footprint=None, out=None, *, mode="ignore"):
     return out
 
 
+# @deprecate_func(
+#     # rapids-pre-commit-hooks: disable-next-line[verify-hardcoded-version]
+#     deprecated_version="26.04",
+#     # rapids-pre-commit-hooks: disable-next-line[verify-hardcoded-version]
+#     removed_version="26.12",
+#     hint="Use `skimage.morphology.opening` instead. "
+# )
 @default_footprint
 def binary_opening(image, footprint=None, out=None, *, mode="ignore"):
+    return _binary_opening(image, footprint=footprint, out=out, mode=mode)
+
+
+def _binary_opening(image, footprint=None, out=None, *, mode="ignore"):
     """Return fast binary morphological opening of an image.
 
     This function returns the same result as grayscale opening but performs
@@ -255,14 +309,29 @@ def binary_opening(image, footprint=None, out=None, *, mode="ignore"):
     computational cost. Most of the builtin footprints such as
     :func:`skimage.morphology.disk` provide an option to automatically generate
     a footprint sequence of this type.
+
+    See Also
+    --------
+    cucim.skimage.morphology.isotropic_opening
     """
-    tmp = binary_erosion(image, footprint, mode=mode)
-    out = binary_dilation(tmp, footprint, out=out, mode=mode)
+    tmp = _binary_erosion(image, footprint, mode=mode)
+    out = _binary_dilation(tmp, footprint, out=out, mode=mode)
     return out
 
 
+# @deprecate_func(
+#     # rapids-pre-commit-hooks: disable-next-line[verify-hardcoded-version]
+#     deprecated_version="26.04",
+#     # rapids-pre-commit-hooks: disable-next-line[verify-hardcoded-version]
+#     removed_version="26.12",
+#     hint="Use `skimage.morphology.closing` instead. "
+# )
 @default_footprint
 def binary_closing(image, footprint=None, out=None, *, mode="ignore"):
+    return _binary_closing(image, footprint=footprint, out=out, mode=mode)
+
+
+def _binary_closing(image, footprint=None, out=None, *, mode="ignore"):
     """Return fast binary morphological closing of an image.
 
     This function returns the same result as grayscale closing but performs
@@ -311,7 +380,11 @@ def binary_closing(image, footprint=None, out=None, *, mode="ignore"):
     computational cost. Most of the builtin footprints such as
     :func:`skimage.morphology.disk` provide an option to automatically generate
     a footprint sequence of this type.
+
+    See Also
+    --------
+    cucim.skimage.morphology.isotropic_closing
     """
-    tmp = binary_dilation(image, footprint, mode=mode)
-    out = binary_erosion(tmp, footprint, out=out, mode=mode)
+    tmp = _binary_dilation(image, footprint, mode=mode)
+    out = _binary_erosion(tmp, footprint, out=out, mode=mode)
     return out
