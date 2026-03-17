@@ -230,12 +230,6 @@ uint32_t NvImageCodecProcessor::wait_batch(uint32_t index_in_task,
 
         decode_state = std::move(pending_batches_.front());
         pending_batches_.pop();
-
-        // Also pop the corresponding request list (no longer needed for zero-copy)
-        if (!pending_requests_.empty())
-        {
-            pending_requests_.pop();
-        }
     }  // lock released — safe to block on GPU now
 
     // Wait for batch decode completion.  The decoded data was written directly

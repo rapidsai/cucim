@@ -163,7 +163,7 @@ private:
     // Decode batch tracking
     uint64_t next_decode_index_ = 0;
 
-    // Asynchronous batch decode state (FIFO queues)
+    // Asynchronous batch decode state (FIFO queue)
     std::queue<cuslide2::nvimgcodec::BatchDecodeState> pending_batches_;
 };
 
