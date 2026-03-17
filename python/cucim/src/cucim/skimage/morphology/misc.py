@@ -5,7 +5,6 @@
 """Miscellaneous morphology functions."""
 
 import functools
-import warnings
 
 import cupy as cp
 
@@ -67,6 +66,7 @@ def _check_dtype_supported(ar):
 @deprecate_parameter(
     deprecated_name="min_size",
     new_name="max_size",
+    value_adapter=lambda x: x - 1,
     # rapids-pre-commit-hooks: disable-next-line[verify-hardcoded-version]
     start_version="26.04",
     # rapids-pre-commit-hooks: disable-next-line[verify-hardcoded-version]
@@ -171,12 +171,7 @@ def remove_small_objects(
             "Did you mean to use a boolean array?"
         )
 
-    if min_size is not DEPRECATED:
-        # Exclusive threshold is deprecated behavior
-        too_small = component_sizes < min_size
-    else:
-        # New behavior uses inclusive threshold
-        too_small = component_sizes <= max_size
+    too_small = component_sizes <= max_size
 
     too_small_mask = too_small[ccs]
     out[too_small_mask] = 0
@@ -187,6 +182,7 @@ def remove_small_objects(
 @deprecate_parameter(
     deprecated_name="area_threshold",
     new_name="max_size",
+    value_adapter=lambda x: x - 1,
     # rapids-pre-commit-hooks: disable-next-line[verify-hardcoded-version]
     start_version="26.04",
     # rapids-pre-commit-hooks: disable-next-line[verify-hardcoded-version]
@@ -281,19 +277,12 @@ def remove_small_holes(
     cp.logical_not(ar, out=out)
 
     # removing small objects from the inverse of ar
-    with warnings.catch_warnings():
-        warnings.filterwarnings(
-            "ignore",
-            message="Parameter `min_size` is deprecated",
-            category=FutureWarning,
-        )
-        out = remove_small_objects(
-            out,
-            min_size=area_threshold,
-            max_size=max_size,
-            connectivity=connectivity,
-            out=out,
-        )
+    out = remove_small_objects(
+        out,
+        max_size=max_size,
+        connectivity=connectivity,
+        out=out,
+    )
 
     cp.logical_not(out, out=out)
 

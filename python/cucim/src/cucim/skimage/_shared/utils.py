@@ -268,6 +268,11 @@ class deprecate_parameter:
         If given, the default message will recommend the new parameter name and an
         error will be raised if the user uses both old and new names for the
         same parameter.
+    value_adapter : callable, optional
+        If given, this callable is applied to the deprecated parameter's value
+        before forwarding it to the new parameter. Useful when the old and new
+        parameters have different semantics (e.g. exclusive vs. inclusive
+        thresholds).
     modify_docstring : bool, optional
         If the wrapped function has a docstring, add the deprecated parameters
         to the "Other Parameters" section.
@@ -328,11 +333,13 @@ class deprecate_parameter:
         stop_version,
         template=None,
         new_name=None,
+        value_adapter=None,
         modify_docstring=True,
         stacklevel=None,
     ):
         self.deprecated_name = deprecated_name
         self.new_name = new_name
+        self.value_adapter = value_adapter
         self.template = template
         self.start_version = start_version
         self.stop_version = stop_version
@@ -421,8 +428,10 @@ class deprecate_parameter:
                         f"only the latter to avoid conflicting values."
                     )
                 elif self.new_name is not None:
-                    # Assign old value to new one
-                    kwargs[self.new_name] = deprecated_value
+                    value = deprecated_value
+                    if self.value_adapter is not None:
+                        value = self.value_adapter(deprecated_value)
+                    kwargs[self.new_name] = value
 
             return func(*args, **kwargs)
 
