@@ -113,23 +113,37 @@ def test_batch_decode_correctness(img, level_dimensions):
     locations = _generate_tile_locations(level_dimensions, tile_w, tile_h)
 
     if len(locations) < 2:
-        print(f"  ⚠️  Image too small for batch correctness test")
+        print("  ⚠️  Image too small for batch correctness test")
         return  # Not a failure
 
     batch_size = min(len(locations), 8)
-    print(f"  Locations: {len(locations)}, tile: {tile_w}x{tile_h}, batch_size: {batch_size}")
+    print(
+        f"  Locations: {len(locations)}, tile: {tile_w}x{tile_h}, batch_size: {batch_size}"
+    )
 
     # Decode all tiles via GPU batch path
-    gpu_tiles = list(img.read_region(
-        location=locations, size=[tile_w, tile_h],
-        level=0, device="cuda", batch_size=batch_size, num_workers=1,
-    ))
+    gpu_tiles = list(
+        img.read_region(
+            location=locations,
+            size=[tile_w, tile_h],
+            level=0,
+            device="cuda",
+            batch_size=batch_size,
+            num_workers=1,
+        )
+    )
 
     # Decode all tiles via CPU batch path (ground truth)
-    cpu_tiles = list(img.read_region(
-        location=locations, size=[tile_w, tile_h],
-        level=0, device="cpu", batch_size=batch_size, num_workers=1,
-    ))
+    cpu_tiles = list(
+        img.read_region(
+            location=locations,
+            size=[tile_w, tile_h],
+            level=0,
+            device="cpu",
+            batch_size=batch_size,
+            num_workers=1,
+        )
+    )
 
     if len(gpu_tiles) != len(cpu_tiles):
         raise RuntimeError(
@@ -141,11 +155,15 @@ def test_batch_decode_correctness(img, level_dimensions):
         gpu_np = cp.asnumpy(cp.asarray(gpu_t))
         cpu_np = np.asarray(cpu_t)
         if gpu_np.shape != cpu_np.shape:
-            print(f"    ❌ Tile {idx} at {locations[idx]}: shape mismatch GPU={gpu_np.shape} vs CPU={cpu_np.shape}")
+            print(
+                f"    ❌ Tile {idx} at {locations[idx]}: shape mismatch GPU={gpu_np.shape} vs CPU={cpu_np.shape}"
+            )
             mismatch_count += 1
         elif not np.array_equal(gpu_np, cpu_np):
             max_diff = int(np.max(np.abs(gpu_np.astype(int) - cpu_np.astype(int))))
-            print(f"    ❌ Tile {idx} at {locations[idx]}: pixel mismatch (max diff={max_diff})")
+            print(
+                f"    ❌ Tile {idx} at {locations[idx]}: pixel mismatch (max diff={max_diff})"
+            )
             mismatch_count += 1
 
     if mismatch_count == 0:
@@ -169,27 +187,41 @@ def test_batch_decode_performance(img, level_dimensions):
     locations = _generate_tile_locations(level_dimensions, tile_w, tile_h)
 
     if len(locations) < 2:
-        print(f"  ⚠️  Image too small for batch performance test")
+        print("  ⚠️  Image too small for batch performance test")
         return
 
     batch_size = min(len(locations), 8)
-    print(f"  Locations: {len(locations)}, tile: {tile_w}x{tile_h}, batch_size: {batch_size}")
+    print(
+        f"  Locations: {len(locations)}, tile: {tile_w}x{tile_h}, batch_size: {batch_size}"
+    )
 
     # GPU batch decode
     start = time.time()
-    gpu_tiles = list(img.read_region(
-        location=locations, size=[tile_w, tile_h],
-        level=0, device="cuda", batch_size=batch_size, num_workers=1,
-    ))
+    gpu_tiles = list(
+        img.read_region(
+            location=locations,
+            size=[tile_w, tile_h],
+            level=0,
+            device="cuda",
+            batch_size=batch_size,
+            num_workers=1,
+        )
+    )
     gpu_batch_time = time.time() - start
     print(f"  GPU batch: {gpu_batch_time:.4f}s ({len(gpu_tiles)} tiles)")
 
     # CPU batch decode
     start = time.time()
-    cpu_tiles = list(img.read_region(
-        location=locations, size=[tile_w, tile_h],
-        level=0, device="cpu", batch_size=batch_size, num_workers=1,
-    ))
+    cpu_tiles = list(
+        img.read_region(
+            location=locations,
+            size=[tile_w, tile_h],
+            level=0,
+            device="cpu",
+            batch_size=batch_size,
+            num_workers=1,
+        )
+    )
     cpu_batch_time = time.time() - start
     print(f"  CPU batch: {cpu_batch_time:.4f}s ({len(cpu_tiles)} tiles)")
 
@@ -397,6 +429,7 @@ def main():
     except Exception as e:
         print(f"\n❌ Test failed: {e}")
         import traceback
+
         traceback.print_exc()
         return 1
 
