@@ -241,9 +241,21 @@ uint32_t NvImageCodecProcessor::wait_batch(uint32_t index_in_task,
     std::vector<cuslide2::nvimgcodec::BatchDecodeResult> results =
         cuslide2::nvimgcodec::wait_batch_decode(decode_state);
 
-    #ifdef DEBUG
+    // Count successful decodes (log failures even in release builds)
     size_t success_count = 0;
-    for (const auto& r : results) if (r.success) ++success_count;
+    for (const auto& r : results)
+    {
+        if (r.success)
+            ++success_count;
+    }
+
+    if (success_count < results.size())
+    {
+        fmt::print(stderr, "[cuslide2] Batch decode: {}/{} regions failed\n",
+                   results.size() - success_count, results.size());
+    }
+
+    #ifdef DEBUG
     fmt::print("  ✅ wait_batch[{}]: {}/{} regions decoded successfully (zero-copy)\n",
                index_in_task, success_count, results.size());
     #endif
