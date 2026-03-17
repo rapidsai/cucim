@@ -193,7 +193,6 @@ uint32_t NvImageCodecProcessor::request(std::deque<uint32_t>& batch_item_counts,
         }
 
         pending_batches_.push(std::move(decode_state));
-        pending_requests_.push(batch_requests);
     }
 
     return static_cast<uint32_t>(batch_requests.size());
