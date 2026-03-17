@@ -60,6 +60,7 @@ using TiffTagValue = std::variant<
  * Used to categorize IFDs as resolution levels or associated images
  * (particularly for formats like Aperio SVS that use SUBFILETYPE tags)
  */
+
 /**
  * @brief Information about a single IFD (Image File Directory) in a TIFF file
  *
