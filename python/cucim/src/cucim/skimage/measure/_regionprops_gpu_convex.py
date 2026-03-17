@@ -139,10 +139,7 @@ def regionprops_feret_diameter_max(
     width less than the one computed by scikit-image.
     """
     if not isinstance(images_convex, Sequence):
-        raise ValueError(
-            "Expected `images_convex` to be a sequence of images",
-            stacklevel=2,
-        )
+        raise ValueError("Expected `images_convex` to be a sequence of images")
     diameters = cp.asarray(
         tuple(
             _feret_diameter_max(

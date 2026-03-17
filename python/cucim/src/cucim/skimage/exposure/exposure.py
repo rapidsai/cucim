@@ -698,7 +698,7 @@ def adjust_gamma(image, gamma=1, gain=1):
 
     Examples
     --------
-    >>> from skimage as ski
+    >>> import skimage as ski
     >>> from cucim.skimage import exposure, img_as_float
     >>> image = img_as_float(cp.array(ski.data.moon()))
     >>> gamma_corrected = exposure.adjust_gamma(image, 2)

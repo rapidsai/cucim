@@ -100,7 +100,7 @@ def isotropic_erosion(image, radius, out=None, spacing=None):
     --------
     Erosion shrinks bright regions
 
-    >>> import cumpy as cp
+    >>> import cupy as cp
     >>> import cucim.skimage as ski
     >>> image = cp.array([[0, 0, 1, 0, 0],
     ...                   [0, 1, 1, 1, 0],
@@ -186,7 +186,7 @@ def isotropic_dilation(image, radius, out=None, spacing=None):
     Dilation enlarges bright regions
 
     >>> import cupy as cp
-    >>> import skimage as ski
+    >>> import cucim.skimage as ski
     >>> image = cp.array([[0, 0, 0, 0, 0],
     ...                   [0, 0, 0, 0, 0],
     ...                   [0, 0, 1, 0, 0],
