@@ -115,15 +115,16 @@ def test_euclidean_estimation():
     ((EuclideanTransform, False), (SimilarityTransform, True)),
 )
 def test_3d_euclidean_similarity_estimation(tform_class, has_scale):
-    src_points = cp.random.rand(1000, 3)
+    rng = np.random.default_rng(1234)
+    src_points = cp.asarray(rng.random((1000, 3)))
 
     # Random transformation for testing
-    angles = cp.random.random((3,)) * 2 * np.pi - np.pi
+    angles = cp.asarray(rng.random((3,))) * 2 * np.pi - np.pi
     rotation_matrix = cp.array(_euler_rotation_matrix(angles))
     if has_scale:
-        scale = cp.random.randint(0, 20)
+        scale = rng.integers(1, 20)
         rotation_matrix = rotation_matrix * scale
-    translation_vector = cp.random.random((3,))
+    translation_vector = cp.asarray(rng.random((3,)))
     dst_points = []
     for pt in src_points:
         pt_r = pt.reshape(3, 1)
