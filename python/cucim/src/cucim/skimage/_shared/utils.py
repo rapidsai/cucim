@@ -1,13 +1,13 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import functools
 import inspect
 import numbers
-import sys
 import warnings
 from collections.abc import Iterable
+from contextlib import contextmanager
 
 import cupy as cp
 import numpy as np
@@ -53,8 +53,37 @@ except ImportError:
         return cp.stack(cp.nonzero(a), axis=-1)
 
 
-def _count_wrappers(func):
-    """Count the number of wrappers around `func`."""
+def count_inner_wrappers(func):
+    """Count the number of inner wrappers by unpacking ``__wrapped__``.
+
+    If a wrapped function wraps another wrapped function, then we refer to the
+    wrapping of the second function as an *inner wrapper*.
+
+    For example, consider this code fragment:
+
+    .. code-block:: python
+        @wrap_outer
+        @wrap_inner
+        def foo():
+            pass
+
+    Here ``@wrap_inner`` applies a wrapper to ``foo``, and ``@wrap_outer``
+    applies a wrapper to the result.
+
+    Parameters
+    ----------
+    func : callable
+        The callable of which to determine the number of inner wrappers.
+
+    Returns
+    -------
+    count : int
+        The number of times `func` has been wrapped.
+
+    See Also
+    --------
+    count_global_wrappers
+    """
     unwrapped = func
     count = 0
     while hasattr(unwrapped, "__wrapped__"):
@@ -64,14 +93,15 @@ def _count_wrappers(func):
 
 
 def _warning_stacklevel(func):
-    """Find stacklevel for a warning raised from a wrapper around `func`.
+    """Find stacklevel of `func` relative to its global representation.
 
-    Try to determine the number of
+    Determine automatically with which stacklevel a warning should be raised.
 
     Parameters
     ----------
     func : Callable
-
+        Tries to find the global version of `func` and counts the number of
+        additional wrappers around `func`.
 
     Returns
     -------
@@ -79,81 +109,103 @@ def _warning_stacklevel(func):
         The stacklevel. Minimum of 2.
     """
     # Count number of wrappers around `func`
-    wrapped_count = _count_wrappers(func)
+    inner_wrapped_count = count_inner_wrappers(func)
+    global_wrapped_count = count_global_wrappers(func)
 
-    # Count number of total wrappers around global version of `func`
-    module = sys.modules.get(func.__module__)
-    try:
-        for name in func.__qualname__.split("."):
-            global_func = getattr(module, name)
-    except AttributeError as e:
-        raise RuntimeError(
-            f"Could not access `{func.__qualname__}` in {module!r}, "
-            f" may be a closure. Set stacklevel manually. ",
-        ) from e
-    else:
-        global_wrapped_count = _count_wrappers(global_func)
-
-    stacklevel = global_wrapped_count - wrapped_count + 1
+    stacklevel = global_wrapped_count - inner_wrapped_count + 1
     return max(stacklevel, 2)
 
 
-def _get_stack_length(func):
-    """Return function call stack length."""
-    _func = func.__globals__.get(func.__name__, func)
-    length = _count_wrappers(_func)
-    return length
+def count_global_wrappers(func):
+    """Count the total number of times a function as been wrapped globally.
 
+    Similar to :func:`count_inner_wrappers`, this counts the number of times
+    `func` has been wrapped. However, this function doesn't start counting
+    from `func` but instead tries to access the "global representation" of
+    `func`. This means that you could use this function from inside a wrapper
+    that was applied first, and still count wrappers that were applied on
+    top of it afterwards.
 
-class _DecoratorBaseClass:
-    """Used to manage decorators' warnings stacklevel.
+    E.g., `func` might be wrapped by multiple decorators that emit
+    warnings. In that case, calling this function in the inner-most decorator
+    will still return the total count of wrappers.
 
-    The `_stack_length` class variable is used to store the number of
-    times a function is wrapped by a decorator.
+    Parameters
+    ----------
+    func : callable
+        The callable of which to determine the number of wrappers. Can be a
+        function or method of a class.
 
-    Let `stack_length` be the total number of times a decorated
-    function is wrapped, and `stack_rank` be the rank of the decorator
-    in the decorators stack. The stacklevel of a warning is then
-    `stacklevel = 1 + stack_length - stack_rank`.
+    Returns
+    -------
+    count : int
+        The number of times `func` has been wrapped.
+
+    See Also
+    --------
+    count_inner_wrappers
     """
+    if "<locals>" in func.__qualname__:
+        msg = (
+            "Cannot determine stacklevel of a function defined in another "
+            "function's local namespace. Set the stacklevel manually."
+        )
+        raise ValueError(msg)
 
-    _stack_length = {}
+    first_name, *other = func.__qualname__.split(".")
+    global_func = func.__globals__.get(first_name, func)
 
-    def get_stack_length(self, func):
-        return self._stack_length.get(func.__name__, _get_stack_length(func))
+    # Account for `func` being a method, in which case it's an attribute of
+    # what we got from `func.__globals__`
+    for part in other:
+        global_func = getattr(global_func, part, global_func)
+
+    count = count_inner_wrappers(global_func)
+    assert count >= 0
+    return count
 
 
-class change_default_value(_DecoratorBaseClass):
+class change_default_value:
     """Decorator for changing the default value of an argument.
 
     Parameters
     ----------
-    arg_name: str
+    arg_name : str
         The name of the argument to be updated.
-    new_value: any
+    new_value : any
         The argument new value.
     changed_version : str
         The package version in which the change will be introduced.
-    warning_msg: str
+    warning_msg : str
         Optional warning message. If None, a generic warning message
         is used.
-
+    stacklevel : {None, int}, optional
+        If None, the decorator attempts to detect the appropriate stacklevel for the
+        deprecation warning automatically. This can fail, e.g., due to
+        decorating a closure, in which case you can set the stacklevel manually
+        here. The outermost decorator should have stacklevel 2, the next inner
+        one stacklevel 3, etc.
     """
 
     def __init__(
-        self, arg_name, *, new_value, changed_version, warning_msg=None
+        self,
+        arg_name,
+        *,
+        new_value,
+        changed_version,
+        warning_msg=None,
+        stacklevel=None,
     ):
         self.arg_name = arg_name
         self.new_value = new_value
         self.warning_msg = warning_msg
         self.changed_version = changed_version
+        self.stacklevel = stacklevel
 
     def __call__(self, func):
         parameters = inspect.signature(func).parameters
         arg_idx = list(parameters.keys()).index(self.arg_name)
         old_value = parameters[self.arg_name].default
-
-        stack_rank = _count_wrappers(func)
 
         if self.warning_msg is None:
             self.warning_msg = (
@@ -167,8 +219,12 @@ class change_default_value(_DecoratorBaseClass):
 
         @functools.wraps(func)
         def fixed_func(*args, **kwargs):
-            stacklevel = 1 + self.get_stack_length(func) - stack_rank
             if len(args) < arg_idx + 1 and self.arg_name not in kwargs.keys():
+                stacklevel = (
+                    self.stacklevel
+                    if self.stacklevel is not None
+                    else _warning_stacklevel(func)
+                )
                 # warn that arg_name default value changed:
                 warnings.warn(
                     self.warning_msg, FutureWarning, stacklevel=stacklevel
@@ -209,18 +265,23 @@ class deprecate_parameter:
     template : str, optional
         If given, this message template is used instead of the default one.
     new_name : str, optional
-        If given, the default message will recommend the new parameter name and
-        an error will be raised if the user uses both old and new names for the
+        If given, the default message will recommend the new parameter name and an
+        error will be raised if the user uses both old and new names for the
         same parameter.
+    value_adapter : callable, optional
+        If given, this callable is applied to the deprecated parameter's value
+        before forwarding it to the new parameter. Useful when the old and new
+        parameters have different semantics (e.g. exclusive vs. inclusive
+        thresholds).
     modify_docstring : bool, optional
         If the wrapped function has a docstring, add the deprecated parameters
         to the "Other Parameters" section.
-    stacklevel : int, optional
-        This decorator attempts to detect the appropriate stacklevel for the
-        deprecation warning automatically. If this fails, e.g., due to
-        decorating a closure, you can set the stacklevel manually. The
-        outermost decorator should have stacklevel 2, the next inner one
-        stacklevel 3, etc.
+    stacklevel : {None, int}, optional
+        If None, the decorator attempts to detect the appropriate stacklevel for the
+        deprecation warning automatically. This can fail, e.g., due to
+        decorating a closure, in which case you can set the stacklevel manually
+        here. The outermost decorator should have stacklevel 2, the next inner
+        one stacklevel 3, etc.
 
     Notes
     -----
@@ -272,11 +333,13 @@ class deprecate_parameter:
         stop_version,
         template=None,
         new_name=None,
+        value_adapter=None,
         modify_docstring=True,
         stacklevel=None,
     ):
         self.deprecated_name = deprecated_name
         self.new_name = new_name
+        self.value_adapter = value_adapter
         self.template = template
         self.start_version = start_version
         self.stop_version = stop_version
@@ -285,17 +348,24 @@ class deprecate_parameter:
 
     def __call__(self, func):
         parameters = inspect.signature(func).parameters
-        deprecated_idx = list(parameters.keys()).index(self.deprecated_name)
+        try:
+            deprecated_idx = list(parameters.keys()).index(self.deprecated_name)
+        except ValueError as e:
+            raise ValueError(
+                f"{self.deprecated_name!r} not in parameters"
+            ) from e
+
+        new_idx = False
         if self.new_name:
-            new_idx = list(parameters.keys()).index(self.new_name)
-        else:
-            new_idx = False
+            try:
+                new_idx = list(parameters.keys()).index(self.new_name)
+            except ValueError as e:
+                raise ValueError(f"{self.new_name!r} not in parameters") from e
 
         if parameters[self.deprecated_name].default is not DEPRECATED:
             raise RuntimeError(
-                f"Expected `{self.deprecated_name}` to have the value "
-                f"{DEPRECATED!r} to indicate its status in the rendered "
-                "signature."
+                f"Expected `{self.deprecated_name}` to have the value {DEPRECATED!r} "
+                f"to indicate its status in the rendered signature."
             )
 
         if self.template is not None:
@@ -358,8 +428,10 @@ class deprecate_parameter:
                         f"only the latter to avoid conflicting values."
                     )
                 elif self.new_name is not None:
-                    # Assign old value to new one
-                    kwargs[self.new_name] = deprecated_value
+                    value = deprecated_value
+                    if self.value_adapter is not None:
+                        value = self.value_adapter(deprecated_value)
+                    kwargs[self.new_name] = value
 
             return func(*args, **kwargs)
 
@@ -380,7 +452,7 @@ def _docstring_add_deprecated(func, kwarg_mapping, deprecated_version):
     func : function
         The function whose docstring we wish to update.
     kwarg_mapping : dict
-        A dict containing {old_arg: new_arg} key/value pairs as used by
+        A dict containing {old_arg: new_arg} key/value pairs, see
         `deprecate_parameter`.
     deprecated_version : str
         A major.minor version string specifying when old_arg was
@@ -438,6 +510,90 @@ def _docstring_add_deprecated(func, kwarg_mapping, deprecated_version):
         [line.rstrip() for line in final_docstring.split("\n")]
     )
     return final_docstring
+
+
+class FailedEstimationAccessError(AttributeError):
+    """Error from use of failed estimation instance
+
+    This error arises from attempts to use an instance of
+    :class:`FailedEstimation`.
+    """
+
+
+class FailedEstimation:
+    """Class to indicate a failed transform estimation.
+
+    The ``from_estimate`` class method of each transform type may return an
+    instance of this class to indicate some failure in the estimation process.
+
+    Parameters
+    ----------
+    message : str
+        Message indicating reason for failed estimation.
+
+    Attributes
+    ----------
+    message : str
+        Message above.
+
+    Raises
+    ------
+    FailedEstimationAccessError
+        Exception raised for missing attributes or if the instance is used as a
+        callable.
+    """
+
+    error_cls = FailedEstimationAccessError
+
+    hint = (
+        "You can check for a failed estimation by truth testing the returned "
+        "object. For failed estimations, `bool(estimation_result)` will be `False`. "
+        "E.g.\n\n"
+        "    if not estimation_result:\n"
+        "        raise RuntimeError(f'Failed estimation: {estimation_result}')"
+    )
+
+    def __init__(self, message):
+        self.message = message
+
+    def __bool__(self):
+        return False
+
+    def __repr__(self):
+        return f"{type(self).__name__}({self.message!r})"
+
+    def __str__(self):
+        return self.message
+
+    def __call__(self, *args, **kwargs):
+        msg = (
+            f"{type(self).__name__} is not callable. {self.message}\n\n"
+            f"Hint: {self.hint}"
+        )
+        raise self.error_cls(msg)
+
+    def __getattr__(self, name):
+        msg = (
+            f"{type(self).__name__} has no attribute {name!r}. {self.message}\n\n"
+            f"Hint: {self.hint}"
+        )
+        raise self.error_cls(msg)
+
+
+@contextmanager
+def _ignore_deprecated_estimate_warning():
+    """Filter warnings about the deprecated `estimate` method.
+
+    Use either as decorator or context manager.
+    """
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            action="ignore",
+            category=FutureWarning,
+            message="`estimate` is deprecated",
+            module="skimage",
+        )
+        yield
 
 
 class channel_as_last_axis:
@@ -522,7 +678,7 @@ class channel_as_last_axis:
         return fixed_func
 
 
-class deprecate_func(_DecoratorBaseClass):
+class deprecate_func:
     """Decorate a deprecated function and warn when it is called.
 
     Adapted from <http://wiki.python.org/moin/PythonDecoratorLibrary>.
@@ -536,6 +692,13 @@ class deprecate_func(_DecoratorBaseClass):
     hint : str, optional
         A hint on how to address this deprecation,
         e.g., "Use `skimage.submodule.alternative_func` instead."
+    stacklevel :  {None, int}, optional
+        If None, the decorator attempts to detect the appropriate stacklevel for the
+        deprecation warning automatically. This can fail, e.g., due to
+        decorating a closure, in which case you can set the stacklevel manually
+        here. The outermost decorator should have stacklevel 2, the next inner
+        one stacklevel 3, etc.
+
     Examples
     --------
     >>> @deprecate_func(
@@ -545,39 +708,49 @@ class deprecate_func(_DecoratorBaseClass):
     ... )
     ... def foo():
     ...     pass
+
     Calling ``foo`` will warn with::
+
         FutureWarning: `foo` is deprecated since version 1.0.0
         and will be removed in version 1.2.0. Use `bar` instead.
     """
 
-    def __init__(self, *, deprecated_version, removed_version=None, hint=None):
+    def __init__(
+        self,
+        *,
+        deprecated_version,
+        removed_version=None,
+        hint=None,
+        stacklevel=None,
+    ):
         self.deprecated_version = deprecated_version
         self.removed_version = removed_version
         self.hint = hint
+        self.stacklevel = stacklevel
 
     def __call__(self, func):
-        message = (
-            f"`{func.__name__}` is deprecated since version "
-            f"{self.deprecated_version}"
-        )
+        message = f"`{func.__name__}` is deprecated since version {self.deprecated_version}"
         if self.removed_version:
             message += (
                 f" and will be removed in version {self.removed_version}."
             )
         if self.hint:
+            # Prepend space and make sure it closes with "."
             message += f" {self.hint.rstrip('.')}."
-
-        stack_rank = _count_wrappers(func)
 
         @functools.wraps(func)
         def wrapped(*args, **kwargs):
-            stacklevel = 1 + self.get_stack_length(func) - stack_rank
+            stacklevel = (
+                self.stacklevel
+                if self.stacklevel is not None
+                else _warning_stacklevel(func)
+            )
             warnings.warn(
                 message, category=FutureWarning, stacklevel=stacklevel
             )
             return func(*args, **kwargs)
 
-        # modify doc string to display deprecation warning
+        # modify docstring to display deprecation warning
         doc = f"**Deprecated:** {message}"
         if wrapped.__doc__ is None:
             wrapped.__doc__ = doc
@@ -585,6 +758,67 @@ class deprecate_func(_DecoratorBaseClass):
             wrapped.__doc__ = doc + "\n\n    " + wrapped.__doc__
 
         return wrapped
+
+
+def _deprecate_estimate(func, class_name=None):
+    """Deprecate ``estimate`` method."""
+    class_name = (
+        func.__qualname__.split(".")[0] if class_name is None else class_name
+    )
+    return deprecate_func(
+        deprecated_version="0.26",
+        removed_version="2.2",
+        hint=f"Please use `{class_name}.from_estimate` class constructor instead.",
+        stacklevel=2,
+    )(func)
+
+
+def _deprecate_inherited_estimate(cls):
+    """Deprecate inherited ``estimate`` instance method.
+
+    This needs a class decorator so we can correctly specify the class of the
+    `from_estimate` class method in the deprecation message.
+    """
+
+    def estimate(self, *args, **kwargs):
+        return self._estimate(*args, **kwargs) is None
+
+    # The inherited method will always be wrapped by deprecator.
+    inherited_meth = getattr(cls, "estimate").__wrapped__
+    estimate.__doc__ = inherited_meth.__doc__
+    estimate.__signature__ = inspect.signature(inherited_meth)
+
+    cls.estimate = _deprecate_estimate(estimate, cls.__name__)
+    return cls
+
+
+def _update_from_estimate_docstring(cls):
+    """Fix docstring for inherited ``from_estimate`` class method.
+
+    Even for classes that inherit the `from_estimate` method, and do not
+    override it, we nevertheless need to change the *docstring* of the
+    `from_estimate` method to point the user to the current (inheriting) class,
+    rather than the class in which the method is defined (the inherited class).
+
+    This needs a class decorator so we can modify the docstring of the new
+    class method.  CPython currently does not allow us to modify class method
+    docstrings by updating ``__doc__``.
+    """
+
+    inherited_cmeth = getattr(cls, "from_estimate")
+
+    def from_estimate(cls, *args, **kwargs):
+        return inherited_cmeth(*args, **kwargs)
+
+    inherited_class_name = inherited_cmeth.__qualname__.split(".")[-2]
+
+    from_estimate.__doc__ = inherited_cmeth.__doc__.replace(
+        inherited_class_name, cls.__name__
+    )
+    from_estimate.__signature__ = inspect.signature(inherited_cmeth)
+
+    cls.from_estimate = classmethod(from_estimate)
+    return cls
 
 
 def get_bound_method_class(m):
@@ -825,9 +1059,10 @@ def _validate_interpolation_order(image_dtype, order):
     ----------
     image_dtype : dtype
         Image dtype.
-    order : int, optional
-        The order of the spline interpolation. The order has to be in
-        the range 0-5. See `skimage.transform.warp` for detail.
+    order : {None, int}, optional
+        The order of the spline interpolation. The order has to be in the range
+        0-5. If ``None`` assume order 0 for Boolean images, otherwise 1. See
+        `skimage.transform.warp` for detail.
 
     Returns
     -------

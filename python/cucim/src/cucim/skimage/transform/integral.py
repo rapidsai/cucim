@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import cupy as cp
@@ -20,6 +20,10 @@ def integral_image(image, *, dtype=None):
     ----------
     image : ndarray
         Input image.
+    dtype : data-type, optional
+        Data type (NumPy dtype) to be used for calculation, and for
+        output array `S`.  If None, defaults to the more precise of either
+        float64 or `image`'s dtype.
 
     Returns
     -------

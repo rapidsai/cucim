@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import cupy as cp
@@ -98,6 +98,41 @@ def test_salt_and_pepper():
 
     # Verify the relative amount of salt vs. pepper is close to expected
     assert 0.18 < saltmask.sum() / peppermask.sum() < 0.35
+
+
+def test_clipping_application_consistency():
+    """Ensure that clipping is not applied if 'clip' set to False regardless of 'mode' argument"""
+
+    img = (
+        cp.random.rand(1, 5, 5) * 10 - 5
+    )  # image array with c,h,w shape semantics and range [-5,5]
+    # we have float values outside of [-1,1], so we presumably don't want to clip
+
+    arr_out_pepper = random_noise(
+        img, mode="pepper", rng=42, clip=False, amount=0.5
+    )
+    arr_out_pepper2 = random_noise(
+        img, mode="s&p", salt_vs_pepper=0, rng=42, clip=False, amount=0.5
+    )
+
+    arr_out_salt = random_noise(
+        img, mode="salt", rng=42, clip=False, amount=0.5
+    )
+    arr_out_salt2 = random_noise(
+        img, mode="s&p", salt_vs_pepper=1, rng=42, clip=False, amount=0.5
+    )
+
+    # check that clipping has been consistently applied
+    assert cp.all(arr_out_pepper == arr_out_pepper2)
+    assert cp.all(arr_out_salt == arr_out_salt2)
+
+    # check clipping to range 0->1 didn't happen
+    assert cp.max(arr_out_pepper) != 1
+    assert cp.min(arr_out_pepper) != 0
+
+    # check clipping to range 0->1 didn't happen
+    assert cp.max(arr_out_salt) != 1
+    assert cp.min(arr_out_salt) != 0
 
 
 def test_gaussian():

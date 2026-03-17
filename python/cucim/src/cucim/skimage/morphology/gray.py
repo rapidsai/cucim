@@ -1,18 +1,15 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2022-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 """
 Grayscale morphological operations
 """
 
-import warnings
-
 import cupy as cp
 
 import cucim.skimage._vendored.ndimage as ndi
 
-from .._shared.utils import DEPRECATED
 from .footprints import (
     _footprint_is_sequence,
     mirror_footprint,
@@ -63,73 +60,6 @@ def _iterate_gray_func(gray_func, image, footprints, out, mode, cval):
     return out
 
 
-def _shift_footprint(footprint, shift_x, shift_y):
-    """Shift the binary image `footprint` in the left and/or up.
-
-    This only affects 2D footprints with even number of rows
-    or columns.
-
-    Parameters
-    ----------
-    footprint : 2D array, shape (M, N)
-        The input footprint.
-    shift_x, shift_y : bool
-        Whether to move `footprint` along each axis.
-
-    Returns
-    -------
-    out : 2D array, shape (M + int(shift_x), N + int(shift_y))
-        The shifted footprint.
-    """
-    if isinstance(footprint, tuple):
-        if len(footprint) == 2 and any(s % 2 == 0 for s in footprint):
-            # have to use an explicit array to shift the footprint below
-            footprint = cp.ones(footprint, dtype=bool)
-        else:
-            # no shift needed
-            return footprint
-    if footprint.ndim != 2:
-        # do nothing for 1D or 3D or higher footprints
-        return footprint
-    m, n = footprint.shape
-    if m % 2 == 0:
-        extra_row = cp.zeros((1, n), footprint.dtype)
-        if shift_x:
-            footprint = cp.vstack((footprint, extra_row))
-        else:
-            footprint = cp.vstack((extra_row, footprint))
-        m += 1
-    if n % 2 == 0:
-        extra_col = cp.zeros((m, 1), footprint.dtype)
-        if shift_y:
-            footprint = cp.hstack((footprint, extra_col))
-        else:
-            footprint = cp.hstack((extra_col, footprint))
-    return footprint
-
-
-def _shift_footprints(footprint, shift_x, shift_y):
-    """Shifts the footprints, whether it's a single array or a sequence.
-
-    See `_shift_footprint`, which is called for each array in the sequence.
-    """
-    if shift_x is DEPRECATED and shift_y is DEPRECATED:
-        return footprint
-
-    warning_msg = (
-        "The parameters `shift_x` and `shift_y` are deprecated since v0.23 and "
-        "will be removed in v0.26. Use `pad_footprint` or modify the footprint"
-        "manually instead."
-    )
-    warnings.warn(warning_msg, FutureWarning, stacklevel=4)
-
-    if _footprint_is_sequence(footprint):
-        return tuple(
-            (_shift_footprint(fp, shift_x, shift_y), n) for fp, n in footprint
-        )
-    return _shift_footprint(footprint, shift_x, shift_y)
-
-
 def _min_max_to_constant_mode(dtype, mode, cval):
     """Replace 'max' and 'min' with appropriate 'cval' and 'constant' mode."""
     if mode == "max":
@@ -168,8 +98,6 @@ def erosion(
     image,
     footprint=None,
     out=None,
-    shift_x=DEPRECATED,
-    shift_y=DEPRECATED,
     *,
     mode="reflect",
     cval=0.0,
@@ -206,12 +134,6 @@ def erosion(
         .. versionadded:: 24.06
             `mode` and `cval` were added in 24.06.
 
-    Other Parameters
-    ----------------
-    shift_x, shift_y : DEPRECATED
-
-        .. deprecated:: 24.06
-
     Returns
     -------
     eroded : cupy.ndarray, same shape as `image`
@@ -235,7 +157,8 @@ def erosion(
 
     For even-sized footprints, :func:`skimage.morphology.binary_erosion` and
     this function produce an output that differs: one is shifted by one pixel
-    compared to the other.
+    compared to the other. :func:`cucim.skimage.morphology.pad_footprint` is
+    available to account for this.
 
     Examples
     --------
@@ -265,19 +188,6 @@ def erosion(
     mode, cval = _min_max_to_constant_mode(image.dtype, mode, cval)
 
     is_footprint_sequence = _footprint_is_sequence(footprint)
-    footprint = _shift_footprints(footprint, shift_x, shift_y)
-
-    # if isinstance(footprint, tuple) and not is_footprint_sequence:
-    #     if len(footprint) != image.ndim:
-    #         raise ValueError(
-    #             "footprint.ndim={len(footprint)}, image.ndim={image.ndim}"
-    #         )
-    #     if image.ndim == 2 and any(s % 2 == 0 for s in footprint):
-    #         # only odd-shaped footprints are properly handled for tuples
-    #         footprint = cp.ones(footprint, dtype=bool)
-    #     else:
-    #         ndi.grey_erosion(image, size=footprint, output=out)
-    #         return out
 
     footprint = pad_footprint(footprint, pad_end=False)
 
@@ -300,8 +210,6 @@ def dilation(
     image,
     footprint=None,
     out=None,
-    shift_x=DEPRECATED,
-    shift_y=DEPRECATED,
     *,
     mode="reflect",
     cval=0.0,
@@ -339,12 +247,6 @@ def dilation(
         .. versionadded:: 24.06
             `mode` and `cval` were added in 24.06.
 
-    Other Parameters
-    ----------------
-    shift_x, shift_y : DEPRECATED
-
-        .. deprecated:: 24.06
-
     Returns
     -------
     dilated : cupy.ndarray, same shape and type as `image`
@@ -369,6 +271,8 @@ def dilation(
     For non-symmetric footprints, :func:`skimage.morphology.binary_dilation`
     and :func:`skimage.morphology.dilation` produce an output that differs:
     `binary_dilation` mirrors the footprint, whereas `dilation` does not.
+    :func:`cucim.skimage.morphology.mirror_footprint` is available to correct
+    for this.
 
     Examples
     --------
@@ -398,19 +302,6 @@ def dilation(
     mode, cval = _min_max_to_constant_mode(image.dtype, mode, cval)
 
     is_footprint_sequence = _footprint_is_sequence(footprint)
-    footprint = _shift_footprints(footprint, shift_x, shift_y)
-
-    # if isinstance(footprint, tuple) and not is_footprint_sequence:
-    #     if len(footprint) != image.ndim:
-    #         raise ValueError(
-    #             "footprint.ndim={len(footprint)}, image.ndim={image.ndim}"
-    #         )
-    #     if image.ndim == 2 and any(s % 2 == 0 for s in footprint):
-    #         # only odd-shaped footprints are properly handled for tuples
-    #         footprint = cp.ones(footprint, dtype=bool)
-    #     else:
-    #         ndi.grey_dilation(image, size=footprint, output=out)
-    #         return out
 
     footprint = pad_footprint(footprint, pad_end=False)
     # Note that `ndi.grey_dilation` mirrors the footprint and this

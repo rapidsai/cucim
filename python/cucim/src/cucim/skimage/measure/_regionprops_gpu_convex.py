@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 import math
@@ -82,7 +82,9 @@ def _feret_diameter_max(image_convex, spacing=None, return_argmax=False):
     """Compute the maximum Feret diameter of a single convex image region."""
     if image_convex.size == 1:
         warnings.warn(
-            "single element image, returning 0 for feret diameter", UserWarning
+            "single element image, returning 0 for feret diameter",
+            UserWarning,
+            stacklevel=2,
         )
         return 0
     coords = _regionprops_coords_perimeter(image_convex, connectivity=1)
