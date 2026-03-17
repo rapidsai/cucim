@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 from itertools import product
@@ -162,7 +162,7 @@ def convex_hull_image(
         Tolerance when determining whether a point is inside the hull. Due
         to numerical floating point errors, a tolerance of 0 can result in
         some points erroneously being classified as being outside the hull.
-    include_borders: bool, optional
+    include_borders : bool, optional
         If ``False``, vertices/edges are excluded from the final hull mask.
         Note that the ``True`` case is not currently implemented in cuCIM and
         will raise a ``NotImplementedError``.

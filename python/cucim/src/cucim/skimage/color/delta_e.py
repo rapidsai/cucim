@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 """
@@ -16,9 +16,9 @@ differentiation, but more recent studies (Mahy 1994) peg JND at 2.3
 
 The delta-E notation comes from the German word for "Sensation" (Empfindung).
 
-Reference
----------
-https://en.wikipedia.org/wiki/Color_difference
+References
+----------
+.. [1] https://en.wikipedia.org/wiki/Color_difference
 
 """
 
