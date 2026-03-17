@@ -110,6 +110,21 @@ NvImageCodecProcessor::NvImageCodecProcessor(
 
 NvImageCodecProcessor::~NvImageCodecProcessor()
 {
+    // Drain any in-flight batches before destroying the stream so that
+    // nvImageCodec finishes all GPU work enqueued on decode_stream_.
+    while (true)
+    {
+        cuslide2::nvimgcodec::BatchDecodeState state;
+        {
+            std::lock_guard<std::mutex> lock(nvimgcodec_mutex_);
+            if (pending_batches_.empty())
+                break;
+            state = std::move(pending_batches_.front());
+            pending_batches_.pop();
+        }
+        cuslide2::nvimgcodec::wait_batch_decode(state);
+    }
+
     shutdown();
 
     // Destroy custom CUDA stream
