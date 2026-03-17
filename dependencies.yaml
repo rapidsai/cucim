@@ -227,7 +227,7 @@ dependencies:
               - python=3.14
           - matrix:
             packages:
-              - python>=3.11
+              - python>=3.11,<3.15
   rapids_build_setuptools:
     common:
       - output_types: [conda, requirements, pyproject]
