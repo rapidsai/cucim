@@ -1122,10 +1122,11 @@ def test_2D_only_implementations(xp):
         _ = tf.shear
 
 
-@pytest.mark.parametrize("tform_class", TRANSFORMS.values())
+@pytest.mark.parametrize(
+    "tform_class",
+    [t for t in TRANSFORMS.values() if t is not PiecewiseAffineTransform],
+)
 def test_identity(tform_class):
-    if tform_class is PiecewiseAffineTransform:
-        return
     rng = np.random.default_rng(0)
     allows_nd = tform_class in HMAT_TFORMS_ND
     dims = (2, 3, 4) if allows_nd else (2,)
@@ -1137,6 +1138,38 @@ def test_identity(tform_class):
         else:
             out = src
         assert_array_almost_equal(t(src), out)
+
+
+@pytest.mark.parametrize("xp", [np, cp])
+@pytest.mark.parametrize(
+    "tform_class",
+    [t for t in TRANSFORMS.values() if t is not PiecewiseAffineTransform],
+)
+def test_identity_array_module(xp, tform_class):
+    t = tform_class.identity(2, xp=xp)
+    assert type(t.params) is xp.ndarray
+
+
+@pytest.mark.parametrize("xp", [np, cp])
+@pytest.mark.parametrize(
+    "tform_class",
+    [
+        ProjectiveTransform,
+        AffineTransform,
+        EuclideanTransform,
+        SimilarityTransform,
+        PolynomialTransform,
+    ],
+)
+def test_from_estimate_array_module(xp, tform_class):
+    src = xp.array([[0, 0], [0, 50], [50, 50], [50, 0]], dtype=float)
+    dst = xp.array([[0, 0], [0, 50], [50, 50], [50, 0]], dtype=float)
+    if tform_class is PolynomialTransform:
+        tf = tform_class.from_estimate(src, dst, order=2)
+    else:
+        tf = tform_class.from_estimate(src, dst)
+    assert tf
+    assert type(tf.params) is xp.ndarray
 
 
 @pytest.mark.parametrize("tform_class", HMAT_TFORMS)

@@ -262,9 +262,9 @@ class GeometricTransform:
         raise NotImplementedError()
 
     @classmethod
-    def identity(cls, dimensionality=None):
+    def identity(cls, dimensionality=None, xp=cp):
         d = 2 if dimensionality is None else dimensionality
-        return cls(dimensionality=d)
+        return cls(dimensionality=d, xp=xp)
 
     @classmethod
     def from_estimate(cls, src, dst, *args, **kwargs):
@@ -273,7 +273,8 @@ class GeometricTransform:
 
 
 def _from_estimate(cls, src, dst, *args, **kwargs):
-    tf = cls.identity(src.shape[1])
+    xp = cp.get_array_module(src)
+    tf = cls.identity(src.shape[1], xp=xp)
     estimate_func = getattr(tf, "_estimate", None)
     if estimate_func is None:
         result = tf.estimate(src, dst, *args, **kwargs)
@@ -640,7 +641,7 @@ class EssentialMatrixTransform(FundamentalMatrixTransform):
                     "Do not specify rotation or translation when matrix is specified."
                 )
             matrix = self._rt2matrix(rotation, translation, xp=xp)
-        super().__init__(matrix=matrix, dimensionality=dimensionality)
+        super().__init__(matrix=matrix, dimensionality=dimensionality, xp=xp)
 
     def _rt2matrix(self, rotation, translation, xp=cp):
         # Compute small matrix on CPU then transfer to GPU as needed.
@@ -1381,7 +1382,7 @@ class PiecewiseAffineTransform(GeometricTransform):
         return out
 
     @classmethod
-    def identity(cls, dimensionality=None):
+    def identity(cls, dimensionality=None, xp=cp):
         return cls()
 
 
@@ -1873,8 +1874,8 @@ class PolynomialTransform(GeometricTransform):
         )
 
     @classmethod
-    def identity(cls, dimensionality=None):
-        return cls(params=None, dimensionality=dimensionality)
+    def identity(cls, dimensionality=None, xp=cp):
+        return cls(params=None, dimensionality=dimensionality, xp=xp)
 
 
 TRANSFORMS = {
