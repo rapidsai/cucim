@@ -165,7 +165,6 @@ private:
 
     // Asynchronous batch decode state (FIFO queues)
     std::queue<cuslide2::nvimgcodec::BatchDecodeState> pending_batches_;
-    std::queue<std::vector<RoiDecodeRequest>> pending_requests_;
 };
 
 } // namespace cuslide2::loader
