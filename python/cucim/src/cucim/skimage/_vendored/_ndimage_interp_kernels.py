@@ -1,9 +1,11 @@
 # SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Infrastructure, Inc.
 # SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Networks, Inc.
-# SPDX-FileCopyrightText: Copyright (c) 2022-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND MIT
+from __future__ import annotations
 
 import cupy
+import cupy._core.internal
 import numpy
 
 from cucim.skimage._vendored import (
@@ -20,7 +22,7 @@ math_constants_preamble = r"""
 spline_weights_inline = _spline_kernel_weights.spline_weights_inline
 
 
-def _get_coord_map(ndim, nprepad=0):
+def _get_coord_map(ndim, nprepad=0, float_type=None):
     """Extract target coordinate from coords array (for map_coordinates).
 
     Notes
@@ -51,7 +53,7 @@ def _get_coord_map(ndim, nprepad=0):
     return ops
 
 
-def _get_coord_zoom_and_shift(ndim, nprepad=0):
+def _get_coord_zoom_and_shift(ndim, nprepad=0, float_type=None):
     """Compute target coordinate based on a shift followed by a zoom.
 
     This version zooms from the center of the edge pixels.
@@ -79,7 +81,7 @@ def _get_coord_zoom_and_shift(ndim, nprepad=0):
     return ops
 
 
-def _get_coord_zoom_and_shift_grid(ndim, nprepad=0):
+def _get_coord_zoom_and_shift_grid(ndim, nprepad=0, float_type=None):
     """Compute target coordinate based on a shift followed by a zoom.
 
     This version zooms from the outer edges of the grid pixels.
@@ -102,12 +104,13 @@ def _get_coord_zoom_and_shift_grid(ndim, nprepad=0):
     for j in range(ndim):
         ops.append(
             f"""
-    W c_{j} = zoom[{j}] * ((W)in_coord[{j}] - shift[j] + 0.5) - 0.5{pre};"""
+    W c_{j} = zoom[{j}] * ((W)in_coord[{j}] - shift[j] + ({float_type})0.5)
+              - (W)0.5{pre};"""
         )
     return ops
 
 
-def _get_coord_zoom(ndim, nprepad=0):
+def _get_coord_zoom(ndim, nprepad=0, float_type=None):
     """Compute target coordinate based on a zoom.
 
     This version zooms from the center of the edge pixels.
@@ -134,7 +137,7 @@ def _get_coord_zoom(ndim, nprepad=0):
     return ops
 
 
-def _get_coord_zoom_grid(ndim, nprepad=0):
+def _get_coord_zoom_grid(ndim, nprepad=0, float_type="double"):
     """Compute target coordinate based on a zoom (grid_mode=True version).
 
     This version zooms from the outer edges of the grid pixels.
@@ -154,14 +157,13 @@ def _get_coord_zoom_grid(ndim, nprepad=0):
     ops = []
     pre = f" + (W){nprepad}" if nprepad > 0 else ""
     for j in range(ndim):
-        ops.append(
-            f"""
-    W c_{j} = zoom[{j}] * ((W)in_coord[{j}] + 0.5) - 0.5{pre};"""
-        )
+        ops.append(f"""
+    W c_{j} = zoom[{j}] * ((W)in_coord[{j}] + ({float_type})0.5)
+                           - ({float_type})0.5{pre};""")
     return ops
 
 
-def _get_coord_shift(ndim, nprepad=0):
+def _get_coord_shift(ndim, nprepad=0, float_type=None):
     """Compute target coordinate based on a shift.
 
     Notes
@@ -186,7 +188,7 @@ def _get_coord_shift(ndim, nprepad=0):
     return ops
 
 
-def _get_coord_affine(ndim, nprepad=0):
+def _get_coord_affine(ndim, nprepad=0, float_type=None):
     """Compute target coordinate based on a homogeneous transformation matrix.
 
     The homogeneous matrix has shape (ndim, ndim + 1). It corresponds to
@@ -263,6 +265,7 @@ def _generate_interp_custom(
     name="",
     integer_output=False,
     nprepad=0,
+    float_dtype=cupy.float64,
     omit_in_coord=False,
 ):
     """
@@ -271,7 +274,8 @@ def _generate_interp_custom(
             transformation. See for example, `_get_coord_shift`.
         ndim (int): The number of dimensions.
         large_int (bool): If true use Py_ssize_t instead of int for indexing.
-        yshape (tuple): Shape of the output array.
+        yshape (tuple): Shape of the output array. Can be None if not needed
+            in the kernel.
         mode (str): Signal extension mode to use at the array boundaries
         cval (float): constant value used when `mode == 'constant'`.
         name (str): base name for the interpolation kernel
@@ -279,6 +283,11 @@ def _generate_interp_custom(
             integer type.
         nprepad (int): integer indicating the amount of prepadding at the
             boundaries.
+        float_dtype (cupy.dtype): the floating point precision to use
+            internally. Should be cupy.float32 or cupy.float64.
+        omit_in_coord (bool): omit computation of unraveled input coordinates
+            when not needed. This is an optimization for use by
+            ``map_coordinates`` where the coordinates are already known.
 
     Returns:
         operation (str): code body for the ElementwiseKernel
@@ -286,7 +295,8 @@ def _generate_interp_custom(
     """
 
     ops = []
-    internal_dtype = "double" if integer_output else "Y"
+    float_type = cupy._core._scalar.get_typename(float_dtype)
+    internal_dtype = float_type if integer_output else "Y"
     ops.append(f"{internal_dtype} out = 0.0;")
 
     if large_int:
@@ -308,7 +318,7 @@ def _generate_interp_custom(
         ops.append(_unravel_loop_index(yshape, uint_t))
 
     # compute the transformed (target) coordinates, c_j
-    ops = ops + coord_func(ndim, nprepad)
+    ops = ops + coord_func(ndim, nprepad, float_type)
 
     if cval is numpy.nan:
         cval = "(Y)CUDART_NAN"
@@ -336,7 +346,9 @@ def _generate_interp_custom(
 
     if order == 0:
         if mode == "wrap":
-            ops.append("double dcoord;")  # mode 'wrap' requires this to work
+            ops.append(
+                f"{float_type} dcoord;"
+            )  # mode 'wrap' requires this to work
         for j in range(ndim):
             # determine nearest neighbor
             if mode == "wrap":
@@ -346,8 +358,9 @@ def _generate_interp_custom(
                 )
             else:
                 ops.append(
-                    f"""
-                {int_t} cf_{j} = ({int_t})floor((double)c_{j} + 0.5);"""
+                    f"""{int_t} cf_{j} = (
+                            {int_t})floor(({float_type})c_{j}
+                                          + ({float_type})0.5);"""
                 )
 
             # handle boundary
@@ -366,7 +379,7 @@ def _generate_interp_custom(
                 if mode == "wrap":
                     ops.append(
                         f"""
-                {int_t} cf_{j} = ({int_t})floor(dcoord + 0.5);"""
+                {int_t} cf_{j} = ({int_t})floor(dcoord + ({float_type})0.5);"""
                     )
 
             # sum over ic_j will give the raveled coordinate in the input
@@ -396,7 +409,7 @@ def _generate_interp_custom(
             # get coordinates for linear interpolation along axis j
             ops.append(
                 f"""
-            {int_t} cf_{j} = ({int_t})floor((double)c_{j});
+            {int_t} cf_{j} = ({int_t})floor(({float_type})c_{j});
             {int_t} cc_{j} = cf_{j} + 1;
             {int_t} n_{j} = (c_{j} == cf_{j}) ? 1 : 2;  // points needed
             """
@@ -405,8 +418,8 @@ def _generate_interp_custom(
             if mode == "wrap":
                 ops.append(
                     f"""
-                double dcoordf = c_{j};
-                double dcoordc = c_{j} + 1;"""
+                {float_type} dcoordf = c_{j};
+                {float_type} dcoordc = c_{j} + 1;"""
                 )
             else:
                 # handle boundaries for extension modes.
@@ -438,8 +451,9 @@ def _generate_interp_custom(
                 if mode == "wrap":
                     ops.append(
                         f"""
-                    {int_t} cf_bounded_{j} = ({int_t})floor(dcoordf);;
-                    {int_t} cc_bounded_{j} = ({int_t})floor(dcoordf + 1);;
+                    {int_t} cf_bounded_{j} = ({int_t})floor(dcoordf);
+                    {int_t} cc_bounded_{j} = ({int_t})floor(dcoordf
+                                              + ({float_type})1.0);
                     """
                     )
 
@@ -479,11 +493,17 @@ def _generate_interp_custom(
                 f"""
             W weights_{j}[{order + 1}];"""
             )
-            ops.append(spline_weights_inline[order].format(j=j, order=order))
+            ops.append(
+                spline_weights_inline[order].format(
+                    j=j,
+                    order=order,
+                    F=float_type,
+                )
+            )
 
             # get starting coordinate for spline interpolation along axis j
             if mode in ["wrap"]:
-                ops.append(f"double dcoord = c_{j};")
+                ops.append(f"{float_type} dcoord = c_{j};")
                 coord_var = "dcoord"
                 ops.append(
                     _util._generate_boundary_condition_ops(
@@ -491,17 +511,21 @@ def _generate_interp_custom(
                     )
                 )
             else:
-                coord_var = f"(double)c_{j}"
+                coord_var = f"({float_type})c_{j}"
 
             if order & 1:
                 op_str = """
                 start = ({int_t})floor({coord_var}) - {order_2};"""
             else:
                 op_str = """
-                start = ({int_t})floor({coord_var} + 0.5) - {order_2};"""
+                start = ({int_t})floor(
+                    {coord_var} + ({float_type})0.5) - {order_2};"""
             ops.append(
                 op_str.format(
-                    int_t=int_t, coord_var=coord_var, order_2=order // 2
+                    int_t=int_t,
+                    float_type=float_type,
+                    coord_var=coord_var,
+                    order_2=order // 2,
                 )
             )
 
@@ -558,7 +582,7 @@ def _generate_interp_custom(
         ops.append("}")
 
     if integer_output:
-        ops.append("y = (Y)rint((double)out);")
+        ops.append(f"y = (Y)rint(({float_type})out);")
     else:
         ops.append("y = (Y)out;")
     operation = "\n".join(ops)
@@ -586,6 +610,7 @@ def _get_map_kernel(
     order=1,
     integer_output=False,
     nprepad=0,
+    float_dtype=cupy.double,
 ):
     in_params = "raw X x, raw W coords"
     out_params = "Y y"
@@ -600,6 +625,7 @@ def _get_map_kernel(
         name="map",
         integer_output=integer_output,
         nprepad=nprepad,
+        float_dtype=float_dtype,
         omit_in_coord=True,  # input image coordinates are not needed
     )
     return cupy.ElementwiseKernel(
@@ -617,6 +643,7 @@ def _get_shift_kernel(
     order=1,
     integer_output=False,
     nprepad=0,
+    float_dtype=cupy.double,
 ):
     in_params = "raw X x, raw W shift"
     out_params = "Y y"
@@ -631,6 +658,7 @@ def _get_shift_kernel(
         name="shift",
         integer_output=integer_output,
         nprepad=nprepad,
+        float_dtype=float_dtype,
     )
     return cupy.ElementwiseKernel(
         in_params, out_params, operation, name, preamble=math_constants_preamble
@@ -648,6 +676,7 @@ def _get_zoom_shift_kernel(
     integer_output=False,
     grid_mode=False,
     nprepad=0,
+    float_dtype=cupy.double,
 ):
     in_params = "raw X x, raw W shift, raw W zoom"
     out_params = "Y y"
@@ -666,6 +695,7 @@ def _get_zoom_shift_kernel(
         name="zoom_shift_grid" if grid_mode else "zoom_shift",
         integer_output=integer_output,
         nprepad=nprepad,
+        float_dtype=float_dtype,
     )
     return cupy.ElementwiseKernel(
         in_params, out_params, operation, name, preamble=math_constants_preamble
@@ -683,6 +713,7 @@ def _get_zoom_kernel(
     integer_output=False,
     grid_mode=False,
     nprepad=0,
+    float_dtype=cupy.double,
 ):
     in_params = "raw X x, raw W zoom"
     out_params = "Y y"
@@ -697,6 +728,7 @@ def _get_zoom_kernel(
         name="zoom_grid" if grid_mode else "zoom",
         integer_output=integer_output,
         nprepad=nprepad,
+        float_dtype=float_dtype,
     )
     return cupy.ElementwiseKernel(
         in_params, out_params, operation, name, preamble=math_constants_preamble
@@ -713,6 +745,7 @@ def _get_affine_kernel(
     order=1,
     integer_output=False,
     nprepad=0,
+    float_dtype=cupy.double,
 ):
     in_params = "raw X x, raw W mat"
     out_params = "Y y"
@@ -727,6 +760,7 @@ def _get_affine_kernel(
         name="affine",
         integer_output=integer_output,
         nprepad=nprepad,
+        float_dtype=float_dtype,
     )
     return cupy.ElementwiseKernel(
         in_params, out_params, operation, name, preamble=math_constants_preamble
