@@ -1,8 +1,7 @@
-# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 import os
-import pickle
 
 import cupy
 import cupy as cp
@@ -56,10 +55,9 @@ class FilterBench(ImageBench):
         self.args_gpu = (imaged,)
 
 
-pfile = "filter_results.pickle"
-if os.path.exists(pfile):
-    with open(pfile, "rb") as f:
-        all_results = pickle.load(f)
+cfile = "filter_results.csv"
+if os.path.exists(cfile):
+    all_results = pd.read_csv(cfile, index_col=0)
 else:
     all_results = pd.DataFrame()
 
@@ -127,8 +125,7 @@ for shape in [(512, 512), (3840, 2160), (192, 192, 192)]:
         results = B.run_benchmark(duration=1)
         all_results = pd.concat([all_results, results["full"]])
 
-fbase = os.path.splitext(pfile)[0]
-all_results.to_csv(fbase + ".csv")
-all_results.to_pickle(pfile)
+fbase = os.path.splitext(cfile)[0]
+all_results.to_csv(cfile, index=True)
 with open(fbase + ".md", "w") as f:
     f.write(all_results.to_markdown())
