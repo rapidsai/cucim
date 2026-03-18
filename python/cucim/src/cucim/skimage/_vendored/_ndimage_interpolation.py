@@ -509,6 +509,7 @@ def affine_transform(
     integer_output = output.dtype.kind in "iu"
     _util._check_cval(mode, cval, integer_output)
     large_int = max(math.prod(input.shape), math.prod(output_shape)) > 1 << 31
+    matrix = matrix.astype(float_dtype, copy=False)
     if matrix.ndim == 1:
         offset = cupy.asarray(offset, dtype=float_dtype)
         offset = -offset / matrix
