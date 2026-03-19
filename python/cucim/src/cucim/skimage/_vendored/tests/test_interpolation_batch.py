@@ -27,9 +27,10 @@ import pytest
 import cupy
 from cupy.cuda import runtime
 from cupy import testing
-import cupyx.scipy.ndimage
-from cupyx.scipy.ndimage import _util
-from cupyx.scipy.ndimage._interp_kernels import loop_batch_max_channels
+import cucim.skimage._vendored.ndimage as vendored_ndimage
+from cucim.skimage._vendored._ndimage_interp_kernels import (
+    loop_batch_max_channels,
+)
 
 try:
     import scipy
@@ -81,7 +82,7 @@ class TestRotateBatch:
 
     def _rotate(self, a, axes):
         """Compare against manually looping over batch axes."""
-        rotate = cupyx.scipy.ndimage.rotate
+        rotate = vendored_ndimage.rotate
         axes = tuple(ax % a.ndim for ax in axes)
         if a.ndim == 3 and len(axes) == 2 and 2 not in axes:
             # loop over last axis
@@ -232,7 +233,7 @@ class TestShiftBatch:
 
     def _shift(self, a, shift_val):
         """Compare against manually looping over axes where shift is 0."""
-        shift = cupyx.scipy.ndimage.shift
+        shift = vendored_ndimage.shift
         if len(shift_val) == 3 and shift_val[-1] == 0:
             # loop over last axis
             expected = cupy.stack(
@@ -375,7 +376,7 @@ class TestZoomBatch:
 
     def _zoom(self, a, zm):
         """Compare against manually looping over axes where zoom is 1."""
-        zoom = cupyx.scipy.ndimage.zoom
+        zoom = vendored_ndimage.zoom
         if a.ndim == 3 and zm[-1] == 1:
             # loop over last axis
             expected = cupy.stack(
