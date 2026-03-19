@@ -4,6 +4,7 @@
 #
 
 import os
+import sys
 
 import cupy as cp
 import pytest
@@ -138,6 +139,10 @@ def test_read_region_cpu_memleak(testimg_tiff_stripe_4096x4096_256):
     assert mem_usage_history[5] - mem_usage_history[9] < 2**20 * 1
 
 
+@pytest.mark.xfail(
+    sys.version_info >= (3, 14),
+    reason="Fails on Python 3.14, see tracking issue: https://github.com/rapidsai/cucim/issues/1043",
+)
 def test_read_random_region_cpu_memleak(testimg_tiff_stripe_4096x4096_256):
     import gc
     import os
