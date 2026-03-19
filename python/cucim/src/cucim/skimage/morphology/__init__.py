@@ -5,7 +5,7 @@
 """Morphological algorithms, e.g., closing, opening, skeletonization."""
 
 from ._skeletonize import medial_axis, thin
-from .extrema import local_maxima, local_minima
+from .extrema import h_maxima, h_minima, local_maxima, local_minima
 from .binary import (
     binary_closing,
     binary_dilation,
@@ -51,6 +51,8 @@ __all__ = [
     "binary_dilation",
     "binary_opening",
     "binary_closing",
+    "h_maxima",
+    "h_minima",
     "local_maxima",
     "local_minima",
     "isotropic_dilation",
