@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2003-2009 Massachusetts Institute of Technology
 # SPDX-FileCopyrightText: Copyright (c) 2009-2011 Broad Institute
 # SPDX-FileCopyrightText: 2003 Lee Kamentsky
-# SPDX-FileCopyrightText: Copyright (c) 2022-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND (GPL-2.0-only OR BSD-3-Clause)
 
 """
@@ -21,10 +21,20 @@ import numpy as np
 import skimage
 from packaging.version import Version
 
+import cucim.skimage._vendored.ndimage as ndi
+
 old_reconstruction_pyx = Version(skimage.__version__) < Version("0.20.0")
 
 
-def reconstruction(seed, mask, method="dilation", footprint=None, offset=None):
+def reconstruction(
+    seed,
+    mask,
+    method="dilation",
+    footprint=None,
+    offset=None,
+    *,
+    reconstruct_on_cpu=False,
+):
     """Perform a morphological reconstruction of an image.
 
     Morphological reconstruction by dilation is similar to basic morphological
@@ -66,6 +76,10 @@ def reconstruction(seed, mask, method="dilation", footprint=None, offset=None):
         The coordinates of the center of the footprint.
         Default is located on the geometrical center of the footprint, in that
         case footprint dimensions must be odd.
+    reconstruct_on_cpu : bool, optional
+        If False (default), use an iterative GPU-native algorithm that stays
+        entirely on the device. If True, fall back to scikit-image's Cython
+        reconstruction_loop on the CPU (requires host-device transfers).
 
     Returns
     -------
@@ -124,8 +138,30 @@ def reconstruction(seed, mask, method="dilation", footprint=None, offset=None):
 
     Notes
     -----
-    The algorithm is taken from [1]_. Applications for grayscale reconstruction
-    are discussed in [2]_ and [3]_.
+    Two algorithm variants are available, selected by the
+    ``reconstruct_on_cpu`` parameter:
+
+    When ``reconstruct_on_cpu=True``, the CPU-based algorithm from [1]_ is used. This
+    processes pixels in rank order using a linked-list traversal via
+    scikit-image's Cython ``reconstruction_loop``. Data is transferred to
+    the host for the inner loop and back to the device afterward.
+
+    When ``reconstruct_on_cpu=False`` (default), an iterative parallel algorithm runs
+    entirely on the GPU. Each iteration applies a conditional dilation (or
+    erosion) via ``maximum_filter`` (or ``minimum_filter``) and clamps by the
+    mask, repeating until convergence. This is highly efficient when the seed
+    is close to the mask (e.g., in ``h_maxima`` / ``h_minima``), typically
+    converging in few iterations with each iteration fully parallelized.
+    However, in pathological cases where a single seed value must propagate
+    across a long path (e.g., a single-pixel seed with a uniform mask),
+    convergence can require O(N) iterations and the CPU path may be faster.
+
+    An alternative GPU algorithm based on irregular wavefront propagation [4]_
+    would handle such pathological cases efficiently by tiling the image into
+    shared-memory-sized blocks and only re-processing tiles whose boundaries
+    change. This approach is not currently implemented in cuCIM.
+
+    Applications for grayscale reconstruction are discussed in [2]_ and [3]_.
 
     References
     ----------
@@ -136,34 +172,44 @@ def reconstruction(seed, mask, method="dilation", footprint=None, offset=None):
            on Image Processing (1993)
     .. [3] Soille, P., "Morphological Image Analysis: Principles and
            Applications", Chapter 6, 2nd edition (2003), ISBN 3540429883.
+    .. [4] Teodoro, G., Banerjee, T., Kurc, T.M., Sussman, A., Pan, T., and
+           Saltz, J.H., "Efficient irregular wavefront propagation algorithms
+           on hybrid CPU-GPU machines", Parallel Computing, 39(4-5),
+           pp. 189-211, 2013.
     """
-    from ..filters._rank_order import rank_order
+    seed = cp.asarray(seed)
+    mask = cp.asarray(mask)
 
-    assert tuple(seed.shape) == tuple(mask.shape)
+    if seed.shape != mask.shape:
+        raise ValueError(
+            f"seed and mask must have the same shape, "
+            f"got {seed.shape} and {mask.shape}"
+        )
+
+    if method not in ("dilation", "erosion"):
+        raise ValueError(
+            "Reconstruction method can be one of 'erosion' "
+            f"or 'dilation'. Got '{method}'."
+        )
+
     if method == "dilation" and cp.any(seed > mask):  # synchronize!
         raise ValueError(
             "Intensity of seed image must be less than that "
             "of the mask image for reconstruction by dilation."
         )
-
     elif method == "erosion" and cp.any(seed < mask):  # synchronize!
         raise ValueError(
             "Intensity of seed image must be greater than that "
             "of the mask image for reconstruction by erosion."
         )
 
-    try:
-        from skimage.morphology._grayreconstruct import reconstruction_loop
-    except ImportError:
-        try:
-            from skimage.morphology._greyreconstruct import reconstruction_loop
-        except ImportError:
-            raise ImportError("reconstruction requires scikit-image")
-
     if footprint is None:
-        footprint = np.ones([3] * seed.ndim, dtype=bool)
+        if reconstruct_on_cpu:
+            footprint = np.ones([3] * seed.ndim, dtype=bool)
+        else:
+            footprint = cp.ones([3] * seed.ndim, dtype=bool)
     else:
-        if isinstance(footprint, cp.ndarray):
+        if reconstruct_on_cpu and isinstance(footprint, cp.ndarray):
             footprint = cp.asnumpy(footprint)
         footprint = footprint.astype(bool, copy=True)
 
@@ -179,6 +225,91 @@ def reconstruction(seed, mask, method="dilation", footprint=None, offset=None):
         if not all([(0 <= o < d) for o, d in zip(offset, footprint.shape)]):
             raise ValueError("Offset must be included inside footprint")
 
+    if reconstruct_on_cpu:
+        return _reconstruction_cpu(seed, mask, method, footprint, offset)
+    else:
+        return _reconstruction_gpu(seed, mask, method, footprint, offset)
+
+
+def _reconstruction_gpu(seed, mask, method, footprint, offset):
+    """Iterative GPU-native morphological reconstruction.
+
+    Repeatedly applies conditional dilation (or erosion) until convergence.
+    Each iteration is a bulk GPU operation via maximum_filter/minimum_filter.
+    """
+    # Work in a dtype that can represent the reconstruction
+    work_dtype = np.promote_types(seed.dtype, mask.dtype)
+    if method == "erosion" and np.issubdtype(work_dtype, np.unsignedinteger):
+        work_dtype = np.promote_types(work_dtype, np.int8)
+
+    current = seed.astype(work_dtype, copy=True)
+    mask_work = mask.astype(work_dtype, copy=False)
+
+    # Convert reconstruction's `offset` to ndimage's `origin` parameter.
+    # The CPU reconstruction defines offset as the footprint anchor: pixel i
+    # propagates TO neighbors at positions defined by (footprint_pos - offset).
+    # In the iterative GPU approach, maximum_filter has pixel i RECEIVE from
+    # its window. To match the CPU's propagation direction, we reverse the
+    # relationship: origin = shape // 2 - offset (per dimension).
+    # For the default centered case (offset = shape // 2), origin = 0.
+    origin = tuple(int(d // 2 - o) for d, o in zip(footprint.shape, offset))
+
+    # Adaptive batch size: run several iterations between convergence checks
+    # to amortize the cost of the device synchronization in .any().
+    check_every = 4
+    max_check_every = 64
+    max_iter = max(seed.size, 1000)  # safety limit
+
+    filter_kwargs = dict(footprint=footprint, origin=origin)
+
+    is_dilation = method == "dilation"
+    n_iter = 0
+    while n_iter < max_iter:
+        for _ in range(check_every):
+            if is_dilation:
+                dilated = ndi.maximum_filter(current, **filter_kwargs)
+                cp.minimum(dilated, mask_work, out=current)
+            else:
+                eroded = ndi.minimum_filter(current, **filter_kwargs)
+                cp.maximum(eroded, mask_work, out=current)
+            n_iter += 1
+
+        # Check convergence: would one more iteration change anything?
+        if is_dilation:
+            candidate = ndi.maximum_filter(current, **filter_kwargs)
+            cp.minimum(candidate, mask_work, out=candidate)
+        else:
+            candidate = ndi.minimum_filter(current, **filter_kwargs)
+            cp.maximum(candidate, mask_work, out=candidate)
+
+        if not (candidate != current).any():
+            break
+
+        current = candidate
+        n_iter += 1
+
+        # Ramp up batch size if convergence is slow
+        check_every = min(check_every * 2, max_check_every)
+
+    return current
+
+
+def _reconstruction_cpu(seed, mask, method, footprint, offset):
+    """CPU-based morphological reconstruction using scikit-image's Cython loop.
+
+    Data is transferred to host, processed single-threaded via
+    scikit-image's reconstruction_loop, then transferred back.
+    """
+    from ..filters._rank_order import rank_order
+
+    try:
+        from skimage.morphology._grayreconstruct import reconstruction_loop
+    except ImportError:
+        try:
+            from skimage.morphology._greyreconstruct import reconstruction_loop
+        except ImportError:
+            raise ImportError("reconstruction requires scikit-image")
+
     # Cross out the center of the footprint
     footprint[tuple(slice(d, d + 1) for d in offset)] = False
 
@@ -191,13 +322,9 @@ def reconstruction(seed, mask, method="dilation", footprint=None, offset=None):
     # we can interleave image and mask pixels when sorting.
     if method == "dilation":
         pad_value = cp.min(seed).item()
-    elif method == "erosion":
-        pad_value = cp.max(seed).item()
     else:
-        raise ValueError(
-            "Reconstruction method can be one of 'erosion' "
-            f"or 'dilation'. Got '{method}'."
-        )
+        pad_value = cp.max(seed).item()
+
     # CuPy Backend: modified to allow images_dtype based on input dtype
     #               instead of float64
     images_dtype = np.promote_types(seed.dtype, mask.dtype)
@@ -260,7 +387,6 @@ def reconstruction(seed, mask, method="dilation", footprint=None, offset=None):
         value_rank, value_map = rank_order(-images)
         value_map = -value_map
 
-    # TODO: implement reconstruction_loop on the GPU? For now, run it on host.
     start = index_sorted[0]
     value_rank = cp.asnumpy(value_rank.astype(unsigned_int_dtype, copy=False))
     reconstruction_loop(value_rank, prev, next, nb_strides, start, image_stride)

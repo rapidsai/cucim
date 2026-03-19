@@ -52,7 +52,7 @@ def _subtract_constant_clip(image, const_value):
     return result
 
 
-def h_maxima(image, h, footprint=None):
+def h_maxima(image, h, footprint=None, *, reconstruct_on_cpu=False):
     """Determine all maxima of the image with height >= h.
 
     The local maxima are defined as connected sets of pixels with equal
@@ -78,6 +78,11 @@ def h_maxima(image, h, footprint=None):
         The neighborhood expressed as an n-D array of 1's and 0's.
         Default is the ball of radius 1 according to the maximum norm
         (i.e. a 3x3 square for 2D images, a 3x3x3 cube for 3D images, etc.)
+    reconstruct_on_cpu : bool, optional
+        If False (default), the internal morphological reconstruction runs
+        entirely on the GPU. If True, it falls back to scikit-image's
+        CPU-based reconstruction loop. See
+        `cucim.skimage.morphology.reconstruction` for details.
 
     Returns
     -------
@@ -91,12 +96,6 @@ def h_maxima(image, h, footprint=None):
     cucim.skimage.morphology.h_minima
     cucim.skimage.morphology.local_maxima
     cucim.skimage.morphology.local_minima
-
-    Notes
-    -----
-    This function relies on `cucim.skimage.morphology.grayreconstruct` which is
-    still a hybrid CPU+GPU implementation. It is only expected to give modest
-    acceleration (e.g. 2x) over scikit-image.
 
     References
     ----------
@@ -183,13 +182,17 @@ def h_maxima(image, h, footprint=None):
         shifted_img = _subtract_constant_clip(image, h)
 
     rec_img = grayreconstruct.reconstruction(
-        shifted_img, image, method="dilation", footprint=footprint
+        shifted_img,
+        image,
+        method="dilation",
+        footprint=footprint,
+        reconstruct_on_cpu=reconstruct_on_cpu,
     )
     residue_img = image - rec_img
     return (residue_img >= h).astype(cp.uint8)
 
 
-def h_minima(image, h, footprint=None):
+def h_minima(image, h, footprint=None, *, reconstruct_on_cpu=False):
     """Determine all minima of the image with depth >= h.
 
     The local minima are defined as connected sets of pixels with equal
@@ -215,25 +218,17 @@ def h_minima(image, h, footprint=None):
         The neighborhood expressed as an n-D array of 1's and 0's.
         Default is the ball of radius 1 according to the maximum norm
         (i.e. a 3x3 square for 2D images, a 3x3x3 cube for 3D images, etc.)
-
-    Returns
-    -------
-    h_min : ndarray
-        The local minima of depth >= h and the global minima.
-        The resulting image is a binary image, where pixels belonging to
-        the determined minima take value 1, the others take value 0.
+    reconstruct_on_cpu : bool, optional
+        If False (default), the internal morphological reconstruction runs
+        entirely on the GPU. If True, it falls back to scikit-image's
+        CPU-based reconstruction loop. See
+        `cucim.skimage.morphology.reconstruction` for details.
 
     See Also
     --------
     skimage.morphology.h_maxima
     skimage.morphology.local_maxima
     skimage.morphology.local_minima
-
-    Notes
-    -----
-    This function relies on `cucim.skimage.morphology.grayreconstruct` which is
-    still a hybrid CPU+GPU implementation. It is only expected to give modest
-    acceleration (e.g. 2x) over scikit-image.
 
     References
     ----------
@@ -288,7 +283,11 @@ def h_minima(image, h, footprint=None):
         shifted_img = _add_constant_clip(image, h)
 
     rec_img = grayreconstruct.reconstruction(
-        shifted_img, image, method="erosion", footprint=footprint
+        shifted_img,
+        image,
+        method="erosion",
+        footprint=footprint,
+        reconstruct_on_cpu=reconstruct_on_cpu,
     )
     residue_img = rec_img - image
     return (residue_img >= h).astype(cp.uint8)
