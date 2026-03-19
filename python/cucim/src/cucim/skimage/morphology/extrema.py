@@ -15,9 +15,283 @@ import cupy as cp
 import numpy as np
 
 import cucim.skimage._vendored.ndimage as ndi
-from cucim.skimage.util import invert
+from cucim.skimage._shared.utils import warn
+from cucim.skimage.morphology import grayreconstruct
+from cucim.skimage.util import dtype_limits, invert
 
-__all__ = ["local_maxima", "local_minima"]
+__all__ = ["h_maxima", "h_minima", "local_maxima", "local_minima"]
+
+
+def _add_constant_clip(image, const_value):
+    """Add constant to the image while handling overflow issues gracefully."""
+    min_dtype, max_dtype = dtype_limits(image, clip_negative=False)
+
+    if const_value > (max_dtype - min_dtype):
+        raise ValueError(
+            "The added constant is not compatiblewith the image data type."
+        )
+
+    result = image + image.dtype.type(const_value)
+    clip_mask = image > image.dtype.type(max_dtype - const_value)
+    result[clip_mask] = image.dtype.type(max_dtype)
+    return result
+
+
+def _subtract_constant_clip(image, const_value):
+    """Subtract constant from image while handling underflow issues."""
+    min_dtype, max_dtype = dtype_limits(image, clip_negative=False)
+
+    if const_value > (max_dtype - min_dtype):
+        raise ValueError(
+            "The subtracted constant is not compatiblewith the image data type."
+        )
+
+    result = image - image.dtype.type(const_value)
+    clip_mask = image < image.dtype.type(const_value + min_dtype)
+    result[clip_mask] = image.dtype.type(min_dtype)
+    return result
+
+
+def h_maxima(image, h, footprint=None):
+    """Determine all maxima of the image with height >= h.
+
+    The local maxima are defined as connected sets of pixels with equal
+    gray level strictly greater than the gray level of all pixels in direct
+    neighborhood of the set.
+
+    A local maximum M of height h is a local maximum for which
+    there is at least one path joining M with an equal or higher local maximum
+    on which the minimal value is f(M) - h (i.e. the values along the path
+    are not decreasing by more than h with respect to the maximum's value)
+    and no path to an equal or higher local maximum for which the minimal
+    value is greater.
+
+    The global maxima of the image are also found by this function.
+
+    Parameters
+    ----------
+    image : ndarray
+        The input image for which the maxima are to be calculated.
+    h : unsigned integer
+        The minimal height of all extracted maxima.
+    footprint : ndarray, optional
+        The neighborhood expressed as an n-D array of 1's and 0's.
+        Default is the ball of radius 1 according to the maximum norm
+        (i.e. a 3x3 square for 2D images, a 3x3x3 cube for 3D images, etc.)
+
+    Returns
+    -------
+    h_max : ndarray
+        The local maxima of height >= h and the global maxima.
+        The resulting image is a binary image, where pixels belonging to
+        the determined maxima take value 1, the others take value 0.
+
+    See Also
+    --------
+    cucim.skimage.morphology.h_minima
+    cucim.skimage.morphology.local_maxima
+    cucim.skimage.morphology.local_minima
+
+    Notes
+    -----
+    This function relies on `cucim.skimage.morphology.grayreconstruct` which is
+    still a hybrid CPU+GPU implementation. It is only expected to give modest
+    acceleration (e.g. 2x) over scikit-image.
+
+    References
+    ----------
+    .. [1] Soille, P., "Morphological Image Analysis: Principles and
+           Applications" (Chapter 6), 2nd edition (2003), ISBN 3540429883.
+
+    Examples
+    --------
+    >>> import cupy as cp
+    >>> from cucim.skimage.morphology import extrema
+
+    We create an image (quadratic function with a maximum in the center and
+    4 additional constant maxima.
+    The heights of the maxima are: 1, 21, 41, 61, 81
+
+    >>> w = 10
+    >>> x, y = cp.mgrid[0:w,0:w]
+    >>> f = 20 - 0.2*((x - w/2)**2 + (y-w/2)**2)
+    >>> f[2:4,2:4] = 40; f[2:4,7:9] = 60; f[7:9,2:4] = 80; f[7:9,7:9] = 100
+    >>> f = f.astype(int)
+
+    We can calculate all maxima with a height of at least 40:
+
+    >>> maxima = extrema.h_maxima(f, 40)
+
+    The resulting image will contain 3 local maxima.
+    """
+
+    # Check for h value that is larger then range of the image. If this
+    # is True then there are no h-maxima in the image.
+    if h > cp.ptp(image):
+        return cp.zeros(image.shape, dtype=np.uint8)
+
+    # Check for floating point h value. For this to work properly
+    # we need to explicitly convert image to float64.
+    #
+    # FIXME: This could give incorrect results if image is int64 and
+    #        has a very high dynamic range. The dtype of image is
+    #        changed to float64, and different integer values could
+    #        become the same float due to rounding.
+    #
+    #   >>> ii64 = np.iinfo(np.int64)
+    #   >>> a = np.array([ii64.max, ii64.max - 2])
+    #   >>> a[0] == a[1]
+    #   False
+    #   >>> b = a.astype(np.float64)
+    #   >>> b[0] == b[1]
+    #   True
+    #
+    if np.issubdtype(type(h), np.floating) and np.issubdtype(
+        image.dtype, np.integer
+    ):
+        if (h % 1) != 0:
+            warn(
+                "possible precision loss converting image to "
+                "floating point. To silence this warning, "
+                "ensure image and h have same data type.",
+                stacklevel=2,
+            )
+            image = image.astype(float)
+        else:
+            h = image.dtype.type(h)
+
+    if h == 0:
+        raise ValueError("h = 0 is ambiguous, use local_maxima() instead?")
+
+    if np.issubdtype(image.dtype, np.floating):
+        # The purpose of the resolution variable is to allow for the
+        # small rounding errors that inevitably occur when doing
+        # floating point arithmetic. We want shifted_img to be
+        # guaranteed to be h less than image. If we only subtract h
+        # there may be pixels were shifted_img ends up being
+        # slightly greater than image - h.
+        #
+        # The resolution is scaled based on the pixel values in the
+        # image because floating point precision is relative. A
+        # very large value of 1.0e10 will have a large precision,
+        # say +-1.0e4, and a very small value of 1.0e-10 will have
+        # a very small precision, say +-1.0e-16.
+        #
+        resolution = (2 * cp.finfo(image.dtype).resolution) * cp.abs(image)
+        shifted_img = image - h - resolution
+    else:
+        shifted_img = _subtract_constant_clip(image, h)
+
+    rec_img = grayreconstruct.reconstruction(
+        shifted_img, image, method="dilation", footprint=footprint
+    )
+    residue_img = image - rec_img
+    return (residue_img >= h).astype(cp.uint8)
+
+
+def h_minima(image, h, footprint=None):
+    """Determine all minima of the image with depth >= h.
+
+    The local minima are defined as connected sets of pixels with equal
+    gray level strictly smaller than the gray levels of all pixels in direct
+    neighborhood of the set.
+
+    A local minimum M of depth h is a local minimum for which
+    there is at least one path joining M with an equal or lower local minimum
+    on which the maximal value is f(M) + h (i.e. the values along the path
+    are not increasing by more than h with respect to the minimum's value)
+    and no path to an equal or lower local minimum for which the maximal
+    value is smaller.
+
+    The global minima of the image are also found by this function.
+
+    Parameters
+    ----------
+    image : ndarray
+        The input image for which the minima are to be calculated.
+    h : unsigned integer
+        The minimal depth of all extracted minima.
+    footprint : ndarray, optional
+        The neighborhood expressed as an n-D array of 1's and 0's.
+        Default is the ball of radius 1 according to the maximum norm
+        (i.e. a 3x3 square for 2D images, a 3x3x3 cube for 3D images, etc.)
+
+    Returns
+    -------
+    h_min : ndarray
+        The local minima of depth >= h and the global minima.
+        The resulting image is a binary image, where pixels belonging to
+        the determined minima take value 1, the others take value 0.
+
+    See Also
+    --------
+    skimage.morphology.h_maxima
+    skimage.morphology.local_maxima
+    skimage.morphology.local_minima
+
+    Notes
+    -----
+    This function relies on `cucim.skimage.morphology.grayreconstruct` which is
+    still a hybrid CPU+GPU implementation. It is only expected to give modest
+    acceleration (e.g. 2x) over scikit-image.
+
+    References
+    ----------
+    .. [1] Soille, P., "Morphological Image Analysis: Principles and
+           Applications" (Chapter 6), 2nd edition (2003), ISBN 3540429883.
+
+    Examples
+    --------
+    >>> import numpy as cp
+    >>> from cucim.skimage.morphology import extrema
+
+    We create an image (quadratic function with a minimum in the center and
+    4 additional constant maxima.
+    The depth of the minima are: 1, 21, 41, 61, 81
+
+    >>> w = 10
+    >>> x, y = cp.mgrid[0:w,0:w]
+    >>> f = 180 + 0.2*((x - w/2)**2 + (y-w/2)**2)
+    >>> f[2:4,2:4] = 160; f[2:4,7:9] = 140; f[7:9,2:4] = 120; f[7:9,7:9] = 100
+    >>> f = f.astype(int)
+
+    We can calculate all minima with a depth of at least 40:
+
+    >>> minima = extrema.h_minima(f, 40)
+
+    The resulting image will contain 3 local minima.
+    """
+    if h > cp.ptp(image):
+        return cp.zeros(image.shape, dtype=cp.uint8)
+
+    if np.issubdtype(type(h), np.floating) and np.issubdtype(
+        image.dtype, np.integer
+    ):
+        if (h % 1) != 0:
+            warn(
+                "possible precision loss converting image to "
+                "floating point. To silence this warning, "
+                "ensure image and h have same data type.",
+                stacklevel=2,
+            )
+            image = image.astype(float)
+        else:
+            h = image.dtype.type(h)
+
+    if h == 0:
+        raise ValueError("h = 0 is ambiguous, use local_minima() instead?")
+
+    if np.issubdtype(image.dtype, np.floating):
+        resolution = 2 * cp.finfo(image.dtype).resolution * cp.abs(image)
+        shifted_img = image + h + resolution
+    else:
+        shifted_img = _add_constant_clip(image, h)
+
+    rec_img = grayreconstruct.reconstruction(
+        shifted_img, image, method="erosion", footprint=footprint
+    )
+    residue_img = rec_img - image
+    return (residue_img >= h).astype(cp.uint8)
 
 
 def _resolve_footprint(footprint, connectivity, ndim):
@@ -313,7 +587,7 @@ def _local_maxima(image, footprint, connectivity, indices, allow_borders):
     # with the minimum value, making them potential maxima
     if allow_borders:
         # Get minimum value for padding
-        if cp.issubdtype(image.dtype, cp.floating):
+        if np.issubdtype(image.dtype, np.floating):
             pad_value = float(image.min())
         else:
             pad_value = int(image.min())
@@ -351,7 +625,7 @@ def _local_maxima(image, footprint, connectivity, indices, allow_borders):
         #
         # We compute max of non-candidate neighbor values. For candidates,
         # we use a very low value so they don't contribute.
-        if cp.issubdtype(image.dtype, cp.floating):
+        if np.issubdtype(image.dtype, np.floating):
             low_val = float(image.min()) - 1.0
         else:
             # For integers, use float to allow going below min
