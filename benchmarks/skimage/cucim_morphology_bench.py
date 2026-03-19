@@ -7,7 +7,6 @@ import functools
 import math
 import operator
 import os
-import pickle
 
 import cupy as cp
 import numpy as np
@@ -136,12 +135,11 @@ class RemoveSmallHolesBench(RemoveSmallObjectsBench):
 
 
 def main(args):
-    pfile = "cucim_morphology_results.pickle"
-    if os.path.exists(pfile):
-        with open(pfile, "rb") as f:
-            all_results = pickle.load(f)
-    else:
+    cfile = "cucim_morphology_results.csv"
+    if getattr(args, "no_resume", False) or not os.path.exists(cfile):
         all_results = pd.DataFrame()
+    else:
+        all_results = pd.read_csv(cfile, index_col=0)
 
     dtypes = [np.dtype(args.dtype)]
     # image sizes/shapes
@@ -326,9 +324,8 @@ def main(args):
         results = B.run_benchmark(duration=args.duration)
         all_results = pd.concat([all_results, results["full"]])
 
-    fbase = os.path.splitext(pfile)[0]
-    all_results.to_csv(fbase + ".csv")
-    all_results.to_pickle(pfile)
+    fbase = os.path.splitext(cfile)[0]
+    all_results.to_csv(cfile, index=True)
     try:
         import tabular  # noqa: F401
 
@@ -401,6 +398,12 @@ if __name__ == "__main__":
         "--no_cpu",
         action="store_true",
         help="disable cpu measurements",
+        default=False,
+    )
+    parser.add_argument(
+        "--no_resume",
+        action="store_true",
+        help="do not load existing results CSV; save only this run's results (overwrite)",
         default=False,
     )
 
