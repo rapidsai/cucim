@@ -150,30 +150,28 @@ std::vector<BatchDecodeResult> decode_batch_regions_nvimgcodec(
     cudaStream_t cuda_stream = nullptr);
 
 /**
- * Schedule batch decoding of multiple regions asynchronously
+ * Schedule batch decoding of multiple regions asynchronously.
  *
- * This function prepares and schedules a batch decode operation but does not wait
- * for completion. Use wait_batch_decode() to wait for completion and get results.
+ * Prepares and schedules a batch decode operation but does not wait for
+ * completion. Use wait_batch_decode() to wait for completion and get results.
+ *
+ * When @p output_buffers is non-empty the decoder writes directly into those
+ * buffers (one per region, same order). The caller retains ownership; the
+ * returned BatchDecodeState will NOT free them on destruction.
+ *
+ * When @p output_buffers is empty (default), the function allocates its own
+ * buffers, which are freed by wait_batch_decode() or ~BatchDecodeState.
  *
  * @param ifd_info IFD information (resolution level to decode from)
  * @param main_code_stream Main TIFF code stream (from TiffFileParser)
  * @param regions Vector of ROI specifications (all from the same IFD)
  * @param out_device Output device ("cpu" or "cuda")
  * @param cuda_stream Optional CUDA stream for asynchronous execution (nullptr = default stream)
+ * @param output_buffers Optional pre-allocated output buffers, one per region
  * @return BatchDecodeState containing the future and all necessary state
  *
- * @note The returned state must be passed to wait_batch_decode() to complete the operation
- * @note Caller is responsible for cleaning up resources via wait_batch_decode()
- */
-/**
- * Schedule batch decoding with optional caller-provided output buffers.
- *
- * When @p output_buffers is non-empty the decoder writes directly into those
- * buffers (one per region, same order).  The caller retains ownership; the
- * returned BatchDecodeState will NOT free them on destruction.
- *
- * When @p output_buffers is empty (default), the function allocates its own
- * buffers, which are freed by wait_batch_decode() or ~BatchDecodeState.
+ * @note The returned state must be passed to wait_batch_decode() to complete the operation.
+ * @note Caller is responsible for cleaning up resources via wait_batch_decode().
  */
 BatchDecodeState schedule_batch_decode(
     const IfdInfo& ifd_info,
