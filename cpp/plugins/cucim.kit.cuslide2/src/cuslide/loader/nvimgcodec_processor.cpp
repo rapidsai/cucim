@@ -5,6 +5,7 @@
 
 // Standard library
 #include <algorithm>
+#include <cassert>
 #include <cstring>
 #include <deque>
 #include <memory>
@@ -266,8 +267,10 @@ uint32_t NvImageCodecProcessor::wait_batch(uint32_t index_in_task,
 std::shared_ptr<cucim::cache::ImageCacheValue> NvImageCodecProcessor::wait_for_processing(uint32_t index)
 {
     (void)index;
-    // With the zero-copy path, decoded data is written directly into the
-    // raster ring buffer.  There is no intermediate cache to query.
+    // Zero-copy path: decoded data is written directly into the raster ring
+    // buffer via OutputBufferProvider.  This method should never be called on
+    // NvImageCodecProcessor — use next_data() instead.
+    assert(false && "wait_for_processing() should not be called in zero-copy mode; use next_data() instead");
     return nullptr;
 }
 
