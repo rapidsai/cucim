@@ -195,7 +195,7 @@ order-by-type = true
 #   codespell --toml python/cucim/pyproject.toml . -i 3 -w
 skip = "build*,dist,.cache,html,_build,_deps,3rdparty/*,_static,generated,latex,.git,*.ipynb,test_data/input/LICENSE-3rdparty,jitify_testing"
 # ignore-regex = ""
-ignore-words-list = "ans,coo,boun,bu,bui,gool,hart,lond,manuel,nd,paeth,unser,wronly"
+ignore-words-list = "ans,coo,boun,bu,bui,gool,hart,lond,manuel,nd,paeth,unser,wronly,thirdparty,burnin,tge"
 quiet-level = 3
 
 # to undo: ./test_data/input/LICENSE-3rdparty

@@ -1,7 +1,7 @@
 /*
  * SPDX-FileCopyrightText: Copyright (C) 2000-2008, Intel Corporation, all rights reserved.
  * SPDX-FileCopyrightText: Copyright (C) 2009, Willow Garage Inc., all rights reserved.
- * SPDX-FileCopyrightText: Copyright (c) 2022-2025, NVIDIA CORPORATION. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
  */
 
@@ -149,7 +149,7 @@ extern "C" __global__ void cuRankFilterMultiBlock(IMAGE_T* src, IMAGE_T* dest,
 
   // In the original algorithm an initialization phase was required as part of
   // the window was outside the image. In this parallel version, the
-  // initializtion is required for all thread blocks that part of the median
+  // initialization is required for all thread blocks that part of the median
   // filter is outside the window. For all threads in the block the same code
   // will be executed.
   if (initNeeded) {
