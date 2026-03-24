@@ -20,12 +20,15 @@
 #include "nvimgcodec_tiff_parser.h"
 
 #include <algorithm>  // for std::transform
+#include <cstdlib>    // for std::atexit
 #include <cstring>    // for strlen
 #include <type_traits>
 
 #ifdef CUCIM_HAS_NVIMGCODEC
 #include <nvimgcodec.h>
 #include <cuda_runtime.h>
+#include <dlfcn.h>       // for dladdr
+#include <sys/stat.h>    // for stat, S_ISDIR
 #endif
 
 #include <fmt/format.h>
@@ -35,10 +38,110 @@
 #include <algorithm>
 #include <mutex>
 
+// Declared in nvimgcodec_wrap.cc (global namespace) — returns the real
+// symbol pointer from the dynamically loaded libnvimgcodec.so.
+extern "C++" void* NvimgcodecLoadSymbol(const char* name);
+
 namespace cuslide2::nvimgcodec
 {
 
 #ifdef CUCIM_HAS_NVIMGCODEC
+
+// ============================================================================
+// nvImageCodec extension path auto-detection
+// ============================================================================
+//
+// Workaround for a known nvImageCodec 0.7.0 bug: when the library is installed
+// via conda, its internal extension search path doesn't find the codec plugins
+// (libtiff_ext.so, libnvjpeg_ext.so, etc.) in $PREFIX/lib/extensions/.
+//
+// This helper auto-detects the extensions directory so we can pass it
+// explicitly via nvimgcodecInstanceCreateInfo_t::extension_modules_path.
+//
+//   1. Checks NVIMGCODEC_EXTENSIONS_PATH env var (user override)
+//   2. Resolves the real libnvimgcodec.so path via the dynlink wrapper's
+//      NvimgcodecLoadSymbol() + dladdr() (not the stub address)
+//   3. Probes <lib_dir>/extensions/ and <lib_dir>/../extensions/
+//
+// TODO: Remove this workaround once cuCIM upgrades to nvImageCodec >= 0.8.0,
+//       which fixes the extension search path for conda installs.
+//
+
+static std::string detect_nvimgcodec_extensions_path()
+{
+    // 1. Environment variable override
+    const char* env_path = std::getenv("NVIMGCODEC_EXTENSIONS_PATH");
+    if (env_path && env_path[0] != '\0')
+    {
+        #ifdef DEBUG
+        fmt::print("[nvimgcodec_ext] Using NVIMGCODEC_EXTENSIONS_PATH: {}\n", env_path);
+        #endif
+        return std::string(env_path);
+    }
+
+    // 2. Find where libnvimgcodec.so was loaded from using dladdr on the
+    //    REAL function pointer (resolved via dynlink), not the stub address.
+    void* real_func = ::NvimgcodecLoadSymbol("nvimgcodecGetProperties");
+    #ifdef DEBUG
+    fmt::print("[nvimgcodec_ext] NvimgcodecLoadSymbol returned: {}\n", real_func);
+    #endif
+    if (real_func)
+    {
+        Dl_info dl_info{};
+        if (dladdr(real_func, &dl_info) && dl_info.dli_fname)
+        {
+            std::string lib_path(dl_info.dli_fname);
+            #ifdef DEBUG
+            fmt::print("[nvimgcodec_ext] dladdr -> lib_path: {}\n", lib_path);
+            #endif
+            auto last_slash = lib_path.rfind('/');
+            if (last_slash != std::string::npos)
+            {
+                std::string lib_dir = lib_path.substr(0, last_slash);
+
+                // 3a. Probe <lib_dir>/extensions/
+                std::string candidate = lib_dir + "/extensions";
+                struct stat st{};
+                if (stat(candidate.c_str(), &st) == 0 && S_ISDIR(st.st_mode))
+                {
+                    #ifdef DEBUG
+                    fmt::print("[nvimgcodec_ext] Found extensions at: {}\n", candidate);
+                    #endif
+                    return candidate;
+                }
+                #ifdef DEBUG
+                fmt::print("[nvimgcodec_ext] Not found: {}\n", candidate);
+                #endif
+
+                // 3b. Probe <lib_dir>/../extensions/ (pip package layout)
+                candidate = lib_dir + "/../extensions";
+                if (stat(candidate.c_str(), &st) == 0 && S_ISDIR(st.st_mode))
+                {
+                    #ifdef DEBUG
+                    fmt::print("[nvimgcodec_ext] Found extensions at: {}\n", candidate);
+                    #endif
+                    return candidate;
+                }
+                #ifdef DEBUG
+                fmt::print("[nvimgcodec_ext] Not found: {}\n", candidate);
+                #endif
+            }
+        }
+        else
+        {
+            #ifdef DEBUG
+            fmt::print("[nvimgcodec_ext] dladdr failed\n");
+            #endif
+        }
+    }
+
+    // 4. Not found — return empty, nvImageCodec will use its default search
+    #ifdef DEBUG
+    fmt::print("[nvimgcodec_ext] WARNING: Could not detect extensions path\n");
+    #endif
+    return {};
+}
+
 
 // nvimgcodec API compatibility
 //
@@ -122,22 +225,35 @@ static bool extract_tag_value(const std::vector<uint8_t>& buffer, int value_coun
 // ============================================================================
 
 NvImageCodecTiffParserManager::NvImageCodecTiffParserManager()
-    : instance_(nullptr), decoder_(nullptr), cpu_decoder_(nullptr), initialized_(false)
+    : instance_(nullptr), decoder_(nullptr), initialized_(false)
 {
     try
     {
         // Create nvImageCodec instance for TIFF parsing (separate from decoder instance)
+        //
+        // Auto-detect extension modules path so nvImageCodec can find its codec
+        // plugins (libtiff_ext.so, libnvjpeg_ext.so, etc.) regardless of install
+        // method (conda, pip, or system).
+        std::string ext_path = detect_nvimgcodec_extensions_path();
+
         nvimgcodecInstanceCreateInfo_t create_info{};
         create_info.struct_type = NVIMGCODEC_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
         create_info.struct_size = sizeof(nvimgcodecInstanceCreateInfo_t);
         create_info.struct_next = nullptr;
         create_info.load_builtin_modules = 1;       // Load JPEG, PNG, etc.
         create_info.load_extension_modules = 1;     // Load JPEG2K, TIFF, etc.
-        create_info.extension_modules_path = nullptr;
+        create_info.extension_modules_path = ext_path.empty() ? nullptr : ext_path.c_str();
         create_info.create_debug_messenger = 0;     // Disable debug for TIFF parser
         create_info.debug_messenger_desc = nullptr;
         create_info.message_severity = 0;
         create_info.message_category = 0;
+
+        #ifdef DEBUG
+        if (!ext_path.empty())
+        {
+            fmt::print("  nvImageCodec extensions path: {}\n", ext_path);
+        }
+        #endif
 
         nvimgcodecStatus_t status = nvimgcodecInstanceCreate(&instance_, &create_info);
 
@@ -151,8 +267,12 @@ NvImageCodecTiffParserManager::NvImageCodecTiffParserManager()
             return;
         }
 
-        // Create decoder for metadata extraction (not for image decoding)
-        // This decoder is used exclusively for nvimgcodecDecoderGetMetadata() calls
+        // Create the primary decoder used for both metadata extraction and
+        // image decoding (GPU + CPU output).  Using NVIMGCODEC_DEVICE_CURRENT
+        // enables GPU backends (libnvtiff_ext, etc.) so the decoder can handle
+        // JPEG-compressed TIFF.  For CPU output requests the caller sets
+        // buffer_kind = STRIDED_HOST, and nvImageCodec decodes on the GPU then
+        // copies the result back to host memory automatically.
         nvimgcodecExecutionParams_t exec_params{};
         exec_params.struct_type = NVIMGCODEC_STRUCTURE_TYPE_EXECUTION_PARAMS;
         exec_params.struct_size = sizeof(nvimgcodecExecutionParams_t);
@@ -161,10 +281,10 @@ NvImageCodecTiffParserManager::NvImageCodecTiffParserManager()
         exec_params.pinned_allocator = nullptr;
         exec_params.max_num_cpu_threads = 0;
         exec_params.executor = nullptr;
-        exec_params.device_id = NVIMGCODEC_DEVICE_CPU_ONLY;  // CPU-only for metadata extraction
+        exec_params.device_id = NVIMGCODEC_DEVICE_CURRENT;  // GPU-enabled for decode + metadata
         exec_params.pre_init = 0;
         exec_params.skip_pre_sync = 0;
-        exec_params.num_backends = 0;
+        exec_params.num_backends = 0;   // 0 = allow all backends (GPU + CPU)
         exec_params.backends = nullptr;
 
         status = nvimgcodecDecoderCreate(instance_, &decoder_, &exec_params, nullptr);
@@ -181,44 +301,20 @@ NvImageCodecTiffParserManager::NvImageCodecTiffParserManager()
             return;
         }
 
-        // Create CPU-only decoder for native CPU decoding
-        nvimgcodecBackendKind_t cpu_backend_kind = NVIMGCODEC_BACKEND_KIND_CPU_ONLY;
-        nvimgcodecBackendParams_t cpu_backend_params{};
-        cpu_backend_params.struct_type = NVIMGCODEC_STRUCTURE_TYPE_BACKEND_PARAMS;
-        cpu_backend_params.struct_size = sizeof(nvimgcodecBackendParams_t);
-        cpu_backend_params.struct_next = nullptr;
-
-        nvimgcodecBackend_t cpu_backend{};
-        cpu_backend.struct_type = NVIMGCODEC_STRUCTURE_TYPE_BACKEND;
-        cpu_backend.struct_size = sizeof(nvimgcodecBackend_t);
-        cpu_backend.struct_next = nullptr;
-        cpu_backend.kind = cpu_backend_kind;
-        cpu_backend.params = cpu_backend_params;
-
-        nvimgcodecExecutionParams_t cpu_exec_params = exec_params;
-        cpu_exec_params.num_backends = 1;
-        cpu_exec_params.backends = &cpu_backend;
-
-        nvimgcodecStatus_t cpu_status = nvimgcodecDecoderCreate(instance_, &cpu_decoder_, &cpu_exec_params, nullptr);
-        if (cpu_status == NVIMGCODEC_STATUS_SUCCESS)
-        {
-            #ifdef DEBUG
-            fmt::print("✅ CPU-only decoder created successfully (TIFF parser)\n");
-            #endif // DEBUG
-        }
-        else
-        {
-            #ifdef DEBUG
-            fmt::print("⚠️  Failed to create CPU-only decoder (CPU decoding will use fallback)\n");
-            #endif // DEBUG
-            cpu_decoder_ = nullptr;
-        }
-
         initialized_ = true;
         status_message_ = "nvImageCodec TIFF parser initialized successfully (with metadata extraction support)";
         #ifdef DEBUG
         fmt::print("✅ {}\n", status_message_);
         #endif // DEBUG
+
+        // Register atexit() AFTER nvimgcodecDecoderCreate (which initializes
+        // CUDA internally).  atexit handlers run in LIFO order, so this
+        // handler fires BEFORE the CUDA runtime's own atexit cleanup,
+        // guaranteeing that the CUDA context is still alive when we call
+        // nvimgcodecDecoderDestroy / nvimgcodecInstanceDestroy.
+        std::atexit([]() {
+            NvImageCodecTiffParserManager::instance().shutdown();
+        });
     }
     catch (const std::exception& e)
     {
@@ -230,13 +326,16 @@ NvImageCodecTiffParserManager::NvImageCodecTiffParserManager()
     }
 }
 
-NvImageCodecTiffParserManager::~NvImageCodecTiffParserManager()
+void NvImageCodecTiffParserManager::shutdown()
 {
-    if (cpu_decoder_)
+    if (!initialized_)
     {
-        nvimgcodecDecoderDestroy(cpu_decoder_);
-        cpu_decoder_ = nullptr;
+        return;  // Nothing to clean up, or already shut down
     }
+
+    #ifdef DEBUG
+    fmt::print("[nvimgcodec] Shutting down NvImageCodecTiffParserManager...\n");
+    #endif
 
     if (decoder_)
     {
@@ -249,6 +348,20 @@ NvImageCodecTiffParserManager::~NvImageCodecTiffParserManager()
         nvimgcodecInstanceDestroy(instance_);
         instance_ = nullptr;
     }
+
+    initialized_ = false;
+
+    #ifdef DEBUG
+    fmt::print("[nvimgcodec] Shutdown complete.\n");
+    #endif
+}
+
+NvImageCodecTiffParserManager::~NvImageCodecTiffParserManager()
+{
+    // shutdown() is normally called via atexit() while the CUDA context is
+    // still alive.  The destructor calls it again as a safety net — it is
+    // idempotent, so the second call is a harmless no-op.
+    shutdown();
 }
 
 // ============================================================================
@@ -541,7 +654,6 @@ bool TiffFileParser::parse_tiff_structure()
                 #ifdef DEBUG
                 fmt::print("  ⚠️  Warning: codec is 'tiff' but could not infer compression.\n");
                 fmt::print("     File: {}\n", file_path_);
-                fmt::print("     This may limit CPU decoder availability.\n");
                 #endif
             }
         }
@@ -580,12 +692,14 @@ void TiffFileParser::extract_ifd_metadata(IfdInfo& ifd_info)
 
     if (!manager.get_decoder() || !ifd_info.sub_code_stream)
     {
+        #ifdef DEBUG
         if (!manager.get_decoder()) {
             fmt::print("  ⚠️  Decoder not available\n");
         }
         if (!ifd_info.sub_code_stream) {
             fmt::print("  ⚠️  No sub-code stream for this IFD\n");
         }
+        #endif
         return;  // No decoder or stream available
     }
 

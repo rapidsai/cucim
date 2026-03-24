@@ -3,18 +3,28 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include "nvimgcodec_processor.h"
+// Standard library
+#include <algorithm>
+#include <cassert>
+#include <cstring>
+#include <deque>
+#include <memory>
+#include <mutex>
+#include <stdexcept>
+#include <string>
+#include <vector>
+
+// Third-party
+#include <fmt/format.h>
+#include <cuda_runtime.h>
+
+// cuCIM
+#include <cucim/util/cuda.h>
 
 #ifdef CUCIM_HAS_NVIMGCODEC
 
-#include <algorithm>
-#include <cstring>
-
-#include <cuda_runtime.h>
-#include <fmt/format.h>
-
-#include <cucim/util/cuda.h>
-#include "cuslide/nvimgcodec/nvimgcodec_decoder.h"
+// Local
+#include "nvimgcodec_processor.h"
 
 namespace cuslide2::loader
 {
@@ -69,23 +79,33 @@ NvImageCodecProcessor::NvImageCodecProcessor(
         }
     }
 
-    // Calculate batch size for nvImageCodec
-    // Capped by location_len and MAX_NVIMGCODEC_BATCH_SIZE.
+    // Create a dedicated CUDA stream for decode operations when using GPU.
+    // This avoids blocking the default stream and allows overlapping decode
+    // with other GPU work (e.g., inference, preprocessing).
+    if (use_device_memory_)
+    {
+        cudaError_t stream_err = cudaStreamCreateWithFlags(&decode_stream_, cudaStreamNonBlocking);
+        if (stream_err != cudaSuccess)
+        {
+            #ifdef DEBUG
+            fmt::print("⚠️  Failed to create CUDA stream, falling back to default stream\n");
+            #endif
+            decode_stream_ = nullptr;
+        }
+    }
+
     cuda_batch_size_ = std::min(
         static_cast<uint32_t>(location_len),
         std::min(batch_size, MAX_NVIMGCODEC_BATCH_SIZE));
-
-    // Prefetch factor of 2 ensures enough tiles are prefetched to keep the decoder busy.
-    // Note: Unlike cuslide's NvJpegProcessor where cuda_batch_size can exceed batch_size_,
-    // here cuda_batch_size_ <= batch_size_ always, so the formula simplifies to 2.
-    preferred_loader_prefetch_factor_ = 2;
 
     #ifdef DEBUG
     fmt::print("🔧 NvImageCodecProcessor initialized:\n");
     fmt::print("   ROI size: {}x{}, {} bytes\n", roi_width_, roi_height_, roi_size_bytes_);
     fmt::print("   Locations: {}, Batch size: {}\n", location_len_, batch_size_);
     fmt::print("   nvImageCodec batch size: {}\n", cuda_batch_size_);
-    fmt::print("   Output: {}\n", use_device_memory_ ? "GPU" : "CPU");
+    fmt::print("   Output: {} (stream: {})\n",
+                 use_device_memory_ ? "GPU" : "CPU",
+                 decode_stream_ ? "custom" : "default");
     #endif
 }
 
@@ -93,34 +113,25 @@ NvImageCodecProcessor::~NvImageCodecProcessor()
 {
     shutdown();
 
-    // Free CPU memory
-    for (auto& [idx, ptr] : decoded_data_cpu_)
+    // Synchronize the decode stream to ensure all GPU work completes before
+    // destroying it. This ensures nvImageCodec finishes all operations
+    // enqueued on decode_stream_ before the stream is destroyed.
+    if (decode_stream_)
     {
-        if (ptr)
-        {
-            free(ptr);
-        }
+        cudaStreamSynchronize(decode_stream_);
+        cudaStreamDestroy(decode_stream_);
+        decode_stream_ = nullptr;
     }
-    decoded_data_cpu_.clear();
-
-    // Free GPU memory
-    for (auto& [idx, ptr] : decoded_data_gpu_)
-    {
-        if (ptr)
-        {
-            cudaFree(ptr);
-        }
-    }
-    decoded_data_gpu_.clear();
 }
 
 void NvImageCodecProcessor::shutdown()
 {
-    {
-        std::lock_guard<std::mutex> lock(request_mutex_);
-        stopped_ = true;
-    }
-    cache_cond_.notify_all();
+    stopped_.store(true, std::memory_order_release);
+}
+
+void NvImageCodecProcessor::set_output_buffer_provider(OutputBufferProvider provider)
+{
+    output_buffer_provider_ = std::move(provider);
 }
 
 uint32_t NvImageCodecProcessor::preferred_loader_prefetch_factor() const
@@ -132,6 +143,11 @@ uint32_t NvImageCodecProcessor::request(std::deque<uint32_t>& batch_item_counts,
 {
     (void)batch_item_counts;
     (void)num_remaining_patches;
+
+    if (stopped_)
+    {
+        return 0;
+    }
 
     // Build batch of ROI decode requests
     std::vector<RoiDecodeRequest> batch_requests;
@@ -163,13 +179,24 @@ uint32_t NvImageCodecProcessor::request(std::deque<uint32_t>& batch_item_counts,
     fmt::print("📦 Requesting batch decode of {} ROIs\n", batch_requests.size());
     #endif
 
-    // Decode the batch
-    if (!decode_roi_batch(batch_requests))
+    // nvImageCodec is not thread-safe, so schedule + enqueue must be
+    // serialized under the same mutex.
     {
-        #ifdef DEBUG
-        fmt::print("❌ Batch decode failed\n");
-        #endif
-        return 0;
+        std::lock_guard<std::mutex> lock(nvimgcodec_mutex_);
+
+        cuslide2::nvimgcodec::BatchDecodeState decode_state = schedule_roi_batch(batch_requests);
+
+        // Check if the decode was actually scheduled (impl is always allocated,
+        // but impl->future is null when scheduling fails).
+        if (!decode_state.is_valid())
+        {
+            #ifdef DEBUG
+            fmt::print("❌ Failed to schedule batch decode\n");
+            #endif
+            return 0;
+        }
+
+        pending_batches_.push(std::move(decode_state));
     }
 
     return static_cast<uint32_t>(batch_requests.size());
@@ -179,68 +206,85 @@ uint32_t NvImageCodecProcessor::wait_batch(uint32_t index_in_task,
                                             std::deque<uint32_t>& batch_item_counts,
                                             uint32_t num_remaining_patches)
 {
-    (void)index_in_task;
     (void)batch_item_counts;
     (void)num_remaining_patches;
+    (void)index_in_task;
 
-    // Acquire mutex to ensure any in-progress decode in request() has completed
-    // (nvImageCodec decode is synchronous, so once we get the lock, decode is done)
-    std::lock_guard<std::mutex> lock(nvimgcodec_mutex_);
+    #ifdef DEBUG
+    fmt::print("🔍 wait_batch: index_in_task={}\n", index_in_task);
+    #endif
+
+    if (stopped_)
+    {
+        return 0;
+    }
+
+    // Pop the oldest pending batch under the lock, then release it before
+    // the (potentially blocking) wait_batch_decode() call so that other
+    // threads can continue to enqueue new batches concurrently.
+    cuslide2::nvimgcodec::BatchDecodeState decode_state;
+
+    {
+        std::lock_guard<std::mutex> lock(nvimgcodec_mutex_);
+
+        if (pending_batches_.empty())
+        {
+            return 0;  // No pending batches to process
+        }
+
+        decode_state = std::move(pending_batches_.front());
+        pending_batches_.pop();
+    }  // lock released — safe to block on GPU now
+
+    // Wait for batch decode completion.  The decoded data was written directly
+    // into the ThreadBatchDataLoader's raster ring buffer via the output_buffer
+    // pointers passed to schedule_batch_decode(), so there is nothing to copy.
+    std::vector<cuslide2::nvimgcodec::BatchDecodeResult> results =
+        cuslide2::nvimgcodec::wait_batch_decode(decode_state);
+
+    // Count successful decodes (log failures even in release builds)
+    size_t success_count = 0;
+    for (const auto& r : results)
+    {
+        if (r.success)
+            ++success_count;
+    }
+
+    if (success_count < results.size())
+    {
+        fmt::print(stderr, "[cuslide2] Batch decode: {}/{} regions failed\n",
+                   results.size() - success_count, results.size());
+    }
+
+    #ifdef DEBUG
+    fmt::print("  ✅ wait_batch[{}]: {}/{} regions decoded successfully (zero-copy)\n",
+               index_in_task, success_count, results.size());
+    #endif
+
     return batch_size_;
 }
 
 std::shared_ptr<cucim::cache::ImageCacheValue> NvImageCodecProcessor::wait_for_processing(uint32_t index)
 {
-    std::unique_lock<std::mutex> lock(cache_mutex_);
-
-    // Wait until this index is decoded
-    cache_cond_.wait(lock, [this, index]() {
-        return stopped_ || decode_complete_.count(index) > 0;
-    });
-
-    if (stopped_)
-    {
-        return nullptr;
-    }
-
-    // Create cache value pointing to decoded data
-    void* data_ptr = nullptr;
-    cucim::io::DeviceType device_type = cucim::io::DeviceType::kCPU;
-
-    if (use_device_memory_)
-    {
-        auto it = decoded_data_gpu_.find(index);
-        if (it != decoded_data_gpu_.end())
-        {
-            data_ptr = it->second;
-            device_type = cucim::io::DeviceType::kCUDA;
-        }
-    }
-    else
-    {
-        auto it = decoded_data_cpu_.find(index);
-        if (it != decoded_data_cpu_.end())
-        {
-            data_ptr = it->second;
-            device_type = cucim::io::DeviceType::kCPU;
-        }
-    }
-
-    auto value = std::make_shared<cucim::cache::ImageCacheValue>(
-        data_ptr, roi_size_bytes_, nullptr, device_type);
-
-    return value;
+    (void)index;
+    // Zero-copy path: decoded data is written directly into the raster ring
+    // buffer via OutputBufferProvider.  This method should never be called on
+    // NvImageCodecProcessor — use next_data() instead.
+    assert(false && "wait_for_processing() should not be called in zero-copy mode; use next_data() instead");
+    return nullptr;
 }
 
-bool NvImageCodecProcessor::decode_roi_batch(const std::vector<RoiDecodeRequest>& requests)
+cuslide2::nvimgcodec::BatchDecodeState NvImageCodecProcessor::schedule_roi_batch(const std::vector<RoiDecodeRequest>& requests)
 {
+    cuslide2::nvimgcodec::BatchDecodeState state;
+
     if (requests.empty())
     {
-        return false;
+        return state;
     }
 
     #ifdef DEBUG
-    fmt::print("🚀 Decoding batch of {} ROIs with nvImageCodec\n", requests.size());
+    fmt::print("🚀 Scheduling batch decode of {} ROIs with nvImageCodec\n", requests.size());
     #endif
 
     // Build regions for batch decode
@@ -257,61 +301,33 @@ bool NvImageCodecProcessor::decode_roi_batch(const std::vector<RoiDecodeRequest>
         regions.push_back(region);
     }
 
-    // Get IFD info for the batch (all regions decode from the same IFD)
-    const auto& ifd_info = tiff_parser_.get_ifd(ifd_index_);
-
-    // Perform batch decode using nvImageCodec API
-    // Lock mutex since nvImageCodec is not thread-safe
-    std::vector<cuslide2::nvimgcodec::BatchDecodeResult> results;
+    // Build output buffer pointers (one per region) from the provider.
+    // These point directly into the ThreadBatchDataLoader's raster ring buffer.
+    std::vector<uint8_t*> output_buffers;
+    if (output_buffer_provider_)
     {
-        std::lock_guard<std::mutex> lock(nvimgcodec_mutex_);
-        results = cuslide2::nvimgcodec::decode_batch_regions_nvimgcodec(
-            ifd_info,
-            tiff_parser_.get_main_code_stream(),
-            regions,
-            out_device_);
-    }
-
-    // Store results in cache
-    {
-        std::lock_guard<std::mutex> lock(cache_mutex_);
-
-        for (size_t i = 0; i < requests.size(); ++i)
+        output_buffers.reserve(requests.size());
+        for (const auto& req : requests)
         {
-            uint64_t loc_idx = requests[i].location_index;
-
-            if (results[i].success && results[i].buffer)
-            {
-                if (use_device_memory_)
-                {
-                    // Store GPU pointer directly
-                    decoded_data_gpu_[loc_idx] = results[i].buffer;
-                }
-                else
-                {
-                    // Store CPU pointer directly (reuse allocated buffer)
-                    decoded_data_cpu_[loc_idx] = results[i].buffer;
-                }
-                decode_complete_[loc_idx] = true;
-
-                #ifdef DEBUG
-                fmt::print("  ✅ ROI {} decoded successfully\n", loc_idx);
-                #endif
-            }
-            else
-            {
-                #ifdef DEBUG
-                fmt::print("  ❌ ROI {} decode failed\n", loc_idx);
-                #endif
-                decode_complete_[loc_idx] = false;
-            }
+            output_buffers.push_back(output_buffer_provider_(req.location_index));
         }
     }
 
-    // Notify waiters
-    cache_cond_.notify_all();
+    // Get IFD info for the batch (all regions decode from the same IFD)
+    const auto& ifd_info = tiff_parser_.get_ifd(ifd_index_);
 
-    return true;
+    // Schedule batch decode asynchronously on the dedicated CUDA stream.
+    // When output_buffers is non-empty, nvImageCodec decodes directly into
+    // those caller-owned buffers (zero-copy).
+    state = cuslide2::nvimgcodec::schedule_batch_decode(
+        ifd_info,
+        tiff_parser_.get_main_code_stream(),
+        regions,
+        out_device_,
+        decode_stream_,
+        output_buffers);
+
+    return state;
 }
 
 } // namespace cuslide2::loader

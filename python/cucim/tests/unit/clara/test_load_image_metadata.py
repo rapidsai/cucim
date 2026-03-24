@@ -65,10 +65,8 @@ def test_load_image_metadata(testimg_tiff_stripe_32x24_16):
     print(metadata)
     assert isinstance(metadata, dict)
     assert len(metadata) == 2  # 'cucim' and 'tiff'
-    # A raw metadata string.
-    assert json.loads(img.raw_metadata) == json.loads(
-        '{"axes": "YXC", "shape": [24, 32, 3]}'
-    )
+    # A raw metadata string (compare as parsed JSON to avoid key-order issues).
+    assert json.loads(img.raw_metadata) == {"axes": "YXC", "shape": [24, 32, 3]}
 
 
 def test_load_image_resolution_metadata(

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -56,6 +56,11 @@ uint32_t BatchDataProcessor::wait_batch(const uint32_t index_in_task,
 std::shared_ptr<cucim::cache::ImageCacheValue> BatchDataProcessor::wait_for_processing(const uint32_t)
 {
     return std::shared_ptr<cucim::cache::ImageCacheValue>();
+}
+
+void BatchDataProcessor::set_output_buffer_provider(OutputBufferProvider /*provider*/)
+{
+    // Default: unused. Override in subclasses that support direct-to-raster output.
 }
 
 void BatchDataProcessor::shutdown()

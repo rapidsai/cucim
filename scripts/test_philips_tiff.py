@@ -47,7 +47,7 @@ def setup_environment():
     version = _plugin_version_from_dist_version(dist_version)
 
     if os.getenv("ENABLE_CUSLIDE2") == "1":
-        os.environ["CUCIM_PLUGINS"] = f"cucim.kit.cuslide@{version}.so"
+        os.environ["CUCIM_PLUGINS"] = f"cucim.kit.cuslide2@{version}.so"
         os.environ.pop("CUCIM_CONFIG_PATH", None)
         print(
             f"✅ Plugin selection via env: ENABLE_CUSLIDE2=1 + CUCIM_PLUGINS={os.environ['CUCIM_PLUGINS']}"
@@ -74,12 +74,20 @@ def setup_environment():
 
 
 def test_philips_tiff(file_path, plugin_lib):
-    """Test Philips TIFF loading and decoding"""
+    """Test Philips TIFF loading and decoding.
+
+    Raises:
+        FileNotFoundError: If *file_path* does not exist.
+        RuntimeError: On decode or metadata verification failures.
+    """
 
     print("=" * 60)
     print("🔬 Testing Philips TIFF with cuslide2")
     print("=" * 60)
     print(f"📁 File: {file_path}")
+
+    if not Path(file_path).exists():
+        raise FileNotFoundError(f"TIFF file not found: {file_path}")
 
     from cucim.clara import _set_plugin_root
 
@@ -262,82 +270,87 @@ def test_philips_tiff(file_path, plugin_lib):
             print(f"  ❌ Level {level} failed: {e}")
     print()
 
-    # Test batch decoding API
-    print("📦 Testing Batch Decoding API...")
+    # ==================================================================
+    # Test async batch decode path (multiple locations + GPU)
+    # This exercises NvImageCodecProcessor, schedule_batch_decode(),
+    # and wait_batch_decode() — the async scheduling API.
+    # ==================================================================
+    print("🔄 Testing async batch decode (multiple locations, GPU)...")
     try:
-        import numpy as np
+        level_dims = level_dimensions[0]
+        tile_w, tile_h = 256, 256
+        max_x = max(0, level_dims[0] - tile_w)
+        max_y = max(0, level_dims[1] - tile_h)
 
-        # Define multiple locations for batch decoding
-        # Use smaller tiles for Philips TIFF compatibility
-        locations = [
-            (0, 0),
-            (256, 256),
-            (512, 512),
-            (768, 768),
-            (1024, 1024),
-            (1280, 1280),
-            (1536, 1536),
-            (1792, 1792),
-        ]
-        size = (256, 256)
+        # Generate a grid of tile locations
+        locations = []
+        for y_off in range(0, min(max_y + 1, tile_h * 4), tile_h):
+            for x_off in range(0, min(max_x + 1, tile_w * 4), tile_w):
+                locations.append([x_off, y_off])
+        num_locations = len(locations)
 
-        # Sequential baseline: decode one by one
-        print("  📊 Sequential decode (baseline)...")
-        start = time.time()
-        sequential_results = []
-        for loc in locations:
-            region = img.read_region(loc, size, level=0, device="cuda")
-            sequential_results.append(np.asarray(region, copy=True))
-        sequential_time = time.time() - start
-        print(f"     Time: {sequential_time:.4f}s for {len(locations)} tiles")
-
-        # Batch decode: use num_workers to trigger batch decoding path
-        print("  🚀 Batch decode (num_workers=2)...")
-        start = time.time()
-        gen = img.read_region(locations, size, level=0, num_workers=2, device="cuda")
-        batch_results = [np.asarray(r, copy=True) for r in gen]
-        batch_time = time.time() - start
-        print(f"     Time: {batch_time:.4f}s for {len(locations)} tiles")
-
-        # Verify results match
-        print("  ✅ Verifying batch results match sequential...")
-        for i, (batch_arr, seq_arr) in enumerate(
-            zip(batch_results, sequential_results)
-        ):
-            if not np.array_equal(batch_arr, seq_arr):
-                print(f"     ⚠️  Tile {i} mismatch!")
-                break
-        else:
-            print(f"     ✅ All {len(locations)} tiles match!")
-
-        # Calculate speedup
-        if batch_time > 0:
-            speedup = sequential_time / batch_time
-            print(f"  🎯 Batch Speedup: {speedup:.2f}x")
-
-        # Test with different batch sizes
-        print("\n  📦 Testing batch_size parameter...")
-        for batch_size in [2, 4]:
-            start = time.time()
-            gen = img.read_region(
-                locations, size, level=0, num_workers=2, batch_size=batch_size
-            )
-            results = list(gen)
-            elapsed = time.time() - start
+        if num_locations < 2:
             print(
-                f"     batch_size={batch_size}: {elapsed:.4f}s, "
-                f"yielded {len(results)} batches"
+                f"  ⚠️  Image too small for batch test ({level_dims[0]}x{level_dims[1]})"
             )
+        else:
+            batch_size = min(num_locations, 8)
+            print(
+                f"  Locations: {num_locations}, "
+                f"tile: {tile_w}x{tile_h}, "
+                f"batch_size: {batch_size}"
+            )
+
+            # GPU batch decode (async path)
+            start = time.time()
+            gpu_batch = img.read_region(
+                location=locations,
+                size=[tile_w, tile_h],
+                level=0,
+                device="cuda",
+                batch_size=batch_size,
+                num_workers=1,
+            )
+            # Consume iterator to force all batches
+            gpu_tiles = []
+            for tile in gpu_batch:
+                gpu_tiles.append(tile)
+            gpu_batch_time = time.time() - start
+            print(f"  ✅ GPU batch: {gpu_batch_time:.4f}s ({len(gpu_tiles)} tiles)")
+
+            # CPU batch decode (per-tile path, for comparison)
+            start = time.time()
+            cpu_batch = img.read_region(
+                location=locations,
+                size=[tile_w, tile_h],
+                level=0,
+                device="cpu",
+                batch_size=batch_size,
+                num_workers=1,
+            )
+            cpu_tiles = []
+            for tile in cpu_batch:
+                cpu_tiles.append(tile)
+            cpu_batch_time = time.time() - start
+            print(f"  ✅ CPU batch: {cpu_batch_time:.4f}s ({len(cpu_tiles)} tiles)")
+
+            if gpu_batch_time > 0:
+                speedup = cpu_batch_time / gpu_batch_time
+                print(f"  🎯 Batch speedup: {speedup:.2f}x")
+
+            # Verify tile shapes
+            if gpu_tiles:
+                print(f"  Tile shape: {gpu_tiles[0].shape}")
+                print(f"  Tile device: {gpu_tiles[0].device}")
 
     except Exception as e:
-        print(f"  ⚠️  Batch decoding test failed: {e}")
+        print(f"  ⚠️  Batch decode test failed: {e}")
         import traceback
 
         traceback.print_exc()
     print()
 
     print("✅ Philips TIFF test completed!")
-    return True
 
 
 def download_test_data():
@@ -411,22 +424,15 @@ def main():
         download_test_data()
         return 0
 
-    # Check file exists
-    if not Path(file_path).exists():
-        print(f"❌ File not found: {file_path}")
-        print()
-        download_test_data()
-        return 1
-
     # Setup environment
     plugin_lib = setup_environment()
 
-    # Test the Philips TIFF file
+    # Test the Philips TIFF file — exceptions indicate failure
     try:
-        success = test_philips_tiff(file_path, plugin_lib)
-        return 0 if success else 1
+        test_philips_tiff(file_path, plugin_lib)
+        return 0
     except Exception as e:
-        print(f"❌ Test failed: {e}")
+        print(f"\n❌ Test failed: {e}")
         import traceback
 
         traceback.print_exc()

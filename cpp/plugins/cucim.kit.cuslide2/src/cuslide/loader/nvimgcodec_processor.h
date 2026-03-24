@@ -8,20 +8,22 @@
 
 #ifdef CUCIM_HAS_NVIMGCODEC
 
-#include <condition_variable>
-#include <deque>
+#include <atomic>
+#include <queue>
+#include <functional>
 #include <memory>
 #include <mutex>
-#include <unordered_map>
 #include <vector>
 
 #include <nvimgcodec.h>
+#include <cuda_runtime.h>
 
 #include <cucim/io/device.h>
 #include <cucim/loader/batch_data_processor.h>
 #include <cucim/loader/tile_info.h>
 
 #include "cuslide/nvimgcodec/nvimgcodec_tiff_parser.h"
+#include "cuslide/nvimgcodec/nvimgcodec_decoder.h"
 
 namespace cuslide2::loader
 {
@@ -43,16 +45,15 @@ struct RoiDecodeRequest
  * @brief Batch data processor using nvImageCodec for ROI decoding
  *
  * This processor uses nvImageCodec's batch decoding API to decode multiple
- * ROI regions from a TIFF file in a single decoder.decode() call.
+ * ROI regions from a TIFF file in a single decoder.decode() call, writing
+ * decoded pixels directly into the ThreadBatchDataLoader's raster ring buffer
+ * (zero-copy path via the OutputBufferProvider callback).
  *
  * Key features:
  * - Uses get_sub_code_stream() with ROI for each region
  * - Batches multiple ROI decodes into a single decode call
+ * - Zero-copy: decodes directly into the loader's pre-allocated raster slots
  * - Integrates with ThreadBatchDataLoader for multi-threaded loading
- *
- *  Read image into CodeStream, then call multiple get_sub_code_stream()
- *  on this main CodeStream with different ROI and decode them all in a
- *  single decoder.decode() call
  */
 class NvImageCodecProcessor : public cucim::loader::BatchDataProcessor
 {
@@ -91,9 +92,21 @@ public:
                         uint32_t num_remaining_patches) override;
 
     /**
-     * @brief Wait for processing of a specific ROI and return cached result
+     * @brief Wait for processing of a specific ROI.
+     *
+     * With the zero-copy path, decoded data is written directly into the raster
+     * buffer, so this method always returns nullptr.  It is retained for
+     * interface compatibility.
      */
     std::shared_ptr<cucim::cache::ImageCacheValue> wait_for_processing(uint32_t index) override;
+
+    /**
+     * @brief Set the callback that maps location_index → raster buffer address.
+     *
+     * Called by ThreadBatchDataLoader after construction so that schedule_roi_batch()
+     * can pass the output addresses directly to nvImageCodec (zero-copy decode).
+     */
+    void set_output_buffer_provider(OutputBufferProvider provider) override;
 
     /**
      * @brief Shutdown the processor
@@ -107,12 +120,15 @@ public:
 
 private:
     /**
-     * @brief Decode a batch of ROIs using nvImageCodec batch API
+     * @brief Schedule a batch of ROIs for decoding using nvImageCodec batch API
+     * @return BatchDecodeState that must be passed to wait_batch_decode()
      */
-    bool decode_roi_batch(const std::vector<RoiDecodeRequest>& requests);
+    cuslide2::nvimgcodec::BatchDecodeState schedule_roi_batch(const std::vector<RoiDecodeRequest>& requests);
 
-    bool stopped_ = false;
-    uint32_t preferred_loader_prefetch_factor_ = 2;
+    std::atomic<bool> stopped_{false};
+    // Single batch prefetch: I/O is typically faster than decode work,
+    // so one prefetch batch is sufficient to keep the decoder busy.
+    uint32_t preferred_loader_prefetch_factor_ = 1;
 
     // TIFF parser and IFD info
     cuslide2::nvimgcodec::TiffFileParser& tiff_parser_;
@@ -125,6 +141,9 @@ private:
     cucim::io::Device out_device_;
     bool use_device_memory_ = false;
 
+    // Custom CUDA stream for async decode (avoids blocking the default stream)
+    cudaStream_t decode_stream_ = nullptr;
+
     // Batch configuration
     uint32_t cuda_batch_size_ = 1;
 
@@ -134,12 +153,8 @@ private:
     // Request queue
     std::mutex request_mutex_;
 
-    // Decoded data cache
-    mutable std::mutex cache_mutex_;
-    std::condition_variable cache_cond_;
-    std::unordered_map<uint64_t, uint8_t*> decoded_data_cpu_;
-    std::unordered_map<uint64_t, uint8_t*> decoded_data_gpu_;
-    std::unordered_map<uint64_t, bool> decode_complete_;
+    // Output buffer provider (set by ThreadBatchDataLoader after construction)
+    OutputBufferProvider output_buffer_provider_;
 
     // Location info
     const int64_t* request_location_ = nullptr;
@@ -147,6 +162,9 @@ private:
 
     // Decode batch tracking
     uint64_t next_decode_index_ = 0;
+
+    // Asynchronous batch decode state (FIFO queue)
+    std::queue<cuslide2::nvimgcodec::BatchDecodeState> pending_batches_;
 };
 
 } // namespace cuslide2::loader
