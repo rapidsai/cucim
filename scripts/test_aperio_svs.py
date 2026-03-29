@@ -292,7 +292,9 @@ def test_tile_level_caching(img, svs_path, CuImage):
         and level_tile_sizes[0][0] > 0
         and level_tile_sizes[0][1] > 0
     )
-    print(f"  Tile sizes (level 0): {level_tile_sizes[0] if level_tile_sizes else 'N/A'}")
+    print(
+        f"  Tile sizes (level 0): {level_tile_sizes[0] if level_tile_sizes else 'N/A'}"
+    )
 
     if not has_tile_dims:
         print(
@@ -318,7 +320,7 @@ def test_tile_level_caching(img, svs_path, CuImage):
     region_cold = img_cached.read_region((0, 0), (512, 512), level=0)
     cold_hits = CuImage.cache().hit_count
     cold_misses = CuImage.cache().miss_count
-    print(f"\n  🧊 Cold read (512x512):")
+    print("\n  🧊 Cold read (512x512):")
     print(f"     Hits: {cold_hits}, Misses: {cold_misses}")
     assert cold_misses > 0, "Expected cache misses on cold read"
 
@@ -330,10 +332,9 @@ def test_tile_level_caching(img, svs_path, CuImage):
     warm_misses = CuImage.cache().miss_count
     new_hits = warm_hits - cold_hits
     new_misses = warm_misses - cold_misses
-    print(f"\n  🔥 Warm read (same region):")
+    print("\n  🔥 Warm read (same region):")
     print(
-        f"     Hits: {warm_hits} (+{new_hits}), "
-        f"Misses: {warm_misses} (+{new_misses})"
+        f"     Hits: {warm_hits} (+{new_hits}), Misses: {warm_misses} (+{new_misses})"
     )
     print(f"     Time: {warm_time * 1000:.1f} ms")
     assert new_hits > 0, "Expected cache hits on warm read"

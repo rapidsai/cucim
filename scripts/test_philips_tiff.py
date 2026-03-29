@@ -397,7 +397,7 @@ def test_philips_tiff(file_path, plugin_lib):
             region_cold = img_cached.read_region((0, 0), (512, 512), level=0)
             cold_hits = CuImage.cache().hit_count
             cold_misses = CuImage.cache().miss_count
-            print(f"\n  🧊 Cold read (512x512):")
+            print("\n  🧊 Cold read (512x512):")
             print(f"     Hits: {cold_hits}, Misses: {cold_misses}")
             assert cold_misses > 0, "Expected cache misses on cold read"
 
@@ -409,7 +409,7 @@ def test_philips_tiff(file_path, plugin_lib):
             warm_misses = CuImage.cache().miss_count
             new_hits = warm_hits - cold_hits
             new_misses = warm_misses - cold_misses
-            print(f"\n  🔥 Warm read (same region):")
+            print("\n  🔥 Warm read (same region):")
             print(
                 f"     Hits: {warm_hits} (+{new_hits}), "
                 f"Misses: {warm_misses} (+{new_misses})"
@@ -427,19 +427,17 @@ def test_philips_tiff(file_path, plugin_lib):
             # --- Overlapping read (partial hit: some tiles shared) ---
             prev_hits = CuImage.cache().hit_count
             prev_misses = CuImage.cache().miss_count
-            region_overlap = img_cached.read_region(
-                (128, 128), (512, 512), level=0
-            )
+            region_overlap = img_cached.read_region((128, 128), (512, 512), level=0)
             overlap_hits = CuImage.cache().hit_count
             overlap_misses = CuImage.cache().miss_count
-            print(f"\n  🔀 Overlapping read (offset 128,128):")
+            print("\n  🔀 Overlapping read (offset 128,128):")
             print(
                 f"     Hits: {overlap_hits} (+{overlap_hits - prev_hits}), "
                 f"Misses: {overlap_misses} (+{overlap_misses - prev_misses})"
             )
 
             # --- Summary ---
-            print(f"\n  📊 Cache summary:")
+            print("\n  📊 Cache summary:")
             print(f"     Total hits:   {CuImage.cache().hit_count}")
             print(f"     Total misses: {CuImage.cache().miss_count}")
             print(f"     Cache size:   {CuImage.cache().size} tiles")
@@ -536,6 +534,7 @@ def main():
     except Exception as e:
         print(f"\n❌ Test failed: {e}")
         import traceback
+
         traceback.print_exc()
         return 1
 
