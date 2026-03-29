@@ -349,19 +349,17 @@ def test_tile_level_caching(img, svs_path, CuImage):
     # --- Overlapping read (partial hit: some tiles shared) ---
     prev_hits = CuImage.cache().hit_count
     prev_misses = CuImage.cache().miss_count
-    region_overlap = img_cached.read_region(
-        (128, 128), (512, 512), level=0
-    )
+    img_cached.read_region((128, 128), (512, 512), level=0)
     overlap_hits = CuImage.cache().hit_count
     overlap_misses = CuImage.cache().miss_count
-    print(f"\n  🔀 Overlapping read (offset 128,128):")
+    print("\n  🔀 Overlapping read (offset 128,128):")
     print(
         f"     Hits: {overlap_hits} (+{overlap_hits - prev_hits}), "
         f"Misses: {overlap_misses} (+{overlap_misses - prev_misses})"
     )
 
     # --- Summary ---
-    print(f"\n  📊 Cache summary:")
+    print("\n  📊 Cache summary:")
     print(f"     Total hits:   {CuImage.cache().hit_count}")
     print(f"     Total misses: {CuImage.cache().miss_count}")
     print(f"     Cache size:   {CuImage.cache().size} tiles")
@@ -537,7 +535,6 @@ def main():
     except Exception as e:
         print(f"\n❌ Test failed: {e}")
         import traceback
-
 
         traceback.print_exc()
         return 1

@@ -370,7 +370,9 @@ def test_philips_tiff(file_path, plugin_lib):
             and level_tile_sizes[0][0] > 0
             and level_tile_sizes[0][1] > 0
         )
-        print(f"  Tile sizes (level 0): {level_tile_sizes[0] if level_tile_sizes else 'N/A'}")
+        print(
+            f"  Tile sizes (level 0): {level_tile_sizes[0] if level_tile_sizes else 'N/A'}"
+        )
 
         if not has_tile_dims:
             print(
@@ -427,7 +429,7 @@ def test_philips_tiff(file_path, plugin_lib):
             # --- Overlapping read (partial hit: some tiles shared) ---
             prev_hits = CuImage.cache().hit_count
             prev_misses = CuImage.cache().miss_count
-            region_overlap = img_cached.read_region((128, 128), (512, 512), level=0)
+            img_cached.read_region((128, 128), (512, 512), level=0)
             overlap_hits = CuImage.cache().hit_count
             overlap_misses = CuImage.cache().miss_count
             print("\n  🔀 Overlapping read (offset 128,128):")
