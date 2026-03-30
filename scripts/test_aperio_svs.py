@@ -15,6 +15,8 @@ import time
 from importlib import metadata as importlib_metadata
 from pathlib import Path
 
+import numpy as np
+
 
 def _plugin_version_from_dist_version(dist_version: str) -> str:
     """
@@ -104,7 +106,6 @@ def test_batch_decode_correctness(img, level_dimensions):
         RuntimeError: If any GPU tile does not match the corresponding CPU tile.
     """
     import cupy as cp
-    import numpy as np
 
     print("\n🔍 Batch decode correctness test")
     print("-" * 50)
@@ -280,8 +281,6 @@ def test_tile_level_caching(img, svs_path, CuImage):
     Raises:
         RuntimeError: If caching assertions fail.
     """
-    import numpy as np
-
     print("\n💾 Testing tile-level caching...")
     print("-" * 50)
 

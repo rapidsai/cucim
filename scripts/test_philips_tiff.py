@@ -13,6 +13,8 @@ import time
 from importlib import metadata as importlib_metadata
 from pathlib import Path
 
+import numpy as np
+
 
 def _plugin_version_from_dist_version(dist_version: str) -> str:
     """
@@ -196,8 +198,6 @@ def test_philips_tiff(file_path, plugin_lib):
         if hasattr(region, "__array_interface__") or hasattr(
             region, "__cuda_array_interface__"
         ):
-            import numpy as np
-
             if hasattr(region, "get"):  # CuPy array
                 region_cpu = region.get()
             else:
@@ -392,8 +392,6 @@ def test_philips_tiff(file_path, plugin_lib):
             img_cached = CuImage(file_path)
             print(f"  Cache type: {CuImage.cache().type}")
             print(f"  Stat recording: {CuImage.cache().record()}")
-
-            import numpy as np
 
             # --- Cold read (all cache misses) ---
             region_cold = img_cached.read_region((0, 0), (512, 512), level=0)
