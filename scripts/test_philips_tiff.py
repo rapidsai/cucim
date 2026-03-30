@@ -10,6 +10,7 @@ import re
 import sys
 import tempfile
 import time
+import traceback
 from importlib import metadata as importlib_metadata
 from pathlib import Path
 
@@ -182,8 +183,6 @@ def test_philips_tiff(file_path, plugin_lib):
         print()
     except Exception as e:
         print(f"❌ GPU decode failed: {e}")
-        import traceback
-
         traceback.print_exc()
         print()
 
@@ -345,8 +344,6 @@ def test_philips_tiff(file_path, plugin_lib):
 
     except Exception as e:
         print(f"  ⚠️  Batch decode test failed: {e}")
-        import traceback
-
         traceback.print_exc()
     print()
 
@@ -445,8 +442,6 @@ def test_philips_tiff(file_path, plugin_lib):
 
     except Exception as e:
         print(f"  ❌ Caching test failed: {e}")
-        import traceback
-
         traceback.print_exc()
     print()
 
@@ -533,8 +528,6 @@ def main():
         return 0
     except Exception as e:
         print(f"\n❌ Test failed: {e}")
-        import traceback
-
         traceback.print_exc()
         return 1
 

@@ -12,6 +12,7 @@ import re
 import sys
 import tempfile
 import time
+import traceback
 from importlib import metadata as importlib_metadata
 from pathlib import Path
 
@@ -533,8 +534,6 @@ def main():
         return 0
     except Exception as e:
         print(f"\n❌ Test failed: {e}")
-        import traceback
-
         traceback.print_exc()
         return 1
 
