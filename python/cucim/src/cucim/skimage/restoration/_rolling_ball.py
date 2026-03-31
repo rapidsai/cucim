@@ -9,6 +9,8 @@ This module provides a GPU-accelerated implementation of the rolling ball
 algorithm for background estimation and subtraction.
 """
 
+import math
+
 import cupy as cp
 import numpy as np
 
@@ -131,7 +133,7 @@ def ball_kernel(
         the ball) and False elsewhere.
     """
     dtype = cp.dtype(dtype)
-    half_size = int(radius)  # integer center offset
+    half_size = math.ceil(radius)  # upstream-compatible support for float radii
     size = 2 * half_size + 1
     radius_val = dtype.type(radius)  # float radius for distance calculation
 
@@ -321,7 +323,7 @@ def _rolling_ball_exact(
     float_type = cp.float32 if image.dtype.itemsize <= 4 else cp.float64
     img = image.astype(float_type, copy=False)
 
-    if downscale is not None:
+    if downscale is not None and downscale > 1:
         # Scale the radius proportionally (minimum 1)
         new_radius = max(1, int(round(radius / downscale)))
         structure_scale_factor = radius / new_radius
@@ -388,7 +390,7 @@ def rolling_ball(
     ----------
     image : cupy.ndarray
         The image to be filtered.
-    radius : int, optional
+    radius : int or float, optional
         Radius of the ball-shaped kernel to be rolled under the
         image landscape. Used only if ``kernel`` is None. Default is 100.
     kernel : ndarray, or tuple of (ndarray, ndarray), optional
@@ -493,11 +495,9 @@ def rolling_ball(
         raise NotImplementedError("nansafe mode is not yet supported by cuCIM")
 
     # Handle downscaling
-    if downscale is None:
-        downscale = 1
-    if downscale < 1:
+    if downscale is not None and downscale < 1:
         raise ValueError(f"downscale must be >= 1, got {downscale}")
-    elif downscale > 1:
+    elif downscale is not None and downscale > 1:
         if kernel is not None:
             raise ValueError(
                 "downscale parameter cannot be used with a custom kernel. "
@@ -521,7 +521,7 @@ def rolling_ball(
         image, radius, kernel, nansafe=nansafe, downscale=downscale
     )
     # Handle upscaling back to original size
-    if downscale > 1:
+    if downscale is not None and downscale > 1:
         background = resize(
             background,
             original_shape,

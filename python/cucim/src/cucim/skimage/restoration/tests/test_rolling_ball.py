@@ -8,6 +8,7 @@ Tests for Rolling Ball Filter
 (skimage.restoration.rolling_ball)
 """
 
+import math
 import time
 
 import cupy as cp
@@ -39,8 +40,12 @@ def _ball_kernel_reference(
     if dtype.kind != "f":
         raise ValueError("dtype must be a floating-point type")
 
+    half_size = math.ceil(radius)
     coords = np.meshgrid(
-        *[np.arange(-radius, radius + 1, dtype=dtype) for _ in range(ndim)],
+        *[
+            np.arange(-half_size, half_size + 1, dtype=dtype)
+            for _ in range(ndim)
+        ],
         indexing="ij",
     )
     sum_of_squares = sum(c**2 for c in coords)
@@ -93,7 +98,7 @@ def _ellipsoid_kernel_reference(
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("radius", [1, 2, 5, 10])
+@pytest.mark.parametrize("radius", [1, 2, 2.5, 5, 10])
 @pytest.mark.parametrize("ndim", [2, 3])
 @pytest.mark.parametrize("dtype", [np.float32, np.float64])
 def test_ball_kernel_vs_reference(radius, ndim, dtype):
@@ -109,6 +114,18 @@ def test_ball_kernel_vs_reference(radius, ndim, dtype):
     cp.testing.assert_allclose(structure[mask], ref[mask], rtol=1e-5, atol=1e-5)
     cp.testing.assert_array_equal(cp.isposinf(structure), cp.isposinf(ref))
     cp.testing.assert_array_equal(fp, fp_ref)
+
+
+def test_float_radius_matches_skimage_without_downscaling():
+    img_cpu = np.random.default_rng(0).integers(
+        0, 256, size=(16, 16), dtype=np.uint8
+    )
+    img = cp.asarray(img_cpu)
+
+    out = rolling_ball(img, radius=2.5, downscale=None)
+    expected = skimage_rolling_ball(img_cpu, radius=2.5)
+
+    cp.testing.assert_allclose(out, expected)
 
 
 @pytest.mark.parametrize("shape", [(5, 5), (3, 7), (4, 4, 4)])
