@@ -662,8 +662,12 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
                 {
                     throw std::runtime_error("Failed to allocate GPU buffer for tile-cached output");
                 }
-                cudaMemcpy(gpu_buf, host_raster, one_raster_size, cudaMemcpyHostToDevice);
-                // host_raster_owner destructor frees the host buffer
+                err = cudaMemcpy(gpu_buf, host_raster, one_raster_size, cudaMemcpyHostToDevice);
+                if (err != cudaSuccess)
+                {
+                    cudaFree(gpu_buf);
+                    throw std::runtime_error("Failed to copy tile-cached raster to GPU");
+                }
 
                 output_buffer = gpu_buf;
                 raster_type = cucim::io::DeviceType::kCUDA;
