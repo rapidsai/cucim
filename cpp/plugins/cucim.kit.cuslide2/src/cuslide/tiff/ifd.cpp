@@ -579,6 +579,7 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
                 auto cached_value = image_cache.find(key);
 
                 uint8_t* tile_data = nullptr;
+                std::shared_ptr<cucim::cache::ImageCacheValue> tile_value;
 
                 if (cached_value)
                 {
@@ -593,9 +594,28 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
                 else
                 {
                     // *** Cache miss — decode this tile via nvImageCodec ***
-                    uint8_t* tile_buf = static_cast<uint8_t*>(image_cache.allocate(tile_buf_size));
+                    void* tile_mem = image_cache.allocate(tile_buf_size);
+                    if (!tile_mem)
+                    {
+                        image_cache.unlock(index_hash);
+                        #ifdef DEBUG
+                        ::fmt::print("  ❌ Tile alloc FAILED tile[{},{}] — filling background\n",
+                                     tile_col, tile_row);
+                        #endif
 
-                    // Decode tile-aligned ROI to host memory (for caching)
+                        for (uint32_t r = 0; r < copy_rows; ++r)
+                        {
+                            memset(dest_row_ptr + dest_col_byte_offset + r * dest_row_stride,
+                                   background_value, copy_bytes_per_row);
+                        }
+                        dest_col_byte_offset += copy_bytes_per_row;
+                        continue;
+                    }
+
+                    // Wrap immediately so the destructor handles backend-correct cleanup
+                    tile_value = image_cache.create_value(tile_mem, tile_buf_size);
+                    uint8_t* tile_buf = static_cast<uint8_t*>(tile_value->data);
+
                     bool decode_ok = ::cuslide2::nvimgcodec::decode_ifd_region_nvimgcodec(
                         ifd_info, main_code_stream,
                         tile_origin_x, tile_origin_y, actual_tw, actual_th,
@@ -605,8 +625,7 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
                     if (decode_ok)
                     {
                         tile_data = tile_buf;
-                        auto value = image_cache.create_value(tile_data, tile_buf_size);
-                        image_cache.insert(key, value);
+                        image_cache.insert(key, tile_value);
                         image_cache.unlock(index_hash);
 
                         #ifdef DEBUG
@@ -617,13 +636,12 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
                     else
                     {
                         image_cache.unlock(index_hash);
-                        cucim_free(tile_buf);
+                        // tile_value destructor handles backend-correct cleanup
                         #ifdef DEBUG
                         ::fmt::print("  ❌ Tile decode FAILED tile[{},{}] — filling background\n",
                                      tile_col, tile_row);
                         #endif
 
-                        // Fill with background colour on decode failure
                         for (uint32_t r = 0; r < copy_rows; ++r)
                         {
                             memset(dest_row_ptr + dest_col_byte_offset + r * dest_row_stride,
@@ -635,6 +653,9 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
                 }
 
                 // --- Assembly: copy relevant sub-rectangle from tile into output ---
+                // tile_value (if from cache miss) is still in scope, keeping tile_data valid.
+                // If insert() succeeded, the cache also holds a shared reference.
+                // If insert() failed, tile_value is the sole owner — freed after this iteration.
                 const uint32_t src_byte_offset =
                     (tile_pixel_sy * actual_tw + tile_pixel_sx) * samples;
 
