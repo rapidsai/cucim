@@ -254,6 +254,13 @@ def test_workers(workers):
     rolling_ball(img, radius=10, nansafe=False, workers=workers)
 
 
+def test_num_threads_deprecated():
+    img = cp.full((100, 100), 23, dtype=np.uint8)
+
+    with pytest.warns(FutureWarning, match="`num_threads` is deprecated"):
+        rolling_ball(img, radius=10, num_threads=2)
+
+
 def test_ndim():
     image = data.cells3d()[:5, 1, ...]
     kernel_args = ((3, 50, 50), 50)

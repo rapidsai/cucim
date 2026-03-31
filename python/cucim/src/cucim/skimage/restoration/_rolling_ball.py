@@ -14,6 +14,7 @@ import math
 import cupy as cp
 import numpy as np
 
+from cucim.skimage._shared.utils import DEPRECATED, deprecate_parameter
 from cucim.skimage._vendored import ndimage as ndi
 from cucim.skimage.transform import resize
 
@@ -133,7 +134,7 @@ def ball_kernel(
         the ball) and False elsewhere.
     """
     dtype = cp.dtype(dtype)
-    half_size = math.ceil(radius)  # upstream-compatible support for float radii
+    half_size = math.ceil(radius)  # round up as in scikit-image
     size = 2 * half_size + 1
     radius_val = dtype.type(radius)  # float radius for distance calculation
 
@@ -371,12 +372,21 @@ def _rolling_ball_exact(
     return background.astype(image.dtype, copy=False)
 
 
+@deprecate_parameter(
+    "num_threads",
+    new_name="workers",
+    # rapids-pre-commit-hooks: disable-next-line[verify-hardcoded-version]
+    start_version="26.04",
+    # rapids-pre-commit-hooks: disable-next-line[verify-hardcoded-version]
+    stop_version="26.12",
+)
 def rolling_ball(
     image,
     *,
     radius=100,
     kernel=None,
     nansafe=False,
+    num_threads=DEPRECATED,
     workers=None,
     downscale=None,
 ):
@@ -418,7 +428,7 @@ def rolling_ball(
     ----------------
     workers : int, optional
         cuCIM ignores this parameter (it is used by scikit-image for the number
-        of CPU threads to use).
+        of CPU threads to use). Replaces deprecated parameter ``num_threads``.
     downscale : float, optional
         **cuCIM-specific parameter (not available in scikit-image).**
         If provided and greater than 1, the image is downscaled by this
