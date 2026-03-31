@@ -603,6 +603,7 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
                     else
                     {
                         image_cache.unlock(index_hash);
+                        cucim_free(tile_buf);
                         #ifdef DEBUG
                         ::fmt::print("  ❌ Tile decode FAILED tile[{},{}] — filling background\n",
                                      tile_col, tile_row);
