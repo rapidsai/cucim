@@ -122,6 +122,11 @@ def test_tile_level_caching(img, file_path, CuImage):
         )
         return
 
+    # --- Baseline: non-cached direct decode (before enabling cache) ---
+    region_direct = img.read_region((0, 0), (512, 512), level=0)
+    arr_direct = np.asarray(region_direct)
+    print(f"\n  📐 Non-cached baseline (512x512): shape={arr_direct.shape}")
+
     # Enable per-process cache (256 MB) and stat recording.
     # Re-open the image after configuring the cache so the
     # IFD picks up the active cache manager.
@@ -160,7 +165,20 @@ def test_tile_level_caching(img, file_path, CuImage):
     arr_cold = np.asarray(region_cold)
     arr_warm = np.asarray(region_warm)
     assert np.array_equal(arr_cold, arr_warm), "Cold and warm reads differ!"
-    print(f"     ✅ Data matches (shape={arr_cold.shape})")
+    print(f"     ✅ Cold vs warm data matches (shape={arr_cold.shape})")
+
+    # --- Data correctness: cached vs non-cached direct decode must match ---
+    assert arr_direct.shape == arr_cold.shape, (
+        f"Shape mismatch: direct={arr_direct.shape} vs cached={arr_cold.shape}"
+    )
+    if np.array_equal(arr_direct, arr_cold):
+        print("     ✅ Cached vs non-cached data matches")
+    else:
+        max_diff = int(np.max(np.abs(arr_direct.astype(int) - arr_cold.astype(int))))
+        raise RuntimeError(
+            f"Cached decode differs from non-cached direct decode! "
+            f"max pixel diff={max_diff}"
+        )
 
     # --- Overlapping read (partial hit: some tiles shared) ---
     prev_hits = CuImage.cache().hit_count
