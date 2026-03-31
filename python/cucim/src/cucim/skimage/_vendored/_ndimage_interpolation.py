@@ -486,10 +486,11 @@ def affine_transform(
     float_dtype = cupy.float64
     if not float64_coords:
         float_dtype = cupy.promote_types(input.real.dtype, cupy.float32)
+    matrix = matrix.astype(float_dtype, copy=False)
     if mode == "opencv" or mode == "_opencv_edge":
         if matrix.ndim == 1:
             matrix = cupy.diag(matrix)
-        coordinates = cupy.indices(output_shape, dtype=cupy.float64)
+        coordinates = cupy.indices(output_shape, dtype=float_dtype)
         coordinates = cupy.dot(matrix, coordinates.reshape((input.ndim, -1)))
         coordinates += cupy.expand_dims(cupy.asarray(offset), -1)
         coordinates = coordinates.astype(float_dtype, copy=False)
@@ -508,7 +509,6 @@ def affine_transform(
     integer_output = output.dtype.kind in "iu"
     _util._check_cval(mode, cval, integer_output)
     large_int = max(math.prod(input.shape), math.prod(output_shape)) > 1 << 31
-    matrix = matrix.astype(float_dtype, copy=False)
     if matrix.ndim == 1:
         offset = cupy.asarray(offset, dtype=float_dtype)
         offset = -offset / matrix
