@@ -1,7 +1,8 @@
 # SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Infrastructure, Inc.
 # SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Networks, Inc.
-# SPDX-FileCopyrightText: Copyright (c) 2022-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND MIT
+from __future__ import annotations
 
 import cmath
 import math
@@ -235,7 +236,7 @@ def _check_coordinates(coordinates, order, allow_float32=True):
     return coordinates
 
 
-def _prepad_for_spline_filter(input, mode, cval):
+def _prepad_for_spline_filter(input, mode, cval, batch_axes=None):
     if mode in ["nearest", "grid-constant"]:
         # these modes need padding to get accurate boundary values
         npad = 12  # empirical factor chosen by SciPy
@@ -243,14 +244,22 @@ def _prepad_for_spline_filter(input, mode, cval):
             kwargs = dict(mode="constant", constant_values=cval)
         else:
             kwargs = dict(mode="edge")
-        padded = cupy.pad(input, npad, **kwargs)
+        if batch_axes:
+            # Only pad non-batch axes
+            pad_width = [
+                (0, 0) if axis in batch_axes else (npad, npad)
+                for axis in range(input.ndim)
+            ]
+        else:
+            pad_width = npad
+        padded = cupy.pad(input, pad_width, **kwargs)
     else:
         npad = 0
         padded = input
     return padded, npad
 
 
-def _filter_input(image, prefilter, mode, cval, order):
+def _filter_input(image, prefilter, mode, cval, order, batch_axes=None):
     """Perform spline prefiltering when needed.
 
     Spline orders > 1 need a prefiltering stage to preserve resolution.
@@ -259,12 +268,29 @@ def _filter_input(image, prefilter, mode, cval, order):
     prepadding of the input with cupy.pad is used to maintain accuracy.
     ``npad`` is an integer corresponding to the amount of padding at each edge
     of the array.
+
+    Parameters
+    ----------
+    batch_axes : tuple of int, optional
+        Axes that should not be prefiltered (identity/batch dimensions).
     """
     if not prefilter or order < 2:
         return (cupy.ascontiguousarray(image), 0)
-    padded, npad = _prepad_for_spline_filter(image, mode, cval)
+    padded, npad = _prepad_for_spline_filter(image, mode, cval, batch_axes)
     float_dtype = cupy.promote_types(image.dtype, cupy.float32)
-    filtered = spline_filter(padded, order, output=float_dtype, mode=mode)
+
+    if batch_axes:
+        # Only filter along non-batch axes, following spline_filter's pattern
+        x = padded
+        temp = padded.astype(float_dtype, copy=True)
+        for axis in range(image.ndim):
+            if axis not in batch_axes:
+                spline_filter1d(x, order, axis, output=temp, mode=mode)
+                x = temp
+        filtered = temp
+    else:
+        filtered = spline_filter(padded, order, output=float_dtype, mode=mode)
+
     return cupy.ascontiguousarray(filtered), npad
 
 
@@ -276,6 +302,8 @@ def map_coordinates(
     mode="constant",
     cval=0.0,
     prefilter=True,
+    *,
+    batch_axes=None,
 ):
     """Map the input array to new coordinates by interpolation.
 
@@ -309,6 +337,12 @@ def map_coordinates(
             slightly blurred if ``order > 1``, unless the input is prefiltered,
             i.e. it is the result of calling ``spline_filter`` on the original
             input.
+        batch_axes (tuple of int, optional): Axes along which the coordinates
+            represent an identity mapping (i.e., output index equals input
+            coordinate). For these axes, interpolation is skipped and the
+            coordinate values in the ``coordinates`` array are ignored.
+            This can improve performance when only a subset of dimensions
+            require interpolation.
 
     Returns:
         cupy.ndarray:
@@ -334,19 +368,33 @@ def map_coordinates(
     if input.dtype.kind in "iu":
         input = input.astype(cupy.float32)
     coordinates = _check_coordinates(coordinates, order)
-    filtered, nprepad = _filter_input(input, prefilter, mode, cval, order)
+
+    # convert batch_axes to tuple for hashing in memoized kernel getter
+    if batch_axes is not None:
+        batch_axes = tuple(batch_axes)
+
+    filtered, nprepad = _filter_input(
+        input, prefilter, mode, cval, order, batch_axes=batch_axes
+    )
+    float_dtype = cupy.promote_types(input.real.dtype, cupy.float32)
     large_int = max(math.prod(input.shape), coordinates.shape[0]) > 1 << 31
-    kern = _interp_kernels._get_map_kernel(
+
+    kern_info = _interp_kernels._get_map_kernel(
         input.ndim,
         large_int,
-        yshape=coordinates.shape,
+        yshape=coordinates.shape[1:],
         mode=mode,
         cval=cval,
         order=order,
         integer_output=integer_output,
         nprepad=nprepad,
+        float_dtype=float_dtype,
+        batch_axes=batch_axes,
     )
-    kern(filtered, coordinates, ret)
+    if kern_info.size is not None:
+        kern_info.kernel(filtered, coordinates, ret, size=kern_info.size)
+    else:
+        kern_info.kernel(filtered, coordinates, ret)
     return ret
 
 
@@ -362,6 +410,7 @@ def affine_transform(
     prefilter=True,
     *,
     texture_memory=False,
+    float64_coords=False,
 ):
     """Apply an affine transformation.
 
@@ -419,6 +468,9 @@ def affine_transform(
             - ``order=0`` (nearest neighbor) and ``order=1`` (linear
                 interpolation)
             - NVIDIA CUDA GPUs
+        float64_coords (bool): If True, always use double precision
+            internally like SciPy. When false, single precision floats and
+            8 or 16-bit integer types will use single precision internally.
 
     Returns:
         cupy.ndarray or None:
@@ -477,32 +529,46 @@ def affine_transform(
     if output_shape is None:
         output_shape = input.shape
 
+    float_dtype = cupy.float64
+    if not float64_coords:
+        float_dtype = cupy.promote_types(input.real.dtype, cupy.float32)
     if mode == "opencv" or mode == "_opencv_edge":
         if matrix.ndim == 1:
             matrix = cupy.diag(matrix)
         coordinates = cupy.indices(output_shape, dtype=cupy.float64)
         coordinates = cupy.dot(matrix, coordinates.reshape((input.ndim, -1)))
         coordinates += cupy.expand_dims(cupy.asarray(offset), -1)
+        coordinates = coordinates.astype(float_dtype, copy=False)
         ret = _util._get_output(output, input, shape=output_shape)
         ret[:] = map_coordinates(
             input, coordinates, ret.dtype, order, mode, cval, prefilter
         ).reshape(output_shape)
         return ret
 
-    matrix = matrix.astype(cupy.float64, copy=False)
     ndim = input.ndim
     output = _util._get_output(output, input, shape=output_shape)
     if input.dtype.kind in "iu":
         input = input.astype(cupy.float32)
-    filtered, nprepad = _filter_input(input, prefilter, mode, cval, order)
 
     integer_output = output.dtype.kind in "iu"
     _util._check_cval(mode, cval, integer_output)
     large_int = max(math.prod(input.shape), math.prod(output_shape)) > 1 << 31
+    matrix = matrix.astype(float_dtype, copy=False)
     if matrix.ndim == 1:
-        offset = cupy.asarray(offset, dtype=cupy.float64)
+        # identify batch axes where zoom == 1 and shift == 0
+        # (no interpolation needed)
+        matrix_host = cupy.asnumpy(matrix)
+        batch_axes = tuple(
+            j for j in range(ndim) if matrix_host[j] == 1.0 and offset[j] == 0.0
+        )
+
+        filtered, nprepad = _filter_input(
+            input, prefilter, mode, cval, order, batch_axes=batch_axes
+        )
+
+        offset = cupy.asarray(offset, dtype=float_dtype)
         offset = -offset / matrix
-        kern = _interp_kernels._get_zoom_shift_kernel(
+        kern_info = _interp_kernels._get_zoom_shift_kernel(
             ndim,
             large_int,
             output_shape,
@@ -511,10 +577,34 @@ def affine_transform(
             order=order,
             integer_output=integer_output,
             nprepad=nprepad,
+            float_dtype=float_dtype,
+            batch_axes=batch_axes,
         )
-        kern(filtered, offset, matrix, output)
+        if kern_info.size is not None:
+            kern_info.kernel(
+                filtered, offset, matrix, output, size=kern_info.size
+            )
+        else:
+            kern_info.kernel(filtered, offset, matrix, output)
     else:
-        kern = _interp_kernels._get_affine_kernel(
+        # identify batch axes where the row is an identity row with zero offset
+        # i.e., matrix[j, j] == 1, matrix[j, k] == 0 for k != j, and offset[j] == 0
+        matrix_host = cupy.asnumpy(matrix)
+        batch_axes = tuple(
+            j
+            for j in range(ndim)
+            if (
+                matrix_host[j, j] == 1.0
+                and all(matrix_host[j, k] == 0.0 for k in range(ndim) if k != j)
+                and offset[j] == 0.0
+            )
+        )
+
+        filtered, nprepad = _filter_input(
+            input, prefilter, mode, cval, order, batch_axes=batch_axes
+        )
+
+        kern_info = _interp_kernels._get_affine_kernel(
             ndim,
             large_int,
             output_shape,
@@ -523,11 +613,16 @@ def affine_transform(
             order=order,
             integer_output=integer_output,
             nprepad=nprepad,
+            float_dtype=float_dtype,
+            batch_axes=batch_axes,
         )
-        m = cupy.zeros((ndim, ndim + 1), dtype=cupy.float64)
+        m = cupy.zeros((ndim, ndim + 1), dtype=float_dtype)
         m[:, :-1] = matrix
-        m[:, -1] = cupy.asarray(offset, dtype=cupy.float64)
-        kern(filtered, m, output)
+        m[:, -1] = cupy.asarray(offset, dtype=float_dtype)
+        if kern_info.size is not None:
+            kern_info.kernel(filtered, m, output, size=kern_info.size)
+        else:
+            kern_info.kernel(filtered, m, output)
     return output
 
 
@@ -553,6 +648,7 @@ def rotate(
     mode="constant",
     cval=0.0,
     prefilter=True,
+    float64_coords=False,
 ):
     """Rotate an array.
 
@@ -585,6 +681,9 @@ def rotate(
             slightly blurred if ``order > 1``, unless the input is prefiltered,
             i.e. it is the result of calling ``spline_filter`` on the original
             input.
+        float64_coords (bool): If True, always use double precision
+            internally like SciPy. When false, single precision floats and
+            8 or 16-bit integer types will use single precision internally.
 
     Returns:
         cupy.ndarray or None:
@@ -613,9 +712,10 @@ def rotate(
     rad = math.radians(angle)
     sincos = cmath.rect(1, rad)
     cos, sin = sincos.real, sincos.imag
+    float_dtype = cupy.promote_types(input_arr.real.dtype, cupy.float32)
 
     # determine offsets and output shape as in scipy.ndimage.rotate
-    rot_matrix = numpy.array([[cos, sin], [-sin, cos]])
+    rot_matrix = numpy.array([[cos, sin], [-sin, cos]], dtype=float_dtype)
 
     img_shape = numpy.asarray(input_arr.shape)
     in_plane_shape = img_shape[axes]
@@ -637,13 +737,13 @@ def rotate(
     output_shape[axes] = out_plane_shape
     output_shape = tuple(output_shape)
 
-    matrix = numpy.identity(ndim)
+    matrix = numpy.identity(ndim, dtype=float_dtype)
     matrix[axes[0], axes[0]] = cos
     matrix[axes[0], axes[1]] = sin
     matrix[axes[1], axes[0]] = -sin
     matrix[axes[1], axes[1]] = cos
 
-    offset = numpy.zeros(ndim, dtype=cupy.float64)
+    offset = numpy.zeros(ndim, dtype=float_dtype)
     offset[axes] = in_center - out_center
 
     matrix = cupy.asarray(matrix)
@@ -659,6 +759,7 @@ def rotate(
         mode,
         cval,
         prefilter,
+        float64_coords=float64_coords,
     )
 
 
@@ -730,11 +831,19 @@ def shift(
         output = _util._get_output(output, input)
         if input.dtype.kind in "iu":
             input = input.astype(cupy.float32)
-        filtered, nprepad = _filter_input(input, prefilter, mode, cval, order)
         integer_output = output.dtype.kind in "iu"
         _util._check_cval(mode, cval, integer_output)
         large_int = math.prod(input.shape) > 1 << 31
-        kern = _interp_kernels._get_shift_kernel(
+        float_dtype = cupy.promote_types(input.real.dtype, cupy.float32)
+
+        # identify batch axes where shift == 0 (no interpolation needed)
+        batch_axes = tuple(j for j, s in enumerate(shift) if s == 0)
+
+        filtered, nprepad = _filter_input(
+            input, prefilter, mode, cval, order, batch_axes=batch_axes
+        )
+
+        kern_info = _interp_kernels._get_shift_kernel(
             input.ndim,
             large_int,
             input.shape,
@@ -743,13 +852,18 @@ def shift(
             order=order,
             integer_output=integer_output,
             nprepad=nprepad,
+            float_dtype=float_dtype,
+            batch_axes=batch_axes,
         )
         shift = cupy.asarray(shift, dtype=cupy.float64, order="C")
         if shift.ndim != 1:
             raise ValueError("shift must be 1d")
         if shift.size != filtered.ndim:
             raise ValueError("len(shift) must equal input.ndim")
-        kern(filtered, shift, output)
+        if kern_info.size is not None:
+            kern_info.kernel(filtered, shift, output, size=kern_info.size)
+        else:
+            kern_info.kernel(filtered, shift, output)
     return output
 
 
@@ -872,13 +986,26 @@ def zoom(
         output = _util._get_output(output, input, shape=output_shape)
         if input.dtype.kind in "iu":
             input = input.astype(cupy.float32)
-        filtered, nprepad = _filter_input(input, prefilter, mode, cval, order)
         integer_output = output.dtype.kind in "iu"
         _util._check_cval(mode, cval, integer_output)
         large_int = (
             max(math.prod(input.shape), math.prod(output_shape)) > 1 << 31
         )
-        kern = _interp_kernels._get_zoom_kernel(
+        float_dtype = cupy.promote_types(input.real.dtype, cupy.float32)
+
+        # identify batch axes where zoom == 1 (no interpolation needed)
+        # this occurs when input_shape[j] == output_shape[j]
+        batch_axes = tuple(
+            j
+            for j, (in_s, out_s) in enumerate(zip(input.shape, output_shape))
+            if in_s == out_s
+        )
+
+        filtered, nprepad = _filter_input(
+            input, prefilter, mode, cval, order, batch_axes=batch_axes
+        )
+
+        kern_info = _interp_kernels._get_zoom_kernel(
             input.ndim,
             large_int,
             output_shape,
@@ -887,7 +1014,12 @@ def zoom(
             integer_output=integer_output,
             grid_mode=grid_mode,
             nprepad=nprepad,
+            float_dtype=float_dtype,
+            batch_axes=batch_axes,
         )
         zoom = cupy.asarray(zoom, dtype=cupy.float64)
-        kern(filtered, zoom, output)
+        if kern_info.size is not None:
+            kern_info.kernel(filtered, zoom, output, size=kern_info.size)
+        else:
+            kern_info.kernel(filtered, zoom, output)
     return output

@@ -31,7 +31,7 @@ def main(args):
         (
             "resize",
             dict(preserve_range=True),
-            dict(order=[0, 1, 3], mode=["reflect"], anti_aliasing=[True]),
+            dict(order=[0, 1, 3, 5], mode=["reflect"], anti_aliasing=[True]),
             True,
             True,
         ),  # scale handled in loop below
@@ -45,15 +45,15 @@ def main(args):
         (
             "rescale",
             dict(preserve_range=True),
-            dict(order=[0, 1, 3], mode=["reflect"], anti_aliasing=[True]),
+            dict(order=[0, 1, 3, 5], mode=["reflect"], anti_aliasing=[True]),
             True,
             True,
         ),  # output_shape handled in loop below
         (
             "rotate",
             dict(angle=15, preserve_range=True),
-            dict(order=[0, 1, 3], mode=["reflect"], resize=[False, True]),
-            False,
+            dict(order=[0, 1, 3, 5], mode=["reflect"], resize=[False, True]),
+            True,
             False,
         ),
         (
@@ -66,7 +66,7 @@ def main(args):
         (
             "swirl",
             dict(strength=1, preserve_range=True),
-            dict(order=[0, 1, 3], mode=["reflect"]),
+            dict(order=[0, 1, 3, 5], mode=["reflect"]),
             False,
             False,
         ),
@@ -79,14 +79,14 @@ def main(args):
         (
             "pyramid_gaussian",
             dict(max_layer=6, downscale=2, preserve_range=True),
-            dict(order=[0, 1, 3]),
+            dict(order=[0, 1, 3, 5]),
             True,
             True,
         ),
         (
             "pyramid_laplacian",
             dict(max_layer=6, downscale=2, preserve_range=True),
-            dict(order=[0, 1, 3]),
+            dict(order=[0, 1, 3, 5]),
             True,
             True,
         ),
@@ -105,7 +105,7 @@ def main(args):
         if shape[-1] == 3 and not allow_color:
             continue
 
-        ndim_spatial = ndim - 1 if shape[-1] == 3 else ndim
+        ndim_spatial = ndim - 1 if shape[-1] in [3, 4] else ndim
 
         if function_name in [
             "rescale",
@@ -121,7 +121,8 @@ def main(args):
         ]
 
         if function_name in ["rescale", "resize", "resize_local_mean"]:
-            scales = [0.75, 1.25]
+            # scales = [0.75, 1.25]
+            scales = [1.25]
             if function_name == "rescale":
                 var_kwargs["scale"] = [(s,) * ndim_spatial for s in scales]
             elif function_name.startswith("resize"):
