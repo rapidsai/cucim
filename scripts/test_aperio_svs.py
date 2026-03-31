@@ -6,81 +6,14 @@
 Quick test script for cuslide2 plugin with Aperio SVS files
 """
 
-import json
-import os
-import re
 import sys
-import tempfile
 import time
 import traceback
-from importlib import metadata as importlib_metadata
 from pathlib import Path
 
 import numpy as np
 
-
-def _plugin_version_from_dist_version(dist_version: str) -> str:
-    """
-    Convert a dist version like '26.2.0' to cuCIM plugin version format '26.02.00'.
-
-    cuCIM plugin filenames use zero-padded minor/patch components.
-    """
-    m = re.match(r"^\s*(\d+)\.(\d+)\.(\d+)", dist_version)
-    if not m:
-        # Fall back to the raw version string (best-effort)
-        return dist_version
-    major, minor, patch = (int(m.group(1)), int(m.group(2)), int(m.group(3)))
-    return f"{major}.{minor:02d}.{patch:02d}"
-
-
-def setup_environment():
-    """Setup cuCIM environment for cuslide2 plugin"""
-    # Get current build directory
-    repo_root = Path(__file__).parent.parent
-    plugin_lib = (
-        repo_root / "cpp" / "plugins" / "cucim.kit.cuslide2" / "build-release" / "lib"
-    )
-
-    if not plugin_lib.exists():
-        plugin_lib = repo_root / "install" / "lib"
-
-    # Try CUDA-specific packages first, then fall back to generic cucim
-    dist_version = None
-    for pkg_name in ["cucim-cu13", "cucim-cu12", "cucim"]:
-        try:
-            dist_version = importlib_metadata.version(pkg_name)
-            break
-        except importlib_metadata.PackageNotFoundError:
-            continue
-    if dist_version is None:
-        raise importlib_metadata.PackageNotFoundError("cucim")
-    version = _plugin_version_from_dist_version(dist_version)
-
-    if os.getenv("ENABLE_CUSLIDE2") == "1":
-        os.environ["CUCIM_PLUGINS"] = f"cucim.kit.cuslide2@{version}.so"
-        os.environ.pop("CUCIM_CONFIG_PATH", None)
-        print(
-            f"✅ Plugin selection via env: ENABLE_CUSLIDE2=1 + CUCIM_PLUGINS={os.environ['CUCIM_PLUGINS']}"
-        )
-    else:
-        config = {
-            "plugin": {
-                "names": [
-                    f"cucim.kit.cuslide2@{version}.so",
-                ]
-            }
-        }
-
-        config_path = os.path.join(tempfile.gettempdir(), ".cucim_aperio_test.json")
-        with open(config_path, "w") as f:
-            json.dump(config, f, indent=2)
-
-        os.environ["CUCIM_CONFIG_PATH"] = config_path
-        os.environ.pop("CUCIM_PLUGINS", None)
-        print(f"✅ Plugin configuration: {config_path}")
-    print(f"✅ Plugin library path: {plugin_lib}")
-
-    return str(plugin_lib)
+from test_common import setup_environment, test_tile_level_caching
 
 
 def _generate_tile_locations(level_dimensions, tile_w=256, tile_h=256):
@@ -267,105 +200,6 @@ def test_batch_decode_performance(img, level_dimensions):
         print(f"    ⚠️  Failed: {e}")
 
 
-def test_tile_level_caching(img, svs_path, CuImage):
-    """Test tile-level caching (per-process image cache).
-
-    Exercises the tile-level cache in ifd.cpp: ROI -> tile grid
-    decomposition, per-tile cache lookup, miss-decode-insert,
-    and warm-read cache hits.
-
-    NOTE: Tile-level caching requires that the cuslide2 plugin
-    successfully extracts TileWidth/TileLength TIFF tags via
-    nvImageCodec (>= 0.7.0). If tile sizes are (0,0), the
-    caching code path is not entered and the test is skipped.
-
-    Raises:
-        RuntimeError: If caching assertions fail.
-    """
-    print("\n💾 Testing tile-level caching...")
-    print("-" * 50)
-
-    # Check tile sizes — caching requires non-zero tile dimensions
-    level_tile_sizes = img.resolutions.get("level_tile_sizes", ())
-    has_tile_dims = (
-        len(level_tile_sizes) > 0
-        and level_tile_sizes[0][0] > 0
-        and level_tile_sizes[0][1] > 0
-    )
-    print(
-        f"  Tile sizes (level 0): {level_tile_sizes[0] if level_tile_sizes else 'N/A'}"
-    )
-
-    if not has_tile_dims:
-        print(
-            "  ⚠️  Tile dimensions are (0,0) — tile-level caching path is "
-            "inactive.\n"
-            "     This occurs when nvImageCodec does not expose "
-            "TileWidth/TileLength TIFF tags.\n"
-            "     Skipping caching assertions (decode still works, "
-            "just without cache)."
-        )
-        return
-
-    # Enable per-process cache (256 MB) and stat recording.
-    # Re-open the image after configuring the cache so the
-    # IFD picks up the active cache manager.
-    CuImage.cache("per_process", memory_capacity=256)
-    CuImage.cache().record(True)
-    img_cached = CuImage(svs_path)
-    print(f"  Cache type: {CuImage.cache().type}")
-    print(f"  Stat recording: {CuImage.cache().record()}")
-
-    # --- Cold read (all cache misses) ---
-    region_cold = img_cached.read_region((0, 0), (512, 512), level=0)
-    cold_hits = CuImage.cache().hit_count
-    cold_misses = CuImage.cache().miss_count
-    print("\n  🧊 Cold read (512x512):")
-    print(f"     Hits: {cold_hits}, Misses: {cold_misses}")
-    assert cold_misses > 0, "Expected cache misses on cold read"
-
-    # --- Warm read (same region -> all cache hits) ---
-    start = time.time()
-    region_warm = img_cached.read_region((0, 0), (512, 512), level=0)
-    warm_time = time.time() - start
-    warm_hits = CuImage.cache().hit_count
-    warm_misses = CuImage.cache().miss_count
-    new_hits = warm_hits - cold_hits
-    new_misses = warm_misses - cold_misses
-    print("\n  🔥 Warm read (same region):")
-    print(
-        f"     Hits: {warm_hits} (+{new_hits}), Misses: {warm_misses} (+{new_misses})"
-    )
-    print(f"     Time: {warm_time * 1000:.1f} ms")
-    assert new_hits > 0, "Expected cache hits on warm read"
-    assert new_misses == 0, "Expected zero new misses on warm read"
-
-    # --- Data correctness: cold vs warm must match ---
-    arr_cold = np.asarray(region_cold)
-    arr_warm = np.asarray(region_warm)
-    assert np.array_equal(arr_cold, arr_warm), "Cold and warm reads differ!"
-    print(f"     ✅ Data matches (shape={arr_cold.shape})")
-
-    # --- Overlapping read (partial hit: some tiles shared) ---
-    prev_hits = CuImage.cache().hit_count
-    prev_misses = CuImage.cache().miss_count
-    img_cached.read_region((128, 128), (512, 512), level=0)
-    overlap_hits = CuImage.cache().hit_count
-    overlap_misses = CuImage.cache().miss_count
-    print("\n  🔀 Overlapping read (offset 128,128):")
-    print(
-        f"     Hits: {overlap_hits} (+{overlap_hits - prev_hits}), "
-        f"Misses: {overlap_misses} (+{overlap_misses - prev_misses})"
-    )
-
-    # --- Summary ---
-    print("\n  📊 Cache summary:")
-    print(f"     Total hits:   {CuImage.cache().hit_count}")
-    print(f"     Total misses: {CuImage.cache().miss_count}")
-    print(f"     Cache size:   {CuImage.cache().size} tiles")
-    print("  ✅ Tile-level caching test passed!")
-
-
 def test_aperio_svs(svs_path, plugin_lib):
     """Test cuslide2 plugin with an Aperio SVS file.
 
@@ -526,7 +360,7 @@ def main():
             return 1
 
     # Setup environment
-    plugin_lib = setup_environment()
+    plugin_lib = setup_environment("cucim_aperio_test")
 
     # Test the SVS file — exceptions indicate failure
     try:
