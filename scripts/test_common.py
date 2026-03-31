@@ -180,17 +180,51 @@ def test_tile_level_caching(img, file_path, CuImage):
             f"max pixel diff={max_diff}"
         )
 
-    # --- Overlapping read (partial hit: some tiles shared) ---
+    # --- Overlapping read (partial hit: some tiles shared, some new) ---
+    overlap_origin = (128, 128)
+    overlap_size = (512, 512)
+
+    # Non-cached baseline for this region
+    region_overlap_direct = img.read_region(overlap_origin, overlap_size, level=0)
+    arr_overlap_direct = np.asarray(region_overlap_direct)
+
     prev_hits = CuImage.cache().hit_count
     prev_misses = CuImage.cache().miss_count
-    img_cached.read_region((128, 128), (512, 512), level=0)
-    overlap_hits = CuImage.cache().hit_count
-    overlap_misses = CuImage.cache().miss_count
+    region_overlap = img_cached.read_region(overlap_origin, overlap_size, level=0)
+    overlap_new_hits = CuImage.cache().hit_count - prev_hits
+    overlap_new_misses = CuImage.cache().miss_count - prev_misses
     print("\n  🔀 Overlapping read (offset 128,128):")
     print(
-        f"     Hits: {overlap_hits} (+{overlap_hits - prev_hits}), "
-        f"Misses: {overlap_misses} (+{overlap_misses - prev_misses})"
+        f"     Hits: {CuImage.cache().hit_count} (+{overlap_new_hits}), "
+        f"Misses: {CuImage.cache().miss_count} (+{overlap_new_misses})"
     )
+    assert overlap_new_hits > 0, (
+        "Expected cache hits from tiles shared with previous (0,0) read"
+    )
+    assert overlap_new_misses > 0, (
+        "Expected cache misses for tiles outside the previous (0,0) region"
+    )
+
+    # Data correctness: overlapping cached read vs non-cached direct decode
+    arr_overlap_cached = np.asarray(region_overlap)
+    assert arr_overlap_direct.shape == arr_overlap_cached.shape, (
+        f"Shape mismatch: direct={arr_overlap_direct.shape} "
+        f"vs cached={arr_overlap_cached.shape}"
+    )
+    if np.array_equal(arr_overlap_direct, arr_overlap_cached):
+        print("     ✅ Overlapping cached vs non-cached data matches")
+    else:
+        max_diff = int(
+            np.max(
+                np.abs(
+                    arr_overlap_direct.astype(int) - arr_overlap_cached.astype(int)
+                )
+            )
+        )
+        raise RuntimeError(
+            f"Overlapping cached decode differs from non-cached direct decode! "
+            f"max pixel diff={max_diff}"
+        )
 
     # --- Summary ---
     print("\n  📊 Cache summary:")
