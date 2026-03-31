@@ -760,7 +760,7 @@ def shift(
             nprepad=nprepad,
             float_dtype=float_dtype,
         )
-        shift = cupy.asarray(shift, dtype=cupy.float64, order="C")
+        shift = cupy.asarray(shift, dtype=float_type, order="C")
         if shift.ndim != 1:
             raise ValueError("shift must be 1d")
         if shift.size != filtered.ndim:
@@ -906,6 +906,6 @@ def zoom(
             nprepad=nprepad,
             float_dtype=float_dtype,
         )
-        zoom = cupy.asarray(zoom, dtype=cupy.float64)
+        zoom = cupy.asarray(zoom, dtype=float_type)
         kern(filtered, zoom, output)
     return output
