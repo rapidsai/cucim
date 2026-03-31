@@ -212,9 +212,7 @@ def test_tile_level_caching(img, file_path, CuImage):
     else:
         max_diff = int(
             np.max(
-                np.abs(
-                    arr_overlap_cached.astype(int) - arr_overlap_again.astype(int)
-                )
+                np.abs(arr_overlap_cached.astype(int) - arr_overlap_again.astype(int))
             )
         )
         raise RuntimeError(
