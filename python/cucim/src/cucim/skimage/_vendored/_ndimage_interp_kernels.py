@@ -32,6 +32,10 @@ def _get_coord_map(ndim, nprepad=0, float_type=None):
         coords (ndarray): array of shape (ncoords, ndim) containing the target
             coordinates.
         c_j: variables to hold the target coordinates
+        float_type: string or None
+            Unused by this function, but required because all `coord_func`
+            passed to `_generate_interp_custom` have to support the same
+            function signature.
 
     computes::
 
@@ -65,6 +69,10 @@ def _get_coord_zoom_and_shift(ndim, nprepad=0, float_type=None):
         in_coord[ndim]: array containing the source coordinate
         zoom[ndim]: array containing the zoom for each axis
         shift[ndim]: array containing the zoom for each axis
+        float_type: string or None
+            Unused by this function, but required because all `coord_func`
+            passed to `_generate_interp_custom` have to support the same
+            function signature.
 
     computes::
 
@@ -93,6 +101,8 @@ def _get_coord_zoom_and_shift_grid(ndim, nprepad=0, float_type=None):
         in_coord[ndim]: array containing the source coordinate
         zoom[ndim]: array containing the zoom for each axis
         shift[ndim]: array containing the zoom for each axis
+        float_type: string.
+            The C++ floating point type used for floating point literals.
 
     computes::
 
@@ -121,6 +131,10 @@ def _get_coord_zoom(ndim, nprepad=0, float_type=None):
 
         in_coord[ndim]: array containing the source coordinate
         zoom[ndim]: array containing the zoom for each axis
+        float_type: string or None
+            Unused by this function, but required because all `coord_func`
+            passed to `_generate_interp_custom` have to support the same
+            function signature.
 
     computes::
 
@@ -148,6 +162,8 @@ def _get_coord_zoom_grid(ndim, nprepad=0, float_type="double"):
 
         in_coord[ndim]: array containing the source coordinate
         zoom[ndim]: array containing the zoom for each axis
+        float_type: string
+            The C++ floating point type used for floating point literals.
 
     computes::
 
@@ -172,6 +188,10 @@ def _get_coord_shift(ndim, nprepad=0, float_type=None):
 
         in_coord[ndim]: array containing the source coordinate
         shift[ndim]: array containing the zoom for each axis
+        float_type: string or None
+            Unused by this function, but required because all `coord_func`
+            passed to `_generate_interp_custom` have to support the same
+            function signature.
 
     computes::
 
