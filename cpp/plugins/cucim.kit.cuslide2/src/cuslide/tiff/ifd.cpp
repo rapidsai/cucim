@@ -472,7 +472,9 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
     //  1. The image is tiled (tile_width_ > 0 && tile_height_ > 0)
     //  2. The ROI is fully within the image bounds (no boundary handling)
     //  3. An image cache is configured (not kNoCache)
+    //  4. The image is 8-bit RGB (the only format the assembly path supports)
     bool use_tile_caching = (tile_width_ > 0 && tile_height_ > 0 &&
+                             bits_per_sample_ == 8 && samples_per_pixel_ == 3 &&
                              sx >= 0 && sy >= 0 &&
                              ex < static_cast<int64_t>(width_) &&
                              ey < static_cast<int64_t>(height_));
@@ -573,9 +575,21 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
                 const uint64_t index_hash = ifd_hash ^
                     (static_cast<uint64_t>(tile_index) | (static_cast<uint64_t>(tile_index) << 32));
 
-                // --- Cache lookup ---
+                // --- Cache lookup (RAII lock guard for exception safety) ---
                 auto key = image_cache.create_key(ifd_hash, tile_index);
-                image_cache.lock(index_hash);
+
+                // Scope guard: automatically unlocks on destruction (exception or early exit)
+                struct CacheLockGuard {
+                    cucim::cache::ImageCache& cache;
+                    uint64_t hash;
+                    bool locked;
+                    CacheLockGuard(cucim::cache::ImageCache& c, uint64_t h)
+                        : cache(c), hash(h), locked(true) { cache.lock(hash); }
+                    ~CacheLockGuard() { if (locked) cache.unlock(hash); }
+                    void unlock() { if (locked) { cache.unlock(hash); locked = false; } }
+                };
+                CacheLockGuard tile_lock(image_cache, index_hash);
+
                 auto cached_value = image_cache.find(key);
 
                 uint8_t* tile_data = nullptr;
@@ -584,7 +598,7 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
                 if (cached_value)
                 {
                     // *** Cache hit ***
-                    image_cache.unlock(index_hash);
+                    tile_lock.unlock();
                     tile_data = static_cast<uint8_t*>(cached_value->data);
 
                     #ifdef DEBUG
@@ -597,7 +611,7 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
                     void* tile_mem = image_cache.allocate(tile_buf_size);
                     if (!tile_mem)
                     {
-                        image_cache.unlock(index_hash);
+                        tile_lock.unlock();
                         #ifdef DEBUG
                         ::fmt::print("  ❌ Tile alloc FAILED tile[{},{}] — filling background\n",
                                      tile_col, tile_row);
@@ -626,7 +640,7 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
                     {
                         tile_data = tile_buf;
                         image_cache.insert(key, tile_value);
-                        image_cache.unlock(index_hash);
+                        tile_lock.unlock();
 
                         #ifdef DEBUG
                         ::fmt::print("  📥 Cache MISS tile[{},{}] idx={} decoded {}x{}\n",
@@ -635,7 +649,7 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
                     }
                     else
                     {
-                        image_cache.unlock(index_hash);
+                        tile_lock.unlock();
                         // tile_value destructor handles backend-correct cleanup
                         #ifdef DEBUG
                         ::fmt::print("  ❌ Tile decode FAILED tile[{},{}] — filling background\n",
