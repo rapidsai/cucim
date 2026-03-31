@@ -154,8 +154,7 @@ def test_tile_level_caching(img, file_path, CuImage):
     new_misses = warm_misses - cold_misses
     print("\n  🔥 Warm read (same region):")
     print(
-        f"     Hits: {warm_hits} (+{new_hits}), "
-        f"Misses: {warm_misses} (+{new_misses})"
+        f"     Hits: {warm_hits} (+{new_hits}), Misses: {warm_misses} (+{new_misses})"
     )
     print(f"     Time: {warm_time * 1000:.1f} ms")
     assert new_hits > 0, "Expected cache hits on warm read"
@@ -216,9 +215,7 @@ def test_tile_level_caching(img, file_path, CuImage):
     else:
         max_diff = int(
             np.max(
-                np.abs(
-                    arr_overlap_direct.astype(int) - arr_overlap_cached.astype(int)
-                )
+                np.abs(arr_overlap_direct.astype(int) - arr_overlap_cached.astype(int))
             )
         )
         raise RuntimeError(

@@ -12,7 +12,6 @@ import traceback
 from pathlib import Path
 
 import numpy as np
-
 from test_common import setup_environment, test_tile_level_caching
 
 
