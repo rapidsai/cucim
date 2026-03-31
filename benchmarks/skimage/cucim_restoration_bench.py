@@ -199,13 +199,8 @@ def main(args):
                     radius = [5, 10, 20, 40, 80, 160]
             var_kwargs["radius"] = radius
 
-            # algorithm kwarg is not available in scikit-image
-            if not run_cpu:
-                var_kwargs["algorithm"] = ["exact", "layered", "tophat"]
-
             if shape[-1] == 3 and not allow_color:
                 continue
-            print(f"{ndim=},{run_cpu=},{fixed_kwargs=},{var_kwargs=}")
 
             B = ImageBench(
                 function_name=function_name,
