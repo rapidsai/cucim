@@ -514,14 +514,25 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
 
         const uint64_t ifd_hash = hash_value_;
 
-        // Allocate host output buffer for tile assembly (RAII-managed)
-        std::unique_ptr<uint8_t, decltype(cucim_free)*> host_raster_owner(
-            static_cast<uint8_t*>(cucim_malloc(one_raster_size)), cucim_free);
-        if (!host_raster_owner)
+        // If the caller provided a pre-allocated buffer, assemble directly into it;
+        // otherwise allocate our own host buffer (RAII-managed).
+        const bool caller_owns_buffer = is_buf_available && output_buffer != nullptr;
+        std::unique_ptr<uint8_t, decltype(cucim_free)*> host_raster_owner(nullptr, cucim_free);
+        uint8_t* host_raster = nullptr;
+
+        if (caller_owns_buffer)
         {
-            throw std::runtime_error("Failed to allocate host output buffer for tile assembly");
+            host_raster = output_buffer;
         }
-        uint8_t* host_raster = host_raster_owner.get();
+        else
+        {
+            host_raster_owner.reset(static_cast<uint8_t*>(cucim_malloc(one_raster_size)));
+            if (!host_raster_owner)
+            {
+                throw std::runtime_error("Failed to allocate host output buffer for tile assembly");
+            }
+            host_raster = host_raster_owner.get();
+        }
 
         const uint32_t dest_row_stride = static_cast<uint32_t>(w) * samples;
         uint8_t* dest_row_ptr = host_raster;
@@ -641,23 +652,26 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
         }
 
         // --- Move assembled raster to the requested output device ---
-        if (out_device.type() == cucim::io::DeviceType::kCUDA)
+        if (!caller_owns_buffer)
         {
-            uint8_t* gpu_buf = nullptr;
-            cudaError_t err = cudaMalloc(reinterpret_cast<void**>(&gpu_buf), one_raster_size);
-            if (err != cudaSuccess)
+            if (out_device.type() == cucim::io::DeviceType::kCUDA)
             {
-                throw std::runtime_error("Failed to allocate GPU buffer for tile-cached output");
-            }
-            cudaMemcpy(gpu_buf, host_raster, one_raster_size, cudaMemcpyHostToDevice);
-            // host_raster_owner destructor frees the host buffer
+                uint8_t* gpu_buf = nullptr;
+                cudaError_t err = cudaMalloc(reinterpret_cast<void**>(&gpu_buf), one_raster_size);
+                if (err != cudaSuccess)
+                {
+                    throw std::runtime_error("Failed to allocate GPU buffer for tile-cached output");
+                }
+                cudaMemcpy(gpu_buf, host_raster, one_raster_size, cudaMemcpyHostToDevice);
+                // host_raster_owner destructor frees the host buffer
 
-            output_buffer = gpu_buf;
-            raster_type = cucim::io::DeviceType::kCUDA;
-        }
-        else
-        {
-            output_buffer = host_raster_owner.release();
+                output_buffer = gpu_buf;
+                raster_type = cucim::io::DeviceType::kCUDA;
+            }
+            else
+            {
+                output_buffer = host_raster_owner.release();
+            }
         }
 
         // Set up output metadata
