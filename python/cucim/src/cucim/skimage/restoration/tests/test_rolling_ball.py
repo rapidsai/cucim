@@ -40,14 +40,17 @@ def _ball_kernel_reference(
         raise ValueError("dtype must be a floating-point type")
 
     half_size = math.ceil(radius)
-    coords = np.meshgrid(
-        *[
-            np.arange(-half_size, half_size + 1, dtype=dtype)
-            for _ in range(ndim)
-        ],
-        indexing="ij",
+    coords = np.stack(
+        np.meshgrid(
+            *[
+                np.arange(-half_size, half_size + 1, dtype=dtype)
+                for _ in range(ndim)
+            ],
+            indexing="ij",
+        ),
+        axis=-1,
     )
-    sum_of_squares = sum(c**2 for c in coords)
+    sum_of_squares = np.sum(coords * coords, axis=-1)
     distance_from_center = np.sqrt(sum_of_squares)
     kernel = np.sqrt(np.clip(radius**2 - sum_of_squares, 0, None))
     if structure_and_footprint:
