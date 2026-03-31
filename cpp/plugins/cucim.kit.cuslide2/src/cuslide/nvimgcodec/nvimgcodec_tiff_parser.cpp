@@ -145,16 +145,11 @@ static std::string detect_nvimgcodec_extensions_path()
 
 // nvimgcodec API compatibility
 //
-// Older nvimgcodec headers expose `nvimgcodecMetadata_t` with just:
-//   { kind, format, buffer_size, buffer }
-// and do not support per-TIFF-tag querying (no TIFF_TAG kind, no value_type/value_count/id fields).
-//
-// Newer nvimgcodec versions add `NVIMGCODEC_METADATA_KIND_TIFF_TAG` and per-tag query fields.
-#if defined(NVIMGCODEC_METADATA_KIND_TIFF_TAG) && defined(NVIMGCODEC_METADATA_VALUE_TYPE_ASCII)
+// TIFF-tag retrieval via nvimgcodecDecoderGetMetadata (nvImageCodec >= 0.7.0).
+// The required enum values (NVIMGCODEC_METADATA_KIND_TIFF_TAG,
+// NVIMGCODEC_METADATA_VALUE_TYPE_ASCII, etc.) are defined in nvimgcodec.h
+// which is always present in our build tree.
 #define CUSLIDE2_NVIMGCODEC_HAS_TIFF_TAG_METADATA 1
-#else
-#define CUSLIDE2_NVIMGCODEC_HAS_TIFF_TAG_METADATA 0
-#endif
 
 // Helper: convert typed TIFF tag value to a string representation.
 static std::string tiff_tag_value_to_string(const TiffTagValue& value)

@@ -99,9 +99,13 @@ docker cp $tmp_id:/input notebooks
 docker rm -v ${tmp_id}
 ```
 
-## cuslide2 Plugin (Experimental)
+## cuslide2 Plugin
 
-cuCIM includes an experimental `cuslide2` plugin that uses [nvImageCodec](https://developer.nvidia.com/nvimagecodec) for GPU-accelerated TIFF decoding. This plugin provides enhanced performance for batch ROI decoding operations.
+> **Deprecation Notice:** Starting with the next release, the original `cuslide`
+> plugin will be deprecated in favor of `cuslide2`. `cuslide2` uses
+> [nvImageCodec](https://developer.nvidia.com/nvimagecodec) for GPU-accelerated
+> TIFF decoding and adds tile-level caching, async batch decoding, and broader
+> format support. Please plan to migrate existing workflows to `cuslide2`.
 
 ### Enabling cuslide2
 
