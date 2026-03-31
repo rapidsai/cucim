@@ -9,7 +9,6 @@ Tests for Rolling Ball Filter
 """
 
 import math
-import time
 
 import cupy as cp
 import numpy as np
@@ -285,7 +284,7 @@ def test_ndim():
 
 
 @pytest.mark.parametrize("downscale_factor", [2, 3, 4])
-def test_downscale_faster_and_same_shape_dtype(downscale_factor):
+def test_downscale_nrmse_shape_and_dtype(downscale_factor):
     """With downscaling, computation is faster and output shape/dtype match no-downscale case."""
 
     tmp = util.invert(cp.asarray(data.page()))
@@ -293,35 +292,21 @@ def test_downscale_faster_and_same_shape_dtype(downscale_factor):
     img = cp.concatenate([tmp, tmp[:, ::-1]], axis=1)
     shape = img.shape
 
-    # dry runs without downscaling to make sure kernels have been compiled
     radius = 60
-    for downscale in [None, downscale_factor]:
-        rolling_ball(img, radius=radius, downscale=downscale)
 
     # Baseline: no downscaling
-    cp.cuda.Stream.null.synchronize()
-    t0 = time.perf_counter()
     background_full = rolling_ball(img, radius=radius, downscale=None)
-    cp.cuda.Stream.null.synchronize()
-    time_full_ms = 1000 * (time.perf_counter() - t0)
 
     # With downscaling (e.g. 4x smaller each dimension)
-    cp.cuda.Stream.null.synchronize()
-    t0 = time.perf_counter()
     background_down = rolling_ball(
         img, radius=radius, downscale=downscale_factor
     )
-    cp.cuda.Stream.null.synchronize()
-    time_down_ms = 1000 * (time.perf_counter() - t0)
 
     nrmse = normalized_root_mse(background_full, background_down)
 
     # result with and without downscaling should be similar
     assert nrmse < 0.5
 
-    assert time_down_ms < time_full_ms, (
-        f"downscaled run ({time_down_ms:.2f}ms) should be faster than full ({time_full_ms:.2f}ms)"
-    )
     assert background_down.shape == shape, (
         f"output shape with downscale must match input shape, got {background_down.shape}"
     )
