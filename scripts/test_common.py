@@ -171,15 +171,26 @@ def test_tile_level_caching(img, file_path, CuImage):
     print("     ✅ Cached vs non-cached data matches")
 
     # --- Overlapping read (partial hit: some tiles shared, some new) ---
-    overlap_origin = (128, 128)
-    overlap_size = (512, 512)
+    # Shift by half a tile so the new region shares some tiles with the
+    # original (0,0) read but also extends into at least one new tile column
+    # and row.  read_size is set to at least 2 tiles wide/tall to guarantee
+    # both hits and misses regardless of tile dimensions.
+    tile_w = level_tile_sizes[0][0]
+    tile_h = level_tile_sizes[0][1]
+    shift_x = min(tile_w, 256)
+    shift_y = min(tile_h, 256)
+    overlap_origin = (shift_x, shift_y)
+    overlap_size = (max(512, tile_w), max(512, tile_h))
 
     prev_hits = CuImage.cache().hit_count
     prev_misses = CuImage.cache().miss_count
     region_overlap = img_cached.read_region(overlap_origin, overlap_size, level=0)
     overlap_new_hits = CuImage.cache().hit_count - prev_hits
     overlap_new_misses = CuImage.cache().miss_count - prev_misses
-    print("\n  🔀 Overlapping read (offset 128,128):")
+    print(
+        f"\n  🔀 Overlapping read "
+        f"(offset {shift_x},{shift_y}, size {overlap_size[0]}x{overlap_size[1]}):"
+    )
     print(
         f"     Hits: {CuImage.cache().hit_count} (+{overlap_new_hits}), "
         f"Misses: {CuImage.cache().miss_count} (+{overlap_new_misses})"
