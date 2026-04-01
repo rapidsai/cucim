@@ -516,13 +516,18 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
 
         const uint64_t ifd_hash = hash_value_;
 
-        // If the caller provided a pre-allocated buffer, assemble directly into it;
-        // otherwise allocate our own host buffer (RAII-managed).
+        // Tile assembly uses host memcpy/memset, so we always need a host-side
+        // buffer.  When the caller provided a CPU buffer we can write directly
+        // into it; when the output is CUDA (or no buffer was provided) we
+        // allocate a temporary host staging buffer (RAII-managed).
         const bool caller_owns_buffer = is_buf_available && output_buffer != nullptr;
+        const bool caller_buffer_on_device =
+            caller_owns_buffer && out_device.type() == cucim::io::DeviceType::kCUDA;
+
         std::unique_ptr<uint8_t, decltype(cucim_free)*> host_raster_owner(nullptr, cucim_free);
         uint8_t* host_raster = nullptr;
 
-        if (caller_owns_buffer)
+        if (caller_owns_buffer && !caller_buffer_on_device)
         {
             host_raster = output_buffer;
         }
@@ -687,7 +692,18 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
         }
 
         // --- Move assembled raster to the requested output device ---
-        if (!caller_owns_buffer)
+        if (caller_buffer_on_device)
+        {
+            // Caller provided a device buffer — copy the host staging data into it.
+            cudaError_t err = cudaMemcpy(
+                output_buffer, host_raster, one_raster_size, cudaMemcpyHostToDevice);
+            if (err != cudaSuccess)
+            {
+                throw std::runtime_error("Failed to copy tile-cached raster to caller GPU buffer");
+            }
+            raster_type = cucim::io::DeviceType::kCUDA;
+        }
+        else if (!caller_owns_buffer)
         {
             if (out_device.type() == cucim::io::DeviceType::kCUDA)
             {
