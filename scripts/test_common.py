@@ -167,17 +167,8 @@ def test_tile_level_caching(img, file_path, CuImage):
     print(f"     ✅ Cold vs warm data matches (shape={arr_cold.shape})")
 
     # --- Data correctness: cached vs non-cached direct decode must match ---
-    assert arr_direct.shape == arr_cold.shape, (
-        f"Shape mismatch: direct={arr_direct.shape} vs cached={arr_cold.shape}"
-    )
-    if np.array_equal(arr_direct, arr_cold):
-        print("     ✅ Cached vs non-cached data matches")
-    else:
-        max_diff = int(np.max(np.abs(arr_direct.astype(int) - arr_cold.astype(int))))
-        raise RuntimeError(
-            f"Cached decode differs from non-cached direct decode! "
-            f"max pixel diff={max_diff}"
-        )
+    assert np.array_equal(arr_direct, arr_cold), "Cold and non-cached reads differ!"
+    print("     ✅ Cached vs non-cached data matches")
 
     # --- Overlapping read (partial hit: some tiles shared, some new) ---
     overlap_origin = (128, 128)
@@ -200,24 +191,15 @@ def test_tile_level_caching(img, file_path, CuImage):
         "Expected cache misses for tiles outside the previous (0,0) region"
     )
 
-    # Data correctness: read the same region again (now fully cached) and
-    # compare against a second cached read.  The global cache means even
-    # reads on the original `img` go through the cache, so a separate
-    # "non-cached baseline" is not meaningful here.
+    # Data correctness: a second read of the same region (now fully cached)
+    # must produce identical output.
     region_overlap_again = img_cached.read_region(overlap_origin, overlap_size, level=0)
     arr_overlap_cached = np.asarray(region_overlap)
     arr_overlap_again = np.asarray(region_overlap_again)
-    if np.array_equal(arr_overlap_cached, arr_overlap_again):
-        print("     ✅ Overlapping read data is consistent across cached reads")
-    else:
-        max_diff = int(
-            np.max(
-                np.abs(arr_overlap_cached.astype(int) - arr_overlap_again.astype(int))
-            )
-        )
-        raise RuntimeError(
-            f"Overlapping cached reads differ! max pixel diff={max_diff}"
-        )
+    assert np.array_equal(arr_overlap_cached, arr_overlap_again), (
+        "Overlapping cached reads differ!"
+    )
+    print("     ✅ Overlapping read data is consistent across cached reads")
 
     # --- Summary ---
     print("\n  📊 Cache summary:")
