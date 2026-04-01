@@ -1,13 +1,15 @@
 # SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Infrastructure, Inc.
 # SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Networks, Inc.
-# SPDX-FileCopyrightText: Copyright (c) 2022-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND MIT
 
 """
 Spline poles and boundary handling implemented as in SciPy
 
-https://github.com/scipy/scipy/blob/ee6ae72f83a0995aeb34929aed881d3f36fccfda/scipy/ndimage/src/ni_splines.c
-"""  # noqa: E501
+https://github.com/scipy/scipy/blob/master/scipy/ndimage/src/ni_splines.c
+"""
+
+from __future__ import annotations
 
 import functools
 import math
@@ -212,6 +214,8 @@ def _get_spline1d_code(mode, poles, n_boundary):
 _FILTER_GENERAL = """
 #include "cupy/carray.cuh"
 #include "cupy/complex.cuh"
+#include <cupy/float16.cuh>  // TODO(seberg): Add this via type_headers?
+
 typedef {data_type} T;
 typedef {pole_type} P;
 typedef {index_type} idx_t;
