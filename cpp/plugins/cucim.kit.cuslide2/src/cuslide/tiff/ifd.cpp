@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <iostream>
+#include <memory>
 #include <random>
 #include <thread>
 #include <fstream>
@@ -20,6 +21,7 @@
 #include <fmt/format.h>
 
 // cuCIM includes
+#include <cucim/cache/image_cache.h>
 #include <cucim/codec/hash_function.h>
 #include <cucim/cuimage.h>
 #include <cucim/logger/timer.h>
@@ -200,8 +202,8 @@ IFD::IFD(TIFF* tiff, uint16_t index, const ::cuslide2::nvimgcodec::IfdInfo& ifd_
     x_resolution_ = 1.0f;
     y_resolution_ = 1.0f;
 
-    // Calculate hash for caching
-    hash_value_ = cucim::codec::splitmix64(index);
+    // Calculate hash for caching (include file hash for cross-file uniqueness)
+    hash_value_ = tiff->file_handle_shared_.get()->hash_value ^ cucim::codec::splitmix64(index);
 
 #ifdef CUCIM_HAS_NVIMGCODEC
     // Store reference to nvImageCodec sub-stream
@@ -452,10 +454,306 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
         // User provided pre-allocated buffer
         output_buffer = static_cast<uint8_t*>(out_buf->data);
     }
-    // Note: decode_ifd_region_nvimgcodec will allocate buffer if output_buffer is nullptr
 
     // Get IFD info from TiffFileParser
     const auto& ifd_info = tiff->nvimgcodec_parser_->get_ifd(static_cast<uint32_t>(ifd_index_));
+    auto main_code_stream = tiff->nvimgcodec_parser_->get_main_code_stream();
+
+    // ====================================================================
+    // TILE-LEVEL CACHING PATH
+    // Decompose the ROI into its constituent TIFF tiles, check the cache
+    // for each tile, decode only cache-miss tiles via nvImageCodec, insert
+    // decoded tiles into cache, and assemble the output raster.
+    // ====================================================================
+    int64_t ex = sx + w - 1;
+    int64_t ey = sy + h - 1;
+
+    // Tile caching is applicable when:
+    //  1. The image is tiled (tile_width_ > 0 && tile_height_ > 0)
+    //  2. The ROI is fully within the image bounds (no boundary handling)
+    //  3. An image cache is configured (not kNoCache)
+    //  4. The image is 8-bit RGB (the only format the assembly path supports)
+    bool use_tile_caching = (tile_width_ > 0 && tile_height_ > 0 &&
+                             bits_per_sample_ == 8 && samples_per_pixel_ == 3 &&
+                             sx >= 0 && sy >= 0 &&
+                             ex < static_cast<int64_t>(width_) &&
+                             ey < static_cast<int64_t>(height_));
+
+    if (use_tile_caching)
+    {
+        cucim::cache::ImageCache& image_cache = cucim::CuImage::cache_manager().cache();
+        cucim::cache::CacheType cache_type = image_cache.type();
+
+        if (cache_type == cucim::cache::CacheType::kNoCache)
+        {
+            use_tile_caching = false; // No cache configured — fall through to direct decode
+        }
+    }
+
+    if (use_tile_caching)
+    {
+        cucim::cache::ImageCache& image_cache = cucim::CuImage::cache_manager().cache();
+
+        const uint32_t tw = tile_width_;
+        const uint32_t th = tile_height_;
+        const uint32_t samples = samples_per_pixel_;
+        const uint8_t background_value = tiff->background_value_;
+
+        // Tile grid offsets that the ROI overlaps
+        const uint32_t offset_sx = static_cast<uint32_t>(sx / tw);
+        const uint32_t offset_ex = static_cast<uint32_t>(ex / tw);
+        const uint32_t offset_sy = static_cast<uint32_t>(sy / th);
+        const uint32_t offset_ey = static_cast<uint32_t>(ey / th);
+
+        // Pixel offsets within start/end tiles
+        const uint32_t pixel_offset_sx = static_cast<uint32_t>(sx % tw);
+        const uint32_t pixel_offset_ex = static_cast<uint32_t>(ex % tw);
+        const uint32_t pixel_offset_sy = static_cast<uint32_t>(sy % th);
+        const uint32_t pixel_offset_ey = static_cast<uint32_t>(ey % th);
+
+        // Tiles per row in the IFD tile grid
+        const uint32_t stride_y = (width_ + tw - 1) / tw;
+
+        const uint64_t ifd_hash = hash_value_;
+
+        // Tile assembly uses host memcpy/memset, so we always need a host-side
+        // buffer.  When the caller provided a CPU buffer we can write directly
+        // into it; when the output is CUDA (or no buffer was provided) we
+        // allocate a temporary host staging buffer (RAII-managed).
+        const bool caller_owns_buffer = is_buf_available && output_buffer != nullptr;
+        const bool caller_buffer_on_device =
+            caller_owns_buffer && out_device.type() == cucim::io::DeviceType::kCUDA;
+
+        std::unique_ptr<uint8_t, decltype(cucim_free)*> host_raster_owner(nullptr, cucim_free);
+        uint8_t* host_raster = nullptr;
+
+        if (caller_owns_buffer && !caller_buffer_on_device)
+        {
+            host_raster = output_buffer;
+        }
+        else
+        {
+            host_raster_owner.reset(static_cast<uint8_t*>(cucim_malloc(one_raster_size)));
+            if (!host_raster_owner)
+            {
+                throw std::runtime_error("Failed to allocate host output buffer for tile assembly");
+            }
+            host_raster = host_raster_owner.get();
+        }
+
+        const uint32_t dest_row_stride = static_cast<uint32_t>(w) * samples;
+        uint8_t* dest_row_ptr = host_raster;
+
+        #ifdef DEBUG
+        ::fmt::print("🧩 Tile caching: ROI ({},{})→({},{}) maps to tiles [{},{}]→[{},{}], stride_y={}\n",
+                     sx, sy, ex, ey, offset_sx, offset_sy, offset_ex, offset_ey, stride_y);
+        #endif
+
+        for (uint32_t tile_row = offset_sy; tile_row <= offset_ey; ++tile_row)
+        {
+            // Vertical pixel offsets within the current tile row
+            const uint32_t tile_pixel_sy = (tile_row == offset_sy) ? pixel_offset_sy : 0;
+            const uint32_t tile_pixel_ey = (tile_row == offset_ey) ? pixel_offset_ey : (th - 1);
+            const uint32_t copy_rows = tile_pixel_ey - tile_pixel_sy + 1;
+
+            uint32_t dest_col_byte_offset = 0;
+
+            for (uint32_t tile_col = offset_sx; tile_col <= offset_ex; ++tile_col)
+            {
+                const uint32_t tile_index = tile_row * stride_y + tile_col;
+
+                // Horizontal pixel offsets within the current tile
+                const uint32_t tile_pixel_sx = (tile_col == offset_sx) ? pixel_offset_sx : 0;
+                const uint32_t tile_pixel_ex = (tile_col == offset_ex) ? pixel_offset_ex : (tw - 1);
+                const uint32_t copy_cols = tile_pixel_ex - tile_pixel_sx + 1;
+                const uint32_t copy_bytes_per_row = copy_cols * samples;
+
+                // Actual decoded tile dimensions (clipped to image bounds for edge tiles)
+                const uint32_t tile_origin_x = tile_col * tw;
+                const uint32_t tile_origin_y = tile_row * th;
+                const uint32_t actual_tw = std::min(tw, width_ - tile_origin_x);
+                const uint32_t actual_th = std::min(th, height_ - tile_origin_y);
+                const size_t tile_buf_size = static_cast<size_t>(actual_tw) * actual_th * samples;
+                const uint32_t tile_row_stride = actual_tw * samples;
+
+                // Hash for per-tile locking
+                const uint64_t index_hash = ifd_hash ^
+                    (static_cast<uint64_t>(tile_index) | (static_cast<uint64_t>(tile_index) << 32));
+
+                // --- Cache lookup (RAII lock guard for exception safety) ---
+                auto key = image_cache.create_key(ifd_hash, tile_index);
+
+                // Scope guard: automatically unlocks on destruction (exception or early exit)
+                struct CacheLockGuard {
+                    cucim::cache::ImageCache& cache;
+                    uint64_t hash;
+                    bool locked;
+                    CacheLockGuard(cucim::cache::ImageCache& c, uint64_t h)
+                        : cache(c), hash(h), locked(true) { cache.lock(hash); }
+                    ~CacheLockGuard() { if (locked) cache.unlock(hash); }
+                    void unlock() { if (locked) { cache.unlock(hash); locked = false; } }
+                };
+                CacheLockGuard tile_lock(image_cache, index_hash);
+
+                auto cached_value = image_cache.find(key);
+
+                uint8_t* tile_data = nullptr;
+                std::shared_ptr<cucim::cache::ImageCacheValue> tile_value;
+
+                if (cached_value)
+                {
+                    // *** Cache hit ***
+                    tile_lock.unlock();
+                    tile_data = static_cast<uint8_t*>(cached_value->data);
+
+                    #ifdef DEBUG
+                    ::fmt::print("  ♻️  Cache HIT  tile[{},{}] idx={}\n", tile_col, tile_row, tile_index);
+                    #endif
+                }
+                else
+                {
+                    // *** Cache miss — decode this tile via nvImageCodec ***
+                    void* tile_mem = image_cache.allocate(tile_buf_size);
+                    if (!tile_mem)
+                    {
+                        tile_lock.unlock();
+                        #ifdef DEBUG
+                        ::fmt::print("  ❌ Tile alloc FAILED tile[{},{}] — filling background\n",
+                                     tile_col, tile_row);
+                        #endif
+
+                        for (uint32_t r = 0; r < copy_rows; ++r)
+                        {
+                            memset(dest_row_ptr + dest_col_byte_offset + r * dest_row_stride,
+                                   background_value, copy_bytes_per_row);
+                        }
+                        dest_col_byte_offset += copy_bytes_per_row;
+                        continue;
+                    }
+
+                    // Wrap immediately so the destructor handles backend-correct cleanup
+                    tile_value = image_cache.create_value(tile_mem, tile_buf_size);
+                    uint8_t* tile_buf = static_cast<uint8_t*>(tile_value->data);
+
+                    bool decode_ok = ::cuslide2::nvimgcodec::decode_ifd_region_nvimgcodec(
+                        ifd_info, main_code_stream,
+                        tile_origin_x, tile_origin_y, actual_tw, actual_th,
+                        tile_buf,
+                        cucim::io::Device("cpu"));
+
+                    if (decode_ok)
+                    {
+                        tile_data = tile_buf;
+                        image_cache.insert(key, tile_value);
+                        tile_lock.unlock();
+
+                        #ifdef DEBUG
+                        ::fmt::print("  📥 Cache MISS tile[{},{}] idx={} decoded {}x{}\n",
+                                     tile_col, tile_row, tile_index, actual_tw, actual_th);
+                        #endif
+                    }
+                    else
+                    {
+                        tile_lock.unlock();
+                        // tile_value destructor handles backend-correct cleanup
+                        #ifdef DEBUG
+                        ::fmt::print("  ❌ Tile decode FAILED tile[{},{}] — filling background\n",
+                                     tile_col, tile_row);
+                        #endif
+
+                        for (uint32_t r = 0; r < copy_rows; ++r)
+                        {
+                            memset(dest_row_ptr + dest_col_byte_offset + r * dest_row_stride,
+                                   background_value, copy_bytes_per_row);
+                        }
+                        dest_col_byte_offset += copy_bytes_per_row;
+                        continue;
+                    }
+                }
+
+                // --- Assembly: copy relevant sub-rectangle from tile into output ---
+                // tile_value (if from cache miss) is still in scope, keeping tile_data valid.
+                // If insert() succeeded, the cache also holds a shared reference.
+                // If insert() failed, tile_value is the sole owner — freed after this iteration.
+                const uint32_t src_byte_offset =
+                    (tile_pixel_sy * actual_tw + tile_pixel_sx) * samples;
+
+                for (uint32_t r = 0; r < copy_rows; ++r)
+                {
+                    memcpy(dest_row_ptr + dest_col_byte_offset + r * dest_row_stride,
+                           tile_data + src_byte_offset + r * tile_row_stride,
+                           copy_bytes_per_row);
+                }
+
+                dest_col_byte_offset += copy_bytes_per_row;
+            }
+
+            dest_row_ptr += static_cast<size_t>(copy_rows) * dest_row_stride;
+        }
+
+        // --- Move assembled raster to the requested output device ---
+        if (caller_buffer_on_device)
+        {
+            // Caller provided a device buffer — copy the host staging data into it.
+            cudaError_t err = cudaMemcpy(
+                output_buffer, host_raster, one_raster_size, cudaMemcpyHostToDevice);
+            if (err != cudaSuccess)
+            {
+                throw std::runtime_error("Failed to copy tile-cached raster to caller GPU buffer");
+            }
+            raster_type = cucim::io::DeviceType::kCUDA;
+        }
+        else if (!caller_owns_buffer)
+        {
+            if (out_device.type() == cucim::io::DeviceType::kCUDA)
+            {
+                uint8_t* gpu_buf = nullptr;
+                cudaError_t err = cudaMalloc(reinterpret_cast<void**>(&gpu_buf), one_raster_size);
+                if (err != cudaSuccess)
+                {
+                    throw std::runtime_error("Failed to allocate GPU buffer for tile-cached output");
+                }
+                err = cudaMemcpy(gpu_buf, host_raster, one_raster_size, cudaMemcpyHostToDevice);
+                if (err != cudaSuccess)
+                {
+                    cudaFree(gpu_buf);
+                    throw std::runtime_error("Failed to copy tile-cached raster to GPU");
+                }
+
+                output_buffer = gpu_buf;
+                raster_type = cucim::io::DeviceType::kCUDA;
+            }
+            else
+            {
+                output_buffer = host_raster_owner.release();
+            }
+        }
+
+        // Set up output metadata
+        out_image_data->container.data = output_buffer;
+        out_image_data->container.device = DLDevice{ static_cast<DLDeviceType>(raster_type), out_device.index() };
+        out_image_data->container.dtype = DLDataType{ kDLUInt, 8, 1 };
+        out_image_data->container.ndim = 3;
+        out_image_data->container.shape = static_cast<int64_t*>(cucim_malloc(3 * sizeof(int64_t)));
+        out_image_data->container.shape[0] = h;
+        out_image_data->container.shape[1] = w;
+        out_image_data->container.shape[2] = samples_per_pixel_;
+        out_image_data->container.strides = nullptr;
+        out_image_data->container.byte_offset = 0;
+
+        #ifdef DEBUG
+        ::fmt::print("✅ Tile-cached read complete: {}x{} at ({},{}) → {}\n",
+                     w, h, sx, sy, (raster_type == cucim::io::DeviceType::kCUDA) ? "GPU" : "CPU");
+        #endif
+
+        return true;
+    }
+
+    // ====================================================================
+    // DIRECT ROI DECODE PATH (fallback: no caching)
+    // Used when: tile caching is not applicable (strip-based images,
+    // boundary ROIs, or no cache configured).
+    // ====================================================================
 
     // Synchronous single-region decode via nvImageCodec.
     // This is intentional: IFD::read() for a single location is the read_region()
@@ -463,7 +761,7 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
     // is handled separately by NvImageCodecProcessor.
     bool success = ::cuslide2::nvimgcodec::decode_ifd_region_nvimgcodec(
         ifd_info,
-        tiff->nvimgcodec_parser_->get_main_code_stream(),
+        main_code_stream,
         sx, sy, w, h,
         output_buffer,
         out_device);
