@@ -101,7 +101,7 @@ docker rm -v ${tmp_id}
 
 ## cuslide2 Plugin
 
-> **Deprecation Notice:** Starting with the next release, the original `cuslide`
+> **Deprecation Notice:** Starting with 26.04, the original `cuslide`
 > plugin will be deprecated in favor of `cuslide2`. `cuslide2` uses
 > [nvImageCodec](https://developer.nvidia.com/nvimagecodec) for GPU-accelerated
 > TIFF decoding and adds tile-level caching, async batch decoding, and broader
