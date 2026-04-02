@@ -4,73 +4,13 @@
 
 """Test Philips TIFF support in cuslide2"""
 
-import json
-import os
-import re
 import sys
-import tempfile
 import time
-from importlib import metadata as importlib_metadata
+import traceback
 from pathlib import Path
 
-
-def _plugin_version_from_dist_version(dist_version: str) -> str:
-    """
-    Convert a dist version like '26.2.0' to cuCIM plugin version format '26.02.00'.
-    """
-    m = re.match(r"^\s*(\d+)\.(\d+)\.(\d+)", dist_version)
-    if not m:
-        return dist_version
-    major, minor, patch = (int(m.group(1)), int(m.group(2)), int(m.group(3)))
-    return f"{major}.{minor:02d}.{patch:02d}"
-
-
-def setup_environment():
-    """Setup cuCIM environment for cuslide2 plugin"""
-    # Get current build directory
-    repo_root = Path(__file__).parent.parent
-    plugin_lib = repo_root / "cpp/plugins/cucim.kit.cuslide2/build-release/lib"
-
-    if not plugin_lib.exists():
-        plugin_lib = repo_root / "install/lib"
-
-    # Try CUDA-specific packages first, then fall back to generic cucim
-    dist_version = None
-    for pkg_name in ["cucim-cu13", "cucim-cu12", "cucim"]:
-        try:
-            dist_version = importlib_metadata.version(pkg_name)
-            break
-        except importlib_metadata.PackageNotFoundError:
-            continue
-    if dist_version is None:
-        raise importlib_metadata.PackageNotFoundError("cucim")
-    version = _plugin_version_from_dist_version(dist_version)
-
-    if os.getenv("ENABLE_CUSLIDE2") == "1":
-        os.environ["CUCIM_PLUGINS"] = f"cucim.kit.cuslide2@{version}.so"
-        os.environ.pop("CUCIM_CONFIG_PATH", None)
-        print(
-            f"✅ Plugin selection via env: ENABLE_CUSLIDE2=1 + CUCIM_PLUGINS={os.environ['CUCIM_PLUGINS']}"
-        )
-    else:
-        config = {
-            "plugin": {
-                "names": [
-                    f"cucim.kit.cuslide2@{version}.so",
-                ]
-            }
-        }
-
-        config_path = os.path.join(tempfile.gettempdir(), ".cucim_philips_test.json")
-        with open(config_path, "w") as f:
-            json.dump(config, f, indent=2)
-
-        os.environ["CUCIM_CONFIG_PATH"] = config_path
-        os.environ.pop("CUCIM_PLUGINS", None)
-        print(f"✅ Plugin configuration: {config_path}")
-    print(f"✅ Plugin library path: {plugin_lib}")
-
-    return str(plugin_lib)
+import numpy as np
+from test_common import setup_environment, test_tile_level_caching
 
 
 def test_philips_tiff(file_path, plugin_lib):
@@ -180,8 +120,6 @@ def test_philips_tiff(file_path, plugin_lib):
         print()
     except Exception as e:
         print(f"❌ GPU decode failed: {e}")
-        import traceback
-
         traceback.print_exc()
         print()
 
@@ -196,8 +134,6 @@ def test_philips_tiff(file_path, plugin_lib):
         if hasattr(region, "__array_interface__") or hasattr(
             region, "__cuda_array_interface__"
         ):
-            import numpy as np
-
             if hasattr(region, "get"):  # CuPy array
                 region_cpu = region.get()
             else:
@@ -345,9 +281,13 @@ def test_philips_tiff(file_path, plugin_lib):
 
     except Exception as e:
         print(f"  ⚠️  Batch decode test failed: {e}")
-        import traceback
-
         traceback.print_exc()
+    print()
+
+    # ==================================================================
+    # Tile-level caching test (shared with test_aperio_svs.py)
+    # ==================================================================
+    test_tile_level_caching(img, file_path, CuImage)
     print()
 
     print("✅ Philips TIFF test completed!")
@@ -425,7 +365,7 @@ def main():
         return 0
 
     # Setup environment
-    plugin_lib = setup_environment()
+    plugin_lib = setup_environment("cucim_philips_test")
 
     # Test the Philips TIFF file — exceptions indicate failure
     try:
@@ -433,8 +373,6 @@ def main():
         return 0
     except Exception as e:
         print(f"\n❌ Test failed: {e}")
-        import traceback
-
         traceback.print_exc()
         return 1
 

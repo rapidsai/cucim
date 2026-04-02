@@ -6,78 +6,13 @@
 Quick test script for cuslide2 plugin with Aperio SVS files
 """
 
-import json
-import os
-import re
 import sys
-import tempfile
 import time
-from importlib import metadata as importlib_metadata
+import traceback
 from pathlib import Path
 
-
-def _plugin_version_from_dist_version(dist_version: str) -> str:
-    """
-    Convert a dist version like '26.2.0' to cuCIM plugin version format '26.02.00'.
-
-    cuCIM plugin filenames use zero-padded minor/patch components.
-    """
-    m = re.match(r"^\s*(\d+)\.(\d+)\.(\d+)", dist_version)
-    if not m:
-        # Fall back to the raw version string (best-effort)
-        return dist_version
-    major, minor, patch = (int(m.group(1)), int(m.group(2)), int(m.group(3)))
-    return f"{major}.{minor:02d}.{patch:02d}"
-
-
-def setup_environment():
-    """Setup cuCIM environment for cuslide2 plugin"""
-    # Get current build directory
-    repo_root = Path(__file__).parent.parent
-    plugin_lib = (
-        repo_root / "cpp" / "plugins" / "cucim.kit.cuslide2" / "build-release" / "lib"
-    )
-
-    if not plugin_lib.exists():
-        plugin_lib = repo_root / "install" / "lib"
-
-    # Try CUDA-specific packages first, then fall back to generic cucim
-    dist_version = None
-    for pkg_name in ["cucim-cu13", "cucim-cu12", "cucim"]:
-        try:
-            dist_version = importlib_metadata.version(pkg_name)
-            break
-        except importlib_metadata.PackageNotFoundError:
-            continue
-    if dist_version is None:
-        raise importlib_metadata.PackageNotFoundError("cucim")
-    version = _plugin_version_from_dist_version(dist_version)
-
-    if os.getenv("ENABLE_CUSLIDE2") == "1":
-        os.environ["CUCIM_PLUGINS"] = f"cucim.kit.cuslide2@{version}.so"
-        os.environ.pop("CUCIM_CONFIG_PATH", None)
-        print(
-            f"✅ Plugin selection via env: ENABLE_CUSLIDE2=1 + CUCIM_PLUGINS={os.environ['CUCIM_PLUGINS']}"
-        )
-    else:
-        config = {
-            "plugin": {
-                "names": [
-                    f"cucim.kit.cuslide2@{version}.so",
-                ]
-            }
-        }
-
-        config_path = os.path.join(tempfile.gettempdir(), ".cucim_aperio_test.json")
-        with open(config_path, "w") as f:
-            json.dump(config, f, indent=2)
-
-        os.environ["CUCIM_CONFIG_PATH"] = config_path
-        os.environ.pop("CUCIM_PLUGINS", None)
-        print(f"✅ Plugin configuration: {config_path}")
-    print(f"✅ Plugin library path: {plugin_lib}")
-
-    return str(plugin_lib)
+import numpy as np
+from test_common import setup_environment, test_tile_level_caching
 
 
 def _generate_tile_locations(level_dimensions, tile_w=256, tile_h=256):
@@ -104,7 +39,6 @@ def test_batch_decode_correctness(img, level_dimensions):
         RuntimeError: If any GPU tile does not match the corresponding CPU tile.
     """
     import cupy as cp
-    import numpy as np
 
     print("\n🔍 Batch decode correctness test")
     print("-" * 50)
@@ -323,6 +257,11 @@ def test_aperio_svs(svs_path, plugin_lib):
     # ==============================================================
     test_batch_decode_performance(img, level_dimensions)
 
+    # ==============================================================
+    # Tile-level caching test
+    # ==============================================================
+    test_tile_level_caching(img, svs_path, CuImage)
+
     print("\n✅ Test completed successfully!")
 
 
@@ -420,7 +359,7 @@ def main():
             return 1
 
     # Setup environment
-    plugin_lib = setup_environment()
+    plugin_lib = setup_environment("cucim_aperio_test")
 
     # Test the SVS file — exceptions indicate failure
     try:
@@ -428,8 +367,6 @@ def main():
         return 0
     except Exception as e:
         print(f"\n❌ Test failed: {e}")
-        import traceback
-
         traceback.print_exc()
         return 1
 
