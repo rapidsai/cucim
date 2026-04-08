@@ -1,3 +1,32 @@
+# cucim 26.04.00 (8 Apr 2026)
+
+### 🚨 Breaking Changes
+* async cuda stream batch decode by @cdinea in https://github.com/rapidsai/cucim/pull/1028
+### 🐛 Bug Fixes
+* make test_load_image_metadata test case insensitive to key order by @grlee77 in https://github.com/rapidsai/cucim/pull/1035
+### 📖 Documentation
+* remove references to 'nvidia' and 'pytorch' conda channels by @jameslamb in https://github.com/rapidsai/cucim/pull/1026
+### 🛠️ Improvements
+* Drop Python 3.10 support by @gforsyth in https://github.com/rapidsai/cucim/pull/1016
+* tighten wheel size limits, enforce PEP 639 metadata, other small changes by @jameslamb in https://github.com/rapidsai/cucim/pull/1020
+* Resolve forward-merge release/26.02 into main by @jakirkham in https://github.com/rapidsai/cucim/pull/1019
+* remove pip.conf migration code in CI scripts by @jameslamb in https://github.com/rapidsai/cucim/pull/1023
+* Use verify-hardcoded-version pre-commit hook by @KyleFromNVIDIA in https://github.com/rapidsai/cucim/pull/1022
+* Drop CuPy pre-13.6.0 logic & fix CuPy 14 compatibility by @jakirkham in https://github.com/rapidsai/cucim/pull/1031
+* add PR CI job checking that nightly tests are passing by @jameslamb in https://github.com/rapidsai/cucim/pull/1032
+* Update cuCIM for consistency with scikit-image 0.26 (#1038) by @gforsyth in https://github.com/rapidsai/cucim/pull/1047
+* Add support for Python 3.14 by @gforsyth in https://github.com/rapidsai/cucim/pull/1049
+* Replace use of `pickle.load` in benchmark utility scripts by @grlee77 in https://github.com/rapidsai/cucim/pull/1041
+* chore: reset `shared-workflows` branch to `release/26.04` by @gforsyth in https://github.com/rapidsai/cucim/pull/1052
+* build wheels with CUDA 13.0.x, test wheels against mix of CTK versions by @jameslamb in https://github.com/rapidsai/cucim/pull/1054
+* fix(conda): specify `python-gil` for conda recipe (#1056) by @gforsyth in https://github.com/rapidsai/cucim/pull/1058
+* Add `cucim.skimage.restoration.rolling_ball` (useful for background subtraction) by @grlee77 in https://github.com/rapidsai/cucim/pull/1040
+* Update vendored interpolation kernels with precision fix by @grlee77 in https://github.com/rapidsai/cucim/pull/1055
+* Caching for cuslide2 by @cdinea in https://github.com/rapidsai/cucim/pull/1034
+
+
+**Full Changelog**: https://github.com/rapidsai/cucim/compare/v26.04.00a...release/26.04
+
 # cucim 26.02.00 (4 Feb 2026)
 
 ### 🚨 Breaking Changes
