@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 """Inferior and superior ranks, provided by the user, are passed to the kernel
@@ -13,9 +13,9 @@ The kernels do not currently take advantage of the sliding window approach
 used by scikit-image (described in [1]_).
 
 Input images can be any numeric dtype and N-dimensional (not restricted to
-8-bit or 16-bit, 2D like the CPU implementation).
+8-bit or 16-bit or 2D/3D only like the CPU implementation).
 
-Result image has the same dtype as the input image.
+The result image has the same dtype as the input image.
 
 References
 ----------
