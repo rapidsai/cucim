@@ -54,7 +54,7 @@ from ._percentile import (
     sum_percentile,
     threshold_percentile,
 )
-# from .bilateral import mean_bilateral, pop_bilateral, sum_bilateral
+from ._bilateral import mean_bilateral, pop_bilateral, sum_bilateral
 
 __all__ = [
     'autolevel',
@@ -69,21 +69,21 @@ __all__ = [
     'majority',
     'maximum',
     'mean',
+    'mean_bilateral',
     'mean_percentile',
-    # 'mean_bilateral',
     'median',
     'minimum',
     'modal',
     'noise_filter',
     'percentile',
     'pop',
+    'pop_bilateral',
     'pop_percentile',
-    # 'pop_bilateral',
     'subtract_mean',
     'subtract_mean_percentile',
     'sum',
+    'sum_bilateral',
     'sum_percentile',
-    # 'sum_bilateral',
     'threshold',
     'threshold_percentile',
     # --- Not yet implemented ---
