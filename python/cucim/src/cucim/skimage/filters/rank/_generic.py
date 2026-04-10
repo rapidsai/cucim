@@ -183,7 +183,15 @@ def mean(
 
 
 mean.__doc__ = _build_generic_docstring(
-    """Return local mean of an image.""",
+    """Return local mean of an image.
+
+    .. note::
+
+        scikit-image's histogram-based implementation can produce spurious
+        zero outputs in low-variance neighborhoods where no histogram bin
+        falls entirely within the percentile window. This GPU implementation
+        uses a sorted-array approach that always has values in the
+        neighborhood, avoiding such artifacts.""",
 )
 
 
@@ -220,6 +228,22 @@ def subtract_mean(
 
 subtract_mean.__doc__ = _build_generic_docstring(
     """Return image subtracted from its local mean.
+
+    The output is::
+
+        out = (g - mean) * 0.5 + mid_bin - 1
+
+    where ``mean`` is the local neighborhood mean, ``g`` is the center pixel
+    value, and ``mid_bin`` is ``(dtype_max + 1) / 2`` (128 for uint8), so the
+    effective offset is 127 for uint8.
+
+    .. note::
+
+        scikit-image's histogram-based implementation can produce spurious
+        zero outputs in low-variance neighborhoods where no histogram bin
+        falls entirely within the percentile window. This GPU implementation
+        uses a sorted-array approach that always has values in the
+        neighborhood, avoiding such artifacts.
 
     .. note::
 
@@ -296,9 +320,12 @@ pop.__doc__ = _build_generic_docstring(
 
     .. note::
 
-        The output is constant across the image interior (equal to the
-        footprint size). It only varies at image borders (where the footprint
-        extends beyond the image) or when a mask is provided.""",
+        The output is constant across the entire image (equal to the footprint
+        size), except when a mask is provided. Unlike scikit-image, the GPU
+        implementation does not reduce the count at image borders because the
+        underlying kernel uses reflected boundary extension (the neighborhood
+        is always fully populated). In scikit-image, the population decreases
+        at borders because the sliding window excludes out-of-bounds pixels.""",
 )
 
 
@@ -330,5 +357,14 @@ sum.__doc__ = _build_generic_docstring(
     """Return the local sum of pixels.
 
     Note that the sum may overflow depending on the data type of the input
-    array.""",
+    array. The output dtype matches the input dtype, so for full-range uint8
+    images with large footprints, the input should be promoted to a wider
+    dtype (e.g. ``image.astype(cupy.int32)``) to prevent overflow.
+
+    .. note::
+
+        scikit-image's rank filters internally convert all inputs to uint8,
+        so ``sum`` on scikit-image always overflows for non-trivial
+        footprints. The GPU implementation preserves the input dtype,
+        giving correct results when a wider dtype is used.""",
 )
