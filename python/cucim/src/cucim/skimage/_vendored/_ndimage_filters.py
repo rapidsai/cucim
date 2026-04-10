@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Infrastructure, Inc.
 # SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Networks, Inc.
-# SPDX-FileCopyrightText: Copyright (c) 2022-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND MIT
 
 """A vendored subset of cupyx.scipy.ndimage._filters"""
@@ -1892,10 +1892,15 @@ def _percentile_range_filter(
     # Validate percentiles
     p0 = float(p0)
     p1 = float(p1)
-    if p0 < 0 or p0 > 100 or p1 < 0 or p1 > 100:
+    if p0 < 0 or p0 > 100:
         raise ValueError("Percentiles must be in range [0, 100]")
-    if p0 >= p1:
-        raise ValueError("p0 must be less than p1")
+    # "percentile" and "threshold" operations only use p0 (no range needed)
+    _single_percentile_op = operation in ("percentile", "threshold")
+    if not _single_percentile_op:
+        if p1 < 0 or p1 > 100:
+            raise ValueError("Percentiles must be in range [0, 100]")
+        if p0 >= p1:
+            raise ValueError("p0 must be less than p1")
 
     has_weights = True
     if sizes is not None:
@@ -1956,6 +1961,17 @@ def _percentile_range_filter(
         footprint_shape = tuple(footprint_shape_temp)
 
     has_mask = mask is not None
+
+    # Compute dtype max for threshold operation (binary output needs
+    # the type's max value, not the local neighborhood max).
+    import numpy
+
+    _out_dtype = output.dtype if output is not None else input.dtype
+    if numpy.issubdtype(_out_dtype, numpy.integer):
+        _dtype_max = int(numpy.iinfo(_out_dtype).max)
+    else:
+        _dtype_max = 1.0
+
     kernel = _get_percentile_range_kernel(
         filter_size,
         p0,
@@ -1968,6 +1984,7 @@ def _percentile_range_filter(
         int_type,
         has_weights=has_weights,
         has_mask=has_mask,
+        dtype_max=_dtype_max,
     )
     kwargs = dict(weights_dtype=bool)
     if has_mask:
@@ -2080,6 +2097,7 @@ def _get_percentile_range_kernel(
     has_weights,
     *,
     has_mask=False,
+    dtype_max=255,
 ):
     """Generate a kernel for computing statistics on a percentile range.
 
@@ -2122,17 +2140,23 @@ def _get_percentile_range_kernel(
     # Convert percentiles to array indices
     # Note: Matches scikit-image's histogram-based percentile approach
     # where values are included if cumsum is in [p0*pop, p1*pop]
-    if p0 < 0 or p0 > 100 or p1 < 0 or p1 > 100:
+    _single_percentile_op = operation in ("percentile", "threshold")
+    if p0 < 0 or p0 > 100:
         raise ValueError("Percentiles must be in range [0, 100]")
-    if p0 >= p1:
-        raise ValueError("p0 must be less than p1")
+    if not _single_percentile_op:
+        if p1 < 0 or p1 > 100:
+            raise ValueError("Percentiles must be in range [0, 100]")
+        if p0 >= p1:
+            raise ValueError("p0 must be less than p1")
 
     import math
 
     # When has_mask is True, we need to dynamically calculate indices based on
     # the actual number of values collected (which depends on the mask).
     # We'll use runtime calculation in the CUDA code.
-    if not has_mask:
+    # "percentile" and "threshold" ops compute their index from p0 directly,
+    # so idx_start/idx_end are not needed.
+    if not has_mask and not _single_percentile_op:
         # Calculate indices for the percentile range
         # (pre-computed at compile time)
         # Matches scikit-image's histogram-based approach where value at
@@ -2159,7 +2183,7 @@ def _get_percentile_range_kernel(
 
     if has_mask:
         # Runtime calculation of indices based on actual count
-        if operation == "percentile" or operation == "threshold":
+        if operation in ("percentile", "threshold", "pop"):
             post = """
                 if (iv == 0) {{
                     y = cast<Y>(x[i]);  // No valid values, keep original
@@ -2371,27 +2395,61 @@ static_cast<double>(center);
                 y = cast<Y>(values[percentile_idx]);
             """
     elif operation == "pop":
-        # Population: count of pixels in percentile range
+        # Population: count of pixels in percentile range.
+        # Must match scikit-image's histogram-bin grouping: groups of equal
+        # values are included/excluded as a whole based on whether the
+        # cumulative count after adding the group falls in [p0*pop, p1*pop].
         if has_mask:
-            post += """
-                int n_vals = actual_end - actual_start;
-                y = cast<Y>(n_vals);
+            post += f"""
+                int pop_n = 0;
+                int pop_cumsum = 0;
+                int pop_j = 0;
+                while (pop_j < iv) {{
+                    X pop_val = values[pop_j];
+                    int pop_gs = 0;
+                    while (pop_j < iv && values[pop_j] == pop_val) {{
+                        pop_j++;
+                        pop_gs++;
+                    }}
+                    pop_cumsum += pop_gs;
+                    if ((double)pop_cumsum >= {p0 / 100.0} * iv &&
+                        (double)pop_cumsum <= {p1 / 100.0} * iv) {{
+                        pop_n += pop_gs;
+                    }}
+                }}
+                y = cast<Y>(pop_n);
             """
         else:
             post += f"""
-                y = cast<Y>({n_values});
+                int pop_n = 0;
+                int pop_cumsum = 0;
+                int pop_j = 0;
+                while (pop_j < {filter_size}) {{
+                    X pop_val = values[pop_j];
+                    int pop_gs = 0;
+                    while (pop_j < {filter_size} && values[pop_j] == pop_val) {{
+                        pop_j++;
+                        pop_gs++;
+                    }}
+                    pop_cumsum += pop_gs;
+                    if ((double)pop_cumsum >= {p0 / 100.0} * {filter_size} &&
+                        (double)pop_cumsum <= {p1 / 100.0} * {filter_size}) {{
+                        pop_n += pop_gs;
+                    }}
+                }}
+                y = cast<Y>(pop_n);
             """
     elif operation == "threshold":
-        # Threshold: binary comparison of center pixel to p0 percentile
+        # Threshold: binary output comparing center pixel to p0 percentile.
+        # scikit-image uses (n_bins - 1) * (g >= threshold), which gives the
+        # dtype max value (e.g. 255 for uint8) or 0.
         if has_mask:
             post += f"""
                 int threshold_idx = (int)({p0 / 100.0} * iv);
                 if (threshold_idx >= iv) threshold_idx = iv - 1;
                 X threshold_val = values[threshold_idx];
                 X g = x[i];
-                // Return max value if g >= threshold, else 0
-                // Approximate max with large value or use type limits
-                y = (g >= threshold_val) ? cast<Y>(values[iv - 1]) : cast<Y>(0);
+                y = (g >= threshold_val) ? cast<Y>({dtype_max}) : cast<Y>(0);
             """
         else:
             post += f"""
@@ -2401,8 +2459,7 @@ static_cast<double>(center);
                 }}
                 X threshold_val = values[threshold_idx];
                 X g = x[i];
-                y = (g >= threshold_val) ? \
-cast<Y>(values[{filter_size - 1}]) : cast<Y>(0);
+                y = (g >= threshold_val) ? cast<Y>({dtype_max}) : cast<Y>(0);
             """
     elif operation == "autolevel":
         # Autolevel: stretch values to [0, max] based on percentile range
