@@ -19,7 +19,10 @@ __all__ = [
     "autolevel",
     "enhance_contrast",
     "gradient",
+    "maximum",
     "mean",
+    "median",
+    "minimum",
     "pop",
     "subtract_mean",
     "sum",
@@ -62,8 +65,10 @@ def _apply_generic(
     shift_y,
     shift_z,
     shifts,
+    p0=0,
+    p1=1,
 ):
-    """Apply a generic rank filter (full percentile range p0=0, p1=1)."""
+    """Apply a generic rank filter (defaults to full range p0=0, p1=1)."""
     # Convert shift_z into the N-D shifts parameter
     if shifts is not None:
         if shift_x != 0 or shift_y != 0 or shift_z != 0:
@@ -90,8 +95,8 @@ def _apply_generic(
         mask=mask,
         shift_x=shift_x if shifts is None else 0,
         shift_y=shift_y if shifts is None else 0,
-        p0=0,
-        p1=1,
+        p0=p0,
+        p1=p1,
         shifts=shifts,
     )
 
@@ -367,4 +372,115 @@ sum.__doc__ = _build_generic_docstring(
         so ``sum`` on scikit-image always overflows for non-trivial
         footprints. The GPU implementation preserves the input dtype,
         giving correct results when a wider dtype is used.""",
+)
+
+
+def minimum(
+    image,
+    footprint,
+    out=None,
+    mask=None,
+    shift_x=0,
+    shift_y=0,
+    shift_z=0,
+    *,
+    shifts=None,
+):
+    return _apply_generic(
+        "percentile",
+        image,
+        footprint,
+        out,
+        mask,
+        shift_x,
+        shift_y,
+        shift_z,
+        shifts,
+        p0=0,
+    )
+
+
+minimum.__doc__ = _build_generic_docstring(
+    """Return the local minimum of an image.
+
+    .. note::
+
+        This is implemented via ``percentile(p0=0)`` to ensure consistent
+        neighborhood-level mask handling with other rank filters. If mask
+        support is not needed, ``cupyx.scipy.ndimage.minimum_filter`` may
+        be faster.""",
+)
+
+
+def maximum(
+    image,
+    footprint,
+    out=None,
+    mask=None,
+    shift_x=0,
+    shift_y=0,
+    shift_z=0,
+    *,
+    shifts=None,
+):
+    return _apply_generic(
+        "percentile",
+        image,
+        footprint,
+        out,
+        mask,
+        shift_x,
+        shift_y,
+        shift_z,
+        shifts,
+        p0=1,
+    )
+
+
+maximum.__doc__ = _build_generic_docstring(
+    """Return the local maximum of an image.
+
+    .. note::
+
+        This is implemented via ``percentile(p0=1)`` to ensure consistent
+        neighborhood-level mask handling with other rank filters. If mask
+        support is not needed, ``cupyx.scipy.ndimage.maximum_filter`` may
+        be faster.""",
+)
+
+
+def median(
+    image,
+    footprint=None,
+    out=None,
+    mask=None,
+    shift_x=0,
+    shift_y=0,
+    shift_z=0,
+    *,
+    shifts=None,
+):
+    return _apply_generic(
+        "percentile",
+        image,
+        footprint,
+        out,
+        mask,
+        shift_x,
+        shift_y,
+        shift_z,
+        shifts,
+        p0=0.5,
+    )
+
+
+median.__doc__ = _build_generic_docstring(
+    """Return the local median of an image.
+
+    .. note::
+
+        This is implemented via ``percentile(p0=0.5)`` to ensure consistent
+        neighborhood-level mask handling with other rank filters. If mask
+        support is not needed, ``cupyx.scipy.ndimage.median_filter`` may
+        be faster.""",
 )
