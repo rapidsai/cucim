@@ -2,27 +2,34 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
-"""Inferior and superior ranks, provided by the user, are passed to the kernel
+"""Percentile rank filters for GPU (CuPy/CUDA).
+
+Inferior and superior ranks, provided by the user, are passed to the kernel
 function to provide a softer version of the rank filters. E.g.
 ``autolevel_percentile`` will stretch image levels between percentile [p0, p1]
 instead of using [min, max]. It means that isolated bright or dark pixels will
 not produce halos.
 
-This GPU implementation uses CuPy and CUDA kernels for accelerated processing.
-The kernels do not currently take advantage of the sliding window approach
-used by scikit-image (described in [1]_).
+See ``cucim.skimage.filters.rank`` for a summary of differences between the
+cuCIM and scikit-image implementations.
 
-Input images can be any numeric dtype and N-dimensional (not restricted to
-8-bit or 16-bit or 2D/3D only like the CPU implementation).
+Dtype notes
+-----------
 
-The result image has the same dtype as the input image.
+Some operations use a ``dtype_max`` value that affects output scaling
+(``autolevel_percentile``, ``threshold_percentile``,
+``subtract_mean_percentile``):
 
-References
-----------
-
-.. [1] Huang, T. ,Yang, G. ;  Tang, G.. "A fast two-dimensional
-       median filtering algorithm", IEEE Transactions on Acoustics, Speech and
-       Signal Processing, Feb 1979. Volume: 27 , Issue: 1, Page(s): 13 - 18.
+- **Unsigned integers** (uint8, uint16, etc.): ``dtype_max`` is the type
+  maximum (255, 65535, ...). This matches scikit-image's behavior.
+- **Float** (float32, float64): ``dtype_max = 1.0``, assuming normalized
+  images in [0, 1]. Operations like ``autolevel_percentile`` will scale
+  output to [0.0, 1.0] and ``threshold_percentile`` will output 0.0 or 1.0.
+- **Signed integers** (int8, int16, etc.): ``dtype_max`` uses the positive
+  maximum (127 for int8, 32767 for int16). This means operations like
+  ``autolevel_percentile`` scale to [0, 127] (positive half only) and
+  ``subtract_mean_percentile`` centers at 64 (not 0). Signed integer inputs
+  are accepted but may not give intuitive results for these operations.
 
 """
 
@@ -266,7 +273,14 @@ autolevel_percentile.__doc__ = _build_docstring(
     entire range of values from "white" to "black".
 
     Only grayvalues between percentiles [p0, p1] are considered in the
-    filter.""",
+    filter. The output is::
+
+        out = dtype_max * (clamp(g, v_p0, v_p1) - v_p0) / (v_p1 - v_p0)
+
+    where ``v_p0`` and ``v_p1`` are the local values at percentiles p0 and
+    p1, ``g`` is the center pixel value, and ``dtype_max`` is the maximum
+    value for the output dtype (255 for uint8, 65535 for uint16, 1.0 for
+    float). See the module-level dtype notes for signed integer behavior.""",
 )
 
 
@@ -300,7 +314,12 @@ gradient_percentile.__doc__ = _build_docstring(
     """Return local gradient of an image (i.e. local maximum - local minimum).
 
     Only grayvalues between percentiles [p0, p1] are considered in the
-    filter.""",
+    filter. The output is::
+
+        out = v_p1 - v_p0
+
+    where ``v_p0`` and ``v_p1`` are the local values at percentiles p0 and
+    p1.""",
 )
 
 
@@ -334,7 +353,16 @@ mean_percentile.__doc__ = _build_docstring(
     """Return local mean of an image.
 
     Only grayvalues between percentiles [p0, p1] are considered in the
-    filter.""",
+    filter. The output is the arithmetic mean of all neighborhood values
+    whose sorted position falls within the [p0, p1] percentile range.
+
+    .. note::
+
+        scikit-image's histogram-based implementation can produce spurious
+        zero outputs in low-variance neighborhoods where no histogram bin
+        falls entirely within the percentile window. This GPU implementation
+        uses a sorted-array approach that always has values in the percentile
+        range, avoiding such artifacts.""",
 )
 
 
@@ -368,7 +396,21 @@ subtract_mean_percentile.__doc__ = _build_docstring(
     """Return image subtracted from its local mean.
 
     Only grayvalues between percentiles [p0, p1] are considered in the
-    filter.
+    filter. The output is::
+
+        out = (g - mean_p) * 0.5 + mid_bin
+
+    where ``mean_p`` is the mean of neighborhood values in the [p0, p1]
+    percentile range, ``g`` is the center pixel value, and ``mid_bin`` is
+    ``(dtype_max + 1) / 2`` (128 for uint8).
+
+    .. note::
+
+        scikit-image's histogram-based implementation can produce spurious
+        zero outputs in low-variance neighborhoods where no histogram bin
+        falls entirely within the percentile window. This GPU implementation
+        uses a sorted-array approach that always has values in the percentile
+        range, avoiding such artifacts.
 
     .. note::
 
@@ -414,7 +456,12 @@ enhance_contrast_percentile.__doc__ = _build_docstring(
     replaced by the local minimum.
 
     Only grayvalues between percentiles [p0, p1] are considered in the
-    filter.""",
+    filter. The output is::
+
+        out = v_p1  if (v_p1 - g) < (g - v_p0)  else  v_p0
+
+    where ``v_p0`` and ``v_p1`` are the local values at percentiles p0 and
+    p1, and ``g`` is the center pixel value.""",
 )
 
 
@@ -447,7 +494,9 @@ percentile.__doc__ = _build_docstring(
     """Return local percentile of an image.
 
     Returns the value of the p0 lower percentile of the local grayvalue
-    distribution.""",
+    distribution. The output is the value at position
+    ``floor(p0 * N)`` in the sorted neighborhood, where N is the
+    neighborhood population.""",
     p0_only=True,
 )
 
@@ -485,7 +534,9 @@ pop_percentile.__doc__ = _build_docstring(
     in the footprint and the mask.
 
     Only grayvalues between percentiles [p0, p1] are considered in the
-    filter.""",
+    filter. The output is the count of neighborhood pixels whose values fall
+    in histogram bins where the cumulative count is in [p0 * N, p1 * N],
+    where N is the neighborhood population.""",
 )
 
 
@@ -521,7 +572,16 @@ sum_percentile.__doc__ = _build_docstring(
     Only grayvalues between percentiles [p0, p1] are considered in the filter.
 
     Note that the sum may overflow depending on the data type of the input
-    array.""",
+    array. The output dtype matches the input dtype, so for full-range uint8
+    images with large footprints, the input should be promoted to a wider
+    dtype (e.g. ``image.astype(cupy.int32)``) to prevent overflow.
+
+    .. note::
+
+        scikit-image's rank filters internally convert all inputs to uint8,
+        so ``sum_percentile`` on scikit-image always overflows for non-trivial
+        footprints. The GPU implementation preserves the input dtype,
+        giving correct results when a wider dtype is used.""",
 )
 
 
@@ -554,9 +614,20 @@ threshold_percentile.__doc__ = _build_docstring(
     """Local threshold of an image.
 
     The resulting binary mask is True if the grayvalue of the center pixel is
-    greater than the local mean.
+    greater than or equal to the value at the p0 percentile. The output is::
 
-    Only grayvalues between percentiles [p0, p1] are considered in the
-    filter.""",
+        out = dtype_max  if g >= v_p0  else  0
+
+    where ``v_p0`` is the local value at percentile p0, ``g`` is the center
+    pixel value, and ``dtype_max`` is the maximum value for the output dtype
+    (255 for uint8, 65535 for uint16, 1.0 for float). See the module-level
+    dtype notes for signed integer behavior.
+
+    .. note::
+
+        This is different from the (not yet implemented) generic
+        ``threshold``, which compares to the local **mean** and outputs 0
+        or 1 (not 0 or ``dtype_max``). ``threshold_percentile`` compares to
+        the **p0-th percentile** value and outputs 0 or ``dtype_max``.""",
     p0_only=True,
 )
