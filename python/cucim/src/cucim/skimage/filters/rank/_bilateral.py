@@ -173,5 +173,14 @@ sum_bilateral.__doc__ = _build_bilateral_docstring(
     graylevel.
 
     Note that the sum may overflow depending on the data type of the input
-    array.""",
+    array. The output dtype matches the input dtype, so for full-range uint8
+    images with large footprints, the input should be promoted to a wider
+    dtype (e.g. ``image.astype(cupy.int32)``) to prevent overflow.
+
+    .. note::
+
+        scikit-image's rank filters internally convert all inputs to uint8,
+        so ``sum_bilateral`` on scikit-image always overflows for non-trivial
+        footprints. The GPU implementation preserves the input dtype,
+        giving correct results when a wider dtype is used.""",
 )

@@ -4,24 +4,50 @@
 
 """GPU-accelerated rank filters.
 
-This module provides GPU (CuPy/CUDA) implementations of the local rank
-filters from ``skimage.filters.rank``.
+This module provides GPU (CuPy/CUDA) implementations of most of the local
+rank filters from ``skimage.filters.rank``, including all generic, percentile,
+and bilateral variants. The only unimplemented functions are ``otsu`` (local Otsu thresholding via
+between-class variance maximization) and ``windowed_histogram`` (returns the
+full local histogram per pixel), as these do not map cleanly to the
+sort-and-reduce pattern used by all other kernels.
+
+Implementation approach
+-----------------------
+
+All GPU rank filters operate independently on a per-pixel basis: each output
+pixel is computed by a single GPU thread that gathers its local neighborhood,
+sorts the values, and applies the requested operation. This design simplifies
+the implementation (no inter-thread coordination or shared-memory histograms),
+naturally supports N-dimensional inputs, and maps well to GPU parallelism.
+
+scikit-image, by contrast, uses a sliding-window histogram approach that
+incrementally updates a histogram as it moves across the image. This is
+efficient on CPU but inherently sequential and restricted to 2D (or 3D for
+some generic filters).
 
 cuCIM vs scikit-image
 ---------------------
 
-| Feature                     | scikit-image (CPU)                                              | cuCIM (GPU) |
-|-----------------------------|-----------------------------------------------------------------|-------------|
-| Dimensions                  | 2D (3D for generic filters)                                     | N-dimensional |
-| Supported dtypes            | uint8, uint16 only                                              | Any numeric dtype |
-| Output dtype                | Same as input                                                   | Same as input (preserves wider types) |
-| Algorithm                   | Sliding-window histogram                                        | Sort-based per-neighborhood |
-| Boundary handling           | Excludes out-of-bounds pixels (population decreases at borders) | Reflected boundary extension (always fully populated) |
-| ``mean``, ``subtract_mean`` | Spurious zero outputs in low-variance neighborhoods             | No zero artifacts (sorted-array always has values) |
-| ``sum``, ``sum_percentile`` | Input forced to uint8; overflows                                | Preserves input dtype; use int32 to avoid overflow |
+The table below summarizes known behavioral differences. Results are otherwise
+expected to match.
 
-See the ``_percentile`` and ``_generic`` modules for additional per-function
-notes on dtype handling and behavioral differences.
+| Feature                  | scikit-image (CPU)                                              | cuCIM (GPU) |
+|--------------------------|-----------------------------------------------------------------|-------------|
+| Dimensions               | 2D (3D for generic filters)                                     | N-dimensional |
+| Supported dtypes         | uint8, uint16 only                                              | Any numeric dtype |
+| Output dtype             | Same as input                                                   | Same as input (preserves wider types) |
+| Algorithm                | Sliding-window histogram                                        | Sort-based per-neighborhood |
+| Boundary handling        | Excludes out-of-bounds pixels (population decreases at borders) | Reflected boundary extension (always fully populated) |
+| ``mean``                 | Spurious zero outputs in low-variance neighborhoods             | No zero artifacts (sorted-array always has values) |
+| ``subtract_mean``        | Spurious zero outputs in low-variance neighborhoods             | No zero artifacts (sorted-array always has values) |
+| ``sum``                  | Input forced to uint8; overflows                    | Preserves input dtype; use int32 to avoid overflow |
+| ``sum_bilateral``        | Input forced to uint8; overflows                    | Preserves input dtype; use int32 to avoid overflow |
+| ``sum_percentile``       | Input forced to uint8; overflows                    | Preserves input dtype; use int32 to avoid overflow |
+| ``threshold``            | Outputs 0 or 1 (comparison to local mean)                       | Same (0 or 1) |
+| ``threshold_percentile`` | Outputs 0 or ``dtype_max`` (comparison to p0-th percentile)     | Same (0 or ``dtype_max``) |
+
+See the ``_percentile``, ``_generic``, and ``_bilateral`` modules for
+additional per-function notes on dtype handling and behavioral differences.
 """  # noqa: E501
 
 from ._generic import (
