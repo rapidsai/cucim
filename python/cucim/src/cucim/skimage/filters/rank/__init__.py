@@ -27,6 +27,7 @@ notes on dtype handling and behavioral differences.
 from ._generic import (
     autolevel,
     enhance_contrast,
+    entropy,
     equalize,
     geometric_mean,
     gradient,
@@ -60,6 +61,7 @@ __all__ = [
     'autolevel_percentile',
     'enhance_contrast',
     'enhance_contrast_percentile',
+    'entropy',
     'equalize',
     'geometric_mean',
     'gradient',
@@ -73,6 +75,7 @@ __all__ = [
     'minimum',
     'modal',
     'noise_filter',
+    'percentile',
     'pop',
     'pop_percentile',
     # 'pop_bilateral',
@@ -81,11 +84,9 @@ __all__ = [
     'sum',
     'sum_percentile',
     # 'sum_bilateral',
-    'percentile',
     'threshold',
     'threshold_percentile',
     # --- Not yet implemented ---
-    # 'entropy',
     # 'otsu',
     # 'windowed_histogram',
 ]

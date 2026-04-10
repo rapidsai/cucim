@@ -18,6 +18,7 @@ from ._percentile import _apply, _doc_common_params
 __all__ = [
     "autolevel",
     "enhance_contrast",
+    "entropy",
     "equalize",
     "geometric_mean",
     "gradient",
@@ -702,4 +703,46 @@ majority.__doc__ = _build_generic_docstring(
 
     This is an alias for ``modal`` — it returns the most frequent value
     in the local neighborhood.""",
+)
+
+
+def entropy(
+    image,
+    footprint,
+    out=None,
+    mask=None,
+    shift_x=0,
+    shift_y=0,
+    shift_z=0,
+    *,
+    shifts=None,
+):
+    return _apply_generic(
+        "entropy",
+        image,
+        footprint,
+        out,
+        mask,
+        shift_x,
+        shift_y,
+        shift_z,
+        shifts,
+    )
+
+
+entropy.__doc__ = _build_generic_docstring(
+    """Return the local Shannon entropy of an image.
+
+    The output is the entropy in bits of the local grayvalue distribution::
+
+        out = -sum(p * log2(p))
+
+    where the sum is over unique values in the neighborhood and
+    ``p = count / N`` is the probability of each value.
+
+    .. note::
+
+        The output is a floating-point quantity (entropy in bits) cast to the
+        output dtype. For integer output dtypes, fractional entropy values
+        are truncated. Using a float input dtype preserves full precision.""",
 )
