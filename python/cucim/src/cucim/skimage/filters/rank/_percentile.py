@@ -42,6 +42,57 @@ __all__ = [
     "threshold_percentile",
 ]
 
+# --- Common docstring fragments ---
+
+_doc_common_params = """
+    image : cupy.ndarray
+        Input image (N-dimensional, any numeric dtype).
+    footprint : cupy.ndarray
+        The neighborhood expressed as an array of 1's and 0's.
+    out : cupy.ndarray, optional
+        If None, a new array is allocated.
+    mask : cupy.ndarray, optional
+        Mask array that defines (>0) area of the image included in the local
+        neighborhood. If None, the complete image is used (default).
+    shift_x, shift_y : int, optional
+        Offset added to the footprint center point (for 2D images).
+        Default is 0."""
+
+_doc_p0_p1_params = """
+    p0, p1 : float, optional, in interval [0, 1]
+        Define the [p0, p1] percentile interval to be considered for computing
+        the value."""
+
+_doc_p0_only_param = """
+    p0 : float, optional, in interval [0, 1]
+        Set the percentile value."""
+
+_doc_shifts_param = """
+    shifts : sequence of int, optional (keyword-only)
+        N-dimensional offsets. If provided, shift_x and shift_y must be 0.
+        Length must match image.ndim."""
+
+_doc_returns = """
+    Returns
+    -------
+    out : cupy.ndarray
+        Output image with same shape and dtype as input.
+"""
+
+
+def _build_docstring(summary, *, p0_only=False):
+    """Build a docstring from common fragments."""
+    pct_params = _doc_p0_only_param if p0_only else _doc_p0_p1_params
+    return (
+        summary
+        + "\n\n    Parameters\n    ----------"
+        + _doc_common_params
+        + pct_params
+        + _doc_shifts_param
+        + "\n"
+        + _doc_returns
+    )
+
 
 def _preprocess_input(
     image,
@@ -51,40 +102,7 @@ def _preprocess_input(
     out_dtype=None,
     shifts=None,
 ):
-    """Preprocess and verify input for filters.rank methods (GPU version).
-
-    Parameters
-    ----------
-    image : cupy.ndarray
-        Input image (N-dimensional, any numeric dtype).
-    footprint : cupy.ndarray, optional
-        The neighborhood expressed as an array of 1's and 0's.
-    out : cupy.ndarray, optional
-        If None, a new array is allocated.
-    mask : cupy.ndarray, optional
-        Mask array that defines (>0) area of the image included in the local
-        neighborhood. If None, the complete image is used (default).
-    out_dtype : data-type, optional
-        Desired output data-type. Default is None, which preserves input dtype.
-    shifts : sequence of int, optional
-        Offset added to the footprint center point along each axis. The length
-        must match image.ndim. Each shift is bounded to the footprint size
-        (center must be inside the given footprint).
-
-    Returns
-    -------
-    image : cupy.ndarray
-        Input image as CuPy array.
-    footprint : cupy.ndarray
-        The neighborhood expressed as a boolean array.
-    out : cupy.ndarray
-        Output array with same shape as input.
-    mask : cupy.ndarray or None
-        Mask array as boolean CuPy array, or None.
-    origin : tuple of int
-        Origin offset for the footprint (converted from shifts).
-
-    """
+    """Preprocess and verify input for filters.rank methods (GPU version)."""
     # Convert to CuPy array if needed
     if not isinstance(image, cp.ndarray):
         image = cp.asarray(image)
@@ -163,35 +181,7 @@ def _apply(
     out_dtype=None,
     shifts=None,
 ):
-    """Apply percentile range filter with specified operation.
-
-    Parameters
-    ----------
-    operation : str
-        Operation to perform: 'mean', 'sum', 'gradient', etc.
-    image : cupy.ndarray
-        Input image.
-    footprint : cupy.ndarray
-        Footprint defining neighborhood.
-    out : cupy.ndarray or None
-        Output array.
-    mask : cupy.ndarray or None
-        Mask array.
-    shift_x, shift_y : int
-        Footprint shifts for 2D images (scikit-image compatibility).
-    p0, p1 : float
-        Percentile range [0, 1].
-    out_dtype : dtype or None
-        Output dtype.
-    shifts : sequence of int or None
-        N-dimensional footprint shifts. If provided, shift_x and shift_y
-        must be 0.
-
-    Returns
-    -------
-    out : cupy.ndarray
-        Filtered image.
-    """
+    """Apply percentile range filter with specified operation."""
     # Handle shift_x, shift_y vs shifts
     if shifts is not None:
         if shift_x != 0 or shift_y != 0:
@@ -255,40 +245,6 @@ def autolevel_percentile(
     *,
     shifts=None,
 ):
-    """Return grayscale local autolevel of an image.
-
-    This filter locally stretches the histogram of grayvalues to cover the
-    entire range of values from "white" to "black".
-
-    Only grayvalues between percentiles [p0, p1] are considered in the filter.
-
-    Parameters
-    ----------
-    image : cupy.ndarray
-        Input image (N-dimensional, any numeric dtype).
-    footprint : cupy.ndarray
-        The neighborhood expressed as an array of 1's and 0's.
-    out : cupy.ndarray, optional
-        If None, a new array is allocated.
-    mask : cupy.ndarray, optional
-        Mask array that defines (>0) area of the image included in the local
-        neighborhood. If None, the complete image is used (default).
-    shift_x, shift_y : int, optional
-        Offset added to the footprint center point (for 2D images).
-        Default is 0.
-    p0, p1 : float, optional, in interval [0, 1]
-        Define the [p0, p1] percentile interval to be considered for computing
-        the value.
-    shifts : sequence of int, optional (keyword-only)
-        N-dimensional offsets. If provided, shift_x and shift_y must be 0.
-        Length must match image.ndim.
-
-    Returns
-    -------
-    out : cupy.ndarray
-        Output image with same shape and dtype as input.
-
-    """
     return _apply(
         "autolevel",
         image,
@@ -303,6 +259,17 @@ def autolevel_percentile(
     )
 
 
+autolevel_percentile.__doc__ = _build_docstring(
+    """Return grayscale local autolevel of an image.
+
+    This filter locally stretches the histogram of grayvalues to cover the
+    entire range of values from "white" to "black".
+
+    Only grayvalues between percentiles [p0, p1] are considered in the
+    filter.""",
+)
+
+
 def gradient_percentile(
     image,
     footprint,
@@ -315,37 +282,6 @@ def gradient_percentile(
     *,
     shifts=None,
 ):
-    """Return local gradient of an image (i.e. local maximum - local minimum).
-
-    Only grayvalues between percentiles [p0, p1] are considered in the filter.
-
-    Parameters
-    ----------
-    image : cupy.ndarray
-        Input image (N-dimensional, any numeric dtype).
-    footprint : cupy.ndarray
-        The neighborhood expressed as an array of 1's and 0's.
-    out : cupy.ndarray, optional
-        If None, a new array is allocated.
-    mask : cupy.ndarray, optional
-        Mask array that defines (>0) area of the image included in the local
-        neighborhood. If None, the complete image is used (default).
-    shift_x, shift_y : int, optional
-        Offset added to the footprint center point (for 2D images).
-        Default is 0.
-    p0, p1 : float, optional, in interval [0, 1]
-        Define the [p0, p1] percentile interval to be considered for computing
-        the value.
-    shifts : sequence of int, optional (keyword-only)
-        N-dimensional offsets. If provided, shift_x and shift_y must be 0.
-        Length must match image.ndim.
-
-    Returns
-    -------
-    out : cupy.ndarray
-        Output image with same shape and dtype as input.
-
-    """
     return _apply(
         "gradient",
         image,
@@ -360,6 +296,14 @@ def gradient_percentile(
     )
 
 
+gradient_percentile.__doc__ = _build_docstring(
+    """Return local gradient of an image (i.e. local maximum - local minimum).
+
+    Only grayvalues between percentiles [p0, p1] are considered in the
+    filter.""",
+)
+
+
 def mean_percentile(
     image,
     footprint,
@@ -372,38 +316,6 @@ def mean_percentile(
     *,
     shifts=None,
 ):
-    """Return local mean of an image.
-
-    Only grayvalues between percentiles [p0, p1] are considered in the filter.
-
-    Parameters
-    ----------
-    image : cupy.ndarray
-        Input image (N-dimensional, any numeric dtype).
-    footprint : cupy.ndarray
-        The neighborhood expressed as an array of 1's and 0's.
-    out : cupy.ndarray, optional
-        If None, a new array is allocated.
-    mask : cupy.ndarray, optional
-        Mask array that defines (>0) area of the image included in the local
-        neighborhood. If None, the complete image is used (default).
-    shift_x, shift_y : int, optional
-        Offset added to the footprint center point (for 2D images).
-        Default is 0.
-    p0, p1 : float, optional, in interval [0, 1]
-        Define the [p0, p1] percentile interval to be considered for computing
-        the value.
-    shifts : sequence of int, optional (keyword-only)
-        N-dimensional offsets. If provided, shift_x and shift_y must be 0.
-        Length must match image.ndim.
-
-    Returns
-    -------
-    out : cupy.ndarray
-        Output image with same shape and dtype as input.
-
-    """
-
     return _apply(
         "mean",
         image,
@@ -418,6 +330,14 @@ def mean_percentile(
     )
 
 
+mean_percentile.__doc__ = _build_docstring(
+    """Return local mean of an image.
+
+    Only grayvalues between percentiles [p0, p1] are considered in the
+    filter.""",
+)
+
+
 def subtract_mean_percentile(
     image,
     footprint,
@@ -430,37 +350,6 @@ def subtract_mean_percentile(
     *,
     shifts=None,
 ):
-    """Return image subtracted from its local mean.
-
-    Only grayvalues between percentiles [p0, p1] are considered in the filter.
-
-    Parameters
-    ----------
-    image : cupy.ndarray
-        Input image (N-dimensional, any numeric dtype).
-    footprint : cupy.ndarray
-        The neighborhood expressed as an array of 1's and 0's.
-    out : cupy.ndarray, optional
-        If None, a new array is allocated.
-    mask : cupy.ndarray, optional
-        Mask array that defines (>0) area of the image included in the local
-        neighborhood. If None, the complete image is used (default).
-    shift_x, shift_y : int, optional
-        Offset added to the footprint center point (for 2D images).
-        Default is 0.
-    p0, p1 : float, optional, in interval [0, 1]
-        Define the [p0, p1] percentile interval to be considered for computing
-        the value.
-    shifts : sequence of int, optional (keyword-only)
-        N-dimensional offsets. If provided, shift_x and shift_y must be 0.
-        Length must match image.ndim.
-
-    Returns
-    -------
-    out : cupy.ndarray
-        Output image with same shape and dtype as input.
-
-    """
     return _apply(
         "subtract_mean",
         image,
@@ -475,6 +364,14 @@ def subtract_mean_percentile(
     )
 
 
+subtract_mean_percentile.__doc__ = _build_docstring(
+    """Return image subtracted from its local mean.
+
+    Only grayvalues between percentiles [p0, p1] are considered in the
+    filter.""",
+)
+
+
 def enhance_contrast_percentile(
     image,
     footprint,
@@ -487,41 +384,6 @@ def enhance_contrast_percentile(
     *,
     shifts=None,
 ):
-    """Enhance contrast of an image.
-
-    This replaces each pixel by the local maximum if the pixel grayvalue is
-    closer to the local maximum than the local minimum. Otherwise it is
-    replaced by the local minimum.
-
-    Only grayvalues between percentiles [p0, p1] are considered in the filter.
-
-    Parameters
-    ----------
-    image : cupy.ndarray
-        Input image (N-dimensional, any numeric dtype).
-    footprint : cupy.ndarray
-        The neighborhood expressed as an array of 1's and 0's.
-    out : cupy.ndarray, optional
-        If None, a new array is allocated.
-    mask : cupy.ndarray, optional
-        Mask array that defines (>0) area of the image included in the local
-        neighborhood. If None, the complete image is used (default).
-    shift_x, shift_y : int, optional
-        Offset added to the footprint center point (for 2D images).
-        Default is 0.
-    p0, p1 : float, optional, in interval [0, 1]
-        Define the [p0, p1] percentile interval to be considered for computing
-        the value.
-    shifts : sequence of int, optional (keyword-only)
-        N-dimensional offsets. If provided, shift_x and shift_y must be 0.
-        Length must match image.ndim.
-
-    Returns
-    -------
-    out : cupy.ndarray
-        Output image with same shape and dtype as input.
-
-    """
     return _apply(
         "enhance_contrast",
         image,
@@ -536,6 +398,18 @@ def enhance_contrast_percentile(
     )
 
 
+enhance_contrast_percentile.__doc__ = _build_docstring(
+    """Enhance contrast of an image.
+
+    This replaces each pixel by the local maximum if the pixel grayvalue is
+    closer to the local maximum than the local minimum. Otherwise it is
+    replaced by the local minimum.
+
+    Only grayvalues between percentiles [p0, p1] are considered in the
+    filter.""",
+)
+
+
 def percentile(
     image,
     footprint,
@@ -547,37 +421,6 @@ def percentile(
     *,
     shifts=None,
 ):
-    """Return local percentile of an image.
-
-    Returns the value of the p0 lower percentile of the local grayvalue
-    distribution.
-
-    Parameters
-    ----------
-    image : cupy.ndarray
-        Input image (N-dimensional, any numeric dtype).
-    footprint : cupy.ndarray
-        The neighborhood expressed as an array of 1's and 0's.
-    out : cupy.ndarray, optional
-        If None, a new array is allocated.
-    mask : cupy.ndarray, optional
-        Mask array that defines (>0) area of the image included in the local
-        neighborhood. If None, the complete image is used (default).
-    shift_x, shift_y : int, optional
-        Offset added to the footprint center point (for 2D images).
-        Default is 0.
-    p0 : float, optional, in interval [0, 1]
-        Set the percentile value.
-    shifts : sequence of int, optional (keyword-only)
-        N-dimensional offsets. If provided, shift_x and shift_y must be 0.
-        Length must match image.ndim.
-
-    Returns
-    -------
-    out : cupy.ndarray
-        Output image with same shape and dtype as input.
-
-    """
     return _apply(
         "percentile",
         image,
@@ -592,6 +435,15 @@ def percentile(
     )
 
 
+percentile.__doc__ = _build_docstring(
+    """Return local percentile of an image.
+
+    Returns the value of the p0 lower percentile of the local grayvalue
+    distribution.""",
+    p0_only=True,
+)
+
+
 def pop_percentile(
     image,
     footprint,
@@ -604,40 +456,6 @@ def pop_percentile(
     *,
     shifts=None,
 ):
-    """Return the local number (population) of pixels.
-
-    The number of pixels is defined as the number of pixels which are included
-    in the footprint and the mask.
-
-    Only grayvalues between percentiles [p0, p1] are considered in the filter.
-
-    Parameters
-    ----------
-    image : cupy.ndarray
-        Input image (N-dimensional, any numeric dtype).
-    footprint : cupy.ndarray
-        The neighborhood expressed as an array of 1's and 0's.
-    out : cupy.ndarray, optional
-        If None, a new array is allocated.
-    mask : cupy.ndarray, optional
-        Mask array that defines (>0) area of the image included in the local
-        neighborhood. If None, the complete image is used (default).
-    shift_x, shift_y : int, optional
-        Offset added to the footprint center point (for 2D images).
-        Default is 0.
-    p0, p1 : float, optional, in interval [0, 1]
-        Define the [p0, p1] percentile interval to be considered for computing
-        the value.
-    shifts : sequence of int, optional (keyword-only)
-        N-dimensional offsets. If provided, shift_x and shift_y must be 0.
-        Length must match image.ndim.
-
-    Returns
-    -------
-    out : cupy.ndarray
-        Output image with same shape and dtype as input.
-
-    """
     return _apply(
         "pop",
         image,
@@ -652,6 +470,17 @@ def pop_percentile(
     )
 
 
+pop_percentile.__doc__ = _build_docstring(
+    """Return the local number (population) of pixels.
+
+    The number of pixels is defined as the number of pixels which are included
+    in the footprint and the mask.
+
+    Only grayvalues between percentiles [p0, p1] are considered in the
+    filter.""",
+)
+
+
 def sum_percentile(
     image,
     footprint,
@@ -664,41 +493,6 @@ def sum_percentile(
     *,
     shifts=None,
 ):
-    """Return the local sum of pixels.
-
-    Only grayvalues between percentiles [p0, p1] are considered in the filter.
-
-    Note that the sum may overflow depending on the data type of the input
-    array.
-
-    Parameters
-    ----------
-    image : cupy.ndarray
-        Input image (N-dimensional, any numeric dtype).
-    footprint : cupy.ndarray
-        The neighborhood expressed as an array of 1's and 0's.
-    out : cupy.ndarray, optional
-        If None, a new array is allocated.
-    mask : cupy.ndarray, optional
-        Mask array that defines (>0) area of the image included in the local
-        neighborhood. If None, the complete image is used (default).
-    shift_x, shift_y : int, optional
-        Offset added to the footprint center point (for 2D images).
-        Default is 0.
-    p0, p1 : float, optional, in interval [0, 1]
-        Define the [p0, p1] percentile interval to be considered for computing
-        the value.
-    shifts : sequence of int, optional (keyword-only)
-        N-dimensional offsets. If provided, shift_x and shift_y must be 0.
-        Length must match image.ndim.
-
-    Returns
-    -------
-    out : cupy.ndarray
-        Output image with same shape and dtype as input.
-
-    """
-
     return _apply(
         "sum",
         image,
@@ -713,6 +507,16 @@ def sum_percentile(
     )
 
 
+sum_percentile.__doc__ = _build_docstring(
+    """Return the local sum of pixels.
+
+    Only grayvalues between percentiles [p0, p1] are considered in the filter.
+
+    Note that the sum may overflow depending on the data type of the input
+    array.""",
+)
+
+
 def threshold_percentile(
     image,
     footprint,
@@ -724,39 +528,6 @@ def threshold_percentile(
     *,
     shifts=None,
 ):
-    """Local threshold of an image.
-
-    The resulting binary mask is True if the grayvalue of the center pixel is
-    greater than the local mean.
-
-    Only grayvalues between percentiles [p0, p1] are considered in the filter.
-
-    Parameters
-    ----------
-    image : cupy.ndarray
-        Input image (N-dimensional, any numeric dtype).
-    footprint : cupy.ndarray
-        The neighborhood expressed as an array of 1's and 0's.
-    out : cupy.ndarray, optional
-        If None, a new array is allocated.
-    mask : cupy.ndarray, optional
-        Mask array that defines (>0) area of the image included in the local
-        neighborhood. If None, the complete image is used (default).
-    shift_x, shift_y : int, optional
-        Offset added to the footprint center point (for 2D images).
-        Default is 0.
-    p0 : float, optional, in interval [0, 1]
-        Set the percentile value.
-    shifts : sequence of int, optional (keyword-only)
-        N-dimensional offsets. If provided, shift_x and shift_y must be 0.
-        Length must match image.ndim.
-
-    Returns
-    -------
-    out : cupy.ndarray
-        Output image with same shape and dtype as input.
-
-    """
     return _apply(
         "threshold",
         image,
@@ -769,3 +540,15 @@ def threshold_percentile(
         p1=p0,  # p1 not used for threshold
         shifts=shifts,
     )
+
+
+threshold_percentile.__doc__ = _build_docstring(
+    """Local threshold of an image.
+
+    The resulting binary mask is True if the grayvalue of the center pixel is
+    greater than the local mean.
+
+    Only grayvalues between percentiles [p0, p1] are considered in the
+    filter.""",
+    p0_only=True,
+)
