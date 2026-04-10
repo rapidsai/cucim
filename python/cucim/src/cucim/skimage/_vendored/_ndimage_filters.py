@@ -2526,12 +2526,13 @@ static_cast<double>(center);
         # of the array.
         ndim = len(w_shape)
         index_expr = " + ".join([f"ix_{j}" for j in range(ndim)])
-        # Note: double braces for f-string escaping, result still has {value}
+        # Use string concatenation (not f-string) so that {{ / }} are
+        # correctly interpreted as literal braces by .format() later.
         found = (
-            f"{{ ptrdiff_t _neighbor_idx = ({index_expr}) / sizeof(X); "
-            f"if ((bool)mask[_neighbor_idx]) {{ "
-            f"values[iv++] = {{value}}; "
-            f"}} }}"
+            "{{ ptrdiff_t _neighbor_idx = (" + index_expr + ") / sizeof(X); "
+            "if ((bool)mask[_neighbor_idx]) {{ "
+            "values[iv++] = {value}; "
+            "}} }}"
         )
     else:
         found = "values[iv++] = {value};"
