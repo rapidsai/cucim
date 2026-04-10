@@ -2316,10 +2316,13 @@ static_cast<double>(center);
                 y = cast<Y>(max_val - min_val);
             """
     elif operation == "subtract_mean":
-        # Subtract mean: (g - mean) * 0.5 + mid_bin
-        # Note: mid_bin depends on dtype range; for continuous dtypes use 0
+        # Subtract mean: scikit-image formula:
+        #   (g - mean) * 0.5 + mid_bin
+        # where mid_bin = n_bins / 2 (128 for uint8, 32768 for uint16).
+        # This centers the result so that g == mean maps to mid_bin.
+        _mid_bin = (dtype_max + 1) // 2
         if has_mask:
-            post += """
+            post += f"""
                 int n_vals = actual_end - actual_start;
                 double sum = 0.0;
                 for (int j = actual_start; j < actual_end; j++) {{
@@ -2327,7 +2330,7 @@ static_cast<double>(center);
                 }}
                 double mean = sum / n_vals;
                 X g = x[i];
-                y = cast<Y>((static_cast<double>(g) - mean) * 0.5);
+                y = cast<Y>((static_cast<double>(g) - mean) * 0.5 + {_mid_bin});
             """
         else:
             post += f"""
@@ -2337,7 +2340,7 @@ static_cast<double>(center);
                 }}
                 double mean = sum / {n_values};
                 X g = x[i];
-                y = cast<Y>((static_cast<double>(g) - mean) * 0.5);
+                y = cast<Y>((static_cast<double>(g) - mean) * 0.5 + {_mid_bin});
             """
     elif operation == "enhance_contrast":
         # Enhance contrast: replace with closer extreme (min or max)
@@ -2462,20 +2465,21 @@ static_cast<double>(center);
                 y = (g >= threshold_val) ? cast<Y>({dtype_max}) : cast<Y>(0);
             """
     elif operation == "autolevel":
-        # Autolevel: stretch values to [0, max] based on percentile range
+        # Autolevel: stretch pixel values to full dtype range based on local
+        # percentile min/max. scikit-image formula:
+        #   (n_bins - 1) * (clamp(g, imin, imax) - imin) / (imax - imin)
+        # Scales output to [0, dtype_max], NOT [0, local_max].
         if has_mask:
-            post += """
+            post += f"""
                 X min_val = values[actual_start];
                 X max_val = values[actual_end - 1];
                 X g = x[i];
-                // Clamp g to [min_val, max_val]
                 X clamped = (g < min_val) ? min_val : \
 ((g > max_val) ? max_val : g);
                 double delta = static_cast<double>(max_val - min_val);
                 if (delta > 0) {{
-                    // Scale to [0, max_val]
                     double scaled = (static_cast<double>(clamped - min_val) \
-/ delta) * static_cast<double>(max_val);
+/ delta) * static_cast<double>({dtype_max});
                     y = cast<Y>(scaled);
                 }} else {{
                     y = cast<Y>(0);
@@ -2491,7 +2495,7 @@ static_cast<double>(center);
                 double delta = static_cast<double>(max_val - min_val);
                 if (delta > 0) {{
                     double scaled = (static_cast<double>(clamped - min_val) \
-/ delta) * static_cast<double>(max_val);
+/ delta) * static_cast<double>({dtype_max});
                     y = cast<Y>(scaled);
                 }} else {{
                     y = cast<Y>(0);
