@@ -1822,6 +1822,8 @@ def _percentile_range_filter(
     axes=None,
     *,
     mask=None,
+    s0=0,
+    s1=0,
 ):
     """Internal helper for percentile range filters.
 
@@ -1892,15 +1894,20 @@ def _percentile_range_filter(
     # Validate percentiles
     p0 = float(p0)
     p1 = float(p1)
-    if p0 < 0 or p0 > 100:
-        raise ValueError("Percentiles must be in range [0, 100]")
-    # "percentile" and "threshold" operations only use p0 (no range needed)
+    _bilateral_op = operation in (
+        "bilateral_mean",
+        "bilateral_pop",
+        "bilateral_sum",
+    )
     _single_percentile_op = operation in ("percentile", "threshold")
-    if not _single_percentile_op:
-        if p1 < 0 or p1 > 100:
+    if not _bilateral_op:
+        if p0 < 0 or p0 > 100:
             raise ValueError("Percentiles must be in range [0, 100]")
-        if p0 >= p1:
-            raise ValueError("p0 must be less than p1")
+        if not _single_percentile_op:
+            if p1 < 0 or p1 > 100:
+                raise ValueError("Percentiles must be in range [0, 100]")
+            if p0 >= p1:
+                raise ValueError("p0 must be less than p1")
 
     has_weights = True
     if sizes is not None:
@@ -1985,6 +1992,8 @@ def _percentile_range_filter(
         has_weights=has_weights,
         has_mask=has_mask,
         dtype_max=_dtype_max,
+        s0=float(s0),
+        s1=float(s1),
     )
     kwargs = dict(weights_dtype=bool)
     if has_mask:
@@ -2098,6 +2107,8 @@ def _get_percentile_range_kernel(
     *,
     has_mask=False,
     dtype_max=255,
+    s0=0.0,
+    s1=0.0,
 ):
     """Generate a kernel for computing statistics on a percentile range.
 
@@ -2141,22 +2152,29 @@ def _get_percentile_range_kernel(
     # Note: Matches scikit-image's histogram-based percentile approach
     # where values are included if cumsum is in [p0*pop, p1*pop]
     _single_percentile_op = operation in ("percentile", "threshold")
-    if p0 < 0 or p0 > 100:
-        raise ValueError("Percentiles must be in range [0, 100]")
-    if not _single_percentile_op:
-        if p1 < 0 or p1 > 100:
+    _bilateral_op = operation in (
+        "bilateral_mean",
+        "bilateral_pop",
+        "bilateral_sum",
+    )
+    _skip_idx = _single_percentile_op or _bilateral_op
+    if not _bilateral_op:
+        if p0 < 0 or p0 > 100:
             raise ValueError("Percentiles must be in range [0, 100]")
-        if p0 >= p1:
-            raise ValueError("p0 must be less than p1")
+        if not _single_percentile_op:
+            if p1 < 0 or p1 > 100:
+                raise ValueError("Percentiles must be in range [0, 100]")
+            if p0 >= p1:
+                raise ValueError("p0 must be less than p1")
 
     import math
 
     # When has_mask is True, we need to dynamically calculate indices based on
     # the actual number of values collected (which depends on the mask).
     # We'll use runtime calculation in the CUDA code.
-    # "percentile" and "threshold" ops compute their index from p0 directly,
+    # "percentile", "threshold", and bilateral ops compute their own indices,
     # so idx_start/idx_end are not needed.
-    if not has_mask and not _single_percentile_op:
+    if not has_mask and not _skip_idx:
         # Calculate indices for the percentile range
         # (pre-computed at compile time)
         # Matches scikit-image's histogram-based approach where value at
@@ -2183,7 +2201,7 @@ def _get_percentile_range_kernel(
 
     if has_mask:
         # Runtime calculation of indices based on actual count
-        if operation in ("percentile", "threshold", "pop"):
+        if operation in ("percentile", "threshold", "pop") or _bilateral_op:
             post = """
                 if (iv == 0) {{
                     y = cast<Y>(x[i]);  // No valid values, keep original
@@ -2243,63 +2261,6 @@ def _get_percentile_range_kernel(
                     sum += static_cast<double>(values[j]);
                 }}
                 y = cast<Y>(sum);
-            """
-    elif operation == "bilateral_mean":
-        # Mean excluding the center pixel (for bilateral-like filtering)
-        # The center pixel is at the middle of the sorted array after sorting
-        if has_mask:
-            post += """
-                double sum = 0.0;
-                int count = 0;
-                int mid_idx = iv / 2;
-                X center = values[mid_idx];
-                for (int j = actual_start; j < actual_end; j++) {{
-                    if (j != mid_idx) {{
-                        sum += static_cast<double>(values[j]);
-                        count++;
-                    }}
-                }}
-                y = (count > 0) ? cast<Y>(sum / count) : cast<Y>(center);
-            """
-        else:
-            post += f"""
-                double sum = 0.0;
-                int count = 0;
-                X center = values[{filter_size // 2}];
-                for (int j = {idx_start}; j < {idx_end}; j++) {{
-                    if (j != {filter_size // 2}) {{
-                        sum += static_cast<double>(values[j]);
-                        count++;
-                    }}
-                }}
-                y = (count > 0) ? cast<Y>(sum / count) : cast<Y>(center);
-            """
-    elif operation == "pop_mean":
-        # Population mean: mean of |values - pop| in percentile range
-        # where pop is the center pixel value
-        # This is useful for bilateral filtering variations
-        if has_mask:
-            post += """
-                int n_vals = actual_end - actual_start;
-                double sum = 0.0;
-                X center = values[iv / 2];
-                for (int j = actual_start; j < actual_end; j++) {{
-                    double diff = static_cast<double>(values[j]) - \
-static_cast<double>(center);
-                    sum += (diff >= 0) ? diff : -diff;  // abs(diff)
-                }}
-                y = cast<Y>(sum / n_vals);
-            """
-        else:
-            post += f"""
-                double sum = 0.0;
-                X center = values[{filter_size // 2}];
-                for (int j = {idx_start}; j < {idx_end}; j++) {{
-                    double diff = static_cast<double>(values[j]) - \
-static_cast<double>(center);
-                    sum += (diff >= 0) ? diff : -diff;  // abs(diff)
-                }}
-                y = cast<Y>(sum / {n_values});
             """
     elif operation == "gradient":
         # Gradient: max - min in percentile range
@@ -2671,13 +2632,107 @@ static_cast<double>(center);
                 }}
                 y = cast<Y>(ent);
             """
+    elif operation == "bilateral_mean":
+        # Bilateral mean: mean of values where g > (v - s0) and g < (v + s1).
+        # Matches scikit-image's condition on histogram bins.
+        if has_mask:
+            post += f"""
+                X g = x[i];
+                double gd = static_cast<double>(g);
+                int bilat_pop = 0;
+                double bilat_sum = 0.0;
+                for (int j = 0; j < iv; j++) {{
+                    double v = static_cast<double>(values[j]);
+                    if (gd > (v - {s0}) && gd < (v + {s1})) {{
+                        bilat_pop++;
+                        bilat_sum += v;
+                    }}
+                }}
+                y = (bilat_pop > 0) ? cast<Y>(bilat_sum / bilat_pop) : cast<Y>(0);
+            """
+        else:
+            post += f"""
+                X g = x[i];
+                double gd = static_cast<double>(g);
+                int bilat_pop = 0;
+                double bilat_sum = 0.0;
+                for (int j = 0; j < {filter_size}; j++) {{
+                    double v = static_cast<double>(values[j]);
+                    if (gd > (v - {s0}) && gd < (v + {s1})) {{
+                        bilat_pop++;
+                        bilat_sum += v;
+                    }}
+                }}
+                y = (bilat_pop > 0) ? cast<Y>(bilat_sum / bilat_pop) : cast<Y>(0);
+            """
+    elif operation == "bilateral_pop":
+        # Bilateral pop: count of values where g > (v - s0) and g < (v + s1).
+        if has_mask:
+            post += f"""
+                X g = x[i];
+                double gd = static_cast<double>(g);
+                int bilat_pop = 0;
+                for (int j = 0; j < iv; j++) {{
+                    double v = static_cast<double>(values[j]);
+                    if (gd > (v - {s0}) && gd < (v + {s1})) {{
+                        bilat_pop++;
+                    }}
+                }}
+                y = cast<Y>(bilat_pop);
+            """
+        else:
+            post += f"""
+                X g = x[i];
+                double gd = static_cast<double>(g);
+                int bilat_pop = 0;
+                for (int j = 0; j < {filter_size}; j++) {{
+                    double v = static_cast<double>(values[j]);
+                    if (gd > (v - {s0}) && gd < (v + {s1})) {{
+                        bilat_pop++;
+                    }}
+                }}
+                y = cast<Y>(bilat_pop);
+            """
+    elif operation == "bilateral_sum":
+        # Bilateral sum: sum of values where g > (v - s0) and g < (v + s1).
+        if has_mask:
+            post += f"""
+                X g = x[i];
+                double gd = static_cast<double>(g);
+                int bilat_pop = 0;
+                double bilat_sum = 0.0;
+                for (int j = 0; j < iv; j++) {{
+                    double v = static_cast<double>(values[j]);
+                    if (gd > (v - {s0}) && gd < (v + {s1})) {{
+                        bilat_pop++;
+                        bilat_sum += v;
+                    }}
+                }}
+                y = (bilat_pop > 0) ? cast<Y>(bilat_sum) : cast<Y>(0);
+            """
+        else:
+            post += f"""
+                X g = x[i];
+                double gd = static_cast<double>(g);
+                int bilat_pop = 0;
+                double bilat_sum = 0.0;
+                for (int j = 0; j < {filter_size}; j++) {{
+                    double v = static_cast<double>(values[j]);
+                    if (gd > (v - {s0}) && gd < (v + {s1})) {{
+                        bilat_pop++;
+                        bilat_sum += v;
+                    }}
+                }}
+                y = (bilat_pop > 0) ? cast<Y>(bilat_sum) : cast<Y>(0);
+            """
     else:
         raise ValueError(
             f"Unsupported operation: {operation}. "
-            "Supported: 'mean', 'sum', 'bilateral_mean', 'pop_mean', "
-            "'gradient', 'subtract_mean', 'enhance_contrast', 'percentile', "
-            "'pop', 'threshold', 'threshold_mean', 'autolevel', 'equalize', "
-            "'geometric_mean', 'noise_filter', 'modal', 'entropy'"
+            "Supported: 'mean', 'sum', 'bilateral_mean', 'bilateral_pop', "
+            "'bilateral_sum', 'pop_mean', 'gradient', 'subtract_mean', "
+            "'enhance_contrast', 'percentile', 'pop', 'threshold', "
+            "'threshold_mean', 'autolevel', 'equalize', 'geometric_mean', "
+            "'noise_filter', 'modal', 'entropy'"
         )
 
     # Sanitize operation name for kernel name (replace special chars)

@@ -187,6 +187,8 @@ def _apply(
     p1,
     out_dtype=None,
     shifts=None,
+    s0=0,
+    s1=0,
 ):
     """Apply percentile range filter with specified operation."""
     # Handle shift_x, shift_y vs shifts
@@ -235,6 +237,8 @@ def _apply(
         origin=origin,
         axes=None,
         mask=mask,
+        s0=s0,
+        s1=s1,
     )
 
     return result
