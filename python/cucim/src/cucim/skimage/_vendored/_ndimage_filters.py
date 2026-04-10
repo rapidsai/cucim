@@ -2525,12 +2525,125 @@ static_cast<double>(center);
                 X g = x[i];
                 y = (static_cast<double>(g) > tm_mean) ? cast<Y>(1) : cast<Y>(0);
             """
+    elif operation == "equalize":
+        # Local histogram equalization: output is the rank of the center
+        # pixel scaled to [0, dtype_max].
+        if has_mask:
+            post += f"""
+                X g = x[i];
+                int eq_rank = 0;
+                for (int j = 0; j < iv; j++) {{
+                    if (values[j] <= g) eq_rank++;
+                    else break;  // sorted, can stop early
+                }}
+                y = cast<Y>(static_cast<double>({dtype_max}) * eq_rank / iv);
+            """
+        else:
+            post += f"""
+                X g = x[i];
+                int eq_rank = 0;
+                for (int j = 0; j < {filter_size}; j++) {{
+                    if (values[j] <= g) eq_rank++;
+                    else break;
+                }}
+                y = cast<Y>(static_cast<double>({dtype_max}) * eq_rank / {filter_size});
+            """
+    elif operation == "geometric_mean":
+        # Geometric mean: exp(mean(log(value + 1))) - 1.
+        # The +1/-1 offset handles zero values (log(0) is undefined).
+        if has_mask:
+            post += """
+                double gm_log_sum = 0.0;
+                for (int j = 0; j < iv; j++) {
+                    gm_log_sum += log(static_cast<double>(values[j]) + 1.0);
+                }
+                y = cast<Y>(round(exp(gm_log_sum / iv) - 1.0));
+            """
+        else:
+            post += f"""
+                double gm_log_sum = 0.0;
+                for (int j = 0; j < {filter_size}; j++) {{
+                    gm_log_sum += log(static_cast<double>(values[j]) + 1.0);
+                }}
+                y = cast<Y>(round(exp(gm_log_sum / {filter_size}) - 1.0));
+            """
+    elif operation == "noise_filter":
+        # Noise filter: 0 if center pixel value exists in neighborhood,
+        # otherwise the minimum distance to the nearest neighbor value.
+        if has_mask:
+            post += """
+                X g = x[i];
+                bool nf_found = false;
+                int nf_min_dist = 2147483647;  // INT_MAX
+                for (int j = 0; j < iv; j++) {
+                    if (values[j] == g) { nf_found = true; break; }
+                    int d = static_cast<int>(values[j]) - static_cast<int>(g);
+                    if (d < 0) d = -d;
+                    if (d < nf_min_dist) nf_min_dist = d;
+                }
+                y = nf_found ? cast<Y>(0) : cast<Y>(nf_min_dist);
+            """
+        else:
+            post += f"""
+                X g = x[i];
+                bool nf_found = false;
+                int nf_min_dist = 2147483647;
+                for (int j = 0; j < {filter_size}; j++) {{
+                    if (values[j] == g) {{ nf_found = true; break; }}
+                    int d = static_cast<int>(values[j]) - static_cast<int>(g);
+                    if (d < 0) d = -d;
+                    if (d < nf_min_dist) nf_min_dist = d;
+                }}
+                y = nf_found ? cast<Y>(0) : cast<Y>(nf_min_dist);
+            """
+    elif operation == "modal":
+        # Modal: most frequent value (mode) in the neighborhood.
+        # Scan sorted array for the longest run of equal values.
+        if has_mask:
+            post += """
+                X mode_val = values[0];
+                int mode_max = 1;
+                int mode_cur = 1;
+                for (int j = 1; j < iv; j++) {
+                    if (values[j] == values[j - 1]) {
+                        mode_cur++;
+                    } else {
+                        if (mode_cur > mode_max) {
+                            mode_max = mode_cur;
+                            mode_val = values[j - 1];
+                        }
+                        mode_cur = 1;
+                    }
+                }
+                if (mode_cur > mode_max) mode_val = values[iv - 1];
+                y = cast<Y>(mode_val);
+            """
+        else:
+            post += f"""
+                X mode_val = values[0];
+                int mode_max = 1;
+                int mode_cur = 1;
+                for (int j = 1; j < {filter_size}; j++) {{
+                    if (values[j] == values[j - 1]) {{
+                        mode_cur++;
+                    }} else {{
+                        if (mode_cur > mode_max) {{
+                            mode_max = mode_cur;
+                            mode_val = values[j - 1];
+                        }}
+                        mode_cur = 1;
+                    }}
+                }}
+                if (mode_cur > mode_max) mode_val = values[{filter_size} - 1];
+                y = cast<Y>(mode_val);
+            """
     else:
         raise ValueError(
             f"Unsupported operation: {operation}. "
             "Supported: 'mean', 'sum', 'bilateral_mean', 'pop_mean', "
             "'gradient', 'subtract_mean', 'enhance_contrast', 'percentile', "
-            "'pop', 'threshold', 'threshold_mean', 'autolevel'"
+            "'pop', 'threshold', 'threshold_mean', 'autolevel', 'equalize', "
+            "'geometric_mean', 'noise_filter', 'modal'"
         )
 
     # Sanitize operation name for kernel name (replace special chars)

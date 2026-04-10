@@ -18,11 +18,16 @@ from ._percentile import _apply, _doc_common_params
 __all__ = [
     "autolevel",
     "enhance_contrast",
+    "equalize",
+    "geometric_mean",
     "gradient",
+    "majority",
     "maximum",
     "mean",
     "median",
     "minimum",
+    "modal",
+    "noise_filter",
     "pop",
     "subtract_mean",
     "sum",
@@ -528,4 +533,173 @@ threshold.__doc__ = _build_generic_docstring(
         p0-th percentile value and outputs 0 or ``dtype_max`` (e.g. 0/255
         for uint8). The generic ``threshold`` compares to the local **mean**
         and outputs 0 or 1.""",
+)
+
+
+def equalize(
+    image,
+    footprint,
+    out=None,
+    mask=None,
+    shift_x=0,
+    shift_y=0,
+    shift_z=0,
+    *,
+    shifts=None,
+):
+    return _apply_generic(
+        "equalize",
+        image,
+        footprint,
+        out,
+        mask,
+        shift_x,
+        shift_y,
+        shift_z,
+        shifts,
+    )
+
+
+equalize.__doc__ = _build_generic_docstring(
+    """Equalize image using local histogram.
+
+    The output is the rank of the center pixel within its local neighborhood,
+    scaled to the full output range::
+
+        out = dtype_max * rank(g) / N
+
+    where ``rank(g)`` is the number of neighborhood values <= ``g``, ``N``
+    is the neighborhood population, and ``dtype_max`` is the maximum value
+    for the output dtype (255 for uint8, 1.0 for float).""",
+)
+
+
+def geometric_mean(
+    image,
+    footprint,
+    out=None,
+    mask=None,
+    shift_x=0,
+    shift_y=0,
+    shift_z=0,
+    *,
+    shifts=None,
+):
+    return _apply_generic(
+        "geometric_mean",
+        image,
+        footprint,
+        out,
+        mask,
+        shift_x,
+        shift_y,
+        shift_z,
+        shifts,
+    )
+
+
+geometric_mean.__doc__ = _build_generic_docstring(
+    """Return the local geometric mean of an image.
+
+    The output is::
+
+        out = round(exp(mean(log(values + 1))) - 1)
+
+    The ``+1`` / ``-1`` offset ensures that zero-valued pixels are handled
+    correctly (``log(0)`` is undefined).""",
+)
+
+
+def noise_filter(
+    image,
+    footprint,
+    out=None,
+    mask=None,
+    shift_x=0,
+    shift_y=0,
+    shift_z=0,
+    *,
+    shifts=None,
+):
+    return _apply_generic(
+        "noise_filter",
+        image,
+        footprint,
+        out,
+        mask,
+        shift_x,
+        shift_y,
+        shift_z,
+        shifts,
+    )
+
+
+noise_filter.__doc__ = _build_generic_docstring(
+    """Noise feature filter.
+
+    Returns 0 if the center pixel value appears among its neighbors (i.e. it
+    is not isolated noise). Otherwise returns the minimum absolute distance
+    to the nearest neighbor value. Higher values indicate more isolated
+    pixels.""",
+)
+
+
+def modal(
+    image,
+    footprint,
+    out=None,
+    mask=None,
+    shift_x=0,
+    shift_y=0,
+    shift_z=0,
+    *,
+    shifts=None,
+):
+    return _apply_generic(
+        "modal",
+        image,
+        footprint,
+        out,
+        mask,
+        shift_x,
+        shift_y,
+        shift_z,
+        shifts,
+    )
+
+
+modal.__doc__ = _build_generic_docstring(
+    """Return the local modal (most frequent) value of an image.""",
+)
+
+
+def majority(
+    image,
+    footprint,
+    out=None,
+    mask=None,
+    shift_x=0,
+    shift_y=0,
+    shift_z=0,
+    *,
+    shifts=None,
+):
+    return _apply_generic(
+        "modal",
+        image,
+        footprint,
+        out,
+        mask,
+        shift_x,
+        shift_y,
+        shift_z,
+        shifts,
+    )
+
+
+majority.__doc__ = _build_generic_docstring(
+    """Return the local majority value of an image.
+
+    This is an alias for ``modal`` — it returns the most frequent value
+    in the local neighborhood.""",
 )
