@@ -2501,12 +2501,36 @@ static_cast<double>(center);
                     y = cast<Y>(0);
                 }}
             """
+    elif operation == "threshold_mean":
+        # Generic threshold: binary comparison of center pixel to local mean.
+        # scikit-image outputs 0 or 1 (NOT 0 or dtype_max like
+        # threshold_percentile).
+        if has_mask:
+            post += """
+                double tm_sum = 0.0;
+                for (int j = 0; j < iv; j++) {
+                    tm_sum += static_cast<double>(values[j]);
+                }
+                double tm_mean = tm_sum / iv;
+                X g = x[i];
+                y = (static_cast<double>(g) > tm_mean) ? cast<Y>(1) : cast<Y>(0);
+            """
+        else:
+            post += f"""
+                double tm_sum = 0.0;
+                for (int j = 0; j < {filter_size}; j++) {{
+                    tm_sum += static_cast<double>(values[j]);
+                }}
+                double tm_mean = tm_sum / {filter_size};
+                X g = x[i];
+                y = (static_cast<double>(g) > tm_mean) ? cast<Y>(1) : cast<Y>(0);
+            """
     else:
         raise ValueError(
             f"Unsupported operation: {operation}. "
             "Supported: 'mean', 'sum', 'bilateral_mean', 'pop_mean', "
             "'gradient', 'subtract_mean', 'enhance_contrast', 'percentile', "
-            "'pop', 'threshold', 'autolevel'"
+            "'pop', 'threshold', 'threshold_mean', 'autolevel'"
         )
 
     # Sanitize operation name for kernel name (replace special chars)

@@ -26,6 +26,7 @@ __all__ = [
     "pop",
     "subtract_mean",
     "sum",
+    "threshold",
 ]
 
 # --- Docstring fragments for generic (no p0/p1) functions ---
@@ -483,4 +484,48 @@ median.__doc__ = _build_generic_docstring(
         neighborhood-level mask handling with other rank filters. If mask
         support is not needed, ``cupyx.scipy.ndimage.median_filter`` may
         be faster.""",
+)
+
+
+def threshold(
+    image,
+    footprint,
+    out=None,
+    mask=None,
+    shift_x=0,
+    shift_y=0,
+    shift_z=0,
+    *,
+    shifts=None,
+):
+    return _apply_generic(
+        "threshold_mean",
+        image,
+        footprint,
+        out,
+        mask,
+        shift_x,
+        shift_y,
+        shift_z,
+        shifts,
+    )
+
+
+threshold.__doc__ = _build_generic_docstring(
+    """Local threshold of an image.
+
+    The resulting binary mask is True if the grayvalue of the center pixel
+    is greater than the local mean. The output is::
+
+        out = 1  if g > mean  else  0
+
+    where ``g`` is the center pixel value and ``mean`` is the mean of all
+    neighborhood values.
+
+    .. note::
+
+        This differs from ``threshold_percentile``, which compares to the
+        p0-th percentile value and outputs 0 or ``dtype_max`` (e.g. 0/255
+        for uint8). The generic ``threshold`` compares to the local **mean**
+        and outputs 0 or 1.""",
 )
