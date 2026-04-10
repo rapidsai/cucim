@@ -2637,13 +2637,47 @@ static_cast<double>(center);
                 if (mode_cur > mode_max) mode_val = values[{filter_size} - 1];
                 y = cast<Y>(mode_val);
             """
+    elif operation == "entropy":
+        # Shannon entropy in bits: -sum(p * log2(p)) where p = count / N.
+        # Uses run-length counting on the sorted array to get value counts.
+        # log2(p) = log(p) / log(2); 0.6931471805599453 = log(2).
+        if has_mask:
+            post += """
+                double ent = 0.0;
+                int ent_j = 0;
+                while (ent_j < iv) {
+                    int ent_count = 1;
+                    while (ent_j + ent_count < iv &&
+                           values[ent_j + ent_count] == values[ent_j])
+                        ent_count++;
+                    double p = static_cast<double>(ent_count) / iv;
+                    ent -= p * log(p) / 0.6931471805599453;
+                    ent_j += ent_count;
+                }
+                y = cast<Y>(ent);
+            """
+        else:
+            post += f"""
+                double ent = 0.0;
+                int ent_j = 0;
+                while (ent_j < {filter_size}) {{
+                    int ent_count = 1;
+                    while (ent_j + ent_count < {filter_size} &&
+                           values[ent_j + ent_count] == values[ent_j])
+                        ent_count++;
+                    double p = static_cast<double>(ent_count) / {filter_size};
+                    ent -= p * log(p) / 0.6931471805599453;
+                    ent_j += ent_count;
+                }}
+                y = cast<Y>(ent);
+            """
     else:
         raise ValueError(
             f"Unsupported operation: {operation}. "
             "Supported: 'mean', 'sum', 'bilateral_mean', 'pop_mean', "
             "'gradient', 'subtract_mean', 'enhance_contrast', 'percentile', "
             "'pop', 'threshold', 'threshold_mean', 'autolevel', 'equalize', "
-            "'geometric_mean', 'noise_filter', 'modal'"
+            "'geometric_mean', 'noise_filter', 'modal', 'entropy'"
         )
 
     # Sanitize operation name for kernel name (replace special chars)
