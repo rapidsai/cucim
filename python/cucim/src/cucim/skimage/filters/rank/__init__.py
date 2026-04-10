@@ -35,6 +35,7 @@ from ._generic import (
     pop,
     subtract_mean,
     sum,
+    threshold,
 )
 from ._percentile import (
     autolevel_percentile,
@@ -87,6 +88,7 @@ __all__ = [
     'sum_percentile',
     # 'sum_bilateral',
     'percentile',
+    'threshold',
     'threshold_percentile',
     # --- Not yet implemented ---
     # 'equalize',
