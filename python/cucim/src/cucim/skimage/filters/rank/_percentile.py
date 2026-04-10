@@ -368,7 +368,15 @@ subtract_mean_percentile.__doc__ = _build_docstring(
     """Return image subtracted from its local mean.
 
     Only grayvalues between percentiles [p0, p1] are considered in the
-    filter.""",
+    filter.
+
+    .. note::
+
+        This function uses an output offset of ``(dtype_max + 1) / 2`` (128
+        for uint8), matching scikit-image's ``subtract_mean_percentile``. The
+        non-percentile ``subtract_mean`` in ``filters.rank`` uses an offset of
+        ``(dtype_max + 1) / 2 - 1`` (127 for uint8), matching scikit-image's
+        ``subtract_mean``.""",
 )
 
 
