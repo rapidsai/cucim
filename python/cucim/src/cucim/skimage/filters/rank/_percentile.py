@@ -35,7 +35,7 @@ Some operations use a ``dtype_max`` value that affects output scaling
 
 import cupy as cp
 
-from cucim.skimage._vendored._ndimage_filters import _percentile_range_filter
+from ._percentile_range_filter import _skimage_rank_filter
 
 __all__ = [
     "autolevel_percentile",
@@ -225,7 +225,7 @@ def _apply(
     p1_pct = p1 * 100.0
 
     # Call the GPU implementation
-    result = _percentile_range_filter(
+    result = _skimage_rank_filter(
         image,
         p0=p0_pct,
         p1=p1_pct,
