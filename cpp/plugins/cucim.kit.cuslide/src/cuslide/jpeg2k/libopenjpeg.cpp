@@ -15,6 +15,7 @@
 
 #include <cucim/memory/memory_manager.h>
 #include <cucim/profiler/nvtx3.h>
+#include <cucim/util/checked_math.h>
 #include <fmt/format.h>
 #include <openjpeg.h>
 
@@ -215,6 +216,31 @@ bool decode_libopenjpeg(int fd,
                 throw std::runtime_error("[Error] Failed to decode image\n");
             }
         }
+
+        // Validate decoded dimensions fit within the destination buffer.
+        // dest_nbytes is sized from TIFF tile dimensions; the J2K codestream
+        // may declare larger dimensions in a malformed file.
+        for (uint32_t c = 0; c < image->numcomps; c++)
+        {
+            if (image->comps[c].data == nullptr)
+            {
+                throw std::runtime_error(
+                    fmt::format("[Error] J2K component {} has null data after decode", c));
+            }
+        }
+        {
+            size_t decoded_pixels = cucim::util::checked_mul(
+                static_cast<size_t>(image->comps[0].w), static_cast<size_t>(image->comps[0].h));
+            size_t decoded_bytes = cucim::util::checked_mul(decoded_pixels, static_cast<size_t>(3));
+            if (decoded_bytes > dest_nbytes)
+            {
+                throw std::runtime_error(
+                    fmt::format("[Error] J2K decoded dimensions ({}x{}, {} bytes) exceed "
+                                "destination buffer ({} bytes)",
+                                image->comps[0].w, image->comps[0].h, decoded_bytes, dest_nbytes));
+            }
+        }
+
         if (image->color_space != OPJ_CLRSPC_SYCC)
         {
             if (color_space == ColorSpace::kSYCC)
