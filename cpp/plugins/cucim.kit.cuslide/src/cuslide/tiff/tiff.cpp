@@ -20,6 +20,7 @@
 #include <cucim/logger/timer.h>
 #include <cucim/memory/memory_manager.h>
 #include <cucim/profiler/nvtx3.h>
+#include <cucim/util/checked_math.h>
 
 #include "cuslide/jpeg/libjpeg_turbo.h"
 #include "cuslide/lzw/lzw.h"
@@ -783,7 +784,8 @@ bool TIFF::read_associated_image(const cucim::io::format::ImageMetadataDesc* met
             width = image_ifd->width_;
             height = image_ifd->height_;
             samples_per_pixel = image_ifd->samples_per_pixel_;
-            raster_size = width * height * samples_per_pixel;
+            raster_size = cucim::util::checked_raster_size(
+                static_cast<size_t>(width), static_cast<size_t>(height), static_cast<size_t>(samples_per_pixel));
 
             uint16_t compression_method = image_ifd->compression_;
 
@@ -883,7 +885,8 @@ bool TIFF::read_associated_image(const cucim::io::format::ImageMetadataDesc* met
             width = image_width;
             height = image_height;
             samples_per_pixel = 3; // NOTE: assumes RGB image
-            raster_size = image_width * image_height * samples_per_pixel;
+            raster_size = cucim::util::checked_raster_size(
+                static_cast<size_t>(image_width), static_cast<size_t>(image_height), static_cast<size_t>(samples_per_pixel));
 
             raster = static_cast<uint8_t*>(cucim_malloc(raster_size)); // RGB image
 

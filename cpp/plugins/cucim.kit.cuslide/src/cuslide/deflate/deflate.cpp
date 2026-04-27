@@ -13,6 +13,7 @@
 #include <stdexcept>
 #include <unistd.h>
 
+#include <fmt/format.h>
 #include <cucim/memory/memory_manager.h>
 #include <cucim/profiler/nvtx3.h>
 
@@ -75,9 +76,10 @@ bool decode_deflate(int fd,
     }
 
     size_t out_size;
+    enum libdeflate_result decompress_result;
     {
         PROF_SCOPED_RANGE(PROF_EVENT(libdeflate_zlib_decompress));
-        libdeflate_zlib_decompress(
+        decompress_result = libdeflate_zlib_decompress(
             d, deflate_buf, size /*in_nbytes*/, *dest, dest_nbytes /*out_nbytes_avail*/, &out_size);
     }
 
@@ -90,6 +92,28 @@ bool decode_deflate(int fd,
         PROF_SCOPED_RANGE(PROF_EVENT(libdeflate_free_decompressor));
         libdeflate_free_decompressor(d);
     }
+
+    if (decompress_result != LIBDEFLATE_SUCCESS)
+    {
+        const char* reason = "unknown error";
+        switch (decompress_result)
+        {
+        case LIBDEFLATE_BAD_DATA:
+            reason = "corrupt or invalid compressed data";
+            break;
+        case LIBDEFLATE_SHORT_OUTPUT:
+            reason = "decompressed size is less than expected";
+            break;
+        case LIBDEFLATE_INSUFFICIENT_SPACE:
+            reason = "output buffer too small for decompressed data";
+            break;
+        default:
+            break;
+        }
+        throw std::runtime_error(
+            fmt::format("Deflate decompression failed: {}", reason));
+    }
+
     return true;
 }
 

@@ -240,17 +240,17 @@ bool decode_libopenjpeg(int fd,
             if ((comp0_dx == 1) && (comp1_dx == 2) && (comp2_dx == 2) && (comp0_dy == 1) && (comp1_dy == 1) &&
                 (comp2_dy == 1))
             {
-                fast_sycc422_to_rgb(image, *dest); // horizontal sub-sample only
+                fast_sycc422_to_rgb(image, *dest, dest_nbytes); // horizontal sub-sample only
             }
             else if ((comp0_dx == 1) && (comp1_dx == 2) && (comp2_dx == 2) && (comp0_dy == 1) && (comp1_dy == 2) &&
                      (comp2_dy == 2))
             {
-                fast_sycc420_to_rgb(image, *dest); // horizontal and vertical sub-sample
+                fast_sycc420_to_rgb(image, *dest, dest_nbytes); // horizontal and vertical sub-sample
             }
             else if ((comp0_dx == 1) && (comp1_dx == 1) && (comp2_dx == 1) && (comp0_dy == 1) && (comp1_dy == 1) &&
                      (comp2_dy == 1))
             {
-                fast_sycc444_to_rgb(image, *dest); // no sub-sample
+                fast_sycc444_to_rgb(image, *dest, dest_nbytes); // no sub-sample
             }
             else
             {
@@ -278,7 +278,7 @@ bool decode_libopenjpeg(int fd,
             }
             if (image->comps)
             {
-                fast_image_to_rgb(image, *dest);
+                fast_image_to_rgb(image, *dest, dest_nbytes);
             }
         }
     }

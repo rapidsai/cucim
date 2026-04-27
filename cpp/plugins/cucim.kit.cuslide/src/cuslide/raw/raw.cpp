@@ -14,6 +14,7 @@
 #include <stdexcept>
 #include <unistd.h>
 
+#include <fmt/format.h>
 #include <cucim/memory/memory_manager.h>
 #include <cucim/profiler/nvtx3.h>
 
@@ -61,6 +62,16 @@ bool decode_raw(int fd,
     {
         fd = -1;
         raw_buf += offset;
+    }
+
+    if (size < dest_nbytes)
+    {
+        if (fd != -1)
+        {
+            cucim_free(raw_buf);
+        }
+        throw std::runtime_error(
+            fmt::format("Raw tile data size ({}) is smaller than expected destination buffer ({})", size, dest_nbytes));
     }
 
     memcpy(*dest, raw_buf, dest_nbytes);

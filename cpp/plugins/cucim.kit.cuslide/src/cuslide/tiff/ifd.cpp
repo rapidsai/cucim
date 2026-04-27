@@ -23,6 +23,7 @@
 #include <cucim/logger/timer.h>
 #include <cucim/memory/memory_manager.h>
 #include <cucim/profiler/nvtx3.h>
+#include <cucim/util/checked_math.h>
 #include <cucim/util/cuda.h>
 
 #include "cuslide/deflate/deflate.h"
@@ -147,7 +148,8 @@ bool IFD::read(const TIFF* tiff,
     int32_t n_ch = samples_per_pixel_; // number of channels
     int ndim = 3;
 
-    size_t raster_size = w * h * samples_per_pixel_;
+    size_t raster_size = cucim::util::checked_raster_size(
+        static_cast<size_t>(w), static_cast<size_t>(h), static_cast<size_t>(samples_per_pixel_));
     void* raster = nullptr;
     auto raster_type = cucim::io::DeviceType::kCPU;
 
@@ -343,9 +345,8 @@ bool IFD::read(const TIFF* tiff,
             TIFFRGBAImage img;
             if (TIFFRGBAImageBegin(&img, tif, -1, emsg))
             {
-                size_t npixels;
-                npixels = w * h;
-                raster_size = npixels * 4;
+                size_t npixels = cucim::util::checked_mul(static_cast<size_t>(w), static_cast<size_t>(h));
+                raster_size = cucim::util::checked_mul(npixels, static_cast<size_t>(4));
                 if (!raster)
                 {
                     raster = cucim_malloc(raster_size);
@@ -534,8 +535,10 @@ size_t IFD::pixel_size_nbytes() const
 
 size_t IFD::tile_raster_size_nbytes() const
 {
-    const size_t nbytes = tile_width_ * tile_height_ * pixel_size_nbytes();
-    return nbytes;
+    return cucim::util::checked_tile_size(
+        static_cast<size_t>(tile_width_),
+        static_cast<size_t>(tile_height_),
+        pixel_size_nbytes());
 }
 
 bool IFD::is_compression_supported() const
@@ -654,6 +657,11 @@ bool IFD::read_region_tiles(const TIFF* tiff,
         for (uint32_t offset_x = offset_sx; offset_x <= offset_ex; ++offset_x, ++index)
         {
             PROF_SCOPED_RANGE(PROF_EVENT_P(ifd_read_region_tiles_iter, index));
+            if (index >= ifd->image_piece_offsets_.size() || index >= ifd->image_piece_bytecounts_.size())
+            {
+                throw std::out_of_range(
+                    fmt::format("Tile index {} out of range (max {})", index, ifd->image_piece_offsets_.size()));
+            }
             auto tiledata_offset = static_cast<uint64_t>(ifd->image_piece_offsets_[index]);
             auto tiledata_size = static_cast<uint64_t>(ifd->image_piece_bytecounts_[index]);
 
@@ -962,6 +970,12 @@ bool IFD::read_region_tiles_boundary(const TIFF* tiff,
             if (offset_x >= offset_min_x && offset_x <= offset_max_x && index_y >= start_index_min_y &&
                 index_y <= end_index_max_y)
             {
+                if (static_cast<size_t>(index) >= ifd->image_piece_offsets_.size() ||
+                    static_cast<size_t>(index) >= ifd->image_piece_bytecounts_.size())
+                {
+                    throw std::out_of_range(
+                        fmt::format("Tile index {} out of range (max {})", index, ifd->image_piece_offsets_.size()));
+                }
                 tiledata_offset = static_cast<uint64_t>(ifd->image_piece_offsets_[index]);
                 tiledata_size = static_cast<uint64_t>(ifd->image_piece_bytecounts_[index]);
             }

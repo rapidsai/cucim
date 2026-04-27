@@ -23,6 +23,7 @@
 #include <unistd.h>
 
 #include <cucim/profiler/nvtx3.h>
+#include <cucim/util/checked_math.h>
 #include <turbojpeg.h>
 
 static thread_local char errStr[JMSG_LENGTH_MAX] = "No error";
@@ -186,7 +187,10 @@ bool decode_libjpeg(int fd,
     if (*dest == nullptr)
     {
         PROF_SCOPED_RANGE(PROF_EVENT(decoder_libjpeg_turbo_tjAlloc));
-        if ((*dest = (unsigned char*)tjAlloc(width * height * tjPixelSize[pixelFormat])) == nullptr)
+        size_t alloc_size = cucim::util::checked_tile_size(
+            static_cast<size_t>(width), static_cast<size_t>(height),
+            static_cast<size_t>(tjPixelSize[pixelFormat]));
+        if ((*dest = (unsigned char*)tjAlloc(alloc_size)) == nullptr)
             THROW_UNIX("Unable to allocate uncompressed image buffer");
     }
 

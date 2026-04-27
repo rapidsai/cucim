@@ -27,6 +27,7 @@
 #include <cucim/logger/timer.h>
 #include <cucim/memory/memory_manager.h>
 #include <cucim/profiler/nvtx3.h>
+#include <cucim/util/checked_math.h>
 #include <cucim/util/cuda.h>
 
 // nvImageCodec handles ALL decoding (JPEG, JPEG2000, deflate, LZW, raw)
@@ -930,8 +931,10 @@ size_t IFD::pixel_size_nbytes() const
 
 size_t IFD::tile_raster_size_nbytes() const
 {
-    const size_t nbytes = tile_width_ * tile_height_ * pixel_size_nbytes();
-    return nbytes;
+    return cucim::util::checked_tile_size(
+        static_cast<size_t>(tile_width_),
+        static_cast<size_t>(tile_height_),
+        pixel_size_nbytes());
 }
 
 // ============================================================================
