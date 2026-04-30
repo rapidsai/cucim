@@ -217,7 +217,7 @@ bool decode_libopenjpeg(int fd,
             }
         }
 
-        // Validate decoded dimensions fit within the destination buffer.
+        // Validate decoded dimensions and component data pointers.
         // dest_nbytes is sized from TIFF tile dimensions; the J2K codestream
         // may declare larger dimensions in a malformed file.
         for (uint32_t c = 0; c < image->numcomps; c++)
@@ -229,6 +229,7 @@ bool decode_libopenjpeg(int fd,
             }
         }
         {
+            // Validate component 0 (Y/R) output fits in dest buffer
             size_t decoded_pixels = cucim::util::checked_mul(
                 static_cast<size_t>(image->comps[0].w), static_cast<size_t>(image->comps[0].h));
             size_t decoded_bytes = cucim::util::checked_mul(decoded_pixels, static_cast<size_t>(3));
@@ -238,6 +239,26 @@ bool decode_libopenjpeg(int fd,
                     fmt::format("[Error] J2K decoded dimensions ({}x{}, {} bytes) exceed "
                                 "destination buffer ({} bytes)",
                                 image->comps[0].w, image->comps[0].h, decoded_bytes, dest_nbytes));
+            }
+
+            // Validate chroma component dimensions are consistent with luma.
+            // The SYCC converters index Cb/Cr using luma geometry and subsampling
+            // assumptions; undersized chroma components cause out-of-bounds reads.
+            uint32_t luma_w = image->comps[0].w;
+            uint32_t luma_h = image->comps[0].h;
+            for (uint32_t c = 1; c < image->numcomps; c++)
+            {
+                uint32_t expected_w = (luma_w + image->comps[c].dx - 1) / image->comps[c].dx;
+                uint32_t expected_h = (luma_h + image->comps[c].dy - 1) / image->comps[c].dy;
+                if (image->comps[c].w < expected_w || image->comps[c].h < expected_h)
+                {
+                    throw std::runtime_error(
+                        fmt::format("[Error] J2K component {} dimensions ({}x{}) are smaller than "
+                                    "expected ({}x{}) for luma {}x{} with subsampling dx={}, dy={}",
+                                    c, image->comps[c].w, image->comps[c].h,
+                                    expected_w, expected_h, luma_w, luma_h,
+                                    image->comps[c].dx, image->comps[c].dy));
+                }
             }
         }
 
