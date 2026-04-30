@@ -148,7 +148,7 @@ bool IFD::read(const TIFF* tiff,
     int32_t n_ch = samples_per_pixel_; // number of channels
     int ndim = 3;
 
-    size_t raster_size = cucim::util::checked_raster_size(
+    size_t raster_size = cucim::util::checked_mul3(
         static_cast<size_t>(w), static_cast<size_t>(h), static_cast<size_t>(samples_per_pixel_));
     void* raster = nullptr;
     auto raster_type = cucim::io::DeviceType::kCPU;
