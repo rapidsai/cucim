@@ -21,7 +21,7 @@ repos:
         args: [--fix, --exit-non-zero-on-fix, --config, "python/cucim/pyproject.toml"]
       - id: ruff-format
   - repo: https://github.com/codespell-project/codespell
-    rev: v2.2.6
+    rev: v2.4.1
     hooks:
       - id: codespell
         args: ["--toml", "python/cucim/pyproject.toml"]
@@ -226,11 +226,13 @@ repos:
             ^python/cucim/src/cucim/skimage/restoration/__init__[.]py$|
             ^python/cucim/src/cucim/skimage/restoration/__init__[.]pyi$|
             ^python/cucim/src/cucim/skimage/restoration/_denoise[.]py$|
+            ^python/cucim/src/cucim/skimage/restoration/_rolling_ball[.]py$|
             ^python/cucim/src/cucim/skimage/restoration/deconvolution[.]py$|
             ^python/cucim/src/cucim/skimage/restoration/j_invariant[.]py$|
             ^python/cucim/src/cucim/skimage/restoration/tests/test_denoise[.]py$|
             ^python/cucim/src/cucim/skimage/restoration/tests/test_j_invariant[.]py$|
             ^python/cucim/src/cucim/skimage/restoration/tests/test_restoration[.]py$|
+            ^python/cucim/src/cucim/skimage/restoration/tests/test_rolling_ball[.]py$|
             ^python/cucim/src/cucim/skimage/restoration/uft[.]py$|
             ^python/cucim/src/cucim/skimage/segmentation/__init__[.]py$|
             ^python/cucim/src/cucim/skimage/segmentation/__init__[.]pyi$|
@@ -507,11 +509,13 @@ repos:
             python/cucim/src/cucim/skimage/restoration/__init__[.]py$|
             python/cucim/src/cucim/skimage/restoration/__init__[.]pyi$|
             python/cucim/src/cucim/skimage/restoration/_denoise[.]py$|
+            python/cucim/src/cucim/skimage/restoration/_rolling_ball[.]py$|
             python/cucim/src/cucim/skimage/restoration/deconvolution[.]py$|
             python/cucim/src/cucim/skimage/restoration/j_invariant[.]py$|
             python/cucim/src/cucim/skimage/restoration/tests/test_denoise[.]py$|
             python/cucim/src/cucim/skimage/restoration/tests/test_j_invariant[.]py$|
             python/cucim/src/cucim/skimage/restoration/tests/test_restoration[.]py$|
+            python/cucim/src/cucim/skimage/restoration/tests/test_rolling_ball[.]py$|
             python/cucim/src/cucim/skimage/restoration/uft[.]py$|
             python/cucim/src/cucim/skimage/segmentation/__init__[.]py$|
             python/cucim/src/cucim/skimage/segmentation/__init__[.]pyi$|

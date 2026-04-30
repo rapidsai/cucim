@@ -121,6 +121,15 @@ def main(args):
         ("wiener", dict(balance=100.0), dict(), False, False),
         ("unsupervised_wiener", dict(), dict(), False, False),
         ("richardson_lucy", dict(), dict(num_iter=[5]), False, True),
+        (
+            "rolling_ball",
+            dict(nansafe=False),
+            dict(
+                # radius=[5, 10, 20, 40],  # appropriate radius range set below
+            ),
+            False,  # could support color with some modification to the benchmark
+            True,
+        ),
     ]:
         if function_name != args.func_name:
             continue
@@ -171,6 +180,39 @@ def main(args):
                 module_gpu=cucim.skimage.restoration,
                 run_cpu=run_cpu,
             )
+        elif function_name == "rolling_ball":
+            if ndim > 2:
+                if run_cpu:
+                    radius = [4, 8]
+                else:
+                    radius = [4, 8]
+                    if min(shape) > 16:
+                        radius += [16]
+                    if min(shape) > 32:
+                        radius += [32]
+                    if min(shape) > 64:
+                        radius += [64]
+            elif ndim == 2:
+                if run_cpu:
+                    radius = [5, 10, 20, 40]
+                else:
+                    radius = [5, 10, 20, 40, 80, 160]
+            var_kwargs["radius"] = radius
+
+            if shape[-1] == 3 and not allow_color:
+                continue
+
+            B = ImageBench(
+                function_name=function_name,
+                shape=shape,
+                dtypes=dtypes,
+                fixed_kwargs=fixed_kwargs,
+                var_kwargs=var_kwargs,
+                module_cpu=skimage.restoration,
+                module_gpu=cucim.skimage.restoration,
+                run_cpu=run_cpu,
+            )
+
         results = B.run_benchmark(duration=args.duration)
         all_results = pd.concat([all_results, results["full"]])
 
@@ -195,6 +237,7 @@ if __name__ == "__main__":
         "wiener",
         "unsupervised_wiener",
         "richardson_lucy",
+        "rolling_ball",
     ]
     dtype_choices = [
         "float16",

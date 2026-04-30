@@ -131,7 +131,7 @@ Summary per language:
 
   * Erlang: excellent runtime including deployability and concurrency; challenging developer experience; relatively small ecosystem.
 
-  * Elm: looks very promising; IBM is publishing major case studies with good resutls; smaller ecosystem.
+  * Elm: looks very promising; IBM is publishing major case studies with good results; smaller ecosystem.
 
   * Flow: interesting improvement over JavaScript; however; developers are moving away from it.
 

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -69,6 +69,17 @@ ThreadBatchDataLoader::ThreadBatchDataLoader(LoadFunc load_func,
             fmt::print(stderr, "Device type {} is not supported!\n", static_cast<int>(device_type));
             break;
         }
+    }
+
+    // Give the batch processor a callback to resolve location indices to raster
+    // buffer addresses, so it can tell the decoder to decode directly into the
+    // pre-allocated ring buffer (zero-copy path).
+    if (batch_data_processor_)
+    {
+        batch_data_processor_->set_output_buffer_provider(
+            [this](uint64_t location_index) -> uint8_t* {
+                return this->raster_pointer(location_index);
+            });
     }
 }
 
@@ -232,6 +243,19 @@ uint32_t ThreadBatchDataLoader::wait_batch()
                 batch_data_processor_->wait_batch(i, batch_item_counts_, num_remaining_patches);
             }
         }
+
+        // When load_func enqueued no thread-pool tasks (batch_item_count == 0),
+        // the inner loop above never runs and the batch processor's wait_batch()
+        // is never called.  This happens in cuslide2's GPU path where the
+        // NvImageCodecProcessor handles all decoding internally.  Give it a
+        // chance to drain its pending decode work here so that the raster buffer
+        // is populated before next_data() returns it.
+        if (batch_item_count == 0 && batch_data_processor_)
+        {
+            uint32_t num_remaining_patches = static_cast<uint32_t>(location_len_ - queued_item_count_);
+            batch_data_processor_->wait_batch(batch_item_index, batch_item_counts_, num_remaining_patches);
+        }
+
         batch_item_counts_.pop_front();
         num_items_waited += batch_item_count;
     }
