@@ -6,6 +6,7 @@
 #include "tiff.h"
 
 #include <fcntl.h>
+#include <sys/stat.h>
 
 #include <algorithm>
 #include <string>
@@ -812,12 +813,31 @@ bool TIFF::read_associated_image(const cucim::io::format::ImageMetadataDesc* met
             uint32_t strip_nbytes = row_nbytes * rows_per_strip;
             uint32_t start_row = 0;
 
+            struct stat assoc_file_stat;
+            uint64_t assoc_file_size = 0;
+            if (fstat(file_handle_->fd, &assoc_file_stat) == 0)
+            {
+                assoc_file_size = static_cast<uint64_t>(assoc_file_stat.st_size);
+            }
+
             std::vector<uint64_t>& image_piece_offsets = image_ifd->image_piece_offsets_;
             std::vector<uint64_t>& image_piece_bytecounts = image_ifd->image_piece_bytecounts_;
             for (int64_t piece_index = 0; piece_index < piece_count; ++piece_index)
             {
                 uint64_t offset = image_piece_offsets[piece_index];
                 uint64_t size = image_piece_bytecounts[piece_index];
+
+                if (assoc_file_size > 0 && size > 0)
+                {
+                    uint64_t data_end;
+                    if (__builtin_add_overflow(offset, size, &data_end) || data_end > assoc_file_size)
+                    {
+                        cucim_free(raster);
+                        throw std::runtime_error(fmt::format(
+                            "Associated image strip {} data range [{}, +{}) exceeds file size {}",
+                            piece_index, offset, size, assoc_file_size));
+                    }
+                }
 
                 // If the piece is the last piece, adjust strip_nbytes
                 if (start_row + rows_per_strip >= height)

@@ -148,8 +148,12 @@ bool decode_libjpeg(int fd,
                 THROW_UNIX("allocating JPEG buffer");
         }
 
-        if (pread(fd, jpeg_buf, size, offset) < 1)
-            THROW_UNIX("reading input file");
+        {
+            ssize_t bytes_read = pread(fd, jpeg_buf, size, offset);
+            if (bytes_read < 0 || static_cast<uint64_t>(bytes_read) != size)
+                THROW_MSG("reading input file",
+                          "Short read: pread returned fewer bytes than requested");
+        }
     }
     else
     {

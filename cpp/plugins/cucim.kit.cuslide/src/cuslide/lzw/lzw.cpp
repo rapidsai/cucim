@@ -14,6 +14,7 @@
 #include <stdexcept>
 #include <unistd.h>
 
+#include <fmt/format.h>
 #include <cucim/memory/memory_manager.h>
 #include <cucim/profiler/nvtx3.h>
 
@@ -52,9 +53,12 @@ bool decode_lzw(int fd,
             throw std::runtime_error("Unable to allocate buffer for lzw data!");
         }
 
-        if (pread(fd, lzw_buf, size, offset) < 1)
+        ssize_t bytes_read = pread(fd, lzw_buf, size, offset);
+        if (bytes_read < 0 || static_cast<uint64_t>(bytes_read) != size)
         {
-            throw std::runtime_error("Unable to read file for lzw data!");
+            cucim_free(lzw_buf);
+            throw std::runtime_error(
+                fmt::format("Short read for LZW data: expected {} bytes, got {}", size, bytes_read));
         }
     }
     else

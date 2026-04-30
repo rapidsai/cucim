@@ -53,9 +53,12 @@ bool decode_raw(int fd,
             throw std::runtime_error("Unable to allocate buffer for raw data!");
         }
 
-        if (pread(fd, raw_buf, size, offset) < 1)
+        ssize_t bytes_read = pread(fd, raw_buf, size, offset);
+        if (bytes_read < 0 || static_cast<uint64_t>(bytes_read) != size)
         {
-            throw std::runtime_error("Unable to read file for raw data!");
+            cucim_free(raw_buf);
+            throw std::runtime_error(
+                fmt::format("Short read for raw data: expected {} bytes, got {}", size, bytes_read));
         }
     }
     else

@@ -6,6 +6,7 @@
 #include "ifd.h"
 
 #include <sys/types.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include <algorithm>
@@ -640,6 +641,13 @@ bool IFD::read_region_tiles(const TIFF* tiff,
     uint64_t ifd_hash_value = ifd->hash_value_;
     uint32_t dest_pixel_step_y = w * samples_per_pixel;
 
+    struct stat file_stat;
+    uint64_t tiff_file_size = 0;
+    if (fstat(tiff_file, &file_stat) == 0)
+    {
+        tiff_file_size = static_cast<uint64_t>(file_stat.st_size);
+    }
+
     uint32_t nbytes_tw = tw * samples_per_pixel;
     auto dest_start_ptr = static_cast<uint8_t*>(raster);
 
@@ -664,6 +672,18 @@ bool IFD::read_region_tiles(const TIFF* tiff,
             }
             auto tiledata_offset = static_cast<uint64_t>(ifd->image_piece_offsets_[index]);
             auto tiledata_size = static_cast<uint64_t>(ifd->image_piece_bytecounts_[index]);
+
+            if (tiff_file_size > 0 && tiledata_size > 0)
+            {
+                uint64_t tiledata_end;
+                if (__builtin_add_overflow(tiledata_offset, tiledata_size, &tiledata_end) ||
+                    tiledata_end > tiff_file_size)
+                {
+                    throw std::runtime_error(fmt::format(
+                        "Tile {} data range [{}, +{}) exceeds file size {}",
+                        index, tiledata_offset, tiledata_size, tiff_file_size));
+                }
+            }
 
             // Calculate a simple hash value for the tile index
             uint64_t index_hash = ifd_hash_value ^ (static_cast<uint64_t>(index) | (static_cast<uint64_t>(index) << 32));
@@ -942,6 +962,13 @@ bool IFD::read_region_tiles_boundary(const TIFF* tiff,
     int tiff_file = tiff->file_handle_->fd;
     uint64_t ifd_hash_value = ifd->hash_value_;
 
+    struct stat file_stat_boundary;
+    uint64_t tiff_file_size_boundary = 0;
+    if (fstat(tiff_file, &file_stat_boundary) == 0)
+    {
+        tiff_file_size_boundary = static_cast<uint64_t>(file_stat_boundary.st_size);
+    }
+
     uint32_t dest_pixel_step_y = w * samples_per_pixel;
     uint32_t nbytes_tw = tw * samples_per_pixel;
 
@@ -978,6 +1005,18 @@ bool IFD::read_region_tiles_boundary(const TIFF* tiff,
                 }
                 tiledata_offset = static_cast<uint64_t>(ifd->image_piece_offsets_[index]);
                 tiledata_size = static_cast<uint64_t>(ifd->image_piece_bytecounts_[index]);
+
+                if (tiff_file_size_boundary > 0 && tiledata_size > 0)
+                {
+                    uint64_t tiledata_end;
+                    if (__builtin_add_overflow(tiledata_offset, tiledata_size, &tiledata_end) ||
+                        tiledata_end > tiff_file_size_boundary)
+                    {
+                        throw std::runtime_error(fmt::format(
+                            "Tile {} data range [{}, +{}) exceeds file size {}",
+                            index, tiledata_offset, tiledata_size, tiff_file_size_boundary));
+                    }
+                }
             }
 
             uint32_t tile_pixel_offset_x = (offset_x == offset_sx) ? pixel_offset_sx : 0;

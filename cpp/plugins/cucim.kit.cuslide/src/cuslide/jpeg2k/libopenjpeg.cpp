@@ -146,9 +146,12 @@ bool decode_libopenjpeg(int fd,
             throw std::runtime_error("Unable to allocate buffer for libopenjpeg!");
         }
 
-        if (pread(fd, jpeg_buf, size, offset) < 1)
+        ssize_t bytes_read = pread(fd, jpeg_buf, size, offset);
+        if (bytes_read < 0 || static_cast<uint64_t>(bytes_read) != size)
         {
-            throw std::runtime_error("Unable to read file for libopenjpeg!");
+            cucim_free(jpeg_buf);
+            throw std::runtime_error(
+                fmt::format("Short read for JPEG2000 data: expected {} bytes, got {}", size, bytes_read));
         }
     }
     else

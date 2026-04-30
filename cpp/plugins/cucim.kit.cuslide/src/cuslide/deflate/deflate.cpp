@@ -64,9 +64,12 @@ bool decode_deflate(int fd,
             throw std::runtime_error("Unable to allocate buffer for libdeflate!");
         }
 
-        if (pread(fd, deflate_buf, size, offset) < 1)
+        ssize_t bytes_read = pread(fd, deflate_buf, size, offset);
+        if (bytes_read < 0 || static_cast<uint64_t>(bytes_read) != size)
         {
-            throw std::runtime_error("Unable to read file for libdeflate!");
+            cucim_free(deflate_buf);
+            throw std::runtime_error(
+                fmt::format("Short read for deflate data: expected {} bytes, got {}", size, bytes_read));
         }
     }
     else
