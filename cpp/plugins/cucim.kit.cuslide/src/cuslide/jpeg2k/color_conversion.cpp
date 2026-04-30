@@ -6,7 +6,7 @@
  * SPDX-FileCopyrightText: Copyright (c) 2003-2007, Francois-Olivier Devaux
  * SPDX-FileCopyrightText: Copyright (c) 2003-2014, Antonin Descampe
  * SPDX-FileCopyrightText: Copyright (c) 2005, Herve Drolon, FreeImage Team
- * SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION
  * SPDX-License-Identifier: Apache-2.0 AND BSD-2-Clause
  */
 
