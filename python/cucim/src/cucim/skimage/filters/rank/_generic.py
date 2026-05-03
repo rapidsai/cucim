@@ -394,7 +394,7 @@ def minimum(
     shifts=None,
 ):
     return _apply_generic(
-        "percentile",
+        "minimum",
         image,
         footprint,
         out,
@@ -403,7 +403,6 @@ def minimum(
         shift_y,
         shift_z,
         shifts,
-        p0=0,
     )
 
 
@@ -412,10 +411,8 @@ minimum.__doc__ = _build_generic_docstring(
 
     .. note::
 
-        This is implemented via ``percentile(p0=0)`` to ensure consistent
-        neighborhood-level mask handling with other rank filters. If mask
-        support is not needed, ``cupyx.scipy.ndimage.minimum_filter`` may
-        be faster.""",
+        This uses a streaming reduction over the neighborhood. If mask support
+        is not needed, ``cupyx.scipy.ndimage.minimum_filter`` may be faster.""",
 )
 
 
@@ -431,7 +428,7 @@ def maximum(
     shifts=None,
 ):
     return _apply_generic(
-        "percentile",
+        "maximum",
         image,
         footprint,
         out,
@@ -440,7 +437,6 @@ def maximum(
         shift_y,
         shift_z,
         shifts,
-        p0=1,
     )
 
 
@@ -449,10 +445,8 @@ maximum.__doc__ = _build_generic_docstring(
 
     .. note::
 
-        This is implemented via ``percentile(p0=1)`` to ensure consistent
-        neighborhood-level mask handling with other rank filters. If mask
-        support is not needed, ``cupyx.scipy.ndimage.maximum_filter`` may
-        be faster.""",
+        This uses a streaming reduction over the neighborhood. If mask support
+        is not needed, ``cupyx.scipy.ndimage.maximum_filter`` may be faster.""",
 )
 
 

@@ -32,6 +32,127 @@ from cucim.skimage.filters.rank import (
 )
 from cucim.skimage.util import img_as_ubyte
 
+
+def _reflect_index(index, size):
+    if index < 0:
+        index = -1 - index
+    index %= 2 * size
+    return min(index, 2 * size - 1 - index)
+
+
+def _cast_uint8(value):
+    return np.uint8(int(value) % 256)
+
+
+def _rank_filter_brute_force_uint8(
+    image,
+    footprint,
+    operation,
+    *,
+    mask=None,
+    s0=10,
+    s1=10,
+):
+    radius = tuple(s // 2 for s in footprint.shape)
+    out = np.empty_like(image)
+    dtype_max = 255
+    for row in range(image.shape[0]):
+        for col in range(image.shape[1]):
+            values = []
+            for frow in range(footprint.shape[0]):
+                for fcol in range(footprint.shape[1]):
+                    if not footprint[frow, fcol]:
+                        continue
+                    irow = _reflect_index(
+                        row + frow - radius[0], image.shape[0]
+                    )
+                    icol = _reflect_index(
+                        col + fcol - radius[1], image.shape[1]
+                    )
+                    if mask is not None and not mask[irow, icol]:
+                        continue
+                    values.append(int(image[irow, icol]))
+
+            center = int(image[row, col])
+            if not values:
+                out[row, col] = image[row, col]
+            elif operation == "minimum":
+                out[row, col] = min(values)
+            elif operation == "maximum":
+                out[row, col] = max(values)
+            elif operation == "mean":
+                out[row, col] = _cast_uint8(sum(values) / len(values))
+            elif operation == "sum":
+                out[row, col] = _cast_uint8(sum(values))
+            elif operation == "subtract_mean":
+                mean = sum(values) / len(values)
+                out[row, col] = _cast_uint8(
+                    _cast_uint8((center - mean) * 0.5 + 128) - 1
+                )
+            elif operation == "pop":
+                out[row, col] = _cast_uint8(len(values))
+            elif operation == "threshold":
+                out[row, col] = _cast_uint8(
+                    center > (sum(values) / len(values))
+                )
+            elif operation == "gradient":
+                out[row, col] = _cast_uint8(max(values) - min(values))
+            elif operation == "autolevel":
+                min_val = min(values)
+                max_val = max(values)
+                delta = max_val - min_val
+                if delta > 0:
+                    clamped = min(max(center, min_val), max_val)
+                    out[row, col] = _cast_uint8(
+                        (clamped - min_val) / delta * dtype_max
+                    )
+                else:
+                    out[row, col] = 0
+            elif operation == "enhance_contrast":
+                min_val = min(values)
+                max_val = max(values)
+                if max_val - center < center - min_val:
+                    out[row, col] = max_val
+                else:
+                    out[row, col] = min_val
+            elif operation == "equalize":
+                rank = sum(value <= center for value in values)
+                out[row, col] = _cast_uint8(dtype_max * rank / len(values))
+            elif operation == "geometric_mean":
+                log_sum = sum(np.log(value + 1.0) for value in values)
+                out[row, col] = _cast_uint8(
+                    round(np.exp(log_sum / len(values)) - 1.0)
+                )
+            elif operation == "noise_filter":
+                if center in values:
+                    out[row, col] = 0
+                else:
+                    out[row, col] = min(abs(value - center) for value in values)
+            elif operation in {
+                "mean_bilateral",
+                "pop_bilateral",
+                "sum_bilateral",
+            }:
+                bilateral_values = [
+                    value
+                    for value in values
+                    if center > value - s0 and center < value + s1
+                ]
+                if operation == "pop_bilateral":
+                    out[row, col] = _cast_uint8(len(bilateral_values))
+                elif not bilateral_values:
+                    out[row, col] = 0
+                elif operation == "mean_bilateral":
+                    out[row, col] = _cast_uint8(
+                        sum(bilateral_values) / len(bilateral_values)
+                    )
+                else:
+                    out[row, col] = _cast_uint8(sum(bilateral_values))
+            else:
+                raise ValueError(f"unsupported operation: {operation}")
+    return out
+
+
 # def test_otsu_edge_case():
 #     # This is an edge case that causes OTSU to appear to misbehave
 #     # Pixel [1, 1] may take a value of of 41 or 81. Both should be considered
@@ -67,6 +188,75 @@ def test_subtract_mean_underflow_correction(dtype):
     #    expected_val = (arr.max() + 1) // 2 - 1
 
     assert cp.all(result == expected_val)
+
+
+@pytest.mark.parametrize(
+    "filter_name",
+    [
+        "minimum",
+        "maximum",
+        "mean",
+        "sum",
+        "subtract_mean",
+        "pop",
+        "threshold",
+        "gradient",
+        "autolevel",
+        "enhance_contrast",
+        "equalize",
+        "geometric_mean",
+        "noise_filter",
+        "mean_bilateral",
+        "pop_bilateral",
+        "sum_bilateral",
+    ],
+)
+@pytest.mark.parametrize("use_mask", [False, True])
+def test_streaming_rank_filter_ops_uint8(filter_name, use_mask):
+    image = np.array(
+        [
+            [0, 5, 10, 50, 90],
+            [3, 8, 20, 60, 120],
+            [7, 11, 30, 70, 150],
+            [13, 17, 40, 80, 180],
+        ],
+        dtype=np.uint8,
+    )
+    footprint = np.array(
+        [
+            [1, 0, 1],
+            [1, 1, 0],
+            [0, 1, 1],
+        ],
+        dtype=bool,
+    )
+    mask = np.array(
+        [
+            [1, 1, 0, 1, 1],
+            [1, 0, 1, 1, 0],
+            [0, 1, 1, 0, 1],
+            [1, 1, 1, 1, 1],
+        ],
+        dtype=bool,
+    )
+    kwargs = {}
+    if "bilateral" in filter_name:
+        kwargs.update(s0=6, s1=9)
+
+    result = getattr(rank, filter_name)(
+        cp.asarray(image),
+        cp.asarray(footprint),
+        mask=cp.asarray(mask) if use_mask else None,
+        **kwargs,
+    )
+    expected = _rank_filter_brute_force_uint8(
+        image,
+        footprint,
+        filter_name,
+        mask=mask if use_mask else None,
+        **kwargs,
+    )
+    cp.testing.assert_array_equal(result, cp.asarray(expected))
 
 
 # # Note: Explicitly read all values into a dict. Otherwise, stochastic test
