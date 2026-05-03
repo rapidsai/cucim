@@ -15,6 +15,280 @@ from cucim.skimage._vendored._ndimage_filters import (
 )
 
 
+def _get_streaming_rank_kernel(
+    p0,
+    p1,
+    operation,
+    modes,
+    w_shape,
+    offsets,
+    cval,
+    int_type,
+    has_weights,
+    *,
+    has_mask=False,
+    dtype_max=255,
+    s0=0.0,
+    s1=0.0,
+):
+    """Generate a rank kernel that reduces during neighborhood traversal.
+
+    This path is for operations that do not need sorted neighborhood values.
+    It avoids allocating ``values`` and calling ``sort`` in the generated
+    kernel, which is much cheaper for large footprints.
+    """
+    if operation in ("minimum", "maximum"):
+        best_var = "min_val" if operation == "minimum" else "max_val"
+        comparator = "<" if operation == "minimum" else ">"
+        pre = f"int n_vals = 0;\nX {best_var};"
+        update = f"""
+            X v = {{value}};
+            if (n_vals == 0 || v {comparator} {best_var}) {{
+                {best_var} = v;
+            }}
+            n_vals++;
+        """
+        post = f"""
+            if (n_vals == 0) {{
+                y = cast<Y>(x[i]);
+                return;
+            }}
+            y = cast<Y>({best_var});
+        """
+    elif operation in ("gradient", "enhance_contrast", "autolevel"):
+        pre = "int n_vals = 0;\nX min_val;\nX max_val;"
+        update = """
+            X v = {value};
+            if (n_vals == 0) {
+                min_val = v;
+                max_val = v;
+            } else {
+                if (v < min_val) min_val = v;
+                if (v > max_val) max_val = v;
+            }
+            n_vals++;
+        """
+        if operation == "gradient":
+            post = """
+                if (n_vals == 0) {
+                    y = cast<Y>(x[i]);
+                    return;
+                }
+                y = cast<Y>(max_val - min_val);
+            """
+        elif operation == "enhance_contrast":
+            post = """
+                if (n_vals == 0) {
+                    y = cast<Y>(x[i]);
+                    return;
+                }
+                X g = x[i];
+                if (max_val - g < g - min_val) {
+                    y = cast<Y>(max_val);
+                } else {
+                    y = cast<Y>(min_val);
+                }
+            """
+        else:
+            post = f"""
+                if (n_vals == 0) {{
+                    y = cast<Y>(x[i]);
+                    return;
+                }}
+                X g = x[i];
+                X clamped = (g < min_val) ? min_val :
+                    ((g > max_val) ? max_val : g);
+                double delta = static_cast<double>(max_val - min_val);
+                if (delta > 0) {{
+                    double scaled = (static_cast<double>(clamped - min_val)
+                                     / delta) * static_cast<double>({dtype_max});
+                    y = cast<Y>(scaled);
+                }} else {{
+                    y = cast<Y>(0);
+                }}
+            """
+    elif operation in ("mean", "sum", "subtract_mean", "threshold_mean"):
+        pre = "int n_vals = 0;\ndouble sum = 0.0;"
+        update = """
+            X v = {value};
+            sum += static_cast<double>(v);
+            n_vals++;
+        """
+        if operation == "mean":
+            post = """
+                if (n_vals == 0) {
+                    y = cast<Y>(x[i]);
+                    return;
+                }
+                y = cast<Y>(sum / n_vals);
+            """
+        elif operation == "sum":
+            post = """
+                if (n_vals == 0) {
+                    y = cast<Y>(x[i]);
+                    return;
+                }
+                y = cast<Y>(sum);
+            """
+        elif operation == "subtract_mean":
+            _mid_bin = (dtype_max + 1) // 2
+            post = f"""
+                if (n_vals == 0) {{
+                    y = cast<Y>(x[i]);
+                    return;
+                }}
+                double mean = sum / n_vals;
+                X g = x[i];
+                y = cast<Y>((static_cast<double>(g) - mean) * 0.5 + {_mid_bin});
+            """
+        else:
+            post = """
+                if (n_vals == 0) {
+                    y = cast<Y>(x[i]);
+                    return;
+                }
+                double mean = sum / n_vals;
+                X g = x[i];
+                y = (static_cast<double>(g) > mean) ? cast<Y>(1) : cast<Y>(0);
+            """
+    elif operation == "pop":
+        pre = "int n_vals = 0;"
+        update = "n_vals++;"
+        post = """
+            if (n_vals == 0) {
+                y = cast<Y>(x[i]);
+                return;
+            }
+            y = cast<Y>(n_vals);
+        """
+    elif operation == "equalize":
+        pre = "int n_vals = 0;\nint eq_rank = 0;\nX g = x[i];"
+        update = """
+            X v = {value};
+            if (v <= g) eq_rank++;
+            n_vals++;
+        """
+        post = f"""
+            if (n_vals == 0) {{
+                y = cast<Y>(x[i]);
+                return;
+            }}
+            y = cast<Y>(static_cast<double>({dtype_max}) * eq_rank / n_vals);
+        """
+    elif operation == "geometric_mean":
+        pre = "int n_vals = 0;\ndouble log_sum = 0.0;"
+        update = """
+            X v = {value};
+            log_sum += log(static_cast<double>(v) + 1.0);
+            n_vals++;
+        """
+        post = """
+            if (n_vals == 0) {
+                y = cast<Y>(x[i]);
+                return;
+            }
+            y = cast<Y>(round(exp(log_sum / n_vals) - 1.0));
+        """
+    elif operation == "noise_filter":
+        pre = """
+            int n_vals = 0;
+            bool nf_found = false;
+            int nf_min_dist = 2147483647;
+            X g = x[i];
+        """
+        update = """
+            X v = {value};
+            if (v == g) {
+                nf_found = true;
+            } else {
+                int d = static_cast<int>(v) - static_cast<int>(g);
+                if (d < 0) d = -d;
+                if (d < nf_min_dist) nf_min_dist = d;
+            }
+            n_vals++;
+        """
+        post = """
+            if (n_vals == 0) {
+                y = cast<Y>(x[i]);
+                return;
+            }
+            y = nf_found ? cast<Y>(0) : cast<Y>(nf_min_dist);
+        """
+    elif operation in ("bilateral_mean", "bilateral_pop", "bilateral_sum"):
+        pre = """
+            int n_vals = 0;
+            int bilat_pop = 0;
+            double bilat_sum = 0.0;
+            X g = x[i];
+            double gd = static_cast<double>(g);
+        """
+        update = f"""
+            X v = {{value}};
+            double vd = static_cast<double>(v);
+            if (gd > (vd - {s0}) && gd < (vd + {s1})) {{
+                bilat_pop++;
+                bilat_sum += vd;
+            }}
+            n_vals++;
+        """
+        if operation == "bilateral_mean":
+            post = """
+                if (n_vals == 0) {
+                    y = cast<Y>(x[i]);
+                    return;
+                }
+                y = (bilat_pop > 0) ? cast<Y>(bilat_sum / bilat_pop) : cast<Y>(0);
+            """
+        elif operation == "bilateral_pop":
+            post = """
+                if (n_vals == 0) {
+                    y = cast<Y>(x[i]);
+                    return;
+                }
+                y = cast<Y>(bilat_pop);
+            """
+        else:
+            post = """
+                if (n_vals == 0) {
+                    y = cast<Y>(x[i]);
+                    return;
+                }
+                y = (bilat_pop > 0) ? cast<Y>(bilat_sum) : cast<Y>(0);
+            """
+    else:
+        raise ValueError(f"Unsupported streaming operation: {operation}")
+
+    update = update.replace("{value}", "__VALUE__")
+    update = update.replace("{", "{{").replace("}", "}}")
+    update = update.replace("__VALUE__", "{value}")
+
+    if has_mask:
+        ndim = len(w_shape)
+        index_expr = " + ".join([f"ix_{j}" for j in range(ndim)])
+        found = (
+            "{{ ptrdiff_t _neighbor_idx = (" + index_expr + ") / sizeof(X); "
+            "if ((bool)mask[_neighbor_idx]) {{ " + update + " }} }}"
+        )
+    else:
+        found = update
+
+    op_name = operation.replace("_", "")
+    mask_str = "_masked" if has_mask else ""
+    return _filters_core._generate_nd_kernel(
+        f"rank_stream_{op_name}_{int(p0)}_{int(p1)}{mask_str}",
+        pre,
+        found,
+        post,
+        modes,
+        w_shape,
+        int_type,
+        offsets,
+        cval,
+        has_weights=has_weights,
+        has_mask=has_mask,
+    )
+
+
 @cp.memoize(for_each_device=True)
 def _get_percentile_range_kernel(
     filter_size,
@@ -80,6 +354,27 @@ def _get_percentile_range_kernel(
         "bilateral_pop",
         "bilateral_sum",
     )
+    _full_range = p0 <= 0 and p1 >= 100
+    _streaming_ops = {
+        "bilateral_mean",
+        "bilateral_pop",
+        "bilateral_sum",
+        "equalize",
+        "geometric_mean",
+        "minimum",
+        "maximum",
+        "noise_filter",
+        "threshold_mean",
+    }
+    _full_range_streaming_ops = {
+        "autolevel",
+        "enhance_contrast",
+        "gradient",
+        "mean",
+        "pop",
+        "subtract_mean",
+        "sum",
+    }
     _skip_idx = _single_percentile_op or _bilateral_op
     if not _bilateral_op:
         if p0 < 0 or p0 > 100:
@@ -89,6 +384,25 @@ def _get_percentile_range_kernel(
                 raise ValueError("Percentiles must be in range [0, 100]")
             if p0 >= p1:
                 raise ValueError("p0 must be less than p1")
+
+    if operation in _streaming_ops or (
+        _full_range and operation in _full_range_streaming_ops
+    ):
+        return _get_streaming_rank_kernel(
+            p0,
+            p1,
+            operation,
+            modes,
+            w_shape,
+            offsets,
+            cval,
+            int_type,
+            has_weights,
+            has_mask=has_mask,
+            dtype_max=dtype_max,
+            s0=s0,
+            s1=s1,
+        )
 
     # When has_mask is True, we need to dynamically calculate indices based on
     # the actual number of values collected (which depends on the mask).
