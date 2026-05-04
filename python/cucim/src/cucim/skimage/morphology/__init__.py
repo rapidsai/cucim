@@ -1,10 +1,11 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 """Morphological algorithms, e.g., closing, opening, skeletonization."""
 
 from ._skeletonize import medial_axis, thin
+from .extrema import h_maxima, h_minima, local_maxima, local_minima
 from .binary import (
     binary_closing,
     binary_dilation,
@@ -50,6 +51,10 @@ __all__ = [
     "binary_dilation",
     "binary_opening",
     "binary_closing",
+    "h_maxima",
+    "h_minima",
+    "local_maxima",
+    "local_minima",
     "isotropic_dilation",
     "isotropic_erosion",
     "isotropic_opening",
