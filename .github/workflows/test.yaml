@@ -22,8 +22,16 @@ on:
         type: string
         default: nightly
 
+permissions: {}
+
 jobs:
   conda-python-tests:
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+      packages: read
+      pull-requests: read
     secrets: inherit
     uses: rapidsai/shared-workflows/.github/workflows/conda-python-tests.yaml@main
     with:
@@ -33,6 +41,12 @@ jobs:
       script: ci/test_python.sh
       sha: ${{ inputs.sha }}
   wheel-tests:
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+      packages: read
+      pull-requests: read
     secrets: inherit
     uses: rapidsai/shared-workflows/.github/workflows/wheels-test.yaml@main
     with:
