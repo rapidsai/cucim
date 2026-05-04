@@ -27,7 +27,7 @@ jobs:
       id-token: write
       packages: read
       pull-requests: read
-    secrets: inherit
+    secrets: inherit # zizmor: ignore[secrets-inherit]
     uses: rapidsai/shared-workflows/.github/workflows/pr-builder.yaml@main
   telemetry-setup:
     runs-on: ubuntu-latest
@@ -50,7 +50,7 @@ jobs:
       id-token: write
       packages: read
       pull-requests: read
-    secrets: inherit
+    secrets: inherit # zizmor: ignore[secrets-inherit]
     uses: rapidsai/shared-workflows/.github/workflows/checks.yaml@main
     with:
       ignored_pr_jobs: telemetry-summarize
@@ -80,7 +80,7 @@ jobs:
       id-token: write
       packages: read
       pull-requests: read
-    secrets: inherit
+    secrets: inherit # zizmor: ignore[secrets-inherit]
     uses: rapidsai/shared-workflows/.github/workflows/conda-cpp-build.yaml@main
     with:
       build_type: pull-request
@@ -93,7 +93,7 @@ jobs:
       id-token: write
       packages: read
       pull-requests: read
-    secrets: inherit
+    secrets: inherit # zizmor: ignore[secrets-inherit]
     uses: rapidsai/shared-workflows/.github/workflows/conda-python-build.yaml@main
     with:
       build_type: pull-request
@@ -106,7 +106,7 @@ jobs:
       id-token: write
       packages: read
       pull-requests: read
-    secrets: inherit
+    secrets: inherit # zizmor: ignore[secrets-inherit]
     uses: rapidsai/shared-workflows/.github/workflows/conda-python-tests.yaml@main
     with:
       build_type: pull-request
@@ -119,7 +119,7 @@ jobs:
       id-token: write
       packages: read
       pull-requests: read
-    secrets: inherit
+    secrets: inherit # zizmor: ignore[secrets-inherit]
     uses: rapidsai/shared-workflows/.github/workflows/custom-job.yaml@main
     with:
       build_type: pull-request
@@ -135,7 +135,7 @@ jobs:
       id-token: write
       packages: read
       pull-requests: read
-    secrets: inherit
+    secrets: inherit # zizmor: ignore[secrets-inherit]
     uses: rapidsai/shared-workflows/.github/workflows/wheels-build.yaml@main
     with:
       build_type: pull-request
@@ -150,7 +150,7 @@ jobs:
       id-token: write
       packages: read
       pull-requests: read
-    secrets: inherit
+    secrets: inherit # zizmor: ignore[secrets-inherit]
     uses: rapidsai/shared-workflows/.github/workflows/wheels-test.yaml@main
     with:
       build_type: pull-request
