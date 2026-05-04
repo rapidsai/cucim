@@ -97,6 +97,12 @@ def _rank_filter_brute_force_uint8(
                 )
             elif operation == "gradient":
                 out[row, col] = _cast_uint8(max(values) - min(values))
+            elif operation == "entropy":
+                counts = np.bincount(values, minlength=256)
+                probabilities = counts[counts > 0] / len(values)
+                out[row, col] = _cast_uint8(
+                    -(probabilities * np.log2(probabilities)).sum()
+                )
             elif operation == "autolevel":
                 min_val = min(values)
                 max_val = max(values)
@@ -148,6 +154,95 @@ def _rank_filter_brute_force_uint8(
                     )
                 else:
                     out[row, col] = _cast_uint8(sum(bilateral_values))
+            else:
+                raise ValueError(f"unsupported operation: {operation}")
+    return out
+
+
+def _rank_percentile_brute_force_uint8(
+    image,
+    footprint,
+    operation,
+    *,
+    p0=0,
+    p1=1,
+):
+    radius = tuple(s // 2 for s in footprint.shape)
+    out = np.empty_like(image)
+    for row in range(image.shape[0]):
+        for col in range(image.shape[1]):
+            values = []
+            for frow in range(footprint.shape[0]):
+                for fcol in range(footprint.shape[1]):
+                    if not footprint[frow, fcol]:
+                        continue
+                    irow = _reflect_index(
+                        row + frow - radius[0], image.shape[0]
+                    )
+                    icol = _reflect_index(
+                        col + fcol - radius[1], image.shape[1]
+                    )
+                    values.append(int(image[irow, icol]))
+            values.sort()
+            center = int(image[row, col])
+            pop = len(values)
+
+            if operation == "percentile":
+                if p0 == 1:
+                    percentile_idx = pop - 1
+                else:
+                    percentile_idx = int(p0 * pop)
+                    if percentile_idx >= pop:
+                        percentile_idx = pop - 1
+                out[row, col] = values[percentile_idx]
+                continue
+
+            if operation == "threshold_percentile":
+                threshold_idx = int(p0 * pop)
+                if threshold_idx >= pop:
+                    threshold_idx = pop - 1
+                out[row, col] = 255 if center >= values[threshold_idx] else 0
+                continue
+
+            idx_start = max(0, int(np.ceil(p0 * pop)) - 1)
+            idx_end = int(p1 * pop)
+            if idx_end <= idx_start:
+                idx_end = idx_start + 1
+            if idx_end > pop:
+                idx_end = pop
+            selected = values[idx_start:idx_end]
+
+            if operation == "mean_percentile":
+                out[row, col] = _cast_uint8(sum(selected) / len(selected))
+            elif operation == "sum_percentile":
+                out[row, col] = _cast_uint8(sum(selected))
+            elif operation == "gradient_percentile":
+                out[row, col] = _cast_uint8(selected[-1] - selected[0])
+            elif operation == "autolevel_percentile":
+                min_val = selected[0]
+                max_val = selected[-1]
+                delta = max_val - min_val
+                if delta > 0:
+                    clamped = min(max(center, min_val), max_val)
+                    out[row, col] = _cast_uint8(
+                        (clamped - min_val) / delta * 255
+                    )
+                else:
+                    out[row, col] = 0
+            elif operation == "pop_percentile":
+                count = 0
+                cumsum = 0
+                i = 0
+                while i < pop:
+                    value = values[i]
+                    group_size = 0
+                    while i < pop and values[i] == value:
+                        group_size += 1
+                        i += 1
+                    cumsum += group_size
+                    if cumsum >= p0 * pop and cumsum <= p1 * pop:
+                        count += group_size
+                out[row, col] = _cast_uint8(count)
             else:
                 raise ValueError(f"unsupported operation: {operation}")
     return out
@@ -256,6 +351,60 @@ def test_streaming_rank_filter_ops_uint8(filter_name, use_mask):
         mask=mask if use_mask else None,
         **kwargs,
     )
+    cp.testing.assert_array_equal(result, cp.asarray(expected))
+
+
+@pytest.mark.parametrize(
+    "filter_name, kwargs",
+    [
+        ("percentile", dict(p0=0.5)),
+        ("percentile", dict(p0=1.0)),
+        ("threshold_percentile", dict(p0=0.5)),
+        ("mean_percentile", dict(p0=0.25, p1=0.75)),
+        ("sum_percentile", dict(p0=0.25, p1=0.75)),
+        ("pop_percentile", dict(p0=0.25, p1=0.75)),
+        ("gradient_percentile", dict(p0=0.25, p1=0.75)),
+        ("autolevel_percentile", dict(p0=0.25, p1=0.75)),
+    ],
+)
+def test_histogram_rank_percentile_ops_uint8_rectangular(filter_name, kwargs):
+    image = np.array(
+        [
+            [0, 5, 10, 50, 90],
+            [3, 8, 20, 60, 120],
+            [7, 11, 30, 70, 150],
+            [13, 17, 40, 80, 180],
+        ],
+        dtype=np.uint8,
+    )
+    footprint = np.ones((3, 3), dtype=bool)
+    result = getattr(rank, filter_name)(
+        cp.asarray(image),
+        cp.asarray(footprint),
+        **kwargs,
+    )
+    expected = _rank_percentile_brute_force_uint8(
+        image,
+        footprint,
+        filter_name,
+        **kwargs,
+    )
+    cp.testing.assert_array_equal(result, cp.asarray(expected))
+
+
+def test_histogram_rank_entropy_uint8_rectangular():
+    image = np.array(
+        [
+            [0, 0, 10, 50, 90],
+            [0, 8, 20, 60, 120],
+            [7, 8, 30, 70, 150],
+            [13, 17, 40, 80, 180],
+        ],
+        dtype=np.uint8,
+    )
+    footprint = np.ones((3, 3), dtype=bool)
+    result = rank.entropy(cp.asarray(image), cp.asarray(footprint))
+    expected = _rank_filter_brute_force_uint8(image, footprint, "entropy")
     cp.testing.assert_array_equal(result, cp.asarray(expected))
 
 

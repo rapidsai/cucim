@@ -1,0 +1,137 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+import os
+
+import cupy as cp
+
+from ..._shared.utils import _to_np_mode
+from ..._vendored import pad
+
+_HISTOGRAM_OPS = {
+    "percentile": 0,
+    "threshold": 1,
+    "mean": 2,
+    "sum": 3,
+    "pop": 4,
+    "gradient": 5,
+    "autolevel": 6,
+    "entropy": 7,
+}
+
+
+def _can_use_rank_histogram(
+    image,
+    footprint_shape,
+    output,
+    mask,
+    modes,
+    origins,
+    *,
+    has_weights,
+    operation,
+    p0,
+    p1,
+):
+    """Return True for the restricted uint8 2D histogram fast path.
+
+    This backend is intentionally narrow. It is selected only for supported
+    rank operations on 2D uint8 images with an all-ones odd rectangular
+    footprint, no mask, reflect mode and zero origin. Unsupported cases fall
+    back to the generic rank implementation.
+    """
+    if operation not in _HISTOGRAM_OPS:
+        return False
+    if (
+        operation in {"autolevel", "mean", "sum", "pop", "gradient"}
+        and p0 <= 0
+        and p1 >= 100
+    ):
+        return False
+    if image.ndim != 2 or image.dtype != cp.uint8:
+        return False
+    if output is not None and output.dtype != cp.uint8:
+        return False
+    if mask is not None or has_weights:
+        return False
+    if tuple(modes) != ("reflect", "reflect"):
+        return False
+    if any(origin != 0 for origin in origins):
+        return False
+    if len(footprint_shape) != 2:
+        return False
+    if any(size <= 1 or size % 2 == 0 for size in footprint_shape):
+        return False
+    radii = tuple(size // 2 for size in footprint_shape)
+    if any(radius > size for radius, size in zip(radii, image.shape)):
+        return False
+    return True
+
+
+@cp.memoize(for_each_device=True)
+def _get_histogram_rank_kernel():
+    kernel_directory = os.path.join(os.path.dirname(__file__), "cuda")
+    with open(os.path.join(kernel_directory, "histogram_rank.cu")) as f:
+        code = "\n".join(f.readlines())
+
+    return cp.RawKernel(code=code, name="cuRankHistogram2DUint8")
+
+
+def _rank_histogram(
+    image,
+    footprint_shape,
+    operation,
+    *,
+    output=None,
+    mode="reflect",
+    cval=0,
+    p0=0,
+    p1=100,
+    partitions=None,
+):
+    """Apply a uint8 2D rectangular rank filter using a sliding histogram."""
+    image = cp.ascontiguousarray(image)
+    radii = tuple(size // 2 for size in footprint_shape)
+    npad = tuple((radius, radius) for radius in radii)
+    np_mode = _to_np_mode(mode)
+    if np_mode == "constant":
+        pad_kwargs = dict(mode=np_mode, constant_values=cval)
+    else:
+        pad_kwargs = dict(mode=np_mode)
+    padded = pad(image, npad, **pad_kwargs)
+
+    out = cp.empty_like(padded)
+    rows, cols = padded.shape
+    out_rows = image.shape[0]
+    if partitions is None:
+        partitions = min(max(1, out_rows // 2), 16)
+    else:
+        partitions = min(max(1, int(partitions)), out_rows)
+
+    hist = cp.zeros((partitions * cols * 256,), dtype=cp.int32)
+    kernel = _get_histogram_rank_kernel()
+
+    op_code = _HISTOGRAM_OPS[operation]
+    kernel(
+        (partitions,),
+        (256,),
+        (
+            padded,
+            out,
+            hist,
+            radii[0],
+            radii[1],
+            float(p0),
+            float(p1),
+            op_code,
+            rows,
+            cols,
+        ),
+    )
+
+    out_sl = tuple(slice(radius, -radius) for radius in radii)
+    result = out[out_sl]
+    if output is not None:
+        output[...] = result
+        return output
+    return result

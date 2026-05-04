@@ -14,16 +14,48 @@ sort-and-reduce pattern used by all other kernels.
 Implementation approach
 -----------------------
 
-All GPU rank filters operate independently on a per-pixel basis: each output
-pixel is computed by a single GPU thread that gathers its local neighborhood,
-sorts the values, and applies the requested operation. This design simplifies
-the implementation (no inter-thread coordination or shared-memory histograms),
-naturally supports N-dimensional inputs, and maps well to GPU parallelism.
+Most GPU rank filters operate independently on a per-pixel basis: each output
+pixel is computed by a single GPU thread that gathers its local neighborhood
+and applies the requested operation. Operations that do not require sorted
+values use streaming reductions. Operations that need rank ordering use either
+a sorted-neighborhood kernel or, for a restricted high-value subset, a
+sliding-window histogram fast path.
 
 scikit-image, by contrast, uses a sliding-window histogram approach that
 incrementally updates a histogram as it moves across the image. This is
 efficient on CPU but inherently sequential and restricted to 2D (or 3D for
 some generic filters).
+
+Histogram fast path
+-------------------
+
+A uint8 2D sliding-histogram backend is selected automatically for these rank
+filters when all compatibility conditions below are met:
+
+* ``percentile``
+* ``median`` (implemented as ``percentile(p0=0.5)``)
+* ``threshold_percentile``
+* ``mean_percentile`` with a non-full percentile range
+* ``sum_percentile`` with a non-full percentile range
+* ``pop_percentile`` with a non-full percentile range
+* ``gradient_percentile`` with a non-full percentile range
+* ``autolevel_percentile`` with a non-full percentile range
+* ``entropy``
+
+The compatibility conditions are:
+
+* input image is 2D and has dtype ``uint8``
+* output is either omitted or has dtype ``uint8``
+* footprint is a fully populated rectangular footprint with odd side lengths
+  greater than 1, for example ``cupy.ones((15, 15), dtype=bool)``
+* no ``mask`` is provided
+* no footprint shift is requested (``shift_x == shift_y == 0`` and no nonzero
+  ``shifts``)
+* the internal boundary mode is ``reflect`` (the public rank wrappers use this
+  mode)
+* footprint half-width does not exceed the corresponding image extent
+
+Any unsupported case falls back to the generic GPU implementation.
 
 cuCIM vs scikit-image
 ---------------------
@@ -36,7 +68,7 @@ expected to match.
 | Dimensions               | 2D (3D for generic filters)                                     | N-dimensional |
 | Supported dtypes         | uint8, uint16 only                                              | Any numeric dtype |
 | Output dtype             | Same as input                                                   | Same as input (preserves wider types) |
-| Algorithm                | Sliding-window histogram                                        | Sort-based per-neighborhood |
+| Algorithm                | Sliding-window histogram                                        | Streaming reductions, sorted neighborhoods, or uint8 2D histogram fast path |
 | Boundary handling        | Excludes out-of-bounds pixels (population decreases at borders) | Reflected boundary extension (always fully populated) |
 | ``mean``                 | Spurious zero outputs in low-variance neighborhoods             | No zero artifacts (sorted-array always has values) |
 | ``subtract_mean``        | Spurious zero outputs in low-variance neighborhoods             | No zero artifacts (sorted-array always has values) |
