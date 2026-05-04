@@ -1,6 +1,6 @@
 /*
  * SPDX-FileCopyrightText: Copyright (C) 2009-2020 D. R. Commander.
- * SPDX-FileCopyrightText: Copyright (c) 2020-2025, NVIDIA CORPORATION
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION
  * SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause AND IJG-short AND Zlib
  */
 
@@ -23,6 +23,7 @@
 #include <unistd.h>
 
 #include <cucim/profiler/nvtx3.h>
+#include <cucim/util/checked_math.h>
 #include <turbojpeg.h>
 
 static thread_local char errStr[JMSG_LENGTH_MAX] = "No error";
@@ -147,8 +148,12 @@ bool decode_libjpeg(int fd,
                 THROW_UNIX("allocating JPEG buffer");
         }
 
-        if (pread(fd, jpeg_buf, size, offset) < 1)
-            THROW_UNIX("reading input file");
+        {
+            ssize_t bytes_read = pread(fd, jpeg_buf, size, offset);
+            if (bytes_read < 0 || static_cast<uint64_t>(bytes_read) != size)
+                THROW_MSG("reading input file",
+                          "Short read: pread returned fewer bytes than requested");
+        }
     }
     else
     {
@@ -186,7 +191,10 @@ bool decode_libjpeg(int fd,
     if (*dest == nullptr)
     {
         PROF_SCOPED_RANGE(PROF_EVENT(decoder_libjpeg_turbo_tjAlloc));
-        if ((*dest = (unsigned char*)tjAlloc(width * height * tjPixelSize[pixelFormat])) == nullptr)
+        size_t alloc_size = cucim::util::checked_tile_size(
+            static_cast<size_t>(width), static_cast<size_t>(height),
+            static_cast<size_t>(tjPixelSize[pixelFormat]));
+        if ((*dest = (unsigned char*)tjAlloc(alloc_size)) == nullptr)
             THROW_UNIX("Unable to allocate uncompressed image buffer");
     }
 

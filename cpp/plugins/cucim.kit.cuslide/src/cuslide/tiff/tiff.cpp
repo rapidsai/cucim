@@ -1,11 +1,12 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION.
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #include "tiff.h"
 
 #include <fcntl.h>
+#include <sys/stat.h>
 
 #include <algorithm>
 #include <string>
@@ -20,6 +21,7 @@
 #include <cucim/logger/timer.h>
 #include <cucim/memory/memory_manager.h>
 #include <cucim/profiler/nvtx3.h>
+#include <cucim/util/checked_math.h>
 
 #include "cuslide/jpeg/libjpeg_turbo.h"
 #include "cuslide/lzw/lzw.h"
@@ -783,7 +785,8 @@ bool TIFF::read_associated_image(const cucim::io::format::ImageMetadataDesc* met
             width = image_ifd->width_;
             height = image_ifd->height_;
             samples_per_pixel = image_ifd->samples_per_pixel_;
-            raster_size = width * height * samples_per_pixel;
+            raster_size = cucim::util::checked_raster_size(
+                static_cast<size_t>(width), static_cast<size_t>(height), static_cast<size_t>(samples_per_pixel));
 
             uint16_t compression_method = image_ifd->compression_;
 
@@ -810,12 +813,31 @@ bool TIFF::read_associated_image(const cucim::io::format::ImageMetadataDesc* met
             uint32_t strip_nbytes = row_nbytes * rows_per_strip;
             uint32_t start_row = 0;
 
+            struct stat assoc_file_stat;
+            uint64_t assoc_file_size = 0;
+            if (fstat(file_handle_->fd, &assoc_file_stat) == 0)
+            {
+                assoc_file_size = static_cast<uint64_t>(assoc_file_stat.st_size);
+            }
+
             std::vector<uint64_t>& image_piece_offsets = image_ifd->image_piece_offsets_;
             std::vector<uint64_t>& image_piece_bytecounts = image_ifd->image_piece_bytecounts_;
             for (int64_t piece_index = 0; piece_index < piece_count; ++piece_index)
             {
                 uint64_t offset = image_piece_offsets[piece_index];
                 uint64_t size = image_piece_bytecounts[piece_index];
+
+                if (assoc_file_size > 0 && size > 0)
+                {
+                    uint64_t data_end;
+                    if (__builtin_add_overflow(offset, size, &data_end) || data_end > assoc_file_size)
+                    {
+                        cucim_free(raster);
+                        throw std::runtime_error(fmt::format(
+                            "Associated image strip {} data range [{}, +{}) exceeds file size {}",
+                            piece_index, offset, size, assoc_file_size));
+                    }
+                }
 
                 // If the piece is the last piece, adjust strip_nbytes
                 if (start_row + rows_per_strip >= height)
@@ -883,7 +905,8 @@ bool TIFF::read_associated_image(const cucim::io::format::ImageMetadataDesc* met
             width = image_width;
             height = image_height;
             samples_per_pixel = 3; // NOTE: assumes RGB image
-            raster_size = image_width * image_height * samples_per_pixel;
+            raster_size = cucim::util::checked_raster_size(
+                static_cast<size_t>(image_width), static_cast<size_t>(image_height), static_cast<size_t>(samples_per_pixel));
 
             raster = static_cast<uint8_t*>(cucim_malloc(raster_size)); // RGB image
 

@@ -3,7 +3,7 @@
  * SPDX-FileCopyrightText: Copyright (c) 2002-2014, Universite catholique de Louvain (UCL), Belgium
  * SPDX-FileCopyrightText: Copyright (c) 2002-2014, Professor Benoit Macq
  * SPDX-FileCopyrightText: Copyright (c) 2010-2011, Kaori Hagihara
- * SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION
  * SPDX-License-Identifier: Apache-2.0 AND BSD-2-Clause
  */
 
@@ -15,6 +15,7 @@
 
 #include <cucim/memory/memory_manager.h>
 #include <cucim/profiler/nvtx3.h>
+#include <cucim/util/checked_math.h>
 #include <fmt/format.h>
 #include <openjpeg.h>
 
@@ -145,9 +146,12 @@ bool decode_libopenjpeg(int fd,
             throw std::runtime_error("Unable to allocate buffer for libopenjpeg!");
         }
 
-        if (pread(fd, jpeg_buf, size, offset) < 1)
+        ssize_t bytes_read = pread(fd, jpeg_buf, size, offset);
+        if (bytes_read < 0 || static_cast<uint64_t>(bytes_read) != size)
         {
-            throw std::runtime_error("Unable to read file for libopenjpeg!");
+            cucim_free(jpeg_buf);
+            throw std::runtime_error(
+                fmt::format("Short read for JPEG2000 data: expected {} bytes, got {}", size, bytes_read));
         }
     }
     else
@@ -215,6 +219,52 @@ bool decode_libopenjpeg(int fd,
                 throw std::runtime_error("[Error] Failed to decode image\n");
             }
         }
+
+        // Validate decoded dimensions and component data pointers.
+        // dest_nbytes is sized from TIFF tile dimensions; the J2K codestream
+        // may declare larger dimensions in a malformed file.
+        for (uint32_t c = 0; c < image->numcomps; c++)
+        {
+            if (image->comps[c].data == nullptr)
+            {
+                throw std::runtime_error(
+                    fmt::format("[Error] J2K component {} has null data after decode", c));
+            }
+        }
+        {
+            // Validate component 0 (Y/R) output fits in dest buffer
+            size_t decoded_pixels = cucim::util::checked_mul(
+                static_cast<size_t>(image->comps[0].w), static_cast<size_t>(image->comps[0].h));
+            size_t decoded_bytes = cucim::util::checked_mul(decoded_pixels, static_cast<size_t>(3));
+            if (decoded_bytes > dest_nbytes)
+            {
+                throw std::runtime_error(
+                    fmt::format("[Error] J2K decoded dimensions ({}x{}, {} bytes) exceed "
+                                "destination buffer ({} bytes)",
+                                image->comps[0].w, image->comps[0].h, decoded_bytes, dest_nbytes));
+            }
+
+            // Validate chroma component dimensions are consistent with luma.
+            // The SYCC converters index Cb/Cr using luma geometry and subsampling
+            // assumptions; undersized chroma components cause out-of-bounds reads.
+            uint32_t luma_w = image->comps[0].w;
+            uint32_t luma_h = image->comps[0].h;
+            for (uint32_t c = 1; c < image->numcomps; c++)
+            {
+                uint32_t expected_w = (luma_w + image->comps[c].dx - 1) / image->comps[c].dx;
+                uint32_t expected_h = (luma_h + image->comps[c].dy - 1) / image->comps[c].dy;
+                if (image->comps[c].w < expected_w || image->comps[c].h < expected_h)
+                {
+                    throw std::runtime_error(
+                        fmt::format("[Error] J2K component {} dimensions ({}x{}) are smaller than "
+                                    "expected ({}x{}) for luma {}x{} with subsampling dx={}, dy={}",
+                                    c, image->comps[c].w, image->comps[c].h,
+                                    expected_w, expected_h, luma_w, luma_h,
+                                    image->comps[c].dx, image->comps[c].dy));
+                }
+            }
+        }
+
         if (image->color_space != OPJ_CLRSPC_SYCC)
         {
             if (color_space == ColorSpace::kSYCC)
@@ -240,17 +290,17 @@ bool decode_libopenjpeg(int fd,
             if ((comp0_dx == 1) && (comp1_dx == 2) && (comp2_dx == 2) && (comp0_dy == 1) && (comp1_dy == 1) &&
                 (comp2_dy == 1))
             {
-                fast_sycc422_to_rgb(image, *dest); // horizontal sub-sample only
+                fast_sycc422_to_rgb(image, *dest, dest_nbytes); // horizontal sub-sample only
             }
             else if ((comp0_dx == 1) && (comp1_dx == 2) && (comp2_dx == 2) && (comp0_dy == 1) && (comp1_dy == 2) &&
                      (comp2_dy == 2))
             {
-                fast_sycc420_to_rgb(image, *dest); // horizontal and vertical sub-sample
+                fast_sycc420_to_rgb(image, *dest, dest_nbytes); // horizontal and vertical sub-sample
             }
             else if ((comp0_dx == 1) && (comp1_dx == 1) && (comp2_dx == 1) && (comp0_dy == 1) && (comp1_dy == 1) &&
                      (comp2_dy == 1))
             {
-                fast_sycc444_to_rgb(image, *dest); // no sub-sample
+                fast_sycc444_to_rgb(image, *dest, dest_nbytes); // no sub-sample
             }
             else
             {
@@ -278,7 +328,7 @@ bool decode_libopenjpeg(int fd,
             }
             if (image->comps)
             {
-                fast_image_to_rgb(image, *dest);
+                fast_image_to_rgb(image, *dest, dest_nbytes);
             }
         }
     }

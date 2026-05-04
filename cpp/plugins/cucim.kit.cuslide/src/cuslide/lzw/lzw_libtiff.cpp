@@ -2,7 +2,7 @@
  * SPDX-FileCopyrightText: Copyright (c) 1988-1997 Sam Leffler
  * SPDX-FileCopyrightText: Copyright (c) 1991-1997 Silicon Graphics, Inc.
  * SPDX-FileCopyrightText: Copyright (c) 1985, 1986 The Regents of the University of California. All rights reserved.
- * SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION
  * SPDX-License-Identifier: Apache-2.0 AND LicenseRef-Berkeley-lzw AND libtiff
  */
 
@@ -156,8 +156,8 @@ typedef struct
     unsigned short nbits; /* # of bits/code */
     unsigned short maxcode; /* maximum code for lzw_nbits */
     unsigned short free_ent; /* next free entry in hash table */
-    unsigned long nextdata; /* next bits of i/o */
-    long nextbits; /* # of valid bits in lzw_nextdata */
+    uint64_t nextdata; /* next bits of i/o */
+    tmsize_t nextbits; /* # of valid bits in lzw_nextdata */
 
     int rw_mode; /* preserve rw_mode from init */
 } LZWBaseState;
@@ -174,7 +174,7 @@ typedef struct
 typedef uint16_t hcode_t; /* codes fit in 16 bits */
 typedef struct
 {
-    long hash;
+    int64_t hash;
     hcode_t code;
 } hash_t;
 
@@ -196,8 +196,8 @@ typedef struct
     LZWBaseState base;
 
     /* Decoding specific data */
-    long dec_nbitsmask; /* lzw_nbits 1 bits, right adjusted */
-    long dec_restart; /* restart count */
+    tmsize_t dec_nbitsmask; /* lzw_nbits 1 bits, right adjusted */
+    tmsize_t dec_restart; /* restart count */
     decodeFunc dec_decode; /* regular or backwards compatible */
     code_t* dec_codep; /* current recognized code */
     code_t* dec_oldcodep; /* previously recognized code */
@@ -207,10 +207,10 @@ typedef struct
 
     /* Encoding specific data */
     int enc_oldcode; /* last code encountered */
-    long enc_checkpoint; /* point at which to clear table */
-    long enc_ratio; /* current compression ratio */
-    long enc_incount; /* (input) data bytes encoded */
-    long enc_outcount; /* encoded (output) bytes */
+    tmsize_t enc_checkpoint; /* point at which to clear table */
+    tmsize_t enc_ratio; /* current compression ratio */
+    tmsize_t enc_incount; /* (input) data bytes encoded */
+    tmsize_t enc_outcount; /* encoded (output) bytes */
     uint8_t* enc_rawlimit; /* bound on tif_rawdata buffer */
     hash_t* enc_hashtab; /* kept separate for small machines */
 } LZWCodecState;
@@ -363,30 +363,27 @@ static int LZWDecode(TIFF* tif, uint8_t* op0, tmsize_t occ0, uint16_t s)
     static const char module[] = "LZWDecode";
     LZWCodecState* sp = DecoderState(tif);
     uint8_t* op = (uint8_t*)op0;
-    long occ = (long)occ0;
+    tmsize_t occ = occ0;
     uint8_t* tp;
     uint8_t* bp;
     hcode_t code;
     int len;
-    long nbits, nextbits, nbitsmask;
-    unsigned long nextdata;
+    tmsize_t nbits, nextbits, nbitsmask;
+    uint64_t nextdata;
     code_t *codep, *free_entp, *maxcodep, *oldcodep;
 
     (void)s;
     assert(sp != NULL);
     assert(sp->dec_codetab != NULL);
 
-    /*
-      Fail if value does not fit in long.
-    */
-    if ((tmsize_t)occ != occ0)
+    if (occ0 <= 0)
         return (0);
     /*
      * Restart interrupted output operation.
      */
     if (sp->dec_restart)
     {
-        long residue;
+        tmsize_t residue;
 
         codep = sp->dec_codep;
         residue = codep->length - sp->dec_restart;
@@ -523,7 +520,7 @@ static int LZWDecode(TIFF* tif, uint8_t* op0, tmsize_t occ0, uint16_t s)
                 } while (codep && codep->length > occ);
                 if (codep)
                 {
-                    sp->dec_restart = (long)occ;
+                    sp->dec_restart = occ;
                     tp = op + occ;
                     do
                     {
@@ -570,8 +567,8 @@ static int LZWDecode(TIFF* tif, uint8_t* op0, tmsize_t occ0, uint16_t s)
 
     if (occ > 0)
     {
-        TIFFErrorExt(tif->tif_clientdata, module, "Not enough data at scanline %" PRIu32 " (short %ld bytes)",
-                     tif->tif_row, occ);
+        TIFFErrorExt(tif->tif_clientdata, module, "Not enough data at scanline %" PRIu32 " (short %" PRId64 " bytes)",
+                     tif->tif_row, static_cast<int64_t>(occ));
         return (0);
     }
     return (1);
