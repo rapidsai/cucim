@@ -14,6 +14,8 @@ from cucim.skimage._vendored._ndimage_filters import (
     _get_shell_gap,
 )
 
+from ._histogram import _can_use_rank_histogram, _rank_histogram
+
 
 def _get_streaming_rank_kernel(
     p0,
@@ -984,6 +986,29 @@ def _skimage_rank_filter(
         _dtype_max = int(np.iinfo(_out_dtype).max)
     else:
         _dtype_max = 1.0
+
+    if _can_use_rank_histogram(
+        input,
+        footprint_shape,
+        output,
+        mask,
+        modes,
+        origins,
+        has_weights=has_weights,
+        operation=operation,
+        p0=p0,
+        p1=p1,
+    ):
+        return _rank_histogram(
+            input,
+            footprint_shape,
+            operation,
+            output=output,
+            mode=modes[0],
+            cval=cval,
+            p0=p0,
+            p1=p1,
+        )
 
     kernel = _get_percentile_range_kernel(
         filter_size,

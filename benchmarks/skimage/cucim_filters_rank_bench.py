@@ -56,6 +56,21 @@ def _parse_radii(radii):
     return [int(r) for r in radii.split(",")]
 
 
+def _parse_footprint_sizes(footprint_sizes):
+    return [int(size) for size in footprint_sizes.split(",")]
+
+
+def _make_footprints(args):
+    if args.footprint_shape == "disk":
+        return [disk(radius).astype(bool) for radius in _parse_radii(args.radii)]
+
+    footprint_sizes = _parse_footprint_sizes(args.footprint_sizes)
+    if any(size <= 1 or size % 2 == 0 for size in footprint_sizes):
+        raise ValueError("rank filter benchmark footprint sizes must be odd and > 1")
+
+    return [np.ones((size, size), dtype=bool) for size in footprint_sizes]
+
+
 def main(args):
     cfile = "cucim_filters_rank_results.csv"
     if getattr(args, "no_resume", False) or not os.path.exists(cfile):
@@ -66,9 +81,9 @@ def main(args):
 
     shape = _parse_shape(args.img_size)
     if len(shape) != 2:
-        raise ValueError("rank filter benchmarks use 2D disk footprints")
+        raise ValueError("rank filter benchmarks use 2D images")
 
-    footprints = [disk(radius).astype(bool) for radius in _parse_radii(args.radii)]
+    footprints = _make_footprints(args)
 
     for function_name, fixed_kwargs, var_kwargs in RANK_FILTERS:
         if function_name != args.func_name:
@@ -139,10 +154,33 @@ if __name__ == "__main__":
         required=True,
     )
     parser.add_argument(
+        "--footprint_sizes",
+        type=str,
+        help=(
+            "Comma-separated odd square footprint side lengths to benchmark. "
+            "The all-ones rectangular footprints exercise the histogram fast "
+            "path for supported uint8 2D rank filters."
+        ),
+        default="3,7,15,31",
+    )
+    parser.add_argument(
         "--radii",
         type=str,
-        help="Comma-separated disk footprint radii to benchmark",
-        default="1,3,5,7",
+        help=(
+            "Comma-separated disk footprint radii to benchmark when "
+            "--footprint_shape=disk."
+        ),
+        default="1,3,7,15",
+    )
+    parser.add_argument(
+        "--footprint_shape",
+        type=str,
+        choices=["rectangle", "disk"],
+        help=(
+            "Footprint family to benchmark. rectangle uses all-ones square "
+            "footprints and is the default."
+        ),
+        default="rectangle",
     )
     parser.add_argument(
         "--no_cpu",
