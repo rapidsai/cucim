@@ -19,6 +19,10 @@ _HISTOGRAM_OPS = {
     "entropy": 7,
     "enhance_contrast": 8,
     "subtract_mean": 9,
+    "equalize": 10,
+    "bilateral_mean": 11,
+    "bilateral_pop": 12,
+    "bilateral_sum": 13,
 }
 
 _HISTOGRAM_MIN_FOOTPRINT_AREA = {
@@ -158,6 +162,8 @@ def _rank_histogram(
     cval=0,
     p0=0,
     p1=100,
+    s0=0,
+    s1=0,
     partitions=None,
 ):
     """Apply a uint8 2D rectangular rank filter using a sliding histogram."""
@@ -191,6 +197,8 @@ def _rank_histogram(
             radii[1],
             float(p0),
             float(p1),
+            float(s0),
+            float(s1),
             op_code,
             window_size,
             rows,
