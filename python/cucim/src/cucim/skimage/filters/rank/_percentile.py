@@ -79,6 +79,12 @@ _doc_shifts_param = """
         N-dimensional offsets. If provided, shift_x and shift_y must be 0.
         Length must match image.ndim."""
 
+_doc_backend_param = """
+    backend : {'auto', 'histogram', 'elementwise'}, optional (keyword-only)
+        Algorithm backend. ``'auto'`` selects the best compatible backend,
+        ``'histogram'`` requires the uint8 2D rectangular histogram backend,
+        and ``'elementwise'`` forces the generic per-output-pixel backend."""
+
 _doc_returns = """
     Returns
     -------
@@ -96,6 +102,7 @@ def _build_docstring(summary, *, p0_only=False):
         + _doc_common_params
         + pct_params
         + _doc_shifts_param
+        + _doc_backend_param
         + "\n"
         + _doc_returns
     )
@@ -189,6 +196,7 @@ def _apply(
     shifts=None,
     s0=0,
     s1=0,
+    backend="auto",
 ):
     """Apply percentile range filter with specified operation."""
     # Handle shift_x, shift_y vs shifts
@@ -239,6 +247,7 @@ def _apply(
         mask=mask,
         s0=s0,
         s1=s1,
+        backend=backend,
     )
 
     return result
@@ -255,6 +264,7 @@ def autolevel_percentile(
     p1=1,
     *,
     shifts=None,
+    backend="auto",
 ):
     return _apply(
         "autolevel",
@@ -267,6 +277,7 @@ def autolevel_percentile(
         p0=p0,
         p1=p1,
         shifts=shifts,
+        backend=backend,
     )
 
 
@@ -299,6 +310,7 @@ def gradient_percentile(
     p1=1,
     *,
     shifts=None,
+    backend="auto",
 ):
     return _apply(
         "gradient",
@@ -311,6 +323,7 @@ def gradient_percentile(
         p0=p0,
         p1=p1,
         shifts=shifts,
+        backend=backend,
     )
 
 
@@ -338,6 +351,7 @@ def mean_percentile(
     p1=1,
     *,
     shifts=None,
+    backend="auto",
 ):
     return _apply(
         "mean",
@@ -350,6 +364,7 @@ def mean_percentile(
         p0=p0,
         p1=p1,
         shifts=shifts,
+        backend=backend,
     )
 
 
@@ -381,6 +396,7 @@ def subtract_mean_percentile(
     p1=1,
     *,
     shifts=None,
+    backend="auto",
 ):
     return _apply(
         "subtract_mean",
@@ -393,6 +409,7 @@ def subtract_mean_percentile(
         p0=p0,
         p1=p1,
         shifts=shifts,
+        backend=backend,
     )
 
 
@@ -437,6 +454,7 @@ def enhance_contrast_percentile(
     p1=1,
     *,
     shifts=None,
+    backend="auto",
 ):
     return _apply(
         "enhance_contrast",
@@ -449,6 +467,7 @@ def enhance_contrast_percentile(
         p0=p0,
         p1=p1,
         shifts=shifts,
+        backend=backend,
     )
 
 
@@ -479,6 +498,7 @@ def percentile(
     p0=0,
     *,
     shifts=None,
+    backend="auto",
 ):
     return _apply(
         "percentile",
@@ -491,6 +511,7 @@ def percentile(
         p0=p0,
         p1=p0,  # p1 not used for single percentile
         shifts=shifts,
+        backend=backend,
     )
 
 
@@ -516,6 +537,7 @@ def pop_percentile(
     p1=1,
     *,
     shifts=None,
+    backend="auto",
 ):
     return _apply(
         "pop",
@@ -528,6 +550,7 @@ def pop_percentile(
         p0=p0,
         p1=p1,
         shifts=shifts,
+        backend=backend,
     )
 
 
@@ -555,6 +578,7 @@ def sum_percentile(
     p1=1,
     *,
     shifts=None,
+    backend="auto",
 ):
     return _apply(
         "sum",
@@ -567,6 +591,7 @@ def sum_percentile(
         p0=p0,
         p1=p1,
         shifts=shifts,
+        backend=backend,
     )
 
 
@@ -599,6 +624,7 @@ def threshold_percentile(
     p0=0,
     *,
     shifts=None,
+    backend="auto",
 ):
     return _apply(
         "threshold",
@@ -611,6 +637,7 @@ def threshold_percentile(
         p0=p0,
         p1=p0,  # p1 not used for threshold
         shifts=shifts,
+        backend=backend,
     )
 
 

@@ -42,6 +42,12 @@ _doc_shifts_param_generic = """
         N-dimensional offsets. If provided, shift_x, shift_y and shift_z
         must be 0. Length must match image.ndim."""
 
+_doc_backend_param = """
+    backend : {'auto', 'histogram', 'elementwise'}, optional (keyword-only)
+        Algorithm backend. ``'auto'`` selects the best compatible backend,
+        ``'histogram'`` requires the uint8 2D rectangular histogram backend,
+        and ``'elementwise'`` forces the generic per-output-pixel backend."""
+
 _doc_returns = """
     Returns
     -------
@@ -57,6 +63,7 @@ def _build_generic_docstring(summary):
         + "\n\n    Parameters\n    ----------"
         + _doc_common_params
         + _doc_shifts_param_generic
+        + _doc_backend_param
         + "\n"
         + _doc_returns
     )
@@ -74,6 +81,7 @@ def _apply_generic(
     shifts,
     p0=0,
     p1=1,
+    backend="auto",
 ):
     """Apply a generic rank filter (defaults to full range p0=0, p1=1)."""
     # Convert shift_z into the N-D shifts parameter
@@ -105,6 +113,7 @@ def _apply_generic(
         p0=p0,
         p1=p1,
         shifts=shifts,
+        backend=backend,
     )
 
 
@@ -118,6 +127,7 @@ def autolevel(
     shift_z=0,
     *,
     shifts=None,
+    backend="auto",
 ):
     return _apply_generic(
         "autolevel",
@@ -129,6 +139,7 @@ def autolevel(
         shift_y,
         shift_z,
         shifts,
+        backend=backend,
     )
 
 
@@ -150,6 +161,7 @@ def gradient(
     shift_z=0,
     *,
     shifts=None,
+    backend="auto",
 ):
     return _apply_generic(
         "gradient",
@@ -161,6 +173,7 @@ def gradient(
         shift_y,
         shift_z,
         shifts,
+        backend=backend,
     )
 
 
@@ -180,6 +193,7 @@ def mean(
     shift_z=0,
     *,
     shifts=None,
+    backend="auto",
 ):
     return _apply_generic(
         "mean",
@@ -191,6 +205,7 @@ def mean(
         shift_y,
         shift_z,
         shifts,
+        backend=backend,
     )
 
 
@@ -217,6 +232,7 @@ def subtract_mean(
     shift_z=0,
     *,
     shifts=None,
+    backend="auto",
 ):
     result = _apply_generic(
         "subtract_mean",
@@ -228,6 +244,7 @@ def subtract_mean(
         shift_y,
         shift_z,
         shifts,
+        backend=backend,
     )
     # The generic version uses an offset of mid_bin - 1 (127 for uint8),
     # while the percentile version uses mid_bin (128 for uint8). Adjust by
@@ -277,6 +294,7 @@ def enhance_contrast(
     shift_z=0,
     *,
     shifts=None,
+    backend="auto",
 ):
     return _apply_generic(
         "enhance_contrast",
@@ -288,6 +306,7 @@ def enhance_contrast(
         shift_y,
         shift_z,
         shifts,
+        backend=backend,
     )
 
 
@@ -310,6 +329,7 @@ def pop(
     shift_z=0,
     *,
     shifts=None,
+    backend="auto",
 ):
     return _apply_generic(
         "pop",
@@ -321,6 +341,7 @@ def pop(
         shift_y,
         shift_z,
         shifts,
+        backend=backend,
     )
 
 
@@ -351,6 +372,7 @@ def sum(
     shift_z=0,
     *,
     shifts=None,
+    backend="auto",
 ):
     return _apply_generic(
         "sum",
@@ -362,6 +384,7 @@ def sum(
         shift_y,
         shift_z,
         shifts,
+        backend=backend,
     )
 
 
@@ -392,6 +415,7 @@ def minimum(
     shift_z=0,
     *,
     shifts=None,
+    backend="auto",
 ):
     return _apply_generic(
         "minimum",
@@ -403,6 +427,7 @@ def minimum(
         shift_y,
         shift_z,
         shifts,
+        backend=backend,
     )
 
 
@@ -426,6 +451,7 @@ def maximum(
     shift_z=0,
     *,
     shifts=None,
+    backend="auto",
 ):
     return _apply_generic(
         "maximum",
@@ -437,6 +463,7 @@ def maximum(
         shift_y,
         shift_z,
         shifts,
+        backend=backend,
     )
 
 
@@ -460,6 +487,7 @@ def median(
     shift_z=0,
     *,
     shifts=None,
+    backend="auto",
 ):
     return _apply_generic(
         "percentile",
@@ -471,6 +499,7 @@ def median(
         shift_y,
         shift_z,
         shifts,
+        backend=backend,
         p0=0.5,
     )
 
@@ -497,6 +526,7 @@ def threshold(
     shift_z=0,
     *,
     shifts=None,
+    backend="auto",
 ):
     return _apply_generic(
         "threshold_mean",
@@ -508,6 +538,7 @@ def threshold(
         shift_y,
         shift_z,
         shifts,
+        backend=backend,
     )
 
 
@@ -541,6 +572,7 @@ def equalize(
     shift_z=0,
     *,
     shifts=None,
+    backend="auto",
 ):
     return _apply_generic(
         "equalize",
@@ -552,6 +584,7 @@ def equalize(
         shift_y,
         shift_z,
         shifts,
+        backend=backend,
     )
 
 
@@ -579,6 +612,7 @@ def geometric_mean(
     shift_z=0,
     *,
     shifts=None,
+    backend="auto",
 ):
     return _apply_generic(
         "geometric_mean",
@@ -590,6 +624,7 @@ def geometric_mean(
         shift_y,
         shift_z,
         shifts,
+        backend=backend,
     )
 
 
@@ -615,6 +650,7 @@ def noise_filter(
     shift_z=0,
     *,
     shifts=None,
+    backend="auto",
 ):
     return _apply_generic(
         "noise_filter",
@@ -626,6 +662,7 @@ def noise_filter(
         shift_y,
         shift_z,
         shifts,
+        backend=backend,
     )
 
 
@@ -649,6 +686,7 @@ def modal(
     shift_z=0,
     *,
     shifts=None,
+    backend="auto",
 ):
     return _apply_generic(
         "modal",
@@ -660,6 +698,7 @@ def modal(
         shift_y,
         shift_z,
         shifts,
+        backend=backend,
     )
 
 
@@ -678,6 +717,7 @@ def majority(
     shift_z=0,
     *,
     shifts=None,
+    backend="auto",
 ):
     return _apply_generic(
         "modal",
@@ -689,6 +729,7 @@ def majority(
         shift_y,
         shift_z,
         shifts,
+        backend=backend,
     )
 
 
@@ -710,6 +751,7 @@ def entropy(
     shift_z=0,
     *,
     shifts=None,
+    backend="auto",
 ):
     return _apply_generic(
         "entropy",
@@ -721,6 +763,7 @@ def entropy(
         shift_y,
         shift_z,
         shifts,
+        backend=backend,
     )
 
 

@@ -17,6 +17,21 @@ _HISTOGRAM_OPS = {
     "gradient": 5,
     "autolevel": 6,
     "entropy": 7,
+    "enhance_contrast": 8,
+    "subtract_mean": 9,
+}
+
+_HISTOGRAM_MIN_FOOTPRINT_AREA = {
+    "percentile": 39 * 39,
+    "threshold": 39 * 39,
+    "gradient": 39 * 39,
+    "sum": 39 * 39,
+    "enhance_contrast": 39 * 39,
+    "autolevel": 51 * 51,
+    "mean": 51 * 51,
+    "pop": 51 * 51,
+    "subtract_mean": 51 * 51,
+    "entropy": 59 * 59,
 }
 
 
@@ -33,7 +48,7 @@ def _can_use_rank_histogram(
     p0,
     p1,
 ):
-    """Return True for the restricted uint8 2D histogram fast path.
+    """Return True for the restricted uint8 2D histogram backend.
 
     This backend is intentionally narrow. It is selected only for supported
     rank operations on 2D uint8 images with an all-ones odd rectangular
@@ -66,6 +81,14 @@ def _can_use_rank_histogram(
     if any(radius > size for radius, size in zip(radii, image.shape)):
         return False
     return True
+
+
+def _should_use_rank_histogram(operation, footprint_shape):
+    """Return True when benchmarks favor histogram over elementwise."""
+    min_area = _HISTOGRAM_MIN_FOOTPRINT_AREA.get(operation)
+    if min_area is None:
+        return False
+    return footprint_shape[0] * footprint_shape[1] >= min_area
 
 
 @cp.memoize(for_each_device=True)

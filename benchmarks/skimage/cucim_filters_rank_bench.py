@@ -91,12 +91,15 @@ def main(args):
 
         var_kwargs = dict(var_kwargs)
         var_kwargs["footprint"] = footprints
+        fixed_kwargs_gpu = dict(fixed_kwargs)
+        fixed_kwargs_gpu["backend"] = args.backend
 
         B = ImageBench(
             function_name=function_name,
             shape=shape,
             dtypes=dtypes,
             fixed_kwargs=fixed_kwargs,
+            fixed_kwargs_gpu=fixed_kwargs_gpu,
             var_kwargs=var_kwargs,
             module_cpu=skimage.filters.rank,
             module_gpu=cucim.skimage.filters.rank,
@@ -181,6 +184,17 @@ if __name__ == "__main__":
             "footprints and is the default."
         ),
         default="rectangle",
+    )
+    parser.add_argument(
+        "--backend",
+        type=str,
+        choices=["auto", "histogram", "elementwise"],
+        help=(
+            "cuCIM rank backend to benchmark. auto uses automatic dispatch, "
+            "histogram requires the uint8 2D rectangular histogram backend, "
+            "and elementwise forces the generic per-output-pixel backend."
+        ),
+        default="auto",
     )
     parser.add_argument(
         "--no_cpu",

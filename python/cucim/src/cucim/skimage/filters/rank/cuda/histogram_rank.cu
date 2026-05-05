@@ -11,6 +11,8 @@
 #define OP_GRADIENT 5
 #define OP_AUTOLEVEL 6
 #define OP_ENTROPY 7
+#define OP_ENHANCE_CONTRAST 8
+#define OP_SUBTRACT_MEAN 9
 
 __device__ void histogramPrefixScan256(int* hist, int* scan) {
   int tx = threadIdx.x;
@@ -142,7 +144,8 @@ __device__ unsigned char histogramRankValue(int* hist,
     return (unsigned char)dtmp[0];
   }
 
-  if (op == OP_GRADIENT || op == OP_AUTOLEVEL) {
+  if (op == OP_GRADIENT || op == OP_AUTOLEVEL ||
+      op == OP_ENHANCE_CONTRAST) {
     tmp0[tx] = selected_count > 0 ? tx : 255;
     tmp1[tx] = selected_count > 0 ? tx : 0;
     __syncthreads();
@@ -159,6 +162,11 @@ __device__ unsigned char histogramRankValue(int* hist,
 
     int min_val = tmp0[0];
     int max_val = tmp1[0];
+    if (op == OP_ENHANCE_CONTRAST) {
+      return (max_val - center < center - min_val) ? (unsigned char)max_val
+                                                   : (unsigned char)min_val;
+    }
+
     int clamped = min(max((int)center, min_val), max_val);
     int delta = max_val - min_val;
     if (delta > 0) {
@@ -175,6 +183,10 @@ __device__ unsigned char histogramRankValue(int* hist,
 
   if (op == OP_MEAN) {
     return (unsigned char)(((double)tmp1[0]) / tmp0[0]);
+  }
+  if (op == OP_SUBTRACT_MEAN) {
+    double mean = ((double)tmp1[0]) / tmp0[0];
+    return (unsigned char)(((double)center - mean) * 0.5 + 128.0);
   }
   return (unsigned char)tmp1[0];
 }

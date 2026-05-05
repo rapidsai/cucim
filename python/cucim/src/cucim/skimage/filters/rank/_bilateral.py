@@ -33,6 +33,12 @@ _doc_shifts_param = """
         N-dimensional offsets. If provided, shift_x and shift_y must be 0.
         Length must match image.ndim."""
 
+_doc_backend_param = """
+    backend : {'auto', 'histogram', 'elementwise'}, optional (keyword-only)
+        Algorithm backend. ``'auto'`` selects the best compatible backend,
+        ``'histogram'`` requires the uint8 2D rectangular histogram backend,
+        and ``'elementwise'`` forces the generic per-output-pixel backend."""
+
 _doc_returns = """
     Returns
     -------
@@ -49,6 +55,7 @@ def _build_bilateral_docstring(summary):
         + _doc_common_params
         + _doc_s0_s1_params
         + _doc_shifts_param
+        + _doc_backend_param
         + "\n"
         + _doc_returns
     )
@@ -65,6 +72,7 @@ def mean_bilateral(
     s1=10,
     *,
     shifts=None,
+    backend="auto",
 ):
     return _apply(
         "bilateral_mean",
@@ -79,6 +87,7 @@ def mean_bilateral(
         shifts=shifts,
         s0=s0,
         s1=s1,
+        backend=backend,
     )
 
 
@@ -110,6 +119,7 @@ def pop_bilateral(
     s1=10,
     *,
     shifts=None,
+    backend="auto",
 ):
     return _apply(
         "bilateral_pop",
@@ -124,6 +134,7 @@ def pop_bilateral(
         shifts=shifts,
         s0=s0,
         s1=s1,
+        backend=backend,
     )
 
 
@@ -148,6 +159,7 @@ def sum_bilateral(
     s1=10,
     *,
     shifts=None,
+    backend="auto",
 ):
     return _apply(
         "bilateral_sum",
@@ -162,6 +174,7 @@ def sum_bilateral(
         shifts=shifts,
         s0=s0,
         s1=s1,
+        backend=backend,
     )
 
 
