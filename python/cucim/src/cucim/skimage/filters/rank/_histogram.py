@@ -34,6 +34,9 @@ _HISTOGRAM_MIN_FOOTPRINT_AREA = {
     "entropy": 59 * 59,
 }
 
+_DEFAULT_SCRATCH_MB = 256
+_DEFAULT_MAX_PARTITIONS = 256
+
 
 def _can_use_rank_histogram(
     image,
@@ -91,6 +94,41 @@ def _should_use_rank_histogram(operation, footprint_shape):
     return footprint_shape[0] * footprint_shape[1] >= min_area
 
 
+def _get_env_int(name, default):
+    value = os.environ.get(name)
+    if value is None or value == "":
+        return default
+    value = int(value)
+    if value <= 0:
+        raise ValueError(f"{name} must be a positive integer")
+    return value
+
+
+def _get_rank_histogram_partitions(out_rows, cols, partitions=None):
+    """Choose row partitions for the sliding-histogram backend.
+
+    More partitions expose more row-band parallelism, but scratch memory grows
+    linearly as ``partitions * cols * 256 * sizeof(int32)``.
+    """
+    if partitions is not None:
+        return min(max(1, int(partitions)), out_rows)
+
+    partitions = os.environ.get("CUCIM_RANK_HISTOGRAM_PARTITIONS")
+    if partitions not in (None, ""):
+        return min(max(1, int(partitions)), out_rows)
+
+    scratch_mb = _get_env_int(
+        "CUCIM_RANK_HISTOGRAM_SCRATCH_MB", _DEFAULT_SCRATCH_MB
+    )
+    max_partitions = _get_env_int(
+        "CUCIM_RANK_HISTOGRAM_MAX_PARTITIONS", _DEFAULT_MAX_PARTITIONS
+    )
+    bytes_per_partition = cols * 256 * cp.dtype(cp.int32).itemsize
+    partitions_by_memory = max(1, (scratch_mb << 20) // bytes_per_partition)
+
+    return min(max(1, out_rows // 2), max_partitions, partitions_by_memory)
+
+
 @cp.memoize(for_each_device=True)
 def _get_histogram_rank_kernel():
     kernel_directory = os.path.join(os.path.dirname(__file__), "cuda")
@@ -126,10 +164,7 @@ def _rank_histogram(
     out = cp.empty_like(padded)
     rows, cols = padded.shape
     out_rows = image.shape[0]
-    if partitions is None:
-        partitions = min(max(1, out_rows // 2), 16)
-    else:
-        partitions = min(max(1, int(partitions)), out_rows)
+    partitions = _get_rank_histogram_partitions(out_rows, cols, partitions)
 
     hist = cp.zeros((partitions * cols * 256,), dtype=cp.int32)
     kernel = _get_histogram_rank_kernel()

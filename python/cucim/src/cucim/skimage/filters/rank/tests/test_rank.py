@@ -30,6 +30,9 @@ from cucim.skimage.filters.rank import (
     __all__ as all_rank_filters,
     subtract_mean,
 )
+from cucim.skimage.filters.rank._histogram import (
+    _get_rank_histogram_partitions,
+)
 from cucim.skimage.util import img_as_ubyte
 
 
@@ -485,6 +488,20 @@ def test_rank_backend_invalid_value_raises():
 
     with pytest.raises(ValueError, match="backend must be one of"):
         rank.percentile(image, footprint, p0=0.5, backend="bad")
+
+
+def test_rank_histogram_partitions_default_and_env(monkeypatch):
+    monkeypatch.delenv("CUCIM_RANK_HISTOGRAM_PARTITIONS", raising=False)
+    monkeypatch.delenv("CUCIM_RANK_HISTOGRAM_SCRATCH_MB", raising=False)
+    monkeypatch.delenv("CUCIM_RANK_HISTOGRAM_MAX_PARTITIONS", raising=False)
+
+    assert _get_rank_histogram_partitions(1080, 1080) == 242
+
+    monkeypatch.setenv("CUCIM_RANK_HISTOGRAM_MAX_PARTITIONS", "64")
+    assert _get_rank_histogram_partitions(1080, 1080) == 64
+
+    monkeypatch.setenv("CUCIM_RANK_HISTOGRAM_PARTITIONS", "32")
+    assert _get_rank_histogram_partitions(1080, 1080) == 32
 
 
 # # Note: Explicitly read all values into a dict. Otherwise, stochastic test
