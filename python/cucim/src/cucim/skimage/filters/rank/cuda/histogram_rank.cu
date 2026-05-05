@@ -13,6 +13,10 @@
 #define OP_ENTROPY 7
 #define OP_ENHANCE_CONTRAST 8
 #define OP_SUBTRACT_MEAN 9
+#define OP_EQUALIZE 10
+#define OP_BILATERAL_MEAN 11
+#define OP_BILATERAL_POP 12
+#define OP_BILATERAL_SUM 13
 
 __device__ void histogramPrefixScan256(int* hist, int* scan) {
   int tx = threadIdx.x;
@@ -73,12 +77,14 @@ __device__ unsigned char histogramRankValue(int* hist,
                                             int window_size,
                                             double p0,
                                             double p1,
+                                            double s0,
+                                            double s1,
                                             unsigned char center) {
   int tx = threadIdx.x;
   __shared__ int result;
   __shared__ int range_start;
   __shared__ int range_end;
-#if RANK_HIST_OP == OP_MEAN || RANK_HIST_OP == OP_SUM || RANK_HIST_OP == OP_SUBTRACT_MEAN
+#if RANK_HIST_OP == OP_MEAN || RANK_HIST_OP == OP_SUM || RANK_HIST_OP == OP_SUBTRACT_MEAN || RANK_HIST_OP == OP_BILATERAL_MEAN || RANK_HIST_OP == OP_BILATERAL_POP || RANK_HIST_OP == OP_BILATERAL_SUM
   __shared__ int range_start_sum;
   __shared__ int range_end_sum;
 #endif
@@ -143,7 +149,11 @@ __device__ unsigned char histogramRankValue(int* hist,
     return (unsigned char)result;
   }
 
-#if RANK_HIST_OP == OP_MEAN || RANK_HIST_OP == OP_SUM || RANK_HIST_OP == OP_SUBTRACT_MEAN
+#if RANK_HIST_OP == OP_EQUALIZE
+  return (unsigned char)(255.0 * ((double)scan[center]) / pop);
+#endif
+
+#if RANK_HIST_OP == OP_MEAN || RANK_HIST_OP == OP_SUM || RANK_HIST_OP == OP_SUBTRACT_MEAN || RANK_HIST_OP == OP_BILATERAL_MEAN || RANK_HIST_OP == OP_BILATERAL_POP || RANK_HIST_OP == OP_BILATERAL_SUM
   histogramWeightedPrefixScan256(hist, tmp1);
   if (tx == 0) {
     range_start_sum = 0;
@@ -151,6 +161,24 @@ __device__ unsigned char histogramRankValue(int* hist,
   }
   __syncthreads();
 
+#if RANK_HIST_OP == OP_BILATERAL_MEAN || RANK_HIST_OP == OP_BILATERAL_POP || RANK_HIST_OP == OP_BILATERAL_SUM
+  if (tx == 0) {
+    int start_bin = max(0, (int)floor((double)center - s1) + 1);
+    int stop_bin = min(256, (int)ceil((double)center + s0));
+    if (stop_bin <= start_bin) {
+      range_start = 0;
+      range_end = 0;
+      range_start_sum = 0;
+      range_end_sum = 0;
+    } else {
+      range_start = (start_bin > 0) ? scan[start_bin - 1] : 0;
+      range_end = scan[stop_bin - 1];
+      range_start_sum = (start_bin > 0) ? tmp1[start_bin - 1] : 0;
+      range_end_sum = tmp1[stop_bin - 1];
+    }
+  }
+  __syncthreads();
+#else
   if (tx < 256 && hist[tx] > 0) {
     int bin_end = scan[tx];
     int bin_start = bin_end - hist[tx];
@@ -166,9 +194,22 @@ __device__ unsigned char histogramRankValue(int* hist,
     }
   }
   __syncthreads();
+#endif
 
   int selected_count_total = range_end - range_start;
   int selected_sum_total = range_end_sum - range_start_sum;
+  if (op == OP_BILATERAL_POP) {
+    return (unsigned char)selected_count_total;
+  }
+  if (selected_count_total <= 0) {
+    return (unsigned char)0;
+  }
+  if (op == OP_BILATERAL_MEAN) {
+    return (unsigned char)(((double)selected_sum_total) / selected_count_total);
+  }
+  if (op == OP_BILATERAL_SUM) {
+    return (unsigned char)selected_sum_total;
+  }
   if (op == OP_MEAN) {
     return (unsigned char)(((double)selected_sum_total) / selected_count_total);
   }
@@ -236,7 +277,7 @@ __device__ unsigned char histogramRankValue(int* hist,
     return (unsigned char)0;
   }
 
-#if RANK_HIST_OP != OP_MEAN && RANK_HIST_OP != OP_SUM && RANK_HIST_OP != OP_SUBTRACT_MEAN
+#if RANK_HIST_OP != OP_MEAN && RANK_HIST_OP != OP_SUM && RANK_HIST_OP != OP_SUBTRACT_MEAN && RANK_HIST_OP != OP_BILATERAL_MEAN && RANK_HIST_OP != OP_BILATERAL_POP && RANK_HIST_OP != OP_BILATERAL_SUM
   tmp0[tx] = selected_count;
   tmp1[tx] = selected_sum;
   __syncthreads();
@@ -263,6 +304,8 @@ extern "C" __global__ void cuRankHistogram2DUint8(
     int r1,
     double p0,
     double p1,
+    double s0,
+    double s1,
     int op,
     int window_size,
     int rows,
@@ -308,7 +351,7 @@ extern "C" __global__ void cuRankHistogram2DUint8(
     for (int col = r1; col < cols - r1; col++) {
       unsigned char center = src[row * cols + col];
       unsigned char value = histogramRankValue(
-          H, Hscan, tmp0, tmp1, dtmp, op, window_size, p0, p1, center);
+          H, Hscan, tmp0, tmp1, dtmp, op, window_size, p0, p1, s0, s1, center);
 
       if (tx == 0) {
         dest[row * cols + col] = value;

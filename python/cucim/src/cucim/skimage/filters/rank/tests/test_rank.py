@@ -426,6 +426,41 @@ def test_histogram_rank_entropy_uint8_rectangular():
     cp.testing.assert_array_equal(result, cp.asarray(expected))
 
 
+@pytest.mark.parametrize(
+    "filter_name, kwargs",
+    [
+        ("equalize", {}),
+        ("mean_bilateral", dict(s0=6, s1=9)),
+        ("pop_bilateral", dict(s0=6, s1=9)),
+        ("sum_bilateral", dict(s0=6, s1=9)),
+    ],
+)
+def test_histogram_rank_prefix_ops_uint8_rectangular(filter_name, kwargs):
+    image = np.array(
+        [
+            [0, 5, 10, 50, 90],
+            [3, 8, 20, 60, 120],
+            [7, 11, 30, 70, 150],
+            [13, 17, 40, 80, 180],
+        ],
+        dtype=np.uint8,
+    )
+    footprint = np.ones((3, 3), dtype=bool)
+    result = getattr(rank, filter_name)(
+        cp.asarray(image),
+        cp.asarray(footprint),
+        backend="histogram",
+        **kwargs,
+    )
+    expected = _rank_filter_brute_force_uint8(
+        image,
+        footprint,
+        filter_name,
+        **kwargs,
+    )
+    cp.testing.assert_array_equal(result, cp.asarray(expected))
+
+
 def test_rank_backend_override_histogram_and_elementwise():
     image = cp.asarray(
         np.array(

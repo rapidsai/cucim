@@ -1030,6 +1030,8 @@ def _skimage_rank_filter(
             cval=cval,
             p0=p0,
             p1=p1,
+            s0=s0,
+            s1=s1,
         )
 
     kernel = _get_percentile_range_kernel(

@@ -44,6 +44,15 @@ filters when all compatibility conditions below are met:
 * ``subtract_mean_percentile`` with a non-full percentile range
 * ``entropy``
 
+Additional histogram implementations are available for profiling with
+``backend='histogram'`` but are not selected automatically until benchmark
+cutoffs are established:
+
+* ``equalize``
+* ``mean_bilateral``
+* ``pop_bilateral``
+* ``sum_bilateral``
+
 The compatibility conditions are:
 
 * input image is 2D and has dtype ``uint8``
