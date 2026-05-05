@@ -44,6 +44,26 @@ __device__ void reduceSum256(int* values) {
   }
 }
 
+__device__ void histogramWeightedPrefixScan256(int* hist, int* scan) {
+  int tx = threadIdx.x;
+  if (tx < 256) {
+    scan[tx] = hist[tx] * tx;
+  }
+  __syncthreads();
+
+  for (int offset = 1; offset < 256; offset <<= 1) {
+    int v = 0;
+    if (tx >= offset && tx < 256) {
+      v = scan[tx - offset];
+    }
+    __syncthreads();
+    if (tx >= offset && tx < 256) {
+      scan[tx] += v;
+    }
+    __syncthreads();
+  }
+}
+
 __device__ unsigned char histogramRankValue(int* hist,
                                             int* scan,
                                             int* tmp0,
@@ -58,6 +78,10 @@ __device__ unsigned char histogramRankValue(int* hist,
   __shared__ int result;
   __shared__ int range_start;
   __shared__ int range_end;
+#if RANK_HIST_OP == OP_MEAN || RANK_HIST_OP == OP_SUM || RANK_HIST_OP == OP_SUBTRACT_MEAN
+  __shared__ int range_start_sum;
+  __shared__ int range_end_sum;
+#endif
 
 #if RANK_HIST_OP == OP_ENTROPY
   double ent = 0.0;
@@ -119,6 +143,42 @@ __device__ unsigned char histogramRankValue(int* hist,
     return (unsigned char)result;
   }
 
+#if RANK_HIST_OP == OP_MEAN || RANK_HIST_OP == OP_SUM || RANK_HIST_OP == OP_SUBTRACT_MEAN
+  histogramWeightedPrefixScan256(hist, tmp1);
+  if (tx == 0) {
+    range_start_sum = 0;
+    range_end_sum = 0;
+  }
+  __syncthreads();
+
+  if (tx < 256 && hist[tx] > 0) {
+    int bin_end = scan[tx];
+    int bin_start = bin_end - hist[tx];
+    int weighted_end = tmp1[tx];
+    int weighted_start = weighted_end - hist[tx] * tx;
+
+    if (range_start > 0 && bin_start < range_start &&
+        bin_end >= range_start) {
+      range_start_sum = weighted_start + (range_start - bin_start) * tx;
+    }
+    if (range_end > 0 && bin_start < range_end && bin_end >= range_end) {
+      range_end_sum = weighted_start + (range_end - bin_start) * tx;
+    }
+  }
+  __syncthreads();
+
+  int selected_count_total = range_end - range_start;
+  int selected_sum_total = range_end_sum - range_start_sum;
+  if (op == OP_MEAN) {
+    return (unsigned char)(((double)selected_sum_total) / selected_count_total);
+  }
+  if (op == OP_SUBTRACT_MEAN) {
+    double mean = ((double)selected_sum_total) / selected_count_total;
+    return (unsigned char)(((double)center - mean) * 0.5 + 128.0);
+  }
+  return (unsigned char)selected_sum_total;
+#endif
+
   int selected_count = 0;
   int selected_sum = 0;
   if (tx < 256) {
@@ -176,6 +236,7 @@ __device__ unsigned char histogramRankValue(int* hist,
     return (unsigned char)0;
   }
 
+#if RANK_HIST_OP != OP_MEAN && RANK_HIST_OP != OP_SUM && RANK_HIST_OP != OP_SUBTRACT_MEAN
   tmp0[tx] = selected_count;
   tmp1[tx] = selected_sum;
   __syncthreads();
@@ -190,6 +251,7 @@ __device__ unsigned char histogramRankValue(int* hist,
     return (unsigned char)(((double)center - mean) * 0.5 + 128.0);
   }
   return (unsigned char)tmp1[0];
+#endif
 #endif
 }
 
