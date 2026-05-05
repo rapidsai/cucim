@@ -61,7 +61,16 @@ def _can_use_rank_histogram(
     if operation not in _HISTOGRAM_OPS:
         return False
     if (
-        operation in {"autolevel", "mean", "sum", "pop", "gradient"}
+        operation
+        in {
+            "autolevel",
+            "enhance_contrast",
+            "mean",
+            "subtract_mean",
+            "sum",
+            "pop",
+            "gradient",
+        }
         and p0 <= 0
         and p1 >= 100
     ):
