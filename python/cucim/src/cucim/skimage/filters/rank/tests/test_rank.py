@@ -31,6 +31,7 @@ from cucim.skimage.filters.rank import (
     subtract_mean,
 )
 from cucim.skimage.filters.rank._histogram import (
+    _get_histogram_counter_dtype,
     _get_rank_histogram_partitions,
 )
 from cucim.skimage.util import img_as_ubyte
@@ -530,13 +531,29 @@ def test_rank_histogram_partitions_default_and_env(monkeypatch):
     monkeypatch.delenv("CUCIM_RANK_HISTOGRAM_SCRATCH_MB", raising=False)
     monkeypatch.delenv("CUCIM_RANK_HISTOGRAM_MAX_PARTITIONS", raising=False)
 
-    assert _get_rank_histogram_partitions(1080, 1080) == 242
+    assert (
+        _get_rank_histogram_partitions(1080, 1080, counter_dtype=cp.int32)
+        == 242
+    )
+    assert (
+        _get_rank_histogram_partitions(1080, 1080, counter_dtype=cp.int16)
+        == 256
+    )
 
     monkeypatch.setenv("CUCIM_RANK_HISTOGRAM_MAX_PARTITIONS", "64")
-    assert _get_rank_histogram_partitions(1080, 1080) == 64
+    assert (
+        _get_rank_histogram_partitions(1080, 1080, counter_dtype=cp.int32) == 64
+    )
 
     monkeypatch.setenv("CUCIM_RANK_HISTOGRAM_PARTITIONS", "32")
-    assert _get_rank_histogram_partitions(1080, 1080) == 32
+    assert (
+        _get_rank_histogram_partitions(1080, 1080, counter_dtype=cp.int32) == 32
+    )
+
+
+def test_rank_histogram_counter_dtype():
+    assert _get_histogram_counter_dtype((181, 181)) == cp.int16
+    assert _get_histogram_counter_dtype((181, 183)) == cp.int32
 
 
 # # Note: Explicitly read all values into a dict. Otherwise, stochastic test

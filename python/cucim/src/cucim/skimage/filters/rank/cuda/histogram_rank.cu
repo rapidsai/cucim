@@ -18,6 +18,10 @@
 #define OP_BILATERAL_POP 12
 #define OP_BILATERAL_SUM 13
 
+#ifndef HIST_COUNTER_T
+#define HIST_COUNTER_T int
+#endif
+
 __device__ void histogramPrefixScan256(int* hist, int* scan) {
   int tx = threadIdx.x;
   if (tx < 256) {
@@ -299,7 +303,7 @@ __device__ unsigned char histogramRankValue(int* hist,
 extern "C" __global__ void cuRankHistogram2DUint8(
     const unsigned char* src,
     unsigned char* dest,
-    int* histPar,
+    HIST_COUNTER_T* histPar,
     int r0,
     int r1,
     double p0,
@@ -328,10 +332,10 @@ extern "C" __global__ void cuRankHistogram2DUint8(
 
   int start_row = r0 + start_out;
   int stop_row = r0 + stop_out;
-  int* hist = histPar + blockIdx.x * cols * 256;
+  HIST_COUNTER_T* hist = histPar + blockIdx.x * cols * 256;
 
   for (int col = tx; col < cols; col += blockDim.x) {
-    int* col_hist = hist + col * 256;
+    HIST_COUNTER_T* col_hist = hist + col * 256;
     for (int row = start_row - r0; row <= start_row + r0; row++) {
       col_hist[src[row * cols + col]]++;
     }
@@ -342,7 +346,7 @@ extern "C" __global__ void cuRankHistogram2DUint8(
     if (tx < 256) {
       int total = 0;
       for (int col = 0; col <= 2 * r1; col++) {
-        total += hist[col * 256 + tx];
+        total += (int)hist[col * 256 + tx];
       }
       H[tx] = total;
     }
@@ -361,7 +365,8 @@ extern "C" __global__ void cuRankHistogram2DUint8(
       if (col < cols - r1 - 1 && tx < 256) {
         int sub_col = col - r1;
         int add_col = col + r1 + 1;
-        H[tx] += hist[add_col * 256 + tx] - hist[sub_col * 256 + tx];
+        H[tx] += (int)hist[add_col * 256 + tx] -
+                 (int)hist[sub_col * 256 + tx];
       }
       __syncthreads();
     }
@@ -370,7 +375,7 @@ extern "C" __global__ void cuRankHistogram2DUint8(
       int sub_row = row - r0;
       int add_row = row + r0 + 1;
       for (int col = tx; col < cols; col += blockDim.x) {
-        int* col_hist = hist + col * 256;
+        HIST_COUNTER_T* col_hist = hist + col * 256;
         col_hist[src[sub_row * cols + col]]--;
         col_hist[src[add_row * cols + col]]++;
       }
