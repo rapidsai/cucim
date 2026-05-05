@@ -130,11 +130,12 @@ def _get_rank_histogram_partitions(out_rows, cols, partitions=None):
 
 
 @cp.memoize(for_each_device=True)
-def _get_histogram_rank_kernel():
+def _get_histogram_rank_kernel(operation):
     kernel_directory = os.path.join(os.path.dirname(__file__), "cuda")
     with open(os.path.join(kernel_directory, "histogram_rank.cu")) as f:
         code = "\n".join(f.readlines())
 
+    code = f"#define RANK_HIST_OP {_HISTOGRAM_OPS[operation]}\n" + code
     return cp.RawKernel(code=code, name="cuRankHistogram2DUint8")
 
 
@@ -167,9 +168,9 @@ def _rank_histogram(
     partitions = _get_rank_histogram_partitions(out_rows, cols, partitions)
 
     hist = cp.zeros((partitions * cols * 256,), dtype=cp.int32)
-    kernel = _get_histogram_rank_kernel()
-
     op_code = _HISTOGRAM_OPS[operation]
+    kernel = _get_histogram_rank_kernel(operation)
+    window_size = footprint_shape[0] * footprint_shape[1]
     kernel(
         (partitions,),
         (256,),
@@ -182,6 +183,7 @@ def _rank_histogram(
             float(p0),
             float(p1),
             op_code,
+            window_size,
             rows,
             cols,
         ),
