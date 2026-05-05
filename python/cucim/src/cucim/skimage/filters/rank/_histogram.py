@@ -40,6 +40,11 @@ _HISTOGRAM_MIN_FOOTPRINT_AREA = {
 
 _DEFAULT_SCRATCH_MB = 256
 _DEFAULT_MAX_PARTITIONS = 256
+_INT16_MAX = 32767
+_HISTOGRAM_COUNTER_TYPES = {
+    "int16": (cp.int16, "short"),
+    "int32": (cp.int32, "int"),
+}
 
 
 def _can_use_rank_histogram(
@@ -117,11 +122,21 @@ def _get_env_int(name, default):
     return value
 
 
-def _get_rank_histogram_partitions(out_rows, cols, partitions=None):
+def _get_histogram_counter_dtype(footprint_shape):
+    """Return the narrowest safe column-histogram counter dtype."""
+    footprint_area = footprint_shape[0] * footprint_shape[1]
+    if footprint_area <= _INT16_MAX:
+        return cp.int16
+    return cp.int32
+
+
+def _get_rank_histogram_partitions(
+    out_rows, cols, partitions=None, *, counter_dtype=cp.int32
+):
     """Choose row partitions for the sliding-histogram backend.
 
     More partitions expose more row-band parallelism, but scratch memory grows
-    linearly as ``partitions * cols * 256 * sizeof(int32)``.
+    linearly as ``partitions * cols * 256 * sizeof(counter_dtype)``.
     """
     if partitions is not None:
         return min(max(1, int(partitions)), out_rows)
@@ -136,19 +151,23 @@ def _get_rank_histogram_partitions(out_rows, cols, partitions=None):
     max_partitions = _get_env_int(
         "CUCIM_RANK_HISTOGRAM_MAX_PARTITIONS", _DEFAULT_MAX_PARTITIONS
     )
-    bytes_per_partition = cols * 256 * cp.dtype(cp.int32).itemsize
+    bytes_per_partition = cols * 256 * cp.dtype(counter_dtype).itemsize
     partitions_by_memory = max(1, (scratch_mb << 20) // bytes_per_partition)
 
     return min(max(1, out_rows // 2), max_partitions, partitions_by_memory)
 
 
 @cp.memoize(for_each_device=True)
-def _get_histogram_rank_kernel(operation):
+def _get_histogram_rank_kernel(operation, counter_dtype_name):
     kernel_directory = os.path.join(os.path.dirname(__file__), "cuda")
     with open(os.path.join(kernel_directory, "histogram_rank.cu")) as f:
         code = "\n".join(f.readlines())
 
-    code = f"#define RANK_HIST_OP {_HISTOGRAM_OPS[operation]}\n" + code
+    _, counter_type = _HISTOGRAM_COUNTER_TYPES[counter_dtype_name]
+    code = (
+        f"#define RANK_HIST_OP {_HISTOGRAM_OPS[operation]}\n"
+        f"#define HIST_COUNTER_T {counter_type}\n" + code
+    )
     return cp.RawKernel(code=code, name="cuRankHistogram2DUint8")
 
 
@@ -180,11 +199,15 @@ def _rank_histogram(
     out = cp.empty_like(padded)
     rows, cols = padded.shape
     out_rows = image.shape[0]
-    partitions = _get_rank_histogram_partitions(out_rows, cols, partitions)
+    counter_dtype = _get_histogram_counter_dtype(footprint_shape)
+    counter_dtype_name = cp.dtype(counter_dtype).name
+    partitions = _get_rank_histogram_partitions(
+        out_rows, cols, partitions=partitions, counter_dtype=counter_dtype
+    )
 
-    hist = cp.zeros((partitions * cols * 256,), dtype=cp.int32)
+    hist = cp.zeros((partitions * cols * 256,), dtype=counter_dtype)
     op_code = _HISTOGRAM_OPS[operation]
-    kernel = _get_histogram_rank_kernel(operation)
+    kernel = _get_histogram_rank_kernel(operation, counter_dtype_name)
     window_size = footprint_shape[0] * footprint_shape[1]
     kernel(
         (partitions,),
