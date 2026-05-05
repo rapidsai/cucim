@@ -218,6 +218,16 @@ def _rank_percentile_brute_force_uint8(
                 out[row, col] = _cast_uint8(sum(selected))
             elif operation == "gradient_percentile":
                 out[row, col] = _cast_uint8(selected[-1] - selected[0])
+            elif operation == "subtract_mean_percentile":
+                mean = sum(selected) / len(selected)
+                out[row, col] = _cast_uint8((center - mean) * 0.5 + 128)
+            elif operation == "enhance_contrast_percentile":
+                min_val = selected[0]
+                max_val = selected[-1]
+                if max_val - center < center - min_val:
+                    out[row, col] = max_val
+                else:
+                    out[row, col] = min_val
             elif operation == "autolevel_percentile":
                 min_val = selected[0]
                 max_val = selected[-1]
@@ -365,6 +375,8 @@ def test_streaming_rank_filter_ops_uint8(filter_name, use_mask):
         ("pop_percentile", dict(p0=0.25, p1=0.75)),
         ("gradient_percentile", dict(p0=0.25, p1=0.75)),
         ("autolevel_percentile", dict(p0=0.25, p1=0.75)),
+        ("enhance_contrast_percentile", dict(p0=0.25, p1=0.75)),
+        ("subtract_mean_percentile", dict(p0=0.25, p1=0.75)),
     ],
 )
 def test_histogram_rank_percentile_ops_uint8_rectangular(filter_name, kwargs):
@@ -381,6 +393,7 @@ def test_histogram_rank_percentile_ops_uint8_rectangular(filter_name, kwargs):
     result = getattr(rank, filter_name)(
         cp.asarray(image),
         cp.asarray(footprint),
+        backend="histogram",
         **kwargs,
     )
     expected = _rank_percentile_brute_force_uint8(
@@ -403,9 +416,75 @@ def test_histogram_rank_entropy_uint8_rectangular():
         dtype=np.uint8,
     )
     footprint = np.ones((3, 3), dtype=bool)
-    result = rank.entropy(cp.asarray(image), cp.asarray(footprint))
+    result = rank.entropy(
+        cp.asarray(image), cp.asarray(footprint), backend="histogram"
+    )
     expected = _rank_filter_brute_force_uint8(image, footprint, "entropy")
     cp.testing.assert_array_equal(result, cp.asarray(expected))
+
+
+def test_rank_backend_override_histogram_and_elementwise():
+    image = cp.asarray(
+        np.array(
+            [
+                [0, 5, 10, 50, 90],
+                [3, 8, 20, 60, 120],
+                [7, 11, 30, 70, 150],
+                [13, 17, 40, 80, 180],
+            ],
+            dtype=np.uint8,
+        )
+    )
+    footprint = cp.ones((3, 3), dtype=bool)
+
+    automatic = rank.percentile(image, footprint, p0=0.5, backend="auto")
+    histogram = rank.percentile(image, footprint, p0=0.5, backend="histogram")
+    elementwise = rank.percentile(
+        image, footprint, p0=0.5, backend="elementwise"
+    )
+
+    cp.testing.assert_array_equal(histogram, automatic)
+    cp.testing.assert_array_equal(elementwise, automatic)
+
+
+def test_rank_backend_auto_uses_elementwise_below_histogram_cutoff():
+    image = cp.asarray(
+        np.array(
+            [
+                [0, 5, 10, 50, 90],
+                [3, 8, 20, 60, 120],
+                [7, 11, 30, 70, 150],
+                [13, 17, 40, 80, 180],
+            ],
+            dtype=np.uint8,
+        )
+    )
+    footprint = cp.ones((3, 3), dtype=bool)
+
+    automatic = rank.percentile(image, footprint, p0=0.5, backend="auto")
+    elementwise = rank.percentile(
+        image, footprint, p0=0.5, backend="elementwise"
+    )
+    histogram = rank.percentile(image, footprint, p0=0.5, backend="histogram")
+
+    cp.testing.assert_array_equal(automatic, elementwise)
+    cp.testing.assert_array_equal(histogram, elementwise)
+
+
+def test_rank_backend_histogram_rejects_incompatible_input():
+    image = cp.asarray(np.arange(25, dtype=np.uint16).reshape(5, 5))
+    footprint = cp.ones((3, 3), dtype=bool)
+
+    with pytest.raises(ValueError, match="backend='histogram' requires"):
+        rank.percentile(image, footprint, p0=0.5, backend="histogram")
+
+
+def test_rank_backend_invalid_value_raises():
+    image = cp.asarray(np.arange(25, dtype=np.uint8).reshape(5, 5))
+    footprint = cp.ones((3, 3), dtype=bool)
+
+    with pytest.raises(ValueError, match="backend must be one of"):
+        rank.percentile(image, footprint, p0=0.5, backend="bad")
 
 
 # # Note: Explicitly read all values into a dict. Otherwise, stochastic test

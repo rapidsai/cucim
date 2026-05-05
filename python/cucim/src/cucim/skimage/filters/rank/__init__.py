@@ -40,6 +40,8 @@ filters when all compatibility conditions below are met:
 * ``pop_percentile`` with a non-full percentile range
 * ``gradient_percentile`` with a non-full percentile range
 * ``autolevel_percentile`` with a non-full percentile range
+* ``enhance_contrast_percentile`` with a non-full percentile range
+* ``subtract_mean_percentile`` with a non-full percentile range
 * ``entropy``
 
 The compatibility conditions are:
@@ -55,7 +57,18 @@ The compatibility conditions are:
   mode)
 * footprint half-width does not exceed the corresponding image extent
 
-Any unsupported case falls back to the generic GPU implementation.
+Any unsupported case falls back to the generic GPU implementation. For
+compatible calls, automatic dispatch also requires a benchmark-derived minimum
+footprint area. Smaller footprints stay on the generic per-output-pixel
+backend unless ``backend='histogram'`` is requested explicitly.
+
+The automatic selection can be overridden with the keyword-only ``backend``
+parameter accepted by rank filters:
+
+* ``backend='auto'`` keeps the automatic selection behavior.
+* ``backend='histogram'`` requires the histogram backend and raises
+  ``ValueError`` if the call is not compatible.
+* ``backend='elementwise'`` forces the generic per-output-pixel backend.
 
 cuCIM vs scikit-image
 ---------------------

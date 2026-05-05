@@ -14,7 +14,11 @@ from cucim.skimage._vendored._ndimage_filters import (
     _get_shell_gap,
 )
 
-from ._histogram import _can_use_rank_histogram, _rank_histogram
+from ._histogram import (
+    _can_use_rank_histogram,
+    _rank_histogram,
+    _should_use_rank_histogram,
+)
 
 
 def _get_streaming_rank_kernel(
@@ -843,6 +847,7 @@ def _skimage_rank_filter(
     mask=None,
     s0=0,
     s1=0,
+    backend="auto",
 ):
     """Internal helper for percentile range filters.
 
@@ -891,6 +896,11 @@ def _skimage_rank_filter(
     This function is for internal use as a common implementation for filters
     under cucim.skimage.filters.rank.
     """
+    if backend not in ("auto", "histogram", "elementwise"):
+        raise ValueError(
+            "backend must be one of 'auto', 'histogram' or 'elementwise'"
+        )
+
     ndim = input.ndim
     axes = _util._check_axes(axes, ndim)
     num_axes = len(axes)
@@ -987,7 +997,7 @@ def _skimage_rank_filter(
     else:
         _dtype_max = 1.0
 
-    if _can_use_rank_histogram(
+    can_use_histogram = _can_use_rank_histogram(
         input,
         footprint_shape,
         output,
@@ -998,6 +1008,18 @@ def _skimage_rank_filter(
         operation=operation,
         p0=p0,
         p1=p1,
+    )
+    if backend == "histogram" and not can_use_histogram:
+        raise ValueError(
+            "backend='histogram' requires a supported uint8 2D rank "
+            "operation, uint8 output, no mask, zero shifts, reflect mode, "
+            "and an all-ones odd rectangular footprint"
+        )
+
+    if backend == "histogram" or (
+        backend == "auto"
+        and can_use_histogram
+        and _should_use_rank_histogram(operation, footprint_shape)
     ):
         return _rank_histogram(
             input,

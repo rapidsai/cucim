@@ -40,11 +40,17 @@ class ImageBench:
         module_gpu=cupyx.scipy.ndimage,
         function_is_generator=False,
         run_cpu=True,
+        fixed_kwargs_cpu=None,
+        fixed_kwargs_gpu=None,
     ):
         self.shape = shape
         self.function_name = function_name
-        self.fixed_kwargs_cpu = self._update_kwargs_arrays(fixed_kwargs, "cpu")
-        self.fixed_kwargs_gpu = self._update_kwargs_arrays(fixed_kwargs, "gpu")
+        if fixed_kwargs_cpu is None:
+            fixed_kwargs_cpu = fixed_kwargs
+        if fixed_kwargs_gpu is None:
+            fixed_kwargs_gpu = fixed_kwargs
+        self.fixed_kwargs_cpu = self._update_kwargs_arrays(fixed_kwargs_cpu, "cpu")
+        self.fixed_kwargs_gpu = self._update_kwargs_arrays(fixed_kwargs_gpu, "gpu")
         self.var_kwargs = var_kwargs
         self.index_str = index_str
         # self.set_args_kwargs = set_args_kwargs
