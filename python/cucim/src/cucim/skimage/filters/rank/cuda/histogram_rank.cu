@@ -50,6 +50,7 @@ __device__ unsigned char histogramRankValue(int* hist,
                                             int* tmp1,
                                             double* dtmp,
                                             int op,
+                                            int window_size,
                                             double p0,
                                             double p1,
                                             unsigned char center) {
@@ -58,6 +59,23 @@ __device__ unsigned char histogramRankValue(int* hist,
   __shared__ int range_start;
   __shared__ int range_end;
 
+#if RANK_HIST_OP == OP_ENTROPY
+  double ent = 0.0;
+  if (tx < 256 && hist[tx] > 0) {
+    double p = ((double)hist[tx]) / window_size;
+    ent = -p * log(p) / 0.6931471805599453;
+  }
+  dtmp[tx] = ent;
+  __syncthreads();
+  for (int stride = 128; stride > 0; stride >>= 1) {
+    if (tx < stride) {
+      dtmp[tx] += dtmp[tx + stride];
+    }
+    __syncthreads();
+  }
+  return (unsigned char)dtmp[0];
+#else
+  op = RANK_HIST_OP;
   histogramPrefixScan256(hist, scan);
   int pop = scan[255];
 
@@ -127,23 +145,6 @@ __device__ unsigned char histogramRankValue(int* hist,
     return (unsigned char)tmp0[0];
   }
 
-  if (op == OP_ENTROPY) {
-    double ent = 0.0;
-    if (tx < 256 && hist[tx] > 0) {
-      double p = ((double)hist[tx]) / pop;
-      ent = -p * log(p) / 0.6931471805599453;
-    }
-    dtmp[tx] = ent;
-    __syncthreads();
-    for (int stride = 128; stride > 0; stride >>= 1) {
-      if (tx < stride) {
-        dtmp[tx] += dtmp[tx + stride];
-      }
-      __syncthreads();
-    }
-    return (unsigned char)dtmp[0];
-  }
-
   if (op == OP_GRADIENT || op == OP_AUTOLEVEL ||
       op == OP_ENHANCE_CONTRAST) {
     tmp0[tx] = selected_count > 0 ? tx : 255;
@@ -189,6 +190,7 @@ __device__ unsigned char histogramRankValue(int* hist,
     return (unsigned char)(((double)center - mean) * 0.5 + 128.0);
   }
   return (unsigned char)tmp1[0];
+#endif
 }
 
 extern "C" __global__ void cuRankHistogram2DUint8(
@@ -200,6 +202,7 @@ extern "C" __global__ void cuRankHistogram2DUint8(
     double p0,
     double p1,
     int op,
+    int window_size,
     int rows,
     int cols) {
   __shared__ int H[256];
@@ -243,7 +246,7 @@ extern "C" __global__ void cuRankHistogram2DUint8(
     for (int col = r1; col < cols - r1; col++) {
       unsigned char center = src[row * cols + col];
       unsigned char value = histogramRankValue(
-          H, Hscan, tmp0, tmp1, dtmp, op, p0, p1, center);
+          H, Hscan, tmp0, tmp1, dtmp, op, window_size, p0, p1, center);
 
       if (tx == 0) {
         dest[row * cols + col] = value;
