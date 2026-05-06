@@ -2,6 +2,8 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
+import warnings
+
 import cupy as cp
 import numpy as np
 import pytest
@@ -515,6 +517,86 @@ def test_rank_median_default_footprint():
     cp.testing.assert_array_equal(result, expected)
 
 
+def test_rank_cast_to_uint8_matches_explicit_float_conversion():
+    image = cp.linspace(0, 1, 25, dtype=cp.float32).reshape(5, 5)
+    footprint = cp.ones((3, 3), dtype=bool)
+    image_u8 = img_as_ubyte(image)
+
+    expected = rank.percentile(
+        image_u8, footprint, p0=0.5, backend="elementwise"
+    )
+    result = rank.percentile(
+        image,
+        footprint,
+        p0=0.5,
+        backend="elementwise",
+        cast_to_uint8=True,
+    )
+
+    assert result.dtype == cp.uint8
+    cp.testing.assert_array_equal(result, expected)
+
+
+def test_rank_cast_to_uint8_matches_explicit_uint16_conversion():
+    image = cp.linspace(0, 65535, 25, dtype=cp.uint16).reshape(5, 5)
+    footprint = cp.ones((3, 3), dtype=bool)
+    image_u8 = img_as_ubyte(image)
+
+    expected = rank.percentile(
+        image_u8, footprint, p0=0.5, backend="elementwise"
+    )
+    result = rank.percentile(
+        image,
+        footprint,
+        p0=0.5,
+        backend="elementwise",
+        cast_to_uint8=True,
+    )
+
+    assert result.dtype == cp.uint8
+    cp.testing.assert_array_equal(result, expected)
+
+
+def test_rank_cast_to_uint8_before_histogram_backend_selection():
+    image = cp.linspace(0, 1, 25 * 25, dtype=cp.float32).reshape(25, 25)
+    footprint = cp.ones((17, 17), dtype=bool)
+    image_u8 = img_as_ubyte(image)
+
+    with pytest.raises(ValueError, match="backend='histogram' requires"):
+        rank.percentile(image, footprint, p0=0.5, backend="histogram")
+
+    expected = rank.percentile(image_u8, footprint, p0=0.5, backend="histogram")
+    result = rank.percentile(
+        image,
+        footprint,
+        p0=0.5,
+        backend="histogram",
+        cast_to_uint8=True,
+    )
+
+    assert result.dtype == cp.uint8
+    cp.testing.assert_array_equal(result, expected)
+
+
+def test_rank_uint16_elementwise_does_not_warn_about_bins():
+    image = cp.asarray(np.arange(25, dtype=np.uint16).reshape(5, 5))
+    image[-1, -1] = 2048
+    footprint = cp.ones((3, 3), dtype=bool)
+
+    with warnings.catch_warnings(record=True) as record:
+        warnings.simplefilter("always")
+        rank.percentile(
+            image,
+            footprint,
+            p0=0.5,
+            backend="elementwise",
+        )
+    assert not record
+
+    with pytest.raises(ValueError, match="backend='histogram' requires"):
+        rank.percentile(image, footprint, p0=0.5, backend="histogram")
+
+
 def test_rank_histogram_partitions_default_and_env(monkeypatch):
     monkeypatch.delenv("CUCIM_RANK_HISTOGRAM_PARTITIONS", raising=False)
     monkeypatch.delenv("CUCIM_RANK_HISTOGRAM_SCRATCH_MB", raising=False)
@@ -660,10 +742,9 @@ class TestRank:
                 f"{filter}: known algorithmic difference vs scikit-image (not a bug)"
             )
         expected = cp.asarray(self.refs[filter])
-        # Convert to uint8 to match the reference data (scikit-image
-        # internally does img_as_ubyte on float input).
-        image_u8 = img_as_ubyte(self.image)
-        result = getattr(rank, filter)(image_u8, self.footprint)
+        result = getattr(rank, filter)(
+            self.image, self.footprint, cast_to_uint8=True
+        )
         if filter in self._border_differences_allowed:
             # Only compare interior pixels — borders differ due to
             # reflected boundary extension (GPU) vs excluded pixels
@@ -721,11 +802,9 @@ class TestRank:
             out = cp.zeros_like(expected, dtype=outdt)
         else:
             out = None
-        # Convert to uint8 to match the reference data (scikit-image
-        # internally does img_as_ubyte on float input).
-        volume_u8 = img_as_ubyte(self.volume)
-        result = getattr(rank, filter)(volume_u8, self.footprint_3d, out=out)
-        # 1 / 0
+        result = getattr(rank, filter)(
+            self.volume, self.footprint_3d, out=out, cast_to_uint8=True
+        )
         if outdt is not None:
             # Avoid rounding issues comparing to expected result
             if filter == "sum":
@@ -1339,7 +1418,6 @@ class TestRank:
         footprint = cp.ones((64, 64), dtype=cp.uint8)
         data = cp.zeros((65, 65), dtype=cp.uint16)
         data[:64, :64] = cp.reshape(cp.arange(4096), (64, 64))
-        # with expected_warnings(['Bad rank filter performance']):
         assert cp.max(rank.entropy(data, footprint)) == 12
 
         # # make sure output is of dtype double
