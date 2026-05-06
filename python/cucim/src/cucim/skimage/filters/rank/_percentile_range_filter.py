@@ -831,6 +831,23 @@ def _get_percentile_range_kernel(
     )
 
 
+def _is_decomposed_footprint(footprint):
+    """Return True for morphology footprint decomposition sequences."""
+    if not isinstance(footprint, (tuple, list)) or len(footprint) == 0:
+        return False
+
+    for item in footprint:
+        if not isinstance(item, (tuple, list)) or len(item) != 2:
+            return False
+        footprint_part, num_iter = item
+        if not hasattr(footprint_part, "ndim"):
+            return False
+        if not isinstance(num_iter, (int, np.integer)):
+            return False
+
+    return True
+
+
 def _skimage_rank_filter(
     input,
     p0,
@@ -905,6 +922,10 @@ def _skimage_rank_filter(
     axes = _util._check_axes(axes, ndim)
     num_axes = len(axes)
     default_footprint = footprint is None
+    if _is_decomposed_footprint(footprint):
+        raise ValueError(
+            "decomposed footprint sequences are not supported by rank filters"
+        )
     sizes, footprint, _ = _filters_core._check_size_footprint_structure(
         num_axes, size, footprint, None, force_footprint=False
     )

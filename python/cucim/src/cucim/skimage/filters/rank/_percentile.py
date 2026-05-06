@@ -117,9 +117,8 @@ def _preprocess_input(
     shifts=None,
 ):
     """Preprocess and verify input for filters.rank methods (GPU version)."""
-    # Convert to CuPy array if needed
     if not isinstance(image, cp.ndarray):
-        image = cp.asarray(image)
+        raise ValueError("image must be a CuPy array")
 
     input_dtype = image.dtype
     if input_dtype == bool or out_dtype == bool:
@@ -128,7 +127,7 @@ def _preprocess_input(
     # Convert footprint to boolean CuPy array
     if footprint is not None:
         if not isinstance(footprint, cp.ndarray):
-            footprint = cp.asarray(footprint)
+            raise ValueError("footprint must be a CuPy array")
         footprint = cp.ascontiguousarray(footprint > 0, dtype=bool)
         if footprint.ndim != image.ndim:
             raise ValueError(
@@ -142,7 +141,7 @@ def _preprocess_input(
     # Handle mask
     if mask is not None:
         if not isinstance(mask, cp.ndarray):
-            mask = cp.asarray(mask)
+            raise ValueError("mask must be a CuPy array")
         mask = cp.ascontiguousarray(mask > 0, dtype=bool)
         if mask.shape != image.shape:
             raise ValueError("Mask shape must match image shape")

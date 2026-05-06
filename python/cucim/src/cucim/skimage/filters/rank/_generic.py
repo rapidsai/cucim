@@ -11,6 +11,7 @@ dtype and N-dimensional images (scikit-image is restricted to uint8/uint16 and
 
 """
 
+import cupy as cp
 import numpy as np
 
 from ._percentile import _apply, _doc_common_params
@@ -55,6 +56,14 @@ _doc_returns = """
         Output image with same shape and dtype as input.
 """
 
+_doc_common_params_median = _doc_common_params.replace(
+    """    footprint : cupy.ndarray
+        The neighborhood expressed as an array of 1's and 0's.""",
+    """    footprint : cupy.ndarray or None, optional
+        The neighborhood expressed as an array of 1's and 0's. If None, a
+        full footprint with shape ``(3,) * image.ndim`` is used.""",
+)
+
 
 def _build_generic_docstring(summary):
     """Build a docstring for a generic (no p0/p1) rank filter."""
@@ -62,6 +71,19 @@ def _build_generic_docstring(summary):
         summary
         + "\n\n    Parameters\n    ----------"
         + _doc_common_params
+        + _doc_shifts_param_generic
+        + _doc_backend_param
+        + "\n"
+        + _doc_returns
+    )
+
+
+def _build_median_docstring(summary):
+    """Build a docstring for median, which has a default footprint."""
+    return (
+        summary
+        + "\n\n    Parameters\n    ----------"
+        + _doc_common_params_median
         + _doc_shifts_param_generic
         + _doc_backend_param
         + "\n"
@@ -489,6 +511,8 @@ def median(
     shifts=None,
     backend="auto",
 ):
+    if footprint is None and isinstance(image, cp.ndarray):
+        footprint = cp.ones((3,) * image.ndim, dtype=bool)
     return _apply_generic(
         "percentile",
         image,
@@ -504,7 +528,7 @@ def median(
     )
 
 
-median.__doc__ = _build_generic_docstring(
+median.__doc__ = _build_median_docstring(
     """Return the local median of an image.
 
     .. note::
