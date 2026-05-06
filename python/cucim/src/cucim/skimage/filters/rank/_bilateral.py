@@ -12,7 +12,7 @@ See ``cucim.skimage.filters.rank`` for a summary of differences between the
 cuCIM and scikit-image implementations.
 """
 
-from ._percentile import _apply, _doc_common_params
+from ._percentile import _apply, _doc_cast_to_uint8_param, _doc_common_params
 
 __all__ = [
     "mean_bilateral",
@@ -56,6 +56,7 @@ def _build_bilateral_docstring(summary):
         + _doc_s0_s1_params
         + _doc_shifts_param
         + _doc_backend_param
+        + _doc_cast_to_uint8_param
         + "\n"
         + _doc_returns
     )
@@ -73,6 +74,7 @@ def mean_bilateral(
     *,
     shifts=None,
     backend="auto",
+    cast_to_uint8=False,
 ):
     return _apply(
         "bilateral_mean",
@@ -88,6 +90,7 @@ def mean_bilateral(
         s0=s0,
         s1=s1,
         backend=backend,
+        cast_to_uint8=cast_to_uint8,
     )
 
 
@@ -120,6 +123,7 @@ def pop_bilateral(
     *,
     shifts=None,
     backend="auto",
+    cast_to_uint8=False,
 ):
     return _apply(
         "bilateral_pop",
@@ -135,6 +139,7 @@ def pop_bilateral(
         s0=s0,
         s1=s1,
         backend=backend,
+        cast_to_uint8=cast_to_uint8,
     )
 
 
@@ -160,6 +165,7 @@ def sum_bilateral(
     *,
     shifts=None,
     backend="auto",
+    cast_to_uint8=False,
 ):
     return _apply(
         "bilateral_sum",
@@ -175,6 +181,7 @@ def sum_bilateral(
         s0=s0,
         s1=s1,
         backend=backend,
+        cast_to_uint8=cast_to_uint8,
     )
 
 

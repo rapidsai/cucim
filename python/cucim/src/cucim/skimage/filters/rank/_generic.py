@@ -14,7 +14,11 @@ dtype and N-dimensional images (scikit-image is restricted to uint8/uint16 and
 import cupy as cp
 import numpy as np
 
-from ._percentile import _apply, _doc_common_params
+from ._percentile import (
+    _apply,
+    _doc_cast_to_uint8_param,
+    _doc_common_params,
+)
 
 __all__ = [
     "autolevel",
@@ -73,6 +77,7 @@ def _build_generic_docstring(summary):
         + _doc_common_params
         + _doc_shifts_param_generic
         + _doc_backend_param
+        + _doc_cast_to_uint8_param
         + "\n"
         + _doc_returns
     )
@@ -86,6 +91,7 @@ def _build_median_docstring(summary):
         + _doc_common_params_median
         + _doc_shifts_param_generic
         + _doc_backend_param
+        + _doc_cast_to_uint8_param
         + "\n"
         + _doc_returns
     )
@@ -104,8 +110,12 @@ def _apply_generic(
     p0=0,
     p1=1,
     backend="auto",
+    cast_to_uint8=False,
 ):
     """Apply a generic rank filter (defaults to full range p0=0, p1=1)."""
+    if not isinstance(image, cp.ndarray):
+        raise ValueError("image must be a CuPy array")
+
     # Convert shift_z into the N-D shifts parameter
     if shifts is not None:
         if shift_x != 0 or shift_y != 0 or shift_z != 0:
@@ -136,6 +146,7 @@ def _apply_generic(
         p1=p1,
         shifts=shifts,
         backend=backend,
+        cast_to_uint8=cast_to_uint8,
     )
 
 
@@ -150,6 +161,7 @@ def autolevel(
     *,
     shifts=None,
     backend="auto",
+    cast_to_uint8=False,
 ):
     return _apply_generic(
         "autolevel",
@@ -162,6 +174,7 @@ def autolevel(
         shift_z,
         shifts,
         backend=backend,
+        cast_to_uint8=cast_to_uint8,
     )
 
 
@@ -184,6 +197,7 @@ def gradient(
     *,
     shifts=None,
     backend="auto",
+    cast_to_uint8=False,
 ):
     return _apply_generic(
         "gradient",
@@ -196,6 +210,7 @@ def gradient(
         shift_z,
         shifts,
         backend=backend,
+        cast_to_uint8=cast_to_uint8,
     )
 
 
@@ -216,6 +231,7 @@ def mean(
     *,
     shifts=None,
     backend="auto",
+    cast_to_uint8=False,
 ):
     return _apply_generic(
         "mean",
@@ -228,6 +244,7 @@ def mean(
         shift_z,
         shifts,
         backend=backend,
+        cast_to_uint8=cast_to_uint8,
     )
 
 
@@ -255,6 +272,7 @@ def subtract_mean(
     *,
     shifts=None,
     backend="auto",
+    cast_to_uint8=False,
 ):
     result = _apply_generic(
         "subtract_mean",
@@ -267,6 +285,7 @@ def subtract_mean(
         shift_z,
         shifts,
         backend=backend,
+        cast_to_uint8=cast_to_uint8,
     )
     # The generic version uses an offset of mid_bin - 1 (127 for uint8),
     # while the percentile version uses mid_bin (128 for uint8). Adjust by
@@ -317,6 +336,7 @@ def enhance_contrast(
     *,
     shifts=None,
     backend="auto",
+    cast_to_uint8=False,
 ):
     return _apply_generic(
         "enhance_contrast",
@@ -329,6 +349,7 @@ def enhance_contrast(
         shift_z,
         shifts,
         backend=backend,
+        cast_to_uint8=cast_to_uint8,
     )
 
 
@@ -352,6 +373,7 @@ def pop(
     *,
     shifts=None,
     backend="auto",
+    cast_to_uint8=False,
 ):
     return _apply_generic(
         "pop",
@@ -364,6 +386,7 @@ def pop(
         shift_z,
         shifts,
         backend=backend,
+        cast_to_uint8=cast_to_uint8,
     )
 
 
@@ -395,6 +418,7 @@ def sum(
     *,
     shifts=None,
     backend="auto",
+    cast_to_uint8=False,
 ):
     return _apply_generic(
         "sum",
@@ -407,6 +431,7 @@ def sum(
         shift_z,
         shifts,
         backend=backend,
+        cast_to_uint8=cast_to_uint8,
     )
 
 
@@ -438,6 +463,7 @@ def minimum(
     *,
     shifts=None,
     backend="auto",
+    cast_to_uint8=False,
 ):
     return _apply_generic(
         "minimum",
@@ -450,6 +476,7 @@ def minimum(
         shift_z,
         shifts,
         backend=backend,
+        cast_to_uint8=cast_to_uint8,
     )
 
 
@@ -474,6 +501,7 @@ def maximum(
     *,
     shifts=None,
     backend="auto",
+    cast_to_uint8=False,
 ):
     return _apply_generic(
         "maximum",
@@ -486,6 +514,7 @@ def maximum(
         shift_z,
         shifts,
         backend=backend,
+        cast_to_uint8=cast_to_uint8,
     )
 
 
@@ -510,6 +539,7 @@ def median(
     *,
     shifts=None,
     backend="auto",
+    cast_to_uint8=False,
 ):
     if footprint is None and isinstance(image, cp.ndarray):
         footprint = cp.ones((3,) * image.ndim, dtype=bool)
@@ -525,6 +555,7 @@ def median(
         shifts,
         backend=backend,
         p0=0.5,
+        cast_to_uint8=cast_to_uint8,
     )
 
 
@@ -551,6 +582,7 @@ def threshold(
     *,
     shifts=None,
     backend="auto",
+    cast_to_uint8=False,
 ):
     return _apply_generic(
         "threshold_mean",
@@ -563,6 +595,7 @@ def threshold(
         shift_z,
         shifts,
         backend=backend,
+        cast_to_uint8=cast_to_uint8,
     )
 
 
@@ -597,6 +630,7 @@ def equalize(
     *,
     shifts=None,
     backend="auto",
+    cast_to_uint8=False,
 ):
     return _apply_generic(
         "equalize",
@@ -609,6 +643,7 @@ def equalize(
         shift_z,
         shifts,
         backend=backend,
+        cast_to_uint8=cast_to_uint8,
     )
 
 
@@ -637,6 +672,7 @@ def geometric_mean(
     *,
     shifts=None,
     backend="auto",
+    cast_to_uint8=False,
 ):
     return _apply_generic(
         "geometric_mean",
@@ -649,6 +685,7 @@ def geometric_mean(
         shift_z,
         shifts,
         backend=backend,
+        cast_to_uint8=cast_to_uint8,
     )
 
 
@@ -675,6 +712,7 @@ def noise_filter(
     *,
     shifts=None,
     backend="auto",
+    cast_to_uint8=False,
 ):
     return _apply_generic(
         "noise_filter",
@@ -687,6 +725,7 @@ def noise_filter(
         shift_z,
         shifts,
         backend=backend,
+        cast_to_uint8=cast_to_uint8,
     )
 
 
@@ -711,6 +750,7 @@ def modal(
     *,
     shifts=None,
     backend="auto",
+    cast_to_uint8=False,
 ):
     return _apply_generic(
         "modal",
@@ -723,6 +763,7 @@ def modal(
         shift_z,
         shifts,
         backend=backend,
+        cast_to_uint8=cast_to_uint8,
     )
 
 
@@ -742,6 +783,7 @@ def majority(
     *,
     shifts=None,
     backend="auto",
+    cast_to_uint8=False,
 ):
     return _apply_generic(
         "modal",
@@ -754,6 +796,7 @@ def majority(
         shift_z,
         shifts,
         backend=backend,
+        cast_to_uint8=cast_to_uint8,
     )
 
 
@@ -776,6 +819,7 @@ def entropy(
     *,
     shifts=None,
     backend="auto",
+    cast_to_uint8=False,
 ):
     return _apply_generic(
         "entropy",
@@ -788,6 +832,7 @@ def entropy(
         shift_z,
         shifts,
         backend=backend,
+        cast_to_uint8=cast_to_uint8,
     )
 
 

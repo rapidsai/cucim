@@ -35,6 +35,7 @@ Some operations use a ``dtype_max`` value that affects output scaling
 
 import cupy as cp
 
+from ...util import img_as_ubyte
 from ._percentile_range_filter import _skimage_rank_filter
 
 __all__ = [
@@ -85,6 +86,13 @@ _doc_backend_param = """
         ``'histogram'`` requires the uint8 2D rectangular histogram backend,
         and ``'elementwise'`` forces the generic per-output-pixel backend."""
 
+_doc_cast_to_uint8_param = """
+    cast_to_uint8 : bool, optional (keyword-only)
+        If True, non-uint8 image inputs are converted to uint8 with
+        ``img_as_ubyte`` before backend selection. This can more closely
+        match scikit-image's rank filter behavior and can enable the uint8
+        histogram backend for compatible inputs. Default is False."""
+
 _doc_returns = """
     Returns
     -------
@@ -103,6 +111,7 @@ def _build_docstring(summary, *, p0_only=False):
         + pct_params
         + _doc_shifts_param
         + _doc_backend_param
+        + _doc_cast_to_uint8_param
         + "\n"
         + _doc_returns
     )
@@ -115,14 +124,22 @@ def _preprocess_input(
     mask=None,
     out_dtype=None,
     shifts=None,
+    cast_to_uint8=False,
 ):
     """Preprocess and verify input for filters.rank methods (GPU version)."""
     if not isinstance(image, cp.ndarray):
         raise ValueError("image must be a CuPy array")
 
+    if image is out:
+        raise NotImplementedError("Cannot perform rank operation in place.")
+
     input_dtype = image.dtype
     if input_dtype == bool or out_dtype == bool:
         raise ValueError("dtype cannot be bool.")
+
+    if cast_to_uint8 and image.dtype != cp.dtype(cp.uint8):
+        image = img_as_ubyte(image)
+        input_dtype = image.dtype
 
     # Convert footprint to boolean CuPy array
     if footprint is not None:
@@ -147,9 +164,6 @@ def _preprocess_input(
             raise ValueError("Mask shape must match image shape")
 
     # Handle output array
-    if image is out:
-        raise NotImplementedError("Cannot perform rank operation in place.")
-
     if out is None:
         if out_dtype is None:
             out_dtype = image.dtype
@@ -196,8 +210,12 @@ def _apply(
     s0=0,
     s1=0,
     backend="auto",
+    cast_to_uint8=False,
 ):
     """Apply percentile range filter with specified operation."""
+    if not isinstance(image, cp.ndarray):
+        raise ValueError("image must be a CuPy array")
+
     # Handle shift_x, shift_y vs shifts
     if shifts is not None:
         if shift_x != 0 or shift_y != 0:
@@ -225,6 +243,7 @@ def _apply(
         mask,
         out_dtype,
         shifts=shifts,
+        cast_to_uint8=cast_to_uint8,
     )
 
     # Convert percentiles from [0, 1] to [0, 100] for our implementation
@@ -264,6 +283,7 @@ def autolevel_percentile(
     *,
     shifts=None,
     backend="auto",
+    cast_to_uint8=False,
 ):
     return _apply(
         "autolevel",
@@ -277,6 +297,7 @@ def autolevel_percentile(
         p1=p1,
         shifts=shifts,
         backend=backend,
+        cast_to_uint8=cast_to_uint8,
     )
 
 
@@ -310,6 +331,7 @@ def gradient_percentile(
     *,
     shifts=None,
     backend="auto",
+    cast_to_uint8=False,
 ):
     return _apply(
         "gradient",
@@ -323,6 +345,7 @@ def gradient_percentile(
         p1=p1,
         shifts=shifts,
         backend=backend,
+        cast_to_uint8=cast_to_uint8,
     )
 
 
@@ -351,6 +374,7 @@ def mean_percentile(
     *,
     shifts=None,
     backend="auto",
+    cast_to_uint8=False,
 ):
     return _apply(
         "mean",
@@ -364,6 +388,7 @@ def mean_percentile(
         p1=p1,
         shifts=shifts,
         backend=backend,
+        cast_to_uint8=cast_to_uint8,
     )
 
 
@@ -396,6 +421,7 @@ def subtract_mean_percentile(
     *,
     shifts=None,
     backend="auto",
+    cast_to_uint8=False,
 ):
     return _apply(
         "subtract_mean",
@@ -409,6 +435,7 @@ def subtract_mean_percentile(
         p1=p1,
         shifts=shifts,
         backend=backend,
+        cast_to_uint8=cast_to_uint8,
     )
 
 
@@ -454,6 +481,7 @@ def enhance_contrast_percentile(
     *,
     shifts=None,
     backend="auto",
+    cast_to_uint8=False,
 ):
     return _apply(
         "enhance_contrast",
@@ -467,6 +495,7 @@ def enhance_contrast_percentile(
         p1=p1,
         shifts=shifts,
         backend=backend,
+        cast_to_uint8=cast_to_uint8,
     )
 
 
@@ -498,6 +527,7 @@ def percentile(
     *,
     shifts=None,
     backend="auto",
+    cast_to_uint8=False,
 ):
     return _apply(
         "percentile",
@@ -511,6 +541,7 @@ def percentile(
         p1=p0,  # p1 not used for single percentile
         shifts=shifts,
         backend=backend,
+        cast_to_uint8=cast_to_uint8,
     )
 
 
@@ -537,6 +568,7 @@ def pop_percentile(
     *,
     shifts=None,
     backend="auto",
+    cast_to_uint8=False,
 ):
     return _apply(
         "pop",
@@ -550,6 +582,7 @@ def pop_percentile(
         p1=p1,
         shifts=shifts,
         backend=backend,
+        cast_to_uint8=cast_to_uint8,
     )
 
 
@@ -578,6 +611,7 @@ def sum_percentile(
     *,
     shifts=None,
     backend="auto",
+    cast_to_uint8=False,
 ):
     return _apply(
         "sum",
@@ -591,6 +625,7 @@ def sum_percentile(
         p1=p1,
         shifts=shifts,
         backend=backend,
+        cast_to_uint8=cast_to_uint8,
     )
 
 
@@ -624,6 +659,7 @@ def threshold_percentile(
     *,
     shifts=None,
     backend="auto",
+    cast_to_uint8=False,
 ):
     return _apply(
         "threshold",
@@ -637,6 +673,7 @@ def threshold_percentile(
         p1=p0,  # p1 not used for threshold
         shifts=shifts,
         backend=backend,
+        cast_to_uint8=cast_to_uint8,
     )
 
 
