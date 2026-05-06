@@ -33,6 +33,7 @@ from cucim.skimage.filters.rank import (
 from cucim.skimage.filters.rank._histogram import (
     _get_histogram_counter_dtype,
     _get_rank_histogram_partitions,
+    _should_use_rank_histogram,
 )
 from cucim.skimage.util import img_as_ubyte
 
@@ -554,6 +555,19 @@ def test_rank_histogram_partitions_default_and_env(monkeypatch):
 def test_rank_histogram_counter_dtype():
     assert _get_histogram_counter_dtype((181, 181)) == cp.int16
     assert _get_histogram_counter_dtype((181, 183)) == cp.int32
+
+
+def test_rank_histogram_auto_cutoffs():
+    assert not _should_use_rank_histogram("percentile", (15, 15))
+    assert _should_use_rank_histogram("percentile", (17, 17))
+    assert not _should_use_rank_histogram("mean", (17, 17))
+    assert _should_use_rank_histogram("mean", (19, 19))
+    assert not _should_use_rank_histogram("entropy", (23, 23))
+    assert _should_use_rank_histogram("entropy", (25, 25))
+    assert not _should_use_rank_histogram("bilateral_mean", (31, 31))
+    assert _should_use_rank_histogram("bilateral_mean", (33, 33))
+    assert not _should_use_rank_histogram("equalize", (71, 71))
+    assert _should_use_rank_histogram("equalize", (91, 91))
 
 
 # # Note: Explicitly read all values into a dict. Otherwise, stochastic test

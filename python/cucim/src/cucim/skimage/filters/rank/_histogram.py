@@ -26,16 +26,20 @@ _HISTOGRAM_OPS = {
 }
 
 _HISTOGRAM_MIN_FOOTPRINT_AREA = {
-    "percentile": 39 * 39,
-    "threshold": 39 * 39,
-    "gradient": 39 * 39,
-    "sum": 39 * 39,
-    "enhance_contrast": 39 * 39,
-    "autolevel": 51 * 51,
-    "mean": 51 * 51,
-    "pop": 51 * 51,
-    "subtract_mean": 51 * 51,
-    "entropy": 59 * 59,
+    "sum": 15 * 15,
+    "enhance_contrast": 17 * 17,
+    "gradient": 17 * 17,
+    "percentile": 17 * 17,
+    "pop": 17 * 17,
+    "threshold": 17 * 17,
+    "mean": 19 * 19,
+    "subtract_mean": 19 * 19,
+    "autolevel": 21 * 21,
+    "entropy": 25 * 25,
+    "bilateral_sum": 27 * 27,
+    "bilateral_pop": 29 * 29,
+    "bilateral_mean": 33 * 33,
+    "equalize": 91 * 91,
 }
 
 _DEFAULT_SCRATCH_MB = 256
