@@ -25,6 +25,10 @@ from cucim.skimage.measure._marching_cubes import (
     _get_lewiner_luts_device,
     _lewiner_case_needs_center_vertex,
     _lewiner_center_vertex,
+    _lewiner_count_cells_gpu,
+    _lewiner_generate_center_vertices_gpu,
+    _lewiner_generate_edge_ids_gpu,
+    _lewiner_generate_faces_from_edge_ids_gpu,
     _lewiner_tri_edges_and_trace_for_case_values,
     _lewiner_tri_edges_for_case_values,
 )
@@ -36,9 +40,79 @@ def _single_voxel_volume():
     return volume
 
 
-def test_default_lewiner_not_implemented():
-    with pytest.raises(NotImplementedError, match="method='lewiner'"):
-        marching_cubes(_single_voxel_volume())
+def _case_volume(values):
+    volume = np.empty((2, 2, 2), dtype=np.float32)
+    volume[0, 0, 0] = values[0]
+    volume[1, 0, 0] = values[1]
+    volume[1, 1, 0] = values[2]
+    volume[0, 1, 0] = values[3]
+    volume[0, 0, 1] = values[4]
+    volume[1, 0, 1] = values[5]
+    volume[1, 1, 1] = values[6]
+    volume[0, 1, 1] = values[7]
+    return cp.asarray(volume)
+
+
+def _single_cell_edge_vertex_ids():
+    edge_vertex_ids = np.full((2, 2, 2, 3), -1, dtype=np.int32)
+    edge_to_axis_slot = {
+        0: (0, 0, 0, 0),
+        1: (1, 0, 0, 1),
+        2: (0, 1, 0, 0),
+        3: (0, 0, 0, 1),
+        4: (0, 0, 1, 0),
+        5: (1, 0, 1, 1),
+        6: (0, 1, 1, 0),
+        7: (0, 0, 1, 1),
+        8: (0, 0, 0, 2),
+        9: (1, 0, 0, 2),
+        10: (1, 1, 0, 2),
+        11: (0, 1, 0, 2),
+    }
+    for edge, slot in edge_to_axis_slot.items():
+        edge_vertex_ids[slot] = 100 + edge
+    return cp.asarray(edge_vertex_ids.reshape(-1))
+
+
+_LEWINER_LOCAL_VALUE_ORDER = (0, 4, 7, 3, 1, 5, 6, 2)
+_LEWINER_EDGE_TO_LOCAL = np.asarray(
+    [8, 7, 11, 3, 9, 5, 10, 1, 0, 4, 6, 2, 12], dtype=np.int8
+)
+
+
+def _lewiner_expected_local_edges_for_volume(values):
+    values = tuple(values[i] for i in _LEWINER_LOCAL_VALUE_ORDER)
+    edges = np.asarray(
+        _lewiner_tri_edges_for_case_values(values), dtype=np.int8
+    )
+    return tuple(int(v) for v in _LEWINER_EDGE_TO_LOCAL[edges])
+
+
+def _case_volume_for_lewiner_values(values):
+    local_values = (
+        values[0],
+        values[4],
+        values[7],
+        values[3],
+        values[1],
+        values[5],
+        values[6],
+        values[2],
+    )
+    return _case_volume(local_values), local_values
+
+
+def test_default_lewiner_single_voxel_smoke():
+    verts, faces, normals, values = marching_cubes(_single_voxel_volume(), 0.5)
+
+    assert verts.ndim == 2
+    assert faces.ndim == 2
+    assert normals.shape == verts.shape
+    assert values.shape == (verts.shape[0],)
+    assert verts.dtype == cp.float32
+    assert faces.dtype == cp.int32
+    assert bool(cp.all(faces >= 0))
+    assert bool(cp.all(faces < verts.shape[0]))
 
 
 def test_invalid_method():
@@ -69,13 +143,23 @@ def test_lewiner_lut_scaffolding():
 def test_lewiner_reference_selector_binary_cases():
     for case in range(256):
         values = tuple(1.0 if case & (1 << i) else -1.0 for i in range(8))
-        actual = _triangles_as_sets(
-            np.asarray(_lewiner_tri_edges_for_case_values(values)).reshape(
-                -1, 3
-            )
-        )
+        edges = _lewiner_tri_edges_for_case_values(values)
+        actual = _triangles_as_sets(np.asarray(edges).reshape(-1, 3))
         expected = _skimage_lewiner_case_triangles(values)
         assert actual == expected, f"case={case}"
+
+        tri_counts, center_flags = _lewiner_count_cells_gpu(
+            _case_volume(values), 0.0
+        )
+        gpu_edges = _lewiner_expected_local_edges_for_volume(values)
+        assert int(tri_counts[0]) == len(gpu_edges) // 3, f"case={case}"
+        assert int(center_flags[0]) == (12 in gpu_edges), f"case={case}"
+        edge_ids = _lewiner_generate_edge_ids_gpu(
+            _case_volume(values), 0.0, tri_counts
+        )
+        np.testing.assert_array_equal(
+            cp.asnumpy(edge_ids), np.asarray(gpu_edges)
+        )
 
 
 @pytest.mark.parametrize(
@@ -286,6 +370,17 @@ def test_lewiner_reference_selector_ambiguous_branches(expected_table, values):
     expected = _skimage_lewiner_case_triangles(values)
     assert actual == expected
 
+    tri_counts, center_flags = _lewiner_count_cells_gpu(
+        _case_volume(values), 0.0
+    )
+    gpu_edges = _lewiner_expected_local_edges_for_volume(values)
+    assert int(tri_counts[0]) == len(gpu_edges) // 3
+    assert int(center_flags[0]) == (12 in gpu_edges)
+    edge_ids = _lewiner_generate_edge_ids_gpu(
+        _case_volume(values), 0.0, tri_counts
+    )
+    np.testing.assert_array_equal(cp.asnumpy(edge_ids), np.asarray(gpu_edges))
+
 
 def test_lewiner_center_vertex_detection():
     center_cases = []
@@ -318,6 +413,88 @@ def test_lewiner_center_vertex_formula():
     assert_allclose(np.linalg.norm(normal), 1.0)
 
 
+def test_lewiner_gpu_center_vertex_generation():
+    values = (
+        -0.074507588,
+        0.05111846,
+        -85.477048,
+        5.9626186,
+        28.537463,
+        -0.13654382,
+        2.4709994,
+        -16.967766,
+    )
+    spacing = (2.0, 3.0, 4.0)
+    volume, local_values = _case_volume_for_lewiner_values(values)
+    tri_counts, center_flags = _lewiner_count_cells_gpu(volume, 0.0)
+    assert int(tri_counts[0]) == 12
+    assert int(center_flags[0]) == 1
+
+    vertices, normals, out_values, center_vertex_ids = (
+        _lewiner_generate_center_vertices_gpu(
+            volume, 0.0, spacing, center_flags
+        )
+    )
+    expected_position, expected_normal = _lewiner_center_vertex(local_values)
+
+    cp.testing.assert_array_equal(center_vertex_ids, cp.asarray([0]))
+    cp.testing.assert_allclose(
+        vertices[0], cp.asarray(expected_position * spacing), rtol=1e-6
+    )
+    cp.testing.assert_allclose(
+        normals[0], cp.asarray(expected_normal), rtol=1e-6, atol=1e-7
+    )
+    cp.testing.assert_allclose(
+        out_values[0], np.max(local_values) - np.min(local_values), rtol=1e-6
+    )
+
+
+def test_lewiner_gpu_faces_from_edge_ids():
+    values = (
+        -0.074507588,
+        0.05111846,
+        -85.477048,
+        5.9626186,
+        28.537463,
+        -0.13654382,
+        2.4709994,
+        -16.967766,
+    )
+    volume, _ = _case_volume_for_lewiner_values(values)
+    tri_counts, center_flags = _lewiner_count_cells_gpu(volume, 0.0)
+    assert int(tri_counts[0]) == 12
+    assert int(center_flags[0]) == 1
+
+    edge_ids = _lewiner_generate_edge_ids_gpu(volume, 0.0, tri_counts)
+    edge_vertex_ids = _single_cell_edge_vertex_ids()
+    center_vertex_ids = cp.asarray([112], dtype=cp.int32)
+    expected = cp.where(
+        edge_ids.reshape(-1, 3) == 12,
+        cp.asarray(112, dtype=cp.int32),
+        edge_ids.reshape(-1, 3).astype(cp.int32) + 100,
+    )
+
+    faces_ascent = _lewiner_generate_faces_from_edge_ids_gpu(
+        edge_ids,
+        tri_counts,
+        edge_vertex_ids,
+        center_vertex_ids,
+        volume.shape,
+        "ascent",
+    )
+    cp.testing.assert_array_equal(faces_ascent, expected)
+
+    faces_descent = _lewiner_generate_faces_from_edge_ids_gpu(
+        edge_ids,
+        tri_counts,
+        edge_vertex_ids,
+        center_vertex_ids,
+        volume.shape,
+        "descent",
+    )
+    cp.testing.assert_array_equal(faces_descent, expected[:, ::-1])
+
+
 def test_lorensen_single_voxel_smoke():
     verts, faces, normals, values = marching_cubes(
         _single_voxel_volume(), 0.5, method="lorensen"
@@ -348,6 +525,18 @@ def test_lorensen_matches_skimage_single_voxel_mesh():
     )
 
 
+def test_lewiner_matches_skimage_single_voxel_mesh():
+    volume = cp.asnumpy(_single_voxel_volume())
+    verts, faces = marching_cubes(cp.asarray(volume), 0.5)[:2]
+    expected_verts, expected_faces = skimage_marching_cubes(
+        volume, 0.5, method="lewiner"
+    )[:2]
+
+    assert _same_mesh(
+        cp.asnumpy(verts), cp.asnumpy(faces), expected_verts, expected_faces
+    )
+
+
 def test_lorensen_spacing():
     spacing = (2.0, 3.0, 4.0)
     verts, _, _, _ = marching_cubes(
@@ -365,6 +554,18 @@ def test_gradient_direction_flips_winding():
     )
     _, faces_ascent, _, _ = marching_cubes(
         volume, 0.5, method="lorensen", gradient_direction="ascent"
+    )
+
+    cp.testing.assert_array_equal(faces_descent, faces_ascent[:, ::-1])
+
+
+def test_lewiner_gradient_direction_flips_winding():
+    volume = _single_voxel_volume()
+    _, faces_descent, _, _ = marching_cubes(
+        volume, 0.5, gradient_direction="descent"
+    )
+    _, faces_ascent, _, _ = marching_cubes(
+        volume, 0.5, gradient_direction="ascent"
     )
 
     cp.testing.assert_array_equal(faces_descent, faces_ascent[:, ::-1])
@@ -404,6 +605,12 @@ def test_marching_cubes_isotropic():
     # Test within 1% tolerance for isotropic. Will always underestimate.
     assert surf > surf_calc and surf_calc > surf * 0.99
 
+    # Lewiner
+    verts, faces = marching_cubes(cp.asarray(ellipsoid_isotropic), 0.0)[:2]
+    surf_calc = mesh_surface_area(cp.asnumpy(verts), cp.asnumpy(faces))
+    # Test within 1% tolerance for isotropic. Will always underestimate.
+    assert surf > surf_calc and surf_calc > surf * 0.99
+
 
 def test_marching_cubes_anisotropic():
     # test spacing as numpy array (and not just tuple)
@@ -422,6 +629,14 @@ def test_marching_cubes_anisotropic():
     # Test within 1.5% tolerance for anisotropic. Will always underestimate.
     assert surf > surf_calc and surf_calc > surf * 0.985
 
+    # Lewiner
+    verts, faces = marching_cubes(
+        cp.asarray(ellipsoid_anisotropic), 0.0, spacing=spacing
+    )[:2]
+    surf_calc = mesh_surface_area(cp.asnumpy(verts), cp.asnumpy(faces))
+    # Test within 1.5% tolerance for anisotropic. Will always underestimate.
+    assert surf > surf_calc and surf_calc > surf * 0.985
+
     # Test marching cube with mask
     with pytest.raises(ValueError):
         marching_cubes(
@@ -430,6 +645,13 @@ def test_marching_cubes_anisotropic():
             spacing=spacing,
             mask=np.array([]),
             method="lorensen",
+        )[:2]
+    with pytest.raises(ValueError):
+        marching_cubes(
+            cp.asarray(ellipsoid_anisotropic),
+            0.0,
+            spacing=spacing,
+            mask=np.array([]),
         )[:2]
 
 
@@ -443,6 +665,16 @@ def test_invalid_input():
         marching_cubes(cp.ones((3, 3, 3)), 1, spacing=(1, 2), method="lorensen")
     with pytest.raises(ValueError):
         marching_cubes(cp.zeros((20, 20)), 0, method="lorensen")
+
+    # Lewiner
+    with pytest.raises(ValueError):
+        marching_cubes(cp.zeros((2, 2, 1)), 0)
+    with pytest.raises(ValueError):
+        marching_cubes(cp.zeros((2, 2, 1)), 1)
+    with pytest.raises(ValueError):
+        marching_cubes(cp.ones((3, 3, 3)), 1, spacing=(1, 2))
+    with pytest.raises(ValueError):
+        marching_cubes(cp.zeros((20, 20)), 0)
 
     # invalid method name
     ellipsoid_isotropic = ellipsoid(6, 10, 16, levelset=True)

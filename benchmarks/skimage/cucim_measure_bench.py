@@ -232,7 +232,13 @@ def main(args):
             False,
         ),  # variable block_size configured below
         # _marching_cubes.py
-        ("marching_cubes", dict(level=0.0, method="lorensen"), dict(), False, True),
+        (
+            "marching_cubes",
+            dict(level=0.0),
+            dict(method=["lorensen", "lewiner"]),
+            False,
+            True,
+        ),
         # binary image overlap measures
         ("intersection_coeff", dict(mask=None), dict(), False, True),
         ("manders_coloc_coeff", dict(mask=None), dict(), False, True),
