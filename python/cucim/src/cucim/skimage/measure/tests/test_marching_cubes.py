@@ -677,8 +677,6 @@ def test_no_surface_found():
 def test_unsupported_options():
     volume = _single_voxel_volume()
     for method in ("lorensen", "lewiner"):
-        with pytest.raises(NotImplementedError, match="step_size"):
-            marching_cubes(volume, 0.5, method=method, step_size=2)
         with pytest.raises(NotImplementedError, match="mask"):
             marching_cubes(
                 volume,
@@ -686,6 +684,39 @@ def test_unsupported_options():
                 method=method,
                 mask=cp.ones(volume.shape, dtype=bool),
             )
+
+
+def test_step_size_matches_skimage_lewiner():
+    volume = ellipsoid(6, 10, 16, levelset=True).astype(np.float32)
+    verts, faces = marching_cubes(cp.asarray(volume), 0.0, step_size=2)[:2]
+    expected_verts, expected_faces = skimage_marching_cubes(
+        volume, 0.0, step_size=2
+    )[:2]
+
+    assert _same_mesh(
+        cp.asnumpy(verts),
+        cp.asnumpy(faces),
+        expected_verts,
+        expected_faces,
+        tol=1e-5,
+    )
+
+
+def test_step_size_lorensen_surface_area():
+    volume = ellipsoid(6, 10, 16, levelset=True).astype(np.float32)
+    verts, faces = marching_cubes(
+        cp.asarray(volume), 0.0, method="lorensen", step_size=2
+    )[:2]
+    expected_verts, expected_faces = skimage_marching_cubes(
+        volume, 0.0, method="lorensen", step_size=2
+    )[:2]
+
+    assert verts.shape == expected_verts.shape
+    assert faces.shape == expected_faces.shape
+    assert_allclose(
+        mesh_surface_area(cp.asnumpy(verts), cp.asnumpy(faces)),
+        mesh_surface_area(expected_verts, expected_faces),
+    )
 
 
 def test_allow_degenerate_false_removes_zero_area_faces():
@@ -820,6 +851,8 @@ def test_invalid_input():
         marching_cubes(cp.ones((3, 3, 3)), 1, spacing=(1, 2), method="lorensen")
     with pytest.raises(ValueError):
         marching_cubes(cp.zeros((20, 20)), 0, method="lorensen")
+    with pytest.raises(ValueError):
+        marching_cubes(cp.zeros((3, 3, 3)), 0, method="lorensen", step_size=0)
 
     # Lewiner
     with pytest.raises(ValueError):
@@ -830,6 +863,8 @@ def test_invalid_input():
         marching_cubes(cp.ones((3, 3, 3)), 1, spacing=(1, 2))
     with pytest.raises(ValueError):
         marching_cubes(cp.zeros((20, 20)), 0)
+    with pytest.raises(ValueError):
+        marching_cubes(cp.zeros((3, 3, 3)), 0, step_size=0)
 
     # invalid method name
     ellipsoid_isotropic = ellipsoid(6, 10, 16, levelset=True)

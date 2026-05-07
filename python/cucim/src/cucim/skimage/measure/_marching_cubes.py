@@ -1256,44 +1256,66 @@ extern "C" __global__ void mc_generate_faces(
     }
 }
 
-extern "C" __global__ void mc_mark_degenerate_faces(
+extern "C" __device__ inline int mc_find_root(int* parent, int x) {
+    int p = parent[x];
+    while (p != parent[p]) {
+        p = parent[p];
+    }
+    return p;
+}
+
+extern "C" __device__ inline void mc_union_vertices(int* parent, int a, int b) {
+    while (true) {
+        int ra = mc_find_root(parent, a);
+        int rb = mc_find_root(parent, b);
+        if (ra == rb) {
+            return;
+        }
+        int hi = ra > rb ? ra : rb;
+        int lo = ra > rb ? rb : ra;
+        int old = atomicMin(parent + hi, lo);
+        if (old == hi || old <= lo) {
+            return;
+        }
+    }
+}
+
+extern "C" __global__ void mc_mark_degenerate_faces_parallel(
     const float* vertices, const int* faces, int n_faces,
-    int* vertex_map, int* faces_ok) {
-    if (blockIdx.x != 0 || threadIdx.x != 0) {
+    int* parent, int* faces_ok) {
+    int idx = blockDim.x * blockIdx.x + threadIdx.x;
+    if (idx >= n_faces) {
         return;
     }
 
-    for (int idx = 0; idx < n_faces; idx++) {
-        int i0 = faces[3 * idx];
-        int i1 = faces[3 * idx + 1];
-        int i2 = faces[3 * idx + 2];
-        const float* v0 = vertices + 3 * i0;
-        const float* v1 = vertices + 3 * i1;
-        const float* v2 = vertices + 3 * i2;
-        bool eq01 = v0[0] == v1[0] && v0[1] == v1[1] && v0[2] == v1[2];
-        bool eq02 = v0[0] == v2[0] && v0[1] == v2[1] && v0[2] == v2[2];
-        bool eq12 = v1[0] == v2[0] && v1[1] == v2[1] && v1[2] == v2[2];
+    int i0 = faces[3 * idx];
+    int i1 = faces[3 * idx + 1];
+    int i2 = faces[3 * idx + 2];
+    const float* v0 = vertices + 3 * i0;
+    const float* v1 = vertices + 3 * i1;
+    const float* v2 = vertices + 3 * i2;
+    bool eq01 = v0[0] == v1[0] && v0[1] == v1[1] && v0[2] == v1[2];
+    bool eq02 = v0[0] == v2[0] && v0[1] == v2[1] && v0[2] == v2[2];
+    bool eq12 = v1[0] == v2[0] && v1[1] == v2[1] && v1[2] == v2[2];
 
-        faces_ok[idx] = 1;
-        if (eq01) {
-            int m = vertex_map[i0] < vertex_map[i1] ? vertex_map[i0] : vertex_map[i1];
-            vertex_map[i0] = m;
-            vertex_map[i1] = m;
-            faces_ok[idx] = 0;
-        }
-        if (eq02) {
-            int m = vertex_map[i0] < vertex_map[i2] ? vertex_map[i0] : vertex_map[i2];
-            vertex_map[i0] = m;
-            vertex_map[i2] = m;
-            faces_ok[idx] = 0;
-        }
-        if (eq12) {
-            int m = vertex_map[i1] < vertex_map[i2] ? vertex_map[i1] : vertex_map[i2];
-            vertex_map[i1] = m;
-            vertex_map[i2] = m;
-            faces_ok[idx] = 0;
-        }
+    faces_ok[idx] = !(eq01 || eq02 || eq12);
+    if (eq01) {
+        mc_union_vertices(parent, i0, i1);
     }
+    if (eq02) {
+        mc_union_vertices(parent, i0, i2);
+    }
+    if (eq12) {
+        mc_union_vertices(parent, i1, i2);
+    }
+}
+
+extern "C" __global__ void mc_compress_vertex_roots(int* parent, int n_vertices) {
+    int idx = blockDim.x * blockIdx.x + threadIdx.x;
+    if (idx >= n_vertices) {
+        return;
+    }
+    parent[idx] = mc_find_root(parent, idx);
 }
 """
 
@@ -1312,8 +1334,12 @@ def marching_cubes(
     """Marching cubes algorithm to find surfaces in 3D volumetric data.
 
     The ``method='lewiner'`` default and ``method='lorensen'`` are supported
-    for CuPy inputs when ``step_size=1`` and ``mask=None``. Masked marching
-    cubes and larger step sizes are not implemented yet.
+    for CuPy inputs when ``mask=None``. Masked marching cubes is not
+    implemented yet.
+
+    When ``allow_degenerate=False``, zero-area faces are removed and the mesh
+    geometry is preserved, but the exact surviving duplicate vertex IDs can
+    differ from scikit-image's ordered CPU post-processing.
     """
     if method not in ("lewiner", "lorensen"):
         raise ValueError("method should be either 'lewiner' or 'lorensen'")
@@ -1349,7 +1375,7 @@ def _marching_cubes_lorensen(
     allow_degenerate,
     mask,
 ):
-    volume, level, spacing = _validate_marching_cubes_inputs(
+    volume, level, spacing, step_size = _validate_marching_cubes_inputs(
         volume,
         level,
         spacing,
@@ -1358,6 +1384,7 @@ def _marching_cubes_lorensen(
         allow_degenerate,
         mask,
     )
+    volume, spacing = _apply_step_size(volume, spacing, step_size)
     return _run_lorensen(
         volume, level, spacing, gradient_direction, allow_degenerate
     )
@@ -1372,7 +1399,7 @@ def _marching_cubes_lewiner(
     allow_degenerate,
     mask,
 ):
-    volume, level, spacing = _validate_marching_cubes_inputs(
+    volume, level, spacing, step_size = _validate_marching_cubes_inputs(
         volume,
         level,
         spacing,
@@ -1381,6 +1408,7 @@ def _marching_cubes_lewiner(
         allow_degenerate,
         mask,
     )
+    volume, spacing = _apply_step_size(volume, spacing, step_size)
     return _run_lewiner(
         volume, level, spacing, gradient_direction, allow_degenerate
     )
@@ -1417,8 +1445,6 @@ def _validate_marching_cubes_inputs(
     step_size = int(step_size)
     if step_size < 1:
         raise ValueError("step_size must be at least one.")
-    if step_size != 1:
-        raise NotImplementedError("step_size > 1 is not implemented yet.")
 
     if gradient_direction not in ("descent", "ascent"):
         raise ValueError(
@@ -1431,7 +1457,18 @@ def _validate_marching_cubes_inputs(
             raise ValueError("volume and mask must have the same shape.")
         raise NotImplementedError("mask is not implemented yet.")
 
-    return volume, level, spacing
+    return volume, level, spacing, step_size
+
+
+def _apply_step_size(volume, spacing, step_size):
+    if step_size == 1:
+        return volume, spacing
+
+    volume = cp.ascontiguousarray(volume[::step_size, ::step_size, ::step_size])
+    if volume.shape[0] < 2 or volume.shape[1] < 2 or volume.shape[2] < 2:
+        raise RuntimeError("No surface found at the given iso value.")
+    spacing = tuple(s * step_size for s in spacing)
+    return volume, spacing
 
 
 def _run_lorensen(volume, level, spacing, gradient_direction, allow_degenerate):
@@ -1598,10 +1635,18 @@ def _remove_degenerate_faces_gpu(vertices, faces, normals, values):
     vertex_ids = cp.arange(n_vertices, dtype=cp.int32)
     vertex_map = vertex_ids.copy()
     faces_ok = cp.empty(n_faces, dtype=cp.int32)
-    _get_kernel("mc_mark_degenerate_faces")(
-        (1,),
-        (1,),
+    threads = 256
+    face_blocks = ((n_faces + threads - 1) // threads,)
+    _get_kernel("mc_mark_degenerate_faces_parallel")(
+        face_blocks,
+        (threads,),
         (vertices, faces, n_faces, vertex_map, faces_ok),
+    )
+    vertex_blocks = ((n_vertices + threads - 1) // threads,)
+    _get_kernel("mc_compress_vertex_roots")(
+        vertex_blocks,
+        (threads,),
+        (vertex_map, n_vertices),
     )
 
     vertices_ok = vertex_map == vertex_ids
