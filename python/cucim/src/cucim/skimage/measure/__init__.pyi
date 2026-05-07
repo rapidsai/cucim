@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2024-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 # Explicitly setting `__all__` is necessary for type inference engines
@@ -32,6 +32,7 @@ __all__ = [
     "manders_coloc_coeff",
     "manders_overlap_coeff",
     "intersection_coeff",
+    "marching_cubes",
 ]
 
 from ._blur_effect import blur_effect
@@ -42,6 +43,7 @@ from ._colocalization import (
     pearson_corr_coeff,
 )
 from ._label import label
+from ._marching_cubes import marching_cubes
 from ._moments import (
     centroid,
     inertia_tensor,
