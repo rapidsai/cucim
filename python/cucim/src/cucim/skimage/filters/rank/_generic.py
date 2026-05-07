@@ -16,6 +16,7 @@ import numpy as np
 
 from ._percentile import (
     _apply,
+    _doc_boundary_note,
     _doc_cast_to_uint8_param,
     _doc_common_params,
 )
@@ -80,6 +81,7 @@ def _build_generic_docstring(summary):
         + _doc_cast_to_uint8_param
         + "\n"
         + _doc_returns
+        + _doc_boundary_note
     )
 
 
@@ -94,6 +96,7 @@ def _build_median_docstring(summary):
         + _doc_cast_to_uint8_param
         + "\n"
         + _doc_returns
+        + _doc_boundary_note
     )
 
 
@@ -111,6 +114,7 @@ def _apply_generic(
     p1=1,
     backend="auto",
     cast_to_uint8=False,
+    out_dtype=None,
 ):
     """Apply a generic rank filter (defaults to full range p0=0, p1=1)."""
     if not isinstance(image, cp.ndarray):
@@ -145,6 +149,7 @@ def _apply_generic(
         p0=p0,
         p1=p1,
         shifts=shifts,
+        out_dtype=out_dtype,
         backend=backend,
         cast_to_uint8=cast_to_uint8,
     )
@@ -821,6 +826,13 @@ def entropy(
     backend="auto",
     cast_to_uint8=False,
 ):
+    out_dtype = None
+    if (
+        out is None
+        and isinstance(image, cp.ndarray)
+        and (image.dtype.kind != "f" or cast_to_uint8)
+    ):
+        out_dtype = cp.float32
     return _apply_generic(
         "entropy",
         image,
@@ -833,6 +845,7 @@ def entropy(
         shifts,
         backend=backend,
         cast_to_uint8=cast_to_uint8,
+        out_dtype=out_dtype,
     )
 
 
@@ -848,7 +861,8 @@ entropy.__doc__ = _build_generic_docstring(
 
     .. note::
 
-        The output is a floating-point quantity (entropy in bits) cast to the
-        output dtype. For integer output dtypes, fractional entropy values
-        are truncated. Using a float input dtype preserves full precision.""",
+        The output is a floating-point quantity (entropy in bits). When `out`
+        is not provided, integer inputs produce a floating-point output.
+        Explicit integer `out` arrays are respected and will truncate
+        fractional entropy values.""",
 )
