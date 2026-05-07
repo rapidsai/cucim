@@ -8,6 +8,8 @@ import base64
 import cupy as cp
 import numpy as np
 
+from . import _marching_cubes_lewiner_luts as _mcluts
+
 # Implementation notes
 # --------------------
 # This is a CuPy RawKernel implementation of classic Lorensen marching cubes.
@@ -99,6 +101,58 @@ CggICgv/////////AwEKCwMK/////////////wECCwELCQkLCP////////8DAAkDCQsBAgkCCwn/
 /wAJAf////////////////8AAwj//////////////////////////////////////w==
 """,
 )
+
+_LEWINER_LUT_NAMES = (
+    "CASES",
+    "TILING1",
+    "TILING2",
+    "TILING3_1",
+    "TILING3_2",
+    "TILING4_1",
+    "TILING4_2",
+    "TILING5",
+    "TILING6_1_1",
+    "TILING6_1_2",
+    "TILING6_2",
+    "TILING7_1",
+    "TILING7_2",
+    "TILING7_3",
+    "TILING7_4_1",
+    "TILING7_4_2",
+    "TILING8",
+    "TILING9",
+    "TILING10_1_1",
+    "TILING10_1_1_",
+    "TILING10_1_2",
+    "TILING10_2",
+    "TILING10_2_",
+    "TILING11",
+    "TILING12_1_1",
+    "TILING12_1_1_",
+    "TILING12_1_2",
+    "TILING12_2",
+    "TILING12_2_",
+    "TILING13_1",
+    "TILING13_1_",
+    "TILING13_2",
+    "TILING13_2_",
+    "TILING13_3",
+    "TILING13_3_",
+    "TILING13_4",
+    "TILING13_5_1",
+    "TILING13_5_2",
+    "TILING14",
+    "TEST3",
+    "TEST4",
+    "TEST6",
+    "TEST7",
+    "TEST10",
+    "TEST12",
+    "TEST13",
+    "SUBCONFIG13",
+)
+
+_FLT_EPSILON = float(np.spacing(1.0))
 
 
 _KERNEL_CODE = r"""
@@ -522,13 +576,409 @@ def _run_lorensen(volume, level, spacing, gradient_direction):
 
 def _decode_cases_classic():
     shape, text = _CASES_CLASSIC
+    return _decode_lut(shape, text)
+
+
+def _decode_lut(shape, text):
     byts = base64.decodebytes(text.encode("utf-8"))
     return np.frombuffer(byts, dtype=np.int8).reshape(shape)
+
+
+def _decode_named_lut(name):
+    shape, text = getattr(_mcluts, name)
+    return _decode_lut(shape, text)
+
+
+def _get_lewiner_luts_cpu():
+    return {name: _decode_named_lut(name) for name in _LEWINER_LUT_NAMES}
+
+
+def _append_triangles_from_lut(out, luts, name, config, *args, trace=None):
+    if len(args) == 1:
+        subconfig = None
+        n_triangles = args[0]
+    elif len(args) == 2:
+        subconfig, n_triangles = args
+    else:
+        raise TypeError("expected n_triangles or subconfig, n_triangles")
+
+    lut = luts[name]
+    n_values = n_triangles * 3
+    if subconfig is None:
+        values = lut[config, :n_values]
+    else:
+        values = lut[config, subconfig, :n_values]
+    out.extend(int(v) for v in values)
+    if trace is not None:
+        trace.append(
+            (
+                name,
+                int(config),
+                None if subconfig is None else int(subconfig),
+                int(n_triangles),
+            )
+        )
+
+
+def _lewiner_test_face(values, face):
+    abs_face = abs(int(face))
+    if abs_face == 1:
+        a, b, c, d = values[0], values[4], values[5], values[1]
+    elif abs_face == 2:
+        a, b, c, d = values[1], values[5], values[6], values[2]
+    elif abs_face == 3:
+        a, b, c, d = values[2], values[6], values[7], values[3]
+    elif abs_face == 4:
+        a, b, c, d = values[3], values[7], values[4], values[0]
+    elif abs_face == 5:
+        a, b, c, d = values[0], values[3], values[2], values[1]
+    elif abs_face == 6:
+        a, b, c, d = values[4], values[7], values[6], values[5]
+    else:
+        return False
+
+    ac_bd = a * c - b * d
+    if -_FLT_EPSILON < ac_bd < _FLT_EPSILON:
+        return face >= 0
+    return face * a * ac_bd >= 0
+
+
+def _lewiner_test_internal(values, luts, case, config, subconfig, s):
+    v = values
+    at = bt = ct = dt = 0.0
+
+    if case in (4, 10):
+        a = (v[4] - v[0]) * (v[6] - v[2]) - (v[7] - v[3]) * (v[5] - v[1])
+        b = (
+            v[2] * (v[4] - v[0])
+            + v[0] * (v[6] - v[2])
+            - v[1] * (v[7] - v[3])
+            - v[3] * (v[5] - v[1])
+        )
+        t = -b / (2 * a + _FLT_EPSILON)
+        if t < 0 or t > 1:
+            return s > 0
+
+        at = v[0] + (v[4] - v[0]) * t
+        bt = v[3] + (v[7] - v[3]) * t
+        ct = v[2] + (v[6] - v[2]) * t
+        dt = v[1] + (v[5] - v[1]) * t
+    elif case in (6, 7, 12, 13):
+        if case == 6:
+            edge = int(luts["TEST6"][config, 2])
+        elif case == 7:
+            edge = int(luts["TEST7"][config, 4])
+        elif case == 12:
+            edge = int(luts["TEST12"][config, 3])
+        else:
+            edge = int(luts["TILING13_5_1"][config, subconfig, 0])
+
+        if edge == 0:
+            t = v[0] / (v[0] - v[1] + _FLT_EPSILON)
+            bt = v[3] + (v[2] - v[3]) * t
+            ct = v[7] + (v[6] - v[7]) * t
+            dt = v[4] + (v[5] - v[4]) * t
+        elif edge == 1:
+            t = v[1] / (v[1] - v[2] + _FLT_EPSILON)
+            bt = v[0] + (v[3] - v[0]) * t
+            ct = v[4] + (v[7] - v[4]) * t
+            dt = v[5] + (v[6] - v[5]) * t
+        elif edge == 2:
+            t = v[2] / (v[2] - v[3] + _FLT_EPSILON)
+            bt = v[1] + (v[0] - v[1]) * t
+            ct = v[5] + (v[4] - v[5]) * t
+            dt = v[6] + (v[7] - v[6]) * t
+        elif edge == 3:
+            t = v[3] / (v[3] - v[0] + _FLT_EPSILON)
+            bt = v[2] + (v[1] - v[2]) * t
+            ct = v[6] + (v[5] - v[6]) * t
+            dt = v[7] + (v[4] - v[7]) * t
+        elif edge == 4:
+            t = v[4] / (v[4] - v[5] + _FLT_EPSILON)
+            bt = v[7] + (v[6] - v[7]) * t
+            ct = v[3] + (v[2] - v[3]) * t
+            dt = v[0] + (v[1] - v[0]) * t
+        elif edge == 5:
+            t = v[5] / (v[5] - v[6] + _FLT_EPSILON)
+            bt = v[4] + (v[7] - v[4]) * t
+            ct = v[0] + (v[3] - v[0]) * t
+            dt = v[1] + (v[2] - v[1]) * t
+        elif edge == 6:
+            t = v[6] / (v[6] - v[7] + _FLT_EPSILON)
+            bt = v[5] + (v[4] - v[5]) * t
+            ct = v[1] + (v[0] - v[1]) * t
+            dt = v[2] + (v[3] - v[2]) * t
+        elif edge == 7:
+            t = v[7] / (v[7] - v[4] + _FLT_EPSILON)
+            bt = v[6] + (v[5] - v[6]) * t
+            ct = v[2] + (v[1] - v[2]) * t
+            dt = v[3] + (v[0] - v[3]) * t
+        elif edge == 8:
+            t = v[0] / (v[0] - v[4] + _FLT_EPSILON)
+            bt = v[3] + (v[7] - v[3]) * t
+            ct = v[2] + (v[6] - v[2]) * t
+            dt = v[1] + (v[5] - v[1]) * t
+        elif edge == 9:
+            t = v[1] / (v[1] - v[5] + _FLT_EPSILON)
+            bt = v[0] + (v[4] - v[0]) * t
+            ct = v[3] + (v[7] - v[3]) * t
+            dt = v[2] + (v[6] - v[2]) * t
+        elif edge == 10:
+            t = v[2] / (v[2] - v[6] + _FLT_EPSILON)
+            bt = v[1] + (v[5] - v[1]) * t
+            ct = v[0] + (v[4] - v[0]) * t
+            dt = v[3] + (v[7] - v[3]) * t
+        elif edge == 11:
+            t = v[3] / (v[3] - v[7] + _FLT_EPSILON)
+            bt = v[2] + (v[6] - v[2]) * t
+            ct = v[1] + (v[5] - v[1]) * t
+            dt = v[0] + (v[4] - v[0]) * t
+        else:
+            return s < 0
+    else:
+        return s < 0
+
+    test = 0
+    if at >= 0:
+        test += 1
+    if bt >= 0:
+        test += 2
+    if ct >= 0:
+        test += 4
+    if dt >= 0:
+        test += 8
+
+    if test in (0, 1, 2, 3, 4, 6, 8, 9, 12):
+        return s > 0
+    if test == 5:
+        if at * ct - bt * dt < _FLT_EPSILON:
+            return s > 0
+    elif test == 10:
+        if at * ct - bt * dt >= _FLT_EPSILON:
+            return s > 0
+    return s < 0
+
+
+def _lewiner_tri_edges_for_case_values(values, luts=None):
+    edges, _ = _lewiner_tri_edges_and_trace_for_case_values(values, luts=luts)
+    return edges
+
+
+def _lewiner_tri_edges_and_trace_for_case_values(values, luts=None):
+    values = tuple(float(v) for v in values)
+    if len(values) != 8:
+        raise ValueError("values must contain 8 cube corner values.")
+    if luts is None:
+        luts = _get_lewiner_luts_cpu()
+
+    index = 0
+    for i, value in enumerate(values):
+        if value > 0.0:
+            index += 1 << i
+
+    case = int(luts["CASES"][index, 0])
+    if case == 0:
+        return (), ()
+    config = int(luts["CASES"][index, 1])
+    out = []
+    trace = []
+    _lewiner_big_switch(values, luts, case, config, out, trace=trace)
+    return tuple(out), tuple(trace)
+
+
+def _lewiner_case_needs_center_vertex(values, luts=None):
+    return 12 in _lewiner_tri_edges_for_case_values(values, luts=luts)
+
+
+def _lewiner_center_vertex(values):
+    values = tuple(float(v) for v in values)
+    if len(values) != 8:
+        raise ValueError("values must contain 8 cube corner values.")
+
+    weights = [1.0 / (_FLT_EPSILON + abs(v)) for v in values]
+    total = sum(weights)
+    position = np.asarray(
+        [
+            (weights[1] + weights[2] + weights[5] + weights[6]) / total,
+            (weights[2] + weights[3] + weights[6] + weights[7]) / total,
+            (weights[4] + weights[5] + weights[6] + weights[7]) / total,
+        ],
+        dtype=np.float64,
+    )
+
+    v = values
+    gradients = np.asarray(
+        [
+            (v[0] - v[1], v[0] - v[3], v[0] - v[4]),
+            (v[0] - v[1], v[1] - v[2], v[1] - v[5]),
+            (v[3] - v[2], v[1] - v[2], v[2] - v[6]),
+            (v[3] - v[2], v[0] - v[3], v[3] - v[7]),
+            (v[4] - v[5], v[4] - v[7], v[0] - v[4]),
+            (v[4] - v[5], v[5] - v[6], v[1] - v[5]),
+            (v[7] - v[6], v[5] - v[6], v[2] - v[6]),
+            (v[7] - v[6], v[4] - v[7], v[3] - v[7]),
+        ],
+        dtype=np.float64,
+    )
+    gradient = np.sum(
+        np.asarray(weights, dtype=np.float64)[:, np.newaxis] * gradients,
+        axis=0,
+    )
+    norm = np.linalg.norm(gradient)
+    if norm > 0:
+        gradient = gradient / norm
+    return position, gradient
+
+
+def _lewiner_big_switch(values, luts, case, config, out, trace=None):
+    subconfig = 0
+
+    def add(out, luts, name, config, *args):
+        _append_triangles_from_lut(out, luts, name, config, *args, trace=trace)
+
+    test_face = _lewiner_test_face
+    test_internal = _lewiner_test_internal
+
+    if case == 1:
+        add(out, luts, "TILING1", config, 1)
+    elif case == 2:
+        add(out, luts, "TILING2", config, 2)
+    elif case == 3:
+        if test_face(values, luts["TEST3"][config]):
+            add(out, luts, "TILING3_2", config, 4)
+        else:
+            add(out, luts, "TILING3_1", config, 2)
+    elif case == 4:
+        if test_internal(
+            values, luts, case, config, subconfig, luts["TEST4"][config]
+        ):
+            add(out, luts, "TILING4_1", config, 2)
+        else:
+            add(out, luts, "TILING4_2", config, 6)
+    elif case == 5:
+        add(out, luts, "TILING5", config, 3)
+    elif case == 6:
+        if test_face(values, luts["TEST6"][config, 0]):
+            add(out, luts, "TILING6_2", config, 5)
+        elif test_internal(
+            values, luts, case, config, subconfig, luts["TEST6"][config, 1]
+        ):
+            add(out, luts, "TILING6_1_1", config, 3)
+        else:
+            add(out, luts, "TILING6_1_2", config, 9)
+    elif case == 7:
+        if test_face(values, luts["TEST7"][config, 0]):
+            subconfig += 1
+        if test_face(values, luts["TEST7"][config, 1]):
+            subconfig += 2
+        if test_face(values, luts["TEST7"][config, 2]):
+            subconfig += 4
+        if subconfig == 0:
+            add(out, luts, "TILING7_1", config, 3)
+        elif subconfig in (1, 2, 4):
+            add(
+                out, luts, "TILING7_2", config, {1: 0, 2: 1, 4: 2}[subconfig], 5
+            )
+        elif subconfig in (3, 5, 6):
+            add(
+                out, luts, "TILING7_3", config, {3: 0, 5: 1, 6: 2}[subconfig], 9
+            )
+        elif test_internal(
+            values, luts, case, config, subconfig, luts["TEST7"][config, 3]
+        ):
+            add(out, luts, "TILING7_4_2", config, 9)
+        else:
+            add(out, luts, "TILING7_4_1", config, 5)
+    elif case == 8:
+        add(out, luts, "TILING8", config, 2)
+    elif case == 9:
+        add(out, luts, "TILING9", config, 4)
+    elif case == 10:
+        if test_face(values, luts["TEST10"][config, 0]):
+            if test_face(values, luts["TEST10"][config, 1]):
+                add(out, luts, "TILING10_1_1_", config, 4)
+            else:
+                add(out, luts, "TILING10_2", config, 8)
+        elif test_face(values, luts["TEST10"][config, 1]):
+            add(out, luts, "TILING10_2_", config, 8)
+        elif test_internal(
+            values, luts, case, config, subconfig, luts["TEST10"][config, 2]
+        ):
+            add(out, luts, "TILING10_1_1", config, 4)
+        else:
+            add(out, luts, "TILING10_1_2", config, 8)
+    elif case == 11:
+        add(out, luts, "TILING11", config, 4)
+    elif case == 12:
+        if test_face(values, luts["TEST12"][config, 0]):
+            if test_face(values, luts["TEST12"][config, 1]):
+                add(out, luts, "TILING12_1_1_", config, 4)
+            else:
+                add(out, luts, "TILING12_2", config, 8)
+        elif test_face(values, luts["TEST12"][config, 1]):
+            add(out, luts, "TILING12_2_", config, 8)
+        elif test_internal(
+            values, luts, case, config, subconfig, luts["TEST12"][config, 2]
+        ):
+            add(out, luts, "TILING12_1_1", config, 4)
+        else:
+            add(out, luts, "TILING12_1_2", config, 8)
+    elif case == 13:
+        _lewiner_case_13(values, luts, config, out, trace=trace)
+    elif case == 14:
+        add(out, luts, "TILING14", config, 4)
+
+
+def _lewiner_case_13(values, luts, config, out, trace=None):
+    subconfig = 0
+    for i in range(6):
+        if _lewiner_test_face(values, luts["TEST13"][config, i]):
+            subconfig += 1 << i
+    subconfig = int(luts["SUBCONFIG13"][subconfig])
+
+    def add(out, luts, name, config, *args):
+        _append_triangles_from_lut(out, luts, name, config, *args, trace=trace)
+
+    if subconfig == 0:
+        add(out, luts, "TILING13_1", config, 4)
+    elif 1 <= subconfig <= 6:
+        add(out, luts, "TILING13_2", config, subconfig - 1, 6)
+    elif 7 <= subconfig <= 18:
+        add(out, luts, "TILING13_3", config, subconfig - 7, 10)
+    elif 19 <= subconfig <= 22:
+        add(out, luts, "TILING13_4", config, subconfig - 19, 12)
+    elif 23 <= subconfig <= 26:
+        internal_subconfig = subconfig - 23
+        if _lewiner_test_internal(
+            values,
+            luts,
+            13,
+            config,
+            internal_subconfig,
+            luts["TEST13"][config, 6],
+        ):
+            add(out, luts, "TILING13_5_1", config, internal_subconfig, 6)
+        else:
+            add(out, luts, "TILING13_5_2", config, internal_subconfig, 10)
+    elif 27 <= subconfig <= 38:
+        add(out, luts, "TILING13_3_", config, subconfig - 27, 10)
+    elif 39 <= subconfig <= 44:
+        add(out, luts, "TILING13_2_", config, subconfig - 39, 6)
+    elif subconfig == 45:
+        add(out, luts, "TILING13_1_", config, 4)
 
 
 @cp.memoize(for_each_device=True)
 def _get_tri_table():
     return cp.asarray(_decode_cases_classic())
+
+
+@cp.memoize(for_each_device=True)
+def _get_lewiner_luts_device():
+    return {
+        name.lower(): cp.asarray(_decode_named_lut(name))
+        for name in _LEWINER_LUT_NAMES
+    }
 
 
 @cp.memoize(for_each_device=True)
