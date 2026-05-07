@@ -235,7 +235,10 @@ def main(args):
         (
             "marching_cubes",
             dict(level=0.0),
-            dict(method=["lorensen", "lewiner"]),
+            dict(
+                method=["lorensen", "lewiner"],
+                allow_degenerate=[True, False],
+            ),
             False,
             True,
         ),

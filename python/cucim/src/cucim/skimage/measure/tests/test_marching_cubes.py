@@ -676,17 +676,66 @@ def test_no_surface_found():
 
 def test_unsupported_options():
     volume = _single_voxel_volume()
-    with pytest.raises(NotImplementedError, match="step_size"):
-        marching_cubes(volume, 0.5, method="lorensen", step_size=2)
-    with pytest.raises(NotImplementedError, match="allow_degenerate"):
-        marching_cubes(volume, 0.5, method="lorensen", allow_degenerate=False)
-    with pytest.raises(NotImplementedError, match="mask"):
-        marching_cubes(
-            volume,
-            0.5,
-            method="lorensen",
-            mask=cp.ones(volume.shape, dtype=bool),
-        )
+    for method in ("lorensen", "lewiner"):
+        with pytest.raises(NotImplementedError, match="step_size"):
+            marching_cubes(volume, 0.5, method=method, step_size=2)
+        with pytest.raises(NotImplementedError, match="mask"):
+            marching_cubes(
+                volume,
+                0.5,
+                method=method,
+                mask=cp.ones(volume.shape, dtype=bool),
+            )
+
+
+def test_allow_degenerate_false_removes_zero_area_faces():
+    volume = np.array(
+        [
+            [[1.0, 0.0, 0.0], [-1.0, -1.0, -1.0], [-1.0, -1.0, -1.0]],
+            [[1.0, 0.0, 1.0], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]],
+            [[0.0, 1.0, -1.0], [1.0, 1.0, -1.0], [0.0, 1.0, 0.0]],
+        ],
+        dtype=np.float32,
+    )
+
+    verts, faces = marching_cubes(cp.asarray(volume), 0.0)[:2]
+    verts_clean, faces_clean = marching_cubes(
+        cp.asarray(volume), 0.0, allow_degenerate=False
+    )[:2]
+    expected_verts, expected_faces = skimage_marching_cubes(
+        volume, 0.0, allow_degenerate=False
+    )[:2]
+
+    assert faces_clean.shape[0] < faces.shape[0]
+    assert verts_clean.shape[0] < verts.shape[0]
+    assert not _has_degenerate_faces(
+        cp.asnumpy(verts_clean), cp.asnumpy(faces_clean)
+    )
+    assert_allclose(
+        mesh_surface_area(cp.asnumpy(verts_clean), cp.asnumpy(faces_clean)),
+        mesh_surface_area(expected_verts, expected_faces),
+    )
+
+
+def test_allow_degenerate_false_both_algs_same_result_ellipse():
+    sphere_small = ellipsoid(1, 1, 1, levelset=True)
+
+    vertices1, faces1 = marching_cubes(
+        cp.asarray(sphere_small), 0, allow_degenerate=False
+    )[:2]
+    vertices2, faces2 = marching_cubes(
+        cp.asarray(sphere_small),
+        0,
+        allow_degenerate=False,
+        method="lorensen",
+    )[:2]
+
+    assert _same_mesh(
+        cp.asnumpy(vertices1),
+        cp.asnumpy(faces1),
+        cp.asnumpy(vertices2),
+        cp.asnumpy(faces2),
+    )
 
 
 def test_marching_cubes_isotropic():
@@ -728,6 +777,16 @@ def test_marching_cubes_anisotropic():
     # Lewiner
     verts, faces = marching_cubes(
         cp.asarray(ellipsoid_anisotropic), 0.0, spacing=spacing
+    )[:2]
+    surf_calc = mesh_surface_area(cp.asnumpy(verts), cp.asnumpy(faces))
+    # Test within 1.5% tolerance for anisotropic. Will always underestimate.
+    assert surf > surf_calc and surf_calc > surf * 0.985
+
+    verts, faces = marching_cubes(
+        cp.asarray(ellipsoid_anisotropic),
+        0.0,
+        spacing=spacing,
+        allow_degenerate=False,
     )[:2]
     surf_calc = mesh_surface_area(cp.asnumpy(verts), cp.asnumpy(faces))
     # Test within 1.5% tolerance for anisotropic. Will always underestimate.
@@ -792,6 +851,17 @@ def _same_mesh(vertices1, faces1, vertices2, faces2, tol=1e-10):
     triang2 = np.array(sorted([tuple(x) for x in triang2]))
     return triang1.shape == triang2.shape and np.allclose(
         triang1, triang2, 0, tol
+    )
+
+
+def _has_degenerate_faces(vertices, faces):
+    triangles = vertices[np.asarray(faces)]
+    return bool(
+        np.any(
+            np.all(triangles[:, 0] == triangles[:, 1], axis=1)
+            | np.all(triangles[:, 0] == triangles[:, 2], axis=1)
+            | np.all(triangles[:, 1] == triangles[:, 2], axis=1)
+        )
     )
 
 

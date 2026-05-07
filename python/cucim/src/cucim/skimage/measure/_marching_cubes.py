@@ -1255,6 +1255,46 @@ extern "C" __global__ void mc_generate_faces(
         face_start++;
     }
 }
+
+extern "C" __global__ void mc_mark_degenerate_faces(
+    const float* vertices, const int* faces, int n_faces,
+    int* vertex_map, int* faces_ok) {
+    if (blockIdx.x != 0 || threadIdx.x != 0) {
+        return;
+    }
+
+    for (int idx = 0; idx < n_faces; idx++) {
+        int i0 = faces[3 * idx];
+        int i1 = faces[3 * idx + 1];
+        int i2 = faces[3 * idx + 2];
+        const float* v0 = vertices + 3 * i0;
+        const float* v1 = vertices + 3 * i1;
+        const float* v2 = vertices + 3 * i2;
+        bool eq01 = v0[0] == v1[0] && v0[1] == v1[1] && v0[2] == v1[2];
+        bool eq02 = v0[0] == v2[0] && v0[1] == v2[1] && v0[2] == v2[2];
+        bool eq12 = v1[0] == v2[0] && v1[1] == v2[1] && v1[2] == v2[2];
+
+        faces_ok[idx] = 1;
+        if (eq01) {
+            int m = vertex_map[i0] < vertex_map[i1] ? vertex_map[i0] : vertex_map[i1];
+            vertex_map[i0] = m;
+            vertex_map[i1] = m;
+            faces_ok[idx] = 0;
+        }
+        if (eq02) {
+            int m = vertex_map[i0] < vertex_map[i2] ? vertex_map[i0] : vertex_map[i2];
+            vertex_map[i0] = m;
+            vertex_map[i2] = m;
+            faces_ok[idx] = 0;
+        }
+        if (eq12) {
+            int m = vertex_map[i1] < vertex_map[i2] ? vertex_map[i1] : vertex_map[i2];
+            vertex_map[i1] = m;
+            vertex_map[i2] = m;
+            faces_ok[idx] = 0;
+        }
+    }
+}
 """
 
 
@@ -1271,9 +1311,9 @@ def marching_cubes(
 ):
     """Marching cubes algorithm to find surfaces in 3D volumetric data.
 
-    This initial cuCIM implementation supports ``method='lorensen'`` and an
-    initial ``method='lewiner'`` path for ``step_size=1``, ``mask=None``, and
-    ``allow_degenerate=True``.
+    The ``method='lewiner'`` default and ``method='lorensen'`` are supported
+    for CuPy inputs when ``step_size=1`` and ``mask=None``. Masked marching
+    cubes and larger step sizes are not implemented yet.
     """
     if method not in ("lewiner", "lorensen"):
         raise ValueError("method should be either 'lewiner' or 'lorensen'")
@@ -1318,7 +1358,9 @@ def _marching_cubes_lorensen(
         allow_degenerate,
         mask,
     )
-    return _run_lorensen(volume, level, spacing, gradient_direction)
+    return _run_lorensen(
+        volume, level, spacing, gradient_direction, allow_degenerate
+    )
 
 
 def _marching_cubes_lewiner(
@@ -1339,7 +1381,9 @@ def _marching_cubes_lewiner(
         allow_degenerate,
         mask,
     )
-    return _run_lewiner(volume, level, spacing, gradient_direction)
+    return _run_lewiner(
+        volume, level, spacing, gradient_direction, allow_degenerate
+    )
 
 
 def _validate_marching_cubes_inputs(
@@ -1382,11 +1426,6 @@ def _validate_marching_cubes_inputs(
             "see docstring."
         )
 
-    if not allow_degenerate:
-        raise NotImplementedError(
-            "allow_degenerate=False is not implemented yet."
-        )
-
     if mask is not None:
         if not isinstance(mask, cp.ndarray) or mask.shape != volume.shape:
             raise ValueError("volume and mask must have the same shape.")
@@ -1395,7 +1434,7 @@ def _validate_marching_cubes_inputs(
     return volume, level, spacing
 
 
-def _run_lorensen(volume, level, spacing, gradient_direction):
+def _run_lorensen(volume, level, spacing, gradient_direction, allow_degenerate):
     nx, ny, nz = volume.shape
     n_edges = nx * ny * nz * 3
     threads = 256
@@ -1468,10 +1507,15 @@ def _run_lorensen(volume, level, spacing, gradient_direction):
             np.int32(gradient_direction == "descent"),
         ),
     )
-    return vertices, faces.reshape(-1, 3), normals, values
+    faces = faces.reshape(-1, 3)
+    if not allow_degenerate:
+        vertices, faces, normals, values = _remove_degenerate_faces_gpu(
+            vertices, faces, normals, values
+        )
+    return vertices, faces, normals, values
 
 
-def _run_lewiner(volume, level, spacing, gradient_direction):
+def _run_lewiner(volume, level, spacing, gradient_direction, allow_degenerate):
     nx, ny, nz = volume.shape
     n_edges = nx * ny * nz * 3
     threads = 256
@@ -1538,7 +1582,36 @@ def _run_lewiner(volume, level, spacing, gradient_direction):
         volume.shape,
         gradient_direction,
     )
+    if not allow_degenerate:
+        vertices, faces, normals, values = _remove_degenerate_faces_gpu(
+            vertices, faces, normals, values
+        )
     return vertices, faces, normals, values
+
+
+def _remove_degenerate_faces_gpu(vertices, faces, normals, values):
+    n_vertices = vertices.shape[0]
+    n_faces = faces.shape[0]
+    if n_faces == 0:
+        return vertices, faces, normals, values
+
+    vertex_ids = cp.arange(n_vertices, dtype=cp.int32)
+    vertex_map = vertex_ids.copy()
+    faces_ok = cp.empty(n_faces, dtype=cp.int32)
+    _get_kernel("mc_mark_degenerate_faces")(
+        (1,),
+        (1,),
+        (vertices, faces, n_faces, vertex_map, faces_ok),
+    )
+
+    vertices_ok = vertex_map == vertex_ids
+    vertex_map2 = cp.cumsum(vertices_ok, dtype=cp.int32) - 1
+    face_mask = faces_ok > 0
+    faces2 = vertex_map2[vertex_map[faces[face_mask]]]
+    vertices2 = vertices[vertices_ok]
+    normals2 = normals[vertices_ok]
+    values2 = values[vertices_ok]
+    return vertices2, faces2, normals2, values2
 
 
 def _lewiner_count_cells_gpu(volume, level):
