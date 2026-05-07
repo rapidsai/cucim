@@ -102,6 +102,36 @@ def _case_volume_for_lewiner_values(values):
     return _case_volume(local_values), local_values
 
 
+def _skimage_volume_for_lewiner_values(values):
+    volume = np.empty((2, 2, 2), dtype=np.float32)
+    volume[0, 0, 0] = values[0]
+    volume[0, 0, 1] = values[1]
+    volume[0, 1, 1] = values[2]
+    volume[0, 1, 0] = values[3]
+    volume[1, 0, 0] = values[4]
+    volume[1, 0, 1] = values[5]
+    volume[1, 1, 1] = values[6]
+    volume[1, 1, 0] = values[7]
+    return volume
+
+
+def _lewiner_generated_volumes():
+    coords = np.ogrid[tuple(slice(-1.0, 1.0, complex(s)) for s in (16, 18, 20))]
+    x, y, z = coords
+    trig_x = np.linspace(-np.pi, np.pi, 18, dtype=np.float32)[:, None, None]
+    trig_y = np.linspace(-np.pi, np.pi, 20, dtype=np.float32)[None, :, None]
+    trig_z = np.linspace(-np.pi, np.pi, 22, dtype=np.float32)[None, None, :]
+    return [
+        ((x / 0.7) ** 2 + (y / 0.9) ** 2 + (z / 1.1) ** 2 - 0.8).astype(
+            np.float32
+        ),
+        (x + 0.35 * y - 0.2 * z).astype(np.float32),
+        (np.sin(trig_x) + 0.75 * np.cos(trig_y) - 0.4 * np.sin(trig_z)).astype(
+            np.float32
+        ),
+    ]
+
+
 def test_default_lewiner_single_voxel_smoke():
     verts, faces, normals, values = marching_cubes(_single_voxel_volume(), 0.5)
 
@@ -535,6 +565,72 @@ def test_lewiner_matches_skimage_single_voxel_mesh():
     assert _same_mesh(
         cp.asnumpy(verts), cp.asnumpy(faces), expected_verts, expected_faces
     )
+
+
+def test_lewiner_matches_skimage_exact_level_single_voxel_mesh():
+    volume = cp.asnumpy(_single_voxel_volume())
+    verts, faces = marching_cubes(cp.asarray(volume), 0.0)[:2]
+    expected_verts, expected_faces = skimage_marching_cubes(
+        volume, 0.0, method="lewiner"
+    )[:2]
+
+    assert bool(cp.all(faces >= 0))
+    assert _same_mesh(
+        cp.asnumpy(verts),
+        cp.asnumpy(faces),
+        expected_verts,
+        expected_faces,
+        tol=1e-6,
+    )
+
+
+def test_lewiner_matches_skimage_center_vertex_ambiguous_cell_mesh():
+    values = (
+        -0.074507588,
+        0.05111846,
+        -85.477048,
+        5.9626186,
+        28.537463,
+        -0.13654382,
+        2.4709994,
+        -16.967766,
+    )
+    volume, _ = _case_volume_for_lewiner_values(values)
+    expected_volume = _skimage_volume_for_lewiner_values(values)
+
+    verts, faces, normals, out_values = marching_cubes(volume, 0.0)
+    expected_verts, expected_faces = skimage_marching_cubes(
+        expected_volume, 0.0, method="lewiner"
+    )[:2]
+
+    assert verts.shape == (13, 3)
+    assert faces.shape == (12, 3)
+    assert normals.shape == verts.shape
+    assert out_values.shape == (verts.shape[0],)
+    assert bool(cp.all(faces >= 0))
+    assert _same_mesh(
+        cp.asnumpy(verts),
+        cp.asnumpy(faces),
+        expected_verts,
+        expected_faces,
+        tol=1e-5,
+    )
+
+
+@pytest.mark.parametrize("volume", _lewiner_generated_volumes())
+def test_lewiner_matches_skimage_generated_volume_stats(volume):
+    verts, faces = marching_cubes(cp.asarray(volume), 0.0)[:2]
+    expected_verts, expected_faces = skimage_marching_cubes(
+        volume, 0.0, method="lewiner"
+    )[:2]
+
+    assert verts.shape == expected_verts.shape
+    assert faces.shape == expected_faces.shape
+    assert bool(cp.all(faces >= 0))
+    assert bool(cp.all(faces < verts.shape[0]))
+    cp_area = mesh_surface_area(cp.asnumpy(verts), cp.asnumpy(faces))
+    expected_area = mesh_surface_area(expected_verts, expected_faces)
+    assert_allclose(cp_area, expected_area, rtol=1e-6)
 
 
 def test_lorensen_spacing():
