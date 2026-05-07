@@ -133,6 +133,24 @@ class FiltersBench(ImageBench):
         self.args_gpu = (imaged,)
 
 
+class MarchingCubesBench(ImageBench):
+    def set_args(self, dtype):
+        dtype = np.dtype(dtype)
+        if dtype.kind != "f":
+            raise ValueError("marching_cubes benchmarks require a floating dtype.")
+        if len(self.shape) != 3:
+            raise ValueError("marching_cubes benchmarks require a 3D shape.")
+
+        coords = np.ogrid[tuple(slice(-1.0, 1.0, complex(s)) for s in self.shape)]
+        scales = (0.75, 0.9, 1.1)
+        image = sum((coord / scale) ** 2 for coord, scale in zip(coords, scales))
+        image = (image - 0.55).astype(dtype, copy=False)
+        imaged = cp.asarray(image)
+
+        self.args_cpu = (image,)
+        self.args_gpu = (imaged,)
+
+
 class BinaryImagePairBench(ImageBench):
     def set_args(self, dtype):
         rng = cp.random.default_rng(seed=123)
@@ -213,6 +231,8 @@ def main(args):
             True,
             False,
         ),  # variable block_size configured below
+        # _marching_cubes.py
+        ("marching_cubes", dict(level=0.0, method="lorensen"), dict(), False, True),
         # binary image overlap measures
         ("intersection_coeff", dict(mask=None), dict(), False, True),
         ("manders_coloc_coeff", dict(mask=None), dict(), False, True),
@@ -270,6 +290,17 @@ def main(args):
                 Tester = BinaryImagePairBench
 
             B = Tester(
+                function_name=function_name,
+                shape=shape,
+                dtypes=dtypes,
+                fixed_kwargs=fixed_kwargs,
+                var_kwargs=var_kwargs,
+                module_cpu=skimage.measure,
+                module_gpu=cucim.skimage.measure,
+                run_cpu=run_cpu,
+            )
+        elif function_name == "marching_cubes":
+            B = MarchingCubesBench(
                 function_name=function_name,
                 shape=shape,
                 dtypes=dtypes,
@@ -340,6 +371,7 @@ if __name__ == "__main__":
         "block_reduce",
         "shannon_entropy",
         "profile_line",
+        "marching_cubes",
         "intersection_coeff",
         "manders_coloc_coeff",
         "manders_overlap_coeff",

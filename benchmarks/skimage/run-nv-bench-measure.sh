@@ -16,6 +16,17 @@ for shape in "${param_shape[@]}"; do
     done
 done
 
+param_shape=("64,64,64" "128,128,128" "192,192,192")
+param_filt=(marching_cubes)
+param_dt=(float32)
+for shape in "${param_shape[@]}"; do
+    for filt in "${param_filt[@]}"; do
+        for dt in "${param_dt[@]}"; do
+            python cucim_measure_bench.py -f "$filt" -i "$shape" -d "$dt" -t "$MAX_DURATION"
+        done
+    done
+done
+
 # # commenting out colocalization metrics below this point
 # # (scikit-image 0.20 is not yet officially released)
 # param_shape=(512,512 3840,2160 192,192,192)
