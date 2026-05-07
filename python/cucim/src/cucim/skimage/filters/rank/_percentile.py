@@ -33,6 +33,8 @@ Some operations use a ``dtype_max`` value that affects output scaling
 
 """
 
+import warnings
+
 import cupy as cp
 
 from ...util import img_as_ubyte
@@ -49,6 +51,13 @@ __all__ = [
     "sum_percentile",
     "threshold_percentile",
 ]
+
+_ZERO_FOR_EMPTY_FOOTPRINT_OPS = {
+    "geometric_mean",
+    "maximum",
+    "mean",
+    "minimum",
+}
 
 # --- Common docstring fragments ---
 
@@ -86,6 +95,22 @@ _doc_backend_param = """
         ``'histogram'`` requires the uint8 2D rectangular histogram backend,
         and ``'elementwise'`` forces the generic per-output-pixel backend."""
 
+_doc_boundary_note = """
+
+    Notes
+    -----
+    Rank filters use reflected boundary extension. The name ``reflect`` can be
+    confusing because padding libraries use different conventions. Here it
+    follows the SciPy ``ndimage`` convention, which repeats the edge value
+    (equivalent to ``numpy.pad(..., mode='symmetric')``)::
+
+        d c b a | a b c d | d c b a
+
+    This also differs from scikit-image's rank filters, which do not extend
+    the image at the boundary. scikit-image uses cropped neighborhoods at
+    edges and corners, so the effective footprint population can be smaller
+    near the image border."""
+
 _doc_cast_to_uint8_param = """
     cast_to_uint8 : bool, optional (keyword-only)
         If True, non-uint8 image inputs are converted to uint8 with
@@ -114,6 +139,7 @@ def _build_docstring(summary, *, p0_only=False):
         + _doc_cast_to_uint8_param
         + "\n"
         + _doc_returns
+        + _doc_boundary_note
     )
 
 
@@ -138,6 +164,14 @@ def _preprocess_input(
         raise ValueError("dtype cannot be bool.")
 
     if cast_to_uint8 and image.dtype != cp.dtype(cp.uint8):
+        if image.dtype.kind == "f":
+            warnings.warn(
+                f"Possible precision loss converting image of type "
+                f"{image.dtype} to uint8 as required by rank filters. "
+                f"Convert manually using cucim.skimage.util.img_as_ubyte to "
+                f"silence this warning.",
+                stacklevel=3,
+            )
         image = img_as_ubyte(image)
         input_dtype = image.dtype
 
@@ -245,6 +279,14 @@ def _apply(
         shifts=shifts,
         cast_to_uint8=cast_to_uint8,
     )
+
+    if (
+        operation in _ZERO_FOR_EMPTY_FOOTPRINT_OPS
+        and footprint is not None
+        and not bool(cp.any(footprint))
+    ):
+        out.fill(0)
+        return out
 
     # Convert percentiles from [0, 1] to [0, 100] for our implementation
     p0_pct = p0 * 100.0

@@ -11,6 +11,7 @@ from skimage import data
 from skimage._shared.testing import fetch
 
 from cucim.skimage import morphology, util
+from cucim.skimage._shared.testing import expected_warnings
 from cucim.skimage.filters import rank
 from cucim.skimage.filters.rank import (
     __all__ as all_rank_filters,
@@ -21,8 +22,8 @@ from cucim.skimage.filters.rank._histogram import (
     _get_rank_histogram_partitions,
     _should_use_rank_histogram,
 )
-from cucim.skimage.morphology import disk, gray
-from cucim.skimage.util import img_as_ubyte
+from cucim.skimage.morphology import ball, disk, gray
+from cucim.skimage.util import img_as_float, img_as_ubyte
 
 
 def _reflect_index(index, size):
@@ -391,8 +392,11 @@ def test_histogram_rank_entropy_uint8_rectangular():
     result = rank.entropy(
         cp.asarray(image), cp.asarray(footprint), backend="histogram"
     )
-    expected = _rank_filter_brute_force_uint8(image, footprint, "entropy")
-    cp.testing.assert_array_equal(result, cp.asarray(expected))
+    expected = rank.entropy(
+        cp.asarray(image), cp.asarray(footprint), backend="elementwise"
+    )
+    assert result.dtype.kind == "f"
+    cp.testing.assert_allclose(result, expected)
 
 
 @pytest.mark.parametrize(
@@ -525,13 +529,14 @@ def test_rank_cast_to_uint8_matches_explicit_float_conversion():
     expected = rank.percentile(
         image_u8, footprint, p0=0.5, backend="elementwise"
     )
-    result = rank.percentile(
-        image,
-        footprint,
-        p0=0.5,
-        backend="elementwise",
-        cast_to_uint8=True,
-    )
+    with expected_warnings(["Possible precision loss"]):
+        result = rank.percentile(
+            image,
+            footprint,
+            p0=0.5,
+            backend="elementwise",
+            cast_to_uint8=True,
+        )
 
     assert result.dtype == cp.uint8
     cp.testing.assert_array_equal(result, expected)
@@ -545,13 +550,16 @@ def test_rank_cast_to_uint8_matches_explicit_uint16_conversion():
     expected = rank.percentile(
         image_u8, footprint, p0=0.5, backend="elementwise"
     )
-    result = rank.percentile(
-        image,
-        footprint,
-        p0=0.5,
-        backend="elementwise",
-        cast_to_uint8=True,
-    )
+    with warnings.catch_warnings(record=True) as record:
+        warnings.simplefilter("always")
+        result = rank.percentile(
+            image,
+            footprint,
+            p0=0.5,
+            backend="elementwise",
+            cast_to_uint8=True,
+        )
+    assert not record
 
     assert result.dtype == cp.uint8
     cp.testing.assert_array_equal(result, expected)
@@ -566,13 +574,14 @@ def test_rank_cast_to_uint8_before_histogram_backend_selection():
         rank.percentile(image, footprint, p0=0.5, backend="histogram")
 
     expected = rank.percentile(image_u8, footprint, p0=0.5, backend="histogram")
-    result = rank.percentile(
-        image,
-        footprint,
-        p0=0.5,
-        backend="histogram",
-        cast_to_uint8=True,
-    )
+    with expected_warnings(["Possible precision loss"]):
+        result = rank.percentile(
+            image,
+            footprint,
+            p0=0.5,
+            backend="histogram",
+            cast_to_uint8=True,
+        )
 
     assert result.dtype == cp.uint8
     cp.testing.assert_array_equal(result, expected)
@@ -646,36 +655,6 @@ ref_data = dict(np.load(fetch("data/rank_filter_tests.npz")))
 ref_data_3d = dict(np.load(fetch("data/rank_filters_tests_3d.npz")))
 
 
-# @pytest.mark.parametrize(
-#     'func',
-#     [
-#         rank.autolevel,
-#         rank.equalize,
-#         rank.gradient,
-#         rank.maximum,
-#         rank.mean,
-#         rank.geometric_mean,
-#         rank.subtract_mean,
-#         rank.median,
-#         rank.minimum,
-#         rank.modal,
-#         rank.enhance_contrast,
-#         rank.pop,
-#         rank.sum,
-#         rank.threshold,
-#         rank.noise_filter,
-#         rank.entropy,
-#         rank.otsu,
-#         rank.majority,
-#     ],
-# )
-# def test_1d_input_raises_error(func):
-#     image = np.arange(10)
-#     footprint = disk(3)
-#     with pytest.raises(ValueError, match='`image` must have 2 or 3 dimensions, got 1'):
-#         func(image, footprint)
-
-
 class TestRank:
     def setup_method(self):
         np.random.seed(0)
@@ -695,6 +674,7 @@ class TestRank:
     # borders (due to reflected boundary extension vs excluded pixels).
     # For these, we compare only interior pixels.
     _border_differences_allowed = {
+        "entropy",
         "equalize",
         "geometric_mean",
         "majority",
@@ -716,9 +696,6 @@ class TestRank:
     # Filters with known algorithmic differences that are documented and
     # expected. These are tested separately or skipped here.
     _xfail_filters = {
-        # entropy: output dtype is uint8 (truncated float), reference is
-        # float64. The entropy computation itself is correct.
-        "entropy",
         # gradient_percentile: scikit-image's histogram p1-inversion quirk
         # makes imax=255 always; our sorted-array computes correct max-min.
         "gradient_percentile",
@@ -742,9 +719,10 @@ class TestRank:
                 f"{filter}: known algorithmic difference vs scikit-image (not a bug)"
             )
         expected = cp.asarray(self.refs[filter])
-        result = getattr(rank, filter)(
-            self.image, self.footprint, cast_to_uint8=True
-        )
+        with expected_warnings(["Possible precision loss"]):
+            result = getattr(rank, filter)(
+                self.image, self.footprint, cast_to_uint8=True
+            )
         if filter in self._border_differences_allowed:
             # Only compare interior pixels — borders differ due to
             # reflected boundary extension (GPU) vs excluded pixels
@@ -802,9 +780,10 @@ class TestRank:
             out = cp.zeros_like(expected, dtype=outdt)
         else:
             out = None
-        result = getattr(rank, filter)(
-            self.volume, self.footprint_3d, out=out, cast_to_uint8=True
-        )
+        with expected_warnings(["Possible precision loss"]):
+            result = getattr(rank, filter)(
+                self.volume, self.footprint_3d, out=out, cast_to_uint8=True
+            )
         if outdt is not None:
             # Avoid rounding issues comparing to expected result
             if filter == "sum":
@@ -966,24 +945,25 @@ class TestRank:
         cm = gray.erosion(image, elem)
         cp.testing.assert_array_equal(out, cm)
 
-    # def test_population(self):
-    #     # check the number of valid pixels in the neighborhood
-    #     image = cp.zeros((5, 5), dtype=np.uint8)
-    #     elem = cp.ones((3, 3), dtype=np.uint8)
-    #     out = cp.empty_like(image)
-    #     mask = cp.ones(image.shape, dtype=np.uint8)
+    def test_population(self):
+        # check the number of valid pixels in the neighborhood
+        image = cp.zeros((5, 5), dtype=np.uint8)
+        elem = cp.ones((3, 3), dtype=np.uint8)
+        out = cp.empty_like(image)
+        mask = cp.ones(image.shape, dtype=np.uint8)
 
-    #     rank.pop(image=image, footprint=elem, out=out, mask=mask)
-    #     r = cp.array(
-    #         [
-    #             [4, 6, 6, 6, 4],
-    #             [6, 9, 9, 9, 6],
-    #             [6, 9, 9, 9, 6],
-    #             [6, 9, 9, 9, 6],
-    #             [4, 6, 6, 6, 4],
-    #         ]
-    #     )
-    #     cp.testing.assert_array_equal(r, out)
+        rank.pop(image=image, footprint=elem, out=out, mask=mask)
+        r = cp.array(
+            [
+                [4, 6, 6, 6, 4],
+                [6, 9, 9, 9, 6],
+                [6, 9, 9, 9, 6],
+                [6, 9, 9, 9, 6],
+                [4, 6, 6, 6, 4],
+            ]
+        )
+        # Note: omit boundaries due to known difference in boundary handling
+        cp.testing.assert_array_equal(r[1:-1, 1:-1], out[1:-1, 1:-1])
 
     def test_structuring_element8(self):
         # check the output for a custom footprint
@@ -1068,196 +1048,212 @@ class TestRank:
 
         cp.testing.assert_array_equal(loc_autolevel, loc_perc_autolevel)
 
-    # def test_compare_ubyte_vs_float(self):
-    #     # Create signed int8 image that and convert it to uint8
-    #     image_uint = img_as_ubyte(cp.asarray(data.camera()[:50, :50]))
-    #     image_float = img_as_float(image_uint)
+    @pytest.mark.parametrize(
+        "method",
+        [
+            "autolevel",
+            "equalize",
+            "gradient",
+            "threshold",
+            "subtract_mean",
+            "enhance_contrast",
+            "pop",
+        ],
+    )
+    def test_compare_ubyte_vs_float(self, method):
+        # Create signed int8 image that and convert it to uint8
+        image_uint = img_as_ubyte(cp.asarray(data.camera()[:50, :50]))
+        image_float = img_as_float(image_uint)
 
-    #     methods = [
-    #         'autolevel',
-    #         'equalize',
-    #         'gradient',
-    #         'threshold',
-    #         'subtract_mean',
-    #         'enhance_contrast',
-    #         'pop',
-    #     ]
+        disk3 = disk(3, decomposition=None)
+        func = getattr(rank, method)
+        out_u = func(image_uint, disk3)
+        with expected_warnings(["Possible precision loss"]):
+            out_f = func(image_float, disk3, cast_to_uint8=True)
+        cp.testing.assert_array_equal(out_u, out_f)
 
-    #     disk3 = disk(3, decomposition=None)
-    #     for method in methods:
-    #         func = getattr(rank, method)
-    #         out_u = func(image_uint, disk3)
-    #         # with expected_warnings(["Possible precision loss"]):
-    #         out_f = func(image_float, disk3)
-    #         cp.testing.assert_array_equal(out_u, out_f)
+    @pytest.mark.parametrize(
+        "method",
+        [
+            "equalize",
+            "autolevel",
+            "gradient",
+            "majority",
+            "maximum",
+            "mean",
+            "geometric_mean",
+            "subtract_mean",
+            "median",
+            "minimum",
+            "modal",
+            "enhance_contrast",
+            "pop",
+            "sum",
+            "threshold",
+            "noise_filter",
+            "entropy",
+        ],
+    )
+    def test_compare_ubyte_vs_float_3d(self, method):
+        # Create signed int8 volume that and convert it to uint8
+        np.random.seed(0)
+        volume_uint = np.random.randint(
+            0, high=256, size=(10, 20, 30), dtype=np.uint8
+        )
+        volume_uint = cp.asarray(volume_uint)
+        volume_float = img_as_float(volume_uint)
 
-    # def test_compare_ubyte_vs_float_3d(self):
-    #     # Create signed int8 volume that and convert it to uint8
-    #     np.random.seed(0)
-    #     volume_uint = np.random.randint(0, high=256, size=(10, 20, 30), dtype=np.uint8)
-    #     volume_uint = cp.asarray(volume_uint)
-    #     volume_float = img_as_float(volume_uint)
+        ball3 = ball(3, decomposition=None)
+        func = getattr(rank, method)
+        out_u = func(volume_uint, ball3)
+        with expected_warnings(["Possible precision loss"]):
+            out_f = func(volume_float, ball3, cast_to_uint8=True)
+        cp.testing.assert_array_equal(out_u, out_f)
 
-    #     methods_3d = [
-    #         'equalize',
-    #         'otsu',
-    #         'autolevel',
-    #         'gradient',
-    #         'majority',
-    #         'maximum',
-    #         'mean',
-    #         'geometric_mean',
-    #         'subtract_mean',
-    #         'median',
-    #         'minimum',
-    #         'modal',
-    #         'enhance_contrast',
-    #         'pop',
-    #         'sum',
-    #         'threshold',
-    #         'noise_filter',
-    #         'entropy',
-    #     ]
+    @pytest.mark.parametrize(
+        "method",
+        [
+            "autolevel",
+            "equalize",
+            "gradient",
+            "maximum",
+            "mean",
+            "geometric_mean",
+            "subtract_mean",
+            "median",
+            "minimum",
+            "modal",
+            "enhance_contrast",
+            "pop",
+            "threshold",
+        ],
+    )
+    def test_compare_8bit_unsigned_vs_signed(self, method):
+        # filters applied on 8-bit image or 16-bit image (having only real 8-bit
+        # of dynamic) should be identical
 
-    #     ball3 = ball(3, decomposition=None)
-    #     for method in methods_3d:
-    #         func = getattr(rank, method)
-    #         out_u = func(volume_uint, ball3)
-    #         with expected_warnings(["Possible precision loss"]):
-    #             out_f = func(volume_float, ball3)
-    #         cp.testing.assert_array_equal(out_u, out_f)
+        # Create signed int8 image that and convert it to uint8
+        image = img_as_ubyte(cp.asarray(data.camera()))[::2, ::2]
+        image[image > 127] = 0
+        image_s = image.astype(np.int8)
+        image_u = img_as_ubyte(image_s)
+        cp.testing.assert_array_equal(image_u, img_as_ubyte(image_s))
+        func = getattr(rank, method)
+        disk3 = disk(3, decomposition=None)
+        out_u = func(image_u, disk3)
+        # with expected_warnings(["Possible precision loss"]):
+        out_s = func(image_s, disk3, cast_to_uint8=True)
+        cp.testing.assert_array_equal(out_u, out_s)
 
-    # def test_compare_8bit_unsigned_vs_signed(self):
-    #     # filters applied on 8-bit image or 16-bit image (having only real 8-bit
-    #     # of dynamic) should be identical
+    @pytest.mark.parametrize(
+        "method",
+        [
+            "equalize",
+            "autolevel",
+            "gradient",
+            "majority",
+            "maximum",
+            "mean",
+            "geometric_mean",
+            "subtract_mean",
+            "median",
+            "minimum",
+            "modal",
+            "enhance_contrast",
+            "pop",
+            "sum",
+            "threshold",
+            "noise_filter",
+            "entropy",
+        ],
+    )
+    def test_compare_8bit_unsigned_vs_signed_3d(self, method):
+        # filters applied on 8-bit volume or 16-bit volume (having only real 8-bit
+        # of dynamic) should be identical
 
-    #     # Create signed int8 image that and convert it to uint8
-    #     image = img_as_ubyte(data.camera())[::2, ::2]
-    #     image[image > 127] = 0
-    #     image_s = image.astype(np.int8)
-    #     image_u = img_as_ubyte(image_s)
-    #     cp.testing.assert_array_equal(image_u, img_as_ubyte(image_s))
+        # Create signed int8 volume that and convert it to uint8
+        np.random.seed(0)
+        volume_s = np.random.randint(
+            0, high=127, size=(10, 20, 30), dtype=np.int8
+        )
+        volume_s = cp.asarray(volume_s)
+        volume_u = img_as_ubyte(volume_s)
+        cp.testing.assert_array_equal(volume_u, img_as_ubyte(volume_s))
 
-    #     methods = [
-    #         'autolevel',
-    #         'equalize',
-    #         'gradient',
-    #         'maximum',
-    #         'mean',
-    #         'geometric_mean',
-    #         'subtract_mean',
-    #         'median',
-    #         'minimum',
-    #         'modal',
-    #         'enhance_contrast',
-    #         'pop',
-    #         'threshold',
-    #     ]
+        ball3 = ball(3, decomposition=None)
+        func = getattr(rank, method)
+        out_u = func(volume_u, ball3)
+        # with expected_warnings(["Possible precision loss"]):
+        out_s = func(volume_s, ball3, cast_to_uint8=True)
+        cp.testing.assert_array_equal(out_u, out_s)
 
-    #     for method in methods:
-    #         func = getattr(rank, method)
-    #         out_u = func(image_u, disk(3))
-    #         with expected_warnings(["Possible precision loss"]):
-    #             out_s = func(image_s, disk(3))
-    #         cp.testing.assert_array_equal(out_u, out_s)
+    @pytest.mark.parametrize(
+        "method",
+        [
+            "autolevel",
+            "equalize",
+            "gradient",
+            "maximum",
+            "mean",
+            "subtract_mean",
+            "median",
+            "minimum",
+            "modal",
+            "enhance_contrast",
+            "pop",
+            "threshold",
+        ],
+    )
+    def test_compare_8bit_vs_16bit(self, method):
+        # filters applied on 8-bit image or 16-bit image (having only real 8-bit
+        # of dynamic) should be identical
+        image8 = util.img_as_ubyte(cp.asarray(data.camera())[::2, ::2])
+        image16 = image8.astype(cp.uint16)
+        cp.testing.assert_array_equal(image8, image16)
 
-    # def test_compare_8bit_unsigned_vs_signed_3d(self):
-    #     # filters applied on 8-bit volume or 16-bit volume (having only real 8-bit
-    #     # of dynamic) should be identical
+        func = getattr(rank, method)
 
-    #     # Create signed int8 volume that and convert it to uint8
-    #     np.random.seed(0)
-    #     volume_s = np.random.randint(0, high=127, size=(10, 20, 30), dtype=np.int8)
-    #     volume_u = img_as_ubyte(volume_s)
-    #     cp.testing.assert_array_equal(volume_u, img_as_ubyte(volume_s))
+        disk3 = disk(3, decomposition=None)
+        f8 = func(image8, disk3)
+        f16 = func(image16, disk3, cast_to_uint8=True)
+        cp.testing.assert_array_equal(f8, f16)
 
-    #     methods_3d = [
-    #         'equalize',
-    #         'otsu',
-    #         'autolevel',
-    #         'gradient',
-    #         'majority',
-    #         'maximum',
-    #         'mean',
-    #         'geometric_mean',
-    #         'subtract_mean',
-    #         'median',
-    #         'minimum',
-    #         'modal',
-    #         'enhance_contrast',
-    #         'pop',
-    #         'sum',
-    #         'threshold',
-    #         'noise_filter',
-    #         'entropy',
-    #     ]
+    @pytest.mark.parametrize(
+        "method",
+        [
+            "equalize",
+            "autolevel",
+            "gradient",
+            "majority",
+            "maximum",
+            "mean",
+            "geometric_mean",
+            "subtract_mean",
+            "median",
+            "minimum",
+            "modal",
+            "enhance_contrast",
+            "pop",
+            "sum",
+            "threshold",
+            "noise_filter",
+            "entropy",
+        ],
+    )
+    def test_compare_8bit_vs_16bit_3d(self, method):
+        np.random.seed(0)
+        volume8 = np.random.randint(
+            128, high=256, size=(10, 10, 10), dtype=np.uint8
+        )
+        volume8 = cp.asarray(volume8)
+        volume16 = volume8.astype(cp.uint16)
 
-    #     for method in methods_3d:
-    #         func = getattr(rank, method)
-    #         out_u = func(volume_u, ball(3))
-    #         with expected_warnings(["Possible precision loss"]):
-    #             out_s = func(volume_s, ball(3))
-    #         cp.testing.assert_array_equal(out_u, out_s)
+        func = getattr(rank, method)
 
-    # @pytest.mark.parametrize(
-    #     'method',
-    #     [
-    #         'autolevel',
-    #         'equalize',
-    #         'gradient',
-    #         'maximum',
-    #         'mean',
-    #         'subtract_mean',
-    #         'median',
-    #         'minimum',
-    #         'modal',
-    #         'enhance_contrast',
-    #         'pop',
-    #         'threshold',
-    #     ],
-    # )
-    # def test_compare_8bit_vs_16bit(self, method):
-    #     # filters applied on 8-bit image or 16-bit image (having only real 8-bit
-    #     # of dynamic) should be identical
-    #     image8 = util.img_as_ubyte(cp.asarray(data.camera())[::2, ::2])
-    #     image16 = image8.astype(cp.uint16)
-    #     cp.testing.assert_array_equal(image8, image16)
-
-    #     np.random.seed(0)
-    #     volume8 = np.random.randint(128, high=256, size=(10, 10, 10), dtype=np.uint8)
-    #     volume8 = cp.asarray(volume8)
-    #     volume16 = volume8.astype(cp.uint16)
-
-    #     methods_3d = [
-    #         'equalize',
-    #         'autolevel',
-    #         'gradient',
-    #         'majority',
-    #         'maximum',
-    #         'mean',
-    #         'geometric_mean',
-    #         'subtract_mean',
-    #         'median',
-    #         'minimum',
-    #         'modal',
-    #         'enhance_contrast',
-    #         'pop',
-    #         'sum',
-    #         'threshold',
-    #         'noise_filter',
-    #         'entropy',
-    #     ]
-
-    #     func = getattr(rank, method)
-    #     f8 = func(image8, disk(3, decomposition=None))
-    #     f16 = func(image16, disk(3, decomposition=None))
-    #     cp.testing.assert_array_equal(f8, f16)
-
-    #     if method in methods_3d:
-    #         f8 = func(volume8, ball(3, decomposition=None))
-    #         f16 = func(volume16, ball(3, decomposition=None))
-
-    #         cp.testing.assert_array_equal(f8, f16)
+        ball3 = ball(3, decomposition=None)
+        f8 = func(volume8, ball3)
+        f16 = func(volume16, ball3, cast_to_uint8=True)
+        cp.testing.assert_array_equal(f8, f16)
 
     @pytest.mark.parametrize("dtype", [cp.uint8, cp.uint16])
     def test_trivial_footprint8(self, dtype):
@@ -1350,33 +1346,53 @@ class TestRank:
         )
         cp.testing.assert_array_equal(image, out)
 
-    # def test_empty_footprint(self):
-    #     # check that min, max and mean returns zeros if footprint is empty
+    def test_empty_footprint(self):
+        image = cp.zeros((5, 5), dtype=np.uint16)
+        out = cp.zeros_like(image)
+        mask = cp.ones_like(image, dtype=np.uint8)
+        res = cp.zeros_like(image)
+        image[2, 2] = 255
+        image[2, 3] = 128
+        image[1, 2] = 16
 
-    #     image = cp.zeros((5, 5), dtype=np.uint16)
-    #     out = cp.zeros_like(image)
-    #     mask = cp.ones_like(image, dtype=np.uint8)
-    #     res = cp.zeros_like(image)
-    #     image[2, 2] = 255
-    #     image[2, 3] = 128
-    #     image[1, 2] = 16
+        elem = cp.array([[0, 0, 0], [0, 0, 0]], dtype=np.uint8)
 
-    #     elem = cp.array([[0, 0, 0], [0, 0, 0]], dtype=np.uint8)
-
-    #     rank.mean(image=image, footprint=elem, out=out, mask=mask, shift_x=0, shift_y=0)
-    #     cp.testing.assert_array_equal(res, out)
-    #     rank.geometric_mean(
-    #         image=image, footprint=elem, out=out, mask=mask, shift_x=0, shift_y=0
-    #     )
-    #     cp.testing.assert_array_equal(res, out)
-    #     rank.minimum(
-    #         image=image, footprint=elem, out=out, mask=mask, shift_x=0, shift_y=0
-    #     )
-    #     cp.testing.assert_array_equal(res, out)
-    #     rank.maximum(
-    #         image=image, footprint=elem, out=out, mask=mask, shift_x=0, shift_y=0
-    #     )
-    #     cp.testing.assert_array_equal(res, out)
+        rank.mean(
+            image=image,
+            footprint=elem,
+            out=out,
+            mask=mask,
+            shift_x=0,
+            shift_y=0,
+        )
+        cp.testing.assert_array_equal(res, out)
+        rank.geometric_mean(
+            image=image,
+            footprint=elem,
+            out=out,
+            mask=mask,
+            shift_x=0,
+            shift_y=0,
+        )
+        cp.testing.assert_array_equal(res, out)
+        rank.minimum(
+            image=image,
+            footprint=elem,
+            out=out,
+            mask=mask,
+            shift_x=0,
+            shift_y=0,
+        )
+        cp.testing.assert_array_equal(res, out)
+        rank.maximum(
+            image=image,
+            footprint=elem,
+            out=out,
+            mask=mask,
+            shift_x=0,
+            shift_y=0,
+        )
+        cp.testing.assert_array_equal(res, out)
 
     def test_entropy(self):
         #  verify that entropy is coherent with bitdepth of the input data
@@ -1420,10 +1436,10 @@ class TestRank:
         data[:64, :64] = cp.reshape(cp.arange(4096), (64, 64))
         assert cp.max(rank.entropy(data, footprint)) == 12
 
-        # # make sure output is of dtype double
-        # # with expected_warnings(['Bad rank filter performance']):
-        # out = rank.entropy(data, cp.ones((16, 16), dtype=cp.uint8))
-        # assert out.dtype == cp.float64
+        # make sure output is floating point
+        # with expected_warnings(['Bad rank filter performance']):
+        out = rank.entropy(data, cp.ones((16, 16), dtype=cp.uint8))
+        assert out.dtype.kind == "f"
 
     def test_footprint_dtypes(self):
         image = cp.zeros((5, 5), dtype=cp.uint8)
@@ -1471,22 +1487,21 @@ class TestRank:
             )
             cp.testing.assert_array_equal(image, out)
 
-    #     def test_16bit(self):
-    #         image = np.zeros((21, 21), dtype=np.uint16)
-    #         footprint = np.ones((3, 3), dtype=np.uint8)
+    def test_16bit(self):
+        image = cp.zeros((21, 21), dtype=np.uint16)
+        footprint = cp.ones((3, 3), dtype=np.uint8)
 
-    #         for bitdepth in range(17):
-    #             value = 2**bitdepth - 1
-    #             image[10, 10] = value
-    #             if bitdepth >= 11:
-    #                 expected = ['Bad rank filter performance']
-    #             else:
-    #                 expected = []
-    #             with expected_warnings(expected):
-    #                 assert rank.minimum(image, footprint)[10, 10] == 0
-    #                 assert rank.maximum(image, footprint)[10, 10] == value
-    #                 mean_val = rank.mean(image, footprint)[10, 10]
-    #                 assert mean_val == int(value / footprint.size)
+        for bitdepth in range(17):
+            value = 2**bitdepth - 1
+            image[10, 10] = value
+            expected = []
+            # if bitdepth >= 11:
+            #     expected = ['Bad rank filter performance']
+            with expected_warnings(expected):
+                assert rank.minimum(image, footprint)[10, 10] == 0
+                assert rank.maximum(image, footprint)[10, 10] == value
+                mean_val = rank.mean(image, footprint)[10, 10]
+                assert mean_val == int(value / footprint.size)
 
     def test_bilateral(self):
         image = cp.zeros((21, 21), dtype=cp.uint16)

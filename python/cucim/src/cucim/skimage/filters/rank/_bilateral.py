@@ -12,7 +12,12 @@ See ``cucim.skimage.filters.rank`` for a summary of differences between the
 cuCIM and scikit-image implementations.
 """
 
-from ._percentile import _apply, _doc_cast_to_uint8_param, _doc_common_params
+from ._percentile import (
+    _apply,
+    _doc_boundary_note,
+    _doc_cast_to_uint8_param,
+    _doc_common_params,
+)
 
 __all__ = [
     "mean_bilateral",
@@ -59,6 +64,7 @@ def _build_bilateral_docstring(summary):
         + _doc_cast_to_uint8_param
         + "\n"
         + _doc_returns
+        + _doc_boundary_note
     )
 
 

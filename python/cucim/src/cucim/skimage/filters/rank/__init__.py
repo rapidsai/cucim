@@ -63,7 +63,12 @@ The compatibility conditions are:
 * no footprint shift is requested (``shift_x == shift_y == 0`` and no nonzero
   ``shifts``)
 * the internal boundary mode is ``reflect`` (the public rank wrappers use this
-  mode)
+  mode). This is the SciPy ``ndimage`` meaning of ``reflect``, which repeats
+  the edge value and is equivalent to ``numpy.pad(..., mode='symmetric')``:
+  ``d c b a | a b c d | d c b a``. The naming differs across libraries, so
+  this should not be confused with NumPy's ``mode='reflect'``. It also differs
+  from scikit-image rank filters, which do not extend the image and therefore
+  use smaller cropped neighborhoods near edges and corners.
 * footprint half-width does not exceed the corresponding image extent
 
 Any unsupported case falls back to the generic GPU implementation. For
@@ -91,7 +96,7 @@ expected to match.
 | Supported dtypes         | uint8, uint16 only                                              | Any numeric dtype |
 | Output dtype             | Same as input                                                   | Same as input (preserves wider types) |
 | Algorithm                | Sliding-window histogram                                        | Streaming reductions, sorted neighborhoods, or uint8 2D histogram fast path |
-| Boundary handling        | Excludes out-of-bounds pixels (population decreases at borders) | Reflected boundary extension (always fully populated) |
+| Boundary handling        | Excludes out-of-bounds pixels (population decreases at borders) | SciPy ``ndimage``-style reflected boundary extension, with repeated edge values (always fully populated) |
 | ``mean``                 | Spurious zero outputs in low-variance neighborhoods             | No zero artifacts (sorted-array always has values) |
 | ``subtract_mean``        | Spurious zero outputs in low-variance neighborhoods             | No zero artifacts (sorted-array always has values) |
 | ``sum``                  | Input forced to uint8; overflows                    | Preserves input dtype; use int32 to avoid overflow |

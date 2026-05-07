@@ -49,6 +49,11 @@ _HISTOGRAM_COUNTER_TYPES = {
     "int16": (cp.int16, "short"),
     "int32": (cp.int32, "int"),
 }
+_HISTOGRAM_OUTPUT_TYPES = {
+    "float32": (cp.float32, "float"),
+    "float64": (cp.float64, "double"),
+    "uint8": (cp.uint8, "unsigned char"),
+}
 
 
 def _can_use_rank_histogram(
@@ -91,6 +96,19 @@ def _can_use_rank_histogram(
     if image.ndim != 2 or image.dtype != cp.uint8:
         return False
     if output is not None and output.dtype != cp.uint8:
+        if (
+            operation != "entropy"
+            or output.dtype.kind != "f"
+            or output.dtype.name not in _HISTOGRAM_OUTPUT_TYPES
+        ):
+            return False
+    if operation == "entropy" and output is None:
+        return False
+    if (
+        operation != "entropy"
+        and output is not None
+        and output.dtype != cp.uint8
+    ):
         return False
     if mask is not None or has_weights:
         return False
@@ -162,15 +180,19 @@ def _get_rank_histogram_partitions(
 
 
 @cp.memoize(for_each_device=True)
-def _get_histogram_rank_kernel(operation, counter_dtype_name):
+def _get_histogram_rank_kernel(
+    operation, counter_dtype_name, output_dtype_name
+):
     kernel_directory = os.path.join(os.path.dirname(__file__), "cuda")
     with open(os.path.join(kernel_directory, "histogram_rank.cu")) as f:
         code = "\n".join(f.readlines())
 
     _, counter_type = _HISTOGRAM_COUNTER_TYPES[counter_dtype_name]
+    _, output_type = _HISTOGRAM_OUTPUT_TYPES[output_dtype_name]
     code = (
         f"#define RANK_HIST_OP {_HISTOGRAM_OPS[operation]}\n"
-        f"#define HIST_COUNTER_T {counter_type}\n" + code
+        f"#define HIST_COUNTER_T {counter_type}\n"
+        f"#define RANK_HIST_OUTPUT_T {output_type}\n" + code
     )
     return cp.RawKernel(code=code, name="cuRankHistogram2DUint8")
 
@@ -200,18 +222,22 @@ def _rank_histogram(
         pad_kwargs = dict(mode=np_mode)
     padded = pad(image, npad, **pad_kwargs)
 
-    out = cp.empty_like(padded)
+    out_dtype = output.dtype if output is not None else padded.dtype
+    out = cp.empty(padded.shape, dtype=out_dtype)
     rows, cols = padded.shape
     out_rows = image.shape[0]
     counter_dtype = _get_histogram_counter_dtype(footprint_shape)
     counter_dtype_name = cp.dtype(counter_dtype).name
+    output_dtype_name = cp.dtype(out.dtype).name
     partitions = _get_rank_histogram_partitions(
         out_rows, cols, partitions=partitions, counter_dtype=counter_dtype
     )
 
     hist = cp.zeros((partitions * cols * 256,), dtype=counter_dtype)
     op_code = _HISTOGRAM_OPS[operation]
-    kernel = _get_histogram_rank_kernel(operation, counter_dtype_name)
+    kernel = _get_histogram_rank_kernel(
+        operation, counter_dtype_name, output_dtype_name
+    )
     window_size = footprint_shape[0] * footprint_shape[1]
     kernel(
         (partitions,),
