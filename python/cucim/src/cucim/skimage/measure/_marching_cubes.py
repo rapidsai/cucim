@@ -235,7 +235,8 @@ extern "C" __device__ inline float grad_at(
 }
 
 extern "C" __global__ void mc_classify_edges(
-    const float* volume, int* edge_flags, int nx, int ny, int nz, float level) {
+    const float* volume, unsigned char* edge_flags, int nx, int ny, int nz,
+    float level) {
     int idx = blockDim.x * blockIdx.x + threadIdx.x;
     int total = nx * ny * nz * 3;
     if (idx >= total) {
@@ -261,7 +262,8 @@ extern "C" __global__ void mc_classify_edges(
 }
 
 extern "C" __global__ void mc_lewiner_classify_edges(
-    const float* volume, int* edge_flags, int nx, int ny, int nz, float level) {
+    const float* volume, unsigned char* edge_flags, int nx, int ny, int nz,
+    float level) {
     int idx = blockDim.x * blockIdx.x + threadIdx.x;
     int total = nx * ny * nz * 3;
     if (idx >= total) {
@@ -324,7 +326,7 @@ extern "C" __device__ inline bool mc_edge_has_active_masked_cell(
 }
 
 extern "C" __global__ void mc_classify_edges_masked(
-    const float* volume, const bool* mask, int* edge_flags,
+    const float* volume, const bool* mask, unsigned char* edge_flags,
     int nx, int ny, int nz, float level) {
     int idx = blockDim.x * blockIdx.x + threadIdx.x;
     int total = nx * ny * nz * 3;
@@ -354,7 +356,7 @@ extern "C" __global__ void mc_classify_edges_masked(
 }
 
 extern "C" __global__ void mc_lewiner_classify_edges_masked(
-    const float* volume, const bool* mask, int* edge_flags,
+    const float* volume, const bool* mask, unsigned char* edge_flags,
     int nx, int ny, int nz, float level) {
     int idx = blockDim.x * blockIdx.x + threadIdx.x;
     int total = nx * ny * nz * 3;
@@ -908,6 +910,25 @@ extern "C" __device__ inline void load_lewiner_values(
     const float* volume, int i, int j, int k, int ny, int nz, float level,
     double* v);
 
+extern "C" __device__ inline void load_lewiner_values_float(
+    const float* volume, int i, int j, int k, int ny, int nz, float level,
+    float* v);
+
+extern "C" __device__ inline bool lewiner_count_case_needs_values(
+    int case_id) {
+    return case_id == 3 || case_id == 4 || case_id == 6 ||
+           case_id == 7 || case_id == 10 || case_id == 12 ||
+           case_id == 13;
+}
+
+extern "C" __device__ inline int lewiner_simple_case_tri_count(int case_id) {
+    if (case_id == 1) return 1;
+    if (case_id == 2 || case_id == 8) return 2;
+    if (case_id == 5) return 3;
+    if (case_id == 9 || case_id == 11 || case_id == 14) return 4;
+    return 0;
+}
+
 extern "C" __global__ void mc_lewiner_count_cells(
     const float* volume, int* tri_counts, int* center_flags,
     unsigned char* case_codes, int* center_count, int nx, int ny, int nz,
@@ -924,29 +945,37 @@ extern "C" __global__ void mc_lewiner_count_cells(
     int k = idx % cnz;
     int j = (idx / cnz) % cny;
     int i = idx / (cny * cnz);
-    double v[8];
-    load_lewiner_values(volume, i, j, k, ny, nz, level, v);
+    float vf[8];
+    load_lewiner_values_float(volume, i, j, k, ny, nz, level, vf);
 
     int code = 0;
-    if (v[0] > 0.0) code |= 1;
-    if (v[1] > 0.0) code |= 2;
-    if (v[2] > 0.0) code |= 4;
-    if (v[3] > 0.0) code |= 8;
-    if (v[4] > 0.0) code |= 16;
-    if (v[5] > 0.0) code |= 32;
-    if (v[6] > 0.0) code |= 64;
-    if (v[7] > 0.0) code |= 128;
+    if (vf[0] > 0.0f) code |= 1;
+    if (vf[1] > 0.0f) code |= 2;
+    if (vf[2] > 0.0f) code |= 4;
+    if (vf[3] > 0.0f) code |= 8;
+    if (vf[4] > 0.0f) code |= 16;
+    if (vf[5] > 0.0f) code |= 32;
+    if (vf[6] > 0.0f) code |= 64;
+    if (vf[7] > 0.0f) code |= 128;
 
     int case_id = (int)lut_cases[code * 2];
     int config = (int)lut_cases[code * 2 + 1];
     int tri_count = 0;
     int center_flag = 0;
-    if (case_id > 0) {
+    // Keep upstream-compatible double ambiguity tests, but avoid promoting
+    // simple cases that only need a fixed triangle count.
+    if (lewiner_count_case_needs_values(case_id)) {
+        double v[8];
+        for (int n = 0; n < 8; n++) {
+            v[n] = (double)vf[n];
+        }
         lewiner_select_count_center(
             v, case_id, config, lut_test3, lut_test4, lut_test6, lut_test7,
             lut_test10, lut_test12, lut_test13, lut_subconfig13,
             lut_tiling13_5_1,
             &tri_count, &center_flag);
+    } else {
+        tri_count = lewiner_simple_case_tri_count(case_id);
     }
     tri_counts[idx] = tri_count;
     center_flags[idx] = center_flag;
@@ -979,29 +1008,37 @@ extern "C" __global__ void mc_lewiner_count_cells_masked(
         return;
     }
 
-    double v[8];
-    load_lewiner_values(volume, i, j, k, ny, nz, level, v);
+    float vf[8];
+    load_lewiner_values_float(volume, i, j, k, ny, nz, level, vf);
 
     int code = 0;
-    if (v[0] > 0.0) code |= 1;
-    if (v[1] > 0.0) code |= 2;
-    if (v[2] > 0.0) code |= 4;
-    if (v[3] > 0.0) code |= 8;
-    if (v[4] > 0.0) code |= 16;
-    if (v[5] > 0.0) code |= 32;
-    if (v[6] > 0.0) code |= 64;
-    if (v[7] > 0.0) code |= 128;
+    if (vf[0] > 0.0f) code |= 1;
+    if (vf[1] > 0.0f) code |= 2;
+    if (vf[2] > 0.0f) code |= 4;
+    if (vf[3] > 0.0f) code |= 8;
+    if (vf[4] > 0.0f) code |= 16;
+    if (vf[5] > 0.0f) code |= 32;
+    if (vf[6] > 0.0f) code |= 64;
+    if (vf[7] > 0.0f) code |= 128;
 
     int case_id = (int)lut_cases[code * 2];
     int config = (int)lut_cases[code * 2 + 1];
     int tri_count = 0;
     int center_flag = 0;
-    if (case_id > 0) {
+    // Keep upstream-compatible double ambiguity tests, but avoid promoting
+    // simple cases that only need a fixed triangle count.
+    if (lewiner_count_case_needs_values(case_id)) {
+        double v[8];
+        for (int n = 0; n < 8; n++) {
+            v[n] = (double)vf[n];
+        }
         lewiner_select_count_center(
             v, case_id, config, lut_test3, lut_test4, lut_test6, lut_test7,
             lut_test10, lut_test12, lut_test13, lut_subconfig13,
             lut_tiling13_5_1,
             &tri_count, &center_flag);
+    } else {
+        tri_count = lewiner_simple_case_tri_count(case_id);
     }
     tri_counts[idx] = tri_count;
     center_flags[idx] = center_flag;
@@ -1114,18 +1151,18 @@ extern "C" __device__ inline int lewiner_edge_to_local(int edge) {
     }
 }
 
-extern "C" __device__ inline void load_lewiner_values(
+extern "C" __device__ inline void load_lewiner_values_float(
     const float* volume, int i, int j, int k, int ny, int nz, float level,
-    double* v) {
-    double local[8];
-    local[0] = (double)vol_at(volume, i, j, k, ny, nz) - (double)level;
-    local[1] = (double)vol_at(volume, i + 1, j, k, ny, nz) - (double)level;
-    local[2] = (double)vol_at(volume, i + 1, j + 1, k, ny, nz) - (double)level;
-    local[3] = (double)vol_at(volume, i, j + 1, k, ny, nz) - (double)level;
-    local[4] = (double)vol_at(volume, i, j, k + 1, ny, nz) - (double)level;
-    local[5] = (double)vol_at(volume, i + 1, j, k + 1, ny, nz) - (double)level;
-    local[6] = (double)vol_at(volume, i + 1, j + 1, k + 1, ny, nz) - (double)level;
-    local[7] = (double)vol_at(volume, i, j + 1, k + 1, ny, nz) - (double)level;
+    float* v) {
+    float local[8];
+    local[0] = vol_at(volume, i, j, k, ny, nz) - level;
+    local[1] = vol_at(volume, i + 1, j, k, ny, nz) - level;
+    local[2] = vol_at(volume, i + 1, j + 1, k, ny, nz) - level;
+    local[3] = vol_at(volume, i, j + 1, k, ny, nz) - level;
+    local[4] = vol_at(volume, i, j, k + 1, ny, nz) - level;
+    local[5] = vol_at(volume, i + 1, j, k + 1, ny, nz) - level;
+    local[6] = vol_at(volume, i + 1, j + 1, k + 1, ny, nz) - level;
+    local[7] = vol_at(volume, i, j + 1, k + 1, ny, nz) - level;
 
     v[0] = local[0];
     v[1] = local[4];
@@ -1135,6 +1172,16 @@ extern "C" __device__ inline void load_lewiner_values(
     v[5] = local[5];
     v[6] = local[6];
     v[7] = local[2];
+}
+
+extern "C" __device__ inline void load_lewiner_values(
+    const float* volume, int i, int j, int k, int ny, int nz, float level,
+    double* v) {
+    float vf[8];
+    load_lewiner_values_float(volume, i, j, k, ny, nz, level, vf);
+    for (int n = 0; n < 8; n++) {
+        v[n] = (double)vf[n];
+    }
 }
 
 extern "C" __device__ inline void lewiner_write_lut2(
@@ -1842,7 +1889,7 @@ def _run_lorensen(
     threads = 256
     edge_blocks = ((n_edges + threads - 1) // threads,)
 
-    edge_flags = cp.empty(n_edges, dtype=cp.int32)
+    edge_flags = cp.empty(n_edges, dtype=cp.uint8)
     if mask is None:
         _get_kernel("mc_classify_edges")(
             edge_blocks,
@@ -1945,7 +1992,7 @@ def _run_lewiner(
     threads = 256
     edge_blocks = ((n_edges + threads - 1) // threads,)
 
-    edge_flags = cp.empty(n_edges, dtype=cp.int32)
+    edge_flags = cp.empty(n_edges, dtype=cp.uint8)
     if mask is None:
         _get_kernel("mc_lewiner_classify_edges")(
             edge_blocks,
