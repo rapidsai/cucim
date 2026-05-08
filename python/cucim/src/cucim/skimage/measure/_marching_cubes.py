@@ -1464,6 +1464,25 @@ extern "C" __global__ void mc_compact_root_vertices(
     normals_out[3 * out_idx + 2] = normals[3 * idx + 2];
     values_out[out_idx] = values[idx];
 }
+
+extern "C" __global__ void mc_mark_referenced_vertices(
+    const int* faces, int n_face_indices, int* vertex_flags) {
+    int idx = blockDim.x * blockIdx.x + threadIdx.x;
+    if (idx >= n_face_indices) {
+        return;
+    }
+    atomicOr(vertex_flags + faces[idx], 1);
+}
+
+extern "C" __global__ void mc_emit_reindexed_faces(
+    const int* faces, const int* vertex_scan, int n_face_indices,
+    int* faces_out) {
+    int idx = blockDim.x * blockIdx.x + threadIdx.x;
+    if (idx >= n_face_indices) {
+        return;
+    }
+    faces_out[idx] = vertex_scan[faces[idx]] - 1;
+}
 """
 
 
@@ -1872,13 +1891,43 @@ def _compact_referenced_vertices_gpu(vertices, faces, normals, values):
     if faces.size == 0:
         return vertices[:0], faces, normals[:0], values[:0]
 
-    vertices_ok = cp.zeros(n_vertices, dtype=cp.bool_)
-    vertices_ok[faces.ravel()] = True
-    vertex_map = cp.cumsum(vertices_ok, dtype=cp.int32) - 1
-    faces2 = vertex_map[faces]
-    vertices2 = vertices[vertices_ok]
-    normals2 = normals[vertices_ok]
-    values2 = values[vertices_ok]
+    threads = 256
+    n_face_indices = faces.size
+    face_index_blocks = ((n_face_indices + threads - 1) // threads,)
+    vertex_blocks = ((n_vertices + threads - 1) // threads,)
+    vertex_flags = cp.zeros(n_vertices, dtype=cp.int32)
+    _get_kernel("mc_mark_referenced_vertices")(
+        face_index_blocks,
+        (threads,),
+        (faces, n_face_indices, vertex_flags),
+    )
+    vertex_scan = cp.cumsum(vertex_flags, dtype=cp.int32)
+    n_vertices2 = int(vertex_scan[-1])
+
+    faces2 = cp.empty_like(faces)
+    vertices2 = cp.empty((n_vertices2, 3), dtype=vertices.dtype)
+    normals2 = cp.empty((n_vertices2, 3), dtype=normals.dtype)
+    values2 = cp.empty((n_vertices2,), dtype=values.dtype)
+    _get_kernel("mc_emit_reindexed_faces")(
+        face_index_blocks,
+        (threads,),
+        (faces, vertex_scan, n_face_indices, faces2),
+    )
+    _get_kernel("mc_compact_root_vertices")(
+        vertex_blocks,
+        (threads,),
+        (
+            vertices,
+            normals,
+            values,
+            vertex_flags,
+            vertex_scan,
+            n_vertices,
+            vertices2,
+            normals2,
+            values2,
+        ),
+    )
     return vertices2, faces2, normals2, values2
 
 
