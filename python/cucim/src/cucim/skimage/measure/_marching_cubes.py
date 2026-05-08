@@ -910,7 +910,8 @@ extern "C" __device__ inline void load_lewiner_values(
 
 extern "C" __global__ void mc_lewiner_count_cells(
     const float* volume, int* tri_counts, int* center_flags,
-    unsigned char* case_codes, int nx, int ny, int nz, float level) {
+    unsigned char* case_codes, int* center_count, int nx, int ny, int nz,
+    float level) {
     int idx = blockDim.x * blockIdx.x + threadIdx.x;
     int cnx = nx - 1;
     int cny = ny - 1;
@@ -950,11 +951,15 @@ extern "C" __global__ void mc_lewiner_count_cells(
     tri_counts[idx] = tri_count;
     center_flags[idx] = center_flag;
     case_codes[idx] = (unsigned char)code;
+    if (center_flag) {
+        atomicAdd(center_count, 1);
+    }
 }
 
 extern "C" __global__ void mc_lewiner_count_cells_masked(
     const float* volume, const bool* mask, int* tri_counts, int* center_flags,
-    unsigned char* case_codes, int nx, int ny, int nz, float level) {
+    unsigned char* case_codes, int* center_count, int nx, int ny, int nz,
+    float level) {
     int idx = blockDim.x * blockIdx.x + threadIdx.x;
     int cnx = nx - 1;
     int cny = ny - 1;
@@ -1001,6 +1006,9 @@ extern "C" __global__ void mc_lewiner_count_cells_masked(
     tri_counts[idx] = tri_count;
     center_flags[idx] = center_flag;
     case_codes[idx] = (unsigned char)code;
+    if (center_flag) {
+        atomicAdd(center_count, 1);
+    }
 }
 
 extern "C" __global__ void mc_lewiner_generate_center_vertices(
@@ -1979,10 +1987,9 @@ def _run_lewiner(
         ),
     )
 
-    tri_counts, center_flags, case_codes = _lewiner_count_cells_gpu(
-        volume, level, mask
+    tri_counts, center_flags, case_codes, n_center_vertices = (
+        _lewiner_count_cells_gpu(volume, level, mask)
     )
-    n_center_vertices = int(cp.sum(center_flags, dtype=cp.int32))
     if n_center_vertices:
         vertices, normals, values, center_vertex_ids = (
             _lewiner_generate_center_vertices_gpu(
@@ -1991,6 +1998,7 @@ def _run_lewiner(
                 spacing,
                 center_flags,
                 vertex_offset=n_edge_vertices,
+                n_centers=n_center_vertices,
             )
         )
         vertices[:n_edge_vertices] = edge_vertices
@@ -2093,6 +2101,7 @@ def _lewiner_count_cells_gpu(volume, level, mask=None):
     tri_counts = cp.empty(n_cells, dtype=cp.int32)
     center_flags = cp.empty(n_cells, dtype=cp.int32)
     case_codes = cp.empty(n_cells, dtype=cp.uint8)
+    center_count = cp.zeros(1, dtype=cp.int32)
     if mask is None:
         _get_kernel("mc_lewiner_count_cells")(
             cell_blocks,
@@ -2102,6 +2111,7 @@ def _lewiner_count_cells_gpu(volume, level, mask=None):
                 tri_counts,
                 center_flags,
                 case_codes,
+                center_count,
                 nx,
                 ny,
                 nz,
@@ -2118,22 +2128,24 @@ def _lewiner_count_cells_gpu(volume, level, mask=None):
                 tri_counts,
                 center_flags,
                 case_codes,
+                center_count,
                 nx,
                 ny,
                 nz,
                 np.float32(level),
             ),
         )
-    return tri_counts, center_flags, case_codes
+    return tri_counts, center_flags, case_codes, int(center_count[0])
 
 
 def _lewiner_generate_center_vertices_gpu(
-    volume, level, spacing, center_flags, vertex_offset=0
+    volume, level, spacing, center_flags, vertex_offset=0, n_centers=None
 ):
     nx, ny, nz = volume.shape
     n_cells = (nx - 1) * (ny - 1) * (nz - 1)
     center_scan = cp.cumsum(center_flags, dtype=cp.int32)
-    n_centers = int(center_scan[-1]) if n_cells else 0
+    if n_centers is None:
+        n_centers = int(center_scan[-1]) if n_cells else 0
     n_vertices = vertex_offset + n_centers
     center_vertex_ids = cp.full(n_cells, -1, dtype=cp.int32)
     vertices = cp.empty((n_vertices, 3), dtype=cp.float32)

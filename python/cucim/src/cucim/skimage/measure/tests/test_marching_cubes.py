@@ -178,12 +178,16 @@ def test_lewiner_reference_selector_binary_cases():
         expected = _skimage_lewiner_case_triangles(values)
         assert actual == expected, f"case={case}"
 
-        tri_counts, center_flags, case_codes = _lewiner_count_cells_gpu(
-            _case_volume(values), 0.0
-        )
+        (
+            tri_counts,
+            center_flags,
+            case_codes,
+            n_center_vertices,
+        ) = _lewiner_count_cells_gpu(_case_volume(values), 0.0)
         gpu_edges = _lewiner_expected_local_edges_for_volume(values)
         assert int(tri_counts[0]) == len(gpu_edges) // 3, f"case={case}"
         assert int(center_flags[0]) == (12 in gpu_edges), f"case={case}"
+        assert n_center_vertices == int(center_flags[0]), f"case={case}"
         expected_case_code = sum(
             ((case >> src) & 1) << dst
             for dst, src in enumerate(_LEWINER_LOCAL_VALUE_ORDER)
@@ -405,12 +409,16 @@ def test_lewiner_reference_selector_ambiguous_branches(expected_table, values):
     expected = _skimage_lewiner_case_triangles(values)
     assert actual == expected
 
-    tri_counts, center_flags, _case_codes = _lewiner_count_cells_gpu(
-        _case_volume(values), 0.0
-    )
+    (
+        tri_counts,
+        center_flags,
+        _case_codes,
+        n_center_vertices,
+    ) = _lewiner_count_cells_gpu(_case_volume(values), 0.0)
     gpu_edges = _lewiner_expected_local_edges_for_volume(values)
     assert int(tri_counts[0]) == len(gpu_edges) // 3
     assert int(center_flags[0]) == (12 in gpu_edges)
+    assert n_center_vertices == int(center_flags[0])
     edge_ids = _lewiner_generate_edge_ids_gpu(
         _case_volume(values), 0.0, tri_counts
     )
@@ -461,15 +469,19 @@ def test_lewiner_gpu_center_vertex_generation():
     )
     spacing = (2.0, 3.0, 4.0)
     volume, local_values = _case_volume_for_lewiner_values(values)
-    tri_counts, center_flags, _case_codes = _lewiner_count_cells_gpu(
-        volume, 0.0
-    )
+    (
+        tri_counts,
+        center_flags,
+        _case_codes,
+        n_center_vertices,
+    ) = _lewiner_count_cells_gpu(volume, 0.0)
     assert int(tri_counts[0]) == 12
     assert int(center_flags[0]) == 1
+    assert n_center_vertices == 1
 
     vertices, normals, out_values, center_vertex_ids = (
         _lewiner_generate_center_vertices_gpu(
-            volume, 0.0, spacing, center_flags
+            volume, 0.0, spacing, center_flags, n_centers=n_center_vertices
         )
     )
     expected_position, expected_normal = _lewiner_center_vertex(local_values)
@@ -498,11 +510,15 @@ def test_lewiner_gpu_faces_from_edge_ids():
         -16.967766,
     )
     volume, _ = _case_volume_for_lewiner_values(values)
-    tri_counts, center_flags, _case_codes = _lewiner_count_cells_gpu(
-        volume, 0.0
-    )
+    (
+        tri_counts,
+        center_flags,
+        _case_codes,
+        n_center_vertices,
+    ) = _lewiner_count_cells_gpu(volume, 0.0)
     assert int(tri_counts[0]) == 12
     assert int(center_flags[0]) == 1
+    assert n_center_vertices == 1
 
     edge_ids = _lewiner_generate_edge_ids_gpu(volume, 0.0, tri_counts)
     edge_vertex_ids = _single_cell_edge_vertex_ids()
