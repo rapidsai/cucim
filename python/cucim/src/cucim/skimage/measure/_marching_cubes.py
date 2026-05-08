@@ -1886,18 +1886,25 @@ def _run_lewiner(
     if edge_ids.size == 0:
         raise RuntimeError("No surface found at the given iso value.")
 
-    vertices, normals, values, center_vertex_ids = (
-        _lewiner_generate_center_vertices_gpu(
-            volume,
-            level,
-            spacing,
-            center_flags,
-            vertex_offset=n_edge_vertices,
+    n_center_vertices = int(cp.sum(center_flags, dtype=cp.int32))
+    if n_center_vertices:
+        vertices, normals, values, center_vertex_ids = (
+            _lewiner_generate_center_vertices_gpu(
+                volume,
+                level,
+                spacing,
+                center_flags,
+                vertex_offset=n_edge_vertices,
+            )
         )
-    )
-    vertices[:n_edge_vertices] = edge_vertices
-    normals[:n_edge_vertices] = edge_normals
-    values[:n_edge_vertices] = edge_values
+        vertices[:n_edge_vertices] = edge_vertices
+        normals[:n_edge_vertices] = edge_normals
+        values[:n_edge_vertices] = edge_values
+    else:
+        vertices = edge_vertices
+        normals = edge_normals
+        values = edge_values
+        center_vertex_ids = cp.empty(0, dtype=cp.int32)
 
     faces = _lewiner_generate_faces_from_edge_ids_gpu(
         edge_ids,
