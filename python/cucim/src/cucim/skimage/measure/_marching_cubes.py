@@ -1405,12 +1405,64 @@ extern "C" __global__ void mc_mark_degenerate_faces_parallel(
     }
 }
 
+extern "C" __global__ void mc_init_vertex_map(int* parent, int n_vertices) {
+    int idx = blockDim.x * blockIdx.x + threadIdx.x;
+    if (idx >= n_vertices) {
+        return;
+    }
+    parent[idx] = idx;
+}
+
 extern "C" __global__ void mc_compress_vertex_roots(int* parent, int n_vertices) {
     int idx = blockDim.x * blockIdx.x + threadIdx.x;
     if (idx >= n_vertices) {
         return;
     }
     parent[idx] = mc_find_root(parent, idx);
+}
+
+extern "C" __global__ void mc_mark_vertex_roots(
+    const int* parent, int* root_flags, int n_vertices) {
+    int idx = blockDim.x * blockIdx.x + threadIdx.x;
+    if (idx >= n_vertices) {
+        return;
+    }
+    root_flags[idx] = parent[idx] == idx;
+}
+
+extern "C" __global__ void mc_emit_non_degenerate_faces(
+    const int* faces, const int* faces_ok, const int* face_scan,
+    const int* vertex_map, const int* vertex_scan, int n_faces,
+    int* faces_out) {
+    int idx = blockDim.x * blockIdx.x + threadIdx.x;
+    if (idx >= n_faces || !faces_ok[idx]) {
+        return;
+    }
+    int out_idx = face_scan[idx] - 1;
+    int i0 = vertex_map[faces[3 * idx]];
+    int i1 = vertex_map[faces[3 * idx + 1]];
+    int i2 = vertex_map[faces[3 * idx + 2]];
+    faces_out[3 * out_idx] = vertex_scan[i0] - 1;
+    faces_out[3 * out_idx + 1] = vertex_scan[i1] - 1;
+    faces_out[3 * out_idx + 2] = vertex_scan[i2] - 1;
+}
+
+extern "C" __global__ void mc_compact_root_vertices(
+    const float* vertices, const float* normals, const float* values,
+    const int* root_flags, const int* vertex_scan, int n_vertices,
+    float* vertices_out, float* normals_out, float* values_out) {
+    int idx = blockDim.x * blockIdx.x + threadIdx.x;
+    if (idx >= n_vertices || !root_flags[idx]) {
+        return;
+    }
+    int out_idx = vertex_scan[idx] - 1;
+    vertices_out[3 * out_idx] = vertices[3 * idx];
+    vertices_out[3 * out_idx + 1] = vertices[3 * idx + 1];
+    vertices_out[3 * out_idx + 2] = vertices[3 * idx + 2];
+    normals_out[3 * out_idx] = normals[3 * idx];
+    normals_out[3 * out_idx + 1] = normals[3 * idx + 1];
+    normals_out[3 * out_idx + 2] = normals[3 * idx + 2];
+    values_out[out_idx] = values[idx];
 }
 """
 
@@ -1756,30 +1808,62 @@ def _remove_degenerate_faces_gpu(vertices, faces, normals, values):
     if n_faces == 0:
         return vertices, faces, normals, values
 
-    vertex_ids = cp.arange(n_vertices, dtype=cp.int32)
-    vertex_map = vertex_ids.copy()
+    vertex_map = cp.empty(n_vertices, dtype=cp.int32)
     faces_ok = cp.empty(n_faces, dtype=cp.int32)
     threads = 256
     face_blocks = ((n_faces + threads - 1) // threads,)
+    vertex_blocks = ((n_vertices + threads - 1) // threads,)
+    _get_kernel("mc_init_vertex_map")(
+        vertex_blocks,
+        (threads,),
+        (vertex_map, n_vertices),
+    )
     _get_kernel("mc_mark_degenerate_faces_parallel")(
         face_blocks,
         (threads,),
         (vertices, faces, n_faces, vertex_map, faces_ok),
     )
-    vertex_blocks = ((n_vertices + threads - 1) // threads,)
     _get_kernel("mc_compress_vertex_roots")(
         vertex_blocks,
         (threads,),
         (vertex_map, n_vertices),
     )
 
-    vertices_ok = vertex_map == vertex_ids
-    vertex_map2 = cp.cumsum(vertices_ok, dtype=cp.int32) - 1
-    face_mask = faces_ok > 0
-    faces2 = vertex_map2[vertex_map[faces[face_mask]]]
-    vertices2 = vertices[vertices_ok]
-    normals2 = normals[vertices_ok]
-    values2 = values[vertices_ok]
+    root_flags = cp.empty(n_vertices, dtype=cp.int32)
+    _get_kernel("mc_mark_vertex_roots")(
+        vertex_blocks,
+        (threads,),
+        (vertex_map, root_flags, n_vertices),
+    )
+    vertex_scan = cp.cumsum(root_flags, dtype=cp.int32)
+    n_vertices2 = int(vertex_scan[-1])
+    face_scan = cp.cumsum(faces_ok, dtype=cp.int32)
+    n_faces2 = int(face_scan[-1])
+
+    faces2 = cp.empty((n_faces2, 3), dtype=faces.dtype)
+    vertices2 = cp.empty((n_vertices2, 3), dtype=vertices.dtype)
+    normals2 = cp.empty((n_vertices2, 3), dtype=normals.dtype)
+    values2 = cp.empty((n_vertices2,), dtype=values.dtype)
+    _get_kernel("mc_emit_non_degenerate_faces")(
+        face_blocks,
+        (threads,),
+        (faces, faces_ok, face_scan, vertex_map, vertex_scan, n_faces, faces2),
+    )
+    _get_kernel("mc_compact_root_vertices")(
+        vertex_blocks,
+        (threads,),
+        (
+            vertices,
+            normals,
+            values,
+            root_flags,
+            vertex_scan,
+            n_vertices,
+            vertices2,
+            normals2,
+            values2,
+        ),
+    )
     return vertices2, faces2, normals2, values2
 
 
