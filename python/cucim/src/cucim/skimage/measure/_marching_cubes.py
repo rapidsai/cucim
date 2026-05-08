@@ -254,6 +254,103 @@ extern "C" __global__ void mc_lewiner_classify_edges(
     edge_flags[idx] = flag;
 }
 
+extern "C" __device__ inline bool mc_mask_cell_active(
+    const bool* mask, int i, int j, int k, int nx, int ny, int nz) {
+    return i >= 0 && i < nx - 1 &&
+           j >= 0 && j < ny - 1 &&
+           k >= 0 && k < nz - 1 &&
+           mask[node_index(i + 1, j + 1, k + 1, ny, nz)];
+}
+
+extern "C" __device__ inline bool mc_edge_has_active_masked_cell(
+    const bool* mask, int i, int j, int k, int side, int nx, int ny, int nz) {
+    if (side == 0) {
+        if (i >= nx - 1) {
+            return false;
+        }
+        return mc_mask_cell_active(mask, i, j - 1, k - 1, nx, ny, nz) ||
+               mc_mask_cell_active(mask, i, j, k - 1, nx, ny, nz) ||
+               mc_mask_cell_active(mask, i, j - 1, k, nx, ny, nz) ||
+               mc_mask_cell_active(mask, i, j, k, nx, ny, nz);
+    }
+    if (side == 1) {
+        if (j >= ny - 1) {
+            return false;
+        }
+        return mc_mask_cell_active(mask, i - 1, j, k - 1, nx, ny, nz) ||
+               mc_mask_cell_active(mask, i, j, k - 1, nx, ny, nz) ||
+               mc_mask_cell_active(mask, i - 1, j, k, nx, ny, nz) ||
+               mc_mask_cell_active(mask, i, j, k, nx, ny, nz);
+    }
+    if (k >= nz - 1) {
+        return false;
+    }
+    return mc_mask_cell_active(mask, i - 1, j - 1, k, nx, ny, nz) ||
+           mc_mask_cell_active(mask, i, j - 1, k, nx, ny, nz) ||
+           mc_mask_cell_active(mask, i - 1, j, k, nx, ny, nz) ||
+           mc_mask_cell_active(mask, i, j, k, nx, ny, nz);
+}
+
+extern "C" __global__ void mc_classify_edges_masked(
+    const float* volume, const bool* mask, int* edge_flags,
+    int nx, int ny, int nz, float level) {
+    int idx = blockDim.x * blockIdx.x + threadIdx.x;
+    int total = nx * ny * nz * 3;
+    if (idx >= total) {
+        return;
+    }
+
+    int side = idx % 3;
+    int node = idx / 3;
+    int k = node % nz;
+    int j = (node / nz) % ny;
+    int i = node / (ny * nz);
+    int i2 = i + (side == 0);
+    int j2 = j + (side == 1);
+    int k2 = k + (side == 2);
+
+    int flag = 0;
+    if (i2 < nx && j2 < ny && k2 < nz) {
+        float a = vol_at(volume, i, j, k, ny, nz);
+        float b = vol_at(volume, i2, j2, k2, ny, nz);
+        if (crosses(a, b, level) &&
+            mc_edge_has_active_masked_cell(mask, i, j, k, side, nx, ny, nz)) {
+            flag = 1;
+        }
+    }
+    edge_flags[idx] = flag;
+}
+
+extern "C" __global__ void mc_lewiner_classify_edges_masked(
+    const float* volume, const bool* mask, int* edge_flags,
+    int nx, int ny, int nz, float level) {
+    int idx = blockDim.x * blockIdx.x + threadIdx.x;
+    int total = nx * ny * nz * 3;
+    if (idx >= total) {
+        return;
+    }
+
+    int side = idx % 3;
+    int node = idx / 3;
+    int k = node % nz;
+    int j = (node / nz) % ny;
+    int i = node / (ny * nz);
+    int i2 = i + (side == 0);
+    int j2 = j + (side == 1);
+    int k2 = k + (side == 2);
+
+    int flag = 0;
+    if (i2 < nx && j2 < ny && k2 < nz) {
+        float a = vol_at(volume, i, j, k, ny, nz);
+        float b = vol_at(volume, i2, j2, k2, ny, nz);
+        if (crosses_lewiner(a, b, level) &&
+            mc_edge_has_active_masked_cell(mask, i, j, k, side, nx, ny, nz)) {
+            flag = 1;
+        }
+    }
+    edge_flags[idx] = flag;
+}
+
 extern "C" __global__ void mc_generate_vertices(
     const float* volume, const int* edge_scan, int* edge_vertex_ids,
     float* vertices, float* normals, float* values,
@@ -285,6 +382,10 @@ extern "C" __global__ void mc_generate_vertices(
         return;
     }
 
+    int prev = idx == 0 ? 0 : edge_scan[idx - 1];
+    if (edge_scan[idx] == prev) {
+        return;
+    }
     int vid = edge_scan[idx] - 1;
     edge_vertex_ids[idx] = vid;
 
@@ -358,6 +459,10 @@ extern "C" __global__ void mc_lewiner_generate_vertices(
         return;
     }
 
+    int prev = idx == 0 ? 0 : edge_scan[idx - 1];
+    if (edge_scan[idx] == prev) {
+        return;
+    }
     int vid = edge_scan[idx] - 1;
     edge_vertex_ids[idx] = vid;
 
@@ -1465,24 +1570,6 @@ extern "C" __global__ void mc_compact_root_vertices(
     values_out[out_idx] = values[idx];
 }
 
-extern "C" __global__ void mc_mark_referenced_vertices(
-    const int* faces, int n_face_indices, int* vertex_flags) {
-    int idx = blockDim.x * blockIdx.x + threadIdx.x;
-    if (idx >= n_face_indices) {
-        return;
-    }
-    atomicOr(vertex_flags + faces[idx], 1);
-}
-
-extern "C" __global__ void mc_emit_reindexed_faces(
-    const int* faces, const int* vertex_scan, int n_face_indices,
-    int* faces_out) {
-    int idx = blockDim.x * blockIdx.x + threadIdx.x;
-    if (idx >= n_face_indices) {
-        return;
-    }
-    faces_out[idx] = vertex_scan[faces[idx]] - 1;
-}
 """
 
 
@@ -1647,11 +1734,18 @@ def _run_lorensen(
     edge_blocks = ((n_edges + threads - 1) // threads,)
 
     edge_flags = cp.empty(n_edges, dtype=cp.int32)
-    _get_kernel("mc_classify_edges")(
-        edge_blocks,
-        (threads,),
-        (volume, edge_flags, nx, ny, nz, np.float32(level)),
-    )
+    if mask is None:
+        _get_kernel("mc_classify_edges")(
+            edge_blocks,
+            (threads,),
+            (volume, edge_flags, nx, ny, nz, np.float32(level)),
+        )
+    else:
+        _get_kernel("mc_classify_edges_masked")(
+            edge_blocks,
+            (threads,),
+            (volume, mask, edge_flags, nx, ny, nz, np.float32(level)),
+        )
     edge_scan = cp.cumsum(edge_flags, dtype=cp.int32)
     n_vertices = int(edge_scan[-1])
     if n_vertices == 0:
@@ -1730,10 +1824,6 @@ def _run_lorensen(
         ),
     )
     faces = faces.reshape(-1, 3)
-    if mask is not None:
-        vertices, faces, normals, values = _compact_referenced_vertices_gpu(
-            vertices, faces, normals, values
-        )
     if not allow_degenerate:
         vertices, faces, normals, values = _remove_degenerate_faces_gpu(
             vertices, faces, normals, values
@@ -1750,11 +1840,18 @@ def _run_lewiner(
     edge_blocks = ((n_edges + threads - 1) // threads,)
 
     edge_flags = cp.empty(n_edges, dtype=cp.int32)
-    _get_kernel("mc_lewiner_classify_edges")(
-        edge_blocks,
-        (threads,),
-        (volume, edge_flags, nx, ny, nz, np.float32(level)),
-    )
+    if mask is None:
+        _get_kernel("mc_lewiner_classify_edges")(
+            edge_blocks,
+            (threads,),
+            (volume, edge_flags, nx, ny, nz, np.float32(level)),
+        )
+    else:
+        _get_kernel("mc_lewiner_classify_edges_masked")(
+            edge_blocks,
+            (threads,),
+            (volume, mask, edge_flags, nx, ny, nz, np.float32(level)),
+        )
     edge_scan = cp.cumsum(edge_flags, dtype=cp.int32)
     n_edge_vertices = int(edge_scan[-1])
     if n_edge_vertices == 0:
@@ -1810,10 +1907,6 @@ def _run_lewiner(
         volume.shape,
         gradient_direction,
     )
-    if mask is not None:
-        vertices, faces, normals, values = _compact_referenced_vertices_gpu(
-            vertices, faces, normals, values
-        )
     if not allow_degenerate:
         vertices, faces, normals, values = _remove_degenerate_faces_gpu(
             vertices, faces, normals, values
@@ -1876,51 +1969,6 @@ def _remove_degenerate_faces_gpu(vertices, faces, normals, values):
             normals,
             values,
             root_flags,
-            vertex_scan,
-            n_vertices,
-            vertices2,
-            normals2,
-            values2,
-        ),
-    )
-    return vertices2, faces2, normals2, values2
-
-
-def _compact_referenced_vertices_gpu(vertices, faces, normals, values):
-    n_vertices = vertices.shape[0]
-    if faces.size == 0:
-        return vertices[:0], faces, normals[:0], values[:0]
-
-    threads = 256
-    n_face_indices = faces.size
-    face_index_blocks = ((n_face_indices + threads - 1) // threads,)
-    vertex_blocks = ((n_vertices + threads - 1) // threads,)
-    vertex_flags = cp.zeros(n_vertices, dtype=cp.int32)
-    _get_kernel("mc_mark_referenced_vertices")(
-        face_index_blocks,
-        (threads,),
-        (faces, n_face_indices, vertex_flags),
-    )
-    vertex_scan = cp.cumsum(vertex_flags, dtype=cp.int32)
-    n_vertices2 = int(vertex_scan[-1])
-
-    faces2 = cp.empty_like(faces)
-    vertices2 = cp.empty((n_vertices2, 3), dtype=vertices.dtype)
-    normals2 = cp.empty((n_vertices2, 3), dtype=normals.dtype)
-    values2 = cp.empty((n_vertices2,), dtype=values.dtype)
-    _get_kernel("mc_emit_reindexed_faces")(
-        face_index_blocks,
-        (threads,),
-        (faces, vertex_scan, n_face_indices, faces2),
-    )
-    _get_kernel("mc_compact_root_vertices")(
-        vertex_blocks,
-        (threads,),
-        (
-            vertices,
-            normals,
-            values,
-            vertex_flags,
             vertex_scan,
             n_vertices,
             vertices2,
