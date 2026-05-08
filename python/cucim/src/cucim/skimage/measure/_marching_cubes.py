@@ -900,7 +900,7 @@ extern "C" __device__ inline void load_lewiner_values(
 
 extern "C" __global__ void mc_lewiner_count_cells(
     const float* volume, int* tri_counts, int* center_flags,
-    int nx, int ny, int nz, float level) {
+    unsigned char* case_codes, int nx, int ny, int nz, float level) {
     int idx = blockDim.x * blockIdx.x + threadIdx.x;
     int cnx = nx - 1;
     int cny = ny - 1;
@@ -939,11 +939,12 @@ extern "C" __global__ void mc_lewiner_count_cells(
     }
     tri_counts[idx] = tri_count;
     center_flags[idx] = center_flag;
+    case_codes[idx] = (unsigned char)code;
 }
 
 extern "C" __global__ void mc_lewiner_count_cells_masked(
     const float* volume, const bool* mask, int* tri_counts, int* center_flags,
-    int nx, int ny, int nz, float level) {
+    unsigned char* case_codes, int nx, int ny, int nz, float level) {
     int idx = blockDim.x * blockIdx.x + threadIdx.x;
     int cnx = nx - 1;
     int cny = ny - 1;
@@ -959,6 +960,7 @@ extern "C" __global__ void mc_lewiner_count_cells_masked(
     if (!mask[node_index(i + 1, j + 1, k + 1, ny, nz)]) {
         tri_counts[idx] = 0;
         center_flags[idx] = 0;
+        case_codes[idx] = 0;
         return;
     }
 
@@ -988,6 +990,7 @@ extern "C" __global__ void mc_lewiner_count_cells_masked(
     }
     tri_counts[idx] = tri_count;
     center_flags[idx] = center_flag;
+    case_codes[idx] = (unsigned char)code;
 }
 
 extern "C" __global__ void mc_lewiner_generate_center_vertices(
@@ -1417,8 +1420,15 @@ extern "C" __global__ void mc_lewiner_generate_faces_from_edge_ids(
     }
 }
 
+extern "C" __device__ inline bool lewiner_case_needs_values(int case_id) {
+    return case_id == 3 || case_id == 4 || case_id == 6 ||
+           case_id == 7 || case_id == 10 || case_id == 12 ||
+           case_id == 13;
+}
+
 extern "C" __global__ void mc_lewiner_generate_faces_direct(
-    const float* volume, const int* tri_counts, const int* tri_scan,
+    const float* volume, const unsigned char* case_codes,
+    const int* tri_counts, const int* tri_scan,
     const int* edge_vertex_ids, const int* center_vertex_ids, int* faces,
     int nx, int ny, int nz, float level, int flip_winding) {
     int idx = blockDim.x * blockIdx.x + threadIdx.x;
@@ -1433,24 +1443,17 @@ extern "C" __global__ void mc_lewiner_generate_faces_direct(
     int k = idx % cnz;
     int j = (idx / cnz) % cny;
     int i = idx / (cny * cnz);
-    double v[8];
-    load_lewiner_values(volume, i, j, k, ny, nz, level, v);
 
-    int code = 0;
-    if (v[0] > 0.0) code |= 1;
-    if (v[1] > 0.0) code |= 2;
-    if (v[2] > 0.0) code |= 4;
-    if (v[3] > 0.0) code |= 8;
-    if (v[4] > 0.0) code |= 16;
-    if (v[5] > 0.0) code |= 32;
-    if (v[6] > 0.0) code |= 64;
-    if (v[7] > 0.0) code |= 128;
-
+    int code = (int)case_codes[idx];
     int case_id = (int)lut_cases[code * 2];
     if (case_id == 0) {
         return;
     }
     int config = (int)lut_cases[code * 2 + 1];
+    double v[8];
+    if (lewiner_case_needs_values(case_id)) {
+        load_lewiner_values(volume, i, j, k, ny, nz, level, v);
+    }
     signed char local_edges[36];
     lewiner_write_edges(
         local_edges, 0, v, case_id, config, lut_test3, lut_test4,
@@ -1969,7 +1972,9 @@ def _run_lewiner(
         ),
     )
 
-    tri_counts, center_flags = _lewiner_count_cells_gpu(volume, level, mask)
+    tri_counts, center_flags, case_codes = _lewiner_count_cells_gpu(
+        volume, level, mask
+    )
     n_center_vertices = int(cp.sum(center_flags, dtype=cp.int32))
     if n_center_vertices:
         vertices, normals, values, center_vertex_ids = (
@@ -1993,6 +1998,7 @@ def _run_lewiner(
     faces = _lewiner_generate_faces_direct_gpu(
         volume,
         level,
+        case_codes,
         tri_counts,
         edge_vertex_ids,
         center_vertex_ids,
@@ -2079,6 +2085,7 @@ def _lewiner_count_cells_gpu(volume, level, mask=None):
     cell_blocks = ((n_cells + threads - 1) // threads,)
     tri_counts = cp.empty(n_cells, dtype=cp.int32)
     center_flags = cp.empty(n_cells, dtype=cp.int32)
+    case_codes = cp.empty(n_cells, dtype=cp.uint8)
     if mask is None:
         _get_kernel("mc_lewiner_count_cells")(
             cell_blocks,
@@ -2087,6 +2094,7 @@ def _lewiner_count_cells_gpu(volume, level, mask=None):
                 volume,
                 tri_counts,
                 center_flags,
+                case_codes,
                 nx,
                 ny,
                 nz,
@@ -2102,13 +2110,14 @@ def _lewiner_count_cells_gpu(volume, level, mask=None):
                 mask,
                 tri_counts,
                 center_flags,
+                case_codes,
                 nx,
                 ny,
                 nz,
                 np.float32(level),
             ),
         )
-    return tri_counts, center_flags
+    return tri_counts, center_flags, case_codes
 
 
 def _lewiner_generate_center_vertices_gpu(
@@ -2268,6 +2277,7 @@ def _lewiner_generate_faces_from_edge_ids_gpu(
 def _lewiner_generate_faces_direct_gpu(
     volume,
     level,
+    case_codes,
     tri_counts,
     edge_vertex_ids,
     center_vertex_ids,
@@ -2288,6 +2298,7 @@ def _lewiner_generate_faces_direct_gpu(
         (threads,),
         (
             volume,
+            case_codes,
             tri_counts,
             tri_scan,
             edge_vertex_ids,
