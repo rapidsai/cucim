@@ -677,12 +677,12 @@ def test_no_surface_found():
 def test_unsupported_options():
     volume = _single_voxel_volume()
     for method in ("lorensen", "lewiner"):
-        with pytest.raises(NotImplementedError, match="mask"):
+        with pytest.raises(ValueError, match="same shape"):
             marching_cubes(
                 volume,
                 0.5,
                 method=method,
-                mask=cp.ones(volume.shape, dtype=bool),
+                mask=cp.ones((2, 2, 2), dtype=bool),
             )
 
 
@@ -766,6 +766,72 @@ def test_allow_degenerate_false_both_algs_same_result_ellipse():
         cp.asnumpy(faces1),
         cp.asnumpy(vertices2),
         cp.asnumpy(faces2),
+    )
+
+
+def test_masked_marching_cubes():
+    volume = ellipsoid(6, 10, 16, levelset=True).astype(np.float32)
+    mask = np.ones_like(volume, dtype=bool)
+    mask[:10, :, :] = False
+    mask[:, :, 20:] = False
+
+    verts, faces = marching_cubes(
+        cp.asarray(volume), 0.0, mask=cp.asarray(mask)
+    )[:2]
+    expected_verts, expected_faces = skimage_marching_cubes(
+        volume, 0.0, mask=mask
+    )[:2]
+
+    assert faces.shape == expected_faces.shape
+    assert not _has_unreferenced_vertices(cp.asnumpy(verts), cp.asnumpy(faces))
+    assert_allclose(
+        mesh_surface_area(cp.asnumpy(verts), cp.asnumpy(faces)),
+        mesh_surface_area(expected_verts, expected_faces),
+        rtol=1e-6,
+    )
+
+
+def test_masked_marching_cubes_all_true():
+    volume = ellipsoid(6, 10, 16, levelset=True).astype(np.float32)
+    mask = cp.ones(volume.shape, dtype=bool)
+
+    verts_m, faces_m, normals_m, values_m = marching_cubes(
+        cp.asarray(volume), 0.0, mask=mask
+    )
+    verts, faces, normals, values = marching_cubes(cp.asarray(volume), 0.0)
+
+    cp.testing.assert_allclose(verts_m, verts)
+    cp.testing.assert_array_equal(faces_m, faces)
+    cp.testing.assert_allclose(normals_m, normals)
+    cp.testing.assert_allclose(values_m, values)
+
+
+def test_masked_marching_cubes_empty():
+    volume = ellipsoid(6, 10, 16, levelset=True).astype(np.float32)
+    mask = cp.zeros(volume.shape, dtype=bool)
+    with pytest.raises(RuntimeError, match="No surface found"):
+        marching_cubes(cp.asarray(volume), 0.0, mask=mask)
+
+
+def test_masked_marching_cubes_with_step_size():
+    volume = ellipsoid(6, 10, 16, levelset=True).astype(np.float32)
+    mask = np.ones_like(volume, dtype=bool)
+    mask[:10, :, :] = False
+    mask[:, :, 20:] = False
+
+    verts, faces = marching_cubes(
+        cp.asarray(volume), 0.0, mask=cp.asarray(mask), step_size=2
+    )[:2]
+    expected_verts, expected_faces = skimage_marching_cubes(
+        volume, 0.0, mask=mask, step_size=2
+    )[:2]
+
+    assert verts.shape == expected_verts.shape
+    assert faces.shape == expected_faces.shape
+    assert_allclose(
+        mesh_surface_area(cp.asnumpy(verts), cp.asnumpy(faces)),
+        mesh_surface_area(expected_verts, expected_faces),
+        rtol=1e-6,
     )
 
 
@@ -898,6 +964,12 @@ def _has_degenerate_faces(vertices, faces):
             | np.all(triangles[:, 1] == triangles[:, 2], axis=1)
         )
     )
+
+
+def _has_unreferenced_vertices(vertices, faces):
+    used = np.zeros(vertices.shape[0], dtype=bool)
+    used[np.asarray(faces).ravel()] = True
+    return bool(np.any(~used))
 
 
 _SKIMAGE_EDGE_MIDPOINTS = {

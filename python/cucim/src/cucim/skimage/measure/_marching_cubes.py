@@ -437,6 +437,47 @@ extern "C" __global__ void mc_count_faces(
     tri_counts[idx] = count;
 }
 
+extern "C" __global__ void mc_count_faces_masked(
+    const float* volume, const bool* mask, const signed char* tri_table,
+    int* tri_counts, int nx, int ny, int nz, float level) {
+    int idx = blockDim.x * blockIdx.x + threadIdx.x;
+    int cnx = nx - 1;
+    int cny = ny - 1;
+    int cnz = nz - 1;
+    int total = cnx * cny * cnz;
+    if (idx >= total) {
+        return;
+    }
+
+    int k = idx % cnz;
+    int j = (idx / cnz) % cny;
+    int i = idx / (cny * cnz);
+    if (!mask[node_index(i + 1, j + 1, k + 1, ny, nz)]) {
+        tri_counts[idx] = 0;
+        return;
+    }
+
+    int code = 0;
+    code |= (vol_at(volume, i, j, k, ny, nz) >= level) ? 1 : 0;
+    code |= (vol_at(volume, i + 1, j, k, ny, nz) >= level) ? 2 : 0;
+    code |= (vol_at(volume, i + 1, j + 1, k, ny, nz) >= level) ? 4 : 0;
+    code |= (vol_at(volume, i, j + 1, k, ny, nz) >= level) ? 8 : 0;
+    code |= (vol_at(volume, i, j, k + 1, ny, nz) >= level) ? 16 : 0;
+    code |= (vol_at(volume, i + 1, j, k + 1, ny, nz) >= level) ? 32 : 0;
+    code |= (vol_at(volume, i + 1, j + 1, k + 1, ny, nz) >= level) ? 64 : 0;
+    code |= (vol_at(volume, i, j + 1, k + 1, ny, nz) >= level) ? 128 : 0;
+
+    int count = 0;
+    const signed char* row = tri_table + code * 16;
+    for (int n = 0; n < 15; n += 3) {
+        if (row[n] < 0) {
+            break;
+        }
+        count++;
+    }
+    tri_counts[idx] = count;
+}
+
 extern "C" __device__ inline int edge_vid(
     const int* edge_vertex_ids, int i, int j, int k, int side, int ny, int nz) {
     return edge_vertex_ids[(node_index(i, j, k, ny, nz) * 3) + side];
@@ -752,6 +793,60 @@ extern "C" __global__ void mc_lewiner_count_cells(
     int k = idx % cnz;
     int j = (idx / cnz) % cny;
     int i = idx / (cny * cnz);
+    double v[8];
+    load_lewiner_values(volume, i, j, k, ny, nz, level, v);
+
+    int code = 0;
+    if (v[0] > 0.0) code |= 1;
+    if (v[1] > 0.0) code |= 2;
+    if (v[2] > 0.0) code |= 4;
+    if (v[3] > 0.0) code |= 8;
+    if (v[4] > 0.0) code |= 16;
+    if (v[5] > 0.0) code |= 32;
+    if (v[6] > 0.0) code |= 64;
+    if (v[7] > 0.0) code |= 128;
+
+    int case_id = (int)cases[code * 2];
+    int config = (int)cases[code * 2 + 1];
+    int tri_count = 0;
+    int center_flag = 0;
+    if (case_id > 0) {
+        lewiner_select_count_center(
+            v, case_id, config, test3, test4, test6, test7, test10,
+            test12, test13, subconfig13, tiling13_5_1,
+            &tri_count, &center_flag);
+    }
+    tri_counts[idx] = tri_count;
+    center_flags[idx] = center_flag;
+}
+
+extern "C" __global__ void mc_lewiner_count_cells_masked(
+    const float* volume, const bool* mask, const signed char* cases,
+    const signed char* test3, const signed char* test4,
+    const signed char* test6, const signed char* test7,
+    const signed char* test10, const signed char* test12,
+    const signed char* test13, const signed char* subconfig13,
+    const signed char* tiling13_5_1,
+    int* tri_counts, int* center_flags,
+    int nx, int ny, int nz, float level) {
+    int idx = blockDim.x * blockIdx.x + threadIdx.x;
+    int cnx = nx - 1;
+    int cny = ny - 1;
+    int cnz = nz - 1;
+    int total = cnx * cny * cnz;
+    if (idx >= total) {
+        return;
+    }
+
+    int k = idx % cnz;
+    int j = (idx / cnz) % cny;
+    int i = idx / (cny * cnz);
+    if (!mask[node_index(i + 1, j + 1, k + 1, ny, nz)]) {
+        tri_counts[idx] = 0;
+        center_flags[idx] = 0;
+        return;
+    }
+
     double v[8];
     load_lewiner_values(volume, i, j, k, ny, nz, level, v);
 
@@ -1334,8 +1429,7 @@ def marching_cubes(
     """Marching cubes algorithm to find surfaces in 3D volumetric data.
 
     The ``method='lewiner'`` default and ``method='lorensen'`` are supported
-    for CuPy inputs when ``mask=None``. Masked marching cubes is not
-    implemented yet.
+    for CuPy inputs.
 
     When ``allow_degenerate=False``, zero-area faces are removed and the mesh
     geometry is preserved, but the exact surviving duplicate vertex IDs can
@@ -1375,7 +1469,7 @@ def _marching_cubes_lorensen(
     allow_degenerate,
     mask,
 ):
-    volume, level, spacing, step_size = _validate_marching_cubes_inputs(
+    volume, level, spacing, step_size, mask = _validate_marching_cubes_inputs(
         volume,
         level,
         spacing,
@@ -1384,9 +1478,9 @@ def _marching_cubes_lorensen(
         allow_degenerate,
         mask,
     )
-    volume, spacing = _apply_step_size(volume, spacing, step_size)
+    volume, spacing, mask = _apply_step_size(volume, spacing, step_size, mask)
     return _run_lorensen(
-        volume, level, spacing, gradient_direction, allow_degenerate
+        volume, level, spacing, gradient_direction, allow_degenerate, mask
     )
 
 
@@ -1399,7 +1493,7 @@ def _marching_cubes_lewiner(
     allow_degenerate,
     mask,
 ):
-    volume, level, spacing, step_size = _validate_marching_cubes_inputs(
+    volume, level, spacing, step_size, mask = _validate_marching_cubes_inputs(
         volume,
         level,
         spacing,
@@ -1408,9 +1502,9 @@ def _marching_cubes_lewiner(
         allow_degenerate,
         mask,
     )
-    volume, spacing = _apply_step_size(volume, spacing, step_size)
+    volume, spacing, mask = _apply_step_size(volume, spacing, step_size, mask)
     return _run_lewiner(
-        volume, level, spacing, gradient_direction, allow_degenerate
+        volume, level, spacing, gradient_direction, allow_degenerate, mask
     )
 
 
@@ -1455,23 +1549,27 @@ def _validate_marching_cubes_inputs(
     if mask is not None:
         if not isinstance(mask, cp.ndarray) or mask.shape != volume.shape:
             raise ValueError("volume and mask must have the same shape.")
-        raise NotImplementedError("mask is not implemented yet.")
+        mask = cp.ascontiguousarray(mask, dtype=cp.bool_)
 
-    return volume, level, spacing, step_size
+    return volume, level, spacing, step_size, mask
 
 
-def _apply_step_size(volume, spacing, step_size):
+def _apply_step_size(volume, spacing, step_size, mask):
     if step_size == 1:
-        return volume, spacing
+        return volume, spacing, mask
 
     volume = cp.ascontiguousarray(volume[::step_size, ::step_size, ::step_size])
+    if mask is not None:
+        mask = cp.ascontiguousarray(mask[::step_size, ::step_size, ::step_size])
     if volume.shape[0] < 2 or volume.shape[1] < 2 or volume.shape[2] < 2:
         raise RuntimeError("No surface found at the given iso value.")
     spacing = tuple(s * step_size for s in spacing)
-    return volume, spacing
+    return volume, spacing, mask
 
 
-def _run_lorensen(volume, level, spacing, gradient_direction, allow_degenerate):
+def _run_lorensen(
+    volume, level, spacing, gradient_direction, allow_degenerate, mask
+):
     nx, ny, nz = volume.shape
     n_edges = nx * ny * nz * 3
     threads = 256
@@ -1516,11 +1614,27 @@ def _run_lorensen(volume, level, spacing, gradient_direction, allow_degenerate):
     cell_blocks = ((n_cells + threads - 1) // threads,)
     tri_counts = cp.empty(n_cells, dtype=cp.int32)
     tri_table = _get_tri_table()
-    _get_kernel("mc_count_faces")(
-        cell_blocks,
-        (threads,),
-        (volume, tri_table, tri_counts, nx, ny, nz, np.float32(level)),
-    )
+    if mask is None:
+        _get_kernel("mc_count_faces")(
+            cell_blocks,
+            (threads,),
+            (volume, tri_table, tri_counts, nx, ny, nz, np.float32(level)),
+        )
+    else:
+        _get_kernel("mc_count_faces_masked")(
+            cell_blocks,
+            (threads,),
+            (
+                volume,
+                mask,
+                tri_table,
+                tri_counts,
+                nx,
+                ny,
+                nz,
+                np.float32(level),
+            ),
+        )
     tri_scan = cp.cumsum(tri_counts, dtype=cp.int32)
     n_faces = int(tri_scan[-1])
     if n_faces == 0:
@@ -1545,6 +1659,10 @@ def _run_lorensen(volume, level, spacing, gradient_direction, allow_degenerate):
         ),
     )
     faces = faces.reshape(-1, 3)
+    if mask is not None:
+        vertices, faces, normals, values = _compact_referenced_vertices_gpu(
+            vertices, faces, normals, values
+        )
     if not allow_degenerate:
         vertices, faces, normals, values = _remove_degenerate_faces_gpu(
             vertices, faces, normals, values
@@ -1552,7 +1670,9 @@ def _run_lorensen(volume, level, spacing, gradient_direction, allow_degenerate):
     return vertices, faces, normals, values
 
 
-def _run_lewiner(volume, level, spacing, gradient_direction, allow_degenerate):
+def _run_lewiner(
+    volume, level, spacing, gradient_direction, allow_degenerate, mask
+):
     nx, ny, nz = volume.shape
     n_edges = nx * ny * nz * 3
     threads = 256
@@ -1593,7 +1713,7 @@ def _run_lewiner(volume, level, spacing, gradient_direction, allow_degenerate):
         ),
     )
 
-    tri_counts, center_flags = _lewiner_count_cells_gpu(volume, level)
+    tri_counts, center_flags = _lewiner_count_cells_gpu(volume, level, mask)
     edge_ids = _lewiner_generate_edge_ids_gpu(volume, level, tri_counts)
     if edge_ids.size == 0:
         raise RuntimeError("No surface found at the given iso value.")
@@ -1619,6 +1739,10 @@ def _run_lewiner(volume, level, spacing, gradient_direction, allow_degenerate):
         volume.shape,
         gradient_direction,
     )
+    if mask is not None:
+        vertices, faces, normals, values = _compact_referenced_vertices_gpu(
+            vertices, faces, normals, values
+        )
     if not allow_degenerate:
         vertices, faces, normals, values = _remove_degenerate_faces_gpu(
             vertices, faces, normals, values
@@ -1659,7 +1783,22 @@ def _remove_degenerate_faces_gpu(vertices, faces, normals, values):
     return vertices2, faces2, normals2, values2
 
 
-def _lewiner_count_cells_gpu(volume, level):
+def _compact_referenced_vertices_gpu(vertices, faces, normals, values):
+    n_vertices = vertices.shape[0]
+    if faces.size == 0:
+        return vertices[:0], faces, normals[:0], values[:0]
+
+    vertices_ok = cp.zeros(n_vertices, dtype=cp.bool_)
+    vertices_ok[faces.ravel()] = True
+    vertex_map = cp.cumsum(vertices_ok, dtype=cp.int32) - 1
+    faces2 = vertex_map[faces]
+    vertices2 = vertices[vertices_ok]
+    normals2 = normals[vertices_ok]
+    values2 = values[vertices_ok]
+    return vertices2, faces2, normals2, values2
+
+
+def _lewiner_count_cells_gpu(volume, level, mask=None):
     nx, ny, nz = volume.shape
     n_cells = (nx - 1) * (ny - 1) * (nz - 1)
     threads = 256
@@ -1667,29 +1806,55 @@ def _lewiner_count_cells_gpu(volume, level):
     tri_counts = cp.empty(n_cells, dtype=cp.int32)
     center_flags = cp.empty(n_cells, dtype=cp.int32)
     luts = _get_lewiner_luts_device()
-    _get_kernel("mc_lewiner_count_cells")(
-        cell_blocks,
-        (threads,),
-        (
-            volume,
-            luts["cases"],
-            luts["test3"],
-            luts["test4"],
-            luts["test6"],
-            luts["test7"],
-            luts["test10"],
-            luts["test12"],
-            luts["test13"],
-            luts["subconfig13"],
-            luts["tiling13_5_1"],
-            tri_counts,
-            center_flags,
-            nx,
-            ny,
-            nz,
-            np.float32(level),
-        ),
-    )
+    if mask is None:
+        _get_kernel("mc_lewiner_count_cells")(
+            cell_blocks,
+            (threads,),
+            (
+                volume,
+                luts["cases"],
+                luts["test3"],
+                luts["test4"],
+                luts["test6"],
+                luts["test7"],
+                luts["test10"],
+                luts["test12"],
+                luts["test13"],
+                luts["subconfig13"],
+                luts["tiling13_5_1"],
+                tri_counts,
+                center_flags,
+                nx,
+                ny,
+                nz,
+                np.float32(level),
+            ),
+        )
+    else:
+        _get_kernel("mc_lewiner_count_cells_masked")(
+            cell_blocks,
+            (threads,),
+            (
+                volume,
+                mask,
+                luts["cases"],
+                luts["test3"],
+                luts["test4"],
+                luts["test6"],
+                luts["test7"],
+                luts["test10"],
+                luts["test12"],
+                luts["test13"],
+                luts["subconfig13"],
+                luts["tiling13_5_1"],
+                tri_counts,
+                center_flags,
+                nx,
+                ny,
+                nz,
+                np.float32(level),
+            ),
+        )
     return tri_counts, center_flags
 
 
