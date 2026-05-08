@@ -1637,7 +1637,7 @@ extern "C" __device__ inline void mc_union_vertices(int* parent, int a, int b) {
 
 extern "C" __global__ void mc_mark_degenerate_faces_parallel(
     const float* vertices, const int* faces, int n_faces,
-    int* parent, int* faces_ok) {
+    unsigned char* faces_ok, int* degenerate_count) {
     int idx = blockDim.x * blockIdx.x + threadIdx.x;
     if (idx >= n_faces) {
         return;
@@ -1653,14 +1653,34 @@ extern "C" __global__ void mc_mark_degenerate_faces_parallel(
     bool eq02 = v0[0] == v2[0] && v0[1] == v2[1] && v0[2] == v2[2];
     bool eq12 = v1[0] == v2[0] && v1[1] == v2[1] && v1[2] == v2[2];
 
-    faces_ok[idx] = !(eq01 || eq02 || eq12);
-    if (eq01) {
+    bool ok = !(eq01 || eq02 || eq12);
+    faces_ok[idx] = ok;
+    if (!ok) {
+        atomicAdd(degenerate_count, 1);
+    }
+}
+
+extern "C" __global__ void mc_union_degenerate_faces(
+    const float* vertices, const int* faces, const unsigned char* faces_ok,
+    int n_faces, int* parent) {
+    int idx = blockDim.x * blockIdx.x + threadIdx.x;
+    if (idx >= n_faces || faces_ok[idx]) {
+        return;
+    }
+
+    int i0 = faces[3 * idx];
+    int i1 = faces[3 * idx + 1];
+    int i2 = faces[3 * idx + 2];
+    const float* v0 = vertices + 3 * i0;
+    const float* v1 = vertices + 3 * i1;
+    const float* v2 = vertices + 3 * i2;
+    if (v0[0] == v1[0] && v0[1] == v1[1] && v0[2] == v1[2]) {
         mc_union_vertices(parent, i0, i1);
     }
-    if (eq02) {
+    if (v0[0] == v2[0] && v0[1] == v2[1] && v0[2] == v2[2]) {
         mc_union_vertices(parent, i0, i2);
     }
-    if (eq12) {
+    if (v1[0] == v2[0] && v1[1] == v2[1] && v1[2] == v2[2]) {
         mc_union_vertices(parent, i1, i2);
     }
 }
@@ -1691,7 +1711,7 @@ extern "C" __global__ void mc_mark_vertex_roots(
 }
 
 extern "C" __global__ void mc_emit_non_degenerate_faces(
-    const int* faces, const int* faces_ok, const int* face_scan,
+    const int* faces, const unsigned char* faces_ok, const int* face_scan,
     const int* vertex_map, const int* vertex_scan, int n_faces,
     int* faces_out) {
     int idx = blockDim.x * blockIdx.x + threadIdx.x;
@@ -2081,20 +2101,29 @@ def _remove_degenerate_faces_gpu(vertices, faces, normals, values):
     if n_faces == 0:
         return vertices, faces, normals, values
 
-    vertex_map = cp.empty(n_vertices, dtype=cp.int32)
-    faces_ok = cp.empty(n_faces, dtype=cp.int32)
+    faces_ok = cp.empty(n_faces, dtype=cp.uint8)
+    degenerate_count = cp.zeros(1, dtype=cp.int32)
     threads = 256
     face_blocks = ((n_faces + threads - 1) // threads,)
     vertex_blocks = ((n_vertices + threads - 1) // threads,)
+    _get_kernel("mc_mark_degenerate_faces_parallel")(
+        face_blocks,
+        (threads,),
+        (vertices, faces, n_faces, faces_ok, degenerate_count),
+    )
+    if int(degenerate_count[0]) == 0:
+        return vertices, faces, normals, values
+
+    vertex_map = cp.empty(n_vertices, dtype=cp.int32)
     _get_kernel("mc_init_vertex_map")(
         vertex_blocks,
         (threads,),
         (vertex_map, n_vertices),
     )
-    _get_kernel("mc_mark_degenerate_faces_parallel")(
+    _get_kernel("mc_union_degenerate_faces")(
         face_blocks,
         (threads,),
-        (vertices, faces, n_faces, vertex_map, faces_ok),
+        (vertices, faces, faces_ok, n_faces, vertex_map),
     )
     _get_kernel("mc_compress_vertex_roots")(
         vertex_blocks,
