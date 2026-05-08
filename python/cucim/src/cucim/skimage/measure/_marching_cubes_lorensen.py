@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
 # SPDX-FileCopyrightText: Copyright (c) 2012-2015, P. M. Neila
 # SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import base64
 
@@ -181,16 +181,6 @@ def _apply_step_size(volume, spacing, step_size, mask):
     return volume, spacing, mask
 
 
-def _generate_lut_constants_code():
-    classic_values = _decode_classic_lut_for_cuda_constants().ravel()
-    classic_values_text = ", ".join(str(int(value)) for value in classic_values)
-    lines = [
-        f"__constant__ signed char lut_cases_classic[{classic_values.size}] = "
-        f"{{{classic_values_text}}};"
-    ]
-    return "\n".join(lines)
-
-
 # common kernels shared across Lewiner and Lorensen implementations
 _COMMON_KERNEL_CODE = r"""
 extern "C" __device__ inline int node_index(int i, int j, int k, int ny, int nz) {
@@ -292,6 +282,17 @@ extern "C" __device__ inline int local_edge_vid(
 }
 
 """
+
+
+def _generate_lut_constants_code():
+    classic_values = _decode_classic_lut_for_cuda_constants().ravel()
+    classic_values_text = ", ".join(str(int(value)) for value in classic_values)
+    lines = [
+        f"__constant__ signed char lut_cases_classic[{classic_values.size}] = "
+        f"{{{classic_values_text}}};"
+    ]
+    return "\n".join(lines)
+
 
 # code specific to method = 'Lorensen'
 _LORENSEN_KERNEL_CODE = (
