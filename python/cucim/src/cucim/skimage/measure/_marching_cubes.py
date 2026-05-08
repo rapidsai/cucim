@@ -161,8 +161,19 @@ def _decode_lut_for_cuda_constants(name):
     return np.frombuffer(byts, dtype=np.int8).reshape(shape)
 
 
+def _decode_classic_lut_for_cuda_constants():
+    shape, text = _CASES_CLASSIC
+    byts = base64.decodebytes(text.encode("utf-8"))
+    return np.frombuffer(byts, dtype=np.int8).reshape(shape)
+
+
 def _generate_lewiner_lut_constants_code():
-    lines = []
+    classic_values = _decode_classic_lut_for_cuda_constants().ravel()
+    classic_values_text = ", ".join(str(int(value)) for value in classic_values)
+    lines = [
+        f"__constant__ signed char lut_cases_classic[{classic_values.size}] = "
+        f"{{{classic_values_text}}};"
+    ]
     for name in _LEWINER_LUT_NAMES:
         values = _decode_lut_for_cuda_constants(name).ravel()
         identifier = f"lut_{name.lower()}"
@@ -527,8 +538,7 @@ extern "C" __global__ void mc_lewiner_generate_vertices(
 }
 
 extern "C" __global__ void mc_count_faces(
-    const float* volume, const signed char* tri_table, int* tri_counts,
-    int nx, int ny, int nz, float level) {
+    const float* volume, int* tri_counts, int nx, int ny, int nz, float level) {
     int idx = blockDim.x * blockIdx.x + threadIdx.x;
     int cnx = nx - 1;
     int cny = ny - 1;
@@ -553,7 +563,7 @@ extern "C" __global__ void mc_count_faces(
     code |= (vol_at(volume, i, j + 1, k + 1, ny, nz) >= level) ? 128 : 0;
 
     int count = 0;
-    const signed char* row = tri_table + code * 16;
+    const signed char* row = lut_cases_classic + code * 16;
     for (int n = 0; n < 15; n += 3) {
         if (row[n] < 0) {
             break;
@@ -564,8 +574,8 @@ extern "C" __global__ void mc_count_faces(
 }
 
 extern "C" __global__ void mc_count_faces_masked(
-    const float* volume, const bool* mask, const signed char* tri_table,
-    int* tri_counts, int nx, int ny, int nz, float level) {
+    const float* volume, const bool* mask, int* tri_counts,
+    int nx, int ny, int nz, float level) {
     int idx = blockDim.x * blockIdx.x + threadIdx.x;
     int cnx = nx - 1;
     int cny = ny - 1;
@@ -594,7 +604,7 @@ extern "C" __global__ void mc_count_faces_masked(
     code |= (vol_at(volume, i, j + 1, k + 1, ny, nz) >= level) ? 128 : 0;
 
     int count = 0;
-    const signed char* row = tri_table + code * 16;
+    const signed char* row = lut_cases_classic + code * 16;
     for (int n = 0; n < 15; n += 3) {
         if (row[n] < 0) {
             break;
@@ -1497,8 +1507,8 @@ extern "C" __global__ void mc_lewiner_generate_faces_direct(
 }
 
 extern "C" __global__ void mc_generate_faces(
-    const float* volume, const signed char* tri_table, const int* tri_counts,
-    const int* tri_scan, const int* edge_vertex_ids, int* faces,
+    const float* volume, const int* tri_counts, const int* tri_scan,
+    const int* edge_vertex_ids, int* faces,
     int nx, int ny, int nz, float level, int flip_winding) {
     int idx = blockDim.x * blockIdx.x + threadIdx.x;
     int cnx = nx - 1;
@@ -1524,7 +1534,7 @@ extern "C" __global__ void mc_generate_faces(
     code |= (vol_at(volume, i, j + 1, k + 1, ny, nz) >= level) ? 128 : 0;
 
     int face_start = tri_scan[idx] - tri_counts[idx];
-    const signed char* row = tri_table + code * 16;
+    const signed char* row = lut_cases_classic + code * 16;
     for (int n = 0; n < 15; n += 3) {
         if (row[n] < 0) {
             break;
@@ -1869,12 +1879,11 @@ def _run_lorensen(
     n_cells = (nx - 1) * (ny - 1) * (nz - 1)
     cell_blocks = ((n_cells + threads - 1) // threads,)
     tri_counts = cp.empty(n_cells, dtype=cp.int32)
-    tri_table = _get_tri_table()
     if mask is None:
         _get_kernel("mc_count_faces")(
             cell_blocks,
             (threads,),
-            (volume, tri_table, tri_counts, nx, ny, nz, np.float32(level)),
+            (volume, tri_counts, nx, ny, nz, np.float32(level)),
         )
     else:
         _get_kernel("mc_count_faces_masked")(
@@ -1883,7 +1892,6 @@ def _run_lorensen(
             (
                 volume,
                 mask,
-                tri_table,
                 tri_counts,
                 nx,
                 ny,
@@ -1902,7 +1910,6 @@ def _run_lorensen(
         (threads,),
         (
             volume,
-            tri_table,
             tri_counts,
             tri_scan,
             edge_vertex_ids,
