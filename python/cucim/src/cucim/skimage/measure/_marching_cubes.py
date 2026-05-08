@@ -155,7 +155,28 @@ _LEWINER_LUT_NAMES = (
 _FLT_EPSILON = float(np.spacing(1.0))
 
 
-_KERNEL_CODE = r"""
+def _decode_lut_for_cuda_constants(name):
+    shape, text = getattr(_mcluts, name)
+    byts = base64.decodebytes(text.encode("utf-8"))
+    return np.frombuffer(byts, dtype=np.int8).reshape(shape)
+
+
+def _generate_lewiner_lut_constants_code():
+    lines = []
+    for name in _LEWINER_LUT_NAMES:
+        values = _decode_lut_for_cuda_constants(name).ravel()
+        identifier = f"lut_{name.lower()}"
+        values_text = ", ".join(str(int(value)) for value in values)
+        lines.append(
+            f"__constant__ signed char {identifier}[{values.size}] = "
+            f"{{{values_text}}};"
+        )
+    return "\n".join(lines)
+
+
+_KERNEL_CODE = (
+    _generate_lewiner_lut_constants_code()
+    + r"""
 extern "C" __device__ inline int node_index(int i, int j, int k, int ny, int nz) {
     return (i * ny + j) * nz + k;
 }
@@ -878,13 +899,7 @@ extern "C" __device__ inline void load_lewiner_values(
     double* v);
 
 extern "C" __global__ void mc_lewiner_count_cells(
-    const float* volume, const signed char* cases,
-    const signed char* test3, const signed char* test4,
-    const signed char* test6, const signed char* test7,
-    const signed char* test10, const signed char* test12,
-    const signed char* test13, const signed char* subconfig13,
-    const signed char* tiling13_5_1,
-    int* tri_counts, int* center_flags,
+    const float* volume, int* tri_counts, int* center_flags,
     int nx, int ny, int nz, float level) {
     int idx = blockDim.x * blockIdx.x + threadIdx.x;
     int cnx = nx - 1;
@@ -911,14 +926,15 @@ extern "C" __global__ void mc_lewiner_count_cells(
     if (v[6] > 0.0) code |= 64;
     if (v[7] > 0.0) code |= 128;
 
-    int case_id = (int)cases[code * 2];
-    int config = (int)cases[code * 2 + 1];
+    int case_id = (int)lut_cases[code * 2];
+    int config = (int)lut_cases[code * 2 + 1];
     int tri_count = 0;
     int center_flag = 0;
     if (case_id > 0) {
         lewiner_select_count_center(
-            v, case_id, config, test3, test4, test6, test7, test10,
-            test12, test13, subconfig13, tiling13_5_1,
+            v, case_id, config, lut_test3, lut_test4, lut_test6, lut_test7,
+            lut_test10, lut_test12, lut_test13, lut_subconfig13,
+            lut_tiling13_5_1,
             &tri_count, &center_flag);
     }
     tri_counts[idx] = tri_count;
@@ -926,13 +942,7 @@ extern "C" __global__ void mc_lewiner_count_cells(
 }
 
 extern "C" __global__ void mc_lewiner_count_cells_masked(
-    const float* volume, const bool* mask, const signed char* cases,
-    const signed char* test3, const signed char* test4,
-    const signed char* test6, const signed char* test7,
-    const signed char* test10, const signed char* test12,
-    const signed char* test13, const signed char* subconfig13,
-    const signed char* tiling13_5_1,
-    int* tri_counts, int* center_flags,
+    const float* volume, const bool* mask, int* tri_counts, int* center_flags,
     int nx, int ny, int nz, float level) {
     int idx = blockDim.x * blockIdx.x + threadIdx.x;
     int cnx = nx - 1;
@@ -965,14 +975,15 @@ extern "C" __global__ void mc_lewiner_count_cells_masked(
     if (v[6] > 0.0) code |= 64;
     if (v[7] > 0.0) code |= 128;
 
-    int case_id = (int)cases[code * 2];
-    int config = (int)cases[code * 2 + 1];
+    int case_id = (int)lut_cases[code * 2];
+    int config = (int)lut_cases[code * 2 + 1];
     int tri_count = 0;
     int center_flag = 0;
     if (case_id > 0) {
         lewiner_select_count_center(
-            v, case_id, config, test3, test4, test6, test7, test10,
-            test12, test13, subconfig13, tiling13_5_1,
+            v, case_id, config, lut_test3, lut_test4, lut_test6, lut_test7,
+            lut_test10, lut_test12, lut_test13, lut_subconfig13,
+            lut_tiling13_5_1,
             &tri_count, &center_flag);
     }
     tri_counts[idx] = tri_count;
@@ -1407,31 +1418,7 @@ extern "C" __global__ void mc_lewiner_generate_faces_from_edge_ids(
 }
 
 extern "C" __global__ void mc_lewiner_generate_faces_direct(
-    const float* volume, const signed char* cases,
-    const signed char* test3, const signed char* test4,
-    const signed char* test6, const signed char* test7,
-    const signed char* test10, const signed char* test12,
-    const signed char* test13, const signed char* subconfig13,
-    const signed char* tiling1, const signed char* tiling2,
-    const signed char* tiling3_1, const signed char* tiling3_2,
-    const signed char* tiling4_1, const signed char* tiling4_2,
-    const signed char* tiling5, const signed char* tiling6_1_1,
-    const signed char* tiling6_1_2, const signed char* tiling6_2,
-    const signed char* tiling7_1, const signed char* tiling7_2,
-    const signed char* tiling7_3, const signed char* tiling7_4_1,
-    const signed char* tiling7_4_2, const signed char* tiling8,
-    const signed char* tiling9, const signed char* tiling10_1_1,
-    const signed char* tiling10_1_1_, const signed char* tiling10_1_2,
-    const signed char* tiling10_2, const signed char* tiling10_2_,
-    const signed char* tiling11, const signed char* tiling12_1_1,
-    const signed char* tiling12_1_1_, const signed char* tiling12_1_2,
-    const signed char* tiling12_2, const signed char* tiling12_2_,
-    const signed char* tiling13_1, const signed char* tiling13_1_,
-    const signed char* tiling13_2, const signed char* tiling13_2_,
-    const signed char* tiling13_3, const signed char* tiling13_3_,
-    const signed char* tiling13_4, const signed char* tiling13_5_1,
-    const signed char* tiling13_5_2, const signed char* tiling14,
-    const int* tri_counts, const int* tri_scan,
+    const float* volume, const int* tri_counts, const int* tri_scan,
     const int* edge_vertex_ids, const int* center_vertex_ids, int* faces,
     int nx, int ny, int nz, float level, int flip_winding) {
     int idx = blockDim.x * blockIdx.x + threadIdx.x;
@@ -1459,23 +1446,27 @@ extern "C" __global__ void mc_lewiner_generate_faces_direct(
     if (v[6] > 0.0) code |= 64;
     if (v[7] > 0.0) code |= 128;
 
-    int case_id = (int)cases[code * 2];
+    int case_id = (int)lut_cases[code * 2];
     if (case_id == 0) {
         return;
     }
-    int config = (int)cases[code * 2 + 1];
+    int config = (int)lut_cases[code * 2 + 1];
     signed char local_edges[36];
     lewiner_write_edges(
-        local_edges, 0, v, case_id, config, test3, test4, test6, test7,
-        test10, test12, test13, subconfig13, tiling1, tiling2, tiling3_1,
-        tiling3_2, tiling4_1, tiling4_2, tiling5, tiling6_1_1,
-        tiling6_1_2, tiling6_2, tiling7_1, tiling7_2, tiling7_3,
-        tiling7_4_1, tiling7_4_2, tiling8, tiling9, tiling10_1_1,
-        tiling10_1_1_, tiling10_1_2, tiling10_2, tiling10_2_,
-        tiling11, tiling12_1_1, tiling12_1_1_, tiling12_1_2,
-        tiling12_2, tiling12_2_, tiling13_1, tiling13_1_,
-        tiling13_2, tiling13_2_, tiling13_3, tiling13_3_, tiling13_4,
-        tiling13_5_1, tiling13_5_2, tiling14);
+        local_edges, 0, v, case_id, config, lut_test3, lut_test4,
+        lut_test6, lut_test7, lut_test10, lut_test12, lut_test13,
+        lut_subconfig13, lut_tiling1, lut_tiling2, lut_tiling3_1,
+        lut_tiling3_2, lut_tiling4_1, lut_tiling4_2, lut_tiling5,
+        lut_tiling6_1_1, lut_tiling6_1_2, lut_tiling6_2, lut_tiling7_1,
+        lut_tiling7_2, lut_tiling7_3, lut_tiling7_4_1, lut_tiling7_4_2,
+        lut_tiling8, lut_tiling9, lut_tiling10_1_1, lut_tiling10_1_1_,
+        lut_tiling10_1_2, lut_tiling10_2, lut_tiling10_2_,
+        lut_tiling11, lut_tiling12_1_1, lut_tiling12_1_1_,
+        lut_tiling12_1_2, lut_tiling12_2, lut_tiling12_2_,
+        lut_tiling13_1, lut_tiling13_1_, lut_tiling13_2,
+        lut_tiling13_2_, lut_tiling13_3, lut_tiling13_3_,
+        lut_tiling13_4, lut_tiling13_5_1, lut_tiling13_5_2,
+        lut_tiling14);
 
     int face_start = tri_scan[idx] - tri_counts[idx];
     for (int t = 0; t < tri_counts[idx]; t++) {
@@ -1667,6 +1658,7 @@ extern "C" __global__ void mc_compact_root_vertices(
 }
 
 """
+)
 
 
 def marching_cubes(
@@ -2087,23 +2079,12 @@ def _lewiner_count_cells_gpu(volume, level, mask=None):
     cell_blocks = ((n_cells + threads - 1) // threads,)
     tri_counts = cp.empty(n_cells, dtype=cp.int32)
     center_flags = cp.empty(n_cells, dtype=cp.int32)
-    luts = _get_lewiner_luts_device()
     if mask is None:
         _get_kernel("mc_lewiner_count_cells")(
             cell_blocks,
             (threads,),
             (
                 volume,
-                luts["cases"],
-                luts["test3"],
-                luts["test4"],
-                luts["test6"],
-                luts["test7"],
-                luts["test10"],
-                luts["test12"],
-                luts["test13"],
-                luts["subconfig13"],
-                luts["tiling13_5_1"],
                 tri_counts,
                 center_flags,
                 nx,
@@ -2119,16 +2100,6 @@ def _lewiner_count_cells_gpu(volume, level, mask=None):
             (
                 volume,
                 mask,
-                luts["cases"],
-                luts["test3"],
-                luts["test4"],
-                luts["test6"],
-                luts["test7"],
-                luts["test10"],
-                luts["test12"],
-                luts["test13"],
-                luts["subconfig13"],
-                luts["tiling13_5_1"],
                 tri_counts,
                 center_flags,
                 nx,
@@ -2312,59 +2283,11 @@ def _lewiner_generate_faces_direct_gpu(
 
     threads = 128
     cell_blocks = ((n_cells + threads - 1) // threads,)
-    luts = _get_lewiner_luts_device()
     _get_kernel("mc_lewiner_generate_faces_direct")(
         cell_blocks,
         (threads,),
         (
             volume,
-            luts["cases"],
-            luts["test3"],
-            luts["test4"],
-            luts["test6"],
-            luts["test7"],
-            luts["test10"],
-            luts["test12"],
-            luts["test13"],
-            luts["subconfig13"],
-            luts["tiling1"],
-            luts["tiling2"],
-            luts["tiling3_1"],
-            luts["tiling3_2"],
-            luts["tiling4_1"],
-            luts["tiling4_2"],
-            luts["tiling5"],
-            luts["tiling6_1_1"],
-            luts["tiling6_1_2"],
-            luts["tiling6_2"],
-            luts["tiling7_1"],
-            luts["tiling7_2"],
-            luts["tiling7_3"],
-            luts["tiling7_4_1"],
-            luts["tiling7_4_2"],
-            luts["tiling8"],
-            luts["tiling9"],
-            luts["tiling10_1_1"],
-            luts["tiling10_1_1_"],
-            luts["tiling10_1_2"],
-            luts["tiling10_2"],
-            luts["tiling10_2_"],
-            luts["tiling11"],
-            luts["tiling12_1_1"],
-            luts["tiling12_1_1_"],
-            luts["tiling12_1_2"],
-            luts["tiling12_2"],
-            luts["tiling12_2_"],
-            luts["tiling13_1"],
-            luts["tiling13_1_"],
-            luts["tiling13_2"],
-            luts["tiling13_2_"],
-            luts["tiling13_3"],
-            luts["tiling13_3_"],
-            luts["tiling13_4"],
-            luts["tiling13_5_1"],
-            luts["tiling13_5_2"],
-            luts["tiling14"],
             tri_counts,
             tri_scan,
             edge_vertex_ids,
