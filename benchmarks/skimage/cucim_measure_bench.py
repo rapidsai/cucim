@@ -133,6 +133,76 @@ class FiltersBench(ImageBench):
         self.args_gpu = (imaged,)
 
 
+class FindContoursBench(ImageBench):
+    def __init__(
+        self,
+        function_name,
+        shape,
+        field_kind="sine",
+        dtypes=np.float32,
+        fixed_kwargs={},
+        var_kwargs={},
+        index_str=None,
+        module_cpu=skimage.measure,
+        module_gpu=cucim.skimage.measure,
+        run_cpu=True,
+    ):
+        self.field_kind = field_kind
+        if index_str is None:
+            index_str = f"field={field_kind}"
+        super().__init__(
+            function_name=function_name,
+            shape=shape,
+            dtypes=dtypes,
+            fixed_kwargs=fixed_kwargs,
+            var_kwargs=var_kwargs,
+            index_str=index_str,
+            module_cpu=module_cpu,
+            module_gpu=module_gpu,
+            run_cpu=run_cpu,
+        )
+
+    def _make_field(self, dtype):
+        dtype = np.dtype(dtype)
+        if dtype.kind != "f":
+            raise ValueError("find_contours benchmarks require a floating dtype.")
+        if len(self.shape) != 2:
+            raise ValueError("find_contours benchmarks require a 2D shape.")
+
+        if self.field_kind == "camera":
+            image = skimage.data.camera().astype(np.float32, copy=False)
+            image = image / 255.0 - 0.5
+            image = image.astype(dtype, copy=False)
+            tiling = tuple(
+                int(np.ceil(s / image_s)) for s, image_s in zip(self.shape, image.shape)
+            )
+            slices = tuple(slice(s) for s in self.shape)
+            return np.tile(image, tiling)[slices]
+
+        y, x = np.ogrid[
+            slice(-1.0, 1.0, complex(self.shape[0])),
+            slice(-1.0, 1.0, complex(self.shape[1])),
+        ]
+
+        if self.field_kind == "sine":
+            image = (
+                np.sin(12.0 * x) + np.cos(9.0 * y) + 0.35 * np.sin(8.0 * (x + y)) - 0.2
+            )
+        elif self.field_kind == "circle":
+            image = x * x + y * y - 0.45
+        else:
+            raise ValueError(f"unsupported find_contours field {self.field_kind!r}")
+
+        return image.astype(dtype, copy=False)
+
+    def set_args(self, dtype):
+        image = self._make_field(dtype)
+        imaged = cp.asarray(image)
+
+        self.args_cpu = (image,)
+        self.args_gpu = (imaged,)
+
+
 class BinaryImagePairBench(ImageBench):
     def set_args(self, dtype):
         rng = cp.random.default_rng(seed=123)
@@ -213,6 +283,17 @@ def main(args):
             True,
             False,
         ),  # variable block_size configured below
+        # _find_contours.py
+        (
+            "find_contours",
+            dict(level=0.0),
+            dict(
+                fully_connected=["low", "high"],
+                positive_orientation=["low", "high"],
+            ),
+            False,
+            False,
+        ),
         # binary image overlap measures
         ("intersection_coeff", dict(mask=None), dict(), False, True),
         ("manders_coloc_coeff", dict(mask=None), dict(), False, True),
@@ -279,6 +360,22 @@ def main(args):
                 module_gpu=cucim.skimage.measure,
                 run_cpu=run_cpu,
             )
+        elif function_name == "find_contours":
+            for field_kind in args.find_contours_kinds:
+                B = FindContoursBench(
+                    function_name=function_name,
+                    shape=shape,
+                    field_kind=field_kind,
+                    dtypes=dtypes,
+                    fixed_kwargs=fixed_kwargs,
+                    var_kwargs=var_kwargs,
+                    module_cpu=skimage.measure,
+                    module_gpu=cucim.skimage.measure,
+                    run_cpu=run_cpu,
+                )
+                results = B.run_benchmark(duration=args.duration)
+                all_results = pd.concat([all_results, results["full"]])
+            continue
         else:
             if function_name == "gabor" and np.prod(shape) > 1000000:
                 # avoid cases that are too slow on the CPU
@@ -340,6 +437,7 @@ if __name__ == "__main__":
         "block_reduce",
         "shannon_entropy",
         "profile_line",
+        "find_contours",
         "intersection_coeff",
         "manders_coloc_coeff",
         "manders_overlap_coeff",
@@ -396,6 +494,13 @@ if __name__ == "__main__":
         action="store_true",
         help="do not load existing results CSV; save only this run's results (overwrite)",
         default=False,
+    )
+    parser.add_argument(
+        "--find_contours_kinds",
+        nargs="+",
+        choices=("circle", "sine", "camera"),
+        default=("circle", "sine", "camera"),
+        help="Image-content patterns to run for find_contours benchmarks.",
     )
 
     args = parser.parse_args()

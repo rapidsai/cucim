@@ -379,6 +379,7 @@ build_local_cucim_() {
         -DCMAKE_INSTALL_PREFIX="${source_folder}/install" \
         -DPython_EXECUTABLE="$(which python3)"
     ${CMAKE_CMD} --build "${build_folder}" --config "${build_type_str}" --target cucim -- -j "$(nproc)"
+    ${CMAKE_CMD} --build "${build_folder}" --config "${build_type_str}" --target cucim_skimage_cpp -- -j "$(nproc)"
     ${CMAKE_CMD} --build "${build_folder}" --config "${build_type_str}" --target install -- -j "$(nproc)"
 
     popd
