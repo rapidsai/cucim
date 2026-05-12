@@ -134,7 +134,7 @@ class FiltersBench(ImageBench):
 
 
 class MarchingCubesBench(ImageBench):
-    def set_args(self, dtype):
+    def _make_volume(self, dtype):
         dtype = np.dtype(dtype)
         if dtype.kind != "f":
             raise ValueError("marching_cubes benchmarks require a floating dtype.")
@@ -145,10 +145,30 @@ class MarchingCubesBench(ImageBench):
         scales = (0.75, 0.9, 1.1)
         image = sum((coord / scale) ** 2 for coord, scale in zip(coords, scales))
         image = (image - 0.55).astype(dtype, copy=False)
-        imaged = cp.asarray(image)
+        return image, cp.asarray(image)
 
+    def set_args(self, dtype):
+        image, imaged = self._make_volume(dtype)
         self.args_cpu = (image,)
         self.args_gpu = (imaged,)
+
+
+class MeshSurfaceAreaBench(MarchingCubesBench):
+    def set_args(self, dtype):
+        image, imaged = self._make_volume(dtype)
+        mesh_kwargs = {
+            "level": 0.0,
+            "method": "lewiner",
+            "allow_degenerate": False,
+        }
+
+        verts_cpu, faces_cpu = skimage.measure.marching_cubes(image, **mesh_kwargs)[:2]
+        verts_gpu, faces_gpu = cucim.skimage.measure.marching_cubes(
+            imaged, **mesh_kwargs
+        )[:2]
+
+        self.args_cpu = (verts_cpu, faces_cpu)
+        self.args_gpu = (verts_gpu, faces_gpu)
 
 
 class BinaryImagePairBench(ImageBench):
@@ -242,6 +262,13 @@ def main(args):
             False,
             True,
         ),
+        (
+            "mesh_surface_area",
+            dict(),
+            dict(),
+            False,
+            True,
+        ),
         # binary image overlap measures
         ("intersection_coeff", dict(mask=None), dict(), False, True),
         ("manders_coloc_coeff", dict(mask=None), dict(), False, True),
@@ -319,6 +346,17 @@ def main(args):
                 module_gpu=cucim.skimage.measure,
                 run_cpu=run_cpu,
             )
+        elif function_name == "mesh_surface_area":
+            B = MeshSurfaceAreaBench(
+                function_name=function_name,
+                shape=shape,
+                dtypes=dtypes,
+                fixed_kwargs=fixed_kwargs,
+                var_kwargs=var_kwargs,
+                module_cpu=skimage.measure,
+                module_gpu=cucim.skimage.measure,
+                run_cpu=run_cpu,
+            )
         else:
             if function_name == "gabor" and np.prod(shape) > 1000000:
                 # avoid cases that are too slow on the CPU
@@ -381,6 +419,7 @@ if __name__ == "__main__":
         "shannon_entropy",
         "profile_line",
         "marching_cubes",
+        "mesh_surface_area",
         "intersection_coeff",
         "manders_coloc_coeff",
         "manders_overlap_coeff",

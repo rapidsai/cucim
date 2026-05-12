@@ -17,7 +17,7 @@ for shape in "${param_shape[@]}"; do
 done
 
 param_shape=("64,64,64" "128,128,128" "192,192,192")
-param_filt=(marching_cubes)
+param_filt=(marching_cubes mesh_surface_area)
 param_dt=(float32)
 for shape in "${param_shape[@]}"; do
     for filt in "${param_filt[@]}"; do
