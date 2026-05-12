@@ -9,10 +9,10 @@ from numpy.testing import assert_allclose
 from skimage.draw import ellipsoid, ellipsoid_stats
 from skimage.measure import (
     marching_cubes as skimage_marching_cubes,
-    mesh_surface_area,
+    mesh_surface_area as skimage_mesh_surface_area,
 )
 
-from cucim.skimage.measure import marching_cubes
+from cucim.skimage.measure import marching_cubes, mesh_surface_area
 
 
 def _single_voxel_volume():
@@ -67,6 +67,24 @@ def test_default_lewiner_single_voxel_smoke():
 def test_invalid_method():
     with pytest.raises(ValueError, match="method should be either"):
         marching_cubes(_single_voxel_volume(), 0.5, method="invalid")
+
+
+def test_mesh_surface_area():
+    verts = cp.asarray(
+        [
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 2.0],
+        ],
+        dtype=cp.float32,
+    )
+    faces = cp.asarray([[0, 1, 2], [0, 1, 3]], dtype=cp.int32)
+
+    area = mesh_surface_area(verts, faces)
+
+    assert isinstance(area, cp.ndarray)
+    cp.testing.assert_allclose(area, cp.asarray(1.5, dtype=cp.float32))
 
 
 def test_lorensen_single_voxel_smoke():
@@ -139,8 +157,8 @@ def test_lewiner_matches_skimage_generated_volume_stats(volume):
     assert faces.shape == expected_faces.shape
     assert bool(cp.all(faces >= 0))
     assert bool(cp.all(faces < verts.shape[0]))
-    cp_area = mesh_surface_area(cp.asnumpy(verts), cp.asnumpy(faces))
-    expected_area = mesh_surface_area(expected_verts, expected_faces)
+    cp_area = cp.asnumpy(mesh_surface_area(verts, faces))
+    expected_area = skimage_mesh_surface_area(expected_verts, expected_faces)
     assert_allclose(cp_area, expected_area, rtol=1e-6)
 
 
@@ -257,8 +275,8 @@ def test_step_size_lorensen_surface_area():
     assert verts.shape == expected_verts.shape
     assert faces.shape == expected_faces.shape
     assert_allclose(
-        mesh_surface_area(cp.asnumpy(verts), cp.asnumpy(faces)),
-        mesh_surface_area(expected_verts, expected_faces),
+        cp.asnumpy(mesh_surface_area(verts, faces)),
+        skimage_mesh_surface_area(expected_verts, expected_faces),
     )
 
 
@@ -286,8 +304,8 @@ def test_allow_degenerate_false_removes_zero_area_faces():
         cp.asnumpy(verts_clean), cp.asnumpy(faces_clean)
     )
     assert_allclose(
-        mesh_surface_area(cp.asnumpy(verts_clean), cp.asnumpy(faces_clean)),
-        mesh_surface_area(expected_verts, expected_faces),
+        cp.asnumpy(mesh_surface_area(verts_clean, faces_clean)),
+        skimage_mesh_surface_area(expected_verts, expected_faces),
     )
 
 
@@ -372,8 +390,8 @@ def test_masked_marching_cubes():
     assert faces.shape == expected_faces.shape
     assert not _has_unreferenced_vertices(cp.asnumpy(verts), cp.asnumpy(faces))
     assert_allclose(
-        mesh_surface_area(cp.asnumpy(verts), cp.asnumpy(faces)),
-        mesh_surface_area(expected_verts, expected_faces),
+        cp.asnumpy(mesh_surface_area(verts, faces)),
+        skimage_mesh_surface_area(expected_verts, expected_faces),
         rtol=1e-6,
     )
 
@@ -416,8 +434,8 @@ def test_masked_marching_cubes_with_step_size():
     assert verts.shape == expected_verts.shape
     assert faces.shape == expected_faces.shape
     assert_allclose(
-        mesh_surface_area(cp.asnumpy(verts), cp.asnumpy(faces)),
-        mesh_surface_area(expected_verts, expected_faces),
+        cp.asnumpy(mesh_surface_area(verts, faces)),
+        skimage_mesh_surface_area(expected_verts, expected_faces),
         rtol=1e-6,
     )
 
@@ -430,13 +448,13 @@ def test_marching_cubes_isotropic():
     verts, faces = marching_cubes(
         cp.asarray(ellipsoid_isotropic), 0.0, method="lorensen"
     )[:2]
-    surf_calc = mesh_surface_area(cp.asnumpy(verts), cp.asnumpy(faces))
+    surf_calc = float(mesh_surface_area(verts, faces))
     # Test within 1% tolerance for isotropic. Will always underestimate.
     assert surf > surf_calc and surf_calc > surf * 0.99
 
     # Lewiner
     verts, faces = marching_cubes(cp.asarray(ellipsoid_isotropic), 0.0)[:2]
-    surf_calc = mesh_surface_area(cp.asnumpy(verts), cp.asnumpy(faces))
+    surf_calc = float(mesh_surface_area(verts, faces))
     # Test within 1% tolerance for isotropic. Will always underestimate.
     assert surf > surf_calc and surf_calc > surf * 0.99
 
@@ -454,7 +472,7 @@ def test_marching_cubes_anisotropic():
         spacing=spacing,
         method="lorensen",
     )[:2]
-    surf_calc = mesh_surface_area(cp.asnumpy(verts), cp.asnumpy(faces))
+    surf_calc = float(mesh_surface_area(verts, faces))
     # Test within 1.5% tolerance for anisotropic. Will always underestimate.
     assert surf > surf_calc and surf_calc > surf * 0.985
 
@@ -462,7 +480,7 @@ def test_marching_cubes_anisotropic():
     verts, faces = marching_cubes(
         cp.asarray(ellipsoid_anisotropic), 0.0, spacing=spacing
     )[:2]
-    surf_calc = mesh_surface_area(cp.asnumpy(verts), cp.asnumpy(faces))
+    surf_calc = float(mesh_surface_area(verts, faces))
     # Test within 1.5% tolerance for anisotropic. Will always underestimate.
     assert surf > surf_calc and surf_calc > surf * 0.985
 
@@ -472,7 +490,7 @@ def test_marching_cubes_anisotropic():
         spacing=spacing,
         allow_degenerate=False,
     )[:2]
-    surf_calc = mesh_surface_area(cp.asnumpy(verts), cp.asnumpy(faces))
+    surf_calc = float(mesh_surface_area(verts, faces))
     # Test within 1.5% tolerance for anisotropic. Will always underestimate.
     assert surf > surf_calc and surf_calc > surf * 0.985
 

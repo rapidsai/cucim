@@ -33,6 +33,7 @@ __all__ = [
     "manders_overlap_coeff",
     "intersection_coeff",
     "marching_cubes",
+    "mesh_surface_area",
 ]
 
 from ._blur_effect import blur_effect
@@ -43,7 +44,7 @@ from ._colocalization import (
     pearson_corr_coeff,
 )
 from ._label import label
-from ._marching_cubes import marching_cubes
+from ._marching_cubes import marching_cubes, mesh_surface_area
 from ._moments import (
     centroid,
     inertia_tensor,
