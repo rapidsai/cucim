@@ -37,7 +37,7 @@ target_compile_definitions(cuslide2_tests
 )
 target_link_libraries(cuslide2_tests
         PRIVATE
-            CUDA::cudart
+            CUDA::cudart_static
             cucim::cucim
             cuslide2_core
             deps::catch2

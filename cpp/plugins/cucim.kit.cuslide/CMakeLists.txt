@@ -1,5 +1,5 @@
 # cmake-format: off
-# SPDX-FileCopyrightText: Copyright (c) 2020-2025, NVIDIA CORPORATION
+# SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION
 # SPDX-License-Identifier: Apache-2.0
 # cmake-format: on
 
@@ -217,17 +217,17 @@ target_link_libraries(${CUCIM_PLUGIN_NAME}
 if (TARGET CUDA::nvjpeg_static)
         target_link_libraries(${CUCIM_PLUGIN_NAME}
             PRIVATE
-                # Add nvjpeg before cudart so that nvjpeg.h in static library takes precedence.
+                # Add nvjpeg before cudart_static so that nvjpeg.h in static library takes precedence.
                 CUDA::nvjpeg_static
                 # Add CUDA::culibos to link necessary methods for 'deps::nvjpeg_static'
                 CUDA::culibos
-                CUDA::cudart
+                CUDA::cudart_static
         )
 else()
         target_link_libraries(${CUCIM_PLUGIN_NAME}
             PRIVATE
                 CUDA::nvjpeg
-                CUDA::cudart
+                CUDA::cudart_static
         )
 endif()
 

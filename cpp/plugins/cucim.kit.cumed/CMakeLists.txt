@@ -1,5 +1,5 @@
 # cmake-format: off
-# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION
 # SPDX-License-Identifier: Apache-2.0
 # cmake-format: on
 
@@ -159,7 +159,7 @@ target_compile_options(${CUCIM_PLUGIN_NAME} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-W
 # Link libraries
 target_link_libraries(${CUCIM_PLUGIN_NAME}
         PRIVATE
-            CUDA::cudart
+            CUDA::cudart_static
             deps::fmt
             cucim::cucim
         )

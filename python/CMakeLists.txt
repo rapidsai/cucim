@@ -1,6 +1,6 @@
 #
 # cmake-format: off
-# SPDX-FileCopyrightText: Copyright (c) 2020-2025, NVIDIA CORPORATION.
+# SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION.
 # SPDX-License-Identifier: Apache-2.0
 # cmake-format: on
 #
@@ -51,7 +51,7 @@ if (NOT CMAKE_RUNTIME_OUTPUT_DIRECTORY)
     set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/bin")
 endif ()
 
-find_package(CUDAToolkit) # cucim library depends on CUDA::cudart
+find_package(CUDAToolkit) # cucim library depends on CUDA::cudart_static
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED YES)
 
