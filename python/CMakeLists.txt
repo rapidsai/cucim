@@ -192,6 +192,7 @@ nanobind_add_module(cucim_skimage_cpp
     PROTECT_STACK
     NOMINSIZE
         nanobind/skimage/skimage_cpp_py.cpp
+        nanobind/skimage/contour_assembly.h
         nanobind/skimage/segmented_sort.h
         nanobind/skimage/segmented_sort.cu
         )

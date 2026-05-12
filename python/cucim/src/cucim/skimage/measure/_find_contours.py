@@ -1,0 +1,576 @@
+# SPDX-FileCopyrightText: 2009-2022 the scikit-image team
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
+
+from collections import deque
+
+import cupy as cp
+import numpy as np
+
+try:
+    from cucim.skimage import _cucim_skimage_cpp_ext as _skimage_cpp
+except ImportError:
+    _skimage_cpp = None
+
+_PARAM_OPTIONS = ("high", "low")
+
+
+_KERNEL_CODE = r"""
+__device__ inline double fc_fraction(double from_value, double to_value, double level)
+{
+    if (to_value == from_value) {
+        return 0.0;
+    }
+    return (level - from_value) / (to_value - from_value);
+}
+
+__device__ inline int fc_square_case(double ul, double ur, double ll, double lr,
+                                     double level)
+{
+    int square_case = 0;
+    if (ul > level) {
+        square_case += 1;
+    }
+    if (ur > level) {
+        square_case += 2;
+    }
+    if (ll > level) {
+        square_case += 4;
+    }
+    if (lr > level) {
+        square_case += 8;
+    }
+    return square_case;
+}
+
+__device__ inline int fc_segment_count(int square_case)
+{
+    if (square_case == 0 || square_case == 15) {
+        return 0;
+    }
+    if (square_case == 6 || square_case == 9) {
+        return 2;
+    }
+    return 1;
+}
+
+__device__ inline bool fc_isnan(double value)
+{
+    return value != value;
+}
+
+__device__ inline void fc_cell_values(const double* image, int rows, int cols,
+                                      int r0, int c0, double* ul, double* ur,
+                                      double* ll, double* lr)
+{
+    int r1 = r0 + 1;
+    int c1 = c0 + 1;
+    *ul = image[r0 * cols + c0];
+    *ur = image[r0 * cols + c1];
+    *ll = image[r1 * cols + c0];
+    *lr = image[r1 * cols + c1];
+}
+
+__device__ inline bool fc_masked_cell(const bool* mask, int cols, int r0, int c0)
+{
+    int r1 = r0 + 1;
+    int c1 = c0 + 1;
+    return !(mask[r0 * cols + c0] && mask[r0 * cols + c1] &&
+             mask[r1 * cols + c0] && mask[r1 * cols + c1]);
+}
+
+__device__ inline void fc_write_segment(double* segments, int segment_id,
+                                        double from_r, double from_c,
+                                        double to_r, double to_c)
+{
+    int offset = 4 * segment_id;
+    segments[offset + 0] = from_r;
+    segments[offset + 1] = from_c;
+    segments[offset + 2] = to_r;
+    segments[offset + 3] = to_c;
+}
+
+// Topological endpoint keys are disjoint IDs for horizontal grid edges,
+// vertical grid edges, and exact source-grid vertices. Vertex keys are used
+// when interpolation lands exactly on a grid vertex so adjacent cell edges
+// still stitch through the same topological endpoint.
+__device__ inline long long fc_horizontal_key(int rows, int cols, int r, int c)
+{
+    return (long long)r * (long long)(cols - 1) + (long long)c;
+}
+
+__device__ inline long long fc_vertical_key(int rows, int cols, int r, int c)
+{
+    return (long long)rows * (long long)(cols - 1) +
+           (long long)r * (long long)cols + (long long)c;
+}
+
+__device__ inline long long fc_vertex_key(int rows, int cols, int r, int c)
+{
+    long long n_horizontal = (long long)rows * (long long)(cols - 1);
+    long long n_vertical = (long long)(rows - 1) * (long long)cols;
+    return n_horizontal + n_vertical + (long long)r * (long long)cols + (long long)c;
+}
+
+__device__ inline long long fc_horizontal_endpoint_key(
+    int rows, int cols, int r, int c, double fraction)
+{
+    if (fraction == 0.0) {
+        return fc_vertex_key(rows, cols, r, c);
+    }
+    if (fraction == 1.0) {
+        return fc_vertex_key(rows, cols, r, c + 1);
+    }
+    return fc_horizontal_key(rows, cols, r, c);
+}
+
+__device__ inline long long fc_vertical_endpoint_key(
+    int rows, int cols, int r, int c, double fraction)
+{
+    if (fraction == 0.0) {
+        return fc_vertex_key(rows, cols, r, c);
+    }
+    if (fraction == 1.0) {
+        return fc_vertex_key(rows, cols, r + 1, c);
+    }
+    return fc_vertical_key(rows, cols, r, c);
+}
+
+__device__ inline void fc_write_keys(long long* segment_keys, int segment_id,
+                                     long long from_key, long long to_key)
+{
+    int offset = 2 * segment_id;
+    segment_keys[offset + 0] = from_key;
+    segment_keys[offset + 1] = to_key;
+}
+
+extern "C" __global__
+void fc_count_segments(const double* image, const bool* mask, int* counts,
+                       int rows, int cols, double level, int use_mask)
+{
+    int n_cell_cols = cols - 1;
+    int n_cells = (rows - 1) * n_cell_cols;
+    int idx = blockDim.x * blockIdx.x + threadIdx.x;
+    if (idx >= n_cells) {
+        return;
+    }
+
+    int r0 = idx / n_cell_cols;
+    int c0 = idx - r0 * n_cell_cols;
+
+    if (use_mask && fc_masked_cell(mask, cols, r0, c0)) {
+        counts[idx] = 0;
+        return;
+    }
+
+    double ul, ur, ll, lr;
+    fc_cell_values(image, rows, cols, r0, c0, &ul, &ur, &ll, &lr);
+
+    if (fc_isnan(ul) || fc_isnan(ur) || fc_isnan(ll) || fc_isnan(lr)) {
+        counts[idx] = 0;
+        return;
+    }
+
+    counts[idx] = fc_segment_count(fc_square_case(ul, ur, ll, lr, level));
+}
+
+extern "C" __global__
+void fc_generate_segments(const double* image, const bool* mask,
+                          const int* counts, const int* scan, double* segments,
+                          long long* segment_keys, int rows, int cols,
+                          double level, int use_mask,
+                          int vertex_connect_high)
+{
+    int n_cell_cols = cols - 1;
+    int n_cells = (rows - 1) * n_cell_cols;
+    int idx = blockDim.x * blockIdx.x + threadIdx.x;
+    if (idx >= n_cells || counts[idx] == 0) {
+        return;
+    }
+
+    int r0 = idx / n_cell_cols;
+    int c0 = idx - r0 * n_cell_cols;
+    int r1 = r0 + 1;
+    int c1 = c0 + 1;
+
+    if (use_mask && fc_masked_cell(mask, cols, r0, c0)) {
+        return;
+    }
+
+    double ul, ur, ll, lr;
+    fc_cell_values(image, rows, cols, r0, c0, &ul, &ur, &ll, &lr);
+    if (fc_isnan(ul) || fc_isnan(ur) || fc_isnan(ll) || fc_isnan(lr)) {
+        return;
+    }
+
+    int square_case = fc_square_case(ul, ur, ll, lr, level);
+    int out_id = scan[idx] - counts[idx];
+
+    double top_fraction = fc_fraction(ul, ur, level);
+    double bottom_fraction = fc_fraction(ll, lr, level);
+    double left_fraction = fc_fraction(ul, ll, level);
+    double right_fraction = fc_fraction(ur, lr, level);
+
+    double top_r = (double)r0;
+    double top_c = (double)c0 + top_fraction;
+    double bottom_r = (double)r1;
+    double bottom_c = (double)c0 + bottom_fraction;
+    double left_r = (double)r0 + left_fraction;
+    double left_c = (double)c0;
+    double right_r = (double)r0 + right_fraction;
+    double right_c = (double)c1;
+
+    long long top_key = fc_horizontal_endpoint_key(rows, cols, r0, c0, top_fraction);
+    long long bottom_key = fc_horizontal_endpoint_key(rows, cols, r1, c0, bottom_fraction);
+    long long left_key = fc_vertical_endpoint_key(rows, cols, r0, c0, left_fraction);
+    long long right_key = fc_vertical_endpoint_key(rows, cols, r0, c1, right_fraction);
+
+    if (square_case == 1) {
+        fc_write_segment(segments, out_id, top_r, top_c, left_r, left_c);
+        fc_write_keys(segment_keys, out_id, top_key, left_key);
+    } else if (square_case == 2) {
+        fc_write_segment(segments, out_id, right_r, right_c, top_r, top_c);
+        fc_write_keys(segment_keys, out_id, right_key, top_key);
+    } else if (square_case == 3) {
+        fc_write_segment(segments, out_id, right_r, right_c, left_r, left_c);
+        fc_write_keys(segment_keys, out_id, right_key, left_key);
+    } else if (square_case == 4) {
+        fc_write_segment(segments, out_id, left_r, left_c, bottom_r, bottom_c);
+        fc_write_keys(segment_keys, out_id, left_key, bottom_key);
+    } else if (square_case == 5) {
+        fc_write_segment(segments, out_id, top_r, top_c, bottom_r, bottom_c);
+        fc_write_keys(segment_keys, out_id, top_key, bottom_key);
+    } else if (square_case == 6) {
+        if (vertex_connect_high) {
+            fc_write_segment(segments, out_id, left_r, left_c, top_r, top_c);
+            fc_write_keys(segment_keys, out_id, left_key, top_key);
+            fc_write_segment(segments, out_id + 1, right_r, right_c, bottom_r, bottom_c);
+            fc_write_keys(segment_keys, out_id + 1, right_key, bottom_key);
+        } else {
+            fc_write_segment(segments, out_id, right_r, right_c, top_r, top_c);
+            fc_write_keys(segment_keys, out_id, right_key, top_key);
+            fc_write_segment(segments, out_id + 1, left_r, left_c, bottom_r, bottom_c);
+            fc_write_keys(segment_keys, out_id + 1, left_key, bottom_key);
+        }
+    } else if (square_case == 7) {
+        fc_write_segment(segments, out_id, right_r, right_c, bottom_r, bottom_c);
+        fc_write_keys(segment_keys, out_id, right_key, bottom_key);
+    } else if (square_case == 8) {
+        fc_write_segment(segments, out_id, bottom_r, bottom_c, right_r, right_c);
+        fc_write_keys(segment_keys, out_id, bottom_key, right_key);
+    } else if (square_case == 9) {
+        if (vertex_connect_high) {
+            fc_write_segment(segments, out_id, top_r, top_c, right_r, right_c);
+            fc_write_keys(segment_keys, out_id, top_key, right_key);
+            fc_write_segment(segments, out_id + 1, bottom_r, bottom_c, left_r, left_c);
+            fc_write_keys(segment_keys, out_id + 1, bottom_key, left_key);
+        } else {
+            fc_write_segment(segments, out_id, top_r, top_c, left_r, left_c);
+            fc_write_keys(segment_keys, out_id, top_key, left_key);
+            fc_write_segment(segments, out_id + 1, bottom_r, bottom_c, right_r, right_c);
+            fc_write_keys(segment_keys, out_id + 1, bottom_key, right_key);
+        }
+    } else if (square_case == 10) {
+        fc_write_segment(segments, out_id, bottom_r, bottom_c, top_r, top_c);
+        fc_write_keys(segment_keys, out_id, bottom_key, top_key);
+    } else if (square_case == 11) {
+        fc_write_segment(segments, out_id, bottom_r, bottom_c, left_r, left_c);
+        fc_write_keys(segment_keys, out_id, bottom_key, left_key);
+    } else if (square_case == 12) {
+        fc_write_segment(segments, out_id, left_r, left_c, right_r, right_c);
+        fc_write_keys(segment_keys, out_id, left_key, right_key);
+    } else if (square_case == 13) {
+        fc_write_segment(segments, out_id, top_r, top_c, right_r, right_c);
+        fc_write_keys(segment_keys, out_id, top_key, right_key);
+    } else if (square_case == 14) {
+        fc_write_segment(segments, out_id, left_r, left_c, top_r, top_c);
+        fc_write_keys(segment_keys, out_id, left_key, top_key);
+    }
+}
+"""
+
+
+@cp.memoize(for_each_device=True)
+def _get_kernel(name):
+    return cp.RawKernel(_KERNEL_CODE, name)
+
+
+def find_contours(
+    image,
+    level=None,
+    fully_connected="low",
+    positive_orientation="low",
+    *,
+    mask=None,
+):
+    """Find iso-valued contours in a 2D CuPy array.
+
+    This implementation extracts marching-squares line segments on the GPU and
+    assembles the final contours on the host. Because contour assembly is done
+    on the host, the returned contours are NumPy arrays.
+
+    Parameters
+    ----------
+    image : ndarray of shape (M, N) and dtype float
+        Input image in which to find contours.
+    level : float, optional
+        Value along which to find contours in the array. By default, the level
+        is set to (max(image) + min(image)) / 2
+    fully_connected : str, {'low', 'high'}
+         Indicates whether array elements below the given level value are to be
+         considered fully-connected (and hence elements above the value will
+         only be face connected), or vice-versa. (See notes below for details.)
+    positive_orientation : str, {'low', 'high'}
+         Indicates whether the output contours will produce positively-oriented
+         polygons around islands of low- or high-valued elements. If 'low' then
+         contours will wind counter-clockwise around elements below the
+         iso-value. Alternately, this means that low-valued elements are always
+         on the left of the contour. (See below for details.)
+    mask : ndarray of shape (M, N) and dtype bool
+        A boolean mask, True where we want to draw contours.
+        Note that NaN values are always excluded from the considered region
+        (``mask`` is set to ``False`` wherever ``array`` is ``NaN``).
+
+    Returns
+    -------
+    contours : list of (ndarray of shape (K, 2))
+        Each contour is a ndarray of ``(row, column)`` coordinates along the
+        contour.
+
+    See Also
+    --------
+    cucim.skimage.measure.marching_cubes
+
+    Notes
+    -----
+    The marching squares algorithm is a special case of the marching cubes
+    algorithm [1]_.  A simple explanation is available here:
+
+    https://users.polytech.unice.fr/~lingrand/MarchingCubes/algo.html
+
+    There is a single ambiguous case in the marching squares algorithm: when
+    a given ``2 x 2``-element square has two high-valued and two low-valued
+    elements, each pair diagonally adjacent. (Where high- and low-valued is
+    with respect to the contour value sought.) In this case, either the
+    high-valued elements can be 'connected together' via a thin isthmus that
+    separates the low-valued elements, or vice-versa. When elements are
+    connected together across a diagonal, they are considered 'fully
+    connected' (also known as 'face+vertex-connected' or '8-connected'). Only
+    high-valued or low-valued elements can be fully-connected, the other set
+    will be considered as 'face-connected' or '4-connected'. By default,
+    low-valued elements are considered fully-connected; this can be altered
+    with the 'fully_connected' parameter.
+
+    Output contours are not guaranteed to be closed: contours which intersect
+    the array edge or a masked-off region (either where mask is False or where
+    array is NaN) will be left open. All other contours will be closed. (The
+    closed-ness of a contours can be tested by checking whether the beginning
+    point is the same as the end point.)
+
+    Contours are oriented. By default, array values lower than the contour
+    value are to the left of the contour and values greater than the contour
+    value are to the right. This means that contours will wind
+    counter-clockwise (i.e. in 'positive orientation') around islands of
+    low-valued pixels. This behavior can be altered with the
+    'positive_orientation' parameter.
+
+    The order of the contours in the output list is determined by the position
+    of the smallest ``x,y`` (in lexicographical order) coordinate in the
+    contour.  This is a side effect of how the input array is traversed, but
+    can be relied upon.
+
+    .. warning::
+
+       Array coordinates/values are assumed to refer to the *center* of the
+       array element. Take a simple example input: ``[0, 1]``. The interpolated
+       position of 0.5 in this array is midway between the 0-element (at
+       ``x=0``) and the 1-element (at ``x=1``), and thus would fall at
+       ``x=0.5``.
+
+    This means that to find reasonable contours, it is best to find contours
+    midway between the expected "light" and "dark" values. In particular,
+    given a binarized array, *do not* choose to find contours at the low or
+    high value of the array. This will often yield degenerate contours,
+    especially around structures that are a single array element wide. Instead,
+    choose a middle value, as above.
+
+    References
+    ----------
+    .. [1] Lorensen, William and Harvey E. Cline. Marching Cubes: A High
+           Resolution 3D Surface Construction Algorithm. Computer Graphics
+           (SIGGRAPH 87 Proceedings) 21(4) July 1987, p. 163-170).
+           :DOI:`10.1145/37401.37422`
+
+    Examples
+    --------
+    >>> a = cp.zeros((3, 3))
+    >>> a[0, 0] = 1
+    >>> a
+    array([[1., 0., 0.],
+           [0., 0., 0.],
+           [0., 0., 0.]])
+    >>> find_contours(a, 0.5)
+    [array([[0. , 0.5],
+           [0.5, 0. ]])]
+    """
+    image, level, vertex_connect_high, positive_orientation_high, mask = (
+        _validate_find_contours_inputs(
+            image, level, fully_connected, positive_orientation, mask
+        )
+    )
+
+    segments = _get_contour_segments(image, level, vertex_connect_high, mask)
+    contours = _assemble_contours(*segments)
+    if positive_orientation_high:
+        contours = [contour[::-1] for contour in contours]
+    return contours
+
+
+def _validate_find_contours_inputs(
+    image, level, fully_connected, positive_orientation, mask
+):
+    if fully_connected not in _PARAM_OPTIONS:
+        raise ValueError(
+            'Parameters "fully_connected" must be either "high" or "low".'
+        )
+    if positive_orientation not in _PARAM_OPTIONS:
+        raise ValueError(
+            'Parameters "positive_orientation" must be either "high" or "low".'
+        )
+
+    if not isinstance(image, cp.ndarray) or image.ndim != 2:
+        raise ValueError("Only 2D CuPy arrays are supported.")
+    if image.shape[0] < 2 or image.shape[1] < 2:
+        raise ValueError("Input array must be at least 2x2.")
+
+    image = cp.ascontiguousarray(image, dtype=cp.float64)
+    if level is None:
+        level = float((cp.nanmin(image) + cp.nanmax(image)) / 2.0)
+    else:
+        level = float(level)
+
+    if mask is not None:
+        if not isinstance(mask, cp.ndarray) or mask.shape != image.shape:
+            raise ValueError(
+                'Parameters "array" and "mask" must have same shape.'
+            )
+        if not np.can_cast(mask.dtype, bool, casting="safe"):
+            raise TypeError('Parameter "mask" must be a binary array.')
+        mask = cp.ascontiguousarray(mask, dtype=cp.bool_)
+
+    return (
+        image,
+        level,
+        fully_connected == "high",
+        positive_orientation == "high",
+        mask,
+    )
+
+
+def _get_contour_segments(image, level, vertex_connect_high, mask):
+    rows, cols = image.shape
+    n_cells = (rows - 1) * (cols - 1)
+    counts = cp.empty(n_cells, dtype=cp.int32)
+    threads = 256
+    blocks = ((n_cells + threads - 1) // threads,)
+    mask_arg = mask
+    use_mask = mask is not None
+    if mask_arg is None:
+        mask_arg = cp.empty(1, dtype=cp.bool_)
+
+    _get_kernel("fc_count_segments")(
+        blocks,
+        (threads,),
+        (
+            image,
+            mask_arg,
+            counts,
+            rows,
+            cols,
+            np.float64(level),
+            np.int32(use_mask),
+        ),
+    )
+    scan = cp.cumsum(counts, dtype=cp.int32)
+    n_segments = int(scan[-1])
+    if n_segments == 0:
+        return (
+            cp.empty((0, 2, 2), dtype=cp.float64),
+            cp.empty((0, 2), dtype=cp.int64),
+        )
+
+    segments = cp.empty((n_segments, 2, 2), dtype=cp.float64)
+    segment_keys = cp.empty((n_segments, 2), dtype=cp.int64)
+    _get_kernel("fc_generate_segments")(
+        blocks,
+        (threads,),
+        (
+            image,
+            mask_arg,
+            counts,
+            scan,
+            segments,
+            segment_keys,
+            rows,
+            cols,
+            np.float64(level),
+            np.int32(use_mask),
+            np.int32(vertex_connect_high),
+        ),
+    )
+    return segments, segment_keys
+
+
+def _assemble_contours(segments, segment_keys=None):
+    segments = cp.asnumpy(segments)
+    if _skimage_cpp is not None and segment_keys is not None:
+        segment_keys = cp.asnumpy(segment_keys)
+        return _skimage_cpp.assemble_contours(segments, segment_keys)
+    return _assemble_contours_python(segments)
+
+
+def _assemble_contours_python(segments):
+    current_index = 0
+    contours = {}
+    starts = {}
+    ends = {}
+    for from_point, to_point in segments:
+        from_point = tuple(from_point)
+        to_point = tuple(to_point)
+
+        # Ignore degenerate segments. This matches scikit-image's behavior for
+        # vertices exactly on the requested level.
+        if from_point == to_point:
+            continue
+
+        tail, tail_num = starts.pop(to_point, (None, None))
+        head, head_num = ends.pop(from_point, (None, None))
+
+        if tail is not None and head is not None:
+            if tail is head:
+                head.append(to_point)
+            elif tail_num > head_num:
+                head.extend(tail)
+                contours.pop(tail_num, None)
+                starts[head[0]] = (head, head_num)
+                ends[head[-1]] = (head, head_num)
+            else:
+                tail.extendleft(reversed(head))
+                starts.pop(head[0], None)
+                contours.pop(head_num, None)
+                starts[tail[0]] = (tail, tail_num)
+                ends[tail[-1]] = (tail, tail_num)
+        elif tail is None and head is None:
+            new_contour = deque((from_point, to_point))
+            contours[current_index] = new_contour
+            starts[from_point] = (new_contour, current_index)
+            ends[to_point] = (new_contour, current_index)
+            current_index += 1
+        elif head is None:
+            tail.appendleft(from_point)
+            starts[from_point] = (tail, tail_num)
+        else:
+            head.append(to_point)
+            ends[to_point] = (head, head_num)
+
+    return [np.array(contour) for _, contour in sorted(contours.items())]
