@@ -9,6 +9,7 @@ import cupy as cp
 import numpy as np
 import pandas as pd
 import skimage
+import skimage.data
 import skimage.measure
 from _image_bench import ImageBench
 from cucim_metrics_bench import MetricsBench
