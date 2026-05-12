@@ -86,6 +86,19 @@ def test_mesh_surface_area():
     assert isinstance(area, cp.ndarray)
     cp.testing.assert_allclose(area, cp.asarray(1.5, dtype=cp.float32))
 
+    empty_faces = cp.empty((0, 3), dtype=cp.int32)
+    cp.testing.assert_array_equal(
+        mesh_surface_area(verts, empty_faces), cp.asarray(0.0, dtype=cp.float32)
+    )
+
+    int_verts = verts.astype(cp.int16)
+    int_area = mesh_surface_area(int_verts, faces)
+    assert int_area.dtype == cp.float32
+    cp.testing.assert_allclose(int_area, cp.asarray(1.5, dtype=cp.float32))
+
+    with pytest.raises(TypeError, match="cupy.ndarray"):
+        mesh_surface_area(cp.asnumpy(verts), cp.asnumpy(faces))
+
 
 def test_lorensen_single_voxel_smoke():
     verts, faces, normals, values = marching_cubes(

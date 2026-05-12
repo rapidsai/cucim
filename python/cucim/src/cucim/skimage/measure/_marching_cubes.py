@@ -167,6 +167,28 @@ def marching_cubes(
     )
 
 
+_mesh_surface_area_kernel = cp.ReductionKernel(
+    "raw T verts, I f0, I f1, I f2",
+    "T area",
+    r"""[&]() {
+        T ax = verts[3 * f0 + 0] - verts[3 * f1 + 0];
+        T ay = verts[3 * f0 + 1] - verts[3 * f1 + 1];
+        T az = verts[3 * f0 + 2] - verts[3 * f1 + 2];
+        T bx = verts[3 * f0 + 0] - verts[3 * f2 + 0];
+        T by = verts[3 * f0 + 1] - verts[3 * f2 + 1];
+        T bz = verts[3 * f0 + 2] - verts[3 * f2 + 2];
+        T cx = ay * bz - az * by;
+        T cy = az * bx - ax * bz;
+        T cz = ax * by - ay * bx;
+        return sqrt(cx * cx + cy * cy + cz * cz) * T(0.5);
+    }()""",
+    "a + b",
+    "area = a",
+    "0",
+    "cucim_skimage_measure_mesh_surface_area",
+)
+
+
 def mesh_surface_area(verts, faces):
     """Compute surface area, given vertices and triangular faces.
 
@@ -197,7 +219,15 @@ def mesh_surface_area(verts, faces):
     cucim.skimage.measure.marching_cubes
 
     """
-    v0 = verts[faces[:, 0]]
-    a = v0 - verts[faces[:, 1]]
-    b = v0 - verts[faces[:, 2]]
-    return cp.sqrt((cp.cross(a, b) ** 2).sum(axis=1)).sum() / 2.0
+    if not isinstance(verts, cp.ndarray) or not isinstance(faces, cp.ndarray):
+        raise TypeError("verts and faces must have type cupy.ndarray")
+
+    float_dtype = cp.promote_types(verts.dtype, cp.float32)
+    if verts.dtype != float_dtype:
+        verts = verts.astype(float_dtype)
+    if faces.shape[0] == 0:
+        return cp.zeros((), dtype=float_dtype)
+
+    return _mesh_surface_area_kernel(
+        verts.ravel(), faces[:, 0], faces[:, 1], faces[:, 2]
+    )
