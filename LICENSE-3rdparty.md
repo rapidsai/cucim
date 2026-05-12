@@ -157,6 +157,24 @@ CuPy
   - Preferred Infrastructure, Inc.
   - Preferred Networks, Inc.
 
+CuMCubes
+- License: BSD-3-Clause License
+  - https://github.com/lzhnb/CuMCubes/blob/main/LICENSE
+- Copyright:
+  - P. M. Neila
+- Files:
+  - python/cucim/src/cucim/skimage/measure/_marching_cubes_lorensen.py : Marching cubes dense-grid edge/face organization was informed by the CuMCubes CUDA kernel structure.
+  - python/cucim/src/cucim/skimage/measure/_marching_cubes_lewiner.py : Lewiner implementation builds on the same cuCIM marching cubes kernel organization.
+
+NVIDIA Warp
+- License: Apache-2.0 License
+  - https://github.com/NVIDIA/warp/blob/main/LICENSE.md
+- Copyright:
+  - NVIDIA Corporation & Affiliates
+- Files:
+  - python/cucim/src/cucim/skimage/measure/_marching_cubes_lorensen.py : Marching cubes output allocation strategy was informed by Warp's scan-based marching cubes implementation.
+  - python/cucim/src/cucim/skimage/measure/_marching_cubes_lewiner.py : Lewiner implementation builds on the same cuCIM marching cubes allocation strategy.
+
 OpenSlide
 - License: GNU Lesser General Public License v2.1
   - https://github.com/openslide/openslide/blob/master/LICENSE.txt
