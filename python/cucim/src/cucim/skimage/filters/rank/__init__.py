@@ -6,31 +6,56 @@
 
 This module provides GPU (CuPy/CUDA) implementations of most of the local
 rank filters from ``skimage.filters.rank``, including all generic, percentile,
-and bilateral variants. The only unimplemented functions are ``otsu`` (local Otsu thresholding via
-between-class variance maximization) and ``windowed_histogram`` (returns the
-full local histogram per pixel), as these do not map cleanly to the
-sort-and-reduce pattern used by all other kernels.
+and bilateral variants. The only unimplemented functions are:
+
+1.  ``otsu`` (local Otsu thresholding via between-class variance maximization)
+2. ``windowed_histogram`` (returns the full local histogram per pixel)
+
+as these two operations did not map cleanly to the common patterns shared
+across the other filters implemented here.
 
 Implementation approach
 -----------------------
 
-Most GPU rank filters operate independently on a per-pixel basis: each output
-pixel is computed by a single GPU thread that gathers its local neighborhood
-and applies the requested operation. Operations that do not require sorted
-values use streaming reductions. Operations that need rank ordering use either
-a sorted-neighborhood kernel or, for a restricted high-value subset, a
+All implemented GPU rank filters operate independently on a per-pixel basis:
+each output pixel is computed by a single GPU thread that gathers its local
+neighborhood and applies the requested operation. Operations that do not
+require sorted values use streaming reductions for efficiency. Operations that
+need rank ordering use either a sorted-neighborhood kernel or, when possible, a
 sliding-window histogram fast path.
 
-scikit-image, by contrast, uses a sliding-window histogram approach that
+scikit-image, by contrast, always uses a sliding-window histogram approach that
 incrementally updates a histogram as it moves across the image. This is
 efficient on CPU but inherently sequential and restricted to 2D (or 3D for
-some generic filters).
+a subset of filters). The elementwise implementations in cuCIM do not have this
+dimensionality restriction and all filters are available in nD (although the
+histogram-based GPU fast path is restricted to 2D uint8 inputs).
+
+For small window sizes, the naive elementwise approach is faster on the GPU but
+a histogram-based approach becomes much faster at large window sizes. The
+default setting of `backend=auto` uses performance measurements done on an
+RTX A6000 to automatically choose the best approach for a given window size.
+This choice can be overridden by explicitly choosing `backend='elementwise'` or
+`backend='histogram'`.
+
+Note that the elementwise approach is more general and supports features such
+as arbitrary footprint shape and an image `mask` which are not available for
+the histogram-based approach.
+
+Note that behavior at image boundaries differs from scikit-image. The GPU
+implementations in cuCIM extend the boundary by reflection and maintain a
+constant footprint size. The scikit-image implementation does NOT extend the
+image and instead crops the footprint to remain within the image edges.
 
 Histogram fast path
 -------------------
 
+At larger window sizes, when the input is uint8 (or converted to
+uint8 via `cast_to_uint8=True`) a histogram-based approach is often beneficial.
+
 A uint8 2D sliding-histogram backend is selected automatically for these rank
-filters when all compatibility conditions below are met:
+filters when all compatibility conditions below are met and the rectangular
+footprint is at least the operation-specific benchmark-derived cutoff size:
 
 * ``percentile``
 * ``median`` (implemented as ``percentile(p0=0.5)``)
@@ -42,23 +67,21 @@ filters when all compatibility conditions below are met:
 * ``autolevel_percentile`` with a non-full percentile range
 * ``enhance_contrast_percentile`` with a non-full percentile range
 * ``subtract_mean_percentile`` with a non-full percentile range
+* ``equalize``
+* ``geometric_mean``
+* ``mean_bilateral``
 * ``modal``
 * ``majority`` (alias for ``modal``)
-* ``entropy``
-
-Additional histogram implementations are available for profiling with
-``backend='histogram'`` but are not selected automatically until benchmark
-cutoffs are established:
-
-* ``equalize``
-* ``mean_bilateral``
 * ``pop_bilateral``
 * ``sum_bilateral``
+* ``entropy``
 
 The compatibility conditions are:
 
-* input image is 2D and has dtype ``uint8``
-* output is either omitted or has dtype ``uint8``
+* input image is 2D and either has dtype ``uint8`` or is converted to
+  ``uint8`` before backend selection with ``cast_to_uint8=True``
+* output is either omitted or has dtype ``uint8``; ``entropy`` also supports
+  floating-point output
 * footprint is a fully populated rectangular footprint with odd side lengths
   greater than 1, for example ``cupy.ones((15, 15), dtype=bool)``
 * no ``mask`` is provided
@@ -73,9 +96,9 @@ The compatibility conditions are:
   use smaller cropped neighborhoods near edges and corners.
 * footprint half-width does not exceed the corresponding image extent
 
-Any unsupported case falls back to the generic GPU implementation. For
-compatible calls, automatic dispatch also requires a benchmark-derived minimum
-footprint area. Smaller footprints stay on the generic per-output-pixel
+Any unsupported case falls back to the generic elementwise GPU implementation.
+For compatible calls, automatic dispatch also requires a benchmark-derived
+minimum footprint area. Smaller footprints stay on the generic per-output-pixel
 backend unless ``backend='histogram'`` is requested explicitly.
 
 The automatic selection can be overridden with the keyword-only ``backend``
