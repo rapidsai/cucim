@@ -17,6 +17,7 @@
 #define OP_BILATERAL_MEAN 11
 #define OP_BILATERAL_POP 12
 #define OP_BILATERAL_SUM 13
+#define OP_MODAL 14
 
 #ifndef HIST_COUNTER_T
 #define HIST_COUNTER_T int
@@ -112,6 +113,23 @@ __device__ RANK_HIST_OUTPUT_T histogramRankValue(int* hist,
     __syncthreads();
   }
   return static_cast<RANK_HIST_OUTPUT_T>(dtmp[0]);
+#elif RANK_HIST_OP == OP_MODAL
+  tmp0[tx] = hist[tx];
+  tmp1[tx] = tx;
+  __syncthreads();
+  for (int stride = 128; stride > 0; stride >>= 1) {
+    if (tx < stride) {
+      int other_count = tmp0[tx + stride];
+      int other_value = tmp1[tx + stride];
+      if (other_count > tmp0[tx] ||
+          (other_count == tmp0[tx] && other_value < tmp1[tx])) {
+        tmp0[tx] = other_count;
+        tmp1[tx] = other_value;
+      }
+    }
+    __syncthreads();
+  }
+  return static_cast<RANK_HIST_OUTPUT_T>(tmp1[0]);
 #else
   op = RANK_HIST_OP;
   histogramPrefixScan256(hist, scan);

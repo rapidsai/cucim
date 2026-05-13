@@ -122,6 +122,9 @@ def _rank_filter_brute_force_uint8(
                 out[row, col] = _cast_uint8(
                     round(np.exp(log_sum / len(values)) - 1.0)
                 )
+            elif operation in {"modal", "majority"}:
+                counts = np.bincount(values, minlength=256)
+                out[row, col] = int(np.argmax(counts))
             elif operation == "noise_filter":
                 if center in values:
                     out[row, col] = 0
@@ -404,6 +407,8 @@ def test_histogram_rank_entropy_uint8_rectangular():
     [
         ("equalize", {}),
         ("mean_bilateral", dict(s0=6, s1=9)),
+        ("modal", {}),
+        ("majority", {}),
         ("pop_bilateral", dict(s0=6, s1=9)),
         ("sum_bilateral", dict(s0=6, s1=9)),
     ],
@@ -645,6 +650,8 @@ def test_rank_histogram_auto_cutoffs():
     assert _should_use_rank_histogram("entropy", (25, 25))
     assert not _should_use_rank_histogram("bilateral_mean", (31, 31))
     assert _should_use_rank_histogram("bilateral_mean", (33, 33))
+    assert not _should_use_rank_histogram("modal", (13, 13))
+    assert _should_use_rank_histogram("modal", (15, 15))
     assert not _should_use_rank_histogram("equalize", (71, 71))
     assert _should_use_rank_histogram("equalize", (91, 91))
 
