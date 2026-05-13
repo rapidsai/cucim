@@ -1033,8 +1033,8 @@ def _skimage_rank_filter(
     if backend == "histogram" and not can_use_histogram:
         raise ValueError(
             "backend='histogram' requires a supported uint8 2D rank "
-            "operation, uint8 output, no mask, zero shifts, reflect mode, "
-            "and an all-ones odd rectangular footprint"
+            "operation, compatible output, no mask, zero shifts, reflect "
+            "mode, and an all-ones odd rectangular footprint"
         )
 
     if backend == "histogram" or (
