@@ -99,20 +99,16 @@ def _can_use_rank_histogram(
         return False
     if image.ndim != 2 or image.dtype != cp.uint8:
         return False
-    if output is not None and output.dtype != cp.uint8:
-        if (
-            operation != "entropy"
-            or output.dtype.kind != "f"
-            or output.dtype.name not in _HISTOGRAM_OUTPUT_TYPES
-        ):
-            return False
-    if operation == "entropy" and output is None:
-        return False
     if (
-        operation != "entropy"
+        operation == "entropy"
         and output is not None
-        and output.dtype != cp.uint8
+        and (
+            output.dtype.kind != "f"
+            or output.dtype.name not in _HISTOGRAM_OUTPUT_TYPES
+        )
     ):
+        return False
+    if operation == "entropy" and output is None:
         return False
     if mask is not None or has_weights:
         return False
@@ -227,7 +223,11 @@ def _rank_histogram(
     padded = pad(image, npad, **pad_kwargs)
 
     out_dtype = output.dtype if output is not None else padded.dtype
-    out = cp.empty(padded.shape, dtype=out_dtype)
+    if cp.dtype(out_dtype).name not in _HISTOGRAM_OUTPUT_TYPES:
+        kernel_out_dtype = cp.uint8
+    else:
+        kernel_out_dtype = out_dtype
+    out = cp.empty(padded.shape, dtype=kernel_out_dtype)
     rows, cols = padded.shape
     out_rows = image.shape[0]
     counter_dtype = _get_histogram_counter_dtype(footprint_shape)

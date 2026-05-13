@@ -496,6 +496,29 @@ def test_rank_backend_histogram_rejects_incompatible_input():
         rank.percentile(image, footprint, p0=0.5, backend="histogram")
 
 
+@pytest.mark.parametrize("out_dtype", [cp.float32, cp.uint16])
+def test_rank_backend_histogram_supports_non_uint8_output(out_dtype):
+    image = cp.asarray(np.arange(32 * 32, dtype=np.uint8).reshape(32, 32))
+    footprint = cp.ones((17, 17), dtype=bool)
+    out = cp.empty(image.shape, dtype=out_dtype)
+
+    result = rank.percentile(
+        image, footprint, p0=0.5, out=out, backend="histogram"
+    )
+    expected = rank.percentile(
+        image, footprint, p0=0.5, backend="histogram"
+    ).astype(out_dtype)
+
+    assert result is out
+    assert result.dtype == out_dtype
+    cp.testing.assert_array_equal(result, expected)
+
+    auto = rank.percentile(
+        image, footprint, p0=0.5, out=cp.empty_like(out), backend="auto"
+    )
+    cp.testing.assert_array_equal(auto, expected)
+
+
 def test_rank_backend_invalid_value_raises():
     image = cp.asarray(np.arange(25, dtype=np.uint8).reshape(5, 5))
     footprint = cp.ones((3, 3), dtype=bool)

@@ -47,6 +47,34 @@ implementations in cuCIM extend the boundary by reflection and maintain a
 constant footprint size. The scikit-image implementation does NOT extend the
 image and instead crops the footprint to remain within the image edges.
 
+cuCIM vs scikit-image
+---------------------
+
+The table below summarizes known behavioral differences. Results are otherwise
+expected to match.
+
+| Feature                  | scikit-image (CPU)                                              | cuCIM (GPU) |
+|--------------------------|-----------------------------------------------------------------|-------------|
+| Dimensions               | 2D (3D for generic filters)                                     | N-dimensional |
+| Supported dtypes         | uint8, uint16 only                                              | Any numeric dtype |
+| Output dtype             | Same as input                                                   | Same as input (preserves wider types) |
+| Algorithm                | Sliding-window histogram                                        | Streaming reductions, sorted neighborhoods, or uint8 2D histogram fast path |
+| Boundary handling        | Excludes out-of-bounds pixels (population decreases at borders) | SciPy ``ndimage``-style reflected boundary extension, with repeated edge values (always fully populated) |
+
+When the dtype is not uint8 (and `cast_to_uint8=False`) the elementwise kernels will be used. These kernels have the
+following behavioral differences. The cuCIM behavior is generally preferable in these cases.
+
+| Feature                  | scikit-image (CPU)                                              | cuCIM (GPU) |
+|--------------------------|-----------------------------------------------------------------|-------------|
+| ``mean``                 | Spurious zero outputs in low-variance neighborhoods             | No zero artifacts (sorted-array always has values) |
+| ``subtract_mean``        | Spurious zero outputs in low-variance neighborhoods             | No zero artifacts (sorted-array always has values) |
+| ``sum``                  | Input forced to uint8; overflows                    | Preserves input dtype; use int32 to avoid overflow |
+| ``sum_bilateral``        | Input forced to uint8; overflows                    | Preserves input dtype; use int32 to avoid overflow |
+| ``sum_percentile``       | Input forced to uint8; overflows                    | Preserves input dtype; use int32 to avoid overflow |
+
+See the ``_percentile``, ``_generic``, and ``_bilateral`` modules for
+additional per-function notes on dtype handling and behavioral differences.
+
 Histogram fast path
 -------------------
 
@@ -80,8 +108,6 @@ The compatibility conditions are:
 
 * input image is 2D and either has dtype ``uint8`` or is converted to
   ``uint8`` before backend selection with ``cast_to_uint8=True``
-* output is either omitted or has dtype ``uint8``; ``entropy`` also supports
-  floating-point output
 * footprint is a fully populated rectangular footprint with odd side lengths
   greater than 1, for example ``cupy.ones((15, 15), dtype=bool)``
 * no ``mask`` is provided
@@ -109,29 +135,6 @@ parameter accepted by rank filters:
   ``ValueError`` if the call is not compatible.
 * ``backend='elementwise'`` forces the generic per-output-pixel backend.
 
-cuCIM vs scikit-image
----------------------
-
-The table below summarizes known behavioral differences. Results are otherwise
-expected to match.
-
-| Feature                  | scikit-image (CPU)                                              | cuCIM (GPU) |
-|--------------------------|-----------------------------------------------------------------|-------------|
-| Dimensions               | 2D (3D for generic filters)                                     | N-dimensional |
-| Supported dtypes         | uint8, uint16 only                                              | Any numeric dtype |
-| Output dtype             | Same as input                                                   | Same as input (preserves wider types) |
-| Algorithm                | Sliding-window histogram                                        | Streaming reductions, sorted neighborhoods, or uint8 2D histogram fast path |
-| Boundary handling        | Excludes out-of-bounds pixels (population decreases at borders) | SciPy ``ndimage``-style reflected boundary extension, with repeated edge values (always fully populated) |
-| ``mean``                 | Spurious zero outputs in low-variance neighborhoods             | No zero artifacts (sorted-array always has values) |
-| ``subtract_mean``        | Spurious zero outputs in low-variance neighborhoods             | No zero artifacts (sorted-array always has values) |
-| ``sum``                  | Input forced to uint8; overflows                    | Preserves input dtype; use int32 to avoid overflow |
-| ``sum_bilateral``        | Input forced to uint8; overflows                    | Preserves input dtype; use int32 to avoid overflow |
-| ``sum_percentile``       | Input forced to uint8; overflows                    | Preserves input dtype; use int32 to avoid overflow |
-| ``threshold``            | Outputs 0 or 1 (comparison to local mean)                       | Same (0 or 1) |
-| ``threshold_percentile`` | Outputs 0 or ``dtype_max`` (comparison to p0-th percentile)     | Same (0 or ``dtype_max``) |
-
-See the ``_percentile``, ``_generic``, and ``_bilateral`` modules for
-additional per-function notes on dtype handling and behavioral differences.
 """  # noqa: E501
 
 from ._generic import (
