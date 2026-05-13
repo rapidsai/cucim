@@ -42,6 +42,8 @@ filters when all compatibility conditions below are met:
 * ``autolevel_percentile`` with a non-full percentile range
 * ``enhance_contrast_percentile`` with a non-full percentile range
 * ``subtract_mean_percentile`` with a non-full percentile range
+* ``modal``
+* ``majority`` (alias for ``modal``)
 * ``entropy``
 
 Additional histogram implementations are available for profiling with
