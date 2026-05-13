@@ -7,7 +7,7 @@ channels:
 dependencies:
 - c-compiler
 - click
-- cmake>=3.30.4
+- cmake>=4.0
 - cuda-cudart-dev
 - cuda-nvcc
 - cuda-version=13.2
