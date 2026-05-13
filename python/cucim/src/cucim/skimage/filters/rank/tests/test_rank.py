@@ -406,6 +406,7 @@ def test_histogram_rank_entropy_uint8_rectangular():
     "filter_name, kwargs",
     [
         ("equalize", {}),
+        ("geometric_mean", {}),
         ("mean_bilateral", dict(s0=6, s1=9)),
         ("modal", {}),
         ("majority", {}),
@@ -650,6 +651,8 @@ def test_rank_histogram_auto_cutoffs():
     assert _should_use_rank_histogram("entropy", (25, 25))
     assert not _should_use_rank_histogram("bilateral_mean", (31, 31))
     assert _should_use_rank_histogram("bilateral_mean", (33, 33))
+    assert not _should_use_rank_histogram("geometric_mean", (13, 13))
+    assert _should_use_rank_histogram("geometric_mean", (15, 15))
     assert not _should_use_rank_histogram("modal", (13, 13))
     assert _should_use_rank_histogram("modal", (15, 15))
     assert not _should_use_rank_histogram("equalize", (71, 71))

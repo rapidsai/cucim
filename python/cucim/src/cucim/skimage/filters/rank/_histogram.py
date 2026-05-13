@@ -24,6 +24,7 @@ _HISTOGRAM_OPS = {
     "bilateral_pop": 12,
     "bilateral_sum": 13,
     "modal": 14,
+    "geometric_mean": 15,
 }
 
 _HISTOGRAM_MIN_FOOTPRINT_AREA = {
@@ -41,6 +42,7 @@ _HISTOGRAM_MIN_FOOTPRINT_AREA = {
     "bilateral_pop": 29 * 29,
     "bilateral_mean": 33 * 33,
     "modal": 15 * 15,
+    "geometric_mean": 15 * 15,
     "equalize": 91 * 91,
 }
 
