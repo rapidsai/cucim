@@ -113,7 +113,7 @@ def _apply_generic(
     p0=0,
     p1=1,
     backend="auto",
-    cast_to_uint8=False,
+    cast_to_uint8=True,
     out_dtype=None,
 ):
     """Apply a generic rank filter (defaults to full range p0=0, p1=1)."""
@@ -166,7 +166,7 @@ def autolevel(
     *,
     shifts=None,
     backend="auto",
-    cast_to_uint8=False,
+    cast_to_uint8=True,
 ):
     return _apply_generic(
         "autolevel",
@@ -202,7 +202,7 @@ def gradient(
     *,
     shifts=None,
     backend="auto",
-    cast_to_uint8=False,
+    cast_to_uint8=True,
 ):
     return _apply_generic(
         "gradient",
@@ -236,7 +236,7 @@ def mean(
     *,
     shifts=None,
     backend="auto",
-    cast_to_uint8=False,
+    cast_to_uint8=True,
 ):
     return _apply_generic(
         "mean",
@@ -277,7 +277,7 @@ def subtract_mean(
     *,
     shifts=None,
     backend="auto",
-    cast_to_uint8=False,
+    cast_to_uint8=True,
 ):
     result = _apply_generic(
         "subtract_mean",
@@ -341,7 +341,7 @@ def enhance_contrast(
     *,
     shifts=None,
     backend="auto",
-    cast_to_uint8=False,
+    cast_to_uint8=True,
 ):
     return _apply_generic(
         "enhance_contrast",
@@ -378,7 +378,7 @@ def pop(
     *,
     shifts=None,
     backend="auto",
-    cast_to_uint8=False,
+    cast_to_uint8=True,
 ):
     return _apply_generic(
         "pop",
@@ -423,7 +423,7 @@ def sum(
     *,
     shifts=None,
     backend="auto",
-    cast_to_uint8=False,
+    cast_to_uint8=True,
 ):
     return _apply_generic(
         "sum",
@@ -468,7 +468,7 @@ def minimum(
     *,
     shifts=None,
     backend="auto",
-    cast_to_uint8=False,
+    cast_to_uint8=True,
 ):
     return _apply_generic(
         "minimum",
@@ -506,7 +506,7 @@ def maximum(
     *,
     shifts=None,
     backend="auto",
-    cast_to_uint8=False,
+    cast_to_uint8=True,
 ):
     return _apply_generic(
         "maximum",
@@ -544,7 +544,7 @@ def median(
     *,
     shifts=None,
     backend="auto",
-    cast_to_uint8=False,
+    cast_to_uint8=True,
 ):
     if footprint is None and isinstance(image, cp.ndarray):
         footprint = cp.ones((3,) * image.ndim, dtype=bool)
@@ -587,7 +587,7 @@ def threshold(
     *,
     shifts=None,
     backend="auto",
-    cast_to_uint8=False,
+    cast_to_uint8=True,
 ):
     return _apply_generic(
         "threshold_mean",
@@ -635,7 +635,7 @@ def equalize(
     *,
     shifts=None,
     backend="auto",
-    cast_to_uint8=False,
+    cast_to_uint8=True,
 ):
     return _apply_generic(
         "equalize",
@@ -677,7 +677,7 @@ def geometric_mean(
     *,
     shifts=None,
     backend="auto",
-    cast_to_uint8=False,
+    cast_to_uint8=True,
 ):
     return _apply_generic(
         "geometric_mean",
@@ -717,7 +717,7 @@ def noise_filter(
     *,
     shifts=None,
     backend="auto",
-    cast_to_uint8=False,
+    cast_to_uint8=True,
 ):
     return _apply_generic(
         "noise_filter",
@@ -755,7 +755,7 @@ def modal(
     *,
     shifts=None,
     backend="auto",
-    cast_to_uint8=False,
+    cast_to_uint8=True,
 ):
     return _apply_generic(
         "modal",
@@ -788,7 +788,7 @@ def majority(
     *,
     shifts=None,
     backend="auto",
-    cast_to_uint8=False,
+    cast_to_uint8=True,
 ):
     return _apply_generic(
         "modal",
@@ -824,7 +824,7 @@ def entropy(
     *,
     shifts=None,
     backend="auto",
-    cast_to_uint8=False,
+    cast_to_uint8=True,
 ):
     out_dtype = None
     if (

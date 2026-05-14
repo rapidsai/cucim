@@ -56,13 +56,16 @@ expected to match.
 | Feature                  | scikit-image (CPU)                                              | cuCIM (GPU) |
 |--------------------------|-----------------------------------------------------------------|-------------|
 | Dimensions               | 2D (3D for generic filters)                                     | N-dimensional |
-| Supported dtypes         | uint8, uint16 only                                              | Any numeric dtype |
-| Output dtype             | Same as input                                                   | Same as input (preserves wider types) |
+| Supported dtypes         | uint8, uint16 only                                              | Any numeric dtype; non-uint8 inputs are converted to uint8 by default |
+| Output dtype             | Same as input                                                   | Same as processed input by default; preserves wider types when ``cast_to_uint8=False`` |
 | Algorithm                | Sliding-window histogram                                        | Streaming reductions, sorted neighborhoods, or uint8 2D histogram fast path |
 | Boundary handling        | Excludes out-of-bounds pixels (population decreases at borders) | SciPy ``ndimage``-style reflected boundary extension, with repeated edge values (always fully populated) |
 
-When the dtype is not uint8 (and `cast_to_uint8=False`) the elementwise kernels will be used. These kernels have the
-following behavioral differences. The cuCIM behavior is generally preferable in these cases.
+By default, non-uint8 inputs are converted to uint8 with
+``img_as_ubyte`` before rank filtering. Set ``cast_to_uint8=False`` to opt
+out of this conversion and use the elementwise kernels on the native dtype.
+These kernels have the following behavioral differences. The cuCIM behavior is
+generally preferable in these cases.
 
 | Feature                  | scikit-image (CPU)                                              | cuCIM (GPU) |
 |--------------------------|-----------------------------------------------------------------|-------------|
@@ -79,7 +82,8 @@ Histogram fast path
 -------------------
 
 At larger window sizes, when the input is uint8 (or converted to
-uint8 via `cast_to_uint8=True`) a histogram-based approach is often beneficial.
+uint8 via `cast_to_uint8`, which is enabled by default) a histogram-based
+approach is often beneficial.
 
 A uint8 2D sliding-histogram backend is selected automatically for these rank
 filters when all compatibility conditions below are met and the rectangular
@@ -107,7 +111,7 @@ footprint is at least the operation-specific benchmark-derived cutoff size:
 The compatibility conditions are:
 
 * input image is 2D and either has dtype ``uint8`` or is converted to
-  ``uint8`` before backend selection with ``cast_to_uint8=True``
+  ``uint8`` before backend selection with ``cast_to_uint8=True``, the default
 * footprint is a fully populated rectangular footprint with odd side lengths
   greater than 1, for example ``cupy.ones((15, 15), dtype=bool)``
 * no ``mask`` is provided
