@@ -80,7 +80,7 @@ def mean_bilateral(
     *,
     shifts=None,
     backend="auto",
-    cast_to_uint8=False,
+    cast_to_uint8=True,
 ):
     return _apply(
         "bilateral_mean",
@@ -129,7 +129,7 @@ def pop_bilateral(
     *,
     shifts=None,
     backend="auto",
-    cast_to_uint8=False,
+    cast_to_uint8=True,
 ):
     return _apply(
         "bilateral_pop",
@@ -171,7 +171,7 @@ def sum_bilateral(
     *,
     shifts=None,
     backend="auto",
-    cast_to_uint8=False,
+    cast_to_uint8=True,
 ):
     return _apply(
         "bilateral_sum",
