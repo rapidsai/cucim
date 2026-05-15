@@ -18,7 +18,6 @@ from skimage.filters import (
     threshold_isodata as _threshold_isodata_cpu,
     threshold_minimum as _threshold_minimum_cpu,
     threshold_multiotsu as _threshold_multiotsu_cpu,
-    threshold_yen as _threshold_yen_cpu,
 )
 
 import cucim.skimage._vendored.ndimage as ndi
@@ -451,6 +450,93 @@ def _threshold_otsu_gpu(counts, bin_centers):
     return threshold
 
 
+@cache
+def _get_threshold_yen_kernel(bin_centers_dtype):
+    ctype = _DTYPE_TO_CTYPE[np.dtype(bin_centers_dtype).char]
+    code = f"""
+    #include <math_constants.h>
+
+    extern "C" __global__ void threshold_yen(
+            const float* counts,
+            const {ctype}* bin_centers,
+            const long long n_bins,
+            double* threshold)
+    {{
+        if (blockIdx.x != 0 || threadIdx.x != 0) {{
+            return;
+        }}
+
+        if (n_bins <= 0) {{
+            threshold[0] = 0.0;
+            return;
+        }}
+        if (n_bins == 1) {{
+            threshold[0] = static_cast<double>(bin_centers[0]);
+            return;
+        }}
+
+        double total_count = 0.0;
+        double total_squared_count = 0.0;
+        for (long long i = 0; i < n_bins; ++i) {{
+            const double count = static_cast<double>(counts[i]);
+            total_count += count;
+            total_squared_count += count * count;
+        }}
+
+        double cum_count = 0.0;
+        double cum_squared_count = 0.0;
+        double best_score = -CUDART_INF;
+        long long best_idx = 0;
+
+        for (long long i = 0; i < n_bins - 1; ++i) {{
+            const double count = static_cast<double>(counts[i]);
+            cum_count += count;
+            cum_squared_count += count * count;
+
+            const double suffix_count = total_count - cum_count;
+            const double suffix_squared_count =
+                    total_squared_count - cum_squared_count;
+            if (cum_count <= 0.0 || suffix_count <= 0.0 ||
+                    cum_squared_count <= 0.0 ||
+                    suffix_squared_count <= 0.0) {{
+                continue;
+            }}
+
+            // Equivalent to scikit-image's Yen criterion, with histogram
+            // normalization factors cancelled out:
+            // log((P1_sq * P2_sq)^-1 * (P1 * (1 - P1))^2).
+            const double score =
+                    2.0 * log(cum_count * suffix_count) -
+                    log(cum_squared_count * suffix_squared_count);
+
+            // Match np.argmax tie-breaking by keeping the first maximum.
+            if (score > best_score) {{
+                best_score = score;
+                best_idx = i;
+            }}
+        }}
+
+        threshold[0] = static_cast<double>(bin_centers[best_idx]);
+    }}
+    """
+    return cp.RawKernel(code, "threshold_yen")
+
+
+def _threshold_yen_gpu(counts, bin_centers):
+    counts = cp.ascontiguousarray(counts, dtype=cp.float32)
+    bin_centers = cp.ascontiguousarray(bin_centers)
+    if bin_centers.dtype.char not in _DTYPE_TO_CTYPE:
+        bin_centers = bin_centers.astype(cp.float64)
+    threshold = cp.empty((), dtype=cp.float64)
+    kernel = _get_threshold_yen_kernel(bin_centers.dtype)
+    kernel(
+        (1,),
+        (1,),
+        (counts, bin_centers, np.int64(counts.size), threshold),
+    )
+    return threshold
+
+
 def threshold_otsu(image=None, nbins=256, *, hist=None):
     """Return threshold value based on Otsu's method.
 
@@ -559,13 +645,7 @@ def threshold_yen(image=None, nbins=256, *, hist=None):
     if bin_centers.size == 1:
         return bin_centers[0]
 
-    # Calculate probability mass function
-    # (small size counts -> faster on the host)
-    counts = cp.asnumpy(counts)
-    bin_centers = cp.asnumpy(bin_centers)
-    return cp.asarray(
-        _threshold_yen_cpu(nbins=nbins, hist=(counts, bin_centers))
-    )
+    return _threshold_yen_gpu(counts, bin_centers)
 
 
 def threshold_isodata(image=None, nbins=256, return_all=False, *, hist=None):
