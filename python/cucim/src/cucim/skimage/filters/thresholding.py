@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2009 Zachary Pincus
 # SPDX-FileCopyrightText: 2009 Almar Klein
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-2-Clause AND BSD-3-Clause
 
 import inspect
@@ -10,6 +10,7 @@ import itertools
 import math
 from collections import OrderedDict
 from collections.abc import Iterable
+from functools import cache
 
 import cupy as cp
 import numpy as np
@@ -17,7 +18,6 @@ from skimage.filters import (
     threshold_isodata as _threshold_isodata_cpu,
     threshold_minimum as _threshold_minimum_cpu,
     threshold_multiotsu as _threshold_multiotsu_cpu,
-    threshold_otsu as _threshold_otsu_cpu,
     threshold_yen as _threshold_yen_cpu,
 )
 
@@ -352,6 +352,105 @@ def _validate_image_histogram(image, hist, nbins=None, normalize=False):
     return counts.astype(cp.float32, copy=False), bin_centers
 
 
+_DTYPE_TO_CTYPE = {
+    "?": "bool",
+    "b": "signed char",
+    "B": "unsigned char",
+    "h": "short",
+    "H": "unsigned short",
+    "i": "int",
+    "I": "unsigned int",
+    "l": "long",
+    "L": "unsigned long",
+    "q": "long long",
+    "Q": "unsigned long long",
+    "f": "float",
+    "d": "double",
+}
+
+
+@cache
+def _get_threshold_otsu_kernel(bin_centers_dtype):
+    ctype = _DTYPE_TO_CTYPE[np.dtype(bin_centers_dtype).char]
+    code = f"""
+    extern "C" __global__ void threshold_otsu(
+            const float* counts,
+            const {ctype}* bin_centers,
+            const long long n_bins,
+            double* threshold)
+    {{
+        if (blockIdx.x != 0 || threadIdx.x != 0) {{
+            return;
+        }}
+
+        if (n_bins <= 0) {{
+            threshold[0] = 0.0;
+            return;
+        }}
+
+        double total_count = 0.0;
+        double total_weighted = 0.0;
+        for (long long i = 0; i < n_bins; ++i) {{
+            const double count = static_cast<double>(counts[i]);
+            const double center = static_cast<double>(bin_centers[i]);
+            total_count += count;
+            total_weighted += count * center;
+        }}
+
+        if (n_bins == 1 || total_count <= 0.0) {{
+            threshold[0] = static_cast<double>(bin_centers[0]);
+            return;
+        }}
+
+        double weight1 = 0.0;
+        double weighted1 = 0.0;
+        double best_variance = -1.0;
+        long long best_idx = 0;
+
+        for (long long i = 0; i < n_bins - 1; ++i) {{
+            const double count = static_cast<double>(counts[i]);
+            const double center = static_cast<double>(bin_centers[i]);
+            weight1 += count;
+            weighted1 += count * center;
+
+            const double weight2 = total_count - weight1;
+            if (weight1 <= 0.0 || weight2 <= 0.0) {{
+                continue;
+            }}
+
+            const double mean1 = weighted1 / weight1;
+            const double mean2 = (total_weighted - weighted1) / weight2;
+            const double diff = mean1 - mean2;
+            const double variance = weight1 * weight2 * diff * diff;
+
+            // Match np.argmax tie-breaking by keeping the first maximum.
+            if (variance > best_variance) {{
+                best_variance = variance;
+                best_idx = i;
+            }}
+        }}
+
+        threshold[0] = static_cast<double>(bin_centers[best_idx]);
+    }}
+    """
+    return cp.RawKernel(code, "threshold_otsu")
+
+
+def _threshold_otsu_gpu(counts, bin_centers):
+    counts = cp.ascontiguousarray(counts, dtype=cp.float32)
+    bin_centers = cp.ascontiguousarray(bin_centers)
+    if bin_centers.dtype.char not in _DTYPE_TO_CTYPE:
+        bin_centers = bin_centers.astype(cp.float64)
+    threshold = cp.empty((), dtype=cp.float64)
+    kernel = _get_threshold_otsu_kernel(bin_centers.dtype)
+    kernel(
+        (1,),
+        (1,),
+        (counts, bin_centers, np.int64(counts.size), threshold),
+    )
+    return threshold
+
+
 def threshold_otsu(image=None, nbins=256, *, hist=None):
     """Return threshold value based on Otsu's method.
 
@@ -408,12 +507,7 @@ def threshold_otsu(image=None, nbins=256, *, hist=None):
             return first_pixel
 
     counts, bin_centers = _validate_image_histogram(image, hist, nbins)
-    # small size counts, bin_centers -> faster on the host
-    counts = cp.asnumpy(counts)
-    bin_centers = cp.asnumpy(bin_centers)
-    return cp.asarray(
-        _threshold_otsu_cpu(nbins=nbins, hist=(counts, bin_centers))
-    )
+    return _threshold_otsu_gpu(counts, bin_centers)
 
 
 def threshold_yen(image=None, nbins=256, *, hist=None):
