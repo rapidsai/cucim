@@ -105,6 +105,49 @@ nb::list assemble_contours(SegmentsArray segments, SegmentKeysArray segment_keys
     return output;
 }
 
+// Return contours in packed form: (points, offsets).
+//
+//     points:  float64 array, shape (total_points, 2)
+//     offsets: int64 array, shape (n_contours + 1,)
+//
+// Contour i is points[offsets[i]:offsets[i + 1]]. This avoids allocating one
+// NumPy array per contour and gives callers a single contiguous coordinate
+// array that can be transferred to another backend in one operation.
+nb::tuple assemble_contours_packed(SegmentsArray segments, SegmentKeysArray segment_keys)
+{
+    check_segments(segments, segment_keys);
+    const cucim::skimage::ContourAssembly assembly =
+        cucim::skimage::build_contour_assembly(segments.data(), segment_keys.data(), segments.shape(0));
+    const auto [active_contours, total_points] = cucim::skimage::count_active_contours(assembly);
+
+    double* points_data;
+    long long* offsets_data;
+    auto points = new_array<double>({ total_points, 2 }, points_data);
+    auto offsets = new_array<long long>({ active_contours + 1 }, offsets_data);
+
+    std::size_t output_index = 0;
+    std::size_t point_index = 0;
+    offsets_data[0] = 0;
+    for (const cucim::skimage::Contour& contour : assembly.contours)
+    {
+        if (!contour.active)
+        {
+            continue;
+        }
+        for (std::size_t node_index = contour.head; node_index != cucim::skimage::invalid_index;
+             node_index = assembly.nodes[node_index].next)
+        {
+            const cucim::skimage::Point& point = assembly.nodes[node_index].point;
+            points_data[2 * point_index] = point.row;
+            points_data[2 * point_index + 1] = point.col;
+            ++point_index;
+        }
+        ++output_index;
+        offsets_data[output_index] = static_cast<long long>(point_index);
+    }
+    return nb::make_tuple(std::move(points), std::move(offsets));
+}
+
 } // namespace
 
 NB_MODULE(_cucim_skimage_cpp_ext, m)
@@ -112,6 +155,8 @@ NB_MODULE(_cucim_skimage_cpp_ext, m)
     m.doc() = "Optional compiled helpers for cucim.skimage.";
     m.def("assemble_contours", &assemble_contours, "segments"_a, "segment_keys"_a,
           "Assemble marching-squares line segments into contours.");
+    m.def("assemble_contours_packed", &assemble_contours_packed, "segments"_a, "segment_keys"_a,
+          "Assemble marching-squares line segments into a packed points/offsets representation.");
     def_segmented_sort<std::uint8_t>(m, "segmented_sort_keys_temp_storage_bytes_uint8", "segmented_sort_keys_uint8",
                                      "segmented_sort_keys_ranges_uint8");
     def_segmented_sort<std::uint16_t>(m, "segmented_sort_keys_temp_storage_bytes_uint16", "segmented_sort_keys_uint16",
