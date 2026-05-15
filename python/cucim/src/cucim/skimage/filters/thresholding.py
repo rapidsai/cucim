@@ -1050,6 +1050,111 @@ def threshold_mean(image):
     return cp.mean(image)
 
 
+@cache
+def _get_threshold_triangle_kernel(bin_centers_dtype):
+    ctype = _DTYPE_TO_CTYPE[np.dtype(bin_centers_dtype).char]
+    code = f"""
+    extern "C" __global__ void threshold_triangle(
+            const float* hist,
+            const {ctype}* bin_centers,
+            const long long n_bins,
+            double* threshold)
+    {{
+        if (blockIdx.x != 0 || threadIdx.x != 0) {{
+            return;
+        }}
+
+        if (n_bins <= 0) {{
+            threshold[0] = 0.0;
+            return;
+        }}
+
+        long long arg_peak_height = 0;
+        double peak_height = static_cast<double>(hist[0]);
+        long long arg_low_level = -1;
+        long long arg_high_level = -1;
+
+        for (long long i = 0; i < n_bins; ++i) {{
+            const double value = static_cast<double>(hist[i]);
+            if (value > peak_height) {{
+                peak_height = value;
+                arg_peak_height = i;
+            }}
+            if (value != 0.0) {{
+                if (arg_low_level < 0) {{
+                    arg_low_level = i;
+                }}
+                arg_high_level = i;
+            }}
+        }}
+
+        if (arg_low_level < 0) {{
+            threshold[0] = static_cast<double>(bin_centers[0]);
+            return;
+        }}
+        if (arg_low_level == arg_high_level) {{
+            threshold[0] = static_cast<double>(bin_centers[arg_low_level]);
+            return;
+        }}
+
+        const bool flip = (
+                arg_peak_height - arg_low_level <
+                arg_high_level - arg_peak_height);
+        if (flip) {{
+            arg_low_level = n_bins - arg_high_level - 1;
+            arg_peak_height = n_bins - arg_peak_height - 1;
+        }}
+
+        const long long width = arg_peak_height - arg_low_level;
+        if (width <= 0) {{
+            const long long arg_level = flip
+                    ? n_bins - arg_low_level - 1
+                    : arg_low_level;
+            threshold[0] = static_cast<double>(bin_centers[arg_level]);
+            return;
+        }}
+
+        double best_score = -1.0e300;
+        long long arg_level = arg_low_level;
+        for (long long x = 0; x < width; ++x) {{
+            const long long hist_idx = flip
+                    ? n_bins - (x + arg_low_level) - 1
+                    : x + arg_low_level;
+            const double y = static_cast<double>(hist[hist_idx]);
+            // The positive normalization factor used by scikit-image does not
+            // affect the argmax, so compare the unnormalized score.
+            const double score = peak_height * static_cast<double>(x) -
+                    static_cast<double>(width) * y;
+            if (score > best_score) {{
+                best_score = score;
+                arg_level = x + arg_low_level;
+            }}
+        }}
+
+        if (flip) {{
+            arg_level = n_bins - arg_level - 1;
+        }}
+        threshold[0] = static_cast<double>(bin_centers[arg_level]);
+    }}
+    """
+    return cp.RawKernel(code, "threshold_triangle")
+
+
+def _threshold_triangle_gpu(hist, bin_centers):
+    hist = cp.ascontiguousarray(hist, dtype=cp.float32)
+    bin_centers = cp.ascontiguousarray(bin_centers)
+    if bin_centers.dtype.char not in _DTYPE_TO_CTYPE:
+        bin_centers = bin_centers.astype(cp.float64)
+    threshold = cp.empty((), dtype=cp.float64)
+    kernel = _get_threshold_triangle_kernel(bin_centers.dtype)
+    kernel(
+        (1,),
+        (1,),
+        (hist, bin_centers, np.int64(hist.size), threshold),
+    )
+    return threshold
+
+
 def threshold_triangle(image, nbins=256):
     """Return threshold value based on the triangle algorithm.
 
@@ -1091,64 +1196,12 @@ def threshold_triangle(image, nbins=256):
     if hist.size == 1:
         # integer-valued image with constant intensity will have just 1 bin
         return image.ravel()[0]
+    if image.dtype.kind == "f":
+        first_pixel = image.ravel()[0]
+        if cp.all(image == first_pixel):  # device synchronization!
+            return first_pixel
 
-    # In most cases, nbins is small so it is better to process hist on the CPU
-    if nbins > 100000:
-        xp = cp
-    else:
-        xp = np
-        hist = cp.asnumpy(hist)
-
-    nbins = len(hist)
-    # Find peak, lowest and highest gray levels.
-    arg_peak_height = xp.argmax(hist)
-    arg_low_level, arg_high_level = xp.flatnonzero(hist)[[0, -1]]
-    if arg_low_level == arg_high_level:
-        # Image has constant intensity.
-        return image.ravel()[0]
-    peak_height = hist[arg_peak_height]
-
-    # Flip is True if left tail is shorter.
-    flip = arg_peak_height - arg_low_level < arg_high_level - arg_peak_height
-    if flip:
-        hist = hist[::-1]
-        arg_low_level = nbins - arg_high_level - 1
-        arg_peak_height = nbins - arg_peak_height - 1
-
-    # If flip == True, arg_high_level becomes incorrect
-    # but we don't need it anymore.
-    del arg_high_level
-
-    # Set up the coordinate system.
-    width = arg_peak_height - arg_low_level
-    x1 = xp.arange(width)
-    y1 = hist[x1 + arg_low_level]
-
-    # Normalize.
-    norm = xp.sqrt(peak_height**2 + width**2)
-    try:
-        peak_height /= norm
-        width /= norm
-    except TypeError:
-        # TODO: CuPy bug?
-        # workaround for:
-        #    TypeError: output (typecode 'd') could not be coerced to provided
-        #    output parameter (typecode 'l') according to the casting rule
-        #    "same_kind"
-        peak_height = peak_height / norm
-        width = width / norm
-
-    # Maximize the length.
-    # The ImageJ implementation includes an additional constant when calculating
-    # the length, but here we omit it as it does not affect the location of the
-    # minimum.
-    length = peak_height * x1 - width * y1
-    arg_level = xp.argmax(length) + arg_low_level
-
-    if flip:
-        arg_level = nbins - arg_level - 1
-
-    return bin_centers[arg_level]
+    return _threshold_triangle_gpu(hist, bin_centers)
 
 
 def _mean_std(image, w):
