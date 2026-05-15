@@ -21,6 +21,12 @@ x, y = np.mgrid[-1:1:5j, -1:1:5j]
 r = np.sqrt(x**2 + y**2)
 
 
+def _unpack_contours(points, offsets):
+    return [
+        points[start:stop] for start, stop in zip(offsets[:-1], offsets[1:])
+    ]
+
+
 def test_binary():
     ref = [
         [6.0, 1.5],
@@ -315,3 +321,40 @@ def test_cpp_assemble_contours_matches_python():
     assert len(result) == len(expected)
     for result_contour, expected_contour in zip(result, expected):
         assert_array_equal(result_contour, expected_contour)
+
+
+@pytest.mark.skipif(
+    _skimage_cpp is None,
+    reason="optional cucim.skimage C++ extension is not available",
+)
+@pytest.mark.parametrize("positive_orientation", ["low", "high"])
+def test_find_contours_return_packed_matches_list(positive_orientation):
+    image = (np.sin(8 * x) + np.cos(5 * y)).astype(np.float32)
+
+    expected = find_contours(
+        cp.asarray(image),
+        0.0,
+        positive_orientation=positive_orientation,
+    )
+    points, offsets = find_contours(
+        cp.asarray(image),
+        0.0,
+        positive_orientation=positive_orientation,
+        return_packed=True,
+    )
+    result = _unpack_contours(points, offsets)
+
+    assert points.flags.c_contiguous
+    assert points.dtype == np.float64
+    assert offsets.dtype == np.int64
+    assert offsets[0] == 0
+    assert offsets[-1] == len(points)
+    assert len(result) == len(expected)
+    for result_contour, expected_contour in zip(result, expected):
+        assert_array_equal(result_contour, expected_contour)
+
+
+def test_find_contours_return_packed_requires_cpp(monkeypatch):
+    monkeypatch.setattr(_fc, "_skimage_cpp", None)
+    with pytest.raises(RuntimeError, match="requires the optional"):
+        find_contours(cp.asarray(r), 0.5, return_packed=True)

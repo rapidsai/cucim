@@ -302,6 +302,7 @@ def find_contours(
     positive_orientation="low",
     *,
     mask=None,
+    return_packed=False,
 ):
     """Find iso-valued contours in a 2D CuPy array.
 
@@ -330,12 +331,23 @@ def find_contours(
         A boolean mask, True where we want to draw contours.
         Note that NaN values are always excluded from the considered region
         (``mask`` is set to ``False`` wherever ``array`` is ``NaN``).
+    return_packed : bool, optional
+        If False (default), return the scikit-image-compatible list of NumPy
+        contour arrays. If True, return a tuple ``(points, offsets)`` where
+        ``points`` is one contiguous NumPy array of shape ``(K, 2)`` and
+        ``offsets`` has shape ``(n_contours + 1,)``. Contour ``i`` is
+        ``points[offsets[i]:offsets[i + 1]]``. Packed output requires the
+        optional C++ contour assembler. If contour coordinates are needed on
+        the GPU, packed output is recommended so that ``cupy.asarray(points)``
+        and ``cupy.asarray(offsets)`` can transfer the data with two bulk
+        copies instead of many small contour-array copies.
 
     Returns
     -------
-    contours : list of (ndarray of shape (K, 2))
-        Each contour is a ndarray of ``(row, column)`` coordinates along the
-        contour.
+    contours : list of (ndarray of shape (K, 2)) or tuple
+        If ``return_packed`` is False, each contour is a ndarray of
+        ``(row, column)`` coordinates along the contour. If ``return_packed``
+        is True, returns ``(points, offsets)`` as described above.
 
     See Also
     --------
@@ -420,9 +432,15 @@ def find_contours(
     )
 
     segments = _get_contour_segments(image, level, vertex_connect_high, mask)
-    contours = _assemble_contours(*segments)
+    if return_packed:
+        contours = _assemble_contours_packed(*segments)
+    else:
+        contours = _assemble_contours(*segments)
     if positive_orientation_high:
-        contours = [contour[::-1] for contour in contours]
+        if return_packed:
+            contours = _reverse_packed_contours(*contours)
+        else:
+            contours = [contour[::-1] for contour in contours]
     return contours
 
 
@@ -527,6 +545,24 @@ def _assemble_contours(segments, segment_keys=None):
         segment_keys = cp.asnumpy(segment_keys)
         return _skimage_cpp.assemble_contours(segments, segment_keys)
     return _assemble_contours_python(segments)
+
+
+def _assemble_contours_packed(segments, segment_keys=None):
+    if _skimage_cpp is None or segment_keys is None:
+        raise RuntimeError(
+            "return_packed=True requires the optional "
+            "cucim.skimage C++ contour assembler"
+        )
+    segments = cp.asnumpy(segments)
+    segment_keys = cp.asnumpy(segment_keys)
+    return _skimage_cpp.assemble_contours_packed(segments, segment_keys)
+
+
+def _reverse_packed_contours(points, offsets):
+    reversed_points = np.empty_like(points)
+    for start, stop in zip(offsets[:-1], offsets[1:]):
+        reversed_points[start:stop] = points[start:stop][::-1]
+    return reversed_points, offsets
 
 
 def _assemble_contours_python(segments):
