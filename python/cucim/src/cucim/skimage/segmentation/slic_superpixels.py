@@ -69,7 +69,10 @@ def box_kernel_config(im_shape, block=None):
     """determine launch parameters"""
     if len(im_shape) == 2:
         if block is None:
-            block = (1, 1)  # (8, 32)
+            # The 2D CUDA kernel maps threadIdx.x -> image y and
+            # threadIdx.y -> image x. Keep threadIdx.y wide so each warp
+            # touches consecutive x locations in memory.
+            block = (1, 64)
         grid = (
             (im_shape[0] + block[0] - 1) // block[0],
             (im_shape[1] + block[1] - 1) // block[1],
