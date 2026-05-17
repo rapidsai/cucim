@@ -214,6 +214,27 @@ def test_mask_slic_start_label_zero():
     assert int(seg[mask].min()) >= 0
 
 
+def test_mask_slic_force_kmeans2():
+    img = cp.zeros((32, 33, 3), dtype=cp.float32)
+    img[:16, :, 0] = 1
+    img[16:, :, 1] = 1
+    mask = cp.zeros(img.shape[:2], dtype=cp.bool_)
+    mask[4:28, 5:30] = True
+
+    seg = slic(
+        img,
+        n_segments=8,
+        mask=mask,
+        enforce_connectivity=False,
+        force_kmeans2=True,
+    )
+
+    assert_equal(seg.shape, img.shape[:2])
+    assert cp.all(seg[~mask] == 0).get()
+    assert int(seg[mask].min()) >= 1
+    assert int(cp.unique(seg[mask]).size) > 1
+
+
 def test_mask_slic_3d():
     img = cp.zeros((12, 13, 14), dtype=cp.float32)
     img[:6, :, :] = 0.25

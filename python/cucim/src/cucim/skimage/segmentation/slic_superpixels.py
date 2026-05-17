@@ -16,6 +16,12 @@ from cucim.skimage.color import rgb2lab
 from cucim.skimage.filters import gaussian
 from cucim.skimage.util import img_as_float, regular_grid
 
+try:
+    from cuvs.cluster.kmeans import KMeansParams, fit as cuvs_kmeans_fit
+except Exception:
+    KMeansParams = None
+    cuvs_kmeans_fit = None
+
 slic_available = True
 try:
     from skimage.segmentation.slic_superpixels import (
@@ -25,8 +31,20 @@ except ImportError:
     slic_available = False
 
 
-def _get_mask_centroids(mask, n_centroids):
-    """Find regularly spaced centroids on a mask."""
+def _estimate_centroid_steps(centroids):
+    centroids_host = (
+        cp.asnumpy(centroids)
+        if isinstance(centroids, cp.ndarray)
+        else centroids
+    )
+    dist = squareform(pdist(centroids_host))
+    np.fill_diagonal(dist, np.inf)
+    closest_pts = dist.argmin(-1)
+    steps = abs(centroids_host - centroids_host[closest_pts, :]).mean(0)
+    return tuple(float(s) for s in steps)
+
+
+def _get_mask_centroids_kmeans2(mask, n_centroids):
     coord = np.array(np.nonzero(mask), dtype=float).T
     rng = random.RandomState(123)
 
@@ -43,13 +61,61 @@ def _get_mask_centroids(mask, n_centroids):
     else:
         idx_dense = Ellipsis
     centroids, _ = kmeans2(coord[idx_dense], coord[idx], iter=5)
+    return cp.asarray(centroids), _estimate_centroid_steps(centroids)
 
-    dist = squareform(pdist(centroids))
-    np.fill_diagonal(dist, np.inf)
-    closest_pts = dist.argmin(-1)
-    steps = abs(centroids - centroids[closest_pts, :]).mean(0)
 
-    return cp.asarray(centroids), tuple(float(s) for s in steps)
+def _get_mask_centroids_cuvs(mask, n_centroids, rng_on_host=True):
+    coord = cp.stack(cp.nonzero(mask), axis=1).astype(cp.float32, copy=False)
+    n_coord = int(coord.shape[0])
+    n_init = min(n_centroids, n_coord)
+    n_dense = int((10**mask.ndim) * n_centroids)
+
+    if rng_on_host:
+        rng = random.RandomState(123)
+        idx_full = np.arange(n_coord, dtype=np.int64)
+        idx = np.sort(rng.choice(idx_full, n_init, replace=False))
+        idx = cp.asarray(idx)
+        if n_coord > n_dense:
+            idx_dense = np.sort(rng.choice(idx_full, n_dense, replace=False))
+            coord_dense = coord[cp.asarray(idx_dense)]
+        else:
+            coord_dense = coord
+    else:
+        rng = cp.random.RandomState(123)
+        idx = cp.sort(rng.choice(n_coord, n_init, replace=False))
+        if n_coord > n_dense:
+            idx_dense = cp.sort(rng.choice(n_coord, n_dense, replace=False))
+            coord_dense = coord[idx_dense]
+        else:
+            coord_dense = coord
+
+    centroids = coord[idx].copy()
+    params = KMeansParams(
+        n_clusters=n_init, init_method="Array", max_iter=5, n_init=1
+    )
+    centroids, _, _ = cuvs_kmeans_fit(params, coord_dense, centroids=centroids)
+    centroids = cp.asarray(centroids)
+    return centroids, _estimate_centroid_steps(centroids)
+
+
+def _get_mask_centroids(
+    mask, n_centroids, force_kmeans2=False, rng_on_host=True
+):
+    """Find regularly spaced centroids on a mask."""
+    if (
+        not force_kmeans2
+        and cuvs_kmeans_fit is not None
+        and isinstance(mask, cp.ndarray)
+    ):
+        try:
+            return _get_mask_centroids_cuvs(
+                mask, n_centroids, rng_on_host=rng_on_host
+            )
+        except Exception:
+            pass
+    if isinstance(mask, cp.ndarray):
+        mask = cp.asnumpy(mask)
+    return _get_mask_centroids_kmeans2(mask, n_centroids)
 
 
 def _get_grid_centroids(spatial_shape, n_centroids):
@@ -337,6 +403,7 @@ def slic(
     channel_axis=-1,
     check_finite_and_constant=False,
     maximization_algorithm="atomic",
+    force_kmeans2=False,
 ):
     """Segments image using k-means clustering in Color-(x,y,z) space.
     Parameters
@@ -379,7 +446,10 @@ def slic(
         This option defaults to ``True`` when ``multichannel=True`` *and*
         ``image.shape[-1] == 3``.
     enforce_connectivity : bool, optional
-        Whether the generated segments are connected or not
+        Whether the generated segments are connected or not. When ``True``,
+        cuCIM currently copies labels to host and uses scikit-image's
+        host-side connectivity enforcement implementation before copying the
+        result back to the device.
     min_size_factor : float, optional
         Proportion of the minimum segment size to be removed with respect
         to the supposed segment size ```depth*width*height/n_segments```
@@ -394,7 +464,8 @@ def slic(
         If provided, superpixels are computed only where ``mask`` is ``True``.
         Pixels outside the mask are assigned ``start_label - 1``. The initial
         maskSLIC centroids are currently computed on the host using SciPy's
-        ``kmeans2`` implementation, then copied to the device.
+        ``kmeans2`` implementation after copying the mask to host, then copied
+        to the device.
     channel_axis : int or None, optional
         If None, the image is assumed to be a grayscale (single channel) image.
         Otherwise, this parameter indicates which axis of the array corresponds
@@ -415,6 +486,11 @@ def slic(
         Floating point atomic accumulation order can make the exact
         segmentation non-deterministic across repeated runs. Use ``"scan"``
         when exact deterministic results are required.
+    force_kmeans2 : bool, optional
+        When ``mask`` is provided, force the initial maskSLIC centroid
+        placement to use SciPy's host-side ``kmeans2`` implementation. By
+        default, cuCIM uses cuVS k-means when it can be imported and falls back
+        to SciPy otherwise.
 
     Returns
     -------
@@ -444,6 +520,15 @@ def slic(
       ensures sensible smoothing for anisotropic images.
 
     * The image is rescaled to be in [0, 1] prior to processing.
+
+    * When ``mask`` is provided, initial centroid placement uses cuVS k-means
+      when available. If cuVS cannot be imported, or if ``force_kmeans2=True``,
+      it falls back to SciPy's host-side ``kmeans2`` implementation, requiring
+      a mask transfer to host and CPU work on each call.
+
+    * When ``enforce_connectivity=True``, connectivity cleanup is currently
+      host-side and requires transferring the label image from device to host
+      and the cleaned labels back to device.
 
     * Images of shape (M, N, 3) are interpreted as 2D RGB images by default. To
       interpret them as 3D with the last dimension having length 3, use
@@ -580,7 +665,9 @@ def slic(
     # initialize cluster centroids for desired number of segments
     update_centroids = False
     if use_mask:
-        centroids, steps = _get_mask_centroids(cp.asnumpy(mask), n_segments)
+        centroids, steps = _get_mask_centroids(
+            mask, n_segments, force_kmeans2=force_kmeans2
+        )
         sp_grid = ()
         update_centroids = True
     else:
