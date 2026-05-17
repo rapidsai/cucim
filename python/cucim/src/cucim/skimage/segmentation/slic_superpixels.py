@@ -158,7 +158,6 @@ def _slic(
                 ss,
             ),
         )
-        cp.cuda.runtime.deviceSynchronize()
 
         gpu_slic_maximization(
             center_grid,
@@ -172,7 +171,6 @@ def _slic(
                 n_centers,
             ),
         )
-        cp.cuda.runtime.deviceSynchronize()
 
     # TODO (grelee): may want to keep the final centroids for use
     # in GPU-based connectivity enforcement.
