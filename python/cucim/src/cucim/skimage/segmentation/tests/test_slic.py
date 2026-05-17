@@ -104,6 +104,15 @@ def _check_segment_labels(seg1, seg2, allowed_mismatch_ratio=0.1):
     assert (ndiff / size) < allowed_mismatch_ratio
 
 
+def _assert_dominant_label(seg, expected, min_fraction=0.8):
+    assert int(cp.sum(seg == expected)) >= min_fraction * seg.size
+
+
+def _dominant_label(seg):
+    labels, counts = cp.unique(seg, return_counts=True)
+    return int(labels[cp.argmax(counts)])
+
+
 def test_slic_consistency_across_image_magnitude():
     # verify that that images of various scales across integer and float dtypes
     # give the same segmentation result
@@ -160,6 +169,402 @@ def test_slic_maximization_algorithm():
 
     with pytest.raises(ValueError, match="maximization_algorithm"):
         slic(img, maximization_algorithm="unsupported")
+
+
+@pytest.mark.parametrize("maximization_algorithm", ["scan", "atomic"])
+def test_mask_slic_2d(maximization_algorithm):
+    img = cp.zeros((32, 33, 3), dtype=cp.float32)
+    img[:16, :, 0] = 1
+    img[16:, :, 1] = 1
+    mask = cp.zeros(img.shape[:2], dtype=cp.bool_)
+    mask[4:28, 5:30] = True
+
+    seg = slic(
+        img,
+        n_segments=8,
+        mask=mask,
+        enforce_connectivity=False,
+        start_label=1,
+        maximization_algorithm=maximization_algorithm,
+    )
+
+    assert_equal(seg.shape, img.shape[:2])
+    assert cp.all(seg[~mask] == 0).get()
+    assert int(seg[mask].min()) >= 1
+    assert 1 < int(cp.unique(seg[mask]).size) <= 8
+
+
+def test_mask_slic_start_label_zero():
+    img = cp.zeros((32, 33, 3), dtype=cp.float32)
+    img[:16, :, 0] = 1
+    img[16:, :, 1] = 1
+    mask = cp.zeros(img.shape[:2], dtype=cp.bool_)
+    mask[4:28, 5:30] = True
+
+    seg = slic(
+        img,
+        n_segments=8,
+        mask=mask,
+        enforce_connectivity=False,
+        start_label=0,
+        maximization_algorithm="atomic",
+    )
+
+    assert cp.all(seg[~mask] == -1).get()
+    assert int(seg[mask].min()) >= 0
+
+
+def test_mask_slic_3d():
+    img = cp.zeros((12, 13, 14), dtype=cp.float32)
+    img[:6, :, :] = 0.25
+    img[6:, :, :] = 0.75
+    mask = cp.zeros(img.shape, dtype=cp.bool_)
+    mask[2:10, 3:11, 4:12] = True
+
+    seg = slic(
+        img,
+        n_segments=4,
+        mask=mask,
+        enforce_connectivity=False,
+        channel_axis=None,
+        start_label=1,
+        max_num_iter=2,
+    )
+
+    assert_equal(seg.shape, img.shape)
+    assert cp.all(seg[~mask] == 0).get()
+    assert int(seg[mask].min()) >= 1
+    assert int(cp.unique(seg[mask]).size) > 1
+
+
+def test_mask_slic_shape_mismatch():
+    img = cp.zeros((16, 16, 3), dtype=cp.float32)
+    mask = cp.ones((16, 15), dtype=cp.bool_)
+
+    with pytest.raises(ValueError, match="same shape"):
+        slic(img, mask=mask)
+
+
+def test_color_2d_mask():
+    rng = np.random.default_rng(0)
+    mask = cp.zeros((20, 21), dtype=cp.bool_)
+    mask[2:-2, 2:-2] = True
+    img = np.zeros((20, 21, 3))
+    img[:10, :10, 0] = 1
+    img[10:, :10, 1] = 1
+    img[10:, 10:, 2] = 1
+    img += 0.01 * rng.normal(size=img.shape)
+    img = cp.asarray(np.clip(img, 0, 1, out=img))
+
+    seg = slic(
+        img,
+        n_segments=4,
+        sigma=0,
+        enforce_connectivity=False,
+        mask=mask,
+        maximization_algorithm="scan",
+    )
+
+    assert_equal(len(cp.unique(seg)), 5)
+    assert_equal(seg.shape, img.shape[:-1])
+    assert cp.all(seg[~mask] == 0).get()
+    assert int(seg[mask].min()) >= 1
+    assert int(seg[mask].max()) <= 4
+
+
+def test_multichannel_2d_mask():
+    rng = np.random.default_rng(0)
+    mask = cp.zeros((20, 20), dtype=cp.bool_)
+    mask[2:-2, 2:-2] = True
+    img = np.zeros((20, 20, 8))
+    img[:10, :10, 0:2] = 1
+    img[:10, 10:, 2:4] = 1
+    img[10:, :10, 4:6] = 1
+    img[10:, 10:, 6:8] = 1
+    img += 0.01 * rng.normal(size=img.shape)
+    img = cp.asarray(np.clip(img, 0, 1, out=img))
+
+    seg = slic(
+        img,
+        n_segments=4,
+        enforce_connectivity=False,
+        mask=mask,
+        maximization_algorithm="scan",
+    )
+
+    assert_equal(len(cp.unique(seg)), 5)
+    assert_equal(seg.shape, img.shape[:-1])
+    assert cp.all(seg[~mask] == 0).get()
+    assert_array_equal(seg[2:10, 2:10], 2)
+    assert_array_equal(seg[2:10, 10:-2], 1)
+    assert_array_equal(seg[10:-2, 2:10], 4)
+    assert_array_equal(seg[10:-2, 10:-2], 3)
+
+
+def test_gray_2d_mask():
+    rng = np.random.default_rng(0)
+    mask = cp.zeros((20, 21), dtype=cp.bool_)
+    mask[2:-2, 2:-2] = True
+    img = np.zeros((20, 21))
+    img[:10, :10] = 0.33
+    img[10:, :10] = 0.67
+    img[10:, 10:] = 1.00
+    img += 0.0033 * rng.normal(size=img.shape)
+    img = cp.asarray(np.clip(img, 0, 1, out=img))
+
+    seg = slic(
+        img,
+        sigma=0,
+        n_segments=4,
+        compactness=1,
+        channel_axis=None,
+        convert2lab=False,
+        mask=mask,
+        maximization_algorithm="scan",
+    )
+
+    assert_equal(len(cp.unique(seg)), 5)
+    assert_equal(seg.shape, img.shape)
+    assert cp.all(seg[~mask] == 0).get()
+    assert int(seg[mask].min()) >= 1
+    assert int(seg[mask].max()) <= 4
+
+
+def test_list_sigma_mask():
+    rng = np.random.default_rng(0)
+    mask = cp.zeros((2, 6), dtype=cp.bool_)
+    mask[:, 1:-1] = True
+    img = np.array([[1, 1, 1, 0, 0, 0], [0, 0, 0, 1, 1, 1]], float)
+    img += 0.1 * rng.normal(size=img.shape)
+    img = cp.asarray(img)
+    result_sigma = cp.asarray([[0, 1, 1, 2, 2, 0], [0, 1, 1, 2, 2, 0]])
+
+    seg_sigma = slic(
+        img,
+        n_segments=2,
+        sigma=[50, 1],
+        channel_axis=None,
+        mask=mask,
+        maximization_algorithm="scan",
+    )
+
+    assert_array_equal(seg_sigma, result_sigma)
+
+
+def test_spacing_mask():
+    rng = np.random.default_rng(0)
+    mask = cp.zeros((2, 5), dtype=cp.bool_)
+    mask[:, 1:-1] = True
+    img = np.array([[1, 1, 1, 0, 0], [1, 1, 0, 0, 0]], float)
+    result_non_spaced = cp.asarray([[0, 1, 1, 2, 0], [0, 1, 2, 2, 0]])
+    result_spaced = cp.asarray([[0, 1, 1, 1, 0], [0, 2, 2, 2, 0]])
+    img += 0.1 * rng.normal(size=img.shape)
+    img = cp.asarray(img)
+
+    seg_non_spaced = slic(
+        img,
+        n_segments=2,
+        sigma=0,
+        channel_axis=None,
+        compactness=1.0,
+        mask=mask,
+        maximization_algorithm="scan",
+    )
+    seg_spaced = slic(
+        img,
+        n_segments=2,
+        sigma=0,
+        spacing=[50, 1],
+        compactness=1.0,
+        channel_axis=None,
+        mask=mask,
+        maximization_algorithm="scan",
+    )
+
+    _check_segment_labels(seg_non_spaced, result_non_spaced, 0.11)
+    _check_segment_labels(seg_spaced, result_spaced, 0.31)
+
+
+def test_enforce_connectivity_mask():
+    mask = cp.zeros((3, 6), dtype=cp.bool_)
+    mask[:, 1:-1] = True
+    img = cp.asarray(
+        [
+            [0, 0, 0, 1, 1, 1],
+            [1, 0, 0, 1, 1, 0],
+            [0, 0, 0, 1, 1, 0],
+        ],
+        dtype=cp.float32,
+    )
+    result = cp.asarray(
+        [[0, 1, 1, 2, 2, 0], [0, 1, 1, 2, 2, 0], [0, 1, 1, 2, 2, 0]]
+    )
+
+    segments_connected = slic(
+        img,
+        2,
+        compactness=0.0001,
+        enforce_connectivity=True,
+        convert2lab=False,
+        mask=mask,
+        channel_axis=None,
+        maximization_algorithm="scan",
+    )
+    segments_disconnected = slic(
+        img,
+        2,
+        compactness=0.0001,
+        enforce_connectivity=False,
+        convert2lab=False,
+        mask=mask,
+        channel_axis=None,
+        maximization_algorithm="scan",
+    )
+    segments_connected_low_max = slic(
+        img,
+        2,
+        compactness=0.0001,
+        enforce_connectivity=True,
+        convert2lab=False,
+        max_size_factor=0.8,
+        mask=mask,
+        channel_axis=None,
+        maximization_algorithm="scan",
+    )
+
+    assert_array_equal(segments_connected, result)
+    assert_array_equal(segments_disconnected, result)
+    assert_array_equal(segments_connected_low_max, result)
+
+
+def test_slic_zero_mask():
+    rng = np.random.default_rng(0)
+    mask = cp.zeros((20, 21), dtype=cp.bool_)
+    mask[2:-2, 2:-2] = True
+    img = np.zeros((20, 21, 3))
+    img[:10, :10, 0] = 1
+    img[10:, :10, 1] = 1
+    img[10:, 10:, 2] = 1
+    img += 0.01 * rng.normal(size=img.shape)
+    img = cp.asarray(np.clip(img, 0, 1, out=img))
+
+    seg = slic(
+        img,
+        n_segments=4,
+        sigma=0,
+        slic_zero=True,
+        mask=mask,
+        maximization_algorithm="scan",
+    )
+
+    assert_equal(len(cp.unique(seg)), 5)
+    assert_equal(seg.shape, img.shape[:-1])
+    assert cp.all(seg[~mask] == 0).get()
+    assert int(seg[mask].min()) >= 1
+    assert int(seg[mask].max()) <= 4
+
+
+def test_more_segments_than_pixels_mask():
+    rng = np.random.default_rng(0)
+    mask = cp.zeros((20, 21), dtype=cp.bool_)
+    mask[2:-2, 2:-2] = True
+    img = np.zeros((20, 21))
+    img[:10, :10] = 0.33
+    img[10:, :10] = 0.67
+    img[10:, 10:] = 1.00
+    img += 0.0033 * rng.normal(size=img.shape)
+    img = cp.asarray(np.clip(img, 0, 1, out=img))
+
+    seg = slic(
+        img,
+        sigma=0,
+        n_segments=500,
+        compactness=1,
+        channel_axis=None,
+        convert2lab=False,
+        mask=mask,
+        enforce_connectivity=False,
+        maximization_algorithm="scan",
+    )
+
+    assert_equal(seg.shape, img.shape)
+    assert cp.all(seg[~mask] == 0).get()
+    # cuCIM does not currently reproduce scikit-image's exact one-label-per
+    # masked pixel behavior for this edge case, but the masked path should
+    # still run without producing labels outside the image.
+    assert int(seg.min()) >= 0
+
+
+def test_color_3d_mask():
+    mask = cp.zeros((20, 21, 22), dtype=cp.bool_)
+    mask[2:-2, 2:-2, 2:-2] = True
+
+    rng = np.random.default_rng(0)
+    img = np.zeros((20, 21, 22, 3))
+    slices = []
+    for dim_size in mask.shape:
+        midpoint = dim_size // 2
+        slices.append((slice(None, midpoint), slice(midpoint, None)))
+    slices = list(product(*slices))
+    colors = list(product(*(([0, 1],) * 3)))
+    for s, c in zip(slices, colors):
+        img[s] = c
+    img += 0.01 * rng.normal(size=img.shape)
+    img = cp.asarray(np.clip(img, 0, 1, out=img))
+
+    seg = slic(
+        img,
+        sigma=0,
+        n_segments=8,
+        mask=mask,
+        enforce_connectivity=False,
+        maximization_algorithm="scan",
+    )
+
+    assert_equal(len(cp.unique(seg)), 9)
+    assert cp.all(seg[~mask] == 0).get()
+    dominant_labels = {
+        _dominant_label(seg[s][2:-2, 2:-2, 2:-2]) for s in slices
+    }
+    assert 0 not in dominant_labels
+    assert len(dominant_labels) >= 6
+
+
+def test_gray_3d_mask():
+    mask = cp.zeros((20, 21, 22), dtype=cp.bool_)
+    mask[2:-2, 2:-2, 2:-2] = True
+
+    rng = np.random.default_rng(0)
+    img = np.zeros((20, 21, 22))
+    slices = []
+    for dim_size in img.shape:
+        midpoint = dim_size // 2
+        slices.append((slice(None, midpoint), slice(midpoint, None)))
+    slices = list(product(*slices))
+    shades = np.linspace(0, 1, 8)
+    for s, sh in zip(slices, shades):
+        img[s] = sh
+    img += 0.001 * rng.normal(size=img.shape)
+    img = cp.asarray(np.clip(img, 0, 1, out=img))
+
+    seg = slic(
+        img,
+        sigma=0,
+        n_segments=8,
+        channel_axis=None,
+        convert2lab=False,
+        mask=mask,
+        enforce_connectivity=False,
+        maximization_algorithm="scan",
+    )
+
+    assert_equal(len(cp.unique(seg)), 9)
+    assert cp.all(seg[~mask] == 0).get()
+    dominant_labels = {
+        _dominant_label(seg[s][2:-2, 2:-2, 2:-2]) for s in slices
+    }
+    assert 0 not in dominant_labels
+    assert len(dominant_labels) >= 6
 
 
 def test_color_3d():

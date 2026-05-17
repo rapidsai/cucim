@@ -9,6 +9,8 @@ import cupy as cp
 import numpy as np
 import pandas as pd
 import skimage
+import skimage.color
+import skimage.morphology
 import skimage.segmentation
 from _image_bench import ImageBench
 
@@ -126,6 +128,57 @@ class RandomWalkerBench(ImageBench):
         markers_cpu = cp.asnumpy(markers)
         self.args_cpu = (data_cpu, markers_cpu)
         self.args_gpu = (data, markers)
+
+
+class SlicBench(ImageBench):
+    def __init__(self, *args, **kwargs):
+        fixed_kwargs = kwargs.get("fixed_kwargs", {})
+        self.use_ihc_mask = fixed_kwargs.get("mask", None) == "ihc"
+        super().__init__(*args, **kwargs)
+
+    def _tile_crop(self, image, shape):
+        n_tile = [math.ceil(s / im_s) for s, im_s in zip(shape, image.shape)]
+        slices = tuple(slice(s) for s in shape)
+        return np.tile(image, n_tile)[slices]
+
+    def _make_masked_slic_data(self, dtype):
+        image = skimage.data.immunohistochemistry()
+        lum = skimage.color.rgb2gray(image)
+        mask = lum < 0.7
+        mask = skimage.morphology.remove_small_objects(mask, max_size=499)
+        mask = skimage.morphology.remove_small_holes(mask, max_size=499)
+        mask = skimage.morphology.opening(mask, skimage.morphology.disk(3))
+
+        spatial_shape = self.shape[:-1] if self.shape[-1] in (3, 4) else self.shape
+        if len(spatial_shape) != 2:
+            raise ValueError("masked SLIC benchmark data is currently 2D only")
+
+        image = self._tile_crop(image, (*spatial_shape, image.shape[-1]))
+        mask = self._tile_crop(mask, spatial_shape)
+        if self.shape[-1] == 4:
+            alpha = np.full((*spatial_shape, 1), 255, dtype=image.dtype)
+            image = np.concatenate([image, alpha], axis=-1)
+
+        if np.dtype(dtype).kind in "iu":
+            image = image.astype(dtype, copy=False)
+        else:
+            image = (image / 255.0).astype(dtype, copy=False)
+        return image, mask
+
+    def set_args(self, dtype):
+        if self.use_ihc_mask:
+            image, mask = self._make_masked_slic_data(dtype)
+            imaged = cp.asarray(image)
+            self.fixed_kwargs_cpu["mask"] = mask
+            self.fixed_kwargs_gpu["mask"] = cp.asarray(mask)
+        else:
+            super().set_args(dtype)
+            return
+
+        assert imaged.dtype == dtype
+        assert imaged.shape == self.shape
+        self.args_cpu = (image,)
+        self.args_gpu = (imaged,)
 
 
 def main(args):
@@ -291,6 +344,8 @@ def main(args):
         ]:
             if function_name == "morphological_geodesic_active_contour":
                 bench_class = MorphGeodesicBench
+            elif function_name == "slic":
+                bench_class = SlicBench
             else:
                 bench_class = ImageBench
 
@@ -299,27 +354,44 @@ def main(args):
 
             slic_zero_values = [False, True] if function_name == "slic" else [None]
             for slic_zero in slic_zero_values:
-                fixed_kwargs1 = fixed_kwargs.copy()
-                var_kwargs1 = var_kwargs.copy()
-                index_str = None
-                if slic_zero is not None:
-                    fixed_kwargs1["slic_zero"] = slic_zero
-                    index_str = f"slic_zero={slic_zero}"
-                    if slic_zero:
-                        var_kwargs1["compactness"] = [10.0]
-                B = bench_class(
-                    function_name=function_name,
-                    shape=shape,
-                    dtypes=dtypes,
-                    fixed_kwargs=fixed_kwargs1,
-                    var_kwargs=var_kwargs1,
-                    index_str=index_str,
-                    module_cpu=skimage.segmentation,
-                    module_gpu=cucim.skimage.segmentation,
-                    run_cpu=run_cpu,
+                mask_values = [None]
+                is_2d_color_slic = (
+                    function_name == "slic" and len(shape) == 3 and shape[-1] == 3
                 )
-                results = B.run_benchmark(duration=args.duration)
-                all_results = pd.concat([all_results, results["full"]])
+                if is_2d_color_slic:
+                    mask_values.append("ihc")
+
+                for mask_value in mask_values:
+                    fixed_kwargs1 = fixed_kwargs.copy()
+                    var_kwargs1 = var_kwargs.copy()
+                    index_parts = []
+                    if slic_zero is not None:
+                        fixed_kwargs1["slic_zero"] = slic_zero
+                        index_parts.append(f"slic_zero={slic_zero}")
+                        if slic_zero:
+                            var_kwargs1["compactness"] = [10.0]
+                    if mask_value is not None:
+                        fixed_kwargs1["mask"] = mask_value
+                        # Include connectivity enforcement for maskSLIC because
+                        # this matches the public example and exercises the
+                        # code path most sensitive to mask behavior.
+                        var_kwargs1["enforce_connectivity"] = [True]
+                        index_parts.append(f"mask={mask_value}")
+                    index_str = ", ".join(index_parts) if index_parts else None
+
+                    B = bench_class(
+                        function_name=function_name,
+                        shape=shape,
+                        dtypes=dtypes,
+                        fixed_kwargs=fixed_kwargs1,
+                        var_kwargs=var_kwargs1,
+                        index_str=index_str,
+                        module_cpu=skimage.segmentation,
+                        module_gpu=cucim.skimage.segmentation,
+                        run_cpu=run_cpu,
+                    )
+                    results = B.run_benchmark(duration=args.duration)
+                    all_results = pd.concat([all_results, results["full"]])
 
     fbase = os.path.splitext(cfile)[0]
     all_results.to_csv(cfile, index=True)

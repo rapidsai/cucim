@@ -107,6 +107,14 @@ CuPy prepends the following defines in slic_superpixels.py:
 #    define SLIC_ZERO 0
 #endif
 
+#ifndef USE_MASK
+#    define USE_MASK 0
+#endif
+
+#ifndef IGNORE_COLOR
+#    define IGNORE_COLOR 0
+#endif
+
 #define CENTER_STRIDE (N_PIXEL_FEATURES + 2)
 
 __forceinline__ __device__ INTERNAL_FLOAT_DTYPE slic_distance(const int2 idx,
@@ -121,18 +129,20 @@ __forceinline__ __device__ INTERNAL_FLOAT_DTYPE slic_distance(const int2 idx,
 {
     // Color diff
     INTERNAL_FLOAT_DTYPE color_diff = 0;
-#if N_PIXEL_FEATURES <= 8
-#    pragma unroll
-#else
-#    pragma unroll 8
-#endif
+#if !IGNORE_COLOR
+#    if N_PIXEL_FEATURES <= 8
+#        pragma unroll
+#    else
+#        pragma unroll 8
+#    endif
     for (int w = 0; w < N_PIXEL_FEATURES; w++)
     {
         INTERNAL_FLOAT_DTYPE d = static_cast<INTERNAL_FLOAT_DTYPE>(pixel[w] - centers[center_addr + w]);
         color_diff += d * d;
     }
-#if SLIC_ZERO
+#    if SLIC_ZERO
     color_diff /= static_cast<INTERNAL_FLOAT_DTYPE>(max_dist_color[linear_cidx]);
+#    endif
 #endif
 
     // Position diff
@@ -148,7 +158,7 @@ __forceinline__ __device__ INTERNAL_FLOAT_DTYPE slic_distance(const int2 idx,
 
 __global__ void expectation(const FLOAT_DTYPE* __restrict__ data,
                             const FLOAT_DTYPE* __restrict__ centers,
-                            unsigned int* __restrict__ labels,
+                            int* __restrict__ labels,
                             int im_shape_y,
                             int im_shape_x,
                             int sp_shape_y,
@@ -228,13 +238,107 @@ __global__ void expectation(const FLOAT_DTYPE* __restrict__ data,
     labels[linear_idx] = closest_linear_cidx + START_LABEL;
 }
 
+#if USE_MASK
+__global__ void expectation_mask(const FLOAT_DTYPE* __restrict__ data,
+                                 const FLOAT_DTYPE* __restrict__ centers,
+                                 int* __restrict__ labels,
+                                 int im_shape_y,
+                                 int im_shape_x,
+                                 int sp_shape_y,
+                                 int sp_shape_x,
+                                 const FLOAT_DTYPE* __restrict__ spacing,
+                                 const FLOAT_DTYPE* __restrict__ ss,
+                                 const FLOAT_DTYPE* __restrict__ max_dist_color,
+                                 const unsigned char* __restrict__ mask,
+                                 long n_clusters)
+{
+    int2 idx;
+    idx.y = threadIdx.x + (blockIdx.x * blockDim.x);
+    idx.x = threadIdx.y + (blockIdx.y * blockDim.y);
+
+    if (idx.x >= im_shape_x || idx.y >= im_shape_y)
+    {
+        return;
+    }
+
+    const long linear_idx = idx.y * im_shape_x + idx.x;
+    if (!mask[linear_idx])
+    {
+        labels[linear_idx] = START_LABEL - 1;
+        return;
+    }
+
+    const long pixel_addr = linear_idx * N_PIXEL_FEATURES;
+    FLOAT_DTYPE pixel[N_PIXEL_FEATURES];
+#    if N_PIXEL_FEATURES <= 8
+#        pragma unroll
+#    else
+#        pragma unroll 8
+#    endif
+    for (int w = 0; w < N_PIXEL_FEATURES; w++)
+    {
+        pixel[w] = data[pixel_addr + w];
+    }
+    INTERNAL_FLOAT_DTYPE inv_ss = static_cast<INTERNAL_FLOAT_DTYPE>(1) / static_cast<INTERNAL_FLOAT_DTYPE>(*ss);
+
+    INTERNAL_FLOAT_DTYPE minimum_distance = DIST_LIMIT;
+    long closest_linear_cidx = -1;
+    for (long linear_cidx = 0; linear_cidx < n_clusters; linear_cidx++)
+    {
+        long center_addr = linear_cidx * CENTER_STRIDE;
+        if (centers[center_addr] == CENTER_LIMIT)
+        {
+            continue;
+        }
+        const int center_y = (int)centers[center_addr + N_PIXEL_FEATURES];
+        const int center_x = (int)centers[center_addr + N_PIXEL_FEATURES + 1];
+        if (idx.y < center_y - 2 * sp_shape_y || idx.y > center_y + 2 * sp_shape_y ||
+            idx.x < center_x - 2 * sp_shape_x || idx.x > center_x + 2 * sp_shape_x)
+        {
+            continue;
+        }
+        INTERNAL_FLOAT_DTYPE dist =
+            slic_distance(idx, pixel, linear_cidx, center_addr, centers, spacing, inv_ss, max_dist_color);
+        if (dist < minimum_distance)
+        {
+            minimum_distance = dist;
+            closest_linear_cidx = linear_cidx;
+        }
+    }
+    if (closest_linear_cidx < 0)
+    {
+        for (long linear_cidx = 0; linear_cidx < n_clusters; linear_cidx++)
+        {
+            long center_addr = linear_cidx * CENTER_STRIDE;
+            if (centers[center_addr] == CENTER_LIMIT)
+            {
+                continue;
+            }
+            INTERNAL_FLOAT_DTYPE dist =
+                slic_distance(idx, pixel, linear_cidx, center_addr, centers, spacing, inv_ss, max_dist_color);
+            if (dist < minimum_distance)
+            {
+                minimum_distance = dist;
+                closest_linear_cidx = linear_cidx;
+            }
+        }
+    }
+    labels[linear_idx] = closest_linear_cidx + START_LABEL;
+}
+#endif
+
 __global__ void update_max_dist_color(const FLOAT_DTYPE* __restrict__ data,
-                                      const unsigned int* __restrict__ labels,
+                                      const int* __restrict__ labels,
                                       const FLOAT_DTYPE* __restrict__ centers,
                                       int im_shape_y,
                                       int im_shape_x,
                                       long n_clusters,
-                                      FLOAT_DTYPE* __restrict__ max_dist_color)
+                                      FLOAT_DTYPE* __restrict__ max_dist_color
+#if USE_MASK
+                                      ,
+                                      const unsigned char* __restrict__ mask
+#endif
+)
 {
     const unsigned long thread_idx = threadIdx.x + (blockIdx.x * blockDim.x);
     const unsigned long start_idx = thread_idx * PIXELS_PER_THREAD;
@@ -247,6 +351,12 @@ __global__ void update_max_dist_color(const FLOAT_DTYPE* __restrict__ data,
         {
             break;
         }
+#if USE_MASK
+        if (!mask[linear_idx])
+        {
+            continue;
+        }
+#endif
 
         const long linear_cidx = (long)labels[linear_idx] - START_LABEL;
         if (linear_cidx < 0 || linear_cidx >= n_clusters)
@@ -295,7 +405,7 @@ __global__ void reset_accumulators(SUM_DTYPE* __restrict__ center_sums,
 }
 
 __global__ void accumulate_centers(const FLOAT_DTYPE* __restrict__ data,
-                                   const unsigned int* __restrict__ labels,
+                                   const int* __restrict__ labels,
                                    const FLOAT_DTYPE* __restrict__ centers,
                                    int im_shape_y,
                                    int im_shape_x,
@@ -303,7 +413,12 @@ __global__ void accumulate_centers(const FLOAT_DTYPE* __restrict__ data,
                                    int sp_shape_x,
                                    long n_clusters,
                                    SUM_DTYPE* __restrict__ center_sums,
-                                   unsigned int* __restrict__ center_counts)
+                                   unsigned int* __restrict__ center_counts
+#if USE_MASK
+                                   ,
+                                   const unsigned char* __restrict__ mask
+#endif
+)
 {
     const unsigned long thread_idx = threadIdx.x + (blockIdx.x * blockDim.x);
     const unsigned long start_idx = thread_idx * PIXELS_PER_THREAD;
@@ -331,8 +446,14 @@ __global__ void accumulate_centers(const FLOAT_DTYPE* __restrict__ data,
         {
             break;
         }
+#if USE_MASK
+        if (!mask[linear_idx])
+        {
+            continue;
+        }
+#endif
 
-        const unsigned int label = labels[linear_idx];
+        const int label = labels[linear_idx];
         const long linear_cidx = (long)label - START_LABEL;
         if (linear_cidx < 0 || linear_cidx >= n_clusters)
         {
@@ -370,6 +491,7 @@ __global__ void accumulate_centers(const FLOAT_DTYPE* __restrict__ data,
         const int y = linear_idx / im_shape_x;
         const int x = linear_idx - (unsigned long)y * im_shape_x;
 
+#if !USE_MASK
         const long center_addr = linear_cidx * CENTER_STRIDE;
         const int center_y = (int)centers[center_addr + N_PIXEL_FEATURES];
         const int center_x = (int)centers[center_addr + N_PIXEL_FEATURES + 1];
@@ -382,6 +504,7 @@ __global__ void accumulate_centers(const FLOAT_DTYPE* __restrict__ data,
         {
             continue;
         }
+#endif
 
         local_sums[base + N_PIXEL_FEATURES] += y;
         local_sums[base + N_PIXEL_FEATURES + 1] += x;
@@ -429,13 +552,18 @@ __global__ void normalize_centers(FLOAT_DTYPE* __restrict__ centers,
 }
 
 __global__ void maximization(const FLOAT_DTYPE* __restrict__ data,
-                             const unsigned int* __restrict__ labels,
+                             const int* __restrict__ labels,
                              FLOAT_DTYPE* __restrict__ centers,
                              int im_shape_y,
                              int im_shape_x,
                              int sp_shape_y,
                              int sp_shape_x,
-                             long n_clusters)
+                             long n_clusters
+#if USE_MASK
+                             ,
+                             const unsigned char* __restrict__ mask
+#endif
+)
 {
     const long linear_cidx = threadIdx.x + (blockIdx.x * blockDim.x);
     const int c_stride = N_PIXEL_FEATURES + 2;
@@ -453,12 +581,22 @@ __global__ void maximization(const FLOAT_DTYPE* __restrict__ data,
     float ratio = 2.0f;
 
     int2 from;
+#if USE_MASK
+    from.y = 0;
+    from.x = 0;
+#else
     from.y = __max(cidx.y - sp_shape_y * ratio, 0);
     from.x = __max(cidx.x - sp_shape_x * ratio, 0);
+#endif
 
     int2 to;
+#if USE_MASK
+    to.y = im_shape_y;
+    to.x = im_shape_x;
+#else
     to.y = __min(cidx.y + sp_shape_y * ratio, im_shape_y);
     to.x = __min(cidx.x + sp_shape_x * ratio, im_shape_x);
+#endif
 
     FLOAT_DTYPE f[c_stride];
     for (int k = 0; k < c_stride; k++)
@@ -477,6 +615,14 @@ __global__ void maximization(const FLOAT_DTYPE* __restrict__ data,
         long pixel_addr = linear_idx * N_PIXEL_FEATURES;
         for (p.x = from.x; p.x < to.x; p.x++)
         {
+#if USE_MASK
+            if (!mask[linear_idx])
+            {
+                linear_idx += 1;
+                pixel_addr += N_PIXEL_FEATURES;
+                continue;
+            }
+#endif
             if (labels[linear_idx] == linear_cidx + START_LABEL)
             {
 #if N_PIXEL_FEATURES <= 8

@@ -8,6 +8,9 @@ from warnings import warn
 
 import cupy as cp
 import numpy as np
+from numpy import random
+from scipy.cluster.vq import kmeans2
+from scipy.spatial.distance import pdist, squareform
 
 from cucim.skimage.color import rgb2lab
 from cucim.skimage.filters import gaussian
@@ -20,6 +23,33 @@ try:
     )
 except ImportError:
     slic_available = False
+
+
+def _get_mask_centroids(mask, n_centroids):
+    """Find regularly spaced centroids on a mask."""
+    coord = np.array(np.nonzero(mask), dtype=float).T
+    rng = random.RandomState(123)
+
+    idx_full = np.arange(len(coord), dtype=int)
+    idx = np.sort(
+        rng.choice(idx_full, min(n_centroids, len(coord)), replace=False)
+    )
+
+    dense_factor = 10
+    ndim_spatial = mask.ndim
+    n_dense = int((dense_factor**ndim_spatial) * n_centroids)
+    if len(coord) > n_dense:
+        idx_dense = np.sort(rng.choice(idx_full, n_dense, replace=False))
+    else:
+        idx_dense = Ellipsis
+    centroids, _ = kmeans2(coord[idx_dense], coord[idx], iter=5)
+
+    dist = squareform(pdist(centroids))
+    np.fill_diagonal(dist, np.inf)
+    closest_pts = dist.argmin(-1)
+    steps = abs(centroids - centroids[closest_pts, :]).mean(0)
+
+    return cp.asarray(centroids), tuple(float(s) for s in steps)
 
 
 def _get_grid_centroids(spatial_shape, n_centroids):
@@ -105,12 +135,15 @@ def _slic(
     start_label,
     maximization_algorithm,
     slic_zero,
+    mask=None,
+    ignore_color=False,
 ):
     shape_spatial = image.shape[:-1]
 
-    spatial_weight = float(max(sp_shape))
-    n_centers = int(math.prod(sp_grid))
+    spatial_weight = float(max_step)
+    n_centers = centers_gpu.shape[0]
     n_features = image.shape[-1]
+    use_mask = mask is not None
     use_atomic_maximization = maximization_algorithm == "atomic"
     maximization_pixels_per_thread = int(
         os.environ.get("CUCIM_SLIC_MAXIMIZATION_PIXELS_PER_THREAD", "8")
@@ -136,6 +169,8 @@ def _slic(
 #define INTERNAL_FLOAT_DTYPE {"double" if image.dtype == np.float64 else "float"}
 #define PIXELS_PER_THREAD {maximization_pixels_per_thread}
 #define SLIC_ZERO {1 if slic_zero else 0}
+#define USE_MASK {1 if use_mask else 0}
+#define IGNORE_COLOR {1 if ignore_color else 0}
 """
     cuda_source = (
         '#include "cupy/atomics.cuh"\n'
@@ -146,7 +181,9 @@ def _slic(
     )
     module = cp.RawModule(code=cuda_source, options=("-std=c++11",))
     # gpu_slic_init = module.get_function("init_clusters")
-    gpu_slic_expectation = module.get_function("expectation")
+    gpu_slic_expectation = module.get_function(
+        "expectation_mask" if use_mask else "expectation"
+    )
     if slic_zero:
         gpu_slic_update_max_dist_color = module.get_function(
             "update_max_dist_color"
@@ -158,13 +195,16 @@ def _slic(
     else:
         gpu_slic_maximization = module.get_function("maximization")
 
-    labels_gpu = cp.zeros(shape_spatial, dtype=cp.uint32)
+    mask_label = start_label - 1
+    labels_gpu = cp.full(shape_spatial, mask_label, dtype=cp.int32)
     max_dist_color_gpu = cp.ones(n_centers, dtype=image.dtype)
     if use_atomic_maximization:
         center_sums_gpu = cp.empty(
             (n_centers, n_features + len(shape_spatial)), dtype=image.dtype
         )
         center_counts_gpu = cp.empty(n_centers, dtype=cp.uint32)
+    if use_mask:
+        mask = cp.ascontiguousarray(mask, dtype=cp.uint8)
 
     float_dtype = image.dtype
     spacing = cp.asarray(spacing, dtype=float_dtype)
@@ -181,20 +221,33 @@ def _slic(
         )
 
     for _ in range(max_num_iter):
-        gpu_slic_expectation(
-            image_grid,
-            image_block,
-            (
-                image,
-                centers_gpu,
-                labels_gpu,
-                *shape_spatial,
+        expectation_args = (
+            image,
+            centers_gpu,
+            labels_gpu,
+            *shape_spatial,
+        )
+        if use_mask:
+            expectation_args += (
+                *sp_shape,
+                spacing,
+                ss,
+                max_dist_color_gpu,
+                mask,
+                n_centers,
+            )
+        else:
+            expectation_args += (
                 *sp_shape,
                 *sp_grid,
                 spacing,
                 ss,
                 max_dist_color_gpu,
-            ),
+            )
+        gpu_slic_expectation(
+            image_grid,
+            image_block,
+            expectation_args,
         )
 
         if use_atomic_maximization:
@@ -216,6 +269,7 @@ def _slic(
                     n_centers,
                     center_sums_gpu,
                     center_counts_gpu,
+                    *((mask,) if use_mask else ()),
                 ),
             )
 
@@ -240,6 +294,7 @@ def _slic(
                     *shape_spatial,
                     *sp_shape,
                     n_centers,
+                    *((mask,) if use_mask else ()),
                 ),
             )
         if slic_zero:
@@ -253,6 +308,7 @@ def _slic(
                     *shape_spatial,
                     n_centers,
                     max_dist_color_gpu,
+                    *((mask,) if use_mask else ()),
                 ),
             )
 
@@ -266,7 +322,7 @@ def _slic(
 def slic(
     image,
     n_segments=100,
-    compactness=1.0,
+    compactness=10.0,
     max_num_iter=10,
     sigma=0,
     spacing=None,
@@ -335,8 +391,10 @@ def slic(
     slic_zero: bool, optional
         Run SLIC-zero, the zero-parameter mode of SLIC. [2]_.
     mask : ndarray, optional
-        Masked SLIC is currently unimplemented in CuPy. A
-        ``NotImplementedError`` will be raised if `mask` is not ``None``.
+        If provided, superpixels are computed only where ``mask`` is ``True``.
+        Pixels outside the mask are assigned ``start_label - 1``. The initial
+        maskSLIC centroids are currently computed on the host using SciPy's
+        ``kmeans2`` implementation, then copied to the device.
     channel_axis : int or None, optional
         If None, the image is assumed to be a grayscale (single channel) image.
         Otherwise, this parameter indicates which axis of the array corresponds
@@ -427,10 +485,6 @@ def slic(
             "function from scikit-image version '{skimage.__version__}', so "
             "the `slic` algorithm is unavailable."
         )
-    if mask is not None:
-        raise NotImplementedError(
-            "masked SLIC not implemented in cuCIM: mask must be None"
-        )
     if maximization_algorithm not in {"scan", "atomic"}:
         raise ValueError(
             "maximization_algorithm must be either 'scan' or 'atomic'"
@@ -455,7 +509,22 @@ def slic(
     image = image.astype(float_dtype, copy=True)
     use_mask = mask is not None
     if use_mask:
-        raise NotImplementedError("masked SLIC not implemented")
+        mask = cp.ascontiguousarray(mask, dtype=cp.bool_)
+        if channel_axis is None:
+            if mask.shape != image.shape:
+                raise ValueError("image and mask should have the same shape.")
+            mask_values = mask
+        else:
+            channel_axis_norm = channel_axis % image.ndim
+            spatial_shape = (
+                image.shape[:channel_axis_norm]
+                + image.shape[channel_axis_norm + 1 :]
+            )
+            if mask.shape != spatial_shape:
+                raise ValueError("image and mask should have the same shape.")
+            mask_values = cp.expand_dims(mask, axis=channel_axis_norm)
+            mask_values = cp.broadcast_to(mask_values, image.shape)
+        image_values = image[mask_values]
     else:
         image_values = image
 
@@ -505,10 +574,19 @@ def slic(
     # omit the channel dimension
     spatial_shape = image.shape[:-1]
     ndim_spatial = len(spatial_shape)
+    if use_mask and mask.shape != spatial_shape:
+        raise ValueError("image and mask should have the same shape.")
 
     # initialize cluster centroids for desired number of segments
-    # update_centroids = False
-    centroids, steps, sp_grid = _get_grid_centroids(spatial_shape, n_segments)
+    update_centroids = False
+    if use_mask:
+        centroids, steps = _get_mask_centroids(cp.asnumpy(mask), n_segments)
+        sp_grid = ()
+        update_centroids = True
+    else:
+        centroids, steps, sp_grid = _get_grid_centroids(
+            spatial_shape, n_segments
+        )
 
     n_centroids = centroids.shape[0]
     segments = cp.ascontiguousarray(
@@ -528,8 +606,8 @@ def slic(
     #   check step and ratio parameters and grid generation to make it closely
     #   match scikit-image
 
-    sp_shape = tuple(int(step) for step in steps)
-    n_centers = math.prod(sp_grid)
+    sp_shape = tuple(max(1, math.ceil(step)) for step in steps)
+    n_centers = n_centroids
 
     # TODO(grelee): spacing currently on CPU for use with jinja2.Template
     #   may make this a device array and kernel argument later
@@ -596,6 +674,23 @@ def slic(
         sigma = list(sigma) + [0]
         image = gaussian(image, sigma=sigma, mode="reflect")
 
+    if update_centroids:
+        _slic(
+            image,
+            sp_shape,
+            sp_grid,
+            spacing,
+            compactness,
+            max_num_iter,
+            segments,
+            max_step,
+            start_label,
+            maximization_algorithm,
+            slic_zero,
+            mask=mask,
+            ignore_color=True,
+        )
+
     labels = _slic(
         image,
         sp_shape,
@@ -608,9 +703,13 @@ def slic(
         start_label,
         maximization_algorithm,
         slic_zero,
+        mask=mask,
     )
     if enforce_connectivity:
-        segment_size = math.prod(spatial_shape) / n_centers
+        if use_mask:
+            segment_size = int(mask.sum()) / n_centers
+        else:
+            segment_size = math.prod(spatial_shape) / n_centers
         min_size = int(min_size_factor * segment_size)
         max_size = int(max_size_factor * segment_size)
 
