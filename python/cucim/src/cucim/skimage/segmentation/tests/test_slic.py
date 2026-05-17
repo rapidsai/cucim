@@ -317,8 +317,8 @@ def test_enforce_connectivity():
     assert_array_equal(segments_connected_low_max, result_connected)
 
 
-@pytest.mark.xfail(reason="slic_zero not implemented yet in cuCIM")
-def test_slic_zero():
+@pytest.mark.parametrize("maximization_algorithm", ["scan", "atomic"])
+def test_slic_zero(maximization_algorithm):
     # Same as test_color_2d but with slic_zero=True
     rng = np.random.default_rng(0)
     img = np.zeros((20, 21, 3))
@@ -329,7 +329,14 @@ def test_slic_zero():
     img[img > 1] = 1
     img[img < 0] = 0
     img = cp.asarray(img)
-    seg = slic(img, n_segments=4, sigma=0, slic_zero=True, start_label=0)
+    seg = slic(
+        img,
+        n_segments=4,
+        sigma=0,
+        slic_zero=True,
+        start_label=0,
+        maximization_algorithm=maximization_algorithm,
+    )
 
     # we expect 4 segments
     assert_equal(len(cp.unique(seg)), 4)

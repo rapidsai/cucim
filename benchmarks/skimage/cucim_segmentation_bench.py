@@ -221,7 +221,6 @@ def main(args):
                 start_label=1,
                 min_size_factor=0.5,
                 max_size_factor=3.0,
-                slic_zero=False,
                 mask=None,
             ),
             dict(
@@ -298,18 +297,29 @@ def main(args):
             if function_name == "slic":
                 fixed_kwargs["channel_axis"] = -1 if shape[-1] == 3 else None
 
-            B = bench_class(
-                function_name=function_name,
-                shape=shape,
-                dtypes=dtypes,
-                fixed_kwargs=fixed_kwargs,
-                var_kwargs=var_kwargs,
-                module_cpu=skimage.segmentation,
-                module_gpu=cucim.skimage.segmentation,
-                run_cpu=run_cpu,
-            )
-            results = B.run_benchmark(duration=args.duration)
-            all_results = pd.concat([all_results, results["full"]])
+            slic_zero_values = [False, True] if function_name == "slic" else [None]
+            for slic_zero in slic_zero_values:
+                fixed_kwargs1 = fixed_kwargs.copy()
+                var_kwargs1 = var_kwargs.copy()
+                index_str = None
+                if slic_zero is not None:
+                    fixed_kwargs1["slic_zero"] = slic_zero
+                    index_str = f"slic_zero={slic_zero}"
+                    if slic_zero:
+                        var_kwargs1["compactness"] = [10.0]
+                B = bench_class(
+                    function_name=function_name,
+                    shape=shape,
+                    dtypes=dtypes,
+                    fixed_kwargs=fixed_kwargs1,
+                    var_kwargs=var_kwargs1,
+                    index_str=index_str,
+                    module_cpu=skimage.segmentation,
+                    module_gpu=cucim.skimage.segmentation,
+                    run_cpu=run_cpu,
+                )
+                results = B.run_benchmark(duration=args.duration)
+                all_results = pd.concat([all_results, results["full"]])
 
     fbase = os.path.splitext(cfile)[0]
     all_results.to_csv(cfile, index=True)

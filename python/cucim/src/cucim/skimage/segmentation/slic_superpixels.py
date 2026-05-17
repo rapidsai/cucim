@@ -104,6 +104,7 @@ def _slic(
     max_step,
     start_label,
     maximization_algorithm,
+    slic_zero,
 ):
     shape_spatial = image.shape[:-1]
 
@@ -134,11 +135,22 @@ def _slic(
 #define FLOAT_DTYPE {"double" if image.dtype == np.float64 else "float"}
 #define INTERNAL_FLOAT_DTYPE {"double" if image.dtype == np.float64 else "float"}
 #define PIXELS_PER_THREAD {maximization_pixels_per_thread}
+#define SLIC_ZERO {1 if slic_zero else 0}
 """
-    cuda_source = 'extern "C" { ' + cuda_source_defines + cuda_source + " }"
+    cuda_source = (
+        '#include "cupy/atomics.cuh"\n'
+        + 'extern "C" { '
+        + cuda_source_defines
+        + cuda_source
+        + " }"
+    )
     module = cp.RawModule(code=cuda_source, options=("-std=c++11",))
     # gpu_slic_init = module.get_function("init_clusters")
     gpu_slic_expectation = module.get_function("expectation")
+    if slic_zero:
+        gpu_slic_update_max_dist_color = module.get_function(
+            "update_max_dist_color"
+        )
     if use_atomic_maximization:
         gpu_slic_reset_accumulators = module.get_function("reset_accumulators")
         gpu_slic_accumulate_centers = module.get_function("accumulate_centers")
@@ -147,6 +159,7 @@ def _slic(
         gpu_slic_maximization = module.get_function("maximization")
 
     labels_gpu = cp.zeros(shape_spatial, dtype=cp.uint32)
+    max_dist_color_gpu = cp.ones(n_centers, dtype=image.dtype)
     if use_atomic_maximization:
         center_sums_gpu = cp.empty(
             (n_centers, n_features + len(shape_spatial)), dtype=image.dtype
@@ -159,7 +172,7 @@ def _slic(
     # device scalar (passing Python float did not work, so changed to
     # float* in the kernel)
     ss = cp.asarray(ss, dtype=float_dtype)
-    if use_atomic_maximization:
+    if use_atomic_maximization or slic_zero:
         n_pixels = image.size // n_features
         accumulation_block, accumulation_grid = line_kernel_config(
             (n_pixels + maximization_pixels_per_thread - 1)
@@ -180,6 +193,7 @@ def _slic(
                 *sp_grid,
                 spacing,
                 ss,
+                max_dist_color_gpu,
             ),
         )
 
@@ -226,6 +240,19 @@ def _slic(
                     *shape_spatial,
                     *sp_shape,
                     n_centers,
+                ),
+            )
+        if slic_zero:
+            gpu_slic_update_max_dist_color(
+                accumulation_grid,
+                accumulation_block,
+                (
+                    image,
+                    labels_gpu,
+                    centers_gpu,
+                    *shape_spatial,
+                    n_centers,
+                    max_dist_color_gpu,
                 ),
             )
 
@@ -329,7 +356,6 @@ def slic(
         The labels' index start. Should be 0 or 1.
     slic_zero: bool, optional
         Run SLIC-zero, the zero-parameter mode of SLIC. [2]_.
-        ``NotImplementedError`` will be raised if `slic_zero` is not ``False``.
     mask : ndarray, optional
         Masked SLIC is currently unimplemented in CuPy. A
         ``NotImplementedError`` will be raised if `mask` is not ``None``.
@@ -431,11 +457,6 @@ def slic(
         raise ValueError(
             "maximization_algorithm must be either 'scan' or 'atomic'"
         )
-    if slic_zero:
-        raise NotImplementedError(
-            "SLIC0 not implemented in cuCIM: `slice_zero` must be False"
-        )
-
     if image.ndim not in [2, 3, 4]:
         raise ValueError(
             "input image must be either 2, 3, or 4 dimensional.\n"
@@ -608,6 +629,7 @@ def slic(
         max_step,
         start_label,
         maximization_algorithm,
+        slic_zero,
     )
     if enforce_connectivity:
         segment_size = math.prod(spatial_shape) / n_centers

@@ -103,14 +103,20 @@ CuPy prepends the following defines in slic_superpixels.py:
 #    define PIXELS_PER_THREAD 1
 #endif
 
+#ifndef SLIC_ZERO
+#    define SLIC_ZERO 0
+#endif
+
 #define CENTER_STRIDE (N_PIXEL_FEATURES + 3)
 
 __forceinline__ __device__ INTERNAL_FLOAT_DTYPE slic_distance(const int3 idx,
                                                               const FLOAT_DTYPE* __restrict__ pixel,
+                                                              const long linear_cidx,
                                                               const long center_addr,
                                                               const FLOAT_DTYPE* __restrict__ centers,
                                                               const FLOAT_DTYPE* __restrict__ spacing,
-                                                              INTERNAL_FLOAT_DTYPE inv_ss)
+                                                              INTERNAL_FLOAT_DTYPE inv_ss,
+                                                              const FLOAT_DTYPE* __restrict__ max_dist_color)
 
 {
     // Color diff
@@ -125,6 +131,9 @@ __forceinline__ __device__ INTERNAL_FLOAT_DTYPE slic_distance(const int3 idx,
         INTERNAL_FLOAT_DTYPE d = static_cast<INTERNAL_FLOAT_DTYPE>(pixel[w] - centers[center_addr + w]);
         color_diff += d * d;
     }
+#if SLIC_ZERO
+    color_diff /= static_cast<INTERNAL_FLOAT_DTYPE>(max_dist_color[linear_cidx]);
+#endif
 
     // Position diff
     INTERNAL_FLOAT_DTYPE pd_z = static_cast<INTERNAL_FLOAT_DTYPE>(
@@ -185,7 +194,8 @@ __global__ void expectation(const FLOAT_DTYPE* __restrict__ data,
                             int sp_grid_y,
                             int sp_grid_x,
                             const FLOAT_DTYPE* __restrict__ spacing,
-                            const FLOAT_DTYPE* __restrict__ ss)
+                            const FLOAT_DTYPE* __restrict__ ss,
+                            const FLOAT_DTYPE* __restrict__ max_dist_color)
 
 {
     int3 idx;
@@ -249,7 +259,8 @@ __global__ void expectation(const FLOAT_DTYPE* __restrict__ data,
                     continue;
                 }
 
-                INTERNAL_FLOAT_DTYPE dist = slic_distance(idx, pixel, iter_center_addr, centers, spacing, inv_ss);
+                INTERNAL_FLOAT_DTYPE dist = slic_distance(
+                    idx, pixel, iter_linear_cidx, iter_center_addr, centers, spacing, inv_ss, max_dist_color);
 
                 // Wrapup
                 if (dist < minimum_distance)
@@ -262,6 +273,55 @@ __global__ void expectation(const FLOAT_DTYPE* __restrict__ data,
     }
 
     labels[linear_idx] = closest_linear_cidx + START_LABEL;
+}
+
+__global__ void update_max_dist_color(const FLOAT_DTYPE* __restrict__ data,
+                                      const unsigned int* __restrict__ labels,
+                                      const FLOAT_DTYPE* __restrict__ centers,
+                                      int im_shape_z,
+                                      int im_shape_y,
+                                      int im_shape_x,
+                                      long n_clusters,
+                                      FLOAT_DTYPE* __restrict__ max_dist_color)
+{
+    const unsigned long thread_idx = threadIdx.x + (blockIdx.x * blockDim.x);
+    const unsigned long start_idx = thread_idx * PIXELS_PER_THREAD;
+    const unsigned long n_pixels = (unsigned long)im_shape_z * im_shape_y * im_shape_x;
+
+    for (int k = 0; k < PIXELS_PER_THREAD; k++)
+    {
+        const unsigned long linear_idx = start_idx + k;
+        if (linear_idx >= n_pixels)
+        {
+            break;
+        }
+
+        const long linear_cidx = (long)labels[linear_idx] - START_LABEL;
+        if (linear_cidx < 0 || linear_cidx >= n_clusters)
+        {
+            continue;
+        }
+
+        const long center_addr = linear_cidx * CENTER_STRIDE;
+        if (centers[center_addr] == CENTER_LIMIT)
+        {
+            continue;
+        }
+
+        const unsigned long pixel_addr = linear_idx * N_PIXEL_FEATURES;
+        FLOAT_DTYPE dist_color = 0;
+#if N_PIXEL_FEATURES <= 8
+#    pragma unroll
+#else
+#    pragma unroll 8
+#endif
+        for (int w = 0; w < N_PIXEL_FEATURES; w++)
+        {
+            FLOAT_DTYPE d = data[pixel_addr + w] - centers[center_addr + w];
+            dist_color += d * d;
+        }
+        atomicMax(&max_dist_color[linear_cidx], dist_color);
+    }
 }
 
 __global__ void reset_accumulators(SUM_DTYPE* __restrict__ center_sums,
