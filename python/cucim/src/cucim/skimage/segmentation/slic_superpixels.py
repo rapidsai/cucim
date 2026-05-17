@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 import math
 import os
 from collections.abc import Iterable
@@ -117,9 +120,10 @@ def _slic(
     ss = spatial_weight * spatial_weight
 
     cuda_source_defines = f"""
-#define N_PIXEL_FEATURES { n_features }
-#define START_LABEL { start_label }
-#define FLOAT_DTYPE { "double" if image.dtype == np.float64 else "float"}
+#define N_PIXEL_FEATURES {n_features}
+#define START_LABEL {start_label}
+#define FLOAT_DTYPE {"double" if image.dtype == np.float64 else "float"}
+#define INTERNAL_FLOAT_DTYPE {"double" if image.dtype == np.float64 else "float"}
 """
     cuda_source = 'extern "C" { ' + cuda_source_defines + cuda_source + " }"
     module = cp.RawModule(code=cuda_source, options=("-std=c++11",))
