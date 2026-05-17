@@ -263,28 +263,6 @@ def _slic(
     return labels_gpu  # , centroids
 
 
-# change default to spacing=None
-#
-# change multichannel -> channel_axis
-#
-# update order of kwargs to match skimage
-#
-# Possibly add support for the following options
-#     sigma=0,
-#
-#     slic_zero=False,
-#     start_label=1,
-#     mask=None,
-#     *,
-#     channel_axis=-1,
-
-
-# * added sigma parameter
-# * added start_label parameter
-# * remove pycuda code paths
-# * changed argument default values to match current scikit-image
-
-
 def slic(
     image,
     n_segments=100,
