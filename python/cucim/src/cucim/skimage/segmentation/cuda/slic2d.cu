@@ -96,15 +96,20 @@ CuPy prepends the following defines in slic_superpixels.py:
 #endif
 
 __forceinline__ __device__ INTERNAL_FLOAT_DTYPE slic_distance(const int2 idx,
-                                                              const FLOAT_DTYPE* pixel,
+                                                              const FLOAT_DTYPE* __restrict__ pixel,
                                                               const long center_addr,
-                                                              const FLOAT_DTYPE* centers,
-                                                              const FLOAT_DTYPE* spacing,
-                                                              FLOAT_DTYPE ss)
+                                                              const FLOAT_DTYPE* __restrict__ centers,
+                                                              const FLOAT_DTYPE* __restrict__ spacing,
+                                                              INTERNAL_FLOAT_DTYPE inv_ss)
 
 {
     // Color diff
     INTERNAL_FLOAT_DTYPE color_diff = 0;
+#if N_PIXEL_FEATURES <= 8
+#    pragma unroll
+#else
+#    pragma unroll 8
+#endif
     for (int w = 0; w < N_PIXEL_FEATURES; w++)
     {
         INTERNAL_FLOAT_DTYPE d = static_cast<INTERNAL_FLOAT_DTYPE>(pixel[w] - centers[center_addr + w]);
@@ -119,20 +124,20 @@ __forceinline__ __device__ INTERNAL_FLOAT_DTYPE slic_distance(const int2 idx,
         (static_cast<FLOAT_DTYPE>(idx.x) - centers[center_addr + N_PIXEL_FEATURES + 1]) * spacing[1]);
 
     INTERNAL_FLOAT_DTYPE position_diff = pd_y * pd_y + pd_x * pd_x;
-    return color_diff + position_diff / static_cast<INTERNAL_FLOAT_DTYPE>(ss);
+    return color_diff + position_diff * inv_ss;
 }
 
-__global__ void expectation(const FLOAT_DTYPE* data,
-                            const FLOAT_DTYPE* centers,
-                            unsigned int* labels,
+__global__ void expectation(const FLOAT_DTYPE* __restrict__ data,
+                            const FLOAT_DTYPE* __restrict__ centers,
+                            unsigned int* __restrict__ labels,
                             int im_shape_y,
                             int im_shape_x,
                             int sp_shape_y,
                             int sp_shape_x,
                             int sp_grid_y,
                             int sp_grid_x,
-                            FLOAT_DTYPE* spacing,
-                            FLOAT_DTYPE* ss)
+                            const FLOAT_DTYPE* __restrict__ spacing,
+                            const FLOAT_DTYPE* __restrict__ ss)
 
 {
     int2 idx;
@@ -150,10 +155,16 @@ __global__ void expectation(const FLOAT_DTYPE* data,
     const long pixel_addr = linear_idx * N_PIXEL_FEATURES;
 
     FLOAT_DTYPE pixel[N_PIXEL_FEATURES];
+#if N_PIXEL_FEATURES <= 8
+#    pragma unroll
+#else
+#    pragma unroll 8
+#endif
     for (int w = 0; w < N_PIXEL_FEATURES; w++)
     {
         pixel[w] = data[pixel_addr + w];
     }
+    INTERNAL_FLOAT_DTYPE inv_ss = static_cast<INTERNAL_FLOAT_DTYPE>(1) / static_cast<INTERNAL_FLOAT_DTYPE>(*ss);
 
     int2 cidx;
     long closest_linear_cidx = 0 - START_LABEL;
@@ -182,7 +193,7 @@ __global__ void expectation(const FLOAT_DTYPE* data,
                 continue;
             }
 
-            INTERNAL_FLOAT_DTYPE dist = slic_distance(idx, pixel, iter_center_addr, centers, spacing, *ss);
+            INTERNAL_FLOAT_DTYPE dist = slic_distance(idx, pixel, iter_center_addr, centers, spacing, inv_ss);
 
             // Wrapup
             if (dist < minimum_distance)
@@ -196,9 +207,9 @@ __global__ void expectation(const FLOAT_DTYPE* data,
     labels[linear_idx] = closest_linear_cidx + START_LABEL;
 }
 
-__global__ void maximization(const FLOAT_DTYPE* data,
-                             const unsigned int* labels,
-                             FLOAT_DTYPE* centers,
+__global__ void maximization(const FLOAT_DTYPE* __restrict__ data,
+                             const unsigned int* __restrict__ labels,
+                             FLOAT_DTYPE* __restrict__ centers,
                              int im_shape_y,
                              int im_shape_x,
                              int sp_shape_y,
@@ -247,6 +258,11 @@ __global__ void maximization(const FLOAT_DTYPE* data,
         {
             if (labels[linear_idx] == linear_cidx + START_LABEL)
             {
+#if N_PIXEL_FEATURES <= 8
+#    pragma unroll
+#else
+#    pragma unroll 8
+#endif
                 for (int w = 0; w < N_PIXEL_FEATURES; w++)
                 {
                     f[w] += data[pixel_addr + w];
