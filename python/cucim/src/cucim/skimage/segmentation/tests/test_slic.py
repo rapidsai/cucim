@@ -171,6 +171,40 @@ def test_slic_maximization_algorithm():
         slic(img, maximization_algorithm="unsupported")
 
 
+def test_slic_connectivity_algorithm_gpu():
+    img = cp.asarray(data.cat()[:64, :64])
+
+    seg = slic(
+        img,
+        n_segments=32,
+        enforce_connectivity=True,
+        connectivity_algorithm="gpu",
+    )
+
+    assert_equal(seg.shape, img.shape[:2])
+    assert int(seg.min()) >= 1
+    assert int(cp.unique(seg).size) > 1
+
+    with pytest.raises(ValueError, match="connectivity_algorithm"):
+        slic(img, connectivity_algorithm="unsupported")
+
+
+def test_slic_connectivity_gpu_without_relabel():
+    img = cp.asarray(data.cat()[:64, :64])
+
+    seg = slic(
+        img,
+        n_segments=32,
+        enforce_connectivity=True,
+        connectivity_algorithm="gpu",
+        relabel_connectivity=False,
+    )
+
+    assert_equal(seg.shape, img.shape[:2])
+    assert int(seg.min()) >= 1
+    assert int(cp.unique(seg).size) > 1
+
+
 @pytest.mark.parametrize("maximization_algorithm", ["scan", "atomic"])
 def test_mask_slic_2d(maximization_algorithm):
     img = cp.zeros((32, 33, 3), dtype=cp.float32)
@@ -367,6 +401,7 @@ def test_list_sigma_mask():
         channel_axis=None,
         mask=mask,
         maximization_algorithm="scan",
+        connectivity_algorithm="host",
     )
 
     assert_array_equal(seg_sigma, result_sigma)
@@ -390,6 +425,7 @@ def test_spacing_mask():
         compactness=1.0,
         mask=mask,
         maximization_algorithm="scan",
+        connectivity_algorithm="host",
     )
     seg_spaced = slic(
         img,
@@ -400,6 +436,7 @@ def test_spacing_mask():
         channel_axis=None,
         mask=mask,
         maximization_algorithm="scan",
+        connectivity_algorithm="host",
     )
 
     _check_segment_labels(seg_non_spaced, result_non_spaced, 0.11)
@@ -430,6 +467,7 @@ def test_enforce_connectivity_mask():
         mask=mask,
         channel_axis=None,
         maximization_algorithm="scan",
+        connectivity_algorithm="host",
     )
     segments_disconnected = slic(
         img,
@@ -451,6 +489,7 @@ def test_enforce_connectivity_mask():
         mask=mask,
         channel_axis=None,
         maximization_algorithm="scan",
+        connectivity_algorithm="host",
     )
 
     assert_array_equal(segments_connected, result)
@@ -655,6 +694,7 @@ def test_list_sigma():
             sigma=[1, 50, 1],
             channel_axis=None,
             start_label=0,
+            connectivity_algorithm="host",
         )
     assert_array_equal(seg_sigma, result_sigma)
 
@@ -673,6 +713,7 @@ def test_spacing():
         channel_axis=None,
         compactness=1.0,
         start_label=0,
+        connectivity_algorithm="host",
     )
     seg_spaced = slic(
         img,
@@ -682,6 +723,7 @@ def test_spacing():
         compactness=1.0,
         channel_axis=None,
         start_label=0,
+        connectivity_algorithm="host",
     )
     assert_array_equal(seg_non_spaced, result_non_spaced)
     assert_array_equal(seg_spaced, result_spaced)
@@ -706,6 +748,7 @@ def test_enforce_connectivity():
         convert2lab=False,
         start_label=0,
         channel_axis=None,
+        connectivity_algorithm="host",
     )
     segments_disconnected = slic(
         img,
@@ -728,6 +771,7 @@ def test_enforce_connectivity():
         max_size_factor=0.8,
         start_label=0,
         channel_axis=None,
+        connectivity_algorithm="host",
     )
 
     result_connected = cp.array(
@@ -833,6 +877,7 @@ def test_start_label_fix():
         compactness=0.01,
         enforce_connectivity=True,
         max_num_iter=10,
+        connectivity_algorithm="host",
     )
     assert superp.min().get() == start_label
 

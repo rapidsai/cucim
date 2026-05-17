@@ -14,6 +14,11 @@ from scipy.spatial.distance import pdist, squareform
 
 from cucim.skimage.color import rgb2lab
 from cucim.skimage.filters import gaussian
+from cucim.skimage.measure import label as measure_label
+from cucim.skimage.measure._regionprops_gpu_basic_kernels import (
+    regionprops_num_pixels,
+)
+from cucim.skimage.segmentation._join import relabel_sequential
 from cucim.skimage.util import img_as_float, regular_grid
 
 try:
@@ -154,6 +159,231 @@ def _get_grid_centroids(spatial_shape, n_centroids):
     if xp != cp:
         centroids = cp.asarray(centroids)
     return centroids, steps, grid_shape
+
+
+_slic_connectivity_collect_adjacency = cp.RawKernel(
+    r"""
+extern "C" __global__
+void slic_connectivity_collect_adjacency(
+    const int* __restrict__ components,
+    const unsigned long long* __restrict__ sizes,
+    unsigned long long* __restrict__ large_keys,
+    unsigned long long* __restrict__ small_keys,
+    int n0,
+    int n1,
+    int n2,
+    int ndim,
+    int max_label,
+    unsigned long long min_size,
+    unsigned long long total)
+{
+    unsigned long long i = blockDim.x * blockIdx.x + threadIdx.x;
+    if (i >= total) {
+        return;
+    }
+
+    int self = components[i];
+    if (self <= 0 || self > max_label) {
+        return;
+    }
+
+    unsigned long long plane = (unsigned long long)n1 * n2;
+    int z = (int)(i / plane);
+    unsigned long long rem = i - (unsigned long long)z * plane;
+    int y = (int)(rem / n2);
+    int x = (int)(rem - (unsigned long long)y * n2);
+
+    const unsigned long long id_mask = 0xffffffffULL;
+    int neighbor_offsets[3];
+    int n_neighbors = 0;
+    if (x + 1 < n2) {
+        neighbor_offsets[n_neighbors++] = 1;
+    }
+    if (y + 1 < n1) {
+        neighbor_offsets[n_neighbors++] = n2;
+    }
+    if (ndim == 3 && z + 1 < n0) {
+        neighbor_offsets[n_neighbors++] = n1 * n2;
+    }
+
+    for (int j = 0; j < n_neighbors; j++) {
+        int other = components[i + neighbor_offsets[j]];
+        if (other <= 0 || other == self || other > max_label) {
+            continue;
+        }
+
+        int comps[2] = {self, other};
+        int candidates[2] = {other, self};
+        for (int k = 0; k < 2; k++) {
+            int comp = comps[k];
+            int candidate = candidates[k];
+            unsigned long long candidate_size = sizes[candidate - 1];
+            unsigned long long key =
+                (candidate_size << 32) | (id_mask - (unsigned long long)candidate);
+            if (candidate_size >= min_size) {
+                atomicMax(&large_keys[comp], key);
+            }
+            else if (candidate < comp) {
+                atomicMax(&small_keys[comp], key);
+            }
+        }
+    }
+}
+""",
+    "slic_connectivity_collect_adjacency",
+)
+
+
+_slic_connectivity_build_map = cp.RawKernel(
+    r"""
+extern "C" __global__
+void slic_connectivity_build_map(
+    const unsigned long long* __restrict__ sizes,
+    const unsigned long long* __restrict__ large_keys,
+    const unsigned long long* __restrict__ small_keys,
+    int* __restrict__ component_map,
+    int max_label,
+    unsigned long long min_size)
+{
+    int comp = blockDim.x * blockIdx.x + threadIdx.x + 1;
+    if (comp > max_label) {
+        return;
+    }
+    if (sizes[comp - 1] >= min_size) {
+        component_map[comp] = comp;
+        return;
+    }
+
+    const unsigned long long id_mask = 0xffffffffULL;
+    unsigned long long key = large_keys[comp];
+    if (key == 0) {
+        key = small_keys[comp];
+    }
+    if (key == 0) {
+        component_map[comp] = comp;
+        return;
+    }
+    component_map[comp] = (int)(id_mask - (key & id_mask));
+}
+""",
+    "slic_connectivity_build_map",
+)
+
+
+_slic_connectivity_compress_map = cp.RawKernel(
+    r"""
+extern "C" __global__
+void slic_connectivity_compress_map(int* __restrict__ component_map, int max_label)
+{
+    int comp = blockDim.x * blockIdx.x + threadIdx.x;
+    if (comp > max_label) {
+        return;
+    }
+    int root = comp;
+    for (int iter = 0; iter < 1024; iter++) {
+        int parent = component_map[root];
+        if (parent == root) {
+            break;
+        }
+        root = parent;
+    }
+    component_map[comp] = root;
+}
+""",
+    "slic_connectivity_compress_map",
+)
+
+
+_slic_connectivity_apply_map = cp.ElementwiseKernel(
+    "int32 component, raw int32 component_map",
+    "int32 out",
+    "out = component <= 0 ? 0 : component_map[component];",
+    "cucim_slic_connectivity_apply_map",
+)
+
+
+def _enforce_label_connectivity_gpu(
+    labels,
+    min_size,
+    max_size,
+    start_label=1,
+    relabel=True,
+):
+    """GPU approximation of SLIC connectivity cleanup.
+
+    This uses a deterministic GPU-friendly merge policy for small components:
+    merge into an adjacent large component with largest size, or if none is
+    available, into a smaller-id adjacent small component. This is not intended
+    to be bit-for-bit equivalent to scikit-image's traversal-order-dependent
+    CPU implementation.
+    """
+    del max_size  # The GPU policy does not need the host BFS buffer bound.
+    if labels.ndim not in (2, 3):
+        raise ValueError("GPU SLIC connectivity supports 2D or 3D labels.")
+
+    mask_label = start_label - 1
+    components = measure_label(labels, background=mask_label, connectivity=1)
+    max_label = int(components.max())
+    if max_label == 0:
+        return labels.copy()
+
+    sizes = regionprops_num_pixels(components, max_label=max_label)
+    sizes = sizes.astype(cp.uint64, copy=False)
+
+    large_keys = cp.zeros(max_label + 1, dtype=cp.uint64)
+    small_keys = cp.zeros(max_label + 1, dtype=cp.uint64)
+    component_map = cp.arange(max_label + 1, dtype=cp.int32)
+
+    if labels.ndim == 2:
+        n0, n1, n2 = 1, labels.shape[0], labels.shape[1]
+    else:
+        n0, n1, n2 = labels.shape
+    block = (256,)
+    grid = ((components.size + block[0] - 1) // block[0],)
+    _slic_connectivity_collect_adjacency(
+        grid,
+        block,
+        (
+            components,
+            sizes,
+            large_keys,
+            small_keys,
+            n0,
+            n1,
+            n2,
+            labels.ndim,
+            max_label,
+            np.uint64(max(1, min_size)),
+            np.uint64(components.size),
+        ),
+    )
+
+    grid_map = ((max_label + block[0] - 1) // block[0],)
+    _slic_connectivity_build_map(
+        grid_map,
+        block,
+        (
+            sizes,
+            large_keys,
+            small_keys,
+            component_map,
+            max_label,
+            np.uint64(max(1, min_size)),
+        ),
+    )
+    _slic_connectivity_compress_map(
+        ((max_label + 1 + block[0] - 1) // block[0],),
+        block,
+        (component_map, max_label),
+    )
+
+    connected = _slic_connectivity_apply_map(components, component_map)
+
+    if relabel:
+        connected, _, _ = relabel_sequential(connected, offset=1)
+    if start_label == 0:
+        connected = connected - 1
+    return connected
 
 
 def line_kernel_config(threads_total, block_size=64):
@@ -404,6 +634,8 @@ def slic(
     check_finite_and_constant=False,
     maximization_algorithm="atomic",
     force_kmeans2=False,
+    connectivity_algorithm="gpu",
+    relabel_connectivity=True,
 ):
     """Segments image using k-means clustering in Color-(x,y,z) space.
     Parameters
@@ -446,10 +678,7 @@ def slic(
         This option defaults to ``True`` when ``multichannel=True`` *and*
         ``image.shape[-1] == 3``.
     enforce_connectivity : bool, optional
-        Whether the generated segments are connected or not. When ``True``,
-        cuCIM currently copies labels to host and uses scikit-image's
-        host-side connectivity enforcement implementation before copying the
-        result back to the device.
+        Whether the generated segments are connected or not.
     min_size_factor : float, optional
         Proportion of the minimum segment size to be removed with respect
         to the supposed segment size ```depth*width*height/n_segments```
@@ -462,16 +691,15 @@ def slic(
         Run SLIC-zero, the zero-parameter mode of SLIC. [2]_.
     mask : ndarray, optional
         If provided, superpixels are computed only where ``mask`` is ``True``.
-        Pixels outside the mask are assigned ``start_label - 1``. The initial
-        maskSLIC centroids are currently computed on the host using SciPy's
-        ``kmeans2`` implementation after copying the mask to host, then copied
-        to the device.
+        Pixels outside the mask are assigned ``start_label - 1``. Initial
+        maskSLIC centroid placement uses cuVS k-means when available and
+        falls back to SciPy's host-side ``kmeans2`` implementation otherwise.
     channel_axis : int or None, optional
         If None, the image is assumed to be a grayscale (single channel) image.
         Otherwise, this parameter indicates which axis of the array corresponds
         to channels.
 
-    Extra Parameters
+    Other Parameters
     ----------------
     check_finite_and_constant : bool, optional
         Whether to raise an error if any NaN or infinite values are present in
@@ -491,6 +719,18 @@ def slic(
         placement to use SciPy's host-side ``kmeans2`` implementation. By
         default, cuCIM uses cuVS k-means when it can be imported and falls back
         to SciPy otherwise.
+    connectivity_algorithm : {"host", "gpu"}, optional
+        Algorithm used when ``enforce_connectivity=True``. ``"gpu"`` is the
+        default and keeps cleanup on device using a deterministic
+        GPU-friendly small-component merge policy that may not produce labels
+        identical to scikit-image. Use ``"host"`` to run scikit-image's
+        Cython-based CPU connectivity cleanup, which requires transferring the
+        label image to host and the cleaned labels back to device.
+    relabel_connectivity : bool, optional
+        If ``True``, relabel the result of GPU connectivity cleanup so labels
+        are dense and sequential. Set to ``False`` to skip this extra pass when
+        dense labels are not required. This option only affects
+        ``connectivity_algorithm="gpu"``.
 
     Returns
     -------
@@ -526,9 +766,14 @@ def slic(
       it falls back to SciPy's host-side ``kmeans2`` implementation, requiring
       a mask transfer to host and CPU work on each call.
 
-    * When ``enforce_connectivity=True``, connectivity cleanup is currently
-      host-side and requires transferring the label image from device to host
-      and the cleaned labels back to device.
+    * When ``enforce_connectivity=True``, cuCIM uses a GPU connectivity cleanup
+      by default. This avoids host/device label transfers, but uses a
+      GPU-friendly merge policy that may not match scikit-image exactly. The
+      GPU path relabels the result to dense sequential labels by default. Pass
+      ``relabel_connectivity=False`` to skip that extra pass, or call
+      :func:`cucim.skimage.segmentation.relabel_sequential` later if dense
+      labels are needed. Pass ``connectivity_algorithm="host"`` to use
+      scikit-image's Cython-based CPU cleanup instead.
 
     * Images of shape (M, N, 3) are interpreted as 2D RGB images by default. To
       interpret them as 3D with the last dimension having length 3, use
@@ -573,6 +818,10 @@ def slic(
     if maximization_algorithm not in {"scan", "atomic"}:
         raise ValueError(
             "maximization_algorithm must be either 'scan' or 'atomic'"
+        )
+    if connectivity_algorithm not in {"host", "gpu"}:
+        raise ValueError(
+            "connectivity_algorithm must be either 'host' or 'gpu'"
         )
     if image.ndim not in [2, 3, 4]:
         raise ValueError(
@@ -800,17 +1049,26 @@ def slic(
         min_size = int(min_size_factor * segment_size)
         max_size = int(max_size_factor * segment_size)
 
-        labels = cp.asnumpy(labels).astype(cp.intp, copy=False)
+        if connectivity_algorithm == "gpu":
+            labels = _enforce_label_connectivity_gpu(
+                labels,
+                min_size,
+                max_size,
+                start_label=start_label,
+                relabel=relabel_connectivity,
+            )
+        else:
+            labels = cp.asnumpy(labels).astype(cp.intp, copy=False)
 
-        if is_2d:
-            # prepend singleton axis for 2D case
-            # (Cython function only supports 3D spatial images)
-            labels = labels[cp.newaxis, ...]
-        labels = _enforce_label_connectivity_cython(
-            labels, min_size, max_size, start_label=start_label
-        )
-        if is_2d:
-            labels = labels[0]
-        labels = cp.asarray(labels)
+            if is_2d:
+                # prepend singleton axis for 2D case
+                # (Cython function only supports 3D spatial images)
+                labels = labels[cp.newaxis, ...]
+            labels = _enforce_label_connectivity_cython(
+                labels, min_size, max_size, start_label=start_label
+            )
+            if is_2d:
+                labels = labels[0]
+            labels = cp.asarray(labels)
 
     return labels
