@@ -113,11 +113,12 @@ def test_slic_consistency_across_image_magnitude():
     img_float32_norm = img_float32 / img_float32.max()
     img_float32_offset = img_float32 + 1000.0
 
-    seg1 = slic(img_uint8)
-    seg2 = slic(img_uint16)
-    seg3 = slic(img_float32)
-    seg4 = slic(img_float32_norm)
-    seg5 = slic(img_float32_offset)
+    kwargs = {"maximization_algorithm": "scan"}
+    seg1 = slic(img_uint8, **kwargs)
+    seg2 = slic(img_uint16, **kwargs)
+    seg3 = slic(img_float32, **kwargs)
+    seg4 = slic(img_float32_norm, **kwargs)
+    seg5 = slic(img_float32_offset, **kwargs)
 
     if False:  # (TODO: fix this test case)
         assert_array_equal(seg1, seg2)

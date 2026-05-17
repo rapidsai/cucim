@@ -275,7 +275,7 @@ def slic(
     *,
     channel_axis=-1,
     check_finite_and_constant=False,
-    maximization_algorithm="scan",
+    maximization_algorithm="atomic",
 ):
     """Segments image using k-means clustering in Color-(x,y,z) space.
     Parameters
@@ -348,11 +348,11 @@ def slic(
         checks for the case where all values in the image are constant.
     maximization_algorithm : {"scan", "atomic"}, optional
         Algorithm used to update cluster centers after assigning pixels to
-        their closest center. ``"scan"`` uses the original center-parallel
-        implementation and is the default because it is deterministic across
-        repeated runs. ``"atomic"`` uses a faster pixel-parallel accumulation
-        implementation, but floating point atomic accumulation order can make
-        the exact segmentation non-deterministic across repeated runs.
+        their closest center. ``"atomic"`` uses a faster pixel-parallel
+        accumulation implementation and is the default for performance.
+        Floating point atomic accumulation order can make the exact
+        segmentation non-deterministic across repeated runs. Use ``"scan"``
+        when exact deterministic results are required.
 
     Returns
     -------
