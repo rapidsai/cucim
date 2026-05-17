@@ -281,3 +281,10 @@ PBA+
   - https://github.com/orzzzjq/Parallel-Banding-Algorithm-plus/blob/master/LICENSE
 - Copyright: School of Computing, National University of Singapore
 - Usage: PBA+ is used to implement the Euclidean distance transform.
+
+cuda-slic
+- License: Apache 2.0
+  - https://github.com/rosalindfranklininstitute/cuda-slic
+- Copyright: Omar Elamin
+- Usage: not used directly, but served as an initial implementation reference for
+  the 3D SLIC superpixel algorithm.

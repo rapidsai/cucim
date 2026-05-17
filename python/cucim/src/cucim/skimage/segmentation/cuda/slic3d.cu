@@ -1,76 +1,58 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: Copyright (c) 2020, Omar Elamin
  * SPDX-License-Identifier: Apache-2.0
  */
 
 /*
-Apache Software License 2.0
-
-Copyright (c) 2020, Omar Elamin
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-
-
-adapted from the following file:
+started out as an adaptation of:
 https://github.com/rosalindfranklininstitute/cuda-slic/blob/master/src/cuda_slic/kernels/slic3d_template.cu
 
-original license:
-https://github.com/rosalindfranklininstitute/cuda-slic/blob/master/README.md
-
-
-refactoring/update for cuCIM (c) 2025, Gregory Lee
+refactoring/update for cuCIM (c) 2026, Gregory Lee
 - removed Jinja2 template code (prepend a string with any needed #define statements from Python)
-- comment out unused init_clusters kernel
-- add __force_inline__ to slic_distance
-- minor stylistic/performance updates
+- performance refactor (use float32 distance, use __restrict__, etc.)
+- add SLIC0 implementation
+- and maskedSLIC implementation
 
-*/
+Note on indexing conventions used here:
 
-/*
-Indexing:
-idx = pixel/voxel index in cartesian coordinates
-cidx = center index in cartesian coordinates
+  idx = pixel/voxel index in cartesian coordinates
+  cidx = center index in cartesian coordinates
 
-linear_idx = pixel/voxel index in flat array
-linear_cidx = center index in flat array
+  linear_idx = pixel/voxel index in flat array
+  linear_cidx = center index in flat array
 
 Center Stride:
-c_stride = number_of_features + image_dimention
-center_addr = linear_cidx * c_stride
+
+  c_stride = number_of_features + image_dimention
+  center_addr = linear_cidx * c_stride
 
 image has shape (z, y, x) with C-contiguous layout:
-z_stride = image_shape.y * image_shape.x
-y_stride = image_shape.x
-x_stride = 1
+
+  z_stride = image_shape.y * image_shape.x
+  y_stride = image_shape.x
+  x_stride = 1
 
 Transformations 3D:
-linear_idx = idx.z * z_stride + idx.y * y_stride + idx.x
-pixel_addr = linear_idx * N_PIXEL_FEATURES
 
-idx.z = linear_idx / z_stride
-plane_idx = linear_idx % z_stride
-idx.y = plane_idx / y_stride
-idx.x = plane_idx % y_stride
-
-Transformations 2D:
-linear_idx = idx.y * y_stride + idx.x
-pixel_addr = linear_idx * N_PIXEL_FEATURES
-
-idx.y = linear_idx / y_stride
-idx.x = linear_idx % y_stride
+  linear_idx = idx.z * z_stride + idx.y * y_stride + idx.x
+  pixel_addr = linear_idx * N_PIXEL_FEATURES
+  idx.z = linear_idx / z_stride
+  plane_idx = linear_idx % z_stride
+  idx.y = plane_idx / y_stride
+  idx.x = plane_idx % y_stride
 
 CuPy prepends the following defines in slic_superpixels.py:
-#define N_PIXEL_FEATURES { n_features }
+
+  #define N_PIXEL_FEATURES {n_features}
+  #define START_LABEL {start_label}
+  #define FLOAT_DTYPE {"double" if image.dtype == np.float64 else "float"}
+  #define INTERNAL_FLOAT_DTYPE {"double" if image.dtype == np.float64 else "float"}
+  #define PIXELS_PER_THREAD {maximization_pixels_per_thread}
+  #define SLIC_ZERO {1 if slic_zero else 0}
+  #define USE_MASK {1 if use_mask else 0}
+  #define IGNORE_COLOR {1 if ignore_color else 0}
 */
 
 #define __min(a, b) (((a) < (b)) ? (a) : (b))

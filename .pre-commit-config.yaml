@@ -248,6 +248,7 @@ repos:
             ^python/cucim/src/cucim/skimage/segmentation/boundaries[.]py$|
             ^python/cucim/src/cucim/skimage/segmentation/morphsnakes[.]py$|
             ^python/cucim/src/cucim/skimage/segmentation/random_walker_segmentation[.]py$|
+            ^python/cucim/src/cucim/skimage/segmentation/slic_superpixels[.]py$|
             ^python/cucim/src/cucim/skimage/segmentation/tests/test_boundaries[.]py$|
             ^python/cucim/src/cucim/skimage/segmentation/tests/test_chan_vese[.]py$|
             ^python/cucim/src/cucim/skimage/segmentation/tests/test_clear_border[.]py$|
@@ -255,6 +256,7 @@ repos:
             ^python/cucim/src/cucim/skimage/segmentation/tests/test_join[.]py$|
             ^python/cucim/src/cucim/skimage/segmentation/tests/test_morphsnakes[.]py$|
             ^python/cucim/src/cucim/skimage/segmentation/tests/test_random_walker[.]py$|
+            ^python/cucim/src/cucim/skimage/segmentation/tests/test_slic[.]py$|
             ^python/cucim/src/cucim/skimage/transform/__init__[.]py$|
             ^python/cucim/src/cucim/skimage/transform/__init__[.]pyi$|
             ^python/cucim/src/cucim/skimage/transform/_geometric[.]py$|
@@ -537,6 +539,7 @@ repos:
             python/cucim/src/cucim/skimage/segmentation/boundaries[.]py$|
             python/cucim/src/cucim/skimage/segmentation/morphsnakes[.]py$|
             python/cucim/src/cucim/skimage/segmentation/random_walker_segmentation[.]py$|
+            python/cucim/src/cucim/skimage/segmentation/slic_superpixels[.]py$|
             python/cucim/src/cucim/skimage/segmentation/tests/test_boundaries[.]py$|
             python/cucim/src/cucim/skimage/segmentation/tests/test_chan_vese[.]py$|
             python/cucim/src/cucim/skimage/segmentation/tests/test_clear_border[.]py$|
@@ -544,6 +547,7 @@ repos:
             python/cucim/src/cucim/skimage/segmentation/tests/test_join[.]py$|
             python/cucim/src/cucim/skimage/segmentation/tests/test_morphsnakes[.]py$|
             python/cucim/src/cucim/skimage/segmentation/tests/test_random_walker[.]py$|
+            python/cucim/src/cucim/skimage/segmentation/tests/test_slic[.]py$|
             python/cucim/src/cucim/skimage/transform/__init__[.]py$|
             python/cucim/src/cucim/skimage/transform/__init__[.]pyi$|
             python/cucim/src/cucim/skimage/transform/_geometric[.]py$|
