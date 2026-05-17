@@ -88,12 +88,22 @@ CuPy prepends the following defines in slic_superpixels.py:
 #    define INTERNAL_FLOAT_DTYPE FLOAT_DTYPE
 #endif
 
+#ifndef SUM_DTYPE
+#    define SUM_DTYPE FLOAT_DTYPE
+#endif
+
 #define CENTER_LIMIT ((FLOAT_DTYPE)1.0e30)
 #define DIST_LIMIT ((INTERNAL_FLOAT_DTYPE)1.0e30)
 
 #ifndef START_LABEL
 #    define START_LABEL 1 // starting label (must be 0 or 1)
 #endif
+
+#ifndef PIXELS_PER_THREAD
+#    define PIXELS_PER_THREAD 1
+#endif
+
+#define CENTER_STRIDE (N_PIXEL_FEATURES + 3)
 
 __forceinline__ __device__ INTERNAL_FLOAT_DTYPE slic_distance(const int3 idx,
                                                               const FLOAT_DTYPE* __restrict__ pixel,
@@ -252,6 +262,167 @@ __global__ void expectation(const FLOAT_DTYPE* __restrict__ data,
     }
 
     labels[linear_idx] = closest_linear_cidx + START_LABEL;
+}
+
+__global__ void reset_accumulators(SUM_DTYPE* __restrict__ center_sums,
+                                   unsigned int* __restrict__ center_counts,
+                                   long n_clusters)
+{
+    const long linear_cidx = threadIdx.x + (blockIdx.x * blockDim.x);
+    if (linear_cidx >= n_clusters)
+    {
+        return;
+    }
+
+    const long center_addr = linear_cidx * CENTER_STRIDE;
+    for (int w = 0; w < CENTER_STRIDE; w++)
+    {
+        center_sums[center_addr + w] = 0;
+    }
+    center_counts[linear_cidx] = 0;
+}
+
+__global__ void accumulate_centers(const FLOAT_DTYPE* __restrict__ data,
+                                   const unsigned int* __restrict__ labels,
+                                   const FLOAT_DTYPE* __restrict__ centers,
+                                   int im_shape_z,
+                                   int im_shape_y,
+                                   int im_shape_x,
+                                   int sp_shape_z,
+                                   int sp_shape_y,
+                                   int sp_shape_x,
+                                   long n_clusters,
+                                   SUM_DTYPE* __restrict__ center_sums,
+                                   unsigned int* __restrict__ center_counts)
+{
+    const unsigned long thread_idx = threadIdx.x + (blockIdx.x * blockDim.x);
+    const unsigned long start_idx = thread_idx * PIXELS_PER_THREAD;
+    const unsigned long plane_size = (unsigned long)im_shape_y * im_shape_x;
+    const unsigned long n_pixels = (unsigned long)im_shape_z * plane_size;
+
+    unsigned int encountered_labels[PIXELS_PER_THREAD];
+    unsigned int local_counts[PIXELS_PER_THREAD];
+    SUM_DTYPE local_sums[PIXELS_PER_THREAD * CENTER_STRIDE];
+
+    for (int i = 0; i < PIXELS_PER_THREAD; i++)
+    {
+        encountered_labels[i] = 0;
+        local_counts[i] = 0;
+    }
+    for (int i = 0; i < PIXELS_PER_THREAD * CENTER_STRIDE; i++)
+    {
+        local_sums[i] = 0;
+    }
+
+    int n_encountered = 0;
+    for (int k = 0; k < PIXELS_PER_THREAD; k++)
+    {
+        const unsigned long linear_idx = start_idx + k;
+        if (linear_idx >= n_pixels)
+        {
+            break;
+        }
+
+        const unsigned int label = labels[linear_idx];
+        const long linear_cidx = (long)label - START_LABEL;
+        if (linear_cidx < 0 || linear_cidx >= n_clusters)
+        {
+            continue;
+        }
+
+        int offset = -1;
+        for (int j = 0; j < n_encountered; j++)
+        {
+            if (encountered_labels[j] == label)
+            {
+                offset = j;
+                break;
+            }
+        }
+        if (offset < 0)
+        {
+            offset = n_encountered;
+            encountered_labels[offset] = label;
+            n_encountered += 1;
+        }
+
+        const unsigned long pixel_addr = linear_idx * N_PIXEL_FEATURES;
+        const long base = offset * CENTER_STRIDE;
+#if N_PIXEL_FEATURES <= 8
+#    pragma unroll
+#else
+#    pragma unroll 8
+#endif
+        for (int w = 0; w < N_PIXEL_FEATURES; w++)
+        {
+            local_sums[base + w] += data[pixel_addr + w];
+        }
+
+        const int z = linear_idx / plane_size;
+        const unsigned long plane_idx = linear_idx - (unsigned long)z * plane_size;
+        const int y = plane_idx / im_shape_x;
+        const int x = plane_idx - (unsigned long)y * im_shape_x;
+
+        const long center_addr = linear_cidx * CENTER_STRIDE;
+        const int center_z = (int)centers[center_addr + N_PIXEL_FEATURES];
+        const int center_y = (int)centers[center_addr + N_PIXEL_FEATURES + 1];
+        const int center_x = (int)centers[center_addr + N_PIXEL_FEATURES + 2];
+        const float ratio = 2.0f;
+        const int from_z = __max(center_z - sp_shape_z * ratio, 0);
+        const int from_y = __max(center_y - sp_shape_y * ratio, 0);
+        const int from_x = __max(center_x - sp_shape_x * ratio, 0);
+        const int to_z = __min(center_z + sp_shape_z * ratio, im_shape_z);
+        const int to_y = __min(center_y + sp_shape_y * ratio, im_shape_y);
+        const int to_x = __min(center_x + sp_shape_x * ratio, im_shape_x);
+        if (z < from_z || z >= to_z || y < from_y || y >= to_y || x < from_x || x >= to_x)
+        {
+            continue;
+        }
+
+        local_sums[base + N_PIXEL_FEATURES] += z;
+        local_sums[base + N_PIXEL_FEATURES + 1] += y;
+        local_sums[base + N_PIXEL_FEATURES + 2] += x;
+        local_counts[offset] += 1;
+    }
+
+    for (int j = 0; j < n_encountered; j++)
+    {
+        const long linear_cidx = (long)encountered_labels[j] - START_LABEL;
+        const long center_addr = linear_cidx * CENTER_STRIDE;
+        const long base = j * CENTER_STRIDE;
+        for (int w = 0; w < CENTER_STRIDE; w++)
+        {
+            atomicAdd(&center_sums[center_addr + w], local_sums[base + w]);
+        }
+        atomicAdd(&center_counts[linear_cidx], local_counts[j]);
+    }
+}
+
+__global__ void normalize_centers(FLOAT_DTYPE* __restrict__ centers,
+                                  const SUM_DTYPE* __restrict__ center_sums,
+                                  const unsigned int* __restrict__ center_counts,
+                                  long n_clusters)
+{
+    const long linear_cidx = threadIdx.x + (blockIdx.x * blockDim.x);
+    if (linear_cidx >= n_clusters)
+    {
+        return;
+    }
+
+    const long center_addr = linear_cidx * CENTER_STRIDE;
+    const unsigned int count = center_counts[linear_cidx];
+    if (count > 0)
+    {
+        const FLOAT_DTYPE inv_count = static_cast<FLOAT_DTYPE>(1) / static_cast<FLOAT_DTYPE>(count);
+        for (int w = 0; w < CENTER_STRIDE; w++)
+        {
+            centers[center_addr + w] = static_cast<FLOAT_DTYPE>(center_sums[center_addr + w]) * inv_count;
+        }
+    }
+    else
+    {
+        centers[center_addr] = CENTER_LIMIT;
+    }
 }
 
 __global__ void maximization(const FLOAT_DTYPE* __restrict__ data,

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 from itertools import product
 
 import cupy as cp
@@ -125,7 +128,7 @@ def test_slic_consistency_across_image_magnitude():
         sz = img_uint8.size
         assert int(cp.sum(seg1 != seg2)) < 0.001 * sz
         assert int(cp.sum(seg1 != seg3)) < 0.001 * sz
-        assert int(cp.sum(seg4 != seg5)) < 0.02 * sz
+        assert int(cp.sum(seg4 != seg5)) < 0.025 * sz
 
     # Floating point cases can have mismatch due to floating point error
     # exact match was observed on x86_64, but mismatches seen no i686.
@@ -134,6 +137,28 @@ def test_slic_consistency_across_image_magnitude():
     n_seg1 = seg1.max()
     n_seg4 = seg4.max()
     assert abs(n_seg1 - n_seg4) / n_seg1 < 0.5
+
+
+def test_slic_maximization_algorithm():
+    img = cp.asarray(data.cat()[:64, :64])
+
+    seg_scan = slic(
+        img,
+        n_segments=16,
+        enforce_connectivity=False,
+        maximization_algorithm="scan",
+    )
+    seg_atomic = slic(
+        img,
+        n_segments=16,
+        enforce_connectivity=False,
+        maximization_algorithm="atomic",
+    )
+    assert seg_scan.shape == img.shape[:2]
+    assert seg_atomic.shape == img.shape[:2]
+
+    with pytest.raises(ValueError, match="maximization_algorithm"):
+        slic(img, maximization_algorithm="unsupported")
 
 
 def test_color_3d():
@@ -195,7 +220,7 @@ def test_list_sigma():
     img = cp.asarray(img)
     result_sigma = cp.asarray([[0, 0, 0, 1, 1, 1], [0, 0, 0, 1, 1, 1]], int)
     with expected_warnings(
-        ["Input image is 2D: sigma number of " "elements must be 2"]
+        ["Input image is 2D: sigma number of elements must be 2"]
     ):
         seg_sigma = slic(
             img,

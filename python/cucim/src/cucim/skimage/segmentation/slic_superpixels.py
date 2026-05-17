@@ -54,9 +54,10 @@ def _get_grid_centroids(spatial_shape, n_centroids):
     grids_1d = xp.meshgrid(*grid_vecs, indexing="ij")
     centroids = xp.stack(tuple(g.ravel() for g in grids_1d), axis=-1)
     steps = tuple(float(s.step) if s.step is not None else 1.0 for s in slices)
+    grid_shape = tuple(int(g.size) for g in grid_vecs)
     if xp != cp:
         centroids = cp.asarray(centroids)
-    return centroids, steps
+    return centroids, steps, grid_shape
 
 
 def line_kernel_config(threads_total, block_size=64):
@@ -102,12 +103,17 @@ def _slic(
     centers_gpu,
     max_step,
     start_label,
+    maximization_algorithm,
 ):
     shape_spatial = image.shape[:-1]
 
     spatial_weight = float(max(sp_shape))
     n_centers = int(math.prod(sp_grid))
     n_features = image.shape[-1]
+    use_atomic_maximization = maximization_algorithm == "atomic"
+    maximization_pixels_per_thread = int(
+        os.environ.get("CUCIM_SLIC_MAXIMIZATION_PIXELS_PER_THREAD", "8")
+    )
 
     __dirname__ = os.path.dirname(__file__)
     if len(shape_spatial) == 2:
@@ -127,14 +133,25 @@ def _slic(
 #define START_LABEL {start_label}
 #define FLOAT_DTYPE {"double" if image.dtype == np.float64 else "float"}
 #define INTERNAL_FLOAT_DTYPE {"double" if image.dtype == np.float64 else "float"}
+#define PIXELS_PER_THREAD {maximization_pixels_per_thread}
 """
     cuda_source = 'extern "C" { ' + cuda_source_defines + cuda_source + " }"
     module = cp.RawModule(code=cuda_source, options=("-std=c++11",))
     # gpu_slic_init = module.get_function("init_clusters")
     gpu_slic_expectation = module.get_function("expectation")
-    gpu_slic_maximization = module.get_function("maximization")
+    if use_atomic_maximization:
+        gpu_slic_reset_accumulators = module.get_function("reset_accumulators")
+        gpu_slic_accumulate_centers = module.get_function("accumulate_centers")
+        gpu_slic_normalize_centers = module.get_function("normalize_centers")
+    else:
+        gpu_slic_maximization = module.get_function("maximization")
 
     labels_gpu = cp.zeros(shape_spatial, dtype=cp.uint32)
+    if use_atomic_maximization:
+        center_sums_gpu = cp.empty(
+            (n_centers, n_features + len(shape_spatial)), dtype=image.dtype
+        )
+        center_counts_gpu = cp.empty(n_centers, dtype=cp.uint32)
 
     float_dtype = image.dtype
     spacing = cp.asarray(spacing, dtype=float_dtype)
@@ -142,6 +159,13 @@ def _slic(
     # device scalar (passing Python float did not work, so changed to
     # float* in the kernel)
     ss = cp.asarray(ss, dtype=float_dtype)
+    if use_atomic_maximization:
+        n_pixels = image.size // n_features
+        accumulation_block, accumulation_grid = line_kernel_config(
+            (n_pixels + maximization_pixels_per_thread - 1)
+            // maximization_pixels_per_thread,
+            block_size=256,
+        )
 
     for _ in range(max_num_iter):
         gpu_slic_expectation(
@@ -159,18 +183,51 @@ def _slic(
             ),
         )
 
-        gpu_slic_maximization(
-            center_grid,
-            center_block,
-            (
-                image,
-                labels_gpu,
-                centers_gpu,
-                *shape_spatial,
-                *sp_shape,
-                n_centers,
-            ),
-        )
+        if use_atomic_maximization:
+            gpu_slic_reset_accumulators(
+                center_grid,
+                center_block,
+                (center_sums_gpu, center_counts_gpu, n_centers),
+            )
+
+            gpu_slic_accumulate_centers(
+                accumulation_grid,
+                accumulation_block,
+                (
+                    image,
+                    labels_gpu,
+                    centers_gpu,
+                    *shape_spatial,
+                    *sp_shape,
+                    n_centers,
+                    center_sums_gpu,
+                    center_counts_gpu,
+                ),
+            )
+
+            gpu_slic_normalize_centers(
+                center_grid,
+                center_block,
+                (
+                    centers_gpu,
+                    center_sums_gpu,
+                    center_counts_gpu,
+                    n_centers,
+                ),
+            )
+        else:
+            gpu_slic_maximization(
+                center_grid,
+                center_block,
+                (
+                    image,
+                    labels_gpu,
+                    centers_gpu,
+                    *shape_spatial,
+                    *sp_shape,
+                    n_centers,
+                ),
+            )
 
     # TODO (grelee): may want to keep the final centroids for use
     # in GPU-based connectivity enforcement.
@@ -218,6 +275,7 @@ def slic(
     *,
     channel_axis=-1,
     check_finite_and_constant=False,
+    maximization_algorithm="scan",
 ):
     """Segments image using k-means clustering in Color-(x,y,z) space.
     Parameters
@@ -288,6 +346,13 @@ def slic(
         (for regions inside any provided mask), but has device synchronization
         overhead for CuPy, so is disabled by default in cuCIM. When True, also
         checks for the case where all values in the image are constant.
+    maximization_algorithm : {"scan", "atomic"}, optional
+        Algorithm used to update cluster centers after assigning pixels to
+        their closest center. ``"scan"`` uses the original center-parallel
+        implementation and is the default because it is deterministic across
+        repeated runs. ``"atomic"`` uses a faster pixel-parallel accumulation
+        implementation, but floating point atomic accumulation order can make
+        the exact segmentation non-deterministic across repeated runs.
 
     Returns
     -------
@@ -361,6 +426,10 @@ def slic(
     if mask is not None:
         raise NotImplementedError(
             "masked SLIC not implemented in cuCIM: mask must be None"
+        )
+    if maximization_algorithm not in {"scan", "atomic"}:
+        raise ValueError(
+            "maximization_algorithm must be either 'scan' or 'atomic'"
         )
     if slic_zero:
         raise NotImplementedError(
@@ -436,10 +505,11 @@ def slic(
 
     # omit the channel dimension
     spatial_shape = image.shape[:-1]
+    ndim_spatial = len(spatial_shape)
 
     # initialize cluster centroids for desired number of segments
     # update_centroids = False
-    centroids, steps = _get_grid_centroids(spatial_shape, n_segments)
+    centroids, steps, sp_grid = _get_grid_centroids(spatial_shape, n_segments)
 
     n_centroids = centroids.shape[0]
     segments = cp.ascontiguousarray(
@@ -459,14 +529,7 @@ def slic(
     #   check step and ratio parameters and grid generation to make it closely
     #   match scikit-image
 
-    ndim_spatial = 2 if is_2d else 3
-    power = 1 / ndim_spatial
-    sp_size = int(math.ceil((math.prod(spatial_shape) / n_segments) ** power))
-    # don't allow sp_shape to be larger than image sides
-    sp_shape = tuple(min(s, sp_size) for s in spatial_shape)
-    sp_grid = tuple(
-        (im_sz + sz - 1) // sz for im_sz, sz in zip(spatial_shape, sp_shape)
-    )
+    sp_shape = tuple(int(step) for step in steps)
     n_centers = math.prod(sp_grid)
 
     # TODO(grelee): spacing currently on CPU for use with jinja2.Template
@@ -544,6 +607,7 @@ def slic(
         segments,
         max_step,
         start_label,
+        maximization_algorithm,
     )
     if enforce_connectivity:
         segment_size = math.prod(spatial_shape) / n_centers
