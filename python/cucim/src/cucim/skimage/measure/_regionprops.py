@@ -123,7 +123,7 @@ COL_DTYPES = {
     "inertia_tensor_eigvals": float,
     "intensity_max": float,
     "intensity_mean": float,
-    # 'intensity_median': float,  # TODO: uncomment once supported
+    "intensity_median": float,
     "intensity_min": float,
     "intensity_std": float,
     "label": int,
