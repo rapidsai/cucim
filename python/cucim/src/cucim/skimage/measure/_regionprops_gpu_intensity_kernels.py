@@ -35,12 +35,22 @@ intensity_deps["intensity_std"] = ["num_pixels"]
 
 
 # Region size threshold for the per-label median kernel in the hybrid
-# implementation. Users can monkeypatch this value to tune dispatch.
-hybrid_size_threshold = 4096
+# implementation. Users can monkeypatch this value to tune dispatch. If the
+# requested threshold requires more shared memory than the current GPU supports,
+# progressively smaller thresholds are tried before falling back to cp.median.
+hybrid_size_threshold = 10000
+_median_kernel_size_buckets = (1024, 4096, 10000)
+_median_kernel_bucket_cache = {}
 
-# The per-label median kernel uses size-dependent dispatch between partial
-# selection sort for small regions and shell sort for larger regions, matching
-# the strategy used by the cupyx.scipy.ndimage rank filters.
+# The per-label median kernel uses CUB BlockRadixSort with one CUDA block per
+# region/channel for regions with size <= hybrid_size_threshold. Larger regions
+# are handled by a follow-up cp.median call.
+#
+# TODO(grlee77): For larger regions, consider using
+# cub::DeviceSegmentedRadixSort::SortKeys over the packed per-label intensity
+# values, followed by a small median extraction kernel. CUB segmented sort is a
+# host-side API, so this would require a custom pybind11 host-function wrapper
+# or a future CCCL Python API exposing segmented radix sort directly.
 
 
 def _get_img_sums_code(
@@ -500,26 +510,69 @@ def regionprops_intensity_median(
 
     median_dtype = cp.promote_types(intensity_image.dtype, cp.float32)
     img1d = img1d.astype(median_dtype, copy=False)
-    max_region_size = int(hybrid_size_threshold)
-    if max_region_size > 0:
-        medians = _regionprops_intensity_median_kernel(
-            img1d,
-            counts,
-            num_channels=num_channels,
-            max_label=max_label,
-            max_region_size=max_region_size,
-        )
-    else:
-        out_shape = (
-            (max_label,) if num_channels == 1 else (max_label, num_channels)
-        )
+    out_shape = (max_label,) if num_channels == 1 else (max_label, num_channels)
+    medians = None
+    counts_cpu = cp.asnumpy(counts)
+    requested_max_region_size = int(hybrid_size_threshold)
+    max_count = int(counts_cpu.max()) if counts_cpu.size else 0
+    target_max_region_size = min(
+        requested_max_region_size, max_count, _median_kernel_size_buckets[-1]
+    )
+    device_id = cp.cuda.runtime.getDevice()
+    requested_bucket_size = next(
+        (
+            bucket
+            for bucket in _median_kernel_size_buckets
+            if bucket >= target_max_region_size
+        ),
+        _median_kernel_size_buckets[-1],
+    )
+    cache_key = (device_id, median_dtype.str, requested_bucket_size)
+    bucket_size = _median_kernel_bucket_cache.get(
+        cache_key, requested_bucket_size
+    )
+    target_max_region_size = min(target_max_region_size, bucket_size)
+    while target_max_region_size > 0 and bucket_size > 0:
+        try:
+            medians = _regionprops_intensity_median_kernel(
+                img1d,
+                counts,
+                num_channels=num_channels,
+                max_label=max_label,
+                bucket_size=bucket_size,
+                max_region_size=target_max_region_size,
+            )
+            _median_kernel_bucket_cache[cache_key] = bucket_size
+            break
+        except cp.cuda.compiler.CompileException as e:
+            if "uses too much shared data" not in str(e):
+                raise
+            # The CUB BlockRadixSort kernel has a compile-time shared memory
+            # requirement that depends on the threshold. If this GPU cannot
+            # support the requested size, retry with a smaller kernel capacity.
+            smaller_buckets = [
+                bucket
+                for bucket in _median_kernel_size_buckets
+                if bucket < bucket_size
+            ]
+            if not smaller_buckets:
+                bucket_size = 0
+                target_max_region_size = 0
+            else:
+                bucket_size = smaller_buckets[-1]
+                target_max_region_size = min(
+                    target_max_region_size, bucket_size
+                )
+    if medians is None:
+        _median_kernel_bucket_cache[cache_key] = 0
         medians = cp.full(out_shape, cp.nan, dtype=median_dtype)
 
     slice_start = 0
-    counts_cpu = cp.asnumpy(counts)
     for label_index, count in enumerate(counts_cpu):
         slice_stop = slice_start + count
-        if count and (max_region_size <= 0 or count > max_region_size):
+        if count and (
+            target_max_region_size <= 0 or count > target_max_region_size
+        ):
             medians[label_index] = cp.median(
                 img1d[slice_start:slice_stop], axis=0
             )
@@ -530,75 +583,102 @@ def regionprops_intensity_median(
 
 
 @cp.memoize(for_each_device=True)
-def get_intensity_median_per_label_kernel(max_region_size):
-    source = f"""
-    unsigned long long label_index = i / num_channels;
-    unsigned long long channel = i - label_index * num_channels;
-    unsigned long long count = counts[label_index];
-    if (count == 0) {{
-        y[i] = static_cast<X>(0.0 / 0.0);
-    }} else if (count > {max_region_size}) {{
-        // large regions are handled by a follow-up cp.median call
-        y[i] = static_cast<X>(0.0 / 0.0);
-    }} else {{
-        X values[{max_region_size}];
+def get_intensity_median_per_label_kernel(dtype, bucket_size):
+    dtype = cp.dtype(dtype)
+    c_type = "double" if dtype == cp.float64 else "float"
+    block_threads = 256
+    items_per_thread = math.ceil(bucket_size / block_threads)
+    capacity = block_threads * items_per_thread
+    code = f"""
+    #include <cub/block/block_radix_sort.cuh>
+    #include <cub/block/block_reduce.cuh>
+
+    extern "C" __global__
+    void cucim_regionprops_intensity_median_per_label(
+        const {c_type}* img,
+        const unsigned int* counts,
+        const unsigned long long* offsets,
+        const unsigned long long num_channels,
+        const unsigned int max_region_size,
+        {c_type}* y)
+    {{
+        constexpr int BLOCK_THREADS = {block_threads};
+        constexpr int ITEMS_PER_THREAD = {items_per_thread};
+        constexpr int CAPACITY = {capacity};
+        using BlockRadixSort = cub::BlockRadixSort<
+            {c_type}, BLOCK_THREADS, ITEMS_PER_THREAD>;
+        __shared__ typename BlockRadixSort::TempStorage temp_storage;
+
+        unsigned long long out_index = blockIdx.x;
+        unsigned long long label_index = out_index / num_channels;
+        unsigned long long channel = out_index - label_index * num_channels;
+        unsigned int count = counts[label_index];
+        if (count == 0) {{
+            if (threadIdx.x == 0) {{
+                y[out_index] = static_cast<{c_type}>(0.0 / 0.0);
+            }}
+            return;
+        }}
+        if (count > max_region_size) {{
+            if (threadIdx.x == 0) {{
+                y[out_index] = static_cast<{c_type}>(0.0 / 0.0);
+            }}
+            return;
+        }}
+
+        {c_type} thread_keys[ITEMS_PER_THREAD];
         unsigned long long start = offsets[label_index];
-        for (unsigned long long j = 0; j < count; j++) {{
-            unsigned long long input_index = (
-                num_channels == 1 ? start + j : (start + j) * num_channels + channel
-            );
-            values[j] = img[input_index];
-        }}
-        unsigned long long hi = count / 2;
-        unsigned long long partial_selection_threshold = 161;
-        if (count <= partial_selection_threshold) {{
-            for (unsigned long long pos = 0; pos <= hi; pos++) {{
-                unsigned long long target = pos;
-                X target_val = values[pos];
-                for (unsigned long long j = pos + 1; j < count; j++) {{
-                    if (values[j] < target_val) {{
-                        target = j;
-                        target_val = values[j];
-                    }}
-                }}
-                if (target != pos) {{
-                    values[target] = values[pos];
-                    values[pos] = target_val;
-                }}
-            }}
-        }} else {{
-            // shell sort
-            int gap = 1;
-            while (gap < count) {{
-                gap = 3 * gap + 1;
-            }}
-            while (gap > 1) {{
-                gap /= 3;
-                for (int j = gap; j < count; j++) {{
-                    X value = values[j];
-                    int k = j - gap;
-                    while (k >= 0 && value < values[k]) {{
-                        values[k + gap] = values[k];
-                        k -= gap;
-                    }}
-                    values[k + gap] = value;
-                }}
+        #pragma unroll
+        for (int item = 0; item < ITEMS_PER_THREAD; item++) {{
+            unsigned int local_index = threadIdx.x * ITEMS_PER_THREAD + item;
+            if (local_index < count) {{
+                unsigned long long input_index = (
+                    num_channels == 1
+                        ? start + local_index
+                        : (start + local_index) * num_channels + channel);
+                thread_keys[item] = img[input_index];
+            }} else {{
+                thread_keys[item] = static_cast<{c_type}>(1.0 / 0.0);
             }}
         }}
-        if ((count & 1) != 0) {{
-            y[i] = values[hi];
-        }} else {{
-            unsigned long long lo = hi - 1;
-            y[i] = (values[lo] + values[hi]) / static_cast<X>(2.0);
+
+        BlockRadixSort(temp_storage).Sort(thread_keys);
+        __syncthreads();
+
+        unsigned int hi = count / 2;
+        unsigned int lo = hi - 1;
+        {c_type} lo_val = 0;
+        {c_type} hi_val = 0;
+        #pragma unroll
+        for (int item = 0; item < ITEMS_PER_THREAD; item++) {{
+            unsigned int local_index = threadIdx.x * ITEMS_PER_THREAD + item;
+            if (local_index == hi) {{
+                hi_val = thread_keys[item];
+            }}
+            if ((count & 1) == 0 && local_index == lo) {{
+                lo_val = thread_keys[item];
+            }}
+        }}
+        typedef cub::BlockReduce<{c_type}, BLOCK_THREADS> BlockReduce;
+        __shared__ typename BlockReduce::TempStorage reduce_storage;
+        hi_val = BlockReduce(reduce_storage).Sum(hi_val);
+        __syncthreads();
+        if ((count & 1) == 0) {{
+            lo_val = BlockReduce(reduce_storage).Sum(lo_val);
+        }}
+        if (threadIdx.x == 0) {{
+            if ((count & 1) != 0) {{
+                y[out_index] = hi_val;
+            }} else {{
+                y[out_index] = (lo_val + hi_val) / static_cast<{c_type}>(2.0);
+            }}
         }}
     }}
     """
-    return cp.ElementwiseKernel(
-        "raw X img, raw C counts, raw O offsets, uint64 num_channels",
-        "raw X y",
-        source,
-        preamble=_includes,
-        name=f"cucim_regionprops_intensity_median_per_label_{max_region_size}",
+    return cp.RawKernel(
+        code,
+        "cucim_regionprops_intensity_median_per_label",
+        options=("--std=c++17",),
     )
 
 
@@ -607,6 +687,7 @@ def _regionprops_intensity_median_kernel(
     counts,
     num_channels,
     max_label,
+    bucket_size,
     max_region_size,
 ):
     offsets = cp.empty(max_label + 1, dtype=cp.uint64)
@@ -617,14 +698,18 @@ def _regionprops_intensity_median_kernel(
     out_shape = (max_label,) if num_channels == 1 else (max_label, num_channels)
     medians = cp.empty(out_shape, dtype=img1d.dtype)
 
-    kernel = get_intensity_median_per_label_kernel(max_region_size)
+    kernel = get_intensity_median_per_label_kernel(img1d.dtype, bucket_size)
     kernel(
-        img1d,
-        counts,
-        offsets,
-        cp.uint64(num_channels),
-        medians,
-        size=medians.size,
+        (medians.size,),
+        (256,),
+        (
+            img1d,
+            counts,
+            offsets,
+            cp.uint64(num_channels),
+            cp.uint32(max_region_size),
+            medians,
+        ),
     )
     return medians
 
