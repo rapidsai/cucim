@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import functools
@@ -41,6 +41,7 @@ from cucim.skimage.measure._regionprops_gpu import (
     regionprops_inertia_tensor,
     regionprops_inertia_tensor_eigvals,
     regionprops_intensity_mean,
+    regionprops_intensity_median,
     regionprops_intensity_min_max,
     regionprops_intensity_std,
     regionprops_moments,
@@ -274,7 +275,9 @@ def test_extent(ndim, area_dtype, spacing):
 
 @pytest.mark.parametrize("precompute_max", [False, True])
 @pytest.mark.parametrize("ndim", [2, 3])
-@pytest.mark.parametrize("image_dtype", [cp.uint16, cp.uint8, cp.float32])
+@pytest.mark.parametrize(
+    "image_dtype", [cp.uint16, cp.uint8, cp.float16, cp.float32]
+)
 @pytest.mark.parametrize("mean_dtype", [cp.float32, cp.float64])
 @pytest.mark.parametrize("num_channels", [1, 4])
 def test_mean_intensity(
@@ -285,6 +288,7 @@ def test_mean_intensity(
     intensity_image = get_intensity_image(
         shape, dtype=image_dtype, num_channels=num_channels
     )
+    intensity_image = intensity_image.astype(image_dtype, copy=False)
 
     max_label = int(cp.max(labels)) if precompute_max else None
     props_dict = regionprops_intensity_mean(
@@ -306,6 +310,41 @@ def test_mean_intensity(
                 props_dict["intensity_mean"][..., c],
                 expected[f"intensity_mean-{c}"],
                 rtol=1e-3,
+            )
+
+
+@pytest.mark.parametrize("precompute_max", [False, True])
+@pytest.mark.parametrize("ndim", [2, 3])
+@pytest.mark.parametrize("image_dtype", [cp.uint16, cp.uint8, cp.float32])
+@pytest.mark.parametrize("num_channels", [1, 4])
+def test_median_intensity(precompute_max, ndim, image_dtype, num_channels):
+    shape = (128, 256) if ndim == 2 else (15, 31, 23)
+    labels = get_labels_nd(shape)
+    intensity_image = get_intensity_image(
+        shape, dtype=image_dtype, num_channels=num_channels
+    )
+
+    max_label = int(cp.max(labels)) if precompute_max else None
+    props_dict = regionprops_intensity_median(
+        labels, intensity_image, max_label=max_label
+    )
+    median_dtype = cp.promote_types(intensity_image.dtype, cp.float32)
+    assert props_dict["intensity_median"].dtype == median_dtype
+    expected = measure_cpu.regionprops_table(
+        cp.asnumpy(labels),
+        intensity_image=cp.asnumpy(intensity_image),
+        properties=["num_pixels", "intensity_median"],
+    )
+    assert_array_equal(props_dict["num_pixels"], expected["num_pixels"])
+    if num_channels == 1:
+        assert_allclose(
+            props_dict["intensity_median"], expected["intensity_median"]
+        )
+    else:
+        for c in range(num_channels):
+            assert_allclose(
+                props_dict["intensity_median"][..., c],
+                expected[f"intensity_median-{c}"],
             )
 
 

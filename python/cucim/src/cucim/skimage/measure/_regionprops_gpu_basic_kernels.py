@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 import math
@@ -803,7 +803,7 @@ def _get_compressed_labels(
         sort_indices = cp.argsort(labels1d)
         label_coords = tuple(c[sort_indices] for c in label_coords)
         labels1d = labels1d[sort_indices]
-    if intensity_image:
+    if intensity_image is not None:
         img1d = intensity_image[label_coords]
         return label_coords, labels1d, img1d
     return label_coords, labels1d
