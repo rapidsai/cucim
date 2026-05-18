@@ -5,6 +5,11 @@ import math
 
 import cupy as cp
 
+try:
+    from cucim.skimage import _cucim_skimage_cpp_ext as _skimage_cpp_ext
+except ImportError:
+    _skimage_cpp_ext = None
+
 from ._regionprops_gpu_basic_kernels import (
     _get_compressed_labels,
     regionprops_num_pixels,
@@ -34,48 +39,13 @@ intensity_deps["intensity_median"] = ["num_pixels"]
 intensity_deps["intensity_std"] = ["num_pixels"]
 
 
-# Region size threshold for the per-label median kernel in the hybrid
-# implementation. Users can monkeypatch this value to tune dispatch. If the
-# requested threshold requires more shared memory than the current GPU supports,
-# progressively smaller thresholds are tried before falling back to cp.median.
-hybrid_size_threshold = 20000
-_median_kernel_size_buckets = (1024, 4096, 10000, 20000)
-_median_kernel_bucket_cache = {}
+# Region size threshold for the CUB segmented sort path in the hybrid
+# implementation. Users can monkeypatch this value to tune dispatch.
+hybrid_size_threshold = 128000
 
-# The per-label median kernel uses CUB BlockRadixSort with one CUDA block per
-# region/channel for regions with size <= hybrid_size_threshold. Larger regions
-# are handled by a follow-up cp.median call.
-#
-# TODO(grlee77): For larger regions, consider using
-# cub::DeviceSegmentedRadixSort::SortKeys over the packed per-label intensity
-# values, followed by a small median extraction kernel. CUB segmented sort is a
-# host-side API, so this would require a custom pybind11 host-function wrapper
-# or a future CCCL Python API exposing segmented radix sort directly.
-
-
-def _get_median_kernel_dynamic_smem(dtype, bucket_size):
-    capacity = 256 * math.ceil(bucket_size / 256)
-    return capacity * cp.dtype(dtype).itemsize + 8192
-
-
-@cp.memoize(for_each_device=True)
-def _get_median_kernel_smem_limits():
-    device_props = cp.cuda.runtime.getDeviceProperties(
-        cp.cuda.runtime.getDevice()
-    )
-    return device_props["sharedMemPerBlock"], device_props.get(
-        "sharedMemPerBlockOptin", device_props["sharedMemPerBlock"]
-    )
-
-
-@cp.memoize(for_each_device=True)
-def _get_median_kernel_available_buckets(dtype):
-    _, max_dynamic_smem = _get_median_kernel_smem_limits()
-    return tuple(
-        bucket
-        for bucket in _median_kernel_size_buckets
-        if _get_median_kernel_dynamic_smem(dtype, bucket) <= max_dynamic_smem
-    )
+# The median implementation uses cub::DeviceSegmentedRadixSort::SortKeys over
+# packed per-label intensity values for regions up to hybrid_size_threshold.
+# Larger regions are handled by a follow-up cp.median call.
 
 
 def _get_img_sums_code(
@@ -536,68 +506,33 @@ def regionprops_intensity_median(
     median_dtype = cp.promote_types(intensity_image.dtype, cp.float32)
     img1d = img1d.astype(median_dtype, copy=False)
     out_shape = (max_label,) if num_channels == 1 else (max_label, num_channels)
-    medians = None
     counts_cpu = cp.asnumpy(counts)
-    requested_max_region_size = int(hybrid_size_threshold)
-    max_count = int(counts_cpu.max()) if counts_cpu.size else 0
-    available_buckets = _get_median_kernel_available_buckets(median_dtype)
-    target_max_region_size = min(
-        requested_max_region_size,
-        max_count,
-        available_buckets[-1] if available_buckets else 0,
+    medians = cp.full(out_shape, cp.nan, dtype=median_dtype)
+
+    offsets = cp.empty(max_label + 1, dtype=cp.uint64)
+    offsets[0] = 0
+    if max_label:
+        cp.cumsum(counts, dtype=cp.uint64, out=offsets[1:])
+
+    segmented_filled = _fill_intensity_median_segmented_sort(
+        img1d,
+        counts,
+        offsets,
+        medians,
+        num_channels=num_channels,
+        min_region_size=0,
+        max_region_size=int(hybrid_size_threshold),
     )
-    device_id = cp.cuda.runtime.getDevice()
-    requested_bucket_size = next(
-        (
-            bucket
-            for bucket in available_buckets
-            if bucket >= target_max_region_size
-        ),
-        available_buckets[-1] if available_buckets else 0,
+    segmented_filled_cpu = (
+        cp.asnumpy(segmented_filled) if segmented_filled is not None else None
     )
-    cache_key = (device_id, median_dtype.str, requested_bucket_size)
-    bucket_size = _median_kernel_bucket_cache.get(
-        cache_key, requested_bucket_size
-    )
-    target_max_region_size = min(target_max_region_size, bucket_size)
-    while target_max_region_size > 0 and bucket_size > 0:
-        try:
-            medians = _regionprops_intensity_median_kernel(
-                img1d,
-                counts,
-                num_channels=num_channels,
-                max_label=max_label,
-                bucket_size=bucket_size,
-                max_region_size=target_max_region_size,
-            )
-            _median_kernel_bucket_cache[cache_key] = bucket_size
-            break
-        except cp.cuda.compiler.CompileException as e:
-            if "uses too much shared data" not in str(e):
-                raise
-            # The CUB BlockRadixSort kernel has a compile-time shared memory
-            # requirement that depends on the threshold. If this GPU cannot
-            # support the requested size, retry with a smaller kernel capacity.
-            smaller_buckets = [
-                bucket for bucket in available_buckets if bucket < bucket_size
-            ]
-            if not smaller_buckets:
-                bucket_size = 0
-                target_max_region_size = 0
-            else:
-                bucket_size = smaller_buckets[-1]
-                target_max_region_size = min(
-                    target_max_region_size, bucket_size
-                )
-    if medians is None:
-        _median_kernel_bucket_cache[cache_key] = 0
-        medians = cp.full(out_shape, cp.nan, dtype=median_dtype)
 
     slice_start = 0
     for label_index, count in enumerate(counts_cpu):
         slice_stop = slice_start + count
         if count and (
-            target_max_region_size <= 0 or count > target_max_region_size
+            segmented_filled_cpu is None
+            or not segmented_filled_cpu[label_index]
         ):
             medians[label_index] = cp.median(
                 img1d[slice_start:slice_stop], axis=0
@@ -608,159 +543,71 @@ def regionprops_intensity_median(
     return props_dict
 
 
-@cp.memoize(for_each_device=True)
-def get_intensity_median_per_label_kernel(dtype, bucket_size, use_dynamic_smem):
-    dtype = cp.dtype(dtype)
-    c_type = "double" if dtype == cp.float64 else "float"
-    block_threads = 256
-    items_per_thread = math.ceil(bucket_size / block_threads)
-    capacity = block_threads * items_per_thread
-    code = f"""
-    #include <cub/block/block_radix_sort.cuh>
-    #include <cub/block/block_reduce.cuh>
-
-    extern "C" __global__
-    void cucim_regionprops_intensity_median_per_label(
-        const {c_type}* img,
-        const unsigned int* counts,
-        const unsigned long long* offsets,
-        const unsigned long long num_channels,
-        const unsigned int max_region_size,
-        {c_type}* y)
-    {{
-        constexpr int BLOCK_THREADS = {block_threads};
-        constexpr int ITEMS_PER_THREAD = {items_per_thread};
-        constexpr int CAPACITY = {capacity};
-        using BlockRadixSort = cub::BlockRadixSort<
-            {c_type}, BLOCK_THREADS, ITEMS_PER_THREAD>;
-        using BlockReduce = cub::BlockReduce<{c_type}, BLOCK_THREADS>;
-    """
-    if use_dynamic_smem:
-        code += """
-        extern __shared__ __align__(16) unsigned char shared_mem[];
-        auto& sort_storage =
-            *reinterpret_cast<typename BlockRadixSort::TempStorage*>(
-                shared_mem);
-        auto& reduce_storage =
-            *reinterpret_cast<typename BlockReduce::TempStorage*>(
-                shared_mem);
-    """
-    else:
-        code += """
-        __shared__ typename BlockRadixSort::TempStorage sort_storage;
-        __shared__ typename BlockReduce::TempStorage reduce_storage;
-    """
-    code += f"""
-
-        unsigned long long out_index = blockIdx.x;
-        unsigned long long label_index = out_index / num_channels;
-        unsigned long long channel = out_index - label_index * num_channels;
-        unsigned int count = counts[label_index];
-        if (count == 0) {{
-            if (threadIdx.x == 0) {{
-                y[out_index] = static_cast<{c_type}>(0.0 / 0.0);
-            }}
-            return;
-        }}
-        if (count > max_region_size) {{
-            if (threadIdx.x == 0) {{
-                y[out_index] = static_cast<{c_type}>(0.0 / 0.0);
-            }}
-            return;
-        }}
-
-        {c_type} thread_keys[ITEMS_PER_THREAD];
-        unsigned long long start = offsets[label_index];
-        #pragma unroll
-        for (int item = 0; item < ITEMS_PER_THREAD; item++) {{
-            unsigned int local_index = threadIdx.x * ITEMS_PER_THREAD + item;
-            if (local_index < count) {{
-                unsigned long long input_index = (
-                    num_channels == 1
-                        ? start + local_index
-                        : (start + local_index) * num_channels + channel);
-                thread_keys[item] = img[input_index];
-            }} else {{
-                thread_keys[item] = static_cast<{c_type}>(1.0 / 0.0);
-            }}
-        }}
-
-        BlockRadixSort(sort_storage).Sort(thread_keys);
-        __syncthreads();
-
-        unsigned int hi = count / 2;
-        unsigned int lo = hi - 1;
-        {c_type} lo_val = 0;
-        {c_type} hi_val = 0;
-        #pragma unroll
-        for (int item = 0; item < ITEMS_PER_THREAD; item++) {{
-            unsigned int local_index = threadIdx.x * ITEMS_PER_THREAD + item;
-            if (local_index == hi) {{
-                hi_val = thread_keys[item];
-            }}
-            if ((count & 1) == 0 && local_index == lo) {{
-                lo_val = thread_keys[item];
-            }}
-        }}
-        hi_val = BlockReduce(reduce_storage).Sum(hi_val);
-        __syncthreads();
-        if ((count & 1) == 0) {{
-            lo_val = BlockReduce(reduce_storage).Sum(lo_val);
-        }}
-        if (threadIdx.x == 0) {{
-            if ((count & 1) != 0) {{
-                y[out_index] = hi_val;
-            }} else {{
-                y[out_index] = (lo_val + hi_val) / static_cast<{c_type}>(2.0);
-            }}
-        }}
-    }}
-    """
-    return cp.RawKernel(
-        code,
-        "cucim_regionprops_intensity_median_per_label",
-        options=("--std=c++17",),
-    )
-
-
-def _regionprops_intensity_median_kernel(
+def _fill_intensity_median_segmented_sort(
     img1d,
     counts,
+    offsets,
+    medians,
     num_channels,
-    max_label,
-    bucket_size,
+    min_region_size,
     max_region_size,
 ):
-    offsets = cp.empty(max_label + 1, dtype=cp.uint64)
-    offsets[0] = 0
-    if max_label:
-        cp.cumsum(counts, dtype=cp.uint64, out=offsets[1:])
+    if _skimage_cpp_ext is None or max_region_size <= min_region_size:
+        return None
+    if not hasattr(
+        _skimage_cpp_ext, "segmented_radix_sort_keys_ranges_float32"
+    ):
+        return None
 
-    out_shape = (max_label,) if num_channels == 1 else (max_label, num_channels)
-    medians = cp.empty(out_shape, dtype=img1d.dtype)
+    eligible = (counts > min_region_size) & (counts <= max_region_size)
+    if not bool(eligible.any()):
+        return eligible
 
-    normal_smem, _ = _get_median_kernel_smem_limits()
-    dynamic_smem = _get_median_kernel_dynamic_smem(img1d.dtype, bucket_size)
-    use_dynamic_smem = dynamic_smem > normal_smem
-    kernel = get_intensity_median_per_label_kernel(
-        img1d.dtype, bucket_size, use_dynamic_smem
-    )
-    if use_dynamic_smem:
-        kernel.max_dynamic_shared_size_bytes = dynamic_smem
-    kernel(
-        (medians.size,),
-        (256,),
-        (
-            img1d,
-            counts,
-            offsets,
-            cp.uint64(num_channels),
-            cp.uint32(max_region_size),
-            medians,
-        ),
-        shared_mem=dynamic_smem if use_dynamic_smem else 0,
-    )
-    return medians
+    label_indices = cp.nonzero(eligible)[0]
+    begin_offsets = cp.ascontiguousarray(offsets[:-1][eligible])
+    end_offsets = cp.ascontiguousarray(offsets[1:][eligible])
+    counts_selected = counts[eligible].astype(cp.uint64, copy=False)
+    hi = begin_offsets + counts_selected // 2
+    even = counts_selected % 2 == 0
+
+    def sort_channel(keys):
+        sorted_keys = cp.empty_like(keys)
+        stream_ptr = cp.cuda.get_current_stream().ptr
+        if keys.dtype == cp.float32:
+            _skimage_cpp_ext.segmented_radix_sort_keys_ranges_float32(
+                keys.data.ptr,
+                sorted_keys.data.ptr,
+                begin_offsets.data.ptr,
+                end_offsets.data.ptr,
+                keys.size,
+                label_indices.size,
+                stream_ptr,
+            )
+        elif keys.dtype == cp.float64:
+            _skimage_cpp_ext.segmented_radix_sort_keys_ranges_float64(
+                keys.data.ptr,
+                sorted_keys.data.ptr,
+                begin_offsets.data.ptr,
+                end_offsets.data.ptr,
+                keys.size,
+                label_indices.size,
+                stream_ptr,
+            )
+        else:
+            raise TypeError(f"unsupported intensity median dtype {keys.dtype}")
+        values = sorted_keys[hi]
+        if bool(even.any()):
+            lo = hi[even] - cp.uint64(1)
+            values[even] = (sorted_keys[lo] + values[even]) / keys.dtype.type(2)
+        return values
+
+    if num_channels == 1:
+        medians[label_indices] = sort_channel(img1d)
+    else:
+        for channel in range(num_channels):
+            keys = cp.ascontiguousarray(img1d[:, channel])
+            medians[label_indices, channel] = sort_channel(keys)
+    return eligible
 
 
 @cp.memoize(for_each_device=True)
