@@ -132,9 +132,17 @@ class RandomWalkerBench(ImageBench):
 
 class SlicBench(ImageBench):
     def __init__(self, *args, **kwargs):
-        fixed_kwargs = kwargs.get("fixed_kwargs", {})
+        fixed_kwargs = kwargs.get("fixed_kwargs", {}).copy()
+        self.gpu_connectivity_algorithm = fixed_kwargs.pop(
+            "gpu_connectivity_algorithm", None
+        )
+        kwargs["fixed_kwargs"] = fixed_kwargs
         self.use_ihc_mask = fixed_kwargs.get("mask", None) == "ihc"
         super().__init__(*args, **kwargs)
+        if self.gpu_connectivity_algorithm is not None:
+            self.fixed_kwargs_gpu["connectivity_algorithm"] = (
+                self.gpu_connectivity_algorithm
+            )
 
     def _tile_crop(self, image, shape):
         n_tile = [math.ceil(s / im_s) for s, im_s in zip(shape, image.shape)]
@@ -376,7 +384,9 @@ def main(args):
                         # this matches the public example and exercises the
                         # code path most sensitive to mask behavior.
                         var_kwargs1["enforce_connectivity"] = [True]
+                        fixed_kwargs1["gpu_connectivity_algorithm"] = "gpu"
                         index_parts.append(f"mask={mask_value}")
+                        index_parts.append("connectivity_algorithm=gpu")
                     index_str = ", ".join(index_parts) if index_parts else None
 
                     B = bench_class(
