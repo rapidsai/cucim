@@ -38,8 +38,8 @@ intensity_deps["intensity_std"] = ["num_pixels"]
 # implementation. Users can monkeypatch this value to tune dispatch. If the
 # requested threshold requires more shared memory than the current GPU supports,
 # progressively smaller thresholds are tried before falling back to cp.median.
-hybrid_size_threshold = 10000
-_median_kernel_size_buckets = (1024, 4096, 10000)
+hybrid_size_threshold = 20000
+_median_kernel_size_buckets = (1024, 4096, 10000, 20000)
 _median_kernel_bucket_cache = {}
 
 # The per-label median kernel uses CUB BlockRadixSort with one CUDA block per
@@ -51,6 +51,31 @@ _median_kernel_bucket_cache = {}
 # values, followed by a small median extraction kernel. CUB segmented sort is a
 # host-side API, so this would require a custom pybind11 host-function wrapper
 # or a future CCCL Python API exposing segmented radix sort directly.
+
+
+def _get_median_kernel_dynamic_smem(dtype, bucket_size):
+    capacity = 256 * math.ceil(bucket_size / 256)
+    return capacity * cp.dtype(dtype).itemsize + 8192
+
+
+@cp.memoize(for_each_device=True)
+def _get_median_kernel_smem_limits():
+    device_props = cp.cuda.runtime.getDeviceProperties(
+        cp.cuda.runtime.getDevice()
+    )
+    return device_props["sharedMemPerBlock"], device_props.get(
+        "sharedMemPerBlockOptin", device_props["sharedMemPerBlock"]
+    )
+
+
+@cp.memoize(for_each_device=True)
+def _get_median_kernel_available_buckets(dtype):
+    _, max_dynamic_smem = _get_median_kernel_smem_limits()
+    return tuple(
+        bucket
+        for bucket in _median_kernel_size_buckets
+        if _get_median_kernel_dynamic_smem(dtype, bucket) <= max_dynamic_smem
+    )
 
 
 def _get_img_sums_code(
@@ -515,17 +540,20 @@ def regionprops_intensity_median(
     counts_cpu = cp.asnumpy(counts)
     requested_max_region_size = int(hybrid_size_threshold)
     max_count = int(counts_cpu.max()) if counts_cpu.size else 0
+    available_buckets = _get_median_kernel_available_buckets(median_dtype)
     target_max_region_size = min(
-        requested_max_region_size, max_count, _median_kernel_size_buckets[-1]
+        requested_max_region_size,
+        max_count,
+        available_buckets[-1] if available_buckets else 0,
     )
     device_id = cp.cuda.runtime.getDevice()
     requested_bucket_size = next(
         (
             bucket
-            for bucket in _median_kernel_size_buckets
+            for bucket in available_buckets
             if bucket >= target_max_region_size
         ),
-        _median_kernel_size_buckets[-1],
+        available_buckets[-1] if available_buckets else 0,
     )
     cache_key = (device_id, median_dtype.str, requested_bucket_size)
     bucket_size = _median_kernel_bucket_cache.get(
@@ -551,9 +579,7 @@ def regionprops_intensity_median(
             # requirement that depends on the threshold. If this GPU cannot
             # support the requested size, retry with a smaller kernel capacity.
             smaller_buckets = [
-                bucket
-                for bucket in _median_kernel_size_buckets
-                if bucket < bucket_size
+                bucket for bucket in available_buckets if bucket < bucket_size
             ]
             if not smaller_buckets:
                 bucket_size = 0
@@ -583,7 +609,7 @@ def regionprops_intensity_median(
 
 
 @cp.memoize(for_each_device=True)
-def get_intensity_median_per_label_kernel(dtype, bucket_size):
+def get_intensity_median_per_label_kernel(dtype, bucket_size, use_dynamic_smem):
     dtype = cp.dtype(dtype)
     c_type = "double" if dtype == cp.float64 else "float"
     block_threads = 256
@@ -607,7 +633,24 @@ def get_intensity_median_per_label_kernel(dtype, bucket_size):
         constexpr int CAPACITY = {capacity};
         using BlockRadixSort = cub::BlockRadixSort<
             {c_type}, BLOCK_THREADS, ITEMS_PER_THREAD>;
-        __shared__ typename BlockRadixSort::TempStorage temp_storage;
+        using BlockReduce = cub::BlockReduce<{c_type}, BLOCK_THREADS>;
+    """
+    if use_dynamic_smem:
+        code += """
+        extern __shared__ __align__(16) unsigned char shared_mem[];
+        auto& sort_storage =
+            *reinterpret_cast<typename BlockRadixSort::TempStorage*>(
+                shared_mem);
+        auto& reduce_storage =
+            *reinterpret_cast<typename BlockReduce::TempStorage*>(
+                shared_mem);
+    """
+    else:
+        code += """
+        __shared__ typename BlockRadixSort::TempStorage sort_storage;
+        __shared__ typename BlockReduce::TempStorage reduce_storage;
+    """
+    code += f"""
 
         unsigned long long out_index = blockIdx.x;
         unsigned long long label_index = out_index / num_channels;
@@ -642,7 +685,7 @@ def get_intensity_median_per_label_kernel(dtype, bucket_size):
             }}
         }}
 
-        BlockRadixSort(temp_storage).Sort(thread_keys);
+        BlockRadixSort(sort_storage).Sort(thread_keys);
         __syncthreads();
 
         unsigned int hi = count / 2;
@@ -659,8 +702,6 @@ def get_intensity_median_per_label_kernel(dtype, bucket_size):
                 lo_val = thread_keys[item];
             }}
         }}
-        typedef cub::BlockReduce<{c_type}, BLOCK_THREADS> BlockReduce;
-        __shared__ typename BlockReduce::TempStorage reduce_storage;
         hi_val = BlockReduce(reduce_storage).Sum(hi_val);
         __syncthreads();
         if ((count & 1) == 0) {{
@@ -698,7 +739,14 @@ def _regionprops_intensity_median_kernel(
     out_shape = (max_label,) if num_channels == 1 else (max_label, num_channels)
     medians = cp.empty(out_shape, dtype=img1d.dtype)
 
-    kernel = get_intensity_median_per_label_kernel(img1d.dtype, bucket_size)
+    normal_smem, _ = _get_median_kernel_smem_limits()
+    dynamic_smem = _get_median_kernel_dynamic_smem(img1d.dtype, bucket_size)
+    use_dynamic_smem = dynamic_smem > normal_smem
+    kernel = get_intensity_median_per_label_kernel(
+        img1d.dtype, bucket_size, use_dynamic_smem
+    )
+    if use_dynamic_smem:
+        kernel.max_dynamic_shared_size_bytes = dynamic_smem
     kernel(
         (medians.size,),
         (256,),
@@ -710,6 +758,7 @@ def _regionprops_intensity_median_kernel(
             cp.uint32(max_region_size),
             medians,
         ),
+        shared_mem=dynamic_smem if use_dynamic_smem else 0,
     )
     return medians
 
