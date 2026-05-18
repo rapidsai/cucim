@@ -17,6 +17,7 @@ from cupy.testing import (
 from scipy.ndimage import find_objects as cpu_find_objects
 from skimage import measure as measure_cpu
 
+import cucim.skimage.measure._regionprops_gpu_intensity_kernels as intensity_kernels
 from cucim.skimage import data, measure
 from cucim.skimage._vendored import ndimage as ndi
 from cucim.skimage.measure._regionprops import PROPS
@@ -346,6 +347,27 @@ def test_median_intensity(precompute_max, ndim, image_dtype, num_channels):
                 props_dict["intensity_median"][..., c],
                 expected[f"intensity_median-{c}"],
             )
+
+
+def test_median_intensity_hybrid_threshold_monkeypatch(monkeypatch):
+    labels = cp.array(
+        [[1, 1, 0, 2], [1, 0, 2, 2], [3, 3, 3, 3]], dtype=cp.uint8
+    )
+    intensity_image = cp.arange(labels.size, dtype=cp.float32).reshape(
+        labels.shape
+    )
+
+    monkeypatch.setattr(intensity_kernels, "hybrid_size_threshold", 0)
+    fallback = regionprops_intensity_median(labels, intensity_image)[
+        "intensity_median"
+    ]
+
+    monkeypatch.setattr(intensity_kernels, "hybrid_size_threshold", 4)
+    hybrid = regionprops_intensity_median(labels, intensity_image)[
+        "intensity_median"
+    ]
+
+    assert_allclose(hybrid, fallback)
 
 
 @pytest.mark.parametrize("precompute_max", [False, True])
