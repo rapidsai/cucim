@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import math
-import os
 
 import cupy as cp
 
@@ -35,15 +34,13 @@ intensity_deps["intensity_median"] = ["num_pixels"]
 intensity_deps["intensity_std"] = ["num_pixels"]
 
 
-_INTENSITY_MEDIAN_BACKEND_ENV = "CUCIM_REGIONPROPS_INTENSITY_MEDIAN_BACKEND"
-_INTENSITY_MEDIAN_MAX_SIZE_ENV = "CUCIM_REGIONPROPS_INTENSITY_MEDIAN_MAX_SIZE"
-_INTENSITY_MEDIAN_KERNEL_THRESHOLD_ENV = (
-    "CUCIM_REGIONPROPS_INTENSITY_MEDIAN_KERNEL_THRESHOLD"
-)
+# Region size threshold for the per-label median kernel in the hybrid
+# implementation. Users can monkeypatch this value to tune dispatch.
+hybrid_size_threshold = 4096
 
-# The experimental per-label median kernel uses size-dependent dispatch between
-# partial selection sort for small regions and shell sort for larger regions,
-# matching the strategy used by the cupyx.scipy.ndimage rank filters.
+# The per-label median kernel uses size-dependent dispatch between partial
+# selection sort for small regions and shell sort for larger regions, matching
+# the strategy used by the cupyx.scipy.ndimage rank filters.
 
 
 def _get_img_sums_code(
@@ -503,43 +500,30 @@ def regionprops_intensity_median(
 
     median_dtype = cp.promote_types(intensity_image.dtype, cp.float32)
     img1d = img1d.astype(median_dtype, copy=False)
-    out_shape = (max_label,) if num_channels == 1 else (max_label, num_channels)
-    backend = os.environ.get(_INTENSITY_MEDIAN_BACKEND_ENV, "hybrid").lower()
-    if backend in ("kernel", "hybrid"):
-        max_region_size = int(
-            os.environ.get(
-                _INTENSITY_MEDIAN_KERNEL_THRESHOLD_ENV,
-                os.environ.get(_INTENSITY_MEDIAN_MAX_SIZE_ENV, 4096),
-            )
+    max_region_size = int(hybrid_size_threshold)
+    if max_region_size > 0:
+        medians = _regionprops_intensity_median_kernel(
+            img1d,
+            counts,
+            num_channels=num_channels,
+            max_label=max_label,
+            max_region_size=max_region_size,
         )
-        max_count = int(counts.max()) if counts.size else 0
-        if backend == "kernel" and max_count > max_region_size:
-            backend = "cupy"
-        else:
-            medians = _regionprops_intensity_median_kernel(
-                img1d,
-                counts,
-                num_channels=num_channels,
-                max_label=max_label,
-                max_region_size=max_region_size,
-                skip_large=backend == "hybrid",
-            )
+    else:
+        out_shape = (
+            (max_label,) if num_channels == 1 else (max_label, num_channels)
+        )
+        medians = cp.full(out_shape, cp.nan, dtype=median_dtype)
 
-    if backend != "kernel":
-        if backend != "hybrid":
-            medians = cp.full(out_shape, cp.nan, dtype=median_dtype)
-        slice_start = 0
-        counts_cpu = cp.asnumpy(counts)
-        for label_index, count in enumerate(counts_cpu):
-            slice_stop = slice_start + count
-            needs_cupy_median = count and (
-                backend != "hybrid" or count > max_region_size
+    slice_start = 0
+    counts_cpu = cp.asnumpy(counts)
+    for label_index, count in enumerate(counts_cpu):
+        slice_stop = slice_start + count
+        if count and (max_region_size <= 0 or count > max_region_size):
+            medians[label_index] = cp.median(
+                img1d[slice_start:slice_stop], axis=0
             )
-            if needs_cupy_median:
-                medians[label_index] = cp.median(
-                    img1d[slice_start:slice_stop], axis=0
-                )
-            slice_start = slice_stop
+        slice_start = slice_stop
 
     props_dict["intensity_median"] = medians
     return props_dict
@@ -553,8 +537,8 @@ def get_intensity_median_per_label_kernel(max_region_size):
     unsigned long long count = counts[label_index];
     if (count == 0) {{
         y[i] = static_cast<X>(0.0 / 0.0);
-    }} else if (skip_large && count > {max_region_size}) {{
-        // large regions are handled by a follow-up cp.median call in hybrid mode
+    }} else if (count > {max_region_size}) {{
+        // large regions are handled by a follow-up cp.median call
         y[i] = static_cast<X>(0.0 / 0.0);
     }} else {{
         X values[{max_region_size}];
@@ -610,7 +594,7 @@ def get_intensity_median_per_label_kernel(max_region_size):
     }}
     """
     return cp.ElementwiseKernel(
-        "raw X img, raw C counts, raw O offsets, uint64 num_channels, bool skip_large",
+        "raw X img, raw C counts, raw O offsets, uint64 num_channels",
         "raw X y",
         source,
         preamble=_includes,
@@ -624,7 +608,6 @@ def _regionprops_intensity_median_kernel(
     num_channels,
     max_label,
     max_region_size,
-    skip_large=False,
 ):
     offsets = cp.empty(max_label + 1, dtype=cp.uint64)
     offsets[0] = 0
@@ -640,7 +623,6 @@ def _regionprops_intensity_median_kernel(
         counts,
         offsets,
         cp.uint64(num_channels),
-        skip_large,
         medians,
         size=medians.size,
     )
