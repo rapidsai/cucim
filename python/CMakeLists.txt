@@ -19,7 +19,7 @@ string(REGEX REPLACE "a.*$" "" VERSION ${VERSION})
 
 # Append local cmake module path
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake/modules")
-project(cucim VERSION ${VERSION} DESCRIPTION "cucim" LANGUAGES CXX)
+project(cucim VERSION ${VERSION} DESCRIPTION "cucim" LANGUAGES CXX CUDA)
 
 ################################################################################
 # Include utilities
@@ -165,15 +165,44 @@ set_target_properties(cucim PROPERTIES
         OUTPUT_NAME cucim/_cucim
         )
 
+################################################################################
+# Add library: cucim_skimage_cpp
+################################################################################
+
+nanobind_add_module(cucim_skimage_cpp
+    STABLE_ABI
+    NB_STATIC
+    PROTECT_STACK
+    NOMINSIZE
+        nanobind/skimage/skimage_cpp_py.cpp
+        nanobind/skimage/segmented_radix_sort.cu
+        )
+target_link_libraries(cucim_skimage_cpp
+    PRIVATE
+        CUDA::cudart
+        )
+# nanobind_add_module() only sets CXX_VISIBILITY_PRESET (pybind11_add_module()
+# also hid CUDA symbols). Without this, the CUB/libcu++ symbols instantiated by
+# segmented_radix_sort.cu are exported from the module and could interpose with
+# other CUB users loaded in the same process (e.g. CuPy).
+set_target_properties(cucim_skimage_cpp PROPERTIES
+        CUDA_STANDARD ${CMAKE_CXX_STANDARD}
+        CUDA_STANDARD_REQUIRED YES
+        CUDA_VISIBILITY_PRESET hidden
+        LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR}
+        OUTPUT_NAME cucim/skimage/_cucim_skimage_cpp_ext
+        )
+file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR}/cucim/skimage)
 
 ################################################################################
 # Install
 ################################################################################
 set(INSTALL_TARGETS
         cucim
+        cucim_skimage_cpp
         )
 
-install(TARGETS cucim
+install(TARGETS ${INSTALL_TARGETS}
         EXPORT cucim-targets
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
                 COMPONENT cucim_Runtime
