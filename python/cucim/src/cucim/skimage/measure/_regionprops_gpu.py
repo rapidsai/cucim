@@ -37,6 +37,7 @@ from ._regionprops_gpu_convex import (
 from ._regionprops_gpu_intensity_kernels import (
     intensity_deps,
     regionprops_intensity_mean,
+    regionprops_intensity_median,
     regionprops_intensity_min_max,
     regionprops_intensity_std,
 )
@@ -79,6 +80,7 @@ __all__ = [
     "regionprops_inertia_tensor",
     "regionprops_inertia_tensor_eigvals",
     "regionprops_intensity_mean",
+    "regionprops_intensity_median",
     "regionprops_intensity_min_max",
     "regionprops_intensity_std",
     "regionprops_moments",
@@ -107,6 +109,7 @@ PROPS_GPU = copy(PROPS)
 # extra properties not currently in scikit-image
 PROPS_GPU_EXTRA = {
     "axis_lengths": "axis_lengths",
+    "intensity_median": "intensity_median",
     "inertia_tensor_eigenvectors": "inertia_tensor_eigenvectors",
     "num_pixels_filled": "num_pixels_filled",
     # a few extra parameters as in ITK
@@ -316,13 +319,6 @@ def regionprops_dict(
     invalid_names = set(properties) - valid_names
     valid_names = list(valid_names)
 
-    # TODO(grelee): implement batch kernel for efficient intensity median
-    # computation.
-    if "intensity_median" in properties:
-        raise NotImplementedError(
-            "Batch computation of 'intensity_median' is not yet supported"
-        )
-
     # Use only the modern names internally, but keep list of mappings back to
     # any deprecated names in restore_legacy_names and use that at the end to
     # restore the requested deprecated property names.
@@ -441,6 +437,14 @@ def regionprops_dict(
                 max_label=max_label,
                 mean_dtype=cp.float32,
                 **perf_kwargs,
+                props_dict=out,
+            )
+
+        if "intensity_median" in required_props:
+            regionprops_intensity_median(
+                label_image,
+                intensity_image,
+                max_label=max_label,
                 props_dict=out,
             )
 

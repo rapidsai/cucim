@@ -1,10 +1,14 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 import math
 
 import cupy as cp
 
+from ._regionprops_gpu_basic_kernels import (
+    _get_compressed_labels,
+    regionprops_num_pixels,
+)
 from ._regionprops_gpu_utils import (
     _check_intensity_image_shape,
     _get_count_dtype,
@@ -13,6 +17,7 @@ from ._regionprops_gpu_utils import (
 
 __all__ = [
     "regionprops_intensity_mean",
+    "regionprops_intensity_median",
     "regionprops_intensity_min_max",
     "regionprops_intensity_std",
 ]
@@ -25,6 +30,7 @@ intensity_deps = dict()
 intensity_deps["intensity_min"] = []
 intensity_deps["intensity_max"] = []
 intensity_deps["intensity_mean"] = ["num_pixels"]
+intensity_deps["intensity_median"] = ["num_pixels"]
 intensity_deps["intensity_std"] = ["num_pixels"]
 
 
@@ -443,6 +449,61 @@ def regionprops_intensity_mean(
     props_dict["intensity_mean"] = means
     if "num_pixels" not in props_dict:
         props_dict["num_pixels"] = counts
+    return props_dict
+
+
+def regionprops_intensity_median(
+    label_image,
+    intensity_image,
+    max_label=None,
+    props_dict=None,
+):
+    """Compute the median intensity of each region.
+
+    This implementation compresses foreground intensity values into label
+    order, then computes one median per region slice with ``cp.median``.
+
+    reuses "num_pixels" from `props_dict` if it exists
+
+    writes "intensity_median" to `props_dict`
+    writes "num_pixels" to `props_dict` if it was not already present
+    """
+    if props_dict is None:
+        props_dict = {}
+    if max_label is None:
+        max_label = int(label_image.max())
+
+    num_channels = _check_intensity_image_shape(label_image, intensity_image)
+
+    if "num_pixels" in props_dict:
+        counts = props_dict["num_pixels"]
+    else:
+        counts = regionprops_num_pixels(
+            label_image, max_label=max_label, props_dict=props_dict
+        )
+
+    _, _, img1d = _get_compressed_labels(
+        label_image,
+        max_label=max_label,
+        intensity_image=intensity_image,
+        sort_labels=True,
+    )
+
+    median_dtype = cp.promote_types(intensity_image.dtype, cp.float32)
+    img1d = img1d.astype(median_dtype, copy=False)
+    out_shape = (max_label,) if num_channels == 1 else (max_label, num_channels)
+    medians = cp.full(out_shape, cp.nan, dtype=median_dtype)
+
+    slice_start = 0
+    for label_index, count in enumerate(cp.asnumpy(counts)):
+        slice_stop = slice_start + count
+        if count:
+            medians[label_index] = cp.median(
+                img1d[slice_start:slice_stop], axis=0
+            )
+        slice_start = slice_stop
+
+    props_dict["intensity_median"] = medians
     return props_dict
 
 
