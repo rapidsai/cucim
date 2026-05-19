@@ -542,7 +542,7 @@ void TIFF::resolve_vendor_format()
         }
 
         // Method 2: Check metadata_blobs for Aperio (kind=1)
-        // This includes the workaround for nvImageCodec 0.6.0 misclassifying Aperio as Leica
+        // This includes a workaround for nvImageCodec misclassifying Aperio as Leica
         if (!is_aperio && nvimgcodec_parser_)
         {
             const auto& metadata_blobs = nvimgcodec_parser_->get_metadata_blobs(0);
@@ -562,8 +562,7 @@ void TIFF::resolve_vendor_format()
     }
 
     // Detect Philips TIFF
-    // NOTE: nvImageCodec 0.6.0 doesn't expose individual TIFF tags (like SOFTWARE)
-    // Workaround: Check for Philips XML in ImageDescription or use nvImageCodec metadata kind
+    // Check for Philips TIFF using SOFTWARE tag, ImageDescription XML, or nvImageCodec metadata kind
     {
         bool is_philips = false;
 
@@ -574,8 +573,7 @@ void TIFF::resolve_vendor_format()
             is_philips = true;
         }
 
-        // Method 2: Check for Philips XML structure in ImageDescription
-        // (Workaround for nvImageCodec 0.6.0 where SOFTWARE tag is not available)
+        // Method 2: Check for Philips XML structure in ImageDescription (fallback)
         if (!is_philips)
         {
             auto& image_desc = first_ifd->image_description();
@@ -587,7 +585,7 @@ void TIFF::resolve_vendor_format()
         }
 
         // Method 3: Check metadata_blobs for Philips (kind=2)
-        // This includes the workaround for nvImageCodec 0.6.0 misclassifying Philips as Ventana
+        // This includes a workaround for nvImageCodec misclassifying Philips as Ventana
         if (!is_philips && nvimgcodec_parser_)
         {
             const auto& metadata_blobs = nvimgcodec_parser_->get_metadata_blobs(0);

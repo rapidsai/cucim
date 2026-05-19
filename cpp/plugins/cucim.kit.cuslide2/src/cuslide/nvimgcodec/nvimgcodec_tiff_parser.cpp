@@ -13,6 +13,7 @@
 // - Vendor-specific metadata blobs (MED_APERIO, MED_PHILIPS, ...)
 // - IFD (Image File Directory) enumeration for pyramidal TIFFs
 // - nvImageCodec 0.7.0+: direct TIFF tag queries via NVIMGCODEC_METADATA_KIND_TIFF_TAG
+// - nvImageCodec 0.8.0+: TIFF offset parsing, pagination, SubIFD support, TIFF_TAG_LIST
 //   (COMPRESSION, SUBFILETYPE, IMAGEDESCRIPTION, JPEGTABLES, ...)
 //
 // ============================================================================
@@ -51,7 +52,7 @@ namespace cuslide2::nvimgcodec
 // nvImageCodec extension path auto-detection
 // ============================================================================
 //
-// Workaround for a known nvImageCodec 0.7.0 bug: when the library is installed
+// Workaround for a known nvImageCodec pre-0.8.0 bug: when the library is installed
 // via conda, its internal extension search path doesn't find the codec plugins
 // (libtiff_ext.so, libnvjpeg_ext.so, etc.) in $PREFIX/lib/extensions/.
 //
@@ -63,8 +64,8 @@ namespace cuslide2::nvimgcodec
 //      NvimgcodecLoadSymbol() + dladdr() (not the stub address)
 //   3. Probes <lib_dir>/extensions/ and <lib_dir>/../extensions/
 //
-// TODO: Remove this workaround once cuCIM upgrades to nvImageCodec >= 0.8.0,
-//       which fixes the extension search path for conda installs.
+// NOTE: nvImageCodec 0.8.0 fixes the extension search path for conda installs.
+// This workaround is kept as a safety net for non-standard install layouts.
 //
 
 static std::string detect_nvimgcodec_extensions_path()
@@ -145,7 +146,7 @@ static std::string detect_nvimgcodec_extensions_path()
 
 // nvimgcodec API compatibility
 //
-// TIFF-tag retrieval via nvimgcodecDecoderGetMetadata (nvImageCodec >= 0.7.0).
+// TIFF-tag retrieval via nvimgcodecDecoderGetMetadata.
 // The required enum values (NVIMGCODEC_METADATA_KIND_TIFF_TAG,
 // NVIMGCODEC_METADATA_VALUE_TYPE_ASCII, etc.) are defined in nvimgcodec.h
 // which is always present in our build tree.
@@ -379,7 +380,8 @@ TiffFileParser::TiffFileParser(const std::string& file_path)
     nvimgcodecStatus_t status = nvimgcodecCodeStreamCreateFromFile(
         manager.get_instance(),
         &main_code_stream_,
-        file_path.c_str()
+        file_path.c_str(),
+        nullptr
     );
 
     if (status != NVIMGCODEC_STATUS_SUCCESS)
@@ -553,10 +555,10 @@ bool TiffFileParser::parse_tiff_structure()
         // Extract TIFF metadata using available methods
         extract_tiff_tags(ifd_info);
 
-        // Current limitation (nvImageCodec v0.6.0):
+        // Legacy limitation (nvImageCodec v0.6.0, resolved in v0.7.0+):
         // - codec_name returns "tiff" (container format) not compression type
-        // - Individual TIFF tags not exposed through metadata API
-        // - Only vendor-specific metadata blobs available (MED_APERIO, MED_PHILIPS, etc.)
+        // - Individual TIFF tags now available via NVIMGCODEC_METADATA_KIND_TIFF_TAG (v0.7.0+)
+        // - TIFF_TAG_LIST enumeration available in v0.8.0+
         //
 
         if (ifd_info.codec == "tiff")
@@ -810,7 +812,7 @@ void TiffFileParser::extract_ifd_metadata(IfdInfo& ifd_info)
         size_t buffer_size = metadata->buffer_size;
 
         #ifdef DEBUG
-        // Map kind to human-readable name for debugging (nvImageCodec v0.6.0 enum values)
+        // Map kind to human-readable name for debugging
         const char* kind_name = "UNKNOWN";
         switch (kind) {
             case NVIMGCODEC_METADATA_KIND_UNKNOWN: kind_name = "UNKNOWN"; break;
@@ -862,9 +864,9 @@ void TiffFileParser::extract_ifd_metadata(IfdInfo& ifd_info)
         }
     }
 
-    // WORKAROUND for nvImageCodec 0.6.0: Philips TIFF metadata limitation
+    // Legacy workaround for nvImageCodec 0.6.0: Philips TIFF metadata limitation
     // ========================================================================
-    // nvImageCodec 0.6.0 does NOT expose:
+    // nvImageCodec 0.6.0 did NOT expose (resolved in 0.7.0+ via TIFF tag queries):
     // 1. Individual TIFF tags (SOFTWARE, ImageDescription, etc.)
     // 2. Philips format detection for some files
     //
@@ -916,7 +918,7 @@ void TiffFileParser::extract_tiff_tags(IfdInfo& ifd_info)
     }
 
     // ========================================================================
-    // nvImageCodec 0.7.0+: Direct TIFF Tag Retrieval by ID
+    // Direct TIFF Tag Retrieval by ID (nvImageCodec 0.7.0+)
     // ========================================================================
     // Query a fixed set of common TIFF tags individually. Not all tags exist on all IFDs.
 
@@ -1064,8 +1066,7 @@ void TiffFileParser::extract_tiff_tags(IfdInfo& ifd_info)
     }
 #endif // CUSLIDE2_NVIMGCODEC_HAS_TIFF_TAG_METADATA
 
-    // Fallback: file extension heuristics when COMPRESSION tag is not available
-    // (either nvImageCodec < 0.7.0 or tag not present in file)
+    // Fallback: file extension heuristics when COMPRESSION tag is not present in file
 #ifdef DEBUG
     fmt::print("  ℹ️  COMPRESSION tag not available, using file extension heuristics\n");
 #endif // DEBUG
