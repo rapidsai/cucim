@@ -524,11 +524,11 @@ void TIFF::resolve_vendor_format()
         if (!is_aperio && nvimgcodec_parser_)
         {
             const auto& metadata_blobs = nvimgcodec_parser_->get_metadata_blobs(0);
-            if (metadata_blobs.find(1) != metadata_blobs.end())  // MED_APERIO = 1
+            if (metadata_blobs.find(5) != metadata_blobs.end())  // MED_APERIO = 5
             {
                 is_aperio = true;
                 #ifdef DEBUG
-                fmt::print("✅ Aperio detected via metadata_blobs workaround\n");
+                fmt::print("✅ Aperio detected via metadata_blobs\n");
                 #endif
             }
         }
@@ -568,11 +568,11 @@ void TIFF::resolve_vendor_format()
         if (!is_philips && nvimgcodec_parser_)
         {
             const auto& metadata_blobs = nvimgcodec_parser_->get_metadata_blobs(0);
-            if (metadata_blobs.find(2) != metadata_blobs.end())  // MED_PHILIPS = 2
+            if (metadata_blobs.find(6) != metadata_blobs.end())  // MED_PHILIPS = 6
             {
                 is_philips = true;
                 #ifdef DEBUG
-                fmt::print("✅ Philips detected via metadata_blobs workaround\n");
+                fmt::print("✅ Philips detected via metadata_blobs\n");
                 #endif
             }
         }
@@ -591,6 +591,68 @@ void TIFF::resolve_vendor_format()
         {
             _populate_philips_tiff_metadata(ifd_count, json_metadata, first_ifd);
         }
+    }
+
+    // Detect additional vendor formats (when not already classified as Aperio/Philips)
+    if (tiff_type_ == TiffType::Generic)
+    {
+        auto& image_desc = first_ifd->image_description();
+        std::string file_ext;
+        {
+            std::string path_str(file_path_.c_str());
+            auto dot_pos = path_str.rfind('.');
+            if (dot_pos != std::string::npos)
+            {
+                file_ext = path_str.substr(dot_pos);
+                std::transform(file_ext.begin(), file_ext.end(), file_ext.begin(), ::tolower);
+            }
+        }
+
+        // Hamamatsu NDPI: extension .ndpi or MODEL contains "Hamamatsu"
+        if (file_ext == ".ndpi" || model.find("Hamamatsu") != std::string::npos)
+        {
+            tiff_type_ = TiffType::Hamamatsu;
+        }
+        // Ventana BIF: extension .bif or nvImageCodec MED_VENTANA blob (kind=7)
+        else if (file_ext == ".bif" ||
+                 (nvimgcodec_parser_ &&
+                  nvimgcodec_parser_->get_metadata_blobs(0).find(7) != nvimgcodec_parser_->get_metadata_blobs(0).end()))
+        {
+            tiff_type_ = TiffType::Ventana;
+        }
+        // Leica SCN: extension .scn or nvImageCodec MED_LEICA blob (kind=8, when not NDPI)
+        else if (file_ext == ".scn" ||
+                 (nvimgcodec_parser_ &&
+                  nvimgcodec_parser_->get_metadata_blobs(0).find(8) != nvimgcodec_parser_->get_metadata_blobs(0).end()))
+        {
+            tiff_type_ = TiffType::Leica;
+        }
+        // Trestle TIFF: nvImageCodec MED_TRESTLE blob (kind=9)
+        else if (nvimgcodec_parser_ &&
+                 nvimgcodec_parser_->get_metadata_blobs(0).find(9) != nvimgcodec_parser_->get_metadata_blobs(0).end())
+        {
+            tiff_type_ = TiffType::Trestle;
+        }
+        // OME-TIFF: ImageDescription contains OME XML namespace
+        else if (image_desc.find("<OME") != std::string::npos ||
+                 image_desc.find("ome.xsd") != std::string::npos)
+        {
+            tiff_type_ = TiffType::OmeTiff;
+        }
+        // Vectra QPTIFF: extension .qptiff or ImageDescription contains PerkinElmer
+        else if (file_ext == ".qptiff" ||
+                 image_desc.find("PerkinElmer") != std::string::npos ||
+                 image_desc.find("Vectra") != std::string::npos)
+        {
+            tiff_type_ = TiffType::Qptiff;
+        }
+
+        #ifdef DEBUG
+        if (tiff_type_ != TiffType::Generic)
+        {
+            fmt::print("✅ Detected vendor format: {}\n", static_cast<uint32_t>(tiff_type_));
+        }
+        #endif
     }
 
     // Append TIFF metadata

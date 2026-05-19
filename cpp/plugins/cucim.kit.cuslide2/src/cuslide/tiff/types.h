@@ -20,6 +20,12 @@ enum class TiffType : uint32_t
     Generic = 0,
     Philips = 1,
     Aperio = 2,
+    Hamamatsu = 3,
+    Leica = 4,
+    Ventana = 5,
+    Trestle = 6,
+    OmeTiff = 7,
+    Qptiff = 8,
 };
 
 enum class AssociatedImageBufferType : uint8_t

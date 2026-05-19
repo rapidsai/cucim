@@ -14,6 +14,7 @@
 #include <fmt/format.h>
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <array>
 #include <cassert>
 #include <cstring>
@@ -63,12 +64,10 @@ static bool CUCIM_ABI checker_is_valid(const char* file_name, const char* buf, s
     (void)buf;
     (void)size;
     auto file = std::filesystem::path(file_name);
-    auto extension = file.extension().string();
-    if (extension.compare(".tif") == 0 || extension.compare(".tiff") == 0 || extension.compare(".svs") == 0)
-    {
-        return true;
-    }
-    return false;
+    auto ext = file.extension().string();
+    std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+    return ext == ".tif" || ext == ".tiff" || ext == ".svs" ||
+           ext == ".ndpi" || ext == ".scn" || ext == ".bif" || ext == ".qptiff";
 }
 
 static CuCIMFileHandle_share CUCIM_ABI parser_open(const char* file_path)
@@ -133,8 +132,18 @@ static bool CUCIM_ABI parser_parse(CuCIMFileHandle_ptr handle_ptr, cucim::io::fo
         }
     }
 
-    // If not Aperio SVS, Philips TIFF, or multi-resolution pyramid, apply strict validation
-    if (!is_aperio_svs && !is_philips_tiff)
+    // WSI formats commonly have multiple SubfileType=0 IFDs for pyramid levels.
+    // Only enforce the single-main-image constraint for unrecognized Generic TIFFs.
+    bool is_known_multi_ifd_format =
+        is_aperio_svs || is_philips_tiff ||
+        tif->tiff_type() == cuslide::tiff::TiffType::Hamamatsu ||
+        tif->tiff_type() == cuslide::tiff::TiffType::Leica ||
+        tif->tiff_type() == cuslide::tiff::TiffType::Ventana ||
+        tif->tiff_type() == cuslide::tiff::TiffType::Trestle ||
+        tif->tiff_type() == cuslide::tiff::TiffType::OmeTiff ||
+        tif->tiff_type() == cuslide::tiff::TiffType::Qptiff;
+
+    if (!is_known_multi_ifd_format)
     {
         std::vector<size_t> main_ifd_list;
         for (size_t i = 0; i < ifd_count; i++)

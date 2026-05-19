@@ -881,7 +881,6 @@ void TiffFileParser::extract_ifd_metadata(IfdInfo& ifd_info)
         size_t buffer_size = metadata->buffer_size;
 
         #ifdef DEBUG
-        // Map kind to human-readable name for debugging
         const char* kind_name = "UNKNOWN";
         switch (kind) {
             case NVIMGCODEC_METADATA_KIND_UNKNOWN: kind_name = "UNKNOWN"; break;
@@ -889,6 +888,9 @@ void TiffFileParser::extract_ifd_metadata(IfdInfo& ifd_info)
             case NVIMGCODEC_METADATA_KIND_GEO: kind_name = "GEO"; break;
             case NVIMGCODEC_METADATA_KIND_MED_APERIO: kind_name = "MED_APERIO"; break;
             case NVIMGCODEC_METADATA_KIND_MED_PHILIPS: kind_name = "MED_PHILIPS"; break;
+            case NVIMGCODEC_METADATA_KIND_MED_VENTANA: kind_name = "MED_VENTANA"; break;
+            case NVIMGCODEC_METADATA_KIND_MED_LEICA: kind_name = "MED_LEICA"; break;
+            case NVIMGCODEC_METADATA_KIND_MED_TRESTLE: kind_name = "MED_TRESTLE"; break;
         }
         fmt::print("    Metadata[{}]: kind={} ({}), format={}, size={}\n",
                   j, kind, kind_name, format, buffer_size);
@@ -915,16 +917,34 @@ void TiffFileParser::extract_ifd_metadata(IfdInfo& ifd_info)
             }
             else if (kind == NVIMGCODEC_METADATA_KIND_MED_PHILIPS && ifd_info.image_description.empty())
             {
-                // Philips metadata is typically XML
                 ifd_info.image_description.assign(data_ptr, data_ptr + buffer_size);
                 #ifdef DEBUG
                 fmt::print("  ✅ Extracted Philips ImageDescription XML ({} bytes)\n", buffer_size);
-
-                // Show preview of XML
                 if (buffer_size > 0) {
                     std::string preview(data_ptr, data_ptr + std::min(buffer_size, size_t(100)));
                     fmt::print("     XML preview: {}...\n", preview);
                 }
+                #endif
+            }
+            else if (kind == NVIMGCODEC_METADATA_KIND_MED_VENTANA && ifd_info.image_description.empty())
+            {
+                ifd_info.image_description.assign(data_ptr, data_ptr + buffer_size);
+                #ifdef DEBUG
+                fmt::print("  ✅ Extracted Ventana metadata ({} bytes)\n", buffer_size);
+                #endif
+            }
+            else if (kind == NVIMGCODEC_METADATA_KIND_MED_LEICA && ifd_info.image_description.empty())
+            {
+                ifd_info.image_description.assign(data_ptr, data_ptr + buffer_size);
+                #ifdef DEBUG
+                fmt::print("  ✅ Extracted Leica metadata ({} bytes)\n", buffer_size);
+                #endif
+            }
+            else if (kind == NVIMGCODEC_METADATA_KIND_MED_TRESTLE && ifd_info.image_description.empty())
+            {
+                ifd_info.image_description.assign(data_ptr, data_ptr + buffer_size);
+                #ifdef DEBUG
+                fmt::print("  ✅ Extracted Trestle metadata ({} bytes)\n", buffer_size);
                 #endif
             }
 
@@ -1210,6 +1230,12 @@ std::string TiffFileParser::get_detected_format() const
                 return "Aperio SVS";
             case NVIMGCODEC_METADATA_KIND_MED_PHILIPS:
                 return "Philips TIFF";
+            case NVIMGCODEC_METADATA_KIND_MED_VENTANA:
+                return "Ventana BIF";
+            case NVIMGCODEC_METADATA_KIND_MED_LEICA:
+                return "Leica SCN";
+            case NVIMGCODEC_METADATA_KIND_MED_TRESTLE:
+                return "Trestle TIFF";
             default:
                 break;
         }
