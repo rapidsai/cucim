@@ -21,8 +21,9 @@
 #include "nvimgcodec_tiff_parser.h"
 
 #include <algorithm>  // for std::transform
-#include <cstdlib>    // for std::atexit
+#include <cstdlib>    // for std::atexit, std::getenv
 #include <cstring>    // for strlen
+#include <thread>     // for std::thread::hardware_concurrency
 #include <type_traits>
 
 #ifdef CUCIM_HAS_NVIMGCODEC
@@ -141,6 +142,74 @@ static std::string detect_nvimgcodec_extensions_path()
     fmt::print("[nvimgcodec_ext] WARNING: Could not detect extensions path\n");
     #endif
     return {};
+}
+
+
+// ============================================================================
+// Decoder thread count heuristic
+// ============================================================================
+//
+// Computes a reasonable max_num_cpu_threads for nvImageCodec's internal
+// threadpool. Each CPU thread needs a CUDA stream to submit GPU decode
+// work to; threads beyond the stream count just queue. On multi-worker
+// deployments, the total thread count across all workers should not
+// exceed the physical core count to avoid context-switch overhead.
+//
+// Heuristic: min(num_cuda_streams, physical_cores / num_dataloader_workers)
+//
+// Overridable via CUCIM_MAX_DECODER_THREADS environment variable.
+// Value 0 means "use nvImageCodec default" (num_cores - 1).
+//
+static int compute_max_decoder_threads()
+{
+    const char* env_val = std::getenv("CUCIM_MAX_DECODER_THREADS");
+    if (env_val)
+    {
+        int val = std::atoi(env_val);
+        if (val > 0)
+        {
+            #ifdef DEBUG
+            fmt::print("[nvimgcodec] CUCIM_MAX_DECODER_THREADS={}\n", val);
+            #endif
+            return val;
+        }
+        // val == 0 → fall through to nvImageCodec default
+        if (val == 0) return 0;
+    }
+
+    unsigned int hw_threads = std::thread::hardware_concurrency();
+    if (hw_threads == 0) return 0;  // unknown → let nvImageCodec decide
+
+    // Query GPU multiprocessor count to estimate a reasonable stream count.
+    // nvImageCodec v0.8.0 defaults to num_streams = num_threads; we cap at
+    // SM_count / 4 as a proxy for useful decode concurrency.
+    int num_cuda_streams = static_cast<int>(hw_threads);  // conservative default
+    int device_id = -1;
+    if (cudaGetDevice(&device_id) == cudaSuccess)
+    {
+        int sm_count = 0;
+        if (cudaDeviceGetAttribute(&sm_count, cudaDevAttrMultiProcessorCount, device_id) == cudaSuccess
+            && sm_count > 0)
+        {
+            num_cuda_streams = std::max(1, sm_count / 4);
+        }
+    }
+
+    // Fair share: assume this process is one of potentially several workers.
+    // Without explicit num_workers knowledge at decoder-creation time, use
+    // a conservative cap of physical_cores / 4 (typical multi-worker setup).
+    int fair_share = std::max(1, static_cast<int>(hw_threads) / 4);
+
+    int result = std::min(num_cuda_streams, fair_share);
+    result = std::max(result, 1);
+
+    #ifdef DEBUG
+    fmt::print("[nvimgcodec] max_decoder_threads heuristic: hw_threads={}, "
+               "cuda_streams={}, fair_share={}, result={}\n",
+               hw_threads, num_cuda_streams, fair_share, result);
+    #endif
+
+    return result;
 }
 
 
@@ -275,7 +344,7 @@ NvImageCodecTiffParserManager::NvImageCodecTiffParserManager()
         exec_params.struct_next = nullptr;
         exec_params.device_allocator = nullptr;
         exec_params.pinned_allocator = nullptr;
-        exec_params.max_num_cpu_threads = 0;
+        exec_params.max_num_cpu_threads = compute_max_decoder_threads();
         exec_params.executor = nullptr;
         exec_params.device_id = NVIMGCODEC_DEVICE_CURRENT;  // GPU-enabled for decode + metadata
         exec_params.pre_init = 0;
