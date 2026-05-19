@@ -16,9 +16,14 @@ import skimage
 import skimage.data
 import skimage.morphology
 from _image_bench import ImageBench
+from packaging.version import Version
 
 import cucim.skimage
 import cucim.skimage.morphology
+
+# scikit-image >= 0.26 renamed min_size -> max_size in remove_small_objects
+# and area_threshold -> max_size in remove_small_holes
+_skimage_has_max_size = Version(skimage.__version__) >= Version("0.26")
 
 
 class BinaryMorphologyBench(ImageBench):
@@ -107,15 +112,26 @@ class RemoveSmallObjectsBench(ImageBench):
 
     def set_args(self, dtype):
         a = self._init_test_data(dtype)
-        self.args_cpu = (cp.asnumpy(a), 6)
-        self.args_gpu = (a, 6)
+        self.args_cpu = (cp.asnumpy(a),)
+        self.args_gpu = (a,)
+        # scikit-image < 0.26 uses min_size, >= 0.26 uses max_size
+        if _skimage_has_max_size:
+            self.fixed_kwargs_cpu["max_size"] = 6
+        else:
+            self.fixed_kwargs_cpu["min_size"] = 6
+        self.fixed_kwargs_gpu["max_size"] = 6
 
 
 class RemoveSmallHolesBench(RemoveSmallObjectsBench):
     def set_args(self, dtype):
         a = ~self._init_test_data(dtype)
-        self.args_cpu = (cp.asnumpy(a), 5)
-        self.args_gpu = (a, 5)
+        self.args_cpu = (cp.asnumpy(a),)
+        self.args_gpu = (a,)
+        if _skimage_has_max_size:
+            self.fixed_kwargs_cpu["max_size"] = 5
+        else:
+            self.fixed_kwargs_cpu["area_threshold"] = 5
+        self.fixed_kwargs_gpu["max_size"] = 5
 
 
 def main(args):
@@ -161,6 +177,37 @@ def main(args):
         ("thin", dict(), dict(), False, True),
         # grayreconstruct.py
         ("reconstruction", dict(), dict(), False, True),
+        # extrema.py
+        (
+            "local_maxima",
+            dict(),
+            dict(connectivity=list(range(1, len(shape) + 1))),
+            False,
+            True,
+        ),
+        (
+            "local_minima",
+            dict(),
+            dict(connectivity=list(range(1, len(shape) + 1))),
+            False,
+            True,
+        ),
+        # h values scaled to image range: integers use camera (0-255),
+        # floats use camera/255 (0-1)
+        (
+            "h_maxima",
+            dict(),
+            dict(h=[10, 40] if np.issubdtype(dtypes[0], np.integer) else [0.04, 0.16]),
+            False,
+            True,
+        ),
+        (
+            "h_minima",
+            dict(),
+            dict(h=[10, 40] if np.issubdtype(dtypes[0], np.integer) else [0.04, 0.16]),
+            False,
+            True,
+        ),
         # footprints.py
         # OMIT the functions from this file (each creates a structuring element)
     ]:
@@ -298,7 +345,8 @@ if __name__ == "__main__":
         'binary_closing', 'isotropic_erosion', 'isotropic_dilation',
         'isotropic_opening', 'isotropic_closing','remove_small_objects',
         'remove_small_holes', 'erosion', 'dilation', 'opening', 'closing',
-        'white_tophat', 'black_tophat', 'thin', 'medial_axis', 'reconstruction'
+        'white_tophat', 'black_tophat', 'thin', 'medial_axis', 'reconstruction',
+        'local_maxima', 'local_minima', 'h_maxima', 'h_minima',
     ]
     # fmt: on
     dtype_choices = [
