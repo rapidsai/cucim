@@ -80,7 +80,7 @@ struct IfdInfo
     std::string image_description;           // ImageDescription TIFF tag (270)
 
     // Format-specific metadata: kind -> (format, buffer_data)
-    // kind: nvimgcodecMetadataKind_t (e.g., MED_APERIO=1, MED_PHILIPS=2, etc.)
+    // kind: nvimgcodecMetadataKind_t (e.g., MED_APERIO=5, MED_PHILIPS=6, MED_VENTANA=7, MED_LEICA=8, MED_TRESTLE=9)
     // format: nvimgcodecMetadataFormat_t (e.g., RAW, XML, JSON)
     // buffer_data: raw bytes from metadata buffer
     struct MetadataBlob {
@@ -178,7 +178,7 @@ public:
      * @brief Get all metadata blobs for an IFD
      *
      * Returns all vendor-specific metadata extracted by nvImageCodec.
-     * The map key is nvimgcodecMetadataKind_t (e.g., MED_APERIO=1, MED_PHILIPS=2).
+     * The map key is nvimgcodecMetadataKind_t (e.g., MED_APERIO=5, MED_PHILIPS=6, MED_VENTANA=7, MED_LEICA=8, MED_TRESTLE=9).
      *
      * @param ifd_index IFD index
      * @return Map of metadata kind to blob (format + data), or empty if no metadata
@@ -225,7 +225,7 @@ public:
      * Returns a list of metadata kinds present in the file for discovery.
      * Useful for detecting file format (Aperio, Philips, Generic TIFF, etc.)
      *
-     * Example kinds: MED_APERIO=1, MED_PHILIPS=2, etc.
+     * Example kinds: MED_APERIO=5, MED_PHILIPS=6, MED_VENTANA=7, MED_LEICA=8, MED_TRESTLE=9
      *
      * @param ifd_index IFD index (default 0 for file-level metadata)
      * @return Vector of metadata kind values present in the IFD
