@@ -201,6 +201,7 @@ extern "C"
         NVIMGCODEC_STRUCTURE_TYPE_METADATA,
         NVIMGCODEC_STRUCTURE_TYPE_METADATA_KIND,
         NVIMGCODEC_STRUCTURE_TYPE_METADATA_FORMAT,
+        NVIMGCODEC_STRUCTURE_TYPE_TIFF_CODE_STREAM_INFO,
         NVIMGCODEC_STRUCTURE_TYPE_ENUM_FORCE_INT = INT32_MAX
     } nvimgcodecStructureType_t;
 
@@ -555,6 +556,8 @@ extern "C"
 
        size_t image_idx;                     /**< Image index starts from 0. */
        nvimgcodecRegion_t region;            /**< Region of interest. */
+       size_t bitstream_offset;             /**< Byte offset to start parsing from relative to file start. 0 = start at default position. */
+       uint32_t limit_images;               /**< Maximum number of images to parse. 0 = no limit (parse all). */
    } nvimgcodecCodeStreamView_t;
 
     /**
@@ -572,6 +575,28 @@ extern "C"
         size_t num_images;                  /**< Number of images in CodeStream. */
         size_t size;              /**< Size of bitstream in bytes. */
     } nvimgcodecCodeStreamInfo_t;
+
+    /** Maximum number of SubIFD offsets that can be stored in CodeStreamInfoTiffExt */
+    #define NVIMGCODEC_MAX_SUBIFD_OFFSETS 16
+
+    /**
+     * @brief TIFF-specific extension for CodeStreamInfo.
+     *
+     * Chain this struct via struct_next of nvimgcodecCodeStreamInfo_t to receive
+     * pagination and SubIFD information for TIFF files.
+     */
+    typedef struct
+    {
+        nvimgcodecStructureType_t struct_type; /**< Must be NVIMGCODEC_STRUCTURE_TYPE_TIFF_CODE_STREAM_INFO */
+        size_t struct_size;                    /**< The size of the structure, in bytes. */
+        void* struct_next;                     /**< Is NULL or a pointer to an extension structure type. */
+
+        size_t next_bitstream_offset;  /**< Offset to next IFD for pagination. 0 = no more images. */
+        size_t target_ifd_offset;      /**< Byte offset of the target image's IFD. Used internally to avoid redundant IFD walks. */
+
+        uint32_t subifd_count;         /**< Number of SubIFDs for the current image (Tag 330). */
+        size_t subifd_offsets[NVIMGCODEC_MAX_SUBIFD_OFFSETS]; /**< SubIFD byte offsets. Only first subifd_count entries are valid. */
+    } nvimgcodecCodeStreamInfoTiffExt_t;
 
     /**
      * @brief JPEG Encoding
@@ -853,6 +878,7 @@ extern "C"
             NVIMGCODEC_METADATA_KIND_MED_VENTANA,       /**< Medical metadata - Ventana format */
             NVIMGCODEC_METADATA_KIND_MED_LEICA,         /**< Medical metadata - Leica format */
             NVIMGCODEC_METADATA_KIND_MED_TRESTLE,       /**< Medical metadata - Trestle format */
+            NVIMGCODEC_METADATA_KIND_TIFF_TAG_LIST,     /**< List of available TIFF tag IDs */
 
             NVIMGCODEC_METADATA_KIND_ENUM_FORCE_INT = INT32_MAX
     } nvimgcodecMetadataKind_t;
@@ -1808,10 +1834,13 @@ extern "C"
      *        If *code_stream is NULL, a new code stream instance will be created.
      *        If *code_stream is not NULL, the existing code stream instance will be reused instead of creating a new one.
      * @param file_name [in] File name with compressed image data to wrap.
+     * @param code_stream_view [in] Optional pointer to a nvimgcodecCodeStreamView_t struct specifying parsing parameters
+     *        such as bitstream_offset and limit_images. Can be NULL for default behavior.
      * @return nvimgcodecStatus_t - An error code as specified in {@link nvimgcodecStatus_t API Return Status Codes}
      */
     NVIMGCODECAPI nvimgcodecStatus_t nvimgcodecCodeStreamCreateFromFile(
-        nvimgcodecInstance_t instance, nvimgcodecCodeStream_t* code_stream, const char* file_name);
+        nvimgcodecInstance_t instance, nvimgcodecCodeStream_t* code_stream, const char* file_name,
+        const nvimgcodecCodeStreamView_t* code_stream_view);
 
     /**
      * @brief Creates code stream which wraps host memory source of compressed data.
@@ -1822,10 +1851,13 @@ extern "C"
      *        If *code_stream is not NULL, the existing code stream instance will be reused instead of creating a new one.
      * @param data [in] Pointer to buffer with compressed data.
      * @param length [in] Length of compressed data in provided buffer.
+     * @param code_stream_view [in] Optional pointer to a nvimgcodecCodeStreamView_t struct specifying parsing parameters
+     *        such as bitstream_offset and limit_images. Can be NULL for default behavior.
      * @return nvimgcodecStatus_t - An error code as specified in {@link nvimgcodecStatus_t API Return Status Codes}
      */
     NVIMGCODECAPI nvimgcodecStatus_t nvimgcodecCodeStreamCreateFromHostMem(
-        nvimgcodecInstance_t instance, nvimgcodecCodeStream_t* code_stream, const unsigned char* data, size_t length);
+        nvimgcodecInstance_t instance, nvimgcodecCodeStream_t* code_stream, const unsigned char* data, size_t length,
+        const nvimgcodecCodeStreamView_t* code_stream_view);
 
     /**
      * @brief Creates code stream which wraps file sink for compressed data with given format.

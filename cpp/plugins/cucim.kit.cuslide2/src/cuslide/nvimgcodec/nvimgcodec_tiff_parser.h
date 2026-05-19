@@ -89,7 +89,7 @@ struct IfdInfo
     };
     std::map<int, MetadataBlob> metadata_blobs;
 
-    // nvImageCodec 0.7.0+: Individual TIFF tag storage with typed values
+    // nvImageCodec 0.7.0+: Individual TIFF tag storage with typed values (0.8.0+ adds TIFF_TAG_LIST)
     // tag_name -> TiffTagValue (variant with typed storage)
     std::unordered_map<std::string, TiffTagValue> tiff_tags;
 
@@ -192,14 +192,14 @@ public:
     }
 
     // ========================================================================
-    // TIFF Metadata and Tag Access (nvImageCodec v0.6.0)
+    // TIFF Metadata and Tag Access
     // ========================================================================
 
     /**
      * @brief Get a specific TIFF tag value as string
      *
-     * Returns tags inferred from file extension and vendor metadata (limited).
-     * nvImageCodec v0.6.0 does not expose individual TIFF tags directly.
+     * Returns TIFF tags queried via nvImageCodec metadata API (v0.7.0+)
+     * or inferred from file extension and vendor metadata as fallback.
      *
      * @param ifd_index IFD index
      * @param tag_name TIFF tag name (case-sensitive, e.g., "COMPRESSION", "IMAGEDESCRIPTION")
@@ -214,10 +214,8 @@ public:
      * - 0 = full resolution image
      * - 1 = reduced resolution image (thumbnail/label/macro)
      *
-     * Note: nvImageCodec v0.6.0 does not expose SUBFILETYPE tag.
-     *
      * @param ifd_index IFD index
-     * @return SUBFILETYPE value, or -1 (not available in v0.6.0)
+     * @return SUBFILETYPE value, or -1 if not available
      */
     int get_subfile_type(uint32_t ifd_index) const;
 
@@ -296,8 +294,8 @@ private:
     /**
      * @brief Extract TIFF tags using file extension heuristics
      *
-     * nvImageCodec v0.6.0 does not expose individual TIFF tags, so this function
-     * infers compression type from file extension for common WSI formats.
+     * Fallback path: infers compression type from file extension for common WSI formats
+     * when TIFF tag metadata is not available from nvImageCodec.
      *
      * Populates ifd_info.tiff_tags map with inferred tags (primarily COMPRESSION).
      *
