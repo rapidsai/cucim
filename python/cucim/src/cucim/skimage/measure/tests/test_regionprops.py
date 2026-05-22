@@ -22,6 +22,7 @@ from skimage.segmentation import slic
 from cucim.skimage import transform
 from cucim.skimage._vendored import pad
 from cucim.skimage.measure import (
+    _regionprops as regionprops_module,
     euler_number,
     perimeter,
     perimeter_crofton,
@@ -64,6 +65,10 @@ SAMPLE_3D[1:3, 1:3, 1:3] = 1
 SAMPLE_3D[3, 2, 2] = 1
 INTENSITY_SAMPLE_3D = SAMPLE_3D.copy()
 
+REGIONPROPS_PERFORMANCE_WARNING = (
+    "For performant cuCIM region property measurement, use regionprops_table"
+)
+
 
 def get_moment_function(img, spacing=(1, 1)):
     rows, cols = img.shape
@@ -97,6 +102,20 @@ def get_central_moment_function(img, spacing=(1, 1)):
     cY = Mpq(1, 0) / Mpq(0, 0)
     cX = Mpq(0, 1) / Mpq(0, 0)
     return lambda p, q: cp.sum((Y - cY) ** p * (X - cX) ** q * img)
+
+
+def test_regionprops_performance_warning_once():
+    regionprops_module._regionprops_performance_warning_emitted = False
+    with pytest.warns(UserWarning, match=REGIONPROPS_PERFORMANCE_WARNING):
+        regionprops(SAMPLE)
+
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "error",
+            category=UserWarning,
+            message=REGIONPROPS_PERFORMANCE_WARNING,
+        )
+        regionprops(SAMPLE)
 
 
 @pytest.mark.filterwarnings(

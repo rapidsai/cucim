@@ -162,6 +162,21 @@ _require_intensity_image = (
     "moments_weighted_normalized",
 )
 
+_regionprops_performance_warning_emitted = False
+
+
+def _warn_regionprops_performance_once():
+    global _regionprops_performance_warning_emitted
+    if _regionprops_performance_warning_emitted:
+        return
+    warn(
+        "cucim.skimage.measure.regionprops computes RegionProperties objects "
+        "one region at a time. For performant cuCIM region property "
+        "measurement, use regionprops_table(..., batch_processing=True).",
+        stacklevel=3,
+    )
+    _regionprops_performance_warning_emitted = True
+
 
 def _infer_number_of_required_args(func):
     """Infer the number of required arguments for a given function
@@ -269,8 +284,11 @@ class RegionProperties:
 
     Notes
     -----
-    For GPU computation of regionprops it is highly recommended to instead
-    use regionprops_table for efficient batch computation over all labels.
+    For performant cuCIM region property computation on the GPU, prefer
+    :func:`cucim.skimage.measure.regionprops_table` with
+    ``batch_processing=True``. That path computes properties for all labels in
+    batched GPU kernels, while ``RegionProperties`` computes properties one
+    region at a time.
 
     Examples
     --------
@@ -1323,9 +1341,11 @@ def regionprops(
     you want to do tabular data analysis of specific properties, consider
     using :func:`skimage.measure.regionprops_table` instead.
 
-    For computation on the GPU, it is highly recommended to use
-    `regionprops_table` for batch processing of all region properties in an
-    efficient manner.
+    For performant cuCIM region property computation on the GPU, prefer
+    :func:`cucim.skimage.measure.regionprops_table` with
+    ``batch_processing=True``. That path computes properties for all labels in
+    batched GPU kernels, while this function returns ``RegionProperties``
+    objects whose properties are evaluated one region at a time.
 
     Parameters
     ----------
@@ -1592,6 +1612,8 @@ def regionprops(
             )
         else:
             raise TypeError("Non-integer label_image types are ambiguous")
+
+    _warn_regionprops_performance_once()
 
     regions = []
 
