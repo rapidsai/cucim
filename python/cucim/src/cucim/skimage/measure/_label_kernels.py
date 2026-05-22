@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 """Kernels for scikit-image label.
@@ -24,7 +24,7 @@ def _label(x, structure, y, greyscale_mode=False):
     dirs = cupy.array(dirs, dtype=numpy.int32)
     ndirs = indxs.shape[0]
     y_shape = cupy.array(y.shape, dtype=numpy.int32)
-    count = cupy.zeros(2, dtype=numpy.int32)
+    count = cupy.zeros(2, dtype=y.dtype)
     _kernel_init()(x, y)
     if greyscale_mode:
         _kernel_connect(True)(x, y_shape, dirs, ndirs, x.ndim, y, size=y.size)
@@ -32,7 +32,7 @@ def _label(x, structure, y, greyscale_mode=False):
         _kernel_connect(False)(y_shape, dirs, ndirs, x.ndim, y, size=y.size)
     _kernel_count()(y, count, size=y.size)
     maxlabel = int(count[0])  # synchronize
-    labels = cupy.empty(maxlabel, dtype=numpy.int32)
+    labels = cupy.empty(maxlabel, dtype=y.dtype)
     _kernel_labels()(y, count, labels, size=y.size)
     _kernel_finalize()(maxlabel, cupy.sort(labels), y, size=y.size)
     return maxlabel
@@ -78,18 +78,20 @@ def _kernel_connect(greyscale_mode=False, int_t="int"):
         # binary mode -> all non-background voxels treated the same
         x_condition = ""
 
-    # Note: atomicCAS is implemented for int, unsigned short, unsigned int, and
-    # unsigned long long
-
     code = f"""
+        using atomic_t = typename cupy::type_traits::conditional<
+            cupy::type_traits::is_same<Y, long long>::value,
+            unsigned long long,
+            Y
+        >::type;
         if (y[i] < 0) continue;
         for (int dr = 0; dr < ndirs; dr++) {{
-            {int_t} j = i;
-            {int_t} rest = j;
-            {int_t} stride = 1;
-            {int_t} k = 0;
+            Y j = i;
+            Y rest = j;
+            Y stride = 1;
+            Y k = 0;
             for (int dm = ndim-1; dm >= 0; dm--) {{
-                int pos = rest % shape[dm] + dirs[dm + dr * ndim];
+                Y pos = rest % shape[dm] + dirs[dm + dr * ndim];
                 if (pos < 0 || pos >= shape[dm]) {{
                     k = -1;
                     break;
@@ -106,12 +108,12 @@ def _kernel_connect(greyscale_mode=False, int_t="int"):
                 while (k != y[k]) {{ k = y[k]; }}
                 if (j == k) break;
                 if (j < k) {{
-                    {int_t} old = atomicCAS( &y[k], (Y)k, (Y)j );
+                    Y old = atomicCAS((atomic_t*)&y[k], k, j);
                     if (old == k) break;
                     k = old;
                 }}
                 else {{
-                    {int_t} old = atomicCAS( &y[j], (Y)j, (Y)k );
+                    Y old = atomicCAS((atomic_t*)&y[j], j, k);
                     if (old == j) break;
                     j = old;
                 }}
@@ -130,10 +132,10 @@ def _kernel_connect(greyscale_mode=False, int_t="int"):
 def _kernel_count():
     return cupy.ElementwiseKernel(
         "",
-        "raw Y y, raw int32 count",
+        "raw Y y, raw Y count",
         """
         if (y[i] < 0) continue;
-        int j = i;
+        Y j = i;
         while (j != y[j]) { j = y[j]; }
         if (j != i) y[i] = j;
         else atomicAdd(&count[0], 1);
@@ -145,10 +147,10 @@ def _kernel_count():
 def _kernel_labels():
     return cupy.ElementwiseKernel(
         "",
-        "raw Y y, raw int32 count, raw int32 labels",
+        "raw Y y, raw Y count, raw Y labels",
         """
         if (y[i] != i) continue;
-        int j = atomicAdd(&count[1], 1);
+        Y j = atomicAdd(&count[1], 1);
         labels[j] = i;
         """,
         "cucim_skimage_measure_label_labels",
@@ -157,17 +159,17 @@ def _kernel_labels():
 
 def _kernel_finalize():
     return cupy.ElementwiseKernel(
-        "int32 maxlabel",
-        "raw int32 labels, raw Y y",
+        "Y maxlabel",
+        "raw Y labels, raw Y y",
         """
         if (y[i] < 0) {
             y[i] = 0;
             continue;
         }
-        int yi = y[i];
-        int j_min = 0;
-        int j_max = maxlabel - 1;
-        int j = (j_min + j_max) / 2;
+        Y yi = y[i];
+        Y j_min = 0;
+        Y j_max = maxlabel - 1;
+        Y j = (j_min + j_max) / 2;
         while (j_min < j_max) {
             if (yi == labels[j]) break;
             if (yi < labels[j]) j_max = j - 1;
