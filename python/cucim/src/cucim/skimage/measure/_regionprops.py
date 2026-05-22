@@ -836,7 +836,11 @@ _RegionProperties = RegionProperties
 
 
 def _props_to_dict(
-    regions, properties=("label", "bbox"), separator="-", copy_to_host=False
+    regions,
+    properties=("label", "bbox"),
+    separator="-",
+    copy_to_host=False,
+    to_table=True,
 ):
     """Convert image region properties list into a column dictionary.
 
@@ -863,6 +867,11 @@ def _props_to_dict(
     copy_to_host : bool, optional
         If True, copy any device scalars or arrays to host before storing in
         the output dict.
+    to_table : bool, optional
+        If True, split fixed-size multidimensional properties into one column
+        per element. If False, keep fixed-size multidimensional properties in
+        a single array with the region axis first, and keep variable-size
+        object properties as tuples containing one value per region.
 
     Returns
     -------
@@ -880,19 +889,18 @@ def _props_to_dict(
     Properties with scalar values for each region, such as "eccentricity", will
     appear as a float or int array with that property name as key.
 
-    Multidimensional properties *of fixed size* for a given image dimension,
-    such as "centroid" (every centroid will have three elements in a 3D image,
-    no matter the region size), will be split into that many columns, with the
-    name {property_name}{separator}{element_num} (for 1D properties),
-    {property_name}{separator}{elem_num0}{separator}{elem_num1} (for 2D
-    properties), and so on.
+    When ``to_table=True``, multidimensional properties *of fixed size* for a
+    given image dimension, such as "centroid" (every centroid will have three
+    elements in a 3D image, no matter the region size), will be split into that
+    many columns, with the name {property_name}{separator}{element_num} (for 1D
+    properties), {property_name}{separator}{elem_num0}{separator}{elem_num1}
+    (for 2D properties), and so on.
 
     For multidimensional properties that don't have a fixed size, such as
     "image" (the image of a region varies in size depending on the region
     size), an object array will be used, with the corresponding property name
-    as the key. When ``batch_processing=True`` and ``to_table=False``, these
-    unsplit variable-size properties are returned as tuples containing one
-    array per region.
+    as the key. When ``to_table=False``, these unsplit variable-size properties
+    are returned as tuples containing one value per region.
 
     Examples
     --------
@@ -956,15 +964,24 @@ def _props_to_dict(
             or dtype is np.object_
         ):
             if prop in OBJECT_COLUMNS or dtype is np.object_:
-                # keep objects in a NumPy array
-                column_buffer = np.empty(n, dtype=dtype)
-                if copy_to_host:
-                    for i in range(n):
-                        column_buffer[i] = cp.asnumpy(regions[i][prop])
+                if to_table:
+                    # keep objects in a NumPy array
+                    column_buffer = np.empty(n, dtype=dtype)
+                    if copy_to_host:
+                        for i in range(n):
+                            column_buffer[i] = cp.asnumpy(regions[i][prop])
+                    else:
+                        for i in range(n):
+                            column_buffer[i] = regions[i][prop]
+                    out[orig_prop] = np.copy(column_buffer)
                 else:
+                    column_buffer = []
                     for i in range(n):
-                        column_buffer[i] = regions[i][prop]
-                out[orig_prop] = np.copy(column_buffer)
+                        value = regions[i][prop]
+                        if copy_to_host and isinstance(value, cp.ndarray):
+                            value = cp.asnumpy(value)
+                        column_buffer.append(value)
+                    out[orig_prop] = tuple(column_buffer)
             else:
                 column_buffer = []
                 if copy_to_host:
@@ -983,6 +1000,23 @@ def _props_to_dict(
                 shape = rp.shape
             else:
                 shape = (len(rp),)
+
+            if not to_table:
+                if copy_to_host:
+                    column_data = np.empty((n,) + shape, dtype=dtype)
+                    for k in range(n):
+                        rp = regions[k][prop]
+                        if isinstance(rp, cp.ndarray):
+                            rp = cp.asnumpy(rp)
+                        column_data[k] = rp
+                    out[orig_prop] = column_data
+                else:
+                    column_buffer = [regions[k][prop] for k in range(n)]
+                    if isinstance(rp, cp.ndarray):
+                        out[orig_prop] = cp.stack(column_buffer, axis=0)
+                    else:
+                        out[orig_prop] = cp.asarray(column_buffer, dtype=dtype)
+                continue
 
             # precompute property column names and locations
             modified_props = []
@@ -1091,16 +1125,13 @@ def regionprops_table(
         single pass over the full image instead of on an individual label
         basis. In this mode, the `RegionProperties` class is not used at all.
     to_table : bool, optional
-        When `batch_processing=True`, this controls whether properties computed
-        as multidimensional arrays of fixed shape (e.g. centroid,
-        inertia_tensor) are split into multiple table entries. The split is
-        done to make results amenable to tabular analysis with pandas or other
-        similar library. As a concrete example, when ``to_table=False``,
-        centroids for a 2D image would be returned as a single ``cupy.ndarray``
-        of shape ``(num_labels, 2)`` vs. when this value is true it is split to
-        two separate columns "centroid-0" and "centroid-1". When
-        ``batch_processing=False``, this parameter is irrelevant and the
-        column split is always done.
+        Controls whether properties computed as multidimensional arrays of
+        fixed shape (e.g. centroid, inertia_tensor) are split into multiple
+        table entries. The split is done to make results amenable to tabular
+        analysis with pandas or other similar library. As a concrete example,
+        when ``to_table=False``, centroids for a 2D image would be returned as
+        a single array of shape ``(num_labels, 2)`` vs. when this value is true
+        it is split to two separate columns "centroid-0" and "centroid-1".
     copy_output_to_host : bool, optional
         If true, all the individual values in `out_dict` will have been copied
         to the host. This is desired if planning to do host-side analysis of
@@ -1125,7 +1156,7 @@ def regionprops_table(
     Properties with scalar values for each region, such as "eccentricity", will
     appear as a float or int array with that property name as key.
 
-    When `batch_processing` is ``True``, multidimensional properties *of fixed size*
+    When `to_table` is ``True``, multidimensional properties *of fixed size*
     for a given image dimension, such as "centroid" (every centroid will have
     three elements in a 3D image, no matter the region size), will be split
     into that many columns, with the name
@@ -1265,6 +1296,7 @@ def regionprops_table(
                 properties=properties,
                 separator=separator,
                 copy_to_host=copy_output_to_host,
+                to_table=to_table,
             )
             return {k: v[:0] for k, v in out_d.items()}
 
@@ -1273,6 +1305,7 @@ def regionprops_table(
             properties=properties,
             separator=separator,
             copy_to_host=copy_output_to_host,
+            to_table=to_table,
         )
 
 

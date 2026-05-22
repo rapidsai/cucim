@@ -1189,6 +1189,14 @@ def test_props_to_dict():
     assert_array_equal(out["coords"][0], coords[0])
     assert_array_equal(out["coords"][1], coords[1])
 
+    out = _props_to_dict(regions, properties=("bbox", "coords"), to_table=False)
+    assert set(out) == {"bbox", "coords"}
+    assert_array_equal(out["bbox"], cp.array([[0, 0, 10, 10], [3, 7, 5, 8]]))
+    assert isinstance(out["coords"], tuple)
+    assert len(out["coords"]) == 2
+    assert_array_equal(out["coords"][0], coords[0])
+    assert_array_equal(out["coords"][1], coords[1])
+
 
 @pytest.mark.parametrize("batch_processing", [False, True])
 @pytest.mark.parametrize("copy_output_to_host", [False, True])
@@ -1237,12 +1245,15 @@ def test_regionprops_table(batch_processing, copy_output_to_host):
     assert_array_equal(out["coords"][1], coords[1])
 
 
+@pytest.mark.parametrize("batch_processing", [False, True])
 @pytest.mark.parametrize("copy_output_to_host", [False, True])
-def test_regionprops_table_batch_to_table_false(copy_output_to_host):
+def test_regionprops_table_to_table_false(
+    batch_processing, copy_output_to_host
+):
     out = regionprops_table(
         SAMPLE,
         properties=("label", "centroid", "inertia_tensor", "coords"),
-        batch_processing=True,
+        batch_processing=batch_processing,
         to_table=False,
         copy_output_to_host=copy_output_to_host,
     )
@@ -1377,6 +1388,21 @@ def test_regionprops_table_no_regions(batch_processing):
     assert len(out["bbox+1"]) == 0
     assert len(out["bbox+2"]) == 0
     assert len(out["bbox+3"]) == 0
+
+
+@pytest.mark.parametrize("batch_processing", [False, True])
+def test_regionprops_table_to_table_false_no_regions(batch_processing):
+    out = regionprops_table(
+        cp.zeros((2, 2), dtype=int),
+        properties=("label", "area", "bbox", "coords"),
+        batch_processing=batch_processing,
+        to_table=False,
+    )
+    assert set(out) == {"label", "area", "bbox", "coords"}
+    assert out["label"].shape == (0,)
+    assert out["area"].shape == (0,)
+    assert out["bbox"].shape == (0, 4)
+    assert out["coords"] == ()
 
 
 def test_regionprops_table_error_on_numpy_input():
