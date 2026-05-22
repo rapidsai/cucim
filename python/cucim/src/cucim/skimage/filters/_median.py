@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import math
@@ -44,26 +44,19 @@ def median(
         If None, a new array is allocated.
     mode : {'reflect', 'constant', 'nearest', 'mirror','‘wrap'}, optional
         The mode parameter determines how the array borders are handled, where
-        ``cval`` is the value when mode is equal to 'constant'.
+        ``cval`` is the value when mode is equal to 'constant'. ``mode`` is
+        only used when ``behavior='ndimage'``.
         Default is 'nearest'.
-
-        .. versionadded:: 0.15
-           ``mode`` is used when ``behavior='ndimage'``.
     cval : scalar, optional
-        Value to fill past edges of input if mode is 'constant'. Default is 0.0
-
-        .. versionadded:: 0.15
-           ``cval`` was added in 0.15 is used when ``behavior='ndimage'``.
+        Value to fill past edges of input if mode is 'constant'. ``cval`` is
+        only used when ``behavior='ndimage'``.Default is 0.0
     behavior : {'ndimage', 'rank'}, optional
-        Either to use the old behavior (i.e., < 0.15) or the new behavior.
-        The old behavior will call the :func:`skimage.filters.rank.median`.
-        The new behavior will call the :func:`scipy.ndimage.median_filter`.
-        Default is 'ndimage'.
-
-        .. versionadded:: 0.15
-           ``behavior`` is introduced in 0.15
-        .. versionchanged:: 0.16
-           Default ``behavior`` has been changed from 'rank' to 'ndimage'
+        Behavior 'ndimage' behaves like `cupyx.scipy.ndimage.median_filter`,
+        while 'rank' mode used :func:`cucim.skimage.filters.rank.median`.
+        Note that cuCIM 'rank' filters use reflected boundary extension with a
+        constant footprint size and work in nD. This differs from scikit-image
+        rank filters, which crop neighborhoods near image boundaries and are
+        2D only. Default is 'ndimage'.
 
     Other Parameters
     ----------------
@@ -124,9 +117,15 @@ def median(
                 "otherwise.",
                 stacklevel=2,
             )
-        raise NotImplementedError("rank behavior not currently implemented")
-        # TODO: implement median rank filter
-        # return generic.median(image, footprint=footprint, out=out)
+        from .rank import median as rank_median
+
+        if isinstance(footprint, tuple):
+            if len(footprint) != image.ndim:
+                raise ValueError(
+                    "tuple footprint must have ndim matching image"
+                )
+            footprint = cp.ones(footprint, dtype=bool)
+        return rank_median(image, footprint=footprint, out=out)
 
     if footprint is None:
         footprint_shape = (3,) * image.ndim
