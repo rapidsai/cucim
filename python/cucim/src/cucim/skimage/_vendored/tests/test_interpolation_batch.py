@@ -51,6 +51,19 @@ except ImportError:
 scipy16_modes = ["wrap", "grid-wrap", "reflect", "grid-mirror", "grid-constant"]
 # these modes are okay to test on older SciPy
 legacy_modes = ["constant", "nearest", "mirror"]
+all_modes = legacy_modes + scipy16_modes
+batch_modes = ["constant", "nearest", "wrap", "grid-constant"]
+order_prefilter_pairs = [(0, False), (1, False), (3, False), (3, True)]
+
+
+class OrderPrefilterMixin:
+    @property
+    def order(self):
+        return self.order_prefilter[0]
+
+    @property
+    def prefilter(self):
+        return self.order_prefilter[1]
 
 
 def test_zoom_shift_grid_codegen_indexes_shift_by_axis():
@@ -77,16 +90,15 @@ def test_zoom_shift_grid_codegen_indexes_shift_by_axis():
                 "angle": [-15],
                 "reshape": [False],
                 "output": [None],
-                "order": [0, 1, 3],
-                "mode": legacy_modes + scipy16_modes,
+                "order_prefilter": order_prefilter_pairs,
+                "mode": batch_modes,
                 "cval": [1.0],
-                "prefilter": [False, True],
             }
         )
     )
 )
 @testing.with_requires("scipy")
-class TestRotateBatch:
+class TestRotateBatch(OrderPrefilterMixin):
     _multiprocess_can_split = True
 
     def _rotate(self, a, axes):
@@ -229,15 +241,14 @@ class TestRotateBatch:
                     ((17, 48, 64, 3), (0, 2, -3.2, 0)),
                 ],
                 "output": [None],
-                "order": [0, 1, 3],
-                "mode": legacy_modes + scipy16_modes,
+                "order_prefilter": order_prefilter_pairs,
+                "mode": batch_modes,
                 "cval": [1.0],
-                "prefilter": [False, True],
             }
         )
     )
 )
-class TestShiftBatch:
+class TestShiftBatch(OrderPrefilterMixin):
     _multiprocess_can_split = True
 
     def _shift(self, a, shift_val):
@@ -372,15 +383,14 @@ class TestShiftBatch:
                 ((17, 32, 64, 3), (1, 2.2, 0.3, 1)),
             ],
             "output": [None],
-            "order": [0, 1, 3],
-            "mode": legacy_modes + scipy16_modes,
+            "order_prefilter": order_prefilter_pairs,
+            "mode": batch_modes,
             "cval": [1.0],
-            "prefilter": [False, True],
         }
     )
 )
 @testing.with_requires("scipy")
-class TestZoomBatch:
+class TestZoomBatch(OrderPrefilterMixin):
     _multiprocess_can_split = True
 
     def _zoom(self, a, zm):
@@ -486,6 +496,81 @@ class TestZoomBatch:
                 dtype = numpy.uint64
         a = testing.shaped_random(shape, cupy, dtype)
         return self._zoom(a, zoom)
+
+
+@testing.parameterize(
+    *testing.product(
+        {
+            "operation": ["rotate", "shift", "zoom"],
+            "mode": all_modes,
+        }
+    )
+)
+class TestBatchAllModesSmoke:
+    def test_all_modes_last_axis_batch(self):
+        a = testing.shaped_random((7, 8, 3), cupy, cupy.float32, scale=1)
+        cval = 1.0
+
+        if self.operation == "rotate":
+            rotate = vendored_ndimage.rotate
+            expected = cupy.stack(
+                [
+                    rotate(
+                        a[..., i],
+                        -15,
+                        (1, 0),
+                        False,
+                        None,
+                        1,
+                        self.mode,
+                        cval,
+                        False,
+                    )
+                    for i in range(a.shape[-1])
+                ],
+                axis=-1,
+            )
+            result = rotate(
+                a, -15, (1, 0), False, None, 1, self.mode, cval, False
+            )
+        elif self.operation == "shift":
+            shift = vendored_ndimage.shift
+            expected = cupy.stack(
+                [
+                    shift(
+                        a[..., i],
+                        (0.4, -0.3),
+                        None,
+                        1,
+                        self.mode,
+                        cval,
+                        False,
+                    )
+                    for i in range(a.shape[-1])
+                ],
+                axis=-1,
+            )
+            result = shift(a, (0.4, -0.3, 0), None, 1, self.mode, cval, False)
+        else:
+            zoom = vendored_ndimage.zoom
+            expected = cupy.stack(
+                [
+                    zoom(
+                        a[..., i],
+                        (1.2, 0.8),
+                        None,
+                        1,
+                        self.mode,
+                        cval,
+                        False,
+                    )
+                    for i in range(a.shape[-1])
+                ],
+                axis=-1,
+            )
+            result = zoom(a, (1.2, 0.8, 1), None, 1, self.mode, cval, False)
+
+        cupy.testing.assert_allclose(result, expected, rtol=1e-5, atol=1e-5)
 
 
 @testing.parameterize(
