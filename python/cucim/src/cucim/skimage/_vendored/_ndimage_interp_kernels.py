@@ -155,7 +155,7 @@ def _get_coord_zoom_and_shift(
 
             in_coord[ndim]: array containing the source coordinate
             zoom[ndim]: array containing the zoom for each axis
-            shift[ndim]: array containing the zoom for each axis
+            shift[ndim]: array containing the shift for each axis
 
         computes::
 
