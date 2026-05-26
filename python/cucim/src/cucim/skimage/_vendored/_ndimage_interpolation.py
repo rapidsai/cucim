@@ -394,6 +394,7 @@ def map_coordinates(
         nprepad=nprepad,
         float_dtype=float_dtype,
         batch_axes=batch_axes,
+        output_c_contiguous=ret.flags.c_contiguous,
     )
     if kern_info.size is not None:
         kern_info.kernel(filtered, coordinates, ret, size=kern_info.size)
@@ -591,6 +592,7 @@ def affine_transform(
             nprepad=nprepad,
             float_dtype=float_dtype,
             batch_axes=batch_axes,
+            output_c_contiguous=output.flags.c_contiguous,
         )
         if kern_info.size is not None:
             kern_info.kernel(
@@ -630,6 +632,7 @@ def affine_transform(
             nprepad=nprepad,
             float_dtype=float_dtype,
             batch_axes=batch_axes,
+            output_c_contiguous=output.flags.c_contiguous,
         )
         m = cupy.zeros((ndim, ndim + 1), dtype=float_dtype)
         m[:, :-1] = matrix
@@ -865,6 +868,7 @@ def shift(
             nprepad=nprepad,
             float_dtype=float_dtype,
             batch_axes=batch_axes,
+            output_c_contiguous=output.flags.c_contiguous,
         )
         shift = cupy.asarray(shift, dtype=float_dtype, order="C")
         if shift.ndim != 1:
@@ -1027,6 +1031,7 @@ def zoom(
             nprepad=nprepad,
             float_dtype=float_dtype,
             batch_axes=batch_axes,
+            output_c_contiguous=output.flags.c_contiguous,
         )
         zoom = cupy.asarray(zoom, dtype=float_dtype)
         if kern_info.size is not None:

@@ -527,3 +527,88 @@ class TestAffineTransformBatchOutputShape:
         )
 
         cupy.testing.assert_allclose(result, expected, rtol=1e-5, atol=1e-5)
+
+
+@testing.parameterize(
+    *testing.product(
+        {
+            "operation": [
+                "map_coordinates",
+                "shift",
+                "zoom",
+                "affine_diagonal",
+                "affine_full",
+            ],
+        }
+    )
+)
+class TestLoopBatchNonContiguousOutput:
+    def _run_operation(self, a, output=None):
+        if self.operation == "map_coordinates":
+            coordinates = cupy.indices(a.shape, dtype=cupy.float32)
+            coordinates[0] += 0.3
+            coordinates[1] -= 0.2
+            return vendored_ndimage.map_coordinates(
+                a,
+                coordinates,
+                output=output,
+                order=1,
+                mode="nearest",
+                prefilter=False,
+                batch_axes=(2,),
+            )
+        if self.operation == "shift":
+            return vendored_ndimage.shift(
+                a,
+                shift=(0.3, -0.2, 0),
+                output=output,
+                order=1,
+                mode="nearest",
+                prefilter=False,
+            )
+        if self.operation == "zoom":
+            return vendored_ndimage.zoom(
+                a,
+                zoom=(1.2, 0.8, 1),
+                output=output,
+                order=1,
+                mode="nearest",
+                prefilter=False,
+            )
+
+        offset = (0.3, -0.2, 0)
+        if self.operation == "affine_diagonal":
+            matrix = cupy.ones(a.ndim, dtype=cupy.float32)
+        else:
+            matrix = cupy.eye(a.ndim, dtype=cupy.float32)
+        return vendored_ndimage.affine_transform(
+            a,
+            matrix,
+            offset=offset,
+            output=output,
+            order=1,
+            mode="nearest",
+            prefilter=False,
+        )
+
+    def test_loop_batch_falls_back_for_non_contiguous_output(self):
+        a = testing.shaped_random((5, 6, 3), cupy, cupy.float32, scale=1)
+        expected = self._run_operation(a)
+
+        sentinel = cupy.asarray(-12345, dtype=expected.dtype)
+        base_shape = (
+            expected.shape[0],
+            expected.shape[1] * 2,
+            expected.shape[2],
+        )
+        base = cupy.full(base_shape, sentinel, dtype=expected.dtype)
+        output = base[:, ::2, :]
+        assert not output.flags.c_contiguous
+
+        # The loop-batch kernel writes raw contiguous output, so strided output
+        # views must fall back to the normal strided ElementwiseKernel output.
+        result = self._run_operation(a, output=output)
+
+        assert result is output
+        cupy.testing.assert_allclose(output, expected, rtol=1e-5, atol=1e-5)
+        cupy.testing.assert_array_equal(base[:, 1::2, :], sentinel)

@@ -1201,7 +1201,7 @@ def _generate_interp_custom(
     return operation, name
 
 
-def use_loop_batch(batch_axes, ndim, yshape):
+def use_loop_batch(batch_axes, ndim, yshape, output_c_contiguous=True):
     """Whether batch optimization over the final axis should be applied.
 
     If the last axis (contiguous axis) is a batch axis, we can compute the
@@ -1213,7 +1213,8 @@ def use_loop_batch(batch_axes, ndim, yshape):
     degradation was observed at higher batch sizes.
     """
     return (
-        batch_axes == (ndim - 1,)
+        output_c_contiguous
+        and batch_axes == (ndim - 1,)
         and ndim > 1
         and yshape[-1] <= loop_batch_max_channels
     )
@@ -1231,12 +1232,15 @@ def _get_map_kernel(
     nprepad=0,
     float_dtype=cupy.double,
     batch_axes=None,
+    output_c_contiguous=True,
 ):
     in_params = "raw X x, raw W coords"
 
     # Optimize for contiguous batch axis at the end
     # Only enable when there's at least one spatial axis (ndim > 1)
-    loop_batch_axis = use_loop_batch(batch_axes, ndim, yshape)
+    loop_batch_axis = use_loop_batch(
+        batch_axes, ndim, yshape, output_c_contiguous
+    )
     if loop_batch_axis:
         out_params = "raw Y y"
         size = math.prod(yshape[:-1])
@@ -1281,12 +1285,15 @@ def _get_shift_kernel(
     nprepad=0,
     float_dtype=cupy.double,
     batch_axes=None,
+    output_c_contiguous=True,
 ):
     in_params = "raw X x, raw W shift"
 
     # Optimize for contiguous batch axis at the end
     # Only enable when there's at least one spatial axis (ndim > 1)
-    loop_batch_axis = use_loop_batch(batch_axes, ndim, yshape)
+    loop_batch_axis = use_loop_batch(
+        batch_axes, ndim, yshape, output_c_contiguous
+    )
     if loop_batch_axis:
         out_params = "raw Y y"
         size = math.prod(yshape[:-1])
@@ -1328,12 +1335,15 @@ def _get_zoom_shift_kernel(
     nprepad=0,
     float_dtype=cupy.double,
     batch_axes=None,
+    output_c_contiguous=True,
 ):
     in_params = "raw X x, raw W shift, raw W zoom"
 
     # Optimize for contiguous batch axis at the end
     # Only enable when there's at least one spatial axis (ndim > 1)
-    loop_batch_axis = use_loop_batch(batch_axes, ndim, yshape)
+    loop_batch_axis = use_loop_batch(
+        batch_axes, ndim, yshape, output_c_contiguous
+    )
     if loop_batch_axis:
         out_params = "raw Y y"
         size = math.prod(yshape[:-1])
@@ -1379,12 +1389,15 @@ def _get_zoom_kernel(
     nprepad=0,
     float_dtype=cupy.double,
     batch_axes=None,
+    output_c_contiguous=True,
 ):
     in_params = "raw X x, raw W zoom"
 
     # Optimize for contiguous batch axis at the end
     # Only enable when there's at least one spatial axis (ndim > 1)
-    loop_batch_axis = use_loop_batch(batch_axes, ndim, yshape)
+    loop_batch_axis = use_loop_batch(
+        batch_axes, ndim, yshape, output_c_contiguous
+    )
     if loop_batch_axis:
         out_params = "raw Y y"
         size = math.prod(yshape[:-1])
@@ -1425,12 +1438,15 @@ def _get_affine_kernel(
     nprepad=0,
     float_dtype=cupy.double,
     batch_axes=None,
+    output_c_contiguous=True,
 ):
     in_params = "raw X x, raw W mat"
 
     # Optimize for contiguous batch axis at the end
     # Only enable when there's at least one spatial axis (ndim > 1)
-    loop_batch_axis = use_loop_batch(batch_axes, ndim, yshape)
+    loop_batch_axis = use_loop_batch(
+        batch_axes, ndim, yshape, output_c_contiguous
+    )
     if loop_batch_axis:
         out_params = "raw Y y"
         size = math.prod(yshape[:-1])
