@@ -665,7 +665,7 @@ void TIFF::resolve_vendor_format()
                  image_desc.find("PerkinElmer") != std::string::npos ||
                  image_desc.find("Vectra") != std::string::npos)
         {
-            tiff_type_ = TiffType::Qptiff;
+            tiff_type_ = TiffType::QpTiff;
         }
 
         #ifdef DEBUG

@@ -141,7 +141,7 @@ static bool CUCIM_ABI parser_parse(CuCIMFileHandle_ptr handle_ptr, cucim::io::fo
         tif->tiff_type() == cuslide::tiff::TiffType::Ventana ||
         tif->tiff_type() == cuslide::tiff::TiffType::Trestle ||
         tif->tiff_type() == cuslide::tiff::TiffType::OmeTiff ||
-        tif->tiff_type() == cuslide::tiff::TiffType::Qptiff;
+        tif->tiff_type() == cuslide::tiff::TiffType::QpTiff;
 
     if (!is_known_multi_ifd_format)
     {
