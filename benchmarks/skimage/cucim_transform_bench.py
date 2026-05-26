@@ -121,8 +121,7 @@ def main(args):
         ]
 
         if function_name in ["rescale", "resize", "resize_local_mean"]:
-            # scales = [0.75, 1.25]
-            scales = [1.25]
+            scales = [0.75, 1.25]
             if function_name == "rescale":
                 var_kwargs["scale"] = [(s,) * ndim_spatial for s in scales]
             elif function_name.startswith("resize"):
