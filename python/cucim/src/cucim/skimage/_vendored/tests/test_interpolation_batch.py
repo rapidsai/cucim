@@ -785,3 +785,68 @@ class TestLoopBatchNonContiguousOutput:
         assert result is output
         cupy.testing.assert_allclose(output, expected, rtol=1e-5, atol=1e-5)
         cupy.testing.assert_array_equal(base[:, 1::2, :], sentinel)
+
+
+class TestLoopBatchIntegerOutputRounding:
+    def test_constant_cval_uses_rint_for_integer_output(self):
+        a = testing.shaped_random((5, 6, 3), cupy, cupy.float32, scale=1)
+        result = vendored_ndimage.shift(
+            a,
+            shift=(20, 0.1, 0),
+            output=cupy.uint8,
+            order=1,
+            mode="constant",
+            cval=1.6,
+            prefilter=False,
+        )
+
+        expected = cupy.full(a.shape, 2, dtype=cupy.uint8)
+        cupy.testing.assert_array_equal(result, expected)
+
+    def test_grid_constant_cval_uses_rint_for_integer_output(self):
+        a = testing.shaped_random((5, 6, 3), cupy, cupy.float32, scale=1)
+        result = vendored_ndimage.shift(
+            a,
+            shift=(20, 0.1, 0),
+            output=cupy.uint8,
+            order=0,
+            mode="grid-constant",
+            cval=1.6,
+            prefilter=False,
+        )
+
+        expected = cupy.full(a.shape, 2, dtype=cupy.uint8)
+        cupy.testing.assert_array_equal(result, expected)
+
+    def test_order0_samples_use_rint_for_integer_output(self):
+        a = cupy.asarray(
+            [
+                [[1.6, 2.6, 3.6], [4.6, 5.6, 6.6]],
+                [[7.6, 8.6, 9.6], [10.6, 11.6, 12.6]],
+            ],
+            dtype=cupy.float32,
+        )
+        result = vendored_ndimage.shift(
+            a,
+            shift=(0.2, -0.2, 0),
+            output=cupy.uint8,
+            order=0,
+            mode="nearest",
+            prefilter=False,
+        )
+        expected = cupy.stack(
+            [
+                vendored_ndimage.shift(
+                    a[..., i],
+                    shift=(0.2, -0.2),
+                    output=cupy.uint8,
+                    order=0,
+                    mode="nearest",
+                    prefilter=False,
+                )
+                for i in range(a.shape[-1])
+            ],
+            axis=-1,
+        )
+
+        cupy.testing.assert_array_equal(result, expected)

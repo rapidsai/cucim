@@ -548,6 +548,16 @@ def _unravel_loop_index(shape, uint_t="unsigned int", array_size=None):
     return "\n".join(code)
 
 
+def _generate_loop_batch_output_write(
+    value, integer_output, float_type, indent="                "
+):
+    if integer_output:
+        value = f"(Y)rint(({float_type})({value}))"
+    else:
+        value = f"(Y)({value})"
+    return f"{indent}y[out_base_idx + batch_idx] = {value};"
+
+
 def _generate_interp_custom(
     coord_func,
     ndim,
@@ -684,7 +694,7 @@ def _generate_interp_custom(
         {{
             #pragma unroll 4
             for ({uint_t} batch_idx = 0; batch_idx < batch_size; batch_idx++) {{
-                y[out_base_idx + batch_idx] = {cval};
+{_generate_loop_batch_output_write(cval, integer_output, float_type)}
             }}
         }}
         else
@@ -757,26 +767,41 @@ def _generate_interp_custom(
             # Batch loop is innermost - iterate over batch elements
             if mode == "grid-constant":
                 _cond = " || ".join([f"(ic_{j} < 0)" for j in spatial_axes])
+                _cval_write = _generate_loop_batch_output_write(
+                    cval, integer_output, float_type, "                    "
+                )
+                _sample = (
+                    f"({internal_dtype})x_ptr[{_spatial_coord_idx} + batch_idx]"
+                )
+                _sample_write = _generate_loop_batch_output_write(
+                    _sample, integer_output, float_type, "                    "
+                )
                 ops.append(
                     f"""
             if ({_cond}) {{
                 #pragma unroll 4
                 for ({uint_t} batch_idx = 0; batch_idx < batch_size; batch_idx++) {{
-                    y[out_base_idx + batch_idx] = {cval};
+{_cval_write}
                 }}
             }} else {{
                 #pragma unroll 4
                 for ({uint_t} batch_idx = 0; batch_idx < batch_size; batch_idx++) {{
-                    y[out_base_idx + batch_idx] = ({internal_dtype})x_ptr[{_spatial_coord_idx} + batch_idx];
+{_sample_write}
                 }}
             }}"""  # noqa: E501
                 )
             else:
+                _sample = (
+                    f"({internal_dtype})x_ptr[{_spatial_coord_idx} + batch_idx]"
+                )
+                _sample_write = _generate_loop_batch_output_write(
+                    _sample, integer_output, float_type
+                )
                 ops.append(
                     f"""
             #pragma unroll 4
             for ({uint_t} batch_idx = 0; batch_idx < batch_size; batch_idx++) {{
-                y[out_base_idx + batch_idx] = ({internal_dtype})x_ptr[{_spatial_coord_idx} + batch_idx];
+{_sample_write}
             }}"""  # noqa: E501
                 )
         else:
