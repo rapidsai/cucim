@@ -344,9 +344,11 @@ def map_coordinates(
         batch_axes (tuple of int, optional): Axes along which the coordinates
             represent an identity mapping (i.e., output index equals input
             coordinate). For these axes, interpolation is skipped and the
-            coordinate values in the ``coordinates`` array are ignored.
-            This can improve performance when only a subset of dimensions
-            require interpolation.
+            coordinate values in the ``coordinates`` array are ignored. The
+            same spatial coordinate map is applied to every element along
+            these axes, so coordinate planes for non-batch axes must be
+            invariant along each batch axis. This can improve performance when
+            only a subset of dimensions require interpolation.
 
     Returns:
         cupy.ndarray:
@@ -602,7 +604,8 @@ def affine_transform(
             kern_info.kernel(filtered, offset, matrix, output)
     else:
         # identify batch axes where the row is an identity row with zero offset
-        # i.e., matrix[j, j] == 1, matrix[j, k] == 0 for k != j, and offset[j] == 0
+        # and no other row depends on this axis. Otherwise, the transform
+        # varies by batch element and the axis cannot be handled as batch.
         # The direct batch-indexing kernel path bypasses boundary handling and
         # assumes a preserved batch extent.
         matrix_host = cupy.asnumpy(matrix)
@@ -612,6 +615,7 @@ def affine_transform(
             if (
                 matrix_host[j, j] == 1.0
                 and all(matrix_host[j, k] == 0.0 for k in range(ndim) if k != j)
+                and all(matrix_host[k, j] == 0.0 for k in range(ndim) if k != j)
                 and offset[j] == 0.0
                 and _output_axis_matches_input(input.shape, output_shape, j)
             )

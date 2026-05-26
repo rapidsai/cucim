@@ -52,9 +52,10 @@ def _get_coord_map(
         batch_axes (tuple of int): Axes along which the coordinates
             represent an identity mapping (i.e., output index equals input
             coordinate). For these axes, interpolation is skipped and the
-            coordinate values in the ``coordinates`` array are ignored.
-            This improves performance when only a subset of dimensions
-            require interpolation.
+            coordinate values in the ``coordinates`` array are ignored. The
+            same spatial coordinate map is applied to every element along
+            these axes, so coordinate planes for non-batch axes must be
+            invariant along each batch axis.
         loop_batch_axis (bool): If True, the last axis is a contiguous batch
             axis and the kernel will loop over it internally. This requires
             using raw output and reduces kernel launch overhead.
@@ -451,9 +452,9 @@ def _get_coord_affine(
             to support the same function signature.
         batch_axes (tuple of int): Axes along which the coordinates
             represent an identity mapping (i.e., output index equals input
-            coordinate). For these axes, interpolation is skipped. This
-            improves performance when only a subset of dimensions require
-            interpolation.
+            coordinate) and no non-batch coordinate depends on that axis. For
+            these axes, interpolation is skipped. This improves performance
+            when only a subset of dimensions require interpolation.
         loop_batch_axis (bool): If True, the last axis is a contiguous batch
             axis and the kernel will loop over it internally. This requires
             using raw output and reduces kernel launch overhead.

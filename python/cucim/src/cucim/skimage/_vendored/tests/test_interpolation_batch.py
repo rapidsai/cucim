@@ -538,6 +538,85 @@ class TestAffineTransformBatchOutputShape:
         cupy.testing.assert_allclose(result, expected, rtol=1e-5, atol=1e-5)
 
 
+@testing.with_requires("scipy")
+def test_affine_transform_cross_term_from_last_axis_is_not_batch_axis():
+    input_shape = (5, 6, 4)
+    a_np = numpy.arange(numpy.prod(input_shape), dtype=numpy.float32)
+    a_np = a_np.reshape(input_shape)
+    a = cupy.asarray(a_np)
+
+    matrix_np = numpy.asarray(
+        [
+            [1.0, 0.0, 0.25],
+            [0.0, 0.9, 0.0],
+            [0.0, 0.0, 1.0],
+        ],
+        dtype=numpy.float32,
+    )
+    matrix = cupy.asarray(matrix_np)
+    offset = (0.1, -0.2, 0.0)
+
+    result = vendored_ndimage.affine_transform(
+        a,
+        matrix,
+        offset=offset,
+        order=1,
+        mode="nearest",
+        prefilter=False,
+    )
+    expected = scipy.ndimage.affine_transform(
+        a_np,
+        matrix_np,
+        offset=offset,
+        order=1,
+        mode="nearest",
+        prefilter=False,
+    )
+
+    cupy.testing.assert_allclose(result, expected, rtol=1e-5, atol=1e-5)
+
+
+def test_map_coordinates_batch_axes_use_same_spatial_map_for_all_channels():
+    a = testing.shaped_random((5, 6, 3), cupy, cupy.float32, scale=1)
+    coordinates = cupy.indices(a.shape, dtype=cupy.float32)
+    coordinates[0] += 0.2
+    coordinates[1] -= 0.3
+
+    # These channel-varying spatial coordinate planes intentionally violate
+    # the batch_axes contract. With batch_axes=(2,), the same spatial
+    # transform is applied to all channels, so only channel 0's spatial
+    # coordinate planes are used by the looped batch path.
+    coordinates[0, :, :, 1] += 0.5
+    coordinates[0, :, :, 2] += 1.0
+    coordinates[1, :, :, 1] -= 0.25
+    coordinates[1, :, :, 2] -= 0.5
+
+    invariant_coordinates = coordinates.copy()
+    for axis in (0, 1):
+        invariant_coordinates[axis] = invariant_coordinates[axis, :, :, 0][
+            :, :, cupy.newaxis
+        ]
+
+    result = vendored_ndimage.map_coordinates(
+        a,
+        coordinates,
+        order=1,
+        mode="nearest",
+        prefilter=False,
+        batch_axes=(2,),
+    )
+    expected = vendored_ndimage.map_coordinates(
+        a,
+        invariant_coordinates,
+        order=1,
+        mode="nearest",
+        prefilter=False,
+        batch_axes=(2,),
+    )
+
+    cupy.testing.assert_allclose(result, expected, rtol=1e-5, atol=1e-5)
+
+
 @testing.parameterize(
     *testing.product(
         {
