@@ -29,6 +29,7 @@ from cupy.cuda import runtime
 from cupy import testing
 import cucim.skimage._vendored.ndimage as vendored_ndimage
 from cucim.skimage._vendored._ndimage_interp_kernels import (
+    _get_coord_zoom_and_shift_grid,
     loop_batch_max_channels,
 )
 
@@ -50,6 +51,14 @@ except ImportError:
 scipy16_modes = ["wrap", "grid-wrap", "reflect", "grid-mirror", "grid-constant"]
 # these modes are okay to test on older SciPy
 legacy_modes = ["constant", "nearest", "mirror"]
+
+
+def test_zoom_shift_grid_codegen_indexes_shift_by_axis():
+    code = "\n".join(_get_coord_zoom_and_shift_grid(3, float_type="float"))
+
+    assert "shift[j]" not in code
+    for axis in range(3):
+        assert f"shift[{axis}]" in code
 
 
 @testing.parameterize(

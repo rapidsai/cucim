@@ -245,7 +245,7 @@ def _get_coord_zoom_and_shift_grid(
         else:
             ops.append(
                 f"""
-    W c_{j} = zoom[{j}] * ((W)in_coord[{j}] - shift[j] + ({float_type})0.5)
+    W c_{j} = zoom[{j}] * ((W)in_coord[{j}] - shift[{j}] + ({float_type})0.5)
               - (W)0.5{pre};"""
             )
     return ops
