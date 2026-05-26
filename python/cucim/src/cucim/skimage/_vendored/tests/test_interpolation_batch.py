@@ -30,6 +30,7 @@ from cupy import testing
 import cucim.skimage._vendored.ndimage as vendored_ndimage
 from cucim.skimage._vendored._ndimage_interp_kernels import (
     _get_coord_zoom_and_shift_grid,
+    _get_shift_kernel,
     loop_batch_max_channels,
 )
 
@@ -72,6 +73,20 @@ def test_zoom_shift_grid_codegen_indexes_shift_by_axis():
     assert "shift[j]" not in code
     for axis in range(3):
         assert f"shift[{axis}]" in code
+
+
+def test_loop_batch_selected_when_last_axis_is_one_of_multiple_batch_axes():
+    kern_info = _get_shift_kernel(
+        4,
+        False,
+        (5, 6, 7, 3),
+        "nearest",
+        order=1,
+        batch_axes=(0, 3),
+        output_c_contiguous=True,
+    )
+
+    assert kern_info.size == 5 * 6 * 7
 
 
 @testing.parameterize(

@@ -558,6 +558,10 @@ def _generate_loop_batch_output_write(
     return f"{indent}y[out_base_idx + batch_idx] = {value};"
 
 
+def _join_index_terms(terms):
+    return " + ".join(terms) if terms else "0"
+
+
 def _generate_interp_custom(
     coord_func,
     ndim,
@@ -629,10 +633,12 @@ def _generate_interp_custom(
     if loop_batch_axis:
         batch_size = yshape[-1]
         batch_axis = ndim - 1
+        outer_batch_axes = [j for j in batch_axes if j != batch_axis]
         reduced_yshape = yshape[:-1]
         ops.append(f"const {uint_t} batch_size = {batch_size};")
         ops.append(f"const {uint_t} out_base_idx = i * batch_size;")
     else:
+        outer_batch_axes = []
         reduced_yshape = yshape
 
     float_type = cupy._core._scalar.get_typename(float_dtype)
@@ -760,8 +766,11 @@ def _generate_interp_custom(
             {int_t} ic_{j} = cf_{j} * sx_{j};"""
             )
 
-        # Compute base index from spatial coords
-        _spatial_coord_idx = " + ".join([f"ic_{j}" for j in spatial_axes])
+        # Compute base index from spatial coords and any non-looped batch axes.
+        _base_coord_idx = _join_index_terms(
+            [f"(({int_t})in_coord[{j}]) * sx_{j}" for j in outer_batch_axes]
+            + [f"ic_{j}" for j in spatial_axes]
+        )
 
         if loop_batch_axis:
             # Batch loop is innermost - iterate over batch elements
@@ -771,7 +780,7 @@ def _generate_interp_custom(
                     cval, integer_output, float_type, "                    "
                 )
                 _sample = (
-                    f"({internal_dtype})x_ptr[{_spatial_coord_idx} + batch_idx]"
+                    f"({internal_dtype})x_ptr[{_base_coord_idx} + batch_idx]"
                 )
                 _sample_write = _generate_loop_batch_output_write(
                     _sample, integer_output, float_type, "                    "
@@ -792,7 +801,7 @@ def _generate_interp_custom(
                 )
             else:
                 _sample = (
-                    f"({internal_dtype})x_ptr[{_spatial_coord_idx} + batch_idx]"
+                    f"({internal_dtype})x_ptr[{_base_coord_idx} + batch_idx]"
                 )
                 _sample_write = _generate_loop_batch_output_write(
                     _sample, integer_output, float_type
@@ -915,7 +924,10 @@ def _generate_interp_custom(
 
             # Compute spatial weight and base index
             _spatial_weight = " * ".join([f"w_{j}" for j in spatial_axes])
-            _spatial_coord_idx = " + ".join([f"ic_{j}" for j in spatial_axes])
+            _base_coord_idx = _join_index_terms(
+                [f"(({int_t})in_coord[{j}]) * sx_{j}" for j in outer_batch_axes]
+                + [f"ic_{j}" for j in spatial_axes]
+            )
 
             # Innermost batch loop - with bounds check for grid-constant mode
             if mode == "grid-constant":
@@ -925,7 +937,7 @@ def _generate_interp_custom(
                 ops.append(
                     f"""
                     W spatial_weight = {_spatial_weight};
-                    {int_t} ic_base = {_spatial_coord_idx};
+                    {int_t} ic_base = {_base_coord_idx};
                     if ({_spatial_cond}) {{
                         #pragma unroll 4
                         for ({uint_t} batch_idx = 0; batch_idx < batch_size; batch_idx++) {{
@@ -943,7 +955,7 @@ def _generate_interp_custom(
                 ops.append(
                     f"""
                     W spatial_weight = {_spatial_weight};
-                    {int_t} ic_base = {_spatial_coord_idx};
+                    {int_t} ic_base = {_base_coord_idx};
                     #pragma unroll 4
                     for ({uint_t} batch_idx = 0; batch_idx < batch_size; batch_idx++) {{
                         {internal_dtype} val = ({internal_dtype})x_ptr[ic_base + batch_idx];
@@ -1095,7 +1107,10 @@ def _generate_interp_custom(
 
             # Compute spatial weight and base index
             _spatial_weight = " * ".join([f"w_{j}" for j in spatial_axes])
-            _spatial_coord_idx = " + ".join([f"ic_{j}" for j in spatial_axes])
+            _base_coord_idx = _join_index_terms(
+                [f"(({int_t})in_coord[{j}]) * sx_{j}" for j in outer_batch_axes]
+                + [f"ic_{j}" for j in spatial_axes]
+            )
 
             # Innermost batch loop
             # For order > 1, we need bounds check for both constant and grid-constant modes
@@ -1106,7 +1121,7 @@ def _generate_interp_custom(
                 ops.append(
                     f"""
                     W spatial_weight = {_spatial_weight};
-                    {int_t} ic_base = {_spatial_coord_idx};
+                    {int_t} ic_base = {_base_coord_idx};
                     if ({_spatial_cond}) {{
                         #pragma unroll 4
                         for ({uint_t} batch_idx = 0; batch_idx < batch_size; batch_idx++) {{
@@ -1124,7 +1139,7 @@ def _generate_interp_custom(
                 ops.append(
                     f"""
                     W spatial_weight = {_spatial_weight};
-                    {int_t} ic_base = {_spatial_coord_idx};
+                    {int_t} ic_base = {_base_coord_idx};
                     #pragma unroll 4
                     for ({uint_t} batch_idx = 0; batch_idx < batch_size; batch_idx++) {{
                         {internal_dtype} val = ({internal_dtype})x_ptr[ic_base + batch_idx];
@@ -1240,8 +1255,10 @@ def use_loop_batch(batch_axes, ndim, yshape, output_c_contiguous=True):
     """
     return (
         output_c_contiguous
-        and batch_axes == (ndim - 1,)
+        and batch_axes is not None
+        and ndim - 1 in batch_axes
         and ndim > 1
+        and any(j not in batch_axes for j in range(ndim - 1))
         and yshape[-1] <= loop_batch_max_channels
     )
 
