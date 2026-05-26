@@ -589,6 +589,144 @@ class TestBatchAllModesSmoke:
         cupy.testing.assert_allclose(result, expected, rtol=1e-5, atol=1e-5)
 
 
+@pytest.mark.parametrize(
+    "operation", ["map_coordinates", "shift", "zoom", "affine"]
+)
+@pytest.mark.parametrize("mode", all_modes)
+def test_prefilter_boundary_modes_with_batch_axes(operation, mode):
+    shape = (2, 5, 6, 3)
+    a = cupy.arange(numpy.prod(shape), dtype=cupy.float32).reshape(shape)
+    a = a / 10 + 0.125
+    cval = -7.25
+
+    if operation == "map_coordinates":
+        coordinates = cupy.indices(shape, dtype=cupy.float32)
+        coordinates[1] -= 1.2
+        coordinates[2] += 0.85
+        result = vendored_ndimage.map_coordinates(
+            a,
+            coordinates,
+            order=3,
+            mode=mode,
+            cval=cval,
+            prefilter=True,
+            batch_axes=(0, 3),
+        )
+        expected = cupy.stack(
+            [
+                cupy.stack(
+                    [
+                        vendored_ndimage.map_coordinates(
+                            a[n, :, :, c],
+                            coordinates[1:3, n, :, :, c],
+                            order=3,
+                            mode=mode,
+                            cval=cval,
+                            prefilter=True,
+                        )
+                        for c in range(shape[-1])
+                    ],
+                    axis=-1,
+                )
+                for n in range(shape[0])
+            ],
+            axis=0,
+        )
+    elif operation == "shift":
+        result = vendored_ndimage.shift(
+            a,
+            shift=(0, 1.2, -0.85, 0),
+            order=3,
+            mode=mode,
+            cval=cval,
+            prefilter=True,
+        )
+        expected = cupy.stack(
+            [
+                cupy.stack(
+                    [
+                        vendored_ndimage.shift(
+                            a[n, :, :, c],
+                            shift=(1.2, -0.85),
+                            order=3,
+                            mode=mode,
+                            cval=cval,
+                            prefilter=True,
+                        )
+                        for c in range(shape[-1])
+                    ],
+                    axis=-1,
+                )
+                for n in range(shape[0])
+            ],
+            axis=0,
+        )
+    elif operation == "zoom":
+        result = vendored_ndimage.zoom(
+            a,
+            zoom=(1, 1.4, 0.7, 1),
+            order=3,
+            mode=mode,
+            cval=cval,
+            prefilter=True,
+        )
+        expected = cupy.stack(
+            [
+                cupy.stack(
+                    [
+                        vendored_ndimage.zoom(
+                            a[n, :, :, c],
+                            zoom=(1.4, 0.7),
+                            order=3,
+                            mode=mode,
+                            cval=cval,
+                            prefilter=True,
+                        )
+                        for c in range(shape[-1])
+                    ],
+                    axis=-1,
+                )
+                for n in range(shape[0])
+            ],
+            axis=0,
+        )
+    else:
+        matrix = cupy.eye(a.ndim, dtype=cupy.float32)
+        offset = (0, 1.2, -0.85, 0)
+        result = vendored_ndimage.affine_transform(
+            a,
+            matrix,
+            offset=offset,
+            order=3,
+            mode=mode,
+            cval=cval,
+            prefilter=True,
+        )
+        expected = cupy.stack(
+            [
+                cupy.stack(
+                    [
+                        vendored_ndimage.affine_transform(
+                            a[n, :, :, c],
+                            cupy.eye(2, dtype=cupy.float32),
+                            offset=offset[1:3],
+                            order=3,
+                            mode=mode,
+                            cval=cval,
+                            prefilter=True,
+                        )
+                        for c in range(shape[-1])
+                    ],
+                    axis=-1,
+                )
+                for n in range(shape[0])
+            ],
+            axis=0,
+        )
+
+    cupy.testing.assert_allclose(result, expected, rtol=1e-5, atol=1e-5)
+
+
 @testing.parameterize(
     *testing.product(
         {
