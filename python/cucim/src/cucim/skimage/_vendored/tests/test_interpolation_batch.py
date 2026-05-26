@@ -28,6 +28,7 @@ import cupy
 from cupy.cuda import runtime
 from cupy import testing
 import cucim.skimage._vendored.ndimage as vendored_ndimage
+from cucim.skimage._vendored._internal import AxisError
 from cucim.skimage._vendored._ndimage_interp_kernels import (
     _get_coord_zoom_and_shift_grid,
     _get_shift_kernel,
@@ -715,6 +716,70 @@ def test_map_coordinates_batch_axes_use_same_spatial_map_for_all_channels():
     )
 
     cupy.testing.assert_allclose(result, expected, rtol=1e-5, atol=1e-5)
+
+
+def test_map_coordinates_batch_axes_negative_axis_is_normalized():
+    a = testing.shaped_random((5, 6, 3), cupy, cupy.float32, scale=1)
+    coordinates = cupy.indices(a.shape, dtype=cupy.float32)
+    coordinates[0] += 0.2
+    coordinates[1] -= 0.3
+
+    result = vendored_ndimage.map_coordinates(
+        a,
+        coordinates,
+        order=1,
+        mode="nearest",
+        prefilter=False,
+        batch_axes=(-1,),
+    )
+    expected = vendored_ndimage.map_coordinates(
+        a,
+        coordinates,
+        order=1,
+        mode="nearest",
+        prefilter=False,
+        batch_axes=(2,),
+    )
+
+    cupy.testing.assert_allclose(result, expected, rtol=1e-5, atol=1e-5)
+
+
+@pytest.mark.parametrize(
+    "batch_axes, match",
+    [
+        ((3,), "out of bounds"),
+        ((-4,), "out of bounds"),
+        ((2, -1), "unique"),
+    ],
+)
+def test_map_coordinates_batch_axes_invalid_axes(batch_axes, match):
+    a = testing.shaped_random((5, 6, 3), cupy, cupy.float32, scale=1)
+    coordinates = cupy.indices(a.shape, dtype=cupy.float32)
+
+    with pytest.raises((ValueError, AxisError), match=match):
+        vendored_ndimage.map_coordinates(
+            a,
+            coordinates,
+            order=1,
+            mode="nearest",
+            prefilter=False,
+            batch_axes=batch_axes,
+        )
+
+
+def test_map_coordinates_batch_axes_require_matching_output_extent():
+    a = testing.shaped_random((5, 6, 3), cupy, cupy.float32, scale=1)
+    coordinates = cupy.indices((5, 6, 4), dtype=cupy.float32)
+
+    with pytest.raises(ValueError, match="output shape must match input shape"):
+        vendored_ndimage.map_coordinates(
+            a,
+            coordinates,
+            order=1,
+            mode="nearest",
+            prefilter=False,
+            batch_axes=(2,),
+        )
 
 
 @testing.parameterize(

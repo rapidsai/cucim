@@ -120,6 +120,14 @@ def test_warp_nd():
         assert_array_almost_equal(outx, refx)
 
 
+def test_warp_batch_axes_require_matching_output_extent():
+    image = cp.random.rand(5, 6, 3)
+    coords = cp.indices((5, 6, 4), dtype=cp.float32)
+
+    with pytest.raises(ValueError, match="output shape must match input shape"):
+        warp(image, coords, order=1, batch_axes=(2,))
+
+
 def test_warp_clip():
     x = cp.zeros((5, 5), dtype=cp.float64)
     x[2, 2] = 1

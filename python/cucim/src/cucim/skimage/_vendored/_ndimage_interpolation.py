@@ -50,6 +50,20 @@ def _output_axis_matches_input(input_shape, output_shape, axis):
     return output_shape[axis] == input_shape[axis]
 
 
+def _normalize_batch_axes(batch_axes, ndim, input_shape, output_shape):
+    if batch_axes is None:
+        return None
+    batch_axes = tuple(_normalize_axis_index(axis, ndim) for axis in batch_axes)
+    if len(set(batch_axes)) != len(batch_axes):
+        raise ValueError("batch_axes must be unique")
+    for axis in batch_axes:
+        if not _output_axis_matches_input(input_shape, output_shape, axis):
+            raise ValueError(
+                "output shape must match input shape along batch_axes"
+            )
+    return batch_axes
+
+
 def _get_spline_output(input, output):
     """Create workspace array, temp, and the final dtype for the output.
 
@@ -375,9 +389,9 @@ def map_coordinates(
         input = input.astype(cupy.float32)
     coordinates = _check_coordinates(coordinates, order)
 
-    # convert batch_axes to tuple for hashing in memoized kernel getter
-    if batch_axes is not None:
-        batch_axes = tuple(batch_axes)
+    batch_axes = _normalize_batch_axes(
+        batch_axes, input.ndim, input.shape, ret.shape
+    )
 
     filtered, nprepad = _filter_input(
         input, prefilter, mode, cval, order, batch_axes=batch_axes
