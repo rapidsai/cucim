@@ -649,7 +649,6 @@ def rotate(
     mode="constant",
     cval=0.0,
     prefilter=True,
-    float64_coords=False,
 ):
     """Rotate an array.
 
@@ -682,9 +681,6 @@ def rotate(
             slightly blurred if ``order > 1``, unless the input is prefiltered,
             i.e. it is the result of calling ``spline_filter`` on the original
             input.
-        float64_coords (bool): If True, always use double precision
-            internally like SciPy. When false, single precision floats and
-            8 or 16-bit integer types will use single precision internally.
 
     Returns:
         cupy.ndarray or None:
@@ -760,7 +756,7 @@ def rotate(
         mode,
         cval,
         prefilter,
-        float64_coords=float64_coords,
+        float64_coords=False,
     )
 
 
