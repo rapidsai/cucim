@@ -46,6 +46,10 @@ def _check_parameter(func_name, order, mode):
         raise ValueError(f"boundary mode ({mode}) is not supported")
 
 
+def _output_axis_matches_input(input_shape, output_shape, axis):
+    return output_shape[axis] == input_shape[axis]
+
+
 def _get_spline_output(input, output):
     """Create workspace array, temp, and the final dtype for the output.
 
@@ -557,10 +561,17 @@ def affine_transform(
     matrix = matrix.astype(float_dtype, copy=False)
     if matrix.ndim == 1:
         # identify batch axes where zoom == 1 and shift == 0
-        # (no interpolation needed)
+        # (no interpolation needed). The direct batch-indexing kernel path
+        # bypasses boundary handling and assumes a preserved batch extent.
         matrix_host = cupy.asnumpy(matrix)
         batch_axes = tuple(
-            j for j in range(ndim) if matrix_host[j] == 1.0 and offset[j] == 0.0
+            j
+            for j in range(ndim)
+            if (
+                matrix_host[j] == 1.0
+                and offset[j] == 0.0
+                and _output_axis_matches_input(input.shape, output_shape, j)
+            )
         )
 
         filtered, nprepad = _filter_input(
@@ -590,6 +601,8 @@ def affine_transform(
     else:
         # identify batch axes where the row is an identity row with zero offset
         # i.e., matrix[j, j] == 1, matrix[j, k] == 0 for k != j, and offset[j] == 0
+        # The direct batch-indexing kernel path bypasses boundary handling and
+        # assumes a preserved batch extent.
         matrix_host = cupy.asnumpy(matrix)
         batch_axes = tuple(
             j
@@ -598,6 +611,7 @@ def affine_transform(
                 matrix_host[j, j] == 1.0
                 and all(matrix_host[j, k] == 0.0 for k in range(ndim) if k != j)
                 and offset[j] == 0.0
+                and _output_axis_matches_input(input.shape, output_shape, j)
             )
         )
 

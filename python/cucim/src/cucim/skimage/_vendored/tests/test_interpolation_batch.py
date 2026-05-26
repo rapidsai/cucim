@@ -477,3 +477,53 @@ class TestZoomBatch:
                 dtype = numpy.uint64
         a = testing.shaped_random(shape, cupy, dtype)
         return self._zoom(a, zoom)
+
+
+@testing.parameterize(
+    *testing.product(
+        {
+            "matrix_kind": ["diagonal", "full"],
+            "mode": ["constant", "nearest"],
+        }
+    )
+)
+@testing.with_requires("scipy")
+class TestAffineTransformBatchOutputShape:
+    def test_identity_batch_axis_output_larger_than_input(self):
+        input_shape = (3, 4, 2)
+        # Safe to request a different identity-axis extent: the optimized
+        # batch kernel is only selected when the input/output extents match.
+        output_shape = (3, 4, 5)
+        cval = -7.0
+        a_np = numpy.arange(numpy.prod(input_shape), dtype=numpy.float32)
+        a_np = a_np.reshape(input_shape)
+        a = cupy.asarray(a_np)
+
+        if self.matrix_kind == "diagonal":
+            matrix_np = numpy.ones(a_np.ndim, dtype=numpy.float32)
+        else:
+            matrix_np = numpy.eye(a_np.ndim, dtype=numpy.float32)
+        matrix = cupy.asarray(matrix_np)
+
+        result = vendored_ndimage.affine_transform(
+            a,
+            matrix,
+            offset=0.0,
+            output_shape=output_shape,
+            order=1,
+            mode=self.mode,
+            cval=cval,
+            prefilter=False,
+        )
+        expected = scipy.ndimage.affine_transform(
+            a_np,
+            matrix_np,
+            offset=0.0,
+            output_shape=output_shape,
+            order=1,
+            mode=self.mode,
+            cval=cval,
+            prefilter=False,
+        )
+
+        cupy.testing.assert_allclose(result, expected, rtol=1e-5, atol=1e-5)
