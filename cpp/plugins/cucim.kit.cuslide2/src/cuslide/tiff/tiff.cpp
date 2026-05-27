@@ -25,6 +25,20 @@
 
 static constexpr int DEFAULT_IFD_SIZE = 32;
 
+#ifdef CUCIM_HAS_NVIMGCODEC
+constexpr int kMetadataKindMedAperio = NVIMGCODEC_METADATA_KIND_MED_APERIO;
+constexpr int kMetadataKindMedPhilips = NVIMGCODEC_METADATA_KIND_MED_PHILIPS;
+constexpr int kMetadataKindMedVentana = NVIMGCODEC_METADATA_KIND_MED_VENTANA;
+constexpr int kMetadataKindMedLeica = NVIMGCODEC_METADATA_KIND_MED_LEICA;
+constexpr int kMetadataKindMedTrestle = NVIMGCODEC_METADATA_KIND_MED_TRESTLE;
+#else
+constexpr int kMetadataKindMedAperio = 5;
+constexpr int kMetadataKindMedPhilips = 6;
+constexpr int kMetadataKindMedVentana = 7;
+constexpr int kMetadataKindMedLeica = 8;
+constexpr int kMetadataKindMedTrestle = 9;
+#endif
+
 using json = nlohmann::json;
 
 namespace cuslide::tiff
@@ -541,12 +555,12 @@ void TIFF::resolve_vendor_format()
             is_aperio = true;
         }
 
-        // Method 2: Check metadata_blobs for Aperio (kind=1)
+        // Method 2: Check metadata_blobs for Aperio (MED_APERIO)
         // This includes a workaround for nvImageCodec misclassifying Aperio as Leica
         if (!is_aperio && nvimgcodec_parser_)
         {
             const auto& metadata_blobs = nvimgcodec_parser_->get_metadata_blobs(0);
-            if (metadata_blobs.find(5) != metadata_blobs.end())  // MED_APERIO = 5
+            if (metadata_blobs.find(kMetadataKindMedAperio) != metadata_blobs.end())
             {
                 is_aperio = true;
                 #ifdef DEBUG
@@ -584,12 +598,12 @@ void TIFF::resolve_vendor_format()
             }
         }
 
-        // Method 3: Check metadata_blobs for Philips (kind=2)
+        // Method 3: Check metadata_blobs for Philips (MED_PHILIPS)
         // This includes a workaround for nvImageCodec misclassifying Philips as Ventana
         if (!is_philips && nvimgcodec_parser_)
         {
             const auto& metadata_blobs = nvimgcodec_parser_->get_metadata_blobs(0);
-            if (metadata_blobs.find(6) != metadata_blobs.end())  // MED_PHILIPS = 6
+            if (metadata_blobs.find(kMetadataKindMedPhilips) != metadata_blobs.end())
             {
                 is_philips = true;
                 #ifdef DEBUG
@@ -637,20 +651,20 @@ void TIFF::resolve_vendor_format()
         // Ventana BIF: extension .bif or nvImageCodec MED_VENTANA blob (kind=7)
         else if (file_ext == ".bif" ||
                  (nvimgcodec_parser_ &&
-                  nvimgcodec_parser_->get_metadata_blobs(0).find(7) != nvimgcodec_parser_->get_metadata_blobs(0).end()))
+                  nvimgcodec_parser_->get_metadata_blobs(0).find(kMetadataKindMedVentana) != nvimgcodec_parser_->get_metadata_blobs(0).end()))
         {
             tiff_type_ = TiffType::Ventana;
         }
         // Leica SCN: extension .scn or nvImageCodec MED_LEICA blob (kind=8, when not NDPI)
         else if (file_ext == ".scn" ||
                  (nvimgcodec_parser_ &&
-                  nvimgcodec_parser_->get_metadata_blobs(0).find(8) != nvimgcodec_parser_->get_metadata_blobs(0).end()))
+                  nvimgcodec_parser_->get_metadata_blobs(0).find(kMetadataKindMedLeica) != nvimgcodec_parser_->get_metadata_blobs(0).end()))
         {
             tiff_type_ = TiffType::Leica;
         }
         // Trestle TIFF: nvImageCodec MED_TRESTLE blob (kind=9)
         else if (nvimgcodec_parser_ &&
-                 nvimgcodec_parser_->get_metadata_blobs(0).find(9) != nvimgcodec_parser_->get_metadata_blobs(0).end())
+                 nvimgcodec_parser_->get_metadata_blobs(0).find(kMetadataKindMedTrestle) != nvimgcodec_parser_->get_metadata_blobs(0).end())
         {
             tiff_type_ = TiffType::Trestle;
         }
