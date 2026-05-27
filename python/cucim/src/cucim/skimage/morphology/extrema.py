@@ -138,6 +138,8 @@ def h_maxima(image, h, footprint=None, *, reconstruct_on_cpu="auto"):
     #        changed to float64, and different integer values could
     #        become the same float due to rounding.
     #
+    #        see: https://github.com/rapidsai/cucim/issues/1090
+    #
     #   >>> ii64 = np.iinfo(np.int64)
     #   >>> a = np.array([ii64.max, ii64.max - 2])
     #   >>> a[0] == a[1]
