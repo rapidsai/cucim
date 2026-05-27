@@ -105,17 +105,20 @@ static bool CUCIM_ABI parser_parse(CuCIMFileHandle_ptr handle_ptr, cucim::io::fo
     // Philips TIFF also has multiple SubfileType=0 (by design)
     bool is_philips_tiff = (tif->tiff_type() == cuslide::tiff::TiffType::Philips);
 
-    // Fallback detection: check for multiple resolution levels
-    // Aperio SVS files typically have 3-6 IFDs with multiple resolution levels
-    // If we have multiple IFDs and they look like a pyramid, treat as Aperio/SVS
+    // Fallback: detect unrecognised pyramidal TIFFs that were not caught by
+    // ImageDescription or nvImageCodec metadata-blob detection above.
+    // If the file has >=3 IFDs forming a resolution pyramid, assume it is a
+    // valid multi-resolution WSI so it is not rejected by the SubfileType=0
+    // single-main-image constraint below.
+    // TODO: revisit once all known pyramid formats are covered by the
+    //       is_known_multi_ifd_format check — this heuristic may become unnecessary.
     if (!is_aperio_svs && ifd_count >= 3 && level_count >= 3)
     {
-        // Check if IFDs form a pyramid structure (decreasing sizes)
         bool is_pyramid = true;
         for (size_t i = 1; i < std::min(size_t(3), level_count); ++i)
         {
             auto ifd_curr = tif->level_ifd(i);
-            auto ifd_prev = tif->level_ifd(i-1);
+            auto ifd_prev = tif->level_ifd(i - 1);
             if (ifd_curr->width() >= ifd_prev->width())
             {
                 is_pyramid = false;
@@ -126,7 +129,7 @@ static bool CUCIM_ABI parser_parse(CuCIMFileHandle_ptr handle_ptr, cucim::io::fo
         if (is_pyramid)
         {
             #ifdef DEBUG
-            fmt::print("ℹ️  Detected pyramid structure → treating as Aperio SVS/multi-resolution TIFF\n");
+            fmt::print("ℹ️  Detected pyramid structure → treating as multi-resolution TIFF\n");
             #endif // DEBUG
             is_aperio_svs = true;
         }
