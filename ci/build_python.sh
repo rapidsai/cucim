@@ -30,7 +30,7 @@ sccache --start-server
 # ref: https://github.com/rapidsai/cucim/issues/800#issuecomment-2529593457
 conda config --set path_conflict warn
 
-CPP_CHANNEL=$(rapids-download-conda-from-github cpp)
+CPP_CHANNEL=$(rapids-download-from-github "$(rapids-artifact-name conda_cpp libcucim cucim --cuda "$RAPIDS_CUDA_VERSION")")
 
 # TODO: Remove `--no-test` flag once importing on a CPU
 # node works correctly
@@ -40,3 +40,6 @@ RAPIDS_PACKAGE_VERSION=$(head -1 ./VERSION) rapids-conda-retry build \
   conda/recipes/cucim
 
 sccache --show-adv-stats
+
+RAPIDS_PACKAGE_NAME="$(rapids-artifact-name conda_python cucim cucim --python "$RAPIDS_PY_VERSION" --cuda "$RAPIDS_CUDA_VERSION")"
+export RAPIDS_PACKAGE_NAME
