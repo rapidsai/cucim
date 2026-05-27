@@ -155,7 +155,7 @@ static std::string detect_nvimgcodec_extensions_path()
 // all workers should not exceed the physical core count to avoid
 // context-switch overhead.
 //
-// Heuristic:  min(hardware_concurrency / 4, kMaxDefaultThreads)
+// Heuristic:  min(hardware_concurrency / 4, kHeuristicMaxThreads)
 //
 // The CUDA stream count is left at nvImageCodec's default because
 // empirically it has limited performance impact and over-allocating
@@ -166,7 +166,7 @@ static std::string detect_nvimgcodec_extensions_path()
 //   - value == 0: fall back to nvImageCodec default (= num cpu cores)
 //   - malformed : warn and fall through to heuristic
 //
-static constexpr int kMaxDefaultThreads = 8;
+static constexpr int kHeuristicMaxThreads = 8;
 
 static int compute_max_decoder_threads()
 {
@@ -203,16 +203,16 @@ static int compute_max_decoder_threads()
     if (hw_threads == 0) return 0;  // unknown → let nvImageCodec decide
 
     // Fair share: assume this process is one of potentially several workers.
-    // Cap at kMaxDefaultThreads to keep the threadpool bounded even on
+    // Cap at kHeuristicMaxThreads to keep the threadpool bounded even on
     // high-core-count machines (e.g. 64 cores / 4 = 16 is still too many).
     int fair_share = std::min(
         std::max(1, static_cast<int>(hw_threads) / 4),
-        kMaxDefaultThreads);
+        kHeuristicMaxThreads);
 
     #ifdef DEBUG
     fmt::print("[nvimgcodec] max_decoder_threads heuristic: hw_threads={}, "
                "fair_share={}, cap={}\n",
-               hw_threads, fair_share, kMaxDefaultThreads);
+               hw_threads, fair_share, kHeuristicMaxThreads);
     #endif
 
     return fair_share;
