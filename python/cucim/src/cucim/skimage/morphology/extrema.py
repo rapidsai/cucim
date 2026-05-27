@@ -399,6 +399,11 @@ def local_maxima(
     have strictly lower values (not equal). When a plateau is identified as
     a local maximum, ALL pixels belonging to that plateau are marked as True.
 
+    Integer inputs use ``float64`` intermediates while validating plateaus.
+    For high-range ``int64`` or ``uint64`` inputs, distinct adjacent values may
+    round to the same ``float64`` value. In that case, extrema differing by
+    less than the local ``float64`` spacing may be missed.
+
     The algorithm works as follows:
     1. Find candidate pixels using a hollow (center-excluded) maximum filter
     2. Label connected regions of candidates
@@ -507,6 +512,11 @@ def local_minima(
     only considered a local minimum if ALL pixels in its external neighborhood
     have strictly higher values (not equal). When a plateau is identified as
     a local minimum, ALL pixels belonging to that plateau are marked as True.
+
+    Integer inputs use ``float64`` intermediates while validating plateaus.
+    For high-range ``int64`` or ``uint64`` inputs, distinct adjacent values may
+    round to the same ``float64`` value. In that case, extrema differing by
+    less than the local ``float64`` spacing may be missed.
 
     Examples
     --------
