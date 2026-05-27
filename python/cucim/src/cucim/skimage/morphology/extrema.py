@@ -28,7 +28,7 @@ def _add_constant_clip(image, const_value):
 
     if const_value > (max_dtype - min_dtype):
         raise ValueError(
-            "The added constant is not compatiblewith the image data type."
+            "The added constant is not compatible with the image data type."
         )
 
     result = image + image.dtype.type(const_value)
@@ -43,7 +43,7 @@ def _subtract_constant_clip(image, const_value):
 
     if const_value > (max_dtype - min_dtype):
         raise ValueError(
-            "The subtracted constant is not compatiblewith the image data type."
+            "The subtracted constant is not compatible with the image data type."
         )
 
     result = image - image.dtype.type(const_value)
@@ -124,7 +124,7 @@ def h_maxima(image, h, footprint=None, *, reconstruct_on_cpu=False):
     The resulting image will contain 3 local maxima.
     """
 
-    # Check for h value that is larger then range of the image. If this
+    # Check for h value that is larger than the range of the image. If this
     # is True then there are no h-maxima in the image.
     if h > cp.ptp(image):
         return cp.zeros(image.shape, dtype=np.uint8)
@@ -167,7 +167,7 @@ def h_maxima(image, h, footprint=None, *, reconstruct_on_cpu=False):
         # small rounding errors that inevitably occur when doing
         # floating point arithmetic. We want shifted_img to be
         # guaranteed to be h less than image. If we only subtract h
-        # there may be pixels were shifted_img ends up being
+        # there may be pixels where shifted_img ends up being
         # slightly greater than image - h.
         #
         # The resolution is scaled based on the pixel values in the
@@ -237,7 +237,7 @@ def h_minima(image, h, footprint=None, *, reconstruct_on_cpu=False):
 
     Examples
     --------
-    >>> import numpy as cp
+    >>> import cupy as cp
     >>> from cucim.skimage.morphology import extrema
 
     We create an image (quadratic function with a minimum in the center and

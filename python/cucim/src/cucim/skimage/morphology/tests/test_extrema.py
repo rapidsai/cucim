@@ -543,11 +543,11 @@ class TestLocalMaxima:
         """Test maxima detection at the image border."""
         # Use connectivity 1 to allow many maxima, only filtering at border is
         # of interest
-        result_with_boder = local_maxima(
+        result_with_border = local_maxima(
             self.image, connectivity=1, allow_borders=True
         )
-        assert result_with_boder.dtype == bool
-        cp.testing.assert_array_equal(result_with_boder, self.expected_cross)
+        assert result_with_border.dtype == bool
+        cp.testing.assert_array_equal(result_with_border, self.expected_cross)
 
         expected_without_border = cp.asarray(
             [
