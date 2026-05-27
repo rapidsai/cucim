@@ -255,6 +255,84 @@ def test_offset_not_none(reconstruct_on_cpu):
     )
 
 
+@pytest.mark.parametrize("reconstruct_on_cpu", ["auto", False, True])
+def test_noncentered_offset_matches_skimage(reconstruct_on_cpu):
+    seed = cp.array([0, 1, 0, 2, 0, 2])
+    mask = cp.array([2, 3, 0, 3, 1, 3])
+    footprint = cp.ones(3)
+    offset = cp.array([0])
+    expected = cp.array([0, 1, 0, 2, 1, 2])
+
+    assert_array_almost_equal(
+        reconstruction(
+            seed,
+            mask,
+            footprint=footprint,
+            offset=offset,
+            reconstruct_on_cpu=reconstruct_on_cpu,
+        ),
+        expected,
+    )
+
+
+def test_asymmetric_footprint_matches_skimage_gpu_path():
+    seed = cp.array([0, 2, 0, 0, 0])
+    mask = cp.array([0, 3, 3, 3, 0])
+    footprint = cp.array([0, 1, 1])
+    offset = cp.array([1])
+
+    result = reconstruction(
+        seed,
+        mask,
+        footprint=footprint,
+        offset=offset,
+        reconstruct_on_cpu=False,
+    )
+    expected = reconstruction_cpu(
+        cp.asnumpy(seed),
+        cp.asnumpy(mask),
+        footprint=cp.asnumpy(footprint),
+        offset=cp.asnumpy(offset),
+    )
+
+    cp.testing.assert_allclose(
+        result, cp.asarray(expected).astype(result.dtype)
+    )
+
+
+def test_auto_falls_back_for_unsupported_gpu_offset():
+    seed = cp.array([0, 1, 0, 2, 0, 2])
+    mask = cp.array([2, 3, 0, 3, 1, 3])
+    footprint = cp.ones(2)
+    offset = cp.array([0])
+
+    result = reconstruction(
+        seed,
+        mask,
+        footprint=footprint,
+        offset=offset,
+        reconstruct_on_cpu="auto",
+    )
+    expected = reconstruction_cpu(
+        cp.asnumpy(seed),
+        cp.asnumpy(mask),
+        footprint=cp.asnumpy(footprint),
+        offset=cp.asnumpy(offset),
+    )
+    cp.testing.assert_allclose(
+        result, cp.asarray(expected).astype(result.dtype)
+    )
+
+    with pytest.raises(ValueError, match="GPU reconstruction path"):
+        reconstruction(
+            seed,
+            mask,
+            footprint=footprint,
+            offset=offset,
+            reconstruct_on_cpu=False,
+        )
+
+
 @pytest.mark.parametrize("reconstruct_on_cpu", [False, True])
 def test_reconstruction_float_inputs(reconstruct_on_cpu):
     """Verifies fix for: https://github.com/rapidsai/cuci/issues/36

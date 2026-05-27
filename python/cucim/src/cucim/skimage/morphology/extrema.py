@@ -52,7 +52,7 @@ def _subtract_constant_clip(image, const_value):
     return result
 
 
-def h_maxima(image, h, footprint=None, *, reconstruct_on_cpu=False):
+def h_maxima(image, h, footprint=None, *, reconstruct_on_cpu="auto"):
     """Determine all maxima of the image with height >= h.
 
     The local maxima are defined as connected sets of pixels with equal
@@ -78,10 +78,11 @@ def h_maxima(image, h, footprint=None, *, reconstruct_on_cpu=False):
         The neighborhood expressed as an n-D array of 1's and 0's.
         Default is the ball of radius 1 according to the maximum norm
         (i.e. a 3x3 square for 2D images, a 3x3x3 cube for 3D images, etc.)
-    reconstruct_on_cpu : bool, optional
-        If False (default), the internal morphological reconstruction runs
-        entirely on the GPU. If True, it falls back to scikit-image's
-        CPU-based reconstruction loop. See
+    reconstruct_on_cpu : bool or {'auto'}, optional
+        If ``'auto'`` (default), the internal morphological reconstruction uses
+        the GPU path when supported by the footprint and offset. If False, it
+        always runs entirely on the GPU. If True, it falls back to
+        scikit-image's CPU-based reconstruction loop. See
         `cucim.skimage.morphology.reconstruction` for details.
 
     Returns
@@ -192,7 +193,7 @@ def h_maxima(image, h, footprint=None, *, reconstruct_on_cpu=False):
     return (residue_img >= h).astype(cp.uint8)
 
 
-def h_minima(image, h, footprint=None, *, reconstruct_on_cpu=False):
+def h_minima(image, h, footprint=None, *, reconstruct_on_cpu="auto"):
     """Determine all minima of the image with depth >= h.
 
     The local minima are defined as connected sets of pixels with equal
@@ -218,10 +219,11 @@ def h_minima(image, h, footprint=None, *, reconstruct_on_cpu=False):
         The neighborhood expressed as an n-D array of 1's and 0's.
         Default is the ball of radius 1 according to the maximum norm
         (i.e. a 3x3 square for 2D images, a 3x3x3 cube for 3D images, etc.)
-    reconstruct_on_cpu : bool, optional
-        If False (default), the internal morphological reconstruction runs
-        entirely on the GPU. If True, it falls back to scikit-image's
-        CPU-based reconstruction loop. See
+    reconstruct_on_cpu : bool or {'auto'}, optional
+        If ``'auto'`` (default), the internal morphological reconstruction uses
+        the GPU path when supported by the footprint and offset. If False, it
+        always runs entirely on the GPU. If True, it falls back to
+        scikit-image's CPU-based reconstruction loop. See
         `cucim.skimage.morphology.reconstruction` for details.
 
     See Also
