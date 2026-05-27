@@ -643,28 +643,28 @@ void TIFF::resolve_vendor_format()
             }
         }
 
+        const decltype(nvimgcodec_parser_->get_metadata_blobs(0))* blobs =
+            nvimgcodec_parser_ ? &nvimgcodec_parser_->get_metadata_blobs(0) : nullptr;
+
         // Hamamatsu NDPI: extension .ndpi or MODEL contains "Hamamatsu"
         if (file_ext == ".ndpi" || model.find("Hamamatsu") != std::string::npos)
         {
             tiff_type_ = TiffType::Hamamatsu;
         }
-        // Ventana BIF: extension .bif or nvImageCodec MED_VENTANA blob (kind=7)
+        // Ventana BIF: extension .bif or nvImageCodec MED_VENTANA blob
         else if (file_ext == ".bif" ||
-                 (nvimgcodec_parser_ &&
-                  nvimgcodec_parser_->get_metadata_blobs(0).find(kMetadataKindMedVentana) != nvimgcodec_parser_->get_metadata_blobs(0).end()))
+                 (blobs && blobs->find(kMetadataKindMedVentana) != blobs->end()))
         {
             tiff_type_ = TiffType::Ventana;
         }
-        // Leica SCN: extension .scn or nvImageCodec MED_LEICA blob (kind=8, when not NDPI)
+        // Leica SCN: extension .scn or nvImageCodec MED_LEICA blob
         else if (file_ext == ".scn" ||
-                 (nvimgcodec_parser_ &&
-                  nvimgcodec_parser_->get_metadata_blobs(0).find(kMetadataKindMedLeica) != nvimgcodec_parser_->get_metadata_blobs(0).end()))
+                 (blobs && blobs->find(kMetadataKindMedLeica) != blobs->end()))
         {
             tiff_type_ = TiffType::Leica;
         }
-        // Trestle TIFF: nvImageCodec MED_TRESTLE blob (kind=9)
-        else if (nvimgcodec_parser_ &&
-                 nvimgcodec_parser_->get_metadata_blobs(0).find(kMetadataKindMedTrestle) != nvimgcodec_parser_->get_metadata_blobs(0).end())
+        // Trestle TIFF: nvImageCodec MED_TRESTLE blob
+        else if (blobs && blobs->find(kMetadataKindMedTrestle) != blobs->end())
         {
             tiff_type_ = TiffType::Trestle;
         }
