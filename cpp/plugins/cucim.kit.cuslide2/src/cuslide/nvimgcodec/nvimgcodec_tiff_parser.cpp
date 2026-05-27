@@ -163,7 +163,7 @@ static std::string detect_nvimgcodec_extensions_path()
 //
 // Overridable via CUCIM_MAX_DECODER_THREADS environment variable.
 //   - value > 0 : use that exact thread count
-//   - value == 0: fall back to nvImageCodec default (num_cores - 1)
+//   - value == 0: fall back to nvImageCodec default (= num cpu cores)
 //   - malformed : warn and fall through to heuristic
 //
 static constexpr int kMaxDefaultThreads = 8;
