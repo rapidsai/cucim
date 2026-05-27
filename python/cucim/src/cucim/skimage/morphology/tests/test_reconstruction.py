@@ -333,6 +333,44 @@ def test_auto_falls_back_for_unsupported_gpu_offset():
         )
 
 
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        cp.int8,
+        cp.uint8,
+        cp.int16,
+        cp.uint16,
+        cp.int32,
+        cp.uint32,
+        cp.int64,
+        cp.uint64,
+        cp.float32,
+        cp.float64,
+    ],
+)
+@pytest.mark.parametrize("method", ["dilation", "erosion"])
+def test_gpu_cval_dtype_extremes(dtype, method):
+    dtype = cp.dtype(dtype)
+    if dtype.kind in "iu":
+        info = cp.iinfo(dtype)
+        low = info.min
+        high = info.max
+    else:
+        low = -1.0
+        high = 1.0
+
+    if method == "dilation":
+        seed = cp.array([low, low, low], dtype=dtype)
+        mask = cp.array([low, high, low], dtype=dtype)
+    else:
+        seed = cp.array([high, high, high], dtype=dtype)
+        mask = cp.array([high, low, high], dtype=dtype)
+
+    result = reconstruction(seed, mask, method=method, reconstruct_on_cpu=False)
+    expected_value = low if method == "dilation" else high
+    cp.testing.assert_array_equal(result, cp.full_like(result, expected_value))
+
+
 @pytest.mark.parametrize("reconstruct_on_cpu", [False, True])
 def test_reconstruction_float_inputs(reconstruct_on_cpu):
     """Verifies fix for: https://github.com/rapidsai/cuci/issues/36

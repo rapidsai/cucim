@@ -272,6 +272,19 @@ def _gpu_reconstruction_supports_offset(footprint_shape, offset):
     return True
 
 
+def _extreme_cval(dtype, *, low):
+    """Return a boundary value that cannot win a min/max filter."""
+    dtype = np.dtype(dtype)
+    if np.issubdtype(dtype, np.integer):
+        info = np.iinfo(dtype)
+        return info.min if low else info.max
+    if np.issubdtype(dtype, np.floating):
+        return -np.inf if low else np.inf
+    if np.issubdtype(dtype, np.bool_):
+        return False if low else True
+    raise TypeError(f"dtype {dtype} is not supported")
+
+
 def _reconstruction_gpu(seed, mask, method, footprint, offset):
     """Iterative GPU-native morphological reconstruction.
 
@@ -306,7 +319,7 @@ def _reconstruction_gpu(seed, mask, method, footprint, offset):
     max_iter = max(seed.size, 1000)  # safety limit
 
     is_dilation = method == "dilation"
-    cval = cp.min(seed).item() if is_dilation else cp.max(seed).item()
+    cval = _extreme_cval(current.dtype, low=is_dilation)
     filter_kwargs = dict(
         footprint=footprint, origin=origin, mode="constant", cval=cval
     )
