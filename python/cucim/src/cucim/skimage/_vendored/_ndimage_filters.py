@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Infrastructure, Inc.
 # SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Networks, Inc.
-# SPDX-FileCopyrightText: Copyright (c) 2022-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND MIT
 
 """A vendored subset of cupyx.scipy.ndimage._filters"""
@@ -8,6 +8,7 @@
 import math
 import platform
 import warnings
+from functools import lru_cache
 
 import cupy
 import numpy
@@ -30,6 +31,7 @@ except ImportError:
     compile_errors = (ResourceLimitError,)
 
 _is_not_windows = platform.system() != "Windows"
+_MAX_CACHED_GAUSSIAN_KERNELS = 64
 
 
 def correlate(
@@ -571,7 +573,9 @@ def gaussian_filter1d(
     """
     radius = int(float(truncate) * float(sigma) + 0.5)
     weights_dtype = cupy.promote_types(input.dtype, cupy.float32)
-    weights = _gaussian_kernel1d(sigma, int(order), radius, weights_dtype)
+    weights = _cached_gaussian_kernel1d(
+        float(sigma), int(order), radius, cupy.dtype(weights_dtype).str
+    )
     return correlate1d(
         input, weights, axis, output, mode, cval, algorithm=algorithm
     )
@@ -671,7 +675,9 @@ def gaussian_filter(
             radius = int(truncate * float(sigma) + 0.5)
         if radius <= 0:
             return None
-        return _gaussian_kernel1d(sigma, order, radius, dtype=weights_dtype)
+        return _cached_gaussian_kernel1d(
+            float(sigma), int(order), int(radius), cupy.dtype(weights_dtype).str
+        )
 
     return _run_1d_correlates(
         input,
@@ -715,6 +721,21 @@ def _gaussian_kernel1d(sigma, order, radius, dtype=cupy.float64):
         q = Q_deriv.dot(q)
     q = (x[:, None] ** exponent_range).dot(q)
     return cupy.asarray((q * phi_x)[::-1], order="C", dtype=dtype)
+
+
+def _cached_gaussian_kernel1d(sigma, order, radius, dtype):
+    device_id = cupy.cuda.runtime.getDevice()
+    return _cached_gaussian_kernel1d_for_device(
+        device_id, sigma, order, radius, dtype
+    )
+
+
+@lru_cache(maxsize=_MAX_CACHED_GAUSSIAN_KERNELS)
+def _cached_gaussian_kernel1d_for_device(
+    device_id, sigma, order, radius, dtype
+):
+    with cupy.cuda.Device(device_id):
+        return _gaussian_kernel1d(sigma, order, radius, cupy.dtype(dtype))
 
 
 def prewitt(
