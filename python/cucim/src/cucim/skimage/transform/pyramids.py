@@ -1,13 +1,13 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import math
 
 import cupy as cp
 
-from .._shared.filters import gaussian
 from .._shared.utils import convert_to_float
+from .._vendored import ndimage as ndi
 from ._warps import resize
 
 
@@ -17,18 +17,17 @@ def _smooth(image, sigma, mode, cval, channel_axis):
 
     # apply Gaussian filter to all channels independently
     if channel_axis is not None:
-        # can rely on gaussian to insert a 0 entry at channel_axis
         channel_axis = channel_axis % image.ndim
-        sigma = (sigma,) * (image.ndim - 1)
+        axes = tuple(ax for ax in range(image.ndim) if ax != channel_axis)
     else:
-        channel_axis = None
-    gaussian(
+        axes = None
+    ndi.gaussian_filter(
         image,
         sigma,
-        out=smoothed,
+        output=smoothed,
         mode=mode,
         cval=cval,
-        channel_axis=channel_axis,
+        axes=axes,
     )
     return smoothed
 
