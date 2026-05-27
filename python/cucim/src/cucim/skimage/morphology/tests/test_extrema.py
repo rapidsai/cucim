@@ -563,7 +563,7 @@ class TestLocalMaxima:
         result_without_border = local_maxima(
             self.image, connectivity=1, allow_borders=False
         )
-        assert result_with_boder.dtype == bool
+        assert result_with_border.dtype == bool
         cp.testing.assert_array_equal(
             result_without_border, expected_without_border
         )
