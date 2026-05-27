@@ -183,8 +183,9 @@ static int compute_max_decoder_threads()
         }
         else if (val > 0)
         {
-            fmt::print(stderr,
-                "[cuslide2] CUCIM_MAX_DECODER_THREADS={}\n", val);
+            #ifdef DEBUG
+            fmt::print("[cuslide2] CUCIM_MAX_DECODER_THREADS={}\n", val);
+            #endif
             return static_cast<int>(val);
         }
         else if (val == 0)
