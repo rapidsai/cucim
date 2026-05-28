@@ -556,7 +556,6 @@ void TIFF::resolve_vendor_format()
         }
 
         // Method 2: Check metadata_blobs for Aperio (MED_APERIO)
-        // This includes a workaround for nvImageCodec misclassifying Aperio as Leica
         if (!is_aperio && nvimgcodec_parser_)
         {
             const auto& metadata_blobs = nvimgcodec_parser_->get_metadata_blobs(0);
@@ -599,7 +598,6 @@ void TIFF::resolve_vendor_format()
         }
 
         // Method 3: Check metadata_blobs for Philips (MED_PHILIPS)
-        // This includes a workaround for nvImageCodec misclassifying Philips as Ventana
         if (!is_philips && nvimgcodec_parser_)
         {
             const auto& metadata_blobs = nvimgcodec_parser_->get_metadata_blobs(0);
