@@ -965,7 +965,7 @@ uint16_t IFD::parse_codec_to_compression(const std::string& codec)
         return cuslide::tiff::COMPRESSION_NONE;  // 1
     }
 
-    // Handle generic 'tiff' codec from nvImageCodec 0.6.0
+    // Handle generic 'tiff' codec when nvImageCodec returns container format name
     // This is a known limitation where nvImageCodec doesn't expose the actual compression
     // For now, default to JPEG which is most common in whole-slide imaging
     if (codec == "tiff") {
