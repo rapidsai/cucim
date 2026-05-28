@@ -14,6 +14,7 @@
 #include <fmt/format.h>
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <array>
 #include <cassert>
 #include <cstring>
@@ -63,12 +64,10 @@ static bool CUCIM_ABI checker_is_valid(const char* file_name, const char* buf, s
     (void)buf;
     (void)size;
     auto file = std::filesystem::path(file_name);
-    auto extension = file.extension().string();
-    if (extension.compare(".tif") == 0 || extension.compare(".tiff") == 0 || extension.compare(".svs") == 0)
-    {
-        return true;
-    }
-    return false;
+    auto ext = file.extension().string();
+    std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+    return ext == ".tif" || ext == ".tiff" || ext == ".svs" ||
+           ext == ".ndpi" || ext == ".scn" || ext == ".bif" || ext == ".qptiff";
 }
 
 static CuCIMFileHandle_share CUCIM_ABI parser_open(const char* file_path)
@@ -99,24 +98,27 @@ static bool CUCIM_ABI parser_parse(CuCIMFileHandle_ptr handle_ptr, cucim::io::fo
     size_t level_count = tif->level_count();
 
     // Detect if this is an Aperio SVS file
-    // Try ImageDescription first (works with nvImageCodec 0.7.0+)
+    // Try ImageDescription first
     bool is_aperio_svs = (tif->ifd(0)->image_description().rfind("Aperio", 0) == 0);
 
     // Detect if this is a Philips TIFF file
     // Philips TIFF also has multiple SubfileType=0 (by design)
     bool is_philips_tiff = (tif->tiff_type() == cuslide::tiff::TiffType::Philips);
 
-    // Fallback detection for nvImageCodec 0.6.0: check for multiple resolution levels
-    // Aperio SVS files typically have 3-6 IFDs with multiple resolution levels
-    // If we have multiple IFDs and they look like a pyramid, treat as Aperio/SVS
+    // Fallback: detect unrecognised pyramidal TIFFs that were not caught by
+    // ImageDescription or nvImageCodec metadata-blob detection above.
+    // If the file has >=3 IFDs forming a resolution pyramid, assume it is a
+    // valid multi-resolution WSI so it is not rejected by the SubfileType=0
+    // single-main-image constraint below.
+    // TODO: revisit once all known pyramid formats are covered by the
+    //       is_known_multi_ifd_format check — this heuristic may become unnecessary.
     if (!is_aperio_svs && ifd_count >= 3 && level_count >= 3)
     {
-        // Check if IFDs form a pyramid structure (decreasing sizes)
         bool is_pyramid = true;
         for (size_t i = 1; i < std::min(size_t(3), level_count); ++i)
         {
             auto ifd_curr = tif->level_ifd(i);
-            auto ifd_prev = tif->level_ifd(i-1);
+            auto ifd_prev = tif->level_ifd(i - 1);
             if (ifd_curr->width() >= ifd_prev->width())
             {
                 is_pyramid = false;
@@ -127,14 +129,24 @@ static bool CUCIM_ABI parser_parse(CuCIMFileHandle_ptr handle_ptr, cucim::io::fo
         if (is_pyramid)
         {
             #ifdef DEBUG
-            fmt::print("ℹ️  Detected pyramid structure → treating as Aperio SVS/multi-resolution TIFF\n");
+            fmt::print("ℹ️  Detected pyramid structure → treating as multi-resolution TIFF\n");
             #endif // DEBUG
             is_aperio_svs = true;
         }
     }
 
-    // If not Aperio SVS, Philips TIFF, or multi-resolution pyramid, apply strict validation
-    if (!is_aperio_svs && !is_philips_tiff)
+    // WSI formats commonly have multiple SubfileType=0 IFDs for pyramid levels.
+    // Only enforce the single-main-image constraint for unrecognized Generic TIFFs.
+    bool is_known_multi_ifd_format =
+        is_aperio_svs || is_philips_tiff ||
+        tif->tiff_type() == cuslide::tiff::TiffType::Hamamatsu ||
+        tif->tiff_type() == cuslide::tiff::TiffType::Leica ||
+        tif->tiff_type() == cuslide::tiff::TiffType::Ventana ||
+        tif->tiff_type() == cuslide::tiff::TiffType::Trestle ||
+        tif->tiff_type() == cuslide::tiff::TiffType::OmeTiff ||
+        tif->tiff_type() == cuslide::tiff::TiffType::QpTiff;
+
+    if (!is_known_multi_ifd_format)
     {
         std::vector<size_t> main_ifd_list;
         for (size_t i = 0; i < ifd_count; i++)
