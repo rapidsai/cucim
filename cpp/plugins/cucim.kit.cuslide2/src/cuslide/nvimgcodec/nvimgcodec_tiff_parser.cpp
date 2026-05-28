@@ -631,11 +631,9 @@ bool TiffFileParser::parse_tiff_structure()
         // Extract TIFF metadata using available methods
         extract_tiff_tags(ifd_info);
 
-        // Legacy limitation (nvImageCodec v0.6.0, resolved in v0.7.0+):
-        // - codec_name returns "tiff" (container format) not compression type
-        // - Individual TIFF tags now available via NVIMGCODEC_METADATA_KIND_TIFF_TAG (v0.7.0+)
-        // - TIFF_TAG_LIST enumeration available in v0.8.0+
-        //
+        // codec_name returns "tiff" (container format), not compression type.
+        // Individual TIFF tags are queried via NVIMGCODEC_METADATA_KIND_TIFF_TAG,
+        // and TIFF_TAG_LIST enumeration is available in v0.8.0+.
 
         if (ifd_info.codec == "tiff")
         {
@@ -959,13 +957,6 @@ void TiffFileParser::extract_ifd_metadata(IfdInfo& ifd_info)
             ifd_info.metadata_blobs[kind] = std::move(metadata_blobs[j]);
         }
     }
-
-    // Legacy workaround for nvImageCodec 0.6.0: Philips TIFF metadata limitation
-    // ========================================================================
-    // nvImageCodec 0.6.0 did NOT expose (resolved in 0.7.0+ via TIFF tag queries):
-    // 1. Individual TIFF tags (SOFTWARE, ImageDescription, etc.)
-    // 2. Philips format detection for some files
-    //
 
 }
 
