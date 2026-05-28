@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <string>
 #include <string_view>
+#include <type_traits>
 
 #include <fmt/format.h>
 #include <nlohmann/json.hpp>
@@ -641,7 +642,7 @@ void TIFF::resolve_vendor_format()
             }
         }
 
-        const decltype(nvimgcodec_parser_->get_metadata_blobs(0))* blobs =
+        const std::remove_reference_t<decltype(nvimgcodec_parser_->get_metadata_blobs(0))>* blobs =
             nvimgcodec_parser_ ? &nvimgcodec_parser_->get_metadata_blobs(0) : nullptr;
 
         // Hamamatsu NDPI: extension .ndpi or MODEL contains "Hamamatsu"
