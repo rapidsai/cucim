@@ -153,7 +153,6 @@ jobs:
     with:
       build_type: pull-request
       script: ci/test_wheel.sh
-      matrix_type: "nightly"
   telemetry-summarize:
     # This job must use a self-hosted runner to record telemetry traces.
     runs-on: linux-amd64-cpu4
