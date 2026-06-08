@@ -217,7 +217,7 @@ dependencies:
         packages:
           - cuda-cudart-dev
           - libnvjpeg-dev
-          - libnvimgcodec-dev>=0.7.0,<0.8.0
+          - libnvimgcodec-dev>=0.8.0,<0.9.0
     specific:
       - output_types: conda
         matrices:
@@ -297,22 +297,22 @@ dependencies:
           - scipy>=1.11.2
       - output_types: conda
         packages:
-          - &cupy_unsuffixed cupy>=13.6.0,!=14.0.0
-          - libnvimgcodec>=0.7.0,<0.8.0
-          - nvimgcodec>=0.7.0,<0.8.0
+          - &cupy_unsuffixed cupy>=13.6.0,!=14.0.0,!=14.1.0
+          - libnvimgcodec>=0.8.0,<0.9.0
+          - nvimgcodec>=0.8.0,<0.9.0
     specific:
       - output_types: [requirements, pyproject]
         matrices:
           - matrix:
               cuda: "12.*"
             packages:
-              - cupy-cuda12x>=13.6.0,!=14.0.0
-              - nvidia-nvimgcodec-cu12>=0.7.0,<0.8.0
+              - cupy-cuda12x>=13.6.0,!=14.0.0,!=14.1.0
+              - nvidia-nvimgcodec-cu12>=0.8.0,<0.9.0
           # fallback to CUDA 13 versions if 'cuda' is '13.*' or not provided
           - matrix:
             packages:
-              - cupy-cuda13x>=13.6.0,!=14.0.0
-              - nvidia-nvimgcodec-cu13>=0.7.0,<0.8.0
+              - cupy-cuda13x>=13.6.0,!=14.0.0,!=14.1.0
+              - nvidia-nvimgcodec-cu13>=0.8.0,<0.9.0
   test_python:
     common:
       - output_types: [conda, requirements, pyproject]

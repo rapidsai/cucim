@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <string>
 #include <string_view>
+#include <type_traits>
 
 #include <fmt/format.h>
 #include <nlohmann/json.hpp>
@@ -24,6 +25,20 @@
 #include "ifd.h"
 
 static constexpr int DEFAULT_IFD_SIZE = 32;
+
+#ifdef CUCIM_HAS_NVIMGCODEC
+constexpr int kMetadataKindMedAperio = NVIMGCODEC_METADATA_KIND_MED_APERIO;
+constexpr int kMetadataKindMedPhilips = NVIMGCODEC_METADATA_KIND_MED_PHILIPS;
+constexpr int kMetadataKindMedVentana = NVIMGCODEC_METADATA_KIND_MED_VENTANA;
+constexpr int kMetadataKindMedLeica = NVIMGCODEC_METADATA_KIND_MED_LEICA;
+constexpr int kMetadataKindMedTrestle = NVIMGCODEC_METADATA_KIND_MED_TRESTLE;
+#else
+constexpr int kMetadataKindMedAperio = 5;
+constexpr int kMetadataKindMedPhilips = 6;
+constexpr int kMetadataKindMedVentana = 7;
+constexpr int kMetadataKindMedLeica = 8;
+constexpr int kMetadataKindMedTrestle = 9;
+#endif
 
 using json = nlohmann::json;
 
@@ -541,16 +556,15 @@ void TIFF::resolve_vendor_format()
             is_aperio = true;
         }
 
-        // Method 2: Check metadata_blobs for Aperio (kind=1)
-        // This includes the workaround for nvImageCodec 0.6.0 misclassifying Aperio as Leica
+        // Method 2: Check metadata_blobs for Aperio (MED_APERIO)
         if (!is_aperio && nvimgcodec_parser_)
         {
             const auto& metadata_blobs = nvimgcodec_parser_->get_metadata_blobs(0);
-            if (metadata_blobs.find(1) != metadata_blobs.end())  // MED_APERIO = 1
+            if (metadata_blobs.find(kMetadataKindMedAperio) != metadata_blobs.end())
             {
                 is_aperio = true;
                 #ifdef DEBUG
-                fmt::print("✅ Aperio detected via metadata_blobs workaround\n");
+                fmt::print("✅ Aperio detected via metadata_blobs\n");
                 #endif
             }
         }
@@ -562,8 +576,7 @@ void TIFF::resolve_vendor_format()
     }
 
     // Detect Philips TIFF
-    // NOTE: nvImageCodec 0.6.0 doesn't expose individual TIFF tags (like SOFTWARE)
-    // Workaround: Check for Philips XML in ImageDescription or use nvImageCodec metadata kind
+    // Check for Philips TIFF using SOFTWARE tag, ImageDescription XML, or nvImageCodec metadata kind
     {
         bool is_philips = false;
 
@@ -574,8 +587,7 @@ void TIFF::resolve_vendor_format()
             is_philips = true;
         }
 
-        // Method 2: Check for Philips XML structure in ImageDescription
-        // (Workaround for nvImageCodec 0.6.0 where SOFTWARE tag is not available)
+        // Method 2: Check for Philips XML structure in ImageDescription (fallback)
         if (!is_philips)
         {
             auto& image_desc = first_ifd->image_description();
@@ -586,16 +598,15 @@ void TIFF::resolve_vendor_format()
             }
         }
 
-        // Method 3: Check metadata_blobs for Philips (kind=2)
-        // This includes the workaround for nvImageCodec 0.6.0 misclassifying Philips as Ventana
+        // Method 3: Check metadata_blobs for Philips (MED_PHILIPS)
         if (!is_philips && nvimgcodec_parser_)
         {
             const auto& metadata_blobs = nvimgcodec_parser_->get_metadata_blobs(0);
-            if (metadata_blobs.find(2) != metadata_blobs.end())  // MED_PHILIPS = 2
+            if (metadata_blobs.find(kMetadataKindMedPhilips) != metadata_blobs.end())
             {
                 is_philips = true;
                 #ifdef DEBUG
-                fmt::print("✅ Philips detected via metadata_blobs workaround\n");
+                fmt::print("✅ Philips detected via metadata_blobs\n");
                 #endif
             }
         }
@@ -614,6 +625,68 @@ void TIFF::resolve_vendor_format()
         {
             _populate_philips_tiff_metadata(ifd_count, json_metadata, first_ifd);
         }
+    }
+
+    // Detect additional vendor formats (when not already classified as Aperio/Philips)
+    if (tiff_type_ == TiffType::Generic)
+    {
+        auto& image_desc = first_ifd->image_description();
+        std::string file_ext;
+        {
+            std::string path_str(file_path_.c_str());
+            auto dot_pos = path_str.rfind('.');
+            if (dot_pos != std::string::npos)
+            {
+                file_ext = path_str.substr(dot_pos);
+                std::transform(file_ext.begin(), file_ext.end(), file_ext.begin(), ::tolower);
+            }
+        }
+
+        const std::remove_reference_t<decltype(nvimgcodec_parser_->get_metadata_blobs(0))>* blobs =
+            nvimgcodec_parser_ ? &nvimgcodec_parser_->get_metadata_blobs(0) : nullptr;
+
+        // Hamamatsu NDPI: extension .ndpi or MODEL contains "Hamamatsu"
+        if (file_ext == ".ndpi" || model.find("Hamamatsu") != std::string::npos)
+        {
+            tiff_type_ = TiffType::Hamamatsu;
+        }
+        // Ventana BIF: extension .bif or nvImageCodec MED_VENTANA blob
+        else if (file_ext == ".bif" ||
+                 (blobs && blobs->find(kMetadataKindMedVentana) != blobs->end()))
+        {
+            tiff_type_ = TiffType::Ventana;
+        }
+        // Leica SCN: extension .scn or nvImageCodec MED_LEICA blob
+        else if (file_ext == ".scn" ||
+                 (blobs && blobs->find(kMetadataKindMedLeica) != blobs->end()))
+        {
+            tiff_type_ = TiffType::Leica;
+        }
+        // Trestle TIFF: nvImageCodec MED_TRESTLE blob
+        else if (blobs && blobs->find(kMetadataKindMedTrestle) != blobs->end())
+        {
+            tiff_type_ = TiffType::Trestle;
+        }
+        // OME-TIFF: ImageDescription contains OME XML namespace
+        else if (image_desc.find("<OME") != std::string::npos ||
+                 image_desc.find("ome.xsd") != std::string::npos)
+        {
+            tiff_type_ = TiffType::OmeTiff;
+        }
+        // Vectra QPTIFF: extension .qptiff or ImageDescription contains PerkinElmer
+        else if (file_ext == ".qptiff" ||
+                 image_desc.find("PerkinElmer") != std::string::npos ||
+                 image_desc.find("Vectra") != std::string::npos)
+        {
+            tiff_type_ = TiffType::QpTiff;
+        }
+
+        #ifdef DEBUG
+        if (tiff_type_ != TiffType::Generic)
+        {
+            fmt::print("✅ Detected vendor format: {}\n", static_cast<uint32_t>(tiff_type_));
+        }
+        #endif
     }
 
     // Append TIFF metadata

@@ -52,7 +52,11 @@ def setup_environment(config_name: str = "cucim_test") -> str:
         except importlib_metadata.PackageNotFoundError:
             continue
     if dist_version is None:
-        raise importlib_metadata.PackageNotFoundError("cucim")
+        version_file = repo_root / "VERSION"
+        if version_file.exists():
+            dist_version = version_file.read_text().strip()
+        else:
+            raise importlib_metadata.PackageNotFoundError("cucim")
     version = plugin_version_from_dist_version(dist_version)
 
     if os.getenv("ENABLE_CUSLIDE2") == "1":

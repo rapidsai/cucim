@@ -23,7 +23,7 @@ rapids-pip-retry install \
     "$(echo ${PYTHON_WHEELHOUSE}/cucim*.whl)[test]"
 
 if type -f yum > /dev/null 2>&1; then
-    yum update -y
+    yum update --nobest -y
     yum install -y openslide
 else
     DEBIAN_FRONTEND=noninteractive apt update

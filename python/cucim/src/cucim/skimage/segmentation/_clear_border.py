@@ -1,10 +1,43 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2022-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import cupy as cp
 
 from ..measure import label
+
+
+def _get_border_labels(labels, buffer_size=0):
+    """Return unique labels that touch the image border.
+
+    Parameters
+    ----------
+    labels : cupy.ndarray
+        Label image.
+    buffer_size : int, optional
+        The width of the border examined. By default (0), only labels
+        that touch the outermost pixels are returned.
+
+    Returns
+    -------
+    border_labels : cupy.ndarray
+        1-D array of unique label values that touch the border region.
+    """
+    # Create border mask using slice-based approach
+    border_mask = cp.zeros(labels.shape, dtype=bool)
+    ext = buffer_size + 1
+    slstart = slice(ext)
+    slend = slice(-ext, None)
+    slices = [slice(None)] * labels.ndim
+    for d in range(labels.ndim):
+        slices[d] = slstart
+        border_mask[tuple(slices)] = True
+        slices[d] = slend
+        border_mask[tuple(slices)] = True
+        slices[d] = slice(None)
+
+    return cp.unique(labels[border_mask])
+
 
 _clear_border_labels = cp.ElementwiseKernel(
     in_params="raw X labels, raw X borders_indices, int32 nvals, Y bgval",
@@ -89,6 +122,10 @@ def clear_border(labels, buffer_size=0, bgval=0, mask=None, *, out=None):
     else:
         out = labels.copy()
 
+    # Re-label, in case we are dealing with a binary out
+    # and to get consistent labeling
+    relabeled, number = label(out, background=0, return_num=True)
+
     if mask is not None:
         err_msg = (
             f"labels and mask should have the same shape but "
@@ -98,29 +135,14 @@ def clear_border(labels, buffer_size=0, bgval=0, mask=None, *, out=None):
             raise ValueError(err_msg)
         if mask.dtype != bool:
             raise TypeError("mask should be of type bool.")
+        # For mask case, border is where mask is False
         borders = ~mask
+        borders_indices = cp.unique(relabeled[borders])
     else:
-        # create borders with buffer_size
-        borders = cp.zeros_like(out, dtype=bool)
-        ext = buffer_size + 1
-        slstart = slice(ext)
-        slend = slice(-ext, None)
-        slices = [slice(None) for _ in out.shape]
-        for d in range(out.ndim):
-            slices[d] = slstart
-            borders[tuple(slices)] = True
-            slices[d] = slend
-            borders[tuple(slices)] = True
-            slices[d] = slice(None)
-
-    # Re-label, in case we are dealing with a binary out
-    # and to get consistent labeling
-    labels, number = label(out, background=0, return_num=True)
-
-    # determine all objects that are connected to borders
-    borders_indices = cp.unique(labels[borders])
+        # Use helper function to get labels touching border
+        borders_indices = _get_border_labels(relabeled, buffer_size=buffer_size)
 
     _clear_border_labels(
-        labels, borders_indices, borders_indices.size, bgval, out
+        relabeled, borders_indices, borders_indices.size, bgval, out
     )
     return out
