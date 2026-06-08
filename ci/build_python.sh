@@ -41,5 +41,5 @@ RAPIDS_PACKAGE_VERSION=$(head -1 ./VERSION) rapids-conda-retry build \
 
 sccache --show-adv-stats
 
-RAPIDS_PACKAGE_NAME="$(rapids-artifact-name conda_python cucim cucim --python "$RAPIDS_PY_VERSION" --cuda "$RAPIDS_CUDA_VERSION")"
+RAPIDS_PACKAGE_NAME="$(rapids-artifact-name conda_python cucim cucim --py "$RAPIDS_PY_VERSION" --cuda "$RAPIDS_CUDA_VERSION")"
 export RAPIDS_PACKAGE_NAME
