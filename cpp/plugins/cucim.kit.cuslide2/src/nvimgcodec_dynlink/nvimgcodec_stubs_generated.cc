@@ -127,28 +127,28 @@ nvimgcodecStatus_t nvimgcodecImageDestroy(nvimgcodecImage_t image) {
   return func_ptr(image);
 }
 
-nvimgcodecStatus_t NVIMGCODECAPI nvimgcodecCodeStreamCreateFromFileNotFound(nvimgcodecInstance_t, nvimgcodecCodeStream_t *, const char *) {
+nvimgcodecStatus_t NVIMGCODECAPI nvimgcodecCodeStreamCreateFromFileNotFound(nvimgcodecInstance_t, nvimgcodecCodeStream_t *, const char *, const nvimgcodecCodeStreamView_t*) {
   return NVIMGCODEC_STATUS_IMPLEMENTATION_UNSUPPORTED;
 }
 
-nvimgcodecStatus_t nvimgcodecCodeStreamCreateFromFile(nvimgcodecInstance_t instance, nvimgcodecCodeStream_t * code_stream, const char * file_name) {
-  using FuncPtr = nvimgcodecStatus_t (NVIMGCODECAPI *)(nvimgcodecInstance_t, nvimgcodecCodeStream_t *, const char *);
+nvimgcodecStatus_t nvimgcodecCodeStreamCreateFromFile(nvimgcodecInstance_t instance, nvimgcodecCodeStream_t * code_stream, const char * file_name, const nvimgcodecCodeStreamView_t* code_stream_view) {
+  using FuncPtr = nvimgcodecStatus_t (NVIMGCODECAPI *)(nvimgcodecInstance_t, nvimgcodecCodeStream_t *, const char *, const nvimgcodecCodeStreamView_t*);
   static auto func_ptr = reinterpret_cast<FuncPtr>(LOAD_SYMBOL_FUNC("nvimgcodecCodeStreamCreateFromFile")) ?
                            reinterpret_cast<FuncPtr>(LOAD_SYMBOL_FUNC("nvimgcodecCodeStreamCreateFromFile")) :
                            nvimgcodecCodeStreamCreateFromFileNotFound;
-  return func_ptr(instance, code_stream, file_name);
+  return func_ptr(instance, code_stream, file_name, code_stream_view);
 }
 
-nvimgcodecStatus_t NVIMGCODECAPI nvimgcodecCodeStreamCreateFromHostMemNotFound(nvimgcodecInstance_t, nvimgcodecCodeStream_t *, const unsigned char *, size_t) {
+nvimgcodecStatus_t NVIMGCODECAPI nvimgcodecCodeStreamCreateFromHostMemNotFound(nvimgcodecInstance_t, nvimgcodecCodeStream_t *, const unsigned char *, size_t, const nvimgcodecCodeStreamView_t*) {
   return NVIMGCODEC_STATUS_IMPLEMENTATION_UNSUPPORTED;
 }
 
-nvimgcodecStatus_t nvimgcodecCodeStreamCreateFromHostMem(nvimgcodecInstance_t instance, nvimgcodecCodeStream_t * code_stream, const unsigned char * data, size_t length) {
-  using FuncPtr = nvimgcodecStatus_t (NVIMGCODECAPI *)(nvimgcodecInstance_t, nvimgcodecCodeStream_t *, const unsigned char *, size_t);
+nvimgcodecStatus_t nvimgcodecCodeStreamCreateFromHostMem(nvimgcodecInstance_t instance, nvimgcodecCodeStream_t * code_stream, const unsigned char * data, size_t length, const nvimgcodecCodeStreamView_t* code_stream_view) {
+  using FuncPtr = nvimgcodecStatus_t (NVIMGCODECAPI *)(nvimgcodecInstance_t, nvimgcodecCodeStream_t *, const unsigned char *, size_t, const nvimgcodecCodeStreamView_t*);
   static auto func_ptr = reinterpret_cast<FuncPtr>(LOAD_SYMBOL_FUNC("nvimgcodecCodeStreamCreateFromHostMem")) ?
                            reinterpret_cast<FuncPtr>(LOAD_SYMBOL_FUNC("nvimgcodecCodeStreamCreateFromHostMem")) :
                            nvimgcodecCodeStreamCreateFromHostMemNotFound;
-  return func_ptr(instance, code_stream, data, length);
+  return func_ptr(instance, code_stream, data, length, code_stream_view);
 }
 
 nvimgcodecStatus_t NVIMGCODECAPI nvimgcodecCodeStreamDestroyNotFound(nvimgcodecCodeStream_t) {
