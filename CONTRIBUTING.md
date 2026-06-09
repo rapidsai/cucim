@@ -132,7 +132,7 @@ Note that the environment files in `./conda/environments/` will pull in GCC and 
 If you want to change the version of GCC or CUDA, please update the environment file before executing the following commands.
 
 ```bash
-conda env create -n cucim -f ./conda/environments/all_cuda-132_arch-$(uname -m).yaml
+conda env create -n cucim -f ./conda/environments/all_cuda-133_arch-$(uname -m).yaml
 # activate the environment
 conda activate cucim
 ```
