@@ -1,3 +1,31 @@
+# cucim 26.06.00 (3 Jun 2026)
+
+### 🚨 Breaking Changes
+* Update cuCIM for consistency with scikit-image 0.26 by @grlee77 in https://github.com/rapidsai/cucim/pull/1038
+* Upgrade nvImageCodec dependency from v0.7.0 to v0.8.0 by @cdinea in https://github.com/rapidsai/cucim/pull/1085
+### 🛠️ Improvements
+* Forward-merge release/26.04 into main by @jakirkham in https://github.com/rapidsai/cucim/pull/1053
+* fix(conda): specify `python-gil` for conda recipe by @gforsyth in https://github.com/rapidsai/cucim/pull/1056
+* chore: bump `codespell` version for Python 3.14+ compatibility by @gforsyth in https://github.com/rapidsai/cucim/pull/1062
+* Use S3 for preprocessor cache by @trxcllnt in https://github.com/rapidsai/cucim/pull/1071
+* Fixes for heap overflow by @cdinea in https://github.com/rapidsai/cucim/pull/1077
+* fix(ci): resolve all zizmor findings and add zizmor pre-commit checks by @gforsyth in https://github.com/rapidsai/cucim/pull/1078
+* Build and test with CUDA 13.2.0 by @bdice in https://github.com/rapidsai/cucim/pull/1080
+* fix(ci): add explicit `actions: write` permission for `telemetry-summarize`
+ by @gforsyth in https://github.com/rapidsai/cucim/pull/1081
+* Add SECURITY.md by @jolorunyomi in https://github.com/rapidsai/cucim/pull/1082
+* Require CMake 4.0 by @KyleFromNVIDIA in https://github.com/rapidsai/cucim/pull/1083
+* vendor metadata hardening by @cdinea in https://github.com/rapidsai/cucim/pull/1079
+* Optimize batch/multi-channel image interpolation (`cucim.skimage.transform.warp` and `cucim.skimage._vendored.ndimage`) by @grlee77 in https://github.com/rapidsai/cucim/pull/1060
+* morphology: add `h_maxima`, `h_minima`, `local_maxima`, `local_minima`. improve `reconstruct` by @grlee77 in https://github.com/rapidsai/cucim/pull/1061
+* skip CuPy 14.1.0 by @jameslamb in https://github.com/rapidsai/cucim/pull/1096
+* fix 'yum update' in nightly wheels tests by @jameslamb in https://github.com/rapidsai/cucim/pull/1099
+
+## New Contributors
+* @trxcllnt made their first contribution in https://github.com/rapidsai/cucim/pull/1071
+
+**Full Changelog**: https://github.com/rapidsai/cucim/compare/v26.06.00a...release/26.06
+
 # cucim 26.04.00 (8 Apr 2026)
 
 ### 🚨 Breaking Changes
