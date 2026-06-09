@@ -134,3 +134,4 @@ jobs:
       sha: ${{ inputs.sha }}
       date: ${{ inputs.date }}
       package-name: cucim
+      publish-wheel-search-key: cucim_wheel_python_cucim
