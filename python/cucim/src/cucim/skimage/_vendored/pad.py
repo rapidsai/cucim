@@ -408,7 +408,7 @@ def _as_pairs(x, ndim, as_index=False):
 
     # Converting the array with `tolist` seems to improve performance
     # when iterating and indexing the result (see usage in `pad`)
-    x_view = x.reshape(ndim, 2)
+    x_view = x.reshape((ndim, 2), copy=False)
     return x_view.tolist()
 
 
