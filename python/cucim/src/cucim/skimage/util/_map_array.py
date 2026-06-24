@@ -85,8 +85,7 @@ def map_array(input_arr, input_vals, output_vals, out=None):
             f"output array has shape {out.shape}."
         )
     try:
-        out_view = out.view()
-        out_view.shape = (-1,)  # no-copy reshape/ravel
+        out_view = out.reshape(-1)  # no-copy reshape/ravel
     except AttributeError:  # if out strides are not compatible with 0-copy
         raise ValueError(
             "If out array is provided, it should be either contiguous "
