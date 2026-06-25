@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Infrastructure, Inc.
 # SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Networks, Inc.
-# SPDX-FileCopyrightText: Copyright (c) 2023-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND MIT
 
 """version of cupy.pad that dispatches to elementwise kernels for some boundary
@@ -408,8 +408,7 @@ def _as_pairs(x, ndim, as_index=False):
 
     # Converting the array with `tolist` seems to improve performance
     # when iterating and indexing the result (see usage in `pad`)
-    x_view = x.view()
-    x_view.shape = (ndim, 2)
+    x_view = x.reshape((ndim, 2))
     return x_view.tolist()
 
 
