@@ -1,9 +1,12 @@
+# SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 # Dependency list for https://github.com/rapidsai/dependency-file-generator
 files:
   all:
     output: conda
     matrix:
-      cuda: ["12.9", "13.0"]
+      cuda: ["12.9", "13.3"]
       arch: [x86_64, aarch64]
     includes:
       - build
@@ -82,8 +85,8 @@ files:
     includes:
       - docs
 channels:
-  - rapidsai
   - rapidsai-nightly
+  - rapidsai
   - conda-forge
 dependencies:
   build:
@@ -95,7 +98,7 @@ dependencies:
       #   python/cucim/src/cucim/clara/ before calling `pip install .`.
       - output_types: [conda, requirements]
         packages:
-          - cmake>=3.30.4
+          - cmake>=4.0
           - ninja
       - output_types: conda
         packages:
@@ -124,14 +127,12 @@ dependencies:
       - output_types: [conda, requirements]
         packages:
           - pre-commit
+  # 'cuda_version' intentionally does not contain fallback entries... we want
+  # a loud error if an unsupported 'cuda' value is passed
   cuda_version:
     specific:
       - output_types: conda
         matrices:
-          - matrix:
-              cuda: "12.0"
-            packages:
-              - cuda-version=12.0
           - matrix:
               cuda: "12.2"
             packages:
@@ -152,12 +153,80 @@ dependencies:
               cuda: "13.0"
             packages:
               - cuda-version=13.0
+          - matrix:
+              cuda: "13.1"
+            packages:
+              - cuda-version=13.1
+          - matrix:
+              cuda: "13.2"
+            packages:
+              - cuda-version=13.2
+          - matrix:
+              cuda: "13.3"
+            packages:
+              - cuda-version=13.3
+      - output_types: requirements
+        matrices:
+          # if use_cuda_wheels=false is provided, do not add dependencies on any CUDA wheels
+          # (e.g. for DLFW and pip devcontainers)
+          - matrix:
+              use_cuda_wheels: "false"
+            packages:
+          - matrix:
+              arch: aarch64
+              cuda: "12.2"
+              use_cuda_wheels: "true"
+            packages:
+              # some components (like nvidia-cublas-cu12 and nvidia-cuda-nvcc-cu12) didn't have
+              # aarch64 wheels until CTK 12.3, so allow a slightly looser bound here
+              - cuda-toolkit>=12.2,<12.4
+          - matrix:
+              cuda: "12.2"
+              use_cuda_wheels: "true"
+            packages:
+              - cuda-toolkit==12.2.*
+          - matrix:
+              cuda: "12.5"
+              use_cuda_wheels: "true"
+            packages:
+              - cuda-toolkit==12.5.*
+          - matrix:
+              cuda: "12.8"
+              use_cuda_wheels: "true"
+            packages:
+              - cuda-toolkit==12.8.*
+          - matrix:
+              cuda: "12.9"
+              use_cuda_wheels: "true"
+            packages:
+              - cuda-toolkit==12.9.*
+          - matrix:
+              cuda: "13.0"
+              use_cuda_wheels: "true"
+            packages:
+              - cuda-toolkit==13.0.*
+          - matrix:
+              cuda: "13.1"
+              use_cuda_wheels: "true"
+            packages:
+              - cuda-toolkit==13.1.*
+          - matrix:
+              cuda: "13.2"
+              use_cuda_wheels: "true"
+            packages:
+              - cuda-toolkit==13.2.*
+          - matrix:
+              cuda: "13.3"
+              use_cuda_wheels: "true"
+            packages:
+              - cuda-toolkit==13.3.*
   cuda:
     common:
       - output_types: conda
         packages:
           - cuda-cudart-dev
           - libnvjpeg-dev
+          - libnvimgcodec-dev>=0.8.0,<0.9.0
     specific:
       - output_types: conda
         matrices:
@@ -172,12 +241,12 @@ dependencies:
     common:
       - output_types: conda
         packages:
-          - cucim==25.10.*,>=0.0.0a0
+          - cucim==26.8.*,>=0.0.0a0
   depends_on_libcucim:
     common:
       - output_types: conda
         packages:
-          - libcucim==25.10.*,>=0.0.0a0
+          - libcucim==26.8.*,>=0.0.0a0
   develop:
     common:
       - output_types: [conda, requirements, pyproject]
@@ -202,10 +271,6 @@ dependencies:
       - output_types: conda
         matrices:
           - matrix:
-              py: "3.10"
-            packages:
-              - python=3.10
-          - matrix:
               py: "3.11"
             packages:
               - python=3.11
@@ -218,13 +283,17 @@ dependencies:
             packages:
               - python=3.13
           - matrix:
+              py: "3.14"
             packages:
-              - python>=3.10,<3.14
+              - python=3.14
+          - matrix:
+            packages:
+              - python>=3.11,<3.15
   rapids_build_setuptools:
     common:
       - output_types: [conda, requirements, pyproject]
         packages:
-          - rapids-build-backend>=0.4.0,<0.5.0.dev0
+          - rapids-build-backend>=0.4.0,<0.5.0
           - setuptools>=80.9.0
   run:
     common:
@@ -232,29 +301,33 @@ dependencies:
         packages:
           - click
           - lazy-loader>=0.4
-          - numpy>=1.23.4,<3.0a0
-          - scikit-image>=0.19.0,<0.26.0a0
+          - numpy>=1.23.4,<3.0
+          - scikit-image>=0.23.2,<0.27.0
           - scipy>=1.11.2
       - output_types: conda
         packages:
-          - &cupy_unsuffixed cupy>=13.6.0
+          - &cupy_unsuffixed cupy>=13.6.0,!=14.0.0,!=14.1.0
+          - libnvimgcodec>=0.8.0,<0.9.0
+          - nvimgcodec>=0.8.0,<0.9.0
     specific:
       - output_types: [requirements, pyproject]
         matrices:
           - matrix:
               cuda: "12.*"
             packages:
-              - cupy-cuda12x>=13.6.0
+              - cupy-cuda12x>=13.6.0,!=14.0.0,!=14.1.0
+              - nvidia-nvimgcodec-cu12>=0.8.0,<0.9.0
           # fallback to CUDA 13 versions if 'cuda' is '13.*' or not provided
           - matrix:
             packages:
-              - cupy-cuda13x>=13.6.0
+              - cupy-cuda13x>=13.6.0,!=14.0.0,!=14.1.0
+              - nvidia-nvimgcodec-cu13>=0.8.0,<0.9.0
   test_python:
     common:
       - output_types: [conda, requirements, pyproject]
         packages:
           - psutil>=5.8.0
-          - pytest>=7.0.0,<9.0.0a0
+          - pytest>=7.0.0,<9.0.0
           - pytest-cov>=2.12.1
           - pytest-lazy-fixtures>=1.0.0
           - pytest-xdist

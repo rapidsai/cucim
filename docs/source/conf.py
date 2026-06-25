@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 #
-# Copyright (c) 2018, NVIDIA CORPORATION.
+# SPDX-FileCopyrightText: Copyright (c) 2018, NVIDIA CORPORATION.
+# SPDX-License-Identifier: Apache-2.0
 #
 # pygdf documentation build configuration file, created by
 # sphinx-quickstart on Wed May  3 10:59:22 2017.

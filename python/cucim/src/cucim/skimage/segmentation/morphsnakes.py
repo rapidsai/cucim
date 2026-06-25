@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2009-2022 the scikit-image team
+# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
+
 import functools
 from itertools import cycle
 
@@ -109,7 +113,7 @@ def _init_level_set(init_level_set, image_shape):
             res = disk_level_set(image_shape)
         else:
             raise ValueError(
-                "`init_level_set` not in " "['checkerboard', 'circle', 'disk']"
+                "`init_level_set` not in ['checkerboard', 'circle', 'disk']"
             )
     else:
         res = init_level_set
@@ -341,7 +345,7 @@ def morphological_chan_vese(
         footprints = _get_P3()
     else:
         raise ValueError(
-            "u has an invalid number of dimensions " "(should be 2 or 3)"
+            "u has an invalid number of dimensions (should be 2 or 3)"
         )
     workspace = cp.empty(((len(footprints),) + u.shape), dtype=u.dtype)
 
@@ -480,7 +484,7 @@ def morphological_geodesic_active_contour(
         footprints = _get_P3()
     else:
         raise ValueError(
-            "u has an invalid number of dimensions " "(should be 2 or 3)"
+            "u has an invalid number of dimensions (should be 2 or 3)"
         )
     workspace = cp.empty(((len(footprints),) + u.shape), dtype=u.dtype)
 

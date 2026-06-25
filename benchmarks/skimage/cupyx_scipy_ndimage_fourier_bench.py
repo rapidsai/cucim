@@ -1,5 +1,7 @@
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 import os
-import pickle
 
 import cupy
 import cupy as cp
@@ -7,10 +9,9 @@ import numpy as np
 import pandas as pd
 from _image_bench import ImageBench
 
-pfile = "fourier_results.pickle"
-if os.path.exists(pfile):
-    with open(pfile, "rb") as f:
-        all_results = pickle.load(f)
+cfile = "fourier_results.csv"
+if os.path.exists(cfile):
+    all_results = pd.read_csv(cfile, index_col=0)
 else:
     all_results = pd.DataFrame()
 
@@ -23,9 +24,7 @@ for shape in [(512, 512), (3840, 2160), (192, 192, 192)]:
     class FourierBench(ImageBench):
         def set_args(self, dtype):
             cplx_dt = np.promote_types(dtype, np.complex64)
-            imaged = cupy.testing.shaped_random(
-                self.shape, xp=cp, dtype=cplx_dt
-            )
+            imaged = cupy.testing.shaped_random(self.shape, xp=cp, dtype=cplx_dt)
             image = cp.asnumpy(imaged)
             self.args_cpu = (image,)
             self.args_gpu = (imaged,)
@@ -47,8 +46,7 @@ for shape in [(512, 512), (3840, 2160), (192, 192, 192)]:
         all_results = pd.concat([all_results, results["full"]])
 
 
-fbase = os.path.splitext(pfile)[0]
-all_results.to_csv(fbase + ".csv")
-all_results.to_pickle(pfile)
+fbase = os.path.splitext(cfile)[0]
+all_results.to_csv(cfile, index=True)
 with open(fbase + ".md", "w") as f:
     f.write(all_results.to_markdown())

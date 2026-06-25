@@ -1,3 +1,8 @@
+# SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Infrastructure, Inc.
+# SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Networks, Inc.
+# SPDX-FileCopyrightText: Copyright (c) 2022-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 AND MIT
+
 # locally defined filters that are more efficient than in CuPy
 
 from cupyx.scipy.ndimage import distance_transform_edt  # NOQA

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2009-2022 the scikit-image team
+# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
+
 import math
 import os
 
@@ -63,7 +67,6 @@ def _get_hessian_det_appx_kernel(dtype, large_int) -> cp.RawModule:
 
     return cp.RawModule(
         code=_preamble + _code,
-        options=("--std=c++11",),
         name_expressions=["_hessian_matrix_det"],
     )
 
@@ -101,9 +104,7 @@ def _hessian_matrix_det(img: cp.ndarray, sigma) -> cp.ndarray:
     the result obtained if someone computed the Hessian and took its
     determinant.
     """
-    rawmodule = _get_hessian_det_appx_kernel(
-        img.dtype, max(img.shape) > 2**31
-    )
+    rawmodule = _get_hessian_det_appx_kernel(img.dtype, max(img.shape) > 2**31)
     _hessian_det_appx_kernel = rawmodule.get_function("_hessian_matrix_det")
 
     out = cp.empty_like(img, dtype=img.dtype)

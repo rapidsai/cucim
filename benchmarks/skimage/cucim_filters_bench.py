@@ -1,6 +1,8 @@
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 import argparse
 import os
-import pickle
 
 import numpy as np
 import pandas as pd
@@ -13,12 +15,11 @@ import cucim.skimage.filters
 
 
 def main(args):
-    pfile = "cucim_filters_results.pickle"
-    if os.path.exists(pfile):
-        with open(pfile, "rb") as f:
-            all_results = pickle.load(f)
-    else:
+    cfile = "cucim_filters_results.csv"
+    if getattr(args, "no_resume", False) or not os.path.exists(cfile):
         all_results = pd.DataFrame()
+    else:
+        all_results = pd.read_csv(cfile, index_col=0)
     dtypes = [np.dtype(args.dtype)]
 
     for function_name, fixed_kwargs, var_kwargs, allow_color, allow_nd in [
@@ -159,9 +160,7 @@ def main(args):
 
         if function_name == "gabor" and np.prod(shape) > 1000000:
             # avoid cases that are too slow on the CPU
-            var_kwargs["frequency"] = [
-                f for f in var_kwargs["frequency"] if f >= 0.1
-            ]
+            var_kwargs["frequency"] = [f for f in var_kwargs["frequency"] if f >= 0.1]
 
         if function_name == "median":
             footprints = []
@@ -187,9 +186,8 @@ def main(args):
         results = B.run_benchmark(duration=args.duration)
         all_results = pd.concat([all_results, results["full"]])
 
-    fbase = os.path.splitext(pfile)[0]
-    all_results.to_csv(fbase + ".csv")
-    all_results.to_pickle(pfile)
+    fbase = os.path.splitext(cfile)[0]
+    all_results.to_csv(cfile, index=True)
     with open(fbase + ".md", "w") as f:
         f.write(all_results.to_markdown())
 
@@ -270,6 +268,12 @@ if __name__ == "__main__":
         "--no_cpu",
         action="store_true",
         help="disable cpu measurements",
+        default=False,
+    )
+    parser.add_argument(
+        "--no_resume",
+        action="store_true",
+        help="do not load existing results CSV; save only this run's results (overwrite)",
         default=False,
     )
 

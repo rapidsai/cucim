@@ -1,3 +1,140 @@
+# cucim 26.06.00 (3 Jun 2026)
+
+### 🚨 Breaking Changes
+* Update cuCIM for consistency with scikit-image 0.26 by @grlee77 in https://github.com/rapidsai/cucim/pull/1038
+* Upgrade nvImageCodec dependency from v0.7.0 to v0.8.0 by @cdinea in https://github.com/rapidsai/cucim/pull/1085
+### 🛠️ Improvements
+* Forward-merge release/26.04 into main by @jakirkham in https://github.com/rapidsai/cucim/pull/1053
+* fix(conda): specify `python-gil` for conda recipe by @gforsyth in https://github.com/rapidsai/cucim/pull/1056
+* chore: bump `codespell` version for Python 3.14+ compatibility by @gforsyth in https://github.com/rapidsai/cucim/pull/1062
+* Use S3 for preprocessor cache by @trxcllnt in https://github.com/rapidsai/cucim/pull/1071
+* Fixes for heap overflow by @cdinea in https://github.com/rapidsai/cucim/pull/1077
+* fix(ci): resolve all zizmor findings and add zizmor pre-commit checks by @gforsyth in https://github.com/rapidsai/cucim/pull/1078
+* Build and test with CUDA 13.2.0 by @bdice in https://github.com/rapidsai/cucim/pull/1080
+* fix(ci): add explicit `actions: write` permission for `telemetry-summarize`
+ by @gforsyth in https://github.com/rapidsai/cucim/pull/1081
+* Add SECURITY.md by @jolorunyomi in https://github.com/rapidsai/cucim/pull/1082
+* Require CMake 4.0 by @KyleFromNVIDIA in https://github.com/rapidsai/cucim/pull/1083
+* vendor metadata hardening by @cdinea in https://github.com/rapidsai/cucim/pull/1079
+* Optimize batch/multi-channel image interpolation (`cucim.skimage.transform.warp` and `cucim.skimage._vendored.ndimage`) by @grlee77 in https://github.com/rapidsai/cucim/pull/1060
+* morphology: add `h_maxima`, `h_minima`, `local_maxima`, `local_minima`. improve `reconstruct` by @grlee77 in https://github.com/rapidsai/cucim/pull/1061
+* skip CuPy 14.1.0 by @jameslamb in https://github.com/rapidsai/cucim/pull/1096
+* fix 'yum update' in nightly wheels tests by @jameslamb in https://github.com/rapidsai/cucim/pull/1099
+
+## New Contributors
+* @trxcllnt made their first contribution in https://github.com/rapidsai/cucim/pull/1071
+
+**Full Changelog**: https://github.com/rapidsai/cucim/compare/v26.06.00a...release/26.06
+
+# cucim 26.04.00 (8 Apr 2026)
+
+### 🚨 Breaking Changes
+* async cuda stream batch decode by @cdinea in https://github.com/rapidsai/cucim/pull/1028
+### 🐛 Bug Fixes
+* make test_load_image_metadata test case insensitive to key order by @grlee77 in https://github.com/rapidsai/cucim/pull/1035
+### 📖 Documentation
+* remove references to 'nvidia' and 'pytorch' conda channels by @jameslamb in https://github.com/rapidsai/cucim/pull/1026
+### 🛠️ Improvements
+* Drop Python 3.10 support by @gforsyth in https://github.com/rapidsai/cucim/pull/1016
+* tighten wheel size limits, enforce PEP 639 metadata, other small changes by @jameslamb in https://github.com/rapidsai/cucim/pull/1020
+* Resolve forward-merge release/26.02 into main by @jakirkham in https://github.com/rapidsai/cucim/pull/1019
+* remove pip.conf migration code in CI scripts by @jameslamb in https://github.com/rapidsai/cucim/pull/1023
+* Use verify-hardcoded-version pre-commit hook by @KyleFromNVIDIA in https://github.com/rapidsai/cucim/pull/1022
+* Drop CuPy pre-13.6.0 logic & fix CuPy 14 compatibility by @jakirkham in https://github.com/rapidsai/cucim/pull/1031
+* add PR CI job checking that nightly tests are passing by @jameslamb in https://github.com/rapidsai/cucim/pull/1032
+* Update cuCIM for consistency with scikit-image 0.26 (#1038) by @gforsyth in https://github.com/rapidsai/cucim/pull/1047
+* Add support for Python 3.14 by @gforsyth in https://github.com/rapidsai/cucim/pull/1049
+* Replace use of `pickle.load` in benchmark utility scripts by @grlee77 in https://github.com/rapidsai/cucim/pull/1041
+* chore: reset `shared-workflows` branch to `release/26.04` by @gforsyth in https://github.com/rapidsai/cucim/pull/1052
+* build wheels with CUDA 13.0.x, test wheels against mix of CTK versions by @jameslamb in https://github.com/rapidsai/cucim/pull/1054
+* fix(conda): specify `python-gil` for conda recipe (#1056) by @gforsyth in https://github.com/rapidsai/cucim/pull/1058
+* Add `cucim.skimage.restoration.rolling_ball` (useful for background subtraction) by @grlee77 in https://github.com/rapidsai/cucim/pull/1040
+* Update vendored interpolation kernels with precision fix by @grlee77 in https://github.com/rapidsai/cucim/pull/1055
+* Caching for cuslide2 by @cdinea in https://github.com/rapidsai/cucim/pull/1034
+
+
+**Full Changelog**: https://github.com/rapidsai/cucim/compare/v26.04.00a...release/26.04
+
+# cucim 26.02.00 (4 Feb 2026)
+
+### 🚨 Breaking Changes
+### 🐛 Bug Fixes
+* Fix broken binary_fill_holes in vendored code by @grlee77 in https://github.com/rapidsai/cucim/pull/1001
+* Misc fixes and improvements to existing benchmark scripts by @grlee77 in https://github.com/rapidsai/cucim/pull/1002
+* fix(core): Replace strlen with strnlen for safer string handling by @gigony in https://github.com/rapidsai/cucim/pull/1015
+### 🛠️ Improvements
+* Use strict priority in CI conda tests by @bdice in https://github.com/rapidsai/cucim/pull/979
+* Use strict priority in CI conda tests by @bdice in https://github.com/rapidsai/cucim/pull/986
+* Remove alpha specs from non-RAPIDS dependencies by @bdice in https://github.com/rapidsai/cucim/pull/989
+* Enable merge barriers by @KyleFromNVIDIA in https://github.com/rapidsai/cucim/pull/991
+* Use SPDX license identifiers in pyproject.toml, bump build dependency floors by @jameslamb in https://github.com/rapidsai/cucim/pull/999
+* Add CUDA 13.1 support by @bdice in https://github.com/rapidsai/cucim/pull/995
+* build and test against CUDA 13.1.0 by @jameslamb in https://github.com/rapidsai/cucim/pull/1000
+* [REVIEW] nvImageCodec v0.7.0 infra only by @cdinea in https://github.com/rapidsai/cucim/pull/997
+* Use main shared-workflows branch by @jameslamb in https://github.com/rapidsai/cucim/pull/1003
+* Cherry-pick 25.12 changelog to main by @AyodeAwe in https://github.com/rapidsai/cucim/pull/1004
+* Fix update-version.sh notebook sed commands by @AyodeAwe in https://github.com/rapidsai/cucim/pull/1005
+* [REVIEW] nvImageCodec v0.7.0 decoding by @cdinea in https://github.com/rapidsai/cucim/pull/998
+* fix(build): build package on merge to `release/*` branch by @gforsyth in https://github.com/rapidsai/cucim/pull/1009
+* Add batch ROI decoding using nvImageCodec v0.7.0+ API by @cdinea in https://github.com/rapidsai/cucim/pull/1007
+
+## New Contributors
+
+**Full Changelog**: https://github.com/rapidsai/cucim/compare/v26.02.00a...release/26.02
+
+# cucim 25.12.00 (10 Dec 2025)
+
+### 🚨 Breaking Changes
+* Require CUDA 12.2+ by @jakirkham in https://github.com/rapidsai/cucim/pull/961
+* remove deprecated `square`, `rectangle` and `cube` (replaced by `footprint_rectangle`) by @grlee77 in https://github.com/rapidsai/cucim/pull/969
+### 🐛 Bug Fixes
+* refactored update-version.sh to handle new branching strategy by @rockhowse in https://github.com/rapidsai/cucim/pull/970
+* add missing import of ellipse in morphology module by @grlee77 in https://github.com/rapidsai/cucim/pull/968
+* Fix crash on unsigned integer input to `cucim.skimage.morphology.reconstruction` by @grlee77 in https://github.com/rapidsai/cucim/pull/967
+* resolve static analysis complaints about potentially unsafe C-style string-handling by @grlee77 in https://github.com/rapidsai/cucim/pull/990
+### 📖 Documentation
+### 🛠️ Improvements
+* Empty commit to trigger a build by @msarahan in https://github.com/rapidsai/cucim/pull/944
+* Use main branch by @bdice in https://github.com/rapidsai/cucim/pull/958
+* Use main shared-workflows branch by @bdice in https://github.com/rapidsai/cucim/pull/959
+* Use SPDX for all copyright headers by @KyleFromNVIDIA in https://github.com/rapidsai/cucim/pull/960
+* Use ruff-format instead of black, bump ruff version by @KyleFromNVIDIA in https://github.com/rapidsai/cucim/pull/963
+* chore: remove extra trailing curly brace from conda build string by @gforsyth in https://github.com/rapidsai/cucim/pull/977
+* [REVIEW] Feat: PR #1 nvImageCodec infrastructure only by @cdinea in https://github.com/rapidsai/cucim/pull/966
+* [REVIEW] Feat: PR #2 Add GPU-accelerated TIFF decoding via nvImageCodec v0.6.0 for digital pathology by @cdinea in https://github.com/rapidsai/cucim/pull/978
+
+## New Contributors
+* @rockhowse made their first contribution in https://github.com/rapidsai/cucim/pull/970
+* @cdinea made their first contribution in https://github.com/rapidsai/cucim/pull/966
+
+**Full Changelog**: https://github.com/rapidsai/cucim/compare/v25.12.00a...release/25.12
+
+# cucim 25.10.00 (8 Oct 2025)
+
+## 🐛 Bug Fixes
+
+- Add `pip` to `cucim`&#39;s `requirements/host` ([#941](https://github.com/rapidsai/cucim/pull/941)) [@jakirkham](https://github.com/jakirkham)
+- Fix indentation ([#931](https://github.com/rapidsai/cucim/pull/931)) [@jakirkham](https://github.com/jakirkham)
+- Relax `libcufile` dependency for old CTK 12 on ARM ([#930](https://github.com/rapidsai/cucim/pull/930)) [@jakirkham](https://github.com/jakirkham)
+- Update fmt library to version 11.2.0 in CMake configuration ([#917](https://github.com/rapidsai/cucim/pull/917)) [@gigony](https://github.com/gigony)
+
+## 📖 Documentation
+
+- update package installation commands in notebooks ([#927](https://github.com/rapidsai/cucim/pull/927)) [@grlee77](https://github.com/grlee77)
+
+## 🛠️ Improvements
+
+- Revert incorrect changelog updates ([#954](https://github.com/rapidsai/cucim/pull/954)) [@AyodeAwe](https://github.com/AyodeAwe)
+- remove unused RMM config and docs, update pre-commit hooks ([#946](https://github.com/rapidsai/cucim/pull/946)) [@jameslamb](https://github.com/jameslamb)
+- Configure repo for automatic release notes generation ([#939](https://github.com/rapidsai/cucim/pull/939)) [@AyodeAwe](https://github.com/AyodeAwe)
+- Use branch-25.10 again ([#936](https://github.com/rapidsai/cucim/pull/936)) [@jameslamb](https://github.com/jameslamb)
+- add montage and compare_images utility functions ([#935](https://github.com/rapidsai/cucim/pull/935)) [@grlee77](https://github.com/grlee77)
+- Update rapids-dependency-file-generator ([#934](https://github.com/rapidsai/cucim/pull/934)) [@KyleFromNVIDIA](https://github.com/KyleFromNVIDIA)
+- Build and test with CUDA 13.0.0, use GCC 14 for conda builds ([#926](https://github.com/rapidsai/cucim/pull/926)) [@jameslamb](https://github.com/jameslamb)
+- add a copy of rapids-configure-conda-channels to the repo ([#923](https://github.com/rapidsai/cucim/pull/923)) [@jameslamb](https://github.com/jameslamb)
+- Update rapids-build-backend to 0.4.1 ([#922](https://github.com/rapidsai/cucim/pull/922)) [@KyleFromNVIDIA](https://github.com/KyleFromNVIDIA)
+- Remove CUDA 11 references ([#905](https://github.com/rapidsai/cucim/pull/905)) [@jakirkham](https://github.com/jakirkham)
+
 # cucim 25.08.00 (6 Aug 2025)
 
 ## 🚨 Breaking Changes

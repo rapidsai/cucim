@@ -1,3 +1,8 @@
+# SPDX-FileCopyrightText: Copyright (c) 2003-2009 Massachusetts Institute of Technology
+# SPDX-FileCopyrightText: Copyright (c) 2009-2011 Broad Institute
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 AND (GPL-2.0-only OR BSD-3-Clause)
+
 """
 These tests are originally part of CellProfiler, code licensed under both GPL
 and BSD licenses.
@@ -8,45 +13,67 @@ Copyright (c) 2009-2011 Broad Institute
 All rights reserved.
 Original author: Lee Kamentsky
 """
+
 import cupy as cp
 import numpy as np
 import pytest
 from cupy.testing import assert_array_almost_equal
+from skimage import data
 from skimage.morphology import reconstruction as reconstruction_cpu
 
+from cucim.skimage.exposure import rescale_intensity
 from cucim.skimage.morphology import reconstruction
 
 
-def test_zeros():
+@pytest.mark.parametrize("reconstruct_on_cpu", [False, True])
+def test_zeros(reconstruct_on_cpu):
     """Test reconstruction with image and mask of zeros"""
     assert_array_almost_equal(
-        reconstruction(cp.zeros((5, 7)), cp.zeros((5, 7))), 0
+        reconstruction(
+            cp.zeros((5, 7)),
+            cp.zeros((5, 7)),
+            reconstruct_on_cpu=reconstruct_on_cpu,
+        ),
+        0,
     )
 
 
-def test_image_equals_mask():
+@pytest.mark.parametrize("reconstruct_on_cpu", [False, True])
+def test_image_equals_mask(reconstruct_on_cpu):
     """Test reconstruction where the image and mask are the same"""
     assert_array_almost_equal(
-        reconstruction(cp.ones((7, 5)), cp.ones((7, 5))), 1
+        reconstruction(
+            cp.ones((7, 5)),
+            cp.ones((7, 5)),
+            reconstruct_on_cpu=reconstruct_on_cpu,
+        ),
+        1,
     )
 
 
-def test_image_less_than_mask():
+@pytest.mark.parametrize("reconstruct_on_cpu", [False, True])
+def test_image_less_than_mask(reconstruct_on_cpu):
     """Test reconstruction where the image is uniform and less than mask"""
     image = cp.ones((5, 5))
     mask = cp.ones((5, 5)) * 2
-    assert_array_almost_equal(reconstruction(image, mask), 1)
+    assert_array_almost_equal(
+        reconstruction(image, mask, reconstruct_on_cpu=reconstruct_on_cpu), 1
+    )
 
 
-def test_one_image_peak():
+@pytest.mark.parametrize("reconstruct_on_cpu", [False, True])
+def test_one_image_peak(reconstruct_on_cpu):
     """Test reconstruction with one peak pixel"""
     image = cp.ones((5, 5))
     image[2, 2] = 2
     mask = cp.ones((5, 5)) * 3
-    assert_array_almost_equal(reconstruction(image, mask), 2)
+    assert_array_almost_equal(
+        reconstruction(image, mask, reconstruct_on_cpu=reconstruct_on_cpu), 2
+    )
 
 
-def test_two_image_peaks():
+@pytest.mark.parametrize("reconstruct_on_cpu", [False, True])
+def test_two_image_peaks(reconstruct_on_cpu):
     """Test reconstruction with two peak pixels isolated by the mask"""
     # fmt: off
     image = cp.array([[1, 1, 1, 1, 1, 1, 1, 1],
@@ -70,20 +97,31 @@ def test_two_image_peaks():
                          [1, 1, 1, 1, 1, 3, 3, 3],
                          [1, 1, 1, 1, 1, 3, 3, 3]])
     # fmt: on
-    assert_array_almost_equal(reconstruction(image, mask), expected)
+    assert_array_almost_equal(
+        reconstruction(image, mask, reconstruct_on_cpu=reconstruct_on_cpu),
+        expected,
+    )
 
 
-def test_zero_image_one_mask():
+@pytest.mark.parametrize("reconstruct_on_cpu", [False, True])
+def test_zero_image_one_mask(reconstruct_on_cpu):
     """Test reconstruction with an image of all zeros and a mask that's not"""
-    result = reconstruction(cp.zeros((10, 10)), cp.ones((10, 10)))
+    result = reconstruction(
+        cp.zeros((10, 10)),
+        cp.ones((10, 10)),
+        reconstruct_on_cpu=reconstruct_on_cpu,
+    )
     assert_array_almost_equal(result, 0)
 
 
-def test_fill_hole():
+@pytest.mark.parametrize("reconstruct_on_cpu", [False, True])
+def test_fill_hole(reconstruct_on_cpu):
     """Test reconstruction by erosion, which should fill holes in mask."""
     seed = cp.array([0, 8, 8, 8, 8, 8, 8, 8, 8, 0])
     mask = cp.array([0, 3, 6, 2, 1, 1, 1, 4, 2, 0])
-    result = reconstruction(seed, mask, method="erosion")
+    result = reconstruction(
+        seed, mask, method="erosion", reconstruct_on_cpu=reconstruct_on_cpu
+    )
     assert_array_almost_equal(result, cp.array([0, 3, 6, 4, 4, 4, 4, 4, 2, 0]))
 
 
@@ -96,24 +134,80 @@ def test_invalid_seed():
         reconstruction(seed * 0.5, mask, method="erosion")
 
 
-def test_invalid_footprint():
+@pytest.mark.parametrize("reconstruct_on_cpu", [False, True])
+@pytest.mark.parametrize(
+    "unsigned_dtype", [cp.uint8, cp.uint16, cp.uint32, cp.uint64]
+)
+def test_erosion_uint8_input(unsigned_dtype, reconstruct_on_cpu):
+    image = cp.asarray(data.moon())
+    # Rescale image intensity so that we can see dim features.
+    image = rescale_intensity(image, in_range=(50, 200))
+
+    image2 = cp.copy(image)
+    image2[1:-1, 1:-1] = image.max()
+    mask = image
+
+    image2 = image2.astype(unsigned_dtype)
+    image2_erosion = reconstruction(
+        image2, mask, method="erosion", reconstruct_on_cpu=reconstruct_on_cpu
+    )
+
+    expected_out_type = cp.promote_types(image2.dtype, cp.int8)
+    assert image2_erosion.dtype == expected_out_type
+    # promoted to signed dtype (or float in the case of cp.uint64)
+    assert (
+        image2_erosion.dtype.kind == "i" if unsigned_dtype != cp.uint64 else "f"
+    )
+    assert image2_erosion.dtype.itemsize >= image2.dtype.itemsize
+
+    # compare to scikit-image CPU result
+    image2_erosion_cpu = reconstruction_cpu(
+        cp.asnumpy(image2), cp.asnumpy(mask), method="erosion"
+    )
+    # filled_cpu will be np.float64, so convert to the type returned by cuCIM
+    cp.testing.assert_allclose(
+        image2_erosion, image2_erosion_cpu.astype(image2_erosion.dtype)
+    )
+
+
+@pytest.mark.parametrize("reconstruct_on_cpu", [False, True])
+def test_invalid_footprint(reconstruct_on_cpu):
     seed = cp.ones((5, 5))
     mask = cp.ones((5, 5))
     with pytest.raises(ValueError):
-        reconstruction(seed, mask, footprint=np.ones((4, 4)))
+        reconstruction(
+            seed,
+            mask,
+            footprint=cp.ones((4, 4)),
+            reconstruct_on_cpu=reconstruct_on_cpu,
+        )
     with pytest.raises(ValueError):
-        reconstruction(seed, mask, footprint=np.ones((3, 4)))
-    reconstruction(seed, mask, footprint=np.ones((3, 3)))
+        reconstruction(
+            seed,
+            mask,
+            footprint=cp.ones((3, 4)),
+            reconstruct_on_cpu=reconstruct_on_cpu,
+        )
+    reconstruction(
+        seed,
+        mask,
+        footprint=cp.ones((3, 3)),
+        reconstruct_on_cpu=reconstruct_on_cpu,
+    )
 
 
-def test_invalid_method():
+@pytest.mark.parametrize("reconstruct_on_cpu", [False, True])
+def test_invalid_method(reconstruct_on_cpu):
     seed = cp.array([0, 8, 8, 8, 8, 8, 8, 8, 8, 0])
     mask = cp.array([0, 3, 6, 2, 1, 1, 1, 4, 2, 0])
     with pytest.raises(ValueError):
-        reconstruction(seed, mask, method="foo")
+        reconstruction(
+            seed, mask, method="foo", reconstruct_on_cpu=reconstruct_on_cpu
+        )
 
 
-def test_invalid_offset_not_none():
+@pytest.mark.parametrize("reconstruct_on_cpu", [False, True])
+def test_invalid_offset_not_none(reconstruct_on_cpu):
     """Test reconstruction with invalid not None offset parameter"""
     # fmt: off
     image = cp.array([[1, 1, 1, 1, 1, 1, 1, 1],
@@ -137,10 +231,12 @@ def test_invalid_offset_not_none():
             method="dilation",
             footprint=cp.ones((3, 3)),
             offset=cp.array([3, 0]),
+            reconstruct_on_cpu=reconstruct_on_cpu,
         )
 
 
-def test_offset_not_none():
+@pytest.mark.parametrize("reconstruct_on_cpu", [False, True])
+def test_offset_not_none(reconstruct_on_cpu):
     """Test reconstruction with valid offset parameter"""
     seed = cp.array([0, 3, 6, 2, 1, 1, 1, 4, 2, 0])
     mask = cp.array([0, 8, 6, 8, 8, 8, 8, 4, 4, 0])
@@ -153,12 +249,130 @@ def test_offset_not_none():
             method="dilation",
             footprint=cp.ones(3),
             offset=cp.array([0]),
+            reconstruct_on_cpu=reconstruct_on_cpu,
         ),
         expected,
     )
 
 
-def test_reconstruction_float_inputs():
+@pytest.mark.parametrize("reconstruct_on_cpu", ["auto", False, True])
+def test_noncentered_offset_matches_skimage(reconstruct_on_cpu):
+    seed = cp.array([0, 1, 0, 2, 0, 2])
+    mask = cp.array([2, 3, 0, 3, 1, 3])
+    footprint = cp.ones(3)
+    offset = cp.array([0])
+    expected = cp.array([0, 1, 0, 2, 1, 2])
+
+    assert_array_almost_equal(
+        reconstruction(
+            seed,
+            mask,
+            footprint=footprint,
+            offset=offset,
+            reconstruct_on_cpu=reconstruct_on_cpu,
+        ),
+        expected,
+    )
+
+
+def test_asymmetric_footprint_matches_skimage_gpu_path():
+    seed = cp.array([0, 2, 0, 0, 0])
+    mask = cp.array([0, 3, 3, 3, 0])
+    footprint = cp.array([0, 1, 1])
+    offset = cp.array([1])
+
+    result = reconstruction(
+        seed,
+        mask,
+        footprint=footprint,
+        offset=offset,
+        reconstruct_on_cpu=False,
+    )
+    expected = reconstruction_cpu(
+        cp.asnumpy(seed),
+        cp.asnumpy(mask),
+        footprint=cp.asnumpy(footprint),
+        offset=cp.asnumpy(offset),
+    )
+
+    cp.testing.assert_allclose(
+        result, cp.asarray(expected).astype(result.dtype)
+    )
+
+
+def test_auto_falls_back_for_unsupported_gpu_offset():
+    seed = cp.array([0, 1, 0, 2, 0, 2])
+    mask = cp.array([2, 3, 0, 3, 1, 3])
+    footprint = cp.ones(2)
+    offset = cp.array([0])
+
+    result = reconstruction(
+        seed,
+        mask,
+        footprint=footprint,
+        offset=offset,
+        reconstruct_on_cpu="auto",
+    )
+    expected = reconstruction_cpu(
+        cp.asnumpy(seed),
+        cp.asnumpy(mask),
+        footprint=cp.asnumpy(footprint),
+        offset=cp.asnumpy(offset),
+    )
+    cp.testing.assert_allclose(
+        result, cp.asarray(expected).astype(result.dtype)
+    )
+
+    with pytest.raises(ValueError, match="GPU reconstruction path"):
+        reconstruction(
+            seed,
+            mask,
+            footprint=footprint,
+            offset=offset,
+            reconstruct_on_cpu=False,
+        )
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        cp.int8,
+        cp.uint8,
+        cp.int16,
+        cp.uint16,
+        cp.int32,
+        cp.uint32,
+        cp.int64,
+        cp.uint64,
+        cp.float32,
+        cp.float64,
+    ],
+)
+@pytest.mark.parametrize("method", ["dilation", "erosion"])
+def test_gpu_cval_dtype_extremes(dtype, method):
+    dtype = cp.dtype(dtype)
+    if dtype.kind in "iu":
+        info = cp.iinfo(dtype)
+        low = info.min
+        high = info.max
+    else:
+        low = -1.0
+        high = 1.0
+
+    if method == "dilation":
+        seed = cp.array([low, low, low], dtype=dtype)
+        mask = cp.array([low, high, low], dtype=dtype)
+    else:
+        seed = cp.array([high, high, high], dtype=dtype)
+        mask = cp.array([high, low, high], dtype=dtype)
+
+    result = reconstruction(seed, mask, method=method, reconstruct_on_cpu=False)
+    expected_value = low if method == "dilation" else high
+    cp.testing.assert_array_equal(result, cp.full_like(result, expected_value))
+
+
+@pytest.mark.parametrize("reconstruct_on_cpu", [False, True])
+def test_reconstruction_float_inputs(reconstruct_on_cpu):
     """Verifies fix for: https://github.com/rapidsai/cuci/issues/36
 
     Run the 2D example from the reconstruction docstring and compare the output
@@ -170,5 +384,9 @@ def test_reconstruction_float_inputs():
     h = 0.3
     seed = bumps - h
     background_cpu = reconstruction_cpu(seed, bumps)
-    background = reconstruction(cp.asarray(seed), cp.asarray(bumps))
+    background = reconstruction(
+        cp.asarray(seed),
+        cp.asarray(bumps),
+        reconstruct_on_cpu=reconstruct_on_cpu,
+    )
     cp.testing.assert_allclose(background, background_cpu)

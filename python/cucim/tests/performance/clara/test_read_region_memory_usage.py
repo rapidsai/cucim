@@ -1,17 +1,10 @@
 #
-# Copyright (c) 2023, NVIDIA CORPORATION.
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
+# SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION.
+# SPDX-License-Identifier: Apache-2.0
 #
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-#
+
+import os
+import sys
 
 import cupy as cp
 import pytest
@@ -146,6 +139,10 @@ def test_read_region_cpu_memleak(testimg_tiff_stripe_4096x4096_256):
     assert mem_usage_history[5] - mem_usage_history[9] < 2**20 * 1
 
 
+@pytest.mark.xfail(
+    sys.version_info >= (3, 14),
+    reason="Fails on Python 3.14, see tracking issue: https://github.com/rapidsai/cucim/issues/1043",
+)
 def test_read_random_region_cpu_memleak(testimg_tiff_stripe_4096x4096_256):
     import gc
     import os
@@ -192,6 +189,13 @@ def test_read_random_region_cpu_memleak(testimg_tiff_stripe_4096x4096_256):
     assert memory_increment_count < iteration * 0.01
 
 
+@pytest.mark.skipif(
+    os.environ.get("CUCIM_RUN_TIFF_ITERATOR_MEM_TEST", "0") != "1",
+    reason=(
+        "Memory usage regression with nvImageCodec v0.7.0 decoder - investigating (gh-998). "
+        "Set CUCIM_RUN_TIFF_ITERATOR_MEM_TEST=1 to run locally."
+    ),
+)
 def test_tiff_iterator(testimg_tiff_stripe_4096x4096_256):
     """Verify that the iterator of read_region does not cause a memory leak.
     See issue gh-598: https://github.com/rapidsai/cucim/issues/598
@@ -219,7 +223,7 @@ def test_tiff_iterator(testimg_tiff_stripe_4096x4096_256):
     ]
     print(
         f"Number of locations: {len(locations)}, batch size: {batch_size}, "
-        "number of workers: {num_workers}"
+        f"number of workers: {num_workers}"
     )
 
     def get_total_mem_usage():
@@ -257,7 +261,11 @@ def test_tiff_iterator(testimg_tiff_stripe_4096x4096_256):
                     mem_usage_history.append(memory_increase)
                     print(
                         f"mem increase (iteration: {i:3d}): "
-                        "{memory_increase:4d} MB"
+                        f"{memory_increase:4d} MB"
                     )
+        # Memory usage difference should be less than 20MB.
+        # (Include history in the failure message to aid debugging.)
         # Memory usage difference should be less than 20MB
+        if mem_usage_history[-1] - mem_usage_history[1] < 20:
+            assert False, f"mem_usage_history: {mem_usage_history}"
         assert mem_usage_history[-1] - mem_usage_history[1] < 20

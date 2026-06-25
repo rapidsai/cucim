@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2009-2022 the scikit-image team
+# SPDX-FileCopyrightText: Copyright (c) 2022-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
+
 """
 Tests for Morphological footprints
 (skimage.morphology.footprint)
@@ -5,17 +9,25 @@ Tests for Morphological footprints
 Author: Damian Eads
 """
 
-
 import cupy as cp
 import numpy as np
 import pytest
 from cupy.testing import assert_array_equal
 
 from cucim.skimage._shared.testing import assert_stacklevel, fetch
+
+# also test that import from top-level morphology namespace work
 from cucim.skimage.morphology import (
+    ball,
+    diamond,
+    disk,
+    ellipse,
     footprint_from_sequence,
     footprint_rectangle,
     footprints,
+    octagon,
+    octahedron,
+    star,
 )
 
 
@@ -143,14 +155,14 @@ class TestSElem:
 @pytest.mark.parametrize(
     "function, args, supports_sequence_decomposition",
     [
-        (footprints.disk, (3,), True),
-        (footprints.ball, (3,), True),
-        (footprints.diamond, (3,), True),
-        (footprints.octahedron, (3,), True),
+        (disk, (3,), True),
+        (ball, (3,), True),
+        (diamond, (3,), True),
+        (octahedron, (3,), True),
         (footprint_rectangle, ((3, 5),), True),
-        (footprints.ellipse, (3, 4), False),
-        (footprints.octagon, (3, 4), True),
-        (footprints.star, (3,), False),
+        (ellipse, (3, 4), False),
+        (octagon, (3, 4), True),
+        (star, (3,), False),
     ],
 )
 @pytest.mark.parametrize("dtype", [np.uint8, np.float64])

@@ -1,18 +1,6 @@
 /*
- * Apache License, Version 2.0
- * Copyright 2021 NVIDIA Corporation
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 /**
@@ -25,6 +13,7 @@
 #include <stdexcept>
 #include <unistd.h>
 
+#include <fmt/format.h>
 #include <cucim/memory/memory_manager.h>
 #include <cucim/profiler/nvtx3.h>
 
@@ -75,9 +64,12 @@ bool decode_deflate(int fd,
             throw std::runtime_error("Unable to allocate buffer for libdeflate!");
         }
 
-        if (pread(fd, deflate_buf, size, offset) < 1)
+        ssize_t bytes_read = pread(fd, deflate_buf, size, offset);
+        if (bytes_read < 0 || static_cast<uint64_t>(bytes_read) != size)
         {
-            throw std::runtime_error("Unable to read file for libdeflate!");
+            cucim_free(deflate_buf);
+            throw std::runtime_error(
+                fmt::format("Short read for deflate data: expected {} bytes, got {}", size, bytes_read));
         }
     }
     else
@@ -87,9 +79,10 @@ bool decode_deflate(int fd,
     }
 
     size_t out_size;
+    enum libdeflate_result decompress_result;
     {
         PROF_SCOPED_RANGE(PROF_EVENT(libdeflate_zlib_decompress));
-        libdeflate_zlib_decompress(
+        decompress_result = libdeflate_zlib_decompress(
             d, deflate_buf, size /*in_nbytes*/, *dest, dest_nbytes /*out_nbytes_avail*/, &out_size);
     }
 
@@ -102,6 +95,28 @@ bool decode_deflate(int fd,
         PROF_SCOPED_RANGE(PROF_EVENT(libdeflate_free_decompressor));
         libdeflate_free_decompressor(d);
     }
+
+    if (decompress_result != LIBDEFLATE_SUCCESS)
+    {
+        const char* reason = "unknown error";
+        switch (decompress_result)
+        {
+        case LIBDEFLATE_BAD_DATA:
+            reason = "corrupt or invalid compressed data";
+            break;
+        case LIBDEFLATE_SHORT_OUTPUT:
+            reason = "decompressed size is less than expected";
+            break;
+        case LIBDEFLATE_INSUFFICIENT_SPACE:
+            reason = "output buffer too small for decompressed data";
+            break;
+        default:
+            break;
+        }
+        throw std::runtime_error(
+            fmt::format("Deflate decompression failed: {}", reason));
+    }
+
     return true;
 }
 

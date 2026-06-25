@@ -1,18 +1,13 @@
 /*
- * Apache License, Version 2.0
- * Copyright 2021 NVIDIA Corporation
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * SPDX-FileCopyrightText: Copyright (c) 2002-2014, Universite catholique de Louvain (UCL), Belgium
+ * SPDX-FileCopyrightText: Copyright (c) 2002-2014, Professor Benoit Macq
+ * SPDX-FileCopyrightText: Copyright (c) 2001-2003, David Janssens
+ * SPDX-FileCopyrightText: Copyright (c) 2002-2003, Yannick Verschueren
+ * SPDX-FileCopyrightText: Copyright (c) 2003-2007, Francois-Olivier Devaux
+ * SPDX-FileCopyrightText: Copyright (c) 2003-2014, Antonin Descampe
+ * SPDX-FileCopyrightText: Copyright (c) 2005, Herve Drolon, FreeImage Team
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION
+ * SPDX-License-Identifier: Apache-2.0 AND BSD-2-Clause
  */
 
 /**
@@ -23,7 +18,10 @@
 
 #include "color_conversion.h"
 
+#include <stdexcept>
+
 #include <cucim/profiler/nvtx3.h>
+#include <cucim/util/checked_math.h>
 
 #include "color_table.h"
 
@@ -35,12 +33,17 @@ static inline uint8_t clamp(int32_t x)
     return (x < 0) ? 0 : ((x > 255) ? 255 : x);
 }
 
-void fast_sycc422_to_rgb(opj_image_t* image, uint8_t* dest)
+void fast_sycc422_to_rgb(opj_image_t* image, uint8_t* dest, size_t dest_nbytes)
 {
     PROF_SCOPED_RANGE(PROF_EVENT(jpeg2k_fast_sycc422_to_rgb));
     const opj_image_comp_t* comps = image->comps;
     const size_t maxw = (size_t)comps[0].w;
     const size_t maxh = (size_t)comps[0].h;
+    size_t required = cucim::util::checked_mul3(maxw, maxh, static_cast<size_t>(3));
+    if (required > dest_nbytes)
+    {
+        throw std::overflow_error("J2K codestream dimensions exceed destination buffer size");
+    }
     const int* y = image->comps[0].data;
     const int* cb = image->comps[1].data;
     const int* cr = image->comps[2].data;
@@ -116,12 +119,17 @@ void fast_sycc422_to_rgb(opj_image_t* image, uint8_t* dest)
     }
 }
 
-void fast_sycc420_to_rgb(opj_image_t* image, uint8_t* dest)
+void fast_sycc420_to_rgb(opj_image_t* image, uint8_t* dest, size_t dest_nbytes)
 {
     PROF_SCOPED_RANGE(PROF_EVENT(jpeg2k_fast_sycc420_to_rgb));
     const opj_image_comp_t* comps = image->comps;
     const size_t maxw = (size_t)comps[0].w;
     const size_t maxh = (size_t)comps[0].h;
+    size_t required = cucim::util::checked_mul3(maxw, maxh, static_cast<size_t>(3));
+    if (required > dest_nbytes)
+    {
+        throw std::overflow_error("J2K codestream dimensions exceed destination buffer size");
+    }
     const int* y = image->comps[0].data;
     const int* cb = image->comps[1].data;
     const int* cr = image->comps[2].data;
@@ -312,13 +320,18 @@ void fast_sycc420_to_rgb(opj_image_t* image, uint8_t* dest)
     }
 }
 
-void fast_sycc444_to_rgb(opj_image_t* image, uint8_t* dest)
+void fast_sycc444_to_rgb(opj_image_t* image, uint8_t* dest, size_t dest_nbytes)
 {
     PROF_SCOPED_RANGE(PROF_EVENT(jpeg2k_fast_sycc444_to_rgb));
     const opj_image_comp_t* comps = image->comps;
     const size_t maxw = (size_t)comps[0].w;
     const size_t maxh = (size_t)comps[0].h;
-    const size_t max = maxw * maxh;
+    const size_t max = cucim::util::checked_mul(maxw, maxh);
+    size_t required = cucim::util::checked_mul(max, static_cast<size_t>(3));
+    if (required > dest_nbytes)
+    {
+        throw std::overflow_error("J2K codestream dimensions exceed destination buffer size");
+    }
     const int* y = image->comps[0].data;
     const int* cb = image->comps[1].data;
     const int* cr = image->comps[2].data;
@@ -344,19 +357,24 @@ void fast_sycc444_to_rgb(opj_image_t* image, uint8_t* dest)
     }
 }
 
-void fast_image_to_rgb(opj_image_t* image, uint8_t* dest)
+void fast_image_to_rgb(opj_image_t* image, uint8_t* dest, size_t dest_nbytes)
 {
     PROF_SCOPED_RANGE(PROF_EVENT(jpeg2k_fast_image_to_rgb));
     opj_image_comp_t* comps = image->comps;
     uint32_t width = comps[0].w;
     uint32_t height = comps[0].h;
-    uint32_t items = width * height;
+    size_t items = cucim::util::checked_mul(static_cast<size_t>(width), static_cast<size_t>(height));
+    size_t required = cucim::util::checked_mul(items, static_cast<size_t>(3));
+    if (required > dest_nbytes)
+    {
+        throw std::overflow_error("J2K image dimensions exceed destination buffer size");
+    }
 
     uint8_t* buf = dest;
     int32_t* comp0 = comps[0].data;
     int32_t* comp1 = comps[1].data;
     int32_t* comp2 = comps[2].data;
-    for (uint32_t i = 0; i < items; ++i)
+    for (size_t i = 0; i < items; ++i)
     {
         *(buf++) = comp0[i];
         *(buf++) = comp1[i];

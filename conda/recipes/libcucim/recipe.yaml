@@ -1,4 +1,6 @@
-# Copyright (c) 2025, NVIDIA CORPORATION.
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION.
+# SPDX-License-Identifier: Apache-2.0
+
 schema_version: 1
 
 context:
@@ -96,31 +98,37 @@ requirements:
     - cuda-cudart-dev
     - cuda-version =${{ cuda_version }}
     - libcufile-dev
+    - libnvimgcodec-dev =${{ nvimgcodec_version }}  # nvImageCodec development headers and libraries
     - libnvjpeg-dev
     - nvtx-c >=3.1.0
     - openslide
   run:
+    {% if cuda_major == "12" %}
+    - {{ pin_compatible('cuda-version', lower_bound='12.2', upper_bound='13.0a0') }}
+    {% else %}
+    - {{ pin_compatible('cuda-version', max_pin='x', min_pin='x') }}
+    {% endif %}
+
+
     - cuda-cudart
+    - libcufile
     - libnvjpeg
-    - if: x86_64 or (aarch64 and cuda_version >= "13.0")
+    - libnvimgcodec =${{ nvimgcodec_version }}   # nvImageCodec metapackage (includes libnvimgcodec0 + run_exports)
+    - if: cuda_version >= "13.0"
       then:
         - ${{ pin_compatible("cuda-version", upper_bound="x", lower_bound="x") }}
-        - libcufile
       else:
-      - if: aarch64 and cuda_version >= "12.2"
-        then:
-          - ${{ pin_compatible("cuda-version", upper_bound="x", lower_bound="12.2.0a0") }}
-          - libcufile
-        else:
-          - ${{ pin_compatible("cuda-version", upper_bound="12.2.0a0", lower_bound="12.0") }}
+        - ${{ pin_compatible("cuda-version", lower_bound="12.2", upper_bound="13.0a0") }}
   run_constraints:
     - ${{ pin_compatible("openslide") }}
+    - libnvimgcodec-dev =${{ nvimgcodec_version }}  # Optional: for development/debugging
   ignore_run_exports:
     by_name:
       - cuda-cudart
       - cuda-version
       - libcufile
       - libnvjpeg
+      - libnvimgcodec
       - openslide
 
 about:

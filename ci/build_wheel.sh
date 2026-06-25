@@ -1,5 +1,6 @@
 #!/bin/bash
-# Copyright (c) 2023, NVIDIA CORPORATION.
+# SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION.
+# SPDX-License-Identifier: Apache-2.0
 
 set -euo pipefail
 
@@ -11,6 +12,14 @@ CMAKE_BUILD_TYPE="release"
 source rapids-configure-sccache
 source rapids-date-string
 source rapids-init-pip
+
+sccache --stop-server 2>/dev/null || true
+
+export SCCACHE_S3_KEY_PREFIX="${package_name}/${RAPIDS_CONDA_ARCH}/cuda${RAPIDS_CUDA_VERSION%%.*}/object-cache"
+export SCCACHE_S3_PREPROCESSOR_CACHE_KEY_PREFIX="${package_name}/${RAPIDS_CONDA_ARCH}/cuda${RAPIDS_CUDA_VERSION%%.*}/preprocessor-cache"
+export SCCACHE_S3_USE_PREPROCESSOR_CACHE_MODE="true"
+
+sccache --start-server
 
 rapids-generate-version > ./VERSION
 
@@ -60,3 +69,6 @@ python -m auditwheel repair -w "${RAPIDS_WHEEL_BLD_OUTPUT_DIR}" dist/*
 ls -1 "${RAPIDS_WHEEL_BLD_OUTPUT_DIR}" | grep -vqz 'none'
 
 ../../ci/validate_wheel.sh "${RAPIDS_WHEEL_BLD_OUTPUT_DIR}"
+
+RAPIDS_PACKAGE_NAME="$(rapids-artifact-name wheel_python cucim cucim --py "$RAPIDS_PY_VERSION" --cuda "$RAPIDS_CUDA_VERSION")"
+export RAPIDS_PACKAGE_NAME

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2009-2022 the scikit-image team
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
+
 r"""Function of unitary fourier transform (uft) and utilities
 
 This module implements the unitary fourier transform, also known as
@@ -18,7 +22,6 @@ References
        vol. au-19, no. 4, pp. 285-288, dec. 1971
 
 """
-
 
 import math
 
@@ -375,7 +378,7 @@ def ir2tf(imp_resp, shape, dim=None, is_real=True):
     dim : int, optional
         The last axis along which to compute the transform. All
         axes by default.
-    is_real : boolean, optional
+    is_real : bool, optional
        If True (default), imp_resp is supposed real and the Hermitian property
        is used with rfftn Fourier transform.
 
@@ -434,7 +437,7 @@ def laplacian(ndim, shape, is_real=True, *, dtype=None):
         The dimension of the Laplacian.
     shape : tuple
         The support on which to compute the transfer function.
-    is_real : boolean, optional
+    is_real : bool, optional
        If True (default), imp_resp is assumed to be real-valued and
        the Hermitian property is used with rfftn Fourier transform
        to return the transfer function.

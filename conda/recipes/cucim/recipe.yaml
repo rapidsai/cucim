@@ -1,4 +1,6 @@
-# Copyright (c) 2025, NVIDIA CORPORATION.
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION.
+# SPDX-License-Identifier: Apache-2.0
+
 schema_version: 1
 
 context:
@@ -78,24 +80,26 @@ requirements:
     - click
     - cuda-cudart-dev
     - cuda-version =${{ cuda_version }}
-    - cupy >=12.0.0
+    - cupy >=13.6.0,!=14.0.0,!=14.1.0
     - libcucim =${{ version }}
     - pip
     - python =${{ py_version }}
+    - python-gil
     - rapids-build-backend >=0.4.0,<0.5.0.dev0
-    - scikit-image >=0.19.0,<0.25.0a0
+    - scikit-image >=0.23.2,<0.27.0a0
     - scipy >=1.6
     - setuptools >=80.9.0
   run:
     - ${{ pin_compatible("cuda-version", upper_bound="x", lower_bound="x") }}
     - click
     - cuda-cudart
-    - cupy >=12.0.0
+    - cupy >=13.6.0,!=14.0.0,!=14.1.0
     - lazy_loader >=0.1
     - libcucim =${{ version }}
     - numpy >=1.23,<3.0a0
     - python
-    - scikit-image >=0.19.0,<0.25.0a0
+    - python-gil
+    - scikit-image >=0.23.2,<0.27.0a0
     - scipy >=1.6
   run_constraints:
     - openslide-python >=1.3.0

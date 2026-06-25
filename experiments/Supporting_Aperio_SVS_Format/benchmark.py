@@ -1,16 +1,6 @@
 #
-# Copyright (c) 2021, NVIDIA CORPORATION.
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION.
+# SPDX-License-Identifier: Apache-2.0
 #
 
 import concurrent.futures
@@ -246,21 +236,13 @@ def experiment_process(
 
 
 for i in range(10):
-    experiment_thread(
-        "per_process", "notebooks/input/TUPAC-TR-488.svs", 12, 120, 240
-    )
-    experiment_thread(
-        "per_process", "notebooks/input/JP2K-33003-2.svs", 12, 128, 256
-    )
+    experiment_thread("per_process", "notebooks/input/TUPAC-TR-488.svs", 12, 120, 240)
+    experiment_thread("per_process", "notebooks/input/JP2K-33003-2.svs", 12, 128, 256)
     experiment_thread(
         "per_process", "notebooks/input/CMU-1-JP2K-33005.svs", 12, 120, 240
     )
-    experiment_process(
-        "per_process", "notebooks/input/TUPAC-TR-488.svs", 12, 120, 240
-    )
-    experiment_process(
-        "per_process", "notebooks/input/JP2K-33003-2.svs", 12, 128, 256
-    )
+    experiment_process("per_process", "notebooks/input/TUPAC-TR-488.svs", 12, 120, 240)
+    experiment_process("per_process", "notebooks/input/JP2K-33003-2.svs", 12, 128, 256)
     experiment_process(
         "per_process", "notebooks/input/CMU-1-JP2K-33005.svs", 12, 120, 240
     )

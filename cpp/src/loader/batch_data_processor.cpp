@@ -1,18 +1,6 @@
 /*
- * Apache License, Version 2.0
- * Copyright 2021 NVIDIA Corporation
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 #include "cucim/loader/batch_data_processor.h"
@@ -68,6 +56,11 @@ uint32_t BatchDataProcessor::wait_batch(const uint32_t index_in_task,
 std::shared_ptr<cucim::cache::ImageCacheValue> BatchDataProcessor::wait_for_processing(const uint32_t)
 {
     return std::shared_ptr<cucim::cache::ImageCacheValue>();
+}
+
+void BatchDataProcessor::set_output_buffer_provider(OutputBufferProvider /*provider*/)
+{
+    // Default: unused. Override in subclasses that support direct-to-raster output.
 }
 
 void BatchDataProcessor::shutdown()

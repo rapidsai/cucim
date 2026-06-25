@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2009-2022 the scikit-image team
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
+
 import itertools
 
 import cupy as cp
@@ -178,7 +182,7 @@ def moments(image, order=3, *, spacing=None):
         Rasterized shape as image.
     order : int, optional
         Maximum order of moments. Default is 3.
-    spacing: tuple of float, shape (ndim,)
+    spacing : tuple of float, shape (ndim,)
         The pixel spacing along each axis of the image.
 
     Returns
@@ -245,7 +249,7 @@ def moments_central(image, center=None, order=3, *, spacing=None, **kwargs):
         is not provided.
     order : int, optional
         The maximum order of moments computed.
-    spacing: tuple of float, shape (ndim,)
+    spacing : tuple of float, shape (ndim,)
         The pixel spacing along each axis of the image.
 
     Returns
@@ -368,7 +372,7 @@ def moments_normalized(mu, order=3, spacing=None):
         to ``order``.
     order : int, optional
         Maximum order of moments. Default is 3.
-    spacing: tuple of float, shape (ndim,)
+    spacing : tuple of float, shape (ndim,)
         The pixel spacing along each axis of the image.
 
     Returns
@@ -493,7 +497,7 @@ def centroid(image, *, spacing=None):
     ----------
     image : array
         The input image.
-    spacing: tuple of float, shape (ndim,)
+    spacing : tuple of float, shape (ndim,)
         The pixel spacing along each axis of the image.
 
     Returns

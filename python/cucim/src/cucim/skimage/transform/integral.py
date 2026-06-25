@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2009-2022 the scikit-image team
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
+
 import cupy as cp
 import numpy as np
 
@@ -16,6 +20,10 @@ def integral_image(image, *, dtype=None):
     ----------
     image : ndarray
         Input image.
+    dtype : data-type, optional
+        Data type (NumPy dtype) to be used for calculation, and for
+        output array `S`.  If None, defaults to the more precise of either
+        float64 or `image`'s dtype.
 
     Returns
     -------
@@ -93,9 +101,7 @@ def integrate(ii, start, end):
     # convert negative indices into equivalent positive indices
     start_negatives = start < 0
     end_negatives = end < 0
-    start = (start + total_shape) * start_negatives + start * ~(
-        start_negatives
-    )  # noqa
+    start = (start + total_shape) * start_negatives + start * ~(start_negatives)  # noqa
     end = (end + total_shape) * end_negatives + end * ~(end_negatives)  # noqa
 
     if np.any((end - start) < 0):

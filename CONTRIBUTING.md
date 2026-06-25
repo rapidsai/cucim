@@ -99,7 +99,7 @@ Compiler requirements:
 
 * `gcc`     version 14.0+
 * `nvcc`    version 12.0+
-* `cmake`   version 3.30.4+
+* `cmake`   version 4.0+
 
 CUDA/GPU requirements:
 
@@ -121,19 +121,18 @@ cd $CUCIM_HOME
 ```
 ## Local Development using Conda Environment (for gcc 13 and nvcc 12)
 
-Conda can be used to setup an environment which includes all of the necessary dependencies (as shown in `./conda/environments/all_cuda-130_arch-x86_64.yaml`) for building cuCIM.
+Conda can be used to setup an environment which includes all of the necessary dependencies (as shown in `./conda/environments/`) for building cuCIM.
 
 Otherwise, you may need to install dependencies (such as yasm) through your OS's package manager (`apt`, `yum`, and so on).
 
-
 ### Creating the Conda Development Environment `cucim`
 
-Note that `./conda/environments/all_cuda-130_arch-x86_64.yaml` is currently set to pull in GCC and NVCC with the expected versions.
+Note that the environment files in `./conda/environments/` will pull in GCC and NVCC with supported versions.
 
-If you want to change the version of GCC or CUDA, please update `./conda/environments/all_cuda-130_arch-x86_64.yaml` before executing the following commands.
+If you want to change the version of GCC or CUDA, please update the environment file before executing the following commands.
 
 ```bash
-conda env create -n cucim -f ./conda/environments/all_cuda-130_arch-x86_64.yaml
+conda env create -n cucim -f ./conda/environments/all_cuda-133_arch-$(uname -m).yaml
 # activate the environment
 conda activate cucim
 ```

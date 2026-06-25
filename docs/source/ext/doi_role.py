@@ -1,20 +1,24 @@
+# SPDX-FileCopyrightText: Copyright 2015  Jon Lund Steffensen. Based on extlinks by the Sphinx team.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 AND BSD-2-Clause
+
 # From scikit-image:
 # https://github.com/scikit-image/scikit-image/blob/16e0b87b8cb1abc4c78ebf6cd013dadc90810f39/doc/ext/doi_role.py
 # -*- coding: utf-8 -*-
 """
-    doilinks
-    ~~~~~~~~~~~~~~~~~~~
-    Extension to add links to DOIs. With this extension you can use e.g.
-    :doi:`10.1016/S0022-2836(05)80360-2` in your documents. This will
-    create a link to a DOI resolver
-    (``https://doi.org/10.1016/S0022-2836(05)80360-2``).
-    The link caption will be the raw DOI.
-    You can also give an explicit caption, e.g.
-    :doi:`Basic local alignment search tool <10.1016/S0022-2836(05)80360-2>`.
+doilinks
+~~~~~~~~~~~~~~~~~~~
+Extension to add links to DOIs. With this extension you can use e.g.
+:doi:`10.1016/S0022-2836(05)80360-2` in your documents. This will
+create a link to a DOI resolver
+(``https://doi.org/10.1016/S0022-2836(05)80360-2``).
+The link caption will be the raw DOI.
+You can also give an explicit caption, e.g.
+:doi:`Basic local alignment search tool <10.1016/S0022-2836(05)80360-2>`.
 
-    :copyright: Copyright 2015  Jon Lund Steffensen. Based on extlinks by
-        the Sphinx team.
-    :license: BSD.
+:copyright: Copyright 2015  Jon Lund Steffensen. Based on extlinks by
+    the Sphinx team.
+:license: BSD.
 """
 
 from docutils import nodes, utils

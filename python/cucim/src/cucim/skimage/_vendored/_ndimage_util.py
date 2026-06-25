@@ -1,4 +1,10 @@
+# SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Infrastructure, Inc.
+# SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Networks, Inc.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 AND MIT
+
 """A vendored subset of cupyx.scipy.ndimage._util"""
+
 import operator
 import warnings
 from collections.abc import Iterable
@@ -22,8 +28,7 @@ def _is_integer_output(output, input):
 def _check_cval(mode, cval, integer_output):
     if mode == "constant" and integer_output and not cupy.isfinite(cval):
         raise NotImplementedError(
-            "Non-finite cval is not supported for "
-            "outputs with integer dtype."
+            "Non-finite cval is not supported for outputs with integer dtype."
         )
 
 
@@ -244,9 +249,7 @@ def _generate_boundary_condition_ops(
         T = "int" if int_t == "int" else "long long"
         if separate:
             ops_lower = f"""{ix} = {max_func}(({T}){ix}, ({T})0);"""
-            ops_upper = (
-                f"""{ix} = {min_func}(({T}){ix}, ({T})({xsize} - 1));"""  # noqa
-            )
+            ops_upper = f"""{ix} = {min_func}(({T}){ix}, ({T})({xsize} - 1));"""  # noqa
             ops = (ops_lower, ops_upper)
         else:
             ops = f"""{ix} = {min_func}({max_func}(({T}){ix}, ({T})0), ({T})({xsize} - 1));"""  # noqa
@@ -273,7 +276,9 @@ def _generate_boundary_condition_ops(
     elif mode == "wrap":
         if separate:
             ops_lower = f"""{ix} += ({xsize} - 1) * (({int_t})(-{ix} / ({xsize} - 1)) + 1);"""  # noqa
-            ops_upper = f"""{ix} -= ({xsize} - 1) * ({int_t})({ix} / ({xsize} - 1));"""  # noqa
+            ops_upper = (
+                f"""{ix} -= ({xsize} - 1) * ({int_t})({ix} / ({xsize} - 1));"""  # noqa
+            )
             ops = (ops_lower, ops_upper)
         else:
             ops = f"""

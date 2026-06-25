@@ -1,17 +1,6 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 #include "cucim/cuimage.h"
@@ -287,14 +276,16 @@ CuImage::~CuImage()
                 image_data_->container.data = nullptr;
                 break;
             case io::DeviceType::kCUDA:
-
-                if (image_data_->loader)
-                {
-                    cudaError_t cuda_status;
-                    CUDA_TRY(cudaFree(image_data_->container.data));
-                }
+            {
+                // Always free CUDA memory allocated for this CuImage.
+                // If a loader exists and transferred ownership (num_workers==0), CuImage owns the memory.
+                // If no loader exists, CuImage allocated the memory directly.
+                // Either way, CuImage is responsible for freeing it.
+                cudaError_t cuda_status;
+                CUDA_TRY(cudaFree(image_data_->container.data));
                 image_data_->container.data = nullptr;
                 break;
+            }
             case io::DeviceType::kCUDAHost:
             case io::DeviceType::kCUDAManaged:
             case io::DeviceType::kCPUShared:
@@ -864,7 +855,15 @@ CuImage CuImage::read_region(std::vector<int64_t>&& location,
         }
 
         const char* str_ptr = image_metadata_->spacing_units[dim_index];
-        size_t str_len = strlen(image_metadata_->spacing_units[dim_index]);
+        if (!str_ptr)
+        {
+            str_ptr = ""; // fallback to empty string if null
+        }
+        // Use strnlen to safely limit string length and prevent reading past buffer
+        // if string is unexpectedly not null-terminated (spacing units are typically short like
+        // "mm", "um")
+        constexpr size_t kMaxSpacingUnitLen = 256;
+        size_t str_len = strnlen(str_ptr, kMaxSpacingUnitLen);
 
         char* spacing_unit = static_cast<char*>(resource.allocate(str_len + 1));
         memcpy(spacing_unit, str_ptr, str_len);
@@ -904,7 +903,11 @@ CuImage CuImage::read_region(std::vector<int64_t>&& location,
     const char* coord_sys_ptr = image_metadata_->coord_sys;
     if (coord_sys_ptr)
     {
-        size_t coord_sys_len = strlen(coord_sys_ptr);
+        // Use strnlen to safely limit string length and prevent reading past buffer
+        // if string is unexpectedly not null-terminated (coord_sys is typically 3 chars like
+        // "LPS" or "RAS")
+        constexpr size_t kMaxCoordSysLen = 16;
+        size_t coord_sys_len = strnlen(coord_sys_ptr, kMaxCoordSysLen);
         char* coord_sys_str = static_cast<char*>(resource.allocate(coord_sys_len + 1));
         memcpy(coord_sys_str, coord_sys_ptr, coord_sys_len);
         coord_sys_str[coord_sys_len] = '\0';

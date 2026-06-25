@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2009-2022 the scikit-image team
+# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
+
 import math
 import warnings
 from warnings import warn
@@ -288,7 +292,7 @@ def _convert(image, dtype, force_copy=False, uniform=False):
 
     if not (dtype_in in _supported_types and dtype_out in _supported_types):
         raise ValueError(
-            f"Cannot convert from {dtypeobj_in} to " f"{dtypeobj_out}."
+            f"Cannot convert from {dtypeobj_in} to {dtypeobj_out}."
         )
 
     if kind_in in "ui":

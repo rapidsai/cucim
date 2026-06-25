@@ -1,17 +1,6 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 #ifndef CUCIM_LOADER_BATCH_DATA_PROCESSOR_H
@@ -21,6 +10,7 @@
 
 #include <cstdint>
 #include <deque>
+#include <functional>
 
 #include <cucim/cache/image_cache.h>
 
@@ -44,6 +34,19 @@ public:
                                 const uint32_t num_remaining_patches);
 
     virtual std::shared_ptr<cucim::cache::ImageCacheValue> wait_for_processing(uint32_t);
+
+    /**
+     * @brief Set a callback that maps location_index → output buffer address.
+     *
+     * Subclasses that support direct-to-raster decoding (e.g. NvImageCodecProcessor)
+     * override this to store the provider and use it in request() to tell the decoder
+     * where to place decoded pixel data.  The default implementation is a no-op.
+     *
+     * @param provider  A function that, given a location index, returns the address of
+     *                  the pre-allocated raster slot for that location.
+     */
+    using OutputBufferProvider = std::function<uint8_t*(uint64_t /*location_index*/)>;
+    virtual void set_output_buffer_provider(OutputBufferProvider provider);
 
     virtual void shutdown();
 

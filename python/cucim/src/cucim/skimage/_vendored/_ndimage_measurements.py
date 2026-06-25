@@ -1,3 +1,8 @@
+# SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Infrastructure, Inc.
+# SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Networks, Inc.
+# SPDX-FileCopyrightText: Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 AND MIT
+
 import math
 
 import cupy
@@ -119,9 +124,9 @@ def get_bbox_coords_kernel(coord_dtype, ndim, pixels_per_thread=32):
         if (lab > 0) {"""
     for d in range(ndim):
         source += f"""
-          atomicMin(&bbox[(lab - 1)*{2*ndim} + {2*d}],
+          atomicMin(&bbox[(lab - 1)*{2 * ndim} + {2 * d}],
                     bbox_min[{ndim}*ii + {d}]);
-          atomicMax(&bbox[(lab - 1)*{2*ndim} + {2*d + 1}],
+          atomicMax(&bbox[(lab - 1)*{2 * ndim} + {2 * d + 1}],
                     bbox_max[{ndim}*ii + {d}]);"""
     source += """
         }

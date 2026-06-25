@@ -1,3 +1,11 @@
+# SPDX-FileCopyrightText: Copyright (c) 2003-2009 Massachusetts Institute of Technology
+# SPDX-FileCopyrightText: Copyright (c) 2009-2011 Broad Institute
+# SPDX-FileCopyrightText: 2003 Lee Kamentsky
+# SPDX-FileCopyrightText: 2003-2005 Peter J. Verveer
+# SPDX-FileCopyrightText: 2009-2022 the scikit-image team
+# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 AND (GPL-2.0-only OR BSD-3-Clause)
+
 import warnings
 
 import cupy as cp
@@ -124,7 +132,8 @@ def thin(image, max_num_iter=None):
 
     # neighborhood mask
     mask = cp.asarray(
-        [[8, 4, 2], [16, 0, 1], [32, 64, 128]], dtype=cp.uint8  # noqa
+        [[8, 4, 2], [16, 0, 1], [32, 64, 128]],
+        dtype=cp.uint8,  # noqa
     )
 
     G123_LUT = cp.asarray(_G123_LUT)
@@ -313,7 +322,7 @@ def medial_axis(image, mask=None, return_distance=False, *, rng=None):
         tiebreaker = cp.asarray(generator.permutation(np.arange(distance.size)))
     else:
         raise ValueError(
-            f"{type(rng)} class not yet supported for use in " "`medial_axis`."
+            f"{type(rng)} class not yet supported for use in `medial_axis`."
         )
     order = cp.lexsort(
         cp.stack((tiebreaker, corner_score[masked_image], distance), axis=0)

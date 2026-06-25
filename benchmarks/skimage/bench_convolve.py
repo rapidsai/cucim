@@ -1,6 +1,10 @@
+# SPDX-FileCopyrightText: Copyright (c) 2022-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 """
 Benchmark locally modified ndimage functions vs. their CuPy counterparts
 """
+
 import cupy as cp
 import cupyx.scipy.ndimage as ndi
 from cupyx.profiler import benchmark

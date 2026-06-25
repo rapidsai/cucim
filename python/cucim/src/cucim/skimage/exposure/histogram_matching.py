@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2009-2022 the scikit-image team
+# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
+
 import cupy as cp
 
 from .._shared import utils
@@ -68,7 +72,7 @@ def match_histograms(image, reference, *, channel_axis=None):
     """
     if image.ndim != reference.ndim:
         raise ValueError(
-            "Image and reference must have the same number " "of channels."
+            "Image and reference must have the same number of channels."
         )
 
     if channel_axis is not None:

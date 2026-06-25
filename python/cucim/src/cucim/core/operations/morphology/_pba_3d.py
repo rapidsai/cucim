@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 import math
 import os
 
@@ -123,7 +126,6 @@ def _get_encode3d_kernel(size_max, marker=-2147483648):
         in_params="raw B arr",
         out_params="raw I out",
         operation=code,
-        options=("--std=c++11",),
     )
 
 
@@ -170,7 +172,6 @@ def _get_decode3d_kernel(size_max):
         in_params="E encoded",
         out_params="I x, I y, I z",
         operation=code,
-        options=("--std=c++11",),
     )
 
 
@@ -257,7 +258,6 @@ def _get_distance_kernel(int_type, large_dist=False):
         in_params="I z, I y, I x",
         out_params="raw F dist",
         operation=operation,
-        options=("--std=c++11",),
     )
 
 
@@ -294,7 +294,6 @@ def _get_aniso_distance_kernel(int_type):
         in_params="I z, I y, I x, raw F sampling",
         out_params="raw F dist",
         operation=operation,
-        options=("--std=c++11",),
     )
 
 
@@ -330,7 +329,6 @@ def _get_decode_as_distance_kernel(size_max, large_dist=False, sampling=None):
         in_params=in_params,
         out_params="raw F dist",
         operation=code,
-        options=("--std=c++11",),
     )
 
 

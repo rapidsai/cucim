@@ -1,3 +1,8 @@
+# SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Infrastructure, Inc.
+# SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Networks, Inc.
+# SPDX-FileCopyrightText: Copyright (c) 2023-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 AND MIT
+
 """Implementation of cupyx.scipy.stats.pearsonr (currently missing in CuPy)
 
 Simple port of SciPy's pearsonr in scipy/stats/_stats_py.py.
@@ -8,6 +13,7 @@ return type changed to a PearsonRResult object that also has a
 `confidence_interval` method. Since we do not need that method in the cuCIM
 API, a simple tuple-based return is used
 """
+
 import warnings
 
 import cupy as cp

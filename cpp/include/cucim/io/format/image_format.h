@@ -1,17 +1,6 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2025, NVIDIA CORPORATION.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 #ifndef CUCIM_IMAGE_FORMAT_H
@@ -91,13 +80,16 @@ public:
     ImageMetadata& dims(std::string_view&& dims);
     ImageMetadata& shape(std::pmr::vector<int64_t>&& shape);
     ImageMetadata& dtype(const DLDataType& dtype);
+    /// @note The string_view elements are copied with null-termination if needed for safe use with C string functions.
     ImageMetadata& channel_names(std::pmr::vector<std::string_view>&& channel_names);
 
     ImageMetadata& spacing(std::pmr::vector<float>&& spacing);
+    /// @note The string_view elements are copied with null-termination if needed for safe use with C string functions.
     ImageMetadata& spacing_units(std::pmr::vector<std::string_view>&& spacing_units);
 
     ImageMetadata& origin(std::pmr::vector<float>&& origin);
     ImageMetadata& direction(std::pmr::vector<float>&& direction);
+    /// @note The string_view is copied with null-termination if needed for safe use with C string functions.
     ImageMetadata& coord_sys(std::string_view&& coord_sys);
 
     // ResolutionInfoDesc

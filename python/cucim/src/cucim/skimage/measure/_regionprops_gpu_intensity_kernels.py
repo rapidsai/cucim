@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 import math
 
 import cupy as cp
@@ -647,9 +650,7 @@ def regionprops_intensity_min_max(
     else:
         outputs = (maximums,)
 
-    kernel(
-        label_image, lab_size, intensity_image, *outputs, size=sz
-    )  # noqa: E501
+    kernel(label_image, lab_size, intensity_image, *outputs, size=sz)  # noqa: E501
     if compute_min:
         props_dict["intensity_min"] = minimums
     if compute_max:

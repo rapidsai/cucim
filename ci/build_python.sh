@@ -1,5 +1,6 @@
 #!/bin/bash
-# Copyright (c) 2022, NVIDIA CORPORATION.
+# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+# SPDX-License-Identifier: Apache-2.0
 
 set -euo pipefail
 
@@ -13,19 +14,21 @@ rapids-print-env
 
 rapids-generate-version > ./VERSION
 
-RAPIDS_PACKAGE_VERSION=$(head -1 ./VERSION)
-export RAPIDS_PACKAGE_VERSION
+rapids-logger "Begin py build"
 
-CPP_CHANNEL=$(rapids-download-conda-from-github cpp)
+sccache --stop-server 2>/dev/null || true
 
-# populates `RATTLER_CHANNELS` array and `RATTLER_ARGS` array
-source rapids-rattler-channel-string
+export SCCACHE_S3_KEY_PREFIX="cucim/${RAPIDS_CONDA_ARCH}/cuda${RAPIDS_CUDA_VERSION%%.*}/object-cache"
+export SCCACHE_S3_PREPROCESSOR_CACHE_KEY_PREFIX="cucim/${RAPIDS_CONDA_ARCH}/cuda${RAPIDS_CUDA_VERSION%%.*}/preprocessor-cache"
+export SCCACHE_S3_USE_PREPROCESSOR_CACHE_MODE="true"
 
-rapids-logger "Prepending channel ${CPP_CHANNEL} to RATTLER_CHANNELS"
+sccache --start-server
 
-RATTLER_CHANNELS=("--channel" "${CPP_CHANNEL}" "${RATTLER_CHANNELS[@]}")
+# this can be set back to 'prevent' once the xorg-* migrations are completed
+# ref: https://github.com/rapidsai/cucim/issues/800#issuecomment-2529593457
+conda config --set path_conflict warn
 
-sccache --zero-stats
+CPP_CHANNEL=$(rapids-download-from-github "$(rapids-artifact-name conda_cpp libcucim cucim --cuda "$RAPIDS_CUDA_VERSION")")
 
 rapids-logger "Building cucim"
 
@@ -40,6 +43,5 @@ rattler-build build --recipe conda/recipes/cucim \
 
 sccache --show-adv-stats
 
-# remove build_cache directory to avoid uploading the entire source tree
-# tracked in https://github.com/prefix-dev/rattler-build/issues/1424
-rm -rf "$RAPIDS_CONDA_BLD_OUTPUT_DIR"/build_cache
+RAPIDS_PACKAGE_NAME="$(rapids-artifact-name conda_python cucim cucim --py "$RAPIDS_PY_VERSION" --cuda "$RAPIDS_CUDA_VERSION")"
+export RAPIDS_PACKAGE_NAME

@@ -1,7 +1,9 @@
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 import argparse
 import math
 import os
-import pickle
 
 import cupy as cp
 import numpy as np
@@ -158,12 +160,11 @@ class MandersColocBench(ImageBench):
 
 
 def main(args):
-    pfile = "cucim_measure_results.pickle"
-    if os.path.exists(pfile):
-        with open(pfile, "rb") as f:
-            all_results = pickle.load(f)
-    else:
+    cfile = "cucim_measure_results.csv"
+    if getattr(args, "no_resume", False) or not os.path.exists(cfile):
         all_results = pd.DataFrame()
+    else:
+        all_results = pd.read_csv(cfile, index_col=0)
 
     dtypes = [np.dtype(args.dtype)]
     # image sizes/shapes
@@ -233,9 +234,7 @@ def main(args):
             continue
 
         if function_name in ["label", "regionprops"]:
-            Tester = (
-                LabelBench if function_name == "label" else RegionpropsBench
-            )
+            Tester = LabelBench if function_name == "label" else RegionpropsBench
 
             for contiguous_labels in [True, False]:
                 if contiguous_labels:
@@ -290,9 +289,7 @@ def main(args):
             if function_name == "block_reduce":
                 ndim = len(shape)
                 if shape[-1] == 3:
-                    block_sizes = [
-                        (b,) * (ndim - 1) + (3,) for b in (16, 32, 64)
-                    ]
+                    block_sizes = [(b,) * (ndim - 1) + (3,) for b in (16, 32, 64)]
                 else:
                     block_sizes = [(b,) * ndim for b in (16, 32, 64)]
                 var_kwargs["block_size"] = block_sizes
@@ -305,9 +302,7 @@ def main(args):
                 ndim = len(shape)
                 footprint_sizes = [3, 5, 7, 9] if ndim == 2 else [3, 5, 7]
                 for footprint_size in [3, 5, 7, 9]:
-                    footprints.append(
-                        np.ones((footprint_sizes,) * ndim, dtype=bool)
-                    )
+                    footprints.append(np.ones((footprint_sizes,) * ndim, dtype=bool))
                 var_kwargs["footprint"] = footprints
 
             if function_name in ["gaussian", "unsharp_mask"]:
@@ -326,17 +321,14 @@ def main(args):
         results = B.run_benchmark(duration=args.duration)
         all_results = pd.concat([all_results, results["full"]])
 
-    fbase = os.path.splitext(pfile)[0]
-    all_results.to_csv(fbase + ".csv")
-    all_results.to_pickle(pfile)
+    fbase = os.path.splitext(cfile)[0]
+    all_results.to_csv(cfile, index=True)
     with open(fbase + ".md", "w") as f:
         f.write(all_results.to_markdown())
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Benchmarking cuCIM measure functions"
-    )
+    parser = argparse.ArgumentParser(description="Benchmarking cuCIM measure functions")
     func_name_choices = [
         "label",
         "regionprops",
@@ -397,6 +389,12 @@ if __name__ == "__main__":
         "--no_cpu",
         action="store_true",
         help="disable cpu measurements",
+        default=False,
+    )
+    parser.add_argument(
+        "--no_resume",
+        action="store_true",
+        help="do not load existing results CSV; save only this run's results (overwrite)",
         default=False,
     )
 

@@ -1,22 +1,12 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 #include "tiff.h"
 
 #include <fcntl.h>
+#include <sys/stat.h>
 
 #include <algorithm>
 #include <string>
@@ -31,6 +21,7 @@
 #include <cucim/logger/timer.h>
 #include <cucim/memory/memory_manager.h>
 #include <cucim/profiler/nvtx3.h>
+#include <cucim/util/checked_math.h>
 
 #include "cuslide/jpeg/libjpeg_turbo.h"
 #include "cuslide/lzw/lzw.h"
@@ -80,30 +71,44 @@ static void parse_string_array(const char* values, json& arr, PhilipsMetadataTyp
         {
             if (text[next_pos - 1] != '\\')
             {
-                switch (type)
+                try
                 {
-                case PhilipsMetadataType::IString:
-                    arr.emplace_back(std::string(text.substr(pos + 1, next_pos - pos - 1)));
-                    break;
-                case PhilipsMetadataType::IDouble:
-                    arr.emplace_back(std::stod(std::string(text.substr(pos + 1, next_pos - pos - 1))));
-                    break;
-                case PhilipsMetadataType::IUInt16:
-                case PhilipsMetadataType::IUInt32:
-                case PhilipsMetadataType::IUInt64:
-                    arr.emplace_back(std::stoul(std::string(text.substr(pos + 1, next_pos - pos - 1))));
-                    break;
+                    std::string val(text.substr(pos + 1, next_pos - pos - 1));
+                    switch (type)
+                    {
+                    case PhilipsMetadataType::IString:
+                        arr.emplace_back(std::move(val));
+                        break;
+                    case PhilipsMetadataType::IDouble:
+                        arr.emplace_back(std::stod(val));
+                        break;
+                    case PhilipsMetadataType::IUInt16:
+                    case PhilipsMetadataType::IUInt32:
+                    case PhilipsMetadataType::IUInt64:
+                        arr.emplace_back(std::stoul(val));
+                        break;
+                    }
+                }
+                catch (const std::exception&)
+                {
                 }
                 pos = next_pos + 1;
             }
         }
     }
 }
+static constexpr int kMaxXmlParseDepth = 32;
+
 static void parse_philips_tiff_metadata(const pugi::xml_node& node,
                                         json& metadata,
                                         const char* name,
-                                        PhilipsMetadataStage stage)
+                                        PhilipsMetadataStage stage,
+                                        int depth = 0)
 {
+    if (depth > kMaxXmlParseDepth)
+    {
+        return;
+    }
     switch (stage)
     {
     case PhilipsMetadataStage::ROOT:
@@ -114,7 +119,8 @@ static void parse_philips_tiff_metadata(const pugi::xml_node& node,
             const pugi::xml_attribute& attr_attribute = attr.attribute("Name");
             if (attr_attribute)
             {
-                parse_philips_tiff_metadata(attr, metadata, attr_attribute.value(), PhilipsMetadataStage::ELEMENT);
+                parse_philips_tiff_metadata(
+                    attr, metadata, attr_attribute.value(), PhilipsMetadataStage::ELEMENT, depth + 1);
             }
         }
         break;
@@ -179,7 +185,8 @@ static void parse_philips_tiff_metadata(const pugi::xml_node& node,
                         {
                             auto& item_iter = item_array_iter.first->emplace_back(json{});
                             parse_philips_tiff_metadata(
-                                data_node, item_iter, nullptr, PhilipsMetadataStage::PIXEL_DATA_PRESENTATION);
+                                data_node, item_iter, nullptr, PhilipsMetadataStage::PIXEL_DATA_PRESENTATION,
+                                depth + 1);
                         }
                     }
                     break;
@@ -231,13 +238,20 @@ static std::string strip_string(const std::string& str)
     }
 }
 
+static constexpr size_t kMaxImageDescriptionBytes = 1 * 1024 * 1024; // 1 MB
+
 static void parse_aperio_svs_metadata(std::shared_ptr<IFD>& first_ifd, json& metadata)
 {
     (void)metadata;
     std::string& desc = first_ifd->image_description();
 
-    // Assumes that metadata's image description starts with 'Aperio '.
-    // It is handled by 'resolve_vendor_format()'
+    if (desc.size() > kMaxImageDescriptionBytes)
+    {
+        fmt::print(stderr, "[Warning] Aperio SVS ImageDescription exceeds 1 MB limit ({}); skipping metadata parse\n",
+                   desc.size());
+        return;
+    }
+
     std::vector<std::string> items = split_string(desc, "|");
     if (items.size() < 1)
     {
@@ -395,8 +409,8 @@ void TIFF::resolve_vendor_format()
     {
         auto& image_desc = first_ifd->image_description();
         std::string_view prefix("Aperio ");
-        auto res = std::mismatch(prefix.begin(), prefix.end(), image_desc.begin());
-        if (res.first == prefix.end())
+        if (image_desc.size() >= prefix.size() &&
+            std::mismatch(prefix.begin(), prefix.end(), image_desc.begin()).first == prefix.end())
         {
             _populate_aperio_svs_metadata(ifd_count, json_metadata, first_ifd);
         }
@@ -405,8 +419,8 @@ void TIFF::resolve_vendor_format()
     // Detect Philips TIFF
     {
         std::string_view prefix("Philips");
-        auto res = std::mismatch(prefix.begin(), prefix.end(), software.begin());
-        if (res.first == prefix.end())
+        if (software.size() >= prefix.size() &&
+            std::mismatch(prefix.begin(), prefix.end(), software.begin()).first == prefix.end())
         {
             _populate_philips_tiff_metadata(ifd_count, json_metadata, first_ifd);
         }
@@ -502,6 +516,12 @@ void TIFF::_populate_philips_tiff_metadata(uint16_t ifd_count, void* metadata, s
             pixel_spacings.emplace_back(std::pair{ spacing_x, spacing_y });
         }
 
+        if (pixel_spacings.empty())
+        {
+            fmt::print(stderr, "[Warning] Philips TIFF: no DICOM_PIXEL_SPACING entries found\n");
+            return;
+        }
+
         double spacing_x_l0 = pixel_spacings[0].first;
         double spacing_y_l0 = pixel_spacings[0].second;
 
@@ -521,13 +541,15 @@ void TIFF::_populate_philips_tiff_metadata(uint16_t ifd_count, void* metadata, s
                 buf_desc.ifd_index = index;
 
                 auto& image_desc = ifd->image_description();
-                if (std::mismatch(macro_prefix.begin(), macro_prefix.end(), image_desc.begin()).first ==
-                    macro_prefix.end())
+                if (image_desc.size() >= macro_prefix.size() &&
+                    std::mismatch(macro_prefix.begin(), macro_prefix.end(), image_desc.begin()).first ==
+                        macro_prefix.end())
                 {
                     associated_images_.emplace("macro", buf_desc);
                 }
-                else if (std::mismatch(label_prefix.begin(), label_prefix.end(), image_desc.begin()).first ==
-                         label_prefix.end())
+                else if (image_desc.size() >= label_prefix.size() &&
+                         std::mismatch(label_prefix.begin(), label_prefix.end(), image_desc.begin()).first ==
+                             label_prefix.end())
                 {
                     associated_images_.emplace("label", buf_desc);
                 }
@@ -537,13 +559,18 @@ void TIFF::_populate_philips_tiff_metadata(uint16_t ifd_count, void* metadata, s
                 --level_index;
                 continue;
             }
-            double downsample = std::round((pixel_spacings[spacing_index].first / spacing_x_l0 +
-                                            pixel_spacings[spacing_index].second / spacing_y_l0) /
-                                           2);
-            // Fix width and height of IFD
-            ifd->width_ = width_l0 / downsample;
-            ifd->height_ = height_l0 / downsample;
-            ++spacing_index;
+            if (spacing_index < pixel_spacings.size())
+            {
+                double downsample = std::round((pixel_spacings[spacing_index].first / spacing_x_l0 +
+                                                pixel_spacings[spacing_index].second / spacing_y_l0) /
+                                               2);
+                if (downsample > 0)
+                {
+                    ifd->width_ = width_l0 / downsample;
+                    ifd->height_ = height_l0 / downsample;
+                }
+                ++spacing_index;
+            }
         }
 
         constexpr int associated_image_type_count = 2;
@@ -572,27 +599,23 @@ void TIFF::_populate_philips_tiff_metadata(uint16_t ifd_count, void* metadata, s
                 {
                     auto node_offset = associated_node.node().offset_debug();
 
-                    if (node_offset >= 0)
+                    size_t image_desc_len = first_ifd->image_description().size();
+                    if (node_offset >= 0 && static_cast<size_t>(node_offset) < image_desc_len)
                     {
-                        // `image_desc_cstr[node_offset]` would point to the following text:
-                        //   Attribute Element="0x1004" Group="0x301D" Name="PIM_DP_IMAGE_DATA" PMSVR="IString">
-                        //     (base64-encoded JPEG image)
-                        //   </Attribute>
-                        //
+                        const char* data_ptr = image_desc_cstr + node_offset;
+                        const char* desc_end = image_desc_cstr + image_desc_len;
 
-                        // 34 is from `Attribute Name="PIM_DP_IMAGE_DATA"`
-                        char* data_ptr = const_cast<char*>(image_desc_cstr) + node_offset + 34;
-                        uint32_t data_len = 0;
-                        while (*data_ptr != '>' && *data_ptr != '\0')
+                        // Find '>' that closes the opening <Attribute ...> tag
+                        while (data_ptr < desc_end && *data_ptr != '>')
                         {
                             ++data_ptr;
                         }
-                        if (*data_ptr != '\0')
+                        uint32_t data_len = 0;
+                        if (data_ptr < desc_end && *data_ptr != '\0')
                         {
                             ++data_ptr; // start of base64-encoded data
-                            char* data_end_ptr = data_ptr;
-                            // Seek until it finds '<' for '</Attribute>'
-                            while (*data_end_ptr != '<' && *data_end_ptr != '\0')
+                            const char* data_end_ptr = data_ptr;
+                            while (data_end_ptr < desc_end && *data_end_ptr != '<' && *data_end_ptr != '\0')
                             {
                                 ++data_end_ptr;
                             }
@@ -794,7 +817,8 @@ bool TIFF::read_associated_image(const cucim::io::format::ImageMetadataDesc* met
             width = image_ifd->width_;
             height = image_ifd->height_;
             samples_per_pixel = image_ifd->samples_per_pixel_;
-            raster_size = width * height * samples_per_pixel;
+            raster_size = cucim::util::checked_raster_size(
+                static_cast<size_t>(width), static_cast<size_t>(height), static_cast<size_t>(samples_per_pixel));
 
             uint16_t compression_method = image_ifd->compression_;
 
@@ -821,12 +845,31 @@ bool TIFF::read_associated_image(const cucim::io::format::ImageMetadataDesc* met
             uint32_t strip_nbytes = row_nbytes * rows_per_strip;
             uint32_t start_row = 0;
 
+            struct stat assoc_file_stat;
+            uint64_t assoc_file_size = 0;
+            if (fstat(file_handle_->fd, &assoc_file_stat) == 0)
+            {
+                assoc_file_size = static_cast<uint64_t>(assoc_file_stat.st_size);
+            }
+
             std::vector<uint64_t>& image_piece_offsets = image_ifd->image_piece_offsets_;
             std::vector<uint64_t>& image_piece_bytecounts = image_ifd->image_piece_bytecounts_;
             for (int64_t piece_index = 0; piece_index < piece_count; ++piece_index)
             {
                 uint64_t offset = image_piece_offsets[piece_index];
                 uint64_t size = image_piece_bytecounts[piece_index];
+
+                if (assoc_file_size > 0 && size > 0)
+                {
+                    uint64_t data_end;
+                    if (__builtin_add_overflow(offset, size, &data_end) || data_end > assoc_file_size)
+                    {
+                        cucim_free(raster);
+                        throw std::runtime_error(fmt::format(
+                            "Associated image strip {} data range [{}, +{}) exceeds file size {}",
+                            piece_index, offset, size, assoc_file_size));
+                    }
+                }
 
                 // If the piece is the last piece, adjust strip_nbytes
                 if (start_row + rows_per_strip >= height)
@@ -894,7 +937,8 @@ bool TIFF::read_associated_image(const cucim::io::format::ImageMetadataDesc* met
             width = image_width;
             height = image_height;
             samples_per_pixel = 3; // NOTE: assumes RGB image
-            raster_size = image_width * image_height * samples_per_pixel;
+            raster_size = cucim::util::checked_raster_size(
+                static_cast<size_t>(image_width), static_cast<size_t>(image_height), static_cast<size_t>(samples_per_pixel));
 
             raster = static_cast<uint8_t*>(cucim_malloc(raster_size)); // RGB image
 

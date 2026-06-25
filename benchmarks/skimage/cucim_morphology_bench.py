@@ -1,10 +1,12 @@
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 import argparse
 import copy
 import functools
 import math
 import operator
 import os
-import pickle
 
 import cupy as cp
 import numpy as np
@@ -14,9 +16,14 @@ import skimage
 import skimage.data
 import skimage.morphology
 from _image_bench import ImageBench
+from packaging.version import Version
 
 import cucim.skimage
 import cucim.skimage.morphology
+
+# scikit-image >= 0.26 renamed min_size -> max_size in remove_small_objects
+# and area_threshold -> max_size in remove_small_holes
+_skimage_has_max_size = Version(skimage.__version__) >= Version("0.26")
 
 
 class BinaryMorphologyBench(ImageBench):
@@ -105,24 +112,34 @@ class RemoveSmallObjectsBench(ImageBench):
 
     def set_args(self, dtype):
         a = self._init_test_data(dtype)
-        self.args_cpu = (cp.asnumpy(a), 6)
-        self.args_gpu = (a, 6)
+        self.args_cpu = (cp.asnumpy(a),)
+        self.args_gpu = (a,)
+        # scikit-image < 0.26 uses min_size, >= 0.26 uses max_size
+        if _skimage_has_max_size:
+            self.fixed_kwargs_cpu["max_size"] = 6
+        else:
+            self.fixed_kwargs_cpu["min_size"] = 6
+        self.fixed_kwargs_gpu["max_size"] = 6
 
 
 class RemoveSmallHolesBench(RemoveSmallObjectsBench):
     def set_args(self, dtype):
         a = ~self._init_test_data(dtype)
-        self.args_cpu = (cp.asnumpy(a), 5)
-        self.args_gpu = (a, 5)
+        self.args_cpu = (cp.asnumpy(a),)
+        self.args_gpu = (a,)
+        if _skimage_has_max_size:
+            self.fixed_kwargs_cpu["max_size"] = 5
+        else:
+            self.fixed_kwargs_cpu["area_threshold"] = 5
+        self.fixed_kwargs_gpu["max_size"] = 5
 
 
 def main(args):
-    pfile = "cucim_morphology_results.pickle"
-    if os.path.exists(pfile):
-        with open(pfile, "rb") as f:
-            all_results = pickle.load(f)
-    else:
+    cfile = "cucim_morphology_results.csv"
+    if getattr(args, "no_resume", False) or not os.path.exists(cfile):
         all_results = pd.DataFrame()
+    else:
+        all_results = pd.read_csv(cfile, index_col=0)
 
     dtypes = [np.dtype(args.dtype)]
     # image sizes/shapes
@@ -160,6 +177,37 @@ def main(args):
         ("thin", dict(), dict(), False, True),
         # grayreconstruct.py
         ("reconstruction", dict(), dict(), False, True),
+        # extrema.py
+        (
+            "local_maxima",
+            dict(),
+            dict(connectivity=list(range(1, len(shape) + 1))),
+            False,
+            True,
+        ),
+        (
+            "local_minima",
+            dict(),
+            dict(connectivity=list(range(1, len(shape) + 1))),
+            False,
+            True,
+        ),
+        # h values scaled to image range: integers use camera (0-255),
+        # floats use camera/255 (0-1)
+        (
+            "h_maxima",
+            dict(),
+            dict(h=[10, 40] if np.issubdtype(dtypes[0], np.integer) else [0.04, 0.16]),
+            False,
+            True,
+        ),
+        (
+            "h_minima",
+            dict(),
+            dict(h=[10, 40] if np.issubdtype(dtypes[0], np.integer) else [0.04, 0.16]),
+            False,
+            True,
+        ),
         # footprints.py
         # OMIT the functions from this file (each creates a structuring element)
     ]:
@@ -276,9 +324,8 @@ def main(args):
         results = B.run_benchmark(duration=args.duration)
         all_results = pd.concat([all_results, results["full"]])
 
-    fbase = os.path.splitext(pfile)[0]
-    all_results.to_csv(fbase + ".csv")
-    all_results.to_pickle(pfile)
+    fbase = os.path.splitext(cfile)[0]
+    all_results.to_csv(cfile, index=True)
     try:
         import tabular  # noqa: F401
 
@@ -298,7 +345,8 @@ if __name__ == "__main__":
         'binary_closing', 'isotropic_erosion', 'isotropic_dilation',
         'isotropic_opening', 'isotropic_closing','remove_small_objects',
         'remove_small_holes', 'erosion', 'dilation', 'opening', 'closing',
-        'white_tophat', 'black_tophat', 'thin', 'medial_axis', 'reconstruction'
+        'white_tophat', 'black_tophat', 'thin', 'medial_axis', 'reconstruction',
+        'local_maxima', 'local_minima', 'h_maxima', 'h_minima',
     ]
     # fmt: on
     dtype_choices = [
@@ -319,8 +367,7 @@ if __name__ == "__main__":
         "--img_size",
         type=str,
         help=(
-            "Size of input image (omit color channel, it will be appended "
-            "as needed)"
+            "Size of input image (omit color channel, it will be appended as needed)"
         ),
         required=True,
     )
@@ -351,6 +398,12 @@ if __name__ == "__main__":
         "--no_cpu",
         action="store_true",
         help="disable cpu measurements",
+        default=False,
+    )
+    parser.add_argument(
+        "--no_resume",
+        action="store_true",
+        help="do not load existing results CSV; save only this run's results (overwrite)",
         default=False,
     )
 

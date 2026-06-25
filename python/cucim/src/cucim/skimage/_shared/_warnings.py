@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2009-2022 the scikit-image team
+# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
+
 import functools
 import os
 import re
@@ -109,8 +113,7 @@ def expected_warnings(matching):
     """
     if isinstance(matching, str):
         raise ValueError(
-            "``matching`` should be a list of strings and not "
-            "a string itself."
+            "``matching`` should be a list of strings and not a string itself."
         )
 
     # Special case for disabling the context manager

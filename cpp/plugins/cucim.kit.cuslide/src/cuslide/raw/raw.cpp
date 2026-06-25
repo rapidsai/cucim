@@ -1,18 +1,6 @@
 /*
- * Apache License, Version 2.0
- * Copyright 2021 NVIDIA Corporation
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 /**
@@ -26,6 +14,7 @@
 #include <stdexcept>
 #include <unistd.h>
 
+#include <fmt/format.h>
 #include <cucim/memory/memory_manager.h>
 #include <cucim/profiler/nvtx3.h>
 
@@ -64,15 +53,28 @@ bool decode_raw(int fd,
             throw std::runtime_error("Unable to allocate buffer for raw data!");
         }
 
-        if (pread(fd, raw_buf, size, offset) < 1)
+        ssize_t bytes_read = pread(fd, raw_buf, size, offset);
+        if (bytes_read < 0 || static_cast<uint64_t>(bytes_read) != size)
         {
-            throw std::runtime_error("Unable to read file for raw data!");
+            cucim_free(raw_buf);
+            throw std::runtime_error(
+                fmt::format("Short read for raw data: expected {} bytes, got {}", size, bytes_read));
         }
     }
     else
     {
         fd = -1;
         raw_buf += offset;
+    }
+
+    if (size < dest_nbytes)
+    {
+        if (fd != -1)
+        {
+            cucim_free(raw_buf);
+        }
+        throw std::runtime_error(
+            fmt::format("Raw tile data size ({}) is smaller than expected destination buffer ({})", size, dest_nbytes));
     }
 
     memcpy(*dest, raw_buf, dest_nbytes);

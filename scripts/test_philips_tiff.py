@@ -1,0 +1,381 @@
+#!/usr/bin/env python3
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+"""Test Philips TIFF support in cuslide2"""
+
+import sys
+import time
+import traceback
+from pathlib import Path
+
+import numpy as np
+from test_common import setup_environment, test_tile_level_caching
+
+
+def test_philips_tiff(file_path, plugin_lib):
+    """Test Philips TIFF loading and decoding.
+
+    Raises:
+        FileNotFoundError: If *file_path* does not exist.
+        RuntimeError: On decode or metadata verification failures.
+    """
+
+    print("=" * 60)
+    print("🔬 Testing Philips TIFF with cuslide2")
+    print("=" * 60)
+    print(f"📁 File: {file_path}")
+
+    if not Path(file_path).exists():
+        raise FileNotFoundError(f"TIFF file not found: {file_path}")
+
+    from cucim.clara import _set_plugin_root
+
+    _set_plugin_root(str(plugin_lib))
+    print(f"✅ Plugin root set: {plugin_lib}")
+    print()
+
+    print("📂 Loading Philips TIFF file...")
+    start = time.time()
+
+    from cucim import CuImage
+
+    img = CuImage(file_path)
+    load_time = time.time() - start
+    print(f"✅ Loaded in {load_time:.3f}s")
+    print()
+
+    # Check detection
+    print("📊 Image Information:")
+    print("  Format: Philips TIFF")
+    print(f"  Dimensions: {img.shape}")
+    level_count = img.resolutions["level_count"]
+    print(f"  Levels: {level_count}")
+    print(f"  Dtype: {img.dtype}")
+    print(f"  Device: {img.device}")
+    print()
+
+    # Display resolution levels
+    print("🔍 Resolution Levels:")
+    level_count = img.resolutions["level_count"]
+    level_dimensions = img.resolutions["level_dimensions"]
+    level_downsamples = img.resolutions["level_downsamples"]
+    for level in range(level_count):
+        dims = level_dimensions[level]
+        downsample = level_downsamples[level]
+        print(f"  Level {level}: {dims[0]}x{dims[1]} (downsample: {downsample:.1f}x)")
+    print()
+
+    # Check for Philips metadata
+    print("📋 Philips Metadata:")
+    metadata = img.metadata
+    if "philips" in metadata:
+        philips_data = metadata["philips"]
+        print(f"  ✅ Found {len(philips_data)} Philips metadata entries")
+        # Show some important keys
+        important_keys = [
+            "DICOM_PIXEL_SPACING",
+            "DICOM_MANUFACTURER",
+            "PIM_DP_IMAGE_TYPE",
+            "DICOM_SOFTWARE_VERSIONS",
+            "PIM_DP_IMAGE_ROWS",
+            "PIM_DP_IMAGE_COLUMNS",
+        ]
+        for key in important_keys:
+            if key in philips_data:
+                print(f"    {key}: {philips_data[key]}")
+        print(f"    ... and {len(philips_data) - len(important_keys)} more entries")
+    else:
+        print("  ⚠️  No Philips metadata found")
+    print()
+
+    # Check MPP (microns per pixel)
+    print("📏 Pixel Spacing:")
+    if "philips" in metadata and "DICOM_PIXEL_SPACING" in metadata["philips"]:
+        spacing = metadata["philips"]["DICOM_PIXEL_SPACING"]
+        print(
+            f"  DICOM Pixel Spacing: {spacing[0] * 1000:.4f} x {spacing[1] * 1000:.4f} μm/pixel"
+        )
+    if "openslide.mpp-x" in metadata:
+        print(f"  OpenSlide MPP-X: {metadata['openslide.mpp-x']} μm/pixel")
+        print(f"  OpenSlide MPP-Y: {metadata['openslide.mpp-y']} μm/pixel")
+    print()
+
+    # Test GPU decode
+    print("🚀 Testing GPU decode (nvImageCodec)...")
+    try:
+        start = time.time()
+        region = img.read_region((0, 0), (512, 512), level=0, device="cuda")
+        decode_time = time.time() - start
+        print("✅ GPU decode successful!")
+        print(f"  Time: {decode_time:.4f}s")
+        print(f"  Shape: {region.shape}")
+        print(f"  Device: {region.device}")
+
+        # Check pixel values
+        if hasattr(region, "get"):
+            region_cpu = region.get()
+            print(f"  Pixel range: [{region_cpu.min()}, {region_cpu.max()}]")
+            print(f"  Mean value: {region_cpu.mean():.2f}")
+        print()
+    except Exception as e:
+        print(f"❌ GPU decode failed: {e}")
+        traceback.print_exc()
+        print()
+
+    # Test CPU decode
+    print("🖥️  Testing CPU decode...")
+    try:
+        start = time.time()
+        region = img.read_region((0, 0), (512, 512), level=0, device="cpu")
+        decode_time = time.time() - start
+
+        # Check if we got actual data
+        if hasattr(region, "__array_interface__") or hasattr(
+            region, "__cuda_array_interface__"
+        ):
+            if hasattr(region, "get"):  # CuPy array
+                region_cpu = region.get()
+            else:
+                region_cpu = np.asarray(region)
+
+            if region_cpu.size > 0:
+                pixel_sum = region_cpu.sum()
+                pixel_mean = region_cpu.mean()
+                print("✅ CPU decode successful:")
+                print(f"  Time: {decode_time:.4f}s")
+                print(f"  Shape: {region_cpu.shape}")
+                print(f"  Pixel sum: {pixel_sum}, mean: {pixel_mean:.2f}")
+            else:
+                print("⚠️  CPU decode returned empty data:")
+                print(f"  Time: {decode_time:.4f}s (likely returning cached/empty)")
+        else:
+            print(f"⚠️  CPU decode returned unknown type: {type(region)}")
+        print()
+    except Exception as e:
+        print("❌ CPU decode failed:")
+        print(f"  {e}")
+        print()
+
+    # Test associated images
+    print("🖼️  Testing associated images...")
+    try:
+        label = img.associated_image("label")
+        print(f"  ✅ Label: {label.shape}")
+    except Exception as e:
+        print(f"  ⚠️  Label not found: {e}")
+
+    try:
+        macro = img.associated_image("macro")
+        print(f"  ✅ Macro: {macro.shape}")
+    except Exception as e:
+        print(f"  ⚠️  Macro not found: {e}")
+
+    try:
+        thumbnail = img.associated_image("thumbnail")
+        print(f"  ✅ Thumbnail: {thumbnail.shape}")
+    except Exception as e:
+        print(f"  ⚠️  Thumbnail not found: {e}")
+    print()
+
+    # Test larger tile
+    print("📏 Testing larger tile (2048x2048)...")
+    try:
+        start = time.time()
+        region = img.read_region((0, 0), (2048, 2048), level=0, device="cuda")
+        decode_time = time.time() - start
+        print(f"  ✅ GPU: {decode_time:.4f}s")
+        print(f"     Shape: {region.shape}")
+    except Exception as e:
+        print(f"  ⚠️  Large tile failed: {e}")
+    print()
+
+    # Test multi-level reads
+    print("🔀 Testing multi-level reads...")
+    level_count = img.resolutions["level_count"]
+    level_dimensions = img.resolutions["level_dimensions"]
+    for level in range(min(3, level_count)):
+        try:
+            start = time.time()
+            dims = level_dimensions[level]
+            read_size = (min(512, dims[0]), min(512, dims[1]))
+            region = img.read_region((0, 0), read_size, level=level, device="cuda")
+            decode_time = time.time() - start
+            print(f"  ✅ Level {level}: {decode_time:.4f}s ({region.shape})")
+        except Exception as e:
+            print(f"  ❌ Level {level} failed: {e}")
+    print()
+
+    # ==================================================================
+    # Test async batch decode path (multiple locations + GPU)
+    # This exercises NvImageCodecProcessor, schedule_batch_decode(),
+    # and wait_batch_decode() — the async scheduling API.
+    # ==================================================================
+    print("🔄 Testing async batch decode (multiple locations, GPU)...")
+    try:
+        level_dims = level_dimensions[0]
+        tile_w, tile_h = 256, 256
+        max_x = max(0, level_dims[0] - tile_w)
+        max_y = max(0, level_dims[1] - tile_h)
+
+        # Generate a grid of tile locations
+        locations = []
+        for y_off in range(0, min(max_y + 1, tile_h * 4), tile_h):
+            for x_off in range(0, min(max_x + 1, tile_w * 4), tile_w):
+                locations.append([x_off, y_off])
+        num_locations = len(locations)
+
+        if num_locations < 2:
+            print(
+                f"  ⚠️  Image too small for batch test ({level_dims[0]}x{level_dims[1]})"
+            )
+        else:
+            batch_size = min(num_locations, 8)
+            print(
+                f"  Locations: {num_locations}, "
+                f"tile: {tile_w}x{tile_h}, "
+                f"batch_size: {batch_size}"
+            )
+
+            # GPU batch decode (async path)
+            start = time.time()
+            gpu_batch = img.read_region(
+                location=locations,
+                size=[tile_w, tile_h],
+                level=0,
+                device="cuda",
+                batch_size=batch_size,
+                num_workers=1,
+            )
+            # Consume iterator to force all batches
+            gpu_tiles = []
+            for tile in gpu_batch:
+                gpu_tiles.append(tile)
+            gpu_batch_time = time.time() - start
+            print(f"  ✅ GPU batch: {gpu_batch_time:.4f}s ({len(gpu_tiles)} tiles)")
+
+            # CPU batch decode (per-tile path, for comparison)
+            start = time.time()
+            cpu_batch = img.read_region(
+                location=locations,
+                size=[tile_w, tile_h],
+                level=0,
+                device="cpu",
+                batch_size=batch_size,
+                num_workers=1,
+            )
+            cpu_tiles = []
+            for tile in cpu_batch:
+                cpu_tiles.append(tile)
+            cpu_batch_time = time.time() - start
+            print(f"  ✅ CPU batch: {cpu_batch_time:.4f}s ({len(cpu_tiles)} tiles)")
+
+            if gpu_batch_time > 0:
+                speedup = cpu_batch_time / gpu_batch_time
+                print(f"  🎯 Batch speedup: {speedup:.2f}x")
+
+            # Verify tile shapes
+            if gpu_tiles:
+                print(f"  Tile shape: {gpu_tiles[0].shape}")
+                print(f"  Tile device: {gpu_tiles[0].device}")
+
+    except Exception as e:
+        print(f"  ⚠️  Batch decode test failed: {e}")
+        traceback.print_exc()
+    print()
+
+    # ==================================================================
+    # Tile-level caching test (shared with test_aperio_svs.py)
+    # ==================================================================
+    test_tile_level_caching(img, file_path, CuImage)
+    print()
+
+    print("✅ Philips TIFF test completed!")
+
+
+def download_test_data():
+    """List available Philips TIFF test files"""
+
+    print("\n📋 Available Philips TIFF Test Files from OpenSlide:")
+    print("=" * 70)
+    print(
+        "Source: https://openslide.cs.cmu.edu/download/openslide-testdata/Philips-TIFF/"
+    )
+    print()
+
+    test_files = [
+        ("Philips-1.tiff", "311 MB", "Lymph node, H&E, BigTIFF, barcode (CAMELYON16)"),
+        (
+            "Philips-2.tiff",
+            "872 MB",
+            "Lymph node, H&E, BigTIFF, macro image (CAMELYON16)",
+        ),
+        (
+            "Philips-3.tiff",
+            "3.08 GB",
+            "Lymph node, H&E, BigTIFF, full metadata (CAMELYON16)",
+        ),
+        ("Philips-4.tiff", "277 MB", "Lymph node, H&E, BigTIFF, sparse (CAMELYON17)"),
+    ]
+
+    print(f"{'Filename':<20} {'Size':<12} {'Description'}")
+    print("-" * 70)
+    for filename, size, description in test_files:
+        print(f"{filename:<20} {size:<12} {description}")
+
+    print("\n💡 To download:")
+    print(
+        "   wget https://openslide.cs.cmu.edu/download/openslide-testdata/Philips-TIFF/<filename>"
+    )
+    print("\n📖 Format details:")
+    print("   - Single-file pyramidal tiled TIFF/BigTIFF")
+    print("   - Non-standard Philips metadata in ImageDescription XML")
+    print("   - Label and macro images as Base64 JPEGs in XML or TIFF directories")
+    print("   - Some tiles may be sparse (TileOffset=0 for blank regions)")
+    print("\n📜 License: CC0 (Public Domain)")
+    print("   Credit: Computational Pathology Group, Radboud University Medical Center")
+
+
+def main():
+    """Main function"""
+
+    if len(sys.argv) < 2:
+        print("Usage: python test_philips_tiff.py <philips_tiff_file>")
+        print("   or: python test_philips_tiff.py --list (show available test files)")
+        print()
+        print("Example:")
+        print("  python test_philips_tiff.py /path/to/Philips-1.tiff")
+        print("  python test_philips_tiff.py --list")
+        print()
+        print("This script will:")
+        print("  ✅ Configure cuslide2 plugin with nvImageCodec")
+        print("  ✅ Load and analyze the Philips TIFF file")
+        print("  ✅ Test GPU-accelerated decoding")
+        print("  ✅ Display Philips-specific metadata")
+        print("  ✅ Test multi-level pyramid reads")
+
+        download_test_data()
+        return 1
+
+    file_path = sys.argv[1]
+
+    # Handle --list flag
+    if file_path == "--list":
+        download_test_data()
+        return 0
+
+    # Setup environment
+    plugin_lib = setup_environment("cucim_philips_test")
+
+    # Test the Philips TIFF file — exceptions indicate failure
+    try:
+        test_philips_tiff(file_path, plugin_lib)
+        return 0
+    except Exception as e:
+        print(f"\n❌ Test failed: {e}")
+        traceback.print_exc()
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

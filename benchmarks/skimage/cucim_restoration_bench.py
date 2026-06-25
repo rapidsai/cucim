@@ -1,7 +1,9 @@
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 import argparse
 import math
 import os
-import pickle
 
 import cupy as cp
 import cupyx.scipy.ndimage as ndi
@@ -99,12 +101,11 @@ class DeconvolutionBench(ImageBench):
 
 
 def main(args):
-    pfile = "cucim_restoration_results.pickle"
-    if os.path.exists(pfile):
-        with open(pfile, "rb") as f:
-            all_results = pickle.load(f)
-    else:
+    cfile = "cucim_restoration_results.csv"
+    if getattr(args, "no_resume", False) or not os.path.exists(cfile):
         all_results = pd.DataFrame()
+    else:
+        all_results = pd.read_csv(cfile, index_col=0)
 
     dtypes = [np.dtype(args.dtype)]
     # image sizes/shapes
@@ -120,6 +121,15 @@ def main(args):
         ("wiener", dict(balance=100.0), dict(), False, False),
         ("unsupervised_wiener", dict(), dict(), False, False),
         ("richardson_lucy", dict(), dict(num_iter=[5]), False, True),
+        (
+            "rolling_ball",
+            dict(nansafe=False),
+            dict(
+                # radius=[5, 10, 20, 40],  # appropriate radius range set below
+            ),
+            False,  # could support color with some modification to the benchmark
+            True,
+        ),
     ]:
         if function_name != args.func_name:
             continue
@@ -154,8 +164,6 @@ def main(args):
                 module_gpu=cucim.skimage.restoration,
                 run_cpu=run_cpu,
             )
-            results = B.run_benchmark(duration=args.duration)
-            all_results = pd.concat([all_results, results["full"]])
 
         elif function_name in [
             "wiener",
@@ -172,12 +180,44 @@ def main(args):
                 module_gpu=cucim.skimage.restoration,
                 run_cpu=run_cpu,
             )
-            results = B.run_benchmark(duration=args.duration)
-            all_results = pd.concat([all_results, results["full"]])
+        elif function_name == "rolling_ball":
+            if ndim > 2:
+                if run_cpu:
+                    radius = [4, 8]
+                else:
+                    radius = [4, 8]
+                    if min(shape) > 16:
+                        radius += [16]
+                    if min(shape) > 32:
+                        radius += [32]
+                    if min(shape) > 64:
+                        radius += [64]
+            elif ndim == 2:
+                if run_cpu:
+                    radius = [5, 10, 20, 40]
+                else:
+                    radius = [5, 10, 20, 40, 80, 160]
+            var_kwargs["radius"] = radius
 
-    fbase = os.path.splitext(pfile)[0]
-    all_results.to_csv(fbase + ".csv")
-    all_results.to_pickle(pfile)
+            if shape[-1] == 3 and not allow_color:
+                continue
+
+            B = ImageBench(
+                function_name=function_name,
+                shape=shape,
+                dtypes=dtypes,
+                fixed_kwargs=fixed_kwargs,
+                var_kwargs=var_kwargs,
+                module_cpu=skimage.restoration,
+                module_gpu=cucim.skimage.restoration,
+                run_cpu=run_cpu,
+            )
+
+        results = B.run_benchmark(duration=args.duration)
+        all_results = pd.concat([all_results, results["full"]])
+
+    fbase = os.path.splitext(cfile)[0]
+    all_results.to_csv(cfile, index=True)
     try:
         import tabular  # noqa: F401
 
@@ -197,6 +237,7 @@ if __name__ == "__main__":
         "wiener",
         "unsupervised_wiener",
         "richardson_lucy",
+        "rolling_ball",
     ]
     dtype_choices = [
         "float16",
@@ -216,8 +257,7 @@ if __name__ == "__main__":
         "--img_size",
         type=str,
         help=(
-            "Size of input image (omit color channel, it will be appended "
-            "as needed)"
+            "Size of input image (omit color channel, it will be appended as needed)"
         ),
         required=True,
     )
@@ -248,6 +288,12 @@ if __name__ == "__main__":
         "--no_cpu",
         action="store_true",
         help="disable cpu measurements",
+        default=False,
+    )
+    parser.add_argument(
+        "--no_resume",
+        action="store_true",
+        help="do not load existing results CSV; save only this run's results (overwrite)",
         default=False,
     )
 

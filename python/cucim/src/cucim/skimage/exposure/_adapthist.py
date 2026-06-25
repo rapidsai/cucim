@@ -1,3 +1,8 @@
+# SPDX-FileCopyrightText: 1994 Karel Zuiderveld
+# SPDX-FileCopyrightText: 2009-2022 the scikit-image team
+# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-License-Identifier: Apach-2.0 AND BSD-3-Clause
+
 """
 Adapted code from "Contrast Limited Adaptive Histogram Equalization" by Karel
 Zuiderveld <karel@cv.ruu.nl>, Graphics Gems IV, Academic Press, 1994.
@@ -6,6 +11,7 @@ http://tog.acm.org/resources/GraphicsGems/
 
 Relicensed with permission of the author under the Modified BSD license.
 """
+
 import functools
 import itertools
 import math
