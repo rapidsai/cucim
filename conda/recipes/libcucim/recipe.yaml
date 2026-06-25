@@ -103,13 +103,6 @@ requirements:
     - nvtx-c >=3.1.0
     - openslide
   run:
-    {% if cuda_major == "12" %}
-    - {{ pin_compatible('cuda-version', lower_bound='12.2', upper_bound='13.0a0') }}
-    {% else %}
-    - {{ pin_compatible('cuda-version', max_pin='x', min_pin='x') }}
-    {% endif %}
-
-
     - cuda-cudart
     - libcufile
     - libnvjpeg
