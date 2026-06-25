@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2022-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 import os
@@ -92,7 +92,7 @@ def _decode(data, tile_shape, truncation_slices):
     """
     if not hasattr(data, "__cuda_array_interface__"):
         data = np.frombuffer(data, np.uint8)
-    data.shape = tile_shape
+    data = data.reshape(tile_shape)
     # truncate any tiles that extend past the image boundary
     if truncation_slices:
         data = data[truncation_slices]
