@@ -28,8 +28,6 @@ sccache --start-server
 # ref: https://github.com/rapidsai/cucim/issues/800#issuecomment-2529593457
 conda config --set path_conflict warn
 
-CPP_CHANNEL=$(rapids-download-from-github "$(rapids-artifact-name conda_cpp libcucim cucim --cuda "$RAPIDS_CUDA_VERSION")")
-
 rapids-logger "Building cucim"
 
 # TODO: remove `--test skip` when importing on a CPU node works correctly
