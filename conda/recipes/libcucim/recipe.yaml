@@ -98,7 +98,7 @@ requirements:
     - cuda-cudart-dev
     - cuda-version =${{ cuda_version }}
     - libcufile-dev
-    - libnvimgcodec-dev =${{ nvimgcodec_version }}  # nvImageCodec development headers and libraries
+    - libnvimgcodec-dev ${{ nvimgcodec_version }}  # nvImageCodec development headers and libraries
     - libnvjpeg-dev
     - nvtx-c >=3.1.0
     - openslide
@@ -106,7 +106,7 @@ requirements:
     - cuda-cudart
     - libcufile
     - libnvjpeg
-    - libnvimgcodec =${{ nvimgcodec_version }}   # nvImageCodec metapackage (includes libnvimgcodec0 + run_exports)
+    - libnvimgcodec ${{ nvimgcodec_version }}   # nvImageCodec metapackage (includes libnvimgcodec0 + run_exports)
     - if: cuda_version >= "13.0"
       then:
         - ${{ pin_compatible("cuda-version", upper_bound="x", lower_bound="x") }}
@@ -114,7 +114,7 @@ requirements:
         - ${{ pin_compatible("cuda-version", lower_bound="12.2", upper_bound="13.0a0") }}
   run_constraints:
     - ${{ pin_compatible("openslide") }}
-    - libnvimgcodec-dev =${{ nvimgcodec_version }}  # Optional: for development/debugging
+    - libnvimgcodec-dev ${{ nvimgcodec_version }}  # Optional: for development/debugging
   ignore_run_exports:
     by_name:
       - cuda-cudart
