@@ -148,6 +148,10 @@ filterwarnings = [
     "error::DeprecationWarning",
     # https://github.com/cupy/cupy/blob/main/cupy/testing/_helper.py#L56
     "ignore:pkg_resources is deprecated as an API:DeprecationWarning",
+    # https://github.com/cupy/cupy/blob/v14.1.1/cupy/_padding/pad.py#L408
+    "ignore:Setting the shape on a NumPy array:DeprecationWarning:cupy",
+    # https://github.com/scikit-image/scikit-image/blob/v0.26.0/skimage/measure/_marching_cubes_lewiner.py#L237
+    "ignore:Setting the shape on a NumPy array:DeprecationWarning:skimage",
 ]
 
 [tool.ruff]
