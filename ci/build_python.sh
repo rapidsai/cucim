@@ -12,10 +12,9 @@ export CMAKE_GENERATOR=Ninja
 
 rapids-print-env
 
-rapids-generate-version > ./VERSION
-
-RAPIDS_PACKAGE_VERSION=$(rapids-generate-version)
+RAPIDS_PACKAGE_VERSION="$(rapids-generate-version)"
 export RAPIDS_PACKAGE_VERSION
+echo "${RAPIDS_PACKAGE_VERSION}" > ./VERSION
 
 rapids-logger "Begin py build"
 
