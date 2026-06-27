@@ -22,6 +22,10 @@ export SCCACHE_S3_USE_PREPROCESSOR_CACHE_MODE="true"
 
 sccache --start-server
 
+# this can be set back to 'prevent' once the xorg-* migrations are completed
+# ref: https://github.com/rapidsai/cucim/issues/800#issuecomment-2529593457
+conda config --set path_conflict warn
+
 RAPIDS_PACKAGE_VERSION=$(rapids-generate-version)
 export RAPIDS_PACKAGE_VERSION
 echo "${RAPIDS_PACKAGE_VERSION}" > ./VERSION
