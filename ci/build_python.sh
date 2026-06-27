@@ -25,6 +25,14 @@ export SCCACHE_S3_KEY_PREFIX="cucim/${RAPIDS_CONDA_ARCH}/cuda${RAPIDS_CUDA_VERSI
 export SCCACHE_S3_PREPROCESSOR_CACHE_KEY_PREFIX="cucim/${RAPIDS_CONDA_ARCH}/cuda${RAPIDS_CUDA_VERSION%%.*}/preprocessor-cache"
 export SCCACHE_S3_USE_PREPROCESSOR_CACHE_MODE="true"
 
+# populates `RATTLER_CHANNELS` array and `RATTLER_ARGS` array
+source rapids-rattler-channel-string
+
+# Add C++ cached packages to rattler-build's channels
+CPP_CHANNEL=$(rapids-download-from-github "$(rapids-artifact-name conda_cpp libcucim cucim --cuda "$RAPIDS_CUDA_VERSION")")
+rapids-logger "Prepending channel ${CPP_CHANNEL} to RATTLER_CHANNELS"
+RATTLER_CHANNELS=("--channel" "${CPP_CHANNEL}" "${RATTLER_CHANNELS[@]}")
+
 sccache --start-server
 
 # this can be set back to 'prevent' once the xorg-* migrations are completed
