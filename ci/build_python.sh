@@ -4,8 +4,6 @@
 
 set -euo pipefail
 
-./ci/rapids-configure-conda-channels
-
 source rapids-configure-sccache
 
 source rapids-date-string
@@ -14,7 +12,9 @@ export CMAKE_GENERATOR=Ninja
 
 rapids-print-env
 
-rapids-generate-version > ./VERSION
+RAPIDS_PACKAGE_VERSION="$(rapids-generate-version)"
+export RAPIDS_PACKAGE_VERSION
+echo "${RAPIDS_PACKAGE_VERSION}" > ./VERSION
 
 rapids-logger "Begin py build"
 
@@ -30,14 +30,25 @@ sccache --start-server
 # ref: https://github.com/rapidsai/cucim/issues/800#issuecomment-2529593457
 conda config --set path_conflict warn
 
-CPP_CHANNEL=$(rapids-download-from-github "$(rapids-artifact-name conda_cpp libcucim cucim --cuda "$RAPIDS_CUDA_VERSION")")
+# populates `RATTLER_CHANNELS` array and `RATTLER_ARGS` array
+source rapids-rattler-channel-string
 
-# TODO: Remove `--no-test` flag once importing on a CPU
-# node works correctly
-RAPIDS_PACKAGE_VERSION=$(head -1 ./VERSION) rapids-conda-retry build \
-  --no-test \
-  --channel "${CPP_CHANNEL}" \
-  conda/recipes/cucim
+# Add C++ cached packages to rattler-build's channels
+CPP_CHANNEL=$(rapids-download-from-github "$(rapids-artifact-name conda_cpp libcucim cucim --cuda "$RAPIDS_CUDA_VERSION")")
+rapids-logger "Prepending channel ${CPP_CHANNEL} to RATTLER_CHANNELS"
+RATTLER_CHANNELS=("--channel" "${CPP_CHANNEL}" "${RATTLER_CHANNELS[@]}")
+
+rapids-logger "Building cucim"
+
+# TODO: remove `--test skip` when importing on a CPU node works correctly
+# --no-build-id allows for caching with `sccache`
+# more info is available at
+# https://rattler.build/latest/tips_and_tricks/#using-sccache-or-ccache-with-rattler-build
+rattler-build build --recipe conda/recipes/cucim \
+                    --experimental \
+                    --test skip \
+                    "${RATTLER_ARGS[@]}" \
+                    "${RATTLER_CHANNELS[@]}"
 
 sccache --show-adv-stats
 
