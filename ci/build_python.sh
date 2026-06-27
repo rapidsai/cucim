@@ -14,6 +14,9 @@ rapids-print-env
 
 rapids-generate-version > ./VERSION
 
+RAPIDS_PACKAGE_VERSION=$(rapids-generate-version)
+export RAPIDS_PACKAGE_VERSION
+
 rapids-logger "Begin py build"
 
 sccache --stop-server 2>/dev/null || true
