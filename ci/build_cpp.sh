@@ -14,7 +14,13 @@ rapids-print-env
 
 rapids-logger "Begin cpp build"
 
-sccache --zero-stats
+sccache --stop-server 2>/dev/null || true
+
+export SCCACHE_S3_KEY_PREFIX="libcucim/${RAPIDS_CONDA_ARCH}/cuda${RAPIDS_CUDA_VERSION%%.*}/object-cache"
+export SCCACHE_S3_PREPROCESSOR_CACHE_KEY_PREFIX="libcucim/${RAPIDS_CONDA_ARCH}/cuda${RAPIDS_CUDA_VERSION%%.*}/preprocessor-cache"
+export SCCACHE_S3_USE_PREPROCESSOR_CACHE_MODE="true"
+
+sccache --start-server
 
 RAPIDS_PACKAGE_VERSION=$(rapids-generate-version)
 export RAPIDS_PACKAGE_VERSION
