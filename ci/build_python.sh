@@ -26,6 +26,10 @@ export SCCACHE_S3_USE_PREPROCESSOR_CACHE_MODE="true"
 
 sccache --start-server
 
+# this can be set back to 'prevent' once the xorg-* migrations are completed
+# ref: https://github.com/rapidsai/cucim/issues/800#issuecomment-2529593457
+conda config --set path_conflict warn
+
 # populates `RATTLER_CHANNELS` array and `RATTLER_ARGS` array
 source rapids-rattler-channel-string
 
@@ -33,10 +37,6 @@ source rapids-rattler-channel-string
 CPP_CHANNEL=$(rapids-download-from-github "$(rapids-artifact-name conda_cpp libcucim cucim --cuda "$RAPIDS_CUDA_VERSION")")
 rapids-logger "Prepending channel ${CPP_CHANNEL} to RATTLER_CHANNELS"
 RATTLER_CHANNELS=("--channel" "${CPP_CHANNEL}" "${RATTLER_CHANNELS[@]}")
-
-# this can be set back to 'prevent' once the xorg-* migrations are completed
-# ref: https://github.com/rapidsai/cucim/issues/800#issuecomment-2529593457
-conda config --set path_conflict warn
 
 rapids-logger "Building cucim"
 
