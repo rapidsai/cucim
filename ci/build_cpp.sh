@@ -33,6 +33,8 @@ echo "${RAPIDS_PACKAGE_VERSION}" > ./VERSION
 # populates `RATTLER_CHANNELS` array and `RATTLER_ARGS` array
 source rapids-rattler-channel-string
 
+rapids-logger "Building libcucim"
+
 # --no-build-id allows for caching with `sccache`
 # more info is available at
 # https://rattler.build/latest/tips_and_tricks/#using-sccache-or-ccache-with-rattler-build
