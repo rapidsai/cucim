@@ -6,9 +6,29 @@ import cupy as cp
 import pytest
 
 from cucim.core.operations.color import (
+    image_to_absorbance,
     normalize_colors_pca,
     stain_extraction_pca,
 )
+
+
+class TestImageToAbsorbance:
+    @pytest.mark.parametrize("dtype", [cp.float32, cp.float64])
+    def test_should_clip_normalized_float_input_if_dtype_is_float(self, dtype):
+        image = cp.asarray(
+            [0.0, 1.0 / 510.0, 1.0 / 255.0, 0.5, 1.5],
+            dtype=dtype,
+        )
+
+        result = image_to_absorbance(
+            image,
+            source_intensity=1.0,
+            dtype=dtype,
+        )
+        expected = -cp.log(cp.clip(image, 1.0 / 255.0, 1.0))
+
+        assert result.dtype == cp.dtype(dtype)
+        cp.testing.assert_allclose(result, expected, rtol=1e-6, atol=1e-6)
 
 
 class TestStainExtractorMacenko:
