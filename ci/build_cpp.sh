@@ -24,6 +24,7 @@ sccache --start-server
 
 RAPIDS_PACKAGE_VERSION=$(rapids-generate-version)
 export RAPIDS_PACKAGE_VERSION
+echo "${RAPIDS_PACKAGE_VERSION}" > ./VERSION
 
 # populates `RATTLER_CHANNELS` array and `RATTLER_ARGS` array
 source rapids-rattler-channel-string
