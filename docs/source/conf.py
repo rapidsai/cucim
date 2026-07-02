@@ -108,6 +108,16 @@ todo_include_todos = False
 #
 
 html_theme = "nvidia_sphinx_theme"
+html_theme_options = {
+    "icon_links": [
+        {
+            "name": "GitHub",
+            "url": "https://github.com/rapidsai/cucim",
+            "icon": "fa-brands fa-github",
+            "type": "fontawesome",
+        },
+    ],
+}
 
 
 # Theme options are theme-specific and customize the look and feel of a theme
@@ -152,7 +162,7 @@ latex_documents = [
     (
         master_doc,
         "cucim.tex",
-        "cucim Documentation",
+        f"{project} Documentation",
         "NVIDIA Corporation",
         "manual",
     ),
@@ -163,7 +173,7 @@ latex_documents = [
 
 # One entry per manual page. List of tuples
 # (source start file, name, description, authors, manual section).
-man_pages = [(master_doc, "cucim", "cucim Documentation", [author], 1)]
+man_pages = [(master_doc, "cucim", f"{project} Documentation", [author], 1)]
 
 
 # -- Options for Texinfo output -------------------------------------------
@@ -175,7 +185,7 @@ texinfo_documents = [
     (
         master_doc,
         "cucim",
-        "cucim Documentation",
+        f"{project} Documentation",
         author,
         "cucim",
         "One line description of project.",
