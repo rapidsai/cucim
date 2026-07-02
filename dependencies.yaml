@@ -264,10 +264,16 @@ dependencies:
           - ipython
           - nbsphinx
           - &numpydoc numpydoc>=1.7
-          - pydata-sphinx-theme
           - recommonmark
           # the ceiling on sphinx can be removed when https://github.com/spatialaudio/nbsphinx/issues/825 is resolved
           - sphinx>=8.0.0,<8.2.0
+      - output_types: [requirements, pyproject]
+        packages:
+          - nvidia-sphinx-theme
+      - output_types: conda
+        packages:
+          - pip:
+              - nvidia-sphinx-theme
   py_version:
     specific:
       - output_types: conda
