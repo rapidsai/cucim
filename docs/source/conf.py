@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 #
-# SPDX-FileCopyrightText: Copyright (c) 2018, NVIDIA CORPORATION.
+# SPDX-FileCopyrightText: Copyright (c) 2018-2026, NVIDIA CORPORATION.
 # SPDX-License-Identifier: Apache-2.0
 #
 # pygdf documentation build configuration file, created by
@@ -19,6 +19,7 @@
 # add these directories to sys.path here. If the directory is relative to the
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 #
+import datetime
 import os
 import sys
 
@@ -67,9 +68,9 @@ source_suffix = ".rst"
 master_doc = "index"
 
 # General information about the project.
-project = "cuCIM"
-copyright = "2020-2021, NVIDIA"
-author = "NVIDIA"
+project = "NVIDIA cuCIM"
+copyright = f"2020-{datetime.datetime.today().year}, NVIDIA Corporation"
+author = "NVIDIA Corporation"
 
 # The version info for the project you're documenting, acts as replacement for
 # |version| and |release|, also used in various other places throughout the
