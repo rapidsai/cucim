@@ -349,6 +349,7 @@ __device__ RANK_HIST_OUTPUT_T histogramRankValue(int* hist,
                                                  double p1,
                                                  double s0,
                                                  double s1,
+                                                 double dtype_max,
                                                  unsigned char center) {
   int tx = threadIdx.x;
   __shared__ int result;
@@ -446,14 +447,15 @@ __device__ RANK_HIST_OUTPUT_T histogramRankValue(int* hist,
     __syncthreads();
 
     if (op == OP_THRESHOLD) {
-      return (center >= result) ? static_cast<RANK_HIST_OUTPUT_T>(255)
+      return (center >= result) ? static_cast<RANK_HIST_OUTPUT_T>(dtype_max)
                                 : static_cast<RANK_HIST_OUTPUT_T>(0);
     }
     return static_cast<RANK_HIST_OUTPUT_T>(result);
   }
 
 #if RANK_HIST_OP == OP_EQUALIZE
-  return static_cast<RANK_HIST_OUTPUT_T>(255.0 * ((double)scan[center]) / pop);
+  return static_cast<RANK_HIST_OUTPUT_T>(
+      dtype_max * ((double)scan[center]) / pop);
 #endif
 
 #if RANK_HIST_OP == OP_MEAN || RANK_HIST_OP == OP_SUM || RANK_HIST_OP == OP_SUBTRACT_MEAN || RANK_HIST_OP == OP_BILATERAL_MEAN || RANK_HIST_OP == OP_BILATERAL_POP || RANK_HIST_OP == OP_BILATERAL_SUM
@@ -521,7 +523,7 @@ __device__ RANK_HIST_OUTPUT_T histogramRankValue(int* hist,
   if (op == OP_SUBTRACT_MEAN) {
     double mean = ((double)selected_sum_total) / selected_count_total;
     return static_cast<RANK_HIST_OUTPUT_T>(
-        ((double)center - mean) * 0.5 + 128.0);
+        ((double)center - mean) * 0.5 + floor((dtype_max + 1.0) / 2.0));
   }
   return static_cast<RANK_HIST_OUTPUT_T>(selected_sum_total);
 #endif
@@ -580,7 +582,7 @@ __device__ RANK_HIST_OUTPUT_T histogramRankValue(int* hist,
     int delta = max_val - min_val;
     if (delta > 0) {
       return static_cast<RANK_HIST_OUTPUT_T>(
-          ((double)(clamped - min_val) / delta) * 255.0);
+          ((double)(clamped - min_val) / delta) * dtype_max);
     }
     return static_cast<RANK_HIST_OUTPUT_T>(0);
   }
@@ -598,7 +600,7 @@ __device__ RANK_HIST_OUTPUT_T histogramRankValue(int* hist,
   if (op == OP_SUBTRACT_MEAN) {
     double mean = ((double)tmp1[0]) / tmp0[0];
     return static_cast<RANK_HIST_OUTPUT_T>(
-        ((double)center - mean) * 0.5 + 128.0);
+        ((double)center - mean) * 0.5 + floor((dtype_max + 1.0) / 2.0));
   }
   return static_cast<RANK_HIST_OUTPUT_T>(tmp1[0]);
 #endif
@@ -615,6 +617,7 @@ extern "C" __global__ void cuRankHistogram2DUint8(
     double p1,
     double s0,
     double s1,
+    double dtype_max,
     int op,
     int window_size,
     int rows,
@@ -660,7 +663,8 @@ extern "C" __global__ void cuRankHistogram2DUint8(
     for (int col = r1; col < cols - r1; col++) {
       unsigned char center = src[row * cols + col];
       RANK_HIST_OUTPUT_T value = histogramRankValue(
-          H, Hscan, tmp0, tmp1, dtmp, op, window_size, p0, p1, s0, s1, center);
+          H, Hscan, tmp0, tmp1, dtmp, op, window_size, p0, p1, s0, s1,
+          dtype_max, center);
 
       if (tx == 0) {
         dest[row * cols + col] = value;

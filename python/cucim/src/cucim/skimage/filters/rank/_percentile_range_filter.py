@@ -199,7 +199,8 @@ def _get_streaming_rank_kernel(
         pre = """
             int n_vals = 0;
             bool nf_found = false;
-            int nf_min_dist = 2147483647;
+            bool nf_has_dist = false;
+            typename RankNoiseDistance<X>::type nf_min_dist = 0;
             X g = x[i];
         """
         update = """
@@ -207,9 +208,12 @@ def _get_streaming_rank_kernel(
             if (v == g) {
                 nf_found = true;
             } else {
-                int d = static_cast<int>(v) - static_cast<int>(g);
-                if (d < 0) d = -d;
-                if (d < nf_min_dist) nf_min_dist = d;
+                typedef typename RankNoiseDistance<X>::type DistanceT;
+                DistanceT vd = static_cast<DistanceT>(v);
+                DistanceT gd = static_cast<DistanceT>(g);
+                DistanceT d = (v > g) ? vd - gd : gd - vd;
+                if (!nf_has_dist || d < nf_min_dist) nf_min_dist = d;
+                nf_has_dist = true;
             }
             n_vals++;
         """
@@ -280,6 +284,19 @@ def _get_streaming_rank_kernel(
 
     op_name = operation.replace("_", "")
     mask_str = "_masked" if has_mask else ""
+    preamble = ""
+    if operation == "noise_filter":
+        preamble = r"""
+template <typename T, bool = std::is_floating_point<T>::value>
+struct RankNoiseDistance {
+    typedef typename std::make_unsigned<T>::type type;
+};
+
+template <typename T>
+struct RankNoiseDistance<T, true> {
+    typedef double type;
+};
+"""
     return _filters_core._generate_nd_kernel(
         f"rank_stream_{op_name}_{int(p0)}_{int(p1)}{mask_str}",
         pre,
@@ -292,6 +309,7 @@ def _get_streaming_rank_kernel(
         cval,
         has_weights=has_weights,
         has_mask=has_mask,
+        preamble=preamble,
     )
 
 
@@ -927,7 +945,11 @@ def _skimage_rank_filter(
             "decomposed footprint sequences are not supported by rank filters"
         )
     sizes, footprint, _ = _filters_core._check_size_footprint_structure(
-        num_axes, size, footprint, None, force_footprint=False
+        num_axes,
+        size,
+        footprint,
+        None,
+        force_footprint=operation == "noise_filter",
     )
     if cval is cp.nan:
         raise NotImplementedError("NaN cval is unsupported")
@@ -985,6 +1007,13 @@ def _skimage_rank_filter(
         ) = _filters_core._check_nd_args(
             input, footprint, mode, origin, "footprint", axes=axes
         )
+
+        if operation == "noise_filter":
+            # The footprint anchor addresses the center input pixel. Exclude
+            # it so that it cannot make every pixel appear non-isolated.
+            footprint = footprint.copy()
+            anchor = _filters_core._origins_to_offsets(origins, footprint.shape)
+            footprint[anchor] = False
 
         if default_footprint:
             filter_size = footprint.size
@@ -1053,6 +1082,7 @@ def _skimage_rank_filter(
             p1=p1,
             s0=s0,
             s1=s1,
+            dtype_max=_dtype_max,
         )
 
     kernel = _get_percentile_range_kernel(

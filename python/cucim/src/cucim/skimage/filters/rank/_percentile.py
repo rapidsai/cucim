@@ -158,7 +158,9 @@ def _preprocess_input(
     if not isinstance(image, cp.ndarray):
         raise ValueError("image must be a CuPy array")
 
-    if image is out:
+    if isinstance(out, cp.ndarray) and cp.shares_memory(
+        image, out, "MAY_SHARE_BOUNDS"
+    ):
         raise NotImplementedError("Cannot perform rank operation in place.")
 
     input_dtype = image.dtype
