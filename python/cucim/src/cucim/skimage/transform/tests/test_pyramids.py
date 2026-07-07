@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import math
@@ -204,6 +204,17 @@ def test_check_factor():
         pyramids._check_factor(0.99)
     with pytest.raises(ValueError):
         pyramids._check_factor(-2)
+
+
+@pytest.mark.parametrize("sigma", [-1.0, (-1.0, 1.0)])
+@pytest.mark.parametrize(
+    "pyramid_func", [pyramids.pyramid_reduce, pyramids.pyramid_expand]
+)
+def test_negative_sigma(pyramid_func, sigma):
+    with pytest.raises(
+        ValueError, match="Sigma values less than zero are not valid"
+    ):
+        pyramid_func(cp.ones((8, 8)), sigma=sigma)
 
 
 @pytest.mark.parametrize(
