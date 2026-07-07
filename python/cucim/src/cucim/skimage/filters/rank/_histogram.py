@@ -57,6 +57,7 @@ _HISTOGRAM_OUTPUT_TYPES = {
     "float32": (cp.float32, "float"),
     "float64": (cp.float64, "double"),
     "uint8": (cp.uint8, "unsigned char"),
+    "uint16": (cp.uint16, "unsigned short"),
 }
 
 
@@ -98,6 +99,8 @@ def _can_use_rank_histogram(
     ):
         return False
     if image.ndim != 2 or image.dtype != cp.uint8:
+        return False
+    if output is not None and output.dtype.name not in _HISTOGRAM_OUTPUT_TYPES:
         return False
     if (
         operation == "entropy"
@@ -209,6 +212,7 @@ def _rank_histogram(
     p1=100,
     s0=0,
     s1=0,
+    dtype_max=255,
     partitions=None,
 ):
     """Apply a uint8 2D rectangular rank filter using a sliding histogram."""
@@ -224,10 +228,8 @@ def _rank_histogram(
 
     out_dtype = output.dtype if output is not None else padded.dtype
     if cp.dtype(out_dtype).name not in _HISTOGRAM_OUTPUT_TYPES:
-        kernel_out_dtype = cp.uint8
-    else:
-        kernel_out_dtype = out_dtype
-    out = cp.empty(padded.shape, dtype=kernel_out_dtype)
+        raise ValueError(f"unsupported histogram output dtype: {out_dtype}")
+    out = cp.empty(padded.shape, dtype=out_dtype)
     rows, cols = padded.shape
     out_rows = image.shape[0]
     counter_dtype = _get_histogram_counter_dtype(footprint_shape)
@@ -256,6 +258,7 @@ def _rank_histogram(
             float(p1),
             float(s0),
             float(s1),
+            float(dtype_max),
             op_code,
             window_size,
             rows,

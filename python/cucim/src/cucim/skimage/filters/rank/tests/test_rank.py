@@ -56,6 +56,15 @@ def _rank_filter_brute_force_uint8(
                 for fcol in range(footprint.shape[1]):
                     if not footprint[frow, fcol]:
                         continue
+                    if (
+                        operation == "noise_filter"
+                        and (
+                            frow,
+                            fcol,
+                        )
+                        == radius
+                    ):
+                        continue
                     irow = _reflect_index(
                         row + frow - radius[0], image.shape[0]
                     )
@@ -341,6 +350,53 @@ def test_streaming_rank_filter_ops_uint8(filter_name, use_mask):
 
 
 @pytest.mark.parametrize(
+    "shift_kwargs",
+    [{}, {"shift_x": 1}, {"shifts": (-1, 0)}],
+)
+def test_noise_filter_excludes_shifted_anchor(shift_kwargs):
+    image = cp.zeros((7, 7), dtype=cp.uint8)
+    image[3, 3] = 10
+    footprint = cp.ones((3, 3), dtype=bool)
+    footprint_before = footprint.copy()
+
+    result = rank.noise_filter(
+        image,
+        footprint,
+        backend="elementwise",
+        **shift_kwargs,
+    )
+
+    assert result[3, 3] == 10
+    cp.testing.assert_array_equal(footprint, footprint_before)
+
+
+@pytest.mark.parametrize(
+    "dtype, values, expected",
+    [
+        (cp.float32, [0.5, 0.6, 0.8], 0.1),
+        (cp.uint64, [0, 2**32, 2**33], 2**32),
+    ],
+)
+def test_noise_filter_preserves_native_distance_precision(
+    dtype, values, expected
+):
+    image = cp.asarray([values], dtype=dtype)
+    footprint = cp.ones((1, 3), dtype=bool)
+
+    result = rank.noise_filter(
+        image,
+        footprint,
+        backend="elementwise",
+        cast_to_uint8=False,
+    )
+
+    if dtype == cp.float32:
+        cp.testing.assert_allclose(result[0, 1], expected, rtol=1e-6)
+    else:
+        cp.testing.assert_array_equal(result[0, 1], expected)
+
+
+@pytest.mark.parametrize(
     "filter_name, kwargs",
     [
         ("percentile", dict(p0=0.5)),
@@ -525,6 +581,110 @@ def test_rank_backend_histogram_supports_non_uint8_output(out_dtype):
     cp.testing.assert_array_equal(auto, expected)
 
 
+@pytest.mark.parametrize(
+    "filter_name, kwargs",
+    [
+        ("sum_percentile", dict(p0=0.01, p1=1.0)),
+        ("pop_percentile", dict(p0=0.01, p1=1.0)),
+        ("sum_bilateral", dict(s0=1, s1=1)),
+    ],
+)
+def test_histogram_rank_preserves_uint16_results(filter_name, kwargs):
+    image = cp.full((32, 32), 255, dtype=cp.uint8)
+    footprint = cp.ones((29, 29), dtype=bool)
+
+    histogram = getattr(rank, filter_name)(
+        image,
+        footprint,
+        out=cp.empty(image.shape, dtype=cp.uint16),
+        backend="histogram",
+        **kwargs,
+    )
+    elementwise = getattr(rank, filter_name)(
+        image,
+        footprint,
+        out=cp.empty(image.shape, dtype=cp.uint16),
+        backend="elementwise",
+        **kwargs,
+    )
+    automatic = getattr(rank, filter_name)(
+        image,
+        footprint,
+        out=cp.empty(image.shape, dtype=cp.uint16),
+        backend="auto",
+        **kwargs,
+    )
+
+    cp.testing.assert_array_equal(histogram, elementwise)
+    cp.testing.assert_array_equal(automatic, elementwise)
+
+
+@pytest.mark.parametrize("out_dtype", [cp.float32, cp.uint16])
+@pytest.mark.parametrize(
+    "filter_name, kwargs",
+    [
+        ("threshold_percentile", dict(p0=0.5)),
+        ("equalize", {}),
+        ("autolevel_percentile", dict(p0=0.1, p1=0.9)),
+        ("subtract_mean_percentile", dict(p0=0.1, p1=0.9)),
+    ],
+)
+def test_histogram_rank_uses_output_dtype_scale(filter_name, kwargs, out_dtype):
+    image = cp.arange(24 * 24, dtype=cp.uint8).reshape(24, 24)
+    footprint = cp.ones((17, 17), dtype=bool)
+
+    histogram = getattr(rank, filter_name)(
+        image,
+        footprint,
+        out=cp.empty(image.shape, dtype=out_dtype),
+        backend="histogram",
+        **kwargs,
+    )
+    elementwise = getattr(rank, filter_name)(
+        image,
+        footprint,
+        out=cp.empty(image.shape, dtype=out_dtype),
+        backend="elementwise",
+        **kwargs,
+    )
+
+    cp.testing.assert_allclose(histogram, elementwise)
+
+
+def test_histogram_rank_rejects_unsupported_output_dtype():
+    image = cp.arange(24 * 24, dtype=cp.uint8).reshape(24, 24)
+    footprint = cp.ones((17, 17), dtype=bool)
+    out = cp.empty(image.shape, dtype=cp.uint32)
+
+    with pytest.raises(ValueError, match="backend='histogram' requires"):
+        rank.sum_percentile(
+            image,
+            footprint,
+            p0=0.01,
+            p1=1.0,
+            out=out,
+            backend="histogram",
+        )
+
+    automatic = rank.sum_percentile(
+        image,
+        footprint,
+        p0=0.01,
+        p1=1.0,
+        out=out,
+        backend="auto",
+    )
+    elementwise = rank.sum_percentile(
+        image,
+        footprint,
+        p0=0.01,
+        p1=1.0,
+        out=cp.empty_like(out),
+        backend="elementwise",
+    )
+    cp.testing.assert_array_equal(automatic, elementwise)
+
+
 def test_rank_backend_invalid_value_raises():
     image = cp.asarray(np.arange(25, dtype=np.uint8).reshape(5, 5))
     footprint = cp.ones((3, 3), dtype=bool)
@@ -546,6 +706,24 @@ def test_rank_requires_cupy_inputs():
 
     with pytest.raises(ValueError, match="mask must be a CuPy array"):
         rank.percentile(image, footprint, mask=cp.asnumpy(mask), p0=0.5)
+
+
+@pytest.mark.parametrize("alias", ["view", "transpose"])
+def test_rank_rejects_overlapping_output_alias(alias):
+    image = cp.arange(25, dtype=cp.uint8).reshape(5, 5)
+    footprint = cp.ones((3, 3), dtype=bool)
+    out = image.view() if alias == "view" else image.T
+
+    with pytest.raises(
+        NotImplementedError, match="Cannot perform rank operation in place"
+    ):
+        rank.percentile(
+            image,
+            footprint,
+            p0=0.5,
+            out=out,
+            backend="elementwise",
+        )
 
 
 def test_rank_median_default_footprint():
@@ -748,9 +926,9 @@ class TestRank:
         # gradient_percentile: scikit-image's histogram p1-inversion quirk
         # makes imax=255 always; our sorted-array computes correct max-min.
         "gradient_percentile",
-        # noise_filter: center pixel is always in its own neighborhood
-        # (footprint center=1), so our result is always 0. scikit-image
-        # reference shows non-zero values — under investigation.
+        # noise_filter: scikit-image treats the dtype endpoints as implicit
+        # neighbors when all actual neighbors lie on one side of the center.
+        # Our implementation returns the nearest actual neighbor distance.
         "noise_filter",
     }
 
