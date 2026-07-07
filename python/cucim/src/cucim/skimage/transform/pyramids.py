@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import math
+from collections.abc import Iterable
 
 import cupy as cp
 
@@ -13,6 +14,13 @@ from ._warps import resize
 
 def _smooth(image, sigma, mode, cval, channel_axis):
     """Return image with each channel smoothed by the Gaussian filter."""
+    sigma_msg = "Sigma values less than zero are not valid"
+    if not isinstance(sigma, Iterable):
+        if sigma < 0:
+            raise ValueError(sigma_msg)
+    elif any(s < 0 for s in sigma):
+        raise ValueError(sigma_msg)
+
     smoothed = cp.empty_like(image)
 
     # apply Gaussian filter to all channels independently

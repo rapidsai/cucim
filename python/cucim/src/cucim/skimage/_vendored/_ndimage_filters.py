@@ -32,6 +32,7 @@ except ImportError:
 
 _is_not_windows = platform.system() != "Windows"
 _MAX_CACHED_GAUSSIAN_KERNELS = 64
+_MAX_CACHED_GAUSSIAN_KERNEL_BYTES = 1 << 20
 
 
 def correlate(
@@ -724,10 +725,19 @@ def _gaussian_kernel1d(sigma, order, radius, dtype=cupy.float64):
 
 
 def _cached_gaussian_kernel1d(sigma, order, radius, dtype):
+    # Avoid retaining unusually large kernels. Together with the entry count
+    # limit, this bounds the cached kernel data to roughly 64 MiB per process.
+    kernel_dtype = cupy.float64 if order == 0 else dtype
+    kernel_nbytes = (2 * radius + 1) * cupy.dtype(kernel_dtype).itemsize
+    if kernel_nbytes > _MAX_CACHED_GAUSSIAN_KERNEL_BYTES:
+        return _gaussian_kernel1d(sigma, order, radius, cupy.dtype(dtype))
+
     device_id = cupy.cuda.runtime.getDevice()
-    return _cached_gaussian_kernel1d_for_device(
+    kernel, ready = _cached_gaussian_kernel1d_for_device(
         device_id, sigma, order, radius, dtype
     )
+    cupy.cuda.get_current_stream().wait_event(ready)
+    return kernel
 
 
 @lru_cache(maxsize=_MAX_CACHED_GAUSSIAN_KERNELS)
@@ -735,7 +745,10 @@ def _cached_gaussian_kernel1d_for_device(
     device_id, sigma, order, radius, dtype
 ):
     with cupy.cuda.Device(device_id):
-        return _gaussian_kernel1d(sigma, order, radius, cupy.dtype(dtype))
+        kernel = _gaussian_kernel1d(sigma, order, radius, cupy.dtype(dtype))
+        ready = cupy.cuda.Event()
+        ready.record()
+        return kernel, ready
 
 
 def prewitt(
