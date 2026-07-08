@@ -27,6 +27,7 @@ _HISTOGRAM_OPS = {
     "geometric_mean": 15,
 }
 
+# Performance-tuning thresholds derived from benchmarks on an RTX A6000.
 _HISTOGRAM_MIN_FOOTPRINT_AREA = {
     "sum": 15 * 15,
     "enhance_contrast": 17 * 17,
@@ -74,10 +75,10 @@ def _can_use_rank_histogram(
     p0,
     p1,
 ):
-    """Return True for the restricted uint8 2D histogram backend.
+    """Return True for the restricted uint8 2-D histogram backend.
 
     This backend is intentionally narrow. It is selected only for supported
-    rank operations on 2D uint8 images with an all-ones odd rectangular
+    rank operations on 2-D uint8 images with an all-ones odd rectangular
     footprint, no mask, reflect mode and zero origin. Unsupported cases fall
     back to the generic rank implementation.
     """
@@ -215,7 +216,7 @@ def _rank_histogram(
     dtype_max=255,
     partitions=None,
 ):
-    """Apply a uint8 2D rectangular rank filter using a sliding histogram."""
+    """Apply a uint8 2-D rectangular rank filter using a sliding histogram."""
     image = cp.ascontiguousarray(image)
     radii = tuple(size // 2 for size in footprint_shape)
     npad = tuple((radius, radius) for radius in radii)

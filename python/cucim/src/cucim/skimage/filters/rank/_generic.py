@@ -5,9 +5,10 @@
 """Generic rank filters for GPU.
 
 These are equivalent to the corresponding ``*_percentile`` functions called
-with ``p0=0, p1=1`` (full range). This GPU implementation supports any numeric
-dtype and N-dimensional images (scikit-image is restricted to uint8/uint16 and
-2D/3D).
+with ``p0=0, p1=1`` (full range). This GPU implementation supports integer and
+floating-point dtypes and N-D images; Boolean images are not supported.
+scikit-image processes uint8 and uint16 natively and is restricted to 2-D/3-D
+inputs.
 
 """
 
@@ -44,6 +45,9 @@ __all__ = [
 # --- Docstring fragments for generic (no p0/p1) functions ---
 
 _doc_shifts_param_generic = """
+    shift_z : int, optional
+        Additional footprint-center offset for 3-D images. For general N-D
+        offsets, use ``shifts`` instead. Default is 0.
     shifts : sequence of int, optional (keyword-only)
         N-dimensional offsets. If provided, shift_x, shift_y and shift_z
         must be 0. Length must match image.ndim."""
@@ -51,14 +55,20 @@ _doc_shifts_param_generic = """
 _doc_backend_param = """
     backend : {'auto', 'histogram', 'elementwise'}, optional (keyword-only)
         Algorithm backend. ``'auto'`` selects the best compatible backend,
-        ``'histogram'`` requires the uint8 2D rectangular histogram backend,
-        and ``'elementwise'`` forces the generic per-output-pixel backend."""
+        ``'histogram'`` requires a supported operation on a uint8 2-D image
+        with a fully populated, odd-sized rectangular footprint, and
+        ``'elementwise'`` forces the generic per-output-pixel backend.
+        ``'histogram'`` raises ``ValueError`` for an incompatible call."""
 
 _doc_returns = """
     Returns
     -------
     out : cupy.ndarray
-        Output image with same shape and dtype as input.
+        Output image with the same shape as the input. The default output dtype
+        is uint8 for non-uint8 inputs converted with
+        ``cast_to_uint8=True``; otherwise it follows the input dtype unless
+        ``out`` controls it. ``entropy`` defaults to float32 for non-floating
+        inputs when ``out`` is not provided.
 """
 
 _doc_common_params_median = _doc_common_params.replace(
@@ -254,15 +264,7 @@ def mean(
 
 
 mean.__doc__ = _build_generic_docstring(
-    """Return local mean of an image.
-
-    .. note::
-
-        scikit-image's histogram-based implementation can produce spurious
-        zero outputs in low-variance neighborhoods where no histogram bin
-        falls entirely within the percentile window. This GPU implementation
-        uses a sorted-array approach that always has values in the
-        neighborhood, avoiding such artifacts.""",
+    """Return local mean of an image.""",
 )
 
 
@@ -311,14 +313,6 @@ subtract_mean.__doc__ = _build_generic_docstring(
     where ``mean`` is the local neighborhood mean, ``g`` is the center pixel
     value, and ``mid_bin`` is ``(dtype_max + 1) / 2`` (128 for uint8), so the
     effective offset is 127 for uint8.
-
-    .. note::
-
-        scikit-image's histogram-based implementation can produce spurious
-        zero outputs in low-variance neighborhoods where no histogram bin
-        falls entirely within the percentile window. This GPU implementation
-        uses a sorted-array approach that always has values in the
-        neighborhood, avoiding such artifacts.
 
     .. note::
 
@@ -403,12 +397,12 @@ pop.__doc__ = _build_generic_docstring(
 
     .. note::
 
-        The output is constant across the entire image (equal to the footprint
-        size), except when a mask is provided. Unlike scikit-image, the GPU
-        implementation does not reduce the count at image borders because the
-        underlying kernel uses reflected boundary extension (the neighborhood
-        is always fully populated). In scikit-image, the population decreases
-        at borders because the sliding window excludes out-of-bounds pixels.""",
+        The output is constant across the entire image (equal to the number of
+        active footprint elements), except when a mask is provided. Unlike
+        scikit-image, the GPU implementation does not reduce the count at image
+        borders because the underlying kernel uses reflected boundary
+        extension. In scikit-image, the population decreases at borders
+        because the sliding window excludes out-of-bounds pixels.""",
 )
 
 
@@ -443,17 +437,15 @@ def sum(
 sum.__doc__ = _build_generic_docstring(
     """Return the local sum of pixels.
 
-    Note that the sum may overflow depending on the data type of the input
-    array. The output dtype matches the input dtype, so for full-range uint8
-    images with large footprints, the input should be promoted to a wider
-    dtype (e.g. ``image.astype(cupy.int32)``) to prevent overflow.
+    The sum may overflow in a narrow output dtype. To accumulate into a wider
+    dtype, either provide a wider ``out`` array or promote the input and set
+    ``cast_to_uint8=False``.
 
     .. note::
 
-        scikit-image's rank filters internally convert all inputs to uint8,
-        so ``sum`` on scikit-image always overflows for non-trivial
-        footprints. The GPU implementation preserves the input dtype,
-        giving correct results when a wider dtype is used.""",
+        scikit-image processes uint8 and uint16 inputs natively and returns
+        the sum in that dtype, so sufficiently large sums can overflow. cuCIM
+        can use a wider input or output dtype to avoid overflow.""",
 )
 
 
@@ -607,8 +599,8 @@ def threshold(
 threshold.__doc__ = _build_generic_docstring(
     """Local threshold of an image.
 
-    The resulting binary mask is True if the grayvalue of the center pixel
-    is greater than the local mean. The output is::
+    The output is 1 if the grayvalue of the center pixel is greater than the
+    local mean and 0 otherwise::
 
         out = 1  if g > mean  else  0
 
@@ -861,8 +853,8 @@ entropy.__doc__ = _build_generic_docstring(
 
     .. note::
 
-        The output is a floating-point quantity (entropy in bits). When `out`
+        The output is a floating-point quantity (entropy in bits). When ``out``
         is not provided, integer inputs produce a floating-point output.
-        Explicit integer `out` arrays are respected and will truncate
+        Explicit integer ``out`` arrays are respected and will truncate
         fractional entropy values.""",
 )
