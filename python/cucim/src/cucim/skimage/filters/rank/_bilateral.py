@@ -41,14 +41,19 @@ _doc_shifts_param = """
 _doc_backend_param = """
     backend : {'auto', 'histogram', 'elementwise'}, optional (keyword-only)
         Algorithm backend. ``'auto'`` selects the best compatible backend,
-        ``'histogram'`` requires the uint8 2D rectangular histogram backend,
-        and ``'elementwise'`` forces the generic per-output-pixel backend."""
+        ``'histogram'`` requires a uint8 2-D image with a fully populated,
+        odd-sized rectangular footprint, and ``'elementwise'`` forces the
+        generic per-output-pixel backend. ``'histogram'`` raises ``ValueError``
+        for an incompatible call."""
 
 _doc_returns = """
     Returns
     -------
     out : cupy.ndarray
-        Output image with same shape and dtype as input.
+        Output image with the same shape as the input. The default output dtype
+        is uint8 for non-uint8 inputs converted with
+        ``cast_to_uint8=True``; otherwise it follows the input dtype unless
+        ``out`` controls it.
 """
 
 
@@ -198,15 +203,13 @@ sum_bilateral.__doc__ = _build_bilateral_docstring(
     interval ``(g-s1, g+s0)`` are summed, where ``g`` is the current pixel
     graylevel.
 
-    Note that the sum may overflow depending on the data type of the input
-    array. The output dtype matches the input dtype, so for full-range uint8
-    images with large footprints, the input should be promoted to a wider
-    dtype (e.g. ``image.astype(cupy.int32)``) to prevent overflow.
+    The sum may overflow in a narrow output dtype. To accumulate into a wider
+    dtype, either provide a wider ``out`` array or promote the input and set
+    ``cast_to_uint8=False``.
 
     .. note::
 
-        scikit-image's rank filters internally convert all inputs to uint8,
-        so ``sum_bilateral`` on scikit-image always overflows for non-trivial
-        footprints. The GPU implementation preserves the input dtype,
-        giving correct results when a wider dtype is used.""",
+        scikit-image processes uint8 and uint16 inputs natively and returns
+        the sum in that dtype, so sufficiently large sums can overflow. cuCIM
+        can use a wider input or output dtype to avoid overflow.""",
 )

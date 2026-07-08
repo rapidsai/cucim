@@ -342,13 +342,13 @@ def _get_percentile_range_kernel(
     p1 : float
         Upper percentile (0-100).
     operation : str
-        The operation to perform on values in the percentile range.
-        Supported operations:
-        - 'mean': arithmetic mean
-        - 'sum': sum of values
-        - 'bilateral_mean': mean excluding center value
-        - 'pop_mean': mean using center as reference
-                      (percentile mean of |values - center|)
+        Operation to perform. Supported values are ``'autolevel'``,
+        ``'bilateral_mean'``, ``'bilateral_pop'``, ``'bilateral_sum'``,
+        ``'enhance_contrast'``, ``'entropy'``, ``'equalize'``,
+        ``'geometric_mean'``, ``'gradient'``, ``'maximum'``, ``'mean'``,
+        ``'minimum'``, ``'modal'``, ``'noise_filter'``, ``'percentile'``,
+        ``'pop'``, ``'subtract_mean'``, ``'sum'``, ``'threshold'``, and
+        ``'threshold_mean'``.
     modes : tuple of str
         Boundary handling modes.
     w_shape : tuple of int
@@ -360,9 +360,13 @@ def _get_percentile_range_kernel(
     int_type : str
         Integer type to use for indexing.
     has_weights : bool
-        Whether a footprint mask is used.
+        Whether an explicit footprint array is used.
     has_mask : bool
         Whether an image mask is used to filter neighborhood pixels.
+    dtype_max : scalar
+        Maximum representable output value used by scaled operations.
+    s0, s1 : float
+        Bilateral graylevel-range parameters.
 
     Returns
     -------
@@ -898,16 +902,21 @@ def _skimage_rank_filter(
     p1 : float
         Upper percentile (0-100).
     operation : str, optional
-        The operation to perform. Supported: 'mean', 'sum', 'bilateral_mean',
-        'pop_mean'. Default is 'mean'.
+        Operation to perform. Supported values are ``'autolevel'``,
+        ``'bilateral_mean'``, ``'bilateral_pop'``, ``'bilateral_sum'``,
+        ``'enhance_contrast'``, ``'entropy'``, ``'equalize'``,
+        ``'geometric_mean'``, ``'gradient'``, ``'maximum'``, ``'mean'``,
+        ``'minimum'``, ``'modal'``, ``'noise_filter'``, ``'percentile'``,
+        ``'pop'``, ``'subtract_mean'``, ``'sum'``, ``'threshold'``, and
+        ``'threshold_mean'``. Default is ``'mean'``.
     size : int or sequence of int, optional
         Size of the neighborhood. One of `size` or `footprint` must be provided.
     footprint : cupy.ndarray, optional
         Boolean array specifying the neighborhood shape.
     output : cupy.ndarray, dtype or None, optional
         The array in which to place the output.
-    mode : str, optional
-        Boundary handling mode. Default is 'reflect'.
+    mode : str or sequence of str, optional
+        Boundary handling mode. Default is ``'reflect'``.
     cval : scalar, optional
         Value to fill past edges if mode is 'constant'. Default is 0.0.
     origin : int or sequence of int, optional
@@ -920,6 +929,13 @@ def _skimage_rank_filter(
         behavior where the mask filters which pixels in the local neighborhood
         contribute to the computation. Output is computed for all pixels, but
         each uses a different set of neighbors based on the mask.
+    s0, s1 : float, optional
+        Bilateral graylevel-range parameters. Default is 0.
+    backend : {'auto', 'histogram', 'elementwise'}, optional
+        ``'auto'`` selects the histogram backend for compatible calls above
+        the tuned footprint-size threshold and otherwise uses the elementwise
+        backend. ``'histogram'`` requires a compatible uint8 2-D call and
+        raises ``ValueError`` otherwise. Default is ``'auto'``.
 
     Returns
     -------

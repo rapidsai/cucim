@@ -16,9 +16,11 @@ cuCIM and scikit-image implementations.
 Dtype notes
 -----------
 
-Some operations use a ``dtype_max`` value that affects output scaling
-(``autolevel_percentile``, ``threshold_percentile``,
-``subtract_mean_percentile``):
+Some operations use a ``dtype_max`` value based on the output dtype that
+affects output scaling (``autolevel_percentile``, ``threshold_percentile``,
+``subtract_mean_percentile``). With the default ``cast_to_uint8=True``,
+non-uint8 inputs are converted before filtering and the default output dtype
+is uint8. When processing other dtypes natively with ``cast_to_uint8=False``:
 
 - **Unsigned integers** (uint8, uint16, etc.): ``dtype_max`` is the type
   maximum (255, 65535, ...). This matches scikit-image's behavior.
@@ -63,7 +65,8 @@ _ZERO_FOR_EMPTY_FOOTPRINT_OPS = {
 
 _doc_common_params = """
     image : cupy.ndarray
-        Input image (N-dimensional, any numeric dtype).
+        N-D input image with an integer or floating-point dtype. Boolean
+        images are not supported.
     footprint : cupy.ndarray
         The neighborhood expressed as an array of 1's and 0's.
     out : cupy.ndarray, optional
@@ -72,17 +75,17 @@ _doc_common_params = """
         Mask array that defines (>0) area of the image included in the local
         neighborhood. If None, the complete image is used (default).
     shift_x, shift_y : int, optional
-        Offset added to the footprint center point (for 2D images).
-        Default is 0."""
+        Footprint-center offsets along axes 1 and 0, respectively. For general
+        N-D offsets, use ``shifts`` instead. Default is 0."""
 
 _doc_p0_p1_params = """
     p0, p1 : float, optional, in interval [0, 1]
         Define the [p0, p1] percentile interval to be considered for computing
-        the value."""
+        the value. Defaults are 0 and 1, respectively."""
 
 _doc_p0_only_param = """
     p0 : float, optional, in interval [0, 1]
-        Set the percentile value."""
+        Set the percentile value. Default is 0."""
 
 _doc_shifts_param = """
     shifts : sequence of int, optional (keyword-only)
@@ -92,8 +95,10 @@ _doc_shifts_param = """
 _doc_backend_param = """
     backend : {'auto', 'histogram', 'elementwise'}, optional (keyword-only)
         Algorithm backend. ``'auto'`` selects the best compatible backend,
-        ``'histogram'`` requires the uint8 2D rectangular histogram backend,
-        and ``'elementwise'`` forces the generic per-output-pixel backend."""
+        ``'histogram'`` requires a supported operation on a uint8 2-D image
+        with a fully populated, odd-sized rectangular footprint, and
+        ``'elementwise'`` forces the generic per-output-pixel backend.
+        ``'histogram'`` raises ``ValueError`` for an incompatible call."""
 
 _doc_boundary_note = """
 
@@ -109,14 +114,16 @@ _doc_boundary_note = """
     This also differs from scikit-image's rank filters, which do not extend
     the image at the boundary. scikit-image uses cropped neighborhoods at
     edges and corners, so the effective footprint population can be smaller
-    near the image border."""
+    near the image border. A supplied mask can still reduce the number of
+    samples contributing to a cuCIM neighborhood."""
 
 _doc_cast_to_uint8_param = """
     cast_to_uint8 : bool, optional (keyword-only)
         If True, non-uint8 image inputs are converted to uint8 with
-        ``img_as_ubyte`` before backend selection. This can more closely
-        match scikit-image's rank filter behavior and can enable the uint8
-        histogram backend for compatible inputs. Default is True."""
+        ``img_as_ubyte`` before backend selection. This matches scikit-image's
+        conversion behavior for many other input dtypes and can enable the
+        uint8 histogram backend for compatible inputs. Set this to False to
+        process a wider input dtype natively. Default is True."""
 
 _doc_returns = """
     Returns
@@ -460,9 +467,9 @@ mean_percentile.__doc__ = _build_docstring(
 
         scikit-image's histogram-based implementation can produce spurious
         zero outputs in low-variance neighborhoods where no histogram bin
-        falls entirely within the percentile window. This GPU implementation
-        uses a sorted-array approach that always has values in the percentile
-        range, avoiding such artifacts.""",
+        falls entirely within the percentile window. Both cuCIM backends
+        ensure that a nonempty neighborhood contributes at least one value to
+        the selected percentile range, avoiding such artifacts.""",
 )
 
 
@@ -512,9 +519,9 @@ subtract_mean_percentile.__doc__ = _build_docstring(
 
         scikit-image's histogram-based implementation can produce spurious
         zero outputs in low-variance neighborhoods where no histogram bin
-        falls entirely within the percentile window. This GPU implementation
-        uses a sorted-array approach that always has values in the percentile
-        range, avoiding such artifacts.
+        falls entirely within the percentile window. Both cuCIM backends
+        ensure that a nonempty neighborhood contributes at least one value to
+        the selected percentile range, avoiding such artifacts.
 
     .. note::
 
@@ -691,17 +698,15 @@ sum_percentile.__doc__ = _build_docstring(
 
     Only grayvalues between percentiles [p0, p1] are considered in the filter.
 
-    Note that the sum may overflow depending on the data type of the input
-    array. The output dtype matches the input dtype, so for full-range uint8
-    images with large footprints, the input should be promoted to a wider
-    dtype (e.g. ``image.astype(cupy.int32)``) to prevent overflow.
+    The sum may overflow in a narrow output dtype. To accumulate into a wider
+    dtype, either provide a wider ``out`` array or promote the input and set
+    ``cast_to_uint8=False``.
 
     .. note::
 
-        scikit-image's rank filters internally convert all inputs to uint8,
-        so ``sum_percentile`` on scikit-image always overflows for non-trivial
-        footprints. The GPU implementation preserves the input dtype,
-        giving correct results when a wider dtype is used.""",
+        scikit-image processes uint8 and uint16 inputs natively and returns
+        the sum in that dtype, so sufficiently large sums can overflow. cuCIM
+        can use a wider input or output dtype to avoid overflow.""",
 )
 
 
@@ -737,8 +742,8 @@ def threshold_percentile(
 threshold_percentile.__doc__ = _build_docstring(
     """Local threshold of an image.
 
-    The resulting binary mask is True if the grayvalue of the center pixel is
-    greater than or equal to the value at the p0 percentile. The output is::
+    The output is ``dtype_max`` if the grayvalue of the center pixel is greater
+    than or equal to the value at the p0 percentile, and 0 otherwise::
 
         out = dtype_max  if g >= v_p0  else  0
 
@@ -749,9 +754,9 @@ threshold_percentile.__doc__ = _build_docstring(
 
     .. note::
 
-        This is different from the (not yet implemented) generic
-        ``threshold``, which compares to the local **mean** and outputs 0
-        or 1 (not 0 or ``dtype_max``). ``threshold_percentile`` compares to
-        the **p0-th percentile** value and outputs 0 or ``dtype_max``.""",
+        This differs from generic ``threshold``, which compares to the local
+        **mean** and outputs 0 or 1 (not 0 or ``dtype_max``).
+        ``threshold_percentile`` compares to the **p0-th percentile** value
+        and outputs 0 or ``dtype_max``.""",
     p0_only=True,
 )
