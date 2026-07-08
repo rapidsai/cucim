@@ -2,6 +2,14 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
+"""Shared implementation machinery for GPU rank filters.
+
+This internal module normalizes neighborhood arguments, generates elementwise
+CUDA kernels, and dispatches compatible operations to the sliding-histogram
+backend. It is used by the public generic, percentile, and bilateral rank-filter
+APIs defined in ``_generic``, ``_percentile``, and ``_bilateral``.
+"""
+
 import math
 
 import cupy as cp
