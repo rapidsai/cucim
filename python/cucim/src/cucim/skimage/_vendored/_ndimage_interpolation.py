@@ -7,6 +7,7 @@ from __future__ import annotations
 import cmath
 import math
 import warnings
+from functools import lru_cache
 
 import cupy
 import numpy
@@ -19,6 +20,21 @@ from cucim.skimage._vendored import (
     _ndimage_util as _util,
 )
 from cucim.skimage._vendored._internal import _normalize_axis_index
+
+_MAX_CACHED_ZOOM_FACTORS = 128
+
+
+def _cached_zoom_factors(zoom, dtype):
+    device_id = runtime.getDevice()
+    return _cached_zoom_factors_for_device(
+        device_id, tuple(zoom), cupy.dtype(dtype).str
+    )
+
+
+@lru_cache(maxsize=_MAX_CACHED_ZOOM_FACTORS)
+def _cached_zoom_factors_for_device(device_id, zoom, dtype):
+    with cupy.cuda.Device(device_id):
+        return cupy.asarray(zoom, dtype=cupy.dtype(dtype), blocking=True)
 
 
 def _check_parameter(func_name, order, mode):
@@ -1113,7 +1129,7 @@ def zoom(
             batch_axes=batch_axes,
             output_c_contiguous=output.flags.c_contiguous,
         )
-        zoom = cupy.asarray(zoom, dtype=float_dtype)
+        zoom = _cached_zoom_factors(zoom, float_dtype)
         if kern_info.size is not None:
             kern_info.kernel(filtered, zoom, output, size=kern_info.size)
         else:

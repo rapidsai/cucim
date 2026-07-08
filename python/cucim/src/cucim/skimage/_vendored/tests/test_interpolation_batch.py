@@ -21,12 +21,12 @@ axes as done in the reference implementation here.
 
 from __future__ import annotations
 
+import cupy
 import numpy
 import pytest
-
-import cupy
-from cupy.cuda import runtime
 from cupy import testing
+from cupy.cuda import runtime
+
 import cucim.skimage._vendored.ndimage as vendored_ndimage
 from cucim.skimage._vendored import _ndimage_interpolation
 from cucim.skimage._vendored import _ndimage_spline_prefilter_core
@@ -76,6 +76,31 @@ def test_zoom_shift_grid_codegen_indexes_shift_by_axis():
     assert "shift[j]" not in code
     for axis in range(3):
         assert f"shift[{axis}]" in code
+
+
+def test_zoom_factors_are_cached(monkeypatch):
+    image = cupy.arange(64, dtype=cupy.float32).reshape(8, 8)
+    original_asarray = cupy.asarray
+    copied_sequences = []
+
+    def asarray_spy(a, *args, **kwargs):
+        if isinstance(a, (list, tuple)):
+            copied_sequences.append((a, kwargs))
+        return original_asarray(a, *args, **kwargs)
+
+    monkeypatch.setattr(_ndimage_interpolation.cupy, "asarray", asarray_spy)
+    _ndimage_interpolation._cached_zoom_factors_for_device.cache_clear()
+    first = vendored_ndimage.zoom(
+        image, (0.5, 0.5), order=1, mode="reflect", grid_mode=True
+    )
+    second = vendored_ndimage.zoom(
+        image, (0.5, 0.5), order=1, mode="reflect", grid_mode=True
+    )
+
+    assert first.shape == (4, 4)
+    cupy.testing.assert_array_equal(first, second)
+    assert len(copied_sequences) == 1
+    assert copied_sequences[0][1]["blocking"] is True
 
 
 def test_loop_batch_selected_when_last_axis_is_one_of_multiple_batch_axes():
