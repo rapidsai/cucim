@@ -693,7 +693,9 @@ def gaussian_filter(
     )
 
 
-def _gaussian_kernel1d(sigma, order, radius, dtype=cupy.float64):
+def _gaussian_kernel1d(
+    sigma, order, radius, dtype=cupy.float64, *, blocking=False
+):
     """
     Computes a 1-D Gaussian correlation kernel.
     """
@@ -705,7 +707,7 @@ def _gaussian_kernel1d(sigma, order, radius, dtype=cupy.float64):
     phi_x /= phi_x.sum()
 
     if order == 0:
-        return cupy.asarray(phi_x)
+        return cupy.asarray(phi_x, blocking=blocking)
 
     # f(x) = q(x) * phi(x) = q(x) * exp(p(x))
     # f'(x) = (q'(x) + q(x) * p'(x)) * phi(x)
@@ -721,7 +723,9 @@ def _gaussian_kernel1d(sigma, order, radius, dtype=cupy.float64):
     for _ in range(order):
         q = Q_deriv.dot(q)
     q = (x[:, None] ** exponent_range).dot(q)
-    return cupy.asarray((q * phi_x)[::-1], order="C", dtype=dtype)
+    return cupy.asarray(
+        (q * phi_x)[::-1], order="C", dtype=dtype, blocking=blocking
+    )
 
 
 def _cached_gaussian_kernel1d(sigma, order, radius, dtype):
@@ -733,11 +737,9 @@ def _cached_gaussian_kernel1d(sigma, order, radius, dtype):
         return _gaussian_kernel1d(sigma, order, radius, cupy.dtype(dtype))
 
     device_id = cupy.cuda.runtime.getDevice()
-    kernel, ready = _cached_gaussian_kernel1d_for_device(
+    return _cached_gaussian_kernel1d_for_device(
         device_id, sigma, order, radius, dtype
     )
-    cupy.cuda.get_current_stream().wait_event(ready)
-    return kernel
 
 
 @lru_cache(maxsize=_MAX_CACHED_GAUSSIAN_KERNELS)
@@ -745,10 +747,13 @@ def _cached_gaussian_kernel1d_for_device(
     device_id, sigma, order, radius, dtype
 ):
     with cupy.cuda.Device(device_id):
-        kernel = _gaussian_kernel1d(sigma, order, radius, cupy.dtype(dtype))
-        ready = cupy.cuda.Event()
-        ready.record()
-        return kernel, ready
+        return _gaussian_kernel1d(
+            sigma,
+            order,
+            radius,
+            cupy.dtype(dtype),
+            blocking=True,
+        )
 
 
 def prewitt(
