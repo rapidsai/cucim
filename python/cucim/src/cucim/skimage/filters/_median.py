@@ -34,9 +34,8 @@ def median(
         If ``None``, ``footprint`` will be a N-D array with 3 elements for each
         dimension (e.g., vector, square, cube, etc.). If `footprint` is a
         tuple of integers, it will be an array of ones with the given shape.
-        Otherwise, if ``behavior=='rank'``, ``footprint`` is a 2-D array of 1's
-        and 0's. If ``behavior=='ndimage'``, ``footprint`` is a N-D array of
-        1's and 0's with the same number of dimension as ``image``.
+        Otherwise, ``footprint`` is an N-D array of 1's and 0's with the same
+        number of dimensions as ``image``.
         Note that upstream scikit-image currently does not support supplying
         a tuple for `footprint`. It is added here to avoid overhead of
         generating a small weights array in cases where it is not needed.
@@ -49,14 +48,14 @@ def median(
         Default is 'nearest'.
     cval : scalar, optional
         Value to fill past edges of input if mode is 'constant'. ``cval`` is
-        only used when ``behavior='ndimage'``.Default is 0.0
+        only used when ``behavior='ndimage'``. Default is 0.0.
     behavior : {'ndimage', 'rank'}, optional
         Behavior 'ndimage' behaves like `cupyx.scipy.ndimage.median_filter`,
-        while 'rank' mode used :func:`cucim.skimage.filters.rank.median`.
-        Note that cuCIM 'rank' filters use reflected boundary extension with a
-        constant footprint size and work in nD. This differs from scikit-image
-        rank filters, which crop neighborhoods near image boundaries and are
-        2D only. Default is 'ndimage'.
+        while 'rank' uses :func:`cucim.skimage.filters.rank.median`. cuCIM rank
+        filters use reflected boundary extension with a constant footprint
+        size and support N-D images. This differs from scikit-image rank
+        filters, which crop neighborhoods near image boundaries and support
+        only 2-D and 3-D images. Default is 'ndimage'.
 
     Other Parameters
     ----------------
@@ -74,8 +73,8 @@ def median(
 
     Returns
     -------
-    out : 2-D array (same dtype as input image)
-        Output image.
+    out : N-D array
+        Output image with the same shape as the input image.
 
     See also
     --------
