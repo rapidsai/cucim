@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import math
@@ -125,6 +125,30 @@ def test_build_gaussian_pyramid_nd():
         for layer, out in enumerate(pyramid):
             layer_shape = original_shape / 2**layer
             assert_array_equal(out.shape, layer_shape)
+
+
+@pytest.mark.parametrize(
+    "shape, downscale, channel_axis",
+    [((1, 1), 2, None), ((2, 3), 1.1, None), ((1, 1, 4), 2, -1)],
+)
+@pytest.mark.parametrize("max_layer", [-1, 1, 10])
+def test_gaussian_pyramid_skips_terminal_reduction(
+    monkeypatch, shape, downscale, channel_axis, max_layer
+):
+    def fail_reduce(*args, **kwargs):
+        pytest.fail("pyramid_reduce called for an unchanged output shape")
+
+    monkeypatch.setattr(pyramids, "pyramid_reduce", fail_reduce)
+    layers = list(
+        pyramids.pyramid_gaussian(
+            cp.ones(shape),
+            max_layer=max_layer,
+            downscale=downscale,
+            channel_axis=channel_axis,
+        )
+    )
+    assert len(layers) == 1
+    assert layers[0].shape == shape
 
 
 @pytest.mark.parametrize("channel_axis", [0, 1, 2, -1, -2, -3])
