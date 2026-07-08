@@ -40,7 +40,7 @@ import warnings
 import cupy as cp
 
 from ...util import img_as_ubyte
-from ._percentile_range_filter import _skimage_rank_filter
+from ._rank_filter import _skimage_rank_filter
 
 __all__ = [
     "autolevel_percentile",
