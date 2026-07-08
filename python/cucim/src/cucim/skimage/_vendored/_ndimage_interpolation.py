@@ -8,6 +8,7 @@ import cmath
 import ctypes
 import math
 import warnings
+from functools import lru_cache
 
 import cupy
 import numpy
@@ -21,6 +22,21 @@ from cucim.skimage._vendored import (
 )
 from cucim.skimage._vendored._internal import _normalize_axis_index
 from cucim.skimage._vendored.pad import pad
+
+_MAX_CACHED_ZOOM_FACTORS = 128
+
+
+def _cached_zoom_factors(zoom, dtype):
+    device_id = runtime.getDevice()
+    return _cached_zoom_factors_for_device(
+        device_id, tuple(zoom), cupy.dtype(dtype).str
+    )
+
+
+@lru_cache(maxsize=_MAX_CACHED_ZOOM_FACTORS)
+def _cached_zoom_factors_for_device(device_id, zoom, dtype):
+    with cupy.cuda.Device(device_id):
+        return cupy.asarray(zoom, dtype=cupy.dtype(dtype), blocking=True)
 
 
 def _launch_interpolation(
@@ -1210,7 +1226,7 @@ def zoom(
             input, prefilter, mode, cval, order, batch_axes=batch_axes
         )
 
-        zoom = cupy.asarray(zoom, dtype=float_dtype)
+        zoom = _cached_zoom_factors(zoom, float_dtype)
         _launch_interpolation(
             "zoom_grid" if grid_mode else "zoom",
             filtered,
