@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import math
@@ -263,6 +263,8 @@ def pyramid_gaussian(
 
     # cast to float for consistent data type in pyramid
     image = convert_to_float(image, preserve_range)
+    if channel_axis is not None:
+        channel_axis = channel_axis % image.ndim
 
     layer = 0
     current_shape = image.shape
@@ -273,6 +275,13 @@ def pyramid_gaussian(
     # build downsampled images until max_layer is reached or downscale process
     # does not change image size
     while layer != max_layer:
+        next_shape = tuple(
+            math.ceil(d / float(downscale)) if ax != channel_axis else d
+            for ax, d in enumerate(current_shape)
+        )
+        if next_shape == current_shape:
+            break
+
         layer += 1
 
         layer_image = pyramid_reduce(
