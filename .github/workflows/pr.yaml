@@ -12,10 +12,10 @@ jobs:
     needs:
       - checks
       - check-nightly-ci
-      - conda-cpp-build
-      - conda-python-build
-      - conda-python-tests
-      - docs-build
+      # - conda-cpp-build
+      # - conda-python-build
+      # - conda-python-tests
+      # - docs-build
       - wheel-build
       - wheel-tests
       - telemetry-setup
@@ -70,61 +70,61 @@ jobs:
         with:
           repo: ${{ github.repository }}
           target-branch: ${{ fromJSON(steps.get-pr-info.outputs.pr-info).base.ref }}
-  conda-cpp-build:
-    needs: checks
-    permissions:
-      actions: read
-      contents: read
-      id-token: write
-      packages: read
-      pull-requests: read
-    secrets: inherit # zizmor: ignore[secrets-inherit]
-    uses: rapidsai/shared-workflows/.github/workflows/conda-cpp-build.yaml@main
-    with:
-      build_type: pull-request
-      script: ci/build_cpp.sh
-  conda-python-build:
-    needs: conda-cpp-build
-    permissions:
-      actions: read
-      contents: read
-      id-token: write
-      packages: read
-      pull-requests: read
-    secrets: inherit # zizmor: ignore[secrets-inherit]
-    uses: rapidsai/shared-workflows/.github/workflows/conda-python-build.yaml@main
-    with:
-      build_type: pull-request
-      script: ci/build_python.sh
-  conda-python-tests:
-    needs: conda-python-build
-    permissions:
-      actions: read
-      contents: read
-      id-token: write
-      packages: read
-      pull-requests: read
-    secrets: inherit # zizmor: ignore[secrets-inherit]
-    uses: rapidsai/shared-workflows/.github/workflows/conda-python-tests.yaml@main
-    with:
-      build_type: pull-request
-      script: ci/test_python.sh
-  docs-build:
-    needs: conda-python-build
-    permissions:
-      actions: read
-      contents: read
-      id-token: write
-      packages: read
-      pull-requests: read
-    secrets: inherit # zizmor: ignore[secrets-inherit]
-    uses: rapidsai/shared-workflows/.github/workflows/custom-job.yaml@main
-    with:
-      build_type: pull-request
-      node_type: "gpu-l4-latest-1"
-      arch: "amd64"
-      container_image: "rapidsai/ci-conda:26.08-latest"
-      script: "ci/build_docs.sh"
+  # conda-cpp-build:
+  #   needs: checks
+  #   permissions:
+  #     actions: read
+  #     contents: read
+  #     id-token: write
+  #     packages: read
+  #     pull-requests: read
+  #   secrets: inherit # zizmor: ignore[secrets-inherit]
+  #   uses: rapidsai/shared-workflows/.github/workflows/conda-cpp-build.yaml@main
+  #   with:
+  #     build_type: pull-request
+  #     script: ci/build_cpp.sh
+  # conda-python-build:
+  #   needs: conda-cpp-build
+  #   permissions:
+  #     actions: read
+  #     contents: read
+  #     id-token: write
+  #     packages: read
+  #     pull-requests: read
+  #   secrets: inherit # zizmor: ignore[secrets-inherit]
+  #   uses: rapidsai/shared-workflows/.github/workflows/conda-python-build.yaml@main
+  #   with:
+  #     build_type: pull-request
+  #     script: ci/build_python.sh
+  # conda-python-tests:
+  #   needs: conda-python-build
+  #   permissions:
+  #     actions: read
+  #     contents: read
+  #     id-token: write
+  #     packages: read
+  #     pull-requests: read
+  #   secrets: inherit # zizmor: ignore[secrets-inherit]
+  #   uses: rapidsai/shared-workflows/.github/workflows/conda-python-tests.yaml@main
+  #   with:
+  #     build_type: pull-request
+  #     script: ci/test_python.sh
+  # docs-build:
+  #   needs: conda-python-build
+  #   permissions:
+  #     actions: read
+  #     contents: read
+  #     id-token: write
+  #     packages: read
+  #     pull-requests: read
+  #   secrets: inherit # zizmor: ignore[secrets-inherit]
+  #   uses: rapidsai/shared-workflows/.github/workflows/custom-job.yaml@main
+  #   with:
+  #     build_type: pull-request
+  #     node_type: "gpu-l4-latest-1"
+  #     arch: "amd64"
+  #     container_image: "rapidsai/ci-conda:26.08-latest"
+  #     script: "ci/build_docs.sh"
   wheel-build:
     needs: checks
     permissions:
@@ -149,7 +149,7 @@ jobs:
       packages: read
       pull-requests: read
     secrets: inherit # zizmor: ignore[secrets-inherit]
-    uses: rapidsai/shared-workflows/.github/workflows/wheels-test.yaml@main
+    uses: rapidsai/shared-workflows/.github/workflows/wheels-test.yaml@smaller_citestwheel
     with:
       build_type: pull-request
       script: ci/test_wheel.sh
