@@ -1,5 +1,5 @@
 #
-# SPDX-FileCopyrightText: Copyright (c) 2020-2021, NVIDIA CORPORATION.
+# SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION.
 # SPDX-License-Identifier: Apache-2.0
 #
 
@@ -39,6 +39,20 @@ try:
     submodules += ["core", "skimage"]
 except ImportError:
     pass
+
+if _is_cupy_available:
+    # If CuPy is available AND we aren't on a system CTK install, then
+    # `cuda.pathfinder` will also be available
+    # Use it to pre-load `cusolver` to get around an upstream issue in CuPy
+    try:
+        from cuda.pathfinder import (
+            DynamicLibNotFoundError,
+            load_nvidia_dynamic_lib,
+        )
+
+        load_nvidia_dynamic_lib("cusolver")
+    except (ImportError, DynamicLibNotFoundError):
+        pass
 
 try:
     from .clara import CuImage, cli
