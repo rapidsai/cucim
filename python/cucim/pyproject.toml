@@ -30,8 +30,6 @@ license-files = [
 requires-python = ">=3.11"
 dependencies = [
     "click",
-    "cuda-pathfinder",
-    "cuda-toolkit[cusolver]",
     "cupy-cuda13x[ctk]>=14.0.1,!=14.1.0",
     "lazy-loader>=0.4",
     "numpy>=2.0,<3.0",
