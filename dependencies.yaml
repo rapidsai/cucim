@@ -316,10 +316,6 @@ dependencies:
         packages:
           - libnvimgcodec>=0.8.0,<0.9.0
           - nvimgcodec>=0.8.0,<0.9.0
-      - output_types: [requirements, pyproject]
-        packages:
-          - cuda-toolkit[cusolver]
-          - cuda-pathfinder
     specific:
       - output_types: [requirements, pyproject]
         matrices:
