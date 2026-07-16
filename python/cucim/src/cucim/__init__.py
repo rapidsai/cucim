@@ -45,7 +45,8 @@ if _is_cupy_available:
     # If CuPy is available AND we aren't on a system CTK install, then
     # the end-user will have to have used the `ctk` extra to install `cupy-cuda13x` (or similar)
     # `cuda.pathfinder` will also be available
-    # Use it to pre-load `cusolver` to get around an upstream issue in CuPy
+    # Use it to pre-load `cusolver` to get around an upstream issue in CuPy:
+    # https://github.com/cupy/cupy/issues/10095
     #
     # If CuPy is available and we ARE on a system CTK install, then a user might have not installed the `ctk` extra
     # and so `cuda.pathfinder` might not be available. In this scenario, we don't NEED `cuda.pathfinder` since on CTK installs
