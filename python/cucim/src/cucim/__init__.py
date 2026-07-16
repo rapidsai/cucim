@@ -56,13 +56,8 @@ if _is_cupy_available:
     # `ctk` extra, all we do is pre-load the DSO that would've been loaded
     # anyway
     try:
-        from cuda.pathfinder import (
-            DynamicLibNotFoundError,
-            load_nvidia_dynamic_lib,
-        )
-
-        load_nvidia_dynamic_lib("cusolver")
-    except (ImportError, DynamicLibNotFoundError):
+        from cupy_backends.cuda.libs import cusolver
+    except ImportError:
         pass
 
 try:
