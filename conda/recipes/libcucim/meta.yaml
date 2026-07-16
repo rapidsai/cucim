@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION.
 # SPDX-License-Identifier: Apache-2.0
 
 {% set version = environ['RAPIDS_PACKAGE_VERSION'].lstrip('v') %}
@@ -69,7 +69,6 @@ requirements:
     - {{ pin_compatible('cuda-version', max_pin='x', min_pin='x') }}
     {% endif %}
     - libcufile
-    - cuda-cudart
     - libnvjpeg
     - libnvimgcodec {{ nvimgcodec_version }}   # nvImageCodec metapackage (includes libnvimgcodec0 + run_exports)
   run_constrained:

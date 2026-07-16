@@ -1,6 +1,6 @@
 #
 # cmake-format: off
-# SPDX-FileCopyrightText: Copyright (c) 2020-2025, NVIDIA CORPORATION.
+# SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION.
 # SPDX-License-Identifier: Apache-2.0
 # cmake-format: on
 #
@@ -147,7 +147,7 @@ target_link_libraries(${CUCIM_PACKAGE_NAME}
             $<BUILD_INTERFACE:deps::fmt>
             $<INSTALL_INTERFACE:cucim::fmt-header-only>
         PRIVATE
-            CUDA::cudart
+            CUDA::cudart_static
             deps::abseil
             deps::gds
             deps::libcuckoo
