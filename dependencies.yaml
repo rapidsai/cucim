@@ -6,7 +6,7 @@ files:
   all:
     output: conda
     matrix:
-      cuda: ["12.9", "13.2"]
+      cuda: ["12.9", "13.3"]
       arch: [x86_64, aarch64]
     includes:
       - build
@@ -16,6 +16,7 @@ files:
       - docs
       - py_version
       - run
+      - depends_on_cupy
       - test_python
   test_python:
     output: none
@@ -60,6 +61,7 @@ files:
       table: project
     includes:
       - run
+      - depends_on_cupy
   py_optional_test:
     output: pyproject
     pyproject_dir: python/cucim
@@ -161,6 +163,10 @@ dependencies:
               cuda: "13.2"
             packages:
               - cuda-version=13.2
+          - matrix:
+              cuda: "13.3"
+            packages:
+              - cuda-version=13.3
       - output_types: requirements
         matrices:
           # if use_cuda_wheels=false is provided, do not add dependencies on any CUDA wheels
@@ -211,6 +217,11 @@ dependencies:
               use_cuda_wheels: "true"
             packages:
               - cuda-toolkit==13.2.*
+          - matrix:
+              cuda: "13.3"
+              use_cuda_wheels: "true"
+            packages:
+              - cuda-toolkit==13.3.*
   cuda:
     common:
       - output_types: conda
@@ -253,10 +264,16 @@ dependencies:
           - ipython
           - nbsphinx
           - &numpydoc numpydoc>=1.7
-          - pydata-sphinx-theme
           - recommonmark
           # the ceiling on sphinx can be removed when https://github.com/spatialaudio/nbsphinx/issues/825 is resolved
           - sphinx>=8.0.0,<8.2.0
+      - output_types: [requirements, pyproject]
+        packages:
+          - nvidia-sphinx-theme
+      - output_types: conda
+        packages:
+          - pip:
+              - nvidia-sphinx-theme
   py_version:
     specific:
       - output_types: conda
@@ -292,12 +309,11 @@ dependencies:
         packages:
           - click
           - lazy-loader>=0.4
-          - numpy>=1.23.4,<3.0
+          - numpy>=2.0,<3.0
           - scikit-image>=0.23.2,<0.27.0
           - scipy>=1.11.2
       - output_types: conda
         packages:
-          - &cupy_unsuffixed cupy>=13.6.0,!=14.0.0,!=14.1.0
           - libnvimgcodec>=0.8.0,<0.9.0
           - nvimgcodec>=0.8.0,<0.9.0
     specific:
@@ -306,13 +322,47 @@ dependencies:
           - matrix:
               cuda: "12.*"
             packages:
-              - cupy-cuda12x>=13.6.0,!=14.0.0,!=14.1.0
               - nvidia-nvimgcodec-cu12>=0.8.0,<0.9.0
           # fallback to CUDA 13 versions if 'cuda' is '13.*' or not provided
           - matrix:
             packages:
-              - cupy-cuda13x>=13.6.0,!=14.0.0,!=14.1.0
               - nvidia-nvimgcodec-cu13>=0.8.0,<0.9.0
+  depends_on_cupy:
+    common:
+      - output_types: conda
+        packages:
+          - &cupy_unsuffixed cupy>=14.0.1,!=14.1.0
+    specific:
+      - output_types: requirements
+        matrices:
+          - matrix:
+              cuda: "12.*"
+            packages:
+              - &cupy_cu12 cupy-cuda12x>=14.0.1,!=14.1.0
+          # fallback to CUDA 13 versions if 'cuda' is '13.*' or not provided
+          - matrix:
+            packages:
+              - &cupy_cu13 cupy-cuda13x>=14.0.1,!=14.1.0
+      - output_types: pyproject
+        matrices:
+          - matrix:
+              cuda: "12.*"
+              use_cuda_wheels: "false"
+            packages:
+              - *cupy_cu12
+          - matrix:
+              cuda: "13.*"
+              use_cuda_wheels: "false"
+            packages:
+              - *cupy_cu13
+          - matrix:
+              cuda: "12.*"
+            packages:
+              - cupy-cuda12x[ctk]>=14.0.1,!=14.1.0
+          # fallback to CUDA 13 versions if 'cuda' is '13.*' or not provided
+          - matrix:
+            packages:
+              - cupy-cuda13x[ctk]>=14.0.1,!=14.1.0
   test_python:
     common:
       - output_types: [conda, requirements, pyproject]

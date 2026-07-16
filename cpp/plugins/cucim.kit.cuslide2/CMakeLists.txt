@@ -277,13 +277,13 @@ if (TARGET CUDA::nvjpeg_static)
                 CUDA::nvjpeg_static
                 # culibos provides OS abstraction functions needed by nvjpeg_static
                 CUDA::culibos
-                CUDA::cudart
+                CUDA::cudart_static
         )
 else()
         target_link_libraries(cuslide2_core
             PUBLIC
                 CUDA::nvjpeg
-                CUDA::cudart
+                CUDA::cudart_static
         )
 endif()
 
