@@ -1,15 +1,19 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 # Note: These test cases originated in skimage/morphology/tests/test_ccomp.py
 
 import cupy as cp
-
-# import numpy as np
 from cupy.testing import assert_array_equal
 
 from cucim.skimage.measure import label
+from cucim.skimage.measure._label import (
+    _INT32_LABEL_SIZE_LIMIT,
+    _get_structure,
+    _label_dtype_for_size,
+)
+from cucim.skimage.measure._label_kernels import _label
 
 # import pytest
 
@@ -139,6 +143,31 @@ class TestConnectedComponents:
         assert_array_equal(label(x, return_num=True)[1], 3)
 
         assert_array_equal(label(x, background=-1, return_num=True)[1], 4)
+
+    def test_label_dtype_for_size(self):
+        assert (
+            cp.dtype(_label_dtype_for_size(_INT32_LABEL_SIZE_LIMIT - 1))
+            == cp.int32
+        )
+        assert (
+            cp.dtype(_label_dtype_for_size(_INT32_LABEL_SIZE_LIMIT)) == cp.int64
+        )
+
+    def test_label_uses_int32_for_small_image(self):
+        labels = label(cp.eye(3, dtype=cp.uint8))
+
+        assert labels.dtype == cp.int32
+
+    def test_label_kernels_support_int64_output(self):
+        x = cp.eye(3, dtype=cp.uint8)
+        structure = _get_structure(x.ndim, connectivity=1)
+        labels = cp.empty(x.shape, dtype=cp.int64)
+
+        num = _label(x, structure, labels, greyscale_mode=True)
+
+        assert labels.dtype == cp.int64
+        assert num == 3
+        assert_array_equal(labels, cp.diag(cp.arange(1, 4, dtype=cp.int64)))
 
 
 class TestConnectedComponents3d:
