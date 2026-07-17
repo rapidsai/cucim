@@ -22,6 +22,7 @@ from skimage.segmentation import slic
 from cucim.skimage import transform
 from cucim.skimage._vendored import pad
 from cucim.skimage.measure import (
+    _regionprops as regionprops_module,
     euler_number,
     perimeter,
     perimeter_crofton,
@@ -64,6 +65,10 @@ SAMPLE_3D[1:3, 1:3, 1:3] = 1
 SAMPLE_3D[3, 2, 2] = 1
 INTENSITY_SAMPLE_3D = SAMPLE_3D.copy()
 
+REGIONPROPS_PERFORMANCE_WARNING = (
+    "For performant cuCIM region property measurement, use regionprops_table"
+)
+
 
 def get_moment_function(img, spacing=(1, 1)):
     rows, cols = img.shape
@@ -97,6 +102,20 @@ def get_central_moment_function(img, spacing=(1, 1)):
     cY = Mpq(1, 0) / Mpq(0, 0)
     cX = Mpq(0, 1) / Mpq(0, 0)
     return lambda p, q: cp.sum((Y - cY) ** p * (X - cX) ** q * img)
+
+
+def test_regionprops_performance_warning_once():
+    regionprops_module._regionprops_performance_warning_emitted = False
+    with pytest.warns(UserWarning, match=REGIONPROPS_PERFORMANCE_WARNING):
+        regionprops(SAMPLE)
+
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "error",
+            category=UserWarning,
+            message=REGIONPROPS_PERFORMANCE_WARNING,
+        )
+        regionprops(SAMPLE)
 
 
 @pytest.mark.filterwarnings(
@@ -1189,16 +1208,30 @@ def test_props_to_dict():
     assert_array_equal(out["coords"][0], coords[0])
     assert_array_equal(out["coords"][1], coords[1])
 
+    out = _props_to_dict(regions, properties=("bbox", "coords"), to_table=False)
+    assert set(out) == {"bbox", "coords"}
+    assert_array_equal(out["bbox"], cp.array([[0, 0, 10, 10], [3, 7, 5, 8]]))
+    assert isinstance(out["coords"], tuple)
+    assert len(out["coords"]) == 2
+    assert_array_equal(out["coords"][0], coords[0])
+    assert_array_equal(out["coords"][1], coords[1])
+
 
 @pytest.mark.parametrize("batch_processing", [False, True])
-def test_regionprops_table(batch_processing):
-    out = regionprops_table(SAMPLE, batch_processing=batch_processing)
+@pytest.mark.parametrize("copy_output_to_host", [False, True])
+def test_regionprops_table(batch_processing, copy_output_to_host):
+    out = regionprops_table(
+        SAMPLE,
+        batch_processing=batch_processing,
+        copy_output_to_host=copy_output_to_host,
+    )
+    xp = np if copy_output_to_host else cp
     assert out == {
-        "label": cp.array([1]),
-        "bbox-0": cp.array([0]),
-        "bbox-1": cp.array([0]),
-        "bbox-2": cp.array([10]),
-        "bbox-3": cp.array([18]),
+        "label": xp.array([1]),
+        "bbox-0": xp.array([0]),
+        "bbox-1": xp.array([0]),
+        "bbox-2": xp.array([10]),
+        "bbox-3": xp.array([18]),
     }
 
     out = regionprops_table(
@@ -1206,27 +1239,57 @@ def test_regionprops_table(batch_processing):
         properties=("label", "area", "bbox"),
         separator="+",
         batch_processing=batch_processing,
+        copy_output_to_host=copy_output_to_host,
     )
     assert out == {
-        "label": cp.array([1]),
-        "area": cp.array([72]),
-        "bbox+0": cp.array([0]),
-        "bbox+1": cp.array([0]),
-        "bbox+2": cp.array([10]),
-        "bbox+3": cp.array([18]),
+        "label": xp.array([1]),
+        "area": xp.array([72]),
+        "bbox+0": xp.array([0]),
+        "bbox+1": xp.array([0]),
+        "bbox+2": xp.array([10]),
+        "bbox+3": xp.array([18]),
     }
 
     out = regionprops_table(
         SAMPLE_MULTIPLE,
         properties=("coords",),
         batch_processing=batch_processing,
+        copy_output_to_host=copy_output_to_host,
     )
     coords = np.empty(2, object)
-    coords[0] = cp.stack((cp.arange(10),) * 2, axis=-1)
-    coords[1] = cp.array([[3, 7], [4, 7]])
+    coords[0] = xp.stack((xp.arange(10),) * 2, axis=-1)
+    coords[1] = xp.array([[3, 7], [4, 7]])
     assert out["coords"].shape == coords.shape
     assert_array_equal(out["coords"][0], coords[0])
     assert_array_equal(out["coords"][1], coords[1])
+
+
+@pytest.mark.parametrize("batch_processing", [False, True])
+@pytest.mark.parametrize("copy_output_to_host", [False, True])
+def test_regionprops_table_to_table_false(
+    batch_processing, copy_output_to_host
+):
+    out = regionprops_table(
+        SAMPLE,
+        properties=("label", "centroid", "inertia_tensor", "coords"),
+        batch_processing=batch_processing,
+        to_table=False,
+        copy_output_to_host=copy_output_to_host,
+    )
+    xp = np if copy_output_to_host else cp
+
+    assert set(out) == {"label", "centroid", "inertia_tensor", "coords"}
+    assert isinstance(out["label"], xp.ndarray)
+    assert isinstance(out["centroid"], xp.ndarray)
+    assert isinstance(out["inertia_tensor"], xp.ndarray)
+    assert isinstance(out["coords"], tuple)
+    assert isinstance(out["coords"][0], xp.ndarray)
+    assert out["centroid"].shape == (1, 2)
+    assert out["inertia_tensor"].shape == (1, 2, 2)
+    assert len(out["coords"]) == 1
+    assert out["coords"][0].shape == (72, 2)
+    assert_allclose(out["label"], xp.array([1]))
+    assert_allclose(out["centroid"], xp.array([[5.66666667, 9.44444444]]))
 
 
 @pytest.mark.parametrize("batch_processing", [False, True])
@@ -1344,6 +1407,21 @@ def test_regionprops_table_no_regions(batch_processing):
     assert len(out["bbox+1"]) == 0
     assert len(out["bbox+2"]) == 0
     assert len(out["bbox+3"]) == 0
+
+
+@pytest.mark.parametrize("batch_processing", [False, True])
+def test_regionprops_table_to_table_false_no_regions(batch_processing):
+    out = regionprops_table(
+        cp.zeros((2, 2), dtype=int),
+        properties=("label", "area", "bbox", "coords"),
+        batch_processing=batch_processing,
+        to_table=False,
+    )
+    assert set(out) == {"label", "area", "bbox", "coords"}
+    assert out["label"].shape == (0,)
+    assert out["area"].shape == (0,)
+    assert out["bbox"].shape == (0, 4)
+    assert out["coords"] == ()
 
 
 def test_regionprops_table_error_on_numpy_input():
