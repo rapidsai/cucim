@@ -68,9 +68,9 @@ TEST_CASE("Verify libcufile usage", "[test_cufile.cpp]")
     constexpr int W_FLAG_LEN = sizeof(test_w_flags) / sizeof(test_w_flags[0]);
     constexpr char const* test_r_flags[] = { "rpn", "rp", "rn", "r" };
     // clang-format off
-    constexpr int test_buf_offsets[] =  { 0,   0,   0,    0,  0,     0,    0,    0,    0,            0 };
-    constexpr int test_file_offsets[] = { 0, 500,   0,    0, 400,  400, 4000, 4500, 4500, 4096 * 2 - 1 };
-    constexpr int test_counts[] =       { 0,   0, 500, 4097, 500, 4097,  500,  500, 4097,          500 };
+    constexpr int test_buf_offsets[] =  { 0,   0,   0,    0,  0,     0,    0,    0,    0,            0,        0 };
+    constexpr int test_file_offsets[] = { 0, 500,   0,    0, 400,  400, 4000, 4500, 4500, 4096 * 2 - 1, 4096 };
+    constexpr int test_counts[] =       { 0,   0, 500, 4097, 500, 4097,  500,  500, 4097,          500, 4097 };
     // clang-format on
     constexpr int TEST_PARAM_LEN = sizeof(test_counts) / sizeof(test_counts[0]);
     uint8_t test_data[BLOCK_SECTOR_SIZE * 3];
