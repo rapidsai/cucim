@@ -1,5 +1,5 @@
 #
-# SPDX-FileCopyrightText: Copyright (c) 2020-2021, NVIDIA CORPORATION.
+# SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION.
 # SPDX-License-Identifier: Apache-2.0
 #
 
@@ -20,6 +20,7 @@ skimage
     Functions from scikit-image.
 
 """
+
 _is_cupy_available = False
 _is_clara_available = False
 
@@ -39,6 +40,25 @@ try:
     submodules += ["core", "skimage"]
 except ImportError:
     pass
+
+if _is_cupy_available:
+    # If CuPy is available AND we aren't on a system CTK install, then
+    # the end-user will have to have used the `ctk` extra to install `cupy-cuda13x` (or similar)
+    # `cuda.pathfinder` will also be available
+    # Use it to pre-load `cusolver` to get around an upstream issue in CuPy:
+    # https://github.com/cupy/cupy/issues/10095
+    #
+    # If CuPy is available and we ARE on a system CTK install, then a user might have not installed the `ctk` extra
+    # and so `cuda.pathfinder` might not be available. In this scenario, we don't NEED `cuda.pathfinder` since on CTK installs
+    # CuPy can load `libcusolver.so` without issue.
+    #
+    # If CuPy is available, on a system CTK install, AND user installed the
+    # `ctk` extra, all we do is pre-load the DSO that would've been loaded
+    # anyway
+    try:
+        from cupy_backends.cuda.libs import cusolver
+    except ImportError:
+        pass
 
 try:
     from .clara import CuImage, cli
