@@ -16,6 +16,7 @@ Constructor of CuFileDriver.
 
 Args:
     fd: A file descriptor (in `int` type) which is available through `os.open()` method.
+        File descriptors opened with `os.O_APPEND` are not supported.
     no_gds: If True, use POSIX APIs only even when GDS can be supported for the file.
     use_mmap: If True, use memory-mapped IO. This flag is supported only for the read-only file descriptor. Default value is `False`.
     file_path: A file path for the file descriptor. It would retrieve the absolute file path of the file descriptor if not specified.

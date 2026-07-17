@@ -30,6 +30,8 @@ namespace cucim::filesystem
 {
 static constexpr unsigned int PAGE_SIZE = 4096;
 static constexpr uint64_t DEFAULT_MAX_CACHE_SIZE = 128 << 20; // 128MiB
+static constexpr char kAppendModeUnsupportedMessage[] =
+    "Append mode is not supported because CuFileDriver uses explicit-offset pread()/pwrite() semantics.";
 static CuFileStub s_cufile_stub;
 static CuFileDriverInitializer s_cufile_initializer;
 thread_local static CuFileDriverCache s_cufile_cache;
@@ -76,9 +78,6 @@ static int get_file_flags(const char* flags)
     case 'w':
         file_flags = O_RDWR | O_CREAT | O_TRUNC;
         break;
-    case 'a':
-        file_flags = O_RDWR | O_CREAT;
-        break;
     default:
         return -1;
     }
@@ -96,6 +95,11 @@ bool is_gds_available()
 
 std::shared_ptr<CuFileDriver> open(const char* file_path, const char* flags, mode_t mode)
 {
+    if (flags != nullptr && flags[0] == 'a')
+    {
+        throw std::invalid_argument(kAppendModeUnsupportedMessage);
+    }
+
     bool use_o_direct = true;
     bool no_gds = false;
     bool use_mmap = false;
@@ -188,6 +192,10 @@ CuFileDriver::CuFileDriver(int fd, bool no_gds, bool use_mmap, const char* file_
     if (flags < 0)
     {
         throw std::runtime_error(fmt::format("[Error] fcntl failed for fd {} ({})", fd, std::strerror(errno)));
+    }
+    if (flags & O_APPEND)
+    {
+        throw std::invalid_argument(kAppendModeUnsupportedMessage);
     }
     file_flags_ = flags;
 
