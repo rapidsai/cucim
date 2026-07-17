@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import math
@@ -34,9 +34,8 @@ def median(
         If ``None``, ``footprint`` will be a N-D array with 3 elements for each
         dimension (e.g., vector, square, cube, etc.). If `footprint` is a
         tuple of integers, it will be an array of ones with the given shape.
-        Otherwise, if ``behavior=='rank'``, ``footprint`` is a 2-D array of 1's
-        and 0's. If ``behavior=='ndimage'``, ``footprint`` is a N-D array of
-        1's and 0's with the same number of dimension as ``image``.
+        Otherwise, ``footprint`` is an N-D array of 1's and 0's with the same
+        number of dimensions as ``image``.
         Note that upstream scikit-image currently does not support supplying
         a tuple for `footprint`. It is added here to avoid overhead of
         generating a small weights array in cases where it is not needed.
@@ -44,26 +43,19 @@ def median(
         If None, a new array is allocated.
     mode : {'reflect', 'constant', 'nearest', 'mirror','‘wrap'}, optional
         The mode parameter determines how the array borders are handled, where
-        ``cval`` is the value when mode is equal to 'constant'.
+        ``cval`` is the value when mode is equal to 'constant'. ``mode`` is
+        only used when ``behavior='ndimage'``.
         Default is 'nearest'.
-
-        .. versionadded:: 0.15
-           ``mode`` is used when ``behavior='ndimage'``.
     cval : scalar, optional
-        Value to fill past edges of input if mode is 'constant'. Default is 0.0
-
-        .. versionadded:: 0.15
-           ``cval`` was added in 0.15 is used when ``behavior='ndimage'``.
+        Value to fill past edges of input if mode is 'constant'. ``cval`` is
+        only used when ``behavior='ndimage'``. Default is 0.0.
     behavior : {'ndimage', 'rank'}, optional
-        Either to use the old behavior (i.e., < 0.15) or the new behavior.
-        The old behavior will call the :func:`skimage.filters.rank.median`.
-        The new behavior will call the :func:`scipy.ndimage.median_filter`.
-        Default is 'ndimage'.
-
-        .. versionadded:: 0.15
-           ``behavior`` is introduced in 0.15
-        .. versionchanged:: 0.16
-           Default ``behavior`` has been changed from 'rank' to 'ndimage'
+        Behavior 'ndimage' behaves like `cupyx.scipy.ndimage.median_filter`,
+        while 'rank' uses :func:`cucim.skimage.filters.rank.median`. cuCIM rank
+        filters use reflected boundary extension with a constant footprint
+        size and support N-D images. This differs from scikit-image rank
+        filters, which crop neighborhoods near image boundaries and support
+        only 2-D and 3-D images. Default is 'ndimage'.
 
     Other Parameters
     ----------------
@@ -81,8 +73,8 @@ def median(
 
     Returns
     -------
-    out : 2-D array (same dtype as input image)
-        Output image.
+    out : N-D array
+        Output image with the same shape as the input image.
 
     See also
     --------
@@ -124,9 +116,15 @@ def median(
                 "otherwise.",
                 stacklevel=2,
             )
-        raise NotImplementedError("rank behavior not currently implemented")
-        # TODO: implement median rank filter
-        # return generic.median(image, footprint=footprint, out=out)
+        from .rank import median as rank_median
+
+        if isinstance(footprint, tuple):
+            if len(footprint) != image.ndim:
+                raise ValueError(
+                    "tuple footprint must have ndim matching image"
+                )
+            footprint = cp.ones(footprint, dtype=bool)
+        return rank_median(image, footprint=footprint, out=out)
 
     if footprint is None:
         footprint_shape = (3,) * image.ndim

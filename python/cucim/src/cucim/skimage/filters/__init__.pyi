@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2023-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 __all__ = [
@@ -24,6 +24,7 @@ __all__ = [
     "prewitt",
     "prewitt_h",
     "prewitt_v",
+    "rank",
     "rank_order",
     "roberts",
     "roberts_neg_diag",
@@ -52,6 +53,7 @@ __all__ = [
     "window",
 ]
 
+from . import rank
 from ._fft_based import butterworth
 from ._gabor import gabor, gabor_kernel
 from ._gaussian import difference_of_gaussians, gaussian
