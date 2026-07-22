@@ -153,6 +153,8 @@ set(CUSLIDE2_CORE_SOURCES
     # TIFF structure management (uses nvImageCodec for parsing)
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/tiff/ifd.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/tiff/ifd.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/tiff/ome_xml.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/tiff/ome_xml.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/tiff/tiff.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/tiff/tiff.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/tiff/types.h

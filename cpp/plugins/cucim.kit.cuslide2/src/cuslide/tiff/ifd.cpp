@@ -112,7 +112,12 @@ IFD::IFD(TIFF* tiff, uint16_t index, ifd_offset_t offset) : tiff_(tiff), ifd_ind
 // ============================================================================
 
 #ifdef CUCIM_HAS_NVIMGCODEC
-IFD::IFD(TIFF* tiff, uint16_t index, const ::cuslide2::nvimgcodec::IfdInfo& ifd_info)
+IFD::IFD(TIFF* tiff,
+         uint16_t index,
+         const ::cuslide2::nvimgcodec::IfdInfo& ifd_info,
+         size_t parser_idx,
+         uint32_t local_ifd_idx,
+         uint64_t file_hash)
     : tiff_(tiff), ifd_index_(index), ifd_offset_(index)
 {
     PROF_SCOPED_RANGE(PROF_EVENT(ifd_ifd));  // Use standard ifd_ifd profiler event
@@ -126,6 +131,8 @@ IFD::IFD(TIFF* tiff, uint16_t index, const ::cuslide2::nvimgcodec::IfdInfo& ifd_
     height_ = ifd_info.height;
     samples_per_pixel_ = ifd_info.num_channels;
     bits_per_sample_ = ifd_info.bits_per_sample;
+    parser_index_ = parser_idx;
+    local_ifd_index_ = local_ifd_idx;
 
     #ifdef DEBUG
     fmt::print("   Dimensions: {}x{}, {} channels, {} bits/sample\n",
@@ -142,14 +149,15 @@ IFD::IFD(TIFF* tiff, uint16_t index, const ::cuslide2::nvimgcodec::IfdInfo& ifd_
     // Get ImageDescription from nvImageCodec
     image_description_ = ifd_info.image_description;
 
-    // Extract TIFF tags from TiffFileParser
-    if (tiff->nvimgcodec_parser_) {
+    // Extract TIFF tags from the parser that owns this IFD.
+    const auto& parser = (parser_idx == 0) ? *tiff->nvimgcodec_parser_ : *tiff->companion_parsers_[parser_idx - 1];
+    {
         // Software and Model tags
-        software_ = tiff->nvimgcodec_parser_->get_tiff_tag(index, "SOFTWARE");
-        model_ = tiff->nvimgcodec_parser_->get_tiff_tag(index, "MODEL");
+        software_ = parser.get_tiff_tag(local_ifd_idx, "SOFTWARE");
+        model_ = parser.get_tiff_tag(local_ifd_idx, "MODEL");
 
         // SUBFILETYPE for IFD classification
-        int subfile_type = tiff->nvimgcodec_parser_->get_subfile_type(index);
+        int subfile_type = parser.get_subfile_type(local_ifd_idx);
         if (subfile_type >= 0) {
             subfile_type_ = static_cast<uint64_t>(subfile_type);
             #ifdef DEBUG
@@ -158,7 +166,7 @@ IFD::IFD(TIFF* tiff, uint16_t index, const ::cuslide2::nvimgcodec::IfdInfo& ifd_
         }
 
         // Check for JPEGTables (abbreviated JPEG indicator)
-        std::string jpeg_tables = tiff->nvimgcodec_parser_->get_tiff_tag(index, "JPEGTABLES");
+        std::string jpeg_tables = parser.get_tiff_tag(local_ifd_idx, "JPEGTABLES");
         if (!jpeg_tables.empty()) {
             #ifdef DEBUG
             fmt::print("   ✅ JPEGTables detected (abbreviated JPEG)\n");
@@ -166,8 +174,9 @@ IFD::IFD(TIFF* tiff, uint16_t index, const ::cuslide2::nvimgcodec::IfdInfo& ifd_
         }
 
         // Tile dimensions (if available from TIFF tags)
-        std::string tile_w_str = tiff->nvimgcodec_parser_->get_tiff_tag(index, "TILEWIDTH");
-        std::string tile_h_str = tiff->nvimgcodec_parser_->get_tiff_tag(index, "TILELENGTH");
+        std::string tile_w_str = parser.get_tiff_tag(local_ifd_idx, "TILEWIDTH");
+        std::string tile_h_str = parser.get_tiff_tag(local_ifd_idx, "TILELENGTH");
+        std::string photo_str = parser.get_tiff_tag(local_ifd_idx, "PHOTOMETRIC");
 
         if (!tile_w_str.empty() && !tile_h_str.empty()) {
             try {
@@ -191,11 +200,27 @@ IFD::IFD(TIFF* tiff, uint16_t index, const ::cuslide2::nvimgcodec::IfdInfo& ifd_
             fmt::print("   Not tiled (strip-based or whole image)\n");
             #endif
         }
+
+        if (!photo_str.empty())
+        {
+            try
+            {
+                photometric_ = static_cast<uint16_t>(std::stoul(photo_str));
+            }
+            catch (...)
+            {
+                // Keep fallback below.
+            }
+        }
     }
 
     // Set format defaults
     planar_config_ = cuslide::tiff::PLANARCONFIG_CONTIG;  // nvImageCodec outputs interleaved
-    photometric_ = cuslide::tiff::PHOTOMETRIC_RGB;
+    if (photometric_ == 0)
+    {
+        photometric_ = (samples_per_pixel_ == 1) ? cuslide::tiff::PHOTOMETRIC_MINISBLACK
+                                                  : cuslide::tiff::PHOTOMETRIC_RGB;
+    }
     predictor_ = 1;  // No predictor
 
     // Resolution info (defaults - may not be available from nvImageCodec)
@@ -204,7 +229,8 @@ IFD::IFD(TIFF* tiff, uint16_t index, const ::cuslide2::nvimgcodec::IfdInfo& ifd_
     y_resolution_ = 1.0f;
 
     // Calculate hash for caching (include file hash for cross-file uniqueness)
-    hash_value_ = tiff->file_handle_shared_.get()->hash_value ^ cucim::codec::splitmix64(index);
+    hash_value_ = (file_hash != 0) ? (file_hash ^ cucim::codec::splitmix64(local_ifd_idx))
+                                   : (tiff->file_handle_shared_.get()->hash_value ^ cucim::codec::splitmix64(index));
 
 #ifdef CUCIM_HAS_NVIMGCODEC
     // Store reference to nvImageCodec sub-stream
@@ -254,7 +280,7 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
     #endif
 
 #ifdef CUCIM_HAS_NVIMGCODEC
-    if (!nvimgcodec_sub_stream_ || !tiff->nvimgcodec_parser_)
+    if (!nvimgcodec_sub_stream_)
     {
         throw std::runtime_error(fmt::format(
             "IFD[{}]: nvImageCodec parser not available", ifd_index_));
@@ -272,10 +298,11 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
     const uint64_t location_len = request->location_len;
 
     uint32_t batch_size = request->batch_size;
-    int32_t n_ch = samples_per_pixel_;
+    int32_t n_ch = static_cast<int32_t>(std::max<uint32_t>(1, samples_per_pixel_));
     int ndim = 3;
+    const size_t bytes_per_sample = std::max<size_t>(1, bits_per_sample_ / 8);
 
-    size_t one_raster_size = static_cast<size_t>(w) * static_cast<size_t>(h) * samples_per_pixel_;
+    size_t one_raster_size = static_cast<size_t>(w) * static_cast<size_t>(h) * n_ch * bytes_per_sample;
     size_t raster_size = one_raster_size;
 
     void* raster = nullptr;
@@ -419,7 +446,7 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
         // loader->next_data() during Python iteration.
         out_image_data->container.data = raster;  // may be nullptr for batch iteration
         out_image_data->container.device = DLDevice{ static_cast<DLDeviceType>(raster_type), out_device.index() };
-        out_image_data->container.dtype = DLDataType{ kDLUInt, 8, 1 };
+        out_image_data->container.dtype = DLDataType{ kDLUInt, static_cast<uint8_t>(bits_per_sample_), 1 };
         out_image_data->container.ndim = ndim;
         out_image_data->container.shape = static_cast<int64_t*>(cucim_malloc(ndim * sizeof(int64_t)));
         if (ndim == 4)
@@ -456,9 +483,10 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
         output_buffer = static_cast<uint8_t*>(out_buf->data);
     }
 
-    // Get IFD info from TiffFileParser
-    const auto& ifd_info = tiff->nvimgcodec_parser_->get_ifd(static_cast<uint32_t>(ifd_index_));
-    auto main_code_stream = tiff->nvimgcodec_parser_->get_main_code_stream();
+    // Get IFD info from the parser that owns this global IFD.
+    const auto& parser = tiff->parser_for_global_ifd(ifd_index_);
+    const auto& ifd_info = parser.get_ifd(local_ifd_index_);
+    auto main_code_stream = parser.get_main_code_stream();
 
     // ====================================================================
     // TILE-LEVEL CACHING PATH
@@ -473,9 +501,10 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
     //  1. The image is tiled (tile_width_ > 0 && tile_height_ > 0)
     //  2. The ROI is fully within the image bounds (no boundary handling)
     //  3. An image cache is configured (not kNoCache)
-    //  4. The image is 8-bit RGB (the only format the assembly path supports)
+    //  4. The image has a scalar sample format this assembly path supports
     bool use_tile_caching = (tile_width_ > 0 && tile_height_ > 0 &&
-                             bits_per_sample_ == 8 && samples_per_pixel_ == 3 &&
+                             (bits_per_sample_ == 8 || bits_per_sample_ == 16) &&
+                             samples_per_pixel_ >= 1 &&
                              sx >= 0 && sy >= 0 &&
                              ex < static_cast<int64_t>(width_) &&
                              ey < static_cast<int64_t>(height_));
@@ -497,7 +526,8 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
 
         const uint32_t tw = tile_width_;
         const uint32_t th = tile_height_;
-        const uint32_t samples = samples_per_pixel_;
+        const uint32_t samples = std::max<uint32_t>(1, samples_per_pixel_);
+        const uint32_t bytes_per_px = static_cast<uint32_t>(std::max<size_t>(1, bits_per_sample_ / 8));
         const uint8_t background_value = tiff->background_value_;
 
         // Tile grid offsets that the ROI overlaps
@@ -542,7 +572,7 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
             host_raster = host_raster_owner.get();
         }
 
-        const uint32_t dest_row_stride = static_cast<uint32_t>(w) * samples;
+        const uint32_t dest_row_stride = static_cast<uint32_t>(w) * samples * bytes_per_px;
         uint8_t* dest_row_ptr = host_raster;
 
         #ifdef DEBUG
@@ -567,15 +597,15 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
                 const uint32_t tile_pixel_sx = (tile_col == offset_sx) ? pixel_offset_sx : 0;
                 const uint32_t tile_pixel_ex = (tile_col == offset_ex) ? pixel_offset_ex : (tw - 1);
                 const uint32_t copy_cols = tile_pixel_ex - tile_pixel_sx + 1;
-                const uint32_t copy_bytes_per_row = copy_cols * samples;
+                const uint32_t copy_bytes_per_row = copy_cols * samples * bytes_per_px;
 
                 // Actual decoded tile dimensions (clipped to image bounds for edge tiles)
                 const uint32_t tile_origin_x = tile_col * tw;
                 const uint32_t tile_origin_y = tile_row * th;
                 const uint32_t actual_tw = std::min(tw, width_ - tile_origin_x);
                 const uint32_t actual_th = std::min(th, height_ - tile_origin_y);
-                const size_t tile_buf_size = static_cast<size_t>(actual_tw) * actual_th * samples;
-                const uint32_t tile_row_stride = actual_tw * samples;
+                const size_t tile_buf_size = static_cast<size_t>(actual_tw) * actual_th * samples * bytes_per_px;
+                const uint32_t tile_row_stride = actual_tw * samples * bytes_per_px;
 
                 // Hash for per-tile locking
                 const uint64_t index_hash = ifd_hash ^
@@ -677,7 +707,7 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
                 // If insert() succeeded, the cache also holds a shared reference.
                 // If insert() failed, tile_value is the sole owner — freed after this iteration.
                 const uint32_t src_byte_offset =
-                    (tile_pixel_sy * actual_tw + tile_pixel_sx) * samples;
+                    (tile_pixel_sy * actual_tw + tile_pixel_sx) * samples * bytes_per_px;
 
                 for (uint32_t r = 0; r < copy_rows; ++r)
                 {
@@ -733,12 +763,12 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
         // Set up output metadata
         out_image_data->container.data = output_buffer;
         out_image_data->container.device = DLDevice{ static_cast<DLDeviceType>(raster_type), out_device.index() };
-        out_image_data->container.dtype = DLDataType{ kDLUInt, 8, 1 };
+        out_image_data->container.dtype = DLDataType{ kDLUInt, static_cast<uint8_t>(bits_per_sample_), 1 };
         out_image_data->container.ndim = 3;
         out_image_data->container.shape = static_cast<int64_t*>(cucim_malloc(3 * sizeof(int64_t)));
         out_image_data->container.shape[0] = h;
         out_image_data->container.shape[1] = w;
-        out_image_data->container.shape[2] = samples_per_pixel_;
+        out_image_data->container.shape[2] = std::max<uint32_t>(1, samples_per_pixel_);
         out_image_data->container.strides = nullptr;
         out_image_data->container.byte_offset = 0;
 
@@ -776,12 +806,12 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
         // Set up output metadata
         out_image_data->container.data = output_buffer;
         out_image_data->container.device = DLDevice{ static_cast<DLDeviceType>(out_device.type()), out_device.index() };
-        out_image_data->container.dtype = DLDataType{ kDLUInt, 8, 1 };
+        out_image_data->container.dtype = DLDataType{ kDLUInt, static_cast<uint8_t>(bits_per_sample_), 1 };
         out_image_data->container.ndim = 3;
         out_image_data->container.shape = static_cast<int64_t*>(cucim_malloc(3 * sizeof(int64_t)));
         out_image_data->container.shape[0] = h;
         out_image_data->container.shape[1] = w;
-        out_image_data->container.shape[2] = samples_per_pixel_;
+        out_image_data->container.shape[2] = std::max<uint32_t>(1, samples_per_pixel_);
         out_image_data->container.strides = nullptr;
         out_image_data->container.byte_offset = 0;
 
@@ -1002,9 +1032,13 @@ bool IFD::is_compression_supported() const
 
 bool IFD::is_read_optimizable() const
 {
-    return is_compression_supported() && bits_per_sample_ == 8 && samples_per_pixel_ == 3 &&
+    return is_compression_supported() && (bits_per_sample_ == 8 || bits_per_sample_ == 16) &&
+           samples_per_pixel_ >= 1 &&
            (tile_width_ != 0 && tile_height_ != 0) && planar_config_ == cuslide::tiff::PLANARCONFIG_CONTIG &&
-           (photometric_ == cuslide::tiff::PHOTOMETRIC_RGB || photometric_ == cuslide::tiff::PHOTOMETRIC_YCBCR) &&
+           (photometric_ == cuslide::tiff::PHOTOMETRIC_RGB ||
+            photometric_ == cuslide::tiff::PHOTOMETRIC_YCBCR ||
+            photometric_ == cuslide::tiff::PHOTOMETRIC_MINISBLACK ||
+            photometric_ == cuslide::tiff::PHOTOMETRIC_MINISWHITE) &&
            !tiff_->is_in_read_config(TIFF::kUseLibTiff);
 }
 

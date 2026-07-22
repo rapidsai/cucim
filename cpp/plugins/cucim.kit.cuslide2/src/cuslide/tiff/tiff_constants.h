@@ -38,6 +38,8 @@ constexpr uint16_t COMPRESSION_APERIO_JP2K_YCBCR = 33003;
 constexpr uint16_t COMPRESSION_APERIO_JP2K_RGB = 33005;
 
 // TIFF Photometric Interpretation
+constexpr uint16_t PHOTOMETRIC_MINISWHITE = 0;
+constexpr uint16_t PHOTOMETRIC_MINISBLACK = 1;
 constexpr uint16_t PHOTOMETRIC_RGB = 2;
 constexpr uint16_t PHOTOMETRIC_YCBCR = 6;
 
