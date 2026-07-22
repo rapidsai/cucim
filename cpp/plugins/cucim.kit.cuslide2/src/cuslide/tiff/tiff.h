@@ -17,6 +17,8 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <string>
+#include <tuple>
 #include <vector>
 
 #include "ifd.h"
@@ -98,6 +100,26 @@ public:
     friend class IFD;
 
 private:
+    std::vector<std::unique_ptr<cuslide2::nvimgcodec::TiffFileParser>> companion_parsers_;
+    std::vector<std::string> companion_parser_paths_;
+    std::vector<uint64_t> parser_file_hashes_;
+    std::map<std::pair<size_t, uint32_t>, size_t> parser_local_to_global_ifd_;
+    std::vector<std::pair<size_t, uint32_t>> global_to_parser_local_ifd_;
+    bool has_ome_plane_index_ = false;
+    int64_t ome_size_c_ = 1;
+    int64_t ome_size_z_ = 1;
+    int64_t ome_size_t_ = 1;
+    std::vector<std::string> ome_channel_names_;
+    std::map<std::string, int64_t> ome_channel_name_to_index_;
+    std::map<std::tuple<int64_t, int64_t, int64_t, uint16_t>, size_t> ome_plane_to_ifd_;
+    void _populate_ome_tiff_metadata(uint16_t ifd_count, void* metadata, std::shared_ptr<IFD>& first_ifd);
+    size_t _ensure_global_ifd(size_t parser_idx, uint32_t local_ifd_idx);
+    size_t _find_or_add_parser_context(const std::string& abs_path);
+    static uint64_t _hash_path(const std::string& path);
+    const cuslide2::nvimgcodec::TiffFileParser& parser_for_global_ifd(size_t global_ifd_idx) const;
+    uint32_t local_ifd_for_global_ifd(size_t global_ifd_idx) const;
+    uint64_t file_hash_for_global_ifd(size_t global_ifd_idx) const;
+
     // UPDATED: These now use nvImageCodec TiffFileParser instead of libtiff
     void _populate_philips_tiff_metadata(uint16_t ifd_count, void* metadata, std::shared_ptr<IFD>& first_ifd);
     void _populate_aperio_svs_metadata(uint16_t ifd_count, void* metadata, std::shared_ptr<IFD>& first_ifd);

@@ -34,7 +34,12 @@ class EXPORT_VISIBLE IFD : public std::enable_shared_from_this<IFD>
 public:
     IFD(TIFF* tiff, uint16_t index, ifd_offset_t offset);
 #ifdef CUCIM_HAS_NVIMGCODEC
-    IFD(TIFF* tiff, uint16_t index, const cuslide2::nvimgcodec::IfdInfo& ifd_info);
+    IFD(TIFF* tiff,
+        uint16_t index,
+        const cuslide2::nvimgcodec::IfdInfo& ifd_info,
+        size_t parser_idx = 0,
+        uint32_t local_ifd_idx = 0,
+        uint64_t file_hash = 0);
 #endif
     ~IFD();
 
@@ -121,6 +126,8 @@ private:
     // nvImageCodec-specific members
     nvimgcodecCodeStream_t nvimgcodec_sub_stream_ = nullptr;
     std::string codec_name_;  // codec name from nvImageCodec (jpeg, jpeg2k, deflate, etc.)
+    size_t parser_index_ = 0;
+    uint32_t local_ifd_index_ = 0;
 #endif
 
     /**
