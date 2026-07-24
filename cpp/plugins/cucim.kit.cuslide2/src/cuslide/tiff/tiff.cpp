@@ -8,13 +8,15 @@
 #include <fcntl.h>
 
 #include <algorithm>
+#include <filesystem>
+#include <functional>
 #include <string>
 #include <string_view>
-#include <type_traits>
 
 #include <fmt/format.h>
 #include <nlohmann/json.hpp>
 #include <pugixml.hpp>
+#include "ome_xml.h"
 #include "tiff_constants.h"
 
 #include <cucim/codec/base64.h>
@@ -25,20 +27,6 @@
 #include "ifd.h"
 
 static constexpr int DEFAULT_IFD_SIZE = 32;
-
-#ifdef CUCIM_HAS_NVIMGCODEC
-constexpr int kMetadataKindMedAperio = NVIMGCODEC_METADATA_KIND_MED_APERIO;
-constexpr int kMetadataKindMedPhilips = NVIMGCODEC_METADATA_KIND_MED_PHILIPS;
-constexpr int kMetadataKindMedVentana = NVIMGCODEC_METADATA_KIND_MED_VENTANA;
-constexpr int kMetadataKindMedLeica = NVIMGCODEC_METADATA_KIND_MED_LEICA;
-constexpr int kMetadataKindMedTrestle = NVIMGCODEC_METADATA_KIND_MED_TRESTLE;
-#else
-constexpr int kMetadataKindMedAperio = 5;
-constexpr int kMetadataKindMedPhilips = 6;
-constexpr int kMetadataKindMedVentana = 7;
-constexpr int kMetadataKindMedLeica = 8;
-constexpr int kMetadataKindMedTrestle = 9;
-#endif
 
 using json = nlohmann::json;
 
@@ -82,44 +70,30 @@ static void parse_string_array(const char* values, json& arr, PhilipsMetadataTyp
         {
             if (text[next_pos - 1] != '\\')
             {
-                try
+                switch (type)
                 {
-                    std::string val(text.substr(pos + 1, next_pos - pos - 1));
-                    switch (type)
-                    {
-                    case PhilipsMetadataType::IString:
-                        arr.emplace_back(std::move(val));
-                        break;
-                    case PhilipsMetadataType::IDouble:
-                        arr.emplace_back(std::stod(val));
-                        break;
-                    case PhilipsMetadataType::IUInt16:
-                    case PhilipsMetadataType::IUInt32:
-                    case PhilipsMetadataType::IUInt64:
-                        arr.emplace_back(std::stoul(val));
-                        break;
-                    }
-                }
-                catch (const std::exception&)
-                {
+                case PhilipsMetadataType::IString:
+                    arr.emplace_back(std::string(text.substr(pos + 1, next_pos - pos - 1)));
+                    break;
+                case PhilipsMetadataType::IDouble:
+                    arr.emplace_back(std::stod(std::string(text.substr(pos + 1, next_pos - pos - 1))));
+                    break;
+                case PhilipsMetadataType::IUInt16:
+                case PhilipsMetadataType::IUInt32:
+                case PhilipsMetadataType::IUInt64:
+                    arr.emplace_back(std::stoul(std::string(text.substr(pos + 1, next_pos - pos - 1))));
+                    break;
                 }
                 pos = next_pos + 1;
             }
         }
     }
 }
-static constexpr int kMaxXmlParseDepth = 32;
-
 static void parse_philips_tiff_metadata(const pugi::xml_node& node,
                                         json& metadata,
                                         const char* name,
-                                        PhilipsMetadataStage stage,
-                                        int depth = 0)
+                                        PhilipsMetadataStage stage)
 {
-    if (depth > kMaxXmlParseDepth)
-    {
-        return;
-    }
     switch (stage)
     {
     case PhilipsMetadataStage::ROOT:
@@ -130,8 +104,7 @@ static void parse_philips_tiff_metadata(const pugi::xml_node& node,
             const pugi::xml_attribute& attr_attribute = attr.attribute("Name");
             if (attr_attribute)
             {
-                parse_philips_tiff_metadata(
-                    attr, metadata, attr_attribute.value(), PhilipsMetadataStage::ELEMENT, depth + 1);
+                parse_philips_tiff_metadata(attr, metadata, attr_attribute.value(), PhilipsMetadataStage::ELEMENT);
             }
         }
         break;
@@ -196,8 +169,7 @@ static void parse_philips_tiff_metadata(const pugi::xml_node& node,
                         {
                             auto& item_iter = item_array_iter.first->emplace_back(json{});
                             parse_philips_tiff_metadata(
-                                data_node, item_iter, nullptr, PhilipsMetadataStage::PIXEL_DATA_PRESENTATION,
-                                depth + 1);
+                                data_node, item_iter, nullptr, PhilipsMetadataStage::PIXEL_DATA_PRESENTATION);
                         }
                     }
                     break;
@@ -249,20 +221,13 @@ static std::string strip_string(const std::string& str)
     }
 }
 
-static constexpr size_t kMaxImageDescriptionBytes = 1 * 1024 * 1024; // 1 MB
-
 static void parse_aperio_svs_metadata(std::shared_ptr<IFD>& first_ifd, json& metadata)
 {
     (void)metadata;
     std::string& desc = first_ifd->image_description();
 
-    if (desc.size() > kMaxImageDescriptionBytes)
-    {
-        fmt::print(stderr, "[Warning] Aperio SVS ImageDescription exceeds 1 MB limit ({}); skipping metadata parse\n",
-                   desc.size());
-        return;
-    }
-
+    // Assumes that metadata's image description starts with 'Aperio '.
+    // It is handled by 'resolve_vendor_format()'
     std::vector<std::string> items = split_string(desc, "|");
     if (items.size() < 1)
     {
@@ -379,6 +344,8 @@ TIFF::TIFF(const cucim::filesystem::Path& file_path) : file_path_(file_path)
 
     // Initialize metadata container
     metadata_ = new json{};
+    parser_file_hashes_.clear();
+    parser_file_hashes_.push_back(file_handle_shared_ ? file_handle_shared_->hash_value : 0);
 }
 
 TIFF::TIFF(const cucim::filesystem::Path& file_path, uint64_t read_config) : TIFF(file_path)
@@ -453,6 +420,18 @@ void TIFF::construct_ifds()
 
     ifd_offsets_.clear();
     ifds_.clear();
+    parser_local_to_global_ifd_.clear();
+    global_to_parser_local_ifd_.clear();
+    companion_parsers_.clear();
+    companion_parser_paths_.clear();
+    if (parser_file_hashes_.empty())
+    {
+        parser_file_hashes_.push_back(file_handle_shared_ ? file_handle_shared_->hash_value : 0);
+    }
+    else
+    {
+        parser_file_hashes_.resize(1);
+    }
 
     uint32_t ifd_count = nvimgcodec_parser_->get_ifd_count();
     #ifdef DEBUG
@@ -472,8 +451,16 @@ void TIFF::construct_ifds()
             ifd_offsets_.push_back(ifd_index);
 
             // Create IFD from nvImageCodec metadata using NEW constructor
-            auto ifd = std::make_shared<cuslide::tiff::IFD>(this, ifd_index, ifd_info);
+            auto ifd = std::make_shared<cuslide::tiff::IFD>(
+                this,
+                ifd_index,
+                ifd_info,
+                0,
+                ifd_index,
+                parser_file_hashes_[0]);
             ifds_.emplace_back(std::move(ifd));
+            parser_local_to_global_ifd_[{ 0, ifd_index }] = ifds_.size() - 1;
+            global_to_parser_local_ifd_.emplace_back(0, ifd_index);
 
             #ifdef DEBUG
             fmt::print("  ✅ IFD[{}]: {}x{}, {} channels, codec: {}\n",
@@ -527,6 +514,104 @@ void TIFF::construct_ifds()
               level_to_ifd_idx_.size(), associated_images_.size());
     #endif // DEBUG
 }
+
+uint64_t TIFF::_hash_path(const std::string& path)
+{
+    return static_cast<uint64_t>(std::hash<std::string>{}(path));
+}
+
+size_t TIFF::_find_or_add_parser_context(const std::string& abs_path)
+{
+    if (abs_path == std::string(file_path_.c_str()))
+    {
+        return 0;
+    }
+    for (size_t i = 0; i < companion_parser_paths_.size(); ++i)
+    {
+        if (companion_parser_paths_[i] == abs_path)
+        {
+            return i + 1;
+        }
+    }
+
+    auto parser = std::make_unique<cuslide2::nvimgcodec::TiffFileParser>(abs_path);
+    if (!parser || !parser->is_valid())
+    {
+        throw std::runtime_error(fmt::format("Failed to open OME companion TIFF '{}'", abs_path));
+    }
+    companion_parser_paths_.emplace_back(abs_path);
+    companion_parsers_.emplace_back(std::move(parser));
+    parser_file_hashes_.emplace_back(_hash_path(abs_path));
+    return companion_parsers_.size();
+}
+
+const cuslide2::nvimgcodec::TiffFileParser& TIFF::parser_for_global_ifd(size_t global_ifd_idx) const
+{
+    if (global_ifd_idx >= global_to_parser_local_ifd_.size())
+    {
+        throw std::out_of_range(fmt::format("Global IFD {} is out of range", global_ifd_idx));
+    }
+    const size_t parser_idx = global_to_parser_local_ifd_[global_ifd_idx].first;
+    if (parser_idx == 0)
+    {
+        return *nvimgcodec_parser_;
+    }
+    const size_t companion_idx = parser_idx - 1;
+    if (companion_idx >= companion_parsers_.size() || !companion_parsers_[companion_idx])
+    {
+        throw std::out_of_range(fmt::format("Companion parser {} is unavailable", parser_idx));
+    }
+    return *companion_parsers_[companion_idx];
+}
+
+uint32_t TIFF::local_ifd_for_global_ifd(size_t global_ifd_idx) const
+{
+    if (global_ifd_idx >= global_to_parser_local_ifd_.size())
+    {
+        throw std::out_of_range(fmt::format("Global IFD {} is out of range", global_ifd_idx));
+    }
+    return global_to_parser_local_ifd_[global_ifd_idx].second;
+}
+
+uint64_t TIFF::file_hash_for_global_ifd(size_t global_ifd_idx) const
+{
+    if (global_ifd_idx >= global_to_parser_local_ifd_.size())
+    {
+        throw std::out_of_range(fmt::format("Global IFD {} is out of range", global_ifd_idx));
+    }
+    const size_t parser_idx = global_to_parser_local_ifd_[global_ifd_idx].first;
+    if (parser_idx >= parser_file_hashes_.size())
+    {
+        return file_handle_shared_ ? file_handle_shared_->hash_value : 0;
+    }
+    return parser_file_hashes_[parser_idx];
+}
+
+size_t TIFF::_ensure_global_ifd(size_t parser_idx, uint32_t local_ifd_idx)
+{
+    auto map_it = parser_local_to_global_ifd_.find({ parser_idx, local_ifd_idx });
+    if (map_it != parser_local_to_global_ifd_.end())
+    {
+        return map_it->second;
+    }
+
+    const auto& parser = (parser_idx == 0) ? *nvimgcodec_parser_ : *companion_parsers_[parser_idx - 1];
+    const auto& ifd_info = parser.get_ifd(local_ifd_idx);
+    const size_t global_ifd_idx = ifds_.size();
+    auto ifd = std::make_shared<cuslide::tiff::IFD>(
+        this,
+        static_cast<uint16_t>(global_ifd_idx),
+        ifd_info,
+        parser_idx,
+        local_ifd_idx,
+        parser_file_hashes_[parser_idx]);
+    ifd_offsets_.push_back(global_ifd_idx);
+    ifds_.emplace_back(std::move(ifd));
+    parser_local_to_global_ifd_[{ parser_idx, local_ifd_idx }] = global_ifd_idx;
+    global_to_parser_local_ifd_.emplace_back(parser_idx, local_ifd_idx);
+    return global_ifd_idx;
+}
+
 void TIFF::resolve_vendor_format()
 {
     PROF_SCOPED_RANGE(PROF_EVENT(tiff_resolve_vendor_format));
@@ -548,19 +633,20 @@ void TIFF::resolve_vendor_format()
     {
         bool is_aperio = false;
 
+        // Method 1: Check ImageDescription starts with "Aperio "
         auto& image_desc = first_ifd->image_description();
         std::string_view prefix("Aperio ");
-        if (image_desc.size() >= prefix.size() &&
-            std::mismatch(prefix.begin(), prefix.end(), image_desc.begin()).first == prefix.end())
+        auto res = std::mismatch(prefix.begin(), prefix.end(), image_desc.begin());
+        if (res.first == prefix.end())
         {
             is_aperio = true;
         }
 
-        // Method 2: Check metadata_blobs for Aperio (MED_APERIO)
+        // Method 2: Check metadata_blobs for Aperio (kind=5 in v0.8.0)
         if (!is_aperio && nvimgcodec_parser_)
         {
             const auto& metadata_blobs = nvimgcodec_parser_->get_metadata_blobs(0);
-            if (metadata_blobs.find(kMetadataKindMedAperio) != metadata_blobs.end())
+            if (metadata_blobs.find(5) != metadata_blobs.end())  // MED_APERIO = 5
             {
                 is_aperio = true;
                 #ifdef DEBUG
@@ -576,18 +662,21 @@ void TIFF::resolve_vendor_format()
     }
 
     // Detect Philips TIFF
-    // Check for Philips TIFF using SOFTWARE tag, ImageDescription XML, or nvImageCodec metadata kind
+    // NOTE: nvImageCodec 0.6.0 doesn't expose individual TIFF tags (like SOFTWARE)
+    // Workaround: Check for Philips XML in ImageDescription or use nvImageCodec metadata kind
     {
         bool is_philips = false;
 
+        // Method 1: Check SOFTWARE tag (available in nvImageCodec 0.7.0+)
         std::string_view prefix("Philips");
-        if (software.size() >= prefix.size() &&
-            std::mismatch(prefix.begin(), prefix.end(), software.begin()).first == prefix.end())
+        auto res = std::mismatch(prefix.begin(), prefix.end(), software.begin());
+        if (res.first == prefix.end())
         {
             is_philips = true;
         }
 
-        // Method 2: Check for Philips XML structure in ImageDescription (fallback)
+        // Method 2: Check for Philips XML structure in ImageDescription
+        // (Workaround for nvImageCodec 0.6.0 where SOFTWARE tag is not available)
         if (!is_philips)
         {
             auto& image_desc = first_ifd->image_description();
@@ -598,11 +687,11 @@ void TIFF::resolve_vendor_format()
             }
         }
 
-        // Method 3: Check metadata_blobs for Philips (MED_PHILIPS)
+        // Method 3: Check metadata_blobs for Philips (kind=6 in v0.8.0)
         if (!is_philips && nvimgcodec_parser_)
         {
             const auto& metadata_blobs = nvimgcodec_parser_->get_metadata_blobs(0);
-            if (metadata_blobs.find(kMetadataKindMedPhilips) != metadata_blobs.end())
+            if (metadata_blobs.find(6) != metadata_blobs.end())  // MED_PHILIPS = 6
             {
                 is_philips = true;
                 #ifdef DEBUG
@@ -642,28 +731,28 @@ void TIFF::resolve_vendor_format()
             }
         }
 
-        const std::remove_reference_t<decltype(nvimgcodec_parser_->get_metadata_blobs(0))>* blobs =
-            nvimgcodec_parser_ ? &nvimgcodec_parser_->get_metadata_blobs(0) : nullptr;
-
         // Hamamatsu NDPI: extension .ndpi or MODEL contains "Hamamatsu"
         if (file_ext == ".ndpi" || model.find("Hamamatsu") != std::string::npos)
         {
             tiff_type_ = TiffType::Hamamatsu;
         }
-        // Ventana BIF: extension .bif or nvImageCodec MED_VENTANA blob
+        // Ventana BIF: extension .bif or nvImageCodec MED_VENTANA blob (kind=7)
         else if (file_ext == ".bif" ||
-                 (blobs && blobs->find(kMetadataKindMedVentana) != blobs->end()))
+                 (nvimgcodec_parser_ &&
+                  nvimgcodec_parser_->get_metadata_blobs(0).find(7) != nvimgcodec_parser_->get_metadata_blobs(0).end()))
         {
             tiff_type_ = TiffType::Ventana;
         }
-        // Leica SCN: extension .scn or nvImageCodec MED_LEICA blob
+        // Leica SCN: extension .scn or nvImageCodec MED_LEICA blob (kind=8, when not NDPI)
         else if (file_ext == ".scn" ||
-                 (blobs && blobs->find(kMetadataKindMedLeica) != blobs->end()))
+                 (nvimgcodec_parser_ &&
+                  nvimgcodec_parser_->get_metadata_blobs(0).find(8) != nvimgcodec_parser_->get_metadata_blobs(0).end()))
         {
             tiff_type_ = TiffType::Leica;
         }
-        // Trestle TIFF: nvImageCodec MED_TRESTLE blob
-        else if (blobs && blobs->find(kMetadataKindMedTrestle) != blobs->end())
+        // Trestle TIFF: nvImageCodec MED_TRESTLE blob (kind=9)
+        else if (nvimgcodec_parser_ &&
+                 nvimgcodec_parser_->get_metadata_blobs(0).find(9) != nvimgcodec_parser_->get_metadata_blobs(0).end())
         {
             tiff_type_ = TiffType::Trestle;
         }
@@ -672,13 +761,14 @@ void TIFF::resolve_vendor_format()
                  image_desc.find("ome.xsd") != std::string::npos)
         {
             tiff_type_ = TiffType::OmeTiff;
+            _populate_ome_tiff_metadata(ifd_count, json_metadata, first_ifd);
         }
         // Vectra QPTIFF: extension .qptiff or ImageDescription contains PerkinElmer
         else if (file_ext == ".qptiff" ||
                  image_desc.find("PerkinElmer") != std::string::npos ||
                  image_desc.find("Vectra") != std::string::npos)
         {
-            tiff_type_ = TiffType::QpTiff;
+            tiff_type_ = TiffType::Qptiff;
         }
 
         #ifdef DEBUG
@@ -712,6 +802,208 @@ void TIFF::resolve_vendor_format()
         tiff_metadata.emplace("y_resolution", y_resolution);
 
         (*json_metadata).emplace("tiff", std::move(tiff_metadata));
+    }
+}
+
+void TIFF::_populate_ome_tiff_metadata(uint16_t ifd_count, void* metadata, std::shared_ptr<IFD>& first_ifd)
+{
+    (void)ifd_count;
+    json* json_metadata = reinterpret_cast<json*>(metadata);
+
+    ome::Model model;
+    std::string parse_error;
+    if (!ome::parse(first_ifd->image_description(), &model, &parse_error) || !model.valid)
+    {
+        return;
+    }
+
+    ome_size_c_ = std::max<int64_t>(1, model.pixels.size_c);
+    ome_size_z_ = std::max<int64_t>(1, model.pixels.size_z);
+    ome_size_t_ = std::max<int64_t>(1, model.pixels.size_t);
+
+    ome_channel_names_.clear();
+    ome_channel_name_to_index_.clear();
+    if (!model.pixels.channels.empty())
+    {
+        ome_channel_names_.reserve(model.pixels.channels.size());
+        for (const auto& channel : model.pixels.channels)
+        {
+            std::string channel_name = channel.name.empty() ? fmt::format("C{}", channel.index) : channel.name;
+            if (!ome_channel_name_to_index_.count(channel_name))
+            {
+                ome_channel_name_to_index_.emplace(channel_name, static_cast<int64_t>(ome_channel_names_.size()));
+            }
+            ome_channel_names_.emplace_back(std::move(channel_name));
+        }
+    }
+    else
+    {
+        for (int64_t c = 0; c < ome_size_c_; ++c)
+        {
+            ome_channel_names_.emplace_back(fmt::format("C{}", c));
+            ome_channel_name_to_index_.emplace(ome_channel_names_.back(), c);
+        }
+    }
+
+    std::vector<char> logical_axes;
+    logical_axes.reserve(3);
+    for (char axis : model.pixels.dimension_order)
+    {
+        if (axis == 'C' || axis == 'Z' || axis == 'T')
+        {
+            logical_axes.emplace_back(axis);
+        }
+    }
+
+    auto increment_plane = [&](int64_t& c, int64_t& z, int64_t& t) {
+        for (auto it = logical_axes.rbegin(); it != logical_axes.rend(); ++it)
+        {
+            switch (*it)
+            {
+            case 'C':
+                c = (c + 1) % ome_size_c_;
+                if (c != 0)
+                    return;
+                break;
+            case 'Z':
+                z = (z + 1) % ome_size_z_;
+                if (z != 0)
+                    return;
+                break;
+            case 'T':
+                t = (t + 1) % ome_size_t_;
+                if (t != 0)
+                    return;
+                break;
+            default:
+                break;
+            }
+        }
+    };
+
+    std::vector<std::tuple<int64_t, int64_t, int64_t, size_t>> pending_planes;
+    pending_planes.reserve(model.pixels.tiff_data.size());
+
+    const std::filesystem::path base_path = std::filesystem::path(file_path_.c_str()).parent_path();
+    for (const auto& tiff_data : model.pixels.tiff_data)
+    {
+        size_t parser_idx = 0;
+        if (!tiff_data.file_name.empty())
+        {
+            std::filesystem::path candidate = base_path / tiff_data.file_name;
+            candidate = candidate.lexically_normal();
+            parser_idx = _find_or_add_parser_context(candidate.string());
+        }
+
+        const auto& parser = (parser_idx == 0) ? *nvimgcodec_parser_ : *companion_parsers_[parser_idx - 1];
+        int64_t c = tiff_data.first_c;
+        int64_t z = tiff_data.first_z;
+        int64_t t = tiff_data.first_t;
+
+        for (uint32_t p = 0; p < tiff_data.plane_count; ++p)
+        {
+            uint32_t local_ifd_idx = tiff_data.ifd + p;
+            if (local_ifd_idx >= parser.get_ifd_count())
+            {
+                break;
+            }
+            size_t global_ifd_idx = _ensure_global_ifd(parser_idx, local_ifd_idx);
+            pending_planes.emplace_back(c, z, t, global_ifd_idx);
+            increment_plane(c, z, t);
+        }
+    }
+
+    ome_plane_to_ifd_.clear();
+    if (!pending_planes.empty())
+    {
+        std::vector<std::pair<uint32_t, uint32_t>> level_dims;
+        level_dims.reserve(ifds_.size());
+        for (const auto& ifd : ifds_)
+        {
+            std::pair<uint32_t, uint32_t> dim = { ifd->width(), ifd->height() };
+            if (std::find(level_dims.begin(), level_dims.end(), dim) == level_dims.end())
+            {
+                level_dims.emplace_back(dim);
+            }
+        }
+        std::sort(level_dims.begin(), level_dims.end(), [](const auto& a, const auto& b) {
+            if (a.first != b.first)
+            {
+                return a.first > b.first;
+            }
+            return a.second > b.second;
+        });
+
+        auto level_for_ifd = [&level_dims, this](size_t ifd_idx) -> uint16_t {
+            const auto& ifd = ifds_[ifd_idx];
+            std::pair<uint32_t, uint32_t> dim = { ifd->width(), ifd->height() };
+            auto it = std::find(level_dims.begin(), level_dims.end(), dim);
+            return (it == level_dims.end()) ? 0 : static_cast<uint16_t>(std::distance(level_dims.begin(), it));
+        };
+
+        for (const auto& [c, z, t, ifd_idx] : pending_planes)
+        {
+            ome_plane_to_ifd_[std::make_tuple(c, z, t, level_for_ifd(ifd_idx))] = ifd_idx;
+        }
+    }
+    has_ome_plane_index_ = !ome_plane_to_ifd_.empty();
+
+    if (has_ome_plane_index_)
+    {
+        std::map<uint16_t, size_t> level_representative_ifd;
+        for (const auto& [key, ifd_idx] : ome_plane_to_ifd_)
+        {
+            if (std::get<0>(key) == 0 && std::get<1>(key) == 0 && std::get<2>(key) == 0)
+            {
+                level_representative_ifd[std::get<3>(key)] = ifd_idx;
+            }
+        }
+        if (level_representative_ifd.empty())
+        {
+            for (const auto& [key, ifd_idx] : ome_plane_to_ifd_)
+            {
+                uint16_t level = std::get<3>(key);
+                if (!level_representative_ifd.count(level))
+                {
+                    level_representative_ifd[level] = ifd_idx;
+                }
+            }
+        }
+        if (!level_representative_ifd.empty())
+        {
+            level_to_ifd_idx_.clear();
+            for (const auto& [level, ifd_idx] : level_representative_ifd)
+            {
+                (void)level;
+                level_to_ifd_idx_.push_back(ifd_idx);
+            }
+        }
+    }
+
+    if (json_metadata)
+    {
+        json ome_metadata;
+        ome_metadata.emplace("size_c", ome_size_c_);
+        ome_metadata.emplace("size_z", ome_size_z_);
+        ome_metadata.emplace("size_t", ome_size_t_);
+        ome_metadata.emplace("size_x", model.pixels.size_x);
+        ome_metadata.emplace("size_y", model.pixels.size_y);
+        ome_metadata.emplace("type", model.pixels.type);
+        ome_metadata.emplace("dimension_order", model.pixels.dimension_order);
+        ome_metadata.emplace("channel_names", ome_channel_names_);
+        if (model.pixels.has_physical_size_x)
+        {
+            ome_metadata.emplace("physical_size_x", model.pixels.physical_size_x);
+            ome_metadata.emplace("physical_size_x_unit", model.pixels.physical_size_x_unit);
+        }
+        if (model.pixels.has_physical_size_y)
+        {
+            ome_metadata.emplace("physical_size_y", model.pixels.physical_size_y);
+            ome_metadata.emplace("physical_size_y_unit", model.pixels.physical_size_y_unit);
+        }
+        ome_metadata.emplace("plane_count", pending_planes.size());
+        ome_metadata.emplace("companion_file_count", companion_parsers_.size());
+        (*json_metadata)["ome"] = std::move(ome_metadata);
     }
 }
 
@@ -785,12 +1077,6 @@ void TIFF::_populate_philips_tiff_metadata(uint16_t ifd_count, void* metadata, s
             pixel_spacings.emplace_back(std::pair{ spacing_x, spacing_y });
         }
 
-        if (pixel_spacings.empty())
-        {
-            fmt::print(stderr, "[Warning] Philips TIFF: no DICOM_PIXEL_SPACING entries found\n");
-            return;
-        }
-
         double spacing_x_l0 = pixel_spacings[0].first;
         double spacing_y_l0 = pixel_spacings[0].second;
 
@@ -806,12 +1092,8 @@ void TIFF::_populate_philips_tiff_metadata(uint16_t ifd_count, void* metadata, s
             // NOTE: In Philips TIFF, pyramid levels can be strip-based (tile_width==0)
             // So we can't use tile_width to identify associated images
             auto& image_desc = ifd->image_description();
-            bool is_macro = (image_desc.size() >= macro_prefix.size() &&
-                             std::mismatch(macro_prefix.begin(), macro_prefix.end(), image_desc.begin()).first ==
-                                 macro_prefix.end());
-            bool is_label = (image_desc.size() >= label_prefix.size() &&
-                             std::mismatch(label_prefix.begin(), label_prefix.end(), image_desc.begin()).first ==
-                                 label_prefix.end());
+            bool is_macro = (std::mismatch(macro_prefix.begin(), macro_prefix.end(), image_desc.begin()).first == macro_prefix.end());
+            bool is_label = (std::mismatch(label_prefix.begin(), label_prefix.end(), image_desc.begin()).first == label_prefix.end());
 
             if (is_macro || is_label)
             {
@@ -842,11 +1124,9 @@ void TIFF::_populate_philips_tiff_metadata(uint16_t ifd_count, void* metadata, s
                 double downsample = std::round((pixel_spacings[spacing_index].first / spacing_x_l0 +
                                                 pixel_spacings[spacing_index].second / spacing_y_l0) /
                                                2);
-                if (downsample > 0)
-                {
-                    ifd->width_ = width_l0 / downsample;
-                    ifd->height_ = height_l0 / downsample;
-                }
+                // Fix width and height of IFD
+                ifd->width_ = width_l0 / downsample;
+                ifd->height_ = height_l0 / downsample;
                 ++spacing_index;
             }
             else
@@ -885,23 +1165,27 @@ void TIFF::_populate_philips_tiff_metadata(uint16_t ifd_count, void* metadata, s
                 {
                     auto node_offset = associated_node.node().offset_debug();
 
-                    size_t image_desc_len = first_ifd->image_description().size();
-                    if (node_offset >= 0 && static_cast<size_t>(node_offset) < image_desc_len)
+                    if (node_offset >= 0)
                     {
-                        const char* data_ptr = image_desc_cstr + node_offset;
-                        const char* desc_end = image_desc_cstr + image_desc_len;
+                        // `image_desc_cstr[node_offset]` would point to the following text:
+                        //   Attribute Element="0x1004" Group="0x301D" Name="PIM_DP_IMAGE_DATA" PMSVR="IString">
+                        //     (base64-encoded JPEG image)
+                        //   </Attribute>
+                        //
 
-                        // Find '>' that closes the opening <Attribute ...> tag
-                        while (data_ptr < desc_end && *data_ptr != '>')
+                        // 34 is from `Attribute Name="PIM_DP_IMAGE_DATA"`
+                        char* data_ptr = const_cast<char*>(image_desc_cstr) + node_offset + 34;
+                        uint32_t data_len = 0;
+                        while (*data_ptr != '>' && *data_ptr != '\0')
                         {
                             ++data_ptr;
                         }
-                        uint32_t data_len = 0;
-                        if (data_ptr < desc_end && *data_ptr != '\0')
+                        if (*data_ptr != '\0')
                         {
                             ++data_ptr; // start of base64-encoded data
-                            const char* data_end_ptr = data_ptr;
-                            while (data_end_ptr < desc_end && *data_end_ptr != '<' && *data_end_ptr != '\0')
+                            char* data_end_ptr = data_ptr;
+                            // Seek until it finds '<' for '</Attribute>'
+                            while (*data_end_ptr != '<' && *data_end_ptr != '\0')
                             {
                                 ++data_end_ptr;
                             }
@@ -1039,7 +1323,8 @@ bool TIFF::read(const cucim::io::format::ImageMetadataDesc* metadata,
             "Invalid level ({}) in the request! (Should be < {})", request->level, level_to_ifd_idx_.size()));
     }
     auto main_ifd = ifds_[level_to_ifd_idx_[0]];
-    auto ifd = ifds_[level_to_ifd_idx_[request->level]];
+    size_t selected_ifd_idx = level_to_ifd_idx_[request->level];
+    auto ifd = ifds_[selected_ifd_idx];
     auto original_img_width = main_ifd->width();
     auto original_img_height = main_ifd->height();
 

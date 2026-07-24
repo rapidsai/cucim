@@ -16,6 +16,7 @@
 #include <cstring>
 #include <string>
 #include <stdexcept>
+#include <type_traits>
 #include <unistd.h>
 #include <mutex>
 #include <fmt/format.h>
@@ -215,6 +216,59 @@ private:
     bool is_device_ = false;
 };
 
+struct DecodePixelSpec
+{
+    uint32_t num_channels = 3;
+    uint32_t bytes_per_sample = 1;
+    nvimgcodecSampleDataType_t sample_type = NVIMGCODEC_SAMPLE_DATA_TYPE_UINT8;
+    nvimgcodecColorSpec_t color_spec = NVIMGCODEC_COLORSPEC_SRGB;
+};
+
+DecodePixelSpec resolve_decode_pixel_spec(const IfdInfo& ifd_info)
+{
+    DecodePixelSpec spec;
+    spec.num_channels = ifd_info.num_channels > 0 ? ifd_info.num_channels : 3;
+
+    const uint32_t bits = ifd_info.bits_per_sample > 0 ? ifd_info.bits_per_sample : 8;
+    if (bits > 8)
+    {
+        spec.bytes_per_sample = 2;
+        spec.sample_type = NVIMGCODEC_SAMPLE_DATA_TYPE_UINT16;
+    }
+    else
+    {
+        spec.bytes_per_sample = 1;
+        spec.sample_type = NVIMGCODEC_SAMPLE_DATA_TYPE_UINT8;
+    }
+
+    int64_t photometric = -1;
+    auto tag_it = ifd_info.tiff_tags.find("PHOTOMETRIC");
+    if (tag_it != ifd_info.tiff_tags.end())
+    {
+        std::visit(
+            [&](const auto& v)
+            {
+                using T = std::decay_t<decltype(v)>;
+                if constexpr (std::is_integral_v<T>)
+                {
+                    photometric = static_cast<int64_t>(v);
+                }
+            },
+            tag_it->second);
+    }
+
+    if (spec.num_channels == 1 || photometric == 0 || photometric == 1)
+    {
+        spec.color_spec = NVIMGCODEC_COLORSPEC_GRAY;
+    }
+    else
+    {
+        spec.color_spec = NVIMGCODEC_COLORSPEC_SRGB;
+    }
+
+    return spec;
+}
+
 // ============================================================================
 // IFD-Level Region Decoding (Primary Decode Function)
 // ============================================================================
@@ -331,24 +385,24 @@ bool decode_ifd_region_nvimgcodec(const IfdInfo& ifd_info,
         output_image_info.struct_size = sizeof(nvimgcodecImageInfo_t);
         output_image_info.struct_next = nullptr;
 
-        // Use UNCHANGED to preserve original format (RGB or grayscale)
+        const DecodePixelSpec decode_spec = resolve_decode_pixel_spec(ifd_info);
+        // Use UNCHANGED to preserve original planar packing and channel ordering.
         output_image_info.sample_format = NVIMGCODEC_SAMPLEFORMAT_I_UNCHANGED;
-        output_image_info.color_spec = NVIMGCODEC_COLORSPEC_SRGB;
+        output_image_info.color_spec = decode_spec.color_spec;
         output_image_info.chroma_subsampling = NVIMGCODEC_SAMPLING_NONE;
         output_image_info.num_planes = 1;
         output_image_info.buffer_kind = buffer_kind;
 
-        uint32_t num_channels = ifd_info.num_channels > 0 ? ifd_info.num_channels : 3;
-        size_t row_stride = width * num_channels;
+        uint32_t num_channels = decode_spec.num_channels;
+        size_t row_stride = width * num_channels * decode_spec.bytes_per_sample;
         size_t buffer_size = row_stride * height;
 
         output_image_info.plane_info[0].height = height;
         output_image_info.plane_info[0].width = width;
         output_image_info.plane_info[0].num_channels = num_channels;
         output_image_info.plane_info[0].row_stride = row_stride;
-        output_image_info.plane_info[0].sample_type = NVIMGCODEC_SAMPLE_DATA_TYPE_UINT8;
-        // nvImageCodec >=0.7.0 removed buffer_size from nvimgcodecImageInfo_t;
-        // the required size is deterministic: row_stride * height per plane.
+        output_image_info.plane_info[0].sample_type = decode_spec.sample_type;
+        // Note: buffer_size removed in nvImageCodec v0.7.0 - size is inferred from plane_info
         output_image_info.cuda_stream = cuda_stream;
 
         // Step 4: Provide output buffer
@@ -475,7 +529,7 @@ bool decode_ifd_region_nvimgcodec(const IfdInfo& ifd_info,
 }
 
 // ============================================================================
-// Batch ROI Decoding
+// Batch ROI Decoding (nvImageCodec v0.7.0+)
 // ============================================================================
 
 std::vector<BatchDecodeResult> decode_batch_regions_nvimgcodec(
@@ -623,9 +677,9 @@ std::vector<BatchDecodeResult> decode_batch_regions_nvimgcodec(
             }
 
             const auto& region = regions[i];
-            // Use num_channels from IFD info, fallback to 3 (RGB)
-            uint32_t num_channels = (ifd_info.num_channels > 0) ? ifd_info.num_channels : 3;
-            size_t row_stride = region.width * num_channels;
+            const DecodePixelSpec decode_spec = resolve_decode_pixel_spec(ifd_info);
+            uint32_t num_channels = decode_spec.num_channels;
+            size_t row_stride = region.width * num_channels * decode_spec.bytes_per_sample;
             size_t buffer_size = row_stride * region.height;
 
             if (!decode_buffers[i].allocate(buffer_size, use_device_memory))
@@ -641,9 +695,9 @@ std::vector<BatchDecodeResult> decode_batch_regions_nvimgcodec(
             output_image_info.struct_type = NVIMGCODEC_STRUCTURE_TYPE_IMAGE_INFO;
             output_image_info.struct_size = sizeof(nvimgcodecImageInfo_t);
             output_image_info.struct_next = nullptr;
-            // Use UNCHANGED to preserve original format (RGB or grayscale)
+            // Use UNCHANGED to preserve original planar packing and channel ordering.
             output_image_info.sample_format = NVIMGCODEC_SAMPLEFORMAT_I_UNCHANGED;
-            output_image_info.color_spec = NVIMGCODEC_COLORSPEC_SRGB;
+            output_image_info.color_spec = decode_spec.color_spec;
             output_image_info.chroma_subsampling = NVIMGCODEC_SAMPLING_NONE;
             output_image_info.num_planes = 1;
             output_image_info.buffer_kind = buffer_kind;
@@ -652,7 +706,7 @@ std::vector<BatchDecodeResult> decode_batch_regions_nvimgcodec(
             output_image_info.plane_info[0].width = region.width;
             output_image_info.plane_info[0].num_channels = num_channels;
             output_image_info.plane_info[0].row_stride = row_stride;
-            output_image_info.plane_info[0].sample_type = NVIMGCODEC_SAMPLE_DATA_TYPE_UINT8;
+            output_image_info.plane_info[0].sample_type = decode_spec.sample_type;
             output_image_info.cuda_stream = cuda_stream;
 
             nvimgcodecImage_t image_raw = nullptr;
@@ -926,8 +980,9 @@ BatchDecodeState schedule_batch_decode(
             }
 
             const auto& region = regions[i];
-            uint32_t num_channels = (ifd_info.num_channels > 0) ? ifd_info.num_channels : 3;
-            size_t row_stride = region.width * num_channels;
+            const DecodePixelSpec decode_spec = resolve_decode_pixel_spec(ifd_info);
+            uint32_t num_channels = decode_spec.num_channels;
+            size_t row_stride = region.width * num_channels * decode_spec.bytes_per_sample;
             size_t buffer_size = row_stride * region.height;
 
             void* buffer_ptr = nullptr;
@@ -960,7 +1015,7 @@ BatchDecodeState schedule_batch_decode(
             output_image_info.struct_size = sizeof(nvimgcodecImageInfo_t);
             output_image_info.struct_next = nullptr;
             output_image_info.sample_format = NVIMGCODEC_SAMPLEFORMAT_I_UNCHANGED;
-            output_image_info.color_spec = NVIMGCODEC_COLORSPEC_SRGB;
+            output_image_info.color_spec = decode_spec.color_spec;
             output_image_info.chroma_subsampling = NVIMGCODEC_SAMPLING_NONE;
             output_image_info.num_planes = 1;
             output_image_info.buffer_kind = buffer_kind;
@@ -969,7 +1024,7 @@ BatchDecodeState schedule_batch_decode(
             output_image_info.plane_info[0].width = region.width;
             output_image_info.plane_info[0].num_channels = num_channels;
             output_image_info.plane_info[0].row_stride = row_stride;
-            output_image_info.plane_info[0].sample_type = NVIMGCODEC_SAMPLE_DATA_TYPE_UINT8;
+            output_image_info.plane_info[0].sample_type = decode_spec.sample_type;
             output_image_info.cuda_stream = impl->cuda_stream;
 
             nvimgcodecImage_t image_raw = nullptr;
