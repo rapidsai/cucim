@@ -20,6 +20,7 @@
 #include "nvimgcodec_tiff_parser.h"
 
 #include <algorithm>  // for std::transform
+#include <cstddef>    // for offsetof
 #include <cstdlib>    // for std::atexit
 #include <cstring>    // for strlen
 #include <type_traits>
@@ -283,21 +284,32 @@ NvImageCodecTiffParserManager::NvImageCodecTiffParserManager()
         exec_params.backends = nullptr;
 
         status = nvimgcodecDecoderCreate(instance_, &decoder_, &exec_params, nullptr);
-
         if (status != NVIMGCODEC_STATUS_SUCCESS)
         {
-            nvimgcodecInstanceDestroy(instance_);
-            instance_ = nullptr;
-            status_message_ = fmt::format("Failed to create decoder for metadata extraction (status: {})",
-                                         static_cast<int>(status));
-            #ifdef DEBUG
-            fmt::print("⚠️  {}\n", status_message_);
-            #endif // DEBUG
-            return;
+            // If CUDA initialization is unavailable (for example, no GPU device
+            // in the current runtime), retry with CPU-only decoder so metadata
+            // extraction and CPU decode paths can still run.
+            exec_params.device_id = NVIMGCODEC_DEVICE_CPU_ONLY;
+            status = nvimgcodecDecoderCreate(instance_, &decoder_, &exec_params, nullptr);
+            if (status != NVIMGCODEC_STATUS_SUCCESS)
+            {
+                nvimgcodecInstanceDestroy(instance_);
+                instance_ = nullptr;
+                status_message_ = fmt::format("Failed to create decoder for metadata extraction (status: {})",
+                                             static_cast<int>(status));
+                #ifdef DEBUG
+                fmt::print("⚠️  {}\n", status_message_);
+                #endif // DEBUG
+                return;
+            }
+            status_message_ = "nvImageCodec TIFF parser initialized in CPU-only mode";
         }
 
         initialized_ = true;
-        status_message_ = "nvImageCodec TIFF parser initialized successfully (with metadata extraction support)";
+        if (status_message_.empty())
+        {
+            status_message_ = "nvImageCodec TIFF parser initialized successfully (with metadata extraction support)";
+        }
         #ifdef DEBUG
         fmt::print("✅ {}\n", status_message_);
         #endif // DEBUG
@@ -379,7 +391,8 @@ TiffFileParser::TiffFileParser(const std::string& file_path)
     nvimgcodecStatus_t status = nvimgcodecCodeStreamCreateFromFile(
         manager.get_instance(),
         &main_code_stream_,
-        file_path.c_str()
+        file_path.c_str(),
+        nullptr
     );
 
     if (status != NVIMGCODEC_STATUS_SUCCESS)
@@ -469,6 +482,11 @@ bool TiffFileParser::parse_tiff_structure()
         #endif // DEBUG
     }
 
+    int substream_failures = 0;
+    int image_info_failures = 0;
+    int first_substream_status = 0;
+    int first_image_info_status = 0;
+
     // Get information for each IFD
     for (uint32_t i = 0; i < num_ifds; ++i)
     {
@@ -478,9 +496,17 @@ bool TiffFileParser::parse_tiff_structure()
         // Create view for this IFD
         nvimgcodecCodeStreamView_t view{};
         view.struct_type = NVIMGCODEC_STRUCTURE_TYPE_CODE_STREAM_VIEW;
-        view.struct_size = sizeof(nvimgcodecCodeStreamView_t);
+        // ABI compatibility: nvImageCodec builds prior to the `limit_images`
+        // field expect a smaller CodeStreamView payload.
+        view.struct_size = offsetof(nvimgcodecCodeStreamView_t, limit_images);
         view.struct_next = nullptr;
         view.image_idx = i;  // Note: nvImageCodec uses 'image_idx' not 'image_index'
+        view.bitstream_offset = 0;
+        view.limit_images = 0;
+        view.region.struct_type = NVIMGCODEC_STRUCTURE_TYPE_REGION;
+        view.region.struct_size = sizeof(nvimgcodecRegion_t);
+        view.region.struct_next = nullptr;
+        view.region.ndim = 0; // No ROI for parser-time IFD discovery.
 
         // Get sub-code stream for this IFD
         status = nvimgcodecCodeStreamGetSubCodeStream(main_code_stream_,
@@ -489,6 +515,11 @@ bool TiffFileParser::parse_tiff_structure()
 
         if (status != NVIMGCODEC_STATUS_SUCCESS)
         {
+            ++substream_failures;
+            if (first_substream_status == 0)
+            {
+                first_substream_status = static_cast<int>(status);
+            }
             #ifdef DEBUG
             fmt::print("❌ Failed to get sub-code stream for IFD {} (status: {})\n",
                       i, static_cast<int>(status));
@@ -511,6 +542,11 @@ bool TiffFileParser::parse_tiff_structure()
 
         if (status != NVIMGCODEC_STATUS_SUCCESS)
         {
+            ++image_info_failures;
+            if (first_image_info_status == 0)
+            {
+                first_image_info_status = static_cast<int>(status);
+            }
             #ifdef DEBUG
             fmt::print("❌ Failed to get image info for IFD {} (status: {})\n",
                       i, static_cast<int>(status));
@@ -672,6 +708,19 @@ bool TiffFileParser::parse_tiff_structure()
         #ifdef DEBUG
         fmt::print("   {} IFDs were skipped due to parsing errors\n", num_ifds - ifd_infos_.size());
         #endif // DEBUG
+    }
+
+    if (ifd_infos_.empty())
+    {
+        parse_error_ = fmt::format(
+            "Failed to parse TIFF IFDs via nvImageCodec: num_images={}, "
+            "substream_failures={} (first_status={}), image_info_failures={} (first_status={})",
+            num_ifds,
+            substream_failures,
+            first_substream_status,
+            image_info_failures,
+            first_image_info_status);
+        return false;
     }
 
     return true;

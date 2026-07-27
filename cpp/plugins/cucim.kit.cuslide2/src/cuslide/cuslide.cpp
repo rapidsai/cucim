@@ -105,6 +105,9 @@ static bool CUCIM_ABI parser_parse(CuCIMFileHandle_ptr handle_ptr, cucim::io::fo
     // Detect if this is a Philips TIFF file
     // Philips TIFF also has multiple SubfileType=0 (by design)
     bool is_philips_tiff = (tif->tiff_type() == cuslide::tiff::TiffType::Philips);
+    const std::string& first_desc = tif->ifd(0)->image_description();
+    bool looks_like_ome = (first_desc.find("<OME") != std::string::npos ||
+                           first_desc.find(":OME") != std::string::npos);
 
     // Fallback detection for nvImageCodec 0.6.0: check for multiple resolution levels
     // Aperio SVS files typically have 3-6 IFDs with multiple resolution levels
@@ -136,7 +139,7 @@ static bool CUCIM_ABI parser_parse(CuCIMFileHandle_ptr handle_ptr, cucim::io::fo
     // WSI formats commonly have multiple SubfileType=0 IFDs for pyramid levels.
     // Only enforce the single-main-image constraint for unrecognized Generic TIFFs.
     bool is_known_multi_ifd_format =
-        is_aperio_svs || is_philips_tiff ||
+        is_aperio_svs || is_philips_tiff || looks_like_ome ||
         tif->tiff_type() == cuslide::tiff::TiffType::Hamamatsu ||
         tif->tiff_type() == cuslide::tiff::TiffType::Leica ||
         tif->tiff_type() == cuslide::tiff::TiffType::Ventana ||
@@ -157,11 +160,14 @@ static bool CUCIM_ABI parser_parse(CuCIMFileHandle_ptr handle_ptr, cucim::io::fo
             }
         }
 
-        // Assume that the image has only one main (high resolution) image.
-        if (main_ifd_list.size() != 1)
+        // Legacy TIFF path expected exactly one main image, but modern
+        // multiplex/stacked TIFF variants may legitimately carry multiple
+        // SubfileType=0 IFDs. We only reject the clearly invalid case with
+        // no main image at all.
+        if (main_ifd_list.empty())
         {
             throw std::runtime_error(
-                fmt::format("This format has more than one image with Subfile Type 0 so cannot be loaded!"));
+                fmt::format("No main image (Subfile Type 0) found in TIFF file."));
         }
     }
 
