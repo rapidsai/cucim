@@ -15,11 +15,6 @@ from cucim.skimage.measure._label import (
 )
 from cucim.skimage.measure._label_kernels import _label
 
-# import pytest
-
-# import cucim.skimage.measure._ccomp as ccomp
-
-
 BG = 0  # background value
 
 
