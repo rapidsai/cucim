@@ -6,9 +6,11 @@
 #
 
 if (NOT TARGET deps::nvimgcodec)
+    # Packaging pins nvImageCodec to >=0.9.0,<0.10.0 and the vendored headers
+    # declare 0.9, so only 0.9 is supported here.  The unversioned entries are
+    # kept for wheel and system layouts that ship just the symlinks.
     set(NVIMGCODEC_SONAME_CANDIDATES
         "libnvimgcodec.so.0.9.0"
-        "libnvimgcodec.so.0.8.0"
         "libnvimgcodec.so.0"
         "libnvimgcodec.so")
 
@@ -22,14 +24,60 @@ if (NOT TARGET deps::nvimgcodec)
         set(${out_var} "" PARENT_SCOPE)
     endfunction()
 
+    # The unversioned "libnvimgcodec.so.0" / "libnvimgcodec.so" candidates above
+    # resolve to whatever major-0 build is installed, so an unsupported 0.8 would
+    # otherwise be picked up silently.  The 0.9 API is not backward compatible
+    # (limit_images was removed) and there are no compile-time version guards, so
+    # fail at configure time instead of at runtime.
+    function(_cucim_check_nvimgcodec_version include_dir)
+        set(_version_header "${include_dir}/nvimgcodec_version.h")
+        if(NOT EXISTS "${_version_header}")
+            message(WARNING
+                "nvImageCodec: nvimgcodec_version.h not found under '${include_dir}' - "
+                "skipping version check. cuCIM requires >=0.9.0,<0.10.0.")
+            return()
+        endif()
+
+        file(STRINGS "${_version_header}" _major_line
+             REGEX "^#define[ \t]+NVIMGCODEC_VER_MAJOR[ \t]+[0-9]+")
+        file(STRINGS "${_version_header}" _minor_line
+             REGEX "^#define[ \t]+NVIMGCODEC_VER_MINOR[ \t]+[0-9]+")
+        string(REGEX REPLACE ".*NVIMGCODEC_VER_MAJOR[ \t]+([0-9]+).*" "\\1" _major "${_major_line}")
+        string(REGEX REPLACE ".*NVIMGCODEC_VER_MINOR[ \t]+([0-9]+).*" "\\1" _minor "${_minor_line}")
+
+        if(NOT _major MATCHES "^[0-9]+$" OR NOT _minor MATCHES "^[0-9]+$")
+            message(WARNING
+                "nvImageCodec: could not parse version from '${_version_header}' - "
+                "skipping version check.")
+            return()
+        endif()
+
+        if(_major EQUAL 0 AND _minor LESS 9)
+            message(FATAL_ERROR
+                "nvImageCodec ${_major}.${_minor} found at '${include_dir}', but cuCIM "
+                "requires >=0.9.0 (packaging pins >=0.9.0,<0.10.0). The 0.9 API is not "
+                "backward compatible and this build has no compile-time version guards, "
+                "so it would fail at runtime. Install libnvimgcodec-dev >=0.9.")
+        elseif(_major GREATER 0 OR _minor GREATER_EQUAL 10)
+            message(WARNING
+                "nvImageCodec ${_major}.${_minor} is outside the pinned range "
+                "(>=0.9.0,<0.10.0) and is untested with this cuCIM build.")
+        endif()
+    endfunction()
+
     # First try to find it as a package
     find_package(nvimgcodec QUIET)
 
     if(nvimgcodec_FOUND)
         # Use the found package
+        if(DEFINED nvimgcodec_VERSION AND nvimgcodec_VERSION VERSION_LESS "0.9.0")
+            message(FATAL_ERROR
+                "nvImageCodec ${nvimgcodec_VERSION} found via find_package, but cuCIM "
+                "requires >=0.9.0 (packaging pins >=0.9.0,<0.10.0).")
+        endif()
         add_library(deps::nvimgcodec INTERFACE IMPORTED GLOBAL)
         target_link_libraries(deps::nvimgcodec INTERFACE nvimgcodec::nvimgcodec)
-        message(STATUS "✓ nvImageCodec found via find_package")
+        message(STATUS "✓ nvImageCodec found via find_package (version: ${nvimgcodec_VERSION})")
     else()
         # Manual detection in various environments
         set(NVIMGCODEC_LIB_PATH "")
@@ -104,6 +152,7 @@ if (NOT TARGET deps::nvimgcodec)
 
         # Create the target if we found the library
         if(NVIMGCODEC_LIB_PATH AND EXISTS "${NVIMGCODEC_LIB_PATH}")
+            _cucim_check_nvimgcodec_version("${NVIMGCODEC_INCLUDE_PATH}")
             add_library(deps::nvimgcodec SHARED IMPORTED GLOBAL)
             set_target_properties(deps::nvimgcodec PROPERTIES
                 IMPORTED_LOCATION "${NVIMGCODEC_LIB_PATH}"
