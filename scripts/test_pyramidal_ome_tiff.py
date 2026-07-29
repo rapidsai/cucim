@@ -37,7 +37,14 @@ def _max_read_size(level_dims: tuple[int, int], cap: int = 512):
 
 
 def _validate_pyramid_geometry(level_dimensions, level_downsamples, level_count):
-    """Assert pyramid levels shrink and match reported downsample factors."""
+    """Assert pyramid levels shrink and match reported downsample factors.
+
+    cuslide2 reports a single scalar downsample per level, computed as the mean
+    of the per-axis ratios ((w0/wi) + (h0/hi)) / 2. Levels are free to use
+    different X and Y ratios, so dims cannot be recovered from the scalar.
+    Multi-plane files (OME C/Z/T) also expose several IFDs per resolution, so
+    dims are required to be non-increasing rather than strictly decreasing.
+    """
     print("\n📐 Pyramid geometry checks")
     if level_count < 1:
         raise RuntimeError("level_count must be >= 1")
@@ -48,6 +55,7 @@ def _validate_pyramid_geometry(level_dimensions, level_downsamples, level_count)
             f"Level 0 downsample should be 1.0, got {level_downsamples[0]}"
         )
 
+    resolutions = 1
     for level in range(1, level_count):
         w, h = int(level_dimensions[level][0]), int(level_dimensions[level][1])
         ds = float(level_downsamples[level])
@@ -60,22 +68,38 @@ def _validate_pyramid_geometry(level_dimensions, level_downsamples, level_count)
                 f"Level {level} dims {w}x{h} are not smaller than "
                 f"level {level - 1} {prev_w}x{prev_h}"
             )
-        if ds <= prev_ds:
+
+        if w == prev_w and h == prev_h:
+            if abs(ds - prev_ds) > 1e-3 * max(1.0, prev_ds):
+                raise RuntimeError(
+                    f"Level {level} repeats dims {w}x{h} from level "
+                    f"{level - 1} but reports downsample {ds} != {prev_ds}"
+                )
+        else:
+            resolutions += 1
+            if ds <= prev_ds:
+                raise RuntimeError(
+                    f"Level {level} downsample {ds} should be > "
+                    f"level {level - 1} downsample {prev_ds}"
+                )
+
+        expected_ds = ((base_w / w) + (base_h / h)) / 2.0
+        if abs(ds - expected_ds) > max(0.01, 0.01 * expected_ds):
             raise RuntimeError(
-                f"Level {level} downsample {ds} should be > "
-                f"level {level - 1} downsample {prev_ds}"
+                f"Level {level}: downsample {ds} != mean axis ratio "
+                f"{expected_ds:.4f} for dims {w}x{h} "
+                f"(base {base_w}x{base_h})"
             )
 
-        # Allow ±1 for integer rounding of base / downsample.
-        expected_w = max(1, int(round(base_w / ds)))
-        expected_h = max(1, int(round(base_h / ds)))
-        if abs(w - expected_w) > 1 or abs(h - expected_h) > 1:
-            raise RuntimeError(
-                f"Level {level}: dims {w}x{h} != base/ds ~{expected_w}x{expected_h} "
-                f"(ds={ds})"
-            )
-
-    print("  ✅ Pyramid dims decrease and match reported downsamples")
+    print(
+        f"  ✅ Pyramid dims are non-increasing and match reported downsamples "
+        f"({resolutions} distinct resolution(s) over {level_count} level(s))"
+    )
+    if resolutions < level_count:
+        print(
+            f"  ⚠️  {level_count - resolutions} level(s) repeat an existing "
+            f"resolution — likely multi-plane (C/Z/T) IFDs exposed as levels"
+        )
 
 
 def _dtype_bits(dtype) -> int | None:
