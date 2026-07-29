@@ -20,7 +20,7 @@
 #include "nvimgcodec_tiff_parser.h"
 
 #include <algorithm>  // for std::transform
-#include <cstddef>    // for offsetof
+#include <cstddef>    // for size_t
 #include <cstdlib>    // for std::atexit, std::getenv, std::strtol
 #include <cstring>    // for strlen
 #include <thread>     // for std::thread::hardware_concurrency
@@ -571,13 +571,10 @@ bool TiffFileParser::parse_tiff_structure()
         // Create view for this IFD
         nvimgcodecCodeStreamView_t view{};
         view.struct_type = NVIMGCODEC_STRUCTURE_TYPE_CODE_STREAM_VIEW;
-        // ABI compatibility: nvImageCodec builds prior to the `limit_images`
-        // field expect a smaller CodeStreamView payload.
-        view.struct_size = offsetof(nvimgcodecCodeStreamView_t, limit_images);
+        view.struct_size = sizeof(nvimgcodecCodeStreamView_t);
         view.struct_next = nullptr;
         view.image_idx = i;  // Note: nvImageCodec uses 'image_idx' not 'image_index'
         view.bitstream_offset = 0;
-        view.limit_images = 0;
         view.region.struct_type = NVIMGCODEC_STRUCTURE_TYPE_REGION;
         view.region.struct_size = sizeof(nvimgcodecRegion_t);
         view.region.struct_next = nullptr;

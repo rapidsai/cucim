@@ -340,7 +340,7 @@ bool decode_ifd_region_nvimgcodec(const IfdInfo& ifd_info,
 
         nvimgcodecCodeStreamView_t view{};
         view.struct_type = NVIMGCODEC_STRUCTURE_TYPE_CODE_STREAM_VIEW;
-        view.struct_size = offsetof(nvimgcodecCodeStreamView_t, limit_images);
+        view.struct_size = sizeof(nvimgcodecCodeStreamView_t);
         view.struct_next = nullptr;
         view.image_idx = ifd_info.index;
         view.region = region;
@@ -637,7 +637,7 @@ std::vector<BatchDecodeResult> decode_batch_regions_nvimgcodec(
 
             nvimgcodecCodeStreamView_t view{};
             view.struct_type = NVIMGCODEC_STRUCTURE_TYPE_CODE_STREAM_VIEW;
-            view.struct_size = offsetof(nvimgcodecCodeStreamView_t, limit_images);
+            view.struct_size = sizeof(nvimgcodecCodeStreamView_t);
             view.struct_next = nullptr;
             view.image_idx = ifd_info.index;  // Use IFD index for nvImageCodec page selection
             view.region = nvregion;
@@ -936,7 +936,7 @@ BatchDecodeState schedule_batch_decode(
 
             nvimgcodecCodeStreamView_t view{};
             view.struct_type = NVIMGCODEC_STRUCTURE_TYPE_CODE_STREAM_VIEW;
-            view.struct_size = offsetof(nvimgcodecCodeStreamView_t, limit_images);
+            view.struct_size = sizeof(nvimgcodecCodeStreamView_t);
             view.struct_next = nullptr;
             view.image_idx = ifd_info.index;
             view.region = nvregion;
