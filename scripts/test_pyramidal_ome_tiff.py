@@ -9,11 +9,13 @@ This script focuses on:
   - multi-level pyramid reads
   - channel-plane selection via read_region kwargs (C/Z/T)
   - CPU vs GPU decode consistency (where GPU is available)
+  - synthetic uint16 / higher bit-depth decode coverage
   - optional tile-level caching smoke test
 """
 
 import json
 import sys
+import tempfile
 import time
 import traceback
 from pathlib import Path
@@ -74,6 +76,122 @@ def _validate_pyramid_geometry(level_dimensions, level_downsamples, level_count)
             )
 
     print("  ✅ Pyramid dims decrease and match reported downsamples")
+
+
+def _dtype_bits(dtype) -> int | None:
+    """Best-effort bit depth from CuImage/DLDataType or NumPy dtype."""
+    bits = getattr(dtype, "bits", None)
+    if bits is not None:
+        return int(bits)
+    try:
+        return int(np.dtype(dtype).itemsize * 8)
+    except Exception:
+        return None
+
+
+def _write_synthetic_uint16_ome_tiff(path: Path, height: int = 128, width: int = 128):
+    """Write a small tiled pyramidal uint16 OME-TIFF for decode coverage."""
+    import tifffile
+
+    ome = f"""<?xml version="1.0" encoding="UTF-8"?>
+<OME xmlns="http://www.openmicroscopy.org/Schemas/OME/2016-06">
+  <Image ID="Image:0" Name="uint16-synth">
+    <Pixels ID="Pixels:0" DimensionOrder="XYCZT" Type="uint16"
+            SizeX="{width}" SizeY="{height}" SizeZ="1" SizeC="1" SizeT="1"
+            PhysicalSizeX="1.0" PhysicalSizeY="1.0"
+            PhysicalSizeXUnit="um" PhysicalSizeYUnit="um">
+      <Channel ID="Channel:0:0" Name="C0" SamplesPerPixel="1"/>
+      <TiffData IFD="0" PlaneCount="1"/>
+    </Pixels>
+  </Image>
+</OME>"""
+
+    rng = np.random.default_rng(0)
+    level0 = rng.integers(0, 4096, size=(height, width), dtype=np.uint16)
+    # Plant a recognizable high-bit pattern (>255) so uint8 truncation would fail.
+    level0[10:20, 10:20] = 12345
+    level1 = level0[::2, ::2].copy()
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tifffile.TiffWriter(path, bigtiff=True) as tif:
+        tif.write(
+            level0,
+            description=ome,
+            tile=(64, 64),
+            compression="deflate",
+            photometric="minisblack",
+            metadata=None,
+        )
+        tif.write(
+            level1,
+            tile=(64, 64),
+            compression="deflate",
+            photometric="minisblack",
+            subfiletype=1,
+            metadata=None,
+        )
+    return level0, level1
+
+
+def _validate_uint16_decode(plugin_lib: str):
+    """Exercise the uint16 / higher bit-depth decode path on a synthetic OME-TIFF."""
+    print("\n🧪 Synthetic uint16 decode checks")
+    from cucim import CuImage
+    from cucim.clara import _set_plugin_root
+
+    _set_plugin_root(str(plugin_lib))
+
+    with tempfile.TemporaryDirectory(prefix="cucim_uint16_") as tmp:
+        path = Path(tmp) / "uint16_pyramid.ome.tif"
+        level0, level1 = _write_synthetic_uint16_ome_tiff(path)
+        img = CuImage(str(path))
+
+        bits = _dtype_bits(img.dtype)
+        if bits != 16 and np.dtype(img.typestr) != np.uint16:
+            raise RuntimeError(
+                f"Expected uint16 image dtype, got dtype={img.dtype}, typestr={img.typestr}"
+            )
+        print(f"  ✅ Metadata dtype is uint16 (bits={bits}, typestr={img.typestr})")
+
+        region = _to_numpy(img.read_region((10, 10), (10, 10), level=0, device="cpu"))
+        if region.dtype != np.uint16:
+            raise RuntimeError(f"Expected uint16 region dtype, got {region.dtype}")
+        region2d = region[..., 0] if region.ndim == 3 else region
+        expected = level0[10:20, 10:20]
+        if not np.array_equal(region2d, expected):
+            raise RuntimeError(
+                "uint16 level-0 patch mismatch "
+                f"(max_diff={int(np.max(np.abs(region2d.astype(np.int64) - expected.astype(np.int64))))})"
+            )
+        print(
+            f"  ✅ Level-0 uint16 patch matches source ({region2d.shape}, dtype={region.dtype})"
+        )
+
+        # Values above 255 prove we did not silently narrow to uint8.
+        if int(region2d.max()) <= 255:
+            raise RuntimeError(
+                f"Expected high-bit values in uint16 patch, max={int(region2d.max())}"
+            )
+        print(f"  ✅ High-bit values preserved (max={int(region2d.max())})")
+
+        level1_region = _to_numpy(
+            img.read_region((0, 0), list(level1.shape[::-1]), level=1, device="cpu")
+        )
+        if level1_region.dtype != np.uint16:
+            raise RuntimeError(
+                f"Expected uint16 level-1 dtype, got {level1_region.dtype}"
+            )
+        level1_2d = level1_region[..., 0] if level1_region.ndim == 3 else level1_region
+        if not np.array_equal(level1_2d, level1):
+            raise RuntimeError(
+                "uint16 level-1 decode does not match source pyramid plane"
+            )
+        print(
+            f"  ✅ Level-1 uint16 plane matches source "
+            f"({level1_2d.shape}, dtype={level1_region.dtype})"
+        )
+
+    print("  ✅ Synthetic uint16 decode path validated")
 
 
 def _print_public_dataset_references():
@@ -409,6 +527,11 @@ def test_pyramidal_ome_tiff(
         ds = level_downsamples[level]
         print(f"  Level {level}: {dims[0]}x{dims[1]} (downsample: {ds:.3f}x)")
 
+    image_bits = _dtype_bits(img.dtype)
+    expect_uint16 = image_bits == 16 or np.dtype(img.typestr) == np.uint16
+    if expect_uint16:
+        print("  ✅ Input reported as uint16 — decode checks will enforce dtype")
+
     print("\n🧬 OME metadata checks")
     metadata = img.metadata
     if isinstance(metadata, str):
@@ -441,6 +564,10 @@ def test_pyramidal_ome_tiff(
         cpu_time = time.time() - start
         cpu_np = _to_numpy(cpu_region)
         print(f"  CPU level {level}: {cpu_np.shape}, {cpu_np.dtype}, {cpu_time:.4f}s")
+        if expect_uint16 and cpu_np.dtype != np.uint16:
+            raise RuntimeError(
+                f"Expected uint16 CPU decode at level {level}, got {cpu_np.dtype}"
+            )
         try:
             start = time.time()
             gpu_region = img.read_region((0, 0), read_size, level=level, device="cuda")
@@ -449,6 +576,10 @@ def test_pyramidal_ome_tiff(
             print(
                 f"  GPU level {level}: {gpu_np.shape}, {gpu_np.dtype}, {gpu_time:.4f}s"
             )
+            if expect_uint16 and gpu_np.dtype != np.uint16:
+                raise RuntimeError(
+                    f"Expected uint16 GPU decode at level {level}, got {gpu_np.dtype}"
+                )
             if gpu_np.shape != cpu_np.shape:
                 raise RuntimeError(
                     f"Shape mismatch at level {level}: CPU={cpu_np.shape}, GPU={gpu_np.shape}"
@@ -526,6 +657,8 @@ def main():
 
     plugin_lib = setup_environment("cucim_ome_tiff_test")
     try:
+        # Always cover the uint16 decode path, independent of the user-provided file.
+        _validate_uint16_decode(plugin_lib)
         test_pyramidal_ome_tiff(
             file_path,
             plugin_lib,
