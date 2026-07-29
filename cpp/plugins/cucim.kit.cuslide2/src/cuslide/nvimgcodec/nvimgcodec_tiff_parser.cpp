@@ -21,8 +21,9 @@
 
 #include <algorithm>  // for std::transform
 #include <cstddef>    // for offsetof
-#include <cstdlib>    // for std::atexit
+#include <cstdlib>    // for std::atexit, std::getenv, std::strtol
 #include <cstring>    // for strlen
+#include <thread>     // for std::thread::hardware_concurrency
 #include <type_traits>
 
 #ifdef CUCIM_HAS_NVIMGCODEC
@@ -141,6 +142,80 @@ static std::string detect_nvimgcodec_extensions_path()
     fmt::print("[nvimgcodec_ext] WARNING: Could not detect extensions path\n");
     #endif
     return {};
+}
+
+
+// ============================================================================
+// Decoder thread count heuristic
+// ============================================================================
+//
+// Computes a reasonable max_num_cpu_threads for nvImageCodec's internal
+// threadpool.  On multi-worker deployments the total thread count across
+// all workers should not exceed the physical core count to avoid
+// context-switch overhead.
+//
+// Heuristic:  min(hardware_concurrency / 4, kHeuristicMaxThreads)
+//
+// The CUDA stream count is left at nvImageCodec's default because
+// empirically it has limited performance impact and over-allocating
+// streams can itself cause oversubscription.
+//
+// Overridable via CUCIM_MAX_DECODER_THREADS environment variable.
+//   - value > 0 : use that exact thread count
+//   - value == 0: fall back to nvImageCodec default (= num cpu cores)
+//   - malformed : warn and fall through to heuristic
+//
+static constexpr int kHeuristicMaxThreads = 8;
+
+static int compute_max_decoder_threads()
+{
+    const char* env_val = std::getenv("CUCIM_MAX_DECODER_THREADS");
+    if (env_val)
+    {
+        char* end = nullptr;
+        long val = std::strtol(env_val, &end, 10);
+        if (end == env_val || *end != '\0')
+        {
+            fmt::print(stderr,
+                "[cuslide2] WARNING: CUCIM_MAX_DECODER_THREADS='{}' is not a "
+                "valid integer — ignoring and using heuristic\n", env_val);
+        }
+        else if (val > 0)
+        {
+            #ifdef DEBUG
+            fmt::print("[cuslide2] CUCIM_MAX_DECODER_THREADS={}\n", val);
+            #endif
+            return static_cast<int>(val);
+        }
+        else if (val == 0)
+        {
+            return 0;  // explicit 0 → nvImageCodec default
+        }
+        else
+        {
+            fmt::print(stderr,
+                "[cuslide2] WARNING: CUCIM_MAX_DECODER_THREADS={} is negative "
+                "— ignoring and using heuristic\n", val);
+        }
+    }
+
+    unsigned int hw_threads = std::thread::hardware_concurrency();
+    if (hw_threads == 0) return 0;  // unknown → let nvImageCodec decide
+
+    // Fair share: assume this process is one of potentially several workers.
+    // Cap at kHeuristicMaxThreads to keep the threadpool bounded even on
+    // high-core-count machines (e.g. 64 cores / 4 = 16 is still too many).
+    int fair_share = std::min(
+        std::max(1, static_cast<int>(hw_threads) / 4),
+        kHeuristicMaxThreads);
+
+    #ifdef DEBUG
+    fmt::print("[nvimgcodec] max_decoder_threads heuristic: hw_threads={}, "
+               "fair_share={}, cap={}\n",
+               hw_threads, fair_share, kHeuristicMaxThreads);
+    #endif
+
+    return fair_share;
 }
 
 
@@ -275,7 +350,7 @@ NvImageCodecTiffParserManager::NvImageCodecTiffParserManager()
         exec_params.struct_next = nullptr;
         exec_params.device_allocator = nullptr;
         exec_params.pinned_allocator = nullptr;
-        exec_params.max_num_cpu_threads = 0;
+        exec_params.max_num_cpu_threads = compute_max_decoder_threads();
         exec_params.executor = nullptr;
         exec_params.device_id = NVIMGCODEC_DEVICE_CURRENT;  // GPU-enabled for decode + metadata
         exec_params.pre_init = 0;
@@ -589,11 +664,8 @@ bool TiffFileParser::parse_tiff_structure()
         // Extract TIFF metadata using available methods
         extract_tiff_tags(ifd_info);
 
-        // Current limitation (nvImageCodec v0.6.0):
-        // - codec_name returns "tiff" (container format) not compression type
-        // - Individual TIFF tags not exposed through metadata API
-        // - Only vendor-specific metadata blobs available (MED_APERIO, MED_PHILIPS, etc.)
-        //
+        // codec_name reports "tiff" (the container format) rather than the
+        // compression type, so compression is inferred from the TIFF tags below.
 
         if (ifd_info.codec == "tiff")
         {
@@ -930,13 +1002,6 @@ void TiffFileParser::extract_ifd_metadata(IfdInfo& ifd_info)
             ifd_info.metadata_blobs[kind] = std::move(metadata_blobs[j]);
         }
     }
-
-    // WORKAROUND for nvImageCodec 0.6.0: Philips TIFF metadata limitation
-    // ========================================================================
-    // nvImageCodec 0.6.0 does NOT expose:
-    // 1. Individual TIFF tags (SOFTWARE, ImageDescription, etc.)
-    // 2. Philips format detection for some files
-    //
 
 }
 
