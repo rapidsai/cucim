@@ -395,7 +395,7 @@ bool decode_ifd_region_nvimgcodec(const IfdInfo& ifd_info,
         output_image_info.buffer_kind = buffer_kind;
 
         uint32_t num_channels = decode_spec.num_channels;
-        size_t row_stride = width * num_channels * decode_spec.bytes_per_sample;
+        size_t row_stride = static_cast<size_t>(width) * num_channels * decode_spec.bytes_per_sample;
         size_t buffer_size = row_stride * height;
 
         output_image_info.plane_info[0].height = height;
@@ -680,7 +680,7 @@ std::vector<BatchDecodeResult> decode_batch_regions_nvimgcodec(
             const auto& region = regions[i];
             const DecodePixelSpec decode_spec = resolve_decode_pixel_spec(ifd_info);
             uint32_t num_channels = decode_spec.num_channels;
-            size_t row_stride = region.width * num_channels * decode_spec.bytes_per_sample;
+            size_t row_stride = static_cast<size_t>(region.width) * num_channels * decode_spec.bytes_per_sample;
             size_t buffer_size = row_stride * region.height;
 
             if (!decode_buffers[i].allocate(buffer_size, use_device_memory))
@@ -983,7 +983,7 @@ BatchDecodeState schedule_batch_decode(
             const auto& region = regions[i];
             const DecodePixelSpec decode_spec = resolve_decode_pixel_spec(ifd_info);
             uint32_t num_channels = decode_spec.num_channels;
-            size_t row_stride = region.width * num_channels * decode_spec.bytes_per_sample;
+            size_t row_stride = static_cast<size_t>(region.width) * num_channels * decode_spec.bytes_per_sample;
             size_t buffer_size = row_stride * region.height;
 
             void* buffer_ptr = nullptr;
