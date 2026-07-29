@@ -246,47 +246,49 @@ static bool CUCIM_ABI parser_parse(CuCIMFileHandle_ptr handle_ptr, cucim::io::fo
         shape[2] = n_ch;
     }
 
-    std::pmr::vector<std::string_view> channel_names(&resource);
-    channel_names.reserve(n_ch);
-    auto add_owned_channel_name = [&resource, &channel_names](const std::string& name) {
-        void* raw = resource.allocate(name.size() + 1, alignof(char));
-        auto* buf = static_cast<char*>(raw);
-        memcpy(buf, name.c_str(), name.size() + 1);
-        channel_names.emplace_back(buf, name.size());
-    };
+    // Own the names as strings while building. ImageMetadata::channel_names
+    // takes string_views and may retain pointers into the metadata buffer, so
+    // we copy into `resource` once at the end rather than keeping views into
+    // this temporary storage.
+    std::vector<std::string> channel_name_storage;
+    channel_name_storage.reserve(n_ch);
     if (!ome_channel_names.empty())
     {
         for (size_t i = 0; i < static_cast<size_t>(n_ch); ++i)
         {
             if (i < ome_channel_names.size())
             {
-                add_owned_channel_name(ome_channel_names[i]);
+                channel_name_storage.push_back(ome_channel_names[i]);
             }
             else
             {
-                add_owned_channel_name(fmt::format("C{}", i));
+                channel_name_storage.push_back(fmt::format("C{}", i));
             }
         }
     }
     else if (n_ch == 3)
     {
-        channel_names.emplace_back(std::string_view{ "R" });
-        channel_names.emplace_back(std::string_view{ "G" });
-        channel_names.emplace_back(std::string_view{ "B" });
+        channel_name_storage = { "R", "G", "B" };
     }
     else if (n_ch == 4)
     {
-        channel_names.emplace_back(std::string_view{ "R" });
-        channel_names.emplace_back(std::string_view{ "G" });
-        channel_names.emplace_back(std::string_view{ "B" });
-        channel_names.emplace_back(std::string_view{ "A" });
+        channel_name_storage = { "R", "G", "B", "A" };
     }
     else
     {
         for (uint8_t i = 0; i < n_ch; ++i)
         {
-            add_owned_channel_name(fmt::format("C{}", i));
+            channel_name_storage.push_back(fmt::format("C{}", i));
         }
+    }
+
+    std::pmr::vector<std::string_view> channel_names(&resource);
+    channel_names.reserve(channel_name_storage.size());
+    for (const auto& name : channel_name_storage)
+    {
+        char* buf = static_cast<char*>(resource.allocate(name.size() + 1, alignof(char)));
+        std::memcpy(buf, name.c_str(), name.size() + 1);
+        channel_names.emplace_back(buf, name.size());
     }
 
     // Spacing units
