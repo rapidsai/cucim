@@ -17,7 +17,6 @@ import sys
 import time
 import traceback
 from pathlib import Path
-from typing import Dict, Optional, Tuple
 
 import numpy as np
 from test_common import setup_environment, test_tile_level_caching
@@ -31,20 +30,66 @@ def _to_numpy(arr):
     return np.asarray(arr)
 
 
-def _max_read_size(level_dims: Tuple[int, int], cap: int = 512):
+def _max_read_size(level_dims: tuple[int, int], cap: int = 512):
     return [min(cap, int(level_dims[0])), min(cap, int(level_dims[1]))]
+
+
+def _validate_pyramid_geometry(level_dimensions, level_downsamples, level_count):
+    """Assert pyramid levels shrink and match reported downsample factors."""
+    print("\n📐 Pyramid geometry checks")
+    if level_count < 1:
+        raise RuntimeError("level_count must be >= 1")
+
+    base_w, base_h = int(level_dimensions[0][0]), int(level_dimensions[0][1])
+    if float(level_downsamples[0]) != 1.0:
+        raise RuntimeError(
+            f"Level 0 downsample should be 1.0, got {level_downsamples[0]}"
+        )
+
+    for level in range(1, level_count):
+        w, h = int(level_dimensions[level][0]), int(level_dimensions[level][1])
+        ds = float(level_downsamples[level])
+        prev_w = int(level_dimensions[level - 1][0])
+        prev_h = int(level_dimensions[level - 1][1])
+        prev_ds = float(level_downsamples[level - 1])
+
+        if w > prev_w or h > prev_h:
+            raise RuntimeError(
+                f"Level {level} dims {w}x{h} are not smaller than "
+                f"level {level - 1} {prev_w}x{prev_h}"
+            )
+        if ds <= prev_ds:
+            raise RuntimeError(
+                f"Level {level} downsample {ds} should be > "
+                f"level {level - 1} downsample {prev_ds}"
+            )
+
+        # Allow ±1 for integer rounding of base / downsample.
+        expected_w = max(1, int(round(base_w / ds)))
+        expected_h = max(1, int(round(base_h / ds)))
+        if abs(w - expected_w) > 1 or abs(h - expected_h) > 1:
+            raise RuntimeError(
+                f"Level {level}: dims {w}x{h} != base/ds ~{expected_w}x{expected_h} "
+                f"(ds={ds})"
+            )
+
+    print("  ✅ Pyramid dims decrease and match reported downsamples")
 
 
 def _print_public_dataset_references():
     print("\n📋 Public Cell DIVE datasets used in this effort:")
     print("=" * 70)
     print("Heart sample (5 markers):")
-    print("  https://portal.hubmapconsortium.org/browse/dataset/e4263715a087881e46ea4d11f49139aa")
+    print(
+        "  https://portal.hubmapconsortium.org/browse/dataset/e4263715a087881e46ea4d11f49139aa"
+    )
     print("Skin sample (19 markers):")
-    print("  https://portal.hubmapconsortium.org/browse/dataset/1b8121539ff16f53681de6108069be24")
+    print(
+        "  https://portal.hubmapconsortium.org/browse/dataset/1b8121539ff16f53681de6108069be24"
+    )
 
 
-def _extract_ome_meta(metadata: Dict):
+def _extract_ome_meta(metadata: dict):
     """Extract OME metadata from CuImage metadata dict."""
     ome = metadata.get("ome", {}) if isinstance(metadata, dict) else {}
     size_c = int(ome.get("size_c", -1)) if isinstance(ome, dict) else -1
@@ -54,7 +99,7 @@ def _extract_ome_meta(metadata: Dict):
     return ome, size_c, size_z, size_t, channel_names
 
 
-def _load_cell_dive_tsv(tsv_path: str, hubmap_id: Optional[str] = None):
+def _load_cell_dive_tsv(tsv_path: str, hubmap_id: str | None = None):
     """Load Cell DIVE assay keys from HuBMAP-style TSV metadata export."""
     path = Path(tsv_path)
     if not path.exists():
@@ -114,7 +159,9 @@ def _as_int_or_none(v):
         return None
 
 
-def _validate_tsv_mapping(tsv_hubmap_id: str, tsv_meta: Dict, ome: Dict, size_c: int, channel_names):
+def _validate_tsv_mapping(
+    tsv_hubmap_id: str, tsv_meta: dict, ome: dict, size_c: int, channel_names
+):
     """Map selected TSV keys to OME/cuslide2 outputs and validate consistency."""
     print("\n🧾 TSV → OME mapping checks")
     print("-" * 50)
@@ -129,7 +176,9 @@ def _validate_tsv_mapping(tsv_hubmap_id: str, tsv_meta: Dict, ome: Dict, size_c:
 
     if tsv_rx is not None and ome_px is not None:
         dx = abs(tsv_rx - ome_px)
-        print(f"  resolution_x_value ({tsv_rx}) ↔ physical_size_x ({ome_px}), Δ={dx:.6f}")
+        print(
+            f"  resolution_x_value ({tsv_rx}) ↔ physical_size_x ({ome_px}), Δ={dx:.6f}"
+        )
         if dx > 1e-3:
             raise RuntimeError(
                 f"TSV/OME X spacing mismatch is too large: TSV={tsv_rx}, OME={ome_px}, delta={dx}"
@@ -139,7 +188,9 @@ def _validate_tsv_mapping(tsv_hubmap_id: str, tsv_meta: Dict, ome: Dict, size_c:
 
     if tsv_ry is not None and ome_py is not None:
         dy = abs(tsv_ry - ome_py)
-        print(f"  resolution_y_value ({tsv_ry}) ↔ physical_size_y ({ome_py}), Δ={dy:.6f}")
+        print(
+            f"  resolution_y_value ({tsv_ry}) ↔ physical_size_y ({ome_py}), Δ={dy:.6f}"
+        )
         if dy > 1e-3:
             raise RuntimeError(
                 f"TSV/OME Y spacing mismatch is too large: TSV={tsv_ry}, OME={ome_py}, delta={dy}"
@@ -207,7 +258,9 @@ def _validate_channel_selection(img, level_dims, level, c_index, z_index=0, t_in
     # GPU read (optional, skip if unavailable)
     try:
         start = time.time()
-        gpu_region = img.read_region((0, 0), read_size, level=level, device="cuda", **kwargs)
+        gpu_region = img.read_region(
+            (0, 0), read_size, level=level, device="cuda", **kwargs
+        )
         gpu_time = time.time() - start
         gpu_np = _to_numpy(gpu_region)
         print(
@@ -221,7 +274,9 @@ def _validate_channel_selection(img, level_dims, level, c_index, z_index=0, t_in
                 f"GPU={gpu_np.shape}, CPU={cpu_np.shape}"
             )
         if not np.array_equal(gpu_np, cpu_np):
-            max_diff = int(np.max(np.abs(gpu_np.astype(np.int64) - cpu_np.astype(np.int64))))
+            max_diff = int(
+                np.max(np.abs(gpu_np.astype(np.int64) - cpu_np.astype(np.int64)))
+            )
             raise RuntimeError(
                 f"Pixel mismatch for plane C={c_index},Z={z_index},T={t_index}: max_diff={max_diff}"
             )
@@ -254,8 +309,7 @@ def _validate_batch_decode(img, level_dims):
 
     batch_size = min(8, len(locations))
     print(
-        f"  Locations={len(locations)}, tile={tile_w}x{tile_h}, "
-        f"batch_size={batch_size}"
+        f"  Locations={len(locations)}, tile={tile_w}x{tile_h}, batch_size={batch_size}"
     )
 
     # CPU ground truth
@@ -292,7 +346,9 @@ def _validate_batch_decode(img, level_dims):
             print(f"  🎯 Batch speedup: {cpu_time / gpu_time:.2f}x")
 
         if len(cpu_tiles) != len(gpu_tiles):
-            raise RuntimeError(f"Tile count mismatch CPU={len(cpu_tiles)} GPU={len(gpu_tiles)}")
+            raise RuntimeError(
+                f"Tile count mismatch CPU={len(cpu_tiles)} GPU={len(gpu_tiles)}"
+            )
 
         mismatch = 0
         for idx, (cpu_tile, gpu_tile) in enumerate(zip(cpu_tiles, gpu_tiles)):
@@ -301,9 +357,13 @@ def _validate_batch_decode(img, level_dims):
             if c.shape != g.shape or not np.array_equal(c, g):
                 mismatch += 1
                 if mismatch <= 3:
-                    print(f"    ❌ mismatch at tile idx={idx}, location={locations[idx]}")
+                    print(
+                        f"    ❌ mismatch at tile idx={idx}, location={locations[idx]}"
+                    )
         if mismatch:
-            raise RuntimeError(f"Batch decode mismatch count: {mismatch}/{len(cpu_tiles)}")
+            raise RuntimeError(
+                f"Batch decode mismatch count: {mismatch}/{len(cpu_tiles)}"
+            )
         print("  ✅ Batch decode GPU and CPU are identical")
     except Exception as e:
         print(f"  ⚠️  GPU batch validation skipped/failed: {e}")
@@ -313,8 +373,8 @@ def test_pyramidal_ome_tiff(
     file_path,
     plugin_lib,
     run_cache=True,
-    tsv_path: Optional[str] = None,
-    hubmap_id: Optional[str] = None,
+    tsv_path: str | None = None,
+    hubmap_id: str | None = None,
 ):
     print("=" * 70)
     print("🔬 Testing pyramidal OME-TIFF with cuslide2")
@@ -324,8 +384,8 @@ def test_pyramidal_ome_tiff(
     if not Path(file_path).exists():
         raise FileNotFoundError(f"OME-TIFF file not found: {file_path}")
 
-    from cucim.clara import _set_plugin_root
     from cucim import CuImage
+    from cucim.clara import _set_plugin_root
 
     _set_plugin_root(str(plugin_lib))
     print(f"✅ Plugin root set: {plugin_lib}")
@@ -368,6 +428,8 @@ def test_pyramidal_ome_tiff(
         tsv_hubmap_id, tsv_meta = _load_cell_dive_tsv(tsv_path, hubmap_id)
         _validate_tsv_mapping(tsv_hubmap_id, tsv_meta, ome, size_c, channel_names)
 
+    _validate_pyramid_geometry(level_dimensions, level_downsamples, level_count)
+
     # Multi-level single read smoke checks
     print("\n🧪 Multi-level decode checks")
     test_levels = sorted(set([0, min(level_count - 1, 1), level_count - 1]))
@@ -384,11 +446,21 @@ def test_pyramidal_ome_tiff(
             gpu_region = img.read_region((0, 0), read_size, level=level, device="cuda")
             gpu_time = time.time() - start
             gpu_np = _to_numpy(gpu_region)
-            print(f"  GPU level {level}: {gpu_np.shape}, {gpu_np.dtype}, {gpu_time:.4f}s")
+            print(
+                f"  GPU level {level}: {gpu_np.shape}, {gpu_np.dtype}, {gpu_time:.4f}s"
+            )
             if gpu_np.shape != cpu_np.shape:
                 raise RuntimeError(
                     f"Shape mismatch at level {level}: CPU={cpu_np.shape}, GPU={gpu_np.shape}"
                 )
+            if not np.array_equal(gpu_np, cpu_np):
+                max_diff = int(
+                    np.max(np.abs(gpu_np.astype(np.int64) - cpu_np.astype(np.int64)))
+                )
+                raise RuntimeError(
+                    f"Pixel mismatch at level {level}: max_diff={max_diff}"
+                )
+            print(f"  ✅ GPU and CPU level {level} decode are identical")
         except Exception as e:
             print(f"  ⚠️  GPU level {level} validation skipped/failed: {e}")
 
@@ -402,7 +474,9 @@ def test_pyramidal_ome_tiff(
         z_idx = 0 if size_z <= 0 else min(size_z - 1, 0)
         t_idx = 0 if size_t <= 0 else min(size_t - 1, 0)
         for c_idx in c_candidates:
-            _validate_channel_selection(img, dims0, level=0, c_index=c_idx, z_index=z_idx, t_index=t_idx)
+            _validate_channel_selection(
+                img, dims0, level=0, c_index=c_idx, z_index=z_idx, t_index=t_idx
+            )
     else:
         print("\n⚠️  Skipping C/Z/T plane checks (size_c not available)")
 
@@ -468,4 +542,3 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
-
