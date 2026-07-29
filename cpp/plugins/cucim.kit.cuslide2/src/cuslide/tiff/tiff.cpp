@@ -1124,9 +1124,14 @@ void TIFF::_populate_philips_tiff_metadata(uint16_t ifd_count, void* metadata, s
                 double downsample = std::round((pixel_spacings[spacing_index].first / spacing_x_l0 +
                                                 pixel_spacings[spacing_index].second / spacing_y_l0) /
                                                2);
-                // Fix width and height of IFD
-                ifd->width_ = width_l0 / downsample;
-                ifd->height_ = height_l0 / downsample;
+                // Fix width and height of IFD. Guard against bogus pixel spacing metadata that
+                // rounds to zero (or worse, negative): the division is floating-point, so the
+                // result would be inf/negative and the narrowing to uint32_t undefined.
+                if (downsample > 0)
+                {
+                    ifd->width_ = width_l0 / downsample;
+                    ifd->height_ = height_l0 / downsample;
+                }
                 ++spacing_index;
             }
             else
