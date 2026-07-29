@@ -71,4 +71,3 @@ TEST_CASE("OME parser reads UUID companion references", "[ome][parser]")
     REQUIRE(model.pixels.tiff_data[1].ifd == 3);
     REQUIRE(model.pixels.tiff_data[1].first_c == 1);
 }
-

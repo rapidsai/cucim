@@ -61,4 +61,3 @@ struct Model
 bool parse(const std::string& xml_text, Model* out_model, std::string* out_error = nullptr);
 
 } // namespace cuslide::tiff::ome
-
