@@ -1170,27 +1170,29 @@ void TIFF::_populate_philips_tiff_metadata(uint16_t ifd_count, void* metadata, s
                 {
                     auto node_offset = associated_node.node().offset_debug();
 
-                    if (node_offset >= 0)
+                    size_t image_desc_len = first_ifd->image_description().size();
+                    if (node_offset >= 0 && static_cast<size_t>(node_offset) < image_desc_len)
                     {
                         // `image_desc_cstr[node_offset]` would point to the following text:
                         //   Attribute Element="0x1004" Group="0x301D" Name="PIM_DP_IMAGE_DATA" PMSVR="IString">
                         //     (base64-encoded JPEG image)
                         //   </Attribute>
                         //
+                        const char* data_ptr = image_desc_cstr + node_offset;
+                        const char* desc_end = image_desc_cstr + image_desc_len;
 
-                        // 34 is from `Attribute Name="PIM_DP_IMAGE_DATA"`
-                        char* data_ptr = const_cast<char*>(image_desc_cstr) + node_offset + 34;
-                        uint32_t data_len = 0;
-                        while (*data_ptr != '>' && *data_ptr != '\0')
+                        // Find '>' that closes the opening <Attribute ...> tag
+                        while (data_ptr < desc_end && *data_ptr != '>')
                         {
                             ++data_ptr;
                         }
-                        if (*data_ptr != '\0')
+                        uint32_t data_len = 0;
+                        if (data_ptr < desc_end && *data_ptr != '\0')
                         {
                             ++data_ptr; // start of base64-encoded data
-                            char* data_end_ptr = data_ptr;
+                            const char* data_end_ptr = data_ptr;
                             // Seek until it finds '<' for '</Attribute>'
-                            while (*data_end_ptr != '<' && *data_end_ptr != '\0')
+                            while (data_end_ptr < desc_end && *data_end_ptr != '<' && *data_end_ptr != '\0')
                             {
                                 ++data_end_ptr;
                             }
