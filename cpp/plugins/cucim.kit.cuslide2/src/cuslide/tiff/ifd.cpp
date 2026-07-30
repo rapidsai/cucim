@@ -14,6 +14,7 @@
 #include <memory>
 #include <random>
 #include <thread>
+#include <cstring>
 #include <fstream>
 #include <langinfo.h>
 
@@ -540,6 +541,59 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
     // ====================================================================
     int64_t ex = sx + w - 1;
     int64_t ey = sy + h - 1;
+
+    // A request can fall entirely outside the image. nvImageCodec fills out-of-bounds
+    // pixels for a region that partially overlaps, but rejects one with no
+    // intersection at all, which would surface as a decode failure. read_region()
+    // is specified to return an all-background raster of the requested size here, so
+    // produce it directly instead of consulting the decoder.
+    if (ex < 0 || ey < 0 || sx >= static_cast<int64_t>(width_) || sy >= static_cast<int64_t>(height_))
+    {
+        if (!output_buffer)
+        {
+            if (out_device.type() == cucim::io::DeviceType::kCUDA)
+            {
+                if (cudaMalloc(reinterpret_cast<void**>(&output_buffer), one_raster_size) != cudaSuccess)
+                {
+                    throw std::runtime_error("Failed to allocate GPU buffer for out-of-bounds region");
+                }
+            }
+            else
+            {
+                output_buffer = static_cast<uint8_t*>(cucim_malloc(one_raster_size));
+                if (!output_buffer)
+                {
+                    throw std::runtime_error("Failed to allocate host buffer for out-of-bounds region");
+                }
+            }
+        }
+
+        if (out_device.type() == cucim::io::DeviceType::kCUDA)
+        {
+            if (cudaMemset(output_buffer, 0, one_raster_size) != cudaSuccess)
+            {
+                throw std::runtime_error("Failed to clear GPU buffer for out-of-bounds region");
+            }
+        }
+        else
+        {
+            std::memset(output_buffer, 0, one_raster_size);
+        }
+
+        out_image_data->container.data = output_buffer;
+        out_image_data->container.device =
+            DLDevice{ static_cast<DLDeviceType>(out_device.type()), out_device.index() };
+        out_image_data->container.dtype = DLDataType{ kDLUInt, static_cast<uint8_t>(bits_per_sample_), 1 };
+        out_image_data->container.ndim = 3;
+        out_image_data->container.shape = static_cast<int64_t*>(cucim_malloc(3 * sizeof(int64_t)));
+        out_image_data->container.shape[0] = h;
+        out_image_data->container.shape[1] = w;
+        out_image_data->container.shape[2] = n_ch;
+        out_image_data->container.strides = nullptr;
+        out_image_data->container.byte_offset = 0;
+
+        return true;
+    }
 
     // Tile caching is applicable when:
     //  1. The image is tiled (tile_width_ > 0 && tile_height_ > 0)
