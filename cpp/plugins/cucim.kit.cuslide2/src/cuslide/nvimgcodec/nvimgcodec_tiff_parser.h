@@ -331,8 +331,16 @@ public:
      */
     static NvImageCodecTiffParserManager& instance()
     {
-        static NvImageCodecTiffParserManager manager;
-        return manager;
+        // Deliberately never destroyed. A static local would register its destructor
+        // via __cxa_atexit *after* the constructor registers shutdown() with
+        // std::atexit, and exit handlers run in reverse registration order, so the
+        // destructor would always run first and tear down CUDA-backed decoder state
+        // at an unsequenced point relative to the CUDA driver's own teardown. That
+        // races and aborts in free() inside libcuda. Leaking the manager leaves
+        // shutdown() to the atexit handler, which is registered after CUDA is
+        // initialized and therefore runs while the driver is still alive.
+        static NvImageCodecTiffParserManager* manager = new NvImageCodecTiffParserManager();
+        return *manager;
     }
 
     /**

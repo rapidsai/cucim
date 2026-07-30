@@ -424,14 +424,16 @@ NvImageCodecTiffParserManager::NvImageCodecTiffParserManager()
         fmt::print("✅ {}\n", status_message_);
         #endif // DEBUG
 
-        // Register atexit() AFTER nvimgcodecDecoderCreate (which initializes
-        // CUDA internally).  atexit handlers run in LIFO order, so this
-        // handler fires BEFORE the CUDA runtime's own atexit cleanup,
-        // guaranteeing that the CUDA context is still alive when we call
-        // nvimgcodecDecoderDestroy / nvimgcodecInstanceDestroy.
-        std::atexit([]() {
-            NvImageCodecTiffParserManager::instance().shutdown();
-        });
+        // The decoder and instance are intentionally not torn down at process exit.
+        // Registering an atexit handler after nvimgcodecDecoderCreate does not make
+        // the teardown safe: the CUDA driver releases its own state on a schedule
+        // that cannot be ordered against libc exit handlers, so
+        // nvimgcodecDecoderDestroy intermittently frees pointers the driver has
+        // already reclaimed and aborts in free() inside libcuda. Both orderings
+        // were observed to abort. These are process-lifetime singletons, so letting
+        // the OS and the driver reclaim them at exit is the reliable choice.
+        // shutdown() remains available for callers that need to release the decoder
+        // deterministically while CUDA is still up.
     }
     catch (const std::exception& e)
     {
@@ -475,9 +477,10 @@ void NvImageCodecTiffParserManager::shutdown()
 
 NvImageCodecTiffParserManager::~NvImageCodecTiffParserManager()
 {
-    // shutdown() is normally called via atexit() while the CUDA context is
-    // still alive.  The destructor calls it again as a safety net — it is
-    // idempotent, so the second call is a harmless no-op.
+    // Not reached at process exit: instance() intentionally leaks the singleton so
+    // that teardown is driven solely by the atexit() handler, which is sequenced
+    // before the CUDA driver's own cleanup. Kept for completeness if an instance is
+    // ever destroyed explicitly while CUDA is still up. shutdown() is idempotent.
     shutdown();
 }
 
