@@ -12,7 +12,7 @@
 //
 // - Vendor-specific metadata blobs (MED_APERIO, MED_PHILIPS, ...)
 // - IFD (Image File Directory) enumeration for pyramidal TIFFs
-// - nvImageCodec 0.7.0+: direct TIFF tag queries via NVIMGCODEC_METADATA_KIND_TIFF_TAG
+// - Direct TIFF tag queries via NVIMGCODEC_METADATA_KIND_TIFF_TAG
 //   (COMPRESSION, SUBFILETYPE, IMAGEDESCRIPTION, JPEGTABLES, ...)
 //
 // ============================================================================
@@ -218,14 +218,6 @@ static int compute_max_decoder_threads()
     return fair_share;
 }
 
-
-// nvimgcodec API compatibility
-//
-// TIFF-tag retrieval via nvimgcodecDecoderGetMetadata (nvImageCodec >= 0.7.0).
-// The required enum values (NVIMGCODEC_METADATA_KIND_TIFF_TAG,
-// NVIMGCODEC_METADATA_VALUE_TYPE_ASCII, etc.) are defined in nvimgcodec.h
-// which is always present in our build tree.
-#define CUSLIDE2_NVIMGCODEC_HAS_TIFF_TAG_METADATA 1
 
 // Helper: convert typed TIFF tag value to a string representation.
 static std::string tiff_tag_value_to_string(const TiffTagValue& value)
@@ -1085,11 +1077,10 @@ void TiffFileParser::extract_tiff_tags(IfdInfo& ifd_info)
     }
 
     // ========================================================================
-    // nvImageCodec 0.7.0+: Direct TIFF Tag Retrieval by ID
+    // Direct TIFF Tag Retrieval by ID
     // ========================================================================
     // Query a fixed set of common TIFF tags individually. Not all tags exist on all IFDs.
 
-#if CUSLIDE2_NVIMGCODEC_HAS_TIFF_TAG_METADATA
     std::vector<std::pair<uint16_t, std::string>> tiff_tags_to_query = {
         {254, "SUBFILETYPE"},
         {256, "IMAGEWIDTH"},
@@ -1254,10 +1245,8 @@ void TiffFileParser::extract_tiff_tags(IfdInfo& ifd_info)
     {
         return;  // Have compression info, no need for heuristics
     }
-#endif // CUSLIDE2_NVIMGCODEC_HAS_TIFF_TAG_METADATA
 
-    // Fallback: file extension heuristics when COMPRESSION tag is not available
-    // (either nvImageCodec < 0.7.0 or tag not present in file)
+    // Fallback: file extension heuristics when the file carries no COMPRESSION tag
 #ifdef DEBUG
     fmt::print("  ℹ️  COMPRESSION tag not available, using file extension heuristics\n");
 #endif // DEBUG
@@ -1304,13 +1293,11 @@ std::vector<int> TiffFileParser::query_metadata_kinds(uint32_t ifd_index) const
         kinds.push_back(kind);
     }
 
-    // Also include TIFF_TAG kind if any tags were extracted (only supported on newer nvimgcodec).
-#if CUSLIDE2_NVIMGCODEC_HAS_TIFF_TAG_METADATA
+    // Also include TIFF_TAG kind if any tags were extracted.
     if (!ifd_infos_[ifd_index].tiff_tags.empty())
     {
         kinds.insert(kinds.begin(), NVIMGCODEC_METADATA_KIND_TIFF_TAG);
     }
-#endif
 
     return kinds;
 }

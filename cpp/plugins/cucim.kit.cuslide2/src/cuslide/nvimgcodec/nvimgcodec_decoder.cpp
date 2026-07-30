@@ -403,7 +403,7 @@ bool decode_ifd_region_nvimgcodec(const IfdInfo& ifd_info,
         output_image_info.plane_info[0].num_channels = num_channels;
         output_image_info.plane_info[0].row_stride = row_stride;
         output_image_info.plane_info[0].sample_type = decode_spec.sample_type;
-        // Note: buffer_size removed in nvImageCodec v0.7.0 - size is inferred from plane_info
+        // Buffer size is inferred from plane_info rather than set explicitly.
         output_image_info.cuda_stream = cuda_stream;
 
         // Step 4: Provide output buffer
@@ -530,7 +530,7 @@ bool decode_ifd_region_nvimgcodec(const IfdInfo& ifd_info,
 }
 
 // ============================================================================
-// Batch ROI Decoding (nvImageCodec v0.7.0+)
+// Batch ROI Decoding
 // ============================================================================
 
 std::vector<BatchDecodeResult> decode_batch_regions_nvimgcodec(

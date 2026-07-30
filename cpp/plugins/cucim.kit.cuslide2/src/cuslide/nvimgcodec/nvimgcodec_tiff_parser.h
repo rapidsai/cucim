@@ -89,7 +89,7 @@ struct IfdInfo
     };
     std::map<int, MetadataBlob> metadata_blobs;
 
-    // nvImageCodec 0.7.0+: Individual TIFF tag storage with typed values (0.8.0+ adds TIFF_TAG_LIST)
+    // Individual TIFF tag storage with typed values.
     // tag_name -> TiffTagValue (variant with typed storage)
     std::unordered_map<std::string, TiffTagValue> tiff_tags;
 
@@ -198,7 +198,7 @@ public:
     /**
      * @brief Get a specific TIFF tag value as string
      *
-     * Returns TIFF tags queried via nvImageCodec metadata API (v0.7.0+)
+     * Returns TIFF tags queried via the nvImageCodec metadata API,
      * or inferred from file extension and vendor metadata as fallback.
      *
      * @param ifd_index IFD index

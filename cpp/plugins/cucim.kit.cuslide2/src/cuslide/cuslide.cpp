@@ -99,7 +99,7 @@ static bool CUCIM_ABI parser_parse(CuCIMFileHandle_ptr handle_ptr, cucim::io::fo
     size_t level_count = tif->level_count();
 
     // Detect if this is an Aperio SVS file
-    // Try ImageDescription first (works with nvImageCodec 0.7.0+)
+    // Try ImageDescription first
     bool is_aperio_svs = (tif->ifd(0)->image_description().rfind("Aperio", 0) == 0);
 
     // Detect if this is a Philips TIFF file
@@ -109,9 +109,9 @@ static bool CUCIM_ABI parser_parse(CuCIMFileHandle_ptr handle_ptr, cucim::io::fo
     bool looks_like_ome = (first_desc.find("<OME") != std::string::npos ||
                            first_desc.find(":OME") != std::string::npos);
 
-    // Fallback detection for nvImageCodec 0.6.0: check for multiple resolution levels
-    // Aperio SVS files typically have 3-6 IFDs with multiple resolution levels
-    // If we have multiple IFDs and they look like a pyramid, treat as Aperio/SVS
+    // Fallback for files with no usable ImageDescription: check for multiple
+    // resolution levels. Aperio SVS files typically have 3-6 IFDs with multiple
+    // resolution levels, so treat a pyramid-shaped IFD chain as Aperio/SVS.
     if (!is_aperio_svs && ifd_count >= 3 && level_count >= 3)
     {
         // Check if IFDs form a pyramid structure (decreasing sizes)

@@ -28,10 +28,10 @@ if (NOT TARGET deps::nvimgcodec)
     endfunction()
 
     # The unversioned "libnvimgcodec.so.0" / "libnvimgcodec.so" candidates above
-    # resolve to whatever major-0 build is installed, so an unsupported 0.8 would
-    # otherwise be picked up silently.  The 0.9 API is not backward compatible
-    # (limit_images was removed) and there are no compile-time version guards, so
-    # fail at configure time instead of at runtime.
+    # resolve to whatever major-0 build is installed, so a version below the
+    # required minimum would otherwise be picked up silently.  That API is not
+    # compatible and there are no compile-time version guards, so fail at
+    # configure time instead of at runtime.
     function(_cucim_check_nvimgcodec_version include_dir)
         set(_version_header "${include_dir}/nvimgcodec_version.h")
         if(NOT EXISTS "${_version_header}")
