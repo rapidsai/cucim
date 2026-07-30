@@ -1,11 +1,17 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import cupy as cp
 import scipy.ndimage as cpu_ndi
 
 from ._label_kernels import _label
+
+_INT32_LABEL_SIZE_LIMIT = 2**31 - 2
+
+
+def _label_dtype_for_size(size):
+    return cp.int64 if size >= _INT32_LABEL_SIZE_LIMIT else cp.int32
 
 
 def _get_structure(ndim, connectivity):
@@ -17,7 +23,6 @@ def _get_structure(ndim, connectivity):
     return cpu_ndi.generate_binary_structure(ndim, connectivity)
 
 
-# TODO: currently uses int32 for the labels. should add int64 option as well
 def label(label_image, background=None, return_num=False, connectivity=None):
     r"""Label connected regions of an integer array.
 
@@ -76,9 +81,8 @@ def label(label_image, background=None, return_num=False, connectivity=None):
 
     Notes
     -----
-    Currently the cucim implementation of this function always uses 32-bit
-    integers for the label array. This is done for performance. In the future
-    64-bit integer support may also be added for better skimage compatibility.
+    The cucim implementation of this function uses 32-bit integers for the
+    label array unless the input size requires 64-bit labels.
 
     Examples
     --------
@@ -121,7 +125,11 @@ def label(label_image, background=None, return_num=False, connectivity=None):
         # same here for non-integer dtypes.
         label_image = label_image.astype(cp.intp)
 
-    labels = cp.empty(label_image.shape, order="C", dtype=cp.int32)
+    labels = cp.empty(
+        label_image.shape,
+        order="C",
+        dtype=_label_dtype_for_size(label_image.size),
+    )
     num = _label(label_image, structure, labels, greyscale_mode=True)
 
     if return_num:
