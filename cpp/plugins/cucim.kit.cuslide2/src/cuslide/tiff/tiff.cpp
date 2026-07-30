@@ -70,19 +70,28 @@ static void parse_string_array(const char* values, json& arr, PhilipsMetadataTyp
         {
             if (text[next_pos - 1] != '\\')
             {
-                switch (type)
+                std::string val(text.substr(pos + 1, next_pos - pos - 1));
+                try
                 {
-                case PhilipsMetadataType::IString:
-                    arr.emplace_back(std::string(text.substr(pos + 1, next_pos - pos - 1)));
-                    break;
-                case PhilipsMetadataType::IDouble:
-                    arr.emplace_back(std::stod(std::string(text.substr(pos + 1, next_pos - pos - 1))));
-                    break;
-                case PhilipsMetadataType::IUInt16:
-                case PhilipsMetadataType::IUInt32:
-                case PhilipsMetadataType::IUInt64:
-                    arr.emplace_back(std::stoul(std::string(text.substr(pos + 1, next_pos - pos - 1))));
-                    break;
+                    switch (type)
+                    {
+                    case PhilipsMetadataType::IString:
+                        arr.emplace_back(std::move(val));
+                        break;
+                    case PhilipsMetadataType::IDouble:
+                        arr.emplace_back(std::stod(val));
+                        break;
+                    case PhilipsMetadataType::IUInt16:
+                    case PhilipsMetadataType::IUInt32:
+                    case PhilipsMetadataType::IUInt64:
+                        arr.emplace_back(std::stoul(val));
+                        break;
+                    }
+                }
+                catch (const std::exception&)
+                {
+                    // Keep parsing remaining array items, preserving the
+                    // previous tolerant behavior for malformed values.
                 }
                 pos = next_pos + 1;
             }
