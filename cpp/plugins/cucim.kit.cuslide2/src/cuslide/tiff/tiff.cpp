@@ -814,6 +814,11 @@ void TIFF::_populate_ome_tiff_metadata(uint16_t ifd_count, void* metadata, std::
     std::string parse_error;
     if (!ome::parse(first_ifd->image_description(), &model, &parse_error) || !model.valid)
     {
+        // The file advertised OME XML but it could not be used, so callers silently lose
+        // channel/plane information. Report why rather than discarding the reason.
+        fmt::print(stderr, "[cuslide2] OME XML present but not usable ({} bytes): {}\n",
+                   first_ifd->image_description().size(),
+                   parse_error.empty() ? "incomplete OME model" : parse_error);
         return;
     }
 
@@ -914,9 +919,11 @@ void TIFF::_populate_ome_tiff_metadata(uint16_t ifd_count, void* metadata, std::
     }
 
     ome_plane_to_ifd_.clear();
+
+    // Distinct IFD dimensions, largest first: index into this list is the resolution level.
+    std::vector<std::pair<uint32_t, uint32_t>> level_dims;
     if (!pending_planes.empty())
     {
-        std::vector<std::pair<uint32_t, uint32_t>> level_dims;
         level_dims.reserve(ifds_.size());
         for (const auto& ifd : ifds_)
         {
@@ -969,8 +976,31 @@ void TIFF::_populate_ome_tiff_metadata(uint16_t ifd_count, void* metadata, std::
                 }
             }
         }
+        // OME TiffData entries enumerate the full-resolution planes only; pyramid
+        // sub-resolutions are additional IFDs the XML never references. Mapping planes
+        // alone therefore yields level 0 and drops every sub-resolution, making them
+        // unreachable through read_region(). Backfill the levels the plane index missed.
+        for (size_t level = 0; level < level_dims.size(); ++level)
+        {
+            const auto level_key = static_cast<uint16_t>(level);
+            if (level_representative_ifd.count(level_key) != 0)
+            {
+                continue;
+            }
+            for (size_t ifd_idx = 0; ifd_idx < ifds_.size(); ++ifd_idx)
+            {
+                if (ifds_[ifd_idx]->width() == level_dims[level].first &&
+                    ifds_[ifd_idx]->height() == level_dims[level].second)
+                {
+                    level_representative_ifd[level_key] = ifd_idx;
+                    break;
+                }
+            }
+        }
+
         if (!level_representative_ifd.empty())
         {
+            // std::map iterates in ascending level order, so levels stay largest-first.
             level_to_ifd_idx_.clear();
             for (const auto& [level, ifd_idx] : level_representative_ifd)
             {

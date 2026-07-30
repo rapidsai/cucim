@@ -310,6 +310,9 @@ private:
 
     // Configuration: Maximum size for binary TIFF tag data (0 = unlimited)
     size_t max_binary_tag_size_ = 0;
+
+    // Limits the "no TIFF tags returned" diagnostic to one message per file.
+    bool tag_extraction_warned_ = false;
 };
 
 /**

@@ -212,6 +212,55 @@ IFD::IFD(TIFF* tiff,
                 // Keep fallback below.
             }
         }
+
+        // Resolution tags drive the pixel spacing reported to callers. XRESOLUTION and
+        // YRESOLUTION are RATIONAL tags already reduced to a decimal by the parser.
+        // Missing or unparsable tags leave the declared defaults in place.
+        std::string res_unit_str = parser.get_tiff_tag(local_ifd_idx, "RESOLUTIONUNIT");
+        std::string x_res_str = parser.get_tiff_tag(local_ifd_idx, "XRESOLUTION");
+        std::string y_res_str = parser.get_tiff_tag(local_ifd_idx, "YRESOLUTION");
+
+        if (!res_unit_str.empty())
+        {
+            try
+            {
+                resolution_unit_ = static_cast<uint16_t>(std::stoul(res_unit_str));
+            }
+            catch (...)
+            {
+            }
+        }
+        if (!x_res_str.empty())
+        {
+            try
+            {
+                const float parsed = std::stof(x_res_str);
+                if (parsed > 0.0f)
+                {
+                    x_resolution_ = parsed;
+                }
+            }
+            catch (...)
+            {
+            }
+        }
+        if (!y_res_str.empty())
+        {
+            try
+            {
+                const float parsed = std::stof(y_res_str);
+                if (parsed > 0.0f)
+                {
+                    y_resolution_ = parsed;
+                }
+            }
+            catch (...)
+            {
+            }
+        }
+        #ifdef DEBUG
+        fmt::print("   Resolution: {}x{} (unit={})\n", x_resolution_, y_resolution_, resolution_unit_);
+        #endif
     }
 
     // Set format defaults
@@ -222,11 +271,6 @@ IFD::IFD(TIFF* tiff,
                                                   : cuslide::tiff::PHOTOMETRIC_RGB;
     }
     predictor_ = 1;  // No predictor
-
-    // Resolution info (defaults - may not be available from nvImageCodec)
-    resolution_unit_ = 1;  // No absolute unit
-    x_resolution_ = 1.0f;
-    y_resolution_ = 1.0f;
 
     // Calculate hash for caching (include file hash for cross-file uniqueness)
     hash_value_ = (file_hash != 0) ? (file_hash ^ cucim::codec::splitmix64(local_ifd_idx))

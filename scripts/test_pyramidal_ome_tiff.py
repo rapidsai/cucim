@@ -29,6 +29,13 @@ def _to_numpy(arr):
     if hasattr(arr, "get"):
         # CuPy array
         return arr.get()
+    if hasattr(arr, "__cuda_array_interface__"):
+        # Device-resident CuImage. NumPy cannot consume the CUDA array interface and
+        # would silently produce a 0-d object array, which turns every GPU comparison
+        # into a skipped check, so copy to host through CuPy instead.
+        import cupy
+
+        return cupy.asarray(arr).get()
     return np.asarray(arr)
 
 

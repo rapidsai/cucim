@@ -272,6 +272,41 @@ static std::string tiff_tag_value_to_string(const TiffTagValue& value)
     }, value);
 }
 
+// RATIONAL/SRATIONAL tags arrive as numerator/denominator pairs. The pair count is
+// derived from the buffer size rather than value_count, which may report either the
+// number of rationals or the number of underlying LONGs.
+template <typename T>
+static bool extract_rational_value(const std::vector<uint8_t>& buffer, TiffTagValue& out_value)
+{
+    constexpr size_t pair_size = sizeof(T) * 2;
+    const size_t pair_count = buffer.size() / pair_size;
+    if (pair_count == 0)
+    {
+        return false;
+    }
+
+    const T* vals = reinterpret_cast<const T*>(buffer.data());
+    auto as_double = [](T numerator, T denominator) -> double {
+        return (denominator == 0) ? 0.0 : static_cast<double>(numerator) / static_cast<double>(denominator);
+    };
+
+    if (pair_count == 1)
+    {
+        out_value = as_double(vals[0], vals[1]);
+    }
+    else
+    {
+        std::vector<double> converted;
+        converted.reserve(pair_count);
+        for (size_t i = 0; i < pair_count; ++i)
+        {
+            converted.emplace_back(as_double(vals[2 * i], vals[2 * i + 1]));
+        }
+        out_value = std::move(converted);
+    }
+    return true;
+}
+
 // Unified extraction function: handles both single values and arrays.
 template <typename T>
 static bool extract_tag_value(const std::vector<uint8_t>& buffer, int value_count, TiffTagValue& out_value)
@@ -1063,6 +1098,9 @@ void TiffFileParser::extract_tiff_tags(IfdInfo& ifd_info)
         {271, "MAKE"},
         {272, "MODEL"},
         {277, "SAMPLESPERPIXEL"},
+        {282, "XRESOLUTION"},
+        {283, "YRESOLUTION"},
+        {296, "RESOLUTIONUNIT"},
         {305, "SOFTWARE"},
         {306, "DATETIME"},
         {322, "TILEWIDTH"},
@@ -1148,6 +1186,12 @@ void TiffFileParser::extract_tiff_tags(IfdInfo& ifd_info)
             case NVIMGCODEC_METADATA_VALUE_TYPE_SLONG:
                 extract_tag_value<int32_t>(buffer, metadata.value_count, tag_value);
                 break;
+            case NVIMGCODEC_METADATA_VALUE_TYPE_RATIONAL:
+                extract_rational_value<uint32_t>(buffer, tag_value);
+                break;
+            case NVIMGCODEC_METADATA_VALUE_TYPE_SRATIONAL:
+                extract_rational_value<int32_t>(buffer, tag_value);
+                break;
             case NVIMGCODEC_METADATA_VALUE_TYPE_LONG8:
             case NVIMGCODEC_METADATA_VALUE_TYPE_IFD8:
                 extract_tag_value<uint64_t>(buffer, metadata.value_count, tag_value);
@@ -1179,6 +1223,20 @@ void TiffFileParser::extract_tiff_tags(IfdInfo& ifd_info)
             ifd_info.tiff_tags[tag_name] = std::move(tag_value);
             extracted_count++;
         }
+    }
+
+    // Tag retrieval goes through the nvImageCodec decoder, so it yields nothing when no
+    // decoder can be created (for example, no usable CUDA device). Without tags there is
+    // no ImageDescription, which silently disables OME and vendor format detection.
+    // Report it once per file so the degraded metadata is traceable.
+    if (extracted_count == 0 && !tag_extraction_warned_)
+    {
+        tag_extraction_warned_ = true;
+        fmt::print(stderr,
+                   "[cuslide2] No TIFF tags returned by nvImageCodec for '{}'. "
+                   "OME/vendor metadata and pixel spacing will be unavailable. "
+                   "Tag retrieval requires a working decoder (CUDA device).\n",
+                   file_path_);
     }
 
     // Populate image_description if it wasn't already filled via vendor metadata.
