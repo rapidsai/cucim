@@ -1,6 +1,7 @@
 /*
  * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
+ *
  */
 
 /**
@@ -385,6 +386,16 @@ extern "C"
         NVIMGCODEC_SAMPLEFORMAT_UNKNOWN = 0,
         NVIMGCODEC_SAMPLEFORMAT_P_UNCHANGED = 1, /**< Unchanged planar. */
         NVIMGCODEC_SAMPLEFORMAT_I_UNCHANGED = 2, /**< Unchanged interleaved. */
+        /** Alias of P_UNCHANGED for callers that want to pin only the channel
+         * interleaving (planar) and let color_spec choose the components.
+         * Preferred over P_UNCHANGED whenever color_spec is concrete; the two
+         * names produce identical behaviour. */
+        NVIMGCODEC_SAMPLEFORMAT_P_AUTO_COMPONENTS = NVIMGCODEC_SAMPLEFORMAT_P_UNCHANGED,
+        /** Alias of I_UNCHANGED for callers that want to pin only the channel
+         * interleaving (interleaved) and let color_spec choose the components.
+         * Preferred over I_UNCHANGED whenever color_spec is concrete; the two
+         * names produce identical behaviour. */
+        NVIMGCODEC_SAMPLEFORMAT_I_AUTO_COMPONENTS = NVIMGCODEC_SAMPLEFORMAT_I_UNCHANGED,
         NVIMGCODEC_SAMPLEFORMAT_P_Y = 3,         /**< Planar Y component only. For 3-dimensional shape is defined as (1, H, W) and this is only difference with I_Y.*/
         NVIMGCODEC_SAMPLEFORMAT_I_Y = 4,         /**< Interleaved Y component only. For 3-dimensional shape is defined as (H, W, 1) and this is only difference with P_Y.*/
         NVIMGCODEC_SAMPLEFORMAT_P_YA = 5,        /**< Planar Y component with alpha. */
@@ -436,9 +447,11 @@ extern "C"
         size_t struct_size;                    /**< The size of the structure, in bytes. */
         void* struct_next;                     /**< Is NULL or a pointer to an extension structure type. */
 
-        int rotated; /**< Rotation angle in degrees (clockwise). Only multiples of 90 are allowed. */
-        int flip_x;  /**< Flip horizontal 0 or 1*/
-        int flip_y;  /**< Flip vertical 0 or 1*/
+        int rotated; /**< Counter-clockwise rotation in degrees applied to the raw codestream
+                          pixels to produce the displayed image. Only multiples of 90 are
+                          allowed (0, 90, 180, 270). */
+        int flip_x;  /**< Mirror across the vertical axis, applied after the rotation. 0 or 1. */
+        int flip_y;  /**< Mirror across the horizontal axis, applied after the rotation. 0 or 1. */
     } nvimgcodecOrientation_t;
 
     /**
@@ -486,6 +499,18 @@ extern "C"
 
     /**
      * @brief Defines region of an image.
+     *
+     * The coordinate system depends on `nvimgcodecDecodeParams_t::apply_exif_orientation`:
+     * - When `apply_exif_orientation == 1`, the region is interpreted in **display**
+     *   (post-orientation) coordinates. For a codestream whose EXIF orientation swaps width
+     *   and height (rotated 90 or 270 degrees), this means the region's axes match the rotated
+     *   image, not the raw codestream layout.
+     * - When `apply_exif_orientation == 0`, the region is interpreted in **codestream**
+     *   coordinates, matching `nvimgcodecImagePlaneInfo_t::width`/`height` of the parsed code
+     *   stream and `nvimgcodec::CodeStream.height`/`width` in the Python bindings.
+     *
+     * `start[0]`/`end[0]` is the y (height) axis; `start[1]`/`end[1]` is the x (width) axis.
+     * Half-open ranges: a pixel is included when `start <= idx < end`.
      */
     typedef struct
     {
@@ -556,8 +581,10 @@ extern "C"
 
        size_t image_idx;                     /**< Image index starts from 0. */
        nvimgcodecRegion_t region;            /**< Region of interest. */
-       size_t bitstream_offset;             /**< Byte offset to start parsing from relative to file start. 0 = start at default position. */
-       uint32_t limit_images;               /**< Maximum number of images to parse. 0 = no limit (parse all). */
+       size_t bitstream_offset;              /**< TIFF IFD byte offset selecting one image view; 0 selects the default view.
+                                                 Note that this field cannot be used in conjunction with `image_idx`. Currently, this field
+                                                 is only used by the TIFF extension, and offsets should normally come from `ifd_offset`,
+                                                 `next_ifd_offset`, or `subifd_offsets` of `nvimgcodecCodeStreamInfoTiffExt_t`. */
    } nvimgcodecCodeStreamView_t;
 
     /**
@@ -573,7 +600,7 @@ extern "C"
         char codec_name[NVIMGCODEC_MAX_CODEC_NAME_SIZE]; /**< Information about codec used. Only valid when used with code stream. */
 
         size_t num_images;                  /**< Number of images in CodeStream. */
-        size_t size;              /**< Size of bitstream in bytes. */
+        size_t size;                        /**< Size of underlying bitstream in bytes. */
     } nvimgcodecCodeStreamInfo_t;
 
     /** Maximum number of SubIFD offsets that can be stored in CodeStreamInfoTiffExt */
@@ -583,7 +610,7 @@ extern "C"
      * @brief TIFF-specific extension for CodeStreamInfo.
      *
      * Chain this struct via struct_next of nvimgcodecCodeStreamInfo_t to receive
-     * pagination and SubIFD information for TIFF files.
+     * IFD traversal and SubIFD information for TIFF files.
      */
     typedef struct
     {
@@ -591,10 +618,10 @@ extern "C"
         size_t struct_size;                    /**< The size of the structure, in bytes. */
         void* struct_next;                     /**< Is NULL or a pointer to an extension structure type. */
 
-        size_t next_bitstream_offset;  /**< Offset to next IFD for pagination. 0 = no more images. */
-        size_t target_ifd_offset;      /**< Byte offset of the target image's IFD. Used internally to avoid redundant IFD walks. */
+        size_t ifd_offset;             /**< Byte offset of the selected image's IFD. 0 = unknown or not applicable. */
+        size_t next_ifd_offset;        /**< Byte offset of the next sibling IFD. 0 = no next sibling. */
 
-        uint32_t subifd_count;         /**< Number of SubIFDs for the current image (Tag 330). */
+        uint32_t subifd_count;         /**< Number of stored SubIFD offsets for the current image (Tag 330), capped at `NVIMGCODEC_MAX_SUBIFD_OFFSETS`. */
         size_t subifd_offsets[NVIMGCODEC_MAX_SUBIFD_OFFSETS]; /**< SubIFD byte offsets. Only first subifd_count entries are valid. */
     } nvimgcodecCodeStreamInfoTiffExt_t;
 
@@ -698,7 +725,7 @@ extern "C"
         float load_hint;
 
         /**
-         * If true, the backend load will be adapted on every iteration to minimize idle time of the threads.
+         * If true, the backend load will be adapted on every iteration to minize idle time of the threads.
          */
         nvimgcodecLoadHintPolicy_t load_hint_policy;
     } nvimgcodecBackendParams_t;
@@ -773,19 +800,20 @@ extern "C"
     } nvimgcodecDecodeParams_t;
 
     /**
-     * @brief Supported quality types (algorithms), which determines how `quality_value` is interpreted.
+     * @brief Supported quality types (algorithms), which determines how ``quality_value`` is interpreted.
      */
     typedef enum
     {
-        NVIMGCODEC_QUALITY_TYPE_DEFAULT = 0,           /**< Each plugin decides what is best quality setting to use. `quality_value` is ignored.*/
-        NVIMGCODEC_QUALITY_TYPE_LOSSLESS = 1,          /**< Image encoding is reversible and keeps original image quality. `quality_value` is ignored except for the CUDA tiff encoder backend,
-                                                            for which `quality_value=0` means no compression, and `quality_value=1` means LZW compression. */
-        NVIMGCODEC_QUALITY_TYPE_QUALITY = 2,           /**< `quality_value` is interpreted as JPEG-like quality in range from 1 (worst) to 100 (best). */
-        NVIMGCODEC_QUALITY_TYPE_QUANTIZATION_STEP = 3, /**< `quality_value` is interpreted as quantization step (by how much pixel data will be divided).
+        NVIMGCODEC_QUALITY_TYPE_DEFAULT = 0,           /**< Each plugin decides what is best quality setting to use. ``quality_value``is ignored.*/
+        NVIMGCODEC_QUALITY_TYPE_LOSSLESS = 1,          /**< Image encoding is reversible and keeps original image quality. ``quality_value`` is ignored except for:
+                                                            - the CUDA TIFF encoder backend, for which ``quality_value = 0`` means no compression, and ``quality_value = 1`` means LZW compression,
+                                                            - the CPU PNG encoder backend, for which ``quality_value`` can be in range from 0 (lowest compression ratio, fastest) to 9 (highest compression ratio, slowest). */
+        NVIMGCODEC_QUALITY_TYPE_QUALITY = 2,           /**< ``quality_value`` is interpreted as JPEG-like quality in range from 1 (worst) to 100 (best). */
+        NVIMGCODEC_QUALITY_TYPE_QUANTIZATION_STEP = 3, /**< ``quality_value`` is interpreted as quantization step (by how much pixel data will be divided).
                                                             The higher the value, the worse quality image is produced.*/
-        NVIMGCODEC_QUALITY_TYPE_PSNR = 4,              /**< `quality_value` is interpreted as desired Peak Signal-to-Noise Ratio (PSNR) target for the encoded image.
+        NVIMGCODEC_QUALITY_TYPE_PSNR = 4,              /**< ``quality_value`` is interpreted as desired Peak Signal-to-Noise Ratio (PSNR) target for the encoded image.
                                                             The higher the value, the better quality image is produced. Value should be positive. */
-        NVIMGCODEC_QUALITY_TYPE_SIZE_RATIO = 5,         /**< `quality_value` is interpreted as desired encoded image size ratio compared to original size, should be floating in range (0.0, 1.0).
+        NVIMGCODEC_QUALITY_TYPE_SIZE_RATIO = 5,         /**< ``quality_value`` is interpreted as desired encoded image size ratio compared to original size, should be floating in range (0.0, 1.0).
                                                             E.g. value 0.1 means target size of 10% of original image. */
         NVIMGCODEC_QUALITY_TYPE_ENUM_FORCE_INT = INT32_MAX
     } nvimgcodecQualityType_t;
@@ -915,9 +943,10 @@ extern "C"
         NVIMGCODEC_METADATA_VALUE_TYPE_SRATIONAL  = 10,   /**< Two SLONGs: numerator and denominator */
         NVIMGCODEC_METADATA_VALUE_TYPE_FLOAT      = 11,   /**< 4-byte IEEE floating point value */
         NVIMGCODEC_METADATA_VALUE_TYPE_DOUBLE     = 12,   /**< 8-byte IEEE floating point value */
+        NVIMGCODEC_METADATA_VALUE_TYPE_IFD        = 13,   /**< 4-byte (32-bit) unsigned integer used for IFD offsets */
         NVIMGCODEC_METADATA_VALUE_TYPE_LONG8      = 16,   /**< 8-byte (64-bit) unsigned integer (BigTIFF) */
         NVIMGCODEC_METADATA_VALUE_TYPE_SLONG8     = 17,   /**< 8-byte (64-bit) signed integer (BigTIFF) */
-        NVIMGCODEC_METADATA_VALUE_TYPE_IFD8       = 18,   /**< 8-byte (64-bit) unsigned integer used for offsets (BigTIFF) */
+        NVIMGCODEC_METADATA_VALUE_TYPE_IFD8       = 18,   /**< 8-byte (64-bit) unsigned integer used for IFD offsets (BigTIFF) */
         NVIMGCODEC_METADATA_VALUE_TYPE_ENUM_FORCE_INT = INT32_MAX
     } nvimgcodecMetadataValueType_t;
 
@@ -1835,7 +1864,9 @@ extern "C"
      *        If *code_stream is not NULL, the existing code stream instance will be reused instead of creating a new one.
      * @param file_name [in] File name with compressed image data to wrap.
      * @param code_stream_view [in] Optional pointer to a nvimgcodecCodeStreamView_t struct specifying parsing parameters
-     *        such as bitstream_offset and limit_images. Can be NULL for default behavior.
+     *        such as bitstream_offset. Can be NULL for default behavior.
+     *        Note: image_idx and region are rejected here; use nvimgcodecCodeStreamGetSubCodeStream to select
+     *        a specific image or region after creation.
      * @return nvimgcodecStatus_t - An error code as specified in {@link nvimgcodecStatus_t API Return Status Codes}
      */
     NVIMGCODECAPI nvimgcodecStatus_t nvimgcodecCodeStreamCreateFromFile(
@@ -1852,7 +1883,9 @@ extern "C"
      * @param data [in] Pointer to buffer with compressed data.
      * @param length [in] Length of compressed data in provided buffer.
      * @param code_stream_view [in] Optional pointer to a nvimgcodecCodeStreamView_t struct specifying parsing parameters
-     *        such as bitstream_offset and limit_images. Can be NULL for default behavior.
+     *        such as bitstream_offset. Can be NULL for default behavior.
+     *        Note: image_idx and region are rejected here; use nvimgcodecCodeStreamGetSubCodeStream to select
+     *        a specific image or region after creation.
      * @return nvimgcodecStatus_t - An error code as specified in {@link nvimgcodecStatus_t API Return Status Codes}
      */
     NVIMGCODECAPI nvimgcodecStatus_t nvimgcodecCodeStreamCreateFromHostMem(
@@ -1880,7 +1913,7 @@ extern "C"
      * @param req_size [in] Requested size of buffer.
      * @return Pointer to requested buffer.
      *
-     * @note This function can be called multiple times and requested size can be lower at the end so buffer can be shrunk.
+     * @note This function can be called multiple times and requested size can be lower at the end so buffer can be shrinked.
      */
     typedef unsigned char* (*nvimgcodecResizeBufferFunc_t)(void* ctx, size_t req_size);
 
@@ -1924,6 +1957,7 @@ extern "C"
      *        If *sub_code_stream is NULL, a new code stream instance will be created.
      *        If *sub_code_stream is not NULL, the existing code stream instance will be reused instead of creating a new one.
      * @param code_stream_view [in] Points to a nvimgcodecCodeStreamView_t struct which describes the view of the code stream to be used for the sub-code stream.
+     *        Views selecting a specific image are resolved during this call, so containers may parse metadata up to the requested image.
      * @return nvimgcodecStatus_t - An error code as specified in {@link nvimgcodecStatus_t API Return Status Codes}
      */
     NVIMGCODECAPI nvimgcodecStatus_t nvimgcodecCodeStreamGetSubCodeStream(nvimgcodecCodeStream_t code_stream, nvimgcodecCodeStream_t* sub_code_stream,
@@ -1945,8 +1979,10 @@ extern "C"
      * @param instance  [in] The library instance handle the decoder will be used with.
      * @param decoder  [in/out] Points a nvimgcodecDecoder_t handle in which the decoder is returned.
      * @param exec_params [in] Points an execution parameters.
-     * @param options [in] String with optional space separated list of parameters for specific decoders in format
-     *                     "<decoder_id>:<parameter_name>=<parameter_value>". For example  "nvjpeg:fancy_upsampling=1"
+     * @param options [in] Optional space-separated list of parameters. Use "<decoder_id>:<name>=<value>" for
+     *                     decoder-specific options, or a leading colon for global options (e.g. ":num_cuda_streams=4")
+     *                     or options that any matching decoder may honor (e.g. ":fancy_upsampling=1"). Pass NULL
+     *                     or empty string for no options. See the documentation for the full list of options per decoder.
      * @return nvimgcodecStatus_t - An error code as specified in {@link nvimgcodecStatus_t API Return Status Codes}
      */
     NVIMGCODECAPI nvimgcodecStatus_t nvimgcodecDecoderCreate(
@@ -2013,10 +2049,11 @@ extern "C"
      * @brief Creates generic image encoder.
      *
      * @param instance [in] The library instance handle the encoder will be used with.
-     * @param encoder [in/out] Points a nvimgcodecEncoder_t handle in which the decoder is returned.
+     * @param encoder [in/out] Points a nvimgcodecEncoder_t handle in which the encoder is returned.
      * @param exec_params [in] Points an execution parameters.
-     * @param options [in] String with optional, space separated, list of parameters for specific encoders, in format
-     *                     "<encoder_id>:<parameter_name>=<parameter_value>."
+     * @param options [in] Optional space-separated list of parameters. Use "<encoder_id>:<name>=<value>" for
+     *                     encoder-specific options, or a leading colon for global options (e.g. ":num_cuda_streams=4").
+     *                     Pass NULL or empty string for no options. See the documentation for encoder options.
      * @return nvimgcodecStatus_t - An error code as specified in {@link nvimgcodecStatus_t API Return Status Codes}
      */
     NVIMGCODECAPI nvimgcodecStatus_t nvimgcodecEncoderCreate(

@@ -20,6 +20,7 @@
 #include <cstring>
 #include <fcntl.h>
 #include <filesystem>
+#include <memory_resource>
 #include <memory>
 
 using json = nlohmann::json;
@@ -104,21 +105,21 @@ static bool CUCIM_ABI parser_parse(CuCIMFileHandle_ptr handle_ptr, cucim::io::fo
     // Detect if this is a Philips TIFF file
     // Philips TIFF also has multiple SubfileType=0 (by design)
     bool is_philips_tiff = (tif->tiff_type() == cuslide::tiff::TiffType::Philips);
+    const std::string& first_desc = tif->ifd(0)->image_description();
+    bool looks_like_ome = (first_desc.find("<OME") != std::string::npos ||
+                           first_desc.find(":OME") != std::string::npos);
 
-    // Fallback: detect unrecognised pyramidal TIFFs that were not caught by
-    // ImageDescription or nvImageCodec metadata-blob detection above.
-    // If the file has >=3 IFDs forming a resolution pyramid, assume it is a
-    // valid multi-resolution WSI so it is not rejected by the SubfileType=0
-    // single-main-image constraint below.
-    // TODO: revisit once all known pyramid formats are covered by the
-    //       is_known_multi_ifd_format check — this heuristic may become unnecessary.
+    // Fallback for files with no usable ImageDescription: check for multiple
+    // resolution levels. Aperio SVS files typically have 3-6 IFDs with multiple
+    // resolution levels, so treat a pyramid-shaped IFD chain as Aperio/SVS.
     if (!is_aperio_svs && ifd_count >= 3 && level_count >= 3)
     {
+        // Check if IFDs form a pyramid structure (decreasing sizes)
         bool is_pyramid = true;
         for (size_t i = 1; i < std::min(size_t(3), level_count); ++i)
         {
             auto ifd_curr = tif->level_ifd(i);
-            auto ifd_prev = tif->level_ifd(i - 1);
+            auto ifd_prev = tif->level_ifd(i-1);
             if (ifd_curr->width() >= ifd_prev->width())
             {
                 is_pyramid = false;
@@ -129,7 +130,7 @@ static bool CUCIM_ABI parser_parse(CuCIMFileHandle_ptr handle_ptr, cucim::io::fo
         if (is_pyramid)
         {
             #ifdef DEBUG
-            fmt::print("ℹ️  Detected pyramid structure → treating as multi-resolution TIFF\n");
+            fmt::print("ℹ️  Detected pyramid structure → treating as Aperio SVS/multi-resolution TIFF\n");
             #endif // DEBUG
             is_aperio_svs = true;
         }
@@ -138,13 +139,13 @@ static bool CUCIM_ABI parser_parse(CuCIMFileHandle_ptr handle_ptr, cucim::io::fo
     // WSI formats commonly have multiple SubfileType=0 IFDs for pyramid levels.
     // Only enforce the single-main-image constraint for unrecognized Generic TIFFs.
     bool is_known_multi_ifd_format =
-        is_aperio_svs || is_philips_tiff ||
+        is_aperio_svs || is_philips_tiff || looks_like_ome ||
         tif->tiff_type() == cuslide::tiff::TiffType::Hamamatsu ||
         tif->tiff_type() == cuslide::tiff::TiffType::Leica ||
         tif->tiff_type() == cuslide::tiff::TiffType::Ventana ||
         tif->tiff_type() == cuslide::tiff::TiffType::Trestle ||
         tif->tiff_type() == cuslide::tiff::TiffType::OmeTiff ||
-        tif->tiff_type() == cuslide::tiff::TiffType::QpTiff;
+        tif->tiff_type() == cuslide::tiff::TiffType::Qptiff;
 
     if (!is_known_multi_ifd_format)
     {
@@ -159,11 +160,14 @@ static bool CUCIM_ABI parser_parse(CuCIMFileHandle_ptr handle_ptr, cucim::io::fo
             }
         }
 
-        // Assume that the image has only one main (high resolution) image.
-        if (main_ifd_list.size() != 1)
+        // Legacy TIFF path expected exactly one main image, but modern
+        // multiplex/stacked TIFF variants may legitimately carry multiple
+        // SubfileType=0 IFDs. We only reject the clearly invalid case with
+        // no main image at all.
+        if (main_ifd_list.empty())
         {
             throw std::runtime_error(
-                fmt::format("This format has more than one image with Subfile Type 0 so cannot be loaded!"));
+                fmt::format("No main image (Subfile Type 0) found in TIFF file."));
         }
     }
 
@@ -181,31 +185,110 @@ static bool CUCIM_ABI parser_parse(CuCIMFileHandle_ptr handle_ptr, cucim::io::fo
     std::pmr::vector<int64_t> shape(
         { level0_ifd->height(), level0_ifd->width(), level0_ifd->samples_per_pixel() }, &resource);
 
-    DLDataType dtype{ kDLUInt, 8, 1 };
+    const std::string& json_str = tif->metadata();
+    json parsed_metadata{};
+    bool has_ome_metadata = false;
+    std::vector<std::string> ome_channel_names;
+    int64_t ome_size_c = -1;
+    double ome_physical_size_x = 0.0;
+    double ome_physical_size_y = 0.0;
+    bool has_ome_physical_size_x = false;
+    bool has_ome_physical_size_y = false;
+    try
+    {
+        parsed_metadata = json::parse(json_str);
+        if (parsed_metadata.contains("ome"))
+        {
+            const auto& ome = parsed_metadata["ome"];
+            if (ome.contains("size_c"))
+            {
+                ome_size_c = ome["size_c"].get<int64_t>();
+            }
+            if (ome.contains("channel_names") && ome["channel_names"].is_array())
+            {
+                for (const auto& ch : ome["channel_names"])
+                {
+                    if (ch.is_string())
+                    {
+                        ome_channel_names.emplace_back(ch.get<std::string>());
+                    }
+                }
+            }
+            if (ome.contains("physical_size_x") && ome["physical_size_x"].is_number())
+            {
+                ome_physical_size_x = ome["physical_size_x"].get<double>();
+                has_ome_physical_size_x = true;
+            }
+            if (ome.contains("physical_size_y") && ome["physical_size_y"].is_number())
+            {
+                ome_physical_size_y = ome["physical_size_y"].get<double>();
+                has_ome_physical_size_y = true;
+            }
+            has_ome_metadata = true;
+        }
+    }
+    catch (const std::exception&)
+    {
+        // Metadata is best-effort; continue with robust TIFF defaults.
+    }
+
+    DLDataType dtype{ kDLUInt, static_cast<uint8_t>(std::max<uint32_t>(8, level0_ifd->bits_per_sample())), 1 };
 
     // TODO: Fill correct values for cucim::io::format::ImageMetadataDesc
-    uint8_t n_ch = level0_ifd->samples_per_pixel();
-    if (n_ch != 3)
+    uint8_t n_ch = static_cast<uint8_t>(level0_ifd->samples_per_pixel());
+    if (has_ome_metadata && ome_size_c > 0)
     {
-        // Image loaded by a slow-path(libtiff) always will have 4 channel
-        // (by TIFFRGBAImageGet() method in libtiff)
-        n_ch = 4;
-        shape[2] = 4;
-    }
-    std::pmr::vector<std::string_view> channel_names(&resource);
-    channel_names.reserve(n_ch);
-    if (n_ch == 3)
-    {
-        channel_names.emplace_back(std::string_view{ "R" });
-        channel_names.emplace_back(std::string_view{ "G" });
-        channel_names.emplace_back(std::string_view{ "B" });
+        n_ch = static_cast<uint8_t>(ome_size_c);
+        shape[2] = n_ch;
     }
     else
     {
-        channel_names.emplace_back(std::string_view{ "R" });
-        channel_names.emplace_back(std::string_view{ "G" });
-        channel_names.emplace_back(std::string_view{ "B" });
-        channel_names.emplace_back(std::string_view{ "A" });
+        shape[2] = n_ch;
+    }
+
+    // Own the names as strings while building. ImageMetadata::channel_names
+    // takes string_views and may retain pointers into the metadata buffer, so
+    // we copy into `resource` once at the end rather than keeping views into
+    // this temporary storage.
+    std::vector<std::string> channel_name_storage;
+    channel_name_storage.reserve(n_ch);
+    if (!ome_channel_names.empty())
+    {
+        for (size_t i = 0; i < static_cast<size_t>(n_ch); ++i)
+        {
+            if (i < ome_channel_names.size())
+            {
+                channel_name_storage.push_back(ome_channel_names[i]);
+            }
+            else
+            {
+                channel_name_storage.push_back(fmt::format("C{}", i));
+            }
+        }
+    }
+    else if (n_ch == 3)
+    {
+        channel_name_storage = { "R", "G", "B" };
+    }
+    else if (n_ch == 4)
+    {
+        channel_name_storage = { "R", "G", "B", "A" };
+    }
+    else
+    {
+        for (uint8_t i = 0; i < n_ch; ++i)
+        {
+            channel_name_storage.push_back(fmt::format("C{}", i));
+        }
+    }
+
+    std::pmr::vector<std::string_view> channel_names(&resource);
+    channel_names.reserve(channel_name_storage.size());
+    for (const auto& name : channel_name_storage)
+    {
+        char* buf = static_cast<char*>(resource.allocate(name.size() + 1, alignof(char)));
+        std::memcpy(buf, name.c_str(), name.size() + 1);
+        channel_names.emplace_back(buf, name.size());
     }
 
     // Spacing units
@@ -222,7 +305,15 @@ static bool CUCIM_ABI parser_parse(CuCIMFileHandle_ptr handle_ptr, cucim::io::fo
     const auto x_resolution = level0_ifd->x_resolution();
     const auto y_resolution = level0_ifd->y_resolution();
 
-    switch (resolution_unit)
+    if (has_ome_physical_size_x && has_ome_physical_size_y)
+    {
+        spacing.emplace_back(static_cast<float>(ome_physical_size_y));
+        spacing.emplace_back(static_cast<float>(ome_physical_size_x));
+        spacing.emplace_back(1.0f);
+        spacing_units.emplace_back(micrometer_unit);
+        spacing_units.emplace_back(micrometer_unit);
+    }
+    else switch (resolution_unit)
     {
     case 1: // no absolute unit of measurement
         spacing.emplace_back(y_resolution);
@@ -305,7 +396,6 @@ static bool CUCIM_ABI parser_parse(CuCIMFileHandle_ptr handle_ptr, cucim::io::fo
     std::string_view raw_data{ image_description.empty() ? "" : image_description.c_str() };
 
     // Dynamically allocate memory for json_data (need to be freed manually);
-    const std::string& json_str = tif->metadata();
     char* json_data_ptr = static_cast<char*>(cucim_malloc(json_str.size() + 1));
     memcpy(json_data_ptr, json_str.data(), json_str.size() + 1);
     std::string_view json_data{ json_data_ptr, json_str.size() };

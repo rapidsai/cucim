@@ -17,6 +17,7 @@ add_executable(cuslide2_tests
         test_read_region.cpp
         # test_read_rawtiff.cpp  # Disabled: requires libtiff-specific write_offsets_() method not available in nvImageCodec
         test_philips_tiff.cpp
+        test_ome_xml.cpp
         )
 set_target_properties(cuslide2_tests
     PROPERTIES

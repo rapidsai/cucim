@@ -25,7 +25,7 @@ enum class TiffType : uint32_t
     Ventana = 5,
     Trestle = 6,
     OmeTiff = 7,
-    QpTiff = 8,
+    Qptiff = 8,
 };
 
 enum class AssociatedImageBufferType : uint8_t
