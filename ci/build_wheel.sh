@@ -10,7 +10,7 @@ package_dir="python/cucim"
 CMAKE_BUILD_TYPE="release"
 
 source rapids-configure-sccache
-source rapids-date-string
+source rapids-datetime-string
 source rapids-init-pip
 
 sccache --stop-server 2>/dev/null || true
