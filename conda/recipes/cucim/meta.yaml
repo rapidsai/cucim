@@ -5,7 +5,7 @@
 {% set py_version = environ['CONDA_PY'] %}
 {% set cuda_version = '.'.join(environ['RAPIDS_CUDA_VERSION'].split('.')[:2]) %}
 {% set cuda_major = cuda_version.split('.')[0] %}
-{% set date_string = environ['RAPIDS_DATE_STRING'] %}
+{% set datetime_string = environ["RAPIDS_DATETIME_STRING"] %}
 
 
 package:
@@ -17,7 +17,7 @@ source:
 
 build:
   number: {{ GIT_DESCRIBE_NUMBER }}
-  string: cuda{{ cuda_major }}_py{{ py_version }}_{{ date_string }}_gh{{ GIT_DESCRIBE_HASH }}_gn{{ GIT_DESCRIBE_NUMBER }}_ph{{ PKG_HASH }}
+  string: cuda{{ cuda_major }}_py{{ py_version }}_{{ datetime_string }}_gh{{ GIT_DESCRIBE_HASH }}_gn{{ GIT_DESCRIBE_NUMBER }}_ph{{ PKG_HASH }}
   ignore_run_exports_from:
     - {{ compiler('cuda') }}
     - cuda-cudart-dev
