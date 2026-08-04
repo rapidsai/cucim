@@ -12,6 +12,7 @@ jobs:
     uses: rapidsai/shared-workflows/.github/workflows/compute-build-details.yaml@main
   pr-builder:
     needs:
+      - build-details
       - checks
       - check-nightly-ci
       - conda-cpp-build
