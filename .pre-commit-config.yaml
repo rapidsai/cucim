@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 # To install the git pre-commit hook run:
@@ -14,21 +14,21 @@ repos:
       - id: end-of-file-fixer
       - id: debug-statements
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.14.3
+    rev: v0.16.3
     hooks:
       - id: ruff-check
         types_or: [python, pyi]
         args: [--fix, --exit-non-zero-on-fix, --config, "python/cucim/pyproject.toml"]
       - id: ruff-format
   - repo: https://github.com/codespell-project/codespell
-    rev: v2.4.1
+    rev: v2.4.3
     hooks:
       - id: codespell
         args: ["--toml", "python/cucim/pyproject.toml"]
         additional_dependencies:
           - tomli
   - repo: https://github.com/rapidsai/pre-commit-hooks
-    rev: v1.4.3
+    rev: v1.6.1
     hooks:
       - id: verify-copyright
         name: verify-copyright-cucim
@@ -600,16 +600,16 @@ repos:
             [.](md|rst|avro|parquet|png|orc|gz|pkl|sas7bdat)$|
             [.]code-workspace$
   - repo: https://github.com/rapidsai/dependency-file-generator
-    rev: v1.20.0
+    rev: v1.22.0
     hooks:
         - id: rapids-dependency-file-generator
           args: ["--clean", "--warn-all", "--strict"]
   - repo: https://github.com/shellcheck-py/shellcheck-py
-    rev: v0.10.0.1
+    rev: v0.11.0.1
     hooks:
       - id: shellcheck
         args: ["--severity=warning"]
   - repo: https://github.com/zizmorcore/zizmor-pre-commit
-    rev: v1.24.1
+    rev: v1.29.0
     hooks:
       - id: zizmor
