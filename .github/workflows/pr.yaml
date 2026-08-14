@@ -11,6 +11,7 @@ jobs:
   pr-builder:
     needs:
       - build-details
+      - changed-files
       - checks
       - check-nightly-ci
       - conda-cpp-build
@@ -43,6 +44,113 @@ jobs:
         uses: rapidsai/shared-actions/telemetry-dispatch-stash-base-env-vars@main
   build-details:
     uses: rapidsai/shared-workflows/.github/workflows/compute-build-details.yaml@main
+  changed-files:
+    permissions:
+      actions: read
+      contents: read
+      packages: read
+      pull-requests: read
+    uses: rapidsai/shared-workflows/.github/workflows/changed-files.yaml@main
+    with:
+      files_yaml: |
+        build_docs:
+          - '**'
+          - '!.clang-format'
+          - '!.github/CODEOWNERS'
+          - '!.github/ISSUE_TEMPLATE/**'
+          - '!.github/PULL_REQUEST_TEMPLATE.md'
+          - '!.github/copy-pr-bot.yaml'
+          - '!.github/ops-bot.yaml'
+          - '!.github/release.yml'
+          - '!.github/workflows/build.yaml'
+          - '!.github/workflows/test.yaml'
+          - '!.github/workflows/trigger-breaking-change-alert.yaml'
+          - '!.github/zizmor.yml'
+          - '!.git-blame-ignore-revs'
+          - '!.editorconfig'
+          - '!.gitignore'
+          - '!.pre-commit-config.yaml'
+          - '!3rdparty/**'
+          - '!CHANGELOG.md'
+          - '!CONTRIBUTING.md'
+          - '!LICENSE'
+          - '!LICENSE-3rdparty.md'
+          - '!LICENSES/**'
+          - '!README.md'
+          - '!SECURITY.md'
+          - '!benchmarks/**'
+          - '!ci/build_wheel.sh'
+          - '!ci/check_style.sh'
+          - '!ci/release/**'
+          - '!ci/test_wheel.sh'
+          - '!ci/validate_wheel.sh'
+          - '!test_data/**'
+        test_python_conda:
+          - '**'
+          - '!.clang-format'
+          - '!.editorconfig'
+          - '!.github/CODEOWNERS'
+          - '!.github/ISSUE_TEMPLATE/**'
+          - '!.github/PULL_REQUEST_TEMPLATE.md'
+          - '!.github/copy-pr-bot.yaml'
+          - '!.github/ops-bot.yaml'
+          - '!.github/release.yml'
+          - '!.github/workflows/build.yaml'
+          - '!.github/workflows/test.yaml'
+          - '!.github/workflows/trigger-breaking-change-alert.yaml'
+          - '!.github/zizmor.yml'
+          - '!.git-blame-ignore-revs'
+          - '!.gitignore'
+          - '!.pre-commit-config.yaml'
+          - '!3rdparty/**'
+          - '!CHANGELOG.md'
+          - '!CONTRIBUTING.md'
+          - '!LICENSE'
+          - '!LICENSE-3rdparty.md'
+          - '!LICENSES/**'
+          - '!README.md'
+          - '!SECURITY.md'
+          - '!ci/build_wheel.sh'
+          - '!ci/check_style.sh'
+          - '!ci/release/**'
+          - '!ci/test_wheel.sh'
+          - '!ci/validate_wheel.sh'
+          - '!docs/**'
+          - '!notebooks/**'
+        test_python_wheels:
+          - '**'
+          - '!.clang-format'
+          - '!.editorconfig'
+          - '!.github/CODEOWNERS'
+          - '!.github/ISSUE_TEMPLATE/**'
+          - '!.github/PULL_REQUEST_TEMPLATE.md'
+          - '!.github/copy-pr-bot.yaml'
+          - '!.github/ops-bot.yaml'
+          - '!.github/release.yml'
+          - '!.github/workflows/build.yaml'
+          - '!.github/workflows/test.yaml'
+          - '!.github/workflows/trigger-breaking-change-alert.yaml'
+          - '!.github/zizmor.yml'
+          - '!.git-blame-ignore-revs'
+          - '!.gitignore'
+          - '!.pre-commit-config.yaml'
+          - '!3rdparty/**'
+          - '!CHANGELOG.md'
+          - '!CONTRIBUTING.md'
+          - '!LICENSE'
+          - '!LICENSE-3rdparty.md'
+          - '!LICENSES/**'
+          - '!README.md'
+          - '!SECURITY.md'
+          - '!ci/build_cpp.sh'
+          - '!ci/build_python.sh'
+          - '!ci/check_style.sh'
+          - '!ci/release/**'
+          - '!ci/test_python.sh'
+          - '!conda/**'
+          - '!docs/**'
+          - '!examples/**'
+          - '!notebooks/**'
   checks:
     needs: telemetry-setup
     permissions:
@@ -102,7 +210,8 @@ jobs:
       build-datetime: ${{ needs.build-details.outputs.build-datetime }}
       script: ci/build_python.sh
   conda-python-tests:
-    needs: conda-python-build
+    needs: [conda-python-build, changed-files]
+    if: fromJSON(needs.changed-files.outputs.changed_file_groups).test_python_conda
     permissions:
       actions: read
       contents: read
@@ -115,7 +224,8 @@ jobs:
       build_type: pull-request
       script: ci/test_python.sh
   docs-build:
-    needs: conda-python-build
+    needs: [conda-python-build, changed-files]
+    if: fromJSON(needs.changed-files.outputs.changed_file_groups).build_docs
     permissions:
       actions: read
       contents: read
@@ -147,7 +257,8 @@ jobs:
       package-name: cucim
       package-type: python
   wheel-tests:
-    needs: wheel-build
+    needs: [wheel-build, changed-files]
+    if: fromJSON(needs.changed-files.outputs.changed_file_groups).test_python_wheels
     permissions:
       actions: read
       contents: read
