@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import importlib
 import math
 
 import cupy as cp
@@ -473,6 +474,7 @@ def regionprops_intensity_median(
     props_dict=None,
     *,
     disable_nan_check=False,
+    intensity_median_backend="cub",
 ):
     """Compute the median intensity of each region.
 
@@ -529,6 +531,7 @@ def regionprops_intensity_median(
         num_channels=num_channels,
         min_region_size=0,
         max_region_size=int(hybrid_size_threshold),
+        backend=intensity_median_backend,
     )
     segmented_filled_cpu = (
         cp.asnumpy(segmented_filled) if segmented_filled is not None else None
@@ -612,6 +615,61 @@ def _fill_intensity_median_segmented_sort(
     num_channels,
     min_region_size,
     max_region_size,
+    backend,
+):
+    if backend == "cub":
+        fill_func = _fill_intensity_median_segmented_sort_cub
+    elif backend == "cuda.compute":
+        fill_func = _fill_intensity_median_segmented_sort_cuda_compute
+    else:
+        raise ValueError(
+            "intensity_median_backend must be 'cub' or 'cuda.compute', "
+            f"got {backend!r}"
+        )
+    return fill_func(
+        img1d,
+        counts,
+        offsets,
+        medians,
+        num_channels=num_channels,
+        min_region_size=min_region_size,
+        max_region_size=max_region_size,
+    )
+
+
+def _get_segmented_median_params(
+    counts, offsets, *, min_region_size, max_region_size
+):
+    eligible = (counts > min_region_size) & (counts <= max_region_size)
+    if not bool(eligible.any()):
+        return eligible, None
+
+    label_indices = cp.nonzero(eligible)[0]
+    begin_offsets = cp.ascontiguousarray(offsets[:-1][eligible])
+    end_offsets = cp.ascontiguousarray(offsets[1:][eligible])
+    counts_selected = counts[eligible].astype(cp.uint64, copy=False)
+    hi = begin_offsets + counts_selected // 2
+    even = counts_selected % 2 == 0
+    return eligible, (label_indices, begin_offsets, end_offsets, hi, even)
+
+
+def _extract_segmented_medians(sorted_keys, hi, even, output_dtype):
+    values = sorted_keys[hi].astype(output_dtype, copy=False)
+    if bool(even.any()):
+        lo = hi[even] - cp.uint64(1)
+        lo_values = sorted_keys[lo].astype(output_dtype, copy=False)
+        values[even] = (lo_values + values[even]) / output_dtype.type(2)
+    return values
+
+
+def _fill_intensity_median_segmented_sort_cub(
+    img1d,
+    counts,
+    offsets,
+    medians,
+    num_channels,
+    min_region_size,
+    max_region_size,
 ):
     if _skimage_cpp_ext is None or max_region_size <= min_region_size:
         return None
@@ -623,16 +681,16 @@ def _fill_intensity_median_segmented_sort(
     if sort_func is None:
         return None
 
-    eligible = (counts > min_region_size) & (counts <= max_region_size)
-    if not bool(eligible.any()):
+    eligible, params = _get_segmented_median_params(
+        counts,
+        offsets,
+        min_region_size=min_region_size,
+        max_region_size=max_region_size,
+    )
+    if params is None:
         return eligible
 
-    label_indices = cp.nonzero(eligible)[0]
-    begin_offsets = cp.ascontiguousarray(offsets[:-1][eligible])
-    end_offsets = cp.ascontiguousarray(offsets[1:][eligible])
-    counts_selected = counts[eligible].astype(cp.uint64, copy=False)
-    hi = begin_offsets + counts_selected // 2
-    even = counts_selected % 2 == 0
+    label_indices, begin_offsets, end_offsets, hi, even = params
 
     def sort_channel(keys):
         sorted_keys = cp.empty_like(keys)
@@ -646,12 +704,79 @@ def _fill_intensity_median_segmented_sort(
             label_indices.size,
             stream_ptr,
         )
-        values = sorted_keys[hi].astype(medians.dtype, copy=False)
-        if bool(even.any()):
-            lo = hi[even] - cp.uint64(1)
-            lo_values = sorted_keys[lo].astype(medians.dtype, copy=False)
-            values[even] = (lo_values + values[even]) / medians.dtype.type(2)
-        return values
+        return _extract_segmented_medians(sorted_keys, hi, even, medians.dtype)
+
+    if num_channels == 1:
+        medians[label_indices] = sort_channel(img1d)
+    else:
+        for channel in range(num_channels):
+            keys = cp.ascontiguousarray(img1d[:, channel])
+            medians[label_indices, channel] = sort_channel(keys)
+    return eligible
+
+
+def _import_cuda_compute():
+    try:
+        return importlib.import_module("cuda.compute")
+    except ImportError as error:
+        raise ImportError(
+            "intensity_median_backend='cuda.compute' requires the "
+            "'cuda-cccl' pip package or 'cccl-python' conda package"
+        ) from error
+
+
+class _CudaStreamAdapter:
+    def __init__(self, stream):
+        self._stream = stream
+
+    def __cuda_stream__(self):
+        return (0, self._stream.ptr)
+
+
+def _get_cuda_compute_stream():
+    stream = cp.cuda.get_current_stream()
+    if hasattr(stream, "__cuda_stream__"):
+        return stream
+    return _CudaStreamAdapter(stream)
+
+
+def _fill_intensity_median_segmented_sort_cuda_compute(
+    img1d,
+    counts,
+    offsets,
+    medians,
+    num_channels,
+    min_region_size,
+    max_region_size,
+):
+    cuda_compute = _import_cuda_compute()
+    if max_region_size <= min_region_size:
+        return None
+
+    eligible, params = _get_segmented_median_params(
+        counts,
+        offsets,
+        min_region_size=min_region_size,
+        max_region_size=max_region_size,
+    )
+    if params is None:
+        return eligible
+
+    label_indices, begin_offsets, end_offsets, hi, even = params
+
+    def sort_channel(keys):
+        sorted_keys = cp.empty_like(keys)
+        cuda_compute.segmented_sort(
+            d_in_keys=keys,
+            d_out_keys=sorted_keys,
+            num_items=keys.size,
+            num_segments=label_indices.size,
+            start_offsets_in=begin_offsets,
+            end_offsets_in=end_offsets,
+            order=cuda_compute.SortOrder.ASCENDING,
+            stream=_get_cuda_compute_stream(),
+        )
+        return _extract_segmented_medians(sorted_keys, hi, even, medians.dtype)
 
     if num_channels == 1:
         medians[label_indices] = sort_channel(img1d)

@@ -240,6 +240,7 @@ def regionprops_dict(
     pixels_per_thread=16,
     robust_perimeter=True,
     disable_nan_check=False,
+    intensity_median_backend="cub",
     to_table=False,
     table_separator="-",
     table_on_host=False,
@@ -305,6 +306,10 @@ def regionprops_dict(
         ``intensity_median`` is NaN for every affected region and channel.
         Set to True to skip this additional check. This only affects the
         batch-computed ``intensity_median`` property.
+    intensity_median_backend : {"cub", "cuda.compute"}, optional
+        Backend used for the segmented-sort portion of ``intensity_median``.
+        The default ``"cub"`` uses cuCIM's precompiled extension. Selecting
+        ``"cuda.compute"`` requires the optional CCCL Python package.
     to_table : bool, optional
         If true, split up vector/matrix properties into separate keys for
         the individual elements to match the output format of
@@ -453,6 +458,7 @@ def regionprops_dict(
                 max_label=max_label,
                 props_dict=out,
                 disable_nan_check=disable_nan_check,
+                intensity_median_backend=intensity_median_backend,
             )
 
         compute_min = "intensity_min" in required_props
