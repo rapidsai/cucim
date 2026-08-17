@@ -370,6 +370,38 @@ def test_median_intensity_hybrid_threshold_monkeypatch(monkeypatch):
     assert_allclose(hybrid, fallback)
 
 
+@pytest.mark.parametrize("image_dtype", [cp.uint8, cp.uint16])
+def test_median_intensity_segmented_sort_preserves_integer_dtype(
+    monkeypatch, image_dtype
+):
+    extension = intensity_kernels._skimage_cpp_ext
+    if extension is None:
+        pytest.skip("cucim.skimage C++ extension is unavailable")
+
+    function_name = (
+        f"segmented_radix_sort_keys_ranges_{cp.dtype(image_dtype).name}"
+    )
+    if not hasattr(extension, function_name):
+        pytest.skip(f"C++ extension does not provide {function_name}")
+
+    calls = []
+    sort_func = getattr(extension, function_name)
+
+    def wrapped_sort(*args, **kwargs):
+        calls.append(True)
+        return sort_func(*args, **kwargs)
+
+    monkeypatch.setattr(extension, function_name, wrapped_sort)
+    labels = cp.asarray([[1, 1, 1, 0], [2, 2, 2, 2]], dtype=cp.uint8)
+    intensity = cp.asarray([[7, 1, 3, 0], [8, 2, 6, 4]], dtype=image_dtype)
+
+    result = regionprops_intensity_median(labels, intensity)["intensity_median"]
+
+    assert calls
+    assert result.dtype == cp.float32
+    assert_array_equal(result, cp.asarray([3, 5], dtype=cp.float32))
+
+
 @pytest.mark.parametrize("precompute_max", [False, True])
 @pytest.mark.parametrize("ndim", [2, 3])
 @pytest.mark.parametrize(
