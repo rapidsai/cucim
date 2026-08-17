@@ -434,11 +434,14 @@ def test_median_intensity_disable_nan_check(monkeypatch):
     labels = cp.asarray([[1, 1, 1]], dtype=cp.uint8)
     intensity = cp.asarray([[1, 2, cp.nan]], dtype=cp.float32)
 
-    def fail_if_called(*args, **kwargs):
-        raise AssertionError("NaN detector should not be called")
+    pack_intensities = intensity_kernels._pack_intensities_by_label
+
+    def check_nan_flag(*args, **kwargs):
+        assert kwargs["check_nans"] is False
+        return pack_intensities(*args, **kwargs)
 
     monkeypatch.setattr(
-        intensity_kernels, "_find_labels_containing_nan", fail_if_called
+        intensity_kernels, "_pack_intensities_by_label", check_nan_flag
     )
 
     result = measure.regionprops_table(
@@ -449,6 +452,36 @@ def test_median_intensity_disable_nan_check(monkeypatch):
     )
 
     assert result["intensity_median"].shape == (1,)
+
+
+@pytest.mark.parametrize(
+    "image_dtype", [cp.uint8, cp.uint16, cp.int16, cp.float16, cp.float64]
+)
+@pytest.mark.parametrize("num_channels", [1, 3])
+def test_median_intensity_atomic_pack_noncontiguous(image_dtype, num_channels):
+    labels = cp.asarray(
+        [[1, 0, 3, 3], [1, 1, 0, 3], [0, 1, 3, 3]], dtype=cp.uint16
+    ).T
+    intensity = cp.arange(labels.size * num_channels).astype(image_dtype)
+    if num_channels == 1:
+        intensity = intensity.reshape(labels.shape[::-1]).T
+    else:
+        intensity = intensity.reshape(
+            (num_channels,) + labels.shape[::-1]
+        ).transpose(2, 1, 0)
+    assert not labels.flags.c_contiguous
+    assert not intensity.flags.c_contiguous
+
+    result = regionprops_intensity_median(labels, intensity)["intensity_median"]
+
+    expected_shape = (3,) if num_channels == 1 else (3, num_channels)
+    assert result.shape == expected_shape
+    assert cp.all(cp.isnan(result[1]))
+    for label in (1, 3):
+        expected = cp.median(intensity[labels == label], axis=0).astype(
+            result.dtype
+        )
+        assert_array_equal(result[label - 1], expected)
 
 
 def test_median_intensity_nan_check_is_keyword_only():

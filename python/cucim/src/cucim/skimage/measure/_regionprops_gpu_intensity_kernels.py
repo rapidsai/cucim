@@ -11,10 +11,7 @@ try:
 except ImportError:
     _skimage_cpp_ext = None
 
-from ._regionprops_gpu_basic_kernels import (
-    _get_compressed_labels,
-    regionprops_num_pixels,
-)
+from ._regionprops_gpu_basic_kernels import regionprops_num_pixels
 from ._regionprops_gpu_utils import (
     _check_intensity_image_shape,
     _get_count_dtype,
@@ -501,20 +498,12 @@ def regionprops_intensity_median(
             label_image, max_label=max_label, props_dict=props_dict
         )
 
-    _, labels1d, img1d = _get_compressed_labels(
-        label_image,
-        max_label=max_label,
-        intensity_image=intensity_image,
-        sort_labels=True,
-    )
-
     median_dtype = cp.promote_types(intensity_image.dtype, cp.float32)
     sort_dtype = (
         intensity_image.dtype
         if intensity_image.dtype in (cp.dtype(cp.uint8), cp.dtype(cp.uint16))
         else median_dtype
     )
-    img1d = img1d.astype(sort_dtype, copy=False)
     out_shape = (max_label,) if num_channels == 1 else (max_label, num_channels)
     counts_cpu = cp.asnumpy(counts)
     medians = cp.full(out_shape, cp.nan, dtype=median_dtype)
@@ -523,6 +512,18 @@ def regionprops_intensity_median(
     offsets[0] = 0
     if max_label:
         cp.cumsum(counts, dtype=cp.uint64, out=offsets[1:])
+
+    img1d, nan_labels = _pack_intensities_by_label(
+        label_image,
+        intensity_image,
+        offsets,
+        num_foreground=int(counts_cpu.sum()),
+        num_channels=num_channels,
+        output_dtype=sort_dtype,
+        check_nans=(
+            not disable_nan_check and intensity_image.dtype.kind == "f"
+        ),
+    )
 
     segmented_filled = _fill_intensity_median_segmented_sort(
         img1d,
@@ -537,23 +538,6 @@ def regionprops_intensity_median(
     segmented_filled_cpu = (
         cp.asnumpy(segmented_filled) if segmented_filled is not None else None
     )
-    check_nans = (
-        not disable_nan_check
-        and intensity_image.dtype.kind == "f"
-        and segmented_filled_cpu is not None
-        and segmented_filled_cpu.any()
-    )
-    nan_labels = (
-        _find_labels_containing_nan(
-            labels1d,
-            img1d,
-            max_label=max_label,
-            num_channels=num_channels,
-        )
-        if check_nans
-        else None
-    )
-
     slice_start = 0
     for label_index, count in enumerate(counts_cpu):
         slice_stop = slice_start + count
@@ -567,45 +551,106 @@ def regionprops_intensity_median(
             medians[label_index] = cp.median(values, axis=0)
         slice_start = slice_stop
 
-    if nan_labels is not None:
+    if nan_labels is not None and segmented_filled is not None:
         segmented_mask = segmented_filled
         if num_channels > 1:
             segmented_mask = segmented_mask[:, cp.newaxis]
-        medians[nan_labels & segmented_mask] = cp.nan
+        medians[(nan_labels != 0) & segmented_mask] = cp.nan
 
     props_dict["intensity_median"] = medians
     return props_dict
 
 
 @cp.memoize(for_each_device=True)
-def _get_nan_label_kernel(num_channels):
+def _get_intensity_packing_kernel(num_channels, check_nans):
+    nan_output = ", raw uint32 nan_labels" if check_nans else ""
+    nan_operation = ""
+    if check_nans:
+        nan_operations = []
+        for channel in range(num_channels):
+            nan_operations.append(
+                f"""
+            if (isnan(static_cast<double>(
+                    intensities[{num_channels} * i + {channel}]))) {{
+                atomicExch(
+                    &nan_labels[{num_channels} * label_index + {channel}],
+                    1U);
+            }}"""
+            )
+        nan_operation = "".join(nan_operations)
+
+    copy_operations = "".join(
+        f"""
+        packed[{num_channels} * output_index + {channel}] =
+            static_cast<Z>(intensities[{num_channels} * i + {channel}]);"""
+        for channel in range(num_channels)
+    )
     return cp.ElementwiseKernel(
         "raw X labels, raw Y intensities",
-        "raw uint32 nan_labels",
+        f"raw uint64 write_offsets, raw Z packed{nan_output}",
         f"""
-        if (isnan(static_cast<double>(intensities[i]))) {{
-            const size_t pixel = i / {num_channels};
-            const size_t channel = i % {num_channels};
-            const size_t output_index =
-                {num_channels} * (labels[pixel] - 1) + channel;
-            atomicExch(&nan_labels[output_index], 1U);
+        const X label = labels[i];
+        if (label != 0) {{
+            const size_t label_index = label - 1;
+            const unsigned long long output_index = atomicAdd(
+                &write_offsets[label_index], 1ULL);
+            {copy_operations}
+            {nan_operation}
         }}
         """,
-        name=f"cucim_regionprops_median_nan_labels_c{num_channels}",
+        name=(
+            f"cucim_regionprops_pack_intensity_c{num_channels}"
+            f"_nan{int(check_nans)}"
+        ),
     )
 
 
-def _find_labels_containing_nan(labels1d, img1d, *, max_label, num_channels):
-    out_shape = (max_label,) if num_channels == 1 else (max_label, num_channels)
-    nan_labels = cp.zeros(out_shape, dtype=cp.uint32)
-    if img1d.size:
-        _get_nan_label_kernel(num_channels)(
-            labels1d,
-            img1d,
-            nan_labels,
-            size=img1d.size,
+def _pack_intensities_by_label(
+    label_image,
+    intensity_image,
+    offsets,
+    *,
+    num_foreground,
+    num_channels,
+    output_dtype,
+    check_nans,
+):
+    """Pack intensities into contiguous, unordered segments for each label.
+
+    ``offsets`` gives each segment's initial write position. One atomic cursor
+    per label assigns foreground pixels to that segment; the subsequent radix
+    sort does not require the values within a segment to retain image order.
+    """
+    label_image = cp.ascontiguousarray(label_image)
+    intensity_image = cp.ascontiguousarray(intensity_image)
+    packed_shape = (
+        (num_foreground,)
+        if num_channels == 1
+        else (num_foreground, num_channels)
+    )
+    packed = cp.empty(packed_shape, dtype=output_dtype)
+    write_offsets = offsets[:-1].copy()
+
+    nan_labels = None
+    outputs = [packed]
+    if check_nans:
+        nan_shape = (
+            (offsets.size - 1,)
+            if num_channels == 1
+            else (offsets.size - 1, num_channels)
         )
-    return nan_labels.astype(cp.bool_)
+        nan_labels = cp.zeros(nan_shape, dtype=cp.uint32)
+        outputs.append(nan_labels)
+
+    if label_image.size:
+        _get_intensity_packing_kernel(num_channels, check_nans)(
+            label_image,
+            intensity_image,
+            write_offsets,
+            *outputs,
+            size=label_image.size,
+        )
+    return packed, nan_labels
 
 
 def _fill_intensity_median_segmented_sort(
