@@ -6,6 +6,7 @@
 #include <cub/device/device_segmented_radix_sort.cuh>
 #include <cuda_runtime_api.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <stdexcept>
 #include <string>
@@ -49,18 +50,10 @@ void segmented_radix_sort_keys_ranges_impl(std::uintptr_t keys_in,
 
     void* temp_storage = nullptr;
     std::size_t temp_storage_bytes = 0;
-    check_cuda(cub::DeviceSegmentedRadixSort::SortKeys(temp_storage,
-                                                       temp_storage_bytes,
-                                                       d_keys_in,
-                                                       d_keys_out,
-                                                       num_items,
-                                                       num_segments,
-                                                       d_begin_offsets,
-                                                       d_end_offsets,
-                                                       0,
-                                                       sizeof(T) * 8,
-                                                       stream),
-               "cub::DeviceSegmentedRadixSort::SortKeys size query failed");
+    check_cuda(
+        cub::DeviceSegmentedRadixSort::SortKeys(temp_storage, temp_storage_bytes, d_keys_in, d_keys_out, num_items,
+                                                num_segments, d_begin_offsets, d_end_offsets, 0, sizeof(T) * 8, stream),
+        "cub::DeviceSegmentedRadixSort::SortKeys size query failed");
     if (temp_storage_bytes == 0)
     {
         return;
@@ -68,17 +61,9 @@ void segmented_radix_sort_keys_ranges_impl(std::uintptr_t keys_in,
     check_cuda(cudaMalloc(&temp_storage, temp_storage_bytes), "cudaMalloc failed");
     try
     {
-        check_cuda(cub::DeviceSegmentedRadixSort::SortKeys(temp_storage,
-                                                           temp_storage_bytes,
-                                                           d_keys_in,
-                                                           d_keys_out,
-                                                           num_items,
-                                                           num_segments,
-                                                           d_begin_offsets,
-                                                           d_end_offsets,
-                                                           0,
-                                                           sizeof(T) * 8,
-                                                           stream),
+        check_cuda(cub::DeviceSegmentedRadixSort::SortKeys(temp_storage, temp_storage_bytes, d_keys_in, d_keys_out,
+                                                           num_items, num_segments, d_begin_offsets, d_end_offsets, 0,
+                                                           sizeof(T) * 8, stream),
                    "cub::DeviceSegmentedRadixSort::SortKeys failed");
         check_cuda(cudaStreamSynchronize(stream), "cudaStreamSynchronize failed");
     }
@@ -98,11 +83,57 @@ void segmented_radix_sort_keys_impl(std::uintptr_t keys_in,
                                     std::int64_t num_segments,
                                     std::uintptr_t stream_ptr)
 {
-    segmented_radix_sort_keys_ranges_impl<T>(
-        keys_in, keys_out, segment_offsets, segment_offsets + sizeof(unsigned long long), num_items, num_segments, stream_ptr);
+    segmented_radix_sort_keys_ranges_impl<T>(keys_in, keys_out, segment_offsets,
+                                             segment_offsets + sizeof(unsigned long long), num_items, num_segments,
+                                             stream_ptr);
 }
 
 } // namespace
+
+void segmented_radix_sort_keys_uint8(std::uintptr_t keys_in,
+                                     std::uintptr_t keys_out,
+                                     std::uintptr_t segment_offsets,
+                                     std::int64_t num_items,
+                                     std::int64_t num_segments,
+                                     std::uintptr_t stream_ptr)
+{
+    segmented_radix_sort_keys_impl<std::uint8_t>(keys_in, keys_out, segment_offsets, num_items, num_segments, stream_ptr);
+}
+
+void segmented_radix_sort_keys_ranges_uint8(std::uintptr_t keys_in,
+                                            std::uintptr_t keys_out,
+                                            std::uintptr_t begin_offsets,
+                                            std::uintptr_t end_offsets,
+                                            std::int64_t num_items,
+                                            std::int64_t num_segments,
+                                            std::uintptr_t stream_ptr)
+{
+    segmented_radix_sort_keys_ranges_impl<std::uint8_t>(
+        keys_in, keys_out, begin_offsets, end_offsets, num_items, num_segments, stream_ptr);
+}
+
+void segmented_radix_sort_keys_uint16(std::uintptr_t keys_in,
+                                      std::uintptr_t keys_out,
+                                      std::uintptr_t segment_offsets,
+                                      std::int64_t num_items,
+                                      std::int64_t num_segments,
+                                      std::uintptr_t stream_ptr)
+{
+    segmented_radix_sort_keys_impl<std::uint16_t>(
+        keys_in, keys_out, segment_offsets, num_items, num_segments, stream_ptr);
+}
+
+void segmented_radix_sort_keys_ranges_uint16(std::uintptr_t keys_in,
+                                             std::uintptr_t keys_out,
+                                             std::uintptr_t begin_offsets,
+                                             std::uintptr_t end_offsets,
+                                             std::int64_t num_items,
+                                             std::int64_t num_segments,
+                                             std::uintptr_t stream_ptr)
+{
+    segmented_radix_sort_keys_ranges_impl<std::uint16_t>(
+        keys_in, keys_out, begin_offsets, end_offsets, num_items, num_segments, stream_ptr);
+}
 
 void segmented_radix_sort_keys_float32(std::uintptr_t keys_in,
                                        std::uintptr_t keys_out,

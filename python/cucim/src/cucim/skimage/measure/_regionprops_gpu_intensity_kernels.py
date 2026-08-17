@@ -504,7 +504,12 @@ def regionprops_intensity_median(
     )
 
     median_dtype = cp.promote_types(intensity_image.dtype, cp.float32)
-    img1d = img1d.astype(median_dtype, copy=False)
+    sort_dtype = (
+        intensity_image.dtype
+        if intensity_image.dtype in (cp.dtype(cp.uint8), cp.dtype(cp.uint16))
+        else median_dtype
+    )
+    img1d = img1d.astype(sort_dtype, copy=False)
     out_shape = (max_label,) if num_channels == 1 else (max_label, num_channels)
     counts_cpu = cp.asnumpy(counts)
     medians = cp.full(out_shape, cp.nan, dtype=median_dtype)
@@ -534,9 +539,10 @@ def regionprops_intensity_median(
             segmented_filled_cpu is None
             or not segmented_filled_cpu[label_index]
         ):
-            medians[label_index] = cp.median(
-                img1d[slice_start:slice_stop], axis=0
+            values = img1d[slice_start:slice_stop].astype(
+                median_dtype, copy=False
             )
+            medians[label_index] = cp.median(values, axis=0)
         slice_start = slice_stop
 
     props_dict["intensity_median"] = medians
@@ -554,9 +560,12 @@ def _fill_intensity_median_segmented_sort(
 ):
     if _skimage_cpp_ext is None or max_region_size <= min_region_size:
         return None
-    if not hasattr(
-        _skimage_cpp_ext, "segmented_radix_sort_keys_ranges_float32"
-    ):
+    sort_func = getattr(
+        _skimage_cpp_ext,
+        f"segmented_radix_sort_keys_ranges_{img1d.dtype.name}",
+        None,
+    )
+    if sort_func is None:
         return None
 
     eligible = (counts > min_region_size) & (counts <= max_region_size)
@@ -573,32 +582,20 @@ def _fill_intensity_median_segmented_sort(
     def sort_channel(keys):
         sorted_keys = cp.empty_like(keys)
         stream_ptr = cp.cuda.get_current_stream().ptr
-        if keys.dtype == cp.float32:
-            _skimage_cpp_ext.segmented_radix_sort_keys_ranges_float32(
-                keys.data.ptr,
-                sorted_keys.data.ptr,
-                begin_offsets.data.ptr,
-                end_offsets.data.ptr,
-                keys.size,
-                label_indices.size,
-                stream_ptr,
-            )
-        elif keys.dtype == cp.float64:
-            _skimage_cpp_ext.segmented_radix_sort_keys_ranges_float64(
-                keys.data.ptr,
-                sorted_keys.data.ptr,
-                begin_offsets.data.ptr,
-                end_offsets.data.ptr,
-                keys.size,
-                label_indices.size,
-                stream_ptr,
-            )
-        else:
-            raise TypeError(f"unsupported intensity median dtype {keys.dtype}")
-        values = sorted_keys[hi]
+        sort_func(
+            keys.data.ptr,
+            sorted_keys.data.ptr,
+            begin_offsets.data.ptr,
+            end_offsets.data.ptr,
+            keys.size,
+            label_indices.size,
+            stream_ptr,
+        )
+        values = sorted_keys[hi].astype(medians.dtype, copy=False)
         if bool(even.any()):
             lo = hi[even] - cp.uint64(1)
-            values[even] = (sorted_keys[lo] + values[even]) / keys.dtype.type(2)
+            lo_values = sorted_keys[lo].astype(medians.dtype, copy=False)
+            values[even] = (lo_values + values[even]) / medians.dtype.type(2)
         return values
 
     if num_channels == 1:
