@@ -239,6 +239,7 @@ def regionprops_dict(
     max_label=None,
     pixels_per_thread=16,
     robust_perimeter=True,
+    disable_nan_check=False,
     to_table=False,
     table_separator="-",
     table_on_host=False,
@@ -299,6 +300,11 @@ def regionprops_dict(
         overhead so can optionally be disabled. This parameter affects the
         following regionprops: {"perimeter", "perimeter_crofton",
         "euler_number"}.
+    disable_nan_check : bool, optional
+        If False, detect NaNs in intensity values and ensure that
+        ``intensity_median`` is NaN for every affected region and channel.
+        Set to True to skip this additional check. This only affects the
+        batch-computed ``intensity_median`` property.
     to_table : bool, optional
         If true, split up vector/matrix properties into separate keys for
         the individual elements to match the output format of
@@ -446,6 +452,7 @@ def regionprops_dict(
                 intensity_image,
                 max_label=max_label,
                 props_dict=out,
+                disable_nan_check=disable_nan_check,
             )
 
         compute_min = "intensity_min" in required_props

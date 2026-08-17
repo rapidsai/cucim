@@ -471,6 +471,8 @@ def regionprops_intensity_median(
     intensity_image,
     max_label=None,
     props_dict=None,
+    *,
+    disable_nan_check=False,
 ):
     """Compute the median intensity of each region.
 
@@ -496,7 +498,7 @@ def regionprops_intensity_median(
             label_image, max_label=max_label, props_dict=props_dict
         )
 
-    _, _, img1d = _get_compressed_labels(
+    _, labels1d, img1d = _get_compressed_labels(
         label_image,
         max_label=max_label,
         intensity_image=intensity_image,
@@ -531,6 +533,22 @@ def regionprops_intensity_median(
     segmented_filled_cpu = (
         cp.asnumpy(segmented_filled) if segmented_filled is not None else None
     )
+    check_nans = (
+        not disable_nan_check
+        and intensity_image.dtype.kind == "f"
+        and segmented_filled_cpu is not None
+        and segmented_filled_cpu.any()
+    )
+    nan_labels = (
+        _find_labels_containing_nan(
+            labels1d,
+            img1d,
+            max_label=max_label,
+            num_channels=num_channels,
+        )
+        if check_nans
+        else None
+    )
 
     slice_start = 0
     for label_index, count in enumerate(counts_cpu):
@@ -545,8 +563,45 @@ def regionprops_intensity_median(
             medians[label_index] = cp.median(values, axis=0)
         slice_start = slice_stop
 
+    if nan_labels is not None:
+        segmented_mask = segmented_filled
+        if num_channels > 1:
+            segmented_mask = segmented_mask[:, cp.newaxis]
+        medians[nan_labels & segmented_mask] = cp.nan
+
     props_dict["intensity_median"] = medians
     return props_dict
+
+
+@cp.memoize(for_each_device=True)
+def _get_nan_label_kernel(num_channels):
+    return cp.ElementwiseKernel(
+        "raw X labels, raw Y intensities",
+        "raw uint32 nan_labels",
+        f"""
+        if (isnan(static_cast<double>(intensities[i]))) {{
+            const size_t pixel = i / {num_channels};
+            const size_t channel = i % {num_channels};
+            const size_t output_index =
+                {num_channels} * (labels[pixel] - 1) + channel;
+            atomicExch(&nan_labels[output_index], 1U);
+        }}
+        """,
+        name=f"cucim_regionprops_median_nan_labels_c{num_channels}",
+    )
+
+
+def _find_labels_containing_nan(labels1d, img1d, *, max_label, num_channels):
+    out_shape = (max_label,) if num_channels == 1 else (max_label, num_channels)
+    nan_labels = cp.zeros(out_shape, dtype=cp.uint32)
+    if img1d.size:
+        _get_nan_label_kernel(num_channels)(
+            labels1d,
+            img1d,
+            nan_labels,
+            size=img1d.size,
+        )
+    return nan_labels.astype(cp.bool_)
 
 
 def _fill_intensity_median_segmented_sort(

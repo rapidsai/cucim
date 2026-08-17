@@ -402,6 +402,49 @@ def test_median_intensity_segmented_sort_preserves_integer_dtype(
     assert_array_equal(result, cp.asarray([3, 5], dtype=cp.float32))
 
 
+@pytest.mark.parametrize("num_channels", [1, 2])
+def test_median_intensity_nan_propagation(num_channels):
+    labels = cp.asarray([[1, 1, 1], [2, 2, 2]], dtype=cp.uint8)
+    intensity = cp.asarray([[1, 2, cp.nan], [4, 5, 6]], dtype=cp.float32)
+    expected = cp.asarray([cp.nan, 5], dtype=cp.float32)
+    if num_channels == 2:
+        intensity = cp.stack((intensity, intensity[::-1]), axis=-1)
+        expected = cp.asarray([[cp.nan, 5], [5, cp.nan]], dtype=cp.float32)
+
+    result = regionprops_intensity_median(labels, intensity)["intensity_median"]
+
+    assert_array_equal(result, expected)
+
+
+def test_median_intensity_disable_nan_check(monkeypatch):
+    labels = cp.asarray([[1, 1, 1]], dtype=cp.uint8)
+    intensity = cp.asarray([[1, 2, cp.nan]], dtype=cp.float32)
+
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("NaN detector should not be called")
+
+    monkeypatch.setattr(
+        intensity_kernels, "_find_labels_containing_nan", fail_if_called
+    )
+
+    result = measure.regionprops_table(
+        labels,
+        intensity,
+        properties=["intensity_median"],
+        disable_nan_check=True,
+    )
+
+    assert result["intensity_median"].shape == (1,)
+
+
+def test_median_intensity_nan_check_is_keyword_only():
+    labels = cp.asarray([[1]], dtype=cp.uint8)
+    intensity = cp.asarray([[1]], dtype=cp.float32)
+
+    with pytest.raises(TypeError):
+        regionprops_intensity_median(labels, intensity, None, None, False)
+
+
 @pytest.mark.parametrize("precompute_max", [False, True])
 @pytest.mark.parametrize("ndim", [2, 3])
 @pytest.mark.parametrize(
