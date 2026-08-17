@@ -402,14 +402,28 @@ def test_median_intensity_segmented_sort_preserves_integer_dtype(
     assert_array_equal(result, cp.asarray([3, 5], dtype=cp.float32))
 
 
+@pytest.mark.parametrize("region_size", [3, 4])
 @pytest.mark.parametrize("num_channels", [1, 2])
-def test_median_intensity_nan_propagation(num_channels):
-    labels = cp.asarray([[1, 1, 1], [2, 2, 2]], dtype=cp.uint8)
-    intensity = cp.asarray([[1, 2, cp.nan], [4, 5, 6]], dtype=cp.float32)
-    expected = cp.asarray([cp.nan, 5], dtype=cp.float32)
+def test_median_intensity_nan_propagation(num_channels, region_size):
+    labels = cp.stack(
+        (
+            cp.ones(region_size, dtype=cp.uint8),
+            cp.full(region_size, 2, dtype=cp.uint8),
+        )
+    )
+    intensity = cp.arange(2 * region_size, dtype=cp.float32).reshape(2, -1)
+    intensity[0, -1] = cp.nan
+    finite_median = (3 * region_size - 1) / 2
+    expected = cp.asarray([cp.nan, finite_median], dtype=cp.float32)
     if num_channels == 2:
         intensity = cp.stack((intensity, intensity[::-1]), axis=-1)
-        expected = cp.asarray([[cp.nan, 5], [5, cp.nan]], dtype=cp.float32)
+        expected = cp.asarray(
+            [
+                [cp.nan, finite_median],
+                [finite_median, cp.nan],
+            ],
+            dtype=cp.float32,
+        )
 
     result = regionprops_intensity_median(labels, intensity)["intensity_median"]
 

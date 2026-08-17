@@ -479,7 +479,8 @@ def regionprops_intensity_median(
     """Compute the median intensity of each region.
 
     This implementation compresses foreground intensity values into label
-    order, then computes one median per region slice with ``cp.median``.
+    order, uses segmented sort for eligible region sizes, and falls back to
+    ``cp.median`` for the remaining regions.
 
     reuses "num_pixels" from `props_dict` if it exists
 
