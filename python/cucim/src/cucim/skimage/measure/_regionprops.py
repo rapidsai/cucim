@@ -1079,6 +1079,7 @@ def regionprops_table(
     to_table=True,
     copy_output_to_host=False,
     disable_nan_check=False,
+    intensity_median_backend="cub",
 ):
     """Compute region properties and return them as a pandas-compatible table.
 
@@ -1160,6 +1161,11 @@ def regionprops_table(
         If False, batch-computed intensity medians are set to NaN for regions
         and channels containing a NaN intensity. Set to True to skip this
         additional check. Ignored when ``batch_processing=False``.
+    intensity_median_backend : {"cub", "cuda.compute"}, optional
+        Backend used for the segmented-sort portion of a batch-computed
+        ``intensity_median``. The default ``"cub"`` uses cuCIM's precompiled
+        extension. ``"cuda.compute"`` requires the optional CCCL Python
+        package. Ignored when ``batch_processing=False``.
 
     Returns
     -------
@@ -1274,6 +1280,7 @@ def regionprops_table(
             table_separator=separator,
             table_on_host=copy_output_to_host,
             disable_nan_check=disable_nan_check,
+            intensity_median_backend=intensity_median_backend,
         )
         if copy_output_to_host and not to_table:
             for key, value in table.items():

@@ -445,6 +445,55 @@ def test_median_intensity_nan_check_is_keyword_only():
         regionprops_intensity_median(labels, intensity, None, None, False)
 
 
+def test_median_intensity_cuda_compute_backend():
+    pytest.importorskip("cuda.compute")
+    labels = cp.asarray([[1, 1, 1, 0], [2, 2, 2, 2]], dtype=cp.uint8)
+    intensity = cp.asarray([[7, 1, 3, 0], [8, 2, 6, 4]], dtype=cp.uint8)
+
+    result = measure.regionprops_table(
+        labels,
+        intensity,
+        properties=["intensity_median"],
+        intensity_median_backend="cuda.compute",
+    )
+
+    assert result["intensity_median"].dtype == cp.float32
+    assert_array_equal(
+        result["intensity_median"], cp.asarray([3, 5], dtype=cp.float32)
+    )
+
+
+def test_median_intensity_cuda_compute_import_error(monkeypatch):
+    labels = cp.asarray([[1]], dtype=cp.uint8)
+    intensity = cp.asarray([[1]], dtype=cp.uint8)
+
+    def raise_import_error():
+        raise ImportError("cuda.compute is unavailable")
+
+    monkeypatch.setattr(
+        intensity_kernels, "_import_cuda_compute", raise_import_error
+    )
+
+    with pytest.raises(ImportError, match="cuda.compute is unavailable"):
+        regionprops_intensity_median(
+            labels,
+            intensity,
+            intensity_median_backend="cuda.compute",
+        )
+
+
+def test_median_intensity_invalid_backend():
+    labels = cp.asarray([[1]], dtype=cp.uint8)
+    intensity = cp.asarray([[1]], dtype=cp.uint8)
+
+    with pytest.raises(ValueError, match="intensity_median_backend"):
+        regionprops_intensity_median(
+            labels,
+            intensity,
+            intensity_median_backend="unknown",
+        )
+
+
 @pytest.mark.parametrize("precompute_max", [False, True])
 @pytest.mark.parametrize("ndim", [2, 3])
 @pytest.mark.parametrize(
