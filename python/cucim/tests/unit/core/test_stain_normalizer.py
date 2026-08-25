@@ -1,14 +1,18 @@
-# SPDX-FileCopyrightText: Copyright (c) 2022, NVIDIA CORPORATION.
+# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 
 import cupy as cp
 import pytest
+from packaging.version import parse
 
 from cucim.core.operations.color import (
     normalize_colors_pca,
     stain_extraction_pca,
 )
+
+# check CuPy instead of SciPy
+CUPY_GT_14_2 = parse(cp.__version__) >= parse("14.2.0a0")
 
 
 class TestStainExtractorMacenko:
@@ -59,6 +63,10 @@ class TestStainExtractorMacenko:
             result = stain_extraction_pca(image)
             cp.testing.assert_array_equal(result[:, 0], result[:, 1])
 
+    @pytest.mark.xfail(
+        CUPY_GT_14_2,
+        reason="Fails on CuPy 14.2.0+, see tracking issue: https://github.com/rapidsai/cucim/issues/1137",
+    )
     @pytest.mark.parametrize(
         "image, expected",
         [
