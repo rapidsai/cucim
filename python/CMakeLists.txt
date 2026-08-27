@@ -16,6 +16,8 @@ unset(VERSION CACHE)
 file(STRINGS ${CMAKE_CURRENT_LIST_DIR}/../VERSION VERSION)
 # strip alpha version info
 string(REGEX REPLACE "a.*$" "" VERSION ${VERSION})
+# strip RC version info
+string(REGEX REPLACE "rc.*$" "" VERSION ${VERSION})
 
 # Append local cmake module path
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake/modules")
