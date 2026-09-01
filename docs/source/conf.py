@@ -109,6 +109,7 @@ todo_include_todos = False
 
 html_theme = "nvidia_sphinx_theme"
 html_theme_options = {
+    "public_docs_features": os.environ.get("CI") == "true",
     "icon_links": [
         {
             "name": "GitHub",
