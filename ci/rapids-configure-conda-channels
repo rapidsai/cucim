@@ -23,12 +23,15 @@ remove_conda_channel() {
   fi
 }
 
-# Remove release channel if build is not a release build
-if ! rapids-is-release-build; then
+# Candidate dependencies come only from the materialized candidate channel and
+# conda-forge, never either public RAPIDS channel.
+if [[ "${RAPIDS_BUILD_TYPE:-}" == "release-candidate" ]]; then
   remove_conda_channel 'rapidsai'
-fi
-
-# Remove nightly channels if build is a release build
-if rapids-is-release-build; then
   remove_conda_channel 'rapidsai-nightly'
+elif rapids-is-release-build; then
+  # Release builds use the stable RAPIDS channel, not nightly packages.
+  remove_conda_channel 'rapidsai-nightly'
+else
+  # Development builds use nightly packages, not stable releases.
+  remove_conda_channel 'rapidsai'
 fi
