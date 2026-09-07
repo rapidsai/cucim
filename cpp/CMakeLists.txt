@@ -99,6 +99,7 @@ add_library(${CUCIM_PACKAGE_NAME}
         src/loader/thread_batch_data_loader.cpp
         src/logger/logger.cpp
         src/logger/timer.cpp
+        src/memory/device_resources.cpp
         src/memory/memory_manager.cpp
         src/plugin/image_format.cpp
         src/plugin/plugin_config.cpp
@@ -155,6 +156,24 @@ target_link_libraries(${CUCIM_PACKAGE_NAME}
             deps::json
             deps::nvtx3
             deps::taskflow
+        )
+
+# CCCL's headers have to be searched before the CUDA toolkit's.
+#
+# The toolkit ships its own copy of libcudacxx, and for every CUDA version
+# cuCIM supports that copy predates cuda::mr. If the toolkit include directory
+# (pulled in by CUDA::cudart_static) is searched first, CCCL's
+# <cuda/memory_resource> still resolves but the cuda/std/* headers it depends
+# on come from the toolkit, the version guards do not line up, and cuda::mr
+# silently disappears. BEFORE is what keeps the two copies from being mixed.
+#
+# PUBLIC because <cucim/memory/device_resources.h> exposes cuda::mr types.
+# BUILD_INTERFACE only: installed consumers of that header still need CCCL
+# exported or a cuda-cccl dependency added, which is not done yet.
+target_include_directories(${CUCIM_PACKAGE_NAME}
+        BEFORE
+        PUBLIC
+            $<BUILD_INTERFACE:${deps-cccl_SOURCE_DIR}/libcudacxx/include>
         )
 
 if (CUCIM_STATIC_GDS)
