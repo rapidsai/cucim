@@ -705,10 +705,6 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
                 const size_t tile_buf_size = static_cast<size_t>(actual_tw) * actual_th * samples * bytes_per_px;
                 const uint32_t tile_row_stride = actual_tw * samples * bytes_per_px;
 
-                // Hash for per-tile locking
-                const uint64_t index_hash = ifd_hash ^
-                    (static_cast<uint64_t>(tile_index) | (static_cast<uint64_t>(tile_index) << 32));
-
                 // --- Cache lookup (RAII lock guard for exception safety) ---
                 auto key = image_cache.create_key(ifd_hash, tile_index);
 
@@ -722,7 +718,7 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
                     ~CacheLockGuard() { if (locked) cache.unlock(hash); }
                     void unlock() { if (locked) { cache.unlock(hash); locked = false; } }
                 };
-                CacheLockGuard tile_lock(image_cache, index_hash);
+                CacheLockGuard tile_lock(image_cache, key->lock_hash());
 
                 auto cached_value = image_cache.find(key);
 

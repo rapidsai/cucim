@@ -14,6 +14,16 @@ ImageCacheKey::ImageCacheKey(uint64_t file_hash, uint64_t index) : file_hash(fil
 {
 }
 
+uint64_t ImageCacheKey::lock_hash() const
+{
+    // Spreading location_hash across both halves keeps consecutive tile indices
+    // in distinct pool slots once this is taken modulo the pool size, which is
+    // the access pattern tile assembly actually produces.  This reproduces what
+    // the IFD readers were computing inline, so which mutex a tile maps to is
+    // unchanged for them.
+    return file_hash ^ (location_hash | (location_hash << 32));
+}
+
 ImageCacheValue::ImageCacheValue(void* data, uint64_t size, void* user_obj, const cucim::io::DeviceType device_type)
     : data(data), size(size), user_obj(user_obj), device_type(device_type)
 {
