@@ -56,6 +56,23 @@ Constructor of CuImage.
 // std::shared_ptr<cache::ImageCache> CuImage::cache()
 PYDOC(cache, R"doc(
 Get cache object.
+
+This is the host-resident tile cache, used for reads whose output device is
+the CPU.
+)doc")
+
+// std::shared_ptr<cache::ImageCache> CuImage::device_cache()
+PYDOC(device_cache, R"doc(
+Get the device-resident tile cache object.
+
+Reads that request GPU output cache their decoded tiles here rather than in
+cache(), so a warm read is assembled with device-to-device copies instead of
+being staged through host memory. Query it to see hits and misses for those
+reads; the two caches keep separate statistics.
+
+It is created on first use, so a process that never requests GPU output never
+allocates device memory for it. Both caches follow the configuration given to
+cache(), and each may grow to the configured memory_capacity independently.
 )doc")
 
 // std::shared_ptr<profiler::Profiler> CuImage::profiler()
