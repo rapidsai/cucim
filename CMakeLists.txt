@@ -91,7 +91,30 @@ option(CUCIM_SUPPORT_NVTX "Support NVTX" ON)
 # Setup CXX11 ABI
 # : Adds CXX11 ABI definition to the compiler command line for targets in the current directory,
 #   whether added before or after this command is invoked, and for the ones in sub-directories added after.
-add_definitions(-D_GLIBCXX_USE_CXX11_ABI=0) # TODO: create two library, one with CXX11 ABI and one without it.
+#
+# Why 0 (this is the canonical explanation; the other CMakeLists.txt files that
+# set the same definition point here):
+#
+#   This dates to building manylinux2014 wheels. That platform tag requires a
+#   gcc4-compatible libstdc++ ABI (gcc configured with
+#   '--with-default-libstdcxx-abi=gcc4-compatible', see
+#   https://gcc.gnu.org/onlinedocs/libstdc++/manual/configure.html), which forces
+#   _GLIBCXX_USE_CXX11_ABI=0 on CentOS 7.
+#
+# What it costs: parts of the standard library that are only defined for the new
+# ABI are unavailable, most visibly std::pmr::string. ImageMetadata therefore
+# keeps two sets of member declarations and stores strings as std::string_view
+# into its own memory resource; see cpp/include/cucim/io/format/image_format.h
+# and ImageMetadata::store_string().
+#
+# Changing it is not a local edit: cpp/CMakeLists.txt exports this definition as
+# an INTERFACE compile definition, so it is part of the installed package's
+# contract and flipping it breaks ABI for anything already linked against
+# libcucim. The manylinux2014 constraint itself no longer appears to apply (the
+# repository no longer references manylinux anywhere and requires-python is
+# >=3.11), so this is worth revisiting deliberately as its own change rather
+# than in passing.
+add_definitions(-D_GLIBCXX_USE_CXX11_ABI=0)
 
 ################################################################################
 # Define basic dependencies

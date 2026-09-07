@@ -24,6 +24,19 @@ void* ImageMetadata::allocate(size_t size)
     return res_.allocate(size);
 }
 
+std::string_view ImageMetadata::store_string(std::string_view value)
+{
+    char* buf = static_cast<char*>(res_.allocate(value.size() + 1, alignof(char)));
+    if (!value.empty())
+    {
+        std::memcpy(buf, value.data(), value.size());
+    }
+    // Terminate explicitly rather than copying value.size() + 1 bytes: `value` may
+    // be a view into a longer buffer, in which case the extra byte is not a '\0'.
+    buf[value.size()] = '\0';
+    return std::string_view{ buf, value.size() };
+}
+
 std::pmr::monotonic_buffer_resource& ImageMetadata::get_resource()
 {
     return res_;

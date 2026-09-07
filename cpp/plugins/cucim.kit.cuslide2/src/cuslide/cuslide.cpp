@@ -246,10 +246,9 @@ static bool CUCIM_ABI parser_parse(CuCIMFileHandle_ptr handle_ptr, cucim::io::fo
         shape[2] = n_ch;
     }
 
-    // Own the names as strings while building. ImageMetadata::channel_names
-    // takes string_views and may retain pointers into the metadata buffer, so
-    // we copy into `resource` once at the end rather than keeping views into
-    // this temporary storage.
+    // Own the names as strings while building, then hand them to the metadata
+    // once at the end via store_string() rather than keeping views into this
+    // temporary storage.
     std::vector<std::string> channel_name_storage;
     channel_name_storage.reserve(n_ch);
     if (!ome_channel_names.empty())
@@ -286,9 +285,7 @@ static bool CUCIM_ABI parser_parse(CuCIMFileHandle_ptr handle_ptr, cucim::io::fo
     channel_names.reserve(channel_name_storage.size());
     for (const auto& name : channel_name_storage)
     {
-        char* buf = static_cast<char*>(resource.allocate(name.size() + 1, alignof(char)));
-        std::memcpy(buf, name.c_str(), name.size() + 1);
-        channel_names.emplace_back(buf, name.size());
+        channel_names.push_back(out_metadata.store_string(name));
     }
 
     // Spacing units
