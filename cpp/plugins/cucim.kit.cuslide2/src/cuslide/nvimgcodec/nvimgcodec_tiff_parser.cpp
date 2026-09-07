@@ -69,6 +69,83 @@ namespace cuslide2::nvimgcodec
 // including older deployments where extension auto-discovery is incomplete.
 //
 
+// The range packaging pins, spelled out for diagnostics.  Not derived from the
+// constants below because the packed encoding cannot represent a two-digit
+// minor: see format_nvimgcodec_version().
+static constexpr const char* kSupportedNvimgcodecRange = ">=0.9.0,<0.10.0";
+
+// Same range as packed semantic-version integers, so they can be compared
+// directly against nvimgcodecProperties_t::version.
+static constexpr uint32_t kMinNvimgcodecVersion = MAKE_SEMANTIC_VERSION(0, 9, 0);
+static constexpr uint32_t kFirstUnsupportedNvimgcodecVersion = MAKE_SEMANTIC_VERSION(0, 10, 0);
+
+/**
+ * @brief Render a packed nvImageCodec version for a diagnostic message.
+ *
+ * The encoding gives the minor component a single digit
+ * (major * 1000 + minor * 100 + patch), so 0.10.0 and 1.0.0 both pack to 1000
+ * and this renders either as "1.0.0". Ordering is still preserved, so the
+ * comparisons in check_nvimgcodec_runtime_version() are unaffected; only the
+ * text can be misleading, and only for a minor of 10 or above, which is
+ * already outside the supported range.
+ */
+static std::string format_nvimgcodec_version(uint32_t version)
+{
+    return fmt::format("{}.{}.{}", NVIMGCODEC_MAJOR_FROM_SEMVER(version), NVIMGCODEC_MINOR_FROM_SEMVER(version),
+                       NVIMGCODEC_PATCH_FROM_SEMVER(version));
+}
+
+bool is_supported_nvimgcodec_version(uint32_t packed_version)
+{
+    return packed_version >= kMinNvimgcodecVersion && packed_version < kFirstUnsupportedNvimgcodecVersion;
+}
+
+/**
+ * @brief Verify that the nvImageCodec library actually loaded is one cuCIM supports.
+ *
+ * The build cannot answer this. cuCIM loads nvImageCodec with dlopen by
+ * default (WITH_DYNAMIC_NVIMGCODEC), and the SONAME candidates the build
+ * searches end with `libnvimgcodec.so.0` and `libnvimgcodec.so`, either of
+ * which resolves to whichever major-0 build happens to be installed. So the
+ * configure-time header check says nothing about what is loaded at run time,
+ * and since there are no compile-time version guards an unsupported library
+ * shows up as a missing symbol or as wrong behaviour partway through a decode.
+ * Asking the library for its own version is the only dependable check, and
+ * doing it here turns those failures into one clear message.
+ *
+ * @return An empty string if the loaded version is supported, otherwise a
+ *         description of the problem suitable for appending to
+ *         "nvImageCodec not available: ".
+ */
+static std::string check_nvimgcodec_runtime_version()
+{
+    nvimgcodecProperties_t properties{};
+    properties.struct_type = NVIMGCODEC_STRUCTURE_TYPE_PROPERTIES;
+    properties.struct_size = sizeof(nvimgcodecProperties_t);
+    properties.struct_next = nullptr;
+
+    const nvimgcodecStatus_t status = nvimgcodecGetProperties(&properties);
+    if (status != NVIMGCODEC_STATUS_SUCCESS)
+    {
+        return fmt::format("could not query the version of the loaded nvImageCodec library "
+                           "(nvimgcodecGetProperties status: {}), so it cannot be confirmed as supported. "
+                           "cuCIM requires nvImageCodec {}.",
+                           static_cast<int>(status), kSupportedNvimgcodecRange);
+    }
+
+    if (!is_supported_nvimgcodec_version(properties.version))
+    {
+        return fmt::format("loaded nvImageCodec {}, which is outside the supported range {}. cuCIM was built "
+                           "against {} and the API is not compatible across these versions. The library was "
+                           "resolved at run time, so a different build may be earlier on the loader path; check "
+                           "LD_LIBRARY_PATH and any libnvimgcodec.so symlinks.",
+                           format_nvimgcodec_version(properties.version), kSupportedNvimgcodecRange,
+                           format_nvimgcodec_version(NVIMGCODEC_VER));
+    }
+
+    return {};
+}
+
 static std::string detect_nvimgcodec_extensions_path()
 {
     // 1. Environment variable override
@@ -327,6 +404,20 @@ NvImageCodecTiffParserManager::NvImageCodecTiffParserManager()
 {
     try
     {
+        // Check the library before using any of it.  This constructor is the
+        // one place every read path passes through exactly once, so an
+        // unsupported install is reported here rather than as a confusing
+        // failure inside a later decode.
+        std::string version_error = check_nvimgcodec_runtime_version();
+        if (!version_error.empty())
+        {
+            status_message_ = std::move(version_error);
+            #ifdef DEBUG
+            fmt::print("⚠️  {}\n", status_message_);
+            #endif // DEBUG
+            return;
+        }
+
         // Create nvImageCodec instance for TIFF parsing (separate from decoder instance)
         //
         // Auto-detect extension modules path so nvImageCodec can find its codec

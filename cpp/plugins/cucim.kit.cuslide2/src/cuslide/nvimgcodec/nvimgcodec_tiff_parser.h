@@ -316,6 +316,19 @@ private:
 };
 
 /**
+ * @brief Whether *packed_version* is an nvImageCodec version cuCIM supports.
+ *
+ * @param packed_version A version in nvImageCodec's packed encoding, as found
+ *        in `nvimgcodecProperties_t::version` or `NVIMGCODEC_VER`.
+ *
+ * Exposed so the supported range can be regression-tested. The range has to
+ * agree with the pin in `dependencies.yaml` and with the one the build checks
+ * in `cmake/deps/nvimgcodec.cmake`; there is no way to derive one from the
+ * others, so a test is what keeps them from drifting apart.
+ */
+bool is_supported_nvimgcodec_version(uint32_t packed_version);
+
+/**
  * @brief Singleton manager for nvImageCodec TIFF parsing
  *
  * Manages the global nvImageCodec instance for TIFF parsing operations.
