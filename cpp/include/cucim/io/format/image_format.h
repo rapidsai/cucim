@@ -68,6 +68,22 @@ public:
     ImageMetadata();
     ~ImageMetadata();
     void* allocate(size_t size);
+
+    /**
+     * @brief Copy @p value into this metadata's memory and return a view of the copy.
+     *
+     * The setters below take std::string_view and the views are handed out through
+     * ImageMetadataDesc as plain `char*`, so the characters have to outlive whatever
+     * temporary produced them and have to be null-terminated. This copies once into
+     * the metadata's own resource and hands back a view of that copy, which callers
+     * can store directly.
+     *
+     * std::pmr::string would express this more directly, but it is unavailable while
+     * _GLIBCXX_USE_CXX11_ABI=0 (see the note above the member declarations below).
+     * This helper works either way, so it does not need revisiting if that changes.
+     */
+    std::string_view store_string(std::string_view value);
+
     std::pmr::monotonic_buffer_resource& get_resource();
     constexpr uint8_t* get_buffer()
     {

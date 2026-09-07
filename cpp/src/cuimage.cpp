@@ -865,12 +865,7 @@ CuImage CuImage::read_region(std::vector<int64_t>&& location,
         constexpr size_t kMaxSpacingUnitLen = 256;
         size_t str_len = strnlen(str_ptr, kMaxSpacingUnitLen);
 
-        char* spacing_unit = static_cast<char*>(resource.allocate(str_len + 1));
-        memcpy(spacing_unit, str_ptr, str_len);
-        spacing_unit[str_len] = '\0';
-        // std::pmr::string spacing_unit{ image_metadata_->spacing_units[dim_index], &resource };
-
-        spacing_units.emplace_back(std::string_view{ spacing_unit });
+        spacing_units.push_back(out_metadata.store_string(std::string_view{ str_ptr, str_len }));
 
         // Update spacing based on level_downsample
         char dim_char = image_metadata_->dims[dim_index];
@@ -908,13 +903,8 @@ CuImage CuImage::read_region(std::vector<int64_t>&& location,
         // "LPS" or "RAS")
         constexpr size_t kMaxCoordSysLen = 16;
         size_t coord_sys_len = strnlen(coord_sys_ptr, kMaxCoordSysLen);
-        char* coord_sys_str = static_cast<char*>(resource.allocate(coord_sys_len + 1));
-        memcpy(coord_sys_str, coord_sys_ptr, coord_sys_len);
-        coord_sys_str[coord_sys_len] = '\0';
-        coord_sys = std::string_view{ coord_sys_str };
+        coord_sys = out_metadata.store_string(std::string_view{ coord_sys_ptr, coord_sys_len });
     }
-    // std::pmr::string coord_sys_str{ image_metadata_->coord_sys ? image_metadata_->coord_sys : "", &resource };
-    // std::string_view coord_sys{ coord_sys_str };
 
     // Manually set resolution dimensions to 2
     const uint16_t level_ndim = 2;

@@ -122,6 +122,56 @@ TEST_CASE("Verify metadata", "[test_metadata.cpp]")
     // REQUIRE(1 == 1);
 }
 
+TEST_CASE("ImageMetadata::store_string copies into metadata memory", "[test_metadata.cpp]")
+{
+    cucim::io::format::ImageMetadata metadata{};
+
+    SECTION("the copy is independent of the source and null-terminated")
+    {
+        std::string source{ "Cy5" };
+        std::string_view stored = metadata.store_string(source);
+
+        REQUIRE(stored == "Cy5");
+        REQUIRE(stored.data() != source.data());
+        // Consumers reach these through ImageMetadataDesc as plain `char*`.
+        REQUIRE(stored.data()[stored.size()] == '\0');
+
+        source[0] = 'X';
+        REQUIRE(stored == "Cy5");
+    }
+
+    SECTION("a view into a longer buffer is terminated at its own end")
+    {
+        // The reason store_string() writes the terminator itself instead of
+        // copying size() + 1 bytes from the source.
+        std::string_view middle_of{ "DAPI/FITC", 4 };
+        std::string_view stored = metadata.store_string(middle_of);
+
+        REQUIRE(stored == "DAPI");
+        REQUIRE(stored.size() == 4);
+        REQUIRE(stored.data()[4] == '\0');
+    }
+
+    SECTION("an empty value is still a valid null-terminated string")
+    {
+        std::string_view stored = metadata.store_string(std::string_view{});
+
+        REQUIRE(stored.empty());
+        REQUIRE(stored.data() != nullptr);
+        REQUIRE(stored.data()[0] == '\0');
+    }
+
+    SECTION("separate calls do not alias")
+    {
+        std::string_view first = metadata.store_string("R");
+        std::string_view second = metadata.store_string("G");
+
+        REQUIRE(first == "R");
+        REQUIRE(second == "G");
+        REQUIRE(first.data() != second.data());
+    }
+}
+
 TEST_CASE("Load test", "[test_metadata.cpp]")
 {
     cucim::CuImage img{ g_config.get_input_path("private/philips_tiff_000.tif") };
