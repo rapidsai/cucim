@@ -46,12 +46,16 @@ class TiffGenerator:
         else:
             raise RuntimeError("'image_data' is neithor list or numpy.ndarray")
 
-        compression = COMPRESSION_MAP.get(compression)
-        compressionargs = None
-        if not compression:
-            compression = "jpeg"
-        if compression == "jpeg":
-            compressionargs = {"level": 95}
+        if compression not in COMPRESSION_MAP:
+            raise ValueError(
+                f"Unknown compression '{compression}'. "
+                f"Expected one of {sorted(COMPRESSION_MAP)}."
+            )
+        # `raw` maps to None, which tifffile writes uncompressed.  Do not
+        # substitute a codec here: the whole point of the `raw` recipe is to
+        # produce an image whose decode cost is negligible.
+        compression = COMPRESSION_MAP[compression]
+        compressionargs = {"level": 95} if compression == "jpeg" else None
 
         # save as tif
         tiff_file_name = str(
