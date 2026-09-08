@@ -36,7 +36,7 @@ permissions: {}
 
 jobs:
   build-details:
-    uses: rapidsai/shared-workflows/.github/workflows/compute-build-details.yaml@release/26.10
+    uses: rapidsai/shared-workflows/.github/workflows/compute-build-details.yaml@main
   cpp-build:
     permissions:
       actions: read
@@ -45,7 +45,7 @@ jobs:
       packages: read
       pull-requests: read
     secrets: inherit # zizmor: ignore[secrets-inherit]
-    uses: rapidsai/shared-workflows/.github/workflows/conda-cpp-build.yaml@release/26.10
+    uses: rapidsai/shared-workflows/.github/workflows/conda-cpp-build.yaml@main
     needs: [build-details]
     with:
       build_type: ${{ inputs.build_type || 'branch' }}
@@ -64,7 +64,7 @@ jobs:
       packages: read
       pull-requests: read
     secrets: inherit # zizmor: ignore[secrets-inherit]
-    uses: rapidsai/shared-workflows/.github/workflows/custom-job.yaml@release/26.10
+    uses: rapidsai/shared-workflows/.github/workflows/custom-job.yaml@main
     with:
       arch: "amd64"
       branch: ${{ inputs.branch }}
@@ -90,7 +90,7 @@ jobs:
       target-aws-region: ${{ secrets.NVIDIA_DOCS_AWS_REGION }}
       target-aws-secret-access-key: ${{ secrets.NVIDIA_DOCS_AWS_SECRET_ACCESS_KEY }}
       target-s3-bucket: ${{ secrets.NVIDIA_DOCS_S3_BUCKET }}
-    uses: rapidsai/shared-workflows/.github/workflows/publish-api-docs.yaml@release/26.10
+    uses: rapidsai/shared-workflows/.github/workflows/publish-api-docs.yaml@main
     with:
       docs-projects: cucim
       dry-run: false
@@ -104,7 +104,7 @@ jobs:
       packages: read
       pull-requests: read
     secrets: inherit # zizmor: ignore[secrets-inherit]
-    uses: rapidsai/shared-workflows/.github/workflows/conda-python-build.yaml@release/26.10
+    uses: rapidsai/shared-workflows/.github/workflows/conda-python-build.yaml@main
     with:
       build_type: ${{ inputs.build_type || 'branch' }}
       build-datetime: ${{ needs.build-details.outputs.build-datetime }}
@@ -121,7 +121,7 @@ jobs:
       packages: read
       pull-requests: read
     secrets: inherit # zizmor: ignore[secrets-inherit]
-    uses: rapidsai/shared-workflows/.github/workflows/conda-upload-packages.yaml@release/26.10
+    uses: rapidsai/shared-workflows/.github/workflows/conda-upload-packages.yaml@main
     with:
       build_type: ${{ inputs.build_type || 'branch' }}
       branch: ${{ inputs.branch }}
@@ -135,7 +135,7 @@ jobs:
       packages: read
       pull-requests: read
     secrets: inherit # zizmor: ignore[secrets-inherit]
-    uses: rapidsai/shared-workflows/.github/workflows/wheels-build.yaml@release/26.10
+    uses: rapidsai/shared-workflows/.github/workflows/wheels-build.yaml@main
     needs: [build-details]
     with:
       build_type: ${{ inputs.build_type || 'branch' }}
@@ -155,7 +155,7 @@ jobs:
       packages: read
       pull-requests: read
     secrets: inherit # zizmor: ignore[secrets-inherit]
-    uses: rapidsai/shared-workflows/.github/workflows/wheels-publish.yaml@release/26.10
+    uses: rapidsai/shared-workflows/.github/workflows/wheels-publish.yaml@main
     with:
       build_type: ${{ inputs.build_type || 'branch' }}
       branch: ${{ inputs.branch }}
