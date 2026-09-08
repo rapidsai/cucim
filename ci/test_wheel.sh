@@ -1,12 +1,12 @@
 #!/bin/bash
-# SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION.
+# SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 set -eou pipefail
 
 source rapids-init-pip
 
-PYTHON_WHEELHOUSE=$(rapids-download-from-github "$(rapids-artifact-name wheel_python cucim cucim --py "$RAPIDS_PY_VERSION" --cuda "$RAPIDS_CUDA_VERSION")")
+PYTHON_WHEELHOUSE=$(rapids-download-from-github "$(rapids-artifact-name wheel_python cucim cucim --stable --cuda "$RAPIDS_CUDA_VERSION")")
 
 # generate constraints (possibly pinning to oldest support versions of dependencies)
 rapids-generate-pip-constraints test_python "${PIP_CONSTRAINT}"
