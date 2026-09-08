@@ -189,14 +189,14 @@ Once it is built, the subsequent build doesn't take much time.
 
 However, if a build option or dependent packages are updated, the build can be failed (due to CMakeCache.txt or existing build files). In that case, you can remove use the following commands to remove CMakeCache.txt or build folder, then build it again.
 
-1) Remove CMakeCache.txt for libcucim, cuslide/cumed plugin, and the python wrapper (pybind11).
+1) Remove CMakeCache.txt for libcucim, cuslide/cumed plugin, and the Python wrapper (Cython).
 
 ```bash
 # this command wouldn't remove already downloaded dependency so faster than `clean` subcommand
 ./run build_local clean_cache
 ```
 
-2) Remove `build-*` and `install` folder for libcucim, cuslide/cumed plugin, and the python wrapper (pybind11).
+2) Remove `build-*` and `install` folder for libcucim, cuslide/cumed plugin, and the Python wrapper (Cython).
 
 ```bash
 # this command is for clean build
