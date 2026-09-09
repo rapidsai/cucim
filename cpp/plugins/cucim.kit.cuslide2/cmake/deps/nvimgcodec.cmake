@@ -12,6 +12,13 @@ if (NOT TARGET deps::nvimgcodec)
     # Packaging pins nvImageCodec to >=0.9.0,<0.10.0 and the vendored headers
     # declare 0.9, so only 0.9 is supported here.  The unversioned entries are
     # kept for wheel and system layouts that ship just the symlinks.
+    #
+    # Those unversioned entries are also why the check below is not sufficient
+    # on its own: they resolve to whatever major-0 build is installed, and the
+    # default build (WITH_DYNAMIC_NVIMGCODEC=ON) dlopens the library rather than
+    # linking it, so what gets configured here need not be what gets loaded.
+    # check_nvimgcodec_runtime_version() in nvimgcodec_tiff_parser.cpp asks the
+    # loaded library for its version and is the authoritative check.
     set(NVIMGCODEC_SONAME_CANDIDATES
         "libnvimgcodec.so.0.9.0"
         "libnvimgcodec.so.0"
@@ -72,17 +79,28 @@ if (NOT TARGET deps::nvimgcodec)
     find_package(nvimgcodec QUIET)
 
     if (nvimgcodec_FOUND)
+        # Same policy as _cucim_check_nvimgcodec_version() applies to the header
+        # path: reject below the minimum, warn above the pinned range.
         if(DEFINED nvimgcodec_VERSION AND nvimgcodec_VERSION VERSION_LESS "0.9.0")
             message(FATAL_ERROR
                 "nvImageCodec ${nvimgcodec_VERSION} found via find_package, but cuCIM "
                 "requires >=0.9.0 (packaging pins >=0.9.0,<0.10.0).")
+        elseif(DEFINED nvimgcodec_VERSION AND NOT nvimgcodec_VERSION VERSION_LESS "0.10.0")
+            message(WARNING
+                "nvImageCodec ${nvimgcodec_VERSION} found via find_package is outside the "
+                "pinned range (>=0.9.0,<0.10.0) and is untested with this cuCIM build.")
         endif()
         add_library(deps::nvimgcodec INTERFACE IMPORTED GLOBAL)
         target_link_libraries(deps::nvimgcodec INTERFACE nvimgcodec::nvimgcodec)
         message(STATUS "✓ nvImageCodec found via find_package (version: ${nvimgcodec_VERSION})")
     else()
         # Manual detection: try conda environment, Python site-packages, and system paths
-        if (DEFINED ENV{CONDA_PREFIX})
+        if (DEFINED ENV{CONDA_BUILD})
+            # Inside conda-build, CONDA_PREFIX points at the build environment
+            # rather than the install prefix, so use PREFIX instead.
+            _cucim_find_nvimgcodec_library(NVIMGCODEC_LIB_PATH "$ENV{PREFIX}/lib")
+            set(NVIMGCODEC_INCLUDE_PATH "$ENV{PREFIX}/include/")
+        elseif (DEFINED ENV{CONDA_PREFIX})
             # Try native conda package (libnvimgcodec-dev)
             set(CONDA_NATIVE_ROOT "$ENV{CONDA_PREFIX}")
             if(EXISTS "${CONDA_NATIVE_ROOT}/include/nvimgcodec.h")
