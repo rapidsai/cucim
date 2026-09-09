@@ -607,9 +607,17 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
                              ex < static_cast<int64_t>(width_) &&
                              ey < static_cast<int64_t>(height_));
 
+    // GPU output caches its tiles in the device-resident cache and assembles
+    // them with device-to-device copies.  Staging through host memory instead
+    // would also forfeit nvImageCodec's direct-to-device decode, which made a
+    // warm cached read slower than an uncached one for CUDA output (#1069).
+    const bool assemble_on_device = (out_device.type() == cucim::io::DeviceType::kCUDA);
+
     if (use_tile_caching)
     {
-        cucim::cache::ImageCache& image_cache = cucim::CuImage::cache_manager().cache();
+        cucim::cache::ImageCache& image_cache = assemble_on_device ?
+                                                    cucim::CuImage::cache_manager().device_cache() :
+                                                    cucim::CuImage::cache_manager().cache();
         cucim::cache::CacheType cache_type = image_cache.type();
 
         if (cache_type == cucim::cache::CacheType::kNoCache)
@@ -620,7 +628,9 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
 
     if (use_tile_caching)
     {
-        cucim::cache::ImageCache& image_cache = cucim::CuImage::cache_manager().cache();
+        cucim::cache::ImageCache& image_cache = assemble_on_device ?
+                                                    cucim::CuImage::cache_manager().device_cache() :
+                                                    cucim::CuImage::cache_manager().cache();
 
         const uint32_t tw = tile_width_;
         const uint32_t th = tile_height_;
@@ -645,20 +655,47 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
 
         const uint64_t ifd_hash = hash_value_;
 
-        // Tile assembly uses host memcpy/memset, so we always need a host-side
-        // buffer.  When the caller provided a CPU buffer we can write directly
-        // into it; when the output is CUDA (or no buffer was provided) we
-        // allocate a temporary host staging buffer (RAII-managed).
+        // Assemble in whichever memory space the output lives in, so no staging
+        // copy is needed either way.  A caller-supplied buffer is already on the
+        // requested device, so we write straight into it; otherwise we allocate
+        // our own and hand it over at the end.
         const bool caller_owns_buffer = is_buf_available && output_buffer != nullptr;
-        const bool caller_buffer_on_device =
-            caller_owns_buffer && out_device.type() == cucim::io::DeviceType::kCUDA;
+
+        // RAII for the device raster; the host raster uses cucim_free below.
+        struct DeviceRaster
+        {
+            uint8_t* ptr = nullptr;
+            ~DeviceRaster()
+            {
+                if (ptr)
+                {
+                    cudaFree(ptr);
+                }
+            }
+            uint8_t* release()
+            {
+                uint8_t* released = ptr;
+                ptr = nullptr;
+                return released;
+            }
+        } device_raster_owner;
 
         std::unique_ptr<uint8_t, decltype(cucim_free)*> host_raster_owner(nullptr, cucim_free);
-        uint8_t* host_raster = nullptr;
+        uint8_t* raster = nullptr;
 
-        if (caller_owns_buffer && !caller_buffer_on_device)
+        if (caller_owns_buffer)
         {
-            host_raster = output_buffer;
+            raster = output_buffer;
+        }
+        else if (assemble_on_device)
+        {
+            uint8_t* gpu_raster = nullptr;
+            if (cudaMalloc(reinterpret_cast<void**>(&gpu_raster), one_raster_size) != cudaSuccess)
+            {
+                throw std::runtime_error("Failed to allocate GPU output buffer for tile assembly");
+            }
+            device_raster_owner.ptr = gpu_raster;
+            raster = gpu_raster;
         }
         else
         {
@@ -667,11 +704,31 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
             {
                 throw std::runtime_error("Failed to allocate host output buffer for tile assembly");
             }
-            host_raster = host_raster_owner.get();
+            raster = host_raster_owner.get();
         }
 
         const uint32_t dest_row_stride = static_cast<uint32_t>(w) * samples * bytes_per_px;
-        uint8_t* dest_row_ptr = host_raster;
+        uint8_t* dest_row_ptr = raster;
+
+        // Used when a tile can neither be allocated nor decoded.  Strided fills
+        // and copies keep the device path to a single call per tile instead of
+        // one per row.
+        auto fill_background = [&](uint8_t* dest, uint32_t bytes_per_row, uint32_t rows) {
+            if (assemble_on_device)
+            {
+                if (cudaMemset2D(dest, dest_row_stride, background_value, bytes_per_row, rows) != cudaSuccess)
+                {
+                    throw std::runtime_error("Failed to fill background in GPU raster");
+                }
+            }
+            else
+            {
+                for (uint32_t r = 0; r < rows; ++r)
+                {
+                    memset(dest + r * dest_row_stride, background_value, bytes_per_row);
+                }
+            }
+        };
 
         #ifdef DEBUG
         ::fmt::print("🧩 Tile caching: ROI ({},{})→({},{}) maps to tiles [{},{}]→[{},{}], stride_y={}\n",
@@ -751,24 +808,24 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
                                      tile_col, tile_row);
                         #endif
 
-                        for (uint32_t r = 0; r < copy_rows; ++r)
-                        {
-                            memset(dest_row_ptr + dest_col_byte_offset + r * dest_row_stride,
-                                   background_value, copy_bytes_per_row);
-                        }
+                        fill_background(dest_row_ptr + dest_col_byte_offset, copy_bytes_per_row, copy_rows);
                         dest_col_byte_offset += copy_bytes_per_row;
                         continue;
                     }
 
-                    // Wrap immediately so the destructor handles backend-correct cleanup
-                    tile_value = image_cache.create_value(tile_mem, tile_buf_size);
+                    // Wrap immediately so the destructor handles backend-correct cleanup.
+                    // The value must carry the cache's device type, or a device
+                    // allocation would be released with the host deallocator.
+                    tile_value = image_cache.create_value(
+                        tile_mem, tile_buf_size,
+                        assemble_on_device ? cucim::io::DeviceType::kCUDA : cucim::io::DeviceType::kCPU);
                     uint8_t* tile_buf = static_cast<uint8_t*>(tile_value->data);
 
                     bool decode_ok = ::cuslide2::nvimgcodec::decode_ifd_region_nvimgcodec(
                         ifd_info, main_code_stream,
                         tile_origin_x, tile_origin_y, actual_tw, actual_th,
                         tile_buf,
-                        cucim::io::Device("cpu"));
+                        assemble_on_device ? out_device : cucim::io::Device("cpu"));
 
                     if (decode_ok)
                     {
@@ -790,11 +847,7 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
                                      tile_col, tile_row);
                         #endif
 
-                        for (uint32_t r = 0; r < copy_rows; ++r)
-                        {
-                            memset(dest_row_ptr + dest_col_byte_offset + r * dest_row_stride,
-                                   background_value, copy_bytes_per_row);
-                        }
+                        fill_background(dest_row_ptr + dest_col_byte_offset, copy_bytes_per_row, copy_rows);
                         dest_col_byte_offset += copy_bytes_per_row;
                         continue;
                     }
@@ -807,11 +860,25 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
                 const uint32_t src_byte_offset =
                     (tile_pixel_sy * actual_tw + tile_pixel_sx) * samples * bytes_per_px;
 
-                for (uint32_t r = 0; r < copy_rows; ++r)
+                if (assemble_on_device)
                 {
-                    memcpy(dest_row_ptr + dest_col_byte_offset + r * dest_row_stride,
-                           tile_data + src_byte_offset + r * tile_row_stride,
-                           copy_bytes_per_row);
+                    // Both sides are device memory, so this never touches the host.
+                    if (cudaMemcpy2D(dest_row_ptr + dest_col_byte_offset, dest_row_stride,
+                                     tile_data + src_byte_offset, tile_row_stride,
+                                     copy_bytes_per_row, copy_rows,
+                                     cudaMemcpyDeviceToDevice) != cudaSuccess)
+                    {
+                        throw std::runtime_error("Failed to copy cached tile into GPU raster");
+                    }
+                }
+                else
+                {
+                    for (uint32_t r = 0; r < copy_rows; ++r)
+                    {
+                        memcpy(dest_row_ptr + dest_col_byte_offset + r * dest_row_stride,
+                               tile_data + src_byte_offset + r * tile_row_stride,
+                               copy_bytes_per_row);
+                    }
                 }
 
                 dest_col_byte_offset += copy_bytes_per_row;
@@ -820,42 +887,17 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
             dest_row_ptr += static_cast<size_t>(copy_rows) * dest_row_stride;
         }
 
-        // --- Move assembled raster to the requested output device ---
-        if (caller_buffer_on_device)
+        // --- Publish the assembled raster ---
+        // It was assembled in place on the requested device, so there is nothing
+        // left to transfer; we only take ownership of a buffer we allocated.
+        if (!caller_owns_buffer)
         {
-            // Caller provided a device buffer — copy the host staging data into it.
-            cudaError_t err = cudaMemcpy(
-                output_buffer, host_raster, one_raster_size, cudaMemcpyHostToDevice);
-            if (err != cudaSuccess)
-            {
-                throw std::runtime_error("Failed to copy tile-cached raster to caller GPU buffer");
-            }
-            raster_type = cucim::io::DeviceType::kCUDA;
+            output_buffer = assemble_on_device ? device_raster_owner.release() : host_raster_owner.release();
         }
-        else if (!caller_owns_buffer)
-        {
-            if (out_device.type() == cucim::io::DeviceType::kCUDA)
-            {
-                uint8_t* gpu_buf = nullptr;
-                cudaError_t err = cudaMalloc(reinterpret_cast<void**>(&gpu_buf), one_raster_size);
-                if (err != cudaSuccess)
-                {
-                    throw std::runtime_error("Failed to allocate GPU buffer for tile-cached output");
-                }
-                err = cudaMemcpy(gpu_buf, host_raster, one_raster_size, cudaMemcpyHostToDevice);
-                if (err != cudaSuccess)
-                {
-                    cudaFree(gpu_buf);
-                    throw std::runtime_error("Failed to copy tile-cached raster to GPU");
-                }
 
-                output_buffer = gpu_buf;
-                raster_type = cucim::io::DeviceType::kCUDA;
-            }
-            else
-            {
-                output_buffer = host_raster_owner.release();
-            }
+        if (assemble_on_device)
+        {
+            raster_type = cucim::io::DeviceType::kCUDA;
         }
 
         // Set up output metadata
