@@ -46,8 +46,9 @@ struct PerProcessImageCacheItem
 PerProcessImageCacheValue::PerProcessImageCacheValue(void* data,
                                                      uint64_t size,
                                                      void* user_obj,
-                                                     const cucim::io::DeviceType device_type)
-    : ImageCacheValue(data, size, user_obj, device_type){};
+                                                     const cucim::io::DeviceType device_type,
+                                                     cucim::memory::DeviceResources device_resources)
+    : ImageCacheValue(data, size, user_obj, device_type), device_resources_(std::move(device_resources)){};
 
 PerProcessImageCacheValue::~PerProcessImageCacheValue()
 {
@@ -59,8 +60,10 @@ PerProcessImageCacheValue::~PerProcessImageCacheValue()
             cucim_free(data);
             break;
         case io::DeviceType::kCUDA: {
-            cudaError_t cuda_status;
-            CUDA_TRY(cudaFree(data));
+            // Returned to the resource that allocated it, not to cudaFree: a
+            // pool resource has to get its block back to stay a pool, and
+            // `size` is what tells it which block this was.
+            device_resources_.deallocate(data, size);
             break;
         }
         case io::DeviceType::kCUDAHost:
@@ -103,7 +106,15 @@ std::shared_ptr<ImageCacheValue> PerProcessImageCache::create_value(void* data,
                                                                     uint64_t size,
                                                                     const cucim::io::DeviceType device_type)
 {
-    return std::make_shared<PerProcessImageCacheValue>(data, size, nullptr, device_type);
+    // The value keeps the resource so it can free through it later, which is
+    // the only way the pairing stays correct if set_device_resources() swaps
+    // the resource while this entry is still cached.
+    return std::make_shared<PerProcessImageCacheValue>(data, size, nullptr, device_type, device_resources_);
+}
+
+void PerProcessImageCache::set_device_resources(cucim::memory::DeviceResources device_resources)
+{
+    device_resources_ = std::move(device_resources);
 }
 
 void* PerProcessImageCache::allocate(std::size_t n)
@@ -113,10 +124,17 @@ void* PerProcessImageCache::allocate(std::size_t n)
     case io::DeviceType::kCPU:
         return cucim_malloc(n);
     case io::DeviceType::kCUDA: {
-        cudaError_t cuda_status;
-        void* image_data_ptr = nullptr;
-        CUDA_TRY(cudaMalloc(&image_data_ptr, n));
-        return image_data_ptr;
+        // The resource throws on failure, whereas this returns nullptr to
+        // signal "no room in the cache" to callers that then decode without
+        // caching. Keep that contract rather than propagating.
+        try
+        {
+            return device_resources_.allocate(n);
+        }
+        catch (const std::bad_alloc&)
+        {
+            return nullptr;
+        }
     }
     case io::DeviceType::kCUDAHost:
     case io::DeviceType::kCUDAManaged:

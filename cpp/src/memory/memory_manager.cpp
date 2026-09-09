@@ -7,12 +7,11 @@
 
 #include "cucim/memory/memory_manager.h"
 
-#include <memory_resource>
-
 #include <cuda_runtime.h>
 #include <fmt/format.h>
 
 #include "cucim/io/device_type.h"
+#include "cucim/memory/device_resources.h"
 #include "cucim/profiler/nvtx3.h"
 #include "cucim/util/cuda.h"
 
@@ -64,7 +63,10 @@ void get_pointer_attributes(PointerAttributes& attr, const void* ptr)
     }
 }
 
-CUCIM_API bool move_raster_from_host(void** target, size_t size, const cucim::io::Device& dst_device)
+EXPORT_VISIBLE bool move_raster_from_host(void** target,
+                                          size_t size,
+                                          const cucim::io::Device& dst_device,
+                                          DeviceResources& resources)
 {
     switch (dst_device.type())
     {
@@ -73,15 +75,15 @@ CUCIM_API bool move_raster_from_host(void** target, size_t size, const cucim::io
     case cucim::io::DeviceType::kCUDA: {
         cudaError_t cuda_status;
         void* host_mem = *target;
-        void* cuda_mem;
-        CUDA_TRY(cudaMalloc(&cuda_mem, size));
-        if (cuda_status)
-        {
-            throw std::bad_alloc();
-        }
+        // Throws std::bad_alloc on failure, which is what the hand-rolled
+        // check below used to raise.
+        void* cuda_mem = resources.allocate(size);
         CUDA_TRY(cudaMemcpy(cuda_mem, host_mem, size, cudaMemcpyHostToDevice));
         if (cuda_status)
         {
+            // Give the block back before unwinding, or the failed transfer
+            // leaks it. The original code leaked here.
+            resources.deallocate(cuda_mem, size);
             throw std::bad_alloc();
         }
         cucim_free(host_mem);
@@ -94,7 +96,10 @@ CUCIM_API bool move_raster_from_host(void** target, size_t size, const cucim::io
     return true;
 }
 
-CUCIM_API bool move_raster_from_device(void** target, size_t size, const cucim::io::Device& dst_device)
+EXPORT_VISIBLE bool move_raster_from_device(void** target,
+                                            size_t size,
+                                            const cucim::io::Device& dst_device,
+                                            DeviceResources& resources)
 {
     switch (dst_device.type())
     {
@@ -105,9 +110,10 @@ CUCIM_API bool move_raster_from_device(void** target, size_t size, const cucim::
         CUDA_TRY(cudaMemcpy(host_mem, cuda_mem, size, cudaMemcpyDeviceToHost));
         if (cuda_status)
         {
+            cucim_free(host_mem);
             throw std::bad_alloc();
         }
-        cudaFree(cuda_mem);
+        resources.deallocate(cuda_mem, size);
         *target = host_mem;
         break;
     }
@@ -117,6 +123,26 @@ CUCIM_API bool move_raster_from_device(void** target, size_t size, const cucim::
         throw std::runtime_error("Unsupported device type");
     }
     return true;
+}
+
+// The resource-free overloads are the long-standing entry points and are what
+// the plugins call. They delegate to a default-constructed handle, which is
+// cudaMalloc/cudaFree, so their behaviour is unchanged.
+//
+// This is also the only correct thing they can do: a buffer allocated inside a
+// plugin came from a raw cudaMalloc, and freeing it through a caller's pool
+// resource would corrupt that pool.
+
+CUCIM_API bool move_raster_from_host(void** target, size_t size, const cucim::io::Device& dst_device)
+{
+    DeviceResources resources{};
+    return move_raster_from_host(target, size, dst_device, resources);
+}
+
+CUCIM_API bool move_raster_from_device(void** target, size_t size, const cucim::io::Device& dst_device)
+{
+    DeviceResources resources{};
+    return move_raster_from_device(target, size, dst_device, resources);
 }
 
 } // namespace cucim::memory

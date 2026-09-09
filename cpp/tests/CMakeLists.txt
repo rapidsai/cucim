@@ -16,6 +16,7 @@ add_executable(cucim_tests
         test_read_region.cpp
         test_cufile.cpp
         test_metadata.cpp
+        test_device_resources.cpp
         )
 
 set_target_properties(cucim_tests
@@ -50,6 +51,15 @@ target_link_libraries(cucim_tests
             deps::openslide
             deps::taskflow
             Threads::Threads # -lpthread
+        )
+
+# Same reason as in cpp/CMakeLists.txt: CCCL must be searched before the CUDA
+# toolkit's older bundled libcudacxx, and CUDA::cudart_static above brings the
+# toolkit include directory in.
+target_include_directories(cucim_tests
+        BEFORE
+        PRIVATE
+            ${deps-cccl_SOURCE_DIR}/libcudacxx/include
         )
 
 include(Catch)

@@ -7,6 +7,7 @@
 #define CUCIM_CACHE_IMAGE_CACHE_PER_PROCESS_H
 
 #include "cucim/cache/image_cache.h"
+#include "cucim/memory/device_resources.h"
 
 #include <libcuckoo/cuckoohash_map.hh>
 #include <memory>
@@ -38,11 +39,25 @@ struct PerProcessImageCacheItem;
 
 struct PerProcessImageCacheValue : public ImageCacheValue
 {
+    /**
+     * @param device_resources Resource that allocated *data*, when
+     *        *device_type* is kCUDA. Held by value rather than by reference
+     *        because a cached value can outlive the cache that produced it
+     *        (an entry evicted while a reader still holds it is destroyed
+     *        last), and freeing through a dangling resource would be worse
+     *        than the duplicated handle. Copying is cheap: the handle is a
+     *        type-erased resource plus a stream.
+     */
     PerProcessImageCacheValue(void* data,
                               uint64_t size,
                               void* user_obj = nullptr,
-                              const cucim::io::DeviceType device_type = cucim::io::DeviceType::kCPU);
+                              const cucim::io::DeviceType device_type = cucim::io::DeviceType::kCPU,
+                              cucim::memory::DeviceResources device_resources = {});
     ~PerProcessImageCacheValue() override;
+
+private:
+    /// Must be the resource that allocated `data`; see the constructor.
+    cucim::memory::DeviceResources device_resources_;
 };
 
 
@@ -91,6 +106,19 @@ public:
 
     std::shared_ptr<ImageCacheValue> find(const std::shared_ptr<ImageCacheKey>& key) override;
 
+    /**
+     * @brief Allocate device tiles from *device_resources* from now on.
+     *
+     * Only affects allocations made after the call. Entries already cached
+     * keep a copy of the resource they were allocated from, so they are still
+     * freed correctly; the two resources simply coexist until those entries
+     * are evicted.
+     *
+     * Not declared on ImageCache because that header is included by the
+     * plugins, which would then all need CCCL on their include path.
+     */
+    void set_device_resources(cucim::memory::DeviceResources device_resources);
+
 private:
     bool is_list_full() const;
     bool is_memory_full(uint64_t additional_size = 0) const;
@@ -98,6 +126,9 @@ private:
     bool erase(const std::shared_ptr<ImageCacheKey>& key);
 
     std::vector<std::mutex> mutex_array_;
+
+    /// Where device tiles come from. Defaults to cudaMalloc/cudaFree.
+    cucim::memory::DeviceResources device_resources_;
 
     std::atomic<uint64_t> size_nbytes_ = 0; /// size of cache memory used
     uint64_t capacity_nbytes_ = 0; /// size of cache memory allocated
