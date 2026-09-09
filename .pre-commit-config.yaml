@@ -149,6 +149,11 @@ repos:
             ^python/cucim/src/cucim/skimage/filters/_window[.]py$|
             ^python/cucim/src/cucim/skimage/filters/cuda/histogram_median[.]cu$|
             ^python/cucim/src/cucim/skimage/filters/lpi_filter[.]py$|
+            ^python/cucim/src/cucim/skimage/filters/rank/__init__[.]py$|
+            ^python/cucim/src/cucim/skimage/filters/rank/_generic[.]py$|
+            ^python/cucim/src/cucim/skimage/filters/rank/_percentile[.]py$|
+            ^python/cucim/src/cucim/skimage/filters/rank/_rank_filter[.]py$|
+            ^python/cucim/src/cucim/skimage/filters/rank/tests/test_rank[.]py$|
             ^python/cucim/src/cucim/skimage/filters/ridges[.]py$|
             ^python/cucim/src/cucim/skimage/filters/tests/test_correlate[.]py$|
             ^python/cucim/src/cucim/skimage/filters/tests/test_edges[.]py$|
@@ -434,6 +439,11 @@ repos:
             python/cucim/src/cucim/skimage/filters/_window[.]py$|
             python/cucim/src/cucim/skimage/filters/lpi_filter[.]py$|
             python/cucim/src/cucim/skimage/filters/ridges[.]py$|
+            python/cucim/src/cucim/skimage/filters/rank/__init__[.]py$|
+            python/cucim/src/cucim/skimage/filters/rank/_generic[.]py$|
+            python/cucim/src/cucim/skimage/filters/rank/_percentile[.]py$|
+            python/cucim/src/cucim/skimage/filters/rank/_rank_filter[.]py$|
+            python/cucim/src/cucim/skimage/filters/rank/tests/test_rank[.]py$|
             python/cucim/src/cucim/skimage/filters/tests/test_correlate[.]py$|
             python/cucim/src/cucim/skimage/filters/tests/test_edges[.]py$|
             python/cucim/src/cucim/skimage/filters/tests/test_fft_based[.]py$|

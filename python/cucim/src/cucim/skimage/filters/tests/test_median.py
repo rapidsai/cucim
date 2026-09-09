@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import math
@@ -12,7 +12,7 @@ from skimage import data
 
 from cucim.skimage import morphology
 from cucim.skimage._shared.testing import expected_warnings
-from cucim.skimage.filters import median
+from cucim.skimage.filters import median, rank
 
 
 @pytest.fixture
@@ -34,14 +34,12 @@ def camera():
     return cp.array(data.camera())
 
 
-# TODO: mode='rank' disabled until it has been implemented
 @pytest.mark.parametrize(
     "mode, cval, behavior, warning_type",
     [
         ("nearest", 0.0, "ndimage", []),
-        # ('constant', 0.0, 'rank', (UserWarning,)),
-        # ('nearest', 0.0, 'rank', []),
-        ("nearest", 0.0, "ndimage", []),
+        ("constant", 0.0, "rank", (UserWarning,)),
+        ("nearest", 0.0, "rank", []),
     ],
 )
 def test_median_warning(image, mode, cval, behavior, warning_type):
@@ -52,7 +50,6 @@ def test_median_warning(image, mode, cval, behavior, warning_type):
         median(image, mode=mode, behavior=behavior)
 
 
-# TODO: update if rank.median implemented
 @pytest.mark.parametrize(
     "behavior, func",
     [("ndimage", ndimage.median_filter)],
@@ -93,6 +90,34 @@ def test_median_behavior(
         median(cam2, footprint, mode=mode, behavior=behavior, out=out),
         func(cam2, size=footprint_shape, mode=mode, output=out),
     )
+
+
+@pytest.mark.parametrize("footprint_tuple", (False, True))
+@pytest.mark.parametrize("out", [None, "array"])
+def test_median_rank_behavior_matches_rank_median(camera, footprint_tuple, out):
+    footprint_shape = (3, 5)
+    if footprint_tuple:
+        footprint = footprint_shape
+        rank_footprint = cp.ones(footprint_shape, dtype=bool)
+    else:
+        footprint = cp.ones(footprint_shape, dtype=bool)
+        rank_footprint = footprint
+    cam2 = camera[:64, :75]
+    out_arg = cp.zeros_like(cam2) if out == "array" else None
+    expected_out = cp.zeros_like(cam2) if out == "array" else None
+
+    result = median(
+        cam2,
+        footprint,
+        behavior="rank",
+        out=out_arg,
+    )
+    expected = rank.median(cam2, footprint=rank_footprint, out=expected_out)
+
+    if out_arg is not None:
+        assert result is out_arg
+        assert expected is expected_out
+    assert_allclose(result, expected)
 
 
 @pytest.mark.parametrize(
@@ -262,18 +287,12 @@ def test_median_preserve_dtype(image, dtype):
     assert median_image.dtype == dtype
 
 
-# TODO: update if rank.median implemented
-# def test_median_error_ndim():
-#     img = cp.random.randint(0, 10, size=(5, 5, 5), dtype=cp.uint8)
-#     with pytest.raises(ValueError):
-#         median(img, behavior='rank')
-
-
-# TODO: update if rank.median implemented
 @pytest.mark.parametrize(
     "img, behavior",
-    # (cp.random.randint(0, 10, size=(3, 3), dtype=cp.uint8), 'rank'),
     [
+        (cp.random.randint(0, 10, size=(3, 3), dtype=cp.uint8), "rank"),
+        # note: upstream scikit-image is 2D-only in rank mode, but cuCIM is nD
+        (cp.random.randint(0, 10, size=(3, 3, 3), dtype=cp.uint8), "rank"),
         (cp.random.randint(0, 10, size=(3, 3), dtype=cp.uint8), "ndimage"),
         (cp.random.randint(0, 10, size=(3, 3, 3), dtype=cp.uint8), "ndimage"),
     ],
