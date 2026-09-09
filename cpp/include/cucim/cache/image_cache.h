@@ -26,6 +26,25 @@ struct EXPORT_VISIBLE ImageCacheKey
 {
     ImageCacheKey(uint64_t file_hash, uint64_t index);
 
+    /**
+     * @brief Hash identifying this key's lock in the cache's mutex pool.
+     *
+     * Pass this to ImageCache::lock(), unlock() and mutex() instead of
+     * deriving a hash at the call site.  Callers previously computed their own
+     * value next to the key they had just created, which meant the same tile
+     * was described two different ways in adjacent lines, and nothing tied the
+     * two together if one of them changed.
+     *
+     * The value only selects which mutex of the pool guards this entry, so it
+     * is not an identity: it does not have to be unique, but every lock(),
+     * unlock() and mutex() call for a given entry must derive it the same way
+     * or they will take different locks.  Deriving it from the key is what
+     * guarantees that.
+     *
+     * @return uint64_t
+     */
+    uint64_t lock_hash() const;
+
     uint64_t file_hash = 0; /// st_dev + st_ino + st_mtime + ifd_index
     uint64_t location_hash = 0; ///  tile_index or (x , y)
 };
