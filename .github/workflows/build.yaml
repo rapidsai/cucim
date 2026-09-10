@@ -110,6 +110,7 @@ jobs:
       build-datetime: ${{ needs.build-details.outputs.build-datetime }}
       branch: ${{ inputs.branch }}
       date: ${{ inputs.date }}
+      matrix_filter: group_by({CUDA_VER, ARCH}) | map(min_by(.PY_VER | split(".") | map(tonumber)))
       script: ci/build_python.sh
       sha: ${{ inputs.sha }}
   upload-conda:
@@ -143,6 +144,7 @@ jobs:
       branch: ${{ inputs.branch }}
       sha: ${{ inputs.sha }}
       date: ${{ inputs.date }}
+      matrix_filter: group_by({CUDA_VER, ARCH}) | map(min_by(.PY_VER | split(".") | map(tonumber)))
       script: ci/build_wheel.sh
       package-name: cucim
       package-type: python
