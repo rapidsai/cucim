@@ -567,10 +567,11 @@ ssize_t CuFileDriver::pread(void* buf, size_t count, off_t file_offset, off_t bu
             {
                 uint8_t internal_buf[PAGE_SIZE * 2]; // no need to initialize for pread()
                 uint8_t* buf_pos = reinterpret_cast<uint8_t*>(ALIGN_UP(static_cast<uint8_t*>(internal_buf), PAGE_SIZE));
+                off_t tail_offset = file_offset + block_read_size;
 
                 // Read the remaining block (size of PAGE_SIZE)
                 ssize_t read_cnt;
-                read_cnt = ::pread(handle_->fd, buf_pos, PAGE_SIZE, block_read_size);
+                read_cnt = ::pread(handle_->fd, buf_pos, PAGE_SIZE, tail_offset);
                 if (read_cnt < 0)
                 {
                     fmt::print(stderr, "Cannot read the remaining file content block! ({})\n", std::strerror(errno));
@@ -878,10 +879,11 @@ ssize_t CuFileDriver::pwrite(const void* buf, size_t count, off_t file_offset, o
                 uint8_t internal_buf[PAGE_SIZE * 2]{};
                 uint8_t* internal_buf_pos =
                     reinterpret_cast<uint8_t*>(ALIGN_UP(static_cast<uint8_t*>(internal_buf), PAGE_SIZE));
+                off_t tail_offset = file_offset + block_write_size;
 
                 // Read the remaining block (size of PAGE_SIZE)
                 ssize_t read_cnt;
-                read_cnt = ::pread(handle_->fd, internal_buf_pos, PAGE_SIZE, block_write_size);
+                read_cnt = ::pread(handle_->fd, internal_buf_pos, PAGE_SIZE, tail_offset);
                 if (read_cnt < 0)
                 {
                     fmt::print(stderr, "Cannot read the remaining file content block! ({})\n", std::strerror(errno));
@@ -904,7 +906,7 @@ ssize_t CuFileDriver::pwrite(const void* buf, size_t count, off_t file_offset, o
                     }
                 }
                 // Write the constructed block
-                write_cnt = ::pwrite(handle_->fd, internal_buf_pos, PAGE_SIZE, block_write_size);
+                write_cnt = ::pwrite(handle_->fd, internal_buf_pos, PAGE_SIZE, tail_offset);
                 if (write_cnt < 0)
                 {
                     fmt::print(stderr, "Cannot write the remaining file content! ({})\n", std::strerror(errno));
