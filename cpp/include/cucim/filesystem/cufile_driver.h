@@ -35,8 +35,9 @@ bool EXPORT_VISIBLE is_gds_available();
  * - "r": O_RDONLY
  * - "r+": O_RDWR
  * - "w": O_RDWR | O_CREAT | O_TRUNC
- * - "a": O_RDWR | O_CREAT
  * In addition to above flags, the method append O_CLOEXEC and O_DIRECT by default.
+ *
+ * Append mode ("a") is not supported because CuFileDriver exposes explicit-offset pread()/pwrite() APIs.
  *
  * The following is optional flags that can be added to above string:
  * - 'p': Use POSIX APIs only (first try to open with O_DIRECT). It does not use GDS.
@@ -56,6 +57,7 @@ std::shared_ptr<CuFileDriver> EXPORT_VISIBLE open(const char* file_path, const c
  * Open file with existing file descriptor.
  *
  * @param fd A file descriptor. To use GDS, fd needs to be opened with O_DIRECT flag.
+ *           File descriptors opened with O_APPEND are not supported.
  * @param no_gds true if you do not want to use GDS. Default value is `false`.
  * @param use_mmap true if you want to use memory-mapped IO. This flag is supported only for the read-only file descriptor. Default value is `false`.
  * @return A std::shared_ptr object of CuFileDriver.
