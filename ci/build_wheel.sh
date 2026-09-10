@@ -1,5 +1,5 @@
 #!/bin/bash
-# SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION.
+# SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 set -euo pipefail
@@ -8,6 +8,8 @@ package_name="cucim"
 package_dir="python/cucim"
 
 CMAKE_BUILD_TYPE="release"
+RAPIDS_PY_API="${RAPIDS_PY_API:-cp311}"
+export RAPIDS_PY_API
 
 source rapids-configure-sccache
 source rapids-datetime-string
@@ -44,8 +46,10 @@ sccache --zero-stats
 rapids-logger "pyenv rehash"
 pyenv rehash
 
-# First build the C++ lib using CMake via the run script
-./run build_local all ${CMAKE_BUILD_TYPE}
+# Build the native libraries and plugins before scikit-build-core builds the
+# ABI3 extension. Building the extension here as well would leave a
+# CPython-versioned shared object in the wheel package tree.
+./run build_local native ${CMAKE_BUILD_TYPE}
 
 sccache --show-adv-stats
 
@@ -54,12 +58,20 @@ cd "${package_dir}"
 sccache --zero-stats
 
 rapids-logger "Building '${package_name}' wheel"
+RAPIDS_PIP_WHEEL_ARGS=(
+  -w dist
+  -v
+  --no-build-isolation
+  --no-deps
+  --disable-pip-version-check
+)
+
+if [[ -n "${RAPIDS_PY_API:-}" ]]; then
+  RAPIDS_PIP_WHEEL_ARGS+=(--config-settings="skbuild.wheel.py-api=${RAPIDS_PY_API}")
+fi
+
 rapids-pip-retry wheel \
-    -w dist \
-    -v \
-    --no-build-isolation \
-    --no-deps \
-    --disable-pip-version-check \
+    "${RAPIDS_PIP_WHEEL_ARGS[@]}" \
     .
 
 sccache --show-adv-stats

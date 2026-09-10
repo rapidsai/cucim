@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 # Dependency list for https://github.com/rapidsai/dependency-file-generator
@@ -10,6 +10,7 @@ files:
       arch: [x86_64, aarch64]
     includes:
       - build
+      - build_cython
       - cuda
       - cuda_version
       - checks
@@ -45,7 +46,7 @@ files:
     extras:
       table: build-system
     includes:
-      - rapids_build_setuptools
+      - rapids_build_scikit
   py_rapids_build_cucim:
     output: pyproject
     pyproject_dir: python/cucim
@@ -54,6 +55,7 @@ files:
       key: requires
     includes:
       - build
+      - build_cython
   py_run:
     output: pyproject
     pyproject_dir: python/cucim
@@ -93,12 +95,7 @@ channels:
 dependencies:
   build:
     common:
-      # Note:
-      #   Currently omit pyproject output_type from cmake, ninja. The python
-      #   build doesn't use these, but assumes that the C++ libcucim shared
-      #   library had already previously been built and the .so file copied to
-      #   python/cucim/src/cucim/clara/ before calling `pip install .`.
-      - output_types: [conda, requirements]
+      - output_types: [conda, requirements, pyproject]
         packages:
           - cmake>=4.0
           - ninja
@@ -107,9 +104,6 @@ dependencies:
           - c-compiler
           - cuda-nvcc
           - cxx-compiler
-      - output_types: [requirements, pyproject]
-        packages:
-          - wheel
     specific:
       - output_types: conda
         matrices:
@@ -124,6 +118,11 @@ dependencies:
             packages:
               - gcc_linux-aarch64=14.*
               - sysroot_linux-aarch64==2.28
+  build_cython:
+    common:
+      - output_types: [conda, requirements, pyproject]
+        packages:
+          - cython>=3.2.2,<3.3.0a0
   checks:
     common:
       - output_types: [conda, requirements]
@@ -297,12 +296,12 @@ dependencies:
           - matrix:
             packages:
               - python>=3.11,<3.15
-  rapids_build_setuptools:
+  rapids_build_scikit:
     common:
       - output_types: [conda, requirements, pyproject]
         packages:
           - rapids-build-backend>=0.4.0,<0.5.0
-          - setuptools>=80.9.0
+          - scikit-build-core[pyproject]>=0.11.0
   run:
     common:
       - output_types: [conda, requirements, pyproject]
