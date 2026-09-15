@@ -274,7 +274,6 @@ jobs:
     with:
       docs-projects: cucim
       dry-run: true
-      version-map: ${{ vars.VERSION_MAP }}
   wheel-build:
     needs: [build-details, checks]
     permissions:
