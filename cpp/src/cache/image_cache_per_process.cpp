@@ -25,7 +25,7 @@ size_t hash<std::shared_ptr<cucim::cache::ImageCacheKey>>::operator()(
 bool equal_to<std::shared_ptr<cucim::cache::ImageCacheKey>>::operator()(
     const std::shared_ptr<cucim::cache::ImageCacheKey>& lhs, const std::shared_ptr<cucim::cache::ImageCacheKey>& rhs) const
 {
-    return lhs->location_hash == rhs->location_hash;
+    return lhs->file_hash == rhs->file_hash && lhs->location_hash == rhs->location_hash;
 }
 
 } // namespace std

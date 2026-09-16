@@ -15,6 +15,7 @@ add_executable(cucim_tests
         main.cpp
         test_read_region.cpp
         test_cufile.cpp
+        test_image_cache.cpp
         test_metadata.cpp
         )
 
