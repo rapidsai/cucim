@@ -28,7 +28,7 @@ repos:
         additional_dependencies:
           - tomli
   - repo: https://github.com/rapidsai/pre-commit-hooks
-    rev: v1.6.1
+    rev: v1.7.0
     hooks:
       - id: verify-copyright
         name: verify-copyright-cucim
@@ -585,6 +585,7 @@ repos:
             cpp/plugins/cucim[.]kit[.]cuslide/src/cuslide/jpeg/libjpeg_turbo[.]cpp$
           )
       - id: verify-alpha-spec
+      - id: verify-dependencies
       - id: verify-pyproject-license
       - id: verify-hardcoded-version
         exclude: |
