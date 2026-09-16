@@ -31,9 +31,9 @@ Open file with specific flags and mode.
 
 - "w": os.O_RDWR | os.O_CREAT | os.O_TRUNC
 
-- "a": os.O_RDWR | os.O_CREAT
-
 In addition to above flags, the method append os.O_CLOEXEC and os.O_DIRECT by default.
+
+Append mode ("a") is not supported because CuFileDriver exposes explicit-offset pread()/pwrite() APIs.
 
 The following is optional flags that can be added to above string:
 
