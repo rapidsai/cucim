@@ -1,8 +1,9 @@
-# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 {% set version = environ['RAPIDS_PACKAGE_VERSION'].lstrip('v') %}
 {% set py_version = environ['CONDA_PY'] %}
+{% set py_abi_min = '.'.join([py_version[0], py_version[1:]]) %}
 {% set cuda_version = '.'.join(environ['RAPIDS_CUDA_VERSION'].split('.')[:2]) %}
 {% set cuda_major = cuda_version.split('.')[0] %}
 {% set datetime_string = environ["RAPIDS_DATETIME_STRING"] %}
@@ -17,7 +18,8 @@ source:
 
 build:
   number: {{ GIT_DESCRIBE_NUMBER }}
-  string: cuda{{ cuda_major }}_py{{ py_version }}_{{ datetime_string }}_gh{{ GIT_DESCRIBE_HASH }}_gn{{ GIT_DESCRIBE_NUMBER }}_ph{{ PKG_HASH }}
+  python_version_independent: true
+  string: cuda{{ cuda_major }}_cp{{ py_version }}_abi3_{{ datetime_string }}_gh{{ GIT_DESCRIBE_HASH }}_gn{{ GIT_DESCRIBE_NUMBER }}_ph{{ PKG_HASH }}
   ignore_run_exports_from:
     - {{ compiler('cuda') }}
     - cuda-cudart-dev
@@ -53,14 +55,16 @@ requirements:
     - cuda-version ={{ cuda_version }}
     - cuda-cudart-dev
     - cupy >=14.0.1,!=14.1.0
+    - cython >=3.2.2,<3.3.0a0
     - libcucim ={{ version }}
-    - python
+    - python ={{ py_abi_min }}
+    - python-abi3 {{ py_abi_min }}.*
     - python-gil
     - pip
     - rapids-build-backend >=0.4.0,<0.5.0
+    - scikit-build-core >=0.11.0
     - scikit-image >=0.23.2,<0.27.0
     - scipy >=1.6
-    - setuptools >=80.9.0
   run:
     - {{ pin_compatible('cuda-version', max_pin='x', min_pin='x') }}
     - numpy >=2.0,<3.0
@@ -68,7 +72,7 @@ requirements:
     - cupy >=14.0.1,!=14.1.0
     - lazy_loader >=0.1
     - libcucim ={{ version }}
-    - python
+    - python >=3.11
     - python-gil
     - scikit-image >=0.23.2,<0.27.0
     - scipy >=1.6
