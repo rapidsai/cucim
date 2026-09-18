@@ -28,6 +28,10 @@
 #    define RANK_HIST_OUTPUT_T unsigned char
 #endif
 
+#ifndef RANK_HIST_WEIGHTED_SUM_T
+#    define RANK_HIST_WEIGHTED_SUM_T int
+#endif
+
 #if RANK_HIST_OP == OP_GEOMETRIC_MEAN
 __device__ __constant__ double geometricMeanLogLut[256] = { 0,
                                                             0.69314718055994529,
@@ -325,18 +329,18 @@ __device__ void reduceSum256(int* values)
     }
 }
 
-__device__ void histogramWeightedPrefixScan256(int* hist, int* scan)
+__device__ void histogramWeightedPrefixScan256(int* hist, RANK_HIST_WEIGHTED_SUM_T* scan)
 {
     int tx = threadIdx.x;
     if (tx < 256)
     {
-        scan[tx] = hist[tx] * tx;
+        scan[tx] = static_cast<RANK_HIST_WEIGHTED_SUM_T>(hist[tx]) * tx;
     }
     __syncthreads();
 
     for (int offset = 1; offset < 256; offset <<= 1)
     {
-        int v = 0;
+        RANK_HIST_WEIGHTED_SUM_T v = 0;
         if (tx >= offset && tx < 256)
         {
             v = scan[tx - offset];
@@ -353,7 +357,7 @@ __device__ void histogramWeightedPrefixScan256(int* hist, int* scan)
 __device__ RANK_HIST_OUTPUT_T histogramRankValue(int* hist,
                                                  int* scan,
                                                  int* tmp0,
-                                                 int* tmp1,
+                                                 RANK_HIST_WEIGHTED_SUM_T* tmp1,
                                                  double* dtmp,
                                                  int op,
                                                  int window_size,
@@ -371,8 +375,8 @@ __device__ RANK_HIST_OUTPUT_T histogramRankValue(int* hist,
     // clang-format off
 #if RANK_HIST_OP == OP_MEAN || RANK_HIST_OP == OP_SUM || RANK_HIST_OP == OP_SUBTRACT_MEAN || RANK_HIST_OP == OP_BILATERAL_MEAN || RANK_HIST_OP == OP_BILATERAL_POP || RANK_HIST_OP == OP_BILATERAL_SUM
     // clang-format on
-    __shared__ int range_start_sum;
-    __shared__ int range_end_sum;
+    __shared__ RANK_HIST_WEIGHTED_SUM_T range_start_sum;
+    __shared__ RANK_HIST_WEIGHTED_SUM_T range_end_sum;
 #endif
 
 #if RANK_HIST_OP == OP_ENTROPY
@@ -526,23 +530,23 @@ __device__ RANK_HIST_OUTPUT_T histogramRankValue(int* hist,
     {
         int bin_end = scan[tx];
         int bin_start = bin_end - hist[tx];
-        int weighted_end = tmp1[tx];
-        int weighted_start = weighted_end - hist[tx] * tx;
+        RANK_HIST_WEIGHTED_SUM_T weighted_end = tmp1[tx];
+        RANK_HIST_WEIGHTED_SUM_T weighted_start = weighted_end - static_cast<RANK_HIST_WEIGHTED_SUM_T>(hist[tx]) * tx;
 
         if (range_start > 0 && bin_start < range_start && bin_end >= range_start)
         {
-            range_start_sum = weighted_start + (range_start - bin_start) * tx;
+            range_start_sum = weighted_start + static_cast<RANK_HIST_WEIGHTED_SUM_T>(range_start - bin_start) * tx;
         }
         if (range_end > 0 && bin_start < range_end && bin_end >= range_end)
         {
-            range_end_sum = weighted_start + (range_end - bin_start) * tx;
+            range_end_sum = weighted_start + static_cast<RANK_HIST_WEIGHTED_SUM_T>(range_end - bin_start) * tx;
         }
     }
     __syncthreads();
 #        endif
 
     int selected_count_total = range_end - range_start;
-    int selected_sum_total = range_end_sum - range_start_sum;
+    RANK_HIST_WEIGHTED_SUM_T selected_sum_total = range_end_sum - range_start_sum;
     if (op == OP_BILATERAL_POP)
     {
         return static_cast<RANK_HIST_OUTPUT_T>(selected_count_total);
@@ -677,7 +681,7 @@ extern "C" __global__ void cuRankHistogram2DUint8(const unsigned char* src,
     __shared__ int H[256];
     __shared__ int Hscan[256];
     __shared__ int tmp0[256];
-    __shared__ int tmp1[256];
+    __shared__ RANK_HIST_WEIGHTED_SUM_T tmp1[256];
     __shared__ double dtmp[256];
 
     int tx = threadIdx.x;

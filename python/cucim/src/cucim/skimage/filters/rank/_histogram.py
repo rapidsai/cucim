@@ -50,6 +50,16 @@ _HISTOGRAM_MIN_FOOTPRINT_AREA = {
 _DEFAULT_SCRATCH_MB = 256
 _DEFAULT_MAX_PARTITIONS = 256
 _INT16_MAX = 32767
+_INT32_MAX = 2147483647
+_MAX_UINT8 = 255
+_WEIGHTED_HISTOGRAM_OPS = {
+    "mean",
+    "sum",
+    "subtract_mean",
+    "bilateral_mean",
+    "bilateral_pop",
+    "bilateral_sum",
+}
 _HISTOGRAM_COUNTER_TYPES = {
     "int16": (cp.int16, "short"),
     "int32": (cp.int32, "int"),
@@ -156,6 +166,16 @@ def _get_histogram_counter_dtype(footprint_shape):
     return cp.int32
 
 
+def _get_histogram_weighted_sum_dtype(operation, footprint_shape):
+    """Return the narrowest safe weighted-histogram accumulator dtype."""
+    if operation not in _WEIGHTED_HISTOGRAM_OPS:
+        return cp.int32
+    footprint_area = footprint_shape[0] * footprint_shape[1]
+    if footprint_area <= _INT32_MAX // _MAX_UINT8:
+        return cp.int32
+    return cp.int64
+
+
 def _get_rank_histogram_partitions(
     out_rows, cols, partitions=None, *, counter_dtype=cp.int32
 ):
@@ -185,7 +205,10 @@ def _get_rank_histogram_partitions(
 
 @cp.memoize(for_each_device=True)
 def _get_histogram_rank_kernel(
-    operation, counter_dtype_name, output_dtype_name
+    operation,
+    counter_dtype_name,
+    output_dtype_name,
+    weighted_sum_dtype_name,
 ):
     kernel_directory = os.path.join(os.path.dirname(__file__), "cuda")
     with open(os.path.join(kernel_directory, "histogram_rank.cu")) as f:
@@ -193,9 +216,14 @@ def _get_histogram_rank_kernel(
 
     _, counter_type = _HISTOGRAM_COUNTER_TYPES[counter_dtype_name]
     _, output_type = _HISTOGRAM_OUTPUT_TYPES[output_dtype_name]
+    weighted_sum_type = {
+        "int32": "int",
+        "int64": "long long",
+    }[weighted_sum_dtype_name]
     code = (
         f"#define RANK_HIST_OP {_HISTOGRAM_OPS[operation]}\n"
         f"#define HIST_COUNTER_T {counter_type}\n"
+        f"#define RANK_HIST_WEIGHTED_SUM_T {weighted_sum_type}\n"
         f"#define RANK_HIST_OUTPUT_T {output_type}\n" + code
     )
     return cp.RawKernel(code=code, name="cuRankHistogram2DUint8")
@@ -236,6 +264,10 @@ def _rank_histogram(
     counter_dtype = _get_histogram_counter_dtype(footprint_shape)
     counter_dtype_name = cp.dtype(counter_dtype).name
     output_dtype_name = cp.dtype(out.dtype).name
+    weighted_sum_dtype = _get_histogram_weighted_sum_dtype(
+        operation, footprint_shape
+    )
+    weighted_sum_dtype_name = cp.dtype(weighted_sum_dtype).name
     partitions = _get_rank_histogram_partitions(
         out_rows, cols, partitions=partitions, counter_dtype=counter_dtype
     )
@@ -243,7 +275,10 @@ def _rank_histogram(
     hist = cp.zeros((partitions * cols * 256,), dtype=counter_dtype)
     op_code = _HISTOGRAM_OPS[operation]
     kernel = _get_histogram_rank_kernel(
-        operation, counter_dtype_name, output_dtype_name
+        operation,
+        counter_dtype_name,
+        output_dtype_name,
+        weighted_sum_dtype_name,
     )
     window_size = footprint_shape[0] * footprint_shape[1]
     kernel(

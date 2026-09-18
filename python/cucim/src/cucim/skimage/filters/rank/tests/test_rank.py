@@ -19,7 +19,9 @@ from cucim.skimage.filters.rank import (
 )
 from cucim.skimage.filters.rank._histogram import (
     _get_histogram_counter_dtype,
+    _get_histogram_weighted_sum_dtype,
     _get_rank_histogram_partitions,
+    _rank_histogram,
     _should_use_rank_histogram,
 )
 from cucim.skimage.morphology import ball, disk, gray
@@ -1172,6 +1174,73 @@ def test_rank_histogram_partitions_default_and_env(monkeypatch):
 def test_rank_histogram_counter_dtype():
     assert _get_histogram_counter_dtype((181, 181)) == cp.int16
     assert _get_histogram_counter_dtype((181, 183)) == cp.int32
+
+
+@pytest.mark.parametrize(
+    "operation",
+    [
+        "mean",
+        "sum",
+        "subtract_mean",
+        "bilateral_mean",
+        "bilateral_pop",
+        "bilateral_sum",
+    ],
+)
+def test_rank_histogram_weighted_sum_dtype(operation):
+    assert (
+        _get_histogram_weighted_sum_dtype(operation, (2901, 2901)) == cp.int32
+    )
+    assert (
+        _get_histogram_weighted_sum_dtype(operation, (2903, 2903)) == cp.int64
+    )
+
+
+@pytest.mark.parametrize(
+    "operation, kwargs, expected",
+    [
+        ("mean", {"p0": 1, "p1": 100}, 255),
+        ("sum", {"p0": 1, "p1": 100}, 2273564955),
+        ("subtract_mean", {"p0": 1, "p1": 100}, 128),
+        ("bilateral_mean", {"s0": 10, "s1": 10}, 255),
+        ("bilateral_sum", {"s0": 10, "s1": 10}, 2296530255),
+    ],
+)
+def test_rank_histogram_weighted_sum_exceeds_int32(operation, kwargs, expected):
+    image = cp.full((1, 1), 255, dtype=cp.uint8)
+    output = cp.empty(image.shape, dtype=cp.float64)
+
+    # Exercise the production kernel directly so the very large logical
+    # window does not also require a multi-million-pixel output image.
+    result = _rank_histogram(
+        image,
+        (3001, 3001),
+        operation,
+        output=output,
+        partitions=1,
+        **kwargs,
+    )
+
+    assert result is output
+    cp.testing.assert_array_equal(result, cp.full_like(result, expected))
+
+
+def test_rank_histogram_weighted_sum_float32_output():
+    image = cp.full((1, 1), 255, dtype=cp.uint8)
+    output = cp.empty(image.shape, dtype=cp.float32)
+
+    result = _rank_histogram(
+        image,
+        (3001, 3001),
+        "bilateral_mean",
+        output=output,
+        s0=10,
+        s1=10,
+        partitions=1,
+    )
+
+    assert result is output
+    cp.testing.assert_array_equal(result, cp.full_like(result, 255))
 
 
 def test_rank_histogram_auto_cutoffs():
