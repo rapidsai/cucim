@@ -370,6 +370,94 @@ def test_noise_filter_excludes_shifted_anchor(shift_kwargs):
     cp.testing.assert_array_equal(footprint, footprint_before)
 
 
+@pytest.mark.parametrize("ndim", [3, 4])
+@pytest.mark.parametrize(
+    "legacy_shifts",
+    [
+        (0, 0, 0),
+        (1, -2, 1),
+        (-1, 2, -1),
+    ],
+)
+def test_generic_3d_legacy_shifts_match_explicit(ndim, legacy_shifts):
+    image_shape = (5, 7, 5) + ((3,) if ndim == 4 else ())
+    footprint_shape = (3, 5, 3) + ((1,) if ndim == 4 else ())
+    image = cp.arange(np.prod(image_shape), dtype=cp.uint32).reshape(
+        image_shape
+    )
+    image = (image % 251).astype(cp.uint8)
+    footprint = cp.ones(footprint_shape, dtype=bool)
+    shift_x, shift_y, shift_z = legacy_shifts
+
+    legacy = rank.mean(
+        image,
+        footprint,
+        shift_x=shift_x,
+        shift_y=shift_y,
+        shift_z=shift_z,
+        backend="elementwise",
+    )
+    explicit = rank.mean(
+        image,
+        footprint,
+        shifts=legacy_shifts + (0,) * (ndim - 3),
+        backend="elementwise",
+    )
+
+    cp.testing.assert_array_equal(legacy, explicit)
+
+
+@pytest.mark.parametrize(
+    "shift_x, shift_y",
+    [
+        (0, 0),
+        (2, -1),
+        (-2, 1),
+    ],
+)
+def test_generic_2d_legacy_shifts_match_explicit(shift_x, shift_y):
+    image = cp.arange(5 * 7, dtype=cp.uint8).reshape(5, 7)
+    footprint = cp.ones((3, 5), dtype=bool)
+
+    legacy = rank.mean(
+        image,
+        footprint,
+        shift_x=shift_x,
+        shift_y=shift_y,
+        backend="elementwise",
+    )
+    explicit = rank.mean(
+        image,
+        footprint,
+        shifts=(shift_y, shift_x),
+        backend="elementwise",
+    )
+
+    cp.testing.assert_array_equal(legacy, explicit)
+
+
+def test_generic_shift_z_rejects_2d_image():
+    image = cp.ones((5, 5), dtype=cp.uint8)
+    footprint = cp.ones((3, 3), dtype=bool)
+
+    with pytest.raises(ValueError, match="shift_z is only valid"):
+        rank.mean(image, footprint, shift_z=1)
+
+
+@pytest.mark.parametrize("legacy_shift", ["shift_x", "shift_y", "shift_z"])
+def test_generic_legacy_shifts_reject_explicit_shifts(legacy_shift):
+    image = cp.ones((5, 5, 5), dtype=cp.uint8)
+    footprint = cp.ones((3, 3, 3), dtype=bool)
+
+    with pytest.raises(ValueError, match="must be 0 when shifts is specified"):
+        rank.mean(
+            image,
+            footprint,
+            shifts=(0, 0, 0),
+            **{legacy_shift: 1},
+        )
+
+
 @pytest.mark.parametrize(
     "dtype, values, expected",
     [

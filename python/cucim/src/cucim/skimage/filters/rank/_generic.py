@@ -46,11 +46,12 @@ __all__ = [
 
 _doc_shifts_param_generic = """
     shift_z : int, optional
-        Additional footprint-center offset for 3-D images. For general N-D
-        offsets, use ``shifts`` instead. Default is 0.
+        Footprint-center offset along axis 2 for 3-D or higher-dimensional
+        images. This follows scikit-image's 3-D rank-filter convention. For
+        general N-D offsets, use ``shifts`` instead. Default is 0.
     shifts : sequence of int, optional (keyword-only)
-        N-dimensional offsets. If provided, shift_x, shift_y and shift_z
-        must be 0. Length must match image.ndim."""
+        N-dimensional offsets in direct array-axis order. If provided,
+        shift_x, shift_y and shift_z must be 0. Length must match image.ndim."""
 
 _doc_backend_param = """
     backend : {'auto', 'histogram', 'elementwise'}, optional (keyword-only)
@@ -71,7 +72,19 @@ _doc_returns = """
         inputs when ``out`` is not provided.
 """
 
-_doc_common_params_median = _doc_common_params.replace(
+_doc_common_params_generic = _doc_common_params.replace(
+    """    shift_x, shift_y : int, optional
+        Footprint-center offsets along axes 1 and 0, respectively. For general
+        N-D offsets, use ``shifts`` instead. Default is 0.""",
+    """    shift_x, shift_y : int, optional
+        Legacy footprint-center offsets. For 2-D images, shift_x offsets axis
+        1 and shift_y offsets axis 0. For 3-D or higher-dimensional images,
+        shift_x offsets axis 0 and shift_y offsets axis 1, matching
+        scikit-image's dimension-dependent rank-filter convention. For direct
+        N-D axis ordering, use ``shifts`` instead. Default is 0.""",
+)
+
+_doc_common_params_median = _doc_common_params_generic.replace(
     """    footprint : cupy.ndarray
         The neighborhood expressed as an array of 1's and 0's.""",
     """    footprint : cupy.ndarray or None, optional
@@ -85,7 +98,7 @@ def _build_generic_docstring(summary):
     return (
         summary
         + "\n\n    Parameters\n    ----------"
-        + _doc_common_params
+        + _doc_common_params_generic
         + _doc_shifts_param_generic
         + _doc_backend_param
         + _doc_cast_to_uint8_param
@@ -130,22 +143,25 @@ def _apply_generic(
     if not isinstance(image, cp.ndarray):
         raise ValueError("image must be a CuPy array")
 
-    # Convert shift_z into the N-D shifts parameter
+    # Match scikit-image's dimension-dependent legacy convention. In 2-D,
+    # shift_x/shift_y map to axes 1/0. In 3-D, shift_x/shift_y/shift_z map to
+    # axes 0/1/2. Explicit `shifts` always uses direct array-axis order.
     if shifts is not None:
         if shift_x != 0 or shift_y != 0 or shift_z != 0:
             raise ValueError(
                 "shift_x, shift_y and shift_z must be 0 when shifts "
                 "is specified"
             )
-    elif shift_z != 0:
-        if image.ndim < 3:
+    elif image.ndim < 3:
+        if shift_z != 0:
             raise ValueError(
                 "shift_z is only valid for 3D or higher dimensional images"
             )
+    else:
         shifts_list = [0] * image.ndim
-        shifts_list[0] = shift_z
+        shifts_list[0] = shift_x
         shifts_list[1] = shift_y
-        shifts_list[2] = shift_x
+        shifts_list[2] = shift_z
         shifts = tuple(shifts_list)
 
     return _apply(
