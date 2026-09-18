@@ -97,7 +97,8 @@ def _get_streaming_rank_kernel(
                     return;
                 }
                 X g = x[i];
-                if (max_val - g < g - min_val) {
+                if (g >= max_val ||
+                    (g > min_val && max_val - g < g - min_val)) {
                     y = cast<Y>(max_val);
                 } else {
                     y = cast<Y>(min_val);
@@ -581,7 +582,8 @@ def _get_percentile_range_kernel(
                 X max_val = values[actual_end - 1];
                 X g = x[i];
                 // Replace with whichever extreme is closer
-                if (max_val - g < g - min_val) {{
+                if (g >= max_val ||
+                    (g > min_val && max_val - g < g - min_val)) {{
                     y = cast<Y>(max_val);
                 }} else {{
                     y = cast<Y>(min_val);
@@ -592,7 +594,8 @@ def _get_percentile_range_kernel(
                 X min_val = values[{idx_start}];
                 X max_val = values[{idx_end - 1}];
                 X g = x[i];
-                if (max_val - g < g - min_val) {{
+                if (g >= max_val ||
+                    (g > min_val && max_val - g < g - min_val)) {{
                     y = cast<Y>(max_val);
                 }} else {{
                     y = cast<Y>(min_val);

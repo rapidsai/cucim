@@ -488,6 +488,95 @@ def test_noise_filter_preserves_native_distance_precision(
         cp.testing.assert_array_equal(result[0, 1], expected)
 
 
+@pytest.mark.parametrize("dtype", [cp.uint32, cp.uint64])
+@pytest.mark.parametrize(
+    "center, p0, p1, expected",
+    [
+        (30, 0.01, 0.67, 20),
+        (0, 0.34, 1.0, 10),
+    ],
+)
+def test_enhance_contrast_percentile_unsigned_outside_interval(
+    dtype, center, p0, p1, expected
+):
+    base = 2**54 if dtype == cp.uint64 else 2**30
+    image = cp.asarray([[base + 10, base + center, base + 20]], dtype=dtype)
+    footprint = cp.ones((1, 3), dtype=bool)
+
+    result = rank.enhance_contrast_percentile(
+        image,
+        footprint,
+        p0=p0,
+        p1=p1,
+        backend="elementwise",
+        cast_to_uint8=False,
+    )
+
+    assert result[0, 1] == base + expected
+
+
+@pytest.mark.parametrize("dtype", [cp.uint32, cp.uint64])
+@pytest.mark.parametrize(
+    "filter_name, kwargs",
+    [
+        ("enhance_contrast", {}),
+        ("enhance_contrast_percentile", {"p0": 0.01, "p1": 1.0}),
+    ],
+)
+@pytest.mark.parametrize("center, expected", [(30, 20), (0, 10)])
+def test_masked_enhance_contrast_unsigned_outside_interval(
+    dtype, filter_name, kwargs, center, expected
+):
+    base = 2**54 if dtype == cp.uint64 else 2**30
+    image = cp.asarray([[base + 10, base + center, base + 20]], dtype=dtype)
+    footprint = cp.ones((1, 3), dtype=bool)
+    mask = cp.asarray([[True, False, True]])
+
+    result = getattr(rank, filter_name)(
+        image,
+        footprint,
+        mask=mask,
+        backend="elementwise",
+        cast_to_uint8=False,
+        **kwargs,
+    )
+
+    assert result[0, 1] == base + expected
+
+
+@pytest.mark.parametrize(
+    "dtype", [cp.uint8, cp.uint16, cp.uint32, cp.uint64, cp.float32, cp.float64]
+)
+@pytest.mark.parametrize(
+    "low, center, high, expected",
+    [
+        (10, 0, 20, 10),
+        (10, 10, 20, 10),
+        (10, 15, 20, 10),
+        (10, 17, 20, 20),
+        (10, 20, 20, 20),
+        (10, 25, 20, 20),
+        (10, 15, 10, 10),
+    ],
+)
+def test_enhance_contrast_endpoint_selection(
+    dtype, low, center, high, expected
+):
+    image = cp.asarray([[low, center, high]], dtype=dtype)
+    footprint = cp.ones((1, 3), dtype=bool)
+    mask = cp.asarray([[True, False, True]])
+
+    result = rank.enhance_contrast(
+        image,
+        footprint,
+        mask=mask,
+        backend="elementwise",
+        cast_to_uint8=False,
+    )
+
+    assert result[0, 1] == expected
+
+
 @pytest.mark.parametrize("dtype", [cp.float32, cp.float64])
 @pytest.mark.parametrize("use_mask", [False, True])
 @pytest.mark.parametrize(
