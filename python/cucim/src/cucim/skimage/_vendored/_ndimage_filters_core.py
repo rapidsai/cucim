@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Infrastructure, Inc.
 # SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Networks, Inc.
-# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND MIT
 
 """A vendored subset of cupyx.scipy.ndimage._filters_core"""
@@ -169,6 +169,7 @@ def _call_kernel(
     weights,
     output,
     structure=None,
+    mask=None,
     weights_dtype=numpy.float64,
     structure_dtype=numpy.float64,
 ):
@@ -200,6 +201,9 @@ def _call_kernel(
     if structure is not None:
         structure = cupy.ascontiguousarray(structure, structure_dtype)
         args.append(structure)
+    if mask is not None:
+        mask = cupy.ascontiguousarray(mask, bool)
+        args.append(mask)
     output = _util._get_output(output, input, None, complex_output)  # noqa
     needs_temp = cupy.shares_memory(output, input, "MAY_SHARE_BOUNDS")
     if needs_temp:
