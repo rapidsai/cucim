@@ -169,10 +169,6 @@ def _get_streaming_rank_kernel(
         pre = "int n_vals = 0;"
         update = "n_vals++;"
         post = """
-            if (n_vals == 0) {
-                y = cast<Y>(x[i]);
-                return;
-            }
             y = cast<Y>(n_vals);
         """
     elif operation == "equalize":
@@ -259,10 +255,6 @@ def _get_streaming_rank_kernel(
             """
         elif operation == "bilateral_pop":
             post = """
-                if (n_vals == 0) {
-                    y = cast<Y>(x[i]);
-                    return;
-                }
                 y = cast<Y>(bilat_pop);
             """
         else:
@@ -472,7 +464,14 @@ def _get_percentile_range_kernel(
 
     if has_mask:
         # Runtime calculation of indices based on actual count
-        if operation in ("percentile", "threshold", "pop") or _bilateral_op:
+        if operation == "pop":
+            post = """
+                if (iv == 0) {{
+                    y = cast<Y>(0);
+                    return;
+                }}
+                sort(values, iv);"""
+        elif operation in ("percentile", "threshold") or _bilateral_op:
             post = """
                 if (iv == 0) {{
                     y = cast<Y>(x[i]);  // No valid values, keep original

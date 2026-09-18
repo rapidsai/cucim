@@ -77,7 +77,11 @@ def _rank_filter_brute_force_uint8(
 
             center = int(image[row, col])
             if not values:
-                out[row, col] = image[row, col]
+                out[row, col] = (
+                    0
+                    if operation in {"pop", "pop_bilateral"}
+                    else image[row, col]
+                )
             elif operation == "minimum":
                 out[row, col] = min(values)
             elif operation == "maximum":
@@ -550,6 +554,72 @@ def test_pop_percentile_preserves_finite_value_groups(use_mask):
     )
 
     assert result[0, 2] == 4
+
+
+@pytest.mark.parametrize(
+    "filter_name, kwargs",
+    [
+        ("pop", {}),
+        ("pop_percentile", {"p0": 0.0, "p1": 1.0}),
+        ("pop_percentile", {"p0": 0.1, "p1": 0.9}),
+        ("pop_bilateral", {"s0": 10, "s1": 10}),
+    ],
+)
+@pytest.mark.parametrize(
+    "image_dtype, out_dtype, cast_to_uint8",
+    [
+        (cp.uint8, cp.uint16, True),
+        (cp.float32, cp.float64, False),
+    ],
+)
+def test_population_filters_empty_mask_return_zero(
+    filter_name, kwargs, image_dtype, out_dtype, cast_to_uint8
+):
+    image = cp.full((5, 5), 255, dtype=image_dtype)
+    footprint = cp.ones((3, 3), dtype=bool)
+    mask = cp.zeros_like(image, dtype=bool)
+    out = cp.empty(image.shape, dtype=out_dtype)
+
+    result = getattr(rank, filter_name)(
+        image,
+        footprint,
+        mask=mask,
+        out=out,
+        backend="elementwise",
+        cast_to_uint8=cast_to_uint8,
+        **kwargs,
+    )
+
+    assert result is out
+    cp.testing.assert_array_equal(result, cp.zeros_like(result))
+
+
+@pytest.mark.parametrize(
+    "filter_name, kwargs",
+    [
+        ("pop", {}),
+        ("pop_percentile", {"p0": 0.0, "p1": 1.0}),
+        ("pop_percentile", {"p0": 0.1, "p1": 1.0}),
+        ("pop_bilateral", {"s0": 10, "s1": 10}),
+    ],
+)
+def test_population_filters_sparse_mask(filter_name, kwargs):
+    image = cp.full((7, 7), 17, dtype=cp.uint8)
+    footprint = cp.ones((3, 3), dtype=bool)
+    mask = cp.zeros_like(image, dtype=bool)
+    mask[3, 3] = True
+    expected = cp.zeros_like(image)
+    expected[2:5, 2:5] = 1
+
+    result = getattr(rank, filter_name)(
+        image,
+        footprint,
+        mask=mask,
+        backend="elementwise",
+        **kwargs,
+    )
+
+    cp.testing.assert_array_equal(result, expected)
 
 
 @pytest.mark.parametrize(
