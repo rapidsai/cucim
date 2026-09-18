@@ -82,6 +82,7 @@ generally preferable in these cases.
 | ``sum``                  | uint8/uint16 output can overflow                                 | Preserves native input dtype; use a wider dtype to avoid overflow |
 | ``sum_bilateral``        | uint8/uint16 output can overflow                                 | Preserves native input dtype; use a wider dtype to avoid overflow |
 | ``sum_percentile``       | uint8/uint16 output can overflow                                 | Preserves native input dtype; use a wider dtype to avoid overflow |
+| NaNs in ``pop_percentile`` | No native floating-point path; floating inputs are converted to uint8 | With ``cast_to_uint8=False``, included NaNs are not grouped together; each NaN independently advances the cumulative population count by one |
 
 See the ``_percentile``, ``_generic``, and ``_bilateral`` modules for
 additional per-function notes on dtype handling and behavioral differences.
@@ -154,6 +155,7 @@ parameter accepted by rank filters:
 
 """  # noqa: E501
 
+from ._bilateral import mean_bilateral, pop_bilateral, sum_bilateral
 from ._generic import (
     autolevel,
     enhance_contrast,
@@ -184,7 +186,6 @@ from ._percentile import (
     sum_percentile,
     threshold_percentile,
 )
-from ._bilateral import mean_bilateral, pop_bilateral, sum_bilateral
 
 __all__ = [
     'autolevel',

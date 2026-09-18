@@ -396,6 +396,74 @@ def test_noise_filter_preserves_native_distance_precision(
         cp.testing.assert_array_equal(result[0, 1], expected)
 
 
+@pytest.mark.parametrize("dtype", [cp.float32, cp.float64])
+@pytest.mark.parametrize("use_mask", [False, True])
+@pytest.mark.parametrize(
+    "values, footprint_shape, center, expected",
+    [
+        ([np.nan] * 9, (3, 3), (1, 1), 8),
+        ([1, 1, np.nan], (1, 3), (0, 1), 2),
+        ([np.nan], (1, 1), (0, 0), 0),
+    ],
+)
+def test_pop_percentile_nan_groups_terminate(
+    dtype, use_mask, values, footprint_shape, center, expected
+):
+    image = cp.asarray(values, dtype=dtype).reshape(footprint_shape)
+    footprint = cp.ones(footprint_shape, dtype=bool)
+    mask = cp.ones_like(image, dtype=bool) if use_mask else None
+
+    result = rank.pop_percentile(
+        image,
+        footprint,
+        mask=mask,
+        p0=0.1,
+        p1=0.9,
+        backend="elementwise",
+        cast_to_uint8=False,
+    )
+
+    assert result[center] == expected
+
+
+@pytest.mark.parametrize("dtype", [cp.float32, cp.float64])
+def test_pop_percentile_masked_nan_does_not_contribute(dtype):
+    image = cp.asarray([[np.nan, 1, 2]], dtype=dtype)
+    footprint = cp.ones((1, 3), dtype=bool)
+    mask = cp.asarray([[False, True, True]])
+
+    result = rank.pop_percentile(
+        image,
+        footprint,
+        mask=mask,
+        p0=0.1,
+        p1=0.9,
+        backend="elementwise",
+        cast_to_uint8=False,
+    )
+
+    assert result[0, 1] == 1
+
+
+@pytest.mark.parametrize("use_mask", [False, True])
+def test_pop_percentile_preserves_finite_value_groups(use_mask):
+    image = cp.asarray([[1, 1, 2, 2, 3]], dtype=cp.float32)
+    footprint = cp.ones((1, 5), dtype=bool)
+    mask = cp.ones_like(image, dtype=bool) if use_mask else None
+
+    result = rank.pop_percentile(
+        image,
+        footprint,
+        mask=mask,
+        p0=0.2,
+        p1=0.8,
+        backend="elementwise",
+        cast_to_uint8=False,
+    )
+
+    assert result[0, 2] == 4
+
+
 @pytest.mark.parametrize(
     "filter_name, kwargs",
     [

@@ -659,7 +659,11 @@ pop_percentile.__doc__ = _build_docstring(
     Only grayvalues between percentiles [p0, p1] are considered in the
     filter. The output is the count of neighborhood pixels whose values fall
     in histogram bins where the cumulative count is in [p0 * N, p1 * N],
-    where N is the neighborhood population.""",
+    where N is the neighborhood population. When floating-point inputs are
+    processed natively with ``cast_to_uint8=False``, included NaNs are not
+    grouped together as equal values. Each NaN independently advances the
+    cumulative population count by one. scikit-image instead converts
+    floating-point inputs to uint8 before filtering.""",
 )
 
 

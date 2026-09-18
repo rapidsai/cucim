@@ -641,7 +641,10 @@ def _get_percentile_range_kernel(
                 int pop_j = 0;
                 while (pop_j < iv) {{
                     X pop_val = values[pop_j];
-                    int pop_gs = 0;
+                    // NaNs compare unequal to themselves, so consume the
+                    // first group member unconditionally to ensure progress.
+                    int pop_gs = 1;
+                    pop_j++;
                     while (pop_j < iv && values[pop_j] == pop_val) {{
                         pop_j++;
                         pop_gs++;
@@ -661,7 +664,10 @@ def _get_percentile_range_kernel(
                 int pop_j = 0;
                 while (pop_j < {filter_size}) {{
                     X pop_val = values[pop_j];
-                    int pop_gs = 0;
+                    // NaNs compare unequal to themselves, so consume the
+                    // first group member unconditionally to ensure progress.
+                    int pop_gs = 1;
+                    pop_j++;
                     while (pop_j < {filter_size} && values[pop_j] == pop_val) {{
                         pop_j++;
                         pop_gs++;
