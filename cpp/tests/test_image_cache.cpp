@@ -66,13 +66,14 @@ TEST_CASE("ImageCacheKey::lock_hash separates neighbouring tiles", "[test_image_
         REQUIRE(slots.size() == pool_capacity);
     }
 
-    SECTION("the same tile index in different IFDs does not share a slot")
+    SECTION("the same tile index in the sample IFDs occupies distinct pool slots")
     {
-        // Tiles from different IFDs are independent entries; they should not
-        // contend just because they sit at the same grid position.
+        // Compare the actual pool slots for these sample keys. Different full
+        // hashes alone do not guarantee different slots in a finite pool.
+        constexpr uint64_t pool_capacity = 64;
         constexpr uint64_t index = 7;
         ImageCacheKey first{ 0x1111111111111111ULL, index };
         ImageCacheKey second{ 0x2222222222222222ULL, index };
-        REQUIRE(first.lock_hash() != second.lock_hash());
+        REQUIRE(first.lock_hash() % pool_capacity != second.lock_hash() % pool_capacity);
     }
 }
