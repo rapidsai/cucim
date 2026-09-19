@@ -15,6 +15,7 @@ add_executable(cuslide2_tests
         config.h
         main.cpp
         test_read_region.cpp
+        test_device_cache.cpp
         # test_read_rawtiff.cpp  # Disabled: requires libtiff-specific write_offsets_() method not available in nvImageCodec
         test_philips_tiff.cpp
         test_ome_xml.cpp
@@ -45,6 +46,7 @@ target_link_libraries(cuslide2_tests
             deps::openslide
             deps::cli11
             deps::fmt
+            Threads::Threads
         )
 
 # Add headers in src

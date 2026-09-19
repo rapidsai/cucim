@@ -96,8 +96,8 @@ std::shared_ptr<cucim::cache::ImageCache> ImageCacheManager::cache(const ImageCa
         std::lock_guard<std::mutex> guard(device_cache_mutex_);
         device_cache_config_ = config;
         // Drop the device cache so the new configuration takes effect on next
-        // use.  This also releases whatever device memory it was holding, which
-        // is what a caller reconfiguring the cache expects.
+        // use. Active readers keep the old cache and its device memory alive
+        // until their owning handles are released.
         device_cache_.reset();
     }
 

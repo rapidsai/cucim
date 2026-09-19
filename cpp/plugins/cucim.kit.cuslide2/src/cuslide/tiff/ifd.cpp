@@ -613,12 +613,14 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
     // warm cached read slower than an uncached one for CUDA output (#1069).
     const bool assemble_on_device = (out_device.type() == cucim::io::DeviceType::kCUDA);
 
+    // Keep one owning snapshot through the type check and all tile operations.
+    // Reconfiguration may replace the manager's cache while this read is active.
+    std::shared_ptr<cucim::cache::ImageCache> image_cache_owner;
     if (use_tile_caching)
     {
-        cucim::cache::ImageCache& image_cache = assemble_on_device ?
-                                                    cucim::CuImage::cache_manager().device_cache() :
-                                                    cucim::CuImage::cache_manager().cache();
-        cucim::cache::CacheType cache_type = image_cache.type();
+        image_cache_owner = assemble_on_device ? cucim::CuImage::cache_manager().get_device_cache() :
+                                                cucim::CuImage::cache_manager().get_cache();
+        cucim::cache::CacheType cache_type = image_cache_owner->type();
 
         if (cache_type == cucim::cache::CacheType::kNoCache)
         {
@@ -628,9 +630,7 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
 
     if (use_tile_caching)
     {
-        cucim::cache::ImageCache& image_cache = assemble_on_device ?
-                                                    cucim::CuImage::cache_manager().device_cache() :
-                                                    cucim::CuImage::cache_manager().cache();
+        cucim::cache::ImageCache& image_cache = *image_cache_owner;
 
         const uint32_t tw = tile_width_;
         const uint32_t th = tile_height_;

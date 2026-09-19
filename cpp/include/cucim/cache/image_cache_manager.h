@@ -50,6 +50,9 @@ public:
      * A kSharedMemory configuration has no device equivalent, since device
      * pointers cannot live in a Boost.Interprocess segment; such a
      * configuration is downgraded to kPerProcess for this cache only.
+     *
+     * This reference does not retain ownership across reconfiguration. Readers
+     * must retain get_device_cache() instead for the duration of their work.
      */
     ImageCache& device_cache() const;
 
