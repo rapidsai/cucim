@@ -323,10 +323,16 @@ private:
  *
  * Exposed so the supported range can be regression-tested. The range has to
  * agree with the pin in `dependencies.yaml` and with the one the build checks
- * in `cmake/deps/nvimgcodec.cmake`; there is no way to derive one from the
- * others, so a test is what keeps them from drifting apart.
+ * in `cmake/deps/nvimgcodec.cmake`. The C++ tests pin the runtime policy only;
+ * they do not inspect those files or detect changes to the packaging pin.
  */
 bool is_supported_nvimgcodec_version(uint32_t packed_version);
+
+/**
+ * @brief Describe a packed version, reporting raw values when the 0.9 encoding
+ *        cannot distinguish their semantic versions.
+ */
+std::string format_nvimgcodec_version(uint32_t packed_version);
 
 /**
  * @brief Singleton manager for nvImageCodec TIFF parsing

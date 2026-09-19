@@ -42,7 +42,9 @@
 
 // Declared in nvimgcodec_wrap.cc (global namespace) — returns the real
 // symbol pointer from the dynamically loaded libnvimgcodec.so.
+#ifdef WITH_DYNAMIC_NVIMGCODEC
 extern "C++" void* NvimgcodecLoadSymbol(const char* name);
+#endif
 
 namespace cuslide2::nvimgcodec
 {
@@ -82,15 +84,18 @@ static constexpr uint32_t kFirstUnsupportedNvimgcodecVersion = MAKE_SEMANTIC_VER
 /**
  * @brief Render a packed nvImageCodec version for a diagnostic message.
  *
- * The encoding gives the minor component a single digit
- * (major * 1000 + minor * 100 + patch), so 0.10.0 and 1.0.0 both pack to 1000
- * and this renders either as "1.0.0". Ordering is still preserved, so the
- * comparisons in check_nvimgcodec_runtime_version() are unaffected; only the
- * text can be misleading, and only for a minor of 10 or above, which is
- * already outside the supported range.
+ * The 0.9 headers encode major * 1000 + minor * 100 + patch, so 0.10.0
+ * and 1.0.0 both pack to 1000. Values at or above that boundary cannot be
+ * decoded unambiguously with these headers. Report the raw value instead of
+ * claiming an exact semantic version. The supported-range check still uses
+ * the packed value and rejects these versions.
  */
-static std::string format_nvimgcodec_version(uint32_t version)
+std::string format_nvimgcodec_version(uint32_t version)
 {
+    if (version >= kFirstUnsupportedNvimgcodecVersion)
+    {
+        return fmt::format("packed version {} (semantic version is ambiguous with the 0.9 headers)", version);
+    }
     return fmt::format("{}.{}.{}", NVIMGCODEC_MAJOR_FROM_SEMVER(version), NVIMGCODEC_MINOR_FROM_SEMVER(version),
                        NVIMGCODEC_PATCH_FROM_SEMVER(version));
 }
@@ -158,11 +163,15 @@ static std::string detect_nvimgcodec_extensions_path()
         return std::string(env_path);
     }
 
-    // 2. Find where libnvimgcodec.so was loaded from using dladdr on the
-    //    REAL function pointer (resolved via dynlink), not the stub address.
+    // 2. Find where libnvimgcodec.so was loaded from using the real function
+    //    address. Only dynamic builds need to resolve past the dynlink stub.
+#ifdef WITH_DYNAMIC_NVIMGCODEC
     void* real_func = ::NvimgcodecLoadSymbol("nvimgcodecGetProperties");
+#else
+    void* real_func = reinterpret_cast<void*>(&nvimgcodecGetProperties);
+#endif
     #ifdef DEBUG
-    fmt::print("[nvimgcodec_ext] NvimgcodecLoadSymbol returned: {}\n", real_func);
+    fmt::print("[nvimgcodec_ext] nvimgcodecGetProperties address: {}\n", real_func);
     #endif
     if (real_func)
     {
