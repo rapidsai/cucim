@@ -106,30 +106,40 @@ def time_reads(img, regions, size, device, repeats):
     return timings
 
 
-def measure(path, CuImage, cache_type, device, size, repeats, num_regions):
-    """Time warm and cold access patterns for one cache/device combination."""
-    # The IFD binds to whatever cache manager is active when the image is
-    # opened, so configure the cache first and open afterwards.
+def _reset_cache(CuImage, cache_type):
+    """Install an empty cache and enable hit/miss recording."""
     if cache_type == "nocache":
         CuImage.cache("nocache")
     else:
         CuImage.cache(cache_type, memory_capacity=1024)
     CuImage.cache().record(True)
 
+
+def measure(path, CuImage, cache_type, device, size, repeats, num_regions):
+    """Time warm and cold access patterns for one cache/device combination."""
+    if len(size) != 2 or any(s <= 0 for s in size):
+        raise ValueError("region must contain two positive dimensions")
+    if repeats < 1 or num_regions < 1:
+        raise ValueError("repeats and regions must be positive")
+
+    _reset_cache(CuImage, cache_type)
     img = CuImage(str(path))
     tile_sizes = img.resolutions.get("level_tile_sizes", ())
     tile = list(tile_sizes[0]) if tile_sizes else [0, 0]
 
     width, height = img.shape[1], img.shape[0]
-    # Distinct, non-overlapping origins for the miss path.
-    step = max(size[0], size[1])
-    regions = [
-        (
-            min((i * step) % max(width - size[0], 1), width - size[0]),
-            min((i * step) % max(height - size[1], 1), height - size[1]),
-        )
-        for i in range(num_regions)
-    ]
+    if size[0] > width or size[1] > height:
+        raise ValueError("region must fit inside the image")
+    # Align each stride to whole tiles so regions cannot share cached tiles.
+    # Unknown tile dimensions use one-pixel alignment (the cache is inactive).
+    tile_w, tile_h = (max(t, 1) for t in tile)
+    step_x = ((size[0] + tile_w - 1) // tile_w) * tile_w
+    step_y = ((size[1] + tile_h - 1) // tile_h) * tile_h
+    xs = range(0, width - size[0] + 1, step_x)
+    ys = range(0, height - size[1] + 1, step_y)
+    if num_regions > len(xs) * len(ys):
+        raise ValueError("not enough tile-disjoint regions fit in the image")
+    regions = [(xs[i % len(xs)], ys[i // len(xs)]) for i in range(num_regions)]
 
     result = {
         "cache": cache_type,
@@ -147,8 +157,10 @@ def measure(path, CuImage, cache_type, device, size, repeats, num_regions):
     result["warm_hits"] = CuImage.cache().hit_count - before_hits
     result["warm_misses"] = CuImage.cache().miss_count - before_misses
 
-    # Cold: distinct regions, so every tile is a first touch.  Reopening also
-    # drops any per-image state carried over from the warm pass.
+    # Reopening alone retains the process-wide cache populated by the warm
+    # pass. Reset it first so every tile in the cold grid is a first touch.
+    img.close()
+    _reset_cache(CuImage, cache_type)
     img_cold = CuImage(str(path))
     before_hits = CuImage.cache().hit_count
     before_misses = CuImage.cache().miss_count
@@ -156,6 +168,7 @@ def measure(path, CuImage, cache_type, device, size, repeats, num_regions):
     result["cold_ms"] = statistics.median(cold)
     result["cold_hits"] = CuImage.cache().hit_count - before_hits
     result["cold_misses"] = CuImage.cache().miss_count - before_misses
+    img_cold.close()
 
     return result
 
