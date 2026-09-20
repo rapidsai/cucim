@@ -152,6 +152,15 @@ TEST_CASE("ImageMetadata::store_string copies into metadata memory", "[test_meta
         REQUIRE(stored.data()[4] == '\0');
     }
 
+    SECTION("a bounded view does not require a source terminator")
+    {
+        const char source[] = { 'D', 'A', 'P', 'I' };
+        std::string_view stored = metadata.store_string(std::string_view{ source, sizeof(source) });
+
+        REQUIRE(stored == "DAPI");
+        REQUIRE(stored.data()[stored.size()] == '\0');
+    }
+
     SECTION("an empty value is still a valid null-terminated string")
     {
         std::string_view stored = metadata.store_string(std::string_view{});
