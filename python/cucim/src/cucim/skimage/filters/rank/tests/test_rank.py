@@ -467,6 +467,7 @@ def test_generic_legacy_shifts_reject_explicit_shifts(legacy_shift):
 @pytest.mark.parametrize(
     "dtype, values, expected",
     [
+        (cp.float16, [0, 1, 2], 1),
         (cp.float32, [0.5, 0.6, 0.8], 0.1),
         (cp.uint64, [0, 2**32, 2**33], 2**32),
     ],
@@ -577,6 +578,142 @@ def test_enhance_contrast_endpoint_selection(
     )
 
     assert result[0, 1] == expected
+
+
+@pytest.mark.parametrize(
+    "center, expected", [(2**54 + 15, 2**54 + 10), (2**54 + 16, 2**54 + 20)]
+)
+def test_enhance_contrast_uint64_large_value_precision(center, expected):
+    image = cp.asarray([[2**54 + 10, center, 2**54 + 20]], dtype=cp.uint64)
+    footprint = cp.ones((1, 3), dtype=bool)
+
+    result = rank.enhance_contrast(
+        image,
+        footprint,
+        backend="elementwise",
+        cast_to_uint8=False,
+    )
+
+    assert result[0, 1].item() == expected
+
+
+@pytest.mark.parametrize(
+    "dtype, dtype_min, dtype_max",
+    [
+        (cp.int32, -(2**31), 2**31 - 1),
+        (cp.int64, -(2**63), 2**63 - 1),
+    ],
+)
+def test_streaming_signed_extrema_differences(dtype, dtype_min, dtype_max):
+    image = cp.asarray([[dtype_min, 0, dtype_max]], dtype=dtype)
+    footprint = cp.ones((1, 3), dtype=bool)
+    kwargs = dict(backend="elementwise", cast_to_uint8=False)
+
+    gradient = rank.gradient(
+        image,
+        footprint,
+        out=cp.empty(image.shape, dtype=cp.float64),
+        **kwargs,
+    )
+    exact_gradient = rank.gradient(
+        image,
+        footprint,
+        out=cp.empty(image.shape, dtype=cp.uint64),
+        **kwargs,
+    )
+    autolevel = rank.autolevel(
+        image,
+        footprint,
+        out=cp.empty(image.shape, dtype=cp.float64),
+        **kwargs,
+    )
+    contrast = rank.enhance_contrast(image, footprint, **kwargs)
+
+    assert gradient[0, 1].item() == float(dtype_max - dtype_min)
+    assert exact_gradient[0, 1].item() == dtype_max - dtype_min
+    assert autolevel[0, 1].item() == pytest.approx(
+        (0 - dtype_min) / (dtype_max - dtype_min), abs=1e-15
+    )
+    assert contrast[0, 1].item() == dtype_max
+
+
+@pytest.mark.parametrize("use_mask", [False, True])
+@pytest.mark.parametrize(
+    "dtype, dtype_min, dtype_max",
+    [
+        (cp.int32, -(2**31), 2**31 - 1),
+        (cp.int64, -(2**63), 2**63 - 1),
+    ],
+)
+def test_percentile_signed_extrema_differences(
+    dtype, dtype_min, dtype_max, use_mask
+):
+    image = cp.asarray([[dtype_min, 0, dtype_max]], dtype=dtype)
+    footprint = cp.ones((1, 3), dtype=bool)
+    mask = cp.ones_like(image, dtype=bool) if use_mask else None
+    kwargs = dict(
+        p0=0.01,
+        p1=1.0,
+        mask=mask,
+        backend="elementwise",
+        cast_to_uint8=False,
+    )
+
+    gradient = rank.gradient_percentile(
+        image,
+        footprint,
+        out=cp.empty(image.shape, dtype=cp.float64),
+        **kwargs,
+    )
+    autolevel = rank.autolevel_percentile(
+        image,
+        footprint,
+        out=cp.empty(image.shape, dtype=cp.float64),
+        **kwargs,
+    )
+    contrast = rank.enhance_contrast_percentile(image, footprint, **kwargs)
+
+    assert gradient[0, 1].item() == float(dtype_max - dtype_min)
+    assert autolevel[0, 1].item() == pytest.approx(
+        (0 - dtype_min) / (dtype_max - dtype_min), abs=1e-15
+    )
+    assert contrast[0, 1].item() == dtype_max
+
+
+@pytest.mark.parametrize(
+    "dtype, low, center, high, expected_contrast",
+    [
+        (cp.float16, -65504, 0, 65504, -65504),
+        (cp.float32, -3, 0, 2, 2),
+        (cp.float64, -3, 0, 2, 2),
+    ],
+)
+def test_extrema_difference_float_specializations(
+    dtype, low, center, high, expected_contrast
+):
+    image = cp.asarray([[low, center, high]], dtype=dtype)
+    footprint = cp.ones((1, 3), dtype=bool)
+    kwargs = dict(backend="elementwise", cast_to_uint8=False)
+
+    gradient = rank.gradient(
+        image,
+        footprint,
+        out=cp.empty(image.shape, dtype=cp.float64),
+        **kwargs,
+    )
+    autolevel = rank.autolevel(
+        image,
+        footprint,
+        out=cp.empty(image.shape, dtype=cp.float64),
+        **kwargs,
+    )
+    contrast = rank.enhance_contrast(image, footprint, **kwargs)
+
+    assert gradient[0, 1].item() == high - low
+    assert autolevel[0, 1].item() == pytest.approx(
+        (center - low) / (high - low), abs=1e-15
+    )
+    assert contrast[0, 1].item() == expected_contrast
 
 
 @pytest.mark.parametrize("dtype", [cp.float32, cp.float64])

@@ -28,6 +28,30 @@ from ._histogram import (
     _should_use_rank_histogram,
 )
 
+_RANK_ORDERED_DIFFERENCE_PREAMBLE = r"""
+template <typename T, bool = std::is_floating_point<T>::value>
+struct RankOrderedDifference {
+    typedef typename std::make_unsigned<T>::type type;
+    __device__ __forceinline__ static type get(T high, T low) {
+        return static_cast<type>(
+            static_cast<type>(high) - static_cast<type>(low));
+    }
+};
+
+template <typename T>
+struct RankOrderedDifference<T, true> {
+    __device__ __forceinline__ static double get(T high, T low) {
+        return static_cast<double>(high) - static_cast<double>(low);
+    }
+};
+"""
+
+_RANK_ORDERED_DIFFERENCE_OPS = {
+    "autolevel",
+    "enhance_contrast",
+    "gradient",
+}
+
 
 def _get_streaming_rank_kernel(
     p0,
@@ -88,7 +112,7 @@ def _get_streaming_rank_kernel(
                     y = cast<Y>(x[i]);
                     return;
                 }
-                y = cast<Y>(max_val - min_val);
+                y = cast<Y>(RankOrderedDifference<X>::get(max_val, min_val));
             """
         elif operation == "enhance_contrast":
             post = """
@@ -98,7 +122,9 @@ def _get_streaming_rank_kernel(
                 }
                 X g = x[i];
                 if (g >= max_val ||
-                    (g > min_val && max_val - g < g - min_val)) {
+                    (g > min_val &&
+                     RankOrderedDifference<X>::get(max_val, g) <
+                     RankOrderedDifference<X>::get(g, min_val))) {
                     y = cast<Y>(max_val);
                 } else {
                     y = cast<Y>(min_val);
@@ -113,9 +139,12 @@ def _get_streaming_rank_kernel(
                 X g = x[i];
                 X clamped = (g < min_val) ? min_val :
                     ((g > max_val) ? max_val : g);
-                double delta = static_cast<double>(max_val - min_val);
+                double delta = static_cast<double>(
+                    RankOrderedDifference<X>::get(max_val, min_val));
                 if (delta > 0) {{
-                    double scaled = (static_cast<double>(clamped - min_val)
+                    double scaled = (static_cast<double>(
+                                         RankOrderedDifference<X>::get(
+                                             clamped, min_val))
                                      / delta) * static_cast<double>({dtype_max});
                     y = cast<Y>(scaled);
                 }} else {{
@@ -285,9 +314,13 @@ def _get_streaming_rank_kernel(
 
     op_name = operation.replace("_", "")
     mask_str = "_masked" if has_mask else ""
-    preamble = ""
+    preamble = (
+        _RANK_ORDERED_DIFFERENCE_PREAMBLE
+        if operation in _RANK_ORDERED_DIFFERENCE_OPS
+        else ""
+    )
     if operation == "noise_filter":
-        preamble = r"""
+        preamble += r"""
 template <typename T, bool = std::is_floating_point<T>::value>
 struct RankNoiseDistance {
     typedef typename std::make_unsigned<T>::type type;
@@ -539,13 +572,13 @@ def _get_percentile_range_kernel(
             post += """
                 X min_val = values[actual_start];
                 X max_val = values[actual_end - 1];
-                y = cast<Y>(max_val - min_val);
+                y = cast<Y>(RankOrderedDifference<X>::get(max_val, min_val));
             """
         else:
             post += f"""
                 X min_val = values[{idx_start}];
                 X max_val = values[{idx_end - 1}];
-                y = cast<Y>(max_val - min_val);
+                y = cast<Y>(RankOrderedDifference<X>::get(max_val, min_val));
             """
     elif operation == "subtract_mean":
         # Subtract mean: scikit-image formula:
@@ -583,7 +616,9 @@ def _get_percentile_range_kernel(
                 X g = x[i];
                 // Replace with whichever extreme is closer
                 if (g >= max_val ||
-                    (g > min_val && max_val - g < g - min_val)) {{
+                    (g > min_val &&
+                     RankOrderedDifference<X>::get(max_val, g) <
+                     RankOrderedDifference<X>::get(g, min_val))) {{
                     y = cast<Y>(max_val);
                 }} else {{
                     y = cast<Y>(min_val);
@@ -595,7 +630,9 @@ def _get_percentile_range_kernel(
                 X max_val = values[{idx_end - 1}];
                 X g = x[i];
                 if (g >= max_val ||
-                    (g > min_val && max_val - g < g - min_val)) {{
+                    (g > min_val &&
+                     RankOrderedDifference<X>::get(max_val, g) <
+                     RankOrderedDifference<X>::get(g, min_val))) {{
                     y = cast<Y>(max_val);
                 }} else {{
                     y = cast<Y>(min_val);
@@ -714,12 +751,14 @@ def _get_percentile_range_kernel(
                 X min_val = values[actual_start];
                 X max_val = values[actual_end - 1];
                 X g = x[i];
-                X clamped = (g < min_val) ? min_val : \
-((g > max_val) ? max_val : g);
-                double delta = static_cast<double>(max_val - min_val);
+                X clamped = (g < min_val) ? min_val :
+                    ((g > max_val) ? max_val : g);
+                double delta = static_cast<double>(
+                    RankOrderedDifference<X>::get(max_val, min_val));
                 if (delta > 0) {{
-                    double scaled = (static_cast<double>(clamped - min_val) \
-/ delta) * static_cast<double>({dtype_max});
+                    double scaled = (static_cast<double>(
+                        RankOrderedDifference<X>::get(clamped, min_val))
+                        / delta) * static_cast<double>({dtype_max});
                     y = cast<Y>(scaled);
                 }} else {{
                     y = cast<Y>(0);
@@ -730,12 +769,14 @@ def _get_percentile_range_kernel(
                 X min_val = values[{idx_start}];
                 X max_val = values[{idx_end - 1}];
                 X g = x[i];
-                X clamped = (g < min_val) ? min_val : \
-((g > max_val) ? max_val : g);
-                double delta = static_cast<double>(max_val - min_val);
+                X clamped = (g < min_val) ? min_val :
+                    ((g > max_val) ? max_val : g);
+                double delta = static_cast<double>(
+                    RankOrderedDifference<X>::get(max_val, min_val));
                 if (delta > 0) {{
-                    double scaled = (static_cast<double>(clamped - min_val) \
-/ delta) * static_cast<double>({dtype_max});
+                    double scaled = (static_cast<double>(
+                        RankOrderedDifference<X>::get(clamped, min_val))
+                        / delta) * static_cast<double>({dtype_max});
                     y = cast<Y>(scaled);
                 }} else {{
                     y = cast<Y>(0);
@@ -853,6 +894,9 @@ def _get_percentile_range_kernel(
         found = "values[iv++] = {value};"
 
     mask_str = "_masked" if has_mask else ""
+    preamble = sorter
+    if operation in _RANK_ORDERED_DIFFERENCE_OPS:
+        preamble += _RANK_ORDERED_DIFFERENCE_PREAMBLE
     return _filters_core._generate_nd_kernel(
         f"percentile_range_{filter_size}_{int(p0)}_{int(p1)}_{op_name}{mask_str}",
         pre,
@@ -865,7 +909,7 @@ def _get_percentile_range_kernel(
         cval,
         has_weights=has_weights,
         has_mask=has_mask,
-        preamble=sorter,
+        preamble=preamble,
     )
 
 
