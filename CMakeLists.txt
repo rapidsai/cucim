@@ -107,13 +107,11 @@ option(CUCIM_SUPPORT_NVTX "Support NVTX" ON)
 # into its own memory resource; see cpp/include/cucim/io/format/image_format.h
 # and ImageMetadata::store_string().
 #
-# Changing it is not a local edit: cpp/CMakeLists.txt exports this definition as
-# an INTERFACE compile definition, so it is part of the installed package's
-# contract and flipping it breaks ABI for anything already linked against
-# libcucim. The manylinux2014 constraint itself no longer appears to apply (the
-# repository no longer references manylinux anywhere and requires-python is
-# >=3.11), so this is worth revisiting deliberately as its own change rather
-# than in passing.
+# cpp/CMakeLists.txt exports this setting through a PUBLIC compile definition.
+# The library, plugins, and consumers must use a consistent libstdc++ ABI;
+# switching requires rebuilding binaries that depend on it.
+# Retain this setting until the dedicated C++11 string ABI migration tracked in
+# https://github.com/rapidsai/cucim/issues/1163.
 add_definitions(-D_GLIBCXX_USE_CXX11_ABI=0)
 
 ################################################################################
