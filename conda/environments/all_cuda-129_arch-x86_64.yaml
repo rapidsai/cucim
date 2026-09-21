@@ -13,6 +13,7 @@ dependencies:
 - cuda-version=12.9
 - cupy>=14.0.1,!=14.1.0
 - cxx-compiler
+- cython>=3.2.2,<3.3.0a0
 - gcc_linux-64=14.*
 - imagecodecs>=2021.6.8
 - ipython
