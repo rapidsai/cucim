@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 # Dependency list for https://github.com/rapidsai/dependency-file-generator
@@ -57,6 +57,9 @@ files:
   py_run:
     output: pyproject
     pyproject_dir: python/cucim
+    matrix:
+      cuda_suffixed: ["false"]
+      use_cuda_wheels: ["true"]
     extras:
       table: project
     includes:
@@ -243,12 +246,12 @@ dependencies:
     common:
       - output_types: conda
         packages:
-          - cucim==26.10.*,>=0.0.0a0
+          - cucim==26.12.*,>=0.0.0a0
   depends_on_libcucim:
     common:
       - output_types: conda
         packages:
-          - libcucim==26.10.*,>=0.0.0a0
+          - libcucim==26.12.*,>=0.0.0a0
   develop:
     common:
       - output_types: [conda, requirements, pyproject]
@@ -357,10 +360,12 @@ dependencies:
               - *cupy_cu13
           - matrix:
               cuda: "12.*"
+              use_cuda_wheels: "true"
             packages:
               - cupy-cuda12x[ctk]>=14.0.1,!=14.1.0
           # fallback to CUDA 13 versions if 'cuda' is '13.*' or not provided
           - matrix:
+              use_cuda_wheels: "true"
             packages:
               - cupy-cuda13x[ctk]>=14.0.1,!=14.1.0
   test_python:

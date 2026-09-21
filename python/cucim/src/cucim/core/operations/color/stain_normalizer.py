@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2022-2025, NVIDIA CORPORATION.
+# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 import math
@@ -196,6 +196,11 @@ def _covariance(a):
     if fact <= 0:
         raise RuntimeError("Degrees of freedom <= 0")
 
+    # Shift before computing the mean to improve the accuracy of centering.
+    # In particular, this ensures that constant rows center to exact zeros
+    # regardless of the floating-point reduction order used by the backend.
+    offset = X[:, :1].copy()
+    X -= offset
     X -= X.mean(axis=1, keepdims=True)
     if not X.flags.f_contiguous:
         # TODO: Empirically, it is faster to use F order for .dot() call below.

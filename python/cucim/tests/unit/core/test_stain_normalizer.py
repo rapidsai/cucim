@@ -4,15 +4,21 @@
 
 import cupy as cp
 import pytest
-from packaging.version import parse
 
 from cucim.core.operations.color import (
     normalize_colors_pca,
     stain_extraction_pca,
 )
+from cucim.core.operations.color.stain_normalizer import _covariance
 
-# check CuPy instead of SciPy
-CUPY_GT_14_2 = parse(cp.__version__) >= parse("14.2.0a0")
+
+def test_covariance_constant_rows_are_exactly_zero():
+    value = cp.float32(5.4806389808654785)
+    image = cp.full((3, 8), value, dtype=cp.float32)
+
+    cp.testing.assert_array_equal(
+        _covariance(image), cp.zeros((3, 3), dtype=cp.float32)
+    )
 
 
 class TestStainExtractorMacenko:
@@ -63,10 +69,6 @@ class TestStainExtractorMacenko:
             result = stain_extraction_pca(image)
             cp.testing.assert_array_equal(result[:, 0], result[:, 1])
 
-    @pytest.mark.xfail(
-        CUPY_GT_14_2,
-        reason="Fails on CuPy 14.2.0+, see tracking issue: https://github.com/rapidsai/cucim/issues/1137",
-    )
     @pytest.mark.parametrize(
         "image, expected",
         [
