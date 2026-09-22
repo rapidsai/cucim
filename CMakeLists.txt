@@ -1,6 +1,6 @@
 #
 # cmake-format: off
-# SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION.
+# SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 # cmake-format: on
 #
@@ -91,7 +91,28 @@ option(CUCIM_SUPPORT_NVTX "Support NVTX" ON)
 # Setup CXX11 ABI
 # : Adds CXX11 ABI definition to the compiler command line for targets in the current directory,
 #   whether added before or after this command is invoked, and for the ones in sub-directories added after.
-add_definitions(-D_GLIBCXX_USE_CXX11_ABI=0) # TODO: create two library, one with CXX11 ABI and one without it.
+#
+# Why 0 (this is the canonical explanation; the other CMakeLists.txt files that
+# set the same definition point here):
+#
+#   This dates to building manylinux2014 wheels. That platform tag requires a
+#   gcc4-compatible libstdc++ ABI (gcc configured with
+#   '--with-default-libstdcxx-abi=gcc4-compatible', see
+#   https://gcc.gnu.org/onlinedocs/libstdc++/manual/configure.html), which forces
+#   _GLIBCXX_USE_CXX11_ABI=0 on CentOS 7.
+#
+# What it costs: parts of the standard library that are only defined for the new
+# ABI are unavailable, most visibly std::pmr::string. ImageMetadata therefore
+# keeps two sets of member declarations and stores strings as std::string_view
+# into its own memory resource; see cpp/include/cucim/io/format/image_format.h
+# and ImageMetadata::store_string().
+#
+# cpp/CMakeLists.txt exports this setting through a PUBLIC compile definition.
+# The library, plugins, and consumers must use a consistent libstdc++ ABI;
+# switching requires rebuilding binaries that depend on it.
+# Retain this setting until the dedicated C++11 string ABI migration tracked in
+# https://github.com/rapidsai/cucim/issues/1163.
+add_definitions(-D_GLIBCXX_USE_CXX11_ABI=0)
 
 ################################################################################
 # Define basic dependencies
