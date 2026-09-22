@@ -1,6 +1,6 @@
 #
 # cmake-format: off
-# SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION.
+# SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 # cmake-format: on
 #
@@ -16,6 +16,7 @@ add_executable(cucim_tests
         test_read_region.cpp
         test_cufile.cpp
         test_metadata.cpp
+        test_image_cache.cpp
         )
 
 set_target_properties(cucim_tests
