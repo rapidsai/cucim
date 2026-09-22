@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -314,6 +314,25 @@ private:
     // Limits the "no TIFF tags returned" diagnostic to one message per file.
     bool tag_extraction_warned_ = false;
 };
+
+/**
+ * @brief Whether *packed_version* is an nvImageCodec version cuCIM supports.
+ *
+ * @param packed_version A version in nvImageCodec's packed encoding, as found
+ *        in `nvimgcodecProperties_t::version` or `NVIMGCODEC_VER`.
+ *
+ * Exposed so the supported range can be regression-tested. The range has to
+ * agree with the pin in `dependencies.yaml` and with the one the build checks
+ * in `cmake/deps/nvimgcodec.cmake`. The C++ tests pin the runtime policy only;
+ * they do not inspect those files or detect changes to the packaging pin.
+ */
+bool is_supported_nvimgcodec_version(uint32_t packed_version);
+
+/**
+ * @brief Describe a packed version, reporting raw values when the 0.9 encoding
+ *        cannot distinguish their semantic versions.
+ */
+std::string format_nvimgcodec_version(uint32_t packed_version);
 
 /**
  * @brief Singleton manager for nvImageCodec TIFF parsing

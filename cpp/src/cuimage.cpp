@@ -361,6 +361,11 @@ std::shared_ptr<cache::ImageCache> CuImage::cache(cache::ImageCacheConfig& confi
     return cache_manager_->cache(config);
 }
 
+std::shared_ptr<cache::ImageCache> CuImage::device_cache()
+{
+    return cache_manager_->get_device_cache();
+}
+
 bool CuImage::is_trace_enabled()
 {
     return profiler_->trace();
