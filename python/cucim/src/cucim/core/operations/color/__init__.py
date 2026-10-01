@@ -11,7 +11,8 @@ from .stain_normalizer import (
 
 __all__ = [
     "color_jitter",
-    "rand_color_jitter" "absorbance_to_image",
+    "rand_color_jitter",
+    "absorbance_to_image",
     "image_to_absorbance",
     "stain_extraction_pca",
     "normalize_colors_pca",
