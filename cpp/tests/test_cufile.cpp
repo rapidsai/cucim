@@ -85,6 +85,51 @@ TEST_CASE("Verify libcufile usage", "[test_cufile.cpp]")
 
     std::hash<std::string_view> str_hash;
 
+    SECTION("Read past EOF should preserve unread buffer bytes")
+    {
+        constexpr int test_file_offset = BLOCK_SECTOR_SIZE * 3 - 100;
+        constexpr int test_count = 200;
+        constexpr uint8_t sentinel = 0xCD;
+
+        uint8_t* aligned_host;
+        POSIX_ERROR(posix_memalign(reinterpret_cast<void**>(&aligned_host), 512, test_count));
+
+        ssize_t reference_read_cnt = -1;
+        uint8_t reference_buffer[test_count]{};
+        for (int flag_idx = 0; flag_idx < W_FLAG_LEN; ++flag_idx)
+        {
+            INFO(fmt::format("flag_index: {} ({})\n  count: {}\n  file_offset: {}\n",
+                             flag_idx,
+                             test_flags_desc[flag_idx],
+                             test_count,
+                             test_file_offset));
+            create_test_file(output_file.c_str(), BLOCK_SECTOR_SIZE * 3);
+
+            auto fd = cucim::filesystem::open(output_file.c_str(), test_r_flags[flag_idx]);
+            memset(aligned_host, sentinel, test_count);
+            ssize_t read_cnt = fd->pread(aligned_host, test_count, test_file_offset, 0);
+
+            if (flag_idx == 0)
+            {
+                reference_read_cnt = read_cnt;
+                memcpy(reference_buffer, aligned_host, test_count);
+            }
+            else
+            {
+                REQUIRE(read_cnt == reference_read_cnt);
+                REQUIRE(memcmp(reference_buffer, aligned_host, test_count) == 0);
+            }
+
+            REQUIRE(read_cnt == 100);
+            for (int i = read_cnt; i < test_count; ++i)
+            {
+                REQUIRE(aligned_host[i] == sentinel);
+            }
+        }
+
+        free(aligned_host);
+    }
+
     for (int test_param_index = 0; test_param_index < TEST_PARAM_LEN; ++test_param_index)
     {
         int test_buf_offset = test_buf_offsets[test_param_index];
