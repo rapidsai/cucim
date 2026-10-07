@@ -1,3 +1,11 @@
+OpenJPEG 2.5.3 patches for cuCIM.
+
+The pi.c fix is backported from upstream commit
+839936aa33eb8899bbbd80fda02796bb65068951 by Even Rouault:
+https://github.com/uclouvain/openjpeg/commit/839936aa33eb8899bbbd80fda02796bb65068951
+
+Prevent integer overflow from allocating an undersized packet inclusion buffer.
+
 diff --git a/CMakeLists.txt b/CMakeLists.txt
 index b04561f4..2392c14d 100644
 --- a/CMakeLists.txt
@@ -12,3 +20,19 @@ index b04561f4..2392c14d 100644
  
  if(NOT OPENJPEG_NAMESPACE)
    set(OPENJPEG_NAMESPACE "OPENJPEG")
+diff --git a/src/lib/openjp2/pi.c b/src/lib/openjp2/pi.c
+index 15ac331..4abb87a 100644
+--- a/src/lib/openjp2/pi.c
++++ b/src/lib/openjp2/pi.c
+@@ -1696,5 +1696,8 @@ opj_pi_iterator_t *opj_pi_initialise_encode(const opj_image_t *p_image,
+     /* memory allocation for include*/
+-    l_current_pi->include_size = l_tcp->numlayers * l_step_l;
+-    l_current_pi->include = (OPJ_INT16*) opj_calloc(l_current_pi->include_size,
+-                            sizeof(OPJ_INT16));
++    l_current_pi->include = NULL;
++    if (l_step_l <= UINT_MAX / l_tcp->numlayers) {
++        l_current_pi->include_size = l_tcp->numlayers * l_step_l;
++        l_current_pi->include = (OPJ_INT16*) opj_calloc(l_current_pi->include_size,
++                                sizeof(OPJ_INT16));
++    }
+     if (!l_current_pi->include) {
