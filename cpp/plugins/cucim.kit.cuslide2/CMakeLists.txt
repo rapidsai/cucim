@@ -13,8 +13,8 @@ cmake_minimum_required(VERSION 3.24.0 FATAL_ERROR)
 # Set VERSION
 unset(VERSION CACHE)
 file(STRINGS ${CMAKE_CURRENT_LIST_DIR}/../../../VERSION VERSION)
-# strip alpha version info
-string(REGEX REPLACE "a.*$" "" VERSION ${VERSION})
+# strip prerelease version info
+string(REGEX REPLACE "^([0-9]+\\.[0-9]+\\.[0-9]+).*$" "\\1" VERSION ${VERSION})
 
 # Reuse cmake modules from cuslide plugin (for SuperBuildUtils.cmake and shared deps)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/../cucim.kit.cuslide/cmake/modules")

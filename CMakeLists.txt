@@ -14,8 +14,8 @@ cmake_minimum_required(VERSION 4.0 FATAL_ERROR)
 # Set VERSION and BUILD
 unset(VERSION CACHE)
 file(STRINGS ${CMAKE_CURRENT_LIST_DIR}/VERSION VERSION)
-# strip alpha version info
-string(REGEX REPLACE "a.*$" "" VERSION ${VERSION})
+# strip prerelease version info
+string(REGEX REPLACE "^([0-9]+\\.[0-9]+\\.[0-9]+).*$" "\\1" VERSION ${VERSION})
 set(PROJECT_VERSION_BUILD dev)
 
 # Append local cmake module path
