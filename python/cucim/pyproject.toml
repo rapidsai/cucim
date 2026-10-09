@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 # See file LICENSE for terms.
 
@@ -27,7 +27,7 @@ license-files = [
     "LICENSE",
     "LICENSE-3rdparty.md",
 ]
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "click",
     "cupy-cuda13x[ctk]>=14.0.1,!=14.1.0",
