@@ -41,6 +41,8 @@ rapids-pip-retry install \
 
 rapids-logger "Installing system build dependencies (openslide)"
 if type -f dnf > /dev/null 2>&1; then
+    # TODO: remove before merging (just testing timing)
+    dnf remove --assumeyes openslide-devel
     dnf install -y --setopt=install_weak_deps=False openslide-devel
 else
     DEBIAN_FRONTEND=noninteractive apt update
