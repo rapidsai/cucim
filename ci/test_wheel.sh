@@ -1,5 +1,5 @@
 #!/bin/bash
-# SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION.
+# SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 set -eou pipefail
@@ -22,9 +22,9 @@ rapids-pip-retry install \
     --constraint "${PIP_CONSTRAINT}" \
     "$(echo ${PYTHON_WHEELHOUSE}/cucim*.whl)[test]"
 
-if type -f yum > /dev/null 2>&1; then
-    yum update --nobest -y
-    yum install -y openslide
+if type -f dnf > /dev/null 2>&1; then
+    dnf update -y
+    dnf install -y --setopt=install_weak_deps=False --setopt=best=False openslide
 else
     DEBIAN_FRONTEND=noninteractive apt update
     DEBIAN_FRONTEND=noninteractive apt install -y --no-install-recommends libopenslide0
