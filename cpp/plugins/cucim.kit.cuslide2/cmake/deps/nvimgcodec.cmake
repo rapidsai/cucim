@@ -110,7 +110,7 @@ if (NOT TARGET deps::nvimgcodec)
 
             # Fallback: try Python site-packages in conda environment
             if(NOT NVIMGCODEC_LIB_PATH)
-                foreach(PY_VER "3.13" "3.12" "3.11" "3.10" "3.9")
+                foreach(PY_VER "3.14" "3.13" "3.12")
                     set(CONDA_PYTHON_ROOT "$ENV{CONDA_PREFIX}/lib/python${PY_VER}/site-packages/nvidia/nvimgcodec")
                     if(EXISTS "${CONDA_PYTHON_ROOT}/include/nvimgcodec.h")
                         set(NVIMGCODEC_INCLUDE_PATH "${CONDA_PYTHON_ROOT}/include/")
