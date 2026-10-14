@@ -54,7 +54,7 @@ classifiers = [
 
 [project.urls]
 Homepage = "https://developer.nvidia.com/multidimensional-image-processing"
-Documentation = "https://docs.rapids.ai/api/cucim/stable/"
+Documentation = "https://docs.nvidia.com/cucim"
 Changelog = "https://github.com/rapidsai/cucim/blob/main/CHANGELOG.md"
 Source = "https://github.com/rapidsai/cucim"
 Tracker = "https://github.com/rapidsai/cucim/issues"
