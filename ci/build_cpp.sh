@@ -1,5 +1,5 @@
 #!/bin/bash
-# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 set -euo pipefail
@@ -28,8 +28,8 @@ sccache --start-server
 # ref: https://github.com/rapidsai/cucim/issues/800#issuecomment-2529593457
 conda config --set path_conflict warn
 
-RAPIDS_PACKAGE_VERSION=$(rapids-generate-version) rapids-conda-retry build \
-    conda/recipes/libcucim
+RAPIDS_PACKAGE_VERSION=$(rapids-generate-version) python ci/build_conda.py \
+    --recipe conda/recipes/libcucim
 
 sccache --show-adv-stats
 

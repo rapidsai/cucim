@@ -1,5 +1,5 @@
 #!/bin/bash
-# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 set -euo pipefail
@@ -34,10 +34,10 @@ CPP_CHANNEL=$(rapids-download-from-github "$(rapids-artifact-name conda_cpp libc
 
 # TODO: Remove `--no-test` flag once importing on a CPU
 # node works correctly
-RAPIDS_PACKAGE_VERSION=$(head -1 ./VERSION) rapids-conda-retry build \
+RAPIDS_PACKAGE_VERSION=$(head -1 ./VERSION) python ci/build_conda.py \
   --no-test \
-  --channel "${CPP_CHANNEL}" \
-  conda/recipes/cucim
+  --cpp-channel "${CPP_CHANNEL}" \
+  --recipe conda/recipes/cucim
 
 sccache --show-adv-stats
 
