@@ -13,6 +13,7 @@ import re
 import shutil
 import stat
 import subprocess  # nosec B404
+import sys
 import tempfile
 from contextlib import contextmanager
 from pathlib import Path
@@ -139,7 +140,14 @@ def isolated_channels(command: list[str], environment: dict[str, str], temporary
         )
     roots = []
     for key in ("RUNNER_TEMP", "CONDA_PREFIX"):
-        path = Path(environment.get(key, ""))
+        # SDK images expose Conda on PATH without activating an environment.
+        # An explicitly supplied prefix must still pass validation unchanged.
+        value = (
+            sys.prefix
+            if key == "CONDA_PREFIX" and key not in environment
+            else environment.get(key, "")
+        )
+        path = Path(value)
         if not path.is_absolute() or not path.is_dir() or path.is_symlink():
             raise ValueError(f"candidate Conda isolation requires a local {key}")
         roots.append(path.resolve())

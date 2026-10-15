@@ -236,11 +236,11 @@ def test_real_conda_build_append_finalize_and_channel_override(
         "CONDA_OFFLINE": "true",
         "GITHUB_ACTIONS": "true",
         "RUNNER_TEMP": str(tmp_path),
-        "CONDA_PREFIX": str(Path(sys.executable).parent.parent),
         "PATH": str(Path(sys.executable).parent)
         + os.pathsep
         + os.environ.get("PATH", ""),
     }
+    environment.pop("CONDA_PREFIX", None)
     command = [
         sys.executable,
         str(Path(__file__).resolve()),
@@ -482,6 +482,37 @@ def test_nonchannel_configuration_source_is_untouched(
         ["build", "--channel", str(tmp_path)], environment, tmp_path
     ):
         assert configuration.read_bytes() == original  # nosec B101
+
+
+def test_absent_active_prefix_uses_interpreter_sdk(
+    job_configuration, tmp_path, monkeypatch
+):
+    configuration, original, environment = job_configuration
+    environment.pop("CONDA_PREFIX")
+    monkeypatch.setattr(MODULE.sys, "prefix", str(tmp_path))
+    with MODULE.isolated_channels(
+        ["build", "--channel", str(tmp_path)], environment, tmp_path
+    ):
+        assert "channels" not in yaml.safe_load(configuration.read_bytes())  # nosec B101
+    assert configuration.read_bytes() == original  # nosec B101
+    assert "CONDA_PREFIX" not in environment  # nosec B101
+
+
+@pytest.mark.parametrize("invalid", ("", "relative", "/missing-candidate-prefix"))
+def test_explicit_invalid_active_prefix_never_falls_back(
+    job_configuration, tmp_path, monkeypatch, invalid
+):
+    configuration, original, environment = job_configuration
+    environment["CONDA_PREFIX"] = invalid
+    monkeypatch.setattr(MODULE.sys, "prefix", str(tmp_path))
+    with pytest.raises(ValueError, match="local CONDA_PREFIX"):
+        with MODULE.isolated_channels(
+            ["build", "--channel", str(tmp_path)], environment, tmp_path
+        ):
+            pytest.fail(
+                "an explicit invalid prefix must not use the valid interpreter prefix"
+            )
+    assert configuration.read_bytes() == original  # nosec B101
 
 
 if __name__ == "__main__":
