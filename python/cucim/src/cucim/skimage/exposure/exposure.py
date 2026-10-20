@@ -49,27 +49,33 @@ def _offset_array(arr, low_boundary, high_boundary):
     return arr
 
 
-def _bincount_histogram_centers(image, source_range):
-    """Compute bin centers for bincount-based histogram."""
+def _bincount_histogram_centers(image, source_range, *, return_range=False):
+    """Compute integer bin centers, optionally retaining their host bounds."""
     if source_range not in ["image", "dtype"]:
         raise ValueError(
             f"Incorrect value for `source_range` argument: {source_range}"
         )
     if source_range == "image":
-        image_min = int(image.min().astype(np.int64))  # synchronize
-        image_max = int(image.max().astype(np.int64))  # synchronize
+        image_min, image_max = (
+            _get_minmax(image).get().astype(np.int64, copy=False).tolist()
+        )
     elif source_range == "dtype":
         image_min, image_max = dtype_limits(image, clip_negative=False)
     bin_centers = cp.arange(image_min, image_max + 1)
+    if return_range:
+        return bin_centers, (image_min, image_max)
     return bin_centers
 
 
-def _bincount_histogram(image, source_range, bin_centers=None):
+def _bincount_histogram(
+    image, source_range, bin_centers=None, *, bin_range=None
+):
     """
     Efficient histogram calculation for an image of integers.
 
     This function is significantly more efficient than cupy.histogram but
     works only on images of integers. It is based on cupy.bincount.
+    Pass `bin_range` with supplied centers to reuse their host bounds.
 
     Parameters
     ----------
@@ -88,9 +94,15 @@ def _bincount_histogram(image, source_range, bin_centers=None):
         The values at the center of the bins.
     """
     if bin_centers is None:
-        bin_centers = _bincount_histogram_centers(image, source_range)
-    image_min, image_max = bin_centers[0].item(), bin_centers[-1].item()
-    image = _offset_array(image, image_min, image_max)  # synchronize  # noqa
+        bin_centers, bin_range = _bincount_histogram_centers(
+            image, source_range, return_range=True
+        )
+    if bin_range is None:
+        image_min, image_max = bin_centers[0].item(), bin_centers[-1].item()
+    else:
+        # The caller already determined these bounds before making GPU bins.
+        image_min, image_max = bin_range
+    image = _offset_array(image, image_min, image_max)
 
     # Casting back to unsigned dtype seems necessary to avoid incorrect
     # results for larger integer ranges with CUDA 12.x.
@@ -143,10 +155,7 @@ def _get_outer_edges(image, hist_range):
         # handle empty arrays. Can't determine hist_range, so use 0-1.
         first_edge, last_edge = 0, 1
     else:
-        first_edge, last_edge = (
-            float(image.min()),
-            float(image.max()),
-        )  # synchronize  # noqa
+        first_edge, last_edge = map(float, _get_minmax(image).get().tolist())
         if not (np.isfinite(first_edge) and np.isfinite(last_edge)):
             raise ValueError(
                 f"autodetected hist_range of [{first_edge}, {last_edge}] is "
@@ -284,18 +293,27 @@ def histogram(
     if channel_axis is not None:
         channels = sh[-1]
         hist = []
+        bin_range = None
 
         # compute bins based on the raveled array
         if cp.issubdtype(image.dtype, cp.integer):
             # here bins corresponds to the bin centers
-            bins = _bincount_histogram_centers(image, source_range)
+            bins, bin_range = _bincount_histogram_centers(
+                image, source_range, return_range=True
+            )
         else:
             # determine the bin edges for np.histogram
             hist_range = _get_numpy_hist_range(image, source_range)
             bins = _get_bin_edges(image, nbins, hist_range)
 
         for chan in range(channels):
-            h, bc = _histogram(image[..., chan], bins, source_range, normalize)
+            h, bc = _histogram(
+                image[..., chan],
+                bins,
+                source_range,
+                normalize,
+                bin_range=bin_range,
+            )
             hist.append(h)
         # Convert to numpy arrays
         bin_centers = cp.asarray(bc)
@@ -306,7 +324,7 @@ def histogram(
     return hist, bin_centers
 
 
-def _histogram(image, bins, source_range, normalize):
+def _histogram(image, bins, source_range, normalize, *, bin_range=None):
     """
 
     Parameters
@@ -331,7 +349,7 @@ def _histogram(image, bins, source_range, normalize):
     if np.issubdtype(image.dtype, cp.integer):
         bin_centers = bins if isinstance(bins, cp.ndarray) else None
         hist, bin_centers = _bincount_histogram(
-            image, source_range, bin_centers
+            image, source_range, bin_centers, bin_range=bin_range
         )
     else:
         hist_range = _get_numpy_hist_range(image, source_range)
