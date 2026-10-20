@@ -8,11 +8,12 @@ import warnings
 import cupy as cp
 import pytest
 from cupy.testing import assert_array_equal
+from cupyx import allow_synchronize
 from skimage import data
 
 from cucim.skimage._shared.testing import assert_almost_equal
 from cucim.skimage._shared.utils import _supported_float_type
-from cucim.skimage.transform import pyramids
+from cucim.skimage.transform import _warps, pyramids
 
 image = cp.asarray(data.astronaut())
 image_gray = image[..., 0]
@@ -262,3 +263,70 @@ def test_pyramid_dtype_support(pyramid_func, dtype):
 
     float_dtype = _supported_float_type(dtype)
     assert all([im.dtype == float_dtype for im in pyramid])
+
+
+@pytest.mark.parametrize(
+    "func",
+    [
+        pyramids.pyramid_reduce,
+        pyramids.pyramid_expand,
+        pyramids.pyramid_gaussian,
+        pyramids.pyramid_laplacian,
+    ],
+)
+@pytest.mark.parametrize("dtype", ["float32", "float64"])
+@pytest.mark.parametrize("order", [1, 3])
+@pytest.mark.parametrize(
+    "mode,cval", [("reflect", 0), ("constant", 0), ("constant", 1.5)]
+)
+@pytest.mark.parametrize("channel_axis", [None, 0, -1])
+@pytest.mark.filterwarnings(
+    "ignore:cupyx.allow_synchronize will be removed:UserWarning"
+)
+def test_pyramids_assume_finite(
+    monkeypatch, func, dtype, order, mode, cval, channel_axis
+):
+    image = cp.linspace(1, 2, 33 * 35 * 3, dtype=dtype).reshape(33, 35, 3)
+    if channel_axis == 0:
+        image = cp.moveaxis(image, -1, 0)
+    kwargs = dict(order=order, mode=mode, cval=cval, channel_axis=channel_axis)
+    is_generator = func in (
+        pyramids.pyramid_gaussian,
+        pyramids.pyramid_laplacian,
+    )
+    if is_generator:
+        kwargs["max_layer"] = 3
+    expected = func(image, **kwargs)
+    expected = list(expected) if is_generator else [expected]
+
+    def fail_nan_path(*args, **kwargs):
+        pytest.fail("pyramid level did not reuse the finite guarantee")
+
+    monkeypatch.setattr(_warps, "_get_warp_range", fail_nan_path)
+    monkeypatch.setattr(_warps, "_clip_constant_warp_output", fail_nan_path)
+    # Warmed Gaussian/zoom caches above avoid their intentional blocking first use.
+    with allow_synchronize(False):
+        actual = func(image, **kwargs, assume_finite=True)
+        actual = list(actual) if is_generator else [actual]
+    assert len(actual) == len(expected)
+    for result, reference in zip(actual, expected):
+        cp.testing.assert_array_equal(result, reference)
+
+
+@pytest.mark.parametrize(
+    "func",
+    [
+        pyramids.pyramid_reduce,
+        pyramids.pyramid_expand,
+        pyramids.pyramid_gaussian,
+        pyramids.pyramid_laplacian,
+    ],
+)
+@pytest.mark.parametrize("cval", [float("nan"), float("inf"), -float("inf")])
+def test_pyramids_assume_finite_requires_finite_cval(func, cval):
+    with pytest.raises(ValueError, match="requires a finite cval"):
+        result = func(
+            cp.ones((8, 8)), mode="constant", cval=cval, assume_finite=True
+        )
+        if func in (pyramids.pyramid_gaussian, pyramids.pyramid_laplacian):
+            list(result)
