@@ -9,6 +9,7 @@ import numpy as np
 
 import cucim.skimage._vendored.ndimage as ndi
 
+from .._shared._reduction_kernels import _get_minmax_with_nan as _get_warp_range
 from .._shared.utils import (
     _to_ndimage_mode,
     _validate_interpolation_order,
@@ -23,7 +24,6 @@ from ._geometric import (
     ProjectiveTransform,
     SimilarityTransform,
 )
-from ._warps_kernels import _get_warp_range
 
 HOMOGRAPHY_TRANSFORMS = (
     SimilarityTransform,
