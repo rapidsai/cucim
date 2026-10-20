@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import itertools
@@ -123,6 +123,27 @@ def test_float_out_of_range():
     too_low = cp.array([-2], dtype=cp.float32)
     with pytest.raises(ValueError):
         img_as_int(too_low)
+
+
+@pytest.mark.parametrize("dtype", [cp.float16, cp.float32, cp.float64])
+@pytest.mark.parametrize("value", [-cp.inf, -1.01, 1.01, cp.inf])
+@pytest.mark.parametrize("uniform", [False, True])
+def test_float_integer_range_validation(dtype, value, uniform):
+    # A reversed view also exercises the combined strided reduction path.
+    image = cp.array([[0, value], [-1, 1]], dtype=dtype)[:, ::-1]
+    with pytest.raises(ValueError, match="between -1 and 1"):
+        _convert(image, cp.int16, uniform=uniform)
+
+
+@pytest.mark.parametrize("dtype", [cp.float16, cp.float32, cp.float64])
+@pytest.mark.parametrize("value", [-cp.inf, -2, 2, cp.inf])
+def test_float_integer_nan_range_validation(dtype, value):
+    # Preserve the existing NaN-propagating validation: either bound being
+    # NaN suppresses the range error, including for other out-of-range values.
+    image = cp.array([cp.nan, value, 0], dtype=dtype)
+    result = _convert(image, cp.int16)
+    assert result.shape == image.shape
+    assert result.dtype == cp.int16
 
 
 def test_float_float_all_ranges():
