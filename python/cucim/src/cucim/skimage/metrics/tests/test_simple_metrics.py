@@ -255,3 +255,56 @@ def test_NRMSE_minmax_float32_arithmetic(values):
 def test_NRMSE_minmax_empty():
     with pytest.raises(ValueError):
         normalized_root_mse(cp.empty(0), cp.empty(0), normalization="min-max")
+
+
+@pytest.mark.parametrize(
+    "dtype,values,data_range",
+    [
+        ("bool", [False, True, False], 1),
+        ("uint8", [0, 127, 255], 255),
+        ("int8", [-128, 0, 127], 255),
+        ("int8", [0, 1, 127], 127),
+        ("float32", [-0.5, 0.25, 1], 2),
+        ("float32", [0, 0.25, 1], 1),
+        ("float64", [-0.5, 0.25, 1], 2),
+        ("float64", [0, 0.25, 1], 1),
+    ],
+)
+@pytest.mark.parametrize("transpose", [False, True])
+def test_PSNR_auto_range_extrema(dtype, values, data_range, transpose):
+    image_true = cp.resize(cp.asarray(values, dtype=dtype), (257, 513))
+    if transpose:
+        image_true = image_true.T
+    image_test = cp.zeros_like(image_true)
+    expected = peak_signal_noise_ratio(
+        image_true, image_test, data_range=data_range
+    )
+    actual = peak_signal_noise_ratio(image_true, image_test)
+    assert actual.dtype == cp.float64
+    cp.testing.assert_array_equal(actual, expected)
+
+
+@pytest.mark.parametrize(
+    "values", [[-1.1, 0], [0, 1.1], [0, np.inf], [-np.inf, 0]]
+)
+def test_PSNR_auto_range_rejects_invalid_extrema(values):
+    image_true = cp.asarray(values, dtype=cp.float32)
+    with pytest.raises(ValueError, match="outside the range expected"):
+        peak_signal_noise_ratio(image_true, cp.zeros_like(image_true))
+
+
+def test_PSNR_auto_range_nan_propagates():
+    # NaNs keep propagating even if the other values would fail validation.
+    image_true = cp.asarray([np.nan, -2, 2], dtype=cp.float32)
+    actual = peak_signal_noise_ratio(image_true, cp.zeros_like(image_true))
+    assert bool(cp.isnan(actual))
+
+
+def test_PSNR_auto_range_float32_negative_subnormal():
+    tiny = np.nextafter(np.float32(0), np.float32(1))
+    image_true = cp.asarray([0, -tiny, 0.5], dtype=cp.float32)
+    image_test = cp.zeros_like(image_true)
+    expected = peak_signal_noise_ratio(image_true, image_test, data_range=2)
+    cp.testing.assert_array_equal(
+        peak_signal_noise_ratio(image_true, image_test), expected
+    )
