@@ -1,10 +1,11 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import cupy as cp
 from cupyx.scipy.stats import entropy
 
+from .._shared._reduction_kernels import _get_minmax_mse
 from .._shared.utils import _supported_float_type, check_shape_equality, warn
 from .._vendored import pad
 from ..util.dtype import dtype_range
@@ -52,6 +53,16 @@ def mean_squared_error(image0, image1):
     image0, image1 = _as_floats(image0, image1)
     diff = image0 - image1
     return cp.mean(diff * diff, dtype=cp.float64)
+
+
+@cp.fuse()
+def _nrmse_from_range(minimum, maximum, has_nan, squared_error, size):
+    """Finish min-max NRMSE using only device statistics, propagating NaNs."""
+    # Preserve the reference dtype's subtraction before dividing in float64.
+    denominator = cp.where(has_nan, cp.nan, maximum - minimum).astype(
+        minimum.dtype
+    )
+    return cp.sqrt(squared_error / size) / denominator
 
 
 def normalized_root_mse(image_true, image_test, *, normalization="euclidean"):
@@ -107,7 +118,12 @@ def normalized_root_mse(image_true, image_test, *, normalization="euclidean"):
     if normalization == "euclidean":
         denom = cp.sqrt(cp.mean((image_true * image_true), dtype=cp.float64))
     elif normalization == "min-max":
-        denom = image_true.max() - image_true.min()
+        minimum, maximum, has_nan, squared_error = _get_minmax_mse(
+            image_true, image_test
+        )
+        return _nrmse_from_range(
+            minimum, maximum, has_nan, squared_error, image_true.size
+        )
     elif normalization == "mean":
         denom = image_true.mean()
     else:
