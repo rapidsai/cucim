@@ -1,11 +1,12 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import cupy as cp
 import numpy as np
 
 from .._shared import utils
+from .._shared._reduction_kernels import _get_minmax
 from ..util.dtype import dtype_limits, dtype_range
 
 __all__ = [
@@ -464,8 +465,8 @@ def intensity_range(image, range_values="image", clip_negative=False):
         range_values = image.dtype.type
 
     if range_values == "image":
-        i_min = image.min().item()
-        i_max = image.max().item()
+        # Preserve host scalar results while transferring both extrema together.
+        i_min, i_max = _get_minmax(image).get().tolist()
     elif range_values in DTYPE_RANGE:
         i_min, i_max = DTYPE_RANGE[range_values]
         if clip_negative:
@@ -619,10 +620,16 @@ def rescale_intensity(image, in_range="image", out_range="dtype"):
     else:
         out_dtype = _output_dtype(out_range, image.dtype)
 
-    imin, imax = map(float, intensity_range(image, in_range))
-    omin, omax = map(
-        float, intensity_range(image, out_range, clip_negative=(imin >= 0))
-    )
+    input_range = intensity_range(image, in_range)
+    imin, imax = map(float, input_range)
+    # Both requests describe the original image, so reuse its extrema.
+    if in_range == "image" and out_range == "image":
+        output_range = input_range
+    else:
+        output_range = intensity_range(
+            image, out_range, clip_negative=(imin >= 0)
+        )
+    omin, omax = map(float, output_range)
 
     if np.any(np.isnan([imin, imax, omin, omax])):
         utils.warn(
