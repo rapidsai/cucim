@@ -11,7 +11,7 @@ numeric sentinels that would complicate support for integer and complex data.
 
 CuPy's generic scalar ReductionKernel uses a single thread block. Small inputs
 use it directly to avoid the extra dispatch and launch overhead of staging:
-up to 512 KiB for C-contiguous arrays, or 4096 elements for other layouts.
+up to 512 KiB of total C-contiguous input data, or 4096 elements for other layouts.
 Larger contiguous real inputs use a single launch: blocks publish partial
 ranges and increment a completion counter after a device fence. The last
 finishing block merges those ranges; other blocks exit without waiting. Each
@@ -26,6 +26,8 @@ of the full image merely to flatten it. The same accumulator and merge
 operation are used for both image values and partial ranges, and all results
 remain on the device. Callers can retain NaN-ignoring extrema with a NaN flag
 or request NaN-propagating bounds, matching ordinary min/max reductions.
+For min-max NRMSE, the state and staging also carry a double-precision
+squared-error sum from two images, avoiding full-sized arithmetic temporaries.
 """
 
 import cupy as cp
@@ -35,8 +37,6 @@ _RANGE_CHUNK_SIZE = 4096
 # Keep the direct-reduction cutoff separate from the parallel chunk size.
 # A conservative byte limit balances launch savings against the limited
 # throughput of a single block.
-# This empirical host-overhead tradeoff was tuned on an RTX A6000; GPUs with
-# different SM counts or GPU-bound workloads may favor a different cutoff.
 _RANGE_DIRECT_MAX_BYTES = 512 * 1024
 
 _range_preamble = r"""
@@ -142,7 +142,8 @@ def _get_last_block_range_kernel(dtype, propagate_nan):
     """
     ctype = get_typename(cp.dtype(dtype))
     code = (
-        "#include <cupy/math_constants.h>\n" + _range_preamble
+        "#include <cupy/math_constants.h>\n"
+        + _range_preamble
         + r"""
     typedef CTYPE T;
 
@@ -218,77 +219,93 @@ def _last_block_minmax(image, result, *, propagate_nan=False):
     )
 
 
-def _partial_minmax(image, axis, chunk_size, kernel):
-    """Reduce chunk views along one axis, including any incomplete tail."""
+def _partial_reduce(images, axis, chunk_size, kernel, allocate):
+    """Reduce matching chunk views, including any incomplete tail."""
+    image = images[0]
     n_full, remainder = divmod(image.shape[axis], chunk_size)
-    partials = _empty_minmax((n_full + bool(remainder),), image.dtype)
+    partials = allocate((n_full + bool(remainder),))
     full_size = n_full * chunk_size
     selection = [slice(None)] * image.ndim
     selection[axis] = slice(0, full_size)
     shape = image.shape[:axis] + (n_full, chunk_size) + image.shape[axis + 1 :]
-    # Splitting a single axis preserves the view even for strided inputs.
-    full_chunks = image[tuple(selection)].reshape(shape)
-    reduce_axes = tuple(ax for ax in range(full_chunks.ndim) if ax != axis)
-    kernel(
-        full_chunks,
-        *(out[:n_full] for out in partials),
-        axis=reduce_axes,
-    )
+    # Splitting a single axis preserves views even when input strides differ.
+    full_chunks = tuple(x[tuple(selection)].reshape(shape) for x in images)
+    reduce_axes = tuple(ax for ax in range(len(shape)) if ax != axis)
+    kernel(*full_chunks, *(out[:n_full] for out in partials), axis=reduce_axes)
     if remainder:
         selection[axis] = slice(full_size, None)
         kernel(
-            image[tuple(selection)],
+            *(x[tuple(selection)] for x in images),
             *(out[-1:].reshape(()) for out in partials),
         )
     return partials
 
 
-def _reduce_minmax(image, *, propagate_nan=False):
-    """Choose direct or staged reduction and return packed bounds and a NaN flag."""
+def _reduce_image_statistics(
+    images, result, kernel, merge_kernel, allocate, *, minmax_nan_policy=None
+):
+    """Stage one or more images without copying their full contents to flatten."""
+    image = images[0]
     if image.size == 0:
         raise ValueError("Cannot compute the range of an empty image")
+    contiguous = all(x.flags.c_contiguous for x in images)
+    if image.size <= _RANGE_CHUNK_SIZE or (
+        contiguous and sum(x.nbytes for x in images) <= _RANGE_DIRECT_MAX_BYTES
+    ):
+        kernel(*images, *result)
+        return
+
+    if (
+        minmax_nan_policy is not None
+        and contiguous
+        and (image.dtype.kind in "biu" or image.dtype.char in "fd")
+    ):
+        _last_block_minmax(image, result, propagate_nan=minmax_nan_policy)
+        return
+
+    # Parallel partials avoid assigning a large scalar reduction to one block.
+    if not contiguous and image.ndim > 1:
+        keep_axis = max(range(image.ndim), key=lambda ax: image.shape[ax])
+        if image.shape[keep_axis] <= _RANGE_CHUNK_SIZE:
+            axes = tuple(ax for ax in range(image.ndim) if ax != keep_axis)
+            partials = allocate((image.shape[keep_axis],))
+            kernel(*images, *partials, axis=axes)
+        else:
+            chunk_size = (
+                image.shape[keep_axis] + _RANGE_CHUNK_SIZE - 1
+            ) // _RANGE_CHUNK_SIZE
+            partials = _partial_reduce(
+                images, keep_axis, chunk_size, kernel, allocate
+            )
+    else:
+        partials = _partial_reduce(
+            tuple(x.reshape(-1) for x in images),
+            0,
+            _RANGE_CHUNK_SIZE,
+            kernel,
+            allocate,
+        )
+    merge_kernel(*partials, *result)
+
+
+def _reduce_minmax(image, *, propagate_nan=False):
+    """Choose direct or staged reduction and return packed bounds and a NaN flag."""
     bounds = cp.empty(2, dtype=image.dtype)
     has_nan = cp.empty((), dtype=cp.bool_)
-    result = (bounds[0], bounds[1], has_nan)
     kernel = _minmax_propagate_kernel if propagate_nan else _minmax_kernel
     merge_kernel = (
         _merge_minmax_propagate_kernel
         if propagate_nan
         else _merge_minmax_kernel
     )
-    if image.size <= _RANGE_CHUNK_SIZE or (
-        image.flags.c_contiguous and image.nbytes <= _RANGE_DIRECT_MAX_BYTES
-    ):
-        kernel(image, *result)
-        return bounds, has_nan
-
-    if image.flags.c_contiguous and (
-        image.dtype.kind in "biu" or image.dtype.char in "fd"
-    ):
-        _last_block_minmax(image, result, propagate_nan=propagate_nan)
-        return bounds, has_nan
-
-    # A generic scalar ReductionKernel uses a single block. Split large
-    # arrays into independent ranges first to use more of the device.
-    if not image.flags.c_contiguous and image.ndim > 1:
-        # Reduce across existing axes to avoid copying a strided image just
-        # to flatten it. Preserve the largest axis for parallel partials.
-        keep_axis = max(range(image.ndim), key=lambda ax: image.shape[ax])
-        if image.shape[keep_axis] <= _RANGE_CHUNK_SIZE:
-            axes = tuple(ax for ax in range(image.ndim) if ax != keep_axis)
-            partials = _empty_minmax((image.shape[keep_axis],), image.dtype)
-            kernel(image, *partials, axis=axes)
-        else:
-            # Bound the merge size for very long strided axes as well.
-            chunk_size = (
-                image.shape[keep_axis] + _RANGE_CHUNK_SIZE - 1
-            ) // _RANGE_CHUNK_SIZE
-            partials = _partial_minmax(image, keep_axis, chunk_size, kernel)
-    else:
-        partials = _partial_minmax(
-            image.reshape(-1), 0, _RANGE_CHUNK_SIZE, kernel
-        )
-    merge_kernel(*partials, *result)
+    _reduce_image_statistics(
+        (image,),
+        (bounds[0], bounds[1], has_nan),
+        kernel,
+        merge_kernel,
+        lambda shape: _empty_minmax(shape, image.dtype),
+        minmax_nan_policy=propagate_nan,
+    )
     return bounds, has_nan
 
 
@@ -307,3 +324,83 @@ def _get_minmax(image):
     """
     bounds, _ = _reduce_minmax(image, propagate_nan=image.dtype.kind in "fc")
     return bounds
+
+
+_mse_preamble = (
+    _range_preamble
+    + r"""
+template<typename T>
+struct MinMaxMSEState {
+    MinMaxState<T> range;
+    double squared_error;
+
+    __device__ MinMaxMSEState() : range(), squared_error(0) {}
+
+    __device__ MinMaxMSEState(T x, T y) : range(x) {
+        // Match mean_squared_error: subtract and square in the image dtype,
+        // then accumulate in double precision without materializing an image.
+        T difference = x - y;
+        T squared = difference * difference;
+        squared_error = static_cast<double>(squared);
+    }
+
+    __device__ MinMaxMSEState(T lo, T hi, bool nan, double error)
+        : range(lo, hi, nan), squared_error(error) {}
+};
+
+template<typename T>
+__device__ MinMaxMSEState<T> merge_minmax_mse(
+        MinMaxMSEState<T> a, MinMaxMSEState<T> b) {
+    a.range = merge_minmax_states(a.range, b.range);
+    a.squared_error += b.squared_error;
+    return a;
+}
+"""
+)
+
+
+def _make_minmax_mse_kernel(*, merge=False):
+    """Combine reference extrema and squared-error sums in one image scan."""
+    return cp.ReductionKernel(
+        "T lo, T hi, bool nan, float64 error" if merge else "T x, T y",
+        "T minimum, T maximum, bool contains_nan, float64 squared_error",
+        "MinMaxMSEState<T>(lo, hi, nan, error)"
+        if merge
+        else "MinMaxMSEState<T>(x, y)",
+        "merge_minmax_mse(a, b)",
+        "minimum = a.range.minimum, maximum = a.range.maximum, "
+        "contains_nan = a.range.has_nan, squared_error = a.squared_error",
+        "MinMaxMSEState<T>()",
+        name="cucim_" + ("merge_" if merge else "") + "minmax_mse",
+        reduce_type="MinMaxMSEState<T>",
+        preamble=_mse_preamble,
+    )
+
+
+_minmax_mse_kernel = _make_minmax_mse_kernel()
+_merge_minmax_mse_kernel = _make_minmax_mse_kernel(merge=True)
+
+
+def _get_minmax_mse(image_true, image_test):
+    """Return extrema, a NaN flag, and squared-error sum for matching float images.
+
+    Callers supply equally shaped arrays of the same float32/float64 dtype.
+    Both images share the staging used for min/max; different strides are
+    supported without making full-sized copies or arithmetic temporaries.
+    """
+
+    def allocate(shape):
+        return (
+            *_empty_minmax(shape, image_true.dtype),
+            cp.empty(shape, dtype=cp.float64),
+        )
+
+    result = allocate(())
+    _reduce_image_statistics(
+        (image_true, image_test),
+        result,
+        _minmax_mse_kernel,
+        _merge_minmax_mse_kernel,
+        allocate,
+    )
+    return result
