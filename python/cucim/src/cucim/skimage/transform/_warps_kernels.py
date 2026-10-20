@@ -9,12 +9,13 @@ once instead of scanning separately for each statistic. The accumulator also
 tracks whether it contains a non-NaN value, preserving all-NaN ranges without
 numeric sentinels that would complicate support for integer and complex data.
 
-CuPy's generic scalar ReductionKernel uses a single thread block. This is
-appropriate for inputs of at most 4096 elements, where an additional launch
-would add overhead. Larger inputs first produce independent partial ranges in
-parallel, then merge those small results. This exposes more parallelism while
-avoiding another scan of the image; an incomplete final chunk is reduced
-separately before the merge.
+CuPy's generic scalar ReductionKernel uses a single thread block. Small inputs
+use it directly to avoid the extra dispatch and launch overhead of staging:
+up to 512 KiB for C-contiguous arrays, or 4096 elements for other layouts.
+Larger inputs first produce independent partial ranges in parallel, then merge
+those small results. This exposes more parallelism while avoiding another
+scan of the image; an incomplete final chunk is reduced separately before
+the merge.
 
 Contiguous inputs use fixed-size chunks of their flattened view. Strided
 inputs use existing axes or split one axis into chunk views, avoiding a copy
@@ -26,6 +27,10 @@ remain on the device.
 import cupy as cp
 
 _RANGE_CHUNK_SIZE = 4096
+# Keep the direct-reduction cutoff separate from the parallel chunk size.
+# A conservative byte limit balances launch savings against the limited
+# throughput of a single block.
+_RANGE_DIRECT_MAX_BYTES = 512 * 1024
 
 _range_preamble = r"""
 template<typename T>
@@ -143,7 +148,9 @@ def _get_warp_range(image):
     if image.size == 0:
         raise ValueError("Cannot compute the range of an empty image")
     result = _empty_warp_range((), image.dtype)
-    if image.size <= _RANGE_CHUNK_SIZE:
+    if image.size <= _RANGE_CHUNK_SIZE or (
+        image.flags.c_contiguous and image.nbytes <= _RANGE_DIRECT_MAX_BYTES
+    ):
         _warp_range_kernel(image, *result)
         return result
 

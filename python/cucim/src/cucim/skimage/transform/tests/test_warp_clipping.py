@@ -6,12 +6,20 @@ import numpy as np
 import pytest
 from cupyx import allow_synchronize
 
+from cucim.skimage.transform import _warps_kernels
 from cucim.skimage.transform._warps import _clip_warp_output
 from cucim.skimage.transform._warps_kernels import _get_warp_range
 
 pytestmark = pytest.mark.filterwarnings(
     "ignore:cupyx.allow_synchronize will be removed:UserWarning"
 )
+
+
+@pytest.fixture(params=["direct", "staged"])
+def range_dispatch(request, monkeypatch):
+    """Exercise both reduction paths on the same dtype and NaN cases."""
+    if request.param == "staged":
+        monkeypatch.setattr(_warps_kernels, "_RANGE_DIRECT_MAX_BYTES", 0)
 
 
 @pytest.mark.parametrize("dtype", ["float32", "float64"])
@@ -98,7 +106,7 @@ def test_clip_warp_output_all_nan(mode):
     ],
 )
 @pytest.mark.parametrize("size", [1, 31, 4096, 4097, 12288, 12289])
-def test_warp_range(dtype, size):
+def test_warp_range(dtype, size, range_dispatch):
     dtype = np.dtype(dtype)
     image = np.random.default_rng(0).integers(0, 100, size=size).astype(dtype)
     if size > 1:
@@ -119,7 +127,7 @@ def test_warp_range(dtype, size):
     "dtype", ["float16", "float32", "float64", "complex64", "complex128"]
 )
 @pytest.mark.parametrize("nan_pattern", ["all", "mixed", "chunk"])
-def test_warp_range_with_nans(dtype, nan_pattern):
+def test_warp_range_with_nans(dtype, nan_pattern, range_dispatch):
     image = cp.asarray(np.arange(12289).astype(dtype))
     if nan_pattern == "all":
         image[:] = cp.nan
@@ -202,7 +210,7 @@ def test_warp_range_subnormal_extrema(size):
 
 @pytest.mark.parametrize("mode", ["reflect", "constant"])
 @pytest.mark.parametrize("input_nan", [False, True])
-def test_clip_warp_output_multiple_chunks(mode, input_nan):
+def test_clip_warp_output_multiple_chunks(mode, input_nan, range_dispatch):
     image = cp.ones(16385, dtype=cp.float32)
     image[-1] = 2
     if input_nan:
@@ -215,3 +223,17 @@ def test_clip_warp_output_multiple_chunks(mode, input_nan):
     with allow_synchronize(False):
         _clip_warp_output(image, output, mode, 3, 3, True)
     cp.testing.assert_array_equal(output, expected)
+
+
+@pytest.mark.parametrize("dtype", ["float32", "float64"])
+@pytest.mark.parametrize("offset", [-1, 0, 1])
+def test_warp_range_direct_cutoff(dtype, offset):
+    dtype = cp.dtype(dtype)
+    size = _warps_kernels._RANGE_DIRECT_MAX_BYTES // dtype.itemsize + offset
+    image = cp.arange(size, dtype=dtype)
+    image[-1] = cp.nan
+    with allow_synchronize(False):
+        minimum, maximum, has_nan = _get_warp_range(image)
+    cp.testing.assert_array_equal(minimum, 0)
+    cp.testing.assert_array_equal(maximum, size - 2)
+    cp.testing.assert_array_equal(has_nan, True)
