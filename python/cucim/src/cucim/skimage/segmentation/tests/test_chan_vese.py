@@ -1,13 +1,61 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2022-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import cupy as cp
+import numpy as np
 import pytest
 from cupy.testing import assert_array_equal
+from cupyx import allow_synchronize
 
 from cucim.skimage._shared.utils import _supported_float_type
 from cucim.skimage.segmentation import chan_vese
+from cucim.skimage.segmentation._chan_vese import _cv_normalize
+
+
+@pytest.mark.parametrize("dtype", [cp.float32, cp.float64])
+@pytest.mark.parametrize("transpose", [False, True])
+@pytest.mark.parametrize(
+    "values",
+    [
+        [-3, 0, 0.25, 5],
+        [4, 4, 4, 4],
+        [0, -0.0, 0, 0],
+        [cp.nan, 1, 2, 3],
+        [cp.nan] * 4,
+        [cp.inf] * 4,
+        [-cp.inf, 1, 2, 3],
+        [0, 1, 2, cp.inf],
+        [-cp.inf, 1, 2, cp.inf],
+        [-np.finfo(np.float32).max, 0, 1, np.finfo(np.float32).max],
+    ],
+)
+@pytest.mark.filterwarnings("ignore:cupyx.allow_synchronize will be removed")
+def test_chan_vese_normalization(dtype, transpose, values):
+    image = cp.asarray(values, dtype=dtype).reshape(2, 2)
+    if transpose:
+        image = image.T
+    before = image.copy()
+    expected = image - image.min()
+    if expected.max() != 0:
+        expected = expected / expected.max()
+    with allow_synchronize(False):
+        result = _cv_normalize(image)
+    assert result.dtype == image.dtype
+    cp.testing.assert_allclose(result, expected, rtol=2e-7, equal_nan=True)
+    assert_array_equal(image, before)
+
+
+@pytest.mark.parametrize("dtype", [cp.float32, cp.float64])
+@pytest.mark.parametrize("transpose", [False, True])
+def test_chan_vese_normalization_large(dtype, transpose):
+    image = cp.random.RandomState(0).uniform(-17, 3, (257, 513)).astype(dtype)
+    if transpose:
+        image = image.T
+    expected = image - image.min()
+    expected /= expected.max()
+    actual = _cv_normalize(image)
+    cp.testing.assert_allclose(actual, expected, rtol=2e-7)
 
 
 @pytest.mark.parametrize("dtype", [cp.float32, cp.float64])
