@@ -980,3 +980,64 @@ def test_rescale_reuses_image_range(
     assert len(calls) == expected_calls
     expected = image * 2 if out_range == (0, 2) else image
     cp.testing.assert_array_equal(output, expected)
+
+
+@pytest.mark.parametrize(
+    "values", [[0, 0, 0], [], [np.nan, 1], [-np.inf, np.inf]]
+)
+def test_histogram_outer_edges_special_values(values):
+    from cucim.skimage.exposure.exposure import _get_outer_edges
+
+    image = cp.asarray(values, dtype=cp.float32)
+    if any(not np.isfinite(value) for value in values):
+        with pytest.raises(ValueError, match="not finite"):
+            _get_outer_edges(image, None)
+    else:
+        expected = (-0.5, 0.5) if values else (0, 1)
+        assert _get_outer_edges(image, None) == expected
+
+
+@pytest.mark.parametrize(
+    "dtype,source_range",
+    [
+        ("uint8", "image"),
+        ("uint8", "dtype"),
+        ("int8", "image"),
+        ("int8", "dtype"),
+        ("int64", "image"),
+    ],
+)
+def test_bincount_histogram_reuses_host_bounds(dtype, source_range):
+    from cucim.skimage.exposure.exposure import (
+        _bincount_histogram,
+        _bincount_histogram_centers,
+    )
+
+    values = [0, 1, 10] if dtype == "uint8" else [-10, -1, 10]
+    image = cp.asarray(values, dtype=dtype)
+    centers, bounds = _bincount_histogram_centers(
+        image, source_range, return_range=True
+    )
+    expected, _ = _bincount_histogram(image, source_range, centers)
+    actual, actual_centers = _bincount_histogram(
+        image, source_range, centers, bin_range=bounds
+    )
+    cp.testing.assert_array_equal(actual, expected)
+    cp.testing.assert_array_equal(actual_centers, centers)
+    assert bounds == (int(centers[0]), int(centers[-1]))
+
+
+@pytest.mark.parametrize("dtype", ["uint8", "int8"])
+@pytest.mark.parametrize("source_range", ["image", "dtype"])
+def test_multichannel_histogram_common_extrema(dtype, source_range):
+    image = cp.asarray([[0, 3, 9], [1, 4, 10], [2, 5, 11]], dtype=dtype)
+    if dtype == "int8":
+        image -= 6
+    actual, centers = exposure.histogram(
+        image, source_range=source_range, channel_axis=-1
+    )
+    centers_cpu = cp.asnumpy(centers)
+    edges = np.append(centers_cpu - 0.5, centers_cpu[-1] + 0.5)
+    for channel in range(image.shape[-1]):
+        expected, _ = np.histogram(cp.asnumpy(image[:, channel]), bins=edges)
+        cp.testing.assert_array_equal(actual[channel], expected)
