@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 from cupyx import allow_synchronize
 
-from cucim.skimage.transform import _warps_kernels
+from cucim.skimage.transform import _warps, _warps_kernels
 from cucim.skimage.transform._warps import _clip_warp_output
 from cucim.skimage.transform._warps_kernels import _get_warp_range
 
@@ -22,13 +22,22 @@ def range_dispatch(request, monkeypatch):
         monkeypatch.setattr(_warps_kernels, "_RANGE_DIRECT_MAX_BYTES", 0)
 
 
+@pytest.fixture(params=["device", "host"])
+def clipping_dispatch(request, monkeypatch):
+    """Check both constant-mode strategies against the same reference values."""
+    threshold = 0 if request.param == "host" else float("inf")
+    monkeypatch.setattr(_warps, "_CLIP_CONSTANT_HOST_MIN_BYTES", threshold)
+    monkeypatch.setattr(_warps, "_CLIP_CONSTANT_HOST_MAX_BYTES", float("inf"))
+    return request.param
+
+
 @pytest.mark.parametrize("dtype", ["float32", "float64"])
 @pytest.mark.parametrize("mode", ["reflect", "constant"])
 @pytest.mark.parametrize("input_nan", [False, True])
 @pytest.mark.parametrize("output_nan", [False, True])
 @pytest.mark.parametrize("cval", [-1, 1.5, 3, np.nan])
-def test_clip_warp_output_without_synchronizing(
-    dtype, mode, input_nan, output_nan, cval
+def test_clip_warp_output(
+    dtype, mode, input_nan, output_nan, cval, clipping_dispatch
 ):
     image = np.array([1, 2, np.nan] if input_nan else [1, 2], dtype=dtype)
     output = np.array([-2, 0, 1, 1.5, 2, 3, 4], dtype=dtype)
@@ -49,7 +58,7 @@ def test_clip_warp_output_without_synchronizing(
     expected = np.clip(output, min_val, max_val)
 
     image_gpu, output_gpu = cp.asarray(image), cp.asarray(output)
-    with allow_synchronize(False):
+    with allow_synchronize(mode == "constant" and clipping_dispatch == "host"):
         _clip_warp_output(image_gpu, output_gpu, mode, cval, 3, True)
     cp.testing.assert_array_equal(output_gpu, expected)
 
@@ -69,21 +78,33 @@ def test_clip_warp_output_with_precomputed_bounds(mode, cval, device_bounds):
 
 
 @pytest.mark.parametrize("mode", ["reflect", "constant"])
-def test_clip_warp_output_unused_cval(mode):
+def test_clip_warp_output_unused_cval(mode, clipping_dispatch):
     image = cp.asarray([1.0, 2.0])
     output = cp.asarray([0.5, 1.5, 2.5])
-    with allow_synchronize(False):
+    with allow_synchronize(mode == "constant" and clipping_dispatch == "host"):
         _clip_warp_output(image, output, mode, 0, 3, True)
     cp.testing.assert_array_equal(output, [1, 1.5, 2])
 
 
 @pytest.mark.parametrize("mode", ["reflect", "constant"])
-def test_clip_warp_output_all_nan(mode):
+def test_clip_warp_output_all_nan(mode, clipping_dispatch):
     image = cp.full(4, cp.nan)
     output = cp.full(4, cp.nan)
-    with allow_synchronize(False):
+    with allow_synchronize(mode == "constant" and clipping_dispatch == "host"):
         _clip_warp_output(image, output, mode, 0, 3, True)
     cp.testing.assert_array_equal(output, cp.full(4, cp.nan))
+
+
+@pytest.mark.parametrize("cval", [0.1, 2.1])
+def test_clip_warp_output_cval_uses_input_dtype(cval, clipping_dispatch):
+    image = cp.asarray([1, 2], dtype=cp.float32)
+    output = cp.asarray([-1, 0, 1.5, 3], dtype=cp.float64)
+    min_val = min(1, np.float32(cval))
+    max_val = max(2, np.float32(cval))
+    expected = np.clip(np.array([-1, 0, 1.5, 3]), min_val, max_val)
+    with allow_synchronize(clipping_dispatch == "host"):
+        _clip_warp_output(image, output, "constant", cval, 3, True)
+    cp.testing.assert_array_equal(output, expected)
 
 
 @pytest.mark.parametrize(
@@ -210,7 +231,9 @@ def test_warp_range_subnormal_extrema(size):
 
 @pytest.mark.parametrize("mode", ["reflect", "constant"])
 @pytest.mark.parametrize("input_nan", [False, True])
-def test_clip_warp_output_multiple_chunks(mode, input_nan, range_dispatch):
+def test_clip_warp_output_multiple_chunks(
+    mode, input_nan, range_dispatch, clipping_dispatch
+):
     image = cp.ones(16385, dtype=cp.float32)
     image[-1] = 2
     if input_nan:
@@ -220,7 +243,7 @@ def test_clip_warp_output_multiple_chunks(mode, input_nan, range_dispatch):
     expected = output.copy()
     expected[0] = 1
     expected[-1] = 3 if mode == "constant" and input_nan else 2
-    with allow_synchronize(False):
+    with allow_synchronize(mode == "constant" and clipping_dispatch == "host"):
         _clip_warp_output(image, output, mode, 3, 3, True)
     cp.testing.assert_array_equal(output, expected)
 
