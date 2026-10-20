@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import math
@@ -9,6 +9,7 @@ from warnings import warn
 import cupy as cp
 import numpy as np
 
+from .._shared._reduction_kernels import _get_minmax
 from .._shared.utils import _supported_float_type
 
 __all__ = [
@@ -319,7 +320,9 @@ def _convert(image, dtype, force_copy=False, uniform=False):
             # float -> float
             return image.astype(dtype_out)
 
-        if cp.min(image) < -1.0 or cp.max(image) > 1.0:
+        # Transfer both bounds once rather than synchronizing two GPU predicates.
+        image_min, image_max = _get_minmax(image).get().tolist()
+        if image_min < -1.0 or image_max > 1.0:
             raise ValueError("Images of type float must be between -1 and 1.")
         # floating point -> integer
         # use float type that can represent output integer type
