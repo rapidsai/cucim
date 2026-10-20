@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import platform
@@ -923,3 +923,60 @@ def test_dask_histogram():
     expected_hist = [1, 2, 1]
     assert cp.allclose(expected_bins, output_bins)
     assert cp.allclose(expected_hist, output_hist)
+
+
+@pytest.mark.parametrize("dtype", ["int64", "uint64"])
+def test_intensity_range_preserves_integer_precision(dtype):
+    limits = np.iinfo(dtype)
+    image = cp.asarray([limits.min, limits.max], dtype=dtype)
+    result = intensity_range(image)
+    assert result == (limits.min, limits.max)
+    assert all(isinstance(value, int) for value in result)
+
+
+@pytest.mark.parametrize("dtype", ["float32", "float64"])
+@pytest.mark.parametrize("nan_pattern", ["mixed", "all"])
+def test_rescale_image_ranges_propagate_nan(dtype, nan_pattern):
+    image = cp.linspace(0, 1, 131073, dtype=dtype)
+    if nan_pattern == "mixed":
+        image[4096] = cp.nan
+    else:
+        image[:] = cp.nan
+    with pytest.warns(
+        UserWarning, match="One or more intensity levels are NaN"
+    ):
+        output = exposure.rescale_intensity(
+            image, in_range="image", out_range="image"
+        )
+    assert output.dtype == image.dtype
+    assert bool(cp.isnan(output).all())
+
+
+@pytest.mark.parametrize(
+    "in_range,out_range,expected_calls",
+    [
+        ("image", "image", 1),
+        ("dtype", "dtype", 0),
+        ((0, 1), (0, 2), 0),
+    ],
+)
+def test_rescale_reuses_image_range(
+    monkeypatch, in_range, out_range, expected_calls
+):
+    from cucim.skimage.exposure import exposure as exposure_module
+
+    get_minmax = exposure_module._get_minmax
+    calls = []
+
+    def counted_minmax(image):
+        calls.append(image)
+        return get_minmax(image)
+
+    monkeypatch.setattr(exposure_module, "_get_minmax", counted_minmax)
+    image = cp.asarray([0, 0.5, 1], dtype=cp.float32)
+    output = exposure.rescale_intensity(
+        image, in_range=in_range, out_range=out_range
+    )
+    assert len(calls) == expected_calls
+    expected = image * 2 if out_range == (0, 2) else image
+    cp.testing.assert_array_equal(output, expected)
