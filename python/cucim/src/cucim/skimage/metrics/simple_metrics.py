@@ -5,7 +5,7 @@
 import cupy as cp
 from cupyx.scipy.stats import entropy
 
-from .._shared._reduction_kernels import _get_minmax_mse
+from .._shared._reduction_kernels import _get_minmax, _get_minmax_mse
 from .._shared.utils import _supported_float_type, check_shape_equality, warn
 from .._vendored import pad
 from ..util.dtype import dtype_range
@@ -172,7 +172,9 @@ def peak_signal_noise_ratio(image_true, image_test, *, data_range=None):
                 stacklevel=2,
             )
         dmin, dmax = dtype_range[image_true.dtype.type]
-        true_min, true_max = cp.min(image_true), cp.max(image_true)
+        # Validate both bounds after one readback, without separate GPU
+        # comparisons and their individual host synchronizations.
+        true_min, true_max = _get_minmax(image_true).get().tolist()
         if true_max > dmax or true_min < dmin:
             raise ValueError(
                 "im_true has intensity values outside the range expected for "
