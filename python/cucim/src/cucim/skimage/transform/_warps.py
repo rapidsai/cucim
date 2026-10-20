@@ -31,6 +31,11 @@ HOMOGRAPHY_TRANSFORMS = (
     ProjectiveTransform,
 )
 
+# Small arrays favor combined reductions; large arrays favor their throughput.
+# Intermediate constant-mode arrays benefit from the in-range short-circuit.
+_CLIP_CONSTANT_HOST_MIN_BYTES = 512 * 1024
+_CLIP_CONSTANT_HOST_MAX_BYTES = 16 * 1024 * 1024
+
 
 def _preprocess_resize_output_shape(image, output_shape):
     """Validate resize output shape according to input image.
@@ -913,6 +918,41 @@ def _clip_warp_output_with_cval(
     cp.clip(output_image, min_val, max_val, out=output_image)
 
 
+def _clip_constant_warp_output(image, output_image, cval):
+    """Short-circuit in-range fills, falling back to NaN-safe device clipping.
+
+    Reading the input extrema on the host avoids reducing the output when the
+    fill is already within range. For inputs without NaNs, ordinary output
+    extrema suffice: a NaN bound naturally disables preservation of the fill.
+    Return False for NaN-containing inputs so the caller uses combined ranges.
+    """
+    min_val = image.min().item()
+    if np.isnan(min_val):
+        return False
+    if cval < min_val:
+        # The fill is already known to be outside the range; keep the maximum
+        # on the device rather than synchronizing a second time.
+        max_val = image.max()
+    else:
+        max_val = image.max().item()
+        if min_val <= cval <= max_val:
+            cp.clip(output_image, min_val, max_val, out=output_image)
+            return True
+        max_val = image.dtype.type(max_val)
+
+    _clip_warp_output_with_cval(
+        output_image,
+        image.dtype.type(min_val),
+        max_val,
+        cval,
+        False,
+        False,
+        output_image.min(),
+        output_image.max(),
+    )
+    return True
+
+
 def _clip_warp_output(input_image, output_image, mode, cval, order, clip):
     """Clip output image to range of values of input image.
 
@@ -946,6 +986,15 @@ def _clip_warp_output(input_image, output_image, mode, cval, order, clip):
     """
     if (clip is None and order <= 1) or not clip:
         # no clipping by default for order = 0 or 1
+        return
+    if (
+        mode == "constant"
+        and isinstance(input_image, cp.ndarray)
+        and _CLIP_CONSTANT_HOST_MIN_BYTES
+        < input_image.nbytes
+        <= _CLIP_CONSTANT_HOST_MAX_BYTES
+        and _clip_constant_warp_output(input_image, output_image, cval)
+    ):
         return
     if isinstance(input_image, tuple) and len(input_image) == 2:
         min_val, max_val = input_image
