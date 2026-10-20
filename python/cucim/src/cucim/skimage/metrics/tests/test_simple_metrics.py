@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import math
@@ -151,3 +151,107 @@ def test_nmi_random_3d():
         1,
         decimal=2,
     )
+
+
+def _previous_minmax_nrmse(image_true, image_test):
+    """Reference the separate reductions and image temporaries used previously."""
+    from cucim.skimage._shared.utils import _supported_float_type
+
+    dtype = _supported_float_type([image_true.dtype, image_test.dtype])
+    image_true, image_test = (
+        x.astype(dtype, copy=False) for x in (image_true, image_test)
+    )
+    return cp.sqrt(mean_squared_error(image_true, image_test)) / (
+        image_true.max() - image_true.min()
+    )
+
+
+@pytest.mark.parametrize("dtype", ["float32", "float64"])
+@pytest.mark.parametrize("shape", [(7, 9), (257, 513), (3, 32771)])
+@pytest.mark.parametrize(
+    "layout", ["contiguous", "different_strides", "reverse", "slice"]
+)
+@pytest.mark.filterwarnings(
+    "ignore:cupyx.allow_synchronize will be removed:UserWarning"
+)
+def test_NRMSE_minmax_combined(dtype, shape, layout):
+    from cupyx import allow_synchronize
+
+    rng = cp.random.default_rng(0)
+    image_true = rng.random(shape, dtype=dtype) * 2 - 1
+    image_test = rng.random(shape, dtype=dtype) * 2 - 1
+    if layout == "different_strides":
+        image_test = cp.asfortranarray(image_test)
+    elif layout == "reverse":
+        image_true = image_true[::-1, ::-1]
+    elif layout == "slice":
+        image_true = image_true[:, ::2]
+        image_test = image_test[:, ::2]
+    expected = _previous_minmax_nrmse(image_true, image_test)
+    with allow_synchronize(False):
+        actual = normalized_root_mse(
+            image_true, image_test, normalization="min-max"
+        )
+    assert actual.dtype == cp.float64
+    assert actual.shape == ()
+    cp.testing.assert_allclose(actual, expected, rtol=1e-12)
+
+
+@pytest.mark.parametrize(
+    "dtype", ["uint8", "int16", "float16", "float32", "float64"]
+)
+@pytest.mark.parametrize("test_dtype", ["float32", "float64"])
+def test_NRMSE_minmax_dtype_promotion(dtype, test_dtype):
+    image_true = cp.arange(99, dtype=dtype).reshape(9, 11)
+    image_test = (image_true + 0.125).astype(test_dtype)
+    expected = _previous_minmax_nrmse(image_true, image_test)
+    actual = normalized_root_mse(
+        image_true, image_test, normalization="MIN-MAX"
+    )
+    assert actual.dtype == cp.float64
+    cp.testing.assert_allclose(actual, expected, rtol=1e-12)
+
+
+@pytest.mark.parametrize("dtype", ["float32", "float64"])
+@pytest.mark.parametrize(
+    "case", ["true_nan", "test_nan", "all_nan", "infinity", "constant", "zero"]
+)
+def test_NRMSE_minmax_nonfinite_and_constant(dtype, case):
+    image_true = cp.linspace(-1, 1, 131073, dtype=dtype)
+    image_test = image_true + 0.25
+    if case == "true_nan":
+        image_true[4096] = cp.nan
+    elif case == "test_nan":
+        image_test[-1] = cp.nan
+    elif case == "all_nan":
+        image_true[:] = cp.nan
+    elif case == "infinity":
+        image_true[0] = cp.inf
+    elif case == "constant":
+        image_true[:] = 1
+        image_test[:] = 2
+    else:
+        image_true[:] = image_test[:] = 0
+    expected = _previous_minmax_nrmse(image_true, image_test)
+    actual = normalized_root_mse(
+        image_true, image_test, normalization="min-max"
+    )
+    cp.testing.assert_allclose(actual, expected, rtol=1e-12, equal_nan=True)
+
+
+@pytest.mark.parametrize("values", [[0, 1e20], [-2e38, 2e38], [0, 1e-30]])
+def test_NRMSE_minmax_float32_arithmetic(values):
+    # Squaring and range subtraction must retain float32 overflow/underflow,
+    # even though the squared-error sum is accumulated in float64.
+    image_true = cp.asarray(values, dtype=cp.float32)
+    image_test = cp.zeros_like(image_true)
+    expected = _previous_minmax_nrmse(image_true, image_test)
+    actual = normalized_root_mse(
+        image_true, image_test, normalization="min-max"
+    )
+    cp.testing.assert_allclose(actual, expected, rtol=1e-12, equal_nan=True)
+
+
+def test_NRMSE_minmax_empty():
+    with pytest.raises(ValueError):
+        normalized_root_mse(cp.empty(0), cp.empty(0), normalization="min-max")
