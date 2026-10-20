@@ -23,6 +23,7 @@ from ._geometric import (
     ProjectiveTransform,
     SimilarityTransform,
 )
+from ._warps_kernels import _get_warp_range
 
 HOMOGRAPHY_TRANSFORMS = (
     SimilarityTransform,
@@ -885,14 +886,14 @@ def _clip_warp_output_with_cval(
     min_val,
     max_val,
     cval,
-    input_min,
-    output_min,
+    input_has_nan,
+    output_has_nan,
     output_nanmin,
     output_nanmax,
 ):
     # Ignore output NaNs only when the input contained NaNs, matching the
     # choice between min/max and nanmin/nanmax in the original clipping path.
-    valid_output_range = cp.isnan(input_min) | ~cp.isnan(output_min)
+    valid_output_range = input_has_nan | ~output_has_nan
     preserve_cval = (
         ~((min_val <= cval) & (cval <= max_val))
         & valid_output_range
@@ -948,25 +949,22 @@ def _clip_warp_output(input_image, output_image, mode, cval, order, clip):
         return
     if isinstance(input_image, tuple) and len(input_image) == 2:
         min_val, max_val = input_image
-        input_min = min_val
-    else:
-        # The public nanmin/nanmax wrappers synchronize to check whether to
-        # warn about all-NaN slices. Keep the results on the device instead.
-        min_val = cp._core.nanmin(input_image)
-        max_val = cp._core.nanmax(input_image)
         if mode == "constant":
-            input_min = input_image.min()
+            input_has_nan = cp.isnan(min_val)
+    else:
+        min_val, max_val, input_has_nan = _get_warp_range(input_image)
 
     if mode == "constant":
+        output_min, output_max, output_has_nan = _get_warp_range(output_image)
         _clip_warp_output_with_cval(
             output_image,
             min_val,
             max_val,
             cval,
-            input_min,
-            output_image.min(),
-            cp._core.nanmin(output_image),
-            cp._core.nanmax(output_image),
+            input_has_nan,
+            output_has_nan,
+            output_min,
+            output_max,
         )
     else:
         cp.clip(output_image, min_val, max_val, out=output_image)
