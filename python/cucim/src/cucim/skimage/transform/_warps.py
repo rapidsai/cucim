@@ -96,6 +96,8 @@ def resize(
     preserve_range=False,
     anti_aliasing=None,
     anti_aliasing_sigma=None,
+    *,
+    assume_finite=False,
 ):
     """Resize image to match a certain size.
 
@@ -151,6 +153,11 @@ def resize(
         By default, this value is chosen as (s - 1) / 2 where s is the
         downsampling factor, where s > 1. For the up-size case, s < 1, no
         anti-aliasing is performed prior to rescaling.
+    assume_finite : bool, optional
+        If True, assume the input and all intermediate values remain finite.
+        Skip NaN detection during clipping and keep range decisions on the
+        device. The input is not validated. Constant mode requires a finite
+        `cval`. Default is False, retaining NaN-aware clipping.
 
     See Also
     --------
@@ -186,6 +193,7 @@ def resize(
 
     """
 
+    _validate_assume_finite(mode, cval, assume_finite)
     image, output_shape = _preprocess_resize_output_shape(image, output_shape)
     input_shape = image.shape
     input_type = image.dtype
@@ -257,7 +265,9 @@ def resize(
         cval=cval,
         grid_mode=True,
     )
-    _clip_warp_output(image, out, mode, cval, order, clip)
+    _clip_warp_output(
+        image, out, mode, cval, order, clip, assume_finite=assume_finite
+    )
     return out
 
 
@@ -953,7 +963,17 @@ def _clip_constant_warp_output(image, output_image, cval):
     return True
 
 
-def _clip_warp_output(input_image, output_image, mode, cval, order, clip):
+def _validate_assume_finite(mode, cval, assume_finite):
+    """Reject a padding value that contradicts the caller's finite promise."""
+    if assume_finite and mode == "constant" and not math.isfinite(cval):
+        raise ValueError(
+            "assume_finite=True requires a finite cval in constant mode"
+        )
+
+
+def _clip_warp_output(
+    input_image, output_image, mode, cval, order, clip, *, assume_finite=False
+):
     """Clip output image to range of values of input image.
 
     Note that this function modifies the values of `output_image` in-place
@@ -982,13 +1002,17 @@ def _clip_warp_output(input_image, output_image, mode, cval, order, clip):
         Whether to clip the output to the range of values of the input image.
         If `order` > 1, this will be enabled by default, since higher order
         interpolation may produce values outside the given input range.
+    assume_finite : bool, optional
+        Trust that all values remain finite, allowing ordinary extrema
+        reductions without NaN detection or host-side range checks.
 
     """
     if (clip is None and order <= 1) or not clip:
         # no clipping by default for order = 0 or 1
         return
     if (
-        mode == "constant"
+        not assume_finite
+        and mode == "constant"
         and isinstance(input_image, cp.ndarray)
         and _CLIP_CONSTANT_HOST_MIN_BYTES
         < input_image.nbytes
@@ -999,12 +1023,21 @@ def _clip_warp_output(input_image, output_image, mode, cval, order, clip):
     if isinstance(input_image, tuple) and len(input_image) == 2:
         min_val, max_val = input_image
         if mode == "constant":
-            input_has_nan = cp.isnan(min_val)
+            input_has_nan = False if assume_finite else cp.isnan(min_val)
+    elif assume_finite:
+        min_val, max_val = input_image.min(), input_image.max()
+        input_has_nan = False
     else:
         min_val, max_val, input_has_nan = _get_warp_range(input_image)
 
     if mode == "constant":
-        output_min, output_max, output_has_nan = _get_warp_range(output_image)
+        if assume_finite:
+            output_min, output_max = output_image.min(), output_image.max()
+            output_has_nan = False
+        else:
+            output_min, output_max, output_has_nan = _get_warp_range(
+                output_image
+            )
         _clip_warp_output_with_cval(
             output_image,
             min_val,
