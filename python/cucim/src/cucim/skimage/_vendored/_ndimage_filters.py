@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Infrastructure, Inc.
 # SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Networks, Inc.
-# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND MIT
 
 """A vendored subset of cupyx.scipy.ndimage._filters"""
@@ -707,7 +707,7 @@ def _gaussian_kernel1d(
     phi_x /= phi_x.sum()
 
     if order == 0:
-        return cupy.asarray(phi_x, blocking=blocking)
+        return cupy.asarray(phi_x, dtype=dtype, blocking=blocking)
 
     # f(x) = q(x) * phi(x) = q(x) * exp(p(x))
     # f'(x) = (q'(x) + q(x) * p'(x)) * phi(x)
@@ -731,8 +731,7 @@ def _gaussian_kernel1d(
 def _cached_gaussian_kernel1d(sigma, order, radius, dtype):
     # Avoid retaining unusually large kernels. Together with the entry count
     # limit, this bounds the cached kernel data to roughly 64 MiB per process.
-    kernel_dtype = cupy.float64 if order == 0 else dtype
-    kernel_nbytes = (2 * radius + 1) * cupy.dtype(kernel_dtype).itemsize
+    kernel_nbytes = (2 * radius + 1) * cupy.dtype(dtype).itemsize
     if kernel_nbytes > _MAX_CACHED_GAUSSIAN_KERNEL_BYTES:
         return _gaussian_kernel1d(sigma, order, radius, cupy.dtype(dtype))
 
