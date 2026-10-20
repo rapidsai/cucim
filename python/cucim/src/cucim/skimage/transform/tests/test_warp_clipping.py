@@ -260,3 +260,25 @@ def test_warp_range_direct_cutoff(dtype, offset):
     cp.testing.assert_array_equal(minimum, 0)
     cp.testing.assert_array_equal(maximum, size - 2)
     cp.testing.assert_array_equal(has_nan, True)
+
+
+@pytest.mark.parametrize("dtype", ["float32", "float64"])
+@pytest.mark.parametrize("size", [31, 131073])
+@pytest.mark.parametrize("mode", ["reflect", "constant"])
+@pytest.mark.parametrize("cval", [-1, 1.5, 3])
+def test_clip_warp_output_assume_finite(monkeypatch, dtype, size, mode, cval):
+    image = cp.linspace(1, 2, size, dtype=dtype)
+    output = cp.linspace(-2, 4, size, dtype=dtype)
+    expected = output.copy()
+    _clip_warp_output(image, expected, mode, cval, 3, True)
+
+    def fail_nan_path(*args, **kwargs):
+        pytest.fail("finite clipping used NaN detection or host range checks")
+
+    monkeypatch.setattr(_warps, "_get_warp_range", fail_nan_path)
+    monkeypatch.setattr(_warps, "_clip_constant_warp_output", fail_nan_path)
+    with allow_synchronize(False):
+        _clip_warp_output(
+            image, output, mode, cval, 3, True, assume_finite=True
+        )
+    cp.testing.assert_array_equal(output, expected)
