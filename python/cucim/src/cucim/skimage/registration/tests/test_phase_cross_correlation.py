@@ -260,3 +260,42 @@ def test_disambiguate_empty_image(null_images):
         "Could not determine RMS error between images"
         in records[1].message.args[0]
     )
+
+
+@pytest.mark.parametrize(
+    "dtypes",
+    [
+        ("complex64", "float32", "float32"),
+        ("complex128", "float64", "float64"),
+        ("complex128", "float32", "float64"),
+    ],
+)
+@pytest.mark.parametrize(
+    "values,expected",
+    [
+        ((1 + 2j, 2, 3), False),
+        ((complex(np.nan, 1), 2, 3), True),
+        ((complex(1, np.nan), 2, 3), True),
+        ((1 + 2j, np.nan, 3), True),
+        ((1 + 2j, 2, np.nan), True),
+        ((complex(np.inf, 1), np.inf, np.inf), False),
+    ],
+)
+@pytest.mark.filterwarnings(
+    "ignore:cupyx.allow_synchronize will be removed:UserWarning"
+)
+def test_phase_stats_have_nan(dtypes, values, expected):
+    from cupyx import allow_synchronize
+
+    from cucim.skimage.registration._phase_cross_correlation import (
+        _phase_stats_have_nan,
+    )
+
+    args = tuple(
+        cp.asarray(value, dtype=dtype) for value, dtype in zip(values, dtypes)
+    )
+    with allow_synchronize(False):
+        actual = _phase_stats_have_nan(*args)
+    assert actual.shape == ()
+    assert actual.dtype == cp.bool_
+    cp.testing.assert_array_equal(actual, expected)
