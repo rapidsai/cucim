@@ -879,6 +879,39 @@ def warp_coords(coord_map, shape, dtype=cp.float64):
     return coords
 
 
+@cp.fuse()
+def _clip_warp_output_with_cval(
+    output_image,
+    min_val,
+    max_val,
+    cval,
+    input_min,
+    output_min,
+    output_nanmin,
+    output_nanmax,
+):
+    # Ignore output NaNs only when the input contained NaNs, matching the
+    # choice between min/max and nanmin/nanmax in the original clipping path.
+    valid_output_range = cp.isnan(input_min) | ~cp.isnan(output_min)
+    preserve_cval = (
+        ~((min_val <= cval) & (cval <= max_val))
+        & valid_output_range
+        & (output_nanmin <= cval)
+        & (cval <= output_nanmax)
+    )
+    min_val = cp.where(
+        preserve_cval,
+        cp.minimum(min_val, cval).astype(min_val.dtype),
+        min_val,
+    )
+    max_val = cp.where(
+        preserve_cval,
+        cp.maximum(max_val, cval).astype(max_val.dtype),
+        max_val,
+    )
+    cp.clip(output_image, min_val, max_val, out=output_image)
+
+
 def _clip_warp_output(input_image, output_image, mode, cval, order, clip):
     """Clip output image to range of values of input image.
 
@@ -915,39 +948,28 @@ def _clip_warp_output(input_image, output_image, mode, cval, order, clip):
         return
     if isinstance(input_image, tuple) and len(input_image) == 2:
         min_val, max_val = input_image
-        # copy device scalars to host if necessary
-        if isinstance(min_val, cp.ndarray):
-            min_val = min_val.item()
-        if isinstance(max_val, cp.ndarray):
-            max_val = max_val.item()
+        input_min = min_val
     else:
-        min_val = input_image.min().item()
-        if np.isnan(min_val):
-            # NaNs detected, use NaN-safe min/max
-            min_func = cp.nanmin
-            max_func = cp.nanmax
-            min_val = min_func(input_image).item()
-        else:
-            min_func = cp.min
-            max_func = cp.max
-        max_val = max_func(input_image).item()
+        # The public nanmin/nanmax wrappers synchronize to check whether to
+        # warn about all-NaN slices. Keep the results on the device instead.
+        min_val = cp._core.nanmin(input_image)
+        max_val = cp._core.nanmax(input_image)
+        if mode == "constant":
+            input_min = input_image.min()
 
-    # Check if cval has been used such that it expands the effective input
-    # range
-    preserve_cval = (
-        mode == "constant"
-        and not min_val <= cval <= max_val
-        and min_func(output_image) <= cval <= max_func(output_image)
-    )
-
-    # expand min/max range to account for cval
-    if preserve_cval:
-        # cast cval to the same dtype as the input image
-        cval = input_image.dtype.type(cval)
-        min_val = min(min_val, cval)
-        max_val = max(max_val, cval)
-
-    cp.clip(output_image, min_val, max_val, out=output_image)
+    if mode == "constant":
+        _clip_warp_output_with_cval(
+            output_image,
+            min_val,
+            max_val,
+            cval,
+            input_min,
+            output_image.min(),
+            cp._core.nanmin(output_image),
+            cp._core.nanmax(output_image),
+        )
+    else:
+        cp.clip(output_image, min_val, max_val, out=output_image)
 
 
 def warp(
