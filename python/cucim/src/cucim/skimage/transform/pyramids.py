@@ -9,7 +9,7 @@ import cupy as cp
 
 from .._shared.utils import convert_to_float
 from .._vendored import ndimage as ndi
-from ._warps import resize
+from ._warps import _validate_assume_finite, resize
 
 
 def _smooth(image, sigma, mode, cval, channel_axis):
@@ -55,6 +55,7 @@ def pyramid_reduce(
     preserve_range=False,
     *,
     channel_axis=None,
+    assume_finite=False,
 ):
     """Smooth and then downsample image.
 
@@ -84,6 +85,12 @@ def pyramid_reduce(
         If None, the image is assumed to be a grayscale (single channel) image.
         Otherwise, this parameter indicates which axis of the array corresponds
         to channels.
+    assume_finite : bool, optional
+        If True, assume the input and all intermediate values remain finite.
+        Skip NaN detection during clipping. The input is not validated and
+        constant mode requires a finite `cval`. Default is False, retaining
+        NaN-aware clipping. Pyramid generators reuse this promise at every
+        level without checking the image again.
 
     Returns
     -------
@@ -96,6 +103,7 @@ def pyramid_reduce(
 
     """
     _check_factor(downscale)
+    _validate_assume_finite(mode, cval, assume_finite)
 
     image = convert_to_float(image, preserve_range)
     if channel_axis is not None:
@@ -119,6 +127,7 @@ def pyramid_reduce(
         mode=mode,
         cval=cval,
         anti_aliasing=False,
+        assume_finite=assume_finite,
     )
 
     return out
@@ -134,6 +143,7 @@ def pyramid_expand(
     preserve_range=False,
     *,
     channel_axis=None,
+    assume_finite=False,
 ):
     """Upsample and then smooth image.
 
@@ -163,6 +173,12 @@ def pyramid_expand(
         If None, the image is assumed to be a grayscale (single channel) image.
         Otherwise, this parameter indicates which axis of the array corresponds
         to channels.
+    assume_finite : bool, optional
+        If True, assume the input and all intermediate values remain finite.
+        Skip NaN detection during clipping. The input is not validated and
+        constant mode requires a finite `cval`. Default is False, retaining
+        NaN-aware clipping. Pyramid generators reuse this promise at every
+        level without checking the image again.
 
     Returns
     -------
@@ -175,6 +191,7 @@ def pyramid_expand(
 
     """
     _check_factor(upscale)
+    _validate_assume_finite(mode, cval, assume_finite)
     image = convert_to_float(image, preserve_range)
     if channel_axis is not None:
         channel_axis = channel_axis % image.ndim
@@ -190,7 +207,13 @@ def pyramid_expand(
         sigma = 2 * upscale / 6.0
 
     resized = resize(
-        image, out_shape, order=order, mode=mode, cval=cval, anti_aliasing=False
+        image,
+        out_shape,
+        order=order,
+        mode=mode,
+        cval=cval,
+        anti_aliasing=False,
+        assume_finite=assume_finite,
     )
     out = _smooth(resized, sigma, mode, cval, channel_axis)
 
@@ -208,6 +231,7 @@ def pyramid_gaussian(
     preserve_range=False,
     *,
     channel_axis=None,
+    assume_finite=False,
 ):
     """Yield images of the Gaussian pyramid formed by the input image.
 
@@ -248,6 +272,12 @@ def pyramid_gaussian(
         If None, the image is assumed to be a grayscale (single channel) image.
         Otherwise, this parameter indicates which axis of the array corresponds
         to channels.
+    assume_finite : bool, optional
+        If True, assume the input and all intermediate values remain finite.
+        Skip NaN detection during clipping. The input is not validated and
+        constant mode requires a finite `cval`. Default is False, retaining
+        NaN-aware clipping. Pyramid generators reuse this promise at every
+        level without checking the image again.
 
     Returns
     -------
@@ -260,6 +290,7 @@ def pyramid_gaussian(
 
     """
     _check_factor(downscale)
+    _validate_assume_finite(mode, cval, assume_finite)
 
     # cast to float for consistent data type in pyramid
     image = convert_to_float(image, preserve_range)
@@ -292,6 +323,7 @@ def pyramid_gaussian(
             mode,
             cval,
             channel_axis=channel_axis,
+            assume_finite=assume_finite,
         )
 
         prev_shape = current_shape
@@ -316,6 +348,7 @@ def pyramid_laplacian(
     preserve_range=False,
     *,
     channel_axis=None,
+    assume_finite=False,
 ):
     """Yield images of the laplacian pyramid formed by the input image.
 
@@ -359,6 +392,12 @@ def pyramid_laplacian(
         If None, the image is assumed to be a grayscale (single channel) image.
         Otherwise, this parameter indicates which axis of the array corresponds
         to channels.
+    assume_finite : bool, optional
+        If True, assume the input and all intermediate values remain finite.
+        Skip NaN detection during clipping. The input is not validated and
+        constant mode requires a finite `cval`. Default is False, retaining
+        NaN-aware clipping. Pyramid generators reuse this promise at every
+        level without checking the image again.
 
 
     Returns
@@ -373,6 +412,7 @@ def pyramid_laplacian(
 
     """  # noqa
     _check_factor(downscale)
+    _validate_assume_finite(mode, cval, assume_finite)
 
     # cast to float for consistent data type in pyramid
     image = convert_to_float(image, preserve_range)
@@ -417,6 +457,7 @@ def pyramid_laplacian(
             mode=mode,
             cval=cval,
             anti_aliasing=False,
+            assume_finite=assume_finite,
         )
         smoothed_image = _smooth(resized_image, sigma, mode, cval, channel_axis)
         current_shape = resized_image.shape
