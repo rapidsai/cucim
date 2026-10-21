@@ -66,7 +66,10 @@ def _bincount_rows(image, nbins, low=0):
     blocks = min((pixels + 255) // 256, max(1, 1024 // rows))
     shared = nbins <= 4096
     # Each private counter is bounded by this block's number of input values.
-    shared &= (pixels + blocks - 1) // blocks <= 0xFFFFFFFF
+    # Round to the full 256-thread iteration: an early block can process up
+    # to one more iteration than the average pixels-per-block estimate.
+    iterations = (pixels + blocks * 256 - 1) // (blocks * 256)
+    shared &= iterations * 256 <= 0xFFFFFFFF
     kernel = _get_bincount_rows_kernel(image.dtype.str, shared)
     kernel(
         (rows * blocks,),
