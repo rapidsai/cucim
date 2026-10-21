@@ -161,7 +161,33 @@ def spline_filter1d(
     int_type = numpy.dtype(index_dtype).type
     core = _spline_prefilter_core
     launch_kwargs = {}
-    if temp.flags.c_contiguous and core.supports_segmented_spline1d(
+    # Contiguous lines, or the axis before a small trailing axis (e.g. the
+    # last spatial axis of RGB/RGBA images) filtered as interleaved lines.
+    channels = core.get_warp_spline1d_channels(axis, temp.shape)
+    if temp.flags.c_contiguous and core.supports_warp_spline1d(
+        data_type, n_samples, n_signals, channels
+    ):
+        warps_per_block, smem = core.get_warp_spline1d_launch(
+            n_samples, data_type, channels
+        )
+        kern = core.get_warp_spline1d_kernel(
+            mode,
+            order=order,
+            index_type=index_type,
+            data_type=data_type,
+            pole_type=pole_type,
+            warps_per_block=warps_per_block,
+            channels=channels,
+        )
+        if smem > core._DEFAULT_MAX_DYNAMIC_SHARED_MEMORY:
+            # Long lines opt in to the device's larger shared memory limit.
+            kern.max_dynamic_shared_size_bytes = smem
+        n_blocks = n_signals // channels  # staged (n_samples, channels) blocks
+        block = (32 * warps_per_block,)
+        grid = ((n_blocks + warps_per_block - 1) // warps_per_block,)
+        args = (temp, int_type(n_blocks), int_type(n_samples))
+        launch_kwargs = dict(shared_mem=smem)
+    elif temp.flags.c_contiguous and core.supports_segmented_spline1d(
         axis, ndim, data_type
     ):
         # Strided axis: several threads per line, 32 adjacent lines per block.

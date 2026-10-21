@@ -169,6 +169,7 @@ def test_general_spline_scalar_metadata(
         return checked
 
     with monkeypatch.context() as patch:
+        patch.setattr(core, "supports_warp_spline1d", lambda *args: False)
         patch.setattr(core, "supports_segmented_spline1d", lambda *args: False)
         patch.setattr(
             interpolation._util, "_get_inttype", lambda image: index_type
@@ -249,6 +250,7 @@ def test_segmented_spline_prefilter(
 
     with monkeypatch.context() as patch:
         patch.setattr(core, "get_segmented_spline1d_kernel", spy)
+        patch.setattr(core, "supports_warp_spline1d", lambda *args: False)
         patch.setattr(
             interpolation._util, "_get_inttype", lambda image: index_type
         )

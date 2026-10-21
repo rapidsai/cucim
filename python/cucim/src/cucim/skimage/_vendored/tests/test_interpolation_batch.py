@@ -28,6 +28,8 @@ import cupy
 from cupy.cuda import runtime
 from cupy import testing
 import cucim.skimage._vendored.ndimage as vendored_ndimage
+from cucim.skimage._vendored import _ndimage_interpolation
+from cucim.skimage._vendored import _ndimage_spline_prefilter_core
 from cucim.skimage._vendored._internal import AxisError
 from cucim.skimage._vendored._ndimage_interp_kernels import (
     _get_coord_zoom_and_shift_grid,
@@ -88,6 +90,197 @@ def test_loop_batch_selected_when_last_axis_is_one_of_multiple_batch_axes():
     )
 
     assert kern_info.size == 5 * 6 * 7
+
+
+@pytest.mark.parametrize("order", [2, 3])
+@pytest.mark.parametrize(
+    "mode",
+    [
+        "reflect",
+        "grid-mirror",
+        "nearest",
+        "mirror",
+        "constant",
+        "wrap",
+        "grid-wrap",
+        "grid-constant",
+    ],
+)
+@pytest.mark.parametrize("dtype", [cupy.uint8, cupy.float32, cupy.float64])
+def test_warp_spline_prefilter_matches_fallback(
+    monkeypatch, order, mode, dtype
+):
+    x = cupy.arange(7 * 257, dtype=dtype).reshape(7, 257)
+    output = cupy.float64 if dtype == cupy.float64 else cupy.float32
+
+    monkeypatch.setattr(
+        _ndimage_spline_prefilter_core,
+        "supports_warp_spline1d",
+        lambda *args, **kwargs: False,
+    )
+    expected = _ndimage_interpolation.spline_filter1d(
+        x, order=order, axis=-1, output=output, mode=mode
+    )
+
+    monkeypatch.undo()
+    actual = _ndimage_interpolation.spline_filter1d(
+        x, order=order, axis=-1, output=output, mode=mode
+    )
+
+    testing.assert_allclose(actual, expected, rtol=5e-6, atol=5e-5)
+
+
+def test_warp_spline_prefilter_shape_heuristic():
+    core = _ndimage_spline_prefilter_core
+    channels = core.get_warp_spline1d_channels
+    supports = core.supports_warp_spline1d
+
+    # contiguous last axis, or the axis before a trailing axis of 2-4
+    assert channels(1, (9, 7)) == 1
+    assert channels(1, (9, 7, 3)) == 3
+    assert channels(1, (9, 7, 4)) == 4
+    assert channels(0, (9, 7)) == 0
+    assert channels(1, (9, 7, 5)) == 0
+    assert channels(0, (9, 7, 3)) == 0
+    # float32/float64 lines of at least 32 samples
+    assert supports("float", 32, 100000, 1)
+    assert supports("float", 4096, 4096, 1)
+    assert supports("float", 1920, 3240, 3)
+    assert not supports("float", 512, 512, 0)
+    assert not supports("float", 31, 64, 1)
+    assert not supports("complex<float>", 512, 512, 1)
+    # double: long lines, or few single-channel lines
+    assert supports("double", 512, 100000, 1)
+    assert supports("double", 512, 100000, 3)
+    assert supports("double", 64, 256, 1)
+    assert not supports("double", 64, 192, 3)
+    assert not supports("double", 256, 1024, 1)
+    # staged blocks must fit in shared memory
+    assert not supports("double", 1 << 20, 1, 1)
+
+
+@pytest.mark.parametrize("order", [2, 3, 4, 5])
+@pytest.mark.parametrize("mode", ["mirror", "reflect", "grid-wrap"])
+@pytest.mark.parametrize("dtype", ["float32", "float64"])
+@pytest.mark.parametrize("length", [32, 33, 100, 1000, 2161, 4097])
+def test_warp_spline_prefilter_matches_scipy(
+    monkeypatch, order, mode, dtype, length
+):
+    host = numpy.random.default_rng(12).uniform(-1, 1, (3, length))
+    host = host.astype(dtype)
+    expected = scipy.ndimage.spline_filter1d(
+        host.astype(numpy.float64), order, -1, output=numpy.float64, mode=mode
+    )
+    core = _ndimage_spline_prefilter_core
+    launched = []
+    original_get_kernel = core.get_warp_spline1d_kernel
+
+    def spy(*args, **kwargs):
+        launched.append(args)
+        return original_get_kernel(*args, **kwargs)
+
+    monkeypatch.setattr(core, "get_warp_spline1d_kernel", spy)
+    image = cupy.asarray(host)
+    actual = _ndimage_interpolation.spline_filter1d(
+        image, order, -1, output=cupy.dtype(dtype), mode=mode
+    )
+    assert launched
+    tolerance = 1e-11 if dtype == "float64" else 5e-5
+    testing.assert_allclose(actual, expected, rtol=tolerance, atol=tolerance)
+    testing.assert_array_equal(image, host)
+
+
+def test_warp_spline_prefilter_large_shared_memory():
+    # One float32 line beyond the default 48 KiB dynamic shared memory limit.
+    core = _ndimage_spline_prefilter_core
+    length = 13000
+    if length * 4 > core._max_dynamic_shared_memory():
+        pytest.skip("device shared memory too small")
+    assert core.get_warp_spline1d_launch(length, "float") == (1, length * 4)
+    host = numpy.random.default_rng(13).uniform(-1, 1, (2, length))
+    host = host.astype(numpy.float32)
+    expected = scipy.ndimage.spline_filter1d(
+        host.astype(numpy.float64), 3, -1, output=numpy.float64
+    )
+    actual = _ndimage_interpolation.spline_filter1d(
+        cupy.asarray(host), 3, -1, output=cupy.float32
+    )
+    testing.assert_allclose(actual, expected, rtol=5e-5, atol=5e-5)
+
+
+@pytest.mark.parametrize("order", [2, 3, 4, 5])
+@pytest.mark.parametrize("mode", ["reflect", "mirror", "grid-wrap", "constant"])
+@pytest.mark.parametrize("dtype", [cupy.uint8, cupy.float32, cupy.float64])
+@pytest.mark.parametrize("channels", [2, 3, 4])
+@pytest.mark.parametrize("length", [33, 600])
+def test_warp_channel_spline_prefilter_matches_fallback(
+    monkeypatch, order, mode, dtype, channels, length
+):
+    x = cupy.arange(5 * length * channels, dtype=dtype)
+    x = x.reshape(5, length, channels)
+    output = cupy.float64 if dtype == cupy.float64 else cupy.float32
+    core = _ndimage_spline_prefilter_core
+    launched = []
+    original_get_kernel = core.get_warp_spline1d_kernel
+
+    def spy(*args, **kwargs):
+        launched.append(kwargs["channels"])
+        return original_get_kernel(*args, **kwargs)
+
+    # Reference: the segmented kernel for the strided axis.
+    monkeypatch.setattr(
+        core, "supports_warp_spline1d", lambda *args, **kwargs: False
+    )
+    expected = _ndimage_interpolation.spline_filter1d(
+        x, order=order, axis=-2, output=output, mode=mode
+    )
+    monkeypatch.undo()
+
+    monkeypatch.setattr(core, "get_warp_spline1d_kernel", spy)
+    actual = _ndimage_interpolation.spline_filter1d(
+        x, order=order, axis=-2, output=output, mode=mode
+    )
+    if dtype != cupy.float64 or length >= 512:
+        assert launched == [channels]
+    rtol = 1e-12 if dtype == cupy.float64 else 5e-6
+    testing.assert_allclose(actual, expected, rtol=rtol, atol=5e-5)
+
+
+@pytest.mark.parametrize("dtype", [cupy.float32, cupy.float64])
+@pytest.mark.parametrize("channels", [3, 4])
+@pytest.mark.parametrize("offset", [0, 1, 2, 3])
+@pytest.mark.parametrize("use_spline_filter", [False, True])
+def test_warp_channel_spline_prefilter_unaligned_output(
+    dtype, channels, offset, use_spline_filter
+):
+    # A C-contiguous output view starting at an arbitrary element is used
+    # directly as the workspace; prefiltering must not assume any alignment
+    # beyond that of the element type.
+    shape = (8, 64, channels)
+    x = cupy.asarray(
+        numpy.random.default_rng(0).uniform(0, 1, shape).astype(dtype)
+    )
+    size = x.size
+    output = cupy.zeros(size + 4, dtype=dtype)[offset : offset + size]
+    output = output.reshape(shape)
+    if use_spline_filter:
+        expected = _ndimage_interpolation.spline_filter(
+            x, order=3, output=dtype, mode="mirror"
+        )
+        actual = _ndimage_interpolation.spline_filter(
+            x, order=3, output=output, mode="mirror"
+        )
+    else:
+        expected = _ndimage_interpolation.spline_filter1d(
+            x, order=3, axis=1, output=dtype, mode="mirror"
+        )
+        actual = _ndimage_interpolation.spline_filter1d(
+            x, order=3, axis=1, output=output, mode="mirror"
+        )
+    cupy.cuda.Device().synchronize()
+    assert actual is output
+    rtol = 1e-12 if dtype == cupy.float64 else 5e-6
+    testing.assert_allclose(actual, expected, rtol=rtol, atol=rtol)
 
 
 @testing.parameterize(
