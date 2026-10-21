@@ -130,8 +130,9 @@ def test_warp_spline_prefilter_matches_fallback(
     testing.assert_allclose(actual, expected, rtol=5e-6, atol=5e-5)
 
 
-def test_warp_spline_prefilter_shape_heuristic():
+def test_warp_spline_prefilter_shape_heuristic(monkeypatch):
     core = _ndimage_spline_prefilter_core
+    monkeypatch.setattr(core, "_get_fp32_to_fp64_ratio", lambda device: 64)
     channels = core.get_warp_spline1d_channels
     supports = core.supports_warp_spline1d
 
@@ -157,6 +158,67 @@ def test_warp_spline_prefilter_shape_heuristic():
     assert not supports("double", 256, 1024, 1)
     # staged blocks must fit in shared memory
     assert not supports("double", 1 << 20, 1, 1)
+
+
+@pytest.mark.parametrize(
+    "ratio,min_samples,max_short_lines",
+    [(64, 512, 256), (32, 256, 512), (16, 128, 1024), (8, 64, 2048)],
+)
+def test_warp_spline_prefilter_fp64_dispatch(
+    monkeypatch, ratio, min_samples, max_short_lines
+):
+    core = _ndimage_spline_prefilter_core
+    monkeypatch.setattr(core, "_get_fp32_to_fp64_ratio", lambda device: ratio)
+    for channels in (1, 2, 3, 4):
+        assert core.supports_warp_spline1d(
+            "double", min_samples, 100000, channels
+        )
+        assert not core.supports_warp_spline1d(
+            "double", min_samples - 1, 100000, channels
+        )
+    assert core.supports_warp_spline1d("double", 32, max_short_lines, 1)
+    assert not core.supports_warp_spline1d("double", 32, max_short_lines + 1, 1)
+    assert not core.supports_warp_spline1d("double", 32, 1, 3)
+
+
+@pytest.mark.parametrize("ratio", [1, 2, 3, 4])
+def test_warp_spline_prefilter_strong_fp64(monkeypatch, ratio):
+    core = _ndimage_spline_prefilter_core
+    monkeypatch.setattr(core, "_get_fp32_to_fp64_ratio", lambda device: ratio)
+    for channels in (1, 2, 3, 4):
+        assert core.supports_warp_spline1d("double", 32, 100000, channels)
+        assert not core.supports_warp_spline1d("double", 31, 1, channels)
+        assert not core.supports_warp_spline1d("double", 1 << 20, 1, channels)
+    assert not core.supports_warp_spline1d("double", 32, 1, 0)
+    assert not core.supports_warp_spline1d("complex<double>", 32, 1, 1)
+
+
+@pytest.mark.parametrize("order", [2, 3, 4, 5])
+@pytest.mark.parametrize("mode", ["mirror", "reflect", "grid-wrap"])
+@pytest.mark.parametrize("channels", [1, 2, 3, 4])
+def test_warp_spline_prefilter_strong_fp64_matches_scipy(
+    monkeypatch, order, mode, channels
+):
+    # These short/many-line cases previously fell back on weak FP64 devices.
+    core = _ndimage_spline_prefilter_core
+    monkeypatch.setattr(core, "_get_fp32_to_fp64_ratio", lambda device: 2)
+    shape = (300, 33) if channels == 1 else (5, 33, channels)
+    axis = -1 if channels == 1 else -2
+    host = numpy.random.default_rng(14).uniform(-1, 1, shape)
+    expected = scipy.ndimage.spline_filter1d(host, order, axis, mode=mode)
+    launched = []
+    original = core.get_warp_spline1d_kernel
+
+    def spy(*args, **kwargs):
+        launched.append(kwargs["channels"])
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(core, "get_warp_spline1d_kernel", spy)
+    actual = _ndimage_interpolation.spline_filter1d(
+        cupy.asarray(host), order, axis, output=cupy.float64, mode=mode
+    )
+    assert launched == [channels]
+    testing.assert_allclose(actual, expected, rtol=1e-11, atol=1e-11)
 
 
 @pytest.mark.parametrize("order", [2, 3, 4, 5])
