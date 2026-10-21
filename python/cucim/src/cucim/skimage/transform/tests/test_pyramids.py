@@ -242,6 +242,43 @@ def test_negative_sigma(pyramid_func, sigma):
         pyramid_func(cp.ones((8, 8)), sigma=sigma)
 
 
+@pytest.mark.parametrize("channel_axis", [0, -1])
+@pytest.mark.parametrize(
+    "func",
+    [
+        pyramids.pyramid_reduce,
+        pyramids.pyramid_expand,
+        pyramids.pyramid_gaussian,
+        pyramids.pyramid_laplacian,
+    ],
+)
+def test_pyramids_sigma_sequence_with_channel_axis(func, channel_axis):
+    image = cp.linspace(0, 1, 12 * 14 * 3, dtype=cp.float32).reshape(12, 14, 3)
+    kwargs = dict(sigma=(0.8, 1.3), preserve_range=True)
+    is_generator = func in (
+        pyramids.pyramid_gaussian,
+        pyramids.pyramid_laplacian,
+    )
+    if is_generator:
+        kwargs["max_layer"] = 2
+    channels = [func(image[..., channel], **kwargs) for channel in range(3)]
+    channels = [
+        list(result) if is_generator else [result] for result in channels
+    ]
+    actual = func(
+        cp.moveaxis(image, -1, channel_axis),
+        channel_axis=channel_axis,
+        **kwargs,
+    )
+    actual = list(actual) if is_generator else [actual]
+    assert len(actual) == len(channels[0])
+    for layer, result in enumerate(actual):
+        expected = cp.stack(
+            [channel[layer] for channel in channels], axis=channel_axis
+        )
+        cp.testing.assert_allclose(result, expected, rtol=1e-6, atol=1e-7)
+
+
 @pytest.mark.parametrize(
     "dtype", ["float16", "float32", "float64", "uint8", "int64"]
 )
@@ -304,7 +341,7 @@ def test_pyramids_assume_finite(
 
     monkeypatch.setattr(_warps, "_get_warp_range", fail_nan_path)
     monkeypatch.setattr(_warps, "_clip_constant_warp_output", fail_nan_path)
-    # Warmed Gaussian/zoom caches above avoid their intentional blocking first use.
+    # Warmed caches above avoid waiting for their private initialization copies.
     with allow_synchronize(False):
         actual = func(image, **kwargs, assume_finite=True)
         actual = list(actual) if is_generator else [actual]
