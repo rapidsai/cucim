@@ -300,15 +300,58 @@ def _correlate_or_convolve1d(
             )
         )
     )
+    # Any interior/last axis of a C-contiguous nD array can be viewed as
+    # (independent leading rows, filtered length, independent trailing values).
+    # Packed tiles handle small trailing sizes; the 3D kernel covers larger
+    # ones without creating a strided copy of the image.
+    view_axis = axis % input.ndim if -input.ndim <= axis < input.ndim else 0
+    use_row_view = (
+        input.ndim > 2
+        and view_axis > 0
+        and input.flags.c_contiguous
+        and 0 < input.size < (1 << 30)
+        and (
+            not isinstance(output, cupy.ndarray)
+            or (
+                output.shape == input.shape
+                and output.flags.c_contiguous
+                and not cupy.shares_memory(input, output, "MAY_SHARE_BOUNDS")
+            )
+        )
+    )
+    if use_row_view:
+        row_view_shape = (
+            math.prod(input.shape[:view_axis]),
+            input.shape[view_axis],
+            math.prod(input.shape[view_axis + 1 :]),
+        )
     default_algorithm = False
     if algorithm is None:
         default_algorithm = True
+        # Avoid mostly empty tiles on short filtered axes/rows. Large stacks
+        # need fuller tiles; tiny inputs favor lower setup cost.
+        if use_row_view:
+            use_row_view = (
+                row_view_shape[1] >= 8
+                and row_view_shape[1] * row_view_shape[2]
+                >= (32 if input.size <= 65536 else 64)
+                # The packed kernel splits rows across grid.y/grid.z. The
+                # existing wide-stride kernel tiles length/rows into y/z.
+                and (
+                    row_view_shape[2] <= 16
+                    or (
+                        row_view_shape[0] <= 4 * 65535
+                        and row_view_shape[1] <= 16 * 65535
+                    )
+                )
+            )
         if (
             _is_not_windows
-            and (input.ndim == 2 or use_2d_view)
+            and (input.ndim == 2 or use_2d_view or use_row_view)
             and weights.size <= 256
             and not (
-                cval < 0 and mode == "constant" and input.dtype.kind == "u"
+                mode in ("constant", "grid-constant")
+                and _unsupported_shmem_cval(cval, input.dtype)
             )
         ):
             algorithm = "shared_memory"
@@ -329,11 +372,32 @@ def _correlate_or_convolve1d(
     if mode == "wrap":
         mode = "grid-wrap"
     if algorithm == "shared_memory":
-        if input.ndim not in [2, 3] and not use_2d_view:
+        if input.ndim not in [2, 3] and not (use_2d_view or use_row_view):
             raise NotImplementedError(
                 f"shared_memory not implemented for ndim={input.ndim}"
             )
         try:
+            if use_row_view:
+                output_view = (
+                    output.reshape(row_view_shape)
+                    if isinstance(output, cupy.ndarray)
+                    else output
+                )
+                out = _shmem_convolve1d(
+                    input.reshape(row_view_shape),
+                    weights,
+                    axis=1,
+                    output=output_view,
+                    mode=mode,
+                    cval=cval,
+                    origin=origin,
+                    convolution=convolution,
+                )
+                return (
+                    output
+                    if isinstance(output, cupy.ndarray)
+                    else out.reshape(input.shape)
+                )
             if use_2d_view:
                 shape_2d = (input.shape[0], input.size // input.shape[0])
                 output_view = (
