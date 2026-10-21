@@ -1079,3 +1079,41 @@ def test_multichannel_histogram_common_extrema(dtype, source_range):
     for channel in range(image.shape[-1]):
         expected, _ = np.histogram(cp.asnumpy(image[:, channel]), bins=edges)
         cp.testing.assert_array_equal(actual[channel], expected)
+
+
+@pytest.mark.parametrize("dtype", [cp.uint8, cp.int16, cp.float32, cp.float64])
+@pytest.mark.parametrize("constant", [False, True])
+def test_rescale_preserves_separate_operation_rounding(dtype, constant):
+    rng = np.random.default_rng(307)
+    host = rng.uniform(-100, 100, (17, 23))
+    if dtype == cp.uint8:
+        host += 100
+    if constant:
+        host.fill(71)
+    image = cp.asarray(host, dtype=dtype).T
+    for _ in range(8):
+        in_range = tuple(sorted(rng.uniform(-100, 200, 2)))
+        out_range = tuple(sorted(rng.uniform(-3, 7, 2)))
+        if constant:
+            in_range = (71.0, 71.0)
+        imin, imax = map(float, in_range)
+        omin, omax = map(float, out_range)
+        expected = cp.clip(image, imin, imax)
+        if imin != imax:
+            expected = (expected - imin) / (imax - imin)
+            expected = expected * (omax - omin) + omin
+        else:
+            expected = cp.clip(expected, omin, omax)
+        expected = expected.astype(_supported_float_type(image.dtype))
+        actual = exposure.rescale_intensity(image, in_range, out_range)
+        cp.testing.assert_array_equal(actual, expected)
+        assert actual.dtype == expected.dtype
+
+
+@pytest.mark.parametrize("dtype", [cp.float32, cp.float64])
+def test_rescale_reversed_range_and_nonfinite_pixels(dtype):
+    image = cp.array([-cp.inf, -1, cp.nan, 0, 1, cp.inf], dtype=dtype)
+    expected = (cp.clip(image, 2.0, -2.0) - 2.0) / -4.0
+    expected = expected * 3.0 - 1.0
+    actual = exposure.rescale_intensity(image, (2.0, -2.0), (-1.0, 2.0))
+    cp.testing.assert_array_equal(actual, expected)
