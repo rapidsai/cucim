@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Infrastructure, Inc.
 # SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Networks, Inc.
-# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 """Extensions to CuPy's own test cases for new features in the vendored code.
@@ -1068,3 +1068,50 @@ class TestLoopBatchIntegerOutputRounding:
         )
 
         cupy.testing.assert_array_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    "matrix_kind", ["square", "diagonal", "homogeneous", "augmented"]
+)
+@pytest.mark.parametrize("mode", ["reflect", "grid-constant", "opencv"])
+@pytest.mark.parametrize("order", [1, 3])
+def test_affine_transform_host_matrix(matrix_kind, mode, order):
+    rng = numpy.random.default_rng(3)
+    image = cupy.asarray(rng.uniform(0, 1, (31, 40)).astype(numpy.float32))
+    linear = numpy.array([[0.9, 0.2], [-0.15, 1.1]])
+    offset = numpy.array([1.5, -2.25])
+    if matrix_kind == "square":
+        matrix = linear
+    elif matrix_kind == "diagonal":
+        matrix = numpy.diag(linear)
+    else:
+        matrix = numpy.eye(3)
+        matrix[:2, :2] = linear
+        matrix[:2, 2] = offset
+        if matrix_kind == "augmented":
+            matrix = matrix[:2]
+    kwargs = dict(order=order, mode=mode, output_shape=(29, 37))
+    expected = vendored_ndimage.affine_transform(
+        image, cupy.asarray(matrix), offset, **kwargs
+    )
+    actual = vendored_ndimage.affine_transform(image, matrix, offset, **kwargs)
+    cupy.testing.assert_array_equal(actual, expected)
+
+
+@pytest.mark.parametrize("reshape", [False, True])
+def test_rotate_does_not_read_matrix_from_device(monkeypatch, reshape):
+    image = cupy.asarray(
+        numpy.random.default_rng(2).uniform(0, 1, (33, 40, 3)),
+        dtype=cupy.float32,
+    )
+    expected = vendored_ndimage.rotate(image, 17, reshape=reshape)
+    original_asnumpy = cupy.asnumpy
+
+    def host_only_asnumpy(value, *args, **kwargs):
+        assert not isinstance(value, cupy.ndarray), "matrix read from device"
+        return original_asnumpy(value, *args, **kwargs)
+
+    monkeypatch.setattr(cupy, "asnumpy", host_only_asnumpy)
+    actual = vendored_ndimage.rotate(image, 17, reshape=reshape)
+    monkeypatch.undo()
+    cupy.testing.assert_array_equal(actual, expected)
