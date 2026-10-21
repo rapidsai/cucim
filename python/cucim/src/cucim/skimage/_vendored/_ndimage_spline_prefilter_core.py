@@ -268,6 +268,158 @@ void {kernel_name}(T* __restrict__ y, idx_t n_signals, idx_t n_samples,
 """
 
 
+def _get_n_boundary(poles, pole_type):
+    """Number of samples used by the truncated boundary initializations."""
+    # SciPy uses n_boundary = n_samples, but this is excessive.
+    largest_pole = max(abs(p) for p in poles)
+    # tol < 1e-7 fails test cases comparing to SciPy at atol = rtol = 1e-5
+    tol = 1e-10 if pole_type == "float" else 1e-18
+    return math.ceil(math.log(tol, largest_pole))
+
+
+_SEGMENTED_SPLINE1D_HEADER = """
+#include "cupy/carray.cuh"
+#include "cupy/complex.cuh"
+#include <cupy/float16.cuh>  // TODO(seberg): Add this via type_headers?
+
+typedef {data_type} T;
+typedef {pole_type} P;
+typedef {index_type} idx_t;
+
+extern "C" __global__
+__launch_bounds__({block_size})
+void {kernel_name}(T* __restrict__ y, idx_t n_lines, idx_t n, idx_t inner)
+{{
+    // A line is indexed by its (outer, inner) position. Element i of line
+    // `line` is at (line / inner) * n * inner + i * inner + line % inner, so
+    // the 32 lines handled by a warp are adjacent in memory when inner >= 32.
+    constexpr int n_segments = {n_segments};
+    __shared__ P seg_A[n_segments][32];
+    __shared__ T seg_B[n_segments][32];
+    const int lane = threadIdx.x;
+    const int segment = threadIdx.y;
+    const idx_t line = static_cast<idx_t>(blockIdx.x) * 32 + lane;
+    const bool active = line < n_lines;
+    const idx_t outer = active ? line / inner : 0;
+    const idx_t element_stride = inner;
+    T* __restrict__ c = y + (outer * n * inner + (line - outer * inner));
+
+    // Variables shared with the boundary initialization code.
+    idx_t i;
+    P z, z_i;
+    P z_n, z_n_1;
+    T c0;
+    (void)z_n; (void)z_n_1; (void)c0;
+
+    // Each of the n_segments threads of a line filters a contiguous run of
+    // samples. A run maps an incoming carry x to A * x + B; composing the
+    // transforms of earlier runs gives each run its exact incoming carry.
+    const idx_t seg_len = (n - 2 + n_segments) / n_segments;
+    idx_t start, end;
+    P A, A_run;
+    T B, carry;
+
+    P gain = {gain};
+    if (active && segment == 0) {{
+        c[0] *= gain;
+    }}
+"""
+
+_SEGMENTED_SPLINE1D_POLE = """
+    // ---- pole {pole_index} ----
+    z = {pole};
+
+    // causal initialization and filter over samples 1 .. n - 1
+    if (active && segment == 0) {{
+{causal_init}
+    }}
+    start = 1 + segment * seg_len;
+    end = min(n, start + seg_len);
+    A = 1;
+    B = 0;
+    if (active) {{
+        for (i = start; i < end; ++i) {{
+            B = z * B + gain * c[i * element_stride];
+            A *= z;
+        }}
+    }}
+    seg_A[segment][lane] = A;
+    seg_B[segment][lane] = B;
+    __syncthreads();
+    if (active) {{
+        carry = c[0];
+        for (int s = 0; s < segment; ++s) {{
+            A_run = seg_A[s][lane];
+            carry = A_run * carry + seg_B[s][lane];
+        }}
+        for (i = start; i < end; ++i) {{
+            carry = z * carry + gain * c[i * element_stride];
+            c[i * element_stride] = carry;
+        }}
+    }}
+    __syncthreads();
+
+    // anti-causal initialization and filter over samples n - 2 .. 0
+    if (active && segment == 0) {{
+{anticausal_init}
+    }}
+    start = segment * seg_len;
+    end = min(n - 1, start + seg_len);
+    A = 1;
+    B = 0;
+    if (active) {{
+        for (idx_t p = start; p < end; ++p) {{
+            i = n - 2 - p;
+            B = z * B - z * c[i * element_stride];
+            A *= z;
+        }}
+    }}
+    seg_A[segment][lane] = A;
+    seg_B[segment][lane] = B;
+    __syncthreads();
+    if (active) {{
+        carry = c[(n - 1) * element_stride];
+        for (int s = 0; s < segment; ++s) {{
+            A_run = seg_A[s][lane];
+            carry = A_run * carry + seg_B[s][lane];
+        }}
+        for (idx_t p = start; p < end; ++p) {{
+            i = n - 2 - p;
+            carry = z * carry - z * c[i * element_stride];
+            c[i * element_stride] = carry;
+        }}
+    }}
+    __syncthreads();
+    gain = 1;
+"""
+
+
+def _get_segmented_spline1d_code(
+    kernel_name, mode, poles, n_boundary, n_segments, types
+):
+    """Generate a block-parallel spline prefilter for strided lines."""
+    mode = _get_spline_mode(mode)
+    code = _SEGMENTED_SPLINE1D_HEADER.format(
+        kernel_name=kernel_name,
+        n_segments=n_segments,
+        block_size=32 * n_segments,
+        gain=get_gain(poles),
+        **types,
+    )
+    for pole_index, pole in enumerate(poles):
+        causal = _causal_init_code(mode).format(n_boundary=n_boundary)
+        anticausal = _anticausal_init_code(mode).format(n_boundary=n_boundary)
+        code += _SEGMENTED_SPLINE1D_POLE.format(
+            pole_index=pole_index,
+            pole=pole,
+            causal_init=textwrap.indent(textwrap.dedent(causal), " " * 8),
+            anticausal_init=textwrap.indent(
+                textwrap.dedent(anticausal), " " * 8
+            ),
+        )
+    return code + "}\n"
+
+
 @cupy.memoize(for_each_device=True)
 def get_raw_spline1d_kernel(
     axis,
@@ -317,5 +469,57 @@ def get_raw_spline1d_kernel(
             f"idx_t shape_{axis}" for axis in range(ndim)
         ),
         shape_values=", ".join(f"shape_{axis}" for axis in range(ndim)),
+    )
+    return cupy.RawKernel(code, kernel_name)
+
+
+def supports_segmented_spline1d(axis, ndim, data_type):
+    """Return True if the block-parallel strided prefilter can be used.
+
+    Lines along any axis other than the last are filtered with several
+    threads per line, while adjacent lines keep global memory accesses
+    coalesced. The workspace must be C-contiguous.
+    """
+    return axis < ndim - 1 and data_type in ("float", "double")
+
+
+def get_segmented_spline1d_segments(n_samples, data_type="float"):
+    """Number of threads (runs) that cooperatively filter each line."""
+    # Keep runs at least 8 samples long so the recurrence dominates the carry
+    # composition. Measured on an RTX A6000, 32 runs (1024 threads per block)
+    # were best for float and 16 runs for double.
+    max_segments = 32 if data_type == "float" else 16
+    n_segments = 1
+    while n_segments < max_segments and 2 * n_segments * 8 <= n_samples - 1:
+        n_segments *= 2
+    return n_segments
+
+
+@cupy.memoize(for_each_device=True)
+def get_segmented_spline1d_kernel(
+    mode,
+    order,
+    n_segments,
+    index_type="int",
+    data_type="float",
+    pole_type="float",
+):
+    """Generate a block-parallel spline prefilter for strided lines."""
+    if data_type not in ("float", "double"):
+        raise ValueError(f"unsupported segmented spline dtype: {data_type}")
+    poles = get_poles(order)
+    n_boundary = _get_n_boundary(poles, pole_type)
+    mode_str = _get_spline_mode(mode).replace("-", "_")
+    kernel_name = (
+        f"cupyx_scipy_ndimage_segmented_spline_ord{order}_{mode_str}_"
+        f"seg{n_segments}"
+    )
+    code = _get_segmented_spline1d_code(
+        kernel_name,
+        mode,
+        poles,
+        n_boundary,
+        n_segments,
+        dict(data_type=data_type, pole_type=pole_type, index_type=index_type),
     )
     return cupy.RawKernel(code, kernel_name)
