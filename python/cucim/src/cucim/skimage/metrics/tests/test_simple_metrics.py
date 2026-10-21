@@ -308,3 +308,23 @@ def test_PSNR_auto_range_float32_negative_subnormal():
     cp.testing.assert_array_equal(
         peak_signal_noise_ratio(image_true, image_test), expected
     )
+
+
+@pytest.mark.parametrize("dtype", [cp.float32, cp.float64])
+@pytest.mark.parametrize("shape", [(16, 17), (1025, 1027)])
+@pytest.mark.parametrize("layout", ["contiguous", "transpose", "different"])
+def test_PSNR_combines_error_and_range(dtype, shape, layout):
+    rng = np.random.default_rng(318)
+    reference = cp.asarray(rng.random(shape), dtype=dtype)
+    test = cp.asarray(rng.random(shape), dtype=dtype)
+    if layout == "transpose":
+        reference, test = reference.T, test.T
+    elif layout == "different":
+        test = cp.asfortranarray(test)
+    difference = reference - test
+    expected = 10 * cp.log10(
+        1 / cp.mean(difference * difference, dtype=cp.float64)
+    )
+    actual = peak_signal_noise_ratio(reference, test)
+    assert actual.dtype == cp.float64
+    cp.testing.assert_allclose(actual, expected, rtol=1e-12)
