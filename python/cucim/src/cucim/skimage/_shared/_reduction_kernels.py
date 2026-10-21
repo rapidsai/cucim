@@ -28,11 +28,22 @@ remain on the device. Callers can retain NaN-ignoring extrema with a NaN flag
 or request NaN-propagating bounds, matching ordinary min/max reductions.
 For min-max NRMSE, the state and staging also carry a double-precision
 squared-error sum from two images, avoiding full-sized arithmetic temporaries.
+
+Dispatch cutoffs are empirical measurements on an RTX A6000, including the
+CUB preference for large 8- and 16-bit integer inputs; other architectures
+may favor different cutoffs. The sign of zero in an extremum is unspecified
+and can vary with dtype, layout, and backend. Both signs compare as zero in
+the callers of this module.
 """
 
 import cupy as cp
-from cupy._core import _accelerator
 from cupy._core._scalar import get_typename
+
+try:
+    from cupy._core import _accelerator
+except ImportError:
+    # CUB dispatch is optional; private CuPy APIs can move between releases.
+    _accelerator = None
 
 _RANGE_CHUNK_SIZE = 4096
 # Keep the direct-reduction cutoff separate from the parallel chunk size.
@@ -356,6 +367,7 @@ def _get_minmax(image):
             image.nbytes <= _MINMAX_SEPARATE_MAX_BYTES
             or (image.dtype.kind in "biu" and image.dtype.itemsize <= 2)
         )
+        and _accelerator is not None
         and _accelerator.ACCELERATOR_CUB
         in _accelerator.get_reduction_accelerators()
     ):
