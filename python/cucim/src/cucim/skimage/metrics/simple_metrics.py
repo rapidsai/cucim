@@ -5,7 +5,11 @@
 import cupy as cp
 from cupyx.scipy.stats import entropy
 
-from .._shared._reduction_kernels import _get_minmax, _get_minmax_mse
+from .._shared._reduction_kernels import (
+    _get_error_statistics,
+    _get_minmax,
+    _get_minmax_mse,
+)
 from .._shared.utils import _supported_float_type, check_shape_equality, warn
 from .._vendored import pad
 from ..util.dtype import dtype_range
@@ -26,6 +30,16 @@ def _as_floats(image0, image1):
     image0 = image0.astype(float_type, copy=False)
     image1 = image1.astype(float_type, copy=False)
     return image0, image1
+
+
+def _use_staged_error(image0, image1, *, min_size=1 << 20):
+    """Amortize staging overhead on large contiguous real images (A6000 tuned)."""
+    return (
+        image0.size >= min_size
+        and image0.dtype in (cp.float32, cp.float64)
+        and image0.flags.c_contiguous
+        and image1.flags.c_contiguous
+    )
 
 
 def mean_squared_error(image0, image1):
@@ -51,6 +65,10 @@ def mean_squared_error(image0, image1):
     """
     check_shape_equality(image0, image1)
     image0, image1 = _as_floats(image0, image1)
+    # MSE saves fewer passes than NRMSE and amortizes staging later.
+    if _use_staged_error(image0, image1, min_size=1 << 22):
+        squared_error, _ = _get_error_statistics(image0, image1)
+        return squared_error / image0.size
     diff = image0 - image1
     return cp.mean(diff * diff, dtype=cp.float64)
 
@@ -63,6 +81,19 @@ def _nrmse_from_range(minimum, maximum, has_nan, squared_error, size):
         minimum.dtype
     )
     return cp.sqrt(squared_error / size) / denominator
+
+
+_nrmse_from_sums = cp.ElementwiseKernel(
+    "float64 squared_error, T normalizer_sum, int64 size, bool euclidean",
+    "float64 result",
+    """
+    // Mean normalization rounds both its sum and division in the input dtype.
+    T mean = normalizer_sum / T(size);
+    double denominator = euclidean ? sqrt(double(mean)) : double(mean);
+    result = sqrt(squared_error / double(size)) / denominator;
+    """,
+    "cucim_nrmse_from_sums",
+)
 
 
 def normalized_root_mse(image_true, image_test, *, normalization="euclidean"):
@@ -115,6 +146,18 @@ def normalized_root_mse(image_true, image_test, *, normalization="euclidean"):
 
     # Ensure that both 'Euclidean' and 'euclidean' match
     normalization = normalization.lower()
+    if normalization in ("euclidean", "mean") and _use_staged_error(
+        image_true, image_test
+    ):
+        squared_error, normalizer_sum = _get_error_statistics(
+            image_true, image_test, normalization
+        )
+        return _nrmse_from_sums(
+            squared_error,
+            normalizer_sum,
+            image_true.size,
+            normalization == "euclidean",
+        )
     if normalization == "euclidean":
         denom = cp.sqrt(cp.mean((image_true * image_true), dtype=cp.float64))
     elif normalization == "min-max":
