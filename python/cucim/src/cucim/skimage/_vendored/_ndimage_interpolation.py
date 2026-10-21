@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Infrastructure, Inc.
 # SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Networks, Inc.
-# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND MIT
 from __future__ import annotations
 
@@ -176,11 +176,7 @@ def spline_filter1d(
     block = (block_size,)
     grid = ((n_signals + block[0] - 1) // block[0],)
 
-    # apply prefilter gain
-    poles = _spline_prefilter_core.get_poles(order=order)
-    temp *= _spline_prefilter_core.get_gain(poles)
-
-    # apply caual + anti-causal IIR spline filters
+    # apply causal + anti-causal IIR spline filters
     kern(grid, block, (temp, info))
 
     if isinstance(output, cupy.ndarray) and temp is not output:
