@@ -4,9 +4,11 @@
 
 import math
 from collections.abc import Iterable
+from numbers import Real
 
 from .._shared.utils import convert_to_float
 from .._vendored import ndimage as ndi
+from ._pyramid_kernels import _gaussian_decimate
 from ._warps import _validate_assume_finite, resize
 
 
@@ -97,6 +99,10 @@ def pyramid_reduce(
     not provide it. If the finite-value promise is violated, output clipping
     may be skipped.
 
+    Eligible even-sized float inputs with ``downscale=2`` and ``order=1``
+    combine smoothing and downsampling in separable strided correlations.
+    Reassociated arithmetic can change the last bits of floating-point results.
+
     References
     ----------
     .. [1] http://persci.mit.edu/pub_pdfs/pyramid83.pdf
@@ -118,6 +124,26 @@ def pyramid_reduce(
     if sigma is None:
         # automatically determine sigma which covers > 99% of distribution
         sigma = 2 * downscale / 6.0
+
+    # Half-pixel samples are adjacent pairs only on even, exactly halved axes.
+    # Other scales, layouts, and large Gaussian supports use smooth + resize.
+    # Bound the input size so kernel indexing and reflection periods fit int32.
+    axes = tuple(ax for ax in range(image.ndim) if ax != channel_axis)
+    if (
+        downscale == 2
+        and order == 1
+        and image.dtype.char in "fd"
+        and image.flags.c_contiguous
+        and image.size < (1 << 30)
+        and axes
+        and all(image.shape[ax] > 0 and image.shape[ax] % 2 == 0 for ax in axes)
+        and isinstance(sigma, Real)
+        and 0 <= sigma <= 4
+        and mode in ("reflect", "constant", "wrap")
+        and isinstance(cval, Real)
+        and math.isfinite(cval)
+    ):
+        return _gaussian_decimate(image, float(sigma), axes, mode, cval)
 
     smoothed = _smooth(image, sigma, mode, cval, channel_axis)
     out = resize(
