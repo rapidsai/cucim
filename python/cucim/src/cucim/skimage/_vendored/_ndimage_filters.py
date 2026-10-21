@@ -693,9 +693,7 @@ def gaussian_filter(
     )
 
 
-def _gaussian_kernel1d(
-    sigma, order, radius, dtype=cupy.float64, *, blocking=False
-):
+def _gaussian_kernel1d(sigma, order, radius, dtype=cupy.float64):
     """
     Computes a 1-D Gaussian correlation kernel.
     """
@@ -707,7 +705,7 @@ def _gaussian_kernel1d(
     phi_x /= phi_x.sum()
 
     if order == 0:
-        return cupy.asarray(phi_x, dtype=dtype, blocking=blocking)
+        return cupy.asarray(phi_x, dtype=dtype)
 
     # f(x) = q(x) * phi(x) = q(x) * exp(p(x))
     # f'(x) = (q'(x) + q(x) * p'(x)) * phi(x)
@@ -723,9 +721,7 @@ def _gaussian_kernel1d(
     for _ in range(order):
         q = Q_deriv.dot(q)
     q = (x[:, None] ** exponent_range).dot(q)
-    return cupy.asarray(
-        (q * phi_x)[::-1], order="C", dtype=dtype, blocking=blocking
-    )
+    return cupy.asarray((q * phi_x)[::-1], order="C", dtype=dtype)
 
 
 def _cached_gaussian_kernel1d(sigma, order, radius, dtype):
@@ -736,9 +732,10 @@ def _cached_gaussian_kernel1d(sigma, order, radius, dtype):
         return _gaussian_kernel1d(sigma, order, radius, cupy.dtype(dtype))
 
     device_id = cupy.cuda.runtime.getDevice()
-    return _cached_gaussian_kernel1d_for_device(
+    kernel = _cached_gaussian_kernel1d_for_device(
         device_id, sigma, order, radius, dtype
     )
+    return _util._record_cache_array_use(kernel)
 
 
 @lru_cache(maxsize=_MAX_CACHED_GAUSSIAN_KERNELS)
@@ -746,13 +743,12 @@ def _cached_gaussian_kernel1d_for_device(
     device_id, sigma, order, radius, dtype
 ):
     with cupy.cuda.Device(device_id):
-        return _gaussian_kernel1d(
-            sigma,
-            order,
-            radius,
-            cupy.dtype(dtype),
-            blocking=True,
-        )
+        stream = _util._get_cache_init_stream()
+        with stream:
+            kernel = _gaussian_kernel1d(sigma, order, radius, cupy.dtype(dtype))
+        # Publish fully initialized coefficients without draining the caller.
+        stream.synchronize()
+        return _util._register_cache_array(kernel)
 
 
 def prewitt(

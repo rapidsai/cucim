@@ -11,27 +11,46 @@ from cucim.skimage._vendored import _ndimage_filters as filters
 
 @pytest.mark.parametrize("order", [0, 1])
 @pytest.mark.parametrize("dtype", ["float32", "float64", "complex64"])
-def test_cached_gaussian_kernel_is_initialized_synchronously(
+def test_cached_gaussian_kernel_is_initialized_on_private_stream(
     monkeypatch, order, dtype
 ):
     asarray_calls = []
     original_asarray = cp.asarray
 
     def asarray_spy(*args, **kwargs):
-        asarray_calls.append(kwargs)
-        return original_asarray(*args, **kwargs)
+        result = original_asarray(*args, **kwargs)
+        stream = cp.cuda.get_current_stream()
+        ready = cp.cuda.Event()
+        ready.record(stream)
+        asarray_calls.append((stream, ready))
+        return result
 
     monkeypatch.setattr(filters.cupy, "asarray", asarray_spy)
     filters._cached_gaussian_kernel1d_for_device.cache_clear()
 
     args = (1.0, order, 4, cp.dtype(dtype).str)
-    first = filters._cached_gaussian_kernel1d(*args)
-    second = filters._cached_gaussian_kernel1d(*args)
+    producer = cp.cuda.Stream(non_blocking=True)
+    consumer = cp.cuda.Stream(non_blocking=True)
+    with producer:
+        first = filters._cached_gaussian_kernel1d(*args)
+        assert cp.cuda.get_current_stream() == producer
+    with consumer:
+        second = filters._cached_gaussian_kernel1d(*args)
+        copied = second.copy()
+    consumer.synchronize()
 
     assert first is second
     assert first.dtype == cp.dtype(dtype)
     assert len(asarray_calls) == 1
-    assert asarray_calls[0]["blocking"] is True
+    stream, ready = asarray_calls[0]
+    assert stream.ptr not in (
+        producer.ptr,
+        consumer.ptr,
+        cp.cuda.Stream.null.ptr,
+    )
+    assert stream.is_non_blocking
+    assert ready.done
+    cp.testing.assert_array_equal(copied, first)
 
 
 @pytest.mark.parametrize("dtype", ["float32", "float64"])

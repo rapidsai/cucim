@@ -26,15 +26,21 @@ _MAX_CACHED_ZOOM_FACTORS = 128
 
 def _cached_zoom_factors(zoom, dtype):
     device_id = runtime.getDevice()
-    return _cached_zoom_factors_for_device(
+    factors = _cached_zoom_factors_for_device(
         device_id, tuple(zoom), cupy.dtype(dtype).str
     )
+    return _util._record_cache_array_use(factors)
 
 
 @lru_cache(maxsize=_MAX_CACHED_ZOOM_FACTORS)
 def _cached_zoom_factors_for_device(device_id, zoom, dtype):
     with cupy.cuda.Device(device_id):
-        return cupy.asarray(zoom, dtype=cupy.dtype(dtype), blocking=True)
+        stream = _util._get_cache_init_stream()
+        with stream:
+            factors = cupy.asarray(zoom, dtype=cupy.dtype(dtype))
+        # Publish fully initialized factors without draining the caller.
+        stream.synchronize()
+        return _util._register_cache_array(factors)
 
 
 def _check_parameter(func_name, order, mode):

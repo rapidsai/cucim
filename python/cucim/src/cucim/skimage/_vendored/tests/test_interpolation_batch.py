@@ -84,9 +84,13 @@ def test_zoom_factors_are_cached(monkeypatch):
     copied_sequences = []
 
     def asarray_spy(a, *args, **kwargs):
+        result = original_asarray(a, *args, **kwargs)
         if isinstance(a, (list, tuple)):
-            copied_sequences.append((a, kwargs))
-        return original_asarray(a, *args, **kwargs)
+            stream = cupy.cuda.get_current_stream()
+            ready = cupy.cuda.Event()
+            ready.record(stream)
+            copied_sequences.append((stream, ready))
+        return result
 
     monkeypatch.setattr(_ndimage_interpolation.cupy, "asarray", asarray_spy)
     _ndimage_interpolation._cached_zoom_factors_for_device.cache_clear()
@@ -100,7 +104,31 @@ def test_zoom_factors_are_cached(monkeypatch):
     assert first.shape == (4, 4)
     cupy.testing.assert_array_equal(first, second)
     assert len(copied_sequences) == 1
-    assert copied_sequences[0][1]["blocking"] is True
+    stream, ready = copied_sequences[0]
+    assert stream.ptr != cupy.cuda.get_current_stream().ptr
+    assert stream.is_non_blocking
+    assert ready.done
+
+
+def test_cached_zoom_factors_are_ready_for_other_streams():
+    _ndimage_interpolation._cached_zoom_factors_for_device.cache_clear()
+    producer = cupy.cuda.Stream(non_blocking=True)
+    consumer = cupy.cuda.Stream(non_blocking=True)
+    with producer:
+        first = _ndimage_interpolation._cached_zoom_factors(
+            (0.5, 0.25), "float32"
+        )
+        assert cupy.cuda.get_current_stream() == producer
+    with consumer:
+        second = _ndimage_interpolation._cached_zoom_factors(
+            (0.5, 0.25), "float32"
+        )
+        copied = second.copy()
+    consumer.synchronize()
+    assert first is second
+    cupy.testing.assert_array_equal(
+        copied, numpy.asarray([0.5, 0.25], dtype="float32")
+    )
 
 
 def test_loop_batch_selected_when_last_axis_is_one_of_multiple_batch_axes():
