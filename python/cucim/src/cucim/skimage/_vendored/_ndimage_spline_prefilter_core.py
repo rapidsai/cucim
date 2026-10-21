@@ -45,11 +45,15 @@ otherwise generate; scalar loads also allow element-aligned output views.
 The staged warp path needs at least 32 samples and enough device shared
 memory for the staged block. Launches use 4, 2, or 1 independent warps per
 block, opting in to larger shared memory for long lines when available.
-Float64 uses this path for lines of at least 512 samples, or at most 256
-single-channel lines: serial per-channel boundary initialization otherwise
-outweighs the parallel recurrence. Ineligible strided cases use the segmented
-kernel; remaining cases use the general fallback. The dispatch and run-count
-choices are empirical RTX A6000 tuning, rather than universal cutoffs.
+On devices with FP64 throughput at 1/64 of FP32, float64 uses this path for
+lines of at least 512 samples, or at most 256 single-channel lines: serial
+per-channel boundary initialization otherwise outweighs the parallel
+recurrence. A cached per-device throughput ratio scales these restrictions
+toward the float32 shape rules on devices with stronger FP64; unavailable or
+invalid ratios keep the 1/64 defaults. Ineligible strided cases use the
+segmented kernel; remaining cases use the general fallback. The baseline
+dispatch and run-count choices are empirical RTX A6000 tuning; scaling for
+stronger FP64 is a heuristic, rather than a measured crossover.
 
 Spline poles and boundary handling are implemented as in SciPy:
 https://github.com/scipy/scipy/blob/master/scipy/ndimage/src/ni_splines.c
@@ -792,6 +796,22 @@ def get_warp_spline1d_launch(n_samples, data_type, channels=1):
     return None
 
 
+@functools.cache
+def _get_fp32_to_fp64_ratio(device_id):
+    """Cache the device's arithmetic throughput ratio, defaulting to 64."""
+    try:
+        ratio = cupy.cuda.runtime.deviceGetAttribute(
+            cupy.cuda.runtime.cudaDevAttrSingleToDoublePrecisionPerfRatio,
+            device_id,
+        )
+    except (AttributeError, RuntimeError):
+        return 64
+    if isinstance(ratio, bool) or not isinstance(ratio, int) or ratio <= 0:
+        return 64
+    # Never relax the baseline policy for weaker FP64 hardware.
+    return min(ratio, 64)
+
+
 def supports_warp_spline1d(data_type, n_samples, n_signals, channels):
     """Return True if the staged warp prefilter can be used.
 
@@ -808,9 +828,18 @@ def supports_warp_spline1d(data_type, n_samples, n_signals, channels):
     # Lane 0 runs the boundary initialization serially for each line (and
     # channel). With slow double precision this outweighs the parallel
     # recurrence for many short lines (measured crossover on an RTX A6000).
-    if data_type == "float" or n_samples >= 512:
+    if (
+        data_type == "float"
+        or n_samples >= 512
+        or (channels == 1 and n_signals <= 256)
+    ):
         return True
-    return channels == 1 and n_signals <= 256
+    ratio = _get_fp32_to_fp64_ratio(cupy.cuda.runtime.getDevice())
+    # Scale the A6000's 512-sample / 256-line crossovers with FP64 throughput.
+    # At ratios <= 4, all otherwise-eligible shapes use the float32 policy.
+    return n_samples >= 8 * ratio or (
+        channels == 1 and n_signals <= 256 * 64 // ratio
+    )
 
 
 @cupy.memoize(for_each_device=True)
