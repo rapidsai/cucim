@@ -328,3 +328,65 @@ def test_PSNR_combines_error_and_range(dtype, shape, layout):
     actual = peak_signal_noise_ratio(reference, test)
     assert actual.dtype == cp.float64
     cp.testing.assert_allclose(actual, expected, rtol=1e-12)
+
+
+@pytest.mark.parametrize("dtype", [cp.float32, cp.float64])
+@pytest.mark.parametrize(
+    "values", ["random", "constant", "nan", "inf", "overflow"]
+)
+def test_large_error_statistics(dtype, values):
+    rng = np.random.default_rng(31)
+    image_true = cp.asarray(rng.random((2049, 2051)), dtype=dtype)
+    image_test = image_true * dtype(0.9)
+    if values == "constant":
+        image_true.fill(0)
+        image_test.fill(0)
+    elif values == "nan":
+        image_true[-1, -1] = cp.nan
+    elif values == "inf":
+        image_true[-1, -1] = cp.inf
+    elif values == "overflow":
+        image_true[0, 0] = dtype(1e30)
+        image_test[0, 0] = dtype(-1e30)
+    difference = image_true - image_test
+    expected_mse = cp.mean(difference * difference, dtype=cp.float64)
+    actual_mse = mean_squared_error(image_true, image_test)
+    assert actual_mse.dtype == cp.float64
+    cp.testing.assert_allclose(
+        actual_mse, expected_mse, rtol=1e-12, equal_nan=True
+    )
+    for normalization in ("euclidean", "mean"):
+        if normalization == "mean":
+            denominator = image_true.mean()
+        else:
+            denominator = cp.sqrt(
+                cp.mean(image_true * image_true, dtype=cp.float64)
+            )
+        expected = cp.sqrt(expected_mse) / denominator
+        actual = normalized_root_mse(
+            image_true, image_test, normalization=normalization
+        )
+        assert actual.dtype == cp.float64
+        cp.testing.assert_allclose(actual, expected, rtol=2e-6, equal_nan=True)
+
+
+@pytest.mark.parametrize("normalization", [None, "mean", "euclidean"])
+def test_error_statistics_different_strides(normalization):
+    from cucim.skimage._shared._reduction_kernels import _get_error_statistics
+
+    rng = np.random.default_rng(32)
+    image_true = cp.asarray(rng.random((257, 513)), dtype=cp.float32).T
+    image_test = cp.ascontiguousarray(image_true) * cp.float32(0.8)
+    error, normalizer = _get_error_statistics(
+        image_true, image_test, normalization
+    )
+    difference = image_true - image_test
+    expected = cp.sum(difference * difference, dtype=cp.float64)
+    cp.testing.assert_allclose(error, expected, rtol=1e-12)
+    if normalization == "mean":
+        expected = image_true.sum()
+    elif normalization == "euclidean":
+        expected = cp.sum(image_true * image_true, dtype=cp.float64)
+    else:
+        expected = 0
+    cp.testing.assert_allclose(normalizer, expected, rtol=2e-6)
