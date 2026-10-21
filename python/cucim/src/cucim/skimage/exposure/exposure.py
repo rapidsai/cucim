@@ -8,6 +8,7 @@ import numpy as np
 from .._shared import utils
 from .._shared._reduction_kernels import _get_minmax
 from ..util.dtype import dtype_limits, dtype_range
+from ._histogram_kernels import _bincount_rows
 
 __all__ = [
     "histogram",
@@ -74,8 +75,9 @@ def _bincount_histogram(
     Efficient histogram calculation for an image of integers.
 
     This function is significantly more efficient than cupy.histogram but
-    works only on images of integers. It is based on cupy.bincount.
-    Pass `bin_range` with supplied centers to reuse their host bounds.
+    works only on images of integers. Known compact ranges use shared-memory
+    counting; wider ranges retain cupy.bincount. Pass `bin_range` with supplied
+    centers to reuse their host bounds.
 
     Parameters
     ----------
@@ -102,6 +104,14 @@ def _bincount_histogram(
     else:
         # The caller already determined these bounds before making GPU bins.
         image_min, image_max = bin_range
+    nbins = image_max - image_min + 1
+    if (
+        bin_range is not None
+        and 0 < nbins <= 4096
+        and -(1 << 63) <= image_min < (1 << 63)
+    ):
+        hist = _bincount_rows(image.reshape(1, -1), nbins, image_min)[0]
+        return hist, bin_centers
     image = _offset_array(image, image_min, image_max)
 
     # Casting back to unsigned dtype seems necessary to avoid incorrect
