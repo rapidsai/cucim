@@ -131,6 +131,14 @@ def normalized_root_mse(image_true, image_test, *, normalization="euclidean"):
     return cp.sqrt(mean_squared_error(image_true, image_test)) / denom
 
 
+_pack_psnr_bounds = cp.ElementwiseKernel(
+    "raw T minimum, raw T maximum, raw bool has_nan",
+    "T bounds",
+    "bounds = has_nan[0] ? T(CUDART_NAN) : (i == 0 ? minimum[0] : maximum[0])",
+    "cucim_pack_psnr_bounds",
+)
+
+
 def peak_signal_noise_ratio(image_true, image_test, *, data_range=None):
     """
     Compute the peak signal to noise ratio (PSNR) for an image.
@@ -163,6 +171,7 @@ def peak_signal_noise_ratio(image_true, image_test, *, data_range=None):
 
     """
     check_shape_equality(image_true, image_test)
+    squared_error = None
 
     if data_range is None:
         if image_true.dtype != image_test.dtype:
@@ -174,7 +183,17 @@ def peak_signal_noise_ratio(image_true, image_test, *, data_range=None):
         dmin, dmax = dtype_range[image_true.dtype.type]
         # Validate both bounds after one readback, without separate GPU
         # comparisons and their individual host synchronizations.
-        true_min, true_max = _get_minmax(image_true).get().tolist()
+        if image_true.dtype == image_test.dtype and image_true.dtype in (
+            cp.float32,
+            cp.float64,
+        ):
+            minimum, maximum, has_nan, squared_error = _get_minmax_mse(
+                image_true, image_test
+            )
+            bounds = _pack_psnr_bounds(minimum, maximum, has_nan, size=2)
+        else:
+            bounds = _get_minmax(image_true)
+        true_min, true_max = bounds.get().tolist()
         if true_max > dmax or true_min < dmin:
             raise ValueError(
                 "im_true has intensity values outside the range expected for "
@@ -186,9 +205,10 @@ def peak_signal_noise_ratio(image_true, image_test, *, data_range=None):
         else:
             data_range = dmax - dmin
 
-    image_true, image_test = _as_floats(image_true, image_test)
-
-    err = mean_squared_error(image_true, image_test)
+    if squared_error is None:
+        err = mean_squared_error(image_true, image_test)
+    else:
+        err = squared_error / image_true.size
     return 10 * cp.log10((data_range * data_range) / err)
 
 
