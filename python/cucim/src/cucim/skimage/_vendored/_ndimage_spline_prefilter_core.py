@@ -548,8 +548,11 @@ void {kernel_name}(T* __restrict__ y, idx_t n_signals, idx_t n)
     T c0;
     (void)z_n; (void)z_n_1; (void)c0;
 
-    // Lane runs have odd length, so for odd CH the 32 lanes access distinct
-    // shared memory banks.
+    // Odd run lengths make seg_len * CH coprime to 32 for odd CH, avoiding
+    // bank conflicts for float32 (float64 spans two 32-bit bank words).
+    // This changes the run partition, not the shared-memory allocation.
+    // See the related padding example:
+    // https://developer.nvidia.com/blog/efficient-matrix-transpose-cuda-cc/
     const idx_t seg_len = ((n - 2 + 32) / 32) | 1;
     idx_t start, end;
     P A;
