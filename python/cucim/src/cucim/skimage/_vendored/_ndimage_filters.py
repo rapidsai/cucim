@@ -284,12 +284,28 @@ def _correlate_or_convolve1d(
 ):
     # Calls fast shared-memory convolution when possible, otherwise falls back
     # to the vendored elementwise _correlate_or_convolve
+    # Flatten only unfiltered trailing dimensions: axis-0 boundaries and sample
+    # order are identical in this view, including for channel-last images.
+    use_2d_view = (
+        input.ndim > 2
+        and axis in (0, -input.ndim)
+        and input.flags.c_contiguous
+        and input.size > 0
+        and (
+            not isinstance(output, cupy.ndarray)
+            or (
+                output.shape == input.shape
+                and output.flags.c_contiguous
+                and not cupy.shares_memory(input, output, "MAY_SHARE_BOUNDS")
+            )
+        )
+    )
     default_algorithm = False
     if algorithm is None:
         default_algorithm = True
         if (
             _is_not_windows
-            and input.ndim == 2
+            and (input.ndim == 2 or use_2d_view)
             and weights.size <= 256
             and not (
                 cval < 0 and mode == "constant" and input.dtype.kind == "u"
@@ -313,11 +329,33 @@ def _correlate_or_convolve1d(
     if mode == "wrap":
         mode = "grid-wrap"
     if algorithm == "shared_memory":
-        if input.ndim not in [2, 3]:
+        if input.ndim not in [2, 3] and not use_2d_view:
             raise NotImplementedError(
                 f"shared_memory not implemented for ndim={input.ndim}"
             )
         try:
+            if use_2d_view:
+                shape_2d = (input.shape[0], input.size // input.shape[0])
+                output_view = (
+                    output.reshape(shape_2d)
+                    if isinstance(output, cupy.ndarray)
+                    else output
+                )
+                out = _shmem_convolve1d(
+                    input.reshape(shape_2d),
+                    weights,
+                    axis=0,
+                    output=output_view,
+                    mode=mode,
+                    cval=cval,
+                    origin=origin,
+                    convolution=convolution,
+                )
+                return (
+                    output
+                    if isinstance(output, cupy.ndarray)
+                    else out.reshape(input.shape)
+                )
             out = _shmem_convolve1d(
                 input,
                 weights,
