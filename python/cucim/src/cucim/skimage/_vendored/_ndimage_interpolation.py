@@ -443,10 +443,11 @@ def affine_transform(
 
     Args:
         input (cupy.ndarray): The input array.
-        matrix (cupy.ndarray): The inverse coordinate transformation matrix,
-            mapping output coordinates to input coordinates. If ``ndim`` is the
-            number of dimensions of ``input``, the given matrix must have one
-            of the following shapes:
+        matrix (cupy.ndarray or numpy.ndarray): The inverse coordinate
+            transformation matrix, mapping output coordinates to input
+            coordinates. A host (NumPy) matrix avoids reading the matrix back
+            from the device. If ``ndim`` is the number of dimensions of
+            ``input``, the given matrix must have one of the following shapes:
 
                 - ``(ndim, ndim)``: the linear transformation matrix for each
                   output coordinate.
@@ -514,7 +515,7 @@ def affine_transform(
         tm_interp = "linear" if order > 0 else "nearest"
         return _texture.affine_transformation(
             data=input,
-            transformation_matrix=matrix,
+            transformation_matrix=cupy.asarray(matrix),
             output_shape=output_shape,
             output=output,
             interpolation=tm_interp,
@@ -540,8 +541,8 @@ def affine_transform(
 
     if mode == "opencv":
         m = cupy.zeros((input.ndim + 1, input.ndim + 1))
-        m[:-1, :-1] = matrix
-        m[:-1, -1] = offset
+        m[:-1, :-1] = cupy.asarray(matrix)
+        m[:-1, -1] = cupy.asarray(offset)
         m[-1, -1] = 1
         m = cupy.linalg.inv(m)
         m[:2] = cupy.roll(m[:2], 1, axis=0)
@@ -557,6 +558,7 @@ def affine_transform(
         float_dtype = cupy.promote_types(input.real.dtype, cupy.float32)
     matrix = matrix.astype(float_dtype, copy=False)
     if mode == "opencv" or mode == "_opencv_edge":
+        matrix = cupy.asarray(matrix)
         if matrix.ndim == 1:
             matrix = cupy.diag(matrix)
         coordinates = cupy.indices(output_shape, dtype=float_dtype)
@@ -597,6 +599,7 @@ def affine_transform(
             input, prefilter, mode, cval, order, batch_axes=batch_axes
         )
 
+        matrix = cupy.asarray(matrix)
         offset = cupy.asarray(offset, dtype=float_dtype)
         offset = -offset / matrix
         kern_info = _interp_kernels._get_zoom_shift_kernel(
@@ -654,9 +657,16 @@ def affine_transform(
             batch_axes=batch_axes,
             output_c_contiguous=output.flags.c_contiguous,
         )
-        m = cupy.zeros((ndim, ndim + 1), dtype=float_dtype)
-        m[:, :-1] = matrix
-        m[:, -1] = cupy.asarray(offset, dtype=float_dtype)
+        if isinstance(matrix, numpy.ndarray):
+            # Build the combined matrix on the host and upload it once.
+            m = numpy.empty((ndim, ndim + 1), dtype=float_dtype)
+            m[:, :-1] = matrix
+            m[:, -1] = offset
+            m = cupy.asarray(m)
+        else:
+            m = cupy.zeros((ndim, ndim + 1), dtype=float_dtype)
+            m[:, :-1] = matrix
+            m[:, -1] = cupy.asarray(offset, dtype=float_dtype)
         if kern_info.size is not None:
             kern_info.kernel(filtered, m, output, size=kern_info.size)
         else:
@@ -780,9 +790,8 @@ def rotate(
     offset = numpy.zeros(ndim, dtype=float_dtype)
     offset[axes] = in_center - out_center
 
-    matrix = cupy.asarray(matrix)
-    offset = cupy.asarray(offset)
-
+    # Keep the matrix and offset on the host; affine_transform inspects them
+    # there and uploads the combined matrix once.
     return affine_transform(
         input,
         matrix,
