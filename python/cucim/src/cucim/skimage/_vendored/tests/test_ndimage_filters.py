@@ -9,6 +9,70 @@ from scipy import ndimage as scipy_ndi
 from cucim.skimage._vendored import _ndimage_filters as filters
 
 
+@pytest.mark.parametrize("shape", [(17, 19, 3), (13, 7, 5, 4)])
+@pytest.mark.parametrize("dtype", ["float32", "float64", "int16", "complex64"])
+@pytest.mark.parametrize(
+    "mode", ["reflect", "mirror", "nearest", "wrap", "constant"]
+)
+@pytest.mark.parametrize("convolution", [False, True])
+def test_axis0_shared_memory_view(shape, dtype, mode, convolution):
+    image = cp.asarray(
+        np.random.default_rng(0).standard_normal(shape) * 20
+    ).astype(dtype)
+    weights = cp.asarray([0.1, 0.2, 0.3, 0.4])
+    function = filters.convolve1d if convolution else filters.correlate1d
+    expected = function(
+        image,
+        weights,
+        axis=0,
+        origin=-1,
+        mode=mode,
+        cval=2,
+        algorithm="elementwise",
+    )
+    output = cp.empty_like(image)
+    actual = function(
+        image,
+        weights,
+        axis=-image.ndim,
+        origin=-1,
+        mode=mode,
+        cval=2,
+        output=output,
+    )
+    assert actual is output
+    cp.testing.assert_allclose(actual, expected, rtol=2e-5, atol=2e-5)
+
+
+@pytest.mark.parametrize(
+    "layout", ["contiguous", "strided_input", "strided_output", "overlap"]
+)
+def test_axis0_shared_memory_view_dispatch(monkeypatch, layout):
+    image = cp.arange(9 * 11 * 3, dtype=cp.float32).reshape(9, 11, 3)
+    if layout == "strided_input":
+        image = image[:, ::2]
+    output = cp.empty_like(image)
+    if layout == "strided_output":
+        output = cp.empty(image.shape + (2,), image.dtype)[..., 0]
+    elif layout == "overlap":
+        output = image
+    weights = cp.asarray([0.25, 0.5, 0.25], dtype=cp.float32)
+    expected = filters.correlate1d(
+        image, weights, axis=0, algorithm="elementwise"
+    )
+    calls = []
+    original = filters._shmem_convolve1d
+
+    def spy(image, *args, **kwargs):
+        calls.append(image.shape)
+        return original(image, *args, **kwargs)
+
+    monkeypatch.setattr(filters, "_shmem_convolve1d", spy)
+    actual = filters.correlate1d(image, weights, axis=0, output=output)
+    assert calls == ([(9, 33)] if layout == "contiguous" else [])
+    cp.testing.assert_allclose(actual, expected)
+
+
 @pytest.mark.parametrize("order", [0, 1])
 @pytest.mark.parametrize("dtype", ["float32", "float64", "complex64"])
 def test_cached_gaussian_kernel_is_initialized_on_private_stream(
