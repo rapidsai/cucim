@@ -11,6 +11,7 @@ import numpy as np
 
 from .._shared._reduction_kernels import _get_minmax
 from .._shared.utils import _supported_float_type
+from ._dtype_kernels import _get_float_to_integer_kernel
 
 __all__ = [
     "img_as_float32",
@@ -329,6 +330,29 @@ def _convert(image, dtype, force_copy=False, uniform=False):
         computation_type = _dtype_itemsize(
             itemsize_out, dtype_in, cp.float32, cp.float64
         )
+
+        if (
+            cp.dtype(computation_type)
+            in (cp.dtype("float32"), cp.dtype("float64"))
+            # Keep the existing oversized Python-scalar error for this case.
+            and not (uniform and dtypeobj_out == cp.dtype("uint64"))
+        ):
+            if kind_out == "u":
+                scale = imax_out + int(uniform)
+            elif uniform:
+                scale = (imax_out - imin_out + 1.0) / 2.0
+            else:
+                scale = (imax_out - imin_out) / 2.0
+            output = cp.empty(image.shape, dtype=dtype_out)
+            return _get_float_to_integer_kernel(
+                cp.dtype(computation_type).name, kind_out == "i", uniform
+            )(
+                image,
+                computation_type(scale),
+                computation_type(imin_out),
+                computation_type(imax_out),
+                output,
+            )
 
         if not uniform:
             if kind_out == "u":
