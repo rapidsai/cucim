@@ -610,8 +610,9 @@ def rotate(
 
     float_dtype = cp.promote_types(image.real.dtype, cp.float32)
 
-    # transfer the coordinate transform to the GPU
-    affine_params = cp.asarray(affine_params, dtype=float_dtype)
+    # Keep the coordinate transform on the host; affine_transform inspects it
+    # there and uploads it once.
+    affine_params = np.asarray(affine_params, dtype=float_dtype)
 
     return _ndimage_affine(
         image,
