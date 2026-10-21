@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Infrastructure, Inc.
 # SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Networks, Inc.
-# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND MIT
 
 """
@@ -62,10 +62,10 @@ def _causal_init_code(mode):
         z_i = z;
         z_n_1 = pow(z, (P)(n - 1));
 
-        c[0] = c[0] + z_n_1 * c[(n - 1) * element_stride];
+        c[0] = c[0] + z_n_1 * gain * c[(n - 1) * element_stride];
         for (i = 1; i < min(n - 1, static_cast<idx_t>({n_boundary})); ++i) {{
-            c[0] += z_i * (c[i * element_stride] +
-                           z_n_1 * c[(n - 1 - i) * element_stride]);
+            c[0] += z_i * gain * (c[i * element_stride] +
+                                   z_n_1 * c[(n - 1 - i) * element_stride]);
             z_i *= z;
         }}
         c[0] /= 1 - z_n_1 * z_n_1;"""
@@ -74,7 +74,7 @@ def _causal_init_code(mode):
         z_i = z;
 
         for (i = 1; i < min(n, static_cast<idx_t>({n_boundary})); ++i) {{
-            c[0] += z_i * c[(n - i) * element_stride];
+            c[0] += z_i * gain * c[(n - i) * element_stride];
             z_i *= z;
         }}
         c[0] /= 1 - z_i; /* z_i = pow(z, n) */"""
@@ -84,11 +84,16 @@ def _causal_init_code(mode):
         z_n = pow(z, (P)n);
         c0 = c[0];
 
-        c[0] = c[0] + z_n * c[(n - 1) * element_stride];
-        for (i = 1; i < min(n, static_cast<idx_t>({n_boundary})); ++i) {{
-            c[0] += z_i * (c[i * element_stride] +
-                           z_n * c[(n - 1 - i) * element_stride]);
+        c[0] = c[0] + z_n * gain * c[(n - 1) * element_stride];
+        for (i = 1; i < min(n - 1, static_cast<idx_t>({n_boundary})); ++i) {{
+            c[0] += z_i * gain * (c[i * element_stride] +
+                                   z_n * c[(n - 1 - i) * element_stride]);
             z_i *= z;
+        }}
+        // The last reflected pair reads the already scaled and updated c[0].
+        // Apply gain only to its other sample, matching an upfront gain pass.
+        if (n <= static_cast<idx_t>({n_boundary})) {{
+            c[0] += z_i * (gain * c[(n - 1) * element_stride] + z_n * c[0]);
         }}
         c[0] *= z / (1 - z_n * z_n);
         c[0] += c0;"""
@@ -159,6 +164,13 @@ def _get_spline1d_code(mode, poles, n_boundary):
         idx_t i, n = signal_length;
         P z, z_i;"""
     )
+    gain = get_gain(poles)
+    code.append(
+        f"""
+        // apply prefilter gain
+        P gain = {gain};
+        c[0] *= gain;"""
+    )
 
     # retrieve the spline boundary extension mode to use
     mode = _get_spline_mode(mode)
@@ -190,7 +202,8 @@ def _get_spline1d_code(mode, poles, n_boundary):
             """
         // apply the causal filter for the current pole
         for (i = 1; i < n; ++i) {{
-            c[i * element_stride] += z * c[(i - 1) * element_stride];
+            c[i * element_stride] = gain * c[i * element_stride] +
+                                    z * c[(i - 1) * element_stride];
         }}"""
         )
         # initialize and apply the anti-causal filter
@@ -201,7 +214,8 @@ def _get_spline1d_code(mode, poles, n_boundary):
         for (i = n - 2; i >= 0; --i) {{
             c[i * element_stride] = z * (c[(i + 1) * element_stride] -
                                          c[i * element_stride]);
-        }}"""
+        }}
+        gain = 1;"""
         )
 
     code += [
