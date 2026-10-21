@@ -144,7 +144,8 @@ def spline_filter1d(
     run_kernel = not (order < 2 or x.ndim == 0 or x.shape[axis] == 1)
     if not run_kernel:
         output = _util._get_output(output, input)
-        _core.elementwise_copy(x, output)
+        if output is not x:
+            _core.elementwise_copy(x, output)
         return output
 
     temp, data_dtype, output_dtype = _get_spline_output(x, output)
@@ -211,14 +212,13 @@ def spline_filter(input, order=3, output=cupy.float64, mode="mirror"):
     if order < 2 or order > 5:
         raise RuntimeError("spline order not supported")
 
-    x = input
-    temp, data_dtype, output_dtype = _get_spline_output(x, output)
-    if order not in [0, 1] and input.ndim > 0:
-        for axis in range(x.ndim):
-            spline_filter1d(x, order, axis, output=temp, mode=mode)
-            x = temp
+    temp, data_dtype, output_dtype = _get_spline_output(input, output)
+    # The workspace already contains the input; filter it in place on every axis.
+    for axis in range(input.ndim):
+        spline_filter1d(temp, order, axis, output=temp, mode=mode)
     if isinstance(output, cupy.ndarray):
-        _core.elementwise_copy(temp, output)
+        if temp is not output:
+            _core.elementwise_copy(temp, output)
     else:
         output = temp
     if output.dtype != output_dtype:
@@ -295,19 +295,18 @@ def _filter_input(image, prefilter, mode, cval, order, batch_axes=None):
     padded, npad = _prepad_for_spline_filter(image, mode, cval, batch_axes)
     float_dtype = cupy.promote_types(image.dtype, cupy.float32)
 
-    if batch_axes:
-        # Only filter along non-batch axes, following spline_filter's pattern
-        x = padded
-        temp = padded.astype(float_dtype, copy=True)
-        for axis in range(image.ndim):
-            if axis not in batch_axes:
-                spline_filter1d(x, order, axis, output=temp, mode=mode)
-                x = temp
-        filtered = temp
+    if padded is image:
+        # Never filter the caller's array in place.
+        temp = image.astype(float_dtype, order="C", copy=True)
     else:
-        filtered = spline_filter(padded, order, output=float_dtype, mode=mode)
-
-    return cupy.ascontiguousarray(filtered), npad
+        # The padded array is a private temporary: convert it if needed, but
+        # do not copy it again before filtering in place.
+        temp = cupy.ascontiguousarray(padded.astype(float_dtype, copy=False))
+    for axis in range(image.ndim):
+        # Only filter along non-batch axes (identity/batch dimensions).
+        if not batch_axes or axis not in batch_axes:
+            spline_filter1d(temp, order, axis, output=temp, mode=mode)
+    return temp, npad
 
 
 def map_coordinates(
