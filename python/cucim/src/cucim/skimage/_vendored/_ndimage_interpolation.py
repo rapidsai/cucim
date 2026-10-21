@@ -152,18 +152,20 @@ def spline_filter1d(
     data_type = cupy._core._scalar.get_typename(temp.dtype)
     pole_type = cupy._core._scalar.get_typename(temp.real.dtype)
 
-    index_type = _util._get_inttype(input)
+    # Index the floating workspace, which can be larger than the input dtype.
+    index_type = _util._get_inttype(temp)
     index_dtype = cupy.int32 if index_type == "int" else cupy.int64
 
     n_samples = x.shape[axis]
     n_signals = x.size // n_samples
-    info = cupy.array((n_signals, n_samples) + x.shape, dtype=index_dtype)
-
+    int_type = numpy.dtype(index_dtype).type
+    core = _spline_prefilter_core
+    launch_kwargs = {}
     # empirical choice of block size that seemed to work well
     block_size = max(2 ** math.ceil(numpy.log2(n_samples / 32)), 8)
     if math.prod(x.shape[axis + 1 :]) <= 1024:
         block_size = min(block_size, 32)
-    kern = _spline_prefilter_core.get_raw_spline1d_kernel(
+    kern = core.get_raw_spline1d_kernel(
         axis,
         ndim,
         mode,
@@ -173,14 +175,17 @@ def spline_filter1d(
         pole_type=pole_type,
         block_size=block_size,
     )
-
-    # Due to recursive nature, a given line of data must be processed by a
-    # single thread. n_signals lines will be processed in total.
+    # Due to recursive nature, a given line of data must be processed by
+    # a single thread. n_signals lines will be processed in total.
     block = (block_size,)
     grid = ((n_signals + block[0] - 1) // block[0],)
+    # Pass runtime sizes directly; no device metadata allocation or copy.
+    args = (temp,) + tuple(
+        int_type(size) for size in (n_signals, n_samples) + temp.shape
+    )
 
     # apply causal + anti-causal IIR spline filters
-    kern(grid, block, (temp, info))
+    kern(grid, block, args, **launch_kwargs)
 
     if isinstance(output, cupy.ndarray) and temp is not output:
         # copy kernel output into the user-provided output array
