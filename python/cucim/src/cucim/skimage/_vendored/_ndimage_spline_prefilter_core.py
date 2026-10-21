@@ -3,9 +3,55 @@
 # SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND MIT
 
-"""
-Spline poles and boundary handling implemented as in SciPy
+"""Spline prefilter kernels and their memory-access patterns.
 
+Kernel families
+---------------
+``spline_filter1d`` in ``_ndimage_interpolation`` selects among three kernel
+families after preparing a C-contiguous workspace. All implement the causal
+and anti-causal IIR recurrences for each spline pole (orders 2--5), share the
+boundary-initialization formulas, and fuse the gain into the first causal
+pass. Cooperative kernels summarize a run as an affine carry map
+``incoming -> A * incoming + B``, compose those maps, and replay each run with
+its correct incoming carry.
+
+``get_raw_spline1d_kernel`` is the general fallback: one thread processes an
+entire line sequentially in global memory. Threads can process independent
+lines without cooperation or shared-memory storage. This keeps setup small
+for short lines and supports complex workspaces and real cases outside the
+optimized dispatch. Long recurrences limit parallelism when there are few
+lines, and last-axis lines give neighboring threads widely separated global
+addresses, motivating the two cooperative layouts below.
+
+``get_segmented_spline1d_kernel`` handles non-last axes of real float32/float64
+workspaces. A block has shape ``(32, n_segments)``: a warp spans 32 adjacent
+lines, while threads at the same x coordinate split one line into runs. At a
+fixed sample, adjacent lines access neighboring trailing elements, so global
+accesses coalesce well when the trailing dimension spans a warp. Shared memory
+holds only the runs' carry maps; block barriers make them available for carry
+composition before replay. This exposes several threads per long line while
+preserving the favorable global-access pattern of filtering a strided axis.
+
+``get_warp_spline1d_kernel`` handles contiguous last-axis lines and the axis
+before a trailing dimension of 2--4 elements, such as RGB/RGBA channels. Each
+warp stages a complete line or interleaved ``(samples, channels)`` block with
+coalesced global loads, filters it in shared memory, then stores it coalesced.
+Lanes own runs and use shuffle-based prefix scans to compose their carry
+maps, carrying each channel independently. Odd run lengths avoid systematic
+shared-memory bank collisions for contiguous and odd-channel layouts. Staging
+avoids the widely separated global accesses that lane-owned runs would
+otherwise generate; scalar loads also allow element-aligned output views.
+
+The staged warp path needs at least 32 samples and enough device shared
+memory for the staged block. Launches use 4, 2, or 1 independent warps per
+block, opting in to larger shared memory for long lines when available.
+Float64 uses this path for lines of at least 512 samples, or at most 256
+single-channel lines: serial per-channel boundary initialization otherwise
+outweighs the parallel recurrence. Ineligible strided cases use the segmented
+kernel; remaining cases use the general fallback. The dispatch and run-count
+choices are empirical RTX A6000 tuning, rather than universal cutoffs.
+
+Spline poles and boundary handling are implemented as in SciPy:
 https://github.com/scipy/scipy/blob/master/scipy/ndimage/src/ni_splines.c
 """
 
