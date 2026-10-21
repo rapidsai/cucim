@@ -33,6 +33,8 @@ HOMOGRAPHY_TRANSFORMS = (
 
 # Small arrays favor combined reductions; large arrays favor their throughput.
 # Intermediate constant-mode arrays benefit from the in-range short-circuit.
+# These empirical cutoffs were tuned on an RTX A6000; other architectures and
+# GPU-bound pipelines may favor a different balance of launches and throughput.
 _CLIP_CONSTANT_HOST_MIN_BYTES = 512 * 1024
 _CLIP_CONSTANT_HOST_MAX_BYTES = 16 * 1024 * 1024
 
@@ -165,6 +167,10 @@ def resize(
 
     Notes
     -----
+    `assume_finite` is a cuCIM-only keyword-only argument; scikit-image does
+    not provide it. If the finite-value promise is violated, output clipping
+    may be skipped.
+
     Modes 'reflect' and 'symmetric' are similar, but differ in whether the edge
     pixels are duplicated during the reflection.  As an example, if an array
     has values [0, 1, 2] and was padded to the right by four values using
@@ -1007,6 +1013,10 @@ def _clip_warp_output(
         reductions without NaN detection or host-side range checks.
 
     """
+    # Range dispatch when clipping is enabled:
+    # assume_finite=True       ordinary extrema, no NaN or host range checks
+    # default, constant band   host short-circuit; NaNs fall back to device path
+    # default, otherwise       combined NaN-safe extrema on the device
     if (clip is None and order <= 1) or not clip:
         # no clipping by default for order = 0 or 1
         return
@@ -1021,6 +1031,7 @@ def _clip_warp_output(
     ):
         return
     if isinstance(input_image, tuple) and len(input_image) == 2:
+        # Internal hook for callers/tests that already have input bounds.
         min_val, max_val = input_image
         if mode == "constant":
             input_has_nan = False if assume_finite else cp.isnan(min_val)

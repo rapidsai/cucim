@@ -97,6 +97,12 @@ def pyramid_reduce(
     out : array
         Smoothed and downsampled float image.
 
+    Notes
+    -----
+    `assume_finite` is a cuCIM-only keyword-only argument; scikit-image does
+    not provide it. If the finite-value promise is violated, output clipping
+    may be skipped.
+
     References
     ----------
     .. [1] http://persci.mit.edu/pub_pdfs/pyramid83.pdf
@@ -184,6 +190,12 @@ def pyramid_expand(
     -------
     out : array
         Upsampled and smoothed float image.
+
+    Notes
+    -----
+    `assume_finite` is a cuCIM-only keyword-only argument; scikit-image does
+    not provide it. If the finite-value promise is violated, output clipping
+    may be skipped.
 
     References
     ----------
@@ -284,6 +296,12 @@ def pyramid_gaussian(
     pyramid : generator
         Generator yielding pyramid layers as float images.
 
+    Notes
+    -----
+    `assume_finite` is a cuCIM-only keyword-only argument; scikit-image does
+    not provide it. If the finite-value promise is violated, output clipping
+    may be skipped.
+
     References
     ----------
     .. [1] http://persci.mit.edu/pub_pdfs/pyramid83.pdf
@@ -326,13 +344,8 @@ def pyramid_gaussian(
             assume_finite=assume_finite,
         )
 
-        prev_shape = current_shape
         prev_layer_image = layer_image
         current_shape = layer_image.shape
-
-        # no change to previous pyramid layer
-        if current_shape == prev_shape:
-            break
 
         yield layer_image
 
@@ -404,6 +417,12 @@ def pyramid_laplacian(
     -------
     pyramid : generator
         Generator yielding pyramid layers as float images.
+
+    Notes
+    -----
+    `assume_finite` is a cuCIM-only keyword-only argument; scikit-image does
+    not provide it. If the finite-value promise is violated, output clipping
+    may be skipped.
 
     References
     ----------
