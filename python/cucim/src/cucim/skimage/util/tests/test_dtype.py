@@ -253,3 +253,54 @@ def test_subclass_conversion():
         x = x.astype(dtype)
         y = _convert(x, cp.floating)
         assert y.dtype == x.dtype
+
+
+@pytest.mark.parametrize("dtype_in", [cp.float16, cp.float32, cp.float64])
+@pytest.mark.parametrize(
+    "dtype_out",
+    [
+        cp.uint8,
+        cp.int8,
+        cp.uint16,
+        cp.int16,
+        cp.uint32,
+        cp.int32,
+        cp.uint64,
+        cp.int64,
+    ],
+)
+@pytest.mark.parametrize("uniform", [False, True])
+def test_float_integer_fusion_rounding(dtype_in, dtype_out, uniform):
+    from cucim.skimage.util.dtype import _dtype_itemsize
+
+    rng = np.random.default_rng(71)
+    limits = np.iinfo(dtype_out)
+    scale = limits.max if limits.min == 0 else (limits.max - limits.min) / 2
+    # Include ties and nearby values, endpoints, and NaN alongside random data.
+    ties = (np.arange(-9, 10) + 0.5) / scale
+    host = np.concatenate((rng.uniform(-1, 1, 1000), ties, [-1, 0, 1, np.nan]))
+    image = cp.asarray(host, dtype=dtype_in)[::-1]
+    if uniform and dtype_out == cp.uint64:
+        # The legacy multiply cannot accept 2**64 as a Python scalar.
+        with pytest.raises(OverflowError):
+            _convert(image, dtype_out, uniform=uniform)
+        return
+    computation_type = _dtype_itemsize(
+        cp.dtype(dtype_out).itemsize, dtype_in, cp.float32, cp.float64
+    )
+    if not uniform:
+        expected = cp.multiply(image, scale, dtype=computation_type)
+        if limits.min != 0:
+            expected -= 0.5
+        cp.rint(expected, out=expected)
+    elif limits.min == 0:
+        expected = cp.multiply(image, limits.max + 1, dtype=computation_type)
+    else:
+        expected = cp.multiply(
+            image, (limits.max - limits.min + 1.0) / 2.0, dtype=computation_type
+        )
+        cp.floor(expected, out=expected)
+    cp.clip(expected, limits.min, limits.max, out=expected)
+    expected = expected.astype(dtype_out)
+    actual = _convert(image, dtype_out, uniform=uniform)
+    cp.testing.assert_array_equal(actual, expected)
