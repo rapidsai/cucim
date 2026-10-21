@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import math
@@ -1037,7 +1037,7 @@ def _shmem_convolve1d(
     # handle potential overlap between input and output arrays
     needs_temp = cp.shares_memory(output, image, "MAY_SHARE_BOUNDS")
     if needs_temp:
-        output, temp = util._get_output(output.dtype, input), output
+        output, temp = util._get_output(output.dtype, image), output
 
     # index_c_type = util._get_inttype(image)
     image_c_type = _dtype_char_to_c_types[image.dtype.char]
@@ -1065,6 +1065,6 @@ def _shmem_convolve1d(
         args,
     )
     if needs_temp:
-        output[:] = temp
+        temp[:] = output
         output = temp
     return output
