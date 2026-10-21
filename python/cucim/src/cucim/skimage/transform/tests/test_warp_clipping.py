@@ -218,6 +218,29 @@ def test_warp_range_empty():
         _get_warp_range(cp.empty(0))
 
 
+@pytest.mark.parametrize("dtype", ["float32", "float64", "uint64"])
+def test_warp_range_parallel_streams(dtype):
+    streams = [cp.cuda.Stream(non_blocking=True) for _ in range(2)]
+    pending = []
+    for repeat in range(12):
+        for index, stream in enumerate(streams):
+            with stream:
+                size = 131073 + repeat * 13 + index
+                image = cp.arange(size, dtype=dtype)
+                if dtype != "uint64":
+                    image[-1] = cp.nan
+                result = _get_warp_range(image)
+                pending.append((image, result, size))
+    for stream in streams:
+        stream.synchronize()
+    for image, (minimum, maximum, has_nan), size in pending:
+        cp.testing.assert_array_equal(minimum, 0)
+        cp.testing.assert_array_equal(
+            maximum, size - (1 if dtype == "uint64" else 2)
+        )
+        cp.testing.assert_array_equal(has_nan, dtype != "uint64")
+
+
 @pytest.mark.parametrize("size", [31, 131073])
 def test_warp_range_subnormal_extrema(size):
     tiny = np.nextafter(np.float32(0), np.float32(1))
