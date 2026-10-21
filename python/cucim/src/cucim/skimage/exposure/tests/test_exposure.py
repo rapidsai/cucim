@@ -1117,3 +1117,33 @@ def test_rescale_reversed_range_and_nonfinite_pixels(dtype):
     expected = expected * 3.0 - 1.0
     actual = exposure.rescale_intensity(image, (2.0, -2.0), (-1.0, 2.0))
     cp.testing.assert_array_equal(actual, expected)
+
+
+@pytest.mark.parametrize("nbins", [16, 256, 5000])
+@pytest.mark.parametrize(
+    "shape,kernel_size",
+    [((31, 43), (5, 7)), ((9, 11, 13), (3, 4, 5)), ((17, 23, 3), (4, 5))],
+)
+def test_adapthist_batched_histogram_matches_per_row(
+    monkeypatch, nbins, shape, kernel_size
+):
+    import importlib
+
+    module = importlib.import_module("cucim.skimage.exposure._adapthist")
+    image = cp.asarray(
+        np.random.default_rng(44).random(shape), dtype=cp.float32
+    )
+    actual = exposure.equalize_adapthist(
+        image, kernel_size=kernel_size, nbins=nbins
+    )
+    monkeypatch.setattr(
+        module,
+        "_bincount_rows",
+        lambda rows, bins: cp.apply_along_axis(
+            cp.bincount, -1, rows, minlength=bins
+        ),
+    )
+    expected = exposure.equalize_adapthist(
+        image, kernel_size=kernel_size, nbins=nbins
+    )
+    cp.testing.assert_array_equal(actual, expected)
