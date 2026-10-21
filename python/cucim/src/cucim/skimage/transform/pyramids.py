@@ -6,6 +6,8 @@ import math
 from collections.abc import Iterable
 from numbers import Real
 
+import cupy as cp
+
 from .._shared.utils import convert_to_float
 from .._vendored import ndimage as ndi
 from ._pyramid_kernels import _gaussian_decimate
@@ -505,4 +507,6 @@ def pyramid_laplacian(
         smoothed_image = _smooth(resized_image, sigma, mode, cval, channel_axis)
         current_shape = resized_image.shape
 
-        yield resized_image - smoothed_image
+        # The resized buffer is no longer needed; keep smoothed_image intact
+        # as the input to the next level and leave previous yields untouched.
+        yield cp.subtract(resized_image, smoothed_image, out=resized_image)
