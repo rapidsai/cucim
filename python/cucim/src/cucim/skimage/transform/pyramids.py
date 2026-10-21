@@ -5,8 +5,6 @@
 import math
 from collections.abc import Iterable
 
-import cupy as cp
-
 from .._shared.utils import convert_to_float
 from .._vendored import ndimage as ndi
 from ._warps import _validate_assume_finite, resize
@@ -21,23 +19,19 @@ def _smooth(image, sigma, mode, cval, channel_axis):
     elif any(s < 0 for s in sigma):
         raise ValueError(sigma_msg)
 
-    smoothed = cp.empty_like(image)
-
     # apply Gaussian filter to all channels independently
     if channel_axis is not None:
         channel_axis = channel_axis % image.ndim
         axes = tuple(ax for ax in range(image.ndim) if ax != channel_axis)
     else:
         axes = None
-    ndi.gaussian_filter(
+    return ndi.gaussian_filter(
         image,
         sigma,
-        output=smoothed,
         mode=mode,
         cval=cval,
         axes=axes,
     )
-    return smoothed
 
 
 def _check_factor(factor):
@@ -133,6 +127,7 @@ def pyramid_reduce(
         mode=mode,
         cval=cval,
         anti_aliasing=False,
+        preserve_range=True,
         assume_finite=assume_finite,
     )
 
@@ -225,6 +220,7 @@ def pyramid_expand(
         mode=mode,
         cval=cval,
         anti_aliasing=False,
+        preserve_range=True,
         assume_finite=assume_finite,
     )
     out = _smooth(resized, sigma, mode, cval, channel_axis)
@@ -340,6 +336,7 @@ def pyramid_gaussian(
             order,
             mode,
             cval,
+            preserve_range=True,
             channel_axis=channel_axis,
             assume_finite=assume_finite,
         )
@@ -476,6 +473,7 @@ def pyramid_laplacian(
             mode=mode,
             cval=cval,
             anti_aliasing=False,
+            preserve_range=True,
             assume_finite=assume_finite,
         )
         smoothed_image = _smooth(resized_image, sigma, mode, cval, channel_axis)
