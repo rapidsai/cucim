@@ -133,6 +133,56 @@ def test_spline_filter_singleton_axes(shape, inplace):
     cp.testing.assert_allclose(actual, expected, rtol=5e-5, atol=5e-5)
 
 
+@pytest.mark.parametrize(
+    "shape,axis", [((17,), 0), ((9, 7), 0), ((9, 7), 1), ((2, 3, 5, 7), 2)]
+)
+@pytest.mark.parametrize("index_type", ["int", "ptrdiff_t"])
+@pytest.mark.parametrize("dtype", ["float32", "float64", "complex64", "int8"])
+@pytest.mark.parametrize("order", [2, 5])
+def test_general_spline_scalar_metadata(
+    monkeypatch, shape, axis, index_type, dtype, order
+):
+    rng = np.random.default_rng(9)
+    host = rng.uniform(0, 1, shape)
+    if dtype == "complex64":
+        host = host + 1j * rng.uniform(0, 1, shape)
+    elif dtype == "int8":
+        host = host * 4 - 2
+    image = cp.asarray(host.astype(dtype))
+    if image.ndim > 1:
+        image = cp.swapaxes(image, 0, -1)
+    original = image.get()
+    working_dtype = np.result_type(dtype, np.float32)
+    expected = scipy_ndi.spline_filter1d(
+        original, order, axis, output=working_dtype, mode="reflect"
+    )
+    core = interpolation._spline_prefilter_core
+    original_array, original_asarray = cp.array, cp.asarray
+
+    def require_device_input(original_func):
+        def checked(value, *args, **kwargs):
+            assert isinstance(value, cp.ndarray), (
+                "prefilter copied host metadata"
+            )
+            return original_func(value, *args, **kwargs)
+
+        return checked
+
+    with monkeypatch.context() as patch:
+        patch.setattr(core, "supports_segmented_spline1d", lambda *args: False)
+        patch.setattr(
+            interpolation._util, "_get_inttype", lambda image: index_type
+        )
+        patch.setattr(cp, "array", require_device_input(original_array))
+        patch.setattr(cp, "asarray", require_device_input(original_asarray))
+        actual = interpolation.spline_filter1d(
+            image, order, axis, output=cp.dtype(working_dtype), mode="reflect"
+        )
+    tolerance = 1e-11 if working_dtype == np.dtype("float64") else 5e-5
+    cp.testing.assert_allclose(actual, expected, rtol=tolerance, atol=tolerance)
+    cp.testing.assert_array_equal(image, original)
+
+
 @pytest.mark.parametrize("order", [2, 3, 5])
 @pytest.mark.parametrize("mode", ["mirror", "nearest", "grid-constant"])
 @pytest.mark.parametrize("dtype", ["float32", "float64", "uint8"])
@@ -166,48 +216,61 @@ def test_filter_input_workspace(order, mode, dtype):
 
 
 @pytest.mark.parametrize(
-    "shape,axis", [((17,), 0), ((9, 7), 0), ((9, 7), 1), ((2, 3, 5, 7), 2)]
+    "shape,axis",
+    [
+        ((2, 5), 0),
+        ((3, 40), 0),
+        ((41, 3), 0),
+        ((129, 33), 0),
+        ((300, 70), 0),
+        ((4, 257, 6), 1),
+        ((100, 3, 2), 0),
+    ],
 )
+@pytest.mark.parametrize("order", [2, 3, 4, 5])
+@pytest.mark.parametrize("mode", ["mirror", "reflect", "grid-wrap"])
+@pytest.mark.parametrize("dtype", ["float32", "float64"])
 @pytest.mark.parametrize("index_type", ["int", "ptrdiff_t"])
-@pytest.mark.parametrize("dtype", ["float32", "float64", "complex64", "int8"])
-@pytest.mark.parametrize("order", [2, 5])
-def test_general_spline_scalar_metadata(
-    monkeypatch, shape, axis, index_type, dtype, order
+def test_segmented_spline_prefilter(
+    monkeypatch, shape, axis, order, mode, dtype, index_type
 ):
-    rng = np.random.default_rng(9)
-    host = rng.uniform(0, 1, shape)
-    if dtype == "complex64":
-        host = host + 1j * rng.uniform(0, 1, shape)
-    elif dtype == "int8":
-        host = host * 4 - 2
-    image = cp.asarray(host.astype(dtype))
-    if image.ndim > 1:
-        image = cp.swapaxes(image, 0, -1)
-    original = image.get()
-    working_dtype = np.result_type(dtype, np.float32)
+    host = np.random.default_rng(10).uniform(-1, 1, shape).astype(dtype)
+    image = cp.asarray(host)
     expected = scipy_ndi.spline_filter1d(
-        original, order, axis, output=working_dtype, mode="reflect"
+        host.astype(np.float64), order, axis, output=np.float64, mode=mode
     )
-    original_array, original_asarray = cp.array, cp.asarray
+    core = interpolation._spline_prefilter_core
+    launched = []
+    original_get_kernel = core.get_segmented_spline1d_kernel
 
-    def require_device_input(original_func):
-        def checked(value, *args, **kwargs):
-            assert isinstance(value, cp.ndarray), (
-                "prefilter copied host metadata"
-            )
-            return original_func(value, *args, **kwargs)
-
-        return checked
+    def spy(*args, **kwargs):
+        launched.append(args)
+        return original_get_kernel(*args, **kwargs)
 
     with monkeypatch.context() as patch:
+        patch.setattr(core, "get_segmented_spline1d_kernel", spy)
         patch.setattr(
             interpolation._util, "_get_inttype", lambda image: index_type
         )
-        patch.setattr(cp, "array", require_device_input(original_array))
-        patch.setattr(cp, "asarray", require_device_input(original_asarray))
         actual = interpolation.spline_filter1d(
-            image, order, axis, output=cp.dtype(working_dtype), mode="reflect"
+            image, order, axis, output=cp.dtype(dtype), mode=mode
         )
-    tolerance = 1e-11 if working_dtype == np.dtype("float64") else 5e-5
+    assert launched
+    tolerance = 1e-11 if dtype == "float64" else 5e-5
     cp.testing.assert_allclose(actual, expected, rtol=tolerance, atol=tolerance)
-    cp.testing.assert_array_equal(image, original)
+    cp.testing.assert_array_equal(image, host)
+
+
+@pytest.mark.parametrize("n_segments", [1, 2, 8, 32])
+def test_segmented_spline_prefilter_segment_counts(monkeypatch, n_segments):
+    # Exercise run lengths from a single sample up to whole lines.
+    host = np.random.default_rng(11).uniform(-1, 1, (37, 45)).astype("float32")
+    expected = scipy_ndi.spline_filter1d(host, 3, 0, output=np.float32)
+    core = interpolation._spline_prefilter_core
+    monkeypatch.setattr(
+        core, "get_segmented_spline1d_segments", lambda *args: n_segments
+    )
+    actual = interpolation.spline_filter1d(
+        cp.asarray(host), 3, 0, output=cp.float32
+    )
+    cp.testing.assert_allclose(actual, expected, rtol=5e-5, atol=5e-5)
