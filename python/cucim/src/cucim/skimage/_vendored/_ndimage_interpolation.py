@@ -161,28 +161,51 @@ def spline_filter1d(
     int_type = numpy.dtype(index_dtype).type
     core = _spline_prefilter_core
     launch_kwargs = {}
-    # empirical choice of block size that seemed to work well
-    block_size = max(2 ** math.ceil(numpy.log2(n_samples / 32)), 8)
-    if math.prod(x.shape[axis + 1 :]) <= 1024:
-        block_size = min(block_size, 32)
-    kern = core.get_raw_spline1d_kernel(
-        axis,
-        ndim,
-        mode,
-        order=order,
-        index_type=index_type,
-        data_type=data_type,
-        pole_type=pole_type,
-        block_size=block_size,
-    )
-    # Due to recursive nature, a given line of data must be processed by
-    # a single thread. n_signals lines will be processed in total.
-    block = (block_size,)
-    grid = ((n_signals + block[0] - 1) // block[0],)
-    # Pass runtime sizes directly; no device metadata allocation or copy.
-    args = (temp,) + tuple(
-        int_type(size) for size in (n_signals, n_samples) + temp.shape
-    )
+    if temp.flags.c_contiguous and core.supports_segmented_spline1d(
+        axis, ndim, data_type
+    ):
+        # Strided axis: several threads per line, 32 adjacent lines per block.
+        n_segments = core.get_segmented_spline1d_segments(n_samples, data_type)
+        kern = core.get_segmented_spline1d_kernel(
+            mode,
+            order,
+            n_segments,
+            index_type=index_type,
+            data_type=data_type,
+            pole_type=pole_type,
+        )
+        block = (32, n_segments)
+        grid = ((n_signals + 31) // 32,)
+        inner = math.prod(temp.shape[axis + 1 :])
+        args = (
+            temp,
+            int_type(n_signals),
+            int_type(n_samples),
+            int_type(inner),
+        )
+    else:
+        # empirical choice of block size that seemed to work well
+        block_size = max(2 ** math.ceil(numpy.log2(n_samples / 32)), 8)
+        if math.prod(x.shape[axis + 1 :]) <= 1024:
+            block_size = min(block_size, 32)
+        kern = core.get_raw_spline1d_kernel(
+            axis,
+            ndim,
+            mode,
+            order=order,
+            index_type=index_type,
+            data_type=data_type,
+            pole_type=pole_type,
+            block_size=block_size,
+        )
+        # Due to recursive nature, a given line of data must be processed by
+        # a single thread. n_signals lines will be processed in total.
+        block = (block_size,)
+        grid = ((n_signals + block[0] - 1) // block[0],)
+        # Pass runtime sizes directly; no device metadata allocation or copy.
+        args = (temp,) + tuple(
+            int_type(size) for size in (n_signals, n_samples) + temp.shape
+        )
 
     # apply causal + anti-causal IIR spline filters
     kern(grid, block, args, **launch_kwargs)
