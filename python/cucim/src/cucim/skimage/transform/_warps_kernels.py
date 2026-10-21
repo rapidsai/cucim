@@ -30,6 +30,8 @@ _RANGE_CHUNK_SIZE = 4096
 # Keep the direct-reduction cutoff separate from the parallel chunk size.
 # A conservative byte limit balances launch savings against the limited
 # throughput of a single block.
+# This empirical host-overhead tradeoff was tuned on an RTX A6000; GPUs with
+# different SM counts or GPU-bound workloads may favor a different cutoff.
 _RANGE_DIRECT_MAX_BYTES = 512 * 1024
 
 _range_preamble = r"""
