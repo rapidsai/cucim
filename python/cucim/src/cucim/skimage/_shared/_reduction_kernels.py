@@ -28,6 +28,8 @@ remain on the device. Callers can retain NaN-ignoring extrema with a NaN flag
 or request NaN-propagating bounds, matching ordinary min/max reductions.
 For min-max NRMSE, the state and staging also carry a double-precision
 squared-error sum from two images, avoiding full-sized arithmetic temporaries.
+Large-image MSE and Euclidean/mean NRMSE reuse this staging with an error sum
+and an optional reference sum, omitting extrema when they are not needed.
 
 Dispatch cutoffs are empirical measurements on an RTX A6000, including the
 CUB preference for large 8- and 16-bit integer inputs; other architectures
@@ -455,5 +457,86 @@ def _get_minmax_mse(image_true, image_test):
         _minmax_mse_kernel,
         _merge_minmax_mse_kernel,
         allocate,
+    )
+    return result
+
+
+@cp.memoize(for_each_device=True)
+def _get_error_statistics_kernels(normalization):
+    """Build matching scan/merge kernels for error and one normalizer sum."""
+    normalizer_type = "T" if normalization == "mean" else "double"
+    expression = {
+        None: "0",
+        "mean": "x",
+        "euclidean": "static_cast<double>(T(x * x))",
+    }[normalization]
+    preamble = """
+    template<typename T> struct ErrorState {
+        typedef NORMALIZER N;
+        double error;
+        N normalizer;
+        __device__ ErrorState() : error(0), normalizer(0) {}
+        __device__ ErrorState(T x, T y) : normalizer(EXPRESSION) {
+            T difference = x - y;
+            T squared = difference * difference;
+            error = static_cast<double>(squared);
+        }
+        __device__ ErrorState(double e, N n, int) : error(e), normalizer(n) {}
+    };
+    template<typename T>
+    __device__ ErrorState<T> merge_error(ErrorState<T> a, ErrorState<T> b) {
+        a.error += b.error;
+        a.normalizer += b.normalizer;
+        return a;
+    }
+    """.replace("NORMALIZER", normalizer_type).replace("EXPRESSION", expression)
+    normalizer_dtype = "T" if normalization == "mean" else "float64"
+    kernels = []
+    for merge in (False, True):
+        state = (
+            "ErrorState<T>"
+            if not merge or normalization == "mean"
+            else "ErrorState<double>"
+        )
+        kernels.append(
+            cp.ReductionKernel(
+                f"float64 error, {normalizer_dtype} normalizer"
+                if merge
+                else "T x, T y",
+                f"float64 squared_error, {normalizer_dtype} normalizer_sum",
+                f"{state}(error, normalizer, 0)" if merge else f"{state}(x, y)",
+                "merge_error(a, b)",
+                "squared_error = a.error, normalizer_sum = a.normalizer",
+                f"{state}()",
+                "cucim_"
+                + ("merge_" if merge else "")
+                + "error_"
+                + str(normalization),
+                reduce_type=state,
+                preamble=preamble,
+                options=("-fmad=false",),
+            )
+        )
+    return tuple(kernels)
+
+
+def _get_error_statistics(image_true, image_test, normalization=None):
+    """Stage error and optional reference sums without image-sized temporaries.
+
+    Inputs have matching shapes and float32/float64 dtypes. Squared differences
+    and reference squares retain that dtype before float64 accumulation. Mean
+    normalization retains the reference dtype for its sum, matching mean().
+    """
+    normalizer_dtype = (
+        image_true.dtype if normalization == "mean" else cp.float64
+    )
+
+    def allocate(shape):
+        return cp.empty(shape, cp.float64), cp.empty(shape, normalizer_dtype)
+
+    result = allocate(())
+    kernel, merge_kernel = _get_error_statistics_kernels(normalization)
+    _reduce_image_statistics(
+        (image_true, image_test), result, kernel, merge_kernel, allocate
     )
     return result
