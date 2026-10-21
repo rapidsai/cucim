@@ -160,6 +160,8 @@ def spline_filter1d(
 
     # empirical choice of block size that seemed to work well
     block_size = max(2 ** math.ceil(numpy.log2(n_samples / 32)), 8)
+    if math.prod(x.shape[axis + 1 :]) <= 1024:
+        block_size = min(block_size, 32)
     kern = _spline_prefilter_core.get_raw_spline1d_kernel(
         axis,
         ndim,
