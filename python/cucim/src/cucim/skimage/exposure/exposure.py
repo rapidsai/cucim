@@ -344,7 +344,7 @@ def _histogram(image, bins, source_range, normalize, *, bin_range=None):
         If True, normalize the histogram by the sum of its values.
     """
 
-    image = image.flatten()
+    image = image.ravel()
     # For integer types, histogramming with bincount is more efficient.
     if np.issubdtype(image.dtype, cp.integer):
         bin_centers = bins if isinstance(bins, cp.ndarray) else None
@@ -353,6 +353,41 @@ def _histogram(image, bins, source_range, normalize, *, bin_range=None):
         )
     else:
         hist_range = _get_numpy_hist_range(image, source_range)
+        if (
+            isinstance(bins, (int, np.integer))
+            and bins > 0
+            and hist_range is None
+        ):
+            hist_range = _get_outer_edges(image, None)
+            # Dyadic bins over [0, 1] are exact in the input dtype, so the
+            # host-scalar fast path also preserves their rounding.
+            exact_unit_bins = image.dtype.kind == "f" and (
+                hist_range == (0.0, 1.0)
+                and bins & (bins - 1) == 0
+                and bins <= 1 << np.finfo(image.dtype).nmant
+            )
+            if image.size and image.dtype.kind == "f" and not exact_unit_bins:
+                # Typed endpoints retain the arithmetic used by CuPy's
+                # device-scalar linspace. Python float endpoints instead use
+                # its double-precision fast path, which can move bin edges.
+                first, last = map(image.dtype.type, hist_range)
+                delta = float(last) - float(first)
+                tiny = np.finfo(np.float32).tiny
+                exceptional = not np.isfinite(delta) or (
+                    image.dtype == np.float32
+                    and (
+                        abs(delta) > np.finfo(np.float32).max
+                        or any(
+                            0 < abs(v) < tiny
+                            for v in (first, last, delta, delta / bins)
+                        )
+                    )
+                )
+                if exceptional:
+                    # Retain CuPy's overflow and float32 flush-to-zero rules.
+                    hist_range = None
+                else:
+                    bins = np.linspace(first, last, bins + 1, dtype=image.dtype)
         hist, bin_edges = cp.histogram(image, bins=bins, range=hist_range)
         bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2.0
 

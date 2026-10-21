@@ -27,6 +27,44 @@ ON_AARCH64_REASON = "TODO: Test fails unexpectedly on ARM."
 # =======================
 
 
+@pytest.mark.parametrize("dtype", [cp.float16, cp.float32, cp.float64])
+@pytest.mark.parametrize(
+    "values", [[-2.0, 0.0, 1.0, 1.0, 5.0], [3.0, 3.0, 3.0], []]
+)
+def test_single_channel_float_histogram_edges(dtype, values):
+    image = cp.asarray(values, dtype=dtype)
+    expected_hist, edges = cp.histogram(image, bins=7)
+    hist, centers = exposure.histogram(image, nbins=7)
+    assert_array_equal(hist, expected_hist)
+    assert_array_equal(centers, (edges[:-1] + edges[1:]) / 2)
+
+
+@pytest.mark.parametrize(
+    "values", [[np.nan, np.nan], [0.0, np.nan], [-np.inf, 1.0], [0.0, np.inf]]
+)
+def test_single_channel_float_histogram_nonfinite_range(values):
+    with pytest.raises(ValueError, match="autodetected hist_range.*not finite"):
+        exposure.histogram(cp.asarray(values), nbins=7)
+
+
+@pytest.mark.parametrize("dtype", [cp.float16, cp.float32, cp.float64])
+def test_single_channel_float_histogram_bin_boundaries(dtype):
+    image = cp.linspace(-3, 5, 22, dtype=dtype)
+    expected_hist, edges = cp.histogram(image, bins=7)
+    hist, centers = exposure.histogram(image, nbins=7)
+    assert_array_equal(hist, expected_hist)
+    assert_array_equal(centers, (edges[:-1] + edges[1:]) / 2)
+
+
+def test_single_channel_float_histogram_subnormal_range():
+    tiny = np.nextafter(np.float32(0), np.float32(1))
+    image = cp.asarray([-tiny, 0, tiny], dtype=cp.float32)
+    expected_hist, edges = cp.histogram(image, bins=7)
+    hist, centers = exposure.histogram(image, nbins=7)
+    assert_array_equal(hist, expected_hist)
+    assert_array_equal(centers, (edges[:-1] + edges[1:]) / 2)
+
+
 def test_wrong_source_range():
     im = cp.array([-1, 100], dtype=cp.int8)
     match = "Incorrect value for `source_range` argument"
