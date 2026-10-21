@@ -252,9 +252,9 @@ __device__ T* row(
 _batch_spline1d_strided_template = """
 extern "C" __global__
 __launch_bounds__({block_size})
-void {kernel_name}(T* __restrict__ y, const idx_t* __restrict__ info) {{
-    const idx_t n_signals = info[0], n_samples = info[1],
-        * __restrict__ shape = info+2;
+void {kernel_name}(T* __restrict__ y, idx_t n_signals, idx_t n_samples,
+                   {shape_parameters}) {{
+    const idx_t shape[] = {{{shape_values}}};
     idx_t y_elem_stride = 1;
     for (int a = {ndim} - 1; a > {axis}; --a) {{ y_elem_stride *= shape[a]; }}
     idx_t unraveled_idx = blockDim.x * blockIdx.x + threadIdx.x;
@@ -279,7 +279,12 @@ def get_raw_spline1d_kernel(
     pole_type="double",
     block_size=128,
 ):
-    """Generate a kernel for applying a spline prefilter along a given axis."""
+    """Generate a spline prefilter with runtime sizes passed as scalar arguments.
+
+    Kernel specialization depends on rank/axis/types and spline settings,
+    rather than exact image shape. No separate device metadata allocation or
+    host-to-device copy is needed.
+    """
     poles = get_poles(order)
 
     # determine number of samples for the boundary approximation
@@ -304,6 +309,13 @@ def get_raw_spline1d_kernel(
         f"axis{axis}_{mode_str}"
     )
     code += _batch_spline1d_strided_template.format(
-        ndim=ndim, axis=axis, block_size=block_size, kernel_name=kernel_name
+        ndim=ndim,
+        axis=axis,
+        block_size=block_size,
+        kernel_name=kernel_name,
+        shape_parameters=", ".join(
+            f"idx_t shape_{axis}" for axis in range(ndim)
+        ),
+        shape_values=", ".join(f"shape_{axis}" for axis in range(ndim)),
     )
     return cupy.RawKernel(code, kernel_name)

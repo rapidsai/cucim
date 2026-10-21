@@ -163,3 +163,51 @@ def test_filter_input_workspace(order, mode, dtype):
     tolerance = 1e-11 if working_dtype == np.dtype("float64") else 5e-5
     cp.testing.assert_allclose(actual, expected, rtol=tolerance, atol=tolerance)
     cp.testing.assert_array_equal(image, host)
+
+
+@pytest.mark.parametrize(
+    "shape,axis", [((17,), 0), ((9, 7), 0), ((9, 7), 1), ((2, 3, 5, 7), 2)]
+)
+@pytest.mark.parametrize("index_type", ["int", "ptrdiff_t"])
+@pytest.mark.parametrize("dtype", ["float32", "float64", "complex64", "int8"])
+@pytest.mark.parametrize("order", [2, 5])
+def test_general_spline_scalar_metadata(
+    monkeypatch, shape, axis, index_type, dtype, order
+):
+    rng = np.random.default_rng(9)
+    host = rng.uniform(0, 1, shape)
+    if dtype == "complex64":
+        host = host + 1j * rng.uniform(0, 1, shape)
+    elif dtype == "int8":
+        host = host * 4 - 2
+    image = cp.asarray(host.astype(dtype))
+    if image.ndim > 1:
+        image = cp.swapaxes(image, 0, -1)
+    original = image.get()
+    working_dtype = np.result_type(dtype, np.float32)
+    expected = scipy_ndi.spline_filter1d(
+        original, order, axis, output=working_dtype, mode="reflect"
+    )
+    original_array, original_asarray = cp.array, cp.asarray
+
+    def require_device_input(original_func):
+        def checked(value, *args, **kwargs):
+            assert isinstance(value, cp.ndarray), (
+                "prefilter copied host metadata"
+            )
+            return original_func(value, *args, **kwargs)
+
+        return checked
+
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            interpolation._util, "_get_inttype", lambda image: index_type
+        )
+        patch.setattr(cp, "array", require_device_input(original_array))
+        patch.setattr(cp, "asarray", require_device_input(original_asarray))
+        actual = interpolation.spline_filter1d(
+            image, order, axis, output=cp.dtype(working_dtype), mode="reflect"
+        )
+    tolerance = 1e-11 if working_dtype == np.dtype("float64") else 5e-5
+    cp.testing.assert_allclose(actual, expected, rtol=tolerance, atol=tolerance)
+    cp.testing.assert_array_equal(image, original)
