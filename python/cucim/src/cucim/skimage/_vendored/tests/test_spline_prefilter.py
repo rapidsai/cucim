@@ -131,3 +131,35 @@ def test_spline_filter_singleton_axes(shape, inplace):
         image, output=image if inplace else cp.float32
     )
     cp.testing.assert_allclose(actual, expected, rtol=5e-5, atol=5e-5)
+
+
+@pytest.mark.parametrize("order", [2, 3, 5])
+@pytest.mark.parametrize("mode", ["mirror", "nearest", "grid-constant"])
+@pytest.mark.parametrize("dtype", ["float32", "float64", "uint8"])
+def test_filter_input_workspace(order, mode, dtype):
+    rng = np.random.default_rng(8)
+    host = rng.uniform(0, 1, (9, 11))
+    if dtype == "uint8":
+        host *= 255
+    host = host.astype(dtype)
+    image = cp.asarray(host)
+    working_dtype = np.result_type(dtype, np.float32)
+    padding = 12 if mode in ("nearest", "grid-constant") else 0
+    if mode == "nearest":
+        padded = np.pad(host, padding, mode="edge")
+    elif mode == "grid-constant":
+        padded = np.pad(host, padding, mode="constant", constant_values=0.5)
+    else:
+        padded = host
+    expected = scipy_ndi.spline_filter(
+        padded, order=order, output=working_dtype, mode=mode
+    )
+    actual, actual_padding = interpolation._filter_input(
+        image, True, mode, 0.5, order
+    )
+    assert actual_padding == padding
+    assert actual.dtype == working_dtype
+    assert actual.flags.c_contiguous
+    tolerance = 1e-11 if working_dtype == np.dtype("float64") else 5e-5
+    cp.testing.assert_allclose(actual, expected, rtol=tolerance, atol=tolerance)
+    cp.testing.assert_array_equal(image, host)
