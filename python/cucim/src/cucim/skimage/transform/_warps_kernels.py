@@ -12,12 +12,15 @@ numeric sentinels that would complicate support for integer and complex data.
 CuPy's generic scalar ReductionKernel uses a single thread block. Small inputs
 use it directly to avoid the extra dispatch and launch overhead of staging:
 up to 512 KiB for C-contiguous arrays, or 4096 elements for other layouts.
-Larger inputs first produce independent partial ranges in parallel, then merge
-those small results. This exposes more parallelism while avoiding another
-scan of the image; an incomplete final chunk is reduced separately before
-the merge.
+Larger contiguous real inputs use a single launch: blocks publish partial
+ranges and increment a completion counter after a device fence. The last
+finishing block merges those ranges; other blocks exit without waiting. Each
+call owns its scratch storage and counter, so streams can run independently.
+Float16, complex, and strided inputs retain partial and merge launches. This
+exposes more parallelism while avoiding another scan of the image; an
+incomplete final chunk in the fallback is reduced separately before the merge.
 
-Contiguous inputs use fixed-size chunks of their flattened view. Strided
+The fallback uses fixed-size chunks for contiguous inputs. Strided
 inputs use existing axes or split one axis into chunk views, avoiding a copy
 of the full image merely to flatten it. The same accumulator and merge
 operation are used for both image values and partial ranges, and all results
@@ -25,6 +28,7 @@ remain on the device.
 """
 
 import cupy as cp
+from cupy._core._scalar import get_typename
 
 _RANGE_CHUNK_SIZE = 4096
 # Keep the direct-reduction cutoff separate from the parallel chunk size.
@@ -120,6 +124,90 @@ def _empty_warp_range(shape, dtype):
     )
 
 
+@cp.memoize(for_each_device=True)
+def _get_last_block_range_kernel(dtype):
+    """Merge parallel ranges in the last finishing block, without a spin wait.
+
+    Each block publishes one range through volatile stores, then fences before
+    incrementing a per-call completion counter. Only the last block reads the
+    partials and writes the result; every other block exits. Keeping scratch
+    and counter storage private to each invocation allows concurrent streams.
+    """
+    ctype = get_typename(cp.dtype(dtype))
+    code = (
+        _range_preamble
+        + r"""
+    typedef CTYPE T;
+
+    __device__ WarpRange<T> block_range(WarpRange<T> value,
+                                       WarpRange<T>* shared) {
+        int t = threadIdx.x;
+        shared[t] = value;
+        __syncthreads();
+        for (int offset = blockDim.x / 2; offset; offset /= 2) {
+            if (t < offset)
+                shared[t] = merge_warp_ranges(shared[t], shared[t + offset]);
+            __syncthreads();
+        }
+        return shared[0];
+    }
+
+    extern "C" __global__ void cucim_warp_range_last_block(
+        const T* image, long long size,
+        volatile T* partial_min, volatile T* partial_max,
+        volatile bool* partial_nan, unsigned int* counter,
+        T* minimum, T* maximum, bool* contains_nan) {
+        __shared__ __align__(16) unsigned char storage[256 * sizeof(WarpRange<T>)];
+        WarpRange<T>* shared = reinterpret_cast<WarpRange<T>*>(storage);
+        __shared__ bool last;
+        WarpRange<T> value;
+        for (long long i = (long long)blockIdx.x * blockDim.x + threadIdx.x;
+             i < size; i += (long long)blockDim.x * gridDim.x)
+            value = merge_warp_ranges(value, WarpRange<T>(image[i]));
+        value = block_range(value, shared);
+        if (threadIdx.x == 0) {
+            partial_min[blockIdx.x] = value.minimum;
+            partial_max[blockIdx.x] = value.maximum;
+            partial_nan[blockIdx.x] = value.has_nan;
+            __threadfence();
+            last = atomicAdd(counter, 1u) == gridDim.x - 1;
+        }
+        __syncthreads();
+        if (!last) return;
+
+        value = WarpRange<T>();
+        for (unsigned int i = threadIdx.x; i < gridDim.x; i += blockDim.x)
+            value = merge_warp_ranges(value,
+                WarpRange<T>(partial_min[i], partial_max[i], partial_nan[i]));
+        value = block_range(value, shared);
+        if (threadIdx.x == 0) {
+            *minimum = value.minimum;
+            *maximum = value.maximum;
+            *contains_nan = value.has_nan;
+        }
+    }
+    """
+    )
+    return cp.RawKernel(
+        code.replace("CTYPE", ctype), "cucim_warp_range_last_block"
+    )
+
+
+def _last_block_warp_range(image, result):
+    """Launch parallel scan and final merge together for contiguous real data."""
+    n_blocks = min(
+        (image.size + _RANGE_CHUNK_SIZE - 1) // _RANGE_CHUNK_SIZE, 4096
+    )
+    partials = _empty_warp_range((n_blocks,), image.dtype)
+    # An asynchronous memset initializes this invocation's counter. No host
+    # synchronization or persistent, stream-shared counter state is needed.
+    counter = cp.zeros((), dtype=cp.uint32)
+    kernel = _get_last_block_range_kernel(image.dtype.str)
+    kernel(
+        (n_blocks,), (256,), (image, image.size, *partials, counter, *result)
+    )
+
+
 def _partial_warp_ranges(image, axis, chunk_size):
     """Reduce chunk views along one axis, including any incomplete tail."""
     n_full, remainder = divmod(image.shape[axis], chunk_size)
@@ -154,6 +242,12 @@ def _get_warp_range(image):
         image.flags.c_contiguous and image.nbytes <= _RANGE_DIRECT_MAX_BYTES
     ):
         _warp_range_kernel(image, *result)
+        return result
+
+    if image.flags.c_contiguous and (
+        image.dtype.kind in "biu" or image.dtype.char in "fd"
+    ):
+        _last_block_warp_range(image, result)
         return result
 
     # A generic scalar ReductionKernel uses a single block. Split large
