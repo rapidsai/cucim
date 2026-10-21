@@ -174,6 +174,30 @@ def test_build_laplacian_pyramid_defaults():
         assert_array_equal(out.shape, layer_shape)
 
 
+@pytest.mark.parametrize("sigma", [0, 2 / 3])
+@pytest.mark.parametrize("channel_axis", [None, -1])
+def test_laplacian_layers_do_not_alias_input_or_later_layers(
+    sigma, channel_axis
+):
+    shape = (32, 40, 3) if channel_axis is not None else (32, 40)
+    image = cp.arange(math.prod(shape), dtype=cp.float32).reshape(shape) / 100
+    original = image.copy()
+    previous = []
+    for layer in pyramids.pyramid_laplacian(
+        image,
+        max_layer=4,
+        sigma=sigma,
+        channel_axis=channel_axis,
+        preserve_range=True,
+    ):
+        assert not cp.shares_memory(layer, image)
+        for result, snapshot in previous:
+            assert not cp.shares_memory(result, layer)
+            cp.testing.assert_array_equal(result, snapshot)
+        previous.append((layer, layer.copy()))
+    cp.testing.assert_array_equal(image, original)
+
+
 def test_build_laplacian_pyramid_nd():
     for ndim in [1, 2, 3, 4]:
         img = cp.random.randn(*(16,) * ndim)
