@@ -108,3 +108,22 @@ def test_minmax_without_accelerated_reductions(monkeypatch):
     with allow_synchronize(False):
         bounds = _get_minmax(image)
     cp.testing.assert_array_equal(bounds, [-1, 2])
+
+
+@pytest.mark.parametrize("nan_pattern", ["none", "mixed", "all"])
+def test_minmax_without_private_accelerator_module(monkeypatch, nan_pattern):
+    image = cp.linspace(-1, 2, 131073, dtype=cp.float32)
+    if nan_pattern == "mixed":
+        image[-1] = cp.nan
+    elif nan_pattern == "all":
+        image[:] = cp.nan
+    monkeypatch.setattr(_reduction_kernels, "_accelerator", None)
+
+    def fail_pack(*args, **kwargs):
+        pytest.fail("CUB path selected without its optional module")
+
+    monkeypatch.setattr(_reduction_kernels, "_pack_minmax_kernel", fail_pack)
+    with allow_synchronize(False):
+        bounds = _get_minmax(image)
+    expected = [-1, 2] if nan_pattern == "none" else [np.nan, np.nan]
+    cp.testing.assert_array_equal(bounds, expected)
