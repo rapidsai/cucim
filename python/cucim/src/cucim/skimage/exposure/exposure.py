@@ -586,6 +586,40 @@ def _output_dtype(dtype_or_range, image_dtype):
         )
 
 
+@cp.memoize(for_each_device=True)
+def _get_rescale_intensity_kernel(dtype):
+    """Fuse clipping and rescaling with separately rounded arithmetic stages."""
+    ctype = "float" if dtype == "float32" else "double"
+    return cp.ElementwiseKernel(
+        f"T image, {dtype} imin, {dtype} imax, {dtype} omin, {dtype} omax, "
+        f"{dtype} input_scale, {dtype} output_scale, bool constant",
+        "U output",
+        f"typedef {ctype} S;"
+        + """
+        S value = S(image);
+        value = value < imin ? imin : value;
+        value = value > imax ? imax : value;
+        if (imin > imax) value = imax;
+        if (isnan(imin) || isnan(imax)) value = imin + imax;
+        if (constant) {
+            value = value < omin ? omin : value;
+            value = value > omax ? omax : value;
+            if (omin > omax) value = omax;
+            if (isnan(omin) || isnan(omax)) value = omin + omax;
+        } else {
+            value = value - imin;
+            value = value / input_scale;
+            value = value * output_scale;
+            value = value + omin;
+        }
+        output = U(value);
+        """,
+        "cucim_rescale_intensity",
+        # Preserve the rounding of the separate multiply and add operations.
+        options=("-fmad=false",),
+    )
+
+
 def rescale_intensity(image, in_range="image", out_range="dtype"):
     """Return image after stretching or shrinking its intensity levels.
 
@@ -700,6 +734,23 @@ def rescale_intensity(image, in_range="image", out_range="dtype"):
             "NaN to the full image. Provide intensity levels yourself to "
             "avoid this. E.g. with np.nanmin(image), np.nanmax(image).",
             stacklevel=2,
+        )
+
+    if image.dtype.kind in "biu" or image.dtype in (cp.float32, cp.float64):
+        # Python float bounds promote integer clipping to float64. Floating
+        # images retain their dtype at each arithmetic step.
+        computation_type = (
+            image.dtype.type if image.dtype.kind == "f" else np.float64
+        )
+        output = cp.empty(image.shape, dtype=out_dtype)
+        return _get_rescale_intensity_kernel(np.dtype(computation_type).name)(
+            image,
+            *map(
+                computation_type,
+                (imin, imax, omin, omax, imax - imin, omax - omin),
+            ),
+            imin == imax,
+            output,
         )
 
     image = cp.clip(image, imin, imax)
