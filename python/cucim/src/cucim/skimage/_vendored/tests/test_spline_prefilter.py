@@ -9,6 +9,71 @@ from scipy import ndimage as scipy_ndi
 from cucim.skimage._vendored import _ndimage_interpolation as interpolation
 
 
+@pytest.fixture
+def fp64_ratio_query():
+    query = interpolation._spline_prefilter_core._get_fp32_to_fp64_ratio
+    query.cache_clear()
+    yield query
+    query.cache_clear()
+
+
+@pytest.mark.parametrize(
+    "reported,expected",
+    [
+        (2, 2),
+        (32, 32),
+        (64, 64),
+        (128, 64),
+        (None, 64),
+        (0, 64),
+        (-1, 64),
+        (True, 64),
+        (2.0, 64),
+        ("2", 64),
+        (float("nan"), 64),
+        (float("inf"), 64),
+    ],
+)
+def test_fp64_ratio_values(monkeypatch, fp64_ratio_query, reported, expected):
+    monkeypatch.setattr(
+        cp.cuda.runtime, "deviceGetAttribute", lambda attr, device: reported
+    )
+    assert fp64_ratio_query(0) == expected
+
+
+@pytest.mark.parametrize("error", [AttributeError, RuntimeError])
+def test_fp64_ratio_unavailable(monkeypatch, fp64_ratio_query, error):
+    def unavailable(attr, device):
+        raise error("throughput ratio unavailable")
+
+    monkeypatch.setattr(cp.cuda.runtime, "deviceGetAttribute", unavailable)
+    assert fp64_ratio_query(0) == 64
+
+
+def test_fp64_ratio_missing_attribute(monkeypatch, fp64_ratio_query):
+    monkeypatch.delattr(
+        cp.cuda.runtime, "cudaDevAttrSingleToDoublePrecisionPerfRatio"
+    )
+    assert fp64_ratio_query(0) == 64
+
+
+def test_fp64_ratio_cached_per_device(monkeypatch, fp64_ratio_query):
+    queried = []
+
+    def query(attr, device):
+        assert (
+            attr == cp.cuda.runtime.cudaDevAttrSingleToDoublePrecisionPerfRatio
+        )
+        queried.append(device)
+        return [2, 64][device]
+
+    monkeypatch.setattr(cp.cuda.runtime, "deviceGetAttribute", query)
+    for _ in range(2):
+        assert fp64_ratio_query(0) == 2
+        assert fp64_ratio_query(1) == 64
+    assert queried == [0, 1]
+
+
 @pytest.mark.parametrize("length", [2, 3, 7, 17])
 @pytest.mark.parametrize("order", [2, 3, 4, 5])
 @pytest.mark.parametrize("dtype", ["float32", "float64", "complex64"])
