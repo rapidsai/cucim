@@ -420,6 +420,182 @@ def _get_segmented_spline1d_code(
     return code + "}\n"
 
 
+_WARP_SPLINE1D_HEADER = """
+#include "cupy/carray.cuh"
+#include "cupy/complex.cuh"
+#include <cupy/float16.cuh>  // TODO(seberg): Add this via type_headers?
+
+typedef {data_type} T;
+typedef {pole_type} P;
+typedef {index_type} idx_t;
+
+// Number of interleaved lines: 1 for a contiguous axis, or the size of a
+// small trailing axis (e.g. RGB/RGBA channels) when filtering the axis
+// before it. Element i of channel ch is at lines[i * CH + ch].
+constexpr int CH = {channels};
+
+__device__ __forceinline__ void scan_transform(P &A, T (&B)[CH])
+{{
+    // Inclusive warp scan composing the runs' carry maps x -> A * x + B.
+    #pragma unroll
+    for (int offset = 1; offset < 32; offset <<= 1) {{
+        P A_up = __shfl_up_sync(0xffffffffu, A, offset);
+        T B_up[CH];
+        #pragma unroll
+        for (int ch = 0; ch < CH; ++ch) {{
+            B_up[ch] = __shfl_up_sync(0xffffffffu, B[ch], offset);
+        }}
+        if ((threadIdx.x & 31) >= offset) {{
+            #pragma unroll
+            for (int ch = 0; ch < CH; ++ch) {{
+                B[ch] = B[ch] + A * B_up[ch];
+            }}
+            A = A * A_up;
+        }}
+    }}
+}}
+
+__device__ __forceinline__ void run_carry_in(
+    P A, const T (&B)[CH], const T* __restrict__ init, T (&carry)[CH])
+{{
+    // Carries entering this lane's run, from the exclusive scan.
+    P A_prev = __shfl_up_sync(0xffffffffu, A, 1);
+    #pragma unroll
+    for (int ch = 0; ch < CH; ++ch) {{
+        T B_prev = __shfl_up_sync(0xffffffffu, B[ch], 1);
+        carry[ch] = (threadIdx.x & 31) == 0 ? init[ch]
+                                             : A_prev * init[ch] + B_prev;
+    }}
+}}
+
+extern "C" __global__
+__launch_bounds__({block_size})
+void {kernel_name}(T* __restrict__ y, idx_t n_signals, idx_t n)
+{{
+    // Each warp filters one contiguous (n, CH) block, staged in shared memory
+    // so that global loads and stores are coalesced.
+    extern __shared__ __align__(8) unsigned char smem_raw[];
+    const int lane = threadIdx.x & 31;
+    const int warp = threadIdx.x >> 5;
+    const idx_t line = static_cast<idx_t>(blockIdx.x) * {warps_per_block}
+                       + warp;
+    if (line >= n_signals) {{
+        return;  // uniform across the warp; only warp-level syncs are used
+    }}
+    const idx_t n_elements = n * CH;
+    T* __restrict__ g = y + static_cast<ptrdiff_t>(line) * n_elements;
+    T* __restrict__ lines = reinterpret_cast<T*>(smem_raw) + warp * n_elements;
+    for (idx_t j = lane; j < n_elements; j += 32) {{
+        lines[j] = g[j];
+    }}
+    __syncwarp();
+
+    // Variables shared with the boundary initialization code.
+    const idx_t element_stride = CH;
+    idx_t i;
+    P z, z_i;
+    P z_n, z_n_1;
+    T c0;
+    (void)z_n; (void)z_n_1; (void)c0;
+
+    // Lane runs have odd length, so for odd CH the 32 lanes access distinct
+    // shared memory banks.
+    const idx_t seg_len = ((n - 2 + 32) / 32) | 1;
+    idx_t start, end;
+    P A;
+    T B[CH], carry[CH];
+
+    P gain = {gain};
+    if (lane == 0) {{
+        #pragma unroll
+        for (int ch = 0; ch < CH; ++ch) {{
+            lines[ch] *= gain;
+        }}
+    }}
+"""
+
+_WARP_SPLINE1D_POLE = """
+    // ---- pole {pole_index} ----
+    z = {pole};
+
+    // causal initialization and filter over samples 1 .. n - 1
+    if (lane == 0) {{
+        for (int ch = 0; ch < CH; ++ch) {{
+            T* __restrict__ c = lines + ch;
+{causal_init}
+        }}
+    }}
+    __syncwarp();
+    start = 1 + lane * seg_len;
+    end = min(n, start + seg_len);
+    A = 1;
+    #pragma unroll
+    for (int ch = 0; ch < CH; ++ch) {{
+        B[ch] = 0;
+    }}
+    for (i = start; i < end; ++i) {{
+        #pragma unroll
+        for (int ch = 0; ch < CH; ++ch) {{
+            B[ch] = z * B[ch] + gain * lines[i * CH + ch];
+        }}
+        A *= z;
+    }}
+    scan_transform(A, B);
+    run_carry_in(A, B, lines, carry);
+    for (i = start; i < end; ++i) {{
+        #pragma unroll
+        for (int ch = 0; ch < CH; ++ch) {{
+            carry[ch] = z * carry[ch] + gain * lines[i * CH + ch];
+            lines[i * CH + ch] = carry[ch];
+        }}
+    }}
+    __syncwarp();
+
+    // anti-causal initialization and filter over samples n - 2 .. 0
+    if (lane == 0) {{
+        for (int ch = 0; ch < CH; ++ch) {{
+            T* __restrict__ c = lines + ch;
+{anticausal_init}
+        }}
+    }}
+    __syncwarp();
+    start = lane * seg_len;
+    end = min(n - 1, start + seg_len);
+    A = 1;
+    #pragma unroll
+    for (int ch = 0; ch < CH; ++ch) {{
+        B[ch] = 0;
+    }}
+    for (idx_t p = start; p < end; ++p) {{
+        i = n - 2 - p;
+        #pragma unroll
+        for (int ch = 0; ch < CH; ++ch) {{
+            B[ch] = z * B[ch] - z * lines[i * CH + ch];
+        }}
+        A *= z;
+    }}
+    scan_transform(A, B);
+    run_carry_in(A, B, lines + (n - 1) * CH, carry);
+    for (idx_t p = start; p < end; ++p) {{
+        i = n - 2 - p;
+        #pragma unroll
+        for (int ch = 0; ch < CH; ++ch) {{
+            carry[ch] = z * carry[ch] - z * lines[i * CH + ch];
+            lines[i * CH + ch] = carry[ch];
+        }}
+    }}
+    __syncwarp();
+    gain = 1;
+"""
+
+_WARP_SPLINE1D_FOOTER = """
+    for (idx_t j = lane; j < n_elements; j += 32) {
+        g[j] = lines[j];
+    }
+}
+"""
+
+
 @cupy.memoize(for_each_device=True)
 def get_raw_spline1d_kernel(
     axis,
@@ -522,4 +698,126 @@ def get_segmented_spline1d_kernel(
         n_segments,
         dict(data_type=data_type, pole_type=pole_type, index_type=index_type),
     )
+    return cupy.RawKernel(code, kernel_name)
+
+
+# Dynamic shared memory available to a block without opting in.
+_DEFAULT_MAX_DYNAMIC_SHARED_MEMORY = 48 * 1024
+
+
+@cupy.memoize(for_each_device=True)
+def _max_dynamic_shared_memory():
+    attributes = cupy.cuda.Device().attributes
+    return attributes.get(
+        "MaxSharedMemoryPerBlockOptin", _DEFAULT_MAX_DYNAMIC_SHARED_MEMORY
+    )
+
+
+def get_warp_spline1d_channels(axis, shape):
+    """Number of interleaved lines a warp filters together, or 0.
+
+    A contiguous last axis is one line. Filtering the axis before a small
+    trailing axis (e.g. RGB/RGBA channels) filters the trailing elements as
+    interleaved lines of the same staged block.
+    """
+    ndim = len(shape)
+    if axis == ndim - 1:
+        return 1
+    if axis == ndim - 2 and 2 <= shape[-1] <= 4:
+        return shape[-1]
+    return 0
+
+
+def get_warp_spline1d_launch(n_samples, data_type, channels=1):
+    """Return (warps per block, dynamic shared memory bytes) or None.
+
+    Each warp stages one (n_samples, channels) block in shared memory. Use up
+    to 4 warps per block within the default 48 KiB limit; longer lines use
+    one warp per block and opt in to the device's larger limit when it is
+    sufficient.
+    """
+    line_bytes = n_samples * channels * (4 if data_type == "float" else 8)
+    for warps_per_block in (4, 2, 1):
+        smem = warps_per_block * line_bytes
+        if smem <= _DEFAULT_MAX_DYNAMIC_SHARED_MEMORY:
+            return warps_per_block, smem
+    if line_bytes <= _max_dynamic_shared_memory():
+        return 1, line_bytes
+    return None
+
+
+def supports_warp_spline1d(data_type, n_samples, n_signals, channels):
+    """Return True if the staged warp prefilter can be used.
+
+    ``n_signals`` counts the 1D lines (including interleaved channels) and
+    ``channels`` comes from :func:`get_warp_spline1d_channels`.
+    """
+    if not (
+        channels
+        and data_type in ("float", "double")
+        and n_samples >= 32
+        and get_warp_spline1d_launch(n_samples, data_type, channels) is not None
+    ):
+        return False
+    # Lane 0 runs the boundary initialization serially for each line (and
+    # channel). With slow double precision this outweighs the parallel
+    # recurrence for many short lines (measured crossover on an RTX A6000).
+    if data_type == "float" or n_samples >= 512:
+        return True
+    return channels == 1 and n_signals <= 256
+
+
+@cupy.memoize(for_each_device=True)
+def get_warp_spline1d_kernel(
+    mode,
+    order,
+    index_type="int",
+    data_type="float",
+    pole_type="float",
+    warps_per_block=4,
+    channels=1,
+):
+    """Generate a warp-parallel spline prefilter for contiguous 1D lines.
+
+    Each warp loads one line into dynamic shared memory (``warps_per_block``
+    lines of ``n`` elements per block), splits it into one run per lane, and
+    composes the runs' carries with warp scans. Boundary initialization uses
+    the same generated code as the general kernel. All spline orders are
+    supported; orders 4 and 5 filter both poles in the same launch.
+
+    With ``channels > 1``, each warp instead stages an ``(n, channels)``
+    block and filters its ``channels`` interleaved lines together.
+    """
+    if data_type not in ("float", "double"):
+        raise ValueError(f"unsupported warp spline dtype: {data_type}")
+    mode = _get_spline_mode(mode)
+    poles = get_poles(order)
+    n_boundary = _get_n_boundary(poles, pole_type)
+    mode_str = mode.replace("-", "_")
+    kernel_name = (
+        f"cupyx_scipy_ndimage_warp_spline_ord{order}_{mode_str}_"
+        f"ch{channels}_w{warps_per_block}"
+    )
+    code = _WARP_SPLINE1D_HEADER.format(
+        channels=channels,
+        index_type=index_type,
+        data_type=data_type,
+        pole_type=pole_type,
+        block_size=32 * warps_per_block,
+        kernel_name=kernel_name,
+        gain=get_gain(poles),
+        warps_per_block=warps_per_block,
+    )
+    for pole_index, pole in enumerate(poles):
+        causal = _causal_init_code(mode).format(n_boundary=n_boundary)
+        anticausal = _anticausal_init_code(mode).format(n_boundary=n_boundary)
+        code += _WARP_SPLINE1D_POLE.format(
+            pole_index=pole_index,
+            pole=pole,
+            causal_init=textwrap.indent(textwrap.dedent(causal), " " * 12),
+            anticausal_init=textwrap.indent(
+                textwrap.dedent(anticausal), " " * 12
+            ),
+        )
+    code += _WARP_SPLINE1D_FOOTER
     return cupy.RawKernel(code, kernel_name)
