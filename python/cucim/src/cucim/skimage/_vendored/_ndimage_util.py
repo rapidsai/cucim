@@ -1,12 +1,14 @@
 # SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Infrastructure, Inc.
 # SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Networks, Inc.
-# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND MIT
 
 """A vendored subset of cupyx.scipy.ndimage._util"""
 
 import operator
 import warnings
+import weakref
+from collections import deque
 from collections.abc import Iterable
 
 try:
@@ -15,6 +17,70 @@ except ImportError:
     from numpy import AxisError
 
 import cupy
+
+_cache_array_streams = {}
+_retired_cache_allocations = {}
+
+
+def _release_completed_cache_allocations(device_id):
+    """Reclaim evicted storage after all queued consumers have finished."""
+    allocations = _retired_cache_allocations.get(device_id)
+    # Check only the oldest allocation while consumers are busy, rather than
+    # rescanning every pending entry on each miss in a long asynchronous batch.
+    while allocations and all(event.done for event in allocations[0][1]):
+        allocations.popleft()
+
+
+def _retire_cache_allocation(array_id, device_id, memory, streams):
+    # The last ndarray reference is gone, so every use has now been enqueued.
+    # Keep its allocation alive separately until those reads complete; returning
+    # it immediately to the initialization stream's arena would allow early reuse.
+    del _cache_array_streams[array_id]
+    with cupy.cuda.Device(device_id):
+        events = []
+        for stream in streams.values():
+            event = cupy.cuda.Event(disable_timing=True)
+            event.record(stream)
+            events.append(event)
+        _retired_cache_allocations.setdefault(device_id, deque()).append(
+            (memory, events)
+        )
+        _release_completed_cache_allocations(device_id)
+
+
+def _register_cache_array(array):
+    """Protect an initialized array's allocation from reuse after eviction."""
+    device_id = array.device.id
+    _release_completed_cache_allocations(device_id)
+    streams = _cache_array_streams[id(array)] = {}
+    # The memory pointer owns the allocation, without retaining the ndarray.
+    finalizer = weakref.finalize(
+        array,
+        _retire_cache_allocation,
+        id(array),
+        device_id,
+        array.data,
+        streams,
+    )
+    finalizer.atexit = False
+    return _record_cache_array_use(array)
+
+
+def _record_cache_array_use(array):
+    """Track consumer streams on the host; cache hits issue no CUDA operations."""
+    stream = cupy.cuda.get_current_stream()
+    _cache_array_streams[id(array)].setdefault(stream.ptr, stream)
+    return array
+
+
+@cupy.memoize(for_each_device=True)
+def _get_cache_init_stream():
+    """Share a private stream for small cache-initialization copies per device.
+
+    Synchronize this stream before publishing an entry so other streams can
+    reuse it immediately, without waiting for work queued by the caller.
+    """
+    return cupy.cuda.Stream(non_blocking=True)
 
 
 def _is_integer_output(output, input):
