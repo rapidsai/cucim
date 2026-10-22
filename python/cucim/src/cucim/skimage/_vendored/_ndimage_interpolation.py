@@ -908,10 +908,11 @@ def shift(
     if mode == "opencv":
         mode = "_opencv_edge"
 
+        # Keep parameters on the host through affine setup to avoid readbacks.
         output = affine_transform(
             input,
-            cupy.ones(input.ndim, input.dtype),
-            cupy.negative(cupy.asarray(shift)),
+            numpy.ones(input.ndim, input.dtype),
+            numpy.negative(shift),
             None,
             output,
             order,
@@ -1042,9 +1043,10 @@ def zoom(
                 offset.append(0)
         mode = "nearest"
 
+        # Keep parameters on the host through affine setup to avoid readbacks.
         output = affine_transform(
             input,
-            cupy.asarray(zoom),
+            numpy.asarray(zoom),
             offset,
             output_shape,
             output,
