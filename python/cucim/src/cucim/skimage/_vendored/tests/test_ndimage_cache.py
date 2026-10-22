@@ -29,7 +29,7 @@ def delay_kernel():
     return delay
 
 
-@pytest.mark.parametrize("kind", ["gaussian", "zoom"])
+@pytest.mark.parametrize("kind", ["gaussian", "zoom", "weights"])
 @pytest.mark.parametrize("non_blocking", [False, True])
 def test_cache_miss_leaves_caller_work_pending(
     kind, non_blocking, delay_kernel
@@ -39,6 +39,13 @@ def test_cache_miss_leaves_caller_work_pending(
 
         def get():
             return filters._cached_gaussian_kernel1d(1.75, 0, 7, "<f4")
+    elif kind == "weights":
+        cache = util._cached_filter_weights_for_device
+
+        def get():
+            return util._cached_filter_weights(
+                (1, 0, -1), "float32", divisor=np.sqrt(2)
+            )
     else:
         cache = interpolation._cached_zoom_factors_for_device
 
@@ -65,7 +72,7 @@ def test_cache_miss_leaves_caller_work_pending(
         caller.synchronize()
 
 
-@pytest.mark.parametrize("kind", ["gaussian", "zoom"])
+@pytest.mark.parametrize("kind", ["gaussian", "zoom", "weights"])
 def test_cache_eviction_preserves_queued_consumers(kind, delay_kernel):
     # Delay both consumer streams so the LRU evicts entries before their reads.
     delay = delay_kernel
@@ -88,12 +95,17 @@ def test_cache_eviction_preserves_queued_consumers(kind, delay_kernel):
             np.float32
         )
     else:
-        cache = interpolation._cached_zoom_factors_for_device
+        cache = (
+            interpolation._cached_zoom_factors_for_device
+            if kind == "zoom"
+            else util._cached_filter_weights_for_device
+        )
 
         def get(index):
-            return interpolation._cached_zoom_factors(
-                (0.5 + index / count, 0.25), "float32"
-            )
+            weights = (0.5 + index / count, 0.25)
+            if kind == "zoom":
+                return interpolation._cached_zoom_factors(weights, "float32")
+            return util._cached_filter_weights(weights, "float32")
 
         expected = np.array(
             [(0.5 + i / count, 0.25) for i in range(count)], dtype=np.float32
@@ -129,6 +141,27 @@ def test_cache_hits_do_not_synchronize():
     zoom_args = ((0.5, 0.25), "float32")
     gaussian = filters._cached_gaussian_kernel1d(*gaussian_args)
     zoom = interpolation._cached_zoom_factors(*zoom_args)
+    weights_args = ((1, 0, -1), "float32", np.sqrt(2))
+    weights = util._cached_filter_weights(*weights_args)
     with allow_synchronize(False):
         assert filters._cached_gaussian_kernel1d(*gaussian_args) is gaussian
         assert interpolation._cached_zoom_factors(*zoom_args) is zoom
+        assert util._cached_filter_weights(*weights_args) is weights
+
+
+@pytest.mark.parametrize("dtype", ["float32", "float64", "complex64"])
+def test_filter_weight_normalization_does_not_modify_other_entries(dtype):
+    coefficients = (1, 0, -1)
+    unscaled = util._cached_filter_weights(coefficients, dtype)
+    for ndim in (2, 3, 2):
+        expected = cp.asarray(coefficients, dtype=dtype)
+        expected /= np.sqrt(ndim)
+        actual = util._cached_filter_weights(
+            coefficients, dtype, divisor=np.sqrt(ndim)
+        )
+        cp.testing.assert_array_equal(actual, expected)
+        cp.testing.assert_array_equal(unscaled, cp.asarray(coefficients))
+    other_dtype = "float64" if dtype != "float64" else "float32"
+    other = util._cached_filter_weights(coefficients, other_dtype)
+    assert other.dtype == cp.dtype(other_dtype)
+    assert other is not unscaled
