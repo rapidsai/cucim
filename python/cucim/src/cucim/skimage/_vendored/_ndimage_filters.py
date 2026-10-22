@@ -880,7 +880,7 @@ def prewitt(
         from SciPy due to floating-point rounding of intermediate results.
     """
     weights_dtype = cupy.promote_types(input.dtype, cupy.float32)
-    smooth = cupy.ones(3, dtype=weights_dtype)
+    smooth = _util._cached_filter_weights((1, 1, 1), weights_dtype)
     return _prewitt_or_sobel(input, axis, output, mode, cval, smooth, algorithm)
 
 
@@ -911,7 +911,7 @@ def sobel(
         from SciPy due to floating-point rounding of intermediate results.
     """
     weights_dtype = cupy.promote_types(input.dtype, cupy.float32)
-    smooth = cupy.array([1, 2, 1], dtype=weights_dtype)
+    smooth = _util._cached_filter_weights((1, 2, 1), weights_dtype)
     return _prewitt_or_sobel(input, axis, output, mode, cval, smooth, algorithm)
 
 
@@ -922,7 +922,9 @@ def _prewitt_or_sobel(input, axis, output, mode, cval, weights, algorithm):
 
     def get(is_diff):
         return (
-            cupy.array([-1, 0, 1], dtype=weights_dtype) if is_diff else weights
+            _util._cached_filter_weights((-1, 0, 1), weights_dtype)
+            if is_diff
+            else weights
         )  # noqa
 
     axes = tuple(range(input.ndim))
@@ -1056,7 +1058,7 @@ def laplace(
         from SciPy due to floating-point rounding of intermediate results.
     """
     weights_dtype = cupy.promote_types(input.dtype, cupy.float32)
-    weights = cupy.array([1, -2, 1], dtype=weights_dtype)
+    weights = _util._cached_filter_weights((1, -2, 1), weights_dtype)
 
     def derivative2(input, axis, output, mode, cval):
         return correlate1d(
