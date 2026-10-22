@@ -10,6 +10,7 @@ import warnings
 import weakref
 from collections import deque
 from collections.abc import Iterable
+from functools import lru_cache
 
 try:
     from numpy.exceptions import AxisError
@@ -81,6 +82,33 @@ def _get_cache_init_stream():
     reuse it immediately, without waiting for work queued by the caller.
     """
     return cupy.cuda.Stream(non_blocking=True)
+
+
+def _cached_filter_weights(weights, dtype, divisor=1):
+    """Reuse small built-in coefficient tuples; callers must not modify them.
+
+    Optional normalization runs once in the working dtype on the device, as
+    in the uncached edge filters. Keep it in the key so magnitude and single-
+    axis filters never share coefficients with different normalization.
+    """
+    device_id = cupy.cuda.runtime.getDevice()
+    array = _cached_filter_weights_for_device(
+        device_id, weights, cupy.dtype(dtype).str, divisor
+    )
+    return _record_cache_array_use(array)
+
+
+@lru_cache(maxsize=64)
+def _cached_filter_weights_for_device(device_id, weights, dtype, divisor):
+    """Publish initialized coefficients using the shared cache stream policy."""
+    with cupy.cuda.Device(device_id):
+        stream = _get_cache_init_stream()
+        with stream:
+            array = cupy.asarray(weights, dtype=dtype)
+            if divisor != 1:
+                array /= divisor
+        stream.synchronize()
+        return _register_cache_array(array)
 
 
 def _is_integer_output(output, input):

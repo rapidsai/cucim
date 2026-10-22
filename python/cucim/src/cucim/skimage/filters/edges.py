@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: 2003 Lee Kamentsky
 # SPDX-FileCopyrightText: 2003-2005 Peter J. Verveer
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND (GPL-2.0-only OR BSD-3-Clause)
 
 """
@@ -24,6 +24,7 @@ import cupy as cp
 import numpy as np
 
 import cucim.skimage._vendored.ndimage as ndi
+from cucim.skimage._vendored._ndimage_util import _cached_filter_weights
 
 from .._shared.utils import _supported_float_type, check_nD
 from ..restoration.uft import laplacian
@@ -205,11 +206,11 @@ def _generic_edge_filter(
         float_dtype = image.dtype
 
     # TODO: file an upstream scikit-image PR casting weights in this manner
-    edge_weights = cp.asarray(edge_weights, dtype=float_dtype)
-    smooth_weights = cp.asarray(smooth_weights, dtype=float_dtype)
-
-    if return_magnitude:
-        edge_weights /= math.sqrt(ndim)
+    divisor = math.sqrt(ndim) if return_magnitude else 1
+    edge_weights = _cached_filter_weights(
+        tuple(edge_weights), float_dtype, divisor=divisor
+    )
+    smooth_weights = _cached_filter_weights(tuple(smooth_weights), float_dtype)
 
     # CuPy Backend: Apply the smoothing and edge convolutions separably
     #               rather than forming an n-dimensional kernel. This is
