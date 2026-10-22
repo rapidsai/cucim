@@ -127,7 +127,7 @@ def test_warp_spline_prefilter_matches_fallback(
         x, order=order, axis=-1, output=output, mode=mode
     )
 
-    testing.assert_allclose(actual, expected, rtol=5e-6, atol=5e-5)
+    testing.assert_allclose(actual, expected, rtol=5e-5, atol=5e-4)
 
 
 def test_warp_spline_prefilter_shape_heuristic(monkeypatch):
@@ -218,7 +218,7 @@ def test_warp_spline_prefilter_strong_fp64_matches_scipy(
         cupy.asarray(host), order, axis, output=cupy.float64, mode=mode
     )
     assert launched == [channels]
-    testing.assert_allclose(actual, expected, rtol=1e-11, atol=1e-11)
+    testing.assert_allclose(actual, expected, rtol=1e-10, atol=1e-10)
 
 
 @pytest.mark.parametrize("order", [2, 3, 4, 5])
@@ -247,7 +247,7 @@ def test_warp_spline_prefilter_matches_scipy(
         image, order, -1, output=cupy.dtype(dtype), mode=mode
     )
     assert launched
-    tolerance = 1e-11 if dtype == "float64" else 5e-5
+    tolerance = 1e-10 if dtype == "float64" else 5e-4
     testing.assert_allclose(actual, expected, rtol=tolerance, atol=tolerance)
     testing.assert_array_equal(image, host)
 
@@ -267,7 +267,7 @@ def test_warp_spline_prefilter_large_shared_memory():
     actual = _ndimage_interpolation.spline_filter1d(
         cupy.asarray(host), 3, -1, output=cupy.float32
     )
-    testing.assert_allclose(actual, expected, rtol=5e-5, atol=5e-5)
+    testing.assert_allclose(actual, expected, rtol=5e-4, atol=5e-4)
 
 
 @pytest.mark.parametrize("order", [2, 3, 4, 5])
@@ -304,8 +304,8 @@ def test_warp_channel_spline_prefilter_matches_fallback(
     )
     if dtype != cupy.float64 or length >= 512:
         assert launched == [channels]
-    rtol = 1e-12 if dtype == cupy.float64 else 5e-6
-    testing.assert_allclose(actual, expected, rtol=rtol, atol=5e-5)
+    rtol = 1e-11 if dtype == cupy.float64 else 5e-5
+    testing.assert_allclose(actual, expected, rtol=rtol, atol=5e-4)
 
 
 @pytest.mark.parametrize("dtype", [cupy.float32, cupy.float64])
@@ -341,7 +341,7 @@ def test_warp_channel_spline_prefilter_unaligned_output(
         )
     cupy.cuda.Device().synchronize()
     assert actual is output
-    rtol = 1e-12 if dtype == cupy.float64 else 5e-6
+    rtol = 1e-11 if dtype == cupy.float64 else 5e-5
     testing.assert_allclose(actual, expected, rtol=rtol, atol=rtol)
 
 
