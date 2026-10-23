@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import math
@@ -742,7 +742,9 @@ def _get_code_stage2_convolve_2d(ndim, axis, flip_kernel):
 
             #pragma unroll
             for (int k = 0; k < KSIZE; ++k) {{
-               {inner}
+               if (nonzero(kernel[{kernel_idx}])) {{
+                   {inner}
+               }}
             }}
             dst[y * row_stride + x] = cast<D>(sum);
         }}
@@ -797,7 +799,9 @@ def _get_code_stage2_convolve_3d(ndim, axis, flip_kernel):
 
             #pragma unroll
             for (int k = 0; k < KSIZE; ++k) {{
-               {inner}
+               if (nonzero(kernel[{kernel_idx}])) {{
+                   {inner}
+               }}
             }}
             dst[z * stride_0 + y * stride_1 + x] = cast<D>(sum);
         }}
@@ -925,6 +929,110 @@ def _get_separable_conv_kernel(
     return m.get_function(func_name), block, patch_per_block
 
 
+@cp.memoize(for_each_device=True)
+def _get_packed_row_kernel(
+    kernel_size,
+    trailing_size,
+    anchor,
+    image_c_type,
+    kernel_c_type,
+    output_c_type,
+    mode,
+    cval,
+    flip_kernel,
+):
+    """Tile interleaved rows, keeping neighboring trailing elements together.
+
+    The input is a C-contiguous (rows, length, trailing_size) view. Threads
+    load contiguous flattened row tiles; filter taps advance by trailing_size
+    in shared memory. Only border loads decode the spatial/trailing indices,
+    so reflection and wrapping never mix independent trailing elements.
+    """
+    block = (32, 8, 1)
+    patches = 4
+    halo = math.ceil(
+        max(kernel_size - anchor, anchor) * trailing_size / block[0]
+    )
+    tile_width = (patches + 2 * halo) * block[0]
+    # The launch shape is independent of image extents. Only the small trailing
+    # stride is specialized, allowing constant tap offsets and border division.
+    image_dtype = next(
+        dtype
+        for dtype, ctype in _dtype_char_to_c_types.items()
+        if ctype == image_c_type
+    )
+    if (
+        tile_width * block[1] * cp.dtype(image_dtype).itemsize
+        > _get_shmem_limits()["shared_block"]
+    ):
+        raise ResourceLimitError("inadequate shared memory for packed row tile")
+    if mode in ("constant", "grid-constant"):
+        load = f"""
+            T value = static_cast<T>({cval});
+            if (flat >= 0 && flat < row_width) value = src[row_base + flat];
+        """
+    else:
+        boundary = util._generate_boundary_condition_ops(
+            mode, "pixel", "length"
+        )
+        load = f"""
+            int mapped = flat;
+            if (flat < 0 || flat >= row_width) {{
+                int pixel = flat / {trailing_size};
+                int tail = flat % {trailing_size};
+                // C++ division truncates toward zero; use floor division.
+                if (tail < 0) {{ tail += {trailing_size}; --pixel; }}
+                {boundary}
+                mapped = pixel * {trailing_size} + tail;
+            }}
+            T value = src[row_base + mapped];
+        """
+    weight_index = f"{kernel_size} - 1 - k" if flip_kernel else "k"
+    code = '#include "cupy/float16.cuh"\n#include "cupy/complex.cuh"\n'
+    code += (
+        _ndimage_includes
+        + _ndimage_CAST_FUNCTION
+        + f"""
+    typedef {image_c_type} T;
+    typedef {kernel_c_type} W;
+    typedef {output_c_type} D;
+    extern "C" __global__ void cucim_packed_row(
+        const T* src, D* dst, const W* weights, int rows, int length) {{
+        __shared__ T smem[{block[1]}][{tile_width}];
+        int row = (blockIdx.y + blockIdx.z * gridDim.y) * {block[1]} + threadIdx.y;
+        if (row >= rows) return;
+        int row_width = length * {trailing_size};
+        int row_base = row * row_width;
+        int start = blockIdx.x * {patches * block[0]};
+        #pragma unroll
+        for (int j = 0; j < {patches + 2 * halo}; ++j) {{
+            int flat = start + threadIdx.x + (j - {halo}) * {block[0]};
+            {load}
+            smem[threadIdx.y][threadIdx.x + j * {block[0]}] = value;
+        }}
+        __syncthreads();
+        #pragma unroll
+        for (int j = 0; j < {patches}; ++j) {{
+            int flat = start + threadIdx.x + j * {block[0]};
+            if (flat < row_width) {{
+                W sum = static_cast<W>(0);
+                #pragma unroll
+                for (int k = 0; k < {kernel_size}; ++k) {{
+                    W weight = weights[{weight_index}];
+                    if (nonzero(weight))
+                        sum += static_cast<W>(smem[threadIdx.y][threadIdx.x +
+                            (j + {halo}) * {block[0]} + (k - {anchor}) * {trailing_size}]) * weight;
+                }}
+                dst[row_base + flat] = cast<D>(sum);
+            }}
+        }}
+    }}
+    """
+    )
+    kernel = cp.RawKernel(code, "cucim_packed_row")
+    return kernel, block, patches
+
+
 def _get_grid(shape, block, axis, patch_per_block):
     """Determine grid size from image shape and block parameters"""
     ndim = len(shape)
@@ -1004,7 +1112,8 @@ def _shmem_convolve1d(
 
     anchor = weights.size // 2 + origin
 
-    if weights.size > 32:
+    packed_rows = ndim == 3 and axis == 1 and image.shape[2] <= 16
+    if weights.size > 32 and not packed_rows:
         # For large kernels, make sure we have adequate shared memory
         _check_smem_availability(
             ndim,
@@ -1037,12 +1146,37 @@ def _shmem_convolve1d(
     # handle potential overlap between input and output arrays
     needs_temp = cp.shares_memory(output, image, "MAY_SHARE_BOUNDS")
     if needs_temp:
-        output, temp = util._get_output(output.dtype, input), output
+        output, temp = util._get_output(output.dtype, image), output
 
     # index_c_type = util._get_inttype(image)
     image_c_type = _dtype_char_to_c_types[image.dtype.char]
     weights_c_type = _dtype_char_to_c_types[weights.dtype.char]
     output_c_type = _dtype_char_to_c_types[output.dtype.char]
+
+    if packed_rows:
+        kernel, block, patches = _get_packed_row_kernel(
+            weights.size,
+            image.shape[2],
+            anchor,
+            image_c_type,
+            weights_c_type,
+            output_c_type,
+            mode,
+            cval,
+            convolution,
+        )
+        rows, length, trailing_size = image.shape
+        row_blocks = math.ceil(rows / block[1])
+        grid = (
+            math.ceil(length * trailing_size / (block[0] * patches)),
+            min(row_blocks, 65535),
+            math.ceil(row_blocks / 65535),
+        )
+        kernel(grid, block, (image, output, weights, rows, length))
+        if needs_temp:
+            temp[:] = output
+            return temp
+        return output
 
     conv_axis_kernel, block, patch_per_block = _get_separable_conv_kernel(
         weights.size,
@@ -1065,6 +1199,6 @@ def _shmem_convolve1d(
         args,
     )
     if needs_temp:
-        output[:] = temp
+        temp[:] = output
         output = temp
     return output
