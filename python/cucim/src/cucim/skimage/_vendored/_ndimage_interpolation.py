@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Infrastructure, Inc.
 # SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Networks, Inc.
-# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND MIT
 from __future__ import annotations
 
@@ -144,44 +144,97 @@ def spline_filter1d(
     run_kernel = not (order < 2 or x.ndim == 0 or x.shape[axis] == 1)
     if not run_kernel:
         output = _util._get_output(output, input)
-        _core.elementwise_copy(x, output)
+        if output is not x:
+            _core.elementwise_copy(x, output)
         return output
 
     temp, data_dtype, output_dtype = _get_spline_output(x, output)
     data_type = cupy._core._scalar.get_typename(temp.dtype)
     pole_type = cupy._core._scalar.get_typename(temp.real.dtype)
 
-    index_type = _util._get_inttype(input)
+    # Index the floating workspace, which can be larger than the input dtype.
+    index_type = _util._get_inttype(temp)
     index_dtype = cupy.int32 if index_type == "int" else cupy.int64
 
     n_samples = x.shape[axis]
     n_signals = x.size // n_samples
-    info = cupy.array((n_signals, n_samples) + x.shape, dtype=index_dtype)
+    int_type = numpy.dtype(index_dtype).type
+    core = _spline_prefilter_core
+    launch_kwargs = {}
+    # Contiguous lines, or the axis before a small trailing axis (e.g. the
+    # last spatial axis of RGB/RGBA images) filtered as interleaved lines.
+    channels = core.get_warp_spline1d_channels(axis, temp.shape)
+    if temp.flags.c_contiguous and core.supports_warp_spline1d(
+        data_type, n_samples, n_signals, channels
+    ):
+        warps_per_block, smem = core.get_warp_spline1d_launch(
+            n_samples, data_type, channels
+        )
+        kern = core.get_warp_spline1d_kernel(
+            mode,
+            order=order,
+            index_type=index_type,
+            data_type=data_type,
+            pole_type=pole_type,
+            warps_per_block=warps_per_block,
+            channels=channels,
+        )
+        if smem > core._DEFAULT_MAX_DYNAMIC_SHARED_MEMORY:
+            # Long lines opt in to the device's larger shared memory limit.
+            kern.max_dynamic_shared_size_bytes = smem
+        n_blocks = n_signals // channels  # staged (n_samples, channels) blocks
+        block = (32 * warps_per_block,)
+        grid = ((n_blocks + warps_per_block - 1) // warps_per_block,)
+        args = (temp, int_type(n_blocks), int_type(n_samples))
+        launch_kwargs = dict(shared_mem=smem)
+    elif temp.flags.c_contiguous and core.supports_segmented_spline1d(
+        axis, ndim, data_type
+    ):
+        # Strided axis: several threads per line, 32 adjacent lines per block.
+        n_segments = core.get_segmented_spline1d_segments(n_samples, data_type)
+        kern = core.get_segmented_spline1d_kernel(
+            mode,
+            order,
+            n_segments,
+            index_type=index_type,
+            data_type=data_type,
+            pole_type=pole_type,
+        )
+        block = (32, n_segments)
+        grid = ((n_signals + 31) // 32,)
+        inner = math.prod(temp.shape[axis + 1 :])
+        args = (
+            temp,
+            int_type(n_signals),
+            int_type(n_samples),
+            int_type(inner),
+        )
+    else:
+        # empirical choice of block size that seemed to work well
+        block_size = max(2 ** math.ceil(numpy.log2(n_samples / 32)), 8)
+        if math.prod(x.shape[axis + 1 :]) <= 1024:
+            block_size = min(block_size, 32)
+        kern = core.get_raw_spline1d_kernel(
+            axis,
+            ndim,
+            mode,
+            order=order,
+            index_type=index_type,
+            data_type=data_type,
+            pole_type=pole_type,
+            block_size=block_size,
+        )
+        # Due to recursive nature, a given line of data must be processed by
+        # a single thread. n_signals lines will be processed in total.
+        block = (block_size,)
+        grid = ((n_signals + block[0] - 1) // block[0],)
+        # Pass runtime sizes directly; no device metadata allocation or copy.
+        args = (temp,) + tuple(
+            int_type(size) for size in (n_signals, n_samples) + temp.shape
+        )
 
-    # empirical choice of block size that seemed to work well
-    block_size = max(2 ** math.ceil(numpy.log2(n_samples / 32)), 8)
-    kern = _spline_prefilter_core.get_raw_spline1d_kernel(
-        axis,
-        ndim,
-        mode,
-        order=order,
-        index_type=index_type,
-        data_type=data_type,
-        pole_type=pole_type,
-        block_size=block_size,
-    )
-
-    # Due to recursive nature, a given line of data must be processed by a
-    # single thread. n_signals lines will be processed in total.
-    block = (block_size,)
-    grid = ((n_signals + block[0] - 1) // block[0],)
-
-    # apply prefilter gain
-    poles = _spline_prefilter_core.get_poles(order=order)
-    temp *= _spline_prefilter_core.get_gain(poles)
-
-    # apply caual + anti-causal IIR spline filters
-    kern(grid, block, (temp, info))
+    # apply causal + anti-causal IIR spline filters
+    kern(grid, block, args, **launch_kwargs)
 
     if isinstance(output, cupy.ndarray) and temp is not output:
         # copy kernel output into the user-provided output array
@@ -213,14 +266,13 @@ def spline_filter(input, order=3, output=cupy.float64, mode="mirror"):
     if order < 2 or order > 5:
         raise RuntimeError("spline order not supported")
 
-    x = input
-    temp, data_dtype, output_dtype = _get_spline_output(x, output)
-    if order not in [0, 1] and input.ndim > 0:
-        for axis in range(x.ndim):
-            spline_filter1d(x, order, axis, output=temp, mode=mode)
-            x = temp
+    temp, data_dtype, output_dtype = _get_spline_output(input, output)
+    # The workspace already contains the input; filter it in place on every axis.
+    for axis in range(input.ndim):
+        spline_filter1d(temp, order, axis, output=temp, mode=mode)
     if isinstance(output, cupy.ndarray):
-        _core.elementwise_copy(temp, output)
+        if temp is not output:
+            _core.elementwise_copy(temp, output)
     else:
         output = temp
     if output.dtype != output_dtype:
@@ -297,19 +349,18 @@ def _filter_input(image, prefilter, mode, cval, order, batch_axes=None):
     padded, npad = _prepad_for_spline_filter(image, mode, cval, batch_axes)
     float_dtype = cupy.promote_types(image.dtype, cupy.float32)
 
-    if batch_axes:
-        # Only filter along non-batch axes, following spline_filter's pattern
-        x = padded
-        temp = padded.astype(float_dtype, copy=True)
-        for axis in range(image.ndim):
-            if axis not in batch_axes:
-                spline_filter1d(x, order, axis, output=temp, mode=mode)
-                x = temp
-        filtered = temp
+    if padded is image:
+        # Never filter the caller's array in place.
+        temp = image.astype(float_dtype, order="C", copy=True)
     else:
-        filtered = spline_filter(padded, order, output=float_dtype, mode=mode)
-
-    return cupy.ascontiguousarray(filtered), npad
+        # The padded array is a private temporary: convert it if needed, but
+        # do not copy it again before filtering in place.
+        temp = cupy.ascontiguousarray(padded.astype(float_dtype, copy=False))
+    for axis in range(image.ndim):
+        # Only filter along non-batch axes (identity/batch dimensions).
+        if not batch_axes or axis not in batch_axes:
+            spline_filter1d(temp, order, axis, output=temp, mode=mode)
+    return temp, npad
 
 
 def map_coordinates(
@@ -441,10 +492,11 @@ def affine_transform(
 
     Args:
         input (cupy.ndarray): The input array.
-        matrix (cupy.ndarray): The inverse coordinate transformation matrix,
-            mapping output coordinates to input coordinates. If ``ndim`` is the
-            number of dimensions of ``input``, the given matrix must have one
-            of the following shapes:
+        matrix (cupy.ndarray or numpy.ndarray): The inverse coordinate
+            transformation matrix, mapping output coordinates to input
+            coordinates. A host (NumPy) matrix avoids reading the matrix back
+            from the device. If ``ndim`` is the number of dimensions of
+            ``input``, the given matrix must have one of the following shapes:
 
                 - ``(ndim, ndim)``: the linear transformation matrix for each
                   output coordinate.
@@ -512,7 +564,7 @@ def affine_transform(
         tm_interp = "linear" if order > 0 else "nearest"
         return _texture.affine_transformation(
             data=input,
-            transformation_matrix=matrix,
+            transformation_matrix=cupy.asarray(matrix),
             output_shape=output_shape,
             output=output,
             interpolation=tm_interp,
@@ -538,8 +590,8 @@ def affine_transform(
 
     if mode == "opencv":
         m = cupy.zeros((input.ndim + 1, input.ndim + 1))
-        m[:-1, :-1] = matrix
-        m[:-1, -1] = offset
+        m[:-1, :-1] = cupy.asarray(matrix)
+        m[:-1, -1] = cupy.asarray(offset)
         m[-1, -1] = 1
         m = cupy.linalg.inv(m)
         m[:2] = cupy.roll(m[:2], 1, axis=0)
@@ -555,6 +607,7 @@ def affine_transform(
         float_dtype = cupy.promote_types(input.real.dtype, cupy.float32)
     matrix = matrix.astype(float_dtype, copy=False)
     if mode == "opencv" or mode == "_opencv_edge":
+        matrix = cupy.asarray(matrix)
         if matrix.ndim == 1:
             matrix = cupy.diag(matrix)
         coordinates = cupy.indices(output_shape, dtype=float_dtype)
@@ -595,6 +648,7 @@ def affine_transform(
             input, prefilter, mode, cval, order, batch_axes=batch_axes
         )
 
+        matrix = cupy.asarray(matrix)
         offset = cupy.asarray(offset, dtype=float_dtype)
         offset = -offset / matrix
         kern_info = _interp_kernels._get_zoom_shift_kernel(
@@ -652,9 +706,16 @@ def affine_transform(
             batch_axes=batch_axes,
             output_c_contiguous=output.flags.c_contiguous,
         )
-        m = cupy.zeros((ndim, ndim + 1), dtype=float_dtype)
-        m[:, :-1] = matrix
-        m[:, -1] = cupy.asarray(offset, dtype=float_dtype)
+        if isinstance(matrix, numpy.ndarray):
+            # Build the combined matrix on the host and upload it once.
+            m = numpy.empty((ndim, ndim + 1), dtype=float_dtype)
+            m[:, :-1] = matrix
+            m[:, -1] = offset
+            m = cupy.asarray(m)
+        else:
+            m = cupy.zeros((ndim, ndim + 1), dtype=float_dtype)
+            m[:, :-1] = matrix
+            m[:, -1] = cupy.asarray(offset, dtype=float_dtype)
         if kern_info.size is not None:
             kern_info.kernel(filtered, m, output, size=kern_info.size)
         else:
@@ -778,9 +839,8 @@ def rotate(
     offset = numpy.zeros(ndim, dtype=float_dtype)
     offset[axes] = in_center - out_center
 
-    matrix = cupy.asarray(matrix)
-    offset = cupy.asarray(offset)
-
+    # Keep the matrix and offset on the host; affine_transform inspects them
+    # there and uploads the combined matrix once.
     return affine_transform(
         input,
         matrix,
@@ -848,10 +908,11 @@ def shift(
     if mode == "opencv":
         mode = "_opencv_edge"
 
+        # Keep parameters on the host through affine setup to avoid readbacks.
         output = affine_transform(
             input,
-            cupy.ones(input.ndim, input.dtype),
-            cupy.negative(cupy.asarray(shift)),
+            numpy.ones(input.ndim, input.dtype),
+            numpy.negative(shift),
             None,
             output,
             order,
@@ -982,9 +1043,10 @@ def zoom(
                 offset.append(0)
         mode = "nearest"
 
+        # Keep parameters on the host through affine setup to avoid readbacks.
         output = affine_transform(
             input,
-            cupy.asarray(zoom),
+            numpy.asarray(zoom),
             offset,
             output_shape,
             output,
