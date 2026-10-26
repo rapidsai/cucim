@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 {% set version = environ['RAPIDS_PACKAGE_VERSION'].lstrip('v') %}
@@ -54,6 +54,7 @@ requirements:
     - cuda-cudart-dev
     - cupy >=14.0.1,!=14.1.0
     - libcucim ={{ version }}
+    - nanobind >=3.1.0,<3.2.0a0
     - python
     - python-gil
     - pip

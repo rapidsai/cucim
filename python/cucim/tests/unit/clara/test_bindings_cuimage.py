@@ -170,6 +170,18 @@ def test_read_region_errors(testimg_tiff_stripe_32x24_16_jpeg):
         img.read_region((0, 0), (8, 8), C="x")
 
 
+def test_read_region_numpy_locations(testimg_tiff_stripe_32x24_16_jpeg):
+    img = CuImage(testimg_tiff_stripe_32x24_16_jpeg)
+    expected = np.asarray(img.read_region((4, 2), (16, 8)))
+    for dtype in (np.int64, np.longlong):
+        region = img.read_region(np.array([4, 2], dtype=dtype), (16, 8))
+        np.testing.assert_array_equal(np.asarray(region), expected)
+    with pytest.raises(ValueError, match="int64"):
+        img.read_region(np.array([4, 2], dtype=np.int32), (16, 8))
+    with pytest.raises(ValueError, match="C-contiguous"):
+        img.read_region(np.array([4, 0, 2, 0], dtype=np.int64)[::2], (16, 8))
+
+
 def test_region_data_outlives_source(testimg_tiff_stripe_32x24_16_jpeg):
     img = CuImage(testimg_tiff_stripe_32x24_16_jpeg)
     region = img.read_region((0, 0), (32, 24))
