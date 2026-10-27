@@ -7,7 +7,9 @@
 #include "filesystem_pydoc.h"
 
 #include <fmt/format.h>
+#include <nanobind/stl/filesystem.h>
 #include <nanobind/stl/shared_ptr.h>
+#include <nanobind/stl/string.h>
 
 #include <cucim/filesystem/cufile_driver.h>
 
@@ -32,7 +34,7 @@ void init_filesystem(nb::module_ fs)
     nb::class_<CuFileDriver>(fs, "CuFileDriver", nb::is_weak_referenceable())
         .def(
             "__init__",
-            [](CuFileDriver* self, int fd, Bool no_gds, Bool use_mmap, const std::string& file_path) {
+            [](CuFileDriver* self, int fd, Bool no_gds, Bool use_mmap, const std::filesystem::path& file_path) {
                 nb::gil_scoped_release release;
                 new (self) CuFileDriver(fd, no_gds, use_mmap, file_path.c_str());
             },
@@ -89,13 +91,14 @@ void init_filesystem(nb::module_ fs)
              "buf_offset"_a = 0) //
         .def("close", &close, doc::doc_close, nb::call_guard<nb::gil_scoped_release>())
         .def(
-            "discard_page_cache", [](const std::string& file_path) { return discard_page_cache(file_path.c_str()); },
+            "discard_page_cache",
+            [](const std::filesystem::path& file_path) { return discard_page_cache(file_path.c_str()); },
             doc::doc_discard_page_cache,
             "file_path"_a, //
             nb::call_guard<nb::gil_scoped_release>());
 }
 
-std::shared_ptr<CuFileDriver> py_open(const std::string& file_path, const std::string& flags, mode_t mode)
+std::shared_ptr<CuFileDriver> py_open(const std::filesystem::path& file_path, const std::string& flags, mode_t mode)
 {
     return open(file_path.c_str(), flags.c_str(), mode);
 }

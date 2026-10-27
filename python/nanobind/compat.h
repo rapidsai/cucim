@@ -8,7 +8,6 @@
 
 #include <cstdint>
 #include <stdexcept>
-#include <string>
 #include <type_traits>
 
 #include <fmt/format.h>
@@ -72,50 +71,6 @@ struct type_caster<cucim::Bool>
     static handle from_cpp(cucim::Bool src, rv_policy, cleanup_list*) noexcept
     {
         return src.value ? Py_NewRef(Py_True) : Py_NewRef(Py_False);
-    }
-};
-
-// Replaces <nanobind/stl/string.h> (never include both): like pybind11, std::string parameters also accept bytes and
-// bytearray.
-template <>
-struct type_caster<std::string>
-{
-    NB_TYPE_CASTER(std::string, const_name("str"))
-
-    bool from_python(handle src, uint32_t, cleanup_list*) noexcept
-    {
-        Py_ssize_t size = 0;
-        const char* data = nullptr;
-        if (PyUnicode_Check(src.ptr()))
-        {
-            data = PyUnicode_AsUTF8AndSize(src.ptr(), &size);
-        }
-        else if (PyBytes_Check(src.ptr()))
-        {
-            char* bytes = nullptr;
-            data = PyBytes_AsStringAndSize(src.ptr(), &bytes, &size) == 0 ? bytes : nullptr;
-        }
-        else if (PyByteArray_Check(src.ptr()))
-        {
-            data = PyByteArray_AsString(src.ptr());
-            size = PyByteArray_Size(src.ptr());
-        }
-        else
-        {
-            return false;
-        }
-        if (data == nullptr)
-        {
-            PyErr_Clear();
-            return false;
-        }
-        value.assign(data, static_cast<size_t>(size));
-        return true;
-    }
-
-    static handle from_cpp(const std::string& value, rv_policy, cleanup_list*) noexcept
-    {
-        return PyUnicode_FromStringAndSize(value.data(), static_cast<Py_ssize_t>(value.size()));
     }
 };
 

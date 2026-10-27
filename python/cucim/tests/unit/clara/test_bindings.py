@@ -5,6 +5,7 @@
 
 import importlib
 import os
+import pathlib
 
 import numpy as np
 import pytest
@@ -214,7 +215,7 @@ def test_device_cache():
     assert isinstance(CuImage.device_cache(), cache.ImageCache)
 
 
-def test_pybind11_argument_conversions(tmp_path, restore_cache):
+def test_bool_argument_conversions(tmp_path, restore_cache):
     assert CuImage.cache("per_process", record_stat=1).config["record_stat"]
     assert not CuImage.cache("per_process", record_stat=np.False_).config[
         "record_stat"
@@ -222,11 +223,60 @@ def test_pybind11_argument_conversions(tmp_path, restore_cache):
 
     path = tmp_path / "data.bin"
     path.write_bytes(bytes(16))
-    with filesystem.open(os.fsencode(path), "r") as reader:
-        assert reader.pread(np.zeros(16, np.uint8), 16, 0) == 16
-    driver = filesystem.CuFileDriver(
-        os.open(path, os.O_RDONLY), no_gds=1, file_path=os.fsencode(path)
-    )
-    assert repr(driver).endswith(f"path:{path}>")
-    driver.close()
-    assert isinstance(filesystem.discard_page_cache(os.fsencode(path)), bool)
+    with filesystem.CuFileDriver(
+        os.open(path, os.O_RDONLY), no_gds=1
+    ) as driver:
+        assert driver.pread(np.zeros(16, np.uint8), 16, 0) == 16
+
+
+@pytest.mark.parametrize(
+    "as_path", [str, os.fsencode, pathlib.Path], ids=["str", "bytes", "pathlib"]
+)
+def test_filesystem_path_arguments(tmp_path, as_path):
+    path = tmp_path / "data.bin"
+    payload = np.arange(16, dtype=np.uint8)
+    path.write_bytes(payload.tobytes())
+
+    with filesystem.open(as_path(path), "r") as reader:
+        out = np.zeros(16, np.uint8)
+        assert reader.pread(out, 16, 0) == 16
+        np.testing.assert_array_equal(out, payload)
+    with filesystem.CuFileDriver(
+        os.open(path, os.O_RDONLY), no_gds=True, file_path=as_path(path)
+    ) as driver:
+        assert repr(driver).endswith(f"path:{path}>")
+    assert filesystem.discard_page_cache(as_path(path)) is True
+
+
+def test_filesystem_opens_non_utf8_file_name(tmp_path):
+    path = os.path.join(os.fsencode(tmp_path), b"data-\xff.bin")
+    payload = np.arange(16, dtype=np.uint8)
+    with open(path, "wb") as f:
+        f.write(payload.tobytes())
+
+    for path_arg in (path, os.fsdecode(path)):
+        with filesystem.open(path_arg, "r") as reader:
+            out = np.zeros(16, np.uint8)
+            assert reader.pread(out, 16, 0) == 16
+            np.testing.assert_array_equal(out, payload)
+
+
+def test_filesystem_open_rejects_invalid_paths(tmp_path):
+    path = tmp_path / "data"
+    path.write_bytes(bytes(16))
+    for path_arg in (
+        bytearray(os.fsencode(path)),
+        f"{path}\0.bin",
+        os.fsencode(path) + b"\0.bin",
+    ):
+        with pytest.raises(TypeError):
+            filesystem.open(path_arg, "r")
+
+
+def test_text_arguments_reject_bytes(tmp_path):
+    path = tmp_path / "data.bin"
+    path.write_bytes(bytes(16))
+    with pytest.raises(TypeError):
+        io.Device(b"cpu")
+    with pytest.raises(TypeError):
+        filesystem.open(path, b"r")

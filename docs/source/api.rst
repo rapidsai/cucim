@@ -9,6 +9,30 @@ Clara Submodules
     :members:
     :undoc-members:
 
+Path and text arguments
+-----------------------
+
+File path arguments accept ``str``, ``bytes``, or an ``os.PathLike`` object
+such as ``pathlib.Path``. These are the path of ``CuImage(path)``,
+``CuImage.save()``, ``filesystem.open()``, ``filesystem.CuFileDriver()``
+(``file_path``), and ``filesystem.discard_page_cache()``. A file name that is
+not valid UTF-8 can be passed as ``bytes`` or as an ``os.fsdecode()`` string.
+
+Other string arguments, such as ``dim_order``, device names, and the
+``filesystem.open()`` flags, accept only ``str``.
+
+.. versionchanged:: 26.12
+   These arguments now raise ``TypeError``. Earlier releases accepted them.
+
+   - A ``bytearray`` path.
+   - A path that contains an embedded NUL character. Earlier releases cut the
+     path at the NUL and opened the shorter path.
+   - ``bytes`` or ``bytearray`` for a string argument that is not a path.
+
+``CuImage.path`` and ``repr()`` of a ``CuImage`` decode the path as UTF-8. For
+an image opened from a file name that is not valid UTF-8, both raise
+``UnicodeDecodeError``.
+
 cache
 -----
 

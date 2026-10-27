@@ -5,6 +5,7 @@
 #ifndef PYCUCIM_FILESYSTEM_INIT_H
 #define PYCUCIM_FILESYSTEM_INIT_H
 
+#include <filesystem>
 #include <memory>
 #include <string>
 
@@ -20,7 +21,7 @@ class CuFileDriver;
 
 void init_filesystem(nb::module_ m);
 
-std::shared_ptr<CuFileDriver> py_open(const std::string& file_path, const std::string& flags, mode_t mode);
+std::shared_ptr<CuFileDriver> py_open(const std::filesystem::path& file_path, const std::string& flags, mode_t mode);
 ssize_t py_pread(
     const std::shared_ptr<CuFileDriver>& fd, nb::handle buf, size_t count, off_t file_offset, off_t buf_offset = 0);
 ssize_t py_pwrite(

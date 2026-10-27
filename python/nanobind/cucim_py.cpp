@@ -14,8 +14,10 @@
 #include <nanobind/nanobind.h>
 #include <nanobind/operators.h>
 #include <nanobind/stl/array.h>
+#include <nanobind/stl/filesystem.h>
 #include <nanobind/stl/set.h>
 #include <nanobind/stl/shared_ptr.h>
+#include <nanobind/stl/string.h>
 #include <nanobind/stl/vector.h>
 #include <nlohmann/json.hpp>
 
@@ -115,8 +117,9 @@ NB_MODULE(_cucim, m)
             nb::call_guard<nb::gil_scoped_release>());
 
     nb::class_<CuImage>(m, "CuImage", nb::dynamic_attr(), nb::is_weak_referenceable()) //
-        .def(nb::init<const std::string&>(), "path"_a, doc::CuImage::doc_CuImage,
-             nb::call_guard<nb::gil_scoped_release>()) //
+        .def(
+            "__init__", [](CuImage* self, const std::filesystem::path& path) { new (self) CuImage(path.native()); },
+            "path"_a, doc::CuImage::doc_CuImage, nb::call_guard<nb::gil_scoped_release>()) //
         .def_static("cache", &py_cache, doc::CuImage::doc_cache, //
                     "type"_a = nb::none(), "kwargs"_a) //
         .def_static("device_cache", &CuImage::device_cache, doc::CuImage::doc_device_cache,
@@ -177,7 +180,9 @@ NB_MODULE(_cucim, m)
         .def("associated_image", &py_associated_image, doc::CuImage::doc_associated_image, //
              "name"_a = "", //
              "device"_a = io::Device()) //
-        .def("save", &CuImage::save, doc::CuImage::doc_save, nb::call_guard<nb::gil_scoped_release>()) //
+        .def(
+            "save", [](const CuImage& cuimg, const std::filesystem::path& file_path) { cuimg.save(file_path.native()); },
+            doc::CuImage::doc_save, nb::call_guard<nb::gil_scoped_release>()) //
         .def("close", &CuImage::close, doc::CuImage::doc_close, nb::call_guard<nb::gil_scoped_release>()) //
         .def("__bool__", &CuImage::operator bool, nb::call_guard<nb::gil_scoped_release>()) //
         .def(
@@ -210,7 +215,7 @@ std::string get_plugin_root()
     return CuImage::get_framework()->get_plugin_root();
 }
 
-void set_plugin_root(std::string path)
+void set_plugin_root(const std::filesystem::path& path)
 {
     CuImage::get_framework()->set_plugin_root(path.c_str());
 }

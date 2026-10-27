@@ -6,6 +6,7 @@
 #include "io_py.h"
 #include "device_pydoc.h"
 
+#include <nanobind/stl/string.h>
 
 #include <cucim/io/device.h>
 

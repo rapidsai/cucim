@@ -6,6 +6,7 @@
 #ifndef PYCUCIM_CUIMAGE_PY_H
 #define PYCUCIM_CUIMAGE_PY_H
 
+#include <filesystem>
 #include <memory>
 #include <string>
 #include <vector>
@@ -37,7 +38,7 @@ class Profiler;
 }
 
 std::string get_plugin_root();
-void set_plugin_root(std::string path);
+void set_plugin_root(const std::filesystem::path& path);
 
 std::shared_ptr<cucim::cache::ImageCache> py_cache(nb::handle type, nb::kwargs kwargs);
 std::shared_ptr<cucim::profiler::Profiler> py_profiler(nb::kwargs kwargs);

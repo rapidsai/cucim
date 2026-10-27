@@ -5,6 +5,7 @@
 
 import gc
 import os
+import pathlib
 import threading
 import time
 import weakref
@@ -148,7 +149,6 @@ def test_read_region_argument_forms(testimg_tiff_stripe_32x24_16_jpeg):
         img.read_region(location=(4, 2), size=(16, 8), level=0),
         img.read_region((4, 2), (16, 8), 0, device="cpu"),
         img.read_region((4, 2), (16, 8), 0, device=io.Device("cpu")),
-        img.read_region((4, 2), (16, 8), 0, device=b"cpu"),
         img.read_region((4, 2), (16, 8), C=0),
     ):
         np.testing.assert_array_equal(np.asarray(region), expected)
@@ -333,12 +333,50 @@ def test_preferred_memory_capacity(testimg_tiff_stripe_4096x4096_256_jpeg):
         cache.preferred_memory_capacity(None)
 
 
-def test_pybind11_argument_conversions(testimg_tiff_stripe_32x24_16_jpeg):
+@pytest.mark.parametrize(
+    "as_path", [str, os.fsencode, pathlib.Path], ids=["str", "bytes", "pathlib"]
+)
+def test_path_arguments(testimg_tiff_stripe_32x24_16_jpeg, tmp_path, as_path):
     path = testimg_tiff_stripe_32x24_16_jpeg
-    for path_arg in (os.fsencode(path), bytearray(os.fsencode(path))):
+    img = CuImage(as_path(path))
+    assert img.path == path
+    region = img.read_region((0, 0), (32, 24))
+
+    out = tmp_path / "region.ppm"
+    region.save(as_path(out))
+    assert out.read_bytes() == (
+        b"P6\n32\n24\n255\n" + np.asarray(region).tobytes()
+    )
+
+
+def test_open_non_utf8_file_name(testimg_tiff_stripe_32x24_16_jpeg, tmp_path):
+    link = os.path.join(os.fsencode(tmp_path), b"slide-\xff.tif")
+    os.symlink(os.fsencode(testimg_tiff_stripe_32x24_16_jpeg), link)
+    for path_arg in (link, os.fsdecode(link)):
         assert CuImage(path_arg).shape == [24, 32, 3]
-    img = CuImage(path)
-    assert img.size(b"XY") == [32, 24]
+
+
+def test_invalid_paths_are_rejected(testimg_tiff_stripe_32x24_16_jpeg):
+    path = testimg_tiff_stripe_32x24_16_jpeg
+    for path_arg in (
+        bytearray(os.fsencode(path)),
+        f"{path}\0.tif",
+        os.fsencode(path) + b"\0.tif",
+    ):
+        with pytest.raises(TypeError):
+            CuImage(path_arg)
+
+
+def test_text_arguments_reject_bytes(testimg_tiff_stripe_32x24_16_jpeg):
+    img = CuImage(testimg_tiff_stripe_32x24_16_jpeg)
+    with pytest.raises(TypeError):
+        img.size(b"XY")
+    with pytest.raises(TypeError):
+        img.read_region((0, 0), (8, 8), device=b"cpu")
+
+
+def test_bool_argument_conversions(testimg_tiff_stripe_32x24_16_jpeg):
+    img = CuImage(testimg_tiff_stripe_32x24_16_jpeg)
     locations = [(0, 0), (8, 8)]
     for flag in (np.True_, 1, 0, None, 2.0):
         batches = img.read_region(
