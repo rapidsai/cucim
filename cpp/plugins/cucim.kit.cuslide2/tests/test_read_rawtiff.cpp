@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020-2025, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -15,6 +15,7 @@
 #include <ctime>
 #include <fcntl.h>
 #include <unistd.h>
+#include <format>
 #include <string_view>
 #include <cucim/logger/timer.h>
 #include <iostream>
@@ -30,7 +31,7 @@
         cuda_status = stmt;                                                                                            \
         if (cudaSuccess != cuda_status)                                                                                \
         {                                                                                                              \
-            INFO(fmt::format("Error message: {}", cudaGetErrorString(cuda_status)));                                   \
+            INFO(std::format("Error message: {}", cudaGetErrorString(cuda_status)));                                   \
             REQUIRE(cudaSuccess == cuda_status);                                                                       \
         }                                                                                                              \
     }
@@ -40,7 +41,7 @@
         err = stmt;                                                                                                    \
         if (err < 0)                                                                                                   \
         {                                                                                                              \
-            INFO(fmt::format("Error message: {}", std::strerror(errno)));                                              \
+            INFO(std::format("Error message: {}", std::strerror(errno)));                                              \
             REQUIRE(err >= 0);                                                                                         \
         }                                                                                                              \
     }
@@ -99,8 +100,8 @@ TEST_CASE("Verify raw tiff read", "[test_read_rawtiff.cpp]")
     tif->ifd(0)->write_offsets_(input_file.c_str());
 
 
-    std::ifstream offsets(fmt::format("{}.offsets", input_file), std::ios::in | std::ios::binary);
-    std::ifstream bytecounts(fmt::format("{}.bytecounts", input_file), std::ios::in | std::ios::binary);
+    std::ifstream offsets(std::format("{}.offsets", input_file), std::ios::in | std::ios::binary);
+    std::ifstream bytecounts(std::format("{}.bytecounts", input_file), std::ios::in | std::ios::binary);
 
     // Read image piece count
     uint32_t image_piece_count_ = 0;

@@ -6,7 +6,7 @@
 #include "cufile_py.h"
 #include "cufile_pydoc.h"
 
-#include <fmt/format.h>
+#include <format>
 
 #include <cucim/filesystem/cufile_driver.h>
 
@@ -34,7 +34,7 @@ ssize_t fd_pread(const CuFileDriver& fd, nb::handle obj, size_t count, off_t fil
     if (memory_size && count > memory_size)
     {
         throw std::runtime_error(
-            fmt::format("[Error] 'count' ({}) is larger than the size of the array object ({})!", count, memory_size));
+            std::format("[Error] 'count' ({}) is larger than the size of the array object ({})!", count, memory_size));
     }
 
     return fd.pread(buf, count, file_offset, buf_offset);
@@ -53,7 +53,7 @@ ssize_t fd_pwrite(CuFileDriver& fd, nb::handle obj, size_t count, off_t file_off
     if (memory_size && count > memory_size)
     {
         throw std::runtime_error(
-            fmt::format("[Error] 'count' ({}) is larger than the size of the array object ({})!", count, memory_size));
+            std::format("[Error] 'count' ({}) is larger than the size of the array object ({})!", count, memory_size));
     }
 
     return fd.pwrite(buf, count, file_offset, buf_offset);

@@ -6,6 +6,7 @@
 #include "filesystem_py.h"
 #include "filesystem_pydoc.h"
 
+#include <format>
 #include <fmt/format.h>
 #include <nanobind/stl/filesystem.h>
 #include <nanobind/stl/shared_ptr.h>
@@ -67,7 +68,7 @@ void init_filesystem(nb::module_ fs)
             },
             "type"_a.none(), "value"_a.none(), "traceback"_a.none())
         .def("__repr__", [](const CuFileDriver& fd) {
-            return fmt::format("<cucim.clara.filesystem.CuFileDriver path:{}>", fd.path());
+            return std::format("<cucim.clara.filesystem.CuFileDriver path:{}>", fd.path());
         });
 
     fs.def("is_gds_available", &is_gds_available, doc::doc_is_gds_available, nb::call_guard<nb::gil_scoped_release>())

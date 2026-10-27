@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 #define CUCIM_EXPORTS
@@ -11,7 +11,6 @@
 #include "cucim/io/format/image_format.h"
 #include "tiff/tiff.h"
 
-#include <fmt/format.h>
 #include <nlohmann/json.hpp>
 
 #include <array>
@@ -19,6 +18,7 @@
 #include <cstring>
 #include <fcntl.h>
 #include <filesystem>
+#include <format>
 #include <memory>
 
 using json = nlohmann::json;
@@ -115,7 +115,7 @@ static bool CUCIM_ABI parser_parse(CuCIMFileHandle_ptr handle_ptr, cucim::io::fo
         if (main_ifd_list.size() != 1)
         {
             throw std::runtime_error(
-                fmt::format("This format has more than one image with Subfile Type 0 so cannot be loaded!"));
+                std::format("This format has more than one image with Subfile Type 0 so cannot be loaded!"));
         }
     }
 

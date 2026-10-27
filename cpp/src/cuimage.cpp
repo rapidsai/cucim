@@ -6,6 +6,7 @@
 #include "cucim/cuimage.h"
 
 #include <cstring>
+#include <format>
 #include <fstream>
 #include <iostream>
 #include <memory>
@@ -101,7 +102,7 @@ std::vector<int64_t> ResolutionInfo::level_dimension(uint16_t level) const
 {
     if (level >= level_count_)
     {
-        throw std::invalid_argument(fmt::format("'level' should be less than {}", level_count_));
+        throw std::invalid_argument(std::format("'level' should be less than {}", level_count_));
     }
     std::vector<int64_t> result;
     auto start_index = level_dimensions_.begin() + (level * level_ndim_);
@@ -116,7 +117,7 @@ float ResolutionInfo::level_downsample(uint16_t level) const
 {
     if (level >= level_count_)
     {
-        throw std::invalid_argument(fmt::format("'level' should be less than {}", level_count_));
+        throw std::invalid_argument(std::format("'level' should be less than {}", level_count_));
     }
     return level_downsamples_.at(level);
 }
@@ -128,7 +129,7 @@ std::vector<uint32_t> ResolutionInfo::level_tile_size(uint16_t level) const
 {
     if (level >= level_count_)
     {
-        throw std::invalid_argument(fmt::format("'level' should be less than {}", level_count_));
+        throw std::invalid_argument(std::format("'level' should be less than {}", level_count_));
     }
     std::vector<uint32_t> result;
     auto start_index = level_tile_sizes_.begin() + (level * level_ndim_);
@@ -772,7 +773,7 @@ CuImage CuImage::read_region(std::vector<int64_t>&& location,
             const char* dims_str = image_metadata_->dims;
             if (strncmp("YXC", dims_str, 4) != 0)
             {
-                throw std::runtime_error(fmt::format("[Error] The image is not in YXC format! ({})", dims_str));
+                throw std::runtime_error(std::format("[Error] The image is not in YXC format! ({})", dims_str));
             }
             if (image_data_->container.data == nullptr)
             {
@@ -856,7 +857,7 @@ CuImage CuImage::read_region(std::vector<int64_t>&& location,
         int64_t dim_index = dim_indices_.index(dims[index]);
         if (dim_index < 0)
         {
-            throw std::runtime_error(fmt::format("[Error] Invalid dimension name: {}", dims[index]));
+            throw std::runtime_error(std::format("[Error] Invalid dimension name: {}", dims[index]));
         }
 
         const char* str_ptr = image_metadata_->spacing_units[dim_index];
@@ -1074,11 +1075,11 @@ void CuImage::ensure_init()
             // TODO: Here 'LINUX' path separator is used. Need to make it generalize once filesystem library is
             // available.
             std::string plugin_file_path = (plugin_root && *plugin_root != 0) ?
-                                               fmt::format("{}/{}", plugin_root, plugin_name) :
-                                               fmt::format("{}", plugin_name);
+                                               std::format("{}/{}", plugin_root, plugin_name) :
+                                               std::format("{}", plugin_name);
             if (!cucim::util::file_exists(plugin_file_path.c_str()))
             {
-                plugin_file_path = fmt::format("{}", plugin_name);
+                plugin_file_path = std::format("{}", plugin_name);
             }
 
             const auto& image_formats =
@@ -1088,7 +1089,7 @@ void CuImage::ensure_init()
 
             if (image_formats == nullptr)
             {
-                throw std::runtime_error(fmt::format("Dependent library '{}' cannot be loaded!", plugin_file_path));
+                throw std::runtime_error(std::format("Dependent library '{}' cannot be loaded!", plugin_file_path));
             }
         }
     }
@@ -1102,7 +1103,7 @@ bool CuImage::crop_image(const io::format::ImageReaderRegionRequestDesc& request
 
     if (request.level >= image_metadata_->resolution_info.level_count)
     {
-        throw std::invalid_argument(fmt::format("Invalid level ({}) in the request! (Should be < {})", request.level,
+        throw std::invalid_argument(std::format("Invalid level ({}) in the request! (Should be < {})", request.level,
                                                 image_metadata_->resolution_info.level_count));
     }
 
@@ -1119,29 +1120,29 @@ bool CuImage::crop_image(const io::format::ImageReaderRegionRequestDesc& request
         if (request.location[i] < 0)
         {
             throw std::invalid_argument(
-                fmt::format("Invalid location ({}) in the request! (Should be >= 0)", request.location[i]));
+                std::format("Invalid location ({}) in the request! (Should be >= 0)", request.location[i]));
         }
         if (request.size[i] <= 0)
         {
-            throw std::invalid_argument(fmt::format("Invalid size ({}) in the request! (Should be > 0)", request.size[i]));
+            throw std::invalid_argument(std::format("Invalid size ({}) in the request! (Should be > 0)", request.size[i]));
         }
     }
     if (request.location[0] + request.size[0] > original_img_width)
     {
         throw std::invalid_argument(
-            fmt::format("Invalid location/size (it exceeds the image width {})", original_img_width));
+            std::format("Invalid location/size (it exceeds the image width {})", original_img_width));
     }
     if (request.location[1] + request.size[1] > original_img_height)
     {
         throw std::invalid_argument(
-            fmt::format("Invalid location/size (it exceeds the image height {})", original_img_height));
+            std::format("Invalid location/size (it exceeds the image height {})", original_img_height));
     }
 
     std::string device_name(request.device);
 
     if (request.shm_name)
     {
-        device_name = device_name + fmt::format("[{}]", request.shm_name); // TODO: check performance
+        device_name = device_name + std::format("[{}]", request.shm_name); // TODO: check performance
     }
     cucim::io::Device out_device(device_name);
 
@@ -1229,7 +1230,7 @@ bool CuImage::crop_image(const io::format::ImageReaderRegionRequestDesc& request
     case cucim::io::DeviceType::kCUDAManaged:
     case cucim::io::DeviceType::kCPUShared:
     case cucim::io::DeviceType::kCUDAShared:
-        throw std::runtime_error(fmt::format("Device type {} not supported!", static_cast<int>(in_device.type())));
+        throw std::runtime_error(std::format("Device type {} not supported!", static_cast<int>(in_device.type())));
         break;
     }
 

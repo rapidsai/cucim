@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -14,6 +14,7 @@
 #include <unistd.h>
 
 #include <chrono>
+#include <format>
 
 #include <cuda_runtime.h>
 #include <fmt/format.h>
@@ -43,7 +44,7 @@ static std::string get_fd_path(int fd)
 
     char real_path[PATH_MAX];
 
-    std::string src_path = fmt::format("/proc/{}/fd/{}", pid, fd);
+    std::string src_path = std::format("/proc/{}/fd/{}", pid, fd);
 
     if ((file_path_len = readlink(src_path.c_str(), real_path, PATH_MAX - 1)) > 0)
     {
@@ -51,7 +52,7 @@ static std::string get_fd_path(int fd)
     }
     else
     {
-        throw std::runtime_error(fmt::format("Cannot get the real path from process entries ({})", strerror(errno)));
+        throw std::runtime_error(std::format("Cannot get the real path from process entries ({})", strerror(errno)));
     }
 
     return std::string(real_path);
@@ -131,11 +132,11 @@ std::shared_ptr<CuFileDriver> open(const char* file_path, const char* flags, mod
     {
         if (errno == ENOENT)
         {
-            throw std::invalid_argument(fmt::format("File '{}' doesn't exist!", file_path));
+            throw std::invalid_argument(std::format("File '{}' doesn't exist!", file_path));
         }
         if (file_type == FileHandleType::kPosix)
         {
-            throw std::invalid_argument(fmt::format("File '{}' cannot be open!", file_path));
+            throw std::invalid_argument(std::format("File '{}' cannot be open!", file_path));
         }
         else // if kFileHandlePosixODirect
         {
@@ -145,7 +146,7 @@ std::shared_ptr<CuFileDriver> open(const char* file_path, const char* flags, mod
                 stderr, "The file {} doesn't support O_DIRECT. Trying to open the file without O_DIRECT\n", file_path);
             if (fd < 0)
             {
-                throw std::invalid_argument(fmt::format("File '{}' cannot be open!", file_path));
+                throw std::invalid_argument(std::format("File '{}' cannot be open!", file_path));
             }
             file_type = FileHandleType::kPosix; // POSIX
         }
@@ -187,7 +188,7 @@ CuFileDriver::CuFileDriver(int fd, bool no_gds, bool use_mmap, const char* file_
     flags = fcntl(fd, F_GETFL);
     if (flags < 0)
     {
-        throw std::runtime_error(fmt::format("[Error] fcntl failed for fd {} ({})", fd, std::strerror(errno)));
+        throw std::runtime_error(std::format("[Error] fcntl failed for fd {} ({})", fd, std::strerror(errno)));
     }
     file_flags_ = flags;
 
@@ -226,7 +227,7 @@ CuFileDriver::CuFileDriver(int fd, bool no_gds, bool use_mmap, const char* file_
         if (flags & (O_RDWR || O_WRONLY))
         {
             throw std::runtime_error(
-                fmt::format("[Error] Memory-mapped IO for writable file descriptor is not supported!"));
+                std::format("[Error] Memory-mapped IO for writable file descriptor is not supported!"));
         }
 
         mmap_ptr_ = mmap((void*)0, file_size_, PROT_READ, MAP_SHARED, fd, 0);
@@ -237,7 +238,7 @@ CuFileDriver::CuFileDriver(int fd, bool no_gds, bool use_mmap, const char* file_
         else
         {
             mmap_ptr_ = nullptr;
-            throw std::runtime_error(fmt::format("[Error] failed to call mmap ({})", std::strerror(errno)));
+            throw std::runtime_error(std::format("[Error] failed to call mmap ({})", std::strerror(errno)));
         }
     }
 }

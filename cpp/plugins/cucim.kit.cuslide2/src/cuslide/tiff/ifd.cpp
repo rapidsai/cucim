@@ -10,6 +10,7 @@
 #include <unistd.h>
 #include <algorithm>
 #include <cstdlib>
+#include <format>
 #include <iostream>
 #include <memory>
 #include <random>
@@ -99,7 +100,7 @@ IFD::IFD(TIFF* tiff, uint16_t index, ifd_offset_t offset) : tiff_(tiff), ifd_ind
     }
 
     // Fallback: throw error if nvImageCodec parser not available
-    throw std::runtime_error(fmt::format(
+    throw std::runtime_error(std::format(
         "IFD constructor (offset-based) requires libtiff, which is not available in pure nvImageCodec build. "
         "Use IFD(TIFF*, uint16_t, IfdInfo&) constructor instead."));
 #else
@@ -327,14 +328,14 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
 #ifdef CUCIM_HAS_NVIMGCODEC
     if (!nvimgcodec_sub_stream_)
     {
-        throw std::runtime_error(fmt::format(
+        throw std::runtime_error(std::format(
             "IFD[{}]: nvImageCodec parser not available", ifd_index_));
     }
 
     std::string device_name(request->device);
     if (request->shm_name)
     {
-        device_name = device_name + fmt::format("[{}]", request->shm_name);
+        device_name = device_name + std::format("[{}]", request->shm_name);
     }
     cucim::io::Device out_device(device_name);
 
@@ -972,13 +973,13 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
             }
         }
 
-        throw std::runtime_error(fmt::format(
+        throw std::runtime_error(std::format(
             "Failed to decode IFD[{}] with nvImageCodec. ROI: ({},{}) {}x{}",
             ifd_index_, sx, sy, w, h));
     }
 #else
     // If nvImageCodec not available, throw error
-    throw std::runtime_error(fmt::format(
+    throw std::runtime_error(std::format(
         "IFD[{}]: This library requires nvImageCodec for image decoding.", ifd_index_));
 #endif
 }

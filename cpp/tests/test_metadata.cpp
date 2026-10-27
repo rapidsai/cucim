@@ -13,6 +13,7 @@
 #include <fmt/format.h>
 #include <chrono>
 #include <cstdlib>
+#include <format>
 #include <memory>
 #include <fcntl.h>
 #include <unistd.h>
@@ -32,7 +33,7 @@
         cuda_status = stmt;                                                                                            \
         if (cudaSuccess != cuda_status)                                                                                \
         {                                                                                                              \
-            INFO(fmt::format("Error message: {}", cudaGetErrorString(cuda_status)));                                   \
+            INFO(std::format("Error message: {}", cudaGetErrorString(cuda_status)));                                   \
             REQUIRE(cudaSuccess == cuda_status);                                                                       \
         }                                                                                                              \
     }
@@ -42,7 +43,7 @@
         err = stmt;                                                                                                    \
         if (err < 0)                                                                                                   \
         {                                                                                                              \
-            INFO(fmt::format("Error message: {}", std::strerror(errno)));                                              \
+            INFO(std::format("Error message: {}", std::strerror(errno)));                                              \
             REQUIRE(err >= 0);                                                                                         \
         }                                                                                                              \
     }
@@ -83,10 +84,10 @@ TEST_CASE("Verify metadata", "[test_metadata.cpp]")
     image_format->formats[0].image_parser.parse(file_handle.get(), &metadata.desc());
 
     // Using fmt::print() has a problem with TestMate VSCode plugin (output is not caught by the plugin)
-    std::cout << fmt::format("metadata: {}\n", metadata.desc().raw_data);
+    std::cout << std::format("metadata: {}\n", metadata.desc().raw_data);
     const uint8_t* buf = metadata.get_buffer();
     const uint8_t* buf2 = static_cast<uint8_t*>(metadata.allocate(1));
-    std::cout << fmt::format("test: {}\n", buf2 - buf);
+    std::cout << std::format("test: {}\n", buf2 - buf);
 
     // cucim::CuImage img{ g_config.get_input_path("private/philips_tiff_000.tif") };
     // const auto& img_metadata = img.metadata();

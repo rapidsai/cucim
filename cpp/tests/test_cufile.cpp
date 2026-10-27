@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -7,12 +7,12 @@
 #include "config.h"
 
 #include <catch2/catch_test_macros.hpp>
-#include <fmt/format.h>
 #include <cucim/filesystem/cufile_driver.h>
 #include <chrono>
 #include <cstdlib>
 #include <fcntl.h>
 #include <unistd.h>
+#include <format>
 #include <string_view>
 // Test
 #include <iostream>
@@ -28,7 +28,7 @@
         cuda_status = stmt;                                                                                            \
         if (cudaSuccess != cuda_status)                                                                                \
         {                                                                                                              \
-            INFO(fmt::format("Error message: {}", cudaGetErrorString(cuda_status)));                                   \
+            INFO(std::format("Error message: {}", cudaGetErrorString(cuda_status)));                                   \
             REQUIRE(cudaSuccess == cuda_status);                                                                       \
         }                                                                                                              \
     }
@@ -38,7 +38,7 @@
         err = stmt;                                                                                                    \
         if (err < 0)                                                                                                   \
         {                                                                                                              \
-            INFO(fmt::format("Error message: {}", std::strerror(errno)));                                              \
+            INFO(std::format("Error message: {}", std::strerror(errno)));                                              \
             REQUIRE(err >= 0);                                                                                         \
         }                                                                                                              \
     }
@@ -75,7 +75,7 @@ TEST_CASE("Verify libcufile usage", "[test_cufile.cpp]")
     constexpr int TEST_PARAM_LEN = sizeof(test_counts) / sizeof(test_counts[0]);
     uint8_t test_data[BLOCK_SECTOR_SIZE * 3];
 
-    std::string output_file = fmt::format("{}/test_cufile.raw", g_config.temp_folder);
+    std::string output_file = std::format("{}/test_cufile.raw", g_config.temp_folder);
 
     ::srand(777);
     for (int i = 0; i < BLOCK_SECTOR_SIZE * 3; i++)
@@ -109,7 +109,7 @@ TEST_CASE("Verify libcufile usage", "[test_cufile.cpp]")
         uint8_t* aligned_device_managed =
             reinterpret_cast<uint8_t*>(ALIGN_UP(unaligned_device_managed, BLOCK_SECTOR_SIZE));
 
-        SECTION(fmt::format("Write Test with different parameters (offset:{}, count:{})", test_file_offset, test_count))
+        SECTION(std::format("Write Test with different parameters (offset:{}, count:{})", test_file_offset, test_count))
         {
             {
                 INFO("# unaligned_host");
@@ -119,10 +119,10 @@ TEST_CASE("Verify libcufile usage", "[test_cufile.cpp]")
                 ssize_t reference_read_cnt = 0;
                 for (int flag_idx = 0; flag_idx < W_FLAG_LEN; ++flag_idx)
                 {
-                    INFO(fmt::format("flag_index: {} ({})\n  count: {}\n  file_offset: {}  buf_offset: {}\n", flag_idx,
+                    INFO(std::format("flag_index: {} ({})\n  count: {}\n  file_offset: {}  buf_offset: {}\n", flag_idx,
                                      test_flags_desc[flag_idx], test_count, test_file_offset, test_buf_offset));
                     {
-                        INFO(fmt::format("memory: unaligned_host \n"));
+                        INFO(std::format("memory: unaligned_host \n"));
                         create_test_file(output_file.c_str(), BLOCK_SECTOR_SIZE * 3);
 
                         auto fd = cucim::filesystem::open(output_file.c_str(), test_w_flags[flag_idx]);
@@ -179,10 +179,10 @@ TEST_CASE("Verify libcufile usage", "[test_cufile.cpp]")
                 ssize_t reference_read_cnt = 0;
                 for (int flag_idx = 0; flag_idx < W_FLAG_LEN; ++flag_idx)
                 {
-                    INFO(fmt::format("flag_index: {} ({})\n  count: {}\n  file_offset: {}  buf_offset: {}\n", flag_idx,
+                    INFO(std::format("flag_index: {} ({})\n  count: {}\n  file_offset: {}  buf_offset: {}\n", flag_idx,
                                      test_flags_desc[flag_idx], test_count, test_file_offset, test_buf_offset));
                     {
-                        INFO(fmt::format("memory: aligned_host \n"));
+                        INFO(std::format("memory: aligned_host \n"));
                         create_test_file(output_file.c_str(), BLOCK_SECTOR_SIZE * 3);
 
                         auto fd = cucim::filesystem::open(output_file.c_str(), test_w_flags[flag_idx]);
@@ -239,10 +239,10 @@ TEST_CASE("Verify libcufile usage", "[test_cufile.cpp]")
                     ssize_t reference_read_cnt = 0;
                     for (int flag_idx = 0; flag_idx < W_FLAG_LEN; ++flag_idx)
                     {
-                        INFO(fmt::format("flag_index: {} ({})\n  count: {}\n  file_offset: {}  buf_offset: {}\n", flag_idx,
+                        INFO(std::format("flag_index: {} ({})\n  count: {}\n  file_offset: {}  buf_offset: {}\n", flag_idx,
                                          test_flags_desc[flag_idx], test_count, test_file_offset, test_buf_offset));
                         {
-                            INFO(fmt::format("memory: unaligned_device \n"));
+                            INFO(std::format("memory: unaligned_device \n"));
                             create_test_file(output_file.c_str(), BLOCK_SECTOR_SIZE * 3);
 
                             auto fd = cucim::filesystem::open(output_file.c_str(), test_w_flags[flag_idx]);
@@ -300,10 +300,10 @@ TEST_CASE("Verify libcufile usage", "[test_cufile.cpp]")
                     ssize_t reference_read_cnt = 0;
                     for (int flag_idx = 0; flag_idx < W_FLAG_LEN; ++flag_idx)
                     {
-                        INFO(fmt::format("flag_index: {} ({})\n  count: {}\n  file_offset: {}  buf_offset: {}\n", flag_idx,
+                        INFO(std::format("flag_index: {} ({})\n  count: {}\n  file_offset: {}  buf_offset: {}\n", flag_idx,
                                          test_flags_desc[flag_idx], test_count, test_file_offset, test_buf_offset));
                         {
-                            INFO(fmt::format("memory: aligned_device \n"));
+                            INFO(std::format("memory: aligned_device \n"));
                             create_test_file(output_file.c_str(), BLOCK_SECTOR_SIZE * 3);
 
                             auto fd = cucim::filesystem::open(output_file.c_str(), test_w_flags[flag_idx]);
@@ -362,10 +362,10 @@ TEST_CASE("Verify libcufile usage", "[test_cufile.cpp]")
                     ssize_t reference_read_cnt = 0;
                     for (int flag_idx = 0; flag_idx < W_FLAG_LEN; ++flag_idx)
                     {
-                        INFO(fmt::format("flag_index: {} ({})\n  count: {}\n  file_offset: {}  buf_offset: {}\n", flag_idx,
+                        INFO(std::format("flag_index: {} ({})\n  count: {}\n  file_offset: {}  buf_offset: {}\n", flag_idx,
                                          test_flags_desc[flag_idx], test_count, test_file_offset, test_buf_offset));
                         {
-                            INFO(fmt::format("memory: unaligned_device (pinned host)\n"));
+                            INFO(std::format("memory: unaligned_device (pinned host)\n"));
                             create_test_file(output_file.c_str(), BLOCK_SECTOR_SIZE * 3);
 
                             auto fd = cucim::filesystem::open(output_file.c_str(), test_w_flags[flag_idx]);
@@ -425,10 +425,10 @@ TEST_CASE("Verify libcufile usage", "[test_cufile.cpp]")
                     ssize_t reference_read_cnt = 0;
                     for (int flag_idx = 0; flag_idx < W_FLAG_LEN; ++flag_idx)
                     {
-                        INFO(fmt::format("flag_index: {} ({})\n  count: {}\n  file_offset: {}  buf_offset: {}\n", flag_idx,
+                        INFO(std::format("flag_index: {} ({})\n  count: {}\n  file_offset: {}  buf_offset: {}\n", flag_idx,
                                          test_flags_desc[flag_idx], test_count, test_file_offset, test_buf_offset));
                         {
-                            INFO(fmt::format("memory: aligned_device (pinned host)\n"));
+                            INFO(std::format("memory: aligned_device (pinned host)\n"));
                             create_test_file(output_file.c_str(), BLOCK_SECTOR_SIZE * 3);
 
                             auto fd = cucim::filesystem::open(output_file.c_str(), test_w_flags[flag_idx]);
@@ -490,10 +490,10 @@ TEST_CASE("Verify libcufile usage", "[test_cufile.cpp]")
                     ssize_t reference_read_cnt = 0;
                     for (int flag_idx = 0; flag_idx < W_FLAG_LEN; ++flag_idx)
                     {
-                        INFO(fmt::format("flag_index: {} ({})\n  count: {}\n  file_offset: {}  buf_offset: {}\n", flag_idx,
+                        INFO(std::format("flag_index: {} ({})\n  count: {}\n  file_offset: {}  buf_offset: {}\n", flag_idx,
                                          test_flags_desc[flag_idx], test_count, test_file_offset, test_buf_offset));
                         {
-                            INFO(fmt::format("memory: unaligned_device (managed)\n"));
+                            INFO(std::format("memory: unaligned_device (managed)\n"));
                             create_test_file(output_file.c_str(), BLOCK_SECTOR_SIZE * 3);
 
                             auto fd = cucim::filesystem::open(output_file.c_str(), test_w_flags[flag_idx]);
@@ -554,10 +554,10 @@ TEST_CASE("Verify libcufile usage", "[test_cufile.cpp]")
                     ssize_t reference_read_cnt = 0;
                     for (int flag_idx = 0; flag_idx < W_FLAG_LEN; ++flag_idx)
                     {
-                        INFO(fmt::format("flag_index: {} ({})\n  count: {}\n  file_offset: {}  buf_offset: {}\n", flag_idx,
+                        INFO(std::format("flag_index: {} ({})\n  count: {}\n  file_offset: {}  buf_offset: {}\n", flag_idx,
                                          test_flags_desc[flag_idx], test_count, test_file_offset, test_buf_offset));
                         {
-                            INFO(fmt::format("memory: aligned_device (managed)\n"));
+                            INFO(std::format("memory: aligned_device (managed)\n"));
                             create_test_file(output_file.c_str(), BLOCK_SECTOR_SIZE * 3);
 
                             auto fd = cucim::filesystem::open(output_file.c_str(), test_w_flags[flag_idx]);
