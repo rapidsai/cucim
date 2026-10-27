@@ -1,10 +1,9 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef CUCIM_LOADER_TILE_INFO_H
-#define CUCIM_LOADER_TILE_INFO_H
+#pragma once
 
 #include "cucim/macros/api_header.h"
 
@@ -22,5 +21,3 @@ struct EXPORT_VISIBLE TileInfo
 };
 
 } // namespace cucim::loader
-
-#endif // CUCIM_LOADER_TILE_INFO_H

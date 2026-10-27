@@ -1,9 +1,8 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
-#ifndef PYCUCIM_PROFILER_PROFILER_PYDOC_H
-#define PYCUCIM_PROFILER_PROFILER_PYDOC_H
+#pragma once
 
 #include "../macros.h"
 
@@ -21,5 +20,3 @@ Traces method executions with NVTX.
 )doc")
 
 } // namespace cucim::profiler::doc::Profiler
-
-#endif // PYCUCIM_PROFILER_PROFILER_PYDOC_H

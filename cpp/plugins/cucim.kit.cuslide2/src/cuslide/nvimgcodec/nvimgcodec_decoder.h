@@ -1,10 +1,9 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef CUSLIDE2_NVIMGCODEC_DECODER_H
-#define CUSLIDE2_NVIMGCODEC_DECODER_H
+#pragma once
 
 #ifdef CUCIM_HAS_NVIMGCODEC
 #include <nvimgcodec.h>
@@ -198,5 +197,3 @@ std::vector<BatchDecodeResult> wait_batch_decode(BatchDecodeState& state);
 #endif // CUCIM_HAS_NVIMGCODEC
 
 } // namespace cuslide2::nvimgcodec
-
-#endif // CUSLIDE2_NVIMGCODEC_DECODER_H

@@ -1,9 +1,8 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
-#ifndef PYCUCIM_CACHE_PYDOC_H
-#define PYCUCIM_CACHE_PYDOC_H
+#pragma once
 
 #include "../macros.h"
 
@@ -33,4 +32,3 @@ Returns:
 )doc")
 
 } // namespace cucim::cache::doc
-#endif // PYCUCIM_CACHE_PYDOC_H

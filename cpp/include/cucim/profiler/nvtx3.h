@@ -1,10 +1,9 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef CUCIM_PROFILER_NVTX3_H
-#define CUCIM_PROFILER_NVTX3_H
+#pragma once
 
 #include "cucim/core/framework.h"
 
@@ -232,5 +231,3 @@ DEFINE_EVENT(lzw_horAcc8, "lzw::LZWCleanup()", compute, 255, 0, 255, 0);
 #    define DEFINE_EVENT(id, msg, c, p, a, r, g, b) ((void)0)
 
 #endif // CUCIM_SUPPORT_NVTX
-
-#endif // CUCIM_PROFILER_NVTX3_H

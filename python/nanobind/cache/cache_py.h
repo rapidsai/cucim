@@ -3,8 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef PYCUCIM_CACHE_INIT_H
-#define PYCUCIM_CACHE_INIT_H
+#pragma once
 
 #include <optional>
 #include <vector>
@@ -35,6 +34,3 @@ uint32_t py_preferred_memory_capacity(nb::handle img,
                                       uint32_t bytes_per_pixel);
 
 } // namespace cucim::cache
-
-
-#endif // PYCUCIM_CACHE_INIT_H

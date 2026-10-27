@@ -1,10 +1,7 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
-
-#ifndef CUCIM_DYNAMIC_LIBRARY_H
-#define CUCIM_DYNAMIC_LIBRARY_H
 
 // Copyright (c) 2019-2020, NVIDIA CORPORATION. All rights reserved.
 //
@@ -106,5 +103,3 @@ inline void unload_library(LibraryHandle library_handle)
 
 } // namespace dynlib
 } // namespace cucim
-
-#endif // CUCIM_DYNAMIC_LIBRARY_H

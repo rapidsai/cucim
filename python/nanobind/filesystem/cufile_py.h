@@ -2,8 +2,7 @@
  * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
-#ifndef PYCUCIM_CUFILE_PY_H
-#define PYCUCIM_CUFILE_PY_H
+#pragma once
 
 #include "cucim/filesystem/cufile_driver.h"
 
@@ -18,5 +17,3 @@ namespace cucim::filesystem
 ssize_t fd_pread(const CuFileDriver& fd, nb::handle buf, size_t count, off_t file_offset, off_t buf_offset = 0);
 ssize_t fd_pwrite(CuFileDriver& fd, nb::handle buf, size_t count, off_t file_offset, off_t buf_offset = 0);
 } // namespace cucim::filesystem
-
-#endif // PYCUCIM_CUFILE_PY_H

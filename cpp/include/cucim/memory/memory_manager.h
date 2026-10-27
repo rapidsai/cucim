@@ -1,10 +1,9 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 //
-#ifndef CUCIM_MEMORY_MANAGER_H
-#define CUCIM_MEMORY_MANAGER_H
+#pragma once
 
 #include "cucim/macros/api_header.h"
 
@@ -82,4 +81,3 @@ CUCIM_API bool move_raster_from_host(void** target, size_t size, const cucim::io
 CUCIM_API bool move_raster_from_device(void** target, size_t size, const cucim::io::Device& dst_device);
 
 } // namespace cucim::memory
-#endif // CUCIM_MEMORY_MANAGER_H

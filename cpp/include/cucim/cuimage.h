@@ -3,8 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef CUCIM_CUIMAGE_H
-#define CUCIM_CUIMAGE_H
+#pragma once
 
 #include "cucim/core/framework.h"
 #include "cucim/cache/image_cache_manager.h"
@@ -268,5 +267,3 @@ template class CuImageIterator<CuImage>;
 template class CuImageIterator<const CuImage>;
 
 } // namespace cucim
-
-#endif // CUCIM_CUIMAGE_H
