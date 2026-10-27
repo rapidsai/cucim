@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 from pathlib import Path
@@ -13,6 +13,7 @@ from skimage.data import camera
 from skimage.io import imread
 
 from cucim.skimage._shared.fft import fftmodule as fft
+from cucim.skimage._shared.testing import load_sample_data
 from cucim.skimage._shared.utils import _supported_float_type
 from cucim.skimage.registration._masked_phase_cross_correlation import (
     _masked_phase_cross_correlation as masked_register_translation,
@@ -80,10 +81,7 @@ def test_masked_registration_random_masks():
 def test_masked_registration_3d_contiguous_mask():
     """masked_register_translation should be able to register translations
     between volumes with contiguous masks."""
-    data = pytest.importorskip("skimage.data")
-    if not hasattr(data, "brain"):
-        pytest.skip("brain data not available in this version of scikit-image")
-    ref_vol = cp.array(data.brain()[:, ::2, ::2])
+    ref_vol = cp.array(load_sample_data("brain")[:, ::2, ::2])
 
     offset = (1, -5, 10)
 

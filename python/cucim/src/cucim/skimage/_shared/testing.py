@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import inspect
@@ -42,10 +42,38 @@ def fetch(data_filename):
         try:
             # CuPy Backend: TODO: avoid call to non-public _fetch method
             return _fetch(data_filename)
-        except (ConnectionError, ModuleNotFoundError):
-            pytest.skip(f"Unable to download {data_filename}")
+        except (OSError, ModuleNotFoundError) as err:
+            # OSError also covers the HTTP errors raised by requests, e.g.
+            # 429 (Too Many Requests) when the data host rate limits CI.
+            pytest.skip(f"Unable to download {data_filename}: {err}")
     else:
         pytest.skip("skimage _fetch utility not found")
+
+
+def load_sample_data(name):
+    """Load a scikit-image sample dataset, skipping the test if unavailable.
+
+    Datasets that are not bundled with scikit-image (e.g. ``eagle``,
+    ``brain``, ``cells3d``) are downloaded on first use, which can fail.
+    Call this from a module-scoped fixture when several tests use the same
+    data, so that a failed download is attempted only once per module.
+
+    Parameters
+    ----------
+    name : str
+        Name of the loader function in ``skimage.data``.
+    """
+    from skimage import data
+
+    loader = getattr(data, name, None)
+    if loader is None:
+        pytest.skip(
+            f"{name} data not available in this version of scikit-image"
+        )
+    try:
+        return loader()
+    except (OSError, ModuleNotFoundError) as err:
+        pytest.skip(f"Unable to load {name} data: {err}")
 
 
 def assert_stacklevel(warnings, *, offset=-1):
