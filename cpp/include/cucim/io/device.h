@@ -1,10 +1,9 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef CUCIM_IO_DEVICE_H
-#define CUCIM_IO_DEVICE_H
+#pragma once
 
 #include "cucim/macros/api_header.h"
 
@@ -51,6 +50,3 @@ private:
 };
 
 } // namespace cucim::io
-
-
-#endif // CUCIM_IO_DEVICE_H

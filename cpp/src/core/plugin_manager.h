@@ -1,10 +1,9 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef CUCIM_PLUGIN_MANAGER_H
-#define CUCIM_PLUGIN_MANAGER_H
+#pragma once
 
 #include <cstddef>
 #include <limits>
@@ -55,4 +54,3 @@ private:
     std::unordered_set<size_t> plugin_indices_;
 };
 } // namespace cucim
-#endif // CUCIM_PLUGIN_MANAGER_H

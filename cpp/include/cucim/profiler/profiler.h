@@ -1,10 +1,9 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef CUCIM_PROFILER_PROFILER_H
-#define CUCIM_PROFILER_PROFILER_H
+#pragma once
 
 #include "cucim/core/framework.h"
 
@@ -47,5 +46,3 @@ protected:
 };
 
 } // namespace cucim::profiler
-
-#endif // CUCIM_PROFILER_PROFILER_H

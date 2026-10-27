@@ -1,9 +1,8 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
-#ifndef CUCIM_UTIL_CHECKED_MATH_H
-#define CUCIM_UTIL_CHECKED_MATH_H
+#pragma once
 
 #include <cstddef>
 #include <cstdint>
@@ -97,5 +96,3 @@ inline size_t checked_raster_size(size_t width, size_t height, size_t pixel_byte
 }
 
 } // namespace cucim::util
-
-#endif // CUCIM_UTIL_CHECKED_MATH_H
