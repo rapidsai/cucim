@@ -10,7 +10,7 @@ index 787def5..db8dfc1 100644
 
  set(libcuckoo_VERSION_MAJOR 0)
 diff --git a/libcuckoo/cuckoohash_map.hh b/libcuckoo/cuckoohash_map.hh
-index 88f1f43..a36c273 100644
+index 88f1f43..8206c88 100644
 --- a/libcuckoo/cuckoohash_map.hh
 +++ b/libcuckoo/cuckoohash_map.hh
 @@ -24,6 +24,10 @@
@@ -24,7 +24,18 @@ index 88f1f43..a36c273 100644
  #include "cuckoohash_config.hh"
  #include "cuckoohash_util.hh"
  #include "bucket_container.hh"
-@@ -841,8 +845,13 @@ private:
+@@ -705,7 +709,9 @@ private:
+   // true if the key is small and simple, which means using partial keys for
+   // lookup would probably slow us down
+   static constexpr bool is_simple() {
+-    return std::is_pod<key_type>::value && sizeof(key_type) <= 8;
++    // [cuCIM patch] std::is_pod is deprecated in C++20.
++    return std::is_standard_layout<key_type>::value &&
++           std::is_trivial<key_type>::value && sizeof(key_type) <= 8;
+   }
+
+   // Whether or not the data is nothrow-move-constructible.
+@@ -841,8 +847,13 @@ private:
    using rebind_alloc =
        typename std::allocator_traits<allocator_type>::template rebind_alloc<U>;
 

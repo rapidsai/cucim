@@ -23,7 +23,7 @@ add_executable(cuslide2_tests
         )
 set_target_properties(cuslide2_tests
     PROPERTIES
-        CXX_STANDARD 17
+        CXX_STANDARD 20
         CXX_STANDARD_REQUIRED YES
         CXX_EXTENSIONS NO
 )

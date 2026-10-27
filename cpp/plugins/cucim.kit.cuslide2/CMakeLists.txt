@@ -61,7 +61,7 @@ find_package(CUDAToolkit REQUIRED)
 # For Threads::Threads
 find_package(Threads REQUIRED)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED YES)
 
 # Include CUDA headers explicitly for VSCode intelli-sense
@@ -175,22 +175,22 @@ target_link_libraries(${CUCIM_PLUGIN_NAME} PRIVATE cuslide2_core)
 # Compile options
 set_target_properties(cuslide2_core
     PROPERTIES
-        CXX_STANDARD 17
+        CXX_STANDARD 20
         CXX_STANDARD_REQUIRED YES
         CXX_EXTENSIONS NO
 )
-target_compile_features(cuslide2_core PRIVATE cxx_std_17)
+target_compile_features(cuslide2_core PRIVATE cxx_std_20)
 target_compile_options(cuslide2_core PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-Werror -Wall -Wextra>)
 
 set_target_properties(${CUCIM_PLUGIN_NAME}
     PROPERTIES
-        CXX_STANDARD 17
+        CXX_STANDARD 20
         CXX_STANDARD_REQUIRED YES
         CXX_EXTENSIONS NO
         SOVERSION ${PROJECT_VERSION_MAJOR}
         VERSION ${PROJECT_VERSION}
 )
-target_compile_features(${CUCIM_PLUGIN_NAME} PRIVATE cxx_std_17)
+target_compile_features(${CUCIM_PLUGIN_NAME} PRIVATE cxx_std_20)
 # Use generator expression to avoid `nvcc fatal   : Value '-std=c++17' is not defined for option 'Werror'`
 target_compile_options(${CUCIM_PLUGIN_NAME} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-Werror -Wall -Wextra>)
 
