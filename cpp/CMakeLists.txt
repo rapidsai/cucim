@@ -110,7 +110,7 @@ add_library(${CUCIM_PACKAGE_NAME}
 # Compile options
 set_target_properties(${CUCIM_PACKAGE_NAME}
     PROPERTIES
-        CXX_STANDARD 17
+        CXX_STANDARD 20
         CXX_STANDARD_REQUIRED YES
         CXX_EXTENSIONS NO
         SOVERSION ${PROJECT_VERSION_MAJOR}
@@ -118,7 +118,7 @@ set_target_properties(${CUCIM_PACKAGE_NAME}
 )
 
 # Note: Looks like the following line causes error on CMake 3.18.4 (it is working on 3.18.2). Keeping it for now.
-set(CUCIM_REQUIRED_FEATURES cxx_std_17)
+set(CUCIM_REQUIRED_FEATURES cxx_std_20)
 target_compile_features(${CUCIM_PACKAGE_NAME} PRIVATE ${CUCIM_REQUIRED_FEATURES})
 # Use generator expression to avoid `nvcc fatal   : Value '-std=c++17' is not defined for option 'Werror'`
 target_compile_options(${CUCIM_PACKAGE_NAME}

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -439,7 +439,7 @@ void TIFF::construct_ifds()
     }
     else
     {
-        parser_file_hashes_.resize(1);
+        parser_file_hashes_.erase(parser_file_hashes_.begin() + 1, parser_file_hashes_.end());
     }
 
     uint32_t ifd_count = nvimgcodec_parser_->get_ifd_count();

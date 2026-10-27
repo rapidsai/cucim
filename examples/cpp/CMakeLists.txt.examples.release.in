@@ -59,7 +59,7 @@ add_executable(tiff_image tiff_image/main.cpp)
 
 set_target_properties(tiff_image
     PROPERTIES
-        CXX_STANDARD 17
+        CXX_STANDARD 20
         CXX_STANDARD_REQUIRED YES
         CXX_EXTENSIONS NO
         CUDA_STANDARD 17
@@ -68,7 +68,7 @@ set_target_properties(tiff_image
         CUDA_SEPARABLE_COMPILATION ON
         CUDA_RUNTIME_LIBRARY Shared
 )
-target_compile_features(tiff_image PRIVATE cxx_std_17 cuda_std_17)
+target_compile_features(tiff_image PRIVATE cxx_std_20 cuda_std_17)
 # Use generator expression to avoid `nvcc fatal   : Value '-std=c++17' is not defined for option 'Werror'`
 target_compile_options(tiff_image PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-Werror -Wall -Wextra>)
 target_link_libraries(tiff_image

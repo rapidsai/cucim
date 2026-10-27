@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -43,11 +43,11 @@ void Timer::print(const char* message)
 {
     if (message)
     {
-        fmt::print(stderr, message, elapsed_seconds_);
+        fmt::print(stderr, fmt::runtime(message), elapsed_seconds_);
     }
     else
     {
-        fmt::print(stderr, message_, elapsed_seconds_);
+        fmt::print(stderr, fmt::runtime(message_), elapsed_seconds_);
     }
 }
 
