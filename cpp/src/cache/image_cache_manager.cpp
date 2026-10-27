@@ -12,7 +12,7 @@
 #include "cucim/profiler/nvtx3.h"
 
 #include <cstdlib>
-#include <fmt/format.h>
+#include <format>
 
 
 namespace cucim::cache
@@ -28,7 +28,7 @@ uint32_t preferred_memory_capacity(const std::vector<uint64_t>& image_size,
     if (image_size.size() != 2 || tile_size.size() != 2 || patch_size.size() != 2)
     {
         throw std::invalid_argument(
-            fmt::format("Please specify arguments with correct size (image_size:{}, tile_size:{}, patch_size:{})!",
+            std::format("Please specify arguments with correct size (image_size:{}, tile_size:{}, patch_size:{})!",
                         image_size.size(), tile_size.size(), patch_size.size()));
     }
     // Number of tiles (x-axis)

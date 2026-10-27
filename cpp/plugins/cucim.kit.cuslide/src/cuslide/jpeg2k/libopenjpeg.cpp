@@ -3,7 +3,7 @@
  * SPDX-FileCopyrightText: Copyright (c) 2002-2014, Universite catholique de Louvain (UCL), Belgium
  * SPDX-FileCopyrightText: Copyright (c) 2002-2014, Professor Benoit Macq
  * SPDX-FileCopyrightText: Copyright (c) 2010-2011, Kaori Hagihara
- * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0 AND BSD-2-Clause
  */
 
@@ -16,7 +16,7 @@
 #include <cucim/memory/memory_manager.h>
 #include <cucim/profiler/nvtx3.h>
 #include <cucim/util/checked_math.h>
-#include <fmt/format.h>
+#include <format>
 #include <openjpeg.h>
 
 #include "color_conversion.h"
@@ -151,7 +151,7 @@ bool decode_libopenjpeg(int fd,
         {
             cucim_free(jpeg_buf);
             throw std::runtime_error(
-                fmt::format("Short read for JPEG2000 data: expected {} bytes, got {}", size, bytes_read));
+                std::format("Short read for JPEG2000 data: expected {} bytes, got {}", size, bytes_read));
         }
     }
     else
@@ -228,7 +228,7 @@ bool decode_libopenjpeg(int fd,
             if (image->comps[c].data == nullptr)
             {
                 throw std::runtime_error(
-                    fmt::format("[Error] J2K component {} has null data after decode", c));
+                    std::format("[Error] J2K component {} has null data after decode", c));
             }
         }
         {
@@ -239,7 +239,7 @@ bool decode_libopenjpeg(int fd,
             if (decoded_bytes > dest_nbytes)
             {
                 throw std::runtime_error(
-                    fmt::format("[Error] J2K decoded dimensions ({}x{}, {} bytes) exceed "
+                    std::format("[Error] J2K decoded dimensions ({}x{}, {} bytes) exceed "
                                 "destination buffer ({} bytes)",
                                 image->comps[0].w, image->comps[0].h, decoded_bytes, dest_nbytes));
             }
@@ -256,7 +256,7 @@ bool decode_libopenjpeg(int fd,
                 if (image->comps[c].w < expected_w || image->comps[c].h < expected_h)
                 {
                     throw std::runtime_error(
-                        fmt::format("[Error] J2K component {} dimensions ({}x{}) are smaller than "
+                        std::format("[Error] J2K component {} dimensions ({}x{}) are smaller than "
                                     "expected ({}x{}) for luma {}x{} with subsampling dx={}, dy={}",
                                     c, image->comps[c].w, image->comps[c].h,
                                     expected_w, expected_h, luma_w, luma_h,
@@ -304,7 +304,7 @@ bool decode_libopenjpeg(int fd,
             }
             else
             {
-                throw std::runtime_error(fmt::format(
+                throw std::runtime_error(std::format(
                     "[Error] decode_libopenjpeg cannot convert the image (comp0_dx:{}, comp0_dy:{}, comp1_dx:{}, comp1_dy:{}, comp2_dx:{}, comp2_dy:{})\n",
                     comp0_dx, comp0_dy, comp1_dx, comp1_dy, comp2_dx, comp2_dy));
             }

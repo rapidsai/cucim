@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -9,6 +9,7 @@
 #include <sys/stat.h>
 
 #include <algorithm>
+#include <format>
 #include <string>
 #include <string_view>
 
@@ -287,13 +288,13 @@ TIFF::TIFF(const cucim::filesystem::Path& file_path, int mode) : file_path_(file
     if (fd == -1)
     {
         cucim_free(file_path_cstr);
-        throw std::invalid_argument(fmt::format("Cannot open {}!", file_path));
+        throw std::invalid_argument(std::format("Cannot open {}!", file_path));
     }
     tiff_client_ = ::TIFFFdOpen(fd, file_path_cstr, "rm"); // Add 'm' to disable memory-mapped file
     if (tiff_client_ == nullptr)
     {
         cucim_free(file_path_cstr);
-        throw std::invalid_argument(fmt::format("Cannot load {}!", file_path));
+        throw std::invalid_argument(std::format("Cannot load {}!", file_path));
     }
     file_handle_shared_ = std::make_shared<CuCIMFileHandle>(fd, nullptr, FileHandleType::kPosix, file_path_cstr, this);
     file_handle_ = file_handle_shared_.get();
@@ -732,7 +733,7 @@ bool TIFF::read(const cucim::io::format::ImageMetadataDesc* metadata,
 
     if (request->level >= level_to_ifd_idx_.size())
     {
-        throw std::invalid_argument(fmt::format(
+        throw std::invalid_argument(std::format(
             "Invalid level ({}) in the request! (Should be < {})", request->level, level_to_ifd_idx_.size()));
     }
     auto main_ifd = ifds_[level_to_ifd_idx_[0]];
@@ -745,18 +746,18 @@ bool TIFF::read(const cucim::io::format::ImageMetadataDesc* metadata,
         if (request->size[i] <= 0)
         {
             throw std::invalid_argument(
-                fmt::format("Invalid size ({}) in the request! (Should be > 0)", request->size[i]));
+                std::format("Invalid size ({}) in the request! (Should be > 0)", request->size[i]));
         }
     }
     if (request->size[0] > original_img_width)
     {
         throw std::invalid_argument(
-            fmt::format("Invalid size (it exceeds the original image width {})", original_img_width));
+            std::format("Invalid size (it exceeds the original image width {})", original_img_width));
     }
     if (request->size[1] > original_img_height)
     {
         throw std::invalid_argument(
-            fmt::format("Invalid size (it exceeds the original image height {})", original_img_height));
+            std::format("Invalid size (it exceeds the original image height {})", original_img_height));
     }
 
     float downsample_factor = metadata->resolution_info.level_downsamples[request->level];
@@ -781,7 +782,7 @@ bool TIFF::read_associated_image(const cucim::io::format::ImageMetadataDesc* met
     std::string device_name(request->device);
     if (request->shm_name)
     {
-        device_name = device_name + fmt::format("[{}]", request->shm_name); // TODO: check performance
+        device_name = device_name + std::format("[{}]", request->shm_name); // TODO: check performance
     }
     cucim::io::Device out_device(device_name);
 
@@ -865,7 +866,7 @@ bool TIFF::read_associated_image(const cucim::io::format::ImageMetadataDesc* met
                     if (__builtin_add_overflow(offset, size, &data_end) || data_end > assoc_file_size)
                     {
                         cucim_free(raster);
-                        throw std::runtime_error(fmt::format(
+                        throw std::runtime_error(std::format(
                             "Associated image strip {} data range [{}, +{}) exceeds file size {}",
                             piece_index, offset, size, assoc_file_size));
                     }

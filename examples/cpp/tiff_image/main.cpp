@@ -1,9 +1,10 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #include <cucim/cuimage.h>
+#include <format>
 #include <fmt/format.h>
 #include <fmt/ranges.h>
 
@@ -69,10 +70,10 @@ int main(int argc, char* argv[])
     fmt::print("associated_images: ({})\n", fmt::join(associated_images, ", "));
     fmt::print("\n");
 
-    region.save(fmt::format("{}/output.ppm", output_folder_path));
+    region.save(std::format("{}/output.ppm", output_folder_path));
 
     cucim::CuImage region2 = image.read_region({ 5000, 5000 }, { 1024, 1024 }, 1);
-    region2.save(fmt::format("{}/output2.ppm", output_folder_path));
+    region2.save(std::format("{}/output2.ppm", output_folder_path));
 
     // Batch loading image
     // You need to create shared pointer for cucim::CuImage. Otherwise it will cause std::bad_weak_ptr exception.

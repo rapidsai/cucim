@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -10,6 +10,7 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <format>
 #include <iostream>
 #include <random>
 #include <thread>
@@ -137,7 +138,7 @@ bool IFD::read(const TIFF* tiff,
 
     if (request->shm_name)
     {
-        device_name = device_name + fmt::format("[{}]", request->shm_name); // TODO: check performance
+        device_name = device_name + std::format("[{}]", request->shm_name); // TODO: check performance
     }
     cucim::io::Device out_device(device_name);
 
@@ -322,13 +323,13 @@ bool IFD::read(const TIFF* tiff,
         int64_t ey = sy + h - 1;
         if (sx < 0 || sy < 0 || sx >= width_ || sy >= height_ || ex < 0 || ey < 0 || ex >= width_ || ey >= height_)
         {
-            throw std::invalid_argument(fmt::format("Cannot handle the out-of-boundary cases."));
+            throw std::invalid_argument(std::format("Cannot handle the out-of-boundary cases."));
         }
 
         // Check if the image format is supported or not
         if (!is_format_supported())
         {
-            throw std::runtime_error(fmt::format(
+            throw std::runtime_error(std::format(
                 "This format (compression: {}, sample_per_pixel: {}, planar_config: {}, photometric: {}) is not supported yet!.",
                 compression_, samples_per_pixel_, planar_config_, photometric_));
         }
@@ -366,7 +367,7 @@ bool IFD::read(const TIFF* tiff,
             }
             else
             {
-                throw std::runtime_error(fmt::format(
+                throw std::runtime_error(std::format(
                     "This format (compression: {}, sample_per_pixel: {}, planar_config: {}, photometric: {}) is not supported yet!: {}",
                     compression_, samples_per_pixel_, planar_config_, photometric_, emsg));
             }
@@ -374,7 +375,7 @@ bool IFD::read(const TIFF* tiff,
         }
         else
         {
-            throw std::runtime_error(fmt::format(
+            throw std::runtime_error(std::format(
                 "This format (compression: {}, sample_per_pixel: {}, planar_config: {}, photometric: {}) is not supported yet!: {}",
                 compression_, samples_per_pixel_, planar_config_, photometric_, emsg));
         }
@@ -668,7 +669,7 @@ bool IFD::read_region_tiles(const TIFF* tiff,
             if (index >= ifd->image_piece_offsets_.size() || index >= ifd->image_piece_bytecounts_.size())
             {
                 throw std::out_of_range(
-                    fmt::format("Tile index {} out of range (max {})", index, ifd->image_piece_offsets_.size()));
+                    std::format("Tile index {} out of range (max {})", index, ifd->image_piece_offsets_.size()));
             }
             auto tiledata_offset = static_cast<uint64_t>(ifd->image_piece_offsets_[index]);
             auto tiledata_size = static_cast<uint64_t>(ifd->image_piece_bytecounts_[index]);
@@ -679,7 +680,7 @@ bool IFD::read_region_tiles(const TIFF* tiff,
                 if (__builtin_add_overflow(tiledata_offset, tiledata_size, &tiledata_end) ||
                     tiledata_end > tiff_file_size)
                 {
-                    throw std::runtime_error(fmt::format(
+                    throw std::runtime_error(std::format(
                         "Tile {} data range [{}, +{}) exceeds file size {}",
                         index, tiledata_offset, tiledata_size, tiff_file_size));
                 }
@@ -1001,7 +1002,7 @@ bool IFD::read_region_tiles_boundary(const TIFF* tiff,
                     static_cast<size_t>(index) >= ifd->image_piece_bytecounts_.size())
                 {
                     throw std::out_of_range(
-                        fmt::format("Tile index {} out of range (max {})", index, ifd->image_piece_offsets_.size()));
+                        std::format("Tile index {} out of range (max {})", index, ifd->image_piece_offsets_.size()));
                 }
                 tiledata_offset = static_cast<uint64_t>(ifd->image_piece_offsets_[index]);
                 tiledata_size = static_cast<uint64_t>(ifd->image_piece_bytecounts_[index]);
@@ -1012,7 +1013,7 @@ bool IFD::read_region_tiles_boundary(const TIFF* tiff,
                     if (__builtin_add_overflow(tiledata_offset, tiledata_size, &tiledata_end) ||
                         tiledata_end > tiff_file_size_boundary)
                     {
-                        throw std::runtime_error(fmt::format(
+                        throw std::runtime_error(std::format(
                             "Tile {} data range [{}, +{}) exceeds file size {}",
                             index, tiledata_offset, tiledata_size, tiff_file_size_boundary));
                     }
@@ -1292,8 +1293,8 @@ namespace cuslide::tiff
 {
 void IFD::write_offsets_(const char* file_path)
 {
-    std::ofstream offsets(fmt::format("{}.offsets", file_path), std::ios::out | std::ios::binary | std::ios::trunc);
-    std::ofstream bytecounts(fmt::format("{}.bytecounts", file_path), std::ios::out | std::ios::binary | std::ios::trunc);
+    std::ofstream offsets(std::format("{}.offsets", file_path), std::ios::out | std::ios::binary | std::ios::trunc);
+    std::ofstream bytecounts(std::format("{}.bytecounts", file_path), std::ios::out | std::ios::binary | std::ios::trunc);
 
     offsets.write(reinterpret_cast<char*>(&image_piece_count_), sizeof(image_piece_count_));
     bytecounts.write(reinterpret_cast<char*>(&image_piece_count_), sizeof(image_piece_count_));

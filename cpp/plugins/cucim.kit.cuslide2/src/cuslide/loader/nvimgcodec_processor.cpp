@@ -8,6 +8,7 @@
 #include <cassert>
 #include <cstring>
 #include <deque>
+#include <format>
 #include <memory>
 #include <mutex>
 #include <stdexcept>
@@ -184,7 +185,7 @@ uint32_t NvImageCodecProcessor::request(std::deque<uint32_t>& batch_item_counts,
             auto state = schedule_roi_batch(requests);
             if (!state.is_valid())
             {
-                throw std::runtime_error(fmt::format("Failed to schedule IFD[{}] batch decode with nvImageCodec",
+                throw std::runtime_error(std::format("Failed to schedule IFD[{}] batch decode with nvImageCodec",
                                                      ifd_index_));
             }
             pending_batch_.chunks.push_back(std::move(state));
@@ -224,7 +225,7 @@ uint32_t NvImageCodecProcessor::wait_batch(uint32_t index_in_task,
     }
     if (batch.chunks.empty())
     {
-        throw std::runtime_error(fmt::format("No pending nvImageCodec batch for IFD[{}]", ifd_index_));
+        throw std::runtime_error(std::format("No pending nvImageCodec batch for IFD[{}]", ifd_index_));
     }
 
     uint32_t decoded = 0;
@@ -234,7 +235,7 @@ uint32_t NvImageCodecProcessor::wait_batch(uint32_t index_in_task,
         if (results.empty() || std::any_of(results.begin(), results.end(),
                                            [](const auto& result) { return !result.success; }))
         {
-            throw std::runtime_error(fmt::format("Failed to decode IFD[{}] batch with nvImageCodec. "
+            throw std::runtime_error(std::format("Failed to decode IFD[{}] batch with nvImageCodec. "
                                                  "Check that nvTIFF and the required codec libraries are installed.",
                                                  ifd_index_));
         }

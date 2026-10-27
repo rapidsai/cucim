@@ -20,6 +20,7 @@
 #include <cstring>
 #include <fcntl.h>
 #include <filesystem>
+#include <format>
 #include <memory_resource>
 #include <memory>
 
@@ -167,7 +168,7 @@ static bool CUCIM_ABI parser_parse(CuCIMFileHandle_ptr handle_ptr, cucim::io::fo
         if (main_ifd_list.empty())
         {
             throw std::runtime_error(
-                fmt::format("No main image (Subfile Type 0) found in TIFF file."));
+                std::format("No main image (Subfile Type 0) found in TIFF file."));
         }
     }
 
@@ -261,7 +262,7 @@ static bool CUCIM_ABI parser_parse(CuCIMFileHandle_ptr handle_ptr, cucim::io::fo
             }
             else
             {
-                channel_name_storage.push_back(fmt::format("C{}", i));
+                channel_name_storage.push_back(std::format("C{}", i));
             }
         }
     }
@@ -277,7 +278,7 @@ static bool CUCIM_ABI parser_parse(CuCIMFileHandle_ptr handle_ptr, cucim::io::fo
     {
         for (uint8_t i = 0; i < n_ch; ++i)
         {
-            channel_name_storage.push_back(fmt::format("C{}", i));
+            channel_name_storage.push_back(std::format("C{}", i));
         }
     }
 

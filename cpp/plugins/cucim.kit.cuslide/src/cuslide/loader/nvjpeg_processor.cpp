@@ -1,10 +1,11 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #include "nvjpeg_processor.h"
 
+#include <format>
 #include <vector>
 
 #include <cucim/cache/image_cache_manager.h>
@@ -74,11 +75,11 @@ NvJpegProcessor::NvJpegProcessor(CuCIMFileHandle* file_handle,
 
         if (NVJPEG_STATUS_SUCCESS != nvjpegCreate(backend_, NULL, &handle_))
         {
-            throw std::runtime_error(fmt::format("NVJPEG initialization error"));
+            throw std::runtime_error(std::format("NVJPEG initialization error"));
         }
         if (NVJPEG_STATUS_SUCCESS != nvjpegJpegStateCreate(handle_, &state_))
         {
-            throw std::runtime_error(fmt::format("JPEG state initialization error"));
+            throw std::runtime_error(std::format("JPEG state initialization error"));
         }
 
         nvjpegDecodeBatchedParseJpegTables(handle_, state_, jpegtable_data, jpegtable_size);
@@ -291,7 +292,7 @@ uint32_t NvJpegProcessor::request(std::deque<uint32_t>& batch_item_counts, const
 
     if (NVJPEG_STATUS_SUCCESS != error_code)
     {
-        throw std::runtime_error(fmt::format("Error in batched decode: {}", error_code));
+        throw std::runtime_error(std::format("Error in batched decode: {}", error_code));
     }
     CUDA_ERROR(cudaStreamSynchronize(stream_));
 
