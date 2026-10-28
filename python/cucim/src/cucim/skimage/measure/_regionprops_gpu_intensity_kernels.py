@@ -719,12 +719,16 @@ def _fill_intensity_median_segmented_sort_cub(
 ):
     if _skimage_cpp_ext is None or max_region_size <= min_region_size:
         return None
+    dtype_name = img1d.dtype.name
     sort_func = getattr(
+        _skimage_cpp_ext, f"segmented_radix_sort_keys_ranges_{dtype_name}", None
+    )
+    temp_storage_bytes_func = getattr(
         _skimage_cpp_ext,
-        f"segmented_radix_sort_keys_ranges_{img1d.dtype.name}",
+        f"segmented_radix_sort_keys_temp_storage_bytes_{dtype_name}",
         None,
     )
-    if sort_func is None:
+    if sort_func is None or temp_storage_bytes_func is None:
         return None
 
     eligible, params = _get_segmented_median_params(
@@ -738,6 +742,14 @@ def _fill_intensity_median_segmented_sort_cub(
 
     label_indices, begin_offsets, end_offsets, hi, even = params
 
+    # Allocate CUB's temporary storage from CuPy's memory pool (shared by all
+    # channels) so that repeated calls reuse pooled memory rather than paying
+    # for cudaMalloc/cudaFree and a stream synchronization on every sort.
+    num_items = img1d.shape[0]
+    num_segments = label_indices.size
+    temp_storage_bytes = temp_storage_bytes_func(num_items, num_segments)
+    temp_storage = cp.empty(max(temp_storage_bytes, 1), dtype=cp.uint8)
+
     def sort_channel(keys):
         sorted_keys = cp.empty_like(keys)
         stream_ptr = cp.cuda.get_current_stream().ptr
@@ -746,8 +758,10 @@ def _fill_intensity_median_segmented_sort_cub(
             sorted_keys.data.ptr,
             begin_offsets.data.ptr,
             end_offsets.data.ptr,
-            keys.size,
-            label_indices.size,
+            num_items,
+            num_segments,
+            temp_storage.data.ptr,
+            temp_storage.nbytes,
             stream_ptr,
         )
         return _extract_segmented_medians(sorted_keys, hi, even, medians.dtype)
