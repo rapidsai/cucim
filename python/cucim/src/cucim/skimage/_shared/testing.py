@@ -37,6 +37,7 @@ except ImportError:
     # skip this test if private API changed on scikit-image end
     have_fetch = False
     _fetchers = None
+    _fetch = None
 
 # Number of retries for a failed download that was not rate limited.
 _DOWNLOAD_RETRIES = 3
