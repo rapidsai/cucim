@@ -20,6 +20,12 @@ string(REGEX REPLACE "a.*$" "" VERSION ${VERSION})
 # Fetch rapids-cmake (used to obtain the RAPIDS-pinned CCCL version)
 include(${CMAKE_CURRENT_LIST_DIR}/../cmake/rapids_config.cmake)
 
+# Build for all RAPIDS-supported GPU architectures unless CMAKE_CUDA_ARCHITECTURES
+# or the CUDAARCHS environment variable is set (e.g. CUDAARCHS=NATIVE for the
+# GPU(s) in the build machine only).
+include(rapids-cuda)
+rapids_cuda_init_architectures(cucim)
+
 # Append local cmake module path
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake/modules")
 project(cucim VERSION ${VERSION} DESCRIPTION "cucim" LANGUAGES CXX CUDA)
