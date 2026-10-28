@@ -17,6 +17,9 @@ file(STRINGS ${CMAKE_CURRENT_LIST_DIR}/../VERSION VERSION)
 # strip alpha version info
 string(REGEX REPLACE "a.*$" "" VERSION ${VERSION})
 
+# Fetch rapids-cmake (used to obtain the RAPIDS-pinned CCCL version)
+include(${CMAKE_CURRENT_LIST_DIR}/../cmake/rapids_config.cmake)
+
 # Append local cmake module path
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake/modules")
 project(cucim VERSION ${VERSION} DESCRIPTION "cucim" LANGUAGES CXX CUDA)
@@ -82,6 +85,14 @@ include(ExternalProject)
 ################################################################################
 superbuild_depend(fmt)
 superbuild_depend(json)
+
+# Use the CCCL version pinned by rapids-cmake (as other RAPIDS projects do)
+# rather than the one bundled with the CUDA Toolkit.
+include(rapids-cmake)
+include(rapids-cpm)
+rapids_cpm_init()
+include(${rapids-cmake-dir}/cpm/cccl.cmake)
+rapids_cpm_cccl()
 
 find_package(Python 3.12 REQUIRED COMPONENTS Interpreter Development.Module Development.SABIModule)
 execute_process(
@@ -180,6 +191,7 @@ nanobind_add_module(cucim_skimage_cpp
         )
 target_link_libraries(cucim_skimage_cpp
     PRIVATE
+        CCCL::CCCL
         CUDA::cudart
         )
 # nanobind_add_module() only sets CXX_VISIBILITY_PRESET (pybind11_add_module()
