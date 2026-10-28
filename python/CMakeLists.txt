@@ -208,8 +208,8 @@ nanobind_add_module(cucim_skimage_cpp
     PROTECT_STACK
     NOMINSIZE
         nanobind/skimage/skimage_cpp_py.cpp
-        nanobind/skimage/segmented_radix_sort.h
-        nanobind/skimage/segmented_radix_sort.cu
+        nanobind/skimage/segmented_sort.h
+        nanobind/skimage/segmented_sort.cu
         )
 target_link_libraries(cucim_skimage_cpp
     PRIVATE
