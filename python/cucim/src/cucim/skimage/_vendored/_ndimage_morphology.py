@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Infrastructure, Inc.
 # SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Networks, Inc.
-# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND MIT
 
 import math
@@ -29,6 +29,7 @@ def _get_binary_erosion_kernel(
     invert,
     masked,
     all_weights_nonzero,
+    mode="constant",
 ):
     if invert:
         border_value = int(not border_value)
@@ -83,7 +84,14 @@ def _get_binary_erosion_kernel(
         name += "_invert"
     has_weights = not all_weights_nonzero
 
-    modes = ("constant",) * len(w_shape)
+    if mode != "constant":
+        found = f"""
+            bool nn = {{value}} ? {true_val} : {false_val};
+            if (!nn) {{{{
+                y = cast<Y>({false_val});
+                return;
+            }}}}"""
+    modes = (mode,) * len(w_shape)
     return _filters_core._generate_nd_kernel(
         name,
         pre,
@@ -98,7 +106,7 @@ def _get_binary_erosion_kernel(
         has_weights=has_weights,
         has_structure=False,
         has_mask=masked,
-        binary_morphology=True,
+        binary_morphology=mode == "constant",
     )
 
 
@@ -187,6 +195,8 @@ def _binary_erosion(
     brute_force=True,
     *,
     axes=None,
+    mode="constant",
+    allow_empty=True,
 ):
     try:
         iterations = operator.index(iterations)
@@ -274,6 +284,9 @@ def _binary_erosion(
         else:
             center_is_true = _center_is_true(structure, origin)
 
+    if not allow_empty and nnz == 0:
+        raise ValueError("all-zero footprint is not supported")
+
     erode_kernel = _get_binary_erosion_kernel(
         structure_shape,
         int_type,
@@ -283,6 +296,7 @@ def _binary_erosion(
         invert,
         masked,
         all_weights_nonzero,
+        mode=mode,
     )
     if all_weights_nonzero:
         if masked:

@@ -4,27 +4,68 @@
 
 """Binary morphological operations.
 
-cuCIM intentionally retains the public ``binary_erosion``, ``binary_dilation``,
-``binary_opening``, and ``binary_closing`` functions despite their upstream
-deprecation. The binary and grayscale implementations use different GPU kernels,
-and the separate binary implementations can offer better performance.
+The binary and grayscale implementations use different GPU kernels, and the
+separate binary implementations can offer better performance. Grayscale
+morphology dispatches suitable boolean inputs to private binary kernels while
+preserving its boundary modes, footprint alignment and mirroring, and output
+dtype. These private implementations will remain after the public binary
+functions are removed, allowing the public API to follow scikit-image.
 
-A possible future approach is to retain the binary implementations privately
-and dispatch to them from the grayscale functions for suitable boolean inputs.
-Such dispatch must preserve grayscale semantics, including boundary modes,
-even-sized footprint alignment, footprint mirroring, and output dtype.
-
-Before removing the public binary functions, cuCIM must provide its own
-deprecation period spanning at least two releases. The upstream deprecation
-schedule does not replace this cuCIM deprecation period.
+The public ``binary_erosion``, ``binary_dilation``, ``binary_opening``, and
+``binary_closing`` functions are deprecated. They remain available for two cuCIM
+transition releases independently of upstream's schedule. Their individual
+docstrings specify the deprecation and removal versions.
 """
 
 import cupy as cp
 
 import cucim.skimage._vendored.ndimage as ndi
+from cucim.skimage._vendored._ndimage_morphology import (
+    _binary_erosion as _ndimage_binary_erosion,
+)
 
-from .footprints import _footprint_is_sequence, pad_footprint
+from .._shared.utils import deprecate_func
+from .footprints import _footprint_is_sequence, mirror_footprint, pad_footprint
 from .misc import default_footprint
+
+
+def _binary_gray(image, footprints, out, mode, cval, *, dilation):
+    """Apply binary kernels to footprints prepared by grayscale morphology.
+
+    The footprints already have grayscale's even-size alignment. Undo the
+    grayscale dilation wrapper's mirroring because this private ndimage
+    implementation applies the footprint directly for either operation.
+    Revisit this when adopting ``skimage2`` dilation, which drops that
+    mirroring to follow SciPy's convention.
+    """
+    for index, (footprint, repetitions) in enumerate(footprints):
+        if dilation:
+            footprint = mirror_footprint(footprint)
+        if isinstance(footprint, tuple) and len(footprint) != image.ndim:
+            raise ValueError("sizes must match len(axes)")
+        # The first footprint is applied at least once, as in _iterate_gray_func.
+        if index == 0:
+            repetitions = max(1, repetitions)
+        for _ in range(repetitions):
+            # Constant-border kernels mark out-of-bounds samples with negative
+            # byte offsets, which requires strictly positive input strides.
+            if mode == "constant" and any(s <= 0 for s in image.strides):
+                image = image.copy(order="C")
+            out = _ndimage_binary_erosion(
+                image,
+                structure=footprint,
+                iterations=1,
+                mask=None,
+                output=out,
+                border_value=cval,
+                origin=0,
+                invert=dilation,
+                brute_force=True,
+                mode=mode,
+                allow_empty=False,
+            )
+            image = out
+    return out
 
 
 def _iterate_binary_func(binary_func, image, footprint, out, border_value):
@@ -121,7 +162,7 @@ def _binary_erosion(image, footprint=None, out=None, *, mode="ignore"):
 
     For even-sized footprints, :func:`skimage.morphology.erosion` and
     this function produce an output that differs: one is shifted by one pixel
-    compared to the other. :func:`cucim.skimage.morphology.pad_footprint´ is
+    compared to the other. :func:`cucim.skimage.morphology.pad_footprint` is
     available to account for this.
 
     See Also
@@ -363,3 +404,49 @@ def _binary_closing(image, footprint=None, out=None, *, mode="ignore"):
     tmp = _binary_dilation(image, footprint, mode=mode)
     out = _binary_erosion(tmp, footprint, out=out, mode=mode)
     return out
+
+
+def _deprecate_binary(func, implementation, replacement, footprint_hint):
+    # Keep the full API documentation on the public wrapper during transition.
+    func.__doc__ = implementation.__doc__
+    return deprecate_func(
+        # rapids-pre-commit-hooks: disable-next-line[verify-hardcoded-version]
+        deprecated_version="26.12",
+        # rapids-pre-commit-hooks: disable-next-line[verify-hardcoded-version]
+        removed_version="27.04",
+        hint=(
+            f"Use `cucim.skimage.morphology.{replacement}` with `mode='ignore'` "
+            f"instead. Convert non-boolean inputs to bool. {footprint_hint}"
+        ),
+        stacklevel=2,
+    )(func)
+
+
+binary_erosion = _deprecate_binary(
+    binary_erosion,
+    _binary_erosion,
+    "erosion",
+    "Pad even-sized footprints with `pad_footprint(..., pad_end=True)` "
+    "to preserve alignment.",
+)
+binary_dilation = _deprecate_binary(
+    binary_dilation,
+    _binary_dilation,
+    "dilation",
+    "Use `mirror_footprint(pad_footprint(..., pad_end=True))` "
+    "to preserve footprint mirroring and alignment.",
+)
+binary_opening = _deprecate_binary(
+    binary_opening,
+    _binary_opening,
+    "opening",
+    "Pad even-sized footprints with `pad_footprint(..., pad_end=True)` "
+    "to preserve alignment.",
+)
+binary_closing = _deprecate_binary(
+    binary_closing,
+    _binary_closing,
+    "closing",
+    "Use `mirror_footprint(pad_footprint(..., pad_end=True))` "
+    "to preserve footprint mirroring and alignment.",
+)
