@@ -33,6 +33,43 @@ Other string arguments, such as ``dim_order``, device names, and the
 an image opened from a file name that is not valid UTF-8, both raise
 ``UnicodeDecodeError``.
 
+Enumerations
+------------
+
+``cache.CacheType``, ``io.DeviceType``, and ``filesystem.FileHandleType`` are
+``enum.Enum`` classes. Their members do not compare equal to integers, so
+compare them with members, as in ``device.type == io.DeviceType.CUDA``, or use
+``.value``. ``DLDataTypeCode`` is an ``enum.IntEnum``, so its members are
+integers and compare equal to ``DLDataType.code``.
+
+.. versionchanged:: 26.12
+   The enumerations are now classes from Python's ``enum`` module.
+
+   - ``int()`` and ``operator.index()`` raise ``TypeError`` for members of
+     ``CacheType``, ``DeviceType``, and ``FileHandleType``. Use ``.value``.
+   - An unknown value, such as ``io.DeviceType(99)``, raises ``ValueError``.
+     Earlier releases returned an unnamed member.
+   - ``repr()`` of a member is ``DeviceType.CUDA`` instead of
+     ``<DeviceType.CUDA: 2>``.
+
+   Comparison with integers is unchanged. Members of ``CacheType``,
+   ``DeviceType``, and ``FileHandleType`` did not compare equal to integers in
+   earlier releases either, and members of ``DLDataTypeCode`` still do.
+
+Boolean arguments
+-----------------
+
+These arguments accept only ``True`` or ``False``: ``drop_last`` and
+``shuffle`` of ``CuImage.read_region()``, ``record_stat`` of
+``CuImage.cache()``, ``trace`` of ``CuImage.profiler()``, and ``no_gds`` and
+``use_mmap`` of ``filesystem.CuFileDriver()``.
+
+.. versionchanged:: 26.12
+   Earlier releases also accepted ``None`` and numbers such as
+   ``numpy.bool_``, ``0``, ``1``, and ``1.0``. These values now raise
+   ``TypeError``, or ``RuntimeError`` for ``record_stat`` and ``trace``. Pass
+   ``bool(value)`` instead.
+
 cache
 -----
 

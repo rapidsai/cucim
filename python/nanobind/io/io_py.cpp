@@ -10,13 +10,11 @@
 
 #include <cucim/io/device.h>
 
-#include "../compat.h"
-
 namespace cucim::io
 {
 void init_io(nb::module_ io)
 {
-    bind_enum<DeviceType>(io, "DeviceType") //
+    nb::enum_<DeviceType>(io, "DeviceType") //
         .value("CPU", DeviceType::kCPU) //
         .value("CUDA", DeviceType::kCUDA) //
         .value("CUDAHost", DeviceType::kCUDAHost) //

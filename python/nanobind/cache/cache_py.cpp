@@ -13,7 +13,6 @@
 #include <cucim/cache/image_cache.h>
 #include <cucim/cuimage.h>
 
-#include "../compat.h"
 #include "image_cache_pydoc.h"
 
 using namespace nanobind::literals;
@@ -23,7 +22,7 @@ namespace cucim::cache
 
 void init_cache(nb::module_ cache)
 {
-    bind_enum<CacheType>(cache, "CacheType") //
+    nb::enum_<CacheType>(cache, "CacheType") //
         .value("NoCache", CacheType::kNoCache) //
         .value("PerProcess", CacheType::kPerProcess) //
         .value("SharedMemory", CacheType::kSharedMemory);
@@ -98,7 +97,7 @@ void py_image_cache_reserve(ImageCache& cache, uint32_t memory_capacity, nb::kwa
 
     if (kwargs.contains("capacity"))
     {
-        config.capacity = cast_or_runtime_error<uint32_t>(kwargs["capacity"]);
+        config.capacity = nb::cast<uint32_t>(kwargs["capacity"]);
     }
     else
     {
@@ -122,7 +121,7 @@ uint32_t py_preferred_memory_capacity(nb::handle img,
 
     if (!img.is_none())
     {
-        const CuImage& cuimg = *cast_or_runtime_error<cucim::CuImage*>(img);
+        const CuImage& cuimg = *nb::cast<cucim::CuImage*>(img);
         std::vector<int64_t> image_size_vec = cuimg.size("XY");
         param_image.insert(param_image.end(), image_size_vec.begin(), image_size_vec.end());
         std::vector<uint32_t> tile_size_vec = cuimg.resolutions().level_tile_size(0);

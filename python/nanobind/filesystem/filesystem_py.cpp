@@ -13,7 +13,6 @@
 
 #include <cucim/filesystem/cufile_driver.h>
 
-#include "../compat.h"
 #include "cufile_py.h"
 #include "cufile_pydoc.h"
 
@@ -24,7 +23,7 @@ namespace cucim::filesystem
 
 void init_filesystem(nb::module_ fs)
 {
-    bind_enum<FileHandleType>(fs, "FileHandleType") //
+    nb::enum_<FileHandleType>(fs, "FileHandleType") //
         .value("Unknown", FileHandleType::kUnknown) //
         .value("Posix", FileHandleType::kPosix) //
         .value("PosixODirect", FileHandleType::kPosixODirect) //
@@ -34,13 +33,13 @@ void init_filesystem(nb::module_ fs)
     nb::class_<CuFileDriver>(fs, "CuFileDriver", nb::is_weak_referenceable())
         .def(
             "__init__",
-            [](CuFileDriver* self, int fd, Bool no_gds, Bool use_mmap, const std::filesystem::path& file_path) {
+            [](CuFileDriver* self, int fd, bool no_gds, bool use_mmap, const std::filesystem::path& file_path) {
                 nb::gil_scoped_release release;
                 new (self) CuFileDriver(fd, no_gds, use_mmap, file_path.c_str());
             },
             "fd"_a, //
-            "no_gds"_a.none() = false, //
-            "use_mmap"_a.none() = false, //
+            "no_gds"_a = false, //
+            "use_mmap"_a = false, //
             "file_path"_a = "", //
             doc::CuFileDriver::doc_CuFileDriver)
         .def("pread", &fd_pread, doc::CuFileDriver::doc_pread, // Do not release GIL as it would access properties of

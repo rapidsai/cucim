@@ -375,18 +375,22 @@ def test_text_arguments_reject_bytes(testimg_tiff_stripe_32x24_16_jpeg):
         img.read_region((0, 0), (8, 8), device=b"cpu")
 
 
-def test_bool_argument_conversions(testimg_tiff_stripe_32x24_16_jpeg):
+def test_bool_arguments_are_strict(testimg_tiff_stripe_32x24_16_jpeg):
     img = CuImage(testimg_tiff_stripe_32x24_16_jpeg)
     locations = [(0, 0), (8, 8)]
-    for flag in (np.True_, 1, 0, None, 2.0):
-        batches = img.read_region(
-            locations, (8, 8), 0, num_workers=1, shuffle=flag, drop_last=flag
-        )
-        assert type(batches) is CuImageIterator
-    with pytest.raises(TypeError):
-        img.read_region(locations, (8, 8), 0, num_workers=1, shuffle="yes")
+    batches = img.read_region(
+        locations, (8, 8), 0, num_workers=1, shuffle=True, drop_last=False
+    )
+    assert type(batches) is CuImageIterator
+    for flag in (np.True_, 1, 0, None, "yes"):
+        with pytest.raises(TypeError):
+            img.read_region(locations, (8, 8), 0, num_workers=1, shuffle=flag)
+        with pytest.raises(TypeError):
+            img.read_region(locations, (8, 8), 0, num_workers=1, drop_last=flag)
     region = img.read_region((0, 0), (8, 8))
-    assert len(CuImageIterator(region, ending=0)) == 1
+    assert len(CuImageIterator(region, ending=False)) == 1
+    with pytest.raises(TypeError):
+        CuImageIterator(region, ending=0)
 
 
 def test_python_subclass(testimg_tiff_stripe_32x24_16_jpeg):

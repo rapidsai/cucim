@@ -24,7 +24,6 @@
 #include <cucim/cuimage.h>
 
 #include "cache/cache_py.h"
-#include "compat.h"
 #include "filesystem/filesystem_py.h"
 #include "io/io_py.h"
 #include "profiler/profiler_py.h"
@@ -70,7 +69,8 @@ NB_MODULE(_cucim, m)
     profiler::init_profiler(m.def_submodule("profiler"));
 
     // Data structures
-    bind_enum<DLDataTypeCode>(m, "DLDataTypeCode") //
+    // An IntEnum, because DLDataType.code is a plain int that callers compare with these members.
+    nb::enum_<DLDataTypeCode>(m, "DLDataTypeCode", nb::is_arithmetic()) //
         .value("DLInt", kDLInt) //
         .value("DLUInt", kDLUInt) //
         .value("DLFloat", kDLFloat) //
@@ -97,9 +97,9 @@ NB_MODULE(_cucim, m)
         .attr("__hash__") = nb::none();
 
     nb::class_<CuImageIterator<CuImage>>(m, "CuImageIterator", nb::is_weak_referenceable()) //
-        .def(nb::init<std::shared_ptr<CuImage>, Bool>(), doc::CuImageIterator::doc_CuImageIterator,
+        .def(nb::init<std::shared_ptr<CuImage>, bool>(), doc::CuImageIterator::doc_CuImageIterator,
              "cuimg"_a.none(), //
-             "ending"_a.none() = false, nb::call_guard<nb::gil_scoped_release>())
+             "ending"_a = false, nb::call_guard<nb::gil_scoped_release>())
         .def(
             "__len__",
             [](const CuImageIterator<CuImage>& it) { //
@@ -167,9 +167,9 @@ NB_MODULE(_cucim, m)
              "level"_a = 0, //
              "num_workers"_a = 0, //
              "batch_size"_a = 1, //
-             "drop_last"_a.none() = false, //
+             "drop_last"_a = false, //
              "prefetch_factor"_a = 2, //
-             "shuffle"_a.none() = false, //
+             "shuffle"_a = false, //
              "seed"_a = 0, //
              "device"_a = io::Device(), //
              "buf"_a = nb::none(), //
@@ -249,11 +249,11 @@ std::shared_ptr<cucim::cache::ImageCache> py_cache(nb::handle type, nb::kwargs k
 
         if (kwargs.contains("memory_capacity"))
         {
-            config.memory_capacity = cast_or_runtime_error<uint32_t>(kwargs["memory_capacity"]);
+            config.memory_capacity = nb::cast<uint32_t>(kwargs["memory_capacity"]);
         }
         if (kwargs.contains("capacity"))
         {
-            config.capacity = cast_or_runtime_error<uint32_t>(kwargs["capacity"]);
+            config.capacity = nb::cast<uint32_t>(kwargs["capacity"]);
         }
         else
         {
@@ -262,19 +262,19 @@ std::shared_ptr<cucim::cache::ImageCache> py_cache(nb::handle type, nb::kwargs k
         }
         if (kwargs.contains("mutex_pool_capacity"))
         {
-            config.mutex_pool_capacity = cast_or_runtime_error<uint32_t>(kwargs["mutex_pool_capacity"]);
+            config.mutex_pool_capacity = nb::cast<uint32_t>(kwargs["mutex_pool_capacity"]);
         }
         if (kwargs.contains("list_padding"))
         {
-            config.list_padding = cast_or_runtime_error<uint32_t>(kwargs["list_padding"]);
+            config.list_padding = nb::cast<uint32_t>(kwargs["list_padding"]);
         }
         if (kwargs.contains("extra_shared_memory_size"))
         {
-            config.extra_shared_memory_size = cast_or_runtime_error<uint32_t>(kwargs["extra_shared_memory_size"]);
+            config.extra_shared_memory_size = nb::cast<uint32_t>(kwargs["extra_shared_memory_size"]);
         }
         if (kwargs.contains("record_stat"))
         {
-            config.record_stat = cast_or_runtime_error<Bool>(kwargs["record_stat"]);
+            config.record_stat = nb::cast<bool>(kwargs["record_stat"]);
         }
         return CuImage::cache(config);
     }
@@ -301,7 +301,7 @@ std::shared_ptr<cucim::profiler::Profiler> py_profiler(nb::kwargs kwargs)
 
         if (kwargs.contains("trace"))
         {
-            config.trace = cast_or_runtime_error<Bool>(kwargs["trace"]);
+            config.trace = nb::cast<bool>(kwargs["trace"]);
         }
         nb::gil_scoped_release release;
         return CuImage::profiler(config);
@@ -474,12 +474,12 @@ static std::vector<int64_t> parse_locations(nb::iterable location)
         {
             for (nb::handle value : item)
             {
-                locations.emplace_back(cast_or_runtime_error<int64_t>(value));
+                locations.emplace_back(nb::cast<int64_t>(value));
             }
         }
         else
         {
-            locations.emplace_back(cast_or_runtime_error<int64_t>(item));
+            locations.emplace_back(nb::cast<int64_t>(item));
         }
     }
     return locations;
@@ -491,9 +491,9 @@ nb::object py_read_region(const CuImage& cuimg,
                           int16_t level,
                           uint32_t num_workers,
                           uint32_t batch_size,
-                          Bool drop_last,
+                          bool drop_last,
                           uint32_t prefetch_factor,
-                          Bool shuffle,
+                          bool shuffle,
                           uint64_t seed,
                           const io::Device& device,
                           nb::handle buf,
@@ -515,7 +515,7 @@ nb::object py_read_region(const CuImage& cuimg,
         for (auto [key_obj, value_obj] : kwargs)
         {
             auto key = nb::cast<std::string>(nb::str(key_obj));
-            auto value = cast_or_runtime_error<int>(value_obj);
+            auto value = nb::cast<int>(value_obj);
 
             if (key.size() != 1)
             {

@@ -13,8 +13,6 @@
 
 #include <nanobind/nanobind.h>
 
-#include "compat.h"
-
 namespace nb = nanobind;
 
 namespace cucim
@@ -51,9 +49,9 @@ nb::object py_read_region(const CuImage& cuimg,
                           int16_t level,
                           uint32_t num_workers,
                           uint32_t batch_size,
-                          Bool drop_last,
+                          bool drop_last,
                           uint32_t prefetch_factor,
-                          Bool shuffle,
+                          bool shuffle,
                           uint64_t seed,
                           const io::Device& device,
                           nb::handle buf,

@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
+import enum
 import importlib
 import os
 import pathlib
@@ -15,7 +16,7 @@ from cucim import CuImage
 from cucim.clara import DLDataType, DLDataTypeCode, cache, filesystem, io
 from cucim.clara._cucim import profiler
 
-INT_COMPARABLE_ENUMS = {DLDataTypeCode}
+INT_ENUMS = {DLDataTypeCode}
 ENUM_MEMBERS = {
     DLDataTypeCode: {"DLInt": 0, "DLUInt": 1, "DLFloat": 2, "DLBfloat": 4},
     cache.CacheType: {"NoCache": 0, "PerProcess": 1, "SharedMemory": 2},
@@ -50,6 +51,9 @@ def test_public_names_are_importable():
 @pytest.mark.parametrize("enum_type", ENUM_MEMBERS, ids=lambda e: e.__name__)
 def test_enum_members(enum_type):
     expected = ENUM_MEMBERS[enum_type]
+    is_int_enum = enum_type in INT_ENUMS
+    assert issubclass(enum_type, enum.Enum)
+    assert issubclass(enum_type, int) is is_int_enum
     assert list(enum_type.__members__) == list(expected)
     members = []
     for name, value in expected.items():
@@ -57,22 +61,29 @@ def test_enum_members(enum_type):
         members.append(member)
         assert member.name == name
         assert member.value == value
-        assert int(member) == value
-        assert member.__index__() == value
+        assert enum_type(value) is member
         assert str(member) == f"{enum_type.__name__}.{name}"
-        assert repr(member) == f"<{enum_type.__name__}.{name}: {value}>"
+        assert repr(member) == str(member)
         assert format(member) == f"{member}" == str(member)
-        assert enum_type(value) == member
-        assert (member == value) is (enum_type in INT_COMPARABLE_ENUMS)
+        assert (member == value) is is_int_enum
+        if is_int_enum:
+            assert int(member) == value
+        else:
+            with pytest.raises(TypeError):
+                int(member)
     assert len(set(members)) == len(members)
     assert members[0] != members[1]
+    with pytest.raises(ValueError):
+        enum_type(99)
 
 
 def test_dldatatype():
     dtype = DLDataType(DLDataTypeCode.DLUInt, 8, 1)
     assert (dtype.code, dtype.bits, dtype.lanes) == (1, 8, 1)
     assert type(dtype.code) is int
+    assert dtype.code == DLDataTypeCode.DLUInt
     assert dtype == DLDataType(DLDataTypeCode.DLUInt, 8, 1)
+    assert dtype == DLDataType(1, 8, 1)
     assert dtype != DLDataType(DLDataTypeCode.DLFloat, 32, 1)
     assert (
         repr(dtype) == "<cucim.clara.DLDataType code:DLUInt(1) bits:8 lanes:1>"
@@ -166,7 +177,6 @@ def test_profiler_api(restore_trace):
 def test_profiler_config_keyword(restore_trace):
     assert CuImage.profiler(trace=True).config == {"trace": True}
     assert CuImage.profiler(trace=False).config == {"trace": False}
-    assert CuImage.profiler(trace=np.True_).config == {"trace": True}
 
 
 def test_filesystem_roundtrip(tmp_path):
@@ -215,18 +225,24 @@ def test_device_cache():
     assert isinstance(CuImage.device_cache(), cache.ImageCache)
 
 
-def test_bool_argument_conversions(tmp_path, restore_cache):
-    assert CuImage.cache("per_process", record_stat=1).config["record_stat"]
-    assert not CuImage.cache("per_process", record_stat=np.False_).config[
-        "record_stat"
-    ]
+def test_bool_arguments_are_strict(tmp_path, restore_cache, restore_trace):
+    for flag in (1, 0, np.True_, np.False_, None):
+        with pytest.raises(RuntimeError):
+            CuImage.cache("per_process", record_stat=flag)
+        with pytest.raises(RuntimeError):
+            CuImage.profiler(trace=flag)
 
     path = tmp_path / "data.bin"
     path.write_bytes(bytes(16))
-    with filesystem.CuFileDriver(
-        os.open(path, os.O_RDONLY), no_gds=1
-    ) as driver:
-        assert driver.pread(np.zeros(16, np.uint8), 16, 0) == 16
+    fd = os.open(path, os.O_RDONLY)
+    try:
+        for flag in (1, np.True_, None):
+            with pytest.raises(TypeError):
+                filesystem.CuFileDriver(fd, no_gds=flag)
+            with pytest.raises(TypeError):
+                filesystem.CuFileDriver(fd, use_mmap=flag)
+    finally:
+        os.close(fd)
 
 
 @pytest.mark.parametrize(

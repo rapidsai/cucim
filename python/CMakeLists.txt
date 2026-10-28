@@ -130,7 +130,6 @@ nanobind_add_module(cucim
     PROTECT_STACK
     NOMINSIZE
         nanobind/macros.h
-        nanobind/compat.h
         nanobind/cucim_py.h
         nanobind/cucim_pydoc.h
         nanobind/cucim_py.cpp

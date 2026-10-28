@@ -9,8 +9,6 @@
 
 #include <cucim/memory/memory_manager.h>
 
-#include "../compat.h"
-
 namespace cucim::memory
 {
 
@@ -38,18 +36,18 @@ void get_memory_info(
             auto data_tuple = nb::borrow<nb::tuple>(data);
             if (out_readonly)
             {
-                *out_readonly = cast_or_runtime_error<Bool>(data_tuple[1]);
+                *out_readonly = nb::cast<bool>(data_tuple[1]);
             }
-            buf = reinterpret_cast<void*>(cast_or_runtime_error<uint64_t>(data_tuple[0]));
+            buf = reinterpret_cast<void*>(nb::cast<uint64_t>(data_tuple[0]));
             if (nb::hasattr(buf_obj, "nbytes"))
             {
-                memory_size = cast_or_runtime_error<size_t>(nb::getattr(buf_obj, "nbytes"));
+                memory_size = nb::cast<size_t>(nb::getattr(buf_obj, "nbytes"));
             }
         }
     }
     else if (nb::isinstance<nb::int_>(buf_obj))
     {
-        buf = reinterpret_cast<void*>(cast_or_runtime_error<uint64_t>(buf_obj));
+        buf = reinterpret_cast<void*>(nb::cast<uint64_t>(buf_obj));
     }
 
     *out_buf = buf;
