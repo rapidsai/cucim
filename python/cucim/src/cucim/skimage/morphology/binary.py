@@ -1,9 +1,22 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
-"""
-Binary morphological operations
+"""Binary morphological operations.
+
+cuCIM intentionally retains the public ``binary_erosion``, ``binary_dilation``,
+``binary_opening``, and ``binary_closing`` functions despite their upstream
+deprecation. The binary and grayscale implementations use different GPU kernels,
+and the separate binary implementations can offer better performance.
+
+A possible future approach is to retain the binary implementations privately
+and dispatch to them from the grayscale functions for suitable boolean inputs.
+Such dispatch must preserve grayscale semantics, including boundary modes,
+even-sized footprint alignment, footprint mirroring, and output dtype.
+
+Before removing the public binary functions, cuCIM must provide its own
+deprecation period spanning at least two releases. The upstream deprecation
+schedule does not replace this cuCIM deprecation period.
 """
 
 import cupy as cp
@@ -48,24 +61,9 @@ def _iterate_binary_func(binary_func, image, footprint, out, border_value):
     return out
 
 
-# Note: scikit-image 0.26 deprecated the binary_* functions.
-#
-# For cuCIM, we need to consider whether or not to do the same. For
-# scikit-image it seems grayscale morphology is equal or faster to binary, but
-# for cuCIM performance is better with these binary variants.
-
-
 # The default_footprint decorator provides a diamond footprint as
 # default with the same dimension as the input image and size 3 along each
 # axis.
-# @deprecate_func(
-#     # rapids-pre-commit-hooks: disable-next-line[verify-hardcoded-version]
-#     deprecated_version="26.04",
-#     # rapids-pre-commit-hooks: disable-next-line[verify-hardcoded-version]
-#     removed_version="26.12",
-#     hint="Use `skimage.morphology.erosion` instead. "
-#     "Note the pixel shift by 1 for even-sized footprints (see docstring notes).",
-# )
 @default_footprint
 def binary_erosion(image, footprint=None, out=None, *, mode="ignore"):
     return _binary_erosion(image, footprint=footprint, out=out, mode=mode)
@@ -152,15 +150,6 @@ def _binary_erosion(image, footprint=None, out=None, *, mode="ignore"):
     return out
 
 
-# @deprecate_func(
-#     # rapids-pre-commit-hooks: disable-next-line[verify-hardcoded-version]
-#     deprecated_version="26.04",
-#     # rapids-pre-commit-hooks: disable-next-line[verify-hardcoded-version]
-#     removed_version="26.12",
-#     hint="Use `skimage.morphology.dilation` instead. "
-#     "Note the lack of mirroring for non-symmetric footprints (see docstring "
-#     "notes).",
-# )
 @default_footprint
 def binary_dilation(image, footprint=None, out=None, *, mode="ignore"):
     return _binary_dilation(image, footprint=footprint, out=out, mode=mode)
@@ -248,13 +237,6 @@ def _binary_dilation(image, footprint=None, out=None, *, mode="ignore"):
     return out
 
 
-# @deprecate_func(
-#     # rapids-pre-commit-hooks: disable-next-line[verify-hardcoded-version]
-#     deprecated_version="26.04",
-#     # rapids-pre-commit-hooks: disable-next-line[verify-hardcoded-version]
-#     removed_version="26.12",
-#     hint="Use `skimage.morphology.opening` instead. "
-# )
 @default_footprint
 def binary_opening(image, footprint=None, out=None, *, mode="ignore"):
     return _binary_opening(image, footprint=footprint, out=out, mode=mode)
@@ -319,13 +301,6 @@ def _binary_opening(image, footprint=None, out=None, *, mode="ignore"):
     return out
 
 
-# @deprecate_func(
-#     # rapids-pre-commit-hooks: disable-next-line[verify-hardcoded-version]
-#     deprecated_version="26.04",
-#     # rapids-pre-commit-hooks: disable-next-line[verify-hardcoded-version]
-#     removed_version="26.12",
-#     hint="Use `skimage.morphology.closing` instead. "
-# )
 @default_footprint
 def binary_closing(image, footprint=None, out=None, *, mode="ignore"):
     return _binary_closing(image, footprint=footprint, out=out, mode=mode)

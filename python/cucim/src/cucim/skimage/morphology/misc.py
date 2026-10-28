@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 """Miscellaneous morphology functions."""
@@ -10,7 +10,7 @@ import cupy as cp
 
 import cucim.skimage._vendored.ndimage as ndi
 
-from .._shared.utils import DEPRECATED, deprecate_parameter, warn
+from .._shared.utils import warn
 
 # Our function names don't exactly correspond to ndimages.
 # This dictionary translates from our names to scipy's.
@@ -63,22 +63,8 @@ def _check_dtype_supported(ar):
         )
 
 
-@deprecate_parameter(
-    deprecated_name="min_size",
-    new_name="max_size",
-    value_adapter=lambda x: x - 1,
-    # rapids-pre-commit-hooks: disable-next-line[verify-hardcoded-version]
-    start_version="26.04",
-    # rapids-pre-commit-hooks: disable-next-line[verify-hardcoded-version]
-    stop_version="26.12",
-    template=f"{deprecate_parameter.replace_parameter_template} "
-    "Note that the new threshold removes objects smaller than **or equal to** "
-    "its value, while the previous parameter only removed smaller ones.",
-)
-def remove_small_objects(
-    ar, min_size=DEPRECATED, connectivity=1, *, max_size=64, out=None
-):
-    """Remove objects smaller than the specified size.
+def remove_small_objects(ar, *, max_size=63, connectivity=1, out=None):
+    """Remove objects smaller than or equal to the specified size.
 
     Expects `ar` to be an array with labeled objects, and removes objects
     smaller than or equal to `max_size`. If `ar` is bool, the image is first
@@ -90,9 +76,16 @@ def remove_small_objects(
     ar : ndarray (arbitrary shape, int or bool type)
         The array containing the objects of interest. If the array type is
         int, the ints must be non-negative.
-    max_size : int, optional (default: 64)
+    max_size : int, optional (default: 63)
         Remove objects whose contiguous area (or volume, in N-D) contains this
         number of pixels or fewer.
+
+        .. versionchanged:: 26.12
+            The deprecated `min_size` parameter was removed. Use
+            ``max_size=min_size - 1`` to preserve the old threshold behavior.
+            All parameters after `ar` are now keyword-only, so a positional
+            `min_size` value raises instead of silently changing meaning.
+            The default is now 63, matching the former ``min_size=64``.
     connectivity : int, {1, 2, ..., ar.ndim}, optional (default: 1)
         The connectivity defining the neighborhood of a pixel. Used during
         labelling if `ar` is bool.
@@ -179,30 +172,24 @@ def remove_small_objects(
     return out
 
 
-@deprecate_parameter(
-    deprecated_name="area_threshold",
-    new_name="max_size",
-    value_adapter=lambda x: x - 1,
-    # rapids-pre-commit-hooks: disable-next-line[verify-hardcoded-version]
-    start_version="26.04",
-    # rapids-pre-commit-hooks: disable-next-line[verify-hardcoded-version]
-    stop_version="26.12",
-    template=f"{deprecate_parameter.replace_parameter_template} "
-    "Note that the new threshold removes objects smaller than **or equal to** "
-    "its value, while the previous parameter only removed smaller ones.",
-)
-def remove_small_holes(
-    ar, area_threshold=DEPRECATED, connectivity=1, *, max_size=64, out=None
-):
-    """Remove contiguous holes smaller than the specified size.
+def remove_small_holes(ar, *, max_size=63, connectivity=1, out=None):
+    """Remove contiguous holes smaller than or equal to the specified size.
 
     Parameters
     ----------
     ar : ndarray (arbitrary shape, int or bool type)
         The array containing the connected components of interest.
-    max_size : int, optional (default: 64)
+    max_size : int, optional (default: 63)
         Remove holes whose contiguous area (or volume, in N-D) contains this
         number of pixels or fewer.
+
+        .. versionchanged:: 26.12
+            The deprecated `area_threshold` parameter was removed. Use
+            ``max_size=area_threshold - 1`` to preserve the old threshold
+            behavior. All parameters after `ar` are now keyword-only, so a
+            positional `area_threshold` value raises instead of silently
+            changing meaning. The default is now 63, matching the former
+            ``area_threshold=64``.
     connectivity : int, {1, 2, ..., ar.ndim}, optional (default: 1)
         The connectivity defining the neighborhood of a pixel.
     out : ndarray
