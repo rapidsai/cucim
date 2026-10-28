@@ -192,8 +192,8 @@ nanobind_add_module(cucim_skimage_cpp
     PROTECT_STACK
     NOMINSIZE
         nanobind/skimage/skimage_cpp_py.cpp
-        nanobind/skimage/segmented_radix_sort.h
-        nanobind/skimage/segmented_radix_sort.cu
+        nanobind/skimage/segmented_sort.h
+        nanobind/skimage/segmented_sort.cu
         )
 target_link_libraries(cucim_skimage_cpp
     PRIVATE
@@ -202,7 +202,7 @@ target_link_libraries(cucim_skimage_cpp
         )
 # nanobind_add_module() only sets CXX_VISIBILITY_PRESET (pybind11_add_module()
 # also hid CUDA symbols). Without this, the CUB/libcu++ symbols instantiated by
-# segmented_radix_sort.cu are exported from the module and could interpose with
+# segmented_sort.cu are exported from the module and could interpose with
 # other CUB users loaded in the same process (e.g. CuPy).
 set_target_properties(cucim_skimage_cpp PROPERTIES
         CUDA_STANDARD ${CMAKE_CXX_STANDARD}
