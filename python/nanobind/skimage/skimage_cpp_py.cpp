@@ -3,98 +3,50 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include "segmented_radix_sort.h"
+
 #include <nanobind/nanobind.h>
 
-#include <cstdint>
-
+namespace nb = nanobind;
 using namespace nanobind::literals;
 
-namespace cucim::skimage
+namespace
 {
 
-void segmented_radix_sort_keys_uint8(std::uintptr_t keys_in,
-                                     std::uintptr_t keys_out,
-                                     std::uintptr_t segment_offsets,
-                                     std::int64_t num_items,
-                                     std::int64_t num_segments,
-                                     std::uintptr_t stream_ptr);
-void segmented_radix_sort_keys_ranges_uint8(std::uintptr_t keys_in,
-                                            std::uintptr_t keys_out,
-                                            std::uintptr_t begin_offsets,
-                                            std::uintptr_t end_offsets,
-                                            std::int64_t num_items,
-                                            std::int64_t num_segments,
-                                            std::uintptr_t stream_ptr);
+template <typename T>
+void def_segmented_radix_sort(nb::module_& m,
+                              const char* temp_storage_bytes_name,
+                              const char* sort_name,
+                              const char* ranges_name)
+{
+    m.def(temp_storage_bytes_name, &cucim::skimage::segmented_radix_sort_keys_temp_storage_bytes<T>, "num_items"_a,
+          "num_segments"_a,
+          "Return the size in bytes of the temporary device storage required by the matching "
+          "segmented_radix_sort_keys functions.");
+    m.def(sort_name, &cucim::skimage::segmented_radix_sort_keys<T>, "keys_in"_a, "keys_out"_a, "segment_offsets"_a,
+          "num_items"_a, "num_segments"_a, "temp_storage"_a, "temp_storage_bytes"_a, "stream_ptr"_a = 0,
+          "Sort keys independently within each segment using cub::DeviceSegmentedRadixSort.\n\n"
+          "The sort is enqueued asynchronously on ``stream_ptr``. ``temp_storage`` must provide at least the "
+          "number of bytes reported by the matching temp_storage_bytes function.");
+    m.def(ranges_name, &cucim::skimage::segmented_radix_sort_keys_ranges<T>, "keys_in"_a, "keys_out"_a, "begin_offsets"_a,
+          "end_offsets"_a, "num_items"_a, "num_segments"_a, "temp_storage"_a, "temp_storage_bytes"_a, "stream_ptr"_a = 0,
+          "Sort selected key ranges using cub::DeviceSegmentedRadixSort.\n\n"
+          "The sort is enqueued asynchronously on ``stream_ptr``. ``temp_storage`` must provide at least the "
+          "number of bytes reported by the matching temp_storage_bytes function.");
+}
 
-void segmented_radix_sort_keys_uint16(std::uintptr_t keys_in,
-                                      std::uintptr_t keys_out,
-                                      std::uintptr_t segment_offsets,
-                                      std::int64_t num_items,
-                                      std::int64_t num_segments,
-                                      std::uintptr_t stream_ptr);
-void segmented_radix_sort_keys_ranges_uint16(std::uintptr_t keys_in,
-                                             std::uintptr_t keys_out,
-                                             std::uintptr_t begin_offsets,
-                                             std::uintptr_t end_offsets,
-                                             std::int64_t num_items,
-                                             std::int64_t num_segments,
-                                             std::uintptr_t stream_ptr);
-
-void segmented_radix_sort_keys_float32(std::uintptr_t keys_in,
-                                       std::uintptr_t keys_out,
-                                       std::uintptr_t segment_offsets,
-                                       std::int64_t num_items,
-                                       std::int64_t num_segments,
-                                       std::uintptr_t stream_ptr);
-void segmented_radix_sort_keys_ranges_float32(std::uintptr_t keys_in,
-                                              std::uintptr_t keys_out,
-                                              std::uintptr_t begin_offsets,
-                                              std::uintptr_t end_offsets,
-                                              std::int64_t num_items,
-                                              std::int64_t num_segments,
-                                              std::uintptr_t stream_ptr);
-
-void segmented_radix_sort_keys_float64(std::uintptr_t keys_in,
-                                       std::uintptr_t keys_out,
-                                       std::uintptr_t segment_offsets,
-                                       std::int64_t num_items,
-                                       std::int64_t num_segments,
-                                       std::uintptr_t stream_ptr);
-void segmented_radix_sort_keys_ranges_float64(std::uintptr_t keys_in,
-                                              std::uintptr_t keys_out,
-                                              std::uintptr_t begin_offsets,
-                                              std::uintptr_t end_offsets,
-                                              std::int64_t num_items,
-                                              std::int64_t num_segments,
-                                              std::uintptr_t stream_ptr);
-
-} // namespace cucim::skimage
+} // namespace
 
 NB_MODULE(_cucim_skimage_cpp_ext, m)
 {
     m.doc() = "Optional compiled helpers for cucim.skimage.";
-    m.def("segmented_radix_sort_keys_uint8", &cucim::skimage::segmented_radix_sort_keys_uint8, "keys_in"_a,
-          "keys_out"_a, "segment_offsets"_a, "num_items"_a, "num_segments"_a, "stream_ptr"_a = 0,
-          "Sort uint8 keys independently within each segment using cub::DeviceSegmentedRadixSort.");
-    m.def("segmented_radix_sort_keys_uint16", &cucim::skimage::segmented_radix_sort_keys_uint16, "keys_in"_a,
-          "keys_out"_a, "segment_offsets"_a, "num_items"_a, "num_segments"_a, "stream_ptr"_a = 0,
-          "Sort uint16 keys independently within each segment using cub::DeviceSegmentedRadixSort.");
-    m.def("segmented_radix_sort_keys_float32", &cucim::skimage::segmented_radix_sort_keys_float32, "keys_in"_a,
-          "keys_out"_a, "segment_offsets"_a, "num_items"_a, "num_segments"_a, "stream_ptr"_a = 0,
-          "Sort float32 keys independently within each segment using cub::DeviceSegmentedRadixSort.");
-    m.def("segmented_radix_sort_keys_float64", &cucim::skimage::segmented_radix_sort_keys_float64, "keys_in"_a,
-          "keys_out"_a, "segment_offsets"_a, "num_items"_a, "num_segments"_a, "stream_ptr"_a = 0,
-          "Sort float64 keys independently within each segment using cub::DeviceSegmentedRadixSort.");
-    m.def("segmented_radix_sort_keys_ranges_uint8", &cucim::skimage::segmented_radix_sort_keys_ranges_uint8,
-          "keys_in"_a, "keys_out"_a, "begin_offsets"_a, "end_offsets"_a, "num_items"_a, "num_segments"_a,
-          "stream_ptr"_a = 0, "Sort selected uint8 key ranges using cub::DeviceSegmentedRadixSort.");
-    m.def("segmented_radix_sort_keys_ranges_uint16", &cucim::skimage::segmented_radix_sort_keys_ranges_uint16,
-          "keys_in"_a, "keys_out"_a, "begin_offsets"_a, "end_offsets"_a, "num_items"_a, "num_segments"_a,
-          "stream_ptr"_a = 0, "Sort selected uint16 key ranges using cub::DeviceSegmentedRadixSort.");
-    m.def("segmented_radix_sort_keys_ranges_float32", &cucim::skimage::segmented_radix_sort_keys_ranges_float32,
-          "keys_in"_a, "keys_out"_a, "begin_offsets"_a, "end_offsets"_a, "num_items"_a, "num_segments"_a,
-          "stream_ptr"_a = 0, "Sort selected float32 key ranges using cub::DeviceSegmentedRadixSort.");
-    m.def("segmented_radix_sort_keys_ranges_float64", &cucim::skimage::segmented_radix_sort_keys_ranges_float64,
-          "keys_in"_a, "keys_out"_a, "begin_offsets"_a, "end_offsets"_a, "num_items"_a, "num_segments"_a,
-          "stream_ptr"_a = 0, "Sort selected float64 key ranges using cub::DeviceSegmentedRadixSort.");
+    def_segmented_radix_sort<std::uint8_t>(m, "segmented_radix_sort_keys_temp_storage_bytes_uint8",
+                                           "segmented_radix_sort_keys_uint8", "segmented_radix_sort_keys_ranges_uint8");
+    def_segmented_radix_sort<std::uint16_t>(m, "segmented_radix_sort_keys_temp_storage_bytes_uint16",
+                                            "segmented_radix_sort_keys_uint16",
+                                            "segmented_radix_sort_keys_ranges_uint16");
+    def_segmented_radix_sort<float>(m, "segmented_radix_sort_keys_temp_storage_bytes_float32",
+                                    "segmented_radix_sort_keys_float32", "segmented_radix_sort_keys_ranges_float32");
+    def_segmented_radix_sort<double>(m, "segmented_radix_sort_keys_temp_storage_bytes_float64",
+                                     "segmented_radix_sort_keys_float64", "segmented_radix_sort_keys_ranges_float64");
 }
