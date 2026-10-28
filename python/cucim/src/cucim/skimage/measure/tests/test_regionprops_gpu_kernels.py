@@ -378,9 +378,7 @@ def test_median_intensity_segmented_sort_preserves_integer_dtype(
     if extension is None:
         pytest.skip("cucim.skimage C++ extension is unavailable")
 
-    function_name = (
-        f"segmented_radix_sort_keys_ranges_{cp.dtype(image_dtype).name}"
-    )
+    function_name = f"segmented_sort_keys_ranges_{cp.dtype(image_dtype).name}"
     if not hasattr(extension, function_name):
         pytest.skip(f"C++ extension does not provide {function_name}")
 

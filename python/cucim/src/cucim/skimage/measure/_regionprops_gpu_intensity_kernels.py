@@ -40,9 +40,13 @@ intensity_deps["intensity_std"] = ["num_pixels"]
 # implementation. Users can monkeypatch this value to tune dispatch.
 hybrid_size_threshold = 128000
 
-# The median implementation uses cub::DeviceSegmentedRadixSort::SortKeys over
+# The median implementation uses cub::DeviceSegmentedSort::SortKeys over
 # packed per-label intensity values for regions up to hybrid_size_threshold.
 # Larger regions are handled by a follow-up cp.median call.
+# DeviceSegmentedSort (rather than DeviceSegmentedRadixSort) is used because
+# it groups segments by size and picks a suitable algorithm for each group,
+# which suits the wide range of region sizes typical of label images; CUB
+# recommends DeviceSegmentedRadixSort only for uniformly large segments.
 
 
 def _get_img_sums_code(
@@ -615,8 +619,9 @@ def _pack_intensities_by_label(
     """Pack intensities into contiguous, unordered segments for each label.
 
     ``offsets`` gives each segment's initial write position. One atomic cursor
-    per label assigns foreground pixels to that segment; the subsequent radix
-    sort does not require the values within a segment to retain image order.
+    per label assigns foreground pixels to that segment; the subsequent
+    segmented sort does not require the values within a segment to retain
+    image order.
     """
     label_image = cp.ascontiguousarray(label_image)
     intensity_image = cp.ascontiguousarray(intensity_image)
@@ -688,11 +693,11 @@ def _fill_intensity_median_segmented_sort(
         return None
     dtype_name = img1d.dtype.name
     sort_func = getattr(
-        _skimage_cpp_ext, f"segmented_radix_sort_keys_ranges_{dtype_name}", None
+        _skimage_cpp_ext, f"segmented_sort_keys_ranges_{dtype_name}", None
     )
     temp_storage_bytes_func = getattr(
         _skimage_cpp_ext,
-        f"segmented_radix_sort_keys_temp_storage_bytes_{dtype_name}",
+        f"segmented_sort_keys_temp_storage_bytes_{dtype_name}",
         None,
     )
     if sort_func is None or temp_storage_bytes_func is None:
