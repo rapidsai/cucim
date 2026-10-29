@@ -806,23 +806,53 @@ def test_orientation():
     # test diagonal regions
     diag = cp.eye(10, dtype=int)
     orient_diag = regionprops(diag)[0].orientation
-    assert_almost_equal(orient_diag, -math.pi / 4)
+    assert_almost_equal(orient_diag, math.pi / 4)
     orient_diag = regionprops(diag, spacing=(1, 2))[0].orientation
     assert_almost_equal(orient_diag, np.arccos(0.5 / math.sqrt(1 + 0.5**2)))
     orient_diag = regionprops(cp.flipud(diag))[0].orientation
-    assert_almost_equal(orient_diag, math.pi / 4)
+    assert_almost_equal(orient_diag, -math.pi / 4)
     orient_diag = regionprops(cp.flipud(diag), spacing=(1, 2))[0].orientation
     assert_almost_equal(orient_diag, -np.arccos(0.5 / math.sqrt(1 + 0.5**2)))
     orient_diag = regionprops(cp.fliplr(diag))[0].orientation
-    assert_almost_equal(orient_diag, math.pi / 4)
+    assert_almost_equal(orient_diag, -math.pi / 4)
     orient_diag = regionprops(cp.fliplr(diag), spacing=(1, 2))[0].orientation
     assert_almost_equal(orient_diag, -np.arccos(0.5 / math.sqrt(1 + 0.5**2)))
     orient_diag = regionprops(cp.fliplr(cp.flipud(diag)))[0].orientation
-    assert_almost_equal(orient_diag, -math.pi / 4)
+    assert_almost_equal(orient_diag, math.pi / 4)
     orient_diag = regionprops(np.fliplr(np.flipud(diag)), spacing=(1, 2))[
         0
     ].orientation
     assert_almost_equal(orient_diag, np.arccos(0.5 / math.sqrt(1 + 0.5**2)))
+
+
+@pytest.mark.parametrize("batch_processing", [False, True])
+def test_orientation_continuity(batch_processing):
+    # nearly diagonal array
+    arr1 = cp.array([[0, 0, 1, 1], [0, 0, 1, 0], [0, 1, 0, 0], [1, 0, 0, 0]])
+    # diagonal array
+    arr2 = cp.array([[0, 0, 0, 2], [0, 0, 2, 0], [0, 2, 0, 0], [2, 0, 0, 0]])
+    # nearly diagonal array
+    arr3 = cp.array([[0, 0, 0, 3], [0, 0, 3, 3], [0, 3, 0, 0], [3, 0, 0, 0]])
+    image = cp.hstack((arr1, arr2, arr3))
+    orientations = regionprops_table(
+        image,
+        properties=["orientation"],
+        batch_processing=batch_processing,
+        copy_output_to_host=True,
+    )["orientation"]
+    np.testing.assert_allclose(orientations, orientations[1], rtol=0, atol=0.08)
+
+
+@pytest.mark.parametrize("flip", [None, 0, 1, (0, 1)])
+def test_orientation_diagonal_batch_matches_regionprops(flip):
+    diag = cp.eye(10, dtype=int)
+    if flip is not None:
+        diag = cp.flip(diag, axis=flip)
+    expected = regionprops(diag)[0].orientation
+    result = regionprops_table(
+        diag, properties=["orientation"], copy_output_to_host=True
+    )["orientation"]
+    assert_almost_equal(result[0], expected)
 
 
 def test_perimeter():

@@ -684,9 +684,9 @@ class RegionProperties:
         a, b, b, c = self.inertia_tensor.ravel()
         if a - c == 0:
             if b < 0:
-                return -PI / 4.0
-            else:
                 return PI / 4.0
+            else:
+                return -PI / 4.0
         else:
             return 0.5 * math.atan2(-2 * b, c - a)
 
