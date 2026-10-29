@@ -68,6 +68,7 @@ jobs:
       date: ${{ inputs.date }}
       script: ci/build_cpp.sh
       sha: ${{ inputs.sha }}
+      matrix_type: cuda-13-4-nightly
   docs-build-matrix:
     permissions:
       contents: read
@@ -75,6 +76,7 @@ jobs:
     with:
       build_type: ${{ inputs.build_type || 'branch' }}
       matrix_name: docs-build
+      matrix_type: cuda-13-4-nightly
   docs-build:
     if: github.ref_type == 'branch'
     needs: [docs-build-matrix, python-build]
@@ -136,6 +138,7 @@ jobs:
       date: ${{ inputs.date }}
       script: ci/build_python.sh
       sha: ${{ inputs.sha }}
+      matrix_type: cuda-13-4-nightly
   upload-conda:
     needs: [cpp-build, python-build]
     permissions:
@@ -170,6 +173,7 @@ jobs:
       script: ci/build_wheel.sh
       package-name: cucim
       package-type: python
+      matrix_type: cuda-13-4-nightly
   wheel-publish:
     needs: wheel-build
     permissions:
