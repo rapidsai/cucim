@@ -95,13 +95,13 @@ def denoise_nl_means(
 
         image.size * patch_distance ** image.ndim
 
-    The computing time depends only weakly on the patch size, thanks to
-    the computation of the integral of patches distances for a given
-    shift, that reduces the number of operations [1]_. Therefore, this
-    algorithm executes faster than the classic algorithm
-    (``fast_mode=False``), at the expense of using twice as much memory.
-    This implementation has been proven to be more efficient compared to
-    other alternatives, see e.g. [3]_.
+    The computing time depends only weakly on the patch size, because for
+    each shift the patch distances of all pixels are computed together,
+    reusing the partial sums shared by overlapping patches [2]_. In cuCIM,
+    these are separable sums along each axis computed in GPU shared memory,
+    so the cost per pixel and shift grows only linearly with the patch size.
+    This approach has been proven to be more efficient compared to other
+    alternatives, see e.g. [3]_.
 
     Compared to the classic algorithm, all pixels of a patch contribute
     to the distance to another patch with the same weight, no matter
@@ -131,9 +131,20 @@ def denoise_nl_means(
 
     The GPU implementation reproduces the patch weights of scikit-image's
     implementation (including its fast approximation of the exponential), so
-    results agree with scikit-image up to floating point rounding. On the GPU,
-    the computational cost of ``fast_mode=False`` is only modestly higher than
-    that of ``fast_mode=True``.
+    results agree with scikit-image up to floating point rounding. The
+    Gaussian patch weights of ``fast_mode=False`` are also separable, so both
+    modes use the same separable sums and the computational cost of
+    ``fast_mode=False`` is only modestly higher than that of
+    ``fast_mode=True``.
+
+    scikit-image computes the ``fast_mode=True`` patch distances from an
+    integral image of the squared differences over the whole image, so their
+    rounding error grows with the image size (to a relative error of about
+    1e-9 for an 8192 x 8192 image). cuCIM sums only the values within each
+    patch, so its patch distances are more accurate, with a relative error
+    independent of the image size. This also keeps the float32 computation
+    accurate (relative error of about 2e-7), which would not be the case with
+    a float32 integral image.
 
     Images with 8 or 16-bit integer (or boolean) dtypes are processed and
     returned as float32, while 32 or 64-bit integer images use float64
