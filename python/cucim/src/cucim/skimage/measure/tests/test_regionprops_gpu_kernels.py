@@ -1372,8 +1372,11 @@ def test_regionprops_dict_single_property(ndim, spacing, property_name):
     if spacing is not None and property_name in [
         "moments_hu",
         "moments_weighted_hu",
+        "perimeter",
+        "perimeter_crofton",
     ]:
-        # as in scikit-image, Hu moments require unit spacing
+        # as in scikit-image, Hu moments require unit spacing and the
+        # perimeters isotropic spacing (this test's spacing is anisotropic)
         with pytest.raises(NotImplementedError):
             regionprops_dict(
                 labels,
@@ -1446,6 +1449,22 @@ def test_regionprops_dict_spacing(ndim, spacing, property_name):
         assert_allclose(
             result[key][valid], expected[key][valid], rtol=1e-5, atol=1e-8
         )
+
+
+@pytest.mark.parametrize("property_name", ["perimeter", "perimeter_crofton"])
+def test_regionprops_dict_perimeter_spacing(property_name):
+    labels = get_labels_nd((256, 512))
+    for spacing in [(2, 2), (0.5, 0.5)]:
+        result = regionprops_dict(
+            labels, properties=[property_name], spacing=spacing
+        )[property_name]
+        expected = measure_cpu.regionprops_table(
+            cp.asnumpy(labels), properties=[property_name], spacing=spacing
+        )[property_name]
+        assert_allclose(result, expected, rtol=1e-5)
+    # scikit-image raises NotImplementedError for anisotropic spacing
+    with pytest.raises(NotImplementedError):
+        regionprops_dict(labels, properties=[property_name], spacing=(1, 2))
 
 
 @pytest.mark.parametrize("property_name", ["moments_hu", "moments_weighted_hu"])
