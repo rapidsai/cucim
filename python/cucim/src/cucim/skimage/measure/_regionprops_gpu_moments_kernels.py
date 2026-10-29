@@ -1929,7 +1929,7 @@ def regionprops_centroid_weighted(
             bbox = cp.ascontiguousarray(bbox)
         inputs = (moments_raw, bbox)
         if not unit_spacing:
-            inputs = inputs + (cp.asarray(spacing),)
+            inputs = inputs + (cp.asarray(spacing, dtype=cp.float64),)
     kernel = get_centroid_weighted_kernel(
         moments_raw.dtype,
         ndim,

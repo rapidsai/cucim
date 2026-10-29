@@ -1378,6 +1378,44 @@ def test_regionprops_dict_single_property(ndim, spacing, property_name):
 
 
 @pytest.mark.parametrize("ndim", [2, 3])
+@pytest.mark.parametrize("spacing", [(2, 2, 2), (1.5, 0.5, 0.76)])
+@pytest.mark.parametrize(
+    "property_name",
+    [
+        "centroid",
+        "centroid_local",
+        "centroid_weighted",
+        "centroid_weighted_local",
+    ],
+)
+def test_regionprops_dict_spacing(ndim, spacing, property_name):
+    """Batch properties with non-unit spacing must match scikit-image."""
+    if ndim != 2 and property_name in ndim_2_only:
+        pytest.skip(f"{property_name} is for 2d images only.")
+    shape = (256, 512) if ndim == 2 else (48, 64, 64)
+    spacing = spacing[:ndim]
+    labels = get_labels_nd(shape)
+    intensity_image = get_intensity_image(shape, dtype=cp.float32)
+    intensity_image -= intensity_image.min() - 1  # positive weights
+    result = regionprops_dict(
+        labels,
+        intensity_image,
+        properties=[property_name],
+        spacing=spacing,
+        to_table=True,
+    )
+    expected = measure_cpu.regionprops_table(
+        cp.asnumpy(labels),
+        cp.asnumpy(intensity_image),
+        properties=[property_name],
+        spacing=spacing,
+    )
+    assert set(result) == set(expected)
+    for key in expected:
+        assert_allclose(result[key], expected[key], rtol=1e-5, atol=1e-8)
+
+
+@pytest.mark.parametrize("ndim", [2, 3])
 def test_regionprops_dict_axis_lengths(ndim):
     shape = (256, 512) if ndim == 2 else (64, 64, 64)
     labels = get_labels_nd(shape)
