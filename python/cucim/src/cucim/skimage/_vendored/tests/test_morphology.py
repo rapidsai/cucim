@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 """Testing axes support that is not currently present in CuPy/SciPy."""
@@ -132,3 +132,22 @@ def test_grey_axes(func, expand_axis, origin, footprint_mode, mode):
     cucim_func = getattr(ndi, func)
     cucim_func(data, output=out, axes=axes, **kwargs)
     cp.testing.assert_array_almost_equal(out, expected)
+
+
+@pytest.mark.parametrize("ndim", [2, 3])
+@pytest.mark.parametrize("connectivity", [1, 2, 3])
+def test_binary_fill_holes_structure(ndim, connectivity):
+    # the non-iterative algorithm (used with the default origin and axes)
+    # must also use the structuring element
+    if connectivity > ndim:
+        pytest.skip("connectivity > ndim")
+    rng = np.random.default_rng(5)
+    shape = (64, 64) if ndim == 2 else (16, 16, 16)
+    data = rng.random(shape) > 0.35
+    struct = ndi_cpu.generate_binary_structure(ndim, connectivity)
+    expected = ndi_cpu.binary_fill_holes(data, struct)
+    # the structuring element changes which background pixels are holes
+    default = ndi_cpu.binary_fill_holes(data)
+    assert np.array_equal(expected, default) == (connectivity == 1)
+    out = ndi.binary_fill_holes(cp.asarray(data), cp.asarray(struct))
+    cp.testing.assert_array_equal(out, expected)

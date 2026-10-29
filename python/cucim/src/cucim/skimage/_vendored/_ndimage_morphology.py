@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Infrastructure, Inc.
 # SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Networks, Inc.
-# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND MIT
 
 import math
@@ -915,7 +915,9 @@ def binary_fill_holes(
     if isinstance(origin, int):
         origin = (origin,) * len(axes)
     if all(o == 0 for o in origin) and filter_all_axes:
-        return _binary_fill_holes_non_iterative(input, output=output)
+        return _binary_fill_holes_non_iterative(
+            input, structure=structure, output=output
+        )
     elif filter_all_axes:
         warnings.warn(
             "It is recommended to keep the default origin=0 so that a faster "
