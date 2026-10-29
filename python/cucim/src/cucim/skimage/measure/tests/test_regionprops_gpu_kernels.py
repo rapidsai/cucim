@@ -1382,10 +1382,12 @@ def test_regionprops_dict_single_property(ndim, spacing, property_name):
 @pytest.mark.parametrize(
     "property_name",
     [
+        "area_bbox",
         "centroid",
         "centroid_local",
         "centroid_weighted",
         "centroid_weighted_local",
+        "extent",
     ],
 )
 def test_regionprops_dict_spacing(ndim, spacing, property_name):
