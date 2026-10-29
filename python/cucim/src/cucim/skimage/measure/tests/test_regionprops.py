@@ -17,6 +17,7 @@ from cupy.testing import (
 )
 from numpy.testing import assert_almost_equal, assert_equal
 from skimage import data, draw
+from skimage.measure import regionprops_table as regionprops_table_cpu
 from skimage.segmentation import slic
 
 from cucim.skimage import transform
@@ -1002,6 +1003,30 @@ def test_centroid_weighted():
     )[0].centroid_weighted
     centroid = tuple(float(c) for c in centroid)
     assert_almost_equal(centroid, (cX, cY))
+
+
+@pytest.mark.parametrize("batch_processing", [False, True])
+@pytest.mark.parametrize("spacing", [(2, 2), (1.3, 0.7)])
+def test_centroid_weighted_offset_spacing(batch_processing, spacing):
+    # region whose bounding box does not start at the origin, so that the
+    # offset of the bounding box must also be scaled by the spacing
+    labels = cp.pad(SAMPLE, ((3, 0), (5, 0)))
+    intensity_image = cp.pad(INTENSITY_SAMPLE, ((3, 0), (5, 0)))
+    expected = regionprops_table_cpu(
+        cp.asnumpy(labels),
+        cp.asnumpy(intensity_image),
+        properties=["centroid_weighted"],
+        spacing=spacing,
+    )
+    result = regionprops_table(
+        labels,
+        intensity_image,
+        properties=["centroid_weighted"],
+        spacing=spacing,
+        batch_processing=batch_processing,
+    )
+    for key in expected:
+        assert_almost_equal(float(result[key][0]), expected[key][0])
 
 
 def test_moments_weighted_hu():
