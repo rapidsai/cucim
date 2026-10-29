@@ -22,13 +22,10 @@ twine check \
 
 rapids-logger "validate the stable ABI with 'abi3audit'"
 
-if ! compgen -G "${wheel_dir_relative_path}/*-cp312-abi3-*.whl" > /dev/null; then
-    rapids-echo-stderr "No cp312-abi3 wheel found in ${wheel_dir_relative_path}"
-    exit 1
-fi
-
-abi3audit \
-    --strict \
-    --summary \
-    --verbose \
-    "${wheel_dir_relative_path}"/*.whl
+# 'abi3audit' fails on wheels with DSOs that lack an ABI tag (e.g. 'lib*' wheels).
+# Filtering by '*abi*' avoids those.
+find \
+    "${wheel_dir_relative_path}" \
+    -type f \
+    -name '*abi*' \
+    -exec abi3audit --strict --summary --verbose '{}' \+
