@@ -72,7 +72,7 @@ requirements:
     - cupy >=14.0.1,!=14.1.0
     - lazy_loader >=0.1
     - libcucim ={{ version }}
-    - python >=3.12
+    - python
     - python-gil
     - scikit-image >=0.23.2,<0.27.0
     - scipy >=1.6
