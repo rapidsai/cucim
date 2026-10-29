@@ -758,6 +758,7 @@ def regionprops_dict(
             # also handles "num_pixels_filled"
             out["area_filled"] = regionprops_area(
                 out["label_filled"],
+                spacing=spacing,
                 max_label=max_label,
                 filled=True,
                 props_dict=out,
