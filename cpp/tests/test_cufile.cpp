@@ -12,6 +12,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <fcntl.h>
+#include <stdexcept>
 #include <unistd.h>
 #include <string_view>
 // Test
@@ -56,6 +57,19 @@ static void create_test_file(const char* file_name, int size)
     (void)write_cnt;
     assert(write_cnt == size);
     close(fd);
+}
+
+TEST_CASE("Append mode should be rejected", "[test_cufile.cpp]")
+{
+    std::string output_file = fmt::format("{}/test_cufile_append.raw", g_config.temp_folder);
+    create_test_file(output_file.c_str(), 32);
+
+    REQUIRE_THROWS_AS(cucim::filesystem::open(output_file.c_str(), "a"), std::invalid_argument);
+
+    int append_fd = ::open(output_file.c_str(), O_RDWR | O_APPEND);
+    REQUIRE(append_fd >= 0);
+    REQUIRE_THROWS_AS(cucim::filesystem::open(append_fd, true, false), std::invalid_argument);
+    ::close(append_fd);
 }
 
 TEST_CASE("Verify libcufile usage", "[test_cufile.cpp]")
