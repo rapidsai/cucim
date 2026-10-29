@@ -1562,7 +1562,9 @@ def get_spd_matrix_eigvals_kernel(
             axis_lengths[offset_evals + 1] = 4.0 * sqrt(lam2);\n"""
         if compute_eccentricity:
             source += """
-            eccentricity[i] =  sqrt(1.0 - lam2 / lam1);\n"""
+            // 0 for regions with lam1 == 0 (e.g. a single pixel), as in
+            // scikit-image, instead of 0 / 0 = NaN
+            eccentricity[i] = (lam1 == 0) ? 0.0 : sqrt(1.0 - lam2 / lam1);\n"""
     elif rank == 3:
         if compute_eccentricity:
             raise ValueError("eccentricity only supported for 2D images")
