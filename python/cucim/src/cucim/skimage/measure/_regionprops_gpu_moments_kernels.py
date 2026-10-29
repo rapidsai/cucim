@@ -36,6 +36,7 @@ moment_deps["moments_weighted"] = ["bbox"]
 moment_deps["eccentricity"] = ["inertia_tensor_eigvals"]
 moment_deps["axis_major_length"] = ["inertia_tensor_eigvals"]
 moment_deps["axis_minor_length"] = ["inertia_tensor_eigvals"]
+moment_deps["axis_lengths"] = ["inertia_tensor_eigvals"]
 moment_deps["inertia_tensor_eigenvectors"] = ["inertia_tensor_eigvals"]
 moment_deps["inertia_tensor_eigvals"] = ["inertia_tensor"]
 moment_deps["orientation"] = ["inertia_tensor"]
@@ -60,6 +61,7 @@ required_order = {
     "centroid_weighted_local": 1,
     "axis_major_length": 2,
     "axis_minor_length": 2,
+    "axis_lengths": 2,
     "eccentricity": 2,
     "inertia_tensor": 2,
     "inertia_tensor_eigvals": 2,

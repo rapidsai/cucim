@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 import warnings
@@ -610,6 +610,7 @@ def regionprops_dict(
                 compute_axis_lengths = (
                     "axis_minor_length" in required_moment_props
                     or "axis_major_length" in required_moment_props
+                    or "axis_lengths" in required_moment_props
                 )
                 regionprops_inertia_tensor_eigvals(
                     out["inertia_tensor"],
