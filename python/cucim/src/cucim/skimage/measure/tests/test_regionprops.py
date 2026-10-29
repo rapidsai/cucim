@@ -1006,6 +1006,42 @@ def test_centroid_weighted():
 
 
 @pytest.mark.parametrize("batch_processing", [False, True])
+@pytest.mark.parametrize("to_table", [False, True])
+def test_centroid_weighted_copy_to_host(batch_processing, to_table):
+    # centroid_weighted is a tuple of CuPy scalars in the per-label path,
+    # which copy_output_to_host=True failed to convert for > 1 region
+    labels = cp.zeros((20, 20), dtype=cp.uint8)
+    labels[3:9, 4:12] = 1
+    labels[12:16, 2:6] = 2
+    intensity_image = cp.arange(400, dtype=cp.float32).reshape(20, 20)
+    expected = regionprops_table_cpu(
+        cp.asnumpy(labels),
+        cp.asnumpy(intensity_image),
+        properties=["centroid_weighted"],
+    )
+    result = regionprops_table(
+        labels,
+        intensity_image,
+        properties=["centroid_weighted"],
+        batch_processing=batch_processing,
+        to_table=to_table,
+        copy_output_to_host=True,
+    )
+    if to_table:
+        for key in expected:
+            assert isinstance(result[key], np.ndarray)
+            assert_array_almost_equal(result[key], expected[key])
+    else:
+        centroids = np.asarray(result["centroid_weighted"], dtype=float)
+        assert_array_almost_equal(
+            centroids[:, 0], expected["centroid_weighted-0"]
+        )
+        assert_array_almost_equal(
+            centroids[:, 1], expected["centroid_weighted-1"]
+        )
+
+
+@pytest.mark.parametrize("batch_processing", [False, True])
 @pytest.mark.parametrize("spacing", [(2, 2), (1.3, 0.7)])
 def test_centroid_weighted_offset_spacing(batch_processing, spacing):
     # region whose bounding box does not start at the origin, so that the
