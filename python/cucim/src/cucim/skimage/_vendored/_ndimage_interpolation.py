@@ -19,6 +19,7 @@ from cucim.skimage._vendored import (
     _ndimage_util as _util,
 )
 from cucim.skimage._vendored._internal import _normalize_axis_index
+from cucim.skimage._vendored.pad import pad
 
 
 def _check_parameter(func_name, order, mode):
@@ -322,7 +323,9 @@ def _prepad_for_spline_filter(input, mode, cval, batch_axes=None):
             ]
         else:
             pad_width = npad
-        padded = cupy.pad(input, pad_width, **kwargs)
+        # The vendored pad applies 'edge' mode in a single elementwise kernel
+        # rather than the many small kernels launched by cupy.pad.
+        padded = pad(input, pad_width, **kwargs)
     else:
         npad = 0
         padded = input
@@ -335,7 +338,7 @@ def _filter_input(image, prefilter, mode, cval, order, batch_axes=None):
     Spline orders > 1 need a prefiltering stage to preserve resolution.
 
     For boundary modes without analytical spline boundary conditions, some
-    prepadding of the input with cupy.pad is used to maintain accuracy.
+    prepadding of the input is used to maintain accuracy.
     ``npad`` is an integer corresponding to the amount of padding at each edge
     of the array.
 
