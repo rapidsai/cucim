@@ -517,6 +517,20 @@ def test_eccentricity():
     assert_almost_equal(eps, 0)
 
 
+@pytest.mark.parametrize("spacing", [None, (3, 3)])
+def test_eccentricity_single_pixel_batch(spacing):
+    img = cp.zeros((5, 5), dtype=int)
+    img[2, 2] = 1
+    img[0, 0:3] = 2
+    eps = regionprops_table(
+        img,
+        properties=["eccentricity"],
+        spacing=spacing,
+        copy_output_to_host=True,
+    )["eccentricity"]
+    assert_array_almost_equal(eps, [0, 1])
+
+
 def test_equivalent_diameter_area():
     diameter = regionprops(SAMPLE)[0].equivalent_diameter_area
     # determined with MATLAB
