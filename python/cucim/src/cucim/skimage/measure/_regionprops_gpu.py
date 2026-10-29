@@ -536,6 +536,7 @@ def regionprops_dict(
                 compute_local=compute_centroid_local,
                 compute_global=compute_centroid,
                 weighted=False,
+                spacing=spacing,
                 props_dict=out,
             )
 
@@ -551,6 +552,7 @@ def regionprops_dict(
                 compute_local=compute_centroid_weighted_local,
                 compute_global=compute_centroid_weighted,
                 weighted=True,
+                spacing=spacing,
                 props_dict=out,
             )
 
