@@ -23,6 +23,7 @@ def denoise_nl_means(
     preserve_range=False,
     channel_axis=None,
     compute_dtype=None,
+    symmetric_patch=False,
 ):
     """Perform non-local means denoising on 2D-4D grayscale or RGB images.
 
@@ -66,6 +67,13 @@ def denoise_nl_means(
         scikit-image, which always uses double precision in fast mode. This
         option does not change the output dtype. This parameter is specific
         to cuCIM.
+    symmetric_patch : bool, optional
+        If True, the patch distances of ``fast_mode=True`` are computed over
+        the full patch centered on each pixel. By default (False), they use
+        the same patch as scikit-image, which has one element fewer per axis
+        and is not centered on the pixel (see Notes). This has no effect when
+        ``fast_mode=False``, whose patch is always centered. This parameter is
+        specific to cuCIM.
 
     Returns
     -------
@@ -145,6 +153,19 @@ def denoise_nl_means(
     independent of the image size. This also keeps the float32 computation
     accurate (relative error of about 2e-7), which would not be the case with
     a float32 integral image.
+
+    For ``fast_mode=True``, scikit-image's integral-image lookup uses corners
+    at offsets of ``-r`` and ``+r`` from each pixel, where
+    ``r = patch_size // 2``. The resulting box covers ``2 * r`` elements per
+    axis, from ``r - 1`` elements before the pixel to ``r`` after it, instead
+    of the ``2 * r + 1`` elements of the patch centered on the pixel, while
+    the distance is still normalized by the size of the centered patch. The
+    default behavior reproduces this, so that results match scikit-image. A
+    consequence is that the result depends on the image orientation:
+    denoising a flipped image does not give the flipped denoised image.
+    ``symmetric_patch=True`` instead uses the centered patch, as
+    ``fast_mode=False`` does. Its results differ from scikit-image's, and it
+    is slightly slower because the patch is larger.
 
     Images with 8 or 16-bit integer (or boolean) dtypes are processed and
     returned as float32, while 32 or 64-bit integer images use float64
@@ -239,6 +260,7 @@ def denoise_nl_means(
         h,
         sigma * sigma,
         fast_mode,
+        symmetric_patch=symmetric_patch,
     )
     out = out.astype(float_dtype, copy=False)
     if not multichannel:

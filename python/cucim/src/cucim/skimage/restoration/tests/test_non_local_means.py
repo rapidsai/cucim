@@ -324,7 +324,122 @@ def test_nl_means_slow_mode_overflow_guard():
     cp.testing.assert_allclose(result, image, rtol=0, atol=1e-12)
 
 
-@pytest.mark.parametrize("fast_mode", [True, False])
+def _fast_nl_means_ref(image, patch_size, patch_distance, h, sigma, symmetric):
+    """NumPy fast-mode NL-means for an image with channels on the last axis.
+
+    Uses the gather form, with scikit-image's box (``symmetric=False``) or
+    the box centered on each pixel (``symmetric=True``).
+    """
+    s = patch_size + 1 if patch_size % 2 == 0 else patch_size
+    r = s // 2
+    d = patch_distance
+    shape = image.shape[:-1]
+    ndim = len(shape)
+    n_channels = image.shape[-1]
+    lo, n_taps = (-r, s) if symmetric else (-r + 1, s - 1)
+    npad = r + d
+    padded = np.pad(image, [(npad, npad)] * ndim + [(0, 0)], mode="reflect")
+
+    def view(offset):
+        return padded[
+            tuple(slice(npad + o, npad + o + n) for o, n in zip(offset, shape))
+        ]
+
+    acc = np.zeros(image.shape)
+    wsum = np.zeros(shape)
+    for t in itertools.product(range(-d, d + 1), repeat=ndim):
+        dist = np.zeros(shape)
+        for k in itertools.product(range(lo, lo + n_taps), repeat=ndim):
+            diff = view(k) - view(tuple(a + b for a, b in zip(k, t)))
+            dist += np.sum(diff * diff, axis=-1) - 2 * n_channels * sigma**2
+        dist = np.maximum(dist, 0) / (n_channels * h * h * s**ndim)
+        w = np.where(dist > 5, 0.0, _fast_exp_ref(-np.minimum(dist, 5)))
+        acc += w[..., np.newaxis] * view(t)
+        wsum += w
+    return acc / wsum[..., np.newaxis]
+
+
+@pytest.mark.parametrize("sigma", [0.0, 0.1])
+@pytest.mark.parametrize(
+    "shape, n_channels, patch_size, patch_distance",
+    [
+        ((19, 17), 1, 5, 3),
+        ((19, 17), 1, 4, 2),
+        ((15, 13), 3, 3, 2),
+        ((9, 8, 7), 1, 5, 2),
+        ((5, 6, 5, 4), 2, 3, 1),
+    ],
+)
+def test_nl_means_symmetric_patch_vs_reference(
+    shape, n_channels, patch_size, patch_distance, sigma
+):
+    image = _smooth_noisy(shape, n_channels=n_channels)
+    kwargs = dict(
+        patch_size=patch_size,
+        patch_distance=patch_distance,
+        h=0.08,
+        sigma=sigma,
+        channel_axis=-1,
+    )
+    # the reference reproduces scikit-image with its default (offset) box
+    expected = _fast_nl_means_ref(
+        image, patch_size, patch_distance, 0.08, sigma, symmetric=False
+    )
+    skimage_result = skimage.restoration.denoise_nl_means(image, **kwargs)
+    np.testing.assert_allclose(
+        expected, skimage_result.reshape(expected.shape), rtol=0, atol=1e-12
+    )
+
+    expected = _fast_nl_means_ref(
+        image, patch_size, patch_distance, 0.08, sigma, symmetric=True
+    )
+    result = restoration.denoise_nl_means(
+        cp.asarray(image), symmetric_patch=True, **kwargs
+    )
+    cp.testing.assert_allclose(result, expected, rtol=0, atol=1e-12)
+    result = restoration.denoise_nl_means(
+        cp.asarray(image.astype(np.float32)), symmetric_patch=True, **kwargs
+    )
+    cp.testing.assert_allclose(result, expected, rtol=0, atol=2e-5)
+
+
+@pytest.mark.parametrize(
+    "shape, patch_size, patch_distance",
+    [((48, 41), 7, 5), ((48, 41), 4, 3), ((20, 22, 18), 5, 3)],
+)
+def test_nl_means_symmetric_patch_flip(shape, patch_size, patch_distance):
+    # With the centered patch, denoising a flipped image gives the flipped
+    # result. scikit-image's offset box (the default) does not.
+    image = cp.asarray(_smooth_noisy(shape, sigma=0.3))
+    flip = (slice(None, None, -1),) * image.ndim
+    for symmetric_patch in (True, False):
+        kwargs = dict(
+            patch_size=patch_size,
+            patch_distance=patch_distance,
+            h=0.2,
+            symmetric_patch=symmetric_patch,
+        )
+        result = restoration.denoise_nl_means(image, **kwargs)
+        flipped = restoration.denoise_nl_means(image[flip], **kwargs)[flip]
+        max_diff = float(cp.max(cp.abs(flipped - result)))
+        if symmetric_patch:
+            assert max_diff < 1e-12
+        else:
+            assert max_diff > 1e-3
+
+
+def test_nl_means_symmetric_patch_slow_mode():
+    # slow mode's patch is always centered, so the option has no effect
+    image = cp.asarray(_smooth_noisy((30, 27)))
+    kwargs = dict(patch_size=5, patch_distance=3, h=0.08, fast_mode=False)
+    expected = restoration.denoise_nl_means(image, **kwargs)
+    result = restoration.denoise_nl_means(image, symmetric_patch=True, **kwargs)
+    cp.testing.assert_array_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    "fast_mode, symmetric_patch", [(True, False), (True, True), (False, False)]
+)
 @pytest.mark.parametrize("dtype", [cp.float32, cp.float64])
 @pytest.mark.parametrize(
     "shape, n_channels, patch_size, patch_distance, tile",
@@ -340,7 +455,14 @@ def test_nl_means_slow_mode_overflow_guard():
     ],
 )
 def test_nl_means_tiled_vs_direct(
-    shape, n_channels, patch_size, patch_distance, tile, dtype, fast_mode
+    shape,
+    n_channels,
+    patch_size,
+    patch_distance,
+    tile,
+    dtype,
+    fast_mode,
+    symmetric_patch,
 ):
     image = cp.asarray(_smooth_noisy(shape, n_channels), dtype=dtype)
     kwargs = dict(
@@ -349,6 +471,7 @@ def test_nl_means_tiled_vs_direct(
         h=0.08,
         var=0.01,
         fast_mode=fast_mode,
+        symmetric_patch=symmetric_patch,
     )
     tiled = nlm._nl_means_denoising(image, kernel="tiled", tile=tile, **kwargs)
     direct = nlm._nl_means_denoising(image, kernel="direct", **kwargs)
@@ -419,17 +542,27 @@ extern "C" __global__ void fast_exp_kernel(const T* y, T* out, int n) {
 
 def test_nl_means_kernel_sources_compile():
     # generated variants in 2D-4D compile and run (patch size 1 has a
-    # single-tap slow mode and an empty fast-mode patch)
+    # single tap in slow mode and with the symmetric fast-mode patch, and an
+    # empty default fast-mode patch)
     n_channels = 2
-    for ndim, fast_mode, patch_size in itertools.product(
-        (2, 3, 4), (True, False), (1, 5)
+    modes = [(True, False), (True, True), (False, False)]
+    for ndim, (fast_mode, symmetric), patch_size in itertools.product(
+        (2, 3, 4), modes, (1, 5)
     ):
         image = cp.ones((5,) * ndim + (n_channels,), dtype=cp.float32)
         for kernel in ("direct", "tiled"):
-            if kernel == "tiled" and patch_size == 1 and fast_mode:
+            empty_patch = patch_size == 1 and fast_mode and not symmetric
+            if kernel == "tiled" and empty_patch:
                 continue
             out = nlm._nl_means_denoising(
-                image, patch_size, 1, 0.1, 0.0, fast_mode, kernel=kernel
+                image,
+                patch_size,
+                1,
+                0.1,
+                0.0,
+                fast_mode,
+                symmetric_patch=symmetric,
+                kernel=kernel,
             )
             cp.testing.assert_allclose(out, image, rtol=1e-6)
 

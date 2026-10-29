@@ -88,6 +88,7 @@ def _nl_means_denoising(
     var,
     fast_mode,
     *,
+    symmetric_patch=False,
     kernel="auto",
     tile=None,
     shift_chunks=None,
@@ -99,7 +100,7 @@ def _nl_means_denoising(
     image : cupy.ndarray
         Array of shape ``(*spatial_shape, n_channels)`` with dtype float32 or
         float64. The computation is performed in this dtype.
-    patch_size, patch_distance, h, fast_mode
+    patch_size, patch_distance, h, fast_mode, symmetric_patch
         As for `denoise_nl_means`.
     var : float
         Noise variance (``sigma**2``).
@@ -132,7 +133,9 @@ def _nl_means_denoising(
     s = patch_size + 1 if patch_size % 2 == 0 else patch_size
     r = s // 2
     d = patch_distance
-    _, taps = _patch_taps(s, fast_mode)
+    # slow mode's patch is always centered (avoid compiling duplicates)
+    symmetric = bool(symmetric_patch) and fast_mode
+    _, taps = _patch_taps(s, fast_mode, symmetric)
     n_taps = len(taps)
     if fast_mode:
         scale = 1.0 / (n_channels * h * h * s**ndim)
@@ -215,14 +218,14 @@ def _nl_means_denoising(
     )
     if use_tiled:
         nlm_kernel = _get_tiled_kernel(
-            ndim, n_channels, s, fast_mode, c_type, index_type, tile
+            ndim, n_channels, s, fast_mode, symmetric, c_type, index_type, tile
         )
         if smem_bytes > nlm_kernel.max_dynamic_shared_size_bytes:
             nlm_kernel.max_dynamic_shared_size_bytes = smem_bytes
         nlm_kernel((n_blocks, n_chunks), (block,), args, shared_mem=smem_bytes)
     else:
         nlm_kernel = _get_direct_kernel(
-            ndim, n_channels, s, fast_mode, c_type, index_type
+            ndim, n_channels, s, fast_mode, symmetric, c_type, index_type
         )
         nlm_kernel((n_blocks, n_chunks), (block,), args)
 

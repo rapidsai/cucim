@@ -63,15 +63,18 @@ __device__ __forceinline__ float nlm_fast_exp(float y) {{
 """
 
 
-def _patch_taps(patch_size, fast_mode):
+def _patch_taps(patch_size, fast_mode, symmetric=False):
     """Return the patch footprint along each axis.
 
     Returns ``(lo, taps)`` where ``lo`` is the offset of the first patch
     element relative to the patch center and ``taps`` holds the separable
-    per-axis weights. ``patch_size`` must be odd.
+    per-axis weights. ``patch_size`` must be odd. ``symmetric`` selects the
+    centered patch in fast mode (slow mode is always centered).
     """
     r = patch_size // 2
     if fast_mode:
+        if symmetric:
+            return -r, (1.0,) * patch_size
         # scikit-image's integral-image distance sums over [x - r + 1, x + r]
         return -r + 1, (1.0,) * (2 * r)
     if patch_size == 1:
@@ -96,9 +99,17 @@ def _c_order_strides(extents):
 
 
 def _kernel_name(
-    variant, ndim, n_channels, patch_size, fast_mode, c_type, index_type, tile
+    variant,
+    ndim,
+    n_channels,
+    patch_size,
+    fast_mode,
+    symmetric,
+    c_type,
+    index_type,
+    tile,
 ):
-    mode = "fast" if fast_mode else "slow"
+    mode = ("fastsym" if symmetric else "fast") if fast_mode else "slow"
     name = f"nlm_{variant}_{mode}_{ndim}d_c{n_channels}_s{patch_size}"
     name += "_f32" if c_type == "float" else "_f64"
     name += "_i64" if index_type == "long long" else "_i32"
@@ -247,15 +258,16 @@ def _direct_distance_code(ndim, fast_mode):
 
 
 def _get_direct_kernel_src(
-    ndim, n_channels, patch_size, fast_mode, c_type, index_type
+    ndim, n_channels, patch_size, fast_mode, symmetric, c_type, index_type
 ):
-    lo, taps = _patch_taps(patch_size, fast_mode)
+    lo, taps = _patch_taps(patch_size, fast_mode, symmetric)
     name = _kernel_name(
         "direct",
         ndim,
         n_channels,
         patch_size,
         fast_mode,
+        symmetric,
         c_type,
         index_type,
         None,
@@ -363,9 +375,9 @@ def _tiled_smem_elements(ndim, n_taps, tile):
 
 
 def _get_tiled_kernel_src(
-    ndim, n_channels, patch_size, fast_mode, c_type, index_type, tile
+    ndim, n_channels, patch_size, fast_mode, symmetric, c_type, index_type, tile
 ):
-    lo, taps = _patch_taps(patch_size, fast_mode)
+    lo, taps = _patch_taps(patch_size, fast_mode, symmetric)
     n_taps = len(taps)
     if n_taps < 1:
         raise ValueError("tiled kernel requires a non-empty patch")
@@ -375,6 +387,7 @@ def _get_tiled_kernel_src(
         n_channels,
         patch_size,
         fast_mode,
+        symmetric,
         c_type,
         index_type,
         tile,
@@ -616,20 +629,27 @@ def _get_tiled_kernel_src(
 
 @cp.memoize(for_each_device=True)
 def _get_direct_kernel(
-    ndim, n_channels, patch_size, fast_mode, c_type, index_type
+    ndim, n_channels, patch_size, fast_mode, symmetric, c_type, index_type
 ):
     name, code = _get_direct_kernel_src(
-        ndim, n_channels, patch_size, fast_mode, c_type, index_type
+        ndim, n_channels, patch_size, fast_mode, symmetric, c_type, index_type
     )
     return cp.RawModule(code=code).get_function(name)
 
 
 @cp.memoize(for_each_device=True)
 def _get_tiled_kernel(
-    ndim, n_channels, patch_size, fast_mode, c_type, index_type, tile
+    ndim, n_channels, patch_size, fast_mode, symmetric, c_type, index_type, tile
 ):
     name, code = _get_tiled_kernel_src(
-        ndim, n_channels, patch_size, fast_mode, c_type, index_type, tile
+        ndim,
+        n_channels,
+        patch_size,
+        fast_mode,
+        symmetric,
+        c_type,
+        index_type,
+        tile,
     )
     return cp.RawModule(code=code).get_function(name)
 
