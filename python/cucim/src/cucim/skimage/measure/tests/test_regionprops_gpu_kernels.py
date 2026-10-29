@@ -1378,6 +1378,23 @@ def test_regionprops_dict_single_property(ndim, spacing, property_name):
 
 
 @pytest.mark.parametrize("ndim", [2, 3])
+def test_regionprops_dict_axis_lengths(ndim):
+    shape = (256, 512) if ndim == 2 else (64, 64, 64)
+    labels = get_labels_nd(shape)
+    # axis_lengths alone used to raise KeyError
+    lengths = regionprops_dict(labels, properties=["axis_lengths"])[
+        "axis_lengths"
+    ]
+    expected = measure_cpu.regionprops_table(
+        cp.asnumpy(labels),
+        properties=["axis_major_length", "axis_minor_length"],
+    )
+    assert lengths.shape == (int(labels.max()), ndim)
+    assert_allclose(lengths[:, 0], expected["axis_major_length"], rtol=1e-5)
+    assert_allclose(lengths[:, -1], expected["axis_minor_length"], rtol=1e-5)
+
+
+@pytest.mark.parametrize("ndim", [2, 3])
 @pytest.mark.parametrize(
     "property_name",
     [
