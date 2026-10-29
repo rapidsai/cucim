@@ -1,8 +1,9 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import inspect
+import time
 
 import pytest
 from numpy.testing import (  # noqa
@@ -30,22 +31,93 @@ fixture = pytest.fixture
 have_fetch = True
 try:
     # scikit-image >=0.19
+    from skimage.data import _fetchers
     from skimage.data._fetchers import _fetch
 except ImportError:
     # skip this test if private API changed on scikit-image end
     have_fetch = False
+    _fetchers = None
+    _fetch = None
+
+# Number of retries for a failed download that was not rate limited.
+_DOWNLOAD_RETRIES = 3
+# Message of the first rate-limited download in this session, if any.
+_rate_limit_message = None
+
+
+def _download_or_skip(load, description):
+    """Return ``load()``, skipping the test if the data cannot be downloaded.
+
+    A rate-limited (HTTP 429) download is not retried: GitLab.com, which
+    hosts the scikit-image data, limits anonymous traffic per IP address and
+    hour, so a retry seconds later also fails and counts against the limit.
+    Once a download is rate limited, later downloads in the session are
+    skipped without a request. pooch retries every failed download, so its
+    retries are disabled here and other failures (e.g. a dropped connection)
+    are retried in the same way instead.
+    """
+    global _rate_limit_message
+
+    if _rate_limit_message is not None:
+        pytest.skip(
+            f"Not downloading {description}: an earlier download was rate "
+            f"limited ({_rate_limit_message})"
+        )
+    fetcher = getattr(_fetchers, "_image_fetcher", None)
+    pooch_retries = getattr(fetcher, "retry_if_failed", None)
+    if pooch_retries is not None:
+        fetcher.retry_if_failed = 0
+    try:
+        for attempt in range(_DOWNLOAD_RETRIES + 1):
+            try:
+                return load()
+            except (OSError, ModuleNotFoundError) as err:
+                # OSError includes the HTTP errors raised by requests.
+                response = getattr(err, "response", None)
+                rate_limited = getattr(response, "status_code", None) == 429
+                if rate_limited:
+                    _rate_limit_message = str(err)
+                if (
+                    rate_limited
+                    or isinstance(err, ModuleNotFoundError)
+                    or attempt == _DOWNLOAD_RETRIES
+                ):
+                    pytest.skip(f"Unable to download {description}: {err}")
+                time.sleep(attempt + 1)
+    finally:
+        if pooch_retries is not None:
+            fetcher.retry_if_failed = pooch_retries
 
 
 def fetch(data_filename):
     """Attempt to fetch data, but if unavailable, skip the tests."""
-    if have_fetch:
-        try:
-            # CuPy Backend: TODO: avoid call to non-public _fetch method
-            return _fetch(data_filename)
-        except (ConnectionError, ModuleNotFoundError):
-            pytest.skip(f"Unable to download {data_filename}")
-    else:
+    if not have_fetch:
         pytest.skip("skimage _fetch utility not found")
+    # CuPy Backend: TODO: avoid call to non-public _fetch method
+    return _download_or_skip(lambda: _fetch(data_filename), data_filename)
+
+
+def load_sample_data(name):
+    """Load a scikit-image sample dataset, skipping the test if unavailable.
+
+    Datasets that are not bundled with scikit-image (e.g. ``eagle``,
+    ``brain``, ``cells3d``) are downloaded on first use, which can fail.
+    Call this from a module-scoped fixture when several tests use the same
+    data, so that a failed download is attempted only once per module.
+
+    Parameters
+    ----------
+    name : str
+        Name of the loader function in ``skimage.data``.
+    """
+    from skimage import data
+
+    loader = getattr(data, name, None)
+    if loader is None:
+        pytest.skip(
+            f"{name} data not available in this version of scikit-image"
+        )
+    return _download_or_skip(loader, f"{name} data")
 
 
 def assert_stacklevel(warnings, *, offset=-1):

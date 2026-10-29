@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import itertools
@@ -9,12 +9,15 @@ import numpy as np
 import pytest
 from cupy.testing import assert_allclose
 from cupyx.scipy.ndimage import fourier_shift
-from skimage.data import camera, eagle
+from skimage.data import camera
 
 from cucim.skimage import img_as_float
 from cucim.skimage._shared._warnings import expected_warnings
 from cucim.skimage._shared.fft import fftmodule as fft
-from cucim.skimage._shared.testing import assert_stacklevel
+from cucim.skimage._shared.testing import (
+    assert_stacklevel,
+    load_sample_data,
+)
 from cucim.skimage.data import binary_blobs
 from cucim.skimage.registration._phase_cross_correlation import (
     _upsampled_dft,
@@ -181,13 +184,21 @@ def test_mismatch_offsets_size():
         _upsampled_dft(cp.ones((4, 4)), 3, axis_offsets=[3, 2, 1, 4])
 
 
+@pytest.fixture(scope="module")
+def eagle_image():
+    # Load once per module: on a failed download, every test skips without
+    # retrying it.
+    return load_sample_data("eagle")
+
+
 @pytest.mark.parametrize(
     ("shift0", "shift1"),
     itertools.product((100, -100, 350, -350), (100, -100, 350, -350)),
 )
 @cp.testing.with_requires("scikit-image>=0.20")
-def test_disambiguate_2d(shift0, shift1):
-    image = cp.array(eagle()[500:, 900:])  # use a highly textured image region
+def test_disambiguate_2d(eagle_image, shift0, shift1):
+    # use a highly textured image region
+    image = cp.array(eagle_image[500:, 900:])
 
     # Protect against some versions of scikit-image + imagio loading as
     # RGB instead of grayscale.
