@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 import math
@@ -157,11 +157,11 @@ def regionprops_perimeter(
 
     Notes
     -----
-    The `perimeter` method does not consider the boundary along the image edge
-    as image as part of the perimeter, while the `perimeter_crofton` method
-    does. In any case, an object touching the image edge likely extends outside
-    of the field of view, so an accurate perimeter cannot be measured for such
-    objects.
+    Both the `perimeter` and the `perimeter_crofton` methods treat the area
+    outside of the image as background, so the boundary along the image edge
+    is part of the perimeter. In any case, an object touching the image edge
+    likely extends outside of the field of view, so an accurate perimeter
+    cannot be measured for such objects.
 
     If the labeled regions have holes, the hole edges will be included in this
     measurement. If this is not desired, use regionprops_label_filled to fill
@@ -380,11 +380,11 @@ def regionprops_perimeter_crofton(
     Similar to :func:`~.measure.perimeter`, this function returns an
     approximation of the perimeter in continuous space.
 
-    The `perimeter` method does not consider the boundary along the image edge
-    as image as part of the perimeter, while the `perimeter_crofton` method
-    does. In any case, an object touching the image edge likely extends outside
-    of the field of view, so an accurate perimeter cannot be measured for such
-    objects.
+    Both the `perimeter` and the `perimeter_crofton` methods treat the area
+    outside of the image as background, so the boundary along the image edge
+    is part of the perimeter. In any case, an object touching the image edge
+    likely extends outside of the field of view, so an accurate perimeter
+    cannot be measured for such objects.
 
     If the labeled regions have holes, the hole edges will be included in this
     measurement. If this is not desired, use regionprops_label_filled to fill
