@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 import argparse
@@ -37,6 +37,8 @@ class DenoiseBench(ImageBench):
         else:
             sigma = 0.05
             im1 = im1 + sigma * np.random.randn(*im1.shape)
+            # keep the requested dtype (the float64 noise would upcast it)
+            im1 = im1.astype(dtype)
 
         n_tile = [math.ceil(s / im_s) for s, im_s in zip(self.shape, im1.shape)]
         slices = tuple([slice(s) for s in self.shape])
@@ -65,6 +67,8 @@ class CalibratedDenoiseBench(ImageBench):
         else:
             sigma = 0.05
             im1 = im1 + sigma * np.random.randn(*im1.shape)
+            # keep the requested dtype (the float64 noise would upcast it)
+            im1 = im1.astype(dtype)
 
         n_tile = [math.ceil(s / im_s) for s, im_s in zip(self.shape, im1.shape)]
         slices = tuple([slice(s) for s in self.shape])
@@ -115,6 +119,14 @@ def main(args):
     for function_name, fixed_kwargs, var_kwargs, allow_color, allow_nd in [
         # _denoise.py
         ("denoise_tv_chambolle", dict(), dict(weight=[0.02]), True, True),
+        # non_local_means.py
+        (
+            "denoise_nl_means",
+            dict(h=0.04),
+            dict(fast_mode=[True, False]),
+            True,
+            True,
+        ),
         # j_invariant.py
         ("calibrate_denoiser", dict(), dict(), False, True),
         # deconvolution.py
@@ -145,9 +157,24 @@ def main(args):
         if shape[-1] == 3 and not allow_color:
             continue
 
-        if function_name in ["denoise_tv_chambolle", "calibrate_denoiser"]:
-            if function_name == "denoise_tv_chambolle":
+        if function_name in [
+            "denoise_tv_chambolle",
+            "calibrate_denoiser",
+            "denoise_nl_means",
+        ]:
+            if function_name in ["denoise_tv_chambolle", "denoise_nl_means"]:
                 fixed_kwargs["channel_axis"] = -1 if shape[-1] == 3 else None
+
+            if function_name == "denoise_nl_means":
+                spatial_ndim = ndim - 1 if shape[-1] == 3 else ndim
+                if spatial_ndim == 2:
+                    fixed_kwargs.update(patch_size=7, patch_distance=11)
+                else:
+                    # smaller search window as recommended for volumes
+                    fixed_kwargs.update(patch_size=5, patch_distance=5)
+                if spatial_ndim > 3 or (spatial_ndim == 3 and shape[-1] == 3):
+                    # slow mode only supports 2D and single-channel 3D
+                    var_kwargs["fast_mode"] = [True]
 
             if function_name == "calibrate_denoiser":
                 denoise_class = CalibratedDenoiseBench
@@ -233,6 +260,7 @@ if __name__ == "__main__":
     )
     func_name_choices = [
         "denoise_tv_chambolle",
+        "denoise_nl_means",
         "calibrate_denoiser",
         "wiener",
         "unsupervised_wiener",

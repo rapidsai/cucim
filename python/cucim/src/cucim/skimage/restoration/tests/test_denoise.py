@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import functools
@@ -12,7 +12,7 @@ from skimage import color, data, img_as_float
 
 from cucim.skimage import restoration
 from cucim.skimage._shared.utils import _supported_float_type, slice_at_axis
-from cucim.skimage.metrics import structural_similarity
+from cucim.skimage.metrics import peak_signal_noise_ratio, structural_similarity
 
 cp.random.seed(1234)
 
@@ -160,4 +160,296 @@ def test_denoise_tv_chambolle_weighting():
             denoised_2d, denoised_4d[:, :, 0, 0], data_range=1.0
         )
         > 0.98
+    )
+
+
+@pytest.mark.parametrize("fast_mode", [False, True])
+def test_denoise_nl_means_2d(fast_mode):
+    img = cp.zeros((40, 40))
+    img[10:-10, 10:-10] = 1.0
+    sigma = 0.3
+    img += sigma * cp.random.standard_normal(img.shape)
+    img_f32 = img.astype("float32")
+    for s in [sigma, 0]:
+        denoised = restoration.denoise_nl_means(
+            img, 7, 5, 0.2, fast_mode=fast_mode, channel_axis=None, sigma=s
+        )
+        # make sure noise is reduced
+        assert img.std() > denoised.std()
+
+        denoised_f32 = restoration.denoise_nl_means(
+            img_f32, 7, 5, 0.2, fast_mode=fast_mode, channel_axis=None, sigma=s
+        )
+        # make sure noise is reduced
+        assert img.std() > denoised_f32.std()
+
+        # Check single precision result
+        assert cp.allclose(denoised_f32, denoised, atol=1e-2)
+
+
+@pytest.mark.parametrize("fast_mode", [False, True])
+@pytest.mark.parametrize("n_channels", [2, 3, 6])
+@pytest.mark.parametrize("dtype", ["float64", "float32"])
+def test_denoise_nl_means_2d_multichannel(fast_mode, n_channels, dtype):
+    # reduce image size because nl means is slow
+    img = cp.copy(astro[:50, :50])
+    img = cp.concatenate((img,) * 2, axis=-1)  # 6 channels
+    img = img.astype(dtype)
+
+    # add some random noise
+    sigma = 0.1
+    imgn = img + sigma * cp.random.standard_normal(img.shape)
+    imgn = cp.clip(imgn, 0, 1)
+    imgn = imgn.astype(dtype)
+
+    for s in [sigma, 0]:
+        psnr_noisy = peak_signal_noise_ratio(
+            img[..., :n_channels], imgn[..., :n_channels]
+        )
+        denoised = restoration.denoise_nl_means(
+            imgn[..., :n_channels],
+            3,
+            5,
+            h=0.75 * sigma,
+            fast_mode=fast_mode,
+            channel_axis=-1,
+            sigma=s,
+        )
+        psnr_denoised = peak_signal_noise_ratio(
+            denoised[..., :n_channels], img[..., :n_channels]
+        )
+
+        # make sure noise is reduced
+        assert psnr_denoised > psnr_noisy
+
+
+@pytest.mark.parametrize("fast_mode", [False, True])
+@pytest.mark.parametrize("dtype", ["float64", "float32"])
+def test_denoise_nl_means_3d(fast_mode, dtype):
+    img = cp.zeros((12, 12, 8), dtype=dtype)
+    img[5:-5, 5:-5, 2:-2] = 1.0
+    sigma = 0.3
+    imgn = img + sigma * cp.random.standard_normal(img.shape)
+    imgn = imgn.astype(dtype)
+    psnr_noisy = peak_signal_noise_ratio(img, imgn)
+    for s in [sigma, 0]:
+        denoised = restoration.denoise_nl_means(
+            imgn,
+            3,
+            4,
+            h=0.75 * sigma,
+            fast_mode=fast_mode,
+            channel_axis=None,
+            sigma=s,
+        )
+        # make sure noise is reduced
+        assert peak_signal_noise_ratio(img, denoised) > psnr_noisy
+
+
+@pytest.mark.parametrize("fast_mode", [False, True])
+@pytest.mark.parametrize("dtype", ["float64", "float32", "float16"])
+@pytest.mark.parametrize("channel_axis", [0, -1])
+def test_denoise_nl_means_multichannel(fast_mode, dtype, channel_axis):
+    # for true 3D data, 3D denoising is better than denoising as 2D+channels
+
+    # synthetic 3d volume
+    img = cp.asarray(data.binary_blobs(length=32, n_dim=3, rng=5))
+    img = img[:, :24, :16].astype(dtype, copy=False)
+
+    sigma = 0.2
+    rng = cp.random.default_rng(5)
+    imgn = img + sigma * rng.standard_normal(img.shape)
+    imgn = imgn.astype(dtype)
+
+    # test 3D denoising (channel_axis = None)
+    denoised_ok_multichannel = restoration.denoise_nl_means(
+        imgn.copy(),
+        3,
+        2,
+        h=0.6 * sigma,
+        sigma=sigma,
+        fast_mode=fast_mode,
+        channel_axis=None,
+    )
+
+    # set a channel axis: one dimension is (incorrectly) considered "channels"
+    imgn = cp.moveaxis(imgn, -1, channel_axis)
+    denoised_wrong_multichannel = restoration.denoise_nl_means(
+        imgn.copy(),
+        3,
+        2,
+        h=0.6 * sigma,
+        sigma=sigma,
+        fast_mode=fast_mode,
+        channel_axis=channel_axis,
+    )
+    denoised_wrong_multichannel = cp.moveaxis(
+        denoised_wrong_multichannel, channel_axis, -1
+    )
+
+    img = img.astype(denoised_wrong_multichannel.dtype)
+    psnr_wrong = peak_signal_noise_ratio(img, denoised_wrong_multichannel)
+    psnr_ok = peak_signal_noise_ratio(img, denoised_ok_multichannel)
+    assert psnr_ok > psnr_wrong
+
+
+def test_denoise_nl_means_4d():
+    rng = cp.random.default_rng(5)
+    img = cp.zeros((10, 10, 8, 5))
+    img[2:-2, 2:-2, 2:-2, :2] = 0.5
+    img[2:-2, 2:-2, 2:-2, 2:] = 1.0
+    sigma = 0.3
+    imgn = img + sigma * rng.standard_normal(img.shape)
+
+    nlmeans_kwargs = dict(
+        patch_size=3,
+        patch_distance=2,
+        h=0.3 * sigma,
+        sigma=sigma,
+        fast_mode=True,
+    )
+
+    psnr_noisy = peak_signal_noise_ratio(img, imgn, data_range=1.0)
+
+    # denoise by looping over 3D slices
+    denoised_3d = cp.zeros_like(imgn)
+    for ch in range(img.shape[-1]):
+        denoised_3d[..., ch] = restoration.denoise_nl_means(
+            imgn[..., ch], channel_axis=None, **nlmeans_kwargs
+        )
+    psnr_3d = peak_signal_noise_ratio(img, denoised_3d, data_range=1.0)
+    assert psnr_3d > psnr_noisy
+
+    # denoise as 4D
+    denoised_4d = restoration.denoise_nl_means(
+        imgn, channel_axis=None, **nlmeans_kwargs
+    )
+    psnr_4d = peak_signal_noise_ratio(img, denoised_4d, data_range=1.0)
+    assert psnr_4d > psnr_3d
+
+    # denoise as 3D + channels instead
+    denoised_3dmc = restoration.denoise_nl_means(
+        imgn, channel_axis=-1, **nlmeans_kwargs
+    )
+    psnr_3dmc = peak_signal_noise_ratio(img, denoised_3dmc, data_range=1.0)
+    assert psnr_3dmc > psnr_3d
+
+
+def test_denoise_nl_means_4d_multichannel():
+    img = cp.zeros((8, 8, 8, 4, 4))
+    img[2:-2, 2:-2, 2:-2, 1:-1, :] = 1.0
+    sigma = 0.3
+    imgn = img + sigma * cp.random.standard_normal(img.shape)
+
+    psnr_noisy = peak_signal_noise_ratio(img, imgn, data_range=1.0)
+
+    denoised_4dmc = restoration.denoise_nl_means(
+        imgn,
+        3,
+        3,
+        h=0.35 * sigma,
+        fast_mode=True,
+        channel_axis=-1,
+        sigma=sigma,
+    )
+    psnr_4dmc = peak_signal_noise_ratio(img, denoised_4dmc, data_range=1.0)
+    assert psnr_4dmc > psnr_noisy
+
+
+def test_denoise_nl_means_wrong_dimension():
+    # 1D not implemented
+    img = cp.zeros((5,))
+    with pytest.raises(NotImplementedError):
+        restoration.denoise_nl_means(img, channel_axis=None)
+
+    img = cp.zeros((5, 3))
+    with pytest.raises(NotImplementedError):
+        restoration.denoise_nl_means(img, channel_axis=-1)
+
+    # 3D + channels only for fast mode
+    img = cp.zeros((5, 5, 5, 5))
+    with pytest.raises(NotImplementedError):
+        restoration.denoise_nl_means(img, channel_axis=-1, fast_mode=False)
+
+    # 4D only for fast mode
+    img = cp.zeros((5, 5, 5, 5))
+    with pytest.raises(NotImplementedError):
+        restoration.denoise_nl_means(img, channel_axis=None, fast_mode=False)
+
+    # 4D + channels only for fast mode
+    img = cp.zeros((5, 5, 5, 5, 5))
+    with pytest.raises(NotImplementedError):
+        restoration.denoise_nl_means(img, channel_axis=-1, fast_mode=False)
+
+    # 5D not implemented
+    img = cp.zeros((5, 5, 5, 5, 5))
+    with pytest.raises(NotImplementedError):
+        restoration.denoise_nl_means(img, channel_axis=None)
+
+
+@pytest.mark.parametrize("fast_mode", [False, True])
+@pytest.mark.parametrize("dtype", ["float64", "float32"])
+def test_no_denoising_for_small_h(fast_mode, dtype):
+    img = cp.zeros((40, 40))
+    img[10:-10, 10:-10] = 1.0
+    img += 0.3 * cp.random.standard_normal(img.shape)
+    img = img.astype(dtype)
+    # very small h should result in no averaging with other patches
+    denoised = restoration.denoise_nl_means(
+        img, 7, 5, 0.01, fast_mode=fast_mode, channel_axis=None
+    )
+    assert cp.allclose(denoised, img)
+    denoised = restoration.denoise_nl_means(
+        img, 7, 5, 0.01, fast_mode=fast_mode, channel_axis=None
+    )
+    assert cp.allclose(denoised, img)
+
+
+@pytest.mark.parametrize("fast_mode", [False, True])
+def test_denoise_nl_means_2d_dtype(fast_mode):
+    img = cp.zeros((40, 40), dtype=int)
+    img_f32 = img.astype("float32")
+    img_f64 = img.astype("float64")
+
+    assert (
+        restoration.denoise_nl_means(img, fast_mode=fast_mode).dtype
+        == "float64"
+    )
+
+    assert (
+        restoration.denoise_nl_means(img_f32, fast_mode=fast_mode).dtype
+        == img_f32.dtype
+    )
+
+    assert (
+        restoration.denoise_nl_means(img_f64, fast_mode=fast_mode).dtype
+        == img_f64.dtype
+    )
+
+
+@pytest.mark.parametrize("fast_mode", [False, True])
+def test_denoise_nl_means_3d_dtype(fast_mode):
+    img = cp.zeros((12, 12, 8), dtype=int)
+    img_f32 = img.astype("float32")
+    img_f64 = img.astype("float64")
+
+    assert (
+        restoration.denoise_nl_means(
+            img, patch_distance=2, fast_mode=fast_mode
+        ).dtype
+        == "float64"
+    )
+
+    assert (
+        restoration.denoise_nl_means(
+            img_f32, patch_distance=2, fast_mode=fast_mode
+        ).dtype
+        == img_f32.dtype
+    )
+
+    assert (
+        restoration.denoise_nl_means(
+            img_f64, patch_distance=2, fast_mode=fast_mode
+        ).dtype
+        == img_f64.dtype
     )
