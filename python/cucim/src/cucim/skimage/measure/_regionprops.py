@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import inspect
@@ -684,9 +684,9 @@ class RegionProperties:
         a, b, b, c = self.inertia_tensor.ravel()
         if a - c == 0:
             if b < 0:
-                return -PI / 4.0
-            else:
                 return PI / 4.0
+            else:
+                return -PI / 4.0
         else:
             return 0.5 * math.atan2(-2 * b, c - a)
 

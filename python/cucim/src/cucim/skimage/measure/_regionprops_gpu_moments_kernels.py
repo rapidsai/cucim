@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 import math
@@ -1408,11 +1408,11 @@ def get_inertia_tensor_kernel(moments_dtype, ndim, compute_orientation):
         if compute_orientation:
             source += """
         if (a - c == 0) {
-          // had to use <= 0 to get same result as Python's atan2 with < 0
+          // same convention as scikit-image >= 0.21 for the a == c case
           if (b < 0) {
-            orientation[i] = -M_PI / 4.0;
-          } else {
             orientation[i] = M_PI / 4.0;
+          } else {
+            orientation[i] = -M_PI / 4.0;
           }
         } else {
           orientation[i] = 0.5 * atan2(-2 * b, c - a);
