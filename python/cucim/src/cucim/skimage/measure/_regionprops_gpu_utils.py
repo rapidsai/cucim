@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 import math
@@ -20,6 +20,19 @@ def _get_count_dtype(label_image_size):
     int32_count = label_image_size < 2**32
     count_dtype = cp.dtype(cp.uint32 if int32_count else cp.uint64)
     return count_dtype, int32_count
+
+
+def _get_run_count_ctype(pixels_per_thread):
+    """C type of the per-thread pixel counters of the label-run kernels.
+
+    A thread counts at most `pixels_per_thread` pixels for one label, so the
+    counter must be able to hold that value.
+    """
+    if pixels_per_thread <= 255:
+        return "uint8_t"
+    elif pixels_per_thread <= 65535:
+        return "uint16_t"
+    return "uint32_t"
 
 
 def _get_min_integer_dtype(max_size, signed=False):

@@ -13,6 +13,7 @@ from cucim.skimage.morphology import convex_hull_image
 from ._regionprops_gpu_utils import (
     _get_count_dtype,
     _get_min_integer_dtype,
+    _get_run_count_ctype,
     _includes,
     _unravel_loop_index,
     _unravel_loop_index_declarations,
@@ -133,7 +134,7 @@ def _get_num_pixels_code(pixels_per_thread, array_size):
 
         - counts : shape (max_label,)
     """
-    pixel_count_dtype = "int8_t" if pixels_per_thread < 256 else "int16_t"
+    pixel_count_dtype = _get_run_count_ctype(pixels_per_thread)
 
     source_pre = f"""
     // num_pixels variables
