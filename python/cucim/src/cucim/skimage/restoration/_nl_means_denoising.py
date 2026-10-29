@@ -25,6 +25,20 @@ _default_tiles = {2: (16, 16), 3: (8, 8, 8), 4: (4, 4, 4, 4)}
 # 1.2-2x faster in 2D, 3D and 4D benchmarks.
 _min_tiled_taps = 3
 
+# The same holds for three unit taps (fast mode with symmetric_patch=True and
+# patch_size 3) on single-channel 2D images: the direct kernel was 1.2-1.6x
+# faster. With more channels or dimensions, or with the three Gaussian taps of
+# slow mode, the tiled kernel was about as fast or faster.
+_min_tiled_taps_2d_fast_gray = 4
+
+
+def _prefer_tiled(ndim, n_channels, n_taps, fast_mode):
+    """Whether ``kernel='auto'`` tries the tiled kernel first."""
+    if fast_mode and ndim == 2 and n_channels == 1:
+        return n_taps >= _min_tiled_taps_2d_fast_gray
+    return n_taps >= _min_tiled_taps
+
+
 # shrink tiles no further than this many threads before using the direct
 # kernel instead
 _min_tile_threads = 64
@@ -154,7 +168,7 @@ def _nl_means_denoising(
     use_tiled = False
     smem_bytes = 0
     if (kernel == "tiled" and n_taps > 0) or (
-        kernel == "auto" and n_taps >= _min_tiled_taps
+        kernel == "auto" and _prefer_tiled(ndim, n_channels, n_taps, fast_mode)
     ):
         tile, smem_bytes = _select_tile(ndim, n_taps, dtype.itemsize, tile)
         use_tiled = tile is not None
