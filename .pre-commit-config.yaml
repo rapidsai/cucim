@@ -232,9 +232,12 @@ repos:
             ^python/cucim/src/cucim/skimage/restoration/__init__[.]py$|
             ^python/cucim/src/cucim/skimage/restoration/__init__[.]pyi$|
             ^python/cucim/src/cucim/skimage/restoration/_denoise[.]py$|
+            ^python/cucim/src/cucim/skimage/restoration/_nl_means_denoising[.]py$|
+            ^python/cucim/src/cucim/skimage/restoration/_nl_means_kernels[.]py$|
             ^python/cucim/src/cucim/skimage/restoration/_rolling_ball[.]py$|
             ^python/cucim/src/cucim/skimage/restoration/deconvolution[.]py$|
             ^python/cucim/src/cucim/skimage/restoration/j_invariant[.]py$|
+            ^python/cucim/src/cucim/skimage/restoration/non_local_means[.]py$|
             ^python/cucim/src/cucim/skimage/restoration/tests/test_denoise[.]py$|
             ^python/cucim/src/cucim/skimage/restoration/tests/test_j_invariant[.]py$|
             ^python/cucim/src/cucim/skimage/restoration/tests/test_restoration[.]py$|
@@ -521,9 +524,12 @@ repos:
             python/cucim/src/cucim/skimage/restoration/__init__[.]py$|
             python/cucim/src/cucim/skimage/restoration/__init__[.]pyi$|
             python/cucim/src/cucim/skimage/restoration/_denoise[.]py$|
+            python/cucim/src/cucim/skimage/restoration/_nl_means_denoising[.]py$|
+            python/cucim/src/cucim/skimage/restoration/_nl_means_kernels[.]py$|
             python/cucim/src/cucim/skimage/restoration/_rolling_ball[.]py$|
             python/cucim/src/cucim/skimage/restoration/deconvolution[.]py$|
             python/cucim/src/cucim/skimage/restoration/j_invariant[.]py$|
+            python/cucim/src/cucim/skimage/restoration/non_local_means[.]py$|
             python/cucim/src/cucim/skimage/restoration/tests/test_denoise[.]py$|
             python/cucim/src/cucim/skimage/restoration/tests/test_j_invariant[.]py$|
             python/cucim/src/cucim/skimage/restoration/tests/test_restoration[.]py$|

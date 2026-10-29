@@ -19,10 +19,7 @@ import skimage.restoration
 
 from cucim.skimage import restoration
 from cucim.skimage.restoration import _nl_means_denoising as nlm
-from cucim.skimage.restoration._nl_means_kernels import (
-    _get_pad_kernel,
-    _preamble_template,
-)
+from cucim.skimage.restoration._nl_means_kernels import _preamble_template
 
 # Expected agreement with scikit-image. In float32, scikit-image's fast mode
 # computes in float64 while cuCIM computes in float32.
@@ -457,27 +454,19 @@ def test_nl_means_shift_chunks(shift_chunks, kernel, fast_mode):
     cp.testing.assert_allclose(result, expected, rtol=0, atol=1e-12)
 
 
-@pytest.mark.parametrize(
-    "shape, pad",
-    [((7, 5), 3), ((1, 6), 4), ((3, 4, 2), 9), ((2, 3, 2, 3), 5)],
-)
-def test_nl_means_reflect_pad_kernel(shape, pad):
-    # the padding kernel matches NumPy's 'reflect' mode, including pad widths
-    # larger than the axis and extra padding on the high side of axis 0
-    n_channels = 3
-    image = np.random.default_rng(0).random(shape + (n_channels,))
-    widths = [(pad, pad + 1)] + [(pad, pad)] * (len(shape) - 1)
-    expected = np.pad(
-        np.moveaxis(image, -1, 0), [(0, 0)] + widths, mode="reflect"
+@pytest.mark.parametrize("fast_mode", [True, False])
+@pytest.mark.parametrize("shape", [(1, 30), (25, 1), (1, 1), (1, 8, 9)])
+def test_nl_means_singleton_axes(shape, fast_mode):
+    # reflect padding of size-1 axes matches scikit-image
+    image = np.random.default_rng(0).uniform(size=shape)
+    kwargs = dict(patch_size=3, patch_distance=2, h=0.2, fast_mode=fast_mode)
+    expected = skimage.restoration.denoise_nl_means(image, **kwargs)
+    result = restoration.denoise_nl_means(cp.asarray(image), **kwargs)
+    # scikit-image squeezes singleton dimensions
+    assert result.shape == shape
+    cp.testing.assert_allclose(
+        result.ravel(), np.ravel(expected), rtol=0, atol=1e-7
     )
-    padded = cp.empty(expected.shape)
-    sizes = (
-        np.int32(v) for n, p in zip(shape, expected.shape[1:]) for v in (n, p)
-    )
-    _get_pad_kernel(len(shape))(
-        cp.asarray(image), *sizes, np.int32(pad), np.int32(n_channels), padded
-    )
-    cp.testing.assert_array_equal(padded, expected)
 
 
 @pytest.mark.skipif(

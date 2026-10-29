@@ -1,16 +1,16 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import math
 
 import cupy as cp
 import numpy as np
 
+from .._vendored import pad
 from ._nl_means_kernels import (
     _get_direct_kernel,
     _get_finalize_kernel,
-    _get_pad_kernel,
     _get_tiled_kernel,
     _patch_taps,
     _tiled_smem_elements,
@@ -160,25 +160,17 @@ def _nl_means_denoising(
 
     # Reflect-pad by the patch radius plus the search distance. For the tiled
     # kernel, the high side is also extended to a whole number of tiles so
-    # that the kernel needs no bounds checks.
-    pad = r + d
+    # that the kernel needs no bounds checks. The vendored pad uses a single
+    # elementwise kernel (unlike cupy.pad), which also transposes the
+    # channels-last input to the planar layout used by the kernels.
+    npad = r + d
     if use_tiled:
         extra = [-(-n // t) * t - n for n, t in zip(spatial_shape, tile)]
     else:
         extra = [0] * ndim
-    padded_shape = tuple(n + 2 * pad + e for n, e in zip(spatial_shape, extra))
-    padded = cp.empty((n_channels,) + padded_shape, dtype=dtype)
-    _get_pad_kernel(ndim)(
-        cp.ascontiguousarray(image),
-        *(
-            np.int32(v)
-            for n, p in zip(spatial_shape, padded_shape)
-            for v in (n, p)
-        ),
-        np.int32(pad),
-        np.int32(n_channels),
-        padded,
-    )
+    widths = [(0, 0)] + [(npad, npad + e) for e in extra]
+    padded = pad(cp.moveaxis(image, -1, 0), widths, mode="reflect")
+    padded = cp.ascontiguousarray(padded)
 
     if use_tiled:
         block = math.prod(tile)
@@ -214,7 +206,7 @@ def _nl_means_denoising(
         + strides
         + (
             plane,
-            np.int32(pad),
+            np.int32(npad),
             np.int32(d),
             np.int32(chunk_len),
             dtype.type(scale),

@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 """CUDA source generation for non-local means denoising.
 
@@ -632,53 +632,6 @@ def _get_tiled_kernel(
         ndim, n_channels, patch_size, fast_mode, c_type, index_type, tile
     )
     return cp.RawModule(code=code).get_function(name)
-
-
-_reflect_code = """
-// index into an axis of length n for NumPy's 'reflect' padding mode (also
-// valid for pad widths larger than the axis)
-__device__ __forceinline__ int nlm_reflect(int k, const int n) {
-    if (n == 1) {
-        return 0;
-    }
-    const int period = 2 * (n - 1);
-    k = abs(k) % period;
-    return k < n ? k : period - k;
-}
-"""
-
-
-@cp.memoize(for_each_device=True)
-def _get_pad_kernel(ndim):
-    """Kernel reflect-padding a contiguous ``(*shape, C)`` array.
-
-    The output is the planar ``(C, *padded_shape)`` array used by the
-    denoising kernels. Padding and transposing in a single kernel is much
-    cheaper for small images than ``cupy.pad``, which launches many kernels.
-    The padding starts ``pad`` elements before the image on every axis.
-    """
-    params = ", ".join(f"int32 n{a}, int32 p{a}" for a in range(ndim))
-    body = """
-        ptrdiff_t rem = i;"""
-    for a in range(ndim - 1, -1, -1):
-        body += f"""
-        const int j{a} = rem % p{a};
-        rem /= p{a};"""
-    body += """
-        const int ch = rem;
-        ptrdiff_t src_idx = 0;"""
-    for a in range(ndim):
-        body += f"""
-        src_idx = src_idx * n{a} + nlm_reflect(j{a} - pad, n{a});"""
-    body += """
-        dst = src[src_idx * n_channels + ch];"""
-    return cp.ElementwiseKernel(
-        f"raw T src, {params}, int32 pad, int32 n_channels",
-        "T dst",
-        body,
-        f"nlm_reflect_pad_{ndim}d",
-        preamble=_reflect_code,
-    )
 
 
 @cp.memoize(for_each_device=True)
