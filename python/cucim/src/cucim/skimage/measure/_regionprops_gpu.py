@@ -382,6 +382,12 @@ def regionprops_dict(
             raise NotImplementedError(
                 f"{invalid_names} support spacing = (1, 1) only"
             )
+        # as in scikit-image, the perimeters support isotropic spacing only
+        invalid_names = requested_props & {"perimeter", "perimeter_crofton"}
+        if invalid_names and len(set(float(s) for s in spacing)) != 1:
+            raise NotImplementedError(
+                f"{invalid_names} support isotropic spacings only"
+            )
 
     out = {}
     if max_label is None:
@@ -667,6 +673,8 @@ def regionprops_dict(
                 labels_close=labels_close,
                 props_dict=out,
             )
+            if spacing is not None:
+                out["perimeter"] = out["perimeter"] * float(spacing[0])
         if compute_perimeter_crofton:
             regionprops_perimeter_crofton(
                 label_image,
@@ -677,6 +685,10 @@ def regionprops_dict(
                 labels_close=labels_close,
                 props_dict=out,
             )
+            if spacing is not None:
+                out["perimeter_crofton"] = out["perimeter_crofton"] * float(
+                    spacing[0]
+                )
 
         if compute_euler:
             regionprops_euler(
