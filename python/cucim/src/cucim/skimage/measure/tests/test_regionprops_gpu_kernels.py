@@ -1396,6 +1396,7 @@ def test_regionprops_dict_single_property(ndim, spacing, property_name):
     "property_name",
     [
         "area_bbox",
+        "area_convex",
         "centroid",
         "centroid_local",
         "centroid_weighted",
@@ -1403,6 +1404,7 @@ def test_regionprops_dict_single_property(ndim, spacing, property_name):
         "extent",
         "moments_normalized",
         "moments_weighted_normalized",
+        "solidity",
     ],
 )
 def test_regionprops_dict_spacing(ndim, spacing, property_name):
@@ -1435,7 +1437,15 @@ def test_regionprops_dict_spacing(ndim, spacing, property_name):
         if is_moments and sum(int(i) for i in key.split("-")[1:]) > 3:
             # entries above the computed order are not computed (NaN or 0)
             continue
-        assert_allclose(result[key], expected[key], rtol=1e-5, atol=1e-8)
+        valid = slice(None)
+        if property_name in ["area_convex", "solidity"]:
+            # scikit-image's QHull-based convex hull returns an empty image
+            # for 3D regions that are flat along one axis (see the note in
+            # test_area_convex_and_solidity); skip those regions
+            valid = np.isfinite(expected[key]) & (expected[key] != 0)
+        assert_allclose(
+            result[key][valid], expected[key][valid], rtol=1e-5, atol=1e-8
+        )
 
 
 @pytest.mark.parametrize("property_name", ["moments_hu", "moments_weighted_hu"])
