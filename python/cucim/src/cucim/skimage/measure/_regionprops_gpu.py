@@ -708,7 +708,10 @@ def regionprops_dict(
 
     if "area_convex" in required_props:
         regionprops_area_convex(
-            out["image_convex"], max_label=max_label, props_dict=out
+            out["image_convex"],
+            max_label=max_label,
+            spacing=spacing,
+            props_dict=out,
         )
 
     if "solidity" in required_props:
