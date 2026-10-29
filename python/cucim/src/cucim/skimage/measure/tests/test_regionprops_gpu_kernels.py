@@ -406,6 +406,46 @@ def test_intensity_std(
             )
 
 
+@pytest.mark.parametrize("image_dtype", [cp.float32, cp.float64])
+@pytest.mark.parametrize("sample_std", [False, True])
+def test_intensity_std_constant_regions(image_dtype, sample_std):
+    # sumsq - mean**2 * count rounds to a tiny negative number for some
+    # constant values, which used to give NaN instead of 0. (The one-pass
+    # formula can also leave a small positive value, up to about 1e-8 of the
+    # intensity magnitude, so the tolerance is relative to the values.)
+    labels = cp.zeros((20, 50), dtype=cp.uint8)
+    intensity_image = cp.zeros(labels.shape, dtype=image_dtype)
+    values = (0.1, 1.7, 1000.3, 1e6 + 0.1)
+    for i, value in enumerate(values):
+        labels[2:18, 12 * i + 1 : 12 * i + 11] = i + 1
+        intensity_image[2:18, 12 * i + 1 : 12 * i + 11] = value
+    props = regionprops_intensity_std(
+        labels, intensity_image, sample_std=sample_std
+    )
+    std = props["intensity_std"]
+    assert not cp.any(cp.isnan(std))
+    assert cp.all(std <= 1e-7 * cp.asarray(values))
+
+
+@pytest.mark.parametrize("image_dtype", [cp.float32, cp.float64])
+@pytest.mark.parametrize("sample_std", [False, True])
+def test_intensity_std_nonfinite(image_dtype, sample_std):
+    # regions containing NaN or +/-inf have a NaN standard deviation, as with
+    # numpy.std (the clip at 0 for constant regions must not change that)
+    labels = cp.zeros((4, 8), dtype=cp.uint8)
+    intensity_image = cp.ones(labels.shape, dtype=image_dtype)
+    for i, value in enumerate((cp.nan, cp.inf, -cp.inf)):
+        labels[:, 2 * i : 2 * i + 2] = i + 1
+        intensity_image[0, 2 * i] = value
+    labels[:, 6:] = 4  # finite values only
+    props = regionprops_intensity_std(
+        labels, intensity_image, sample_std=sample_std
+    )
+    std = props["intensity_std"]
+    assert cp.all(cp.isnan(std[:3]))
+    assert std[3] == 0
+
+
 @pytest.mark.parametrize("precompute_max", [False, True])
 @pytest.mark.parametrize("dtype", [cp.uint32, cp.int64])
 @pytest.mark.parametrize("return_slices", [False, True])

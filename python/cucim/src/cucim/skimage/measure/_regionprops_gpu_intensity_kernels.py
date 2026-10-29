@@ -459,6 +459,11 @@ def get_mean_var_kernel(dtype, sample_std=False):
         c_type = "float"
         nan_val = "CUDART_NAN_F"
 
+    # The one-pass formula sumsq - m * m * count can round to a small negative
+    # number when all values are equal (or nearly so), so the variance is
+    # clipped at 0 before taking the square root (otherwise sqrt gives NaN).
+    # The clip uses a comparison rather than max(), which is fmax in CUDA and
+    # would also replace a NaN variance (from NaN or inf values) with 0.
     if sample_std:
         source = f"""
             if (count == 1) {{
@@ -466,8 +471,9 @@ def get_mean_var_kernel(dtype, sample_std=False):
               var = {nan_val};
             }} else {{
               m = static_cast<double>(sum) / count;
-              var = sqrt(
-                  (static_cast<double>(sumsq) - m * m * count) / (count - 1));
+              double v = (static_cast<double>(sumsq) - m * m * count)
+                         / (count - 1);
+              var = sqrt(v < 0.0 ? 0.0 : v);
             }}\n"""
     else:
         source = f"""
@@ -479,8 +485,8 @@ def get_mean_var_kernel(dtype, sample_std=False):
               var = 0.0;
             }} else {{
               m = static_cast<double>(sum) / count;
-              var = sqrt(
-                  (static_cast<double>(sumsq) - m * m * count) / count);
+              double v = (static_cast<double>(sumsq) - m * m * count) / count;
+              var = sqrt(v < 0.0 ? 0.0 : v);
             }}\n"""
     inputs = "X count, Y sum, Y sumsq"
     outputs = "Z m, Z var"
