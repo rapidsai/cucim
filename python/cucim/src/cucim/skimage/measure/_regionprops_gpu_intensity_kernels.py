@@ -8,6 +8,7 @@ import cupy as cp
 from ._regionprops_gpu_utils import (
     _check_intensity_image_shape,
     _get_count_dtype,
+    _get_run_count_ctype,
     _includes,
 )
 
@@ -49,7 +50,7 @@ def _get_img_sums_code(
 
         - counts : shape (max_label,)
     """
-    pixel_count_dtype = "int8_t" if pixels_per_thread < 256 else "int16_t"
+    pixel_count_dtype = _get_run_count_ctype(pixels_per_thread)
 
     source_pre = ""
     if compute_num_pixels:

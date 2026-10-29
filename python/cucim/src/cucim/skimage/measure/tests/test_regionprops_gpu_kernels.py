@@ -142,6 +142,26 @@ def test_num_pixels(precompute_max, ndim):
     assert_allclose(num_pixels, expected["num_pixels"])
 
 
+@pytest.mark.parametrize("pixels_per_thread", [1, 127, 128, 200, 255, 256, 300])
+def test_num_pixels_large_pixels_per_thread(pixels_per_thread):
+    # the per-thread counters must hold up to pixels_per_thread pixels of one
+    # label (they used to be int8_t, which overflowed above 127)
+    labels = cp.ones((64, 64), dtype=cp.uint8)
+    labels[40:, :] = 2
+    expected = cp.asarray([40 * 64, 24 * 64])
+    num_pixels = regionprops_num_pixels(
+        labels, pixels_per_thread=pixels_per_thread
+    )
+    assert_array_equal(num_pixels, expected)
+    # the intensity kernels count pixels with the same kind of counters
+    intensity_image = cp.ones(labels.shape, dtype=cp.float32)
+    props = regionprops_intensity_mean(
+        labels, intensity_image, pixels_per_thread=pixels_per_thread
+    )
+    assert_array_equal(props["num_pixels"], expected)
+    assert_allclose(props["intensity_mean"], cp.ones(2))
+
+
 @pytest.mark.parametrize("precompute_max", [False, True])
 @pytest.mark.parametrize("ndim", [2, 3])
 @pytest.mark.parametrize("area_dtype", [cp.float32, cp.float64])
