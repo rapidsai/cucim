@@ -472,7 +472,7 @@ def regionprops_dict(
             regionprops_area_bbox(
                 out["bbox"],
                 area_dtype=cp.float32,
-                spacing=None,
+                spacing=spacing,
                 props_dict=out,
             )
 
