@@ -51,7 +51,10 @@ from cucim.skimage.measure._regionprops_gpu import (
     regionprops_perimeter,
     regionprops_perimeter_crofton,
 )
-from cucim.skimage.measure._regionprops_gpu_basic_kernels import basic_deps
+from cucim.skimage.measure._regionprops_gpu_basic_kernels import (
+    _fill_holes_by_label,
+    basic_deps,
+)
 from cucim.skimage.measure._regionprops_gpu_convex import convex_deps
 from cucim.skimage.measure._regionprops_gpu_intensity_kernels import (
     intensity_deps,
@@ -1449,6 +1452,130 @@ def test_regionprops_dict_spacing(ndim, spacing, property_name):
         assert_allclose(
             result[key][valid], expected[key][valid], rtol=1e-5, atol=1e-8
         )
+
+
+def _filled_case(name):
+    """Small label images for checking the filled-region properties."""
+    if name == "non_raster_order":
+        labels = cp.zeros((20, 20), dtype=cp.uint8)
+        labels[2:8, 2:8] = 2
+        labels[4:6, 4:6] = 0  # hole in label 2
+        labels[12:18, 12:18] = 1
+        labels[14:16, 14:16] = 0  # hole in label 1
+        labels[10, 2:6] = 3
+    elif name == "touching":
+        labels = cp.zeros((12, 20), dtype=cp.uint8)
+        labels[2:10, 2:10] = 1
+        labels[5:7, 5:7] = 0
+        labels[2:10, 10:18] = 2
+    elif name == "nested_with_gap":
+        labels = cp.zeros((16, 16), dtype=cp.uint8)
+        labels[2:14, 2:14] = 1
+        labels[4:12, 4:12] = 0
+        labels[6:10, 6:10] = 2  # inside the hole of label 1
+    elif name == "nested_touching":
+        labels = cp.zeros((16, 16), dtype=cp.uint8)
+        labels[2:14, 2:14] = 1
+        labels[5:11, 5:11] = 2  # touches label 1 on all sides
+        labels[7:9, 7:9] = 0  # hole in label 2
+    elif name == "nested_disconnected":
+        labels = cp.zeros((12, 12), dtype=cp.uint8)
+        labels[2:10, 2:10] = 1
+        labels[4:8, 4:8] = 2  # fills the hole of label 1
+        labels[0, 0] = 2  # so the bounding box of label 2 is not inside 1's
+    elif name == "nested_diagonal_gap":
+        labels = cp.zeros((12, 12), dtype=cp.uint8)
+        labels[2:10, 2:10] = 1
+        labels[3:9, 3:9] = 0
+        labels[2, 2] = 0  # the inside of label 1 is open diagonally
+        labels[6:9, 6:9] = 2  # touches label 1 (which is then recomputed)
+    elif name == "hole_between_two_labels":
+        labels = cp.zeros((12, 16), dtype=cp.uint8)
+        labels[2:10, 2:8] = 1
+        labels[2:10, 8:14] = 2
+        labels[4:8, 5:11] = 0  # hole bordered by labels 1 and 2
+    elif name == "3d":
+        labels = cp.zeros((12, 14, 16), dtype=cp.uint8)
+        labels[1:11, 1:11, 1:11] = 1
+        labels[3:9, 3:9, 3:9] = 0  # cavity of label 1
+        labels[5:7, 5:7, 5:7] = 2  # nested in the cavity
+        labels[2:6, 12:14, 2:14] = 3
+        labels[3:5, 12:14, 4:6] = 0  # not a hole: open along axis 1
+    else:
+        raise ValueError(name)
+    return labels
+
+
+FILLED_CASES = [
+    "non_raster_order",
+    "touching",
+    "nested_with_gap",
+    "nested_touching",
+    "nested_disconnected",
+    "nested_diagonal_gap",
+    "hole_between_two_labels",
+    "3d",
+]
+
+
+@pytest.mark.parametrize("case", FILLED_CASES)
+def test_regionprops_dict_filled(case):
+    labels = _filled_case(case)
+    result = regionprops_dict(
+        labels, properties=["area_filled", "num_pixels_filled", "image_filled"]
+    )
+    expected = measure_cpu.regionprops_table(
+        cp.asnumpy(labels), properties=["area_filled", "image_filled"]
+    )
+    assert_allclose(result["area_filled"], expected["area_filled"])
+    assert_allclose(result["num_pixels_filled"], expected["area_filled"])
+    assert len(result["image_filled"]) == len(expected["image_filled"])
+    for image, image_expected in zip(
+        result["image_filled"], expected["image_filled"]
+    ):
+        assert_array_equal(image, image_expected)
+    # num_pixels_filled requested alone (used to count the unfilled labels)
+    num_pixels_filled = regionprops_dict(
+        labels, properties=["num_pixels_filled"]
+    )["num_pixels_filled"]
+    assert_allclose(num_pixels_filled, expected["area_filled"])
+
+
+@pytest.mark.parametrize("ndim", [2, 3])
+def test_regionprops_dict_filled_random(ndim):
+    shape = (256, 512) if ndim == 2 else (48, 64, 64)
+    labels = get_labels_nd(shape, insert_holes=True)
+    result = regionprops_dict(labels, properties=["area_filled"])
+    expected = measure_cpu.regionprops_table(
+        cp.asnumpy(labels), properties=["area_filled"]
+    )
+    assert_allclose(result["area_filled"], expected["area_filled"])
+
+
+def test_label_filled():
+    labels = _filled_case("non_raster_order")
+    label_filled = regionprops_dict(labels, properties=["label_filled"])[
+        "label_filled"
+    ]
+    # same shape and label values as the input (no padding, no relabeling)
+    assert label_filled.shape == labels.shape
+    expected = labels.copy()
+    expected[4:6, 4:6] = 2
+    expected[14:16, 14:16] = 1
+    assert_array_equal(label_filled, expected)
+
+
+def test_fill_holes_by_label_tiling_is_exact():
+    # touching labels without nesting need no per-label recomputation
+    labels = cp.arange(1, 65, dtype=cp.int32).reshape(8, 8)
+    labels = cp.kron(labels, cp.ones((5, 4), dtype=cp.int32))
+    label_filled, labels_inexact = _fill_holes_by_label(labels, 64)
+    assert_array_equal(label_filled, labels)
+    assert labels_inexact.size == 0
+    # a label nested in another one is reported
+    labels[1:4, 1:3] = 100
+    _, labels_inexact = _fill_holes_by_label(labels, 100)
+    assert list(labels_inexact) == [1]
 
 
 @pytest.mark.parametrize("spacing", [None, (2, 3)])

@@ -15,6 +15,8 @@ from cucim.skimage.measure._regionprops import (
 )
 
 from ._regionprops_gpu_basic_kernels import (
+    _fill_holes_by_label,
+    _regionprops_filled,
     basic_deps,
     equivalent_diameter_area,
     equivalent_spherical_perimeter,
@@ -749,35 +751,21 @@ def regionprops_dict(
         )
 
     if "label_filled" in required_props:
-        regionprops_label_filled(
-            label_image,
-            max_label=max_label,
-            props_dict=out,
+        label_filled, labels_inexact = _fill_holes_by_label(
+            label_image, max_label=max_label, bbox=out.get("bbox")
         )
-        if "area_filled" in required_props:
-            # also handles "num_pixels_filled"
-            out["area_filled"] = regionprops_area(
-                out["label_filled"],
-                spacing=spacing,
-                max_label=max_label,
-                filled=True,
-                props_dict=out,
-            )
-        elif "num_pixels_filled" in required_props:
-            regionprops_num_pixels(
+        out["label_filled"] = label_filled
+        compute_image_filled = "image_filled" in required_props
+        if compute_image_filled or "num_pixels_filled" in required_props:
+            # labels in labels_inexact are recomputed on per-label crops
+            _regionprops_filled(
                 label_image,
+                label_filled,
+                labels_inexact,
                 max_label=max_label,
-                filled=True,
-                **perf_kwargs,
+                spacing=spacing,
+                compute_image=compute_image_filled,
                 props_dict=out,
-            )
-        if "image_filled" in required_props:
-            out["image_filled"], _, _ = regionprops_image(
-                out["label_filled"],
-                max_label=max_label,
-                compute_image=True,
-                compute_convex=False,
-                props_dict=None,  # omit: using custom "image_filled" key
             )
 
     # If user had requested properties via their deprecated names, set the
