@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-FileCopyrightText: Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 """
@@ -236,7 +236,7 @@ def check_library_files(install_method):
         if conda_prefix:
             search_paths.extend([f"{conda_prefix}/lib", f"{conda_prefix}/include"])
             # Add Python site-packages paths for pip installations
-            for py_ver in ["3.14", "3.13", "3.12", "3.11", "3.10", "3.9"]:
+            for py_ver in ["3.14", "3.13", "3.12"]:
                 search_paths.append(
                     f"{conda_prefix}/lib/python{py_ver}/site-packages/nvidia/nvimgcodec"
                 )

@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import cupy as cp
@@ -13,6 +13,7 @@ from skimage import data, morphology as morphology_cpu
 
 from cucim.skimage import color, morphology, transform
 from cucim.skimage._shared._warnings import expected_warnings
+from cucim.skimage._shared.testing import load_sample_data
 from cucim.skimage.morphology import footprint_rectangle, gray
 from cucim.skimage.util import img_as_ubyte, img_as_uint
 
@@ -24,13 +25,16 @@ def cam_image():
     return cp.ascontiguousarray(cp.array(data.camera()[64:112, 64:96]))
 
 
-@pytest.fixture
-def cell3d_image():
-    from skimage import data
+@pytest.fixture(scope="module")
+def cells3d_data():
+    # Load once per module: on a failed download, every test skips without
+    # retrying it.
+    return load_sample_data("cells3d")
 
-    return cp.ascontiguousarray(
-        cp.array(data.cells3d()[30:48, 0, 20:36, 20:32])
-    )
+
+@pytest.fixture
+def cell3d_image(cells3d_data):
+    return cp.ascontiguousarray(cp.array(cells3d_data[30:48, 0, 20:36, 20:32]))
 
 
 gray_morphology_funcs = (

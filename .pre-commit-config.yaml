@@ -28,7 +28,7 @@ repos:
         additional_dependencies:
           - tomli
   - repo: https://github.com/rapidsai/pre-commit-hooks
-    rev: v1.6.1
+    rev: v1.7.0
     hooks:
       - id: verify-copyright
         name: verify-copyright-cucim
@@ -149,6 +149,11 @@ repos:
             ^python/cucim/src/cucim/skimage/filters/_window[.]py$|
             ^python/cucim/src/cucim/skimage/filters/cuda/histogram_median[.]cu$|
             ^python/cucim/src/cucim/skimage/filters/lpi_filter[.]py$|
+            ^python/cucim/src/cucim/skimage/filters/rank/__init__[.]py$|
+            ^python/cucim/src/cucim/skimage/filters/rank/_generic[.]py$|
+            ^python/cucim/src/cucim/skimage/filters/rank/_percentile[.]py$|
+            ^python/cucim/src/cucim/skimage/filters/rank/_rank_filter[.]py$|
+            ^python/cucim/src/cucim/skimage/filters/rank/tests/test_rank[.]py$|
             ^python/cucim/src/cucim/skimage/filters/ridges[.]py$|
             ^python/cucim/src/cucim/skimage/filters/tests/test_correlate[.]py$|
             ^python/cucim/src/cucim/skimage/filters/tests/test_edges[.]py$|
@@ -434,6 +439,11 @@ repos:
             python/cucim/src/cucim/skimage/filters/_window[.]py$|
             python/cucim/src/cucim/skimage/filters/lpi_filter[.]py$|
             python/cucim/src/cucim/skimage/filters/ridges[.]py$|
+            python/cucim/src/cucim/skimage/filters/rank/__init__[.]py$|
+            python/cucim/src/cucim/skimage/filters/rank/_generic[.]py$|
+            python/cucim/src/cucim/skimage/filters/rank/_percentile[.]py$|
+            python/cucim/src/cucim/skimage/filters/rank/_rank_filter[.]py$|
+            python/cucim/src/cucim/skimage/filters/rank/tests/test_rank[.]py$|
             python/cucim/src/cucim/skimage/filters/tests/test_correlate[.]py$|
             python/cucim/src/cucim/skimage/filters/tests/test_edges[.]py$|
             python/cucim/src/cucim/skimage/filters/tests/test_fft_based[.]py$|
@@ -585,6 +595,7 @@ repos:
             cpp/plugins/cucim[.]kit[.]cuslide/src/cuslide/jpeg/libjpeg_turbo[.]cpp$
           )
       - id: verify-alpha-spec
+      - id: verify-dependencies
       - id: verify-pyproject-license
       - id: verify-hardcoded-version
         exclude: |

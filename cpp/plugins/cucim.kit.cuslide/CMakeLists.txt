@@ -1,5 +1,5 @@
 # cmake-format: off
-# SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION
+# SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 # cmake-format: on
 
@@ -98,7 +98,7 @@ include(ExternalProject)
 # Setup CXX11 ABI
 # : Adds CXX11 ABI definition to the compiler command line for targets in the current directory,
 #   whether added before or after this command is invoked, and for the ones in sub-directories added after.
-add_definitions(-D_GLIBCXX_USE_CXX11_ABI=0) # TODO: create two library, one with CXX11 ABI and one without it.
+add_definitions(-D_GLIBCXX_USE_CXX11_ABI=0) # See the top-level CMakeLists.txt for why this is 0.
 
 ################################################################################
 # Define dependencies

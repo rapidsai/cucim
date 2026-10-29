@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 # Dependency list for https://github.com/rapidsai/dependency-file-generator
@@ -57,6 +57,9 @@ files:
   py_run:
     output: pyproject
     pyproject_dir: python/cucim
+    matrix:
+      cuda_suffixed: ["false"]
+      use_cuda_wheels: ["true"]
     extras:
       table: project
     includes:
@@ -98,7 +101,7 @@ dependencies:
       #   build doesn't use these, but assumes that the C++ libcucim shared
       #   library had already previously been built and the .so file copied to
       #   python/cucim/src/cucim/clara/ before calling `pip install .`.
-      - output_types: [conda, requirements]
+      - output_types: [conda, requirements, constraints]
         packages:
           - cmake>=4.0
           - ninja
@@ -107,7 +110,7 @@ dependencies:
           - c-compiler
           - cuda-nvcc
           - cxx-compiler
-      - output_types: [requirements, pyproject]
+      - output_types: [requirements, constraints, pyproject]
         packages:
           - wheel
     specific:
@@ -126,7 +129,7 @@ dependencies:
               - sysroot_linux-aarch64==2.28
   checks:
     common:
-      - output_types: [conda, requirements]
+      - output_types: [conda, requirements, constraints]
         packages:
           - pre-commit
   # 'cuda_version' intentionally does not contain fallback entries... we want
@@ -167,7 +170,7 @@ dependencies:
               cuda: "13.3"
             packages:
               - cuda-version=13.3
-      - output_types: requirements
+      - output_types: [requirements, constraints]
         matrices:
           # if use_cuda_wheels=false is provided, do not add dependencies on any CUDA wheels
           # (e.g. for DLFW and pip devcontainers)
@@ -251,7 +254,7 @@ dependencies:
           - libcucim==26.12.*,>=0.0.0a0
   develop:
     common:
-      - output_types: [conda, requirements, pyproject]
+      - output_types: [conda, requirements, constraints, pyproject]
         packages:
           - pre-commit
           - black
@@ -259,7 +262,7 @@ dependencies:
           - isort
   docs:
     common:
-      - output_types: [conda, requirements, pyproject]
+      - output_types: [conda, requirements, constraints, pyproject]
         packages:
           - ipython
           - nbsphinx
@@ -267,7 +270,7 @@ dependencies:
           - recommonmark
           # the ceiling on sphinx can be removed when https://github.com/spatialaudio/nbsphinx/issues/825 is resolved
           - sphinx>=8.0.0,<8.2.0
-      - output_types: [requirements, pyproject]
+      - output_types: [requirements, constraints, pyproject]
         packages:
           - nvidia-sphinx-theme
       - output_types: conda
@@ -278,10 +281,6 @@ dependencies:
     specific:
       - output_types: conda
         matrices:
-          - matrix:
-              py: "3.11"
-            packages:
-              - python=3.11
           - matrix:
               py: "3.12"
             packages:
@@ -296,16 +295,16 @@ dependencies:
               - python=3.14
           - matrix:
             packages:
-              - python>=3.11,<3.15
+              - python>=3.12,<3.15
   rapids_build_setuptools:
     common:
-      - output_types: [conda, requirements, pyproject]
+      - output_types: [conda, requirements, constraints, pyproject]
         packages:
           - rapids-build-backend>=0.4.0,<0.5.0
           - setuptools>=80.9.0
   run:
     common:
-      - output_types: [conda, requirements, pyproject]
+      - output_types: [conda, requirements, constraints, pyproject]
         packages:
           - click
           - lazy-loader>=0.4
@@ -317,7 +316,7 @@ dependencies:
           - libnvimgcodec>=0.9.0,<0.10.0
           - nvimgcodec>=0.9.0,<0.10.0
     specific:
-      - output_types: [requirements, pyproject]
+      - output_types: [requirements, constraints, pyproject]
         matrices:
           - matrix:
               cuda: "12.*"
@@ -333,7 +332,7 @@ dependencies:
         packages:
           - &cupy_unsuffixed cupy>=14.0.1,!=14.1.0
     specific:
-      - output_types: requirements
+      - output_types: constraints
         matrices:
           - matrix:
               cuda: "12.*"
@@ -343,7 +342,7 @@ dependencies:
           - matrix:
             packages:
               - &cupy_cu13 cupy-cuda13x>=14.0.1,!=14.1.0
-      - output_types: pyproject
+      - output_types: [requirements, pyproject]
         matrices:
           - matrix:
               cuda: "12.*"
@@ -357,15 +356,17 @@ dependencies:
               - *cupy_cu13
           - matrix:
               cuda: "12.*"
+              use_cuda_wheels: "true"
             packages:
               - cupy-cuda12x[ctk]>=14.0.1,!=14.1.0
           # fallback to CUDA 13 versions if 'cuda' is '13.*' or not provided
           - matrix:
+              use_cuda_wheels: "true"
             packages:
               - cupy-cuda13x[ctk]>=14.0.1,!=14.1.0
   test_python:
     common:
-      - output_types: [conda, requirements, pyproject]
+      - output_types: [conda, requirements, constraints, pyproject]
         packages:
           - psutil>=5.8.0
           - pytest>=7.0.0,<9.0.0
@@ -383,13 +384,13 @@ dependencies:
           - pip
           - pip:
               - opencv-python-headless>=4.6
-      - output_types: [requirements, pyproject]
+      - output_types: [requirements, constraints, pyproject]
         packages:
           # skip packages on arm64 that don't provide a wheel
           - imagecodecs>=2021.6.8; platform_machine=='x86_64'
           - openslide-python>=1.3.0; platform_machine=='x86_64'
           - matplotlib>=3.7
           - opencv-python-headless>=4.6
-      - output_types: [pyproject, requirements]
+      - output_types: [pyproject, requirements, constraints]
         packages:
           - *numpydoc

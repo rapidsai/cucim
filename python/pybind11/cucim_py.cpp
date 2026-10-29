@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -100,6 +100,8 @@ PYBIND11_MODULE(_cucim, m)
              py::arg("path")) //
         .def_static("cache", &py_cache, doc::CuImage::doc_cache, //
                     py::arg("type") = py::none()) //
+        .def_static("device_cache", &CuImage::device_cache, doc::CuImage::doc_device_cache,
+                    py::call_guard<py::gil_scoped_release>()) //
         .def_static("profiler", &py_profiler, doc::CuImage::doc_profiler, py::call_guard<py::gil_scoped_release>()) //
         .def_property_readonly_static("is_trace_enabled", &py_is_trace_enabled, doc::CuImage::doc_is_trace_enabled,
                                       py::call_guard<py::gil_scoped_release>()) //);

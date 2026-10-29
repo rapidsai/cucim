@@ -22,7 +22,6 @@ jobs:
       - publish-api-docs
       - wheel-build
       - wheel-tests
-      - telemetry-setup
     permissions:
       actions: read
       contents: read
@@ -34,19 +33,6 @@ jobs:
     if: always()
     with:
       needs: ${{ toJSON(needs) }}
-  telemetry-setup:
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    permissions:
-      contents: read
-    env:
-      OTEL_SERVICE_NAME: "pr-cucim"
-    steps:
-      - name: Telemetry setup
-        # This gate is here and not at the job level because we need the job to not be skipped,
-        # since other jobs depend on it.
-        if: ${{ vars.TELEMETRY_ENABLED == 'true' }}
-        uses: rapidsai/shared-actions/telemetry-dispatch-stash-base-env-vars@main
   build-details:
     uses: rapidsai/shared-workflows/.github/workflows/compute-build-details.yaml@main
   changed-files:
@@ -157,7 +143,6 @@ jobs:
           - '!examples/**'
           - '!notebooks/**'
   checks:
-    needs: telemetry-setup
     permissions:
       actions: read
       contents: read
@@ -167,7 +152,9 @@ jobs:
     secrets: inherit # zizmor: ignore[secrets-inherit]
     uses: rapidsai/shared-workflows/.github/workflows/checks.yaml@main
     with:
-      ignored_pr_jobs: telemetry-summarize
+      # Main builds seed this cache. PR merge refs can restore it but should not create
+      # duplicate archives that are inaccessible to other PRs.
+      pre-commit-cache-read-only: true
   check-nightly-ci:
     runs-on: ubuntu-latest
     permissions:
@@ -269,12 +256,12 @@ jobs:
       target-aws-access-key-id: ${{ secrets.NVIDIA_DOCS_AWS_ACCESS_KEY_ID }}
       target-aws-region: ${{ secrets.NVIDIA_DOCS_AWS_REGION }}
       target-aws-secret-access-key: ${{ secrets.NVIDIA_DOCS_AWS_SECRET_ACCESS_KEY }}
+      target-archive-s3-bucket: ${{ secrets.NVIDIA_DOCS_ARCHIVE_S3_BUCKET }}
       target-s3-bucket: ${{ secrets.NVIDIA_DOCS_S3_BUCKET }}
     uses: rapidsai/shared-workflows/.github/workflows/publish-api-docs.yaml@main
     with:
       docs-projects: cucim
       dry-run: true
-      version-map: ${{ vars.VERSION_MAP }}
   wheel-build:
     needs: [build-details, checks]
     permissions:
@@ -305,16 +292,3 @@ jobs:
     with:
       build_type: pull-request
       script: ci/test_wheel.sh
-  telemetry-summarize:
-    # This job must use a self-hosted runner to record telemetry traces.
-    runs-on: linux-amd64-cpu4
-    needs: pr-builder
-    if: ${{ vars.TELEMETRY_ENABLED == 'true' && !cancelled() }}
-    continue-on-error: true
-    permissions:
-      actions: write
-    steps:
-      - name: Telemetry summarize
-        uses: rapidsai/shared-actions/telemetry-dispatch-summarize@main
-    env:
-      GH_TOKEN: ${{ github.token }}
