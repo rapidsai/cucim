@@ -375,6 +375,13 @@ def regionprops_dict(
             )
     else:
         has_intensity = True
+    if spacing is not None and any(s != 1 for s in spacing):
+        # as in scikit-image, Hu moments are not defined for non-unit spacing
+        invalid_names = requested_props & {"moments_hu", "moments_weighted_hu"}
+        if invalid_names:
+            raise NotImplementedError(
+                f"{invalid_names} support spacing = (1, 1) only"
+            )
 
     out = {}
     if max_label is None:
@@ -565,7 +572,7 @@ def regionprops_dict(
                 regionprops_moments_normalized(
                     out["moments_central"],
                     ndim=ndim,
-                    spacing=None,
+                    spacing=spacing,
                     pixel_correction=False,
                     weighted=False,
                     props_dict=out,
@@ -586,7 +593,7 @@ def regionprops_dict(
                 regionprops_moments_normalized(
                     out["moments_weighted_central"],
                     ndim=ndim,
-                    spacing=None,
+                    spacing=spacing,
                     pixel_correction=False,
                     weighted=True,
                     props_dict=out,

@@ -1369,6 +1369,19 @@ def test_regionprops_dict_single_property(ndim, spacing, property_name):
         )
     else:
         intensity_image = None
+    if spacing is not None and property_name in [
+        "moments_hu",
+        "moments_weighted_hu",
+    ]:
+        # as in scikit-image, Hu moments require unit spacing
+        with pytest.raises(NotImplementedError):
+            regionprops_dict(
+                labels,
+                intensity_image,
+                properties=[property_name],
+                spacing=spacing,
+            )
+        return
     props = regionprops_dict(
         labels, intensity_image, properties=[property_name], spacing=spacing
     )
@@ -1388,6 +1401,8 @@ def test_regionprops_dict_single_property(ndim, spacing, property_name):
         "centroid_weighted",
         "centroid_weighted_local",
         "extent",
+        "moments_normalized",
+        "moments_weighted_normalized",
     ],
 )
 def test_regionprops_dict_spacing(ndim, spacing, property_name):
@@ -1399,11 +1414,14 @@ def test_regionprops_dict_spacing(ndim, spacing, property_name):
     labels = get_labels_nd(shape)
     intensity_image = get_intensity_image(shape, dtype=cp.float32)
     intensity_image -= intensity_image.min() - 1  # positive weights
+    # scikit-image computes moment matrices up to order 3
+    is_moments = property_name.startswith("moments")
     result = regionprops_dict(
         labels,
         intensity_image,
         properties=[property_name],
         spacing=spacing,
+        moment_order=3 if is_moments else None,
         to_table=True,
     )
     expected = measure_cpu.regionprops_table(
@@ -1414,7 +1432,25 @@ def test_regionprops_dict_spacing(ndim, spacing, property_name):
     )
     assert set(result) == set(expected)
     for key in expected:
+        if is_moments and sum(int(i) for i in key.split("-")[1:]) > 3:
+            # entries above the computed order are not computed (NaN or 0)
+            continue
         assert_allclose(result[key], expected[key], rtol=1e-5, atol=1e-8)
+
+
+@pytest.mark.parametrize("property_name", ["moments_hu", "moments_weighted_hu"])
+def test_regionprops_dict_hu_spacing_not_implemented(property_name):
+    labels = get_labels_nd((64, 64))
+    intensity_image = get_intensity_image((64, 64), dtype=cp.float32)
+    for spacing in [None, (1, 1)]:
+        regionprops_dict(
+            labels, intensity_image, properties=[property_name], spacing=spacing
+        )
+    # scikit-image raises NotImplementedError for non-unit spacing
+    with pytest.raises(NotImplementedError):
+        regionprops_dict(
+            labels, intensity_image, properties=[property_name], spacing=(2, 2)
+        )
 
 
 @pytest.mark.parametrize("ndim", [2, 3])
