@@ -1451,6 +1451,22 @@ def test_regionprops_dict_spacing(ndim, spacing, property_name):
         )
 
 
+@pytest.mark.parametrize("spacing", [None, (2, 3)])
+def test_regionprops_dict_area_filled_spacing(spacing):
+    labels = cp.zeros((20, 30), dtype=cp.uint8)
+    labels[2:8, 2:9] = 1
+    labels[4:6, 4:6] = 0  # a hole in label 1
+    labels[11:18, 12:27] = 2
+    labels[13:16, 15:17] = 0  # a hole in label 2
+    result = regionprops_dict(
+        labels, properties=["area_filled"], spacing=spacing
+    )["area_filled"]
+    expected = measure_cpu.regionprops_table(
+        cp.asnumpy(labels), properties=["area_filled"], spacing=spacing
+    )["area_filled"]
+    assert_allclose(result, expected)
+
+
 @pytest.mark.parametrize("property_name", ["perimeter", "perimeter_crofton"])
 def test_regionprops_dict_perimeter_spacing(property_name):
     labels = get_labels_nd((256, 512))
