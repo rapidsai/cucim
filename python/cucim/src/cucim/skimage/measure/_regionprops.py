@@ -856,6 +856,16 @@ class RegionProperties:
 _RegionProperties = RegionProperties
 
 
+def _to_host(value):
+    """Copy a property value to the host, including tuples of CuPy scalars
+    (e.g. centroid_weighted)."""
+    if isinstance(value, cp.ndarray):
+        return cp.asnumpy(value)
+    if isinstance(value, (tuple, list)):
+        return type(value)(_to_host(v) for v in value)
+    return value
+
+
 def _props_to_dict(
     regions,
     properties=("label", "bbox"),
@@ -1026,10 +1036,7 @@ def _props_to_dict(
                 if copy_to_host:
                     column_data = np.empty((n,) + shape, dtype=dtype)
                     for k in range(n):
-                        rp = regions[k][prop]
-                        if isinstance(rp, cp.ndarray):
-                            rp = cp.asnumpy(rp)
-                        column_data[k] = rp
+                        column_data[k] = _to_host(regions[k][prop])
                     out[orig_prop] = column_data
                 else:
                     column_buffer = [regions[k][prop] for k in range(n)]
@@ -1053,7 +1060,7 @@ def _props_to_dict(
             if copy_to_host:
                 column_data = np.empty((n, n_columns), dtype=dtype)
                 for k in range(n):
-                    rp = cp.asnumpy(regions[k][prop])
+                    rp = np.asarray(_to_host(regions[k][prop]))
                     for i, loc in enumerate(locs):
                         column_data[k, i] = rp[loc]
             else:
