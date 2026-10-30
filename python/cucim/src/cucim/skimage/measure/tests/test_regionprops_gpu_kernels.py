@@ -701,6 +701,48 @@ def test_label_run_warp_aggregation(label_dtype, pixels_per_thread, pattern):
         )
 
 
+@pytest.mark.parametrize("label_dtype", [cp.uint16, cp.int32, cp.int64])
+@pytest.mark.parametrize("image_dtype", [cp.float32, cp.float64])
+def test_label_run_unaligned_inputs(label_dtype, image_dtype):
+    # 4 and 8-byte labels and images are read with 16-byte loads when they
+    # are 16-byte aligned; views starting one (odd-length) row in are not,
+    # and must give the same results as aligned copies
+    shape = (65, 999)
+    labels = cp.asarray(
+        get_labels_nd(shape, blob_size_fraction=0.1), dtype=label_dtype
+    )
+    image = get_intensity_image(shape, dtype=image_dtype)
+    labels_view, image_view = labels[1:], image[1:]
+    assert labels_view.flags.c_contiguous and image_view.flags.c_contiguous
+    assert labels_view.data.ptr % 16 != 0 or image_view.data.ptr % 16 != 0
+    labels_copy, image_copy = labels_view.copy(), image_view.copy()
+    max_label = int(labels.max())
+    results = []
+    for lab, img in [(labels_view, image_view), (labels_copy, image_copy)]:
+        props = _regionprops_label_pass(
+            lab,
+            max_label,
+            compute_num_pixels=True,
+            compute_bbox=True,
+            compute_coordinate_sums=True,
+        )
+        _regionprops_intensity(
+            lab,
+            img,
+            max_label,
+            compute_std=True,
+            compute_min=True,
+            compute_max=True,
+            props_dict=props,
+        )
+        regionprops_moments(
+            lab, img, max_label=max_label, order=2, props_dict=props
+        )
+        results.append(props)
+    for name, values in results[1].items():
+        assert_allclose(results[0][name], values, rtol=1e-12)
+
+
 @pytest.mark.parametrize("ndim", [2, 3])
 def test_centroid_reuses_num_pixels(ndim):
     shape = (256, 128) if ndim == 2 else (40, 32, 24)

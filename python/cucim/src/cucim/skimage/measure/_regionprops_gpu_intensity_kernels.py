@@ -30,6 +30,17 @@ intensity_deps["intensity_mean"] = ["num_pixels"]
 intensity_deps["intensity_std"] = ["num_pixels"]
 
 
+def _image_value(num_channels):
+    """Expression of channel c of the intensity at pixel ii.
+
+    A single-channel image is read through `img_value`, set by
+    get_intensity_measure_kernel.
+    """
+    if num_channels == 1:
+        return lambda c: "img_value"
+    return lambda c: f"img[{num_channels}*ii + {c}]"
+
+
 def _get_img_sums_code(
     c_sum_type,
     num_channels=1,
@@ -74,11 +85,12 @@ def _get_img_sums_code(
     #     ii : index into labels array
     # flush uses external variables:
     #     lab : label value of the run
+    image_value = _image_value(num_channels)
     nc = f"{num_channels}*" if num_channels > 1 else ""
     for c in range(num_channels):
         if compute_sum or compute_sum_sq:
             source_operation += f"""
-          v = static_cast<{c_sum_type}>(img[{nc}ii + {c}]);"""
+          v = static_cast<{c_sum_type}>({image_value(c)});"""
         if compute_sum:
             reduce.append((f"img_sum{c}", "sum"))
             source_pre += f"""
@@ -140,10 +152,11 @@ def _get_intensity_min_max_code(
     #     ii : index into labels array
     # flush uses external variables:
     #     lab : label value of the run
+    image_value = _image_value(num_channels)
     nc = f"{num_channels}*" if num_channels > 1 else ""
     for c in range(num_channels):
         source_operation += f"""
-          v_mm = static_cast<{c_type}>(img[{nc}ii + {c}]);"""
+          v_mm = static_cast<{c_type}>({image_value(c)});"""
         if compute_min:
             reduce.append((f"min_val{c}", "min"))
             source_pre += f"""
@@ -279,6 +292,17 @@ def get_intensity_measure_kernel(
         )
     pre, start, op, flush = ("".join(f[i] for f in fragments) for i in range(4))
     reduce = [r for f in fragments for r in f[4]]
+
+    if num_channels == 1 and (compute_sum or compute_sum_sq or any_min_max):
+        # read the image with 16-byte loads (see _get_label_run_loop)
+        pre += f"""
+      cucim_sequential_reader<Y> img_reader(
+          &img[start_index], {pixels_per_thread}, full_thread);"""
+        op = (
+            """
+          Y img_value = img_reader.get(ii - start_index);"""
+            + op
+        )
 
     # store only counts for label > 0  (label = 0 is the background)
     source = _get_label_run_loop(
