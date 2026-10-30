@@ -151,3 +151,47 @@ def test_binary_fill_holes_structure(ndim, connectivity):
     assert np.array_equal(expected, default) == (connectivity == 1)
     out = ndi.binary_fill_holes(cp.asarray(data), cp.asarray(struct))
     cp.testing.assert_array_equal(out, expected)
+
+
+@pytest.mark.parametrize("ndim", [2, 3])
+@pytest.mark.parametrize(
+    "footprint", ["horizontal", "large", "asymmetric", "diagonal"]
+)
+@pytest.mark.parametrize("empty", [False, True])
+@pytest.mark.parametrize("inplace", [False, True])
+def test_binary_fill_holes_iterative_structure(ndim, footprint, empty, inplace):
+    if footprint == "horizontal":
+        struct = np.zeros((3,) * ndim, dtype=bool)
+        struct[(1,) * (ndim - 1) + (slice(None),)] = True
+    elif footprint == "large":
+        struct = np.ones((5,) * ndim, dtype=bool)
+    elif footprint == "asymmetric":
+        struct = np.ones((3,) * ndim, dtype=bool)
+        struct[(0,) * ndim] = False
+    else:
+        struct = np.zeros((3,) * ndim, dtype=bool)
+        for index in range(3):
+            struct[(index,) * ndim] = True
+
+    data = np.zeros((9,) * ndim, dtype=bool)
+    if not empty:
+        data[(slice(1, -1),) * ndim] = True
+        data[(slice(3, -3),) * ndim] = False
+    expected = ndi_cpu.binary_fill_holes(data, struct)
+    data = cp.asarray(data)
+    struct = cp.asarray(struct)
+    if inplace:
+        ndi.binary_fill_holes(data, struct, output=data)
+        out = data
+    else:
+        out = ndi.binary_fill_holes(data, struct)
+    cp.testing.assert_array_equal(out, expected)
+
+
+def test_binary_fill_holes_1d():
+    # The exterior on each side of the image must remain unfilled even
+    # though the padding cannot connect the two ends in one dimension.
+    data = np.array([0, 1, 0, 1, 0], dtype=bool)
+    expected = ndi_cpu.binary_fill_holes(data)
+    out = ndi.binary_fill_holes(cp.asarray(data))
+    cp.testing.assert_array_equal(out, expected)
