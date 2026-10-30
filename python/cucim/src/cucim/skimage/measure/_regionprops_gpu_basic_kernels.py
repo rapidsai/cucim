@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 import math
@@ -11,6 +11,7 @@ from cucim.skimage.measure import label
 from cucim.skimage.morphology import convex_hull_image
 
 from ._regionprops_gpu_utils import (
+    _get_coord_dtype,
     _get_count_dtype,
     _get_min_integer_dtype,
     _get_run_count_ctype,
@@ -547,8 +548,7 @@ def regionprops_bbox_coords(
     if max_label is None:
         max_label = int(label_image.max())
 
-    int32_coords = max(label_image.shape) < 2**32
-    coord_dtype = cp.dtype(cp.uint32 if int32_coords else cp.uint64)
+    coord_dtype, int32_coords = _get_coord_dtype(label_image.size)
 
     bbox_kernel = get_bbox_coords_kernel(
         ndim=label_image.ndim,

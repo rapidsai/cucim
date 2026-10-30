@@ -22,6 +22,19 @@ def _get_count_dtype(label_image_size):
     return count_dtype, int32_count
 
 
+def _get_coord_dtype(label_image_size):
+    """Coordinate type of the kernels that unravel raveled pixel indices.
+
+    `_unravel_loop_index` unravels the raveled index in this type, so it must
+    hold the raveled index of every pixel, not only each coordinate. 32-bit
+    coordinates are used whenever possible because their divisions are much
+    faster.
+    """
+    int32_coords = label_image_size < 2**32
+    coord_dtype = cp.dtype(cp.uint32 if int32_coords else cp.uint64)
+    return coord_dtype, int32_coords
+
+
 def _get_run_count_ctype(pixels_per_thread):
     """C type of the per-thread pixel counters of the label-run kernels.
 
@@ -86,7 +99,8 @@ def _unravel_loop_index(
 ):
     """
     declare a multi-index array in_coord and unravel the 1D index, i into it.
-    This code assumes that the array is a C-ordered array.
+    This code assumes that the array is a C-ordered array. `uint_t` must be
+    able to hold the raveled index (see `_get_coord_dtype`).
     """
     code = (
         ""

@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import functools
@@ -1718,3 +1718,34 @@ def test_regionprops_dict_deprecated_property_names(property_name):
     assert property_name in props
     # non-deprecated version of the name is not also present
     assert PROPS[property_name] not in props
+
+
+def test_regionprops_dict_coordinates_beyond_2_32_pixels():
+    # The coordinates of pixels whose raveled index is 2**32 or more must not
+    # wrap, even though every axis is shorter than 2**32.
+    shape = (2**16 + 1, 2**16)  # the last row starts at raveled index 2**32
+    if cp.cuda.Device().mem_info[0] < 2 * math.prod(shape):
+        pytest.skip("not enough free GPU memory for a 4 GB label image")
+    labels = cp.zeros(shape, dtype=cp.uint8)
+    rows, cols = shape
+    labels[rows - 3 :, cols - 6 :] = 1  # straddles raveled index 2**32
+    labels[rows - 1, 100:300] = 2  # entirely beyond raveled index 2**32
+    properties = ["bbox", "centroid", "centroid_local", "moments_central"]
+    props = regionprops_dict(labels, properties=properties)
+    del labels
+
+    assert_array_equal(
+        props["bbox"],
+        [[rows - 3, cols - 6, rows, cols], [rows - 1, 100, rows, 300]],
+    )
+    assert_allclose(
+        props["centroid"], [[rows - 2, cols - 3.5], [rows - 1, 199.5]]
+    )
+    # translation-invariant properties match those of the same regions in a
+    # small image
+    small = cp.zeros((8, 400), dtype=cp.uint8)
+    small[1:4, 2:8] = 1
+    small[5, 100:300] = 2
+    expected = regionprops_dict(small, properties=properties)
+    for name in ["centroid_local", "moments_central"]:
+        assert_allclose(props[name], expected[name])
