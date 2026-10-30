@@ -5,7 +5,7 @@ into three categories:
 1. You want to report a bug, feature request, or documentation issue
     - File an [issue](https://github.com/rapidsai/cucim/issues/new/choose)
     describing what you encountered or what you want to see changed.
-    - The RAPIDS team will evaluate the issues and triage them, scheduling
+    - The cuCIM maintainers will evaluate and triage issues, scheduling
     them for a release. If you believe the issue needs priority attention
     comment on the issue to notify the team.
 2. You want to propose a new Feature and implement it
@@ -31,7 +31,7 @@ into three categories:
 5. When done, [create your pull request](https://github.com/rapidsai/cucim/compare)
 6. Verify that CI passes all [status checks](https://help.github.com/articles/about-status-checks/). Fix if needed
 7. Wait for other developers to review your code and update code as needed
-8. Once reviewed and approved, a RAPIDS developer will merge your pull request
+8. Once reviewed and approved, a cuCIM maintainer will merge your pull request
 
 Remember, if you are unsure about anything, don't hesitate to comment on issues
 and ask for clarifications!
@@ -42,7 +42,7 @@ Once you have gotten your feet wet and are more comfortable with the code, you
 can look at the prioritized issues of our next release in our [project boards](https://github.com/rapidsai/cucim/projects).
 
 > **Pro Tip:** Always look at the release board with the highest number for
-issues to work on. This is where RAPIDS developers also focus their efforts.
+issues to work on. This is where cuCIM maintainers also focus their efforts.
 
 Look at the unassigned issues, and find an issue you are comfortable with
 contributing to. Start with _Step 3_ from above, commenting on the issue to let

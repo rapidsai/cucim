@@ -93,5 +93,5 @@ about:
   license_file:
     - LICENSE
     - LICENSE-3rdparty.md
-  doc_url: https://docs.rapids.ai/api/cucim/stable/
+  doc_url: https://docs.nvidia.com/cucim
   dev_url: https://github.com/rapidsai/cucim
