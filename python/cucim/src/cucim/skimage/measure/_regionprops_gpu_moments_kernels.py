@@ -316,6 +316,7 @@ def _get_raw_moments_code(
     has_spacing=False,
     has_weights=False,
     accum_c_type=None,
+    pixels_per_thread=16,
 ):
     """
     Notes
@@ -372,6 +373,10 @@ def _get_raw_moments_code(
     if has_weights:
         source_pre += f"""
     {accum_c_type} w;"""
+        if num_channels == 1:
+            source_pre += f"""
+    cucim_sequential_reader<Y> img_reader(
+        &img[start_index], {pixels_per_thread}, full_thread);"""
 
     # the bounding box is used to transform the global coordinates to local ones
     # (bbox : bounding box coordinates, shape (max_label, 2*ndim))
@@ -450,9 +455,15 @@ def _get_raw_moments_code(
           {accum_c_type} x{e} = x{e - 1} * x1;"""
     for c in range(num_channels):
         if has_weights:
-            # need additional multiplication by the intensity value
+            # need additional multiplication by the intensity value (a
+            # single-channel image is read with 16-byte loads, see
+            # _get_label_run_loop)
+            if num_channels == 1:
+                value = "img_reader.get(ii - start_index)"
+            else:
+                value = f"img[{num_channels} * ii + {c}]"
             source_operation += f"""
-          w = static_cast<{accum_c_type}>(img[{num_channels} * ii + {c}]);"""
+          w = static_cast<{accum_c_type}>({value});"""
             source_operation += f"""
           psum{c}_0 += w;"""
         else:
@@ -555,6 +566,7 @@ def get_raw_moments_kernel(
         has_spacing=spacing is not None,
         num_channels=num_channels,
         accum_c_type=accum_c_type,
+        pixels_per_thread=pixels_per_thread,
     )
 
     pre += _unravel_loop_index_declarations("labels", ndim, uint_t=coord_c_type)
