@@ -158,7 +158,7 @@ def _get_coord_dtype(label_image_size):
 
 
 def _get_label_run_loop(
-    pixels_per_thread, pre, start, op, flush, warp_reduce=()
+    pixels_per_thread, pre, start, op, flush, warp_reduce=(), finish=""
 ):
     """Source of the loop shared by the label-run kernels.
 
@@ -183,6 +183,9 @@ def _get_label_run_loop(
     flush : str
         Executed at the end of each run to write the accumulators to the
         outputs. Can use `lab`.
+    finish : str, optional
+        Executed at the end of each run, before its accumulators are combined
+        across the warp (see `warp_reduce`) and flushed. Can use `lab`.
     warp_reduce : sequence of (str, str), optional
         The accumulators and how they are combined ("sum", "min" or "max").
         If given, the last runs of neighboring lanes of a warp that have the
@@ -200,6 +203,7 @@ def _get_label_run_loop(
     """
     final_flush = f"""
       if (lab != 0) {{
+        {finish}
         {flush}
       }}\n"""
     if warp_reduce:
@@ -213,6 +217,9 @@ def _get_label_run_loop(
         # loop are those with i < num_threads (blocks are a multiple of 32
         # threads, so warps start at multiples of 32).
         final_flush = f"""
+      if (lab != 0) {{
+        {finish}
+      }}
       {{
         unsigned int lane = threadIdx.x & 31;
         uint64_t num_threads = (labels_size + {pixels_per_thread - 1})
@@ -251,6 +258,7 @@ def _get_label_run_loop(
         if (current_label == 0) {{ continue; }}
         if (current_label != lab) {{
           if (lab != 0) {{
+            {finish}
             {flush}
           }}
           lab = current_label;

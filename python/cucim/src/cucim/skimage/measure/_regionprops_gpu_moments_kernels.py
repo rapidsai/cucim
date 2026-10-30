@@ -325,6 +325,11 @@ def _get_raw_moments_code(
         - mom{c}_{k} : the moment at raveled index k of the moments matrix of
             channel c (only for the entries of total order <= `order`), with
             type `accum_c_type` (default: `moments_c_type`)
+        - psum{c}_{e} : sum of (weight times) the e-th power of the last
+            coordinate over the pixels of the current row, expanded into the
+            moments when the row changes and at the end of the run
+            (`source_finish`)
+        - row0[, row1] : the other local coordinates of the current row
 
     The per-run sums are computed from the local coordinates without spacing;
     the spacing factor of each moment is applied once per run, when adding
@@ -375,6 +380,50 @@ def _get_raw_moments_code(
         source_start += f"""
           bbox_min{d} = bbox[(lab - 1) * {2 * ndim} + {d}];"""
 
+    # Within a row of the image, only the last coordinate varies, so each
+    # moment is M[a, b] = sum(w * c0**a * c1**b) = c0**a * T[b] (2D), with the
+    # power sums T[e] = sum(w * c1**e) of the row's pixels. The pixels only
+    # update the order + 1 power sums of the current row; these are added to
+    # the moments (expanded) when the row changes and at the end of the run.
+    last = ndim - 1
+    row_axes = range(ndim - 1)
+    for d in row_axes:
+        source_pre += f"""
+    {coord_c_type} row{d};"""
+        source_start += f"""
+          row{d} = 0;"""
+    for c in range(num_channels):
+        for e in range(order + 1):
+            source_pre += f"""
+    {accum_c_type} psum{c}_{e};"""
+            source_start += f"""
+          psum{c}_{e} = 0;"""
+
+    # expand the power sums of the row `row0`(, `row1`) into the moments
+    expand = ""
+    for d in row_axes:
+        expand += f"""
+            {accum_c_type} r{d} = row{d};"""
+    source_flush = ""
+    reduce = []
+    for c in range(num_channels):
+        for k, exponents in entries:
+            var = f"mom{c}_{k}"
+            reduce.append((var, "sum"))
+            source_pre += f"""
+    {accum_c_type} {var};"""
+            source_start += f"""
+          {var} = 0;"""
+            factors = []
+            for d in row_axes:
+                factors += [f"r{d}"] * exponents[d]
+            factors.append(f"psum{c}_{exponents[last]}")
+            expand += f"""
+            {var} += {" * ".join(factors)};"""
+        for e in range(order + 1):
+            expand += f"""
+            psum{c}_{e} = 0;"""
+
     # op uses external coordinate array variables:
     #    in_coord[0]...in_coord[ndim - 1] : coordinates
     #        coordinates in the labeled image at the current index
@@ -384,34 +433,49 @@ def _get_raw_moments_code(
     source_operation = ""
     for d in range(ndim):
         source_operation += f"""
-          {accum_c_type} c{d} = in_coord[{d}] - bbox_min{d};"""
-
-    source_flush = ""
-    reduce = []
+          {coord_c_type} c{d} = in_coord[{d}] - bbox_min{d};"""
+    row_changed = " || ".join(f"c{d} != row{d}" for d in row_axes)
+    source_operation += f"""
+          if ({row_changed}) {{{expand}"""
+    for d in row_axes:
+        source_operation += f"""
+            row{d} = c{d};"""
+    source_operation += """
+          }"""
+    # powers of the last coordinate
+    source_operation += f"""
+          {accum_c_type} x1 = c{last};"""
+    for e in range(2, order + 1):
+        source_operation += f"""
+          {accum_c_type} x{e} = x{e - 1} * x1;"""
     for c in range(num_channels):
         if has_weights:
             # need additional multiplication by the intensity value
             source_operation += f"""
           w = static_cast<{accum_c_type}>(img[{num_channels} * ii + {c}]);"""
+            source_operation += f"""
+          psum{c}_0 += w;"""
+        else:
+            one = "1.0" if use_floating_point else "1"
+            source_operation += f"""
+          psum{c}_0 += {one};"""
+        for e in range(1, order + 1):
+            w = "w * " if has_weights else ""
+            source_operation += f"""
+          psum{c}_{e} += {w}x{e};"""
+
+    # the power sums of the run's last row are expanded before the run's
+    # moments are combined across the warp and flushed
+    source_finish = f"""
+          {{{expand}
+          }}"""
+
+    # flush uses external variables:
+    #     lab : label value of the run
+    #     moments : output with shape (max_label, num_channels, num_moments)
+    for c in range(num_channels):
         for k, exponents in entries:
             var = f"mom{c}_{k}"
-            reduce.append((var, "sum"))
-            source_pre += f"""
-    {accum_c_type} {var};"""
-            source_start += f"""
-          {var} = 0;"""
-            factors = ["w"] if has_weights else []
-            for d, e in enumerate(exponents):
-                factors += [f"c{d}"] * e
-            if factors:
-                term = " * ".join(factors)
-            else:
-                term = "1.0" if use_floating_point else "1"
-            source_operation += f"""
-          {var} += {term};"""
-            # flush uses external variables:
-            #     lab : label value of the run
-            #     moments : output with shape (max_label, num_channels, num_moments)
             m_index = f"{num_moments * num_channels}*(lab - 1) + {c * num_moments + k}"
             value = f"static_cast<{moments_c_type}>({var})"
             if has_spacing:
@@ -419,7 +483,14 @@ def _get_raw_moments_code(
                     value += f" * spacing{d}" * e
             source_flush += f"""
           atomicAdd(&moments[{m_index}], {value});"""
-    return source_pre, source_start, source_operation, source_flush, reduce
+    return (
+        source_pre,
+        source_start,
+        source_operation,
+        source_flush,
+        reduce,
+        source_finish,
+    )
 
 
 def _get_moments_accum_c_type(shape, order, pixels_per_thread):
@@ -475,7 +546,7 @@ def get_raw_moments_kernel(
 
     if weighted and accum_c_type not in [None, "double"]:
         raise ValueError("weighted moments are accumulated in double")
-    pre, start, op, flush, reduce = _get_raw_moments_code(
+    pre, start, op, flush, reduce, finish = _get_raw_moments_code(
         coord_c_type=coord_c_type,
         moments_c_type=moments_c_type,
         ndim=ndim,
@@ -500,7 +571,13 @@ def get_raw_moments_kernel(
 
     # store only counts for label > 0  (label = 0 is the background)
     source = _get_label_run_loop(
-        pixels_per_thread, pre, start, op, flush, warp_reduce=reduce
+        pixels_per_thread,
+        pre,
+        start,
+        op,
+        flush,
+        warp_reduce=reduce,
+        finish=finish,
     )
 
     # print(source)
