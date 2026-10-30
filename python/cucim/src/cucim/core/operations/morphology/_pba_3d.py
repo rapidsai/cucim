@@ -26,6 +26,7 @@ pba3d_defines_template = """
 #define MAX_INT    {max_int}
 #define BLOCKSIZE  {block_size_3d}
 #define SPACING_T  {spacing_t}  // type of the pixel spacing and of the distances computed with it
+#define IMAGE_T    {image_t}  // type of the elements of the input image
 
 """
 
@@ -93,12 +94,14 @@ def get_pba3d_src(
     max_int=2147483647,
     encoding=(10, 10, False),
     spacing_t="double",
+    image_t="unsigned char",
 ):
     pba3d_code = pba3d_defines_template.format(
         block_size_3d=block_size_3d,
         marker=marker,
         max_int=max_int,
         spacing_t=spacing_t,
+        image_t=image_t,
     )
     bits_xy, bits_z, wide = encoding
     pba3d_code += pba3d_defines_encode.format(
@@ -118,7 +121,13 @@ def get_pba3d_src(
 
 
 @cupy.memoize(for_each_device=True)
-def _get_pba3d_kernels(block_size, encoding, with_spacing, spacing_t="double"):
+def _get_pba3d_kernels(
+    block_size,
+    encoding,
+    with_spacing,
+    spacing_t="double",
+    image_t="unsigned char",
+):
     """Return the kernels of the 3D algorithm as a dictionary.
 
     The kernels that take a pixel spacing are returned under the names of the
@@ -126,7 +135,10 @@ def _get_pba3d_kernels(block_size, encoding, with_spacing, spacing_t="double"):
     """
     module = cupy.RawModule(
         code=get_pba3d_src(
-            block_size_3d=block_size, encoding=encoding, spacing_t=spacing_t
+            block_size_3d=block_size,
+            encoding=encoding,
+            spacing_t=spacing_t,
+            image_t=image_t,
         )
     )
     suffix = "WithSpacing" if with_spacing else ""
@@ -136,50 +148,25 @@ def _get_pba3d_kernels(block_size, encoding, with_spacing, spacing_t="double"):
     return kernels
 
 
-@cupy.memoize(for_each_device=True)
-def _get_encode3d_kernel(encoding, marker=-2147483648):
-    """Pack array coordinates into a single integer."""
-    bits_xy, bits_z, wide = encoding
-    int_type = "ptrdiff_t" if wide else "int"  # int64_t or int32_t
-
-    # value must match the ENCODE macro in the C++ code!
-    value = f"""(((x) << {bits_xy + bits_z}) | ((y) << {bits_z}) | (z))"""
-
-    code = f"""
-    if (arr[i]) {{
-        out[i] = {marker};
-    }} else {{
-        {int_type} shape_2 = arr.shape()[2];
-        {int_type} shape_1 = arr.shape()[1];
-        {int_type} _i = i;
-        {int_type} x = _i % shape_2;
-        _i /= shape_2;
-        {int_type} y = _i % shape_1;
-        _i /= shape_1;
-        {int_type} z = _i;
-        out[i] = {value};
-    }}
-    """
-    return cupy.ElementwiseKernel(
-        in_params="raw B arr",
-        out_params="raw I out",
-        operation=code,
-    )
-
-
-def encode3d(arr, marker=-2147483648, encoding=None):
-    if arr.ndim != 3:
-        raise ValueError("only 3d arr supported")
-    if encoding is None:
-        encoding = _get_encoding(arr.shape)
-    image = cupy.zeros(arr.shape, dtype=_get_encoded_dtype(encoding), order="C")
-    kern = _get_encode3d_kernel(encoding, marker=marker)
-    kern(arr, image, size=image.size)
-    return image
+# C types of the dtypes that the kernels read directly. The kernels only test
+# if an element is 0.
+_image_ctypes = {
+    "bool": "bool",
+    "int8": "signed char",
+    "uint8": "unsigned char",
+    "int16": "short",
+    "uint16": "unsigned short",
+    "int32": "int",
+    "uint32": "unsigned int",
+    "int64": "long long",
+    "uint64": "unsigned long long",
+    "float32": "float",
+    "float64": "double",
+}
 
 
 def _get_decode3d_code(encoding, int_type=""):
-    # bit shifts here must match those used in the encode3d kernel
+    # bit shifts here must match those of the ENCODE macro in the kernels
     bits_xy, bits_z, wide = encoding
     notsite_bit = 61 if wide else 31
     # The NOTSITE flag is set if there is no nearest site. The coordinates are
@@ -396,6 +383,9 @@ def _pba_3d(
 
     block_size = _get_block_size(check_warp_size)
 
+    if arr.dtype.name not in _image_ctypes:
+        # other types (e.g. float16 or complex) are converted
+        arr = arr != 0
     orig_sz, orig_sy, orig_sx = arr.shape
     padding_width = _determine_padding(arr.shape, block_size, blockx, blocky)
     if padding_width is not None:
@@ -408,18 +398,25 @@ def _pba_3d(
             "at most 2**31 - 1 are supported"
         )
 
-    # pba algorithm was implemented to use 32-bit integer to store compressed
-    # coordinates. input_arr will be C-contiguous, int32
+    # The coordinates are packed in 32-bit or 64-bit integers. The two arrays
+    # are written before they are read: the first kernel reads the image and
+    # writes the second array.
     encoding = _get_encoding(arr.shape)
-    input_arr = encode3d(arr, encoding=encoding)
+    input_arr = cupy.empty(arr.shape, dtype=_get_encoded_dtype(encoding))
     buffer_idx = 0
-    output = cupy.zeros_like(input_arr)
+    output = cupy.empty_like(input_arr)
     pba_images = [input_arr, output]
+    # strides of the image in elements
+    image_strides = tuple(np.int64(st // arr.itemsize) for st in arr.strides)
 
     block = (blockx, blocky, 1)
     spacing_t = "float" if float32_spacing else "double"
     kernels = _get_pba3d_kernels(
-        block_size, encoding, sampling is not None, spacing_t
+        block_size,
+        encoding,
+        sampling is not None,
+        spacing_t,
+        _image_ctypes[arr.dtype.name],
     )
     kernelFloodZ = kernels["kernelFloodZ"]
     kernelMaurerAxis = kernels["kernelMaurerAxis"]
@@ -439,7 +436,7 @@ def _pba_3d(
     kernelFloodZ(
         (sx // blockx, sy // blocky, 1),
         block,
-        (pba_images[buffer_idx], pba_images[1 - buffer_idx], sx, sy, sz),
+        (arr,) + image_strides + (pba_images[1 - buffer_idx], sx, sy, sz),
     )
     buffer_idx = 1 - buffer_idx
 

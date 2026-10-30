@@ -53,6 +53,10 @@
 #define SPACING_T double
 #endif
 
+#ifndef IMAGE_T
+#define IMAGE_T unsigned char
+#endif
+
 #ifndef ENCODE
 
 // Sites     : ENCODE(x, y, z, 0, 0)
@@ -114,7 +118,12 @@ __device__ bool dominate_sp(int _x_1, int _y_1, int _z_1, int _x_2, int _y_2, in
 
 extern "C"{
 
-__global__ void kernelFloodZ(ENCODED_INT_TYPE *input, ENCODED_INT_TYPE *output, int size_x, int size_y, int size_z)
+// Phase 1: find the nearest site along z in every pencil of voxels.
+//
+// This reads the image, not packed coordinates (the sites are the voxels that
+// are 0), so the image does not have to be packed in a separate kernel. The
+// strides are in elements of the image, which can be any array of type IMAGE_T.
+__global__ void kernelFloodZ(const IMAGE_T *image, long long stride_z, long long stride_y, long long stride_x, ENCODED_INT_TYPE *output, int size_x, int size_y, int size_z)
 {
 
     int tx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -123,16 +132,15 @@ __global__ void kernelFloodZ(ENCODED_INT_TYPE *input, ENCODED_INT_TYPE *output, 
 
     int plane = size_x * size_y;
     int id = TOID(tx, ty, tz, size_y, size_x);
+    const IMAGE_T *voxel = image + ty * stride_y + tx * stride_x;
     ENCODED_INT_TYPE pixel1, pixel2;
 
     pixel1 = ENCODE(ZERO,ZERO,ZERO,ONE,ZERO);
 
     // Sweep down
-    for (int i = 0; i < size_z; i++, id += plane) {
-        pixel2 = input[id];
-
-        if (!NOTSITE(pixel2))
-            pixel1 = pixel2;
+    for (int i = 0; i < size_z; i++, id += plane, voxel += stride_z) {
+        if (*voxel == 0)
+            pixel1 = ENCODE(static_cast<ENCODED_INT_TYPE>(tx), static_cast<ENCODED_INT_TYPE>(ty), static_cast<ENCODED_INT_TYPE>(i), ZERO, ZERO);
 
         output[id] = pixel1;
     }

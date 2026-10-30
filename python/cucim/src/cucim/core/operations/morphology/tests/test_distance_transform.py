@@ -759,28 +759,6 @@ def test_pba3d_encoding_too_large():
         _get_encoding((2**21, 2**21, 2**21))
 
 
-@pytest.mark.parametrize("shape", [(5, 17, 9), (3, 1100, 6), (300, 1100, 20)])
-def test_pba3d_encode_decode(shape):
-    """Encoding and decoding coordinates is the identity for 32 and 64 bits."""
-    from cucim.core.operations.morphology._pba_3d import (
-        _get_encoding,
-        decode3d,
-        encode3d,
-    )
-
-    encoding = _get_encoding(shape)
-    # shapes that use a 32-bit and a 64-bit integer are included
-    assert encoding[2] == (shape == (300, 1100, 20))
-    arr = cp.zeros(shape, dtype=bool)
-    encoded = encode3d(arr, encoding=encoding)
-    assert encoded.dtype == (cp.int64 if encoding[2] else cp.int32)
-    x, y, z = decode3d(encoded, encoding)
-    zz, yy, xx = cp.meshgrid(*(cp.arange(n) for n in shape), indexing="ij")
-    cp.testing.assert_array_equal(x, xx)
-    cp.testing.assert_array_equal(y, yy)
-    cp.testing.assert_array_equal(z, zz)
-
-
 @pytest.mark.parametrize(
     "shape",
     [
@@ -806,6 +784,78 @@ def test_distance_transform_edt_3d_long_axis(shape, sampling):
         distance_transform_edt(img, sampling=sampling), expected, rtol=1e-6
     )
     assert not img_cpu[tuple(cp.asnumpy(ind))].any()
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        bool,
+        np.int8,
+        np.uint8,
+        np.int16,
+        np.uint16,
+        np.int32,
+        np.uint32,
+        np.int64,
+        np.uint64,
+        np.float16,
+        np.float32,
+        np.float64,
+        np.complex64,
+    ],
+)
+@pytest.mark.parametrize("shape", [(6, 21, 40)])
+def test_distance_transform_edt_input_dtypes(dtype, shape):
+    """Any non-zero value is foreground, whatever the dtype of the image."""
+    rng = np.random.default_rng(5)
+    values = rng.integers(0, 4, size=shape)
+    values[(0,) * len(shape)] = 0
+    img = cp.asarray(values.astype(dtype))
+    out = distance_transform_edt(img)
+    expected = ndi_cpu.distance_transform_edt(values != 0)
+    cp.testing.assert_allclose(out, expected, rtol=1e-6)
+
+
+def test_distance_transform_edt_nan_is_foreground():
+    values = np.ones((12, 20, 9), dtype=np.float32)
+    values[3, 4, 5] = 0
+    values[7, 1, 2] = np.nan  # not 0, so it is foreground
+    out = distance_transform_edt(cp.asarray(values))
+    expected = ndi_cpu.distance_transform_edt(values != 0)
+    cp.testing.assert_allclose(out, expected, rtol=1e-6)
+
+
+@pytest.mark.parametrize("shape", [(24, 40), (9, 21, 40)])
+@pytest.mark.parametrize(
+    "view",
+    ["c", "fortran", "transposed", "strided", "reversed", "sliced_copy"],
+)
+@pytest.mark.parametrize("sampling", [None, 1.5, "aniso"])
+def test_distance_transform_edt_input_strides(shape, view, sampling):
+    """Arrays that are not C-contiguous are processed in place."""
+    ndim = len(shape)
+    if sampling == "aniso":
+        sampling = tuple(1.0 + 0.5 * i for i in range(ndim))
+    base = binary_image(tuple(2 * n + 1 for n in shape), pct_true=40)
+    if view == "c":
+        img = base[: shape[0], : shape[1]] if ndim == 2 else base[:9, :21, :40]
+    elif view == "fortran":
+        img = cp.asfortranarray(base[tuple(slice(n) for n in shape)])
+    elif view == "transposed":
+        img = binary_image(shape[::-1], pct_true=40).T
+    elif view == "strided":
+        img = base[tuple(slice(0, 2 * n, 2) for n in shape)]
+    elif view == "reversed":
+        img = base[tuple(slice(n - 1, None, -1) for n in shape)]
+    else:
+        img = base[tuple(slice(1, n + 1) for n in shape)].copy()
+    assert img.shape == shape
+    img[(0,) * ndim] = False
+    out = distance_transform_edt(img, sampling=sampling)
+    expected = ndi_cpu.distance_transform_edt(
+        cp.asnumpy(img), sampling=sampling
+    )
+    cp.testing.assert_allclose(out, expected, rtol=1e-6)
 
 
 @pytest.mark.parametrize("ndim", [1, 4, 5])
