@@ -55,7 +55,10 @@ from cucim.skimage.measure._regionprops_gpu_basic_kernels import (
     _regionprops_label_pass,
     basic_deps,
 )
-from cucim.skimage.measure._regionprops_gpu_convex import convex_deps
+from cucim.skimage.measure._regionprops_gpu_convex import (
+    _regionprops_row_extents,
+    convex_deps,
+)
 from cucim.skimage.measure._regionprops_gpu_intensity_kernels import (
     _regionprops_intensity,
     intensity_deps,
@@ -200,6 +203,57 @@ def test_area(precompute_max, ndim, area_dtype, spacing):
     assert_allclose(
         ed, expected["equivalent_diameter_area"], rtol=1e-5, atol=1e-5
     )
+
+
+def _row_extents_reference(labels, max_label):
+    """First and last column of each label in each row of its bbox."""
+    labels = cp.asnumpy(labels)
+    first, last = [], []
+    for lab in range(1, max_label + 1):
+        coords = np.nonzero(labels == lab)
+        if coords[0].size == 0:
+            continue
+        crop = labels[tuple(slice(c.min(), c.max() + 1) for c in coords)]
+        rows = (crop == lab).reshape(-1, crop.shape[-1])
+        nonempty = rows.any(axis=1)
+        n_cols = rows.shape[1]
+        first.append(np.where(nonempty, rows.argmax(axis=1), n_cols))
+        last.append(
+            np.where(nonempty, n_cols - 1 - rows[:, ::-1].argmax(axis=1), -1)
+        )
+    return np.concatenate(first), np.concatenate(last)
+
+
+@pytest.mark.parametrize("ndim", [2, 3])
+@pytest.mark.parametrize(
+    "label_dtype", [cp.uint8, cp.int16, cp.int32, cp.int64]
+)
+@pytest.mark.parametrize("pixels_per_thread", [1, 3, 16])
+@pytest.mark.parametrize("kind", ["blobs", "random"])
+def test_row_extents(ndim, label_dtype, pixels_per_thread, kind):
+    shape = (61, 87) if ndim == 2 else (17, 13, 19)
+    if kind == "blobs":
+        labels = get_labels_nd(shape, blob_size_fraction=0.2)
+    else:
+        # labels with several components, rows without pixels in their
+        # bounding box, runs continuing from one row to the next, and an
+        # absent label value (3)
+        rng = np.random.default_rng(0)
+        labels = cp.asarray(rng.choice([0, 1, 2, 4, 5], size=shape))
+    labels = labels.astype(label_dtype)
+    max_label = int(labels.max())
+    props = _regionprops_label_pass(labels, max_label, compute_bbox=True)
+    row_first, row_last, offsets, num_rows = _regionprops_row_extents(
+        labels, props["bbox"], max_label, pixels_per_thread=pixels_per_thread
+    )
+    expected_first, expected_last = _row_extents_reference(labels, max_label)
+    assert num_rows == expected_first.size == int(offsets[-1])
+    assert offsets.size == max_label + 1
+    # rows without pixels of the label only need row_first > row_last
+    nonempty = expected_last >= 0
+    assert_array_equal(row_first <= row_last, nonempty)
+    assert_array_equal(row_first[nonempty], expected_first[nonempty])
+    assert_array_equal(row_last[nonempty], expected_last[nonempty])
 
 
 @pytest.mark.parametrize("ndim", [2, 3])
