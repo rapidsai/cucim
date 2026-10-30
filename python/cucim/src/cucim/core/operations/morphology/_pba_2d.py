@@ -90,8 +90,7 @@ def _get_pba2d_kernels(
     )
     suffix = "WithSpacing" if with_spacing else ""
     names = [
-        "kernelFloodDown",
-        "kernelFloodUp",
+        "kernelFloodDownUp",
         "kernelPropagateInterband",
         "kernelUpdateVertical",
         "kernelCreateForwardPointers",
@@ -444,8 +443,7 @@ def _pba_2d(
     kernels = _get_pba2d_kernels(
         block_size, marker, pixel_int2_type, sampling is not None, spacing_t
     )
-    kernelFloodDown = kernels["kernelFloodDown"]
-    kernelFloodUp = kernels["kernelFloodUp"]
+    kernelFloodDownUp = kernels["kernelFloodDownUp"]
     kernelPropagateInterband = kernels["kernelPropagateInterband"]
     kernelUpdateVertical = kernels["kernelUpdateVertical"]
     kernelCreateForwardPointers = kernels["kernelCreateForwardPointers"]
@@ -459,11 +457,9 @@ def _pba_2d(
     block = (block_size, 1, 1)
     grid = (sx // block_size, m1, 1)
     bandSize1 = sy // m1
-    # kernelFloodDown modifies input_arr in-place
-    kernelFloodDown(grid, block, (input_arr, input_arr, sx, bandSize1))
-    # kernelFloodUp modifies input_arr in-place
-    kernelFloodUp(grid, block, (input_arr, input_arr, sx, bandSize1))
-    # kernelFloodUp fills values into margin
+    # kernelFloodDownUp modifies input_arr in-place
+    kernelFloodDownUp(grid, block, (input_arr, sx, bandSize1))
+    # kernelPropagateInterband fills values into margin
     kernelPropagateInterband(
         grid, block, (input_arr, margin, sx, sy, bandSize1)
     )

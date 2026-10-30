@@ -92,7 +92,11 @@ __device__ bool dominate_sp(int _x1, int _y1, int _x2, int _y2, int _x3, int _y3
 
 extern "C"{
 
-__global__ void kernelFloodDown(pixel_int2_t *input, pixel_int2_t *output, int width, int bandSize)
+// The sweeps of phase 1: every thread handles one column of one band.
+//
+// Sweep down the band, carrying the last site that was seen. This runs in
+// place.
+__device__ void floodDown(pixel_int2_t *data, int width, int bandSize)
 {
     int tx = blockIdx.x * blockDim.x + threadIdx.x;
     int ty = blockIdx.y * bandSize;
@@ -103,16 +107,18 @@ __global__ void kernelFloodDown(pixel_int2_t *input, pixel_int2_t *output, int w
     pixel1 = make_pixel(MARKER, MARKER);
 
     for (int i = 0; i < bandSize; i++, id += width) {
-        pixel2 = input[id];
+        pixel2 = data[id];
 
         if (pixel2.x != MARKER)
             pixel1 = pixel2;
 
-        output[id] = pixel1;
+        data[id] = pixel1;
     }
 }
 
-__global__ void kernelFloodUp(pixel_int2_t *input, pixel_int2_t *output, int width, int bandSize)
+// Sweep up the band, keeping the nearer of the carried site and the site that
+// was found by the sweep down. This runs in place.
+__device__ void floodUp(pixel_int2_t *data, int width, int bandSize)
 {
     int tx = blockIdx.x * blockDim.x + threadIdx.x;
     int ty = (blockIdx.y+1) * bandSize - 1;
@@ -126,14 +132,23 @@ __global__ void kernelFloodUp(pixel_int2_t *input, pixel_int2_t *output, int wid
     for (int i = 0; i < bandSize; i++, id -= width) {
         dist1 = abs(pixel1.y - ty + i);
 
-        pixel2 = input[id];
+        pixel2 = data[id];
         dist2 = abs(pixel2.y - ty + i);
 
         if (dist2 < dist1)
             pixel1 = pixel2;
 
-        output[id] = pixel1;
+        data[id] = pixel1;
     }
+}
+
+// Both sweeps are done by the same thread on the same values, so they do not
+// have to be separate kernels (a thread only reads values that it has written
+// itself).
+__global__ void kernelFloodDownUp(pixel_int2_t *data, int width, int bandSize)
+{
+    floodDown(data, width, bandSize);
+    floodUp(data, width, bandSize);
 }
 
 __global__ void kernelPropagateInterband(pixel_int2_t *input, pixel_int2_t *margin_out, int width, int height, int bandSize)
