@@ -90,15 +90,6 @@ set(CMAKE_INSTALL_LIBDIR lib)
 include(ExternalProject)
 
 ################################################################################
-# Options
-################################################################################
-
-# Setup CXX11 ABI
-# : Adds CXX11 ABI definition to the compiler command line for targets in the current directory,
-#   whether added before or after this command is invoked, and for the ones in sub-directories added after.
-add_compile_definitions(_GLIBCXX_USE_CXX11_ABI=0) # See the top-level CMakeLists.txt for why this is 0.
-
-################################################################################
 # Define dependencies
 ################################################################################
 superbuild_depend(fmt)
