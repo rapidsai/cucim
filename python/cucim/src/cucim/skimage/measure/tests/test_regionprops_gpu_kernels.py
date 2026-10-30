@@ -1816,6 +1816,27 @@ def test_feret_diameter_max(ndim, spacing, blob_kwargs):
     assert max_diff < math.sqrt(ndim)
 
 
+@pytest.mark.parametrize("spacing", [None, (0.5, 0.35)])
+@pytest.mark.parametrize("kind", ["blobs", "large_blobs", "lines", "random"])
+def test_feret_diameter_max_batch_2d(spacing, kind):
+    # equal to scikit-image's (contour points of the convex image), also for
+    # single pixels (diameter 1)
+    labels = _convex_test_labels(kind, 2)
+    result = regionprops_dict(
+        labels, properties=["feret_diameter_max"], spacing=spacing
+    )
+    expected = measure_cpu.regionprops_table(
+        cp.asnumpy(labels),
+        properties=["label", "feret_diameter_max"],
+        spacing=spacing,
+    )
+    assert_allclose(
+        result["feret_diameter_max"][expected["label"] - 1],
+        expected["feret_diameter_max"],
+        rtol=1e-12,
+    )
+
+
 @pytest.mark.parametrize("ndim", [2, 3])
 def test_feret_diameter_max_absent_label(ndim):
     # label 2 does not occur: its row gets 0, like its area_convex
