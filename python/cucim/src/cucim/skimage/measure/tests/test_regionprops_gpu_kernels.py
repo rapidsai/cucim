@@ -53,6 +53,7 @@ from cucim.skimage.measure._regionprops_gpu import (
 )
 from cucim.skimage.measure._regionprops_gpu_basic_kernels import (
     _fill_holes_by_label,
+    _regionprops_label_pass,
     basic_deps,
 )
 from cucim.skimage.measure._regionprops_gpu_convex import convex_deps
@@ -632,6 +633,72 @@ def test_centroid(via_moments, local, ndim):
         assert_allclose(centroid[:, 1], expected[name + "-1"])
     if ndim > 2:
         assert_allclose(centroid[:, 2], expected[name + "-2"])
+
+
+@pytest.mark.parametrize(
+    "label_dtype", [cp.uint8, cp.int16, cp.uint16, cp.int32, cp.uint64]
+)
+@pytest.mark.parametrize("pixels_per_thread", [1, 3, 16])
+@pytest.mark.parametrize("pattern", ["single", "stripes", "random"])
+def test_label_run_warp_aggregation(label_dtype, pixels_per_thread, pattern):
+    # The last runs of neighboring lanes with the same label are combined
+    # with warp shuffles before the atomics. Check the counts, bounding boxes,
+    # coordinate sums and intensity statistics against NumPy for groups of
+    # lanes of various lengths, a partial last warp, and all label dtypes.
+    shape = (37, 1001)  # 37037 pixels: not a multiple of 32 * pixels_per_thread
+    rng = np.random.default_rng(0)
+    if pattern == "single":
+        labels = np.ones(shape, dtype=np.int64)
+    elif pattern == "stripes":
+        # runs of 1 to 100 pixels with labels cycling through 1..5, so that
+        # groups of equal labels have different lengths
+        lengths = rng.integers(1, 100, size=2000)
+        values = np.arange(lengths.size) % 5 + 1
+        labels = np.repeat(values, lengths)[: math.prod(shape)].reshape(shape)
+    else:
+        labels = rng.integers(0, 4, size=shape)
+    labels_gpu = cp.asarray(labels.astype(label_dtype))
+    image = rng.uniform(-10, 10, size=shape).astype(np.float32)
+    image_gpu = cp.asarray(image)
+    max_label = int(labels.max())
+
+    props = _regionprops_label_pass(
+        labels_gpu,
+        max_label,
+        compute_num_pixels=True,
+        compute_bbox=True,
+        compute_coordinate_sums=True,
+        pixels_per_thread=pixels_per_thread,
+    )
+    _regionprops_intensity(
+        labels_gpu,
+        image_gpu,
+        max_label,
+        compute_mean=True,
+        compute_min=True,
+        compute_max=True,
+        pixels_per_thread=pixels_per_thread,
+        props_dict=props,
+    )
+    rr, cc = np.indices(shape)
+    for lab in range(1, max_label + 1):
+        mask = labels == lab
+        assert int(props["num_pixels"][lab - 1]) == mask.sum()
+        expected_bbox = [
+            rr[mask].min(),
+            cc[mask].min(),
+            rr[mask].max() + 1,
+            cc[mask].max() + 1,
+        ]
+        assert_array_equal(props["bbox"][lab - 1], expected_bbox)
+        assert_array_equal(
+            props["coordinate_sums"][lab - 1], [rr[mask].sum(), cc[mask].sum()]
+        )
+        assert float(props["intensity_min"][lab - 1]) == image[mask].min()
+        assert float(props["intensity_max"][lab - 1]) == image[mask].max()
+        assert_allclose(
+            props["intensity_mean"][lab - 1], image[mask].mean(), rtol=1e-5
+        )
 
 
 @pytest.mark.parametrize("ndim", [2, 3])

@@ -10,6 +10,7 @@ from ._regionprops_gpu_utils import (
     _get_count_dtype,
     _get_label_run_loop,
     _includes,
+    _warp_includes,
 )
 
 __all__ = [
@@ -55,7 +56,9 @@ def _get_img_sums_code(
     source_start = ""
     source_operation = ""
     source_flush = ""
+    reduce = []
     if compute_num_pixels:
+        reduce.append(("num_pixels", "sum"))
         source_pre += """
     uint32_t num_pixels;"""
         source_start += """
@@ -77,6 +80,7 @@ def _get_img_sums_code(
             source_operation += f"""
           v = static_cast<{c_sum_type}>(img[{nc}ii + {c}]);"""
         if compute_sum:
+            reduce.append((f"img_sum{c}", "sum"))
             source_pre += f"""
     {c_sum_type} img_sum{c};"""
             source_start += f"""
@@ -86,6 +90,7 @@ def _get_img_sums_code(
             source_flush += f"""
           atomicAdd(&sums[{nc}(lab - 1) + {c}], img_sum{c});"""
         if compute_sum_sq:
+            reduce.append((f"img_sum_sq{c}", "sum"))
             source_pre += f"""
     {c_sum_type} img_sum_sq{c};"""
             source_start += f"""
@@ -94,7 +99,7 @@ def _get_img_sums_code(
           img_sum_sq{c} += v * v;"""
             source_flush += f"""
           atomicAdd(&sumsqs[{nc}(lab - 1) + {c}], img_sum_sq{c});"""
-    return source_pre, source_start, source_operation, source_flush
+    return source_pre, source_start, source_operation, source_flush, reduce
 
 
 def _get_intensity_min_max_code(
@@ -130,6 +135,7 @@ def _get_intensity_min_max_code(
     source_start = ""
     source_operation = ""
     source_flush = ""
+    reduce = []
     # op uses external variables:
     #     ii : index into labels array
     # flush uses external variables:
@@ -139,6 +145,7 @@ def _get_intensity_min_max_code(
         source_operation += f"""
           v_mm = static_cast<{c_type}>(img[{nc}ii + {c}]);"""
         if compute_min:
+            reduce.append((f"min_val{c}", "min"))
             source_pre += f"""
     {c_type} min_val{c};"""
             source_start += f"""
@@ -148,6 +155,7 @@ def _get_intensity_min_max_code(
             source_flush += f"""
           cucim_atomic_min(&minimums[{nc}(lab - 1) + {c}], min_val{c});"""
         if compute_max:
+            reduce.append((f"max_val{c}", "max"))
             source_pre += f"""
     {c_type} max_val{c};"""
             source_start += f"""
@@ -156,7 +164,7 @@ def _get_intensity_min_max_code(
           max_val{c} = max(v_mm, max_val{c});"""
             source_flush += f"""
           cucim_atomic_max(&maximums[{nc}(lab - 1) + {c}], max_val{c});"""
-    return source_pre, source_start, source_operation, source_flush
+    return source_pre, source_start, source_operation, source_flush, reduce
 
 
 @cp.memoize()
@@ -269,10 +277,13 @@ def get_intensity_measure_kernel(
                 compute_max=compute_max,
             )
         )
-    pre, start, op, flush = ("".join(f) for f in zip(*fragments))
+    pre, start, op, flush = ("".join(f[i] for f in fragments) for i in range(4))
+    reduce = [r for f in fragments for r in f[4]]
 
     # store only counts for label > 0  (label = 0 is the background)
-    source = _get_label_run_loop(pixels_per_thread, pre, start, op, flush)
+    source = _get_label_run_loop(
+        pixels_per_thread, pre, start, op, flush, warp_reduce=reduce
+    )
 
     inputs = "raw X labels, raw uint64 labels_size, raw Y img"
     outputs = []
@@ -299,7 +310,7 @@ def get_intensity_measure_kernel(
     outputs = ", ".join(outputs)
     name += f"_batch{pixels_per_thread}"
     return cp.ElementwiseKernel(
-        inputs, outputs, source, preamble=_includes, name=name
+        inputs, outputs, source, preamble=_warp_includes, name=name
     )
 
 

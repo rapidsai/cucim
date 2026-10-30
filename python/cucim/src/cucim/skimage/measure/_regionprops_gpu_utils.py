@@ -58,6 +58,84 @@ __device__ __forceinline__ void cucim_atomic_max<double>(double* address,
 }
 """
 
+# Warp-level helpers for the label-run kernels (see _get_label_run_loop).
+#
+# cucim_shfl_down: __shfl_down_sync, also for the 8 and 16-bit label types.
+# cucim_warp_reduce: reduction of `v` over the lanes lane, lane + 1, ...,
+#     seg_end (which must all be in `mask`), as an inclusive Hillis-Steele scan
+#     towards lower lanes: after the step with offset `off`, each lane holds
+#     the reduction over up to 2 * off lanes, never past seg_end. The steps
+#     stop at offset `max_off`, which must be at least half the length of the
+#     longest group of lanes sharing seg_end. All lanes in `mask` must call it
+#     with the same `max_off`. The result is complete in the first lane of
+#     each group.
+_warp_includes = (
+    _includes
+    + r"""
+template <typename T>
+__device__ __forceinline__ T cucim_shfl_down(unsigned int mask, T v,
+                                             unsigned int delta) {
+  return __shfl_down_sync(mask, v, delta);
+}
+
+template <typename T>
+__device__ __forceinline__ T cucim_shfl_down_small(unsigned int mask, T v,
+                                                   unsigned int delta) {
+  return static_cast<T>(__shfl_down_sync(mask, static_cast<int>(v), delta));
+}
+
+__device__ __forceinline__ signed char cucim_shfl_down(
+    unsigned int mask, signed char v, unsigned int delta) {
+  return cucim_shfl_down_small(mask, v, delta);
+}
+
+__device__ __forceinline__ unsigned char cucim_shfl_down(
+    unsigned int mask, unsigned char v, unsigned int delta) {
+  return cucim_shfl_down_small(mask, v, delta);
+}
+
+__device__ __forceinline__ short cucim_shfl_down(
+    unsigned int mask, short v, unsigned int delta) {
+  return cucim_shfl_down_small(mask, v, delta);
+}
+
+__device__ __forceinline__ unsigned short cucim_shfl_down(
+    unsigned int mask, unsigned short v, unsigned int delta) {
+  return cucim_shfl_down_small(mask, v, delta);
+}
+
+struct cucim_sum_op {
+  template <typename T>
+  __device__ T operator()(T a, T b) const { return a + b; }
+};
+
+struct cucim_min_op {
+  template <typename T>
+  __device__ T operator()(T a, T b) const { return min(a, b); }
+};
+
+struct cucim_max_op {
+  template <typename T>
+  __device__ T operator()(T a, T b) const { return max(a, b); }
+};
+
+template <typename T, typename Op>
+__device__ __forceinline__ T cucim_warp_reduce(unsigned int mask, T v,
+                                               unsigned int seg_end,
+                                               unsigned int max_off, Op op) {
+  unsigned int lane = threadIdx.x & 31;
+#pragma unroll 1
+  for (unsigned int off = 1; off <= max_off; off <<= 1) {
+    T y = cucim_shfl_down(mask, v, off);
+    if (lane + off <= seg_end) {
+      v = op(v, y);
+    }
+  }
+  return v;
+}
+"""
+)
+
 
 def _get_count_dtype(label_image_size):
     """atomicAdd only supports int32, uint32, int64, uint64, float32, float64"""
@@ -79,7 +157,9 @@ def _get_coord_dtype(label_image_size):
     return coord_dtype, int32_coords
 
 
-def _get_label_run_loop(pixels_per_thread, pre, start, op, flush):
+def _get_label_run_loop(
+    pixels_per_thread, pre, start, op, flush, warp_reduce=()
+):
     """Source of the loop shared by the label-run kernels.
 
     Each thread scans `pixels_per_thread` consecutive pixels in raveled order.
@@ -103,12 +183,64 @@ def _get_label_run_loop(pixels_per_thread, pre, start, op, flush):
     flush : str
         Executed at the end of each run to write the accumulators to the
         outputs. Can use `lab`.
+    warp_reduce : sequence of (str, str), optional
+        The accumulators and how they are combined ("sum", "min" or "max").
+        If given, the last runs of neighboring lanes of a warp that have the
+        same label are combined with warp shuffles, and only the first lane
+        of each such group flushes them. In a large region every thread's
+        last (often only) run has the same label, so this divides the number
+        of atomics on the same addresses by up to 32. The kernel must then be
+        compiled with the `_warp_includes` preamble.
 
     Notes
     -----
     The kernel must have the inputs ``raw X labels`` and
-    ``raw uint64 labels_size``.
+    ``raw uint64 labels_size``, and be launched with
+    ``size=math.ceil(labels_size / pixels_per_thread)``.
     """
+    final_flush = f"""
+      if (lab != 0) {{
+        {flush}
+      }}\n"""
+    if warp_reduce:
+        reduce_code = "".join(
+            f"""
+          {var} = cucim_warp_reduce(
+              mask, {var}, seg_end, max_off, cucim_{kind}_op());"""
+            for var, kind in warp_reduce
+        )
+        # The lanes of this warp that run this iteration of the grid-stride
+        # loop are those with i < num_threads (blocks are a multiple of 32
+        # threads, so warps start at multiples of 32).
+        final_flush = f"""
+      {{
+        unsigned int lane = threadIdx.x & 31;
+        uint64_t num_threads = (labels_size + {pixels_per_thread - 1})
+                               / {pixels_per_thread};
+        uint64_t warp_lanes = num_threads - (i - lane);
+        unsigned int mask = warp_lanes >= 32 ? 0xffffffffu
+                            : (1u << warp_lanes) - 1u;
+        // continues: the next lane's last run has the same (nonzero) label
+        X next_lab = cucim_shfl_down(mask, lab, 1);
+        bool continues = (lab != 0) && (lane < 31)
+                         && ((mask >> (lane + 1)) & 1u) && (next_lab == lab);
+        unsigned int cont = __ballot_sync(mask, continues);
+        if (cont != 0) {{
+          // last lane of this lane's group
+          unsigned int seg_end = __ffs(~cont & (0xffffffffu << lane)) - 1;
+          // longest run of set bits in cont = (longest group length - 1), so
+          // the scan needs the offsets 1, 2, 4, ... up to that
+          unsigned int max_off = 0;
+          for (unsigned int x = cont; x != 0; x &= x >> 1) {{
+            ++max_off;
+          }}
+          {reduce_code}
+        }}
+        bool first = (lane == 0) || !((cont >> (lane - 1)) & 1u);
+        if (first && lab != 0) {{
+          {flush}
+        }}
+      }}\n"""
     return f"""
       uint64_t start_index = {pixels_per_thread}*i;
       {pre}
@@ -125,10 +257,7 @@ def _get_label_run_loop(pixels_per_thread, pre, start, op, flush):
           {start}
         }}
         {op}
-      }}
-      if (lab != 0) {{
-        {flush}
-      }}\n"""
+      }}{final_flush}"""
 
 
 def _get_min_integer_dtype(max_size, signed=False):
