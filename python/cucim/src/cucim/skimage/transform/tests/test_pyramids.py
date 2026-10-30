@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import math
@@ -8,11 +8,12 @@ import warnings
 import cupy as cp
 import pytest
 from cupy.testing import assert_array_equal
+from cupyx import allow_synchronize
 from skimage import data
 
 from cucim.skimage._shared.testing import assert_almost_equal
 from cucim.skimage._shared.utils import _supported_float_type
-from cucim.skimage.transform import pyramids
+from cucim.skimage.transform import _warps, pyramids
 
 image = cp.asarray(data.astronaut())
 image_gray = image[..., 0]
@@ -127,6 +128,30 @@ def test_build_gaussian_pyramid_nd():
             assert_array_equal(out.shape, layer_shape)
 
 
+@pytest.mark.parametrize(
+    "shape, downscale, channel_axis",
+    [((1, 1), 2, None), ((2, 3), 1.1, None), ((1, 1, 4), 2, -1)],
+)
+@pytest.mark.parametrize("max_layer", [-1, 1, 10])
+def test_gaussian_pyramid_skips_terminal_reduction(
+    monkeypatch, shape, downscale, channel_axis, max_layer
+):
+    def fail_reduce(*args, **kwargs):
+        pytest.fail("pyramid_reduce called for an unchanged output shape")
+
+    monkeypatch.setattr(pyramids, "pyramid_reduce", fail_reduce)
+    layers = list(
+        pyramids.pyramid_gaussian(
+            cp.ones(shape),
+            max_layer=max_layer,
+            downscale=downscale,
+            channel_axis=channel_axis,
+        )
+    )
+    assert len(layers) == 1
+    assert layers[0].shape == shape
+
+
 @pytest.mark.parametrize("channel_axis", [0, 1, 2, -1, -2, -3])
 def test_build_laplacian_pyramid_rgb(channel_axis):
     image = cp.array(data.astronaut())
@@ -147,6 +172,30 @@ def test_build_laplacian_pyramid_defaults():
     for layer, out in enumerate(pyramid):
         layer_shape = (rows / 2**layer, cols / 2**layer)
         assert_array_equal(out.shape, layer_shape)
+
+
+@pytest.mark.parametrize("sigma", [0, 2 / 3])
+@pytest.mark.parametrize("channel_axis", [None, -1])
+def test_laplacian_layers_do_not_alias_input_or_later_layers(
+    sigma, channel_axis
+):
+    shape = (32, 40, 3) if channel_axis is not None else (32, 40)
+    image = cp.arange(math.prod(shape), dtype=cp.float32).reshape(shape) / 100
+    original = image.copy()
+    previous = []
+    for layer in pyramids.pyramid_laplacian(
+        image,
+        max_layer=4,
+        sigma=sigma,
+        channel_axis=channel_axis,
+        preserve_range=True,
+    ):
+        assert not cp.shares_memory(layer, image)
+        for result, snapshot in previous:
+            assert not cp.shares_memory(result, layer)
+            cp.testing.assert_array_equal(result, snapshot)
+        previous.append((layer, layer.copy()))
+    cp.testing.assert_array_equal(image, original)
 
 
 def test_build_laplacian_pyramid_nd():
@@ -206,6 +255,54 @@ def test_check_factor():
         pyramids._check_factor(-2)
 
 
+@pytest.mark.parametrize("sigma", [-1.0, (-1.0, 1.0)])
+@pytest.mark.parametrize(
+    "pyramid_func", [pyramids.pyramid_reduce, pyramids.pyramid_expand]
+)
+def test_negative_sigma(pyramid_func, sigma):
+    with pytest.raises(
+        ValueError, match="Sigma values less than zero are not valid"
+    ):
+        pyramid_func(cp.ones((8, 8)), sigma=sigma)
+
+
+@pytest.mark.parametrize("channel_axis", [0, -1])
+@pytest.mark.parametrize(
+    "func",
+    [
+        pyramids.pyramid_reduce,
+        pyramids.pyramid_expand,
+        pyramids.pyramid_gaussian,
+        pyramids.pyramid_laplacian,
+    ],
+)
+def test_pyramids_sigma_sequence_with_channel_axis(func, channel_axis):
+    image = cp.linspace(0, 1, 12 * 14 * 3, dtype=cp.float32).reshape(12, 14, 3)
+    kwargs = dict(sigma=(0.8, 1.3), preserve_range=True)
+    is_generator = func in (
+        pyramids.pyramid_gaussian,
+        pyramids.pyramid_laplacian,
+    )
+    if is_generator:
+        kwargs["max_layer"] = 2
+    channels = [func(image[..., channel], **kwargs) for channel in range(3)]
+    channels = [
+        list(result) if is_generator else [result] for result in channels
+    ]
+    actual = func(
+        cp.moveaxis(image, -1, channel_axis),
+        channel_axis=channel_axis,
+        **kwargs,
+    )
+    actual = list(actual) if is_generator else [actual]
+    assert len(actual) == len(channels[0])
+    for layer, result in enumerate(actual):
+        expected = cp.stack(
+            [channel[layer] for channel in channels], axis=channel_axis
+        )
+        cp.testing.assert_allclose(result, expected, rtol=1e-6, atol=1e-7)
+
+
 @pytest.mark.parametrize(
     "dtype", ["float16", "float32", "float64", "uint8", "int64"]
 )
@@ -227,3 +324,70 @@ def test_pyramid_dtype_support(pyramid_func, dtype):
 
     float_dtype = _supported_float_type(dtype)
     assert all([im.dtype == float_dtype for im in pyramid])
+
+
+@pytest.mark.parametrize(
+    "func",
+    [
+        pyramids.pyramid_reduce,
+        pyramids.pyramid_expand,
+        pyramids.pyramid_gaussian,
+        pyramids.pyramid_laplacian,
+    ],
+)
+@pytest.mark.parametrize("dtype", ["float32", "float64"])
+@pytest.mark.parametrize("order", [1, 3])
+@pytest.mark.parametrize(
+    "mode,cval", [("reflect", 0), ("constant", 0), ("constant", 1.5)]
+)
+@pytest.mark.parametrize("channel_axis", [None, 0, -1])
+@pytest.mark.filterwarnings(
+    "ignore:cupyx.allow_synchronize will be removed:UserWarning"
+)
+def test_pyramids_assume_finite(
+    monkeypatch, func, dtype, order, mode, cval, channel_axis
+):
+    image = cp.linspace(1, 2, 33 * 35 * 3, dtype=dtype).reshape(33, 35, 3)
+    if channel_axis == 0:
+        image = cp.moveaxis(image, -1, 0)
+    kwargs = dict(order=order, mode=mode, cval=cval, channel_axis=channel_axis)
+    is_generator = func in (
+        pyramids.pyramid_gaussian,
+        pyramids.pyramid_laplacian,
+    )
+    if is_generator:
+        kwargs["max_layer"] = 3
+    expected = func(image, **kwargs)
+    expected = list(expected) if is_generator else [expected]
+
+    def fail_nan_path(*args, **kwargs):
+        pytest.fail("pyramid level did not reuse the finite guarantee")
+
+    monkeypatch.setattr(_warps, "_get_warp_range", fail_nan_path)
+    monkeypatch.setattr(_warps, "_clip_constant_warp_output", fail_nan_path)
+    # Warmed caches above avoid waiting for their private initialization copies.
+    with allow_synchronize(False):
+        actual = func(image, **kwargs, assume_finite=True)
+        actual = list(actual) if is_generator else [actual]
+    assert len(actual) == len(expected)
+    for result, reference in zip(actual, expected):
+        cp.testing.assert_array_equal(result, reference)
+
+
+@pytest.mark.parametrize(
+    "func",
+    [
+        pyramids.pyramid_reduce,
+        pyramids.pyramid_expand,
+        pyramids.pyramid_gaussian,
+        pyramids.pyramid_laplacian,
+    ],
+)
+@pytest.mark.parametrize("cval", [float("nan"), float("inf"), -float("inf")])
+def test_pyramids_assume_finite_requires_finite_cval(func, cval):
+    with pytest.raises(ValueError, match="requires a finite cval"):
+        result = func(
+            cp.ones((8, 8)), mode="constant", cval=cval, assume_finite=True
+        )
+        if func in (pyramids.pyramid_gaussian, pyramids.pyramid_laplacian):
+            list(result)

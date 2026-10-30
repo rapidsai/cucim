@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Infrastructure, Inc.
 # SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Networks, Inc.
-# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND MIT
 from __future__ import annotations
 
@@ -485,10 +485,13 @@ def _get_coord_affine(
     ncol = ndim + 1
     # When loop_batch_axis is True, skip the last axis (it's the batch axis)
     axes_to_process = range(ndim - 1) if loop_batch_axis else range(ndim)
-    # When loop_batch_axis is True, skip multiplying by in_coord for batch axis
-    # since it's not initialized yet (it's set in the batch loop)
-    # For batch axes, the matrix column should be 0 for non-batch rows anyway
-    coord_axes = range(ndim - 1) if loop_batch_axis else range(ndim)
+    # Batch-axis detection guarantees that non-batch rows do not depend on
+    # batch coordinate columns, so skip those known-zero matrix terms.
+    coord_axes = [
+        k
+        for k in range(ndim)
+        if k not in batch_axes and not (loop_batch_axis and k == ndim - 1)
+    ]
 
     for j in axes_to_process:
         if j in batch_axes:
@@ -655,6 +658,17 @@ def _generate_interp_custom(
         # Only unravel to ndim-1 dimensions (spatial only)
         if not omit_in_coord:
             ops.append(_unravel_loop_index(reduced_yshape, uint_t, ndim))
+        if outer_batch_axes:
+            ops.append(
+                f"const {int_t} batch_base = "
+                + _join_index_terms(
+                    [
+                        f"(({int_t})in_coord[{j}]) * sx_{j}"
+                        for j in outer_batch_axes
+                    ]
+                )
+                + ";"
+            )
         # Don't start batch loop here - it will be the innermost loop
     else:
         if not omit_in_coord:
@@ -768,7 +782,7 @@ def _generate_interp_custom(
 
         # Compute base index from spatial coords and any non-looped batch axes.
         _base_coord_idx = _join_index_terms(
-            [f"(({int_t})in_coord[{j}]) * sx_{j}" for j in outer_batch_axes]
+            (["batch_base"] if outer_batch_axes else [])
             + [f"ic_{j}" for j in spatial_axes]
         )
 
@@ -925,7 +939,7 @@ def _generate_interp_custom(
             # Compute spatial weight and base index
             _spatial_weight = " * ".join([f"w_{j}" for j in spatial_axes])
             _base_coord_idx = _join_index_terms(
-                [f"(({int_t})in_coord[{j}]) * sx_{j}" for j in outer_batch_axes]
+                (["batch_base"] if outer_batch_axes else [])
                 + [f"ic_{j}" for j in spatial_axes]
             )
 
@@ -1108,7 +1122,7 @@ def _generate_interp_custom(
             # Compute spatial weight and base index
             _spatial_weight = " * ".join([f"w_{j}" for j in spatial_axes])
             _base_coord_idx = _join_index_terms(
-                [f"(({int_t})in_coord[{j}]) * sx_{j}" for j in outer_batch_axes]
+                (["batch_base"] if outer_batch_axes else [])
                 + [f"ic_{j}" for j in spatial_axes]
             )
 

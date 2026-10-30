@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import math
@@ -23,12 +23,20 @@ from ._geometric import (
     ProjectiveTransform,
     SimilarityTransform,
 )
+from ._warps_kernels import _get_warp_range
 
 HOMOGRAPHY_TRANSFORMS = (
     SimilarityTransform,
     AffineTransform,
     ProjectiveTransform,
 )
+
+# Small arrays favor combined reductions; large arrays favor their throughput.
+# Intermediate constant-mode arrays benefit from the in-range short-circuit.
+# These empirical cutoffs were tuned on an RTX A6000; other architectures and
+# GPU-bound pipelines may favor a different balance of launches and throughput.
+_CLIP_CONSTANT_HOST_MIN_BYTES = 512 * 1024
+_CLIP_CONSTANT_HOST_MAX_BYTES = 16 * 1024 * 1024
 
 
 def _preprocess_resize_output_shape(image, output_shape):
@@ -90,6 +98,8 @@ def resize(
     preserve_range=False,
     anti_aliasing=None,
     anti_aliasing_sigma=None,
+    *,
+    assume_finite=False,
 ):
     """Resize image to match a certain size.
 
@@ -145,6 +155,11 @@ def resize(
         By default, this value is chosen as (s - 1) / 2 where s is the
         downsampling factor, where s > 1. For the up-size case, s < 1, no
         anti-aliasing is performed prior to rescaling.
+    assume_finite : bool, optional
+        If True, assume the input and all intermediate values remain finite.
+        Skip NaN detection during clipping and keep range decisions on the
+        device. The input is not validated. Constant mode requires a finite
+        `cval`. Default is False, retaining NaN-aware clipping.
 
     See Also
     --------
@@ -152,6 +167,10 @@ def resize(
 
     Notes
     -----
+    `assume_finite` is a cuCIM-only keyword-only argument; scikit-image does
+    not provide it. If the finite-value promise is violated, output clipping
+    may be skipped.
+
     Modes 'reflect' and 'symmetric' are similar, but differ in whether the edge
     pixels are duplicated during the reflection.  As an example, if an array
     has values [0, 1, 2] and was padded to the right by four values using
@@ -180,6 +199,7 @@ def resize(
 
     """
 
+    _validate_assume_finite(mode, cval, assume_finite)
     image, output_shape = _preprocess_resize_output_shape(image, output_shape)
     input_shape = image.shape
     input_type = image.dtype
@@ -251,7 +271,9 @@ def resize(
         cval=cval,
         grid_mode=True,
     )
-    _clip_warp_output(image, out, mode, cval, order, clip)
+    _clip_warp_output(
+        image, out, mode, cval, order, clip, assume_finite=assume_finite
+    )
     return out
 
 
@@ -608,8 +630,9 @@ def rotate(
 
     float_dtype = cp.promote_types(image.real.dtype, cp.float32)
 
-    # transfer the coordinate transform to the GPU
-    affine_params = cp.asarray(affine_params, dtype=float_dtype)
+    # Keep the coordinate transform on the host; affine_transform inspects it
+    # there and uploads it once.
+    affine_params = np.asarray(affine_params, dtype=float_dtype)
 
     return _ndimage_affine(
         image,
@@ -878,7 +901,85 @@ def warp_coords(coord_map, shape, dtype=cp.float64):
     return coords
 
 
-def _clip_warp_output(input_image, output_image, mode, cval, order, clip):
+@cp.fuse()
+def _clip_warp_output_with_cval(
+    output_image,
+    min_val,
+    max_val,
+    cval,
+    input_has_nan,
+    output_has_nan,
+    output_nanmin,
+    output_nanmax,
+):
+    # Ignore output NaNs only when the input contained NaNs, matching the
+    # choice between min/max and nanmin/nanmax in the original clipping path.
+    valid_output_range = input_has_nan | ~output_has_nan
+    preserve_cval = (
+        ~((min_val <= cval) & (cval <= max_val))
+        & valid_output_range
+        & (output_nanmin <= cval)
+        & (cval <= output_nanmax)
+    )
+    min_val = cp.where(
+        preserve_cval,
+        cp.minimum(min_val, cval).astype(min_val.dtype),
+        min_val,
+    )
+    max_val = cp.where(
+        preserve_cval,
+        cp.maximum(max_val, cval).astype(max_val.dtype),
+        max_val,
+    )
+    cp.clip(output_image, min_val, max_val, out=output_image)
+
+
+def _clip_constant_warp_output(image, output_image, cval):
+    """Short-circuit in-range fills, falling back to NaN-safe device clipping.
+
+    Reading the input extrema on the host avoids reducing the output when the
+    fill is already within range. For inputs without NaNs, ordinary output
+    extrema suffice: a NaN bound naturally disables preservation of the fill.
+    Return False for NaN-containing inputs so the caller uses combined ranges.
+    """
+    min_val = image.min().item()
+    if np.isnan(min_val):
+        return False
+    if cval < min_val:
+        # The fill is already known to be outside the range; keep the maximum
+        # on the device rather than synchronizing a second time.
+        max_val = image.max()
+    else:
+        max_val = image.max().item()
+        if min_val <= cval <= max_val:
+            cp.clip(output_image, min_val, max_val, out=output_image)
+            return True
+        max_val = image.dtype.type(max_val)
+
+    _clip_warp_output_with_cval(
+        output_image,
+        image.dtype.type(min_val),
+        max_val,
+        cval,
+        False,
+        False,
+        output_image.min(),
+        output_image.max(),
+    )
+    return True
+
+
+def _validate_assume_finite(mode, cval, assume_finite):
+    """Reject a padding value that contradicts the caller's finite promise."""
+    if assume_finite and mode == "constant" and not math.isfinite(cval):
+        raise ValueError(
+            "assume_finite=True requires a finite cval in constant mode"
+        )
+
+
+def _clip_warp_output(
+    input_image, output_image, mode, cval, order, clip, *, assume_finite=False
+):
     """Clip output image to range of values of input image.
 
     Note that this function modifies the values of `output_image` in-place
@@ -907,46 +1008,59 @@ def _clip_warp_output(input_image, output_image, mode, cval, order, clip):
         Whether to clip the output to the range of values of the input image.
         If `order` > 1, this will be enabled by default, since higher order
         interpolation may produce values outside the given input range.
+    assume_finite : bool, optional
+        Trust that all values remain finite, allowing ordinary extrema
+        reductions without NaN detection or host-side range checks.
 
     """
+    # Range dispatch when clipping is enabled:
+    # assume_finite=True       ordinary extrema, no NaN or host range checks
+    # default, constant band   host short-circuit; NaNs fall back to device path
+    # default, otherwise       combined NaN-safe extrema on the device
     if (clip is None and order <= 1) or not clip:
         # no clipping by default for order = 0 or 1
         return
+    if (
+        not assume_finite
+        and mode == "constant"
+        and isinstance(input_image, cp.ndarray)
+        and _CLIP_CONSTANT_HOST_MIN_BYTES
+        < input_image.nbytes
+        <= _CLIP_CONSTANT_HOST_MAX_BYTES
+        and _clip_constant_warp_output(input_image, output_image, cval)
+    ):
+        return
     if isinstance(input_image, tuple) and len(input_image) == 2:
+        # Internal hook for callers/tests that already have input bounds.
         min_val, max_val = input_image
-        # copy device scalars to host if necessary
-        if isinstance(min_val, cp.ndarray):
-            min_val = min_val.item()
-        if isinstance(max_val, cp.ndarray):
-            max_val = max_val.item()
+        if mode == "constant":
+            input_has_nan = False if assume_finite else cp.isnan(min_val)
+    elif assume_finite:
+        min_val, max_val = input_image.min(), input_image.max()
+        input_has_nan = False
     else:
-        min_val = input_image.min().item()
-        if np.isnan(min_val):
-            # NaNs detected, use NaN-safe min/max
-            min_func = cp.nanmin
-            max_func = cp.nanmax
-            min_val = min_func(input_image).item()
+        min_val, max_val, input_has_nan = _get_warp_range(input_image)
+
+    if mode == "constant":
+        if assume_finite:
+            output_min, output_max = output_image.min(), output_image.max()
+            output_has_nan = False
         else:
-            min_func = cp.min
-            max_func = cp.max
-        max_val = max_func(input_image).item()
-
-    # Check if cval has been used such that it expands the effective input
-    # range
-    preserve_cval = (
-        mode == "constant"
-        and not min_val <= cval <= max_val
-        and min_func(output_image) <= cval <= max_func(output_image)
-    )
-
-    # expand min/max range to account for cval
-    if preserve_cval:
-        # cast cval to the same dtype as the input image
-        cval = input_image.dtype.type(cval)
-        min_val = min(min_val, cval)
-        max_val = max(max_val, cval)
-
-    cp.clip(output_image, min_val, max_val, out=output_image)
+            output_min, output_max, output_has_nan = _get_warp_range(
+                output_image
+            )
+        _clip_warp_output_with_cval(
+            output_image,
+            min_val,
+            max_val,
+            cval,
+            input_has_nan,
+            output_has_nan,
+            output_min,
+            output_max,
+        )
+    else:
+        cp.clip(output_image, min_val, max_val, out=output_image)
 
 
 def warp(
