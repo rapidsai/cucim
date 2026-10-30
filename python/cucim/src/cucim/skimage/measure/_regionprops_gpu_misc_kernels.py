@@ -1,19 +1,13 @@
 # SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import itertools
 import math
 
 import cupy as cp
 import numpy as np
 
-from cucim.skimage._vendored import ndimage as ndi, pad
-
-from ._regionprops_gpu_basic_kernels import regionprops_bbox_coords
-from ._regionprops_gpu_intensity_kernels import (
-    _get_intensity_img_kernel_dtypes,
-    get_intensity_measure_kernel,
-)
-from ._regionprops_gpu_utils import _find_close_labels, _get_min_integer_dtype
+from ._regionprops_gpu_utils import _get_label_run_loop, _warp_includes
 
 __all__ = [
     "regionprops_euler",
@@ -22,83 +16,239 @@ __all__ = [
 ]
 
 misc_deps = dict()
-misc_deps["perimeter"] = ["slice"]
-misc_deps["perimeter_crofton"] = ["slice"]
-misc_deps["euler_number"] = ["slice"]
+misc_deps["perimeter"] = []
+misc_deps["perimeter_crofton"] = []
+misc_deps["euler_number"] = []
 
 
-def _weighted_sum_of_filtered_image(
-    label_image, max_label, image_filtered, coefs, pixels_per_thread=16
-):
-    """Compute weighted sums of pixels for each label.
+# The perimeter, Crofton perimeter and Euler number of scikit-image sum a
+# coefficient over the pixels (perimeter) or the 2 x 2 (x 2) windows (Crofton,
+# Euler) of the region's binary image, looked up from the configuration of the
+# region's pixels in a small neighborhood. To measure every region in
+# isolation in one pass, the kernels below compute these configurations from
+# "has the same label as this pixel" instead of "is foreground", and attribute
+# each pixel's or window's coefficient to one pixel of the region, so that
+# the sums can be accumulated per region by the label-run loop.
 
-    1. Apply the coefs LUT to the filtered image to get a coefficient image
-    2. Sum the values in the coefficient image for each labeled region
 
-    This function is used during computation of the Euler characteristic and
-    perimeter properties.
+def _offset_var(offsets, radius):
+    """Name of the boolean variable for the pixel at `offsets`."""
+    return "same_" + "_".join(str(o + radius) for o in offsets)
 
-    Parameters
-    ----------
-    label_image : cupy.ndarray
-        Label image.
-    max_label : int
-        Maximum label value.
-    image_filtered : (M, N) ndarray
-        Filtered image (must have integer values that can be used to index into
-        the coefs LUT)
-    coefs : cupy.ndarray
-        Coefficients look-up table (LUT).
-    pixels_per_thread : int, optional
-        Number of pixels per thread.
 
-    Returns
-    -------
-    output : cupy.ndarray
-        Weighted sum of pixels for each label.
+def _get_neighbor_coords_code(ndim, radius):
+    """Coordinates of pixel ii, and whether coordinate + offset is inside.
+
+    Uses the shape{d} variables declared by `_get_shape_code`.
     """
-    coefs_image = coefs[image_filtered]
+    code = """
+          long long rem = ii;"""
+    for d in range(ndim - 1, 0, -1):
+        code += f"""
+          long long coord{d} = rem % shape{d};
+          rem /= shape{d};"""
+    code += """
+          long long coord0 = rem;"""
+    for d in range(ndim):
+        for o in range(-radius, radius + 1):
+            if o != 0:
+                code += f"""
+          bool inside{d}_{o + radius} = (coord{d} + ({o}) >= 0)
+                                        && (coord{d} + ({o}) < shape{d});"""
+    return code
 
-    # generate kernel for per-label weighted sum
-    coefs_sum_kernel = get_intensity_measure_kernel(
-        coefs_image.dtype,
-        num_channels=1,
-        compute_num_pixels=False,
-        compute_sum=True,
-        compute_sum_sq=False,
-        compute_min=False,
-        compute_max=False,
-        pixels_per_thread=pixels_per_thread,
+
+def _get_same_label_code(offsets, radius):
+    """Whether each pixel at `offsets` from pixel ii is inside the image and
+    has label `lab`."""
+    code = ""
+    for off in offsets:
+        var = _offset_var(off, radius)
+        if not any(off):
+            code += f"""
+          bool {var} = true;"""
+            continue
+        inside = " && ".join(
+            f"inside{d}_{o + radius}" for d, o in enumerate(off) if o != 0
+        )
+        delta = " + ".join(
+            f"({o}) * stride{d}" for d, o in enumerate(off) if o != 0
+        )
+        code += f"""
+          bool {var} = {inside}
+              && labels[static_cast<long long>(ii) + {delta}] == lab;"""
+    return code
+
+
+def _get_shape_code(ndim):
+    """Declarations of the shape and strides (in pixels) of `labels`."""
+    code = ""
+    for d in range(ndim):
+        code += f"""
+      long long shape{d} = labels.shape()[{d}];"""
+    stride = "1"
+    for d in range(ndim - 1, -1, -1):
+        code += f"""
+      long long stride{d} = {stride};"""
+        stride = f"stride{d} * shape{d}"
+    return code
+
+
+def _get_perimeter_op(neighborhood):
+    """Coefficient of pixel ii for skimage.measure.perimeter of region `lab`.
+
+    As in scikit-image, a border pixel has label `lab` and at least one
+    neighbor (4 or 8-connected) without it, pixels outside the image count as
+    background, and the coefficient of a border pixel is looked up from the
+    weighted number of border pixels among its 3 x 3 neighbors.
+    """
+    offsets1 = list(itertools.product(range(-1, 2), repeat=2))
+    offsets2 = [
+        o
+        for o in itertools.product(range(-2, 3), repeat=2)
+        if max(map(abs, o)) == 2
+    ]
+    if neighborhood == 4:
+        neighbors = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+    else:
+        neighbors = [o for o in offsets1 if any(o)]
+
+    def is_border(p):
+        interior = " && ".join(
+            _offset_var((p[0] + n[0], p[1] + n[1]), 2) for n in neighbors
+        )
+        return f"({_offset_var(p, 2)} && !({interior}))"
+
+    code = _get_neighbor_coords_code(2, 2)
+    code += _get_same_label_code(offsets1, 2)
+    # only border pixels have a nonzero coefficient
+    center_interior = " && ".join(_offset_var(n, 2) for n in neighbors)
+    code += f"""
+          if (!({center_interior})) {{"""
+    code += _get_same_label_code(offsets2, 2)
+    # convolution weights [[10, 2, 10], [2, 1, 2], [10, 2, 10]]
+    terms = " + ".join(
+        f"{2 if 0 in o else 10} * {is_border(o)}" for o in offsets1 if any(o)
     )
+    code += f"""
+            int config = 1 + {terms};
+            acc += coefs[config];
+          }}"""
+    return code
 
-    # prepare output array
-    sum_dtype, _, _, _ = _get_intensity_img_kernel_dtypes(coefs_image.dtype)
-    output = cp.zeros((max_label,), dtype=sum_dtype)
 
-    coefs_sum_kernel(
-        label_image,
-        label_image.size,
-        coefs_image,
-        output,
-        size=math.ceil(label_image.size / pixels_per_thread),
-    )
-    return output
+def _get_windows_op(ndim, omit_image_edges=False):
+    """Coefficients of the 2**ndim windows of 2 x 2 (x 2) pixels that contain
+    pixel ii, for skimage.measure.perimeter_crofton or euler_number of region
+    `lab`.
+
+    The configuration of a window has one bit per pixel with label `lab`
+    (bits as in the convolution weights of scikit-image). A window's
+    coefficient is added by the first of its pixels (in raster order) that has
+    label `lab`, so that each window is counted once per region. Windows
+    partly outside the image count, as scikit-image pads the image with
+    background, except, if `omit_image_edges`, the windows whose last pixel is
+    outside the image.
+
+    The coefficient of the window full of `lab` pixels must be 0, so that
+    interior pixels can be skipped.
+    """
+    offsets1 = list(itertools.product(range(-1, 2), repeat=ndim))
+    code = _get_neighbor_coords_code(ndim, 1)
+    code += _get_same_label_code(offsets1, 1)
+    # bit position of each axis in the configuration
+    bit_position = [0, 1] if ndim == 2 else [2, 0, 1]
+    all_neighbors = " && ".join(_offset_var(o, 1) for o in offsets1 if any(o))
+    code += f"""
+          if (!({all_neighbors})) {{"""
+    for window in itertools.product((-1, 0), repeat=ndim):
+        # pixels of the window in raster order, relative to pixel ii
+        pixels = [
+            tuple(w + r for w, r in zip(window, rel))
+            for rel in itertools.product((0, 1), repeat=ndim)
+        ]
+        first = pixels.index((0,) * ndim)
+        cond = [f"!{_offset_var(p, 1)}" for p in pixels[:first]]
+        if omit_image_edges:
+            cond += [f"inside{d}_2" for d in range(ndim) if window[d] == 0]
+        cond = " && ".join(cond) if cond else "true"
+        bits = []
+        for p in pixels:
+            # offsets of p from the last pixel of the window are 0 or -1
+            bit = sum(
+                1 << bit_position[d]
+                for d in range(ndim)
+                if p[d] - window[d] - 1 == -1
+            )
+            bits.append(f"({_offset_var(p, 1)} ? {1 << bit} : 0)")
+        code += f"""
+            if ({cond}) {{
+              acc += coefs[{" | ".join(bits)}];
+            }}"""
+    code += """
+          }"""
+    return code
 
 
 @cp.memoize(for_each_device=True)
-def _get_perimeter_weights_and_coefs(coefs_dtype=cp.float32):
-    # convolution weights
-    weights = cp.array(
-        [[10, 2, 10], [2, 1, 2], [10, 2, 10]],
+def _get_boundary_kernel(kind, ndim, option, pixels_per_thread):
+    """Per-region sums of the perimeter, Crofton or Euler coefficients.
+
+    kind is "perimeter" (option: neighborhood), "crofton" (option:
+    omit_image_edges) or "euler" (option unused).
+    """
+    if kind == "perimeter":
+        op = _get_perimeter_op(option)
+    else:
+        op = _get_windows_op(ndim, omit_image_edges=option)
+    # integer coefficients of the Euler number are summed exactly
+    acc_c_type, dtype = (
+        ("int", "int32") if kind == "euler" else ("double", "float64")
+    )
+    pre = (
+        _get_shape_code(ndim)
+        + f"""
+      {acc_c_type} acc;"""
+    )
+    start = """
+          acc = 0;"""
+    flush = """
+          atomicAdd(&out[lab - 1], acc);"""
+    source = _get_label_run_loop(
+        pixels_per_thread, pre, start, op, flush, warp_reduce=[("acc", "sum")]
+    )
+    return cp.ElementwiseKernel(
+        f"raw X labels, raw uint64 labels_size, raw {dtype} coefs",
+        f"raw {dtype} out",
+        source,
+        preamble=_warp_includes,
+        name=f"cucim_{kind}_{ndim}d_{option}_batch{pixels_per_thread}",
     )
 
-    # LUT for weighted sum
-    coefs = np.zeros(50, dtype=coefs_dtype)
+
+def _boundary_sums(kind, labels, coefs, option, max_label, pixels_per_thread):
+    if not labels.flags.c_contiguous:
+        labels = cp.ascontiguousarray(labels)
+    kernel = _get_boundary_kernel(kind, labels.ndim, option, pixels_per_thread)
+    out = cp.zeros((max_label,), dtype=coefs.dtype)
+    kernel(
+        labels,
+        labels.size,
+        coefs,
+        out,
+        size=math.ceil(labels.size / pixels_per_thread),
+    )
+    return out
+
+
+@cp.memoize(for_each_device=True)
+def _get_perimeter_coefs():
+    # LUT of skimage.measure.perimeter
+    coefs = np.zeros(50, dtype=np.float64)
     coefs[[5, 7, 15, 17, 25, 27]] = 1
     coefs[[21, 33]] = math.sqrt(2)
     coefs[[13, 23]] = (1 + math.sqrt(2)) / 2
-    coefs = cp.asarray(coefs)
-    return weights, coefs
+    return cp.asarray(coefs)
 
 
 def regionprops_perimeter(
@@ -111,16 +261,14 @@ def regionprops_perimeter(
     props_dict=None,
     pixels_per_thread=10,
 ):
-    """Calculate total perimeter of all objects in binary image.
-
-    when `robust` is ``True``, reuses "slice" from `props_dict`
+    """Calculate the perimeter of each labeled region.
 
     writes "perimeter" to `props_dict`
 
     Parameters
     ----------
     labels : (M, N) ndarray
-        Binary input image.
+        Label image. Each region is measured separately, as in isolation.
     neighborhood : 4 or 8, optional
         Neighborhood connectivity for border pixel determination. It is used to
         compute the contour. A higher neighborhood widens the border on which
@@ -132,28 +280,20 @@ def regionprops_perimeter(
         The maximum label in labels can be provided to avoid recomputing it if
         it was already known.
     robust : bool, optional
-        If True, extra computation will be done to detect if any labeled
-        regions are <=2 pixel spacing from another. Any regions that meet that
-        criteria will have their perimeter recomputed in isolation to avoid
-        possible error that would otherwise occur in this case. Turning this
-        on will make the run time substantially longer, so it should only be
-        used when labeled regions may have a non-negligible portion of their
-        boundary within a <2 pixel gap from another label.
+        Unused. Every region is measured in isolation, as by scikit-image,
+        also when it is close to or touches other regions.
     labels_close : numpy.ndarray or sequence of int
-        List of labeled regions that are less than 2 pixel gap from another
-        label. Used when robust=True. If not provided and robust=True, it
-        will be computed internally.
+        Unused.
     props_dict : dict or None, optional
-        Dictionary of pre-computed properties (e.g. "slice"). The output of this
+        Dictionary of properties. The output of this
         function will be stored under key "perimeter" within this dictionary.
     pixels_per_thread : int, optional
-        Number of pixels processed per thread on the GPU during the final
-        weighted summation.
+        Number of pixels processed per thread on the GPU.
 
     Returns
     -------
-    perimeter : float
-        Total perimeter of all objects in binary image.
+    perimeter : cp.ndarray
+        The perimeter of each region (float64, indexed by label - 1).
 
     Notes
     -----
@@ -173,91 +313,29 @@ def regionprops_perimeter(
            a Perimeter Estimator. The Queen's University of Belfast.
            http://www.cs.qub.ac.uk/~d.crookes/webpubs/papers/perimeter.doc
     """
+    if labels.ndim != 2:
+        raise ValueError("labels must be 2D")
+    if neighborhood not in [4, 8]:
+        raise ValueError("neighborhood must be 4 or 8")
     if max_label is None:
         max_label = int(labels.max())
 
-    binary_image = labels > 0
-    if robust and labels_close is None:
-        labels_close = _find_close_labels(labels, binary_image, max_label)
-    if neighborhood == 4:
-        footprint = cp.array([[0, 1, 0], [1, 1, 1], [0, 1, 0]], dtype=cp.uint8)
-    else:
-        footprint = 3
-
-    eroded_image = ndi.binary_erosion(binary_image, footprint, border_value=0)
-    border_image = binary_image.view(cp.uint8) - eroded_image
-
-    perimeter_weights, perimeter_coefs = _get_perimeter_weights_and_coefs(
-        cp.float32
+    perimeters = _boundary_sums(
+        "perimeter",
+        labels,
+        _get_perimeter_coefs(),
+        neighborhood,
+        max_label,
+        pixels_per_thread,
     )
-
-    perimeter_image = ndi.convolve(
-        border_image,
-        perimeter_weights,
-        mode="constant",
-        cval=0,
-        output=cp.uint8,
-    )
-
-    min_integer_type = _get_min_integer_dtype(max_label, signed=False)
-
-    # dilate labels by 1 pixel so we can sum with values in XF to give
-    # unique histogram bins for each labeled regions (as long as no labeled
-    # regions are within < 2 pixels from another labeled region)
-    labels_dilated = ndi.grey_dilation(
-        labels, 3, mode="constant", output=min_integer_type
-    )
-
-    if robust and labels_close.size > 0:
-        if props_dict is not None and "slice" in props_dict:
-            slices = props_dict["slice"]
-        else:
-            _, slices = regionprops_bbox_coords(labels, return_slices=True)
-
-    # sum the coefficients for each label to compute the perimeter
-    perimeters = _weighted_sum_of_filtered_image(
-        label_image=labels_dilated,
-        max_label=max_label,
-        image_filtered=perimeter_image,
-        coefs=perimeter_coefs,
-        pixels_per_thread=pixels_per_thread,
-    )
-    if robust:
-        # recompute perimeter in isolation for each region that may be too
-        # close to another one
-        shape = binary_image.shape
-        for lab in labels_close:
-            sl = slices[lab - 1]
-
-            # keep boundary of 1 so object is not at 'edge' of cropped
-            # region (unless it is at a true image edge)
-            ld = labels[
-                max(sl[0].start - 1, 0) : min(sl[0].stop + 1, shape[0]),
-                max(sl[1].start - 1, 0) : min(sl[1].stop + 1, shape[1]),
-            ]
-
-            # print(f"{lab=}, {sl=}")
-            # import matplotlib.pyplot as plt
-            # plt.figure(); plt.imshow(ld.get()); plt.show()
-
-            p = regionprops_perimeter(
-                ld == lab, max_label=1, neighborhood=neighborhood, robust=False
-            )
-            perimeters[lab - 1] = p[0]
     if props_dict is not None:
         props_dict["perimeter"] = perimeters
     return perimeters
 
 
 @cp.memoize(for_each_device=True)
-def _get_perimeter_crofton_weights_and_coefs(
-    directions, coefs_dtype=cp.float32
-):
-    # determine convolution weights
-    filter_weights = cp.array(
-        [[0, 0, 0], [0, 1, 4], [0, 2, 8]], dtype=cp.float32
-    )
-
+def _get_perimeter_crofton_coefs(directions):
+    # LUT of skimage.measure.perimeter_crofton
     if directions == 2:
         coefs = [
             0,
@@ -274,7 +352,6 @@ def _get_perimeter_crofton_weights_and_coefs(
             0,
             np.pi / 2,
             np.pi,
-            0,
             0,
             0,
         ]
@@ -297,12 +374,8 @@ def _get_perimeter_crofton_weights_and_coefs(
             np.pi / 2,
             0,
             0,
-            0,
-            0,
-            0,
         ]
-    coefs = cp.asarray(coefs, dtype=coefs_dtype)
-    return filter_weights, coefs
+    return cp.asarray(coefs, dtype=cp.float64)
 
 
 def regionprops_perimeter_crofton(
@@ -316,17 +389,14 @@ def regionprops_perimeter_crofton(
     props_dict=None,
     pixels_per_thread=10,
 ):
-    """Calculate total Crofton perimeter of all objects in binary image.
-
-    when `robust` is ``True``, reuses "slice" from `props_dict`
+    """Calculate the Crofton perimeter of each labeled region.
 
     writes "perimeter_crofton" to `props_dict`
 
     Parameters
     ----------
     labels : (M, N) ndarray
-        Input image. If image is not binary, all values greater than zero
-        are considered as the object.
+        Label image. Each region is measured separately, as in isolation.
     directions : 2 or 4, optional
         Number of directions used to approximate the Crofton perimeter. By
         default, 4 is used: it should be more accurate than 2.
@@ -338,36 +408,28 @@ def regionprops_perimeter_crofton(
         The maximum label in labels can be provided to avoid recomputing it if
         it was already known.
     robust : bool, optional
-        If True, extra computation will be done to detect if any labeled
-        regions are <=2 pixel spacing from another. Any regions that meet that
-        criteria will have their perimeter recomputed in isolation to avoid
-        possible error that would otherwise occur in this case. Turning this
-        on will make the run time substantially longer, so it should only be
-        used when labeled regions may have a non-negligible portion of their
-        boundary within a <2 pixel gap from another label.
+        Unused. Every region is measured in isolation, as by scikit-image,
+        also when it is close to or touches other regions.
     omit_image_edges : bool, optional
-        This can be set to avoid an additional padding step that includes the
-        edges of objects that correspond to the image edge as part of the
-        perimeter. We cannot accurately estimate the perimeter of objects
-        falling partly outside of `image`, so it seems acceptable to just set
-        this to True. The default remains False for consistency with upstream
-        scikit-image.
+        If True, the windows of 2 x 2 pixels that extend past the last row or
+        column of the image are not counted, so that region edges along those
+        image edges do not count as perimeter. We cannot accurately estimate
+        the perimeter of objects falling partly outside of `image` anyway. The
+        default (False) matches scikit-image, which pads the image with
+        background.
     labels_close : numpy.ndarray or sequence of int
-        List of labeled regions that are less than 2 pixel gap from another
-        label. Used when robust=True. If not provided and robust=True, it
-        will be computed internally.
+        Unused.
     props_dict : dict or None, optional
-        Dictionary of pre-computed properties (e.g. "slice"). The output of this
+        Dictionary of properties. The output of this
         function will be stored under key "perimeter_crofton" within this
         dictionary.
     pixels_per_thread : int, optional
-        Number of pixels processed per thread on the GPU during the final
-        weighted summation.
+        Number of pixels processed per thread on the GPU.
 
     Returns
     -------
-    perimeter : float
-        Total perimeter of all objects in binary image.
+    perimeter : cp.ndarray
+        The perimeter of each region (float64, indexed by label - 1).
 
     Notes
     -----
@@ -399,125 +461,46 @@ def regionprops_perimeter_crofton(
            Ecole Nationale Superieure des Mines de Saint-Etienne.
            https://tel.archives-ouvertes.fr/tel-00560838
     """
+    if labels.ndim != 2:
+        raise ValueError("labels must be 2D")
+    if directions not in [2, 4]:
+        raise ValueError("directions must be 2 or 4")
     if max_label is None:
         max_label = int(labels.max())
 
-    ndim = labels.ndim
-    if ndim not in [2, 3]:
-        raise ValueError("labels must be 2D or 3D")
-
-    binary_image = labels > 0
-    if robust and labels_close is None:
-        labels_close = _find_close_labels(labels, binary_image, max_label)
-
-    footprint = 3  # scalar 3 -> (3, ) * ndim array of ones
-
-    if not omit_image_edges:
-        # Dilate labels by 1 pixel so we can sum with values in image_filtered
-        # to give unique histogram bins for each labeled regions (As long as no
-        # labeled regions are within < 2 pixels from another labeled region)
-        labels_pad = cp.pad(labels, pad_width=1, mode="constant")
-        labels_dilated = ndi.grey_dilation(labels_pad, 3, mode="constant")
-        binary_image = pad(binary_image, pad_width=1, mode="constant")
-        # need dilated mask for later use for indexing into
-        # `image_filtered_labeled` for bincount
-        binary_image_mask = ndi.binary_dilation(binary_image, footprint)
-        binary_image_mask = cp.logical_xor(
-            binary_image_mask, ndi.binary_erosion(binary_image, footprint)
-        )
-    else:
-        labels_dilated = ndi.grey_dilation(labels, footprint, mode="constant")
-        binary_image_mask = binary_image
-
-    # determine convolution weights and LUT for weighted sum
-    filter_weights, coefs = _get_perimeter_crofton_weights_and_coefs(
-        directions, cp.float32
+    perimeters = _boundary_sums(
+        "crofton",
+        labels,
+        _get_perimeter_crofton_coefs(directions),
+        bool(omit_image_edges),
+        max_label,
+        pixels_per_thread,
     )
-
-    image_filtered = ndi.convolve(
-        binary_image.view(cp.uint8),
-        filter_weights,
-        mode="constant",
-        cval=0,
-        output=cp.uint8,
-    )
-
-    if robust and labels_close.size > 0:
-        if props_dict is not None and "slice" in props_dict:
-            slices = props_dict["slice"]
-        else:
-            _, slices = regionprops_bbox_coords(labels, return_slices=True)
-
-    # sum the coefficients for each label to compute the perimeter
-    perimeters = _weighted_sum_of_filtered_image(
-        label_image=labels_dilated,
-        max_label=max_label,
-        image_filtered=image_filtered,
-        coefs=coefs,
-        pixels_per_thread=pixels_per_thread,
-    )
-    if robust:
-        # recompute perimeter in isolation for each region that may be too
-        # close to another one
-        shape = labels_dilated.shape
-        for lab in labels_close:
-            sl = slices[lab - 1]
-            ld = labels[
-                max(sl[0].start, 0) : min(sl[0].stop, shape[0]),
-                max(sl[1].start, 0) : min(sl[1].stop, shape[1]),
-            ]
-            p = regionprops_perimeter_crofton(
-                ld == lab,
-                max_label=1,
-                directions=directions,
-                omit_image_edges=False,
-                robust=False,
-            )
-            perimeters[lab - 1] = p[0]
     if props_dict is not None:
         props_dict["perimeter_crofton"] = perimeters
     return perimeters
 
 
 @cp.memoize(for_each_device=True)
-def _get_euler_weights_and_coefs(ndim, connectivity, coefs_dtype=cp.float32):
+def _get_euler_coefs(ndim, connectivity):
     from cucim.skimage.measure._regionprops_utils import (
         EULER_COEFS2D_4,
         EULER_COEFS2D_8,
         EULER_COEFS3D_26,
     )
 
-    if ndim not in [2, 3]:
-        raise ValueError("only 2D and 3D images are supported")
-
     if ndim == 2:
-        filter_weights = cp.array([[0, 0, 0], [0, 1, 4], [0, 2, 8]])
-        if connectivity == 1:
-            coefs = EULER_COEFS2D_4
-        else:
-            coefs = EULER_COEFS2D_8
-        coefs = cp.asarray(coefs, dtype=coefs_dtype)
-    else:  # 3D images
-        if connectivity == 2:
-            raise NotImplementedError(
-                "For 3D images, Euler number is implemented "
-                "for connectivities 1 and 3 only"
-            )
-
-        filter_weights = cp.array(
-            [
-                [[0, 0, 0], [0, 0, 0], [0, 0, 0]],
-                [[0, 0, 0], [0, 1, 4], [0, 2, 8]],
-                [[0, 0, 0], [0, 16, 64], [0, 32, 128]],
-            ]
+        coefs = EULER_COEFS2D_4 if connectivity == 1 else EULER_COEFS2D_8
+    elif connectivity == 2:
+        raise NotImplementedError(
+            "For 3D images, Euler number is implemented "
+            "for connectivities 1 and 3 only"
         )
-        if connectivity == 1:
-            coefs = EULER_COEFS3D_26[::-1]
-        else:
-            coefs = EULER_COEFS3D_26
-        coefs = cp.asarray(0.125 * coefs, dtype=coefs_dtype)
-
-    return filter_weights, coefs
+    elif connectivity == 1:
+        coefs = EULER_COEFS3D_26[::-1]
+    else:
+        coefs = EULER_COEFS3D_26
+    return cp.asarray(coefs, dtype=cp.int32)
 
 
 def regionprops_euler(
@@ -530,21 +513,18 @@ def regionprops_euler(
     props_dict=None,
     pixels_per_thread=10,
 ):
-    """Calculate the Euler characteristic in binary image.
+    """Calculate the Euler characteristic of each labeled region.
 
     For 2D objects, the Euler number is the number of objects minus the number
     of holes. For 3D objects, the Euler number is obtained as the number of
     objects plus the number of holes, minus the number of tunnels, or loops.
-
-    when `robust` is ``True``, reuses "slice" from `props_dict`
 
     writes "euler_number" to `props_dict`
 
     Parameters
     ----------
     labels: (M, N[, P]) cupy.ndarray
-        Input image. If image is not binary, all values greater than zero
-        are considered as the object.
+        Label image. Each region is measured separately, as in isolation.
     connectivity : int, optional
         Maximum number of orthogonal hops to consider a pixel/voxel
         as a neighbor.
@@ -561,28 +541,20 @@ def regionprops_euler(
         The maximum label in labels can be provided to avoid recomputing it if
         it was already known.
     robust : bool, optional
-        If True, extra computation will be done to detect if any labeled
-        regions are <=2 pixel spacing from another. Any regions that meet that
-        criteria will have their perimeter recomputed in isolation to avoid
-        possible error that would otherwise occur in this case. Turning this
-        on will make the run time substantially longer, so it should only be
-        used when labeled regions may have a non-negligible portion of their
-        boundary within a <2 pixel gap from another label.
+        Unused. Every region is measured in isolation, as by scikit-image,
+        also when it is close to or touches other regions.
     labels_close : numpy.ndarray or sequence of int
-        List of labeled regions that are less than 2 pixel gap from another
-        label. Used when robust=True. If not provided and robust=True, it
-        will be computed internally.
+        Unused.
     props_dict : dict or None, optional
-        Dictionary of pre-computed properties (e.g. "slice"). The output of this
+        Dictionary of properties. The output of this
         function will be stored under key "euler_number" within this dictionary.
     pixels_per_thread : int, optional
-        Number of pixels processed per thread on the GPU during the final
-        weighted summation.
+        Number of pixels processed per thread on the GPU.
 
     Returns
     -------
     euler_number : cp.ndarray of int
-        Euler characteristic of the set of all objects in the image.
+        Euler characteristic of each region.
 
     Notes
     -----
@@ -612,73 +584,27 @@ def regionprops_euler(
            Matter. Lecture Notes in Physics, vol 600. Springer, Berlin,
            Heidelberg.
     """
-
+    if labels.ndim not in [2, 3]:
+        raise ValueError("only 2D and 3D images are supported")
     if max_label is None:
         max_label = int(labels.max())
-
     # check connectivity
     if connectivity is None:
         connectivity = labels.ndim
 
-    binary_image = labels > 0
-
-    if robust and labels_close is None:
-        labels_close = _find_close_labels(labels, binary_image, max_label)
-
-    filter_weights, coefs = _get_euler_weights_and_coefs(
-        labels.ndim, connectivity, cp.float32
+    euler_number = _boundary_sums(
+        "euler",
+        labels,
+        _get_euler_coefs(labels.ndim, connectivity),
+        False,
+        max_label,
+        pixels_per_thread,
     )
-    binary_image = pad(binary_image, pad_width=1, mode="constant")
-    image_filtered = ndi.convolve(
-        binary_image.view(cp.uint8),
-        filter_weights,
-        mode="constant",
-        cval=0,
-        output=cp.uint8,
-    )
-
-    if robust and labels_close.size > 0:
-        if props_dict is not None and "slice" in props_dict:
-            slices = props_dict["slice"]
-        else:
-            _, slices = regionprops_bbox_coords(labels, return_slices=True)
-
-    min_integer_type = _get_min_integer_dtype(max_label, signed=False)
-    if labels.dtype != min_integer_type:
-        labels = labels.astype(min_integer_type)
-    # dilate labels by 1 pixel so we can sum with values in XF to give
-    # unique histogram bins for each labeled regions (as long as no labeled
-    # regions are within < 2 pixels from another labeled region)
-    labels_pad = pad(labels, pad_width=1, mode="constant")
-    labels_dilated = ndi.grey_dilation(labels_pad, 3, mode="constant")
-
-    # sum the coefficients for each label to compute the Euler number
-    euler_number = _weighted_sum_of_filtered_image(
-        label_image=labels_dilated,
-        max_label=max_label,
-        image_filtered=image_filtered,
-        coefs=coefs,
-        pixels_per_thread=pixels_per_thread,
-    )
-    euler_number = euler_number.astype(cp.int64, copy=False)
-
-    if robust:
-        # recompute perimeter in isolation for each region that may be too
-        # close to another one
-        shape = labels_dilated.shape
-        for lab in labels_close:
-            sl = slices[lab - 1]
-            # keep boundary of 1 so object is not at 'edge' of cropped
-            # region (unless it is at a true image edge)
-            # + 2 is because labels_pad is padded, but labels was not
-            ld = labels_pad[
-                max(sl[0].start, 0) : min(sl[0].stop + 2, shape[0]),
-                max(sl[1].start, 0) : min(sl[1].stop + 2, shape[1]),
-            ]
-            euler_num = regionprops_euler(
-                ld == lab, connectivity=connectivity, max_label=1, robust=False
-            )
-            euler_number[lab - 1] = euler_num[0]
+    if labels.ndim == 3:
+        # as int(0.125 * coefs @ h) in scikit-image (truncation toward zero)
+        euler_number = (euler_number * 0.125).astype(cp.int64)
+    else:
+        euler_number = euler_number.astype(cp.int64)
     if props_dict is not None:
         props_dict["euler_number"] = euler_number
     return euler_number
