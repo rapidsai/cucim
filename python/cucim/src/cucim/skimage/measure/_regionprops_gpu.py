@@ -418,10 +418,12 @@ def regionprops_dict(
     if max_label is None:
         max_label = int(label_image.max())
     label_dtype = _get_min_integer_dtype(max_label, signed=False)
-    # For performance, shrink label's data type to the minimum possible
-    # unsigned integer type.
-    if label_image.dtype != label_dtype:
-        label_image = label_image.astype(label_dtype)
+    # The kernels read integer labels of any size (4 and 8-byte labels with
+    # 16-byte loads), and casting the labels costs more than the narrower
+    # labels save, unless the label image has to be copied anyway (when it is
+    # not C-contiguous) or is not an integer image.
+    if not label_image.flags.c_contiguous or label_image.dtype.kind not in "iu":
+        label_image = label_image.astype(label_dtype, order="C")
 
     # create vector of label values
     if "label" in required_props:
@@ -761,7 +763,8 @@ def regionprops_dict(
         label_filled, labels_inexact = _fill_holes_by_label(
             label_image, max_label=max_label, bbox=out.get("bbox")
         )
-        out["label_filled"] = label_filled
+        # with the smallest unsigned integer type that holds max_label
+        out["label_filled"] = label_filled.astype(label_dtype, copy=False)
         compute_image_filled = "image_filled" in required_props
         if compute_image_filled or "num_pixels_filled" in required_props:
             # labels in labels_inexact are recomputed on per-label crops
