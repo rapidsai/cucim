@@ -503,6 +503,40 @@ def test_distance_transform_edt_2d_too_many_elements():
         distance_transform_edt(img)
 
 
+@pytest.mark.parametrize("shape", [(40, 70), (7, 5), (33, 40, 50), (6, 3, 4)])
+@pytest.mark.parametrize("sampling", [None, 2.0, "aniso"])
+@pytest.mark.parametrize("float64_distances", [False, True])
+@pytest.mark.parametrize("return_distances", [False, True])
+def test_distance_transform_edt_no_background(
+    shape, sampling, float64_distances, return_distances
+):
+    """With no background element there is no nearest background element."""
+    ndim = len(shape)
+    if sampling == "aniso":
+        sampling = tuple(range(1, ndim + 1))
+    img = cp.ones(shape, dtype=bool)
+    out = distance_transform_edt(
+        img,
+        sampling=sampling,
+        return_distances=return_distances,
+        return_indices=True,
+        float64_distances=float64_distances,
+    )
+    if return_distances:
+        distances, indices = out
+        assert cp.isinf(distances).all()
+    else:
+        indices = out
+    assert (indices < 0).all()
+
+    if return_distances:
+        # distances only (the 3D case uses a separate, fused kernel)
+        distances = distance_transform_edt(
+            img, sampling=sampling, float64_distances=float64_distances
+        )
+        assert cp.isinf(distances).all()
+
+
 @pytest.mark.parametrize("ndim", [1, 4, 5])
 def test_distance_transform_edt_unsupported_ndim(ndim):
     with pytest.raises(NotImplementedError):

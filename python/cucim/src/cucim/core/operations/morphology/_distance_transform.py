@@ -97,6 +97,11 @@ def distance_transform_edt(
     :func:`scipy.ndimage.distance_transform_edt` in the case of input pixels
     that are equidistant from multiple background points.
 
+    If `image` does not contain any background element, there is no nearest
+    background element. The distances are then infinite (``inf``) and the
+    entries of `indices` are negative. (SciPy returns finite distances in this
+    case, as if there were a background element outside of the array.)
+
     The parallel banding algorithm implemented here was originally described in
     [1]_. The kernels used here correspond to the revised PBA+ implementation
     that is described on the author's website [2]_. The source code of the

@@ -626,7 +626,8 @@ __global__ void kernelColor(pixel_int2_t *input, pixel_int2_t *output, int heigh
                     last1 = input[TOID(tx, last2.y, height)];
             }
 
-            block[threadIdx.x][ty - y_end] = make_pixel(lasty, last2.x);
+            // an empty list (the image has no site) is marked by MARKER
+            block[threadIdx.x][ty - y_end] = (last2.x == MARKER) ? make_pixel(MARKER, MARKER) : make_pixel(lasty, last2.x);
         }
 
         __syncthreads();
@@ -691,7 +692,8 @@ __global__ void kernelColorWithSpacing(pixel_int2_t *input, pixel_int2_t *output
                     last1 = input[TOID(tx, last2.y, height)];
             }
 
-            block[threadIdx.x][ty - y_end] = make_pixel(lasty, last2.x);
+            // an empty list (the image has no site) is marked by MARKER
+            block[threadIdx.x][ty - y_end] = (last2.x == MARKER) ? make_pixel(MARKER, MARKER) : make_pixel(lasty, last2.x);
         }
 
         __syncthreads();

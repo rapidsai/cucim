@@ -17,6 +17,7 @@ from ._pba_2d import (
     _generate_indices_ops,
     _generate_shape,
     _get_block_size,
+    _guard_no_site,
 )
 
 pba3d_defines_template = """
@@ -151,13 +152,17 @@ def _get_decode3d_code(size_max, int_type=""):
         {int_type} x = (encoded >> 40) & 0xfffff;
         {int_type} y = (encoded >> 20) & 0xfffff;
         {int_type} z = encoded & 0xfffff;
+        if ((encoded >> 61) & 1) {{ x = -1; y = -1; z = -1; }}
         """
     else:
         code = f"""
         {int_type} x = (encoded >> 20) & 0x3ff;
         {int_type} y = (encoded >> 10) & 0x3ff;
         {int_type} z = encoded & 0x3ff;
+        if ((encoded >> 31) & 1) {{ x = -1; y = -1; z = -1; }}
         """
+    # The NOTSITE flag is set if there is no nearest site. The coordinates are
+    # then set to -1 (otherwise they would be arbitrary values).
     return code
 
 
@@ -233,7 +238,7 @@ def _get_distance_kernel_code(int_type, dist_int_type, raw_out_var=True):
     )
     code += _generate_indices_ops(ndim=3, int_type=int_type)
     code += _generate_distance_computation(int_type, dist_int_type)
-    return code
+    return _guard_no_site(code, "x < 0")
 
 
 @cupy.memoize(for_each_device=True)
@@ -271,7 +276,7 @@ def _get_aniso_distance_kernel_code(int_type, raw_out_var=True):
     )
     code += _generate_indices_ops(ndim=3, int_type=int_type)
     code += _generate_aniso_distance_computation()
-    return code
+    return _guard_no_site(code, "x < 0")
 
 
 @cupy.memoize(for_each_device=True)
@@ -304,16 +309,17 @@ def _get_decode_as_distance_kernel(size_max, large_dist=False, sampling=None):
     code = _get_decode3d_code(size_max, int_type=int_type)
 
     # Step 2: compute the Euclidean distance based on this (z, y, x).
-    code += _generate_shape(
+    code_dist = _generate_shape(
         ndim=3, int_type=int_type, var_name="dist", raw_var=True
     )
-    code += _generate_indices_ops(ndim=3, int_type=int_type)
+    code_dist += _generate_indices_ops(ndim=3, int_type=int_type)
     if sampling is None:
-        code += _generate_distance_computation(int_type, dist_int_type)
+        code_dist += _generate_distance_computation(int_type, dist_int_type)
         in_params = "E encoded"
     else:
-        code += _generate_aniso_distance_computation()
+        code_dist += _generate_aniso_distance_computation()
         in_params = "E encoded, raw F sampling"
+    code += _guard_no_site(code_dist, "x < 0")
     return cupy.ElementwiseKernel(
         in_params=in_params,
         out_params="raw F dist",

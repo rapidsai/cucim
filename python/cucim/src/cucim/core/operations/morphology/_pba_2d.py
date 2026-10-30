@@ -172,6 +172,21 @@ def _generate_indices_ops(ndim, int_type):
     return code
 
 
+def _guard_no_site(code, no_site_condition):
+    """Make a distance kernel output infinity if there is no nearest site.
+
+    This is the case for every pixel if the image does not contain a
+    background pixel. The coordinates of the nearest site are then negative.
+    """
+    return (
+        f"if ({no_site_condition}) {{\n"
+        "    dist[i] = static_cast<F>(CUDART_INF);\n"
+        "} else {\n"
+        f"{code}\n"
+        "}\n"
+    )
+
+
 def _get_distance_kernel_code(int_type, dist_int_type, raw_out_var=True):
     code = _generate_shape(
         ndim=2, int_type=int_type, var_name="dist", raw_var=raw_out_var
@@ -186,7 +201,7 @@ def _get_distance_kernel_code(int_type, dist_int_type, raw_out_var=True):
     sq_dist += tmp * tmp;
     dist[i] = sqrt(static_cast<F>(sq_dist));
     """
-    return code
+    return _guard_no_site(code, "y[i] < 0 || x[i] < 0")
 
 
 @cupy.memoize(for_each_device=True)
@@ -216,7 +231,7 @@ def _get_aniso_distance_kernel_code(int_type, raw_out_var=True):
     sq_dist += tmp * tmp;
     dist[i] = sqrt(sq_dist);
     """
-    return code
+    return _guard_no_site(code, "y[i] < 0 || x[i] < 0")
 
 
 @cupy.memoize(for_each_device=True)
