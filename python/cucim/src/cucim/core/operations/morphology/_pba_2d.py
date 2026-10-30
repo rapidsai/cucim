@@ -128,7 +128,10 @@ def _default_block_params(shape, block_size):
     # applied along the second axis.
     m2 = max(1, min(n_x, block_size))
     m2 = 2 ** math.floor(math.log2(m2))
-    m3 = min(m1, m2, 2)
+    # m3: number of threads that share a column in phase 3. The best value
+    # grows with the size, but a value above 16 is not faster, and it can not
+    # be larger than the number of tiles along the second axis.
+    m3 = min(16, 2 ** math.floor(math.log2(n_x)))
     return m1, m2, m3
 
 

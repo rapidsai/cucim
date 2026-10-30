@@ -490,10 +490,12 @@ def test_pba2d_default_block_params():
     from cucim.core.operations.morphology._pba_2d import _default_block_params
 
     # m1 is set by the first axis and m2 by the second axis
-    assert _default_block_params((100, 300), 32) == (4, 8, 2)
-    assert _default_block_params((4096, 256), 32) == (128, 8, 2)
-    assert _default_block_params((256, 4096), 32) == (8, 32, 2)
+    assert _default_block_params((100, 300), 32) == (4, 8, 8)
+    assert _default_block_params((4096, 256), 32) == (128, 8, 8)
+    assert _default_block_params((256, 4096), 32) == (8, 32, 16)
     assert _default_block_params((32, 32), 32) == (1, 1, 1)
+    assert _default_block_params((64, 64), 32) == (2, 2, 2)
+    assert _default_block_params((8192, 8192), 32) == (256, 32, 16)
 
 
 def test_distance_transform_edt_2d_too_many_elements():
