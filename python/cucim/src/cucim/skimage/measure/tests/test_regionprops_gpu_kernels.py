@@ -468,6 +468,48 @@ def test_convex_flat_3d():
     assert result["feret_diameter_max"][2] == 1
 
 
+@pytest.mark.parametrize("kind", ["blobs", "lines", "random"])
+def test_convex_hull_candidates_3d(kind):
+    # each label's candidates are distinct diamond points of its voxels and
+    # include every vertex of their hull
+    from scipy.spatial import ConvexHull
+
+    labels = _convex_test_labels(kind, 3)
+    max_label = int(labels.max())
+    bbox = _regionprops_label_pass(labels, max_label, compute_bbox=True)["bbox"]
+    row_first, row_last, offsets, num_rows = _regionprops_row_extents(
+        labels, bbox, max_label
+    )
+    points, point_offsets = _regionprops_gpu_convex._convex_hull_candidates_3d(
+        row_first,
+        row_last,
+        offsets,
+        num_rows,
+        bbox,
+        cp.asnumpy(bbox).astype(np.int64),
+        max_label,
+    )
+    points, point_offsets = cp.asnumpy(points), cp.asnumpy(point_offsets)
+    labels, bbox = cp.asnumpy(labels), cp.asnumpy(bbox)
+    diamond = np.concatenate((np.eye(3, dtype=int), -np.eye(3, dtype=int)))
+    for lab in range(1, max_label + 1):
+        candidates = points[point_offsets[lab - 1] : point_offsets[lab]]
+        coords = np.argwhere(labels == lab)
+        if coords.size == 0:
+            assert candidates.size == 0
+            continue
+        candidates = {tuple(p) for p in candidates}
+        assert len(candidates) == point_offsets[lab] - point_offsets[lab - 1]
+        # all diamond points, in doubled coordinates relative to the bbox
+        centers = 2 * (coords - bbox[lab - 1, :3])
+        diamond_points = np.unique(
+            (centers[:, np.newaxis, :] + diamond).reshape(-1, 3), axis=0
+        )
+        assert candidates <= {tuple(p) for p in diamond_points}
+        hull = ConvexHull(diamond_points)
+        assert {tuple(p) for p in diamond_points[hull.vertices]} <= candidates
+
+
 @pytest.mark.parametrize("ndim", [2, 3])
 def test_convex_batch_64bit_coordinates(ndim, monkeypatch):
     # images with an axis of 2**30 pixels or more use 64-bit row extents and

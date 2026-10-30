@@ -676,56 +676,110 @@ def _get_merged_planes_kernel():
     )
 
 
+# The vertices of a segment's right chain that are not also vertices of its
+# left chain: both chains start on the segment's top line and end on its
+# bottom line, so they share their first (last) vertex if that line has one
+# point.
+_gather_chains_includes = r"""
+template <typename T>
+__device__ __forceinline__ void cucim_right_chain_range(
+    const T* left, int nl, const T* right, int nr, int& j0, int& j1) {
+  j0 = 0;
+  j1 = nr;
+  if (nr >= 1 && nl >= 1 && right[0] == left[0] && right[1] == left[1]) {
+    j0 = 1;
+  }
+  if (nr >= 2 && right[2 * nr - 2] == left[2 * nl - 2]
+      && right[2 * nr - 1] == left[2 * nl - 1]) {
+    j1 = nr - 1;
+  }
+}
+"""
+
+
 @cp.memoize(for_each_device=True)
-def _get_gather_chains_kernel():
+def _get_gather_chains_kernel(count_only):
     """Kernel copying the chain vertices of each segment of rows (a plane of
-    a 3D label) to consecutive (z, y, x) points, one thread per segment."""
+    a 3D label) to consecutive (z, y, x) points, one thread per segment.
+    A vertex in both chains is copied once. With `count_only`, it only
+    counts the points of each segment."""
     source = """
       long long base = 2 * segment_offsets[i] + i;
+      const E* left = &left_chains[2 * base];
+      const E* right = &right_chains[2 * base];
+      int nl = chain_sizes[2 * i];
+      int j0, j1;
+      cucim_right_chain_range(left, nl, right, chain_sizes[2 * i + 1], j0,
+                              j1);
+"""
+    if count_only:
+        source += """
+      num_points = nl + (j1 - j0);\n"""
+        inputs = (
+            "raw E left_chains, raw E right_chains, raw int32 chain_sizes, "
+            "raw int64 segment_offsets"
+        )
+        outputs = "int64 num_points"
+        name = "cucim_convex_count_chain_points"
+    else:
+        source += """
       long long out = point_starts[i];
       E z = segment_z[i];
       int lab = segment_label[i];
       for (int side = 0; side < 2; side++) {
-        const E* chain = side == 0 ? &left_chains[2 * base]
-                                   : &right_chains[2 * base];
-        int n = chain_sizes[2 * i + side];
-        for (int j = 0; j < n; j++, out++) {
+        const E* chain = side == 0 ? left : right;
+        int start = side == 0 ? 0 : j0;
+        int end = side == 0 ? nl : j1;
+        for (int j = start; j < end; j++, out++) {
           points[3 * out] = z;
           points[3 * out + 1] = chain[2 * j];
           points[3 * out + 2] = chain[2 * j + 1];
           point_labels[out] = lab;
         }
       }\n"""
-    inputs = (
-        "raw E left_chains, raw E right_chains, raw int32 chain_sizes, "
-        "raw int64 segment_offsets, raw int64 point_starts, raw E segment_z, "
-        "raw int32 segment_label"
-    )
+        inputs = (
+            "raw E left_chains, raw E right_chains, raw int32 chain_sizes, "
+            "raw int64 segment_offsets, raw int64 point_starts, "
+            "raw E segment_z, raw int32 segment_label"
+        )
+        outputs = "raw E points, raw int32 point_labels"
+        name = "cucim_convex_gather_chains"
     return cp.ElementwiseKernel(
         inputs,
-        "raw E points, raw int32 point_labels",
+        outputs,
         source,
-        name="cucim_convex_gather_chains",
+        preamble=_gather_chains_includes,
+        name=name,
     )
 
 
 def _gather_chain_vertices(chains, segment_offsets, segment_z, segment_label):
     """Vertices of the chains of each segment as (z, y, x) points.
 
-    Returns the points (doubled coordinates) and the label index of each.
+    Returns the points (doubled coordinates, each once) and the label index
+    of each.
     """
     left_chains, right_chains, chain_sizes = chains
+    segment_offsets = cp.asarray(segment_offsets)
     point_starts = cp.zeros((segment_z.size + 1,), dtype=cp.int64)
-    cp.cumsum(chain_sizes.sum(axis=1), out=point_starts[1:])
+    if segment_z.size > 0:
+        _get_gather_chains_kernel(True)(
+            left_chains,
+            right_chains,
+            chain_sizes,
+            segment_offsets,
+            point_starts[1:],
+        )
+    cp.cumsum(point_starts, out=point_starts)
     num_points = int(point_starts[-1])
     points = cp.empty((num_points, 3), dtype=left_chains.dtype)
     point_labels = cp.empty((num_points,), dtype=cp.int32)
     if segment_z.size > 0:
-        _get_gather_chains_kernel()(
+        _get_gather_chains_kernel(False)(
             left_chains,
             right_chains,
             chain_sizes,
-            cp.asarray(segment_offsets),
+            segment_offsets,
             point_starts,
             cp.asarray(segment_z, dtype=left_chains.dtype),
             cp.asarray(segment_label, dtype=cp.int32),
