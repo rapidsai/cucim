@@ -25,6 +25,7 @@ pba3d_defines_template = """
 #define MARKER     {marker}
 #define MAX_INT    {max_int}
 #define BLOCKSIZE  {block_size_3d}
+#define SPACING_T  {spacing_t}  // type of the pixel spacing and of the distances computed with it
 
 """
 
@@ -78,10 +79,17 @@ pba3d_defines_encode_64bit = """
 
 @cupy.memoize(True)
 def get_pba3d_src(
-    block_size_3d=32, marker=-2147483648, max_int=2147483647, size_max=1024
+    block_size_3d=32,
+    marker=-2147483648,
+    max_int=2147483647,
+    size_max=1024,
+    spacing_t="double",
 ):
     pba3d_code = pba3d_defines_template.format(
-        block_size_3d=block_size_3d, marker=marker, max_int=max_int
+        block_size_3d=block_size_3d,
+        marker=marker,
+        max_int=max_int,
+        spacing_t=spacing_t,
     )
     if size_max > 1024:
         pba3d_code += pba3d_defines_encode_64bit
@@ -95,14 +103,16 @@ def get_pba3d_src(
 
 
 @cupy.memoize(for_each_device=True)
-def _get_pba3d_kernels(block_size, size_max, with_spacing):
+def _get_pba3d_kernels(block_size, size_max, with_spacing, spacing_t="double"):
     """Return the kernels of the 3D algorithm as a dictionary.
 
     The kernels that take a pixel spacing are returned under the names of the
     kernels without a spacing.
     """
     module = cupy.RawModule(
-        code=get_pba3d_src(block_size_3d=block_size, size_max=size_max)
+        code=get_pba3d_src(
+            block_size_3d=block_size, size_max=size_max, spacing_t=spacing_t
+        )
     )
     suffix = "WithSpacing" if with_spacing else ""
     kernels = {"kernelFloodZ": module.get_function("kernelFloodZ")}
@@ -353,6 +363,7 @@ def _pba_3d(
     check_warp_size=False,
     *,
     float64_distances=False,
+    float32_spacing=False,
     distances=None,
     indices=None,
 ):
@@ -408,7 +419,10 @@ def _pba_3d(
     pba_images = [input_arr, output]
 
     block = (blockx, blocky, 1)
-    kernels = _get_pba3d_kernels(block_size, size_max, sampling is not None)
+    spacing_t = "float" if float32_spacing else "double"
+    kernels = _get_pba3d_kernels(
+        block_size, size_max, sampling is not None, spacing_t
+    )
     kernelFloodZ = kernels["kernelFloodZ"]
     kernelMaurerAxis = kernels["kernelMaurerAxis"]
     kernelColorAxis = kernels["kernelColorAxis"]
@@ -416,7 +430,9 @@ def _pba_3d(
         sampling_args = ()
     else:
         sampling = tuple(map(float, sampling))
-        sampling_args = (sampling[2], sampling[1], sampling[0])
+        # the type of the arguments has to match the one in the kernels
+        spacing_type = np.float32 if float32_spacing else np.float64
+        sampling_args = tuple(spacing_type(sampling[i]) for i in (2, 1, 0))
 
     # Each launch is given the extents (nx, ny, nz) of the layout that it
     # reads. The coloring kernel writes its output with the y and x axes
@@ -446,7 +462,7 @@ def _pba_3d(
     if sampling is not None:
         # kernelColorAxis transposes the first two axis, so have to reorder
         # the sampling_args tuple correspondingly
-        sampling_args = (sampling[1], sampling[2], sampling[0])
+        sampling_args = tuple(spacing_type(sampling[i]) for i in (1, 2, 0))
 
     kernelMaurerAxis(
         (sy // blockx, sz // blocky, 1),

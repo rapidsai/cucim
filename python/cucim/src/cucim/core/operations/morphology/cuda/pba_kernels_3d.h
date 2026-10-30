@@ -47,6 +47,12 @@
 #define BLOCKSIZE  32
 #endif
 
+// The type that is used for the pixel spacing, and for the distances computed
+// with it, in the kernels that take a pixel spacing
+#ifndef SPACING_T
+#define SPACING_T double
+#endif
+
 #ifndef ENCODE
 
 // Sites     : ENCODE(x, y, z, 0, 0)
@@ -200,7 +206,7 @@ __global__ void kernelMaurerAxis(ENCODED_INT_TYPE *input, ENCODED_INT_TYPE *stac
         stack[TOID(tx, ty - 1, tz, size_y, size_x)] = ENCODE(ZERO, lasty, ZERO, ONE, flag);
 }
 
-__global__ void kernelMaurerAxisWithSpacing(ENCODED_INT_TYPE *input, ENCODED_INT_TYPE *stack, int size_x, int size_y, int size_z, double sx, double sy, double sz)
+__global__ void kernelMaurerAxisWithSpacing(ENCODED_INT_TYPE *input, ENCODED_INT_TYPE *stack, int size_x, int size_y, int size_z, SPACING_T sx, SPACING_T sy, SPACING_T sz)
 {
     int tx = blockIdx.x * blockDim.x + threadIdx.x;
     int tz = blockIdx.y * blockDim.y + threadIdx.y;
@@ -322,7 +328,7 @@ __global__ void kernelColorAxis(ENCODED_INT_TYPE *input, ENCODED_INT_TYPE *outpu
 }
 
 
-__global__ void kernelColorAxisWithSpacing(ENCODED_INT_TYPE *input, ENCODED_INT_TYPE *output, int size_x, int size_y, int size_z, double sx, double sy, double sz)
+__global__ void kernelColorAxisWithSpacing(ENCODED_INT_TYPE *input, ENCODED_INT_TYPE *output, int size_x, int size_y, int size_z, SPACING_T sx, SPACING_T sy, SPACING_T sz)
 {
     __shared__ ENCODED_INT_TYPE block[BLOCKSIZE][BLOCKSIZE];
 
@@ -333,7 +339,7 @@ __global__ void kernelColorAxisWithSpacing(ENCODED_INT_TYPE *input, ENCODED_INT_
 
     ENCODED_INT_TYPE x1, y1, z1, x2, y2, z2;
     ENCODED_INT_TYPE last1 = ENCODE(ZERO,ZERO,ZERO,ONE,ZERO), last2 = ENCODE(ZERO,ZERO,ZERO,ONE,ZERO), lasty;
-    double dx, dy, dz, best, dist;
+    SPACING_T dx, dy, dz, best, dist;
 
     lasty = size_y - 1;
 
@@ -359,15 +365,15 @@ __global__ void kernelColorAxisWithSpacing(ENCODED_INT_TYPE *input, ENCODED_INT_
         y_end = size_y - (step + 1) * blockDim.x;
 
         for (int ty = y_start - tid; ty >= y_end; ty -= blockDim.y) {
-            dx = static_cast<double>(x2 - tx) * sx;
-            dy = static_cast<double>(lasty - ty) * sy;
-            dz = static_cast<double>(z2 - tz) * sz;
+            dx = static_cast<SPACING_T>(x2 - tx) * sx;
+            dy = static_cast<SPACING_T>(lasty - ty) * sy;
+            dz = static_cast<SPACING_T>(z2 - tz) * sz;
             best = dx * dx + dy * dy + dz * dz;
 
             while (HASNEXT(last2)) {
-                dx = static_cast<double>(x1 - tx) * sx;
-                dy = static_cast<double>(y2 - ty) * sy;
-                dz = static_cast<double>(z1 - tz) * sz;
+                dx = static_cast<SPACING_T>(x1 - tx) * sx;
+                dy = static_cast<SPACING_T>(y2 - ty) * sy;
+                dz = static_cast<SPACING_T>(z1 - tz) * sz;
                 dist = dx * dx + dy * dy + dz * dz;
 
                 if(dist > best) break;

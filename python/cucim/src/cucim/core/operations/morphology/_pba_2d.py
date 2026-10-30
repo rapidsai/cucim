@@ -5,6 +5,7 @@ import math
 import os
 
 import cupy
+import numpy as np
 
 from cucim.skimage._vendored import pad
 from cucim.skimage._vendored._ndimage_util import _get_inttype
@@ -25,6 +26,7 @@ pba2d_defines_template = """
 #define BLOCKSIZE   {block_size_2d}
 #define pixel_int2_t {pixel_int2_t}                // typically short2 (int2 for images with > 32k pixels per side)
 #define make_pixel(x, y)  {make_pixel_func}(x, y)  // typically make_short2 (make_int2 images with > 32k pixels per side
+#define SPACING_T {spacing_t}  // type of the pixel spacing and of the distances computed with it
 
 """  # noqa: E501
 
@@ -46,7 +48,12 @@ def _init_marker(int_dtype):
 
 
 @cupy.memoize(True)
-def get_pba2d_src(block_size_2d=64, marker=-32768, pixel_int2_t="short2"):
+def get_pba2d_src(
+    block_size_2d=64,
+    marker=-32768,
+    pixel_int2_t="short2",
+    spacing_t="double",
+):
     make_pixel_func = "make_" + pixel_int2_t
 
     pba2d_code = pba2d_defines_template.format(
@@ -54,6 +61,7 @@ def get_pba2d_src(block_size_2d=64, marker=-32768, pixel_int2_t="short2"):
         marker=marker,
         pixel_int2_t=pixel_int2_t,
         make_pixel_func=make_pixel_func,
+        spacing_t=spacing_t,
     )
     kernel_directory = os.path.join(os.path.dirname(__file__), "cuda")
     with open(os.path.join(kernel_directory, "pba_kernels_2d.h")) as f:
@@ -64,7 +72,9 @@ def get_pba2d_src(block_size_2d=64, marker=-32768, pixel_int2_t="short2"):
 
 
 @cupy.memoize(for_each_device=True)
-def _get_pba2d_kernels(block_size, marker, pixel_int2_t, with_spacing):
+def _get_pba2d_kernels(
+    block_size, marker, pixel_int2_t, with_spacing, spacing_t="double"
+):
     """Return the kernels of the 2D algorithm as a dictionary.
 
     The kernels that take a pixel spacing are returned under the names of the
@@ -72,7 +82,10 @@ def _get_pba2d_kernels(block_size, marker, pixel_int2_t, with_spacing):
     """
     module = cupy.RawModule(
         code=get_pba2d_src(
-            block_size_2d=block_size, marker=marker, pixel_int2_t=pixel_int2_t
+            block_size_2d=block_size,
+            marker=marker,
+            pixel_int2_t=pixel_int2_t,
+            spacing_t=spacing_t,
         )
     )
     suffix = "WithSpacing" if with_spacing else ""
@@ -326,6 +339,7 @@ def _pba_2d(
     check_warp_size=False,
     *,
     float64_distances=False,
+    float32_spacing=False,
     distances=None,
     indices=None,
 ):
@@ -426,8 +440,9 @@ def _pba_2d(
     int2_dtype = cupy.dtype({"names": ["x", "y"], "formats": [int_dtype] * 2})
     margin = cupy.empty((2 * m1 * sx,), dtype=int2_dtype)
 
+    spacing_t = "float" if float32_spacing else "double"
     kernels = _get_pba2d_kernels(
-        block_size, marker, pixel_int2_type, sampling is not None
+        block_size, marker, pixel_int2_type, sampling is not None, spacing_t
     )
     kernelFloodDown = kernels["kernelFloodDown"]
     kernelFloodUp = kernels["kernelFloodUp"]
@@ -473,7 +488,12 @@ def _pba_2d(
         sampling = tuple(map(float, sampling))
         # reverse the order if the image was transposed
         kernel_sampling = sampling[::-1] if transposed else sampling
-        sampling_args = (kernel_sampling[0], kernel_sampling[1])
+        # the type of the arguments has to match the one in the kernels
+        spacing_type = np.float32 if float32_spacing else np.float64
+        sampling_args = (
+            spacing_type(kernel_sampling[0]),
+            spacing_type(kernel_sampling[1]),
+        )
     kernelProximatePoints(
         grid,
         block,

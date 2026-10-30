@@ -646,6 +646,11 @@ def test_pba_kernels_are_cached():
         assert get_kernels(*args, True) is spacing
         # the variants with a spacing are different kernels with the same keys
         assert plain.keys() == spacing.keys()
+        # the kernels with a spacing in single precision are also different
+        assert get_kernels(*args, True, "float") is not spacing
+        assert get_kernels(*args, True, "float") is get_kernels(
+            *args, True, "float"
+        )
         assert (
             plain["kernelColor" if len(args) == 3 else "kernelColorAxis"]
             is not spacing[
@@ -672,6 +677,59 @@ def test_distance_transform_edt_repeated_calls(ndim):
             expected_s,
             rtol=1e-6,
         )
+
+
+@pytest.mark.parametrize(
+    "shape",
+    [
+        (40, 50),
+        (64, 2000),
+        (300, 70),
+        (24, 24, 24),
+        (5, 64, 100),
+        (100, 20, 33),
+    ],
+)
+@pytest.mark.parametrize("return_indices", [False, True])
+@pytest.mark.parametrize("density", [2, 50])
+def test_distance_transform_edt_float32_spacing(shape, return_indices, density):
+    """The spacing can be used in single precision (a little less exact)."""
+    ndim = len(shape)
+    sampling = (2.25, 0.85, 1.3)[:ndim]
+    img = binary_image(shape, pct_true=density)
+    img[(0,) * ndim] = False
+    out = distance_transform_edt(
+        img,
+        sampling=sampling,
+        return_indices=return_indices,
+        float32_spacing=True,
+    )
+    expected = ndi_cpu.distance_transform_edt(
+        cp.asnumpy(img), sampling=sampling
+    )
+    distances = out[0] if return_indices else out
+    cp.testing.assert_allclose(distances, expected, rtol=1e-5)
+    if return_indices:
+        # the indices are background locations that reproduce the distances
+        ind = cp.asnumpy(out[1])
+        assert not cp.asnumpy(img)[tuple(ind)].any()
+        offsets = ind - np.indices(shape)
+        from_indices = np.sqrt(
+            sum((o * s) ** 2 for o, s in zip(offsets, sampling))
+        )
+        np.testing.assert_allclose(from_indices, expected, rtol=1e-5)
+
+
+@pytest.mark.parametrize("ndim", [2, 3])
+@pytest.mark.parametrize("sampling", [None, 2.0, "iso"])
+def test_distance_transform_edt_float32_spacing_unused(ndim, sampling):
+    """float32_spacing has no effect if there is no (anisotropic) spacing."""
+    img = binary_image((32,) * ndim, pct_true=80)
+    if sampling == "iso":
+        sampling = (1.5,) * ndim
+    default = distance_transform_edt(img, sampling=sampling)
+    out = distance_transform_edt(img, sampling=sampling, float32_spacing=True)
+    cp.testing.assert_array_equal(out, default)
 
 
 @pytest.mark.parametrize("ndim", [1, 4, 5])

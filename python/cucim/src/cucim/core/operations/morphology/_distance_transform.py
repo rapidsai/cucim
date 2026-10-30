@@ -21,6 +21,7 @@ def distance_transform_edt(
     *,
     block_params=None,
     float64_distances=False,
+    float32_spacing=False,
 ):
     r"""Exact Euclidean distance transform.
 
@@ -68,6 +69,16 @@ def distance_transform_edt(
         SciPy behavior). Otherwise, single precision will be used for
         efficiency. Note: This parameter is specific to cuCIM and does not
         exist in SciPy.
+
+    float32_spacing : bool, optional
+        Only used if `sampling` has different values for the axes. If True,
+        the kernels compute with the spacing in single precision instead of
+        double precision. This is faster, in particular on GPUs with a low
+        double precision rate, but the nearest background element can differ
+        from the exact one if the distances to two of them differ by less than
+        the single precision rounding error (about 1e-7 relative), so the
+        distances can then differ by that amount. Note: This parameter is
+        specific to cuCIM and does not exist in SciPy.
 
     Returns
     -------
@@ -196,6 +207,7 @@ def distance_transform_edt(
         return_indices=return_indices,
         block_params=block_params,
         float64_distances=float64_distances,
+        float32_spacing=float32_spacing,
         distances=distances,
         indices=indices,
     )

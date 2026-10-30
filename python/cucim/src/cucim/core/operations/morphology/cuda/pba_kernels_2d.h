@@ -47,6 +47,12 @@
 #define BLOCKSIZE 32
 #endif
 
+// The type that is used for the pixel spacing, and for the distances computed
+// with it, in the kernels that take a pixel spacing
+#ifndef SPACING_T
+#define SPACING_T double
+#endif
+
 #ifndef pixel_int2_t
 #define pixel_int2_t short2
 #define make_pixel(x, y)  make_short2(x, y)
@@ -267,7 +273,7 @@ __global__ void kernelProximatePoints(pixel_int2_t *input, pixel_int2_t *stack, 
 }
 
 
-__global__ void kernelProximatePointsWithSpacing(pixel_int2_t *input, pixel_int2_t *stack, int height, int bandSize, double sx, double sy)
+__global__ void kernelProximatePointsWithSpacing(pixel_int2_t *input, pixel_int2_t *stack, int height, int bandSize, SPACING_T sx, SPACING_T sy)
 {
     int tx = blockIdx.x * blockDim.x + threadIdx.x;
     int ty = blockIdx.y * bandSize;
@@ -453,7 +459,7 @@ __global__ void kernelMergeBands(pixel_int2_t *color, pixel_int2_t *link, pixel_
 }
 
 
-__global__ void kernelMergeBandsWithSpacing(pixel_int2_t *color, pixel_int2_t *link, pixel_int2_t *output, int height, int bandSize, double sx, double sy)
+__global__ void kernelMergeBandsWithSpacing(pixel_int2_t *color, pixel_int2_t *link, pixel_int2_t *output, int height, int bandSize, SPACING_T sx, SPACING_T sy)
 {
     int tx = blockIdx.x * blockDim.x + threadIdx.x;
     int band1 = blockIdx.y * 2;
@@ -645,7 +651,7 @@ __global__ void kernelColor(pixel_int2_t *input, pixel_int2_t *output, int heigh
 }
 
 
-__global__ void kernelColorWithSpacing(pixel_int2_t *input, pixel_int2_t *output, int height, int width, double sx, double sy)
+__global__ void kernelColorWithSpacing(pixel_int2_t *input, pixel_int2_t *output, int height, int width, SPACING_T sx, SPACING_T sy)
 {
     __shared__ pixel_int2_t block[BLOCKSIZE][BLOCKSIZE];
 
@@ -653,7 +659,7 @@ __global__ void kernelColorWithSpacing(pixel_int2_t *input, pixel_int2_t *output
     int tid = threadIdx.y;
     int tx = blockIdx.x * blockDim.x + col;
     int lasty;
-    double dx, dy, best, dist;
+    SPACING_T dx, dy, best, dist;
     pixel_int2_t last1, last2;
 
     lasty = width - 1;
@@ -674,13 +680,13 @@ __global__ void kernelColorWithSpacing(pixel_int2_t *input, pixel_int2_t *output
         y_end = width - (step + 1) * blockDim.x;
 
         for (int ty = y_start - tid; ty >= y_end; ty -= blockDim.y) {
-            dx = static_cast<double>(last2.x - tx) * sx;
-            dy = static_cast<double>(lasty - ty) * sy;
+            dx = static_cast<SPACING_T>(last2.x - tx) * sx;
+            dy = static_cast<SPACING_T>(lasty - ty) * sy;
             best = dist = dx * dx + dy * dy;
 
             while (last2.y >= 0) {
-                dx = static_cast<double>(last1.x - tx) * sx;
-                dy = static_cast<double>(last2.y - ty) * sy;
+                dx = static_cast<SPACING_T>(last1.x - tx) * sx;
+                dy = static_cast<SPACING_T>(last2.y - ty) * sy;
                 dist = dx * dx + dy * dy;
 
                 if (dist > best)
