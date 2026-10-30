@@ -19,6 +19,7 @@ from skimage import measure as measure_cpu
 
 from cucim.skimage import data, measure
 from cucim.skimage._vendored import ndimage as ndi
+from cucim.skimage.measure import _regionprops_gpu_convex
 from cucim.skimage.measure._regionprops import PROPS
 from cucim.skimage.measure._regionprops_gpu import (
     equivalent_diameter_area,
@@ -465,6 +466,30 @@ def test_convex_flat_3d():
         )
     assert_array_equal(images[2], cp.ones((1, 1, 1), dtype=bool))
     assert result["feret_diameter_max"][2] == 1
+
+
+@pytest.mark.parametrize("ndim", [2, 3])
+def test_convex_batch_64bit_coordinates(ndim, monkeypatch):
+    # images with an axis of 2**30 pixels or more use 64-bit row extents and
+    # hull vertices; force that path on a small image
+    labels = _convex_test_labels("large_blobs", ndim)
+    properties = ["image_convex", "area_convex", "feret_diameter_max"]
+    spacing = (0.7,) * ndim
+    expected = regionprops_dict(labels, properties=properties, spacing=spacing)
+    monkeypatch.setattr(
+        _regionprops_gpu_convex,
+        "_get_row_extent_dtype",
+        lambda shape: cp.dtype(cp.int64),
+    )
+    result = regionprops_dict(labels, properties=properties, spacing=spacing)
+    for image, expected_image in zip(
+        result["image_convex"], expected["image_convex"]
+    ):
+        assert_array_equal(image, expected_image)
+    assert_array_equal(result["area_convex"], expected["area_convex"])
+    assert_allclose(
+        result["feret_diameter_max"], expected["feret_diameter_max"], rtol=1e-14
+    )
 
 
 @pytest.mark.parametrize("ndim", [2, 3])
