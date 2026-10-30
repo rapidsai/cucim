@@ -15,6 +15,7 @@ from ._regionprops_gpu_utils import (
     _includes,
     _unravel_loop_index,
     _unravel_loop_index_declarations,
+    _warp_includes,
 )
 
 __all__ = [
@@ -386,6 +387,7 @@ def _get_raw_moments_code(
           {accum_c_type} c{d} = in_coord[{d}] - bbox_min{d};"""
 
     source_flush = ""
+    reduce = []
     for c in range(num_channels):
         if has_weights:
             # need additional multiplication by the intensity value
@@ -393,6 +395,7 @@ def _get_raw_moments_code(
           w = static_cast<{accum_c_type}>(img[{num_channels} * ii + {c}]);"""
         for k, exponents in entries:
             var = f"mom{c}_{k}"
+            reduce.append((var, "sum"))
             source_pre += f"""
     {accum_c_type} {var};"""
             source_start += f"""
@@ -416,7 +419,7 @@ def _get_raw_moments_code(
                     value += f" * spacing{d}" * e
             source_flush += f"""
           atomicAdd(&moments[{m_index}], {value});"""
-    return source_pre, source_start, source_operation, source_flush
+    return source_pre, source_start, source_operation, source_flush, reduce
 
 
 def _get_moments_accum_c_type(shape, order, pixels_per_thread):
@@ -472,7 +475,7 @@ def get_raw_moments_kernel(
 
     if weighted and accum_c_type not in [None, "double"]:
         raise ValueError("weighted moments are accumulated in double")
-    pre, start, op, flush = _get_raw_moments_code(
+    pre, start, op, flush, reduce = _get_raw_moments_code(
         coord_c_type=coord_c_type,
         moments_c_type=moments_c_type,
         ndim=ndim,
@@ -496,7 +499,9 @@ def get_raw_moments_kernel(
     )
 
     # store only counts for label > 0  (label = 0 is the background)
-    source = _get_label_run_loop(pixels_per_thread, pre, start, op, flush)
+    source = _get_label_run_loop(
+        pixels_per_thread, pre, start, op, flush, warp_reduce=reduce
+    )
 
     # print(source)
     inputs = (
@@ -514,7 +519,7 @@ def get_raw_moments_kernel(
     if accum_c_type is not None:
         name += "_" + accum_c_type.replace(" ", "_")
     return cp.ElementwiseKernel(
-        inputs, outputs, source, preamble=_includes, name=name
+        inputs, outputs, source, preamble=_warp_includes, name=name
     )
 
 
