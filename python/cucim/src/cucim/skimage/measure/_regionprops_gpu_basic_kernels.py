@@ -436,6 +436,7 @@ def regionprops_bbox_coords(
     max_label=None,
     return_slices=False,
     pixels_per_thread=16,
+    compute_num_pixels=False,
     props_dict=None,
 ):
     """Determine bounding box coordinates (and slices) of each labeled region.
@@ -444,6 +445,9 @@ def regionprops_bbox_coords(
 
     if return_slices is True:
         - writes "slice" to `props_dict`
+
+    if compute_num_pixels is True:
+        - writes "num_pixels" to `props_dict` (counted in the same pass)
 
     Parameters
     ----------
@@ -456,6 +460,9 @@ def regionprops_bbox_coords(
     return_slices : bool, optional
         If True, convert the bounding box coordinates array to a list of slice
         tuples.
+    compute_num_pixels : bool, optional
+        If True, also count the pixels of each region in the same pass and
+        store the counts as "num_pixels" in `props_dict`.
 
     Returns
     -------
@@ -477,9 +484,12 @@ def regionprops_bbox_coords(
 
     coord_dtype, int32_coords = _get_coord_dtype(label_image.size)
 
+    count_dtype, int32_count = _get_count_dtype(label_image.size)
     bbox_kernel = get_bbox_coords_kernel(
         ndim=label_image.ndim,
         int32_coords=int32_coords,
+        int32_count=int32_count,
+        compute_num_pixels=compute_num_pixels,
         pixels_per_thread=pixels_per_thread,
     )
 
@@ -489,6 +499,10 @@ def regionprops_bbox_coords(
     # Initialize value for atomicMin on first ndim coordinates
     # The value for atomicMax columns is already 0 as desired.
     bbox_coords[:, :ndim] = cp.iinfo(coord_dtype).max
+    outputs = (bbox_coords,)
+    if compute_num_pixels:
+        counts = cp.zeros(max_label, dtype=count_dtype)
+        outputs += (counts,)
 
     # make a copy if the inputs are not already C-contiguous
     if not label_image.flags.c_contiguous:
@@ -497,11 +511,13 @@ def regionprops_bbox_coords(
     bbox_kernel(
         label_image,
         label_image.size,
-        bbox_coords,
+        *outputs,
         size=math.ceil(label_image.size / pixels_per_thread),
     )
     if props_dict is not None:
         props_dict["bbox"] = bbox_coords
+        if compute_num_pixels:
+            props_dict["num_pixels"] = counts
 
     if return_slices:
         bbox_coords_cpu = cp.asnumpy(bbox_coords)
