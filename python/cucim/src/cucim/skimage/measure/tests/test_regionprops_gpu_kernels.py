@@ -569,6 +569,20 @@ def test_centroid(via_moments, local, ndim):
         assert_allclose(centroid[:, 2], expected[name + "-2"])
 
 
+@pytest.mark.parametrize("ndim", [2, 3])
+def test_centroid_reuses_num_pixels(ndim):
+    shape = (256, 128) if ndim == 2 else (40, 32, 24)
+    labels = get_labels_nd(shape)
+    max_label = int(cp.max(labels))
+    expected = regionprops_centroid(labels, max_label=max_label)
+    props = {}
+    regionprops_num_pixels(labels, max_label=max_label, props_dict=props)
+    centroid = regionprops_centroid(
+        labels, max_label=max_label, props_dict=props
+    )
+    assert_allclose(centroid, expected)
+
+
 @pytest.mark.parametrize("spacing", [None, (0.8, 0.5), (0.2, 1.3)])
 @pytest.mark.parametrize("order", [0, 1, 2, 3])
 @pytest.mark.parametrize(
