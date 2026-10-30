@@ -63,6 +63,33 @@ def get_pba2d_src(block_size_2d=64, marker=-32768, pixel_int2_t="short2"):
     return pba2d_code
 
 
+@cupy.memoize(for_each_device=True)
+def _get_pba2d_kernels(block_size, marker, pixel_int2_t, with_spacing):
+    """Return the kernels of the 2D algorithm as a dictionary.
+
+    The kernels that take a pixel spacing are returned under the names of the
+    kernels without a spacing.
+    """
+    module = cupy.RawModule(
+        code=get_pba2d_src(
+            block_size_2d=block_size, marker=marker, pixel_int2_t=pixel_int2_t
+        )
+    )
+    suffix = "WithSpacing" if with_spacing else ""
+    names = [
+        "kernelFloodDown",
+        "kernelFloodUp",
+        "kernelPropagateInterband",
+        "kernelUpdateVertical",
+        "kernelCreateForwardPointers",
+        "kernelDoubleToSingleList",
+    ]
+    kernels = {name: module.get_function(name) for name in names}
+    for name in ["kernelProximatePoints", "kernelMergeBands", "kernelColor"]:
+        kernels[name] = module.get_function(name + suffix)
+    return kernels
+
+
 def _get_block_size(check_warp_size=False):
     if check_warp_size:
         dev = cupy.cuda.runtime.getDevice()
@@ -399,33 +426,18 @@ def _pba_2d(
     int2_dtype = cupy.dtype({"names": ["x", "y"], "formats": [int_dtype] * 2})
     margin = cupy.empty((2 * m1 * sx,), dtype=int2_dtype)
 
-    # phase 1 of PBA. m1 must divide texture size and be <= 64
-    pba2d = cupy.RawModule(
-        code=get_pba2d_src(
-            block_size_2d=block_size,
-            marker=marker,
-            pixel_int2_t=pixel_int2_type,
-        )
+    kernels = _get_pba2d_kernels(
+        block_size, marker, pixel_int2_type, sampling is not None
     )
-    kernelFloodDown = pba2d.get_function("kernelFloodDown")
-    kernelFloodUp = pba2d.get_function("kernelFloodUp")
-    kernelPropagateInterband = pba2d.get_function("kernelPropagateInterband")
-    kernelUpdateVertical = pba2d.get_function("kernelUpdateVertical")
-    kernelCreateForwardPointers = pba2d.get_function(
-        "kernelCreateForwardPointers"
-    )
-    kernelDoubleToSingleList = pba2d.get_function("kernelDoubleToSingleList")
-
-    if sampling is None:
-        kernelProximatePoints = pba2d.get_function("kernelProximatePoints")
-        kernelMergeBands = pba2d.get_function("kernelMergeBands")
-        kernelColor = pba2d.get_function("kernelColor")
-    else:
-        kernelProximatePoints = pba2d.get_function(
-            "kernelProximatePointsWithSpacing"
-        )
-        kernelMergeBands = pba2d.get_function("kernelMergeBandsWithSpacing")
-        kernelColor = pba2d.get_function("kernelColorWithSpacing")
+    kernelFloodDown = kernels["kernelFloodDown"]
+    kernelFloodUp = kernels["kernelFloodUp"]
+    kernelPropagateInterband = kernels["kernelPropagateInterband"]
+    kernelUpdateVertical = kernels["kernelUpdateVertical"]
+    kernelCreateForwardPointers = kernels["kernelCreateForwardPointers"]
+    kernelDoubleToSingleList = kernels["kernelDoubleToSingleList"]
+    kernelProximatePoints = kernels["kernelProximatePoints"]
+    kernelMergeBands = kernels["kernelMergeBands"]
+    kernelColor = kernels["kernelColor"]
 
     # Phase 1 works along the first axis of the (sy, sx) image, in bands of
     # bandSize1 rows. Each launch gets the size of the image that it reads.

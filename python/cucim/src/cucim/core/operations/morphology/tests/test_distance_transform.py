@@ -631,6 +631,49 @@ def test_distance_transform_edt_sampling_not_on_device(monkeypatch):
     distance_transform_edt(img, sampling=(1.5, 2.0))
 
 
+def test_pba_kernels_are_cached():
+    """The kernels are looked up once, not for every call."""
+    from cucim.core.operations.morphology._pba_2d import _get_pba2d_kernels
+    from cucim.core.operations.morphology._pba_3d import _get_pba3d_kernels
+
+    for get_kernels, args in [
+        (_get_pba2d_kernels, (32, -32768, "short2")),
+        (_get_pba3d_kernels, (32, 64)),
+    ]:
+        plain = get_kernels(*args, False)
+        assert get_kernels(*args, False) is plain
+        spacing = get_kernels(*args, True)
+        assert get_kernels(*args, True) is spacing
+        # the variants with a spacing are different kernels with the same keys
+        assert plain.keys() == spacing.keys()
+        assert (
+            plain["kernelColor" if len(args) == 3 else "kernelColorAxis"]
+            is not spacing[
+                "kernelColor" if len(args) == 3 else "kernelColorAxis"
+            ]
+        )
+
+
+@pytest.mark.parametrize("ndim", [2, 3])
+def test_distance_transform_edt_repeated_calls(ndim):
+    """Calls with and without spacing in any order use the right kernels."""
+    img = binary_image((40,) * ndim, pct_true=80)
+    sampling = tuple(1.0 + 0.5 * i for i in range(ndim))
+    expected = ndi_cpu.distance_transform_edt(cp.asnumpy(img))
+    expected_s = ndi_cpu.distance_transform_edt(
+        cp.asnumpy(img), sampling=sampling
+    )
+    for _ in range(2):
+        cp.testing.assert_allclose(
+            distance_transform_edt(img), expected, rtol=1e-6
+        )
+        cp.testing.assert_allclose(
+            distance_transform_edt(img, sampling=sampling),
+            expected_s,
+            rtol=1e-6,
+        )
+
+
 @pytest.mark.parametrize("ndim", [1, 4, 5])
 def test_distance_transform_edt_unsupported_ndim(ndim):
     with pytest.raises(NotImplementedError):

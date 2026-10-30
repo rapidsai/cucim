@@ -95,6 +95,23 @@ def get_pba3d_src(
 
 
 @cupy.memoize(for_each_device=True)
+def _get_pba3d_kernels(block_size, size_max, with_spacing):
+    """Return the kernels of the 3D algorithm as a dictionary.
+
+    The kernels that take a pixel spacing are returned under the names of the
+    kernels without a spacing.
+    """
+    module = cupy.RawModule(
+        code=get_pba3d_src(block_size_3d=block_size, size_max=size_max)
+    )
+    suffix = "WithSpacing" if with_spacing else ""
+    kernels = {"kernelFloodZ": module.get_function("kernelFloodZ")}
+    for name in ["kernelMaurerAxis", "kernelColorAxis"]:
+        kernels[name] = module.get_function(name + suffix)
+    return kernels
+
+
+@cupy.memoize(for_each_device=True)
 def _get_encode3d_kernel(size_max, marker=-2147483648):
     """Pack array coordinates into a single integer."""
     if size_max > 1024:
@@ -391,18 +408,13 @@ def _pba_3d(
     pba_images = [input_arr, output]
 
     block = (blockx, blocky, 1)
-    pba3d = cupy.RawModule(
-        code=get_pba3d_src(block_size_3d=block_size, size_max=size_max)
-    )
-
-    kernelFloodZ = pba3d.get_function("kernelFloodZ")
+    kernels = _get_pba3d_kernels(block_size, size_max, sampling is not None)
+    kernelFloodZ = kernels["kernelFloodZ"]
+    kernelMaurerAxis = kernels["kernelMaurerAxis"]
+    kernelColorAxis = kernels["kernelColorAxis"]
     if sampling is None:
-        kernelMaurerAxis = pba3d.get_function("kernelMaurerAxis")
-        kernelColorAxis = pba3d.get_function("kernelColorAxis")
         sampling_args = ()
     else:
-        kernelMaurerAxis = pba3d.get_function("kernelMaurerAxisWithSpacing")
-        kernelColorAxis = pba3d.get_function("kernelColorAxisWithSpacing")
         sampling = tuple(map(float, sampling))
         sampling_args = (sampling[2], sampling[1], sampling[0])
 
