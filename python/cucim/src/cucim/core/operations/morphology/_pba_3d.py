@@ -18,6 +18,7 @@ from ._pba_2d import (
     _generate_shape,
     _get_block_size,
     _guard_no_site,
+    _image_ctypes,
 )
 
 pba3d_defines_template = """
@@ -146,23 +147,6 @@ def _get_pba3d_kernels(
     for name in ["kernelMaurerAxis", "kernelColorAxis"]:
         kernels[name] = module.get_function(name + suffix)
     return kernels
-
-
-# C types of the dtypes that the kernels read directly. The kernels only test
-# if an element is 0.
-_image_ctypes = {
-    "bool": "bool",
-    "int8": "signed char",
-    "uint8": "unsigned char",
-    "int16": "short",
-    "uint16": "unsigned short",
-    "int32": "int",
-    "uint32": "unsigned int",
-    "int64": "long long",
-    "uint64": "unsigned long long",
-    "float32": "float",
-    "float64": "double",
-}
 
 
 def _get_decode3d_code(encoding, int_type=""):

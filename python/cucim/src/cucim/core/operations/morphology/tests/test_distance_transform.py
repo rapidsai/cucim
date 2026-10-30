@@ -804,7 +804,7 @@ def test_distance_transform_edt_3d_long_axis(shape, sampling):
         np.complex64,
     ],
 )
-@pytest.mark.parametrize("shape", [(6, 21, 40)])
+@pytest.mark.parametrize("shape", [(20, 30), (6, 21, 40)])
 def test_distance_transform_edt_input_dtypes(dtype, shape):
     """Any non-zero value is foreground, whatever the dtype of the image."""
     rng = np.random.default_rng(5)

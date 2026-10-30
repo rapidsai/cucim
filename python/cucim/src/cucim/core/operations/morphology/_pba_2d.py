@@ -27,6 +27,7 @@ pba2d_defines_template = """
 #define pixel_int2_t {pixel_int2_t}                // typically short2 (int2 for images with > 32k pixels per side)
 #define make_pixel(x, y)  {make_pixel_func}(x, y)  // typically make_short2 (make_int2 images with > 32k pixels per side
 #define SPACING_T {spacing_t}  // type of the pixel spacing and of the distances computed with it
+#define IMAGE_T {image_t}  // type of the elements of the input image
 
 """  # noqa: E501
 
@@ -53,6 +54,7 @@ def get_pba2d_src(
     marker=-32768,
     pixel_int2_t="short2",
     spacing_t="double",
+    image_t="unsigned char",
 ):
     make_pixel_func = "make_" + pixel_int2_t
 
@@ -62,6 +64,7 @@ def get_pba2d_src(
         pixel_int2_t=pixel_int2_t,
         make_pixel_func=make_pixel_func,
         spacing_t=spacing_t,
+        image_t=image_t,
     )
     kernel_directory = os.path.join(os.path.dirname(__file__), "cuda")
     with open(os.path.join(kernel_directory, "pba_kernels_2d.h")) as f:
@@ -73,7 +76,12 @@ def get_pba2d_src(
 
 @cupy.memoize(for_each_device=True)
 def _get_pba2d_kernels(
-    block_size, marker, pixel_int2_t, with_spacing, spacing_t="double"
+    block_size,
+    marker,
+    pixel_int2_t,
+    with_spacing,
+    spacing_t="double",
+    image_t="unsigned char",
 ):
     """Return the kernels of the 2D algorithm as a dictionary.
 
@@ -86,6 +94,7 @@ def _get_pba2d_kernels(
             marker=marker,
             pixel_int2_t=pixel_int2_t,
             spacing_t=spacing_t,
+            image_t=image_t,
         )
     )
     suffix = "WithSpacing" if with_spacing else ""
@@ -111,48 +120,22 @@ def _get_block_size(check_warp_size=False):
         return 32
 
 
-@cupy.memoize(for_each_device=True)
-def _get_pack_kernel(int_type, marker=-32768):
-    """Pack coordinates into array of type short2 (or int2).
-
-    This kernel works with 2D input data, `arr` (typically boolean).
-
-    The output array, `out` will be 3D with a signed integer dtype.
-    It will have size 2 on the last axis so that it can be viewed as a CUDA
-    vector type such as `int2` or `float2`.
-    """
-    code = f"""
-    if (arr[i]) {{
-        out[2*i] = {marker};
-        out[2*i + 1] = {marker};
-    }} else {{
-        int shape_1 = arr.shape()[1];
-        int _i = i;
-        int ind_1 = _i % shape_1;
-        _i /= shape_1;
-        out[2*i] = ind_1;   // out.x
-        out[2*i + 1] = _i;  // out.y
-    }}
-    """
-    return cupy.ElementwiseKernel(
-        in_params="raw B arr",
-        out_params="raw I out",
-        operation=code,
-    )
-
-
-def _pack_int2(arr, marker=-32768, int_dtype=cupy.int16):
-    if arr.ndim != 2:
-        raise ValueError("only 2d arr supported")
-    int2_dtype = cupy.dtype({"names": ["x", "y"], "formats": [int_dtype] * 2})
-    out = cupy.zeros(arr.shape + (2,), dtype=int_dtype)
-    assert out.size == 2 * arr.size
-    pack_kernel = _get_pack_kernel(
-        int_type="short" if int_dtype == cupy.int16 else "int", marker=marker
-    )
-    pack_kernel(arr, out, size=arr.size)
-    out = cupy.squeeze(out.view(int2_dtype))
-    return out
+# C types of the dtypes that the kernels read directly. The kernels only test
+# if an element is 0. Other dtypes (e.g. float16 or complex) are converted to
+# boolean arrays.
+_image_ctypes = {
+    "bool": "bool",
+    "int8": "signed char",
+    "uint8": "unsigned char",
+    "int16": "short",
+    "uint16": "unsigned short",
+    "int32": "int",
+    "uint32": "unsigned int",
+    "int64": "long long",
+    "uint64": "unsigned long long",
+    "float32": "float",
+    "float64": "double",
+}
 
 
 def _unpack_int2(img, make_copy=False, int_dtype=cupy.int16):
@@ -357,6 +340,10 @@ def _pba_2d(
     #       overhead of querying properties
     block_size = _get_block_size(check_warp_size)
 
+    if arr.dtype.name not in _image_ctypes:
+        # other types (e.g. float16 or complex) are converted
+        arr = arr != 0
+
     # Phases 2 and 3 have one thread block per block_size entries of the first
     # axis, and each thread walks along the whole second axis. Much less work
     # can be done in parallel if the first axis is short, so a short first axis
@@ -433,15 +420,23 @@ def _pba_2d(
 
     marker = _init_marker(int_dtype)
 
-    input_arr = _pack_int2(arr, marker=marker, int_dtype=int_dtype)
-    output = cupy.zeros_like(input_arr)
-
+    # The arrays are written before they are read: the first kernel reads the
+    # image and writes the first array.
     int2_dtype = cupy.dtype({"names": ["x", "y"], "formats": [int_dtype] * 2})
+    input_arr = cupy.empty((sy, sx), dtype=int2_dtype)
+    output = cupy.empty_like(input_arr)
+    # strides of the image in elements
+    image_strides = tuple(np.int64(st // arr.itemsize) for st in arr.strides)
     margin = cupy.empty((2 * m1 * sx,), dtype=int2_dtype)
 
     spacing_t = "float" if float32_spacing else "double"
     kernels = _get_pba2d_kernels(
-        block_size, marker, pixel_int2_type, sampling is not None, spacing_t
+        block_size,
+        marker,
+        pixel_int2_type,
+        sampling is not None,
+        spacing_t,
+        _image_ctypes[arr.dtype.name],
     )
     kernelFloodDownUp = kernels["kernelFloodDownUp"]
     kernelPropagateInterband = kernels["kernelPropagateInterband"]
@@ -457,8 +452,10 @@ def _pba_2d(
     block = (block_size, 1, 1)
     grid = (sx // block_size, m1, 1)
     bandSize1 = sy // m1
-    # kernelFloodDownUp modifies input_arr in-place
-    kernelFloodDownUp(grid, block, (input_arr, sx, bandSize1))
+    # kernelFloodDownUp reads the image and modifies input_arr in-place
+    kernelFloodDownUp(
+        grid, block, (arr,) + image_strides + (input_arr, sx, bandSize1)
+    )
     # kernelPropagateInterband fills values into margin
     kernelPropagateInterband(
         grid, block, (input_arr, margin, sx, sy, bandSize1)

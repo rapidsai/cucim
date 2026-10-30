@@ -53,6 +53,10 @@
 #define SPACING_T double
 #endif
 
+#ifndef IMAGE_T
+#define IMAGE_T unsigned char
+#endif
+
 #ifndef pixel_int2_t
 #define pixel_int2_t short2
 #define make_pixel(x, y)  make_short2(x, y)
@@ -94,23 +98,24 @@ extern "C"{
 
 // The sweeps of phase 1: every thread handles one column of one band.
 //
-// Sweep down the band, carrying the last site that was seen. This runs in
-// place.
-__device__ void floodDown(pixel_int2_t *data, int width, int bandSize)
+// Sweep down the band, carrying the last site that was seen. This reads the
+// image (the sites are the pixels that are 0), so the image does not have to
+// be packed in a separate kernel. The strides are in elements of the image,
+// which can be any array of type IMAGE_T.
+__device__ void floodDown(const IMAGE_T *image, long long stride_y, long long stride_x, pixel_int2_t *data, int width, int bandSize)
 {
     int tx = blockIdx.x * blockDim.x + threadIdx.x;
     int ty = blockIdx.y * bandSize;
     int id = TOID(tx, ty, width);
+    const IMAGE_T *pixel = image + ty * stride_y + tx * stride_x;
 
-    pixel_int2_t pixel1, pixel2;
+    pixel_int2_t pixel1;
 
     pixel1 = make_pixel(MARKER, MARKER);
 
-    for (int i = 0; i < bandSize; i++, id += width) {
-        pixel2 = data[id];
-
-        if (pixel2.x != MARKER)
-            pixel1 = pixel2;
+    for (int i = 0; i < bandSize; i++, id += width, pixel += stride_y) {
+        if (*pixel == 0)
+            pixel1 = make_pixel(tx, ty + i);
 
         data[id] = pixel1;
     }
@@ -145,9 +150,9 @@ __device__ void floodUp(pixel_int2_t *data, int width, int bandSize)
 // Both sweeps are done by the same thread on the same values, so they do not
 // have to be separate kernels (a thread only reads values that it has written
 // itself).
-__global__ void kernelFloodDownUp(pixel_int2_t *data, int width, int bandSize)
+__global__ void kernelFloodDownUp(const IMAGE_T *image, long long stride_y, long long stride_x, pixel_int2_t *data, int width, int bandSize)
 {
-    floodDown(data, width, bandSize);
+    floodDown(image, stride_y, stride_x, data, width, bandSize);
     floodUp(data, width, bandSize);
 }
 
