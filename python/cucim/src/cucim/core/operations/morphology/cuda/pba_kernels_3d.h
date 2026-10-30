@@ -1,6 +1,7 @@
 /*
+ * SPDX-FileCopyrightText: Copyright: (c) 2019 School of Computing, National University of Singapore
  * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
- * SPDX-License-Identifier: Apache-2.0
+ * SPDX-License-Identifier: Apache-2.0 AND MIT
  */
 
 // Euclidean Distance Transform
@@ -8,6 +9,7 @@
 // Kernels for the 3D version of the Parallel Banding Algorithm (PBA+).
 //
 // MIT license: see 3rdparty/LICENSE.pba+
+// Copyright: (c) 2019 School of Computing, National University of Singapore
 //
 // Modifications by Gregory Lee (2022) (NVIDIA)
 // - allow user-defined ENCODED_INT_TYPE, ENCODE, DECODE
