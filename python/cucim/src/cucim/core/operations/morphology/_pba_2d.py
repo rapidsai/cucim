@@ -487,7 +487,8 @@ def _pba_2d(
         vals = vals + (distances,)
     if return_indices:
         if indices_inplace:
-            _check_indices(indices, (arr.ndim,) + arr.shape, x.dtype.itemsize)
+            # `arr` may have been padded, so use the shape of the cropped result
+            _check_indices(indices, (arr.ndim,) + y.shape, x.dtype.itemsize)
             indices[0, ...] = y
             indices[1, ...] = x
         else:

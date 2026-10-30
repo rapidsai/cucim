@@ -277,6 +277,26 @@ def test_distance_transform_inplace_indices(
         cp.testing.assert_array_equal(indices, expected)
 
 
+@pytest.mark.parametrize(
+    "shape",
+    [(40, 70), (33, 100), (1, 50), (33, 40, 50), (5, 30, 70), (64, 5, 33)],
+)
+@pytest.mark.parametrize("return_distances", [False, True])
+def test_distance_transform_inplace_indices_unpadded_shape(
+    shape, return_distances
+):
+    """The shape of `indices` is that of the input, not of the padded input."""
+    ndim = len(shape)
+    img = binary_image(shape, pct_true=80)
+    common_kwargs = dict(return_distances=return_distances, return_indices=True)
+    indices = cp.empty((ndim,) + shape, dtype=cp.int32)
+    distance_transform_edt(img, indices=indices, **common_kwargs)
+    expected = distance_transform_edt(img, **common_kwargs)
+    if return_distances:
+        expected = expected[1]
+    cp.testing.assert_array_equal(indices, expected)
+
+
 @pytest.mark.parametrize("ndim", [2, 3])
 def test_distance_transform_inplace_indices_errors(ndim):
     img = binary_image((32,) * ndim, pct_true=80)
