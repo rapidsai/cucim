@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import cupy as cp
+import numpy as np
 
 from ._pba_2d import _pba_2d
 from ._pba_3d import _pba_3d
@@ -159,15 +160,6 @@ def distance_transform_edt(
             [0, 0, 3, 3, 4]]])
 
     """
-    scalar_sampling = None
-    if sampling is not None:
-        unique_sampling = cp.unique(cp.atleast_1d(sampling))
-        if len(unique_sampling) == 1:
-            # In the isotropic case, can use the kernels without sample scaling
-            # and just adjust the final distance accordingly.
-            scalar_sampling = float(unique_sampling.item())
-            sampling = None
-
     if image.ndim == 3:
         pba_func = _pba_3d
     elif image.ndim == 2:
@@ -176,6 +168,26 @@ def distance_transform_edt(
         raise NotImplementedError(
             "Only 2D and 3D distance transforms are supported."
         )
+
+    scalar_sampling = None
+    if sampling is not None:
+        # This is done on the host: using the device to compare a few values
+        # would copy them to the device and synchronize with it.
+        if isinstance(sampling, cp.ndarray):
+            sampling = cp.asnumpy(sampling)
+        sampling = np.atleast_1d(np.asarray(sampling, dtype=np.float64))
+        if sampling.ndim != 1 or sampling.size not in (1, image.ndim):
+            raise ValueError(
+                "sampling must be a scalar or a sequence with one value per "
+                f"axis of the image ({image.ndim}), got shape {sampling.shape}"
+            )
+        if (sampling == sampling[0]).all():
+            # In the isotropic case, can use the kernels without sample scaling
+            # and just adjust the final distance accordingly.
+            scalar_sampling = float(sampling[0])
+            sampling = None
+        else:
+            sampling = tuple(sampling.tolist())
 
     vals = pba_func(
         image,

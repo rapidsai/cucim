@@ -582,6 +582,55 @@ def test_distance_transform_edt_no_background(
         assert cp.isinf(distances).all()
 
 
+@pytest.mark.parametrize("ndim", [2, 3])
+@pytest.mark.parametrize(
+    "container", [list, tuple, np.asarray, cp.asarray, "scalar", "np_scalar"]
+)
+@pytest.mark.parametrize("aniso", [False, True])
+def test_distance_transform_edt_sampling_types(ndim, container, aniso):
+    """`sampling` can be a scalar, or a sequence of any type."""
+    img = binary_image((24,) * ndim, pct_true=80)
+    if container in ("scalar", "np_scalar"):
+        if aniso:
+            pytest.skip("a scalar sampling is isotropic")
+        sampling = 1.5 if container == "scalar" else np.float32(1.5)
+    else:
+        values = (
+            tuple(1.0 + 0.5 * i for i in range(ndim)) if aniso else (2,) * ndim
+        )
+        sampling = container(values)
+    out = distance_transform_edt(img, sampling=sampling)
+    expected = ndi_cpu.distance_transform_edt(
+        cp.asnumpy(img),
+        sampling=cp.asnumpy(sampling)
+        if isinstance(sampling, cp.ndarray)
+        else sampling,
+    )
+    cp.testing.assert_allclose(out, expected, rtol=1e-6)
+
+
+@pytest.mark.parametrize("ndim", [2, 3])
+@pytest.mark.parametrize(
+    "sampling", [(1.0, 2.0, 3.0, 4.0), [1.0] * 5, [[1.0, 2.0]]]
+)
+def test_distance_transform_edt_sampling_invalid(ndim, sampling):
+    img = binary_image((8,) * ndim, pct_true=80)
+    with pytest.raises(ValueError, match="sampling"):
+        distance_transform_edt(img, sampling=sampling)
+
+
+def test_distance_transform_edt_sampling_not_on_device(monkeypatch):
+    """Checking `sampling` must not use the device (it would synchronize)."""
+
+    def fail(*args, **kwargs):
+        raise AssertionError("cp.unique should not be used")
+
+    monkeypatch.setattr(cp, "unique", fail)
+    img = binary_image((24, 24), pct_true=80)
+    distance_transform_edt(img, sampling=(1.5, 1.5))
+    distance_transform_edt(img, sampling=(1.5, 2.0))
+
+
 @pytest.mark.parametrize("ndim", [1, 4, 5])
 def test_distance_transform_edt_unsupported_ndim(ndim):
     with pytest.raises(NotImplementedError):
