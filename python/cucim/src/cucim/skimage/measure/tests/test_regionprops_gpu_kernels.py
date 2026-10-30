@@ -393,6 +393,73 @@ def test_image_convex_batch_2d(kind):
         assert images[lab - 1].size == 0
 
 
+@pytest.mark.parametrize("spacing", [None, (0.5, 0.35, 0.75)])
+@pytest.mark.parametrize("kind", ["blobs", "large_blobs", "lines", "random"])
+def test_convex_batch_3d(spacing, kind):
+    labels = _convex_test_labels(kind, 3)
+    max_label = int(labels.max())
+    properties = ["image_convex", "area_convex", "solidity"]
+    result = regionprops_dict(labels, properties=properties, spacing=spacing)
+    with warnings.catch_warnings():
+        # scikit-image's qhull fails for flat regions (see below)
+        warnings.simplefilter("ignore")
+        expected = measure_cpu.regionprops_table(
+            cp.asnumpy(labels),
+            properties=["label"] + properties,
+            spacing=spacing,
+        )
+    images = result["image_convex"]
+    assert len(images) == max_label
+    n_compared = 0
+    for n, lab in enumerate(expected["label"]):
+        if not expected["image_convex"][n].any():
+            # scikit-image returns an empty image for regions whose voxel
+            # centers are coplanar (test_convex_flat_3d)
+            continue
+        assert_array_equal(images[lab - 1], expected["image_convex"][n])
+        assert_allclose(
+            result["area_convex"][lab - 1],
+            expected["area_convex"][n],
+            rtol=1e-12,
+        )
+        assert_allclose(
+            result["solidity"][lab - 1], expected["solidity"][n], rtol=1e-6
+        )
+        n_compared += 1
+    assert n_compared > 0
+    for lab in set(range(1, max_label + 1)) - set(expected["label"]):
+        assert images[lab - 1].size == 0
+        assert result["area_convex"][lab - 1] == 0
+
+
+def test_convex_flat_3d():
+    # Regions that are flat along an axis get the convex image of the
+    # squeezed 2D region (as cuCIM's convex_hull_image did; scikit-image's
+    # qhull fails and returns an empty image), and a single voxel itself.
+    labels = cp.zeros((5, 30, 40), dtype=cp.int32)
+    labels[2, 3:20, 5:9] = 1
+    labels[2, 10:25, 20:35] = 1  # one plane, two components
+    labels[0:4, 7, 1:30:3] = 2  # one row index, gaps along x
+    labels[4, 0, 0] = 3
+    result = regionprops_dict(
+        labels, properties=["image_convex", "area_convex"]
+    )
+    images = result["image_convex"]
+    for lab, axis in [(1, 0), (2, 1)]:
+        mask = labels == lab
+        coords = cp.nonzero(mask)
+        crop = mask[
+            tuple(slice(int(c.min()), int(c.max()) + 1) for c in coords)
+        ]
+        expected = measure_cpu.regionprops_table(
+            cp.asnumpy(crop.squeeze(axis)).astype(np.uint8),
+            properties=["image_convex"],
+        )["image_convex"][0]
+        assert_array_equal(images[lab - 1].squeeze(axis), expected)
+        assert result["area_convex"][lab - 1] == expected.sum()
+    assert_array_equal(images[2], cp.ones((1, 1, 1), dtype=bool))
+
+
 @pytest.mark.parametrize("ndim", [2, 3])
 @pytest.mark.parametrize("area_dtype", [cp.float32, cp.float64])
 @pytest.mark.parametrize("spacing", [None, (0.5, 0.35, 0.75)])

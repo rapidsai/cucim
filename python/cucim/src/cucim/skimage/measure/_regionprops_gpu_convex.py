@@ -11,6 +11,7 @@ import numpy as np
 from cucim.skimage._shared.distance import pdist_max_blockwise
 from cucim.skimage._shared.utils import _ndarray_argwhere
 from cucim.skimage._vendored import ndimage as ndi
+from cucim.skimage.morphology import convex_hull_image
 
 from ._regionprops_gpu_basic_kernels import _bbox_slices, regionprops_image
 from ._regionprops_gpu_utils import _warp_includes
@@ -288,7 +289,7 @@ __device__ __forceinline__ long long cucim_ceil_div(long long a,
 
 
 @cp.memoize(for_each_device=True)
-def _get_hull_chains_2d_kernel():
+def _get_hull_chains_2d_kernel(centers_only=False):
     """Kernel building the convex hull of each 2D region, one thread per label.
 
     The hull of a region's diamond points (each pixel center +- 0.5 along
@@ -325,6 +326,14 @@ def _get_hull_chains_2d_kernel():
     for a bounding box of h rows), with strictly increasing y. A label's
     chains have room for 2h + 1 vertices each, at ``2 * offsets[label - 1] +
     label - 1``.
+
+    With `centers_only`, the points are the pixel centers of each row's
+    first and last pixel instead (x = 2 * first[k] and 2 * last[k] at y = 2k),
+    as needed for the planes between two planes of a 3D region (see
+    `_convex_hull_candidates_3d`).
+
+    The kernel works on any sequence of "segments" of rows: segment i has
+    the rows offsets[i] to offsets[i + 1] - 1.
     """
     source = """
       long long r0 = offsets[i];
@@ -332,6 +341,20 @@ def _get_hull_chains_2d_kernel():
       long long base = 2 * r0 + i;
       cucim_hull_candidates<E> left(&left_chains[2 * base], 1);
       cucim_hull_candidates<E> right(&right_chains[2 * base], -1);
+"""
+    if centers_only:
+        source += """
+      for (E k = 0; k < h; k++) {
+        E first = row_first[r0 + k];
+        E last = row_last[r0 + k];
+        if (first <= last) {
+          left.add(2 * k, 2 * first);
+          right.add(2 * k, 2 * last);
+        }
+      }
+"""
+    else:
+        source += """
       // extents of the previous row (none before the first row)
       E prev_first = 1;
       E prev_last = 0;
@@ -367,18 +390,23 @@ def _get_hull_chains_2d_kernel():
         prev_first = first;
         prev_last = last;
       }
+"""
+    source += """
       left.finish();
       right.finish();
       chain_sizes[2 * i] = left.chain.n;
       chain_sizes[2 * i + 1] = right.chain.n;\n"""
     inputs = "raw E row_first, raw E row_last, raw int64 offsets"
     outputs = "raw E left_chains, raw E right_chains, raw int32 chain_sizes"
+    name = "cucim_convex_hull_chains_2d"
+    if centers_only:
+        name += "_centers"
     return cp.ElementwiseKernel(
         inputs,
         outputs,
         source,
         preamble=_hull_2d_includes,
-        name="cucim_convex_hull_chains_2d",
+        name=name,
     )
 
 
@@ -456,18 +484,22 @@ def _get_hull_rows_2d_kernel():
     )
 
 
-def _convex_hull_chains_2d(row_first, row_last, offsets, num_rows, max_label):
+def _convex_hull_chains_2d(
+    row_first, row_last, offsets, num_rows, max_label, centers_only=False
+):
     """Left and right hull chains of each 2D region, and their sizes.
 
     Takes row extents in the layout of `_regionprops_row_extents` (of the
     regions, or of their convex images). See `_get_hull_chains_2d_kernel`.
+    `max_label` is the number of segments of rows (offsets has one more
+    element).
     """
     dtype = row_first.dtype
     capacity = 2 * num_rows + max_label
     left_chains = cp.empty((capacity, 2), dtype=dtype)
     right_chains = cp.empty((capacity, 2), dtype=dtype)
     chain_sizes = cp.empty((max_label, 2), dtype=cp.int32)
-    _get_hull_chains_2d_kernel()(
+    _get_hull_chains_2d_kernel(centers_only)(
         row_first,
         row_last,
         offsets,
@@ -585,6 +617,317 @@ def _feret_diameter_max_2d(
 
 
 @cp.memoize(for_each_device=True)
+def _get_merged_planes_kernel():
+    """Kernel merging the row extents of each two neighboring planes.
+
+    For a 3D label with d planes of h rows in its bounding box, merged plane m
+    (m = 0, ..., d) lies between planes m - 1 and m; each of its rows has the
+    smallest first and the largest last column of that row in the two planes
+    (planes -1 and d are empty). One thread per row of the merged planes,
+    whose rows are stored like the row extents, at ``merged_offsets``.
+    """
+    source = """
+      // the label of this row: the last l with merged_offsets[l] <= i
+      long long l = 0;
+      long long l_end = max_label;
+      while (l_end - l > 1) {
+        long long mid = (l + l_end) / 2;
+        if (merged_offsets[mid] <= i) {
+          l = mid;
+        } else {
+          l_end = mid;
+        }
+      }
+      long long local = static_cast<long long>(i) - merged_offsets[l];
+      long long d = static_cast<long long>(bbox[l * 6 + 3] - bbox[l * 6]);
+      long long h = static_cast<long long>(bbox[l * 6 + 4] - bbox[l * 6 + 1]);
+      long long m = local / h;
+      long long y = local - m * h;
+      E first = cuda::std::numeric_limits<E>::max();
+      E last = -1;
+      if (m > 0) {
+        long long r = offsets[l] + (m - 1) * h + y;
+        first = row_first[r];
+        last = row_last[r];
+      }
+      if (m < d) {
+        long long r = offsets[l] + m * h + y;
+        first = min(first, row_first[r]);
+        last = max(last, row_last[r]);
+      }
+      merged_first = first;
+      merged_last = last;\n"""
+    inputs = (
+        "raw E row_first, raw E row_last, raw int64 offsets, "
+        "raw int64 merged_offsets, raw B bbox, int64 max_label"
+    )
+    return cp.ElementwiseKernel(
+        inputs,
+        "E merged_first, E merged_last",
+        source,
+        preamble=_warp_includes,
+        name="cucim_convex_merged_planes_3d",
+    )
+
+
+def _gather_chain_vertices(chains, segment_offsets):
+    """Vertices of the left and right chains of each segment (on the host).
+
+    Returns the (y, x) vertices (doubled coordinates) and the segment of each.
+    """
+    left_chains, right_chains, chain_sizes = (cp.asnumpy(c) for c in chains)
+    num_segments = segment_offsets.size - 1
+    base = 2 * segment_offsets[:-1] + np.arange(num_segments)
+    vertices = []
+    segments = []
+    for side, buffer in enumerate((left_chains, right_chains)):
+        sizes = chain_sizes[:, side].astype(np.int64)
+        starts = np.zeros_like(sizes)
+        np.cumsum(sizes[:-1], out=starts[1:])
+        index = np.repeat(base - starts, sizes) + np.arange(sizes.sum())
+        vertices.append(buffer[index])
+        segments.append(np.repeat(np.arange(num_segments), sizes))
+    return np.concatenate(vertices), np.concatenate(segments)
+
+
+def _convex_hull_candidates_3d(
+    row_first, row_last, offsets, num_rows, bbox, bbox_host, max_label
+):
+    """Candidate vertices of the convex hull of each 3D region (host arrays).
+
+    The hull of a region's diamond points is the hull of the diamond points
+    of each row's first and last voxel. In doubled coordinates these lie in
+    the planes z = 2 * plane (the in-plane diamond points of the plane's row
+    ends) and z = 2 * plane +- 1 (the row ends' centers). A vertex of the 3D
+    hull is also a vertex of the 2D hull of the points in its plane, so the
+    candidates are the vertices of these 2D hulls, built by the 2D chain
+    kernel for all planes of all labels at once (the planes between two
+    planes of a label with ``centers_only``, on merged row extents).
+
+    Returns the points, as (z, y, x) in doubled coordinates relative to the
+    bounding box, sorted by label, and the offsets of each label's points.
+    """
+    shapes = np.maximum(bbox_host[:, 3:] - bbox_host[:, :3], 0)
+    depth, height = shapes[:, 0], shapes[:, 1]
+    offsets_host = np.zeros((max_label + 1,), dtype=np.int64)
+    np.cumsum(depth * height, out=offsets_host[1:])
+    labels = np.arange(max_label)
+
+    def planes(num_planes):
+        # label, plane index and first row of each plane of each label
+        plane_label = np.repeat(labels, num_planes)
+        starts = np.zeros_like(num_planes)
+        np.cumsum(num_planes[:-1], out=starts[1:])
+        plane = np.arange(num_planes.sum()) - np.repeat(starts, num_planes)
+        return plane_label, plane
+
+    # planes of the regions: z = 2 * plane
+    plane_label, plane = planes(depth)
+    segment_offsets = np.append(
+        offsets_host[plane_label] + plane * height[plane_label], num_rows
+    )
+    chains = _convex_hull_chains_2d(
+        row_first,
+        row_last,
+        cp.asarray(segment_offsets),
+        num_rows,
+        plane.size,
+    )
+    yx, segment = _gather_chain_vertices(chains, segment_offsets)
+    points = [np.column_stack((2 * plane[segment], yx))]
+    point_labels = [plane_label[segment]]
+
+    # planes between them (and before the first and after the last):
+    # z = 2 * m - 1 for merged plane m
+    merged_planes = np.where(depth > 0, depth + 1, 0)
+    merged_offsets = np.zeros((max_label + 1,), dtype=np.int64)
+    np.cumsum(merged_planes * height, out=merged_offsets[1:])
+    num_merged_rows = int(merged_offsets[-1])
+    merged_first = cp.empty((num_merged_rows,), dtype=row_first.dtype)
+    merged_last = cp.empty((num_merged_rows,), dtype=row_first.dtype)
+    _get_merged_planes_kernel()(
+        row_first,
+        row_last,
+        offsets,
+        cp.asarray(merged_offsets),
+        bbox,
+        max_label,
+        merged_first,
+        merged_last,
+    )
+    plane_label, plane = planes(merged_planes)
+    segment_offsets = np.append(
+        merged_offsets[plane_label] + plane * height[plane_label],
+        num_merged_rows,
+    )
+    chains = _convex_hull_chains_2d(
+        merged_first,
+        merged_last,
+        cp.asarray(segment_offsets),
+        num_merged_rows,
+        plane.size,
+        centers_only=True,
+    )
+    yx, segment = _gather_chain_vertices(chains, segment_offsets)
+    points.append(np.column_stack((2 * plane[segment] - 1, yx)))
+    point_labels.append(plane_label[segment])
+
+    points = np.concatenate(points)
+    point_labels = np.concatenate(point_labels)
+    order = np.argsort(point_labels, kind="stable")
+    point_offsets = np.zeros((max_label + 1,), dtype=np.int64)
+    np.cumsum(
+        np.bincount(point_labels, minlength=max_label), out=point_offsets[1:]
+    )
+    return points[order], point_offsets
+
+
+@cp.memoize(for_each_device=True)
+def _get_hull_rows_3d_kernel():
+    """Kernel finding the voxels of each row inside the 3D convex hull.
+
+    One thread per row of a label's bounding box. A voxel center p (relative
+    to the bounding box) is inside if ``n . p + b < tolerance`` for every
+    facet equation (n, b) of the label's hull, as in scikit-image's
+    ``convex_hull_image`` in 3D. Along a row, each facet with n_x != 0 bounds
+    x on one side, so the voxels inside form one interval [lo, hi] of x.
+
+    Also adds the number of voxels in the interval to the label's count.
+    """
+    source = """
+      // the label of this row: the last l with offsets[l] <= i
+      long long l = 0;
+      long long l_end = max_label;
+      while (l_end - l > 1) {
+        long long mid = (l + l_end) / 2;
+        if (offsets[mid] <= i) {
+          l = mid;
+        } else {
+          l_end = mid;
+        }
+      }
+      long long local = static_cast<long long>(i) - offsets[l];
+      long long h = static_cast<long long>(bbox[l * 6 + 4] - bbox[l * 6 + 1]);
+      long long w = static_cast<long long>(bbox[l * 6 + 5] - bbox[l * 6 + 2]);
+      double z = static_cast<double>(local / h);
+      double y = static_cast<double>(local % h);
+      double lo = 0.0;
+      double hi = static_cast<double>(w - 1);
+      for (long long f = eq_offsets[l]; f < eq_offsets[l + 1]; f++) {
+        const double* e = &equations[4 * f];
+        // inside: e[2] * x < r
+        double r = tolerance - (e[0] * z + e[1] * y + e[3]);
+        if (e[2] > 0) {
+          hi = fmin(hi, ceil(r / e[2]) - 1.0);
+        } else if (e[2] < 0) {
+          lo = fmax(lo, floor(r / e[2]) + 1.0);
+        } else if (r <= 0) {
+          hi = -1.0;
+        }
+      }
+      // (clamped so that the conversion cannot overflow)
+      lo = fmin(lo, static_cast<double>(w));
+      hi = fmax(hi, -1.0);
+      row_lo = static_cast<E>(lo);
+      row_hi = static_cast<E>(hi);
+      if (hi >= lo) {
+        atomicAdd(&num_pixels[l],
+                  static_cast<unsigned long long>(hi - lo + 1.0));
+      }\n"""
+    inputs = (
+        "raw float64 equations, raw int64 eq_offsets, raw int64 offsets, "
+        "raw B bbox, float64 tolerance, int64 max_label"
+    )
+    return cp.ElementwiseKernel(
+        inputs,
+        "E row_lo, E row_hi, raw uint64 num_pixels",
+        source,
+        preamble=_warp_includes,
+        name="cucim_convex_hull_rows_3d",
+    )
+
+
+def _convex_hull_rows_3d(
+    label_image, row_first, row_last, offsets, num_rows, bbox, max_label
+):
+    """Rows of each 3D region's convex image (see `_convex_hull_rows_2d`).
+
+    The hull of each label is computed on the host with
+    ``scipy.spatial.ConvexHull`` from the candidates of
+    `_convex_hull_candidates_3d` (one transfer for all labels), and its facet
+    equations are copied back to the device in one transfer for
+    `_get_hull_rows_3d_kernel`. If qhull fails for a label, its convex image
+    is computed with ``convex_hull_image`` instead.
+    """
+    from scipy.spatial import ConvexHull, QhullError
+
+    bbox_host = cp.asnumpy(bbox).astype(np.int64)
+    points, point_offsets = _convex_hull_candidates_3d(
+        row_first, row_last, offsets, num_rows, bbox, bbox_host, max_label
+    )
+    # the offsets of each label's rows, on the host
+    shapes = np.maximum(bbox_host[:, 3:] - bbox_host[:, :3], 0)
+    row_offsets_host = np.zeros((max_label + 1,), dtype=np.int64)
+    np.cumsum(shapes[:, 0] * shapes[:, 1], out=row_offsets_host[1:])
+    points = points * 0.5
+    equations = []
+    num_equations = np.zeros((max_label,), dtype=np.int64)
+    failed = []
+    for lab in range(max_label):
+        label_points = points[point_offsets[lab] : point_offsets[lab + 1]]
+        if label_points.shape[0] == 0:
+            continue  # absent label
+        try:
+            hull = ConvexHull(label_points)
+        except QhullError:
+            failed.append(lab)
+            continue
+        equations.append(hull.equations)
+        num_equations[lab] = hull.equations.shape[0]
+    eq_offsets = np.zeros((max_label + 1,), dtype=np.int64)
+    np.cumsum(num_equations, out=eq_offsets[1:])
+    equations = np.concatenate(equations) if equations else np.zeros((0, 4))
+
+    dtype = row_first.dtype
+    row_lo = cp.empty((num_rows,), dtype=dtype)
+    row_hi = cp.empty((num_rows,), dtype=dtype)
+    num_pixels = cp.zeros((max_label,), dtype=cp.uint64)
+    if num_rows > 0:
+        _get_hull_rows_3d_kernel()(
+            cp.asarray(equations, dtype=cp.float64),
+            cp.asarray(eq_offsets),
+            offsets,
+            bbox,
+            1e-10,
+            max_label,
+            row_lo,
+            row_hi,
+            num_pixels,
+        )
+    for lab in failed:
+        # one convex image with convex_hull_image, then its rows
+        sl = tuple(
+            slice(int(bbox_host[lab, d]), int(bbox_host[lab, d + 3]))
+            for d in range(3)
+        )
+        image = convex_hull_image(
+            label_image[sl] == lab + 1,
+            omit_empty_coords_check=True,
+            float64_computation=True,
+        )
+        rows = image.reshape(-1, image.shape[-1])
+        nonempty = rows.any(axis=1)
+        width = rows.shape[1]
+        first = cp.where(nonempty, rows.argmax(axis=1), width)
+        last = cp.where(nonempty, width - 1 - rows[:, ::-1].argmax(axis=1), -1)
+        rows = slice(int(row_offsets_host[lab]), int(row_offsets_host[lab + 1]))
+        row_lo[rows] = first
+        row_hi[rows] = last
+        num_pixels[lab] = int(image.sum())
+    return row_lo, row_hi, num_pixels
+
+
+@cp.memoize(for_each_device=True)
 def _get_convex_image_kernel(ndim, int32_index):
     """Kernel writing the convex images of all labels into one flat buffer.
 
@@ -683,10 +1026,12 @@ def _regionprops_convex(
     writes "area_convex" to props_dict if `compute_area`
     writes "feret_diameter_max" to props_dict if `compute_feret`
 
-    In 2D, all properties are computed for all labels at once from the hull
-    of each region's row extents (see `_get_hull_chains_2d_kernel` and
-    `_feret_diameter_max_2d`). In other dimensions, they are computed from
-    one convex image per label (`regionprops_image`).
+    In 2D and 3D, the properties are computed for all labels at once from
+    the hull of each region's row extents (see `_get_hull_chains_2d_kernel`,
+    `_feret_diameter_max_2d` and `_convex_hull_rows_3d`); 3D
+    feret_diameter_max still takes one convex image per label. In other
+    dimensions, all properties are computed from one convex image per label
+    (`regionprops_image`).
 
     Parameters
     ----------
@@ -698,13 +1043,24 @@ def _regionprops_convex(
     if not (compute_image or compute_area or compute_feret):
         return props_dict
     ndim = label_image.ndim
-    if ndim == 2 and max_label > 0:
+    if ndim in (2, 3) and max_label > 0:
         row_first, row_last, offsets, num_rows = _regionprops_row_extents(
             label_image, bbox, max_label
         )
-        row_lo, row_hi, num_pixels = _convex_hull_rows_2d(
-            row_first, row_last, offsets, num_rows, max_label
-        )
+        if ndim == 2:
+            row_lo, row_hi, num_pixels = _convex_hull_rows_2d(
+                row_first, row_last, offsets, num_rows, max_label
+            )
+        else:
+            row_lo, row_hi, num_pixels = _convex_hull_rows_3d(
+                label_image,
+                row_first,
+                row_last,
+                offsets,
+                num_rows,
+                bbox,
+                max_label,
+            )
         if compute_area:
             props_dict["area_convex"] = num_pixels.astype(cp.float64) * (
                 _pixel_area(spacing)
@@ -713,9 +1069,15 @@ def _regionprops_convex(
             props_dict["image_convex"] = _convex_images(
                 row_lo, row_hi, offsets, bbox, max_label
             )
-        if compute_feret:
+        if compute_feret and ndim == 2:
             props_dict["feret_diameter_max"] = _feret_diameter_max_2d(
                 row_lo, row_hi, offsets, num_rows, max_label, spacing
+            )
+        elif compute_feret:
+            regionprops_feret_diameter_max(
+                _convex_images(row_lo, row_hi, offsets, bbox, max_label),
+                spacing=spacing,
+                props_dict=props_dict,
             )
         return props_dict
 
