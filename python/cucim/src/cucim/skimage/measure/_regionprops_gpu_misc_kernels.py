@@ -39,22 +39,25 @@ def _offset_var(offsets, radius):
 def _get_neighbor_coords_code(ndim, radius):
     """Coordinates of pixel ii, and whether coordinate + offset is inside.
 
-    Uses the shape{d} variables declared by `_get_shape_code`.
+    Uses the cucim_coord_t type and the shape{d} variables declared by
+    `_get_shape_code`.
     """
     code = """
-          long long rem = ii;"""
+          cucim_coord_t rem = ii;"""
     for d in range(ndim - 1, 0, -1):
         code += f"""
-          long long coord{d} = rem % shape{d};
+          cucim_coord_t coord{d} = rem % shape{d};
           rem /= shape{d};"""
     code += """
-          long long coord0 = rem;"""
+          cucim_coord_t coord0 = rem;"""
     for d in range(ndim):
         for o in range(-radius, radius + 1):
-            if o != 0:
+            if o < 0:
                 code += f"""
-          bool inside{d}_{o + radius} = (coord{d} + ({o}) >= 0)
-                                        && (coord{d} + ({o}) < shape{d});"""
+          bool inside{d}_{o + radius} = coord{d} >= {-o};"""
+            elif o > 0:
+                code += f"""
+          bool inside{d}_{o + radius} = coord{d} + {o} < shape{d};"""
     return code
 
 
@@ -80,12 +83,21 @@ def _get_same_label_code(offsets, radius):
     return code
 
 
-def _get_shape_code(ndim):
-    """Declarations of the shape and strides (in pixels) of `labels`."""
-    code = ""
+def _get_shape_code(ndim, int32_coords):
+    """Declarations of the coordinate type, and of the shape and strides (in
+    pixels) of `labels`.
+
+    Coordinates are unraveled from the raveled index in 32 bits when the
+    image has fewer than 2**31 pixels, as 64-bit divisions are much slower.
+    They are signed: with `unsigned int`, NVRTC 13.3 miscompiled the 3D Euler
+    kernel for 4-byte labels and 10 pixels per thread (illegal address).
+    """
+    coord_t = "int" if int32_coords else "long long"
+    code = f"""
+      typedef {coord_t} cucim_coord_t;"""
     for d in range(ndim):
         code += f"""
-      long long shape{d} = labels.shape()[{d}];"""
+      cucim_coord_t shape{d} = labels.shape()[{d}];"""
     stride = "1"
     for d in range(ndim - 1, -1, -1):
         code += f"""
@@ -191,7 +203,9 @@ def _get_windows_op(ndim, omit_image_edges=False):
 
 
 @cp.memoize(for_each_device=True)
-def _get_boundary_kernel(kind, ndim, option, pixels_per_thread):
+def _get_boundary_kernel(
+    kind, ndim, option, pixels_per_thread, int32_coords=True
+):
     """Per-region sums of the perimeter, Crofton or Euler coefficients.
 
     kind is "perimeter" (option: neighborhood), "crofton" (option:
@@ -206,7 +220,7 @@ def _get_boundary_kernel(kind, ndim, option, pixels_per_thread):
         ("int", "int32") if kind == "euler" else ("double", "float64")
     )
     pre = (
-        _get_shape_code(ndim)
+        _get_shape_code(ndim, int32_coords)
         + f"""
       {acc_c_type} acc;"""
     )
@@ -222,14 +236,20 @@ def _get_boundary_kernel(kind, ndim, option, pixels_per_thread):
         f"raw {dtype} out",
         source,
         preamble=_warp_includes,
-        name=f"cucim_{kind}_{ndim}d_{option}_batch{pixels_per_thread}",
+        name=(
+            f"cucim_{kind}_{ndim}d_{option}_batch{pixels_per_thread}"
+            + ("" if int32_coords else "_coords64")
+        ),
     )
 
 
 def _boundary_sums(kind, labels, coefs, option, max_label, pixels_per_thread):
     if not labels.flags.c_contiguous:
         labels = cp.ascontiguousarray(labels)
-    kernel = _get_boundary_kernel(kind, labels.ndim, option, pixels_per_thread)
+    int32_coords = labels.size < 2**31
+    kernel = _get_boundary_kernel(
+        kind, labels.ndim, option, pixels_per_thread, int32_coords
+    )
     out = cp.zeros((max_label,), dtype=coefs.dtype)
     kernel(
         labels,

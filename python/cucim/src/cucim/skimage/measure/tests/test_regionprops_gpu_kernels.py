@@ -60,7 +60,13 @@ from cucim.skimage.measure._regionprops_gpu_intensity_kernels import (
     _regionprops_intensity,
     intensity_deps,
 )
-from cucim.skimage.measure._regionprops_gpu_misc_kernels import misc_deps
+from cucim.skimage.measure._regionprops_gpu_misc_kernels import (
+    _get_boundary_kernel,
+    _get_euler_coefs,
+    _get_perimeter_coefs,
+    _get_perimeter_crofton_coefs,
+    misc_deps,
+)
 from cucim.skimage.measure._regionprops_gpu_moments_kernels import (
     get_raw_moments_kernel,
     moment_deps,
@@ -1456,6 +1462,38 @@ def test_boundary_properties_touching_labels(granularity, label_dtype):
             for lab in range(1, max_label + 1)
         ]
         assert_array_equal(values, expected)
+
+
+@pytest.mark.parametrize("int32_coords", [True, False])
+@pytest.mark.parametrize(
+    "kind, ndim", [("perimeter", 2), ("crofton", 2), ("euler", 2), ("euler", 3)]
+)
+def test_boundary_kernel_coordinate_types(kind, ndim, int32_coords):
+    # images of fewer than 2**31 pixels use 32-bit coordinates, larger ones
+    # 64-bit coordinates; both must give scikit-image's values
+    rng = np.random.default_rng(ndim)
+    shape = (61, 87) if ndim == 2 else (17, 13, 19)
+    small = rng.integers(0, 5, size=tuple(s // 2 + 1 for s in shape))
+    labels = np.kron(small, np.ones((2,) * ndim, dtype=int))
+    labels = labels[tuple(slice(0, s) for s in shape)]
+    max_label = int(labels.max())
+    masks = [labels == lab for lab in range(1, max_label + 1)]
+    if kind == "perimeter":
+        coefs, option = _get_perimeter_coefs(), 4
+        expected = [measure_cpu.perimeter(m, 4) for m in masks]
+    elif kind == "crofton":
+        coefs, option = _get_perimeter_crofton_coefs(4), False
+        expected = [measure_cpu.perimeter_crofton(m, 4) for m in masks]
+    else:
+        coefs, option = _get_euler_coefs(ndim, 1), False
+        expected = [measure_cpu.euler_number(m, 1) for m in masks]
+    labels = cp.asarray(labels, dtype=cp.int32)
+    kernel = _get_boundary_kernel(kind, ndim, option, 10, int32_coords)
+    out = cp.zeros((max_label,), dtype=coefs.dtype)
+    kernel(labels, labels.size, coefs, out, size=math.ceil(labels.size / 10))
+    if kind == "euler" and ndim == 3:
+        out = (out * 0.125).astype(cp.int64)
+    assert_allclose(out, expected, rtol=1e-12, atol=1e-12)
 
 
 @pytest.mark.parametrize(
