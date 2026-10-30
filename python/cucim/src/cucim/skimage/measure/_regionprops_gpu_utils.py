@@ -72,10 +72,22 @@ __device__ __forceinline__ void cucim_atomic_max<double>(double* address,
 _warp_includes = (
     _includes
     + r"""
+#include <cuda/std/limits>
+
 template <typename T>
 __device__ __forceinline__ T cucim_shfl_down(unsigned int mask, T v,
                                              unsigned int delta) {
   return __shfl_down_sync(mask, v, delta);
+}
+
+template <typename T>
+__device__ __forceinline__ T cucim_shfl(unsigned int mask, T v,
+                                        unsigned int src_lane) {
+  if constexpr (sizeof(T) < 4) {
+    return static_cast<T>(__shfl_sync(mask, static_cast<int>(v), src_lane));
+  } else {
+    return __shfl_sync(mask, v, src_lane);
+  }
 }
 
 template <typename T>
@@ -107,16 +119,34 @@ __device__ __forceinline__ unsigned short cucim_shfl_down(
 struct cucim_sum_op {
   template <typename T>
   __device__ T operator()(T a, T b) const { return a + b; }
+  template <typename T>
+  static __device__ T identity() { return T(0); }
 };
 
 struct cucim_min_op {
   template <typename T>
   __device__ T operator()(T a, T b) const { return min(a, b); }
+  template <typename T>
+  static __device__ T identity() {
+    if constexpr (cuda::std::numeric_limits<T>::has_infinity) {
+      return cuda::std::numeric_limits<T>::infinity();
+    } else {
+      return cuda::std::numeric_limits<T>::max();
+    }
+  }
 };
 
 struct cucim_max_op {
   template <typename T>
   __device__ T operator()(T a, T b) const { return max(a, b); }
+  template <typename T>
+  static __device__ T identity() {
+    if constexpr (cuda::std::numeric_limits<T>::has_infinity) {
+      return -cuda::std::numeric_limits<T>::infinity();
+    } else {
+      return cuda::std::numeric_limits<T>::lowest();
+    }
+  }
 };
 
 // Element at byte offset `byte` of a 16-byte chunk (any 1, 2, 4 or 8-byte
@@ -273,6 +303,11 @@ def _get_label_run_loop(
               mask, {var}, seg_end, max_off, cucim_{kind}_op());"""
             for var, kind in warp_reduce
         )
+        identity_code = "".join(
+            f"""
+          {var} = cucim_{kind}_op::identity<decltype({var})>();"""
+            for var, kind in warp_reduce
+        )
         # The lanes of this warp that run this iteration of the grid-stride
         # loop are those with i < num_threads (blocks are a multiple of 32
         # threads, so warps start at multiples of 32).
@@ -287,6 +322,24 @@ def _get_label_run_loop(
         uint64_t warp_lanes = num_threads - (i - lane);
         unsigned int mask = warp_lanes >= 32 ? 0xffffffffu
                             : (1u << warp_lanes) - 1u;
+        // A lane without any labeled pixel between two lanes whose last runs
+        // have the same label (e.g. in a hole of a large region) joins their
+        // group with identity values, so that it does not split the group.
+        // (Lanes between different labels stay apart: joining them would
+        // only lengthen the groups, and so the scans.)
+        unsigned int has_run = __ballot_sync(mask, lab != 0);
+        if (has_run != 0 && has_run != mask) {{
+          unsigned int later = has_run & ~((2u << lane) - 1u);
+          unsigned int earlier = has_run & ((1u << lane) - 1u);
+          bool between = lab == 0 && later != 0 && earlier != 0;
+          X next_run_lab = cucim_shfl(
+              mask, lab, between ? __ffs(later) - 1 : lane);
+          X prev_run_lab = cucim_shfl(
+              mask, lab, between ? 31 - __clz(earlier) : lane);
+          if (between && next_run_lab == prev_run_lab) {{
+            lab = next_run_lab;{identity_code}
+          }}
+        }}
         // continues: the next lane's last run has the same (nonzero) label
         X next_lab = cucim_shfl_down(mask, lab, 1);
         bool continues = (lab != 0) && (lane < 31)
