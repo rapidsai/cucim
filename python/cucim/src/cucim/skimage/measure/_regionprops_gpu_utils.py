@@ -119,6 +119,66 @@ struct cucim_max_op {
   __device__ T operator()(T a, T b) const { return max(a, b); }
 };
 
+// Element at byte offset `byte` of a 16-byte chunk (any 1, 2, 4 or 8-byte
+// type, selected without indexing an array so that the chunk stays in
+// registers).
+template <typename T>
+__device__ __forceinline__ T cucim_chunk_element(const uint4& chunk,
+                                                 unsigned int byte) {
+  unsigned int w = byte >> 2;
+  unsigned int word = w == 0 ? chunk.x
+                      : w == 1 ? chunk.y
+                      : w == 2 ? chunk.z
+                      : chunk.w;
+  T out;
+  if constexpr (sizeof(T) == 8) {
+    unsigned int high = w == 0 ? chunk.y : chunk.w;
+    unsigned long long bits =
+        (static_cast<unsigned long long>(high) << 32) | word;
+    memcpy(&out, &bits, 8);
+  } else if constexpr (sizeof(T) == 4) {
+    memcpy(&out, &word, 4);
+  } else if constexpr (sizeof(T) == 2) {
+    unsigned short bits = static_cast<unsigned short>(word >> ((byte & 3u) * 8));
+    memcpy(&out, &bits, 2);
+  } else {
+    unsigned char bits = static_cast<unsigned char>(word >> ((byte & 3u) * 8));
+    memcpy(&out, &bits, 1);
+  }
+  return out;
+}
+
+// Reads elements of the `n` consecutive elements of `data` in increasing
+// order (get(k) for increasing k < n), with 16-byte loads when the elements
+// are at least 4 bytes, `n` elements are a multiple of 16 bytes, `full` is
+// true and data is 16-byte aligned.
+template <typename T>
+struct cucim_sequential_reader {
+  const T* ptr;
+  bool vector_loads;
+  unsigned int loaded;
+  uint4 chunk;
+
+  __device__ cucim_sequential_reader(const T* data, size_t n, bool full) {
+    ptr = data;
+    vector_loads = sizeof(T) >= 4 && (n * sizeof(T)) % 16 == 0 && full
+                   && (reinterpret_cast<size_t>(data) & 15) == 0;
+    loaded = 0xffffffffu;
+  }
+
+  __device__ __forceinline__ T get(unsigned int k) {
+    if (!vector_loads) {
+      return ptr[k];
+    }
+    unsigned int byte = k * static_cast<unsigned int>(sizeof(T));
+    if ((byte >> 4) != loaded) {
+      loaded = byte >> 4;
+      chunk = reinterpret_cast<const uint4*>(ptr)[loaded];
+    }
+    return cucim_chunk_element<T>(chunk, byte & 15u);
+  }
+};
+
 template <typename T, typename Op>
 __device__ __forceinline__ T cucim_warp_reduce(unsigned int mask, T v,
                                                unsigned int seg_end,
@@ -248,13 +308,24 @@ def _get_label_run_loop(
           {flush}
         }}
       }}\n"""
+    # The thread's labels are read with 16-byte loads if they are 4 or 8-byte
+    # labels (cucim_sequential_reader). With one-element loads, the 32 lanes
+    # of a warp read 32 locations pixels_per_thread elements apart in each
+    # instruction, and for 4 and 8-byte labels a warp's lines no longer fit
+    # in the L1 cache. (For 1 and 2-byte labels, extracting the elements
+    # costs more than it saves.) Kernels reading an image can use the same
+    # reader for it; `full_thread` tells whether the thread has
+    # pixels_per_thread pixels.
     return f"""
       uint64_t start_index = {pixels_per_thread}*i;
-      {pre}
       uint64_t ii_max = min(start_index + {pixels_per_thread}, labels_size);
+      bool full_thread = ii_max == start_index + {pixels_per_thread};
+      {pre}
+      cucim_sequential_reader<X> label_reader(
+          &labels[start_index], {pixels_per_thread}, full_thread);
       X lab = 0;
       for (uint64_t ii = start_index; ii < ii_max; ii++) {{
-        X current_label = labels[ii];
+        X current_label = label_reader.get(ii - start_index);
         if (current_label == 0) {{ continue; }}
         if (current_label != lab) {{
           if (lab != 0) {{
