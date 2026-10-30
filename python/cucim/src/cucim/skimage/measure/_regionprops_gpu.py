@@ -37,6 +37,7 @@ from ._regionprops_gpu_convex import (
     regionprops_feret_diameter_max,
 )
 from ._regionprops_gpu_intensity_kernels import (
+    _regionprops_intensity,
     intensity_deps,
     regionprops_intensity_mean,
     regionprops_intensity_min_max,
@@ -408,11 +409,53 @@ def regionprops_dict(
     if pixels_per_thread is not None:
         perf_kwargs["pixels_per_thread"] = pixels_per_thread
 
-    if "num_pixels" in required_props:
+    compute_bbox = "bbox" in required_props
+    compute_num_pixels = "num_pixels" in required_props
+    compute_std = has_intensity and "intensity_std" in required_props
+    # std also computes mean
+    compute_mean = (
+        has_intensity and "intensity_mean" in required_props and not compute_std
+    )
+    compute_min = has_intensity and "intensity_min" in required_props
+    compute_max = has_intensity and "intensity_max" in required_props
+    compute_intensity = (
+        compute_mean or compute_std or compute_min or compute_max
+    )
+
+    # Each pass over the label image costs about the same for any number of
+    # statistics, so the pixels are counted in the same pass as the bounding
+    # boxes or, if those are not needed, as the intensity sums.
+    if compute_bbox:
+        # compute bbox (and slice)
+        regionprops_bbox_coords(
+            label_image,
+            max_label=max_label,
+            return_slices="slice" in required_props,
+            compute_num_pixels=compute_num_pixels,
+            **perf_kwargs,
+            props_dict=out,
+        )
+    elif compute_num_pixels and not (compute_mean or compute_std):
         regionprops_num_pixels(
             label_image,
             max_label=max_label,
             filled=False,
+            **perf_kwargs,
+            props_dict=out,
+        )
+
+    if compute_intensity:
+        _regionprops_intensity(
+            label_image,
+            intensity_image,
+            max_label=max_label,
+            compute_mean=compute_mean,
+            compute_std=compute_std,
+            compute_min=compute_min,
+            compute_max=compute_max,
+            mean_dtype=cp.float32,
+            std_dtype=cp.float64,
+            sample_std=False,
             **perf_kwargs,
             props_dict=out,
         )
@@ -436,53 +479,7 @@ def regionprops_dict(
                     equivalent_spherical_perimeter(out["area"], ndim, ed)
                 )
 
-    if has_intensity:
-        if "intensity_std" in required_props:
-            # std also computes mean
-            regionprops_intensity_std(
-                label_image,
-                intensity_image,
-                max_label=max_label,
-                std_dtype=cp.float64,
-                sample_std=False,
-                **perf_kwargs,
-                props_dict=out,
-            )
-
-        elif "intensity_mean" in required_props:
-            regionprops_intensity_mean(
-                label_image,
-                intensity_image,
-                max_label=max_label,
-                mean_dtype=cp.float32,
-                **perf_kwargs,
-                props_dict=out,
-            )
-
-        compute_min = "intensity_min" in required_props
-        compute_max = "intensity_max" in required_props
-        if compute_min or compute_max:
-            regionprops_intensity_min_max(
-                label_image,
-                intensity_image,
-                max_label=max_label,
-                compute_min=compute_min,
-                compute_max=compute_max,
-                **perf_kwargs,
-                props_dict=out,
-            )
-
-    compute_bbox = "bbox" in required_props
     if compute_bbox:
-        # compute bbox (and slice)
-        regionprops_bbox_coords(
-            label_image,
-            max_label=max_label,
-            return_slices="slice" in required_props,
-            **perf_kwargs,
-            props_dict=out,
-        )
-
         if "area_bbox" in required_props:
             regionprops_area_bbox(
                 out["bbox"],
