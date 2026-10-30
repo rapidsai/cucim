@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import itertools
 import math
 
 import cupy as cp
@@ -10,6 +11,7 @@ from ._regionprops_gpu_utils import (
     _check_intensity_image_shape,
     _get_coord_dtype,
     _get_count_dtype,
+    _get_label_run_loop,
     _includes,
     _unravel_loop_index,
     _unravel_loop_index_declarations,
@@ -309,7 +311,6 @@ def _get_raw_moments_code(
     moments_c_type,
     ndim,
     order,
-    array_size,
     num_channels=1,
     has_spacing=False,
     has_weights=False,
@@ -317,209 +318,94 @@ def _get_raw_moments_code(
     """
     Notes
     -----
-    Local variables created:
+    Variables created (per run of a label):
 
-        - local_moments : shape (array_size, num_channels, num_moments)
-            local set of moments up to the specified order (1-3 supported)
+        - mom{c}_{k} : the moment at raveled index k of the moments matrix of
+            channel c (only for the entries of total order <= `order`)
 
     Output variables written to:
 
         - moments : shape (max_label, num_channels, num_moments)
     """
+    if order > 3:
+        raise ValueError("Only moments of orders 0-3 are supported")
+    if ndim not in [2, 3]:
+        raise ValueError("only ndim = 2 or 3 is supported")
 
     # number is for a densely populated moments matrix of size (order + 1) per
     # side (values at locations where order is greater than specified will be 0)
     num_moments = (order + 1) ** ndim
 
-    if order > 3:
-        raise ValueError("Only moments of orders 0-3 are supported")
+    # the entries of total order <= order, as (raveled index, exponents)
+    entries = []
+    for k, exponents in enumerate(
+        itertools.product(range(order + 1), repeat=ndim)
+    ):
+        if sum(exponents) <= order:
+            entries.append((k, exponents))
 
     use_floating_point = moments_c_type in ["float", "double"]
 
-    source_pre = f"""
-    {moments_c_type} local_moments[{array_size * num_channels * num_moments}] = {{0}};
-    {coord_c_type} m_offset = 0;
-    {coord_c_type} local_off = 0;\n"""  # noqa: E501
+    source_pre = ""
+    for d in range(ndim):
+        source_pre += f"""
+    {coord_c_type} bbox_min{d};"""
+        if has_spacing:
+            source_pre += f"""
+    double spacing{d} = spacing[{d}];"""
     if has_weights:
         source_pre += f"""
-    {moments_c_type} w = 0.0;\n"""
+    {moments_c_type} w;"""
+
+    # the bounding box is used to transform the global coordinates to local ones
+    # (bbox : bounding box coordinates, shape (max_label, 2*ndim))
+    source_start = ""
+    for d in range(ndim):
+        source_start += f"""
+          bbox_min{d} = bbox[(lab - 1) * {2 * ndim} + {d}];"""
 
     # op uses external coordinate array variables:
-    #    bbox : bounding box coordinates, shape (max_label, 2*ndim)
     #    in_coord[0]...in_coord[ndim - 1] : coordinates
     #        coordinates in the labeled image at the current index
     #    ii : index into labels array
-    #    current_label : value of the label image at location ii
-    #    spacing (optional) : pixel spacings
     #    img (optional) : intensity image
-    source_operation = ""
-    # using bounding box to transform the global coordinates to local ones
     # (c0 = local coordinate on axis 0, etc.)
+    source_operation = ""
     for d in range(ndim):
         source_operation += f"""
-                {moments_c_type} c{d} = in_coord[{d}]
-                            - bbox[(current_label - 1) * {2 * ndim} + {d}];"""
+          {moments_c_type} c{d} = in_coord[{d}] - bbox_min{d};"""
         if has_spacing:
             source_operation += f"""
-                c{d} *= spacing[{d}];"""
+          c{d} *= spacing{d};"""
 
-    # need additional multiplication by the intensity value for weighted case
-    w = "w * " if has_weights else ""
+    source_flush = ""
     for c in range(num_channels):
-        source_operation += f"""
-                local_off = {num_moments * num_channels}*offset + {c * num_moments};\n"""  # noqa: E501
-
-        # zeroth moment
         if has_weights:
+            # need additional multiplication by the intensity value
             source_operation += f"""
-                w = static_cast<{moments_c_type}>(img[{num_channels} * ii + {c}]);
-                local_moments[local_off] += w;\n"""  # noqa: E501
-        elif use_floating_point:
-            source_operation += """
-                local_moments[local_off] += 1.0;\n"""
-        else:
-            source_operation += """
-                local_moments[local_off] += 1;\n"""
-
-        # moments for order 1-3
-        if ndim == 2:
-            if order == 1:
-                source_operation += f"""
-                local_moments[local_off + 1] += {w}c1;
-                local_moments[local_off + 2] += {w}c0;\n"""
-            elif order == 2:
-                source_operation += f"""
-                local_moments[local_off + 1] += {w}c1;
-                local_moments[local_off + 2] += {w}c1 * c1;
-                local_moments[local_off + 3] += {w}c0;
-                local_moments[local_off + 4] += {w}c0 * c1;
-                local_moments[local_off + 6] += {w}c0 * c0;\n"""
-            elif order == 3:
-                source_operation += f"""
-                local_moments[local_off + 1] += {w}c1;
-                local_moments[local_off + 2] += {w}c1 * c1;
-                local_moments[local_off + 3] += {w}c1 * c1 * c1;
-                local_moments[local_off + 4] += {w}c0;
-                local_moments[local_off + 5] += {w}c0 * c1;
-                local_moments[local_off + 6] += {w}c0 * c1 * c1;
-                local_moments[local_off + 8] += {w}c0 * c0;
-                local_moments[local_off + 9] += {w}c0 * c0 * c1;
-                local_moments[local_off + 12] += {w}c0 * c0 * c0;\n"""
-        elif ndim == 3:
-            if order == 1:
-                source_operation += f"""
-                local_moments[local_off + 1] += {w}c2;
-                local_moments[local_off + 2] += {w}c1;
-                local_moments[local_off + 4] += {w}c0;\n"""
-            elif order == 2:
-                source_operation += f"""
-                local_moments[local_off + 1] += {w}c2;
-                local_moments[local_off + 2] += {w}c2 * c2;
-                local_moments[local_off + 3] += {w}c1;
-                local_moments[local_off + 4] += {w}c1 * c2;
-                local_moments[local_off + 6] += {w}c1 * c1;
-                local_moments[local_off + 9] += {w}c0;
-                local_moments[local_off + 10] += {w}c0 * c2;
-                local_moments[local_off + 12] += {w}c0 * c1;
-                local_moments[local_off + 18] += {w}c0 * c0;\n"""
-            elif order == 3:
-                source_operation += f"""
-                local_moments[local_off + 1] += {w}c2;
-                local_moments[local_off + 2] += {w}c2 * c2;
-                local_moments[local_off + 3] += {w}c2 * c2 * c2;
-                local_moments[local_off + 4] += {w}c1;
-                local_moments[local_off + 5] += {w}c1 * c2;
-                local_moments[local_off + 6] += {w}c1 * c2 * c2;
-                local_moments[local_off + 8] += {w}c1 * c1;
-                local_moments[local_off + 9] += {w}c1 * c1 * c2;
-                local_moments[local_off + 12] += {w}c1 * c1 * c1;
-                local_moments[local_off + 16] += {w}c0;
-                local_moments[local_off + 17] += {w}c0 * c2;
-                local_moments[local_off + 18] += {w}c0 * c2 * c2;
-                local_moments[local_off + 20] += {w}c0 * c1;
-                local_moments[local_off + 21] += {w}c0 * c1 * c2;
-                local_moments[local_off + 24] += {w}c0 * c1 * c1;
-                local_moments[local_off + 32] += {w}c0 * c0;
-                local_moments[local_off + 33] += {w}c0 * c0 * c2;
-                local_moments[local_off + 36] += {w}c0 * c0 * c1;
-                local_moments[local_off + 48] += {w}c0 * c0 * c0;\n"""
-        else:
-            raise ValueError("only ndim = 2 or 3 is supported")
-
-    # post_operation uses external variables:
-    #     ii : index into num_pixels array
-    #     lab : label value that corresponds to location ii
-    #     coord_sums : output with shape (max_label, ndim)
-    source_post = ""
-    for c in range(0, num_channels):
-        source_post += f"""
-                // moments outputs
-                m_offset = {num_moments * num_channels}*(lab - 1) + {c * num_moments};
-                local_off = {num_moments * num_channels}*ii + {c * num_moments};
-                atomicAdd(&moments[m_offset], local_moments[local_off]);\n"""  # noqa: E501
-
-        if ndim == 2:
-            if order == 1:
-                source_post += """
-                atomicAdd(&moments[m_offset + 1], local_moments[local_off + 1]);
-                atomicAdd(&moments[m_offset + 2], local_moments[local_off + 2]);\n"""  # noqa: E501
-            elif order == 2:
-                source_post += """
-                atomicAdd(&moments[m_offset + 1], local_moments[local_off + 1]);
-                atomicAdd(&moments[m_offset + 2], local_moments[local_off + 2]);
-                atomicAdd(&moments[m_offset + 3], local_moments[local_off + 3]);
-                atomicAdd(&moments[m_offset + 4], local_moments[local_off + 4]);
-                atomicAdd(&moments[m_offset + 6], local_moments[local_off + 6]);\n"""  # noqa: E501
-            elif order == 3:
-                source_post += """
-                atomicAdd(&moments[m_offset + 1], local_moments[local_off + 1]);
-                atomicAdd(&moments[m_offset + 2], local_moments[local_off + 2]);
-                atomicAdd(&moments[m_offset + 3], local_moments[local_off + 3]);
-                atomicAdd(&moments[m_offset + 4], local_moments[local_off + 4]);
-                atomicAdd(&moments[m_offset + 5], local_moments[local_off + 5]);
-                atomicAdd(&moments[m_offset + 6], local_moments[local_off + 6]);
-                atomicAdd(&moments[m_offset + 8], local_moments[local_off + 8]);
-                atomicAdd(&moments[m_offset + 9], local_moments[local_off + 9]);
-                atomicAdd(&moments[m_offset + 12], local_moments[local_off + 12]);\n"""  # noqa: E501
-        elif ndim == 3:
-            if order == 1:
-                source_post += """
-                atomicAdd(&moments[m_offset + 1], local_moments[local_off + 1]);
-                atomicAdd(&moments[m_offset + 2], local_moments[local_off + 2]);
-                atomicAdd(&moments[m_offset + 4], local_moments[local_off + 4]);\n"""  # noqa: E501
-            elif order == 2:
-                source_post += """
-                atomicAdd(&moments[m_offset + 1], local_moments[local_off + 1]);
-                atomicAdd(&moments[m_offset + 2], local_moments[local_off + 2]);
-                atomicAdd(&moments[m_offset + 3], local_moments[local_off + 3]);
-                atomicAdd(&moments[m_offset + 4], local_moments[local_off + 4]);
-                atomicAdd(&moments[m_offset + 6], local_moments[local_off + 6]);
-                atomicAdd(&moments[m_offset + 9], local_moments[local_off + 9]);
-                atomicAdd(&moments[m_offset + 10], local_moments[local_off + 10]);
-                atomicAdd(&moments[m_offset + 12], local_moments[local_off + 12]);
-                atomicAdd(&moments[m_offset + 18], local_moments[local_off + 18]);\n"""  # noqa: E501
-            elif order == 3:
-                source_post += """
-                atomicAdd(&moments[m_offset + 1], local_moments[local_off + 1]);
-                atomicAdd(&moments[m_offset + 2], local_moments[local_off + 2]);
-                atomicAdd(&moments[m_offset + 3], local_moments[local_off + 3]);
-                atomicAdd(&moments[m_offset + 4], local_moments[local_off + 4]);
-                atomicAdd(&moments[m_offset + 5], local_moments[local_off + 5]);
-                atomicAdd(&moments[m_offset + 6], local_moments[local_off + 6]);
-                atomicAdd(&moments[m_offset + 8], local_moments[local_off + 8]);
-                atomicAdd(&moments[m_offset + 9], local_moments[local_off + 9]);
-                atomicAdd(&moments[m_offset + 12], local_moments[local_off + 12]);
-                atomicAdd(&moments[m_offset + 16], local_moments[local_off + 16]);
-                atomicAdd(&moments[m_offset + 17], local_moments[local_off + 17]);
-                atomicAdd(&moments[m_offset + 18], local_moments[local_off + 18]);
-                atomicAdd(&moments[m_offset + 20], local_moments[local_off + 20]);
-                atomicAdd(&moments[m_offset + 21], local_moments[local_off + 21]);
-                atomicAdd(&moments[m_offset + 24], local_moments[local_off + 24]);
-                atomicAdd(&moments[m_offset + 32], local_moments[local_off + 32]);
-                atomicAdd(&moments[m_offset + 33], local_moments[local_off + 33]);
-                atomicAdd(&moments[m_offset + 36], local_moments[local_off + 36]);
-                atomicAdd(&moments[m_offset + 48], local_moments[local_off + 48]);\n"""  # noqa: E501
-    return source_pre, source_operation, source_post
+          w = static_cast<{moments_c_type}>(img[{num_channels} * ii + {c}]);"""
+        for k, exponents in entries:
+            var = f"mom{c}_{k}"
+            source_pre += f"""
+    {moments_c_type} {var};"""
+            source_start += f"""
+          {var} = 0;"""
+            factors = ["w"] if has_weights else []
+            for d, e in enumerate(exponents):
+                factors += [f"c{d}"] * e
+            if factors:
+                term = " * ".join(factors)
+            else:
+                term = "1.0" if use_floating_point else "1"
+            source_operation += f"""
+          {var} += {term};"""
+            # flush uses external variables:
+            #     lab : label value of the run
+            #     moments : output with shape (max_label, num_channels, num_moments)
+            m_index = f"{num_moments * num_channels}*(lab - 1) + {c * num_moments + k}"
+            source_flush += f"""
+          atomicAdd(&moments[{m_index}], {var});"""
+    return source_pre, source_start, source_operation, source_flush
 
 
 @cp.memoize(for_each_device=True)
@@ -534,8 +420,6 @@ def get_raw_moments_kernel(
     pixels_per_thread=8,
 ):
     moments_dtype = cp.dtype(moments_dtype)
-
-    array_size = pixels_per_thread
 
     coord_dtype = cp.dtype(cp.uint32 if int32_coords else cp.uint64)
     if coord_dtype.itemsize <= 4:
@@ -557,64 +441,30 @@ def get_raw_moments_kernel(
         if moments_dtype.kind != "f":
             raise ValueError("moments must have a floating point data type")
 
-    moments_pre, moments_op, moments_post = _get_raw_moments_code(
+    pre, start, op, flush = _get_raw_moments_code(
         coord_c_type=coord_c_type,
         moments_c_type=moments_c_type,
         ndim=ndim,
         order=order,
-        array_size=array_size,
         has_weights=weighted,
         has_spacing=spacing is not None,
         num_channels=num_channels,
     )
 
+    pre += _unravel_loop_index_declarations("labels", ndim, uint_t=coord_c_type)
+    op = (
+        _unravel_loop_index(
+            "labels",
+            ndim=ndim,
+            uint_t=coord_c_type,
+            raveled_index="ii",
+            omit_declarations=True,
+        )
+        + op
+    )
+
     # store only counts for label > 0  (label = 0 is the background)
-    source = f"""
-      uint64_t start_index = {pixels_per_thread}*i;
-    """
-    source += moments_pre
-
-    inner_op = ""
-
-    source += _unravel_loop_index_declarations(
-        "labels", ndim, uint_t=coord_c_type
-    )
-
-    inner_op += _unravel_loop_index(
-        "labels",
-        ndim=ndim,
-        uint_t=coord_c_type,
-        raveled_index="ii",
-        omit_declarations=True,
-    )
-    inner_op += moments_op
-
-    source += f"""
-      X encountered_labels[{array_size}] = {{0}};
-      X current_label;
-      X prev_label = labels[start_index];
-      int offset = 0;
-      encountered_labels[0] = prev_label;
-      uint64_t ii_max = min(start_index + {pixels_per_thread}, labels_size);
-      for (uint64_t ii = start_index; ii < ii_max; ii++) {{
-        current_label = labels[ii];
-        if (current_label == 0) {{ continue; }}
-        if (current_label != prev_label) {{
-            offset += 1;
-            prev_label = current_label;
-            encountered_labels[offset] = current_label;
-        }}
-        {inner_op}
-      }}"""
-    source += """
-      for (size_t ii = 0; ii <= offset; ii++) {
-        X lab = encountered_labels[ii];
-        if (lab != 0) {"""
-
-    source += moments_post
-    source += """
-        }
-      }\n"""
+    source = _get_label_run_loop(pixels_per_thread, pre, start, op, flush)
 
     # print(source)
     inputs = (

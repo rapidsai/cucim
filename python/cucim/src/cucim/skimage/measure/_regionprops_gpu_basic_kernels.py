@@ -13,8 +13,8 @@ from cucim.skimage.morphology import convex_hull_image
 from ._regionprops_gpu_utils import (
     _get_coord_dtype,
     _get_count_dtype,
+    _get_label_run_loop,
     _get_min_integer_dtype,
-    _get_run_count_ctype,
     _includes,
     _unravel_loop_index,
     _unravel_loop_index_declarations,
@@ -69,127 +69,105 @@ basic_deps["perimeter_on_border_ratio"] = [
 basic_deps["slice"] = ["bbox"]
 
 
-def _get_bbox_code(uint_t, ndim, array_size):
+def _get_bbox_code(uint_t, ndim):
     """
     Notes
     -----
-    Local variables created:
+    Variables created (per run of a label):
 
-        - bbox_min : shape (array_size, ndim)
-            local minimum coordinates across the local set of labels encountered
-        - bbox_max : shape (array_size, ndim)
-            local maximum coordinates across the local set of labels encountered
+        - bbox_min0, ..., bbox_min{ndim - 1}
+            minimum coordinates of the run
+        - bbox_max0, ..., bbox_max{ndim - 1}
+            maximum coordinates of the run (exclusive)
 
     Output variables written to:
 
         - bbox : shape (max_label, 2 * ndim)
     """
-
-    # declaration uses external variable:
-    #    labels_size : total number of pixels in the label image
-    source_pre = f"""
-    // bounding box variables
-    {uint_t} bbox_min[{ndim * array_size}];
-    {uint_t} bbox_max[{ndim * array_size}] = {{0}};
-    // initialize minimum coordinate to array size
-    for (size_t ii = 0; ii < {ndim * array_size}; ii++) {{
-      bbox_min[ii] = labels_size;
-    }}\n"""
-
-    # op uses external coordinate array variables:
-    #    in_coord[0]...in_coord[ndim - 1] : coordinates
-    #        coordinates in the labeled image at the current index
-    source_operation = f"""
-          bbox_min[{ndim}*offset] = min(in_coord[0], bbox_min[{ndim}*offset]);
-          bbox_max[{ndim}*offset] = max(in_coord[0] + 1, bbox_max[{ndim}*offset]);"""  # noqa: E501
+    source_pre = ""
+    source_start = ""
+    source_operation = ""
+    source_flush = ""
     for d in range(ndim):
+        source_pre += f"""
+    {uint_t} bbox_min{d}, bbox_max{d};"""
+        source_start += f"""
+          bbox_min{d} = ~static_cast<{uint_t}>(0);
+          bbox_max{d} = 0;"""
+        # op uses external coordinate array variables:
+        #    in_coord[0]...in_coord[ndim - 1] : coordinates
+        #        coordinates in the labeled image at the current index
         source_operation += f"""
-          bbox_min[{ndim}*offset + {d}] = min(in_coord[{d}], bbox_min[{ndim}*offset + {d}]);
-          bbox_max[{ndim}*offset + {d}] = max(in_coord[{d}] + 1, bbox_max[{ndim}*offset + {d}]);"""  # noqa: E501
-
-    # post_operation uses external variables:
-    #     ii : index into num_pixels array
-    #     lab : label value that corresponds to location ii
-    #     bbox : output with shape (max_label, 2 * ndim)
-    source_post = f"""
-          // bounding box outputs
-          atomicMin(&bbox[(lab - 1)*{2 * ndim}], bbox_min[{ndim}*ii]);
-          atomicMax(&bbox[(lab - 1)*{2 * ndim} + {ndim}], bbox_max[{ndim}*ii]);"""  # noqa: E501
-    for d in range(1, ndim):
-        source_post += f"""
-          atomicMin(&bbox[(lab - 1)*{2 * ndim} + {d}], bbox_min[{ndim}*ii + {d}]);
-          atomicMax(&bbox[(lab - 1)*{2 * ndim} + {d + ndim}], bbox_max[{ndim}*ii + {d}]);"""  # noqa: E501
-    return source_pre, source_operation, source_post
+          bbox_min{d} = min(in_coord[{d}], bbox_min{d});
+          bbox_max{d} = max(in_coord[{d}] + 1, bbox_max{d});"""
+        # flush uses external variables:
+        #     lab : label value of the run
+        #     bbox : output with shape (max_label, 2 * ndim)
+        source_flush += f"""
+          atomicMin(&bbox[(lab - 1)*{2 * ndim} + {d}], bbox_min{d});
+          atomicMax(&bbox[(lab - 1)*{2 * ndim} + {d + ndim}], bbox_max{d});"""  # noqa: E501
+    return source_pre, source_start, source_operation, source_flush
 
 
-def _get_num_pixels_code(pixels_per_thread, array_size):
+def _get_num_pixels_code():
     """
     Notes
     -----
-    Local variables created:
+    Variables created (per run of a label):
 
-        - num_pixels : shape (array_size, )
-            The number of pixels encountered per label value
+        - num_pixels : the number of pixels in the run
 
     Output variables written to:
 
         - counts : shape (max_label,)
     """
-    pixel_count_dtype = _get_run_count_ctype(pixels_per_thread)
-
-    source_pre = f"""
-    // num_pixels variables
-    {pixel_count_dtype} num_pixels[{array_size}] = {{0}};\n"""
-
+    source_pre = """
+    uint32_t num_pixels;"""
+    source_start = """
+          num_pixels = 0;"""
     source_operation = """
-        num_pixels[offset] += 1;\n"""
-
-    # post_operation requires external variables:
-    #     ii : index into num_pixels array
-    #     lab : label value that corresponds to location ii
+          num_pixels += 1;"""
+    # flush uses external variables:
+    #     lab : label value of the run
     #     counts : output with shape (max_label,)
-    source_post = """
-        atomicAdd(&counts[lab - 1], num_pixels[ii]);;"""
-    return source_pre, source_operation, source_post
+    source_flush = """
+          atomicAdd(&counts[lab - 1], num_pixels);"""
+    return source_pre, source_start, source_operation, source_flush
 
 
-def _get_coord_sums_code(coord_sum_ctype, ndim, array_size):
+def _get_coord_sums_code(coord_sum_ctype, ndim):
     """
     Notes
     -----
-    Local variables created:
+    Variables created (per run of a label):
 
-        - coord_sum : shape (array_size, ndim)
-            local sum of coordinates across the local set of labels encountered
+        - coord_sum0, ..., coord_sum{ndim - 1}
+            sum of the coordinates of the run
 
     Output variables written to:
 
-        - coord_sums : shape (max_label, 2 * ndim)
+        - coord_sums : shape (max_label, ndim)
     """
-
-    source_pre = f"""
-    {coord_sum_ctype} coord_sum[{ndim * array_size}] = {{0}};\n"""
-
-    # op uses external coordinate array variables:
-    #    in_coord[0]...in_coord[ndim - 1] : coordinates
-    #        coordinates in the labeled image at the current index
-    source_operation = f"""
-        coord_sum[{ndim}*offset] += in_coord[0];"""
-    for d in range(1, ndim):
+    source_pre = ""
+    source_start = ""
+    source_operation = ""
+    source_flush = ""
+    for d in range(ndim):
+        source_pre += f"""
+    {coord_sum_ctype} coord_sum{d};"""
+        source_start += f"""
+          coord_sum{d} = 0;"""
+        # op uses external coordinate array variables:
+        #    in_coord[0]...in_coord[ndim - 1] : coordinates
+        #        coordinates in the labeled image at the current index
         source_operation += f"""
-        coord_sum[{ndim}*offset + {d}] += in_coord[{d}];"""
-    # post_operation uses external variables:
-    #     ii : index into num_pixels array
-    #     lab : label value that corresponds to location ii
-    #     coord_sums : output with shape (max_label, ndim)
-    source_post = f"""
-        // bounding box outputs
-        atomicAdd(&coord_sums[(lab - 1) * {ndim}], coord_sum[{ndim}*ii]);"""
-    for d in range(1, ndim):
-        source_post += f"""
-        atomicAdd(&coord_sums[(lab - 1) * {ndim} + {d}],
-                  coord_sum[{ndim}*ii + {d}]);"""
-    return source_pre, source_operation, source_post
+          coord_sum{d} += in_coord[{d}];"""
+        # flush uses external variables:
+        #     lab : label value of the run
+        #     coord_sums : output with shape (max_label, ndim)
+        source_flush += f"""
+          atomicAdd(&coord_sums[(lab - 1) * {ndim} + {d}], coord_sum{d});"""
+    return source_pre, source_start, source_operation, source_flush
 
 
 @cp.memoize(for_each_device=True)
@@ -209,8 +187,6 @@ def get_bbox_coords_kernel(
         coord_sum_dtype = cp.dtype(cp.uint64)
         coord_sum_ctype = "uint64_t"
 
-    array_size = pixels_per_thread
-
     if coord_dtype.itemsize <= 4:
         uint_t = "unsigned int"
     else:
@@ -219,82 +195,33 @@ def get_bbox_coords_kernel(
     if not (compute_bbox or compute_num_pixels or compute_coordinate_sums):
         raise ValueError("no computation requested")
 
+    fragments = []
     if compute_bbox:
-        bbox_pre, bbox_op, bbox_post = _get_bbox_code(
-            uint_t=uint_t, ndim=ndim, array_size=array_size
-        )
+        fragments.append(_get_bbox_code(uint_t=uint_t, ndim=ndim))
     if compute_num_pixels:
-        count_pre, count_op, count_post = _get_num_pixels_code(
-            pixels_per_thread=pixels_per_thread, array_size=array_size
-        )
+        fragments.append(_get_num_pixels_code())
     if compute_coordinate_sums:
-        coord_sums_pre, coord_sums_op, coord_sums_post = _get_coord_sums_code(
-            coord_sum_ctype=coord_sum_ctype, ndim=ndim, array_size=array_size
+        fragments.append(
+            _get_coord_sums_code(coord_sum_ctype=coord_sum_ctype, ndim=ndim)
         )
-    # store only counts for label > 0  (label = 0 is the background)
-    source = f"""
-      uint64_t start_index = {pixels_per_thread}*i;
-    """
-    if compute_bbox:
-        source += bbox_pre
-    if compute_num_pixels:
-        source += count_pre
-    if compute_coordinate_sums:
-        source += coord_sums_pre
+    pre, start, op, flush = ("".join(f) for f in zip(*fragments))
 
-    inner_op = ""
     if compute_bbox or compute_coordinate_sums:
-        source += _unravel_loop_index_declarations(
-            "labels", ndim, uint_t=uint_t
+        pre += _unravel_loop_index_declarations("labels", ndim, uint_t=uint_t)
+        op = (
+            _unravel_loop_index(
+                "labels",
+                ndim=ndim,
+                uint_t=uint_t,
+                raveled_index="ii",
+                omit_declarations=True,
+            )
+            + op
         )
 
-        inner_op += _unravel_loop_index(
-            "labels",
-            ndim=ndim,
-            uint_t=uint_t,
-            raveled_index="ii",
-            omit_declarations=True,
-        )
-    if compute_bbox:
-        inner_op += bbox_op
-    if compute_num_pixels:
-        inner_op += count_op
-    if compute_coordinate_sums:
-        inner_op += coord_sums_op
+    # store only counts for label > 0  (label = 0 is the background)
+    source = _get_label_run_loop(pixels_per_thread, pre, start, op, flush)
 
-    source += f"""
-      X encountered_labels[{array_size}] = {{0}};
-      X current_label;
-      X prev_label = labels[start_index];
-      int offset = 0;
-      encountered_labels[0] = prev_label;
-      uint64_t ii_max = min(start_index + {pixels_per_thread}, labels_size);
-      for (uint64_t ii = start_index; ii < ii_max; ii++) {{
-        current_label = labels[ii];
-        if (current_label == 0) {{ continue; }}
-        if (current_label != prev_label) {{
-            offset += 1;
-            prev_label = current_label;
-            encountered_labels[offset] = current_label;
-        }}
-        {inner_op}
-      }}"""
-    source += """
-      for (size_t ii = 0; ii <= offset; ii++) {
-        X lab = encountered_labels[ii];
-        if (lab != 0) {"""
-
-    if compute_bbox:
-        source += bbox_post
-    if compute_num_pixels:
-        source += count_post
-    if compute_coordinate_sums:
-        source += coord_sums_post
-    source += """
-        }
-      }\n"""
-
-    # print(source)
     inputs = "raw X labels, raw uint64 labels_size"
     outputs = []
     name = "cucim_"
