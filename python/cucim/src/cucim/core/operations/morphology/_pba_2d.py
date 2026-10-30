@@ -9,6 +9,13 @@ import cupy
 from cucim.skimage._vendored import pad
 from cucim.skimage._vendored._ndimage_util import _get_inttype
 
+# An image is processed transposed if its first axis has at most
+# _TRANSPOSE_MAX_SIZE entries and its second axis is at least _TRANSPOSE_RATIO
+# times longer. For larger sizes there are enough threads in either orientation
+# and reading the transposed views is slower.
+_TRANSPOSE_MAX_SIZE = 1024
+_TRANSPOSE_RATIO = 2
+
 pba2d_defines_template = """
 
 // MARKER is used to mark blank pixels in the texture.
@@ -310,6 +317,25 @@ def _pba_2d(
     #       overhead of querying properties
     block_size = _get_block_size(check_warp_size)
 
+    # Phases 2 and 3 have one thread block per block_size entries of the first
+    # axis, and each thread walks along the whole second axis. Much less work
+    # can be done in parallel if the first axis is short, so a short first axis
+    # in an image that is much longer along the second axis is exchanged with
+    # the second axis. The transposition is only a view: it is undone by
+    # swapping the coordinates when reading the result. This is not done if the
+    # user chose the block parameters since they refer to the axes of the
+    # image. It is also not done if the indices are returned: the distances do
+    # not depend on the order of the axes, but the choice between equidistant
+    # background elements does.
+    transposed = (
+        block_params is None
+        and not return_indices
+        and arr.shape[0] <= _TRANSPOSE_MAX_SIZE
+        and arr.shape[1] >= _TRANSPOSE_RATIO * arr.shape[0]
+    )
+    if transposed:
+        arr = arr.T
+
     orig_sy, orig_sx = arr.shape
     if block_params is None:
         m1, m2, m3 = _default_block_params(arr.shape, block_size)
@@ -433,7 +459,9 @@ def _pba_2d(
         # we are now working with (x, y) instead. Need sampling ordered
         # accordingly.
         sampling = tuple(map(float, sampling))
-        sampling_args = (sampling[0], sampling[1])
+        # reverse the order if the image was transposed
+        kernel_sampling = sampling[::-1] if transposed else sampling
+        sampling_args = (kernel_sampling[0], kernel_sampling[1])
     kernelProximatePoints(
         grid,
         block,
@@ -476,6 +504,10 @@ def _pba_2d(
     # make sure to crop any padding that was added here!
     x = output[:orig_sy, :orig_sx, 0]
     y = output[:orig_sy, :orig_sx, 1]
+    if transposed:
+        # the roles of the axes were exchanged: transpose to get views with
+        # the shape of the input
+        x, y = y.T, x.T
 
     vals = ()
     if return_distances:

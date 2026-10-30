@@ -486,6 +486,49 @@ def test_pba2d_determine_padding(shape, block_params, expected):
     assert _determine_padding(shape, 32, m1, m2) == expected
 
 
+@pytest.mark.parametrize(
+    "shape",
+    [
+        (64, 4096),  # processed transposed
+        (300, 1000),  # processed transposed
+        (1024, 2048),  # processed transposed
+        (1024, 1500),
+        (2048, 4096),  # too large to be processed transposed
+    ],
+)
+@pytest.mark.parametrize("sampling", [None, (2.25, 0.85)])
+def test_distance_transform_edt_2d_orientation(shape, sampling):
+    """The distances do not depend on the order of the axes."""
+    img = binary_image(shape, pct_true=5)
+    # (the distances are computed in the transposed orientation if the first
+    # axis is short, but not if the indices are requested)
+    dist = distance_transform_edt(img, sampling=sampling)
+    sampling_t = None if sampling is None else sampling[::-1]
+    dist_t = distance_transform_edt(
+        cp.ascontiguousarray(img.T), sampling=sampling_t
+    )
+    cp.testing.assert_allclose(dist, dist_t.T, rtol=1e-6)
+
+    img_cpu = cp.asnumpy(img)
+    expected = ndi_cpu.distance_transform_edt(img_cpu, sampling=sampling)
+    cp.testing.assert_allclose(dist, expected, rtol=1e-6)
+
+    # the same distances are returned if the indices are also requested, and
+    # these are background locations that reproduce the distances
+    dist2, ind = distance_transform_edt(
+        img, sampling=sampling, return_indices=True
+    )
+    cp.testing.assert_array_equal(dist, dist2)
+    ind = cp.asnumpy(ind)
+    assert not img_cpu[tuple(ind)].any()
+    scale = np.ones(2) if sampling is None else np.asarray(sampling)
+    offsets = ind - np.indices(shape)
+    from_indices = np.sqrt(
+        sum((o * s) ** 2 for o, s in zip(offsets, scale)), dtype=np.float64
+    )
+    np.testing.assert_allclose(from_indices, expected, rtol=1e-5)
+
+
 def test_pba2d_default_block_params():
     from cucim.core.operations.morphology._pba_2d import _default_block_params
 
