@@ -21,7 +21,6 @@ from cucim.skimage import data, measure
 from cucim.skimage._vendored import ndimage as ndi
 from cucim.skimage.measure._regionprops import PROPS
 from cucim.skimage.measure._regionprops_gpu import (
-    _find_close_labels,
     equivalent_diameter_area,
     ndim_2_only,
     need_intensity_image,
@@ -66,6 +65,7 @@ from cucim.skimage.measure._regionprops_gpu_moments_kernels import (
     get_raw_moments_kernel,
     moment_deps,
 )
+from cucim.skimage.measure._regionprops_gpu_utils import _find_close_labels
 
 
 def get_labels_nd(
@@ -1360,6 +1360,51 @@ def test_perimeter_crofton(shape, robust, volume_fraction, blob_size_fraction):
     atol = 1e-5
     allclose = functools.partial(assert_allclose, rtol=rtol, atol=atol)
     allclose(values, expected["perimeter_crofton"])
+
+
+@pytest.mark.parametrize("granularity", [1, 2, 3, 5])
+@pytest.mark.parametrize("label_dtype", [cp.uint8, cp.int32])
+def test_boundary_properties_touching_labels(granularity, label_dtype):
+    # every region is measured as in isolation, also when regions touch
+    rng = np.random.default_rng(granularity)
+    g = granularity
+    small = rng.integers(0, 7, size=(61 // g + 1, 87 // g + 1))
+    labels = np.kron(small, np.ones((g, g), dtype=int))[:61, :87]
+    labels_gpu = cp.asarray(labels.astype(label_dtype))
+    max_label = int(labels.max())
+    masks = [labels == lab for lab in range(1, max_label + 1)]
+    for neighborhood in [4, 8]:
+        values = regionprops_perimeter(
+            labels_gpu, neighborhood, max_label=max_label
+        )
+        expected = [measure_cpu.perimeter(m, neighborhood) for m in masks]
+        assert_allclose(values, expected, rtol=1e-12, atol=1e-12)
+    for directions in [2, 4]:
+        values = regionprops_perimeter_crofton(
+            labels_gpu, directions, max_label=max_label
+        )
+        expected = [measure_cpu.perimeter_crofton(m, directions) for m in masks]
+        assert_allclose(values, expected, rtol=1e-12, atol=1e-12)
+    for connectivity in [1, 2]:
+        values = regionprops_euler(
+            labels_gpu, connectivity, max_label=max_label
+        )
+        expected = [measure_cpu.euler_number(m, connectivity) for m in masks]
+        assert_array_equal(values, expected)
+
+    small = rng.integers(0, 5, size=(9, 8, 10))
+    labels = np.kron(small, np.ones((g, g, g), dtype=int))[:17, :13, :19]
+    labels_gpu = cp.asarray(labels.astype(label_dtype))
+    max_label = int(labels.max())
+    for connectivity in [1, 3]:
+        values = regionprops_euler(
+            labels_gpu, connectivity, max_label=max_label
+        )
+        expected = [
+            measure_cpu.euler_number(labels == lab, connectivity)
+            for lab in range(1, max_label + 1)
+        ]
+        assert_array_equal(values, expected)
 
 
 @pytest.mark.parametrize(

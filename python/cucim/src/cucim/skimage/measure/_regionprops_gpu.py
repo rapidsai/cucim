@@ -65,7 +65,7 @@ from ._regionprops_gpu_moments_kernels import (
     regionprops_moments_normalized,
     required_order,
 )
-from ._regionprops_gpu_utils import _find_close_labels, _get_min_integer_dtype
+from ._regionprops_gpu_utils import _get_min_integer_dtype
 
 __all__ = [
     "equivalent_diameter_area",
@@ -304,14 +304,9 @@ def regionprops_dict(
         corresponds to `pixels_per_thread` and can be used as a performance
         tuning parameter.
     robust_perimeter : bool, optional
-        Batch computation of perimeter and euler characteristics can give
-        incorrect results for perimeter pixels that are not more than 1 pixel
-        spacing from another label. If True, a check for this condition is
-        performed and any labels close to another label have their perimeter
-        recomputed in isolation. Doing this check results in performance
-        overhead so can optionally be disabled. This parameter affects the
-        following regionprops: {"perimeter", "perimeter_crofton",
-        "euler_number"}.
+        Unused. The perimeter, Crofton perimeter and Euler number of every
+        region are computed as for the region in isolation, as in
+        scikit-image, also when regions are close to or touch each other.
     to_table : bool, optional
         If true, split up vector/matrix properties into separate keys for
         the individual elements to match the output format of
@@ -684,62 +679,35 @@ def regionprops_dict(
     compute_perimeter_crofton = "perimeter_crofton" in required_props
     compute_euler = "euler_number" in required_props
 
-    if compute_euler or compute_perimeter or compute_perimeter_crofton:
-        # precompute list of labels with <2 pixels space between them
-        if label_image.dtype == cp.uint8:
-            labels_mask = label_image.view("bool")
-        else:
-            labels_mask = label_image > 0
-        if robust_perimeter:
-            # avoid repeatedly computing "labels_close" for
-            # perimeter, perimeter_crofton and euler_number regionprops
-            labels_close = _find_close_labels(
-                label_image, binary_image=labels_mask, max_label=max_label
+    # each region is measured in isolation, as in scikit-image
+    if compute_perimeter:
+        regionprops_perimeter(
+            label_image,
+            neighborhood=4,
+            max_label=max_label,
+            props_dict=out,
+        )
+        if spacing is not None:
+            out["perimeter"] = out["perimeter"] * float(spacing[0])
+    if compute_perimeter_crofton:
+        regionprops_perimeter_crofton(
+            label_image,
+            directions=4,
+            max_label=max_label,
+            omit_image_edges=False,
+            props_dict=out,
+        )
+        if spacing is not None:
+            out["perimeter_crofton"] = out["perimeter_crofton"] * float(
+                spacing[0]
             )
-            if labels_close.size > 0:
-                print(
-                    f"Found {labels_close.size} regions with <=1 background "
-                    "pixel spacing from another region. Using slower robust "
-                    "perimeter/euler measurements for these regions."
-                )
-        else:
-            labels_close = None
-
-        if compute_perimeter:
-            regionprops_perimeter(
-                label_image,
-                neighborhood=4,
-                max_label=max_label,
-                robust=robust_perimeter,
-                labels_close=labels_close,
-                props_dict=out,
-            )
-            if spacing is not None:
-                out["perimeter"] = out["perimeter"] * float(spacing[0])
-        if compute_perimeter_crofton:
-            regionprops_perimeter_crofton(
-                label_image,
-                directions=4,
-                max_label=max_label,
-                robust=robust_perimeter,
-                omit_image_edges=False,
-                labels_close=labels_close,
-                props_dict=out,
-            )
-            if spacing is not None:
-                out["perimeter_crofton"] = out["perimeter_crofton"] * float(
-                    spacing[0]
-                )
-
-        if compute_euler:
-            regionprops_euler(
-                label_image,
-                connectivity=None,
-                max_label=max_label,
-                robust=robust_perimeter,
-                labels_close=labels_close,
-                props_dict=out,
-            )
+    if compute_euler:
+        regionprops_euler(
+            label_image,
+            connectivity=None,
+            max_label=max_label,
+            props_dict=out,
+        )
 
     compute_images = ("image" in required_props) or (len(extra_properties) > 0)
     compute_intensity_images = ("image_intensity" in required_props) or (
