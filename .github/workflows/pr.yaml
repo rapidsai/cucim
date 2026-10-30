@@ -187,6 +187,7 @@ jobs:
       build_type: pull-request
       build-datetime: ${{ needs.build-details.outputs.build-datetime }}
       script: ci/build_cpp.sh
+      matrix_type: cuda-13-4-pr
   conda-python-build:
     needs: [build-details, conda-cpp-build]
     permissions:
@@ -202,6 +203,7 @@ jobs:
       build-datetime: ${{ needs.build-details.outputs.build-datetime }}
       matrix_filter: group_by({CUDA_VER, ARCH}) | map(min_by(.PY_VER | split(".") | map(tonumber)))
       script: ci/build_python.sh
+      matrix_type: cuda-13-4-pr
   conda-python-tests:
     needs: [conda-python-build, changed-files]
     if: fromJSON(needs.changed-files.outputs.changed_file_groups).test_python_conda
@@ -216,6 +218,7 @@ jobs:
     with:
       build_type: pull-request
       script: ci/test_python.sh
+      matrix_type: cuda-13-4-pr,pull-request
   docs-build-matrix:
     permissions:
       contents: read
@@ -223,6 +226,7 @@ jobs:
     with:
       build_type: pull-request
       matrix_name: docs-build
+      matrix_type: cuda-13-4-pr
   docs-build:
     needs: [docs-build-matrix, conda-python-build, changed-files]
     if: fromJSON(needs.changed-files.outputs.changed_file_groups).build_docs
@@ -280,6 +284,7 @@ jobs:
       script: ci/build_wheel.sh
       package-name: cucim
       package-type: python
+      matrix_type: cuda-13-4-pr
   wheel-tests:
     needs: [wheel-build, changed-files]
     if: fromJSON(needs.changed-files.outputs.changed_file_groups).test_python_wheels
@@ -294,3 +299,4 @@ jobs:
     with:
       build_type: pull-request
       script: ci/test_wheel.sh
+      matrix_type: cuda-13-4-pr,pull-request
