@@ -116,15 +116,43 @@ def _unpack_int2(img, make_copy=False, int_dtype=cupy.int16):
     return temp
 
 
-def _determine_padding(shape, padded_size, block_size):
-    # all kernels assume equal size along both axes, so pad up to equal size if
-    # shape is not isotropic
+def _default_block_params(shape, block_size):
+    """Default (m1, m2, m3) for an image of the given shape."""
+    # number of block_size tiles along each axis, rounding up
+    n_y = math.ceil(shape[0] / block_size)
+    n_x = math.ceil(shape[1] / block_size)
+    # m1: bands in phase 1 have block_size rows. This is applied along the
+    # first axis.
+    m1 = n_y
+    # m2: number of bands for phase 2. This must be a power of two. It is
+    # applied along the second axis.
+    m2 = max(1, min(n_x, block_size))
+    m2 = 2 ** math.floor(math.log2(m2))
+    m3 = min(m1, m2, 2)
+    return m1, m2, m3
+
+
+def _determine_padding(shape, block_size, m1, m2):
+    """Padding so that the kernels' bands and tiles divide each axis exactly.
+
+    Each axis is padded separately: the kernels take a separate size for each
+    axis, so the image does not have to be square.
+
+    - The first axis is divided into `m1` bands that have to be a multiple of
+      `block_size` rows (the size of the tiles used to transpose the image).
+    - The second axis is divided into `m2` bands and has to be a multiple of
+      `block_size` (the size of the tiles used to transpose the image).
+
+    Returns the ``pad`` width for each axis or None if no padding is needed.
+    """
     orig_sy, orig_sx = shape
-    if orig_sx != padded_size or orig_sy != padded_size:
-        padding_width = ((0, padded_size - orig_sy), (0, padded_size - orig_sx))
-    else:
-        padding_width = None
-    return padding_width
+    y_multiple = block_size * m1
+    x_multiple = math.lcm(block_size, m2)
+    sy = -(-orig_sy // y_multiple) * y_multiple
+    sx = -(-orig_sx // x_multiple) * x_multiple
+    if (sy, sx) == tuple(shape):
+        return None
+    return ((0, sy - orig_sy), (0, sx - orig_sx))
 
 
 def _generate_shape(ndim, int_type, var_name="out", raw_var=True):
@@ -264,45 +292,47 @@ def _pba_2d(
     #       overhead of querying properties
     block_size = _get_block_size(check_warp_size)
 
+    orig_sy, orig_sx = arr.shape
     if block_params is None:
-        padded_size = math.ceil(max(arr.shape) / block_size) * block_size
-
-        # should be <= size / block_size. sy must be a multiple of m1
-        m1 = padded_size // block_size
-        # size must be a multiple of m2
-        m2 = max(1, min(padded_size // block_size, block_size))
-        # m2 must also be a power of two
-        m2 = 2 ** math.floor(math.log2(m2))
-        if padded_size % m2 != 0:
-            raise RuntimeError("error in setting default m2")
-        m3 = min(min(m1, m2), 2)
+        m1, m2, m3 = _default_block_params(arr.shape, block_size)
     else:
         if any(p < 1 for p in block_params):
             raise ValueError("(m1, m2, m3) in blockparams must be >= 1")
         m1, m2, m3 = block_params
         if math.log2(m2) % 1 > 1e-5:
             raise ValueError("m2 must be a power of 2")
-        # the bands can't be smaller than block_size
-        max_m = math.ceil(max(arr.shape) / block_size)
-        for name, m in zip(("m1", "m2", "m3"), (m1, m2, m3)):
-            if m > max_m:
-                raise ValueError(
-                    f"{name} too large. must be <= arr.shape // {block_size} "
-                    "(rounded up)"
-                )
-        # The phase 1 bands have padded_size // m1 rows, which have to be a
-        # multiple of block_size (the size of the tiles used to transpose).
-        multiple = math.lcm(block_size * m1, m2, m3)
-        padded_size = math.ceil(max(arr.shape) / multiple) * multiple
 
-    for m in (m1, m2, m3):
-        if padded_size % m != 0:
-            raise ValueError(
-                f"Largest dimension of image ({padded_size}) must be evenly "
-                f"disivible by each element of block_params: {(m1, m2, m3)}."
-            )
+    # the bands can't be smaller than block_size
+    n_y = math.ceil(orig_sy / block_size)
+    n_x = math.ceil(orig_sx / block_size)
+    if m1 > n_y:
+        raise ValueError(
+            f"m1 too large. must be <= arr.shape[0] // {block_size} "
+            "(rounded up)"
+        )
+    if m2 > n_x:
+        raise ValueError(
+            f"m2 too large. must be <= arr.shape[1] // {block_size} "
+            "(rounded up)"
+        )
+    if m3 > n_x:
+        raise ValueError(
+            f"m3 too large. must be <= arr.shape[1] // {block_size} "
+            "(rounded up)"
+        )
 
-    shape_max = max(arr.shape)
+    padding_width = _determine_padding(arr.shape, block_size, m1, m2)
+    if padding_width is not None:
+        arr = pad(arr, padding_width, mode="constant", constant_values=1)
+    sy, sx = arr.shape
+    if sy * sx >= 2**31:
+        # the kernels index the array with 32-bit integers
+        raise ValueError(
+            f"the padded array shape {arr.shape} has too many elements: "
+            "at most 2**31 - 1 are supported"
+        )
+
+    shape_max = max(sy, sx)
     if shape_max <= 32768:
         int_dtype = cupy.int16
         pixel_int2_type = "short2"
@@ -319,17 +349,11 @@ def _pba_2d(
 
     marker = _init_marker(int_dtype)
 
-    orig_sy, orig_sx = arr.shape
-    padding_width = _determine_padding(arr.shape, padded_size, block_size)
-    if padding_width is not None:
-        arr = pad(arr, padding_width, mode="constant", constant_values=1)
-    size = arr.shape[0]
-
     input_arr = _pack_int2(arr, marker=marker, int_dtype=int_dtype)
     output = cupy.zeros_like(input_arr)
 
     int2_dtype = cupy.dtype({"names": ["x", "y"], "formats": [int_dtype] * 2})
-    margin = cupy.empty((2 * m1 * size,), dtype=int2_dtype)
+    margin = cupy.empty((2 * m1 * sx,), dtype=int2_dtype)
 
     # phase 1 of PBA. m1 must divide texture size and be <= 64
     pba2d = cupy.RawModule(
@@ -359,39 +383,30 @@ def _pba_2d(
         kernelMergeBands = pba2d.get_function("kernelMergeBandsWithSpacing")
         kernelColor = pba2d.get_function("kernelColorWithSpacing")
 
+    # Phase 1 works along the first axis of the (sy, sx) image, in bands of
+    # bandSize1 rows. Each launch gets the size of the image that it reads.
     block = (block_size, 1, 1)
-    grid = (math.ceil(size / block[0]), m1, 1)
-    bandSize1 = size // m1
+    grid = (sx // block_size, m1, 1)
+    bandSize1 = sy // m1
     # kernelFloodDown modifies input_arr in-place
-    kernelFloodDown(
-        grid,
-        block,
-        (input_arr, input_arr, size, bandSize1),
-    )
+    kernelFloodDown(grid, block, (input_arr, input_arr, sx, bandSize1))
     # kernelFloodUp modifies input_arr in-place
-    kernelFloodUp(
-        grid,
-        block,
-        (input_arr, input_arr, size, bandSize1),
-    )
+    kernelFloodUp(grid, block, (input_arr, input_arr, sx, bandSize1))
     # kernelFloodUp fills values into margin
     kernelPropagateInterband(
-        grid,
-        block,
-        (input_arr, margin, size, bandSize1),
+        grid, block, (input_arr, margin, sx, sy, bandSize1)
     )
     # kernelUpdateVertical stores output into an intermediate array of
-    # transposed shape
+    # transposed shape (sx, sy)
     kernelUpdateVertical(
-        grid,
-        block,
-        (input_arr, margin, output, size, bandSize1),
+        grid, block, (input_arr, margin, output, sx, sy, bandSize1)
     )
 
-    # phase 2
+    # phase 2 works along the first axis of the transposed image (sx rows of
+    # length sy)
     block = (block_size, 1, 1)
-    grid = (math.ceil(size / block[0]), m2, 1)
-    bandSize2 = size // m2
+    grid = (sy // block_size, m2, 1)
+    bandSize2 = sx // m2
     if sampling is None:
         sampling_args = ()
     else:
@@ -404,40 +419,39 @@ def _pba_2d(
     kernelProximatePoints(
         grid,
         block,
-        (output, input_arr, size, bandSize2) + sampling_args,
+        (output, input_arr, sy, bandSize2) + sampling_args,
     )
     kernelCreateForwardPointers(
         grid,
         block,
-        (input_arr, input_arr, size, bandSize2),
+        (input_arr, input_arr, sy, bandSize2),
     )
     # Repeatedly merging two bands into one
     noBand = m2
     while noBand > 1:
-        grid = (math.ceil(size / block[0]), noBand // 2)
+        grid = (sy // block_size, noBand // 2)
         kernelMergeBands(
             grid,
             block,
-            (output, input_arr, input_arr, size, size // noBand)
-            + sampling_args,  # noqa
+            (output, input_arr, input_arr, sy, sx // noBand) + sampling_args,
         )
         noBand //= 2
     # Replace the forward link with the X coordinate of the seed to remove
     # the need of looking at the other texture. We need it for coloring.
-    grid = (math.ceil(size / block[0]), size)
+    grid = (sy // block_size, sx)
     kernelDoubleToSingleList(
         grid,
         block,
-        (output, input_arr, input_arr, size),
+        (output, input_arr, input_arr, sy),
     )
 
-    # Phase 3 of PBA
+    # Phase 3 of PBA: this transposes back to the original shape
     block = (block_size, m3, 1)
-    grid = (math.ceil(size / block[0]), 1, 1)
+    grid = (sy // block_size, 1, 1)
     kernelColor(
         grid,
         block,
-        (input_arr, output, size) + sampling_args,
+        (input_arr, output, sy, sx) + sampling_args,
     )
 
     output = _unpack_int2(output, make_copy=False, int_dtype=int_dtype)

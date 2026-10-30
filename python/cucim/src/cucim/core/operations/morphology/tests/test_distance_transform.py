@@ -349,6 +349,109 @@ def test_distance_transform_edt_3d_too_many_elements():
         distance_transform_edt(img)
 
 
+@pytest.mark.parametrize(
+    "shape",
+    [
+        (1, 40),
+        (40, 1),
+        (3, 500),
+        (500, 3),
+        (33, 1000),
+        (1000, 33),
+        (64, 4096),  # one axis much longer than the other
+        (4096, 64),
+        (37, 129),
+        (100, 300),
+        (2000, 70),
+    ],
+)
+@pytest.mark.parametrize("sampling", [None, (2.25, 0.85)])
+@pytest.mark.parametrize("density", [2, 50, 98])
+def test_distance_transform_edt_2d_strongly_aniso(shape, sampling, density):
+    """Axes of very different size are not padded to a common size."""
+    img = binary_image(shape, pct_true=density)
+    # ensure there is at least one background pixel
+    img[(0,) * 2] = False
+    dist, ind = distance_transform_edt(
+        img, sampling=sampling, return_indices=True
+    )
+    img_cpu = cp.asnumpy(img)
+    expected = ndi_cpu.distance_transform_edt(img_cpu, sampling=sampling)
+    cp.testing.assert_allclose(dist, expected, rtol=1e-6)
+
+    # The indices may differ from SciPy's at equidistant pixels, so check that
+    # they are valid background locations that reproduce the distances.
+    ind = cp.asnumpy(ind)
+    assert not img_cpu[tuple(ind)].any()
+    scale = np.ones(2) if sampling is None else np.asarray(sampling)
+    offsets = ind - np.indices(shape)
+    from_indices = np.sqrt(
+        sum((o * s) ** 2 for o, s in zip(offsets, scale)), dtype=np.float64
+    )
+    np.testing.assert_allclose(from_indices, expected, rtol=1e-5)
+
+
+@pytest.mark.parametrize(
+    "shape, block_params",
+    [
+        # the size of the bands has to be a multiple of 32
+        ((288, 288), (6, 1, 1)),
+        ((300, 520), (6, 4, 2)),
+        ((100, 2000), (2, 16, 3)),
+        ((513, 70), (7, 2, 1)),
+        ((96, 1024), (3, 8, 4)),
+    ],
+)
+def test_distance_transform_edt_block_params_non_isotropic(shape, block_params):
+    img = binary_image(shape, pct_true=4)
+    distances = distance_transform_edt(img, block_params=block_params)
+    expected = ndi_cpu.distance_transform_edt(cp.asnumpy(img))
+    cp.testing.assert_allclose(distances, expected, rtol=1e-6)
+
+
+@pytest.mark.parametrize(
+    "shape, block_params, expected",
+    [
+        ((256, 4096), None, None),  # nothing to pad
+        ((100, 300), None, ((0, 28), (0, 20))),
+        ((300, 100), None, ((0, 20), (0, 28))),
+        ((1, 1), None, ((0, 31), (0, 31))),
+        # m1 bands of a multiple of 32 rows each
+        ((288, 288), (6, 1, 1), ((0, 96), (0, 0))),
+        ((288, 288), (1, 64, 1), ((0, 0), (0, 64 - 32))),
+    ],
+)
+def test_pba2d_determine_padding(shape, block_params, expected):
+    """Each axis is padded separately, not up to a common size."""
+    from cucim.core.operations.morphology._pba_2d import (
+        _default_block_params,
+        _determine_padding,
+    )
+
+    # block_size = 32 is the default value
+    if block_params is None:
+        block_params = _default_block_params(shape, 32)
+    m1, m2, _ = block_params
+    assert _determine_padding(shape, 32, m1, m2) == expected
+
+
+def test_pba2d_default_block_params():
+    from cucim.core.operations.morphology._pba_2d import _default_block_params
+
+    # m1 is set by the first axis and m2 by the second axis
+    assert _default_block_params((100, 300), 32) == (4, 8, 2)
+    assert _default_block_params((4096, 256), 32) == (128, 8, 2)
+    assert _default_block_params((256, 4096), 32) == (8, 32, 2)
+    assert _default_block_params((32, 32), 32) == (1, 1, 1)
+
+
+def test_distance_transform_edt_2d_too_many_elements():
+    # broadcast_to avoids allocating the (2 GiB) array
+    img = cp.broadcast_to(cp.zeros((1, 1), dtype=bool), (46400, 46400))
+    with pytest.raises(ValueError, match="too many elements"):
+        distance_transform_edt(img)
+
+
 @pytest.mark.parametrize("ndim", [1, 4, 5])
 def test_distance_transform_edt_unsupported_ndim(ndim):
     with pytest.raises(NotImplementedError):
