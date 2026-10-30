@@ -456,13 +456,11 @@ def _get_hull_rows_2d_kernel():
     )
 
 
-def _convex_hull_rows_2d(row_first, row_last, offsets, num_rows, max_label):
-    """Rows of each 2D region's convex image.
+def _convex_hull_chains_2d(row_first, row_last, offsets, num_rows, max_label):
+    """Left and right hull chains of each 2D region, and their sizes.
 
-    Takes the output of `_regionprops_row_extents`. Returns the first and last
-    column of each row of each convex image (relative to the bounding box, in
-    the same layout as the row extents) and the number of pixels of each
-    convex image.
+    Takes row extents in the layout of `_regionprops_row_extents` (of the
+    regions, or of their convex images). See `_get_hull_chains_2d_kernel`.
     """
     dtype = row_first.dtype
     capacity = 2 * num_rows + max_label
@@ -478,14 +476,27 @@ def _convex_hull_rows_2d(row_first, row_last, offsets, num_rows, max_label):
         chain_sizes,
         size=max_label,
     )
+    return left_chains, right_chains, chain_sizes
+
+
+def _convex_hull_rows_2d(row_first, row_last, offsets, num_rows, max_label):
+    """Rows of each 2D region's convex image.
+
+    Takes the output of `_regionprops_row_extents`. Returns the first and last
+    column of each row of each convex image (relative to the bounding box, in
+    the same layout as the row extents) and the number of pixels of each
+    convex image.
+    """
+    chains = _convex_hull_chains_2d(
+        row_first, row_last, offsets, num_rows, max_label
+    )
+    dtype = row_first.dtype
     row_lo = cp.empty((num_rows,), dtype=dtype)
     row_hi = cp.empty((num_rows,), dtype=dtype)
     num_pixels = cp.zeros((max_label,), dtype=cp.uint64)
     if num_rows > 0:
         _get_hull_rows_2d_kernel()(
-            left_chains,
-            right_chains,
-            chain_sizes,
+            *chains,
             offsets,
             max_label,
             row_lo,
@@ -493,6 +504,84 @@ def _convex_hull_rows_2d(row_first, row_last, offsets, num_rows, max_label):
             num_pixels,
         )
     return row_lo, row_hi, num_pixels
+
+
+@cp.memoize(for_each_device=True)
+def _get_feret_diameter_max_2d_kernel():
+    """Kernel computing the maximum Feret diameter of each 2D region.
+
+    One warp per label. The vertices are those of the hull chains of the
+    label's convex image (in doubled coordinates); each lane takes every 32nd
+    vertex and its distances to all later vertices, and the warp keeps the
+    largest. The distances are scaled by the spacing.
+    """
+    source = """
+      long long l = i / 32;
+      int lane = static_cast<int>(i & 31);
+      long long base = 2 * offsets[l] + l;
+      const E* left = &left_chains[2 * base];
+      const E* right = &right_chains[2 * base];
+      int n_left = chain_sizes[2 * l];
+      int n = n_left + chain_sizes[2 * l + 1];
+      double best = 0.0;
+      for (int p = lane; p < n; p += 32) {
+        const E* vp = p < n_left ? &left[2 * p] : &right[2 * (p - n_left)];
+        E py = vp[0];
+        E px = vp[1];
+        for (int q = p + 1; q < n; q++) {
+          const E* vq = q < n_left ? &left[2 * q]
+                                   : &right[2 * (q - n_left)];
+          double dy = static_cast<double>(vq[0] - py) * half_spacing0;
+          double dx = static_cast<double>(vq[1] - px) * half_spacing1;
+          best = fmax(best, dy * dy + dx * dx);
+        }
+      }
+      for (int offset = 16; offset > 0; offset >>= 1) {
+        best = fmax(best, __shfl_xor_sync(0xffffffffu, best, offset));
+      }
+      if (lane == 0) {
+        feret[l] = sqrt(best);
+      }\n"""
+    inputs = (
+        "raw E left_chains, raw E right_chains, raw int32 chain_sizes, "
+        "raw int64 offsets, float64 half_spacing0, float64 half_spacing1"
+    )
+    return cp.ElementwiseKernel(
+        inputs,
+        "raw float64 feret",
+        source,
+        preamble=_warp_includes,
+        name="cucim_feret_diameter_max_2d",
+    )
+
+
+def _feret_diameter_max_2d(
+    row_lo, row_hi, offsets, num_rows, max_label, spacing=None
+):
+    """Maximum Feret diameter of each 2D region, from its convex image's rows.
+
+    scikit-image takes the largest distance between the contour points of the
+    convex image at level 0.5. For a binary image these are the diamond
+    points of its boundary pixels, and the largest distance between points is
+    reached at two vertices of their convex hull, which is also the hull of
+    the diamond points of each row's first and last pixel. So the result is
+    the largest distance between the vertices of the hull chains of the
+    convex image (`_get_hull_chains_2d_kernel`).
+    """
+    chains = _convex_hull_chains_2d(
+        row_lo, row_hi, offsets, num_rows, max_label
+    )
+    spacing = (1.0, 1.0) if spacing is None else spacing
+    feret = cp.empty((max_label,), dtype=cp.float64)
+    _get_feret_diameter_max_2d_kernel()(
+        *chains,
+        offsets,
+        0.5 * float(spacing[0]),
+        0.5 * float(spacing[1]),
+        feret,
+        size=32 * max_label,
+    )
+    return feret
 
 
 @cp.memoize(for_each_device=True)
@@ -594,11 +683,10 @@ def _regionprops_convex(
     writes "area_convex" to props_dict if `compute_area`
     writes "feret_diameter_max" to props_dict if `compute_feret`
 
-    In 2D, the convex images and their areas are computed for all labels at
-    once from the hull of each region's row extents (see
-    `_get_hull_chains_2d_kernel`), and the Feret diameters from these convex
-    images. In other dimensions, all properties are computed from one convex
-    image per label (`regionprops_image`).
+    In 2D, all properties are computed for all labels at once from the hull
+    of each region's row extents (see `_get_hull_chains_2d_kernel` and
+    `_feret_diameter_max_2d`). In other dimensions, they are computed from
+    one convex image per label (`regionprops_image`).
 
     Parameters
     ----------
@@ -621,27 +709,32 @@ def _regionprops_convex(
             props_dict["area_convex"] = num_pixels.astype(cp.float64) * (
                 _pixel_area(spacing)
             )
-        if compute_image or compute_feret:
-            images_convex = _convex_images(
+        if compute_image:
+            props_dict["image_convex"] = _convex_images(
                 row_lo, row_hi, offsets, bbox, max_label
             )
-    else:
-        # bounding-box slices given explicitly: one convex image per label
-        _, _, images_convex = regionprops_image(
-            label_image,
-            slices=_bbox_slices(bbox),
-            max_label=max_label,
-            compute_image=False,
-            compute_convex=True,
-            props_dict={},
-        )
-        if compute_area:
-            regionprops_area_convex(
-                images_convex,
-                max_label=max_label,
-                spacing=spacing,
-                props_dict=props_dict,
+        if compute_feret:
+            props_dict["feret_diameter_max"] = _feret_diameter_max_2d(
+                row_lo, row_hi, offsets, num_rows, max_label, spacing
             )
+        return props_dict
+
+    # bounding-box slices given explicitly: one convex image per label
+    _, _, images_convex = regionprops_image(
+        label_image,
+        slices=_bbox_slices(bbox),
+        max_label=max_label,
+        compute_image=False,
+        compute_convex=True,
+        props_dict={},
+    )
+    if compute_area:
+        regionprops_area_convex(
+            images_convex,
+            max_label=max_label,
+            spacing=spacing,
+            props_dict=props_dict,
+        )
     if compute_image:
         props_dict["image_convex"] = images_convex
     if compute_feret:
