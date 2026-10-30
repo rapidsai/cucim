@@ -128,7 +128,7 @@ def regionprops_centroid(
     if compute_num_pixels:
         outputs = (centroid_counts, centroid_sums)
     else:
-        outputs = centroid_sums
+        outputs = (centroid_sums,)
     bbox_coords_kernel(
         label_image,
         label_image.size,
