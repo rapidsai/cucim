@@ -1782,3 +1782,23 @@ def test_regionprops_dict_coordinates_beyond_2_32_pixels():
     expected = regionprops_dict(small, properties=properties)
     for name in ["centroid_local", "moments_central"]:
         assert_allclose(props[name], expected[name])
+
+
+def test_centroid_region_of_2_32_pixels():
+    # pixel counts of 2**32 or more must not wrap
+    shape = (2**16 + 1, 2**16)
+    if cp.cuda.Device().mem_info[0] < 2 * math.prod(shape):
+        pytest.skip("not enough free GPU memory for a 4 GB label image")
+    labels = cp.ones(shape, dtype=cp.uint8)
+    rows, cols = shape
+    labels[rows - 4 : rows - 1, 7:12] = 2
+    centroid = regionprops_centroid(labels, max_label=2)
+    centroid_local = regionprops_centroid_local(labels, max_label=2)
+    del labels
+
+    # centroid of label 1 from those of the whole image and of label 2
+    n1 = rows * cols - 15
+    row1 = ((rows - 1) * rows / 2 * cols - 15 * (rows - 3)) / n1
+    col1 = ((cols - 1) * cols / 2 * rows - 3 * (7 + 8 + 9 + 10 + 11)) / n1
+    assert_allclose(centroid, [[row1, col1], [rows - 3, 9]], rtol=1e-12)
+    assert_allclose(centroid_local, [[row1, col1], [1, 2]], rtol=1e-12)

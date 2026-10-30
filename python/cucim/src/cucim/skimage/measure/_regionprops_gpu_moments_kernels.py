@@ -9,6 +9,7 @@ from ._regionprops_gpu_basic_kernels import get_bbox_coords_kernel
 from ._regionprops_gpu_utils import (
     _check_intensity_image_shape,
     _get_coord_dtype,
+    _get_count_dtype,
     _includes,
     _unravel_loop_index,
     _unravel_loop_index_declarations,
@@ -101,18 +102,18 @@ def regionprops_centroid(
     ndim = label_image.ndim
 
     _, int32_coords = _get_coord_dtype(label_image.size)
+    count_dtype, int32_count = _get_count_dtype(label_image.size)
     if props_dict is not None and "num_pixels" in props_dict:
         centroid_counts = props_dict["num_pixels"]
-        if centroid_counts.dtype != cp.uint32:
-            centroid_counts = centroid_counts.astype(cp.uint32)
         compute_num_pixels = False
     else:
-        centroid_counts = cp.zeros((max_label,), dtype=cp.uint32)
+        centroid_counts = cp.zeros((max_label,), dtype=count_dtype)
         compute_num_pixels = True
 
     bbox_coords_kernel = get_bbox_coords_kernel(
         ndim=label_image.ndim,
         int32_coords=int32_coords,
+        int32_count=int32_count,
         compute_bbox=False,
         compute_num_pixels=compute_num_pixels,
         compute_coordinate_sums=True,
@@ -145,13 +146,13 @@ def regionprops_centroid(
 
 
 @cp.memoize(for_each_device=True)
-def get_centroid_local_kernel(coord_dtype, ndim):
+def get_centroid_local_kernel(coord_dtype, ndim, count_dtype=cp.uint32):
     """Keep this kernel for n-dimensional support as the raw_moments kernels
     currently only support 2D and 3D data.
     """
     coord_dtype = cp.dtype(coord_dtype)
     sum_dtype = cp.dtype(cp.uint64)
-    count_dtype = cp.dtype(cp.uint32)
+    count_dtype = cp.dtype(count_dtype)
     uint_t = (
         "unsigned int" if coord_dtype.itemsize <= 4 else "unsigned long long"
     )
@@ -286,10 +287,11 @@ def regionprops_centroid_local(
         if "bbox" not in props_dict:
             props_dict["bbox"] = bbox_coords
 
-    counts = cp.zeros((max_label,), dtype=cp.uint32)
+    count_dtype, _ = _get_count_dtype(label_image.size)
+    counts = cp.zeros((max_label,), dtype=count_dtype)
     centroids_sums = cp.zeros((max_label, ndim), dtype=cp.uint64)
     centroid_local_kernel = get_centroid_local_kernel(
-        coord_dtype, label_image.ndim
+        coord_dtype, label_image.ndim, count_dtype
     )
     centroid_local_kernel(
         label_image, bbox_coords, counts, centroids_sums, size=label_image.size
