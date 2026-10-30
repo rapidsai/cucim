@@ -45,6 +45,9 @@ namespace CuImage
 // CuImage(const filesystem::Path& path);
 PYDOC(CuImage, R"doc(
 Constructor of CuImage.
+
+Args:
+  path: A file path to open, as `str`, `bytes`, or `os.PathLike`.
 )doc")
 
 // CuImage(const filesystem::Path& path, const std::string& plugin_name);
@@ -245,7 +248,7 @@ Returns an associated image for the given name, as a CuImage object.
 
 // void save(std::string file_path) const;
 PYDOC(save, R"doc(
-Saves image data to the file path.
+Saves image data to the file path, given as `str`, `bytes`, or `os.PathLike`.
 
 Currently it supports only .ppm file format that can be viewed by `eog` command in Ubuntu.
 )doc")
