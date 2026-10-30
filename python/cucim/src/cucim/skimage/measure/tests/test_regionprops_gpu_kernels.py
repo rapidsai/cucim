@@ -322,6 +322,61 @@ def test_area_convex_and_solidity(ndim, spacing, blob_kwargs):
         assert not cp.any(cp.isnan(solidity))
 
 
+def _convex_test_labels(kind, ndim):
+    """Label images for comparing the convex-hull properties with skimage."""
+    if kind == "blobs":
+        shape = (256, 512) if ndim == 2 else (48, 64, 40)
+        return get_labels_nd(shape)
+    if kind == "large_blobs":
+        shape = (256, 512) if ndim == 2 else (48, 64, 40)
+        return get_labels_nd(
+            shape, blob_size_fraction=0.12, volume_fraction=0.3
+        )
+    rng = np.random.default_rng(0)
+    if kind == "lines":
+        # thin digital lines in random directions (nearly collinear hull
+        # edges), each with a separate pixel of the same label
+        shape = (200, 300) if ndim == 2 else (40, 50, 60)
+        labels = np.zeros(shape, dtype=np.int32)
+        t = np.linspace(0, 1, 2 * max(shape))
+        for lab in range(1, 31):
+            start, end = (rng.integers(0, shape) for _ in range(2))
+            line = start + t[:, np.newaxis] * (end - start)
+            labels[tuple(np.round(line).astype(int).T)] = lab
+            labels[tuple(rng.integers(0, shape))] = lab
+        return cp.asarray(labels)
+    if kind == "random":
+        # labels with several components and rows without any of their pixels
+        # in their bounding box; label 3 is absent
+        shape = (37, 29) if ndim == 2 else (11, 9, 13)
+        return cp.asarray(rng.choice([0, 0, 1, 2, 4, 5], size=shape))
+    raise ValueError(kind)
+
+
+@pytest.mark.parametrize("spacing", [None, (0.5, 0.35)])
+@pytest.mark.parametrize("kind", ["blobs", "large_blobs", "lines", "random"])
+def test_area_convex_and_solidity_batch_2d(spacing, kind):
+    labels = _convex_test_labels(kind, 2)
+    max_label = int(labels.max())
+    result = regionprops_dict(
+        labels, properties=["area_convex", "solidity"], spacing=spacing
+    )
+    expected = measure_cpu.regionprops_table(
+        cp.asnumpy(labels),
+        properties=["label", "area_convex", "solidity"],
+        spacing=spacing,
+    )
+    present = expected["label"] - 1
+    absent = np.setdiff1d(np.arange(max_label), present)
+    assert_allclose(
+        result["area_convex"][present], expected["area_convex"], rtol=1e-12
+    )
+    assert_allclose(
+        result["solidity"][present], expected["solidity"], rtol=1e-6
+    )
+    assert_array_equal(result["area_convex"][absent], 0)
+
+
 @pytest.mark.parametrize("ndim", [2, 3])
 @pytest.mark.parametrize("area_dtype", [cp.float32, cp.float64])
 @pytest.mark.parametrize("spacing", [None, (0.5, 0.35, 0.75)])

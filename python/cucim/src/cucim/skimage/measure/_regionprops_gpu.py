@@ -34,6 +34,7 @@ from ._regionprops_gpu_basic_kernels import (
     regionprops_num_pixels,
 )
 from ._regionprops_gpu_convex import (
+    _regionprops_convex,
     convex_deps,
     regionprops_area_convex,
     regionprops_feret_diameter_max,
@@ -715,8 +716,7 @@ def regionprops_dict(
     compute_intensity_images = ("image_intensity" in required_props) or (
         (intensity_image is not None) and (len(extra_properties) > 0)
     )
-    compute_convex = "image_convex" in required_props
-    if compute_intensity_images or compute_images or compute_convex:
+    if compute_intensity_images or compute_images:
         regionprops_image(
             label_image,
             intensity_image=(
@@ -725,27 +725,26 @@ def regionprops_dict(
             max_label=max_label,
             props_dict=out,
             compute_image=compute_images,
-            compute_convex=compute_convex,
             offset_coordinates=True,
         )
 
-    if "area_convex" in required_props:
-        regionprops_area_convex(
-            out["image_convex"],
-            max_label=max_label,
+    compute_convex_image = "image_convex" in required_props
+    compute_area_convex = "area_convex" in required_props
+    compute_feret = "feret_diameter_max" in required_props
+    if compute_convex_image or compute_area_convex or compute_feret:
+        _regionprops_convex(
+            label_image,
+            out["bbox"],
+            max_label,
             spacing=spacing,
+            compute_image=compute_convex_image,
+            compute_area=compute_area_convex,
+            compute_feret=compute_feret,
             props_dict=out,
         )
 
     if "solidity" in required_props:
         out["solidity"] = out["area"] / out["area_convex"]
-
-    if "feret_diameter_max" in required_props:
-        regionprops_feret_diameter_max(
-            out["image_convex"],
-            spacing=spacing,
-            props_dict=out,
-        )
 
     compute_coords = "coords" in required_props
     compute_coords_scaled = "coords_scaled" in required_props

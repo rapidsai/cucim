@@ -11,6 +11,7 @@ from cucim.skimage._shared.distance import pdist_max_blockwise
 from cucim.skimage._shared.utils import _ndarray_argwhere
 from cucim.skimage._vendored import ndimage as ndi
 
+from ._regionprops_gpu_basic_kernels import _bbox_slices, regionprops_image
 from ._regionprops_gpu_utils import _warp_includes
 
 # Store information on which other properties a given property depends on
@@ -18,9 +19,9 @@ from ._regionprops_gpu_utils import _warp_includes
 # a particular property is requested any dependent properties are computed
 # first.
 convex_deps = dict()
-convex_deps["image_convex"] = ["image"]  # computed by regionprops_image
-convex_deps["area_convex"] = ["image_convex"]
-convex_deps["feret_diameter_max"] = ["image_convex"]
+convex_deps["image_convex"] = ["bbox"]
+convex_deps["area_convex"] = ["bbox"]
+convex_deps["feret_diameter_max"] = ["bbox"]
 convex_deps["solidity"] = ["area", "area_convex"]
 
 
@@ -170,6 +171,314 @@ def _regionprops_row_extents(
     )
     kernel(label_image, bbox, offsets, row_first, row_last, size=num_threads)
     return row_first, row_last, offsets, num_rows
+
+
+# Exact integer helpers of the 2D convex-hull kernels. Points are (y, x)
+# pairs in doubled coordinates (2 * row, 2 * column), so that the diamond
+# points of a pixel (its center +- 0.5 along each axis) have integer
+# coordinates.
+_hull_2d_includes = (
+    _warp_includes
+    + r"""
+// z component of (a - o) x (b - o), with y as the first axis: > 0 if
+// o -> a -> b turns towards larger x (to the right when y points down)
+__device__ __forceinline__ long long cucim_cross(
+    long long oy, long long ox, long long ay, long long ax,
+    long long by, long long bx) {
+  return (ay - oy) * (bx - ox) - (ax - ox) * (by - oy);
+}
+
+// floor(a / b) and ceil(a / b) for b > 0
+__device__ __forceinline__ long long cucim_floor_div(long long a,
+                                                    long long b) {
+  long long q = a / b;
+  return (a % b != 0 && a < 0) ? q - 1 : q;
+}
+
+__device__ __forceinline__ long long cucim_ceil_div(long long a,
+                                                   long long b) {
+  return -cucim_floor_div(-a, b);
+}
+"""
+)
+
+
+@cp.memoize(for_each_device=True)
+def _get_hull_chains_2d_kernel():
+    """Kernel building the convex hull of each 2D region, one thread per label.
+
+    The hull of a region's diamond points (each pixel center +- 0.5 along
+    each axis, as in scikit-image's ``convex_hull_image``) is the hull of the
+    diamond points of each row's first and last pixel. On each horizontal
+    line (y = 2 * row - 1, ..., 2 * row + 1 in doubled coordinates), only the
+    leftmost and rightmost of these points can be hull vertices:
+
+        y = 2k (row k):         x = 2 * first[k] - 1 and 2 * last[k] + 1
+        y = 2k + 1 (between     x = 2 * min(first[k], first[k + 1]) and
+            rows k and k + 1):      2 * max(last[k], last[k + 1])
+
+    (rows without pixels are skipped). These points come sorted by y, so
+    Andrew's monotone chain builds the left chain of the hull from the
+    leftmost points and the right chain from the rightmost points in one
+    pass, without sorting. Collinear points are dropped, and the arithmetic
+    is exact.
+
+    Each chain runs from the top line (y = -1) to the bottom line (y = 2h - 1,
+    for a bounding box of h rows), with strictly increasing y. A label's
+    chains have room for 2h + 1 vertices each, at ``2 * offsets[label - 1] +
+    label - 1``.
+    """
+    source = """
+      long long r0 = offsets[i];
+      long long h = offsets[i + 1] - r0;
+      long long base = 2 * r0 + i;
+      E* left = &left_chains[2 * base];
+      E* right = &right_chains[2 * base];
+      int n_left = 0;
+      int n_right = 0;
+      for (long long y = -1; y < 2 * h; y++) {
+        long long x_min = cuda::std::numeric_limits<long long>::max();
+        long long x_max = cuda::std::numeric_limits<long long>::min();
+        if ((y & 1) == 0) {
+          E first = row_first[r0 + y / 2];
+          E last = row_last[r0 + y / 2];
+          if (first <= last) {
+            x_min = 2 * static_cast<long long>(first) - 1;
+            x_max = 2 * static_cast<long long>(last) + 1;
+          }
+        } else {
+          // the line between rows (y - 1) / 2 and (y + 1) / 2
+          for (long long k = (y - 1) / 2; k <= (y + 1) / 2; k++) {
+            if (k < 0 || k >= h) { continue; }
+            E first = row_first[r0 + k];
+            E last = row_last[r0 + k];
+            if (first <= last) {
+              x_min = min(x_min, 2 * static_cast<long long>(first));
+              x_max = max(x_max, 2 * static_cast<long long>(last));
+            }
+          }
+        }
+        if (x_min > x_max) { continue; }
+        while (n_left >= 2
+               && cucim_cross(left[2 * n_left - 4], left[2 * n_left - 3],
+                              left[2 * n_left - 2], left[2 * n_left - 1],
+                              y, x_min) <= 0) {
+          n_left--;
+        }
+        left[2 * n_left] = y;
+        left[2 * n_left + 1] = x_min;
+        n_left++;
+        while (n_right >= 2
+               && cucim_cross(right[2 * n_right - 4], right[2 * n_right - 3],
+                              right[2 * n_right - 2], right[2 * n_right - 1],
+                              y, x_max) >= 0) {
+          n_right--;
+        }
+        right[2 * n_right] = y;
+        right[2 * n_right + 1] = x_max;
+        n_right++;
+      }
+      chain_sizes[2 * i] = n_left;
+      chain_sizes[2 * i + 1] = n_right;\n"""
+    inputs = "raw E row_first, raw E row_last, raw int64 offsets"
+    outputs = "raw E left_chains, raw E right_chains, raw int32 chain_sizes"
+    return cp.ElementwiseKernel(
+        inputs,
+        outputs,
+        source,
+        preamble=_hull_2d_includes,
+        name="cucim_convex_hull_chains_2d",
+    )
+
+
+@cp.memoize(for_each_device=True)
+def _get_hull_rows_2d_kernel():
+    """Kernel finding the pixels of each row inside the 2D convex hull.
+
+    One thread per row of a label's bounding box. The pixel centers of row k
+    inside the convex polygon form one interval [lo, hi] of columns: lo is
+    the first column whose center (y = 2k, x = 2 * column) is not left of
+    the left chain, and hi the last one not right of the right chain. Centers
+    on an edge are inside, as in scikit-image's ``grid_points_in_poly`` with
+    ``include_borders=True``.
+
+    Also adds the number of pixels in the interval to the label's count.
+    """
+    source = """
+      // the label of this row: the last l with offsets[l] <= i
+      long long l = 0;
+      long long l_end = max_label;
+      while (l_end - l > 1) {
+        long long mid = (l + l_end) / 2;
+        if (offsets[mid] <= i) {
+          l = mid;
+        } else {
+          l_end = mid;
+        }
+      }
+      long long y = 2 * (static_cast<long long>(i) - offsets[l]);
+      long long base = 2 * offsets[l] + l;
+      long long bounds[2];
+      for (int side = 0; side < 2; side++) {
+        const E* chain = side == 0 ? &left_chains[2 * base]
+                                   : &right_chains[2 * base];
+        // the chain's edge from vertex j to j + 1 with chain y[j] <= y <
+        // y[j + 1] (the first vertex is above every row center, the last one
+        // below)
+        int j = 0;
+        int j_end = chain_sizes[2 * l + side] - 1;
+        while (j_end - j > 1) {
+          int mid = (j + j_end) / 2;
+          if (chain[2 * mid] <= y) {
+            j = mid;
+          } else {
+            j_end = mid;
+          }
+        }
+        long long ay = chain[2 * j];
+        long long ax = chain[2 * j + 1];
+        long long by = chain[2 * j + 2];
+        long long bx = chain[2 * j + 3];
+        // the edge's x at y is num / (by - ay); column c is inside on this
+        // side if 2 * c >= x (left) or 2 * c <= x (right)
+        long long num = ax * (by - ay) + (bx - ax) * (y - ay);
+        bounds[side] = side == 0 ? cucim_ceil_div(num, 2 * (by - ay))
+                                 : cucim_floor_div(num, 2 * (by - ay));
+      }
+      row_lo = bounds[0];
+      row_hi = bounds[1];
+      if (bounds[1] >= bounds[0]) {
+        atomicAdd(&num_pixels[l], static_cast<unsigned long long>(
+            bounds[1] - bounds[0] + 1));
+      }\n"""
+    inputs = (
+        "raw E left_chains, raw E right_chains, raw int32 chain_sizes, "
+        "raw int64 offsets, int64 max_label"
+    )
+    outputs = "E row_lo, E row_hi, raw uint64 num_pixels"
+    return cp.ElementwiseKernel(
+        inputs,
+        outputs,
+        source,
+        preamble=_hull_2d_includes,
+        name="cucim_convex_hull_rows_2d",
+    )
+
+
+def _convex_hull_rows_2d(row_first, row_last, offsets, num_rows, max_label):
+    """Rows of each 2D region's convex image.
+
+    Takes the output of `_regionprops_row_extents`. Returns the first and last
+    column of each row of each convex image (relative to the bounding box, in
+    the same layout as the row extents) and the number of pixels of each
+    convex image.
+    """
+    dtype = row_first.dtype
+    capacity = 2 * num_rows + max_label
+    left_chains = cp.empty((capacity, 2), dtype=dtype)
+    right_chains = cp.empty((capacity, 2), dtype=dtype)
+    chain_sizes = cp.empty((max_label, 2), dtype=cp.int32)
+    _get_hull_chains_2d_kernel()(
+        row_first,
+        row_last,
+        offsets,
+        left_chains,
+        right_chains,
+        chain_sizes,
+        size=max_label,
+    )
+    row_lo = cp.empty((num_rows,), dtype=dtype)
+    row_hi = cp.empty((num_rows,), dtype=dtype)
+    num_pixels = cp.zeros((max_label,), dtype=cp.uint64)
+    if num_rows > 0:
+        _get_hull_rows_2d_kernel()(
+            left_chains,
+            right_chains,
+            chain_sizes,
+            offsets,
+            max_label,
+            row_lo,
+            row_hi,
+            num_pixels,
+        )
+    return row_lo, row_hi, num_pixels
+
+
+def _pixel_area(spacing):
+    if spacing is None:
+        return 1.0
+    if isinstance(spacing, cp.ndarray):
+        return cp.prod(spacing)
+    return math.prod(spacing)
+
+
+def _regionprops_convex(
+    label_image,
+    bbox,
+    max_label,
+    *,
+    spacing=None,
+    compute_image=False,
+    compute_area=False,
+    compute_feret=False,
+    props_dict=None,
+):
+    """Compute the convex-hull properties of each region.
+
+    writes "image_convex" to props_dict if `compute_image`
+    writes "area_convex" to props_dict if `compute_area`
+    writes "feret_diameter_max" to props_dict if `compute_feret`
+
+    In 2D, the area of each convex image is computed for all labels at once
+    from the hull of each region's row extents (see
+    `_get_hull_chains_2d_kernel`). The other properties are computed from
+    one convex image per label (`regionprops_image`).
+
+    Parameters
+    ----------
+    bbox : cupy.ndarray
+        The "bbox" of `_regionprops_label_pass` (exclusive maximum).
+    """
+    if props_dict is None:
+        props_dict = {}
+    ndim = label_image.ndim
+    batch_area = compute_area and ndim == 2 and max_label > 0
+    if batch_area:
+        row_first, row_last, offsets, num_rows = _regionprops_row_extents(
+            label_image, bbox, max_label
+        )
+        _, _, num_pixels = _convex_hull_rows_2d(
+            row_first, row_last, offsets, num_rows, max_label
+        )
+        props_dict["area_convex"] = num_pixels.astype(cp.float64) * (
+            _pixel_area(spacing)
+        )
+
+    if compute_image or compute_feret or (compute_area and not batch_area):
+        _, _, images_convex = regionprops_image(
+            label_image,
+            slices=_bbox_slices(bbox),
+            max_label=max_label,
+            compute_image=False,
+            compute_convex=True,
+            props_dict={},
+        )
+        if compute_image:
+            props_dict["image_convex"] = images_convex
+        if compute_area and not batch_area:
+            regionprops_area_convex(
+                images_convex,
+                max_label=max_label,
+                spacing=spacing,
+                props_dict=props_dict,
+            )
+        if compute_feret:
+            regionprops_feret_diameter_max(
+                images_convex,
+                spacing=spacing,
+                props_dict=props_dict,
+            )
+    return props_dict
 
 
 def regionprops_area_convex(
