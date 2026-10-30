@@ -8,6 +8,7 @@ import cupy as cp
 from ._regionprops_gpu_basic_kernels import get_bbox_coords_kernel
 from ._regionprops_gpu_utils import (
     _check_intensity_image_shape,
+    _get_coord_dtype,
     _includes,
     _unravel_loop_index,
     _unravel_loop_index_declarations,
@@ -99,7 +100,7 @@ def regionprops_centroid(
         max_label = int(label_image.max())
     ndim = label_image.ndim
 
-    int32_coords = max(label_image.shape) < 2**32
+    _, int32_coords = _get_coord_dtype(label_image.size)
     if props_dict is not None and "num_pixels" in props_dict:
         centroid_counts = props_dict["num_pixels"]
         if centroid_counts.dtype != cp.uint32:
@@ -228,8 +229,7 @@ def regionprops_centroid_local(
     if max_label is None:
         max_label = int(label_image.max())
 
-    int32_coords = max(label_image.shape) < 2**32
-    coord_dtype = cp.dtype(cp.uint32 if int32_coords else cp.uint64)
+    coord_dtype, int32_coords = _get_coord_dtype(label_image.size)
 
     ndim = label_image.ndim
 
@@ -712,8 +712,7 @@ def regionprops_moments(
         label_image = cp.ascontiguousarray(label_image)
     ndim = label_image.ndim
 
-    int32_coords = max(label_image.shape) < 2**32
-    coord_dtype = cp.dtype(cp.uint32 if int32_coords else cp.uint64)
+    coord_dtype, int32_coords = _get_coord_dtype(label_image.size)
     if "bbox" in props_dict:
         bbox_coords = props_dict["bbox"]
         if bbox_coords.dtype != coord_dtype:
