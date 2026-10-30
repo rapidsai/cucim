@@ -1706,6 +1706,27 @@ def test_fill_holes_by_label_tiling_is_exact():
     assert list(labels_inexact) == [1]
 
 
+@pytest.mark.parametrize("ndim", [2, 3])
+@pytest.mark.parametrize("spacing", [None, (1.5, 0.5, 0.75)])
+def test_regionprops_dict_centroid_paths(ndim, spacing):
+    # The centroids come from coordinate sums when no other property needs
+    # the raw moments, and from the moments otherwise. Both must agree.
+    shape = (256, 512) if ndim == 2 else (48, 64, 64)
+    if spacing is not None:
+        spacing = spacing[:ndim]
+    labels = get_labels_nd(shape)
+    labels[labels == 3] = 0  # an absent label gives NaN centroids
+    props = ["centroid", "centroid_local"]
+    from_sums = regionprops_dict(labels, properties=props, spacing=spacing)
+    from_moments = regionprops_dict(
+        labels, properties=props + ["moments_central"], spacing=spacing
+    )
+    for prop in props:
+        assert from_sums[prop].dtype == from_moments[prop].dtype
+        assert_allclose(from_sums[prop], from_moments[prop], rtol=1e-12)
+        assert cp.all(cp.isnan(from_sums[prop][2]))
+
+
 @pytest.mark.parametrize("spacing", [None, (2, 3)])
 def test_regionprops_dict_area_filled_spacing(spacing):
     labels = cp.zeros((20, 30), dtype=cp.uint8)

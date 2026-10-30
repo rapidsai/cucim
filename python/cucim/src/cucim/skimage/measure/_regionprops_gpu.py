@@ -15,8 +15,10 @@ from cucim.skimage.measure._regionprops import (
 )
 
 from ._regionprops_gpu_basic_kernels import (
+    _bbox_slices,
     _fill_holes_by_label,
     _regionprops_filled,
+    _regionprops_label_pass,
     basic_deps,
     equivalent_diameter_area,
     equivalent_spherical_perimeter,
@@ -50,6 +52,7 @@ from ._regionprops_gpu_misc_kernels import (
     regionprops_perimeter_crofton,
 )
 from ._regionprops_gpu_moments_kernels import (
+    _regionprops_centroid_from_sums,
     moment_deps,
     regionprops_centroid,
     regionprops_centroid_local,
@@ -188,6 +191,16 @@ def get_property_dependencies(dependencies, node):
 # precompute full set of direct and indirect dependencies for each property
 property_requirements = {
     k: get_property_dependencies(property_deps, k)
+    for k in (CURRENT_PROPS_GPU | GLOBAL_PROPS)
+}
+
+# The same, but with the (unweighted) centroids computed from coordinate sums
+# accumulated in the pass that counts the pixels instead of from the moments.
+_centroid_sums_deps = dict(property_deps)
+_centroid_sums_deps["centroid"] = ["num_pixels"]
+_centroid_sums_deps["centroid_local"] = ["num_pixels", "bbox"]
+property_requirements_centroid_sums = {
+    k: get_property_dependencies(_centroid_sums_deps, k)
     for k in (CURRENT_PROPS_GPU | GLOBAL_PROPS)
 }
 
@@ -356,9 +369,23 @@ def regionprops_dict(
     if len(requested_props) == 0:
         return {}
 
+    # The centroids only need the first moments. Unless another property needs
+    # the raw moments anyway, they are computed from coordinate sums
+    # accumulated in the pass that counts the pixels, which saves the moments
+    # pass (and the bounding boxes for the global centroid).
+    centroid_props = {"centroid", "centroid_local"}
+    centroid_from_sums = bool(requested_props & centroid_props) and not any(
+        "moments" in property_requirements[prop]
+        for prop in requested_props - centroid_props
+    )
+    requirements = (
+        property_requirements_centroid_sums
+        if centroid_from_sums
+        else property_requirements
+    )
     required_props = set()
     for prop in requested_props:
-        required_props.update(property_requirements[prop])
+        required_props.update(requirements[prop])
 
     ndim = label_image.ndim
     if ndim != 2:
@@ -424,25 +451,23 @@ def regionprops_dict(
 
     # Each pass over the label image costs about the same for any number of
     # statistics, so the pixels are counted in the same pass as the bounding
-    # boxes or, if those are not needed, as the intensity sums.
-    if compute_bbox:
-        # compute bbox (and slice)
-        regionprops_bbox_coords(
+    # boxes or coordinate sums or, if those are not needed, as the intensity
+    # sums.
+    count_in_label_pass = compute_num_pixels and (
+        compute_bbox or centroid_from_sums or not (compute_mean or compute_std)
+    )
+    if compute_bbox or centroid_from_sums or count_in_label_pass:
+        _regionprops_label_pass(
             label_image,
             max_label=max_label,
-            return_slices="slice" in required_props,
-            compute_num_pixels=compute_num_pixels,
+            compute_num_pixels=count_in_label_pass,
+            compute_bbox=compute_bbox,
+            compute_coordinate_sums=centroid_from_sums,
             **perf_kwargs,
             props_dict=out,
         )
-    elif compute_num_pixels and not (compute_mean or compute_std):
-        regionprops_num_pixels(
-            label_image,
-            max_label=max_label,
-            filled=False,
-            **perf_kwargs,
-            props_dict=out,
-        )
+        if "slice" in required_props:
+            out["slice"] = _bbox_slices(out["bbox"])
 
     if compute_intensity:
         _regionprops_intensity(
@@ -510,6 +535,17 @@ def regionprops_dict(
             out["num_boundary_pixels"] / out["num_perimeter_pixels"]
         )
 
+    if centroid_from_sums:
+        _regionprops_centroid_from_sums(
+            out["coordinate_sums"],
+            out["num_pixels"],
+            bbox=out.get("bbox"),
+            compute_local="centroid_local" in required_props,
+            compute_global="centroid" in required_props,
+            spacing=spacing,
+            props_dict=out,
+        )
+
     compute_unweighted_moments = "moments" in required_props
     compute_weighted_moments = "moments_weighted" in required_props
     compute_moments = compute_unweighted_moments or compute_weighted_moments
@@ -518,7 +554,13 @@ def regionprops_dict(
     if compute_moments:
         required_moment_props = set(moment_deps.keys()) & required_props
         # determine minimum necessary order (or validate the user-provided one)
-        order = _check_moment_order(moment_order, required_moment_props)
+        # from the properties computed from the raw moments (the raw moments
+        # themselves need order 2 only if they were requested)
+        raw_moments = {"moments", "moments_weighted"}
+        order_props = required_moment_props - (raw_moments - requested_props)
+        order = _check_moment_order(
+            moment_order, order_props or required_moment_props
+        )
 
         imgs = []
         if compute_unweighted_moments:
