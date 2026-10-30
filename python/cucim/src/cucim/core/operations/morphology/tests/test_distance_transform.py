@@ -285,6 +285,70 @@ def test_distance_transform_edt_3d_aniso(sx, sy, sz):
     cp.testing.assert_allclose(out, expected)
 
 
+@pytest.mark.parametrize(
+    "shape",
+    [
+        (1, 40, 70),  # single slice
+        (3, 33, 31),
+        (5, 64, 64),
+        (100, 32, 32),  # z longest
+        (37, 200, 333),
+        (8, 5, 300),  # x longest
+        (300, 5, 8),  # z longest, tiny y and x
+        (2, 257, 129),
+        (64, 96, 160),
+    ],
+)
+@pytest.mark.parametrize("sampling", [None, (2.0, 0.7, 1.3)])
+@pytest.mark.parametrize("density", [2, 50, 98])
+def test_distance_transform_edt_3d_strongly_aniso(shape, sampling, density):
+    """Axes of very different size are not padded to a common size."""
+    img = binary_image(shape, pct_true=density)
+    # ensure there is at least one background voxel
+    img[(0,) * 3] = False
+    dist, ind = distance_transform_edt(
+        img, sampling=sampling, return_indices=True
+    )
+    img_cpu = cp.asnumpy(img)
+    expected = ndi_cpu.distance_transform_edt(img_cpu, sampling=sampling)
+    cp.testing.assert_allclose(dist, expected, rtol=1e-6)
+
+    # The indices may differ from SciPy's at equidistant voxels, so check that
+    # they are valid background locations that reproduce the distances.
+    ind = cp.asnumpy(ind)
+    assert not img_cpu[tuple(ind)].any()
+    scale = np.ones(3) if sampling is None else np.asarray(sampling)
+    offsets = ind - np.indices(shape)
+    from_indices = np.sqrt(
+        sum((o * s) ** 2 for o, s in zip(offsets, scale)), dtype=np.float64
+    )
+    np.testing.assert_allclose(from_indices, expected, rtol=1e-5)
+
+
+@pytest.mark.parametrize(
+    "shape, expected",
+    [
+        ((64, 512, 512), None),  # nothing to pad
+        ((64, 100, 70), ((0, 0), (0, 28), (0, 26))),
+        ((3, 33, 31), ((0, 1), (0, 31), (0, 1))),
+        ((1, 1, 1), ((0, 3), (0, 31), (0, 31))),
+    ],
+)
+def test_pba3d_determine_padding(shape, expected):
+    """Each axis is padded separately, not up to a common size."""
+    from cucim.core.operations.morphology._pba_3d import _determine_padding
+
+    # block_size = 32, blockx = 32 and blocky = 4 are the default values
+    assert _determine_padding(shape, 32, 32, 4) == expected
+
+
+def test_distance_transform_edt_3d_too_many_elements():
+    # broadcast_to avoids allocating the (2 GiB) array
+    img = cp.broadcast_to(cp.zeros((1, 1, 1), dtype=bool), (2048, 1024, 1024))
+    with pytest.raises(ValueError, match="too many elements"):
+        distance_transform_edt(img)
+
+
 @pytest.mark.parametrize("ndim", [1, 4, 5])
 def test_distance_transform_edt_unsupported_ndim(ndim):
     with pytest.raises(NotImplementedError):

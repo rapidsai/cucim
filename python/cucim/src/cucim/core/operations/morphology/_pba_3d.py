@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 import math
@@ -185,42 +185,31 @@ def decode3d(encoded, size_max=1024):
     return (x, y, z)
 
 
-def _determine_padding(shape, block_size, m1, m2, m3, blockx, blocky):
-    # TODO: can possibly revise to consider only particular factors for LCM on
-    #       a given axis
-    LCM = math.lcm(block_size, m1, m2, m3, blockx, blocky)
-    orig_sz, orig_sy, orig_sx = shape
-    round_up = False
-    if orig_sx % LCM != 0:
-        # round up size to a multiple of the band size
-        round_up = True
-        sx = LCM * math.ceil(orig_sx / LCM)
-    else:
-        sx = orig_sx
-    if orig_sy % LCM != 0:
-        # round up size to a multiple of the band size
-        round_up = True
-        sy = LCM * math.ceil(orig_sy / LCM)
-    else:
-        sy = orig_sy
-    if orig_sz % LCM != 0:
-        # round up size to a multiple of the band size
-        round_up = True
-        sz = LCM * math.ceil(orig_sz / LCM)
-    else:
-        sz = orig_sz
+def _determine_padding(shape, block_size, blockx, blocky):
+    """Padding needed so that every kernel launch divides its axes exactly.
 
-    aniso = not (sx == sy == sz)
-    if aniso or round_up:
-        smax = max(sz, sy, sx)
-        padding_width = (
-            (0, smax - orig_sz),
-            (0, smax - orig_sy),
-            (0, smax - orig_sx),
-        )
-    else:
-        padding_width = None
-    return padding_width
+    The kernels take a separate extent for each axis, so each axis is padded
+    only to the multiple that the launch configuration needs rather than to a
+    common size:
+
+    - x is covered by blocks of ``blockx`` threads and by tiles of
+      ``block_size`` in the coloring kernel.
+    - y is covered by blocks of ``blocky`` threads (flood pass), by tiles of
+      ``block_size`` (coloring kernel) and, after the coloring kernel
+      transposes y and x, by blocks of ``blockx`` threads.
+    - z is covered by blocks of ``blocky`` threads (Maurer passes).
+
+    Returns the ``pad`` width for each axis or None if no padding is needed.
+    """
+    orig_sz, orig_sy, orig_sx = shape
+    x_multiple = math.lcm(block_size, blockx)
+    y_multiple = math.lcm(block_size, blockx, blocky)
+    sx = -(-orig_sx // x_multiple) * x_multiple
+    sy = -(-orig_sy // y_multiple) * y_multiple
+    sz = -(-orig_sz // blocky) * blocky
+    if (sz, sy, sx) == tuple(shape):
+        return None
+    return ((0, sz - orig_sz), (0, sy - orig_sy), (0, sx - orig_sx))
 
 
 def _generate_distance_computation(int_type, dist_int_type):
@@ -354,11 +343,12 @@ def _pba_3d(
         raise ValueError(f"expected a 3D array, got {arr.ndim}D")
 
     if block_params is None:
-        m1 = 1
-        m2 = 1
         m3 = 2
     else:
-        m1, m2, m3 = block_params
+        # Only m3 is used. Unlike in 2D, there is no banding in phases 1 and 2
+        # (m1 = m2 = 1), so the first two values are accepted for consistency
+        # with the 2D API, but have no effect.
+        _, _, m3 = block_params
 
     # reduce blockx for small inputs
     s_min = min(arr.shape)
@@ -375,12 +365,16 @@ def _pba_3d(
     block_size = _get_block_size(check_warp_size)
 
     orig_sz, orig_sy, orig_sx = arr.shape
-    padding_width = _determine_padding(
-        arr.shape, block_size, m1, m2, m3, blockx, blocky
-    )
+    padding_width = _determine_padding(arr.shape, block_size, blockx, blocky)
     if padding_width is not None:
         arr = pad(arr, padding_width, mode="constant", constant_values=1)
-    size = arr.shape[0]
+    sz, sy, sx = arr.shape
+    if sz * sy * sx >= 2**31:
+        # the kernels index the array with 32-bit integers
+        raise ValueError(
+            f"the padded array shape {arr.shape} has too many elements: "
+            "at most 2**31 - 1 are supported"
+        )
 
     # pba algorithm was implemented to use 32-bit integer to store compressed
     # coordinates. input_arr will be C-contiguous, int32
@@ -391,7 +385,6 @@ def _pba_3d(
     pba_images = [input_arr, output]
 
     block = (blockx, blocky, 1)
-    grid = (size // block[0], size // block[1], 1)
     pba3d = cupy.RawModule(
         code=get_pba3d_src(block_size_3d=block_size, size_max=size_max)
     )
@@ -407,26 +400,28 @@ def _pba_3d(
         sampling = tuple(map(float, sampling))
         sampling_args = (sampling[2], sampling[1], sampling[0])
 
+    # Each launch is given the extents (nx, ny, nz) of the layout that it
+    # reads. The coloring kernel writes its output with the y and x axes
+    # exchanged, so the extents (and the spacing) are exchanged for the second
+    # pair of launches.
     kernelFloodZ(
-        grid, block, (pba_images[buffer_idx], pba_images[1 - buffer_idx], size)
+        (sx // blockx, sy // blocky, 1),
+        block,
+        (pba_images[buffer_idx], pba_images[1 - buffer_idx], sx, sy, sz),
     )
     buffer_idx = 1 - buffer_idx
 
-    block = (blockx, blocky, 1)
-    grid = (size // block[0], size // block[1], 1)
     kernelMaurerAxis(
-        grid,
+        (sx // blockx, sz // blocky, 1),
         block,
-        (pba_images[buffer_idx], pba_images[1 - buffer_idx], size)
+        (pba_images[buffer_idx], pba_images[1 - buffer_idx], sx, sy, sz)
         + sampling_args,  # noqa
     )
 
-    block = (block_size, m3, 1)
-    grid = (size // block[0], size, 1)
     kernelColorAxis(
-        grid,
-        block,
-        (pba_images[1 - buffer_idx], pba_images[buffer_idx], size)
+        (sx // block_size, sz, 1),
+        (block_size, m3, 1),
+        (pba_images[1 - buffer_idx], pba_images[buffer_idx], sx, sy, sz)
         + sampling_args,  # noqa
     )
 
@@ -435,21 +430,17 @@ def _pba_3d(
         # the sampling_args tuple correspondingly
         sampling_args = (sampling[1], sampling[2], sampling[0])
 
-    block = (blockx, blocky, 1)
-    grid = (size // block[0], size // block[1], 1)
     kernelMaurerAxis(
-        grid,
+        (sy // blockx, sz // blocky, 1),
         block,
-        (pba_images[buffer_idx], pba_images[1 - buffer_idx], size)
+        (pba_images[buffer_idx], pba_images[1 - buffer_idx], sy, sx, sz)
         + sampling_args,  # noqa
     )
 
-    block = (block_size, m3, 1)
-    grid = (size // block[0], size, 1)
     kernelColorAxis(
-        grid,
-        block,
-        (pba_images[1 - buffer_idx], pba_images[buffer_idx], size)
+        (sy // block_size, sz, 1),
+        (block_size, m3, 1),
+        (pba_images[1 - buffer_idx], pba_images[buffer_idx], sy, sx, sz)
         + sampling_args,  # noqa
     )
     output = pba_images[buffer_idx]
