@@ -6,6 +6,7 @@ import warnings
 from collections.abc import Sequence
 
 import cupy as cp
+import numpy as np
 
 from cucim.skimage._shared.distance import pdist_max_blockwise
 from cucim.skimage._shared.utils import _ndarray_argwhere
@@ -494,6 +495,80 @@ def _convex_hull_rows_2d(row_first, row_last, offsets, num_rows, max_label):
     return row_lo, row_hi, num_pixels
 
 
+@cp.memoize(for_each_device=True)
+def _get_convex_image_kernel(ndim, int32_index):
+    """Kernel writing the convex images of all labels into one flat buffer.
+
+    One thread per pixel of the output. Label l's image (its bounding box,
+    in C order) starts at ``image_offsets[l]``; its lines along the last
+    axis are the label's rows in the row-interval arrays.
+    """
+    index_t = "int" if int32_index else "long long"
+    source = f"""
+      typedef {index_t} cucim_index_t;
+      // the label of this pixel: the last l with image_offsets[l] <= i
+      long long l = 0;
+      long long l_end = max_label;
+      while (l_end - l > 1) {{
+        long long mid = (l + l_end) / 2;
+        if (image_offsets[mid] <= i) {{
+          l = mid;
+        }} else {{
+          l_end = mid;
+        }}
+      }}
+      cucim_index_t local = static_cast<cucim_index_t>(i - image_offsets[l]);
+      cucim_index_t width = static_cast<cucim_index_t>(
+          bbox[l * {2 * ndim} + {2 * ndim - 1}]
+          - bbox[l * {2 * ndim} + {ndim - 1}]);
+      cucim_index_t line = local / width;
+      cucim_index_t col = local - line * width;
+      long long row = offsets[l] + line;
+      image = row_lo[row] <= col && col <= row_hi[row];\n"""
+    inputs = (
+        "raw E row_lo, raw E row_hi, raw int64 offsets, "
+        "raw int64 image_offsets, raw B bbox, int64 max_label"
+    )
+    name = f"cucim_convex_image_{ndim}d"
+    if not int32_index:
+        name += "_index64"
+    return cp.ElementwiseKernel(
+        inputs, "bool image", source, preamble=_warp_includes, name=name
+    )
+
+
+def _convex_images(row_lo, row_hi, offsets, bbox, max_label):
+    """The convex image of each label, from the intervals of its rows.
+
+    The images are written into one buffer by one kernel, and returned as a
+    tuple of arrays on that buffer (an absent label gets an empty image).
+    """
+    ndim = bbox.shape[1] // 2
+    bbox_host = cp.asnumpy(bbox).astype(np.int64)
+    shapes = np.maximum(bbox_host[:, ndim:] - bbox_host[:, :ndim], 0)
+    image_offsets = np.zeros((max_label + 1,), dtype=np.int64)
+    np.cumsum(shapes.prod(axis=1), out=image_offsets[1:])
+    total = int(image_offsets[-1])
+    images = cp.empty((total,), dtype=bool)
+    if total > 0:
+        kernel = _get_convex_image_kernel(ndim, total < 2**31)
+        kernel(
+            row_lo,
+            row_hi,
+            offsets,
+            cp.asarray(image_offsets),
+            bbox,
+            max_label,
+            images,
+        )
+    # arrays on the buffer (cheaper to create than slices of it)
+    memptr = images.data
+    return tuple(
+        cp.ndarray(tuple(shape), dtype=bool, memptr=memptr + offset)
+        for shape, offset in zip(shapes.tolist(), image_offsets[:-1].tolist())
+    )
+
+
 def _pixel_area(spacing):
     if spacing is None:
         return 1.0
@@ -519,10 +594,11 @@ def _regionprops_convex(
     writes "area_convex" to props_dict if `compute_area`
     writes "feret_diameter_max" to props_dict if `compute_feret`
 
-    In 2D, the area of each convex image is computed for all labels at once
-    from the hull of each region's row extents (see
-    `_get_hull_chains_2d_kernel`). The other properties are computed from
-    one convex image per label (`regionprops_image`).
+    In 2D, the convex images and their areas are computed for all labels at
+    once from the hull of each region's row extents (see
+    `_get_hull_chains_2d_kernel`), and the Feret diameters from these convex
+    images. In other dimensions, all properties are computed from one convex
+    image per label (`regionprops_image`).
 
     Parameters
     ----------
@@ -531,20 +607,26 @@ def _regionprops_convex(
     """
     if props_dict is None:
         props_dict = {}
+    if not (compute_image or compute_area or compute_feret):
+        return props_dict
     ndim = label_image.ndim
-    batch_area = compute_area and ndim == 2 and max_label > 0
-    if batch_area:
+    if ndim == 2 and max_label > 0:
         row_first, row_last, offsets, num_rows = _regionprops_row_extents(
             label_image, bbox, max_label
         )
-        _, _, num_pixels = _convex_hull_rows_2d(
+        row_lo, row_hi, num_pixels = _convex_hull_rows_2d(
             row_first, row_last, offsets, num_rows, max_label
         )
-        props_dict["area_convex"] = num_pixels.astype(cp.float64) * (
-            _pixel_area(spacing)
-        )
-
-    if compute_image or compute_feret or (compute_area and not batch_area):
+        if compute_area:
+            props_dict["area_convex"] = num_pixels.astype(cp.float64) * (
+                _pixel_area(spacing)
+            )
+        if compute_image or compute_feret:
+            images_convex = _convex_images(
+                row_lo, row_hi, offsets, bbox, max_label
+            )
+    else:
+        # bounding-box slices given explicitly: one convex image per label
         _, _, images_convex = regionprops_image(
             label_image,
             slices=_bbox_slices(bbox),
@@ -553,21 +635,21 @@ def _regionprops_convex(
             compute_convex=True,
             props_dict={},
         )
-        if compute_image:
-            props_dict["image_convex"] = images_convex
-        if compute_area and not batch_area:
+        if compute_area:
             regionprops_area_convex(
                 images_convex,
                 max_label=max_label,
                 spacing=spacing,
                 props_dict=props_dict,
             )
-        if compute_feret:
-            regionprops_feret_diameter_max(
-                images_convex,
-                spacing=spacing,
-                props_dict=props_dict,
-            )
+    if compute_image:
+        props_dict["image_convex"] = images_convex
+    if compute_feret:
+        regionprops_feret_diameter_max(
+            images_convex,
+            spacing=spacing,
+            props_dict=props_dict,
+        )
     return props_dict
 
 

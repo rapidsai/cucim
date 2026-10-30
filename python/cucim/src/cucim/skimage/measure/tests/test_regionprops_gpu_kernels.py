@@ -377,6 +377,22 @@ def test_area_convex_and_solidity_batch_2d(spacing, kind):
     assert_array_equal(result["area_convex"][absent], 0)
 
 
+@pytest.mark.parametrize("kind", ["blobs", "large_blobs", "lines", "random"])
+def test_image_convex_batch_2d(kind):
+    labels = _convex_test_labels(kind, 2)
+    max_label = int(labels.max())
+    result = regionprops_dict(labels, properties=["image_convex"])
+    expected = measure_cpu.regionprops_table(
+        cp.asnumpy(labels), properties=["label", "image_convex"]
+    )
+    images = result["image_convex"]
+    assert len(images) == max_label
+    for lab, image in zip(expected["label"], expected["image_convex"]):
+        assert_array_equal(images[lab - 1], image)
+    for lab in set(range(1, max_label + 1)) - set(expected["label"]):
+        assert images[lab - 1].size == 0
+
+
 @pytest.mark.parametrize("ndim", [2, 3])
 @pytest.mark.parametrize("area_dtype", [cp.float32, cp.float64])
 @pytest.mark.parametrize("spacing", [None, (0.5, 0.35, 0.75)])

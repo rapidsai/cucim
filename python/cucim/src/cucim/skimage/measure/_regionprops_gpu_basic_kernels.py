@@ -707,6 +707,8 @@ def regionprops_image(
     if props_dict is None:
         props_dict = dict()
 
+    # the bounding boxes, if the slices are those of the bounding boxes
+    bbox = None
     if slices is None:
         if "slice" not in props_dict:
             regionprops_bbox_coords(
@@ -716,6 +718,7 @@ def regionprops_image(
                 props_dict=props_dict,
             )
         slices = props_dict["slice"]
+        bbox = props_dict.get("bbox")
 
     # mask so there will only be a single label value in each returned slice
     masks = tuple(
@@ -723,16 +726,23 @@ def regionprops_image(
     )
 
     if compute_convex:
-        convex_results = tuple(
-            convex_hull_image(
-                m,
-                offset_coordinates=offset_coordinates,
-                omit_empty_coords_check=True,
-                float64_computation=True,
+        if bbox is not None and offset_coordinates:
+            # all labels at once (see _regionprops_convex)
+            from ._regionprops_gpu_convex import _regionprops_convex
+
+            image_convex = _regionprops_convex(
+                label_image, bbox, max_label, compute_image=True
+            )["image_convex"]
+        else:
+            image_convex = tuple(
+                convex_hull_image(
+                    m,
+                    offset_coordinates=offset_coordinates,
+                    omit_empty_coords_check=True,
+                    float64_computation=True,
+                )
+                for m in masks
             )
-            for m in masks
-        )
-        image_convex = convex_results
 
         if on_cpu:
             image_convex = tuple(cp.asnumpy(m) for m in image_convex)
