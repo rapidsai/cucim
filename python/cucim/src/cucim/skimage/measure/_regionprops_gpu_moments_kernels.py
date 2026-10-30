@@ -314,6 +314,7 @@ def _get_raw_moments_code(
     num_channels=1,
     has_spacing=False,
     has_weights=False,
+    accum_c_type=None,
 ):
     """
     Notes
@@ -321,7 +322,14 @@ def _get_raw_moments_code(
     Variables created (per run of a label):
 
         - mom{c}_{k} : the moment at raveled index k of the moments matrix of
-            channel c (only for the entries of total order <= `order`)
+            channel c (only for the entries of total order <= `order`), with
+            type `accum_c_type` (default: `moments_c_type`)
+
+    The per-run sums are computed from the local coordinates without spacing;
+    the spacing factor of each moment is applied once per run, when adding
+    the sums to the outputs. For unweighted moments, `accum_c_type` can be an
+    integer type, as the sums of products of integer coordinates are then
+    exact (see `_get_moments_accum_c_type`).
 
     Output variables written to:
 
@@ -344,7 +352,9 @@ def _get_raw_moments_code(
         if sum(exponents) <= order:
             entries.append((k, exponents))
 
-    use_floating_point = moments_c_type in ["float", "double"]
+    if accum_c_type is None:
+        accum_c_type = moments_c_type
+    use_floating_point = accum_c_type in ["float", "double"]
 
     source_pre = ""
     for d in range(ndim):
@@ -355,7 +365,7 @@ def _get_raw_moments_code(
     double spacing{d} = spacing[{d}];"""
     if has_weights:
         source_pre += f"""
-    {moments_c_type} w;"""
+    {accum_c_type} w;"""
 
     # the bounding box is used to transform the global coordinates to local ones
     # (bbox : bounding box coordinates, shape (max_label, 2*ndim))
@@ -373,21 +383,18 @@ def _get_raw_moments_code(
     source_operation = ""
     for d in range(ndim):
         source_operation += f"""
-          {moments_c_type} c{d} = in_coord[{d}] - bbox_min{d};"""
-        if has_spacing:
-            source_operation += f"""
-          c{d} *= spacing{d};"""
+          {accum_c_type} c{d} = in_coord[{d}] - bbox_min{d};"""
 
     source_flush = ""
     for c in range(num_channels):
         if has_weights:
             # need additional multiplication by the intensity value
             source_operation += f"""
-          w = static_cast<{moments_c_type}>(img[{num_channels} * ii + {c}]);"""
+          w = static_cast<{accum_c_type}>(img[{num_channels} * ii + {c}]);"""
         for k, exponents in entries:
             var = f"mom{c}_{k}"
             source_pre += f"""
-    {moments_c_type} {var};"""
+    {accum_c_type} {var};"""
             source_start += f"""
           {var} = 0;"""
             factors = ["w"] if has_weights else []
@@ -403,9 +410,30 @@ def _get_raw_moments_code(
             #     lab : label value of the run
             #     moments : output with shape (max_label, num_channels, num_moments)
             m_index = f"{num_moments * num_channels}*(lab - 1) + {c * num_moments + k}"
+            value = f"static_cast<{moments_c_type}>({var})"
+            if has_spacing:
+                for d, e in enumerate(exponents):
+                    value += f" * spacing{d}" * e
             source_flush += f"""
-          atomicAdd(&moments[{m_index}], {var});"""
+          atomicAdd(&moments[{m_index}], {value});"""
     return source_pre, source_start, source_operation, source_flush
+
+
+def _get_moments_accum_c_type(shape, order, pixels_per_thread):
+    """C type of the per-run sums of the unweighted moments kernel.
+
+    The local coordinates are smaller than max(shape), so each term of a
+    per-run sum is at most (max(shape) - 1)**order and the sum of at most
+    `pixels_per_thread` terms fits in a 32 or 64-bit unsigned integer for any
+    practical image. Integer arithmetic is exact and much faster than double
+    precision on GPUs with low FP64 throughput.
+    """
+    max_sum = (max(shape) - 1) ** order * pixels_per_thread
+    if max_sum < 2**32:
+        return "unsigned int"
+    elif max_sum < 2**64:
+        return "unsigned long long"
+    return "double"
 
 
 @cp.memoize(for_each_device=True)
@@ -418,6 +446,7 @@ def get_raw_moments_kernel(
     weighted=False,
     num_channels=1,
     pixels_per_thread=8,
+    accum_c_type=None,
 ):
     moments_dtype = cp.dtype(moments_dtype)
 
@@ -441,6 +470,8 @@ def get_raw_moments_kernel(
         if moments_dtype.kind != "f":
             raise ValueError("moments must have a floating point data type")
 
+    if weighted and accum_c_type not in [None, "double"]:
+        raise ValueError("weighted moments are accumulated in double")
     pre, start, op, flush = _get_raw_moments_code(
         coord_c_type=coord_c_type,
         moments_c_type=moments_c_type,
@@ -449,6 +480,7 @@ def get_raw_moments_kernel(
         has_weights=weighted,
         has_spacing=spacing is not None,
         num_channels=num_channels,
+        accum_c_type=accum_c_type,
     )
 
     pre += _unravel_loop_index_declarations("labels", ndim, uint_t=coord_c_type)
@@ -479,6 +511,8 @@ def get_raw_moments_kernel(
     spacing_str = "_sp" if spacing else ""
     name = f"cucim_moments{weighted_str}{spacing_str}_order{order}_{ndim}d"
     name += f"_{coord_dtype.char}_{moments_dtype.char}_batch{pixels_per_thread}"
+    if accum_c_type is not None:
+        name += "_" + accum_c_type.replace(" ", "_")
     return cp.ElementwiseKernel(
         inputs, outputs, source, preamble=_includes, name=name
     )
@@ -611,6 +645,12 @@ def regionprops_moments(
 
     # total number of elements in the moments matrix
     moments = cp.zeros(moments_shape, dtype=cp.float64)
+    if weighted:
+        accum_c_type = None
+    else:
+        accum_c_type = _get_moments_accum_c_type(
+            label_image.shape, order, pixels_per_thread
+        )
     moments_kernel = get_raw_moments_kernel(
         ndim=label_image.ndim,
         order=order,
@@ -620,6 +660,7 @@ def regionprops_moments(
         weighted=weighted,
         num_channels=num_channels,
         pixels_per_thread=pixels_per_thread,
+        accum_c_type=accum_c_type,
     )
     input_args = (
         label_image,

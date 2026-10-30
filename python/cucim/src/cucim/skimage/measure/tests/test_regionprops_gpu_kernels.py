@@ -62,6 +62,7 @@ from cucim.skimage.measure._regionprops_gpu_intensity_kernels import (
 )
 from cucim.skimage.measure._regionprops_gpu_misc_kernels import misc_deps
 from cucim.skimage.measure._regionprops_gpu_moments_kernels import (
+    get_raw_moments_kernel,
     moment_deps,
 )
 
@@ -645,6 +646,43 @@ def test_centroid_reuses_num_pixels(ndim):
         labels, max_label=max_label, props_dict=props
     )
     assert_allclose(centroid, expected)
+
+
+@pytest.mark.parametrize("ndim", [2, 3])
+@pytest.mark.parametrize("order", [1, 2, 3])
+@pytest.mark.parametrize("spacing", [None, (0.8, 0.5, 1.3)])
+def test_raw_moments_accumulator_types(ndim, order, spacing):
+    # the unweighted moments are summed per run in a 32-bit or 64-bit integer
+    # type depending on the image size, or in double for huge images; all
+    # must give the same result
+    shape = (256, 512) if ndim == 2 else (15, 63, 37)
+    if spacing is not None:
+        spacing = spacing[:ndim]
+    labels = get_labels_nd(shape)
+    max_label = int(labels.max())
+    bbox, _ = regionprops_bbox_coords(labels, max_label=max_label)
+    results = []
+    for accum_c_type in ["unsigned int", "unsigned long long", "double"]:
+        kernel = get_raw_moments_kernel(
+            ndim,
+            order,
+            spacing=spacing,
+            pixels_per_thread=16,
+            accum_c_type=accum_c_type,
+        )
+        moments = cp.zeros((max_label,) + (order + 1,) * ndim, cp.float64)
+        args = (labels, labels.size, bbox)
+        if spacing is not None:
+            args += (cp.asarray(spacing, dtype=cp.float64),)
+        kernel(*args, moments, size=math.ceil(labels.size / 16))
+        results.append(moments)
+    if spacing is None:
+        # integer sums of integers are exact
+        assert_array_equal(results[0], results[1])
+    # (with spacing, the scaled per-run sums are added by floating-point
+    # atomics in a nondeterministic order)
+    assert_allclose(results[0], results[1], rtol=1e-14)
+    assert_allclose(results[0], results[2], rtol=1e-14)
 
 
 @pytest.mark.parametrize("spacing", [None, (0.8, 0.5), (0.2, 1.3)])
