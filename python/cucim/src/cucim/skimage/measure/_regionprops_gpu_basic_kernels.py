@@ -18,6 +18,7 @@ from ._regionprops_gpu_utils import (
     _includes,
     _unravel_loop_index,
     _unravel_loop_index_declarations,
+    _warp_includes,
 )
 
 __all__ = [
@@ -88,7 +89,9 @@ def _get_bbox_code(uint_t, ndim):
     source_start = ""
     source_operation = ""
     source_flush = ""
+    reduce = []
     for d in range(ndim):
+        reduce += [(f"bbox_min{d}", "min"), (f"bbox_max{d}", "max")]
         source_pre += f"""
     {uint_t} bbox_min{d}, bbox_max{d};"""
         source_start += f"""
@@ -106,7 +109,7 @@ def _get_bbox_code(uint_t, ndim):
         source_flush += f"""
           atomicMin(&bbox[(lab - 1)*{2 * ndim} + {d}], bbox_min{d});
           atomicMax(&bbox[(lab - 1)*{2 * ndim} + {d + ndim}], bbox_max{d});"""  # noqa: E501
-    return source_pre, source_start, source_operation, source_flush
+    return source_pre, source_start, source_operation, source_flush, reduce
 
 
 def _get_num_pixels_code():
@@ -132,7 +135,8 @@ def _get_num_pixels_code():
     #     counts : output with shape (max_label,)
     source_flush = """
           atomicAdd(&counts[lab - 1], num_pixels);"""
-    return source_pre, source_start, source_operation, source_flush
+    reduce = [("num_pixels", "sum")]
+    return source_pre, source_start, source_operation, source_flush, reduce
 
 
 def _get_coord_sums_code(coord_sum_ctype, ndim):
@@ -167,7 +171,8 @@ def _get_coord_sums_code(coord_sum_ctype, ndim):
         #     coord_sums : output with shape (max_label, ndim)
         source_flush += f"""
           atomicAdd(&coord_sums[(lab - 1) * {ndim} + {d}], coord_sum{d});"""
-    return source_pre, source_start, source_operation, source_flush
+    reduce = [(f"coord_sum{d}", "sum") for d in range(ndim)]
+    return source_pre, source_start, source_operation, source_flush, reduce
 
 
 @cp.memoize(for_each_device=True)
@@ -204,7 +209,8 @@ def get_bbox_coords_kernel(
         fragments.append(
             _get_coord_sums_code(coord_sum_ctype=coord_sum_ctype, ndim=ndim)
         )
-    pre, start, op, flush = ("".join(f) for f in zip(*fragments))
+    pre, start, op, flush = ("".join(f[i] for f in fragments) for i in range(4))
+    reduce = [r for f in fragments for r in f[4]]
 
     if compute_bbox or compute_coordinate_sums:
         pre += _unravel_loop_index_declarations("labels", ndim, uint_t=uint_t)
@@ -220,7 +226,9 @@ def get_bbox_coords_kernel(
         )
 
     # store only counts for label > 0  (label = 0 is the background)
-    source = _get_label_run_loop(pixels_per_thread, pre, start, op, flush)
+    source = _get_label_run_loop(
+        pixels_per_thread, pre, start, op, flush, warp_reduce=reduce
+    )
 
     inputs = "raw X labels, raw uint64 labels_size"
     outputs = []
@@ -237,7 +245,7 @@ def get_bbox_coords_kernel(
     outputs = ", ".join(outputs)
     name += f"_batch{pixels_per_thread}"
     return cp.ElementwiseKernel(
-        inputs, outputs, source, preamble=_includes, name=name
+        inputs, outputs, source, preamble=_warp_includes, name=name
     )
 
 
