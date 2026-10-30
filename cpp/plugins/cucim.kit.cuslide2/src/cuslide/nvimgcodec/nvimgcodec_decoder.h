@@ -123,7 +123,7 @@ struct BatchDecodeState
 /**
  * Decode multiple regions of interest (ROIs) from a single IFD in a TIFF file
  *
- * Uses nvImageCodec batch decoding API (v0.7.0+):
+ * Uses the nvImageCodec batch decoding API:
  * 1. Read image into CodeStream (main_code_stream)
  * 2. Call get_sub_code_stream() for each ROI with different regions
  * 3. Decode all ROIs in a single decoder.decode() call

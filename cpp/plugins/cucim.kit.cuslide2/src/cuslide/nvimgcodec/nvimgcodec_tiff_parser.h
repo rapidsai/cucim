@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -89,7 +89,7 @@ struct IfdInfo
     };
     std::map<int, MetadataBlob> metadata_blobs;
 
-    // nvImageCodec 0.7.0+: Individual TIFF tag storage with typed values (0.8.0+ adds TIFF_TAG_LIST)
+    // Individual TIFF tag storage with typed values.
     // tag_name -> TiffTagValue (variant with typed storage)
     std::unordered_map<std::string, TiffTagValue> tiff_tags;
 
@@ -198,7 +198,7 @@ public:
     /**
      * @brief Get a specific TIFF tag value as string
      *
-     * Returns TIFF tags queried via nvImageCodec metadata API (v0.7.0+)
+     * Returns TIFF tags queried via the nvImageCodec metadata API,
      * or inferred from file extension and vendor metadata as fallback.
      *
      * @param ifd_index IFD index
@@ -310,7 +310,29 @@ private:
 
     // Configuration: Maximum size for binary TIFF tag data (0 = unlimited)
     size_t max_binary_tag_size_ = 0;
+
+    // Limits the "no TIFF tags returned" diagnostic to one message per file.
+    bool tag_extraction_warned_ = false;
 };
+
+/**
+ * @brief Whether *packed_version* is an nvImageCodec version cuCIM supports.
+ *
+ * @param packed_version A version in nvImageCodec's packed encoding, as found
+ *        in `nvimgcodecProperties_t::version` or `NVIMGCODEC_VER`.
+ *
+ * Exposed so the supported range can be regression-tested. The range has to
+ * agree with the pin in `dependencies.yaml` and with the one the build checks
+ * in `cmake/deps/nvimgcodec.cmake`. The C++ tests pin the runtime policy only;
+ * they do not inspect those files or detect changes to the packaging pin.
+ */
+bool is_supported_nvimgcodec_version(uint32_t packed_version);
+
+/**
+ * @brief Describe a packed version, reporting raw values when the 0.9 encoding
+ *        cannot distinguish their semantic versions.
+ */
+std::string format_nvimgcodec_version(uint32_t packed_version);
 
 /**
  * @brief Singleton manager for nvImageCodec TIFF parsing
@@ -328,8 +350,16 @@ public:
      */
     static NvImageCodecTiffParserManager& instance()
     {
-        static NvImageCodecTiffParserManager manager;
-        return manager;
+        // Deliberately never destroyed. A static local would register its destructor
+        // via __cxa_atexit *after* the constructor registers shutdown() with
+        // std::atexit, and exit handlers run in reverse registration order, so the
+        // destructor would always run first and tear down CUDA-backed decoder state
+        // at an unsequenced point relative to the CUDA driver's own teardown. That
+        // races and aborts in free() inside libcuda. Leaking the manager leaves
+        // shutdown() to the atexit handler, which is registered after CUDA is
+        // initialized and therefore runs while the driver is still alive.
+        static NvImageCodecTiffParserManager* manager = new NvImageCodecTiffParserManager();
+        return *manager;
     }
 
     /**

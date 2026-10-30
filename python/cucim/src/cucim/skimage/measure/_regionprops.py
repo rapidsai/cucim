@@ -162,6 +162,21 @@ _require_intensity_image = (
     "moments_weighted_normalized",
 )
 
+_regionprops_performance_warning_emitted = False
+
+
+def _warn_regionprops_performance_once():
+    global _regionprops_performance_warning_emitted
+    if _regionprops_performance_warning_emitted:
+        return
+    warn(
+        "cucim.skimage.measure.regionprops computes RegionProperties objects "
+        "one region at a time. For performant cuCIM region property "
+        "measurement, use regionprops_table(..., batch_processing=True).",
+        stacklevel=3,
+    )
+    _regionprops_performance_warning_emitted = True
+
 
 def _infer_number_of_required_args(func):
     """Infer the number of required arguments for a given function
@@ -269,8 +284,11 @@ class RegionProperties:
 
     Notes
     -----
-    For GPU computation of regionprops it is highly recommended to instead
-    use regionprops_table for efficient batch computation over all labels.
+    For performant cuCIM region property computation on the GPU, prefer
+    :func:`cucim.skimage.measure.regionprops_table` with
+    ``batch_processing=True``. That path computes properties for all labels in
+    batched GPU kernels, while ``RegionProperties`` computes properties one
+    region at a time.
 
     Examples
     --------
@@ -835,7 +853,13 @@ class RegionProperties:
 _RegionProperties = RegionProperties
 
 
-def _props_to_dict(regions, properties=("label", "bbox"), separator="-"):
+def _props_to_dict(
+    regions,
+    properties=("label", "bbox"),
+    separator="-",
+    copy_to_host=False,
+    to_table=True,
+):
     """Convert image region properties list into a column dictionary.
 
     Parameters
@@ -858,6 +882,14 @@ def _props_to_dict(regions, properties=("label", "bbox"), separator="-"):
         Object columns are those that cannot be split in this way because the
         number of columns would change depending on the object. For example,
         ``image`` and ``coords``.
+    copy_to_host : bool, optional
+        If True, copy any device scalars or arrays to host before storing in
+        the output dict.
+    to_table : bool, optional
+        If True, split fixed-size multidimensional properties into one column
+        per element. If False, keep fixed-size multidimensional properties in
+        a single array with the region axis first, and keep variable-size
+        object properties as tuples containing one value per region.
 
     Returns
     -------
@@ -875,17 +907,18 @@ def _props_to_dict(regions, properties=("label", "bbox"), separator="-"):
     Properties with scalar values for each region, such as "eccentricity", will
     appear as a float or int array with that property name as key.
 
-    Multidimensional properties *of fixed size* for a given image dimension,
-    such as "centroid" (every centroid will have three elements in a 3D image,
-    no matter the region size), will be split into that many columns, with the
-    name {property_name}{separator}{element_num} (for 1D properties),
-    {property_name}{separator}{elem_num0}{separator}{elem_num1} (for 2D
-    properties), and so on.
+    When ``to_table=True``, multidimensional properties *of fixed size* for a
+    given image dimension, such as "centroid" (every centroid will have three
+    elements in a 3D image, no matter the region size), will be split into that
+    many columns, with the name {property_name}{separator}{element_num} (for 1D
+    properties), {property_name}{separator}{elem_num0}{separator}{elem_num1}
+    (for 2D properties), and so on.
 
     For multidimensional properties that don't have a fixed size, such as
     "image" (the image of a region varies in size depending on the region
     size), an object array will be used, with the corresponding property name
-    as the key.
+    as the key. When ``to_table=False``, these unsplit variable-size properties
+    are returned as tuples containing one value per region.
 
     Examples
     --------
@@ -949,23 +982,59 @@ def _props_to_dict(regions, properties=("label", "bbox"), separator="-"):
             or dtype is np.object_
         ):
             if prop in OBJECT_COLUMNS or dtype is np.object_:
-                # keep objects in a NumPy array
-                column_buffer = np.empty(n, dtype=dtype)
-                for i in range(n):
-                    column_buffer[i] = regions[i][prop]
-                out[orig_prop] = np.copy(column_buffer)
+                if to_table:
+                    # keep objects in a NumPy array
+                    column_buffer = np.empty(n, dtype=dtype)
+                    if copy_to_host:
+                        for i in range(n):
+                            column_buffer[i] = cp.asnumpy(regions[i][prop])
+                    else:
+                        for i in range(n):
+                            column_buffer[i] = regions[i][prop]
+                    out[orig_prop] = np.copy(column_buffer)
+                else:
+                    column_buffer = []
+                    for i in range(n):
+                        value = regions[i][prop]
+                        if copy_to_host and isinstance(value, cp.ndarray):
+                            value = cp.asnumpy(value)
+                        column_buffer.append(value)
+                    out[orig_prop] = tuple(column_buffer)
             else:
                 column_buffer = []
-                for i in range(n):
-                    p = regions[i][prop]
-                    column_buffer.append(p)
-                column_buffer = cp.array(column_buffer)
+                if copy_to_host:
+                    for i in range(n):
+                        p = cp.asnumpy(regions[i][prop])
+                        column_buffer.append(p)
+                    column_buffer = np.array(column_buffer)
+                else:
+                    for i in range(n):
+                        p = regions[i][prop]
+                        column_buffer.append(p)
+                    column_buffer = cp.array(column_buffer)
                 out[orig_prop] = column_buffer
         else:
             if isinstance(rp, cp.ndarray):
                 shape = rp.shape
             else:
                 shape = (len(rp),)
+
+            if not to_table:
+                if copy_to_host:
+                    column_data = np.empty((n,) + shape, dtype=dtype)
+                    for k in range(n):
+                        rp = regions[k][prop]
+                        if isinstance(rp, cp.ndarray):
+                            rp = cp.asnumpy(rp)
+                        column_data[k] = rp
+                    out[orig_prop] = column_data
+                else:
+                    column_buffer = [regions[k][prop] for k in range(n)]
+                    if isinstance(rp, cp.ndarray):
+                        out[orig_prop] = cp.stack(column_buffer, axis=0)
+                    else:
+                        out[orig_prop] = cp.asarray(column_buffer, dtype=dtype)
+                continue
 
             # precompute property column names and locations
             modified_props = []
@@ -978,11 +1047,18 @@ def _props_to_dict(regions, properties=("label", "bbox"), separator="-"):
 
             # fill temporary column data_array
             n_columns = len(locs)
-            column_data = cp.empty((n, n_columns), dtype=dtype)
-            for k in range(n):
-                rp = regions[k][prop]
-                for i, loc in enumerate(locs):
-                    column_data[k, i] = rp[loc]
+            if copy_to_host:
+                column_data = np.empty((n, n_columns), dtype=dtype)
+                for k in range(n):
+                    rp = cp.asnumpy(regions[k][prop])
+                    for i, loc in enumerate(locs):
+                        column_data[k, i] = rp[loc]
+            else:
+                column_data = cp.empty((n, n_columns), dtype=dtype)
+                for k in range(n):
+                    rp = regions[k][prop]
+                    for i, loc in enumerate(locs):
+                        column_data[k, i] = rp[loc]
 
             # add the columns to the output dictionary
             for i, modified_prop in enumerate(modified_props):
@@ -1000,6 +1076,8 @@ def regionprops_table(
     extra_properties=None,
     spacing=None,
     batch_processing=True,
+    to_table=True,
+    copy_output_to_host=False,
 ):
     """Compute region properties and return them as a pandas-compatible table.
 
@@ -1017,8 +1095,6 @@ def regionprops_table(
     a dict where multi-dimensional properties have not been split into
     regions.
 
-    .. versionadded:: 0.16
-
     Parameters
     ----------
     label_image : (M, N[, P]) ndarray
@@ -1027,9 +1103,6 @@ def regionprops_table(
         Intensity (input) image of same shape as labeled image, plus
         optionally an extra dimension for multichannel data. The channel
         dimension, if present, must be the last axis. Default is None.
-
-        .. versionchanged:: 0.18.0
-            The ability to provide an extra dimension for channels was added.
     properties : tuple or list of str, optional
         Properties that will be included in the resulting dictionary
         For a list of available properties, please see :func:`regionprops`.
@@ -1069,15 +1142,29 @@ def regionprops_table(
         properties will be computed for all regions much more efficiently via a
         single pass over the full image instead of on an individual label
         basis. In this mode, the `RegionProperties` class is not used at all.
+    to_table : bool, optional
+        Controls whether properties computed as multidimensional arrays of
+        fixed shape (e.g. centroid, inertia_tensor) are split into multiple
+        table entries. The split is done to make results amenable to tabular
+        analysis with pandas or other similar library. As a concrete example,
+        when ``to_table=False``, centroids for a 2D image would be returned as
+        a single array of shape ``(num_labels, 2)`` vs. when this value is true
+        it is split to two separate columns "centroid-0" and "centroid-1".
+    copy_output_to_host : bool, optional
+        If true, all the individual values in `out_dict` will have been copied
+        to the host. This is desired if planning to do host-side analysis of
+        the properties. Leave this False if further handling of the outputs is
+        planned on the GPU.
 
     Returns
     -------
     out_dict : dict
         Dictionary mapping property names to an array of values of that
-        property, one value per region. This dictionary can be used as input to
+        property, one value per region. When `to_table=True` and
+        `copy_output_to_host=True`, this dictionary can be used as input to
         pandas ``DataFrame`` to map property names to columns in the frame and
-        regions to rows. If the image has no regions,
-        the arrays will have length 0, but the correct type.
+        regions to rows. If the image has no regions, the arrays will have
+        length 0, but the correct type.
 
     Notes
     -----
@@ -1087,10 +1174,11 @@ def regionprops_table(
     Properties with scalar values for each region, such as "eccentricity", will
     appear as a float or int array with that property name as key.
 
-    Multidimensional properties *of fixed size* for a given image dimension,
-    such as "centroid" (every centroid will have three elements in a 3D image,
-    no matter the region size), will be split into that many columns, with the
-    name {property_name}{separator}{element_num} (for 1D properties),
+    When `to_table` is ``True``, multidimensional properties *of fixed size*
+    for a given image dimension, such as "centroid" (every centroid will have
+    three elements in a 3D image, no matter the region size), will be split
+    into that many columns, with the name
+    {property_name}{separator}{element_num} (for 1D properties),
     {property_name}{separator}{elem_num0}{separator}{elem_num1} (for 2D
     properties), and so on.
 
@@ -1177,10 +1265,19 @@ def regionprops_table(
             moment_order=None,
             properties=properties,
             extra_properties=extra_properties,
-            to_table=True,
+            to_table=to_table,
             table_separator=separator,
-            table_on_host=False,
+            table_on_host=copy_output_to_host,
         )
+        if copy_output_to_host and not to_table:
+            for key, value in table.items():
+                if isinstance(value, cp.ndarray):
+                    table[key] = cp.asnumpy(value)
+                elif isinstance(value, tuple):
+                    table[key] = tuple(
+                        cp.asnumpy(v) if isinstance(v, cp.ndarray) else v
+                        for v in value
+                    )
         return table
     else:
         regions = regionprops(
@@ -1213,12 +1310,20 @@ def regionprops_table(
             )
 
             out_d = _props_to_dict(
-                regions, properties=properties, separator=separator
+                regions,
+                properties=properties,
+                separator=separator,
+                copy_to_host=copy_output_to_host,
+                to_table=to_table,
             )
             return {k: v[:0] for k, v in out_d.items()}
 
         return _props_to_dict(
-            regions, properties=properties, separator=separator
+            regions,
+            properties=properties,
+            separator=separator,
+            copy_to_host=copy_output_to_host,
+            to_table=to_table,
         )
 
 
@@ -1236,9 +1341,11 @@ def regionprops(
     you want to do tabular data analysis of specific properties, consider
     using :func:`skimage.measure.regionprops_table` instead.
 
-    For computation on the GPU, it is highly recommended to use
-    `regionprops_table` for batch processing of all region properties in an
-    efficient manner.
+    For performant cuCIM region property computation on the GPU, prefer
+    :func:`cucim.skimage.measure.regionprops_table` with
+    ``batch_processing=True``. That path computes properties for all labels in
+    batched GPU kernels, while this function returns ``RegionProperties``
+    objects whose properties are evaluated one region at a time.
 
     Parameters
     ----------
@@ -1505,6 +1612,8 @@ def regionprops(
             )
         else:
             raise TypeError("Non-integer label_image types are ambiguous")
+
+    _warn_regionprops_performance_once()
 
     regions = []
 

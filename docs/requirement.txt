@@ -1,6 +1,6 @@
 nbsphinx
 recommonmark
 sphinx
-pydata-sphinx-theme
+nvidia-sphinx-theme
 numpydoc
 ipython

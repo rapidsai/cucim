@@ -1,6 +1,6 @@
 # Apache License, Version 2.0
 # cmake-format: off
-# SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION
+# SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 # cmake-format: on
 
@@ -90,15 +90,6 @@ set(CMAKE_INSTALL_LIBDIR lib)
 include(ExternalProject)
 
 ################################################################################
-# Options
-################################################################################
-
-# Setup CXX11 ABI
-# : Adds CXX11 ABI definition to the compiler command line for targets in the current directory,
-#   whether added before or after this command is invoked, and for the ones in sub-directories added after.
-add_compile_definitions(_GLIBCXX_USE_CXX11_ABI=0) # TODO: create two library, one with CXX11 ABI and one without it.
-
-################################################################################
 # Define dependencies
 ################################################################################
 superbuild_depend(fmt)
@@ -153,6 +144,8 @@ set(CUSLIDE2_CORE_SOURCES
     # TIFF structure management (uses nvImageCodec for parsing)
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/tiff/ifd.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/tiff/ifd.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/tiff/ome_xml.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/tiff/ome_xml.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/tiff/tiff.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/tiff/tiff.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cuslide/tiff/types.h

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 #
-# SPDX-FileCopyrightText: Copyright (c) 2018, NVIDIA CORPORATION.
+# SPDX-FileCopyrightText: Copyright (c) 2018-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 # pygdf documentation build configuration file, created by
@@ -19,6 +19,7 @@
 # add these directories to sys.path here. If the directory is relative to the
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 #
+import datetime
 import os
 import sys
 
@@ -67,9 +68,9 @@ source_suffix = ".rst"
 master_doc = "index"
 
 # General information about the project.
-project = "cuCIM"
-copyright = "2020-2021, NVIDIA"
-author = "NVIDIA"
+project = "NVIDIA cuCIM"
+copyright = f"2020-{datetime.datetime.today().year}, NVIDIA Corporation"
+author = "NVIDIA Corporation"
 
 # The version info for the project you're documenting, acts as replacement for
 # |version| and |release|, also used in various other places throughout the
@@ -106,7 +107,23 @@ todo_include_todos = False
 # a list of builtin themes.
 #
 
-html_theme = "pydata_sphinx_theme"
+html_theme = "nvidia_sphinx_theme"
+html_theme_options = {
+    "public_docs_features": os.environ.get("CI") == "true",
+    "icon_links": [
+        {
+            "name": "GitHub",
+            "url": "https://github.com/rapidsai/cucim",
+            "icon": "fa-brands fa-github",
+            "type": "fontawesome",
+        },
+    ],
+    "navbar_center": "navbar-nav, version-switcher, navbar-external-links",
+    "switcher": {
+        "json_url": "https://docs.nvidia.com/cucim/versions.json",
+        "version_match": version,
+    },
+}
 
 
 # Theme options are theme-specific and customize the look and feel of a theme
@@ -151,7 +168,7 @@ latex_documents = [
     (
         master_doc,
         "cucim.tex",
-        "cucim Documentation",
+        f"{project} Documentation",
         "NVIDIA Corporation",
         "manual",
     ),
@@ -162,7 +179,7 @@ latex_documents = [
 
 # One entry per manual page. List of tuples
 # (source start file, name, description, authors, manual section).
-man_pages = [(master_doc, "cucim", "cucim Documentation", [author], 1)]
+man_pages = [(master_doc, "cucim", f"{project} Documentation", [author], 1)]
 
 
 # -- Options for Texinfo output -------------------------------------------
@@ -174,7 +191,7 @@ texinfo_documents = [
     (
         master_doc,
         "cucim",
-        "cucim Documentation",
+        f"{project} Documentation",
         author,
         "cucim",
         "One line description of project.",
@@ -196,10 +213,3 @@ intersphinx_mapping = {
 # Config numpydoc
 numpydoc_show_inherited_class_members = False
 numpydoc_class_members_toctree = False
-
-
-def setup(app):
-    app.add_css_file("https://docs.rapids.ai/assets/css/custom.css")
-    app.add_js_file(
-        "https://docs.rapids.ai/assets/js/custom.js", loading_method="defer"
-    )

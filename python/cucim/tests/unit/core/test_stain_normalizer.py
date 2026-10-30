@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2022, NVIDIA CORPORATION.
+# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 
@@ -9,6 +9,16 @@ from cucim.core.operations.color import (
     normalize_colors_pca,
     stain_extraction_pca,
 )
+from cucim.core.operations.color.stain_normalizer import _covariance
+
+
+def test_covariance_constant_rows_are_exactly_zero():
+    value = cp.float32(5.4806389808654785)
+    image = cp.full((3, 8), value, dtype=cp.float32)
+
+    cp.testing.assert_array_equal(
+        _covariance(image), cp.zeros((3, 3), dtype=cp.float32)
+    )
 
 
 class TestStainExtractorMacenko:

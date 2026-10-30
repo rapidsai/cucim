@@ -1,7 +1,7 @@
 
-Welcome to cuCIM's documentation!
-====================================
-cuCIM (Compute Unified Device Architecture Clara IMage) is an open-source, accelerated computer vision and image processing software library for multidimensional images used in biomedical, geospatial, material and life science, and remote sensing use cases.
+NVIDIA cuCIM Documentation
+==========================
+NVIDIA cuCIM (Compute Unified Architecture Clara IMage) is an open-source, accelerated computer vision and image processing software library for multidimensional images used in biomedical, geospatial, material and life science, and remote sensing use cases.
 
 cuCIM provides GPU-accelearted I/O,
 computer vision and image processing primitives for N-Dimensional images including:

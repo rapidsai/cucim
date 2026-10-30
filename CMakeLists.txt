@@ -1,6 +1,6 @@
 #
 # cmake-format: off
-# SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION.
+# SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 # cmake-format: on
 #
@@ -87,11 +87,6 @@ option(CUCIM_SUPPORT_GDS "Support cufile library" ON)
 option(CUCIM_STATIC_GDS "Use static cufile library" OFF)
 option(CUCIM_SUPPORT_CUDA "Support CUDA" ON)
 option(CUCIM_SUPPORT_NVTX "Support NVTX" ON)
-
-# Setup CXX11 ABI
-# : Adds CXX11 ABI definition to the compiler command line for targets in the current directory,
-#   whether added before or after this command is invoked, and for the ones in sub-directories added after.
-add_definitions(-D_GLIBCXX_USE_CXX11_ABI=0) # TODO: create two library, one with CXX11 ABI and one without it.
 
 ################################################################################
 # Define basic dependencies

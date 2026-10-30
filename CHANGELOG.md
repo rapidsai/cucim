@@ -1,3 +1,51 @@
+# cucim 26.10.00 (7 Oct 2026)
+
+### 🐛 Bug Fixes
+* XFail `TestStainExtractorMacenko::test_result_value` on CuPy 14.2.0 by @jakirkham in https://github.com/rapidsai/cucim/pull/1138
+* Backport "Fix stain covariance centering with CuPy CUB" (#1142) by @jakirkham in https://github.com/rapidsai/cucim/pull/1154
+* Add ImageCacheKey::lock_hash() so cache locking derives from the key by @cdinea in https://github.com/rapidsai/cucim/pull/1146
+### 📖 Documentation
+* Enable public docs features in CI by @bdice in https://github.com/rapidsai/cucim/pull/1140
+### 🛠️ Improvements
+* Forward-merge release/26.08 into main by @jakirkham in https://github.com/rapidsai/cucim/pull/1126
+* ensure nightly builds always produce new packages by @jameslamb in https://github.com/rapidsai/cucim/pull/1127
+* selectively skip CI jobs based on changed files, update pre-commit hooks by @jameslamb in https://github.com/rapidsai/cucim/pull/1131
+* ci: avoid triggered-by-schedule and triggered-by-merge builds cancelling each other by @jameslamb in https://github.com/rapidsai/cucim/pull/1132
+* ci: ensure pr-builder always runs by @jameslamb in https://github.com/rapidsai/cucim/pull/1133
+* X-ORG-1134: Publish API docs to docs.nvidia.com by @josephine-wolf-oberholtzer in https://github.com/rapidsai/cucim/pull/1136
+* Add new cucim.skimage.filters.rank module by @grlee77 in https://github.com/rapidsai/cucim/pull/1115
+* Add ImageMetadata::store_string() and document why _GLIBCXX_USE_CXX11_ABI=0 by @cdinea in https://github.com/rapidsai/cucim/pull/1149
+* Add GPU-resident tile cache for cuslide2 by @cdinea in https://github.com/rapidsai/cucim/pull/1145
+* Verify the loaded nvImageCodec version at runtime, and consolidate nvimgcodec.cmake by @cdinea in https://github.com/rapidsai/cucim/pull/1148
+* Add per-codec tile cache benchmark for cuslide2, fix raw TIFF recipe by @cdinea in https://github.com/rapidsai/cucim/pull/1143
+* X-ORG-410: Integrate archived docs into version switcher by @josephine-wolf-oberholtzer in https://github.com/rapidsai/cucim/pull/1170
+
+
+**Full Changelog**: https://github.com/rapidsai/cucim/compare/v26.10.00a...release/26.10
+
+# cucim 26.08.00 (5 Aug 2026)
+
+### 🚨 Breaking Changes
+* Use static linkage for CUDA runtime by @bdice in https://github.com/rapidsai/cucim/pull/992
+### 🐛 Bug Fixes
+* Replace `shape` assignment with `reshape` calls by @jakirkham in https://github.com/rapidsai/cucim/pull/1106
+* add large image support to `cucim.skimage.measure.label` (support 64-bit indexing) by @grlee77 in https://github.com/rapidsai/cucim/pull/1087
+### 📖 Documentation
+* Update docs to use NVIDIA Sphinx theme by @bdice in https://github.com/rapidsai/cucim/pull/1112
+### 🛠️ Improvements
+* Add SECURITY.md by @jameslamb in https://github.com/rapidsai/cucim/pull/1093
+* fix(ci): fix configuration for breaking change notification workflow by @jameslamb in https://github.com/rapidsai/cucim/pull/1098
+* refactor: switch to `rapids-artifact-name` for consistent artifact naming by @gforsyth in https://github.com/rapidsai/cucim/pull/1091
+* Build and test with CUDA 13.3.0 by @bdice in https://github.com/rapidsai/cucim/pull/1102
+* Use main shared-workflows branch by @bdice in https://github.com/rapidsai/cucim/pull/1103
+* Update CuPy and NumPy dependency specs by @bdice in https://github.com/rapidsai/cucim/pull/1104
+* fix(deps): preload `cusolver` if `cupy` is installed by @gforsyth in https://github.com/rapidsai/cucim/pull/1117
+* `regionprops_table` output placement and format by @grlee77 in https://github.com/rapidsai/cucim/pull/1088
+* cuslide2: add pyramidal OME-TIFF semantics and nvImageCodec 0.9 readiness by @cdinea in https://github.com/rapidsai/cucim/pull/1122
+
+
+**Full Changelog**: https://github.com/rapidsai/cucim/compare/v26.08.00a...release/26.08
+
 # cucim 26.06.00 (3 Jun 2026)
 
 ### 🚨 Breaking Changes

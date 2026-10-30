@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -14,6 +14,7 @@
 #include <memory>
 #include <random>
 #include <thread>
+#include <cstring>
 #include <fstream>
 #include <langinfo.h>
 
@@ -112,7 +113,12 @@ IFD::IFD(TIFF* tiff, uint16_t index, ifd_offset_t offset) : tiff_(tiff), ifd_ind
 // ============================================================================
 
 #ifdef CUCIM_HAS_NVIMGCODEC
-IFD::IFD(TIFF* tiff, uint16_t index, const ::cuslide2::nvimgcodec::IfdInfo& ifd_info)
+IFD::IFD(TIFF* tiff,
+         uint16_t index,
+         const ::cuslide2::nvimgcodec::IfdInfo& ifd_info,
+         size_t parser_idx,
+         uint32_t local_ifd_idx,
+         uint64_t file_hash)
     : tiff_(tiff), ifd_index_(index), ifd_offset_(index)
 {
     PROF_SCOPED_RANGE(PROF_EVENT(ifd_ifd));  // Use standard ifd_ifd profiler event
@@ -126,6 +132,8 @@ IFD::IFD(TIFF* tiff, uint16_t index, const ::cuslide2::nvimgcodec::IfdInfo& ifd_
     height_ = ifd_info.height;
     samples_per_pixel_ = ifd_info.num_channels;
     bits_per_sample_ = ifd_info.bits_per_sample;
+    parser_index_ = parser_idx;
+    local_ifd_index_ = local_ifd_idx;
 
     #ifdef DEBUG
     fmt::print("   Dimensions: {}x{}, {} channels, {} bits/sample\n",
@@ -142,14 +150,15 @@ IFD::IFD(TIFF* tiff, uint16_t index, const ::cuslide2::nvimgcodec::IfdInfo& ifd_
     // Get ImageDescription from nvImageCodec
     image_description_ = ifd_info.image_description;
 
-    // Extract TIFF tags from TiffFileParser
-    if (tiff->nvimgcodec_parser_) {
+    // Extract TIFF tags from the parser that owns this IFD.
+    const auto& parser = (parser_idx == 0) ? *tiff->nvimgcodec_parser_ : *tiff->companion_parsers_[parser_idx - 1];
+    {
         // Software and Model tags
-        software_ = tiff->nvimgcodec_parser_->get_tiff_tag(index, "SOFTWARE");
-        model_ = tiff->nvimgcodec_parser_->get_tiff_tag(index, "MODEL");
+        software_ = parser.get_tiff_tag(local_ifd_idx, "SOFTWARE");
+        model_ = parser.get_tiff_tag(local_ifd_idx, "MODEL");
 
         // SUBFILETYPE for IFD classification
-        int subfile_type = tiff->nvimgcodec_parser_->get_subfile_type(index);
+        int subfile_type = parser.get_subfile_type(local_ifd_idx);
         if (subfile_type >= 0) {
             subfile_type_ = static_cast<uint64_t>(subfile_type);
             #ifdef DEBUG
@@ -158,7 +167,7 @@ IFD::IFD(TIFF* tiff, uint16_t index, const ::cuslide2::nvimgcodec::IfdInfo& ifd_
         }
 
         // Check for JPEGTables (abbreviated JPEG indicator)
-        std::string jpeg_tables = tiff->nvimgcodec_parser_->get_tiff_tag(index, "JPEGTABLES");
+        std::string jpeg_tables = parser.get_tiff_tag(local_ifd_idx, "JPEGTABLES");
         if (!jpeg_tables.empty()) {
             #ifdef DEBUG
             fmt::print("   ✅ JPEGTables detected (abbreviated JPEG)\n");
@@ -166,8 +175,9 @@ IFD::IFD(TIFF* tiff, uint16_t index, const ::cuslide2::nvimgcodec::IfdInfo& ifd_
         }
 
         // Tile dimensions (if available from TIFF tags)
-        std::string tile_w_str = tiff->nvimgcodec_parser_->get_tiff_tag(index, "TILEWIDTH");
-        std::string tile_h_str = tiff->nvimgcodec_parser_->get_tiff_tag(index, "TILELENGTH");
+        std::string tile_w_str = parser.get_tiff_tag(local_ifd_idx, "TILEWIDTH");
+        std::string tile_h_str = parser.get_tiff_tag(local_ifd_idx, "TILELENGTH");
+        std::string photo_str = parser.get_tiff_tag(local_ifd_idx, "PHOTOMETRIC");
 
         if (!tile_w_str.empty() && !tile_h_str.empty()) {
             try {
@@ -191,20 +201,81 @@ IFD::IFD(TIFF* tiff, uint16_t index, const ::cuslide2::nvimgcodec::IfdInfo& ifd_
             fmt::print("   Not tiled (strip-based or whole image)\n");
             #endif
         }
+
+        if (!photo_str.empty())
+        {
+            try
+            {
+                photometric_ = static_cast<uint16_t>(std::stoul(photo_str));
+            }
+            catch (...)
+            {
+                // Keep fallback below.
+            }
+        }
+
+        // Resolution tags drive the pixel spacing reported to callers. XRESOLUTION and
+        // YRESOLUTION are RATIONAL tags already reduced to a decimal by the parser.
+        // Missing or unparsable tags leave the declared defaults in place.
+        std::string res_unit_str = parser.get_tiff_tag(local_ifd_idx, "RESOLUTIONUNIT");
+        std::string x_res_str = parser.get_tiff_tag(local_ifd_idx, "XRESOLUTION");
+        std::string y_res_str = parser.get_tiff_tag(local_ifd_idx, "YRESOLUTION");
+
+        if (!res_unit_str.empty())
+        {
+            try
+            {
+                resolution_unit_ = static_cast<uint16_t>(std::stoul(res_unit_str));
+            }
+            catch (...)
+            {
+            }
+        }
+        if (!x_res_str.empty())
+        {
+            try
+            {
+                const float parsed = std::stof(x_res_str);
+                if (parsed > 0.0f)
+                {
+                    x_resolution_ = parsed;
+                }
+            }
+            catch (...)
+            {
+            }
+        }
+        if (!y_res_str.empty())
+        {
+            try
+            {
+                const float parsed = std::stof(y_res_str);
+                if (parsed > 0.0f)
+                {
+                    y_resolution_ = parsed;
+                }
+            }
+            catch (...)
+            {
+            }
+        }
+        #ifdef DEBUG
+        fmt::print("   Resolution: {}x{} (unit={})\n", x_resolution_, y_resolution_, resolution_unit_);
+        #endif
     }
 
     // Set format defaults
     planar_config_ = cuslide::tiff::PLANARCONFIG_CONTIG;  // nvImageCodec outputs interleaved
-    photometric_ = cuslide::tiff::PHOTOMETRIC_RGB;
+    if (photometric_ == 0)
+    {
+        photometric_ = (samples_per_pixel_ == 1) ? cuslide::tiff::PHOTOMETRIC_MINISBLACK
+                                                  : cuslide::tiff::PHOTOMETRIC_RGB;
+    }
     predictor_ = 1;  // No predictor
 
-    // Resolution info (defaults - may not be available from nvImageCodec)
-    resolution_unit_ = 1;  // No absolute unit
-    x_resolution_ = 1.0f;
-    y_resolution_ = 1.0f;
-
     // Calculate hash for caching (include file hash for cross-file uniqueness)
-    hash_value_ = tiff->file_handle_shared_.get()->hash_value ^ cucim::codec::splitmix64(index);
+    hash_value_ = (file_hash != 0) ? (file_hash ^ cucim::codec::splitmix64(local_ifd_idx))
+                                   : (tiff->file_handle_shared_.get()->hash_value ^ cucim::codec::splitmix64(index));
 
 #ifdef CUCIM_HAS_NVIMGCODEC
     // Store reference to nvImageCodec sub-stream
@@ -254,7 +325,7 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
     #endif
 
 #ifdef CUCIM_HAS_NVIMGCODEC
-    if (!nvimgcodec_sub_stream_ || !tiff->nvimgcodec_parser_)
+    if (!nvimgcodec_sub_stream_)
     {
         throw std::runtime_error(fmt::format(
             "IFD[{}]: nvImageCodec parser not available", ifd_index_));
@@ -272,10 +343,11 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
     const uint64_t location_len = request->location_len;
 
     uint32_t batch_size = request->batch_size;
-    int32_t n_ch = samples_per_pixel_;
+    int32_t n_ch = static_cast<int32_t>(std::max<uint32_t>(1, samples_per_pixel_));
     int ndim = 3;
+    const size_t bytes_per_sample = std::max<size_t>(1, bits_per_sample_ / 8);
 
-    size_t one_raster_size = static_cast<size_t>(w) * static_cast<size_t>(h) * samples_per_pixel_;
+    size_t one_raster_size = static_cast<size_t>(w) * static_cast<size_t>(h) * n_ch * bytes_per_sample;
     size_t raster_size = one_raster_size;
 
     void* raster = nullptr;
@@ -419,7 +491,7 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
         // loader->next_data() during Python iteration.
         out_image_data->container.data = raster;  // may be nullptr for batch iteration
         out_image_data->container.device = DLDevice{ static_cast<DLDeviceType>(raster_type), out_device.index() };
-        out_image_data->container.dtype = DLDataType{ kDLUInt, 8, 1 };
+        out_image_data->container.dtype = DLDataType{ kDLUInt, static_cast<uint8_t>(bits_per_sample_), 1 };
         out_image_data->container.ndim = ndim;
         out_image_data->container.shape = static_cast<int64_t*>(cucim_malloc(ndim * sizeof(int64_t)));
         if (ndim == 4)
@@ -456,9 +528,10 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
         output_buffer = static_cast<uint8_t*>(out_buf->data);
     }
 
-    // Get IFD info from TiffFileParser
-    const auto& ifd_info = tiff->nvimgcodec_parser_->get_ifd(static_cast<uint32_t>(ifd_index_));
-    auto main_code_stream = tiff->nvimgcodec_parser_->get_main_code_stream();
+    // Get IFD info from the parser that owns this global IFD.
+    const auto& parser = tiff->parser_for_global_ifd(ifd_index_);
+    const auto& ifd_info = parser.get_ifd(local_ifd_index_);
+    auto main_code_stream = parser.get_main_code_stream();
 
     // ====================================================================
     // TILE-LEVEL CACHING PATH
@@ -469,21 +542,85 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
     int64_t ex = sx + w - 1;
     int64_t ey = sy + h - 1;
 
+    // A request can fall entirely outside the image. nvImageCodec fills out-of-bounds
+    // pixels for a region that partially overlaps, but rejects one with no
+    // intersection at all, which would surface as a decode failure. read_region()
+    // is specified to return an all-background raster of the requested size here, so
+    // produce it directly instead of consulting the decoder.
+    if (ex < 0 || ey < 0 || sx >= static_cast<int64_t>(width_) || sy >= static_cast<int64_t>(height_))
+    {
+        if (!output_buffer)
+        {
+            if (out_device.type() == cucim::io::DeviceType::kCUDA)
+            {
+                if (cudaMalloc(reinterpret_cast<void**>(&output_buffer), one_raster_size) != cudaSuccess)
+                {
+                    throw std::runtime_error("Failed to allocate GPU buffer for out-of-bounds region");
+                }
+            }
+            else
+            {
+                output_buffer = static_cast<uint8_t*>(cucim_malloc(one_raster_size));
+                if (!output_buffer)
+                {
+                    throw std::runtime_error("Failed to allocate host buffer for out-of-bounds region");
+                }
+            }
+        }
+
+        if (out_device.type() == cucim::io::DeviceType::kCUDA)
+        {
+            if (cudaMemset(output_buffer, 0, one_raster_size) != cudaSuccess)
+            {
+                throw std::runtime_error("Failed to clear GPU buffer for out-of-bounds region");
+            }
+        }
+        else
+        {
+            std::memset(output_buffer, 0, one_raster_size);
+        }
+
+        out_image_data->container.data = output_buffer;
+        out_image_data->container.device =
+            DLDevice{ static_cast<DLDeviceType>(out_device.type()), out_device.index() };
+        out_image_data->container.dtype = DLDataType{ kDLUInt, static_cast<uint8_t>(bits_per_sample_), 1 };
+        out_image_data->container.ndim = 3;
+        out_image_data->container.shape = static_cast<int64_t*>(cucim_malloc(3 * sizeof(int64_t)));
+        out_image_data->container.shape[0] = h;
+        out_image_data->container.shape[1] = w;
+        out_image_data->container.shape[2] = n_ch;
+        out_image_data->container.strides = nullptr;
+        out_image_data->container.byte_offset = 0;
+
+        return true;
+    }
+
     // Tile caching is applicable when:
     //  1. The image is tiled (tile_width_ > 0 && tile_height_ > 0)
     //  2. The ROI is fully within the image bounds (no boundary handling)
     //  3. An image cache is configured (not kNoCache)
-    //  4. The image is 8-bit RGB (the only format the assembly path supports)
+    //  4. The image has a scalar sample format this assembly path supports
     bool use_tile_caching = (tile_width_ > 0 && tile_height_ > 0 &&
-                             bits_per_sample_ == 8 && samples_per_pixel_ == 3 &&
+                             (bits_per_sample_ == 8 || bits_per_sample_ == 16) &&
+                             samples_per_pixel_ >= 1 &&
                              sx >= 0 && sy >= 0 &&
                              ex < static_cast<int64_t>(width_) &&
                              ey < static_cast<int64_t>(height_));
 
+    // GPU output caches its tiles in the device-resident cache and assembles
+    // them with device-to-device copies.  Staging through host memory instead
+    // would also forfeit nvImageCodec's direct-to-device decode, which made a
+    // warm cached read slower than an uncached one for CUDA output (#1069).
+    const bool assemble_on_device = (out_device.type() == cucim::io::DeviceType::kCUDA);
+
+    // Keep one owning snapshot through the type check and all tile operations.
+    // Reconfiguration may replace the manager's cache while this read is active.
+    std::shared_ptr<cucim::cache::ImageCache> image_cache_owner;
     if (use_tile_caching)
     {
-        cucim::cache::ImageCache& image_cache = cucim::CuImage::cache_manager().cache();
-        cucim::cache::CacheType cache_type = image_cache.type();
+        image_cache_owner = assemble_on_device ? cucim::CuImage::cache_manager().get_device_cache() :
+                                                cucim::CuImage::cache_manager().get_cache();
+        cucim::cache::CacheType cache_type = image_cache_owner->type();
 
         if (cache_type == cucim::cache::CacheType::kNoCache)
         {
@@ -493,11 +630,12 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
 
     if (use_tile_caching)
     {
-        cucim::cache::ImageCache& image_cache = cucim::CuImage::cache_manager().cache();
+        cucim::cache::ImageCache& image_cache = *image_cache_owner;
 
         const uint32_t tw = tile_width_;
         const uint32_t th = tile_height_;
-        const uint32_t samples = samples_per_pixel_;
+        const uint32_t samples = std::max<uint32_t>(1, samples_per_pixel_);
+        const uint32_t bytes_per_px = static_cast<uint32_t>(std::max<size_t>(1, bits_per_sample_ / 8));
         const uint8_t background_value = tiff->background_value_;
 
         // Tile grid offsets that the ROI overlaps
@@ -517,20 +655,47 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
 
         const uint64_t ifd_hash = hash_value_;
 
-        // Tile assembly uses host memcpy/memset, so we always need a host-side
-        // buffer.  When the caller provided a CPU buffer we can write directly
-        // into it; when the output is CUDA (or no buffer was provided) we
-        // allocate a temporary host staging buffer (RAII-managed).
+        // Assemble in whichever memory space the output lives in, so no staging
+        // copy is needed either way.  A caller-supplied buffer is already on the
+        // requested device, so we write straight into it; otherwise we allocate
+        // our own and hand it over at the end.
         const bool caller_owns_buffer = is_buf_available && output_buffer != nullptr;
-        const bool caller_buffer_on_device =
-            caller_owns_buffer && out_device.type() == cucim::io::DeviceType::kCUDA;
+
+        // RAII for the device raster; the host raster uses cucim_free below.
+        struct DeviceRaster
+        {
+            uint8_t* ptr = nullptr;
+            ~DeviceRaster()
+            {
+                if (ptr)
+                {
+                    cudaFree(ptr);
+                }
+            }
+            uint8_t* release()
+            {
+                uint8_t* released = ptr;
+                ptr = nullptr;
+                return released;
+            }
+        } device_raster_owner;
 
         std::unique_ptr<uint8_t, decltype(cucim_free)*> host_raster_owner(nullptr, cucim_free);
-        uint8_t* host_raster = nullptr;
+        uint8_t* raster = nullptr;
 
-        if (caller_owns_buffer && !caller_buffer_on_device)
+        if (caller_owns_buffer)
         {
-            host_raster = output_buffer;
+            raster = output_buffer;
+        }
+        else if (assemble_on_device)
+        {
+            uint8_t* gpu_raster = nullptr;
+            if (cudaMalloc(reinterpret_cast<void**>(&gpu_raster), one_raster_size) != cudaSuccess)
+            {
+                throw std::runtime_error("Failed to allocate GPU output buffer for tile assembly");
+            }
+            device_raster_owner.ptr = gpu_raster;
+            raster = gpu_raster;
         }
         else
         {
@@ -539,11 +704,31 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
             {
                 throw std::runtime_error("Failed to allocate host output buffer for tile assembly");
             }
-            host_raster = host_raster_owner.get();
+            raster = host_raster_owner.get();
         }
 
-        const uint32_t dest_row_stride = static_cast<uint32_t>(w) * samples;
-        uint8_t* dest_row_ptr = host_raster;
+        const uint32_t dest_row_stride = static_cast<uint32_t>(w) * samples * bytes_per_px;
+        uint8_t* dest_row_ptr = raster;
+
+        // Used when a tile can neither be allocated nor decoded.  Strided fills
+        // and copies keep the device path to a single call per tile instead of
+        // one per row.
+        auto fill_background = [&](uint8_t* dest, uint32_t bytes_per_row, uint32_t rows) {
+            if (assemble_on_device)
+            {
+                if (cudaMemset2D(dest, dest_row_stride, background_value, bytes_per_row, rows) != cudaSuccess)
+                {
+                    throw std::runtime_error("Failed to fill background in GPU raster");
+                }
+            }
+            else
+            {
+                for (uint32_t r = 0; r < rows; ++r)
+                {
+                    memset(dest + r * dest_row_stride, background_value, bytes_per_row);
+                }
+            }
+        };
 
         #ifdef DEBUG
         ::fmt::print("🧩 Tile caching: ROI ({},{})→({},{}) maps to tiles [{},{}]→[{},{}], stride_y={}\n",
@@ -567,19 +752,15 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
                 const uint32_t tile_pixel_sx = (tile_col == offset_sx) ? pixel_offset_sx : 0;
                 const uint32_t tile_pixel_ex = (tile_col == offset_ex) ? pixel_offset_ex : (tw - 1);
                 const uint32_t copy_cols = tile_pixel_ex - tile_pixel_sx + 1;
-                const uint32_t copy_bytes_per_row = copy_cols * samples;
+                const uint32_t copy_bytes_per_row = copy_cols * samples * bytes_per_px;
 
                 // Actual decoded tile dimensions (clipped to image bounds for edge tiles)
                 const uint32_t tile_origin_x = tile_col * tw;
                 const uint32_t tile_origin_y = tile_row * th;
                 const uint32_t actual_tw = std::min(tw, width_ - tile_origin_x);
                 const uint32_t actual_th = std::min(th, height_ - tile_origin_y);
-                const size_t tile_buf_size = static_cast<size_t>(actual_tw) * actual_th * samples;
-                const uint32_t tile_row_stride = actual_tw * samples;
-
-                // Hash for per-tile locking
-                const uint64_t index_hash = ifd_hash ^
-                    (static_cast<uint64_t>(tile_index) | (static_cast<uint64_t>(tile_index) << 32));
+                const size_t tile_buf_size = static_cast<size_t>(actual_tw) * actual_th * samples * bytes_per_px;
+                const uint32_t tile_row_stride = actual_tw * samples * bytes_per_px;
 
                 // --- Cache lookup (RAII lock guard for exception safety) ---
                 auto key = image_cache.create_key(ifd_hash, tile_index);
@@ -594,7 +775,7 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
                     ~CacheLockGuard() { if (locked) cache.unlock(hash); }
                     void unlock() { if (locked) { cache.unlock(hash); locked = false; } }
                 };
-                CacheLockGuard tile_lock(image_cache, index_hash);
+                CacheLockGuard tile_lock(image_cache, key->lock_hash());
 
                 auto cached_value = image_cache.find(key);
 
@@ -623,24 +804,24 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
                                      tile_col, tile_row);
                         #endif
 
-                        for (uint32_t r = 0; r < copy_rows; ++r)
-                        {
-                            memset(dest_row_ptr + dest_col_byte_offset + r * dest_row_stride,
-                                   background_value, copy_bytes_per_row);
-                        }
+                        fill_background(dest_row_ptr + dest_col_byte_offset, copy_bytes_per_row, copy_rows);
                         dest_col_byte_offset += copy_bytes_per_row;
                         continue;
                     }
 
-                    // Wrap immediately so the destructor handles backend-correct cleanup
-                    tile_value = image_cache.create_value(tile_mem, tile_buf_size);
+                    // Wrap immediately so the destructor handles backend-correct cleanup.
+                    // The value must carry the cache's device type, or a device
+                    // allocation would be released with the host deallocator.
+                    tile_value = image_cache.create_value(
+                        tile_mem, tile_buf_size,
+                        assemble_on_device ? cucim::io::DeviceType::kCUDA : cucim::io::DeviceType::kCPU);
                     uint8_t* tile_buf = static_cast<uint8_t*>(tile_value->data);
 
                     bool decode_ok = ::cuslide2::nvimgcodec::decode_ifd_region_nvimgcodec(
                         ifd_info, main_code_stream,
                         tile_origin_x, tile_origin_y, actual_tw, actual_th,
                         tile_buf,
-                        cucim::io::Device("cpu"));
+                        assemble_on_device ? out_device : cucim::io::Device("cpu"));
 
                     if (decode_ok)
                     {
@@ -662,11 +843,7 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
                                      tile_col, tile_row);
                         #endif
 
-                        for (uint32_t r = 0; r < copy_rows; ++r)
-                        {
-                            memset(dest_row_ptr + dest_col_byte_offset + r * dest_row_stride,
-                                   background_value, copy_bytes_per_row);
-                        }
+                        fill_background(dest_row_ptr + dest_col_byte_offset, copy_bytes_per_row, copy_rows);
                         dest_col_byte_offset += copy_bytes_per_row;
                         continue;
                     }
@@ -677,13 +854,27 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
                 // If insert() succeeded, the cache also holds a shared reference.
                 // If insert() failed, tile_value is the sole owner — freed after this iteration.
                 const uint32_t src_byte_offset =
-                    (tile_pixel_sy * actual_tw + tile_pixel_sx) * samples;
+                    (tile_pixel_sy * actual_tw + tile_pixel_sx) * samples * bytes_per_px;
 
-                for (uint32_t r = 0; r < copy_rows; ++r)
+                if (assemble_on_device)
                 {
-                    memcpy(dest_row_ptr + dest_col_byte_offset + r * dest_row_stride,
-                           tile_data + src_byte_offset + r * tile_row_stride,
-                           copy_bytes_per_row);
+                    // Both sides are device memory, so this never touches the host.
+                    if (cudaMemcpy2D(dest_row_ptr + dest_col_byte_offset, dest_row_stride,
+                                     tile_data + src_byte_offset, tile_row_stride,
+                                     copy_bytes_per_row, copy_rows,
+                                     cudaMemcpyDeviceToDevice) != cudaSuccess)
+                    {
+                        throw std::runtime_error("Failed to copy cached tile into GPU raster");
+                    }
+                }
+                else
+                {
+                    for (uint32_t r = 0; r < copy_rows; ++r)
+                    {
+                        memcpy(dest_row_ptr + dest_col_byte_offset + r * dest_row_stride,
+                               tile_data + src_byte_offset + r * tile_row_stride,
+                               copy_bytes_per_row);
+                    }
                 }
 
                 dest_col_byte_offset += copy_bytes_per_row;
@@ -692,53 +883,28 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
             dest_row_ptr += static_cast<size_t>(copy_rows) * dest_row_stride;
         }
 
-        // --- Move assembled raster to the requested output device ---
-        if (caller_buffer_on_device)
+        // --- Publish the assembled raster ---
+        // It was assembled in place on the requested device, so there is nothing
+        // left to transfer; we only take ownership of a buffer we allocated.
+        if (!caller_owns_buffer)
         {
-            // Caller provided a device buffer — copy the host staging data into it.
-            cudaError_t err = cudaMemcpy(
-                output_buffer, host_raster, one_raster_size, cudaMemcpyHostToDevice);
-            if (err != cudaSuccess)
-            {
-                throw std::runtime_error("Failed to copy tile-cached raster to caller GPU buffer");
-            }
-            raster_type = cucim::io::DeviceType::kCUDA;
+            output_buffer = assemble_on_device ? device_raster_owner.release() : host_raster_owner.release();
         }
-        else if (!caller_owns_buffer)
-        {
-            if (out_device.type() == cucim::io::DeviceType::kCUDA)
-            {
-                uint8_t* gpu_buf = nullptr;
-                cudaError_t err = cudaMalloc(reinterpret_cast<void**>(&gpu_buf), one_raster_size);
-                if (err != cudaSuccess)
-                {
-                    throw std::runtime_error("Failed to allocate GPU buffer for tile-cached output");
-                }
-                err = cudaMemcpy(gpu_buf, host_raster, one_raster_size, cudaMemcpyHostToDevice);
-                if (err != cudaSuccess)
-                {
-                    cudaFree(gpu_buf);
-                    throw std::runtime_error("Failed to copy tile-cached raster to GPU");
-                }
 
-                output_buffer = gpu_buf;
-                raster_type = cucim::io::DeviceType::kCUDA;
-            }
-            else
-            {
-                output_buffer = host_raster_owner.release();
-            }
+        if (assemble_on_device)
+        {
+            raster_type = cucim::io::DeviceType::kCUDA;
         }
 
         // Set up output metadata
         out_image_data->container.data = output_buffer;
         out_image_data->container.device = DLDevice{ static_cast<DLDeviceType>(raster_type), out_device.index() };
-        out_image_data->container.dtype = DLDataType{ kDLUInt, 8, 1 };
+        out_image_data->container.dtype = DLDataType{ kDLUInt, static_cast<uint8_t>(bits_per_sample_), 1 };
         out_image_data->container.ndim = 3;
         out_image_data->container.shape = static_cast<int64_t*>(cucim_malloc(3 * sizeof(int64_t)));
         out_image_data->container.shape[0] = h;
         out_image_data->container.shape[1] = w;
-        out_image_data->container.shape[2] = samples_per_pixel_;
+        out_image_data->container.shape[2] = std::max<uint32_t>(1, samples_per_pixel_);
         out_image_data->container.strides = nullptr;
         out_image_data->container.byte_offset = 0;
 
@@ -776,12 +942,12 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
         // Set up output metadata
         out_image_data->container.data = output_buffer;
         out_image_data->container.device = DLDevice{ static_cast<DLDeviceType>(out_device.type()), out_device.index() };
-        out_image_data->container.dtype = DLDataType{ kDLUInt, 8, 1 };
+        out_image_data->container.dtype = DLDataType{ kDLUInt, static_cast<uint8_t>(bits_per_sample_), 1 };
         out_image_data->container.ndim = 3;
         out_image_data->container.shape = static_cast<int64_t*>(cucim_malloc(3 * sizeof(int64_t)));
         out_image_data->container.shape[0] = h;
         out_image_data->container.shape[1] = w;
-        out_image_data->container.shape[2] = samples_per_pixel_;
+        out_image_data->container.shape[2] = std::max<uint32_t>(1, samples_per_pixel_);
         out_image_data->container.strides = nullptr;
         out_image_data->container.byte_offset = 0;
 
@@ -1002,9 +1168,13 @@ bool IFD::is_compression_supported() const
 
 bool IFD::is_read_optimizable() const
 {
-    return is_compression_supported() && bits_per_sample_ == 8 && samples_per_pixel_ == 3 &&
+    return is_compression_supported() && (bits_per_sample_ == 8 || bits_per_sample_ == 16) &&
+           samples_per_pixel_ >= 1 &&
            (tile_width_ != 0 && tile_height_ != 0) && planar_config_ == cuslide::tiff::PLANARCONFIG_CONTIG &&
-           (photometric_ == cuslide::tiff::PHOTOMETRIC_RGB || photometric_ == cuslide::tiff::PHOTOMETRIC_YCBCR) &&
+           (photometric_ == cuslide::tiff::PHOTOMETRIC_RGB ||
+            photometric_ == cuslide::tiff::PHOTOMETRIC_YCBCR ||
+            photometric_ == cuslide::tiff::PHOTOMETRIC_MINISBLACK ||
+            photometric_ == cuslide::tiff::PHOTOMETRIC_MINISWHITE) &&
            !tiff_->is_in_read_config(TIFF::kUseLibTiff);
 }
 

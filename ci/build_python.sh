@@ -1,12 +1,12 @@
 #!/bin/bash
-# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 set -euo pipefail
 
 source rapids-configure-sccache
 
-source rapids-date-string
+source rapids-datetime-string
 
 export CMAKE_GENERATOR=Ninja
 
@@ -52,5 +52,5 @@ rattler-build build --recipe conda/recipes/cucim \
 
 sccache --show-adv-stats
 
-RAPIDS_PACKAGE_NAME="$(rapids-artifact-name conda_python cucim cucim --py "$RAPIDS_PY_VERSION" --cuda "$RAPIDS_CUDA_VERSION")"
+RAPIDS_PACKAGE_NAME="$(rapids-artifact-name conda_python cucim cucim --stable --cuda "$RAPIDS_CUDA_VERSION")"
 export RAPIDS_PACKAGE_NAME

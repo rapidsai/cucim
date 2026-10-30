@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -123,6 +123,8 @@ public:
     static cache::ImageCacheManager& cache_manager();
     static std::shared_ptr<cache::ImageCache> cache();
     static std::shared_ptr<cache::ImageCache> cache(cache::ImageCacheConfig& config);
+    /// Device-resident tile cache used for GPU output; see ImageCacheManager::device_cache().
+    static std::shared_ptr<cache::ImageCache> device_cache();
     static bool is_trace_enabled();
 
     filesystem::Path path() const;
