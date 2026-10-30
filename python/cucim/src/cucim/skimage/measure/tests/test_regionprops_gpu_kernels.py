@@ -639,7 +639,7 @@ def test_centroid(via_moments, local, ndim):
     "label_dtype", [cp.uint8, cp.int16, cp.uint16, cp.int32, cp.uint64]
 )
 @pytest.mark.parametrize("pixels_per_thread", [1, 3, 16])
-@pytest.mark.parametrize("pattern", ["single", "stripes", "random"])
+@pytest.mark.parametrize("pattern", ["single", "stripes", "random", "blocks"])
 def test_label_run_warp_aggregation(label_dtype, pixels_per_thread, pattern):
     # The last runs of neighboring lanes with the same label are combined
     # with warp shuffles before the atomics. Check the counts, bounding boxes,
@@ -655,10 +655,19 @@ def test_label_run_warp_aggregation(label_dtype, pixels_per_thread, pattern):
         lengths = rng.integers(1, 100, size=2000)
         values = np.arange(lengths.size) % 5 + 1
         labels = np.repeat(values, lengths)[: math.prod(shape)].reshape(shape)
+    elif pattern == "blocks":
+        # a large region with background blocks of 16 to 48 pixels, so that
+        # whole lanes have no labeled pixel, and a second region
+        cols = np.arange(shape[1])
+        labels = np.broadcast_to((cols // 16) % 3 != 1, shape).astype(int)
+        labels[:5, :500] *= 2
     else:
         labels = rng.integers(0, 4, size=shape)
     labels_gpu = cp.asarray(labels.astype(label_dtype))
-    image = rng.uniform(-10, 10, size=shape).astype(np.float32)
+    # positive intensities in odd and negative ones in even labels, so that
+    # neither 0 nor any other wrong identity of min/max would go unnoticed
+    image = rng.uniform(1, 10, size=shape).astype(np.float32)
+    image[labels % 2 == 0] *= -1
     image_gpu = cp.asarray(image)
     max_label = int(labels.max())
 
