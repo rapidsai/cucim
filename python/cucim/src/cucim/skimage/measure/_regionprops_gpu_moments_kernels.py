@@ -1625,6 +1625,98 @@ def regionprops_inertia_tensor_eigvals(
 
 
 @cp.memoize(for_each_device=True)
+def get_centroid_from_sums_kernel(
+    ndim, compute_local=True, compute_global=False, unit_spacing=True
+):
+    """Centroid (in global or local coordinates) from coordinate sums"""
+    spc = "" if unit_spacing else " * spacing[d]"
+    source = f"""
+        size_t lab = i / {ndim};
+        int d = i % {ndim};
+        double n = static_cast<double>(counts[lab]);\n"""
+    if compute_global:
+        source += f"""
+        centroid[i] = coordinate_sums[i] / n{spc};\n"""
+    if compute_local:
+        # subtract the bounding box offset from the sums before dividing (an
+        # exact integer operation)
+        source += f"""
+        uint64_t local_sum = coordinate_sums[i]
+            - static_cast<uint64_t>(counts[lab]) * bbox[lab * {2 * ndim} + d];
+        centroid_local[i] = local_sum / n{spc};\n"""
+    inputs = ["raw uint64 coordinate_sums", "raw C counts"]
+    outputs = []
+    name = f"cucim_centroid_from_sums_{ndim}d"
+    if compute_local:
+        inputs.append("raw B bbox")
+    if not unit_spacing:
+        inputs.append("raw float64 spacing")
+        name += "_spacing"
+    if compute_global:
+        outputs.append("raw float64 centroid")
+        name += "_global"
+    if compute_local:
+        outputs.append("raw float64 centroid_local")
+        name += "_local"
+    return cp.ElementwiseKernel(
+        ", ".join(inputs),
+        ", ".join(outputs),
+        source,
+        preamble=_includes,
+        name=name,
+    )
+
+
+def _regionprops_centroid_from_sums(
+    coordinate_sums,
+    num_pixels,
+    bbox=None,
+    compute_local=False,
+    compute_global=True,
+    spacing=None,
+    props_dict=None,
+):
+    """Centroid (in global or local coordinates) from coordinate sums.
+
+    `coordinate_sums` and `num_pixels` are computed by the label-run pass
+    (`_regionprops_label_pass`). `bbox` is needed if `compute_local`.
+
+    if compute_global:
+        writes "centroid" to `props_dict`
+    if compute_local:
+        writes "centroid_local" to `props_dict`
+    """
+    if props_dict is None:
+        props_dict = {}
+    max_label, ndim = coordinate_sums.shape
+    unit_spacing = spacing is None
+    inputs = [coordinate_sums, num_pixels]
+    if compute_local:
+        inputs.append(bbox)
+    if not unit_spacing:
+        inputs.append(cp.asarray(spacing, dtype=cp.float64))
+    outputs = []
+    if compute_global:
+        centroid = cp.empty((max_label, ndim), dtype=cp.float64)
+        outputs.append(centroid)
+    if compute_local:
+        centroid_local = cp.empty((max_label, ndim), dtype=cp.float64)
+        outputs.append(centroid_local)
+    kernel = get_centroid_from_sums_kernel(
+        ndim,
+        compute_local=compute_local,
+        compute_global=compute_global,
+        unit_spacing=unit_spacing,
+    )
+    kernel(*inputs, *outputs, size=max_label * ndim)
+    if compute_global:
+        props_dict["centroid"] = centroid
+    if compute_local:
+        props_dict["centroid_local"] = centroid_local
+    return props_dict
+
+
+@cp.memoize(for_each_device=True)
 def get_centroid_weighted_kernel(
     moments_dtype,
     ndim,
