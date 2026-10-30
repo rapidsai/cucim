@@ -30,51 +30,60 @@ pba3d_defines_template = """
 """
 
 # For efficiency, the original PBA+ packs three 10-bit integers and two binary
-# flags into a single 32-bit integer. The defines in
-# `pba3d_defines_encode_32bit` handle this format.
-pba3d_defines_encode_32bit = """
+# flags into a single 32-bit integer. Here, the number of bits of the
+# coordinates follows from the shape of the array: `_get_encoding` returns
+# the number of bits of the x and y coordinates (the same for both, because the
+# coloring kernel exchanges the two), the number of bits of the z coordinate and
+# whether a 64-bit integer is needed.
+#
+#   | NOTSITE | HASNEXT | ... | x (bits_xy) | y (bits_xy) | z (bits_z) |
+#
+# The flags are the highest two bits of the 32-bit or of the 64-bit integer.
+pba3d_defines_encode = """
 // Sites     : ENCODE(x, y, z, 0, 0)
 // Not sites : ENCODE(0, 0, 0, 1, 0) or MARKER
-#define ENCODED_INT_TYPE int
-#define ZERO 0
-#define ONE 1
-#define ENCODE(x, y, z, a, b)  (((x) << 20) | ((y) << 10) | (z) | ((a) << 31) | ((b) << 30))
+#define ENCODED_INT_TYPE {int_type}
+#define ZERO {zero}
+#define ONE {one}
+#define Z_BITS {bits_z}
+#define XY_BITS {bits_xy}
+#define NOTSITE_BIT {notsite_bit}
+#define HASNEXT_BIT {hasnext_bit}
+#define Z_MASK ((ONE << Z_BITS) - ONE)
+#define XY_MASK ((ONE << XY_BITS) - ONE)
+#define ENCODE(x, y, z, a, b)  (((x) << (XY_BITS + Z_BITS)) | ((y) << Z_BITS) | (z) | ((a) << NOTSITE_BIT) | ((b) << HASNEXT_BIT))
 #define DECODE(value, x, y, z) \
-    x = ((value) >> 20) & 0x3ff; \
-    y = ((value) >> 10) & 0x3ff; \
-    z = (value) & 0x3ff
+    x = ((value) >> (XY_BITS + Z_BITS)) & XY_MASK; \
+    y = ((value) >> Z_BITS) & XY_MASK; \
+    z = (value) & Z_MASK
 
-#define NOTSITE(value)  (((value) >> 31) & 1)
-#define HASNEXT(value)  (((value) >> 30) & 1)
+#define NOTSITE(value)  (((value) >> NOTSITE_BIT) & 1)
+#define HASNEXT(value)  (((value) >> HASNEXT_BIT) & 1)
 
-#define GET_X(value)    (((value) >> 20) & 0x3ff)
-#define GET_Y(value)    (((value) >> 10) & 0x3ff)
-#define GET_Z(value)    ((NOTSITE((value))) ? MAX_INT : ((value) & 0x3ff))
+#define GET_X(value)    (((value) >> (XY_BITS + Z_BITS)) & XY_MASK)
+#define GET_Y(value)    (((value) >> Z_BITS) & XY_MASK)
+#define GET_Z(value)    ((NOTSITE((value))) ? MAX_INT : ((value) & Z_MASK))
 
 """  # noqa
 
 
-# 64bit version of ENCODE/DECODE to allow a 20-bit integer per coordinate axis.
-pba3d_defines_encode_64bit = """
-// Sites     : ENCODE(x, y, z, 0, 0)
-// Not sites : ENCODE(0, 0, 0, 1, 0) or MARKER
-#define ENCODED_INT_TYPE long long
-#define ZERO 0L
-#define ONE 1L
-#define ENCODE(x, y, z, a, b)  (((x) << 40) | ((y) << 20) | (z) | ((a) << 61) | ((b) << 60))
-#define DECODE(value, x, y, z) \
-    x = ((value) >> 40) & 0xfffff; \
-    y = ((value) >> 20) & 0xfffff; \
-    z = (value) & 0xfffff
+def _get_encoding(shape):
+    """Return (bits_xy, bits_z, wide) for packing coordinates in `shape`.
 
-#define NOTSITE(value)  (((value) >> 61) & 1)
-#define HASNEXT(value)  (((value) >> 60) & 1)
+    `wide` is True if a 64-bit integer is needed (more than 30 bits for the
+    coordinates), otherwise a 32-bit integer is used.
+    """
+    size_z, size_y, size_x = shape
+    bits_xy = max(1, (max(size_y, size_x) - 1).bit_length())
+    bits_z = max(1, (size_z - 1).bit_length())
+    n_bits = 2 * bits_xy + bits_z
+    if n_bits > 60:
+        raise ValueError(f"the shape {tuple(shape)} is too large")
+    return bits_xy, bits_z, n_bits > 30
 
-#define GET_X(value)    (((value) >> 40) & 0xfffff)
-#define GET_Y(value)    (((value) >> 20) & 0xfffff)
-#define GET_Z(value)    ((NOTSITE((value))) ? MAX_INT : ((value) & 0xfffff))
 
-"""  # noqa
+def _get_encoded_dtype(encoding):
+    return np.int64 if encoding[2] else np.int32
 
 
 @cupy.memoize(True)
@@ -82,7 +91,7 @@ def get_pba3d_src(
     block_size_3d=32,
     marker=-2147483648,
     max_int=2147483647,
-    size_max=1024,
+    encoding=(10, 10, False),
     spacing_t="double",
 ):
     pba3d_code = pba3d_defines_template.format(
@@ -91,10 +100,16 @@ def get_pba3d_src(
         max_int=max_int,
         spacing_t=spacing_t,
     )
-    if size_max > 1024:
-        pba3d_code += pba3d_defines_encode_64bit
-    else:
-        pba3d_code += pba3d_defines_encode_32bit
+    bits_xy, bits_z, wide = encoding
+    pba3d_code += pba3d_defines_encode.format(
+        int_type="long long" if wide else "int",
+        zero="0L" if wide else "0",
+        one="1L" if wide else "1",
+        bits_xy=bits_xy,
+        bits_z=bits_z,
+        notsite_bit=61 if wide else 31,
+        hasnext_bit=60 if wide else 30,
+    )
     kernel_directory = os.path.join(os.path.dirname(__file__), "cuda")
     with open(os.path.join(kernel_directory, "pba_kernels_3d.h")) as f:
         pba3d_kernels = "\n".join(f.readlines())
@@ -103,7 +118,7 @@ def get_pba3d_src(
 
 
 @cupy.memoize(for_each_device=True)
-def _get_pba3d_kernels(block_size, size_max, with_spacing, spacing_t="double"):
+def _get_pba3d_kernels(block_size, encoding, with_spacing, spacing_t="double"):
     """Return the kernels of the 3D algorithm as a dictionary.
 
     The kernels that take a pixel spacing are returned under the names of the
@@ -111,7 +126,7 @@ def _get_pba3d_kernels(block_size, size_max, with_spacing, spacing_t="double"):
     """
     module = cupy.RawModule(
         code=get_pba3d_src(
-            block_size_3d=block_size, size_max=size_max, spacing_t=spacing_t
+            block_size_3d=block_size, encoding=encoding, spacing_t=spacing_t
         )
     )
     suffix = "WithSpacing" if with_spacing else ""
@@ -122,18 +137,13 @@ def _get_pba3d_kernels(block_size, size_max, with_spacing, spacing_t="double"):
 
 
 @cupy.memoize(for_each_device=True)
-def _get_encode3d_kernel(size_max, marker=-2147483648):
+def _get_encode3d_kernel(encoding, marker=-2147483648):
     """Pack array coordinates into a single integer."""
-    if size_max > 1024:
-        int_type = "ptrdiff_t"  # int64_t
-    else:
-        int_type = "int"  # int32_t
+    bits_xy, bits_z, wide = encoding
+    int_type = "ptrdiff_t" if wide else "int"  # int64_t or int32_t
 
-    # value must match TOID macro in the C++ code!
-    if size_max > 1024:
-        value = """(((x) << 40) | ((y) << 20) | (z))"""
-    else:
-        value = """(((x) << 20) | ((y) << 10) | (z))"""
+    # value must match the ENCODE macro in the C++ code!
+    value = f"""(((x) << {bits_xy + bits_z}) | ((y) << {bits_z}) | (z))"""
 
     code = f"""
     if (arr[i]) {{
@@ -157,48 +167,37 @@ def _get_encode3d_kernel(size_max, marker=-2147483648):
     )
 
 
-def encode3d(arr, marker=-2147483648, bit_depth=32, size_max=1024):
+def encode3d(arr, marker=-2147483648, encoding=None):
     if arr.ndim != 3:
         raise ValueError("only 3d arr supported")
-    if bit_depth not in [32, 64]:
-        raise ValueError("only bit_depth of 32 or 64 is supported")
-    if size_max > 1024:
-        dtype = np.int64
-    else:
-        dtype = np.int32
-    image = cupy.zeros(arr.shape, dtype=dtype, order="C")
-    kern = _get_encode3d_kernel(size_max, marker=marker)
+    if encoding is None:
+        encoding = _get_encoding(arr.shape)
+    image = cupy.zeros(arr.shape, dtype=_get_encoded_dtype(encoding), order="C")
+    kern = _get_encode3d_kernel(encoding, marker=marker)
     kern(arr, image, size=image.size)
     return image
 
 
-def _get_decode3d_code(size_max, int_type=""):
+def _get_decode3d_code(encoding, int_type=""):
     # bit shifts here must match those used in the encode3d kernel
-    if size_max > 1024:
-        code = f"""
-        {int_type} x = (encoded >> 40) & 0xfffff;
-        {int_type} y = (encoded >> 20) & 0xfffff;
-        {int_type} z = encoded & 0xfffff;
-        if ((encoded >> 61) & 1) {{ x = -1; y = -1; z = -1; }}
-        """
-    else:
-        code = f"""
-        {int_type} x = (encoded >> 20) & 0x3ff;
-        {int_type} y = (encoded >> 10) & 0x3ff;
-        {int_type} z = encoded & 0x3ff;
-        if ((encoded >> 31) & 1) {{ x = -1; y = -1; z = -1; }}
-        """
+    bits_xy, bits_z, wide = encoding
+    notsite_bit = 61 if wide else 31
     # The NOTSITE flag is set if there is no nearest site. The coordinates are
     # then set to -1 (otherwise they would be arbitrary values).
-    return code
+    return f"""
+        {int_type} x = (encoded >> {bits_xy + bits_z}) & {(1 << bits_xy) - 1};
+        {int_type} y = (encoded >> {bits_z}) & {(1 << bits_xy) - 1};
+        {int_type} z = encoded & {(1 << bits_z) - 1};
+        if ((encoded >> {notsite_bit}) & 1) {{ x = -1; y = -1; z = -1; }}
+        """
 
 
 @cupy.memoize(for_each_device=True)
-def _get_decode3d_kernel(size_max):
+def _get_decode3d_kernel(encoding):
     """Unpack 3 coordinates encoded as a single integer."""
 
     # int_type = "" here because x, y, z were already allocated externally
-    code = _get_decode3d_code(size_max, int_type="")
+    code = _get_decode3d_code(encoding, int_type="")
 
     return cupy.ElementwiseKernel(
         in_params="E encoded",
@@ -207,12 +206,11 @@ def _get_decode3d_kernel(size_max):
     )
 
 
-def decode3d(encoded, size_max=1024):
-    coord_dtype = cupy.int32 if size_max < 2**31 else cupy.int64
-    x = cupy.empty_like(encoded, dtype=coord_dtype)
+def decode3d(encoded, encoding):
+    x = cupy.empty_like(encoded, dtype=cupy.int32)
     y = cupy.empty_like(x)
     z = cupy.empty_like(x)
-    kern = _get_decode3d_kernel(size_max)
+    kern = _get_decode3d_kernel(encoding)
     kern(encoded, x, y, z)
     return (x, y, z)
 
@@ -319,7 +317,7 @@ def _get_aniso_distance_kernel(int_type):
 
 
 @cupy.memoize(for_each_device=True)
-def _get_decode_as_distance_kernel(size_max, large_dist=False, sampling=None):
+def _get_decode_as_distance_kernel(encoding, large_dist=False, sampling=None):
     """Fused decode3d and distance computation.
 
     This kernel is for use when `return_distances=True`, but
@@ -333,7 +331,7 @@ def _get_decode_as_distance_kernel(size_max, large_dist=False, sampling=None):
     int_type = "int"
 
     # Step 1: decode the (z, y, x) coordinate
-    code = _get_decode3d_code(size_max, int_type=int_type)
+    code = _get_decode3d_code(encoding, int_type=int_type)
 
     # Step 2: compute the Euclidean distance based on this (z, y, x).
     code_dist = _generate_shape(
@@ -412,8 +410,8 @@ def _pba_3d(
 
     # pba algorithm was implemented to use 32-bit integer to store compressed
     # coordinates. input_arr will be C-contiguous, int32
-    size_max = max(arr.shape)
-    input_arr = encode3d(arr, size_max=size_max)
+    encoding = _get_encoding(arr.shape)
+    input_arr = encode3d(arr, encoding=encoding)
     buffer_idx = 0
     output = cupy.zeros_like(input_arr)
     pba_images = [input_arr, output]
@@ -421,7 +419,7 @@ def _pba_3d(
     block = (blockx, blocky, 1)
     spacing_t = "float" if float32_spacing else "double"
     kernels = _get_pba3d_kernels(
-        block_size, size_max, sampling is not None, spacing_t
+        block_size, encoding, sampling is not None, spacing_t
     )
     kernelFloodZ = kernels["kernelFloodZ"]
     kernelMaurerAxis = kernels["kernelMaurerAxis"]
@@ -494,7 +492,7 @@ def _pba_3d(
         if not return_indices:
             # Compute distances without forming explicit coordinate arrays.
             kern = _get_decode_as_distance_kernel(
-                size_max=size_max, large_dist=large_dist, sampling=sampling
+                encoding=encoding, large_dist=large_dist, sampling=sampling
             )
             if sampling is None:
                 kern(output[:orig_sz, :orig_sy, :orig_sx], distances)
@@ -504,9 +502,7 @@ def _pba_3d(
             return (distances,)
 
     if return_indices:
-        x, y, z = decode3d(
-            output[:orig_sz, :orig_sy, :orig_sx], size_max=size_max
-        )
+        x, y, z = decode3d(output[:orig_sz, :orig_sy, :orig_sx], encoding)
     vals = ()
     if return_distances:
         if sampling is None:

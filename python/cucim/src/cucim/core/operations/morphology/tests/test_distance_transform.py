@@ -638,7 +638,7 @@ def test_pba_kernels_are_cached():
 
     for get_kernels, args in [
         (_get_pba2d_kernels, (32, -32768, "short2")),
-        (_get_pba3d_kernels, (32, 64)),
+        (_get_pba3d_kernels, (32, (10, 10, False))),
     ]:
         plain = get_kernels(*args, False)
         assert get_kernels(*args, False) is plain
@@ -730,6 +730,82 @@ def test_distance_transform_edt_float32_spacing_unused(ndim, sampling):
     default = distance_transform_edt(img, sampling=sampling)
     out = distance_transform_edt(img, sampling=sampling, float32_spacing=True)
     cp.testing.assert_array_equal(out, default)
+
+
+@pytest.mark.parametrize(
+    "shape, expected",
+    [
+        ((32, 32, 32), (5, 5, False)),
+        ((1024, 1024, 1024), (10, 10, False)),  # 30 bits
+        ((1, 1, 1), (1, 1, False)),
+        ((64, 2048, 2048), (11, 6, False)),  # a long axis uses fewer bits
+        ((4, 1100, 40), (11, 2, False)),
+        ((2, 8192, 8192), (13, 1, False)),
+        ((1025, 1025, 1025), (11, 11, True)),  # 33 bits
+        ((300, 1100, 20), (11, 9, True)),
+    ],
+)
+def test_pba3d_encoding(shape, expected):
+    """The number of bits of the coordinates follows from the shape."""
+    from cucim.core.operations.morphology._pba_3d import _get_encoding
+
+    assert _get_encoding(shape) == expected
+
+
+def test_pba3d_encoding_too_large():
+    from cucim.core.operations.morphology._pba_3d import _get_encoding
+
+    with pytest.raises(ValueError):
+        _get_encoding((2**21, 2**21, 2**21))
+
+
+@pytest.mark.parametrize("shape", [(5, 17, 9), (3, 1100, 6), (300, 1100, 20)])
+def test_pba3d_encode_decode(shape):
+    """Encoding and decoding coordinates is the identity for 32 and 64 bits."""
+    from cucim.core.operations.morphology._pba_3d import (
+        _get_encoding,
+        decode3d,
+        encode3d,
+    )
+
+    encoding = _get_encoding(shape)
+    # shapes that use a 32-bit and a 64-bit integer are included
+    assert encoding[2] == (shape == (300, 1100, 20))
+    arr = cp.zeros(shape, dtype=bool)
+    encoded = encode3d(arr, encoding=encoding)
+    assert encoded.dtype == (cp.int64 if encoding[2] else cp.int32)
+    x, y, z = decode3d(encoded, encoding)
+    zz, yy, xx = cp.meshgrid(*(cp.arange(n) for n in shape), indexing="ij")
+    cp.testing.assert_array_equal(x, xx)
+    cp.testing.assert_array_equal(y, yy)
+    cp.testing.assert_array_equal(z, zz)
+
+
+@pytest.mark.parametrize(
+    "shape",
+    [
+        (3, 1500, 70),  # 32-bit integers, although an axis is larger than 1024
+        (4, 1100, 40),
+        (1, 40, 2000),
+        (300, 1100, 20),  # needs 64-bit integers
+        (260, 1025, 10),
+        (20, 1030, 1030),
+    ],
+)
+@pytest.mark.parametrize("sampling", [None, (2.0, 0.7, 1.3)])
+def test_distance_transform_edt_3d_long_axis(shape, sampling):
+    img = binary_image(shape, pct_true=30)
+    img[(0,) * 3] = False
+    dist, ind = distance_transform_edt(
+        img, sampling=sampling, return_indices=True
+    )
+    img_cpu = cp.asnumpy(img)
+    expected = ndi_cpu.distance_transform_edt(img_cpu, sampling=sampling)
+    cp.testing.assert_allclose(dist, expected, rtol=1e-6)
+    cp.testing.assert_allclose(
+        distance_transform_edt(img, sampling=sampling), expected, rtol=1e-6
+    )
+    assert not img_cpu[tuple(cp.asnumpy(ind))].any()
 
 
 @pytest.mark.parametrize("ndim", [1, 4, 5])
