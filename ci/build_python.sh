@@ -36,6 +36,7 @@ CPP_CHANNEL=$(rapids-download-from-github "$(rapids-artifact-name conda_cpp libc
 # node works correctly
 RAPIDS_PACKAGE_VERSION=$(head -1 ./VERSION) rapids-conda-retry build \
   --no-test \
+  --python "${RAPIDS_PY_VERSION}" \
   --channel "${CPP_CHANNEL}" \
   conda/recipes/cucim
 
