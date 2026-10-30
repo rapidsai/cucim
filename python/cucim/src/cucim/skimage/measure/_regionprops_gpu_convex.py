@@ -889,25 +889,924 @@ def _convex_hull_candidates_3d(
     return points[order], point_offsets
 
 
+# Exact integer helpers of the 3D convex-hull kernel. Points are (z, y, x)
+# triples in doubled coordinates relative to the label's bounding box (see
+# `_convex_hull_candidates_3d`). For a bounding box of at most
+# _HULL_3D_MAX_EXTENT voxels along each axis, coordinate differences are
+# below 2**20, so the products of three of them (at most 6 * 2**60 in a 3 x 3
+# determinant) fit in 64 bits. Larger labels use qhull on the host.
+_HULL_3D_MAX_EXTENT = 2**19 - 2
+
+_hull_3d_includes = r"""
+struct cucim_vec3 {
+  long long z, y, x;
+};
+
+__device__ __forceinline__ cucim_vec3 cucim_sub3(cucim_vec3 a,
+                                                 cucim_vec3 b) {
+  return {a.z - b.z, a.y - b.y, a.x - b.x};
+}
+
+__device__ __forceinline__ cucim_vec3 cucim_cross3(cucim_vec3 a,
+                                                   cucim_vec3 b) {
+  return {a.y * b.x - a.x * b.y, a.x * b.z - a.z * b.x,
+          a.z * b.y - a.y * b.z};
+}
+
+__device__ __forceinline__ long long cucim_dot3(cucim_vec3 a, cucim_vec3 b) {
+  return a.z * b.z + a.y * b.y + a.x * b.x;
+}
+
+// a . b for vectors whose components fit in 32 bits
+__device__ __forceinline__ long long cucim_dot3_narrow(cucim_vec3 a,
+                                                       cucim_vec3 b) {
+  return static_cast<long long>(static_cast<int>(a.z)) * static_cast<int>(b.z)
+         + static_cast<long long>(static_cast<int>(a.y))
+               * static_cast<int>(b.y)
+         + static_cast<long long>(static_cast<int>(a.x))
+               * static_cast<int>(b.x);
+}
+
+template <typename T>
+__device__ __forceinline__ cucim_vec3 cucim_point3(const T* points, int s) {
+  return {static_cast<long long>(points[3 * s]),
+          static_cast<long long>(points[3 * s + 1]),
+          static_cast<long long>(points[3 * s + 2])};
+}
+
+// Is point s before point t in (z, y, x) order?
+template <typename T>
+__device__ __forceinline__ bool cucim_less3(const T* points, int s, int t) {
+  cucim_vec3 d = cucim_sub3(cucim_point3(points, s), cucim_point3(points, t));
+  return d.z < 0 || (d.z == 0 && (d.y < 0 || (d.y == 0 && d.x < 0)));
+}
+
+// Shared memory of a block working on one label.
+struct cucim_hull_shared {
+  int index[32];
+  int point[32][3];
+  int count[32];
+  long long normal[3];
+  int c;
+  int m;
+  int ea;
+  int eb;
+};
+
+// The threads working on one label: one warp (W = 1), or a whole block of W
+// warps. Loops over all points are strided over the group's threads; the
+// rest of the work is done by the group's first warp (the leader). Values
+// combined from all threads (`best`, `sum`, `any`) are returned to all of
+// them. With W > 1, each of these ends with a barrier after the last read
+// of shared memory, so that the next one can write it.
+template <int W>
+struct cucim_group {
+  int rank;  // the thread's rank in the group, 0 to 32 W - 1
+  int lane;
+  int warp;  // the warp's rank in the group
+  cucim_hull_shared* shared;  // (if W > 1)
+
+  __device__ __forceinline__ bool any(bool pred) const {
+    if (W == 1) {
+      return __any_sync(0xffffffffu, pred);
+    }
+    return __syncthreads_or(pred) != 0;
+  }
+
+  __device__ __forceinline__ int sum(int v) const {
+    for (int offset = 16; offset > 0; offset >>= 1) {
+      v += __shfl_xor_sync(0xffffffffu, v, offset);
+    }
+    if (W > 1) {
+      if (lane == 0) {
+        shared->count[warp] = v;
+      }
+      __syncthreads();
+      v = 0;
+      for (int w = 0; w < W; w++) {
+        v += shared->count[w];
+      }
+      __syncthreads();
+    }
+    return v;
+  }
+
+  // The best of the threads' candidates (point indices, -1 for none).
+  // better(c, c2) tells whether c2 is better than c (both valid); it must
+  // be a strict total order, so that all threads agree.
+  template <typename F>
+  __device__ __forceinline__ int best(int c, F better) const {
+    for (int offset = 16; offset > 0; offset >>= 1) {
+      int c2 = __shfl_xor_sync(0xffffffffu, c, offset);
+      if (c2 >= 0 && c2 != c && (c < 0 || better(c, c2))) {
+        c = c2;
+      }
+    }
+    if (W > 1) {
+      if (lane == 0) {
+        shared->index[warp] = c;
+      }
+      __syncthreads();
+      if (warp == 0) {
+        c = lane < W ? shared->index[lane] : -1;
+        for (int offset = 16; offset > 0; offset >>= 1) {
+          int c2 = __shfl_xor_sync(0xffffffffu, c, offset);
+          if (c2 >= 0 && c2 != c && (c < 0 || better(c, c2))) {
+            c = c2;
+          }
+        }
+        if (lane == 0) {
+          shared->c = c;
+        }
+      }
+      __syncthreads();
+      c = shared->c;
+      __syncthreads();
+    }
+    return c;
+  }
+};
+
+// One step of the reduction of cucim_hull_wrap: takes candidate c2 (at
+// point p2) if it is rotated further than c (at point p, with normal m).
+__device__ __forceinline__ void cucim_wrap_take(int& c, cucim_vec3& p,
+                                                cucim_vec3& m, int c2,
+                                                cucim_vec3 p2, cucim_vec3 ab,
+                                                cucim_vec3 b) {
+  if (c2 >= 0 && c2 != c) {
+    cucim_vec3 sb = cucim_sub3(p2, b);
+    long long o = c >= 0 ? cucim_dot3(m, sb) : 1;
+    if (o > 0 || (o == 0 && c2 < c)) {
+      c = c2;
+      p = p2;
+      m = cucim_cross3(ab, sb);
+    }
+  }
+}
+
+__device__ __forceinline__ void cucim_wrap_butterfly(int& c, cucim_vec3& p,
+                                                     cucim_vec3& m,
+                                                     cucim_vec3 ab,
+                                                     cucim_vec3 b) {
+  for (int offset = 16; offset > 0; offset >>= 1) {
+    int c2 = __shfl_xor_sync(0xffffffffu, c, offset);
+    cucim_vec3 p2 = {
+        __shfl_xor_sync(0xffffffffu, static_cast<int>(p.z), offset),
+        __shfl_xor_sync(0xffffffffu, static_cast<int>(p.y), offset),
+        __shfl_xor_sync(0xffffffffu, static_cast<int>(p.x), offset)};
+    cucim_wrap_take(c, p, m, c2, p2, ab, b);
+  }
+}
+
+// Gift wrapping (Chand and Kapur) around the edge a -> b of a known face,
+// whose other points are on the left of a -> b seen from outside. Returns
+// the point c that is rotated furthest around the edge (a point of the
+// adjacent face) and sets `normal` to that face's outward normal
+// (a - b) x (c - b): normal . (s - b) <= 0 for every point s. As all points
+// lie within half a turn around the edge, the sign of normal . (s - b)
+// orders them by angle; ties go to the smaller index. Also sets `others` to
+// the number of points in the face's plane that are not on the edge's line
+// (c included): if it is 1, the face is the triangle a, c, b.
+//
+// With `narrow` (coordinate differences up to 2**14), the normals fit in 32
+// bits and the scan takes 32-bit products.
+template <int W, typename T>
+__device__ int cucim_hull_wrap(const T* points, int n, cucim_vec3 a,
+                               cucim_vec3 b, bool narrow,
+                               const cucim_group<W>& g, cucim_vec3& normal,
+                               int& others) {
+  cucim_vec3 ab = cucim_sub3(a, b);
+  int c = -1;
+  cucim_vec3 pc = {0, 0, 0};
+  cucim_vec3 m = {0, 0, 0};
+  int ties = 0;  // this thread's points at the angle of c, not on the line
+  // (4 points per iteration, loaded first, so that their loads overlap)
+  for (int s0 = g.rank; s0 < n; s0 += 4 * 32 * W) {
+    cucim_vec3 q[4];
+#pragma unroll
+    for (int u = 0; u < 4; u++) {
+      int s = s0 + u * 32 * W;
+      if (s < n) {
+        q[u] = cucim_point3(points, s);
+      }
+    }
+#pragma unroll
+    for (int u = 0; u < 4; u++) {
+      int s = s0 + u * 32 * W;
+      if (s >= n) {
+        break;
+      }
+      cucim_vec3 sb = cucim_sub3(q[u], b);
+      long long o = 1;
+      if (c >= 0) {
+        o = narrow ? cucim_dot3_narrow(m, sb) : cucim_dot3(m, sb);
+      }
+      if (o >= 0) {
+        cucim_vec3 ms = cucim_cross3(ab, sb);
+        if (ms.z != 0 || ms.y != 0 || ms.x != 0) {  // not on the edge's line
+          if (o > 0) {
+            c = s;
+            pc = q[u];
+            m = ms;
+            ties = 1;
+          } else {
+            ties++;
+          }
+        }
+      }
+    }
+  }
+  // the best point of all threads (with its coordinates and normal, so that
+  // comparing it with another point takes one dot product)
+  int own = c;
+  cucim_vec3 own_p = pc;
+  cucim_wrap_butterfly(c, pc, m, ab, b);
+  if (W > 1) {
+    if (g.lane == 0) {
+      g.shared->index[g.warp] = c;
+      g.shared->point[g.warp][0] = static_cast<int>(pc.z);
+      g.shared->point[g.warp][1] = static_cast<int>(pc.y);
+      g.shared->point[g.warp][2] = static_cast<int>(pc.x);
+    }
+    __syncthreads();
+    if (g.warp == 0) {
+      c = -1;
+      if (g.lane < W) {
+        int c2 = g.shared->index[g.lane];
+        cucim_vec3 p2 = {g.shared->point[g.lane][0],
+                         g.shared->point[g.lane][1],
+                         g.shared->point[g.lane][2]};
+        cucim_wrap_take(c, pc, m, c2, p2, ab, b);
+      }
+      cucim_wrap_butterfly(c, pc, m, ab, b);
+      if (g.lane == 0) {
+        g.shared->c = c;
+        g.shared->normal[0] = m.z;
+        g.shared->normal[1] = m.y;
+        g.shared->normal[2] = m.x;
+      }
+    }
+    __syncthreads();
+    c = g.shared->c;
+    m = {g.shared->normal[0], g.shared->normal[1], g.shared->normal[2]};
+    __syncthreads();
+  }
+  normal = m;
+  // A thread whose own best point is at the angle of c counted all its
+  // points at that angle; the others have none.
+  bool at_c = own >= 0
+              && (own == c || cucim_dot3(m, cucim_sub3(own_p, b)) == 0);
+  others = g.sum(at_c ? ties : 0);
+  return c;
+}
+
+// Writes the points s with normal . (s - ref) == 0 to `out` and returns
+// their number (in increasing order if W == 1).
+template <int W, typename T>
+__device__ int cucim_hull_coplanar(const T* points, int n, cucim_vec3 normal,
+                                   cucim_vec3 ref, bool narrow,
+                                   const cucim_group<W>& g, int* out) {
+  if (W == 1) {
+    int count = 0;
+    for (int base = 0; base < n; base += 4 * 32) {
+      bool on[4];
+#pragma unroll
+      for (int u = 0; u < 4; u++) {
+        int s = base + u * 32 + g.lane;
+        on[u] = false;
+        if (s < n) {
+          cucim_vec3 d = cucim_sub3(cucim_point3(points, s), ref);
+          on[u] = (narrow ? cucim_dot3_narrow(normal, d)
+                          : cucim_dot3(normal, d)) == 0;
+        }
+      }
+#pragma unroll
+      for (int u = 0; u < 4; u++) {
+        unsigned int mask = __ballot_sync(0xffffffffu, on[u]);
+        if (on[u]) {
+          out[count + __popc(mask & ((1u << g.lane) - 1u))] =
+              base + u * 32 + g.lane;
+        }
+        count += __popc(mask);
+      }
+    }
+    __syncwarp();
+    return count;
+  }
+  if (g.rank == 0) {
+    g.shared->m = 0;
+  }
+  __syncthreads();
+  for (int s0 = g.rank; s0 < n; s0 += 4 * 32 * W) {
+    bool on[4];
+#pragma unroll
+    for (int u = 0; u < 4; u++) {
+      int s = s0 + u * 32 * W;
+      on[u] = false;
+      if (s < n) {
+        cucim_vec3 d = cucim_sub3(cucim_point3(points, s), ref);
+        on[u] = (narrow ? cucim_dot3_narrow(normal, d)
+                        : cucim_dot3(normal, d)) == 0;
+      }
+    }
+#pragma unroll
+    for (int u = 0; u < 4; u++) {
+      if (on[u]) {
+        out[atomicAdd(&g.shared->m, 1)] = s0 + u * 32 * W;
+      }
+    }
+  }
+  __syncthreads();
+  int m = g.shared->m;
+  __syncthreads();
+  return m;
+}
+
+// The coordinates of a vector d in a face's plane, projected along axis k
+// (the largest component of the face's normal): the other two axes in
+// cyclic order after k, so that u1 * v2 - v1 * u2 is component k of the
+// cross product of the two vectors.
+__device__ __forceinline__ void cucim_project(cucim_vec3 d, int k,
+                                              long long& u, long long& v) {
+  if (k == 0) {
+    u = d.y;
+    v = d.x;
+  } else if (k == 1) {
+    u = d.x;
+    v = d.z;
+  } else {
+    u = d.z;
+    v = d.y;
+  }
+}
+
+// The projection axis of a face (see cucim_project), and the sign that
+// makes the projected cross products positive for counterclockwise turns
+// seen from outside.
+__device__ __forceinline__ void cucim_face_axis(cucim_vec3 normal, int& k,
+                                                long long& sign) {
+  long long az = abs(normal.z);
+  long long ay = abs(normal.y);
+  long long ax = abs(normal.x);
+  k = (az >= ay && az >= ax) ? 0 : (ay >= ax ? 1 : 2);
+  long long nk = k == 0 ? normal.z : (k == 1 ? normal.y : normal.x);
+  sign = nk > 0 ? 1 : -1;
+}
+
+// Is point s (at (su, sv) from the current vertex) a better next vertex
+// than point q (at (qu, qv)): further clockwise, or collinear and farther?
+__device__ __forceinline__ bool cucim_jarvis_better(long long qu,
+                                                    long long qv, int q,
+                                                    long long su,
+                                                    long long sv, int s,
+                                                    long long sign) {
+  long long c = sign * (qu * sv - qv * su);
+  if (c != 0) {
+    return c < 0;
+  }
+  long long dq = qu * qu + qv * qv;
+  long long ds = su * su + sv * sv;
+  return ds > dq || (ds == dq && s < q);
+}
+
+// The vertices of the 2D hull of a face's m points (`face`),
+// counterclockwise seen from outside, starting at its vertex `start`,
+// without collinear points (Jarvis march, in the projection along the
+// normal's largest component): the next vertex after a vertex is the point
+// furthest clockwise from it, so that all points are on the left of the
+// edge between them. By one warp. Returns the number of vertices, or -1 if
+// the march does not return to `start` within m vertices.
+//
+// For m <= 32, each lane takes one point and finds what would be its next
+// vertex (meaningful for the vertices), in one pass over the points; the
+// polygon then follows these from `start`. For larger m, each step of the
+// march is a pass over the points.
+template <typename T>
+__device__ int cucim_hull_face_polygon(const T* points, const int* face,
+                                       int m, cucim_vec3 normal, int start,
+                                       int lane, int* polygon) {
+  int k;
+  long long sign;
+  cucim_face_axis(normal, k, sign);
+  cucim_vec3 p0 = cucim_point3(points, start);
+  int p = start;
+  int h = 0;
+  if (m <= 32) {
+    int s = lane < m ? face[lane] : -1;
+    long long u = 0;
+    long long v = 0;
+    if (s >= 0) {
+      cucim_project(cucim_sub3(cucim_point3(points, s), p0), k, u, v);
+    }
+    int next = -1;
+    long long nu = 0;
+    long long nv = 0;
+    for (int t = 0; t < m; t++) {
+      long long du = __shfl_sync(0xffffffffu, u, t) - u;
+      long long dv = __shfl_sync(0xffffffffu, v, t) - v;
+      int st = __shfl_sync(0xffffffffu, s, t);
+      if (s >= 0 && st != s
+          && (next < 0 || cucim_jarvis_better(nu, nv, next, du, dv, st,
+                                              sign))) {
+        next = st;
+        nu = du;
+        nv = dv;
+      }
+    }
+    while (h < m) {
+      if (lane == 0) {
+        polygon[h] = p;
+      }
+      h++;
+      int owner = __ffs(__ballot_sync(0xffffffffu, s == p)) - 1;
+      p = owner >= 0 ? __shfl_sync(0xffffffffu, next, owner) : -1;
+      if (p == start || p < 0) {
+        break;
+      }
+    }
+  } else {
+    while (h < m) {
+      if (lane == 0) {
+        polygon[h] = p;
+      }
+      h++;
+      cucim_vec3 pp = cucim_point3(points, p);
+      int q = -1;
+      long long qu = 0;
+      long long qv = 0;
+      for (int t = lane; t < m; t += 32) {
+        int s = face[t];
+        if (s == p) {
+          continue;
+        }
+        long long su, sv;
+        cucim_project(cucim_sub3(cucim_point3(points, s), pp), k, su, sv);
+        if (q < 0 || cucim_jarvis_better(qu, qv, q, su, sv, s, sign)) {
+          q = s;
+          qu = su;
+          qv = sv;
+        }
+      }
+      for (int offset = 16; offset > 0; offset >>= 1) {
+        int s = __shfl_xor_sync(0xffffffffu, q, offset);
+        if (s >= 0 && s != q) {
+          long long su, sv;
+          cucim_project(cucim_sub3(cucim_point3(points, s), pp), k, su, sv);
+          if (q < 0 || cucim_jarvis_better(qu, qv, q, su, sv, s, sign)) {
+            q = s;
+            qu = su;
+            qv = sv;
+          }
+        }
+      }
+      p = q;
+      if (p == start || p < 0) {
+        break;
+      }
+    }
+  }
+  __syncwarp();
+  return p == start ? h : -1;
+}
+
+// The pending edges of a label: a hash table of directed edges u -> v
+// (keys u * 2**32 + v, 0 for an empty slot and -1 for a removed one, with
+// linear probing), and a stack of the slots of the edges in the order they
+// were added. The stack is not updated when an edge is removed, so its
+// entries are checked against the table when popped.
+struct cucim_hull_edges {
+  long long* table;
+  unsigned int mask;  // the table's size - 1 (a power of 2)
+  int* stack;
+  int size;      // of the stack
+  int capacity;  // of the stack
+};
+
+__device__ __forceinline__ unsigned int cucim_edge_hash(int u, int v) {
+  unsigned int h = static_cast<unsigned int>(u) * 0x9e3779b1u
+                   + static_cast<unsigned int>(v) * 0x85ebca77u;
+  return h ^ (h >> 15);
+}
+
+// Adds the directed edge u -> v of a new face to the pending edges, or, if
+// its reverse v -> u is pending, removes that (both faces of the edge are
+// then known). By one warp, each lane probing one slot. Returns false if
+// there is no room.
+__device__ bool cucim_hull_edge(cucim_hull_edges& edges, int u, int v,
+                                int lane) {
+  // An edge is added at the first free slot of its probe sequence, and
+  // slots never become empty again, so a pending edge comes before any
+  // empty slot of its sequence.
+  long long reverse = (static_cast<long long>(v) << 32) | u;
+  for (unsigned int h = cucim_edge_hash(v, u);; h += 32) {
+    unsigned int slot = (h + lane) & edges.mask;
+    long long key = edges.table[slot];
+    unsigned int match = __ballot_sync(0xffffffffu, key == reverse);
+    if (match != 0) {
+      if (lane == __ffs(match) - 1) {
+        edges.table[slot] = -1;
+      }
+      __syncwarp();
+      return true;
+    }
+    if (__ballot_sync(0xffffffffu, key == 0) != 0) {
+      break;
+    }
+  }
+  if (edges.size >= edges.capacity) {
+    return false;
+  }
+  long long added = (static_cast<long long>(u) << 32) | v;
+  for (unsigned int h = cucim_edge_hash(u, v);; h += 32) {
+    unsigned int slot = (h + lane) & edges.mask;
+    long long key = edges.table[slot];
+    unsigned int free = __ballot_sync(0xffffffffu, key == 0 || key == -1);
+    if (free != 0) {
+      if (lane == __ffs(free) - 1) {
+        edges.table[slot] = added;
+        edges.stack[edges.size] = static_cast<int>(slot);
+      }
+      edges.size++;
+      __syncwarp();
+      return true;
+    }
+  }
+}
+
+// The last pending edge on the stack (popping removed ones), as (u, v), or
+// u = -1 if there is none. By one warp.
+__device__ __forceinline__ void cucim_hull_next_edge(cucim_hull_edges& edges,
+                                                     int& u, int& v) {
+  u = -1;
+  v = -1;
+  while (edges.size > 0) {
+    long long key = edges.table[edges.stack[edges.size - 1]];
+    if (key > 0) {
+      u = static_cast<int>(key >> 32);
+      v = static_cast<int>(key & 0xffffffffll);
+      return;
+    }
+    edges.size--;
+  }
+}
+
+// Adds a face, by one warp: its polygon (the triangle start, c, end if
+// c >= 0, else from its m points in `face`), its plane (normal and
+// normal . ref, with ref a point of the face) and its edges. `end` (if >= 0)
+// must be the polygon's last vertex. Returns false on failure.
+template <typename T>
+__device__ bool cucim_hull_add_face(const T* points, const int* face, int m,
+                                    cucim_vec3 normal, cucim_vec3 ref,
+                                    int start, int c, int end, int lane,
+                                    int* polygon, cucim_hull_edges& edges,
+                                    long long* planes, int& num_faces) {
+  int h;
+  if (c >= 0) {
+    if (lane == 0) {
+      polygon[0] = start;
+      polygon[1] = c;
+      polygon[2] = end;
+    }
+    __syncwarp();
+    h = 3;
+  } else {
+    h = cucim_hull_face_polygon(points, face, m, normal, start, lane,
+                                polygon);
+    if (h < 3 || (end >= 0 && polygon[h - 1] != end)) {
+      return false;
+    }
+  }
+  if (lane == 0) {
+    long long* plane = &planes[4 * num_faces];
+    plane[0] = normal.z;
+    plane[1] = normal.y;
+    plane[2] = normal.x;
+    plane[3] = cucim_dot3(normal, ref);
+  }
+  num_faces++;
+  for (int j = 0; j < h; j++) {
+    if (!cucim_hull_edge(edges, polygon[j], polygon[(j + 1) % h], lane)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+// The convex hull of n distinct points spanning 3D, by a group of threads.
+// Writes the plane of each face to `planes` (its outward normal N and
+// N . p for its points p, with N . p smaller for the other points) and
+// returns the number of faces (to the group's first thread), or -1 if some
+// capacity was exceeded (2n faces, 3n edges). `face` and `polygon` need
+// room for n indices, `edges` for 3n edges.
+template <int W, typename T>
+__device__ int cucim_convex_hull_3d(const T* points, int n, bool narrow,
+                                    const cucim_group<W>& g, int* face,
+                                    int* polygon, cucim_hull_edges& edges,
+                                    long long* planes) {
+  bool leader = g.warp == 0;
+  // a: the smallest point in (z, y, x) order, a vertex of the hull
+  int a = -1;
+  for (int s = g.rank; s < n; s += 32 * W) {
+    if (a < 0 || cucim_less3(points, s, a)) {
+      a = s;
+    }
+  }
+  a = g.best(a, [&](int s, int t) { return cucim_less3(points, t, s); });
+  cucim_vec3 pa = cucim_point3(points, a);
+
+  // The first face: the plane z = a.z supports the points, and those in it
+  // have y >= a.y, so wrapping around the line through a along x (as an
+  // edge of that plane) gives a plane through a that supports the points.
+  cucim_vec3 normal;
+  int others;
+  cucim_vec3 pb = {pa.z, pa.y, pa.x + 1};
+  cucim_hull_wrap(points, n, pa, pb, narrow, g, normal, others);
+  int m = cucim_hull_coplanar(points, n, normal, pa, narrow, g, face);
+  // If the points in that plane are collinear, the plane touches the hull in
+  // an edge from a to the farthest of them, q: wrapping around that edge
+  // gives a face.
+  int q = -1;
+  for (int t = g.rank; t < m; t += 32 * W) {
+    int s = face[t];
+    cucim_vec3 ds = cucim_sub3(cucim_point3(points, s), pa);
+    cucim_vec3 dq = cucim_sub3(cucim_point3(points, q < 0 ? s : q), pa);
+    if (q < 0 || cucim_dot3(ds, ds) > cucim_dot3(dq, dq)) {
+      q = s;
+    }
+  }
+  q = g.best(q, [&](int s, int t) {
+    cucim_vec3 ds = cucim_sub3(cucim_point3(points, s), pa);
+    cucim_vec3 dt = cucim_sub3(cucim_point3(points, t), pa);
+    long long d2s = cucim_dot3(ds, ds);
+    long long d2t = cucim_dot3(dt, dt);
+    return d2t > d2s || (d2t == d2s && t < s);
+  });
+  cucim_vec3 aq = cucim_sub3(cucim_point3(points, q), pa);
+  bool off_line = false;
+  for (int t = g.rank; t < m; t += 32 * W) {
+    cucim_vec3 c = cucim_cross3(aq, cucim_sub3(cucim_point3(points, face[t]),
+                                               pa));
+    off_line |= c.z != 0 || c.y != 0 || c.x != 0;
+  }
+  if (!g.any(off_line)) {
+    cucim_hull_wrap(points, n, pa, cucim_point3(points, q), narrow, g,
+                    normal, others);
+    m = cucim_hull_coplanar(points, n, normal, pa, narrow, g, face);
+  }
+  // (the faces and edges are only kept by the leader)
+  int num_faces = 0;
+  bool ok = true;
+  if (leader) {
+    ok = cucim_hull_add_face(points, face, m, normal, pa, a, -1, -1, g.lane,
+                             polygon, edges, planes, num_faces);
+  }
+
+  // Each pending edge u -> v belongs to one known face; the face on its
+  // other side is not known yet (it would have removed the edge), so
+  // wrapping around the edge finds a new face, which contains v -> u.
+  while (true) {
+    int ea = -1;  // -1: done, -2: failed
+    int eb = -1;
+    if (leader) {
+      if (!ok || num_faces >= 2 * n) {
+        ea = -2;
+      } else {
+        cucim_hull_next_edge(edges, ea, eb);
+      }
+    }
+    if (W > 1) {
+      if (g.rank == 0) {
+        g.shared->ea = ea;
+        g.shared->eb = eb;
+      }
+      __syncthreads();
+      ea = g.shared->ea;
+      eb = g.shared->eb;
+      __syncthreads();
+    }
+    if (ea < 0) {
+      return ea == -1 ? num_faces : -1;
+    }
+    pb = cucim_point3(points, eb);
+    int c = cucim_hull_wrap(points, n, cucim_point3(points, ea), pb, narrow,
+                            g, normal, others);
+    if (c < 0) {
+      return -1;
+    }
+    if (others != 1) {
+      m = cucim_hull_coplanar(points, n, normal, pb, narrow, g, face);
+    }
+    if (leader) {
+      // a triangle (others == 1, possibly with more points on the edge
+      // ea - eb) has the vertices ea, c and eb in this order
+      ok = cucim_hull_add_face(points, face, m, normal, pb, ea,
+                               others == 1 ? c : -1, eb, g.lane, polygon,
+                               edges, planes, num_faces);
+    }
+  }
+}
+"""
+
+
+@cp.memoize(for_each_device=True)
+def _get_convex_hulls_3d_kernel(warps_per_block):
+    """Kernel computing the convex hull of each label's 3D points.
+
+    On the candidates of `_convex_hull_candidates_3d` (distinct points with
+    integer coordinates, spanning 3D). The hull is built face by face with
+    gift wrapping [1]: wrapping around an edge of a known face finds the
+    plane of the face on its other side; the points in that plane are
+    collected, and their 2D hull (Jarvis march [2]) gives the face as a
+    polygon. Every edge of the hull belongs to two faces, whose polygons
+    traverse it in opposite directions; an edge whose reverse has not been
+    seen yet is pending (kept in a hash table, `cucim_hull_edges`), and
+    leads to a new face. Whole faces are found, rather than triangles,
+    because the points have many coplanar subsets (they come from a voxel
+    grid; about 60 % of the faces have more than 3 vertices). The wrap
+    recognizes a triangle without collecting its points.
+
+    Finding a face takes one or two passes over all the label's points, and
+    the faces are found one after the other. So each of the first
+    ``num_large`` blocks works on one label of `large_labels` (all its warps
+    scan the points; the first warp does the rest), and the other blocks on
+    one label of `small_labels` per warp.
+
+    All tests are exact integer arithmetic (see `_HULL_3D_MAX_EXTENT`). For
+    label l, the planes of its faces (normal N and N . p for the points p of
+    the face, larger than for the other points) are written at
+    ``2 * point_offsets[l]`` (a hull of n points has at most 2n - 4 faces),
+    and their number to ``num_faces``. It is -1 if the label is too large
+    for exact 64-bit arithmetic or the hull did not fit (which should not
+    happen); such labels need another method.
+
+    References
+    ----------
+    .. [1] D. R. Chand and S. S. Kapur, "An algorithm for convex polytopes",
+           Journal of the ACM 17(1), 78-86, 1970.
+    .. [2] R. A. Jarvis, "On the identification of the convex hull of a
+           finite set of points in the plane", Information Processing
+           Letters 2(1), 18-21, 1973.
+    """
+    source = f"""
+      const int W = {warps_per_block};
+      __shared__ cucim_hull_shared cucim_hull_block;
+      long long b = i / (32 * W);
+      int rank = static_cast<int>(i % (32 * W));
+      bool whole_block = b < num_large;
+      long long l = -1;
+      if (whole_block) {{
+        l = large_labels[b];
+      }} else {{
+        long long j = (b - num_large) * W + rank / 32;
+        if (j < num_small) {{
+          l = small_labels[j];
+        }}
+      }}
+      if (l >= 0) {{
+        long long start = point_offsets[l];
+        int n = static_cast<int>(point_offsets[l + 1] - start);
+        long long extent = 0;
+        for (int d = 0; d < 3; d++) {{
+          extent = max(extent, static_cast<long long>(bbox[l * 6 + 3 + d]
+                                                      - bbox[l * 6 + d]));
+        }}
+        // (coordinates relative to the bounding box are in [-1, 2 extent];
+        // the virtual first edge reaches 2 extent + 1)
+        bool narrow = extent < (1 << 13);
+        int faces = 0;
+        const E* p = &points[3 * start];
+        int* face = &face_points[start];
+        int* polygon = &polygons[start];
+        // (the edge table has 8n slots, of which it uses the smallest power
+        // of 2 >= 4n, at most 75 % full with the at most 3n edges)
+        unsigned int table_size = 1;
+        while (table_size < 4u * static_cast<unsigned int>(n)) {{
+          table_size <<= 1;
+        }}
+        cucim_hull_edges edges = {{&edge_table[8 * start], table_size - 1,
+                                  &edge_stack[3 * start], 0, 3 * n}};
+        long long* plane = &planes[8 * start];
+        if (extent > max_extent) {{
+          faces = -1;
+        }} else if (n > 0 && whole_block) {{
+          cucim_group<W> g = {{rank, rank & 31, rank >> 5, &cucim_hull_block}};
+          faces = cucim_convex_hull_3d(p, n, narrow, g, face, polygon,
+                                       edges, plane);
+        }} else if (n > 0) {{
+          cucim_group<1> g = {{rank & 31, rank & 31, 0, nullptr}};
+          faces = cucim_convex_hull_3d(p, n, narrow, g, face, polygon,
+                                       edges, plane);
+        }}
+        if ((whole_block ? rank : (rank & 31)) == 0) {{
+          num_faces[l] = faces;
+        }}
+      }}\n"""
+    inputs = (
+        "raw E points, raw int64 point_offsets, raw B bbox, int64 max_extent, "
+        "raw int64 large_labels, int64 num_large, raw int64 small_labels, "
+        "int64 num_small"
+    )
+    # (face_points, polygons, edge_table and edge_stack are scratch space;
+    # edge_table must be zero)
+    outputs = (
+        "raw int32 face_points, raw int32 polygons, raw int64 edge_table, "
+        "raw int32 edge_stack, raw int64 planes, raw int32 num_faces"
+    )
+    return cp.ElementwiseKernel(
+        inputs,
+        outputs,
+        source,
+        preamble=_hull_3d_includes,
+        name=f"cucim_convex_hulls_3d_{warps_per_block}",
+    )
+
+
+@cp.memoize(for_each_device=True)
+def _get_hull_equations_kernel():
+    """Kernel converting hull planes (N, N . p in doubled coordinates) to
+    facet equations in the form of qhull's (unit outward normal and offset,
+    in undoubled coordinates), one thread per plane."""
+    source = """
+      double nz = static_cast<double>(planes[4 * i]);
+      double ny = static_cast<double>(planes[4 * i + 1]);
+      double nx = static_cast<double>(planes[4 * i + 2]);
+      double inv_norm = 1.0 / sqrt(nz * nz + ny * ny + nx * nx);
+      equations[4 * i] = nz * inv_norm;
+      equations[4 * i + 1] = ny * inv_norm;
+      equations[4 * i + 2] = nx * inv_norm;
+      equations[4 * i + 3] =
+          -0.5 * static_cast<double>(planes[4 * i + 3]) * inv_norm;\n"""
+    return cp.ElementwiseKernel(
+        "raw int64 planes",
+        "raw float64 equations",
+        source,
+        name="cucim_convex_hull_equations",
+    )
+
+
+# Labels with more points than this get a whole block of this many warps in
+# `_get_convex_hulls_3d_kernel`, the others a warp. (On an RTX A6000, 16
+# warps per block was about 20 % faster than 8 for labels of 10,000 points
+# or more, and about 25 % slower for 512 labels of about 700 points, which
+# use warps but have fewer resident warps with larger blocks.)
+_HULL_3D_BLOCK_POINTS = 1024
+_HULL_3D_WARPS_PER_BLOCK = 16
+
+
+def _convex_hulls_3d(points, point_offsets, bbox, max_label):
+    """Facet equations of the convex hull of each label's 3D points.
+
+    See `_get_convex_hulls_3d_kernel`. Returns the equations (in the form of
+    qhull's; label l's start at ``2 * point_offsets[l]``) and the number of
+    each label's equations (-1 where the kernel could not compute the hull).
+    """
+    num_points = points.shape[0]
+    counts = point_offsets[1:] - point_offsets[:-1]
+    large = counts > _HULL_3D_BLOCK_POINTS
+    large_labels = cp.flatnonzero(large)
+    # largest first, so that they do not start last
+    large_labels = large_labels[cp.argsort(-counts[large_labels])]
+    small_labels = cp.flatnonzero(~large)
+    warps = _HULL_3D_WARPS_PER_BLOCK
+    num_blocks = large_labels.size + -(-small_labels.size // warps)
+    planes = cp.empty((2 * num_points, 4), dtype=cp.int64)
+    num_faces = cp.empty((max_label,), dtype=cp.int32)
+    _get_convex_hulls_3d_kernel(warps)(
+        points,
+        point_offsets,
+        bbox,
+        _HULL_3D_MAX_EXTENT,
+        large_labels,
+        large_labels.size,
+        small_labels,
+        small_labels.size,
+        cp.empty((num_points,), dtype=cp.int32),
+        cp.empty((num_points,), dtype=cp.int32),
+        cp.zeros((8 * num_points,), dtype=cp.int64),
+        cp.empty((3 * num_points,), dtype=cp.int32),
+        planes,
+        num_faces,
+        size=32 * warps * num_blocks,
+        block_size=32 * warps,
+    )
+    equations = cp.empty((2 * num_points, 4), dtype=cp.float64)
+    if num_points > 0:
+        _get_hull_equations_kernel()(planes, equations, size=2 * num_points)
+    return equations, num_faces
+
+
 @cp.memoize(for_each_device=True)
 def _get_hull_rows_3d_kernel():
     """Kernel finding the voxels of each row inside the 3D convex hull.
 
     One thread per row of a label's bounding box. A voxel center p (relative
     to the bounding box) is inside if ``n . p + b < tolerance`` for every
-    facet equation (n, b) of the label's hull, as in scikit-image's
-    ``convex_hull_image`` in 3D. The facet equations are those of Qhull [2]_
-    (``scipy.spatial.ConvexHull.equations``). Along a row, each facet with
-    n_x != 0 bounds x on one side, so the voxels inside form one interval
-    [lo, hi] of x.
+    facet equation (n, b) of the label's hull (the ``eq_counts[l]`` rows of
+    `equations` from ``eq_starts[l]`` on), as in scikit-image's
+    ``convex_hull_image`` in 3D. Along a row, each facet with n_x != 0 bounds
+    x on one side, so the voxels inside form one interval [lo, hi] of x.
 
     Also adds the number of voxels in the interval to the label's count.
-
-    References
-    ----------
-    .. [2] C. B. Barber, D. P. Dobkin and H. Huhdanpaa, "The Quickhull
-           algorithm for convex hulls", ACM Transactions on Mathematical
-           Software 22(4), 469-483, 1996. :DOI:`10.1145/235815.235821`
     """
     source = """
       // the label of this row: the last l with offsets[l] <= i
@@ -928,7 +1827,8 @@ def _get_hull_rows_3d_kernel():
       double y = static_cast<double>(local % h);
       double lo = 0.0;
       double hi = static_cast<double>(w - 1);
-      for (long long f = eq_offsets[l]; f < eq_offsets[l + 1]; f++) {
+      long long f_end = eq_starts[l] + eq_counts[l];
+      for (long long f = eq_starts[l]; f < f_end; f++) {
         const double* e = &equations[4 * f];
         // inside: e[2] * x < r
         double r = tolerance - (e[0] * z + e[1] * y + e[3]);
@@ -950,8 +1850,8 @@ def _get_hull_rows_3d_kernel():
                   static_cast<unsigned long long>(hi - lo + 1.0));
       }\n"""
     inputs = (
-        "raw float64 equations, raw int64 eq_offsets, raw int64 offsets, "
-        "raw B bbox, float64 tolerance, int64 max_label"
+        "raw float64 equations, raw int64 eq_starts, raw int32 eq_counts, "
+        "raw int64 offsets, raw B bbox, float64 tolerance, int64 max_label"
     )
     return cp.ElementwiseKernel(
         inputs,
@@ -1044,12 +1944,12 @@ def _convex_hull_rows_3d(
 ):
     """Rows of each 3D region's convex image (see `_convex_hull_rows_2d`).
 
-    The hull of each label is computed on the host with
-    ``scipy.spatial.ConvexHull`` (Qhull [1]_) from the candidates of
-    `_convex_hull_candidates_3d` (one transfer for all labels), and its facet
-    equations are copied back to the device in one transfer for
-    `_get_hull_rows_3d_kernel`. If qhull fails for a label, its convex image
-    is computed with ``convex_hull_image`` instead.
+    The hull of each label is computed on the device from the candidates of
+    `_convex_hull_candidates_3d` (`_convex_hulls_3d`), and its facet
+    equations give the rows (`_get_hull_rows_3d_kernel`). For a label the
+    kernel cannot handle, the hull is computed with
+    ``scipy.spatial.ConvexHull`` (Qhull [1]_) on the host instead, and if
+    qhull fails, the convex image with ``convex_hull_image``.
 
     References
     ----------
@@ -1063,30 +1963,26 @@ def _convex_hull_rows_3d(
     points, point_offsets = _convex_hull_candidates_3d(
         row_first, row_last, offsets, num_rows, bbox, bbox_host, max_label
     )
-    points = cp.asnumpy(points)
-    point_offsets = cp.asnumpy(point_offsets)
+    equations, num_faces = _convex_hulls_3d(
+        points, point_offsets, bbox, max_label
+    )
+    failed = []
+    for lab in cp.asnumpy(cp.flatnonzero(num_faces < 0)).tolist():
+        start, end = cp.asnumpy(point_offsets[lab : lab + 2]).tolist()
+        try:
+            hull = ConvexHull(cp.asnumpy(points[start:end]) * 0.5)
+        except QhullError:
+            failed.append(lab)
+            num_faces[lab] = 0
+            continue
+        # (a hull of n points has at most 2n - 4 facets)
+        num = hull.equations.shape[0]
+        equations[2 * start : 2 * start + num] = cp.asarray(hull.equations)
+        num_faces[lab] = num
     # the offsets of each label's rows, on the host
     shapes = np.maximum(bbox_host[:, 3:] - bbox_host[:, :3], 0)
     row_offsets_host = np.zeros((max_label + 1,), dtype=np.int64)
     np.cumsum(shapes[:, 0] * shapes[:, 1], out=row_offsets_host[1:])
-    points = points * 0.5
-    equations = []
-    num_equations = np.zeros((max_label,), dtype=np.int64)
-    failed = []
-    for lab in range(max_label):
-        label_points = points[point_offsets[lab] : point_offsets[lab + 1]]
-        if label_points.shape[0] == 0:
-            continue  # absent label
-        try:
-            hull = ConvexHull(label_points)
-        except QhullError:
-            failed.append(lab)
-            continue
-        equations.append(hull.equations)
-        num_equations[lab] = hull.equations.shape[0]
-    eq_offsets = np.zeros((max_label + 1,), dtype=np.int64)
-    np.cumsum(num_equations, out=eq_offsets[1:])
-    equations = np.concatenate(equations) if equations else np.zeros((0, 4))
 
     dtype = row_first.dtype
     row_lo = cp.empty((num_rows,), dtype=dtype)
@@ -1094,8 +1990,9 @@ def _convex_hull_rows_3d(
     num_pixels = cp.zeros((max_label,), dtype=cp.uint64)
     if num_rows > 0:
         _get_hull_rows_3d_kernel()(
-            cp.asarray(equations, dtype=cp.float64),
-            cp.asarray(eq_offsets),
+            equations,
+            2 * point_offsets,
+            num_faces,
             offsets,
             bbox,
             1e-10,

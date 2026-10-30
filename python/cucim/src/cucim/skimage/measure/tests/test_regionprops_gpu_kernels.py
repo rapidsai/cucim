@@ -510,6 +510,77 @@ def test_convex_hull_candidates_3d(kind):
         assert {tuple(p) for p in diamond_points[hull.vertices]} <= candidates
 
 
+@pytest.mark.parametrize("group", ["warp", "block"])
+@pytest.mark.parametrize("kind", ["blobs", "large_blobs", "lines", "wide"])
+def test_convex_hulls_3d(group, kind, monkeypatch):
+    # the facets of the device hulls are those of qhull's hulls of the same
+    # points (merging qhull's coplanar triangles)
+    from scipy.spatial import ConvexHull
+
+    if kind == "wide":
+        # a label over 2**13 voxels wide (64-bit products in the scans)
+        rng = np.random.default_rng(0)
+        labels = cp.zeros((4, 5, 9000), dtype=cp.int32)
+        for lab in (1, 2):
+            coords = rng.integers(0, labels.shape, size=(12, 3))
+            labels[tuple(cp.asarray(coords.T))] = lab
+    else:
+        labels = _convex_test_labels(kind, 3)
+    monkeypatch.setattr(
+        _regionprops_gpu_convex,
+        "_HULL_3D_BLOCK_POINTS",
+        0 if group == "block" else 2**31,
+    )
+    max_label = int(labels.max())
+    bbox = _regionprops_label_pass(labels, max_label, compute_bbox=True)["bbox"]
+    row_first, row_last, offsets, num_rows = _regionprops_row_extents(
+        labels, bbox, max_label
+    )
+    points, point_offsets = _regionprops_gpu_convex._convex_hull_candidates_3d(
+        row_first,
+        row_last,
+        offsets,
+        num_rows,
+        bbox,
+        cp.asnumpy(bbox).astype(np.int64),
+        max_label,
+    )
+    equations, num_faces = _regionprops_gpu_convex._convex_hulls_3d(
+        points, point_offsets, bbox, max_label
+    )
+    points = cp.asnumpy(points) * 0.5
+    point_offsets = cp.asnumpy(point_offsets)
+    equations, num_faces = cp.asnumpy(equations), cp.asnumpy(num_faces)
+
+    def planes(eq):
+        return {tuple(row) for row in np.round(eq, 9) + 0.0}
+
+    for lab in range(max_label):
+        start, end = point_offsets[lab], point_offsets[lab + 1]
+        if start == end:
+            assert num_faces[lab] == 0
+            continue
+        hull = ConvexHull(points[start:end])
+        result = equations[2 * start : 2 * start + num_faces[lab]]
+        assert len(result) == len(planes(result))
+        assert planes(result) == planes(hull.equations)
+
+
+def test_convex_batch_3d_host_hulls(monkeypatch):
+    # labels the device hulls cannot handle (here: wider than 5 voxels) get
+    # qhull's hulls on the host, with the same convex images
+    labels = _convex_test_labels("large_blobs", 3)
+    properties = ["image_convex", "area_convex"]
+    expected = regionprops_dict(labels, properties=properties)
+    monkeypatch.setattr(_regionprops_gpu_convex, "_HULL_3D_MAX_EXTENT", 5)
+    result = regionprops_dict(labels, properties=properties)
+    for image, expected_image in zip(
+        result["image_convex"], expected["image_convex"]
+    ):
+        assert_array_equal(image, expected_image)
+    assert_array_equal(result["area_convex"], expected["area_convex"])
+
+
 @pytest.mark.parametrize("ndim", [2, 3])
 def test_convex_batch_64bit_coordinates(ndim, monkeypatch):
     # images with an axis of 2**30 pixels or more use 64-bit row extents and
