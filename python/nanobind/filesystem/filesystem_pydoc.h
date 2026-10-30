@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 #ifndef PYCUCIM_FILESYSTEM_PYDOC_H
@@ -46,7 +46,7 @@ The following is optional flags that can be added to above string:
 When 'm' is used, `PROT_READ` and `MAP_SHARED` are used for the parameter of mmap() function.
 
 Args:
-    file_path: A file path to open.
+    file_path: A file path to open, as `str`, `bytes`, or `os.PathLike`.
     flags: File flags in string. Default value is "r".
     mode: A file mode. Default value is '0o644'.
 Returns:
@@ -99,7 +99,7 @@ PYDOC(discard_page_cache, R"doc(
 Discards a system (page) cache for the given file path.
 
 Args:
-    file_path: A file path to drop system cache.
+    file_path: A file path to drop system cache, as `str`, `bytes`, or `os.PathLike`.
 Returns:
     True if succeed, False otherwise.
 )doc")

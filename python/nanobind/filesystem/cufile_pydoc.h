@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 #ifndef PYCUCIM_CUFILE_PYDOC_H
@@ -18,7 +18,7 @@ Args:
     fd: A file descriptor (in `int` type) which is available through `os.open()` method.
     no_gds: If True, use POSIX APIs only even when GDS can be supported for the file.
     use_mmap: If True, use memory-mapped IO. This flag is supported only for the read-only file descriptor. Default value is `False`.
-    file_path: A file path for the file descriptor. It would retrieve the absolute file path of the file descriptor if not specified.
+    file_path: A file path for the file descriptor, as `str`, `bytes`, or `os.PathLike`. It would retrieve the absolute file path of the file descriptor if not specified.
 )doc")
 
 // ssize_t pread(void* buf, size_t count, off_t file_offset, off_t buf_offset = 0);

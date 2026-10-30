@@ -97,13 +97,14 @@ dependencies:
   build:
     common:
       # Note:
-      #   Currently omit pyproject output_type from cmake, ninja. The python
+      #   Currently omit pyproject output_type from cmake, nanobind, ninja. The python
       #   build doesn't use these, but assumes that the C++ libcucim shared
       #   library had already previously been built and the .so file copied to
       #   python/cucim/src/cucim/clara/ before calling `pip install .`.
       - output_types: [conda, requirements, constraints]
         packages:
           - cmake>=4.0
+          - nanobind>=3.1.0,<3.2.0a0
           - ninja
       - output_types: conda
         packages:

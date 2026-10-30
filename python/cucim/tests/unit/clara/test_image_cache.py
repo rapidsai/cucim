@@ -1,5 +1,5 @@
 #
-# SPDX-FileCopyrightText: Copyright (c) 2021, NVIDIA CORPORATION.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 
@@ -14,7 +14,7 @@ def test_get_nocache():
 
     cache = CuImage.cache()
 
-    assert int(cache.type) == 0
+    assert cache.type.value == 0
     assert cache.memory_size == 0
     assert cache.memory_capacity == 0
     assert cache.free_memory == 0
@@ -36,7 +36,7 @@ def test_get_per_process_cache():
     from cucim import CuImage
 
     cache = CuImage.cache("per_process", memory_capacity=2048)
-    assert int(cache.type) == 1
+    assert cache.type.value == 1
     assert cache.memory_size == 0
     assert cache.memory_capacity == 2**20 * 2048
     assert cache.free_memory == 2**20 * 2048
@@ -59,7 +59,7 @@ def test_get_shared_memory_cache():
     from cucim import CuImage
 
     cache = CuImage.cache("shared_memory", memory_capacity=2048)
-    assert int(cache.type) == 2
+    assert cache.type.value == 2
     assert cache.memory_size == 0
     # It allocates additional memory
     assert cache.memory_capacity > 2**20 * 2048
@@ -105,7 +105,7 @@ def test_preferred_memory_capacity(testimg_tiff_stripe_32x24_16_jpeg):
 
     # You can also manually set capacity` (e.g., `capacity=500`)
     cache = CuImage.cache("per_process", memory_capacity=memory_capacity)
-    assert int(cache.type) == 1
+    assert cache.type.value == 1
     assert cache.memory_size == 0
     assert cache.memory_capacity == 2**20 * 1
     assert cache.free_memory == 2**20 * 1
@@ -144,7 +144,7 @@ def test_reserve_more_cache_memory():
     )
 
     cache = CuImage.cache("per_process", memory_capacity=memory_capacity)
-    assert int(cache.type) == 1
+    assert cache.type.value == 1
     assert cache.memory_size == 0
     assert cache.memory_capacity == 2**20 * 1536
     assert cache.free_memory == 2**20 * 1536
@@ -154,7 +154,7 @@ def test_reserve_more_cache_memory():
     assert cache.miss_count == 0
 
     cache.reserve(new_memory_capacity)
-    assert int(cache.type) == 1
+    assert cache.type.value == 1
     assert cache.memory_size == 0
     assert cache.memory_capacity == 2**20 * 2304
     assert cache.free_memory == 2**20 * 2304
@@ -165,7 +165,7 @@ def test_reserve_more_cache_memory():
 
     cache.reserve(memory_capacity, capacity=500)
     # Smaller `memory_capacity` value does not change this')
-    assert int(cache.type) == 1
+    assert cache.type.value == 1
     assert cache.memory_size == 0
     assert cache.memory_capacity == 2**20 * 2304
     assert cache.free_memory == 2**20 * 2304
@@ -176,7 +176,7 @@ def test_reserve_more_cache_memory():
 
     cache = CuImage.cache("no_cache")
     # Set new cache will reset memory size
-    assert int(cache.type) == 0
+    assert cache.type.value == 0
     assert cache.memory_size == 0
     assert cache.memory_capacity == 0
     assert cache.free_memory == 0
@@ -213,7 +213,7 @@ def test_cache_hit_miss(testimg_tiff_stripe_32x24_16_jpeg):
     _ = img.read_region((0, 0), (8, 8))
     assert (cache.hit_count, cache.miss_count) == (0, 0)
 
-    assert int(cache.type) == 1
+    assert cache.type.value == 1
     assert cache.memory_size == 768
     assert cache.memory_capacity == 2**20 * 1
     assert cache.free_memory == 2**20 * 1 - 768
@@ -222,7 +222,7 @@ def test_cache_hit_miss(testimg_tiff_stripe_32x24_16_jpeg):
 
     cache = CuImage.cache("no_cache")
 
-    assert int(cache.type) == 0
+    assert cache.type.value == 0
     assert cache.memory_size == 0
     assert cache.memory_capacity == 0
     assert cache.free_memory == 0

@@ -1,73 +1,70 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021-2023, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #include "cache_py.h"
 #include "cache_pydoc.h"
 
-#include <pybind11/stl.h>
+#include <fmt/format.h>
+#include <nanobind/stl/optional.h>
+#include <nanobind/stl/vector.h>
 
 #include <cucim/cache/image_cache.h>
 #include <cucim/cuimage.h>
 
-#include "image_cache_py.h"
 #include "image_cache_pydoc.h"
 
-using namespace pybind11::literals;
-namespace py = pybind11;
+using namespace nanobind::literals;
 
 namespace cucim::cache
 {
 
-void init_cache(py::module& cache)
+void init_cache(nb::module_ cache)
 {
-    py::enum_<CacheType>(cache, "CacheType") //
+    nb::enum_<CacheType>(cache, "CacheType") //
         .value("NoCache", CacheType::kNoCache) //
         .value("PerProcess", CacheType::kPerProcess) //
         .value("SharedMemory", CacheType::kSharedMemory);
 
-    py::class_<ImageCache, std::shared_ptr<ImageCache>>(cache, "ImageCache")
-        .def_property(
-            "type", &ImageCache::type, nullptr, doc::ImageCache::doc_type, py::call_guard<py::gil_scoped_release>())
-        .def_property(
-            "config", &py_config, nullptr, doc::ImageCache::doc_config, py::call_guard<py::gil_scoped_release>())
-        .def_property(
-            "size", &ImageCache::size, nullptr, doc::ImageCache::doc_size, py::call_guard<py::gil_scoped_release>())
-        .def_property("memory_size", &ImageCache::memory_size, nullptr, doc::ImageCache::doc_memory_size,
-                      py::call_guard<py::gil_scoped_release>())
-        .def_property("capacity", &ImageCache::capacity, nullptr, doc::ImageCache::doc_capacity,
-                      py::call_guard<py::gil_scoped_release>())
-        .def_property("memory_capacity", &ImageCache::memory_capacity, nullptr, doc::ImageCache::doc_memory_capacity,
-                      py::call_guard<py::gil_scoped_release>())
-        .def_property("free_memory", &ImageCache::free_memory, nullptr, doc::ImageCache::doc_free_memory,
-                      py::call_guard<py::gil_scoped_release>())
+    nb::class_<ImageCache>(cache, "ImageCache", nb::is_weak_referenceable())
+        .def_prop_ro("type", &ImageCache::type, doc::ImageCache::doc_type, nb::call_guard<nb::gil_scoped_release>())
+        .def_prop_ro("config", &py_config, doc::ImageCache::doc_config)
+        .def_prop_ro("size", &ImageCache::size, doc::ImageCache::doc_size, nb::call_guard<nb::gil_scoped_release>())
+        .def_prop_ro("memory_size", &ImageCache::memory_size, doc::ImageCache::doc_memory_size,
+                     nb::call_guard<nb::gil_scoped_release>())
+        .def_prop_ro(
+            "capacity", &ImageCache::capacity, doc::ImageCache::doc_capacity, nb::call_guard<nb::gil_scoped_release>())
+        .def_prop_ro("memory_capacity", &ImageCache::memory_capacity, doc::ImageCache::doc_memory_capacity,
+                     nb::call_guard<nb::gil_scoped_release>())
+        .def_prop_ro("free_memory", &ImageCache::free_memory, doc::ImageCache::doc_free_memory,
+                     nb::call_guard<nb::gil_scoped_release>())
         .def("record", &py_record, doc::ImageCache::doc_record, //
-             py::arg("value") = py::none())
-        .def_property("hit_count", &ImageCache::hit_count, nullptr, doc::ImageCache::doc_hit_count,
-                      py::call_guard<py::gil_scoped_release>())
-        .def_property("miss_count", &ImageCache::miss_count, nullptr, doc::ImageCache::doc_miss_count,
-                      py::call_guard<py::gil_scoped_release>())
+             "value"_a = nb::none())
+        .def_prop_ro("hit_count", &ImageCache::hit_count, doc::ImageCache::doc_hit_count,
+                     nb::call_guard<nb::gil_scoped_release>())
+        .def_prop_ro("miss_count", &ImageCache::miss_count, doc::ImageCache::doc_miss_count,
+                     nb::call_guard<nb::gil_scoped_release>())
         .def("reserve", &py_image_cache_reserve, doc::ImageCache::doc_reserve, //
-             py::arg("memory_capacity"));
+             "memory_capacity"_a, "kwargs"_a);
 
     cache.def("preferred_memory_capacity", &py_preferred_memory_capacity, doc::doc_preferred_memory_capacity, //
-              py::arg("img") = py::none(), //
-              py::arg("image_size") = std::nullopt, //
-              py::arg("tile_size") = std::nullopt, //
-              py::arg("patch_size") = std::nullopt, //
-              py::arg("bytes_per_pixel") = 3);
+              "img"_a = nb::none(), //
+              "image_size"_a = nb::none(), //
+              "tile_size"_a = nb::none(), //
+              "patch_size"_a = nb::none(), //
+              "bytes_per_pixel"_a = 3);
 }
 
-bool py_record(ImageCache& cache, py::object value)
+bool py_record(ImageCache& cache, nb::handle value)
 {
     if (value.is_none())
     {
         return cache.record();
     }
-    else if (py::isinstance<py::bool_>(value))
+    else if (nb::isinstance<nb::bool_>(value))
     {
-        py::bool_ v = value.cast<py::bool_>();
+        bool v = nb::cast<bool>(value);
         cache.record(v);
         return v;
     }
@@ -77,29 +74,30 @@ bool py_record(ImageCache& cache, py::object value)
     }
 }
 
-py::dict py_config(ImageCache& cache)
+nb::dict py_config(ImageCache& cache)
 {
     ImageCacheConfig& config = cache.config();
+    const std::string_view type_str = lookup_cache_type_str(config.type);
 
-    return py::dict{
-        "type"_a = pybind11::str(std::string(lookup_cache_type_str(config.type))), //
-        "memory_capacity"_a = pybind11::int_(config.memory_capacity), //
-        "capacity"_a = pybind11::int_(config.capacity), //
-        "mutex_pool_capacity"_a = pybind11::int_(config.mutex_pool_capacity), //
-        "list_padding"_a = pybind11::int_(config.list_padding), //
-        "extra_shared_memory_size"_a = pybind11::int_(config.extra_shared_memory_size), //
-        "record_stat"_a = pybind11::bool_(config.record_stat) //
-    };
+    nb::dict result;
+    result["type"] = nb::str(type_str.data(), type_str.size());
+    result["memory_capacity"] = config.memory_capacity;
+    result["capacity"] = config.capacity;
+    result["mutex_pool_capacity"] = config.mutex_pool_capacity;
+    result["list_padding"] = config.list_padding;
+    result["extra_shared_memory_size"] = config.extra_shared_memory_size;
+    result["record_stat"] = config.record_stat;
+    return result;
 }
 
-void py_image_cache_reserve(ImageCache& cache, uint32_t memory_capacity, py::kwargs kwargs)
+void py_image_cache_reserve(ImageCache& cache, uint32_t memory_capacity, nb::kwargs kwargs)
 {
     cucim::cache::ImageCacheConfig config = cucim::CuImage::get_config()->cache();
     config.memory_capacity = memory_capacity;
 
     if (kwargs.contains("capacity"))
     {
-        config.capacity = py::cast<uint32_t>(kwargs["capacity"]);
+        config.capacity = nb::cast<uint32_t>(kwargs["capacity"]);
     }
     else
     {
@@ -107,13 +105,14 @@ void py_image_cache_reserve(ImageCache& cache, uint32_t memory_capacity, py::kwa
         config.capacity = calc_default_cache_capacity(kOneMiB * memory_capacity);
     }
 
+    nb::gil_scoped_release release;
     cache.reserve(config);
 }
 
-uint32_t py_preferred_memory_capacity(const py::object& img,
-                                      const std::optional<const std::vector<uint64_t>>& image_size,
-                                      const std::optional<const std::vector<uint32_t>>& tile_size,
-                                      const std::optional<const std::vector<uint32_t>>& patch_size,
+uint32_t py_preferred_memory_capacity(nb::handle img,
+                                      const std::optional<std::vector<uint64_t>>& image_size,
+                                      const std::optional<std::vector<uint32_t>>& tile_size,
+                                      const std::optional<std::vector<uint32_t>>& patch_size,
                                       uint32_t bytes_per_pixel)
 {
     std::vector<uint64_t> param_image;
@@ -122,7 +121,7 @@ uint32_t py_preferred_memory_capacity(const py::object& img,
 
     if (!img.is_none())
     {
-        const CuImage& cuimg = *img.cast<cucim::CuImage*>();
+        const CuImage& cuimg = *nb::cast<cucim::CuImage*>(img);
         std::vector<int64_t> image_size_vec = cuimg.size("XY");
         param_image.insert(param_image.end(), image_size_vec.begin(), image_size_vec.end());
         std::vector<uint32_t> tile_size_vec = cuimg.resolutions().level_tile_size(0);
