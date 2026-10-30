@@ -26,10 +26,11 @@ build:
   dynamic_linking:
     overlinking_behavior: error
   prefix_detection:
-    ignore:
-      - lib/libcucim.so
-      - lib/libcucim.so.*
-      - lib/cucim.*.so
+    ignore_binary_files: True
+    # ignore:
+    #   - lib/libcucim.so
+    #   - lib/libcucim.so.*
+    #   - lib/cucim.*.so
   script:
     content: |
       # Remove `-fdebug-prefix-map` line from CFLAGS and CXXFLAGS so the
