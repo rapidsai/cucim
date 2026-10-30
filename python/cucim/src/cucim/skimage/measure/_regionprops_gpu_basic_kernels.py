@@ -431,6 +431,95 @@ def equivalent_spherical_perimeter(area, ndim, diameter):
     return ndim * area / (0.5 * diameter)
 
 
+def _regionprops_label_pass(
+    label_image,
+    max_label=None,
+    *,
+    compute_num_pixels=False,
+    compute_bbox=False,
+    compute_coordinate_sums=False,
+    pixels_per_thread=16,
+    props_dict=None,
+):
+    """Count pixels, find bounding boxes and sum coordinates in one pass.
+
+    writes "num_pixels" to `props_dict` if `compute_num_pixels`
+    writes "bbox" to `props_dict` if `compute_bbox`
+    writes "coordinate_sums" (uint64 sums of the coordinates of each region,
+    shape (max_label, ndim)) to `props_dict` if `compute_coordinate_sums`
+    """
+    if props_dict is None:
+        props_dict = {}
+    if max_label is None:
+        max_label = int(label_image.max())
+    ndim = label_image.ndim
+
+    coord_dtype, int32_coords = _get_coord_dtype(label_image.size)
+    count_dtype, int32_count = _get_count_dtype(label_image.size)
+    kernel = get_bbox_coords_kernel(
+        ndim=ndim,
+        int32_coords=int32_coords,
+        int32_count=int32_count,
+        compute_bbox=compute_bbox,
+        compute_num_pixels=compute_num_pixels,
+        compute_coordinate_sums=compute_coordinate_sums,
+        pixels_per_thread=pixels_per_thread,
+    )
+
+    # the outputs are passed in the order of the kernel's parameters
+    outputs = []
+    if compute_bbox:
+        bbox_coords = cp.zeros((max_label, 2 * ndim), dtype=coord_dtype)
+        # Initialize value for atomicMin on first ndim coordinates
+        # The value for atomicMax columns is already 0 as desired.
+        bbox_coords[:, :ndim] = cp.iinfo(coord_dtype).max
+        outputs.append(bbox_coords)
+    if compute_num_pixels:
+        counts = cp.zeros(max_label, dtype=count_dtype)
+        outputs.append(counts)
+    if compute_coordinate_sums:
+        coordinate_sums = cp.zeros((max_label, ndim), dtype=cp.uint64)
+        outputs.append(coordinate_sums)
+
+    # make a copy if the inputs are not already C-contiguous
+    if not label_image.flags.c_contiguous:
+        label_image = cp.ascontiguousarray(label_image)
+
+    kernel(
+        label_image,
+        label_image.size,
+        *outputs,
+        size=math.ceil(label_image.size / pixels_per_thread),
+    )
+    if compute_bbox:
+        props_dict["bbox"] = bbox_coords
+    if compute_num_pixels:
+        props_dict["num_pixels"] = counts
+    if compute_coordinate_sums:
+        props_dict["coordinate_sums"] = coordinate_sums
+    return props_dict
+
+
+def _bbox_slices(bbox_coords):
+    """Convert bounding box coordinates to a list of tuples of slices."""
+    ndim = bbox_coords.shape[1] // 2
+    bbox_coords_cpu = cp.asnumpy(bbox_coords)
+    if ndim == 2:
+        # explicitly writing out the 2d case here for clarity
+        return [
+            (
+                slice(int(box[0]), int(box[2])),
+                slice(int(box[1]), int(box[3])),
+            )
+            for box in bbox_coords_cpu
+        ]
+    # general n-dimensional case
+    return [
+        tuple(slice(int(box[d]), int(box[d + ndim])) for d in range(ndim))
+        for box in bbox_coords_cpu
+    ]
+
+
 def regionprops_bbox_coords(
     label_image,
     max_label=None,
@@ -479,67 +568,20 @@ def regionprops_bbox_coords(
         ``mask = label_image[bbox_slices[label - 1]] == label`` to get the
         region corresponding to the ith bounding box.
     """
-    if max_label is None:
-        max_label = int(label_image.max())
-
-    coord_dtype, int32_coords = _get_coord_dtype(label_image.size)
-
-    count_dtype, int32_count = _get_count_dtype(label_image.size)
-    bbox_kernel = get_bbox_coords_kernel(
-        ndim=label_image.ndim,
-        int32_coords=int32_coords,
-        int32_count=int32_count,
-        compute_num_pixels=compute_num_pixels,
-        pixels_per_thread=pixels_per_thread,
-    )
-
-    ndim = label_image.ndim
-    bbox_coords = cp.zeros((max_label, 2 * ndim), dtype=coord_dtype)
-
-    # Initialize value for atomicMin on first ndim coordinates
-    # The value for atomicMax columns is already 0 as desired.
-    bbox_coords[:, :ndim] = cp.iinfo(coord_dtype).max
-    outputs = (bbox_coords,)
-    if compute_num_pixels:
-        counts = cp.zeros(max_label, dtype=count_dtype)
-        outputs += (counts,)
-
-    # make a copy if the inputs are not already C-contiguous
-    if not label_image.flags.c_contiguous:
-        label_image = cp.ascontiguousarray(label_image)
-
-    bbox_kernel(
+    if props_dict is None:
+        props_dict = {}
+    _regionprops_label_pass(
         label_image,
-        label_image.size,
-        *outputs,
-        size=math.ceil(label_image.size / pixels_per_thread),
+        max_label=max_label,
+        compute_num_pixels=compute_num_pixels,
+        compute_bbox=True,
+        pixels_per_thread=pixels_per_thread,
+        props_dict=props_dict,
     )
-    if props_dict is not None:
-        props_dict["bbox"] = bbox_coords
-        if compute_num_pixels:
-            props_dict["num_pixels"] = counts
-
+    bbox_coords = props_dict["bbox"]
     if return_slices:
-        bbox_coords_cpu = cp.asnumpy(bbox_coords)
-        if ndim == 2:
-            # explicitly writing out the 2d case here for clarity
-            bbox_slices = [
-                (
-                    slice(int(box[0]), int(box[2])),
-                    slice(int(box[1]), int(box[3])),
-                )
-                for box in bbox_coords_cpu
-            ]
-        else:
-            # general n-dimensional case
-            bbox_slices = [
-                tuple(
-                    slice(int(box[d]), int(box[d + ndim])) for d in range(ndim)
-                )
-                for box in bbox_coords_cpu
-            ]
-        if props_dict is not None:
-            props_dict["slice"] = bbox_slices
+        bbox_slices = _bbox_slices(bbox_coords)
+        props_dict["slice"] = bbox_slices
     else:
         bbox_slices = None
 
