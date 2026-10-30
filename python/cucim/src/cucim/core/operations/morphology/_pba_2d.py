@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 import math
@@ -282,21 +282,19 @@ def _pba_2d(
         m1, m2, m3 = block_params
         if math.log2(m2) % 1 > 1e-5:
             raise ValueError("m2 must be a power of 2")
-        multiple = math.lcm(block_size, m1, m2, m3)
+        # the bands can't be smaller than block_size
+        max_m = math.ceil(max(arr.shape) / block_size)
+        for name, m in zip(("m1", "m2", "m3"), (m1, m2, m3)):
+            if m > max_m:
+                raise ValueError(
+                    f"{name} too large. must be <= arr.shape // {block_size} "
+                    "(rounded up)"
+                )
+        # The phase 1 bands have padded_size // m1 rows, which have to be a
+        # multiple of block_size (the size of the tiles used to transpose).
+        multiple = math.lcm(block_size * m1, m2, m3)
         padded_size = math.ceil(max(arr.shape) / multiple) * multiple
 
-    if m1 > padded_size // block_size:
-        raise ValueError(
-            f"m1 too large. must be <= padded arr.shape[0] // {block_size}"
-        )
-    if m2 > padded_size // block_size:
-        raise ValueError(
-            f"m2 too large. must be <= padded arr.shape[1] // {block_size}"
-        )
-    if m3 > padded_size // block_size:
-        raise ValueError(
-            f"m3 too large. must be <= padded arr.shape[1] // {block_size}"
-        )
     for m in (m1, m2, m3):
         if padded_size % m != 0:
             raise ValueError(

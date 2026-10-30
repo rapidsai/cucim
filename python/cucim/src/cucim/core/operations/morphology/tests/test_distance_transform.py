@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2022-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 from copy import copy
@@ -114,6 +114,18 @@ def test_distance_transform_edt_block_params(shape, block_params):
     distances = distance_transform_edt(img, **kwargs_cucim)
     expected = ndi_cpu.distance_transform_edt(cp.asnumpy(img), **kwargs_scipy)
     cp.testing.assert_allclose(distances, expected)
+
+
+@pytest.mark.parametrize("shape", [(288, 288), (300, 200), (320, 1024)])
+@pytest.mark.parametrize(
+    "block_params", [(6, 1, 1), (3, 4, 2), (7, 4, 3), (5, 2, 1)]
+)
+def test_distance_transform_edt_block_params_band_size(shape, block_params):
+    """The phase 1 band size, shape // m1, must be a multiple of 32."""
+    img = binary_image(shape, pct_true=4)
+    distances = distance_transform_edt(img, block_params=block_params)
+    expected = ndi_cpu.distance_transform_edt(cp.asnumpy(img))
+    cp.testing.assert_allclose(distances, expected, rtol=1e-6)
 
 
 @pytest.mark.parametrize(
