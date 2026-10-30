@@ -1344,6 +1344,25 @@ def test_feret_diameter_max(ndim, spacing, blob_kwargs):
 
 
 @pytest.mark.parametrize("ndim", [2, 3])
+def test_feret_diameter_max_absent_label(ndim):
+    # label 2 does not occur: its row gets 0, like its area_convex
+    labels = cp.zeros((12,) * ndim, dtype=cp.uint8)
+    labels[(slice(1, 4),) * ndim] = 1
+    labels[(slice(6, 11),) * ndim] = 3
+    props = regionprops_dict(
+        labels, properties=["area_convex", "feret_diameter_max"]
+    )
+    labels[labels == 3] = 2
+    expected = regionprops_dict(labels, properties=["feret_diameter_max"])
+    expected = expected["feret_diameter_max"]
+    assert_array_equal(props["area_convex"][1], 0)
+    assert_array_equal(
+        props["feret_diameter_max"],
+        cp.stack([expected[0], cp.zeros_like(expected[0]), expected[1]]),
+    )
+
+
+@pytest.mark.parametrize("ndim", [2, 3])
 @pytest.mark.parametrize("spacing", [None, (1.5, 0.5, 0.76)])
 @pytest.mark.parametrize(
     "property_name",
