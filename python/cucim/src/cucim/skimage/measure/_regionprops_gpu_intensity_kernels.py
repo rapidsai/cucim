@@ -303,6 +303,145 @@ def get_intensity_measure_kernel(
     )
 
 
+def _regionprops_intensity(
+    label_image,
+    intensity_image,
+    max_label=None,
+    *,
+    compute_mean=False,
+    compute_std=False,
+    compute_min=False,
+    compute_max=False,
+    mean_dtype=cp.float32,
+    std_dtype=cp.float64,
+    sample_std=False,
+    pixels_per_thread=16,
+    props_dict=None,
+):
+    """Compute the requested intensity statistics in one pass over the image.
+
+    reuses "num_pixels" from `props_dict` if it exists
+
+    writes "intensity_mean" to `props_dict` if `compute_mean` or `compute_std`
+    writes "intensity_std" to `props_dict` if `compute_std`
+    writes "intensity_min" to `props_dict` if `compute_min`
+    writes "intensity_max" to `props_dict` if `compute_max`
+    writes "num_pixels" to `props_dict` if it was not already present and the
+    mean or standard deviation was computed
+
+    When `compute_std` is True, the mean is returned with dtype `std_dtype`
+    rather than `mean_dtype`.
+    """
+    if not (compute_mean or compute_std or compute_min or compute_max):
+        raise ValueError("Nothing to compute")
+    if props_dict is None:
+        props_dict = {}
+    if max_label is None:
+        max_label = int(label_image.max())
+    num_counts = max_label
+
+    num_channels = _check_intensity_image_shape(label_image, intensity_image)
+
+    image_dtype = intensity_image.dtype
+    sum_dtype, _, min_max_dtype, _ = _get_intensity_img_kernel_dtypes(
+        image_dtype
+    )
+    count_dtype, int32_count = _get_count_dtype(label_image.size)
+    out_shape = (
+        (num_counts,) if num_channels == 1 else (num_counts, num_channels)
+    )
+
+    # the outputs are passed in the order of the kernel's parameters
+    compute_sums = compute_mean or compute_std
+    compute_num_pixels = False
+    outputs = []
+    if compute_sums:
+        if "num_pixels" in props_dict:
+            counts = props_dict["num_pixels"]
+            if counts.dtype != count_dtype:
+                counts = counts.astype(count_dtype, copy=False)
+        else:
+            counts = cp.zeros(num_counts, dtype=count_dtype)
+            compute_num_pixels = True
+            outputs.append(counts)
+        sums = cp.zeros(out_shape, dtype=sum_dtype)
+        outputs.append(sums)
+        if compute_std:
+            sumsqs = cp.zeros(out_shape, dtype=sum_dtype)
+            outputs.append(sumsqs)
+    if compute_min or compute_max:
+        # use an appropriate data type supported by atomicMin and atomicMax
+        range_min, range_max = _get_intensity_range(image_dtype)
+        if compute_min:
+            minimums = cp.full(out_shape, range_max, dtype=min_max_dtype)
+            outputs.append(minimums)
+        if compute_max:
+            maximums = cp.full(out_shape, range_min, dtype=min_max_dtype)
+            outputs.append(maximums)
+
+    # TODO(grelee): May want to provide an approach with better numerical
+    # stability (i.e.like the two-pass algorithm or Welford's online algorithm)
+    kernel = get_intensity_measure_kernel(
+        int32_count=int32_count,
+        image_dtype=image_dtype,
+        num_channels=num_channels,
+        compute_num_pixels=compute_num_pixels,
+        compute_sum=compute_sums,
+        compute_sum_sq=compute_std,
+        compute_min=compute_min,
+        compute_max=compute_max,
+        pixels_per_thread=pixels_per_thread,
+    )
+
+    # make a copy if the inputs are not already C-contiguous
+    if not label_image.flags.c_contiguous:
+        label_image = cp.ascontiguousarray(label_image)
+    if not intensity_image.flags.c_contiguous:
+        intensity_image = cp.ascontiguousarray(intensity_image)
+
+    kernel(
+        label_image,
+        label_image.size,
+        intensity_image,
+        *outputs,
+        size=math.ceil(label_image.size / pixels_per_thread),
+    )
+
+    if compute_std:
+        if cp.dtype(std_dtype).kind != "f":
+            raise ValueError("mean_dtype must be a floating point type")
+
+        # compute means and standard deviations from the counts, sums and
+        # squared sums (use float64 here since the numerical stability of this
+        # approach is poor)
+        means = cp.zeros(out_shape, dtype=cp.float64)
+        stds = cp.zeros(out_shape, dtype=cp.float64)
+        kernel2 = get_mean_var_kernel(stds.dtype, sample_std=sample_std)
+        if num_channels > 1:
+            kernel2(counts[..., cp.newaxis], sums, sumsqs, means, stds)
+        else:
+            kernel2(counts, sums, sumsqs, means, stds)
+
+        means = means.astype(std_dtype, copy=False)
+        stds = stds.astype(std_dtype, copy=False)
+        props_dict["intensity_std"] = stds
+        props_dict["intensity_mean"] = means
+    elif compute_mean:
+        if num_channels > 1:
+            means = sums / counts[:, cp.newaxis]
+        else:
+            means = sums / counts
+        means = means.astype(mean_dtype, copy=False)
+        props_dict["intensity_mean"] = means
+    if compute_sums and "num_pixels" not in props_dict:
+        props_dict["num_pixels"] = counts
+    if compute_min:
+        props_dict["intensity_min"] = minimums
+    if compute_max:
+        props_dict["intensity_max"] = maximums
+    return props_dict
+
+
 def regionprops_intensity_mean(
     label_image,
     intensity_image,
@@ -318,71 +457,15 @@ def regionprops_intensity_mean(
     writes "intensity_mean" to `props_dict`
     writes "num_pixels" to `props_dict` if it was not already present
     """
-    if props_dict is None:
-        props_dict = {}
-    if max_label is None:
-        max_label = int(label_image.max())
-    num_counts = max_label
-
-    num_channels = _check_intensity_image_shape(label_image, intensity_image)
-
-    count_dtype, int32_count = _get_count_dtype(label_image.size)
-
-    image_dtype = intensity_image.dtype
-    sum_dtype, _, _, _ = _get_intensity_img_kernel_dtypes(image_dtype)
-
-    if "num_pixels" in props_dict:
-        counts = props_dict["num_pixels"]
-        if counts.dtype != count_dtype:
-            counts = counts.astype(count_dtype, copy=False)
-        compute_num_pixels = False
-    else:
-        counts = cp.zeros(num_counts, dtype=count_dtype)
-        compute_num_pixels = True
-
-    sum_shape = (
-        (num_counts,) if num_channels == 1 else (num_counts, num_channels)
-    )
-    sums = cp.zeros(sum_shape, dtype=sum_dtype)
-
-    kernel = get_intensity_measure_kernel(
-        int32_count=int32_count,
-        image_dtype=image_dtype,
-        num_channels=num_channels,
-        compute_num_pixels=compute_num_pixels,
-        compute_sum=True,
-        compute_sum_sq=False,
-        pixels_per_thread=pixels_per_thread,
-    )
-
-    # make a copy if the inputs are not already C-contiguous
-    if not label_image.flags.c_contiguous:
-        label_image = cp.ascontiguousarray(label_image)
-    if not intensity_image.flags.c_contiguous:
-        intensity_image = cp.ascontiguousarray(intensity_image)
-
-    if compute_num_pixels:
-        outputs = (counts, sums)
-    else:
-        outputs = (sums,)
-
-    kernel(
+    return _regionprops_intensity(
         label_image,
-        label_image.size,
         intensity_image,
-        *outputs,
-        size=math.ceil(label_image.size / pixels_per_thread),
+        max_label=max_label,
+        compute_mean=True,
+        mean_dtype=mean_dtype,
+        pixels_per_thread=pixels_per_thread,
+        props_dict=props_dict,
     )
-
-    if num_channels > 1:
-        means = sums / counts[:, cp.newaxis]
-    else:
-        means = sums / counts
-    means = means.astype(mean_dtype, copy=False)
-    props_dict["intensity_mean"] = means
-    if "num_pixels" not in props_dict:
-        props_dict["num_pixels"] = counts
-    return props_dict
 
 
 @cp.memoize(for_each_device=True)
@@ -452,84 +535,16 @@ def regionprops_intensity_std(
     writes "intensity_std" to `props_dict`
     writes "num_pixels" to `props_dict` if it was not already present
     """
-    if props_dict is None:
-        props_dict = {}
-    if max_label is None:
-        max_label = int(label_image.max())
-    num_counts = max_label
-
-    num_channels = _check_intensity_image_shape(label_image, intensity_image)
-
-    image_dtype = intensity_image.dtype
-    sum_dtype, _, _, _ = _get_intensity_img_kernel_dtypes(image_dtype)
-
-    count_dtype, int32_count = _get_count_dtype(label_image.size)
-
-    if "num_pixels" in props_dict:
-        counts = props_dict["num_pixels"]
-        if counts.dtype != count_dtype:
-            counts = counts.astype(count_dtype, copy=False)
-        compute_num_pixels = False
-    else:
-        counts = cp.zeros(num_counts, dtype=count_dtype)
-        compute_num_pixels = True
-
-    sum_shape = (
-        (num_counts,) if num_channels == 1 else (num_counts, num_channels)
-    )
-    sums = cp.zeros(sum_shape, dtype=sum_dtype)
-    sumsqs = cp.zeros(sum_shape, dtype=sum_dtype)
-
-    # make a copy if the inputs are not already C-contiguous
-    if not label_image.flags.c_contiguous:
-        label_image = cp.ascontiguousarray(label_image)
-    if not intensity_image.flags.c_contiguous:
-        intensity_image = cp.ascontiguousarray(intensity_image)
-
-    # TODO(grelee): May want to provide an approach with better numerical
-    # stability (i.e.like the two-pass algorithm or Welford's online algorithm)
-    kernel = get_intensity_measure_kernel(
-        int32_count=int32_count,
-        image_dtype=image_dtype,
-        num_channels=num_channels,
-        compute_num_pixels=compute_num_pixels,
-        compute_sum=True,
-        compute_sum_sq=True,
-        pixels_per_thread=pixels_per_thread,
-    )
-    if compute_num_pixels:
-        outputs = (counts, sums, sumsqs)
-    else:
-        outputs = (sums, sumsqs)
-    kernel(
+    return _regionprops_intensity(
         label_image,
-        label_image.size,
         intensity_image,
-        *outputs,
-        size=math.ceil(label_image.size / pixels_per_thread),
+        max_label=max_label,
+        compute_std=True,
+        std_dtype=std_dtype,
+        sample_std=sample_std,
+        pixels_per_thread=pixels_per_thread,
+        props_dict=props_dict,
     )
-
-    if cp.dtype(std_dtype).kind != "f":
-        raise ValueError("mean_dtype must be a floating point type")
-
-    # compute means and standard deviations from the counts, sums and
-    # squared sums (use float64 here since the numerical stability of this
-    # approach is poor)
-    means = cp.zeros(sum_shape, dtype=cp.float64)
-    stds = cp.zeros(sum_shape, dtype=cp.float64)
-    kernel2 = get_mean_var_kernel(stds.dtype, sample_std=sample_std)
-    if num_channels > 1:
-        kernel2(counts[..., cp.newaxis], sums, sumsqs, means, stds)
-    else:
-        kernel2(counts, sums, sumsqs, means, stds)
-
-    means = means.astype(std_dtype, copy=False)
-    stds = stds.astype(std_dtype, copy=False)
-    props_dict["intensity_std"] = stds
-    props_dict["intensity_mean"] = means
-    if "num_pixels" not in props_dict:
-        props_dict["num_pixels"] = counts
-    return props_dict
 
 
 def regionprops_intensity_min_max(
@@ -546,58 +561,12 @@ def regionprops_intensity_min_max(
     writes "intensity_min" to `props_dict` if `compute_min` is True
     writes "intensity_max" to `props_dict` if `compute_max` is True
     """
-    if not (compute_min or compute_max):
-        raise ValueError("Nothing to compute")
-    if props_dict is None:
-        props_dict = {}
-
-    if max_label is None:
-        max_label = int(label_image.max())
-    num_counts = max_label
-
-    num_channels = _check_intensity_image_shape(label_image, intensity_image)
-
-    # use an appropriate data type supported by atomicMin and atomicMax
-    image_dtype = intensity_image.dtype
-    _, _, min_max_dtype, _ = _get_intensity_img_kernel_dtypes(image_dtype)
-    range_min, range_max = _get_intensity_range(image_dtype)
-    out_shape = (
-        (num_counts,) if num_channels == 1 else (num_counts, num_channels)
-    )
-    if compute_min:
-        minimums = cp.full(out_shape, range_max, dtype=min_max_dtype)
-    if compute_max:
-        maximums = cp.full(out_shape, range_min, dtype=min_max_dtype)
-
-    kernel = get_intensity_measure_kernel(
-        image_dtype=image_dtype,
-        num_channels=num_channels,
-        compute_num_pixels=False,
-        compute_sum=False,
-        compute_sum_sq=False,
+    return _regionprops_intensity(
+        label_image,
+        intensity_image,
+        max_label=max_label,
         compute_min=compute_min,
         compute_max=compute_max,
         pixels_per_thread=pixels_per_thread,
+        props_dict=props_dict,
     )
-
-    # make a copy if the inputs are not already C-contiguous
-    if not label_image.flags.c_contiguous:
-        label_image = cp.ascontiguousarray(label_image)
-    if not intensity_image.flags.c_contiguous:
-        intensity_image = cp.ascontiguousarray(intensity_image)
-
-    lab_size = label_image.size
-    sz = math.ceil(label_image.size / pixels_per_thread)
-    if compute_min and compute_max:
-        outputs = (minimums, maximums)
-    elif compute_min:
-        outputs = (minimums,)
-    else:
-        outputs = (maximums,)
-
-    kernel(label_image, lab_size, intensity_image, *outputs, size=sz)  # noqa: E501
-    if compute_min:
-        props_dict["intensity_min"] = minimums
-    if compute_max:
-        props_dict["intensity_max"] = maximums
-    return props_dict

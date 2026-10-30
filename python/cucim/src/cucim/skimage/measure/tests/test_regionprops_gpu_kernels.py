@@ -57,6 +57,7 @@ from cucim.skimage.measure._regionprops_gpu_basic_kernels import (
 )
 from cucim.skimage.measure._regionprops_gpu_convex import convex_deps
 from cucim.skimage.measure._regionprops_gpu_intensity_kernels import (
+    _regionprops_intensity,
     intensity_deps,
 )
 from cucim.skimage.measure._regionprops_gpu_misc_kernels import misc_deps
@@ -453,6 +454,43 @@ def test_intensity_std(
                 expected[f"intensity_std-{c}"],
                 rtol=1e-3,
             )
+
+
+@pytest.mark.parametrize("ndim", [2, 3])
+@pytest.mark.parametrize("image_dtype", [cp.uint8, cp.int16, cp.float32])
+@pytest.mark.parametrize("num_channels", [1, 3])
+@pytest.mark.parametrize("compute_std", [False, True])
+def test_intensity_stats_one_pass(ndim, image_dtype, num_channels, compute_std):
+    # the mean (or std), min and max computed in one pass match the separate
+    # functions
+    shape = (256, 512) if ndim == 2 else (15, 63, 37)
+    labels = get_labels_nd(shape)
+    intensity_image = get_intensity_image(
+        shape, dtype=image_dtype, num_channels=num_channels
+    )
+    props = _regionprops_intensity(
+        labels,
+        intensity_image,
+        compute_mean=not compute_std,
+        compute_std=compute_std,
+        compute_min=True,
+        compute_max=True,
+    )
+    if compute_std:
+        expected = regionprops_intensity_std(labels, intensity_image)
+    else:
+        expected = regionprops_intensity_mean(labels, intensity_image)
+    regionprops_intensity_min_max(
+        labels,
+        intensity_image,
+        compute_min=True,
+        compute_max=True,
+        props_dict=expected,
+    )
+    assert set(props) == set(expected)
+    for name, values in expected.items():
+        assert props[name].dtype == values.dtype
+        assert_allclose(props[name], values, rtol=1e-12)
 
 
 @pytest.mark.parametrize("image_dtype", [cp.float32, cp.float64])
