@@ -8,7 +8,7 @@ import cupy as cp
 from ._regionprops_gpu_utils import (
     _check_intensity_image_shape,
     _get_count_dtype,
-    _get_run_count_ctype,
+    _get_label_run_loop,
     _includes,
 )
 
@@ -31,8 +31,6 @@ intensity_deps["intensity_std"] = ["num_pixels"]
 
 def _get_img_sums_code(
     c_sum_type,
-    pixels_per_thread,
-    array_size,
     num_channels=1,
     compute_num_pixels=True,
     compute_sum=True,
@@ -41,83 +39,84 @@ def _get_img_sums_code(
     """
     Notes
     -----
-    Local variables created:
+    Variables created (per run of a label):
 
-        - num_pixels : shape (array_size, )
-            The number of pixels encountered per label value
+        - num_pixels : the number of pixels in the run
+        - img_sum{c}, img_sum_sq{c} : sums of the intensities of channel c
+            and of their squares
 
     Output variables written to:
 
         - counts : shape (max_label,)
+        - sums : shape (max_label, num_channels)
+        - sumsqs : shape (max_label, num_channels)
     """
-    pixel_count_dtype = _get_run_count_ctype(pixels_per_thread)
-
     source_pre = ""
-    if compute_num_pixels:
-        source_pre += f"""
-    {pixel_count_dtype} num_pixels[{array_size}] = {{0}};"""
-    if compute_sum:
-        source_pre += f"""
-    {c_sum_type} img_sums[{array_size * num_channels}] = {{0}};"""
-    if compute_sum_sq:
-        source_pre += f"""
-    {c_sum_type} img_sum_sqs[{array_size * num_channels}] = {{0}};"""
-    if compute_sum or compute_sum_sq:
-        source_pre += f"""
-    {c_sum_type} v = 0;\n"""
-
-    # source_operation requires external variables:
-    #     ii : index into labels array
-    #     offset : index into local region's num_pixels array
-    #              (number of unique labels encountered so far by this thread)
+    source_start = ""
     source_operation = ""
+    source_flush = ""
     if compute_num_pixels:
+        source_pre += """
+    uint32_t num_pixels;"""
+        source_start += """
+          num_pixels = 0;"""
         source_operation += """
-            num_pixels[offset] += 1;"""
-    nc = f"{num_channels}*" if num_channels > 1 else ""
+          num_pixels += 1;"""
+        source_flush += """
+          atomicAdd(&counts[lab - 1], num_pixels);"""
     if compute_sum or compute_sum_sq:
-        for c in range(num_channels):
+        source_pre += f"""
+    {c_sum_type} v;"""
+    # op uses external variables:
+    #     ii : index into labels array
+    # flush uses external variables:
+    #     lab : label value of the run
+    nc = f"{num_channels}*" if num_channels > 1 else ""
+    for c in range(num_channels):
+        if compute_sum or compute_sum_sq:
             source_operation += f"""
-            v = static_cast<{c_sum_type}>(img[{nc}ii + {c}]);"""
-            if compute_sum:
-                source_operation += f"""
-            img_sums[{nc}offset + {c}] += v;"""
-            if compute_sum_sq:
-                source_operation += f"""
-            img_sum_sqs[{nc}offset + {c}] += v * v;\n"""
-
-    # post_operation requires external variables:
-    #     jj : index into num_pixels array
-    #     lab : label value that corresponds to location ii
-    #     num_pixels : output with shape (max_label,)
-    #     sums : output with shape (max_label, num_channels)
-    #     sumsqs : output with shape (max_label, num_channels)
-    source_post = ""
-    if compute_num_pixels:
-        source_post += """
-            atomicAdd(&counts[lab - 1], num_pixels[jj]);"""
-    if compute_sum:
-        for c in range(num_channels):
-            source_post += f"""
-            atomicAdd(&sums[{nc}(lab - 1) + {c}], img_sums[{nc}jj + {c}]);"""
-    if compute_sum_sq:
-        for c in range(num_channels):
-            source_post += f"""
-            atomicAdd(&sumsqs[{nc}(lab - 1) + {c}], img_sum_sqs[{nc}jj + {c}]);"""  # noqa: E501
-    return source_pre, source_operation, source_post
+          v = static_cast<{c_sum_type}>(img[{nc}ii + {c}]);"""
+        if compute_sum:
+            source_pre += f"""
+    {c_sum_type} img_sum{c};"""
+            source_start += f"""
+          img_sum{c} = 0;"""
+            source_operation += f"""
+          img_sum{c} += v;"""
+            source_flush += f"""
+          atomicAdd(&sums[{nc}(lab - 1) + {c}], img_sum{c});"""
+        if compute_sum_sq:
+            source_pre += f"""
+    {c_sum_type} img_sum_sq{c};"""
+            source_start += f"""
+          img_sum_sq{c} = 0;"""
+            source_operation += f"""
+          img_sum_sq{c} += v * v;"""
+            source_flush += f"""
+          atomicAdd(&sumsqs[{nc}(lab - 1) + {c}], img_sum_sq{c});"""
+    return source_pre, source_start, source_operation, source_flush
 
 
 def _get_intensity_min_max_code(
-    min_max_dtype,
     c_min_max_type,
-    array_size,
     initial_min_val,
     initial_max_val,
     compute_min=True,
     compute_max=True,
     num_channels=1,
 ):
-    min_max_dtype = cp.dtype(min_max_dtype)
+    """
+    Notes
+    -----
+    Variables created (per run of a label):
+
+        - min_val{c}, max_val{c} : minimum and maximum intensity of channel c
+
+    Output variables written to:
+
+        - minimums : shape (max_label, num_channels)
+        - maximums : shape (max_label, num_channels)
+    """
     c_type = c_min_max_type
 
     # Note: CuPy provides atomicMin and atomicMax for float and double in
@@ -126,56 +125,38 @@ def _get_intensity_min_max_code(
     #       The kernels call cucim_atomic_min and cucim_atomic_max (see
     #       _includes), because CuPy's double overloads round to float.
 
-    source_pre = ""
-    if compute_min:
-        source_pre += f"""
-    {c_type} min_vals[{array_size * num_channels}];
-    // initialize minimum coordinate to array size
-    for (size_t ii = 0; ii < {array_size * num_channels}; ii++) {{
-      min_vals[ii] = {initial_min_val};
-    }}"""
-    if compute_max:
-        source_pre += f"""
-    {c_type} max_vals[{array_size * num_channels}];
-    // initialize minimum coordinate to array size
-    for (size_t ii = 0; ii < {array_size * num_channels}; ii++) {{
-      max_vals[ii] = {initial_max_val};
-    }}"""
-    source_pre += f"""
-    {c_type} v = 0;\n"""
-
-    # source_operation requires external variables:
-    #     ii : index into labels array
-    #     offset : index into local region's num_pixels array
-    #              (number of unique labels encountered so far by this thread)
+    source_pre = f"""
+    {c_type} v_mm;"""
+    source_start = ""
     source_operation = ""
+    source_flush = ""
+    # op uses external variables:
+    #     ii : index into labels array
+    # flush uses external variables:
+    #     lab : label value of the run
     nc = f"{num_channels}*" if num_channels > 1 else ""
-    if compute_min or compute_max:
-        for c in range(num_channels):
+    for c in range(num_channels):
+        source_operation += f"""
+          v_mm = static_cast<{c_type}>(img[{nc}ii + {c}]);"""
+        if compute_min:
+            source_pre += f"""
+    {c_type} min_val{c};"""
+            source_start += f"""
+          min_val{c} = {initial_min_val};"""
             source_operation += f"""
-            v = static_cast<{c_type}>(img[{nc}ii + {c}]);"""
-            if compute_min:
-                source_operation += f"""
-            min_vals[{nc}offset + {c}] = min(v, min_vals[{nc}offset + {c}]);"""
-            if compute_max:
-                source_operation += f"""
-            max_vals[{nc}offset + {c}] = max(v, max_vals[{nc}offset + {c}]);\n"""  # noqa: E501
-
-    # post_operation requires external variables:
-    #     jj : offset index into min_vals or max_vals array
-    #     lab : label value that corresponds to location ii
-    #     min_vals : output with shape (max_label, num_channels)
-    #     max_vals : output with shape (max_label, num_channels)
-    source_post = ""
-    if compute_min:
-        for c in range(num_channels):
-            source_post += f"""
-            cucim_atomic_min(&minimums[{nc}(lab - 1) + {c}], min_vals[{nc}jj + {c}]);"""  # noqa: E501
-    if compute_max:
-        for c in range(num_channels):
-            source_post += f"""
-            cucim_atomic_max(&maximums[{nc}(lab - 1) + {c}], max_vals[{nc}jj + {c}]);"""  # noqa: E501
-    return source_pre, source_operation, source_post
+          min_val{c} = min(v_mm, min_val{c});"""
+            source_flush += f"""
+          cucim_atomic_min(&minimums[{nc}(lab - 1) + {c}], min_val{c});"""
+        if compute_max:
+            source_pre += f"""
+    {c_type} max_val{c};"""
+            source_start += f"""
+          max_val{c} = {initial_max_val};"""
+            source_operation += f"""
+          max_val{c} = max(v_mm, max_val{c});"""
+            source_flush += f"""
+          cucim_atomic_max(&maximums[{nc}(lab - 1) + {c}], max_val{c});"""
+    return source_pre, source_start, source_operation, source_flush
 
 
 @cp.memoize()
@@ -258,86 +239,41 @@ def get_intensity_measure_kernel(
         c_min_max_type,
     ) = _get_intensity_img_kernel_dtypes(image_dtype)
 
-    array_size = pixels_per_thread
     any_sums = compute_num_pixels or compute_sum or compute_sum_sq
-
-    if any_sums:
-        sums_pre, sums_op, sums_post = _get_img_sums_code(
-            c_sum_type=c_sum_type,
-            pixels_per_thread=pixels_per_thread,
-            array_size=array_size,
-            num_channels=num_channels,
-            compute_num_pixels=compute_num_pixels,
-            compute_sum=compute_sum,
-            compute_sum_sq=compute_sum_sq,
-        )
-
     any_min_max = compute_min or compute_max
+    if not (any_min_max or any_sums):
+        raise ValueError("no output values requested")
+
+    fragments = []
+    if any_sums:
+        fragments.append(
+            _get_img_sums_code(
+                c_sum_type=c_sum_type,
+                num_channels=num_channels,
+                compute_num_pixels=compute_num_pixels,
+                compute_sum=compute_sum,
+                compute_sum_sq=compute_sum_sq,
+            )
+        )
     if any_min_max:
         if min_max_dtype is None:
             raise ValueError("min_max_dtype must be specified")
         range_min, range_max = _get_intensity_range(min_max_dtype)
-        min_max_pre, min_max_op, min_max_post = _get_intensity_min_max_code(
-            min_max_dtype=min_max_dtype,
-            c_min_max_type=c_min_max_type,
-            array_size=array_size,
-            num_channels=num_channels,
-            initial_max_val=range_min,
-            initial_min_val=range_max,
-            compute_min=compute_min,
-            compute_max=compute_max,
+        fragments.append(
+            _get_intensity_min_max_code(
+                c_min_max_type=c_min_max_type,
+                num_channels=num_channels,
+                initial_max_val=range_min,
+                initial_min_val=range_max,
+                compute_min=compute_min,
+                compute_max=compute_max,
+            )
         )
-
-    if not (any_min_max or any_sums):
-        raise ValueError("no output values requested")
+    pre, start, op, flush = ("".join(f) for f in zip(*fragments))
 
     # store only counts for label > 0  (label = 0 is the background)
-    source = f"""
-      uint64_t start_index = {pixels_per_thread}*i;
-    """
+    source = _get_label_run_loop(pixels_per_thread, pre, start, op, flush)
 
-    if any_sums:
-        source += sums_pre
-    if any_min_max:
-        source += min_max_pre
-
-    inner_op = ""
-    if any_sums:
-        inner_op += sums_op
-    if any_min_max:
-        inner_op += min_max_op
-
-    source += f"""
-      X encountered_labels[{array_size}] = {{0}};
-      X current_label;
-      X prev_label = labels[start_index];
-      int offset = 0;
-      encountered_labels[0] = prev_label;
-      uint64_t ii_max = min(start_index + {pixels_per_thread}, labels_size);
-      for (uint64_t ii = start_index; ii < ii_max; ii++) {{
-        current_label = labels[ii];
-        if (current_label == 0) {{ continue; }}
-        if (current_label != prev_label) {{
-            offset += 1;
-            prev_label = current_label;
-            encountered_labels[offset] = current_label;
-        }}
-        {inner_op}
-      }}"""
-    source += """
-      for (size_t jj = 0; jj <= offset; jj++) {
-        X lab = encountered_labels[jj];
-        if (lab != 0) {"""
-
-    if any_sums:
-        source += sums_post
-    if any_min_max:
-        source += min_max_post
-    source += """
-        }
-      }\n"""
-
-    # print(source)
     inputs = "raw X labels, raw uint64 labels_size, raw Y img"
     outputs = []
     name = "cucim_"

@@ -79,17 +79,56 @@ def _get_coord_dtype(label_image_size):
     return coord_dtype, int32_coords
 
 
-def _get_run_count_ctype(pixels_per_thread):
-    """C type of the per-thread pixel counters of the label-run kernels.
+def _get_label_run_loop(pixels_per_thread, pre, start, op, flush):
+    """Source of the loop shared by the label-run kernels.
 
-    A thread counts at most `pixels_per_thread` pixels for one label, so the
-    counter must be able to hold that value.
+    Each thread scans `pixels_per_thread` consecutive pixels in raveled order.
+    Consecutive pixels with the same nonzero label form a run (background
+    pixels are skipped and do not end a run). The statistics of the current
+    run are accumulated in scalar variables (registers) and added to the
+    global outputs with atomics when the label changes and after the last
+    pixel. This issues the same atomics as keeping one set of accumulators per
+    run in a per-thread array, but without that array in local memory.
+
+    Parameters
+    ----------
+    pre : str
+        Declarations, placed before the loop.
+    start : str
+        Executed at the start of each run. Must initialize the accumulators.
+        Can use `lab`, the label of the run.
+    op : str
+        Executed for each pixel of the run. Can use `ii`, the raveled index of
+        the pixel, and `lab`.
+    flush : str
+        Executed at the end of each run to write the accumulators to the
+        outputs. Can use `lab`.
+
+    Notes
+    -----
+    The kernel must have the inputs ``raw X labels`` and
+    ``raw uint64 labels_size``.
     """
-    if pixels_per_thread <= 255:
-        return "uint8_t"
-    elif pixels_per_thread <= 65535:
-        return "uint16_t"
-    return "uint32_t"
+    return f"""
+      uint64_t start_index = {pixels_per_thread}*i;
+      {pre}
+      uint64_t ii_max = min(start_index + {pixels_per_thread}, labels_size);
+      X lab = 0;
+      for (uint64_t ii = start_index; ii < ii_max; ii++) {{
+        X current_label = labels[ii];
+        if (current_label == 0) {{ continue; }}
+        if (current_label != lab) {{
+          if (lab != 0) {{
+            {flush}
+          }}
+          lab = current_label;
+          {start}
+        }}
+        {op}
+      }}
+      if (lab != 0) {{
+        {flush}
+      }}\n"""
 
 
 def _get_min_integer_dtype(max_size, signed=False):
