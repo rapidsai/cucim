@@ -433,17 +433,17 @@ def test_convex_batch_3d(spacing, kind):
 
 
 def test_convex_flat_3d():
-    # Regions that are flat along an axis get the convex image of the
-    # squeezed 2D region (as cuCIM's convex_hull_image did; scikit-image's
-    # qhull fails and returns an empty image), and a single voxel itself.
+    # Regions that are flat along an axis get the convex image and Feret
+    # diameter of the squeezed 2D region (as cuCIM's convex_hull_image did
+    # for the image; scikit-image's qhull fails, it returns an empty image
+    # and its feret_diameter_max raises), and a single voxel itself.
     labels = cp.zeros((5, 30, 40), dtype=cp.int32)
     labels[2, 3:20, 5:9] = 1
     labels[2, 10:25, 20:35] = 1  # one plane, two components
     labels[0:4, 7, 1:30:3] = 2  # one row index, gaps along x
     labels[4, 0, 0] = 3
-    result = regionprops_dict(
-        labels, properties=["image_convex", "area_convex"]
-    )
+    properties = ["image_convex", "area_convex", "feret_diameter_max"]
+    result = regionprops_dict(labels, properties=properties)
     images = result["image_convex"]
     for lab, axis in [(1, 0), (2, 1)]:
         mask = labels == lab
@@ -453,11 +453,18 @@ def test_convex_flat_3d():
         ]
         expected = measure_cpu.regionprops_table(
             cp.asnumpy(crop.squeeze(axis)).astype(np.uint8),
-            properties=["image_convex"],
-        )["image_convex"][0]
-        assert_array_equal(images[lab - 1].squeeze(axis), expected)
-        assert result["area_convex"][lab - 1] == expected.sum()
+            properties=properties,
+        )
+        image = expected["image_convex"][0]
+        assert_array_equal(images[lab - 1].squeeze(axis), image)
+        assert result["area_convex"][lab - 1] == image.sum()
+        assert_allclose(
+            result["feret_diameter_max"][lab - 1],
+            expected["feret_diameter_max"][0],
+            rtol=1e-12,
+        )
     assert_array_equal(images[2], cp.ones((1, 1, 1), dtype=bool))
+    assert result["feret_diameter_max"][2] == 1
 
 
 @pytest.mark.parametrize("ndim", [2, 3])
@@ -1902,6 +1909,32 @@ def test_feret_diameter_max_batch_2d(spacing, kind):
         expected["feret_diameter_max"],
         rtol=1e-12,
     )
+
+
+@pytest.mark.parametrize("spacing", [None, (0.5, 0.35, 0.75)])
+@pytest.mark.parametrize("kind", ["blobs", "large_blobs", "lines", "random"])
+def test_feret_diameter_max_batch_3d(spacing, kind):
+    labels = _convex_test_labels(kind, 3)
+    result = regionprops_dict(
+        labels, properties=["feret_diameter_max"], spacing=spacing
+    )["feret_diameter_max"]
+    n_compared = 0
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        for region in measure_cpu.regionprops(
+            cp.asnumpy(labels), spacing=spacing
+        ):
+            if not region.image_convex.any():
+                # scikit-image's qhull fails for flat regions, and its
+                # feret_diameter_max then raises (test_convex_flat_3d)
+                continue
+            assert_allclose(
+                result[region.label - 1],
+                region.feret_diameter_max,
+                rtol=1e-12,
+            )
+            n_compared += 1
+    assert n_compared > 0
 
 
 @pytest.mark.parametrize("ndim", [2, 3])

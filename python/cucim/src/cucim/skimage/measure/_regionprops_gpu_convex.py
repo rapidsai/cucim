@@ -623,7 +623,8 @@ def _get_merged_planes_kernel():
     For a 3D label with d planes of h rows in its bounding box, merged plane m
     (m = 0, ..., d) lies between planes m - 1 and m; each of its rows has the
     smallest first and the largest last column of that row in the two planes
-    (planes -1 and d are empty). One thread per row of the merged planes,
+    (planes -1 and d are empty; an empty merged row gets first > last). One
+    thread per row of the merged planes,
     whose rows are stored like the row extents, at ``merged_offsets``.
     """
     source = """
@@ -645,15 +646,14 @@ def _get_merged_planes_kernel():
       long long y = local - m * h;
       E first = cuda::std::numeric_limits<E>::max();
       E last = -1;
-      if (m > 0) {
-        long long r = offsets[l] + (m - 1) * h + y;
-        first = row_first[r];
-        last = row_last[r];
-      }
-      if (m < d) {
-        long long r = offsets[l] + m * h + y;
-        first = min(first, row_first[r]);
-        last = max(last, row_last[r]);
+      for (long long plane = m - 1; plane <= m; plane++) {
+        if (plane < 0 || plane >= d) { continue; }
+        long long r = offsets[l] + plane * h + y;
+        // (rows without pixels have row_first > row_last)
+        if (row_first[r] <= row_last[r]) {
+          first = min(first, row_first[r]);
+          last = max(last, row_last[r]);
+        }
       }
       merged_first = first;
       merged_last = last;\n"""
@@ -670,30 +670,70 @@ def _get_merged_planes_kernel():
     )
 
 
-def _gather_chain_vertices(chains, segment_offsets):
-    """Vertices of the left and right chains of each segment (on the host).
+@cp.memoize(for_each_device=True)
+def _get_gather_chains_kernel():
+    """Kernel copying the chain vertices of each segment of rows (a plane of
+    a 3D label) to consecutive (z, y, x) points, one thread per segment."""
+    source = """
+      long long base = 2 * segment_offsets[i] + i;
+      long long out = point_starts[i];
+      E z = segment_z[i];
+      int lab = segment_label[i];
+      for (int side = 0; side < 2; side++) {
+        const E* chain = side == 0 ? &left_chains[2 * base]
+                                   : &right_chains[2 * base];
+        int n = chain_sizes[2 * i + side];
+        for (int j = 0; j < n; j++, out++) {
+          points[3 * out] = z;
+          points[3 * out + 1] = chain[2 * j];
+          points[3 * out + 2] = chain[2 * j + 1];
+          point_labels[out] = lab;
+        }
+      }\n"""
+    inputs = (
+        "raw E left_chains, raw E right_chains, raw int32 chain_sizes, "
+        "raw int64 segment_offsets, raw int64 point_starts, raw E segment_z, "
+        "raw int32 segment_label"
+    )
+    return cp.ElementwiseKernel(
+        inputs,
+        "raw E points, raw int32 point_labels",
+        source,
+        name="cucim_convex_gather_chains",
+    )
 
-    Returns the (y, x) vertices (doubled coordinates) and the segment of each.
+
+def _gather_chain_vertices(chains, segment_offsets, segment_z, segment_label):
+    """Vertices of the chains of each segment as (z, y, x) points.
+
+    Returns the points (doubled coordinates) and the label index of each.
     """
-    left_chains, right_chains, chain_sizes = (cp.asnumpy(c) for c in chains)
-    num_segments = segment_offsets.size - 1
-    base = 2 * segment_offsets[:-1] + np.arange(num_segments)
-    vertices = []
-    segments = []
-    for side, buffer in enumerate((left_chains, right_chains)):
-        sizes = chain_sizes[:, side].astype(np.int64)
-        starts = np.zeros_like(sizes)
-        np.cumsum(sizes[:-1], out=starts[1:])
-        index = np.repeat(base - starts, sizes) + np.arange(sizes.sum())
-        vertices.append(buffer[index])
-        segments.append(np.repeat(np.arange(num_segments), sizes))
-    return np.concatenate(vertices), np.concatenate(segments)
+    left_chains, right_chains, chain_sizes = chains
+    point_starts = cp.zeros((segment_z.size + 1,), dtype=cp.int64)
+    cp.cumsum(chain_sizes.sum(axis=1), out=point_starts[1:])
+    num_points = int(point_starts[-1])
+    points = cp.empty((num_points, 3), dtype=left_chains.dtype)
+    point_labels = cp.empty((num_points,), dtype=cp.int32)
+    if segment_z.size > 0:
+        _get_gather_chains_kernel()(
+            left_chains,
+            right_chains,
+            chain_sizes,
+            cp.asarray(segment_offsets),
+            point_starts,
+            cp.asarray(segment_z, dtype=left_chains.dtype),
+            cp.asarray(segment_label, dtype=cp.int32),
+            points,
+            point_labels,
+            size=segment_z.size,
+        )
+    return points, point_labels
 
 
 def _convex_hull_candidates_3d(
     row_first, row_last, offsets, num_rows, bbox, bbox_host, max_label
 ):
-    """Candidate vertices of the convex hull of each 3D region (host arrays).
+    """Candidate vertices of the convex hull of each 3D region.
 
     The hull of a region's diamond points is the hull of the diamond points
     of each row's first and last voxel. In doubled coordinates these lie in
@@ -705,7 +745,8 @@ def _convex_hull_candidates_3d(
     planes of a label with ``centers_only``, on merged row extents).
 
     Returns the points, as (z, y, x) in doubled coordinates relative to the
-    bounding box, sorted by label, and the offsets of each label's points.
+    bounding box, grouped by label, and the offsets of each label's points
+    (on the device).
     """
     shapes = np.maximum(bbox_host[:, 3:] - bbox_host[:, :3], 0)
     depth, height = shapes[:, 0], shapes[:, 1]
@@ -714,7 +755,7 @@ def _convex_hull_candidates_3d(
     labels = np.arange(max_label)
 
     def planes(num_planes):
-        # label, plane index and first row of each plane of each label
+        # label and plane index of each plane of each label
         plane_label = np.repeat(labels, num_planes)
         starts = np.zeros_like(num_planes)
         np.cumsum(num_planes[:-1], out=starts[1:])
@@ -733,9 +774,9 @@ def _convex_hull_candidates_3d(
         num_rows,
         plane.size,
     )
-    yx, segment = _gather_chain_vertices(chains, segment_offsets)
-    points = [np.column_stack((2 * plane[segment], yx))]
-    point_labels = [plane_label[segment]]
+    points, point_labels = _gather_chain_vertices(
+        chains, segment_offsets, 2 * plane, plane_label
+    )
 
     # planes between them (and before the first and after the last):
     # z = 2 * m - 1 for merged plane m
@@ -768,16 +809,16 @@ def _convex_hull_candidates_3d(
         plane.size,
         centers_only=True,
     )
-    yx, segment = _gather_chain_vertices(chains, segment_offsets)
-    points.append(np.column_stack((2 * plane[segment] - 1, yx)))
-    point_labels.append(plane_label[segment])
+    merged_points, merged_point_labels = _gather_chain_vertices(
+        chains, segment_offsets, 2 * plane - 1, plane_label
+    )
 
-    points = np.concatenate(points)
-    point_labels = np.concatenate(point_labels)
-    order = np.argsort(point_labels, kind="stable")
-    point_offsets = np.zeros((max_label + 1,), dtype=np.int64)
-    np.cumsum(
-        np.bincount(point_labels, minlength=max_label), out=point_offsets[1:]
+    points = cp.concatenate((points, merged_points))
+    point_labels = cp.concatenate((point_labels, merged_point_labels))
+    order = cp.argsort(point_labels)
+    point_offsets = cp.zeros((max_label + 1,), dtype=cp.int64)
+    cp.cumsum(
+        cp.bincount(point_labels, minlength=max_label), out=point_offsets[1:]
     )
     return points[order], point_offsets
 
@@ -847,6 +888,83 @@ def _get_hull_rows_3d_kernel():
     )
 
 
+@cp.memoize(for_each_device=True)
+def _get_feret_diameter_max_points_kernel(ndim):
+    """Kernel computing the largest distance between each label's points.
+
+    One warp per label; each lane takes every 32nd point and its distances to
+    all later points of the label. The points are in doubled coordinates,
+    and the distances are scaled by half the spacing.
+    """
+    load = "".join(
+        f"""
+        E p{d} = points[{ndim} * (start + p) + {d}];"""
+        for d in range(ndim)
+    )
+    distance = "".join(
+        f"""
+          double t{d} = static_cast<double>(q_point[{d}] - p{d})
+                        * half_spacing{d};
+          d2 += t{d} * t{d};"""
+        for d in range(ndim)
+    )
+    source = f"""
+      long long l = i / 32;
+      int lane = static_cast<int>(i & 31);
+      long long start = point_offsets[l];
+      long long n = point_offsets[l + 1] - start;
+      double best = 0.0;
+      for (long long p = lane; p < n; p += 32) {{{load}
+        for (long long q = p + 1; q < n; q++) {{
+          const E* q_point = &points[{ndim} * (start + q)];
+          double d2 = 0.0;{distance}
+          best = fmax(best, d2);
+        }}
+      }}
+      for (int offset = 16; offset > 0; offset >>= 1) {{
+        best = fmax(best, __shfl_xor_sync(0xffffffffu, best, offset));
+      }}
+      if (lane == 0) {{
+        feret[l] = sqrt(best);
+      }}\n"""
+    inputs = "raw E points, raw int64 point_offsets, " + ", ".join(
+        f"float64 half_spacing{d}" for d in range(ndim)
+    )
+    return cp.ElementwiseKernel(
+        inputs,
+        "raw float64 feret",
+        source,
+        name=f"cucim_feret_diameter_max_points_{ndim}d",
+    )
+
+
+def _feret_diameter_max_3d(
+    row_lo, row_hi, offsets, num_rows, bbox, bbox_host, max_label, spacing
+):
+    """Maximum Feret diameter of each 3D region, from its convex image's rows.
+
+    As in 2D (`_feret_diameter_max_2d`), scikit-image's result (the largest
+    distance between the marching-cubes vertices of the convex image at
+    level 0.5) is the largest distance between the diamond points of the
+    convex image's row ends. The candidates of `_convex_hull_candidates_3d`
+    contain all vertices of their hull and are among these points, so the
+    largest distance between them is the same. No 3D hull is needed.
+    """
+    points, point_offsets = _convex_hull_candidates_3d(
+        row_lo, row_hi, offsets, num_rows, bbox, bbox_host, max_label
+    )
+    spacing = (1.0, 1.0, 1.0) if spacing is None else spacing
+    feret = cp.empty((max_label,), dtype=cp.float64)
+    _get_feret_diameter_max_points_kernel(3)(
+        points,
+        point_offsets,
+        *(0.5 * float(s) for s in spacing),
+        feret,
+        size=32 * max_label,
+    )
+    return feret
+
+
 def _convex_hull_rows_3d(
     label_image, row_first, row_last, offsets, num_rows, bbox, max_label
 ):
@@ -865,6 +983,8 @@ def _convex_hull_rows_3d(
     points, point_offsets = _convex_hull_candidates_3d(
         row_first, row_last, offsets, num_rows, bbox, bbox_host, max_label
     )
+    points = cp.asnumpy(points)
+    point_offsets = cp.asnumpy(point_offsets)
     # the offsets of each label's rows, on the host
     shapes = np.maximum(bbox_host[:, 3:] - bbox_host[:, :3], 0)
     row_offsets_host = np.zeros((max_label + 1,), dtype=np.int64)
@@ -1026,12 +1146,11 @@ def _regionprops_convex(
     writes "area_convex" to props_dict if `compute_area`
     writes "feret_diameter_max" to props_dict if `compute_feret`
 
-    In 2D and 3D, the properties are computed for all labels at once from
+    In 2D and 3D, all properties are computed for all labels at once from
     the hull of each region's row extents (see `_get_hull_chains_2d_kernel`,
-    `_feret_diameter_max_2d` and `_convex_hull_rows_3d`); 3D
-    feret_diameter_max still takes one convex image per label. In other
-    dimensions, all properties are computed from one convex image per label
-    (`regionprops_image`).
+    `_feret_diameter_max_2d`, `_convex_hull_rows_3d` and
+    `_feret_diameter_max_3d`). In other dimensions, they are computed from
+    one convex image per label (`regionprops_image`).
 
     Parameters
     ----------
@@ -1074,10 +1193,15 @@ def _regionprops_convex(
                 row_lo, row_hi, offsets, num_rows, max_label, spacing
             )
         elif compute_feret:
-            regionprops_feret_diameter_max(
-                _convex_images(row_lo, row_hi, offsets, bbox, max_label),
-                spacing=spacing,
-                props_dict=props_dict,
+            props_dict["feret_diameter_max"] = _feret_diameter_max_3d(
+                row_lo,
+                row_hi,
+                offsets,
+                num_rows,
+                bbox,
+                cp.asnumpy(bbox).astype(np.int64),
+                max_label,
+                spacing,
             )
         return props_dict
 
