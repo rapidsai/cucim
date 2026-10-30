@@ -1,14 +1,19 @@
-# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION.
 # SPDX-License-Identifier: Apache-2.0
+
 schema_version: 1
 
 context:
-  version: ${{ env.get('RAPIDS_PACKAGE_VERSION') | lstrip('v') }}
-  py_version: ${{ env.get('CONDA_PY') }}
-  py_abi_min: ${{ '.' | join([py_version[0], py_version[1:]]) }}
-  cuda_version: ${{ '.'.join(environ['RAPIDS_CUDA_VERSION'] | split('.')[:2]) }}
-  cuda_major: ${{ cuda_version.split('.')[0] }}
-  datetime_string: ${{ env.get("RAPIDS_DATETIME_STRING") }}
+  version: ${{ env.get("RAPIDS_PACKAGE_VERSION") }}
+  minor_version: ${{ (version | split("."))[:2] | join(".") }}
+  cuda_version: ${{ (env.get("RAPIDS_CUDA_VERSION") | split("."))[:2] | join(".") }}
+  cuda_major: '${{ (env.get("RAPIDS_CUDA_VERSION") | split("."))[0] }}'
+  datetime_string: '${{ env.get("RAPIDS_DATETIME_STRING") }}'
+  py_abi_min: ${{ env.get("RAPIDS_PY_VERSION") }}
+  py_buildstring: ${{ py_abi_min | version_to_buildstring }}
+  py_runtime_latest: "3.14"
+  head_rev: ${{ git.head_rev(".")[:8] }}
+  linux64: ${{ linux and x86_64 }}
 
 package:
   name: cucim
@@ -18,36 +23,62 @@ source:
   path: ../../..
 
 build:
-  number: ${{ GIT_DESCRIBE_NUMBER }}
-  string: cuda${{ cuda_major }}_cp${{ py_version }}_abi3_${{ datetime_string }}_gh${{ GIT_DESCRIBE_HASH }}_gn${{ GIT_DESCRIBE_NUMBER }}_ph${{ PKG_HASH }}
+  python:
+    version_independent: true
+  string: cuda${{ cuda_major }}_cp${{ py_buildstring }}_abi3_${{ datetime_string }}_gh${{ head_rev }}_h${{ hash }}
+  dynamic_linking:
+    overlinking_behavior: error
+  prefix_detection:
+    ignore:
+      - lib/libcucim.so
+      - lib/libcucim.so.*
+      - lib/cucim.*.so
   script:
+    content: |
+      CUCIM_BUILD_TYPE=${CUCIM_BUILD_TYPE:-release}
+      LD_LIBRARY_PATH=${LD_LIBRARY_PATH:-}
+
+      set -euo pipefail
+
+      # CUDA needs to include $PREFIX/include as system include path
+      export CUDAFLAGS="-isystem $BUILD_PREFIX/include -isystem $PREFIX/include "
+      export LD_LIBRARY_PATH="$BUILD_PREFIX/lib:$PREFIX/lib:$LD_LIBRARY_PATH"
+
+      ./run build_local cucim "${CUCIM_BUILD_TYPE}"
+
+      cp -P python/install/lib/* python/cucim/src/cucim/clara/
+
+      pushd python/cucim
+
+      python -m pip install --config-settings rapidsai.disable-cuda=true . -vv
+
+      popd
     secrets:
       - AWS_ACCESS_KEY_ID
       - AWS_SECRET_ACCESS_KEY
       - AWS_SESSION_TOKEN
-      - CMAKE_C_COMPILER_LAUNCHER
-      - CMAKE_CUDA_COMPILER_LAUNCHER
-      - CMAKE_CXX_COMPILER_LAUNCHER
-      - CMAKE_GENERATOR
-      - PARALLEL_LEVEL
-      - SCCACHE_BUCKET
-      - SCCACHE_IDLE_TIMEOUT
-      - SCCACHE_REGION
-      - SCCACHE_S3_USE_SSL
-      - SCCACHE_S3_NO_CREDENTIALS
-  python:
-    version_independent: true
+    env:
+      CMAKE_C_COMPILER_LAUNCHER: ${{ env.get("CMAKE_C_COMPILER_LAUNCHER") }}
+      CMAKE_CUDA_COMPILER_LAUNCHER: ${{ env.get("CMAKE_CUDA_COMPILER_LAUNCHER") }}
+      CMAKE_CXX_COMPILER_LAUNCHER: ${{ env.get("CMAKE_CXX_COMPILER_LAUNCHER") }}
+      CMAKE_GENERATOR: ${{ env.get("CMAKE_GENERATOR") }}
+      SCCACHE_BUCKET: ${{ env.get("SCCACHE_BUCKET") }}
+      SCCACHE_IDLE_TIMEOUT: ${{ env.get("SCCACHE_IDLE_TIMEOUT") }}
+      SCCACHE_REGION: ${{ env.get("SCCACHE_REGION") }}
+      SCCACHE_S3_USE_SSL: ${{ env.get("SCCACHE_S3_USE_SSL") }}
+      SCCACHE_S3_NO_CREDENTIALS: ${{ env.get("SCCACHE_S3_NO_CREDENTIALS") }}
+      SCCACHE_S3_KEY_PREFIX: cucim/${{ env.get("RAPIDS_CONDA_ARCH") }}/cuda${{ cuda_major }}
 
 requirements:
   build:
     - ${{ compiler("c") }}
     - ${{ compiler("cxx") }}
-    - ${{ compiler('cuda') }}
+    - ${{ compiler("cuda") }}
+    - ${{ stdlib("c") }}
     - cuda-version =${{ cuda_version }}
     - cmake ${{ cmake_version }}
     - make
     - ninja
-    - ${{ stdlib("c") }}
   host:
     - click
     - cuda-version =${{ cuda_version }}
@@ -59,33 +90,36 @@ requirements:
     - python-abi3 ${{ py_abi_min }}.*
     - python-gil
     - pip
-    - rapids-build-backend >=0.4.0,<0.5.0
-    - scikit-image >=0.23.2,<0.27.0
+    - rapids-build-backend >=0.4.0,<0.5.0.dev0
+    - scikit-image >=0.23.2,<0.27.0a0
     - scipy >=1.6
     - setuptools >=80.9.0
   run:
-    - ${{ pin_compatible('cuda-version', upper_bound='x', lower_bound='x') }}
-    - numpy >=2.0,<3.0
+    - ${{ pin_compatible("cuda-version", upper_bound="x", lower_bound="x") }}
     - click
     - cupy >=14.0.1,!=14.1.0
     - lazy_loader >=0.1
     - libcucim =${{ version }}
+    - numpy >=2.0,<3.0a0
     - python
     - python-gil
-    - scikit-image >=0.23.2,<0.27.0
+    - scikit-image >=0.23.2,<0.27.0a0
     - scipy >=1.6
-  ignore_run_exports:
-    from_package:
-      - ${{ compiler('cuda') }}
-      - cuda-cudart-dev
   run_constraints:
     - openslide-python >=1.3.0
+  ignore_run_exports:
+    by_name:
+      - cuda-cudart
+      - cuda-version
 
 tests:
   requirements:
     - cuda-version =${{ cuda_version }}
-  imports:
-    - cucim
+  - python:
+      imports:
+        - cucim
+      python_version: ${{ py_runtime_latest }}.*
+      pip_check: False
 
 about:
   summary: cucim Python package
