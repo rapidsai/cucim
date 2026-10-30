@@ -132,7 +132,7 @@ Note that the environment files in `./conda/environments/` will pull in GCC and 
 If you want to change the version of GCC or CUDA, please update the environment file before executing the following commands.
 
 ```bash
-conda env create -n cucim -f ./conda/environments/all_cuda-133_arch-$(uname -m).yaml
+conda env create -n cucim -f ./conda/environments/all_cuda-134_arch-$(uname -m).yaml
 # activate the environment
 conda activate cucim
 ```
@@ -156,13 +156,13 @@ export CUDACXX=$CONDA_PREFIX/pkgs/cuda-toolkit/bin/nvcc
 
 The build command will create the following files:
 - `./install/lib/libcucim*`
-- `./python/install/lib/_cucim.cpython-*-x86_64-linux-gnu.so`
+- `./python/install/lib/_cucim.abi3.so`
 - `./cpp/plugins/cucim.kit.cuslide/install/lib/cucim.kit.cuslide@*.so`
 - `./cpp/plugins/cucim.kit.cumed/install/lib/cucim.kit.cumed@*.so`
 
 And, it will copy the built library files to `python/cucim/src/cucim/clara/` folder:
 - `libcucim.so.*`
-- `_cucim.cpython-*-x86_64-linux-gnu.so`
+- `_cucim.abi3.so`
 - `cucim.kit.cuslide@*.so`
 - `cucim.kit.cumed@*.so`
 
@@ -189,14 +189,14 @@ Once it is built, the subsequent build doesn't take much time.
 
 However, if a build option or dependent packages are updated, the build can be failed (due to CMakeCache.txt or existing build files). In that case, you can remove use the following commands to remove CMakeCache.txt or build folder, then build it again.
 
-1) Remove CMakeCache.txt for libcucim, cuslide/cumed plugin, and the python wrapper (pybind11).
+1) Remove CMakeCache.txt for libcucim, cuslide/cumed plugin, and the Python wrapper (nanobind).
 
 ```bash
 # this command wouldn't remove already downloaded dependency so faster than `clean` subcommand
 ./run build_local clean_cache
 ```
 
-2) Remove `build-*` and `install` folder for libcucim, cuslide/cumed plugin, and the python wrapper (pybind11).
+2) Remove `build-*` and `install` folder for libcucim, cuslide/cumed plugin, and the Python wrapper (nanobind).
 
 ```bash
 # this command is for clean build
