@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2022-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 import cupy as cp
@@ -178,6 +178,7 @@ def distance_transform_edt(
         return_distances=return_distances,
         return_indices=return_indices,
         block_params=block_params,
+        float64_distances=float64_distances,
         distances=distances,
         indices=indices,
     )

@@ -188,6 +188,37 @@ def test_distance_transform_inplace_distance(ndim, sampling):
 
 
 @pytest.mark.parametrize("ndim", [2, 3])
+@pytest.mark.parametrize("sampling", [None, "iso", "aniso"])
+@pytest.mark.parametrize("inplace", [False, True])
+def test_distance_transform_edt_float64_distances(ndim, sampling, inplace):
+    img = binary_image((40,) * ndim, pct_true=80)
+    if sampling == "iso":
+        sampling = (1.5,) * ndim
+    elif sampling == "aniso":
+        sampling = tuple(range(1, ndim + 1))
+    kwargs = dict(sampling=sampling, float64_distances=True)
+    if inplace:
+        distances = cp.empty(img.shape, dtype=cp.float64)
+        distance_transform_edt(img, distances=distances, **kwargs)
+    else:
+        distances = distance_transform_edt(img, **kwargs)
+    assert distances.dtype == cp.float64
+    expected = ndi_cpu.distance_transform_edt(
+        cp.asnumpy(img), sampling=sampling
+    )
+    # the distances are exact to double precision unless there is a spacing
+    # (the comparisons in the kernels with a spacing are in float)
+    rtol = 1e-12 if sampling is None else 1e-6
+    cp.testing.assert_allclose(distances, expected, rtol=rtol)
+
+
+@pytest.mark.parametrize("ndim", [2, 3])
+def test_distance_transform_float32_distances_default(ndim):
+    img = binary_image((40,) * ndim, pct_true=80)
+    assert distance_transform_edt(img).dtype == cp.float32
+
+
+@pytest.mark.parametrize("ndim", [2, 3])
 def test_distance_transform_inplace_distance_errors(ndim):
     img = binary_image((32,) * ndim, pct_true=80)
 
