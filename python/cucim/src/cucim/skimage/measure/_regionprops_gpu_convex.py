@@ -181,12 +181,95 @@ _hull_2d_includes = (
     _warp_includes
     + r"""
 // z component of (a - o) x (b - o), with y as the first axis: > 0 if
-// o -> a -> b turns towards larger x (to the right when y points down)
-__device__ __forceinline__ long long cucim_cross(
-    long long oy, long long ox, long long ay, long long ax,
-    long long by, long long bx) {
-  return (ay - oy) * (bx - ox) - (ax - ox) * (by - oy);
+// o -> a -> b turns towards larger x (to the right when y points down). The
+// differences are taken in T (the doubled coordinates fit in T, see
+// _get_row_extent_dtype) and only the products in 64 bits.
+template <typename T>
+__device__ __forceinline__ long long cucim_cross(T oy, T ox, T ay, T ax,
+                                                 T by, T bx) {
+  return static_cast<long long>(ay - oy) * (bx - ox)
+         - static_cast<long long>(ax - ox) * (by - oy);
 }
+
+// Andrew's monotone chain over points with increasing y. The last two
+// vertices are kept in registers, so that a point that does not remove any
+// vertex needs no read of the vertices already stored.
+template <typename T>
+struct cucim_hull_chain {
+  T* v;  // the vertices, as (y, x) pairs
+  int n;
+  T y0, x0;  // the vertex before the last (if n >= 2)
+  T y1, x1;  // the last vertex (if n >= 1)
+
+  __device__ cucim_hull_chain(T* vertices) : v(vertices), n(0) {}
+
+  // side = 1 keeps the chain convex towards smaller x (left chain), side =
+  // -1 towards larger x (right chain). Collinear vertices are removed.
+  __device__ __forceinline__ void push(T y, T x, int side) {
+    while (n >= 2 && side * cucim_cross(y0, x0, y1, x1, y, x) <= 0) {
+      n--;
+      y1 = y0;
+      x1 = x0;
+      if (n >= 2) {
+        y0 = v[2 * n - 4];
+        x0 = v[2 * n - 3];
+      }
+    }
+    v[2 * n] = y;
+    v[2 * n + 1] = x;
+    n++;
+    y0 = y1;
+    x0 = x1;
+    y1 = y;
+    x1 = x;
+  }
+};
+
+// Adds candidate points (with increasing y) to a cucim_hull_chain, skipping
+// those that are not a strict turn towards the chain's side with the
+// previous and next candidate: such a point lies on or inside the triangle
+// of its two neighbors and a point on the other side of the hull at the same
+// y, so it is not a vertex. On straight or staircase boundaries this skips
+// most points, and with them the vertex removals of the chain, which would
+// read vertices back from memory. The first and last points are always
+// added.
+template <typename T>
+struct cucim_hull_candidates {
+  cucim_hull_chain<T> chain;
+  int side;
+  int m;  // number of candidates so far (counting up to 2)
+  T ay, ax;  // the candidate before the pending one
+  T by, bx;  // the pending candidate
+
+  __device__ cucim_hull_candidates(T* vertices, int chain_side)
+      : chain(vertices), side(chain_side), m(0) {}
+
+  __device__ __forceinline__ void add(T y, T x) {
+    if (m == 0) {
+      chain.push(y, x, side);
+      ay = y;
+      ax = x;
+      m = 1;
+      return;
+    }
+    if (m == 2 && side * cucim_cross(ay, ax, by, bx, y, x) > 0) {
+      chain.push(by, bx, side);
+    }
+    if (m == 2) {
+      ay = by;
+      ax = bx;
+    }
+    by = y;
+    bx = x;
+    m = 2;
+  }
+
+  __device__ __forceinline__ void finish() {
+    if (m == 2) {
+      chain.push(by, bx, side);
+    }
+  }
+};
 
 // floor(a / b) and ceil(a / b) for b > 0
 __device__ __forceinline__ long long cucim_floor_div(long long a,
@@ -223,6 +306,20 @@ def _get_hull_chains_2d_kernel():
     pass, without sorting. Collinear points are dropped, and the arithmetic
     is exact.
 
+    A thread works alone on its label, so it waits for every memory read
+    and every dependent instruction. To keep its work short:
+    - A point between two rows is skipped if the two rows' ends differ by
+      at most 1 (it then lies on or inside the segment between their
+      points).
+    - A point that is not a strict turn with its neighboring points is not
+      a vertex, and is skipped before it reaches the chain
+      (``cucim_hull_candidates``). On straight and staircase boundaries
+      this skips most points, and with them most vertex removals.
+    - The chain keeps its last two vertices in registers
+      (``cucim_hull_chain``), so that it reads stored vertices back only
+      when it removes one.
+    - Coordinate differences are taken in 32 bits when the coordinates fit.
+
     Each chain runs from the top line (y = -1) to the bottom line (y = 2h - 1,
     for a bounding box of h rows), with strictly increasing y. A label's
     chains have room for 2h + 1 vertices each, at ``2 * offsets[label - 1] +
@@ -232,54 +329,47 @@ def _get_hull_chains_2d_kernel():
       long long r0 = offsets[i];
       long long h = offsets[i + 1] - r0;
       long long base = 2 * r0 + i;
-      E* left = &left_chains[2 * base];
-      E* right = &right_chains[2 * base];
-      int n_left = 0;
-      int n_right = 0;
-      for (long long y = -1; y < 2 * h; y++) {
-        long long x_min = cuda::std::numeric_limits<long long>::max();
-        long long x_max = cuda::std::numeric_limits<long long>::min();
-        if ((y & 1) == 0) {
-          E first = row_first[r0 + y / 2];
-          E last = row_last[r0 + y / 2];
-          if (first <= last) {
-            x_min = 2 * static_cast<long long>(first) - 1;
-            x_max = 2 * static_cast<long long>(last) + 1;
+      cucim_hull_candidates<E> left(&left_chains[2 * base], 1);
+      cucim_hull_candidates<E> right(&right_chains[2 * base], -1);
+      // extents of the previous row (none before the first row)
+      E prev_first = 1;
+      E prev_last = 0;
+      // row h (after the last row) is empty: only the line above it is added
+      for (E k = 0; k <= h; k++) {
+        E first = k < h ? row_first[r0 + k] : 1;
+        E last = k < h ? row_last[r0 + k] : 0;
+        // the line between rows k - 1 and k (y = 2k - 1). If both rows have
+        // pixels and their ends differ by at most 1, its point lies on or
+        // inside the segment between the two rows' points, so it is skipped.
+        bool prev_nonempty = prev_first <= prev_last;
+        bool nonempty = first <= last;
+        if (!(prev_nonempty && nonempty)) {
+          if (prev_nonempty || nonempty) {
+            E x_min = nonempty ? first : prev_first;
+            E x_max = nonempty ? last : prev_last;
+            left.add(2 * k - 1, 2 * x_min);
+            right.add(2 * k - 1, 2 * x_max);
           }
         } else {
-          // the line between rows (y - 1) / 2 and (y + 1) / 2
-          for (long long k = (y - 1) / 2; k <= (y + 1) / 2; k++) {
-            if (k < 0 || k >= h) { continue; }
-            E first = row_first[r0 + k];
-            E last = row_last[r0 + k];
-            if (first <= last) {
-              x_min = min(x_min, 2 * static_cast<long long>(first));
-              x_max = max(x_max, 2 * static_cast<long long>(last));
-            }
+          if (abs(first - prev_first) > 1) {
+            left.add(2 * k - 1, 2 * min(prev_first, first));
+          }
+          if (abs(last - prev_last) > 1) {
+            right.add(2 * k - 1, 2 * max(prev_last, last));
           }
         }
-        if (x_min > x_max) { continue; }
-        while (n_left >= 2
-               && cucim_cross(left[2 * n_left - 4], left[2 * n_left - 3],
-                              left[2 * n_left - 2], left[2 * n_left - 1],
-                              y, x_min) <= 0) {
-          n_left--;
+        // row k (y = 2k)
+        if (nonempty) {
+          left.add(2 * k, 2 * first - 1);
+          right.add(2 * k, 2 * last + 1);
         }
-        left[2 * n_left] = y;
-        left[2 * n_left + 1] = x_min;
-        n_left++;
-        while (n_right >= 2
-               && cucim_cross(right[2 * n_right - 4], right[2 * n_right - 3],
-                              right[2 * n_right - 2], right[2 * n_right - 1],
-                              y, x_max) >= 0) {
-          n_right--;
-        }
-        right[2 * n_right] = y;
-        right[2 * n_right + 1] = x_max;
-        n_right++;
+        prev_first = first;
+        prev_last = last;
       }
-      chain_sizes[2 * i] = n_left;
-      chain_sizes[2 * i + 1] = n_right;\n"""
+      left.finish();
+      right.finish();
+      chain_sizes[2 * i] = left.chain.n;
+      chain_sizes[2 * i + 1] = right.chain.n;\n"""
     inputs = "raw E row_first, raw E row_last, raw int64 offsets"
     outputs = "raw E left_chains, raw E right_chains, raw int32 chain_sizes"
     return cp.ElementwiseKernel(
