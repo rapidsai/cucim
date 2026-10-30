@@ -492,8 +492,9 @@ def test_pba2d_determine_padding(shape, block_params, expected):
         (64, 4096),  # processed transposed
         (300, 1000),  # processed transposed
         (1024, 2048),  # processed transposed
+        (2048, 4096),  # processed transposed
         (1024, 1500),
-        (2048, 4096),  # too large to be processed transposed
+        (3584, 4096),  # too large to be processed transposed
     ],
 )
 @pytest.mark.parametrize("sampling", [None, (2.25, 0.85)])

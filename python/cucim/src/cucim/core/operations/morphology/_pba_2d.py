@@ -11,11 +11,14 @@ from cucim.skimage._vendored import pad
 from cucim.skimage._vendored._ndimage_util import _get_inttype
 
 # An image is processed transposed if its first axis has at most
-# _TRANSPOSE_MAX_SIZE entries and its second axis is at least _TRANSPOSE_RATIO
-# times longer. For larger sizes there are enough threads in either orientation
-# and reading the transposed views is slower.
-_TRANSPOSE_MAX_SIZE = 1024
+# _TRANSPOSE_MAX_SIZE entries, its second axis is at least _TRANSPOSE_RATIO
+# times longer and it has at most _TRANSPOSE_MAX_PIXELS pixels. For larger
+# sizes there are enough threads in either orientation, and the strided reads
+# of the transposed view of the image (a cost that grows with the number of
+# pixels) are slower.
+_TRANSPOSE_MAX_SIZE = 3072
 _TRANSPOSE_RATIO = 2
+_TRANSPOSE_MAX_PIXELS = 2**26
 
 pba2d_defines_template = """
 
@@ -359,6 +362,7 @@ def _pba_2d(
         and not return_indices
         and arr.shape[0] <= _TRANSPOSE_MAX_SIZE
         and arr.shape[1] >= _TRANSPOSE_RATIO * arr.shape[0]
+        and arr.shape[0] * arr.shape[1] <= _TRANSPOSE_MAX_PIXELS
     )
     if transposed:
         arr = arr.T
