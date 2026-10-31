@@ -862,9 +862,10 @@ def _assemble_contours(segments, segment_keys=None):
         packed = _assemble_on_device(segments, segment_keys)
         if packed is not None:
             points, offsets = packed
+            # Python ints are faster to slice with than NumPy scalars
+            offsets = offsets.tolist()
             return [
-                points[start:stop]
-                for start, stop in zip(offsets[:-1], offsets[1:])
+                points[start:stop] for start, stop in zip(offsets, offsets[1:])
             ]
         return _skimage_cpp.assemble_contours(
             cp.asnumpy(segments), cp.asnumpy(segment_keys)
