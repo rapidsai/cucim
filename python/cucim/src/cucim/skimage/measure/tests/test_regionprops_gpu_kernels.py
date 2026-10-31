@@ -2162,6 +2162,7 @@ _FERET_CALIPER_PROPS = [
     "feret_diameter_min_perpendicular",
     "feret_angle_max",
     "feret_angle_min",
+    "perimeter_convex",
 ]
 
 
@@ -2201,12 +2202,14 @@ def _feret_calipers_reference(image, spacing):
         perps.append(t.max() - t.min())
     widths = np.array(widths)
     ties = np.nonzero(widths <= widths.min() * (1 + 1e-12))[0]
+    # (the "area" of a 2D ConvexHull is its perimeter)
     return (
         dmax,
         widths.min(),
         {perps[k] for k in ties},
         angles_max,
         {angles[k] for k in ties},
+        ConvexHull(points).area,
     )
 
 
@@ -2224,8 +2227,8 @@ def test_feret_calipers_2d(kind, spacing):
     labels_cpu = cp.asnumpy(labels)
     for region in measure_cpu.regionprops(labels_cpu):
         lab = region.label - 1
-        dmax, wmin, perps, angles_max, angles_min = _feret_calipers_reference(
-            region.image, spacing
+        dmax, wmin, perps, angles_max, angles_min, perimeter = (
+            _feret_calipers_reference(region.image, spacing)
         )
         assert_allclose(result["feret_diameter_max"][lab], dmax, rtol=1e-10)
         assert_allclose(result["feret_diameter_min"][lab], wmin, rtol=1e-10)
@@ -2236,12 +2239,14 @@ def test_feret_calipers_2d(kind, spacing):
         )
         assert round(result["feret_angle_max"][lab], 8) in angles_max
         assert round(result["feret_angle_min"][lab], 8) in angles_min
+        assert_allclose(result["perimeter_convex"][lab], perimeter, rtol=1e-10)
     # absent labels: 0 diameters and NaN angles
     absent = np.setdiff1d(
         np.arange(1, int(labels_cpu.max()) + 1), np.unique(labels_cpu)
     )
     for lab in absent - 1:
         assert result["feret_diameter_min"][lab] == 0
+        assert result["perimeter_convex"][lab] == 0
         assert np.isnan(result["feret_angle_max"][lab])
 
 

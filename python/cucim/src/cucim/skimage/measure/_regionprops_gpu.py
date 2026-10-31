@@ -129,6 +129,8 @@ PROPS_GPU_EXTRA = {
     "feret_diameter_min_perpendicular": "feret_diameter_min_perpendicular",
     "feret_angle_max": "feret_angle_max",
     "feret_angle_min": "feret_angle_min",
+    # the perimeter of the convex hull, as DIPlib's ConvexPerimeter
+    "perimeter_convex": "perimeter_convex",
 }
 PROPS_GPU.update(PROPS_GPU_EXTRA)
 # properties recently removed from PROPS dict (but still supported)
@@ -155,6 +157,7 @@ COL_DTYPES_EXTRA = {
     "feret_diameter_min_perpendicular": float,
     "feret_angle_max": float,
     "feret_angle_min": float,
+    "perimeter_convex": float,
 }
 
 # expand column dtypes from _regionprops to include the extra properties
@@ -237,6 +240,7 @@ ndim_2_only = {
     "feret_diameter_min_perpendicular",
     "feret_angle_max",
     "feret_angle_min",
+    "perimeter_convex",
 }
 
 # set of properties that can only be computed for 3D regions
@@ -788,6 +792,7 @@ def regionprops_dict(
             "feret_diameter_min_perpendicular",
             "feret_angle_max",
             "feret_angle_min",
+            "perimeter_convex",
         }
     )
     if (
