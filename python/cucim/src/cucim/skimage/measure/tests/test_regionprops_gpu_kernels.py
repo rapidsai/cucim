@@ -1836,6 +1836,71 @@ def _surface_area_reference(labels, spacing):
     return out
 
 
+@pytest.mark.parametrize("ndim", [2, 3])
+@pytest.mark.parametrize("kind", ["blobs", "random"])
+@pytest.mark.parametrize("spacing", [None, (0.7, 1.3, 1.1)])
+def test_oriented_bbox(ndim, kind, spacing):
+    labels = _convex_test_labels(kind, ndim)
+    if spacing is not None:
+        spacing = spacing[:ndim]
+    out = regionprops_dict(
+        labels,
+        properties=[
+            "oriented_bbox_size",
+            "oriented_bbox_center",
+            "inertia_tensor_eigenvectors",
+        ],
+        spacing=spacing,
+    )
+    size = cp.asnumpy(out["oriented_bbox_size"])
+    center = cp.asnumpy(out["oriented_bbox_center"])
+    eigvecs = cp.asnumpy(out["inertia_tensor_eigenvectors"])
+    scale = np.ones(ndim) if spacing is None else np.asarray(spacing)
+    corners = np.array(list(itertools.product((-0.5, 0.5), repeat=ndim)))
+    labels_cpu = cp.asnumpy(labels)
+    for region in measure_cpu.regionprops(labels_cpu):
+        lab = region.label - 1
+        v = eigvecs[lab]
+        # the extremes of the pixel centers along each axis, widened by the
+        # extent of one pixel
+        proj = (region.coords * scale) @ v
+        expected_size = (
+            proj.max(axis=0) - proj.min(axis=0) + np.abs(v).T @ scale
+        )
+        expected_center = v @ (0.5 * (proj.max(axis=0) + proj.min(axis=0)))
+        assert_allclose(size[lab], expected_size, rtol=1e-12)
+        assert_allclose(center[lab], expected_center, atol=1e-10)
+        # the box from center, size and eigenvectors encloses every pixel
+        # corner, and touches the extremes along each axis
+        pixel_corners = (
+            region.coords[:, np.newaxis] + corners[np.newaxis]
+        ).reshape(-1, ndim) * scale
+        local = (pixel_corners - center[lab]) @ v
+        assert_allclose(np.abs(local).max(axis=0), 0.5 * size[lab], rtol=1e-12)
+    # absent labels
+    absent = np.setdiff1d(
+        np.arange(1, int(labels_cpu.max()) + 1), np.unique(labels_cpu)
+    )
+    for lab in absent - 1:
+        assert np.all(np.isnan(size[lab])) and np.all(np.isnan(center[lab]))
+
+
+def test_oriented_bbox_rotated_rectangle():
+    # a 51 x 17 rectangle rotated by 20 degrees
+    rr, cc = np.mgrid[:80, :80]
+    theta = math.radians(20)
+    u = (rr - 40) * math.cos(theta) + (cc - 40) * math.sin(theta)
+    v = -(rr - 40) * math.sin(theta) + (cc - 40) * math.cos(theta)
+    labels = cp.asarray(((np.abs(u) <= 25) & (np.abs(v) <= 8)).astype(np.uint8))
+    out = regionprops_dict(
+        labels, properties=["oriented_bbox_size", "oriented_bbox_center"]
+    )
+    # shortest axis first; one pixel wider than the rectangle's pixel
+    # centers along each axis, up to the digitization
+    assert_allclose(out["oriented_bbox_size"][0], (17, 51), atol=0.5)
+    assert_allclose(out["oriented_bbox_center"][0], (40, 40), atol=0.1)
+
+
 def test_surface_area_weights():
     # the Crofton weights are the areas of the Voronoi cells of the 26
     # neighbor directions on the unit sphere (a direction and its opposite)
