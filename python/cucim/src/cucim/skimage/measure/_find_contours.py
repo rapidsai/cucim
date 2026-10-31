@@ -14,6 +14,11 @@ except ImportError:
 
 _PARAM_OPTIONS = ("high", "low")
 
+# The contours of fewer segments than this are put together on the host. The
+# assembly on the device has a fixed cost of about 1 ms (a dozen kernels and a
+# few synchronizations), while the host takes about 40 ns per segment.
+_GPU_ASSEMBLY_MIN_SEGMENTS = 25_000
+
 
 _KERNEL_CODE = r"""
 __device__ inline double fc_fraction(double from_value, double to_value, double level)
@@ -845,9 +850,16 @@ def _assemble_linked(segments, segment_keys):
     return cp.asnumpy(points), offsets
 
 
+def _assemble_on_device(segments, segment_keys):
+    """Packed ``(points, offsets)`` of the device assembly, if it applies."""
+    if segments.shape[0] < _GPU_ASSEMBLY_MIN_SEGMENTS:
+        return None
+    return _assemble_linked(segments, segment_keys)
+
+
 def _assemble_contours(segments, segment_keys=None):
     if _skimage_cpp is not None and segment_keys is not None:
-        packed = _assemble_linked(segments, segment_keys)
+        packed = _assemble_on_device(segments, segment_keys)
         if packed is not None:
             points, offsets = packed
             return [
@@ -866,7 +878,7 @@ def _assemble_contours_packed(segments, segment_keys=None):
             "return_packed=True requires the optional "
             "cucim.skimage C++ contour assembler"
         )
-    packed = _assemble_linked(segments, segment_keys)
+    packed = _assemble_on_device(segments, segment_keys)
     if packed is not None:
         return packed
     return _skimage_cpp.assemble_contours_packed(
