@@ -921,6 +921,37 @@ def test_moments_3d(
                 allclose(moments[:, c, 1, 1, 1], expected[prop + f"-1-1-1-{c}"])
 
 
+@pytest.mark.parametrize("ndim", [2, 3])
+@pytest.mark.parametrize("spacing", [None, (0.5, 1.5, 0.8)])
+def test_inertia_tensor_eigenvectors(ndim, spacing):
+    # the columns of inertia_tensor_eigenvectors are the eigenvectors of
+    # inertia_tensor, in the order of inertia_tensor_eigvals (descending)
+    shape = (256, 512) if ndim == 2 else (48, 64, 40)
+    labels = get_labels_nd(shape, blob_size_fraction=0.12)
+    if spacing is not None:
+        spacing = spacing[:ndim]
+    out = regionprops_dict(
+        labels,
+        properties=[
+            "inertia_tensor",
+            "inertia_tensor_eigvals",
+            "inertia_tensor_eigenvectors",
+        ],
+        spacing=spacing,
+    )
+    tensor = cp.asnumpy(out["inertia_tensor"])
+    eigvals = cp.asnumpy(out["inertia_tensor_eigvals"])
+    eigvecs = cp.asnumpy(out["inertia_tensor_eigenvectors"])
+    assert eigvecs.shape == tensor.shape
+    present = np.isfinite(eigvals).all(axis=1) & (eigvals[:, 0] > 0)
+    assert present.sum() > 10
+    for t, w, v in zip(tensor[present], eigvals[present], eigvecs[present]):
+        scale = np.abs(t).max()
+        assert_allclose(t @ v, v * w, atol=1e-9 * scale)
+        assert_allclose(v.T @ v, np.eye(ndim), atol=1e-12)
+        assert np.all(np.diff(w) <= 0)
+
+
 @pytest.mark.parametrize("spacing", [None, (0.8, 0.5, 1.2)])
 @pytest.mark.parametrize("order", [1, 2, 3])
 @pytest.mark.parametrize("shape", [(500, 400), (64, 96, 32)])
