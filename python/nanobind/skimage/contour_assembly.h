@@ -5,6 +5,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
 #include <limits>
 #include <cstdint>
@@ -389,6 +390,163 @@ inline bool trace_linked_contours(const double* segments,
         out[0] = segments[4 * current + 2];
         out[1] = segments[4 * current + 3];
         out += 2;
+    }
+    return true;
+}
+
+// Where the points of linked contours go, from the sublists of a list ranking.
+//
+// ``trace_linked_contours`` follows the links one segment at a time. On the
+// device, the segments are cut into sublists (paths of segments that end at a
+// segment that is the start of another sublist, or at the end of a contour),
+// and these are far fewer. This function orders the sublists into contours in
+// the same way, from a few numbers per sublist:
+//
+//     first[s]      first segment of sublist s
+//     length[s]     number of segments in it
+//     next_sub[s]   sublist that follows it, or -1
+//     min_id[s]     lowest segment index in it
+//     max_id[s]     highest segment index in it
+//     max_pos[s]    position of that segment in the sublist
+//
+// The output point of the segment that is at position ``j`` of sublist ``s``
+// (see ``trace_linked_contours``: the junction with the following segment, or
+// the last point of the contour) is stored at the index
+//
+//     j > cut[s] ? start[s] + (j - cut[s] - 1) : wrap[s] + j
+//
+// of the points array. ``cut[s]`` is -1 except in the sublist that holds the
+// highest numbered segment of a closed contour, where the contour is cut. The
+// first point of contour ``k`` is the ``from`` point of segment ``anchor[k]``
+// (an open contour) or of its successor (a closed one, ``closed[k]``, whose
+// anchor is the segment that closes it).
+struct ContourPlan
+{
+    std::vector<std::int64_t> offsets;
+    std::vector<std::int32_t> anchor;
+    std::vector<std::uint8_t> closed;
+    std::vector<std::int64_t> start;
+    std::vector<std::int32_t> cut;
+    std::vector<std::int64_t> wrap;
+};
+
+// Returns false if the sublists are not linked as paths and cycles.
+inline bool plan_linked_contours(const std::int32_t* first,
+                                 const std::int32_t* length,
+                                 const std::int32_t* next_sub,
+                                 const std::int32_t* min_id,
+                                 const std::int32_t* max_id,
+                                 const std::int32_t* max_pos,
+                                 std::size_t m,
+                                 ContourPlan& plan)
+{
+    std::vector<std::int32_t> pred(m, -1);
+    for (std::size_t s = 0; s < m; ++s)
+    {
+        const std::int32_t t = next_sub[s];
+        if (t < 0)
+        {
+            continue;
+        }
+        if (static_cast<std::size_t>(t) >= m || pred[t] >= 0)
+        {
+            return false;
+        }
+        pred[t] = static_cast<std::int32_t>(s);
+    }
+
+    struct Component
+    {
+        std::int32_t min_id;
+        std::int32_t head;      // first sublist of an open contour, any sublist of a closed one
+        std::int32_t cut;       // sublist with the highest segment of a closed contour
+        std::int64_t count;     // number of segments
+    };
+    std::vector<Component> components;
+    std::vector<std::uint8_t> seen(m, 0);
+    for (std::size_t s = 0; s < m; ++s)
+    {
+        if (seen[s])
+        {
+            continue;
+        }
+        std::size_t head = s;
+        bool closed = false;
+        while (pred[head] >= 0)
+        {
+            head = static_cast<std::size_t>(pred[head]);
+            if (head == s)
+            {
+                closed = true;
+                break;
+            }
+        }
+        Component component{ min_id[head], static_cast<std::int32_t>(head), -1, 0 };
+        std::size_t cut = head;
+        std::size_t current = head;
+        do
+        {
+            seen[current] = 1;
+            component.count += length[current];
+            component.min_id = std::min(component.min_id, min_id[current]);
+            if (max_id[current] > max_id[cut])
+            {
+                cut = current;
+            }
+            const std::int32_t following = next_sub[current];
+            if (following < 0)
+            {
+                break;
+            }
+            current = static_cast<std::size_t>(following);
+        } while (current != head);
+        if (closed)
+        {
+            component.cut = static_cast<std::int32_t>(cut);
+        }
+        components.push_back(component);
+    }
+    std::sort(components.begin(), components.end(),
+              [](const Component& a, const Component& b) { return a.min_id < b.min_id; });
+
+    plan.offsets.assign(1, 0);
+    plan.anchor.clear();
+    plan.closed.clear();
+    plan.start.assign(m, 0);
+    plan.cut.assign(m, -1);
+    plan.wrap.assign(m, 0);
+    for (const Component& component : components)
+    {
+        const std::int64_t base = plan.offsets.back();
+        plan.offsets.push_back(base + component.count + 1);
+        std::int64_t position = base + 1;
+        if (component.cut < 0)
+        {
+            for (std::int32_t s = component.head; s >= 0; s = next_sub[s])
+            {
+                plan.start[s] = position;
+                position += length[s];
+            }
+            plan.anchor.push_back(first[component.head]);
+            plan.closed.push_back(0);
+        }
+        else
+        {
+            const std::int32_t cut = component.cut;
+            // The segments after the highest one come first, then the other
+            // sublists around the loop, then the segments up to the highest one.
+            plan.cut[cut] = max_pos[cut];
+            plan.start[cut] = position;
+            position += length[cut] - 1 - max_pos[cut];
+            for (std::int32_t s = next_sub[cut]; s != cut; s = next_sub[s])
+            {
+                plan.start[s] = position;
+                position += length[s];
+            }
+            plan.wrap[cut] = position;
+            plan.anchor.push_back(max_id[cut]);
+            plan.closed.push_back(1);
+        }
     }
     return true;
 }
