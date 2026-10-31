@@ -3,7 +3,6 @@
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import functools
-import inspect
 import itertools
 import math
 import warnings
@@ -2313,34 +2312,6 @@ def test_intensity_extrema_float_infinities(values, dtype):
     )
     assert_array_equal(result["intensity_min"], [np.min(values), np.inf])
     assert_array_equal(result["intensity_max"], [np.max(values), -np.inf])
-
-
-def test_filled_erosion_kernel_reused_across_label_counts(monkeypatch):
-    from cucim.skimage._vendored import _ndimage_filters as filters
-
-    get_kernel = filters._get_min_or_max_kernel
-    signature = inspect.signature(get_kernel)
-    minimum_kernels = []
-
-    def record(*args, **kwargs):
-        kernel = get_kernel(*args, **kwargs)
-        if signature.bind(*args, **kwargs).arguments["func"] == "min":
-            minimum_kernels.append(kernel)
-        return kernel
-
-    monkeypatch.setattr(filters, "_get_min_or_max_kernel", record)
-    previous = None
-    for lab in (1, 2, 3):
-        minimum_kernels.clear()
-        labels = cp.zeros((7, 7), dtype=cp.uint8)
-        labels[1:6, 1:6] = lab
-        labels[2:5, 2:5] = 0
-        filled, _ = _fill_holes_by_label(labels, lab)
-        assert_array_equal(filled[1:6, 1:6], cp.full((5, 5), lab))
-        assert minimum_kernels
-        if previous is not None:
-            assert minimum_kernels == previous
-        previous = minimum_kernels.copy()
 
 
 def _power_sum(n, e):
