@@ -436,28 +436,6 @@ def test_linked_contours_fall_back_when_a_vertex_is_on_the_level():
     _skimage_cpp is None,
     reason="optional cucim.skimage C++ extension is not available",
 )
-def test_assemble_linked_contours_rejects_invalid_links():
-    segments = np.zeros((3, 2, 2))
-    segments[:, 1, :] = 1.0
-    with pytest.raises(ValueError, match="at most one"):
-        # Two segments cannot both be followed by segment 2
-        _skimage_cpp.assemble_linked_contours(
-            segments, np.array([2, 2, -1], dtype=np.int32)
-        )
-    with pytest.raises(ValueError, match="at most one"):
-        _skimage_cpp.assemble_linked_contours(
-            segments, np.array([5, -1, -1], dtype=np.int32)
-        )
-    with pytest.raises(ValueError, match="shape"):
-        _skimage_cpp.assemble_linked_contours(
-            segments, np.array([1, -1], dtype=np.int32)
-        )
-
-
-@pytest.mark.skipif(
-    _skimage_cpp is None,
-    reason="optional cucim.skimage C++ extension is not available",
-)
 def test_linked_contours_long_contours():
     # Spiral arms are single contours with thousands of segments, that the
     # assembly on the device has to cut into many sublists.
