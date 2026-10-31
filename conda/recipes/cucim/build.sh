@@ -1,5 +1,5 @@
 #!/bin/bash
-# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 set -e -u -o pipefail
@@ -19,6 +19,8 @@ export LD_LIBRARY_PATH="$BUILD_PREFIX/lib:$PREFIX/lib:$LD_LIBRARY_PATH"
 ./run build_local cucim "${CUCIM_BUILD_TYPE}"
 
 cp -P python/install/lib/* python/cucim/src/cucim/clara/
+# The compiled cucim.skimage helpers belong to the cucim.skimage package
+mv python/cucim/src/cucim/clara/_cucim_skimage_cpp_ext*.so python/cucim/src/cucim/skimage/
 
 pushd python/cucim
 

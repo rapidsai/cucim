@@ -17,9 +17,18 @@ file(STRINGS ${CMAKE_CURRENT_LIST_DIR}/../VERSION VERSION)
 # strip alpha version info
 string(REGEX REPLACE "a.*$" "" VERSION ${VERSION})
 
+# Fetch rapids-cmake (used to obtain the RAPIDS-pinned CCCL version)
+include(${CMAKE_CURRENT_LIST_DIR}/../cmake/rapids_config.cmake)
+
+# Build for all RAPIDS-supported GPU architectures unless CMAKE_CUDA_ARCHITECTURES
+# or the CUDAARCHS environment variable is set (e.g. CUDAARCHS=NATIVE for the
+# GPU(s) in the build machine only).
+include(rapids-cuda)
+rapids_cuda_init_architectures(cucim)
+
 # Append local cmake module path
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake/modules")
-project(cucim VERSION ${VERSION} DESCRIPTION "cucim" LANGUAGES CXX)
+project(cucim VERSION ${VERSION} DESCRIPTION "cucim" LANGUAGES CXX CUDA)
 
 ################################################################################
 # Include utilities
@@ -82,6 +91,14 @@ include(ExternalProject)
 ################################################################################
 superbuild_depend(fmt)
 superbuild_depend(json)
+
+# Use the CCCL version pinned by rapids-cmake (as other RAPIDS projects do)
+# rather than the one bundled with the CUDA Toolkit.
+include(rapids-cmake)
+include(rapids-cpm)
+rapids_cpm_init()
+include(${rapids-cmake-dir}/cpm/cccl.cmake)
+rapids_cpm_cccl()
 
 find_package(Python 3.12 REQUIRED COMPONENTS Interpreter Development.Module Development.SABIModule)
 execute_process(
@@ -165,15 +182,49 @@ set_target_properties(cucim PROPERTIES
         OUTPUT_NAME cucim/_cucim
         )
 
+################################################################################
+# Add library: cucim_skimage_cpp
+################################################################################
+
+nanobind_add_module(cucim_skimage_cpp
+    STABLE_ABI
+    NB_STATIC
+    PROTECT_STACK
+    NOMINSIZE
+        nanobind/skimage/skimage_cpp_py.cpp
+        nanobind/skimage/segmented_sort.h
+        nanobind/skimage/segmented_sort.cu
+        )
+# Link the CUDA runtime statically, as libcucim and its plugins do, so that the
+# module does not need libcudart.so at run time (and auditwheel does not have
+# to bundle it into the wheel).
+target_link_libraries(cucim_skimage_cpp
+    PRIVATE
+        CCCL::CCCL
+        CUDA::cudart_static
+        )
+# nanobind_add_module() only sets CXX_VISIBILITY_PRESET (pybind11_add_module()
+# also hid CUDA symbols). Without this, the CUB/libcu++ symbols instantiated by
+# segmented_sort.cu are exported from the module and could interpose with
+# other CUB users loaded in the same process (e.g. CuPy).
+set_target_properties(cucim_skimage_cpp PROPERTIES
+        CUDA_STANDARD ${CMAKE_CXX_STANDARD}
+        CUDA_STANDARD_REQUIRED YES
+        CUDA_VISIBILITY_PRESET hidden
+        LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR}
+        OUTPUT_NAME cucim/skimage/_cucim_skimage_cpp_ext
+        )
+file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR}/cucim/skimage)
 
 ################################################################################
 # Install
 ################################################################################
 set(INSTALL_TARGETS
         cucim
+        cucim_skimage_cpp
         )
 
-install(TARGETS cucim
+install(TARGETS ${INSTALL_TARGETS}
         EXPORT cucim-targets
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
                 COMPONENT cucim_Runtime
