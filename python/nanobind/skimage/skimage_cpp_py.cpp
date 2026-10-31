@@ -149,40 +149,6 @@ nb::tuple assemble_contours_packed(SegmentsArray segments, SegmentKeysArray segm
     return nb::make_tuple(std::move(points), std::move(offsets));
 }
 
-// Return the contours of segments that were linked on the device, in packed
-// form (points, offsets) as ``assemble_contours_packed``.
-//
-// ``next`` has shape (n_segments,): ``next[i]`` is the segment that starts at
-// the end of segment ``i``, or -1. See ``trace_linked_contours``.
-nb::tuple assemble_linked_contours(SegmentsArray segments, nb::ndarray<const std::int32_t, nb::c_contig, nb::device::cpu> next)
-{
-    if (segments.ndim() != 3 || segments.shape(1) != 2 || segments.shape(2) != 2)
-    {
-        throw nb::value_error("segments must have shape (n_segments, 2, 2)");
-    }
-    if (next.ndim() != 1 || next.shape(0) != segments.shape(0))
-    {
-        throw nb::value_error("next must have shape (n_segments,)");
-    }
-    std::vector<double> point_values;
-    std::vector<std::int64_t> offset_values;
-    if (!cucim::skimage::trace_linked_contours(segments.data(), next.data(), segments.shape(0), point_values,
-                                               offset_values))
-    {
-        throw nb::value_error("next must link every segment to at most one other, and vice versa");
-    }
-
-    // Hand the vectors' memory to NumPy
-    auto* points_owner = new std::vector<double>(std::move(point_values));
-    auto* offsets_owner = new std::vector<std::int64_t>(std::move(offset_values));
-    nb::capsule points_capsule(points_owner, [](void* p) noexcept { delete static_cast<std::vector<double>*>(p); });
-    nb::capsule offsets_capsule(offsets_owner,
-                                [](void* p) noexcept { delete static_cast<std::vector<std::int64_t>*>(p); });
-    nb::ndarray<nb::numpy, double> points(points_owner->data(), { points_owner->size() / 2, 2 }, points_capsule);
-    nb::ndarray<nb::numpy, std::int64_t> offsets(offsets_owner->data(), { offsets_owner->size() }, offsets_capsule);
-    return nb::make_tuple(std::move(points), std::move(offsets));
-}
-
 template <typename T>
 nb::ndarray<nb::numpy, T> vector_to_array(std::vector<T>&& values)
 {
@@ -229,8 +195,6 @@ NB_MODULE(_cucim_skimage_cpp_ext, m)
           "Assemble marching-squares line segments into a packed points/offsets representation.");
     m.def("plan_linked_contours", &plan_linked_contours, "first"_a, "length"_a, "next_sub"_a, "min_id"_a, "max_id"_a,
           "max_pos"_a, "Arrange the sublists of a list ranking of contour segments into contours.");
-    m.def("assemble_linked_contours", &assemble_linked_contours, "segments"_a, "next"_a,
-          "Assemble line segments whose successors are known into a packed points/offsets representation.");
     def_segmented_sort<std::uint8_t>(m, "segmented_sort_keys_temp_storage_bytes_uint8", "segmented_sort_keys_uint8",
                                      "segmented_sort_keys_ranges_uint8");
     def_segmented_sort<std::uint16_t>(m, "segmented_sort_keys_temp_storage_bytes_uint16", "segmented_sort_keys_uint16",

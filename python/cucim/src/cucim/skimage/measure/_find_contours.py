@@ -443,8 +443,10 @@ def find_contours(
     """Find iso-valued contours in a 2D CuPy array.
 
     This implementation extracts marching-squares line segments on the GPU and
-    assembles the final contours on the host. Because contour assembly is done
-    on the host, the returned contours are NumPy arrays.
+    links them into contours there as well. The points are then copied to the
+    host, so the returned contours are NumPy arrays. (Without the optional
+    compiled extension, or for images with levels that are exactly the value of
+    a vertex, the contours are assembled on the host.)
 
     Parameters
     ----------
