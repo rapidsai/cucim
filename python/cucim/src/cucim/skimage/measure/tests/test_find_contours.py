@@ -452,3 +452,47 @@ def test_assemble_linked_contours_rejects_invalid_links():
         _skimage_cpp.assemble_linked_contours(
             segments, np.array([1, -1], dtype=np.int32)
         )
+
+
+@pytest.mark.skipif(
+    _skimage_cpp is None,
+    reason="optional cucim.skimage C++ extension is not available",
+)
+def test_linked_contours_long_contours():
+    # Spiral arms are single contours with thousands of segments, that the
+    # assembly on the device has to cut into many sublists.
+    yy, xx = np.mgrid[:300, :300] - 150.0
+    image = np.sin(0.35 * np.hypot(yy, xx) + np.arctan2(yy, xx))
+    segments, segment_keys = _segments_of(image, 0.0)
+
+    expected_points, expected_offsets = _skimage_cpp.assemble_contours_packed(
+        cp.asnumpy(segments), cp.asnumpy(segment_keys)
+    )
+    points, offsets = _fc._assemble_linked(segments, segment_keys)
+
+    assert np.diff(offsets).max() > 5000
+    assert_array_equal(offsets, expected_offsets)
+    assert_array_equal(points, expected_points)
+
+
+@pytest.mark.skipif(
+    _skimage_cpp is None,
+    reason="optional cucim.skimage C++ extension is not available",
+)
+def test_plan_linked_contours_rejects_invalid_sublists():
+    ints = [np.array(x, dtype=np.int32) for x in ([0, 1], [1, 1], [0, 0])]
+    first, length, min_id = ints[0], ints[1], ints[2]
+    with pytest.raises(ValueError, match="at most one"):
+        # Two sublists cannot both be followed by sublist 0
+        _skimage_cpp.plan_linked_contours(
+            first, length, np.array([0, 0], np.int32), min_id, first, min_id
+        )
+    with pytest.raises(ValueError, match="same length"):
+        _skimage_cpp.plan_linked_contours(
+            first,
+            length[:1],
+            np.array([-1, -1], np.int32),
+            min_id,
+            first,
+            min_id,
+        )

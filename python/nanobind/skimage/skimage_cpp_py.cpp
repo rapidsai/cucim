@@ -183,6 +183,41 @@ nb::tuple assemble_linked_contours(SegmentsArray segments, nb::ndarray<const std
     return nb::make_tuple(std::move(points), std::move(offsets));
 }
 
+template <typename T>
+nb::ndarray<nb::numpy, T> vector_to_array(std::vector<T>&& values)
+{
+    auto* owner = new std::vector<T>(std::move(values));
+    nb::capsule capsule(owner, [](void* p) noexcept { delete static_cast<std::vector<T>*>(p); });
+    return nb::ndarray<nb::numpy, T>(owner->data(), { owner->size() }, capsule);
+}
+
+using SublistArray = nb::ndarray<const std::int32_t, nb::ndim<1>, nb::c_contig, nb::device::cpu>;
+
+// Arrange sublists of linked segments into contours. See
+// ``plan_linked_contours``. Returns the arrays ``(offsets, anchor, closed,
+// start, cut, wrap)``.
+nb::tuple plan_linked_contours(SublistArray first, SublistArray length, SublistArray next_sub, SublistArray min_id,
+                               SublistArray max_id, SublistArray max_pos)
+{
+    const std::size_t m = first.shape(0);
+    for (const SublistArray* array : { &length, &next_sub, &min_id, &max_id, &max_pos })
+    {
+        if (array->shape(0) != m)
+        {
+            throw nb::value_error("the sublist arrays must have the same length");
+        }
+    }
+    cucim::skimage::ContourPlan plan;
+    if (!cucim::skimage::plan_linked_contours(first.data(), length.data(), next_sub.data(), min_id.data(),
+                                              max_id.data(), max_pos.data(), m, plan))
+    {
+        throw nb::value_error("next_sub must link every sublist to at most one other, and vice versa");
+    }
+    return nb::make_tuple(vector_to_array(std::move(plan.offsets)), vector_to_array(std::move(plan.anchor)),
+                          vector_to_array(std::move(plan.closed)), vector_to_array(std::move(plan.start)),
+                          vector_to_array(std::move(plan.cut)), vector_to_array(std::move(plan.wrap)));
+}
+
 } // namespace
 
 NB_MODULE(_cucim_skimage_cpp_ext, m)
@@ -192,6 +227,8 @@ NB_MODULE(_cucim_skimage_cpp_ext, m)
           "Assemble marching-squares line segments into contours.");
     m.def("assemble_contours_packed", &assemble_contours_packed, "segments"_a, "segment_keys"_a,
           "Assemble marching-squares line segments into a packed points/offsets representation.");
+    m.def("plan_linked_contours", &plan_linked_contours, "first"_a, "length"_a, "next_sub"_a, "min_id"_a, "max_id"_a,
+          "max_pos"_a, "Arrange the sublists of a list ranking of contour segments into contours.");
     m.def("assemble_linked_contours", &assemble_linked_contours, "segments"_a, "next"_a,
           "Assemble line segments whose successors are known into a packed points/offsets representation.");
     def_segmented_sort<std::uint8_t>(m, "segmented_sort_keys_temp_storage_bytes_uint8", "segmented_sort_keys_uint8",

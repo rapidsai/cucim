@@ -287,6 +287,142 @@ void fc_generate_segments(const double* image, const bool* mask,
         fc_write_keys(segment_keys, out_id, left_key, top_key);
     }
 }
+
+// Contour assembly: list ranking of the linked segments.
+//
+// next[i] is the segment that follows segment i (-1 if none) and prev[i] the
+// one before it. The segments are cut into sublists at "splitters", and one
+// thread walks each sublist. Splitters are the first segments of open paths,
+// and about one in 64 of the others (to bound the length of sublists). The
+// loops that get no splitter in this way are cut at the segments that are lower
+// numbered than both neighbors (every closed loop has one) in a second round.
+
+extern "C" __global__
+void fc_set_prev(const int* next, int* prev, long long n)
+{
+    long long i = (long long)blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) {
+        int following = next[i];
+        if (following >= 0) {
+            prev[following] = (int)i;
+        }
+    }
+}
+
+extern "C" __global__
+void fc_mark_splitters(const int* next, const int* prev,
+                       unsigned char* is_splitter, long long n)
+{
+    long long i = (long long)blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) {
+        bool sampled = (((unsigned int)i * 2654435761u) >> 26) == 0;
+        is_splitter[i] = prev[i] < 0 || next[i] == (int)i || sampled;
+    }
+}
+
+// Splitters for the segments that no sublist has reached (those of loops
+// without a splitter).
+extern "C" __global__
+void fc_mark_loop_splitters(const int* next, const int* prev,
+                            const int* sublist, unsigned char* is_splitter,
+                            long long n)
+{
+    long long i = (long long)blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n && sublist[i] < 0) {
+        is_splitter[i] = prev[i] > (int)i && next[i] > (int)i;
+    }
+}
+
+extern "C" __global__
+void fc_walk_sublists(const int* next, const unsigned char* is_splitter,
+                      const int* splitters, int* sublist, int* position,
+                      int* length, int* next_sublist, int* min_id,
+                      int* max_id, int* max_position, int n_splitters,
+                      int first_sublist)
+{
+    int t = blockIdx.x * blockDim.x + threadIdx.x;
+    if (t >= n_splitters) {
+        return;
+    }
+    int s = first_sublist + t;
+    int first = splitters[t];
+    int current = first;
+    int j = 0;
+    int lowest = first;
+    int highest = first;
+    int highest_position = 0;
+    int following_sublist = -1;
+    position[first] = 0;
+    while (true) {
+        int following = next[current];
+        if (following < 0) {
+            break;
+        }
+        if (is_splitter[following]) {
+            following_sublist = sublist[following];
+            break;
+        }
+        ++j;
+        sublist[following] = s;
+        position[following] = j;
+        if (following < lowest) {
+            lowest = following;
+        }
+        if (following > highest) {
+            highest = following;
+            highest_position = j;
+        }
+        current = following;
+    }
+    length[t] = j + 1;
+    next_sublist[t] = following_sublist;
+    min_id[t] = lowest;
+    max_id[t] = highest;
+    max_position[t] = highest_position;
+}
+
+// Write the point that ends each segment: the junction with the next segment
+// (the point of the one with the lower index) or, for the last segment of a
+// contour, its own end point.
+extern "C" __global__
+void fc_write_points(const double* segments, const int* next,
+                     const int* sublist, const int* position,
+                     const long long* start, const int* cut,
+                     const long long* wrap, double* points, long long n)
+{
+    long long i = (long long)blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= n) {
+        return;
+    }
+    int s = sublist[i];
+    int j = position[i];
+    int c = cut[s];
+    long long target = j > c ? start[s] + (j - c - 1) : wrap[s] + j;
+    int following = next[i];
+    const double* point;
+    if (following < 0 || j == c || (int)i < following) {
+        point = segments + 4 * i + 2;
+    } else {
+        point = segments + 4 * (long long)following;
+    }
+    points[2 * target] = point[0];
+    points[2 * target + 1] = point[1];
+}
+
+extern "C" __global__
+void fc_write_first_points(const double* segments, const int* next,
+                           const int* anchor, const unsigned char* closed,
+                           const long long* offsets, double* points,
+                           int n_contours)
+{
+    int k = blockIdx.x * blockDim.x + threadIdx.x;
+    if (k >= n_contours) {
+        return;
+    }
+    int first = closed[k] ? next[anchor[k]] : anchor[k];
+    points[2 * offsets[k]] = segments[4 * (long long)first];
+    points[2 * offsets[k] + 1] = segments[4 * (long long)first + 1];
+}
 """
 
 
@@ -586,14 +722,125 @@ def _link_segments(segments, segment_keys):
 
 
 def _assemble_linked(segments, segment_keys):
-    """Return packed ``(points, offsets)`` or ``None`` if links are ambiguous."""
+    """Return packed ``(points, offsets)`` or ``None`` if links are ambiguous.
+
+    The contours are put together on the device. Segments that are linked form
+    paths and loops. Each path is cut into sublists at a set of splitter
+    segments and one thread walks each sublist. The (much shorter) list of
+    sublists is arranged into contours on the host, and a last kernel writes
+    the points of every segment to its place in the packed array.
+    """
     linked = _link_segments(segments, segment_keys)
     if linked is None:
         return None
     segments, next_segment = linked
-    return _skimage_cpp.assemble_linked_contours(
-        cp.asnumpy(segments), cp.asnumpy(next_segment)
+    n_segments = segments.shape[0]
+    if n_segments == 0:
+        return np.empty((0, 2)), np.zeros(1, dtype=np.int64)
+    threads = 256
+    blocks = ((n_segments + threads - 1) // threads,)
+
+    previous = cp.full(n_segments, -1, dtype=cp.int32)
+    _get_kernel("fc_set_prev")(
+        blocks, (threads,), (next_segment, previous, np.int64(n_segments))
     )
+    is_splitter = cp.empty(n_segments, dtype=cp.uint8)
+    _get_kernel("fc_mark_splitters")(
+        blocks,
+        (threads,),
+        (next_segment, previous, is_splitter, np.int64(n_segments)),
+    )
+    sublist = cp.full(n_segments, -1, dtype=cp.int32)
+    position = cp.empty(n_segments, dtype=cp.int32)
+
+    def walk_sublists(first_sublist):
+        splitters = cp.flatnonzero(is_splitter).astype(cp.int32)
+        if first_sublist > 0:
+            # only the splitters added by the second round
+            splitters = splitters[sublist[splitters] < 0]
+        n_new = splitters.size
+        sublist[splitters] = cp.arange(
+            first_sublist, first_sublist + n_new, dtype=cp.int32
+        )
+        info = [cp.empty(n_new, dtype=cp.int32) for _ in range(5)]
+        _get_kernel("fc_walk_sublists")(
+            ((n_new + threads - 1) // threads,),
+            (threads,),
+            (
+                next_segment,
+                is_splitter,
+                splitters,
+                sublist,
+                position,
+                *info,
+                np.int32(n_new),
+                np.int32(first_sublist),
+            ),
+        )
+        return splitters, info
+
+    splitters, sublist_info = walk_sublists(0)
+    # Loops that were not reached have no splitter yet
+    if bool((sublist < 0).any()):
+        _get_kernel("fc_mark_loop_splitters")(
+            blocks,
+            (threads,),
+            (
+                next_segment,
+                previous,
+                sublist,
+                is_splitter,
+                np.int64(n_segments),
+            ),
+        )
+        more_splitters, more_info = walk_sublists(splitters.size)
+        splitters = cp.concatenate((splitters, more_splitters))
+        sublist_info = [
+            cp.concatenate((x, y)) for x, y in zip(sublist_info, more_info)
+        ]
+
+    # The splitters, and a few numbers about each sublist, are all that the
+    # host needs to know to put the sublists in order.
+    offsets, anchor, closed, start, cut, wrap = (
+        _skimage_cpp.plan_linked_contours(
+            cp.asnumpy(splitters), *[cp.asnumpy(x) for x in sublist_info]
+        )
+    )
+    start = cp.asarray(start)
+    cut = cp.asarray(cut)
+    wrap = cp.asarray(wrap)
+    n_points = int(offsets[-1])
+    points = cp.empty((n_points, 2), dtype=cp.float64)
+    _get_kernel("fc_write_points")(
+        blocks,
+        (threads,),
+        (
+            segments,
+            next_segment,
+            sublist,
+            position,
+            start,
+            cut,
+            wrap,
+            points,
+            np.int64(n_segments),
+        ),
+    )
+    n_contours = anchor.size
+    _get_kernel("fc_write_first_points")(
+        ((n_contours + threads - 1) // threads,),
+        (threads,),
+        (
+            segments,
+            next_segment,
+            cp.asarray(anchor),
+            cp.asarray(closed),
+            cp.asarray(offsets),
+            points,
+            np.int32(n_contours),
+        ),
+    )
+    return cp.asnumpy(points), offsets
 
 
 def _assemble_contours(segments, segment_keys=None):
