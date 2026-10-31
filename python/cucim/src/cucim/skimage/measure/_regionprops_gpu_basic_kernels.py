@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import itertools
 import math
 
 import cupy as cp
@@ -927,6 +928,82 @@ def regionprops_num_boundary_pixels(labels, max_label=None, props_dict=None):
     return edge_counts
 
 
+@cp.memoize(for_each_device=True)
+def _get_inexact_fill_labels_kernel(ndim):
+    """Kernel flagging the labels whose filled region the batch fill of
+    `_fill_holes_by_label` may get wrong, one thread per pixel.
+
+    A pixel of label A flags A if one of its 3**ndim - 1 neighbors (inside
+    the image) is
+    (a) background in a hole bordered by several labels (``multi`` of its
+        background component, in the padded ``bg_labels``), or
+    (b) of another label, in a connected component (``components``) whose
+        bounding box lies strictly inside A's.
+    """
+    offsets = [o for o in itertools.product((-1, 0, 1), repeat=ndim) if any(o)]
+    source = f"""
+      X a = labels[i];
+      if (a != 0 && !flags[a - 1]) {{
+        long long rem = i;
+        long long c[{ndim}];
+        for (int d = {ndim - 1}; d >= 0; d--) {{
+          c[d] = rem % labels.shape()[d];
+          rem /= labels.shape()[d];
+        }}
+        long long stride[{ndim}], pstride[{ndim}];
+        long long st = 1, pst = 1;
+        for (int d = {ndim - 1}; d >= 0; d--) {{
+          stride[d] = st;
+          pstride[d] = pst;
+          st *= labels.shape()[d];
+          pst *= labels.shape()[d] + 2;
+        }}
+        long long p = 0;
+        for (int d = 0; d < {ndim}; d++) {{
+          p += (c[d] + 1) * pstride[d];
+        }}
+        const B* box_a = &bbox[(a - 1) * {2 * ndim}];
+        bool flag = false;"""
+    for o in offsets:
+        inside = " && ".join(
+            (f"c[{d}] >= 1" if v < 0 else f"c[{d}] + 1 < labels.shape()[{d}]")
+            for d, v in enumerate(o)
+            if v
+        )
+        delta = " + ".join(f"({v}) * stride[{d}]" for d, v in enumerate(o) if v)
+        pdelta = " + ".join(
+            f"({v}) * pstride[{d}]" for d, v in enumerate(o) if v
+        )
+        source += f"""
+        if (!flag && {inside}) {{
+          long long q = static_cast<long long>(i) + {delta};
+          X b = labels[q];
+          if (b == 0) {{
+            flag = multi[bg_labels[p + {pdelta}]];
+          }} else if (b != a) {{
+            const B* box_b = &component_bbox[(components[q] - 1) * {2 * ndim}];
+            bool nested = true;
+            for (int d = 0; d < {ndim}; d++) {{
+              nested = nested && box_b[d] > box_a[d]
+                       && box_b[{ndim} + d] < box_a[{ndim} + d];
+            }}
+            flag = nested;
+          }}
+        }}"""
+    source += """
+        if (flag) {
+          flags[a - 1] = 1;
+        }
+      }\n"""
+    return cp.ElementwiseKernel(
+        "raw X labels, raw C components, raw B bbox, raw B component_bbox, "
+        "raw G bg_labels, raw bool multi",
+        "raw uint8 flags",
+        source,
+        name=f"cucim_inexact_fill_labels_{ndim}d",
+    )
+
+
 def _fill_holes_by_label(labels, max_label, bbox=None):
     """Fill the background holes of each labeled region.
 
@@ -957,7 +1034,6 @@ def _fill_holes_by_label(labels, max_label, bbox=None):
         Labels whose filled region may differ from scikit-image's.
     """
     ndim = labels.ndim
-    footprint = ndi.generate_binary_structure(ndim, ndim)
     # with the padding, all background outside of the regions is a single
     # connected component
     padded = cp.pad(labels, 1, mode="constant", constant_values=0)
@@ -995,59 +1071,45 @@ def _fill_holes_by_label(labels, max_label, bbox=None):
     core = (slice(1, -1),) * ndim
     label_filled = cp.ascontiguousarray(filled[core].astype(labels.dtype))
 
-    # (a) labels bordering a hole that borders several labels
-    inexact = []
-    if bool(multi.any()):
-        near_multi = ndi.binary_dilation(multi[bg_labels], structure=footprint)
-        inexact.append(cp.unique(padded[near_multi & ~background]))
-
-    # (b) labels touching a connected component of another label whose
-    # bounding box lies strictly inside their own
+    # labels bordering a hole that borders several labels (a), or touching a
+    # connected component of another label whose bounding box lies strictly
+    # inside their own (b), see _get_inexact_fill_labels_kernel
     touching = (~background) & ((nb_max != padded) | (nb_min != padded))
     touching &= padded != 0
-    if bool(touching.any()):
-        if bbox is None:
-            bbox, _ = regionprops_bbox_coords(labels, max_label=max_label)
+    has_multi = bool(multi.any())
+    has_touching = bool(touching.any())
+    if not (has_multi or has_touching):
+        return label_filled, np.zeros((0,), dtype=np.int64)
+    if not labels.flags.c_contiguous:
+        labels = cp.ascontiguousarray(labels)
+    if bbox is None:
+        bbox, _ = regionprops_bbox_coords(labels, max_label=max_label)
+    if has_touching:
         # connected components of each label (label separates neighboring
         # pixels with different values)
         components, num_components = label(
             labels, connectivity=ndim, return_num=True
         )
-        bbox_components, _ = regionprops_bbox_coords(
+        component_bbox, _ = regionprops_bbox_coords(
             components, max_label=num_components
         )
-        padded_components = cp.pad(
-            components, 1, mode="constant", constant_values=0
-        )
-        no_component = num_components + 1
-        pairs = []
-        center = padded[core]
-        for offset in np.ndindex((3,) * ndim):
-            if all(o == 1 for o in offset):
-                continue
-            neighbor_slices = tuple(
-                slice(o, o + s) for o, s in zip(offset, labels.shape)
-            )
-            neighbor = padded[neighbor_slices]
-            mask = touching[core] & (neighbor != 0) & (neighbor != center)
-            pairs.append(
-                center[mask].astype(cp.int64) * no_component
-                + padded_components[neighbor_slices][mask].astype(cp.int64)
-            )
-        pairs = cp.unique(cp.concatenate(pairs))
-        outer_label = pairs // no_component
-        inner_component = pairs % no_component
-        bbox_outer = bbox[outer_label - 1].astype(cp.int64)
-        bbox_inner = bbox_components[inner_component - 1].astype(cp.int64)
-        nested = cp.all(
-            bbox_inner[:, :ndim] > bbox_outer[:, :ndim], axis=1
-        ) & cp.all(bbox_inner[:, ndim:] < bbox_outer[:, ndim:], axis=1)
-        inexact.append(outer_label[nested])
-
-    if inexact:
-        labels_inexact = cp.asnumpy(cp.unique(cp.concatenate(inexact)))
+        component_bbox = component_bbox.astype(bbox.dtype, copy=False)
     else:
-        labels_inexact = np.zeros((0,), dtype=np.int64)
+        # (b) cannot apply: every neighbor of another label is background
+        components = cp.zeros((1,), dtype=cp.int32)
+        component_bbox = bbox[:1]
+    flags = cp.zeros((max_label,), dtype=cp.uint8)
+    _get_inexact_fill_labels_kernel(ndim)(
+        labels,
+        components,
+        bbox,
+        component_bbox,
+        bg_labels,
+        multi,
+        flags,
+        size=labels.size,
+    )
+    labels_inexact = cp.asnumpy(cp.flatnonzero(flags)) + 1
     return label_filled, labels_inexact
 
 
