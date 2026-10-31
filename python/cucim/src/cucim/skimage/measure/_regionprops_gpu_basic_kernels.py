@@ -985,54 +985,68 @@ def _get_hole_neighbors_kernel(ndim):
     """Kernel finding the labels that border each hole, one thread per
     pixel.
 
-    A background pixel in a hole (a component of the padded ``bg_labels``
+    A background pixel in a hole (a component of the padded image's ``ids``
     other than ``outer``) adds the largest and the smallest label among its
     3**ndim - 1 neighbors to ``hole_max`` and ``hole_min`` of its component
     with atomics. The pixels of the outer component, most of the background,
-    are skipped. A labeled pixel next to a pixel of another label sets
-    ``touching[0]``.
+    are skipped. ``ids`` can also number the components of the labels
+    (`_fill_holes_by_label`); only background pixels read it.
     """
-    source = f"""
-      X v = labels[i];
-      {_pixel_coords_code(ndim)}
-      if (v == 0) {{
-        G id = bg_labels[p];
-        if (id != outer) {{
-          W nb_max = 0;
-          W nb_min = no_label;
-          {
-        _neighbor_offsets_code(
-            ndim,
-            '''W b = static_cast<W>(labels[q]);
+    neighbors = _neighbor_offsets_code(
+        ndim,
+        """W b = static_cast<W>(labels[q]);
           if (b != 0) {
             nb_max = max(nb_max, b);
             nb_min = min(nb_min, b);
-          }''',
-        )
-    }
+          }""",
+    )
+    source = f"""
+      X v = labels[i];
+      if (v == 0) {{
+        {_pixel_coords_code(ndim)}
+        G id = ids[p];
+        if (id != outer) {{
+          W nb_max = 0;
+          W nb_min = no_label;
+          {neighbors}
           if (nb_max != 0) {{
             atomicMax(&hole_max[id], nb_max);
             atomicMin(&hole_min[id], nb_min);
           }}
         }}
-      }} else {{
+      }}\n"""
+    return cp.ElementwiseKernel(
+        "raw X labels, raw G ids, G outer, W no_label",
+        "raw W hole_max, raw W hole_min",
+        source,
+        name=f"cucim_hole_neighbors_{ndim}d",
+    )
+
+
+@cp.memoize(for_each_device=True)
+def _get_labels_touch_kernel(ndim):
+    """Kernel setting ``touching[0]`` if a labeled pixel has a neighbor (in
+    its 3**ndim neighborhood) with another label, one thread per pixel."""
+    neighbors = _neighbor_offsets_code(
+        ndim,
+        """X b = labels[q];
+          other = other || (b != 0 && b != v);""",
+    )
+    source = f"""
+      X v = labels[i];
+      if (v != 0) {{
+        {_pixel_coords_code(ndim)}
         bool other = false;
-        {
-        _neighbor_offsets_code(
-            ndim,
-            '''X b = labels[q];
-          other = other || (b != 0 && b != v);''',
-        )
-    }
+        {neighbors}
         if (other) {{
           touching[0] = 1;
         }}
       }}\n"""
     return cp.ElementwiseKernel(
-        "raw X labels, raw G bg_labels, G outer, W no_label",
-        "raw W hole_max, raw W hole_min, raw uint8 touching",
+        "raw X labels",
+        "raw uint8 touching",
         source,
-        name=f"cucim_hole_neighbors_{ndim}d",
+        name=f"cucim_labels_touch_{ndim}d",
     )
 
 
@@ -1044,51 +1058,46 @@ def _get_inexact_fill_labels_kernel(ndim):
     A pixel of label A flags A if one of its 3**ndim - 1 neighbors (inside
     the image) is
     (a) background in a hole bordered by several labels (``multi`` of its
-        background component, in the padded ``bg_labels``), or
-    (b) of another label, in a connected component (``components``) whose
-        bounding box lies strictly inside A's.
+        component), or
+    (b) of another label, in a connected component whose bounding box
+        (``component_bbox``, in the padded image's coordinates) lies strictly
+        inside A's.
+    ``ids`` numbers the connected components of the image padded by one
+    pixel: of the background, and of each label if two labels touch.
     """
-    offsets = [o for o in itertools.product((-1, 0, 1), repeat=ndim) if any(o)]
+    neighbors = _neighbor_offsets_code(
+        ndim,
+        """if (!flag) {
+            X b = labels[q];
+            G id = ids[pq];
+            if (b == 0) {
+              flag = multi[id];
+            } else if (b != a) {
+              // (the component boxes are offset by the padding)
+              const B* box_b = &component_bbox[(id - 1) * NDIM2];
+              bool nested = true;
+              for (int d = 0; d < NDIM; d++) {
+                nested = nested && box_b[d] > box_a[d] + 1
+                         && box_b[NDIM + d] < box_a[NDIM + d] + 1;
+              }
+              flag = nested;
+            }
+          }""".replace("NDIM2", str(2 * ndim)).replace("NDIM", str(ndim)),
+    )
     source = f"""
       X a = labels[i];
       if (a != 0 && !flags[a - 1]) {{
-{_pixel_coords_code(ndim)}
+        {_pixel_coords_code(ndim)}
         const B* box_a = &bbox[(a - 1) * {2 * ndim}];
-        bool flag = false;"""
-    for o in offsets:
-        inside = " && ".join(
-            (f"c[{d}] >= 1" if v < 0 else f"c[{d}] + 1 < labels.shape()[{d}]")
-            for d, v in enumerate(o)
-            if v
-        )
-        delta = " + ".join(f"({v}) * stride[{d}]" for d, v in enumerate(o) if v)
-        pdelta = " + ".join(
-            f"({v}) * pstride[{d}]" for d, v in enumerate(o) if v
-        )
-        source += f"""
-        if (!flag && {inside}) {{
-          long long q = static_cast<long long>(i) + {delta};
-          X b = labels[q];
-          if (b == 0) {{
-            flag = multi[bg_labels[p + {pdelta}]];
-          }} else if (b != a) {{
-            const B* box_b = &component_bbox[(components[q] - 1) * {2 * ndim}];
-            bool nested = true;
-            for (int d = 0; d < {ndim}; d++) {{
-              nested = nested && box_b[d] > box_a[d]
-                       && box_b[{ndim} + d] < box_a[{ndim} + d];
-            }}
-            flag = nested;
-          }}
-        }}"""
-    source += """
-        if (flag) {
+        bool flag = false;
+        {neighbors}
+        if (flag) {{
           flags[a - 1] = 1;
-        }
-      }\n"""
+        }}
+      }}\n"""
     return cp.ElementwiseKernel(
-        "raw X labels, raw C components, raw B bbox, raw B component_bbox, "
-        "raw G bg_labels, raw bool multi",
+        "raw X labels, raw G ids, raw B bbox, raw B component_bbox, "
+        "raw bool multi",
         "raw uint8 flags",
         source,
         name=f"cucim_inexact_fill_labels_{ndim}d",
@@ -1131,35 +1140,42 @@ def _fill_holes_by_label(labels, max_label, bbox=None):
     work_dtype = cp.int32 if max_label < 2**31 - 1 else cp.int64
     padded = padded.astype(work_dtype, copy=False)
     background = padded == 0
-    bg_labels = label(background, connectivity=ndim)
-    num_bg = int(bg_labels.max())
-    outer = int(bg_labels[(0,) * ndim])
     if not labels.flags.c_contiguous:
         labels = cp.ascontiguousarray(labels)
-
-    # the largest and smallest label bordering each hole, and whether two
-    # labels touch (_get_hole_neighbors_kernel)
-    no_label = max_label + 1
-    hole_max = cp.zeros(num_bg + 1, dtype=work_dtype)
-    hole_min = cp.full(num_bg + 1, no_label, dtype=work_dtype)
+    # If two labels touch, the test (b) below needs the connected components
+    # of each label too; one labeling of the padded image (every value, the
+    # background included) then gives both. Otherwise only the background is
+    # labeled.
     touching = cp.zeros((1,), dtype=cp.uint8)
+    _get_labels_touch_kernel(ndim)(labels, touching, size=labels.size)
+    has_touching = bool(touching[0])
+    if has_touching:
+        ids = label(padded, background=-1, connectivity=ndim)
+    else:
+        ids = label(background, connectivity=ndim)
+    num_ids = int(ids.max())
+    outer = int(ids[(0,) * ndim])
+
+    # the largest and smallest label bordering each hole
+    # (_get_hole_neighbors_kernel); only holes get a nonzero maximum
+    no_label = max_label + 1
+    hole_max = cp.zeros(num_ids + 1, dtype=work_dtype)
+    hole_min = cp.full(num_ids + 1, no_label, dtype=work_dtype)
     _get_hole_neighbors_kernel(ndim)(
         labels,
-        bg_labels,
-        bg_labels.dtype.type(outer),
+        ids,
+        ids.dtype.type(outer),
         hole_max.dtype.type(no_label),
         hole_max,
         hole_min,
-        touching,
         size=labels.size,
     )
-    component_ids = cp.arange(num_bg + 1)
-    is_hole = (component_ids != 0) & (component_ids != outer)
+    is_hole = hole_max > 0
     single = is_hole & (hole_min == hole_max)
     multi = is_hole & (hole_min != hole_max)
 
     fill_value = cp.where(single, hole_max, 0).astype(work_dtype, copy=False)
-    filled = cp.where(background, fill_value[bg_labels], padded)
+    filled = cp.where(background, fill_value[ids], padded)
     core = (slice(1, -1),) * ndim
     label_filled = cp.ascontiguousarray(filled[core].astype(labels.dtype))
 
@@ -1167,32 +1183,25 @@ def _fill_holes_by_label(labels, max_label, bbox=None):
     # connected component of another label whose bounding box lies strictly
     # inside their own (b), see _get_inexact_fill_labels_kernel
     has_multi = bool(multi.any())
-    has_touching = bool(touching[0])
     if not (has_multi or has_touching):
         return label_filled, np.zeros((0,), dtype=np.int64)
     if bbox is None:
         bbox, _ = regionprops_bbox_coords(labels, max_label=max_label)
     if has_touching:
-        # connected components of each label (label separates neighboring
-        # pixels with different values)
-        components, num_components = label(
-            labels, connectivity=ndim, return_num=True
-        )
-        component_bbox, _ = regionprops_bbox_coords(
-            components, max_label=num_components
-        )
-        component_bbox = component_bbox.astype(bbox.dtype, copy=False)
+        # bounding boxes of the labels' components (the background pixels,
+        # most of them in the outer component, are left out)
+        component_bbox = _regionprops_label_pass(
+            cp.where(background, 0, ids), num_ids, compute_bbox=True
+        )["bbox"].astype(bbox.dtype, copy=False)
     else:
         # (b) cannot apply: every neighbor of another label is background
-        components = cp.zeros((1,), dtype=cp.int32)
         component_bbox = bbox[:1]
     flags = cp.zeros((max_label,), dtype=cp.uint8)
     _get_inexact_fill_labels_kernel(ndim)(
         labels,
-        components,
+        ids,
         bbox,
         component_bbox,
-        bg_labels,
         multi,
         flags,
         size=labels.size,
