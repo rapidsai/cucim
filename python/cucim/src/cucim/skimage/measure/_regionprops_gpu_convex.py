@@ -1940,16 +1940,24 @@ def _feret_diameter_max_3d(
 
 
 def _convex_hull_rows_3d(
-    label_image, row_first, row_last, offsets, num_rows, bbox, max_label
+    label_image,
+    row_first,
+    row_last,
+    offsets,
+    num_rows,
+    bbox,
+    max_label,
+    use_qhull=False,
 ):
     """Rows of each 3D region's convex image (see `_convex_hull_rows_2d`).
 
     The hull of each label is computed on the device from the candidates of
     `_convex_hull_candidates_3d` (`_convex_hulls_3d`), and its facet
     equations give the rows (`_get_hull_rows_3d_kernel`). For a label the
-    kernel cannot handle, the hull is computed with
-    ``scipy.spatial.ConvexHull`` (Qhull [1]_) on the host instead, and if
-    qhull fails, the convex image with ``convex_hull_image``.
+    kernel cannot handle, or for every label if `use_qhull`, the hull is
+    computed with ``scipy.spatial.ConvexHull`` (Qhull [1]_) on the host
+    instead, and if qhull fails, the convex image with
+    ``convex_hull_image``.
 
     References
     ----------
@@ -1963,22 +1971,42 @@ def _convex_hull_rows_3d(
     points, point_offsets = _convex_hull_candidates_3d(
         row_first, row_last, offsets, num_rows, bbox, bbox_host, max_label
     )
-    equations, num_faces = _convex_hulls_3d(
-        points, point_offsets, bbox, max_label
-    )
+    if use_qhull:
+        equations = cp.empty((2 * points.shape[0], 4), dtype=cp.float64)
+        # -1: hull still to compute (absent labels have no points or facets)
+        num_faces = cp.where(
+            point_offsets[1:] > point_offsets[:-1], -1, 0
+        ).astype(cp.int32)
+    else:
+        equations, num_faces = _convex_hulls_3d(
+            points, point_offsets, bbox, max_label
+        )
     failed = []
-    for lab in cp.asnumpy(cp.flatnonzero(num_faces < 0)).tolist():
-        start, end = cp.asnumpy(point_offsets[lab : lab + 2]).tolist()
-        try:
-            hull = ConvexHull(cp.asnumpy(points[start:end]) * 0.5)
-        except QhullError:
-            failed.append(lab)
-            num_faces[lab] = 0
-            continue
-        # (a hull of n points has at most 2n - 4 facets)
-        num = hull.equations.shape[0]
-        equations[2 * start : 2 * start + num] = cp.asarray(hull.equations)
-        num_faces[lab] = num
+    host_labels = cp.asnumpy(cp.flatnonzero(num_faces < 0)).tolist()
+    if host_labels:
+        # one transfer each way for all of them
+        points_host = cp.asnumpy(points) * 0.5
+        offsets_host = cp.asnumpy(point_offsets)
+        num_faces_host = cp.asnumpy(num_faces)
+        rows, values = [], []
+        for lab in host_labels:
+            start, end = offsets_host[lab : lab + 2].tolist()
+            try:
+                hull = ConvexHull(points_host[start:end])
+            except QhullError:
+                failed.append(lab)
+                num_faces_host[lab] = 0
+                continue
+            # (a hull of n points has at most 2n - 4 facets)
+            num = hull.equations.shape[0]
+            rows.append(np.arange(2 * start, 2 * start + num))
+            values.append(hull.equations)
+            num_faces_host[lab] = num
+        if values:
+            equations[cp.asarray(np.concatenate(rows))] = cp.asarray(
+                np.concatenate(values)
+            )
+        num_faces = cp.asarray(num_faces_host)
     # the offsets of each label's rows, on the host
     shapes = np.maximum(bbox_host[:, 3:] - bbox_host[:, :3], 0)
     row_offsets_host = np.zeros((max_label + 1,), dtype=np.int64)
@@ -2115,6 +2143,7 @@ def _regionprops_convex(
     compute_image=False,
     compute_area=False,
     compute_feret=False,
+    use_qhull=False,
     props_dict=None,
 ):
     """Compute the convex-hull properties of each region.
@@ -2128,6 +2157,9 @@ def _regionprops_convex(
     `_feret_diameter_max_2d`, `_convex_hull_rows_3d` and
     `_feret_diameter_max_3d`). In other dimensions, they are computed from
     one convex image per label (`regionprops_image`).
+
+    If `use_qhull`, the 3D hulls are computed with ``scipy.spatial.ConvexHull``
+    on the host instead of on the device.
 
     Parameters
     ----------
@@ -2156,6 +2188,7 @@ def _regionprops_convex(
                 num_rows,
                 bbox,
                 max_label,
+                use_qhull=use_qhull,
             )
         if compute_area:
             props_dict["area_convex"] = num_pixels.astype(cp.float64) * (

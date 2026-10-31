@@ -581,6 +581,39 @@ def test_convex_batch_3d_host_hulls(monkeypatch):
     assert_array_equal(result["area_convex"], expected["area_convex"])
 
 
+@pytest.mark.parametrize("kind", ["large_blobs", "lines", "random"])
+def test_convex_batch_3d_qhull(kind, monkeypatch):
+    # convex_hull_3d="qhull" computes every hull with qhull on the host, with
+    # the same results as the device hulls
+    labels = _convex_test_labels(kind, 3)
+    properties = ["image_convex", "area_convex", "feret_diameter_max"]
+    expected = regionprops_dict(labels, properties=properties)
+
+    def no_device_hulls(*args):
+        raise AssertionError("device hulls computed")
+
+    monkeypatch.setattr(
+        _regionprops_gpu_convex, "_convex_hulls_3d", no_device_hulls
+    )
+    result = regionprops_dict(
+        labels, properties=properties, convex_hull_3d="qhull"
+    )
+    for image, expected_image in zip(
+        result["image_convex"], expected["image_convex"]
+    ):
+        assert_array_equal(image, expected_image)
+    assert_array_equal(result["area_convex"], expected["area_convex"])
+    assert_allclose(
+        result["feret_diameter_max"], expected["feret_diameter_max"], rtol=1e-14
+    )
+    table = measure.regionprops_table(
+        labels, properties=["area_convex"], convex_hull_3d="qhull"
+    )
+    assert_array_equal(table["area_convex"], expected["area_convex"])
+    with pytest.raises(ValueError, match="convex_hull_3d"):
+        regionprops_dict(labels, properties=properties, convex_hull_3d="cpu")
+
+
 @pytest.mark.parametrize("ndim", [2, 3])
 def test_convex_batch_64bit_coordinates(ndim, monkeypatch):
     # images with an axis of 2**30 pixels or more use 64-bit row extents and

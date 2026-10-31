@@ -1088,6 +1088,7 @@ def regionprops_table(
     batch_processing=True,
     to_table=True,
     copy_output_to_host=False,
+    convex_hull_3d="gpu",
 ):
     """Compute region properties and return them as a pandas-compatible table.
 
@@ -1165,6 +1166,17 @@ def regionprops_table(
         to the host. This is desired if planning to do host-side analysis of
         the properties. Leave this False if further handling of the outputs is
         planned on the GPU.
+    convex_hull_3d : {"gpu", "qhull"}, optional
+        How the convex hulls of 3D regions are computed for the
+        "image_convex", "area_convex", "solidity" and "feret_diameter_max"
+        properties when `batch_processing` is true. With "gpu" (the default),
+        the hulls of all regions are computed on the GPU at once. With
+        "qhull", each region's hull is computed on the host with
+        ``scipy.spatial.ConvexHull``, one region at a time. The GPU is much
+        faster for images with many regions, but qhull can be faster for
+        images with only a few large, round regions (about 2.5x for a single
+        ball of radius 120). Unused for 2D images and without
+        `batch_processing`.
 
     Returns
     -------
@@ -1278,6 +1290,7 @@ def regionprops_table(
             to_table=to_table,
             table_separator=separator,
             table_on_host=copy_output_to_host,
+            convex_hull_3d=convex_hull_3d,
         )
         if copy_output_to_host and not to_table:
             for key, value in table.items():

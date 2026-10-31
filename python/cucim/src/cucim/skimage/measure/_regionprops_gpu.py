@@ -253,6 +253,7 @@ def regionprops_dict(
     max_label=None,
     pixels_per_thread=16,
     robust_perimeter=True,
+    convex_hull_3d="gpu",
     to_table=False,
     table_separator="-",
     table_on_host=False,
@@ -308,6 +309,15 @@ def regionprops_dict(
         Unused. The perimeter, Crofton perimeter and Euler number of every
         region are computed as for the region in isolation, as in
         scikit-image, also when regions are close to or touch each other.
+    convex_hull_3d : {"gpu", "qhull"}, optional
+        How the convex hulls of 3D regions are computed for the
+        "image_convex", "area_convex", "solidity" and "feret_diameter_max"
+        properties. With "gpu" (the default), the hulls of all regions are
+        computed on the GPU at once. With "qhull", each region's hull is
+        computed on the host with ``scipy.spatial.ConvexHull``, one region at
+        a time. The GPU is much faster for images with many regions, but
+        qhull can be faster for images with only a few large, round regions
+        (about 2.5x for a single ball of radius 120). Unused for 2D images.
     to_table : bool, optional
         If true, split up vector/matrix properties into separate keys for
         the individual elements to match the output format of
@@ -319,6 +329,10 @@ def regionprops_dict(
         Copy any device arrays back to the host when creating the
         `regionprops_table` output. Unused if `to_table` is false.
     """
+    if convex_hull_3d not in ("gpu", "qhull"):
+        raise ValueError(
+            f"convex_hull_3d must be 'gpu' or 'qhull', got {convex_hull_3d!r}"
+        )
     supported_properties = CURRENT_PROPS_GPU | GLOBAL_PROPS
     properties = set(properties)
     if extra_properties is None:
@@ -740,6 +754,7 @@ def regionprops_dict(
             compute_image=compute_convex_image,
             compute_area=compute_area_convex,
             compute_feret=compute_feret,
+            use_qhull=convex_hull_3d == "qhull",
             props_dict=out,
         )
 
