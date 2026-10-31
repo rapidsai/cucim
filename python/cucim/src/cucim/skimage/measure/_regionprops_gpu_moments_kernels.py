@@ -1756,9 +1756,10 @@ def regionprops_inertia_tensor_eigvals(
         # eigenvectors computed by the kernel are not robust to 0 entries, so
         # use slightly slow cp.linalg.eigh instead
         eigvals, eigvecs = cp.linalg.eigh(inertia_tensor)
-        # swap from ascending to descending order
-        eigvals = eigvals[:, ::-1]
-        eigvecs = eigvecs[:, ::-1]
+        # swap from ascending to descending order (the eigenvectors are the
+        # columns, along the last axis)
+        eigvals = eigvals[..., ::-1]
+        eigvecs = eigvecs[..., ::-1]
     if props_dict is None:
         props_dict = {}
     props_dict["inertia_tensor_eigvals"] = eigvals
