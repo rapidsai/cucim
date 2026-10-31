@@ -788,6 +788,7 @@ def regionprops_dict(
                 max_label=max_label,
                 spacing=spacing,
                 compute_image=compute_image_filled,
+                bbox=out.get("bbox"),
                 props_dict=out,
             )
 
