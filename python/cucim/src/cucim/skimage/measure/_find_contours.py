@@ -539,12 +539,76 @@ def _get_contour_segments(image, level, vertex_connect_high, mask):
     return segments, segment_keys
 
 
+def _link_segments(segments, segment_keys):
+    """Link every segment to the segment that starts where it ends.
+
+    The keys of the segment endpoints identify the grid edge (or vertex) they
+    lie on, so two segments are linked when the end key of one is the start key
+    of the other. The links are found by sorting and a binary search on the
+    device.
+
+    Returns
+    -------
+    segments, next : cupy.ndarray
+        The segments without the degenerate ones and, for each of them, the
+        index of the segment that follows it (-1 if there is none). ``None`` is
+        returned instead if a key is the start or the end of more than one
+        segment (which happens when the level is exactly the value of a
+        vertex). Those images need the sequential assembler.
+    """
+    # The sequential assembler ignores segments of zero length (vertices that
+    # are exactly on the level).
+    degenerate = (segments[:, 0, 0] == segments[:, 1, 0]) & (
+        segments[:, 0, 1] == segments[:, 1, 1]
+    )
+    if bool(degenerate.any()):
+        keep = ~degenerate
+        segments = segments[keep]
+        segment_keys = segment_keys[keep]
+    n_segments = segments.shape[0]
+    if n_segments == 0:
+        return segments, cp.empty(0, dtype=cp.int32)
+
+    from_keys = cp.ascontiguousarray(segment_keys[:, 0])
+    to_keys = cp.ascontiguousarray(segment_keys[:, 1])
+    order = cp.argsort(from_keys)
+    sorted_from = from_keys[order]
+    sorted_to = cp.sort(to_keys)
+    repeated = (sorted_from[1:] == sorted_from[:-1]).any() | (
+        sorted_to[1:] == sorted_to[:-1]
+    ).any()
+    if bool(repeated):
+        return None
+    position = cp.minimum(cp.searchsorted(sorted_from, to_keys), n_segments - 1)
+    linked = sorted_from[position] == to_keys
+    next_segment = cp.where(linked, order[position], -1).astype(cp.int32)
+    return segments, next_segment
+
+
+def _assemble_linked(segments, segment_keys):
+    """Return packed ``(points, offsets)`` or ``None`` if links are ambiguous."""
+    linked = _link_segments(segments, segment_keys)
+    if linked is None:
+        return None
+    segments, next_segment = linked
+    return _skimage_cpp.assemble_linked_contours(
+        cp.asnumpy(segments), cp.asnumpy(next_segment)
+    )
+
+
 def _assemble_contours(segments, segment_keys=None):
-    segments = cp.asnumpy(segments)
     if _skimage_cpp is not None and segment_keys is not None:
-        segment_keys = cp.asnumpy(segment_keys)
-        return _skimage_cpp.assemble_contours(segments, segment_keys)
-    return _assemble_contours_python(segments)
+        packed = _assemble_linked(segments, segment_keys)
+        if packed is not None:
+            points, offsets = packed
+            return [
+                points[start:stop]
+                for start, stop in zip(offsets[:-1], offsets[1:])
+            ]
+        return _skimage_cpp.assemble_contours(
+            cp.asnumpy(segments), cp.asnumpy(segment_keys)
+        )
+    return _assemble_contours_python(cp.asnumpy(segments))
 
 
 def _assemble_contours_packed(segments, segment_keys=None):
@@ -553,9 +617,12 @@ def _assemble_contours_packed(segments, segment_keys=None):
             "return_packed=True requires the optional "
             "cucim.skimage C++ contour assembler"
         )
-    segments = cp.asnumpy(segments)
-    segment_keys = cp.asnumpy(segment_keys)
-    return _skimage_cpp.assemble_contours_packed(segments, segment_keys)
+    packed = _assemble_linked(segments, segment_keys)
+    if packed is not None:
+        return packed
+    return _skimage_cpp.assemble_contours_packed(
+        cp.asnumpy(segments), cp.asnumpy(segment_keys)
+    )
 
 
 def _reverse_packed_contours(points, offsets):
