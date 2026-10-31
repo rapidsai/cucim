@@ -35,6 +35,7 @@ from ._regionprops_gpu_basic_kernels import (
 )
 from ._regionprops_gpu_convex import (
     _regionprops_convex,
+    _regionprops_oriented_bbox,
     convex_deps,
     regionprops_area_convex,
     regionprops_feret_diameter_max,
@@ -131,6 +132,9 @@ PROPS_GPU_EXTRA = {
     "feret_angle_min": "feret_angle_min",
     # the perimeter of the convex hull, as DIPlib's ConvexPerimeter
     "perimeter_convex": "perimeter_convex",
+    # the oriented bounding box, as in ITK
+    "oriented_bbox_size": "oriented_bbox_size",
+    "oriented_bbox_center": "oriented_bbox_center",
 }
 PROPS_GPU.update(PROPS_GPU_EXTRA)
 # properties recently removed from PROPS dict (but still supported)
@@ -158,6 +162,8 @@ COL_DTYPES_EXTRA = {
     "feret_angle_max": float,
     "feret_angle_min": float,
     "perimeter_convex": float,
+    "oriented_bbox_size": float,
+    "oriented_bbox_center": float,
 }
 
 # expand column dtypes from _regionprops to include the extra properties
@@ -354,6 +360,47 @@ def regionprops_dict(
     table_on_host : bool, optional
         Copy any device arrays back to the host when creating the
         `regionprops_table` output. Unused if `to_table` is false.
+
+    Notes
+    -----
+    Besides the properties of scikit-image's ``regionprops_table``, the
+    following cuCIM-only properties are available:
+
+    - ``axis_lengths``: all ellipse (ellipsoid) axis lengths, longest first.
+    - ``inertia_tensor_eigenvectors``: the eigenvectors of
+      ``inertia_tensor``, as the columns of an (ndim, ndim) matrix per
+      region, in the (descending) order of ``inertia_tensor_eigvals``. The
+      first one is along the region's shortest axis.
+    - ``num_pixels_filled``: the pixel count with the holes filled.
+    - ``num_perimeter_pixels``, ``num_boundary_pixels``,
+      ``perimeter_on_border_ratio``, ``equivalent_spherical_perimeter``: as
+      in ITK.
+    - ``surface_area`` (3D only): the Crofton estimate of the surface area
+      with 13 directions, as ITK's ``Perimeter`` of 3D objects.
+    - ``feret_diameter_min``, ``feret_diameter_min_perpendicular``,
+      ``feret_angle_max``, ``feret_angle_min`` (2D only): the minimum Feret
+      diameter (caliper width), the caliper width perpendicular to it, and
+      the directions of the maximum and minimum Feret diameters, as in
+      DIPlib's ``Feret``. They are measured on the polygon of
+      ``feret_diameter_max`` (the hull of the convex image's pixel-edge
+      midpoints). An angle is that of the direction (d0, d1) from axis 0
+      towards axis 1, ``atan2(d1, d0)``, in (-pi/2, pi/2], the convention
+      of ``orientation``. With ties, one of the tied directions is
+      returned.
+    - ``perimeter_convex`` (2D only): the perimeter of that polygon, as
+      DIPlib's ``ConvexPerimeter``.
+    - ``oriented_bbox_size``, ``oriented_bbox_center``: the bounding box
+      aligned with the principal axes (the columns ``V[:, a]`` of
+      ``inertia_tensor_eigenvectors``) that encloses all the region's pixels,
+      as ITK's oriented bounding box. ``oriented_bbox_size[a]`` is its
+      extent along ``V[:, a]``, and ``oriented_bbox_center`` its center, in
+      the coordinates of ``centroid``. Its ``2**ndim`` corners are
+      ``center + sum_a s_a * size[a] / 2 * V[:, a]`` for all choices of
+      signs ``s_a`` in {-1, +1}; in a table, ``V[d, a]`` is the column
+      ``inertia_tensor_eigenvectors-d-a``. Unlike ITK's corner (origin), the
+      size and the center do not depend on the signs of the eigenvectors.
+      When principal moments are equal, the axes (and so the box) are not
+      unique.
     """
     if convex_hull_3d not in ("gpu", "qhull"):
         raise ValueError(
@@ -816,6 +863,20 @@ def regionprops_dict(
 
     if "solidity" in required_props:
         out["solidity"] = out["area"] / out["area_convex"]
+
+    compute_obb_size = "oriented_bbox_size" in required_props
+    compute_obb_center = "oriented_bbox_center" in required_props
+    if compute_obb_size or compute_obb_center:
+        _regionprops_oriented_bbox(
+            label_image,
+            out["bbox"],
+            out["inertia_tensor_eigenvectors"],
+            max_label,
+            spacing=spacing,
+            compute_size=compute_obb_size,
+            compute_center=compute_obb_center,
+            props_dict=out,
+        )
 
     compute_coords = "coords" in required_props
     compute_coords_scaled = "coords_scaled" in required_props

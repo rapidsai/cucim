@@ -14,7 +14,7 @@ from cucim.skimage._vendored import ndimage as ndi
 from cucim.skimage.morphology import convex_hull_image
 
 from ._regionprops_gpu_basic_kernels import _bbox_slices, regionprops_image
-from ._regionprops_gpu_utils import _warp_includes
+from ._regionprops_gpu_utils import _includes, _warp_includes
 
 # Store information on which other properties a given property depends on
 # This information will be used by `regionprops_dict` to make sure that when
@@ -30,6 +30,8 @@ convex_deps["feret_diameter_min_perpendicular"] = ["bbox"]
 convex_deps["feret_angle_max"] = ["bbox"]
 convex_deps["feret_angle_min"] = ["bbox"]
 convex_deps["perimeter_convex"] = ["bbox"]
+convex_deps["oriented_bbox_size"] = ["bbox", "inertia_tensor_eigenvectors"]
+convex_deps["oriented_bbox_center"] = ["bbox", "inertia_tensor_eigenvectors"]
 
 
 def _get_row_extent_dtype(shape):
@@ -2365,6 +2367,203 @@ def _pixel_area(spacing):
     return math.prod(spacing)
 
 
+def _cached_row_extents(label_image, bbox, max_label, props_dict):
+    """`_regionprops_row_extents`, stored in `props_dict` (under a key that is
+    not a property) so that the convex-hull properties and the oriented
+    bounding box share one pass."""
+    key = "_row_extents"
+    if props_dict is None or key not in props_dict:
+        extents = _regionprops_row_extents(label_image, bbox, max_label)
+        if props_dict is None:
+            return extents
+        props_dict[key] = extents
+    return props_dict[key]
+
+
+@cp.memoize(for_each_device=True)
+def _get_oriented_bbox_kernel(ndim):
+    """Kernel projecting the ends of each row of each region onto the axes
+    of its oriented bounding box.
+
+    One thread per row of a label's bounding box (as `_get_hull_rows_3d_kernel`).
+    The centers of the row's first and last pixel, relative to the bounding
+    box and scaled by the spacing, are projected onto each column of the
+    label's ``eigvecs``, and the smallest and largest projections are kept
+    per label and axis with atomics. A projection is linear, so its extremes
+    over a row are at the row's ends, and over a region at the ends of its
+    rows.
+    """
+    source = """
+      E first = row_first[i];
+      E last = row_last[i];
+      if (first <= last) {
+        // the label of this row: the last l with offsets[l] <= i
+        long long l = 0;
+        long long l_end = max_label;
+        while (l_end - l > 1) {
+          long long mid = (l + l_end) / 2;
+          if (offsets[mid] <= i) {
+            l = mid;
+          } else {
+            l_end = mid;
+          }
+        }
+        long long local = static_cast<long long>(i) - offsets[l];"""
+    if ndim == 2:
+        source += """
+        double c[2] = {static_cast<double>(local) * spacing0, 0.0};"""
+    else:
+        source += """
+        long long h = static_cast<long long>(bbox[l * 6 + 4]
+                                             - bbox[l * 6 + 1]);
+        double c[3] = {static_cast<double>(local / h) * spacing0,
+                       static_cast<double>(local % h) * spacing1, 0.0};"""
+    last_spacing = f"spacing{ndim - 1}"
+    source += f"""
+        double x_first = static_cast<double>(first) * {last_spacing};
+        double x_last = static_cast<double>(last) * {last_spacing};
+        const double* v = &eigvecs[l * {ndim * ndim}];
+        for (int a = 0; a < {ndim}; a++) {{
+          double p = 0.0;
+          for (int d = 0; d < {ndim - 1}; d++) {{
+            p += c[d] * v[d * {ndim} + a];
+          }}
+          double p_first = p + x_first * v[{(ndim - 1) * ndim} + a];
+          double p_last = p + x_last * v[{(ndim - 1) * ndim} + a];
+          cucim_atomic_min(&proj_min[l * {ndim} + a], fmin(p_first, p_last));
+          cucim_atomic_max(&proj_max[l * {ndim} + a], fmax(p_first, p_last));
+        }}
+      }}\n"""
+    spacing_args = ", ".join(f"float64 spacing{d}" for d in range(ndim))
+    inputs = (
+        "raw E row_first, raw E row_last, raw int64 offsets, raw B bbox, "
+        f"raw float64 eigvecs, int64 max_label, {spacing_args}"
+    )
+    return cp.ElementwiseKernel(
+        inputs,
+        "raw float64 proj_min, raw float64 proj_max",
+        source,
+        preamble=_includes,
+        name=f"cucim_oriented_bbox_{ndim}d",
+    )
+
+
+def _regionprops_oriented_bbox(
+    label_image,
+    bbox,
+    eigvecs,
+    max_label,
+    *,
+    spacing=None,
+    compute_size=True,
+    compute_center=True,
+    props_dict=None,
+):
+    """Oriented bounding box of each region, as in ITK.
+
+    writes "oriented_bbox_size" to props_dict if `compute_size`
+    writes "oriented_bbox_center" to props_dict if `compute_center`
+
+    The box is aligned with the principal axes, the columns of
+    `eigvecs` (``inertia_tensor_eigenvectors``), and encloses all the
+    region's pixels (squares of the pixel spacing around the pixel
+    centers), as ITK's ``ShapeLabelMapFilter`` computes it. Its size along
+    each axis is in the order of the eigenvectors (the first eigenvector
+    belongs to the largest eigenvalue of the inertia tensor, the shortest
+    axis). Its center is in the coordinates of ``centroid`` (scaled by the
+    spacing). The size and the center do not depend on the signs of the
+    eigenvectors; the corners are
+    ``center + sum_a (+/- size[a] / 2) * eigvecs[:, a]``.
+
+    The extremes of the pixel centers along each axis come from the ends of
+    each row (`_get_oriented_bbox_kernel`), and the box is then widened by
+    the extent of a pixel along that axis, ``sum_d |eigvecs[d, a]| *
+    spacing[d]``. Absent labels get NaN.
+    """
+    if props_dict is None:
+        props_dict = {}
+    ndim = label_image.ndim
+    if spacing is None:
+        spacing = (1.0,) * ndim
+    elif isinstance(spacing, cp.ndarray):
+        spacing = cp.asnumpy(spacing)
+    spacing = tuple(float(v) for v in spacing)
+    eigvecs = cp.ascontiguousarray(eigvecs, dtype=cp.float64)
+    row_first, row_last, offsets, num_rows = _cached_row_extents(
+        label_image, bbox, max_label, props_dict
+    )
+    proj_min = cp.full((max_label, ndim), cp.inf, dtype=cp.float64)
+    proj_max = cp.full((max_label, ndim), -cp.inf, dtype=cp.float64)
+    if num_rows > 0:
+        _get_oriented_bbox_kernel(ndim)(
+            row_first,
+            row_last,
+            offsets,
+            bbox,
+            eigvecs,
+            max_label,
+            *spacing,
+            proj_min,
+            proj_max,
+            size=num_rows,
+        )
+    size = cp.empty((max_label, ndim), dtype=cp.float64)
+    center = cp.empty((max_label, ndim), dtype=cp.float64)
+    if max_label > 0:
+        _get_oriented_bbox_finish_kernel(ndim)(
+            proj_min,
+            proj_max,
+            eigvecs,
+            bbox,
+            *spacing,
+            size,
+            center,
+            size=max_label,
+        )
+    if compute_size:
+        props_dict["oriented_bbox_size"] = size
+    if compute_center:
+        props_dict["oriented_bbox_center"] = center
+    return props_dict
+
+
+@cp.memoize(for_each_device=True)
+def _get_oriented_bbox_finish_kernel(ndim):
+    """Kernel computing the size and center of each oriented bounding box
+    from the extremes of the pixel centers along its axes, one thread per
+    label (see `_regionprops_oriented_bbox`)."""
+    source = f"""
+      const double* v = &eigvecs[i * {ndim * ndim}];
+      const double* lo = &proj_min[i * {ndim}];
+      const double* hi = &proj_max[i * {ndim}];
+      double spacing[{ndim}] = {{{", ".join(f"spacing{d}" for d in range(ndim))}}};
+      bool empty = isinf(lo[0]);
+      for (int d = 0; d < {ndim}; d++) {{
+        center[i * {ndim} + d] = empty ? nan("")
+            : static_cast<double>(bbox[i * {2 * ndim} + d]) * spacing[d];
+      }}
+      for (int a = 0; a < {ndim}; a++) {{
+        // widened by the extent of one pixel along the axis
+        double extent = 0.0;
+        for (int d = 0; d < {ndim}; d++) {{
+          extent += fabs(v[d * {ndim} + a]) * spacing[d];
+        }}
+        size[i * {ndim} + a] = empty ? nan("") : hi[a] - lo[a] + extent;
+        double mid = 0.5 * (lo[a] + hi[a]);
+        for (int d = 0; d < {ndim}; d++) {{
+          center[i * {ndim} + d] += empty ? 0.0 : mid * v[d * {ndim} + a];
+        }}
+      }}\n"""
+    spacing_args = ", ".join(f"float64 spacing{d}" for d in range(ndim))
+    return cp.ElementwiseKernel(
+        "raw float64 proj_min, raw float64 proj_max, raw float64 eigvecs, "
+        f"raw B bbox, {spacing_args}",
+        "raw float64 size, raw float64 center",
+        source,
+        name=f"cucim_oriented_bbox_finish_{ndim}d",
+    )
+
+
 def _regionprops_convex(
     label_image,
     bbox,
@@ -2414,8 +2613,8 @@ def _regionprops_convex(
             "images only"
         )
     if ndim in (2, 3) and max_label > 0:
-        row_first, row_last, offsets, num_rows = _regionprops_row_extents(
-            label_image, bbox, max_label
+        row_first, row_last, offsets, num_rows = _cached_row_extents(
+            label_image, bbox, max_label, props_dict
         )
         if ndim == 2:
             row_lo, row_hi, num_pixels = _convex_hull_rows_2d(
