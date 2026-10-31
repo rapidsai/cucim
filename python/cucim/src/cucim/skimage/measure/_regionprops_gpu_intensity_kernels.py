@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 import math
@@ -123,6 +123,8 @@ def _get_intensity_min_max_code(
     # Note: CuPy provides atomicMin and atomicMax for float and double in
     #       cupy/_core/include/atomics.cuh
     #       The integer variants are part of CUDA itself.
+    #       The kernels call cucim_atomic_min and cucim_atomic_max (see
+    #       _includes), because CuPy's double overloads round to float.
 
     source_pre = ""
     if compute_min:
@@ -168,11 +170,11 @@ def _get_intensity_min_max_code(
     if compute_min:
         for c in range(num_channels):
             source_post += f"""
-            atomicMin(&minimums[{nc}(lab - 1) + {c}], min_vals[{nc}jj + {c}]);"""  # noqa: E501
+            cucim_atomic_min(&minimums[{nc}(lab - 1) + {c}], min_vals[{nc}jj + {c}]);"""  # noqa: E501
     if compute_max:
         for c in range(num_channels):
             source_post += f"""
-            atomicMax(&maximums[{nc}(lab - 1) + {c}], max_vals[{nc}jj + {c}]);"""  # noqa: E501
+            cucim_atomic_max(&maximums[{nc}(lab - 1) + {c}], max_vals[{nc}jj + {c}]);"""  # noqa: E501
     return source_pre, source_operation, source_post
 
 
