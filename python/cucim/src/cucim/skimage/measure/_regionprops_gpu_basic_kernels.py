@@ -1088,6 +1088,130 @@ def regionprops_label_filled(
     return label_filled
 
 
+def _pack_crops(extents):
+    """Positions of boxes with the given extents in a canvas.
+
+    Shelf packing along axis 0 (shelves) and the last axis (boxes in a
+    shelf), tallest boxes first, with one empty pixel around every box and
+    along the canvas border. Any middle axes start at 1 and get the largest
+    extent. Returns the canvas shape and each box's start in the canvas.
+    """
+    extents = np.asarray(extents, dtype=np.int64)
+    num, ndim = extents.shape
+    heights, widths = extents[:, 0], extents[:, -1]
+    total = int(np.sum(heights * widths))
+    canvas_width = max(int(widths.max()) + 2, math.isqrt(total) + 2)
+    starts = np.ones((num, ndim), dtype=np.int64)
+    y, x, shelf = 1, 1, 0
+    for i in np.argsort(-heights, kind="stable"):
+        if x > 1 and x + widths[i] + 1 > canvas_width:
+            y += shelf + 1
+            x, shelf = 1, 0
+        starts[i, 0], starts[i, -1] = y, x
+        x += int(widths[i]) + 1
+        shelf = max(shelf, int(heights[i]))
+    shape = (
+        (y + shelf + 1,)
+        + tuple(int(e) + 2 for e in extents[:, 1:-1].max(axis=0))
+        + (canvas_width,)
+    )
+    return shape, starts
+
+
+@cp.memoize(for_each_device=True)
+def _get_crops_to_canvas_kernel(ndim):
+    """Kernel copying the masks ``labels[box] == label`` of several labels
+    into a canvas, one thread per pixel of the boxes, and marking each
+    copied pixel with its box's index + 1 in ``box_ids``."""
+    source = f"""
+      // the box of this pixel: the last b with box_offsets[b] <= i
+      long long b = 0;
+      long long b_end = num_boxes;
+      while (b_end - b > 1) {{
+        long long mid = (b + b_end) / 2;
+        if (box_offsets[mid] <= i) {{
+          b = mid;
+        }} else {{
+          b_end = mid;
+        }}
+      }}
+      long long rem = static_cast<long long>(i) - box_offsets[b];
+      const long long* box = &boxes[b * {3 * ndim + 1}];
+      long long src = 0, dst = 0;
+      long long src_stride = 1, dst_stride = 1;
+      for (int d = {ndim - 1}; d >= 0; d--) {{
+        long long extent = box[{ndim} + d];
+        long long c = rem % extent;
+        rem /= extent;
+        src += (box[d] + c) * src_stride;
+        dst += (box[{2 * ndim} + d] + c) * dst_stride;
+        src_stride *= labels_shape[d];
+        dst_stride *= canvas_shape[d];
+      }}
+      canvas[dst] = labels[src] == static_cast<X>(box[{3 * ndim}]);
+      box_ids[dst] = static_cast<int>(b + 1);\n"""
+    return cp.ElementwiseKernel(
+        "raw X labels, raw int64 labels_shape, raw int64 boxes, "
+        "raw int64 box_offsets, int64 num_boxes, raw int64 canvas_shape",
+        "raw bool canvas, raw int32 box_ids",
+        source,
+        name=f"cucim_crops_to_canvas_{ndim}d",
+    )
+
+
+def _fill_holes_of_labels(label_image, labels, bbox_host, compute_image=False):
+    """``binary_fill_holes`` of the crops ``label_image[bbox] == label`` of
+    several labels at once (with the ``3**ndim`` structuring element, as
+    scikit-image fills a region's holes).
+
+    The crops are packed into one canvas with one background pixel between
+    them (`_pack_crops`), so that the background at each crop's border is
+    connected to the canvas border, and a crop's holes are exactly those it
+    has on its own; one ``binary_fill_holes`` call then fills all of them.
+    Returns the number of pixels of each filled crop and, if
+    `compute_image`, the filled crops (views of one array).
+    """
+    ndim = label_image.ndim
+    labels = np.asarray(labels, dtype=np.int64)
+    box_min = bbox_host[labels - 1, :ndim].astype(np.int64)
+    extents = bbox_host[labels - 1, ndim:].astype(np.int64) - box_min
+    canvas_shape, starts = _pack_crops(extents)
+    sizes = np.prod(extents, axis=1)
+    box_offsets = np.zeros(len(labels), dtype=np.int64)
+    np.cumsum(sizes[:-1], out=box_offsets[1:])
+    boxes = np.concatenate(
+        [box_min, extents, starts, labels[:, np.newaxis]], axis=1
+    )
+    canvas = cp.zeros(canvas_shape, dtype=bool)
+    box_ids = cp.zeros(canvas_shape, dtype=cp.int32)
+    if not label_image.flags.c_contiguous:
+        label_image = cp.ascontiguousarray(label_image)
+    _get_crops_to_canvas_kernel(ndim)(
+        label_image,
+        cp.asarray(label_image.shape, dtype=cp.int64),
+        cp.asarray(boxes),
+        cp.asarray(box_offsets),
+        len(labels),
+        cp.asarray(canvas_shape, dtype=cp.int64),
+        canvas,
+        box_ids,
+        size=int(sizes.sum()),
+    )
+    filled = ndi.binary_fill_holes(canvas, cp.ones((3,) * ndim, dtype=bool))
+    # the filled pixels of each box, with the label-run count (few boxes
+    # would make the atomics of cupy.bincount contend)
+    counts = regionprops_num_pixels(
+        cp.where(filled, box_ids, 0), max_label=len(labels)
+    ).astype(cp.int64)
+    images = None
+    if compute_image:
+        images = [
+            filled[tuple(slice(int(a), int(a + e)) for a, e in zip(st, ext))]
+            for st, ext in zip(starts, extents)
+        ]
+    return counts, images
+
+
 def _regionprops_filled(
     label_image,
     label_filled,
@@ -1095,13 +1219,15 @@ def _regionprops_filled(
     max_label,
     spacing=None,
     compute_image=False,
+    bbox=None,
     props_dict=None,
 ):
     """Compute num_pixels_filled, area_filled and (optionally) image_filled.
 
     The values come from `label_filled` (see `_fill_holes_by_label`), except
-    for the labels in `labels_inexact`, which are recomputed one by one with
-    ``binary_fill_holes`` on their bounding-box crop, as scikit-image does.
+    for the labels in `labels_inexact`, which are recomputed with
+    ``binary_fill_holes`` on their bounding-box crops, as scikit-image does,
+    all at once (`_fill_holes_of_labels`).
 
     writes "num_pixels_filled" and "area_filled" to `props_dict`
     writes "image_filled" to `props_dict` if `compute_image` is True
@@ -1122,16 +1248,20 @@ def _regionprops_filled(
         )
         images = list(images)
     if labels_inexact.size > 0:
-        _, slices = regionprops_bbox_coords(
-            label_image, max_label=max_label, return_slices=True
+        if bbox is None:
+            bbox, _ = regionprops_bbox_coords(label_image, max_label=max_label)
+        counts, images_inexact = _fill_holes_of_labels(
+            label_image,
+            labels_inexact,
+            cp.asnumpy(bbox),
+            compute_image=compute_image,
         )
-        structure = cp.ones((3,) * label_image.ndim, dtype=bool)
-        for lab in labels_inexact:
-            image = label_image[slices[lab - 1]] == lab
-            image_filled = ndi.binary_fill_holes(image, structure)
-            num_pixels_filled[lab - 1] = image_filled.sum()
-            if compute_image:
-                images[lab - 1] = image_filled
+        num_pixels_filled[cp.asarray(labels_inexact - 1)] = counts.astype(
+            num_pixels_filled.dtype
+        )
+        if compute_image:
+            for lab, image in zip(labels_inexact, images_inexact):
+                images[lab - 1] = image
     area_filled = num_pixels_filled.astype(cp.float32)
     if spacing is not None:
         area_filled *= math.prod(float(s) for s in spacing)

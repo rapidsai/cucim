@@ -1932,6 +1932,37 @@ def test_label_filled():
     assert_array_equal(label_filled, expected)
 
 
+@pytest.mark.parametrize("ndim", [2, 3])
+def test_fill_holes_of_labels_batch(ndim):
+    # the crops packed into one canvas are filled as one at a time
+    from cucim.skimage.measure._regionprops_gpu_basic_kernels import (
+        _fill_holes_of_labels,
+    )
+
+    rng = np.random.default_rng(3)
+    shape = (120, 150) if ndim == 2 else (30, 40, 36)
+    # nested and touching regions: labeled components of noise levels
+    noise = ndi.gaussian_filter(cp.asarray(rng.random(shape)), 2)
+    levels = cp.digitize(noise, cp.percentile(noise, [20, 50, 80]))
+    labels = measure.label(levels + 1, connectivity=ndim)
+    max_label = int(labels.max())
+    bbox, _ = regionprops_bbox_coords(labels, max_label=max_label)
+    bbox_host = cp.asnumpy(bbox)
+    labels_list = np.arange(1, max_label + 1)
+    counts, images = _fill_holes_of_labels(
+        labels, labels_list, bbox_host, compute_image=True
+    )
+    structure = cp.ones((3,) * ndim, dtype=bool)
+    for lab, count, image in zip(labels_list, cp.asnumpy(counts), images):
+        sl = tuple(
+            slice(int(bbox_host[lab - 1, d]), int(bbox_host[lab - 1, d + ndim]))
+            for d in range(ndim)
+        )
+        expected = ndi.binary_fill_holes(labels[sl] == lab, structure)
+        assert_array_equal(image, expected)
+        assert count == int(expected.sum())
+
+
 def test_fill_holes_by_label_tiling_is_exact():
     # touching labels without nesting need no per-label recomputation
     labels = cp.arange(1, 65, dtype=cp.int32).reshape(8, 8)
