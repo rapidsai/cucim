@@ -928,22 +928,38 @@ def regionprops_num_boundary_pixels(labels, max_label=None, props_dict=None):
     return edge_counts
 
 
-@cp.memoize(for_each_device=True)
-def _get_inexact_fill_labels_kernel(ndim):
-    """Kernel flagging the labels whose filled region the batch fill of
-    `_fill_holes_by_label` may get wrong, one thread per pixel.
+def _neighbor_offsets_code(ndim, body):
+    """Code running `body` for each in-image neighbor q (raveled index) of
+    pixel i, with the coordinates `c` and the strides `stride` of
+    `_pixel_coords_code`; `body` can use ``q`` and ``pq``, the neighbor's
+    index in the image padded by one pixel."""
+    code = ""
+    for o in itertools.product((-1, 0, 1), repeat=ndim):
+        if not any(o):
+            continue
+        inside = " && ".join(
+            (f"c[{d}] >= 1" if v < 0 else f"c[{d}] + 1 < labels.shape()[{d}]")
+            for d, v in enumerate(o)
+            if v
+        )
+        delta = " + ".join(f"({v}) * stride[{d}]" for d, v in enumerate(o) if v)
+        pdelta = " + ".join(
+            f"({v}) * pstride[{d}]" for d, v in enumerate(o) if v
+        )
+        code += f"""
+        if ({inside}) {{
+          long long q = static_cast<long long>(i) + {delta};
+          long long pq = p + {pdelta};
+          {body}
+        }}"""
+    return code
 
-    A pixel of label A flags A if one of its 3**ndim - 1 neighbors (inside
-    the image) is
-    (a) background in a hole bordered by several labels (``multi`` of its
-        background component, in the padded ``bg_labels``), or
-    (b) of another label, in a connected component (``components``) whose
-        bounding box lies strictly inside A's.
-    """
-    offsets = [o for o in itertools.product((-1, 0, 1), repeat=ndim) if any(o)]
-    source = f"""
-      X a = labels[i];
-      if (a != 0 && !flags[a - 1]) {{
+
+def _pixel_coords_code(ndim):
+    """Coordinates `c`, strides `stride` and padded strides `pstride` of
+    pixel i of `labels`, and its index `p` in the image padded by one
+    pixel."""
+    return f"""
         long long rem = i;
         long long c[{ndim}];
         for (int d = {ndim - 1}; d >= 0; d--) {{
@@ -961,7 +977,82 @@ def _get_inexact_fill_labels_kernel(ndim):
         long long p = 0;
         for (int d = 0; d < {ndim}; d++) {{
           p += (c[d] + 1) * pstride[d];
+        }}"""
+
+
+@cp.memoize(for_each_device=True)
+def _get_hole_neighbors_kernel(ndim):
+    """Kernel finding the labels that border each hole, one thread per
+    pixel.
+
+    A background pixel in a hole (a component of the padded ``bg_labels``
+    other than ``outer``) adds the largest and the smallest label among its
+    3**ndim - 1 neighbors to ``hole_max`` and ``hole_min`` of its component
+    with atomics. The pixels of the outer component, most of the background,
+    are skipped. A labeled pixel next to a pixel of another label sets
+    ``touching[0]``.
+    """
+    source = f"""
+      X v = labels[i];
+      {_pixel_coords_code(ndim)}
+      if (v == 0) {{
+        G id = bg_labels[p];
+        if (id != outer) {{
+          W nb_max = 0;
+          W nb_min = no_label;
+          {
+        _neighbor_offsets_code(
+            ndim,
+            '''W b = static_cast<W>(labels[q]);
+          if (b != 0) {
+            nb_max = max(nb_max, b);
+            nb_min = min(nb_min, b);
+          }''',
+        )
+    }
+          if (nb_max != 0) {{
+            atomicMax(&hole_max[id], nb_max);
+            atomicMin(&hole_min[id], nb_min);
+          }}
         }}
+      }} else {{
+        bool other = false;
+        {
+        _neighbor_offsets_code(
+            ndim,
+            '''X b = labels[q];
+          other = other || (b != 0 && b != v);''',
+        )
+    }
+        if (other) {{
+          touching[0] = 1;
+        }}
+      }}\n"""
+    return cp.ElementwiseKernel(
+        "raw X labels, raw G bg_labels, G outer, W no_label",
+        "raw W hole_max, raw W hole_min, raw uint8 touching",
+        source,
+        name=f"cucim_hole_neighbors_{ndim}d",
+    )
+
+
+@cp.memoize(for_each_device=True)
+def _get_inexact_fill_labels_kernel(ndim):
+    """Kernel flagging the labels whose filled region the batch fill of
+    `_fill_holes_by_label` may get wrong, one thread per pixel.
+
+    A pixel of label A flags A if one of its 3**ndim - 1 neighbors (inside
+    the image) is
+    (a) background in a hole bordered by several labels (``multi`` of its
+        background component, in the padded ``bg_labels``), or
+    (b) of another label, in a connected component (``components``) whose
+        bounding box lies strictly inside A's.
+    """
+    offsets = [o for o in itertools.product((-1, 0, 1), repeat=ndim) if any(o)]
+    source = f"""
+      X a = labels[i];
+      if (a != 0 && !flags[a - 1]) {{
+{_pixel_coords_code(ndim)}
         const B* box_a = &bbox[(a - 1) * {2 * ndim}];
         bool flag = false;"""
     for o in offsets:
@@ -1043,24 +1134,25 @@ def _fill_holes_by_label(labels, max_label, bbox=None):
     bg_labels = label(background, connectivity=ndim)
     num_bg = int(bg_labels.max())
     outer = int(bg_labels[(0,) * ndim])
+    if not labels.flags.c_contiguous:
+        labels = cp.ascontiguousarray(labels)
 
-    # largest and smallest label in the 3**ndim neighborhood of each pixel
-    # (the background is excluded from the minimum)
+    # the largest and smallest label bordering each hole, and whether two
+    # labels touch (_get_hole_neighbors_kernel)
     no_label = max_label + 1
-    nb_max = ndi.grey_dilation(padded, size=3, mode="constant", cval=0)
-    nb_min = ndi.grey_erosion(
-        cp.where(background, no_label, padded).astype(work_dtype, copy=False),
-        size=3,
-        mode="constant",
-        cval=no_label,
-    )
-
-    # labels bordering each background component
-    bg_ids = bg_labels[background]
     hole_max = cp.zeros(num_bg + 1, dtype=work_dtype)
     hole_min = cp.full(num_bg + 1, no_label, dtype=work_dtype)
-    cp.maximum.at(hole_max, bg_ids, nb_max[background])
-    cp.minimum.at(hole_min, bg_ids, nb_min[background])
+    touching = cp.zeros((1,), dtype=cp.uint8)
+    _get_hole_neighbors_kernel(ndim)(
+        labels,
+        bg_labels,
+        bg_labels.dtype.type(outer),
+        hole_max.dtype.type(no_label),
+        hole_max,
+        hole_min,
+        touching,
+        size=labels.size,
+    )
     component_ids = cp.arange(num_bg + 1)
     is_hole = (component_ids != 0) & (component_ids != outer)
     single = is_hole & (hole_min == hole_max)
@@ -1074,14 +1166,10 @@ def _fill_holes_by_label(labels, max_label, bbox=None):
     # labels bordering a hole that borders several labels (a), or touching a
     # connected component of another label whose bounding box lies strictly
     # inside their own (b), see _get_inexact_fill_labels_kernel
-    touching = (~background) & ((nb_max != padded) | (nb_min != padded))
-    touching &= padded != 0
     has_multi = bool(multi.any())
-    has_touching = bool(touching.any())
+    has_touching = bool(touching[0])
     if not (has_multi or has_touching):
         return label_filled, np.zeros((0,), dtype=np.int64)
-    if not labels.flags.c_contiguous:
-        labels = cp.ascontiguousarray(labels)
     if bbox is None:
         bbox, _ = regionprops_bbox_coords(labels, max_label=max_label)
     if has_touching:
