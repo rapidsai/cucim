@@ -124,6 +124,11 @@ PROPS_GPU_EXTRA = {
     "perimeter_on_border_ratio": "perimeter_on_border_ratio",
     "equivalent_spherical_perimeter": "equivalent_spherical_perimeter",
     "surface_area": "surface_area",
+    # Feret diameters and angles as in DIPlib's Feret feature
+    "feret_diameter_min": "feret_diameter_min",
+    "feret_diameter_min_perpendicular": "feret_diameter_min_perpendicular",
+    "feret_angle_max": "feret_angle_max",
+    "feret_angle_min": "feret_angle_min",
 }
 PROPS_GPU.update(PROPS_GPU_EXTRA)
 # properties recently removed from PROPS dict (but still supported)
@@ -146,6 +151,10 @@ COL_DTYPES_EXTRA = {
     "perimeter_on_border_ratio": float,
     "equivalent_spherical_perimeter": float,
     "surface_area": float,
+    "feret_diameter_min": float,
+    "feret_diameter_min_perpendicular": float,
+    "feret_angle_max": float,
+    "feret_angle_min": float,
 }
 
 # expand column dtypes from _regionprops to include the extra properties
@@ -224,6 +233,10 @@ ndim_2_only = {
     "orientation",
     "perimeter",
     "perimeter_crofton",  # could be updated to nD as in ITK
+    "feret_diameter_min",
+    "feret_diameter_min_perpendicular",
+    "feret_angle_max",
+    "feret_angle_min",
 }
 
 # set of properties that can only be computed for 3D regions
@@ -768,7 +781,21 @@ def regionprops_dict(
     compute_convex_image = "image_convex" in required_props
     compute_area_convex = "area_convex" in required_props
     compute_feret = "feret_diameter_max" in required_props
-    if compute_convex_image or compute_area_convex or compute_feret:
+    compute_feret_calipers = bool(
+        required_props
+        & {
+            "feret_diameter_min",
+            "feret_diameter_min_perpendicular",
+            "feret_angle_max",
+            "feret_angle_min",
+        }
+    )
+    if (
+        compute_convex_image
+        or compute_area_convex
+        or compute_feret
+        or compute_feret_calipers
+    ):
         _regionprops_convex(
             label_image,
             out["bbox"],
@@ -777,6 +804,7 @@ def regionprops_dict(
             compute_image=compute_convex_image,
             compute_area=compute_area_convex,
             compute_feret=compute_feret,
+            compute_feret_calipers=compute_feret_calipers,
             use_qhull=convex_hull_3d == "qhull",
             props_dict=out,
         )

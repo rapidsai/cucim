@@ -2156,6 +2156,102 @@ def test_feret_diameter_max(ndim, spacing, blob_kwargs):
     assert max_diff < math.sqrt(ndim)
 
 
+_FERET_CALIPER_PROPS = [
+    "feret_diameter_max",
+    "feret_diameter_min",
+    "feret_diameter_min_perpendicular",
+    "feret_angle_max",
+    "feret_angle_min",
+]
+
+
+def _fold_angle(a):
+    # an undirected angle in (-pi/2, pi/2]
+    a = (a + math.pi / 2) % math.pi - math.pi / 2
+    return a + math.pi if a <= -math.pi / 2 + 1e-12 else a
+
+
+def _feret_calipers_reference(image, spacing):
+    """Brute-force Feret values of the hull of the convex image's diamond
+    points. Ties: the sets of the angles (and perpendicular widths) of all
+    maximal pairs and minimal widths."""
+    from scipy.spatial import ConvexHull
+    from skimage.morphology import convex_hull_image
+
+    spacing = np.ones(2) if spacing is None else np.asarray(spacing, float)
+    centers = np.argwhere(convex_hull_image(image))
+    diamond = np.array([[-0.5, 0], [0.5, 0], [0, -0.5], [0, 0.5]])
+    points = (centers[:, np.newaxis] + diamond).reshape(-1, 2)
+    points = np.unique(points, axis=0) * spacing
+    v = points[ConvexHull(points).vertices]
+    dist = np.linalg.norm(v[:, np.newaxis] - v[np.newaxis], axis=-1)
+    dmax = dist.max()
+    angles_max = {
+        round(_fold_angle(math.atan2(*(v[j] - v[i])[::-1])), 8)
+        for i, j in zip(*np.nonzero(dist >= dmax * (1 - 1e-12)))
+    }
+    widths, angles, perps = [], [], []
+    for k in range(len(v)):
+        edge = v[(k + 1) % len(v)] - v[k]
+        edge /= np.linalg.norm(edge)
+        normal = np.array([-edge[1], edge[0]])
+        widths.append(np.abs((v - v[k]) @ normal).max())
+        angles.append(round(_fold_angle(math.atan2(normal[1], normal[0])), 8))
+        t = v @ edge
+        perps.append(t.max() - t.min())
+    widths = np.array(widths)
+    ties = np.nonzero(widths <= widths.min() * (1 + 1e-12))[0]
+    return (
+        dmax,
+        widths.min(),
+        {perps[k] for k in ties},
+        angles_max,
+        {angles[k] for k in ties},
+    )
+
+
+@pytest.mark.parametrize("kind", ["blobs", "lines", "random"])
+@pytest.mark.parametrize("spacing", [None, (0.7, 1.3)])
+def test_feret_calipers_2d(kind, spacing):
+    # minimum Feret diameter, the width perpendicular to it and the angles
+    # of the maximum and minimum diameters, on the hull of the convex image
+    # (the polygon of feret_diameter_max)
+    labels = _convex_test_labels(kind, 2)
+    result = regionprops_dict(
+        labels, properties=_FERET_CALIPER_PROPS, spacing=spacing
+    )
+    result = {k: cp.asnumpy(v) for k, v in result.items()}
+    labels_cpu = cp.asnumpy(labels)
+    for region in measure_cpu.regionprops(labels_cpu):
+        lab = region.label - 1
+        dmax, wmin, perps, angles_max, angles_min = _feret_calipers_reference(
+            region.image, spacing
+        )
+        assert_allclose(result["feret_diameter_max"][lab], dmax, rtol=1e-10)
+        assert_allclose(result["feret_diameter_min"][lab], wmin, rtol=1e-10)
+        assert any(
+            abs(result["feret_diameter_min_perpendicular"][lab] - p)
+            <= 1e-10 * p
+            for p in perps
+        )
+        assert round(result["feret_angle_max"][lab], 8) in angles_max
+        assert round(result["feret_angle_min"][lab], 8) in angles_min
+    # absent labels: 0 diameters and NaN angles
+    absent = np.setdiff1d(
+        np.arange(1, int(labels_cpu.max()) + 1), np.unique(labels_cpu)
+    )
+    for lab in absent - 1:
+        assert result["feret_diameter_min"][lab] == 0
+        assert np.isnan(result["feret_angle_max"][lab])
+
+
+def test_feret_calipers_3d_raises():
+    with pytest.raises(ValueError, match="2D label images only"):
+        regionprops_dict(
+            cp.ones((4, 4, 4), cp.uint8), properties=["feret_diameter_min"]
+        )
+
+
 @pytest.mark.parametrize("spacing", [None, (0.5, 0.35)])
 @pytest.mark.parametrize("kind", ["blobs", "large_blobs", "lines", "random"])
 def test_feret_diameter_max_batch_2d(spacing, kind):

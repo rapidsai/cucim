@@ -25,6 +25,10 @@ convex_deps["image_convex"] = ["bbox"]
 convex_deps["area_convex"] = ["bbox"]
 convex_deps["feret_diameter_max"] = ["bbox"]
 convex_deps["solidity"] = ["area", "area_convex"]
+convex_deps["feret_diameter_min"] = ["bbox"]
+convex_deps["feret_diameter_min_perpendicular"] = ["bbox"]
+convex_deps["feret_angle_max"] = ["bbox"]
+convex_deps["feret_angle_min"] = ["bbox"]
 
 
 def _get_row_extent_dtype(shape):
@@ -594,7 +598,7 @@ def _get_feret_diameter_max_2d_kernel():
 
 
 def _feret_diameter_max_2d(
-    row_lo, row_hi, offsets, num_rows, max_label, spacing=None
+    row_lo, row_hi, offsets, num_rows, max_label, spacing=None, chains=None
 ):
     """Maximum Feret diameter of each 2D region, from its convex image's rows.
 
@@ -604,11 +608,13 @@ def _feret_diameter_max_2d(
     reached at two vertices of their convex hull, which is also the hull of
     the diamond points of each row's first and last pixel. So the result is
     the largest distance between the vertices of the hull chains of the
-    convex image (`_get_hull_chains_2d_kernel`).
+    convex image (`_get_hull_chains_2d_kernel`), which can be given as
+    `chains`.
     """
-    chains = _convex_hull_chains_2d(
-        row_lo, row_hi, offsets, num_rows, max_label
-    )
+    if chains is None:
+        chains = _convex_hull_chains_2d(
+            row_lo, row_hi, offsets, num_rows, max_label
+        )
     spacing = (1.0, 1.0) if spacing is None else spacing
     feret = cp.empty((max_label,), dtype=cp.float64)
     _get_feret_diameter_max_2d_kernel()(
@@ -620,6 +626,169 @@ def _feret_diameter_max_2d(
         size=32 * max_label,
     )
     return feret
+
+
+@cp.memoize(for_each_device=True)
+def _get_feret_calipers_2d_kernel():
+    """Kernel computing the Feret diameters and angles of each 2D region
+    with rotating calipers, one thread per label.
+
+    The polygon is the hull of the label's convex image: its left chain from
+    top to bottom, then its right chain from bottom to top (without the
+    vertices the two chains share). Coordinates are scaled by the spacing.
+    For each edge, the vertex farthest from the edge's line is found by
+    advancing a pointer around the polygon, which moves at most twice around
+    it in total (Preparata and Shamos, 1985):
+
+    - its distance to the edge's line is the width of the polygon in the
+      direction normal to the edge; the smallest width is the minimum Feret
+      diameter, measured along that normal;
+    - the vertices it passes, with the edge's endpoints, are the antipodal
+      pairs, among which the largest distance is the maximum Feret diameter.
+
+    The width perpendicular to the minimum one is the extent of the vertices
+    along the edge of the minimum width. Angles are those of the direction
+    (d0, d1) between axis 0 and axis 1, atan2(d1, d0), folded into
+    (-pi/2, pi/2] (the convention of ``orientation``).
+    """
+    source = """
+      long long base = 2 * offsets[i] + i;
+      const E* left = &left_chains[2 * base];
+      const E* right = &right_chains[2 * base];
+      int n_left = chain_sizes[2 * i];
+      int n_right = chain_sizes[2 * i + 1];
+      if (n_left == 0) {
+        // an absent label
+        feret_min[i] = 0.0;
+        feret_min_perp[i] = 0.0;
+        angle_max[i] = nan("");
+        angle_min[i] = nan("");
+      } else {
+        // the right chain, bottom to top, without the shared end vertices
+        int top = (left[0] == right[0] && left[1] == right[1]) ? 1 : 0;
+        int bottom = (left[2 * (n_left - 1)] == right[2 * (n_right - 1)]
+                      && left[2 * (n_left - 1) + 1]
+                         == right[2 * (n_right - 1) + 1]) ? 1 : 0;
+        int n = n_left + n_right - top - bottom;
+        auto vy = [&](int k) -> double {
+          k = k % n;
+          E y = k < n_left ? left[2 * k]
+                           : right[2 * (n_right - 1 - bottom - (k - n_left))];
+          return static_cast<double>(y) * half_spacing0;
+        };
+        auto vx = [&](int k) -> double {
+          k = k % n;
+          E x = k < n_left ? left[2 * k + 1]
+                           : right[2 * (n_right - 1 - bottom - (k - n_left))
+                                   + 1];
+          return static_cast<double>(x) * half_spacing1;
+        };
+        double best_d2 = -1.0, best_dy = 0.0, best_dx = 0.0;
+        auto check_pair = [&](int a, int b) {
+          double dy = vy(b) - vy(a);
+          double dx = vx(b) - vx(a);
+          double d2 = dy * dy + dx * dx;
+          if (d2 > best_d2) {
+            best_d2 = d2;
+            best_dy = dy;
+            best_dx = dx;
+          }
+        };
+        double min_w = 1.0 / 0.0;
+        int min_edge = 0;
+        int j = 1;
+        for (int e = 0; e < n; e++) {
+          double ay = vy(e), ax = vx(e);
+          double ey = vy(e + 1) - ay;
+          double ex = vx(e + 1) - ax;
+          // twice the area of the triangle (edge, vertex k): proportional
+          // to the distance of vertex k from the edge's line
+          auto height = [&](int k) {
+            return fabs(ey * (vx(k) - ax) - ex * (vy(k) - ay));
+          };
+          while (height(j + 1) > height(j)) {
+            check_pair(e, j);
+            check_pair(e + 1, j);
+            j = (j + 1) % n;
+          }
+          check_pair(e, j);
+          check_pair(e + 1, j);
+          if (height(j + 1) == height(j)) {
+            // an edge parallel to edge e: its other end is antipodal too
+            check_pair(e, j + 1);
+            check_pair(e + 1, j + 1);
+          }
+          double w = height(j) / sqrt(ey * ey + ex * ex);
+          if (w < min_w) {
+            min_w = w;
+            min_edge = e;
+          }
+        }
+        // the extent of the vertices along the edge of the minimum width
+        double ey = vy(min_edge + 1) - vy(min_edge);
+        double ex = vx(min_edge + 1) - vx(min_edge);
+        double norm = sqrt(ey * ey + ex * ex);
+        double lo = 1.0 / 0.0, hi = -1.0 / 0.0;
+        for (int k = 0; k < n; k++) {
+          double t = (vy(k) * ey + vx(k) * ex) / norm;
+          lo = fmin(lo, t);
+          hi = fmax(hi, t);
+        }
+        feret_min[i] = min_w;
+        feret_min_perp[i] = hi - lo;
+        // angles in (-pi/2, pi/2]; the minimum is measured along the normal
+        // (-ex, ey) of its edge
+        auto fold = [](double a) {
+          const double pi = 3.141592653589793;
+          if (a > 0.5 * pi) {
+            a -= pi;
+          } else if (a <= -0.5 * pi) {
+            a += pi;
+          }
+          return a;
+        };
+        angle_max[i] = fold(atan2(best_dx, best_dy));
+        angle_min[i] = fold(atan2(ey, -ex));
+      }\n"""
+    inputs = (
+        "raw E left_chains, raw E right_chains, raw int32 chain_sizes, "
+        "raw int64 offsets, float64 half_spacing0, float64 half_spacing1"
+    )
+    outputs = (
+        "raw float64 feret_min, raw float64 feret_min_perp, "
+        "raw float64 angle_max, raw float64 angle_min"
+    )
+    return cp.ElementwiseKernel(
+        inputs, outputs, source, name="cucim_feret_calipers_2d"
+    )
+
+
+def _feret_calipers_2d(chains, offsets, max_label, spacing=None):
+    """Minimum Feret diameter, the width perpendicular to it, and the angles
+    of the maximum and minimum Feret diameters of each 2D region, from the
+    hull chains of its convex image (see `_get_feret_calipers_2d_kernel`).
+    """
+    spacing = (1.0, 1.0) if spacing is None else spacing
+    out = [cp.empty((max_label,), dtype=cp.float64) for _ in range(4)]
+    _get_feret_calipers_2d_kernel()(
+        *chains,
+        offsets,
+        0.5 * float(spacing[0]),
+        0.5 * float(spacing[1]),
+        *out,
+        size=max_label,
+    )
+    return dict(
+        zip(
+            (
+                "feret_diameter_min",
+                "feret_diameter_min_perpendicular",
+                "feret_angle_max",
+                "feret_angle_min",
+            ),
+            out,
+        )
+    )
 
 
 @cp.memoize(for_each_device=True)
@@ -2196,6 +2365,7 @@ def _regionprops_convex(
     compute_image=False,
     compute_area=False,
     compute_feret=False,
+    compute_feret_calipers=False,
     use_qhull=False,
     props_dict=None,
 ):
@@ -2204,6 +2374,9 @@ def _regionprops_convex(
     writes "image_convex" to props_dict if `compute_image`
     writes "area_convex" to props_dict if `compute_area`
     writes "feret_diameter_max" to props_dict if `compute_feret`
+    writes "feret_diameter_min", "feret_diameter_min_perpendicular",
+        "feret_angle_max" and "feret_angle_min" to props_dict if
+        `compute_feret_calipers` (2D only)
 
     In 2D and 3D, all properties are computed for all labels at once from
     the hull of each region's row extents (see `_get_hull_chains_2d_kernel`,
@@ -2221,9 +2394,13 @@ def _regionprops_convex(
     """
     if props_dict is None:
         props_dict = {}
-    if not (compute_image or compute_area or compute_feret):
+    if not (
+        compute_image or compute_area or compute_feret or compute_feret_calipers
+    ):
         return props_dict
     ndim = label_image.ndim
+    if compute_feret_calipers and ndim != 2:
+        raise ValueError("the Feret angles and minimum are for 2D images only")
     if ndim in (2, 3) and max_label > 0:
         row_first, row_last, offsets, num_rows = _regionprops_row_extents(
             label_image, bbox, max_label
@@ -2251,10 +2428,25 @@ def _regionprops_convex(
             props_dict["image_convex"] = _convex_images(
                 row_lo, row_hi, offsets, bbox, max_label
             )
-        if compute_feret and ndim == 2:
-            props_dict["feret_diameter_max"] = _feret_diameter_max_2d(
-                row_lo, row_hi, offsets, num_rows, max_label, spacing
+        if ndim == 2 and (compute_feret or compute_feret_calipers):
+            # the hull chains of the convex images
+            chains = _convex_hull_chains_2d(
+                row_lo, row_hi, offsets, num_rows, max_label
             )
+            if compute_feret:
+                props_dict["feret_diameter_max"] = _feret_diameter_max_2d(
+                    row_lo,
+                    row_hi,
+                    offsets,
+                    num_rows,
+                    max_label,
+                    spacing,
+                    chains=chains,
+                )
+            if compute_feret_calipers:
+                props_dict.update(
+                    _feret_calipers_2d(chains, offsets, max_label, spacing)
+                )
         elif compute_feret:
             props_dict["feret_diameter_max"] = _feret_diameter_max_3d(
                 row_lo,
@@ -2268,6 +2460,15 @@ def _regionprops_convex(
             )
         return props_dict
 
+    if compute_feret_calipers:
+        # no labels
+        for name in (
+            "feret_diameter_min",
+            "feret_diameter_min_perpendicular",
+            "feret_angle_max",
+            "feret_angle_min",
+        ):
+            props_dict[name] = cp.zeros((0,), dtype=cp.float64)
     # bounding-box slices given explicitly: one convex image per label
     _, _, images_convex = regionprops_image(
         label_image,
