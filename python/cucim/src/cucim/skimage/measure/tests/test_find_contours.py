@@ -474,3 +474,34 @@ def test_plan_linked_contours_rejects_invalid_sublists():
             first,
             min_id,
         )
+
+
+@pytest.mark.skipif(
+    _skimage_cpp is None,
+    reason="optional cucim.skimage C++ extension is not available",
+)
+@pytest.mark.parametrize("return_packed", [False, True])
+@pytest.mark.parametrize("positive_orientation", ["low", "high"])
+def test_find_contours_device_and_host_assembly_agree(
+    monkeypatch, positive_orientation, return_packed
+):
+    image = cp.asarray((np.sin(8 * x) + np.cos(5 * y)).astype(np.float32))
+    results = []
+    # always assemble on the device, then always on the host
+    for min_segments in (0, 10**9):
+        monkeypatch.setattr(_fc, "_GPU_ASSEMBLY_MIN_SEGMENTS", min_segments)
+        results.append(
+            find_contours(
+                image,
+                0.0,
+                positive_orientation=positive_orientation,
+                return_packed=return_packed,
+            )
+        )
+    device, host = results
+    if return_packed:
+        device, host = list(device), list(host)
+    else:
+        assert len(device) == len(host)
+    for device_part, host_part in zip(device, host):
+        assert_array_equal(device_part, host_part)
