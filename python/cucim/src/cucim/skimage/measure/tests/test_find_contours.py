@@ -358,3 +358,97 @@ def test_find_contours_return_packed_requires_cpp(monkeypatch):
     monkeypatch.setattr(_fc, "_skimage_cpp", None)
     with pytest.raises(RuntimeError, match="requires the optional"):
         find_contours(cp.asarray(r), 0.5, return_packed=True)
+
+
+def _segments_of(image, level, fully_connected="low", mask=None):
+    image, level, vertex_connect_high, _, mask = (
+        _fc._validate_find_contours_inputs(
+            cp.asarray(image), level, fully_connected, "low", mask
+        )
+    )
+    return _fc._get_contour_segments(image, level, vertex_connect_high, mask)
+
+
+@pytest.mark.skipif(
+    _skimage_cpp is None,
+    reason="optional cucim.skimage C++ extension is not available",
+)
+@pytest.mark.parametrize("fully_connected", ["low", "high"])
+@pytest.mark.parametrize("seed", range(6))
+def test_linked_contours_match_sequential_assembler(seed, fully_connected):
+    # Smooth noise has open contours and many closed ones
+    rng = np.random.default_rng(seed)
+    shape = rng.integers(8, 80, 2)
+    yy, xx = np.mgrid[: shape[0], : shape[1]]
+    image = np.sin(xx / rng.uniform(1, 6)) * np.cos(yy / rng.uniform(1, 6))
+    image = image + 0.1 * rng.standard_normal(shape)
+    segments, segment_keys = _segments_of(image, 0.2, fully_connected)
+
+    expected_points, expected_offsets = _skimage_cpp.assemble_contours_packed(
+        cp.asnumpy(segments), cp.asnumpy(segment_keys)
+    )
+    packed = _fc._assemble_linked(segments, segment_keys)
+
+    assert packed is not None
+    points, offsets = packed
+    assert len(offsets) > 3
+    assert_array_equal(offsets, expected_offsets)
+    assert_array_equal(points, expected_points)
+
+
+@pytest.mark.skipif(
+    _skimage_cpp is None,
+    reason="optional cucim.skimage C++ extension is not available",
+)
+def test_linked_contours_closed_contour():
+    # A one pixel peak gives a diamond, a closed contour of four segments
+    image = np.zeros((5, 5))
+    image[2, 2] = 1
+    segments, segment_keys = _segments_of(image, 0.5)
+
+    points, offsets = _fc._assemble_linked(segments, segment_keys)
+
+    assert_array_equal(offsets, [0, 5])
+    assert_array_equal(points[0], points[-1])
+    assert len(np.unique(points, axis=0)) == 4
+
+
+@pytest.mark.skipif(
+    _skimage_cpp is None,
+    reason="optional cucim.skimage C++ extension is not available",
+)
+def test_linked_contours_fall_back_when_a_vertex_is_on_the_level():
+    # Several segments end at the vertices that are exactly on the level, so
+    # the segments cannot be linked by sorting their end points.
+    image = np.array([[2, 1, 0], [0, 2, 1], [1, 0, 0]], dtype=float)
+    segments, segment_keys = _segments_of(image, 1.0)
+    assert _fc._link_segments(segments, segment_keys) is None
+
+    expected = _fc._assemble_contours_python(cp.asnumpy(segments))
+    result = _fc._assemble_contours(segments, segment_keys)
+
+    assert len(result) == len(expected)
+    for result_contour, expected_contour in zip(result, expected):
+        assert_array_equal(result_contour, expected_contour)
+
+
+@pytest.mark.skipif(
+    _skimage_cpp is None,
+    reason="optional cucim.skimage C++ extension is not available",
+)
+def test_assemble_linked_contours_rejects_invalid_links():
+    segments = np.zeros((3, 2, 2))
+    segments[:, 1, :] = 1.0
+    with pytest.raises(ValueError, match="at most one"):
+        # Two segments cannot both be followed by segment 2
+        _skimage_cpp.assemble_linked_contours(
+            segments, np.array([2, 2, -1], dtype=np.int32)
+        )
+    with pytest.raises(ValueError, match="at most one"):
+        _skimage_cpp.assemble_linked_contours(
+            segments, np.array([5, -1, -1], dtype=np.int32)
+        )
+    with pytest.raises(ValueError, match="shape"):
+        _skimage_cpp.assemble_linked_contours(
+            segments, np.array([1, -1], dtype=np.int32)
+        )

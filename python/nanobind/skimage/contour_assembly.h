@@ -269,4 +269,128 @@ inline std::pair<std::size_t, std::size_t> count_active_contours(const ContourAs
     return { active_contours, total_points };
 }
 
+// Contours of segments that are already linked.
+//
+// ``next[i]`` is the segment that starts where segment ``i`` ends (-1 if there
+// is none). Every segment has at most one successor and one predecessor, so
+// the segments form open paths and closed loops. The contours (and the order
+// of their points) are the ones that ``build_contour_assembly`` makes:
+//
+// - contours are ordered by their lowest segment index;
+// - an open path starts at the ``from`` point of its first segment and ends at
+//   the ``to`` point of its last one;
+// - at the junction of two segments the point of the segment that comes first
+//   in the input is used (the ``to`` point of ``a`` if ``a`` precedes ``b``,
+//   else the ``from`` point of ``b``), because that is the node that already
+//   existed when the other segment was attached;
+// - a loop is closed by its highest numbered segment ``c``. It starts at the
+//   ``from`` point of the successor of ``c`` and ends with the ``to`` point of
+//   ``c``, so it has one more point than it has segments.
+//
+// ``segments`` points to ``n_segments`` (from_row, from_col, to_row, to_col)
+// records. ``points`` receives the points of all contours and ``offsets`` the
+// start of each contour in it (plus the total number of points at the end).
+// Returns false if ``next`` is not a valid set of links.
+inline bool trace_linked_contours(const double* segments,
+                                  const std::int32_t* next,
+                                  std::size_t n_segments,
+                                  std::vector<double>& points,
+                                  std::vector<std::int64_t>& offsets)
+{
+    std::vector<std::int32_t> prev(n_segments, -1);
+    for (std::size_t i = 0; i < n_segments; ++i)
+    {
+        const std::int32_t j = next[i];
+        if (j < 0)
+        {
+            continue;
+        }
+        if (static_cast<std::size_t>(j) >= n_segments || prev[j] >= 0)
+        {
+            return false;
+        }
+        prev[j] = static_cast<std::int32_t>(i);
+    }
+
+    // Find the first segment and the number of points of each contour. Segment
+    // ``i`` is the lowest numbered segment of its contour when it is reached
+    // here unseen, because all the lower numbered ones have been visited.
+    std::vector<std::uint8_t> seen(n_segments, 0);
+    std::vector<std::int32_t> first;
+    std::vector<std::uint8_t> closed;
+    offsets.assign(1, 0);
+    for (std::size_t i = 0; i < n_segments; ++i)
+    {
+        if (seen[i])
+        {
+            continue;
+        }
+        std::size_t start = i;
+        bool is_closed = false;
+        while (prev[start] >= 0)
+        {
+            start = static_cast<std::size_t>(prev[start]);
+            if (start == i)
+            {
+                is_closed = true;
+                break;
+            }
+        }
+        std::size_t count = 0;
+        if (is_closed)
+        {
+            std::size_t last = i;
+            std::size_t current = i;
+            do
+            {
+                seen[current] = 1;
+                ++count;
+                last = current > last ? current : last;
+                current = static_cast<std::size_t>(next[current]);
+            } while (current != i);
+            start = static_cast<std::size_t>(next[last]);
+        }
+        else
+        {
+            for (std::int64_t current = static_cast<std::int64_t>(start); current >= 0; current = next[current])
+            {
+                seen[current] = 1;
+                ++count;
+            }
+        }
+        first.push_back(static_cast<std::int32_t>(start));
+        closed.push_back(is_closed);
+        offsets.push_back(offsets.back() + static_cast<std::int64_t>(count + 1));
+    }
+
+    points.resize(2 * static_cast<std::size_t>(offsets.back()));
+    double* out = points.data();
+    for (std::size_t k = 0; k < first.size(); ++k)
+    {
+        std::size_t current = static_cast<std::size_t>(first[k]);
+        const std::size_t start = current;
+        out[0] = segments[4 * current];
+        out[1] = segments[4 * current + 1];
+        out += 2;
+        while (true)
+        {
+            const std::int32_t following = next[current];
+            if (following < 0 || (closed[k] && static_cast<std::size_t>(following) == start))
+            {
+                break;
+            }
+            const std::size_t other = static_cast<std::size_t>(following);
+            const double* point = current < other ? segments + 4 * current + 2 : segments + 4 * other;
+            out[0] = point[0];
+            out[1] = point[1];
+            out += 2;
+            current = other;
+        }
+        out[0] = segments[4 * current + 2];
+        out[1] = segments[4 * current + 3];
+        out += 2;
+    }
+    return true;
+}
+
 } // namespace cucim::skimage
