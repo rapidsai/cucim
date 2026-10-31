@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import functools
+import itertools
 import math
 import warnings
 from copy import deepcopy
@@ -24,6 +25,7 @@ from cucim.skimage.measure._regionprops import PROPS
 from cucim.skimage.measure._regionprops_gpu import (
     equivalent_diameter_area,
     ndim_2_only,
+    ndim_3_only,
     need_intensity_image,
     regionprops_area,
     regionprops_area_bbox,
@@ -65,6 +67,7 @@ from cucim.skimage.measure._regionprops_gpu_intensity_kernels import (
     intensity_deps,
 )
 from cucim.skimage.measure._regionprops_gpu_misc_kernels import (
+    _CROFTON_3D_WEIGHTS,
     _get_boundary_kernel,
     _get_euler_coefs,
     _get_perimeter_coefs,
@@ -1815,6 +1818,72 @@ def test_perimeter_crofton(shape, robust, volume_fraction, blob_size_fraction):
     allclose(values, expected["perimeter_crofton"])
 
 
+def _surface_area_reference(labels, spacing):
+    # each region alone, padded with background: every voxel adds the weight
+    # of each of its 26 neighbors that is outside the region
+    spacing = np.ones(3) if spacing is None else np.asarray(spacing)
+    labels = cp.asnumpy(labels)
+    out = np.zeros(int(labels.max()))
+    for lab in range(1, out.size + 1):
+        mask = np.pad(labels == lab, 1)
+        for k, off in enumerate(itertools.product(range(-1, 2), repeat=3)):
+            if any(off):
+                weight = _CROFTON_3D_WEIGHTS[np.count_nonzero(off) - 1]
+                length = np.linalg.norm(np.asarray(off) * spacing)
+                coef = 2 * weight * np.prod(spacing) / length
+                shifted = np.roll(mask, [-o for o in off], axis=(0, 1, 2))
+                out[lab - 1] += coef * np.count_nonzero(mask & ~shifted)
+    return out
+
+
+def test_surface_area_weights():
+    # the Crofton weights are the areas of the Voronoi cells of the 26
+    # neighbor directions on the unit sphere (a direction and its opposite)
+    from scipy.spatial import SphericalVoronoi
+
+    dirs = np.array(
+        [o for o in itertools.product((-1, 0, 1), repeat=3) if any(o)], float
+    )
+    sv = SphericalVoronoi(dirs / np.linalg.norm(dirs, axis=1)[:, np.newaxis])
+    areas = sv.calculate_areas() / (4 * math.pi)
+    n_nonzero = np.count_nonzero(dirs, axis=1)
+    for k in (1, 2, 3):
+        assert_allclose(
+            2 * areas[n_nonzero == k], _CROFTON_3D_WEIGHTS[k - 1], rtol=1e-12
+        )
+
+
+@pytest.mark.parametrize("kind", ["random", "large_blobs"])
+@pytest.mark.parametrize("spacing", [None, (0.5, 1.5, 0.8)])
+@pytest.mark.parametrize("label_dtype", [cp.uint8, cp.int32])
+def test_surface_area(kind, spacing, label_dtype):
+    labels = _convex_test_labels(kind, 3).astype(label_dtype)
+    result = regionprops_dict(
+        labels, properties=["surface_area"], spacing=spacing
+    )["surface_area"]
+    assert_allclose(
+        result, _surface_area_reference(labels, spacing), rtol=1e-12
+    )
+    # an absent label value has no surface
+    if kind == "random":
+        assert result[2] == 0
+
+
+def test_surface_area_ball():
+    # close to the area of the sphere for a digitized ball
+    from skimage.morphology import ball
+
+    radius = 20
+    labels = cp.asarray(ball(radius).astype(np.uint8))
+    area = regionprops_dict(labels, properties=["surface_area"])["surface_area"]
+    assert_allclose(area, 4 * math.pi * radius**2, rtol=0.01)
+
+
+def test_surface_area_2d_raises():
+    with pytest.raises(ValueError, match="3D label images only"):
+        regionprops_dict(cp.ones((4, 4), cp.uint8), properties=["surface_area"])
+
+
 @pytest.mark.parametrize("granularity", [1, 2, 3, 5])
 @pytest.mark.parametrize("label_dtype", [cp.uint8, cp.int32])
 def test_boundary_properties_touching_labels(granularity, label_dtype):
@@ -2183,6 +2252,8 @@ def test_regionprops_dict_single_property(ndim, spacing, property_name):
     """
     if ndim != 2 and property_name in ndim_2_only:
         pytest.skip(f"{property_name} is for 2d images only.")
+    if ndim != 3 and property_name in ndim_3_only:
+        pytest.skip(f"{property_name} is for 3d images only.")
         return
     shape = (768, 512) if ndim == 2 else (64, 64, 64)
     if spacing is not None:
@@ -2239,6 +2310,8 @@ def test_regionprops_dict_spacing(ndim, spacing, property_name):
     """Batch properties with non-unit spacing must match scikit-image."""
     if ndim != 2 and property_name in ndim_2_only:
         pytest.skip(f"{property_name} is for 2d images only.")
+    if ndim != 3 and property_name in ndim_3_only:
+        pytest.skip(f"{property_name} is for 3d images only.")
     shape = (256, 512) if ndim == 2 else (48, 64, 64)
     spacing = spacing[:ndim]
     labels = get_labels_nd(shape)

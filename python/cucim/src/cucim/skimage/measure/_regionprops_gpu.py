@@ -51,6 +51,7 @@ from ._regionprops_gpu_misc_kernels import (
     regionprops_euler,
     regionprops_perimeter,
     regionprops_perimeter_crofton,
+    regionprops_surface_area,
 )
 from ._regionprops_gpu_moments_kernels import (
     _regionprops_centroid_from_sums,
@@ -96,6 +97,7 @@ __all__ = [
     "regionprops_perimeter",
     "regionprops_perimeter_crofton",
     # extra functions for cuCIM not currently in scikit-image
+    "regionprops_surface_area",
     "equivalent_spherical_perimeter",  # as in ITK
     "regionprops_num_boundary_pixels",
     "regionprops_num_perimeter_pixels",
@@ -121,6 +123,7 @@ PROPS_GPU_EXTRA = {
     "num_boundary_pixels": "num_boundary_pixels",
     "perimeter_on_border_ratio": "perimeter_on_border_ratio",
     "equivalent_spherical_perimeter": "equivalent_spherical_perimeter",
+    "surface_area": "surface_area",
 }
 PROPS_GPU.update(PROPS_GPU_EXTRA)
 # properties recently removed from PROPS dict (but still supported)
@@ -142,6 +145,7 @@ COL_DTYPES_EXTRA = {
     "num_boundary_pixels": int,
     "perimeter_on_border_ratio": float,
     "equivalent_spherical_perimeter": float,
+    "surface_area": float,
 }
 
 # expand column dtypes from _regionprops to include the extra properties
@@ -220,6 +224,11 @@ ndim_2_only = {
     "orientation",
     "perimeter",
     "perimeter_crofton",  # could be updated to nD as in ITK
+}
+
+# set of properties that can only be computed for 3D regions
+ndim_3_only = {
+    "surface_area",
 }
 
 
@@ -398,6 +407,13 @@ def regionprops_dict(
         required_props.update(requirements[prop])
 
     ndim = label_image.ndim
+    if ndim != 3:
+        invalid_names = requested_props & ndim_3_only
+        if any(invalid_names):
+            raise ValueError(
+                f"{label_image.ndim=}, but the following properties are for "
+                f"3D label images only: {invalid_names}"
+            )
     if ndim != 2:
         invalid_names = requested_props & ndim_2_only
         if any(invalid_names):
@@ -722,6 +738,13 @@ def regionprops_dict(
         regionprops_euler(
             label_image,
             connectivity=None,
+            max_label=max_label,
+            props_dict=out,
+        )
+    if "surface_area" in required_props:
+        regionprops_surface_area(
+            label_image,
+            spacing=spacing,
             max_label=max_label,
             props_dict=out,
         )

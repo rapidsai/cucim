@@ -13,12 +13,14 @@ __all__ = [
     "regionprops_euler",
     "regionprops_perimeter",
     "regionprops_perimeter_crofton",
+    "regionprops_surface_area",
 ]
 
 misc_deps = dict()
 misc_deps["perimeter"] = []
 misc_deps["perimeter_crofton"] = []
 misc_deps["euler_number"] = []
+misc_deps["surface_area"] = []
 
 
 # The perimeter, Crofton perimeter and Euler number of scikit-image sum a
@@ -202,17 +204,65 @@ def _get_windows_op(ndim, omit_image_edges=False):
     return code
 
 
+def _surface_area_groups(ndim, isotropic):
+    """Neighbor offsets (as indices into ``itertools.product(range(-1, 2),
+    repeat=ndim)``) that share a weight in the surface area: a direction and
+    its opposite, or, with isotropic spacing, all directions of one kind
+    (axis, face diagonal, body diagonal)."""
+    offsets = list(itertools.product(range(-1, 2), repeat=ndim))
+    groups = {}
+    for k, o in enumerate(offsets):
+        if not any(o):
+            continue
+        if isotropic:
+            key = sum(1 for v in o if v)
+        else:
+            key = max(o, tuple(-v for v in o))
+        groups.setdefault(key, []).append(k)
+    return [groups[key] for key in sorted(groups)]
+
+
+def _get_surface_area_op(ndim, isotropic):
+    """Crofton surface-area coefficient of pixel ii for region `lab`.
+
+    Each of the 3**ndim - 1 neighbors without label `lab` (other labels,
+    background, or outside the image) marks one intercept of the region's
+    boundary with the discrete line through pixel ii in that direction, and
+    adds that direction's weight (`_get_surface_area_coefs`). The neighbors
+    are counted in integers per group of directions with the same weight
+    (`_surface_area_groups`), so that a boundary pixel needs one
+    double-precision multiply-add per group. Interior pixels add nothing.
+    """
+    offsets1 = list(itertools.product(range(-1, 2), repeat=ndim))
+    code = _get_neighbor_coords_code(ndim, 1)
+    code += _get_same_label_code(offsets1, 1)
+    all_neighbors = " && ".join(_offset_var(o, 1) for o in offsets1 if any(o))
+    code += f"""
+          if (!({all_neighbors})) {{"""
+    for g, group in enumerate(_surface_area_groups(ndim, isotropic)):
+        count = " + ".join(f"!{_offset_var(offsets1[k], 1)}" for k in group)
+        code += f"""
+            acc += coefs[{g}] * static_cast<double>({count});"""
+    code += """
+          }"""
+    return code
+
+
 @cp.memoize(for_each_device=True)
 def _get_boundary_kernel(
     kind, ndim, option, pixels_per_thread, int32_coords=True
 ):
-    """Per-region sums of the perimeter, Crofton or Euler coefficients.
+    """Per-region sums of the perimeter, Crofton, Euler or surface-area
+    coefficients.
 
     kind is "perimeter" (option: neighborhood), "crofton" (option:
-    omit_image_edges) or "euler" (option unused).
+    omit_image_edges), "euler" (option unused) or "surface" (option:
+    isotropic spacing).
     """
     if kind == "perimeter":
         op = _get_perimeter_op(option)
+    elif kind == "surface":
+        op = _get_surface_area_op(ndim, isotropic=option)
     else:
         op = _get_windows_op(ndim, omit_image_edges=option)
     # integer coefficients of the Euler number are summed exactly
@@ -628,3 +678,113 @@ def regionprops_euler(
     if props_dict is not None:
         props_dict["euler_number"] = euler_number
     return euler_number
+
+
+# Fraction of the unit sphere in the Voronoi cells of a direction and its
+# opposite, among the 26 directions to the neighbors of a voxel: the weights
+# of the axis, face-diagonal and body-diagonal directions in the discrete
+# Crofton formula for the surface area (Lehmann and Legland, 2012; the same
+# values as in ITK's ShapeLabelMapFilter). They are computed by
+# scipy.spatial.SphericalVoronoi in the tests.
+_CROFTON_3D_WEIGHTS = (
+    0.09155578240952184,  # axis (6 of the 26 directions)
+    0.07396125575215028,  # face diagonal (12)
+    0.07039127956463334,  # body diagonal (8)
+)
+
+
+def _is_isotropic(spacing):
+    return spacing is None or len(set(float(v) for v in spacing)) == 1
+
+
+def _get_surface_area_coefs(spacing):
+    """Weight of each group of neighbor directions in the surface area
+    (groups of `_surface_area_groups`).
+
+    Crofton's formula estimates the area of a surface from the number of its
+    intercepts with lines: S = 4 * sum_k c_k * A_k, where the projected area
+    in direction k is A_k = n_k / (2 * lambda_k) for n_k intercepts with lines
+    of density lambda_k = |d_k| / V (V the voxel volume, d_k the
+    spacing-scaled step between neighbors). Each intercept is found once,
+    from the voxel of the region next to it, so it adds
+    4 * c_k * V / (2 * |d_k|). As in ITK, the weights c_k do not depend on the
+    spacing.
+    """
+    isotropic = _is_isotropic(spacing)
+    spacing = (1.0, 1.0, 1.0) if spacing is None else spacing
+    spacing = np.asarray(spacing, dtype=np.float64)
+    volume = float(np.prod(spacing))
+    offsets = list(itertools.product(range(-1, 2), repeat=3))
+    coefs = []
+    for group in _surface_area_groups(3, isotropic):
+        o = np.asarray(offsets[group[0]])
+        length = math.sqrt(float(np.sum((o * spacing) ** 2)))
+        weight = _CROFTON_3D_WEIGHTS[np.count_nonzero(o) - 1]
+        coefs.append(2.0 * weight * volume / length)
+    return cp.asarray(coefs, dtype=cp.float64)
+
+
+def regionprops_surface_area(
+    labels,
+    spacing=None,
+    *,
+    max_label=None,
+    props_dict=None,
+    pixels_per_thread=10,
+):
+    """Estimate the surface area of each labeled region of a 3D image.
+
+    writes "surface_area" to `props_dict`
+
+    The estimate is the discrete Crofton formula with the 13 directions to
+    the neighbors of a voxel (axes, face diagonals and body diagonals), as
+    computed by ITK's ``ShapeLabelMapFilter`` for the ``Perimeter`` of 3D
+    label objects [1]_. Each region is measured as in isolation: neighbors
+    with another label count as background, and the image is padded with
+    background. With anisotropic spacing the direction weights are not
+    adapted to the spacing, also as in ITK.
+
+    Parameters
+    ----------
+    labels : (M, N, P) cupy.ndarray
+        Label image.
+    spacing : tuple of float, optional
+        The voxel spacing along each axis.
+
+    Extra Parameters
+    ----------------
+    max_label : int or None, optional
+        The maximum label in labels can be provided to avoid recomputing it if
+        it was already known.
+    props_dict : dict or None, optional
+        Dictionary of properties. The output of this function will be stored
+        under key "surface_area" within this dictionary.
+    pixels_per_thread : int, optional
+        Number of pixels processed per thread on the GPU.
+
+    Returns
+    -------
+    surface_area : cp.ndarray
+        The estimated surface area of each region, of shape (max_label,).
+
+    References
+    ----------
+    .. [1] G. Lehmann and D. Legland, "Efficient N-dimensional surface
+           estimation using Crofton formula and run-length encoding", The
+           Insight Journal, 2012. :DOI:`10.54294/wdu86d`
+    """
+    if labels.ndim != 3:
+        raise ValueError("surface_area is defined for 3D images only")
+    if max_label is None:
+        max_label = int(labels.max())
+    surface_area = _boundary_sums(
+        "surface",
+        labels,
+        _get_surface_area_coefs(spacing),
+        _is_isotropic(spacing),
+        max_label,
+        pixels_per_thread,
+    )
+    if props_dict is not None:
+        props_dict["surface_area"] = surface_area
+    return surface_area
