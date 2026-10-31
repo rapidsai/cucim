@@ -7,7 +7,8 @@
 
 #include <cstddef>
 #include <limits>
-#include <unordered_map>
+#include <cstdint>
+#include <stdexcept>
 #include <utility>
 #include <vector>
 
@@ -48,6 +49,83 @@ struct ContourAssembly
     std::vector<Contour> contours;
 };
 
+// Open-addressing hash table from non-negative 64-bit keys to contour indices.
+//
+// Removing a key only clears its value (the slot keeps its key), so the table
+// never needs tombstones: a later insertion of the same key reuses the slot.
+// ``max_keys`` is an upper bound on the number of distinct keys that are ever
+// inserted; the load factor stays at or below one half.
+class ContourIndexTable
+{
+public:
+    explicit ContourIndexTable(std::size_t max_keys)
+    {
+        std::size_t capacity = 16;
+        while (capacity < 2 * max_keys)
+        {
+            capacity *= 2;
+        }
+        mask_ = capacity - 1;
+        keys_.assign(capacity, -1);
+        values_.assign(capacity, absent);
+    }
+
+    // Return the contour index stored for ``key`` or ``invalid_index``.
+    std::size_t find(long long key) const
+    {
+        std::size_t slot = hash(key);
+        while (keys_[slot] != -1)
+        {
+            if (keys_[slot] == key)
+            {
+                return values_[slot] == absent ? invalid_index : values_[slot];
+            }
+            slot = (slot + 1) & mask_;
+        }
+        return invalid_index;
+    }
+
+    void set(long long key, std::size_t value)
+    {
+        std::size_t slot = hash(key);
+        while (keys_[slot] != -1 && keys_[slot] != key)
+        {
+            slot = (slot + 1) & mask_;
+        }
+        keys_[slot] = key;
+        values_[slot] = static_cast<std::uint32_t>(value);
+    }
+
+    void erase(long long key)
+    {
+        std::size_t slot = hash(key);
+        while (keys_[slot] != -1)
+        {
+            if (keys_[slot] == key)
+            {
+                values_[slot] = absent;
+                return;
+            }
+            slot = (slot + 1) & mask_;
+        }
+    }
+
+private:
+    static constexpr std::uint32_t absent = std::numeric_limits<std::uint32_t>::max();
+
+    std::size_t hash(long long key) const
+    {
+        // Keys of neighboring grid edges are close, and so are the keys that
+        // consecutive segments look up, so keeping the key order in the slot
+        // order makes these lookups hit the same cache lines.
+        return static_cast<std::size_t>(key) & mask_;
+    }
+
+    std::size_t mask_;
+    std::vector<long long> keys_;
+    std::vector<std::uint32_t> values_;
+};
+
 // Link marching-squares output segments into contours.
 //
 // ``segments`` points to ``n_segments`` consecutive (from_row, from_col,
@@ -60,14 +138,14 @@ inline ContourAssembly build_contour_assembly(const double* data, const long lon
     ContourAssembly assembly;
     std::vector<Node>& nodes = assembly.nodes;
     std::vector<Contour>& contours = assembly.contours;
-    std::unordered_map<long long, std::size_t> starts;
-    std::unordered_map<long long, std::size_t> ends;
+    if (n_segments >= std::numeric_limits<std::uint32_t>::max())
+    {
+        throw std::length_error("too many contour segments");
+    }
+    ContourIndexTable starts(n_segments);
+    ContourIndexTable ends(n_segments);
     nodes.reserve(2 * n_segments);
     contours.reserve(n_segments);
-    starts.max_load_factor(0.7F);
-    ends.max_load_factor(0.7F);
-    starts.reserve(n_segments);
-    ends.reserve(n_segments);
 
     auto add_node = [&nodes](const Point& point, long long key) {
         nodes.push_back(Node{ point, key });
@@ -104,25 +182,18 @@ inline ContourAssembly build_contour_assembly(const double* data, const long lon
             continue;
         }
 
-        bool has_tail = false;
-        bool has_head = false;
-        std::size_t tail_index = 0;
-        std::size_t head_index = 0;
-
-        auto tail_iter = starts.find(to_key);
-        if (tail_iter != starts.end())
+        const std::size_t tail_index = starts.find(to_key);
+        const bool has_tail = tail_index != invalid_index;
+        if (has_tail)
         {
-            has_tail = true;
-            tail_index = tail_iter->second;
-            starts.erase(tail_iter);
+            starts.erase(to_key);
         }
 
-        auto head_iter = ends.find(from_key);
-        if (head_iter != ends.end())
+        const std::size_t head_index = ends.find(from_key);
+        const bool has_head = head_index != invalid_index;
+        if (has_head)
         {
-            has_head = true;
-            head_index = head_iter->second;
-            ends.erase(head_iter);
+            ends.erase(from_key);
         }
 
         if (has_tail && has_head)
@@ -140,8 +211,8 @@ inline ContourAssembly build_contour_assembly(const double* data, const long lon
                 head.tail = tail.tail;
                 head.size += tail.size;
                 tail.active = false;
-                starts[nodes[head.head].key] = head_index;
-                ends[nodes[head.tail].key] = head_index;
+                starts.set(nodes[head.head].key, head_index);
+                ends.set(nodes[head.tail].key, head_index);
             }
             else
             {
@@ -150,8 +221,8 @@ inline ContourAssembly build_contour_assembly(const double* data, const long lon
                 tail.head = head.head;
                 tail.size += head.size;
                 head.active = false;
-                starts[nodes[tail.head].key] = tail_index;
-                ends[nodes[tail.tail].key] = tail_index;
+                starts.set(nodes[tail.head].key, tail_index);
+                ends.set(nodes[tail.tail].key, tail_index);
             }
         }
         else if (!has_tail && !has_head)
@@ -160,21 +231,21 @@ inline ContourAssembly build_contour_assembly(const double* data, const long lon
             const std::size_t to_node = add_node(to_point, to_key);
             nodes[from_node].next = to_node;
             contours.push_back(Contour{ from_node, to_node, 2, true });
-            starts[from_key] = current_index;
-            ends[to_key] = current_index;
+            starts.set(from_key, current_index);
+            ends.set(to_key, current_index);
             ++current_index;
         }
         else if (!has_head)
         {
             Contour& tail = contours[tail_index];
             prepend_node(tail, from_point, from_key);
-            starts[from_key] = tail_index;
+            starts.set(from_key, tail_index);
         }
         else
         {
             Contour& head = contours[head_index];
             append_node(head, to_point, to_key);
-            ends[to_key] = head_index;
+            ends.set(to_key, head_index);
         }
     }
 
