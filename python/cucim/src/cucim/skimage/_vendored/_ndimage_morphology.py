@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Infrastructure, Inc.
 # SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Networks, Inc.
-# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND MIT
 
 import math
@@ -868,6 +868,28 @@ def _binary_fill_holes_non_iterative(input, structure=None, output=None):
     return output
 
 
+def _can_use_label_for_fill_holes(structure, ndim):
+    # In 1D the padding at opposite ends is not connected.
+    if ndim < 2:
+        return False
+    if structure is None:
+        return True
+    structure = numpy.asarray(structure, dtype=bool)
+    # label requires a centrosymmetric footprint with dimensions of size 3.
+    if structure.shape != (3,) * ndim:
+        return False
+    if not numpy.array_equal(structure, numpy.flip(structure)):
+        return False
+    # All face neighbors (and the center) must be present so that the padded
+    # exterior is a single component, regardless of the input image.
+    for axis in range(ndim):
+        index = [1] * ndim
+        index[axis] = slice(None)
+        if not structure[tuple(index)].all():
+            return False
+    return True
+
+
 def binary_fill_holes(
     input, structure=None, output=None, origin=0, *, axes=None
 ):
@@ -875,16 +897,15 @@ def binary_fill_holes(
 
     Args:
         input (cupy.ndarray): N-D binary array with holes to be filled.
-        structure (cupy.ndarray, optional):  For CuPy, it is recommended to
-            leave this None so that a faster non-iterative algorithm will be
-            used. This default is equivalent in behavior to the default
-            structure use by SciPy. If `structure` array is provided, the
-            relatively slow iterative algorithm from SciPy will be used.
-            In that case, a larger-size structure can make the iterative
-            computations faster, but may miss holes separated from the
-            background by thin regions. The default element (with a square
-            connectivity equal to one) yields the intuitive result where all
-            holes in the input have been filled.
+        structure (cupy.ndarray, optional): Structuring element used to find
+            holes. The default element has a squared connectivity equal to
+            one, as in SciPy. With the default origin and axes, inputs with
+            at least two dimensions use a faster non-iterative algorithm
+            when the structure is centrosymmetric, has size 3 on every axis,
+            and includes the center and all face neighbors. Other structures
+            use the iterative algorithm. Larger structures can make the
+            iterative computations faster, but may miss holes separated from
+            the background by thin regions.
         output (cupy.ndarray, dtype or None, optional): Array of the same shape
             as input, into which the output is placed. By default, a new array
             is created.
@@ -915,7 +936,15 @@ def binary_fill_holes(
     if isinstance(origin, int):
         origin = (origin,) * len(axes)
     if all(o == 0 for o in origin) and filter_all_axes:
-        return _binary_fill_holes_non_iterative(input, output=output)
+        # label uses a host footprint; keep the original device footprint
+        # for the iterative path if the non-iterative assumptions do not hold.
+        structure_cpu = structure
+        if isinstance(structure, cupy.ndarray):
+            structure_cpu = cupy.asnumpy(structure)
+        if _can_use_label_for_fill_holes(structure_cpu, input.ndim):
+            return _binary_fill_holes_non_iterative(
+                input, structure=structure_cpu, output=output
+            )
     elif filter_all_axes:
         warnings.warn(
             "It is recommended to keep the default origin=0 so that a faster "

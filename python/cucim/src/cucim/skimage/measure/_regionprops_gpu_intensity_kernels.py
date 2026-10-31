@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 import math
@@ -8,6 +8,7 @@ import cupy as cp
 from ._regionprops_gpu_utils import (
     _check_intensity_image_shape,
     _get_count_dtype,
+    _get_run_count_ctype,
     _includes,
 )
 
@@ -49,7 +50,7 @@ def _get_img_sums_code(
 
         - counts : shape (max_label,)
     """
-    pixel_count_dtype = "int8_t" if pixels_per_thread < 256 else "int16_t"
+    pixel_count_dtype = _get_run_count_ctype(pixels_per_thread)
 
     source_pre = ""
     if compute_num_pixels:
@@ -122,6 +123,8 @@ def _get_intensity_min_max_code(
     # Note: CuPy provides atomicMin and atomicMax for float and double in
     #       cupy/_core/include/atomics.cuh
     #       The integer variants are part of CUDA itself.
+    #       The kernels call cucim_atomic_min and cucim_atomic_max (see
+    #       _includes), because CuPy's double overloads round to float.
 
     source_pre = ""
     if compute_min:
@@ -167,11 +170,11 @@ def _get_intensity_min_max_code(
     if compute_min:
         for c in range(num_channels):
             source_post += f"""
-            atomicMin(&minimums[{nc}(lab - 1) + {c}], min_vals[{nc}jj + {c}]);"""  # noqa: E501
+            cucim_atomic_min(&minimums[{nc}(lab - 1) + {c}], min_vals[{nc}jj + {c}]);"""  # noqa: E501
     if compute_max:
         for c in range(num_channels):
             source_post += f"""
-            atomicMax(&maximums[{nc}(lab - 1) + {c}], max_vals[{nc}jj + {c}]);"""  # noqa: E501
+            cucim_atomic_max(&maximums[{nc}(lab - 1) + {c}], max_vals[{nc}jj + {c}]);"""  # noqa: E501
     return source_pre, source_operation, source_post
 
 
@@ -459,6 +462,11 @@ def get_mean_var_kernel(dtype, sample_std=False):
         c_type = "float"
         nan_val = "CUDART_NAN_F"
 
+    # The one-pass formula sumsq - m * m * count can round to a small negative
+    # number when all values are equal (or nearly so), so the variance is
+    # clipped at 0 before taking the square root (otherwise sqrt gives NaN).
+    # The clip uses a comparison rather than max(), which is fmax in CUDA and
+    # would also replace a NaN variance (from NaN or inf values) with 0.
     if sample_std:
         source = f"""
             if (count == 1) {{
@@ -466,8 +474,9 @@ def get_mean_var_kernel(dtype, sample_std=False):
               var = {nan_val};
             }} else {{
               m = static_cast<double>(sum) / count;
-              var = sqrt(
-                  (static_cast<double>(sumsq) - m * m * count) / (count - 1));
+              double v = (static_cast<double>(sumsq) - m * m * count)
+                         / (count - 1);
+              var = sqrt(v < 0.0 ? 0.0 : v);
             }}\n"""
     else:
         source = f"""
@@ -479,8 +488,8 @@ def get_mean_var_kernel(dtype, sample_std=False):
               var = 0.0;
             }} else {{
               m = static_cast<double>(sum) / count;
-              var = sqrt(
-                  (static_cast<double>(sumsq) - m * m * count) / count);
+              double v = (static_cast<double>(sumsq) - m * m * count) / count;
+              var = sqrt(v < 0.0 ? 0.0 : v);
             }}\n"""
     inputs = "X count, Y sum, Y sumsq"
     outputs = "Z m, Z var"

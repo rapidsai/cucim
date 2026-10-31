@@ -17,6 +17,7 @@ from cupy.testing import (
 )
 from numpy.testing import assert_almost_equal, assert_equal
 from skimage import data, draw
+from skimage.measure import regionprops_table as regionprops_table_cpu
 from skimage.segmentation import slic
 
 from cucim.skimage import transform
@@ -517,6 +518,20 @@ def test_eccentricity():
     assert_almost_equal(eps, 0)
 
 
+@pytest.mark.parametrize("spacing", [None, (3, 3)])
+def test_eccentricity_single_pixel_batch(spacing):
+    img = cp.zeros((5, 5), dtype=int)
+    img[2, 2] = 1
+    img[0, 0:3] = 2
+    eps = regionprops_table(
+        img,
+        properties=["eccentricity"],
+        spacing=spacing,
+        copy_output_to_host=True,
+    )["eccentricity"]
+    assert_array_almost_equal(eps, [0, 1])
+
+
 def test_equivalent_diameter_area():
     diameter = regionprops(SAMPLE)[0].equivalent_diameter_area
     # determined with MATLAB
@@ -806,23 +821,53 @@ def test_orientation():
     # test diagonal regions
     diag = cp.eye(10, dtype=int)
     orient_diag = regionprops(diag)[0].orientation
-    assert_almost_equal(orient_diag, -math.pi / 4)
+    assert_almost_equal(orient_diag, math.pi / 4)
     orient_diag = regionprops(diag, spacing=(1, 2))[0].orientation
     assert_almost_equal(orient_diag, np.arccos(0.5 / math.sqrt(1 + 0.5**2)))
     orient_diag = regionprops(cp.flipud(diag))[0].orientation
-    assert_almost_equal(orient_diag, math.pi / 4)
+    assert_almost_equal(orient_diag, -math.pi / 4)
     orient_diag = regionprops(cp.flipud(diag), spacing=(1, 2))[0].orientation
     assert_almost_equal(orient_diag, -np.arccos(0.5 / math.sqrt(1 + 0.5**2)))
     orient_diag = regionprops(cp.fliplr(diag))[0].orientation
-    assert_almost_equal(orient_diag, math.pi / 4)
+    assert_almost_equal(orient_diag, -math.pi / 4)
     orient_diag = regionprops(cp.fliplr(diag), spacing=(1, 2))[0].orientation
     assert_almost_equal(orient_diag, -np.arccos(0.5 / math.sqrt(1 + 0.5**2)))
     orient_diag = regionprops(cp.fliplr(cp.flipud(diag)))[0].orientation
-    assert_almost_equal(orient_diag, -math.pi / 4)
+    assert_almost_equal(orient_diag, math.pi / 4)
     orient_diag = regionprops(np.fliplr(np.flipud(diag)), spacing=(1, 2))[
         0
     ].orientation
     assert_almost_equal(orient_diag, np.arccos(0.5 / math.sqrt(1 + 0.5**2)))
+
+
+@pytest.mark.parametrize("batch_processing", [False, True])
+def test_orientation_continuity(batch_processing):
+    # nearly diagonal array
+    arr1 = cp.array([[0, 0, 1, 1], [0, 0, 1, 0], [0, 1, 0, 0], [1, 0, 0, 0]])
+    # diagonal array
+    arr2 = cp.array([[0, 0, 0, 2], [0, 0, 2, 0], [0, 2, 0, 0], [2, 0, 0, 0]])
+    # nearly diagonal array
+    arr3 = cp.array([[0, 0, 0, 3], [0, 0, 3, 3], [0, 3, 0, 0], [3, 0, 0, 0]])
+    image = cp.hstack((arr1, arr2, arr3))
+    orientations = regionprops_table(
+        image,
+        properties=["orientation"],
+        batch_processing=batch_processing,
+        copy_output_to_host=True,
+    )["orientation"]
+    np.testing.assert_allclose(orientations, orientations[1], rtol=0, atol=0.08)
+
+
+@pytest.mark.parametrize("flip", [None, 0, 1, (0, 1)])
+def test_orientation_diagonal_batch_matches_regionprops(flip):
+    diag = cp.eye(10, dtype=int)
+    if flip is not None:
+        diag = cp.flip(diag, axis=flip)
+    expected = regionprops(diag)[0].orientation
+    result = regionprops_table(
+        diag, properties=["orientation"], copy_output_to_host=True
+    )["orientation"]
+    assert_almost_equal(result[0], expected)
 
 
 def test_perimeter():
@@ -958,6 +1003,66 @@ def test_centroid_weighted():
     )[0].centroid_weighted
     centroid = tuple(float(c) for c in centroid)
     assert_almost_equal(centroid, (cX, cY))
+
+
+@pytest.mark.parametrize("batch_processing", [False, True])
+@pytest.mark.parametrize("to_table", [False, True])
+def test_centroid_weighted_copy_to_host(batch_processing, to_table):
+    # centroid_weighted is a tuple of CuPy scalars in the per-label path,
+    # which copy_output_to_host=True failed to convert for > 1 region
+    labels = cp.zeros((20, 20), dtype=cp.uint8)
+    labels[3:9, 4:12] = 1
+    labels[12:16, 2:6] = 2
+    intensity_image = cp.arange(400, dtype=cp.float32).reshape(20, 20)
+    expected = regionprops_table_cpu(
+        cp.asnumpy(labels),
+        cp.asnumpy(intensity_image),
+        properties=["centroid_weighted"],
+    )
+    result = regionprops_table(
+        labels,
+        intensity_image,
+        properties=["centroid_weighted"],
+        batch_processing=batch_processing,
+        to_table=to_table,
+        copy_output_to_host=True,
+    )
+    if to_table:
+        for key in expected:
+            assert isinstance(result[key], np.ndarray)
+            assert_array_almost_equal(result[key], expected[key])
+    else:
+        centroids = np.asarray(result["centroid_weighted"], dtype=float)
+        assert_array_almost_equal(
+            centroids[:, 0], expected["centroid_weighted-0"]
+        )
+        assert_array_almost_equal(
+            centroids[:, 1], expected["centroid_weighted-1"]
+        )
+
+
+@pytest.mark.parametrize("batch_processing", [False, True])
+@pytest.mark.parametrize("spacing", [(2, 2), (1.3, 0.7)])
+def test_centroid_weighted_offset_spacing(batch_processing, spacing):
+    # region whose bounding box does not start at the origin, so that the
+    # offset of the bounding box must also be scaled by the spacing
+    labels = cp.pad(SAMPLE, ((3, 0), (5, 0)))
+    intensity_image = cp.pad(INTENSITY_SAMPLE, ((3, 0), (5, 0)))
+    expected = regionprops_table_cpu(
+        cp.asnumpy(labels),
+        cp.asnumpy(intensity_image),
+        properties=["centroid_weighted"],
+        spacing=spacing,
+    )
+    result = regionprops_table(
+        labels,
+        intensity_image,
+        properties=["centroid_weighted"],
+        spacing=spacing,
+        batch_processing=batch_processing,
+    )
+    for key in expected:
+        assert_almost_equal(float(result[key][0]), expected[key][0])
 
 
 def test_moments_weighted_hu():

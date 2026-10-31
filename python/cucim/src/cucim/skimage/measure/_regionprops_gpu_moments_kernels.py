@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 import math
@@ -8,6 +8,8 @@ import cupy as cp
 from ._regionprops_gpu_basic_kernels import get_bbox_coords_kernel
 from ._regionprops_gpu_utils import (
     _check_intensity_image_shape,
+    _get_coord_dtype,
+    _get_count_dtype,
     _includes,
     _unravel_loop_index,
     _unravel_loop_index_declarations,
@@ -36,6 +38,7 @@ moment_deps["moments_weighted"] = ["bbox"]
 moment_deps["eccentricity"] = ["inertia_tensor_eigvals"]
 moment_deps["axis_major_length"] = ["inertia_tensor_eigvals"]
 moment_deps["axis_minor_length"] = ["inertia_tensor_eigvals"]
+moment_deps["axis_lengths"] = ["inertia_tensor_eigvals"]
 moment_deps["inertia_tensor_eigenvectors"] = ["inertia_tensor_eigvals"]
 moment_deps["inertia_tensor_eigvals"] = ["inertia_tensor"]
 moment_deps["orientation"] = ["inertia_tensor"]
@@ -60,6 +63,7 @@ required_order = {
     "centroid_weighted_local": 1,
     "axis_major_length": 2,
     "axis_minor_length": 2,
+    "axis_lengths": 2,
     "eccentricity": 2,
     "inertia_tensor": 2,
     "inertia_tensor_eigvals": 2,
@@ -97,19 +101,19 @@ def regionprops_centroid(
         max_label = int(label_image.max())
     ndim = label_image.ndim
 
-    int32_coords = max(label_image.shape) < 2**32
+    _, int32_coords = _get_coord_dtype(label_image.size)
+    count_dtype, int32_count = _get_count_dtype(label_image.size)
     if props_dict is not None and "num_pixels" in props_dict:
         centroid_counts = props_dict["num_pixels"]
-        if centroid_counts.dtype != cp.uint32:
-            centroid_counts = centroid_counts.astype(cp.uint32)
         compute_num_pixels = False
     else:
-        centroid_counts = cp.zeros((max_label,), dtype=cp.uint32)
+        centroid_counts = cp.zeros((max_label,), dtype=count_dtype)
         compute_num_pixels = True
 
     bbox_coords_kernel = get_bbox_coords_kernel(
         ndim=label_image.ndim,
         int32_coords=int32_coords,
+        int32_count=int32_count,
         compute_bbox=False,
         compute_num_pixels=compute_num_pixels,
         compute_coordinate_sums=True,
@@ -125,7 +129,7 @@ def regionprops_centroid(
     if compute_num_pixels:
         outputs = (centroid_counts, centroid_sums)
     else:
-        outputs = centroid_sums
+        outputs = (centroid_sums,)
     bbox_coords_kernel(
         label_image,
         label_image.size,
@@ -142,13 +146,13 @@ def regionprops_centroid(
 
 
 @cp.memoize(for_each_device=True)
-def get_centroid_local_kernel(coord_dtype, ndim):
+def get_centroid_local_kernel(coord_dtype, ndim, count_dtype=cp.uint32):
     """Keep this kernel for n-dimensional support as the raw_moments kernels
     currently only support 2D and 3D data.
     """
     coord_dtype = cp.dtype(coord_dtype)
     sum_dtype = cp.dtype(cp.uint64)
-    count_dtype = cp.dtype(cp.uint32)
+    count_dtype = cp.dtype(count_dtype)
     uint_t = (
         "unsigned int" if coord_dtype.itemsize <= 4 else "unsigned long long"
     )
@@ -226,8 +230,7 @@ def regionprops_centroid_local(
     if max_label is None:
         max_label = int(label_image.max())
 
-    int32_coords = max(label_image.shape) < 2**32
-    coord_dtype = cp.dtype(cp.uint32 if int32_coords else cp.uint64)
+    coord_dtype, int32_coords = _get_coord_dtype(label_image.size)
 
     ndim = label_image.ndim
 
@@ -284,10 +287,11 @@ def regionprops_centroid_local(
         if "bbox" not in props_dict:
             props_dict["bbox"] = bbox_coords
 
-    counts = cp.zeros((max_label,), dtype=cp.uint32)
+    count_dtype, _ = _get_count_dtype(label_image.size)
+    counts = cp.zeros((max_label,), dtype=count_dtype)
     centroids_sums = cp.zeros((max_label, ndim), dtype=cp.uint64)
     centroid_local_kernel = get_centroid_local_kernel(
-        coord_dtype, label_image.ndim
+        coord_dtype, label_image.ndim, count_dtype
     )
     centroid_local_kernel(
         label_image, bbox_coords, counts, centroids_sums, size=label_image.size
@@ -710,8 +714,7 @@ def regionprops_moments(
         label_image = cp.ascontiguousarray(label_image)
     ndim = label_image.ndim
 
-    int32_coords = max(label_image.shape) < 2**32
-    coord_dtype = cp.dtype(cp.uint32 if int32_coords else cp.uint64)
+    coord_dtype, int32_coords = _get_coord_dtype(label_image.size)
     if "bbox" in props_dict:
         bbox_coords = props_dict["bbox"]
         if bbox_coords.dtype != coord_dtype:
@@ -1408,11 +1411,11 @@ def get_inertia_tensor_kernel(moments_dtype, ndim, compute_orientation):
         if compute_orientation:
             source += """
         if (a - c == 0) {
-          // had to use <= 0 to get same result as Python's atan2 with < 0
+          // same convention as scikit-image >= 0.21 for the a == c case
           if (b < 0) {
-            orientation[i] = -M_PI / 4.0;
-          } else {
             orientation[i] = M_PI / 4.0;
+          } else {
+            orientation[i] = -M_PI / 4.0;
           }
         } else {
           orientation[i] = 0.5 * atan2(-2 * b, c - a);
@@ -1562,7 +1565,9 @@ def get_spd_matrix_eigvals_kernel(
             axis_lengths[offset_evals + 1] = 4.0 * sqrt(lam2);\n"""
         if compute_eccentricity:
             source += """
-            eccentricity[i] =  sqrt(1.0 - lam2 / lam1);\n"""
+            // 0 for regions with lam1 == 0 (e.g. a single pixel), as in
+            // scikit-image, instead of 0 / 0 = NaN
+            eccentricity[i] = (lam1 == 0) ? 0.0 : sqrt(1.0 - lam2 / lam1);\n"""
     elif rank == 3:
         if compute_eccentricity:
             raise ValueError("eccentricity only supported for 2D images")
@@ -1751,9 +1756,10 @@ def regionprops_inertia_tensor_eigvals(
         # eigenvectors computed by the kernel are not robust to 0 entries, so
         # use slightly slow cp.linalg.eigh instead
         eigvals, eigvecs = cp.linalg.eigh(inertia_tensor)
-        # swap from ascending to descending order
-        eigvals = eigvals[:, ::-1]
-        eigvecs = eigvecs[:, ::-1]
+        # swap from ascending to descending order (the eigenvectors are the
+        # columns, along the last axis)
+        eigvals = eigvals[..., ::-1]
+        eigvecs = eigvecs[..., ::-1]
     if props_dict is None:
         props_dict = {}
     props_dict["inertia_tensor_eigvals"] = eigvals
@@ -1925,7 +1931,7 @@ def regionprops_centroid_weighted(
             bbox = cp.ascontiguousarray(bbox)
         inputs = (moments_raw, bbox)
         if not unit_spacing:
-            inputs = inputs + (cp.asarray(spacing),)
+            inputs = inputs + (cp.asarray(spacing, dtype=cp.float64),)
     kernel = get_centroid_weighted_kernel(
         moments_raw.dtype,
         ndim,

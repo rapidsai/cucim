@@ -15,6 +15,8 @@ from cucim.skimage.measure._regionprops import (
 )
 
 from ._regionprops_gpu_basic_kernels import (
+    _fill_holes_by_label,
+    _regionprops_filled,
     basic_deps,
     equivalent_diameter_area,
     equivalent_spherical_perimeter,
@@ -375,6 +377,19 @@ def regionprops_dict(
             )
     else:
         has_intensity = True
+    if spacing is not None and any(s != 1 for s in spacing):
+        # as in scikit-image, Hu moments are not defined for non-unit spacing
+        invalid_names = requested_props & {"moments_hu", "moments_weighted_hu"}
+        if invalid_names:
+            raise NotImplementedError(
+                f"{invalid_names} support spacing = (1, 1) only"
+            )
+        # as in scikit-image, the perimeters support isotropic spacing only
+        invalid_names = requested_props & {"perimeter", "perimeter_crofton"}
+        if invalid_names and len(set(float(s) for s in spacing)) != 1:
+            raise NotImplementedError(
+                f"{invalid_names} support isotropic spacings only"
+            )
 
     out = {}
     if max_label is None:
@@ -472,7 +487,7 @@ def regionprops_dict(
             regionprops_area_bbox(
                 out["bbox"],
                 area_dtype=cp.float32,
-                spacing=None,
+                spacing=spacing,
                 props_dict=out,
             )
 
@@ -536,6 +551,7 @@ def regionprops_dict(
                 compute_local=compute_centroid_local,
                 compute_global=compute_centroid,
                 weighted=False,
+                spacing=spacing,
                 props_dict=out,
             )
 
@@ -551,6 +567,7 @@ def regionprops_dict(
                 compute_local=compute_centroid_weighted_local,
                 compute_global=compute_centroid_weighted,
                 weighted=True,
+                spacing=spacing,
                 props_dict=out,
             )
 
@@ -563,7 +580,7 @@ def regionprops_dict(
                 regionprops_moments_normalized(
                     out["moments_central"],
                     ndim=ndim,
-                    spacing=None,
+                    spacing=spacing,
                     pixel_correction=False,
                     weighted=False,
                     props_dict=out,
@@ -584,7 +601,7 @@ def regionprops_dict(
                 regionprops_moments_normalized(
                     out["moments_weighted_central"],
                     ndim=ndim,
-                    spacing=None,
+                    spacing=spacing,
                     pixel_correction=False,
                     weighted=True,
                     props_dict=out,
@@ -610,6 +627,7 @@ def regionprops_dict(
                 compute_axis_lengths = (
                     "axis_minor_length" in required_moment_props
                     or "axis_major_length" in required_moment_props
+                    or "axis_lengths" in required_moment_props
                 )
                 regionprops_inertia_tensor_eigvals(
                     out["inertia_tensor"],
@@ -657,6 +675,8 @@ def regionprops_dict(
                 labels_close=labels_close,
                 props_dict=out,
             )
+            if spacing is not None:
+                out["perimeter"] = out["perimeter"] * float(spacing[0])
         if compute_perimeter_crofton:
             regionprops_perimeter_crofton(
                 label_image,
@@ -667,6 +687,10 @@ def regionprops_dict(
                 labels_close=labels_close,
                 props_dict=out,
             )
+            if spacing is not None:
+                out["perimeter_crofton"] = out["perimeter_crofton"] * float(
+                    spacing[0]
+                )
 
         if compute_euler:
             regionprops_euler(
@@ -698,7 +722,10 @@ def regionprops_dict(
 
     if "area_convex" in required_props:
         regionprops_area_convex(
-            out["image_convex"], max_label=max_label, props_dict=out
+            out["image_convex"],
+            max_label=max_label,
+            spacing=spacing,
+            props_dict=out,
         )
 
     if "solidity" in required_props:
@@ -724,34 +751,21 @@ def regionprops_dict(
         )
 
     if "label_filled" in required_props:
-        regionprops_label_filled(
-            label_image,
-            max_label=max_label,
-            props_dict=out,
+        label_filled, labels_inexact = _fill_holes_by_label(
+            label_image, max_label=max_label, bbox=out.get("bbox")
         )
-        if "area_filled" in required_props:
-            # also handles "num_pixels_filled"
-            out["area_filled"] = regionprops_area(
-                out["label_filled"],
-                max_label=max_label,
-                filled=True,
-                props_dict=out,
-            )
-        elif "num_pixels_filled" in required_props:
-            regionprops_num_pixels(
+        out["label_filled"] = label_filled
+        compute_image_filled = "image_filled" in required_props
+        if compute_image_filled or "num_pixels_filled" in required_props:
+            # labels in labels_inexact are recomputed on per-label crops
+            _regionprops_filled(
                 label_image,
+                label_filled,
+                labels_inexact,
                 max_label=max_label,
-                filled=True,
-                **perf_kwargs,
+                spacing=spacing,
+                compute_image=compute_image_filled,
                 props_dict=out,
-            )
-        if "image_filled" in required_props:
-            out["image_filled"], _, _ = regionprops_image(
-                out["label_filled"],
-                max_label=max_label,
-                compute_image=True,
-                compute_convex=False,
-                props_dict=None,  # omit: using custom "image_filled" key
             )
 
     # If user had requested properties via their deprecated names, set the
