@@ -373,6 +373,32 @@ def test_intensity_min_and_max(
             assert_allclose(values[..., c], expected[f"{op_name}-{c}"])
 
 
+@pytest.mark.parametrize("ndim", [2, 3])
+@pytest.mark.parametrize("num_channels", [1, 3])
+def test_intensity_min_and_max_float64_exact(ndim, num_channels):
+    # float64 minima and maxima are pixel values, not rounded to float32
+    shape = (256, 512) if ndim == 2 else (15, 63, 37)
+    labels = get_labels_nd(shape)
+    rng = cp.random.default_rng(5)
+    image_shape = shape + ((num_channels,) if num_channels > 1 else ())
+    intensity_image = rng.uniform(0.1, 1.0, size=image_shape)
+    out = regionprops_intensity_min_max(
+        labels, intensity_image, compute_min=True, compute_max=True
+    )
+    expected = measure_cpu.regionprops_table(
+        cp.asnumpy(labels),
+        intensity_image=cp.asnumpy(intensity_image),
+        properties=["intensity_min", "intensity_max"],
+    )
+    for op_name in ["intensity_min", "intensity_max"]:
+        values = cp.asnumpy(out[op_name])
+        if num_channels == 1:
+            assert_array_equal(values, expected[op_name])
+        else:
+            for c in range(num_channels):
+                assert_array_equal(values[..., c], expected[f"{op_name}-{c}"])
+
+
 @pytest.mark.parametrize("precompute_max", [False, True])
 @pytest.mark.parametrize("ndim", [2, 3])
 @pytest.mark.parametrize("image_dtype", [cp.uint16, cp.uint8, cp.float32])

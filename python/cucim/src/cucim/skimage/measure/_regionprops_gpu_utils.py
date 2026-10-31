@@ -10,8 +10,52 @@ from cucim.skimage.util import map_array
 
 # Need some default includes so uint32_t, uint64_t, etc. are defined
 
+# cucim_atomic_min and cucim_atomic_max: atomicMin and atomicMax, except for
+# double. CuPy 14.2's atomicMin and atomicMax overloads for double compare
+# with fminf and fmaxf, which round the values to single precision; the
+# double specializations below compare in double precision.
 _includes = r"""
 #include <cupy/cuda_workaround.h>  // provide std:: coverage
+
+template <typename T>
+__device__ __forceinline__ void cucim_atomic_min(T* address, T val) {
+  atomicMin(address, val);
+}
+
+template <typename T>
+__device__ __forceinline__ void cucim_atomic_max(T* address, T val) {
+  atomicMax(address, val);
+}
+
+template <>
+__device__ __forceinline__ void cucim_atomic_min<double>(double* address,
+                                                         double val) {
+  unsigned long long* a = reinterpret_cast<unsigned long long*>(address);
+  unsigned long long old = *a, assumed;
+  do {
+    assumed = old;
+    if (__longlong_as_double(static_cast<long long>(assumed)) <= val) {
+      return;
+    }
+    old = atomicCAS(a, assumed,
+                    static_cast<unsigned long long>(__double_as_longlong(val)));
+  } while (assumed != old);
+}
+
+template <>
+__device__ __forceinline__ void cucim_atomic_max<double>(double* address,
+                                                         double val) {
+  unsigned long long* a = reinterpret_cast<unsigned long long*>(address);
+  unsigned long long old = *a, assumed;
+  do {
+    assumed = old;
+    if (__longlong_as_double(static_cast<long long>(assumed)) >= val) {
+      return;
+    }
+    old = atomicCAS(a, assumed,
+                    static_cast<unsigned long long>(__double_as_longlong(val)));
+  } while (assumed != old);
+}
 """
 
 
