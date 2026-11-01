@@ -175,6 +175,40 @@ def test_lewiner_matches_skimage_generated_volume_stats(volume):
     assert_allclose(cp_area, expected_area, rtol=1e-6)
 
 
+@pytest.mark.parametrize("smooth", [False, True])
+@pytest.mark.parametrize("level", [0.0, 0.1])
+def test_lewiner_matches_skimage_noisy_volume_mesh(smooth, level):
+    # Noise gives many ambiguous cells, including ones for which the
+    # interior test of scikit-image returns false when its extra condition
+    # (test 5 or 10) fails.
+    rng = np.random.default_rng(5)
+    volume = rng.standard_normal((40, 40, 40)).astype(np.float32)
+    if smooth:
+        from scipy import ndimage as ndi
+
+        volume = ndi.gaussian_filter(volume, 1).astype(np.float32)
+    verts, faces = marching_cubes(cp.asarray(volume), level)[:2]
+    expected_verts, expected_faces = skimage_marching_cubes(
+        volume, level, method="lewiner"
+    )[:2]
+
+    assert verts.shape == expected_verts.shape
+    assert faces.shape == expected_faces.shape
+    cp_area = cp.asnumpy(mesh_surface_area(verts, faces))
+    expected_area = skimage_mesh_surface_area(expected_verts, expected_faces)
+    assert_allclose(cp_area, expected_area, rtol=1e-5)
+    if smooth:
+        # (the sorted triangle lists of the unsmoothed noise volume are not
+        # stable under float32 rounding)
+        assert _same_mesh(
+            cp.asnumpy(verts),
+            cp.asnumpy(faces),
+            expected_verts,
+            expected_faces,
+            tol=1e-5,
+        )
+
+
 def test_lewiner_matches_skimage_center_vertex_ambiguous_cell_mesh():
     values = (
         -0.074507588,
