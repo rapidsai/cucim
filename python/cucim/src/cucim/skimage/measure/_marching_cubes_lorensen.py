@@ -12,13 +12,11 @@ import numpy as np
 # --------------------
 # This is a CuPy RawKernel implementation of classic Lorensen marching cubes.
 # The public API validation and post-processing behavior follows
-# scikit-image's _marching_cubes_lewiner.py. The dense-grid edge/face
-# organization follows the CuMCubes CUDA kernel structure, while the output
-# allocation strategy follows Warp's scan-based implementation in
-# https://github.com/NVIDIA/warp/blob/v1.13.0/warp/_src/marching_cubes.py
-# and the older release-1.8 native CUDA implementation in
-# https://github.com/NVIDIA/warp/blob/release-1.8/warp/native/marching.cu
-# rather than atomic append.
+# scikit-image's _marching_cubes_lewiner.py. The general design (a per-node,
+# three-axis vertex-id grid built by count, vertex and face passes, as in
+# CuMCubes, and output sized from prefix scans rather than atomic appends, as
+# in NVIDIA Warp) is a common approach for regular grids. The kernels here were
+# written independently and do not copy code from either project.
 #
 # Classic Lorensen triangle table. This compact representation is vendored
 # from scikit-image's generated _marching_cubes_lewiner_luts.py.
