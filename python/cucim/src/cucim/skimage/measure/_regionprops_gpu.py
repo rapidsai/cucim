@@ -406,8 +406,12 @@ def regionprops_dict(
       signs ``s_a`` in {-1, +1}; in a table, ``V[d, a]`` is the column
       ``inertia_tensor_eigenvectors-d-a``. Unlike ITK's corner (origin), the
       size and the center do not depend on the signs of the eigenvectors.
-      When principal moments are equal, the axes (and so the box) are not
-      unique.
+      It is not the smallest box that encloses the region: for a right
+      triangle with legs of 200 and 100 pixels it is 6% larger than the
+      smallest rectangle. When principal moments are equal, as for squares
+      and cubes, the axes (and so the box) are not unique, and the box can
+      be much larger: a square rotated by 45 degrees can get an
+      axis-aligned box of twice its area.
     """
     if convex_hull_3d not in ("gpu", "qhull"):
         raise ValueError(

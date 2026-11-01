@@ -2473,7 +2473,9 @@ def _regionprops_oriented_bbox(
     axis). Its center is in the coordinates of ``centroid`` (scaled by the
     spacing). The size and the center do not depend on the signs of the
     eigenvectors; the corners are
-    ``center + sum_a (+/- size[a] / 2) * eigvecs[:, a]``.
+    ``center + sum_a (+/- size[a] / 2) * eigvecs[:, a]``. It is in general
+    not the smallest enclosing box, and it is not unique when principal
+    moments are equal.
 
     The extremes of the pixel centers along each axis come from the ends of
     each row (`_get_oriented_bbox_kernel`), and the box is then widened by
