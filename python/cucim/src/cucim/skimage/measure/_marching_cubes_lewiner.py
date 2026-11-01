@@ -863,8 +863,19 @@ def _lewiner_count_cells_gpu(volume, level, mask=None):
 
 
 def _lewiner_generate_center_vertices_gpu(
-    volume, level, spacing, center_flags, vertex_offset=0, n_centers=None
+    volume,
+    level,
+    spacing,
+    center_flags,
+    vertex_offset=0,
+    n_centers=None,
+    out=None,
 ):
+    """Write the center vertices after the first ``vertex_offset`` entries.
+
+    ``out`` is an optional ``(vertices, normals, values)`` tuple of arrays that
+    already have ``vertex_offset + n_centers`` entries.
+    """
     nx, ny, nz = volume.shape
     n_cells = (nx - 1) * (ny - 1) * (nz - 1)
     center_scan = cp.cumsum(center_flags, dtype=cp.int32)
@@ -872,9 +883,12 @@ def _lewiner_generate_center_vertices_gpu(
         n_centers = int(center_scan[-1]) if n_cells else 0
     n_vertices = vertex_offset + n_centers
     center_vertex_ids = cp.full(n_cells, -1, dtype=cp.int32)
-    vertices = cp.empty((n_vertices, 3), dtype=cp.float32)
-    normals = cp.empty((n_vertices, 3), dtype=cp.float32)
-    values = cp.empty(n_vertices, dtype=cp.float32)
+    if out is None:
+        vertices = cp.empty((n_vertices, 3), dtype=cp.float32)
+        normals = cp.empty((n_vertices, 3), dtype=cp.float32)
+        values = cp.empty(n_vertices, dtype=cp.float32)
+    else:
+        vertices, normals, values = out
     if n_centers == 0:
         return vertices, normals, values, center_vertex_ids
 
@@ -997,10 +1011,16 @@ def _run_lewiner(
         (threads,),
         (edge_flags, edge_scan, edge_idx, n_edges),
     )
+    tri_counts, center_flags, row_offsets, n_center_vertices = (
+        _lewiner_count_cells_gpu(volume, level, mask)
+    )
+
+    # edge vertices come first, followed by the center vertices
+    n_vertices = n_edge_vertices + n_center_vertices
+    vertices = cp.empty((n_vertices, 3), dtype=cp.float32)
+    normals = cp.empty((n_vertices, 3), dtype=cp.float32)
+    values = cp.empty(n_vertices, dtype=cp.float32)
     vertex_blocks = ((n_edge_vertices + threads - 1) // threads,)
-    edge_vertices = cp.empty((n_edge_vertices, 3), dtype=cp.float32)
-    edge_normals = cp.empty((n_edge_vertices, 3), dtype=cp.float32)
-    edge_values = cp.empty(n_edge_vertices, dtype=cp.float32)
     _get_lewiner_kernel("mc_lewiner_generate_vertices")(
         vertex_blocks,
         (threads,),
@@ -1008,9 +1028,9 @@ def _run_lewiner(
             volume,
             edge_idx,
             n_edge_vertices,
-            edge_vertices,
-            edge_normals,
-            edge_values,
+            vertices,
+            normals,
+            values,
             nx,
             ny,
             nz,
@@ -1020,28 +1040,17 @@ def _run_lewiner(
             np.float32(spacing[2]),
         ),
     )
-
-    tri_counts, center_flags, row_offsets, n_center_vertices = (
-        _lewiner_count_cells_gpu(volume, level, mask)
-    )
     if n_center_vertices:
-        vertices, normals, values, center_vertex_ids = (
-            _lewiner_generate_center_vertices_gpu(
-                volume,
-                level,
-                spacing,
-                center_flags,
-                vertex_offset=n_edge_vertices,
-                n_centers=n_center_vertices,
-            )
-        )
-        vertices[:n_edge_vertices] = edge_vertices
-        normals[:n_edge_vertices] = edge_normals
-        values[:n_edge_vertices] = edge_values
+        center_vertex_ids = _lewiner_generate_center_vertices_gpu(
+            volume,
+            level,
+            spacing,
+            center_flags,
+            vertex_offset=n_edge_vertices,
+            n_centers=n_center_vertices,
+            out=(vertices, normals, values),
+        )[3]
     else:
-        vertices = edge_vertices
-        normals = edge_normals
-        values = edge_values
         center_vertex_ids = cp.empty(0, dtype=cp.int32)
 
     faces = _lewiner_generate_faces_direct_gpu(
