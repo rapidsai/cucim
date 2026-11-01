@@ -72,6 +72,8 @@ from cucim.skimage.measure._regionprops_gpu_misc_kernels import (
     _get_euler_coefs,
     _get_perimeter_coefs,
     _get_perimeter_crofton_coefs,
+    _get_voronoi_crofton_weights,
+    _surface_area_groups,
     misc_deps,
 )
 from cucim.skimage.measure._regionprops_gpu_moments_kernels import (
@@ -1818,9 +1820,24 @@ def test_perimeter_crofton(shape, robust, volume_fraction, blob_size_fraction):
     allclose(values, expected["perimeter_crofton"])
 
 
+def _crofton_weights_reference(spacing):
+    # the weight of each of the 26 neighbor offsets: the fraction of the
+    # unit sphere in the Voronoi cells of its spacing-scaled direction and of
+    # the opposite direction, whose cells have the same area
+    from scipy.spatial import SphericalVoronoi
+
+    spacing = np.ones(3) if spacing is None else np.asarray(spacing, float)
+    offsets = [o for o in itertools.product((-1, 0, 1), repeat=3) if any(o)]
+    dirs = np.array(offsets, float) * spacing
+    dirs /= np.linalg.norm(dirs, axis=1, keepdims=True)
+    areas = SphericalVoronoi(dirs).calculate_areas() / (4 * math.pi)
+    return {o: 2 * a for o, a in zip(offsets, areas)}
+
+
 def _surface_area_reference(labels, spacing):
     # each region alone, padded with background: every voxel adds the weight
     # of each of its 26 neighbors that is outside the region
+    weights = _crofton_weights_reference(spacing)
     spacing = np.ones(3) if spacing is None else np.asarray(spacing)
     labels = cp.asnumpy(labels)
     out = np.zeros(int(labels.max()))
@@ -1828,7 +1845,7 @@ def _surface_area_reference(labels, spacing):
         mask = np.pad(labels == lab, 1)
         for k, off in enumerate(itertools.product(range(-1, 2), repeat=3)):
             if any(off):
-                weight = _CROFTON_3D_WEIGHTS[np.count_nonzero(off) - 1]
+                weight = weights[off]
                 length = np.linalg.norm(np.asarray(off) * spacing)
                 coef = 2 * weight * np.prod(spacing) / length
                 shifted = np.roll(mask, [-o for o in off], axis=(0, 1, 2))
@@ -1918,6 +1935,37 @@ def test_surface_area_weights():
         )
 
 
+@pytest.mark.parametrize(
+    "spacing",
+    [(1.0, 1.0, 1.0), (2.0, 1.0, 1.0), (0.5, 1.5, 0.8), (1.0, 1.0, 5.0)],
+)
+def test_surface_area_weights_spacing(spacing):
+    # with anisotropic spacing, the weights are the Voronoi cells of the
+    # spacing-scaled directions: the fraction of 2**20 nearly uniformly
+    # spread points on the sphere (a Fibonacci lattice) nearest to a
+    # direction or its opposite
+    weights = _get_voronoi_crofton_weights(spacing)
+    assert_allclose(sum(weights), 1, rtol=1e-12)
+    if len(set(spacing)) == 1:
+        expected = [_CROFTON_3D_WEIGHTS[0]] * 3 + [_CROFTON_3D_WEIGHTS[1]] * 6
+        expected += [_CROFTON_3D_WEIGHTS[2]] * 4
+        assert_allclose(sorted(weights), sorted(expected), rtol=1e-12)
+    n = 2**20
+    i = cp.arange(n, dtype=cp.float64)
+    z = 1 - (2 * i + 1) / n
+    phi = i * math.pi * (3 - math.sqrt(5))
+    r = cp.sqrt(1 - z * z)
+    points = cp.stack([r * cp.cos(phi), r * cp.sin(phi), z], axis=1)
+    # one offset of each pair, in the order of the weights
+    offsets = list(itertools.product(range(-1, 2), repeat=3))
+    pairs = [offsets[g[0]] for g in _surface_area_groups(3, False)]
+    dirs = np.array(pairs, float) * np.asarray(spacing)
+    dirs /= np.linalg.norm(dirs, axis=1, keepdims=True)
+    nearest = cp.argmax(cp.abs(points @ cp.asarray(dirs.T)), axis=1)
+    counts = cp.bincount(nearest, minlength=len(pairs))
+    assert_allclose(weights, cp.asnumpy(counts) / n, atol=1e-4)
+
+
 @pytest.mark.parametrize("kind", ["random", "large_blobs"])
 @pytest.mark.parametrize("spacing", [None, (0.5, 1.5, 0.8)])
 @pytest.mark.parametrize("label_dtype", [cp.uint8, cp.int32])
@@ -1942,6 +1990,51 @@ def test_surface_area_ball():
     labels = cp.asarray(ball(radius).astype(np.uint8))
     area = regionprops_dict(labels, properties=["surface_area"])["surface_area"]
     assert_allclose(area, 4 * math.pi * radius**2, rtol=0.01)
+
+
+@pytest.mark.parametrize("spacing", [None, (2.0, 1.0, 1.0), (1.0, 2.0, 2.0)])
+def test_surface_area_box(spacing):
+    # Axis-aligned boxes: thin plates normal to each axis, and a box with
+    # unequal sides (physical sizes).
+    scale = np.ones(3) if spacing is None else np.asarray(spacing)
+    weights = _crofton_weights_reference(spacing)
+    # faces normal to axis i are measured with the factor
+    # f_i = 2 * sum_k c_k |u_k[i]| over the 13 unit directions u_k and their
+    # weights c_k, or the sum of c_k |u_k[i]| over the 26 offsets
+    factors = np.zeros(3)
+    for off, c in weights.items():
+        d = np.asarray(off) * scale
+        factors += c * np.abs(d) / np.linalg.norm(d)
+    if spacing is None:
+        # 7.3% too small for faces normal to an axis
+        assert_allclose(factors, 0.92662, atol=1e-5)
+    else:
+        # within 16% (ITK's weights, which do not depend on the spacing,
+        # give 1.17 and 0.75 for spacing (2, 1, 1), and 0.64 and 1.03 for
+        # (1, 2, 2))
+        assert np.all(np.abs(factors - 1) < 0.16)
+    for size in [(8, 120, 120), (120, 8, 120), (120, 120, 8), (24, 40, 64)]:
+        n = (np.asarray(size) / scale).astype(int)
+        labels = np.zeros(tuple(n + 4), dtype=np.uint8)
+        labels[tuple(slice(2, 2 + k) for k in n)] = 1
+        area = regionprops_dict(
+            cp.asarray(labels), properties=["surface_area"], spacing=spacing
+        )["surface_area"][0]
+        # Along each of the 26 directions d to the neighbors, every voxel
+        # but (n0 - |d0|) * (n1 - |d1|) * (n2 - |d2|) has its neighbor
+        # outside the box.
+        expected = 0.0
+        for off, c in weights.items():
+            d = np.asarray(off)
+            coef = 2 * c * np.prod(scale) / np.linalg.norm(d * scale)
+            expected += coef * (np.prod(n) - np.prod(n - np.abs(d)))
+        assert_allclose(area, expected, rtol=1e-12)
+        # the faces, measured with their factors, less up to 2.5% for the
+        # edges
+        lengths = np.asarray(size, float)
+        faces = np.prod(lengths) / lengths
+        from_faces = 2 * np.sum(faces * factors)
+        assert from_faces * 0.975 < float(area) < from_faces
 
 
 def test_surface_area_2d_raises():
