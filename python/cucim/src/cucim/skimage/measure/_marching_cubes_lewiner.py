@@ -3,21 +3,20 @@
 # SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
-# See implementation notes and attributions in marching_cubes_lorensen.py
+# See implementation notes and attributions in _marching_cubes_common.py
 #
 # The same general approach was adapted to Lewiner marching cubes by following
 # the scikit-image implementation.
-
-import base64
 
 import cupy as cp
 import numpy as np
 
 from . import _marching_cubes_lewiner_luts as _mcluts
-from ._marching_cubes_lorensen import (
+from ._marching_cubes_common import (
     _COMMON_KERNEL_CODE,
     _apply_step_size,
     _check_int32_range,
+    _decode_lut,
     _remove_degenerate_faces_gpu,
     _validate_marching_cubes_inputs,
 )
@@ -25,14 +24,14 @@ from ._marching_cubes_lorensen import (
 # Implementation notes
 # --------------------
 # This is a CuPy RawKernel implementation of Lewiner marching cubes.
-# It is implemented by updating the Lorensen kerenels based on referencing
-# the scikit-image implementation to ensure equivalent behavior.
+# It shares the edge classification, vertex generation and degenerate face
+# removal with the Lorensen implementation (see _marching_cubes_common.py) and
+# follows the scikit-image implementation to ensure equivalent behavior.
 
 
 def _decode_lut_for_cuda_constants(name):
     shape, text = getattr(_mcluts, name)
-    byts = base64.decodebytes(text.encode("utf-8"))
-    return np.frombuffer(byts, dtype=np.int8).reshape(shape)
+    return _decode_lut(shape, text)
 
 
 # Edge numbering used by the Lewiner tables -> local cell edge numbering used

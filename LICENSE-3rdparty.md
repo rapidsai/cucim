@@ -163,7 +163,7 @@ CuMCubes
 - Copyright:
   - P. M. Neila
 - Files:
-  - python/cucim/src/cucim/skimage/measure/_marching_cubes_lorensen.py : Design reference only (a per-node, three-axis vertex-id grid with count, vertex and face passes); no CuMCubes code was copied. The kernels were written independently.
+  - python/cucim/src/cucim/skimage/measure/_marching_cubes_common.py : Design reference only (a per-node, three-axis vertex-id grid with count, vertex and face passes); no CuMCubes code was copied. The kernels were written independently.
   - python/cucim/src/cucim/skimage/measure/_marching_cubes_lewiner.py : Derived from the scikit-image implementation and its tables; CuMCubes has no Lewiner implementation.
 
 NVIDIA Warp
@@ -172,7 +172,7 @@ NVIDIA Warp
 - Copyright:
   - NVIDIA Corporation & Affiliates
 - Files:
-  - python/cucim/src/cucim/skimage/measure/_marching_cubes_lorensen.py : Design reference only (allocating the output from prefix scans rather than atomic appends); no Warp code was copied.
+  - python/cucim/src/cucim/skimage/measure/_marching_cubes_common.py : Design reference only (allocating the output from prefix scans rather than atomic appends); no Warp code was copied.
   - python/cucim/src/cucim/skimage/measure/_marching_cubes_lewiner.py : Derived from the scikit-image implementation and its tables; the scan-based allocation is shared with the Lorensen kernels above.
 
 OpenSlide

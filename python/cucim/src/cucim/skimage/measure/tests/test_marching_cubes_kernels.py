@@ -10,12 +10,12 @@ from skimage.measure import (
 )
 
 from cucim.skimage.measure import _marching_cubes_lewiner_luts as _mcluts
+from cucim.skimage.measure._marching_cubes_common import _decode_lut
 from cucim.skimage.measure._marching_cubes_lewiner import (
     _lewiner_count_cells_gpu,
     _lewiner_generate_center_vertices_gpu,
     _lewiner_generate_faces_direct_gpu,
 )
-from cucim.skimage.measure._marching_cubes_lorensen import _decode_lut
 
 _LEWINER_LUT_NAMES = _mcluts._LEWINER_LUT_NAMES
 
