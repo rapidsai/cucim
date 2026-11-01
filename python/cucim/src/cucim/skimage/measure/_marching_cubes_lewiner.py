@@ -17,6 +17,7 @@ from . import _marching_cubes_lewiner_luts as _mcluts
 from ._marching_cubes_lorensen import (
     _COMMON_KERNEL_CODE,
     _apply_step_size,
+    _check_int32_range,
     _remove_degenerate_faces_gpu,
     _validate_marching_cubes_inputs,
 )
@@ -930,8 +931,11 @@ def _lewiner_generate_faces_direct_gpu(
 ):
     nx, ny, nz = volume.shape
     n_cells = (nx - 1) * (ny - 1) * (nz - 1)
+    # a 64-bit total, so that a too large mesh is detected before the 32-bit
+    # scan can wrap around
+    n_faces = int(tri_counts.sum(dtype=cp.int64)) if n_cells else 0
+    _check_int32_range(3 * n_faces, "the face array")
     tri_scan = cp.cumsum(tri_counts, dtype=cp.int32)
-    n_faces = int(tri_scan[-1]) if n_cells else 0
     faces = cp.empty(n_faces * 3, dtype=cp.int32)
     if n_faces == 0:
         return faces.reshape(-1, 3)
@@ -986,6 +990,7 @@ def _run_lewiner(
 ):
     nx, ny, nz = volume.shape
     n_edges = nx * ny * nz * 3
+    _check_int32_range(n_edges, "the edge array")
     threads = 256
     edge_blocks = ((n_edges + threads - 1) // threads,)
 
@@ -1019,6 +1024,7 @@ def _run_lewiner(
 
     # edge vertices come first, followed by the center vertices
     n_vertices = n_edge_vertices + n_center_vertices
+    _check_int32_range(3 * n_vertices, "the vertex array")
     vertices = cp.empty((n_vertices, 3), dtype=cp.float32)
     normals = cp.empty((n_vertices, 3), dtype=cp.float32)
     values = cp.empty(n_vertices, dtype=cp.float32)

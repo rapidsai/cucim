@@ -168,6 +168,23 @@ def _validate_marching_cubes_inputs(
     return volume, level, spacing, step_size, mask
 
 
+_INT32_LIMIT = 2**31
+
+
+def _check_int32_range(count, what):
+    """Raise if ``count`` entries of ``what`` cannot be indexed by the kernels.
+
+    The kernels index with 32-bit integers (up to three values per vertex,
+    face or edge), so ``count`` must stay below ``2**31``.
+    """
+    if count >= _INT32_LIMIT:
+        raise ValueError(
+            f"The volume is too large for marching_cubes: {what} would "
+            f"require more than 2**31 elements ({count}). Use a larger "
+            "`step_size` or process the volume in blocks."
+        )
+
+
 def _apply_step_size(volume, spacing, step_size, mask):
     if step_size == 1:
         return volume, spacing, mask
@@ -797,6 +814,7 @@ def _run_lorensen(
 ):
     nx, ny, nz = volume.shape
     n_edges = nx * ny * nz * 3
+    _check_int32_range(n_edges, "the edge array")
     threads = 256
     edge_blocks = ((n_edges + threads - 1) // threads,)
 
@@ -817,6 +835,7 @@ def _run_lorensen(
     n_vertices = int(edge_scan[-1])
     if n_vertices == 0:
         raise RuntimeError("No surface found at the given iso value.")
+    _check_int32_range(3 * n_vertices, "the vertex array")
 
     edge_idx = cp.empty(n_vertices, dtype=cp.int32)
     _get_lorensen_kernel("mc_compact_edges")(
@@ -871,8 +890,11 @@ def _run_lorensen(
                 np.float32(level),
             ),
         )
+    # a 64-bit total, so that a too large mesh is detected before the 32-bit
+    # scan can wrap around
+    n_faces = int(tri_counts.sum(dtype=cp.int64))
+    _check_int32_range(3 * n_faces, "the face array")
     tri_scan = cp.cumsum(tri_counts, dtype=cp.int32)
-    n_faces = int(tri_scan[-1])
     if n_faces == 0:
         raise RuntimeError("No surface found at the given iso value.")
 

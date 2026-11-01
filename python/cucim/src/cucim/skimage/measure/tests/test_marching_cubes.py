@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import cupy as cp
@@ -582,3 +582,14 @@ def _has_degenerate_faces(vertices, faces):
             | np.all(triangles[:, 1] == triangles[:, 2], axis=1)
         )
     )
+
+
+@pytest.mark.parametrize("method", ["lewiner", "lorensen"])
+def test_volume_too_large_for_32bit_indexing(method):
+    # 3 * 900**3 edges exceeds the 32-bit indexing used by the kernels
+    try:
+        volume = cp.zeros((900, 900, 900), dtype=cp.float32)
+    except cp.cuda.memory.OutOfMemoryError:
+        pytest.skip("not enough device memory")
+    with pytest.raises(ValueError, match="too large"):
+        marching_cubes(volume, 0.0, method=method)
