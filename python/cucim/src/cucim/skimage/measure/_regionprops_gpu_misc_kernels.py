@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import functools
 import itertools
 import math
 
@@ -681,11 +682,11 @@ def regionprops_euler(
 
 
 # Fraction of the unit sphere in the Voronoi cells of a direction and its
-# opposite, among the 26 directions to the neighbors of a voxel: the weights
-# of the axis, face-diagonal and body-diagonal directions in the discrete
-# Crofton formula for the surface area (Lehmann and Legland, 2012; the same
-# values as in ITK's ShapeLabelMapFilter). They are computed by
-# scipy.spatial.SphericalVoronoi in the tests.
+# opposite, among the 26 directions to the neighbors of a voxel of a cubic
+# grid: the weights of the axis, face-diagonal and body-diagonal directions
+# in the discrete Crofton formula for the surface area (Lehmann and Legland,
+# 2012; the same values as in ITK's ShapeLabelMapFilter). They are computed
+# by scipy.spatial.SphericalVoronoi in the tests.
 _CROFTON_3D_WEIGHTS = (
     0.09155578240952184,  # axis (6 of the 26 directions)
     0.07396125575215028,  # face diagonal (12)
@@ -695,6 +696,38 @@ _CROFTON_3D_WEIGHTS = (
 
 def _is_isotropic(spacing):
     return spacing is None or len(set(float(v) for v in spacing)) == 1
+
+
+@functools.lru_cache(maxsize=32)
+def _get_voronoi_crofton_weights(spacing):
+    """Crofton weights of the 13 pairs of opposite neighbor directions
+    (groups of ``_surface_area_groups(3, False)``) for voxels of size
+    `spacing` (a tuple of 3 floats).
+
+    As proposed by Lang et al. [1]_, the weight of a direction is the
+    fraction of the unit sphere in its Voronoi cell among the 26 directions
+    to the neighbors, which with anisotropic spacing are the spacing-scaled
+    steps. A direction and its opposite share a weight. The weights sum to 1;
+    with isotropic spacing they are ``_CROFTON_3D_WEIGHTS``.
+
+    References
+    ----------
+    .. [1] C. Lang, J. Ohser and R. Hilfer, "On the analysis of spatial
+           binary images", Journal of Microscopy 203(3), 303-313, 2001.
+           :DOI:`10.1046/j.1365-2818.2001.00899.x`
+    """
+    from scipy.spatial import SphericalVoronoi
+
+    offsets = np.array(list(itertools.product(range(-1, 2), repeat=3)))
+    neighbors = np.any(offsets != 0, axis=1)
+    directions = offsets[neighbors] * np.asarray(spacing)
+    directions /= np.linalg.norm(directions, axis=1, keepdims=True)
+    areas = np.zeros(len(offsets))
+    areas[neighbors] = SphericalVoronoi(directions).calculate_areas()
+    return tuple(
+        float(np.sum(areas[group])) / (4 * math.pi)
+        for group in _surface_area_groups(3, False)
+    )
 
 
 def _get_surface_area_coefs(spacing):
@@ -707,19 +740,24 @@ def _get_surface_area_coefs(spacing):
     of density lambda_k = |d_k| / V (V the voxel volume, d_k the
     spacing-scaled step between neighbors). Each intercept is found once,
     from the voxel of the region next to it, so it adds
-    4 * c_k * V / (2 * |d_k|). As in ITK, the weights c_k do not depend on the
-    spacing.
+    4 * c_k * V / (2 * |d_k|). The weights c_k are the Voronoi-cell areas of
+    the spacing-scaled directions (`_get_voronoi_crofton_weights`). With
+    isotropic spacing they are ITK's; unlike ITK, they change with
+    anisotropic spacing.
     """
     isotropic = _is_isotropic(spacing)
     spacing = (1.0, 1.0, 1.0) if spacing is None else spacing
-    spacing = np.asarray(spacing, dtype=np.float64)
-    volume = float(np.prod(spacing))
+    spacing = tuple(float(v) for v in spacing)
+    if isotropic:
+        weights = _CROFTON_3D_WEIGHTS
+    else:
+        weights = _get_voronoi_crofton_weights(spacing)
+    volume = math.prod(spacing)
     offsets = list(itertools.product(range(-1, 2), repeat=3))
     coefs = []
-    for group in _surface_area_groups(3, isotropic):
+    for group, weight in zip(_surface_area_groups(3, isotropic), weights):
         o = np.asarray(offsets[group[0]])
-        length = math.sqrt(float(np.sum((o * spacing) ** 2)))
-        weight = _CROFTON_3D_WEIGHTS[np.count_nonzero(o) - 1]
+        length = math.sqrt(float(np.sum((o * np.asarray(spacing)) ** 2)))
         coefs.append(2.0 * weight * volume / length)
     return cp.asarray(coefs, dtype=cp.float64)
 
@@ -741,8 +779,25 @@ def regionprops_surface_area(
     computed by ITK's ``ShapeLabelMapFilter`` for the ``Perimeter`` of 3D
     label objects [1]_. Each region is measured as in isolation: neighbors
     with another label count as background, and the image is padded with
-    background. With anisotropic spacing the direction weights are not
-    adapted to the spacing, also as in ITK.
+    background. The weight of each direction is the area of its Voronoi
+    cell on the unit sphere [2]_. With anisotropic spacing the weights are
+    those of the spacing-scaled directions, whereas ITK keeps the weights of
+    isotropic spacing, so the results equal ITK's for isotropic spacing
+    only.
+
+    The estimate is not exact, and its error does not vanish as the
+    resolution increases [3]_. Surfaces without a preferred orientation,
+    such as spheres, are measured without bias at high resolution: balls of
+    radius 20 voxels or more are within 0.5%. A flat face, however, is
+    measured times a factor that depends on its orientation. With isotropic
+    spacing the factor ranges from 0.927 (7.3% too small) for faces normal
+    to an axis to 1.023 for some oblique faces. An axis-aligned cube of side 120
+    voxels is measured 7.8% too small, and smaller cubes slightly more,
+    because of the edges. With anisotropic spacing the range is wider:
+    0.874 to 1.094 for spacing (2, 1, 1), and 0.768 to 1.100 for
+    (5, 1, 1). Coarse sampling along one axis also adds error: with
+    spacing (5, 1, 1), a ball of radius 20 (4 voxels along axis 0) is
+    measured 1.6% too large.
 
     Parameters
     ----------
@@ -772,6 +827,13 @@ def regionprops_surface_area(
     .. [1] G. Lehmann and D. Legland, "Efficient N-dimensional surface
            estimation using Crofton formula and run-length encoding", The
            Insight Journal, 2012. :DOI:`10.54294/wdu86d`
+    .. [2] C. Lang, J. Ohser and R. Hilfer, "On the analysis of spatial
+           binary images", Journal of Microscopy 203(3), 303-313, 2001.
+           :DOI:`10.1046/j.1365-2818.2001.00899.x`
+    .. [3] J. Ziegel and M. Kiderlen, "Estimation of surface area and
+           surface area measure of three-dimensional sets from
+           digitizations", Image and Vision Computing 28(1), 64-77, 2010.
+           :DOI:`10.1016/j.imavis.2009.04.013`
     """
     if labels.ndim != 3:
         raise ValueError("surface_area is defined for 3D images only")

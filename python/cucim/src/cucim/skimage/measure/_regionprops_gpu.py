@@ -376,7 +376,14 @@ def regionprops_dict(
       ``perimeter_on_border_ratio``, ``equivalent_spherical_perimeter``: as
       in ITK.
     - ``surface_area`` (3D only): the Crofton estimate of the surface area
-      with 13 directions, as ITK's ``Perimeter`` of 3D objects.
+      with 13 directions, as ITK's ``Perimeter`` of 3D objects. Unlike ITK,
+      cuCIM recomputes the direction weights for anisotropic spacing. The
+      estimate is not exact, and its error does not decrease as the
+      resolution increases. Balls of radius 20 voxels or more are measured
+      to within 0.5% with isotropic spacing, but the error for a flat face
+      depends on its orientation. With isotropic spacing it ranges from
+      7.3% too small (faces normal to an axis) to 2.3% too large. For
+      spacing (2, 1, 1) the range is 12.6% too small to 9.4% too large.
     - ``feret_diameter_min``, ``feret_diameter_min_perpendicular``,
       ``feret_angle_max``, ``feret_angle_min`` (2D only): the minimum Feret
       diameter (caliper width), the caliper width perpendicular to it, and
