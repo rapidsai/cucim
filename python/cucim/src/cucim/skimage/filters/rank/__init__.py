@@ -6,13 +6,10 @@
 
 This module provides GPU (CuPy/CUDA) implementations of most of the local
 rank filters from ``skimage.filters.rank``, including generic, percentile, and
-bilateral variants. The only unimplemented functions are:
-
-1. ``otsu`` (local Otsu thresholding via between-class variance maximization)
-2. ``windowed_histogram`` (returns the full local histogram per pixel)
-
-These two operations did not map cleanly to the common patterns shared across
-the other filters implemented here.
+bilateral variants. The only unimplemented function is
+``windowed_histogram`` (it returns the full local histogram per pixel), which
+does not map cleanly to the common patterns shared across the other filters
+implemented here.
 
 Implementation approach
 -----------------------
@@ -118,6 +115,7 @@ footprints require the elementwise backend.
 * ``pop_bilateral``
 * ``sum_bilateral``
 * ``entropy``
+* ``otsu``
 
 The compatibility conditions are:
 
@@ -170,6 +168,7 @@ from ._generic import (
     minimum,
     modal,
     noise_filter,
+    otsu,
     pop,
     subtract_mean,
     sum,
@@ -206,6 +205,7 @@ __all__ = [
     'minimum',
     'modal',
     'noise_filter',
+    'otsu',
     'percentile',
     'pop',
     'pop_bilateral',
@@ -218,6 +218,5 @@ __all__ = [
     'threshold',
     'threshold_percentile',
     # --- Not yet implemented ---
-    # 'otsu',
     # 'windowed_histogram',
 ]

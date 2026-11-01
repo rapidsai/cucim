@@ -19,6 +19,7 @@
 #define OP_BILATERAL_SUM 13
 #define OP_MODAL 14
 #define OP_GEOMETRIC_MEAN 15
+#define OP_OTSU 16
 
 #ifndef HIST_COUNTER_T
 #    define HIST_COUNTER_T int
@@ -354,6 +355,158 @@ __device__ void histogramWeightedPrefixScan256(int* hist, RANK_HIST_WEIGHTED_SUM
     }
 }
 
+#if RANK_HIST_OP == OP_OTSU
+// Local Otsu threshold of a 256-bin histogram with window population
+// `window_size`, matching scikit-image's _kernel_otsu: bin 0 is never a
+// candidate, empty bins are skipped, bins that already hold the whole window
+// are excluded, and the lowest bin wins ties (and 0 is returned when no bin
+// has a positive between-class variance).
+//
+// Only thread 0 uses the returned value (the caller stores it), so only the
+// first warp finishes the search:
+//   1. warp shuffles compute the prefix sums of the counts and of
+//      count * value (one block barrier combines the per-warp totals);
+//   2. every thread estimates the between-class variance of its bin in float
+//      (from exact integer numerators) and publishes it (second barrier);
+//   3. warp 0 finds the float maximum and evaluates, in double precision and
+//      with the reference's operation order, only the bins within
+//      OTSU_SCREEN_TOLERANCE of it. The float error is below 1e-6, so the
+//      winner is the same as when every bin is evaluated in double.
+// Double precision arithmetic (division in particular) is slow on most GPUs,
+// which is why it is limited to the few near-maximal bins.
+//
+// Shared memory use: tmp0 and tmp1 hold the count and weighted prefix sums of
+// every bin; dtmp bytes [0, 1024) hold the float scores, [1024, 1056) the
+// per-warp counts and [1056, 1120) the per-warp weighted sums.
+#    define OTSU_SCREEN_TOLERANCE 1.0e-5f
+
+__device__ int otsuThreshold256(const int* hist,
+                                int* tmp0,
+                                RANK_HIST_WEIGHTED_SUM_T* tmp1,
+                                double* dtmp,
+                                int window_size)
+{
+    const int tx = threadIdx.x;
+    const int lane = tx & 31;
+    const int warp = tx >> 5;
+    float* score = reinterpret_cast<float*>(dtmp);
+    int* warp_count = reinterpret_cast<int*>(dtmp + 128);
+    long long* warp_sum = reinterpret_cast<long long*>(dtmp + 132);
+
+    const int count = hist[tx];
+    int q1 = count;
+    RANK_HIST_WEIGHTED_SUM_T mu1 = static_cast<RANK_HIST_WEIGHTED_SUM_T>(count) * tx;
+    for (int offset = 1; offset < 32; offset <<= 1)
+    {
+        int q1_below = __shfl_up_sync(0xffffffff, q1, offset);
+        RANK_HIST_WEIGHTED_SUM_T mu1_below = __shfl_up_sync(0xffffffff, mu1, offset);
+        if (lane >= offset)
+        {
+            q1 += q1_below;
+            mu1 += mu1_below;
+        }
+    }
+    if (lane == 31)
+    {
+        warp_count[warp] = q1;
+        warp_sum[warp] = static_cast<long long>(mu1);
+    }
+    __syncthreads();
+
+    long long mu = 0;
+    long long mu1_total = static_cast<long long>(mu1);
+    for (int w = 0; w < 8; w++)
+    {
+        mu += warp_sum[w];
+        if (w < warp)
+        {
+            q1 += warp_count[w];
+            mu1_total += warp_sum[w];
+        }
+    }
+    tmp0[tx] = q1;
+    tmp1[tx] = static_cast<RANK_HIST_WEIGHTED_SUM_T>(mu1_total);
+
+    float sigma_f = 0.0f;
+    if (tx >= 1 && count > 0 && q1 < window_size)
+    {
+        const long long rest = window_size - q1;
+        const long long t_exact = rest * mu1_total - (mu - mu1_total) * q1;
+        const float t = static_cast<float>(t_exact);
+        sigma_f = t * (t / (static_cast<float>(q1) * static_cast<float>(rest)));
+    }
+    score[tx] = sigma_f;
+    __syncthreads();
+
+    if (warp != 0)
+    {
+        return 0;
+    }
+
+    float best_f = 0.0f;
+    for (int bin = lane; bin < 256; bin += 32)
+    {
+        best_f = fmaxf(best_f, score[bin]);
+    }
+    for (int offset = 16; offset > 0; offset >>= 1)
+    {
+        best_f = fmaxf(best_f, __shfl_xor_sync(0xffffffff, best_f, offset));
+    }
+    if (!(best_f > 0.0f))
+    {
+        return 0;
+    }
+    const float threshold = best_f * (1.0f - OTSU_SCREEN_TOLERANCE);
+
+    mu = 0;
+    for (int w = 0; w < 8; w++)
+    {
+        mu += warp_sum[w];
+    }
+    const double pop = static_cast<double>(window_size);
+    double best = 0.0;
+    int best_bin = 0;
+    for (int base = 0; base < 256; base += 32)
+    {
+        const int bin = base + lane;
+        const bool near_max = score[bin] >= threshold;
+        if (__ballot_sync(0xffffffff, near_max) == 0)
+        {
+            continue;
+        }
+        double sigma_b = 0.0;
+        if (near_max)
+        {
+            const long long q1_bin = tmp0[bin];
+            const long long mu1_bin = tmp1[bin];
+            const double q1d = static_cast<double>(q1_bin);
+            // explicit rounding mode: no fused multiply-add, as in the reference
+            const double t =
+                __dsub_rn(__dmul_rn(pop - q1d, static_cast<double>(mu1_bin)), static_cast<double>((mu - mu1_bin) * q1_bin));
+            sigma_b = __ddiv_rn(__dmul_rn(t, t), __dmul_rn(q1d, pop - q1d));
+        }
+        int chunk_bin = bin;
+        for (int offset = 16; offset > 0; offset >>= 1)
+        {
+            const double other = __shfl_xor_sync(0xffffffff, sigma_b, offset);
+            const int other_bin = __shfl_xor_sync(0xffffffff, chunk_bin, offset);
+            if (other > sigma_b || (other == sigma_b && other_bin < chunk_bin))
+            {
+                sigma_b = other;
+                chunk_bin = other_bin;
+            }
+        }
+        // chunks are visited in increasing bin order, so strict > keeps the lowest bin on ties
+        if (sigma_b > best)
+        {
+            best = sigma_b;
+            best_bin = chunk_bin;
+        }
+    }
+    return best > 0.0 ? best_bin : 0;
+}
+#endif
+
 __device__ RANK_HIST_OUTPUT_T histogramRankValue(int* hist,
                                                  int* scan,
                                                  int* tmp0,
@@ -416,6 +569,8 @@ __device__ RANK_HIST_OUTPUT_T histogramRankValue(int* hist,
         __syncthreads();
     }
     return static_cast<RANK_HIST_OUTPUT_T>(tmp1[0]);
+#elif RANK_HIST_OP == OP_OTSU
+    return static_cast<RANK_HIST_OUTPUT_T>(otsuThreshold256(hist, tmp0, tmp1, dtmp, window_size));
 #elif RANK_HIST_OP == OP_GEOMETRIC_MEAN
     double log_sum = 0.0;
     if (tx < 256 && hist[tx] > 0)

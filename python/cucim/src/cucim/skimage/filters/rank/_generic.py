@@ -874,3 +874,62 @@ entropy.__doc__ = _build_generic_docstring(
         Explicit integer ``out`` arrays are respected and will truncate
         fractional entropy values.""",
 )
+
+
+def otsu(
+    image,
+    footprint,
+    out=None,
+    mask=None,
+    shift_x=0,
+    shift_y=0,
+    shift_z=0,
+    *,
+    shifts=None,
+    backend="auto",
+    cast_to_uint8=True,
+):
+    return _apply_generic(
+        "otsu",
+        image,
+        footprint,
+        out,
+        mask,
+        shift_x,
+        shift_y,
+        shift_z,
+        shifts,
+        backend=backend,
+        cast_to_uint8=cast_to_uint8,
+    )
+
+
+otsu.__doc__ = (
+    _build_generic_docstring(
+        """Return the local Otsu threshold value for each pixel.
+
+    The threshold is the gray level that maximizes the between-class variance
+    of the local histogram [1]_. It is computed as in scikit-image: gray level
+    0 is never selected, only gray levels present in the neighborhood are
+    candidates, and the lowest gray level wins ties. A neighborhood with a
+    single gray level (or no pixels) gives 0.
+
+    The image must be uint8 or uint16. Other dtypes are converted to uint8
+    unless ``cast_to_uint8=False``, which raises an error for them."""
+    )
+    + """
+    References
+    ----------
+    .. [1] https://en.wikipedia.org/wiki/Otsu's_method
+
+    Examples
+    --------
+    >>> import cupy as cp
+    >>> from skimage import data
+    >>> from cucim.skimage.filters.rank import otsu
+    >>> from cucim.skimage.morphology import disk
+    >>> img = cp.asarray(data.camera())
+    >>> local_otsu = otsu(img, disk(5))
+    >>> thresh_image = img >= local_otsu
+    """
+)
