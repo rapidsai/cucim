@@ -15,12 +15,11 @@ from . import _marching_cubes_lewiner_luts as _mcluts
 from ._marching_cubes_common import (
     _COMMON_KERNEL_CODE,
     _apply_step_size,
-    _check_int32_range,
+    _count_cells_gpu,
     _decode_lut,
-    _generate_edge_vertices,
-    _inclusive_scan_uint8,
-    _number_crossed_edges,
-    _remove_degenerate_faces_gpu,
+    _generate_cell_table_faces_gpu,
+    _generate_center_vertices_gpu,
+    _run_cell_table_method,
     _validate_marching_cubes_inputs,
 )
 
@@ -712,49 +711,18 @@ def _get_lewiner_kernel(name):
     return cp.RawKernel(_LEWINER_KERNEL_CODE, name)
 
 
+_LEWINER_KERNELS = {
+    "count": "mc_lewiner_count_cells",
+    "count_masked": "mc_lewiner_count_cells_masked",
+    "center": "mc_lewiner_generate_center_vertices",
+    "faces": "mc_lewiner_generate_faces_direct",
+}
+
+
 def _lewiner_count_cells_gpu(volume, level, mask=None):
-    nx, ny, nz = volume.shape
-    n_cells = (nx - 1) * (ny - 1) * (nz - 1)
-    threads = 256
-    cell_blocks = ((n_cells + threads - 1) // threads,)
-    tri_counts = cp.empty(n_cells, dtype=cp.uint8)
-    center_flags = cp.empty(n_cells, dtype=cp.uint8)
-    row_offsets = cp.empty(n_cells, dtype=cp.uint16)
-    center_count = cp.zeros(1, dtype=cp.int32)
-    if mask is None:
-        _get_lewiner_kernel("mc_lewiner_count_cells")(
-            cell_blocks,
-            (threads,),
-            (
-                volume,
-                tri_counts,
-                center_flags,
-                row_offsets,
-                center_count,
-                nx,
-                ny,
-                nz,
-                np.float32(level),
-            ),
-        )
-    else:
-        _get_lewiner_kernel("mc_lewiner_count_cells_masked")(
-            cell_blocks,
-            (threads,),
-            (
-                volume,
-                mask,
-                tri_counts,
-                center_flags,
-                row_offsets,
-                center_count,
-                nx,
-                ny,
-                nz,
-                np.float32(level),
-            ),
-        )
-    return tri_counts, center_flags, row_offsets, int(center_count[0])
+    return _count_cells_gpu(
+        _get_lewiner_kernel, _LEWINER_KERNELS, volume, level, mask
+    )
 
 
 def _lewiner_generate_center_vertices_gpu(
@@ -766,51 +734,17 @@ def _lewiner_generate_center_vertices_gpu(
     n_centers=None,
     out=None,
 ):
-    """Write the center vertices after the first ``vertex_offset`` entries.
-
-    ``out`` is an optional ``(vertices, normals, values)`` tuple of arrays that
-    already have ``vertex_offset + n_centers`` entries.
-    """
-    nx, ny, nz = volume.shape
-    n_cells = (nx - 1) * (ny - 1) * (nz - 1)
-    center_scan = _inclusive_scan_uint8(center_flags)
-    if n_centers is None:
-        n_centers = int(center_scan[-1]) if n_cells else 0
-    n_vertices = vertex_offset + n_centers
-    center_vertex_ids = cp.full(n_cells, -1, dtype=cp.int32)
-    if out is None:
-        vertices = cp.empty((n_vertices, 3), dtype=cp.float32)
-        normals = cp.empty((n_vertices, 3), dtype=cp.float32)
-        values = cp.empty(n_vertices, dtype=cp.float32)
-    else:
-        vertices, normals, values = out
-    if n_centers == 0:
-        return vertices, normals, values, center_vertex_ids
-
-    threads = 256
-    cell_blocks = ((n_cells + threads - 1) // threads,)
-    _get_lewiner_kernel("mc_lewiner_generate_center_vertices")(
-        cell_blocks,
-        (threads,),
-        (
-            volume,
-            center_flags,
-            center_scan,
-            center_vertex_ids,
-            vertices,
-            normals,
-            values,
-            nx,
-            ny,
-            nz,
-            np.float32(level),
-            np.float32(spacing[0]),
-            np.float32(spacing[1]),
-            np.float32(spacing[2]),
-            np.int32(vertex_offset),
-        ),
+    return _generate_center_vertices_gpu(
+        _get_lewiner_kernel,
+        _LEWINER_KERNELS,
+        volume,
+        level,
+        spacing,
+        center_flags,
+        vertex_offset,
+        n_centers,
+        out,
     )
-    return vertices, normals, values, center_vertex_ids
 
 
 def _lewiner_generate_faces_direct_gpu(
@@ -822,37 +756,17 @@ def _lewiner_generate_faces_direct_gpu(
     center_vertex_ids,
     gradient_direction,
 ):
-    nx, ny, nz = volume.shape
-    n_cells = (nx - 1) * (ny - 1) * (nz - 1)
-    # a 64-bit total, so that a too large mesh is detected before the 32-bit
-    # scan can wrap around
-    n_faces = int(tri_counts.sum(dtype=cp.int64)) if n_cells else 0
-    _check_int32_range(3 * n_faces, "the face array")
-    tri_scan = _inclusive_scan_uint8(tri_counts)
-    faces = cp.empty(n_faces * 3, dtype=cp.int32)
-    if n_faces == 0:
-        return faces.reshape(-1, 3)
-
-    threads = 128
-    cell_blocks = ((n_cells + threads - 1) // threads,)
-    _get_lewiner_kernel("mc_lewiner_generate_faces_direct")(
-        cell_blocks,
-        (threads,),
-        (
-            row_offsets,
-            tri_counts,
-            tri_scan,
-            node_scan,
-            edge_mask,
-            center_vertex_ids,
-            faces,
-            nx,
-            ny,
-            nz,
-            np.int32(gradient_direction == "descent"),
-        ),
+    return _generate_cell_table_faces_gpu(
+        _get_lewiner_kernel,
+        _LEWINER_KERNELS,
+        volume,
+        row_offsets,
+        tri_counts,
+        node_scan,
+        edge_mask,
+        center_vertex_ids,
+        gradient_direction,
     )
-    return faces.reshape(-1, 3)
 
 
 def _marching_cubes_lewiner(
@@ -882,62 +796,13 @@ def _marching_cubes_lewiner(
 def _run_lewiner(
     volume, level, spacing, gradient_direction, allow_degenerate, mask
 ):
-    nx, ny, nz = volume.shape
-    n_edges = nx * ny * nz * 3
-    _check_int32_range(n_edges, "the edge array")
-    threads = 256
-
-    edge_mask, node_scan, edge_idx = _number_crossed_edges(
-        _get_lewiner_kernel, volume, level, mask, threads
-    )
-    n_edge_vertices = edge_idx.size
-    tri_counts, center_flags, row_offsets, n_center_vertices = (
-        _lewiner_count_cells_gpu(volume, level, mask)
-    )
-
-    # edge vertices come first, followed by the center vertices
-    n_vertices = n_edge_vertices + n_center_vertices
-    _check_int32_range(3 * n_vertices, "the vertex array")
-    vertices = cp.empty((n_vertices, 3), dtype=cp.float32)
-    normals = cp.empty((n_vertices, 3), dtype=cp.float32)
-    values = cp.empty(n_vertices, dtype=cp.float32)
-    _generate_edge_vertices(
+    return _run_cell_table_method(
         _get_lewiner_kernel,
+        _LEWINER_KERNELS,
         volume,
-        edge_idx,
-        vertices,
-        normals,
-        values,
         level,
         spacing,
-        threads,
-    )
-    if n_center_vertices:
-        center_vertex_ids = _lewiner_generate_center_vertices_gpu(
-            volume,
-            level,
-            spacing,
-            center_flags,
-            vertex_offset=n_edge_vertices,
-            n_centers=n_center_vertices,
-            out=(vertices, normals, values),
-        )[3]
-    else:
-        center_vertex_ids = cp.empty(0, dtype=cp.int32)
-
-    faces = _lewiner_generate_faces_direct_gpu(
-        volume,
-        row_offsets,
-        tri_counts,
-        node_scan,
-        edge_mask,
-        center_vertex_ids,
         gradient_direction,
+        allow_degenerate,
+        mask,
     )
-    if faces.size == 0:
-        raise RuntimeError("No surface found at the given iso value.")
-    if not allow_degenerate:
-        vertices, faces, normals, values = _remove_degenerate_faces_gpu(
-            vertices, faces, normals, values
-        )
-    return vertices, faces, normals, values
