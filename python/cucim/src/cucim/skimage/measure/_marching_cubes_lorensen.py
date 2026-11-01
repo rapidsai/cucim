@@ -438,7 +438,7 @@ extern "C" __global__ void mc_generate_vertices(
 }
 
 extern "C" __global__ void mc_count_faces(
-    const float* volume, int* tri_counts, int nx, int ny, int nz, float level) {
+    const float* volume, unsigned char* tri_counts, int nx, int ny, int nz, float level) {
     int idx = blockDim.x * blockIdx.x + threadIdx.x;
     int cnx = nx - 1;
     int cny = ny - 1;
@@ -470,11 +470,11 @@ extern "C" __global__ void mc_count_faces(
         }
         count++;
     }
-    tri_counts[idx] = count;
+    tri_counts[idx] = (unsigned char)count;
 }
 
 extern "C" __global__ void mc_count_faces_masked(
-    const float* volume, const bool* mask, int* tri_counts,
+    const float* volume, const bool* mask, unsigned char* tri_counts,
     int nx, int ny, int nz, float level) {
     int idx = blockDim.x * blockIdx.x + threadIdx.x;
     int cnx = nx - 1;
@@ -511,11 +511,11 @@ extern "C" __global__ void mc_count_faces_masked(
         }
         count++;
     }
-    tri_counts[idx] = count;
+    tri_counts[idx] = (unsigned char)count;
 }
 
 extern "C" __global__ void mc_generate_faces(
-    const float* volume, const int* tri_counts, const int* tri_scan,
+    const float* volume, const unsigned char* tri_counts, const int* tri_scan,
     const int* edge_scan, int* faces,
     int nx, int ny, int nz, float level, int flip_winding) {
     int idx = blockDim.x * blockIdx.x + threadIdx.x;
@@ -850,7 +850,7 @@ def _run_lorensen(
 
     n_cells = (nx - 1) * (ny - 1) * (nz - 1)
     cell_blocks = ((n_cells + threads - 1) // threads,)
-    tri_counts = cp.empty(n_cells, dtype=cp.int32)
+    tri_counts = cp.empty(n_cells, dtype=cp.uint8)
     if mask is None:
         _get_lorensen_kernel("mc_count_faces")(
             cell_blocks,

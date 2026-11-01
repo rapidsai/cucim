@@ -526,7 +526,7 @@ extern "C" __device__ inline bool lewiner_count_case_needs_values(
 }
 
 extern "C" __global__ void mc_lewiner_count_cells(
-    const float* volume, int* tri_counts, int* center_flags,
+    const float* volume, unsigned char* tri_counts, unsigned char* center_flags,
     unsigned short* row_offsets, int* center_count, int nx, int ny, int nz,
     float level) {
     int idx = blockDim.x * blockIdx.x + threadIdx.x;
@@ -573,8 +573,8 @@ extern "C" __global__ void mc_lewiner_count_cells(
         tri_count = tbl_width[table] / 3;
         center_flag = tbl_center[table];
     }
-    tri_counts[idx] = tri_count;
-    center_flags[idx] = center_flag;
+    tri_counts[idx] = (unsigned char)tri_count;
+    center_flags[idx] = (unsigned char)center_flag;
     row_offsets[idx] = (unsigned short)row;
     if (center_flag) {
         atomicAdd(center_count, 1);
@@ -582,7 +582,8 @@ extern "C" __global__ void mc_lewiner_count_cells(
 }
 
 extern "C" __global__ void mc_lewiner_count_cells_masked(
-    const float* volume, const bool* mask, int* tri_counts, int* center_flags,
+    const float* volume, const bool* mask, unsigned char* tri_counts,
+    unsigned char* center_flags,
     unsigned short* row_offsets, int* center_count, int nx, int ny, int nz,
     float level) {
     int idx = blockDim.x * blockIdx.x + threadIdx.x;
@@ -636,8 +637,8 @@ extern "C" __global__ void mc_lewiner_count_cells_masked(
         tri_count = tbl_width[table] / 3;
         center_flag = tbl_center[table];
     }
-    tri_counts[idx] = tri_count;
-    center_flags[idx] = center_flag;
+    tri_counts[idx] = (unsigned char)tri_count;
+    center_flags[idx] = (unsigned char)center_flag;
     row_offsets[idx] = (unsigned short)row;
     if (center_flag) {
         atomicAdd(center_count, 1);
@@ -645,7 +646,8 @@ extern "C" __global__ void mc_lewiner_count_cells_masked(
 }
 
 extern "C" __global__ void mc_lewiner_generate_center_vertices(
-    const float* volume, const int* center_flags, const int* center_scan,
+    const float* volume, const unsigned char* center_flags,
+    const int* center_scan,
     int* center_vertex_ids, float* vertices, float* normals, float* values_out,
     int nx, int ny, int nz, float level, float sx, float sy, float sz,
     int vertex_offset) {
@@ -765,7 +767,7 @@ extern "C" __device__ inline void load_lewiner_values(
 
 extern "C" __global__ void mc_lewiner_generate_faces_direct(
     const unsigned short* row_offsets,
-    const int* tri_counts, const int* tri_scan,
+    const unsigned char* tri_counts, const int* tri_scan,
     const int* edge_scan, const int* center_vertex_ids, int* faces,
     int nx, int ny, int nz, int flip_winding) {
     int idx = blockDim.x * blockIdx.x + threadIdx.x;
@@ -822,8 +824,8 @@ def _lewiner_count_cells_gpu(volume, level, mask=None):
     n_cells = (nx - 1) * (ny - 1) * (nz - 1)
     threads = 256
     cell_blocks = ((n_cells + threads - 1) // threads,)
-    tri_counts = cp.empty(n_cells, dtype=cp.int32)
-    center_flags = cp.empty(n_cells, dtype=cp.int32)
+    tri_counts = cp.empty(n_cells, dtype=cp.uint8)
+    center_flags = cp.empty(n_cells, dtype=cp.uint8)
     row_offsets = cp.empty(n_cells, dtype=cp.uint16)
     center_count = cp.zeros(1, dtype=cp.int32)
     if mask is None:
