@@ -123,60 +123,61 @@ extern "C" __device__ inline bool crosses_lewiner(float a, float b, float level)
 }
 
 extern "C" __global__ void mc_lewiner_classify_edges(
-    const float* volume, unsigned char* edge_flags, int nx, int ny, int nz,
-    float level) {
-    int idx = blockDim.x * blockIdx.x + threadIdx.x;
-    int total = nx * ny * nz * 3;
-    if (idx >= total) {
+    const float* volume, unsigned char* edge_mask, unsigned char* edge_count,
+    int nx, int ny, int nz, float level) {
+    int node = blockDim.x * blockIdx.x + threadIdx.x;
+    if (node >= nx * ny * nz) {
         return;
     }
 
-    int side = idx % 3;
-    int node = idx / 3;
     int k = node % nz;
     int j = (node / nz) % ny;
     int i = node / (ny * nz);
-    int i2 = i + (side == 0);
-    int j2 = j + (side == 1);
-    int k2 = k + (side == 2);
 
-    int flag = 0;
-    if (i2 < nx && j2 < ny && k2 < nz) {
-        float a = vol_at(volume, i, j, k, ny, nz);
-        float b = vol_at(volume, i2, j2, k2, ny, nz);
-        flag = crosses_lewiner(a, b, level) ? 1 : 0;
+    // bit `side` is set when the edge leaving this node along that axis crosses
+    float a = vol_at(volume, i, j, k, ny, nz);
+    int bits = 0;
+    if (i + 1 < nx && crosses_lewiner(a, vol_at(volume, i + 1, j, k, ny, nz), level)) {
+        bits |= 1;
     }
-    edge_flags[idx] = flag;
+    if (j + 1 < ny && crosses_lewiner(a, vol_at(volume, i, j + 1, k, ny, nz), level)) {
+        bits |= 2;
+    }
+    if (k + 1 < nz && crosses_lewiner(a, vol_at(volume, i, j, k + 1, ny, nz), level)) {
+        bits |= 4;
+    }
+    edge_mask[node] = bits;
+    edge_count[node] = __popc(bits);
 }
 
 extern "C" __global__ void mc_lewiner_classify_edges_masked(
-    const float* volume, const bool* mask, unsigned char* edge_flags,
-    int nx, int ny, int nz, float level) {
-    int idx = blockDim.x * blockIdx.x + threadIdx.x;
-    int total = nx * ny * nz * 3;
-    if (idx >= total) {
+    const float* volume, const bool* mask, unsigned char* edge_mask,
+    unsigned char* edge_count, int nx, int ny, int nz, float level) {
+    int node = blockDim.x * blockIdx.x + threadIdx.x;
+    if (node >= nx * ny * nz) {
         return;
     }
 
-    int side = idx % 3;
-    int node = idx / 3;
     int k = node % nz;
     int j = (node / nz) % ny;
     int i = node / (ny * nz);
-    int i2 = i + (side == 0);
-    int j2 = j + (side == 1);
-    int k2 = k + (side == 2);
 
-    int flag = 0;
-    if (i2 < nx && j2 < ny && k2 < nz) {
-        float a = vol_at(volume, i, j, k, ny, nz);
-        float b = vol_at(volume, i2, j2, k2, ny, nz);
-        if (crosses_lewiner(a, b, level) &&
-            mc_edge_has_active_masked_cell(mask, i, j, k, side, nx, ny, nz)) {
-            flag = 1;
-        }
+    float a = vol_at(volume, i, j, k, ny, nz);
+    int bits = 0;
+    if (i + 1 < nx && crosses_lewiner(a, vol_at(volume, i + 1, j, k, ny, nz), level) &&
+        mc_edge_has_active_masked_cell(mask, i, j, k, 0, nx, ny, nz)) {
+        bits |= 1;
     }
-    edge_flags[idx] = flag;
+    if (j + 1 < ny && crosses_lewiner(a, vol_at(volume, i, j + 1, k, ny, nz), level) &&
+        mc_edge_has_active_masked_cell(mask, i, j, k, 1, nx, ny, nz)) {
+        bits |= 2;
+    }
+    if (k + 1 < nz && crosses_lewiner(a, vol_at(volume, i, j, k + 1, ny, nz), level) &&
+        mc_edge_has_active_masked_cell(mask, i, j, k, 2, nx, ny, nz)) {
+        bits |= 4;
+    }
+    edge_mask[node] = bits;
+    edge_count[node] = __popc(bits);
 }
 
 extern "C" __global__ void mc_lewiner_generate_vertices(
@@ -769,7 +770,8 @@ extern "C" __device__ inline void load_lewiner_values(
 extern "C" __global__ void mc_lewiner_generate_faces_direct(
     const unsigned short* row_offsets,
     const unsigned char* tri_counts, const int* tri_scan,
-    const int* edge_scan, const int* center_vertex_ids, int* faces,
+    const int* node_scan, const unsigned char* edge_mask,
+    const int* center_vertex_ids, int* faces,
     int nx, int ny, int nz, int flip_winding) {
     int idx = blockDim.x * blockIdx.x + threadIdx.x;
     int cnx = nx - 1;
@@ -792,11 +794,11 @@ extern "C" __global__ void mc_lewiner_generate_faces_direct(
         int e1 = (int)edges[3 * t + 1];
         int e2 = (int)edges[3 * t + 2];
         int v0 = e0 == 12 ? center_vertex_ids[idx] :
-            local_edge_vid(edge_scan, e0, i, j, k, ny, nz);
+            local_edge_vid(node_scan, edge_mask, e0, i, j, k, ny, nz);
         int v1 = e1 == 12 ? center_vertex_ids[idx] :
-            local_edge_vid(edge_scan, e1, i, j, k, ny, nz);
+            local_edge_vid(node_scan, edge_mask, e1, i, j, k, ny, nz);
         int v2 = e2 == 12 ? center_vertex_ids[idx] :
-            local_edge_vid(edge_scan, e2, i, j, k, ny, nz);
+            local_edge_vid(node_scan, edge_mask, e2, i, j, k, ny, nz);
 
         int out = 3 * (face_start + t);
         if (flip_winding) {
@@ -925,7 +927,8 @@ def _lewiner_generate_faces_direct_gpu(
     volume,
     row_offsets,
     tri_counts,
-    edge_scan,
+    node_scan,
+    edge_mask,
     center_vertex_ids,
     gradient_direction,
 ):
@@ -949,7 +952,8 @@ def _lewiner_generate_faces_direct_gpu(
             row_offsets,
             tri_counts,
             tri_scan,
-            edge_scan,
+            node_scan,
+            edge_mask,
             center_vertex_ids,
             faces,
             nx,
@@ -992,31 +996,44 @@ def _run_lewiner(
     n_edges = nx * ny * nz * 3
     _check_int32_range(n_edges, "the edge array")
     threads = 256
-    edge_blocks = ((n_edges + threads - 1) // threads,)
 
-    edge_flags = cp.empty(n_edges, dtype=cp.uint8)
+    n_nodes = nx * ny * nz
+    node_blocks = ((n_nodes + threads - 1) // threads,)
+    edge_mask = cp.empty(n_nodes, dtype=cp.uint8)
+    edge_count = cp.empty(n_nodes, dtype=cp.uint8)
     if mask is None:
         _get_lewiner_kernel("mc_lewiner_classify_edges")(
-            edge_blocks,
+            node_blocks,
             (threads,),
-            (volume, edge_flags, nx, ny, nz, np.float32(level)),
+            (volume, edge_mask, edge_count, nx, ny, nz, np.float32(level)),
         )
     else:
         _get_lewiner_kernel("mc_lewiner_classify_edges_masked")(
-            edge_blocks,
+            node_blocks,
             (threads,),
-            (volume, mask, edge_flags, nx, ny, nz, np.float32(level)),
+            (
+                volume,
+                mask,
+                edge_mask,
+                edge_count,
+                nx,
+                ny,
+                nz,
+                np.float32(level),
+            ),
         )
-    edge_scan = cp.cumsum(edge_flags, dtype=cp.int32)
-    n_edge_vertices = int(edge_scan[-1])
+    # one scan per node (not per edge); see edge_vid for how ids are recovered
+    node_scan = cp.cumsum(edge_count, dtype=cp.int32)
+    n_edge_vertices = int(node_scan[-1])
     if n_edge_vertices == 0:
         raise RuntimeError("No surface found at the given iso value.")
+    _check_int32_range(3 * n_edge_vertices, "the vertex array")
 
     edge_idx = cp.empty(n_edge_vertices, dtype=cp.int32)
     _get_lewiner_kernel("mc_compact_edges")(
-        edge_blocks,
+        node_blocks,
         (threads,),
-        (edge_flags, edge_scan, edge_idx, n_edges),
+        (edge_mask, node_scan, edge_idx, n_nodes),
     )
     tri_counts, center_flags, row_offsets, n_center_vertices = (
         _lewiner_count_cells_gpu(volume, level, mask)
@@ -1065,7 +1082,8 @@ def _run_lewiner(
         volume,
         row_offsets,
         tri_counts,
-        edge_scan,
+        node_scan,
+        edge_mask,
         center_vertex_ids,
         gradient_direction,
     )

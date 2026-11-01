@@ -421,26 +421,45 @@ def _case_volume(values):
     return cp.asarray(volume)
 
 
-def _single_cell_edge_scan():
-    # vertex id (100 + edge) + 1, the form of the inclusive scan of edge flags
-    edge_vertex_ids = np.zeros((2, 2, 2, 3), dtype=np.int32)
-    edge_to_axis_slot = {
-        0: (0, 0, 0, 0),
-        1: (1, 0, 0, 1),
-        2: (0, 1, 0, 0),
-        3: (0, 0, 0, 1),
-        4: (0, 0, 1, 0),
-        5: (1, 0, 1, 1),
-        6: (0, 1, 1, 0),
-        7: (0, 0, 1, 1),
-        8: (0, 0, 0, 2),
-        9: (1, 0, 0, 2),
-        10: (1, 1, 0, 2),
-        11: (0, 1, 0, 2),
-    }
-    for edge, slot in edge_to_axis_slot.items():
-        edge_vertex_ids[slot] = 100 + edge + 1
-    return cp.asarray(edge_vertex_ids.reshape(-1))
+_SINGLE_CELL_EDGE_TO_AXIS_SLOT = {
+    0: (0, 0, 0, 0),
+    1: (1, 0, 0, 1),
+    2: (0, 1, 0, 0),
+    3: (0, 0, 0, 1),
+    4: (0, 0, 1, 0),
+    5: (1, 0, 1, 1),
+    6: (0, 1, 1, 0),
+    7: (0, 0, 1, 1),
+    8: (0, 0, 0, 2),
+    9: (1, 0, 0, 2),
+    10: (1, 1, 0, 2),
+    11: (0, 1, 0, 2),
+}
+
+
+def _single_cell_edge_arrays():
+    """Node scan and edge mask of a 2x2x2 volume whose 12 cell edges cross."""
+    edge_mask = np.zeros((2, 2, 2), dtype=np.uint8)
+    for i, j, k, side in _SINGLE_CELL_EDGE_TO_AXIS_SLOT.values():
+        edge_mask[i, j, k] |= 1 << side
+    counts = np.array([bin(m).count("1") for m in edge_mask.reshape(-1)])
+    node_scan = np.cumsum(counts).astype(np.int32)
+    return cp.asarray(node_scan), cp.asarray(edge_mask.reshape(-1))
+
+
+def _single_cell_edge_vertex_ids():
+    """Vertex id of each of the 12 cell edges given by the arrays above."""
+    # ids are assigned in (node, side) order
+    order = sorted(
+        _SINGLE_CELL_EDGE_TO_AXIS_SLOT,
+        key=lambda e: (
+            np.ravel_multi_index(
+                _SINGLE_CELL_EDGE_TO_AXIS_SLOT[e][:3], (2, 2, 2)
+            ),
+            _SINGLE_CELL_EDGE_TO_AXIS_SLOT[e][3],
+        ),
+    )
+    return {edge: vertex_id for vertex_id, edge in enumerate(order)}, len(order)
 
 
 _LEWINER_LOCAL_VALUE_ORDER = (0, 4, 7, 3, 1, 5, 6, 2)
@@ -471,13 +490,15 @@ def _case_volume_for_lewiner_values(values):
     return _case_volume(local_values), local_values
 
 
+def _single_cell_center_id():
+    return _single_cell_edge_vertex_ids()[1]
+
+
 def _expected_single_cell_faces_from_edges(local_edges):
-    edge_ids = cp.asarray(local_edges, dtype=cp.int8).reshape(-1, 3)
-    return cp.where(
-        edge_ids == 12,
-        cp.asarray(112, dtype=cp.int32),
-        edge_ids.astype(cp.int32) + 100,
-    )
+    ids, n_edges = _single_cell_edge_vertex_ids()
+    lut = np.asarray([ids[e] for e in range(12)] + [n_edges], dtype=np.int32)
+    edge_ids = np.asarray(local_edges, dtype=np.int8).reshape(-1, 3)
+    return cp.asarray(lut[edge_ids])
 
 
 def test_lewiner_reference_selector_binary_cases():
@@ -502,8 +523,8 @@ def test_lewiner_reference_selector_binary_cases():
             _case_volume(values),
             row_offsets,
             tri_counts,
-            _single_cell_edge_scan(),
-            cp.asarray([112], dtype=cp.int32),
+            *_single_cell_edge_arrays(),
+            cp.asarray([_single_cell_center_id()], dtype=cp.int32),
             "ascent",
         )
         cp.testing.assert_array_equal(
@@ -733,8 +754,8 @@ def test_lewiner_reference_selector_ambiguous_branches(expected_table, values):
         _case_volume(values),
         _row_offsets,
         tri_counts,
-        _single_cell_edge_scan(),
-        cp.asarray([112], dtype=cp.int32),
+        *_single_cell_edge_arrays(),
+        cp.asarray([_single_cell_center_id()], dtype=cp.int32),
         "ascent",
     )
     cp.testing.assert_array_equal(
@@ -806,8 +827,8 @@ def test_lewiner_gpu_faces_direct_vertex_ids():
     assert int(center_flags[0]) == 1
     assert n_center_vertices == 1
 
-    edge_vertex_ids = _single_cell_edge_scan()
-    center_vertex_ids = cp.asarray([112], dtype=cp.int32)
+    edge_arrays = _single_cell_edge_arrays()
+    center_vertex_ids = cp.asarray([_single_cell_center_id()], dtype=cp.int32)
     expected = _expected_single_cell_faces_from_edges(
         _lewiner_expected_local_edges_for_volume(local_values)
     )
@@ -816,7 +837,7 @@ def test_lewiner_gpu_faces_direct_vertex_ids():
         volume,
         _row_offsets,
         tri_counts,
-        edge_vertex_ids,
+        *edge_arrays,
         center_vertex_ids,
         "ascent",
     )
@@ -826,7 +847,7 @@ def test_lewiner_gpu_faces_direct_vertex_ids():
         volume,
         _row_offsets,
         tri_counts,
-        edge_vertex_ids,
+        *edge_arrays,
         center_vertex_ids,
         "descent",
     )

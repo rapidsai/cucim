@@ -273,40 +273,52 @@ extern "C" __device__ inline float grad_at(
     return 0.5f * (vol_at(volume, i, j, k + 1, ny, nz) - vol_at(volume, i, j, k - 1, ny, nz));
 }
 
-// The vertex id of a crossed edge is its inclusive scan value minus one. Faces
-// only reference crossed edges, so no separate id array is needed.
+// Crossed edges are numbered in the order of (node, side). edge_mask holds one
+// bit per side for each node and node_scan the inclusive scan of the number of
+// set bits, so the id of a crossed edge is the scan value minus the number of
+// crossed edges of that node at this side or after it. Faces only reference
+// crossed edges.
 extern "C" __device__ inline int edge_vid(
-    const int* edge_scan, int i, int j, int k, int side, int ny, int nz) {
-    return edge_scan[(node_index(i, j, k, ny, nz) * 3) + side] - 1;
+    const int* node_scan, const unsigned char* edge_mask, int i, int j, int k,
+    int side, int ny, int nz) {
+    int node = node_index(i, j, k, ny, nz);
+    return node_scan[node] - __popc((unsigned int)edge_mask[node] >> side);
 }
 
-// One thread per grid edge: write the (flat) index of each crossed edge at its
-// vertex id, so the vertex kernel can run with one thread per vertex rather
-// than one per edge (surfaces cross only a small fraction of the edges).
+// One thread per node: write the (flat) index node * 3 + side of each crossed
+// edge at its vertex id, so the vertex kernel can run with one thread per
+// vertex (surfaces cross only a small fraction of the edges).
 extern "C" __global__ void mc_compact_edges(
-    const unsigned char* edge_flags, const int* edge_scan, int* edge_idx,
-    int total) {
-    int idx = blockDim.x * blockIdx.x + threadIdx.x;
-    if (idx < total && edge_flags[idx]) {
-        edge_idx[edge_scan[idx] - 1] = idx;
+    const unsigned char* edge_mask, const int* node_scan, int* edge_idx,
+    int n_nodes) {
+    int node = blockDim.x * blockIdx.x + threadIdx.x;
+    if (node >= n_nodes) {
+        return;
+    }
+    unsigned int bits = edge_mask[node];
+    for (int side = 0; side < 3; side++) {
+        if ((bits >> side) & 1u) {
+            edge_idx[node_scan[node] - __popc(bits >> side)] = node * 3 + side;
+        }
     }
 }
 
 extern "C" __device__ inline int local_edge_vid(
-    const int* edge_scan, int edge, int i, int j, int k, int ny, int nz) {
+    const int* node_scan, const unsigned char* edge_mask, int edge, int i,
+    int j, int k, int ny, int nz) {
     switch (edge) {
-        case 0: return edge_vid(edge_scan, i, j, k, 0, ny, nz);
-        case 1: return edge_vid(edge_scan, i + 1, j, k, 1, ny, nz);
-        case 2: return edge_vid(edge_scan, i, j + 1, k, 0, ny, nz);
-        case 3: return edge_vid(edge_scan, i, j, k, 1, ny, nz);
-        case 4: return edge_vid(edge_scan, i, j, k + 1, 0, ny, nz);
-        case 5: return edge_vid(edge_scan, i + 1, j, k + 1, 1, ny, nz);
-        case 6: return edge_vid(edge_scan, i, j + 1, k + 1, 0, ny, nz);
-        case 7: return edge_vid(edge_scan, i, j, k + 1, 1, ny, nz);
-        case 8: return edge_vid(edge_scan, i, j, k, 2, ny, nz);
-        case 9: return edge_vid(edge_scan, i + 1, j, k, 2, ny, nz);
-        case 10: return edge_vid(edge_scan, i + 1, j + 1, k, 2, ny, nz);
-        default: return edge_vid(edge_scan, i, j + 1, k, 2, ny, nz);
+        case 0: return edge_vid(node_scan, edge_mask, i, j, k, 0, ny, nz);
+        case 1: return edge_vid(node_scan, edge_mask, i + 1, j, k, 1, ny, nz);
+        case 2: return edge_vid(node_scan, edge_mask, i, j + 1, k, 0, ny, nz);
+        case 3: return edge_vid(node_scan, edge_mask, i, j, k, 1, ny, nz);
+        case 4: return edge_vid(node_scan, edge_mask, i, j, k + 1, 0, ny, nz);
+        case 5: return edge_vid(node_scan, edge_mask, i + 1, j, k + 1, 1, ny, nz);
+        case 6: return edge_vid(node_scan, edge_mask, i, j + 1, k + 1, 0, ny, nz);
+        case 7: return edge_vid(node_scan, edge_mask, i, j, k + 1, 1, ny, nz);
+        case 8: return edge_vid(node_scan, edge_mask, i, j, k, 2, ny, nz);
+        case 9: return edge_vid(node_scan, edge_mask, i + 1, j, k, 2, ny, nz);
+        case 10: return edge_vid(node_scan, edge_mask, i + 1, j + 1, k, 2, ny, nz);
+        default: return edge_vid(node_scan, edge_mask, i, j + 1, k, 2, ny, nz);
     }
 }
 
@@ -334,60 +346,61 @@ extern "C" __device__ inline bool crosses(float a, float b, float level) {
 }
 
 extern "C" __global__ void mc_classify_edges(
-    const float* volume, unsigned char* edge_flags, int nx, int ny, int nz,
-    float level) {
-    int idx = blockDim.x * blockIdx.x + threadIdx.x;
-    int total = nx * ny * nz * 3;
-    if (idx >= total) {
+    const float* volume, unsigned char* edge_mask, unsigned char* edge_count,
+    int nx, int ny, int nz, float level) {
+    int node = blockDim.x * blockIdx.x + threadIdx.x;
+    if (node >= nx * ny * nz) {
         return;
     }
 
-    int side = idx % 3;
-    int node = idx / 3;
     int k = node % nz;
     int j = (node / nz) % ny;
     int i = node / (ny * nz);
-    int i2 = i + (side == 0);
-    int j2 = j + (side == 1);
-    int k2 = k + (side == 2);
 
-    int flag = 0;
-    if (i2 < nx && j2 < ny && k2 < nz) {
-        float a = vol_at(volume, i, j, k, ny, nz);
-        float b = vol_at(volume, i2, j2, k2, ny, nz);
-        flag = crosses(a, b, level) ? 1 : 0;
+    // bit `side` is set when the edge leaving this node along that axis crosses
+    float a = vol_at(volume, i, j, k, ny, nz);
+    int bits = 0;
+    if (i + 1 < nx && crosses(a, vol_at(volume, i + 1, j, k, ny, nz), level)) {
+        bits |= 1;
     }
-    edge_flags[idx] = flag;
+    if (j + 1 < ny && crosses(a, vol_at(volume, i, j + 1, k, ny, nz), level)) {
+        bits |= 2;
+    }
+    if (k + 1 < nz && crosses(a, vol_at(volume, i, j, k + 1, ny, nz), level)) {
+        bits |= 4;
+    }
+    edge_mask[node] = bits;
+    edge_count[node] = __popc(bits);
 }
 
 extern "C" __global__ void mc_classify_edges_masked(
-    const float* volume, const bool* mask, unsigned char* edge_flags,
-    int nx, int ny, int nz, float level) {
-    int idx = blockDim.x * blockIdx.x + threadIdx.x;
-    int total = nx * ny * nz * 3;
-    if (idx >= total) {
+    const float* volume, const bool* mask, unsigned char* edge_mask,
+    unsigned char* edge_count, int nx, int ny, int nz, float level) {
+    int node = blockDim.x * blockIdx.x + threadIdx.x;
+    if (node >= nx * ny * nz) {
         return;
     }
 
-    int side = idx % 3;
-    int node = idx / 3;
     int k = node % nz;
     int j = (node / nz) % ny;
     int i = node / (ny * nz);
-    int i2 = i + (side == 0);
-    int j2 = j + (side == 1);
-    int k2 = k + (side == 2);
 
-    int flag = 0;
-    if (i2 < nx && j2 < ny && k2 < nz) {
-        float a = vol_at(volume, i, j, k, ny, nz);
-        float b = vol_at(volume, i2, j2, k2, ny, nz);
-        if (crosses(a, b, level) &&
-            mc_edge_has_active_masked_cell(mask, i, j, k, side, nx, ny, nz)) {
-            flag = 1;
-        }
+    float a = vol_at(volume, i, j, k, ny, nz);
+    int bits = 0;
+    if (i + 1 < nx && crosses(a, vol_at(volume, i + 1, j, k, ny, nz), level) &&
+        mc_edge_has_active_masked_cell(mask, i, j, k, 0, nx, ny, nz)) {
+        bits |= 1;
     }
-    edge_flags[idx] = flag;
+    if (j + 1 < ny && crosses(a, vol_at(volume, i, j + 1, k, ny, nz), level) &&
+        mc_edge_has_active_masked_cell(mask, i, j, k, 1, nx, ny, nz)) {
+        bits |= 2;
+    }
+    if (k + 1 < nz && crosses(a, vol_at(volume, i, j, k + 1, ny, nz), level) &&
+        mc_edge_has_active_masked_cell(mask, i, j, k, 2, nx, ny, nz)) {
+        bits |= 4;
+    }
+    edge_mask[node] = bits;
+    edge_count[node] = __popc(bits);
 }
 
 extern "C" __global__ void mc_generate_vertices(
@@ -531,7 +544,7 @@ extern "C" __global__ void mc_count_faces_masked(
 
 extern "C" __global__ void mc_generate_faces(
     const float* volume, const unsigned char* tri_counts, const int* tri_scan,
-    const int* edge_scan, int* faces,
+    const int* node_scan, const unsigned char* edge_mask, int* faces,
     int nx, int ny, int nz, float level, int flip_winding) {
     int idx = blockDim.x * blockIdx.x + threadIdx.x;
     int cnx = nx - 1;
@@ -562,9 +575,9 @@ extern "C" __global__ void mc_generate_faces(
         if (row[n] < 0) {
             break;
         }
-        int v0 = local_edge_vid(edge_scan, row[n], i, j, k, ny, nz);
-        int v1 = local_edge_vid(edge_scan, row[n + 1], i, j, k, ny, nz);
-        int v2 = local_edge_vid(edge_scan, row[n + 2], i, j, k, ny, nz);
+        int v0 = local_edge_vid(node_scan, edge_mask, row[n], i, j, k, ny, nz);
+        int v1 = local_edge_vid(node_scan, edge_mask, row[n + 1], i, j, k, ny, nz);
+        int v2 = local_edge_vid(node_scan, edge_mask, row[n + 2], i, j, k, ny, nz);
         int out = 3 * face_start;
         if (flip_winding) {
             faces[out] = v2;
@@ -814,32 +827,44 @@ def _run_lorensen(
     n_edges = nx * ny * nz * 3
     _check_int32_range(n_edges, "the edge array")
     threads = 256
-    edge_blocks = ((n_edges + threads - 1) // threads,)
 
-    edge_flags = cp.empty(n_edges, dtype=cp.uint8)
+    n_nodes = nx * ny * nz
+    node_blocks = ((n_nodes + threads - 1) // threads,)
+    edge_mask = cp.empty(n_nodes, dtype=cp.uint8)
+    edge_count = cp.empty(n_nodes, dtype=cp.uint8)
     if mask is None:
         _get_lorensen_kernel("mc_classify_edges")(
-            edge_blocks,
+            node_blocks,
             (threads,),
-            (volume, edge_flags, nx, ny, nz, np.float32(level)),
+            (volume, edge_mask, edge_count, nx, ny, nz, np.float32(level)),
         )
     else:
         _get_lorensen_kernel("mc_classify_edges_masked")(
-            edge_blocks,
+            node_blocks,
             (threads,),
-            (volume, mask, edge_flags, nx, ny, nz, np.float32(level)),
+            (
+                volume,
+                mask,
+                edge_mask,
+                edge_count,
+                nx,
+                ny,
+                nz,
+                np.float32(level),
+            ),
         )
-    edge_scan = cp.cumsum(edge_flags, dtype=cp.int32)
-    n_vertices = int(edge_scan[-1])
+    # one scan per node (not per edge); see edge_vid for how ids are recovered
+    node_scan = cp.cumsum(edge_count, dtype=cp.int32)
+    n_vertices = int(node_scan[-1])
     if n_vertices == 0:
         raise RuntimeError("No surface found at the given iso value.")
     _check_int32_range(3 * n_vertices, "the vertex array")
 
     edge_idx = cp.empty(n_vertices, dtype=cp.int32)
     _get_lorensen_kernel("mc_compact_edges")(
-        edge_blocks,
+        node_blocks,
         (threads,),
-        (edge_flags, edge_scan, edge_idx, n_edges),
+        (edge_mask, node_scan, edge_idx, n_nodes),
     )
     vertex_blocks = ((n_vertices + threads - 1) // threads,)
     vertices = cp.empty((n_vertices, 3), dtype=cp.float32)
@@ -904,7 +929,8 @@ def _run_lorensen(
             volume,
             tri_counts,
             tri_scan,
-            edge_scan,
+            node_scan,
+            edge_mask,
             faces,
             nx,
             ny,
