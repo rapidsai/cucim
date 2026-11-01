@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
 # SPDX-FileCopyrightText: Copyright (c) 2012-2015, P. M. Neila
-# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import base64
@@ -258,26 +258,28 @@ extern "C" __device__ inline float grad_at(
     return 0.5f * (vol_at(volume, i, j, k + 1, ny, nz) - vol_at(volume, i, j, k - 1, ny, nz));
 }
 
+// The vertex id of a crossed edge is its inclusive scan value minus one. Faces
+// only reference crossed edges, so no separate id array is needed.
 extern "C" __device__ inline int edge_vid(
-    const int* edge_vertex_ids, int i, int j, int k, int side, int ny, int nz) {
-    return edge_vertex_ids[(node_index(i, j, k, ny, nz) * 3) + side];
+    const int* edge_scan, int i, int j, int k, int side, int ny, int nz) {
+    return edge_scan[(node_index(i, j, k, ny, nz) * 3) + side] - 1;
 }
 
 extern "C" __device__ inline int local_edge_vid(
-    const int* edge_vertex_ids, int edge, int i, int j, int k, int ny, int nz) {
+    const int* edge_scan, int edge, int i, int j, int k, int ny, int nz) {
     switch (edge) {
-        case 0: return edge_vid(edge_vertex_ids, i, j, k, 0, ny, nz);
-        case 1: return edge_vid(edge_vertex_ids, i + 1, j, k, 1, ny, nz);
-        case 2: return edge_vid(edge_vertex_ids, i, j + 1, k, 0, ny, nz);
-        case 3: return edge_vid(edge_vertex_ids, i, j, k, 1, ny, nz);
-        case 4: return edge_vid(edge_vertex_ids, i, j, k + 1, 0, ny, nz);
-        case 5: return edge_vid(edge_vertex_ids, i + 1, j, k + 1, 1, ny, nz);
-        case 6: return edge_vid(edge_vertex_ids, i, j + 1, k + 1, 0, ny, nz);
-        case 7: return edge_vid(edge_vertex_ids, i, j, k + 1, 1, ny, nz);
-        case 8: return edge_vid(edge_vertex_ids, i, j, k, 2, ny, nz);
-        case 9: return edge_vid(edge_vertex_ids, i + 1, j, k, 2, ny, nz);
-        case 10: return edge_vid(edge_vertex_ids, i + 1, j + 1, k, 2, ny, nz);
-        default: return edge_vid(edge_vertex_ids, i, j + 1, k, 2, ny, nz);
+        case 0: return edge_vid(edge_scan, i, j, k, 0, ny, nz);
+        case 1: return edge_vid(edge_scan, i + 1, j, k, 1, ny, nz);
+        case 2: return edge_vid(edge_scan, i, j + 1, k, 0, ny, nz);
+        case 3: return edge_vid(edge_scan, i, j, k, 1, ny, nz);
+        case 4: return edge_vid(edge_scan, i, j, k + 1, 0, ny, nz);
+        case 5: return edge_vid(edge_scan, i + 1, j, k + 1, 1, ny, nz);
+        case 6: return edge_vid(edge_scan, i, j + 1, k + 1, 0, ny, nz);
+        case 7: return edge_vid(edge_scan, i, j, k + 1, 1, ny, nz);
+        case 8: return edge_vid(edge_scan, i, j, k, 2, ny, nz);
+        case 9: return edge_vid(edge_scan, i + 1, j, k, 2, ny, nz);
+        case 10: return edge_vid(edge_scan, i + 1, j + 1, k, 2, ny, nz);
+        default: return edge_vid(edge_scan, i, j + 1, k, 2, ny, nz);
     }
 }
 
@@ -362,7 +364,7 @@ extern "C" __global__ void mc_classify_edges_masked(
 }
 
 extern "C" __global__ void mc_generate_vertices(
-    const float* volume, const int* edge_scan, int* edge_vertex_ids,
+    const float* volume, const int* edge_scan,
     float* vertices, float* normals, float* values,
     int nx, int ny, int nz, float level,
     float sx, float sy, float sz) {
@@ -381,7 +383,6 @@ extern "C" __global__ void mc_generate_vertices(
     int j2 = j + (side == 1);
     int k2 = k + (side == 2);
 
-    edge_vertex_ids[idx] = -1;
     if (i2 >= nx || j2 >= ny || k2 >= nz) {
         return;
     }
@@ -397,7 +398,6 @@ extern "C" __global__ void mc_generate_vertices(
         return;
     }
     int vid = edge_scan[idx] - 1;
-    edge_vertex_ids[idx] = vid;
 
     float t = (level - a) / (b - a);
     t = fminf(1.0f, fmaxf(0.0f, t));
@@ -517,7 +517,7 @@ extern "C" __global__ void mc_count_faces_masked(
 
 extern "C" __global__ void mc_generate_faces(
     const float* volume, const int* tri_counts, const int* tri_scan,
-    const int* edge_vertex_ids, int* faces,
+    const int* edge_scan, int* faces,
     int nx, int ny, int nz, float level, int flip_winding) {
     int idx = blockDim.x * blockIdx.x + threadIdx.x;
     int cnx = nx - 1;
@@ -548,9 +548,9 @@ extern "C" __global__ void mc_generate_faces(
         if (row[n] < 0) {
             break;
         }
-        int v0 = local_edge_vid(edge_vertex_ids, row[n], i, j, k, ny, nz);
-        int v1 = local_edge_vid(edge_vertex_ids, row[n + 1], i, j, k, ny, nz);
-        int v2 = local_edge_vid(edge_vertex_ids, row[n + 2], i, j, k, ny, nz);
+        int v0 = local_edge_vid(edge_scan, row[n], i, j, k, ny, nz);
+        int v1 = local_edge_vid(edge_scan, row[n + 1], i, j, k, ny, nz);
+        int v2 = local_edge_vid(edge_scan, row[n + 2], i, j, k, ny, nz);
         int out = 3 * face_start;
         if (flip_winding) {
             faces[out] = v2;
@@ -819,7 +819,6 @@ def _run_lorensen(
     if n_vertices == 0:
         raise RuntimeError("No surface found at the given iso value.")
 
-    edge_vertex_ids = cp.empty(n_edges, dtype=cp.int32)
     vertices = cp.empty((n_vertices, 3), dtype=cp.float32)
     normals = cp.empty((n_vertices, 3), dtype=cp.float32)
     values = cp.empty(n_vertices, dtype=cp.float32)
@@ -829,7 +828,6 @@ def _run_lorensen(
         (
             volume,
             edge_scan,
-            edge_vertex_ids,
             vertices,
             normals,
             values,
@@ -879,7 +877,7 @@ def _run_lorensen(
             volume,
             tri_counts,
             tri_scan,
-            edge_vertex_ids,
+            edge_scan,
             faces,
             nx,
             ny,

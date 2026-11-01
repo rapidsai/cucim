@@ -421,8 +421,9 @@ def _case_volume(values):
     return cp.asarray(volume)
 
 
-def _single_cell_edge_vertex_ids():
-    edge_vertex_ids = np.full((2, 2, 2, 3), -1, dtype=np.int32)
+def _single_cell_edge_scan():
+    # vertex id (100 + edge) + 1, the form of the inclusive scan of edge flags
+    edge_vertex_ids = np.zeros((2, 2, 2, 3), dtype=np.int32)
     edge_to_axis_slot = {
         0: (0, 0, 0, 0),
         1: (1, 0, 0, 1),
@@ -438,7 +439,7 @@ def _single_cell_edge_vertex_ids():
         11: (0, 1, 0, 2),
     }
     for edge, slot in edge_to_axis_slot.items():
-        edge_vertex_ids[slot] = 100 + edge
+        edge_vertex_ids[slot] = 100 + edge + 1
     return cp.asarray(edge_vertex_ids.reshape(-1))
 
 
@@ -501,7 +502,7 @@ def test_lewiner_reference_selector_binary_cases():
             _case_volume(values),
             row_offsets,
             tri_counts,
-            _single_cell_edge_vertex_ids(),
+            _single_cell_edge_scan(),
             cp.asarray([112], dtype=cp.int32),
             "ascent",
         )
@@ -732,7 +733,7 @@ def test_lewiner_reference_selector_ambiguous_branches(expected_table, values):
         _case_volume(values),
         _row_offsets,
         tri_counts,
-        _single_cell_edge_vertex_ids(),
+        _single_cell_edge_scan(),
         cp.asarray([112], dtype=cp.int32),
         "ascent",
     )
@@ -805,7 +806,7 @@ def test_lewiner_gpu_faces_direct_vertex_ids():
     assert int(center_flags[0]) == 1
     assert n_center_vertices == 1
 
-    edge_vertex_ids = _single_cell_edge_vertex_ids()
+    edge_vertex_ids = _single_cell_edge_scan()
     center_vertex_ids = cp.asarray([112], dtype=cp.int32)
     expected = _expected_single_cell_faces_from_edges(
         _lewiner_expected_local_edges_for_volume(local_values)

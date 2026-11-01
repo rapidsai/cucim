@@ -179,7 +179,7 @@ extern "C" __global__ void mc_lewiner_classify_edges_masked(
 }
 
 extern "C" __global__ void mc_lewiner_generate_vertices(
-    const float* volume, const int* edge_scan, int* edge_vertex_ids,
+    const float* volume, const int* edge_scan,
     float* vertices, float* normals, float* values,
     int nx, int ny, int nz, float level,
     float sx, float sy, float sz) {
@@ -198,7 +198,6 @@ extern "C" __global__ void mc_lewiner_generate_vertices(
     int j2 = j + (side == 1);
     int k2 = k + (side == 2);
 
-    edge_vertex_ids[idx] = -1;
     if (i2 >= nx || j2 >= ny || k2 >= nz) {
         return;
     }
@@ -214,7 +213,6 @@ extern "C" __global__ void mc_lewiner_generate_vertices(
         return;
     }
     int vid = edge_scan[idx] - 1;
-    edge_vertex_ids[idx] = vid;
 
     float t = (level - a) / (b - a);
     t = fminf(1.0f, fmaxf(0.0f, t));
@@ -781,7 +779,7 @@ extern "C" __device__ inline void load_lewiner_values(
 extern "C" __global__ void mc_lewiner_generate_faces_direct(
     const unsigned short* row_offsets,
     const int* tri_counts, const int* tri_scan,
-    const int* edge_vertex_ids, const int* center_vertex_ids, int* faces,
+    const int* edge_scan, const int* center_vertex_ids, int* faces,
     int nx, int ny, int nz, int flip_winding) {
     int idx = blockDim.x * blockIdx.x + threadIdx.x;
     int cnx = nx - 1;
@@ -804,11 +802,11 @@ extern "C" __global__ void mc_lewiner_generate_faces_direct(
         int e1 = (int)edges[3 * t + 1];
         int e2 = (int)edges[3 * t + 2];
         int v0 = e0 == 12 ? center_vertex_ids[idx] :
-            local_edge_vid(edge_vertex_ids, e0, i, j, k, ny, nz);
+            local_edge_vid(edge_scan, e0, i, j, k, ny, nz);
         int v1 = e1 == 12 ? center_vertex_ids[idx] :
-            local_edge_vid(edge_vertex_ids, e1, i, j, k, ny, nz);
+            local_edge_vid(edge_scan, e1, i, j, k, ny, nz);
         int v2 = e2 == 12 ? center_vertex_ids[idx] :
-            local_edge_vid(edge_vertex_ids, e2, i, j, k, ny, nz);
+            local_edge_vid(edge_scan, e2, i, j, k, ny, nz);
 
         int out = 3 * (face_start + t);
         if (flip_winding) {
@@ -923,7 +921,7 @@ def _lewiner_generate_faces_direct_gpu(
     volume,
     row_offsets,
     tri_counts,
-    edge_vertex_ids,
+    edge_scan,
     center_vertex_ids,
     gradient_direction,
 ):
@@ -944,7 +942,7 @@ def _lewiner_generate_faces_direct_gpu(
             row_offsets,
             tri_counts,
             tri_scan,
-            edge_vertex_ids,
+            edge_scan,
             center_vertex_ids,
             faces,
             nx,
@@ -1006,7 +1004,6 @@ def _run_lewiner(
     if n_edge_vertices == 0:
         raise RuntimeError("No surface found at the given iso value.")
 
-    edge_vertex_ids = cp.empty(n_edges, dtype=cp.int32)
     edge_vertices = cp.empty((n_edge_vertices, 3), dtype=cp.float32)
     edge_normals = cp.empty((n_edge_vertices, 3), dtype=cp.float32)
     edge_values = cp.empty(n_edge_vertices, dtype=cp.float32)
@@ -1016,7 +1013,6 @@ def _run_lewiner(
         (
             volume,
             edge_scan,
-            edge_vertex_ids,
             edge_vertices,
             edge_normals,
             edge_values,
@@ -1057,7 +1053,7 @@ def _run_lewiner(
         volume,
         row_offsets,
         tri_counts,
-        edge_vertex_ids,
+        edge_scan,
         center_vertex_ids,
         gradient_direction,
     )
