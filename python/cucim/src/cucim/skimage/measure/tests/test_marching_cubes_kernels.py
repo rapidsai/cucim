@@ -188,12 +188,12 @@ def _lewiner_test_internal(values, luts, case, config, subconfig, s):
 
     if test in (0, 1, 2, 3, 4, 6, 8, 9, 12):
         return s > 0
+    # scikit-image's Cython version returns 0 (false), not s < 0, when the extra
+    # condition of test 5 or 10 fails
     if test == 5:
-        if at * ct - bt * dt < _FLT_EPSILON:
-            return s > 0
-    elif test == 10:
-        if at * ct - bt * dt >= _FLT_EPSILON:
-            return s > 0
+        return at * ct - bt * dt < _FLT_EPSILON and s > 0
+    if test == 10:
+        return at * ct - bt * dt >= _FLT_EPSILON and s > 0
     return s < 0
 
 

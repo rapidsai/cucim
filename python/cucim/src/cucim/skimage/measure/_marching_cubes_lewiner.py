@@ -377,10 +377,13 @@ extern "C" __device__ inline bool lewiner_test_internal(
         test == 4 || test == 6 || test == 8 || test == 9 || test == 12) {
         return s > 0;
     }
+    // scikit-image's cdef function has no return statement when the extra
+    // condition of test 5 or 10 fails, which returns 0 (false) rather than s < 0.
     if (test == 5) {
-        if (at * ct - bt * dt < eps) return s > 0;
-    } else if (test == 10) {
-        if (at * ct - bt * dt >= eps) return s > 0;
+        return (at * ct - bt * dt < eps) && s > 0;
+    }
+    if (test == 10) {
+        return (at * ct - bt * dt >= eps) && s > 0;
     }
     return s < 0;
 }
