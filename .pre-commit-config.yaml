@@ -179,6 +179,8 @@ repos:
             ^python/cucim/src/cucim/skimage/measure/_marching_cubes_lewiner_luts[.]py$|
             ^python/cucim/src/cucim/skimage/measure/_marching_cubes_common[.]py$|
             ^python/cucim/src/cucim/skimage/measure/_marching_cubes_lorensen[.]py$|
+            ^python/cucim/src/cucim/skimage/measure/_marching_cubes_vega[.]py$|
+            ^python/cucim/src/cucim/skimage/measure/_marching_cubes_vega_luts[.]py$|
             ^python/cucim/src/cucim/skimage/measure/_moments_analytical[.]py$|
             ^python/cucim/src/cucim/skimage/measure/_moments[.]py$|
             ^python/cucim/src/cucim/skimage/measure/_polygon[.]py$|
@@ -194,6 +196,8 @@ repos:
             ^python/cucim/src/cucim/skimage/measure/tests/test_entropy[.]py$|
             ^python/cucim/src/cucim/skimage/measure/tests/test_marching_cubes[.]py$|
             ^python/cucim/src/cucim/skimage/measure/tests/test_marching_cubes_kernels[.]py$|
+            ^python/cucim/src/cucim/skimage/measure/tests/test_marching_cubes_vega[.]py$|
+            ^python/cucim/src/cucim/skimage/measure/tests/_vega_reference_cells[.]py$|
             ^python/cucim/src/cucim/skimage/measure/tests/test_moments[.]py$|
             ^python/cucim/src/cucim/skimage/measure/tests/test_polygon[.]py$|
             ^python/cucim/src/cucim/skimage/measure/tests/test_profile[.]py$|

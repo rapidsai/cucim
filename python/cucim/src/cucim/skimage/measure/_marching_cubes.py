@@ -1,12 +1,13 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
 # SPDX-FileCopyrightText: Copyright (c) 2012-2015, P. M. Neila
-# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import cupy as cp
 
 from ._marching_cubes_lewiner import _marching_cubes_lewiner
 from ._marching_cubes_lorensen import _marching_cubes_lorensen
+from ._marching_cubes_vega import _marching_cubes_vega
 
 
 def marching_cubes(
@@ -22,8 +23,10 @@ def marching_cubes(
 ):
     """Marching cubes algorithm to find surfaces in 3D volumetric data.
 
-    The ``method='lewiner'`` default and ``method='lorensen'`` are supported
-    for CuPy inputs.
+    The ``method='lewiner'`` default, ``method='lorensen'`` and
+    ``method='vega'`` are supported for CuPy inputs. ``'vega'`` is not in
+    scikit-image: it is the marching cubes 33 implementation of Vega et al.
+    [3]_ with the corrected interior test.
 
     When ``allow_degenerate=False``, zero-area faces are removed and the mesh
     geometry is preserved, but the exact surviving duplicate vertex IDs can
@@ -55,8 +58,15 @@ def marching_cubes(
         Whether to allow degenerate (i.e. zero-area) triangles in the
         end-result. Default True. If False, degenerate triangles are
         removed, at the cost of making the algorithm slower.
-    method : {'lewiner', 'lorensen'}, optional
-        Whether the method of Lewiner et al. or Lorensen et al. will be used.
+    method : {'lewiner', 'lorensen', 'vega'}, optional
+        Whether the method of Lewiner et al. (the default, as in
+        scikit-image), Lorensen et al. or Vega et al. will be used. The
+        Lewiner and Vega methods resolve the ambiguous cases of the cells so
+        that the surface is topologically consistent; the Vega method uses
+        the corrected interior test of [3]_, and its results do not depend on
+        the orientation of the cells (the Lewiner method gives different
+        meshes for a volume and its mirror image in rare cases). ``'vega'``
+        is not available in scikit-image.
     mask : (M, N, P) array, optional
         Boolean array. The marching cube algorithm will be computed only on
         True elements. This will save computational time when interfaces
@@ -140,13 +150,29 @@ def marching_cubes(
            Resolution 3D Surface Construction Algorithm. Computer Graphics
            (SIGGRAPH 87 Proceedings) 21(4) July 1987, p. 163-170).
            :DOI:`10.1145/37401.37422`
+    .. [3] David Vega, Javier Abache and David Coll. A Fast and Memory-Saving
+           Marching Cubes 33 Implementation with the Correct Interior Test.
+           Journal of Computer Graphics Techniques 8(3), 2019, p. 1-18.
 
     """  # noqa: E501
-    if method not in ("lewiner", "lorensen"):
-        raise ValueError("method should be either 'lewiner' or 'lorensen'")
+    if method not in ("lewiner", "lorensen", "vega"):
+        raise ValueError(
+            "method should be one of 'lewiner', 'lorensen' or 'vega'"
+        )
 
     if method == "lewiner":
         return _marching_cubes_lewiner(
+            volume,
+            level,
+            spacing,
+            gradient_direction,
+            step_size,
+            allow_degenerate,
+            mask,
+        )
+
+    if method == "vega":
+        return _marching_cubes_vega(
             volume,
             level,
             spacing,

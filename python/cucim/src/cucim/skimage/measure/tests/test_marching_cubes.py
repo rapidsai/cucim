@@ -65,7 +65,7 @@ def test_default_lewiner_single_voxel_smoke():
 
 
 def test_invalid_method():
-    with pytest.raises(ValueError, match="method should be either"):
+    with pytest.raises(ValueError, match="method should be one of"):
         marching_cubes(_single_voxel_volume(), 0.5, method="invalid")
 
 
