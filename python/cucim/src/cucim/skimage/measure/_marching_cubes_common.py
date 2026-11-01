@@ -11,7 +11,9 @@ import numpy as np
 # Code shared by the Lorensen and Lewiner marching cubes implementations:
 # input validation, step_size handling, the kernel code for indexing the vertex
 # ids of crossed edges, the edge classification and vertex kernels (which call
-# the method's own mc_crosses), and the removal of degenerate faces.
+# the method's own mc_crosses), the driver of the methods whose count kernel
+# resolves each cell once (_run_cell_table_method), and the removal of
+# degenerate faces.
 #
 # Implementation notes
 # --------------------
@@ -779,3 +781,232 @@ def _remove_degenerate_faces_gpu(vertices, faces, normals, values):
         ),
     )
     return vertices2, faces2, normals2, values2
+
+
+def _count_cells_gpu(get_kernel, kernels, volume, level, mask=None):
+    nx, ny, nz = volume.shape
+    n_cells = (nx - 1) * (ny - 1) * (nz - 1)
+    threads = 256
+    cell_blocks = ((n_cells + threads - 1) // threads,)
+    tri_counts = cp.empty(n_cells, dtype=cp.uint8)
+    center_flags = cp.empty(n_cells, dtype=cp.uint8)
+    row_offsets = cp.empty(n_cells, dtype=cp.uint16)
+    center_count = cp.zeros(1, dtype=cp.int32)
+    if mask is None:
+        get_kernel(kernels["count"])(
+            cell_blocks,
+            (threads,),
+            (
+                volume,
+                tri_counts,
+                center_flags,
+                row_offsets,
+                center_count,
+                nx,
+                ny,
+                nz,
+                np.float32(level),
+            ),
+        )
+    else:
+        get_kernel(kernels["count_masked"])(
+            cell_blocks,
+            (threads,),
+            (
+                volume,
+                mask,
+                tri_counts,
+                center_flags,
+                row_offsets,
+                center_count,
+                nx,
+                ny,
+                nz,
+                np.float32(level),
+            ),
+        )
+    return tri_counts, center_flags, row_offsets, int(center_count[0])
+
+
+def _generate_center_vertices_gpu(
+    get_kernel,
+    kernels,
+    volume,
+    level,
+    spacing,
+    center_flags,
+    vertex_offset=0,
+    n_centers=None,
+    out=None,
+):
+    """Write the center vertices after the first ``vertex_offset`` entries.
+
+    ``out`` is an optional ``(vertices, normals, values)`` tuple of arrays that
+    already have ``vertex_offset + n_centers`` entries.
+    """
+    nx, ny, nz = volume.shape
+    n_cells = (nx - 1) * (ny - 1) * (nz - 1)
+    center_scan = _inclusive_scan_uint8(center_flags)
+    if n_centers is None:
+        n_centers = int(center_scan[-1]) if n_cells else 0
+    n_vertices = vertex_offset + n_centers
+    center_vertex_ids = cp.full(n_cells, -1, dtype=cp.int32)
+    if out is None:
+        vertices = cp.empty((n_vertices, 3), dtype=cp.float32)
+        normals = cp.empty((n_vertices, 3), dtype=cp.float32)
+        values = cp.empty(n_vertices, dtype=cp.float32)
+    else:
+        vertices, normals, values = out
+    if n_centers == 0:
+        return vertices, normals, values, center_vertex_ids
+
+    threads = 256
+    cell_blocks = ((n_cells + threads - 1) // threads,)
+    get_kernel(kernels["center"])(
+        cell_blocks,
+        (threads,),
+        (
+            volume,
+            center_flags,
+            center_scan,
+            center_vertex_ids,
+            vertices,
+            normals,
+            values,
+            nx,
+            ny,
+            nz,
+            np.float32(level),
+            np.float32(spacing[0]),
+            np.float32(spacing[1]),
+            np.float32(spacing[2]),
+            np.int32(vertex_offset),
+        ),
+    )
+    return vertices, normals, values, center_vertex_ids
+
+
+def _generate_cell_table_faces_gpu(
+    get_kernel,
+    kernels,
+    volume,
+    row_offsets,
+    tri_counts,
+    node_scan,
+    edge_mask,
+    center_vertex_ids,
+    gradient_direction,
+):
+    nx, ny, nz = volume.shape
+    n_cells = (nx - 1) * (ny - 1) * (nz - 1)
+    # a 64-bit total, so that a too large mesh is detected before the 32-bit
+    # scan can wrap around
+    n_faces = int(tri_counts.sum(dtype=cp.int64)) if n_cells else 0
+    _check_int32_range(3 * n_faces, "the face array")
+    tri_scan = _inclusive_scan_uint8(tri_counts)
+    faces = cp.empty(n_faces * 3, dtype=cp.int32)
+    if n_faces == 0:
+        return faces.reshape(-1, 3)
+
+    threads = 128
+    cell_blocks = ((n_cells + threads - 1) // threads,)
+    get_kernel(kernels["faces"])(
+        cell_blocks,
+        (threads,),
+        (
+            row_offsets,
+            tri_counts,
+            tri_scan,
+            node_scan,
+            edge_mask,
+            center_vertex_ids,
+            faces,
+            nx,
+            ny,
+            nz,
+            np.int32(gradient_direction == "descent"),
+        ),
+    )
+    return faces.reshape(-1, 3)
+
+
+def _run_cell_table_method(
+    get_kernel,
+    kernels,
+    volume,
+    level,
+    spacing,
+    gradient_direction,
+    allow_degenerate,
+    mask,
+):
+    """Run a method whose count kernel resolves each cell once.
+
+    ``kernels`` names the kernels of the method (``count``, ``count_masked``,
+    ``center`` and ``faces``) that ``get_kernel`` returns. The count kernel
+    writes the number of triangles, the center flag and the offset of the
+    triangle row of each cell.
+    """
+    nx, ny, nz = volume.shape
+    n_edges = nx * ny * nz * 3
+    _check_int32_range(n_edges, "the edge array")
+    threads = 256
+
+    edge_mask, node_scan, edge_idx = _number_crossed_edges(
+        get_kernel, volume, level, mask, threads
+    )
+    n_edge_vertices = edge_idx.size
+    tri_counts, center_flags, row_offsets, n_center_vertices = _count_cells_gpu(
+        get_kernel, kernels, volume, level, mask
+    )
+
+    # edge vertices come first, followed by the center vertices
+    n_vertices = n_edge_vertices + n_center_vertices
+    _check_int32_range(3 * n_vertices, "the vertex array")
+    vertices = cp.empty((n_vertices, 3), dtype=cp.float32)
+    normals = cp.empty((n_vertices, 3), dtype=cp.float32)
+    values = cp.empty(n_vertices, dtype=cp.float32)
+    _generate_edge_vertices(
+        get_kernel,
+        volume,
+        edge_idx,
+        vertices,
+        normals,
+        values,
+        level,
+        spacing,
+        threads,
+    )
+    if n_center_vertices:
+        center_vertex_ids = _generate_center_vertices_gpu(
+            get_kernel,
+            kernels,
+            volume,
+            level,
+            spacing,
+            center_flags,
+            vertex_offset=n_edge_vertices,
+            n_centers=n_center_vertices,
+            out=(vertices, normals, values),
+        )[3]
+    else:
+        center_vertex_ids = cp.empty(0, dtype=cp.int32)
+
+    faces = _generate_cell_table_faces_gpu(
+        get_kernel,
+        kernels,
+        volume,
+        row_offsets,
+        tri_counts,
+        node_scan,
+        edge_mask,
+        center_vertex_ids,
+        gradient_direction,
+    )
+    if faces.size == 0:
+        raise RuntimeError("No surface found at the given iso value.")
+    if not allow_degenerate:
+        vertices, faces, normals, values = _remove_degenerate_faces_gpu(
+            vertices, faces, normals, values
+        )
+    return vertices, faces, normals, values
