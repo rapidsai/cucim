@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
 # SPDX-FileCopyrightText: Copyright (c) 2012-2015, P. M. Neila
-# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 # See implementation notes and attributions in marching_cubes_lorensen.py
@@ -34,15 +34,80 @@ def _decode_lut_for_cuda_constants(name):
     return np.frombuffer(byts, dtype=np.int8).reshape(shape)
 
 
+# Edge numbering used by the Lewiner tables -> local cell edge numbering used
+# by ``local_edge_vid``. The center vertex (12) is kept as is.
+_LEWINER_EDGE_TO_LOCAL = (8, 7, 11, 3, 9, 5, 10, 1, 0, 4, 6, 2)
+
+# The triangle tables (everything named TILING*) in the order of their ids.
+_LEWINER_TILING_NAMES = tuple(
+    name for name in _mcluts._LEWINER_LUT_NAMES if name.startswith("TILING")
+)
+
+
+def _build_lewiner_resolved_tables():
+    """Concatenate all triangle tables, with edges in local numbering.
+
+    Returns ``(flat, base, width, nsub, center)``. The edges of triangle table ``t``
+    for ``(config, subconfig)`` start at
+    ``flat[base[t] + (config * nsub[t] + subconfig) * width[t]]`` and the
+    table has ``width[t] // 3`` triangles. Resolving which table (and
+    subconfiguration) applies to a cell is the expensive part (it needs
+    double precision tests), so it is done once, by the counting kernel.
+    """
+    to_local = np.asarray(_LEWINER_EDGE_TO_LOCAL + (12,), dtype=np.int8)
+    chunks, base, width, nsub, center = [], [], [], [], []
+    offset = 0
+    for name in _LEWINER_TILING_NAMES:
+        table = _decode_lut_for_cuda_constants(name)
+        if table.ndim == 2:
+            table = table[:, np.newaxis, :]
+        n_sub, w = table.shape[1], table.shape[2]
+        # entries past the last triangle (if any) are never read
+        mapped = np.where(table >= 0, to_local[np.clip(table, 0, 12)], table)
+        chunks.append(mapped.astype(np.int8).ravel())
+        has_center = (table == 12).any(axis=2)
+        # a table either always or never uses the center vertex
+        assert has_center.all() or not has_center.any()
+        center.append(int(has_center.any()))
+        base.append(offset)
+        width.append(w)
+        nsub.append(n_sub)
+        offset += mapped.size
+    return np.concatenate(chunks), base, width, nsub, center
+
+
 def _generate_lewiner_lut_constants_code():
     lines = []
+    # The triangle tables are read through the resolved table below, except
+    # that the case 13 internal test reads the first edge of TILING13_5_1 in
+    # the original edge numbering.
     for name in _mcluts._LEWINER_LUT_NAMES:
+        if name.startswith("TILING") and name != "TILING13_5_1":
+            continue
         values = _decode_lut_for_cuda_constants(name).ravel()
         identifier = f"lut_{name.lower()}"
         values_text = ", ".join(str(int(value)) for value in values)
         lines.append(
             f"__constant__ signed char {identifier}[{values.size}] = "
             f"{{{values_text}}};"
+        )
+    flat, base, width, nsub, center = _build_lewiner_resolved_tables()
+    assert flat.size < 2**16  # row offsets are stored as uint16
+    for i, name in enumerate(_LEWINER_TILING_NAMES):
+        lines.append(f"#define T_{name} {i}")
+    lines.append(
+        f"__constant__ signed char lut_resolved[{flat.size}] = "
+        f"{{{', '.join(str(int(v)) for v in flat)}}};"
+    )
+    for ident, values in (
+        ("tbl_base", base),
+        ("tbl_width", width),
+        ("tbl_nsub", nsub),
+        ("tbl_center", center),
+    ):
+        lines.append(
+            f"__constant__ int {ident}[{len(values)}] = "
+            f"{{{', '.join(str(v) for v in values)}}};"
         )
     return "\n".join(lines)
 
@@ -333,94 +398,92 @@ extern "C" __device__ inline bool lewiner_test_internal(
     return s < 0;
 }
 
-extern "C" __device__ inline void lewiner_select_count_center(
-    const double* v, int case_id, int config, int* tri_count,
-    int* center_flag) {
+extern "C" __device__ inline int lewiner_row(int table, int config, int sub) {
+    return tbl_base[table] + (config * tbl_nsub[table] + sub) * tbl_width[table];
+}
+
+// Select the triangle table (and subconfiguration) that applies to a cell and
+// return the offset of its edges in lut_resolved. This is the only place that
+// needs the (double precision) ambiguity tests.
+extern "C" __device__ inline int lewiner_resolve(
+    const double* v, int case_id, int config, int* table_out) {
     int subconfig = 0;
-    *tri_count = 0;
-    *center_flag = 0;
+    int table = -1;
+    int sub = 0;
 
     if (case_id == 1) {
-        *tri_count = 1;
+        table = T_TILING1;
     } else if (case_id == 2) {
-        *tri_count = 2;
+        table = T_TILING2;
     } else if (case_id == 3) {
-        *tri_count = lewiner_test_face(v, (int)lut_test3[config]) ? 4 : 2;
+        table = lewiner_test_face(v, (int)lut_test3[config]) ?
+            T_TILING3_2 : T_TILING3_1;
     } else if (case_id == 4) {
-        *tri_count = lewiner_test_internal(
-            v, case_id, config, subconfig, (int)lut_test4[config]) ? 2 : 6;
+        table = lewiner_test_internal(
+            v, case_id, config, subconfig, (int)lut_test4[config]) ?
+            T_TILING4_1 : T_TILING4_2;
     } else if (case_id == 5) {
-        *tri_count = 3;
+        table = T_TILING5;
     } else if (case_id == 6) {
         if (lewiner_test_face(v, (int)lut_test6[config * 3])) {
-            *tri_count = 5;
+            table = T_TILING6_2;
         } else if (lewiner_test_internal(
                        v, case_id, config, subconfig,
                        (int)lut_test6[config * 3 + 1])) {
-            *tri_count = 3;
+            table = T_TILING6_1_1;
         } else {
-            *tri_count = 9;
-            *center_flag = 1;
+            table = T_TILING6_1_2;
         }
     } else if (case_id == 7) {
         if (lewiner_test_face(v, (int)lut_test7[config * 5])) subconfig += 1;
         if (lewiner_test_face(v, (int)lut_test7[config * 5 + 1])) subconfig += 2;
         if (lewiner_test_face(v, (int)lut_test7[config * 5 + 2])) subconfig += 4;
         if (subconfig == 0) {
-            *tri_count = 3;
+            table = T_TILING7_1;
         } else if (subconfig == 1 || subconfig == 2 || subconfig == 4) {
-            *tri_count = 5;
+            table = T_TILING7_2;
+            sub = subconfig == 1 ? 0 : (subconfig == 2 ? 1 : 2);
         } else if (subconfig == 3 || subconfig == 5 || subconfig == 6) {
-            *tri_count = 9;
-            *center_flag = 1;
+            table = T_TILING7_3;
+            sub = subconfig == 3 ? 0 : (subconfig == 5 ? 1 : 2);
         } else if (lewiner_test_internal(
                        v, case_id, config, subconfig,
                        (int)lut_test7[config * 5 + 3])) {
-            *tri_count = 9;
+            table = T_TILING7_4_2;
         } else {
-            *tri_count = 5;
+            table = T_TILING7_4_1;
         }
     } else if (case_id == 8) {
-        *tri_count = 2;
+        table = T_TILING8;
     } else if (case_id == 9) {
-        *tri_count = 4;
+        table = T_TILING9;
     } else if (case_id == 10) {
         if (lewiner_test_face(v, (int)lut_test10[config * 3])) {
-            if (lewiner_test_face(v, (int)lut_test10[config * 3 + 1])) {
-                *tri_count = 4;
-            } else {
-                *tri_count = 8;
-                *center_flag = 1;
-            }
+            table = lewiner_test_face(v, (int)lut_test10[config * 3 + 1]) ?
+                T_TILING10_1_1_ : T_TILING10_2;
         } else if (lewiner_test_face(v, (int)lut_test10[config * 3 + 1])) {
-            *tri_count = 8;
-            *center_flag = 1;
+            table = T_TILING10_2_;
         } else if (lewiner_test_internal(
                        v, case_id, config, subconfig,
                        (int)lut_test10[config * 3 + 2])) {
-            *tri_count = 4;
+            table = T_TILING10_1_1;
         } else {
-            *tri_count = 8;
+            table = T_TILING10_1_2;
         }
     } else if (case_id == 11) {
-        *tri_count = 4;
+        table = T_TILING11;
     } else if (case_id == 12) {
         if (lewiner_test_face(v, (int)lut_test12[config * 4])) {
-            if (lewiner_test_face(v, (int)lut_test12[config * 4 + 1])) {
-                *tri_count = 4;
-            } else {
-                *tri_count = 8;
-                *center_flag = 1;
-            }
+            table = lewiner_test_face(v, (int)lut_test12[config * 4 + 1]) ?
+                T_TILING12_1_1_ : T_TILING12_2;
         } else if (lewiner_test_face(v, (int)lut_test12[config * 4 + 1])) {
-            *tri_count = 8;
-            *center_flag = 1;
+            table = T_TILING12_2_;
         } else if (lewiner_test_internal(
                        v, case_id, config, subconfig,
                        (int)lut_test12[config * 4 + 2])) {
-            *tri_count = 4;
+            table = T_TILING12_1_1;
         } else {
-            *tri_count = 8;
+            table = T_TILING12_1_2;
         }
     } else if (case_id == 13) {
         for (int n = 0; n < 6; n++) {
@@ -429,31 +492,37 @@ extern "C" __device__ inline void lewiner_select_count_center(
             }
         }
         subconfig = (int)lut_subconfig13[subconfig];
-        if (subconfig == 0 || subconfig == 45) {
-            *tri_count = 4;
-        } else if ((subconfig >= 1 && subconfig <= 6) ||
-                   (subconfig >= 39 && subconfig <= 44)) {
-            *tri_count = 6;
-        } else if ((subconfig >= 7 && subconfig <= 18) ||
-                   (subconfig >= 27 && subconfig <= 38)) {
-            *tri_count = 10;
-            *center_flag = 1;
+        if (subconfig == 0) {
+            table = T_TILING13_1;
+        } else if (subconfig >= 1 && subconfig <= 6) {
+            table = T_TILING13_2;
+            sub = subconfig - 1;
+        } else if (subconfig >= 7 && subconfig <= 18) {
+            table = T_TILING13_3;
+            sub = subconfig - 7;
         } else if (subconfig >= 19 && subconfig <= 22) {
-            *tri_count = 12;
-            *center_flag = 1;
+            table = T_TILING13_4;
+            sub = subconfig - 19;
         } else if (subconfig >= 23 && subconfig <= 26) {
-            int internal_subconfig = subconfig - 23;
-            if (lewiner_test_internal(
-                    v, case_id, config, internal_subconfig,
-                    (int)lut_test13[config * 7 + 6])) {
-                *tri_count = 6;
-            } else {
-                *tri_count = 10;
-            }
+            sub = subconfig - 23;
+            table = lewiner_test_internal(
+                v, case_id, config, sub, (int)lut_test13[config * 7 + 6]) ?
+                T_TILING13_5_1 : T_TILING13_5_2;
+        } else if (subconfig >= 27 && subconfig <= 38) {
+            table = T_TILING13_3_;
+            sub = subconfig - 27;
+        } else if (subconfig >= 39 && subconfig <= 44) {
+            table = T_TILING13_2_;
+            sub = subconfig - 39;
+        } else if (subconfig == 45) {
+            table = T_TILING13_1_;
         }
     } else if (case_id == 14) {
-        *tri_count = 4;
+        table = T_TILING14;
     }
+
+    *table_out = table;
+    return table < 0 ? 0 : lewiner_row(table, config, sub);
 }
 
 extern "C" __device__ inline void load_lewiner_values(
@@ -471,17 +540,9 @@ extern "C" __device__ inline bool lewiner_count_case_needs_values(
            case_id == 13;
 }
 
-extern "C" __device__ inline int lewiner_simple_case_tri_count(int case_id) {
-    if (case_id == 1) return 1;
-    if (case_id == 2 || case_id == 8) return 2;
-    if (case_id == 5) return 3;
-    if (case_id == 9 || case_id == 11 || case_id == 14) return 4;
-    return 0;
-}
-
 extern "C" __global__ void mc_lewiner_count_cells(
     const float* volume, int* tri_counts, int* center_flags,
-    unsigned char* case_codes, int* center_count, int nx, int ny, int nz,
+    unsigned short* row_offsets, int* center_count, int nx, int ny, int nz,
     float level) {
     int idx = blockDim.x * blockIdx.x + threadIdx.x;
     int cnx = nx - 1;
@@ -512,21 +573,24 @@ extern "C" __global__ void mc_lewiner_count_cells(
     int config = (int)lut_cases[code * 2 + 1];
     int tri_count = 0;
     int center_flag = 0;
-    // Keep upstream-compatible double ambiguity tests, but avoid promoting
-    // simple cases that only need a fixed triangle count.
-    if (lewiner_count_case_needs_values(case_id)) {
+    int row = 0;
+    if (case_id != 0) {
+        // Keep upstream-compatible double ambiguity tests, but only promote
+        // the cases that need them.
         double v[8];
-        for (int n = 0; n < 8; n++) {
-            v[n] = (double)vf[n];
+        if (lewiner_count_case_needs_values(case_id)) {
+            for (int n = 0; n < 8; n++) {
+                v[n] = (double)vf[n];
+            }
         }
-        lewiner_select_count_center(
-            v, case_id, config, &tri_count, &center_flag);
-    } else {
-        tri_count = lewiner_simple_case_tri_count(case_id);
+        int table;
+        row = lewiner_resolve(v, case_id, config, &table);
+        tri_count = tbl_width[table] / 3;
+        center_flag = tbl_center[table];
     }
     tri_counts[idx] = tri_count;
     center_flags[idx] = center_flag;
-    case_codes[idx] = (unsigned char)code;
+    row_offsets[idx] = (unsigned short)row;
     if (center_flag) {
         atomicAdd(center_count, 1);
     }
@@ -534,7 +598,7 @@ extern "C" __global__ void mc_lewiner_count_cells(
 
 extern "C" __global__ void mc_lewiner_count_cells_masked(
     const float* volume, const bool* mask, int* tri_counts, int* center_flags,
-    unsigned char* case_codes, int* center_count, int nx, int ny, int nz,
+    unsigned short* row_offsets, int* center_count, int nx, int ny, int nz,
     float level) {
     int idx = blockDim.x * blockIdx.x + threadIdx.x;
     int cnx = nx - 1;
@@ -551,7 +615,7 @@ extern "C" __global__ void mc_lewiner_count_cells_masked(
     if (!mask[node_index(i + 1, j + 1, k + 1, ny, nz)]) {
         tri_counts[idx] = 0;
         center_flags[idx] = 0;
-        case_codes[idx] = 0;
+        row_offsets[idx] = 0;
         return;
     }
 
@@ -572,21 +636,24 @@ extern "C" __global__ void mc_lewiner_count_cells_masked(
     int config = (int)lut_cases[code * 2 + 1];
     int tri_count = 0;
     int center_flag = 0;
-    // Keep upstream-compatible double ambiguity tests, but avoid promoting
-    // simple cases that only need a fixed triangle count.
-    if (lewiner_count_case_needs_values(case_id)) {
+    int row = 0;
+    if (case_id != 0) {
+        // Keep upstream-compatible double ambiguity tests, but only promote
+        // the cases that need them.
         double v[8];
-        for (int n = 0; n < 8; n++) {
-            v[n] = (double)vf[n];
+        if (lewiner_count_case_needs_values(case_id)) {
+            for (int n = 0; n < 8; n++) {
+                v[n] = (double)vf[n];
+            }
         }
-        lewiner_select_count_center(
-            v, case_id, config, &tri_count, &center_flag);
-    } else {
-        tri_count = lewiner_simple_case_tri_count(case_id);
+        int table;
+        row = lewiner_resolve(v, case_id, config, &table);
+        tri_count = tbl_width[table] / 3;
+        center_flag = tbl_center[table];
     }
     tri_counts[idx] = tri_count;
     center_flags[idx] = center_flag;
-    case_codes[idx] = (unsigned char)code;
+    row_offsets[idx] = (unsigned short)row;
     if (center_flag) {
         atomicAdd(center_count, 1);
     }
@@ -678,23 +745,6 @@ extern "C" __global__ void mc_lewiner_generate_center_vertices(
     values_out[vid] = (float)(vmax - vmin);
 }
 
-extern "C" __device__ inline int lewiner_edge_to_local(int edge) {
-    switch (edge) {
-        case 0: return 8;
-        case 1: return 7;
-        case 2: return 11;
-        case 3: return 3;
-        case 4: return 9;
-        case 5: return 5;
-        case 6: return 10;
-        case 7: return 1;
-        case 8: return 0;
-        case 9: return 4;
-        case 10: return 6;
-        default: return 2;
-    }
-}
-
 extern "C" __device__ inline void load_lewiner_values_float(
     const float* volume, int i, int j, int k, int ny, int nz, float level,
     float* v) {
@@ -728,208 +778,11 @@ extern "C" __device__ inline void load_lewiner_values(
     }
 }
 
-extern "C" __device__ inline void lewiner_write_lut2(
-    signed char* out, int start, const signed char* lut, int config,
-    int width, int n_triangles) {
-    int n_values = n_triangles * 3;
-    for (int n = 0; n < n_values; n++) {
-        signed char edge = lut[config * width + n];
-        out[start + n] = edge == 12 ? 12 : lewiner_edge_to_local((int)edge);
-    }
-}
-
-extern "C" __device__ inline void lewiner_write_lut3(
-    signed char* out, int start, const signed char* lut, int config,
-    int subconfig, int subconfigs, int width, int n_triangles) {
-    int base = config * subconfigs * width + subconfig * width;
-    int n_values = n_triangles * 3;
-    for (int n = 0; n < n_values; n++) {
-        signed char edge = lut[base + n];
-        out[start + n] = edge == 12 ? 12 : lewiner_edge_to_local((int)edge);
-    }
-}
-
-extern "C" __device__ inline void lewiner_write_case13_edges(
-    signed char* out, int start, const double* v, int config,
-    const signed char* test6, const signed char* test7,
-    const signed char* test12, const signed char* test13,
-    const signed char* subconfig13, const signed char* tiling13_1,
-    const signed char* tiling13_1_, const signed char* tiling13_2,
-    const signed char* tiling13_2_, const signed char* tiling13_3,
-    const signed char* tiling13_3_, const signed char* tiling13_4,
-    const signed char* tiling13_5_1, const signed char* tiling13_5_2) {
-    int subconfig = 0;
-    for (int n = 0; n < 6; n++) {
-        if (lewiner_test_face(v, (int)test13[config * 7 + n])) {
-            subconfig += 1 << n;
-        }
-    }
-    subconfig = (int)subconfig13[subconfig];
-    if (subconfig == 0) {
-        lewiner_write_lut2(out, start, tiling13_1, config, 12, 4);
-    } else if (subconfig >= 1 && subconfig <= 6) {
-        lewiner_write_lut3(out, start, tiling13_2, config, subconfig - 1, 6, 18, 6);
-    } else if (subconfig >= 7 && subconfig <= 18) {
-        lewiner_write_lut3(out, start, tiling13_3, config, subconfig - 7, 12, 30, 10);
-    } else if (subconfig >= 19 && subconfig <= 22) {
-        lewiner_write_lut3(out, start, tiling13_4, config, subconfig - 19, 4, 36, 12);
-    } else if (subconfig >= 23 && subconfig <= 26) {
-        int internal_subconfig = subconfig - 23;
-        if (lewiner_test_internal(
-                v, 13, config, internal_subconfig,
-                (int)test13[config * 7 + 6])) {
-            lewiner_write_lut3(out, start, tiling13_5_1, config, internal_subconfig, 4, 18, 6);
-        } else {
-            lewiner_write_lut3(out, start, tiling13_5_2, config, internal_subconfig, 4, 30, 10);
-        }
-    } else if (subconfig >= 27 && subconfig <= 38) {
-        lewiner_write_lut3(out, start, tiling13_3_, config, subconfig - 27, 12, 30, 10);
-    } else if (subconfig >= 39 && subconfig <= 44) {
-        lewiner_write_lut3(out, start, tiling13_2_, config, subconfig - 39, 6, 18, 6);
-    } else if (subconfig == 45) {
-        lewiner_write_lut2(out, start, tiling13_1_, config, 12, 4);
-    }
-}
-
-extern "C" __device__ inline void lewiner_write_edges(
-    signed char* out, int start, const double* v, int case_id, int config,
-    const signed char* test3, const signed char* test4,
-    const signed char* test6, const signed char* test7,
-    const signed char* test10, const signed char* test12,
-    const signed char* test13, const signed char* subconfig13,
-    const signed char* tiling1, const signed char* tiling2,
-    const signed char* tiling3_1, const signed char* tiling3_2,
-    const signed char* tiling4_1, const signed char* tiling4_2,
-    const signed char* tiling5, const signed char* tiling6_1_1,
-    const signed char* tiling6_1_2, const signed char* tiling6_2,
-    const signed char* tiling7_1, const signed char* tiling7_2,
-    const signed char* tiling7_3, const signed char* tiling7_4_1,
-    const signed char* tiling7_4_2, const signed char* tiling8,
-    const signed char* tiling9, const signed char* tiling10_1_1,
-    const signed char* tiling10_1_1_, const signed char* tiling10_1_2,
-    const signed char* tiling10_2, const signed char* tiling10_2_,
-    const signed char* tiling11, const signed char* tiling12_1_1,
-    const signed char* tiling12_1_1_, const signed char* tiling12_1_2,
-    const signed char* tiling12_2, const signed char* tiling12_2_,
-    const signed char* tiling13_1, const signed char* tiling13_1_,
-    const signed char* tiling13_2, const signed char* tiling13_2_,
-    const signed char* tiling13_3, const signed char* tiling13_3_,
-    const signed char* tiling13_4, const signed char* tiling13_5_1,
-    const signed char* tiling13_5_2, const signed char* tiling14) {
-    int subconfig = 0;
-    if (case_id == 1) {
-        lewiner_write_lut2(out, start, tiling1, config, 3, 1);
-    } else if (case_id == 2) {
-        lewiner_write_lut2(out, start, tiling2, config, 6, 2);
-    } else if (case_id == 3) {
-        if (lewiner_test_face(v, (int)test3[config])) {
-            lewiner_write_lut2(out, start, tiling3_2, config, 12, 4);
-        } else {
-            lewiner_write_lut2(out, start, tiling3_1, config, 6, 2);
-        }
-    } else if (case_id == 4) {
-        if (lewiner_test_internal(
-                v, case_id, config, subconfig, (int)test4[config])) {
-            lewiner_write_lut2(out, start, tiling4_1, config, 6, 2);
-        } else {
-            lewiner_write_lut2(out, start, tiling4_2, config, 18, 6);
-        }
-    } else if (case_id == 5) {
-        lewiner_write_lut2(out, start, tiling5, config, 9, 3);
-    } else if (case_id == 6) {
-        if (lewiner_test_face(v, (int)test6[config * 3])) {
-            lewiner_write_lut2(out, start, tiling6_2, config, 15, 5);
-        } else if (lewiner_test_internal(
-                       v, case_id, config, subconfig,
-                       (int)test6[config * 3 + 1])) {
-            lewiner_write_lut2(out, start, tiling6_1_1, config, 9, 3);
-        } else {
-            lewiner_write_lut2(out, start, tiling6_1_2, config, 27, 9);
-        }
-    } else if (case_id == 7) {
-        if (lewiner_test_face(v, (int)test7[config * 5])) subconfig += 1;
-        if (lewiner_test_face(v, (int)test7[config * 5 + 1])) subconfig += 2;
-        if (lewiner_test_face(v, (int)test7[config * 5 + 2])) subconfig += 4;
-        if (subconfig == 0) {
-            lewiner_write_lut2(out, start, tiling7_1, config, 9, 3);
-        } else if (subconfig == 1) {
-            lewiner_write_lut3(out, start, tiling7_2, config, 0, 3, 15, 5);
-        } else if (subconfig == 2) {
-            lewiner_write_lut3(out, start, tiling7_2, config, 1, 3, 15, 5);
-        } else if (subconfig == 3) {
-            lewiner_write_lut3(out, start, tiling7_3, config, 0, 3, 27, 9);
-        } else if (subconfig == 4) {
-            lewiner_write_lut3(out, start, tiling7_2, config, 2, 3, 15, 5);
-        } else if (subconfig == 5) {
-            lewiner_write_lut3(out, start, tiling7_3, config, 1, 3, 27, 9);
-        } else if (subconfig == 6) {
-            lewiner_write_lut3(out, start, tiling7_3, config, 2, 3, 27, 9);
-        } else if (lewiner_test_internal(
-                       v, case_id, config, subconfig,
-                       (int)test7[config * 5 + 3])) {
-            lewiner_write_lut2(out, start, tiling7_4_2, config, 27, 9);
-        } else {
-            lewiner_write_lut2(out, start, tiling7_4_1, config, 15, 5);
-        }
-    } else if (case_id == 8) {
-        lewiner_write_lut2(out, start, tiling8, config, 6, 2);
-    } else if (case_id == 9) {
-        lewiner_write_lut2(out, start, tiling9, config, 12, 4);
-    } else if (case_id == 10) {
-        if (lewiner_test_face(v, (int)test10[config * 3])) {
-            if (lewiner_test_face(v, (int)test10[config * 3 + 1])) {
-                lewiner_write_lut2(out, start, tiling10_1_1_, config, 12, 4);
-            } else {
-                lewiner_write_lut2(out, start, tiling10_2, config, 24, 8);
-            }
-        } else if (lewiner_test_face(v, (int)test10[config * 3 + 1])) {
-            lewiner_write_lut2(out, start, tiling10_2_, config, 24, 8);
-        } else if (lewiner_test_internal(
-                       v, case_id, config, subconfig,
-                       (int)test10[config * 3 + 2])) {
-            lewiner_write_lut2(out, start, tiling10_1_1, config, 12, 4);
-        } else {
-            lewiner_write_lut2(out, start, tiling10_1_2, config, 24, 8);
-        }
-    } else if (case_id == 11) {
-        lewiner_write_lut2(out, start, tiling11, config, 12, 4);
-    } else if (case_id == 12) {
-        if (lewiner_test_face(v, (int)test12[config * 4])) {
-            if (lewiner_test_face(v, (int)test12[config * 4 + 1])) {
-                lewiner_write_lut2(out, start, tiling12_1_1_, config, 12, 4);
-            } else {
-                lewiner_write_lut2(out, start, tiling12_2, config, 24, 8);
-            }
-        } else if (lewiner_test_face(v, (int)test12[config * 4 + 1])) {
-            lewiner_write_lut2(out, start, tiling12_2_, config, 24, 8);
-        } else if (lewiner_test_internal(
-                       v, case_id, config, subconfig,
-                       (int)test12[config * 4 + 2])) {
-            lewiner_write_lut2(out, start, tiling12_1_1, config, 12, 4);
-        } else {
-            lewiner_write_lut2(out, start, tiling12_1_2, config, 24, 8);
-        }
-    } else if (case_id == 13) {
-        lewiner_write_case13_edges(
-            out, start, v, config, test6, test7, test12, test13, subconfig13,
-            tiling13_1, tiling13_1_, tiling13_2, tiling13_2_, tiling13_3,
-            tiling13_3_, tiling13_4, tiling13_5_1, tiling13_5_2);
-    } else if (case_id == 14) {
-        lewiner_write_lut2(out, start, tiling14, config, 12, 4);
-    }
-}
-
-extern "C" __device__ inline bool lewiner_case_needs_values(int case_id) {
-    return case_id == 3 || case_id == 4 || case_id == 6 ||
-           case_id == 7 || case_id == 10 || case_id == 12 ||
-           case_id == 13;
-}
-
 extern "C" __global__ void mc_lewiner_generate_faces_direct(
-    const float* volume, const unsigned char* case_codes,
+    const unsigned short* row_offsets,
     const int* tri_counts, const int* tri_scan,
     const int* edge_vertex_ids, const int* center_vertex_ids, int* faces,
-    int nx, int ny, int nz, float level, int flip_winding) {
+    int nx, int ny, int nz, int flip_winding) {
     int idx = blockDim.x * blockIdx.x + threadIdx.x;
     int cnx = nx - 1;
     int cny = ny - 1;
@@ -943,38 +796,13 @@ extern "C" __global__ void mc_lewiner_generate_faces_direct(
     int j = (idx / cnz) % cny;
     int i = idx / (cny * cnz);
 
-    int code = (int)case_codes[idx];
-    int case_id = (int)lut_cases[code * 2];
-    if (case_id == 0) {
-        return;
-    }
-    int config = (int)lut_cases[code * 2 + 1];
-    double v[8];
-    if (lewiner_case_needs_values(case_id)) {
-        load_lewiner_values(volume, i, j, k, ny, nz, level, v);
-    }
-    signed char local_edges[36];
-    lewiner_write_edges(
-        local_edges, 0, v, case_id, config, lut_test3, lut_test4,
-        lut_test6, lut_test7, lut_test10, lut_test12, lut_test13,
-        lut_subconfig13, lut_tiling1, lut_tiling2, lut_tiling3_1,
-        lut_tiling3_2, lut_tiling4_1, lut_tiling4_2, lut_tiling5,
-        lut_tiling6_1_1, lut_tiling6_1_2, lut_tiling6_2, lut_tiling7_1,
-        lut_tiling7_2, lut_tiling7_3, lut_tiling7_4_1, lut_tiling7_4_2,
-        lut_tiling8, lut_tiling9, lut_tiling10_1_1, lut_tiling10_1_1_,
-        lut_tiling10_1_2, lut_tiling10_2, lut_tiling10_2_,
-        lut_tiling11, lut_tiling12_1_1, lut_tiling12_1_1_,
-        lut_tiling12_1_2, lut_tiling12_2, lut_tiling12_2_,
-        lut_tiling13_1, lut_tiling13_1_, lut_tiling13_2,
-        lut_tiling13_2_, lut_tiling13_3, lut_tiling13_3_,
-        lut_tiling13_4, lut_tiling13_5_1, lut_tiling13_5_2,
-        lut_tiling14);
-
-    int face_start = tri_scan[idx] - tri_counts[idx];
-    for (int t = 0; t < tri_counts[idx]; t++) {
-        int e0 = (int)local_edges[3 * t];
-        int e1 = (int)local_edges[3 * t + 1];
-        int e2 = (int)local_edges[3 * t + 2];
+    const signed char* edges = lut_resolved + row_offsets[idx];
+    int n_tri = tri_counts[idx];
+    int face_start = tri_scan[idx] - n_tri;
+    for (int t = 0; t < n_tri; t++) {
+        int e0 = (int)edges[3 * t];
+        int e1 = (int)edges[3 * t + 1];
+        int e2 = (int)edges[3 * t + 2];
         int v0 = e0 == 12 ? center_vertex_ids[idx] :
             local_edge_vid(edge_vertex_ids, e0, i, j, k, ny, nz);
         int v1 = e1 == 12 ? center_vertex_ids[idx] :
@@ -1011,7 +839,7 @@ def _lewiner_count_cells_gpu(volume, level, mask=None):
     cell_blocks = ((n_cells + threads - 1) // threads,)
     tri_counts = cp.empty(n_cells, dtype=cp.int32)
     center_flags = cp.empty(n_cells, dtype=cp.int32)
-    case_codes = cp.empty(n_cells, dtype=cp.uint8)
+    row_offsets = cp.empty(n_cells, dtype=cp.uint16)
     center_count = cp.zeros(1, dtype=cp.int32)
     if mask is None:
         _get_lewiner_kernel("mc_lewiner_count_cells")(
@@ -1021,7 +849,7 @@ def _lewiner_count_cells_gpu(volume, level, mask=None):
                 volume,
                 tri_counts,
                 center_flags,
-                case_codes,
+                row_offsets,
                 center_count,
                 nx,
                 ny,
@@ -1038,7 +866,7 @@ def _lewiner_count_cells_gpu(volume, level, mask=None):
                 mask,
                 tri_counts,
                 center_flags,
-                case_codes,
+                row_offsets,
                 center_count,
                 nx,
                 ny,
@@ -1046,7 +874,7 @@ def _lewiner_count_cells_gpu(volume, level, mask=None):
                 np.float32(level),
             ),
         )
-    return tri_counts, center_flags, case_codes, int(center_count[0])
+    return tri_counts, center_flags, row_offsets, int(center_count[0])
 
 
 def _lewiner_generate_center_vertices_gpu(
@@ -1093,8 +921,7 @@ def _lewiner_generate_center_vertices_gpu(
 
 def _lewiner_generate_faces_direct_gpu(
     volume,
-    level,
-    case_codes,
+    row_offsets,
     tri_counts,
     edge_vertex_ids,
     center_vertex_ids,
@@ -1114,8 +941,7 @@ def _lewiner_generate_faces_direct_gpu(
         cell_blocks,
         (threads,),
         (
-            volume,
-            case_codes,
+            row_offsets,
             tri_counts,
             tri_scan,
             edge_vertex_ids,
@@ -1124,7 +950,6 @@ def _lewiner_generate_faces_direct_gpu(
             nx,
             ny,
             nz,
-            np.float32(level),
             np.int32(gradient_direction == "descent"),
         ),
     )
@@ -1205,7 +1030,7 @@ def _run_lewiner(
         ),
     )
 
-    tri_counts, center_flags, case_codes, n_center_vertices = (
+    tri_counts, center_flags, row_offsets, n_center_vertices = (
         _lewiner_count_cells_gpu(volume, level, mask)
     )
     if n_center_vertices:
@@ -1230,8 +1055,7 @@ def _run_lewiner(
 
     faces = _lewiner_generate_faces_direct_gpu(
         volume,
-        level,
-        case_codes,
+        row_offsets,
         tri_counts,
         edge_vertex_ids,
         center_vertex_ids,

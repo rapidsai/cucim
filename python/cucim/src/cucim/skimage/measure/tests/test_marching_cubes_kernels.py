@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import cupy as cp
@@ -490,22 +490,16 @@ def test_lewiner_reference_selector_binary_cases():
         (
             tri_counts,
             center_flags,
-            case_codes,
+            row_offsets,
             n_center_vertices,
         ) = _lewiner_count_cells_gpu(_case_volume(values), 0.0)
         gpu_edges = _lewiner_expected_local_edges_for_volume(values)
         assert int(tri_counts[0]) == len(gpu_edges) // 3, f"case={case}"
         assert int(center_flags[0]) == (12 in gpu_edges), f"case={case}"
         assert n_center_vertices == int(center_flags[0]), f"case={case}"
-        expected_case_code = sum(
-            ((case >> src) & 1) << dst
-            for dst, src in enumerate(_LEWINER_LOCAL_VALUE_ORDER)
-        )
-        assert int(case_codes[0]) == expected_case_code, f"case={case}"
         faces = _lewiner_generate_faces_direct_gpu(
             _case_volume(values),
-            0.0,
-            case_codes,
+            row_offsets,
             tri_counts,
             _single_cell_edge_vertex_ids(),
             cp.asarray([112], dtype=cp.int32),
@@ -727,7 +721,7 @@ def test_lewiner_reference_selector_ambiguous_branches(expected_table, values):
     (
         tri_counts,
         center_flags,
-        _case_codes,
+        _row_offsets,
         n_center_vertices,
     ) = _lewiner_count_cells_gpu(_case_volume(values), 0.0)
     gpu_edges = _lewiner_expected_local_edges_for_volume(values)
@@ -736,8 +730,7 @@ def test_lewiner_reference_selector_ambiguous_branches(expected_table, values):
     assert n_center_vertices == int(center_flags[0])
     faces = _lewiner_generate_faces_direct_gpu(
         _case_volume(values),
-        0.0,
-        _case_codes,
+        _row_offsets,
         tri_counts,
         _single_cell_edge_vertex_ids(),
         cp.asarray([112], dtype=cp.int32),
@@ -764,7 +757,7 @@ def test_lewiner_gpu_center_vertex_generation():
     (
         tri_counts,
         center_flags,
-        _case_codes,
+        _row_offsets,
         n_center_vertices,
     ) = _lewiner_count_cells_gpu(volume, 0.0)
     assert int(tri_counts[0]) == 12
@@ -805,7 +798,7 @@ def test_lewiner_gpu_faces_direct_vertex_ids():
     (
         tri_counts,
         center_flags,
-        _case_codes,
+        _row_offsets,
         n_center_vertices,
     ) = _lewiner_count_cells_gpu(volume, 0.0)
     assert int(tri_counts[0]) == 12
@@ -820,8 +813,7 @@ def test_lewiner_gpu_faces_direct_vertex_ids():
 
     faces_ascent = _lewiner_generate_faces_direct_gpu(
         volume,
-        0.0,
-        _case_codes,
+        _row_offsets,
         tri_counts,
         edge_vertex_ids,
         center_vertex_ids,
@@ -831,8 +823,7 @@ def test_lewiner_gpu_faces_direct_vertex_ids():
 
     faces_descent = _lewiner_generate_faces_direct_gpu(
         volume,
-        0.0,
-        _case_codes,
+        _row_offsets,
         tri_counts,
         edge_vertex_ids,
         center_vertex_ids,
