@@ -179,16 +179,16 @@ extern "C" __global__ void mc_lewiner_classify_edges_masked(
 }
 
 extern "C" __global__ void mc_lewiner_generate_vertices(
-    const float* volume, const int* edge_scan,
+    const float* volume, const int* edge_idx, int n_vertices,
     float* vertices, float* normals, float* values,
     int nx, int ny, int nz, float level,
     float sx, float sy, float sz) {
-    int idx = blockDim.x * blockIdx.x + threadIdx.x;
-    int total = nx * ny * nz * 3;
-    if (idx >= total) {
+    int vid = blockDim.x * blockIdx.x + threadIdx.x;
+    if (vid >= n_vertices) {
         return;
     }
 
+    int idx = edge_idx[vid];
     int side = idx % 3;
     int node = idx / 3;
     int k = node % nz;
@@ -198,21 +198,8 @@ extern "C" __global__ void mc_lewiner_generate_vertices(
     int j2 = j + (side == 1);
     int k2 = k + (side == 2);
 
-    if (i2 >= nx || j2 >= ny || k2 >= nz) {
-        return;
-    }
-
     float a = vol_at(volume, i, j, k, ny, nz);
     float b = vol_at(volume, i2, j2, k2, ny, nz);
-    if (!crosses_lewiner(a, b, level)) {
-        return;
-    }
-
-    int prev = idx == 0 ? 0 : edge_scan[idx - 1];
-    if (edge_scan[idx] == prev) {
-        return;
-    }
-    int vid = edge_scan[idx] - 1;
 
     float t = (level - a) / (b - a);
     t = fminf(1.0f, fmaxf(0.0f, t));
@@ -1004,15 +991,23 @@ def _run_lewiner(
     if n_edge_vertices == 0:
         raise RuntimeError("No surface found at the given iso value.")
 
+    edge_idx = cp.empty(n_edge_vertices, dtype=cp.int32)
+    _get_lewiner_kernel("mc_compact_edges")(
+        edge_blocks,
+        (threads,),
+        (edge_flags, edge_scan, edge_idx, n_edges),
+    )
+    vertex_blocks = ((n_edge_vertices + threads - 1) // threads,)
     edge_vertices = cp.empty((n_edge_vertices, 3), dtype=cp.float32)
     edge_normals = cp.empty((n_edge_vertices, 3), dtype=cp.float32)
     edge_values = cp.empty(n_edge_vertices, dtype=cp.float32)
     _get_lewiner_kernel("mc_lewiner_generate_vertices")(
-        edge_blocks,
+        vertex_blocks,
         (threads,),
         (
             volume,
-            edge_scan,
+            edge_idx,
+            n_edge_vertices,
             edge_vertices,
             edge_normals,
             edge_values,

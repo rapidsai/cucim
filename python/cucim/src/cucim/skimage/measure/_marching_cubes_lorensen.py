@@ -265,6 +265,18 @@ extern "C" __device__ inline int edge_vid(
     return edge_scan[(node_index(i, j, k, ny, nz) * 3) + side] - 1;
 }
 
+// One thread per grid edge: write the (flat) index of each crossed edge at its
+// vertex id, so the vertex kernel can run with one thread per vertex rather
+// than one per edge (surfaces cross only a small fraction of the edges).
+extern "C" __global__ void mc_compact_edges(
+    const unsigned char* edge_flags, const int* edge_scan, int* edge_idx,
+    int total) {
+    int idx = blockDim.x * blockIdx.x + threadIdx.x;
+    if (idx < total && edge_flags[idx]) {
+        edge_idx[edge_scan[idx] - 1] = idx;
+    }
+}
+
 extern "C" __device__ inline int local_edge_vid(
     const int* edge_scan, int edge, int i, int j, int k, int ny, int nz) {
     switch (edge) {
@@ -364,16 +376,16 @@ extern "C" __global__ void mc_classify_edges_masked(
 }
 
 extern "C" __global__ void mc_generate_vertices(
-    const float* volume, const int* edge_scan,
+    const float* volume, const int* edge_idx, int n_vertices,
     float* vertices, float* normals, float* values,
     int nx, int ny, int nz, float level,
     float sx, float sy, float sz) {
-    int idx = blockDim.x * blockIdx.x + threadIdx.x;
-    int total = nx * ny * nz * 3;
-    if (idx >= total) {
+    int vid = blockDim.x * blockIdx.x + threadIdx.x;
+    if (vid >= n_vertices) {
         return;
     }
 
+    int idx = edge_idx[vid];
     int side = idx % 3;
     int node = idx / 3;
     int k = node % nz;
@@ -383,21 +395,8 @@ extern "C" __global__ void mc_generate_vertices(
     int j2 = j + (side == 1);
     int k2 = k + (side == 2);
 
-    if (i2 >= nx || j2 >= ny || k2 >= nz) {
-        return;
-    }
-
     float a = vol_at(volume, i, j, k, ny, nz);
     float b = vol_at(volume, i2, j2, k2, ny, nz);
-    if (!crosses(a, b, level)) {
-        return;
-    }
-
-    int prev = idx == 0 ? 0 : edge_scan[idx - 1];
-    if (edge_scan[idx] == prev) {
-        return;
-    }
-    int vid = edge_scan[idx] - 1;
 
     float t = (level - a) / (b - a);
     t = fminf(1.0f, fmaxf(0.0f, t));
@@ -819,15 +818,23 @@ def _run_lorensen(
     if n_vertices == 0:
         raise RuntimeError("No surface found at the given iso value.")
 
+    edge_idx = cp.empty(n_vertices, dtype=cp.int32)
+    _get_lorensen_kernel("mc_compact_edges")(
+        edge_blocks,
+        (threads,),
+        (edge_flags, edge_scan, edge_idx, n_edges),
+    )
+    vertex_blocks = ((n_vertices + threads - 1) // threads,)
     vertices = cp.empty((n_vertices, 3), dtype=cp.float32)
     normals = cp.empty((n_vertices, 3), dtype=cp.float32)
     values = cp.empty(n_vertices, dtype=cp.float32)
     _get_lorensen_kernel("mc_generate_vertices")(
-        edge_blocks,
+        vertex_blocks,
         (threads,),
         (
             volume,
-            edge_scan,
+            edge_idx,
+            n_vertices,
             vertices,
             normals,
             values,
