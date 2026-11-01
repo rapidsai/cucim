@@ -172,7 +172,7 @@ NVIDIA Warp
 - Copyright:
   - NVIDIA Corporation & Affiliates
 - Files:
-  - python/cucim/src/cucim/skimage/measure/_marching_cubes_common.py : Design reference only (allocating the output from prefix scans rather than atomic appends); no Warp code was copied.
+  - python/cucim/src/cucim/skimage/measure/_marching_cubes_common.py : Design reference only (allocating the output from prefix scans rather than atomic appends), as in the legacy native CUDA marching cubes (`warp/native/marching.cu`) of Warp versions 1.6.2 to 1.7.2, the releases under Apache-2.0 (Warp was relicensed on 2025-03-06; this implementation was replaced in version 1.8.0); no Warp code was copied.
   - python/cucim/src/cucim/skimage/measure/_marching_cubes_lewiner.py : Derived from the scikit-image implementation and its tables; the scan-based allocation is shared with the Lorensen kernels above.
 
 OpenSlide

@@ -19,9 +19,10 @@ import numpy as np
 # and post-processing behavior follows scikit-image's
 # _marching_cubes_lewiner.py. The general design (a per-node, three-axis
 # vertex-id grid built by count, vertex and face passes, as in CuMCubes, and
-# output sized from prefix scans rather than atomic appends, as in NVIDIA Warp)
-# is a common approach for regular grids. The kernels here were written
-# independently and do not copy code from either project.
+# output sized from prefix scans rather than atomic appends, as in the legacy
+# native CUDA marching cubes of NVIDIA Warp, versions 1.6.2 to 1.7.2, which are
+# Apache-2.0 licensed) is a common approach for regular grids. The kernels here
+# were written independently and do not copy code from either project.
 
 
 def _decode_lut(shape, text):
