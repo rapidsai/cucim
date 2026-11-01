@@ -14,6 +14,7 @@ from ._marching_cubes_common import (
     _check_int32_range,
     _decode_lut,
     _generate_edge_vertices,
+    _inclusive_scan_uint8,
     _number_crossed_edges,
     _remove_degenerate_faces_gpu,
     _validate_marching_cubes_inputs,
@@ -336,7 +337,7 @@ def _run_lorensen(
     # scan can wrap around
     n_faces = int(tri_counts.sum(dtype=cp.int64))
     _check_int32_range(3 * n_faces, "the face array")
-    tri_scan = cp.cumsum(tri_counts, dtype=cp.int32)
+    tri_scan = _inclusive_scan_uint8(tri_counts)
     if n_faces == 0:
         raise RuntimeError("No surface found at the given iso value.")
 
