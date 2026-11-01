@@ -18,6 +18,7 @@ from ._marching_cubes_common import (
     _check_int32_range,
     _decode_lut,
     _generate_edge_vertices,
+    _inclusive_scan_uint8,
     _number_crossed_edges,
     _remove_degenerate_faces_gpu,
     _validate_marching_cubes_inputs,
@@ -772,7 +773,7 @@ def _lewiner_generate_center_vertices_gpu(
     """
     nx, ny, nz = volume.shape
     n_cells = (nx - 1) * (ny - 1) * (nz - 1)
-    center_scan = cp.cumsum(center_flags, dtype=cp.int32)
+    center_scan = _inclusive_scan_uint8(center_flags)
     if n_centers is None:
         n_centers = int(center_scan[-1]) if n_cells else 0
     n_vertices = vertex_offset + n_centers
@@ -827,7 +828,7 @@ def _lewiner_generate_faces_direct_gpu(
     # scan can wrap around
     n_faces = int(tri_counts.sum(dtype=cp.int64)) if n_cells else 0
     _check_int32_range(3 * n_faces, "the face array")
-    tri_scan = cp.cumsum(tri_counts, dtype=cp.int32)
+    tri_scan = _inclusive_scan_uint8(tri_counts)
     faces = cp.empty(n_faces * 3, dtype=cp.int32)
     if n_faces == 0:
         return faces.reshape(-1, 3)

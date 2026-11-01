@@ -386,7 +386,7 @@ def _number_crossed_edges(get_kernel, volume, level, mask, threads=256):
             ),
         )
     # one scan per node (not per edge); see edge_vid for how ids are recovered
-    node_scan = cp.cumsum(edge_count, dtype=cp.int32)
+    node_scan = _inclusive_scan_uint8(edge_count)
     n_edge_vertices = int(node_scan[-1])
     if n_edge_vertices == 0:
         raise RuntimeError("No surface found at the given iso value.")
@@ -434,6 +434,131 @@ def _generate_edge_vertices(
             np.float32(spacing[2]),
         ),
     )
+
+
+# Inclusive scan of uint8 counts into int32, in three steps: the sums of blocks
+# of 1024 counts, a scan of those sums (1/1024 of the size), and a scan inside
+# each block that adds the offset of the block. Compared with cp.cumsum this
+# reads the counts twice (one byte each) and writes the result once, and
+# gives the same values: the sums are integers, so the order of the additions
+# does not matter.
+_SCAN_KERNEL_CODE = r"""
+#define SCAN_TILE 1024
+
+extern "C" __device__ inline void scan_load4(
+    const unsigned char* in, int base, int n, int* v) {
+    if (base + 3 < n) {
+        uchar4 u = *reinterpret_cast<const uchar4*>(in + base);
+        v[0] = u.x; v[1] = u.y; v[2] = u.z; v[3] = u.w;
+    } else {
+        for (int k = 0; k < 4; k++) {
+            v[k] = (base + k < n) ? (int)in[base + k] : 0;
+        }
+    }
+}
+
+extern "C" __global__ void mc_scan_block_sums(
+    const unsigned char* in, int* block_sums, int n) {
+    __shared__ int warp_sums[SCAN_TILE / 4 / 32];
+    int base = blockIdx.x * SCAN_TILE + threadIdx.x * 4;
+    int v[4];
+    scan_load4(in, base, n, v);
+    int x = v[0] + v[1] + v[2] + v[3];
+    for (int d = 16; d > 0; d >>= 1) {
+        x += __shfl_down_sync(0xffffffffu, x, d);
+    }
+    if ((threadIdx.x & 31) == 0) {
+        warp_sums[threadIdx.x >> 5] = x;
+    }
+    __syncthreads();
+    if (threadIdx.x == 0) {
+        int total = 0;
+        for (int w = 0; w < SCAN_TILE / 4 / 32; w++) {
+            total += warp_sums[w];
+        }
+        block_sums[blockIdx.x] = total;
+    }
+}
+
+// block_scan is the inclusive scan of block_sums
+extern "C" __global__ void mc_scan_apply(
+    const unsigned char* in, const int* block_scan, const int* block_sums,
+    int* out, int n) {
+    __shared__ int warp_sums[SCAN_TILE / 4 / 32];
+    int base = blockIdx.x * SCAN_TILE + threadIdx.x * 4;
+    int v[4];
+    scan_load4(in, base, n, v);
+    int local = v[0] + v[1] + v[2] + v[3];
+    int lane = threadIdx.x & 31;
+    int x = local;
+    for (int d = 1; d < 32; d <<= 1) {
+        int y = __shfl_up_sync(0xffffffffu, x, d);
+        if (lane >= d) {
+            x += y;
+        }
+    }
+    if (lane == 31) {
+        warp_sums[threadIdx.x >> 5] = x;
+    }
+    __syncthreads();
+    int offset = block_scan[blockIdx.x] - block_sums[blockIdx.x] + x - local;
+    for (int w = 0; w < (int)(threadIdx.x >> 5); w++) {
+        offset += warp_sums[w];
+    }
+    if (base + 3 < n) {
+        int4 r;
+        r.x = offset + v[0];
+        r.y = r.x + v[1];
+        r.z = r.y + v[2];
+        r.w = r.z + v[3];
+        *reinterpret_cast<int4*>(out + base) = r;
+    } else {
+        for (int k = 0; k < 4; k++) {
+            offset += v[k];
+            if (base + k < n) {
+                out[base + k] = offset;
+            }
+        }
+    }
+}
+"""
+
+_SCAN_TILE = 1024
+
+
+@cp.memoize(for_each_device=True)
+def _get_scan_kernel(name):
+    return cp.RawKernel(_SCAN_KERNEL_CODE, name)
+
+
+# below this size the three launches of the block scan cost more than they save
+# (measured on an RTX A6000: the crossover is between 2 and 3 million entries)
+_SCAN_MIN_SIZE = 5 * 2**19
+
+
+def _inclusive_scan_uint8(counts, min_size=_SCAN_MIN_SIZE):
+    """Inclusive scan of a contiguous 1D uint8 array, as int32.
+
+    Returns the same array as ``cp.cumsum(counts, dtype=cp.int32)``, which is
+    what is used for arrays with fewer than ``min_size`` entries.
+    """
+    if counts.size < min_size:
+        return cp.cumsum(counts, dtype=cp.int32)
+    n = counts.size
+    out = cp.empty(n, dtype=cp.int32)
+    n_blocks = (n + _SCAN_TILE - 1) // _SCAN_TILE
+    block_sums = cp.empty(n_blocks, dtype=cp.int32)
+    threads = _SCAN_TILE // 4
+    _get_scan_kernel("mc_scan_block_sums")(
+        (n_blocks,), (threads,), (counts, block_sums, np.int32(n))
+    )
+    block_scan = cp.cumsum(block_sums, dtype=cp.int32)
+    _get_scan_kernel("mc_scan_apply")(
+        (n_blocks,),
+        (threads,),
+        (counts, block_scan, block_sums, out, np.int32(n)),
+    )
+    return out
 
 
 # code specific to allow_degenerate=False
@@ -625,7 +750,7 @@ def _remove_degenerate_faces_gpu(vertices, faces, normals, values):
     )
     vertex_scan = cp.cumsum(root_flags, dtype=cp.int32)
     n_vertices2 = int(vertex_scan[-1])
-    face_scan = cp.cumsum(faces_ok, dtype=cp.int32)
+    face_scan = _inclusive_scan_uint8(faces_ok)
     n_faces2 = int(face_scan[-1])
 
     faces2 = cp.empty((n_faces2, 3), dtype=faces.dtype)

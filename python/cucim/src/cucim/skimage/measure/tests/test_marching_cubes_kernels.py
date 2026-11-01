@@ -10,7 +10,10 @@ from skimage.measure import (
 )
 
 from cucim.skimage.measure import _marching_cubes_lewiner_luts as _mcluts
-from cucim.skimage.measure._marching_cubes_common import _decode_lut
+from cucim.skimage.measure._marching_cubes_common import (
+    _decode_lut,
+    _inclusive_scan_uint8,
+)
 from cucim.skimage.measure._marching_cubes_lewiner import (
     _lewiner_count_cells_gpu,
     _lewiner_generate_center_vertices_gpu,
@@ -908,3 +911,19 @@ def _vertex_to_skimage_edge_id(vertex):
             if np.all((vertex[variable] >= 0.0) & (vertex[variable] <= 1.0)):
                 return edge_id
     raise AssertionError(f"could not map vertex {vertex} to a cube edge")
+
+
+@pytest.mark.parametrize(
+    "size",
+    [1, 3, 4, 5, 255, 1023, 1024, 1025, 4096, 100003, 2**20 + 7, 3 * 2**20 + 5],
+)
+@pytest.mark.parametrize("high", [2, 4, 256])
+def test_inclusive_scan_uint8_matches_cumsum(size, high):
+    rng = np.random.default_rng(size + high)
+    counts = cp.asarray(rng.integers(0, high, size).astype(np.uint8))
+    expected = cp.cumsum(counts, dtype=cp.int32)
+    # min_size=0 forces the block scan, also for the small sizes
+    result = _inclusive_scan_uint8(counts, min_size=0)
+    assert result.dtype == cp.int32
+    cp.testing.assert_array_equal(result, expected)
+    cp.testing.assert_array_equal(_inclusive_scan_uint8(counts), expected)
