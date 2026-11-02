@@ -627,3 +627,29 @@ def test_volume_too_large_for_32bit_indexing(method):
         pytest.skip("not enough device memory")
     with pytest.raises(ValueError, match="too large"):
         marching_cubes(volume, 0.0, method=method)
+
+
+@pytest.mark.parametrize("method", ["lewiner", "lorensen"])
+@pytest.mark.parametrize("gradient_direction", ["descent", "ascent"])
+def test_winding_matches_skimage(method, gradient_direction):
+    """The orientation (sign of the enclosed volume) follows scikit-image."""
+    grid = np.ogrid[-1:1:48j, -1:1:48j, -1:1:48j]
+    volume = (
+        sum((c / s) ** 2 for c, s in zip(grid, (0.6, 0.75, 0.9))) - 1
+    ).astype(np.float32)
+
+    def signed_volume(vertices, faces):
+        a, b, c = (np.asarray(vertices)[faces[:, i]] for i in range(3))
+        return np.einsum("ij,ij->i", a, np.cross(b, c)).sum() / 6
+
+    kwargs = dict(
+        method=method,
+        gradient_direction=gradient_direction,
+        allow_degenerate=False,
+    )
+    verts, faces, _, _ = marching_cubes(cp.asarray(volume), 0.0, **kwargs)
+    ref_verts, ref_faces, _, _ = skimage_marching_cubes(volume, 0.0, **kwargs)
+    ours = signed_volume(verts.get(), faces.get())
+    ref = signed_volume(ref_verts, ref_faces)
+    assert np.sign(ours) == np.sign(ref)
+    np.testing.assert_allclose(ours, ref, rtol=1e-3)
