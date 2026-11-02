@@ -356,7 +356,8 @@ def _run_lorensen(
             ny,
             nz,
             np.float32(level),
-            np.int32(gradient_direction == "descent"),
+            # the classic table winds the opposite way to the Lewiner one
+            np.int32(gradient_direction == "ascent"),
         ),
     )
     faces = faces.reshape(-1, 3)
