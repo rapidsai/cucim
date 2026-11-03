@@ -14,6 +14,7 @@ from ._marching_cubes_common import (
     _count_cells_gpu,
     _generate_cell_table_faces_gpu,
     _generate_center_vertices_gpu,
+    _idx_code,
     _run_cell_table_method,
     _validate_marching_cubes_inputs,
 )
@@ -400,16 +401,16 @@ extern "C" __global__ void mc_vega_count_cells(
     const float* volume, unsigned char* tri_counts, unsigned char* center_flags,
     unsigned short* row_offsets, int* center_count, int nx, int ny, int nz,
     float level) {
-    int idx = blockDim.x * blockIdx.x + threadIdx.x;
+    mc_idx idx = (mc_idx)blockDim.x * blockIdx.x + threadIdx.x;
     int cnx = nx - 1;
     int cny = ny - 1;
     int cnz = nz - 1;
-    if (idx >= cnx * cny * cnz) {
+    if (idx >= (mc_idx)cnx * cny * cnz) {
         return;
     }
-    int k = idx % cnz;
-    int j = (idx / cnz) % cny;
-    int i = idx / (cny * cnz);
+    int k = (int)(idx % cnz);
+    int j = (int)((idx / cnz) % cny);
+    int i = (int)(idx / ((mc_idx)cny * cnz));
     int tri_count, center_flag, row;
     vega_resolve_cell(volume, i, j, k, ny, nz, level, &tri_count, &center_flag, &row);
     tri_counts[idx] = (unsigned char)tri_count;
@@ -424,16 +425,16 @@ extern "C" __global__ void mc_vega_count_cells_masked(
     const float* volume, const bool* mask, unsigned char* tri_counts,
     unsigned char* center_flags, unsigned short* row_offsets,
     int* center_count, int nx, int ny, int nz, float level) {
-    int idx = blockDim.x * blockIdx.x + threadIdx.x;
+    mc_idx idx = (mc_idx)blockDim.x * blockIdx.x + threadIdx.x;
     int cnx = nx - 1;
     int cny = ny - 1;
     int cnz = nz - 1;
-    if (idx >= cnx * cny * cnz) {
+    if (idx >= (mc_idx)cnx * cny * cnz) {
         return;
     }
-    int k = idx % cnz;
-    int j = (idx / cnz) % cny;
-    int i = idx / (cny * cnz);
+    int k = (int)(idx % cnz);
+    int j = (int)((idx / cnz) % cny);
+    int i = (int)(idx / ((mc_idx)cny * cnz));
     if (!mask[node_index(i + 1, j + 1, k + 1, ny, nz)]) {
         tri_counts[idx] = 0;
         center_flags[idx] = 0;
@@ -458,20 +459,20 @@ extern "C" __global__ void mc_vega_generate_center_vertices(
     const int* center_scan, int* center_vertex_ids, float* vertices,
     float* normals, float* values_out, int nx, int ny, int nz, float level,
     float sx, float sy, float sz, int vertex_offset) {
-    int idx = blockDim.x * blockIdx.x + threadIdx.x;
+    mc_idx idx = (mc_idx)blockDim.x * blockIdx.x + threadIdx.x;
     int cnx = nx - 1;
     int cny = ny - 1;
     int cnz = nz - 1;
-    if (idx >= cnx * cny * cnz) {
+    if (idx >= (mc_idx)cnx * cny * cnz) {
         return;
     }
     center_vertex_ids[idx] = -1;
     if (center_flags[idx] == 0) {
         return;
     }
-    int k = idx % cnz;
-    int j = (idx / cnz) % cny;
-    int i = idx / (cny * cnz);
+    int k = (int)(idx % cnz);
+    int j = (int)((idx / cnz) % cny);
+    int i = (int)(idx / ((mc_idx)cny * cnz));
 
     float gx = 0.0f, gy = 0.0f, gz = 0.0f;
     float vmax = vol_at(volume, i, j, k, ny, nz);
@@ -492,7 +493,7 @@ extern "C" __global__ void mc_vega_generate_center_vertices(
     }
     int vid = vertex_offset + center_scan[idx] - 1;
     center_vertex_ids[idx] = vid;
-    int out = 3 * vid;
+    mc_idx out = (mc_idx)3 * vid;
     vertices[out] = ((float)i + 0.5f) * sx;
     vertices[out + 1] = ((float)j + 0.5f) * sy;
     vertices[out + 2] = ((float)k + 0.5f) * sz;
@@ -504,7 +505,7 @@ extern "C" __global__ void mc_vega_generate_center_vertices(
 
 extern "C" __device__ inline int vega_vertex_id(
     int nibble, const int* node_scan, const unsigned char* edge_mask,
-    const int* center_vertex_ids, int idx, int i, int j, int k, int ny,
+    const int* center_vertex_ids, mc_idx idx, int i, int j, int k, int ny,
     int nz) {
     if (nibble == 12) {
         return center_vertex_ids[idx];
@@ -518,16 +519,16 @@ extern "C" __global__ void mc_vega_generate_faces(
     const int* tri_scan, const int* node_scan, const unsigned char* edge_mask,
     const int* center_vertex_ids, int* faces, int nx, int ny, int nz,
     int flip_winding) {
-    int idx = blockDim.x * blockIdx.x + threadIdx.x;
+    mc_idx idx = (mc_idx)blockDim.x * blockIdx.x + threadIdx.x;
     int cnx = nx - 1;
     int cny = ny - 1;
     int cnz = nz - 1;
-    if (idx >= cnx * cny * cnz || tri_counts[idx] == 0) {
+    if (idx >= (mc_idx)cnx * cny * cnz || tri_counts[idx] == 0) {
         return;
     }
-    int k = idx % cnz;
-    int j = (idx / cnz) % cny;
-    int i = idx / (cny * cnz);
+    int k = (int)(idx % cnz);
+    int j = (int)((idx / cnz) % cny);
+    int i = (int)(idx / ((mc_idx)cny * cnz));
 
     int row = row_offsets[idx];
     int reversed = (row >> 15) & 1;
@@ -544,7 +545,7 @@ extern "C" __global__ void mc_vega_generate_faces(
             v0 = v1;
             v1 = tmp;
         }
-        int out = 3 * (face_start + t);
+        mc_idx out = (mc_idx)3 * (face_start + t);
         if (flip_winding) {
             faces[out] = v2;
             faces[out + 1] = v1;
@@ -575,8 +576,8 @@ _VEGA_KERNELS = {
 
 
 @cp.memoize(for_each_device=True)
-def _get_vega_kernel(name):
-    return cp.RawKernel(_VEGA_KERNEL_CODE, name)
+def _get_vega_kernel(name, wide=False):
+    return cp.RawKernel(_idx_code(wide) + _VEGA_KERNEL_CODE, name)
 
 
 def _vega_count_cells_gpu(volume, level, mask=None):

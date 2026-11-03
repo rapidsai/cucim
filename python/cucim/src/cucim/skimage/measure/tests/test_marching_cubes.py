@@ -619,17 +619,6 @@ def _has_degenerate_faces(vertices, faces):
 
 
 @pytest.mark.parametrize("method", ["lewiner", "lorensen"])
-def test_volume_too_large_for_32bit_indexing(method):
-    # 3 * 900**3 edges exceeds the 32-bit indexing used by the kernels
-    try:
-        volume = cp.zeros((900, 900, 900), dtype=cp.float32)
-    except cp.cuda.memory.OutOfMemoryError:
-        pytest.skip("not enough device memory")
-    with pytest.raises(ValueError, match="too large"):
-        marching_cubes(volume, 0.0, method=method)
-
-
-@pytest.mark.parametrize("method", ["lewiner", "lorensen"])
 @pytest.mark.parametrize("gradient_direction", ["descent", "ascent"])
 def test_winding_matches_skimage(method, gradient_direction):
     """The orientation (sign of the enclosed volume) follows scikit-image."""

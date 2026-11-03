@@ -14,10 +14,12 @@ from ._marching_cubes_common import (
     _check_int32_range,
     _decode_lut,
     _generate_edge_vertices,
+    _idx_code,
     _inclusive_scan_uint8,
     _number_crossed_edges,
     _remove_degenerate_faces_gpu,
     _validate_marching_cubes_inputs,
+    _wide,
 )
 
 # Implementation notes
@@ -149,18 +151,18 @@ _LORENSEN_KERNEL_CODE = (
     + r"""
 extern "C" __global__ void mc_count_faces(
     const float* volume, unsigned char* tri_counts, int nx, int ny, int nz, float level) {
-    int idx = blockDim.x * blockIdx.x + threadIdx.x;
+    mc_idx idx = (mc_idx)blockDim.x * blockIdx.x + threadIdx.x;
     int cnx = nx - 1;
     int cny = ny - 1;
     int cnz = nz - 1;
-    int total = cnx * cny * cnz;
+    mc_idx total = (mc_idx)cnx * cny * cnz;
     if (idx >= total) {
         return;
     }
 
-    int k = idx % cnz;
-    int j = (idx / cnz) % cny;
-    int i = idx / (cny * cnz);
+    int k = (int)(idx % cnz);
+    int j = (int)((idx / cnz) % cny);
+    int i = (int)(idx / ((mc_idx)cny * cnz));
 
     int code = 0;
     code |= (vol_at(volume, i, j, k, ny, nz) >= level) ? 1 : 0;
@@ -186,18 +188,18 @@ extern "C" __global__ void mc_count_faces(
 extern "C" __global__ void mc_count_faces_masked(
     const float* volume, const bool* mask, unsigned char* tri_counts,
     int nx, int ny, int nz, float level) {
-    int idx = blockDim.x * blockIdx.x + threadIdx.x;
+    mc_idx idx = (mc_idx)blockDim.x * blockIdx.x + threadIdx.x;
     int cnx = nx - 1;
     int cny = ny - 1;
     int cnz = nz - 1;
-    int total = cnx * cny * cnz;
+    mc_idx total = (mc_idx)cnx * cny * cnz;
     if (idx >= total) {
         return;
     }
 
-    int k = idx % cnz;
-    int j = (idx / cnz) % cny;
-    int i = idx / (cny * cnz);
+    int k = (int)(idx % cnz);
+    int j = (int)((idx / cnz) % cny);
+    int i = (int)(idx / ((mc_idx)cny * cnz));
     if (!mask[node_index(i + 1, j + 1, k + 1, ny, nz)]) {
         tri_counts[idx] = 0;
         return;
@@ -228,18 +230,18 @@ extern "C" __global__ void mc_generate_faces(
     const float* volume, const unsigned char* tri_counts, const int* tri_scan,
     const int* node_scan, const unsigned char* edge_mask, int* faces,
     int nx, int ny, int nz, float level, int flip_winding) {
-    int idx = blockDim.x * blockIdx.x + threadIdx.x;
+    mc_idx idx = (mc_idx)blockDim.x * blockIdx.x + threadIdx.x;
     int cnx = nx - 1;
     int cny = ny - 1;
     int cnz = nz - 1;
-    int total = cnx * cny * cnz;
+    mc_idx total = (mc_idx)cnx * cny * cnz;
     if (idx >= total || tri_counts[idx] == 0) {
         return;
     }
 
-    int k = idx % cnz;
-    int j = (idx / cnz) % cny;
-    int i = idx / (cny * cnz);
+    int k = (int)(idx % cnz);
+    int j = (int)((idx / cnz) % cny);
+    int i = (int)(idx / ((mc_idx)cny * cnz));
 
     int code = 0;
     code |= (vol_at(volume, i, j, k, ny, nz) >= level) ? 1 : 0;
@@ -260,7 +262,7 @@ extern "C" __global__ void mc_generate_faces(
         int v0 = local_edge_vid(node_scan, edge_mask, row[n], i, j, k, ny, nz);
         int v1 = local_edge_vid(node_scan, edge_mask, row[n + 1], i, j, k, ny, nz);
         int v2 = local_edge_vid(node_scan, edge_mask, row[n + 2], i, j, k, ny, nz);
-        int out = 3 * face_start;
+        mc_idx out = (mc_idx)3 * face_start;
         if (flip_winding) {
             faces[out] = v2;
             faces[out + 1] = v1;
@@ -279,16 +281,14 @@ extern "C" __global__ void mc_generate_faces(
 
 
 @cp.memoize(for_each_device=True)
-def _get_lorensen_kernel(name):
-    return cp.RawKernel(_LORENSEN_KERNEL_CODE, name)
+def _get_lorensen_kernel(name, wide=False):
+    return cp.RawKernel(_idx_code(wide) + _LORENSEN_KERNEL_CODE, name)
 
 
 def _run_lorensen(
     volume, level, spacing, gradient_direction, allow_degenerate, mask
 ):
     nx, ny, nz = volume.shape
-    n_edges = nx * ny * nz * 3
-    _check_int32_range(n_edges, "the edge array")
     threads = 256
 
     edge_mask, node_scan, edge_idx = _number_crossed_edges(
@@ -311,16 +311,17 @@ def _run_lorensen(
     )
 
     n_cells = (nx - 1) * (ny - 1) * (nz - 1)
+    wide = _wide(n_cells)
     cell_blocks = ((n_cells + threads - 1) // threads,)
     tri_counts = cp.empty(n_cells, dtype=cp.uint8)
     if mask is None:
-        _get_lorensen_kernel("mc_count_faces")(
+        _get_lorensen_kernel("mc_count_faces", wide)(
             cell_blocks,
             (threads,),
             (volume, tri_counts, nx, ny, nz, np.float32(level)),
         )
     else:
-        _get_lorensen_kernel("mc_count_faces_masked")(
+        _get_lorensen_kernel("mc_count_faces_masked", wide)(
             cell_blocks,
             (threads,),
             (
@@ -336,13 +337,14 @@ def _run_lorensen(
     # a 64-bit total, so that a too large mesh is detected before the 32-bit
     # scan can wrap around
     n_faces = int(tri_counts.sum(dtype=cp.int64))
-    _check_int32_range(3 * n_faces, "the face array")
+    _check_int32_range(n_faces, "the number of faces")
+    wide = _wide(n_cells, n_faces)
     tri_scan = _inclusive_scan_uint8(tri_counts)
     if n_faces == 0:
         raise RuntimeError("No surface found at the given iso value.")
 
     faces = cp.empty(n_faces * 3, dtype=cp.int32)
-    _get_lorensen_kernel("mc_generate_faces")(
+    _get_lorensen_kernel("mc_generate_faces", wide)(
         cell_blocks,
         (threads,),
         (
