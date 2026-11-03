@@ -39,8 +39,11 @@ def _connect(x, structure, y, greyscale_mode=False):
     """
     dirs = _half_structure_dirs(structure)
     y_shape = cupy.array(y.shape, dtype=numpy.int32)
-    _kernel_init()(x, y)
-    _kernel_connect(greyscale_mode, x.ndim, tuple(map(tuple, dirs.tolist())))(
+    dirs_key = tuple(map(tuple, dirs.tolist()))
+    _kernel_init_link(greyscale_mode, x.ndim, dirs_key)(
+        x, y_shape, y, size=y.size
+    )
+    _kernel_connect(greyscale_mode, x.ndim, dirs_key)(
         *((x,) if greyscale_mode else ()), y_shape, y, size=y.size
     )
 
@@ -70,6 +73,70 @@ def _kernel_init():
     )
 
 
+def _neighbor_code(ndim, dirs):
+    """C++ pieces shared by the init-link and connect kernels.
+
+    Returns the declaration of the table of neighbor offsets (a constant of the
+    kernel), the code that decomposes the index ``i`` into the coordinates c<d>
+    and the strides s<d>, the condition that a neighbor ``dr`` is outside of
+    the image and the expression of its index offset.
+    """
+    table = ", ".join(str(d) for dirvec in dirs for d in dirvec)
+    declaration = f"static const int dirs[{len(dirs) * ndim}] = {{{table}}};"
+    coords = "\n        ".join(
+        ["Y rest = i;", "Y stride = 1;"]
+        + [
+            f"Y c{dm} = rest % shape[{dm}]; rest /= shape[{dm}];"
+            f" Y s{dm} = stride; stride *= shape[{dm}];"
+            for dm in range(ndim - 1, -1, -1)
+        ]
+    )
+    outside = " || ".join(
+        f"c{dm} + dirs[dr * {ndim} + {dm}] < 0 || "
+        f"c{dm} + dirs[dr * {ndim} + {dm}] >= shape[{dm}]"
+        for dm in range(ndim)
+    )
+    offset = " + ".join(
+        f"dirs[dr * {ndim} + {dm}] * s{dm}" for dm in range(ndim)
+    )
+    return declaration, coords, outside, offset
+
+
+@functools.cache
+def _kernel_init_link(greyscale_mode, ndim, dirs):
+    """Initialize the forest, linking each pixel to a preceding neighbor.
+
+    Each foreground pixel points to its first neighbor (in raster order) that
+    is foreground (and, in greyscale mode, has the same value), or to itself
+    when it has none. Only the entry of the pixel itself is written, so no
+    atomics are needed, and the links point to smaller indices as the unions
+    of the connect kernel do. Background pixels get -1.
+    """
+    ndirs = len(dirs)
+    cond = "x[k] != x[i]" if greyscale_mode else "x[k] == 0"
+    declaration, coords, outside, offset = _neighbor_code(ndim, dirs)
+    code = f"""
+        {declaration}
+        if (x[i] == 0) {{ y[i] = -1; continue; }}
+        {coords}
+        Y link = i;
+        for (int dr = 0; dr < {ndirs}; dr++) {{
+            if ({outside}) continue;
+            Y k = i + {offset};
+            if ({cond}) continue;
+            link = k;
+            break;
+        }}
+        y[i] = link;
+        """
+    return cupy.ElementwiseKernel(
+        "raw X x, raw int32 shape",
+        "raw Y y",
+        code,
+        "cucim_skimage_measure_label_init_link",
+    )
+
+
 @functools.cache
 def _kernel_connect(greyscale_mode, ndim, dirs):
     """
@@ -95,23 +162,7 @@ def _kernel_connect(greyscale_mode, ndim, dirs):
         # binary mode -> all non-background voxels treated the same
         x_condition = ""
 
-    table = ", ".join(str(d) for dirvec in dirs for d in dirvec)
-    coords = "\n        ".join(
-        ["Y rest = i;", "Y stride = 1;"]
-        + [
-            f"Y c{dm} = rest % shape[{dm}]; rest /= shape[{dm}];"
-            f" Y s{dm} = stride; stride *= shape[{dm}];"
-            for dm in range(ndim - 1, -1, -1)
-        ]
-    )
-    outside = " || ".join(
-        f"c{dm} + dirs[dr * {ndim} + {dm}] < 0 || "
-        f"c{dm} + dirs[dr * {ndim} + {dm}] >= shape[{dm}]"
-        for dm in range(ndim)
-    )
-    offset = " + ".join(
-        f"dirs[dr * {ndim} + {dm}] * s{dm}" for dm in range(ndim)
-    )
+    declaration, coords, outside, offset = _neighbor_code(ndim, dirs)
 
     code = f"""
         using atomic_t = typename cupy::type_traits::conditional<
@@ -119,7 +170,7 @@ def _kernel_connect(greyscale_mode, ndim, dirs):
             unsigned long long,
             Y
         >::type;
-        static const int dirs[{ndirs * ndim}] = {{{table}}};
+        {declaration}
         if (y[i] < 0) continue;
         {coords}
         for (int dr = 0; dr < {ndirs}; dr++) {{
