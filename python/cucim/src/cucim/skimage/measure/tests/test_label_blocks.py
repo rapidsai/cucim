@@ -65,3 +65,19 @@ def test_label_blocks_are_not_used_for_other_inputs():
     assert not use(image2d.astype(bool), cross, False)  # not full connectivity
     assert not use(cp.zeros((4, 4, 4, 4), dtype=bool), np.ones((3,) * 4), False)
     assert use(image2d.astype(bool), full, True)
+
+
+@pytest.mark.parametrize("shape", [(33, 40), (9, 14, 11)])
+def test_label_blocks_with_64_bit_labels(shape, monkeypatch):
+    # images with 2**31 or more elements use 64-bit labels; check them on a
+    # small image
+    from cucim.skimage.measure import _label
+
+    monkeypatch.setattr(_label, "_label_dtype_for_size", lambda size: cp.int64)
+    rng = np.random.default_rng(3)
+    image = rng.random(shape) < 0.55
+    result = label(cp.asarray(image))
+    assert result.dtype == cp.int64
+    np.testing.assert_array_equal(
+        result.get(), label_cpu(image, connectivity=len(shape))
+    )

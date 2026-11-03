@@ -51,9 +51,6 @@ def _connect(x, structure, y, greyscale_mode=False):
     On return ``y[i]`` is the index of the parent of pixel ``i`` (-1 for
     background pixels); the trees are not flattened yet.
     """
-    if _use_blocks(x, structure, greyscale_mode):
-        _connect_blocks(x, y)
-        return
     dirs = _half_structure_dirs(structure)
     y_shape = cupy.array(y.shape, dtype=numpy.int32)
     dirs_key = tuple(map(tuple, dirs.tolist()))
@@ -66,12 +63,15 @@ def _connect(x, structure, y, greyscale_mode=False):
 
 
 def _connect_blocks(x, y):
-    """`_connect` with one node per 2 x 2 (x 2) block of pixels.
+    """Build the forest of the blocks, one node per 2 x 2 (x 2) block of pixels.
 
     With full connectivity all the foreground pixels of a block are neighbors,
     so each block is one tree: its foreground pixels point to the first of them.
     Two blocks are joined if a foreground pixel of each lies on the sides that
     face each other; only these block pairs need a union.
+
+    Returns the shape of the grid of blocks, the number of blocks and the
+    occupancy byte of each block.
     """
     ndim = x.ndim
     shape = cupy.array(x.shape, dtype=numpy.int32)
@@ -81,10 +81,40 @@ def _connect_blocks(x, y):
     occupancy = cupy.empty(nblocks, dtype=numpy.uint8)
     _kernel_block_init(ndim)(x, shape, bshape, y, occupancy, size=nblocks)
     _kernel_block_connect(ndim)(shape, bshape, occupancy, y, size=nblocks)
+    return shape, bshape, nblocks, occupancy
+
+
+def _label_blocks(x, y):
+    """`_label` for the block kernels: all the steps are done per block."""
+    shape, bshape, nblocks, occupancy = _connect_blocks(x, y)
+    ndim = x.ndim
+    count = cupy.zeros(2, dtype=y.dtype)
+    block_root = cupy.empty(nblocks, dtype=y.dtype)
+    _kernel_block_flatten(ndim)(
+        shape, bshape, occupancy, y, block_root, count, size=nblocks
+    )
+    maxlabel = int(count[0])  # synchronize
+    labels = cupy.empty(maxlabel, dtype=y.dtype)
+    _kernel_block_collect(ndim)(
+        shape, bshape, occupancy, block_root, count, labels, size=nblocks
+    )
+    _kernel_block_finalize(ndim)(
+        shape,
+        bshape,
+        occupancy,
+        block_root,
+        maxlabel,
+        cupy.sort(labels),
+        y,
+        size=nblocks,
+    )
+    return maxlabel
 
 
 def _label(x, structure, y, greyscale_mode=False):
     count = cupy.zeros(2, dtype=y.dtype)
+    if _use_blocks(x, structure, greyscale_mode):
+        return _label_blocks(x, y)
     _connect(x, structure, y, greyscale_mode)
     _kernel_count()(y, count, size=y.size)
     maxlabel = int(count[0])  # synchronize
@@ -410,6 +440,117 @@ def _kernel_block_connect(ndim):
         "raw Y y",
         code,
         "cucim_skimage_measure_label_block_connect",
+    )
+
+
+def _block_pixels(ndim):
+    """Statements that give, for each pixel c of a block, its index i<c>, whether
+    it is inside the image (in<c>) and whether it is foreground (f<c>, from the
+    occupancy byte ``occ``)."""
+    out = []
+    for c in range(2**ndim):
+        local = [(c >> (ndim - 1 - d)) & 1 for d in range(ndim)]
+        inside = " && ".join(
+            f"2 * b{d} + {lc} < shape[{d}]" for d, lc in enumerate(local)
+        )
+        index = " + ".join(
+            [f"{lc} * s{d}" for d, lc in enumerate(local)] + ["origin"]
+        )
+        out.append(
+            f"Y i{c} = {index}; bool in{c} = {inside}; "
+            f"bool f{c} = (occ >> {c}) & 1;"
+        )
+    return "\n        ".join(out)
+
+
+_BLOCK_PARAMS = "raw int32 shape, raw int32 bshape, raw uint8 occupancy"
+
+
+@functools.cache
+def _kernel_block_flatten(ndim):
+    """Find the root of each block and count the roots (one thread per block).
+
+    ``block_root[i]`` is the root of the tree of the block (-1 for an empty
+    block). A block is a root if its first foreground pixel is one.
+    """
+    coords, origin = _block_code(ndim)
+    rep = f"origin + {_local_offset(ndim, '(__ffs(occ) - 1)')}"
+    code = f"""
+        unsigned int occ = occupancy[i];
+        if (occ == 0) {{ block_root[i] = -1; continue; }}
+        {coords}
+        Y origin = {origin};
+        Y rep = {rep};
+        Y root = rep;
+        while (root != y[root]) {{ root = y[root]; }}
+        block_root[i] = root;
+        if (root == rep) atomicAdd(&count[0], 1);
+        """
+    return cupy.ElementwiseKernel(
+        _BLOCK_PARAMS,
+        "raw Y y, raw Y block_root, raw Y count",
+        code,
+        "cucim_skimage_measure_label_block_flatten",
+    )
+
+
+@functools.cache
+def _kernel_block_collect(ndim):
+    """Store the index of each root, in no particular order."""
+    coords, origin = _block_code(ndim)
+    rep = f"origin + {_local_offset(ndim, '(__ffs(occ) - 1)')}"
+    code = f"""
+        unsigned int occ = occupancy[i];
+        if (occ == 0) continue;
+        {coords}
+        Y origin = {origin};
+        Y rep = {rep};
+        if (block_root[i] != rep) continue;
+        Y j = atomicAdd(&count[1], 1);
+        labels[j] = rep;
+        """
+    return cupy.ElementwiseKernel(
+        _BLOCK_PARAMS,
+        "raw Y block_root, raw Y count, raw Y labels",
+        code,
+        "cucim_skimage_measure_label_block_collect",
+    )
+
+
+@functools.cache
+def _kernel_block_finalize(ndim):
+    """Write the labels (the rank of the root + 1, 0 for the background)."""
+    coords, origin = _block_code(ndim)
+    pixels = _block_pixels(ndim)
+    store = "\n        ".join(
+        f"if (in{c}) y[i{c}] = f{c} ? label : 0;" for c in range(2**ndim)
+    )
+    code = f"""
+        unsigned int occ = occupancy[i];
+        {coords}
+        Y origin = {origin};
+        {pixels}
+        Y label = 0;
+        if (occ != 0) {{
+            Y yi = block_root[i];
+            Y j_min = 0;
+            Y j_max = maxlabel - 1;
+            Y j = (j_min + j_max) / 2;
+            while (j_min < j_max) {{
+                if (yi == labels[j]) break;
+                if (yi < labels[j]) j_max = j - 1;
+                else j_min = j + 1;
+                j = (j_min + j_max) / 2;
+            }}
+            label = j + 1;
+        }}
+        {store}
+        """
+    return cupy.ElementwiseKernel(
+        _BLOCK_PARAMS + ", raw Y block_root, Y maxlabel, raw Y labels",
+        "raw Y y",
+        code,
+        "cucim_skimage_measure_label_block_finalize",
     )
 
 
