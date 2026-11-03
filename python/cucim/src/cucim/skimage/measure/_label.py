@@ -1,6 +1,8 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
+
+import functools
 
 import cupy as cp
 import scipy.ndimage as cpu_ndi
@@ -14,6 +16,7 @@ def _label_dtype_for_size(size):
     return cp.int64 if size >= _INT32_LABEL_SIZE_LIMIT else cp.int32
 
 
+@functools.cache
 def _get_structure(ndim, connectivity):
     if connectivity is None:
         # use the full connectivity by default

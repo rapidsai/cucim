@@ -74,13 +74,12 @@ def _connect_blocks(x, y):
     occupancy byte of each block.
     """
     ndim = x.ndim
-    shape = cupy.array(x.shape, dtype=numpy.int32)
-    bshape_tuple = tuple(-(-s // 2) for s in x.shape)
-    bshape = cupy.array(bshape_tuple, dtype=numpy.int32)
-    nblocks = int(numpy.prod(bshape_tuple))
+    shape = tuple(x.shape)
+    bshape = tuple(-(-s // 2) for s in x.shape)
+    nblocks = int(numpy.prod(bshape))
     occupancy = cupy.empty(nblocks, dtype=numpy.uint8)
-    _kernel_block_init(ndim)(x, shape, bshape, y, occupancy, size=nblocks)
-    _kernel_block_connect(ndim)(shape, bshape, occupancy, y, size=nblocks)
+    _kernel_block_init(ndim)(x, *shape, *bshape, y, occupancy, size=nblocks)
+    _kernel_block_connect(ndim)(*shape, *bshape, occupancy, y, size=nblocks)
     return shape, bshape, nblocks, occupancy
 
 
@@ -91,16 +90,16 @@ def _label_blocks(x, y):
     count = cupy.zeros(2, dtype=y.dtype)
     block_root = cupy.empty(nblocks, dtype=y.dtype)
     _kernel_block_flatten(ndim)(
-        shape, bshape, occupancy, y, block_root, count, size=nblocks
+        *shape, *bshape, occupancy, y, block_root, count, size=nblocks
     )
     maxlabel = int(count[0])  # synchronize
     labels = cupy.empty(maxlabel, dtype=y.dtype)
     _kernel_block_collect(ndim)(
-        shape, bshape, occupancy, block_root, count, labels, size=nblocks
+        *shape, *bshape, occupancy, block_root, count, labels, size=nblocks
     )
     _kernel_block_finalize(ndim)(
-        shape,
-        bshape,
+        *shape,
+        *bshape,
         occupancy,
         block_root,
         maxlabel,
@@ -306,8 +305,8 @@ def _block_code(ndim):
     coords = "\n        ".join(
         ["Y brest = i;", "Y stride = 1;"]
         + [
-            f"Y b{d} = brest % bshape[{d}]; brest /= bshape[{d}];"
-            f" Y s{d} = stride; stride *= shape[{d}];"
+            f"Y b{d} = brest % bshape{d}; brest /= bshape{d};"
+            f" Y s{d} = stride; stride *= shape{d};"
             for d in range(ndim - 1, -1, -1)
         ]
     )
@@ -335,7 +334,7 @@ def _kernel_block_init(ndim):
     for c in range(2**ndim):
         local = [(c >> (ndim - 1 - d)) & 1 for d in range(ndim)]
         inside = " && ".join(
-            f"2 * b{d} + {lc} < shape[{d}]" for d, lc in enumerate(local)
+            f"2 * b{d} + {lc} < shape{d}" for d, lc in enumerate(local)
         )
         index = " + ".join(
             [f"{lc} * s{d}" for d, lc in enumerate(local)] + ["origin"]
@@ -362,7 +361,10 @@ def _kernel_block_init(ndim):
         occupancy[i] = {occ};
         """
     return cupy.ElementwiseKernel(
-        "raw X x, raw int32 shape, raw int32 bshape",
+        "raw X x, "
+        + ", ".join(f"int32 shape{d}" for d in range(ndim))
+        + ", "
+        + ", ".join(f"int32 bshape{d}" for d in range(ndim)),
         "raw Y y, raw uint8 occupancy",
         code,
         "cucim_skimage_measure_label_block_init",
@@ -401,12 +403,12 @@ def _kernel_block_connect(ndim):
     )
     outside = " || ".join(
         f"b{d} + deltas[dr * {ndim} + {d}] < 0 || "
-        f"b{d} + deltas[dr * {ndim} + {d}] >= bshape[{d}]"
+        f"b{d} + deltas[dr * {ndim} + {d}] >= bshape{d}"
         for d in range(ndim)
     )
     block_stride = ["1"]
     for d in range(ndim - 1, 0, -1):
-        block_stride.insert(0, f"{block_stride[0]} * bshape[{d}]")
+        block_stride.insert(0, f"{block_stride[0]} * bshape{d}")
     neighbor_block = " + ".join(
         f"deltas[dr * {ndim} + {d}] * ({block_stride[d]})" for d in range(ndim)
     )
@@ -436,7 +438,7 @@ def _kernel_block_connect(ndim):
         }}
         """
     return cupy.ElementwiseKernel(
-        "raw int32 shape, raw int32 bshape, raw uint8 occupancy",
+        _block_params(ndim),
         "raw Y y",
         code,
         "cucim_skimage_measure_label_block_connect",
@@ -451,7 +453,7 @@ def _block_pixels(ndim):
     for c in range(2**ndim):
         local = [(c >> (ndim - 1 - d)) & 1 for d in range(ndim)]
         inside = " && ".join(
-            f"2 * b{d} + {lc} < shape[{d}]" for d, lc in enumerate(local)
+            f"2 * b{d} + {lc} < shape{d}" for d, lc in enumerate(local)
         )
         index = " + ".join(
             [f"{lc} * s{d}" for d, lc in enumerate(local)] + ["origin"]
@@ -463,7 +465,15 @@ def _block_pixels(ndim):
     return "\n        ".join(out)
 
 
-_BLOCK_PARAMS = "raw int32 shape, raw int32 bshape, raw uint8 occupancy"
+def _block_params(ndim):
+    """Parameters of the block kernels: the shapes as scalars (no copy to the
+    device) and the occupancy bytes."""
+    return (
+        ", ".join(f"int32 shape{d}" for d in range(ndim))
+        + ", "
+        + ", ".join(f"int32 bshape{d}" for d in range(ndim))
+        + ", raw uint8 occupancy"
+    )
 
 
 @functools.cache
@@ -487,7 +497,7 @@ def _kernel_block_flatten(ndim):
         if (root == rep) atomicAdd(&count[0], 1);
         """
     return cupy.ElementwiseKernel(
-        _BLOCK_PARAMS,
+        _block_params(ndim),
         "raw Y y, raw Y block_root, raw Y count",
         code,
         "cucim_skimage_measure_label_block_flatten",
@@ -510,7 +520,7 @@ def _kernel_block_collect(ndim):
         labels[j] = rep;
         """
     return cupy.ElementwiseKernel(
-        _BLOCK_PARAMS,
+        _block_params(ndim),
         "raw Y block_root, raw Y count, raw Y labels",
         code,
         "cucim_skimage_measure_label_block_collect",
@@ -547,7 +557,7 @@ def _kernel_block_finalize(ndim):
         {store}
         """
     return cupy.ElementwiseKernel(
-        _BLOCK_PARAMS + ", raw Y block_root, Y maxlabel, raw Y labels",
+        _block_params(ndim) + ", raw Y block_root, Y maxlabel, raw Y labels",
         "raw Y y",
         code,
         "cucim_skimage_measure_label_block_finalize",
