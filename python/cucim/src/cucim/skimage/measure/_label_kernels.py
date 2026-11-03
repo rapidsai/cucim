@@ -9,6 +9,8 @@ parameter as needed for scikit-image.
 
 """
 
+import functools
+
 import cupy
 import numpy
 
@@ -36,14 +38,11 @@ def _connect(x, structure, y, greyscale_mode=False):
     background pixels); the trees are not flattened yet.
     """
     dirs = _half_structure_dirs(structure)
-    ndirs = dirs.shape[0]
-    dirs = cupy.array(dirs, dtype=numpy.int32)
     y_shape = cupy.array(y.shape, dtype=numpy.int32)
     _kernel_init()(x, y)
-    if greyscale_mode:
-        _kernel_connect(True)(x, y_shape, dirs, ndirs, x.ndim, y, size=y.size)
-    else:
-        _kernel_connect(False)(y_shape, dirs, ndirs, x.ndim, y, size=y.size)
+    _kernel_connect(greyscale_mode, x.ndim, tuple(map(tuple, dirs.tolist())))(
+        *((x,) if greyscale_mode else ()), y_shape, y, size=y.size
+    )
 
 
 def _label(x, structure, y, greyscale_mode=False):
@@ -71,24 +70,23 @@ def _kernel_init():
     )
 
 
-def _kernel_connect(greyscale_mode=False, int_t="int"):
+@functools.cache
+def _kernel_connect(greyscale_mode, ndim, dirs):
     """
     Notes
     -----
-    dirs is a (n_neig//2, ndim) of relative offsets to the neighboring voxels.
-    For example, for structure = np.ones((3, 3)):
-        dirs = array([[-1, -1],
-                      [-1,  0],
-                      [-1,  1],
-                      [ 0, -1]], dtype=int32)
-    (Implementation assumes a centro-symmetric structure)
-    ndirs = dirs.shape[0]
+    dirs is a tuple of the relative offsets (one tuple of ndim entries each)
+    of the neighbors that precede a pixel in raster order. For example, for
+    structure = np.ones((3, 3)):
+        dirs = ((-1, -1), (-1, 0), (-1, 1), (0, -1))
+    (Implementation assumes a centro-symmetric structure). The offsets are
+    compiled into the kernel as constants.
 
-    In the dirs loop below, there is a loop over the ndim neighbors:
-        Here, index j corresponds to the current pixel and k is the current
-        neighbor location.
+    The coordinates of the pixel are computed once. In the dirs loop, j is the
+    current pixel and k the current neighbor.
     """
-    in_params = "raw int32 shape, raw int32 dirs, int32 ndirs, int32 ndim"
+    ndirs = len(dirs)
+    in_params = "raw int32 shape"
     if greyscale_mode:
         # greyscale mode -> different values receive different labels
         x_condition = "if (x[k] != x[j]) continue;"
@@ -97,29 +95,37 @@ def _kernel_connect(greyscale_mode=False, int_t="int"):
         # binary mode -> all non-background voxels treated the same
         x_condition = ""
 
+    table = ", ".join(str(d) for dirvec in dirs for d in dirvec)
+    coords = "\n        ".join(
+        ["Y rest = i;", "Y stride = 1;"]
+        + [
+            f"Y c{dm} = rest % shape[{dm}]; rest /= shape[{dm}];"
+            f" Y s{dm} = stride; stride *= shape[{dm}];"
+            for dm in range(ndim - 1, -1, -1)
+        ]
+    )
+    outside = " || ".join(
+        f"c{dm} + dirs[dr * {ndim} + {dm}] < 0 || "
+        f"c{dm} + dirs[dr * {ndim} + {dm}] >= shape[{dm}]"
+        for dm in range(ndim)
+    )
+    offset = " + ".join(
+        f"dirs[dr * {ndim} + {dm}] * s{dm}" for dm in range(ndim)
+    )
+
     code = f"""
         using atomic_t = typename cupy::type_traits::conditional<
             cupy::type_traits::is_same<Y, long long>::value,
             unsigned long long,
             Y
         >::type;
+        static const int dirs[{ndirs * ndim}] = {{{table}}};
         if (y[i] < 0) continue;
-        for (int dr = 0; dr < ndirs; dr++) {{
+        {coords}
+        for (int dr = 0; dr < {ndirs}; dr++) {{
+            if ({outside}) continue;
             Y j = i;
-            Y rest = j;
-            Y stride = 1;
-            Y k = 0;
-            for (int dm = ndim-1; dm >= 0; dm--) {{
-                Y pos = rest % shape[dm] + dirs[dm + dr * ndim];
-                if (pos < 0 || pos >= shape[dm]) {{
-                    k = -1;
-                    break;
-                }}
-                k += pos * stride;
-                rest /= shape[dm];
-                stride *= shape[dm];
-            }}
-            if (k < 0) continue;
+            Y k = i + {offset};
             if (y[k] < 0) continue;
             {x_condition}
             while (1) {{
