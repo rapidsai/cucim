@@ -68,27 +68,24 @@ __device__ inline void fc_cell_values(const double* image, int rows, int cols,
                                       int r0, int c0, double* ul, double* ur,
                                       double* ll, double* lr)
 {
-    int r1 = r0 + 1;
-    int c1 = c0 + 1;
-    *ul = image[r0 * cols + c0];
-    *ur = image[r0 * cols + c1];
-    *ll = image[r1 * cols + c0];
-    *lr = image[r1 * cols + c1];
+    fc_idx p = (fc_idx)r0 * cols + c0;
+    *ul = image[p];
+    *ur = image[p + 1];
+    *ll = image[p + cols];
+    *lr = image[p + cols + 1];
 }
 
 __device__ inline bool fc_masked_cell(const bool* mask, int cols, int r0, int c0)
 {
-    int r1 = r0 + 1;
-    int c1 = c0 + 1;
-    return !(mask[r0 * cols + c0] && mask[r0 * cols + c1] &&
-             mask[r1 * cols + c0] && mask[r1 * cols + c1]);
+    fc_idx p = (fc_idx)r0 * cols + c0;
+    return !(mask[p] && mask[p + 1] && mask[p + cols] && mask[p + cols + 1]);
 }
 
 __device__ inline void fc_write_segment(double* segments, int segment_id,
                                         double from_r, double from_c,
                                         double to_r, double to_c)
 {
-    int offset = 4 * segment_id;
+    fc_idx offset = (fc_idx)4 * segment_id;
     segments[offset + 0] = from_r;
     segments[offset + 1] = from_c;
     segments[offset + 2] = to_r;
@@ -144,7 +141,7 @@ __device__ inline long long fc_vertical_endpoint_key(
 __device__ inline void fc_write_keys(long long* segment_keys, int segment_id,
                                      long long from_key, long long to_key)
 {
-    int offset = 2 * segment_id;
+    fc_idx offset = (fc_idx)2 * segment_id;
     segment_keys[offset + 0] = from_key;
     segment_keys[offset + 1] = to_key;
 }
@@ -154,14 +151,14 @@ void fc_count_segments(const double* image, const bool* mask, int* counts,
                        int rows, int cols, double level, int use_mask)
 {
     int n_cell_cols = cols - 1;
-    int n_cells = (rows - 1) * n_cell_cols;
-    int idx = blockDim.x * blockIdx.x + threadIdx.x;
+    fc_idx n_cells = (fc_idx)(rows - 1) * n_cell_cols;
+    fc_idx idx = (fc_idx)blockDim.x * blockIdx.x + threadIdx.x;
     if (idx >= n_cells) {
         return;
     }
 
-    int r0 = idx / n_cell_cols;
-    int c0 = idx - r0 * n_cell_cols;
+    int r0 = (int)(idx / n_cell_cols);
+    int c0 = (int)(idx - (fc_idx)r0 * n_cell_cols);
 
     if (use_mask && fc_masked_cell(mask, cols, r0, c0)) {
         counts[idx] = 0;
@@ -187,14 +184,14 @@ void fc_generate_segments(const double* image, const bool* mask,
                           int vertex_connect_high)
 {
     int n_cell_cols = cols - 1;
-    int n_cells = (rows - 1) * n_cell_cols;
-    int idx = blockDim.x * blockIdx.x + threadIdx.x;
+    fc_idx n_cells = (fc_idx)(rows - 1) * n_cell_cols;
+    fc_idx idx = (fc_idx)blockDim.x * blockIdx.x + threadIdx.x;
     if (idx >= n_cells || counts[idx] == 0) {
         return;
     }
 
-    int r0 = idx / n_cell_cols;
-    int c0 = idx - r0 * n_cell_cols;
+    int r0 = (int)(idx / n_cell_cols);
+    int c0 = (int)(idx - (fc_idx)r0 * n_cell_cols);
     int r1 = r0 + 1;
     int c1 = c0 + 1;
 
@@ -431,9 +428,21 @@ void fc_write_first_points(const double* segments, const int* next,
 """
 
 
+# The kernels index the pixels, the cells and the offsets of the segments with
+# ``fc_idx``: a 32-bit integer, or a 64-bit one when that could overflow.
+_INT32_LIMIT = 2**31
+_WIDE_LIMIT = _INT32_LIMIT
+
+
+def _wide(n):
+    """Whether indices up to ``n`` need 64 bits."""
+    return n >= _WIDE_LIMIT
+
+
 @cp.memoize(for_each_device=True)
-def _get_kernel(name):
-    return cp.RawKernel(_KERNEL_CODE, name)
+def _get_kernel(name, wide=False):
+    typedef = "typedef long long fc_idx;\n" if wide else "typedef int fc_idx;\n"
+    return cp.RawKernel(typedef + _KERNEL_CODE, name)
 
 
 def find_contours(
@@ -631,6 +640,8 @@ def _validate_find_contours_inputs(
 def _get_contour_segments(image, level, vertex_connect_high, mask):
     rows, cols = image.shape
     n_cells = (rows - 1) * (cols - 1)
+    # a cell index, and the index of a pixel, fit 32 bits below 2**31 pixels
+    wide = _wide(rows * cols)
     counts = cp.empty(n_cells, dtype=cp.int32)
     threads = 256
     blocks = ((n_cells + threads - 1) // threads,)
@@ -639,7 +650,7 @@ def _get_contour_segments(image, level, vertex_connect_high, mask):
     if mask_arg is None:
         mask_arg = cp.empty(1, dtype=cp.bool_)
 
-    _get_kernel("fc_count_segments")(
+    _get_kernel("fc_count_segments", wide)(
         blocks,
         (threads,),
         (
@@ -652,8 +663,21 @@ def _get_contour_segments(image, level, vertex_connect_high, mask):
             np.int32(use_mask),
         ),
     )
-    scan = cp.cumsum(counts, dtype=cp.int32)
-    n_segments = int(scan[-1])
+    # a cell has two segments at most
+    if _wide(2 * rows * cols):
+        # a 64-bit total, so that a too large number of segments is detected
+        # before the 32-bit scan can wrap around
+        n_segments = int(counts.sum(dtype=cp.int64))
+        if n_segments >= _INT32_LIMIT:
+            raise ValueError(
+                "The image is too large for find_contours: it has "
+                f"{n_segments} contour segments (at most 2**31 - 1 are "
+                "supported)."
+            )
+        scan = cp.cumsum(counts, dtype=cp.int32)
+    else:
+        scan = cp.cumsum(counts, dtype=cp.int32)
+        n_segments = int(scan[-1])
     if n_segments == 0:
         return (
             cp.empty((0, 2, 2), dtype=cp.float64),
@@ -662,7 +686,9 @@ def _get_contour_segments(image, level, vertex_connect_high, mask):
 
     segments = cp.empty((n_segments, 2, 2), dtype=cp.float64)
     segment_keys = cp.empty((n_segments, 2), dtype=cp.int64)
-    _get_kernel("fc_generate_segments")(
+    # the offsets of the coordinates of the segments are 4 * the segment id
+    wide = wide or _wide(4 * n_segments)
+    _get_kernel("fc_generate_segments", wide)(
         blocks,
         (threads,),
         (
