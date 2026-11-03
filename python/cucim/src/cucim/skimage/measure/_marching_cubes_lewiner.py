@@ -19,6 +19,7 @@ from ._marching_cubes_common import (
     _decode_lut,
     _generate_cell_table_faces_gpu,
     _generate_center_vertices_gpu,
+    _idx_code,
     _run_cell_table_method,
     _validate_marching_cubes_inputs,
 )
@@ -420,18 +421,18 @@ extern "C" __global__ void mc_lewiner_count_cells(
     const float* volume, unsigned char* tri_counts, unsigned char* center_flags,
     unsigned short* row_offsets, int* center_count, int nx, int ny, int nz,
     float level) {
-    int idx = blockDim.x * blockIdx.x + threadIdx.x;
+    mc_idx idx = (mc_idx)blockDim.x * blockIdx.x + threadIdx.x;
     int cnx = nx - 1;
     int cny = ny - 1;
     int cnz = nz - 1;
-    int total = cnx * cny * cnz;
+    mc_idx total = (mc_idx)cnx * cny * cnz;
     if (idx >= total) {
         return;
     }
 
-    int k = idx % cnz;
-    int j = (idx / cnz) % cny;
-    int i = idx / (cny * cnz);
+    int k = (int)(idx % cnz);
+    int j = (int)((idx / cnz) % cny);
+    int i = (int)(idx / ((mc_idx)cny * cnz));
     float vf[8];
     load_lewiner_values_float(volume, i, j, k, ny, nz, level, vf);
 
@@ -477,18 +478,18 @@ extern "C" __global__ void mc_lewiner_count_cells_masked(
     unsigned char* center_flags,
     unsigned short* row_offsets, int* center_count, int nx, int ny, int nz,
     float level) {
-    int idx = blockDim.x * blockIdx.x + threadIdx.x;
+    mc_idx idx = (mc_idx)blockDim.x * blockIdx.x + threadIdx.x;
     int cnx = nx - 1;
     int cny = ny - 1;
     int cnz = nz - 1;
-    int total = cnx * cny * cnz;
+    mc_idx total = (mc_idx)cnx * cny * cnz;
     if (idx >= total) {
         return;
     }
 
-    int k = idx % cnz;
-    int j = (idx / cnz) % cny;
-    int i = idx / (cny * cnz);
+    int k = (int)(idx % cnz);
+    int j = (int)((idx / cnz) % cny);
+    int i = (int)(idx / ((mc_idx)cny * cnz));
     if (!mask[node_index(i + 1, j + 1, k + 1, ny, nz)]) {
         tri_counts[idx] = 0;
         center_flags[idx] = 0;
@@ -542,11 +543,11 @@ extern "C" __global__ void mc_lewiner_generate_center_vertices(
     int* center_vertex_ids, float* vertices, float* normals, float* values_out,
     int nx, int ny, int nz, float level, float sx, float sy, float sz,
     int vertex_offset) {
-    int idx = blockDim.x * blockIdx.x + threadIdx.x;
+    mc_idx idx = (mc_idx)blockDim.x * blockIdx.x + threadIdx.x;
     int cnx = nx - 1;
     int cny = ny - 1;
     int cnz = nz - 1;
-    int total = cnx * cny * cnz;
+    mc_idx total = (mc_idx)cnx * cny * cnz;
     if (idx >= total) {
         return;
     }
@@ -556,9 +557,9 @@ extern "C" __global__ void mc_lewiner_generate_center_vertices(
         return;
     }
 
-    int k = idx % cnz;
-    int j = (idx / cnz) % cny;
-    int i = idx / (cny * cnz);
+    int k = (int)(idx % cnz);
+    int j = (int)((idx / cnz) % cny);
+    int i = (int)(idx / ((mc_idx)cny * cnz));
     double v[8];
     v[0] = (double)vol_at(volume, i, j, k, ny, nz) - (double)level;
     v[1] = (double)vol_at(volume, i + 1, j, k, ny, nz) - (double)level;
@@ -606,7 +607,7 @@ extern "C" __global__ void mc_lewiner_generate_center_vertices(
 
     int vid = vertex_offset + center_scan[idx] - 1;
     center_vertex_ids[idx] = vid;
-    int out = 3 * vid;
+    mc_idx out = (mc_idx)3 * vid;
     vertices[out] = ((float)i + (float)px) * sx;
     vertices[out + 1] = ((float)j + (float)py) * sy;
     vertices[out + 2] = ((float)k + (float)pz) * sz;
@@ -662,18 +663,18 @@ extern "C" __global__ void mc_lewiner_generate_faces_direct(
     const int* node_scan, const unsigned char* edge_mask,
     const int* center_vertex_ids, int* faces,
     int nx, int ny, int nz, int flip_winding) {
-    int idx = blockDim.x * blockIdx.x + threadIdx.x;
+    mc_idx idx = (mc_idx)blockDim.x * blockIdx.x + threadIdx.x;
     int cnx = nx - 1;
     int cny = ny - 1;
     int cnz = nz - 1;
-    int total = cnx * cny * cnz;
+    mc_idx total = (mc_idx)cnx * cny * cnz;
     if (idx >= total || tri_counts[idx] == 0) {
         return;
     }
 
-    int k = idx % cnz;
-    int j = (idx / cnz) % cny;
-    int i = idx / (cny * cnz);
+    int k = (int)(idx % cnz);
+    int j = (int)((idx / cnz) % cny);
+    int i = (int)(idx / ((mc_idx)cny * cnz));
 
     const signed char* edges = lut_resolved + row_offsets[idx];
     int n_tri = tri_counts[idx];
@@ -689,7 +690,7 @@ extern "C" __global__ void mc_lewiner_generate_faces_direct(
         int v2 = e2 == 12 ? center_vertex_ids[idx] :
             local_edge_vid(node_scan, edge_mask, e2, i, j, k, ny, nz);
 
-        int out = 3 * (face_start + t);
+        mc_idx out = (mc_idx)3 * (face_start + t);
         if (flip_winding) {
             faces[out] = v2;
             faces[out + 1] = v1;
@@ -707,8 +708,8 @@ extern "C" __global__ void mc_lewiner_generate_faces_direct(
 
 
 @cp.memoize(for_each_device=True)
-def _get_lewiner_kernel(name):
-    return cp.RawKernel(_LEWINER_KERNEL_CODE, name)
+def _get_lewiner_kernel(name, wide=False):
+    return cp.RawKernel(_idx_code(wide) + _LEWINER_KERNEL_CODE, name)
 
 
 _LEWINER_KERNELS = {

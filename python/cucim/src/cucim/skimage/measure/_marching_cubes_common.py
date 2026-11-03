@@ -82,17 +82,38 @@ _INT32_LIMIT = 2**31
 
 
 def _check_int32_range(count, what):
-    """Raise if ``count`` entries of ``what`` cannot be indexed by the kernels.
+    """Raise if ``count`` entries of ``what`` do not fit 32-bit integers.
 
-    The kernels index with 32-bit integers (up to three values per vertex,
-    face or edge), so ``count`` must stay below ``2**31``.
+    The vertex ids and the face counts and scans are 32-bit integers, so a
+    mesh can have at most ``2**31 - 1`` vertices and as many faces.
     """
     if count >= _INT32_LIMIT:
         raise ValueError(
-            f"The volume is too large for marching_cubes: {what} would "
-            f"require more than 2**31 elements ({count}). Use a larger "
+            f"The volume is too large for marching_cubes: {what} would be "
+            f"{count} (at most 2**31 - 1 are supported). Use a larger "
             "`step_size` or process the volume in blocks."
         )
+
+
+# The kernels index the nodes, cells and the (up to three values per vertex)
+# output arrays with ``mc_idx``: a 32-bit integer, or a 64-bit one for the
+# arrays that are too large for it.
+_WIDE_LIMIT = _INT32_LIMIT
+
+
+def _wide(*sizes):
+    """Whether arrays of ``sizes`` entries (indexed up to 3 times) need 64 bits."""
+    return any(3 * size >= _WIDE_LIMIT for size in sizes)
+
+
+def _idx_code(wide):
+    """The definition of ``mc_idx`` to put in front of the kernel code."""
+    return "typedef long long mc_idx;\n" if wide else "typedef int mc_idx;\n"
+
+
+def _idx_arg(wide, value):
+    """A kernel argument of type ``mc_idx``."""
+    return np.int64(value) if wide else np.int32(value)
 
 
 def _apply_step_size(volume, spacing, step_size, mask):
@@ -110,8 +131,8 @@ def _apply_step_size(volume, spacing, step_size, mask):
 
 # common kernels shared across Lewiner and Lorensen implementations
 _COMMON_KERNEL_CODE = r"""
-extern "C" __device__ inline int node_index(int i, int j, int k, int ny, int nz) {
-    return (i * ny + j) * nz + k;
+extern "C" __device__ inline mc_idx node_index(int i, int j, int k, int ny, int nz) {
+    return ((mc_idx)i * ny + j) * nz + k;
 }
 
 extern "C" __device__ inline float vol_at(
@@ -193,7 +214,7 @@ extern "C" __device__ inline float grad_at(
 extern "C" __device__ inline int edge_vid(
     const int* node_scan, const unsigned char* edge_mask, int i, int j, int k,
     int side, int ny, int nz) {
-    int node = node_index(i, j, k, ny, nz);
+    mc_idx node = node_index(i, j, k, ny, nz);
     return node_scan[node] - __popc((unsigned int)edge_mask[node] >> side);
 }
 
@@ -201,9 +222,9 @@ extern "C" __device__ inline int edge_vid(
 // edge at its vertex id, so the vertex kernel can run with one thread per
 // vertex (surfaces cross only a small fraction of the edges).
 extern "C" __global__ void mc_compact_edges(
-    const unsigned char* edge_mask, const int* node_scan, int* edge_idx,
-    int n_nodes) {
-    int node = blockDim.x * blockIdx.x + threadIdx.x;
+    const unsigned char* edge_mask, const int* node_scan, mc_idx* edge_idx,
+    mc_idx n_nodes) {
+    mc_idx node = (mc_idx)blockDim.x * blockIdx.x + threadIdx.x;
     if (node >= n_nodes) {
         return;
     }
@@ -236,14 +257,14 @@ extern "C" __device__ inline int local_edge_vid(
 extern "C" __global__ void mc_classify_edges(
     const float* volume, unsigned char* edge_mask, unsigned char* edge_count,
     int nx, int ny, int nz, float level) {
-    int node = blockDim.x * blockIdx.x + threadIdx.x;
-    if (node >= nx * ny * nz) {
+    mc_idx node = (mc_idx)blockDim.x * blockIdx.x + threadIdx.x;
+    if (node >= (mc_idx)nx * ny * nz) {
         return;
     }
 
-    int k = node % nz;
-    int j = (node / nz) % ny;
-    int i = node / (ny * nz);
+    int k = (int)(node % nz);
+    int j = (int)((node / nz) % ny);
+    int i = (int)(node / ((mc_idx)ny * nz));
 
     // bit `side` is set when the edge leaving this node along that axis crosses
     float a = vol_at(volume, i, j, k, ny, nz);
@@ -264,14 +285,14 @@ extern "C" __global__ void mc_classify_edges(
 extern "C" __global__ void mc_classify_edges_masked(
     const float* volume, const bool* mask, unsigned char* edge_mask,
     unsigned char* edge_count, int nx, int ny, int nz, float level) {
-    int node = blockDim.x * blockIdx.x + threadIdx.x;
-    if (node >= nx * ny * nz) {
+    mc_idx node = (mc_idx)blockDim.x * blockIdx.x + threadIdx.x;
+    if (node >= (mc_idx)nx * ny * nz) {
         return;
     }
 
-    int k = node % nz;
-    int j = (node / nz) % ny;
-    int i = node / (ny * nz);
+    int k = (int)(node % nz);
+    int j = (int)((node / nz) % ny);
+    int i = (int)(node / ((mc_idx)ny * nz));
 
     float a = vol_at(volume, i, j, k, ny, nz);
     int bits = 0;
@@ -292,21 +313,21 @@ extern "C" __global__ void mc_classify_edges_masked(
 }
 
 extern "C" __global__ void mc_generate_vertices(
-    const float* volume, const int* edge_idx, int n_vertices,
+    const float* volume, const mc_idx* edge_idx, mc_idx n_vertices,
     float* vertices, float* normals, float* values,
     int nx, int ny, int nz, float level,
     float sx, float sy, float sz) {
-    int vid = blockDim.x * blockIdx.x + threadIdx.x;
+    mc_idx vid = (mc_idx)blockDim.x * blockIdx.x + threadIdx.x;
     if (vid >= n_vertices) {
         return;
     }
 
-    int idx = edge_idx[vid];
-    int side = idx % 3;
-    int node = idx / 3;
-    int k = node % nz;
-    int j = (node / nz) % ny;
-    int i = node / (ny * nz);
+    mc_idx idx = edge_idx[vid];
+    int side = (int)(idx % 3);
+    mc_idx node = idx / 3;
+    int k = (int)(node % nz);
+    int j = (int)((node / nz) % ny);
+    int i = (int)(node / ((mc_idx)ny * nz));
     int i2 = i + (side == 0);
     int j2 = j + (side == 1);
     int k2 = k + (side == 2);
@@ -327,7 +348,7 @@ extern "C" __global__ void mc_generate_vertices(
         z += t;
     }
 
-    int out = 3 * vid;
+    mc_idx out = (mc_idx)3 * vid;
     vertices[out] = x * sx;
     vertices[out + 1] = y * sy;
     vertices[out + 2] = z * sz;
@@ -364,17 +385,18 @@ def _number_crossed_edges(get_kernel, volume, level, mask, threads=256):
     """
     nx, ny, nz = volume.shape
     n_nodes = nx * ny * nz
+    wide = _wide(n_nodes)
     node_blocks = ((n_nodes + threads - 1) // threads,)
     edge_mask = cp.empty(n_nodes, dtype=cp.uint8)
     edge_count = cp.empty(n_nodes, dtype=cp.uint8)
     if mask is None:
-        get_kernel("mc_classify_edges")(
+        get_kernel("mc_classify_edges", wide)(
             node_blocks,
             (threads,),
             (volume, edge_mask, edge_count, nx, ny, nz, np.float32(level)),
         )
     else:
-        get_kernel("mc_classify_edges_masked")(
+        get_kernel("mc_classify_edges_masked", wide)(
             node_blocks,
             (threads,),
             (
@@ -389,17 +411,26 @@ def _number_crossed_edges(get_kernel, volume, level, mask, threads=256):
             ),
         )
     # one scan per node (not per edge); see edge_vid for how ids are recovered
-    node_scan = _inclusive_scan_uint8(edge_count)
-    n_edge_vertices = int(node_scan[-1])
+    if wide:
+        # a 64-bit total, so that a too large mesh is detected before the
+        # 32-bit scan can wrap around (3 * n_nodes edges at most)
+        n_edge_vertices = int(edge_count.sum(dtype=cp.int64))
+        _check_int32_range(n_edge_vertices, "the number of vertices")
+        node_scan = _inclusive_scan_uint8(edge_count)
+    else:
+        node_scan = _inclusive_scan_uint8(edge_count)
+        n_edge_vertices = int(node_scan[-1])
     if n_edge_vertices == 0:
         raise RuntimeError("No surface found at the given iso value.")
-    _check_int32_range(3 * n_edge_vertices, "the vertex array")
+    _check_int32_range(n_edge_vertices, "the number of vertices")
 
-    edge_idx = cp.empty(n_edge_vertices, dtype=cp.int32)
-    get_kernel("mc_compact_edges")(
+    # the edge index is node * 3 + side
+    wide = wide or _wide(n_edge_vertices)
+    edge_idx = cp.empty(n_edge_vertices, dtype=cp.int64 if wide else cp.int32)
+    get_kernel("mc_compact_edges", wide)(
         node_blocks,
         (threads,),
-        (edge_mask, node_scan, edge_idx, n_nodes),
+        (edge_mask, node_scan, edge_idx, _idx_arg(wide, n_nodes)),
     )
     return edge_mask, node_scan, edge_idx
 
@@ -418,13 +449,14 @@ def _generate_edge_vertices(
     """Write the edge vertices (one thread each) to the start of the arrays."""
     nx, ny, nz = volume.shape
     n_edge_vertices = edge_idx.size
-    get_kernel("mc_generate_vertices")(
+    wide = edge_idx.dtype == cp.int64
+    get_kernel("mc_generate_vertices", wide)(
         ((n_edge_vertices + threads - 1) // threads,),
         (threads,),
         (
             volume,
             edge_idx,
-            n_edge_vertices,
+            _idx_arg(wide, n_edge_vertices),
             vertices,
             normals,
             values,
@@ -449,7 +481,7 @@ _SCAN_KERNEL_CODE = r"""
 #define SCAN_TILE 1024
 
 extern "C" __device__ inline void scan_load4(
-    const unsigned char* in, int base, int n, int* v) {
+    const unsigned char* in, mc_idx base, mc_idx n, int* v) {
     if (base + 3 < n) {
         uchar4 u = *reinterpret_cast<const uchar4*>(in + base);
         v[0] = u.x; v[1] = u.y; v[2] = u.z; v[3] = u.w;
@@ -461,9 +493,9 @@ extern "C" __device__ inline void scan_load4(
 }
 
 extern "C" __global__ void mc_scan_block_sums(
-    const unsigned char* in, int* block_sums, int n) {
+    const unsigned char* in, int* block_sums, mc_idx n) {
     __shared__ int warp_sums[SCAN_TILE / 4 / 32];
-    int base = blockIdx.x * SCAN_TILE + threadIdx.x * 4;
+    mc_idx base = (mc_idx)blockIdx.x * SCAN_TILE + threadIdx.x * 4;
     int v[4];
     scan_load4(in, base, n, v);
     int x = v[0] + v[1] + v[2] + v[3];
@@ -486,9 +518,9 @@ extern "C" __global__ void mc_scan_block_sums(
 // block_scan is the inclusive scan of block_sums
 extern "C" __global__ void mc_scan_apply(
     const unsigned char* in, const int* block_scan, const int* block_sums,
-    int* out, int n) {
+    int* out, mc_idx n) {
     __shared__ int warp_sums[SCAN_TILE / 4 / 32];
-    int base = blockIdx.x * SCAN_TILE + threadIdx.x * 4;
+    mc_idx base = (mc_idx)blockIdx.x * SCAN_TILE + threadIdx.x * 4;
     int v[4];
     scan_load4(in, base, n, v);
     int local = v[0] + v[1] + v[2] + v[3];
@@ -530,8 +562,8 @@ _SCAN_TILE = 1024
 
 
 @cp.memoize(for_each_device=True)
-def _get_scan_kernel(name):
-    return cp.RawKernel(_SCAN_KERNEL_CODE, name)
+def _get_scan_kernel(name, wide=False):
+    return cp.RawKernel(_idx_code(wide) + _SCAN_KERNEL_CODE, name)
 
 
 # below this size the three launches of the block scan cost more than they save
@@ -548,18 +580,19 @@ def _inclusive_scan_uint8(counts, min_size=_SCAN_MIN_SIZE):
     if counts.size < min_size:
         return cp.cumsum(counts, dtype=cp.int32)
     n = counts.size
+    wide = _wide(n)
     out = cp.empty(n, dtype=cp.int32)
     n_blocks = (n + _SCAN_TILE - 1) // _SCAN_TILE
     block_sums = cp.empty(n_blocks, dtype=cp.int32)
     threads = _SCAN_TILE // 4
-    _get_scan_kernel("mc_scan_block_sums")(
-        (n_blocks,), (threads,), (counts, block_sums, np.int32(n))
+    _get_scan_kernel("mc_scan_block_sums", wide)(
+        (n_blocks,), (threads,), (counts, block_sums, _idx_arg(wide, n))
     )
     block_scan = cp.cumsum(block_sums, dtype=cp.int32)
-    _get_scan_kernel("mc_scan_apply")(
+    _get_scan_kernel("mc_scan_apply", wide)(
         (n_blocks,),
         (threads,),
-        (counts, block_scan, block_sums, out, np.int32(n)),
+        (counts, block_scan, block_sums, out, _idx_arg(wide, n)),
     )
     return out
 
@@ -592,9 +625,9 @@ extern "C" __device__ inline void mc_union_vertices(int* parent, int a, int b) {
 }
 
 extern "C" __global__ void mc_mark_degenerate_faces_parallel(
-    const float* vertices, const int* faces, int n_faces,
+    const float* vertices, const int* faces, mc_idx n_faces,
     unsigned char* faces_ok, int* degenerate_count) {
-    int idx = blockDim.x * blockIdx.x + threadIdx.x;
+    mc_idx idx = (mc_idx)blockDim.x * blockIdx.x + threadIdx.x;
     if (idx >= n_faces) {
         return;
     }
@@ -602,9 +635,9 @@ extern "C" __global__ void mc_mark_degenerate_faces_parallel(
     int i0 = faces[3 * idx];
     int i1 = faces[3 * idx + 1];
     int i2 = faces[3 * idx + 2];
-    const float* v0 = vertices + 3 * i0;
-    const float* v1 = vertices + 3 * i1;
-    const float* v2 = vertices + 3 * i2;
+    const float* v0 = vertices + (mc_idx)3 * i0;
+    const float* v1 = vertices + (mc_idx)3 * i1;
+    const float* v2 = vertices + (mc_idx)3 * i2;
     bool eq01 = v0[0] == v1[0] && v0[1] == v1[1] && v0[2] == v1[2];
     bool eq02 = v0[0] == v2[0] && v0[1] == v2[1] && v0[2] == v2[2];
     bool eq12 = v1[0] == v2[0] && v1[1] == v2[1] && v1[2] == v2[2];
@@ -618,8 +651,8 @@ extern "C" __global__ void mc_mark_degenerate_faces_parallel(
 
 extern "C" __global__ void mc_union_degenerate_faces(
     const float* vertices, const int* faces, const unsigned char* faces_ok,
-    int n_faces, int* parent) {
-    int idx = blockDim.x * blockIdx.x + threadIdx.x;
+    mc_idx n_faces, int* parent) {
+    mc_idx idx = (mc_idx)blockDim.x * blockIdx.x + threadIdx.x;
     if (idx >= n_faces || faces_ok[idx]) {
         return;
     }
@@ -627,9 +660,9 @@ extern "C" __global__ void mc_union_degenerate_faces(
     int i0 = faces[3 * idx];
     int i1 = faces[3 * idx + 1];
     int i2 = faces[3 * idx + 2];
-    const float* v0 = vertices + 3 * i0;
-    const float* v1 = vertices + 3 * i1;
-    const float* v2 = vertices + 3 * i2;
+    const float* v0 = vertices + (mc_idx)3 * i0;
+    const float* v1 = vertices + (mc_idx)3 * i1;
+    const float* v2 = vertices + (mc_idx)3 * i2;
     if (v0[0] == v1[0] && v0[1] == v1[1] && v0[2] == v1[2]) {
         mc_union_vertices(parent, i0, i1);
     }
@@ -641,16 +674,16 @@ extern "C" __global__ void mc_union_degenerate_faces(
     }
 }
 
-extern "C" __global__ void mc_init_vertex_map(int* parent, int n_vertices) {
-    int idx = blockDim.x * blockIdx.x + threadIdx.x;
+extern "C" __global__ void mc_init_vertex_map(int* parent, mc_idx n_vertices) {
+    mc_idx idx = (mc_idx)blockDim.x * blockIdx.x + threadIdx.x;
     if (idx >= n_vertices) {
         return;
     }
-    parent[idx] = idx;
+    parent[idx] = (int)idx;
 }
 
-extern "C" __global__ void mc_compress_vertex_roots(int* parent, int n_vertices) {
-    int idx = blockDim.x * blockIdx.x + threadIdx.x;
+extern "C" __global__ void mc_compress_vertex_roots(int* parent, mc_idx n_vertices) {
+    mc_idx idx = (mc_idx)blockDim.x * blockIdx.x + threadIdx.x;
     if (idx >= n_vertices) {
         return;
     }
@@ -658,8 +691,8 @@ extern "C" __global__ void mc_compress_vertex_roots(int* parent, int n_vertices)
 }
 
 extern "C" __global__ void mc_mark_vertex_roots(
-    const int* parent, int* root_flags, int n_vertices) {
-    int idx = blockDim.x * blockIdx.x + threadIdx.x;
+    const int* parent, int* root_flags, mc_idx n_vertices) {
+    mc_idx idx = (mc_idx)blockDim.x * blockIdx.x + threadIdx.x;
     if (idx >= n_vertices) {
         return;
     }
@@ -668,13 +701,13 @@ extern "C" __global__ void mc_mark_vertex_roots(
 
 extern "C" __global__ void mc_emit_non_degenerate_faces(
     const int* faces, const unsigned char* faces_ok, const int* face_scan,
-    const int* vertex_map, const int* vertex_scan, int n_faces,
+    const int* vertex_map, const int* vertex_scan, mc_idx n_faces,
     int* faces_out) {
-    int idx = blockDim.x * blockIdx.x + threadIdx.x;
+    mc_idx idx = (mc_idx)blockDim.x * blockIdx.x + threadIdx.x;
     if (idx >= n_faces || !faces_ok[idx]) {
         return;
     }
-    int out_idx = face_scan[idx] - 1;
+    mc_idx out_idx = face_scan[idx] - 1;
     int i0 = vertex_map[faces[3 * idx]];
     int i1 = vertex_map[faces[3 * idx + 1]];
     int i2 = vertex_map[faces[3 * idx + 2]];
@@ -685,13 +718,13 @@ extern "C" __global__ void mc_emit_non_degenerate_faces(
 
 extern "C" __global__ void mc_compact_root_vertices(
     const float* vertices, const float* normals, const float* values,
-    const int* root_flags, const int* vertex_scan, int n_vertices,
+    const int* root_flags, const int* vertex_scan, mc_idx n_vertices,
     float* vertices_out, float* normals_out, float* values_out) {
-    int idx = blockDim.x * blockIdx.x + threadIdx.x;
+    mc_idx idx = (mc_idx)blockDim.x * blockIdx.x + threadIdx.x;
     if (idx >= n_vertices || !root_flags[idx]) {
         return;
     }
-    int out_idx = vertex_scan[idx] - 1;
+    mc_idx out_idx = vertex_scan[idx] - 1;
     vertices_out[3 * out_idx] = vertices[3 * idx];
     vertices_out[3 * out_idx + 1] = vertices[3 * idx + 1];
     vertices_out[3 * out_idx + 2] = vertices[3 * idx + 2];
@@ -705,8 +738,8 @@ extern "C" __global__ void mc_compact_root_vertices(
 
 
 @cp.memoize(for_each_device=True)
-def _get_remove_degen_kernel(name):
-    return cp.RawKernel(_REMOVE_DEGENERATE_KERNEL_CODE, name)
+def _get_remove_degen_kernel(name, wide=False):
+    return cp.RawKernel(_idx_code(wide) + _REMOVE_DEGENERATE_KERNEL_CODE, name)
 
 
 def _remove_degenerate_faces_gpu(vertices, faces, normals, values):
@@ -715,41 +748,44 @@ def _remove_degenerate_faces_gpu(vertices, faces, normals, values):
     if n_faces == 0:
         return vertices, faces, normals, values
 
+    wide = _wide(n_vertices, n_faces)
     faces_ok = cp.empty(n_faces, dtype=cp.uint8)
     degenerate_count = cp.zeros(1, dtype=cp.int32)
     threads = 256
+    nf = _idx_arg(wide, n_faces)
+    nv = _idx_arg(wide, n_vertices)
     face_blocks = ((n_faces + threads - 1) // threads,)
     vertex_blocks = ((n_vertices + threads - 1) // threads,)
-    _get_remove_degen_kernel("mc_mark_degenerate_faces_parallel")(
+    _get_remove_degen_kernel("mc_mark_degenerate_faces_parallel", wide)(
         face_blocks,
         (threads,),
-        (vertices, faces, n_faces, faces_ok, degenerate_count),
+        (vertices, faces, nf, faces_ok, degenerate_count),
     )
     if int(degenerate_count[0]) == 0:
         return vertices, faces, normals, values
 
     vertex_map = cp.empty(n_vertices, dtype=cp.int32)
-    _get_remove_degen_kernel("mc_init_vertex_map")(
+    _get_remove_degen_kernel("mc_init_vertex_map", wide)(
         vertex_blocks,
         (threads,),
-        (vertex_map, n_vertices),
+        (vertex_map, nv),
     )
-    _get_remove_degen_kernel("mc_union_degenerate_faces")(
+    _get_remove_degen_kernel("mc_union_degenerate_faces", wide)(
         face_blocks,
         (threads,),
-        (vertices, faces, faces_ok, n_faces, vertex_map),
+        (vertices, faces, faces_ok, nf, vertex_map),
     )
-    _get_remove_degen_kernel("mc_compress_vertex_roots")(
+    _get_remove_degen_kernel("mc_compress_vertex_roots", wide)(
         vertex_blocks,
         (threads,),
-        (vertex_map, n_vertices),
+        (vertex_map, nv),
     )
 
     root_flags = cp.empty(n_vertices, dtype=cp.int32)
-    _get_remove_degen_kernel("mc_mark_vertex_roots")(
+    _get_remove_degen_kernel("mc_mark_vertex_roots", wide)(
         vertex_blocks,
         (threads,),
-        (vertex_map, root_flags, n_vertices),
+        (vertex_map, root_flags, nv),
     )
     vertex_scan = cp.cumsum(root_flags, dtype=cp.int32)
     n_vertices2 = int(vertex_scan[-1])
@@ -760,12 +796,12 @@ def _remove_degenerate_faces_gpu(vertices, faces, normals, values):
     vertices2 = cp.empty((n_vertices2, 3), dtype=vertices.dtype)
     normals2 = cp.empty((n_vertices2, 3), dtype=normals.dtype)
     values2 = cp.empty((n_vertices2,), dtype=values.dtype)
-    _get_remove_degen_kernel("mc_emit_non_degenerate_faces")(
+    _get_remove_degen_kernel("mc_emit_non_degenerate_faces", wide)(
         face_blocks,
         (threads,),
-        (faces, faces_ok, face_scan, vertex_map, vertex_scan, n_faces, faces2),
+        (faces, faces_ok, face_scan, vertex_map, vertex_scan, nf, faces2),
     )
-    _get_remove_degen_kernel("mc_compact_root_vertices")(
+    _get_remove_degen_kernel("mc_compact_root_vertices", wide)(
         vertex_blocks,
         (threads,),
         (
@@ -774,7 +810,7 @@ def _remove_degenerate_faces_gpu(vertices, faces, normals, values):
             values,
             root_flags,
             vertex_scan,
-            n_vertices,
+            nv,
             vertices2,
             normals2,
             values2,
@@ -786,6 +822,7 @@ def _remove_degenerate_faces_gpu(vertices, faces, normals, values):
 def _count_cells_gpu(get_kernel, kernels, volume, level, mask=None):
     nx, ny, nz = volume.shape
     n_cells = (nx - 1) * (ny - 1) * (nz - 1)
+    wide = _wide(n_cells)
     threads = 256
     cell_blocks = ((n_cells + threads - 1) // threads,)
     tri_counts = cp.empty(n_cells, dtype=cp.uint8)
@@ -793,7 +830,7 @@ def _count_cells_gpu(get_kernel, kernels, volume, level, mask=None):
     row_offsets = cp.empty(n_cells, dtype=cp.uint16)
     center_count = cp.zeros(1, dtype=cp.int32)
     if mask is None:
-        get_kernel(kernels["count"])(
+        get_kernel(kernels["count"], wide)(
             cell_blocks,
             (threads,),
             (
@@ -809,7 +846,7 @@ def _count_cells_gpu(get_kernel, kernels, volume, level, mask=None):
             ),
         )
     else:
-        get_kernel(kernels["count_masked"])(
+        get_kernel(kernels["count_masked"], wide)(
             cell_blocks,
             (threads,),
             (
@@ -825,7 +862,12 @@ def _count_cells_gpu(get_kernel, kernels, volume, level, mask=None):
                 np.float32(level),
             ),
         )
-    return tri_counts, center_flags, row_offsets, int(center_count[0])
+    if wide:
+        # the 32-bit counter may have wrapped around
+        n_centers = int(center_flags.sum(dtype=cp.int64))
+    else:
+        n_centers = int(center_count[0])
+    return tri_counts, center_flags, row_offsets, n_centers
 
 
 def _generate_center_vertices_gpu(
@@ -850,6 +892,7 @@ def _generate_center_vertices_gpu(
     if n_centers is None:
         n_centers = int(center_scan[-1]) if n_cells else 0
     n_vertices = vertex_offset + n_centers
+    wide = _wide(n_cells, n_vertices)
     center_vertex_ids = cp.full(n_cells, -1, dtype=cp.int32)
     if out is None:
         vertices = cp.empty((n_vertices, 3), dtype=cp.float32)
@@ -862,7 +905,7 @@ def _generate_center_vertices_gpu(
 
     threads = 256
     cell_blocks = ((n_cells + threads - 1) // threads,)
-    get_kernel(kernels["center"])(
+    get_kernel(kernels["center"], wide)(
         cell_blocks,
         (threads,),
         (
@@ -902,7 +945,8 @@ def _generate_cell_table_faces_gpu(
     # a 64-bit total, so that a too large mesh is detected before the 32-bit
     # scan can wrap around
     n_faces = int(tri_counts.sum(dtype=cp.int64)) if n_cells else 0
-    _check_int32_range(3 * n_faces, "the face array")
+    _check_int32_range(n_faces, "the number of faces")
+    wide = _wide(n_cells, n_faces)
     tri_scan = _inclusive_scan_uint8(tri_counts)
     faces = cp.empty(n_faces * 3, dtype=cp.int32)
     if n_faces == 0:
@@ -910,7 +954,7 @@ def _generate_cell_table_faces_gpu(
 
     threads = 128
     cell_blocks = ((n_cells + threads - 1) // threads,)
-    get_kernel(kernels["faces"])(
+    get_kernel(kernels["faces"], wide)(
         cell_blocks,
         (threads,),
         (
@@ -947,9 +991,6 @@ def _run_cell_table_method(
     writes the number of triangles, the center flag and the offset of the
     triangle row of each cell.
     """
-    nx, ny, nz = volume.shape
-    n_edges = nx * ny * nz * 3
-    _check_int32_range(n_edges, "the edge array")
     threads = 256
 
     edge_mask, node_scan, edge_idx = _number_crossed_edges(
@@ -962,7 +1003,7 @@ def _run_cell_table_method(
 
     # edge vertices come first, followed by the center vertices
     n_vertices = n_edge_vertices + n_center_vertices
-    _check_int32_range(3 * n_vertices, "the vertex array")
+    _check_int32_range(n_vertices, "the number of vertices")
     vertices = cp.empty((n_vertices, 3), dtype=cp.float32)
     normals = cp.empty((n_vertices, 3), dtype=cp.float32)
     values = cp.empty(n_vertices, dtype=cp.float32)
