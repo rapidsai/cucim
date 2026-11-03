@@ -1982,6 +1982,32 @@ def test_surface_area(kind, spacing, label_dtype):
         assert result[2] == 0
 
 
+def test_surface_area_spacing_types():
+    # the coefficients are cached per spacing: any sequence type gives the
+    # same values, and so does None for unit spacing (up to the order of the
+    # atomic additions)
+    labels = _convex_test_labels("random", 3)
+    results = [
+        regionprops_dict(labels, properties=["surface_area"], spacing=s)[
+            "surface_area"
+        ]
+        for s in [(0.5, 1.5, 0.8), [0.5, 1.5, 0.8], np.array([0.5, 1.5, 0.8])]
+    ]
+    for result in results[1:]:
+        assert_allclose(result, results[0], rtol=1e-14)
+    unit = regionprops_dict(labels, properties=["surface_area"], spacing=None)
+    assert_allclose(
+        unit["surface_area"],
+        regionprops_dict(
+            labels, properties=["surface_area"], spacing=(1, 1, 1)
+        )["surface_area"],
+        rtol=1e-14,
+    )
+    assert not np.allclose(
+        cp.asnumpy(results[0]), cp.asnumpy(unit["surface_area"])
+    )
+
+
 def test_surface_area_ball():
     # close to the area of the sphere for a digitized ball
     from skimage.morphology import ball

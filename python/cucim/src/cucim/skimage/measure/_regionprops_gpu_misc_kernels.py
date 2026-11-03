@@ -730,9 +730,11 @@ def _get_voronoi_crofton_weights(spacing):
     )
 
 
+@cp.memoize(for_each_device=True)
 def _get_surface_area_coefs(spacing):
     """Weight of each group of neighbor directions in the surface area
-    (groups of `_surface_area_groups`).
+    (groups of `_surface_area_groups`), for voxels of size `spacing` (a
+    tuple of 3 floats).
 
     Crofton's formula estimates the area of a surface from the number of its
     intercepts with lines: S = 4 * sum_k c_k * A_k, where the projected area
@@ -744,10 +746,11 @@ def _get_surface_area_coefs(spacing):
     the spacing-scaled directions (`_get_voronoi_crofton_weights`). With
     isotropic spacing they are ITK's; unlike ITK, they change with
     anisotropic spacing.
+
+    The coefficients are cached on the device for each spacing, as
+    computing them takes longer than measuring a small image.
     """
     isotropic = _is_isotropic(spacing)
-    spacing = (1.0, 1.0, 1.0) if spacing is None else spacing
-    spacing = tuple(float(v) for v in spacing)
     if isotropic:
         weights = _CROFTON_3D_WEIGHTS
     else:
@@ -839,6 +842,8 @@ def regionprops_surface_area(
         raise ValueError("surface_area is defined for 3D images only")
     if max_label is None:
         max_label = int(labels.max())
+    spacing = (1.0, 1.0, 1.0) if spacing is None else spacing
+    spacing = tuple(float(v) for v in spacing)
     surface_area = _boundary_sums(
         "surface",
         labels,
