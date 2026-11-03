@@ -95,7 +95,8 @@ def label(label_image, background=None, return_num=False, connectivity=None):
     The general implementation is used for integer images (also if they only
     contain 0 and 1, so convert those with ``label_image.astype(bool)``), for a
     ``connectivity`` below ``label_image.ndim``, for 1D and for 4D or higher
-    dimensional images, and when ``background`` is not 0. The labels are the
+    dimensional images, and when ``background`` is neither 0 nor, for a boolean
+    image, 1 (``True``). The labels are the
     same for both implementations.
 
     Examples
@@ -130,6 +131,10 @@ def label(label_image, background=None, return_num=False, connectivity=None):
     structure = _get_structure(ndim, connectivity)
     if background is None:
         background = 0
+    elif label_image.dtype == cp.bool_ and background == 1:
+        # the foreground of a boolean image is the False pixels (this keeps
+        # the boolean image, which is labeled faster than an integer image)
+        label_image = ~label_image
     elif background != 0:
         # offset so that background becomes 0 as expected by _label below
         label_image = label_image - background

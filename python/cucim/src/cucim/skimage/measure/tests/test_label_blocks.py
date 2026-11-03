@@ -81,3 +81,24 @@ def test_label_blocks_with_64_bit_labels(shape, monkeypatch):
     np.testing.assert_array_equal(
         result.get(), label_cpu(image, connectivity=len(shape))
     )
+
+
+@pytest.mark.parametrize("shape", [(33, 40), (9, 14, 11)])
+@pytest.mark.parametrize("background", [True, 1])
+def test_label_bool_background_true_uses_blocks(shape, background, monkeypatch):
+    calls = []
+    original = _label_kernels._label_blocks
+    monkeypatch.setattr(
+        _label_kernels,
+        "_label_blocks",
+        lambda x, y: calls.append(1) or original(x, y),
+    )
+    rng = np.random.default_rng(4)
+    image = rng.random(shape) < 0.45
+    result, num = label(
+        cp.asarray(image), background=background, return_num=True
+    )
+    assert calls
+    expected = label_cpu(image, background=1, connectivity=len(shape))
+    np.testing.assert_array_equal(result.get(), expected)
+    assert num == expected.max()
