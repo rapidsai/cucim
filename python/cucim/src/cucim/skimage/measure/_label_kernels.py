@@ -31,12 +31,29 @@ def _half_structure_dirs(structure):
     return numpy.array(dirs, dtype=numpy.int32).reshape(-1, structure.ndim)
 
 
+def _use_blocks(x, structure, greyscale_mode):
+    """Whether the 2 x 2 (x 2) block kernels can be used.
+
+    The blocks need full connectivity, which makes every pair of pixels of a
+    block neighbors, and pixels that all have the same value (a binary image).
+    """
+    return (
+        (not greyscale_mode or x.dtype == numpy.bool_)
+        and x.ndim in (2, 3)
+        and numpy.asarray(structure).shape == (3,) * x.ndim
+        and bool(numpy.asarray(structure).all())
+    )
+
+
 def _connect(x, structure, y, greyscale_mode=False):
     """Initialize ``y`` and merge the neighboring pixels into trees.
 
     On return ``y[i]`` is the index of the parent of pixel ``i`` (-1 for
     background pixels); the trees are not flattened yet.
     """
+    if _use_blocks(x, structure, greyscale_mode):
+        _connect_blocks(x, y)
+        return
     dirs = _half_structure_dirs(structure)
     y_shape = cupy.array(y.shape, dtype=numpy.int32)
     dirs_key = tuple(map(tuple, dirs.tolist()))
@@ -46,6 +63,24 @@ def _connect(x, structure, y, greyscale_mode=False):
     _kernel_connect(greyscale_mode, x.ndim, dirs_key)(
         *((x,) if greyscale_mode else ()), y_shape, y, size=y.size
     )
+
+
+def _connect_blocks(x, y):
+    """`_connect` with one node per 2 x 2 (x 2) block of pixels.
+
+    With full connectivity all the foreground pixels of a block are neighbors,
+    so each block is one tree: its foreground pixels point to the first of them.
+    Two blocks are joined if a foreground pixel of each lies on the sides that
+    face each other; only these block pairs need a union.
+    """
+    ndim = x.ndim
+    shape = cupy.array(x.shape, dtype=numpy.int32)
+    bshape_tuple = tuple(-(-s // 2) for s in x.shape)
+    bshape = cupy.array(bshape_tuple, dtype=numpy.int32)
+    nblocks = int(numpy.prod(bshape_tuple))
+    occupancy = cupy.empty(nblocks, dtype=numpy.uint8)
+    _kernel_block_init(ndim)(x, shape, bshape, y, occupancy, size=nblocks)
+    _kernel_block_connect(ndim)(shape, bshape, occupancy, y, size=nblocks)
 
 
 def _label(x, structure, y, greyscale_mode=False):
@@ -228,6 +263,153 @@ def _kernel_connect(greyscale_mode, ndim, dirs):
         "raw Y y",
         code,
         "cucim_skimage_measure_label_connect",
+    )
+
+
+def _block_code(ndim):
+    """C++ pieces shared by the block kernels (blocks of 2 pixels per axis).
+
+    A pixel of a block is identified by its local coordinates l_d in {0, 1},
+    stored in bit sum(l_d * 2**(ndim - 1 - d)) of the occupancy byte of the
+    block, so that the lowest set bit is the first pixel in raster order.
+    """
+    coords = "\n        ".join(
+        ["Y brest = i;", "Y stride = 1;"]
+        + [
+            f"Y b{d} = brest % bshape[{d}]; brest /= bshape[{d}];"
+            f" Y s{d} = stride; stride *= shape[{d}];"
+            for d in range(ndim - 1, -1, -1)
+        ]
+    )
+    origin = " + ".join(f"2 * b{d} * s{d}" for d in range(ndim))
+    return coords, origin
+
+
+def _local_offset(ndim, bit):
+    """Expression of the index offset of the pixel in bit ``bit`` of a block."""
+    return " + ".join(
+        f"((({bit}) >> {ndim - 1 - d}) & 1) * s{d}" for d in range(ndim)
+    )
+
+
+@functools.cache
+def _kernel_block_init(ndim):
+    """Make each block a tree and store which of its pixels are foreground.
+
+    One thread per block. The foreground pixels of the block point to the
+    first of them (the root); the background pixels get -1. The occupancy
+    of the block, one bit per pixel, is written to ``occupancy``.
+    """
+    coords, origin = _block_code(ndim)
+    pixels = []
+    for c in range(2**ndim):
+        local = [(c >> (ndim - 1 - d)) & 1 for d in range(ndim)]
+        inside = " && ".join(
+            f"2 * b{d} + {lc} < shape[{d}]" for d, lc in enumerate(local)
+        )
+        index = " + ".join(
+            [f"{lc} * s{d}" for d, lc in enumerate(local)] + ["origin"]
+        )
+        pixels.append((c, inside, index))
+    load = "\n        ".join(
+        f"Y i{c} = {index}; bool in{c} = {inside}; "
+        f"bool f{c} = in{c} && x[i{c}] != 0;"
+        for c, inside, index in pixels
+    )
+    occ = " | ".join(f"(f{c} << {c})" for c, _, _ in pixels)
+    root = "-1"
+    for c, _, _ in reversed(pixels):
+        root = f"(f{c} ? i{c} : {root})"
+    store = "\n        ".join(
+        f"if (in{c}) y[i{c}] = f{c} ? root : -1;" for c, _, _ in pixels
+    )
+    code = f"""
+        {coords}
+        Y origin = {origin};
+        {load}
+        Y root = {root};
+        {store}
+        occupancy[i] = {occ};
+        """
+    return cupy.ElementwiseKernel(
+        "raw X x, raw int32 shape, raw int32 bshape",
+        "raw Y y, raw uint8 occupancy",
+        code,
+        "cucim_skimage_measure_label_block_init",
+    )
+
+
+@functools.cache
+def _kernel_block_connect(ndim):
+    """Join the blocks that have neighboring foreground pixels.
+
+    One thread per block. For each of the neighbor blocks that precede the
+    block in raster order, the blocks are joined if both have a foreground
+    pixel on the sides that face each other: the pixels with local coordinate
+    1 along the axes where the neighbor is at +1, 0 where it is at -1, and
+    any along the axes where it is at 0. (Any two such pixels are neighbors.)
+    """
+    coords, origin = _block_code(ndim)
+    deltas = _half_structure_dirs(numpy.ones((3,) * ndim, dtype=bool))
+    ndeltas = len(deltas)
+
+    def facing(delta):
+        mask = 0
+        for c in range(2**ndim):
+            local = [(c >> (ndim - 1 - d)) & 1 for d in range(ndim)]
+            if all(
+                dd == 0 or lc == (1 if dd > 0 else 0)
+                for dd, lc in zip(delta, local)
+            ):
+                mask |= 1 << c
+        return mask
+
+    delta_table = ", ".join(str(int(v)) for dv in deltas for v in dv)
+    own_table = ", ".join(str(facing(dv)) for dv in deltas.tolist())
+    other_table = ", ".join(
+        str(facing([-v for v in dv])) for dv in deltas.tolist()
+    )
+    outside = " || ".join(
+        f"b{d} + deltas[dr * {ndim} + {d}] < 0 || "
+        f"b{d} + deltas[dr * {ndim} + {d}] >= bshape[{d}]"
+        for d in range(ndim)
+    )
+    block_stride = ["1"]
+    for d in range(ndim - 1, 0, -1):
+        block_stride.insert(0, f"{block_stride[0]} * bshape[{d}]")
+    neighbor_block = " + ".join(
+        f"deltas[dr * {ndim} + {d}] * ({block_stride[d]})" for d in range(ndim)
+    )
+    neighbor_origin = " + ".join(
+        f"2 * deltas[dr * {ndim} + {d}] * s{d}" for d in range(ndim)
+    )
+    code = f"""
+        {_ATOMIC_T_CODE}
+        static const int deltas[{ndeltas * ndim}] = {{{delta_table}}};
+        static const unsigned char own_faces[{ndeltas}] = {{{own_table}}};
+        static const unsigned char other_faces[{ndeltas}] = {{{other_table}}};
+        unsigned int mine = occupancy[i];
+        if (mine == 0) continue;
+        {coords}
+        Y origin = {origin};
+        for (int dr = 0; dr < {ndeltas}; dr++) {{
+            unsigned int a = mine & own_faces[dr];
+            if (a == 0) continue;
+            if ({outside}) continue;
+            unsigned int c = occupancy[i + {neighbor_block}] & other_faces[dr];
+            if (c == 0) continue;
+            int abit = __ffs(a) - 1;
+            int cbit = __ffs(c) - 1;
+            Y j = origin + {_local_offset(ndim, "abit")};
+            Y k = origin + {neighbor_origin} + {_local_offset(ndim, "cbit")};
+            {_UNION_CODE}
+        }}
+        """
+    return cupy.ElementwiseKernel(
+        "raw int32 shape, raw int32 bshape, raw uint8 occupancy",
+        "raw Y y",
+        code,
+        "cucim_skimage_measure_label_block_connect",
     )
 
 
