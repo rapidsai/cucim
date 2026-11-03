@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 """Kernels for scikit-image label.
@@ -13,23 +13,42 @@ import cupy
 import numpy
 
 
-def _label(x, structure, y, greyscale_mode=False):
+def _half_structure_dirs(structure):
+    """Offsets of the neighbors that precede each pixel in raster order.
+
+    The structure must be centro-symmetric and have 3 elements along each axis.
+    """
+    structure = numpy.asarray(structure)
     elems = numpy.where(structure != 0)
-    vecs = [elems[dm] - 1 for dm in range(x.ndim)]
+    vecs = [elems[dm] - 1 for dm in range(structure.ndim)]
     offset = vecs[0]
-    for dm in range(1, x.ndim):
+    for dm in range(1, structure.ndim):
         offset = offset * 3 + vecs[dm]
     indxs = numpy.where(offset < 0)[0]
-    dirs = [[vecs[dm][dr] for dm in range(x.ndim)] for dr in indxs]
+    dirs = [[vecs[dm][dr] for dm in range(structure.ndim)] for dr in indxs]
+    return numpy.array(dirs, dtype=numpy.int32).reshape(-1, structure.ndim)
+
+
+def _connect(x, structure, y, greyscale_mode=False):
+    """Initialize ``y`` and merge the neighboring pixels into trees.
+
+    On return ``y[i]`` is the index of the parent of pixel ``i`` (-1 for
+    background pixels); the trees are not flattened yet.
+    """
+    dirs = _half_structure_dirs(structure)
+    ndirs = dirs.shape[0]
     dirs = cupy.array(dirs, dtype=numpy.int32)
-    ndirs = indxs.shape[0]
     y_shape = cupy.array(y.shape, dtype=numpy.int32)
-    count = cupy.zeros(2, dtype=y.dtype)
     _kernel_init()(x, y)
     if greyscale_mode:
         _kernel_connect(True)(x, y_shape, dirs, ndirs, x.ndim, y, size=y.size)
     else:
         _kernel_connect(False)(y_shape, dirs, ndirs, x.ndim, y, size=y.size)
+
+
+def _label(x, structure, y, greyscale_mode=False):
+    count = cupy.zeros(2, dtype=y.dtype)
+    _connect(x, structure, y, greyscale_mode)
     _kernel_count()(y, count, size=y.size)
     maxlabel = int(count[0])  # synchronize
     labels = cupy.empty(maxlabel, dtype=y.dtype)
