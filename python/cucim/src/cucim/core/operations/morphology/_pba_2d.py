@@ -148,8 +148,12 @@ def _unpack_int2(img, make_copy=False, int_dtype=cupy.int16):
     return temp
 
 
-def _default_block_params(shape, block_size):
-    """Default (m1, m2, m3) for an image of the given shape."""
+def _default_block_params(shape, block_size, double_spacing=False):
+    """Default (m1, m2, m3) for an image of the given shape.
+
+    double_spacing is True if the distances are computed in double
+    precision from a pixel spacing.
+    """
     # number of block_size tiles along each axis, rounding up
     n_y = math.ceil(shape[0] / block_size)
     n_x = math.ceil(shape[1] / block_size)
@@ -164,6 +168,12 @@ def _default_block_params(shape, block_size):
     # grows with the size, but a value above 16 is not faster, and it can not
     # be larger than the number of tiles along the second axis.
     m3 = min(16, 2 ** math.floor(math.log2(n_x)))
+    if double_spacing:
+        # The coloring kernel is slower with the double precision arithmetic of
+        # a pixel spacing (low rate on many GPUs) and then does not profit from
+        # more threads per column: m3 = 16 was 1.6 to 2 times slower than
+        # m3 = 2 for 4096 ** 2 and larger.
+        m3 = min(m3, 2)
     return m1, m2, m3
 
 
@@ -369,7 +379,11 @@ def _pba_2d(
 
     orig_sy, orig_sx = arr.shape
     if block_params is None:
-        m1, m2, m3 = _default_block_params(arr.shape, block_size)
+        m1, m2, m3 = _default_block_params(
+            arr.shape,
+            block_size,
+            double_spacing=sampling is not None and not float32_spacing,
+        )
     else:
         if any(p < 1 for p in block_params):
             raise ValueError("(m1, m2, m3) in blockparams must be >= 1")

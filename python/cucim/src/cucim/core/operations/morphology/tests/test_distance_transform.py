@@ -541,6 +541,15 @@ def test_pba2d_default_block_params():
     assert _default_block_params((64, 64), 32) == (2, 2, 2)
     assert _default_block_params((8192, 8192), 32) == (256, 32, 16)
 
+    # m3 is limited to 2 if the distances are computed in double precision
+    # from a pixel spacing
+    for shape, expected in [
+        ((8192, 8192), (256, 32, 2)),
+        ((256, 4096), (8, 32, 2)),
+        ((32, 32), (1, 1, 1)),
+    ]:
+        assert _default_block_params(shape, 32, double_spacing=True) == expected
+
 
 def test_distance_transform_edt_2d_too_many_elements():
     # broadcast_to avoids allocating the (2 GiB) array
