@@ -73,6 +73,50 @@ def _kernel_init():
     )
 
 
+# The union of the trees of the nodes j and k of the forest y, which is shared
+# by the connect kernels. The roots are found with path halving; only roots are
+# relinked (with a compare-and-swap) and always to a smaller index. On exit j
+# and k are scratch values.
+_ATOMIC_T_CODE = """
+using atomic_t = typename cupy::type_traits::conditional<
+    cupy::type_traits::is_same<Y, long long>::value,
+    unsigned long long,
+    Y
+>::type;
+"""
+
+_UNION_CODE = """
+while (1) {
+    // find the roots, halving the paths on the way
+    while (1) {
+        Y p = y[j];
+        if (p == j) break;
+        Y gp = y[p];
+        if (gp != p) y[j] = gp;
+        j = gp;
+    }
+    while (1) {
+        Y p = y[k];
+        if (p == k) break;
+        Y gp = y[p];
+        if (gp != p) y[k] = gp;
+        k = gp;
+    }
+    if (j == k) break;
+    if (j < k) {
+        Y old = atomicCAS((atomic_t*)&y[k], k, j);
+        if (old == k) break;
+        k = old;
+    }
+    else {
+        Y old = atomicCAS((atomic_t*)&y[j], j, k);
+        if (old == j) break;
+        j = old;
+    }
+}
+"""
+
+
 def _neighbor_code(ndim, dirs):
     """C++ pieces shared by the init-link and connect kernels.
 
@@ -165,11 +209,7 @@ def _kernel_connect(greyscale_mode, ndim, dirs):
     declaration, coords, outside, offset = _neighbor_code(ndim, dirs)
 
     code = f"""
-        using atomic_t = typename cupy::type_traits::conditional<
-            cupy::type_traits::is_same<Y, long long>::value,
-            unsigned long long,
-            Y
-        >::type;
+        {_ATOMIC_T_CODE}
         {declaration}
         if (y[i] < 0) continue;
         {coords}
@@ -179,34 +219,7 @@ def _kernel_connect(greyscale_mode, ndim, dirs):
             Y k = i + {offset};
             if (y[k] < 0) continue;
             {x_condition}
-            while (1) {{
-                // find the roots, halving the paths on the way
-                while (1) {{
-                    Y p = y[j];
-                    if (p == j) break;
-                    Y gp = y[p];
-                    if (gp != p) y[j] = gp;
-                    j = gp;
-                }}
-                while (1) {{
-                    Y p = y[k];
-                    if (p == k) break;
-                    Y gp = y[p];
-                    if (gp != p) y[k] = gp;
-                    k = gp;
-                }}
-                if (j == k) break;
-                if (j < k) {{
-                    Y old = atomicCAS((atomic_t*)&y[k], k, j);
-                    if (old == k) break;
-                    k = old;
-                }}
-                else {{
-                    Y old = atomicCAS((atomic_t*)&y[j], j, k);
-                    if (old == j) break;
-                    j = old;
-                }}
-            }}
+            {_UNION_CODE}
         }}
         """
 
