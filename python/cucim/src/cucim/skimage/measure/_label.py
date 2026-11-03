@@ -87,6 +87,17 @@ def label(label_image, background=None, return_num=False, connectivity=None):
     The cucim implementation of this function uses 32-bit integers for the
     label array unless the input size requires 64-bit labels.
 
+    For the best performance, pass a boolean image and use full connectivity
+    (the default, ``connectivity=None``, or ``connectivity=label_image.ndim``)
+    in 2D or 3D. In that case each 2 x 2 (or 2 x 2 x 2) block of pixels is
+    handled as a single node, which is typically 2 to 6 times faster than the
+    general implementation (the gain is largest for dense images and in 3D).
+    The general implementation is used for integer images (also if they only
+    contain 0 and 1, so convert those with ``label_image.astype(bool)``), for a
+    ``connectivity`` below ``label_image.ndim``, for 1D and for 4D or higher
+    dimensional images, and when ``background`` is not 0. The labels are the
+    same for both implementations.
+
     Examples
     --------
     >>> import cupy as cp
