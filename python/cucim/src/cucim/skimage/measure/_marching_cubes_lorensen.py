@@ -109,10 +109,81 @@ CggICgv/////////AwEKCwMK/////////////wECCwELCQkLCP////////8DAAkDCQsBAgkCCwn/
 )
 
 
-def _decode_classic_lut_for_cuda_constants():
+# Corners of a cell (x, y, z) in the numbering of the classic table, and its
+# 12 edges as pairs of corners.
+_CLASSIC_CORNERS = (
+    (0, 0, 0),
+    (1, 0, 0),
+    (1, 1, 0),
+    (0, 1, 0),
+    (0, 0, 1),
+    (1, 0, 1),
+    (1, 1, 1),
+    (0, 1, 1),
+)
+_CLASSIC_EDGES = (
+    (0, 1),
+    (1, 2),
+    (2, 3),
+    (3, 0),
+    (4, 5),
+    (5, 6),
+    (6, 7),
+    (7, 4),
+    (0, 4),
+    (1, 5),
+    (2, 6),
+    (3, 7),
+)
+
+
+def _classic_table_in_array_order():
+    """The classic table for the corner and edge numbering of the kernels.
+
+    scikit-image indexes its volume as ``[z, y, x]``, so the x axis of the
+    cells of its classic table is the last axis of the array, while the
+    kernels number the corners and edges of a cell with the first axis of the
+    array as x. Applying the table in the frame of the kernels gives a
+    different (mirrored) triangulation of the cells with the same vertices.
+    This table is the one of scikit-image, with the corners and the edges
+    renumbered so that it gives scikit-image's triangles.
+    """
     shape, text = _CASES_CLASSIC
-    byts = base64.decodebytes(text.encode("utf-8"))
-    return np.frombuffer(byts, dtype=np.int8).reshape(shape)
+    table = np.frombuffer(
+        base64.decodebytes(text.encode("utf-8")), dtype=np.int8
+    ).reshape(shape)
+
+    # position (i, j, k) of corner n of the table: the axes are reversed
+    def array_position(n):
+        x, y, z = _CLASSIC_CORNERS[n]
+        return (z, y, x)
+
+    # corner n of the kernels (bit n of the code) is at _CLASSIC_CORNERS[n]
+    kernel_corner = {pos: n for n, pos in enumerate(_CLASSIC_CORNERS)}
+    corner_to_kernel = [kernel_corner[array_position(n)] for n in range(8)]
+    edge_to_kernel = []
+    for a, b in _CLASSIC_EDGES:
+        ends = {corner_to_kernel[a], corner_to_kernel[b]}
+        edge_to_kernel.append(
+            next(e for e, (c, d) in enumerate(_CLASSIC_EDGES) if {c, d} == ends)
+        )
+    edge_map = np.asarray(edge_to_kernel, dtype=np.int8)
+
+    out = np.full_like(table, -1)
+    for code in range(256):
+        # the code of the table whose corner n is the kernel corner
+        # corner_to_kernel[n]
+        table_code = 0
+        for n in range(8):
+            if code >> corner_to_kernel[n] & 1:
+                table_code |= 1 << n
+        row = table[table_code]
+        out[code] = np.where(row >= 0, edge_map[np.clip(row, 0, 11)], -1)
+    return out
+
+
+def _decode_classic_lut_for_cuda_constants():
+    return _classic_table_in_array_order()
 
 
 def _decode_cases_classic():
@@ -360,8 +431,9 @@ def _run_lorensen(
             ny,
             nz,
             np.float32(level),
-            # the classic table winds the opposite way to the Lewiner one
-            np.int32(gradient_direction == "ascent"),
+            # the table in the frame of the kernels is a mirror image of the
+            # one of scikit-image, so the winding is reversed for 'descent'
+            np.int32(gradient_direction == "descent"),
         ),
     )
     faces = faces.reshape(-1, 3)

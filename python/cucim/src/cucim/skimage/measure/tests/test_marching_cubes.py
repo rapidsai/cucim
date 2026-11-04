@@ -686,12 +686,10 @@ def test_level_equal_to_sample_values(method, level, allow_degenerate):
     if allow_degenerate:
         assert result[0].shape == expected[0].shape
         assert result[1].shape == expected[1].shape
-        if method == "lewiner":
-            # (the triangulation of a cell of the classic table can differ)
-            area = skimage_mesh_surface_area(expected[0], expected[1])
-            cp.testing.assert_allclose(
-                mesh_surface_area(result[0], result[1]), area, rtol=1e-5
-            )
+        area = skimage_mesh_surface_area(expected[0], expected[1])
+        cp.testing.assert_allclose(
+            mesh_surface_area(result[0], result[1]), area, rtol=1e-5
+        )
     else:
         # scikit-image positions the vertices on samples with an error of
         # 1e-16, so its test for coincident vertices finds fewer of them
@@ -748,3 +746,36 @@ def test_wide_kernels_are_chosen_by_the_volume_size(monkeypatch):
     assert all(volume.size in sizes for sizes in seen if len(sizes) > 1)
     for got, want in zip(result, expected):
         cp.testing.assert_array_equal(got, want)
+
+
+@pytest.mark.parametrize("gradient_direction", ["descent", "ascent"])
+@pytest.mark.parametrize("seed", [0, 1])
+def test_lorensen_triangles_match_skimage(gradient_direction, seed):
+    # the table of scikit-image is applied with its x axis as the last axis
+    # of the array; a table applied in the other frame gives the same
+    # vertices but other diagonals in many cells
+    rng = np.random.default_rng(seed)
+    volume = rng.random((14, 15, 16)).astype(np.float32)
+    kwargs = dict(method="lorensen", gradient_direction=gradient_direction)
+    expected = skimage_marching_cubes(volume, 0.5, **kwargs)
+    verts, faces = (
+        cp.asnumpy(a)
+        for a in marching_cubes(cp.asarray(volume), 0.5, **kwargs)[:2]
+    )
+
+    def triangles(v, f):
+        # each triangle starting from its first vertex in lexicographic order
+        # (keeping the winding), and the triangles sorted
+        tri = v[f]
+        first = np.argmin(
+            tri[:, :, 0] * 1e6 + tri[:, :, 1] * 1e3 + tri[:, :, 2], axis=1
+        )
+        idx = (first[:, None] + np.arange(3)) % 3
+        tri = np.take_along_axis(tri, idx[:, :, None], axis=1)
+        flat = np.round(tri.reshape(len(f), 9), 3)
+        return flat[np.lexsort(flat.T[::-1])]
+
+    ref = triangles(expected[0], expected[1])
+    got = triangles(verts, faces)
+    assert ref.shape == got.shape
+    assert np.mean(np.all(np.abs(ref - got) < 2e-3, axis=1)) > 0.999
