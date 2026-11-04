@@ -113,8 +113,6 @@ requirements:
       - cuda-version
 
 tests:
-  requirements:
-    - cuda-version =${{ cuda_version }}
   - python:
       imports:
         - cucim
