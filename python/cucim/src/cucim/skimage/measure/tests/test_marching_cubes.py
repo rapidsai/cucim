@@ -711,17 +711,43 @@ def test_normals_have_the_sign_of_scikit_image(method):
     assert dot.min() > 0.99
 
 
-def test_remove_degenerate_faces_is_repeatable():
-    # the vertex merge is a concurrent union-find; the result must not depend
-    # on the schedule of the threads
-    rng = np.random.default_rng(5)
-    volume = cp.asarray(rng.integers(0, 3, (24, 24, 24)).astype(np.float32))
-    results = [
-        marching_cubes(volume, 1.0, allow_degenerate=False) for _ in range(8)
-    ]
-    for result in results[1:]:
-        assert result[0].shape == results[0][0].shape
-        assert result[1].shape == results[0][1].shape
+def test_remove_degenerate_faces_merges_every_chain_of_vertices():
+    # Degenerate faces join vertices that are at the same position, in chains
+    # of several vertices; the concurrent union must leave one vertex per
+    # connected component whatever the schedule of the threads (a version that
+    # lost merges when two threads joined the same root gave other results
+    # in every run)
+    from scipy.sparse import coo_matrix
+    from scipy.sparse.csgraph import connected_components
+
+    from cucim.skimage.measure import _marching_cubes_common as common
+
+    rng = np.random.default_rng(0)
+    n_pos = 20_000
+    mult = rng.integers(2, 12, n_pos)
+    pos = np.repeat(np.arange(n_pos), mult)
+    n_vertices = len(pos)
+    pos = rng.permutation(pos)
+    by_pos = np.argsort(pos, kind="stable")
+    start = np.concatenate([[0], np.cumsum(mult)])
+    a, b = [], []
+    for p in range(n_pos):
+        idx = rng.permutation(by_pos[start[p] : start[p + 1]])
+        a.append(idx[:-1])
+        b.append(idx[1:])
+    a, b = np.concatenate(a), np.concatenate(b)
+    c = by_pos[start[(pos[a] + 1) % n_pos]]
+    verts = np.stack([pos, 0 * pos, 0 * pos], 1).astype(np.float32)
+    faces = np.stack([a, b, c], 1).astype(np.int32)
+    graph = coo_matrix((np.ones(len(a)), (a, b)), (n_vertices, n_vertices))
+    n_components = connected_components(graph, directed=False)[0]
+    normals = np.zeros_like(verts)
+    values = np.zeros(n_vertices, np.float32)
+    for _ in range(3):
+        out = common._remove_degenerate_faces_gpu(
+            *(cp.asarray(x) for x in (verts, faces, normals, values))
+        )
+        assert out[0].shape[0] == n_components
 
 
 def test_wide_kernels_are_chosen_by_the_volume_size(monkeypatch):
