@@ -30,10 +30,9 @@ def marching_cubes(
 
     Differences from scikit-image:
 
-    - The vertices and faces of ``method='lewiner'`` are the same as
-      scikit-image's, but in a different order. For ``method='lorensen'`` the
-      vertices are the same, and a cell of the classic table can be
-      triangulated differently (the number of faces is the same).
+    - The vertices and faces of ``method='lewiner'`` and
+      ``method='lorensen'`` are the same as scikit-image's, but in a
+      different order.
     - ``verts`` is always float32 (scikit-image returns float64 if ``spacing``
       is not ``(1, 1, 1)``) and ``faces`` is always int32.
     - ``normals`` and ``values`` are computed differently, see Returns.
@@ -146,7 +145,7 @@ def marching_cubes(
     required. ``'lewiner'`` is the default because it reproduces the meshes
     of scikit-image; ``'vega'`` gives different meshes in the cells where the
     Lewiner method is not consistent and splits some quadrilaterals
-    differently. ``'lorensen'`` has the vertices of scikit-image's
+    differently. ``'lorensen'`` reproduces scikit-image's
     ``method='lorensen'``, can leave holes in the surface where cells are
     ambiguous, and is mainly useful for compatibility and on very noisy
     data, where it is faster than ``'lewiner'``. For binary masks there is no
