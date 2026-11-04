@@ -71,8 +71,9 @@ build:
       - AWS_SECRET_ACCESS_KEY
       - AWS_SESSION_TOKEN
     env:
-      # skip installing openslide and cumed tests
+      # skip installing C++ tests and benchmarks (they trigger overlinking errors)
       CUCIM_INSTALL_TESTS: "OFF"
+      CUCIM_INSTALL_BENCHMARKS: "OFF"
       CMAKE_C_COMPILER_LAUNCHER: ${{ env.get("CMAKE_C_COMPILER_LAUNCHER") }}
       CMAKE_CUDA_COMPILER_LAUNCHER: ${{ env.get("CMAKE_CUDA_COMPILER_LAUNCHER") }}
       CMAKE_CXX_COMPILER_LAUNCHER: ${{ env.get("CMAKE_CXX_COMPILER_LAUNCHER") }}

@@ -255,6 +255,7 @@ add_subdirectory(benchmarks)
 # Install
 ################################################################################
 option(CUCIM_INSTALL_TESTS "Install the C++ test executables" ON)
+option(CUCIM_INSTALL_BENCHMARKS "Install the C++ benchmark executables" ON)
 
 set(INSTALL_TARGETS
         ${CUCIM_PLUGIN_NAME}
@@ -262,6 +263,9 @@ set(INSTALL_TARGETS
 
 if(CUCIM_INSTALL_TESTS)
     list(APPEND INSTALL_TARGETS cuslide_tests)
+endif()
+
+if(CUCIM_INSTALL_BENCHMARKS)
     list(APPEND INSTALL_TARGETS cuslide_benchmarks)
 endif()
 
