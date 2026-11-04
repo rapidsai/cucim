@@ -114,26 +114,26 @@ __device__ inline long long fc_vertex_key(int rows, int cols, int r, int c)
     return n_horizontal + n_vertical + (long long)r * (long long)cols + (long long)c;
 }
 
+// The key of an endpoint follows from the emitted coordinate, not from the
+// interpolation fraction: a fraction strictly between 0 and 1 can still add up
+// to an exact grid coordinate (e.g. 1 + 1e-16 == 1), and two segments that
+// emit the same coordinate must get the same key.
 __device__ inline long long fc_horizontal_endpoint_key(
-    int rows, int cols, int r, int c, double fraction)
+    int rows, int cols, int r, int c, double emitted_c)
 {
-    if (fraction == 0.0) {
-        return fc_vertex_key(rows, cols, r, c);
-    }
-    if (fraction == 1.0) {
-        return fc_vertex_key(rows, cols, r, c + 1);
+    double floor_c = floor(emitted_c);
+    if (emitted_c == floor_c) {
+        return fc_vertex_key(rows, cols, r, (int)floor_c);
     }
     return fc_horizontal_key(rows, cols, r, c);
 }
 
 __device__ inline long long fc_vertical_endpoint_key(
-    int rows, int cols, int r, int c, double fraction)
+    int rows, int cols, int r, int c, double emitted_r)
 {
-    if (fraction == 0.0) {
-        return fc_vertex_key(rows, cols, r, c);
-    }
-    if (fraction == 1.0) {
-        return fc_vertex_key(rows, cols, r + 1, c);
+    double floor_r = floor(emitted_r);
+    if (emitted_r == floor_r) {
+        return fc_vertex_key(rows, cols, (int)floor_r, c);
     }
     return fc_vertical_key(rows, cols, r, c);
 }
@@ -222,10 +222,10 @@ void fc_generate_segments(const double* image, const bool* mask,
     double right_r = (double)r0 + right_fraction;
     double right_c = (double)c1;
 
-    long long top_key = fc_horizontal_endpoint_key(rows, cols, r0, c0, top_fraction);
-    long long bottom_key = fc_horizontal_endpoint_key(rows, cols, r1, c0, bottom_fraction);
-    long long left_key = fc_vertical_endpoint_key(rows, cols, r0, c0, left_fraction);
-    long long right_key = fc_vertical_endpoint_key(rows, cols, r0, c1, right_fraction);
+    long long top_key = fc_horizontal_endpoint_key(rows, cols, r0, c0, top_c);
+    long long bottom_key = fc_horizontal_endpoint_key(rows, cols, r1, c0, bottom_c);
+    long long left_key = fc_vertical_endpoint_key(rows, cols, r0, c0, left_r);
+    long long right_key = fc_vertical_endpoint_key(rows, cols, r0, c1, right_r);
 
     if (square_case == 1) {
         fc_write_segment(segments, out_id, top_r, top_c, left_r, left_c);
@@ -613,11 +613,12 @@ def _validate_find_contours_inputs(
     if image.shape[0] < 2 or image.shape[1] < 2:
         raise ValueError("Input array must be at least 2x2.")
 
-    image = cp.ascontiguousarray(image, dtype=cp.float64)
     if level is None:
+        # as in scikit-image, evaluated in the dtype of the input
         level = float((cp.nanmin(image) + cp.nanmax(image)) / 2.0)
     else:
         level = float(level)
+    image = cp.ascontiguousarray(image, dtype=cp.float64)
 
     if mask is not None:
         if not isinstance(mask, cp.ndarray) or mask.shape != image.shape:

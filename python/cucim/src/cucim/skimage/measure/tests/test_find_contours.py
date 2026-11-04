@@ -505,3 +505,44 @@ def test_find_contours_device_and_host_assembly_agree(
         assert len(device) == len(host)
     for device_part, host_part in zip(device, host):
         assert_array_equal(device_part, host_part)
+
+
+@pytest.mark.parametrize("dtype", [np.float32, np.float16])
+def test_level_default_matches_skimage_dtype(dtype):
+    # the default level is computed in the dtype of the input
+    from skimage.measure import find_contours as sk_find_contours
+
+    image = np.array([[0.9, 0.91], [0.91, 0.9]], dtype=dtype)
+    expected = sk_find_contours(image)
+    result = find_contours(cp.asarray(image))
+    assert len(result) == len(expected)
+    for res, exp in zip(result, expected):
+        assert_array_equal(res, exp)
+
+
+@pytest.mark.parametrize("transpose", [False, True])
+@pytest.mark.parametrize("assembly_min_segments", [0, 10**9])
+@pytest.mark.parametrize("negate", [False, True])
+def test_endpoint_on_vertex_after_rounding(
+    monkeypatch, transpose, assembly_min_segments, negate
+):
+    # an interpolation fraction in (0, 1) can add up to an exact grid vertex;
+    # the segments must then still be linked there (horizontal and vertical
+    # edges)
+    from skimage.measure import find_contours as sk_find_contours
+
+    image = np.array(
+        [[-1.0, -1.0, -1.0], [-1.0, -1.0, -1.0], [1.0, -1e-16, 1.0]]
+    )
+    if negate:
+        image = -image
+    if transpose:
+        image = image.T
+    monkeypatch.setattr(
+        _fc, "_GPU_ASSEMBLY_MIN_SEGMENTS", assembly_min_segments
+    )
+    expected = sk_find_contours(image, 0.0)
+    result = find_contours(cp.asarray(image), 0.0)
+    assert len(result) == len(expected)
+    for res, exp in zip(result, expected):
+        assert_array_equal(res, exp)
