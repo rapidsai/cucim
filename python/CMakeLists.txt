@@ -78,21 +78,19 @@ set(CMAKE_INSTALL_LIBDIR lib)
 include(ExternalProject)
 
 ################################################################################
-# Options
-################################################################################
-
-# Setup CXX11 ABI
-# : Adds CXX11 ABI definition to the compiler command line for targets in the current directory,
-#   whether added before or after this command is invoked, and for the ones in sub-directories added after.
-add_definitions(-D_GLIBCXX_USE_CXX11_ABI=0) # See the top-level CMakeLists.txt for why this is 0.
-
-################################################################################
 # Define dependencies
 ################################################################################
-superbuild_depend(pybind11)
 superbuild_depend(fmt)
 superbuild_depend(json)
-superbuild_depend(pybind11_json)
+
+find_package(Python 3.12 REQUIRED COMPONENTS Interpreter Development.Module Development.SABIModule)
+execute_process(
+    COMMAND "${Python_EXECUTABLE}" -m nanobind --cmake_dir
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    OUTPUT_VARIABLE nanobind_ROOT
+    COMMAND_ERROR_IS_FATAL ANY
+    )
+find_package(nanobind CONFIG REQUIRED)
 
 ################################################################################
 # Find cucim package
@@ -126,45 +124,39 @@ set(CMAKE_BUILD_RPATH $ORIGIN)
 # Add library: cucim
 ################################################################################
 
-#get_target_property(TT cucim::cucim INTERFACE_INCLUDE_DIRECTORIES)
-#set(PYBIND11_INCLUDE_DIR ${PYBIND11_INCLUDE_DIR} /ssd/repo/cucim/install/include)
-
-pybind11_add_module(cucim
-    MODULE
-        pybind11/macros.h
-        pybind11/cucim_py.h
-        pybind11/cucim_pydoc.h
-        pybind11/cucim_py.cpp
-        pybind11/cache/cache_py.h
-        pybind11/cache/cache_pydoc.h
-        pybind11/cache/cache_py.cpp
-        pybind11/cache/image_cache_pydoc.h
-        pybind11/cache/image_cache_py.h
-        pybind11/cache/image_cache_py.cpp
-        pybind11/io/io_py.h
-        pybind11/io/io_pydoc.h
-        pybind11/io/io_py.cpp
-        pybind11/io/device_pydoc.h
-        pybind11/io/device_py.cpp
-        pybind11/filesystem/filesystem_py.h
-        pybind11/filesystem/filesystem_pydoc.h
-        pybind11/filesystem/filesystem_py.cpp
-        pybind11/filesystem/cufile_py.h
-        pybind11/filesystem/cufile_pydoc.h
-        pybind11/filesystem/cufile_py.cpp
-        pybind11/memory/memory_py.h
-        pybind11/memory/memory_pydoc.h
-        pybind11/memory/memory_py.cpp
-        pybind11/profiler/profiler_py.h
-        pybind11/profiler/profiler_pydoc.h
-        pybind11/profiler/profiler_py.cpp
+nanobind_add_module(cucim
+    STABLE_ABI
+    NB_STATIC
+    PROTECT_STACK
+    NOMINSIZE
+        nanobind/macros.h
+        nanobind/cucim_py.h
+        nanobind/cucim_pydoc.h
+        nanobind/cucim_py.cpp
+        nanobind/cache/cache_py.h
+        nanobind/cache/cache_pydoc.h
+        nanobind/cache/cache_py.cpp
+        nanobind/cache/image_cache_pydoc.h
+        nanobind/io/io_py.h
+        nanobind/io/io_py.cpp
+        nanobind/io/device_pydoc.h
+        nanobind/filesystem/filesystem_py.h
+        nanobind/filesystem/filesystem_pydoc.h
+        nanobind/filesystem/filesystem_py.cpp
+        nanobind/filesystem/cufile_py.h
+        nanobind/filesystem/cufile_pydoc.h
+        nanobind/filesystem/cufile_py.cpp
+        nanobind/memory/memory_py.h
+        nanobind/memory/memory_py.cpp
+        nanobind/profiler/profiler_py.h
+        nanobind/profiler/profiler_pydoc.h
+        nanobind/profiler/profiler_py.cpp
         )
 target_link_libraries(cucim
     PRIVATE
         cucim::cucim
         deps::fmt
         deps::json
-        deps::pybind11_json
         )
 
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR}/cucim)
@@ -172,18 +164,6 @@ set_target_properties(cucim PROPERTIES
         LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR}
         OUTPUT_NAME cucim/_cucim
         )
-
-#target_compile_options(cucim PRIVATE -g -O0)
-
-#pybind11_add_module(cucim_io
-#    MODULE
-#        pybind11/io/device.cpp
-#        )
-#target_link_libraries(cucim_io
-#    PRIVATE
-#        cucim::cucim)
-#file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/lib/cucim/io)
-#set_target_properties(cucim_io PROPERTIES OUTPUT_NAME cucim/io/_io)
 
 
 ################################################################################

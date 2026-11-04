@@ -5,7 +5,7 @@ into three categories:
 1. You want to report a bug, feature request, or documentation issue
     - File an [issue](https://github.com/rapidsai/cucim/issues/new/choose)
     describing what you encountered or what you want to see changed.
-    - The RAPIDS team will evaluate the issues and triage them, scheduling
+    - The cuCIM maintainers will evaluate and triage issues, scheduling
     them for a release. If you believe the issue needs priority attention
     comment on the issue to notify the team.
 2. You want to propose a new Feature and implement it
@@ -31,7 +31,7 @@ into three categories:
 5. When done, [create your pull request](https://github.com/rapidsai/cucim/compare)
 6. Verify that CI passes all [status checks](https://help.github.com/articles/about-status-checks/). Fix if needed
 7. Wait for other developers to review your code and update code as needed
-8. Once reviewed and approved, a RAPIDS developer will merge your pull request
+8. Once reviewed and approved, a cuCIM maintainer will merge your pull request
 
 Remember, if you are unsure about anything, don't hesitate to comment on issues
 and ask for clarifications!
@@ -42,7 +42,7 @@ Once you have gotten your feet wet and are more comfortable with the code, you
 can look at the prioritized issues of our next release in our [project boards](https://github.com/rapidsai/cucim/projects).
 
 > **Pro Tip:** Always look at the release board with the highest number for
-issues to work on. This is where RAPIDS developers also focus their efforts.
+issues to work on. This is where cuCIM maintainers also focus their efforts.
 
 Look at the unassigned issues, and find an issue you are comfortable with
 contributing to. Start with _Step 3_ from above, commenting on the issue to let
@@ -132,7 +132,7 @@ Note that the environment files in `./conda/environments/` will pull in GCC and 
 If you want to change the version of GCC or CUDA, please update the environment file before executing the following commands.
 
 ```bash
-conda env create -n cucim -f ./conda/environments/all_cuda-133_arch-$(uname -m).yaml
+conda env create -n cucim -f ./conda/environments/all_cuda-134_arch-$(uname -m).yaml
 # activate the environment
 conda activate cucim
 ```
@@ -156,13 +156,13 @@ export CUDACXX=$CONDA_PREFIX/pkgs/cuda-toolkit/bin/nvcc
 
 The build command will create the following files:
 - `./install/lib/libcucim*`
-- `./python/install/lib/_cucim.cpython-*-x86_64-linux-gnu.so`
+- `./python/install/lib/_cucim.abi3.so`
 - `./cpp/plugins/cucim.kit.cuslide/install/lib/cucim.kit.cuslide@*.so`
 - `./cpp/plugins/cucim.kit.cumed/install/lib/cucim.kit.cumed@*.so`
 
 And, it will copy the built library files to `python/cucim/src/cucim/clara/` folder:
 - `libcucim.so.*`
-- `_cucim.cpython-*-x86_64-linux-gnu.so`
+- `_cucim.abi3.so`
 - `cucim.kit.cuslide@*.so`
 - `cucim.kit.cumed@*.so`
 
@@ -189,14 +189,14 @@ Once it is built, the subsequent build doesn't take much time.
 
 However, if a build option or dependent packages are updated, the build can be failed (due to CMakeCache.txt or existing build files). In that case, you can remove use the following commands to remove CMakeCache.txt or build folder, then build it again.
 
-1) Remove CMakeCache.txt for libcucim, cuslide/cumed plugin, and the python wrapper (pybind11).
+1) Remove CMakeCache.txt for libcucim, cuslide/cumed plugin, and the Python wrapper (nanobind).
 
 ```bash
 # this command wouldn't remove already downloaded dependency so faster than `clean` subcommand
 ./run build_local clean_cache
 ```
 
-2) Remove `build-*` and `install` folder for libcucim, cuslide/cumed plugin, and the python wrapper (pybind11).
+2) Remove `build-*` and `install` folder for libcucim, cuslide/cumed plugin, and the Python wrapper (nanobind).
 
 ```bash
 # this command is for clean build

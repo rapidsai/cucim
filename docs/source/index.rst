@@ -48,11 +48,10 @@ cuCIM is interoperable with the following workflows:
 - Tensorflow
 - Triton
 
-cuCIM is fully open sourced under the Apache-2.0 license, and the Clara
-and RAPIDS teams welcomes new and seasoned contributors, users and
-hobbyists! You may download cuCIM via Anaconda `Conda`_ or `PyPI`_ Thank
-you for your wonderful support! Below, we provide some resources to help
-get you started.
+cuCIM is fully open sourced under the Apache-2.0 license, and the cuCIM
+maintainers welcome new and seasoned contributors, users, and hobbyists! You
+may download cuCIM via Anaconda `Conda`_ or `PyPI`_. Thank you for your
+wonderful support! Below, we provide some resources to help get you started.
 
 **Blogs**
 

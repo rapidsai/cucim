@@ -1,5 +1,5 @@
 #!/bin/bash
-# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 set -euo pipefail
@@ -36,10 +36,11 @@ CPP_CHANNEL=$(rapids-download-from-github "$(rapids-artifact-name conda_cpp libc
 # node works correctly
 RAPIDS_PACKAGE_VERSION=$(head -1 ./VERSION) rapids-conda-retry build \
   --no-test \
+  --python "${RAPIDS_PY_VERSION}" \
   --channel "${CPP_CHANNEL}" \
   conda/recipes/cucim
 
 sccache --show-adv-stats
 
-RAPIDS_PACKAGE_NAME="$(rapids-artifact-name conda_python cucim cucim --py "$RAPIDS_PY_VERSION" --cuda "$RAPIDS_CUDA_VERSION")"
+RAPIDS_PACKAGE_NAME="$(rapids-artifact-name conda_python cucim cucim --stable --cuda "$RAPIDS_CUDA_VERSION")"
 export RAPIDS_PACKAGE_NAME

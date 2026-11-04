@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 
@@ -20,6 +20,7 @@ from skimage.restoration import (
 )
 
 from cucim.skimage import util
+from cucim.skimage._shared.testing import load_sample_data
 from cucim.skimage.metrics import normalized_root_mse
 from cucim.skimage.restoration import (
     ball_kernel,
@@ -264,7 +265,7 @@ def test_num_threads_deprecated():
 
 
 def test_ndim():
-    image = data.cells3d()[:5, 1, ...]
+    image = load_sample_data("cells3d")[:5, 1, ...]
     kernel_args = ((3, 50, 50), 50)
     kernel = ellipsoid_kernel(*kernel_args)
     out = rolling_ball(image, kernel=kernel)

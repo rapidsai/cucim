@@ -365,19 +365,12 @@ build_local_cucim_() {
 
     pushd "${source_folder}" > /dev/null
 
-    local python_library
-    python_library=$(python3 -c "import sysconfig, os; print(os.path.join(sysconfig.get_config_var('LIBDIR'), sysconfig.get_config_var('LDLIBRARY')))")
-    local python_include_dir
-    python_include_dir=$(python3 -c "import sysconfig; print(sysconfig.get_path('include'))")
-
     ${CMAKE_CMD} -S "${source_folder}" -B "${build_folder}" -G "Unix Makefiles" \
         -DCMAKE_EXPORT_COMPILE_COMMANDS:BOOL=TRUE \
         -DCMAKE_BUILD_TYPE="${build_type_str}" \
         -DCMAKE_PREFIX_PATH="${prefix}" \
         -DCMAKE_INSTALL_PREFIX="${source_folder}/install" \
-        -DPYTHON_EXECUTABLE="$(which python3)" \
-        -DPYTHON_LIBRARY="${python_library}" \
-        -DPYTHON_INCLUDE_DIR="${python_include_dir}"
+        -DPython_EXECUTABLE="$(which python3)"
     ${CMAKE_CMD} --build "${build_folder}" --config "${build_type_str}" --target cucim -- -j "$(nproc)"
     ${CMAKE_CMD} --build "${build_folder}" --config "${build_type_str}" --target install -- -j "$(nproc)"
 
@@ -468,8 +461,7 @@ build_local() {
             if ls "${TOP}"/cpp/plugins/cucim.kit.cuslide2/build-"${build_type}"/lib*/cucim* 1> /dev/null 2>&1; then
                 cp -P "${TOP}"/cpp/plugins/cucim.kit.cuslide2/build-"${build_type}"/lib*/cucim* "${TOP}"/python/cucim/src/cucim/clara/
             fi
-            # Copy .so files from pybind's build folder to cuCIM's Python source folder
-            cp "${TOP}"/python/build-"${build_type}"/lib/cucim/_cucim.*.so "${TOP}"/python/cucim/src/cucim/clara/
+            cp "${TOP}"/python/build-"${build_type}"/lib/cucim/_cucim.abi3.so "${TOP}"/python/cucim/src/cucim/clara/
         fi
     fi
 
