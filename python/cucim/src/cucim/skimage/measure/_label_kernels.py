@@ -111,9 +111,9 @@ def _label_blocks(x, y):
 
 
 def _label(x, structure, y, greyscale_mode=False):
-    count = cupy.zeros(2, dtype=y.dtype)
     if _use_blocks(x, structure, greyscale_mode):
         return _label_blocks(x, y)
+    count = cupy.zeros(2, dtype=y.dtype)
     _connect(x, structure, y, greyscale_mode)
     _kernel_count()(y, count, size=y.size)
     maxlabel = int(count[0])  # synchronize

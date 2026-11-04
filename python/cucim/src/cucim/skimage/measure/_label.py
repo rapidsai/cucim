@@ -129,6 +129,21 @@ def label(label_image, background=None, return_num=False, connectivity=None):
     image, 1 (``True``). The labels are the
     same for both implementations.
 
+    Known differences from scikit-image:
+
+    - The label array is ``int32`` (``int64`` for very large images), not
+      ``intp``.
+    - For ``background`` other than 0, the background value is subtracted from
+      the image before a floating point image is converted to integers, while
+      scikit-image converts first. For example, ``background=1`` on
+      ``[0.9, 1.1, 1.9]`` gives ``[0, 0, 0]`` here and ``[1, 0, 0]`` in
+      scikit-image.
+    - For a boolean image and a ``background`` that is neither 0 nor 1, the
+      background value is subtracted, which labels both ``False`` and
+      ``True`` pixels, while scikit-image labels only the ``True`` pixels.
+    - Images with 4 or more dimensions are supported (scikit-image raises
+      ``NotImplementedError`` for them).
+
     Examples
     --------
     >>> import cupy as cp
@@ -171,7 +186,8 @@ def label(label_image, background=None, return_num=False, connectivity=None):
 
     if label_image.dtype.kind not in "bui":
         # skimage always copies the input into a np.intp dtype array so do the
-        # same here for non-integer dtypes.
+        # same here for non-integer dtypes (but after the background was
+        # subtracted, which skimage does after the conversion).
         label_image = label_image.astype(cp.intp)
 
     labels = cp.empty(

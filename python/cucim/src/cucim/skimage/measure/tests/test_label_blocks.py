@@ -102,3 +102,21 @@ def test_label_bool_background_true_uses_blocks(shape, background, monkeypatch):
     expected = label_cpu(image, background=1, connectivity=len(shape))
     np.testing.assert_array_equal(result.get(), expected)
     assert num == expected.max()
+
+
+def test_label_differences_from_scikit_image_are_as_documented():
+    # these are listed in the Notes of the docstring of label
+    x = cp.asarray([0.9, 1.1, 1.9])
+    assert label(x, background=1).tolist() == [
+        0,
+        0,
+        0,
+    ]  # scikit-image: [1, 0, 0]
+    x = cp.asarray([False, True, False])
+    assert label(x, background=2).tolist() == [
+        1,
+        2,
+        3,
+    ]  # scikit-image: [0, 1, 0]
+    x = cp.ones((1, 1, 1, 1), dtype=cp.uint8)  # NotImplementedError there
+    assert label(x).tolist() == [[[[1]]]]
