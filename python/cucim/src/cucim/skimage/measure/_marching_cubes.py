@@ -28,9 +28,28 @@ def marching_cubes(
     scikit-image: it is the marching cubes 33 implementation of Vega et al.
     [3]_ with the corrected interior test.
 
-    When ``allow_degenerate=False``, zero-area faces are removed and the mesh
-    geometry is preserved, but the exact surviving duplicate vertex IDs can
-    differ from scikit-image's ordered CPU post-processing.
+    Differences from scikit-image:
+
+    - The vertices and faces of ``method='lewiner'`` are the same as
+      scikit-image's, but in a different order. For ``method='lorensen'`` the
+      vertices are the same, and a cell of the classic table can be
+      triangulated differently (the number of faces is the same).
+    - ``verts`` is always float32 (scikit-image returns float64 if ``spacing``
+      is not ``(1, 1, 1)``) and ``faces`` is always int32.
+    - ``normals`` and ``values`` are computed differently, see Returns.
+    - A volume that contains NaN raises a ``ValueError`` (scikit-image
+      returns vertices with NaN coordinates).
+    - The level is rounded to float32 when the samples are classified, so a
+      level that differs from a sample by less than float32 resolution is
+      treated as equal to it. A sample equal to the level is below it, as in
+      scikit-image.
+    - When ``allow_degenerate=False``, zero-area faces are removed and the mesh
+      geometry is preserved, but the exact surviving duplicate vertex IDs can
+      differ from scikit-image's ordered CPU post-processing. For volumes
+      with samples that equal the level (for example integer volumes with an
+      integer level) the numbers of vertices and faces can also differ,
+      because scikit-image places vertices on a sample with an error of the
+      order of 1e-16 and so misses some of the coincident vertices.
 
     Parameters
     ----------
@@ -86,12 +105,23 @@ def marching_cubes(
         This algorithm specifically outputs triangles, so each face has
         exactly three indices.
     normals : (V, 3) array
-        The normal direction at each vertex, as calculated from the
-        data.
+        The (unit) normal direction at each vertex, as calculated from the
+        data, with the sign of scikit-image's normals (towards lower values).
+        For a vertex on a grid edge it is the interpolation of the
+        central-difference gradients at the two end samples; scikit-image
+        sums the gradients of the cells that contain the vertex, so the
+        directions agree to a few degrees for smooth data but are not equal
+        (for white noise the mean cosine of the angle is about 0.7). The center
+        vertices of the Lewiner method use scikit-image's cell gradients, and
+        those of the Vega method the sum of the central-difference gradients
+        at the eight corners of the cell.
     values : (V,) array
-        Gives a measure for the maximum value of the data in the local region
-        near each vertex. This can be used by visualization tools to apply
-        a colormap to the mesh.
+        A measure of the data in the local region near each vertex, which can
+        be used by visualization tools to apply a colormap to the mesh. For a
+        vertex on a grid edge it is the larger of the two sample values of
+        the edge (scikit-image uses the range of the samples of the cells
+        that contain the vertex), so the values are not the same as
+        scikit-image's.
 
     See Also
     --------
@@ -105,15 +135,18 @@ def marching_cubes(
     heavy use of lookup tables to handle the many different cases,
     keeping the algorithm relatively easy.
 
-    Choosing a method: ``'vega'`` is recommended when the topology of the
-    surface matters and the data are samples of a continuous field (smooth
-    scalar fields, signed distance functions, CT or MRI intensities). Its
-    surface in each cell has the topology of the trilinear interpolant of
-    the cell values, which is not always the case for ``'lewiner'``, and it
-    takes about the same time. ``'lewiner'`` is the default because it
-    reproduces the meshes of scikit-image; ``'vega'`` gives different meshes
-    in the cells where the Lewiner method is not consistent and splits some
-    quadrilaterals differently. ``'lorensen'`` reproduces scikit-image's
+    Choosing a method: ``'vega'`` resolves each cell so that its surface has
+    the topology of the trilinear interpolant of the cell values, which is
+    not always the case for ``'lewiner'``, and it takes about the same time.
+    This is a property of each cell and does not make the whole mesh
+    manifold: for some noisy volumes the ``'vega'`` mesh has edges that are
+    shared by four triangles (the surfaces of neighboring cells overlap along
+    an edge), which the ``'lewiner'`` mesh does not have in the same
+    volumes. Use ``'lewiner'`` if a manifold, consistently oriented mesh is
+    required. ``'lewiner'`` is the default because it reproduces the meshes
+    of scikit-image; ``'vega'`` gives different meshes in the cells where the
+    Lewiner method is not consistent and splits some quadrilaterals
+    differently. ``'lorensen'`` has the vertices of scikit-image's
     ``method='lorensen'``, can leave holes in the surface where cells are
     ambiguous, and is mainly useful for compatibility and on very noisy
     data, where it is faster than ``'lewiner'``. For binary masks there is no
@@ -212,12 +245,16 @@ _mesh_surface_area_kernel = cp.ReductionKernel(
     "raw T verts, I f0, I f1, I f2",
     "T area",
     r"""[&]() {
-        T ax = verts[3 * f0 + 0] - verts[3 * f1 + 0];
-        T ay = verts[3 * f0 + 1] - verts[3 * f1 + 1];
-        T az = verts[3 * f0 + 2] - verts[3 * f1 + 2];
-        T bx = verts[3 * f0 + 0] - verts[3 * f2 + 0];
-        T by = verts[3 * f0 + 1] - verts[3 * f2 + 1];
-        T bz = verts[3 * f0 + 2] - verts[3 * f2 + 2];
+        // 64-bit offsets: 3 * f overflows 32 bits for 715,827,883 vertices
+        long long o0 = 3LL * (long long)f0;
+        long long o1 = 3LL * (long long)f1;
+        long long o2 = 3LL * (long long)f2;
+        T ax = verts[o0 + 0] - verts[o1 + 0];
+        T ay = verts[o0 + 1] - verts[o1 + 1];
+        T az = verts[o0 + 2] - verts[o1 + 2];
+        T bx = verts[o0 + 0] - verts[o2 + 0];
+        T by = verts[o0 + 1] - verts[o2 + 1];
+        T bz = verts[o0 + 2] - verts[o2 + 2];
         T cx = ay * bz - az * by;
         T cy = az * bx - ax * bz;
         T cz = ax * by - ay * bx;
@@ -251,6 +288,9 @@ def mesh_surface_area(verts, faces):
     The arguments expected by this function are the first two outputs from
     ``cucim.skimage.measure.marching_cubes``. For unit-correct output, ensure
     correct ``spacing`` was passed to ``marching_cubes``.
+
+    The result is a device scalar. The areas of the triangles are summed in
+    the floating point type of ``verts`` (at least float32).
 
     This algorithm works properly only if the ``faces`` provided are all
     triangles.

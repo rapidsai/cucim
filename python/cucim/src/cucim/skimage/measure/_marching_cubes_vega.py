@@ -485,6 +485,10 @@ extern "C" __global__ void mc_vega_generate_center_vertices(
         gz += grad_at(volume, ci, cj, ck, 2, nx, ny, nz);
         vmax = fmaxf(vmax, vol_at(volume, ci, cj, ck, ny, nz));
     }
+    // the sign of the normals of scikit-image (towards lower values)
+    gx = -gx;
+    gy = -gy;
+    gz = -gz;
     float norm = sqrtf(gx * gx + gy * gy + gz * gz);
     if (norm > 0.0f) {
         gx /= norm;
