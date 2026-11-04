@@ -47,13 +47,21 @@ def _validate_marching_cubes_inputs(
         raise ValueError("Input array must be at least 2x2x2.")
 
     volume = cp.ascontiguousarray(volume, dtype=cp.float32)
-    vol_min = float(volume.min())
-    vol_max = float(volume.max())
+    vol_min, vol_max = (
+        float(v) for v in cp.stack([volume.min(), volume.max()]).get()
+    )
+    if vol_min != vol_min:
+        # the minimum is NaN if any sample is. The cells with a NaN corner
+        # would reference edges that have no vertex.
+        raise ValueError("Input volume must not contain NaN values.")
     if level is None:
         level = 0.5 * (vol_min + vol_max)
     else:
         level = float(level)
-        if level < vol_min or level > vol_max:
+        # the kernels classify the samples with the level as a float32, so
+        # the range is checked with the level rounded in the same way
+        level32 = float(np.float32(level))
+        if level32 < vol_min or level32 > vol_max:
             raise ValueError("Surface level must be within volume data range.")
 
     if len(spacing) != 3:
@@ -360,9 +368,11 @@ extern "C" __global__ void mc_generate_vertices(
     float gx1 = grad_at(volume, i2, j2, k2, 0, nx, ny, nz);
     float gy1 = grad_at(volume, i2, j2, k2, 1, nx, ny, nz);
     float gz1 = grad_at(volume, i2, j2, k2, 2, nx, ny, nz);
-    float gx = (1.0f - t) * gx0 + t * gx1;
-    float gy = (1.0f - t) * gy0 + t * gy1;
-    float gz = (1.0f - t) * gz0 + t * gz1;
+    // the sign of the normals of scikit-image: they point to lower values
+    // (the center vertices of the Lewiner methods use the same sign)
+    float gx = -((1.0f - t) * gx0 + t * gx1);
+    float gy = -((1.0f - t) * gy0 + t * gy1);
+    float gz = -((1.0f - t) * gz0 + t * gz1);
     float norm = sqrtf(gx * gx + gy * gy + gz * gz);
     if (norm > 0.0f) {
         gx /= norm;
@@ -618,9 +628,13 @@ extern "C" __device__ inline void mc_union_vertices(int* parent, int a, int b) {
         int hi = ra > rb ? ra : rb;
         int lo = ra > rb ? rb : ra;
         int old = atomicMin(parent + hi, lo);
-        if (old == hi || old <= lo) {
+        if (old == hi) {
             return;
         }
+        // hi was no longer a root: another thread gave it the parent ``old``
+        // in the meantime, and ``old`` must still be joined with lo
+        a = old;
+        b = lo;
     }
 }
 
@@ -822,7 +836,7 @@ def _remove_degenerate_faces_gpu(vertices, faces, normals, values):
 def _count_cells_gpu(get_kernel, kernels, volume, level, mask=None):
     nx, ny, nz = volume.shape
     n_cells = (nx - 1) * (ny - 1) * (nz - 1)
-    wide = _wide(n_cells)
+    wide = _wide(n_cells, volume.size)
     threads = 256
     cell_blocks = ((n_cells + threads - 1) // threads,)
     tri_counts = cp.empty(n_cells, dtype=cp.uint8)
@@ -892,7 +906,7 @@ def _generate_center_vertices_gpu(
     if n_centers is None:
         n_centers = int(center_scan[-1]) if n_cells else 0
     n_vertices = vertex_offset + n_centers
-    wide = _wide(n_cells, n_vertices)
+    wide = _wide(n_cells, n_vertices, volume.size)
     center_vertex_ids = cp.full(n_cells, -1, dtype=cp.int32)
     if out is None:
         vertices = cp.empty((n_vertices, 3), dtype=cp.float32)
@@ -946,7 +960,7 @@ def _generate_cell_table_faces_gpu(
     # scan can wrap around
     n_faces = int(tri_counts.sum(dtype=cp.int64)) if n_cells else 0
     _check_int32_range(n_faces, "the number of faces")
-    wide = _wide(n_cells, n_faces)
+    wide = _wide(n_cells, n_faces, volume.size)
     tri_scan = _inclusive_scan_uint8(tri_counts)
     faces = cp.empty(n_faces * 3, dtype=cp.int32)
     if n_faces == 0:

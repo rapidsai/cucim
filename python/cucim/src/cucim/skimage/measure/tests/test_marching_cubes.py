@@ -642,3 +642,109 @@ def test_winding_matches_skimage(method, gradient_direction):
     ref = signed_volume(ref_verts, ref_faces)
     assert np.sign(ours) == np.sign(ref)
     np.testing.assert_allclose(ours, ref, rtol=1e-3)
+
+
+def _sphere_volume(shape=(18, 19, 20)):
+    x, y, z = np.mgrid[
+        -1 : 1 : shape[0] * 1j, -1 : 1 : shape[1] * 1j, -1 : 1 : shape[2] * 1j
+    ]
+    return (x**2 + y**2 + z**2 + 0.05 * np.sin(7 * x * y)).astype(np.float32)
+
+
+@pytest.mark.parametrize("method", ["lewiner", "lorensen", "vega"])
+def test_nan_input_is_rejected(method):
+    # a NaN in the far corner used to give face indices outside the vertices
+    volume = cp.ones((2, 2, 2), dtype=cp.float32)
+    volume[0, 0, 0] = 0
+    volume[1, 1, 1] = cp.nan
+    with pytest.raises(ValueError, match="NaN"):
+        marching_cubes(volume, 0.5, method=method)
+
+
+def test_level_range_is_checked_as_float32():
+    # the kernels use the level as a float32, so the range check does too:
+    # 1 / 3 is below its float32 value, which is the minimum of the volume
+    # after the conversion, but it is not out of range
+    volume = np.ones((4, 4, 4))
+    volume[0, 0, 0] = 1 / 3
+    try:
+        marching_cubes(cp.asarray(volume), 1 / 3)
+    except RuntimeError:
+        pass  # no surface at the minimum, which is also what scikit-image does
+
+
+@pytest.mark.parametrize("method", ["lewiner", "lorensen"])
+@pytest.mark.parametrize("level", [1.0, 2.0])
+@pytest.mark.parametrize("allow_degenerate", [True, False])
+def test_level_equal_to_sample_values(method, level, allow_degenerate):
+    # samples equal to the level count as below it, in both methods
+    rng = np.random.default_rng(3)
+    volume = rng.integers(0, 4, (14, 15, 16)).astype(np.float32)
+    kwargs = dict(method=method, allow_degenerate=allow_degenerate)
+    expected = skimage_marching_cubes(volume, level, **kwargs)
+    result = marching_cubes(cp.asarray(volume), level, **kwargs)
+    if allow_degenerate:
+        assert result[0].shape == expected[0].shape
+        assert result[1].shape == expected[1].shape
+        if method == "lewiner":
+            # (the triangulation of a cell of the classic table can differ)
+            area = skimage_mesh_surface_area(expected[0], expected[1])
+            cp.testing.assert_allclose(
+                mesh_surface_area(result[0], result[1]), area, rtol=1e-5
+            )
+    else:
+        # scikit-image positions the vertices on samples with an error of
+        # 1e-16, so its test for coincident vertices finds fewer of them
+        assert result[1].shape[0] <= expected[1].shape[0]
+
+
+@pytest.mark.parametrize("method", ["lewiner", "lorensen"])
+def test_normals_have_the_sign_of_scikit_image(method):
+    from scipy.spatial import cKDTree
+
+    volume = _sphere_volume()
+    expected = skimage_marching_cubes(volume, 0.6, method=method)
+    result = marching_cubes(cp.asarray(volume), 0.6, method=method)
+    verts, normals = cp.asnumpy(result[0]), cp.asnumpy(result[2])
+    _, index = cKDTree(verts).query(expected[0])
+    dot = np.sum(expected[2] * normals[index], axis=1)
+    # the definitions differ (the gradient is not accumulated over the cells),
+    # but the directions agree to a few degrees and have the same sign
+    assert dot.min() > 0.99
+
+
+def test_remove_degenerate_faces_is_repeatable():
+    # the vertex merge is a concurrent union-find; the result must not depend
+    # on the schedule of the threads
+    rng = np.random.default_rng(5)
+    volume = cp.asarray(rng.integers(0, 3, (24, 24, 24)).astype(np.float32))
+    results = [
+        marching_cubes(volume, 1.0, allow_degenerate=False) for _ in range(8)
+    ]
+    for result in results[1:]:
+        assert result[0].shape == results[0][0].shape
+        assert result[1].shape == results[0][1].shape
+
+
+def test_wide_kernels_are_chosen_by_the_volume_size(monkeypatch):
+    # a thin volume has few cells but many nodes, and the kernels index both
+    from cucim.skimage.measure import _marching_cubes_common as common
+
+    volume = cp.asarray(
+        _sphere_volume((2, 2, 600))[:, :, ::-1] * 0
+        + cp.asnumpy(cp.linspace(0, 1, 600, dtype=cp.float32))
+    )
+    expected = marching_cubes(volume, 0.5)
+    seen = []
+    original = common._wide
+
+    def spy(*sizes):
+        seen.append(sizes)
+        return original(*sizes)
+
+    monkeypatch.setattr(common, "_wide", spy)
+    monkeypatch.setattr(common, "_WIDE_LIMIT", 3 * volume.size)
+    result = marching_cubes(volume, 0.5)
+    assert all(volume.size in sizes for sizes in seen if len(sizes) > 1)
+    for got, want in zip(result, expected):
+        cp.testing.assert_array_equal(got, want)

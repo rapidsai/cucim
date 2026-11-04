@@ -136,10 +136,12 @@ def _generate_lut_constants_code():
 
 
 # crossing test of this method (the shared edge classification kernels in
-# _COMMON_KERNEL_CODE call it, so it must precede that code)
+# _COMMON_KERNEL_CODE call it, so it must precede that code): a sample is
+# above the level when it is greater than the level, as in scikit-image (which
+# builds the case index of both of its methods in the same way)
 _CROSSING_TEST_CODE = r"""
 extern "C" __device__ inline bool mc_crosses(float a, float b, float level) {
-    return (a < level && b >= level) || (a >= level && b < level);
+    return (a <= level && b > level) || (a > level && b <= level);
 }
 """
 
@@ -165,14 +167,14 @@ extern "C" __global__ void mc_count_faces(
     int i = (int)(idx / ((mc_idx)cny * cnz));
 
     int code = 0;
-    code |= (vol_at(volume, i, j, k, ny, nz) >= level) ? 1 : 0;
-    code |= (vol_at(volume, i + 1, j, k, ny, nz) >= level) ? 2 : 0;
-    code |= (vol_at(volume, i + 1, j + 1, k, ny, nz) >= level) ? 4 : 0;
-    code |= (vol_at(volume, i, j + 1, k, ny, nz) >= level) ? 8 : 0;
-    code |= (vol_at(volume, i, j, k + 1, ny, nz) >= level) ? 16 : 0;
-    code |= (vol_at(volume, i + 1, j, k + 1, ny, nz) >= level) ? 32 : 0;
-    code |= (vol_at(volume, i + 1, j + 1, k + 1, ny, nz) >= level) ? 64 : 0;
-    code |= (vol_at(volume, i, j + 1, k + 1, ny, nz) >= level) ? 128 : 0;
+    code |= (vol_at(volume, i, j, k, ny, nz) > level) ? 1 : 0;
+    code |= (vol_at(volume, i + 1, j, k, ny, nz) > level) ? 2 : 0;
+    code |= (vol_at(volume, i + 1, j + 1, k, ny, nz) > level) ? 4 : 0;
+    code |= (vol_at(volume, i, j + 1, k, ny, nz) > level) ? 8 : 0;
+    code |= (vol_at(volume, i, j, k + 1, ny, nz) > level) ? 16 : 0;
+    code |= (vol_at(volume, i + 1, j, k + 1, ny, nz) > level) ? 32 : 0;
+    code |= (vol_at(volume, i + 1, j + 1, k + 1, ny, nz) > level) ? 64 : 0;
+    code |= (vol_at(volume, i, j + 1, k + 1, ny, nz) > level) ? 128 : 0;
 
     int count = 0;
     const signed char* row = lut_cases_classic + code * 16;
@@ -206,14 +208,14 @@ extern "C" __global__ void mc_count_faces_masked(
     }
 
     int code = 0;
-    code |= (vol_at(volume, i, j, k, ny, nz) >= level) ? 1 : 0;
-    code |= (vol_at(volume, i + 1, j, k, ny, nz) >= level) ? 2 : 0;
-    code |= (vol_at(volume, i + 1, j + 1, k, ny, nz) >= level) ? 4 : 0;
-    code |= (vol_at(volume, i, j + 1, k, ny, nz) >= level) ? 8 : 0;
-    code |= (vol_at(volume, i, j, k + 1, ny, nz) >= level) ? 16 : 0;
-    code |= (vol_at(volume, i + 1, j, k + 1, ny, nz) >= level) ? 32 : 0;
-    code |= (vol_at(volume, i + 1, j + 1, k + 1, ny, nz) >= level) ? 64 : 0;
-    code |= (vol_at(volume, i, j + 1, k + 1, ny, nz) >= level) ? 128 : 0;
+    code |= (vol_at(volume, i, j, k, ny, nz) > level) ? 1 : 0;
+    code |= (vol_at(volume, i + 1, j, k, ny, nz) > level) ? 2 : 0;
+    code |= (vol_at(volume, i + 1, j + 1, k, ny, nz) > level) ? 4 : 0;
+    code |= (vol_at(volume, i, j + 1, k, ny, nz) > level) ? 8 : 0;
+    code |= (vol_at(volume, i, j, k + 1, ny, nz) > level) ? 16 : 0;
+    code |= (vol_at(volume, i + 1, j, k + 1, ny, nz) > level) ? 32 : 0;
+    code |= (vol_at(volume, i + 1, j + 1, k + 1, ny, nz) > level) ? 64 : 0;
+    code |= (vol_at(volume, i, j + 1, k + 1, ny, nz) > level) ? 128 : 0;
 
     int count = 0;
     const signed char* row = lut_cases_classic + code * 16;
@@ -244,14 +246,14 @@ extern "C" __global__ void mc_generate_faces(
     int i = (int)(idx / ((mc_idx)cny * cnz));
 
     int code = 0;
-    code |= (vol_at(volume, i, j, k, ny, nz) >= level) ? 1 : 0;
-    code |= (vol_at(volume, i + 1, j, k, ny, nz) >= level) ? 2 : 0;
-    code |= (vol_at(volume, i + 1, j + 1, k, ny, nz) >= level) ? 4 : 0;
-    code |= (vol_at(volume, i, j + 1, k, ny, nz) >= level) ? 8 : 0;
-    code |= (vol_at(volume, i, j, k + 1, ny, nz) >= level) ? 16 : 0;
-    code |= (vol_at(volume, i + 1, j, k + 1, ny, nz) >= level) ? 32 : 0;
-    code |= (vol_at(volume, i + 1, j + 1, k + 1, ny, nz) >= level) ? 64 : 0;
-    code |= (vol_at(volume, i, j + 1, k + 1, ny, nz) >= level) ? 128 : 0;
+    code |= (vol_at(volume, i, j, k, ny, nz) > level) ? 1 : 0;
+    code |= (vol_at(volume, i + 1, j, k, ny, nz) > level) ? 2 : 0;
+    code |= (vol_at(volume, i + 1, j + 1, k, ny, nz) > level) ? 4 : 0;
+    code |= (vol_at(volume, i, j + 1, k, ny, nz) > level) ? 8 : 0;
+    code |= (vol_at(volume, i, j, k + 1, ny, nz) > level) ? 16 : 0;
+    code |= (vol_at(volume, i + 1, j, k + 1, ny, nz) > level) ? 32 : 0;
+    code |= (vol_at(volume, i + 1, j + 1, k + 1, ny, nz) > level) ? 64 : 0;
+    code |= (vol_at(volume, i, j + 1, k + 1, ny, nz) > level) ? 128 : 0;
 
     int face_start = tri_scan[idx] - tri_counts[idx];
     const signed char* row = lut_cases_classic + code * 16;
@@ -311,7 +313,7 @@ def _run_lorensen(
     )
 
     n_cells = (nx - 1) * (ny - 1) * (nz - 1)
-    wide = _wide(n_cells)
+    wide = _wide(n_cells, volume.size)
     cell_blocks = ((n_cells + threads - 1) // threads,)
     tri_counts = cp.empty(n_cells, dtype=cp.uint8)
     if mask is None:
@@ -338,7 +340,7 @@ def _run_lorensen(
     # scan can wrap around
     n_faces = int(tri_counts.sum(dtype=cp.int64))
     _check_int32_range(n_faces, "the number of faces")
-    wide = _wide(n_cells, n_faces)
+    wide = _wide(n_cells, n_faces, volume.size)
     tri_scan = _inclusive_scan_uint8(tri_counts)
     if n_faces == 0:
         raise RuntimeError("No surface found at the given iso value.")
