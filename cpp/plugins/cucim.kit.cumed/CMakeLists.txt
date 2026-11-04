@@ -190,11 +190,11 @@ option(CUCIM_INSTALL_TESTS "Install the C++ test executables" ON)
 
 set(INSTALL_TARGETS
         ${CUCIM_PLUGIN_NAME}
-        cumed_benchmarks
         )
 
 if(CUCIM_INSTALL_TESTS)
     list(APPEND INSTALL_TARGETS cumed_tests)
+    list(APPEND INSTALL_TARGETS cumed_benchmarks)
 endif()
 
 install(TARGETS ${INSTALL_TARGETS}

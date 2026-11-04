@@ -322,11 +322,11 @@ option(CUCIM_INSTALL_TESTS "Install the C++ test executables" ON)
 
 set(INSTALL_TARGETS
         ${CUCIM_PLUGIN_NAME}
-        cuslide2_benchmarks
         )
 
 if(CUCIM_INSTALL_TESTS)
     list(APPEND INSTALL_TARGETS cuslide2_tests)
+    list(APPEND INSTALL_TARGETS cuslide2_benchmarks)
 endif()
 
 # Add nvimgcodec_dynlink to install targets if dynamic loading is enabled
