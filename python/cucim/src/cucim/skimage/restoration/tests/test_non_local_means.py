@@ -651,3 +651,33 @@ def test_nl_means_64bit_indexing():
     finally:
         del image
         cp.get_default_memory_pool().free_all_blocks()
+
+
+@pytest.mark.parametrize("patch_size", [3, 7])  # direct and tiled kernels
+@pytest.mark.parametrize("factor", [1e-20, 1e-12, 1e12, 1e20, 1e30])
+def test_float32_extreme_magnitudes(factor, patch_size):
+    # h is scaled with the image; the squared differences and the weight
+    # scale would otherwise over- or underflow in float32
+    base = np.random.default_rng(3).uniform(size=(8, 9)).astype(np.float32)
+    image = base * np.float32(factor)
+    h = 0.1 * factor
+    kwargs = dict(patch_size=patch_size, patch_distance=1, h=h)
+    expected = skimage.restoration.denoise_nl_means(image, **kwargs)
+    result = restoration.denoise_nl_means(cp.asarray(image), **kwargs)
+    np.testing.assert_allclose(
+        cp.asnumpy(result) / factor, expected / factor, atol=1e-5
+    )
+
+
+def test_float32_extreme_sigma_is_scaled():
+    base = np.random.default_rng(4).uniform(size=(10, 10)).astype(np.float32)
+    factor = 1e-15
+    image = base * np.float32(factor)
+    kwargs = dict(
+        patch_size=3, patch_distance=2, h=0.05 * factor, sigma=0.04 * factor
+    )
+    expected = skimage.restoration.denoise_nl_means(image, **kwargs)
+    result = restoration.denoise_nl_means(cp.asarray(image), **kwargs)
+    np.testing.assert_allclose(
+        cp.asnumpy(result) / factor, expected / factor, atol=1e-5
+    )

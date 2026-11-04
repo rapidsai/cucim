@@ -94,6 +94,22 @@ def _select_tile(ndim, n_taps, itemsize, tile=None):
     return None, 0
 
 
+# float32 images are rescaled if h is outside of the first range and the peak
+# magnitude of the image is outside of the second
+_safe_h = (1e-9, 1e9)
+_safe_peak = (1e-3, 1e3)
+
+
+def _scale_power_of_two(array, exponent, out=None):
+    """``array * 2**exponent`` for a float32 array, in two exact steps (the
+    factor alone can be out of the range of float32)."""
+    first = exponent // 2
+    result = cp.multiply(array, np.float32(2.0**first), out=out)
+    return cp.multiply(
+        result, np.float32(2.0 ** (exponent - first)), out=result
+    )
+
+
 def _nl_means_denoising(
     image,
     patch_size,
@@ -135,6 +151,37 @@ def _nl_means_denoising(
     """
     if kernel not in ("auto", "tiled", "direct"):
         raise ValueError(f"unknown kernel: {kernel}")
+    if (
+        image.dtype == np.float32
+        and image.size > 0
+        and not _safe_h[0] <= h <= _safe_h[1]
+    ):
+        # The float32 kernels square the differences and divide by h**2,
+        # which over- or underflows for images with a very large or small
+        # magnitude (and then for a matching h). Such images are scaled by a
+        # power of two (which is exact), together with h and sigma, and the
+        # result is scaled back. Reading the peak costs a synchronization, so
+        # this is only done for a value of h outside of a wide safe range.
+        peak = float(cp.abs(image).max())  # (synchronizes)
+        if (
+            math.isfinite(peak)
+            and peak > 0
+            and not (_safe_peak[0] <= peak <= _safe_peak[1])
+        ):
+            exponent = math.frexp(peak)[1]  # peak < 2**exponent
+            out = _nl_means_denoising(
+                _scale_power_of_two(image, -exponent),
+                patch_size,
+                patch_distance,
+                h * 2.0**-exponent,
+                var * 2.0 ** (-2 * exponent),
+                fast_mode,
+                symmetric_patch=symmetric_patch,
+                kernel=kernel,
+                tile=tile,
+                shift_chunks=shift_chunks,
+            )
+            return _scale_power_of_two(out, exponent, out=out)
     dtype = image.dtype
     c_type = _c_types[dtype]
     spatial_shape = image.shape[:-1]
@@ -160,6 +207,11 @@ def _nl_means_denoising(
     else:
         scale = 1.0 / (n_channels * h * h * math.fsum(taps) ** ndim)
     var_term = n_channels * 2.0 * var
+    # (a scale or variance beyond the range of the dtype is clamped: the
+    # weights of the patches are then 0, or all 1 for a scale that underflows)
+    largest = float(np.finfo(dtype).max)
+    scale = min(scale, largest)
+    var_term = min(var_term, largest)
 
     out = cp.empty(image.shape, dtype=dtype)
     if out.size == 0:

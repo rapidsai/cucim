@@ -35,14 +35,17 @@ def denoise_nl_means(
         number of channels (does not strictly have to be RGB).
     patch_size : int, optional
         Size of patches used for denoising. Even values are increased by one.
+        Must be non-negative (scikit-image does not check this).
     patch_distance : int, optional
         Maximal distance in pixels where to search patches used for denoising.
+        Must be non-negative.
     h : float, optional
         Cut-off distance (in gray levels). The higher h, the more permissive
         one is in accepting patches. A higher h results in a smoother image,
         at the expense of blurring features. For a Gaussian noise of standard
         deviation sigma, a rule of thumb is to choose the value of h to be
-        sigma of slightly less.
+        sigma of slightly less. Must be positive (scikit-image uses ``h * h``
+        and so accepts a negative value, with the result of its magnitude).
     fast_mode : bool, optional
         If True (default value), a fast version of the non-local means
         algorithm is used. If False, the original version of non-local means is
@@ -174,6 +177,28 @@ def denoise_nl_means(
 
     The output always has the same shape as `image`. Unlike scikit-image,
     singleton spatial dimensions are not removed from the result.
+
+    The patch distances are compared with a cutoff (a patch farther than 5
+    gets weight zero, as in scikit-image). The order of the floating point
+    operations of the distances is not the one of scikit-image (the sums are
+    separable, and ``fast_mode=True`` does not use an integral image), so
+    rounding can move a distance across the cutoff and a patch that
+    contributes in one implementation can have weight zero in the other. The
+    difference in the output is then not a rounding error of the output: for
+    images of 8 x 9 pixels, we observed maximum differences of about 1e-3 for
+    ``fast_mode=True`` in float32 and 6e-4 for ``fast_mode=False`` in float64,
+    where it is rare for larger images and typical noise levels. Computing with
+    ``compute_dtype=numpy.float64`` makes the rounding of the distances
+    smaller but does not remove such cases.
+
+    The float32 kernels square the differences and sum weighted values. For
+    ``h`` outside of 1e-9 to 1e9, a float32 image is scaled by a power of two
+    (together with ``h`` and ``sigma``) when its largest magnitude is outside
+    of 1e-3 to 1e3, so that the intermediate values stay in range. For an
+    ``h`` within that range, an image with magnitudes close to the float32
+    maximum (about 1e38) can overflow in the weighted sums, which gives
+    infinite values; use ``compute_dtype=numpy.float64`` or scale the image
+    in that case.
 
     For ``fast_mode=False``, scikit-image can produce non-finite weights when
     the final patch distance exceeds ~700. Such patches are given zero weight
