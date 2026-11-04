@@ -1318,57 +1318,113 @@ def _get_crops_to_canvas_kernel(ndim):
     )
 
 
-def _fill_holes_of_labels(label_image, labels, bbox_host, compute_image=False):
+# device bytes per canvas pixel while a batch is filled: the canvas and its
+# box ids (5), the filled canvas, the temporaries of binary_fill_holes and the
+# int32 label image counted afterwards
+_FILL_BYTES_PER_PIXEL = 16
+
+
+def _canvas_pixel_limit():
+    """Largest canvas (in pixels) to fill at once: a quarter of the memory
+    that is free on the device, and fewer than 2**31 pixels."""
+    free = cp.cuda.runtime.memGetInfo()[0]
+    free += cp.get_default_memory_pool().free_bytes()
+    return min(free // 4 // _FILL_BYTES_PER_PIXEL, 2**31 - 1)
+
+
+def _fill_holes_of_labels(
+    label_image,
+    labels,
+    bbox_host,
+    compute_image=False,
+    max_canvas_pixels=None,
+):
     """``binary_fill_holes`` of the crops ``label_image[bbox] == label`` of
-    several labels at once (with the ``3**ndim`` structuring element, as
-    scikit-image fills a region's holes).
+    several labels (with the ``3**ndim`` structuring element, as scikit-image
+    fills a region's holes).
 
     The crops are packed into one canvas with one background pixel between
     them (`_pack_crops`), so that the background at each crop's border is
     connected to the canvas border, and a crop's holes are exactly those it
     has on its own; one ``binary_fill_holes`` call then fills all of them.
+    The canvas needs memory for the sum of the crops, so the labels are split
+    in batches (largest crops first, so that the crops of a batch have similar
+    extents) whose canvases have at most `max_canvas_pixels` pixels (by
+    default `_canvas_pixel_limit()`); a single crop larger than that is filled
+    alone.
     Returns the number of pixels of each filled crop and, if
-    `compute_image`, the filled crops (views of one array).
+    `compute_image`, the filled crops (views of the canvas, or copies if
+    there are several batches, so that each canvas can be freed).
     """
     ndim = label_image.ndim
     labels = np.asarray(labels, dtype=np.int64)
     box_min = bbox_host[labels - 1, :ndim].astype(np.int64)
     extents = bbox_host[labels - 1, ndim:].astype(np.int64) - box_min
-    canvas_shape, starts = _pack_crops(extents)
-    sizes = np.prod(extents, axis=1)
-    box_offsets = np.zeros(len(labels), dtype=np.int64)
-    np.cumsum(sizes[:-1], out=box_offsets[1:])
-    boxes = np.concatenate(
-        [box_min, extents, starts, labels[:, np.newaxis]], axis=1
-    )
-    canvas = cp.zeros(canvas_shape, dtype=bool)
-    box_ids = cp.zeros(canvas_shape, dtype=cp.int32)
+    if max_canvas_pixels is None:
+        max_canvas_pixels = _canvas_pixel_limit()
     if not label_image.flags.c_contiguous:
         label_image = cp.ascontiguousarray(label_image)
-    _get_crops_to_canvas_kernel(ndim)(
-        label_image,
-        cp.asarray(label_image.shape, dtype=cp.int64),
-        cp.asarray(boxes),
-        cp.asarray(box_offsets),
-        len(labels),
-        cp.asarray(canvas_shape, dtype=cp.int64),
-        canvas,
-        box_ids,
-        size=int(sizes.sum()),
-    )
-    filled = ndi.binary_fill_holes(canvas, cp.ones((3,) * ndim, dtype=bool))
-    # the filled pixels of each box, with the label-run count (few boxes
-    # would make the atomics of cupy.bincount contend)
-    counts = regionprops_num_pixels(
-        cp.where(filled, box_ids, 0), max_label=len(labels)
-    ).astype(cp.int64)
-    images = None
-    if compute_image:
-        images = [
-            filled[tuple(slice(int(a), int(a + e)) for a, e in zip(st, ext))]
-            for st, ext in zip(starts, extents)
-        ]
-    return counts, images
+
+    batches = []
+
+    def split(order):
+        shape, starts = _pack_crops(extents[order])
+        if len(order) > 1 and math.prod(shape) > max_canvas_pixels:
+            half = len(order) // 2
+            split(order[:half])
+            split(order[half:])
+        else:
+            batches.append((order, shape, starts))
+
+    split(np.argsort(-np.prod(extents, axis=1), kind="stable"))
+
+    counts = np.zeros(len(labels), dtype=np.int64)
+    images = [None] * len(labels) if compute_image else None
+    for order, canvas_shape, starts in batches:
+        batch_extents = extents[order]
+        sizes = np.prod(batch_extents, axis=1)
+        box_offsets = np.zeros(len(order), dtype=np.int64)
+        np.cumsum(sizes[:-1], out=box_offsets[1:])
+        boxes = np.concatenate(
+            [
+                box_min[order],
+                batch_extents,
+                starts,
+                labels[order][:, np.newaxis],
+            ],
+            axis=1,
+        )
+        canvas = cp.zeros(canvas_shape, dtype=bool)
+        box_ids = cp.zeros(canvas_shape, dtype=cp.int32)
+        _get_crops_to_canvas_kernel(ndim)(
+            label_image,
+            cp.asarray(label_image.shape, dtype=cp.int64),
+            cp.asarray(boxes),
+            cp.asarray(box_offsets),
+            len(order),
+            cp.asarray(canvas_shape, dtype=cp.int64),
+            canvas,
+            box_ids,
+            size=int(sizes.sum()),
+        )
+        filled = ndi.binary_fill_holes(canvas, cp.ones((3,) * ndim, dtype=bool))
+        del canvas
+        # the filled pixels of each box, with the label-run count (few boxes
+        # would make the atomics of cupy.bincount contend)
+        counts[order] = cp.asnumpy(
+            regionprops_num_pixels(
+                cp.where(filled, box_ids, 0), max_label=len(order)
+            )
+        )
+        del box_ids
+        if compute_image:
+            for i, st, ext in zip(order, starts, batch_extents):
+                image = filled[
+                    tuple(slice(int(a), int(a + e)) for a, e in zip(st, ext))
+                ]
+                images[i] = image.copy() if len(batches) > 1 else image
+        del filled
+    return cp.asarray(counts), images
 
 
 def _regionprops_filled(

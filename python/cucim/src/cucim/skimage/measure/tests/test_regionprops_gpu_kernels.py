@@ -1933,8 +1933,10 @@ def test_label_filled():
 
 
 @pytest.mark.parametrize("ndim", [2, 3])
-def test_fill_holes_of_labels_batch(ndim):
-    # the crops packed into one canvas are filled as one at a time
+@pytest.mark.parametrize("max_canvas_pixels", [None, 4000, 1])
+def test_fill_holes_of_labels_batch(ndim, max_canvas_pixels):
+    # the crops packed into one canvas are filled as one at a time, also when
+    # the canvas is split in several batches (1: every crop on its own)
     from cucim.skimage.measure._regionprops_gpu_basic_kernels import (
         _fill_holes_of_labels,
     )
@@ -1950,7 +1952,11 @@ def test_fill_holes_of_labels_batch(ndim):
     bbox_host = cp.asnumpy(bbox)
     labels_list = np.arange(1, max_label + 1)
     counts, images = _fill_holes_of_labels(
-        labels, labels_list, bbox_host, compute_image=True
+        labels,
+        labels_list,
+        bbox_host,
+        compute_image=True,
+        max_canvas_pixels=max_canvas_pixels,
     )
     structure = cp.ones((3,) * ndim, dtype=bool)
     for lab, count, image in zip(labels_list, cp.asnumpy(counts), images):
