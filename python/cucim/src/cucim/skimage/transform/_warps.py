@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import math
@@ -564,7 +564,7 @@ def rotate(
     tform3 = SimilarityTransform(translation=-center, xp=np)
     tform = tform3 + tform2 + tform1
 
-    output_shape = None
+    output_shape = (rows, cols)
     if resize:
         # determine shape of output image
         # fmt: off
@@ -602,7 +602,9 @@ def rotate(
         # note: only the first two dimensions are the ones being rotated
         #       embed 2D affine into larger identity matrix.
         affine_params = np.eye(image.ndim + 1)
-        affine_params[:3, :3] = tform.params
+        affine_params[:2, :2] = tform.params[:2, :2]
+        # Translation belongs in the last column, not a trailing-axis column.
+        affine_params[:2, -1] = tform.params[:2, 2]
         # keep original shape on the excess dimensions
         output_shape = output_shape + image.shape[2:]
 
