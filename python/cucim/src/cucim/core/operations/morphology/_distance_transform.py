@@ -1,7 +1,8 @@
-# SPDX-FileCopyrightText: Copyright (c) 2022-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 import cupy as cp
+import numpy as np
 
 from ._pba_2d import _pba_2d
 from ._pba_3d import _pba_3d
@@ -20,6 +21,7 @@ def distance_transform_edt(
     *,
     block_params=None,
     float64_distances=False,
+    float32_spacing=False,
 ):
     r"""Exact Euclidean distance transform.
 
@@ -68,6 +70,16 @@ def distance_transform_edt(
         efficiency. Note: This parameter is specific to cuCIM and does not
         exist in SciPy.
 
+    float32_spacing : bool, optional
+        Only used if `sampling` has different values for the axes. If True,
+        the kernels compute with the spacing in single precision instead of
+        double precision. This is faster, in particular on GPUs with a low
+        double precision rate, but the nearest background element can differ
+        from the exact one if the distances to two of them differ by less than
+        the single precision rounding error (about 1e-7 relative), so the
+        distances can then differ by that amount. Note: This parameter is
+        specific to cuCIM and does not exist in SciPy.
+
     Returns
     -------
     distances : cupy.ndarray, optional
@@ -96,6 +108,11 @@ def distance_transform_edt(
     Note that the `indices` output may differ from the one given by
     :func:`scipy.ndimage.distance_transform_edt` in the case of input pixels
     that are equidistant from multiple background points.
+
+    If `image` does not contain any background element, there is no nearest
+    background element. The distances are then infinite (``inf``) and the
+    entries of `indices` are negative. (SciPy returns finite distances in this
+    case, as if there were a background element outside of the array.)
 
     The parallel banding algorithm implemented here was originally described in
     [1]_. The kernels used here correspond to the revised PBA+ implementation
@@ -154,15 +171,6 @@ def distance_transform_edt(
             [0, 0, 3, 3, 4]]])
 
     """
-    scalar_sampling = None
-    if sampling is not None:
-        unique_sampling = cp.unique(cp.atleast_1d(sampling))
-        if len(unique_sampling) == 1:
-            # In the isotropic case, can use the kernels without sample scaling
-            # and just adjust the final distance accordingly.
-            scalar_sampling = float(unique_sampling.item())
-            sampling = None
-
     if image.ndim == 3:
         pba_func = _pba_3d
     elif image.ndim == 2:
@@ -172,12 +180,34 @@ def distance_transform_edt(
             "Only 2D and 3D distance transforms are supported."
         )
 
+    scalar_sampling = None
+    if sampling is not None:
+        # This is done on the host: using the device to compare a few values
+        # would copy them to the device and synchronize with it.
+        if isinstance(sampling, cp.ndarray):
+            sampling = cp.asnumpy(sampling)
+        sampling = np.atleast_1d(np.asarray(sampling, dtype=np.float64))
+        if sampling.ndim != 1 or sampling.size not in (1, image.ndim):
+            raise ValueError(
+                "sampling must be a scalar or a sequence with one value per "
+                f"axis of the image ({image.ndim}), got shape {sampling.shape}"
+            )
+        if (sampling == sampling[0]).all():
+            # In the isotropic case, can use the kernels without sample scaling
+            # and just adjust the final distance accordingly.
+            scalar_sampling = float(sampling[0])
+            sampling = None
+        else:
+            sampling = tuple(sampling.tolist())
+
     vals = pba_func(
         image,
         sampling=sampling,
         return_distances=return_distances,
         return_indices=return_indices,
         block_params=block_params,
+        float64_distances=float64_distances,
+        float32_spacing=float32_spacing,
         distances=distances,
         indices=indices,
     )

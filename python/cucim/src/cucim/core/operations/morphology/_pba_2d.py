@@ -1,13 +1,24 @@
-# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 import math
 import os
 
 import cupy
+import numpy as np
 
 from cucim.skimage._vendored import pad
 from cucim.skimage._vendored._ndimage_util import _get_inttype
+
+# An image is processed transposed if its first axis has at most
+# _TRANSPOSE_MAX_SIZE entries, its second axis is at least _TRANSPOSE_RATIO
+# times longer and it has at most _TRANSPOSE_MAX_PIXELS pixels. For larger
+# sizes there are enough threads in either orientation, and the strided reads
+# of the transposed view of the image (a cost that grows with the number of
+# pixels) are slower.
+_TRANSPOSE_MAX_SIZE = 3072
+_TRANSPOSE_RATIO = 2
+_TRANSPOSE_MAX_PIXELS = 2**26
 
 pba2d_defines_template = """
 
@@ -18,6 +29,8 @@ pba2d_defines_template = """
 #define BLOCKSIZE   {block_size_2d}
 #define pixel_int2_t {pixel_int2_t}                // typically short2 (int2 for images with > 32k pixels per side)
 #define make_pixel(x, y)  {make_pixel_func}(x, y)  // typically make_short2 (make_int2 images with > 32k pixels per side
+#define SPACING_T {spacing_t}  // type of the pixel spacing and of the distances computed with it
+#define IMAGE_T {image_t}  // type of the elements of the input image
 
 """  # noqa: E501
 
@@ -39,7 +52,13 @@ def _init_marker(int_dtype):
 
 
 @cupy.memoize(True)
-def get_pba2d_src(block_size_2d=64, marker=-32768, pixel_int2_t="short2"):
+def get_pba2d_src(
+    block_size_2d=64,
+    marker=-32768,
+    pixel_int2_t="short2",
+    spacing_t="double",
+    image_t="unsigned char",
+):
     make_pixel_func = "make_" + pixel_int2_t
 
     pba2d_code = pba2d_defines_template.format(
@@ -47,6 +66,8 @@ def get_pba2d_src(block_size_2d=64, marker=-32768, pixel_int2_t="short2"):
         marker=marker,
         pixel_int2_t=pixel_int2_t,
         make_pixel_func=make_pixel_func,
+        spacing_t=spacing_t,
+        image_t=image_t,
     )
     kernel_directory = os.path.join(os.path.dirname(__file__), "cuda")
     with open(os.path.join(kernel_directory, "pba_kernels_2d.h")) as f:
@@ -54,6 +75,43 @@ def get_pba2d_src(block_size_2d=64, marker=-32768, pixel_int2_t="short2"):
 
     pba2d_code += pba2d_kernels
     return pba2d_code
+
+
+@cupy.memoize(for_each_device=True)
+def _get_pba2d_kernels(
+    block_size,
+    marker,
+    pixel_int2_t,
+    with_spacing,
+    spacing_t="double",
+    image_t="unsigned char",
+):
+    """Return the kernels of the 2D algorithm as a dictionary.
+
+    The kernels that take a pixel spacing are returned under the names of the
+    kernels without a spacing.
+    """
+    module = cupy.RawModule(
+        code=get_pba2d_src(
+            block_size_2d=block_size,
+            marker=marker,
+            pixel_int2_t=pixel_int2_t,
+            spacing_t=spacing_t,
+            image_t=image_t,
+        )
+    )
+    suffix = "WithSpacing" if with_spacing else ""
+    names = [
+        "kernelFloodDownUp",
+        "kernelPropagateInterband",
+        "kernelUpdateVertical",
+        "kernelCreateForwardPointers",
+        "kernelDoubleToSingleList",
+    ]
+    kernels = {name: module.get_function(name) for name in names}
+    for name in ["kernelProximatePoints", "kernelMergeBands", "kernelColor"]:
+        kernels[name] = module.get_function(name + suffix)
+    return kernels
 
 
 def _get_block_size(check_warp_size=False):
@@ -65,48 +123,22 @@ def _get_block_size(check_warp_size=False):
         return 32
 
 
-@cupy.memoize(for_each_device=True)
-def _get_pack_kernel(int_type, marker=-32768):
-    """Pack coordinates into array of type short2 (or int2).
-
-    This kernel works with 2D input data, `arr` (typically boolean).
-
-    The output array, `out` will be 3D with a signed integer dtype.
-    It will have size 2 on the last axis so that it can be viewed as a CUDA
-    vector type such as `int2` or `float2`.
-    """
-    code = f"""
-    if (arr[i]) {{
-        out[2*i] = {marker};
-        out[2*i + 1] = {marker};
-    }} else {{
-        int shape_1 = arr.shape()[1];
-        int _i = i;
-        int ind_1 = _i % shape_1;
-        _i /= shape_1;
-        out[2*i] = ind_1;   // out.x
-        out[2*i + 1] = _i;  // out.y
-    }}
-    """
-    return cupy.ElementwiseKernel(
-        in_params="raw B arr",
-        out_params="raw I out",
-        operation=code,
-    )
-
-
-def _pack_int2(arr, marker=-32768, int_dtype=cupy.int16):
-    if arr.ndim != 2:
-        raise ValueError("only 2d arr supported")
-    int2_dtype = cupy.dtype({"names": ["x", "y"], "formats": [int_dtype] * 2})
-    out = cupy.zeros(arr.shape + (2,), dtype=int_dtype)
-    assert out.size == 2 * arr.size
-    pack_kernel = _get_pack_kernel(
-        int_type="short" if int_dtype == cupy.int16 else "int", marker=marker
-    )
-    pack_kernel(arr, out, size=arr.size)
-    out = cupy.squeeze(out.view(int2_dtype))
-    return out
+# C types of the dtypes that the kernels read directly. The kernels only test
+# if an element is 0. Other dtypes (e.g. float16 or complex) are converted to
+# boolean arrays.
+_image_ctypes = {
+    "bool": "bool",
+    "int8": "signed char",
+    "uint8": "unsigned char",
+    "int16": "short",
+    "uint16": "unsigned short",
+    "int32": "int",
+    "uint32": "unsigned int",
+    "int64": "long long",
+    "uint64": "unsigned long long",
+    "float32": "float",
+    "float64": "double",
+}
 
 
 def _unpack_int2(img, make_copy=False, int_dtype=cupy.int16):
@@ -116,15 +148,56 @@ def _unpack_int2(img, make_copy=False, int_dtype=cupy.int16):
     return temp
 
 
-def _determine_padding(shape, padded_size, block_size):
-    # all kernels assume equal size along both axes, so pad up to equal size if
-    # shape is not isotropic
+def _default_block_params(shape, block_size, double_spacing=False):
+    """Default (m1, m2, m3) for an image of the given shape.
+
+    double_spacing is True if the distances are computed in double
+    precision from a pixel spacing.
+    """
+    # number of block_size tiles along each axis, rounding up
+    n_y = math.ceil(shape[0] / block_size)
+    n_x = math.ceil(shape[1] / block_size)
+    # m1: bands in phase 1 have block_size rows. This is applied along the
+    # first axis.
+    m1 = n_y
+    # m2: number of bands for phase 2. This must be a power of two. It is
+    # applied along the second axis.
+    m2 = max(1, min(n_x, block_size))
+    m2 = 2 ** math.floor(math.log2(m2))
+    # m3: number of threads that share a column in phase 3. The best value
+    # grows with the size, but a value above 16 is not faster, and it can not
+    # be larger than the number of tiles along the second axis.
+    m3 = min(16, 2 ** math.floor(math.log2(n_x)))
+    if double_spacing:
+        # The coloring kernel is slower with the double precision arithmetic of
+        # a pixel spacing (low rate on many GPUs) and then does not profit from
+        # more threads per column: m3 = 16 was 1.6 to 2 times slower than
+        # m3 = 2 for 4096 ** 2 and larger.
+        m3 = min(m3, 2)
+    return m1, m2, m3
+
+
+def _determine_padding(shape, block_size, m1, m2):
+    """Padding so that the kernels' bands and tiles divide each axis exactly.
+
+    Each axis is padded separately: the kernels take a separate size for each
+    axis, so the image does not have to be square.
+
+    - The first axis is divided into `m1` bands that have to be a multiple of
+      `block_size` rows (the size of the tiles used to transpose the image).
+    - The second axis is divided into `m2` bands and has to be a multiple of
+      `block_size` (the size of the tiles used to transpose the image).
+
+    Returns the ``pad`` width for each axis or None if no padding is needed.
+    """
     orig_sy, orig_sx = shape
-    if orig_sx != padded_size or orig_sy != padded_size:
-        padding_width = ((0, padded_size - orig_sy), (0, padded_size - orig_sx))
-    else:
-        padding_width = None
-    return padding_width
+    y_multiple = block_size * m1
+    x_multiple = math.lcm(block_size, m2)
+    sy = -(-orig_sy // y_multiple) * y_multiple
+    sx = -(-orig_sx // x_multiple) * x_multiple
+    if (sy, sx) == tuple(shape):
+        return None
+    return ((0, sy - orig_sy), (0, sx - orig_sx))
 
 
 def _generate_shape(ndim, int_type, var_name="out", raw_var=True):
@@ -144,6 +217,21 @@ def _generate_indices_ops(ndim, int_type):
     return code
 
 
+def _guard_no_site(code, no_site_condition):
+    """Make a distance kernel output infinity if there is no nearest site.
+
+    This is the case for every pixel if the image does not contain a
+    background pixel. The coordinates of the nearest site are then negative.
+    """
+    return (
+        f"if ({no_site_condition}) {{\n"
+        "    dist[i] = static_cast<F>(CUDART_INF);\n"
+        "} else {\n"
+        f"{code}\n"
+        "}\n"
+    )
+
+
 def _get_distance_kernel_code(int_type, dist_int_type, raw_out_var=True):
     code = _generate_shape(
         ndim=2, int_type=int_type, var_name="dist", raw_var=raw_out_var
@@ -158,7 +246,7 @@ def _get_distance_kernel_code(int_type, dist_int_type, raw_out_var=True):
     sq_dist += tmp * tmp;
     dist[i] = sqrt(static_cast<F>(sq_dist));
     """
-    return code
+    return _guard_no_site(code, "y[i] < 0 || x[i] < 0")
 
 
 @cupy.memoize(for_each_device=True)
@@ -188,7 +276,7 @@ def _get_aniso_distance_kernel_code(int_type, raw_out_var=True):
     sq_dist += tmp * tmp;
     dist[i] = sqrt(sq_dist);
     """
-    return code
+    return _guard_no_site(code, "y[i] < 0 || x[i] < 0")
 
 
 @cupy.memoize(for_each_device=True)
@@ -246,6 +334,7 @@ def _pba_2d(
     check_warp_size=False,
     *,
     float64_distances=False,
+    float32_spacing=False,
     distances=None,
     indices=None,
 ):
@@ -264,47 +353,75 @@ def _pba_2d(
     #       overhead of querying properties
     block_size = _get_block_size(check_warp_size)
 
-    if block_params is None:
-        padded_size = math.ceil(max(arr.shape) / block_size) * block_size
+    if arr.dtype.name not in _image_ctypes:
+        # other types (e.g. float16 or complex) are converted
+        arr = arr != 0
 
-        # should be <= size / block_size. sy must be a multiple of m1
-        m1 = padded_size // block_size
-        # size must be a multiple of m2
-        m2 = max(1, min(padded_size // block_size, block_size))
-        # m2 must also be a power of two
-        m2 = 2 ** math.floor(math.log2(m2))
-        if padded_size % m2 != 0:
-            raise RuntimeError("error in setting default m2")
-        m3 = min(min(m1, m2), 2)
+    # Phases 2 and 3 have one thread block per block_size entries of the first
+    # axis, and each thread walks along the whole second axis. Much less work
+    # can be done in parallel if the first axis is short, so a short first axis
+    # in an image that is much longer along the second axis is exchanged with
+    # the second axis. The transposition is only a view: it is undone by
+    # swapping the coordinates when reading the result. This is not done if the
+    # user chose the block parameters since they refer to the axes of the
+    # image. It is also not done if the indices are returned: the distances do
+    # not depend on the order of the axes, but the choice between equidistant
+    # background elements does.
+    transposed = (
+        block_params is None
+        and not return_indices
+        and arr.shape[0] <= _TRANSPOSE_MAX_SIZE
+        and arr.shape[1] >= _TRANSPOSE_RATIO * arr.shape[0]
+        and arr.shape[0] * arr.shape[1] <= _TRANSPOSE_MAX_PIXELS
+    )
+    if transposed:
+        arr = arr.T
+
+    orig_sy, orig_sx = arr.shape
+    if block_params is None:
+        m1, m2, m3 = _default_block_params(
+            arr.shape,
+            block_size,
+            double_spacing=sampling is not None and not float32_spacing,
+        )
     else:
         if any(p < 1 for p in block_params):
             raise ValueError("(m1, m2, m3) in blockparams must be >= 1")
         m1, m2, m3 = block_params
         if math.log2(m2) % 1 > 1e-5:
             raise ValueError("m2 must be a power of 2")
-        multiple = math.lcm(block_size, m1, m2, m3)
-        padded_size = math.ceil(max(arr.shape) / multiple) * multiple
 
-    if m1 > padded_size // block_size:
+    # the bands can't be smaller than block_size
+    n_y = math.ceil(orig_sy / block_size)
+    n_x = math.ceil(orig_sx / block_size)
+    if m1 > n_y:
         raise ValueError(
-            f"m1 too large. must be <= padded arr.shape[0] // {block_size}"
+            f"m1 too large. must be <= arr.shape[0] // {block_size} "
+            "(rounded up)"
         )
-    if m2 > padded_size // block_size:
+    if m2 > n_x:
         raise ValueError(
-            f"m2 too large. must be <= padded arr.shape[1] // {block_size}"
+            f"m2 too large. must be <= arr.shape[1] // {block_size} "
+            "(rounded up)"
         )
-    if m3 > padded_size // block_size:
+    if m3 > n_x:
         raise ValueError(
-            f"m3 too large. must be <= padded arr.shape[1] // {block_size}"
+            f"m3 too large. must be <= arr.shape[1] // {block_size} "
+            "(rounded up)"
         )
-    for m in (m1, m2, m3):
-        if padded_size % m != 0:
-            raise ValueError(
-                f"Largest dimension of image ({padded_size}) must be evenly "
-                f"disivible by each element of block_params: {(m1, m2, m3)}."
-            )
 
-    shape_max = max(arr.shape)
+    padding_width = _determine_padding(arr.shape, block_size, m1, m2)
+    if padding_width is not None:
+        arr = pad(arr, padding_width, mode="constant", constant_values=1)
+    sy, sx = arr.shape
+    if sy * sx >= 2**31:
+        # the kernels index the array with 32-bit integers
+        raise ValueError(
+            f"the padded array shape {arr.shape} has too many elements: "
+            "at most 2**31 - 1 are supported"
+        )
+
+    shape_max = max(sy, sx)
     if shape_max <= 32768:
         int_dtype = cupy.int16
         pixel_int2_type = "short2"
@@ -321,79 +438,57 @@ def _pba_2d(
 
     marker = _init_marker(int_dtype)
 
-    orig_sy, orig_sx = arr.shape
-    padding_width = _determine_padding(arr.shape, padded_size, block_size)
-    if padding_width is not None:
-        arr = pad(arr, padding_width, mode="constant", constant_values=1)
-    size = arr.shape[0]
-
-    input_arr = _pack_int2(arr, marker=marker, int_dtype=int_dtype)
-    output = cupy.zeros_like(input_arr)
-
+    # The arrays are written before they are read: the first kernel reads the
+    # image and writes the first array.
     int2_dtype = cupy.dtype({"names": ["x", "y"], "formats": [int_dtype] * 2})
-    margin = cupy.empty((2 * m1 * size,), dtype=int2_dtype)
+    input_arr = cupy.empty((sy, sx), dtype=int2_dtype)
+    output = cupy.empty_like(input_arr)
+    # strides of the image in elements
+    image_strides = tuple(np.int64(st // arr.itemsize) for st in arr.strides)
+    margin = cupy.empty((2 * m1 * sx,), dtype=int2_dtype)
 
-    # phase 1 of PBA. m1 must divide texture size and be <= 64
-    pba2d = cupy.RawModule(
-        code=get_pba2d_src(
-            block_size_2d=block_size,
-            marker=marker,
-            pixel_int2_t=pixel_int2_type,
-        )
+    spacing_t = "float" if float32_spacing else "double"
+    kernels = _get_pba2d_kernels(
+        block_size,
+        marker,
+        pixel_int2_type,
+        sampling is not None,
+        spacing_t,
+        _image_ctypes[arr.dtype.name],
     )
-    kernelFloodDown = pba2d.get_function("kernelFloodDown")
-    kernelFloodUp = pba2d.get_function("kernelFloodUp")
-    kernelPropagateInterband = pba2d.get_function("kernelPropagateInterband")
-    kernelUpdateVertical = pba2d.get_function("kernelUpdateVertical")
-    kernelCreateForwardPointers = pba2d.get_function(
-        "kernelCreateForwardPointers"
-    )
-    kernelDoubleToSingleList = pba2d.get_function("kernelDoubleToSingleList")
+    kernelFloodDownUp = kernels["kernelFloodDownUp"]
+    kernelPropagateInterband = kernels["kernelPropagateInterband"]
+    kernelUpdateVertical = kernels["kernelUpdateVertical"]
+    kernelCreateForwardPointers = kernels["kernelCreateForwardPointers"]
+    kernelDoubleToSingleList = kernels["kernelDoubleToSingleList"]
+    kernelProximatePoints = kernels["kernelProximatePoints"]
+    kernelMergeBands = kernels["kernelMergeBands"]
+    kernelColor = kernels["kernelColor"]
 
-    if sampling is None:
-        kernelProximatePoints = pba2d.get_function("kernelProximatePoints")
-        kernelMergeBands = pba2d.get_function("kernelMergeBands")
-        kernelColor = pba2d.get_function("kernelColor")
-    else:
-        kernelProximatePoints = pba2d.get_function(
-            "kernelProximatePointsWithSpacing"
-        )
-        kernelMergeBands = pba2d.get_function("kernelMergeBandsWithSpacing")
-        kernelColor = pba2d.get_function("kernelColorWithSpacing")
-
+    # Phase 1 works along the first axis of the (sy, sx) image, in bands of
+    # bandSize1 rows. Each launch gets the size of the image that it reads.
     block = (block_size, 1, 1)
-    grid = (math.ceil(size / block[0]), m1, 1)
-    bandSize1 = size // m1
-    # kernelFloodDown modifies input_arr in-place
-    kernelFloodDown(
-        grid,
-        block,
-        (input_arr, input_arr, size, bandSize1),
+    grid = (sx // block_size, m1, 1)
+    bandSize1 = sy // m1
+    # kernelFloodDownUp reads the image and modifies input_arr in-place
+    kernelFloodDownUp(
+        grid, block, (arr,) + image_strides + (input_arr, sx, bandSize1)
     )
-    # kernelFloodUp modifies input_arr in-place
-    kernelFloodUp(
-        grid,
-        block,
-        (input_arr, input_arr, size, bandSize1),
-    )
-    # kernelFloodUp fills values into margin
+    # kernelPropagateInterband fills values into margin
     kernelPropagateInterband(
-        grid,
-        block,
-        (input_arr, margin, size, bandSize1),
+        grid, block, (input_arr, margin, sx, sy, bandSize1)
     )
     # kernelUpdateVertical stores output into an intermediate array of
-    # transposed shape
+    # transposed shape (sx, sy)
     kernelUpdateVertical(
-        grid,
-        block,
-        (input_arr, margin, output, size, bandSize1),
+        grid, block, (input_arr, margin, output, sx, sy, bandSize1)
     )
 
-    # phase 2
+    # phase 2 works along the first axis of the transposed image (sx rows of
+    # length sy)
     block = (block_size, 1, 1)
-    grid = (math.ceil(size / block[0]), m2, 1)
-    bandSize2 = size // m2
+    grid = (sy // block_size, m2, 1)
+    bandSize2 = sx // m2
     if sampling is None:
         sampling_args = ()
     else:
@@ -402,50 +497,60 @@ def _pba_2d(
         # we are now working with (x, y) instead. Need sampling ordered
         # accordingly.
         sampling = tuple(map(float, sampling))
-        sampling_args = (sampling[0], sampling[1])
+        # reverse the order if the image was transposed
+        kernel_sampling = sampling[::-1] if transposed else sampling
+        # the type of the arguments has to match the one in the kernels
+        spacing_type = np.float32 if float32_spacing else np.float64
+        sampling_args = (
+            spacing_type(kernel_sampling[0]),
+            spacing_type(kernel_sampling[1]),
+        )
     kernelProximatePoints(
         grid,
         block,
-        (output, input_arr, size, bandSize2) + sampling_args,
+        (output, input_arr, sy, bandSize2) + sampling_args,
     )
     kernelCreateForwardPointers(
         grid,
         block,
-        (input_arr, input_arr, size, bandSize2),
+        (input_arr, input_arr, sy, bandSize2),
     )
     # Repeatedly merging two bands into one
     noBand = m2
     while noBand > 1:
-        grid = (math.ceil(size / block[0]), noBand // 2)
+        grid = (sy // block_size, noBand // 2)
         kernelMergeBands(
             grid,
             block,
-            (output, input_arr, input_arr, size, size // noBand)
-            + sampling_args,  # noqa
+            (output, input_arr, input_arr, sy, sx // noBand) + sampling_args,
         )
         noBand //= 2
     # Replace the forward link with the X coordinate of the seed to remove
     # the need of looking at the other texture. We need it for coloring.
-    grid = (math.ceil(size / block[0]), size)
+    grid = (sy // block_size, sx)
     kernelDoubleToSingleList(
         grid,
         block,
-        (output, input_arr, input_arr, size),
+        (output, input_arr, input_arr, sy),
     )
 
-    # Phase 3 of PBA
+    # Phase 3 of PBA: this transposes back to the original shape
     block = (block_size, m3, 1)
-    grid = (math.ceil(size / block[0]), 1, 1)
+    grid = (sy // block_size, 1, 1)
     kernelColor(
         grid,
         block,
-        (input_arr, output, size) + sampling_args,
+        (input_arr, output, sy, sx) + sampling_args,
     )
 
     output = _unpack_int2(output, make_copy=False, int_dtype=int_dtype)
     # make sure to crop any padding that was added here!
     x = output[:orig_sy, :orig_sx, 0]
     y = output[:orig_sy, :orig_sx, 1]
+    if transposed:
+        # the roles of the axes were exchanged: transpose to get views with
+        # the shape of the input
+        x, y = y.T, x.T
 
     vals = ()
     if return_distances:
@@ -475,7 +580,8 @@ def _pba_2d(
         vals = vals + (distances,)
     if return_indices:
         if indices_inplace:
-            _check_indices(indices, (arr.ndim,) + arr.shape, x.dtype.itemsize)
+            # `arr` may have been padded, so use the shape of the cropped result
+            _check_indices(indices, (arr.ndim,) + y.shape, x.dtype.itemsize)
             indices[0, ...] = y
             indices[1, ...] = x
         else:

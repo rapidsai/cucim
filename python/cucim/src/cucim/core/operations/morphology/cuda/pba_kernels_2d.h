@@ -1,6 +1,6 @@
 /*
  * SPDX-FileCopyrightText: Copyright: (c) 2019 School of Computing, National University of Singapore
- * SPDX-FileCopyrightText: Copyright (c) 2022-2025, NVIDIA CORPORATION. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0 AND MIT
  */
 
@@ -21,6 +21,11 @@
 //   x and y axes. The kernels are identical except that the `dominate` function
 //   is replaced by `dominate_sp` and the physical spacings are used when
 //   computing distances.
+// - The kernels take the `width` and `height` of the image, instead of a single
+//   size, so the image does not have to have the same size along both axes.
+//   Kernels that work on the transposed image (phases 2 and 3) are given the
+//   length of its rows (the `height` of the image) and, in kernelColor, also
+//   the `width`.
 //
 
 
@@ -42,6 +47,16 @@
 #define BLOCKSIZE 32
 #endif
 
+// The type that is used for the pixel spacing, and for the distances computed
+// with it, in the kernels that take a pixel spacing
+#ifndef SPACING_T
+#define SPACING_T double
+#endif
+
+#ifndef IMAGE_T
+#define IMAGE_T unsigned char
+#endif
+
 #ifndef pixel_int2_t
 #define pixel_int2_t short2
 #define make_pixel(x, y)  make_short2(x, y)
@@ -50,7 +65,8 @@
 // END OF DEFINITIONS OVERRIDDEN BY THE PYTHON SCRIPT
 
 
-#define TOID(x, y, size)  ((y) * (size) + (x))
+// Index into an array with rows of length `pitch`.
+#define TOID(x, y, pitch)  ((y) * (pitch) + (x))
 
 #define LL long long
 __device__ bool dominate(LL x1, LL y1, LL x2, LL y2, LL x3, LL y3, LL x0)
@@ -80,63 +96,79 @@ __device__ bool dominate_sp(int _x1, int _y1, int _x2, int _y2, int _x3, int _y3
 
 extern "C"{
 
-__global__ void kernelFloodDown(pixel_int2_t *input, pixel_int2_t *output, int size, int bandSize)
+// The sweeps of phase 1: every thread handles one column of one band.
+//
+// Sweep down the band, carrying the last site that was seen. This reads the
+// image (the sites are the pixels that are 0), so the image does not have to
+// be packed in a separate kernel. The strides are in elements of the image,
+// which can be any array of type IMAGE_T.
+__device__ void floodDown(const IMAGE_T *image, long long stride_y, long long stride_x, pixel_int2_t *data, int width, int bandSize)
 {
     int tx = blockIdx.x * blockDim.x + threadIdx.x;
     int ty = blockIdx.y * bandSize;
-    int id = TOID(tx, ty, size);
+    int id = TOID(tx, ty, width);
+    const IMAGE_T *pixel = image + ty * stride_y + tx * stride_x;
 
-    pixel_int2_t pixel1, pixel2;
+    pixel_int2_t pixel1;
 
     pixel1 = make_pixel(MARKER, MARKER);
 
-    for (int i = 0; i < bandSize; i++, id += size) {
-        pixel2 = input[id];
+    for (int i = 0; i < bandSize; i++, id += width, pixel += stride_y) {
+        if (*pixel == 0)
+            pixel1 = make_pixel(tx, ty + i);
 
-        if (pixel2.x != MARKER)
-            pixel1 = pixel2;
-
-        output[id] = pixel1;
+        data[id] = pixel1;
     }
 }
 
-__global__ void kernelFloodUp(pixel_int2_t *input, pixel_int2_t *output, int size, int bandSize)
+// Sweep up the band, keeping the nearer of the carried site and the site that
+// was found by the sweep down. This runs in place.
+__device__ void floodUp(pixel_int2_t *data, int width, int bandSize)
 {
     int tx = blockIdx.x * blockDim.x + threadIdx.x;
     int ty = (blockIdx.y+1) * bandSize - 1;
-    int id = TOID(tx, ty, size);
+    int id = TOID(tx, ty, width);
 
     pixel_int2_t pixel1, pixel2;
     int dist1, dist2;
 
     pixel1 = make_pixel(MARKER, MARKER);
 
-    for (int i = 0; i < bandSize; i++, id -= size) {
+    for (int i = 0; i < bandSize; i++, id -= width) {
         dist1 = abs(pixel1.y - ty + i);
 
-        pixel2 = input[id];
+        pixel2 = data[id];
         dist2 = abs(pixel2.y - ty + i);
 
         if (dist2 < dist1)
             pixel1 = pixel2;
 
-        output[id] = pixel1;
+        data[id] = pixel1;
     }
 }
 
-__global__ void kernelPropagateInterband(pixel_int2_t *input, pixel_int2_t *margin_out, int size, int bandSize)
+// Both sweeps are done by the same thread on the same values, so they do not
+// have to be separate kernels (a thread only reads values that it has written
+// itself).
+__global__ void kernelFloodDownUp(const IMAGE_T *image, long long stride_y, long long stride_x, pixel_int2_t *data, int width, int bandSize)
+{
+    floodDown(image, stride_y, stride_x, data, width, bandSize);
+    floodUp(data, width, bandSize);
+}
+
+__global__ void kernelPropagateInterband(pixel_int2_t *input, pixel_int2_t *margin_out, int width, int height, int bandSize)
 {
     int tx = blockIdx.x * blockDim.x + threadIdx.x;
-    int inc = bandSize * size;
+    int inc = bandSize * width;
     int ny, nid, nDist;
     pixel_int2_t pixel;
 
     // Top row, look backward
     int ty = blockIdx.y * bandSize;
-    int topId = TOID(tx, ty, size);
-    int bottomId = TOID(tx, ty + bandSize - 1, size);
-    int tid = blockIdx.y * size + tx;
-    int bid = tid + (size * size / bandSize);
+    int topId = TOID(tx, ty, width);
+    int bottomId = TOID(tx, ty + bandSize - 1, width);
+    int tid = blockIdx.y * width + tx;
+    int bid = tid + (height / bandSize * width);
 
     pixel = input[topId];
     int myDist = abs(pixel.y - ty);
@@ -161,7 +193,7 @@ __global__ void kernelPropagateInterband(pixel_int2_t *input, pixel_int2_t *marg
     myDist = abs(pixel.y - ty);
     margin_out[bid] = pixel;
 
-    for (ny = ty + 1, nid = topId + inc; ny < size; ny += bandSize, nid += inc) {
+    for (ny = ty + 1, nid = topId + inc; ny < height; ny += bandSize, nid += inc) {
         pixel = input[nid];
 
         if (pixel.x != MARKER) {
@@ -175,27 +207,27 @@ __global__ void kernelPropagateInterband(pixel_int2_t *input, pixel_int2_t *marg
     }
 }
 
-__global__ void kernelUpdateVertical(pixel_int2_t *color, pixel_int2_t *margin, pixel_int2_t *output, int size, int bandSize)
+__global__ void kernelUpdateVertical(pixel_int2_t *color, pixel_int2_t *margin, pixel_int2_t *output, int width, int height, int bandSize)
 {
     __shared__ pixel_int2_t block[BLOCKSIZE][BLOCKSIZE];
 
     int tx = blockIdx.x * blockDim.x + threadIdx.x;
     int ty = blockIdx.y * bandSize;
 
-    pixel_int2_t top = margin[blockIdx.y * size + tx];
-    pixel_int2_t bottom = margin[(blockIdx.y + size / bandSize) * size + tx];
+    pixel_int2_t top = margin[blockIdx.y * width + tx];
+    pixel_int2_t bottom = margin[(blockIdx.y + height / bandSize) * width + tx];
     pixel_int2_t pixel;
 
     int dist, myDist;
 
-    int id = TOID(tx, ty, size);
+    int id = TOID(tx, ty, width);
 
     int n_step = bandSize / blockDim.x;
     for(int step = 0; step < n_step; ++step) {
         int y_start = blockIdx.y * bandSize + step * blockDim.x;
         int y_end = y_start + blockDim.x;
 
-        for (ty = y_start; ty < y_end; ++ty, id += size) {
+        for (ty = y_start; ty < y_end; ++ty, id += width) {
             pixel = color[id];
             myDist = abs(pixel.y - ty);
 
@@ -214,9 +246,9 @@ __global__ void kernelUpdateVertical(pixel_int2_t *color, pixel_int2_t *margin, 
         // block is written to a transposed location in the output
 
         int tid = TOID(blockIdx.y * bandSize + step * blockDim.x + threadIdx.x, \
-                        blockIdx.x * blockDim.x, size);
+                        blockIdx.x * blockDim.x, height);
 
-        for(int i = 0; i < blockDim.x; ++i, tid += size) {
+        for(int i = 0; i < blockDim.x; ++i, tid += height) {
             output[tid] = block[i][threadIdx.x];
         }
 
@@ -224,17 +256,17 @@ __global__ void kernelUpdateVertical(pixel_int2_t *color, pixel_int2_t *margin, 
     }
 }
 
-__global__ void kernelProximatePoints(pixel_int2_t *input, pixel_int2_t *stack, int size, int bandSize)
+__global__ void kernelProximatePoints(pixel_int2_t *input, pixel_int2_t *stack, int height, int bandSize)
 {
     int tx = blockIdx.x * blockDim.x + threadIdx.x;
     int ty = blockIdx.y * bandSize;
-    int id = TOID(tx, ty, size);
+    int id = TOID(tx, ty, height);
     int lasty = -1;
     pixel_int2_t last1, last2, current;
 
     last1.y = -1; last2.y = -1;
 
-    for (int i = 0; i < bandSize; i++, id += size) {
+    for (int i = 0; i < bandSize; i++, id += height) {
         current = input[id];
 
         if (current.x != MARKER) {
@@ -246,7 +278,7 @@ __global__ void kernelProximatePoints(pixel_int2_t *input, pixel_int2_t *stack, 
                 lasty = last2.y; last2 = last1;
 
                 if (last1.y >= 0)
-                    last1 = stack[TOID(tx, last1.y, size)];
+                    last1 = stack[TOID(tx, last1.y, height)];
             }
 
             last1 = last2; last2 = make_pixel(current.x, lasty); lasty = current.y;
@@ -257,21 +289,21 @@ __global__ void kernelProximatePoints(pixel_int2_t *input, pixel_int2_t *stack, 
 
     // Store the pointer to the tail at the last pixel of this band
     if (lasty != ty + bandSize - 1)
-        stack[TOID(tx, ty + bandSize - 1, size)] = make_pixel(MARKER, lasty);
+        stack[TOID(tx, ty + bandSize - 1, height)] = make_pixel(MARKER, lasty);
 }
 
 
-__global__ void kernelProximatePointsWithSpacing(pixel_int2_t *input, pixel_int2_t *stack, int size, int bandSize, double sx, double sy)
+__global__ void kernelProximatePointsWithSpacing(pixel_int2_t *input, pixel_int2_t *stack, int height, int bandSize, SPACING_T sx, SPACING_T sy)
 {
     int tx = blockIdx.x * blockDim.x + threadIdx.x;
     int ty = blockIdx.y * bandSize;
-    int id = TOID(tx, ty, size);
+    int id = TOID(tx, ty, height);
     int lasty = -1;
     pixel_int2_t last1, last2, current;
 
     last1.y = -1; last2.y = -1;
 
-    for (int i = 0; i < bandSize; i++, id += size) {
+    for (int i = 0; i < bandSize; i++, id += height) {
         current = input[id];
 
         if (current.x != MARKER) {
@@ -283,7 +315,7 @@ __global__ void kernelProximatePointsWithSpacing(pixel_int2_t *input, pixel_int2
                 lasty = last2.y; last2 = last1;
 
                 if (last1.y >= 0)
-                    last1 = stack[TOID(tx, last1.y, size)];
+                    last1 = stack[TOID(tx, last1.y, height)];
             }
 
             last1 = last2; last2 = make_pixel(current.x, lasty); lasty = current.y;
@@ -294,14 +326,14 @@ __global__ void kernelProximatePointsWithSpacing(pixel_int2_t *input, pixel_int2
 
     // Store the pointer to the tail at the last pixel of this band
     if (lasty != ty + bandSize - 1)
-        stack[TOID(tx, ty + bandSize - 1, size)] = make_pixel(MARKER, lasty);
+        stack[TOID(tx, ty + bandSize - 1, height)] = make_pixel(MARKER, lasty);
 }
 
-__global__ void kernelCreateForwardPointers(pixel_int2_t *input, pixel_int2_t *output, int size, int bandSize)
+__global__ void kernelCreateForwardPointers(pixel_int2_t *input, pixel_int2_t *output, int height, int bandSize)
 {
     int tx = blockIdx.x * blockDim.x + threadIdx.x;
     int ty = (blockIdx.y+1) * bandSize - 1;
-    int id = TOID(tx, ty, size);
+    int id = TOID(tx, ty, height);
     int lasty = -1, nexty;
     pixel_int2_t current;
 
@@ -313,7 +345,7 @@ __global__ void kernelCreateForwardPointers(pixel_int2_t *input, pixel_int2_t *o
     else
         nexty = ty;
 
-    for (int i = 0; i < bandSize; i++, id -= size)
+    for (int i = 0; i < bandSize; i++, id -= height)
         if (ty - i == nexty) {
             current = make_pixel(lasty, input[id].y);
             output[id] = current;
@@ -324,10 +356,10 @@ __global__ void kernelCreateForwardPointers(pixel_int2_t *input, pixel_int2_t *o
 
     // Store the pointer to the head at the first pixel of this band
     if (lasty != ty - bandSize + 1)
-        output[id + size] = make_pixel(lasty, MARKER);
+        output[id + height] = make_pixel(lasty, MARKER);
 }
 
-__global__ void kernelMergeBands(pixel_int2_t *color, pixel_int2_t *link, pixel_int2_t *output, int size, int bandSize)
+__global__ void kernelMergeBands(pixel_int2_t *color, pixel_int2_t *link, pixel_int2_t *output, int height, int bandSize)
 {
     int tx = blockIdx.x * blockDim.x + threadIdx.x;
     int band1 = blockIdx.y * 2;
@@ -341,36 +373,36 @@ __global__ void kernelMergeBands(pixel_int2_t *color, pixel_int2_t *link, pixel_
 
     // Get the two last items of the first list
     lasty = band2 * bandSize - 1;
-    last2 = make_pixel(color[TOID(tx, lasty, size)].x,
-        link[TOID(tx, lasty, size)].y);
+    last2 = make_pixel(color[TOID(tx, lasty, height)].x,
+        link[TOID(tx, lasty, height)].y);
 
     if (last2.x == MARKER) {
         lasty = last2.y;
 
         if (lasty >= 0)
-            last2 = make_pixel(color[TOID(tx, lasty, size)].x,
-            link[TOID(tx, lasty, size)].y);
+            last2 = make_pixel(color[TOID(tx, lasty, height)].x,
+            link[TOID(tx, lasty, height)].y);
         else
             last2 = make_pixel(MARKER, MARKER);
     }
 
     if (last2.y >= 0) {
         // Second item at the top of the stack
-        last1 = make_pixel(color[TOID(tx, last2.y, size)].x,
-            link[TOID(tx, last2.y, size)].y);
+        last1 = make_pixel(color[TOID(tx, last2.y, height)].x,
+            link[TOID(tx, last2.y, height)].y);
     }
 
     // Get the first item of the second band
     firsty = band2 * bandSize;
-    current = make_pixel(link[TOID(tx, firsty, size)].x,
-        color[TOID(tx, firsty, size)].x);
+    current = make_pixel(link[TOID(tx, firsty, height)].x,
+        color[TOID(tx, firsty, height)].x);
 
     if (current.y == MARKER) {
         firsty = current.x;
 
         if (firsty >= 0)
-            current = make_pixel(link[TOID(tx, firsty, size)].x,
-            color[TOID(tx, firsty, size)].x);
+            current = make_pixel(link[TOID(tx, firsty, height)].x,
+            color[TOID(tx, firsty, height)].x);
         else
             current = make_pixel(MARKER, MARKER);
     }
@@ -391,15 +423,15 @@ __global__ void kernelMergeBands(pixel_int2_t *color, pixel_int2_t *link, pixel_
             top--;
 
             if (last1.y >= 0)
-                last1 = make_pixel(color[TOID(tx, last1.y, size)].x,
-                link[TOID(tx, last1.y, size)].y);
+                last1 = make_pixel(color[TOID(tx, last1.y, height)].x,
+                link[TOID(tx, last1.y, height)].y);
         }
 
         // Update the current pointer
-        output[TOID(tx, firsty, size)] = make_pixel(current.x, lasty);
+        output[TOID(tx, firsty, height)] = make_pixel(current.x, lasty);
 
         if (lasty >= 0)
-            output[TOID(tx, lasty, size)] = make_pixel(firsty, last2.y);
+            output[TOID(tx, lasty, height)] = make_pixel(firsty, last2.y);
 
         last1 = last2; last2 = make_pixel(current.y, lasty); lasty = firsty;
         firsty = current.x;
@@ -408,8 +440,8 @@ __global__ void kernelMergeBands(pixel_int2_t *color, pixel_int2_t *link, pixel_
 
         // Advance the current pointer to the next one
         if (firsty >= 0)
-            current = make_pixel(link[TOID(tx, firsty, size)].x,
-            color[TOID(tx, firsty, size)].x);
+            current = make_pixel(link[TOID(tx, firsty, height)].x,
+            color[TOID(tx, firsty, height)].x);
         else
             current = make_pixel(MARKER, MARKER);
     }
@@ -417,37 +449,37 @@ __global__ void kernelMergeBands(pixel_int2_t *color, pixel_int2_t *link, pixel_
     // Update the head and tail pointer.
     firsty = band1 * bandSize;
     lasty = band2 * bandSize;
-    current = link[TOID(tx, firsty, size)];
+    current = link[TOID(tx, firsty, height)];
 
     if (current.y == MARKER && current.x < 0) { // No head?
-        last1 = link[TOID(tx, lasty, size)];
+        last1 = link[TOID(tx, lasty, height)];
 
         if (last1.y == MARKER)
             current.x = last1.x;
         else
             current.x = lasty;
 
-        output[TOID(tx, firsty, size)] = current;
+        output[TOID(tx, firsty, height)] = current;
     }
 
     firsty = band1 * bandSize + bandSize - 1;
     lasty = band2 * bandSize + bandSize - 1;
-    current = link[TOID(tx, lasty, size)];
+    current = link[TOID(tx, lasty, height)];
 
     if (current.x == MARKER && current.y < 0) { // No tail?
-        last1 = link[TOID(tx, firsty, size)];
+        last1 = link[TOID(tx, firsty, height)];
 
         if (last1.x == MARKER)
             current.y = last1.y;
         else
             current.y = firsty;
 
-        output[TOID(tx, lasty, size)] = current;
+        output[TOID(tx, lasty, height)] = current;
     }
 }
 
 
-__global__ void kernelMergeBandsWithSpacing(pixel_int2_t *color, pixel_int2_t *link, pixel_int2_t *output, int size, int bandSize, double sx, double sy)
+__global__ void kernelMergeBandsWithSpacing(pixel_int2_t *color, pixel_int2_t *link, pixel_int2_t *output, int height, int bandSize, SPACING_T sx, SPACING_T sy)
 {
     int tx = blockIdx.x * blockDim.x + threadIdx.x;
     int band1 = blockIdx.y * 2;
@@ -461,36 +493,36 @@ __global__ void kernelMergeBandsWithSpacing(pixel_int2_t *color, pixel_int2_t *l
 
     // Get the two last items of the first list
     lasty = band2 * bandSize - 1;
-    last2 = make_pixel(color[TOID(tx, lasty, size)].x,
-        link[TOID(tx, lasty, size)].y);
+    last2 = make_pixel(color[TOID(tx, lasty, height)].x,
+        link[TOID(tx, lasty, height)].y);
 
     if (last2.x == MARKER) {
         lasty = last2.y;
 
         if (lasty >= 0)
-            last2 = make_pixel(color[TOID(tx, lasty, size)].x,
-            link[TOID(tx, lasty, size)].y);
+            last2 = make_pixel(color[TOID(tx, lasty, height)].x,
+            link[TOID(tx, lasty, height)].y);
         else
             last2 = make_pixel(MARKER, MARKER);
     }
 
     if (last2.y >= 0) {
         // Second item at the top of the stack
-        last1 = make_pixel(color[TOID(tx, last2.y, size)].x,
-            link[TOID(tx, last2.y, size)].y);
+        last1 = make_pixel(color[TOID(tx, last2.y, height)].x,
+            link[TOID(tx, last2.y, height)].y);
     }
 
     // Get the first item of the second band
     firsty = band2 * bandSize;
-    current = make_pixel(link[TOID(tx, firsty, size)].x,
-        color[TOID(tx, firsty, size)].x);
+    current = make_pixel(link[TOID(tx, firsty, height)].x,
+        color[TOID(tx, firsty, height)].x);
 
     if (current.y == MARKER) {
         firsty = current.x;
 
         if (firsty >= 0)
-            current = make_pixel(link[TOID(tx, firsty, size)].x,
-            color[TOID(tx, firsty, size)].x);
+            current = make_pixel(link[TOID(tx, firsty, height)].x,
+            color[TOID(tx, firsty, height)].x);
         else
             current = make_pixel(MARKER, MARKER);
     }
@@ -511,15 +543,15 @@ __global__ void kernelMergeBandsWithSpacing(pixel_int2_t *color, pixel_int2_t *l
             top--;
 
             if (last1.y >= 0)
-                last1 = make_pixel(color[TOID(tx, last1.y, size)].x,
-                link[TOID(tx, last1.y, size)].y);
+                last1 = make_pixel(color[TOID(tx, last1.y, height)].x,
+                link[TOID(tx, last1.y, height)].y);
         }
 
         // Update the current pointer
-        output[TOID(tx, firsty, size)] = make_pixel(current.x, lasty);
+        output[TOID(tx, firsty, height)] = make_pixel(current.x, lasty);
 
         if (lasty >= 0)
-            output[TOID(tx, lasty, size)] = make_pixel(firsty, last2.y);
+            output[TOID(tx, lasty, height)] = make_pixel(firsty, last2.y);
 
         last1 = last2; last2 = make_pixel(current.y, lasty); lasty = firsty;
         firsty = current.x;
@@ -528,8 +560,8 @@ __global__ void kernelMergeBandsWithSpacing(pixel_int2_t *color, pixel_int2_t *l
 
         // Advance the current pointer to the next one
         if (firsty >= 0)
-            current = make_pixel(link[TOID(tx, firsty, size)].x,
-            color[TOID(tx, firsty, size)].x);
+            current = make_pixel(link[TOID(tx, firsty, height)].x,
+            color[TOID(tx, firsty, height)].x);
         else
             current = make_pixel(MARKER, MARKER);
     }
@@ -537,45 +569,45 @@ __global__ void kernelMergeBandsWithSpacing(pixel_int2_t *color, pixel_int2_t *l
     // Update the head and tail pointer.
     firsty = band1 * bandSize;
     lasty = band2 * bandSize;
-    current = link[TOID(tx, firsty, size)];
+    current = link[TOID(tx, firsty, height)];
 
     if (current.y == MARKER && current.x < 0) { // No head?
-        last1 = link[TOID(tx, lasty, size)];
+        last1 = link[TOID(tx, lasty, height)];
 
         if (last1.y == MARKER)
             current.x = last1.x;
         else
             current.x = lasty;
 
-        output[TOID(tx, firsty, size)] = current;
+        output[TOID(tx, firsty, height)] = current;
     }
 
     firsty = band1 * bandSize + bandSize - 1;
     lasty = band2 * bandSize + bandSize - 1;
-    current = link[TOID(tx, lasty, size)];
+    current = link[TOID(tx, lasty, height)];
 
     if (current.x == MARKER && current.y < 0) { // No tail?
-        last1 = link[TOID(tx, firsty, size)];
+        last1 = link[TOID(tx, firsty, height)];
 
         if (last1.x == MARKER)
             current.y = last1.y;
         else
             current.y = firsty;
 
-        output[TOID(tx, lasty, size)] = current;
+        output[TOID(tx, lasty, height)] = current;
     }
 }
 
-__global__ void kernelDoubleToSingleList(pixel_int2_t *color, pixel_int2_t *link, pixel_int2_t *output, int size)
+__global__ void kernelDoubleToSingleList(pixel_int2_t *color, pixel_int2_t *link, pixel_int2_t *output, int height)
 {
     int tx = blockIdx.x * blockDim.x + threadIdx.x;
     int ty = blockIdx.y;
-    int id = TOID(tx, ty, size);
+    int id = TOID(tx, ty, height);
 
     output[id] = make_pixel(color[id].x, link[id].y);
 }
 
-__global__ void kernelColor(pixel_int2_t *input, pixel_int2_t *output, int size)
+__global__ void kernelColor(pixel_int2_t *input, pixel_int2_t *output, int height, int width)
 {
     __shared__ pixel_int2_t block[BLOCKSIZE][BLOCKSIZE];
 
@@ -586,22 +618,22 @@ __global__ void kernelColor(pixel_int2_t *input, pixel_int2_t *output, int size)
     unsigned int best, dist;
     pixel_int2_t last1, last2;
 
-    lasty = size - 1;
+    lasty = width - 1;
 
-    last2 = input[TOID(tx, lasty, size)];
+    last2 = input[TOID(tx, lasty, height)];
 
     if (last2.x == MARKER) {
         lasty = max(last2.y, 0);
-        last2 = input[TOID(tx, lasty, size)];
+        last2 = input[TOID(tx, lasty, height)];
     }
 
     if (last2.y >= 0)
-        last1 = input[TOID(tx, last2.y, size)];
+        last1 = input[TOID(tx, last2.y, height)];
 
-    int y_start, y_end, n_step = size / blockDim.x;
+    int y_start, y_end, n_step = width / blockDim.x;
     for(int step = 0; step < n_step; ++step) {
-        y_start = size - step * blockDim.x - 1;
-        y_end = size - (step + 1) * blockDim.x;
+        y_start = width - step * blockDim.x - 1;
+        y_end = width - (step + 1) * blockDim.x;
 
         for (int ty = y_start - tid; ty >= y_end; ty -= blockDim.y) {
             dx = last2.x - tx; dy = lasty - ty;
@@ -617,18 +649,19 @@ __global__ void kernelColor(pixel_int2_t *input, pixel_int2_t *output, int size)
                 best = dist; lasty = last2.y; last2 = last1;
 
                 if (last2.y >= 0)
-                    last1 = input[TOID(tx, last2.y, size)];
+                    last1 = input[TOID(tx, last2.y, height)];
             }
 
-            block[threadIdx.x][ty - y_end] = make_pixel(lasty, last2.x);
+            // an empty list (the image has no site) is marked by MARKER
+            block[threadIdx.x][ty - y_end] = (last2.x == MARKER) ? make_pixel(MARKER, MARKER) : make_pixel(lasty, last2.x);
         }
 
         __syncthreads();
 
         // note: transposes back to original shape here
         if(!threadIdx.y) {
-            int id = TOID(y_end + threadIdx.x, blockIdx.x * blockDim.x, size);
-            for(int i = 0; i < blockDim.x; ++i, id+=size) {
+            int id = TOID(y_end + threadIdx.x, blockIdx.x * blockDim.x, width);
+            for(int i = 0; i < blockDim.x; ++i, id += width) {
                 output[id] = block[i][threadIdx.x];
             }
         }
@@ -638,7 +671,7 @@ __global__ void kernelColor(pixel_int2_t *input, pixel_int2_t *output, int size)
 }
 
 
-__global__ void kernelColorWithSpacing(pixel_int2_t *input, pixel_int2_t *output, int size, double sx, double sy)
+__global__ void kernelColorWithSpacing(pixel_int2_t *input, pixel_int2_t *output, int height, int width, SPACING_T sx, SPACING_T sy)
 {
     __shared__ pixel_int2_t block[BLOCKSIZE][BLOCKSIZE];
 
@@ -646,34 +679,34 @@ __global__ void kernelColorWithSpacing(pixel_int2_t *input, pixel_int2_t *output
     int tid = threadIdx.y;
     int tx = blockIdx.x * blockDim.x + col;
     int lasty;
-    double dx, dy, best, dist;
+    SPACING_T dx, dy, best, dist;
     pixel_int2_t last1, last2;
 
-    lasty = size - 1;
+    lasty = width - 1;
 
-    last2 = input[TOID(tx, lasty, size)];
+    last2 = input[TOID(tx, lasty, height)];
 
     if (last2.x == MARKER) {
         lasty = max(last2.y, 0);
-        last2 = input[TOID(tx, lasty, size)];
+        last2 = input[TOID(tx, lasty, height)];
     }
 
     if (last2.y >= 0)
-        last1 = input[TOID(tx, last2.y, size)];
+        last1 = input[TOID(tx, last2.y, height)];
 
-    int y_start, y_end, n_step = size / blockDim.x;
+    int y_start, y_end, n_step = width / blockDim.x;
     for(int step = 0; step < n_step; ++step) {
-        y_start = size - step * blockDim.x - 1;
-        y_end = size - (step + 1) * blockDim.x;
+        y_start = width - step * blockDim.x - 1;
+        y_end = width - (step + 1) * blockDim.x;
 
         for (int ty = y_start - tid; ty >= y_end; ty -= blockDim.y) {
-            dx = static_cast<double>(last2.x - tx) * sx;
-            dy = static_cast<double>(lasty - ty) * sy;
+            dx = static_cast<SPACING_T>(last2.x - tx) * sx;
+            dy = static_cast<SPACING_T>(lasty - ty) * sy;
             best = dist = dx * dx + dy * dy;
 
             while (last2.y >= 0) {
-                dx = static_cast<double>(last1.x - tx) * sx;
-                dy = static_cast<double>(last2.y - ty) * sy;
+                dx = static_cast<SPACING_T>(last1.x - tx) * sx;
+                dy = static_cast<SPACING_T>(last2.y - ty) * sy;
                 dist = dx * dx + dy * dy;
 
                 if (dist > best)
@@ -682,18 +715,19 @@ __global__ void kernelColorWithSpacing(pixel_int2_t *input, pixel_int2_t *output
                 best = dist; lasty = last2.y; last2 = last1;
 
                 if (last2.y >= 0)
-                    last1 = input[TOID(tx, last2.y, size)];
+                    last1 = input[TOID(tx, last2.y, height)];
             }
 
-            block[threadIdx.x][ty - y_end] = make_pixel(lasty, last2.x);
+            // an empty list (the image has no site) is marked by MARKER
+            block[threadIdx.x][ty - y_end] = (last2.x == MARKER) ? make_pixel(MARKER, MARKER) : make_pixel(lasty, last2.x);
         }
 
         __syncthreads();
 
         // note: transposes back to original shape here
         if(!threadIdx.y) {
-            int id = TOID(y_end + threadIdx.x, blockIdx.x * blockDim.x, size);
-            for(int i = 0; i < blockDim.x; ++i, id+=size) {
+            int id = TOID(y_end + threadIdx.x, blockIdx.x * blockDim.x, width);
+            for(int i = 0; i < blockDim.x; ++i, id += width) {
                 output[id] = block[i][threadIdx.x];
             }
         }
