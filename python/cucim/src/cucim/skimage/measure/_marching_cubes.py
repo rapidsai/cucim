@@ -35,7 +35,8 @@ def marching_cubes(
       different order.
     - ``verts`` is always float32 (scikit-image returns float64 if ``spacing``
       is not ``(1, 1, 1)``) and ``faces`` is always int32.
-    - ``normals`` and ``values`` are computed differently, see Returns.
+    - ``normals`` are computed differently, and with the ``spacing`` taken
+      into account, see Returns. ``values`` are the same.
     - A volume that contains NaN raises a ``ValueError`` (scikit-image
       returns vertices with NaN coordinates).
     - The level is rounded to float32 when the samples are classified, so a
@@ -105,22 +106,29 @@ def marching_cubes(
         exactly three indices.
     normals : (V, 3) array
         The (unit) normal direction at each vertex, as calculated from the
-        data, with the sign of scikit-image's normals (towards lower values).
-        For a vertex on a grid edge it is the interpolation of the
-        central-difference gradients at the two end samples; scikit-image
-        sums the gradients of the cells that contain the vertex, so the
-        directions agree to a few degrees for smooth data but are not equal
-        (for white noise the mean cosine of the angle is about 0.7). The center
-        vertices of the Lewiner method use scikit-image's cell gradients, and
-        those of the Vega method the sum of the central-difference gradients
-        at the eight corners of the cell.
+        data, pointing towards lower values. For a vertex on a grid edge it
+        is the interpolation of the central-difference gradients at the two
+        end samples of the edge, each component divided by the ``spacing``
+        along its axis so that the normals are those of the surface in the
+        coordinates of ``verts``, also for anisotropic ``spacing``. The
+        definition is that of VTK's contouring filters (``vtkMarchingCubes``
+        and ``vtkFlyingEdges3D``), except for the ``spacing``: VTK takes the
+        gradient on the grid of sample indices without a correction for the
+        voxel size, so its normals are not those of the surface when the
+        spacing is anisotropic. scikit-image sums the gradients of the cells
+        that contain the vertex and does not use the ``spacing`` either,
+        so the directions agree to a few degrees for smooth data and unit
+        ``spacing`` but are not equal (for white noise the mean cosine of
+        the angle is about 0.7). The center vertices of the Lewiner method
+        use scikit-image's cell gradients, and those of the Vega method the
+        sum of the central-difference gradients at the eight corners of the
+        cell, both divided by the ``spacing`` as well.
     values : (V,) array
         A measure of the data in the local region near each vertex, which can
-        be used by visualization tools to apply a colormap to the mesh. For a
-        vertex on a grid edge it is the larger of the two sample values of
-        the edge (scikit-image uses the range of the samples of the cells
-        that contain the vertex), so the values are not the same as
-        scikit-image's.
+        be used by visualization tools to apply a colormap to the mesh. As in
+        scikit-image, it is the largest range (maximum minus minimum) of the
+        samples at the corners of the cells that contain the vertex. (VTK's
+        filters instead give every vertex the value of the contour level.)
 
     See Also
     --------
@@ -134,14 +142,17 @@ def marching_cubes(
     heavy use of lookup tables to handle the many different cases,
     keeping the algorithm relatively easy.
 
-    Normals and values: each mesh vertex on a grid edge is computed from the
-    two samples at the ends of its edge, so that the vertices can be
-    generated in parallel, one per crossed edge, without visiting the cells
-    around them. scikit-image instead accumulates the normal and the value
-    of a vertex over every cell that emits it (up to four in 3D, and which
-    cells do depends on the method's triangulation). Reproducing that on the
-    GPU would need an additional pass over the cells with atomic additions,
-    so the normals and values are defined from the edge samples alone.
+    Normals: the normal of a vertex on a grid edge is computed from the two
+    samples at the ends of its edge, so that the vertices can be generated in
+    parallel, one per crossed edge, without visiting the cells around them.
+    scikit-image instead accumulates the normal of a vertex over every
+    triangle that uses it. Reproducing that would need an additional pass
+    over the cells (a prototype that gathered the contributions of the cells
+    around each vertex took 1.0 to 1.3 times as long as the current
+    implementation on smooth volumes and about 2 times on white noise), and
+    the definition used here, which is also VTK's, is a smooth
+    approximation of the normal of the surface without a clear advantage for
+    the scikit-image one.
 
     Choosing a method: ``'vega'`` resolves each cell so that its surface has
     the topology of the trilinear interpolant of the cell values, which is

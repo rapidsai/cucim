@@ -195,6 +195,14 @@ isoext
   - python/cucim/src/cucim/skimage/measure/_marching_cubes_vega_luts.py : The values of the lookup table were extracted from include/mc/vega_luts.cuh.
   - python/cucim/src/cucim/skimage/measure/tests/test_marching_cubes_vega.py : The cells with a mirror-dependent topology and the checks of the symmetries follow tests/test_vega.py.
 
+VTK (Visualization Toolkit)
+- License: BSD-3-Clause License
+  - https://gitlab.kitware.com/vtk/vtk/-/blob/master/Copyright.txt
+- Copyright:
+  - Copyright (c) 1993-2015 Ken Martin, Will Schroeder, Bill Lorensen
+- Files:
+  - python/cucim/src/cucim/skimage/measure/_marching_cubes_common.py : Design reference only for the normals of the vertices on grid edges (the central-difference gradient at the two samples of the edge, interpolated with the position of the vertex, negated and normalized, as in `vtkMarchingCubes` and `vtkFlyingEdges3D`); no VTK code was copied. Unlike VTK, the gradient is divided by the voxel spacing.
+
 OpenSlide
 - License: GNU Lesser General Public License v2.1
   - https://github.com/openslide/openslide/blob/master/LICENSE.txt
