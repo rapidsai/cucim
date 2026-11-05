@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 import math
@@ -11,11 +11,14 @@ from cucim.skimage.measure import label
 from cucim.skimage.morphology import convex_hull_image
 
 from ._regionprops_gpu_utils import (
+    _get_coord_dtype,
     _get_count_dtype,
+    _get_label_run_loop,
     _get_min_integer_dtype,
     _includes,
     _unravel_loop_index,
     _unravel_loop_index_declarations,
+    _warp_includes,
 )
 
 __all__ = [
@@ -67,127 +70,109 @@ basic_deps["perimeter_on_border_ratio"] = [
 basic_deps["slice"] = ["bbox"]
 
 
-def _get_bbox_code(uint_t, ndim, array_size):
+def _get_bbox_code(uint_t, ndim):
     """
     Notes
     -----
-    Local variables created:
+    Variables created (per run of a label):
 
-        - bbox_min : shape (array_size, ndim)
-            local minimum coordinates across the local set of labels encountered
-        - bbox_max : shape (array_size, ndim)
-            local maximum coordinates across the local set of labels encountered
+        - bbox_min0, ..., bbox_min{ndim - 1}
+            minimum coordinates of the run
+        - bbox_max0, ..., bbox_max{ndim - 1}
+            maximum coordinates of the run (exclusive)
 
     Output variables written to:
 
         - bbox : shape (max_label, 2 * ndim)
     """
-
-    # declaration uses external variable:
-    #    labels_size : total number of pixels in the label image
-    source_pre = f"""
-    // bounding box variables
-    {uint_t} bbox_min[{ndim * array_size}];
-    {uint_t} bbox_max[{ndim * array_size}] = {{0}};
-    // initialize minimum coordinate to array size
-    for (size_t ii = 0; ii < {ndim * array_size}; ii++) {{
-      bbox_min[ii] = labels_size;
-    }}\n"""
-
-    # op uses external coordinate array variables:
-    #    in_coord[0]...in_coord[ndim - 1] : coordinates
-    #        coordinates in the labeled image at the current index
-    source_operation = f"""
-          bbox_min[{ndim}*offset] = min(in_coord[0], bbox_min[{ndim}*offset]);
-          bbox_max[{ndim}*offset] = max(in_coord[0] + 1, bbox_max[{ndim}*offset]);"""  # noqa: E501
+    source_pre = ""
+    source_start = ""
+    source_operation = ""
+    source_flush = ""
+    reduce = []
     for d in range(ndim):
+        reduce += [(f"bbox_min{d}", "min"), (f"bbox_max{d}", "max")]
+        source_pre += f"""
+    {uint_t} bbox_min{d}, bbox_max{d};"""
+        source_start += f"""
+          bbox_min{d} = ~static_cast<{uint_t}>(0);
+          bbox_max{d} = 0;"""
+        # op uses external coordinate array variables:
+        #    in_coord[0]...in_coord[ndim - 1] : coordinates
+        #        coordinates in the labeled image at the current index
         source_operation += f"""
-          bbox_min[{ndim}*offset + {d}] = min(in_coord[{d}], bbox_min[{ndim}*offset + {d}]);
-          bbox_max[{ndim}*offset + {d}] = max(in_coord[{d}] + 1, bbox_max[{ndim}*offset + {d}]);"""  # noqa: E501
-
-    # post_operation uses external variables:
-    #     ii : index into num_pixels array
-    #     lab : label value that corresponds to location ii
-    #     bbox : output with shape (max_label, 2 * ndim)
-    source_post = f"""
-          // bounding box outputs
-          atomicMin(&bbox[(lab - 1)*{2 * ndim}], bbox_min[{ndim}*ii]);
-          atomicMax(&bbox[(lab - 1)*{2 * ndim} + {ndim}], bbox_max[{ndim}*ii]);"""  # noqa: E501
-    for d in range(1, ndim):
-        source_post += f"""
-          atomicMin(&bbox[(lab - 1)*{2 * ndim} + {d}], bbox_min[{ndim}*ii + {d}]);
-          atomicMax(&bbox[(lab - 1)*{2 * ndim} + {d + ndim}], bbox_max[{ndim}*ii + {d}]);"""  # noqa: E501
-    return source_pre, source_operation, source_post
+          bbox_min{d} = min(in_coord[{d}], bbox_min{d});
+          bbox_max{d} = max(in_coord[{d}] + 1, bbox_max{d});"""
+        # flush uses external variables:
+        #     lab : label value of the run
+        #     bbox : output with shape (max_label, 2 * ndim)
+        source_flush += f"""
+          atomicMin(&bbox[(lab - 1)*{2 * ndim} + {d}], bbox_min{d});
+          atomicMax(&bbox[(lab - 1)*{2 * ndim} + {d + ndim}], bbox_max{d});"""  # noqa: E501
+    return source_pre, source_start, source_operation, source_flush, reduce
 
 
-def _get_num_pixels_code(pixels_per_thread, array_size):
+def _get_num_pixels_code():
     """
     Notes
     -----
-    Local variables created:
+    Variables created (per run of a label):
 
-        - num_pixels : shape (array_size, )
-            The number of pixels encountered per label value
+        - num_pixels : the number of pixels in the run
 
     Output variables written to:
 
         - counts : shape (max_label,)
     """
-    pixel_count_dtype = "int8_t" if pixels_per_thread < 256 else "int16_t"
-
-    source_pre = f"""
-    // num_pixels variables
-    {pixel_count_dtype} num_pixels[{array_size}] = {{0}};\n"""
-
+    source_pre = """
+    uint32_t num_pixels;"""
+    source_start = """
+          num_pixels = 0;"""
     source_operation = """
-        num_pixels[offset] += 1;\n"""
-
-    # post_operation requires external variables:
-    #     ii : index into num_pixels array
-    #     lab : label value that corresponds to location ii
+          num_pixels += 1;"""
+    # flush uses external variables:
+    #     lab : label value of the run
     #     counts : output with shape (max_label,)
-    source_post = """
-        atomicAdd(&counts[lab - 1], num_pixels[ii]);;"""
-    return source_pre, source_operation, source_post
+    source_flush = """
+          atomicAdd(&counts[lab - 1], num_pixels);"""
+    reduce = [("num_pixels", "sum")]
+    return source_pre, source_start, source_operation, source_flush, reduce
 
 
-def _get_coord_sums_code(coord_sum_ctype, ndim, array_size):
+def _get_coord_sums_code(coord_sum_ctype, ndim):
     """
     Notes
     -----
-    Local variables created:
+    Variables created (per run of a label):
 
-        - coord_sum : shape (array_size, ndim)
-            local sum of coordinates across the local set of labels encountered
+        - coord_sum0, ..., coord_sum{ndim - 1}
+            sum of the coordinates of the run
 
     Output variables written to:
 
-        - coord_sums : shape (max_label, 2 * ndim)
+        - coord_sums : shape (max_label, ndim)
     """
-
-    source_pre = f"""
-    {coord_sum_ctype} coord_sum[{ndim * array_size}] = {{0}};\n"""
-
-    # op uses external coordinate array variables:
-    #    in_coord[0]...in_coord[ndim - 1] : coordinates
-    #        coordinates in the labeled image at the current index
-    source_operation = f"""
-        coord_sum[{ndim}*offset] += in_coord[0];"""
-    for d in range(1, ndim):
+    source_pre = ""
+    source_start = ""
+    source_operation = ""
+    source_flush = ""
+    for d in range(ndim):
+        source_pre += f"""
+    {coord_sum_ctype} coord_sum{d};"""
+        source_start += f"""
+          coord_sum{d} = 0;"""
+        # op uses external coordinate array variables:
+        #    in_coord[0]...in_coord[ndim - 1] : coordinates
+        #        coordinates in the labeled image at the current index
         source_operation += f"""
-        coord_sum[{ndim}*offset + {d}] += in_coord[{d}];"""
-    # post_operation uses external variables:
-    #     ii : index into num_pixels array
-    #     lab : label value that corresponds to location ii
-    #     coord_sums : output with shape (max_label, ndim)
-    source_post = f"""
-        // bounding box outputs
-        atomicAdd(&coord_sums[(lab - 1) * {ndim}], coord_sum[{ndim}*ii]);"""
-    for d in range(1, ndim):
-        source_post += f"""
-        atomicAdd(&coord_sums[(lab - 1) * {ndim} + {d}],
-                  coord_sum[{ndim}*ii + {d}]);"""
-    return source_pre, source_operation, source_post
+          coord_sum{d} += in_coord[{d}];"""
+        # flush uses external variables:
+        #     lab : label value of the run
+        #     coord_sums : output with shape (max_label, ndim)
+        source_flush += f"""
+          atomicAdd(&coord_sums[(lab - 1) * {ndim} + {d}], coord_sum{d});"""
+    reduce = [(f"coord_sum{d}", "sum") for d in range(ndim)]
+    return source_pre, source_start, source_operation, source_flush, reduce
 
 
 @cp.memoize(for_each_device=True)
@@ -207,8 +192,6 @@ def get_bbox_coords_kernel(
         coord_sum_dtype = cp.dtype(cp.uint64)
         coord_sum_ctype = "uint64_t"
 
-    array_size = pixels_per_thread
-
     if coord_dtype.itemsize <= 4:
         uint_t = "unsigned int"
     else:
@@ -217,82 +200,36 @@ def get_bbox_coords_kernel(
     if not (compute_bbox or compute_num_pixels or compute_coordinate_sums):
         raise ValueError("no computation requested")
 
+    fragments = []
     if compute_bbox:
-        bbox_pre, bbox_op, bbox_post = _get_bbox_code(
-            uint_t=uint_t, ndim=ndim, array_size=array_size
-        )
+        fragments.append(_get_bbox_code(uint_t=uint_t, ndim=ndim))
     if compute_num_pixels:
-        count_pre, count_op, count_post = _get_num_pixels_code(
-            pixels_per_thread=pixels_per_thread, array_size=array_size
-        )
+        fragments.append(_get_num_pixels_code())
     if compute_coordinate_sums:
-        coord_sums_pre, coord_sums_op, coord_sums_post = _get_coord_sums_code(
-            coord_sum_ctype=coord_sum_ctype, ndim=ndim, array_size=array_size
+        fragments.append(
+            _get_coord_sums_code(coord_sum_ctype=coord_sum_ctype, ndim=ndim)
         )
-    # store only counts for label > 0  (label = 0 is the background)
-    source = f"""
-      uint64_t start_index = {pixels_per_thread}*i;
-    """
-    if compute_bbox:
-        source += bbox_pre
-    if compute_num_pixels:
-        source += count_pre
-    if compute_coordinate_sums:
-        source += coord_sums_pre
+    pre, start, op, flush = ("".join(f[i] for f in fragments) for i in range(4))
+    reduce = [r for f in fragments for r in f[4]]
 
-    inner_op = ""
     if compute_bbox or compute_coordinate_sums:
-        source += _unravel_loop_index_declarations(
-            "labels", ndim, uint_t=uint_t
+        pre += _unravel_loop_index_declarations("labels", ndim, uint_t=uint_t)
+        op = (
+            _unravel_loop_index(
+                "labels",
+                ndim=ndim,
+                uint_t=uint_t,
+                raveled_index="ii",
+                omit_declarations=True,
+            )
+            + op
         )
 
-        inner_op += _unravel_loop_index(
-            "labels",
-            ndim=ndim,
-            uint_t=uint_t,
-            raveled_index="ii",
-            omit_declarations=True,
-        )
-    if compute_bbox:
-        inner_op += bbox_op
-    if compute_num_pixels:
-        inner_op += count_op
-    if compute_coordinate_sums:
-        inner_op += coord_sums_op
+    # store only counts for label > 0  (label = 0 is the background)
+    source = _get_label_run_loop(
+        pixels_per_thread, pre, start, op, flush, warp_reduce=reduce
+    )
 
-    source += f"""
-      X encountered_labels[{array_size}] = {{0}};
-      X current_label;
-      X prev_label = labels[start_index];
-      int offset = 0;
-      encountered_labels[0] = prev_label;
-      uint64_t ii_max = min(start_index + {pixels_per_thread}, labels_size);
-      for (uint64_t ii = start_index; ii < ii_max; ii++) {{
-        current_label = labels[ii];
-        if (current_label == 0) {{ continue; }}
-        if (current_label != prev_label) {{
-            offset += 1;
-            prev_label = current_label;
-            encountered_labels[offset] = current_label;
-        }}
-        {inner_op}
-      }}"""
-    source += """
-      for (size_t ii = 0; ii <= offset; ii++) {
-        X lab = encountered_labels[ii];
-        if (lab != 0) {"""
-
-    if compute_bbox:
-        source += bbox_post
-    if compute_num_pixels:
-        source += count_post
-    if compute_coordinate_sums:
-        source += coord_sums_post
-    source += """
-        }
-      }\n"""
-
-    # print(source)
     inputs = "raw X labels, raw uint64 labels_size"
     outputs = []
     name = "cucim_"
@@ -308,7 +245,7 @@ def get_bbox_coords_kernel(
     outputs = ", ".join(outputs)
     name += f"_batch{pixels_per_thread}"
     return cp.ElementwiseKernel(
-        inputs, outputs, source, preamble=_includes, name=name
+        inputs, outputs, source, preamble=_warp_includes, name=name
     )
 
 
@@ -502,11 +439,101 @@ def equivalent_spherical_perimeter(area, ndim, diameter):
     return ndim * area / (0.5 * diameter)
 
 
+def _regionprops_label_pass(
+    label_image,
+    max_label=None,
+    *,
+    compute_num_pixels=False,
+    compute_bbox=False,
+    compute_coordinate_sums=False,
+    pixels_per_thread=16,
+    props_dict=None,
+):
+    """Count pixels, find bounding boxes and sum coordinates in one pass.
+
+    writes "num_pixels" to `props_dict` if `compute_num_pixels`
+    writes "bbox" to `props_dict` if `compute_bbox`
+    writes "coordinate_sums" (uint64 sums of the coordinates of each region,
+    shape (max_label, ndim)) to `props_dict` if `compute_coordinate_sums`
+    """
+    if props_dict is None:
+        props_dict = {}
+    if max_label is None:
+        max_label = int(label_image.max())
+    ndim = label_image.ndim
+
+    coord_dtype, int32_coords = _get_coord_dtype(label_image.size)
+    count_dtype, int32_count = _get_count_dtype(label_image.size)
+    kernel = get_bbox_coords_kernel(
+        ndim=ndim,
+        int32_coords=int32_coords,
+        int32_count=int32_count,
+        compute_bbox=compute_bbox,
+        compute_num_pixels=compute_num_pixels,
+        compute_coordinate_sums=compute_coordinate_sums,
+        pixels_per_thread=pixels_per_thread,
+    )
+
+    # the outputs are passed in the order of the kernel's parameters
+    outputs = []
+    if compute_bbox:
+        bbox_coords = cp.zeros((max_label, 2 * ndim), dtype=coord_dtype)
+        # Initialize value for atomicMin on first ndim coordinates
+        # The value for atomicMax columns is already 0 as desired.
+        bbox_coords[:, :ndim] = cp.iinfo(coord_dtype).max
+        outputs.append(bbox_coords)
+    if compute_num_pixels:
+        counts = cp.zeros(max_label, dtype=count_dtype)
+        outputs.append(counts)
+    if compute_coordinate_sums:
+        coordinate_sums = cp.zeros((max_label, ndim), dtype=cp.uint64)
+        outputs.append(coordinate_sums)
+
+    # make a copy if the inputs are not already C-contiguous
+    if not label_image.flags.c_contiguous:
+        label_image = cp.ascontiguousarray(label_image)
+
+    kernel(
+        label_image,
+        label_image.size,
+        *outputs,
+        size=math.ceil(label_image.size / pixels_per_thread),
+    )
+    if compute_bbox:
+        props_dict["bbox"] = bbox_coords
+    if compute_num_pixels:
+        props_dict["num_pixels"] = counts
+    if compute_coordinate_sums:
+        props_dict["coordinate_sums"] = coordinate_sums
+    return props_dict
+
+
+def _bbox_slices(bbox_coords):
+    """Convert bounding box coordinates to a list of tuples of slices."""
+    ndim = bbox_coords.shape[1] // 2
+    bbox_coords_cpu = cp.asnumpy(bbox_coords)
+    if ndim == 2:
+        # explicitly writing out the 2d case here for clarity
+        return [
+            (
+                slice(int(box[0]), int(box[2])),
+                slice(int(box[1]), int(box[3])),
+            )
+            for box in bbox_coords_cpu
+        ]
+    # general n-dimensional case
+    return [
+        tuple(slice(int(box[d]), int(box[d + ndim])) for d in range(ndim))
+        for box in bbox_coords_cpu
+    ]
+
+
 def regionprops_bbox_coords(
     label_image,
     max_label=None,
     return_slices=False,
     pixels_per_thread=16,
+    compute_num_pixels=False,
     props_dict=None,
 ):
     """Determine bounding box coordinates (and slices) of each labeled region.
@@ -515,6 +542,9 @@ def regionprops_bbox_coords(
 
     if return_slices is True:
         - writes "slice" to `props_dict`
+
+    if compute_num_pixels is True:
+        - writes "num_pixels" to `props_dict` (counted in the same pass)
 
     Parameters
     ----------
@@ -527,6 +557,9 @@ def regionprops_bbox_coords(
     return_slices : bool, optional
         If True, convert the bounding box coordinates array to a list of slice
         tuples.
+    compute_num_pixels : bool, optional
+        If True, also count the pixels of each region in the same pass and
+        store the counts as "num_pixels" in `props_dict`.
 
     Returns
     -------
@@ -543,59 +576,20 @@ def regionprops_bbox_coords(
         ``mask = label_image[bbox_slices[label - 1]] == label`` to get the
         region corresponding to the ith bounding box.
     """
-    if max_label is None:
-        max_label = int(label_image.max())
-
-    int32_coords = max(label_image.shape) < 2**32
-    coord_dtype = cp.dtype(cp.uint32 if int32_coords else cp.uint64)
-
-    bbox_kernel = get_bbox_coords_kernel(
-        ndim=label_image.ndim,
-        int32_coords=int32_coords,
-        pixels_per_thread=pixels_per_thread,
-    )
-
-    ndim = label_image.ndim
-    bbox_coords = cp.zeros((max_label, 2 * ndim), dtype=coord_dtype)
-
-    # Initialize value for atomicMin on first ndim coordinates
-    # The value for atomicMax columns is already 0 as desired.
-    bbox_coords[:, :ndim] = cp.iinfo(coord_dtype).max
-
-    # make a copy if the inputs are not already C-contiguous
-    if not label_image.flags.c_contiguous:
-        label_image = cp.ascontiguousarray(label_image)
-
-    bbox_kernel(
+    if props_dict is None:
+        props_dict = {}
+    _regionprops_label_pass(
         label_image,
-        label_image.size,
-        bbox_coords,
-        size=math.ceil(label_image.size / pixels_per_thread),
+        max_label=max_label,
+        compute_num_pixels=compute_num_pixels,
+        compute_bbox=True,
+        pixels_per_thread=pixels_per_thread,
+        props_dict=props_dict,
     )
-    if props_dict is not None:
-        props_dict["bbox"] = bbox_coords
-
+    bbox_coords = props_dict["bbox"]
     if return_slices:
-        bbox_coords_cpu = cp.asnumpy(bbox_coords)
-        if ndim == 2:
-            # explicitly writing out the 2d case here for clarity
-            bbox_slices = [
-                (
-                    slice(int(box[0]), int(box[2])),
-                    slice(int(box[1]), int(box[3])),
-                )
-                for box in bbox_coords_cpu
-            ]
-        else:
-            # general n-dimensional case
-            bbox_slices = [
-                tuple(
-                    slice(int(box[d]), int(box[d + ndim])) for d in range(ndim)
-                )
-                for box in bbox_coords_cpu
-            ]
-        if props_dict is not None:
-            props_dict["slice"] = bbox_slices
+        bbox_slices = _bbox_slices(bbox_coords)
+        props_dict["slice"] = bbox_slices
     else:
         bbox_slices = None
 
@@ -933,6 +927,130 @@ def regionprops_num_boundary_pixels(labels, max_label=None, props_dict=None):
     return edge_counts
 
 
+def _fill_holes_by_label(labels, max_label, bbox=None):
+    """Fill the background holes of each labeled region.
+
+    A hole is a connected component of the background (with full
+    connectivity, as for ``binary_fill_holes`` with a ``3**ndim`` structuring
+    element) that is not connected to the area outside of the image. A hole
+    whose neighboring pixels all belong to a single region is filled with that
+    region's label. This matches scikit-image's per-region ``image_filled`` for
+    that region.
+
+    scikit-image fills each region's holes treating all other labels as
+    background, so a region's filled image also contains holes bordered by
+    several regions and any regions nested in its holes. For the labels where
+    this can happen, the returned ``label_filled`` is not exact and the labels
+    are returned in ``labels_inexact`` so that the caller can recompute them
+    on per-label crops. These are the labels that (a) border a hole that also
+    borders other labels, or (b) touch a connected component of another label
+    whose bounding box lies strictly inside their own (a component nested in
+    a hole of another region must lie strictly inside that region's bounding
+    box, but the other components of its label can lie anywhere, so the test
+    uses the bounding boxes of the components, not of the labels).
+
+    Returns
+    -------
+    label_filled : cupy.ndarray
+        The label image with each single-region hole filled with its label.
+    labels_inexact : numpy.ndarray
+        Labels whose filled region may differ from scikit-image's.
+    """
+    ndim = labels.ndim
+    footprint = ndi.generate_binary_structure(ndim, ndim)
+    # with the padding, all background outside of the regions is a single
+    # connected component
+    padded = cp.pad(labels, 1, mode="constant", constant_values=0)
+    work_dtype = cp.int32 if max_label < 2**31 - 1 else cp.int64
+    padded = padded.astype(work_dtype, copy=False)
+    background = padded == 0
+    bg_labels = label(background, connectivity=ndim)
+    num_bg = int(bg_labels.max())
+    outer = int(bg_labels[(0,) * ndim])
+
+    # largest and smallest label in the 3**ndim neighborhood of each pixel
+    # (the background is excluded from the minimum)
+    no_label = max_label + 1
+    nb_max = ndi.grey_dilation(padded, size=3, mode="constant", cval=0)
+    nb_min = ndi.grey_erosion(
+        cp.where(background, no_label, padded).astype(work_dtype, copy=False),
+        size=3,
+        mode="constant",
+        cval=no_label,
+    )
+
+    # labels bordering each background component
+    bg_ids = bg_labels[background]
+    hole_max = cp.zeros(num_bg + 1, dtype=work_dtype)
+    hole_min = cp.full(num_bg + 1, no_label, dtype=work_dtype)
+    cp.maximum.at(hole_max, bg_ids, nb_max[background])
+    cp.minimum.at(hole_min, bg_ids, nb_min[background])
+    component_ids = cp.arange(num_bg + 1)
+    is_hole = (component_ids != 0) & (component_ids != outer)
+    single = is_hole & (hole_min == hole_max)
+    multi = is_hole & (hole_min != hole_max)
+
+    fill_value = cp.where(single, hole_max, 0).astype(work_dtype, copy=False)
+    filled = cp.where(background, fill_value[bg_labels], padded)
+    core = (slice(1, -1),) * ndim
+    label_filled = cp.ascontiguousarray(filled[core].astype(labels.dtype))
+
+    # (a) labels bordering a hole that borders several labels
+    inexact = []
+    if bool(multi.any()):
+        near_multi = ndi.binary_dilation(multi[bg_labels], structure=footprint)
+        inexact.append(cp.unique(padded[near_multi & ~background]))
+
+    # (b) labels touching a connected component of another label whose
+    # bounding box lies strictly inside their own
+    touching = (~background) & ((nb_max != padded) | (nb_min != padded))
+    touching &= padded != 0
+    if bool(touching.any()):
+        if bbox is None:
+            bbox, _ = regionprops_bbox_coords(labels, max_label=max_label)
+        # connected components of each label (label separates neighboring
+        # pixels with different values)
+        components, num_components = label(
+            labels, connectivity=ndim, return_num=True
+        )
+        bbox_components, _ = regionprops_bbox_coords(
+            components, max_label=num_components
+        )
+        padded_components = cp.pad(
+            components, 1, mode="constant", constant_values=0
+        )
+        no_component = num_components + 1
+        pairs = []
+        center = padded[core]
+        for offset in np.ndindex((3,) * ndim):
+            if all(o == 1 for o in offset):
+                continue
+            neighbor_slices = tuple(
+                slice(o, o + s) for o, s in zip(offset, labels.shape)
+            )
+            neighbor = padded[neighbor_slices]
+            mask = touching[core] & (neighbor != 0) & (neighbor != center)
+            pairs.append(
+                center[mask].astype(cp.int64) * no_component
+                + padded_components[neighbor_slices][mask].astype(cp.int64)
+            )
+        pairs = cp.unique(cp.concatenate(pairs))
+        outer_label = pairs // no_component
+        inner_component = pairs % no_component
+        bbox_outer = bbox[outer_label - 1].astype(cp.int64)
+        bbox_inner = bbox_components[inner_component - 1].astype(cp.int64)
+        nested = cp.all(
+            bbox_inner[:, :ndim] > bbox_outer[:, :ndim], axis=1
+        ) & cp.all(bbox_inner[:, ndim:] < bbox_outer[:, ndim:], axis=1)
+        inexact.append(outer_label[nested])
+
+    if inexact:
+        labels_inexact = cp.asnumpy(cp.unique(cp.concatenate(inexact)))
+    else:
+        labels_inexact = np.zeros((0,), dtype=np.int64)
+    return label_filled, labels_inexact
+
+
 def regionprops_label_filled(
     labels,
     max_label=None,
@@ -941,6 +1059,12 @@ def regionprops_label_filled(
     """Fill holes in each labeled region.
 
     writes "label_filled" to props_dict
+
+    Each background hole (a connected component of the background that is
+    not connected to the area outside of the image) whose neighboring pixels
+    all belong to one region is filled with that region's label. Holes that
+    border several regions are left unfilled, and other labels are never
+    changed.
 
     Parameters
     ----------
@@ -958,30 +1082,61 @@ def regionprops_label_filled(
     """
     if max_label is None:
         max_label = int(labels.max())
-
-    # make sure all background pixels at the boundary have the same label
-    labels = cp.pad(labels, 1, mode="constant", constant_values=0)
-
-    binary_labels = labels > 0
-
-    # assign unique labels the background and holes
-    inverse_binary_mask = ~binary_labels
-    inverse_labels = label(inverse_binary_mask)
-
-    # After inversion, what was originally the background will now be the
-    # first foreground label encountered. This is ensured due to the
-    # single voxel padding done above and the fact that the `label`
-    # function scans linearly through the array.
-    background_index = 1
-    # set the background back to 0 in the inverse mask so we have a mask
-    # of just the holes
-    inverse_binary_mask[inverse_labels == background_index] = 0
-
-    # add binary holes to the original mask and relabel
-    binary_holes_filled = cp.logical_or(binary_labels, inverse_binary_mask)
-    label_filled = label(binary_holes_filled)
-
+    label_filled, _ = _fill_holes_by_label(labels, max_label)
     if props_dict is not None:
         props_dict["label_filled"] = label_filled
-    label_filled = label_filled[(slice(1, -1),) * label_filled.ndim]
-    return cp.ascontiguousarray(label_filled)
+    return label_filled
+
+
+def _regionprops_filled(
+    label_image,
+    label_filled,
+    labels_inexact,
+    max_label,
+    spacing=None,
+    compute_image=False,
+    props_dict=None,
+):
+    """Compute num_pixels_filled, area_filled and (optionally) image_filled.
+
+    The values come from `label_filled` (see `_fill_holes_by_label`), except
+    for the labels in `labels_inexact`, which are recomputed one by one with
+    ``binary_fill_holes`` on their bounding-box crop, as scikit-image does.
+
+    writes "num_pixels_filled" and "area_filled" to `props_dict`
+    writes "image_filled" to `props_dict` if `compute_image` is True
+    """
+    if props_dict is None:
+        props_dict = {}
+    num_pixels_filled = regionprops_num_pixels(
+        label_filled, max_label=max_label
+    )
+    images = None
+    if compute_image:
+        images, _, _ = regionprops_image(
+            label_filled,
+            max_label=max_label,
+            compute_image=True,
+            compute_convex=False,
+            props_dict=None,
+        )
+        images = list(images)
+    if labels_inexact.size > 0:
+        _, slices = regionprops_bbox_coords(
+            label_image, max_label=max_label, return_slices=True
+        )
+        structure = cp.ones((3,) * label_image.ndim, dtype=bool)
+        for lab in labels_inexact:
+            image = label_image[slices[lab - 1]] == lab
+            image_filled = ndi.binary_fill_holes(image, structure)
+            num_pixels_filled[lab - 1] = image_filled.sum()
+            if compute_image:
+                images[lab - 1] = image_filled
+    area_filled = num_pixels_filled.astype(cp.float32)
+    if spacing is not None:
+        area_filled *= math.prod(float(s) for s in spacing)
+    props_dict["num_pixels_filled"] = num_pixels_filled
+    props_dict["area_filled"] = area_filled
+    if compute_image:
+        props_dict["image_filled"] = tuple(images)
+    return props_dict
