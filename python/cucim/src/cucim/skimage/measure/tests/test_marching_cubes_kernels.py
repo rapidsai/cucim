@@ -795,6 +795,9 @@ def test_lewiner_gpu_center_vertex_generation():
         )
     )
     expected_position, expected_normal = _lewiner_center_vertex(local_values)
+    # the gradient is in physical units: divided by the spacing
+    expected_normal = expected_normal / np.asarray(spacing)
+    expected_normal /= np.linalg.norm(expected_normal)
 
     cp.testing.assert_array_equal(center_vertex_ids, cp.asarray([0]))
     cp.testing.assert_allclose(

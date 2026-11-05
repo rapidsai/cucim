@@ -805,3 +805,43 @@ def test_lorensen_triangles_match_skimage(gradient_direction, seed):
     got = triangles(verts, faces)
     assert ref.shape == got.shape
     assert np.mean(np.all(np.abs(ref - got) < 2e-3, axis=1)) > 0.999
+
+
+@pytest.mark.parametrize("method", ["lewiner", "lorensen"])
+def test_values_match_skimage(method):
+    from scipy.ndimage import gaussian_filter
+    from scipy.spatial import cKDTree
+
+    rng = np.random.default_rng(7)
+    volume = gaussian_filter(rng.standard_normal((30, 28, 26)), 2).astype(
+        np.float32
+    )
+    verts, faces, normals, values = marching_cubes(
+        cp.asarray(volume), 0.0, method=method
+    )
+    verts_s, faces_s, normals_s, values_s = skimage_marching_cubes(
+        volume, 0.0, method=method
+    )
+    _, index = cKDTree(verts_s).query(cp.asnumpy(verts))
+    assert_allclose(cp.asnumpy(values), values_s[index], rtol=0, atol=0)
+
+
+@pytest.mark.parametrize("method", ["lewiner", "lorensen", "vega"])
+@pytest.mark.parametrize(
+    "spacing", [(1.0, 1.0, 1.0), (1.0, 1.0, 3.0), (2.0, 0.5, 1.0)]
+)
+def test_normals_account_for_spacing(method, spacing):
+    # the surface of a sphere in physical coordinates: the normals point to
+    # the center, also when the voxels are anisotropic
+    shape = (50, 50, 30)
+    grid = np.stack(np.mgrid[tuple(slice(n) for n in shape)], axis=-1)
+    center = np.array([(n - 1) / 2 for n in shape]) * spacing
+    radial = grid * spacing - center
+    volume = np.linalg.norm(radial, axis=-1).astype(np.float32)
+    verts, _, normals, _ = marching_cubes(
+        cp.asarray(volume), 12.0, spacing=spacing, method=method
+    )
+    inward = center - cp.asnumpy(verts)
+    inward /= np.linalg.norm(inward, axis=1, keepdims=True)
+    cosine = (cp.asnumpy(normals) * inward).sum(axis=1)
+    assert cosine.min() > np.cos(np.deg2rad(2.0))

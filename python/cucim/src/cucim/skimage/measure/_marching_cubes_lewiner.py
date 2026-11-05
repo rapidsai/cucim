@@ -598,6 +598,10 @@ extern "C" __global__ void mc_lewiner_generate_center_vertices(
         nyg += w[n] * gy[n];
         nzg += w[n] * gz[n];
     }
+    // the gradient in physical units
+    nxg /= (double)sx;
+    nyg /= (double)sy;
+    nzg /= (double)sz;
     double norm = sqrt(nxg * nxg + nyg * nyg + nzg * nzg);
     if (norm > 0.0) {
         nxg /= norm;

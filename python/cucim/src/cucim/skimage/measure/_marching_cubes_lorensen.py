@@ -367,22 +367,6 @@ def _run_lorensen(
     edge_mask, node_scan, edge_idx = _number_crossed_edges(
         _get_lorensen_kernel, volume, level, mask, threads
     )
-    n_vertices = edge_idx.size
-    vertices = cp.empty((n_vertices, 3), dtype=cp.float32)
-    normals = cp.empty((n_vertices, 3), dtype=cp.float32)
-    values = cp.empty(n_vertices, dtype=cp.float32)
-    _generate_edge_vertices(
-        _get_lorensen_kernel,
-        volume,
-        edge_idx,
-        vertices,
-        normals,
-        values,
-        level,
-        spacing,
-        threads,
-    )
-
     n_cells = (nx - 1) * (ny - 1) * (nz - 1)
     wide = _wide(n_cells, volume.size)
     cell_blocks = ((n_cells + threads - 1) // threads,)
@@ -407,6 +391,22 @@ def _run_lorensen(
                 np.float32(level),
             ),
         )
+    n_vertices = edge_idx.size
+    vertices = cp.empty((n_vertices, 3), dtype=cp.float32)
+    normals = cp.empty((n_vertices, 3), dtype=cp.float32)
+    values = cp.empty(n_vertices, dtype=cp.float32)
+    _generate_edge_vertices(
+        _get_lorensen_kernel,
+        volume,
+        edge_idx,
+        tri_counts,
+        vertices,
+        normals,
+        values,
+        level,
+        spacing,
+        threads,
+    )
     # a 64-bit total, so that a too large mesh is detected before the 32-bit
     # scan can wrap around
     n_faces = int(tri_counts.sum(dtype=cp.int64))

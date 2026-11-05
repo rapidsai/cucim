@@ -489,6 +489,9 @@ extern "C" __global__ void mc_vega_generate_center_vertices(
     gx = -gx;
     gy = -gy;
     gz = -gz;
+    gx /= sx;
+    gy /= sy;
+    gz /= sz;
     float norm = sqrtf(gx * gx + gy * gy + gz * gz);
     if (norm > 0.0f) {
         gx /= norm;

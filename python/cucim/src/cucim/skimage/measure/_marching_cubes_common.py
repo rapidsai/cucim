@@ -322,6 +322,7 @@ extern "C" __global__ void mc_classify_edges_masked(
 
 extern "C" __global__ void mc_generate_vertices(
     const float* volume, const mc_idx* edge_idx, mc_idx n_vertices,
+    const unsigned char* tri_counts,
     float* vertices, float* normals, float* values,
     int nx, int ny, int nz, float level,
     float sx, float sy, float sz) {
@@ -360,7 +361,35 @@ extern "C" __global__ void mc_generate_vertices(
     vertices[out] = x * sx;
     vertices[out + 1] = y * sy;
     vertices[out + 2] = z * sz;
-    values[vid] = fmaxf(a, b);
+    // scikit-image's value: the largest range of the samples of the cells
+    // around the edge that emit the vertex (the level cancels in the range)
+    int cny = ny - 1;
+    int cnz = nz - 1;
+    float value = 0.0f;
+    for (int q = 0; q < 4; q++) {
+        int d1 = q & 1;
+        int d2 = q >> 1;
+        int ci = i - (side == 0 ? 0 : d1);
+        int cj = j - (side == 0 ? d1 : (side == 1 ? 0 : d2));
+        int ck = k - (side == 2 ? 0 : d2);
+        if (ci < 0 || cj < 0 || ck < 0 || ci >= nx - 1 || cj >= cny ||
+            ck >= cnz) {
+            continue;
+        }
+        if (tri_counts[((mc_idx)ci * cny + cj) * cnz + ck] == 0) {
+            continue;
+        }
+        float lo = vol_at(volume, ci, cj, ck, ny, nz);
+        float hi = lo;
+        for (int n = 1; n < 8; n++) {
+            float s = vol_at(volume, ci + ((n >> 2) & 1), cj + ((n >> 1) & 1),
+                             ck + (n & 1), ny, nz);
+            lo = fminf(lo, s);
+            hi = fmaxf(hi, s);
+        }
+        value = fmaxf(value, hi - lo);
+    }
+    values[vid] = value;
 
     float gx0 = grad_at(volume, i, j, k, 0, nx, ny, nz);
     float gy0 = grad_at(volume, i, j, k, 1, nx, ny, nz);
@@ -373,6 +402,11 @@ extern "C" __global__ void mc_generate_vertices(
     float gx = -((1.0f - t) * gx0 + t * gx1);
     float gy = -((1.0f - t) * gy0 + t * gy1);
     float gz = -((1.0f - t) * gz0 + t * gz1);
+    // the gradient in physical units: the normal of the surface in the
+    // coordinates of the vertices (the central differences are per sample)
+    gx /= sx;
+    gy /= sy;
+    gz /= sz;
     float norm = sqrtf(gx * gx + gy * gy + gz * gz);
     if (norm > 0.0f) {
         gx /= norm;
@@ -449,6 +483,7 @@ def _generate_edge_vertices(
     get_kernel,
     volume,
     edge_idx,
+    tri_counts,
     vertices,
     normals,
     values,
@@ -456,7 +491,11 @@ def _generate_edge_vertices(
     spacing,
     threads=256,
 ):
-    """Write the edge vertices (one thread each) to the start of the arrays."""
+    """Write the edge vertices (one thread each) to the start of the arrays.
+
+    ``tri_counts`` (the number of triangles of each cell) tells which cells
+    around an edge emit its vertex, for the ``values`` output.
+    """
     nx, ny, nz = volume.shape
     n_edge_vertices = edge_idx.size
     wide = edge_idx.dtype == cp.int64
@@ -467,6 +506,7 @@ def _generate_edge_vertices(
             volume,
             edge_idx,
             _idx_arg(wide, n_edge_vertices),
+            tri_counts,
             vertices,
             normals,
             values,
@@ -1025,6 +1065,7 @@ def _run_cell_table_method(
         get_kernel,
         volume,
         edge_idx,
+        tri_counts,
         vertices,
         normals,
         values,
