@@ -182,6 +182,19 @@ def test_vega_paper_examples(values, n_triangles):
     assert faces.shape[0] == n_triangles
 
 
+@pytest.mark.parametrize("method", ["lewiner", "vega"])
+def test_values_of_a_single_cell_with_a_center_vertex(method):
+    # every vertex of a single cell has the range of the cell as its value,
+    # the center vertex too (case 10.2 of the paper: 8 triangles)
+    sample = [-4, -9, 5, 8, 8, 5, -9, -4]
+    verts, faces, _, values = marching_cubes(
+        cp.asarray(_cell_volume(sample)), 0.0, method=method
+    )
+    assert faces.shape[0] == 8
+    assert verts.shape[0] == 9  # 8 edge vertices and the center vertex
+    cp.testing.assert_array_equal(values, cp.full(9, 17.0, dtype=cp.float32))
+
+
 def test_vega_paper_example_with_two_valid_patterns():
     # figure 8: the products of the opposite vertices of a face are equal,
     # case 3.1 or 3.2 (both patterns are valid)
