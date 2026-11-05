@@ -134,6 +134,15 @@ def marching_cubes(
     heavy use of lookup tables to handle the many different cases,
     keeping the algorithm relatively easy.
 
+    Normals and values: each mesh vertex on a grid edge is computed from the
+    two samples at the ends of its edge, so that the vertices can be
+    generated in parallel, one per crossed edge, without visiting the cells
+    around them. scikit-image instead accumulates the normal and the value
+    of a vertex over every cell that emits it (up to four in 3D, and which
+    cells do depends on the method's triangulation). Reproducing that on the
+    GPU would need an additional pass over the cells with atomic additions,
+    so the normals and values are defined from the edge samples alone.
+
     Choosing a method: ``'vega'`` resolves each cell so that its surface has
     the topology of the trilinear interpolant of the cell values, which is
     not always the case for ``'lewiner'``, and it takes about the same time.
