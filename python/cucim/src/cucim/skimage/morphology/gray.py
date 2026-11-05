@@ -1,15 +1,18 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 """
 Grayscale morphological operations
 """
 
+import math
+
 import cupy as cp
 
 import cucim.skimage._vendored.ndimage as ndi
 
+from .binary import _binary_gray
 from .footprints import (
     _footprint_is_sequence,
     mirror_footprint,
@@ -27,13 +30,57 @@ __all__ = [
 ]
 
 
-def _iterate_gray_func(gray_func, image, footprints, out, mode, cval):
-    """Helper to call `binary_func` for each footprint in a sequence.
+def _separable_footprints(footprints):
+    """Keep large dense footprints on the separable path.
 
-    `gray_func` is a binary morphology function that accepts "structure",
-    "output" and "iterations" keyword arguments
-    (e.g. `scipy.ndimage.gray_erosion`).
+    Early exit benefits binary kernels on mixed images, but uniform regions
+    require visiting the full neighborhood: the product of the filter sizes,
+    rather than their sum for separable filters. On 2D and 3D masks, the
+    binary kernel's uniform-region cost exceeds the separable cost once the
+    product is more than about eight times the sum (from 17x17 in 2D or
+    5x5x5 in 3D). Smaller neighborhoods still benefit from a single binary
+    kernel launch.
+
+    Return a sequence with confirmed dense arrays replaced by shape tuples,
+    or None if no footprint needs the separable path. Using the shapes avoids
+    repeating the density check in the grayscale ndimage implementation.
     """
+    separable = None
+    for index, (footprint, repetitions) in enumerate(footprints):
+        shape = footprint if isinstance(footprint, tuple) else footprint.shape
+        if math.prod(shape) > 8 * sum(shape):
+            if isinstance(footprint, tuple) or bool(footprint.all()):
+                if separable is None:
+                    separable = list(footprints)
+                separable[index] = (shape, repetitions)
+    return separable
+
+
+def _iterate_gray_func(gray_func, image, footprints, out, mode, cval):
+    """Apply a grayscale erosion or dilation to each footprint in a sequence.
+
+    Boolean inputs and outputs can use the binary kernels' early exit, while
+    other dtypes and non-boolean border values retain the grayscale kernels.
+    """
+    if (
+        image.dtype == bool
+        and out.dtype == bool
+        and image.ndim > 0
+        and image.size > 0
+        and cval in (0, 1)
+    ):
+        separable = _separable_footprints(footprints)
+        if separable is None:
+            return _binary_gray(
+                image,
+                footprints,
+                out,
+                mode,
+                cval,
+                dilation=gray_func is ndi.grey_dilation,
+            )
+        footprints = separable
+
     fp, num_iter = footprints[0]
     tuple_fp = isinstance(fp, tuple)
     if tuple_fp:
@@ -588,7 +635,7 @@ def white_tophat(image, footprint=None, out=None, *, mode="reflect", cval=0.0):
             out -= opened
         return out
     # Else write intermediate result into output image
-    out = opening(image, footprint, mode=mode, cval=cval)
+    out = opening(image, footprint, out=out, mode=mode, cval=cval)
     if cp.issubdtype(out.dtype, bool):
         cp.logical_xor(image, out, out=out)
     else:
