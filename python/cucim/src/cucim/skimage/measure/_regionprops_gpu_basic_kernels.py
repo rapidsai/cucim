@@ -1138,7 +1138,6 @@ def _fill_holes_by_label(labels, max_label, bbox=None):
     # connected component
     padded = cp.pad(labels, 1, mode="constant", constant_values=0)
     work_dtype = cp.int32 if max_label < 2**31 - 1 else cp.int64
-    padded = padded.astype(work_dtype, copy=False)
     background = padded == 0
     if not labels.flags.c_contiguous:
         labels = cp.ascontiguousarray(labels)
@@ -1149,10 +1148,14 @@ def _fill_holes_by_label(labels, max_label, bbox=None):
     touching = cp.zeros((1,), dtype=cp.uint8)
     _get_labels_touch_kernel(ndim)(labels, touching, size=labels.size)
     has_touching = bool(touching[0])
+    # (the padded image is dropped as soon as it is labeled: for an image of
+    # more than 2**31 pixels, the labeling is 8 bytes per pixel)
     if has_touching:
+        padded = padded.astype(work_dtype, copy=False)
         ids = label(padded, background=-1, connectivity=ndim)
     else:
         ids = label(background, connectivity=ndim)
+    del padded
     num_ids = int(ids.max())
     outer = int(ids[(0,) * ndim])
 
@@ -1174,10 +1177,9 @@ def _fill_holes_by_label(labels, max_label, bbox=None):
     single = is_hole & (hole_min == hole_max)
     multi = is_hole & (hole_min != hole_max)
 
-    fill_value = cp.where(single, hole_max, 0).astype(work_dtype, copy=False)
-    filled = cp.where(background, fill_value[ids], padded)
+    fill_value = cp.where(single, hole_max, 0).astype(labels.dtype)
     core = (slice(1, -1),) * ndim
-    label_filled = cp.ascontiguousarray(filled[core].astype(labels.dtype))
+    label_filled = cp.where(background[core], fill_value[ids[core]], labels)
 
     # labels bordering a hole that borders several labels (a), or touching a
     # connected component of another label whose bounding box lies strictly
@@ -1190,9 +1192,15 @@ def _fill_holes_by_label(labels, max_label, bbox=None):
     if has_touching:
         # bounding boxes of the labels' components (the background pixels,
         # most of them in the outer component, are left out)
+        if num_ids < 2**31 - 1:
+            component_ids = ids.astype(cp.int32)
+            component_ids *= ~background
+        else:
+            component_ids = cp.where(background, 0, ids)
         component_bbox = _regionprops_label_pass(
-            cp.where(background, 0, ids), num_ids, compute_bbox=True
+            component_ids, num_ids, compute_bbox=True
         )["bbox"].astype(bbox.dtype, copy=False)
+        del component_ids
     else:
         # (b) cannot apply: every neighbor of another label is background
         component_bbox = bbox[:1]
@@ -1259,7 +1267,12 @@ def _pack_crops(extents):
     num, ndim = extents.shape
     heights, widths = extents[:, 0], extents[:, -1]
     total = int(np.sum(heights * widths))
-    canvas_width = max(int(widths.max()) + 2, math.isqrt(total) + 2)
+    # about square, but no wider than all the boxes side by side (a single
+    # tall box gets its own width, not that of a square canvas)
+    canvas_width = min(
+        max(int(widths.max()) + 2, math.isqrt(total) + 2),
+        int(widths.sum()) + num + 1,
+    )
     starts = np.ones((num, ndim), dtype=np.int64)
     y, x, shelf = 1, 1, 0
     for i in np.argsort(-heights, kind="stable"):
@@ -1326,10 +1339,24 @@ _FILL_BYTES_PER_PIXEL = 16
 
 def _canvas_pixel_limit():
     """Largest canvas (in pixels) to fill at once: a quarter of the memory
-    that is free on the device, and fewer than 2**31 pixels."""
+    that is free on the device."""
     free = cp.cuda.runtime.memGetInfo()[0]
     free += cp.get_default_memory_pool().free_bytes()
-    return min(free // 4 // _FILL_BYTES_PER_PIXEL, 2**31 - 1)
+    return free // 4 // _FILL_BYTES_PER_PIXEL
+
+
+def _fill_canvas_holes(canvas):
+    """``binary_fill_holes`` (``3**ndim`` structuring element) of a canvas
+    whose border pixels are all background.
+
+    The background and the holes are the components of the inverted canvas,
+    and the background is the one of the first pixel. Unlike
+    ``binary_fill_holes`` this does not pad the canvas or assign through a
+    boolean mask (an 8-byte index per pixel), which matters for canvases of
+    more than 2**31 pixels.
+    """
+    ids = label(~canvas, connectivity=canvas.ndim)
+    return ids != ids[(0,) * canvas.ndim]
 
 
 def _fill_holes_of_labels(
@@ -1407,7 +1434,7 @@ def _fill_holes_of_labels(
             box_ids,
             size=int(sizes.sum()),
         )
-        filled = ndi.binary_fill_holes(canvas, cp.ones((3,) * ndim, dtype=bool))
+        filled = _fill_canvas_holes(canvas)
         del canvas
         # the filled pixels of each box, with the label-run count (few boxes
         # would make the atomics of cupy.bincount contend)

@@ -1969,6 +1969,44 @@ def test_fill_holes_of_labels_batch(ndim, max_canvas_pixels):
         assert count == int(expected.sum())
 
 
+def test_pack_crops_canvas_is_not_wider_than_the_boxes():
+    from cucim.skimage.measure._regionprops_gpu_basic_kernels import (
+        _pack_crops,
+    )
+
+    # one tall box: its own width, not that of a square canvas
+    shape, starts = _pack_crops([[1000, 5]])
+    assert shape == (1002, 7)
+    assert tuple(starts[0]) == (1, 1)
+    # several boxes: about square, and every box inside with a margin
+    extents = np.array([[40, 30], [10, 70], [25, 25], [5, 5]])
+    shape, starts = _pack_crops(extents)
+    assert shape[1] < sum(extents[:, 1]) + len(extents) + 1
+    canvas = np.zeros(shape, dtype=int)
+    for i, (st, ext) in enumerate(zip(starts, extents), 1):
+        box = canvas[
+            st[0] - 1 : st[0] + ext[0] + 1, st[1] - 1 : st[1] + ext[1] + 1
+        ]
+        assert not box.any()
+        canvas[st[0] : st[0] + ext[0], st[1] : st[1] + ext[1]] = i
+
+
+@pytest.mark.parametrize("dtype", [cp.uint8, cp.int16, cp.int64])
+def test_fill_holes_by_label_dtypes(dtype):
+    labels = cp.zeros((20, 20), dtype=dtype)
+    labels[2:12, 2:12] = 1
+    labels[4:10, 4:10] = 0
+    labels[8:12, 14:18] = 2
+    labels[9, 15:17] = 0
+    label_filled, labels_inexact = _fill_holes_by_label(labels, 2)
+    assert label_filled.dtype == dtype
+    expected = labels.copy()
+    expected[4:10, 4:10] = 1
+    expected[9, 15:17] = 2
+    assert_array_equal(label_filled, expected)
+    assert labels_inexact.size == 0
+
+
 def test_fill_holes_by_label_tiling_is_exact():
     # touching labels without nesting need no per-label recomputation
     labels = cp.arange(1, 65, dtype=cp.int32).reshape(8, 8)
