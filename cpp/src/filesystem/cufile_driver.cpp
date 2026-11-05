@@ -89,6 +89,97 @@ static int get_file_flags(const char* flags)
     return file_flags;
 }
 
+static ssize_t retry_pread(int fd, void* buf, size_t count, off_t offset)
+{
+    while (true)
+    {
+        ssize_t read_cnt = ::pread(fd, buf, count, offset);
+        if (read_cnt < 0 && errno == EINTR)
+        {
+            continue;
+        }
+        return read_cnt;
+    }
+}
+
+static ssize_t retry_pwrite(int fd, const void* buf, size_t count, off_t offset)
+{
+    while (true)
+    {
+        ssize_t write_cnt = ::pwrite(fd, buf, count, offset);
+        if (write_cnt < 0 && errno == EINTR)
+        {
+            continue;
+        }
+        return write_cnt;
+    }
+}
+
+static ssize_t read_exact_at(int fd, void* buf, size_t count, off_t offset, const char* error_message)
+{
+    size_t total_read_cnt = 0;
+    uint8_t* output_buf = static_cast<uint8_t*>(buf);
+
+    while (total_read_cnt < count)
+    {
+        ssize_t read_cnt =
+            retry_pread(fd, output_buf + total_read_cnt, count - total_read_cnt, offset + total_read_cnt);
+        if (read_cnt < 0)
+        {
+            fmt::print(stderr, "{} ({})\n", error_message, std::strerror(errno));
+            return total_read_cnt > 0 ? static_cast<ssize_t>(total_read_cnt) : -1;
+        }
+        if (read_cnt == 0)
+        {
+            break;
+        }
+        total_read_cnt += static_cast<size_t>(read_cnt);
+    }
+
+    return static_cast<ssize_t>(total_read_cnt);
+}
+
+static ssize_t write_exact_at(int fd, const void* buf, size_t count, off_t offset, const char* error_message)
+{
+    size_t total_write_cnt = 0;
+    const uint8_t* input_buf = static_cast<const uint8_t*>(buf);
+
+    while (total_write_cnt < count)
+    {
+        ssize_t write_cnt =
+            retry_pwrite(fd, input_buf + total_write_cnt, count - total_write_cnt, offset + total_write_cnt);
+        if (write_cnt < 0)
+        {
+            fmt::print(stderr, "{} ({})\n", error_message, std::strerror(errno));
+            return total_write_cnt > 0 ? static_cast<ssize_t>(total_write_cnt) : -1;
+        }
+        if (write_cnt == 0)
+        {
+            fmt::print(stderr, "{} (short write returned 0)\n", error_message);
+            return total_write_cnt > 0 ? static_cast<ssize_t>(total_write_cnt) : -1;
+        }
+        total_write_cnt += static_cast<size_t>(write_cnt);
+    }
+
+    return static_cast<ssize_t>(total_write_cnt);
+}
+
+static size_t bytes_covered_from_offset(ssize_t transfer_cnt, size_t offset, size_t requested_size)
+{
+    if (transfer_cnt <= 0)
+    {
+        return 0;
+    }
+
+    size_t transferred_size = static_cast<size_t>(transfer_cnt);
+    if (transferred_size <= offset)
+    {
+        return 0;
+    }
+
+    return std::min(requested_size, transferred_size - offset);
+}
+
 bool is_gds_available()
 {
     return static_cast<bool>(s_cufile_initializer) && !cucim::util::is_in_wsl();
@@ -466,34 +557,45 @@ ssize_t CuFileDriver::pread(void* buf, size_t count, off_t file_offset, off_t bu
         {
             uint64_t cache_size = s_cufile_initializer.max_host_cache_size();
             uint64_t remaining_size = count;
-            ssize_t read_cnt;
             uint8_t* cache_buf = static_cast<uint8_t*>(s_cufile_cache.host_cache());
             uint8_t* output_buf = static_cast<uint8_t*>(buf) + buf_offset;
             off_t read_offset = file_offset;
-            while (true)
+
+            while (remaining_size > 0)
             {
                 size_t bytes_to_copy = std::min(cache_size, remaining_size);
-
-                if (bytes_to_copy == 0)
+                ssize_t read_cnt = read_exact_at(
+                    handle_->fd, cache_buf, bytes_to_copy, read_offset, "Cannot read the file content block!");
+                if (read_cnt < 0)
+                {
+                    return total_read_cnt > 0 ? total_read_cnt : -1;
+                }
+                if (read_cnt == 0)
                 {
                     break;
                 }
-                read_cnt = ::pread(handle_->fd, cache_buf, bytes_to_copy, read_offset);
-                CUDA_TRY(cudaMemcpy(output_buf, cache_buf, bytes_to_copy, cudaMemcpyHostToDevice));
+
+                CUDA_TRY(cudaMemcpy(output_buf, cache_buf, read_cnt, cudaMemcpyHostToDevice));
                 if (cuda_status)
                 {
                     return -1;
                 }
-                read_offset += read_cnt;
-                output_buf += read_cnt;
-                remaining_size -= read_cnt;
 
-                total_read_cnt += bytes_to_copy;
+                size_t bytes_read = static_cast<size_t>(read_cnt);
+                read_offset += read_cnt;
+                output_buf += bytes_read;
+                remaining_size -= bytes_read;
+                total_read_cnt += read_cnt;
+
+                if (bytes_read < bytes_to_copy)
+                {
+                    break;
+                }
             }
         }
         else
         {
-            total_read_cnt = ::pread(handle_->fd, reinterpret_cast<char*>(buf) + buf_offset, count, file_offset);
+            total_read_cnt = retry_pread(handle_->fd, reinterpret_cast<char*>(buf) + buf_offset, count, file_offset);
         }
     }
     else if (file_type == FileHandleType::kMemoryMapped)
@@ -520,44 +622,69 @@ ssize_t CuFileDriver::pread(void* buf, size_t count, off_t file_offset, off_t bu
 
         if (is_aligned)
         {
-            ssize_t read_cnt;
             size_t block_read_size = ALIGN_DOWN(count, PAGE_SIZE);
             if (block_read_size > 0)
             {
                 if (memory_type == cudaMemoryTypeUnregistered)
                 {
-                    read_cnt =
-                        ::pread(handle_->fd, reinterpret_cast<char*>(buf) + buf_offset, block_read_size, file_offset);
+                    ssize_t read_cnt = read_exact_at(handle_->fd,
+                                                     reinterpret_cast<char*>(buf) + buf_offset,
+                                                     block_read_size,
+                                                     file_offset,
+                                                     "Cannot read the aligned file content block!");
+                    if (read_cnt < 0)
+                    {
+                        return total_read_cnt > 0 ? total_read_cnt : -1;
+                    }
                     total_read_cnt += read_cnt;
+                    if (static_cast<size_t>(read_cnt) < block_read_size)
+                    {
+                        return total_read_cnt;
+                    }
                 }
                 else
                 {
                     uint64_t cache_size = s_cufile_initializer.max_host_cache_size();
                     uint64_t remaining_size = block_read_size;
-                    ssize_t read_cnt;
                     uint8_t* cache_buf = static_cast<uint8_t*>(s_cufile_cache.host_cache());
                     uint8_t* input_buf = static_cast<uint8_t*>(buf) + buf_offset;
                     off_t read_offset = file_offset;
-                    while (true)
+
+                    while (remaining_size > 0)
                     {
                         size_t bytes_to_copy = std::min(cache_size, remaining_size);
-
-                        if (bytes_to_copy == 0)
+                        ssize_t read_cnt = read_exact_at(
+                            handle_->fd, cache_buf, bytes_to_copy, read_offset, "Cannot read the file content block!");
+                        if (read_cnt < 0)
+                        {
+                            return total_read_cnt > 0 ? total_read_cnt : -1;
+                        }
+                        if (read_cnt == 0)
                         {
                             break;
                         }
 
-                        read_cnt = ::pread(handle_->fd, cache_buf, bytes_to_copy, read_offset);
-                        CUDA_TRY(cudaMemcpy(input_buf, cache_buf, bytes_to_copy, cudaMemcpyHostToDevice));
+                        CUDA_TRY(cudaMemcpy(input_buf, cache_buf, read_cnt, cudaMemcpyHostToDevice));
                         if (cuda_status)
                         {
                             return -1;
                         }
-                        read_offset += read_cnt;
-                        input_buf += read_cnt;
-                        remaining_size -= read_cnt;
 
-                        total_read_cnt += bytes_to_copy;
+                        size_t bytes_read = static_cast<size_t>(read_cnt);
+                        read_offset += read_cnt;
+                        input_buf += bytes_read;
+                        remaining_size -= bytes_read;
+                        total_read_cnt += read_cnt;
+
+                        if (bytes_read < bytes_to_copy)
+                        {
+                            break;
+                        }
+                    }
+
+                    if (remaining_size > 0)
+                    {
+                        return total_read_cnt;
                     }
                 }
             }
@@ -569,29 +696,33 @@ ssize_t CuFileDriver::pread(void* buf, size_t count, off_t file_offset, off_t bu
                 uint8_t* buf_pos = reinterpret_cast<uint8_t*>(ALIGN_UP(static_cast<uint8_t*>(internal_buf), PAGE_SIZE));
 
                 // Read the remaining block (size of PAGE_SIZE)
-                ssize_t read_cnt;
-                read_cnt = ::pread(handle_->fd, buf_pos, PAGE_SIZE, block_read_size);
+                ssize_t read_cnt = read_exact_at(handle_->fd,
+                                                 buf_pos,
+                                                 PAGE_SIZE,
+                                                 block_read_size,
+                                                 "Cannot read the remaining file content block!");
                 if (read_cnt < 0)
                 {
-                    fmt::print(stderr, "Cannot read the remaining file content block! ({})\n", std::strerror(errno));
-                    return -1;
+                    return total_read_cnt > 0 ? total_read_cnt : -1;
                 }
+
+                size_t bytes_to_copy = std::min(remaining, static_cast<size_t>(read_cnt));
                 // Copy a buffer to read, from the intermediate remaining block (buf_pos)
-                if (memory_type == cudaMemoryTypeUnregistered)
+                if (bytes_to_copy > 0 && memory_type == cudaMemoryTypeUnregistered)
                 {
-                    memcpy(reinterpret_cast<uint8_t*>(buf) + buf_offset + block_read_size, buf_pos, remaining);
+                    memcpy(reinterpret_cast<uint8_t*>(buf) + buf_offset + block_read_size, buf_pos, bytes_to_copy);
                 }
-                else
+                else if (bytes_to_copy > 0)
                 {
                     CUDA_TRY(cudaMemcpy(reinterpret_cast<uint8_t*>(buf) + buf_offset + block_read_size, buf_pos,
-                                        remaining, cudaMemcpyHostToDevice));
+                                        bytes_to_copy, cudaMemcpyHostToDevice));
                     if (cuda_status)
                     {
                         return -1;
                     }
                 }
 
-                total_read_cnt += remaining;
+                total_read_cnt += bytes_to_copy;
             }
         }
         else
@@ -608,26 +739,27 @@ ssize_t CuFileDriver::pread(void* buf, size_t count, off_t file_offset, off_t bu
 
             if (large_block_size <= cache_size) // Optimize if bytes to load is less than cache_size
             {
-                ssize_t read_cnt = ::pread(handle_->fd, cache_buf, large_block_size, file_start_offset);
+                ssize_t read_cnt = read_exact_at(
+                    handle_->fd, cache_buf, large_block_size, file_start_offset, "Cannot read the file content block!");
                 if (read_cnt < 0)
                 {
-                    fmt::print(stderr, "Cannot read the file content block! ({})\n", std::strerror(errno));
-                    return -1;
+                    return total_read_cnt > 0 ? total_read_cnt : -1;
                 }
 
-                if (memory_type == cudaMemoryTypeUnregistered)
+                size_t bytes_to_copy = bytes_covered_from_offset(read_cnt, page_offset, count);
+                if (bytes_to_copy > 0 && memory_type == cudaMemoryTypeUnregistered)
                 {
-                    memcpy(output_buf, cache_buf + page_offset, count);
+                    memcpy(output_buf, cache_buf + page_offset, bytes_to_copy);
                 }
-                else
+                else if (bytes_to_copy > 0)
                 {
-                    CUDA_TRY(cudaMemcpy(output_buf, cache_buf + page_offset, count, cudaMemcpyHostToDevice));
+                    CUDA_TRY(cudaMemcpy(output_buf, cache_buf + page_offset, bytes_to_copy, cudaMemcpyHostToDevice));
                     if (cuda_status)
                     {
                         return -1;
                     }
                 }
-                total_read_cnt += std::min(static_cast<size_t>(read_cnt - page_offset), count);
+                total_read_cnt += bytes_to_copy;
             }
             else
             {
@@ -637,9 +769,6 @@ ssize_t CuFileDriver::pread(void* buf, size_t count, off_t file_offset, off_t bu
                 uint64_t body_remaining_size = count - header_size - tail_size;
                 off_t read_offset = file_start_offset;
 
-                size_t bytes_to_copy;
-                ssize_t read_cnt;
-
                 uint8_t internal_buf[PAGE_SIZE * 2]; // no need to initialize for pread()
                 uint8_t* internal_buf_pos =
                     reinterpret_cast<uint8_t*>(ALIGN_UP(static_cast<uint8_t*>(internal_buf), PAGE_SIZE));
@@ -648,20 +777,22 @@ ssize_t CuFileDriver::pread(void* buf, size_t count, off_t file_offset, off_t bu
                 // Handle the head part of the file content
                 if (header_size)
                 {
-                    read_cnt = ::pread(handle_->fd, internal_buf_pos, PAGE_SIZE, read_offset);
+                    ssize_t read_cnt = read_exact_at(handle_->fd,
+                                                     internal_buf_pos,
+                                                     PAGE_SIZE,
+                                                     read_offset,
+                                                     "Cannot read the head part of the file content block!");
                     if (read_cnt < 0)
                     {
-                        fmt::print(stderr, "Cannot read the head part of the file content block! ({})\n",
-                                   std::strerror(errno));
-                        return -1;
+                        return total_read_cnt > 0 ? total_read_cnt : -1;
                     }
 
-                    bytes_to_copy = header_size;
-                    if (memory_type == cudaMemoryTypeUnregistered)
+                    size_t bytes_to_copy = bytes_covered_from_offset(read_cnt, page_offset, header_size);
+                    if (bytes_to_copy > 0 && memory_type == cudaMemoryTypeUnregistered)
                     {
                         memcpy(output_buf, internal_buf_pos + page_offset, bytes_to_copy);
                     }
-                    else
+                    else if (bytes_to_copy > 0)
                     {
                         CUDA_TRY(cudaMemcpy(
                             output_buf, internal_buf_pos + page_offset, bytes_to_copy, cudaMemcpyHostToDevice));
@@ -675,56 +806,67 @@ ssize_t CuFileDriver::pread(void* buf, size_t count, off_t file_offset, off_t bu
                     read_offset += read_cnt;
 
                     total_read_cnt += bytes_to_copy;
+                    if (bytes_to_copy < header_size)
+                    {
+                        return total_read_cnt;
+                    }
                 }
 
                 // Copy n * PAGE_SIZE bytes
-                while (true)
+                while (body_remaining_size > 0)
                 {
                     size_t bytes_to_copy = std::min(cache_size, body_remaining_size);
-
-                    if (bytes_to_copy == 0)
+                    ssize_t read_cnt = read_exact_at(
+                        handle_->fd, cache_buf, bytes_to_copy, read_offset, "Cannot read the file content block!");
+                    if (read_cnt < 0)
                     {
-                        break;
+                        return total_read_cnt > 0 ? total_read_cnt : -1;
                     }
 
-                    read_cnt = ::pread(handle_->fd, cache_buf, bytes_to_copy, read_offset);
-                    if (memory_type == cudaMemoryTypeUnregistered)
+                    size_t bytes_read = static_cast<size_t>(read_cnt);
+                    if (bytes_read > 0 && memory_type == cudaMemoryTypeUnregistered)
                     {
-                        memcpy(output_buf, cache_buf, bytes_to_copy);
+                        memcpy(output_buf, cache_buf, bytes_read);
                     }
-                    else
+                    else if (bytes_read > 0)
                     {
-                        CUDA_TRY(cudaMemcpy(output_buf, cache_buf, bytes_to_copy, cudaMemcpyHostToDevice));
+                        CUDA_TRY(cudaMemcpy(output_buf, cache_buf, bytes_read, cudaMemcpyHostToDevice));
                         if (cuda_status)
                         {
                             return -1;
                         }
                     }
                     read_offset += read_cnt;
-                    output_buf += read_cnt;
-                    body_remaining_size -= read_cnt;
+                    output_buf += bytes_read;
+                    body_remaining_size -= bytes_read;
 
-                    total_read_cnt += bytes_to_copy;
+                    total_read_cnt += bytes_read;
+                    if (bytes_read < bytes_to_copy)
+                    {
+                        return total_read_cnt;
+                    }
                 }
 
                 // Handle the tail part of the file content
                 if (tail_size)
                 {
                     //                memset(internal_buf_pos, 0, PAGE_SIZE); // no need to initialize for pread()
-                    read_cnt = ::pread(handle_->fd, internal_buf_pos, PAGE_SIZE, read_offset);
+                    ssize_t read_cnt = read_exact_at(handle_->fd,
+                                                     internal_buf_pos,
+                                                     PAGE_SIZE,
+                                                     read_offset,
+                                                     "Cannot read the tail part of the file content block!");
                     if (read_cnt < 0)
                     {
-                        fmt::print(stderr, "Cannot read the tail part of the file content block! ({})\n",
-                                   std::strerror(errno));
-                        return -1;
+                        return total_read_cnt > 0 ? total_read_cnt : -1;
                     }
                     // Copy the region
-                    bytes_to_copy = tail_size;
-                    if (memory_type == cudaMemoryTypeUnregistered)
+                    size_t bytes_to_copy = std::min(tail_size, static_cast<size_t>(read_cnt));
+                    if (bytes_to_copy > 0 && memory_type == cudaMemoryTypeUnregistered)
                     {
                         memcpy(output_buf, internal_buf_pos, bytes_to_copy);
                     }
-                    else
+                    else if (bytes_to_copy > 0)
                     {
                         CUDA_TRY(cudaMemcpy(output_buf, internal_buf_pos, bytes_to_copy, cudaMemcpyHostToDevice));
                         if (cuda_status)
@@ -732,7 +874,7 @@ ssize_t CuFileDriver::pread(void* buf, size_t count, off_t file_offset, off_t bu
                             return -1;
                         }
                     }
-                    total_read_cnt += tail_size;
+                    total_read_cnt += bytes_to_copy;
                 }
             }
         }
@@ -786,35 +928,43 @@ ssize_t CuFileDriver::pwrite(const void* buf, size_t count, off_t file_offset, o
         {
             uint64_t cache_size = s_cufile_initializer.max_host_cache_size();
             uint64_t remaining_size = count;
-            ssize_t write_cnt;
             uint8_t* cache_buf = static_cast<uint8_t*>(s_cufile_cache.host_cache());
             const uint8_t* input_buf = static_cast<const uint8_t*>(buf) + buf_offset;
             off_t write_offset = file_offset;
-            while (true)
+
+            while (remaining_size > 0)
             {
                 size_t bytes_to_copy = std::min(cache_size, remaining_size);
-
-                if (bytes_to_copy == 0)
-                {
-                    break;
-                }
 
                 CUDA_TRY(cudaMemcpy(cache_buf, input_buf, bytes_to_copy, cudaMemcpyDeviceToHost));
                 if (cuda_status)
                 {
                     return -1;
                 }
-                write_cnt = ::pwrite(handle_->fd, cache_buf, bytes_to_copy, write_offset);
-                write_offset += write_cnt;
-                input_buf += write_cnt;
-                remaining_size -= write_cnt;
 
-                total_write_cnt += bytes_to_copy;
+                ssize_t write_cnt = write_exact_at(
+                    handle_->fd, cache_buf, bytes_to_copy, write_offset, "Cannot write the file content block!");
+                if (write_cnt < 0)
+                {
+                    return total_write_cnt > 0 ? total_write_cnt : -1;
+                }
+
+                size_t bytes_written = static_cast<size_t>(write_cnt);
+                write_offset += write_cnt;
+                input_buf += bytes_written;
+                remaining_size -= bytes_written;
+                total_write_cnt += write_cnt;
+
+                if (bytes_written < bytes_to_copy)
+                {
+                    break;
+                }
             }
         }
         else
         {
-            total_write_cnt = ::pwrite(handle_->fd, reinterpret_cast<const char*>(buf) + buf_offset, count, file_offset);
+            total_write_cnt =
+                retry_pwrite(handle_->fd, reinterpret_cast<const char*>(buf) + buf_offset, count, file_offset);
         }
     }
     else if (file_type == FileHandleType::kMemoryMapped)
@@ -829,45 +979,67 @@ ssize_t CuFileDriver::pwrite(const void* buf, size_t count, off_t file_offset, o
 
         if (is_aligned)
         {
-            ssize_t write_cnt;
             size_t block_write_size = ALIGN_DOWN(count, PAGE_SIZE);
 
             if (block_write_size > 0)
             {
                 if (memory_type == cudaMemoryTypeUnregistered)
                 {
-                    write_cnt = ::pwrite(
-                        handle_->fd, reinterpret_cast<const char*>(buf) + buf_offset, block_write_size, file_offset);
+                    ssize_t write_cnt = write_exact_at(handle_->fd,
+                                                       reinterpret_cast<const char*>(buf) + buf_offset,
+                                                       block_write_size,
+                                                       file_offset,
+                                                       "Cannot write the aligned file content block!");
+                    if (write_cnt < 0)
+                    {
+                        return total_write_cnt > 0 ? total_write_cnt : -1;
+                    }
                     total_write_cnt += write_cnt;
+                    if (static_cast<size_t>(write_cnt) < block_write_size)
+                    {
+                        return total_write_cnt;
+                    }
                 }
                 else
                 {
                     uint64_t cache_size = s_cufile_initializer.max_host_cache_size();
                     uint64_t remaining_size = block_write_size;
-                    ssize_t write_cnt;
                     uint8_t* cache_buf = static_cast<uint8_t*>(s_cufile_cache.host_cache());
                     const uint8_t* input_buf = static_cast<const uint8_t*>(buf) + buf_offset;
                     off_t write_offset = file_offset;
-                    while (true)
+
+                    while (remaining_size > 0)
                     {
                         size_t bytes_to_copy = std::min(cache_size, remaining_size);
-
-                        if (bytes_to_copy == 0)
-                        {
-                            break;
-                        }
 
                         CUDA_TRY(cudaMemcpy(cache_buf, input_buf, bytes_to_copy, cudaMemcpyDeviceToHost));
                         if (cuda_status)
                         {
                             return -1;
                         }
-                        write_cnt = ::pwrite(handle_->fd, cache_buf, bytes_to_copy, write_offset);
-                        write_offset += write_cnt;
-                        input_buf += write_cnt;
-                        remaining_size -= write_cnt;
 
-                        total_write_cnt += bytes_to_copy;
+                        ssize_t write_cnt = write_exact_at(
+                            handle_->fd, cache_buf, bytes_to_copy, write_offset, "Cannot write the file content block!");
+                        if (write_cnt < 0)
+                        {
+                            return total_write_cnt > 0 ? total_write_cnt : -1;
+                        }
+
+                        size_t bytes_written = static_cast<size_t>(write_cnt);
+                        write_offset += write_cnt;
+                        input_buf += bytes_written;
+                        remaining_size -= bytes_written;
+                        total_write_cnt += write_cnt;
+
+                        if (bytes_written < bytes_to_copy)
+                        {
+                            break;
+                        }
+                    }
+
+                    if (remaining_size > 0)
+                    {
+                        return total_write_cnt;
                     }
                 }
             }
@@ -880,12 +1052,14 @@ ssize_t CuFileDriver::pwrite(const void* buf, size_t count, off_t file_offset, o
                     reinterpret_cast<uint8_t*>(ALIGN_UP(static_cast<uint8_t*>(internal_buf), PAGE_SIZE));
 
                 // Read the remaining block (size of PAGE_SIZE)
-                ssize_t read_cnt;
-                read_cnt = ::pread(handle_->fd, internal_buf_pos, PAGE_SIZE, block_write_size);
+                ssize_t read_cnt = read_exact_at(handle_->fd,
+                                                 internal_buf_pos,
+                                                 PAGE_SIZE,
+                                                 block_write_size,
+                                                 "Cannot read the remaining file content block!");
                 if (read_cnt < 0)
                 {
-                    fmt::print(stderr, "Cannot read the remaining file content block! ({})\n", std::strerror(errno));
-                    return -1;
+                    return total_write_cnt > 0 ? total_write_cnt : -1;
                 }
                 // Overwrite a buffer to write, to the intermediate remaining block (internal_buf_pos)
                 if (memory_type == cudaMemoryTypeUnregistered)
@@ -904,14 +1078,21 @@ ssize_t CuFileDriver::pwrite(const void* buf, size_t count, off_t file_offset, o
                     }
                 }
                 // Write the constructed block
-                write_cnt = ::pwrite(handle_->fd, internal_buf_pos, PAGE_SIZE, block_write_size);
+                ssize_t write_cnt = write_exact_at(handle_->fd,
+                                                   internal_buf_pos,
+                                                   PAGE_SIZE,
+                                                   block_write_size,
+                                                   "Cannot write the remaining file content!");
                 if (write_cnt < 0)
                 {
-                    fmt::print(stderr, "Cannot write the remaining file content! ({})\n", std::strerror(errno));
-                    return -1;
+                    return total_write_cnt > 0 ? total_write_cnt : -1;
                 }
 
-                total_write_cnt += remaining;
+                total_write_cnt += std::min(remaining, static_cast<size_t>(write_cnt));
+                if (static_cast<size_t>(write_cnt) < PAGE_SIZE)
+                {
+                    return total_write_cnt;
+                }
             }
         }
         else
@@ -928,23 +1109,26 @@ ssize_t CuFileDriver::pwrite(const void* buf, size_t count, off_t file_offset, o
 
             if (large_block_size <= cache_size) // Optimize if bytes to write is less than cache_size
             {
-                memset(cache_buf, 0, PAGE_SIZE);
-                ssize_t read_cnt = ::pread(handle_->fd, cache_buf, PAGE_SIZE, file_start_offset);
+                memset(cache_buf, 0, large_block_size);
+                ssize_t read_cnt = read_exact_at(handle_->fd,
+                                                 cache_buf,
+                                                 PAGE_SIZE,
+                                                 file_start_offset,
+                                                 "Cannot read the head part of the file content block!");
                 if (read_cnt < 0)
                 {
-                    fmt::print(
-                        stderr, "Cannot read the head part of the file content block! ({})\n", std::strerror(errno));
-                    return -1;
+                    return total_write_cnt > 0 ? total_write_cnt : -1;
                 }
                 if (large_block_size > PAGE_SIZE)
                 {
-                    read_cnt = ::pread(handle_->fd, cache_buf + large_block_size - PAGE_SIZE, PAGE_SIZE,
-                                       end_boundary_offset - PAGE_SIZE);
+                    read_cnt = read_exact_at(handle_->fd,
+                                             cache_buf + large_block_size - PAGE_SIZE,
+                                             PAGE_SIZE,
+                                             end_boundary_offset - PAGE_SIZE,
+                                             "Cannot read the tail part of the file content block!");
                     if (read_cnt < 0)
                     {
-                        fmt::print(stderr, "Cannot read the tail part of the file content block! ({})\n",
-                                   std::strerror(errno));
-                        return -1;
+                        return total_write_cnt > 0 ? total_write_cnt : -1;
                     }
                 }
 
@@ -962,14 +1146,17 @@ ssize_t CuFileDriver::pwrite(const void* buf, size_t count, off_t file_offset, o
                 }
 
                 // Write the constructed block
-                ssize_t write_cnt = ::pwrite(handle_->fd, cache_buf, large_block_size, file_start_offset);
+                ssize_t write_cnt = write_exact_at(handle_->fd,
+                                                   cache_buf,
+                                                   large_block_size,
+                                                   file_start_offset,
+                                                   "Cannot write the file content block!");
                 if (write_cnt < 0)
                 {
-                    fmt::print(stderr, "Cannot write the file content block! ({})\n", std::strerror(errno));
-                    return -1;
+                    return total_write_cnt > 0 ? total_write_cnt : -1;
                 }
 
-                total_write_cnt += std::min(static_cast<size_t>(write_cnt - page_offset), count);
+                total_write_cnt += bytes_covered_from_offset(write_cnt, page_offset, count);
             }
             else
             {
@@ -979,25 +1166,23 @@ ssize_t CuFileDriver::pwrite(const void* buf, size_t count, off_t file_offset, o
                 uint64_t body_remaining_size = count - header_size - tail_size;
                 off_t write_offset = file_start_offset;
 
-                size_t bytes_to_copy;
-                ssize_t read_cnt;
-                ssize_t write_cnt;
-
                 uint8_t internal_buf[PAGE_SIZE * 2]{};
                 uint8_t* internal_buf_pos =
                     reinterpret_cast<uint8_t*>(ALIGN_UP(static_cast<uint8_t*>(internal_buf), PAGE_SIZE));
                 // Handle the head part of the file content
                 if (header_size)
                 {
-                    read_cnt = ::pread(handle_->fd, internal_buf_pos, PAGE_SIZE, write_offset);
+                    ssize_t read_cnt = read_exact_at(handle_->fd,
+                                                     internal_buf_pos,
+                                                     PAGE_SIZE,
+                                                     write_offset,
+                                                     "Cannot read the head part of the file content block!");
                     if (read_cnt < 0)
                     {
-                        fmt::print(stderr, "Cannot read the head part of the file content block! ({})\n",
-                                   std::strerror(errno));
-                        return -1;
+                        return total_write_cnt > 0 ? total_write_cnt : -1;
                     }
                     // Overwrite the region to write
-                    bytes_to_copy = header_size;
+                    size_t bytes_to_copy = header_size;
                     if (memory_type == cudaMemoryTypeUnregistered)
                     {
                         memcpy(internal_buf_pos + page_offset, input_buf, bytes_to_copy);
@@ -1013,28 +1198,31 @@ ssize_t CuFileDriver::pwrite(const void* buf, size_t count, off_t file_offset, o
                     }
 
                     // Write the constructed block
-                    write_cnt = ::pwrite(handle_->fd, internal_buf_pos, PAGE_SIZE, write_offset);
+                    ssize_t write_cnt = write_exact_at(handle_->fd,
+                                                       internal_buf_pos,
+                                                       PAGE_SIZE,
+                                                       write_offset,
+                                                       "Cannot write the head part of the file content block!");
                     if (write_cnt < 0)
                     {
-                        fmt::print(stderr, "Cannot write the head part of the file content block! ({})\n",
-                                   std::strerror(errno));
-                        return -1;
+                        return total_write_cnt > 0 ? total_write_cnt : -1;
                     }
+
+                    size_t bytes_written = bytes_covered_from_offset(write_cnt, page_offset, bytes_to_copy);
+                    total_write_cnt += bytes_written;
+                    if (static_cast<size_t>(write_cnt) < PAGE_SIZE || bytes_written < bytes_to_copy)
+                    {
+                        return total_write_cnt;
+                    }
+
                     input_buf += bytes_to_copy;
                     write_offset += write_cnt;
-
-                    total_write_cnt += bytes_to_copy;
                 }
 
                 // Copy n * PAGE_SIZE bytes
-                while (true)
+                while (body_remaining_size > 0)
                 {
                     size_t bytes_to_copy = std::min(cache_size, body_remaining_size);
-
-                    if (bytes_to_copy == 0)
-                    {
-                        break;
-                    }
 
                     if (memory_type == cudaMemoryTypeUnregistered)
                     {
@@ -1048,27 +1236,40 @@ ssize_t CuFileDriver::pwrite(const void* buf, size_t count, off_t file_offset, o
                             return -1;
                         }
                     }
-                    write_cnt = ::pwrite(handle_->fd, cache_buf, bytes_to_copy, write_offset);
-                    write_offset += write_cnt;
-                    input_buf += write_cnt;
-                    body_remaining_size -= write_cnt;
+                    ssize_t write_cnt = write_exact_at(
+                        handle_->fd, cache_buf, bytes_to_copy, write_offset, "Cannot write the file content block!");
+                    if (write_cnt < 0)
+                    {
+                        return total_write_cnt > 0 ? total_write_cnt : -1;
+                    }
 
-                    total_write_cnt += bytes_to_copy;
+                    size_t bytes_written = static_cast<size_t>(write_cnt);
+                    write_offset += write_cnt;
+                    input_buf += bytes_written;
+                    body_remaining_size -= bytes_written;
+                    total_write_cnt += write_cnt;
+
+                    if (bytes_written < bytes_to_copy)
+                    {
+                        return total_write_cnt;
+                    }
                 }
 
                 // Handle the tail part of the file content
                 if (tail_size)
                 {
                     memset(internal_buf_pos, 0, PAGE_SIZE);
-                    read_cnt = ::pread(handle_->fd, internal_buf_pos, PAGE_SIZE, write_offset);
+                    ssize_t read_cnt = read_exact_at(handle_->fd,
+                                                     internal_buf_pos,
+                                                     PAGE_SIZE,
+                                                     write_offset,
+                                                     "Cannot read the tail part of the file content block!");
                     if (read_cnt < 0)
                     {
-                        fmt::print(stderr, "Cannot read the tail part of the file content block! ({})\n",
-                                   std::strerror(errno));
-                        return -1;
+                        return total_write_cnt > 0 ? total_write_cnt : -1;
                     }
                     // Overwrite the region to write
-                    bytes_to_copy = tail_size;
+                    size_t bytes_to_copy = tail_size;
                     if (memory_type == cudaMemoryTypeUnregistered)
                     {
                         memcpy(internal_buf_pos, input_buf, bytes_to_copy);
@@ -1083,14 +1284,16 @@ ssize_t CuFileDriver::pwrite(const void* buf, size_t count, off_t file_offset, o
                     }
 
                     // Write the constructed block
-                    write_cnt = ::pwrite(handle_->fd, internal_buf_pos, PAGE_SIZE, write_offset);
+                    ssize_t write_cnt = write_exact_at(handle_->fd,
+                                                       internal_buf_pos,
+                                                       PAGE_SIZE,
+                                                       write_offset,
+                                                       "Cannot write the tail part of the file content block!");
                     if (write_cnt < 0)
                     {
-                        fmt::print(stderr, "Cannot write the tail part of the file content block! ({})\n",
-                                   std::strerror(errno));
-                        return -1;
+                        return total_write_cnt > 0 ? total_write_cnt : -1;
                     }
-                    total_write_cnt += tail_size;
+                    total_write_cnt += std::min(tail_size, static_cast<size_t>(write_cnt));
                 }
             }
         }
