@@ -84,6 +84,7 @@ tests:
     - cuda-version ={{ cuda_version }}
   imports:
     - cucim
+    - cucim.skimage._cucim_skimage_cpp_ext
 
 about:
   home: https://developer.nvidia.com/multidimensional-image-processing
