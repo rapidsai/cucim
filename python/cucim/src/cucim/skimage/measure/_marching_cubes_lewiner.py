@@ -582,21 +582,24 @@ extern "C" __global__ void mc_lewiner_generate_center_vertices(
     double py = (w[2] + w[3] + w[6] + w[7]) / total_w;
     double pz = (w[4] + w[5] + w[6] + w[7]) / total_w;
 
-    double gx[8], gy[8], gz[8];
-    gx[0] = v[0] - v[1]; gy[0] = v[0] - v[3]; gz[0] = v[0] - v[4];
-    gx[1] = v[0] - v[1]; gy[1] = v[1] - v[2]; gz[1] = v[1] - v[5];
-    gx[2] = v[3] - v[2]; gy[2] = v[1] - v[2]; gz[2] = v[2] - v[6];
-    gx[3] = v[3] - v[2]; gy[3] = v[0] - v[3]; gz[3] = v[3] - v[7];
-    gx[4] = v[4] - v[5]; gy[4] = v[4] - v[7]; gz[4] = v[0] - v[4];
-    gx[5] = v[4] - v[5]; gy[5] = v[5] - v[6]; gz[5] = v[1] - v[5];
-    gx[6] = v[7] - v[6]; gy[6] = v[5] - v[6]; gz[6] = v[2] - v[6];
-    gx[7] = v[7] - v[6]; gy[7] = v[4] - v[7]; gz[7] = v[3] - v[7];
-
+    // the central-difference gradients at the corners, interpolated
+    // trilinearly at the vertex (as the gradients at the two end samples are
+    // interpolated for the vertices on the edges)
+    const int corner_i[8] = {0, 1, 1, 0, 0, 1, 1, 0};
+    const int corner_j[8] = {0, 0, 1, 1, 0, 0, 1, 1};
+    const int corner_k[8] = {0, 0, 0, 0, 1, 1, 1, 1};
     double nxg = 0.0, nyg = 0.0, nzg = 0.0;
     for (int n = 0; n < 8; n++) {
-        nxg += w[n] * gx[n];
-        nyg += w[n] * gy[n];
-        nzg += w[n] * gz[n];
+        int ci = i + corner_i[n];
+        int cj = j + corner_j[n];
+        int ck = k + corner_k[n];
+        double weight = (corner_i[n] ? px : 1.0 - px) *
+                        (corner_j[n] ? py : 1.0 - py) *
+                        (corner_k[n] ? pz : 1.0 - pz);
+        // the sign of the normals of scikit-image: towards lower values
+        nxg -= weight * grad_at(volume, ci, cj, ck, 0, nx, ny, nz);
+        nyg -= weight * grad_at(volume, ci, cj, ck, 1, nx, ny, nz);
+        nzg -= weight * grad_at(volume, ci, cj, ck, 2, nx, ny, nz);
     }
     // the gradient in physical units
     nxg /= (double)sx;
