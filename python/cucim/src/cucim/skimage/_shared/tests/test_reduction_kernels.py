@@ -18,13 +18,11 @@ pytestmark = pytest.mark.filterwarnings(
 def extrema_dispatch(request, monkeypatch):
     """Check NaN propagation and precision with both extrema strategies."""
     monkeypatch.setattr(_reduction_kernels, "_RANGE_DIRECT_MAX_BYTES", 0)
+    monkeypatch.setattr(_reduction_kernels, "_RANGE_DIRECT_MAX_ELEMENTS", 0)
+    # Only float16 is handed to CuPy's reductions; other dtypes always stage.
     minimum = 0 if request.param == "packed" else float("inf")
-    maximum = float("inf") if request.param == "packed" else 0
     monkeypatch.setattr(
         _reduction_kernels, "_MINMAX_SEPARATE_MIN_BYTES", minimum
-    )
-    monkeypatch.setattr(
-        _reduction_kernels, "_MINMAX_SEPARATE_MAX_BYTES", maximum
     )
 
 
@@ -93,8 +91,23 @@ def test_minmax_preserves_float32_subnormals(
     cp.testing.assert_array_equal(bounds, [image.min(), image.max()])
 
 
+@pytest.mark.parametrize(
+    "dtype", ["bool", "int8", "uint16", "int32", "float32", "float64"]
+)
+def test_minmax_only_float16_uses_accelerated_reductions(monkeypatch, dtype):
+    image = cp.arange(131073).astype(dtype)
+
+    def fail_pack(*args, **kwargs):
+        pytest.fail("selected accelerated reduction path for a staged dtype")
+
+    monkeypatch.setattr(_reduction_kernels, "_pack_minmax_kernel", fail_pack)
+    with allow_synchronize(False):
+        bounds = _get_minmax(image)
+    cp.testing.assert_array_equal(bounds, cp.stack((image.min(), image.max())))
+
+
 def test_minmax_without_accelerated_reductions(monkeypatch):
-    image = cp.linspace(-1, 2, 131073, dtype=cp.float32)
+    image = cp.linspace(-1, 2, 131073, dtype=cp.float16)
     monkeypatch.setattr(
         _reduction_kernels._accelerator,
         "get_reduction_accelerators",
@@ -112,7 +125,7 @@ def test_minmax_without_accelerated_reductions(monkeypatch):
 
 @pytest.mark.parametrize("nan_pattern", ["none", "mixed", "all"])
 def test_minmax_without_private_accelerator_module(monkeypatch, nan_pattern):
-    image = cp.linspace(-1, 2, 131073, dtype=cp.float32)
+    image = cp.linspace(-1, 2, 131073, dtype=cp.float16)
     if nan_pattern == "mixed":
         image[-1] = cp.nan
     elif nan_pattern == "all":

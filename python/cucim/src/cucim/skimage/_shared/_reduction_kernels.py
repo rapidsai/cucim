@@ -11,8 +11,9 @@ numeric sentinels that would complicate support for integer and complex data.
 
 CuPy's generic scalar ReductionKernel uses a single thread block. Small inputs
 use it directly to avoid the extra dispatch and launch overhead of staging:
-up to 512 KiB of total C-contiguous input data, or 4096 elements for other layouts.
-Larger contiguous real inputs use a single launch: blocks publish partial
+up to 16384 elements for contiguous float, integer, and bool extrema, 512 KiB of
+total C-contiguous data for the other reductions, or 4096 elements for other
+layouts. Larger contiguous real inputs use a single launch: blocks publish partial
 ranges and increment a completion counter after a device fence. The last
 finishing block merges those ranges; other blocks exit without waiting. Each
 call owns its scratch storage and counter, so streams can run independently.
@@ -31,9 +32,11 @@ squared-error sum from two images, avoiding full-sized arithmetic temporaries.
 Large-image MSE and Euclidean/mean NRMSE reuse this staging with an error sum
 and an optional reference sum, omitting extrema when they are not needed.
 
-Dispatch cutoffs are empirical measurements on an RTX A6000, including the
-CUB preference for large 8- and 16-bit integer inputs; other architectures
-may favor different cutoffs. The sign of zero in an extremum is unspecified
+Dispatch cutoffs are empirical measurements on an RTX A6000; other
+architectures may favor different cutoffs. The single-launch kernel is as fast
+as or faster than CuPy's separate min and max reductions, plus packing their
+scalar results, for every contiguous bool, integer, float32, and float64 size
+measured, so only contiguous float16 inputs are handed to CuPy. The sign of zero in an extremum is unspecified
 and can vary with dtype, layout, and backend. Both signs compare as zero in
 the callers of this module.
 """
@@ -52,9 +55,12 @@ _RANGE_CHUNK_SIZE = 4096
 # A conservative byte limit balances launch savings against the limited
 # throughput of a single block.
 _RANGE_DIRECT_MAX_BYTES = 512 * 1024
-# CuPy's accelerated individual reductions beat custom staging in this band.
-_MINMAX_SEPARATE_MIN_BYTES = 64 * 1024
-_MINMAX_SEPARATE_MAX_BYTES = 32 * 1024 * 1024
+# The single-launch extrema kernel costs about as much as a direct reduction of
+# this many elements, whatever their size, so larger inputs use it instead.
+_RANGE_DIRECT_MAX_ELEMENTS = 16384
+# CuPy's accelerated individual reductions beat custom staging for float16,
+# which has no single-launch kernel.
+_MINMAX_SEPARATE_MIN_BYTES = 128 * 1024
 
 _range_preamble = r"""
 template<typename T>
@@ -280,17 +286,24 @@ def _reduce_image_statistics(
     if image.size == 0:
         raise ValueError("Cannot compute the range of an empty image")
     contiguous = all(x.flags.c_contiguous for x in images)
-    if image.size <= _RANGE_CHUNK_SIZE or (
-        contiguous and sum(x.nbytes for x in images) <= _RANGE_DIRECT_MAX_BYTES
+    single_launch = (
+        minmax_nan_policy is not None
+        and contiguous
+        and (image.dtype.kind in "biu" or image.dtype.char in "fd")
+    )
+    if (
+        image.size <= _RANGE_CHUNK_SIZE
+        or (single_launch and image.size <= _RANGE_DIRECT_MAX_ELEMENTS)
+        or (
+            contiguous
+            and not single_launch
+            and sum(x.nbytes for x in images) <= _RANGE_DIRECT_MAX_BYTES
+        )
     ):
         kernel(*images, *result)
         return
 
-    if (
-        minmax_nan_policy is not None
-        and contiguous
-        and (image.dtype.kind in "biu" or image.dtype.char in "fd")
-    ):
+    if single_launch:
         _last_block_minmax(image, result, propagate_nan=minmax_nan_policy)
         return
 
@@ -363,19 +376,15 @@ def _get_minmax(image):
     """
     if (
         image.flags.c_contiguous
-        and image.dtype.kind in "biuf"
+        and image.dtype == cp.float16
         and image.nbytes > _MINMAX_SEPARATE_MIN_BYTES
-        and (
-            image.nbytes <= _MINMAX_SEPARATE_MAX_BYTES
-            or (image.dtype.kind in "biu" and image.dtype.itemsize <= 2)
-        )
         and _accelerator is not None
         and _accelerator.ACCELERATOR_CUB
         in _accelerator.get_reduction_accelerators()
     ):
-        # Preserve CuPy's accelerated reductions without the dispatch cost of
-        # staging. Only the scalar results are packed; the image is not copied.
-        # Short integer reductions also favor CuPy at large sizes.
+        # Float16 has no single-launch kernel, and the staged fallback needs
+        # two launches plus partial buffers. Only the scalar results are
+        # packed; the image is not copied.
         return _pack_minmax_kernel(image.min(), image.max(), size=2)
     bounds, _ = _reduce_minmax(image, propagate_nan=image.dtype.kind in "fc")
     return bounds
