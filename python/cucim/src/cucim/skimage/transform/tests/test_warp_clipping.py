@@ -23,6 +23,7 @@ def range_dispatch(request, monkeypatch):
     """Exercise both reduction paths on the same dtype and NaN cases."""
     if request.param == "staged":
         monkeypatch.setattr(_reduction_kernels, "_RANGE_DIRECT_MAX_BYTES", 0)
+        monkeypatch.setattr(_reduction_kernels, "_RANGE_DIRECT_MAX_ELEMENTS", 0)
 
 
 @pytest.fixture(params=["device", "host"])
@@ -278,7 +279,7 @@ def test_clip_warp_output_multiple_chunks(
 @pytest.mark.parametrize("offset", [-1, 0, 1])
 def test_warp_range_direct_cutoff(dtype, offset):
     dtype = cp.dtype(dtype)
-    size = _reduction_kernels._RANGE_DIRECT_MAX_BYTES // dtype.itemsize + offset
+    size = _reduction_kernels._RANGE_DIRECT_MAX_ELEMENTS + offset
     image = cp.arange(size, dtype=dtype)
     image[-1] = cp.nan
     with allow_synchronize(False):
