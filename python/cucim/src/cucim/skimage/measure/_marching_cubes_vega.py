@@ -453,7 +453,8 @@ extern "C" __global__ void mc_vega_count_cells_masked(
 
 // The center vertex is at the center of the cell. Its normal is the mean of
 // the gradients at the corners (the trilinear interpolation at the center)
-// and its value the largest of the corner values.
+// and its value the range of the corner values (as for the edge vertices, the
+// largest range of the cells that contain the vertex).
 extern "C" __global__ void mc_vega_generate_center_vertices(
     const float* volume, const unsigned char* center_flags,
     const int* center_scan, int* center_vertex_ids, float* vertices,
@@ -476,6 +477,7 @@ extern "C" __global__ void mc_vega_generate_center_vertices(
 
     float gx = 0.0f, gy = 0.0f, gz = 0.0f;
     float vmax = vol_at(volume, i, j, k, ny, nz);
+    float vmin = vmax;
     for (int n = 0; n < 8; n++) {
         int ci = i + (n & 1);
         int cj = j + ((n >> 1) & 1);
@@ -483,7 +485,9 @@ extern "C" __global__ void mc_vega_generate_center_vertices(
         gx += grad_at(volume, ci, cj, ck, 0, nx, ny, nz);
         gy += grad_at(volume, ci, cj, ck, 1, nx, ny, nz);
         gz += grad_at(volume, ci, cj, ck, 2, nx, ny, nz);
-        vmax = fmaxf(vmax, vol_at(volume, ci, cj, ck, ny, nz));
+        float s = vol_at(volume, ci, cj, ck, ny, nz);
+        vmax = fmaxf(vmax, s);
+        vmin = fminf(vmin, s);
     }
     // the sign of the normals of scikit-image (towards lower values)
     gx = -gx;
@@ -507,7 +511,7 @@ extern "C" __global__ void mc_vega_generate_center_vertices(
     normals[out] = gx;
     normals[out + 1] = gy;
     normals[out + 2] = gz;
-    values_out[vid] = vmax;
+    values_out[vid] = vmax - vmin;
 }
 
 extern "C" __device__ inline int vega_vertex_id(
