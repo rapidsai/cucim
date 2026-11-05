@@ -66,7 +66,7 @@ _doc_returns = """
     -------
     out : cupy.ndarray
         Output image with the same shape as the input. The default output dtype
-        is uint8 for non-uint8 inputs converted with
+        is uint8 for inputs converted with
         ``cast_to_uint8=True``; otherwise it follows the input dtype unless
         ``out`` controls it. ``entropy`` defaults to float32 for non-floating
         inputs when ``out`` is not provided.
@@ -914,8 +914,9 @@ otsu.__doc__ = (
     candidates, and the lowest gray level wins ties. A neighborhood with a
     single gray level (or no pixels) gives 0.
 
-    The image must be uint8 or uint16. Other dtypes are converted to uint8
-    unless ``cast_to_uint8=False``, which raises an error for them."""
+    Uint8 and uint16 images are processed natively, matching scikit-image.
+    Other dtypes are converted to uint8 unless ``cast_to_uint8=False``, which
+    raises an error for them."""
     )
     + """
     References

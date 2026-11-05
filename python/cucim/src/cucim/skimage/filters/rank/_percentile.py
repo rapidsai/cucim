@@ -19,8 +19,9 @@ Dtype notes
 Some operations use a ``dtype_max`` value based on the output dtype that
 affects output scaling (``autolevel_percentile``, ``threshold_percentile``,
 ``subtract_mean_percentile``). With the default ``cast_to_uint8=True``,
-non-uint8 inputs are converted before filtering and the default output dtype
-is uint8. When processing other dtypes natively with ``cast_to_uint8=False``:
+uint8 and uint16 inputs are processed natively; other inputs are converted
+before filtering and their default output dtype is uint8. When processing
+other dtypes natively with ``cast_to_uint8=False``:
 
 - **Unsigned integers** (uint8, uint16, etc.): ``dtype_max`` is the type
   maximum (255, 65535, ...). This matches scikit-image's behavior.
@@ -120,18 +121,19 @@ _doc_boundary_note = """
 
 _doc_cast_to_uint8_param = """
     cast_to_uint8 : bool, optional (keyword-only)
-        If True, non-uint8 image inputs are converted to uint8 with
-        ``img_as_ubyte`` before backend selection. This matches scikit-image's
-        conversion behavior for many other input dtypes and can enable the
-        uint8 histogram backend for compatible inputs. Set this to False to
-        process a wider input dtype natively. Default is True."""
+        If True, image inputs other than uint8 and uint16 are converted to
+        uint8 with ``img_as_ubyte`` before backend selection, matching
+        scikit-image. Uint8 and uint16 inputs are always processed natively.
+        Set this to False to process a wider input dtype natively. Default is
+        True. To use the uint8 histogram backend with a uint16 image, convert
+        it explicitly with ``img_as_ubyte`` before calling the filter."""
 
 _doc_returns = """
     Returns
     -------
     out : cupy.ndarray
         Output image with same shape as input. The default output dtype is
-        uint8 for non-uint8 inputs converted with ``cast_to_uint8=True``;
+        uint8 for inputs converted with ``cast_to_uint8=True``;
         otherwise it follows the input dtype unless ``out`` controls it.
 """
 
@@ -175,7 +177,7 @@ def _preprocess_input(
     if input_dtype == bool or out_dtype == bool:
         raise ValueError("dtype cannot be bool.")
 
-    if cast_to_uint8 and image.dtype != cp.dtype(cp.uint8):
+    if cast_to_uint8 and image.dtype not in (cp.uint8, cp.uint16):
         if image.dtype.kind == "f":
             warnings.warn(
                 f"Possible precision loss converting image of type "

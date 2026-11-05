@@ -1233,24 +1233,46 @@ def test_rank_default_cast_to_uint8_matches_explicit_float_conversion():
     cp.testing.assert_array_equal(result, expected)
 
 
-def test_rank_default_cast_to_uint8_matches_explicit_uint16_conversion():
-    image = cp.linspace(0, 65535, 25, dtype=cp.uint16).reshape(5, 5)
-    footprint = cp.ones((3, 3), dtype=bool)
-    image_u8 = img_as_ubyte(image)
+@pytest.mark.parametrize(
+    "filter_name, kwargs",
+    [
+        ("percentile", {"p0": 0.5}),
+        ("mean", {}),
+        ("mean_bilateral", {"s0": 10000, "s1": 10000}),
+        ("otsu", {}),
+    ],
+)
+@pytest.mark.parametrize("cast_kwargs", [{}, {"cast_to_uint8": False}])
+def test_rank_preserves_uint16_by_default(filter_name, kwargs, cast_kwargs):
+    from skimage.filters import rank as rank_cpu
 
-    expected = rank.percentile(
-        image_u8, footprint, p0=0.5, backend="elementwise"
+    image = np.tile(
+        np.array([1000, 1000, 2000, 4000, 4000], dtype=np.uint16), (5, 1)
     )
+    footprint = np.ones((3, 3), dtype=np.uint8)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        expected = getattr(rank_cpu, filter_name)(image, footprint, **kwargs)
     with warnings.catch_warnings(record=True) as record:
         warnings.simplefilter("always")
-        result = rank.percentile(
-            image,
-            footprint,
-            p0=0.5,
-            backend="elementwise",
+        result = getattr(rank, filter_name)(
+            cp.asarray(image), cp.asarray(footprint), **kwargs, **cast_kwargs
         )
     assert not record
+    assert result.dtype == cp.uint16
+    # Upstream crops border neighborhoods; cuCIM reflects them.
+    cp.testing.assert_array_equal(result[1:-1, 1:-1], expected[1:-1, 1:-1])
+    assert int(result[2, 2]) > 255
 
+
+def test_rank_uint16_histogram_requires_explicit_conversion():
+    image = cp.arange(25, dtype=cp.uint16).reshape(5, 5) * 1000
+    footprint = cp.ones((3, 3), dtype=bool)
+    with pytest.raises(ValueError, match="backend='histogram' requires"):
+        rank.otsu(image, footprint, backend="histogram")
+    image_u8 = img_as_ubyte(image)
+    result = rank.otsu(image_u8, footprint, backend="histogram")
+    expected = rank.otsu(image_u8, footprint, backend="elementwise")
     assert result.dtype == cp.uint8
     cp.testing.assert_array_equal(result, expected)
 
@@ -2000,9 +2022,9 @@ class TestRank:
             "threshold",
         ],
     )
-    def test_compare_8bit_vs_16bit(self, method):
-        # filters applied on 8-bit image or 16-bit image (having only real 8-bit
-        # of dynamic) should be identical
+    def test_compare_8bit_vs_16bit_same_output_dtype(self, method):
+        # Equal input values should give equal results when output dtypes
+        # match: scaling and overflow depend on the output dtype in cuCIM.
         image8 = util.img_as_ubyte(cp.asarray(data.camera())[::2, ::2])
         image16 = image8.astype(cp.uint16)
         cp.testing.assert_array_equal(image8, image16)
@@ -2011,7 +2033,7 @@ class TestRank:
 
         disk3 = disk(3, decomposition=None)
         f8 = func(image8, disk3)
-        f16 = func(image16, disk3, cast_to_uint8=True)
+        f16 = func(image16, disk3, out=cp.empty_like(f8))
         cp.testing.assert_array_equal(f8, f16)
 
     @pytest.mark.parametrize(
@@ -2037,7 +2059,7 @@ class TestRank:
             "otsu",
         ],
     )
-    def test_compare_8bit_vs_16bit_3d(self, method):
+    def test_compare_8bit_vs_16bit_3d_same_output_dtype(self, method):
         np.random.seed(0)
         volume8 = np.random.randint(
             128, high=256, size=(10, 10, 10), dtype=np.uint8
@@ -2049,7 +2071,8 @@ class TestRank:
 
         ball3 = ball(3, decomposition=None)
         f8 = func(volume8, ball3)
-        f16 = func(volume16, ball3, cast_to_uint8=True)
+        # Match output dtypes so scaling and overflow semantics also match.
+        f16 = func(volume16, ball3, out=cp.empty_like(f8))
         cp.testing.assert_array_equal(f8, f16)
 
     @pytest.mark.parametrize("dtype", [cp.uint8, cp.uint16])
@@ -2575,22 +2598,22 @@ def test_otsu_histogram_and_elementwise_agree_on_large_window():
     )
 
 
-def test_otsu_uint16():
+@pytest.mark.parametrize("ndim", [2, 3])
+def test_otsu_uint16(ndim):
     from skimage.filters import rank as rank_cpu
 
-    image = np.random.default_rng(8).integers(0, 4096, (60, 70))
+    shape = (60, 70) if ndim == 2 else (12, 14, 16)
+    footprint_shape = (5, 7) if ndim == 2 else (3, 5, 3)
+    image = np.random.default_rng(8).integers(0, 4096, shape)
     image = image.astype(np.uint16)
-    footprint = np.ones((5, 7), dtype=np.uint8)
+    footprint = np.ones(footprint_shape, dtype=np.uint8)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         expected = rank_cpu.otsu(image, footprint)
-    result = rank.otsu(
-        cp.asarray(image), cp.asarray(footprint), cast_to_uint8=False
-    )
+    result = rank.otsu(cp.asarray(image), cp.asarray(footprint))
     assert result.dtype == cp.uint16
-    np.testing.assert_array_equal(
-        result.get()[2:-2, 3:-3], expected[2:-2, 3:-3]
-    )
+    interior = tuple(slice(s // 2, -(s // 2)) for s in footprint_shape)
+    np.testing.assert_array_equal(result.get()[interior], expected[interior])
 
 
 def test_otsu_3d_matches_skimage_interior():
