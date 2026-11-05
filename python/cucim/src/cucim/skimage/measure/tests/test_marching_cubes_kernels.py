@@ -2,6 +2,8 @@
 # SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
+import itertools
+
 import cupy as cp
 import numpy as np
 import pytest
@@ -795,8 +797,20 @@ def test_lewiner_gpu_center_vertex_generation():
         )
     )
     expected_position, expected_normal = _lewiner_center_vertex(local_values)
-    # the gradient is in physical units: divided by the spacing
-    expected_normal = expected_normal / np.asarray(spacing)
+    # the normal: the central-difference gradients at the corners (one-sided
+    # in a volume of 2 samples), interpolated trilinearly at the vertex, with
+    # the sign towards lower values and divided by the spacing
+    gradients = np.stack(np.gradient(cp.asnumpy(volume).astype(np.float64)))
+    px, py, pz = expected_position
+    interpolated = np.zeros(3)
+    for oi, oj, ok in itertools.product((0, 1), repeat=3):
+        weight = (
+            (px if oi else 1 - px)
+            * (py if oj else 1 - py)
+            * (pz if ok else 1 - pz)
+        )
+        interpolated += weight * gradients[:, oi, oj, ok]
+    expected_normal = -interpolated / np.asarray(spacing)
     expected_normal /= np.linalg.norm(expected_normal)
 
     cp.testing.assert_array_equal(center_vertex_ids, cp.asarray([0]))

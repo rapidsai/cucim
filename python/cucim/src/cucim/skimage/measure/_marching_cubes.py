@@ -119,10 +119,10 @@ def marching_cubes(
         that contain the vertex and does not use the ``spacing`` either,
         so the directions agree to a few degrees for smooth data and unit
         ``spacing`` but are not equal (for white noise the mean cosine of
-        the angle is about 0.7). The center vertices of the Lewiner method
-        use scikit-image's cell gradients, and those of the Vega method the
-        sum of the central-difference gradients at the eight corners of the
-        cell, both divided by the ``spacing`` as well.
+        the angle is about 0.7). A vertex inside a cell (the center vertices
+        of the Lewiner and Vega methods) gets the same central-difference
+        gradients at the eight corners of the cell, interpolated trilinearly
+        at the position of the vertex and divided by the ``spacing``.
     values : (V,) array
         A measure of the data in the local region near each vertex, which can
         be used by visualization tools to apply a colormap to the mesh. As in
