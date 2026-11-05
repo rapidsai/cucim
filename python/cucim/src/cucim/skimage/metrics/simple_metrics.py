@@ -1,10 +1,15 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import cupy as cp
 from cupyx.scipy.stats import entropy
 
+from .._shared._reduction_kernels import (
+    _get_error_statistics,
+    _get_minmax,
+    _get_minmax_mse,
+)
 from .._shared.utils import _supported_float_type, check_shape_equality, warn
 from .._vendored import pad
 from ..util.dtype import dtype_range
@@ -25,6 +30,16 @@ def _as_floats(image0, image1):
     image0 = image0.astype(float_type, copy=False)
     image1 = image1.astype(float_type, copy=False)
     return image0, image1
+
+
+def _use_staged_error(image0, image1, *, min_size=1 << 20):
+    """Amortize staging overhead on large contiguous real images (A6000 tuned)."""
+    return (
+        image0.size >= min_size
+        and image0.dtype in (cp.float32, cp.float64)
+        and image0.flags.c_contiguous
+        and image1.flags.c_contiguous
+    )
 
 
 def mean_squared_error(image0, image1):
@@ -50,8 +65,35 @@ def mean_squared_error(image0, image1):
     """
     check_shape_equality(image0, image1)
     image0, image1 = _as_floats(image0, image1)
+    # MSE saves fewer passes than NRMSE and amortizes staging later.
+    if _use_staged_error(image0, image1, min_size=1 << 22):
+        squared_error, _ = _get_error_statistics(image0, image1)
+        return squared_error / image0.size
     diff = image0 - image1
     return cp.mean(diff * diff, dtype=cp.float64)
+
+
+@cp.fuse()
+def _nrmse_from_range(minimum, maximum, has_nan, squared_error, size):
+    """Finish min-max NRMSE using only device statistics, propagating NaNs."""
+    # Preserve the reference dtype's subtraction before dividing in float64.
+    denominator = cp.where(has_nan, cp.nan, maximum - minimum).astype(
+        minimum.dtype
+    )
+    return cp.sqrt(squared_error / size) / denominator
+
+
+_nrmse_from_sums = cp.ElementwiseKernel(
+    "float64 squared_error, T normalizer_sum, int64 size, bool euclidean",
+    "float64 result",
+    """
+    // Mean normalization rounds both its sum and division in the input dtype.
+    T mean = normalizer_sum / T(size);
+    double denominator = euclidean ? sqrt(double(mean)) : double(mean);
+    result = sqrt(squared_error / double(size)) / denominator;
+    """,
+    "cucim_nrmse_from_sums",
+)
 
 
 def normalized_root_mse(image_true, image_test, *, normalization="euclidean"):
@@ -104,15 +146,40 @@ def normalized_root_mse(image_true, image_test, *, normalization="euclidean"):
 
     # Ensure that both 'Euclidean' and 'euclidean' match
     normalization = normalization.lower()
+    if normalization in ("euclidean", "mean") and _use_staged_error(
+        image_true, image_test
+    ):
+        squared_error, normalizer_sum = _get_error_statistics(
+            image_true, image_test, normalization
+        )
+        return _nrmse_from_sums(
+            squared_error,
+            normalizer_sum,
+            image_true.size,
+            normalization == "euclidean",
+        )
     if normalization == "euclidean":
         denom = cp.sqrt(cp.mean((image_true * image_true), dtype=cp.float64))
     elif normalization == "min-max":
-        denom = image_true.max() - image_true.min()
+        minimum, maximum, has_nan, squared_error = _get_minmax_mse(
+            image_true, image_test
+        )
+        return _nrmse_from_range(
+            minimum, maximum, has_nan, squared_error, image_true.size
+        )
     elif normalization == "mean":
         denom = image_true.mean()
     else:
         raise ValueError("Unsupported norm_type")
     return cp.sqrt(mean_squared_error(image_true, image_test)) / denom
+
+
+_pack_psnr_bounds = cp.ElementwiseKernel(
+    "raw T minimum, raw T maximum, raw bool has_nan",
+    "T bounds",
+    "bounds = has_nan[0] ? T(CUDART_NAN) : (i == 0 ? minimum[0] : maximum[0])",
+    "cucim_pack_psnr_bounds",
+)
 
 
 def peak_signal_noise_ratio(image_true, image_test, *, data_range=None):
@@ -147,6 +214,7 @@ def peak_signal_noise_ratio(image_true, image_test, *, data_range=None):
 
     """
     check_shape_equality(image_true, image_test)
+    squared_error = None
 
     if data_range is None:
         if image_true.dtype != image_test.dtype:
@@ -156,7 +224,19 @@ def peak_signal_noise_ratio(image_true, image_test, *, data_range=None):
                 stacklevel=2,
             )
         dmin, dmax = dtype_range[image_true.dtype.type]
-        true_min, true_max = cp.min(image_true), cp.max(image_true)
+        # Validate both bounds after one readback, without separate GPU
+        # comparisons and their individual host synchronizations.
+        if image_true.dtype == image_test.dtype and image_true.dtype in (
+            cp.float32,
+            cp.float64,
+        ):
+            minimum, maximum, has_nan, squared_error = _get_minmax_mse(
+                image_true, image_test
+            )
+            bounds = _pack_psnr_bounds(minimum, maximum, has_nan, size=2)
+        else:
+            bounds = _get_minmax(image_true)
+        true_min, true_max = bounds.get().tolist()
         if true_max > dmax or true_min < dmin:
             raise ValueError(
                 "im_true has intensity values outside the range expected for "
@@ -168,9 +248,10 @@ def peak_signal_noise_ratio(image_true, image_test, *, data_range=None):
         else:
             data_range = dmax - dmin
 
-    image_true, image_test = _as_floats(image_true, image_test)
-
-    err = mean_squared_error(image_true, image_test)
+    if squared_error is None:
+        err = mean_squared_error(image_true, image_test)
+    else:
+        err = squared_error / image_true.size
     return 10 * cp.log10((data_range * data_range) / err)
 
 

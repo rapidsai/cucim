@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import platform
@@ -25,6 +25,44 @@ ON_AARCH64_REASON = "TODO: Test fails unexpectedly on ARM."
 
 # Test integer histograms
 # =======================
+
+
+@pytest.mark.parametrize("dtype", [cp.float16, cp.float32, cp.float64])
+@pytest.mark.parametrize(
+    "values", [[-2.0, 0.0, 1.0, 1.0, 5.0], [3.0, 3.0, 3.0], []]
+)
+def test_single_channel_float_histogram_edges(dtype, values):
+    image = cp.asarray(values, dtype=dtype)
+    expected_hist, edges = cp.histogram(image, bins=7)
+    hist, centers = exposure.histogram(image, nbins=7)
+    assert_array_equal(hist, expected_hist)
+    assert_array_equal(centers, (edges[:-1] + edges[1:]) / 2)
+
+
+@pytest.mark.parametrize(
+    "values", [[np.nan, np.nan], [0.0, np.nan], [-np.inf, 1.0], [0.0, np.inf]]
+)
+def test_single_channel_float_histogram_nonfinite_range(values):
+    with pytest.raises(ValueError, match="autodetected hist_range.*not finite"):
+        exposure.histogram(cp.asarray(values), nbins=7)
+
+
+@pytest.mark.parametrize("dtype", [cp.float16, cp.float32, cp.float64])
+def test_single_channel_float_histogram_bin_boundaries(dtype):
+    image = cp.linspace(-3, 5, 22, dtype=dtype)
+    expected_hist, edges = cp.histogram(image, bins=7)
+    hist, centers = exposure.histogram(image, nbins=7)
+    assert_array_equal(hist, expected_hist)
+    assert_array_equal(centers, (edges[:-1] + edges[1:]) / 2)
+
+
+def test_single_channel_float_histogram_subnormal_range():
+    tiny = np.nextafter(np.float32(0), np.float32(1))
+    image = cp.asarray([-tiny, 0, tiny], dtype=cp.float32)
+    expected_hist, edges = cp.histogram(image, bins=7)
+    hist, centers = exposure.histogram(image, nbins=7)
+    assert_array_equal(hist, expected_hist)
+    assert_array_equal(centers, (edges[:-1] + edges[1:]) / 2)
 
 
 def test_wrong_source_range():
@@ -923,3 +961,189 @@ def test_dask_histogram():
     expected_hist = [1, 2, 1]
     assert cp.allclose(expected_bins, output_bins)
     assert cp.allclose(expected_hist, output_hist)
+
+
+@pytest.mark.parametrize("dtype", ["int64", "uint64"])
+def test_intensity_range_preserves_integer_precision(dtype):
+    limits = np.iinfo(dtype)
+    image = cp.asarray([limits.min, limits.max], dtype=dtype)
+    result = intensity_range(image)
+    assert result == (limits.min, limits.max)
+    assert all(isinstance(value, int) for value in result)
+
+
+@pytest.mark.parametrize("dtype", ["float32", "float64"])
+@pytest.mark.parametrize("nan_pattern", ["mixed", "all"])
+def test_rescale_image_ranges_propagate_nan(dtype, nan_pattern):
+    image = cp.linspace(0, 1, 131073, dtype=dtype)
+    if nan_pattern == "mixed":
+        image[4096] = cp.nan
+    else:
+        image[:] = cp.nan
+    with pytest.warns(
+        UserWarning, match="One or more intensity levels are NaN"
+    ):
+        output = exposure.rescale_intensity(
+            image, in_range="image", out_range="image"
+        )
+    assert output.dtype == image.dtype
+    assert bool(cp.isnan(output).all())
+
+
+@pytest.mark.parametrize(
+    "in_range,out_range,expected_calls",
+    [
+        ("image", "image", 1),
+        ("dtype", "dtype", 0),
+        ((0, 1), (0, 2), 0),
+    ],
+)
+def test_rescale_reuses_image_range(
+    monkeypatch, in_range, out_range, expected_calls
+):
+    from cucim.skimage.exposure import exposure as exposure_module
+
+    get_minmax = exposure_module._get_minmax
+    calls = []
+
+    def counted_minmax(image):
+        calls.append(image)
+        return get_minmax(image)
+
+    monkeypatch.setattr(exposure_module, "_get_minmax", counted_minmax)
+    image = cp.asarray([0, 0.5, 1], dtype=cp.float32)
+    output = exposure.rescale_intensity(
+        image, in_range=in_range, out_range=out_range
+    )
+    assert len(calls) == expected_calls
+    expected = image * 2 if out_range == (0, 2) else image
+    cp.testing.assert_array_equal(output, expected)
+
+
+@pytest.mark.parametrize(
+    "values", [[0, 0, 0], [], [np.nan, 1], [-np.inf, np.inf]]
+)
+def test_histogram_outer_edges_special_values(values):
+    from cucim.skimage.exposure.exposure import _get_outer_edges
+
+    image = cp.asarray(values, dtype=cp.float32)
+    if any(not np.isfinite(value) for value in values):
+        with pytest.raises(ValueError, match="not finite"):
+            _get_outer_edges(image, None)
+    else:
+        expected = (-0.5, 0.5) if values else (0, 1)
+        assert _get_outer_edges(image, None) == expected
+
+
+@pytest.mark.parametrize(
+    "dtype,source_range",
+    [
+        ("uint8", "image"),
+        ("uint8", "dtype"),
+        ("int8", "image"),
+        ("int8", "dtype"),
+        ("int64", "image"),
+    ],
+)
+def test_bincount_histogram_reuses_host_bounds(dtype, source_range):
+    from cucim.skimage.exposure.exposure import (
+        _bincount_histogram,
+        _bincount_histogram_centers,
+    )
+
+    values = [0, 1, 10] if dtype == "uint8" else [-10, -1, 10]
+    image = cp.asarray(values, dtype=dtype)
+    centers, bounds = _bincount_histogram_centers(
+        image, source_range, return_range=True
+    )
+    expected, _ = _bincount_histogram(image, source_range, centers)
+    actual, actual_centers = _bincount_histogram(
+        image, source_range, centers, bin_range=bounds
+    )
+    cp.testing.assert_array_equal(actual, expected)
+    cp.testing.assert_array_equal(actual_centers, centers)
+    assert bounds == (int(centers[0]), int(centers[-1]))
+
+
+@pytest.mark.parametrize("dtype", ["uint8", "int8"])
+@pytest.mark.parametrize("source_range", ["image", "dtype"])
+def test_multichannel_histogram_common_extrema(dtype, source_range):
+    image = cp.asarray([[0, 3, 9], [1, 4, 10], [2, 5, 11]], dtype=dtype)
+    if dtype == "int8":
+        image -= 6
+    actual, centers = exposure.histogram(
+        image, source_range=source_range, channel_axis=-1
+    )
+    centers_cpu = cp.asnumpy(centers)
+    edges = np.append(centers_cpu - 0.5, centers_cpu[-1] + 0.5)
+    for channel in range(image.shape[-1]):
+        expected, _ = np.histogram(cp.asnumpy(image[:, channel]), bins=edges)
+        cp.testing.assert_array_equal(actual[channel], expected)
+
+
+@pytest.mark.parametrize("dtype", [cp.uint8, cp.int16, cp.float32, cp.float64])
+@pytest.mark.parametrize("constant", [False, True])
+def test_rescale_preserves_separate_operation_rounding(dtype, constant):
+    rng = np.random.default_rng(307)
+    host = rng.uniform(-100, 100, (17, 23))
+    if dtype == cp.uint8:
+        host += 100
+    if constant:
+        host.fill(71)
+    image = cp.asarray(host, dtype=dtype).T
+    for _ in range(8):
+        in_range = tuple(sorted(rng.uniform(-100, 200, 2)))
+        out_range = tuple(sorted(rng.uniform(-3, 7, 2)))
+        if constant:
+            in_range = (71.0, 71.0)
+        imin, imax = map(float, in_range)
+        omin, omax = map(float, out_range)
+        expected = cp.clip(image, imin, imax)
+        if imin != imax:
+            expected = (expected - imin) / (imax - imin)
+            expected = expected * (omax - omin) + omin
+        else:
+            expected = cp.clip(expected, omin, omax)
+        expected = expected.astype(_supported_float_type(image.dtype))
+        actual = exposure.rescale_intensity(image, in_range, out_range)
+        cp.testing.assert_array_equal(actual, expected)
+        assert actual.dtype == expected.dtype
+
+
+@pytest.mark.parametrize("dtype", [cp.float32, cp.float64])
+def test_rescale_reversed_range_and_nonfinite_pixels(dtype):
+    image = cp.array([-cp.inf, -1, cp.nan, 0, 1, cp.inf], dtype=dtype)
+    expected = (cp.clip(image, 2.0, -2.0) - 2.0) / -4.0
+    expected = expected * 3.0 - 1.0
+    actual = exposure.rescale_intensity(image, (2.0, -2.0), (-1.0, 2.0))
+    cp.testing.assert_array_equal(actual, expected)
+
+
+@pytest.mark.parametrize("nbins", [16, 256, 5000])
+@pytest.mark.parametrize(
+    "shape,kernel_size",
+    [((31, 43), (5, 7)), ((9, 11, 13), (3, 4, 5)), ((17, 23, 3), (4, 5))],
+)
+def test_adapthist_batched_histogram_matches_per_row(
+    monkeypatch, nbins, shape, kernel_size
+):
+    import importlib
+
+    module = importlib.import_module("cucim.skimage.exposure._adapthist")
+    image = cp.asarray(
+        np.random.default_rng(44).random(shape), dtype=cp.float32
+    )
+    actual = exposure.equalize_adapthist(
+        image, kernel_size=kernel_size, nbins=nbins
+    )
+    monkeypatch.setattr(
+        module,
+        "_bincount_rows",
+        lambda rows, bins: cp.apply_along_axis(
+            cp.bincount, -1, rows, minlength=bins
+        ),
+    )
+    expected = exposure.equalize_adapthist(
+        image, kernel_size=kernel_size, nbins=nbins
+    )
+    cp.testing.assert_array_equal(actual, expected)
