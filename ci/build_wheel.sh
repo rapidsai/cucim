@@ -39,6 +39,14 @@ rapids-pip-retry install \
     --prefer-binary \
     -r /tmp/requirements-build.txt
 
+rapids-logger "Installing system build dependencies (openslide)"
+if type -f dnf > /dev/null 2>&1; then
+    dnf install -y --setopt=install_weak_deps=False openslide-devel
+else
+    DEBIAN_FRONTEND=noninteractive apt update
+    DEBIAN_FRONTEND=noninteractive apt install -y --no-install-recommends libopenslide-dev
+fi
+
 sccache --zero-stats
 
 rapids-logger "pyenv rehash"
