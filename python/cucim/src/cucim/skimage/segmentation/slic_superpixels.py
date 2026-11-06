@@ -114,21 +114,42 @@ def _get_mask_centroids_cuvs(mask, n_centroids, rng_on_host=True):
     return centroids, _estimate_centroid_steps(centroids)
 
 
+_kmeans2_fallback_warned = False
+
+
+def _warn_kmeans2_fallback(reason):
+    """Warn (once per process) that maskSLIC is using the SciPy fallback."""
+    global _kmeans2_fallback_warned
+    if _kmeans2_fallback_warned:
+        return
+    _kmeans2_fallback_warned = True
+    warn(
+        f"{reason}, so the initial maskSLIC centroids are computed on the "
+        "host with scipy.cluster.vq.kmeans2, which can be much slower. "
+        "Install cuVS (https://docs.rapids.ai/api/cuvs/stable/) to run the "
+        "k-means on the GPU, or pass force_kmeans2=True to select the SciPy "
+        "implementation and silence this warning.",
+        RuntimeWarning,
+        stacklevel=4,
+    )
+
+
 def _get_mask_centroids(
-    mask, n_centroids, force_kmeans2=False, rng_on_host=True
+    mask, n_centroids, force_kmeans2=False, rng_on_host=False
 ):
     """Find regularly spaced centroids on a mask."""
-    if (
-        not force_kmeans2
-        and cuvs_kmeans_fit is not None
-        and isinstance(mask, cp.ndarray)
-    ):
-        try:
-            return _get_mask_centroids_cuvs(
-                mask, n_centroids, rng_on_host=rng_on_host
-            )
-        except Exception:
-            pass
+    if not force_kmeans2 and isinstance(mask, cp.ndarray):
+        if cuvs_kmeans_fit is None:
+            _warn_kmeans2_fallback("cuVS could not be imported")
+        else:
+            try:
+                return _get_mask_centroids_cuvs(
+                    mask, n_centroids, rng_on_host=rng_on_host
+                )
+            except Exception as e:
+                _warn_kmeans2_fallback(
+                    f"cuVS k-means failed ({type(e).__name__}: {e})"
+                )
     if isinstance(mask, cp.ndarray):
         mask = cp.asnumpy(mask)
     return _get_mask_centroids_kmeans2(mask, n_centroids)
@@ -782,7 +803,9 @@ def slic(
         When ``mask`` is provided, force the initial maskSLIC centroid
         placement to use SciPy's host-side ``kmeans2`` implementation. By
         default, cuCIM uses cuVS k-means when it can be imported and falls back
-        to SciPy otherwise. The cuVS centroids are close to, but not identical
+        to SciPy otherwise (cuVS is an optional dependency; a ``RuntimeWarning``
+        is emitted once per process when the fallback is used because cuVS is
+        missing or fails). The cuVS centroids are close to, but not identical
         to, those of ``scipy.cluster.vq.kmeans2`` (see Notes). Use this option
         to reproduce scikit-image's maskSLIC labels exactly.
     rng_on_host : bool, optional
@@ -846,12 +869,15 @@ def slic(
     * When ``mask`` is provided, initial centroid placement uses cuVS k-means
       when available. If cuVS cannot be imported, or if ``force_kmeans2=True``,
       it falls back to SciPy's host-side ``kmeans2`` implementation, requiring
-      a mask transfer to host and CPU work on each call. Both start from the
-      same randomly sampled mask coordinates as scikit-image, but cuVS k-means
-      converges to slightly different centroids than
-      ``scipy.cluster.vq.kmeans2``, so maskSLIC labels with the default cuVS
-      path differ from scikit-image's on a small fraction of the pixels (about
-      0.7% in the case tested), even when the rest of the algorithm matches.
+      a mask transfer to host and CPU work on each call. cuVS is an optional
+      dependency of cuCIM, and a ``RuntimeWarning`` is emitted once per process
+      when the SciPy fallback is used because cuVS is missing or fails. The two
+      implementations start from the same randomly sampled mask coordinates
+      (when ``rng_on_host=True``), but cuVS k-means converges to slightly
+      different centroids than ``scipy.cluster.vq.kmeans2``, so maskSLIC labels
+      with the default cuVS path differ from scikit-image's on a small fraction
+      of the pixels (about 0.7% in the case tested), even when the rest of the
+      algorithm matches.
       With ``force_kmeans2=True`` the labels before connectivity cleanup
       match scikit-image.
 

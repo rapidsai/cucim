@@ -486,6 +486,45 @@ def test_mask_slic_force_kmeans2():
     assert int(cp.unique(seg[mask]).size) > 1
 
 
+@pytest.mark.parametrize("cuvs_fails", [False, True])
+def test_mask_slic_kmeans2_fallback_warns_once(monkeypatch, cuvs_fails):
+    from cucim.skimage.segmentation import slic_superpixels
+
+    def failing_fit(*args, **kwargs):
+        raise RuntimeError("cuVS failure")
+
+    monkeypatch.setattr(slic_superpixels, "_kmeans2_fallback_warned", False)
+    monkeypatch.setattr(
+        slic_superpixels,
+        "cuvs_kmeans_fit",
+        failing_fit if cuvs_fails else None,
+    )
+    img = cp.zeros((32, 33), dtype=cp.float32)
+    img[:16] = 1
+    mask = cp.zeros(img.shape, dtype=cp.bool_)
+    mask[4:28, 5:30] = True
+
+    with pytest.warns(RuntimeWarning, match="kmeans2") as record:
+        slic(img, n_segments=6, mask=mask, channel_axis=None)
+        slic(img, n_segments=6, mask=mask, channel_axis=None)
+    assert len(record) == 1
+    if cuvs_fails:
+        assert "cuVS k-means failed" in str(record[0].message)
+    else:
+        assert "could not be imported" in str(record[0].message)
+
+
+def test_mask_slic_force_kmeans2_does_not_warn(monkeypatch, recwarn):
+    from cucim.skimage.segmentation import slic_superpixels
+
+    monkeypatch.setattr(slic_superpixels, "_kmeans2_fallback_warned", False)
+    monkeypatch.setattr(slic_superpixels, "cuvs_kmeans_fit", None)
+    img = cp.zeros((32, 33), dtype=cp.float32)
+    mask = cp.ones(img.shape, dtype=cp.bool_)
+    slic(img, n_segments=6, mask=mask, channel_axis=None, force_kmeans2=True)
+    assert not [w for w in recwarn if issubclass(w.category, RuntimeWarning)]
+
+
 @pytest.mark.parametrize("rng_on_host", [False, True])
 def test_mask_slic_rng_on_host(rng_on_host):
     img = cp.zeros((48, 52, 3), dtype=cp.float32)
