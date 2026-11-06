@@ -1,7 +1,15 @@
 /*
  * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: Copyright (c) 2020, Omar Elamin
+ * SPDX-License-Identifier: Apache-2.0
  */
+
+/*
+2D counterpart of slic3d.cu (obtained by reducing the dimensionality of the 3D
+kernel), which started out as an adaptation of:
+https://github.com/rosalindfranklininstitute/cuda-slic/blob/master/src/cuda_slic/kernels/slic3d_template.cu
+*/
 
 /*
 Note on indexing conventions used here:

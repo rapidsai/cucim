@@ -283,8 +283,9 @@ PBA+
 - Usage: PBA+ is used to implement the Euclidean distance transform.
 
 cuda-slic
-- License: Apache 2.0
-  - https://github.com/rosalindfranklininstitute/cuda-slic
+- License: Apache-2.0 License
+  - https://github.com/rosalindfranklininstitute/cuda-slic/blob/master/LICENSE
 - Copyright: Omar Elamin
-- Usage: not used directly, but served as an initial implementation reference for
-  the 3D SLIC superpixel algorithm.
+- Usage: the SLIC superpixel CUDA kernels (slic2d.cu, slic3d.cu) started as an
+  adaptation of the 3D kernel (slic3d_template.cu); slic2d.cu was obtained from
+  it by reducing the dimensionality.
