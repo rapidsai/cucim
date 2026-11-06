@@ -10,6 +10,7 @@ __all__ = [
     "regionprops",
     "regionprops_table",
     "oriented_bbox_corners",
+    "min_area_bbox_corners",
     "perimeter",
     "perimeter_crofton",
     "euler_number",
@@ -62,7 +63,7 @@ from ._regionprops import (
     regionprops,
     regionprops_table,
 )
-from ._regionprops_gpu import oriented_bbox_corners
+from ._regionprops_gpu import min_area_bbox_corners, oriented_bbox_corners
 from .block import block_reduce
 from .entropy import shannon_entropy
 from .profile import profile_line
