@@ -33,6 +33,10 @@ def regular_grid(ar_shape, n_points):
         A slice along each dimension of `ar_shape`, such that the intersection
         of all the slices give the coordinates of regularly spaced points.
 
+        If `n_points` is at least the number of elements, every point is
+        returned and each slice is ``slice(0, n)`` (scikit-image returns
+        ``slice(None)``), so that ``slice.start`` is always an integer.
+
         .. versionchanged:: 0.14.1
             In scikit-image 0.14.1 and 0.15, the return type was changed from a
             list to a tuple to ensure `compatibility with Numpy 1.15`_ and
