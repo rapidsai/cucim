@@ -639,11 +639,15 @@ def slic(
     relabel_connectivity=True,
 ):
     """Segments image using k-means clustering in Color-(x,y,z) space.
+
+    This is the SLIC algorithm of Achanta et al. [1]_, with the SLIC0
+    variant [2]_ and the maskSLIC extension to a region of interest [3]_.
+
     Parameters
     ----------
     image : 2D, 3D or 4D ndarray
         Input image, which can be 2D or 3D, and grayscale or multichannel
-        (see `multichannel` parameter).
+        (see `channel_axis` parameter).
     n_segments : int, optional
         The (approximate) number of labels in the segmented output image.
     compactness : float, optional
@@ -670,9 +674,6 @@ def slic(
         each spatial dimension).
         This parameter controls the weights of the distances along the
         spatial dimensions during k-means clustering.
-    multichannel : bool, optional
-        Whether the last axis of the image is to be interpreted as multiple
-        channels or another spatial dimension.
     convert2lab : bool, optional
         Whether the input should be converted to Lab colorspace prior to
         segmentation. The input image *must* be RGB. Highly recommended.
@@ -689,10 +690,11 @@ def slic(
     start_label : int, optional
         The labels' index start. Should be 0 or 1.
     slic_zero: bool, optional
-        Run SLIC-zero, the zero-parameter mode of SLIC. [2]_.
+        Run SLIC-zero, the zero-parameter mode of SLIC [2]_.
     mask : ndarray, optional
-        If provided, superpixels are computed only where ``mask`` is ``True``.
-        Pixels outside the mask are assigned ``start_label - 1``. Initial
+        If provided, superpixels are computed only where ``mask`` is ``True``
+        (maskSLIC [3]_). Pixels outside the mask are assigned
+        ``start_label - 1``. Initial
         maskSLIC centroid placement uses cuVS k-means when available and
         falls back to SciPy's host-side ``kmeans2`` implementation otherwise.
     channel_axis : int or None, optional
@@ -780,7 +782,7 @@ def slic(
       interpret them as 3D with the last dimension having length 3, use
       `channel_axis=None`.
 
-    * `start_label` is introduced to handle the issue [3]_. Label indexing
+    * `start_label` is introduced to handle the issue [4]_. Label indexing
       starts at 1 by default.
 
     References
@@ -798,17 +800,19 @@ def slic(
     Examples
     --------
     >>> import cupy as cp
-    >>> from cucim.skimage import data
-    >>> from cucim.skimage.segmentation import slic
     >>> from skimage import data
-    >>> img = cp.asarray(data.astronaut()) # 2D RGB image
+    >>> from cucim.skimage.segmentation import slic
+    >>> img = cp.asarray(data.astronaut())  # 2D RGB image
     >>> segments = slic(img, n_segments=100, compactness=10)
+
     Increasing the compactness parameter yields more square regions:
+
     >>> segments = slic(img, n_segments=100, compactness=20)
 
-    To segment single channel 3D volumes
-    >>> vol = data.binary_blobs(length=50, n_dim=3, rng=2)
-    >>> labels = slic(vol, n_segments=100, multichannel=False, compactness=0.1)
+    To segment single channel 3D volumes, use ``channel_axis=None``:
+
+    >>> vol = cp.asarray(data.binary_blobs(length=50, n_dim=3, rng=2))
+    >>> labels = slic(vol, n_segments=100, channel_axis=None, compactness=0.1)
     """
     if not slic_available:
         raise ImportError(
