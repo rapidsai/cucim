@@ -303,7 +303,7 @@ def _get_hull_chains_2d_kernel(centers_only=False):
             rows k and k + 1):      2 * max(last[k], last[k + 1])
 
     (rows without pixels are skipped). These points come sorted by y, so
-    Andrew's monotone chain builds the left chain of the hull from the
+    Andrew's monotone chain [1]_ builds the left chain of the hull from the
     leftmost points and the right chain from the rightmost points in one
     pass, without sorting. Collinear points are dropped, and the arithmetic
     is exact.
@@ -334,6 +334,12 @@ def _get_hull_chains_2d_kernel(centers_only=False):
 
     The kernel works on any sequence of "segments" of rows: segment i has
     the rows offsets[i] to offsets[i + 1] - 1.
+
+    References
+    ----------
+    .. [1] A. M. Andrew, "Another efficient algorithm for convex hulls in
+           two dimensions", Information Processing Letters 9(5), 216-219,
+           1979. :DOI:`10.1016/0020-0190(79)90072-3`
     """
     source = """
       long long r0 = offsets[i];
@@ -747,6 +753,12 @@ def _convex_hull_candidates_3d(
     Returns the points, as (z, y, x) in doubled coordinates relative to the
     bounding box, grouped by label, and the offsets of each label's points
     (on the device).
+
+    References
+    ----------
+    .. [1] A. M. Andrew, "Another efficient algorithm for convex hulls in
+           two dimensions", Information Processing Letters 9(5), 216-219,
+           1979. :DOI:`10.1016/0020-0190(79)90072-3`
     """
     shapes = np.maximum(bbox_host[:, 3:] - bbox_host[:, :3], 0)
     depth, height = shapes[:, 0], shapes[:, 1]
@@ -830,10 +842,18 @@ def _get_hull_rows_3d_kernel():
     One thread per row of a label's bounding box. A voxel center p (relative
     to the bounding box) is inside if ``n . p + b < tolerance`` for every
     facet equation (n, b) of the label's hull, as in scikit-image's
-    ``convex_hull_image`` in 3D. Along a row, each facet with n_x != 0 bounds
-    x on one side, so the voxels inside form one interval [lo, hi] of x.
+    ``convex_hull_image`` in 3D. The facet equations are those of Qhull [2]_
+    (``scipy.spatial.ConvexHull.equations``). Along a row, each facet with
+    n_x != 0 bounds x on one side, so the voxels inside form one interval
+    [lo, hi] of x.
 
     Also adds the number of voxels in the interval to the label's count.
+
+    References
+    ----------
+    .. [2] C. B. Barber, D. P. Dobkin and H. Huhdanpaa, "The Quickhull
+           algorithm for convex hulls", ACM Transactions on Mathematical
+           Software 22(4), 469-483, 1996. :DOI:`10.1145/235815.235821`
     """
     source = """
       // the label of this row: the last l with offsets[l] <= i
@@ -971,11 +991,17 @@ def _convex_hull_rows_3d(
     """Rows of each 3D region's convex image (see `_convex_hull_rows_2d`).
 
     The hull of each label is computed on the host with
-    ``scipy.spatial.ConvexHull`` from the candidates of
+    ``scipy.spatial.ConvexHull`` (Qhull [1]_) from the candidates of
     `_convex_hull_candidates_3d` (one transfer for all labels), and its facet
     equations are copied back to the device in one transfer for
     `_get_hull_rows_3d_kernel`. If qhull fails for a label, its convex image
     is computed with ``convex_hull_image`` instead.
+
+    References
+    ----------
+    .. [1] C. B. Barber, D. P. Dobkin and H. Huhdanpaa, "The Quickhull
+           algorithm for convex hulls", ACM Transactions on Mathematical
+           Software 22(4), 469-483, 1996. :DOI:`10.1145/235815.235821`
     """
     from scipy.spatial import ConvexHull, QhullError
 
