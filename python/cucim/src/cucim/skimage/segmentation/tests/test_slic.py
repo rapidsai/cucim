@@ -486,6 +486,30 @@ def test_mask_slic_force_kmeans2():
     assert int(cp.unique(seg[mask]).size) > 1
 
 
+@pytest.mark.parametrize("rng_on_host", [False, True])
+def test_mask_slic_rng_on_host(rng_on_host):
+    img = cp.zeros((48, 52, 3), dtype=cp.float32)
+    img[:24, :, 0] = 1
+    img[24:, :, 1] = 1
+    mask = cp.zeros(img.shape[:2], dtype=cp.bool_)
+    mask[4:44, 5:48] = True
+
+    kwargs = dict(
+        n_segments=12,
+        mask=mask,
+        enforce_connectivity=False,
+        rng_on_host=rng_on_host,
+    )
+    seg = slic(img, **kwargs)
+
+    assert_equal(seg.shape, img.shape[:2])
+    assert cp.all(seg[~mask] == 0).get()
+    assert int(seg[mask].min()) >= 1
+    assert int(cp.unique(seg[mask]).size) > 1
+    # the sampling is seeded, so repeated calls agree
+    assert_array_equal(seg, slic(img, **kwargs))
+
+
 def test_mask_slic_3d():
     img = cp.zeros((12, 13, 14), dtype=cp.float32)
     img[:6, :, :] = 0.25
@@ -562,6 +586,8 @@ def test_multichannel_2d_mask():
         enforce_connectivity=False,
         mask=mask,
         maximization_algorithm="scan",
+        # the expected label numbers follow scikit-image's random sample
+        rng_on_host=True,
     )
 
     assert_equal(len(cp.unique(seg)), 5)
@@ -619,6 +645,8 @@ def test_list_sigma_mask():
         mask=mask,
         maximization_algorithm="scan",
         connectivity_algorithm="host",
+        # the expected label numbers follow scikit-image's random sample
+        rng_on_host=True,
     )
 
     assert_array_equal(seg_sigma, result_sigma)

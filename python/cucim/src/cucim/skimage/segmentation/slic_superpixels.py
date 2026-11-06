@@ -694,6 +694,7 @@ def slic(
     check_finite_and_constant=False,
     maximization_algorithm="atomic",
     force_kmeans2=False,
+    rng_on_host=False,
     connectivity_algorithm="gpu",
     relabel_connectivity=True,
 ):
@@ -784,6 +785,20 @@ def slic(
         to SciPy otherwise. The cuVS centroids are close to, but not identical
         to, those of ``scipy.cluster.vq.kmeans2`` (see Notes). Use this option
         to reproduce scikit-image's maskSLIC labels exactly.
+    rng_on_host : bool, optional
+        This keyword-only parameter is specific to cuCIM; scikit-image has no
+        equivalent. When ``mask`` is provided and cuVS k-means is used, choose the random
+        mask coordinates that seed the initial centroids on the host with
+        ``numpy.random.RandomState(123)``, as scikit-image does (``True``), or
+        on the GPU with ``cupy.random.RandomState(123)`` (``False``, the
+        default). The host sampling permutes the whole list of mask
+        coordinates, which takes about 100 ms for a mask of 2.5 million
+        pixels, and dominates the run time of maskSLIC there. The GPU sampling
+        is much faster, but selects different coordinates, so the centroids
+        and labels differ from scikit-image's. Set this to ``True`` (and
+        ``force_kmeans2=True`` for identical centroids) to use the same random
+        values as scikit-image. It has no effect with ``force_kmeans2=True``,
+        which always samples on the host.
     connectivity_algorithm : {"host", "gpu"}, optional
         Algorithm used when ``enforce_connectivity=True``. ``"gpu"`` is the
         default and keeps cleanup on device using a deterministic
@@ -1009,7 +1024,10 @@ def slic(
     update_centroids = False
     if use_mask:
         centroids, steps = _get_mask_centroids(
-            mask, n_segments, force_kmeans2=force_kmeans2
+            mask,
+            n_segments,
+            force_kmeans2=force_kmeans2,
+            rng_on_host=rng_on_host,
         )
         sp_grid = ()
         update_centroids = True
