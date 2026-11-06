@@ -425,10 +425,16 @@ __global__ void update_max_dist_color(const FLOAT_DTYPE* __restrict__ data,
 #endif
 )
 {
-    const unsigned long thread_idx = threadIdx.x + (blockIdx.x * blockDim.x);
+    const unsigned long thread_idx = threadIdx.x + ((unsigned long)blockIdx.x * blockDim.x);
     const unsigned long start_idx = thread_idx * PIXELS_PER_THREAD;
     const unsigned long n_pixels = (unsigned long)im_shape_z * im_shape_y * im_shape_x;
+    const int lane = threadIdx.x & 31;
 
+    // Same scheme as accumulate_centers: the running maximum of a run of equal
+    // labels is flushed with atomicMax when the label changes, and the last run
+    // is first combined across the warp.
+    int run_label = -1;
+    FLOAT_DTYPE run_max = 0;
     for (int k = 0; k < PIXELS_PER_THREAD; k++)
     {
         const unsigned long linear_idx = start_idx + k;
@@ -442,32 +448,56 @@ __global__ void update_max_dist_color(const FLOAT_DTYPE* __restrict__ data,
             continue;
         }
 #endif
-
-        const long linear_cidx = (long)labels[linear_idx] - START_LABEL;
+        const int label = labels[linear_idx];
+        const long linear_cidx = (long)label - START_LABEL;
         if (linear_cidx < 0 || linear_cidx >= n_clusters)
         {
             continue;
         }
-
         const long center_addr = linear_cidx * CENTER_STRIDE;
         if (centers[center_addr] == CENTER_LIMIT)
         {
             continue;
         }
-
         const unsigned long pixel_addr = linear_idx * N_PIXEL_FEATURES;
         FLOAT_DTYPE dist_color = 0;
-#if N_PIXEL_FEATURES <= 8
-#    pragma unroll
-#else
-#    pragma unroll 8
-#endif
+#pragma unroll
         for (int w = 0; w < N_PIXEL_FEATURES; w++)
         {
             FLOAT_DTYPE d = data[pixel_addr + w] - centers[center_addr + w];
             dist_color += d * d;
         }
-        atomicMax(&max_dist_color[linear_cidx], dist_color);
+        if (label != run_label)
+        {
+            if (run_label >= 0)
+            {
+                atomicMax(&max_dist_color[run_label - START_LABEL], run_max);
+            }
+            run_label = label;
+            run_max = dist_color;
+        }
+        else
+        {
+            run_max = __max(run_max, dist_color);
+        }
+    }
+    const int prev_key = __shfl_up_sync(FULL_MASK, run_label, 1);
+    bool f = (lane == 0) || (prev_key != run_label);
+#pragma unroll
+    for (int d = 1; d < 32; d <<= 1)
+    {
+        FLOAT_DTYPE vu = __shfl_up_sync(FULL_MASK, run_max, d);
+        bool fu = __shfl_up_sync(FULL_MASK, (int)f, d) != 0;
+        if (lane >= d)
+        {
+            if (!f) run_max = __max(run_max, vu);
+            f = f || fu;
+        }
+    }
+    const int next_key = __shfl_down_sync(FULL_MASK, run_label, 1);
+    if (((lane == 31) || (next_key != run_label)) && run_label >= 0)
+    {
+        atomicMax(&max_dist_color[run_label - START_LABEL], run_max);
     }
 }
 
