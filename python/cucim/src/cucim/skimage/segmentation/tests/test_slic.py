@@ -199,6 +199,35 @@ def test_slic_atomic_matches_scan(image_kind, compactness):
     assert float((segs[0] == segs[1]).mean()) > 0.99
 
 
+@pytest.mark.parametrize("channel_axis", [0, 1, 2, -1])
+@pytest.mark.parametrize("use_mask", [False, True])
+def test_slic_channel_axis_3d_multichannel(channel_axis, use_mask):
+    rng = np.random.default_rng(5)
+    shape = (16, 20, 24)
+    img = np.linspace(0, 1, shape[2])[np.newaxis, np.newaxis, :, np.newaxis]
+    img = img * np.ones(shape + (3,)) + 0.1 * rng.random(shape + (3,))
+    mask = None
+    if use_mask:
+        mask = cp.zeros(shape, dtype=bool)
+        mask[2:-2, 3:-3, 4:-4] = True
+    kwargs = dict(
+        n_segments=12, compactness=1, mask=mask, enforce_connectivity=False
+    )
+    expected = slic(cp.asarray(img), channel_axis=-1, **kwargs)
+    img_moved = cp.asarray(np.moveaxis(img, -1, channel_axis))
+    seg = slic(img_moved, channel_axis=channel_axis, **kwargs)
+    assert_array_equal(seg, expected)
+
+
+@pytest.mark.parametrize("channel_axis", [0, 1])
+def test_slic_channel_axis_2d_rgb(channel_axis):
+    img = data.astronaut()[:96, :96]
+    expected = slic(cp.asarray(img), n_segments=16, channel_axis=-1)
+    img_moved = cp.asarray(np.moveaxis(img, -1, channel_axis))
+    seg = slic(img_moved, n_segments=16, channel_axis=channel_axis)
+    assert_array_equal(seg, expected)
+
+
 def test_slic_connectivity_algorithm_gpu():
     img = cp.asarray(data.cat()[:64, :64])
 

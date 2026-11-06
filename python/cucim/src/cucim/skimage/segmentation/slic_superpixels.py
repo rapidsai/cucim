@@ -891,6 +891,9 @@ def slic(
 
     is_2d = False
     multichannel = channel_axis is not None
+    if multichannel and channel_axis % image.ndim != image.ndim - 1:
+        # the kernels expect channels in the last axis
+        image = cp.ascontiguousarray(cp.moveaxis(image, channel_axis, -1))
     if image.ndim == 2:
         # 2D grayscale image: add channel axis
         image = image[..., cp.newaxis]
