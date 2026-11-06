@@ -103,6 +103,29 @@ CuPy prepends the following defines in slic_superpixels.py:
 
 #define CENTER_STRIDE (N_PIXEL_FEATURES + 3)
 
+
+#define FULL_MASK 0xffffffffu
+
+// Segmented (by equal consecutive key) inclusive sum over a warp; the last
+// lane of each segment ends up with the segment total.
+#define SEG_SCAN_ADD(NAME, T)                                                \
+__device__ __forceinline__ void NAME(T &v, bool f, int lane)                 \
+{                                                                            \
+    _Pragma("unroll")                                                        \
+    for (int d = 1; d < 32; d <<= 1)                                         \
+    {                                                                        \
+        T vu = __shfl_up_sync(FULL_MASK, v, d);                              \
+        bool fu = __shfl_up_sync(FULL_MASK, (int)f, d) != 0;                 \
+        if (lane >= d)                                                       \
+        {                                                                    \
+            if (!f) v += vu;                                                 \
+            f = f || fu;                                                     \
+        }                                                                    \
+    }                                                                        \
+}
+SEG_SCAN_ADD(seg_scan_sum, SUM_DTYPE)
+SEG_SCAN_ADD(seg_scan_count, unsigned int)
+
 __forceinline__ __device__ INTERNAL_FLOAT_DTYPE slic_distance(const int3 idx,
                                                               const FLOAT_DTYPE* __restrict__ pixel,
                                                               const long linear_cidx,
@@ -478,26 +501,20 @@ __global__ void accumulate_centers(const FLOAT_DTYPE* __restrict__ data,
 #endif
 )
 {
-    const unsigned long thread_idx = threadIdx.x + (blockIdx.x * blockDim.x);
+    const unsigned long thread_idx = threadIdx.x + ((unsigned long)blockIdx.x * blockDim.x);
     const unsigned long start_idx = thread_idx * PIXELS_PER_THREAD;
     const unsigned long plane_size = (unsigned long)im_shape_y * im_shape_x;
     const unsigned long n_pixels = (unsigned long)im_shape_z * plane_size;
+    const int lane = threadIdx.x & 31;
 
-    unsigned int encountered_labels[PIXELS_PER_THREAD];
-    unsigned int local_counts[PIXELS_PER_THREAD];
-    SUM_DTYPE local_sums[PIXELS_PER_THREAD * CENTER_STRIDE];
+    // The current run of consecutive accepted pixels with one label. A run
+    // that ends inside the thread is flushed with atomics (rare); the last
+    // run is combined with equal-label neighbors across the warp first.
+    int run_label = -1;
+    unsigned int run_count = 0;
+    SUM_DTYPE run_sums[CENTER_STRIDE];
+    for (int w = 0; w < CENTER_STRIDE; w++) run_sums[w] = 0;
 
-    for (int i = 0; i < PIXELS_PER_THREAD; i++)
-    {
-        encountered_labels[i] = 0;
-        local_counts[i] = 0;
-    }
-    for (int i = 0; i < PIXELS_PER_THREAD * CENTER_STRIDE; i++)
-    {
-        local_sums[i] = 0;
-    }
-
-    int n_encountered = 0;
     for (int k = 0; k < PIXELS_PER_THREAD; k++)
     {
         const unsigned long linear_idx = start_idx + k;
@@ -511,37 +528,17 @@ __global__ void accumulate_centers(const FLOAT_DTYPE* __restrict__ data,
             continue;
         }
 #endif
-
         const int label = labels[linear_idx];
         const long linear_cidx = (long)label - START_LABEL;
         if (linear_cidx < 0 || linear_cidx >= n_clusters)
         {
             continue;
         }
-
-        int offset = -1;
-        for (int j = 0; j < n_encountered; j++)
-        {
-            if (encountered_labels[j] == label)
-            {
-                offset = j;
-                break;
-            }
-        }
-        if (offset < 0)
-        {
-            offset = n_encountered;
-            encountered_labels[offset] = label;
-            n_encountered += 1;
-        }
-
-        const long base = offset * CENTER_STRIDE;
-
         const int z = linear_idx / plane_size;
         const unsigned long plane_idx = linear_idx - (unsigned long)z * plane_size;
         const int y = plane_idx / im_shape_x;
         const int x = plane_idx - (unsigned long)y * im_shape_x;
-
+        const int pos[3] = {z, y, x};
 #if !USE_MASK
         const long center_addr = linear_cidx * CENTER_STRIDE;
         const int center_z = (int)centers[center_addr + N_PIXEL_FEATURES];
@@ -559,7 +556,21 @@ __global__ void accumulate_centers(const FLOAT_DTYPE* __restrict__ data,
             continue;
         }
 #endif
-
+        if (label != run_label)
+        {
+            if (run_label >= 0)
+            {
+                const long a = (long)(run_label - START_LABEL) * CENTER_STRIDE;
+                for (int w = 0; w < CENTER_STRIDE; w++)
+                {
+                    atomicAdd(&center_sums[a + w], run_sums[w]);
+                    run_sums[w] = 0;
+                }
+                atomicAdd(&center_counts[run_label - START_LABEL], run_count);
+            }
+            run_label = label;
+            run_count = 0;
+        }
         const unsigned long pixel_addr = linear_idx * N_PIXEL_FEATURES;
 #if N_PIXEL_FEATURES <= 8
 #    pragma unroll
@@ -568,25 +579,33 @@ __global__ void accumulate_centers(const FLOAT_DTYPE* __restrict__ data,
 #endif
         for (int w = 0; w < N_PIXEL_FEATURES; w++)
         {
-            local_sums[base + w] += data[pixel_addr + w];
+            run_sums[w] += data[pixel_addr + w];
         }
-
-        local_sums[base + N_PIXEL_FEATURES] += z;
-        local_sums[base + N_PIXEL_FEATURES + 1] += y;
-        local_sums[base + N_PIXEL_FEATURES + 2] += x;
-        local_counts[offset] += 1;
+        for (int a = 0; a < 3; a++)
+        {
+            run_sums[N_PIXEL_FEATURES + a] += pos[a];
+        }
+        run_count += 1;
     }
 
-    for (int j = 0; j < n_encountered; j++)
+    // warp-level segmented reduction of the last run
+    int prev_key = __shfl_up_sync(FULL_MASK, run_label, 1);
+    bool head = (lane == 0) || (prev_key != run_label);
+    for (int w = 0; w < CENTER_STRIDE; w++)
     {
-        const long linear_cidx = (long)encountered_labels[j] - START_LABEL;
-        const long center_addr = linear_cidx * CENTER_STRIDE;
-        const long base = j * CENTER_STRIDE;
+        seg_scan_sum(run_sums[w], head, lane);
+    }
+    seg_scan_count(run_count, head, lane);
+    int next_key = __shfl_down_sync(FULL_MASK, run_label, 1);
+    const bool tail = (lane == 31) || (next_key != run_label);
+    if (tail && run_label >= 0)
+    {
+        const long a = (long)(run_label - START_LABEL) * CENTER_STRIDE;
         for (int w = 0; w < CENTER_STRIDE; w++)
         {
-            atomicAdd(&center_sums[center_addr + w], local_sums[base + w]);
+            atomicAdd(&center_sums[a + w], run_sums[w]);
         }
-        atomicAdd(&center_counts[linear_cidx], local_counts[j]);
+        atomicAdd(&center_counts[run_label - START_LABEL], run_count);
     }
 }
 
