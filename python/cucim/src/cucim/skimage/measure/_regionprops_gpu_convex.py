@@ -641,7 +641,8 @@ def _get_feret_calipers_2d_kernel():
     vertices the two chains share). Coordinates are scaled by the spacing.
     For each edge, the vertex farthest from the edge's line is found by
     advancing a pointer around the polygon, which moves at most twice around
-    it in total (Preparata and Shamos, 1985):
+    it in total (the rotating calipers of Shamos, see Preparata and Shamos
+    [1]_ and Toussaint [2]_):
 
     - its distance to the edge's line is the width of the polygon in the
       direction normal to the edge; the smallest width is the minimum Feret
@@ -654,6 +655,15 @@ def _get_feret_calipers_2d_kernel():
     the perimeter of the polygon. Angles are those of the direction
     (d0, d1) between axis 0 and axis 1, atan2(d1, d0), folded into
     (-pi/2, pi/2] (the convention of ``orientation``).
+
+    References
+    ----------
+    .. [1] F. P. Preparata and M. I. Shamos, "Computational Geometry: An
+           Introduction", Springer, New York, 1985.
+           :DOI:`10.1007/978-1-4612-1098-6`
+    .. [2] G. T. Toussaint, "Solving geometric problems with the rotating
+           calipers", Proceedings of IEEE MELECON '83, Athens, Greece, May
+           1983.
     """
     source = """
       long long base = 2 * offsets[i] + i;
@@ -2474,13 +2484,23 @@ def _regionprops_oriented_bbox(
     spacing). The size and the center do not depend on the signs of the
     eigenvectors; the corners are
     ``center + sum_a (+/- size[a] / 2) * eigvecs[:, a]``. It is in general
-    not the smallest enclosing box, and it is not unique when principal
-    moments are equal.
+    not the smallest enclosing box (in 2D, the smallest-area rectangle has a
+    side along an edge of the convex hull [1]_, [2]_), and it is not unique
+    when principal moments are equal.
 
     The extremes of the pixel centers along each axis come from the ends of
     each row (`_get_oriented_bbox_kernel`), and the box is then widened by
     the extent of a pixel along that axis, ``sum_d |eigvecs[d, a]| *
     spacing[d]``. Absent labels get NaN.
+
+    References
+    ----------
+    .. [1] H. Freeman and R. Shapira, "Determining the minimum-area encasing
+           rectangle for an arbitrary closed curve", Communications of the
+           ACM 18(7), 409-413, 1975. :DOI:`10.1145/360881.360919`
+    .. [2] G. T. Toussaint, "Solving geometric problems with the rotating
+           calipers", Proceedings of IEEE MELECON '83, Athens, Greece, May
+           1983.
     """
     if props_dict is None:
         props_dict = {}
