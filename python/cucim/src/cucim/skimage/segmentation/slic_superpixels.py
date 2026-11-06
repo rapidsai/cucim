@@ -316,6 +316,10 @@ _slic_connectivity_apply_map = cp.ElementwiseKernel(
 # upper bound on the number of merge passes of the GPU connectivity cleanup
 _CONNECTIVITY_MAX_PASSES = 16
 
+# log2 of the largest fixed-point scale of the atomic center update (about
+# 1e-15 resolution for values of order 1, finer than float64 can use).
+_FIXED_POINT_MAX_LOG2_SCALE = 50
+
 
 def _enforce_label_connectivity_gpu(
     labels,
@@ -498,6 +502,7 @@ def _slic(
 #define USE_MASK {1 if use_mask else 0}
 #define IGNORE_COLOR {1 if ignore_color else 0}
 #define EXTRA_CELLS {extra_cells}
+#define FIXED_ROUND {"llrint" if image.dtype == np.float64 else "llrintf"}
 """
     cuda_source = (
         '#include "cupy/atomics.cuh"\n'
@@ -527,8 +532,23 @@ def _slic(
     max_dist_color_gpu = cp.ones(n_centers, dtype=image.dtype)
     if use_atomic_maximization:
         center_sums_gpu = cp.empty(
-            (n_centers, n_features + len(shape_spatial)), dtype=image.dtype
+            (n_centers, n_features + len(shape_spatial)), dtype=cp.int64
         )
+        # Power-of-two scale for the fixed-point feature sums. It is chosen
+        # so that the sum over all pixels cannot overflow an int64 (with a
+        # factor of 2 margin) and is capped to keep the resolution finite.
+        max_abs = cp.maximum(cp.abs(image.max()), cp.abs(image.min()))
+        fixed_scale_gpu = cp.exp2(
+            cp.minimum(
+                cp.floor(
+                    cp.log2(
+                        2.0**60
+                        / (image.size / n_features * cp.maximum(max_abs, 1e-30))
+                    )
+                ),
+                _FIXED_POINT_MAX_LOG2_SCALE,
+            )
+        ).astype(image.dtype)
         center_counts_gpu = cp.empty(n_centers, dtype=cp.uint32)
     if use_mask:
         mask = cp.ascontiguousarray(mask, dtype=cp.uint8)
@@ -597,6 +617,7 @@ def _slic(
                     n_centers,
                     center_sums_gpu,
                     center_counts_gpu,
+                    fixed_scale_gpu,
                     *((mask,) if use_mask else ()),
                 ),
             )
@@ -608,6 +629,7 @@ def _slic(
                     centers_gpu,
                     center_sums_gpu,
                     center_counts_gpu,
+                    fixed_scale_gpu,
                     n_centers,
                 ),
             )

@@ -199,6 +199,33 @@ def test_slic_atomic_matches_scan(image_kind, compactness):
     assert float((segs[0] == segs[1]).mean()) > 0.99
 
 
+@pytest.mark.parametrize("image_kind", ["2d", "3d"])
+@pytest.mark.parametrize("slic_zero", [False, True])
+def test_slic_atomic_is_deterministic(image_kind, slic_zero):
+    # The center sums are accumulated as fixed-point integers, so repeated
+    # runs must give identical labels (floating-point atomics would not).
+    if image_kind == "2d":
+        img = cp.asarray(np.tile(data.astronaut(), (2, 2, 1)))
+        kwargs = {}
+    else:
+        rng = np.random.default_rng(3)
+        img = cp.asarray(rng.random((40, 40, 40)))
+        kwargs = {"channel_axis": None}
+    segs = [
+        slic(
+            img,
+            n_segments=100,
+            compactness=0.1 if image_kind == "3d" else 1,
+            slic_zero=slic_zero,
+            maximization_algorithm="atomic",
+            **kwargs,
+        )
+        for _ in range(4)
+    ]
+    for seg in segs[1:]:
+        cp.testing.assert_array_equal(seg, segs[0])
+
+
 @pytest.mark.parametrize("channel_axis", [0, 1, 2, -1])
 @pytest.mark.parametrize("use_mask", [False, True])
 def test_slic_channel_axis_3d_multichannel(channel_axis, use_mask):

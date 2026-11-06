@@ -70,8 +70,14 @@ CuPy prepends the following defines in slic_superpixels.py:
 #    define INTERNAL_FLOAT_DTYPE FLOAT_DTYPE
 #endif
 
+// Center sums are accumulated as 64-bit fixed-point integers, so that the
+// result does not depend on the order of the atomic additions.
 #ifndef SUM_DTYPE
-#    define SUM_DTYPE FLOAT_DTYPE
+#    define SUM_DTYPE long long
+#endif
+
+#ifndef FIXED_ROUND
+#    define FIXED_ROUND llrintf
 #endif
 
 #define CENTER_LIMIT ((FLOAT_DTYPE)1.0e30)
@@ -494,13 +500,15 @@ __global__ void accumulate_centers(const FLOAT_DTYPE* __restrict__ data,
                                    int sp_shape_x,
                                    long n_clusters,
                                    SUM_DTYPE* __restrict__ center_sums,
-                                   unsigned int* __restrict__ center_counts
+                                   unsigned int* __restrict__ center_counts,
+                                   const FLOAT_DTYPE* __restrict__ fixed_scale
 #if USE_MASK
                                    ,
                                    const unsigned char* __restrict__ mask
 #endif
 )
 {
+    const FLOAT_DTYPE scale = *fixed_scale;
     const unsigned long thread_idx = threadIdx.x + ((unsigned long)blockIdx.x * blockDim.x);
     const unsigned long start_idx = thread_idx * PIXELS_PER_THREAD;
     const unsigned long plane_size = (unsigned long)im_shape_y * im_shape_x;
@@ -563,7 +571,7 @@ __global__ void accumulate_centers(const FLOAT_DTYPE* __restrict__ data,
                 const long a = (long)(run_label - START_LABEL) * CENTER_STRIDE;
                 for (int w = 0; w < CENTER_STRIDE; w++)
                 {
-                    atomicAdd(&center_sums[a + w], run_sums[w]);
+                    atomicAdd(reinterpret_cast<unsigned long long*>(&center_sums[a + w]), static_cast<unsigned long long>(run_sums[w]));
                     run_sums[w] = 0;
                 }
                 atomicAdd(&center_counts[run_label - START_LABEL], run_count);
@@ -579,7 +587,7 @@ __global__ void accumulate_centers(const FLOAT_DTYPE* __restrict__ data,
 #endif
         for (int w = 0; w < N_PIXEL_FEATURES; w++)
         {
-            run_sums[w] += data[pixel_addr + w];
+            run_sums[w] += FIXED_ROUND(data[pixel_addr + w] * scale);
         }
         for (int a = 0; a < 3; a++)
         {
@@ -603,7 +611,7 @@ __global__ void accumulate_centers(const FLOAT_DTYPE* __restrict__ data,
         const long a = (long)(run_label - START_LABEL) * CENTER_STRIDE;
         for (int w = 0; w < CENTER_STRIDE; w++)
         {
-            atomicAdd(&center_sums[a + w], run_sums[w]);
+            atomicAdd(reinterpret_cast<unsigned long long*>(&center_sums[a + w]), static_cast<unsigned long long>(run_sums[w]));
         }
         atomicAdd(&center_counts[run_label - START_LABEL], run_count);
     }
@@ -612,6 +620,7 @@ __global__ void accumulate_centers(const FLOAT_DTYPE* __restrict__ data,
 __global__ void normalize_centers(FLOAT_DTYPE* __restrict__ centers,
                                   const SUM_DTYPE* __restrict__ center_sums,
                                   const unsigned int* __restrict__ center_counts,
+                                  const FLOAT_DTYPE* __restrict__ fixed_scale,
                                   long n_clusters)
 {
     const long linear_cidx = threadIdx.x + (blockIdx.x * blockDim.x);
@@ -624,10 +633,15 @@ __global__ void normalize_centers(FLOAT_DTYPE* __restrict__ centers,
     const unsigned int count = center_counts[linear_cidx];
     if (count > 0)
     {
-        const FLOAT_DTYPE inv_count = static_cast<FLOAT_DTYPE>(1) / static_cast<FLOAT_DTYPE>(count);
+        // the scale is a power of two, so its inverse is exact
+        const double inv_count = 1.0 / static_cast<double>(count);
+        const double inv_scale = 1.0 / static_cast<double>(*fixed_scale);
         for (int w = 0; w < CENTER_STRIDE; w++)
         {
-            centers[center_addr + w] = static_cast<FLOAT_DTYPE>(center_sums[center_addr + w]) * inv_count;
+            // features are scaled fixed-point values, coordinates are exact integer sums
+            const double unit = (w < N_PIXEL_FEATURES) ? inv_scale : 1.0;
+            centers[center_addr + w] =
+                static_cast<FLOAT_DTYPE>(static_cast<double>(center_sums[center_addr + w]) * unit * inv_count);
         }
     }
     else
